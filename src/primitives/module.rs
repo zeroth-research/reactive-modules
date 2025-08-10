@@ -29,6 +29,7 @@ where
             debug_assert!(!extl.has_duplicates() && extl.is_latched());
             debug_assert!(!intf.has_duplicates() && intf.is_latched());
             debug_assert!(!prvt.has_duplicates() && prvt.is_latched());
+            // TODO: Check pairwise disjointness.
 
             // Check that the control variables of all atoms
             // are contained in the module.
@@ -62,5 +63,13 @@ where
             prvt,
             atoms,
         }
+    }
+    
+    pub fn vars_iter(&self) -> impl Iterator<Item = &V> {
+        self.extl.into_iter().chain(self.intf.into_iter()).chain(self.prvt.into_iter())
+    }
+    
+    pub fn ctr_iter(&self) -> impl Iterator<Item = &V> {
+        self.intf.into_iter().chain(self.prvt.into_iter())
     }
 }

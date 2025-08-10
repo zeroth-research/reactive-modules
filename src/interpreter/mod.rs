@@ -1,3 +1,5 @@
+mod generic;
+
 use crate::primitives::action::Action;
 use crate::primitives::atom::Atom;
 use crate::primitives::module::Module;
