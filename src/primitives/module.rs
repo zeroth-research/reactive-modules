@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use crate::primitives::action::Action;
 use crate::primitives::atom::Atom;
 use crate::primitives::variable::{VarIterExt, Variable};
+use std::collections::HashSet;
 
 pub struct Module<V: Variable, S, I: Action<V, S>, U: Action<V, S>>
 where
@@ -26,10 +26,10 @@ where
     pub fn new(extl: S, intf: S, prvt: S, atoms: Vec<Atom<V, S, I, U>>) -> Self {
         #[cfg(debug_assertions)]
         {
-            debug_assert!(!extl.has_duplicates() && extl.is_latched());
+            debug_assert!(!extl.has_duplicates() && extl.is_latched()); // TODO: SDS is this trait automatically available once the crate loads?
             debug_assert!(!intf.has_duplicates() && intf.is_latched());
             debug_assert!(!prvt.has_duplicates() && prvt.is_latched());
-            // TODO: Check pairwise disjointness.
+            debug_assert!(VarIterExt::pairwise_disjoint(&[extl, intf, prvt]));
 
             // Check that the control variables of all atoms
             // are contained in the module.
@@ -64,11 +64,14 @@ where
             atoms,
         }
     }
-    
+
     pub fn vars_iter(&self) -> impl Iterator<Item = &V> {
-        self.extl.into_iter().chain(self.intf.into_iter()).chain(self.prvt.into_iter())
+        self.extl
+            .into_iter()
+            .chain(self.intf.into_iter())
+            .chain(self.prvt.into_iter())
     }
-    
+
     pub fn ctr_iter(&self) -> impl Iterator<Item = &V> {
         self.intf.into_iter().chain(self.prvt.into_iter())
     }

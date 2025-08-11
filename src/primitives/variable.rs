@@ -14,6 +14,22 @@ pub(crate) trait VarIterExt {
     fn as_set(&self) -> HashSet<&Self::Item>;
     fn into_set(&self) -> HashSet<Self::Item>;
     fn next_set(&self) -> HashSet<Self::Item>;
+    fn pairwise_disjoint<V>(sets: &[V]) -> bool
+    where
+        V: VarIterExt,
+        V::Item: Eq + Hash,
+    {
+        let mut known: HashSet<&V::Item> = HashSet::new();
+        for s in sets {
+            for i in s.as_set() {
+                if !known.contains(&i) {
+                    return false;
+                }
+                known.insert(i);
+            }
+        }
+        true
+    }
 }
 
 impl<I, V> VarIterExt for I
