@@ -2,12 +2,58 @@ use crate::primitives::action::Action;
 use crate::primitives::atom::Atom;
 use crate::primitives::module::Module;
 use crate::primitives::variable::Variable;
+use std::collections::HashSet;
 use std::marker::PhantomData;
 
 pub trait State<Var: Variable, Val: Value>: Default {
     fn get(&self, var: &Var) -> Option<&Val>;
     fn insert(&mut self, var: Var, val: Val);
     fn remove(&mut self, var: &Var) -> Option<Val>;
+}
+
+pub struct StateView<Var: Variable, Val: Value, St: State<Var, Val>> {
+    state: St,
+    public_vars: HashSet<Var>,
+    _val: PhantomData<Val>,
+}
+
+impl<Var: Variable, Val: Value, St: State<Var, Val>> StateView<Var, Val, St> {
+    pub fn new(state: St, public_vars: HashSet<Var>) -> Self {
+        Self {
+            state,
+            public_vars,
+            _val: PhantomData,
+        }
+    }
+}
+
+impl<Var: Variable, Val: Value, St: State<Var, Val>> Default for StateView<Var, Val, St> {
+    fn default() -> Self {
+        Self::new(St::default(), HashSet::new())
+    }
+}
+
+impl<Var: Variable, Val: Value, St: State<Var, Val>> State<Var, Val> for StateView<Var, Val, St> {
+    fn get(&self, var: &Var) -> Option<&Val> {
+        if !self.public_vars.contains(var) {
+            return None;
+        }
+        self.state.get(var)
+    }
+
+    fn insert(&mut self, var: Var, val: Val) {
+        if self.public_vars.contains(&var) {
+            self.state.insert(var, val);
+        }
+        // TODO: Return error if var is not public.
+    }
+
+    fn remove(&mut self, var: &Var) -> Option<Val> {
+        if !self.public_vars.contains(var) {
+            return None;
+        }
+        self.state.remove(var)
+    }
 }
 
 pub trait Value: Default {}
