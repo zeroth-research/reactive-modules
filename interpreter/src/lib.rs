@@ -1,7 +1,3 @@
-pub mod interpreter;
-pub mod primitives;
-mod utils;
-
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }

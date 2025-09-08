@@ -1,7 +1,5 @@
-[package]
-name = "zeroth"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = ["interpreter", "modelchecker", "primitives", "solver"]
+resolver = "3"
 
-
-[dependencies]
+[workspace.dependencies]

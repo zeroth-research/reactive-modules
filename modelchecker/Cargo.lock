@@ -3,17 +3,5 @@
 version = 4
 
 [[package]]
-name = "interpreter"
-version = "0.1.0"
-
-[[package]]
 name = "modelchecker"
-version = "0.1.0"
-
-[[package]]
-name = "primitives"
-version = "0.1.0"
-
-[[package]]
-name = "solver"
 version = "0.1.0"
