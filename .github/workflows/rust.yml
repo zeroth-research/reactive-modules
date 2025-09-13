@@ -24,6 +24,7 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
+    if: github.event_name != 'push' || github.event.pusher.name != 'dependabot[bot]'
     runs-on: ubuntu-latest
 
     steps:
