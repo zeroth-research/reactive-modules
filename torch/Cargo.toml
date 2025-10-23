@@ -1,0 +1,16 @@
+[package]
+name = "torch"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[lib]
+name = "zrm_torch"
+crate-type = ["cdylib"]
+
+[dependencies]
+#primitives = {path="../primitives"}
+pyo3 = { version = "0.24", features = ["extension-module"] }
+pyo3-tch = {  version = "0.22" }
+tch = { features = ["python-extension"], version = "0.22" }
+torch-sys = { features = ["python-extension"], version = "0.22" }
