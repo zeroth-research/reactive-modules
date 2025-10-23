@@ -1,0 +1,57 @@
+use pyo3::prelude::*;
+
+use crate::pyval::PyVal;
+use crate::term::TorchOp;
+
+#[pyclass]
+pub struct PyTerm {
+    op: TorchOp,
+    reads: Vec<PyVal>,
+    writes: Vec<PyVal>,
+}
+
+#[pymethods]
+impl PyTerm {
+    #[new]
+    fn new(op: &str, reads: Vec<Py<PyVal>>, writes: Vec<Py<PyVal>>) -> Self {
+        // here we copy the PyVal created (and owned) by Python so that we can
+        // work with them independently of Python.  If the copying becomes
+        // expensive (IHMO unlikely), we can keep `Py<PyVal>` in `PyTerm`
+        // instead -- the memory would be owned by Python and we would have only
+        // references to the values.
+        Self {
+            op: TorchOp::from_str(op),
+            reads: reads.iter().map(|item| item.get().clone()).collect(),
+            writes: writes.iter().map(|item| item.get().clone()).collect(),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PyTerm({:?}, {:?}, {:?})", self.op, self.reads, self.writes)
+    }
+
+    fn __str__(&self) -> String {
+        format!("{:?} - {:?} -> {:?}", self.reads, self.op, self.writes)
+    }
+
+    fn print(&self) {
+        // FIXME: use `colored` create
+        println!(
+            "\x1b[1;34m{:?}\x1b[0m - \x1b[1;31m{:?}\x1b[0m -> \x1b[1;32m{:?}\x1b[0m",
+            self.reads, self.op, self.writes
+        )
+    }
+}
+
+#[pyfunction]
+pub fn print_pyterm(term: &Bound<'_, PyTerm>) {
+    //Python::with_gil(|py|{ });
+    let term = term.borrow();
+    println!("PyTerm:\n  op: {:?}", term.op);
+    for obj in &term.reads {
+        println!("  r: {:?}", obj);
+    }
+    for obj in &term.writes {
+        println!("  w: {:?}", obj);
+    }
+}
