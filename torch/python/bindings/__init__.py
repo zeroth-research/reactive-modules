@@ -2,7 +2,6 @@
 Python bindings to the `torch` create
 """
 
-
 def load_zrm_torch():
     """
     The generated library needs to be named zrm_torch.so to load,
@@ -34,10 +33,12 @@ def load_zrm_torch():
                 import importlib.util
 
                 if path.endswith(".dylib"):
-                    loader = importlib.machinery.ExtensionFileLoader("zrm_torch", path)
+                    loader = importlib.machinery.ExtensionFileLoader(
+                        "zrm_torch", path)
                     spec = importlib.util.spec_from_loader(loader.name, loader)
                 else:
-                    spec = importlib.util.spec_from_file_location("zrm_torch", path)
+                    spec = importlib.util.spec_from_file_location(
+                        "zrm_torch", path)
                     loader = spec.loader
 
                 if spec is None:
@@ -55,8 +56,7 @@ def load_zrm_torch():
     import zrm_torch
 
 
-# NOTE: this must go first
+# NOTE: this must go first before any other import
 libzrm_torch = load_zrm_torch()
 
-# export `Term` and `to_terms`
-from .term import Term, to_terms, eq, le, lt, ge, gt, ifelse, var
+from .context import Context

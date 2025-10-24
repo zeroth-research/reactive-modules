@@ -35,7 +35,7 @@ use tch;
 
 #[derive(Debug)]
 pub struct PyTensor {
-    tensor: tch::Tensor,
+    pub tensor: tch::Tensor,
 }
 
 impl std::ops::Deref for PyTensor {

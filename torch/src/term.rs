@@ -1,7 +1,9 @@
+use base::term::{Instruction, Term};
+
 #[derive(Debug)]
 pub enum TorchOp {
     // constants are special terms
-    Const,
+    Const(tch::Tensor),
     // comparisons
     Eq,
     Neq,
@@ -22,10 +24,12 @@ pub enum TorchOp {
     Neg,
 }
 
+pub type TorchDType = &'static str;
+pub type TorchTerm = Term<TorchDType, TorchOp>;
+
 impl TorchOp {
     pub fn from_str(s: &str) -> Self {
         match s {
-            "Const" => TorchOp::Const,
             "Eq" => TorchOp::Eq,
             "Neq" => TorchOp::Neq,
             "Lt" => TorchOp::Lt,
@@ -41,7 +45,39 @@ impl TorchOp {
             // -----
             "Guard" => TorchOp::Guard,
             "Neg" => TorchOp::Neg,
+            // -----
+            "Const" => panic!("Const cannot be constructed from a &str"),
             oth => panic!("Invalid TorchOp: {} (maybe just not added yet)", oth),
+        }
+    }
+}
+
+impl Clone for TorchOp {
+    fn clone(&self) -> Self {
+        match self {
+            TorchOp::Eq => TorchOp::Eq,
+            TorchOp::Neq => TorchOp::Neq,
+            TorchOp::Lt => TorchOp::Lt,
+            TorchOp::Le => TorchOp::Le,
+            TorchOp::Gt => TorchOp::Gt,
+            TorchOp::Ge => TorchOp::Ge,
+            TorchOp::Add => TorchOp::Add,
+            TorchOp::Sub => TorchOp::Sub,
+            TorchOp::Mul => TorchOp::Mul,
+            TorchOp::Div => TorchOp::Div,
+            TorchOp::Sum => TorchOp::Sum,
+            TorchOp::Guard => TorchOp::Guard,
+            TorchOp::Neg => TorchOp::Neg,
+            TorchOp::Const(v) => Self::Const(v.shallow_clone()),
+        }
+    }
+}
+
+impl Instruction for TorchOp {
+    fn arity(&self) -> Option<usize> {
+        match self {
+            TorchOp::Const(_) | TorchOp::Sum | TorchOp::Neg => Some(1),
+            _ => Some(2),
         }
     }
 }
