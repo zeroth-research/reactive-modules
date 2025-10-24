@@ -31,6 +31,7 @@ struct Range<D> {
 ///
 /// An important feature of wires is also to create sub-views, e.g., access only parts of a matrix.
 /// If, in the example above, `N` should multiply 2x2 sub-matrices of two 3x3 matrices, the wire can specify that it "forwards" to `N` only the 2x2 sub-matrix of a given 3x3 matrix. The wire itself can be now represented as a 2x2 matrix of indices that should be accessed.
+#[derive(Debug)]
 pub struct Wire<D> {
     ranges: Vec<Range<D>>,
 }

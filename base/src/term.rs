@@ -7,6 +7,7 @@ use crate::wire::Wire;
 ///
 /// A list of terms represents a compute graph. A term is a node in the graph,
 /// and it references the input/output edges (read/write wires).
+#[derive(Debug)]
 pub struct Term<D, I: Instruction> {
     /// The inputs to this term.
     read: Wire<D>,
