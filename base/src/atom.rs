@@ -19,12 +19,22 @@ pub struct Atom<D, I> {
 }
 impl<D, I> Atom<D, I> {
     /// Returns a reference to the initial action.
-    fn init(&self) -> &[Term<D, I>] {
+    pub fn init(&self) -> &[Term<D, I>] {
         &self.init
     }
     /// Returns a reference to the update action.
-    fn update(&self) -> &[Term<D, I>] {
+    pub fn update(&self) -> &[Term<D, I>] {
         &self.update
+    }
+
+    pub fn reads(&self) -> &Wire<D> {
+        &self.read
+    }
+    pub fn writes(&self) -> &Wire<D> {
+        &self.ctrl
+    }
+    pub fn waits(&self) -> &Wire<D> {
+        &self.wait
     }
 
     // fn delay(&self) -> &[Term<I>] {
