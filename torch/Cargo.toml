@@ -9,7 +9,7 @@ name = "zrm_torch"
 crate-type = ["cdylib"]
 
 [dependencies]
-#primitives = {path="../primitives"}
+base = {path="../base"}
 pyo3 = { version = "0.24", features = ["extension-module"] }
 pyo3-tch = {  version = "0.22" }
 tch = { features = ["python-extension"], version = "0.22" }

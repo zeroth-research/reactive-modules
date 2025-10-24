@@ -5,9 +5,9 @@ use crate::term::TorchOp;
 
 #[pyclass]
 pub struct PyTerm {
-    op: TorchOp,
-    reads: Vec<PyVal>,
-    writes: Vec<PyVal>,
+    pub op: TorchOp,
+    pub reads: Vec<PyVal>,
+    pub writes: Vec<PyVal>,
 }
 
 #[pymethods]
@@ -42,6 +42,9 @@ impl PyTerm {
         )
     }
 }
+
+// It is safe to share PyTerm for the same reasons as for PyTensor
+unsafe impl Sync for PyTerm {}
 
 #[pyfunction]
 pub fn print_pyterm(term: &Bound<'_, PyTerm>) {
