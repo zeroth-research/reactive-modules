@@ -1,5 +1,4 @@
 use base;
-use base::term::Instruction;
 
 pub enum LinGCL {
     Eq,
@@ -19,21 +18,6 @@ pub enum LinGCL {
     Guard,
     Tensor(Vec<f64>),
     Id,
-}
-
-impl Instruction for LinGCL {
-    fn arity(&self) -> Option<usize> {
-        Some(match self {
-            LinGCL::Eq | LinGCL::Neq | LinGCL::Leq | LinGCL::Le | LinGCL::Geq | LinGCL::Ge => 2,
-            LinGCL::Sum(_) | LinGCL::Mul(_) | LinGCL::And(_) | LinGCL::Or(_) => 2,
-            LinGCL::Neg | LinGCL::Minus => 1,
-            LinGCL::MatMul => 2,
-            LinGCL::Choose => None?,
-            LinGCL::Guard => 2,
-            LinGCL::Tensor(_) => 0,
-            LinGCL::Id => 1,
-        })
-    }
 }
 
 #[macro_export]

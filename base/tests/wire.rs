@@ -105,3 +105,60 @@ fn cannot_intersect_incompatible_wires() {
     let z = Wire::intersection(&x, &y);
     assert!(z.is_err());
 }
+
+#[test]
+fn difference_halfway_left() {
+    let x = Wire::vector(10, "real", 10);
+    let y = Wire::vector(0, "real", 15);
+
+    let z = x.difference(&y).unwrap();
+    assert_eq!(z.size(), 5);
+}
+
+#[test]
+fn difference_halfway_right() {
+    let x = Wire::vector(10, "real", 10);
+    let y = Wire::vector(15, "real", 15);
+
+    let z = x.difference(&y).unwrap();
+    assert_eq!(z.size(), 5);
+}
+
+#[test]
+fn difference_midway() {
+    let x = Wire::vector(10, "real", 10);
+    let y = Wire::vector(12, "real", 2);
+
+    let z = x.difference(&y).unwrap();
+    assert_eq!(z.size(), 8);
+}
+
+#[test]
+fn difference_all_the_way() {
+    let x = Wire::vector(10, "real", 10);
+    let y = Wire::vector(0, "real", 30);
+
+    let z = x.difference(&y).unwrap();
+    assert_eq!(z.size(), 0);
+}
+
+#[test]
+fn difference_across_two() {
+    let x = Wire::vector(0, "real", 10);
+    let y = Wire::vector(20, "real", 10);
+    let z = Wire::vector(5, "real", 20);
+
+    let w = x.union(&y).unwrap().difference(&z).unwrap();
+    assert_eq!(w.size(), 10);
+}
+
+#[test]
+fn difference_between_two() {
+    let x = Wire::vector(0, "real", 10);
+    let y = Wire::vector(20, "real", 10);
+    let z = Wire::vector(11, "real", 5);
+
+    let mut w = x.union(&y).unwrap();
+    w = w.difference(&z).unwrap();
+    assert_eq!(w.size(), 20);
+}

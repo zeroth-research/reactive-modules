@@ -1,41 +1,26 @@
 use std::cmp::{Ordering, max, min};
 use std::fmt;
 
-/// A typed implementation of a range.
-/// Both `start` and `end` are inclusive.
+/// A wiring represents a view over a sequence of indices, each of which is associated
+/// with a type.
+
 #[derive(Clone)]
-struct Range<D> {
-    start: usize,
-    end: usize, // inclusive
-    dtype: D,
+pub(crate) struct Range<D> {
+    pub(crate) start: usize,
+    pub(crate) end: usize, //inclusive
+    pub(crate) dtype: D,
 }
 
-/// A wire represents a view over a sequence of indices, each of which is associated
-/// with a type.
-///
-/// For example,  we can have the following structure where the computation node `N` is wired with 3 wires
-/// `x`, `y`, and `z`:
-///
-/// ```text
-///     -- x -- |    |
-///             | N  |  -- z --
-///     -- y -- |    |
-/// ```
-///
-/// Wires `x` and `y` connect the node with inputs and `z` connects the output of the node with other nodes
-/// (or represents the output of the graph if the wire is not connected to any node).
-///
-/// If `N` is a multiplication of 3x3 matrices and two matrices `A` and `B` are "sent" into `x` and `y`, then `z`
-/// "forwards" the value `A*B`. The wires can be represented in this case as simple variables taking and
-/// forwarding the values.
-///
-/// An important feature of wires is also to create sub-views, e.g., access only parts of a matrix.
-/// If, in the example above, `N` should multiply 2x2 sub-matrices of two 3x3 matrices, the wire can specify that it "forwards" to `N` only the 2x2 sub-matrix of a given 3x3 matrix. The wire itself can be now represented as a 2x2 matrix of indices that should be accessed.
+#[derive(Clone, Debug)]
 pub struct Wire<D> {
-    ranges: Vec<Range<D>>,
+    pub(crate) ranges: Vec<Range<D>>,
 }
 
 impl<D> Wire<D> {
+    pub fn empty() -> Wire<D> {
+        Self { ranges: vec![] }
+    }
+
     pub fn scalar(offset: usize, dtype: D) -> Wire<D> {
         Self {
             ranges: vec![Range {
@@ -60,6 +45,7 @@ impl<D> Wire<D> {
         self.ranges.iter().map(|r| r.end - r.start + 1).sum()
     }
 
+    // TODO: add a check for contiguity
     fn disjoint_and_sorted(ranges: &[Range<D>]) -> bool {
         let mut i = ranges.iter();
         let Some(mut prev) = i.next() else {
@@ -80,7 +66,7 @@ impl<D> Wire<D> {
     }
 }
 
-impl<T> Range<T> {
+impl<D> Range<D> {
     fn cmp(&self, point: usize) -> Ordering {
         if self.end < point {
             Ordering::Less
@@ -90,11 +76,16 @@ impl<T> Range<T> {
             Ordering::Equal
         }
     }
+
+    fn new_unchecked(start: usize, end: usize, dtype: D) -> Self {
+        debug_assert!(start <= end);
+        Self { start, end, dtype }
+    }
 }
 
 impl<D: fmt::Debug> fmt::Debug for Range<D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[{:?}..={:?}] : {:?}", self.start, self.end, self.dtype)
+        write!(f, "[{:?}, {:?}] : {:?}", self.start, self.end, self.dtype)
     }
 }
 
@@ -107,18 +98,29 @@ impl<D: Eq + Clone> Wire<D> {
         loop {
             match (i.peek(), j.peek()) {
                 (Some(&a), Some(&b)) => {
-                    if a.end < b.start {
+                    if a.end + 1 < b.start {
                         ranges.push(a.clone());
                         i.next();
-                    } else if b.end < a.start {
+                    } else if b.end + 1 < a.start {
                         ranges.push(b.clone());
                         j.next();
-                    } else if a.dtype == b.dtype {
+                    } else if (b.end + 1 >= a.start || a.end + 1 >= b.start) && a.dtype == b.dtype {
+                        // TODO: what if the a range goes beyond the b range (and viceversa)?
                         ranges.push(Range {
                             start: min(a.start, b.start),
                             end: max(a.end, b.end),
                             dtype: a.dtype.clone(),
                         });
+                        i.next();
+                        j.next();
+                    } else if b.end + 1 == a.start && a.dtype != b.dtype {
+                        ranges.push(b.clone());
+                        ranges.push(a.clone());
+                        i.next();
+                        j.next();
+                    } else if a.end + 1 == b.start && a.dtype != b.dtype {
+                        ranges.push(a.clone());
+                        ranges.push(b.clone());
                         i.next();
                         j.next();
                     } else {
@@ -160,27 +162,114 @@ impl<D: Eq + Clone> Wire<D> {
                     if a.dtype != b.dtype {
                         return Err("dtype mismatch");
                     }
-                    ranges.push(Range {
-                        start,
-                        end,
-                        dtype: a.dtype.clone(),
-                    });
+                    ranges.push(Range::new_unchecked(start, end, a.dtype.clone()));
                 } else {
                     break; // empty intersection
                 }
             }
         }
+        Ok(Self::new_unchecked(ranges))
+    }
 
+    pub fn difference(&self, other: &Self) -> Result<Self, &str> {
+        let mut ranges: Vec<Range<D>> = Vec::new();
+        let mut left: usize = 0;
+        for a in self.ranges.iter() {
+            match other.ranges[left..].binary_search_by(|r| r.cmp(a.start)) {
+                Ok(i) => left = i,
+                Err(i) => left = i,
+            }
+
+            let mut start = a.start;
+            for b in other.ranges[left..].iter() {
+                if start < b.start {
+                    if b.dtype != a.dtype {
+                        return Err("dtype mismatch");
+                    }
+                    let end = min(a.end, b.start - 1);
+                    ranges.push(Range::new_unchecked(start, end, a.dtype.clone()));
+                }
+                start = max(start, b.end + 1);
+                if start > a.end {
+                    break;
+                }
+            }
+
+            if start <= a.end {
+                ranges.push(Range::new_unchecked(start, a.end, a.dtype.clone()));
+            }
+        }
         Ok(Self::new_unchecked(ranges))
     }
 }
 
-// #[macro_export]
-// macro_rules! wires {
-//     () => (
-//         $crate::wire:wireg::empty()
-//     );
-//     ($($x:expr),+ $(,)?) => (
-//         $crate::wire:wireg::from_slice(&[$($x),+])
-//     );
-// }
+impl<D: Eq> Wire<D> {
+    pub fn is_subset(&self, other: &Wire<D>) -> bool {
+        let mut left: usize = 0;
+        for a in self.ranges.iter() {
+            match other.ranges[left..].binary_search_by(|r| r.cmp(a.start)) {
+                Ok(i) => left = i,
+                Err(_) => return false,
+            }
+            if a.end > other.ranges[left].end || other.ranges[left].dtype != a.dtype {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn is_disjoint(&self, other: &Wire<D>) -> bool {
+        for a in self.ranges.iter() {
+            match other.ranges.binary_search_by(|r| r.cmp(a.start)) {
+                Ok(_) => return false,
+                Err(i) => {
+                    if i < other.ranges.len() && other.ranges[i].start <= a.end {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    pub fn is_twin(&self, other: &Wire<D>) -> bool {
+        if self.ranges.len() != other.ranges.len() {
+            return false;
+        }
+        // generalising this later - for now, this works under the following assumption:
+        debug_assert!(self.ranges[0].start == 0);
+        let offset = match other.ranges.first() {
+            Some(range) => range.start,
+            None => return true,
+        };
+        for (a, b) in self.ranges.iter().zip(other.ranges.iter()) {
+            if a.start + offset != b.start {
+                return false;
+            }
+            if a.end + offset != b.end {
+                return false;
+            }
+            if a.dtype != b.dtype {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl<D: Clone> Wire<D> {
+    pub fn twin(&self, offset: isize) -> Result<Wire<D>, &str> {
+        let mut twin_ranges: Vec<Range<D>> = Vec::with_capacity(self.ranges.len());
+        for range in &self.ranges {
+            let start: usize = range.start.checked_add_signed(offset).ok_or("bad offset")?;
+            let end: usize = range.end.checked_add_signed(offset).unwrap(); // error cannot happen unless bug
+
+            twin_ranges.push(Range {
+                start,
+                end,
+                dtype: range.dtype.clone(),
+            });
+        }
+        Ok(Self::new_unchecked(twin_ranges))
+    }
+}
