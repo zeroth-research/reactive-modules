@@ -7,24 +7,19 @@ use crate::wire::Wire;
 ///
 /// A list of terms represents a compute graph. A term is a node in the graph,
 /// and it references the input/output edges (read/write wires).
-pub struct Term<D, I: Instruction> {
-    /// The inputs to this term.
-    read: Wire<D>,
+/// [Wire]s are essentially single static assignments.
+#[derive(Debug)]
+pub struct Term<D, I> {
+    /// The instruction to be executed by this node.
+    itype: I,
     /// The outputs of this term.
     write: Wire<D>,
-    /// The instruction to be executed by this node.
-    ins: I,
+    /// The inputs to this term.
+    read: Wire<D>,
 }
 
-impl<D, I: Instruction> Term<D, I> {
-    pub fn new(ins: I, write: Wire<D>, read: Wire<D>) -> Self {
-        Self { read, write, ins }
+impl<D, I> Term<D, I> {
+    pub fn new(itype: I, write: Wire<D>, read: Wire<D>) -> Self {
+        Self { itype, write, read }
     }
-}
-
-/// An instruction set (usually an enum of instructions) will implement this trait.
-pub trait Instruction {
-    /// This is an example of a function on an instruction.
-    /// More likely, we want to have a type check function that can check the input/output wires.
-    fn arity(&self) -> Option<usize>;
 }
