@@ -1,5 +1,3 @@
-use base;
-
 pub enum LinGCL {
     Eq,
     Neq,

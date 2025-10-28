@@ -17,27 +17,19 @@ pub struct Wire<D> {
 }
 
 impl<D> Wire<D> {
-    pub fn empty() -> Wire<D> {
+    pub fn none() -> Wire<D> {
         Self { ranges: vec![] }
     }
 
-    pub fn scalar(offset: usize, dtype: D) -> Wire<D> {
+    pub fn one(offset: usize, dtype: D) -> Wire<D> {
         Self {
-            ranges: vec![Range {
-                start: offset,
-                end: offset,
-                dtype,
-            }],
+            ranges: vec![Range::new_unchecked(offset, offset, dtype)],
         }
     }
 
-    pub fn vector(offset: usize, dtype: D, length: usize) -> Wire<D> {
+    pub fn many(offset: usize, dtype: D, n: usize) -> Wire<D> {
         Self {
-            ranges: vec![Range {
-                start: offset,
-                end: offset + length - 1,
-                dtype,
-            }],
+            ranges: vec![Range::new_unchecked(offset, offset + n - 1, dtype)],
         }
     }
 
@@ -114,7 +106,7 @@ impl<D: Eq + Clone> Wire<D> {
                 ranges.push(next.clone());
             } else if ranges.last().unwrap().dtype == next.dtype {
                 // overlapping
-                ranges.last_mut().unwrap().end = max(next.end, end as usize);
+                ranges.last_mut().unwrap().end = max(next.end, end);
             } else {
                 return Err("dtype mismatch");
             }
@@ -191,8 +183,8 @@ impl<D: Eq + Clone> Wire<D> {
             let end: usize = range.end.checked_add_signed(offset).unwrap(); // error cannot happen unless bug
 
             twin_ranges.push(Range {
-                start: start,
-                end: end,
+                start,
+                end,
                 dtype: range.dtype.clone(),
             });
         }

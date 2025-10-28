@@ -13,9 +13,9 @@ pub struct Term<D, I> {
     /// The instruction to be executed by this node.
     itype: I,
     /// The outputs of this term.
-    write: Wire<D>,
+    pub(crate) write: Wire<D>,
     /// The inputs to this term.
-    read: Wire<D>,
+    pub(crate) read: Wire<D>,
 }
 
 impl<D, I> Term<D, I> {
