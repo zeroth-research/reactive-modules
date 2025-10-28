@@ -61,6 +61,10 @@ impl<D> Wire<D> {
         self.ranges.iter().map(|r| r.end - r.start + 1).sum()
     }
 
+    pub fn empty() -> Wire<D> {
+        Self { ranges: vec![] }
+    }
+
     fn disjoint_and_sorted(ranges: &[Range<D>]) -> bool {
         let mut i = ranges.iter();
         let Some(mut prev) = i.next() else {
@@ -73,6 +77,43 @@ impl<D> Wire<D> {
             prev = r;
         }
         true
+    }
+
+    ///
+    /// Populate a wire from a sequence of variables identifiers.
+    /// The complexity is not the best right now, but it may not be a bottle-neck.
+    pub fn from_iter<I>(iter: I, dtype: D) -> Result<Wire<D>, &'static str>
+    where
+        I: Iterator<Item = usize>,
+        D: Clone,
+    {
+        let mut identifiers: Vec<usize> = Vec::from_iter(iter);
+        identifiers.sort();
+
+        let mut ranges: Vec<Range<D>> = Vec::new();
+        for i in identifiers {
+            if let Some(range) = ranges.last_mut() {
+                assert!(i > range.end, "Repeated value"); // or unsorted array, but we sorted it
+                // above
+                if i == range.end + 1 {
+                    range.end += 1;
+                } else {
+                    ranges.push(Range {
+                        start: i,
+                        end: i,
+                        dtype: dtype.clone(),
+                    });
+                }
+            } else {
+                ranges.push(Range {
+                    start: i,
+                    end: i,
+                    dtype: dtype.clone(),
+                });
+            }
+        }
+
+        Ok(Wire { ranges })
     }
 
     fn new_unchecked(ranges: Vec<Range<D>>) -> Wire<D> {
@@ -90,6 +131,10 @@ impl<T> Range<T> {
         } else {
             Ordering::Equal
         }
+    }
+
+    fn overlap(&self, oth: &Range<T>) -> bool {
+        self.end >= oth.start || oth.end <= self.start
     }
 }
 
