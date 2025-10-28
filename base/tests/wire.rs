@@ -164,6 +164,17 @@ fn difference_between_two() {
 }
 
 #[test]
+fn union_swallow() {
+    let x = Wire::vector(5, "real", 10);
+    let y = Wire::vector(20, "real", 10);
+    let z = Wire::vector(0, "real", 30);
+
+    let mut w = x.union(&y).unwrap();
+    w = w.union(&z).unwrap();
+    assert_eq!(w.size(), 30);
+}
+
+#[test]
 fn can_iterate_wire() {
     let x = Wire::vector(0, "real", 4);
     let y = Wire::vector(4, "int", 2);
