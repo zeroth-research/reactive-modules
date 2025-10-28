@@ -507,6 +507,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nusmv"
+version = "0.1.0"
+dependencies = [
+ "base",
+ "pest",
+ "pest_derive",
+ "pest_generator",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

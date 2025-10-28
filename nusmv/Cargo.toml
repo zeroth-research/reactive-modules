@@ -1,0 +1,12 @@
+[package]
+name = "nusmv"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base = { path = "../base" }
+pest = "2.7"
+pest_derive = "2.7"
+
+[build-dependencies]
+pest_generator = "2.7"

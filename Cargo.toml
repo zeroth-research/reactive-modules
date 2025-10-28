@@ -1,4 +1,4 @@
 [workspace]
-members = ["base", "torch", "toy", "visual"]
+members = ["base", "torch", "toy", "visual", "nusmv"]
 default-members = ["base", "toy"]
 resolver = "3"
