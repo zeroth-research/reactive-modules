@@ -1,36 +1,6 @@
 use crate::atom::Atom;
 use crate::wire::Wire;
 
-#[derive(Debug, Clone)]
-pub struct WirePair<D> {
-    pub latched: Wire<D>,
-    pub next: Wire<D>,
-}
-
-impl<D: Eq> WirePair<D> {
-    pub fn is_twin(&self) -> bool {
-        self.latched.is_twin(&self.next)
-    }
-}
-
-impl<D> WirePair<D> {
-    pub fn empty() -> Self {
-        WirePair {
-            latched: Wire::empty(),
-            next: Wire::empty(),
-        }
-    }
-}
-
-impl<D> From<(Wire<D>, Wire<D>)> for WirePair<D> {
-    fn from(value: (Wire<D>, Wire<D>)) -> Self {
-        WirePair {
-            latched: value.0,
-            next: value.1,
-        }
-    }
-}
-
 /// This data structure corresponds to the module of reactive modules.
 #[derive(Debug)]
 pub struct Module<D, I> {
@@ -49,12 +19,12 @@ pub struct Module<D, I> {
     ///  Wires are organised in pairs of identical twins where
     ///  - 0: latched wires
     ///  - 1: next wires
-    extl: WirePair<D>,
-    intf: WirePair<D>,
-    prvt: WirePair<D>,
-    ctrl: WirePair<D>,
-    obs: WirePair<D>,
-    wire: WirePair<D>,
+    extl: [Wire<D>; 2],
+    intf: [Wire<D>; 2],
+    prvt: [Wire<D>; 2],
+    ctrl: [Wire<D>; 2],
+    obs: [Wire<D>; 2],
+    wire: [Wire<D>; 2],
 
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
@@ -63,22 +33,22 @@ pub struct Module<D, I> {
 }
 impl<D: Clone + Eq, I> Module<D, I> {
     #[allow(clippy::unwrap_used)]
-    pub fn new(wire: WirePair<D>, atoms: Vec<Atom<D, I>>) -> Result<Self, &'static str> {
+    pub fn new(wire: [Wire<D>; 2], atoms: Vec<Atom<D, I>>) -> Result<Self, &'static str> {
         // Check latched and next wires
-        if !wire.is_twin() {
+        if wire[0].is_twin(&wire[1]) {
             return Err("latched and next wires are not matching");
         }
 
         // Infer next controlled wires from atoms
         let mut ctrl_1: Wire<D> = Wire::empty();
         for (i, atom) in atoms.iter().enumerate() {
-            if !atom.read.is_subset(&wire.latched) {
+            if !atom.read.is_subset(&wire[0]) {
                 return Err("atom read is not latched");
             }
-            if !atom.wait.is_subset(&wire.next) {
+            if !atom.wait.is_subset(&wire[0]) {
                 return Err("atom wait is not next");
             }
-            if !atom.ctrl.is_subset(&wire.next) {
+            if !atom.ctrl.is_subset(&wire[0]) {
                 return Err("atom ctrl is not next");
             }
             if !atom.ctrl.is_disjoint(&ctrl_1) {
@@ -93,17 +63,16 @@ impl<D: Clone + Eq, I> Module<D, I> {
         }
 
         // Infer next external and observable wires
-        let extl_1 = wire.next.difference(&ctrl_1).unwrap(); // unwrap cuz checks above ensure
+        let extl_1 = wire[1].difference(&ctrl_1).unwrap(); // unwrap cuz checks above ensure
         let obs_1 = ctrl_1.union(&extl_1).unwrap(); // unwrap cuz checks above ensure
 
         // offset extl, ctrl, and obs backward to obtain latched wires
-        let offset: isize =
-            (wire.next.ranges[0].start as isize) - (wire.latched.ranges[0].start as isize);
-        let extl = (extl_1.twin(offset).unwrap(), extl_1).into(); // unwrap cuz checks above ensure
-        let obs = (obs_1.twin(offset).unwrap(), obs_1).into(); // unwrap cuz checks above ensure
-        let ctrl: WirePair<D> = (ctrl_1.twin(offset).unwrap(), ctrl_1).into(); // unwrap cuz checks above ensure
+        let offset: isize = (wire[1].ranges[0].start as isize) - (wire[0].ranges[0].start as isize);
+        let extl = [extl_1.twin(offset).unwrap(), extl_1]; // unwrap cuz checks above ensure
+        let obs = [obs_1.twin(offset).unwrap(), obs_1]; // unwrap cuz checks above ensure
+        let ctrl = [ctrl_1.twin(offset).unwrap(), ctrl_1]; // unwrap cuz checks above ensure
         let intf = ctrl.clone();
-        let prvt = WirePair::<D>::empty();
+        let prvt = [Wire::<D>::empty(), Wire::<D>::empty()];
 
         Ok(Module {
             extl,
