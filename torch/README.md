@@ -18,7 +18,9 @@ pyenv shell 3.13
 # plugin instead ).
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+# install the required Python packages
+pip install poetry
+poetry install
 ```
 
 ### Building with Maturin
