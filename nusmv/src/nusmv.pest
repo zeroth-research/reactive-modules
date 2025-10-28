@@ -1,0 +1,84 @@
+// ==============================
+// NuSMV Subset Grammar (Pest)
+// ==============================
+//
+// Supports basic modules, variables, assigns, and boolean expressions.
+// Example input:
+//
+// MODULE main
+// VAR
+//   x : boolean;
+//   y : boolean;
+// ASSIGN
+//   init(x) := TRUE;
+//   next(x) := y;
+//   next(y) := !x;
+//
+
+WHITESPACE  = _{ " " | "\t" | NEWLINE }
+NEWLINE     = _{ "\r\n" | "\n" | "\r" }
+COMMENT     = _{ "--" ~ (!NEWLINE ~ ANY)* }
+
+file        =  { SOI ~ module_decl ~ EOI }
+
+module_decl =  { MODULE ~ ident ~ ( "(" ~ param_list? ~ ")" )? ~ module_body }
+
+param_list  =  { ident ~ ("," ~ ident)* }
+
+module_body =  { (var_section | define_section | assign_section)* }
+
+var_section =  { VAR ~ var_decl+ }
+var_decl    =  { ident ~ ":" ~ type_spec ~ ";" }
+
+type_spec   =  { BOOLEAN | INTEGER | enum_type }
+enum_type   =  { ENUM ~ "{" ~ enum_value_list ~ "}" }
+enum_value_list = { ident ~ ("," ~ ident)* }
+
+define_section = { DEFINE ~ define_decl+ }
+define_decl    = { ident ~ ":=" ~ expr ~ ";" }
+
+assign_section = { ASSIGN ~ assign_stmt+ }
+assign_stmt    = {
+    ( init_ref | next_ref | ident ) ~ ":=" ~ expr ~ ";"
+}
+
+init_ref = { INIT ~ "(" ~ ident ~ ")" }
+next_ref = { NEXT ~ "(" ~ ident ~ ")" }
+
+expr = _{
+      expr_or
+}
+
+expr_or  = { expr_and ~ (OR  ~ expr_and)* }
+expr_and = { expr_not ~ (AND ~ expr_not)* }
+expr_not = { (NOT ~ expr_not) | expr_primary }
+
+expr_bool = { "TRUE" | "FALSE" }
+expr_identifier = @{ ASCII_ALPHANUMERIC+ }
+
+expr_primary = _{
+      TRUE
+    | FALSE
+    | ident
+    | number
+    | "(" ~ expr ~ ")"
+}
+
+MODULE  =  @{ "MODULE" }
+VAR     =  @{ "VAR" }
+DEFINE  =  @{ "DEFINE" }
+ASSIGN  =  @{ "ASSIGN" }
+INIT    =  @{ "init" }
+NEXT    =  @{ "next" }
+BOOLEAN =  @{ "boolean" }
+INTEGER =  @{ "integer" }
+ENUM    =  @{ "enum" }
+TRUE    =  @{ "TRUE" }
+FALSE   =  @{ "FALSE" }
+
+AND     =  @{ "&" | "and" }
+OR      =  @{ "|" | "or" }
+NOT     =  @{ "!" | "not" }
+
+ident   =  @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+number  =  @{ ASCII_DIGIT+ }
