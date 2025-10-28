@@ -5,11 +5,11 @@ use base::wire::Wire;
 
 #[test]
 fn can_instantiate_module() {
-    let x = Wire::scalar(0, "real");
-    let y = Wire::scalar(1, "real");
-    let z = Wire::scalar(2, "real");
-    let y0 = Wire::scalar(3, "real_nneg");
-    let z0 = Wire::scalar(4, "real_nneg");
+    let x = Wire::one(0, "real");
+    let y = Wire::one(1, "real");
+    let z = Wire::one(2, "real");
+    let y0 = Wire::one(3, "real_nneg");
+    let z0 = Wire::one(4, "real_nneg");
 
     let wait = Wire::union(&y0, &z0).unwrap();
     let ctrl = x.union(&y).unwrap().union(&z).unwrap();
@@ -41,6 +41,6 @@ fn can_instantiate_module() {
         .unwrap();
     let next = latched.twin(5).unwrap();
 
-    let module = Module::new((latched, next).into(), vec![atom]);
+    let module = Module::with_atoms([latched, next], vec![atom]);
     assert!(module.is_ok(), "Error: {:?}", module.unwrap_err());
 }

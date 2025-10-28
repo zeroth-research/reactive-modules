@@ -33,22 +33,22 @@ pub struct Module<D, I> {
 }
 impl<D: Clone + Eq, I> Module<D, I> {
     #[allow(clippy::unwrap_used)]
-    pub fn new(wire: [Wire<D>; 2], atoms: Vec<Atom<D, I>>) -> Result<Self, &'static str> {
+    pub fn with_atoms(wire: [Wire<D>; 2], atoms: Vec<Atom<D, I>>) -> Result<Self, &'static str> {
         // Check latched and next wires
-        if wire[0].is_twin(&wire[1]) {
+        if !wire[0].is_twin(&wire[1]) {
             return Err("latched and next wires are not matching");
         }
 
         // Infer next controlled wires from atoms
-        let mut ctrl_1: Wire<D> = Wire::empty();
+        let mut ctrl_1: Wire<D> = Wire::none();
         for (i, atom) in atoms.iter().enumerate() {
             if !atom.read.is_subset(&wire[0]) {
                 return Err("atom read is not latched");
             }
-            if !atom.wait.is_subset(&wire[0]) {
+            if !atom.wait.is_subset(&wire[1]) {
                 return Err("atom wait is not next");
             }
-            if !atom.ctrl.is_subset(&wire[0]) {
+            if !atom.ctrl.is_subset(&wire[1]) {
                 return Err("atom ctrl is not next");
             }
             if !atom.ctrl.is_disjoint(&ctrl_1) {
@@ -72,7 +72,7 @@ impl<D: Clone + Eq, I> Module<D, I> {
         let obs = [obs_1.twin(offset).unwrap(), obs_1]; // unwrap cuz checks above ensure
         let ctrl = [ctrl_1.twin(offset).unwrap(), ctrl_1]; // unwrap cuz checks above ensure
         let intf = ctrl.clone();
-        let prvt = [Wire::<D>::empty(), Wire::<D>::empty()];
+        let prvt = [Wire::<D>::none(), Wire::<D>::none()];
 
         Ok(Module {
             extl,
