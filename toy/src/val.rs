@@ -2,6 +2,8 @@
 pub enum Type {
     Real,
     NReal,
+    Int,
+    NInt,
     Bool,
 }
 
@@ -9,5 +11,7 @@ pub enum Type {
 pub enum Val {
     Real(f64),
     NReal(f64),
+    Int(usize),
+    NInt(isize),
     Bool(bool),
 }
