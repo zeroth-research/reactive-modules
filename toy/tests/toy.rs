@@ -6,6 +6,8 @@ use toy::val::{Type, Val};
 
 #[cfg(test)]
 mod tests {
+    use base::atom::Atom;
+
     use super::*;
 
     fn init(vars: &[Wire<Type>; 10]) -> Vec<Term> {
@@ -37,19 +39,29 @@ mod tests {
     fn toy_example() {
         // build module
         let vars = [
-            Wire::scalar(0, Type::Int),
-            Wire::scalar(1, Type::Int),
-            Wire::scalar(2, Type::Int),
-            Wire::scalar(3, Type::NInt),
-            Wire::scalar(4, Type::NInt),
-            Wire::scalar(5, Type::Int),
-            Wire::scalar(6, Type::Int),
-            Wire::scalar(7, Type::Int),
-            Wire::scalar(8, Type::NInt),
-            Wire::scalar(9, Type::NInt),
+            Wire::one(0, Type::Int),
+            Wire::one(1, Type::Int),
+            Wire::one(2, Type::Int),
+            Wire::one(3, Type::NInt),
+            Wire::one(4, Type::NInt),
+            Wire::one(5, Type::Int),
+            Wire::one(6, Type::Int),
+            Wire::one(7, Type::Int),
+            Wire::one(8, Type::NInt),
+            Wire::one(9, Type::NInt),
         ];
 
         let init_terms = init(&vars);
         let update_terms = update(&vars);
+
+        //const NEXT_OFFSET: isize = 5;
+        //let ctrl = Wire::many(0, Type::Int, 3)
+        //    .twin(NEXT_OFFSET)
+        //    .expect("Failed priming variables");
+        //
+        //let wait = Wire::many(3, Type::NInt, 2);
+        //let read =
+        //
+        //let atom = Atom::new_unchecked(ctrl, wait, read, init, update)
     }
 }
