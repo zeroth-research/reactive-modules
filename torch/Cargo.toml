@@ -9,8 +9,7 @@ name = "zrm_torch"
 crate-type = ["cdylib"]
 
 [dependencies]
-base = {path="../base"}
-pyo3 = { version = "0.24", features = ["extension-module"] }
-pyo3-tch = {  version = "0.22" }
+base = { path = "../base" }
+pyo3 = { version = "0.24" }
+pyo3-tch = { version = "0.22" }
 tch = { features = ["python-extension"], version = "0.22" }
-torch-sys = { features = ["python-extension"], version = "0.22" }

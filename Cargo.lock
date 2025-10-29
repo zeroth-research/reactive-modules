@@ -789,7 +789,6 @@ dependencies = [
  "pyo3",
  "pyo3-tch",
  "tch",
- "torch-sys",
 ]
 
 [[package]]

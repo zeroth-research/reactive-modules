@@ -9,6 +9,12 @@ pub struct Context {
     name_to_id: HashMap<String, usize>, // TODO: should we keep track of variable types?
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[pymethods]
 impl Context {
     #[new]

@@ -39,8 +39,8 @@ unsafe impl Sync for PyAtom {}
 ///
 /// # Examples
 ///
-///  If the input is `[PyVal::Sym(2), PyVal::U64(7)]`, then when translating
-/// `PyVal::U64(7)`, a term `Term { TorchOp::Const, reads: [], writes: [19]}` gets generated
+///  If the input is `[PyVal::Sym(2), PyVal::I64(7)]`, then when translating
+/// `PyVal::I64(7)`, a term `Term { TorchOp::Const, reads: [], writes: [19]}` gets generated
 /// and added to `results`, where 19 is just an example value. This value is obtained
 /// from the `ctx` object. The translated vector returned from this function is then `[2, 19]`.
 fn process_pyvals(
@@ -58,8 +58,8 @@ fn process_pyvals(
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new(
                     TorchOp::Const(tensor.tensor.shallow_clone()),
-                    Wire::scalar(var, "tensor"),
-                    Wire::empty(),
+                    Wire::one(var, "tensor"),
+                    Wire::none(),
                 ));
                 args.push(var);
             }
@@ -67,8 +67,8 @@ fn process_pyvals(
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new(
                     TorchOp::Const(tch::Tensor::from_slice(&[*val])),
-                    Wire::scalar(var, "tensor"),
-                    Wire::empty(),
+                    Wire::one(var, "tensor"),
+                    Wire::none(),
                 ));
                 args.push(var);
             }
@@ -76,8 +76,8 @@ fn process_pyvals(
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new(
                     TorchOp::Const(tch::Tensor::from_slice(&[*val])),
-                    Wire::scalar(var, "tensor"),
-                    Wire::empty(),
+                    Wire::one(var, "tensor"),
+                    Wire::none(),
                 ));
                 args.push(var);
             }
@@ -150,11 +150,11 @@ impl PyAtom {
         let read = vars_to_wiring(read).unwrap();
         let write = vars_to_wiring(write).unwrap();
 
-        let ctx: &mut Context = &mut *ctx.borrow_mut();
+        let ctx: &mut Context = &mut ctx.borrow_mut();
         let init = pyterms_to_torchterms(ctx, init).unwrap();
         let update = pyterms_to_torchterms(ctx, update).unwrap();
 
-        let atom = Atom::new_unchecked(read, write, Wire::empty(), init, update);
+        let atom = Atom::new_unchecked(read, write, Wire::none(), init, update);
         Self { atom }
     }
 

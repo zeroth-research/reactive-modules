@@ -1,5 +1,5 @@
 """
-Python bindings to the `torch` create
+Python bindings to the `torch` crate
 """
 
 def load_zrm_torch():
@@ -54,6 +54,8 @@ def load_zrm_torch():
     # just do the import again so that a sensible
     # exception is raised
     import zrm_torch
+
+    return zrm_torch
 
 
 # NOTE: this must go first before any other import

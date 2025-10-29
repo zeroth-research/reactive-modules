@@ -35,7 +35,7 @@ impl PyTerm {
     }
 
     fn print(&self) {
-        // FIXME: use `colored` create
+        // FIXME: use `colored` crate
         println!(
             "\x1b[1;34m{:?}\x1b[0m - \x1b[1;31m{:?}\x1b[0m -> \x1b[1;32m{:?}\x1b[0m",
             self.reads, self.op, self.writes

@@ -73,7 +73,7 @@ class Context:
         def wrapped_fun():
             assert 'zrm' not in fun.__globals__
             fun.__globals__['zrm'] = self
-            r  = fun(*all_args)
+            r = fun(*all_args)
             del fun.__globals__['zrm']
             return r
 
@@ -114,13 +114,13 @@ class Context:
         return self._cmp("Le", t1, t2)
 
     def ge(self, t1, t2):
-        return _cmp(self, "Ge", t1, t2)
+        return self._cmp("Ge", t1, t2)
 
     def lt(self, t1, t2):
-        return _cmp(self, "Lt", t1, t2)
+        return self._cmp("Lt", t1, t2)
 
     def gt(self, t1, t2):
-        return _cmp(self, "Gt", t1, t2)
+        return self._cmp("Gt", t1, t2)
 
     def ifelse(self, cond, iftrue, iffalse):
         neg_cond = cond.neg()
