@@ -25,8 +25,10 @@ module_decl =  { MODULE ~ ident ~ ( "(" ~ param_list? ~ ")" )? ~ module_body }
 
 param_list  =  { ident ~ ("," ~ ident)* }
 
-module_body =  { (var_section | define_section | assign_section)* }
+module_body =  { (ivar_section | var_section | define_section | assign_section)* }
 
+ivar_section =  { IVAR ~ ivar_decl+ }
+ivar_decl    =  { ident ~ ":" ~ type_spec ~ ";" }
 var_section =  { VAR ~ var_decl+ }
 var_decl    =  { ident ~ ":" ~ type_spec ~ ";" }
 
@@ -53,6 +55,9 @@ expr_or  = { expr_and ~ (OR  ~ expr_and)* }
 expr_and = { expr_not ~ (AND ~ expr_not)* }
 expr_not = { (NOT ~ expr_not) | expr_primary }
 
+expr_arith = { expr_term ~ ((PLUS | MINUS) ~ expr_term)* }
+expr_term  = { expr_primary ~ ((TIMES | DIVIDE) ~ expr_primary)* }
+
 expr_bool = { "TRUE" | "FALSE" }
 expr_identifier = @{ ASCII_ALPHANUMERIC+ }
 
@@ -65,6 +70,7 @@ expr_primary = _{
 }
 
 MODULE  =  @{ "MODULE" }
+IVAR     =  @{ "IVAR" }
 VAR     =  @{ "VAR" }
 DEFINE  =  @{ "DEFINE" }
 ASSIGN  =  @{ "ASSIGN" }
@@ -79,6 +85,10 @@ FALSE   =  @{ "FALSE" }
 AND     =  @{ "&" | "and" }
 OR      =  @{ "|" | "or" }
 NOT     =  @{ "!" | "not" }
+PLUS    =  @{ "+" }
+MINUS   =  @{ "-" }
+TIMES   =  @{ "*" }
+DIVIDE  =  @{ "/" }
 
 ident   =  @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 number  =  @{ ASCII_DIGIT+ }
