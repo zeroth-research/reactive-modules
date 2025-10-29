@@ -6,9 +6,9 @@ use toy::val::{Type, Val};
 
 #[cfg(test)]
 mod tests {
-    use base::atom::Atom;
-
     use super::*;
+    use base::atom::Atom;
+    use base::module::Module;
 
     fn init(vars: &[Wire<Type>; 10]) -> Vec<Term> {
         let init_x = Term::new(
@@ -54,14 +54,20 @@ mod tests {
         let init_terms = init(&vars);
         let update_terms = update(&vars);
 
-        //const NEXT_OFFSET: isize = 5;
-        //let ctrl = Wire::many(0, Type::Int, 3)
-        //    .twin(NEXT_OFFSET)
-        //    .expect("Failed priming variables");
-        //
-        //let wait = Wire::many(3, Type::NInt, 2);
-        //let read =
-        //
+        const NEXT_OFFSET: isize = 5;
+        let read = Wire::many(0, Type::Int, 3);
+        let wait = Wire::many(3, Type::NInt, 2);
+
+        let latched = read.union(&wait).expect("Failed creating union");
+        let next = latched.twin(NEXT_OFFSET).expect("Failed getting twins");
+
+        let ctrl = read.twin(NEXT_OFFSET).expect("Failed getting twins");
+        let atom = Atom::with_module_wire(&[read, ctrl], init_terms, update_terms)
+            .expect("failed creating atom");
+
+        let module = Module::with_atoms([latched, next], vec![atom]);
+
+        dbg!(module);
         //let atom = Atom::new_unchecked(ctrl, wait, read, init, update)
     }
 }
