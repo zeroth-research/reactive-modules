@@ -41,23 +41,6 @@ impl<D, I> Atom<D, I> {
     //     &self.delay
     // }
 
-    /// Creates an atom from its components. This method checks the inputs only using assertions
-    /// in debug mode.
-    pub fn new_unchecked(
-        ctrl: Wire<D>,
-        wait: Wire<D>,
-        read: Wire<D>,
-        init: Vec<Term<D, I>>,
-        update: Vec<Term<D, I>>,
-    ) -> Self {
-        Self {
-            ctrl,
-            wait,
-            read,
-            init,
-            update,
-        }
-    }
     pub fn ctrl(&self) -> &Wire<D> {
         &self.ctrl
     }
@@ -72,6 +55,28 @@ impl<D, I> Atom<D, I> {
 impl<D: Eq, I> Atom<D, I> {
     pub fn awaits(&self, other: &Atom<D, I>) -> bool {
         self.wait.is_subset(&other.ctrl)
+    }
+
+    /// Creates an atom from its components. This method checks the inputs only using assertions
+    /// in debug mode.
+    pub fn new_unchecked(
+        ctrl: Wire<D>,
+        wait: Wire<D>,
+        read: Wire<D>,
+        init: Vec<Term<D, I>>,
+        update: Vec<Term<D, I>>,
+    ) -> Self {
+        debug_assert!(ctrl.is_disjoint(&wait));
+        debug_assert!(ctrl.is_disjoint(&read));
+        debug_assert!(wait.is_disjoint(&read));
+        debug_assert!(wait.is_disjoint(&ctrl));
+        Self {
+            ctrl,
+            wait,
+            read,
+            init,
+            update,
+        }
     }
 }
 

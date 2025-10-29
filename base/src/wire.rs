@@ -1,17 +1,17 @@
 use std::cmp::{Ordering, max, min};
-use std::fmt;
+use std::{fmt, mem};
 
 /// A wiring represents a view over a sequence of indices, each of which is associated
 /// with a type.
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Range<D> {
     pub(crate) start: usize,
     pub(crate) end: usize, //inclusive
     pub(crate) dtype: D,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Wire<D> {
     pub(crate) ranges: Vec<Range<D>>,
 }
@@ -103,7 +103,7 @@ impl<D: fmt::Debug> fmt::Debug for Range<D> {
 }
 
 impl<D: Eq + Clone> Wire<D> {
-    pub fn union(&self, other: &Self) -> Result<Self, &str> {
+    pub fn union(&self, other: &Self) -> Result<Self, &'static str> {
         let mut ranges: Vec<Range<D>> = Vec::new();
         let mut i = self.ranges.iter().peekable();
         let mut j = other.ranges.iter().peekable();
@@ -265,13 +265,22 @@ impl<D: Eq> Wire<D> {
         if self.ranges.len() != other.ranges.len() {
             return false;
         }
-        // TODO generalising this later - for now, this works under the following assumption:
-        debug_assert!(self.ranges[0].start == 0);
-        let offset = match other.ranges.first() {
-            Some(range) => range.start,
-            None => return true,
+
+        let mut i = self.ranges.iter();
+        let mut j = self.ranges.iter();
+        let offset: usize = match (i.next(), j.next()) {
+            (Some(a), Some(b)) => {
+                if a.start < b.start {
+                    b.start.checked_sub(a.start).unwrap()
+                } else {
+                    mem::swap(&mut i, &mut j);
+                    a.start.checked_sub(b.start).unwrap()
+                }
+            }
+            (_, _) => return true,
         };
-        for (a, b) in self.ranges.iter().zip(other.ranges.iter()) {
+
+        for (a, b) in i.zip(j) {
             if a.start + offset != b.start {
                 return false;
             }
