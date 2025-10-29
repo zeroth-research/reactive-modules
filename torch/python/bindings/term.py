@@ -1,5 +1,6 @@
 from torch import Tensor as TorchTensor
 from . import libzrm_torch
+
 Context = libzrm_torch.Context
 
 PyVal = libzrm_torch.PyVal
@@ -99,7 +100,7 @@ class Var(Term):
         super().__init__(ctx, "Var", [])
         self.name = name
 
-        # below I set the attributes from the partent class directly,
+        # below I set the attributes from the parent class directly,
         # I'll burn in hell for that.
         self.outvar = self
         # The underlying PyTerm

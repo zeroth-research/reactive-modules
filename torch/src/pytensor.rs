@@ -31,7 +31,6 @@
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3_tch::wrap_tch_err;
-use tch;
 
 #[derive(Debug)]
 pub struct PyTensor {

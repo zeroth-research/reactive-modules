@@ -1,5 +1,6 @@
 [workspace]
 members = ["base", "torch"]
+default-members = ["base"]
 resolver = "3"
 
 [workspace.dependencies]

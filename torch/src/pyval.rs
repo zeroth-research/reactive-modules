@@ -24,12 +24,12 @@ impl PyVal {
     fn new(obj: &Bound<'_, PyAny>) -> PyResult<PyVal> {
         if obj.is_instance_of::<PyInt>() {
             let val: i64 = obj.extract()?;
-            return Ok(PyVal::I64(val));
+            Ok(PyVal::I64(val))
         } else if obj.is_instance_of::<PyFloat>() {
             let val: f64 = obj.extract()?;
-            return Ok(PyVal::F64(val));
+            Ok(PyVal::F64(val))
         } else if let Ok(tensor) = obj.extract::<PyTensor>() {
-            return Ok(PyVal::Tensor(tensor));
+            Ok(PyVal::Tensor(tensor))
         } else {
             panic!("Unknown PyVal argument type: {:?}", obj.get_type());
         }
