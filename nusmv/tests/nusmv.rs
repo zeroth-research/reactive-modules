@@ -1,100 +1,15 @@
 use base::{atom::Atom, module::Module, term::Term, wire::Wire};
 use nusmv::{dtype::DType, itype::IType, nusmv::parse_nusmv};
+use nusmv::debug_utils::{dump_debug, compare_debug};
 
-#[test]
-fn parse_boolean_model() {
-    let input = r#"
-        MODULE main
-        VAR
-            x : boolean;
-            y : boolean;
-        ASSIGN
-            init(x) := TRUE;
-            next(x) := y & !x;
-    "#;
+fn build_manual_module() -> Module<DType, IType> {
+    let x = Wire::one(0, DType::Int);
+    let y = Wire::one(1, DType::Int);
+    let z = Wire::one(2, DType::Int);
+    let y0 = Wire::one(3, DType::Int);
+    let z0 = Wire::one(4, DType::Int);
 
-    let module = parse_nusmv(input);
-    assert!(module.is_ok(), "Error: {:?}", module.unwrap_err());
-    println!("Boolean module built successfully!");
-    println!("{:#?}", module);
-}
-
-#[test]
-fn parse_integer_model() {
-    let input = r#"
-        MODULE main
-        VAR
-            z : integer;
-        ASSIGN
-            init(z) := 0;
-            next(z) := 1;
-    "#;
-
-    let module = parse_nusmv(input);
-    assert!(module.is_ok(), "Error: {:?}", module.unwrap_err());
-    println!("Integer module built successfully!");
-    println!("{:#?}", module);
-}
-
-#[test]
-fn counter_nusmv() {    
-    let input = r#"
-        MODULE main
-        IVAR
-            y0 : integer;
-            z0 : integer;
-        VAR
-            x : integer;
-            y : integer;
-            z : integer;
-        ASSIGN
-            init(x) := 0;
-            init(y) := y0;
-            init(z) := y0;
-            next(x) := x + 1;
-            next(y) := y;
-            next(z) := z;
-    "#;
-
-    let module = parse_nusmv(input);
-    assert!(module.is_ok(), "Error: {:?}", module.unwrap_err());
-    println!("Parsed module: {:#?}", module);
-}
-
-// #[test]
-// fn counter_nusmv2() {    
-//     let input = r#"
-//         MODULE main
-//         IVAR
-//             y0 : integer;
-//             z0 : integer;
-//         VAR
-//             x : integer;
-//             y : integer;
-//             z : integer;
-//         ASSIGN
-//             init(x) := 0;
-//             init(y) := y0;
-//             init(z) := y0;
-//             (x < y | x < z) ? next(x) := x + 1 : next(x) := 0;
-//             next(y) := y;
-//             next(z) := z;
-//     "#;
-
-//     let module = parse_nusmv(input);
-//     assert!(module.is_ok(), "Error: {:?}", module.unwrap_err());
-//     println!("Parsed module: {:#?}", module);
-// }
-
-#[test]
-fn counter_core() {
-    let x = Wire::scalar(0, DType::Int);
-    let y = Wire::scalar(1, DType::Int);
-    let z = Wire::scalar(2, DType::Int);
-    let y0 = Wire::scalar(3, DType::Int);
-    let z0 = Wire::scalar(4, DType::Int);
-
-    let wait = y0.union(&z0).unwrap();
+    let wait = Wire::union(&y0, &z0).unwrap();
     let ctrl = x.union(&y).unwrap().union(&z).unwrap();
     let read = ctrl.clone();
 
@@ -120,7 +35,33 @@ fn counter_core() {
         .unwrap();
     let next = latched.twin(5).unwrap();
 
-    let module = Module::new((latched, next).into(), vec![atom]);
-    assert!(module.is_ok(), "Error: {:?}", module.unwrap_err());
-    println!("Module: {:#?}", module);
+    Module::with_atoms([latched, next], vec![atom]).unwrap()
+}
+
+#[test]
+fn counter_nusmv() {
+    let input = r#"
+        MODULE main
+        IVAR
+            y0 : integer;
+            z0 : integer;
+        VAR
+            x : integer;
+            y : integer;
+            z : integer;
+        ASSIGN
+            init(x) := 0;
+            init(y) := y0;
+            init(z) := y0;
+            next(x) := (x < y | x < z) ? x + 1 : 0;
+            next(y) := y;
+            next(z) := z;
+    "#;
+
+    let parsed_module = parse_nusmv(input).unwrap();
+    let manual_module = build_manual_module();
+
+    dump_debug("Parsed Module", &parsed_module);
+    dump_debug("Manual Module", &manual_module);
+    compare_debug("Parsed", &parsed_module, "Manual", &manual_module);
 }
