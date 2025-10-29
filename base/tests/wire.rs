@@ -162,3 +162,48 @@ fn difference_between_two() {
     w = w.difference(&z).unwrap();
     assert_eq!(w.size(), 20);
 }
+
+#[test]
+fn can_iterate_wire() {
+    let x = Wire::vector(0, "real", 4);
+    let y = Wire::vector(4, "int", 2);
+
+    let w = Wire::union(&x, &y).unwrap();
+
+    let mut i = 0;
+    for (j, dtype) in w.iter() {
+        assert_eq!(i, j);
+        if i < 4 {
+            assert_eq!(*dtype, "real");
+        } else {
+            assert_eq!(*dtype, "int");
+        }
+        i += 1;
+    }
+    assert_eq!(i, 6);
+}
+
+#[test]
+fn can_iterate_nonconsecutive_wire() {
+    let x = Wire::vector(0, "real", 4);
+    let y = Wire::vector(6, "int", 2);
+
+    let w = Wire::union(&x, &y).unwrap();
+
+    let mut i = 0;
+    for (j, dtype) in w.iter() {
+        assert_eq!(i, j);
+        if i < 4 {
+            assert_eq!(*dtype, "real");
+        } else {
+            assert_eq!(*dtype, "int");
+        }
+
+        if i == 3 {
+            i = 6;
+        } else {
+            i += 1;
+        }
+    }
+    assert_eq!(i, 8);
+}

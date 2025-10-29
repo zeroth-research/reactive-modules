@@ -81,6 +81,10 @@ impl<D> Range<D> {
         debug_assert!(start <= end);
         Self { start, end, dtype }
     }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (usize, &D)> {
+        (self.start..=self.end).map(|i| (i, &self.dtype))
+    }
 }
 
 impl<D: fmt::Debug> fmt::Debug for Range<D> {
@@ -271,5 +275,9 @@ impl<D: Clone> Wire<D> {
             });
         }
         Ok(Self::new_unchecked(twin_ranges))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (usize, &D)> {
+        self.ranges.iter().flat_map(|range| range.iter())
     }
 }
