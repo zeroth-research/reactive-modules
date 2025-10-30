@@ -160,8 +160,8 @@ impl<D: Eq + Clone> Wire<D> {
             // find matching position and make that the new left, working under the assumption
             // that "other" ranges are ordered, and no future start in "self" can be further left
             match other.ranges[left..].binary_search_by(|r| r.cmp(a.start)) {
-                Ok(i) => left = i,
-                Err(i) => left = i,
+                Ok(i) => left += i,
+                Err(i) => left += i,
             }
 
             // intersect from the left rightwards until find an empty intersection
@@ -187,12 +187,15 @@ impl<D: Eq + Clone> Wire<D> {
         let mut left: usize = 0;
         for a in self.ranges.iter() {
             match other.ranges[left..].binary_search_by(|r| r.cmp(a.start)) {
-                Ok(i) => left = i,
-                Err(i) => left = i,
+                Ok(i) => left += i,
+                Err(i) => left += i,
             }
 
             let mut start = a.start;
             for b in other.ranges[left..].iter() {
+                if b.start > a.end {
+                    break;
+                }
                 if start < b.start {
                     if b.dtype != a.dtype {
                         return Err("dtype mismatch");
@@ -234,7 +237,7 @@ impl<D: Eq> Wire<D> {
         let mut left: usize = 0;
         for a in self.ranges.iter() {
             match other.ranges[left..].binary_search_by(|r| r.cmp(a.start)) {
-                Ok(i) => left = i,
+                Ok(i) => left += i,
                 Err(_) => return false,
             }
             if a.end > other.ranges[left].end || other.ranges[left].dtype != a.dtype {
