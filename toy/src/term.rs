@@ -20,7 +20,7 @@ pub fn construct(
                 return Err("Const must write to exactly one wire");
             }
             let out = writes.iter().next().unwrap();
-            if !val.same_type(*out.1) {
+            if !val.same_type(out.1) {
                 return Err("Const writes to incompatible wire");
             }
         }
