@@ -1,7 +1,3 @@
-[build-system]
-requires = ["maturin>=1.9,<2.0"]
-build-backend = "maturin"
-
 [project]
 name = "zrm_torch"
 requires-python = ">=3.11,<3.14"
@@ -12,15 +8,19 @@ classifiers = [
 ]
 
 dynamic = ["version"]
+description = "Instance of `base` structures for Torch tensors and binding to Python and PyTorch"
+readme = "README.md"
+
+dependencies = [
+  "numpy~=2.3",
+  "torch==2.9",
+  "maturin==1.9"
+]
+
+[build-system]
+requires = ["maturin>=1.9,<2.0", "torch"]
+build-backend = "maturin"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
 
-# we do not build the package right now
-[tool.poetry]
-package-mode = false
-
-[tool.poetry.dependencies]
-numpy = "^2.3.4"
-torch = "2.9"
-maturin = "1.9"
