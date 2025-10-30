@@ -80,7 +80,6 @@ mod tests {
 
     #[test]
     fn toy_example() {
-        // build module
         let vars = [
             // x y z y0 z0
             Wire::one(0, Type::Int), // x
@@ -96,10 +95,20 @@ mod tests {
             Wire::one(9, Type::Int), // z0'
         ];
 
+        const NEXT_OFFSET: isize = 5;
+
+        // build module
+        let module = build_module(&vars, NEXT_OFFSET);
+        dbg!(module);
+
+        let prop = build_prop(&vars);
+        dbg!(prop);
+    }
+
+    fn build_module(vars: &[Wire<Type>; 10], NEXT_OFFSET: isize) -> Module<Type, Instruction> {
         let init_terms = init(&vars);
         let update_terms = update(&vars);
 
-        const NEXT_OFFSET: isize = 5;
         // x y z
         let read = Wire::many(0, Type::Int, 3);
         // y0 z0
@@ -114,9 +123,22 @@ mod tests {
             Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
                 .expect("failed creating atom");
 
-        let module = Module::with_atoms([latched, next], vec![atom]);
+        Module::with_atoms([latched, next], vec![atom]).expect("Failed building module")
+    }
 
-        dbg!(module);
-        //let atom = Atom::new_unchecked(ctrl, wait, read, init, update)
+    fn build_prop(vars: &[Wire<Type>; 10]) -> Vec<Term> {
+        let reads = vars[0].union(&vars[1]).unwrap();
+        let wire16 = Wire::one(16, Type::Bool);
+        let xeqy = construct(Instruction::Eq, wire16.clone(), reads).unwrap();
+
+        let reads = vars[0].union(&vars[2]).unwrap();
+        let wire17 = Wire::one(17, Type::Bool);
+        let xeqz = construct(Instruction::Eq, wire17.clone(), reads).unwrap();
+
+        let out = Wire::one(18, Type::Bool);
+        let or = construct(Instruction::Or, out, wire16.union(&wire17).unwrap())
+            .expect("Failed creating term");
+
+        vec![xeqy, xeqz, or]
     }
 }
