@@ -10,6 +10,25 @@ use base::wire::Wire;
 use crate::dtype::DType;
 use crate::itype::IType;
 
+// Helper: classify read wires returned by expression parsing into latched
+// vs ivar (wait) wires. `var_count` is the number of VAR declarations;
+// indices < var_count are latched, indices >= var_count are IVARs.
+fn classify_reads(read: &Wire<DType>, var_count: usize, read_latched: &mut Wire<DType>, wait_latched: &mut Wire<DType>) {
+    for (ri, rdtype) in read.iter() {
+        if ri < var_count {
+            *read_latched = read_latched.union(&Wire::one(ri, rdtype.clone())).unwrap();
+        } else {
+            *wait_latched = wait_latched.union(&Wire::one(ri, rdtype.clone())).unwrap();
+        }
+    }
+}
+
+// Small wrapper that returns (IType, read) by calling the main build_expr.
+fn build_expr_no_write(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: usize) -> (IType, Wire<DType>) {
+    let (itype, _write, read) = build_expr(expr_pair, wires, offset);
+    (itype, read)
+}
+
 #[derive(Parser)]
 #[grammar = "nusmv.pest"]
 pub struct NuSMVParser;
@@ -122,36 +141,69 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
 
     // Step 3: (was previously used) IVAR indices detection is implicit below
 
-    // Step 4: compute aggregated ctrl/read/wait wires and a single init/update
-    // term for the whole module, matching the manual construction used in
-    // tests: ctrl = union of VARs that are controlled (have next assignments),
-    // wait = union of IVARs, read = ctrl.
+    // Step 4: build per-variable init and update Terms.
+    // We'll write init/update to the 'next' wires (offset by n) and read
+    // from latched wires (and IVARs) as reported by build_expr with offset=0.
+    let var_count = var_decls.len();
+
+    let mut init_terms: Vec<Term<DType, IType>> = vec![];
+    let mut update_terms: Vec<Term<DType, IType>> = vec![];
+
     let mut ctrl_latched = Wire::none();
     let mut wait_latched = Wire::none();
+    let mut read_latched = Wire::none();
 
-    // Build latched wires per name and collect ctrl/read/wait
-    for (name, idx, dtype) in &wires {
-        let latched_wire = Wire::one(*idx, dtype.clone());
-        // IVARs are treated as wait wires
-        if ivar_decls.iter().any(|(n, _)| n == name) {
-            wait_latched = wait_latched.union(&latched_wire).unwrap();
-        }
-        // VARs that have a next assignment become controlled
-        if next_assigns.iter().any(|(n, _)| n == name) {
-            ctrl_latched = ctrl_latched.union(&latched_wire).unwrap();
-        }
+    // Pre-populate wait_latched from IVAR declarations (they live after vars)
+    for (i, (_name, dtype)) in ivar_decls.iter().enumerate() {
+        let index = var_count + i;
+        wait_latched = wait_latched.union(&Wire::one(index, dtype.clone())).unwrap();
     }
 
-    // read is the same as ctrl (latched)
-    let read_latched = ctrl_latched.clone();
+    for i in 0..var_count {
+        let (name, idx, dtype) = &wires[i];
 
-    // single init term: default value written to ctrl, reading from wait
-    let default_val = IType::ConstInt(0);
-    let init_terms = vec![Term::new(default_val.clone(), ctrl_latched.clone(), wait_latched.clone())];
+        // INIT
+        if let Some((_, expr_pair)) = init_assigns.iter().find(|(n, _)| n == name) {
+            let (rhs_itype, read) = build_expr_no_write(expr_pair.clone(), &wires, 0);
+            // classify read wires into latched vs ivar
+            classify_reads(&read, var_count, &mut read_latched, &mut wait_latched);
 
-    // single update term: default value written to ctrl, reading ctrl U wait
-    let update_read = read_latched.union(&wait_latched).unwrap_or(read_latched.clone());
-    let update_terms = vec![Term::new(default_val.clone(), ctrl_latched.clone(), update_read)];
+            // Represent init as an explicit assignment to the variable (keeps parity with manual modules)
+            let assign_itype = IType::Assign(Box::new(IType::VarRef(name.clone())), Box::new(rhs_itype));
+
+            let write = Wire::one(idx + n, dtype.clone());
+            init_terms.push(Term::new(assign_itype, write, read));
+        } else {
+            // default init: constant zero / false to next wire
+            let default_val = match dtype {
+                DType::Bool => IType::ConstBool(false),
+                DType::Int => IType::ConstInt(0),
+            };
+            let write = Wire::one(idx + n, dtype.clone());
+            init_terms.push(Term::new(default_val, write, Wire::none()));
+        }
+
+        // UPDATE
+        if let Some((_, expr_pair)) = next_assigns.iter().find(|(n, _)| n == name) {
+
+            let (itype, read) = build_expr_no_write(expr_pair.clone(), &wires, 0);
+
+            // include this var in ctrl (latched)
+            ctrl_latched = ctrl_latched.union(&Wire::one(*idx, dtype.clone())).unwrap();
+
+            // classify read wires into latched vs ivar
+            classify_reads(&read, var_count, &mut read_latched, &mut wait_latched);
+
+            let write = Wire::one(idx + n, dtype.clone());
+            update_terms.push(Term::new(itype, write, read));
+        } else {
+            // default update: next(var) := var
+            ctrl_latched = ctrl_latched.union(&Wire::one(*idx, dtype.clone())).unwrap();
+            let write = Wire::one(idx + n, dtype.clone());
+            let read = Wire::one(*idx, dtype.clone());
+            update_terms.push(Term::new(IType::VarRef(name.clone()), write, read));
+        }
+    }
 
     // Step 5: create single Atom for the module using next-twinned ctrl/wait
     let latched_start = latched.iter().next().map(|(i, _)| i).unwrap_or(0);
