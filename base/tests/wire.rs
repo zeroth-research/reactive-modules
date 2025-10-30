@@ -207,3 +207,58 @@ fn can_iterate_nonconsecutive_wire() {
     }
     assert_eq!(i, 8);
 }
+
+#[test]
+fn is_subset_regression_issue13() {
+    let wire1 = Wire::one(12, "Bool")
+        .union(&Wire::one(13, "Int"))
+        .unwrap()
+        .union(&Wire::one(15, "Int"))
+        .unwrap();
+    let wire2 = Wire::many(0, "Int", 5)
+        .union(&Wire::many(8, "Int", 2))
+        .unwrap()
+        .union(&Wire::many(10, "Bool", 3))
+        .unwrap()
+        .union(&Wire::many(13, "Int", 3))
+        .unwrap();
+
+    assert!(wire1.is_subset(&wire2));
+}
+
+#[test]
+fn intersection_regression_issue13() {
+    let wire1 = Wire::one(12, "Bool")
+        .union(&Wire::one(13, "Int"))
+        .unwrap()
+        .union(&Wire::one(15, "Int"))
+        .unwrap();
+    let wire2 = Wire::many(0, "Int", 5)
+        .union(&Wire::many(8, "Int", 2))
+        .unwrap()
+        .union(&Wire::many(10, "Bool", 3))
+        .unwrap()
+        .union(&Wire::many(13, "Int", 3))
+        .unwrap();
+
+    assert_eq!(wire1.intersection(&wire2).unwrap().size(), 3);
+}
+
+#[test]
+fn intersection_difference_issue13() {
+    let wire1 = Wire::one(12, "Bool")
+        .union(&Wire::one(13, "Int"))
+        .unwrap()
+        .union(&Wire::one(15, "Int"))
+        .unwrap();
+    let wire2 = Wire::many(0, "Int", 5)
+        .union(&Wire::many(8, "Int", 2))
+        .unwrap()
+        .union(&Wire::many(10, "Bool", 3))
+        .unwrap()
+        .union(&Wire::many(13, "Int", 3))
+        .unwrap();
+
+    let wire2_minus_wire1 = wire2.difference(&wire1).unwrap();
+    assert_eq!(wire2_minus_wire1.size(), 10);
+}
