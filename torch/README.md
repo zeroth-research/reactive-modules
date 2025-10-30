@@ -2,6 +2,17 @@
 
 ## Setup
 
+### Setup and build using uv
+
+Install [uv](https://github.com/astral-sh/uv) and run
+
+```shell
+uv sync
+```
+
+
+### Setup with Poetry
+
 Before building this crate, it is necessary to install the required Python
 packages. You might need to use  `pyenv` and `virtualenv` to do the setup
 successfully, depending on your system. Also make sure to have `poetry` installed.
@@ -18,7 +29,7 @@ pyenv shell 3.13
 poetry install
 ```
 
-### Building with Maturin
+#### Building with Maturin
 
 Start the virtual environment:
 
@@ -47,6 +58,12 @@ LIBTORCH_USE_PYTORCH=1 cargo build
 TBD: the need to rename `libzrm_torch.dylib` into `zrm_torch.so`, otherwise Python will not load it.
 
 ## Usage
+
+### With uv
+
+```shell
+uv run tests/test.py
+```
 
 ### With Maturin
 
