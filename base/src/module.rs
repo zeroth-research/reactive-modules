@@ -1,5 +1,7 @@
 use crate::atom::Atom;
 use crate::wire::Wire;
+use crate::write_indented;
+use std::fmt;
 
 /// This data structure corresponds to the module of reactive modules.
 #[derive(Debug)]
@@ -83,5 +85,18 @@ impl<D: Clone + Eq, I> Module<D, I> {
             wire,
             atoms,
         })
+    }
+}
+
+impl<D: fmt::Display, I: fmt::Display> fmt::Display for Module<D, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "module")?;
+        writeln!(f, "  external ({} | {})", self.extl[0], self.extl[1])?;
+        writeln!(f, "  interface ({} | {})", self.intf[0], self.intf[1])?;
+        writeln!(f, "  private ({} | {})", self.prvt[0], self.prvt[1])?;
+        for atom in self.atoms.iter() {
+            write_indented(f, "  ", atom)?;
+        }
+        Ok(())
     }
 }

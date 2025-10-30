@@ -1,5 +1,6 @@
 use crate::term::Term;
 use crate::wire::Wire;
+use std::fmt;
 
 /// This data structure corresponds to the atom of reactive modules.
 #[derive(Debug)]
@@ -153,5 +154,24 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         }
 
         Ok(Self::new_unchecked(ctrl, wait, read, init, update))
+    }
+}
+
+impl<D: fmt::Display, I: fmt::Display> fmt::Display for Atom<D, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "atom controls {} reads {} awaits {}",
+            self.ctrl, self.read, self.wait
+        )?;
+        writeln!(f, "init")?;
+        for term in self.init.iter() {
+            writeln!(f, "  {}", term)?;
+        }
+        writeln!(f, "update")?;
+        for term in self.update.iter() {
+            writeln!(f, "  {}", term)?;
+        }
+        Ok(())
     }
 }

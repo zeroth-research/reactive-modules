@@ -300,8 +300,24 @@ impl<D: Eq> Wire<D> {
         debug_assert!(Self::ranges_are_well_formed(&ranges));
         Self { ranges }
     }
+}
 
+impl<D> Wire<D> {
     pub fn iter(&self) -> impl Iterator<Item = (usize, &D)> {
         self.ranges.iter().flat_map(|range| range.iter())
+    }
+}
+
+impl<D: fmt::Display> fmt::Display for Wire<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for (i, d) in self.iter() {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "x{} : {}", i, d)?;
+            first = false;
+        }
+        Ok(())
     }
 }

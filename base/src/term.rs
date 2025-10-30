@@ -1,4 +1,5 @@
 use crate::wire::Wire;
+use std::fmt;
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -21,5 +22,11 @@ pub struct Term<D, I> {
 impl<D, I> Term<D, I> {
     pub fn new(itype: I, write: Wire<D>, read: Wire<D>) -> Self {
         Self { itype, write, read }
+    }
+}
+
+impl<D: fmt::Display, I: fmt::Display> fmt::Display for Term<D, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = {}({})", self.write, self.itype, self.read)
     }
 }
