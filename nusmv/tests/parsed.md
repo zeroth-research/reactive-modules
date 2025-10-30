@@ -86,14 +86,7 @@ Module {
             },
             init: [
                 Term {
-                    itype: Assign(
-                        VarRef(
-                            "x",
-                        ),
-                        ConstInt(
-                            0,
-                        ),
-                    ),
+                    itype: Assign,
                     write: Wire {
                         ranges: [
                             [5, 5] : Int,
@@ -104,14 +97,7 @@ Module {
                     },
                 },
                 Term {
-                    itype: Assign(
-                        VarRef(
-                            "y",
-                        ),
-                        VarRef(
-                            "y0",
-                        ),
-                    ),
+                    itype: Assign,
                     write: Wire {
                         ranges: [
                             [6, 6] : Int,
@@ -124,14 +110,7 @@ Module {
                     },
                 },
                 Term {
-                    itype: Assign(
-                        VarRef(
-                            "z",
-                        ),
-                        VarRef(
-                            "z0",
-                        ),
-                    ),
+                    itype: Assign,
                     write: Wire {
                         ranges: [
                             [7, 7] : Int,
@@ -146,37 +125,7 @@ Module {
             ],
             update: [
                 Term {
-                    itype: Cond(
-                        Or(
-                            Lt(
-                                VarRef(
-                                    "x",
-                                ),
-                                VarRef(
-                                    "y",
-                                ),
-                            ),
-                            Lt(
-                                VarRef(
-                                    "x",
-                                ),
-                                VarRef(
-                                    "z",
-                                ),
-                            ),
-                        ),
-                        Add(
-                            VarRef(
-                                "x",
-                            ),
-                            ConstInt(
-                                1,
-                            ),
-                        ),
-                        ConstInt(
-                            0,
-                        ),
-                    ),
+                    itype: Cond,
                     write: Wire {
                         ranges: [
                             [5, 5] : Int,
@@ -189,9 +138,7 @@ Module {
                     },
                 },
                 Term {
-                    itype: VarRef(
-                        "y",
-                    ),
+                    itype: Assign,
                     write: Wire {
                         ranges: [
                             [6, 6] : Int,
@@ -204,9 +151,7 @@ Module {
                     },
                 },
                 Term {
-                    itype: VarRef(
-                        "z",
-                    ),
+                    itype: Assign,
                     write: Wire {
                         ranges: [
                             [7, 7] : Int,

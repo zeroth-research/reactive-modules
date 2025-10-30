@@ -1,13 +1,5 @@
 use std::fmt::Debug;
 
-/// Prints the formatted debug output of any type that implements Debug.
-/// This is the only introspection you can legally do without field access.
-pub fn dump_debug<T: Debug>(label: &str, value: &T) {
-    println!("==================== {} ====================", label);
-    println!("{:#?}", value);
-    println!("======================================================");
-}
-
 /// Compares two Debug-printable values line by line, highlighting differences.
 /// This is super helpful when comparing manually built modules vs parsed ones.
 pub fn compare_debug<T: Debug, U: Debug>(label_a: &str, a: &T, label_b: &str, b: &U) {

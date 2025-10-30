@@ -164,15 +164,15 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
 
         // INIT
         if let Some((_, expr_pair)) = init_assigns.iter().find(|(n, _)| n == name) {
-            let (rhs_itype, read) = build_expr_no_write(expr_pair.clone(), &wires, 0);
+            let (_rhs_itype, read) = build_expr_no_write(expr_pair.clone(), &wires, 0);
             // classify read wires into latched vs ivar
             classify_reads(&read, var_count, &mut read_latched, &mut wait_latched);
 
             // Represent init as an explicit assignment to the variable (keeps parity with manual modules)
-            let assign_itype = IType::Assign(Box::new(IType::VarRef(name.clone())), Box::new(rhs_itype));
-
+            // New IType no longer stores VarRef or boxed operands; use Assign as the instruction
+            // and keep the rhs read-set in `read` (the write wire is the target).
             let write = Wire::one(idx + n, dtype.clone());
-            init_terms.push(Term::new(assign_itype, write, read));
+            init_terms.push(Term::new(IType::Assign, write, read));
         } else {
             // default init: constant zero / false to next wire
             let default_val = match dtype {
@@ -201,7 +201,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
             ctrl_latched = ctrl_latched.union(&Wire::one(*idx, dtype.clone())).unwrap();
             let write = Wire::one(idx + n, dtype.clone());
             let read = Wire::one(*idx, dtype.clone());
-            update_terms.push(Term::new(IType::VarRef(name.clone()), write, read));
+            update_terms.push(Term::new(IType::Assign, write, read));
         }
     }
 
@@ -247,7 +247,7 @@ fn build_expr(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: u
                 }
 
                 (
-                    IType::Cond(Box::new(cond.0), Box::new(then_b.0), Box::new(else_b.0)),
+                    IType::Cond,
                     Wire::none(),
                     read,
                 )
@@ -265,7 +265,7 @@ fn build_expr(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: u
                 // next_pair is the OR token, next() is the rhs
                 let rhs = build_expr(inner.next().unwrap(), wires, offset);
                 let read = combined.2.union(&rhs.2).unwrap_or_else(|_| combined.2.clone());
-                combined = (IType::Or(Box::new(combined.0), Box::new(rhs.0)), Wire::one(offset, DType::Bool), read);
+                combined = (IType::Or, Wire::one(offset, DType::Bool), read);
             }
             combined
         }
@@ -278,7 +278,7 @@ fn build_expr(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: u
             while let Some(_) = inner.peek() {
                 let rhs = build_expr(inner.next().unwrap(), wires, offset);
                 let read = combined.2.union(&rhs.2).unwrap_or_else(|_| combined.2.clone());
-                combined = (IType::And(Box::new(combined.0), Box::new(rhs.0)), Wire::one(offset, DType::Bool), read);
+                combined = (IType::And, Wire::one(offset, DType::Bool), read);
             }
             combined
         }
@@ -294,11 +294,11 @@ fn build_expr(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: u
                 let right = build_expr(right_pair, wires, offset);
                 let read = left.2.union(&right.2).unwrap_or_else(|_| left.2.clone());
                 left = match op.as_rule() {
-                    Rule::LT => (IType::Lt(Box::new(left.0), Box::new(right.0)), Wire::one(offset, DType::Bool), read),
-                    Rule::LE => (IType::Le(Box::new(left.0), Box::new(right.0)), Wire::one(offset, DType::Bool), read),
-                    Rule::GT => (IType::Gt(Box::new(left.0), Box::new(right.0)), Wire::one(offset, DType::Bool), read),
-                    Rule::GE => (IType::Ge(Box::new(left.0), Box::new(right.0)), Wire::one(offset, DType::Bool), read),
-                    Rule::EQ => (IType::Eq(Box::new(left.0), Box::new(right.0)), Wire::one(offset, DType::Bool), read),
+                    Rule::LT => (IType::Lt, Wire::one(offset, DType::Bool), read),
+                    Rule::LE => (IType::Le, Wire::one(offset, DType::Bool), read),
+                    Rule::GT => (IType::Gt, Wire::one(offset, DType::Bool), read),
+                    Rule::GE => (IType::Ge, Wire::one(offset, DType::Bool), read),
+                    Rule::EQ => (IType::Eq, Wire::one(offset, DType::Bool), read),
                     _ => left, // shouldn't happen
                 };
             }
@@ -322,12 +322,12 @@ fn build_expr(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: u
 
                 left = match op.as_rule() {
                     Rule::PLUS => (
-                        IType::Add(Box::new(left.0), Box::new(right.0)),
+                        IType::Add,
                         Wire::one(offset, DType::Int),
                         combined_read,
                     ),
                     Rule::MINUS => (
-                        IType::Sub(Box::new(left.0), Box::new(right.0)),
+                        IType::Sub,
                         Wire::one(offset, DType::Int),
                         combined_read,
                     ),
@@ -357,12 +357,12 @@ fn build_expr(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: u
 
                 left = match op.as_rule() {
                     Rule::TIMES => (
-                        IType::Mul(Box::new(left.0), Box::new(right.0)),
+                        IType::Mul,
                         Wire::one(offset, DType::Int),
                         combined_read,
                     ),
                     Rule::DIVIDE => (
-                        IType::Div(Box::new(left.0), Box::new(right.0)),
+                        IType::Div,
                         Wire::one(offset, DType::Int),
                         combined_read,
                     ),
@@ -382,9 +382,9 @@ fn build_expr(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: u
             if first.as_rule() == Rule::NOT {
                 // next item is the factor being negated
                 let inner_factor = inner.next().unwrap();
-                let (sub_itype, _, sub_read) = build_expr(inner_factor, wires, offset);
+                let (_sub_itype, _, sub_read) = build_expr(inner_factor, wires, offset);
                 (
-                    IType::Not(Box::new(sub_itype)),
+                    IType::Not,
                     Wire::one(offset, DType::Bool),
                     sub_read,
                 )
@@ -396,18 +396,11 @@ fn build_expr(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: u
 
         Rule::expr_assign => {
             let mut inner = expr_pair.into_inner();
-            let target = inner.next().unwrap();
+            let _target = inner.next().unwrap();
             let value_expr = inner.next().unwrap();
             let rhs = build_expr(value_expr, wires, offset);
-            let target_name = match target.as_rule() {
-                Rule::init_ref | Rule::next_ref => {
-                    target.into_inner().next().unwrap().as_str().to_string()
-                }
-                Rule::ident => target.as_str().to_string(),
-                _ => panic!("unexpected assign target {:?}", target.as_rule()),
-            };
             (
-                IType::Assign(Box::new(IType::VarRef(target_name)), Box::new(rhs.0)),
+                IType::Assign,
                 Wire::none(),
                 rhs.2.clone(),
             )
@@ -424,9 +417,10 @@ fn build_expr(expr_pair: Pair<Rule>, wires: &[(String, usize, DType)], offset: u
         Rule::ident => {
             let name = expr_pair.as_str().to_string();
             if let Some((_, idx, dtype)) = wires.iter().find(|(n, _, _)| n == &name) {
-                (IType::VarRef(name), Wire::none(), Wire::one(idx + offset, dtype.clone()))
+                // Variable references are represented by Assign with the read wire set to the variable
+                (IType::Assign, Wire::none(), Wire::one(idx + offset, dtype.clone()))
             } else {
-                (IType::VarRef(name), Wire::none(), Wire::none())
+                (IType::Assign, Wire::none(), Wire::none())
             }
         }
 
