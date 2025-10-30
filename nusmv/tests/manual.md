@@ -86,7 +86,9 @@ Module {
             },
             init: [
                 Term {
-                    itype: Assign,
+                    itype: ConstInt(
+                        0,
+                    ),
                     write: Wire {
                         ranges: [
                             [5, 5] : Int,
@@ -105,7 +107,7 @@ Module {
                     },
                     read: Wire {
                         ranges: [
-                            [3, 3] : Int,
+                            [8, 8] : Int,
                         ],
                     },
                 },
@@ -118,12 +120,92 @@ Module {
                     },
                     read: Wire {
                         ranges: [
-                            [4, 4] : Int,
+                            [9, 9] : Int,
                         ],
                     },
                 },
             ],
             update: [
+                Term {
+                    itype: Lt,
+                    write: Wire {
+                        ranges: [
+                            [10, 10] : Bool,
+                        ],
+                    },
+                    read: Wire {
+                        ranges: [
+                            [0, 1] : Int,
+                        ],
+                    },
+                },
+                Term {
+                    itype: Lt,
+                    write: Wire {
+                        ranges: [
+                            [11, 11] : Bool,
+                        ],
+                    },
+                    read: Wire {
+                        ranges: [
+                            [0, 0] : Int,
+                            [2, 2] : Int,
+                        ],
+                    },
+                },
+                Term {
+                    itype: Or,
+                    write: Wire {
+                        ranges: [
+                            [12, 12] : Bool,
+                        ],
+                    },
+                    read: Wire {
+                        ranges: [
+                            [10, 11] : Bool,
+                        ],
+                    },
+                },
+                Term {
+                    itype: ConstInt(
+                        0,
+                    ),
+                    write: Wire {
+                        ranges: [
+                            [15, 15] : Int,
+                        ],
+                    },
+                    read: Wire {
+                        ranges: [],
+                    },
+                },
+                Term {
+                    itype: ConstInt(
+                        1,
+                    ),
+                    write: Wire {
+                        ranges: [
+                            [13, 13] : Int,
+                        ],
+                    },
+                    read: Wire {
+                        ranges: [],
+                    },
+                },
+                Term {
+                    itype: Add,
+                    write: Wire {
+                        ranges: [
+                            [14, 14] : Int,
+                        ],
+                    },
+                    read: Wire {
+                        ranges: [
+                            [0, 0] : Int,
+                            [13, 13] : Int,
+                        ],
+                    },
+                },
                 Term {
                     itype: Cond,
                     write: Wire {
@@ -133,7 +215,8 @@ Module {
                     },
                     read: Wire {
                         ranges: [
-                            [0, 2] : Int,
+                            [12, 12] : Bool,
+                            [14, 15] : Int,
                         ],
                     },
                 },

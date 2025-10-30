@@ -176,14 +176,6 @@ fn build_manual_module() -> Module<DType, IType> {
         let reads = wire10.union(&wire11).unwrap();
         let or = Term::new(IType::Or, wire12.clone(), reads);
 
-        // zero
-        let const0 = ctx.tmp_var(DType::Int).clone();
-        let term0 = Term::new(
-            IType::ConstInt(0),
-            const0.clone(),
-            Wire::none(),
-        );
-
         // one
         let const1 = ctx.tmp_var(DType::Int).clone();
         let term1 = Term::new(
@@ -192,13 +184,21 @@ fn build_manual_module() -> Module<DType, IType> {
             Wire::none(),
         );
 
-        // wire15 = vars[0] + const1
-        let wire15 = ctx.tmp_var(DType::Int).clone();
+        // wire14 = vars[0] + const1
+        let wire14 = ctx.tmp_var(DType::Int).clone();
         let reads = ctx.get("x").union(&const1).unwrap();
-        let sum = Term::new(IType::Add, wire15.clone(), reads);
+        let sum = Term::new(IType::Add, wire14.clone(), reads);
+
+        // zero
+        let const0 = ctx.tmp_var(DType::Int).clone();
+        let term0 = Term::new(
+            IType::ConstInt(0),
+            const0.clone(),
+            Wire::none(),
+        );
 
         // wire5 = ite(wire12, wire15, const0)
-        let reads = wire12.union(&wire15).unwrap().union(&const0).unwrap();
+        let reads = wire12.union(&wire14).unwrap().union(&const0).unwrap();
         let ite = Term::new(IType::Cond, ctx.get_cloned("x'"), reads);
 
         // y' := y
