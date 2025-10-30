@@ -1,8 +1,69 @@
+use std::collections::HashMap;
+
 use base::wire::Wire;
 
 use toy::instruction::Instruction;
 use toy::term::{Term, construct};
 use toy::val::{Type, Val};
+
+struct Context {
+    vars: HashMap<String, Wire<Type>>,
+}
+
+impl Context {
+    fn new() -> Self {
+        Self {
+            vars: HashMap::new(),
+        }
+    }
+
+    fn get(&mut self, name: &'static str) -> &Wire<Type> {
+        self.vars.get(name).expect("Not existing value")
+    }
+
+    fn get_cloned(&mut self, name: &'static str) -> Wire<Type> {
+        self.vars.get(name).expect("Not existing value").clone()
+    }
+
+    /// Get or create a variable
+    /// Does not check if the type is compatible if the var exists
+    fn var(&mut self, name: &'static str, ty: Type) -> &Wire<Type> {
+        let new_id = self.vars.len();
+        self.vars
+            .entry(name.to_string())
+            .or_insert(Wire::one(new_id, ty))
+    }
+
+    /// Does not check if the type is compatible if the var exists
+    fn tmp_var(&mut self, ty: Type) -> &Wire<Type> {
+        let new_id = self.vars.len();
+        self.vars
+            .entry(format!("__c_{}", new_id))
+            .or_insert(Wire::one(new_id, ty))
+    }
+
+    fn get_vars(&mut self, names: Vec<&'static str>) -> Wire<Type> {
+        // XXX: not very efficient
+        let mut wire = Wire::none();
+        for name in names {
+            let v = self.get(name);
+            wire = wire.union(v).unwrap();
+        }
+
+        wire
+    }
+
+    fn vars(&mut self, ty: Type, names: Vec<&'static str>) -> Wire<Type> {
+        // XXX: not very efficient
+        let mut wire = Wire::none();
+        for name in names {
+            let v = self.var(name, ty);
+            wire = wire.union(v).unwrap();
+        }
+
+        wire
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -10,114 +71,98 @@ mod tests {
     use base::atom::Atom;
     use base::module::Module;
 
-    fn init(vars: &[Wire<Type>; 10]) -> Vec<Term> {
+    fn init(ctx: &mut Context) -> Vec<Term> {
         let init_x = construct(
             Instruction::Const(Val::Int(0)),
-            vars[5].clone(),
+            ctx.get_cloned("x'"),
             Wire::none(),
         )
-        .expect("Failed creating term");
-        let init_y = construct(Instruction::Id, vars[6].clone(), vars[8].clone())
-            .expect("Failed creating term");
-        let init_z = construct(Instruction::Id, vars[7].clone(), vars[9].clone())
-            .expect("Failed creating term");
+        .unwrap();
+        let init_y =
+            construct(Instruction::Id, ctx.get_cloned("y'"), ctx.get_cloned("y0'")).unwrap();
+        let init_z =
+            construct(Instruction::Id, ctx.get_cloned("z'"), ctx.get_cloned("z0'")).unwrap();
 
         vec![init_x, init_y, init_z]
     }
 
-    fn update(vars: &[Wire<Type>; 10]) -> Vec<Term> {
+    fn update(ctx: &mut Context) -> Vec<Term> {
         // wire10 = x < y
-        let reads = vars[0].union(&vars[1]).unwrap();
-        let wire10 = Wire::one(10, Type::Bool);
-        let xlty = construct(Instruction::Lt, wire10.clone(), reads).expect("Failed creating term");
+        let reads = ctx.get_vars(vec!["x", "y"]);
+        let wire10 = ctx.tmp_var(Type::Bool).clone();
+        let xlty = construct(Instruction::Lt, wire10.clone(), reads).unwrap();
 
         // wire11 = x < z
-        let reads = vars[0].union(&vars[2]).unwrap();
-        let wire11 = Wire::one(11, Type::Bool);
-        let xltz = construct(Instruction::Lt, wire11.clone(), reads).expect("Failed creating term");
+        let reads = ctx.get_vars(vec!["x", "z"]);
+        let wire11 = ctx.tmp_var(Type::Bool).clone();
+        let xltz = construct(Instruction::Lt, wire11.clone(), reads).unwrap();
 
         // wire12 = wire10 || wire11
-        let wire12 = Wire::one(12, Type::Bool);
+        let wire12 = ctx.tmp_var(Type::Bool).clone();
         let reads = wire10.union(&wire11).unwrap();
-        let or = construct(Instruction::Or, wire12.clone(), reads).expect("Failed creating term");
+        let or = construct(Instruction::Or, wire12.clone(), reads).unwrap();
 
         // zero
-        let const0 = Wire::one(13, Type::Int);
+        let const0 = ctx.tmp_var(Type::Int).clone();
         let term0 = construct(
             Instruction::Const(Val::Int(0)),
             const0.clone(),
             Wire::none(),
         )
-        .expect("Failed creating term");
+        .unwrap();
 
         // one
-        let const1 = Wire::one(14, Type::Int);
+        let const1 = ctx.tmp_var(Type::Int).clone();
         let term1 = construct(
             Instruction::Const(Val::Int(1)),
             const1.clone(),
             Wire::none(),
         )
-        .expect("Failed creating term");
+        .unwrap();
 
         // wire15 = vars[0] + const1
-        let wire15 = Wire::one(15, Type::Int);
-        let reads = vars[0].union(&const1).unwrap();
-        let sum = construct(Instruction::Sum, wire15.clone(), reads).expect("Failed creating term");
+        let wire15 = ctx.tmp_var(Type::Int).clone();
+        let reads = ctx.get("x").union(&const1).unwrap();
+        let sum = construct(Instruction::Sum, wire15.clone(), reads).unwrap();
 
         // wire5 = ite(wire12, wire15, const0)
         let reads = wire12.union(&wire15).unwrap().union(&const0).unwrap();
-        let ite =
-            construct(Instruction::Ite, vars[5].clone(), reads).expect("Failed creating term");
+        let ite = construct(Instruction::Ite, ctx.get_cloned("x'"), reads).unwrap();
 
         // y' := y
-        let id_y = construct(Instruction::Id, vars[6].clone(), vars[1].clone())
-            .expect("Failed creating term");
-        let id_z = construct(Instruction::Id, vars[7].clone(), vars[2].clone())
-            .expect("Failed creating term");
+        let id_y = construct(Instruction::Id, ctx.get_cloned("y'"), ctx.get_cloned("y")).unwrap();
+        let id_z = construct(Instruction::Id, ctx.get_cloned("z'"), ctx.get_cloned("z")).unwrap();
 
         vec![xlty, xltz, or, term0, term1, sum, ite, id_y, id_z]
     }
 
     #[test]
     fn toy_example() {
-        let vars = [
-            // x y z y0 z0
-            Wire::one(0, Type::Int), // x
-            Wire::one(1, Type::Int), // y
-            Wire::one(2, Type::Int), // z
-            Wire::one(3, Type::Int), // y0
-            Wire::one(4, Type::Int), // z0
-            // primed variables
-            Wire::one(5, Type::Int), // x'
-            Wire::one(6, Type::Int), // y'
-            Wire::one(7, Type::Int), // z'
-            Wire::one(8, Type::Int), // y0'
-            Wire::one(9, Type::Int), // z0'
-        ];
+        let mut ctx = Context::new();
 
+        // create variables
+        ctx.vars(
+            Type::Int,
+            vec!["x", "y", "z", "y0", "z0", "x'", "y'", "z'", "y0'", "z0'"],
+        );
         const NEXT_OFFSET: isize = 5;
 
         // build module
-        let module = build_module(&vars, NEXT_OFFSET);
+        let module = build_module(&mut ctx, NEXT_OFFSET);
         dbg!(module);
 
-        let prop = build_prop(&vars);
+        let prop = build_prop(&mut ctx);
         dbg!(prop);
     }
 
-    fn build_module(vars: &[Wire<Type>; 10], next_offset: isize) -> Module<Type, Instruction> {
-        let init_terms = init(&vars);
-        let update_terms = update(&vars);
+    fn build_module(ctx: &mut Context, next_offset: isize) -> Module<Type, Instruction> {
+        let init_terms = init(ctx);
+        let update_terms = update(ctx);
 
-        // x y z
-        let read = Wire::many(0, Type::Int, 3);
-        // y0 z0
-        let wait = Wire::many(3, Type::Int, 2);
-
-        // x y z y0 z0
-        let latched = read.union(&wait).expect("Failed creating union");
-        // x' y' z' y0' z0'
-        let next = latched.twin(next_offset).expect("Failed getting twins");
+        let latched = ctx.get_vars(vec!["x", "y", "z", "y0", "z0"]);
+        let next = latched
+            .twin(next_offset)
+            .expect("Failed getting primed variables");
 
         let atom =
             Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
@@ -126,13 +171,13 @@ mod tests {
         Module::with_atoms([latched, next], vec![atom]).expect("Failed building module")
     }
 
-    fn build_prop(vars: &[Wire<Type>; 10]) -> Vec<Term> {
-        let reads = vars[0].union(&vars[1]).unwrap();
-        let wire16 = Wire::one(16, Type::Bool);
+    fn build_prop(ctx: &mut Context) -> Vec<Term> {
+        let reads = ctx.get_vars(vec!["x", "y"]);
+        let wire16 = ctx.tmp_var(Type::Bool).clone();
         let xeqy = construct(Instruction::Eq, wire16.clone(), reads).unwrap();
 
-        let reads = vars[0].union(&vars[2]).unwrap();
-        let wire17 = Wire::one(17, Type::Bool);
+        let reads = ctx.get_cloned("x").union(ctx.get("z")).unwrap();
+        let wire17 = ctx.tmp_var(Type::Bool).clone();
         let xeqz = construct(Instruction::Eq, wire17.clone(), reads).unwrap();
 
         let out = Wire::one(18, Type::Bool);
