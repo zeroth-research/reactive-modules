@@ -105,7 +105,7 @@ mod tests {
         dbg!(prop);
     }
 
-    fn build_module(vars: &[Wire<Type>; 10], NEXT_OFFSET: isize) -> Module<Type, Instruction> {
+    fn build_module(vars: &[Wire<Type>; 10], next_offset: isize) -> Module<Type, Instruction> {
         let init_terms = init(&vars);
         let update_terms = update(&vars);
 
@@ -117,7 +117,7 @@ mod tests {
         // x y z y0 z0
         let latched = read.union(&wait).expect("Failed creating union");
         // x' y' z' y0' z0'
-        let next = latched.twin(NEXT_OFFSET).expect("Failed getting twins");
+        let next = latched.twin(next_offset).expect("Failed getting twins");
 
         let atom =
             Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
