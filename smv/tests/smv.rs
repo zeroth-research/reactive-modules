@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use base::{atom::Atom, module::Module, term::Term, wire::Wire};
-use nusmv::{dtype::DType, itype::IType, nusmv::parse_nusmv};
+use smv::{dtype::DType, itype::IType, smv::parse_smv};
 
 struct Context {
     vars: HashMap<String, Wire<DType>>,
@@ -149,7 +149,7 @@ fn build_manual_module() -> Module<DType, IType> {
 }
 
 #[test]
-fn counter_nusmv() {
+fn counter_smv() {
     let input = r#"
         MODULE main
         IVAR
@@ -168,16 +168,16 @@ fn counter_nusmv() {
             next(z) := z;
     "#;
 
-    let parsed_module = parse_nusmv(input).unwrap();
+    let parsed_module = parse_smv(input).unwrap();
     let manual_module = build_manual_module();
 
     // Instead of printing to stdout during tests, write the same debug output
-    // that `dump_debug` would print into files under the nusmv crate tests
+    // that `dump_debug` would print into files under the smv crate tests
     // directory so CI / editors don't get noisy output.
     let parsed_out = format!("{:#?}", parsed_module);
     let manual_out = format!("{:#?}", manual_module);
 
-    // Use the crate manifest dir to get a stable path to the nusmv crate
+    // Use the crate manifest dir to get a stable path to the smv crate
     let crate_root = env!("CARGO_MANIFEST_DIR");
     let parsed_path = std::path::Path::new(crate_root).join("tests/parsed.md");
     let manual_path = std::path::Path::new(crate_root).join("tests/manual.md");

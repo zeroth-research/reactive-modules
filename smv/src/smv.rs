@@ -386,11 +386,11 @@ fn classify_reads_from_wire(read: &Wire<DType>, var_count: usize, n: usize, read
 }
 
 #[derive(Parser)]
-#[grammar = "nusmv.pest"]
-pub struct NuSMVParser;
+#[grammar = "smv.pest"]
+pub struct SMVParser;
 
-pub fn parse_nusmv(input: &str) -> Result<Module<DType, IType>, &'static str> {
-    let parsed = NuSMVParser::parse(Rule::file, input)
+pub fn parse_smv(input: &str) -> Result<Module<DType, IType>, &'static str> {
+    let parsed = SMVParser::parse(Rule::file, input)
         .map_err(|_| "parse failed")?
         .next()
         .ok_or("empty parse tree")?;
