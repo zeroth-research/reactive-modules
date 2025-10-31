@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use base::{atom::Atom, module::Module, term::Term, wire::Wire};
 use smv::{dtype::DType, itype::IType, smv::parse_smv};
+use std::collections::HashMap;
 
 struct Context {
     vars: HashMap<String, Wire<DType>>,
@@ -72,15 +72,9 @@ fn build_manual_module() -> Module<DType, IType> {
     const NEXT_OFFSET: isize = 5;
 
     fn init(ctx: &mut Context) -> Vec<Term<DType, IType>> {
-        let init_x = Term::new(
-            IType::ConstInt(0),
-            ctx.get_cloned("x'"),
-            Wire::none(),
-        );
-        let init_y =
-            Term::new(IType::Assign, ctx.get_cloned("y'"), ctx.get_cloned("y0'"));
-        let init_z =
-            Term::new(IType::Assign, ctx.get_cloned("z'"), ctx.get_cloned("z0'"));
+        let init_x = Term::new(IType::ConstInt(0), ctx.get_cloned("x'"), Wire::none());
+        let init_y = Term::new(IType::Assign, ctx.get_cloned("y'"), ctx.get_cloned("y0'"));
+        let init_z = Term::new(IType::Assign, ctx.get_cloned("z'"), ctx.get_cloned("z0'"));
 
         vec![init_x, init_y, init_z]
     }
@@ -103,11 +97,7 @@ fn build_manual_module() -> Module<DType, IType> {
 
         // one
         let const1 = ctx.tmp_var(DType::Int).clone();
-        let term1 = Term::new(
-            IType::ConstInt(1),
-            const1.clone(),
-            Wire::none(),
-        );
+        let term1 = Term::new(IType::ConstInt(1), const1.clone(), Wire::none());
 
         // wire14 = vars[0] + const1
         let wire14 = ctx.tmp_var(DType::Int).clone();
@@ -116,11 +106,7 @@ fn build_manual_module() -> Module<DType, IType> {
 
         // zero
         let const0 = ctx.tmp_var(DType::Int).clone();
-        let term0 = Term::new(
-            IType::ConstInt(0),
-            const0.clone(),
-            Wire::none(),
-        );
+        let term0 = Term::new(IType::ConstInt(0), const0.clone(), Wire::none());
 
         // wire5 = ite(wire12, wire15, const0)
         let reads = wire12.union(&wire14).unwrap().union(&const0).unwrap();
@@ -141,9 +127,8 @@ fn build_manual_module() -> Module<DType, IType> {
         .twin(NEXT_OFFSET)
         .expect("Failed getting primed variables");
 
-    let atom =
-        Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
-            .expect("failed creating atom");
+    let atom = Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
+        .expect("failed creating atom");
 
     Module::with_atoms([latched, next], vec![atom]).expect("Failed building module")
 }
@@ -201,7 +186,11 @@ fn counter_smv() {
         }
     }
     if a_lines.len() != b_lines.len() {
-        diff_out.push_str(&format!("\n⚠️ Different number of lines ({} vs {})\n", a_lines.len(), b_lines.len()));
+        diff_out.push_str(&format!(
+            "\n⚠️ Different number of lines ({} vs {})\n",
+            a_lines.len(),
+            b_lines.len()
+        ));
     }
     diff_out.push_str("==============================================================\n");
 
