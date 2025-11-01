@@ -1,7 +1,5 @@
-use std::cmp::{Ordering, max, min};
-use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
-use std::{fmt, mem};
+use std::collections::HashMap;
+use std::fmt;
 
 /// A wiring represents a view over a sequence of indices, each of which is associated
 /// with a type.
@@ -21,8 +19,12 @@ impl<D> Wire<D> {
         }
     }
 
-    pub fn size(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.vec.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.vec.is_empty()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, &D)> + Clone {
@@ -59,16 +61,14 @@ macro_rules! wires {
 /// from_iter can panic. Use at your own risk
 impl<D: Eq> FromIterator<(usize, D)> for Wire<D> {
     fn from_iter<I: IntoIterator<Item = (usize, D)>>(iter: I) -> Self {
-        let vec: Vec<(usize, D)> = iter.into_iter().collect();
-        Self::new_unchecked(vec)
+        Self::try_from_iter(iter).unwrap()
     }
 }
 
 /// from_iter can panic. Use at your own risk
 impl<'a, D: Eq + Clone> FromIterator<&'a (usize, D)> for Wire<D> {
     fn from_iter<I: IntoIterator<Item = &'a (usize, D)>>(iter: I) -> Self {
-        let vec: Vec<(usize, D)> = iter.into_iter().cloned().collect();
-        Self::new_unchecked(vec)
+        Self::try_from_iter(iter.into_iter().cloned()).unwrap()
     }
 }
 
@@ -98,7 +98,7 @@ impl<D: Eq> Wire<D> {
                 .insert(a, vec.len())
                 .is_some_and(|i| b != vec[i].1)
             {
-                return Err("Inconsistent wire types");
+                return Err("Inconsistent wire dtype");
             }
             vec.push((a, b));
         }

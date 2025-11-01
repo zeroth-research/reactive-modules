@@ -1,8 +1,3 @@
-use base::atom::Atom;
-use base::module::Module;
-use base::term::Term;
-use base::wire::Wire;
-
 // #[test]
 // fn can_instantiate_atom_from_module_wire() {
 //     let x = Wire::one(0, "real");

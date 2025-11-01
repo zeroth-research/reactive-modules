@@ -1,11 +1,10 @@
-use base::atom::Atom;
 use base::module::Module;
 use base::term::Term;
 use base::wire::Wire;
 use base::wires;
 
 #[test]
-fn cross_check_atom_with_module_wire_and_module_with_atoms() {
+fn can_instantiate_sequential_module() {
     let x = Wire::one(0, "real");
     let y = Wire::one(1, "real");
     let z = Wire::one(2, "real");
@@ -23,17 +22,15 @@ fn cross_check_atom_with_module_wire_and_module_with_atoms() {
     let wait = Wire::try_from_iter([&y0_next, &z0_next].into_iter().flatten().cloned()).unwrap();
 
     let read: Wire<&str> = wires![&x, &y, &z];
-    let read_wait: Wire<&str> = wires![&x, &y, &z, &y0, &z0];
+    let read_wait: Wire<&str> = wires![&read, &wait];
 
     let init_term = Term::new("see report", ctrl.clone(), wait.clone());
     let update_term = Term::new("see report", ctrl.clone(), read_wait.clone());
 
-    let latched = wires![&x, &y, &z, &y0, &z0];
-    let next = wires![&x_next, &y_next, &z_next, &y0_next, &z0_next];
+    let latched = wires![x, y, z, y0, z0];
+    let next = wires![x_next, y_next, z_next, y0_next, z0_next];
 
     let wire = [latched, next];
 
-    let atom = Atom::with_module_wire(&wire, vec![init_term], vec![update_term]).unwrap();
-
-    let _module = Module::with_atoms(wire, vec![atom]).unwrap();
+    let _module = Module::sequential(wire, [init_term], [update_term]).unwrap();
 }
