@@ -2,6 +2,7 @@ use crate::atom::Atom;
 use crate::term::Term;
 use crate::wire::Wire;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::fmt::Debug;
 
 /// This data structure corresponds to the module of reactive modules.
@@ -268,5 +269,44 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     {
         let atom = Atom::with_module_wire(&wire, Vec::from_iter(init), Vec::from_iter(update))?;
         Self::new(wire, [atom])
+    }
+}
+
+impl<D: fmt::Display, I: fmt::Display> Module<D, I> {
+    fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
+        const BOLD: &str = "\x1b[1m";
+        const RESET: &str = "\x1b[0m";
+        const INDENT: &str = "  ";
+        const INDENT2: &str = "    ";
+
+        writeln!(f, "{pad}{BOLD}module{RESET}")?;
+        if !self.extl[0].is_empty() {
+            writeln!(f, "{pad}{INDENT}{BOLD}external{RESET}")?;
+        }
+        for ((ltc, _), (nxt, typ)) in self.extl[0].iter().zip(self.extl[1].iter()) {
+            writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {typ}")?;
+        }
+        if !self.intf[0].is_empty() {
+            writeln!(f, "{pad}{INDENT}{BOLD}interface{RESET}")?;
+        }
+        for ((ltc, _), (nxt, typ)) in self.intf[0].iter().zip(self.intf[1].iter()) {
+            writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {typ}")?;
+        }
+        if !self.prvt[0].is_empty() {
+            writeln!(f, "{pad}{INDENT}{BOLD}private{RESET}")?;
+        }
+        for ((ltc, _), (nxt, typ)) in self.prvt[0].iter().zip(self.prvt[1].iter()) {
+            writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {typ}")?;
+        }
+        for atom in self.atoms.iter() {
+            atom.fmt_indent(f, &format!("{pad}{INDENT}"))?;
+        }
+        Ok(())
+    }
+}
+
+impl<D: fmt::Display, I: fmt::Display> fmt::Display for Module<D, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_indent(f, "")
     }
 }

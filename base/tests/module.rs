@@ -22,10 +22,10 @@ fn can_instantiate_sequential_module() {
     let wait = Wire::try_from_iter([&y0_next, &z0_next].into_iter().flatten().cloned()).unwrap();
 
     let read: Wire<&str> = wires![&x, &y, &z];
-    let read_wait: Wire<&str> = wires![&read, &wait];
+    //let read_wait: Wire<&str> = wires![&read, &wait];
 
-    let init_term = Term::new("see report", ctrl.clone(), wait.clone());
-    let update_term = Term::new("see report", ctrl.clone(), read_wait.clone());
+    let init_term = Term::new("SEE", ctrl.clone(), wait.clone());
+    let update_term = Term::new("SEE", ctrl.clone(), read.clone());
 
     let latched = wires![x, y, z, y0, z0];
     let next = wires![x_next, y_next, z_next, y0_next, z0_next];
@@ -33,4 +33,6 @@ fn can_instantiate_sequential_module() {
     let wire = [latched, next];
 
     let _module = Module::sequential(wire, [init_term], [update_term]).unwrap();
+
+    //print!("{}", _module);
 }

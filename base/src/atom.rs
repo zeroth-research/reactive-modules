@@ -145,21 +145,49 @@ impl<D: Eq + Clone, I> Atom<D, I> {
     }
 }
 
-impl<D: fmt::Display, I: fmt::Display> fmt::Display for Atom<D, I> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "atom controls {} reads {} awaits {}",
-            self.ctrl, self.read, self.wait
-        )?;
-        writeln!(f, "init")?;
-        for term in self.init.iter() {
-            writeln!(f, "  {}", term)?;
+impl<D: fmt::Display, I: fmt::Display> Atom<D, I> {
+    pub(crate) fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
+        const BOLD: &str = "\x1b[1m";
+        const RESET: &str = "\x1b[0m";
+        const INDENT: &str = "  ";
+
+        write!(f, "{pad}{BOLD}atom{RESET}")?;
+        for (i, (wr, _)) in self.ctrl.iter().enumerate() {
+            if i == 0 {
+                write!(f, " {BOLD}controls{RESET} w{wr}")?;
+            } else {
+                write!(f, ", w{wr}")?;
+            }
         }
-        writeln!(f, "update")?;
+        for (i, (wr, _)) in self.read.iter().enumerate() {
+            if i == 0 {
+                write!(f, " {BOLD}reads{RESET} w{wr}")?;
+            } else {
+                write!(f, ", w{wr}")?;
+            }
+        }
+        for (i, (wr, _)) in self.wait.iter().enumerate() {
+            if i == 0 {
+                write!(f, " {BOLD}awaits{RESET} w{wr}")?;
+            } else {
+                write!(f, ", w{wr}")?;
+            }
+        }
+        writeln!(f, "\n{pad}{BOLD}init{RESET}")?;
+
+        for term in self.init.iter() {
+            writeln!(f, "{pad}{INDENT}{term}")?;
+        }
+        writeln!(f, "{pad}{BOLD}update{RESET}")?;
         for term in self.update.iter() {
-            writeln!(f, "  {}", term)?;
+            writeln!(f, "{pad}{INDENT}{term}")?;
         }
         Ok(())
+    }
+}
+
+impl<D: fmt::Display, I: fmt::Display> fmt::Display for Atom<D, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_indent(f, "")
     }
 }
