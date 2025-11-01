@@ -1,4 +1,5 @@
 use crate::atom::Atom;
+use crate::term::Term;
 use crate::wire::Wire;
 use log::debug;
 use std::collections::{HashMap, HashSet};
@@ -48,12 +49,12 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     ) -> Self {
         #[cfg(debug_assertions)]
         {
-            debug_assert_eq!(extl[0].size(), extl[1].size());
-            debug_assert_eq!(intf[0].size(), intf[1].size());
-            debug_assert_eq!(prvt[0].size(), prvt[1].size());
-            debug_assert_eq!(ctrl[0].size(), ctrl[1].size());
-            debug_assert_eq!(obs[0].size(), obs[1].size());
-            debug_assert_eq!(wire[0].size(), wire[1].size());
+            debug_assert_eq!(extl[0].len(), extl[1].len());
+            debug_assert_eq!(intf[0].len(), intf[1].len());
+            debug_assert_eq!(prvt[0].len(), prvt[1].len());
+            debug_assert_eq!(ctrl[0].len(), ctrl[1].len());
+            debug_assert_eq!(obs[0].len(), obs[1].len());
+            debug_assert_eq!(wire[0].len(), wire[1].len());
 
             let mut ltch_to_dtype: HashMap<usize, &D> = HashMap::new();
             let mut next_to_ltch: HashMap<usize, usize> = HashMap::new();
@@ -178,9 +179,12 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         }
     }
 
-    pub fn with_atoms(wire: [Wire<D>; 2], atoms: Vec<Atom<D, I>>) -> Result<Self, &'static str> {
+    pub fn new<A>(wire: [Wire<D>; 2], atoms: A) -> Result<Self, &'static str>
+    where
+        A: IntoIterator<Item = Atom<D, I>> + Sized,
+    {
         // Check and store wire index + dtype information
-        if wire[0].size() != wire[1].size() {
+        if wire[0].len() != wire[1].len() {
             return Err("len mismatch in latched and next wires");
         }
         let mut ltch_to_dtype: HashMap<usize, &D> = HashMap::new();
@@ -199,7 +203,9 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
 
         // Check atoms consistency and infer control wires
         let mut ctrl_set: HashSet<usize> = HashSet::new();
-        for (i, atom) in atoms.iter().enumerate() {
+        let atoms_iter = atoms.into_iter();
+        let mut mod_atoms: Vec<Atom<D, I>> = Vec::with_capacity(atoms_iter.size_hint().0);
+        for (i, atom) in atoms_iter.enumerate() {
             for (a, at) in atom.read.iter() {
                 if ltch_to_dtype.get(&a) != Some(&at) {
                     return Err("atom read not latched or dtype mismatch");
@@ -219,18 +225,21 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
                 }
             }
 
-            for past_atom in atoms.iter().take(i) {
-                if past_atom.awaits(atom) {
+            // TODO check that temporaries are decoupled from module wires
+
+            for past_atom in mod_atoms.iter() {
+                if past_atom.awaits(&atom) {
                     return Err("inconsistent awaiting order");
                 }
             }
+            mod_atoms.push(atom);
         }
 
         // Build ctrl and extl wires based on inferred control set
         let mut ctrl_0: Vec<(usize, D)> = Vec::with_capacity(ctrl_set.len());
         let mut ctrl_1: Vec<(usize, D)> = Vec::with_capacity(ctrl_set.len());
-        let mut extl_0: Vec<(usize, D)> = Vec::with_capacity(wire[0].size() - ctrl_set.len());
-        let mut extl_1: Vec<(usize, D)> = Vec::with_capacity(wire[0].size() - ctrl_set.len());
+        let mut extl_0: Vec<(usize, D)> = Vec::with_capacity(wire[0].len() - ctrl_set.len());
+        let mut extl_1: Vec<(usize, D)> = Vec::with_capacity(wire[0].len() - ctrl_set.len());
 
         for (a, at) in wire[1].iter() {
             if ctrl_set.contains(&a) {
@@ -250,7 +259,16 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let obs = wire.clone();
 
         Ok(Self::new_unchecked(
-            extl, intf, prvt, ctrl, obs, wire, atoms,
+            extl, intf, prvt, ctrl, obs, wire, mod_atoms,
         ))
+    }
+
+    pub fn sequential<V, U>(wire: [Wire<D>; 2], init: V, update: U) -> Result<Self, &'static str>
+    where
+        V: IntoIterator<Item = Term<D, I>>,
+        U: IntoIterator<Item = Term<D, I>>,
+    {
+        let atom = Atom::with_module_wire(&wire, Vec::from_iter(init), Vec::from_iter(update))?;
+        Self::new(wire, [atom])
     }
 }

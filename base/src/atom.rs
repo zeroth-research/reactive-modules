@@ -83,13 +83,13 @@ impl<D: Eq, I> Atom<D, I> {
 }
 
 impl<D: Eq + Clone, I> Atom<D, I> {
-    pub fn with_module_wire(
+    pub(crate) fn with_module_wire(
         wire: &[Wire<D>; 2],
         init: Vec<Term<D, I>>,
         update: Vec<Term<D, I>>,
     ) -> Result<Self, &'static str> {
         // Check and store wire index + dtype information
-        if wire[0].size() != wire[1].size() {
+        if wire[0].len() != wire[1].len() {
             return Err("len mismatch in latched and next wires");
         }
         let mut latched_to_dtype: HashMap<usize, &D> = HashMap::new();
