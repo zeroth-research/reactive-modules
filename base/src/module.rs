@@ -1,5 +1,8 @@
 use crate::atom::Atom;
 use crate::wire::Wire;
+use log::debug;
+use std::collections::{HashMap, HashSet};
+use std::ffi::c_ushort;
 use std::fmt::Debug;
 
 /// This data structure corresponds to the module of reactive modules.
@@ -45,45 +48,123 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     ) -> Self {
         #[cfg(debug_assertions)]
         {
-            debug_assert!(Wire::is_twin(&extl[0], &extl[1]));
-            debug_assert!(Wire::is_twin(&intf[0], &intf[1]));
-            debug_assert!(Wire::is_twin(&prvt[0], &prvt[1]));
-            debug_assert!(Wire::is_twin(&ctrl[0], &ctrl[1]));
-            debug_assert!(Wire::is_twin(&obs[0], &obs[1]));
-            debug_assert!(Wire::is_twin(&wire[0], &wire[1]));
+            debug_assert_eq!(extl[0].size(), extl[1].size());
+            debug_assert_eq!(intf[0].size(), intf[1].size());
+            debug_assert_eq!(prvt[0].size(), prvt[1].size());
+            debug_assert_eq!(ctrl[0].size(), ctrl[1].size());
+            debug_assert_eq!(obs[0].size(), obs[1].size());
+            debug_assert_eq!(wire[0].size(), wire[1].size());
 
-            debug_assert!(Wire::is_disjoint(&extl[0], &intf[0]));
-            debug_assert!(Wire::is_disjoint(&extl[0], &prvt[0]));
-            debug_assert!(Wire::is_disjoint(&intf[0], &prvt[0]));
+            let mut ltch_to_dtype: HashMap<usize, &D> = HashMap::new();
+            let mut next_to_ltch: HashMap<usize, usize> = HashMap::new();
+            for ((a, at), (b, bt)) in wire[0].iter().zip(wire[1].iter()) {
+                debug_assert_eq!(at, bt);
+                // check that indices are unique, and store them
+                debug_assert!(ltch_to_dtype.insert(a, &at).is_none());
+                debug_assert!(next_to_ltch.insert(b, a).is_none());
+            }
 
-            debug_assert!(Wire::is_disjoint(&extl[1], &intf[1]));
-            debug_assert!(Wire::is_disjoint(&extl[1], &prvt[1]));
-            debug_assert!(Wire::is_disjoint(&intf[1], &prvt[1]));
+            let mut obs_ltch: HashSet<usize> = HashSet::new();
+            for ((a, at), (b, bt)) in obs[0].iter().zip(obs[1].iter()) {
+                debug_assert_eq!(at, bt);
+                // check consistency with other wires
+                debug_assert_eq!(ltch_to_dtype.get(&a), Some(&at));
+                debug_assert_eq!(next_to_ltch.get(&b), Some(&a));
+                // check that indices are unique, and store them
+                debug_assert!(obs_ltch.insert(a));
+            }
 
-            debug_assert_eq!(Wire::union(&extl[0], &intf[0]).unwrap(), obs[0]);
-            debug_assert_eq!(Wire::union(&intf[0], &prvt[0]).unwrap(), ctrl[0]);
+            let mut ctrl_ltch: HashSet<usize> = HashSet::new();
+            for ((a, at), (b, bt)) in ctrl[0].iter().zip(ctrl[1].iter()) {
+                debug_assert_eq!(at, bt);
+                // check consistency with other wires
+                debug_assert_eq!(ltch_to_dtype.get(&a), Some(&at));
+                debug_assert_eq!(next_to_ltch.get(&b), Some(&a));
+                // check that indices are unique, and store them
+                debug_assert!(ctrl_ltch.insert(a));
+            }
 
-            debug_assert_eq!(Wire::union(&extl[1], &intf[1]).unwrap(), obs[1]);
-            debug_assert_eq!(Wire::union(&intf[1], &prvt[1]).unwrap(), ctrl[1]);
+            let mut prvt_ltch: HashSet<usize> = HashSet::new();
+            for ((a, at), (b, bt)) in prvt[0].iter().zip(prvt[1].iter()) {
+                debug_assert_eq!(at, bt);
+                // check consistency with other wires
+                debug_assert_eq!(ltch_to_dtype.get(&a), Some(&at));
+                debug_assert_eq!(next_to_ltch.get(&b), Some(&a));
+                debug_assert!(!obs_ltch.contains(&a));
+                debug_assert!(ctrl_ltch.contains(&a));
+                // check that indices are unique, and store them
+                debug_assert!(prvt_ltch.insert(a));
+            }
 
-            debug_assert_eq!(
-                wire[0],
-                extl[0].union(&intf[0]).unwrap().union(&prvt[0]).unwrap()
-            );
+            let mut intf_ltch: HashSet<usize> = HashSet::new();
+            for ((a, at), (b, bt)) in intf[0].iter().zip(intf[1].iter()) {
+                debug_assert_eq!(at, bt);
+                // check consistency with other wires
+                debug_assert_eq!(ltch_to_dtype.get(&a), Some(&at));
+                debug_assert_eq!(next_to_ltch.get(&b), Some(&a));
+                debug_assert!(obs_ltch.contains(&a));
+                debug_assert!(ctrl_ltch.contains(&a));
+                debug_assert!(!prvt_ltch.contains(&a));
+                // check that indices are unique, and store them
+                debug_assert!(intf_ltch.insert(a));
+            }
 
-            debug_assert_eq!(
-                wire[1],
-                extl[1].union(&intf[1]).unwrap().union(&prvt[1]).unwrap()
-            );
+            let mut extl_ltch: HashSet<usize> = HashSet::new();
+            for ((a, at), (b, bt)) in extl[0].iter().zip(extl[1].iter()) {
+                debug_assert_eq!(at, bt);
+                // check consistency with other wires
+                debug_assert_eq!(ltch_to_dtype.get(&a), Some(&at));
+                debug_assert_eq!(next_to_ltch.get(&b), Some(&a));
+                debug_assert!(obs_ltch.contains(&a));
+                debug_assert!(!ctrl_ltch.contains(&a));
+                debug_assert!(!prvt_ltch.contains(&a));
+                debug_assert!(!intf_ltch.contains(&a));
+                // check that indices are unique, and store them
+                debug_assert!(extl_ltch.insert(a));
+            }
 
+            // check that extl, intf, and prvt contain obs, ctrl, and wire
+            for (a, _) in ctrl[0].iter() {
+                debug_assert!(intf_ltch.contains(&a) || prvt_ltch.contains(&a));
+            }
+            for (a, _) in obs[0].iter() {
+                debug_assert!(extl_ltch.contains(&a) || intf_ltch.contains(&a));
+            }
+            for (a, _) in wire[0].iter() {
+                debug_assert!(
+                    extl_ltch.contains(&a) || intf_ltch.contains(&a) || prvt_ltch.contains(&a)
+                );
+            }
+
+            let next_to_dtype_get = |w| next_to_ltch.get(&w).and_then(|z| ltch_to_dtype.get(z));
+
+            // check atoms consistency
+            let mut written: HashSet<usize> = HashSet::from_iter(extl[1].iter().map(|(w, _)| w));
             for (i, atom1) in atoms.iter().enumerate() {
-                for atom2 in atoms.iter().skip(i + 1) {
-                    // Check that the control variables of all atoms are pairwise disjoint.
-                    debug_assert!(atom1.ctrl.is_disjoint(&atom2.ctrl));
-                    // Check that atoms are in topological order.
-                    debug_assert!(!atom1.awaits(atom2))
+                for (a, at) in atom1.read.iter() {
+                    // reads are latched, and dtype matches
+                    debug_assert_eq!(Some(&at), ltch_to_dtype.get(&a));
+                }
+                for (a, at) in atom1.wait.iter() {
+                    // awaits are next, and dtype matches
+                    debug_assert_eq!(Some(&at), next_to_dtype_get(a));
+                    // await order is consistent
+                    debug_assert!(written.contains(&a));
+                }
+                for (a, at) in atom1.ctrl.iter() {
+                    // controls are next, and dtype matches
+                    debug_assert_eq!(Some(&at), next_to_dtype_get(a));
+                    // controls are disjoint
+                    debug_assert!(written.insert(a));
                 }
             }
+
+            // check that all module control wires are written/controlled by an atom
+            for (a, _) in ctrl[1].iter() {
+                debug_assert!(written.contains(&a));
+            }
+
+            // TODO check that temporaries are decoupled from module wires
         }
 
         Module {
@@ -97,47 +178,76 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         }
     }
 
-    #[allow(clippy::unwrap_used)]
     pub fn with_atoms(wire: [Wire<D>; 2], atoms: Vec<Atom<D, I>>) -> Result<Self, &'static str> {
-        // Check latched and next wires
-        if !wire[0].is_twin(&wire[1]) {
-            return Err("latched and next wires are not matching");
+        // Check and store wire index + dtype information
+        if wire[0].size() != wire[1].size() {
+            return Err("len mismatch in latched and next wires");
+        }
+        let mut ltch_to_dtype: HashMap<usize, &D> = HashMap::new();
+        let mut next_to_ltch: HashMap<usize, usize> = HashMap::new();
+        for ((a, at), (b, bt)) in wire[0].iter().zip(wire[1].iter()) {
+            if at != bt {
+                return Err("dtype mismatch in latched and next wires");
+            }
+            if ltch_to_dtype.insert(a, &at).is_some() {
+                return Err("duplicate latched wire");
+            }
+            if next_to_ltch.insert(b, a).is_some() {
+                return Err("duplicate next wire");
+            }
         }
 
-        // Infer next controlled wires from atoms
-        let mut ctrl_1: Wire<D> = Wire::none();
+        // Check atoms consistency and infer control wires
+        let mut ctrl_set: HashSet<usize> = HashSet::new();
         for (i, atom) in atoms.iter().enumerate() {
-            if !atom.read.is_subset(&wire[0]) {
-                return Err("atom read is not latched");
+            for (a, at) in atom.read.iter() {
+                if ltch_to_dtype.get(&a) != Some(&at) {
+                    return Err("atom read not latched or dtype mismatch");
+                }
             }
-            if !atom.wait.is_subset(&wire[1]) {
-                return Err("atom wait is not next");
+            for (a, at) in atom.wait.iter() {
+                if next_to_ltch.get(&a).and_then(|i| ltch_to_dtype.get(i)) != Some(&at) {
+                    return Err("atom await not next or dtype mismatch");
+                }
             }
-            if !atom.ctrl.is_subset(&wire[1]) {
-                return Err("atom ctrl is not next");
+            for (a, at) in atom.ctrl.iter() {
+                if next_to_ltch.get(&a).and_then(|i| ltch_to_dtype.get(i)) != Some(&at) {
+                    return Err("atom control not next or dtype mismatch");
+                }
+                if !ctrl_set.insert(a) {
+                    return Err("shared or duplicate atom control wire");
+                }
             }
-            if !atom.ctrl.is_disjoint(&ctrl_1) {
-                return Err("atoms are sharing controlled variables");
-            }
+
             for past_atom in atoms.iter().take(i) {
                 if past_atom.awaits(atom) {
                     return Err("inconsistent awaiting order");
                 }
             }
-            ctrl_1 = ctrl_1.union(&atom.ctrl).unwrap(); // unwrap cuz checks above ensure
         }
 
-        // Infer next external and observable wires
-        let extl_1 = wire[1].difference(&ctrl_1).unwrap(); // unwrap cuz checks above ensure
-        let obs_1 = ctrl_1.union(&extl_1).unwrap(); // unwrap cuz checks above ensure
+        // Build ctrl and extl wires based on inferred control set
+        let mut ctrl_0: Vec<(usize, D)> = Vec::with_capacity(ctrl_set.len());
+        let mut ctrl_1: Vec<(usize, D)> = Vec::with_capacity(ctrl_set.len());
+        let mut extl_0: Vec<(usize, D)> = Vec::with_capacity(wire[0].size() - ctrl_set.len());
+        let mut extl_1: Vec<(usize, D)> = Vec::with_capacity(wire[0].size() - ctrl_set.len());
 
-        // offset extl, ctrl, and obs backward to obtain latched wires
-        let offset: isize = (wire[0].ranges[0].start as isize) - (wire[1].ranges[0].start as isize);
-        let extl = [extl_1.twin(offset).unwrap(), extl_1]; // unwrap cuz checks above ensure
-        let obs = [obs_1.twin(offset).unwrap(), obs_1]; // unwrap cuz checks above ensure
-        let ctrl = [ctrl_1.twin(offset).unwrap(), ctrl_1]; // unwrap cuz checks above ensure
+        for (a, at) in wire[1].iter() {
+            if ctrl_set.contains(&a) {
+                ctrl_0.push((next_to_ltch.get(&a).unwrap().clone(), at.clone()));
+                ctrl_1.push((a, at.clone()));
+            } else {
+                extl_0.push((next_to_ltch.get(&a).unwrap().clone(), at.clone()));
+                extl_1.push((a, at.clone()));
+            }
+        }
+
+        // Build wire pairs
+        let extl = [Wire::new_unchecked(extl_0), Wire::new_unchecked(extl_1)];
+        let ctrl = [Wire::new_unchecked(ctrl_0), Wire::new_unchecked(ctrl_1)];
+        let prvt = [Wire::none(), Wire::none()];
         let intf = ctrl.clone();
-        let prvt = [Wire::<D>::none(), Wire::<D>::none()];
+        let obs = wire.clone();
 
         Ok(Self::new_unchecked(
             extl, intf, prvt, ctrl, obs, wire, atoms,
