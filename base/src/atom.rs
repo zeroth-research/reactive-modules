@@ -83,16 +83,16 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         if wire[0].len() != wire[1].len() {
             return Err("len mismatch in latched and next wires");
         }
-        let mut ltch_to_dtype: HashMap<usize, &D> = HashMap::new();
-        let mut next_to_ltch: HashMap<usize, usize> = HashMap::new();
-        for ((a, at), (b, bt)) in wire[0].iter().zip(wire[1].iter()) {
-            if at != bt {
+        let mut ltc_to_dtype: HashMap<usize, &D> = HashMap::new();
+        let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
+        for ((ltc, dtype), (nxt, ntype)) in wire[0].iter().zip(wire[1].iter()) {
+            if dtype != ntype {
                 return Err("dtype mismatch in latched and next wires");
             }
-            if ltch_to_dtype.insert(a, at).is_some() {
+            if ltc_to_dtype.insert(ltc, dtype).is_some() {
                 return Err("duplicate latched wire");
             }
-            if next_to_ltch.insert(a, b).is_some() {
+            if nxt_to_ltc.insert(nxt, ltc).is_some() {
                 return Err("duplicate next wire");
             }
         }
@@ -107,30 +107,30 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             let write_iter = terms_iter.clone().flat_map(|t| t.write.iter());
             let read_iter = terms_iter.flat_map(|t| t.read.iter());
 
-            for (a, at) in wire[1].iter() {
+            for (nxt, dtype) in wire[1].iter() {
                 // if any term writes a next, then this is controlled by the atom
-                if let Some((b, bt)) = write_iter.clone().find(|&(b, _)| a == b) {
-                    if at != bt {
+                if let Some((wr, wtype)) = write_iter.clone().find(|&(wr, _)| nxt == wr) {
+                    if dtype != wtype {
                         return Err("dtype mismatch");
                     }
-                    ctrl.push((b, bt.clone()));
+                    ctrl.push((wr, dtype.clone()));
                 }
                 // if any term reads a next, then this is awaited by the atom
-                if let Some((b, bt)) = read_iter.clone().find(|&(b, _)| a == b) {
-                    if at != bt {
+                if let Some((wr, wtype)) = read_iter.clone().find(|&(wr, _)| nxt == wr) {
+                    if dtype != wtype {
                         return Err("dtype mismatch");
                     }
-                    wait.push((b, bt.clone()));
+                    wait.push((wr, dtype.clone()));
                 }
             }
 
-            for (a, at) in wire[0].iter() {
+            for (ltc, dtype) in wire[0].iter() {
                 // if any term reads a latched, then this is read by the atom
-                if let Some((b, bt)) = read_iter.clone().find(|&(b, _)| a == b) {
-                    if at != bt {
+                if let Some((wr, wtype)) = read_iter.clone().find(|&(wr, _)| ltc == wr) {
+                    if dtype != wtype {
                         return Err("dtype mismatch");
                     }
-                    read.push((b, bt.clone()))
+                    read.push((wr, dtype.clone()))
                 }
             }
         }
