@@ -74,7 +74,7 @@ impl<D: Eq, I> Atom<D, I> {
 }
 
 impl<D: Eq + Clone, I> Atom<D, I> {
-    pub(crate) fn with_module_wire(
+    pub fn with_module_wire(
         wire: &[Wire<D>; 2],
         init: Vec<Term<D, I>>,
         update: Vec<Term<D, I>>,
