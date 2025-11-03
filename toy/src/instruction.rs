@@ -1,22 +1,37 @@
 use crate::val::Val;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
+pub enum CmpOp {
+    Eq,
+    Lt,
+    Le,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum LogicalOp {
+    And,
+    Or,
+    Not,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ArithOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub enum Instruction {
     // constant and identity terms
     Const(Val),
     Id,
     // Comparisons
-    Eq,
-    Lt,
-    Le,
+    Cmp(CmpOp),
     // Logical ops
-    And,
-    Or,
+    Logical(LogicalOp),
     Ite,
-    Not,
     // arith
-    Add,
-    Sub,
-    Mul,
-    Div,
+    Arith(ArithOp),
 }
