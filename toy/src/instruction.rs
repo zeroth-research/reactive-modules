@@ -8,9 +8,15 @@ pub enum Instruction {
     // Comparisons
     Eq,
     Lt,
+    Le,
     // Logical ops
+    And,
     Or,
     Ite,
+    Not,
     // arith
-    Sum,
+    Add,
+    Sub,
+    Mul,
+    Div,
 }
