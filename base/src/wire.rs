@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::iter::Map;
 
@@ -58,6 +58,22 @@ impl<D> Wire<D> {
         }
 
         None
+    }
+}
+
+impl<D: Clone> Wire<D> {
+    pub fn difference(&self, other: &Wire<D>) -> Wire<D> {
+        let mut w = self.clone();
+        // TODO: make more efficient
+        let o: HashSet<usize> = HashSet::from_iter(other.iter().map(|(offset, dtype)| offset));
+        w.vec.retain(|(i, dtype)| !o.contains(i));
+        w
+    }
+
+    pub fn extend(&self, other: &Wire<D>) -> Wire<D> {
+        let mut w = self.clone();
+        w.vec.extend(other.clone().into_iter());
+        w
     }
 }
 

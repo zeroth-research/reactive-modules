@@ -62,3 +62,48 @@ impl<D: fmt::Display, I: fmt::Display> fmt::Display for Term<D, I> {
         )
     }
 }
+
+pub trait TermWire<D> {
+    /// This returns all the free inputs to a term or list of terms.
+    fn read(&self) -> Wire<D>;
+    /// This returns all unread outputs of a term or list of terms.
+    fn write(&self) -> Wire<D>;
+}
+
+impl<D: Clone, I> TermWire<D> for Term<D, I> {
+    fn read(&self) -> Wire<D> {
+        self.read.clone()
+    }
+
+    fn write(&self) -> Wire<D> {
+        self.write.clone()
+    }
+}
+
+impl<D: Eq + Clone, I> TermWire<D> for Vec<Term<D, I>> {
+    fn read(&self) -> Wire<D> {
+        let mut w = Wire::none();
+        // First aggregate all inputs.
+        for term in self.iter() {
+            w = w.extend(&term.read);
+        }
+        // Then subtract all the ones written inside the list.
+        for term in self.iter() {
+            w = w.difference(&term.write);
+        }
+        w
+    }
+
+    fn write(&self) -> Wire<D> {
+        let mut w = Wire::none();
+        // First aggregate all outputs.
+        for term in self.iter() {
+            w = w.extend(&term.write);
+        }
+        // Then subtract all the ones read inside the list.
+        for term in self.iter() {
+            w = w.difference(&term.read);
+        }
+        w
+    }
+}
