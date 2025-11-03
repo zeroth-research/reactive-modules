@@ -1,5 +1,6 @@
 pub mod dtype;
 pub mod instruction;
+pub mod interpreter;
 pub mod term;
 pub mod val;
 
