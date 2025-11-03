@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use base::wire::Wire;
 
+use toy::dtype::Type;
 use toy::instruction::Instruction;
 use toy::term::{Term, construct};
-use toy::val::{Type, Val};
+use toy::val::Val;
 
 struct Context {
     vars: HashMap<String, (usize, Type)>,
