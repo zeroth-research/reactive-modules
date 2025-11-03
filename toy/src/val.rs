@@ -16,6 +16,7 @@ impl Val {
     }
 
     // TODO: implement Add trait
+    // TODO: should we check overflows?
     pub(crate) fn add(&self, rhs: &Val) -> Option<Self> {
         match (self, rhs) {
             (Val::Real(x), Val::Real(y)) => Some(Val::Real(x + y)),
@@ -23,10 +24,36 @@ impl Val {
             (Val::Int(x), Val::Int(y)) => Some(Val::Int(x + y)),
             (Val::NInt(x), Val::NInt(y)) => Some(Val::NInt(x + y)),
             _ => None,
-            //Val::NReal(_) => *ty == Type::NReal,
-            //Val::Int(_) => *ty == Type::Int,
-            //Val::NInt(_) => *ty == Type::NInt,
-            //Val::Bool(_) => *ty == Type::Bool,
+        }
+    }
+
+    pub(crate) fn sub(&self, rhs: &Val) -> Option<Self> {
+        match (self, rhs) {
+            (Val::Real(x), Val::Real(y)) => Some(Val::Real(x - y)),
+            (Val::NReal(x), Val::NReal(y)) => Some(Val::NReal(x - y)),
+            (Val::Int(x), Val::Int(y)) => Some(Val::Int(x - y)),
+            (Val::NInt(x), Val::NInt(y)) => Some(Val::NInt(x - y)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn mul(&self, rhs: &Val) -> Option<Self> {
+        match (self, rhs) {
+            (Val::Real(x), Val::Real(y)) => Some(Val::Real(x * y)),
+            (Val::NReal(x), Val::NReal(y)) => Some(Val::NReal(x * y)),
+            (Val::Int(x), Val::Int(y)) => Some(Val::Int(x * y)),
+            (Val::NInt(x), Val::NInt(y)) => Some(Val::NInt(x * y)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn div(&self, rhs: &Val) -> Option<Self> {
+        match (self, rhs) {
+            (Val::Real(x), Val::Real(y)) => Some(Val::Real(x / y)),
+            (Val::NReal(x), Val::NReal(y)) => Some(Val::NReal(x / y)),
+            (Val::Int(x), Val::Int(y)) => Some(Val::Int(x / y)),
+            (Val::NInt(x), Val::NInt(y)) => Some(Val::NInt(x / y)),
+            _ => None,
         }
     }
 }

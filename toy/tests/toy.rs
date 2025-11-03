@@ -131,7 +131,7 @@ mod tests {
         let wire15 = ctx.tmp_wire(Type::Int).clone();
         let x = ctx.get("x");
         let reads = ctx.concat(&[x, const1]);
-        let sum = construct(Instruction::Sum, wire15.clone(), reads).unwrap();
+        let sum = construct(Instruction::Add, wire15.clone(), reads).unwrap();
 
         // wire5 = ite(wire12, wire15, const0)
         let reads = ctx.concat(&[wire12, wire15, const0]);
