@@ -1,4 +1,4 @@
-use toy::instruction::Instruction;
+use toy::instruction::{ArithOp, Instruction};
 use toy::interpreter::eval;
 use toy::val::Val;
 
@@ -62,7 +62,7 @@ mod tests {
         let mut res: Val = Val::new();
         assert!(
             eval(
-                Instruction::Add,
+                Instruction::Arith(ArithOp::Add),
                 &vec![&Val::Int(42), &Val::Int(43)],
                 &mut vec![&mut res]
             ) == Ok(())
@@ -71,7 +71,7 @@ mod tests {
 
         assert!(
             eval(
-                Instruction::Add,
+                Instruction::Arith(ArithOp::Add),
                 &vec![&Val::Real(42.0), &Val::Real(43.0)],
                 &mut vec![&mut res]
             ) == Ok(())
@@ -81,7 +81,7 @@ mod tests {
         // invalid arguments
         assert!(
             eval(
-                Instruction::Add,
+                Instruction::Arith(ArithOp::Add),
                 &vec![&Val::Int(42), &Val::Real(43.0)],
                 &mut vec![&mut res]
             )
