@@ -1,3 +1,4 @@
+pub mod dtype;
 pub mod instruction;
 pub mod term;
 pub mod val;
