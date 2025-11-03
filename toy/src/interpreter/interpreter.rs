@@ -10,10 +10,19 @@ pub struct Interpreter<'a> {
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new() -> Self {
+    pub fn new(module: &'a Module<Type, Instruction>) -> Self {
+        Self {
+            module,
+            state: State::new(),
+        }
+    }
+
+    /// initialize the execution state
+    fn initialize(&mut self) -> Result<(), &'static str> {
         unimplemented!()
     }
 
+    /// take the next step in execution
     fn step(&mut self) -> Result<(), &'static str> {
         unimplemented!()
     }
