@@ -1,8 +1,8 @@
 use base::atom::Atom;
 use base::module::Module;
 use base::term::Term;
+use base::wire;
 use base::wire::Wire;
-use base::wires;
 
 #[test]
 fn can_instantiate_sequential_module() {
@@ -18,18 +18,18 @@ fn can_instantiate_sequential_module() {
     let y0_next = Wire::one(8, "real_nneg");
     let z0_next = Wire::one(9, "real_nneg");
 
-    let ctrl: Wire<&str> = wires![&x_next, &y_next, &z_next];
+    let ctrl: Wire<&str> = wire![&x_next, &y_next, &z_next];
 
-    let wait = Wire::try_from_iter([&y0_next, &z0_next].into_iter().flatten().cloned()).unwrap();
+    let wait = wire![&y0_next, &z0_next];
 
-    let read: Wire<&str> = wires![&x, &y, &z];
+    let read: Wire<&str> = wire![&x, &y, &z];
     //let read_wait: Wire<&str> = wires![&read, &wait];
 
     let init_term = Term::new("SEE", ctrl.clone(), wait.clone());
     let update_term = Term::new("SEE", ctrl.clone(), read.clone());
 
-    let latched = wires![x, y, z, y0, z0];
-    let next = wires![x_next, y_next, z_next, y0_next, z0_next];
+    let latched = wire![x, y, z, y0, z0];
+    let next = wire![x_next, y_next, z_next, y0_next, z0_next];
 
     let wire = [latched, next];
 
@@ -52,22 +52,22 @@ fn can_instantiate_partially_observable_module() {
     let y0_next = Wire::one(8, "real_nneg");
     let z0_next = Wire::one(9, "real_nneg");
 
-    let ctrl: Wire<&str> = wires![&x_next, &y_next, &z_next];
+    let ctrl: Wire<&str> = wire![&x_next, &y_next, &z_next];
 
-    let wait = Wire::try_from_iter([&y0_next, &z0_next].into_iter().flatten().cloned()).unwrap();
+    let wait = wire![&y0_next, &z0_next];
 
-    let read: Wire<&str> = wires![&x, &y, &z];
+    let read: Wire<&str> = wire![&x, &y, &z];
     //let read_wait: Wire<&str> = wires![&read, &wait];
 
     let init_term = Term::new("SEE", ctrl.clone(), wait.clone());
     let update_term = Term::new("SEE", ctrl.clone(), read.clone());
 
-    let obs_0 = wires![x, y, y0, z0];
-    let obs_1 = wires![x_next, y_next, y0_next, z0_next];
-    let prvt_0 = wires![z];
-    let prvt_1 = wires![z_next];
-    let latched = wires![&obs_0, &prvt_0];
-    let next = wires![&obs_1, &prvt_1];
+    let obs_0 = wire![x, y, y0, z0];
+    let obs_1 = wire![x_next, y_next, y0_next, z0_next];
+    let prvt_0 = wire![(2, "real")]; //z
+    let prvt_1 = wire![z_next];
+    let latched = wire![&obs_0, &prvt_0];
+    let next = wire![&obs_1, &prvt_1];
 
     let obs = [obs_0, obs_1];
     let prvt = [prvt_0, prvt_1];
@@ -93,22 +93,22 @@ fn cannot_instantiate_external_unobservable_wire() {
     let y0_next = Wire::one(8, "real_nneg");
     let z0_next = Wire::one(9, "real_nneg");
 
-    let ctrl: Wire<&str> = wires![&x_next, &y_next, &z_next];
+    let ctrl: Wire<&str> = wire![&x_next, &y_next, &z_next];
 
-    let wait = Wire::try_from_iter([&y0_next, &z0_next].into_iter().flatten().cloned()).unwrap();
+    let wait = wire![&y0_next, &z0_next];
 
-    let read: Wire<&str> = wires![&x, &y, &z];
+    let read: Wire<&str> = wire![&x, &y, &z];
     //let read_wait: Wire<&str> = wires![&read, &wait];
 
     let init_term = Term::new("SEE", ctrl.clone(), wait.clone());
     let update_term = Term::new("SEE", ctrl.clone(), read.clone());
 
-    let obs_0 = wires![x, y];
-    let obs_1 = wires![x_next, y_next];
-    let prvt_0 = wires![z, y0, z0];
-    let prvt_1 = wires![z_next, y0_next, z0_next];
-    let latched = wires![&obs_0, &prvt_0];
-    let next = wires![&obs_1, &prvt_1];
+    let obs_0 = wire![x, y];
+    let obs_1 = wire![x_next, y_next];
+    let prvt_0 = wire![z, y0, z0];
+    let prvt_1 = wire![z_next, y0_next, z0_next];
+    let latched = wire![&obs_0, &prvt_0];
+    let next = wire![&obs_1, &prvt_1];
 
     let obs = [obs_0, obs_1];
     let prvt = [prvt_0, prvt_1];

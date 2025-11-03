@@ -241,7 +241,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
 
             // TODO check that temporaries are decoupled from module wires
 
-            for past_atom in past_atoms.iter() {
+            for past_atom in &past_atoms {
                 if past_atom.awaits(&atom) {
                     return Err("inconsistent awaiting order");
                 }
@@ -322,7 +322,7 @@ impl<D: fmt::Display, I: fmt::Display> Module<D, I> {
         for ((ltc, _), (nxt, dtype)) in self.prvt[0].iter().zip(self.prvt[1].iter()) {
             writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {dtype}")?;
         }
-        for atom in self.atoms.iter() {
+        for atom in &self.atoms {
             atom.fmt_indent(f, &format!("{pad}{INDENT}"))?;
         }
         Ok(())

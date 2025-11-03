@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::iter::Map;
 
 /// A wiring represents a view over a sequence of indices, each of which is associated
 /// with a type.
@@ -26,9 +27,13 @@ impl<D> Wire<D> {
     pub fn is_empty(&self) -> bool {
         self.vec.is_empty()
     }
+}
 
-    pub fn iter(&self) -> impl Iterator<Item = (usize, &D)> + Clone {
-        self.vec.iter().map(|w| (w.0, &w.1))
+type Iter<'a, D> = Map<std::slice::Iter<'a, (usize, D)>, fn(&'a (usize, D)) -> (usize, &'a D)>;
+
+impl<'a, D> Wire<D> {
+    pub fn iter(&'a self) -> Iter<'a, D> {
+        self.vec.iter().map(|(w, t)| (*w, t))
     }
 }
 
@@ -41,17 +46,30 @@ impl<D> IntoIterator for Wire<D> {
     }
 }
 
-impl<'a, D: Clone> IntoIterator for &'a Wire<D> {
-    type Item = &'a (usize, D);
-    type IntoIter = std::slice::Iter<'a, (usize, D)>;
+impl<'a, D> IntoIterator for &'a Wire<D> {
+    type Item = (usize, &'a D);
+    type IntoIter = Iter<'a, D>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.vec.iter()
+        self.iter()
     }
 }
 
 #[macro_export]
-macro_rules! wires {
+macro_rules! wire {
+    // case 1: wires are passed are index-dtype pairs
+    ( $( ($x:expr, $y:expr) ),* $(,)? ) => {{
+        let tmp = [ $( ($x, $y) ),* ];
+        tmp.into_iter().collect::<Wire<_>>()
+    }};
+
+    // case 2: wires are passed as references, and are automatically cloned
+    ( $( &$x:expr ),* $(,)? ) => {{
+        let tmp = [ $( &$x ),* ];
+        tmp.into_iter().flatten().map(|(w, d)| (w, d.clone())).collect::<Wire<_>>()
+    }};
+
+    // case 3: wires are passed as single elements
     ( $( $x:expr ),* $(,)? ) => {{
         let tmp = [ $( $x ),* ];
         tmp.into_iter().flatten().collect::<Wire<_>>()
@@ -62,13 +80,6 @@ macro_rules! wires {
 impl<D: Eq> FromIterator<(usize, D)> for Wire<D> {
     fn from_iter<I: IntoIterator<Item = (usize, D)>>(iter: I) -> Self {
         Self::try_from_iter(iter).unwrap()
-    }
-}
-
-/// from_iter can panic. Use at your own risk
-impl<'a, D: Eq + Clone> FromIterator<&'a (usize, D)> for Wire<D> {
-    fn from_iter<I: IntoIterator<Item = &'a (usize, D)>>(iter: I) -> Self {
-        Self::try_from_iter(iter.into_iter().cloned()).unwrap()
     }
 }
 
@@ -103,7 +114,7 @@ impl<D: Eq> Wire<D> {
             vec.push((a, b));
         }
 
-        Ok(Wire::new_unchecked(vec))
+        Ok(Self::new_unchecked(vec))
     }
 
     /// Returns true if the wire indices of self are also indices of other, regardless of their type.

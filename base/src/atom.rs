@@ -107,7 +107,7 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             let write_iter = terms_iter.clone().flat_map(|t| t.write.iter());
             let read_iter = terms_iter.flat_map(|t| t.read.iter());
 
-            for (nxt, dtype) in wire[1].iter() {
+            for (nxt, dtype) in &wire[1] {
                 // if any term writes a next, then this is controlled by the atom
                 if let Some((wr, wtype)) = write_iter.clone().find(|&(wr, _)| nxt == wr) {
                     if dtype != wtype {
@@ -124,7 +124,7 @@ impl<D: Eq + Clone, I> Atom<D, I> {
                 }
             }
 
-            for (ltc, dtype) in wire[0].iter() {
+            for (ltc, dtype) in &wire[0] {
                 // if any term reads a latched, then this is read by the atom
                 if let Some((wr, wtype)) = read_iter.clone().find(|&(wr, _)| ltc == wr) {
                     if dtype != wtype {
