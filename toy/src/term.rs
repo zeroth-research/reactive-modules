@@ -24,7 +24,7 @@ pub fn construct(
                 return Err("Const writes to incompatible wire");
             }
         }
-        Instruction::Eq | Instruction::Lt => {
+        Instruction::Eq | Instruction::Lt | Instruction::Le => {
             if !reads.len() == 2 {
                 return Err("Comparison must read two values");
             }
@@ -36,9 +36,9 @@ pub fn construct(
                 return Err("Comparison does not write bool");
             }
         }
-        Instruction::Or => {
+        Instruction::Or | Instruction::And => {
             if !reads.len() == 2 {
-                return Err("Comparison must read two values");
+                return Err("Logical and/or must read two values");
             }
             if !writes.len() == 1 {
                 return Err("Comparison must write 1 value");
@@ -51,6 +51,22 @@ pub fn construct(
                 if *ty != Type::Bool {
                     return Err("Input to Or must be a boolean");
                 }
+            }
+        }
+        Instruction::Not => {
+            if !reads.len() == 1 {
+                return Err("Logical and/or must read two values");
+            }
+            if !writes.len() == 1 {
+                return Err("Comparison must write 1 value");
+            }
+            let out = writes.iter().next().unwrap();
+            if *out.1 != Type::Bool {
+                return Err("Comparison does not write bool");
+            }
+            let out = reads.iter().next().unwrap();
+            if *out.1 != Type::Bool {
+                return Err("Comparison does not read bool");
             }
         }
         Instruction::Id => {
@@ -66,9 +82,9 @@ pub fn construct(
                 return Err("Id reads and writes different types");
             }
         }
-        Instruction::Sum => {
+        Instruction::Add | Instruction::Sub | Instruction::Mul | Instruction::Div => {
             if !reads.len() == 2 {
-                return Err("Sum must read two wires");
+                return Err("Add/Sub/Mul/Div must read two wires");
             }
             if !writes.len() == 1 {
                 return Err("Sum must write one wire");
