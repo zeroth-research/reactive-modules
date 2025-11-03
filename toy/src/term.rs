@@ -16,7 +16,7 @@ pub fn construct(
             if !reads.is_empty() {
                 return Err("Const should read nothing");
             }
-            if writes.size() != 1 {
+            if writes.len() != 1 {
                 return Err("Const must write to exactly one wire");
             }
             let out = writes.iter().next().unwrap();
@@ -25,10 +25,10 @@ pub fn construct(
             }
         }
         Instruction::Eq | Instruction::Lt => {
-            if !reads.size() == 2 {
+            if !reads.len() == 2 {
                 return Err("Comparison must read two values");
             }
-            if !writes.size() == 1 {
+            if !writes.len() == 1 {
                 return Err("Comparison must write 1 value");
             }
             let out = writes.iter().next().unwrap();
@@ -37,10 +37,10 @@ pub fn construct(
             }
         }
         Instruction::Or => {
-            if !reads.size() == 2 {
+            if !reads.len() == 2 {
                 return Err("Comparison must read two values");
             }
-            if !writes.size() == 1 {
+            if !writes.len() == 1 {
                 return Err("Comparison must write 1 value");
             }
             let out = writes.iter().next().unwrap();
@@ -54,10 +54,10 @@ pub fn construct(
             }
         }
         Instruction::Id => {
-            if !reads.size() == 1 {
+            if !reads.len() == 1 {
                 return Err("Id must read one wire");
             }
-            if !writes.size() == 1 {
+            if !writes.len() == 1 {
                 return Err("Id must write one wire");
             }
             let in_ = reads.iter().next().unwrap();
@@ -67,10 +67,10 @@ pub fn construct(
             }
         }
         Instruction::Sum => {
-            if !reads.size() == 2 {
+            if !reads.len() == 2 {
                 return Err("Sum must read two wires");
             }
-            if !writes.size() == 1 {
+            if !writes.len() == 1 {
                 return Err("Sum must write one wire");
             }
             let out_ = writes.iter().next().unwrap();
@@ -84,10 +84,10 @@ pub fn construct(
             }
         }
         Instruction::Ite => {
-            if !reads.size() == 3 {
+            if !reads.len() == 3 {
                 return Err("Ite must read three wires");
             }
-            if !writes.size() == 1 {
+            if !writes.len() == 1 {
                 return Err("Ite must write one wire");
             }
             let out_ty = writes.iter().next().unwrap().1;
