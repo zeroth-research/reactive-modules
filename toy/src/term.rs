@@ -1,7 +1,7 @@
 use base::term::Term as BaseTerm;
 
+use crate::dtype::Type;
 use crate::instruction::Instruction;
-use crate::val::Type;
 use base::wire::Wire;
 
 pub type Term = BaseTerm<Type, Instruction>;
