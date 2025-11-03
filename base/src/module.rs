@@ -13,9 +13,9 @@ pub struct Module<D, I> {
     ///     *====================*
     ///     | extl | intf | prvt |
     ///     *--------------------*
-    ///     | extl |    ctrl     |
-    ///     *--------------------*
     ///     |     obs     | prvt |
+    ///     *--------------------*
+    ///     | extl |    ctrl     |
     ///     *--------------------*
     ///     |        wire        |
     ///     *====================*
@@ -26,8 +26,8 @@ pub struct Module<D, I> {
     extl: [Wire<D>; 2],
     intf: [Wire<D>; 2],
     prvt: [Wire<D>; 2],
-    ctrl: [Wire<D>; 2],
     obs: [Wire<D>; 2],
+    ctrl: [Wire<D>; 2],
     wire: [Wire<D>; 2],
 
     /// The atoms of this module.
@@ -60,10 +60,6 @@ impl<D, I> Module<D, I> {
     pub fn obs(&self) -> &[Wire<D>; 2] {
         &self.obs
     }
-
-    pub fn wire(&self) -> &[Wire<D>; 2] {
-        &self.wire
-    }
 }
 
 impl<D: Clone + Eq + Debug, I> Module<D, I> {
@@ -71,8 +67,8 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         extl: [Wire<D>; 2],
         intf: [Wire<D>; 2],
         prvt: [Wire<D>; 2],
-        ctrl: [Wire<D>; 2],
         obs: [Wire<D>; 2],
+        ctrl: [Wire<D>; 2],
         wire: [Wire<D>; 2],
         atoms: Vec<Atom<D, I>>,
     ) -> Self {
@@ -201,8 +197,8 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             extl,
             intf,
             prvt,
-            ctrl,
             obs,
+            ctrl,
             wire,
             atoms,
         }
@@ -315,7 +311,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let wire = [Wire::new_unchecked(wire_0), Wire::new_unchecked(wire_1)];
 
         Ok(Self::new_unchecked(
-            extl, intf, prvt, ctrl, obs, wire, past_atoms,
+            extl, intf, prvt, obs, ctrl, wire, past_atoms,
         ))
     }
 
