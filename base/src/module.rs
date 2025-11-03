@@ -36,6 +36,36 @@ pub struct Module<D, I> {
     atoms: Vec<Atom<D, I>>,
 }
 
+impl<D, I> Module<D, I> {
+    pub fn atoms(&self) -> &[Atom<D, I>] {
+        &self.atoms
+    }
+
+    pub fn extl(&self) -> &[Wire<D>; 2] {
+        &self.extl
+    }
+
+    pub fn intf(&self) -> &[Wire<D>; 2] {
+        &self.intf
+    }
+
+    pub fn prvt(&self) -> &[Wire<D>; 2] {
+        &self.prvt
+    }
+
+    pub fn ctrl(&self) -> &[Wire<D>; 2] {
+        &self.ctrl
+    }
+
+    pub fn obs(&self) -> &[Wire<D>; 2] {
+        &self.obs
+    }
+
+    pub fn wire(&self) -> &[Wire<D>; 2] {
+        &self.wire
+    }
+}
+
 impl<D: Clone + Eq + Debug, I> Module<D, I> {
     pub fn new_unchecked(
         extl: [Wire<D>; 2],
@@ -178,6 +208,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         }
     }
 
+    /// Returns an observable module where external and interface wires are inferred from the observables
     pub fn observable<A>(obs: [Wire<D>; 2], atoms: A) -> Result<Self, &'static str>
     where
         A: IntoIterator<Item = Atom<D, I>> + Sized,
@@ -185,6 +216,8 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         Self::partially_observable(obs, [Wire::none(), Wire::none()], atoms)
     }
 
+    /// Returns a partially observable module where external and interface wires are inferred from the observables,
+    /// and the privates wires are given
     pub fn partially_observable<A>(
         obs: [Wire<D>; 2],
         prvt: [Wire<D>; 2],
@@ -286,6 +319,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         ))
     }
 
+    /// Returns a fully observable module with sequential init and update actions
     pub fn sequential<V, U>(obs: [Wire<D>; 2], init: V, update: U) -> Result<Self, &'static str>
     where
         V: IntoIterator<Item = Term<D, I>>,
