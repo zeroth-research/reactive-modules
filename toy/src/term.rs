@@ -1,7 +1,8 @@
 use base::term::Term as BaseTerm;
 
 use crate::dtype::Type;
-use crate::instruction::Instruction;
+use crate::instruction::{ArithOp, CmpOp, Instruction, LogicalOp};
+use crate::val::Val;
 use base::wire::Wire;
 
 pub type Term = BaseTerm<Type, Instruction>;
@@ -24,7 +25,7 @@ pub fn construct(
                 return Err("Const writes to incompatible wire");
             }
         }
-        Instruction::Eq | Instruction::Lt | Instruction::Le => {
+        Instruction::Cmp(_) => {
             if !reads.len() == 2 {
                 return Err("Comparison must read two values");
             }
@@ -36,37 +37,49 @@ pub fn construct(
                 return Err("Comparison does not write bool");
             }
         }
-        Instruction::Or | Instruction::And => {
-            if !reads.len() == 2 {
-                return Err("Logical and/or must read two values");
-            }
+        Instruction::Ite => {
             if !writes.len() == 1 {
-                return Err("Comparison must write 1 value");
+                return Err("Logical operation must write one wire");
             }
-            let out = writes.iter().next().unwrap();
-            if *out.1 != Type::Bool {
-                return Err("Comparison does not write bool");
+            if !reads.len() == 3 {
+                return Err("Ite must read three wires");
             }
-            for (_, ty) in reads.iter() {
-                if *ty != Type::Bool {
-                    return Err("Input to Or must be a boolean");
-                }
+
+            let types: Vec<&Type> = reads.iter().map(|(_, ty)| ty).collect();
+
+            if *types[0] != Type::Bool {
+                return Err("Ite first argument must be Bool");
+            }
+            if *types[1] != *types[2] {
+                return Err("Ite second and thrid arguments must have the same type");
+            }
+            let out_ty = writes.iter().next().unwrap().1;
+            if *out_ty != *types[1] {
+                return Err("Ite must write the same type as the second and third arguments");
             }
         }
-        Instruction::Not => {
-            if !reads.len() == 1 {
-                return Err("Logical and/or must read two values");
-            }
+
+        Instruction::Logical(op) => {
             if !writes.len() == 1 {
-                return Err("Comparison must write 1 value");
+                return Err("Logical operation must write one wire");
             }
-            let out = writes.iter().next().unwrap();
-            if *out.1 != Type::Bool {
-                return Err("Comparison does not write bool");
+
+            let types: Vec<&Type> = reads.iter().map(|(_, ty)| ty).collect();
+
+            if matches!(op, LogicalOp::Not) {
+                if !reads.len() == 1 {
+                    return Err("Logical and/or must read two values");
+                }
+            } else {
+                if !reads.len() == 2 {
+                    return Err("Logical and/or must read two values");
+                }
             }
-            let out = reads.iter().next().unwrap();
-            if *out.1 != Type::Bool {
-                return Err("Comparison does not read bool");
+
+            for ty in types {
+                if *ty != Type::Bool {
+                    return Err("Input to or/and/not must be a boolean");
+                }
             }
         }
         Instruction::Id => {
@@ -82,7 +95,7 @@ pub fn construct(
                 return Err("Id reads and writes different types");
             }
         }
-        Instruction::Add | Instruction::Sub | Instruction::Mul | Instruction::Div => {
+        Instruction::Arith(_) => {
             if !reads.len() == 2 {
                 return Err("Add/Sub/Mul/Div must read two wires");
             }
@@ -99,27 +112,59 @@ pub fn construct(
                 }
             }
         }
-        Instruction::Ite => {
-            if !reads.len() == 3 {
-                return Err("Ite must read three wires");
-            }
-            if !writes.len() == 1 {
-                return Err("Ite must write one wire");
-            }
-            let out_ty = writes.iter().next().unwrap().1;
-            let types: Vec<&Type> = reads.iter().map(|(_, ty)| ty).collect();
-
-            if *types[0] != Type::Bool {
-                return Err("Ite first argument must be Bool");
-            }
-            if *types[1] != *types[2] {
-                return Err("Ite second and thrid arguments must have the same type");
-            }
-            if *out_ty != *types[1] {
-                return Err("Ite must write the same type as the second and third arguments");
-            }
-        }
     }
 
     Ok(Term::new(ins, writes, reads))
+}
+
+pub fn mk_const(val: &Val, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Const(*val), write, Wire::none())
+}
+
+pub fn mk_id(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Id, write, read)
+}
+
+pub fn mk_eq(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Cmp(CmpOp::Eq), write, read)
+}
+
+pub fn mk_le(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Cmp(CmpOp::Le), write, read)
+}
+
+pub fn mk_lt(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Cmp(CmpOp::Lt), write, read)
+}
+
+pub fn mk_or(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Logical(LogicalOp::Or), write, read)
+}
+
+pub fn mk_and(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Logical(LogicalOp::And), write, read)
+}
+
+pub fn mk_not(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Logical(LogicalOp::Not), write, read)
+}
+
+pub fn mk_ite(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Ite, write, read)
+}
+
+pub fn mk_add(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Arith(ArithOp::Add), write, read)
+}
+
+pub fn mk_sub(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Arith(ArithOp::Sub), write, read)
+}
+
+pub fn mk_mul(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Arith(ArithOp::Mul), write, read)
+}
+
+pub fn mk_div(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Arith(ArithOp::Div), write, read)
 }
