@@ -57,22 +57,22 @@ impl<'a, D> IntoIterator for &'a Wire<D> {
 
 #[macro_export]
 macro_rules! wire {
-    // case 1: wires are passed are index-dtype pairs
-    ( $( ($x:expr, $y:expr) ),* $(,)? ) => {{
-        let tmp = [ $( ($x, $y) ),* ];
-        tmp.into_iter().collect::<Wire<_>>()
+    // case 1: multiple (index, dtype) pairs — requires each in ()
+    ( $( ($x:expr, $y:expr) ),+ $(,)? ) => {{
+        let tmp = [ $( ($x, $y) ),+ ];
+        tmp.into_iter().collect::<base::wire::Wire<_>>()
     }};
 
     // case 2: wires are passed as references, and are automatically cloned
     ( $( &$x:expr ),* $(,)? ) => {{
         let tmp = [ $( &$x ),* ];
-        tmp.into_iter().flatten().map(|(w, d)| (w, d.clone())).collect::<Wire<_>>()
+        tmp.into_iter().flatten().map(|(w, d)| (w, d.clone())).collect::<base::wire::Wire<_>>()
     }};
 
     // case 3: wires are passed as single elements
     ( $( $x:expr ),* $(,)? ) => {{
         let tmp = [ $( $x ),* ];
-        tmp.into_iter().flatten().collect::<Wire<_>>()
+        tmp.into_iter().flatten().collect::<base::wire::Wire<_>>()
     }};
 }
 
@@ -122,6 +122,17 @@ impl<D: Eq> Wire<D> {
     pub fn is_subset(&self, other: &Wire<D>) -> bool {
         for (a, _) in self.vec.iter() {
             if other.vec.iter().all(|(b, _)| a != b) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Returns true if the wire indices of self are disjoint from the indices of other, regardless of their type.
+    /// This function runs in place, in O(self.len() * other.len()) time
+    pub fn is_disjoint(&self, other: &Wire<D>) -> bool {
+        for (a, _) in self.vec.iter() {
+            if other.vec.iter().any(|(b, _)| a == b) {
                 return false;
             }
         }

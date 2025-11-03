@@ -1,6 +1,6 @@
 use crate::term::Term;
 use crate::wire::Wire;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 /// This data structure corresponds to the atom of reactive modules.
@@ -59,9 +59,10 @@ impl<D: Eq, I> Atom<D, I> {
         init: Vec<Term<D, I>>,
         update: Vec<Term<D, I>>,
     ) -> Self {
-        // debug_assert!(ctrl.is_disjoint(&wait));
-        // debug_assert!(ctrl.is_disjoint(&read));
-        // debug_assert!(wait.is_disjoint(&read));
+        debug_assert!(ctrl.is_disjoint(&wait));
+        debug_assert!(ctrl.is_disjoint(&read));
+        debug_assert!(wait.is_disjoint(&read));
+        // TODO full consistency check
 
         Self {
             ctrl,
@@ -83,13 +84,13 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         if wire[0].len() != wire[1].len() {
             return Err("len mismatch in latched and next wires");
         }
-        let mut ltc_to_dtype: HashMap<usize, &D> = HashMap::new();
+        let mut ltc_set: HashSet<usize> = HashSet::new();
         let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
         for ((ltc, dtype), (nxt, ntype)) in wire[0].iter().zip(wire[1].iter()) {
             if dtype != ntype {
                 return Err("dtype mismatch in latched and next wires");
             }
-            if ltc_to_dtype.insert(ltc, dtype).is_some() {
+            if !ltc_set.insert(ltc) {
                 return Err("duplicate latched wire");
             }
             if nxt_to_ltc.insert(nxt, ltc).is_some() {
