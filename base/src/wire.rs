@@ -27,6 +27,28 @@ impl<D> Wire<D> {
     pub fn is_empty(&self) -> bool {
         self.vec.is_empty()
     }
+
+    /// Returns true if the wire indices of self are also indices of other, regardless of their type.
+    /// This function runs in place, in O(self.len() * other.len()) time
+    pub fn is_subset(&self, other: &Wire<D>) -> bool {
+        for (a, _) in self.iter() {
+            if other.iter().all(|(b, _)| a != b) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Returns true if the wire indices of self are disjoint from the indices of other, regardless of their type.
+    /// This function runs in place, in O(self.len() * other.len()) time
+    pub fn is_disjoint(&self, other: &Wire<D>) -> bool {
+        for (a, _) in self.iter() {
+            if other.iter().any(|(b, _)| a == b) {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 type Iter<'a, D> = Map<std::slice::Iter<'a, (usize, D)>, fn(&'a (usize, D)) -> (usize, &'a D)>;
@@ -115,28 +137,6 @@ impl<D: Eq> Wire<D> {
         }
 
         Ok(Self::new_unchecked(vec))
-    }
-
-    /// Returns true if the wire indices of self are also indices of other, regardless of their type.
-    /// This function runs in place, in O(self.len() * other.len()) time
-    pub fn is_subset(&self, other: &Wire<D>) -> bool {
-        for (a, _) in self.vec.iter() {
-            if other.vec.iter().all(|(b, _)| a != b) {
-                return false;
-            }
-        }
-        true
-    }
-
-    /// Returns true if the wire indices of self are disjoint from the indices of other, regardless of their type.
-    /// This function runs in place, in O(self.len() * other.len()) time
-    pub fn is_disjoint(&self, other: &Wire<D>) -> bool {
-        for (a, _) in self.vec.iter() {
-            if other.vec.iter().any(|(b, _)| a == b) {
-                return false;
-            }
-        }
-        true
     }
 }
 
