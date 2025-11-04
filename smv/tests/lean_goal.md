@@ -17,3 +17,17 @@ noncomputable def update (s : State) : State :=
     { s with x0 := s.x0 + 1 }
   else
     { s with x0 := 0 }
+
+def buchi_condition : State → Prop :=
+  fun ⟨x0, x1, x2⟩ ↦
+    x0 = x1 ∨ x0 = x2
+
+def invariant : State → Prop :=
+  fun ⟨x0, x1, x2⟩ ↦
+    x0 ≤ x1 ∨ x0 ≤ x2
+
+def relu : Int → Int := fun x ↦ max x 0
+
+def variant : State → Int :=
+  fun ⟨x0, x1, x2⟩ ↦
+    relu (x1 - x0) + relu (x2 - x0)

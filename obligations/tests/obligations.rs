@@ -20,8 +20,7 @@ fn test_obligations() {
                 IType::Le,
                 Wire::one(4, DType::Bool),
                 Wire::one(0, DType::Int)
-                    .union(&Wire::one(2, DType::Int))
-                    .unwrap(),
+                    .concat(&Wire::one(2, DType::Int)),
             ),
             Term::new(
                 IType::Or,
@@ -45,8 +44,7 @@ fn test_obligations() {
                 // TODO: argument order is important here
                 Wire::one(4, DType::Int),
                 Wire::one(0, DType::Int)
-                    .union(&Wire::one(2, DType::Int))
-                    .unwrap(),
+                    .concat(&Wire::one(2, DType::Int)),
             ),
             // ReLU(x) = Cond(x < 0, 0, x)
             Term::new(IType::ConstInt(0), Wire::one(5, DType::Int), Wire::none()),
@@ -55,36 +53,30 @@ fn test_obligations() {
                 IType::Lt,
                 Wire::one(6, DType::Bool),
                 Wire::one(3, DType::Int)
-                    .union(&Wire::one(5, DType::Int))
-                    .unwrap(),
+                    .concat(&Wire::one(5, DType::Int)),
             ),
             // x7 = x4 < x5
             Term::new(
                 IType::Lt,
                 Wire::one(7, DType::Bool),
                 Wire::one(4, DType::Int)
-                    .union(&Wire::one(5, DType::Int))
-                    .unwrap(),
+                    .concat(&Wire::one(5, DType::Int)),
             ),
             // x8 = Cond(x6, x5, x3)
             Term::new(
                 IType::Cond,
                 Wire::one(8, DType::Int),
                 Wire::one(6, DType::Bool)
-                    .union(&Wire::one(5, DType::Int))
-                    .unwrap()
-                    .union(&Wire::one(3, DType::Int))
-                    .unwrap(),
+                    .concat(&Wire::one(5, DType::Int))
+                    .concat(&Wire::one(3, DType::Int)),
             ),
             // x9 = Cond(x7, x5, x4)
             Term::new(
                 IType::Cond,
                 Wire::one(9, DType::Int),
                 Wire::one(7, DType::Bool)
-                    .union(&Wire::one(5, DType::Int))
-                    .unwrap()
-                    .union(&Wire::one(4, DType::Int))
-                    .unwrap(),
+                    .concat(&Wire::one(5, DType::Int))
+                    .concat(&Wire::one(4, DType::Int)),
             ),
             // x10 = x8 + x9
             Term::new(
@@ -107,8 +99,7 @@ fn test_obligations() {
                 IType::Eq,
                 Wire::one(4, DType::Bool),
                 Wire::one(0, DType::Int)
-                    .union(&Wire::one(2, DType::Int))
-                    .unwrap(),
+                    .concat(&Wire::one(2, DType::Int)),
             ),
             Term::new(
                 IType::Or,

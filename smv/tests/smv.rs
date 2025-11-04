@@ -43,7 +43,7 @@ impl Context {
         let mut wire = Wire::none();
         for name in names {
             let v = self.get(name);
-            wire = wire.union(v).unwrap();
+            wire = wire.concat(v);
         }
 
         wire
@@ -54,7 +54,7 @@ impl Context {
         let mut wire = Wire::none();
         for name in names {
             let v = self.var(name, ty);
-            wire = wire.union(v).unwrap();
+            wire = wire.concat(v);
         }
 
         wire
@@ -92,7 +92,7 @@ fn build_manual_module() -> Module<DType, IType> {
 
         // wire12 = wire10 || wire11
         let wire12 = ctx.tmp_var(DType::Bool).clone();
-        let reads = wire10.union(&wire11).unwrap();
+        let reads = wire10.concat(&wire11);
         let or = Term::new(IType::Or, wire12.clone(), reads);
 
         // one
@@ -101,7 +101,7 @@ fn build_manual_module() -> Module<DType, IType> {
 
         // wire14 = vars[0] + const1
         let wire14 = ctx.tmp_var(DType::Int).clone();
-        let reads = ctx.get("x").union(&const1).unwrap();
+        let reads = ctx.get("x").concat(&const1);
         let sum = Term::new(IType::Add, wire14.clone(), reads);
 
         // zero
@@ -109,7 +109,7 @@ fn build_manual_module() -> Module<DType, IType> {
         let term0 = Term::new(IType::ConstInt(0), const0.clone(), Wire::none());
 
         // wire5 = ite(wire12, wire15, const0)
-        let reads = wire12.union(&wire14).unwrap().union(&const0).unwrap();
+        let reads = wire12.concat(&wire14).concat(&const0);
         let ite = Term::new(IType::Cond, ctx.get_cloned("x'"), reads);
 
         // y' := y
@@ -130,7 +130,7 @@ fn build_manual_module() -> Module<DType, IType> {
     let atom = Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
         .expect("failed creating atom");
 
-    Module::with_atoms([latched, next], vec![atom]).expect("Failed building module")
+    Module::partially_observable([latched, next], [Wire::none(), Wire::none()], vec![atom]).unwrap()
 }
 
 #[test]

@@ -1,77 +1,116 @@
 ==================== Comparing Parsed vs Manual ====================
-❌ Line 171 differs:
+❌ Line 378 differs:
   Parsed:                         1,
   Manual:                         0,
-❌ Line 175 differs:
-  Parsed:                             [13, 13] : Int,
-  Manual:                             [15, 15] : Int,
-❌ Line 183 differs:
+❌ Line 383 differs:
+  Parsed:                                 13,
+  Manual:                                 15,
+❌ Line 393 differs:
   Parsed:                     itype: Add,
   Manual:                     itype: ConstInt(
-❌ Line 184 differs:
+❌ Line 394 differs:
   Parsed:                     write: Wire {
   Manual:                         1,
-❌ Line 185 differs:
-  Parsed:                         ranges: [
+❌ Line 395 differs:
+  Parsed:                         vec: [
   Manual:                     ),
-❌ Line 186 differs:
-  Parsed:                             [14, 14] : Int,
+❌ Line 396 differs:
+  Parsed:                             (
   Manual:                     write: Wire {
-❌ Line 187 differs:
+❌ Line 397 differs:
+  Parsed:                                 14,
+  Manual:                         vec: [
+❌ Line 398 differs:
+  Parsed:                                 Int,
+  Manual:                             (
+❌ Line 399 differs:
+  Parsed:                             ),
+  Manual:                                 13,
+❌ Line 400 differs:
   Parsed:                         ],
-  Manual:                         ranges: [
-❌ Line 188 differs:
+  Manual:                                 Int,
+❌ Line 401 differs:
   Parsed:                     },
-  Manual:                             [13, 13] : Int,
-❌ Line 189 differs:
+  Manual:                             ),
+❌ Line 402 differs:
   Parsed:                     read: Wire {
   Manual:                         ],
-❌ Line 190 differs:
-  Parsed:                         ranges: [
+❌ Line 403 differs:
+  Parsed:                         vec: [
   Manual:                     },
-❌ Line 191 differs:
-  Parsed:                             [0, 0] : Int,
+❌ Line 404 differs:
+  Parsed:                             (
   Manual:                     read: Wire {
-❌ Line 192 differs:
-  Parsed:                             [13, 13] : Int,
-  Manual:                         ranges: [],
-❌ Line 193 differs:
-  Parsed:                         ],
+❌ Line 405 differs:
+  Parsed:                                 0,
+  Manual:                         vec: [],
+❌ Line 406 differs:
+  Parsed:                                 Int,
   Manual:                     },
-❌ Line 195 differs:
-  Parsed:                 },
+❌ Line 407 differs:
+  Parsed:                             ),
+  Manual:                 },
+❌ Line 408 differs:
+  Parsed:                             (
   Manual:                 Term {
-❌ Line 196 differs:
-  Parsed:                 Term {
+❌ Line 409 differs:
+  Parsed:                                 13,
   Manual:                     itype: Add,
-❌ Line 197 differs:
-  Parsed:                     itype: ConstInt(
+❌ Line 410 differs:
+  Parsed:                                 Int,
   Manual:                     write: Wire {
-❌ Line 198 differs:
-  Parsed:                         0,
-  Manual:                         ranges: [
-❌ Line 199 differs:
-  Parsed:                     ),
-  Manual:                             [14, 14] : Int,
-❌ Line 200 differs:
-  Parsed:                     write: Wire {
-  Manual:                         ],
-❌ Line 201 differs:
-  Parsed:                         ranges: [
-  Manual:                     },
-❌ Line 202 differs:
-  Parsed:                             [15, 15] : Int,
-  Manual:                     read: Wire {
-❌ Line 203 differs:
+❌ Line 411 differs:
+  Parsed:                             ),
+  Manual:                         vec: [
+❌ Line 412 differs:
   Parsed:                         ],
-  Manual:                         ranges: [
-❌ Line 204 differs:
+  Manual:                             (
+❌ Line 413 differs:
   Parsed:                     },
-  Manual:                             [0, 0] : Int,
-❌ Line 205 differs:
+  Manual:                                 14,
+❌ Line 414 differs:
+  Parsed:                 },
+  Manual:                                 Int,
+❌ Line 415 differs:
+  Parsed:                 Term {
+  Manual:                             ),
+❌ Line 416 differs:
+  Parsed:                     itype: ConstInt(
+  Manual:                         ],
+❌ Line 417 differs:
+  Parsed:                         0,
+  Manual:                     },
+❌ Line 418 differs:
+  Parsed:                     ),
+  Manual:                     read: Wire {
+❌ Line 419 differs:
+  Parsed:                     write: Wire {
+  Manual:                         vec: [
+❌ Line 420 differs:
+  Parsed:                         vec: [
+  Manual:                             (
+❌ Line 421 differs:
+  Parsed:                             (
+  Manual:                                 0,
+❌ Line 422 differs:
+  Parsed:                                 15,
+  Manual:                                 Int,
+❌ Line 423 differs:
+  Parsed:                                 Int,
+  Manual:                             ),
+❌ Line 424 differs:
+  Parsed:                             ),
+  Manual:                             (
+❌ Line 425 differs:
+  Parsed:                         ],
+  Manual:                                 13,
+❌ Line 426 differs:
+  Parsed:                     },
+  Manual:                                 Int,
+❌ Line 427 differs:
   Parsed:                     read: Wire {
-  Manual:                             [13, 13] : Int,
-❌ Line 206 differs:
-  Parsed:                         ranges: [],
+  Manual:                             ),
+❌ Line 428 differs:
+  Parsed:                         vec: [],
   Manual:                         ],
 ==============================================================

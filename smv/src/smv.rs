@@ -19,11 +19,18 @@ fn classify_reads(
     read_latched: &mut Wire<DType>,
     wait_latched: &mut Wire<DType>,
 ) {
+    // Helper: append a single (index,dtype) into target wire if not present
+    fn add_unique(target: &mut Wire<DType>, idx: usize, dtype: DType) {
+        if !target.iter().any(|(j, _)| j == idx) {
+            *target = target.extend(&Wire::one(idx, dtype));
+        }
+    }
+
     for (ri, rdtype) in read.iter() {
         if ri < var_count {
-            *read_latched = read_latched.union(&Wire::one(ri, *rdtype)).unwrap();
+            add_unique(read_latched, ri, *rdtype);
         } else {
-            *wait_latched = wait_latched.union(&Wire::one(ri, *rdtype)).unwrap();
+            add_unique(wait_latched, ri, *rdtype);
         }
     }
 }
@@ -97,18 +104,9 @@ fn lower_expr_to_terms(
             // the returned read-union for classification and the actual
             // temporary wire produced for the term read list.
             let mut cond_read_union = Wire::none();
-            let (cond_temp_wire, cond_temp_read) = lower_expr_to_terms(
-                cond_pair,
-                wires,
-                var_count,
-                n,
-                None,
-                temp_index,
-                terms,
-            );
-            cond_read_union = cond_read_union
-                .union(&cond_temp_read)
-                .unwrap_or(cond_read_union.clone());
+            let (cond_temp_wire, cond_temp_read) =
+                lower_expr_to_terms(cond_pair, wires, var_count, n, None, temp_index, terms);
+            cond_read_union = cond_read_union.extend(&cond_temp_read);
             let cond_temp = (cond_temp_wire, cond_read_union.clone());
 
             // cond_temp is a tuple (wire, read_union)
@@ -129,8 +127,8 @@ fn lower_expr_to_terms(
                         lower_expr_to_terms(left, wires, var_count, n, None, temp_index, terms);
                     // combine reads
                     let mut then_reads = Wire::none();
-                    then_reads = then_reads.union(&right_read).unwrap_or(then_reads.clone());
-                    then_reads = then_reads.union(&left_read).unwrap_or(then_reads.clone());
+                    then_reads = then_reads.extend(&right_read);
+                    then_reads = then_reads.extend(&left_read);
                     // ensure consts are available as temps (if right_w is a const term it has been emitted)
                     let add_w = {
                         let w = Wire::one(*temp_index, DType::Int);
@@ -138,14 +136,12 @@ fn lower_expr_to_terms(
                         w
                     };
                     let mut read = Wire::none();
-                    read = read.union(&left_w).unwrap_or(read.clone());
-                    read = read.union(&right_w).unwrap_or(read.clone());
+                    read = read.extend(&left_w);
+                    read = read.extend(&right_w);
                     terms.push(Term::new(IType::Add, add_w.clone(), read));
                     // propagate original-variable reads upward
                     let mut then_read_union = Wire::none();
-                    then_read_union = then_read_union
-                        .union(&then_reads)
-                        .unwrap_or(then_read_union.clone());
+                    then_read_union = then_read_union.extend(&then_reads);
                     (add_w, then_read_union)
                 }
                 _ => lower_expr_to_terms(then_pair, wires, var_count, n, None, temp_index, terms),
@@ -169,15 +165,9 @@ fn lower_expr_to_terms(
             // produced for the condition, then-branch and else-branch so e.g. the
             // Cond reads the OR/temp bool and the computed then/else ints.
             let mut term_read_wires = Wire::none();
-            term_read_wires = term_read_wires
-                .union(&cond_temp_wire)
-                .unwrap_or(term_read_wires.clone());
-            term_read_wires = term_read_wires
-                .union(&then_temp_wire)
-                .unwrap_or(term_read_wires.clone());
-            term_read_wires = term_read_wires
-                .union(&else_temp_wire)
-                .unwrap_or(term_read_wires.clone());
+            term_read_wires = term_read_wires.extend(&cond_temp_wire);
+            term_read_wires = term_read_wires.extend(&then_temp_wire);
+            term_read_wires = term_read_wires.extend(&else_temp_wire);
             terms.push(Term::new(
                 IType::Cond,
                 write.clone(),
@@ -187,15 +177,9 @@ fn lower_expr_to_terms(
             // The returned read-union (for classification) remains the union of
             // original-variable reads from each subexpression.
             let mut orig_read_union = Wire::none();
-            orig_read_union = orig_read_union
-                .union(&cond_temp_read)
-                .unwrap_or(orig_read_union.clone());
-            orig_read_union = orig_read_union
-                .union(&then_read)
-                .unwrap_or(orig_read_union.clone());
-            orig_read_union = orig_read_union
-                .union(&else_read)
-                .unwrap_or(orig_read_union.clone());
+            orig_read_union = orig_read_union.extend(&cond_temp_read);
+            orig_read_union = orig_read_union.extend(&then_read);
+            orig_read_union = orig_read_union.extend(&else_read);
             enforce(&final_write, terms, write, orig_read_union)
         }
 
@@ -208,18 +192,14 @@ fn lower_expr_to_terms(
                 let (w, r) =
                     lower_expr_to_terms(first, wires, var_count, n, None, temp_index, terms);
                 operand_wires.push(w);
-                operands_read_union = operands_read_union
-                    .union(&r)
-                    .unwrap_or(operands_read_union.clone());
+                operands_read_union = operands_read_union.extend(&r);
             }
             while let Some(_) = inner.next() {
                 if let Some(rhs) = inner.next() {
                     let (w, r) =
                         lower_expr_to_terms(rhs, wires, var_count, n, None, temp_index, terms);
                     operand_wires.push(w);
-                    operands_read_union = operands_read_union
-                        .union(&r)
-                        .unwrap_or(operands_read_union.clone());
+                    operands_read_union = operands_read_union.extend(&r);
                 }
             }
             if operand_wires.len() == 1 {
@@ -235,7 +215,7 @@ fn lower_expr_to_terms(
             };
             let mut read = Wire::none();
             for ow in operand_wires.iter() {
-                read = read.union(ow).unwrap_or(read.clone());
+                read = read.extend(ow);
             }
             let op_tag = if rule == Rule::expr_or {
                 IType::Or
@@ -260,8 +240,8 @@ fn lower_expr_to_terms(
                 let write = Wire::one(*temp_index, DType::Bool);
                 *temp_index += 1;
                 let mut read = Wire::none();
-                read = read.union(&left_w).unwrap_or(read.clone());
-                read = read.union(&right_w).unwrap_or(read.clone());
+                read = read.extend(&left_w);
+                read = read.extend(&right_w);
                 let tag = match op.as_rule() {
                     Rule::LT => IType::Lt,
                     Rule::LE => IType::Le,
@@ -272,9 +252,7 @@ fn lower_expr_to_terms(
                 };
                 terms.push(Term::new(tag, write.clone(), read));
                 // accumulate original-variable reads
-                cmp_read_union = cmp_read_union
-                    .union(&right_read)
-                    .unwrap_or(cmp_read_union.clone());
+                cmp_read_union = cmp_read_union.extend(&right_read);
                 left_w = write;
             }
             enforce(&final_write, terms, left_w, cmp_read_union)
@@ -292,8 +270,8 @@ fn lower_expr_to_terms(
                 let write = Wire::one(*temp_index, DType::Int);
                 *temp_index += 1;
                 let mut read = Wire::none();
-                read = read.union(&left_w).unwrap_or(read.clone());
-                read = read.union(&right_w).unwrap_or(read.clone());
+                read = read.extend(&left_w);
+                read = read.extend(&right_w);
                 let tag = match op.as_rule() {
                     Rule::PLUS => IType::Add,
                     Rule::MINUS => IType::Sub,
@@ -301,7 +279,7 @@ fn lower_expr_to_terms(
                 };
                 terms.push(Term::new(tag, write.clone(), read));
                 // accumulate original-variable reads
-                left_read = left_read.union(&right_read).unwrap_or(left_read.clone());
+                left_read = left_read.extend(&right_read);
                 left_w = write;
             }
             enforce(&final_write, terms, left_w, left_read)
@@ -326,15 +304,15 @@ fn lower_expr_to_terms(
                 let write = Wire::one(*temp_index, DType::Int);
                 *temp_index += 1;
                 let mut read = Wire::none();
-                read = read.union(&left_w).unwrap_or(read.clone());
-                read = read.union(&right_w).unwrap_or(read.clone());
+                read = read.extend(&left_w);
+                read = read.extend(&right_w);
                 let tag = match op.as_rule() {
                     Rule::TIMES => IType::Mul,
                     Rule::DIVIDE => IType::Div,
                     _ => IType::Mul,
                 };
                 terms.push(Term::new(tag, write.clone(), read));
-                left_read = left_read.union(&right_read).unwrap_or(left_read.clone());
+                left_read = left_read.extend(&right_read);
                 left_w = write;
             }
             (left_w, left_read)
@@ -472,11 +450,18 @@ fn classify_reads_from_wire(
     read_latched: &mut Wire<DType>,
     wait_latched: &mut Wire<DType>,
 ) {
+    // Helper: append a single (index,dtype) into target wire if not present
+    fn add_unique(target: &mut Wire<DType>, idx: usize, dtype: DType) {
+        if !target.iter().any(|(j, _)| j == idx) {
+            *target = target.extend(&Wire::one(idx, dtype));
+        }
+    }
+
     for (ri, rdtype) in read.iter() {
         if ri < var_count {
-            *read_latched = read_latched.union(&Wire::one(ri, *rdtype)).unwrap();
+            add_unique(read_latched, ri, *rdtype);
         } else if ri < n {
-            *wait_latched = wait_latched.union(&Wire::one(ri, *rdtype)).unwrap();
+            add_unique(wait_latched, ri, *rdtype);
         } else {
             // temps and other generated wires are ignored for classification
         }
@@ -612,8 +597,8 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
     let mut latched = Wire::none();
     let mut next_wire = Wire::none();
     for (_, i, dtype) in &wires {
-        latched = latched.union(&Wire::one(*i, *dtype)).unwrap();
-        next_wire = next_wire.union(&Wire::one(i + n, *dtype)).unwrap();
+        latched = latched.extend(&Wire::one(*i, *dtype));
+        next_wire = next_wire.extend(&Wire::one(i + n, *dtype));
     }
 
     // Step 3: (was previously used) IVAR indices detection is implicit below
@@ -631,11 +616,11 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
     let mut read_latched = Wire::none();
 
     // Pre-populate wait_latched from IVAR declarations (they live after vars)
-        for (i, (_name, dtype)) in ivar_decls.iter().enumerate() {
+    for (i, (_name, dtype)) in ivar_decls.iter().enumerate() {
         let index = var_count + i;
-        wait_latched = wait_latched
-            .union(&Wire::one(index, *dtype))
-            .unwrap();
+        if !wait_latched.iter().any(|(j, _)| j == index) {
+            wait_latched = wait_latched.extend(&Wire::one(index, *dtype));
+        }
     }
 
     // temporaries start at 2*n to avoid colliding with latched/next ranges
@@ -672,7 +657,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                 }
                 Rule::ident => {
                     let nm = leaf.as_str().to_string();
-                        if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
+                    if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
                         // If the RHS is an IVAR (index >= var_count) then the
                         // semantic init should use the IVAR's primed twin as the
                         // source value (so the init term reads from ridx + n).
@@ -760,8 +745,10 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
 
         // UPDATE
         if let Some((_, expr_pair)) = next_assigns.iter().find(|(n, _)| n == name) {
-            // include this var in ctrl (latched)
-            ctrl_latched = ctrl_latched.union(&Wire::one(*idx, *dtype)).unwrap();
+            // include this var in ctrl (latched) — avoid duplicates
+            if !ctrl_latched.iter().any(|(j, _)| j == *idx) {
+                ctrl_latched = ctrl_latched.extend(&Wire::one(*idx, *dtype));
+            }
 
             // detect simple single-leaf RHS (drill down single-child chains)
             let mut leaf = expr_pair.clone();
@@ -790,7 +777,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                 }
                 Rule::ident => {
                     let nm = leaf.as_str().to_string();
-                        if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
+                    if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
                         let read = Wire::one(*ridx, *rdtype);
                         update_terms.push(Term::new(IType::Assign, write.clone(), read.clone()));
                         classify_reads_from_wire(
@@ -840,7 +827,9 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
             }
         } else {
             // default update: next(var) := var
-            ctrl_latched = ctrl_latched.union(&Wire::one(*idx, *dtype)).unwrap();
+            if !ctrl_latched.iter().any(|(j, _)| j == *idx) {
+                ctrl_latched = ctrl_latched.extend(&Wire::one(*idx, *dtype));
+            }
             let write = Wire::one(idx + n, *dtype);
             let read = Wire::one(*idx, *dtype);
             update_terms.push(Term::new(IType::Assign, write, read));
@@ -859,7 +848,13 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
         update_terms,
     );
 
-    Module::with_atoms([latched, next_wire], vec![atom]).map_err(|_| "Failed to build module")
+    // Use the partially_observable constructor which will infer extl/intf/prvt
+    // from the provided observable wires and atoms.
+    Module::partially_observable(
+        [latched, next_wire],
+        [Wire::none(), Wire::none()],
+        vec![atom],
+    )
 }
 
 fn build_expr(
@@ -885,12 +880,8 @@ fn build_expr(
 
                 // safely combine reads without borrowing
                 let mut read = cond.2.clone();
-                if let Ok(r) = read.union(&then_b.2) {
-                    read = r;
-                }
-                if let Ok(r2) = read.union(&else_b.2) {
-                    read = r2;
-                }
+                read = read.extend(&then_b.2);
+                read = read.extend(&else_b.2);
 
                 (IType::Cond, Wire::none(), read)
             } else {
@@ -906,10 +897,7 @@ fn build_expr(
             while let Some(_next_pair) = inner.next() {
                 // next_pair is the OR token, next() is the rhs
                 let rhs = build_expr(inner.next().unwrap(), wires, offset);
-                let read = combined
-                    .2
-                    .union(&rhs.2)
-                    .unwrap_or_else(|_| combined.2.clone());
+                let read = combined.2.extend(&rhs.2);
                 combined = (IType::Or, Wire::one(offset, DType::Bool), read);
             }
             combined
@@ -922,10 +910,7 @@ fn build_expr(
             let mut combined = (left_itype, Wire::none(), left_read);
             while inner.peek().is_some() {
                 let rhs = build_expr(inner.next().unwrap(), wires, offset);
-                let read = combined
-                    .2
-                    .union(&rhs.2)
-                    .unwrap_or_else(|_| combined.2.clone());
+                let read = combined.2.extend(&rhs.2);
                 combined = (IType::And, Wire::one(offset, DType::Bool), read);
             }
             combined
@@ -940,7 +925,7 @@ fn build_expr(
             while let Some(op) = inner.next() {
                 let right_pair = inner.next().unwrap();
                 let right = build_expr(right_pair, wires, offset);
-                let read = left.2.union(&right.2).unwrap_or_else(|_| left.2.clone());
+                let read = left.2.extend(&right.2);
                 left = match op.as_rule() {
                     Rule::LT => (IType::Lt, Wire::one(offset, DType::Bool), read),
                     Rule::LE => (IType::Le, Wire::one(offset, DType::Bool), read),
@@ -962,7 +947,7 @@ fn build_expr(
             while let Some(op) = inner.next() {
                 let right_term = inner.next().unwrap();
                 let right = build_expr(right_term, wires, offset);
-                let combined_read = left.2.union(&right.2).unwrap_or_else(|_| left.2.clone());
+                let combined_read = left.2.extend(&right.2);
 
                 left = match op.as_rule() {
                     Rule::PLUS => (IType::Add, Wire::one(offset, DType::Int), combined_read),
@@ -985,7 +970,7 @@ fn build_expr(
             while let Some(op) = inner.next() {
                 let right_primary = inner.next().unwrap();
                 let right = build_expr(right_primary, wires, offset);
-                let combined_read = left.2.union(&right.2).unwrap_or_else(|_| left.2.clone());
+                let combined_read = left.2.extend(&right.2);
 
                 left = match op.as_rule() {
                     Rule::TIMES => (IType::Mul, Wire::one(offset, DType::Int), combined_read),
@@ -1033,11 +1018,7 @@ fn build_expr(
             let name = expr_pair.as_str().to_string();
             if let Some((_, idx, dtype)) = wires.iter().find(|(n, _, _)| n == &name) {
                 // Variable references are represented by Assign with the read wire set to the variable
-                    (
-                    IType::Assign,
-                    Wire::none(),
-                    Wire::one(idx + offset, *dtype),
-                )
+                (IType::Assign, Wire::none(), Wire::one(idx + offset, *dtype))
             } else {
                 (IType::Assign, Wire::none(), Wire::none())
             }

@@ -1,87 +1,250 @@
 Module {
     extl: [
         Wire {
-            ranges: [
-                [3, 4] : Int,
+            vec: [
+                (
+                    3,
+                    Int,
+                ),
+                (
+                    4,
+                    Int,
+                ),
             ],
         },
         Wire {
-            ranges: [
-                [8, 9] : Int,
+            vec: [
+                (
+                    8,
+                    Int,
+                ),
+                (
+                    9,
+                    Int,
+                ),
             ],
         },
     ],
     intf: [
         Wire {
-            ranges: [
-                [0, 2] : Int,
+            vec: [
+                (
+                    0,
+                    Int,
+                ),
+                (
+                    1,
+                    Int,
+                ),
+                (
+                    2,
+                    Int,
+                ),
             ],
         },
         Wire {
-            ranges: [
-                [5, 7] : Int,
+            vec: [
+                (
+                    5,
+                    Int,
+                ),
+                (
+                    6,
+                    Int,
+                ),
+                (
+                    7,
+                    Int,
+                ),
             ],
         },
     ],
     prvt: [
         Wire {
-            ranges: [],
+            vec: [],
         },
         Wire {
-            ranges: [],
+            vec: [],
         },
     ],
     ctrl: [
         Wire {
-            ranges: [
-                [0, 2] : Int,
+            vec: [
+                (
+                    0,
+                    Int,
+                ),
+                (
+                    1,
+                    Int,
+                ),
+                (
+                    2,
+                    Int,
+                ),
             ],
         },
         Wire {
-            ranges: [
-                [5, 7] : Int,
+            vec: [
+                (
+                    5,
+                    Int,
+                ),
+                (
+                    6,
+                    Int,
+                ),
+                (
+                    7,
+                    Int,
+                ),
             ],
         },
     ],
     obs: [
         Wire {
-            ranges: [
-                [0, 4] : Int,
+            vec: [
+                (
+                    0,
+                    Int,
+                ),
+                (
+                    1,
+                    Int,
+                ),
+                (
+                    2,
+                    Int,
+                ),
+                (
+                    3,
+                    Int,
+                ),
+                (
+                    4,
+                    Int,
+                ),
             ],
         },
         Wire {
-            ranges: [
-                [5, 9] : Int,
+            vec: [
+                (
+                    5,
+                    Int,
+                ),
+                (
+                    6,
+                    Int,
+                ),
+                (
+                    7,
+                    Int,
+                ),
+                (
+                    8,
+                    Int,
+                ),
+                (
+                    9,
+                    Int,
+                ),
             ],
         },
     ],
     wire: [
         Wire {
-            ranges: [
-                [0, 4] : Int,
+            vec: [
+                (
+                    0,
+                    Int,
+                ),
+                (
+                    1,
+                    Int,
+                ),
+                (
+                    2,
+                    Int,
+                ),
+                (
+                    3,
+                    Int,
+                ),
+                (
+                    4,
+                    Int,
+                ),
             ],
         },
         Wire {
-            ranges: [
-                [5, 9] : Int,
+            vec: [
+                (
+                    5,
+                    Int,
+                ),
+                (
+                    6,
+                    Int,
+                ),
+                (
+                    7,
+                    Int,
+                ),
+                (
+                    8,
+                    Int,
+                ),
+                (
+                    9,
+                    Int,
+                ),
             ],
         },
     ],
     atoms: [
         Atom {
             ctrl: Wire {
-                ranges: [
-                    [5, 7] : Int,
+                vec: [
+                    (
+                        5,
+                        Int,
+                    ),
+                    (
+                        6,
+                        Int,
+                    ),
+                    (
+                        7,
+                        Int,
+                    ),
                 ],
             },
             wait: Wire {
-                ranges: [
-                    [8, 9] : Int,
+                vec: [
+                    (
+                        8,
+                        Int,
+                    ),
+                    (
+                        9,
+                        Int,
+                    ),
                 ],
             },
             read: Wire {
-                ranges: [
-                    [0, 2] : Int,
+                vec: [
+                    (
+                        0,
+                        Int,
+                    ),
+                    (
+                        1,
+                        Int,
+                    ),
+                    (
+                        2,
+                        Int,
+                    ),
                 ],
             },
             init: [
@@ -90,37 +253,52 @@ Module {
                         0,
                     ),
                     write: Wire {
-                        ranges: [
-                            [5, 5] : Int,
+                        vec: [
+                            (
+                                5,
+                                Int,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [],
+                        vec: [],
                     },
                 },
                 Term {
                     itype: Assign,
                     write: Wire {
-                        ranges: [
-                            [6, 6] : Int,
+                        vec: [
+                            (
+                                6,
+                                Int,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [
-                            [8, 8] : Int,
+                        vec: [
+                            (
+                                8,
+                                Int,
+                            ),
                         ],
                     },
                 },
                 Term {
                     itype: Assign,
                     write: Wire {
-                        ranges: [
-                            [7, 7] : Int,
+                        vec: [
+                            (
+                                7,
+                                Int,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [
-                            [9, 9] : Int,
+                        vec: [
+                            (
+                                9,
+                                Int,
+                            ),
                         ],
                     },
                 },
@@ -129,40 +307,69 @@ Module {
                 Term {
                     itype: Lt,
                     write: Wire {
-                        ranges: [
-                            [10, 10] : Bool,
+                        vec: [
+                            (
+                                10,
+                                Bool,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [
-                            [0, 1] : Int,
+                        vec: [
+                            (
+                                0,
+                                Int,
+                            ),
+                            (
+                                1,
+                                Int,
+                            ),
                         ],
                     },
                 },
                 Term {
                     itype: Lt,
                     write: Wire {
-                        ranges: [
-                            [11, 11] : Bool,
+                        vec: [
+                            (
+                                11,
+                                Bool,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [
-                            [0, 0] : Int,
-                            [2, 2] : Int,
+                        vec: [
+                            (
+                                0,
+                                Int,
+                            ),
+                            (
+                                2,
+                                Int,
+                            ),
                         ],
                     },
                 },
                 Term {
                     itype: Or,
                     write: Wire {
-                        ranges: [
-                            [12, 12] : Bool,
+                        vec: [
+                            (
+                                12,
+                                Bool,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [
-                            [10, 11] : Bool,
+                        vec: [
+                            (
+                                10,
+                                Bool,
+                            ),
+                            (
+                                11,
+                                Bool,
+                            ),
                         ],
                     },
                 },
@@ -171,25 +378,37 @@ Module {
                         1,
                     ),
                     write: Wire {
-                        ranges: [
-                            [13, 13] : Int,
+                        vec: [
+                            (
+                                13,
+                                Int,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [],
+                        vec: [],
                     },
                 },
                 Term {
                     itype: Add,
                     write: Wire {
-                        ranges: [
-                            [14, 14] : Int,
+                        vec: [
+                            (
+                                14,
+                                Int,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [
-                            [0, 0] : Int,
-                            [13, 13] : Int,
+                        vec: [
+                            (
+                                0,
+                                Int,
+                            ),
+                            (
+                                13,
+                                Int,
+                            ),
                         ],
                     },
                 },
@@ -198,51 +417,79 @@ Module {
                         0,
                     ),
                     write: Wire {
-                        ranges: [
-                            [15, 15] : Int,
+                        vec: [
+                            (
+                                15,
+                                Int,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [],
+                        vec: [],
                     },
                 },
                 Term {
                     itype: Cond,
                     write: Wire {
-                        ranges: [
-                            [5, 5] : Int,
+                        vec: [
+                            (
+                                5,
+                                Int,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [
-                            [12, 12] : Bool,
-                            [14, 15] : Int,
+                        vec: [
+                            (
+                                12,
+                                Bool,
+                            ),
+                            (
+                                14,
+                                Int,
+                            ),
+                            (
+                                15,
+                                Int,
+                            ),
                         ],
                     },
                 },
                 Term {
                     itype: Assign,
                     write: Wire {
-                        ranges: [
-                            [6, 6] : Int,
+                        vec: [
+                            (
+                                6,
+                                Int,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [
-                            [1, 1] : Int,
+                        vec: [
+                            (
+                                1,
+                                Int,
+                            ),
                         ],
                     },
                 },
                 Term {
                     itype: Assign,
                     write: Wire {
-                        ranges: [
-                            [7, 7] : Int,
+                        vec: [
+                            (
+                                7,
+                                Int,
+                            ),
                         ],
                     },
                     read: Wire {
-                        ranges: [
-                            [2, 2] : Int,
+                        vec: [
+                            (
+                                2,
+                                Int,
+                            ),
                         ],
                     },
                 },

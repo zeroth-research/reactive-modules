@@ -24,16 +24,17 @@ impl<D, I> Term<D, I> {
         Self { itype, write, read }
     }
 
-    pub fn itype(&self) -> &I {
-        &self.itype
-    }
-
     pub fn writes(&self) -> &Wire<D> {
         &self.write
     }
 
     pub fn reads(&self) -> &Wire<D> {
         &self.read
+    }
+
+    /// Return a reference to the instruction type for this term.
+    pub fn itype(&self) -> &I {
+        &self.itype
     }
 }
 

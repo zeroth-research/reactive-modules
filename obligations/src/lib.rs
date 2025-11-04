@@ -9,7 +9,7 @@ pub struct BuchiObligations<D, I> {
 }
 
 impl<D: fmt::Display, I: fmt::Display> fmt::Display for BuchiObligations<D, I> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Ok(())
     }
 }

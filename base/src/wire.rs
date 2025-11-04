@@ -65,8 +65,8 @@ impl<D: Clone> Wire<D> {
     pub fn difference(&self, other: &Wire<D>) -> Wire<D> {
         let mut w = self.clone();
         // TODO: make more efficient
-        let o: HashSet<usize> = HashSet::from_iter(other.iter().map(|(offset, dtype)| offset));
-        w.vec.retain(|(i, dtype)| !o.contains(i));
+        let o: HashSet<usize> = HashSet::from_iter(other.iter().map(|(offset, _dtype)| offset));
+        w.vec.retain(|(i, _dtype)| !o.contains(i));
         w
     }
 
