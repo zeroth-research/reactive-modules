@@ -60,9 +60,44 @@ impl<D, I> Module<D, I> {
     pub fn obs(&self) -> &[Wire<D>; 2] {
         &self.obs
     }
+
+    pub fn is_closed(&self) -> bool {
+        self.extl[0].is_empty()
+    }
+
+    pub fn is_open(&self) -> bool {
+        !self.extl[0].is_empty()
+    }
 }
 
 impl<D: Clone + Eq + Debug, I> Module<D, I> {
+    /// Creates a new module **without performing any consistency or visibility checks**.
+    ///
+    /// This constructor provides complete control to the caller and performs no inference
+    /// or validation. It should be used only when redundant automation would otherwise
+    /// be repeated (for example, when all necessary checks and inferences have already
+    /// been performed externally).
+    ///
+    /// # Parameters
+    /// - `extl`: External wires (input wires).
+    /// - `intf`: Interface wires (output wires).
+    /// - `prvt`: Private wires (hidden wires).
+    /// - `obs`: Observable wires (visible wires)
+    /// - `ctrl`: Controlled wires (state-holding wires).
+    /// - `wire`: The full set of wires
+    /// - `atoms`: A list of atoms defining the module’s internal behaviour.
+    ///
+    /// # Returns
+    /// The constructed module.
+    ///
+    /// # Safety
+    /// This function performs **no validation or inference**.
+    /// It is the caller’s responsibility to ensure all wires, atoms, and interfaces
+    /// are well-formed and consistent.
+    ///
+    /// # See Also
+    /// - [`partially_observable`], for safe construction with partial visibility.
+    /// - [`observable`], for fully observable modules.
     pub fn new_unchecked(
         extl: [Wire<D>; 2],
         intf: [Wire<D>; 2],
@@ -204,7 +239,26 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         }
     }
 
-    /// Returns an observable module where external and interface wires are inferred from the observables
+    /// Constructs a **fully observable module** from the given atoms.
+    ///
+    /// This constructor automatically infers external and interface wires from the provided atoms.
+    /// The resulting module exposes all of its wires publicly (i.e. it has no private state).
+    ///
+    /// # Parameters
+    /// - `obs`: The pair of observable wires (inputs and outputs).
+    /// - `atoms`: The atoms defining the module’s behaviour.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed module if successful, or an error string
+    /// if the construction fails.
+    ///
+    /// # Notes
+    /// This constructor represents the fully observable case, where `m.prvt().is_empty()`.
+    ///
+    /// # See Also
+    /// - [`partially_observable`], for modules with private state.
+    /// - [`sequential`], for purely sequential modules that are fully observable by default.
+    /// - [`new_unchecked`], for manual module creation.
     pub fn observable<A>(obs: [Wire<D>; 2], atoms: A) -> Result<Self, &'static str>
     where
         A: IntoIterator<Item = Atom<D, I>> + Sized,
@@ -212,8 +266,25 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         Self::partially_observable(obs, [Wire::none(), Wire::none()], atoms)
     }
 
-    /// Returns a partially observable module where external and interface wires are inferred from the observables,
-    /// and the privates wires are given
+    /// Constructs a **partially observable module** from the given atoms.
+    ///
+    /// A partially observable module exposes a subset of its wires (`obs`) while keeping
+    /// others private (`prvt`). The external and interface wires is automatically inferred from
+    /// the provided atoms.
+    ///
+    /// # Parameters
+    /// - `obs`: The pair of observable wires (inputs and outputs).
+    /// - `prvt`: The pair of private wires (internal to the module).
+    /// - `atoms`: The atoms that define the module’s internal behaviour.
+    ///
+    /// # Behaviour
+    /// Observability is a property of modules, as modules define interfaces.
+    /// A module is fully observable when its private wire set is empty.
+    /// This constructor allows partial observability, supporting modules with private state.
+    ///
+    /// # See Also
+    /// - [`observable`], for constructing fully observable modules.
+    /// - [`new_unchecked`], for manually constructing a module without automation.
     pub fn partially_observable<A>(
         obs: [Wire<D>; 2],
         prvt: [Wire<D>; 2],
@@ -315,7 +386,34 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         ))
     }
 
-    /// Returns a fully observable module with sequential init and update actions
+    /// Constructs a **purely sequential and fully observable module** from
+    /// an initialisation and update pair.
+    ///
+    /// Sequential modules define behaviour that evolves over time.
+    /// They are composed of one sequential atom, which relates latched and next wires
+    /// through explicit `init` and `update` definitions.
+    ///
+    /// By default, sequential modules are **fully observable**, as they expose
+    /// their input/output interface and maintain no private state.
+    ///
+    /// # Parameters
+    /// - `obs`: The pair of observable wires (inputs and outputs).
+    /// - `init`: The initialisation function or structure defining the initial state.
+    /// - `update`: The update function or structure defining the next-state transition.
+    ///
+    /// # Returns
+    /// A `Result` containing the sequential module if successful, or an error string
+    /// if construction fails.
+    ///
+    /// # Behaviour
+    /// This constructor indicates that the module is *purely sequential*, containing exactly
+    /// one sequential atom. Sequential atoms differ from combinatorial atoms in that they
+    /// relate wires across time steps.
+    ///
+    /// # See Also
+    /// - [`observable`], for general-purpose fully observable modules.
+    /// - [`partially_observable`], for modules with private state.
+    /// - `combinatorial`, for constructing time-independent modules (to be implemented).
     pub fn sequential<V, U>(obs: [Wire<D>; 2], init: V, update: U) -> Result<Self, &'static str>
     where
         V: IntoIterator<Item = Term<D, I>>,
