@@ -34,6 +34,19 @@ pub struct Module<D, I> {
     /// The atoms must be stored in a *consistent* linear order
     /// as defined in the reactive modules paper.
     atoms: Vec<Atom<D, I>>,
+
+    // Optional name, useful mainly for debugging and visualizing
+    name: Option<String>,
+}
+
+impl<D, I> Module<D, I> {
+    pub fn set_name(&mut self, name: &str) {
+        self.name = Some(name.to_string());
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
 }
 
 impl<D, I> Module<D, I> {
@@ -236,6 +249,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             ctrl,
             wire,
             atoms,
+            name: None,
         }
     }
 
