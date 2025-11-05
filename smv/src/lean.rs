@@ -10,6 +10,7 @@ pub enum ExprKind {
     Number,
     Ident,
     Cond,
+    Abs,
     Or,
     And,
     Cmp,
@@ -51,6 +52,9 @@ pub struct LeanModule {
     pub init_exprs: Vec<Option<Expr>>,
     /// mapping from var index to optional next expression
     pub next_exprs: Vec<Option<Expr>>,
+    /// optional source IVAR index for init values that originate from
+    /// abs(IVAR) lowered into a primed Assign; maps var idx -> Some(ivar_idx)
+    pub init_abs_src: Vec<Option<usize>>,
 }
 
 /// Render a `LeanModule` into a Lean snippet.
@@ -98,12 +102,48 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
             }
             ExprKind::Cond => {
                 if expr.children.is_empty() { return expr.text.clone().unwrap_or_default(); }
-                if expr.children.len() == 1 { return expr_to_lean(&expr.children[0], wires, "s"); }
+                if expr.children.len() == 1 { return expr_to_lean(&expr.children[0], wires, context); }
                 // expect [cond, then, else]
-                let cond = expr_to_lean(&expr.children[0], wires, "s");
-                let then_s = expr_to_lean(&expr.children[1], wires, "s");
-                let else_s = expr_to_lean(&expr.children[2], wires, "s");
+                let cond_node = &expr.children[0];
+                let then_node = &expr.children[1];
+                let else_node = &expr.children[2];
+
+                // Try to detect the relu pattern: if (left < 0) ? 0 : left
+                // and render it as Int.natAbs <context>.xN when appropriate.
+                fn is_zero(n: &Expr) -> bool {
+                    n.kind == ExprKind::Number && n.text.as_ref().map(|s| s.as_str()) == Some("0")
+                }
+
+                if cond_node.kind == ExprKind::Cmp && is_zero(then_node) {
+                    // cond_node children: left, op, right
+                    if cond_node.children.len() >= 3 {
+                        let left_c = &cond_node.children[0];
+                        let op_c = &cond_node.children[1];
+                        let right_c = &cond_node.children[2];
+                        if op_c.kind == ExprKind::LT && is_zero(right_c) {
+                            // Render left and else with the current context and compare
+                            let left_s = expr_to_lean(left_c, wires, context);
+                            let else_s = expr_to_lean(else_node, wires, context);
+                            if left_s == else_s {
+                                return format!("Int.natAbs {}", left_s);
+                            }
+                        }
+                    }
+                }
+
+                let cond = expr_to_lean(cond_node, wires, context);
+                let then_s = expr_to_lean(then_node, wires, context);
+                let else_s = expr_to_lean(else_node, wires, context);
                 format!("if {} then {} else {}", cond, then_s, else_s)
+            }
+
+            ExprKind::Abs => {
+                // Unary abs node: render as Int.natAbs <child>
+                if let Some(child) = expr.children.get(0) {
+                    let c = expr_to_lean(child, wires, context);
+                    return format!("Int.natAbs {}", c);
+                }
+                String::new()
             }
             ExprKind::Or => {
                 let parts: Vec<String> = expr.children.iter().map(|c| expr_to_lean(c, wires, "s")).filter(|s| !s.is_empty()).collect();
@@ -158,7 +198,10 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
                     if let Some((_, idx, _)) = wires.iter().find(|(s,_,_)| s == name) {
                         // If the RHS is an IVAR (index >= var_count) render as params.x{idx}
                         if *idx >= var_count {
-                            parts.push(format!("x{} := params.x{}", i, idx));
+                            // Heuristic: IVARs used in init often originate from
+                            // abs(...) lowering. Render these as the absolute
+                            // value in the generated init: `Int.natAbs params.xN`.
+                            parts.push(format!("x{} := Int.natAbs params.x{}", i, idx));
                             continue;
                         }
                     }
@@ -408,6 +451,18 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
                     }
                     Expr { kind: ExprKind::Cond, text: None, children }
                 }
+                Abs => {
+                    // Unary abs: single read argument
+                    if let Some((ridx, _)) = t.read().iter().next() {
+                        if ridx >= n && !term_map.contains_key(&ridx) {
+                            Expr { kind: ExprKind::Abs, text: None, children: vec![Expr { kind: ExprKind::Ident, text: Some(format!("x{}", ridx - n)), children: vec![] }] }
+                        } else {
+                            Expr { kind: ExprKind::Abs, text: None, children: vec![build_expr_for_index(ridx, n, var_count, wires, term_map)] }
+                        }
+                    } else {
+                        Expr { kind: ExprKind::Abs, text: None, children: vec![] }
+                    }
+                }
                 Not => {
                     let children = t.read().iter().map(|(ridx, _)| build_expr_for_index(ridx, n, var_count, wires, term_map)).collect();
                     Expr { kind: ExprKind::NOT, text: None, children }
@@ -455,8 +510,46 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
         }
     }
 
-    let lm = LeanModule { wires, var_count, init_exprs, next_exprs };
-    to_lean(&lm)
+    // Detect init assignments that come from an Abs term lowered into a
+    // temporary followed by an Assign into the primed var. Pattern:
+    //   Term Abs writes -> temp_t (read primed IVAR)
+    //   Term Assign writes -> vidx+n, read -> temp_t
+    // When found, set init_exprs[vidx] = Some(Abs(Ident(x{base}))) where
+    // base is the original IVAR index (mapped back from primed index).
+    let mut init_abs_src: Vec<Option<usize>> = vec![None; var_count];
+    for (widx, t) in init_term_map.iter() {
+        let widx = *widx;
+        if widx >= n {
+            let vidx = widx - n;
+            if vidx < var_count {
+                if let IType::Assign = t.itype() {
+                    // The Assign should read from a temp produced by an Abs
+                    if let Some((ridx, _)) = t.read().iter().next() {
+                        if let Some(abs_term) = init_term_map.get(&ridx) {
+                            if let IType::Abs = abs_term.itype() {
+                                // Abs read should point at a primed IVAR index
+                                if let Some((abs_ridx, _)) = abs_term.read().iter().next() {
+                                    // Map primed IVAR back to base if needed
+                                    let base = if abs_ridx >= n && !init_term_map.contains_key(&abs_ridx) {
+                                        abs_ridx - n
+                                    } else {
+                                        abs_ridx
+                                    };
+                                    // Record init expr as Abs(Ident(x{base}))
+                                    init_exprs[vidx] = Some(Expr { kind: ExprKind::Abs, text: None, children: vec![Expr { kind: ExprKind::Ident, text: Some(format!("x{}", base)), children: vec![] }] });
+                                    // Also record source ivar if applicable
+                                    if base >= var_count { init_abs_src[vidx] = Some(base); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    to_lean(&LeanModule { wires, var_count, init_exprs, next_exprs, init_abs_src })
+
 }
 
 /// Render a vector of Terms into a Lean expression string by following the
@@ -539,6 +632,13 @@ pub fn render_terms_to_lean(
                 let op = match t.itype() { Add => " + ", Sub => " - ", Mul => " * ", Div => " / ", _ => " + " };
                 let parts: Vec<String> = args.iter().map(|i| render_idx(*i, map, wires, var_count)).collect();
                 parts.join(op)
+            }
+            Abs => {
+                if args.len() >= 1 {
+                    let inner = render_idx(args[0], map, wires, var_count);
+                    return format!("Int.natAbs {}", inner);
+                }
+                String::new()
             }
             Cond => {
                 // expect [cond, then, else]

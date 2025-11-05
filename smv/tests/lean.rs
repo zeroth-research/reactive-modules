@@ -125,8 +125,8 @@ fn write_lean_example() {
             z : integer;
         ASSIGN
             init(x) := 0;
-            init(y) := y0;
-            init(z) := z0;
+            init(y) := abs(y0);
+            init(z) := abs(z0);
             next(x) := (x < y | x < z) ? x + 1 : 0;
             next(y) := y;
             next(z) := z;

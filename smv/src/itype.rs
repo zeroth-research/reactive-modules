@@ -25,6 +25,9 @@ pub enum IType {
     // Conditional expression (ternary operator)
     Cond,
 
+    // Absolute value (unary)
+    Abs,
+
     // Temporal / assignment constructs
     Next,
     Init,

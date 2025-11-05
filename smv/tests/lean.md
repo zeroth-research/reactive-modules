@@ -8,7 +8,7 @@ structure ExternalParams where
   x4 : Int
 
 def init (params : ExternalParams) : State :=
-  { x0 := 0, x1 := params.x3, x2 := params.x4 }
+  { x0 := 0, x1 := Int.natAbs params.x3, x2 := Int.natAbs params.x4 }
 
 noncomputable def update (s : State) : State :=
   let x1 := s.x1

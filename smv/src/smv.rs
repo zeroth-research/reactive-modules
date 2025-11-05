@@ -466,30 +466,21 @@ fn lower_expr_to_terms(
                 temp_index,
                 terms,
             );
-            // (debug prints removed)
 
-            // const0
-            let const0 = Wire::one(*temp_index, DType::Int);
-            *temp_index += 1;
-            terms.push(Term::new(IType::ConstInt(0), const0.clone(), Wire::none()));
+            // If we're writing into a final (primed) wire (init context), and
+            // the inner expression is a direct IVAR reference (unprimed idx
+            // in [var_count, n)), then the Abs term should read the primed
+            // IVAR (ridx + n). Build a mapped read wire for the Abs term but
+            // keep `inner_read` unchanged for classification purposes.
+            let mut abs_read_for_term = Wire::none();
+            for (i, dt) in inner_w.iter() {
+                if i < n && i >= var_count {
+                    abs_read_for_term = abs_read_for_term.concat(&Wire::one(i + n, *dt));
+                } else {
+                    abs_read_for_term = abs_read_for_term.concat(&Wire::one(i, *dt));
+                }
+            }
 
-            // neg = 0 - inner_w
-            let neg_w = Wire::one(*temp_index, DType::Int);
-            *temp_index += 1;
-            let mut neg_read = Wire::none();
-            neg_read = neg_read.concat(&const0);
-            neg_read = neg_read.concat(&inner_w);
-            terms.push(Term::new(IType::Sub, neg_w.clone(), neg_read.clone()));
-
-            // cond = inner_w < 0
-            let cond_w = Wire::one(*temp_index, DType::Bool);
-            *temp_index += 1;
-            let mut cond_read = Wire::none();
-            cond_read = cond_read.concat(&inner_w);
-            cond_read = cond_read.concat(&const0);
-            terms.push(Term::new(IType::Lt, cond_w.clone(), cond_read.clone()));
-
-            // final result (choose neg or inner)
             let write = match &final_write {
                 Some(w) => w.clone(),
                 None => {
@@ -499,13 +490,7 @@ fn lower_expr_to_terms(
                 }
             };
 
-            let mut term_reads = Wire::none();
-            term_reads = term_reads.concat(&cond_w);
-            term_reads = term_reads.concat(&neg_w);
-            term_reads = term_reads.concat(&inner_w);
-            terms.push(Term::new(IType::Cond, write.clone(), term_reads.clone()));
-
-            // original-variable reads come from inner_read
+            terms.push(Term::new(IType::Abs, write.clone(), abs_read_for_term.clone()));
             enforce(&final_write, terms, write, inner_read)
         }
 
@@ -842,18 +827,74 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                             }
                         }
                     }
-                    // fallback to full lowering
-                    let (_final_write, read_union) = lower_expr_to_terms(
-                        expr_pair.clone(),
-                        &wires,
-                        var_count,
-                        n,
-                        Some(write.clone()),
-                        &mut temp_index,
-                        &mut init_terms,
-                    );
+                    // fallback: explicitly expand abs(inner) here so we can
+                    // ensure the final Cond writes directly into the primed
+                    // `write` wire and that the term reads use primed IVAR
+                    // indices while classification uses the original (unprimed)
+                    // inner reads. This keeps the Module representation
+                    // deterministic and avoids leaving an Abs term in a temp.
+                    // Lower the inner expression first (no final_write so it
+                    // may produce temps).
+                    // Find the actual inner expression inside the abs(...) pair
+                    let mut inner_expr: Option<Pair<Rule>> = None;
+                    for child in leaf.clone().into_inner() {
+                        match child.as_rule() {
+                            Rule::expr
+                            | Rule::expr_cond
+                            | Rule::expr_or
+                            | Rule::expr_and
+                            | Rule::expr_cmp
+                            | Rule::expr_arith
+                            | Rule::expr_term
+                            | Rule::expr_factor
+                            | Rule::expr_primary
+                            | Rule::expr_assign => {
+                                inner_expr = Some(child);
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    let (inner_w, inner_read) = if let Some(p) = inner_expr {
+                        lower_expr_to_terms(p, &wires, var_count, n, None, &mut temp_index, &mut init_terms)
+                    } else {
+                        // fallback to lowering the full leaf if we couldn't find a child
+                        lower_expr_to_terms(leaf.clone(), &wires, var_count, n, None, &mut temp_index, &mut init_terms)
+                    };
+
+                    // build a mapped view of the inner wire for term reads:
+                    // if an inner entry is an IVAR (var_count <= i < n) then
+                    // for init we must read its primed twin (i + n). Other
+                    // indices are used as-is.
+                    let mut mapped_inner = Wire::none();
+                    for (i, dt) in inner_w.iter() {
+                        if i < n && i >= var_count {
+                            mapped_inner = mapped_inner.concat(&Wire::one(i + n, *dt));
+                        } else {
+                            mapped_inner = mapped_inner.concat(&Wire::one(i, *dt));
+                        }
+                    }
+
+                    // Emit an Abs term that writes into a temporary, then an
+                    // Assign from that temporary into the primed `write` wire.
+                    // The Abs term's read should reference primed IVAR indices
+                    // (mapped_inner) while classification uses the original
+                    // inner_read (unprimed).
+                    let temp_w = Wire::one(temp_index, DType::Int);
+                    temp_index += 1;
+                    init_terms.push(Term::new(
+                        IType::Abs,
+                        temp_w.clone(),
+                        mapped_inner.clone(),
+                    ));
+
+                    // Move the Abs result into the variable's primed next wire
+                    init_terms.push(Term::new(IType::Assign, write.clone(), temp_w.clone()));
+
+                    // classification: report original reads from inner_read
                     classify_reads_from_wire(
-                        &read_union,
+                        &inner_read,
                         var_count,
                         n,
                         &mut read_latched,

@@ -265,9 +265,7 @@ Module {
                     },
                 },
                 Term {
-                    itype: ConstInt(
-                        0,
-                    ),
+                    itype: Abs,
                     write: Wire {
                         vec: [
                             (
@@ -277,11 +275,35 @@ Module {
                         ],
                     },
                     read: Wire {
-                        vec: [],
+                        vec: [
+                            (
+                                8,
+                                Int,
+                            ),
+                        ],
                     },
                 },
                 Term {
-                    itype: Sub,
+                    itype: Assign,
+                    write: Wire {
+                        vec: [
+                            (
+                                6,
+                                Int,
+                            ),
+                        ],
+                    },
+                    read: Wire {
+                        vec: [
+                            (
+                                16,
+                                Int,
+                            ),
+                        ],
+                    },
+                },
+                Term {
+                    itype: Abs,
                     write: Wire {
                         vec: [
                             (
@@ -293,150 +315,26 @@ Module {
                     read: Wire {
                         vec: [
                             (
-                                16,
-                                Int,
-                            ),
-                            (
-                                3,
+                                9,
                                 Int,
                             ),
                         ],
                     },
                 },
                 Term {
-                    itype: Lt,
+                    itype: Assign,
                     write: Wire {
                         vec: [
                             (
-                                18,
-                                Bool,
-                            ),
-                        ],
-                    },
-                    read: Wire {
-                        vec: [
-                            (
-                                3,
-                                Int,
-                            ),
-                            (
-                                16,
-                                Int,
-                            ),
-                        ],
-                    },
-                },
-                Term {
-                    itype: Cond,
-                    write: Wire {
-                        vec: [
-                            (
-                                19,
+                                7,
                                 Int,
                             ),
                         ],
                     },
                     read: Wire {
                         vec: [
-                            (
-                                18,
-                                Bool,
-                            ),
                             (
                                 17,
-                                Int,
-                            ),
-                            (
-                                3,
-                                Int,
-                            ),
-                        ],
-                    },
-                },
-                Term {
-                    itype: ConstInt(
-                        0,
-                    ),
-                    write: Wire {
-                        vec: [
-                            (
-                                20,
-                                Int,
-                            ),
-                        ],
-                    },
-                    read: Wire {
-                        vec: [],
-                    },
-                },
-                Term {
-                    itype: Sub,
-                    write: Wire {
-                        vec: [
-                            (
-                                21,
-                                Int,
-                            ),
-                        ],
-                    },
-                    read: Wire {
-                        vec: [
-                            (
-                                20,
-                                Int,
-                            ),
-                            (
-                                4,
-                                Int,
-                            ),
-                        ],
-                    },
-                },
-                Term {
-                    itype: Lt,
-                    write: Wire {
-                        vec: [
-                            (
-                                22,
-                                Bool,
-                            ),
-                        ],
-                    },
-                    read: Wire {
-                        vec: [
-                            (
-                                4,
-                                Int,
-                            ),
-                            (
-                                20,
-                                Int,
-                            ),
-                        ],
-                    },
-                },
-                Term {
-                    itype: Cond,
-                    write: Wire {
-                        vec: [
-                            (
-                                23,
-                                Int,
-                            ),
-                        ],
-                    },
-                    read: Wire {
-                        vec: [
-                            (
-                                22,
-                                Bool,
-                            ),
-                            (
-                                21,
-                                Int,
-                            ),
-                            (
-                                4,
                                 Int,
                             ),
                         ],
