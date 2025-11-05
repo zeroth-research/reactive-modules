@@ -10,10 +10,15 @@ When you have `uv` installed, the setup is as easy as
 
 ```shell
 uv sync
+uv run maturin develop
 ```
 
 (The setup is to be made from the `torch` directory, not from the workspace
 directory.)
+
+## Building the package
+
+TBD
 
 
 ## Usage

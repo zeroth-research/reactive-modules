@@ -47,8 +47,7 @@ def torch_libdir():
     return str(libdir)
 
 
-def emit_rustc_flags():
-    py_libdir, py_libname = python_libdir_and_name()
+def emit_rustc_flags(py_libdir, py_libname, torch_lib):
 
     # 1. Link search path for Python
     print(f"cargo:rustc-link-search=native={py_libdir}")
@@ -60,13 +59,15 @@ def emit_rustc_flags():
     print(f"cargo:rustc-link-arg=-Wl,-rpath,{py_libdir}")
 
     # 4. Torch integration
-    tlib = torch_libdir()
-    if tlib is not None:
+    if torch_lib is not None:
         # Make rustc aware of torch's native libs at link time
-        print(f"cargo:rustc-link-search=native={tlib}")
+        print(f"cargo:rustc-link-search=native={torch_lib}")
 
         # Add rpath for torch's lib dir so DYLD_LIBRARY_PATH isn't needed at runtime
-        print(f"cargo:rustc-link-arg=-Wl,-rpath,{tlib}")
+        # Also, explicitly link to `libtorch_python`. This library is linked by `libtorch`, but because
+        # the dependency is inirect, `rpath` will not propagate into `libtorch` and `libtorch_python`
+        # will not be found at runtime (so we would still need to set up DYLD_LIBRARY_PATH without this step).
+        print(f"cargo:rustc-link-arg=-Wl,-rpath,{torch_lib}")
 
         # Let downstream crates know we're using the PyTorch build of libtorch
         print("cargo:rustc-env=LIBTORCH_USE_PYTORCH=1")
@@ -89,4 +90,8 @@ def emit_rustc_flags():
 
 
 if __name__ == "__main__":
-    emit_rustc_flags()
+    py_libdir, py_libname = python_libdir_and_name()
+    torch_lib = torch_libdir()
+
+    emit_rustc_flags(py_libdir, py_libname, torch_lib)
+    # emit_python_config(CONFIG_FILE, py_libdir, py_libname, torch_lib)
