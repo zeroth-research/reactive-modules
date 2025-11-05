@@ -5,13 +5,10 @@ pub mod interpreter;
 pub mod term;
 pub mod val;
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn it_works() {
-//         let result = add(2, 2);
-//         assert_eq!(result, 4);
-//     }
-// }
+#[cfg(feature = "visual")]
+pub mod visual;
+
+pub type ToyModule = base::module::Module<crate::dtype::Type, crate::instruction::Instruction>;
+pub type ToyAtom = base::atom::Atom<crate::dtype::Type, crate::instruction::Instruction>;
+pub type ToyTerm = base::term::Term<crate::dtype::Type, crate::instruction::Instruction>;
+pub type ToyWire = base::wire::Wire<crate::dtype::Type>;
