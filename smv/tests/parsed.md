@@ -265,11 +265,27 @@ Module {
                     },
                 },
                 Term {
-                    itype: Assign,
+                    itype: ConstInt(
+                        0,
+                    ),
                     write: Wire {
                         vec: [
                             (
-                                6,
+                                16,
+                                Int,
+                            ),
+                        ],
+                    },
+                    read: Wire {
+                        vec: [],
+                    },
+                },
+                Term {
+                    itype: Sub,
+                    write: Wire {
+                        vec: [
+                            (
+                                17,
                                 Int,
                             ),
                         ],
@@ -277,18 +293,45 @@ Module {
                     read: Wire {
                         vec: [
                             (
-                                8,
+                                16,
+                                Int,
+                            ),
+                            (
+                                3,
                                 Int,
                             ),
                         ],
                     },
                 },
                 Term {
-                    itype: Assign,
+                    itype: Lt,
                     write: Wire {
                         vec: [
                             (
-                                7,
+                                18,
+                                Bool,
+                            ),
+                        ],
+                    },
+                    read: Wire {
+                        vec: [
+                            (
+                                3,
+                                Int,
+                            ),
+                            (
+                                16,
+                                Int,
+                            ),
+                        ],
+                    },
+                },
+                Term {
+                    itype: Cond,
+                    write: Wire {
+                        vec: [
+                            (
+                                19,
                                 Int,
                             ),
                         ],
@@ -296,7 +339,104 @@ Module {
                     read: Wire {
                         vec: [
                             (
-                                9,
+                                18,
+                                Bool,
+                            ),
+                            (
+                                17,
+                                Int,
+                            ),
+                            (
+                                3,
+                                Int,
+                            ),
+                        ],
+                    },
+                },
+                Term {
+                    itype: ConstInt(
+                        0,
+                    ),
+                    write: Wire {
+                        vec: [
+                            (
+                                20,
+                                Int,
+                            ),
+                        ],
+                    },
+                    read: Wire {
+                        vec: [],
+                    },
+                },
+                Term {
+                    itype: Sub,
+                    write: Wire {
+                        vec: [
+                            (
+                                21,
+                                Int,
+                            ),
+                        ],
+                    },
+                    read: Wire {
+                        vec: [
+                            (
+                                20,
+                                Int,
+                            ),
+                            (
+                                4,
+                                Int,
+                            ),
+                        ],
+                    },
+                },
+                Term {
+                    itype: Lt,
+                    write: Wire {
+                        vec: [
+                            (
+                                22,
+                                Bool,
+                            ),
+                        ],
+                    },
+                    read: Wire {
+                        vec: [
+                            (
+                                4,
+                                Int,
+                            ),
+                            (
+                                20,
+                                Int,
+                            ),
+                        ],
+                    },
+                },
+                Term {
+                    itype: Cond,
+                    write: Wire {
+                        vec: [
+                            (
+                                23,
+                                Int,
+                            ),
+                        ],
+                    },
+                    read: Wire {
+                        vec: [
+                            (
+                                22,
+                                Bool,
+                            ),
+                            (
+                                21,
+                                Int,
+                            ),
+                            (
+                                4,
                                 Int,
                             ),
                         ],

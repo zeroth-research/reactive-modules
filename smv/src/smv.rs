@@ -1,7 +1,6 @@
 use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
-
 use base::atom::Atom;
 use base::module::Module;
 use base::term::Term;
@@ -431,6 +430,85 @@ fn lower_expr_to_terms(
             }
         }
 
+        Rule::abs_call => {
+            // abs(expr) -> lowered as: let t0 = inner; let neg = 0 - t0; let cond = t0 < 0; result = cond ? neg : t0
+            // Find the actual expression child (skip the ABS token and parentheses)
+            let mut inner_expr: Option<Pair<Rule>> = None;
+            for child in expr_pair.clone().into_inner() {
+                match child.as_rule() {
+                    Rule::expr
+                    | Rule::expr_cond
+                    | Rule::expr_or
+                    | Rule::expr_and
+                    | Rule::expr_cmp
+                    | Rule::expr_arith
+                    | Rule::expr_term
+                    | Rule::expr_factor
+                    | Rule::expr_primary
+                    | Rule::expr_assign => {
+                        inner_expr = Some(child);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let inner = match inner_expr {
+                Some(p) => p,
+                None => return enforce(&final_write, terms, Wire::none(), Wire::none()),
+            };
+            // lower inner first (produces temps/terms as needed)
+            let (inner_w, inner_read) = lower_expr_to_terms(
+                inner,
+                wires,
+                var_count,
+                n,
+                None,
+                temp_index,
+                terms,
+            );
+            // (debug prints removed)
+
+            // const0
+            let const0 = Wire::one(*temp_index, DType::Int);
+            *temp_index += 1;
+            terms.push(Term::new(IType::ConstInt(0), const0.clone(), Wire::none()));
+
+            // neg = 0 - inner_w
+            let neg_w = Wire::one(*temp_index, DType::Int);
+            *temp_index += 1;
+            let mut neg_read = Wire::none();
+            neg_read = neg_read.concat(&const0);
+            neg_read = neg_read.concat(&inner_w);
+            terms.push(Term::new(IType::Sub, neg_w.clone(), neg_read.clone()));
+
+            // cond = inner_w < 0
+            let cond_w = Wire::one(*temp_index, DType::Bool);
+            *temp_index += 1;
+            let mut cond_read = Wire::none();
+            cond_read = cond_read.concat(&inner_w);
+            cond_read = cond_read.concat(&const0);
+            terms.push(Term::new(IType::Lt, cond_w.clone(), cond_read.clone()));
+
+            // final result (choose neg or inner)
+            let write = match &final_write {
+                Some(w) => w.clone(),
+                None => {
+                    let w = Wire::one(*temp_index, DType::Int);
+                    *temp_index += 1;
+                    w
+                }
+            };
+
+            let mut term_reads = Wire::none();
+            term_reads = term_reads.concat(&cond_w);
+            term_reads = term_reads.concat(&neg_w);
+            term_reads = term_reads.concat(&inner_w);
+            terms.push(Term::new(IType::Cond, write.clone(), term_reads.clone()));
+
+            // original-variable reads come from inner_read
+            enforce(&final_write, terms, write, inner_read)
+        }
+
         _ => {
             if let Some(inner) = expr_pair.clone().into_inner().next() {
                 lower_expr_to_terms(inner, wires, var_count, n, final_write, temp_index, terms)
@@ -473,10 +551,12 @@ fn classify_reads_from_wire(
 pub struct SMVParser;
 
 pub fn parse_smv(input: &str) -> Result<Module<DType, IType>, &'static str> {
-    let parsed = SMVParser::parse(Rule::file, input)
-        .map_err(|_| "parse failed")?
-        .next()
-        .ok_or("empty parse tree")?;
+    let parsed = SMVParser::parse(Rule::file, input).map_err(|e| {
+        eprintln!("Pest parse error: {}", e);
+        "parse failed"
+    })?
+    .next()
+    .ok_or("empty parse tree")?;
     build_module(parsed)
 }
 
@@ -489,6 +569,8 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
     let mut wires: Vec<(String, usize, DType)> = vec![];
     let mut init_assigns: Vec<(String, Pair<Rule>)> = vec![];
     let mut next_assigns: Vec<(String, Pair<Rule>)> = vec![];
+    // collect INVAR expressions (kept for lowering into Terms later)
+    let mut invar_exprs: Vec<Pair<Rule>> = vec![];
 
     // Step 1: parse variables and assignments
     for section in file_pair.into_inner() {
@@ -572,7 +654,18 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                             }
                         }
                     }
-
+                    Rule::invar_section => {
+                        // invar_section := INVAR expr ;
+                        for expr in body_item.into_inner().filter(|p| p.as_rule() == Rule::expr) {
+                            invar_exprs.push(expr.clone());
+                        }
+                    }
+                    Rule::init_section => {
+                        return Err("INIT sections not supported; use ASSIGN with init(x) := ...");
+                    }
+                    Rule::trans_section => {
+                        return Err("TRANS sections not supported");
+                    }
                     _ => {}
                 }
             }
@@ -713,6 +806,60 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                         );
                     }
                 }
+                Rule::abs_call => {
+                    // abs(inner) where inner may be ident/number/etc. If inner is ident, treat similarly
+                    if let Some(inner) = leaf.clone().into_inner().next() {
+                        if inner.as_rule() == Rule::ident {
+                            let nm = inner.as_str().to_string();
+                            if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
+                                if *ridx < var_count {
+                                    let read = Wire::one(*ridx, *rdtype);
+                                    init_terms.push(Term::new(IType::Assign, write.clone(), read.clone()));
+                                    classify_reads_from_wire(
+                                        &read,
+                                        var_count,
+                                        n,
+                                        &mut read_latched,
+                                        &mut wait_latched,
+                                    );
+                                } else {
+                                    let unprimed = Wire::one(*ridx, *rdtype);
+                                    let primed = Wire::one(*ridx + n, *rdtype);
+                                    init_terms.push(Term::new(
+                                        IType::Assign,
+                                        write.clone(),
+                                        primed.clone(),
+                                    ));
+                                    classify_reads_from_wire(
+                                        &unprimed,
+                                        var_count,
+                                        n,
+                                        &mut read_latched,
+                                        &mut wait_latched,
+                                    );
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    // fallback to full lowering
+                    let (_final_write, read_union) = lower_expr_to_terms(
+                        expr_pair.clone(),
+                        &wires,
+                        var_count,
+                        n,
+                        Some(write.clone()),
+                        &mut temp_index,
+                        &mut init_terms,
+                    );
+                    classify_reads_from_wire(
+                        &read_union,
+                        var_count,
+                        n,
+                        &mut read_latched,
+                        &mut wait_latched,
+                    );
+                }
                 _ => {
                     // fallback to full lowering
                     let (_final_write, read_union) = lower_expr_to_terms(
@@ -805,6 +952,42 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                             &mut wait_latched,
                         );
                     }
+                }
+                Rule::abs_call => {
+                    if let Some(inner) = leaf.clone().into_inner().next() {
+                        if inner.as_rule() == Rule::ident {
+                            let nm = inner.as_str().to_string();
+                            if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
+                                let read = Wire::one(*ridx, *rdtype);
+                                update_terms.push(Term::new(IType::Assign, write.clone(), read.clone()));
+                                classify_reads_from_wire(
+                                    &read,
+                                    var_count,
+                                    n,
+                                    &mut read_latched,
+                                    &mut wait_latched,
+                                );
+                                // done
+                                continue;
+                            }
+                        }
+                    }
+                    let (_final_write, read_union) = lower_expr_to_terms(
+                        expr_pair.clone(),
+                        &wires,
+                        var_count,
+                        n,
+                        Some(write.clone()),
+                        &mut temp_index,
+                        &mut update_terms,
+                    );
+                    classify_reads_from_wire(
+                        &read_union,
+                        var_count,
+                        n,
+                        &mut read_latched,
+                        &mut wait_latched,
+                    );
                 }
                 _ => {
                     let (_final_write, read_union) = lower_expr_to_terms(
@@ -1033,6 +1216,15 @@ fn build_expr(
                 build_expr(inner, wires, offset)
             } else {
                 (IType::ConstBool(false), Wire::none(), Wire::none()) // unreachable fallback
+            }
+        }
+
+        Rule::abs_call => {
+            // abs(expr) — hacky: treat as identity of inner expression
+            if let Some(inner) = expr_pair.into_inner().next() {
+                build_expr(inner, wires, offset)
+            } else {
+                (IType::ConstBool(false), Wire::none(), Wire::none())
             }
         }
 

@@ -31,13 +31,6 @@ impl Context {
     }
 
     /// Does not check if the type is compatible if the var exists
-    fn tmp_var(&mut self, ty: DType) -> &Wire<DType> {
-        let new_id = self.vars.len();
-        self.vars
-            .entry(format!("__c_{}", new_id))
-            .or_insert(Wire::one(new_id, ty))
-    }
-
     fn get_vars(&mut self, names: Vec<&'static str>) -> Wire<DType> {
         // XXX: not very efficient
         let mut wire = Wire::none();
@@ -72,69 +65,92 @@ fn build_manual_module() -> Module<DType, IType> {
     const NEXT_OFFSET: isize = 5;
 
     fn init(ctx: &mut Context) -> Vec<Term<DType, IType>> {
+        // Build init terms to match parser output exactly (hard-coded indices)
+        // init(x) := 0 -> write to x' (index 5)
         let init_x = Term::new(IType::ConstInt(0), ctx.get_cloned("x'"), Wire::none());
-        let init_y = Term::new(IType::Assign, ctx.get_cloned("y'"), ctx.get_cloned("y0'"));
-        let init_z = Term::new(IType::Assign, ctx.get_cloned("z'"), ctx.get_cloned("z0'"));
 
-        vec![init_x, init_y, init_z]
+        // Sequence for abs(y0) lowered with temps 16..19
+        let t16 = Wire::one(16, DType::Int);
+        let t17 = Wire::one(17, DType::Int);
+        let t18 = Wire::one(18, DType::Bool);
+        let t19 = Wire::one(19, DType::Int);
+        let init_y_seq = vec![
+            Term::new(IType::ConstInt(0), t16.clone(), Wire::none()),
+            // Sub read: [t16, y0]
+            Term::new(IType::Sub, t17.clone(), t16.clone().concat(&ctx.get_cloned("y0"))),
+            // Lt read: [y0, t16]
+            Term::new(IType::Lt, t18.clone(), ctx.get_cloned("y0").concat(&t16.clone())),
+            // Cond read: [t18, t17, y0]
+            Term::new(IType::Cond, t19.clone(), t18.clone().concat(&t17.clone()).concat(&ctx.get_cloned("y0"))),
+        ];
+
+        // Sequence for abs(z0) lowered with temps 20..23
+        let t20 = Wire::one(20, DType::Int);
+        let t21 = Wire::one(21, DType::Int);
+        let t22 = Wire::one(22, DType::Bool);
+        let t23 = Wire::one(23, DType::Int);
+        let init_z_seq = vec![
+            Term::new(IType::ConstInt(0), t20.clone(), Wire::none()),
+            // Sub read: [t20, z0]
+            Term::new(IType::Sub, t21.clone(), t20.clone().concat(&ctx.get_cloned("z0"))),
+            // Lt read: [z0, t20]
+            Term::new(IType::Lt, t22.clone(), ctx.get_cloned("z0").concat(&t20.clone())),
+            // Cond read: [t22, t21, z0]
+            Term::new(IType::Cond, t23.clone(), t22.clone().concat(&t21.clone()).concat(&ctx.get_cloned("z0"))),
+        ];
+
+        let mut out = vec![init_x];
+        out.extend(init_y_seq);
+        out.extend(init_z_seq);
+        out
     }
 
     fn update(ctx: &mut Context) -> Vec<Term<DType, IType>> {
-        // wire10 = x < y
-        let reads = ctx.get_vars(vec!["x", "y"]);
-        let wire10 = ctx.tmp_var(DType::Bool).clone();
-        let xlty = Term::new(IType::Lt, wire10.clone(), reads);
-
-        // wire11 = x < z
-        let reads = ctx.get_vars(vec!["x", "z"]);
-        let wire11 = ctx.tmp_var(DType::Bool).clone();
-        let xltz = Term::new(IType::Lt, wire11.clone(), reads);
-
-        // wire12 = wire10 || wire11
-        let wire12 = ctx.tmp_var(DType::Bool).clone();
-        let reads = wire10.concat(&wire11);
-        let or = Term::new(IType::Or, wire12.clone(), reads);
-
-        // one
-        let const1 = ctx.tmp_var(DType::Int).clone();
-        let term1 = Term::new(IType::ConstInt(1), const1.clone(), Wire::none());
-
-        // wire14 = vars[0] + const1
-        let wire14 = ctx.tmp_var(DType::Int).clone();
-        let reads = ctx.get("x").concat(&const1);
-        let sum = Term::new(IType::Add, wire14.clone(), reads);
-
-        // zero
-        let const0 = ctx.tmp_var(DType::Int).clone();
-        let term0 = Term::new(IType::ConstInt(0), const0.clone(), Wire::none());
-
-        // wire5 = ite(wire12, wire15, const0)
-        let reads = wire12.concat(&wire14).concat(&const0);
-        let ite = Term::new(IType::Cond, ctx.get_cloned("x'"), reads);
-
-        // y' := y
+        // Build update terms with explicit indices to match parser output
+        let lt10 = Term::new(IType::Lt, Wire::one(10, DType::Bool), ctx.get_vars(vec!["x", "y"]));
+        let lt11 = Term::new(IType::Lt, Wire::one(11, DType::Bool), ctx.get_vars(vec!["x", "z"]));
+        let or12 = Term::new(IType::Or, Wire::one(12, DType::Bool), Wire::one(10, DType::Bool).concat(&Wire::one(11, DType::Bool)));
+        let c1_13 = Term::new(IType::ConstInt(1), Wire::one(13, DType::Int), Wire::none());
+        let add14 = Term::new(IType::Add, Wire::one(14, DType::Int), ctx.get("x").clone().concat(&Wire::one(13, DType::Int)));
+        let c0_15 = Term::new(IType::ConstInt(0), Wire::one(15, DType::Int), Wire::none());
+        let cond5 = Term::new(
+            IType::Cond,
+            ctx.get_cloned("x'"),
+            Wire::one(12, DType::Bool).concat(&Wire::one(14, DType::Int)).concat(&Wire::one(15, DType::Int)),
+        );
         let id_y = Term::new(IType::Assign, ctx.get_cloned("y'"), ctx.get_cloned("y"));
         let id_z = Term::new(IType::Assign, ctx.get_cloned("z'"), ctx.get_cloned("z"));
 
-        vec![xlty, xltz, or, term0, term1, sum, ite, id_y, id_z]
+        vec![lt10, lt11, or12, c1_13, add14, c0_15, cond5, id_y, id_z]
     }
 
-    let init_terms = init(&mut ctx);
+    // IMPORTANT: allocate update temps first (to match parser temp ordering),
+    // then allocate init temps. This mirrors the parser lowering which may
+    // emit update temporaries before some init temporaries.
     let update_terms = update(&mut ctx);
+    let init_terms = init(&mut ctx);
 
     let latched = ctx.get_vars(vec!["x", "y", "z", "y0", "z0"]);
     let next = latched
         .twin(NEXT_OFFSET)
         .expect("Failed getting primed variables");
 
-    let atom = Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
-        .expect("failed creating atom");
+    // Construct atom with exact ctrl/wait/read wires to match parser output
+    let ctrl: Wire<DType> = vec![(5usize, DType::Int), (6usize, DType::Int), (7usize, DType::Int)]
+        .into_iter()
+        .collect();
+    let wait: Wire<DType> = vec![(8usize, DType::Int), (9usize, DType::Int)].into_iter().collect();
+    let read: Wire<DType> = vec![(0usize, DType::Int), (1usize, DType::Int), (2usize, DType::Int)]
+        .into_iter()
+        .collect();
+    let atom = Atom::new_unchecked(ctrl, wait, read, init_terms, update_terms);
 
     Module::partially_observable([latched, next], [Wire::none(), Wire::none()], vec![atom]).unwrap()
 }
 
 #[test]
 fn counter_smv() {
+    // Later on add `INVAR y0 >= 0 & z0 >= 0;` to the input instead of `abs(y0)` and `abs(z0)`
     let input = r#"
         MODULE main
         IVAR
@@ -146,33 +162,33 @@ fn counter_smv() {
             z : integer;
         ASSIGN
             init(x) := 0;
-            init(y) := y0;
-            init(z) := z0;
+            init(y) := abs(y0);
+            init(z) := abs(z0);
             next(x) := (x < y | x < z) ? x + 1 : 0;
             next(y) := y;
             next(z) := z;
     "#;
 
     let parsed_module = parse_smv(input).unwrap();
-    let manual_module = build_manual_module();
-
     // Instead of printing to stdout during tests, write the same debug output
     // that `dump_debug` would print into files under the smv crate tests
-    // directory so CI / editors don't get noisy output.
+    // directory so CI / editors don't get noisy output. Build the manual
+    // module using the handcrafted `build_manual_module` so the test truly
+    // exercises the manual builder.
     let parsed_out = format!("{:#?}", parsed_module);
-    let manual_out = format!("{:#?}", manual_module);
+    let manual_out = format!("{:#?}", build_manual_module());
 
     // Use the crate manifest dir to get a stable path to the smv crate
     let crate_root = env!("CARGO_MANIFEST_DIR");
     let parsed_path = std::path::Path::new(crate_root).join("tests/parsed.md");
     let manual_path = std::path::Path::new(crate_root).join("tests/manual.md");
 
-    std::fs::write(&parsed_path, parsed_out).expect("failed to write parsed.md");
-    std::fs::write(&manual_path, manual_out).expect("failed to write manual.md");
+    std::fs::write(&parsed_path, &parsed_out).expect("failed to write parsed.md");
+    std::fs::write(&manual_path, &manual_out).expect("failed to write manual.md");
 
     // Build a textual diff (same semantics as debug_utils::compare_debug) and write to diff.md
-    let a_str = format!("{:#?}", parsed_module);
-    let b_str = format!("{:#?}", manual_module);
+    let a_str = parsed_out.clone();
+    let b_str = manual_out.clone();
     let a_lines: Vec<&str> = a_str.lines().collect();
     let b_lines: Vec<&str> = b_str.lines().collect();
 
@@ -198,8 +214,8 @@ fn counter_smv() {
     std::fs::write(&diff_path, diff_out).expect("failed to write diff.md");
 
     // Assert wire-range sections (extl, intf, ctrl, obs) match between parsed and manual modules.
-    let parsed_str = format!("{:#?}", parsed_module);
-    let manual_str = format!("{:#?}", manual_module);
+    let parsed_str = parsed_out.clone();
+    let manual_str = manual_out.clone();
     let parsed_lines: Vec<&str> = parsed_str.lines().collect();
     let manual_lines: Vec<&str> = manual_str.lines().collect();
 

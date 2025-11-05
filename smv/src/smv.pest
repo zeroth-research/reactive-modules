@@ -29,7 +29,11 @@ module_decl =  { MODULE ~ ident ~ ( "(" ~ param_list? ~ ")" )? ~ module_body }
 
 param_list  =  { ident ~ ("," ~ ident)* }
 
-module_body =  { (ivar_section | var_section | define_section | assign_section)* }
+module_body =  { (ivar_section | var_section | define_section | assign_section | invar_section | init_section | trans_section)* }
+
+invar_section = { INVAR ~ expr ~ ";" }
+init_section = { INIT_KW ~ expr ~ ";" }
+trans_section = { TRANS ~ expr ~ ";" }
 
 ivar_section =  { IVAR ~ ivar_decl+ }
 ivar_decl    =  { ident ~ ":" ~ type_spec ~ ";" }
@@ -86,11 +90,14 @@ expr_assign  = { ( init_ref | next_ref | ident ) ~ ":=" ~ expr }
 expr_primary = _{
       TRUE
     | FALSE
+    | abs_call
     | ident
     | number
     | "(" ~ expr ~ ")"
     | expr_assign
 }
+
+abs_call = { ABS ~ "(" ~ expr ~ ")" }
 
 // =============================
 // TERMINALS
@@ -102,7 +109,11 @@ VAR      =  @{ "VAR" }
 DEFINE   =  @{ "DEFINE" }
 ASSIGN   =  @{ "ASSIGN" }
 INIT     =  @{ "init" }
+INIT_KW  =  @{ "INIT" }
+ABS      =  @{ "abs" }
+TRANS    =  @{ "TRANS" }
 NEXT     =  @{ "next" }
+INVAR    =  @{ "INVAR" }
 BOOLEAN  =  @{ "boolean" }
 INTEGER  =  @{ "integer" }
 ENUM     =  @{ "enum" }
