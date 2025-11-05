@@ -2,14 +2,52 @@
 
 ## Setup
 
-### Setup and build using uv
+We use [uv](https://github.com/astral-sh/uv) package manager to handle installing dependencies
+and building this crate. Other building options are mentioned later
+in this README.
 
-Install [uv](https://github.com/astral-sh/uv) and run
+When you have `uv` installed, the setup is as easy as
 
 ```shell
 uv sync
 ```
 
+(The setup is to be made from the `torch` directory, not from the workspace
+directory.)
+
+
+## Usage
+
+After setting up, Python packages and libraries have been
+installed into the virtual environment, so you can start using them without any
+other setup.
+
+```sh
+uv run tests/test.py
+```
+
+Using `uv run` ensures that the scripts are executed in the set up virtual environment.
+If you run into an issue like this:
+
+```py
+ImportError: dlopen(reactive - modules / torch / zrm_torch.so, 0x0002): Library
+not loaded:
+
+@rpath / libtorch_python.dylib
+```
+
+It means that Python cannot find the shared libraries of PyTorch
+(the `rpath` variable does not propagate into non-direct dependencies).
+That can be fixed by running this command before using the package:
+
+```sh
+export DYLD_LIBRARY_PATH=<path-to-libtorch_python>:$DYLD_LIBRARY_PATH
+```
+
+(On Linux, use `LD_LIBRARY_PATH`.)
+
+
+## Other setup options
 
 ### Setup with Poetry
 
@@ -49,54 +87,30 @@ virtual environment.
 
 ### Building manually
 
-Then you can build the crate, using the pip-installed PyTorch.
+You can build the crate manually using the pip-installed PyTorch.
 
 ```sh
+# setup venv and install torch
+pyenv shell 3.13
+source .venv/bin/activate
+
 LIBTORCH_USE_PYTORCH=1 cargo build
 ```
 
-TBD: the need to rename `libzrm_torch.dylib` into `zrm_torch.so`, otherwise Python will not load it.
+After building the crate manually, you may need to rename the build `libzrm_torch.dylib` into `zrm_torch.so`,
+otherwise Python may not load it. Use the crate then as follows:
 
-## Usage
-
-### With uv
-
-```shell
-uv run tests/test.py
-```
-
-### With Maturin
-
-After running `maturin develop`, all the Python packages and libraries have been
-installed into the virtual environment, so you can start using them without any
-other setup. If you run into an issue like this:
-
-```py
-ImportError: dlopen(reactive - modules / torch / zrm_torch.so, 0x0002): Library
-not loaded:
-
-
-@rpath / libtorch_python.dylib
-```
-
-It means that Python cannot find the shared libraries of PyTorch. That can be
-fixed by running this command before using the package:
 
 ```sh
-export DYLD_LIBRARY_PATH=<path-to-libtorch_python>:$DYLD_LIBRARY_PATH
-```
-
-(On Linux, use `LD_LIBRARY_PATH`.)
-
-### Without Maturin
-
-```sh
+# (skip if already done)
 pyenv shell 3.13
 source .venv/bin/activate
+
+# tell python where to look for the zrm_torch.so library
 export PYTHONPATH=<path-to-zrm_torch.so>
 
 python scripts/check.py
 ```
 
-Also, you might need to export the `DYLD_LIBRARY_PATH` in case that Python
+Also, you might need to export the `DYLD_LIBRARY_PATH` (`LD_LIBRARY_PATH`) in case that Python
 cannot find PyTorch libraries (see above).
