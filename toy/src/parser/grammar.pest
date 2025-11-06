@@ -1,0 +1,64 @@
+file          = { SOI ~ modules ~ EOI }
+modules       = { module+ }
+
+module        = { "module" ~ ident ~ "{" ~ module_body ~ "}" }
+module_body   = { decl_variables ~ atoms }
+
+decl_variables = { (ext_vars ~ intf_vars) | (intf_vars ~ ext_vars) | ext_vars | intf_vars }
+ext_vars       = { "external" ~ var_list ~ ":" ~ type_ }
+intf_vars      = { "interface" ~ var_list ~ ":" ~ type_ }
+
+var_list      = { var ~ ("," ~ var)* }
+type_         = { ident }
+
+atoms         = { atom+ }
+//atom          = { "atom" ~ ident ~ "{" ~ atom_body ~ "}" }
+atom          = { "atom" ~ "{" ~ atom_body ~ "}" }
+atom_body     = { atom_variables ~ atom_funs }
+
+atom_variables = { atom_controls ~ (atom_reads | atom_awaits)* | (atom_reads | atom_awaits)+ | atom_controls }
+atom_controls  = { "controls" ~ var_list }
+atom_reads     = { "reads" ~ var_list }
+atom_awaits    = { "awaits" ~ var_list }
+
+atom_funs     = { (atom_init? ~ atom_update) | (atom_update ~ atom_init?) }
+atom_init     = { "init" ~ "{" ~ guarded_commands ~ "}" }
+atom_update   = { "update" ~ "{" ~ guarded_commands ~ "}" }
+
+guarded_commands = { guarded_command+ }
+guarded_command  = { "[]" ~ expr ~ "->" ~ assignments }
+assignments      = { assign ~ (";" ~ assign)* ~ ";"? }
+assign           = { primed_var ~ ":=" ~ expr }
+
+// This is an untyped mix of arithmetics and boolean contectives.
+// I'm thinking how easy and well-typed solution would be in Lark..
+expr  = { expr_1 ~ (logic_op  ~ expr_1)* }
+expr_1  = { expr_2 ~ (cmp_op  ~ expr_2)* }
+expr_2  = { expr_atom ~ (arith_op  ~ expr_atom)* }
+expr_atom = { (not_op | minus_op)? ~ expr_primary}
+expr_primary = _{ constant | boolconst | primed_var | var | "(" ~ expr ~ ")" }
+
+op = { arith_op | logic_op | cmp_op }
+arith_op = { "+" | "-" | "*" | "/" }
+logic_op = { "\\or" | "||" | "\\and" | "&&" }
+cmp_op   = { "=" | "!=" | "<=" | ">=" | "<" | ">" | "\\eq" | "\\neq" | "\\le" | "\\ge" | "\\lt" | "\\gt" }
+not_op   = { "!" | "~" }
+minus_op = { "-" }
+
+boolconst = @{ "true" | "false" }
+
+
+constant       = @{ ASCII_DIGIT+ ~ ( "." ~ ASCII_DIGIT+ )? }
+
+// An iIdentifier can start with an underscore and it has to have at least one letter before any number appears
+ident         = @{ "_"* ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+var           = @{ "_"* ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+primed_var           = @{ "_"* ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* ~ "'" }
+
+// ignore whitespace
+WHITESPACE    = _{ (" " | "\t" | NEWLINE)+ }
+// ignore comments
+COMMENT       = _{ "#" ~ (!NEWLINE ~ ANY)* }
+
+
+

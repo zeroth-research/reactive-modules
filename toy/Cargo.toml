@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 base = { path = "../base" }
+clap = { version = "4.5.51", features = ["derive"] }
+pest = "2.8.3"
+pest_derive = "2.8.3"
