@@ -80,4 +80,37 @@ impl Val {
             Val::Bool(_) => matches!(rhs, Val::Bool { .. }),
         }
     }
+
+    pub fn from_str(val: &str, ty: Type) -> Option<Val> {
+        match ty {
+            Type::Bool => {
+                if let Ok(val) = val.parse() {
+                    return Some(Val::Bool(val));
+                }
+            }
+            Type::Int => {
+                if let Ok(val) = val.parse() {
+                    return Some(Val::Int(val));
+                }
+            }
+            Type::NInt => {
+                if let Ok(val) = val.parse() {
+                    return Some(Val::NInt(val));
+                }
+            }
+            Type::Real => {
+                if let Ok(val) = val.parse() {
+                    return Some(Val::Real(val));
+                }
+            }
+            Type::NReal => {
+                if let Ok(val) = val.parse() {
+                    return Some(Val::NReal(val));
+                }
+            }
+            _ => panic!("Invalid value"),
+        }
+
+        None
+    }
 }
