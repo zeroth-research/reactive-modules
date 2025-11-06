@@ -39,6 +39,10 @@ impl Parser {
         }
     }
 
+    pub fn ctx(&self) -> &Context {
+        &self.ctx
+    }
+
     pub fn parse(&mut self, input: String) -> Vec<ToyModule> {
         let file = ModuleParser::parse(Rule::file, &input)
             .expect("Parsing failed")
