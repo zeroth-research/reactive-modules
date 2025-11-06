@@ -12,7 +12,7 @@ use std::fmt;
 #[derive(Debug)]
 pub struct Term<D, I> {
     /// The instruction to be executed by this node.
-    itype: I,
+    pub(crate) itype: I,
     /// The outputs of this term.
     pub(crate) write: Wire<D>,
     /// The inputs to this term.
@@ -27,6 +27,26 @@ impl<D, I> Term<D, I> {
 
 impl<D: fmt::Display, I: fmt::Display> fmt::Display for Term<D, I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} = {}({})", self.write, self.itype, self.read)
+        const BOLD: &str = "\x1b[1m";
+        const RESET: &str = "\x1b[0m";
+        write!(f, "{} ", self.itype,)?;
+        write!(
+            f,
+            "{}",
+            self.write
+                .iter()
+                .map(|(a, _)| format!("w{}", a))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )?;
+        write!(
+            f,
+            "; {}",
+            self.read
+                .iter()
+                .map(|(a, _)| format!("w{}", a))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 }

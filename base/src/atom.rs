@@ -1,5 +1,6 @@
 use crate::term::Term;
 use crate::wire::Wire;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 /// This data structure corresponds to the atom of reactive modules.
@@ -28,37 +29,10 @@ impl<D, I> Atom<D, I> {
         &self.update
     }
 
-    pub fn reads(&self) -> &Wire<D> {
-        &self.read
-    }
-    pub fn writes(&self) -> &Wire<D> {
-        &self.ctrl
-    }
-    pub fn waits(&self) -> &Wire<D> {
-        &self.wait
-    }
-
     // fn delay(&self) -> &[Term<I>] {
     //     &self.delay
     // }
 
-    /// Creates an atom from its components. This method checks the inputs only using assertions
-    /// in debug mode.
-    pub fn new_unchecked(
-        ctrl: Wire<D>,
-        wait: Wire<D>,
-        read: Wire<D>,
-        init: Vec<Term<D, I>>,
-        update: Vec<Term<D, I>>,
-    ) -> Self {
-        Self {
-            ctrl,
-            wait,
-            read,
-            init,
-            update,
-        }
-    }
     pub fn ctrl(&self) -> &Wire<D> {
         &self.ctrl
     }
@@ -71,8 +45,32 @@ impl<D, I> Atom<D, I> {
 }
 
 impl<D: Eq, I> Atom<D, I> {
+    /// Returns true if this atoms awaits the other atom
     pub fn awaits(&self, other: &Atom<D, I>) -> bool {
         self.wait.is_subset(&other.ctrl)
+    }
+
+    /// Creates an atom from its components. This method checks the inputs only using assertions
+    /// in debug mode.
+    pub fn new_unchecked(
+        ctrl: Wire<D>,
+        wait: Wire<D>,
+        read: Wire<D>,
+        init: Vec<Term<D, I>>,
+        update: Vec<Term<D, I>>,
+    ) -> Self {
+        debug_assert!(ctrl.is_disjoint(&wait));
+        debug_assert!(ctrl.is_disjoint(&read));
+        debug_assert!(wait.is_disjoint(&read));
+        // TODO full consistency check
+
+        Self {
+            ctrl,
+            wait,
+            read,
+            init,
+            update,
+        }
     }
 }
 
@@ -82,96 +80,115 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         init: Vec<Term<D, I>>,
         update: Vec<Term<D, I>>,
     ) -> Result<Self, &'static str> {
-        // Check latched and next wires
-        if !wire[0].is_twin(&wire[1]) {
-            return Err("latched and next wires are not matching");
+        // Check and store wire index + dtype information
+        if wire[0].len() != wire[1].len() {
+            return Err("len mismatch in latched and next wires");
+        }
+        let mut ltc_set: HashSet<usize> = HashSet::new();
+        let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
+        for ((ltc, dtype), (nxt, ntype)) in wire[0].iter().zip(wire[1].iter()) {
+            if dtype != ntype {
+                return Err("dtype mismatch in latched and next wires");
+            }
+            if !ltc_set.insert(ltc) {
+                return Err("duplicate latched wire");
+            }
+            if nxt_to_ltc.insert(nxt, ltc).is_some() {
+                return Err("duplicate next wire");
+            }
         }
 
-        let mut ctrl = Wire::none();
-        let mut wait = Wire::none();
-        let mut read = Wire::none();
+        let mut ctrl = Vec::new();
+        let mut wait = Vec::new();
+        let mut read = Vec::new();
 
-        let mut written = Wire::none();
+        // TODO checks write after write and read before write. The code below will get simpler
+        {
+            let terms_iter = init.iter().chain(update.iter());
+            let write_iter = terms_iter.clone().flat_map(|t| t.write.iter());
+            let read_iter = terms_iter.flat_map(|t| t.read.iter());
 
-        for term in init.iter() {
-            if !term.read.is_disjoint(&wire[0]) {
-                return Err("init read from latched");
+            for (nxt, dtype) in &wire[1] {
+                // if any term writes a next, then this is controlled by the atom
+                if let Some((wr, wtype)) = write_iter.clone().find(|&(wr, _)| nxt == wr) {
+                    if dtype != wtype {
+                        return Err("dtype mismatch");
+                    }
+                    ctrl.push((wr, dtype.clone()));
+                }
+                // if any term reads a next, then this is awaited by the atom
+                if let Some((wr, wtype)) = read_iter.clone().find(|&(wr, _)| nxt == wr) {
+                    if dtype != wtype {
+                        return Err("dtype mismatch");
+                    }
+                    wait.push((wr, dtype.clone()));
+                }
             }
 
-            if !term.read.is_disjoint(&wire[1]) {
-                wait = wait
-                    .union(&term.read.intersection(&wire[1]).unwrap())
-                    .unwrap();
-                written = written.union(&wait).unwrap();
-                //TODO implement mutating union (insert) and remove the guard
+            for (ltc, dtype) in &wire[0] {
+                // if any term reads a latched, then this is read by the atom
+                if let Some((wr, wtype)) = read_iter.clone().find(|&(wr, _)| ltc == wr) {
+                    if dtype != wtype {
+                        return Err("dtype mismatch");
+                    }
+                    read.push((wr, dtype.clone()))
+                }
             }
-
-            if term.read.is_disjoint(&written) {
-                return Err("read before write");
-            }
-            if !term.write.is_disjoint(&written) {
-                return Err("write after write");
-            }
-
-            if !term.write.is_disjoint(&wire[1]) {
-                ctrl = ctrl
-                    .union(&term.write.intersection(&wire[1]).unwrap())
-                    .unwrap();
-                //TODO implement mutating union (insert) and remove the guard
-            }
-            written = written.union(&term.write).unwrap();
         }
 
-        written = wire[0].union(&wait).unwrap();
+        Ok(Self::new_unchecked(
+            Wire::new_unchecked(ctrl),
+            Wire::new_unchecked(wait),
+            Wire::new_unchecked(read),
+            init,
+            update,
+        ))
+    }
+}
 
-        for term in update.iter() {
-            if !term.read.is_disjoint(&wire[0]) {
-                read = read
-                    .union(&term.read.intersection(&wire[0]).unwrap())
-                    .unwrap();
-                //TODO implement mutating union (insert) and remove the guard
+impl<D: fmt::Display, I: fmt::Display> Atom<D, I> {
+    pub(crate) fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
+        const BOLD: &str = "\x1b[1m";
+        const RESET: &str = "\x1b[0m";
+        const INDENT: &str = "  ";
+
+        write!(f, "{pad}{BOLD}atom{RESET}")?;
+        for (i, (wr, _)) in self.ctrl.iter().enumerate() {
+            if i == 0 {
+                write!(f, " {BOLD}controls{RESET} w{wr}")?;
+            } else {
+                write!(f, ", w{wr}")?;
             }
-            if !term.read.is_disjoint(&wire[1]) {
-                wait = wait
-                    .union(&term.read.intersection(&wire[1]).unwrap())
-                    .unwrap();
-                written = written.union(&wait).unwrap();
-                //TODO implement mutating union (insert) and remove the guard
-            }
-            if term.read.is_disjoint(&written) {
-                return Err("read before write");
-            }
-            if !term.write.is_disjoint(&written) {
-                return Err("write after write");
-            }
-            if !term.write.is_disjoint(&wire[1]) {
-                ctrl = ctrl
-                    .union(&term.write.intersection(&wire[1]).unwrap())
-                    .unwrap();
-                //TODO implement mutating union (insert) and remove the guard
-            }
-            written = written.union(&term.write).unwrap();
         }
+        for (i, (wr, _)) in self.read.iter().enumerate() {
+            if i == 0 {
+                write!(f, " {BOLD}reads{RESET} w{wr}")?;
+            } else {
+                write!(f, ", w{wr}")?;
+            }
+        }
+        for (i, (wr, _)) in self.wait.iter().enumerate() {
+            if i == 0 {
+                write!(f, " {BOLD}awaits{RESET} w{wr}")?;
+            } else {
+                write!(f, ", w{wr}")?;
+            }
+        }
+        writeln!(f, "\n{pad}{BOLD}init{RESET}")?;
 
-        Ok(Self::new_unchecked(ctrl, wait, read, init, update))
+        for term in self.init.iter() {
+            writeln!(f, "{pad}{INDENT}{term}")?;
+        }
+        writeln!(f, "{pad}{BOLD}update{RESET}")?;
+        for term in self.update.iter() {
+            writeln!(f, "{pad}{INDENT}{term}")?;
+        }
+        Ok(())
     }
 }
 
 impl<D: fmt::Display, I: fmt::Display> fmt::Display for Atom<D, I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "atom controls {} reads {} awaits {}",
-            self.ctrl, self.read, self.wait
-        )?;
-        writeln!(f, "init")?;
-        for term in self.init.iter() {
-            writeln!(f, "  {}", term)?;
-        }
-        writeln!(f, "update")?;
-        for term in self.update.iter() {
-            writeln!(f, "  {}", term)?;
-        }
-        Ok(())
+        self.fmt_indent(f, "")
     }
 }
