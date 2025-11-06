@@ -177,8 +177,8 @@ impl Parser {
                 let mut inner = g.into_inner();
                 // guarded_command  = { "[]" ~ expr ~ "->" ~ assignments }
                 let expr_pair = inner.next().unwrap();
-                let mut guard = self.build_expr(expr_pair, Type::Bool);
-                let mut assigns = self.parse_assignments(inner.next().unwrap());
+                let guard = self.build_expr(expr_pair, Type::Bool);
+                let assigns = self.parse_assignments(inner.next().unwrap());
 
                 if guard.is_empty() {
                     dbg!("Failed creating a guard");
@@ -293,9 +293,6 @@ impl Parser {
                                 let (_, ty2) = wire_r.get_single().unwrap();
                                 debug_assert!(ty == ty2);
                             }
-                            dbg!(&pair_b);
-                            dbg!(&wire_l);
-                            dbg!(&wire_r);
                             let write_wire = self.ctx.tmp_wire(*ty);
                             terms.push(
                                 create_arith_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),

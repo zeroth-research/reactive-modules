@@ -1,10 +1,17 @@
 use crate::context::Context;
-use crate::{ToyModule, ToyTerm, ToyWire};
+use crate::{ToyAtom, ToyModule, ToyTerm};
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::fmt::Write;
+
+use crate::dtype::Type;
+use crate::instruction::Instruction;
+
+use base::{Atom, Module, Term};
 
 use serde::Serialize;
 use std::fs::File;
-use std::io::Write;
+use std::io::Write as IOWrite;
 
 #[derive(Serialize)]
 struct Node {
@@ -39,7 +46,215 @@ struct Graph {
     elements: Vec<serde_json::Value>,
 }
 
-fn module_to_graph(module: &ToyModule, ctx: Option<&Context>) -> Graph {
+pub trait Descriptor<T, I> {
+    fn describe_module(&self, module: &Module<T, I>) -> String;
+    fn describe_atom(&self, atom: &Atom<T, I>) -> String;
+    fn describe_term(&self, term: &Term<T, I>) -> String;
+
+    fn describe_wire_id(&self, id: usize) -> String {
+        format!("w{id}")
+    }
+
+    // describe node representing output. `id` is the identifier
+    // of the input wire
+    fn describe_input(&self, _id: usize) -> String {
+        "(input node)".into()
+    }
+    // describe node representing output. `id` is the identifier
+    // of the output wire
+    fn describe_output(&self, _id: usize) -> String {
+        "(output node)".into()
+    }
+}
+
+struct DefaultDescriptor {}
+impl<T, I> Descriptor<T, I> for DefaultDescriptor
+where
+    Module<T, I>: std::fmt::Display,
+    Atom<T, I>: std::fmt::Display,
+    Term<T, I>: std::fmt::Display,
+{
+    fn describe_module(&self, module: &Module<T, I>) -> String {
+        module.to_string()
+    }
+
+    fn describe_atom(&self, atom: &Atom<T, I>) -> String {
+        atom.to_string()
+    }
+
+    fn describe_term(&self, term: &Term<T, I>) -> String {
+        term.to_string()
+    }
+}
+
+impl Context {
+    fn wire_name(&self, id: usize) -> String {
+        if let Some(name) = self.get_name(id) {
+            return name.into();
+        }
+        format!("w{id}")
+    }
+
+    fn dump_module(&self, module: &ToyModule, fmt: &HashMap<&str, &str>) -> String {
+        let empty_str = "";
+        let fmt_bold = fmt.get("BOLD_START").unwrap_or(&empty_str);
+        let fmt_bold_end = fmt.get("BOLD_END").unwrap_or(&empty_str);
+
+        let mut s = String::new();
+
+        writeln!(s, "{fmt_bold}module{fmt_bold_end}").unwrap();
+
+        writeln!(s, " {fmt_bold}external{fmt_bold_end}").unwrap();
+        let extl = module.extl();
+        for ((ltc, _), (nxt, dtype)) in extl[0].iter().zip(extl[1].iter()) {
+            writeln!(
+                s,
+                "   {}, {}: {dtype}",
+                self.wire_name(ltc),
+                self.wire_name(nxt)
+            )
+            .unwrap();
+        }
+
+        writeln!(s, " {fmt_bold}interface{fmt_bold_end}").unwrap();
+        let intf = module.intf();
+        for ((ltc, _), (nxt, dtype)) in intf[0].iter().zip(intf[1].iter()) {
+            writeln!(
+                s,
+                "   {}, {}: {dtype}",
+                self.wire_name(ltc),
+                self.wire_name(nxt)
+            )
+            .unwrap();
+        }
+
+        writeln!(s, " {fmt_bold}private{fmt_bold_end}").unwrap();
+        let prvt = module.prvt();
+        for ((ltc, _), (nxt, dtype)) in prvt[0].iter().zip(prvt[1].iter()) {
+            writeln!(
+                s,
+                "   {}, {}: {dtype}",
+                self.wire_name(ltc),
+                self.wire_name(nxt)
+            )
+            .unwrap();
+        }
+
+        write!(s, "\n").unwrap();
+        for atom in module.atoms() {
+            writeln!(s, "{}", self.dump_atom(atom, fmt)).unwrap();
+        }
+
+        s
+    }
+
+    fn dump_atom(&self, atom: &ToyAtom, fmt: &HashMap<&str, &str>) -> String {
+        let empty_str = "";
+        let fmt_bold = fmt.get("BOLD_START").unwrap_or(&empty_str);
+        let fmt_bold_end = fmt.get("BOLD_END").unwrap_or(&empty_str);
+
+        let mut s = String::new();
+        writeln!(s, "{fmt_bold}atom{fmt_bold_end}").unwrap();
+        for (i, (wr, _)) in atom.ctrl().iter().enumerate() {
+            if i == 0 {
+                write!(
+                    s,
+                    " {fmt_bold}controls{fmt_bold_end} {}",
+                    self.wire_name(wr)
+                )
+                .unwrap();
+            } else {
+                write!(s, ", {}", self.wire_name(wr)).unwrap();
+            }
+        }
+        write!(s, "\n").unwrap();
+        for (i, (wr, _)) in atom.read().iter().enumerate() {
+            if i == 0 {
+                write!(s, " {fmt_bold}reads{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
+            } else {
+                write!(s, ", {}", self.wire_name(wr)).unwrap();
+            }
+        }
+        write!(s, "\n").unwrap();
+        for (i, (wr, _)) in atom.wait().iter().enumerate() {
+            if i == 0 {
+                write!(s, " {fmt_bold}awaits{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
+            } else {
+                write!(s, ", {}", self.wire_name(wr)).unwrap();
+            }
+        }
+        write!(s, "\n").unwrap();
+        writeln!(s, "\n{fmt_bold}init{fmt_bold_end}").unwrap();
+
+        for term in atom.init().iter() {
+            write!(s, "  ").unwrap();
+            writeln!(s, "{}", self.dump_term(term, fmt)).unwrap();
+        }
+        writeln!(s, "\n{fmt_bold}update{fmt_bold_end}").unwrap();
+        for term in atom.update().iter() {
+            write!(s, "  ").unwrap();
+            writeln!(s, "{}", self.dump_term(term, fmt)).unwrap();
+        }
+
+        s
+    }
+
+    fn dump_term(&self, term: &ToyTerm, fmt: &HashMap<&str, &str>) -> String {
+        let empty_str = "";
+        let fmt_emph = fmt.get("EMPH_START").unwrap_or(&empty_str);
+        let fmt_emph_end = fmt.get("EMPH_END").unwrap_or(&empty_str);
+
+        let reads = term
+            .reads()
+            .iter()
+            .map(|(id, _)| self.wire_name(id))
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        let writes = term
+            .writes()
+            .iter()
+            .map(|(id, _)| self.wire_name(id))
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        format!(
+            "{writes} = {fmt_emph}{}{fmt_emph_end}({reads})",
+            term.itype()
+        )
+    }
+}
+
+impl Descriptor<Type, Instruction> for Context {
+    fn describe_module(&self, module: &ToyModule) -> String {
+        let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
+        format!("<pre>\n{}</pre>", self.dump_module(module, &fmt))
+    }
+
+    fn describe_atom(&self, atom: &ToyAtom) -> String {
+        let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
+        format!("<pre>\n{}</pre>", self.dump_atom(atom, &fmt))
+    }
+
+    fn describe_term(&self, term: &ToyTerm) -> String {
+        let fmt = HashMap::from([("EMPH_START", "<i>"), ("EMPH_END", "</i>")]);
+        format!(
+            "<pre>\n{}\n\nraw:\n\n{}</pre>",
+            self.dump_term(term, &fmt),
+            term
+        )
+    }
+
+    fn describe_wire_id(&self, id: usize) -> String {
+        self.wire_name(id)
+    }
+}
+
+fn module_to_graph<T, I, D: Descriptor<T, I>>(module: &Module<T, I>, descr: &D) -> Graph
+where
+    T: fmt::Display,
+    I: fmt::Display,
+{
     let mut nodes: Vec<Node> = Vec::new();
     let mut edges: Vec<Edge> = Vec::new();
 
@@ -53,7 +268,7 @@ fn module_to_graph(module: &ToyModule, ctx: Option<&Context>) -> Graph {
         data: NodeData {
             id: format!("module.{module_name}"),
             label: format!("Module {module_name}"),
-            description: format!("{}", module),
+            description: descr.describe_module(module),
             parent: Some(module_name.to_string()),
         },
         classes: Some("module".into()),
@@ -65,7 +280,7 @@ fn module_to_graph(module: &ToyModule, ctx: Option<&Context>) -> Graph {
             data: NodeData {
                 id: format!("atom.{atom_id}"),
                 label: format!("Atom {atom_id}"),
-                description: format!("{}", atom),
+                description: descr.describe_atom(atom),
                 parent: Some(format!("module.{module_name}")),
             },
             classes: Some("atom".into()),
@@ -109,7 +324,7 @@ fn module_to_graph(module: &ToyModule, ctx: Option<&Context>) -> Graph {
                 data: NodeData {
                     id: format!("term.{id}"),
                     label: term.itype().to_string(),
-                    description: format!("{}", term),
+                    description: descr.describe_term(term),
                     parent: Some(atom_id_init.clone()),
                 },
                 classes: Some("term-init".into()),
@@ -131,7 +346,7 @@ fn module_to_graph(module: &ToyModule, ctx: Option<&Context>) -> Graph {
                 data: NodeData {
                     id: format!("term.{id}"),
                     label: term.itype().to_string(),
-                    description: format!("{}", term),
+                    description: descr.describe_term(term),
                     parent: Some(atom_id_update.clone()),
                 },
                 classes: Some("term-update".into()),
@@ -155,8 +370,7 @@ fn module_to_graph(module: &ToyModule, ctx: Option<&Context>) -> Graph {
     );
 
     for wire in wires {
-        let wire_name = ctx.and_then(|ctx_| ctx_.get_name(wire));
-        let wire_name = wire_name.map_or_else(|| format!("w{wire}"), |nm| nm.to_string());
+        let wire_name = descr.describe_wire_id(wire);
 
         if let (Some(srcs), Some(dests)) = (wire_written_by.get(&wire), wire_read_by.get(&wire)) {
             for src in srcs {
@@ -184,7 +398,7 @@ fn module_to_graph(module: &ToyModule, ctx: Option<&Context>) -> Graph {
                     data: NodeData {
                         id: id_str.clone(),
                         label: wire_name.clone(),
-                        description: "(output node)".into(),
+                        description: descr.describe_output(wire),
                         // TODO: we could set the parent to be the parent of this parent
                         parent: Some(parent),
                     },
@@ -212,7 +426,7 @@ fn module_to_graph(module: &ToyModule, ctx: Option<&Context>) -> Graph {
                     data: NodeData {
                         id: id_str.clone(),
                         label: wire_name.clone(),
-                        description: "(input node)".into(),
+                        description: descr.describe_input(wire),
                         // TODO: we could set the parent to be the parent of this parent
                         parent: Some(parent),
                     },
@@ -244,7 +458,11 @@ pub fn write_to_html(
 ) -> Result<(), std::io::Error> {
     //let palette = ["#8ecae6", "#219ebc", "#ffb703", "#fb8500"];
 
-    let data = module_to_graph(module, ctx);
+    let data = if ctx.is_some() {
+        module_to_graph(module, ctx.unwrap())
+    } else {
+        module_to_graph(module, &DefaultDescriptor {})
+    };
 
     // Serialize into vis-network JSON
     let json = serde_json::to_string_pretty(&data).unwrap();
@@ -280,7 +498,7 @@ pub fn write_to_html(
       border-right: 1px solid #ccc;
     }}
     #info {{
-      width: 300px;
+      width: 400px;
       padding: 15px;
       box-sizing: border-box;
       background: #f8f8f8;
@@ -345,12 +563,17 @@ const cy = cytoscape({{
     }}}},
     {{ selector: 'edge', style: {{
         'width': 2,
+        'label': 'data(label)',
         'line-color': '#aaa',
+        'text-background-color': 'white',
+        'text-background-opacity': 0.7,
+        'text-background-shape': 'roundrectangle',
         'curve-style': 'bezier',
         'target-arrow-shape': 'triangle'
     }}}},
     {{ selector: 'edge:selected', style: {{
-        'label': 'data(label)',
+        'line-color': 'red',
+
     }}}},
     {{ selector: 'node:selected', style: {{
         'border-width': 3,
@@ -358,7 +581,7 @@ const cy = cytoscape({{
     }}}}
   ],
   //layout: {{ name: 'breadthfirst', directed: true,  spacingFactor: 0.5, padding: 3, avoidOverlap: true, nodeDimensionsIncludeLabels: true, animate: false }},
-  layout: {{ name: 'fcose', nodeRepulsion: 4500,  avoidOverlap: true, nodeDimensionsIncludeLabels: true, animate: false, gravity: 0.25, gravityRange: 4, nodeSeparation: 75, fit: true}}
+  layout: {{ name: 'fcose', nodeRepulsion: 4500, avoidOverlap: true, nodeDimensionsIncludeLabels: true, animate: false, gravity: 0.5, gravityRange: 5, nodeSeparation: 80, fit: true}}
 }});
 
 // --- Info Panel Logic ---
@@ -370,8 +593,8 @@ cy.on('tap', 'node', (evt) => {{
 
   infoDiv.innerHTML = `
     <h2>${{data.label}}</h2>
-    <p><strong>Type:</strong> ${{data.type || 'Node'}}</p>
-    <p><strong>ID:</strong> ${{data.id}}</p>
+    <!--p><strong>Type:</strong> ${{data.type || 'Node'}}</p>
+    <p><strong>ID:</strong> ${{data.id}}</p-->
     <p>${{data.description || 'No description available.'}}</p>
   `;
 }});
