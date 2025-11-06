@@ -18,14 +18,19 @@ impl Context {
         }
     }
 
-    pub fn get(&mut self, name: &'static str) -> Wire<Type> {
+    pub fn get(&mut self, name: &str) -> Wire<Type> {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
         Wire::one(*id, *ty)
     }
 
+    pub fn get_with_type(&mut self, name: &str) -> (Wire<Type>, Type) {
+        let (id, ty) = self.vars.get(name).expect("Not existing value");
+        (Wire::one(*id, *ty), *ty)
+    }
+
     /// Get or create a variable
     /// Does not check if the type is compatible if the var exists
-    fn var(&mut self, name: &'static str, ty: Type) -> (usize, Type) {
+    pub fn var(&mut self, name: &str, ty: Type) -> (usize, Type) {
         let new_id = self.vars.len();
         *self.vars.entry(name.to_string()).or_insert((new_id, ty))
     }
