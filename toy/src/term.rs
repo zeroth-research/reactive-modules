@@ -125,28 +125,40 @@ pub fn mk_id(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> 
     construct(Instruction::Id, write, read)
 }
 
+pub fn mk_cmp(op: CmpOp, read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
+    construct(Instruction::Cmp(op), write, read)
+}
+
 pub fn mk_eq(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
-    construct(Instruction::Cmp(CmpOp::Eq), write, read)
+    mk_cmp(CmpOp::Eq, write, read)
 }
 
 pub fn mk_le(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
-    construct(Instruction::Cmp(CmpOp::Le), write, read)
+    mk_cmp(CmpOp::Le, write, read)
 }
 
 pub fn mk_lt(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
-    construct(Instruction::Cmp(CmpOp::Lt), write, read)
+    mk_cmp(CmpOp::Lt, write, read)
+}
+
+pub fn mk_logical(
+    op: LogicalOp,
+    read: Wire<Type>,
+    write: Wire<Type>,
+) -> Result<Term, &'static str> {
+    construct(Instruction::Logical(op), write, read)
 }
 
 pub fn mk_or(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
-    construct(Instruction::Logical(LogicalOp::Or), write, read)
+    mk_logical(LogicalOp::Or, write, read)
 }
 
 pub fn mk_and(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
-    construct(Instruction::Logical(LogicalOp::And), write, read)
+    mk_logical(LogicalOp::And, write, read)
 }
 
 pub fn mk_not(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
-    construct(Instruction::Logical(LogicalOp::Not), write, read)
+    mk_logical(LogicalOp::Not, write, read)
 }
 
 pub fn mk_ite(read: Wire<Type>, write: Wire<Type>) -> Result<Term, &'static str> {
