@@ -107,7 +107,6 @@ impl Val {
                     return Some(Val::NReal(val));
                 }
             }
-            _ => panic!("Invalid value"),
         }
 
         None
