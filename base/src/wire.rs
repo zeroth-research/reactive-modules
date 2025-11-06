@@ -49,6 +49,16 @@ impl<D> Wire<D> {
         }
         true
     }
+
+    /// Return the single value in this wire. If the wire
+    /// is not a singleton, fail
+    pub fn get_single(&self) -> Option<&(usize, D)> {
+        if self.vec.len() == 1 {
+            return Some(&self.vec[0]);
+        }
+
+        None
+    }
 }
 
 type Iter<'a, D> = Map<std::slice::Iter<'a, (usize, D)>, fn(&'a (usize, D)) -> (usize, &'a D)>;
@@ -146,6 +156,20 @@ impl<D: Eq + Clone> Wire<D> {
         vec.extend((offset..offset + n - 1).map(|i| (i, dtype.clone())));
         vec.push((offset + n - 1, dtype));
         Self::new_unchecked(vec)
+    }
+
+    pub fn concat(w1: &Wire<D>, w2: &Wire<D>) -> Wire<D> {
+        Wire {
+            vec: [w1.vec.as_slice(), w2.vec.as_slice()].concat(),
+        }
+    }
+
+    pub fn from_wires(wires: &[&Wire<D>]) -> Wire<D> {
+        let mut res = Vec::new();
+        for wire in wires {
+            res.extend_from_slice(wire.vec.as_slice());
+        }
+        Wire { vec: res }
     }
 }
 
