@@ -56,9 +56,7 @@ impl Val {
             _ => None,
         }
     }
-}
 
-impl Val {
     pub fn has_type(&self, ty: &Type) -> bool {
         match self {
             Val::None => false,
