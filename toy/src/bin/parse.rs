@@ -1,6 +1,8 @@
+//use std::fs::metadata;
 use std::process;
 
 use base::module::Module;
+use toy::context::Context;
 use toy::dtype::Type;
 use toy::instruction::Instruction;
 type ToyModule = Module<Type, Instruction>;
@@ -8,6 +10,9 @@ type ToyModule = Module<Type, Instruction>;
 use toy::parser::Parser;
 
 use clap::Parser as ClapParser;
+
+#[cfg(feature = "visual-html")]
+use toy::visual::html;
 
 #[derive(ClapParser)]
 struct Cli {
@@ -17,6 +22,10 @@ struct Cli {
     // how to dump the module, e.g., --dump html
     #[arg(long)]
     dump: Option<String>,
+
+    // output file/dir
+    // #[arg(long)]
+    // output: Option<String>,
 
     // open dump module (if module is dumped)
     #[arg(long, default_value_t = false)]
@@ -28,12 +37,48 @@ struct Cli {
 }
 
 #[cfg(feature = "visual-html")]
-fn dump_to_html(modules: &Vec<ToyModule>, open: bool) {
-    todo!();
+fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli, ctx: &Context) {
+    // TODO: enable output to cusom file/dir
+    //if args.output.is_some() {
+    //    let tmp = &args.output.unwrap();
+    //    if let Ok(md) = metadata(path) {
+    //
+    //    }
+    //}
+
+    for (n, module) in modules.iter().enumerate() {
+        let module_name = module.name();
+        let path = if module_name.is_some() {
+            format!("{}.{}.html", args.spec, module_name.unwrap())
+        } else {
+            format!("{}.module-{}.html", args.spec, n)
+        };
+
+        html::write_to_html(module, path.as_str(), Some(ctx))
+            .inspect_err(|err| {
+                eprintln!("Failed writing the module to file {}", path);
+                eprintln!("{}", err)
+            })
+            .expect("Failed generating HTML");
+
+        println!("Module written to `{}`", path);
+
+        if args.open {
+            println!("Openning in web browser...");
+            #[cfg(target_os = "macos")]
+            {
+                process::Command::new("open").arg(path).spawn().unwrap();
+            }
+            #[cfg(target_os = "linux")]
+            {
+                process::Command::new("xdg-open").arg(path).spawn().unwrap();
+            }
+        }
+    }
 }
 
 #[cfg(not(feature = "visual-html"))]
-fn dump_to_html(modules: &Vec<ToyModule>, open: bool) {
+fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli) {
     eprintln!("HTML visualization is disabled, enable the feature \"visual-html\"".);
     process::exit(1);
 }
@@ -51,14 +96,14 @@ fn main() {
 
     if args.stdout {
         for module in &modules {
-            println!("{:?}", &module);
+            println!("{}", &module);
         }
     }
 
     if let Some(method) = &args.dump {
         match method.as_str() {
             "html" | "HTML" => {
-                dump_to_html(&modules, args.open);
+                dump_to_html(&modules, &args, parser.ctx());
             }
             _ => {
                 eprint!("Unknown `dump` method.");
