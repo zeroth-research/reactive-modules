@@ -40,16 +40,6 @@ pub struct Module<D, I> {
 }
 
 impl<D, I> Module<D, I> {
-    pub fn set_name(&mut self, name: &str) {
-        self.name = Some(name.to_string());
-    }
-
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
-    }
-}
-
-impl<D, I> Module<D, I> {
     pub fn atoms(&self) -> &[Atom<D, I>] {
         &self.atoms
     }
@@ -80,6 +70,14 @@ impl<D, I> Module<D, I> {
 
     pub fn is_open(&self) -> bool {
         !self.extl[0].is_empty()
+    }
+
+    pub fn set_name(&mut self, name: &str) {
+        self.name = Some(name.to_string());
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 }
 
