@@ -9,30 +9,46 @@ use crate::dtype::Type;
 // This is Toy-specific, it will be replaced in the future.
 pub struct Context {
     vars: HashMap<String, (usize, Type)>,
+    // XXX: it would be more efficient make the hash map point to the Entry in `vars`
+    names: HashMap<usize, String>,
 }
 
 impl Context {
     pub fn new() -> Self {
         Self {
             vars: HashMap::new(),
+            names: HashMap::new(),
         }
     }
 
-    pub fn get(&mut self, name: &str) -> Wire<Type> {
+    pub fn get_name(&self, id: usize) -> Option<&str> {
+        self.names.get(&id).and_then(|s| Some(s.as_str()))
+    }
+
+    pub fn get(&self, name: &str) -> Wire<Type> {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
         Wire::one(*id, *ty)
     }
 
-    pub fn get_with_type(&mut self, name: &str) -> (Wire<Type>, Type) {
+    pub fn get_with_type(&self, name: &str) -> (Wire<Type>, Type) {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
         (Wire::one(*id, *ty), *ty)
     }
 
     /// Get or create a variable
     /// Does not check if the type is compatible if the var exists
+    /// This method also remembers names of variables in `self.names`, because
+    /// here we are creating named variables
     pub fn var(&mut self, name: &str, ty: Type) -> (usize, Type) {
         let new_id = self.vars.len();
-        *self.vars.entry(name.to_string()).or_insert((new_id, ty))
+        let name = name.to_string();
+        let res = *self.vars.entry(name.clone()).or_insert((new_id, ty));
+        if res.0 == new_id {
+            // the entry was just inserted
+            let _inserted = self.names.insert(new_id, name);
+            assert!(_inserted == None);
+        }
+        res
     }
 
     /// Does not check if the type is compatible if the var exists
@@ -49,7 +65,7 @@ impl Context {
         Wire::one(self.tmp_var(ty), ty)
     }
 
-    pub fn get_vars(&mut self, names: &[&'static str]) -> Wire<Type> {
+    pub fn get_vars(&self, names: &[&'static str]) -> Wire<Type> {
         let mut vars: Vec<(usize, Type)> = Vec::with_capacity(names.len());
         for name in names {
             let v = self.vars.get(*name).expect("Invalid variable");
@@ -60,7 +76,7 @@ impl Context {
     }
 
     // Union several wires
-    pub fn concat<'a, I>(&mut self, wires: I) -> Wire<Type>
+    pub fn concat<'a, I>(&self, wires: I) -> Wire<Type>
     where
         I: IntoIterator<Item = &'a Wire<Type>>,
     {

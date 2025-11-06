@@ -8,3 +8,15 @@ base = { path = "../base" }
 clap = { version = "4.5.51", features = ["derive"] }
 pest = "2.8.3"
 pest_derive = "2.8.3"
+serde = { version = "1.0", features = ["derive"], optional = true  }
+serde_json = { version = "1.0", optional = true }
+
+
+
+
+[features]
+default = ["visual-html"]
+# enable the visual module (visualizing Modules, debugging)
+visual = []
+# dumping modules to HTML
+visual-html = ["visual", "serde/derive", "serde_json"]
