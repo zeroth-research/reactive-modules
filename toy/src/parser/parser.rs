@@ -269,20 +269,21 @@ impl Parser {
 
                 while let Some(pair_b) = inner.next() {
                     // this is the left-hand-side input to the term that we will parse next
-                    let wire_l = terms.last().unwrap().writes();
+                    let wire_l = terms.last().unwrap().writes().clone();
                     let op_ = pair_b.as_rule();
                     let op_str = pair_b.as_str();
                     let terms_b = self.build_expr(inner.next().unwrap(), ty);
                     if terms_b.is_empty() {
                         panic!("Couldn't build terms");
                     }
-                    let wire_r = terms_b.last().unwrap().writes();
+                    let wire_r = terms_b.last().unwrap().writes().clone();
+                    terms.extend(terms_b);
 
                     match op_ {
                         Rule::logic_op => {
                             let write_wire = self.ctx.tmp_wire(Type::Bool);
                             terms.push(
-                                create_logic_term(op_str, wire_l, wire_r, write_wire).unwrap(),
+                                create_logic_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),
                             )
                         }
                         Rule::arith_op => {
@@ -292,12 +293,17 @@ impl Parser {
                                 let (_, ty2) = wire_r.get_single().unwrap();
                                 debug_assert!(ty == ty2);
                             }
+                            dbg!(&pair_b);
+                            dbg!(&wire_l);
+                            dbg!(&wire_r);
                             let write_wire = self.ctx.tmp_wire(*ty);
                             terms.push(
-                                create_arith_term(op_str, wire_l, wire_r, write_wire).unwrap(),
+                                create_arith_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),
                             )
                         }
-                        Rule::cmp_op => terms.extend(self.create_cmp_term(op_str, wire_l, wire_r)),
+                        Rule::cmp_op => {
+                            terms.extend(self.create_cmp_term(op_str, &wire_l, &wire_r))
+                        }
                         _ => panic!("Invalid operation"),
                     }
                 }
