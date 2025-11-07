@@ -48,16 +48,3 @@ impl WrappedTerm {
 
 // It is safe to share WrappedTerm for the same reasons as for PyTensor
 unsafe impl Sync for WrappedTerm {}
-
-#[pyfunction]
-pub fn print_pyterm(term: &Bound<'_, WrappedTerm>) {
-    //Python::with_gil(|py|{ });
-    let term = term.borrow();
-    println!("WrappedTerm:\n  op: {:?}", term.op);
-    for obj in &term.reads {
-        println!("  r: {:?}", obj);
-    }
-    for obj in &term.writes {
-        println!("  w: {:?}", obj);
-    }
-}

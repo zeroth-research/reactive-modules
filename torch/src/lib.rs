@@ -6,7 +6,6 @@ mod wrappedatom;
 mod wrappedterm;
 
 use pyo3::prelude::*;
-use wrappedterm::print_pyterm;
 
 pub use context::Context;
 pub use pytensor::PyTensor;
@@ -24,6 +23,6 @@ fn zrm_torch(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Context>()?;
 
     py.import("torch")?;
-    m.add_function(wrap_pyfunction!(print_pyterm, m)?)?;
+    //m.add_function(wrap_pyfunction!(print_pyterm, m)?)?;
     Ok(())
 }
