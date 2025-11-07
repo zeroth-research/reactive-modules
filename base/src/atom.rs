@@ -2,7 +2,6 @@ use crate::term::Term;
 use crate::wire::Wire;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::fmt::Write;
 
 /// This data structure corresponds to the atom of reactive modules.
 #[derive(Debug)]
