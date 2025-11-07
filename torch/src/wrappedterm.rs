@@ -4,19 +4,19 @@ use crate::pyval::PyVal;
 use crate::term::TorchOp;
 
 #[pyclass]
-pub struct PyTerm {
+pub struct WrappedTerm {
     pub op: TorchOp,
     pub reads: Vec<PyVal>,
     pub writes: Vec<PyVal>,
 }
 
 #[pymethods]
-impl PyTerm {
+impl WrappedTerm {
     #[new]
     fn new(op: &str, reads: Vec<Py<PyVal>>, writes: Vec<Py<PyVal>>) -> Self {
         // here we copy the PyVal created (and owned) by Python so that we can
         // work with them independently of Python.  If the copying becomes
-        // expensive (IHMO unlikely), we can keep `Py<PyVal>` in `PyTerm`
+        // expensive (IHMO unlikely), we can keep `Py<PyVal>` in `WrappedTerm`
         // instead -- the memory would be owned by Python and we would have only
         // references to the values.
         Self {
@@ -27,7 +27,10 @@ impl PyTerm {
     }
 
     fn __repr__(&self) -> String {
-        format!("PyTerm({:?}, {:?}, {:?})", self.op, self.reads, self.writes)
+        format!(
+            "WrappedTerm({:?}, {:?}, {:?})",
+            self.op, self.reads, self.writes
+        )
     }
 
     fn __str__(&self) -> String {
@@ -43,18 +46,5 @@ impl PyTerm {
     }
 }
 
-// It is safe to share PyTerm for the same reasons as for PyTensor
-unsafe impl Sync for PyTerm {}
-
-#[pyfunction]
-pub fn print_pyterm(term: &Bound<'_, PyTerm>) {
-    //Python::with_gil(|py|{ });
-    let term = term.borrow();
-    println!("PyTerm:\n  op: {:?}", term.op);
-    for obj in &term.reads {
-        println!("  r: {:?}", obj);
-    }
-    for obj in &term.writes {
-        println!("  w: {:?}", obj);
-    }
-}
+// It is safe to share WrappedTerm for the same reasons as for PyTensor
+unsafe impl Sync for WrappedTerm {}

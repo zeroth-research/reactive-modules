@@ -1,32 +1,32 @@
 use std::fmt;
 
 use crate::context::Context;
-use crate::pyterm::PyTerm;
 use crate::pyval::PyVal;
 use crate::term::{TorchDType, TorchOp, TorchTerm};
+use crate::wrappedterm::WrappedTerm;
 
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use base::atom::Atom;
+use base::Atom;
+use base::Wire;
 use base::wire::Interface;
 
 type WireTy = Interface<TorchDType>;
 
 #[pyclass]
-pub struct PyAtom {
+pub struct WrappedAtom {
     atom: Atom<TorchDType, TorchOp>,
 }
 
 // It is safe to share this struct for the same reasons as for PyTensor
-unsafe impl Sync for PyAtom {}
+unsafe impl Sync for WrappedAtom {}
 
 // TODO: the following functions that transfer Python data to our structures may be optimized
 
 /// Translate a vector of [PyVal]s into a vector of wire identifiers (`Vec<usize>`).
 ///
-/// This function is used when translating [PyTerm]s into [Term](base::term::Term)s. This translation
+/// This function is used when translating [WrappedTerm]s into [Term](base::term::Term)s. This translation
 /// is using a vector `result` where the translated [Term](base::term::Term)s are stored.
 /// This vector is passed also to this function and used as described below.
 ///
@@ -87,35 +87,31 @@ fn process_pyvals(
     args
 }
 
-fn str_to_pyerr(e: &'static str) -> PyErr {
-    PyErr::new::<PyValueError, _>(e)
-}
-
-/// Translate a list of [PyTerm]s into a vector of [TorchTerm]s.
+/// Translate a list of [WrappedTerm]s into a vector of [TorchTerm]s.
 /// The results is wrapped in [PyResult] so that we can easily propagate errors
 /// back to Python.
 ///
 /// The resulting vector can be longer that the input vector, because we may generate new
 /// [TorchTerm] terms that represent read or written constants (these we can represent as [PyVal]s
-/// in `PyTerm.reads` and `PyTerm.writes`, but in [TorchTerm]s the wires cannot take "constant"
+/// in `WrappedTerm.reads` and `WrappedTerm.writes`, but in [TorchTerm]s the wires cannot take "constant"
 /// values.)
-fn pyterms_to_torchterms(ctx: &mut Context, terms: &Bound<'_, PyList>) -> PyResult<Vec<TorchTerm>> {
+fn wterms_to_torchterms(ctx: &mut Context, terms: &Bound<'_, PyList>) -> PyResult<Vec<TorchTerm>> {
     let mut result = vec![];
 
     for item in terms {
-        let pyterm: &Bound<'_, PyTerm> = item.downcast()?;
-        let pyterm = pyterm.borrow();
+        let wterm: &Bound<'_, WrappedTerm> = item.downcast()?;
+        let wterm = wterm.borrow();
 
-        // Translate `pyterm.reads` and `pyterm.writes` into vectors of wire identifiers.
+        // Translate `wterm.reads` and `wterm.writes` into vectors of wire identifiers.
         // Because constants have no wire identifiers, we translate each constant
         // into a term and we use the identifier of this term's output wire in place of this
         // constant. See the docstring of [process_pyvals].
-        let rargs = process_pyvals(ctx, &pyterm.reads, &mut result);
-        let wargs = process_pyvals(ctx, &pyterm.writes, &mut result);
+        let rargs = process_pyvals(ctx, &wterm.reads, &mut result);
+        let wargs = process_pyvals(ctx, &wterm.writes, &mut result);
 
         let write = Interface::from_iter(wargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
         let read = Interface::from_iter(rargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
-        result.push(TorchTerm::new_unchecked(pyterm.op.clone(), write, read));
+        result.push(TorchTerm::new_unchecked(wterm.op.clone(), write, read));
     }
 
     Ok(result)
@@ -138,7 +134,7 @@ fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<WireTy> {
 }
 
 #[pymethods]
-impl PyAtom {
+impl WrappedAtom {
     #[new]
     fn new(
         ctx: &Bound<'_, Context>,
@@ -151,8 +147,8 @@ impl PyAtom {
         let write = vars_to_wiring(write).unwrap();
 
         let ctx: &mut Context = &mut ctx.borrow_mut();
-        let init = pyterms_to_torchterms(ctx, init).unwrap();
-        let update = pyterms_to_torchterms(ctx, update).unwrap();
+        let init = wterms_to_torchterms(ctx, init).unwrap();
+        let update = wterms_to_torchterms(ctx, update).unwrap();
 
         let atom = Atom::new_unchecked(read, write, Interface::empty(), init, update);
         Self { atom }
@@ -163,11 +159,11 @@ impl PyAtom {
     }
 }
 
-impl std::fmt::Debug for PyAtom {
+impl std::fmt::Debug for WrappedAtom {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Reads: {:?}", self.atom.reads())?;
-        writeln!(f, "Writes: {:?}", self.atom.writes())?;
-        writeln!(f, "Awaits: NOT IMPLEMENTED {:?}", self.atom.waits())?;
+        writeln!(f, "Reads: {:?}", self.atom.read())?;
+        writeln!(f, "Writes: {:?}", self.atom.ctrl())?;
+        writeln!(f, "Awaits: NOT IMPLEMENTED {:?}", self.atom.wait())?;
         writeln!(f, "-------------")?;
         writeln!(f, "Init:")?;
         for term in self.atom.init() {
