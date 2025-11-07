@@ -2,6 +2,7 @@
 Python bindings to the `torch` crate
 """
 
+
 def load_zrm_torch():
     """
     The generated library needs to be named zrm_torch.so to load,
@@ -13,6 +14,8 @@ def load_zrm_torch():
 
     try:
         import zrm_torch
+
+        # print("Loaded: ", zrm_torch.__file__)
 
         return zrm_torch
     except ImportError:
@@ -33,21 +36,16 @@ def load_zrm_torch():
                 import importlib.util
 
                 if path.endswith(".dylib"):
-                    loader = importlib.machinery.ExtensionFileLoader(
-                        "zrm_torch", path)
+                    loader = importlib.machinery.ExtensionFileLoader("zrm_torch", path)
                     spec = importlib.util.spec_from_loader(loader.name, loader)
                 else:
-                    spec = importlib.util.spec_from_file_location(
-                        "zrm_torch", path)
+                    spec = importlib.util.spec_from_file_location("zrm_torch", path)
                     loader = spec.loader
 
                 if spec is None:
                     continue
                 mod = importlib.util.module_from_spec(spec)
                 loader.exec_module(mod)
-
-                # from sys import modules
-                # modules["libzrm_torch"] = mod
 
                 return mod
 

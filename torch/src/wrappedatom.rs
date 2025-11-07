@@ -16,7 +16,7 @@ type WireTy = Interface<TorchDType>;
 
 #[pyclass]
 pub struct WrappedAtom {
-    atom: Atom<TorchDType, TorchOp>,
+    pub(crate) atom: Atom<TorchDType, TorchOp>,
 }
 
 // It is safe to share this struct for the same reasons as for PyTensor
@@ -58,7 +58,7 @@ fn process_pyvals(
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new_unchecked(
                     TorchOp::Const(tensor.tensor.shallow_clone()),
-                    Interface::single(var, "tensor"),
+                    Interface::single(var, TorchDType::Tensor),
                     Interface::empty(),
                 ));
                 args.push(var);
@@ -67,7 +67,7 @@ fn process_pyvals(
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new_unchecked(
                     TorchOp::Const(tch::Tensor::from_slice(&[*val])),
-                    Interface::single(var, "tensor"),
+                    Interface::single(var, TorchDType::Tensor),
                     Interface::empty(),
                 ));
                 args.push(var);
@@ -76,7 +76,7 @@ fn process_pyvals(
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new_unchecked(
                     TorchOp::Const(tch::Tensor::from_slice(&[*val])),
-                    Interface::single(var, "tensor"),
+                    Interface::single(var, TorchDType::Tensor),
                     Interface::empty(),
                 ));
                 args.push(var);
@@ -109,8 +109,10 @@ fn wterms_to_torchterms(ctx: &mut Context, terms: &Bound<'_, PyList>) -> PyResul
         let rargs = process_pyvals(ctx, &wterm.reads, &mut result);
         let wargs = process_pyvals(ctx, &wterm.writes, &mut result);
 
-        let write = Interface::from_iter(wargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
-        let read = Interface::from_iter(rargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
+        let write =
+            Interface::from_iter(wargs.into_iter(), TorchDType::Tensor).map_err(str_to_pyerr)?;
+        let read =
+            Interface::from_iter(rargs.into_iter(), TorchDType::Tensor).map_err(str_to_pyerr)?;
         result.push(TorchTerm::new_unchecked(wterm.op.clone(), write, read));
     }
 
@@ -119,7 +121,7 @@ fn wterms_to_torchterms(ctx: &mut Context, terms: &Bound<'_, PyList>) -> PyResul
 
 /// Translate a list of `PyVal::Sym` values into a wiring. This is a simple version of
 /// [process_pyvals] where we assume no constants are in the input vector.
-fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<WireTy> {
+pub(crate) fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<WireTy> {
     let mut names: Vec<usize> = Vec::new();
     for item in vals {
         let pyval: &Bound<'_, PyVal> = item.downcast()?;
@@ -130,50 +132,52 @@ fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<WireTy> {
         }
     }
 
-    Interface::from_iter(names.into_iter(), "tensor").map_err(str_to_pyerr)
+    Interface::from_iter(names.into_iter(), TorchDType::Tensor).map_err(str_to_pyerr)
 }
 
 #[pymethods]
 impl WrappedAtom {
+    //fn new_unchecked(
+    //    ctx: &Bound<'_, Context>,
+    //    read: &Bound<'_, PyList>,
+    //    ctrl: &Bound<'_, PyList>,
+    //    init: &Bound<'_, PyList>,
+    //    update: &Bound<'_, PyList>,
+    //) -> Self {
+    //    let read = vars_to_wiring(read).unwrap();
+    //    let ctrl = vars_to_wiring(ctrl).unwrap();
+    //
+    //    let ctx: &mut Context = &mut ctx.borrow_mut();
+    //    let init = wterms_to_torchterms(ctx, init).unwrap();
+    //    let update = wterms_to_torchterms(ctx, update).unwrap();
+    //
+    //    let atom = Atom::new_unchecked(read, ctrl, Wire::none(), init, update);
+    //    Self { atom }
+    //}
+
     #[new]
     fn new(
         ctx: &Bound<'_, Context>,
-        read: &Bound<'_, PyList>,
-        write: &Bound<'_, PyList>,
+        // variables
+        latched: &Bound<'_, PyList>,
+        next: &Bound<'_, PyList>,
+        // init and update
         init: &Bound<'_, PyList>,
         update: &Bound<'_, PyList>,
     ) -> Self {
-        let read = vars_to_wiring(read).unwrap();
-        let write = vars_to_wiring(write).unwrap();
+        let latched = vars_to_wiring(latched).unwrap();
+        let next = vars_to_wiring(next).unwrap();
 
         let ctx: &mut Context = &mut ctx.borrow_mut();
         let init = wterms_to_torchterms(ctx, init).unwrap();
         let update = wterms_to_torchterms(ctx, update).unwrap();
 
-        let atom = Atom::new_unchecked(read, write, Interface::empty(), init, update);
+        //let atom = Atom::new_unchecked(read, write, Interface::empty(), init, update);
+        let atom = Atom::with_module_wire(&[latched, next], init, update).unwrap();
         Self { atom }
     }
 
     fn dbg(&self) {
-        println!("{:?}", self);
-    }
-}
-
-impl std::fmt::Debug for WrappedAtom {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Reads: {:?}", self.atom.read())?;
-        writeln!(f, "Writes: {:?}", self.atom.ctrl())?;
-        writeln!(f, "Awaits: NOT IMPLEMENTED {:?}", self.atom.wait())?;
-        writeln!(f, "-------------")?;
-        writeln!(f, "Init:")?;
-        for term in self.atom.init() {
-            writeln!(f, "  {:?}", term)?;
-        }
-        writeln!(f, "-------------")?;
-        writeln!(f, "Update:")?;
-        for term in self.atom.update() {
-            writeln!(f, "  {:?}", term)?;
-        }
-        writeln!(f, "-------------")
+        println!("{}", self.atom);
     }
 }
