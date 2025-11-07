@@ -40,9 +40,9 @@ for n, val in enumerate(outputs):
 
 print("--- Building atom ---\n")
 
-inputs = [inp.term_ for inp in inputs if isinstance(inp, Var)]
-outputs = [out.term_ for out in outputs if isinstance(out, Var)]
-atom = bindings.libzrm_torch.PyAtom(
+inputs = [inp.wrapped_term() for inp in inputs if isinstance(inp, Var)]
+outputs = [out.wrapped_term() for out in outputs if isinstance(out, Var)]
+atom = bindings.libzrm_torch.WrappedAtom(
     ctx.context_,
     inputs,
     outputs,
