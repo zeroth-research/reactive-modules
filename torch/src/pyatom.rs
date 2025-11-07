@@ -9,8 +9,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use base::atom::Atom;
-use base::wire::Wire;
+use base::Atom;
+use base::Wire;
 
 type WireTy = Wire<TorchDType>;
 
@@ -87,10 +87,6 @@ fn process_pyvals(
     args
 }
 
-fn str_to_pyerr(e: &'static str) -> PyErr {
-    PyErr::new::<PyValueError, _>(e)
-}
-
 /// Translate a list of [PyTerm]s into a vector of [TorchTerm]s.
 /// The results is wrapped in [PyResult] so that we can easily propagate errors
 /// back to Python.
@@ -113,8 +109,8 @@ fn pyterms_to_torchterms(ctx: &mut Context, terms: &Bound<'_, PyList>) -> PyResu
         let rargs = process_pyvals(ctx, &pyterm.reads, &mut result);
         let wargs = process_pyvals(ctx, &pyterm.writes, &mut result);
 
-        let write = Wire::from_iter(wargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
-        let read = Wire::from_iter(rargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
+        let write = Wire::from_iter(wargs.into_iter().map(|val| (val, "tensor")));
+        let read = Wire::from_iter(rargs.into_iter().map(|val| (val, "tensor")));
         result.push(TorchTerm::new(pyterm.op.clone(), write, read));
     }
 
@@ -134,7 +130,9 @@ fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<WireTy> {
         }
     }
 
-    Wire::from_iter(names.into_iter(), "tensor").map_err(str_to_pyerr)
+    Ok(Wire::from_iter(
+        names.into_iter().map(|val| (val, "tensor")),
+    ))
 }
 
 #[pymethods]
@@ -165,9 +163,9 @@ impl PyAtom {
 
 impl std::fmt::Debug for PyAtom {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Reads: {:?}", self.atom.reads())?;
-        writeln!(f, "Writes: {:?}", self.atom.writes())?;
-        writeln!(f, "Awaits: NOT IMPLEMENTED {:?}", self.atom.waits())?;
+        writeln!(f, "Reads: {:?}", self.atom.read())?;
+        writeln!(f, "Writes: {:?}", self.atom.ctrl())?;
+        writeln!(f, "Awaits: NOT IMPLEMENTED {:?}", self.atom.wait())?;
         writeln!(f, "-------------")?;
         writeln!(f, "Init:")?;
         for term in self.atom.init() {
