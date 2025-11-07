@@ -5,7 +5,6 @@ use crate::pyterm::PyTerm;
 use crate::pyval::PyVal;
 use crate::term::{TorchDType, TorchOp, TorchTerm};
 
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
