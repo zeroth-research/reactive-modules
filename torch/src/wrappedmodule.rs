@@ -80,6 +80,10 @@ impl WrappedModule {
         visual::html::write_to_html(&self.module, path, Some(ctx));
     }
 
+    fn set_name(&mut self, name: &str) {
+        self.module.set_name(name);
+    }
+
     fn dbg(&self) {
         println!("{}", self.module);
     }

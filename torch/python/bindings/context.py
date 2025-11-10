@@ -74,7 +74,11 @@ class Context:
         return NextVar(self, var)
 
     def module(
-        self, vars: list[str], init: Callable[[], Any], update: Callable[[], Any]
+        self,
+        vars: list[str],
+        init: Callable[[], None],
+        update: Callable[[], None],
+        name: str = None,
     ) -> WrappedModule:
         cur_vars = [self.var(name) for name in vars]
         nxt_vars = [self.var(f"{name}'") for name in vars]
@@ -94,7 +98,10 @@ class Context:
 
         # TODO: here we unnecessarily copy the terms (they are once copied into
         # Atom and then again into Module)
-        return WrappedModule(self.context_, cur_vars, nxt_vars, atom)
+        module = WrappedModule(self.context_, cur_vars, nxt_vars, atom)
+        if name is not None:
+            module.set_name(name)
+        return module
 
     def trace_with_vars(self, fun: Callable, vars: list[Var]):
         """
