@@ -13,3 +13,9 @@ base = { path = "../base" }
 pyo3 = { version = "0.24" }
 pyo3-tch = { version = "0.22" }
 tch = { features = ["python-extension"], version = "0.22" }
+visual = { path = "../visual", features=["html"], optional = true }
+
+[features]
+default = ["visual-html"]
+# dumping modules to HTML
+visual-html = ["visual", "visual/html"]
