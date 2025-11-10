@@ -1,4 +1,4 @@
 [workspace]
-members = ["base", "torch", "toy"]
+members = ["base", "torch", "toy", "visual"]
 default-members = ["base", "toy"]
 resolver = "3"
