@@ -19,7 +19,6 @@ def load_zrm_torch():
 
         return zrm_torch
     except ImportError:
-        from ctypes import CDLL
         from os.path import dirname, join, isfile
 
         build_dir = join(dirname(__file__), "../../../")
@@ -58,5 +57,3 @@ def load_zrm_torch():
 
 # NOTE: this must go first before any other import
 libzrm_torch = load_zrm_torch()
-
-from .context import Context

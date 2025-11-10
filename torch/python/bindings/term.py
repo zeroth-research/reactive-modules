@@ -46,7 +46,7 @@ class Term:
     def print(self):
         self.term_.print()
 
-    def wrapped_term(self) -> WrappedTerm:
+    def unwrap(self) -> WrappedTerm:
         return self.term_
 
     def __str__(self) -> str:
