@@ -17,6 +17,6 @@ def update():
     Guard[(x < y | ((x < z) & (x < y)))] >> [next(x) == (x + 1)],
     Guard[~(x < y | (x < z))]            >> [next(x) == tch.Tensor([0, 0, 0])]
 
-module = Module(["x", "y", "z", "y0", "z0"], init, update)
+module = Module(["x", "y", "z", "y0", "z0"], init, update, name="Counter")
 module.to_html("/tmp/mod.html", open=True)
 
