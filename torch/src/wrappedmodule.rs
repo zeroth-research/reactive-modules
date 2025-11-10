@@ -10,6 +10,9 @@ use pyo3::types::PyList;
 use crate::wrappedatom::{WrappedAtom, vars_to_wiring};
 use base::{Atom, Module, Wire};
 
+#[cfg(feature = "visual-html")]
+use crate::html::*;
+
 type WireTy = Wire<TorchDType>;
 
 #[pyclass]
@@ -66,6 +69,15 @@ impl WrappedModule {
             )
             .expect("Failed creating module"),
         }
+    }
+
+    ///
+    /// Dump the module to HTML using the `visual` crate
+    #[cfg(feature = "visual-html")]
+    fn to_html(&self, ctx: &Bound<'_, Context>, path: &str) {
+        let ctx: &Context = &ctx.borrow();
+        //visual::html::write_to_html(self.module, path, Some(ctx))
+        visual::html::write_to_html(&self.module, path, Some(ctx));
     }
 
     fn dbg(&self) {
