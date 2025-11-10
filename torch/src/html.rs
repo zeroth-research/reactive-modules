@@ -1,6 +1,5 @@
 use crate::context::Context;
 use std::collections::HashMap;
-use std::fmt;
 use std::fmt::Write;
 
 use crate::{DType, IType, TorchAtom, TorchModule, TorchTerm};
@@ -9,9 +8,9 @@ use visual::html::Descriptor;
 
 impl Context {
     fn wire_name(&self, id: usize) -> String {
-        //if let Some(name) = self.get_name(id) {
-        //    return name.into();
-        //}
+        if let Some(name) = self.get_name(id) {
+            return name.into();
+        }
         format!("w{id}")
     }
 
