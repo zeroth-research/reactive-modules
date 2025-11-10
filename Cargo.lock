@@ -946,6 +946,7 @@ dependencies = [
  "pyo3",
  "pyo3-tch",
  "tch",
+ "visual",
 ]
 
 [[package]]

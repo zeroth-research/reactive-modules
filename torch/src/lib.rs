@@ -6,6 +6,9 @@ mod wrappedatom;
 mod wrappedmodule;
 mod wrappedterm;
 
+#[cfg(feature = "visual-html")]
+mod html;
+
 use pyo3::prelude::*;
 
 pub use context::Context;
@@ -14,6 +17,12 @@ pub use pyval::PyVal;
 pub use wrappedatom::WrappedAtom;
 pub use wrappedmodule::WrappedModule;
 pub use wrappedterm::WrappedTerm;
+
+pub use crate::term::TorchDType as DType;
+pub use crate::term::TorchOp as IType;
+pub use crate::term::TorchTerm;
+pub type TorchModule = base::module::Module<DType, IType>;
+pub type TorchAtom = base::atom::Atom<DType, IType>;
 
 #[pymodule]
 #[pyo3(name = "zrm_torch")]
