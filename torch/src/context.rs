@@ -7,6 +7,7 @@ use std::collections::HashMap;
 pub struct Context {
     // maps names of variables to numerical identifiers in wires
     name_to_id: HashMap<String, usize>, // TODO: should we keep track of variable types?
+    id_to_name: HashMap<usize, String>,
 }
 
 impl Default for Context {
@@ -21,6 +22,7 @@ impl Context {
     pub fn new() -> Self {
         Self {
             name_to_id: HashMap::new(),
+            id_to_name: HashMap::new(),
         }
     }
 
@@ -38,7 +40,18 @@ impl Context {
     }
 
     pub fn get_var(&mut self, name: &str) -> usize {
-        let next_id = self.name_to_id.len();
-        *self.name_to_id.entry(name.to_string()).or_insert(next_id)
+        let new_id = self.name_to_id.len();
+        let name = name.to_string();
+        let res = *self.name_to_id.entry(name.clone()).or_insert(new_id);
+        if res == new_id {
+            // the entry was just inserted, remember the name
+            let _inserted = self.id_to_name.insert(new_id, name);
+            assert!(_inserted == None);
+        }
+        res
+    }
+
+    pub fn get_name(&self, id: usize) -> Option<&str> {
+        self.id_to_name.get(&id).and_then(|s| Some(s.as_str()))
     }
 }
