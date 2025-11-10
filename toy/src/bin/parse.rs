@@ -12,7 +12,8 @@ use toy::parser::Parser;
 use clap::Parser as ClapParser;
 
 #[cfg(feature = "visual-html")]
-use toy::visual::html;
+use toy::visual::html::*;
+use visual::html;
 
 #[derive(ClapParser)]
 struct Cli {
@@ -39,13 +40,6 @@ struct Cli {
 #[cfg(feature = "visual-html")]
 fn dump_to_html(modules: &[ToyModule], args: &Cli, ctx: &Context) -> Result<(), std::io::Error> {
     // TODO: enable output to cusom file/dir
-    //if args.output.is_some() {
-    //    let tmp = &args.output.unwrap();
-    //    if let Ok(md) = metadata(path) {
-    //
-    //    }
-    //}
-
     for (n, module) in modules.iter().enumerate() {
         let module_name = module.name();
         let path = if let Some(name) = module_name {
