@@ -1,5 +1,5 @@
 from . import libzrm_torch
-from typing import Callable
+from typing import Callable, Any
 
 from .term import Term, Var, NextVar, Assignment
 import inspect
@@ -44,6 +44,9 @@ class Context:
         # with the `trace` method.
         self._terms: list[Term] | None = None
 
+    def unwrap(self):
+        return self.context_
+
     def _fresh_var_id(self) -> int:
         return self.context_.fresh_var()
 
@@ -71,7 +74,7 @@ class Context:
         return NextVar(self, var)
 
     def module(
-        self, vars: list[str], init: list[Term], update: list[Term]
+        self, vars: list[str], init: Callable[[], Any], update: Callable[[], Any]
     ) -> WrappedModule:
         cur_vars = [self.var(name) for name in vars]
         nxt_vars = [self.var(f"{name}'") for name in vars]
@@ -79,14 +82,14 @@ class Context:
         init, _ = self.trace_with_vars(init, cur_vars)
         update, _ = self.trace_with_vars(update, cur_vars)
 
-        cur_vars = [v.wrapped_term() for v in cur_vars]
-        nxt_vars = [v.wrapped_term() for v in nxt_vars]
+        cur_vars = [v.unwrap() for v in cur_vars]
+        nxt_vars = [v.unwrap() for v in nxt_vars]
         atom = WrappedAtom(
             self.context_,
             cur_vars,
             nxt_vars,
-            [t.wrapped_term() for t in init],
-            [t.wrapped_term() for t in update],
+            [t.unwrap() for t in init],
+            [t.unwrap() for t in update],
         )
 
         # TODO: here we unnecessarily copy the terms (they are once copied into
