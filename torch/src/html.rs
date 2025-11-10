@@ -138,7 +138,7 @@ impl Context {
             .join(", ");
 
         format!(
-            "{writes} = {fmt_emph}{}{fmt_emph_end}({reads})",
+            "<span style=\"color: red\">{writes}</span> = {fmt_emph}{}{fmt_emph_end}({reads})",
             term.itype()
         )
     }
