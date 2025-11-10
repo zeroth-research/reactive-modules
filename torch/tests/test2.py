@@ -3,14 +3,13 @@ from os.path import dirname, join as pathjoin
 sys.path.append(pathjoin(dirname(__file__), "../python"))
 
 from bindings.term import Var
-import bindings
+from bindings.context import Context
 
 import torch as tch
 
 
-Ctx = bindings.Context
 
-ctx = Ctx()
+ctx = Context()
 
 def init():
     zrm.gc(True, [next(x) == tch.Tensor([0, 0, 0]), next(y) == next(y0), next(z) == next(z0)])
