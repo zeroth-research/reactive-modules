@@ -869,6 +869,7 @@ dependencies = [
  "pest",
  "pest_derive",
  "pest_generator",
+ "visual",
 ]
 
 [[package]]
