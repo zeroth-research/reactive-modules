@@ -40,6 +40,40 @@ pub struct Module<D, I> {
 }
 
 impl<D, I> Module<D, I> {
+    /// Returns a reference to the wire pairs (latched, next).
+    pub fn wire(&self) -> &[Wire<D>; 2] {
+        &self.wire
+    }
+
+    /// Returns a reference to the external wires (latched, next).
+    pub fn extl(&self) -> &[Wire<D>; 2] {
+        &self.extl
+    }
+
+    /// Returns a reference to the interface wires (latched, next).
+    pub fn intf(&self) -> &[Wire<D>; 2] {
+        &self.intf
+    }
+
+    /// Returns a reference to the private wires (latched, next).
+    pub fn prvt(&self) -> &[Wire<D>; 2] {
+        &self.prvt
+    }
+
+    /// Returns a reference to the control wires (latched, next).
+    pub fn ctrl(&self) -> &[Wire<D>; 2] {
+        &self.ctrl
+    }
+
+    /// Returns a reference to the observable wires (latched, next).
+    pub fn obs(&self) -> &[Wire<D>; 2] {
+        &self.obs
+    }
+
+    /// Returns the atoms of the module in their stored order.
+    pub fn atoms(&self) -> &[Atom<D, I>] {
+        &self.atoms
+    }
     pub fn is_closed(&self) -> bool {
         self.extl[0].is_empty()
     }
@@ -409,41 +443,6 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     {
         let atom = Atom::with_module_wire(&obs, Vec::from_iter(init), Vec::from_iter(update))?;
         Self::observable(obs, [atom])
-    }
-
-    /// Returns a reference to the wire pairs (latched, next).
-    pub fn wire(&self) -> &[Wire<D>; 2] {
-        &self.wire
-    }
-
-    /// Returns a reference to the external wires (latched, next).
-    pub fn extl(&self) -> &[Wire<D>; 2] {
-        &self.extl
-    }
-
-    /// Returns a reference to the interface wires (latched, next).
-    pub fn intf(&self) -> &[Wire<D>; 2] {
-        &self.intf
-    }
-
-    /// Returns a reference to the private wires (latched, next).
-    pub fn prvt(&self) -> &[Wire<D>; 2] {
-        &self.prvt
-    }
-
-    /// Returns a reference to the control wires (latched, next).
-    pub fn ctrl(&self) -> &[Wire<D>; 2] {
-        &self.ctrl
-    }
-
-    /// Returns a reference to the observable wires (latched, next).
-    pub fn obs(&self) -> &[Wire<D>; 2] {
-        &self.obs
-    }
-
-    /// Returns the atoms of the module in their stored order.
-    pub fn atoms(&self) -> &[Atom<D, I>] {
-        &self.atoms
     }
 }
 
