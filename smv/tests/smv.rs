@@ -1,5 +1,5 @@
 use base::{atom::Atom, module::Module, term::Term, wire::Wire};
-use smv::{dtype::DType, itype::IType, smv::parse_smv};
+use smv::{dtype::DType, itype::IType, smv::parse_smv, smv::twin};
 use std::collections::HashMap;
 
 struct Context {
@@ -36,7 +36,7 @@ impl Context {
         let mut wire = Wire::none();
         for name in names {
             let v = self.get(name);
-            wire = wire.concat(v);
+            wire = wire.extend(v);
         }
 
         wire
@@ -47,7 +47,7 @@ impl Context {
         let mut wire = Wire::none();
         for name in names {
             let v = self.var(name, ty);
-            wire = wire.concat(v);
+            wire = wire.extend(v);
         }
 
         wire
@@ -77,11 +77,25 @@ fn build_manual_module() -> Module<DType, IType> {
         let init_y_seq = vec![
             Term::new(IType::ConstInt(0), t16.clone(), Wire::none()),
             // Sub read: [t16, y0]
-            Term::new(IType::Sub, t17.clone(), t16.clone().concat(&ctx.get_cloned("y0"))),
+            Term::new(
+                IType::Sub,
+                t17.clone(),
+                t16.clone().extend(&ctx.get_cloned("y0")),
+            ),
             // Lt read: [y0, t16]
-            Term::new(IType::Lt, t18.clone(), ctx.get_cloned("y0").concat(&t16.clone())),
+            Term::new(
+                IType::Lt,
+                t18.clone(),
+                ctx.get_cloned("y0").extend(&t16.clone()),
+            ),
             // Cond read: [t18, t17, y0]
-            Term::new(IType::Cond, t19.clone(), t18.clone().concat(&t17.clone()).concat(&ctx.get_cloned("y0"))),
+            Term::new(
+                IType::Cond,
+                t19.clone(),
+                t18.clone()
+                    .extend(&t17.clone())
+                    .extend(&ctx.get_cloned("y0")),
+            ),
         ];
 
         // Sequence for abs(z0) lowered with temps 20..23
@@ -92,11 +106,25 @@ fn build_manual_module() -> Module<DType, IType> {
         let init_z_seq = vec![
             Term::new(IType::ConstInt(0), t20.clone(), Wire::none()),
             // Sub read: [t20, z0]
-            Term::new(IType::Sub, t21.clone(), t20.clone().concat(&ctx.get_cloned("z0"))),
+            Term::new(
+                IType::Sub,
+                t21.clone(),
+                t20.clone().extend(&ctx.get_cloned("z0")),
+            ),
             // Lt read: [z0, t20]
-            Term::new(IType::Lt, t22.clone(), ctx.get_cloned("z0").concat(&t20.clone())),
+            Term::new(
+                IType::Lt,
+                t22.clone(),
+                ctx.get_cloned("z0").extend(&t20.clone()),
+            ),
             // Cond read: [t22, t21, z0]
-            Term::new(IType::Cond, t23.clone(), t22.clone().concat(&t21.clone()).concat(&ctx.get_cloned("z0"))),
+            Term::new(
+                IType::Cond,
+                t23.clone(),
+                t22.clone()
+                    .extend(&t21.clone())
+                    .extend(&ctx.get_cloned("z0")),
+            ),
         ];
 
         let mut out = vec![init_x];
@@ -107,16 +135,34 @@ fn build_manual_module() -> Module<DType, IType> {
 
     fn update(ctx: &mut Context) -> Vec<Term<DType, IType>> {
         // Build update terms with explicit indices to match parser output
-        let lt10 = Term::new(IType::Lt, Wire::one(10, DType::Bool), ctx.get_vars(vec!["x", "y"]));
-        let lt11 = Term::new(IType::Lt, Wire::one(11, DType::Bool), ctx.get_vars(vec!["x", "z"]));
-        let or12 = Term::new(IType::Or, Wire::one(12, DType::Bool), Wire::one(10, DType::Bool).concat(&Wire::one(11, DType::Bool)));
+        let lt10 = Term::new(
+            IType::Lt,
+            Wire::one(10, DType::Bool),
+            ctx.get_vars(vec!["x", "y"]),
+        );
+        let lt11 = Term::new(
+            IType::Lt,
+            Wire::one(11, DType::Bool),
+            ctx.get_vars(vec!["x", "z"]),
+        );
+        let or12 = Term::new(
+            IType::Or,
+            Wire::one(12, DType::Bool),
+            Wire::one(10, DType::Bool).extend(&Wire::one(11, DType::Bool)),
+        );
         let c1_13 = Term::new(IType::ConstInt(1), Wire::one(13, DType::Int), Wire::none());
-        let add14 = Term::new(IType::Add, Wire::one(14, DType::Int), ctx.get("x").clone().concat(&Wire::one(13, DType::Int)));
+        let add14 = Term::new(
+            IType::Add,
+            Wire::one(14, DType::Int),
+            ctx.get("x").clone().extend(&Wire::one(13, DType::Int)),
+        );
         let c0_15 = Term::new(IType::ConstInt(0), Wire::one(15, DType::Int), Wire::none());
         let cond5 = Term::new(
             IType::Cond,
             ctx.get_cloned("x'"),
-            Wire::one(12, DType::Bool).concat(&Wire::one(14, DType::Int)).concat(&Wire::one(15, DType::Int)),
+            Wire::one(12, DType::Bool)
+                .extend(&Wire::one(14, DType::Int))
+                .extend(&Wire::one(15, DType::Int)),
         );
         let id_y = Term::new(IType::Assign, ctx.get_cloned("y'"), ctx.get_cloned("y"));
         let id_z = Term::new(IType::Assign, ctx.get_cloned("z'"), ctx.get_cloned("z"));
@@ -131,18 +177,26 @@ fn build_manual_module() -> Module<DType, IType> {
     let init_terms = init(&mut ctx);
 
     let latched = ctx.get_vars(vec!["x", "y", "z", "y0", "z0"]);
-    let next = latched
-        .twin(NEXT_OFFSET)
-        .expect("Failed getting primed variables");
+    let next = twin(&latched, NEXT_OFFSET).expect("Failed getting primed variables");
 
     // Construct atom with exact ctrl/wait/read wires to match parser output
-    let ctrl: Wire<DType> = vec![(5usize, DType::Int), (6usize, DType::Int), (7usize, DType::Int)]
+    let ctrl: Wire<DType> = vec![
+        (5usize, DType::Int),
+        (6usize, DType::Int),
+        (7usize, DType::Int),
+    ]
+    .into_iter()
+    .collect();
+    let wait: Wire<DType> = vec![(8usize, DType::Int), (9usize, DType::Int)]
         .into_iter()
         .collect();
-    let wait: Wire<DType> = vec![(8usize, DType::Int), (9usize, DType::Int)].into_iter().collect();
-    let read: Wire<DType> = vec![(0usize, DType::Int), (1usize, DType::Int), (2usize, DType::Int)]
-        .into_iter()
-        .collect();
+    let read: Wire<DType> = vec![
+        (0usize, DType::Int),
+        (1usize, DType::Int),
+        (2usize, DType::Int),
+    ]
+    .into_iter()
+    .collect();
     let atom = Atom::new_unchecked(ctrl, wait, read, init_terms, update_terms);
 
     Module::partially_observable([latched, next], [Wire::none(), Wire::none()], vec![atom]).unwrap()

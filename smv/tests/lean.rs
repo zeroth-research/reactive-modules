@@ -1,15 +1,14 @@
-use std::fs;
-use smv::lean::{to_lean_from_module, render_terms_to_lean, collect_used_vars};
-use smv::smv::parse_smv;
 use base::term::{Term, TermWire};
 use base::wire::Wire;
+use smv::lean::{collect_used_vars, render_terms_to_lean, to_lean_from_module};
+use smv::smv::parse_smv;
 use smv::{dtype::DType, itype::IType};
+use std::fs;
 
 // Build the obligation Term vectors (Büchi, invariant, variant) used by the
 // tests. Kept as a separate function so the test body stays concise and the
 // obligation construction can be reused or unit-tested independently.
-fn build_obligations(
-) -> (
+fn build_obligations() -> (
     Vec<Term<DType, IType>>, // invariant
     Vec<Term<DType, IType>>, // variant
     Vec<Term<DType, IType>>, // buchi
@@ -24,7 +23,7 @@ fn build_obligations(
         Term::new(
             IType::Le,
             Wire::one(4, DType::Bool),
-            Wire::one(0, DType::Int).concat(&Wire::one(2, DType::Int)),
+            Wire::one(0, DType::Int).extend(&Wire::one(2, DType::Int)),
         ),
         Term::new(
             IType::Or,
@@ -43,14 +42,14 @@ fn build_obligations(
             IType::Sub,
             Wire::one(3, DType::Int),
             // order: x1, x0
-            Wire::one(1, DType::Int).concat(&Wire::one(0, DType::Int)),
+            Wire::one(1, DType::Int).extend(&Wire::one(0, DType::Int)),
         ),
         // diff2 := x2 - x0
         Term::new(
             IType::Sub,
             Wire::one(4, DType::Int),
             // order: x2, x0
-            Wire::one(2, DType::Int).concat(&Wire::one(0, DType::Int)),
+            Wire::one(2, DType::Int).extend(&Wire::one(0, DType::Int)),
         ),
         // const 0 at idx 5
         Term::new(IType::ConstInt(0), Wire::one(5, DType::Int), Wire::none()),
@@ -58,29 +57,29 @@ fn build_obligations(
         Term::new(
             IType::Lt,
             Wire::one(6, DType::Bool),
-            Wire::one(3, DType::Int).concat(&Wire::one(5, DType::Int)),
+            Wire::one(3, DType::Int).extend(&Wire::one(5, DType::Int)),
         ),
         // diff2 < 0 -> idx 7
         Term::new(
             IType::Lt,
             Wire::one(7, DType::Bool),
-            Wire::one(4, DType::Int).concat(&Wire::one(5, DType::Int)),
+            Wire::one(4, DType::Int).extend(&Wire::one(5, DType::Int)),
         ),
         // cond1: if diff1 < 0 then 0 else diff1 -> idx 8
         Term::new(
             IType::Cond,
             Wire::one(8, DType::Int),
             Wire::one(6, DType::Bool)
-                .concat(&Wire::one(5, DType::Int))
-                .concat(&Wire::one(3, DType::Int)),
+                .extend(&Wire::one(5, DType::Int))
+                .extend(&Wire::one(3, DType::Int)),
         ),
         // cond2: if diff2 < 0 then 0 else diff2 -> idx 9
         Term::new(
             IType::Cond,
             Wire::one(9, DType::Int),
             Wire::one(7, DType::Bool)
-                .concat(&Wire::one(5, DType::Int))
-                .concat(&Wire::one(4, DType::Int)),
+                .extend(&Wire::one(5, DType::Int))
+                .extend(&Wire::one(4, DType::Int)),
         ),
         // add relu1 + relu2 -> idx 10
         Term::new(
@@ -100,7 +99,7 @@ fn build_obligations(
         Term::new(
             IType::Eq,
             Wire::one(4, DType::Bool),
-            Wire::one(0, DType::Int).concat(&Wire::one(2, DType::Int)),
+            Wire::one(0, DType::Int).extend(&Wire::one(2, DType::Int)),
         ),
         Term::new(
             IType::Or,
@@ -159,9 +158,21 @@ fn write_lean_example() {
     let buch_vars = collect_used_vars(&buchi, &buchi.write(), var_count);
     let inv_vars = collect_used_vars(&invariant, &invariant.write(), var_count);
     let var_vars = collect_used_vars(&variant, &variant.write(), var_count);
-    let buch_tuple = buch_vars.iter().map(|i| format!("x{}", i)).collect::<Vec<_>>().join(", ");
-    let inv_tuple = inv_vars.iter().map(|i| format!("x{}", i)).collect::<Vec<_>>().join(", ");
-    let var_tuple = var_vars.iter().map(|i| format!("x{}", i)).collect::<Vec<_>>().join(", ");
+    let buch_tuple = buch_vars
+        .iter()
+        .map(|i| format!("x{}", i))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let inv_tuple = inv_vars
+        .iter()
+        .map(|i| format!("x{}", i))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let var_tuple = var_vars
+        .iter()
+        .map(|i| format!("x{}", i))
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let obligations = format!(
         "def buchi_condition : State → Prop :=\n  fun ⟨{}⟩ ↦\n    {}\n\ndef invariant : State → Prop :=\n  fun ⟨{}⟩ ↦\n    {}\n\ndef relu : Int → Int := fun x ↦ max x 0\n\ndef variant : State → Int :=\n  fun ⟨{}⟩ ↦\n    {}",
