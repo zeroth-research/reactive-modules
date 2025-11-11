@@ -122,6 +122,9 @@ impl Context {
         let empty_str = "";
         let fmt_emph = fmt.get("EMPH_START").unwrap_or(&empty_str);
         let fmt_emph_end = fmt.get("EMPH_END").unwrap_or(&empty_str);
+        let color_term_lhs = fmt.get("COLOR_TERM_LHS").unwrap_or(&empty_str);
+        let color_term_op = fmt.get("COLOR_TERM_OP").unwrap_or(&empty_str);
+        let color_clr = fmt.get("COLOR_CLEAR").unwrap_or(&empty_str);
 
         let reads = term
             .reads()
@@ -138,7 +141,7 @@ impl Context {
             .join(", ");
 
         format!(
-            "<span style=\"color: red\">{writes}</span> = {fmt_emph}{}{fmt_emph_end}({reads})",
+            "{color_term_lhs}{writes}{color_clr} = {color_term_op}{fmt_emph}{}{fmt_emph_end}{color_clr}({reads})",
             term.itype()
         )
     }
@@ -146,19 +149,37 @@ impl Context {
 
 impl Descriptor<DType, IType> for Context {
     fn describe_module(&self, module: &TorchModule) -> String {
-        let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
+        let fmt = HashMap::from([
+            ("BOLD_START", "<b>"),
+            ("BOLD_END", "</b>"),
+            ("COLOR_TERM_LHS", "<span style=\"color: #106EE2\">"),
+            ("COLOR_TERM_OP", "<span style=\"color: #E88914\">"),
+            ("COLOR_CLEAR", "</span>"),
+        ]);
         format!("<pre>\n{}</pre>", self.dump_module(module, &fmt))
     }
 
     fn describe_atom(&self, atom: &TorchAtom) -> String {
-        let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
+        let fmt = HashMap::from([
+            ("BOLD_START", "<b>"),
+            ("BOLD_END", "</b>"),
+            ("COLOR_TERM_LHS", "<span style=\"color: #106EE2\">"),
+            ("COLOR_TERM_OP", "<span style=\"color: #E88914\">"),
+            ("COLOR_CLEAR", "</span>"),
+        ]);
         format!("<pre>\n{}</pre>", self.dump_atom(atom, &fmt))
     }
 
     fn describe_term(&self, term: &TorchTerm) -> String {
-        let fmt = HashMap::from([("EMPH_START", "<i>"), ("EMPH_END", "</i>")]);
+        let fmt = HashMap::from([
+            //("EMPH_START", "<i>"),
+            //("EMPH_END", "</i>"),
+            ("COLOR_TERM_LHS", "<span style=\"color: #106EE2\">"),
+            ("COLOR_TERM_OP", "<span style=\"color: #E88914\">"),
+            ("COLOR_CLEAR", "</span>"),
+        ]);
         format!(
-            "<pre>\n{}\n\nraw:\n\n{}</pre>",
+            "<pre>\n{}</pre>\n\nraw:\n\n<pre>{}</pre>",
             self.dump_term(term, &fmt),
             term
         )
