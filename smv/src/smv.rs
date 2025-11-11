@@ -9,6 +9,21 @@ use pest_derive::Parser;
 use crate::dtype::DType;
 use crate::itype::IType;
 
+/// Return a twin of this wire by shifting every index by `offset` (signed).
+/// Returns Err on overflow/underflow.
+/// TODO: this method of creating next variables should be removed in the future
+pub fn twin(wire: &Wire<DType>, offset: isize) -> Result<Wire<DType>, &'static str> {
+    let mut shifted: Vec<(usize, DType)> = Vec::with_capacity(wire.len());
+    for (i, d) in wire.iter() {
+        let ni = (i as isize).checked_add(offset).ok_or("index overflow")?;
+        if ni < 0 {
+            return Err("index underflow");
+        }
+        shifted.push((ni as usize, d.clone()));
+    }
+    Ok(Wire::from_iter(shifted))
+}
+
 // Helper: classify read wires returned by expression parsing into latched
 // vs ivar (wait) wires. `var_count` is the number of VAR declarations;
 // indices < var_count are latched, indices >= var_count are IVARs.
@@ -1085,8 +1100,8 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
     let next_start = next_wire.iter().next().map(|(i, _)| i).unwrap_or(0);
     let offset: isize = (next_start as isize) - (latched_start as isize);
     let atom = Atom::new_unchecked(
-        ctrl_latched.twin(offset).unwrap(),
-        wait_latched.twin(offset).unwrap(),
+        twin(&ctrl_latched, offset).unwrap(),
+        twin(&wait_latched, offset).unwrap(),
         read_latched,
         init_terms,
         update_terms,
