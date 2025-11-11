@@ -103,7 +103,26 @@ impl fmt::Display for TorchOp {
             TorchOp::Neg => write!(f, "Neg"),
             TorchOp::And => write!(f, "And"),
             TorchOp::Or => write!(f, "Or"),
-            TorchOp::Const(v) => write!(f, "Const({})", v),
+            TorchOp::Const(t) => {
+                let flat = t.view([-1]);
+
+                if let Ok(vals) = Vec::<f64>::try_from(&flat) {
+                    write!(f, "Const([");
+                    for (n, v) in vals.iter().take(3).enumerate() {
+                        if n == 0 {
+                            write!(f, "{}", v);
+                        } else {
+                            write!(f, " {}", v);
+                        }
+                    }
+                    if flat.numel() > 3 {
+                        write!(f, " ...");
+                    }
+                    write!(f, "])")
+                } else {
+                    write!(f, "Const({})", flat)
+                }
+            }
         }
     }
 }
@@ -111,7 +130,7 @@ impl fmt::Display for TorchOp {
 impl fmt::Display for TorchDType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TorchDType::Tensor => write!(f, "TorchDType::Tensor"),
+            TorchDType::Tensor => write!(f, "Tensor"),
         }
     }
 }
