@@ -1,10 +1,10 @@
-use pest::Parser;
-use pest::iterators::Pair;
-use pest_derive::Parser;
 use base::atom::Atom;
 use base::module::Module;
 use base::term::Term;
 use base::wire::Wire;
+use pest::Parser;
+use pest::iterators::Pair;
+use pest_derive::Parser;
 
 use crate::dtype::DType;
 use crate::itype::IType;
@@ -457,15 +457,8 @@ fn lower_expr_to_terms(
                 None => return enforce(&final_write, terms, Wire::none(), Wire::none()),
             };
             // lower inner first (produces temps/terms as needed)
-            let (inner_w, inner_read) = lower_expr_to_terms(
-                inner,
-                wires,
-                var_count,
-                n,
-                None,
-                temp_index,
-                terms,
-            );
+            let (inner_w, inner_read) =
+                lower_expr_to_terms(inner, wires, var_count, n, None, temp_index, terms);
 
             // If we're writing into a final (primed) wire (init context), and
             // the inner expression is a direct IVAR reference (unprimed idx
@@ -475,9 +468,9 @@ fn lower_expr_to_terms(
             let mut abs_read_for_term = Wire::none();
             for (i, dt) in inner_w.iter() {
                 if i < n && i >= var_count {
-                    abs_read_for_term = abs_read_for_term.concat(&Wire::one(i + n, *dt));
+                    abs_read_for_term = abs_read_for_term.extend(&Wire::one(i + n, *dt));
                 } else {
-                    abs_read_for_term = abs_read_for_term.concat(&Wire::one(i, *dt));
+                    abs_read_for_term = abs_read_for_term.extend(&Wire::one(i, *dt));
                 }
             }
 
@@ -490,7 +483,11 @@ fn lower_expr_to_terms(
                 }
             };
 
-            terms.push(Term::new(IType::Abs, write.clone(), abs_read_for_term.clone()));
+            terms.push(Term::new(
+                IType::Abs,
+                write.clone(),
+                abs_read_for_term.clone(),
+            ));
             enforce(&final_write, terms, write, inner_read)
         }
 
@@ -536,12 +533,13 @@ fn classify_reads_from_wire(
 pub struct SMVParser;
 
 pub fn parse_smv(input: &str) -> Result<Module<DType, IType>, &'static str> {
-    let parsed = SMVParser::parse(Rule::file, input).map_err(|e| {
-        eprintln!("Pest parse error: {}", e);
-        "parse failed"
-    })?
-    .next()
-    .ok_or("empty parse tree")?;
+    let parsed = SMVParser::parse(Rule::file, input)
+        .map_err(|e| {
+            eprintln!("Pest parse error: {}", e);
+            "parse failed"
+        })?
+        .next()
+        .ok_or("empty parse tree")?;
     build_module(parsed)
 }
 
@@ -796,10 +794,15 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                     if let Some(inner) = leaf.clone().into_inner().next() {
                         if inner.as_rule() == Rule::ident {
                             let nm = inner.as_str().to_string();
-                            if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
+                            if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm)
+                            {
                                 if *ridx < var_count {
                                     let read = Wire::one(*ridx, *rdtype);
-                                    init_terms.push(Term::new(IType::Assign, write.clone(), read.clone()));
+                                    init_terms.push(Term::new(
+                                        IType::Assign,
+                                        write.clone(),
+                                        read.clone(),
+                                    ));
                                     classify_reads_from_wire(
                                         &read,
                                         var_count,
@@ -857,10 +860,26 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                     }
 
                     let (inner_w, inner_read) = if let Some(p) = inner_expr {
-                        lower_expr_to_terms(p, &wires, var_count, n, None, &mut temp_index, &mut init_terms)
+                        lower_expr_to_terms(
+                            p,
+                            &wires,
+                            var_count,
+                            n,
+                            None,
+                            &mut temp_index,
+                            &mut init_terms,
+                        )
                     } else {
                         // fallback to lowering the full leaf if we couldn't find a child
-                        lower_expr_to_terms(leaf.clone(), &wires, var_count, n, None, &mut temp_index, &mut init_terms)
+                        lower_expr_to_terms(
+                            leaf.clone(),
+                            &wires,
+                            var_count,
+                            n,
+                            None,
+                            &mut temp_index,
+                            &mut init_terms,
+                        )
                     };
 
                     // build a mapped view of the inner wire for term reads:
@@ -870,9 +889,9 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                     let mut mapped_inner = Wire::none();
                     for (i, dt) in inner_w.iter() {
                         if i < n && i >= var_count {
-                            mapped_inner = mapped_inner.concat(&Wire::one(i + n, *dt));
+                            mapped_inner = mapped_inner.extend(&Wire::one(i + n, *dt));
                         } else {
-                            mapped_inner = mapped_inner.concat(&Wire::one(i, *dt));
+                            mapped_inner = mapped_inner.extend(&Wire::one(i, *dt));
                         }
                     }
 
@@ -883,11 +902,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                     // inner_read (unprimed).
                     let temp_w = Wire::one(temp_index, DType::Int);
                     temp_index += 1;
-                    init_terms.push(Term::new(
-                        IType::Abs,
-                        temp_w.clone(),
-                        mapped_inner.clone(),
-                    ));
+                    init_terms.push(Term::new(IType::Abs, temp_w.clone(), mapped_inner.clone()));
 
                     // Move the Abs result into the variable's primed next wire
                     init_terms.push(Term::new(IType::Assign, write.clone(), temp_w.clone()));
@@ -998,9 +1013,14 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                     if let Some(inner) = leaf.clone().into_inner().next() {
                         if inner.as_rule() == Rule::ident {
                             let nm = inner.as_str().to_string();
-                            if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
+                            if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm)
+                            {
                                 let read = Wire::one(*ridx, *rdtype);
-                                update_terms.push(Term::new(IType::Assign, write.clone(), read.clone()));
+                                update_terms.push(Term::new(
+                                    IType::Assign,
+                                    write.clone(),
+                                    read.clone(),
+                                ));
                                 classify_reads_from_wire(
                                     &read,
                                     var_count,
