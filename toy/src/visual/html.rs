@@ -176,4 +176,8 @@ impl Descriptor<Type, Instruction> for Context {
     fn describe_wire_id(&self, id: usize) -> String {
         self.wire_name(id)
     }
+
+    fn describe_term_label(&self, term: &ToyTerm) -> String {
+        term.itype().to_string()
+    }
 }
