@@ -229,20 +229,20 @@ const graphData = {
       }
     },
     {
-      "classes": "input",
+      "classes": "output",
       "data": {
-        "description": "(input node)",
-        "id": "input.18",
-        "label": "x3'",
+        "description": "(output node)",
+        "id": "output.18",
+        "label": "x0'",
         "parent": "atom.0.init"
       }
     },
     {
-      "classes": "input",
+      "classes": "output",
       "data": {
-        "description": "(input node)",
-        "id": "input.19",
-        "label": "x2",
+        "description": "(output node)",
+        "id": "output.19",
+        "label": "x0'",
         "parent": "atom.0.update"
       }
     },
@@ -251,8 +251,8 @@ const graphData = {
       "data": {
         "description": "(input node)",
         "id": "input.20",
-        "label": "x2",
-        "parent": "atom.0.update"
+        "label": "x4'",
+        "parent": "atom.0.init"
       }
     },
     {
@@ -260,7 +260,7 @@ const graphData = {
       "data": {
         "description": "(input node)",
         "id": "input.21",
-        "label": "x4'",
+        "label": "x3'",
         "parent": "atom.0.init"
       }
     },
@@ -287,7 +287,7 @@ const graphData = {
       "data": {
         "description": "(output node)",
         "id": "output.24",
-        "label": "x2'",
+        "label": "x1'",
         "parent": "atom.0.init"
       }
     },
@@ -296,6 +296,24 @@ const graphData = {
       "data": {
         "description": "(output node)",
         "id": "output.25",
+        "label": "x1'",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "(output node)",
+        "id": "output.26",
+        "label": "x2'",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "(output node)",
+        "id": "output.27",
         "label": "x2'",
         "parent": "atom.0.update"
       }
@@ -304,62 +322,44 @@ const graphData = {
       "classes": "input",
       "data": {
         "description": "(input node)",
-        "id": "input.26",
-        "label": "x0",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
-        "id": "input.27",
-        "label": "x0",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
         "id": "input.28",
+        "label": "x2",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.29",
+        "label": "x2",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.30",
         "label": "x0",
         "parent": "atom.0.update"
       }
     },
     {
-      "classes": "output",
+      "classes": "input",
       "data": {
-        "description": "(output node)",
-        "id": "output.29",
-        "label": "x0'",
-        "parent": "atom.0.init"
-      }
-    },
-    {
-      "classes": "output",
-      "data": {
-        "description": "(output node)",
-        "id": "output.30",
-        "label": "x0'",
+        "description": "(input node)",
+        "id": "input.31",
+        "label": "x0",
         "parent": "atom.0.update"
       }
     },
     {
-      "classes": "output",
+      "classes": "input",
       "data": {
-        "description": "(output node)",
-        "id": "output.31",
-        "label": "x1'",
-        "parent": "atom.0.init"
-      }
-    },
-    {
-      "classes": "output",
-      "data": {
-        "description": "(output node)",
-        "id": "output.32",
-        "label": "x1'",
+        "description": "(input node)",
+        "id": "input.32",
+        "label": "x0",
         "parent": "atom.0.update"
       }
     },
@@ -373,18 +373,26 @@ const graphData = {
     },
     {
       "data": {
-        "id": "wire.11.10.11",
-        "label": "w11",
-        "source": "term.10",
-        "target": "term.11"
+        "id": "wire.5.4.",
+        "label": "w5",
+        "source": "term.4",
+        "target": "output.18"
       }
     },
     {
       "data": {
-        "id": "wire.14.13.15",
-        "label": "w14",
-        "source": "term.13",
-        "target": "term.15"
+        "id": "wire.5.15.",
+        "label": "w5",
+        "source": "term.15",
+        "target": "output.19"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.17.7.8",
+        "label": "w17",
+        "source": "term.7",
+        "target": "term.8"
       }
     },
     {
@@ -397,66 +405,18 @@ const graphData = {
     },
     {
       "data": {
-        "id": "wire.8..5",
-        "label": "w8",
-        "source": "input.18",
-        "target": "term.5"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.2..10",
-        "label": "w2",
-        "source": "input.19",
-        "target": "term.10"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.2..17",
-        "label": "w2",
-        "source": "input.20",
-        "target": "term.17"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.16.5.6",
-        "label": "w16",
-        "source": "term.5",
-        "target": "term.6"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.10.9.11",
-        "label": "w10",
-        "source": "term.9",
-        "target": "term.11"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.15.14.15",
-        "label": "w15",
-        "source": "term.14",
-        "target": "term.15"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.13.12.13",
-        "label": "w13",
-        "source": "term.12",
-        "target": "term.13"
-      }
-    },
-    {
-      "data": {
         "id": "wire.9..7",
         "label": "w9",
-        "source": "input.21",
+        "source": "input.20",
         "target": "term.7"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.8..5",
+        "label": "w8",
+        "source": "input.21",
+        "target": "term.5"
       }
     },
     {
@@ -477,58 +437,10 @@ const graphData = {
     },
     {
       "data": {
-        "id": "wire.7.8.",
-        "label": "w7",
-        "source": "term.8",
-        "target": "output.24"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.7.17.",
-        "label": "w7",
-        "source": "term.17",
-        "target": "output.25"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.0..9",
-        "label": "w0",
-        "source": "input.26",
-        "target": "term.9"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.0..10",
-        "label": "w0",
-        "source": "input.27",
-        "target": "term.10"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.0..13",
-        "label": "w0",
-        "source": "input.28",
-        "target": "term.13"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.5.4.",
-        "label": "w5",
-        "source": "term.4",
-        "target": "output.29"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.5.15.",
-        "label": "w5",
-        "source": "term.15",
-        "target": "output.30"
+        "id": "wire.11.10.11",
+        "label": "w11",
+        "source": "term.10",
+        "target": "term.11"
       }
     },
     {
@@ -536,7 +448,7 @@ const graphData = {
         "id": "wire.6.6.",
         "label": "w6",
         "source": "term.6",
-        "target": "output.31"
+        "target": "output.24"
       }
     },
     {
@@ -544,15 +456,103 @@ const graphData = {
         "id": "wire.6.16.",
         "label": "w6",
         "source": "term.16",
-        "target": "output.32"
+        "target": "output.25"
       }
     },
     {
       "data": {
-        "id": "wire.17.7.8",
-        "label": "w17",
-        "source": "term.7",
-        "target": "term.8"
+        "id": "wire.13.12.13",
+        "label": "w13",
+        "source": "term.12",
+        "target": "term.13"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.10.9.11",
+        "label": "w10",
+        "source": "term.9",
+        "target": "term.11"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.7.8.",
+        "label": "w7",
+        "source": "term.8",
+        "target": "output.26"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.7.17.",
+        "label": "w7",
+        "source": "term.17",
+        "target": "output.27"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.2..10",
+        "label": "w2",
+        "source": "input.28",
+        "target": "term.10"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.2..17",
+        "label": "w2",
+        "source": "input.29",
+        "target": "term.17"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.16.5.6",
+        "label": "w16",
+        "source": "term.5",
+        "target": "term.6"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.14.13.15",
+        "label": "w14",
+        "source": "term.13",
+        "target": "term.15"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..9",
+        "label": "w0",
+        "source": "input.30",
+        "target": "term.9"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..10",
+        "label": "w0",
+        "source": "input.31",
+        "target": "term.10"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..13",
+        "label": "w0",
+        "source": "input.32",
+        "target": "term.13"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.15.14.15",
+        "label": "w15",
+        "source": "term.14",
+        "target": "term.15"
       }
     }
   ]
