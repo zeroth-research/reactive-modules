@@ -11,7 +11,6 @@ use toy::parser::Parser;
 use clap::Parser as ClapParser;
 
 #[cfg(feature = "visual-html")]
-use toy::visual::html::*;
 use visual::html;
 
 #[derive(ClapParser)]

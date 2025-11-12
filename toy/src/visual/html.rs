@@ -1,16 +1,12 @@
 use crate::context::Context;
 use crate::{ToyAtom, ToyModule, ToyTerm};
-use std::collections::{HashMap, HashSet};
-use std::fmt;
+use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::dtype::Type;
 use crate::instruction::Instruction;
 
-use base::{Atom, Module, Term, Wire};
-
-use std::fs::File;
-use std::io::Write as IOWrite;
+use base::Wire;
 
 use visual::html::Descriptor;
 
