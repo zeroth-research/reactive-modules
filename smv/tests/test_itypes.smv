@@ -1,0 +1,23 @@
+MODULE main
+IVAR
+    i0 : integer;
+    j0 : integer;
+    a0 : boolean;
+
+VAR
+    i : integer;
+    j : integer;
+    a : integer;
+
+ASSIGN
+    init(i) := abs(i0);
+    init(j) := 42;
+    init(a) := a0;
+
+    -- equality
+    init(u) := a = b;      -- Eq (u is implicitly declared below)
+
+    -- conditional (ternary) and next/assign examples
+    next(i) := (i < j | i = j) ? i + 1 : i - 1;
+    next(j) := (i > j & a) ? i * j : j / i;
+    next(a) := (a) ? TRUE : FALSE;

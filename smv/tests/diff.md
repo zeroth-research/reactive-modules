@@ -744,8 +744,11 @@
   Parsed:     ],
   Manual:                             (
 ❌ Line 537 differs:
-  Parsed: }
+  Parsed:     name: None,
   Manual:                                 14,
+❌ Line 538 differs:
+  Parsed: }
+  Manual:                                 Int,
 
-⚠️ Different number of lines (537 vs 639)
+⚠️ Different number of lines (538 vs 640)
 ==============================================================

@@ -1,19 +1,13 @@
-//use std::fs::metadata;
 use std::process;
-
 use base::module::Module;
-// use toy::context::Context;
-use crate::dtype::DType;
-use crate::itype::IType;
-type ToyModule = Module<DType, IType>;
-
-use toy::parser::Parser;
+use smv::dtype::DType;
+use smv::itype::IType;
 
 use clap::Parser as ClapParser;
+use smv::smv::parse_smv;
 
-#[cfg(feature = "visual-html")]
-use crate::visual::html::*;
 use visual::html;
+use smv::html::SmvDescriptor;
 
 #[derive(ClapParser)]
 struct Cli {
@@ -37,9 +31,7 @@ struct Cli {
     stdout: bool,
 }
 
-#[cfg(feature = "visual-html")]
-fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli, ctx: &Context) {
-    // TODO: enable output to cusom file/dir
+fn dump_to_html(modules: &Vec<Module<DType, IType>>, args: &Cli) {
     for (n, module) in modules.iter().enumerate() {
         let module_name = module.name();
         let path = if module_name.is_some() {
@@ -48,7 +40,9 @@ fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli, ctx: &Context) {
             format!("{}.module-{}.html", args.spec, n)
         };
 
-        html::write_to_html(module, path.as_str(), Some(ctx))
+        // Use our SMV descriptor for nicer HTML descriptions
+        let descr = SmvDescriptor::new();
+        html::write_to_html(module, path.as_str(), Some(&descr))
             .inspect_err(|err| {
                 eprintln!("Failed writing the module to file {}", path);
                 eprintln!("{}", err)
@@ -71,18 +65,13 @@ fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli, ctx: &Context) {
     }
 }
 
-#[cfg(not(feature = "visual-html"))]
-fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli) {
-    eprintln!("HTML visualization is disabled, enable the feature \"visual-html\"".);
-    process::exit(1);
-}
-
+// cargo run --bin parse --package smv smv/tests/counter.smv --dump html --open
 fn main() {
     let args = Cli::parse();
     let input = std::fs::read_to_string(&args.spec).expect("Cannot read the input file");
-    let mut parser: Parser = Parser::new();
 
-    let modules = parser.parse(input);
+    let module = parse_smv(&input).unwrap();
+    let modules = vec![module];
 
     if modules.len() > 0 {
         println!("Modules parsed successfully!");

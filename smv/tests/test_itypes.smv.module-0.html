@@ -1,0 +1,887 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Module <unnamed></title>
+
+  <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+  <script src="https://unpkg.com/layout-base/layout-base.js"></script>
+  <script src="https://unpkg.com/cose-base/cose-base.js"></script>
+  <script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      font-family: sans-serif;
+    }
+    #cy {
+      flex: 1;
+      border-right: 1px solid #ccc;
+    }
+    #info {
+      width: 400px;
+      padding: 15px;
+      box-sizing: border-box;
+      background: #f8f8f8;
+    }
+    #info h2 {
+      margin-top: 20px;
+      font-size: 20px;
+      color: #333;
+    }
+    #info h3 {
+      margin-top: 20px;
+      font-size: 18px;
+      color: #333;
+    }
+    #info h4 {
+      margin-top: 20px;
+      font-size: 16px;
+      color: #333;
+    }
+    #info strong {
+      font-size: 16px;
+      color: #333;
+    }
+    #info p {
+      margin: 5px 0;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+<div id="cy"></div>
+<div id="info">
+  <h2>Node Information</h2>
+  <p>Click any node or cluster to see details here.</p>
+</div>
+
+<script>
+
+const graphData = {
+  "elements": [
+    {
+      "classes": "module",
+      "data": {
+        "description": "<h2>Module</h2>\n        <div style=\"display:flex;flex-direction:column;align-items:center;margin:0;padding:0;\">\n        <svg width=\"100%\" height=\"120\" viewBox=\"0 0 600 120\" xmlns=\"http://www.w3.org/2000/svg\" preserveAspectRatio=\"xMidYMid meet\">\n            <!-- We'll split the vertical area above the wire row into two bands -->\n            <!-- ctrl will be centered in the top band, obs centered in the middle band -->\n\n                <!-- ctrl and obs side-by-side: split the horizontal space into two halves -->\n                <rect x=\"40\" y=\"-20\" width=\"220\" height=\"36\" rx=\"8\" fill=\"#fff2cc\" stroke=\"#b08900\"/>\n                <text x=\"150\" y=\"4\" font-size=\"20\" text-anchor=\"middle\" fill=\"#111\">ctrl</text>\n\n                <rect x=\"340\" y=\"-20\" width=\"220\" height=\"36\" rx=\"8\" fill=\"#e6ffe6\" stroke=\"#2f8f3a\"/>\n                <text x=\"450\" y=\"4\" font-size=\"20\" text-anchor=\"middle\" fill=\"#111\">obs</text>\n\n            <!-- bottom boxes: prvt, intf, extl (aligned horizontally on the same baseline) -->\n            <!-- prvt: pastel red, intf: pastel yellow, extl: pastel blue -->\n            <rect x=\"60\" y=\"96\" width=\"140\" height=\"50\" rx=\"8\" fill=\"#ffe5e5\" stroke=\"#d16a6a\"/>\n            <text x=\"130\" y=\"118\" font-size=\"20\" text-anchor=\"middle\" fill=\"#111\">prvt</text>\n            <text x=\"130\" y=\"134\" font-size=\"16\" text-anchor=\"middle\" fill=\"#111\">(none)</text>\n            <rect x=\"230\" y=\"96\" width=\"140\" height=\"50\" rx=\"8\" fill=\"#fff8d6\" stroke=\"#d1b35a\"/>\n            <text x=\"300\" y=\"118\" font-size=\"20\" text-anchor=\"middle\" fill=\"#111\">intf</text>\n            <text x=\"300\" y=\"134\" font-size=\"16\" text-anchor=\"middle\" fill=\"#111\">x0, x1, x2</text>\n            <rect x=\"400\" y=\"96\" width=\"140\" height=\"50\" rx=\"8\" fill=\"#d0e7ff\" stroke=\"#6b9bd1\"/>\n            <text x=\"470\" y=\"118\" font-size=\"20\" text-anchor=\"middle\" fill=\"#111\">extl</text>\n            <text x=\"470\" y=\"134\" font-size=\"16\" text-anchor=\"middle\" fill=\"#111\">x3, x4, x5</text>\n            <!-- arrows: from ctrl center (300,56) to prvt center (130,162) and intf center (300,162) -->\n            <defs>\n                <marker id=\"arrow\" markerWidth=\"10\" markerHeight=\"10\" refX=\"10\" refY=\"5\" orient=\"auto\" markerUnits=\"strokeWidth\">\n                    <path d=\"M0,0 L10,5 L0,10 z\" fill=\"#666\"/>\n                </marker>\n            </defs>\n                    <!-- arrows originate at bottom edge of ctrl (y=16) and hit top edge of targets (y=96) -->\n                        <!-- orthogonal (axis-aligned) paths from ctrl bottom to targets -->\n                        <path d=\"M150 16 V56 H130 V96\" fill=\"none\" stroke=\"#666\" stroke-width=\"1.6\" marker-end=\"url(#arrow)\"/>\n                            <!-- route to intf offset slightly left to avoid overlapping the obs->intf path -->\n                            <path d=\"M150 16 V56 H285 V96\" fill=\"none\" stroke=\"#666\" stroke-width=\"1.6\" marker-end=\"url(#arrow)\"/>\n                <!-- arrows: from obs center (450,38) to intf center (300,162) and extl center (470,162) -->\n                    <!-- arrows originate at bottom edge of obs (y=16) and hit top edge of targets (y=96) -->\n                        <!-- orthogonal (axis-aligned) paths from obs bottom to targets -->\n                            <!-- route to intf offset slightly right to avoid overlapping the ctrl->intf path -->\n                            <path d=\"M450 16 V56 H315 V96\" fill=\"none\" stroke=\"#666\" stroke-width=\"1.6\" marker-end=\"url(#arrow)\"/>\n                        <path d=\"M450 16 V56 H470 V96\" fill=\"none\" stroke=\"#666\" stroke-width=\"1.6\" marker-end=\"url(#arrow)\"/>\n        </svg>\n        </div>\n    <h2>Atoms</h2><hr><div><h3>Atom 0</h3><table><tr><td><strong>ctrl</strong></td><td>x0', x1', x2'</td></tr><tr><td><strong>wait</strong></td><td>x3', x4', x5'</td></tr><tr><td><strong>read</strong></td><td>x0, x1, x2</td></tr></table><h4>Init</h4><div>|<code>x3'</code>| → <code>x0'</code><br><code>42</code> → <code>x1'</code><br><code>x5'</code> → <code>x2'</code></div><h4>Update</h4><div>(<code>x0</code> < <code>x1</code> ∨ <code>x0</code> == <code>x1</code>) ? (<code>x0</code> + <code>1</code>) : (<code>x0</code> - <code>1</code>) → <code>x0'</code><br>(<code>x0</code> > <code>x1</code> ∧ <code>x2</code>) ? (<code>x0</code> * <code>x1</code>) : (<code>x1</code> / <code>x0</code>) → <code>x1'</code><br>(<code>x2</code>) ? (<code>true</code>) : (<code>false</code>) → <code>x2'</code></div></div>",
+        "id": "module.",
+        "label": "Module ",
+        "parent": ""
+      }
+    },
+    {
+      "classes": "atom",
+      "data": {
+        "description": "<h3>Atom 0</h3><table><tr><td><strong>ctrl</strong></td><td>x0', x1', x2'</td></tr><tr><td><strong>wait</strong></td><td>x3', x4', x5'</td></tr><tr><td><strong>read</strong></td><td>x0, x1, x2</td></tr></table><h4>Init</h4><div>|<code>x3'</code>| → <code>x0'</code><br><code>42</code> → <code>x1'</code><br><code>x5'</code> → <code>x2'</code></div><h4>Update</h4><div>(<code>x0</code> < <code>x1</code> ∨ <code>x0</code> == <code>x1</code>) ? (<code>x0</code> + <code>1</code>) : (<code>x0</code> - <code>1</code>) → <code>x0'</code><br>(<code>x0</code> > <code>x1</code> ∧ <code>x2</code>) ? (<code>x0</code> * <code>x1</code>) : (<code>x1</code> / <code>x0</code>) → <code>x1'</code><br>(<code>x2</code>) ? (<code>true</code>) : (<code>false</code>) → <code>x2'</code></div>",
+        "id": "atom.0",
+        "label": "Atom 0",
+        "parent": "module."
+      }
+    },
+    {
+      "classes": "atom-init",
+      "data": {
+        "description": "<h3>Init</h3><div>|<code>x3'</code>| → <code>x0'</code><br><code>42</code> → <code>x1'</code><br><code>x5'</code> → <code>x2'</code></div>",
+        "id": "atom.0.init",
+        "label": "Init",
+        "parent": "atom.0"
+      }
+    },
+    {
+      "classes": "atom-update",
+      "data": {
+        "description": "<h3>Update</h3><div>(<code>x0</code> < <code>x1</code> ∨ <code>x0</code> == <code>x1</code>) ? (<code>x0</code> + <code>1</code>) : (<code>x0</code> - <code>1</code>) → <code>x0'</code><br>(<code>x0</code> > <code>x1</code> ∧ <code>x2</code>) ? (<code>x0</code> * <code>x1</code>) : (<code>x1</code> / <code>x0</code>) → <code>x1'</code><br>(<code>x2</code>) ? (<code>true</code>) : (<code>false</code>) → <code>x2'</code></div>",
+        "id": "atom.0.update",
+        "label": "Update",
+        "parent": "atom.0"
+      }
+    },
+    {
+      "classes": "term-init",
+      "data": {
+        "description": "<h3>Absolute Value</h3><p>|<code>x3'</code>| → <code>w12</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w12</code> <small>(w12 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x3'</code> <small>(x3' : Int)</small></td></tr></table>",
+        "id": "term.4",
+        "label": "Abs",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "term-init",
+      "data": {
+        "description": "<h3>Assign</h3><p><code>w12</code> → <code>x0'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x0'</code> <small>(x0' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w12</code> <small>(w12 : Int)</small></td></tr></table>",
+        "id": "term.5",
+        "label": "Assign",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "term-init",
+      "data": {
+        "description": "<h3>Constant (Int)</h3><p><code>42</code> → <code>x1'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x1'</code> <small>(x1' : Int)</small></td></tr></table>",
+        "id": "term.6",
+        "label": "42",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "term-init",
+      "data": {
+        "description": "<h3>Assign</h3><p><code>x5'</code> → <code>x2'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x2'</code> <small>(x2' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x5'</code> <small>(x5' : Bool)</small></td></tr></table>",
+        "id": "term.7",
+        "label": "Assign",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Less Than</h3><p><code>x0</code> < <code>x1</code> → <code>w13</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w13</code> <small>(w13 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr></table>",
+        "id": "term.8",
+        "label": "Lt",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Equality</h3><p><code>x0</code> == <code>x1</code> → <code>w14</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w14</code> <small>(w14 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr></table>",
+        "id": "term.9",
+        "label": "Eq",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Or</h3><p><code>w13</code> ∨ <code>w14</code> → <code>w15</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w15</code> <small>(w15 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w13</code> <small>(w13 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w14</code> <small>(w14 : Bool)</small></td></tr></table>",
+        "id": "term.10",
+        "label": "Or",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Constant (Int)</h3><p><code>1</code> → <code>w16</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w16</code> <small>(w16 : Int)</small></td></tr></table>",
+        "id": "term.11",
+        "label": "1",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Addition</h3><p><code>x0</code> + <code>w16</code> → <code>w17</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w17</code> <small>(w17 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w16</code> <small>(w16 : Int)</small></td></tr></table>",
+        "id": "term.12",
+        "label": "Add",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Constant (Int)</h3><p><code>1</code> → <code>w18</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w18</code> <small>(w18 : Int)</small></td></tr></table>",
+        "id": "term.13",
+        "label": "1",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Subtraction</h3><p><code>x0</code> - <code>w18</code> → <code>w19</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w19</code> <small>(w19 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w18</code> <small>(w18 : Int)</small></td></tr></table>",
+        "id": "term.14",
+        "label": "Sub",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Ternary Condition</h3><p><code>w15</code> ? <code>w17</code> : <code>w19</code> → <code>x0'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x0'</code> <small>(x0' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w15</code> <small>(w15 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w17</code> <small>(w17 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w19</code> <small>(w19 : Int)</small></td></tr></table>",
+        "id": "term.15",
+        "label": "Cond",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Greater Than</h3><p><code>x0</code> > <code>x1</code> → <code>w20</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w20</code> <small>(w20 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr></table>",
+        "id": "term.16",
+        "label": "Gt",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>And</h3><p><code>w20</code> ∧ <code>x2</code> → <code>w21</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w21</code> <small>(w21 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w20</code> <small>(w20 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x2</code> <small>(x2 : Int)</small></td></tr></table>",
+        "id": "term.17",
+        "label": "And",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Multiplication</h3><p><code>x0</code> * <code>x1</code> → <code>w22</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w22</code> <small>(w22 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr></table>",
+        "id": "term.18",
+        "label": "Mul",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Division</h3><p><code>x1</code> / <code>x0</code> → <code>w23</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w23</code> <small>(w23 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr></table>",
+        "id": "term.19",
+        "label": "Div",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Ternary Condition</h3><p><code>w21</code> ? <code>w22</code> : <code>w23</code> → <code>x1'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x1'</code> <small>(x1' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w21</code> <small>(w21 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w22</code> <small>(w22 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w23</code> <small>(w23 : Int)</small></td></tr></table>",
+        "id": "term.20",
+        "label": "Cond",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Constant (Bool)</h3><p><code>true</code> → <code>w24</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w24</code> <small>(w24 : Bool)</small></td></tr></table>",
+        "id": "term.21",
+        "label": "true",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Constant (Bool)</h3><p><code>false</code> → <code>w25</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w25</code> <small>(w25 : Bool)</small></td></tr></table>",
+        "id": "term.22",
+        "label": "false",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "term-update",
+      "data": {
+        "description": "<h3>Ternary Condition</h3><p><code>x2</code> ? <code>w24</code> : <code>w25</code> → <code>x2'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x2'</code> <small>(x2' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x2</code> <small>(x2 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w24</code> <small>(w24 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w25</code> <small>(w25 : Bool)</small></td></tr></table>",
+        "id": "term.23",
+        "label": "Cond",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.24",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.25",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.26",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.27",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.28",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.29",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.30",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "(output node)",
+        "id": "output.31",
+        "label": "x0'",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "(output node)",
+        "id": "output.32",
+        "label": "x0'",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "(output node)",
+        "id": "output.33",
+        "label": "x2'",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "(output node)",
+        "id": "output.34",
+        "label": "x2'",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.35",
+        "label": "x2",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.36",
+        "label": "x2",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.37",
+        "label": "x1",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.38",
+        "label": "x1",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.39",
+        "label": "x1",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.40",
+        "label": "x1",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.41",
+        "label": "x1",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.42",
+        "label": "x3'",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "(input node)",
+        "id": "input.43",
+        "label": "x5'",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "(output node)",
+        "id": "output.44",
+        "label": "x1'",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "(output node)",
+        "id": "output.45",
+        "label": "x1'",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "data": {
+        "id": "order.atom.0",
+        "label": "",
+        "source": "atom.0.init",
+        "target": "atom.0.update"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.21.17.20",
+        "label": "w21",
+        "source": "term.17",
+        "target": "term.20"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..8",
+        "label": "w0",
+        "source": "input.24",
+        "target": "term.8"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..9",
+        "label": "w0",
+        "source": "input.25",
+        "target": "term.9"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..12",
+        "label": "w0",
+        "source": "input.26",
+        "target": "term.12"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..14",
+        "label": "w0",
+        "source": "input.27",
+        "target": "term.14"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..16",
+        "label": "w0",
+        "source": "input.28",
+        "target": "term.16"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..18",
+        "label": "w0",
+        "source": "input.29",
+        "target": "term.18"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..19",
+        "label": "w0",
+        "source": "input.30",
+        "target": "term.19"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.6.5.",
+        "label": "w6",
+        "source": "term.5",
+        "target": "output.31"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.6.15.",
+        "label": "w6",
+        "source": "term.15",
+        "target": "output.32"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.8.7.",
+        "label": "w8",
+        "source": "term.7",
+        "target": "output.33"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.8.23.",
+        "label": "w8",
+        "source": "term.23",
+        "target": "output.34"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.2..17",
+        "label": "w2",
+        "source": "input.35",
+        "target": "term.17"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.2..23",
+        "label": "w2",
+        "source": "input.36",
+        "target": "term.23"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.1..8",
+        "label": "w1",
+        "source": "input.37",
+        "target": "term.8"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.1..9",
+        "label": "w1",
+        "source": "input.38",
+        "target": "term.9"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.1..16",
+        "label": "w1",
+        "source": "input.39",
+        "target": "term.16"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.1..18",
+        "label": "w1",
+        "source": "input.40",
+        "target": "term.18"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.1..19",
+        "label": "w1",
+        "source": "input.41",
+        "target": "term.19"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.18.13.14",
+        "label": "w18",
+        "source": "term.13",
+        "target": "term.14"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.19.14.15",
+        "label": "w19",
+        "source": "term.14",
+        "target": "term.15"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.16.11.12",
+        "label": "w16",
+        "source": "term.11",
+        "target": "term.12"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.14.9.10",
+        "label": "w14",
+        "source": "term.9",
+        "target": "term.10"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.9..4",
+        "label": "w9",
+        "source": "input.42",
+        "target": "term.4"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.23.19.20",
+        "label": "w23",
+        "source": "term.19",
+        "target": "term.20"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.11..7",
+        "label": "w11",
+        "source": "input.43",
+        "target": "term.7"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.17.12.15",
+        "label": "w17",
+        "source": "term.12",
+        "target": "term.15"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.24.21.23",
+        "label": "w24",
+        "source": "term.21",
+        "target": "term.23"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.20.16.17",
+        "label": "w20",
+        "source": "term.16",
+        "target": "term.17"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.12.4.5",
+        "label": "w12",
+        "source": "term.4",
+        "target": "term.5"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.15.10.15",
+        "label": "w15",
+        "source": "term.10",
+        "target": "term.15"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.22.18.20",
+        "label": "w22",
+        "source": "term.18",
+        "target": "term.20"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.25.22.23",
+        "label": "w25",
+        "source": "term.22",
+        "target": "term.23"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.13.8.10",
+        "label": "w13",
+        "source": "term.8",
+        "target": "term.10"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.7.6.",
+        "label": "w7",
+        "source": "term.6",
+        "target": "output.44"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.7.20.",
+        "label": "w7",
+        "source": "term.20",
+        "target": "output.45"
+      }
+    }
+  ]
+};
+
+// Register the dagre layout
+cytoscape.use(cytoscapeDagre);
+
+// --- Cytoscape Setup ---
+const cy = cytoscape({
+  container: document.getElementById('cy'),
+  elements: graphData.elements,
+  style: [
+    { selector: 'node', style: {
+        'label': 'data(label)',
+        'text-valign': 'center',
+        'color': '#222',
+        'background-color': '#77b5fe',
+        'font-size': 12,
+        'width': 'label',
+        'height': 'label',
+        'shape': 'rectangle',
+        'padding': '1em',
+    }},
+    { selector: 'node.input', style: {
+        'background-color': '#77feb5',
+    }},
+    { selector: 'node.output', style: {
+        'background-color': '#fe77b5',
+    }},
+    { selector: ':parent', style: {
+        'label': 'data(label)',
+        'text-valign': 'top',
+        'text-halign': 'center',
+        'background-opacity': 0.1,
+        'border-width': 2,
+        'border-color': '#666',
+        'shape': 'round-rectangle',
+        'padding': '25px',
+        'font-weight': 'bold',
+        'font-size': 14
+    }},
+    { selector: 'edge', style: {
+        'width': 2,
+        'label': 'data(label)',
+        'line-color': '#aaa',
+        'text-background-color': 'white',
+        'text-background-opacity': 0.7,
+        'text-background-shape': 'roundrectangle',
+        'curve-style': 'bezier',
+        'target-arrow-shape': 'triangle',
+        'edge-text-rotation': 'autorotate'
+    }},
+    { selector: 'edge[id^="order."]', style: {
+        'opacity': 0,
+        'width': 0,
+        'label': ''
+    }},
+    { selector: 'edge:selected', style: {
+        'line-color': 'red',
+    }},
+    { selector: 'node:selected', style: {
+        'border-width': 3,
+        'border-color': '#ff6600'
+    }}
+  ],
+  layout: { 
+    name: 'dagre',
+    rankDir: 'LR',  // Left to Right
+    nodeSep: 30,    // Vertical separation between unconnected nodes
+    edgeSep: 30,    // Edge separation
+    rankSep: 100,   // Horizontal separation between ranks (wire length/distance between terms)
+    ranker: 'network-simplex',
+    animate: false,
+    fit: true,
+    padding: 20
+  }
+});
+
+// --- Info Panel Logic ---
+const infoDiv = document.getElementById('info');
+
+    cy.on('tap', 'node', (evt) => {
+    const node = evt.target;
+    const data = node.data();
+
+    // Use the full HTML description provided by the descriptor when
+    // available. Fall back to a simple heading if no description is set.
+    if (data.description && data.description.length > 0) {
+        infoDiv.innerHTML = data.description;
+    } else {
+        infoDiv.innerHTML = `
+            <h2>${data.label}</h2>
+            <p>No description available.</p>
+        `;
+    }
+});
+
+cy.on('tap', (evt) => {
+  // Click on background → reset info panel
+  if (evt.target === cy) {
+    infoDiv.innerHTML = `
+      <h2>Node Information</h2>
+      <p>Click any node or cluster to see details here.</p>
+    `;
+  }
+});
+</script>
+
+</body>
+</html>

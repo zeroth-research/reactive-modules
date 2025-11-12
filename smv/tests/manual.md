@@ -67,40 +67,6 @@ Module {
             vec: [],
         },
     ],
-    ctrl: [
-        Wire {
-            vec: [
-                (
-                    0,
-                    Int,
-                ),
-                (
-                    1,
-                    Int,
-                ),
-                (
-                    2,
-                    Int,
-                ),
-            ],
-        },
-        Wire {
-            vec: [
-                (
-                    5,
-                    Int,
-                ),
-                (
-                    6,
-                    Int,
-                ),
-                (
-                    7,
-                    Int,
-                ),
-            ],
-        },
-    ],
     obs: [
         Wire {
             vec: [
@@ -146,6 +112,40 @@ Module {
                 ),
                 (
                     9,
+                    Int,
+                ),
+            ],
+        },
+    ],
+    ctrl: [
+        Wire {
+            vec: [
+                (
+                    0,
+                    Int,
+                ),
+                (
+                    1,
+                    Int,
+                ),
+                (
+                    2,
+                    Int,
+                ),
+            ],
+        },
+        Wire {
+            vec: [
+                (
+                    5,
+                    Int,
+                ),
+                (
+                    6,
+                    Int,
+                ),
+                (
+                    7,
                     Int,
                 ),
             ],
@@ -636,4 +636,5 @@ Module {
             ],
         },
     ],
+    name: None,
 }
