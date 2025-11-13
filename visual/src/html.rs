@@ -88,12 +88,12 @@ pub trait Descriptor<T, I> {
     // describe node representing output. `id` is the identifier
     // of the input wire
     fn describe_input(&self, _id: usize) -> String {
-        "(input node)".into()
+        "(input value)".into()
     }
     // describe node representing output. `id` is the identifier
     // of the output wire
     fn describe_output(&self, _id: usize) -> String {
-        "(output node)".into()
+        "(output value)".into()
     }
 }
 
@@ -719,9 +719,11 @@ const cy = cytoscape({{
     }}}},
     {{ selector: 'node.input', style: {{
         'background-color': '#77feb5',
+        'shape': 'ellipse',
     }}}},
     {{ selector: 'node.output', style: {{
         'background-color': '#fe77b5',
+        'shape': 'ellipse',
     }}}},
     {{ selector: ':parent', style: {{
         'label': 'data(label)',

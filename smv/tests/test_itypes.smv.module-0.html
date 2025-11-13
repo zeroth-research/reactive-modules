@@ -105,7 +105,7 @@ const graphData = {
     {
       "classes": "term-init",
       "data": {
-        "description": "<h3>Absolute Value</h3><p>|<code>x3'</code>| → <code>w12</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w12</code> <small>(w12 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x3'</code> <small>(x3' : Int)</small></td></tr></table>",
+        "description": "<h3>Absolute Value</h3><p>|<code>x3'</code>| → <code>w12</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w12</code> <small>(w12 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x3'</code> <small>(w9 : Int)</small></td></tr></table>",
         "id": "term.4",
         "label": "Abs",
         "parent": "atom.0.init"
@@ -114,16 +114,16 @@ const graphData = {
     {
       "classes": "term-init",
       "data": {
-        "description": "<h3>Assign</h3><p><code>w12</code> → <code>x0'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x0'</code> <small>(x0' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w12</code> <small>(w12 : Int)</small></td></tr></table>",
+        "description": "<h3>Id</h3><p><code>w12</code> → <code>x0'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x0'</code> <small>(w6 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w12</code> <small>(w12 : Int)</small></td></tr></table>",
         "id": "term.5",
-        "label": "Assign",
+        "label": "Id",
         "parent": "atom.0.init"
       }
     },
     {
       "classes": "term-init",
       "data": {
-        "description": "<h3>Constant (Int)</h3><p><code>42</code> → <code>x1'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x1'</code> <small>(x1' : Int)</small></td></tr></table>",
+        "description": "<h3>Constant (Int)</h3><p><code>42</code> → <code>x1'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x1'</code> <small>(w7 : Int)</small></td></tr></table>",
         "id": "term.6",
         "label": "42",
         "parent": "atom.0.init"
@@ -132,16 +132,16 @@ const graphData = {
     {
       "classes": "term-init",
       "data": {
-        "description": "<h3>Assign</h3><p><code>x5'</code> → <code>x2'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x2'</code> <small>(x2' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x5'</code> <small>(x5' : Bool)</small></td></tr></table>",
+        "description": "<h3>Id</h3><p><code>x5'</code> → <code>x2'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x2'</code> <small>(w8 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x5'</code> <small>(w11 : Bool)</small></td></tr></table>",
         "id": "term.7",
-        "label": "Assign",
+        "label": "Id",
         "parent": "atom.0.init"
       }
     },
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Less Than</h3><p><code>x0</code> < <code>x1</code> → <code>w13</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w13</code> <small>(w13 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr></table>",
+        "description": "<h3>Less Than</h3><p><code>x0</code> < <code>x1</code> → <code>w13</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w13</code> <small>(w13 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(w0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(w1 : Int)</small></td></tr></table>",
         "id": "term.8",
         "label": "Lt",
         "parent": "atom.0.update"
@@ -150,7 +150,7 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Equality</h3><p><code>x0</code> == <code>x1</code> → <code>w14</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w14</code> <small>(w14 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr></table>",
+        "description": "<h3>Equality</h3><p><code>x0</code> == <code>x1</code> → <code>w14</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w14</code> <small>(w14 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(w0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(w1 : Int)</small></td></tr></table>",
         "id": "term.9",
         "label": "Eq",
         "parent": "atom.0.update"
@@ -177,7 +177,7 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Addition</h3><p><code>x0</code> + <code>w16</code> → <code>w17</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w17</code> <small>(w17 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w16</code> <small>(w16 : Int)</small></td></tr></table>",
+        "description": "<h3>Addition</h3><p><code>x0</code> + <code>w16</code> → <code>w17</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w17</code> <small>(w17 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(w0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w16</code> <small>(w16 : Int)</small></td></tr></table>",
         "id": "term.12",
         "label": "Add",
         "parent": "atom.0.update"
@@ -195,7 +195,7 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Subtraction</h3><p><code>x0</code> - <code>w18</code> → <code>w19</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w19</code> <small>(w19 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w18</code> <small>(w18 : Int)</small></td></tr></table>",
+        "description": "<h3>Subtraction</h3><p><code>x0</code> - <code>w18</code> → <code>w19</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w19</code> <small>(w19 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(w0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w18</code> <small>(w18 : Int)</small></td></tr></table>",
         "id": "term.14",
         "label": "Sub",
         "parent": "atom.0.update"
@@ -204,7 +204,7 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Ternary Condition</h3><p><code>w15</code> ? <code>w17</code> : <code>w19</code> → <code>x0'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x0'</code> <small>(x0' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w15</code> <small>(w15 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w17</code> <small>(w17 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w19</code> <small>(w19 : Int)</small></td></tr></table>",
+        "description": "<h3>Ternary Condition</h3><p><code>w15</code> ? <code>w17</code> : <code>w19</code> → <code>x0'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x0'</code> <small>(w6 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w15</code> <small>(w15 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w17</code> <small>(w17 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w19</code> <small>(w19 : Int)</small></td></tr></table>",
         "id": "term.15",
         "label": "Cond",
         "parent": "atom.0.update"
@@ -213,7 +213,7 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Greater Than</h3><p><code>x0</code> > <code>x1</code> → <code>w20</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w20</code> <small>(w20 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr></table>",
+        "description": "<h3>Greater Than</h3><p><code>x0</code> > <code>x1</code> → <code>w20</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w20</code> <small>(w20 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(w0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(w1 : Int)</small></td></tr></table>",
         "id": "term.16",
         "label": "Gt",
         "parent": "atom.0.update"
@@ -222,7 +222,7 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>And</h3><p><code>w20</code> ∧ <code>x2</code> → <code>w21</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w21</code> <small>(w21 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w20</code> <small>(w20 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x2</code> <small>(x2 : Int)</small></td></tr></table>",
+        "description": "<h3>And</h3><p><code>w20</code> ∧ <code>x2</code> → <code>w21</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w21</code> <small>(w21 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w20</code> <small>(w20 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x2</code> <small>(w2 : Int)</small></td></tr></table>",
         "id": "term.17",
         "label": "And",
         "parent": "atom.0.update"
@@ -231,7 +231,7 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Multiplication</h3><p><code>x0</code> * <code>x1</code> → <code>w22</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w22</code> <small>(w22 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr></table>",
+        "description": "<h3>Multiplication</h3><p><code>x0</code> * <code>x1</code> → <code>w22</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w22</code> <small>(w22 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(w0 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(w1 : Int)</small></td></tr></table>",
         "id": "term.18",
         "label": "Mul",
         "parent": "atom.0.update"
@@ -240,7 +240,7 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Division</h3><p><code>x1</code> / <code>x0</code> → <code>w23</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w23</code> <small>(w23 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(x1 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(x0 : Int)</small></td></tr></table>",
+        "description": "<h3>Division</h3><p><code>x1</code> / <code>x0</code> → <code>w23</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>w23</code> <small>(w23 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x1</code> <small>(w1 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x0</code> <small>(w0 : Int)</small></td></tr></table>",
         "id": "term.19",
         "label": "Div",
         "parent": "atom.0.update"
@@ -249,7 +249,7 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Ternary Condition</h3><p><code>w21</code> ? <code>w22</code> : <code>w23</code> → <code>x1'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x1'</code> <small>(x1' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w21</code> <small>(w21 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w22</code> <small>(w22 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w23</code> <small>(w23 : Int)</small></td></tr></table>",
+        "description": "<h3>Ternary Condition</h3><p><code>w21</code> ? <code>w22</code> : <code>w23</code> → <code>x1'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x1'</code> <small>(w7 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w21</code> <small>(w21 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w22</code> <small>(w22 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w23</code> <small>(w23 : Int)</small></td></tr></table>",
         "id": "term.20",
         "label": "Cond",
         "parent": "atom.0.update"
@@ -276,107 +276,17 @@ const graphData = {
     {
       "classes": "term-update",
       "data": {
-        "description": "<h3>Ternary Condition</h3><p><code>x2</code> ? <code>w24</code> : <code>w25</code> → <code>x2'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x2'</code> <small>(x2' : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x2</code> <small>(x2 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w24</code> <small>(w24 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w25</code> <small>(w25 : Bool)</small></td></tr></table>",
+        "description": "<h3>Ternary Condition</h3><p><code>x2</code> ? <code>w24</code> : <code>w25</code> → <code>x2'</code></p><hr><table><tr><td><strong>writes</strong></td><td><code>x2'</code> <small>(w8 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>x2</code> <small>(w2 : Int)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w24</code> <small>(w24 : Bool)</small></td></tr><tr><td><strong>reads</strong></td><td><code>w25</code> <small>(w25 : Bool)</small></td></tr></table>",
         "id": "term.23",
         "label": "Cond",
         "parent": "atom.0.update"
       }
     },
     {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
-        "id": "input.24",
-        "label": "x1",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
-        "id": "input.25",
-        "label": "x1",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
-        "id": "input.26",
-        "label": "x1",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
-        "id": "input.27",
-        "label": "x1",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
-        "id": "input.28",
-        "label": "x1",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
-        "id": "input.29",
-        "label": "x5'",
-        "parent": "atom.0.init"
-      }
-    },
-    {
       "classes": "output",
       "data": {
-        "description": "(output node)",
-        "id": "output.30",
-        "label": "x2'",
-        "parent": "atom.0.init"
-      }
-    },
-    {
-      "classes": "output",
-      "data": {
-        "description": "(output node)",
-        "id": "output.31",
-        "label": "x2'",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
-        "id": "input.32",
-        "label": "x2",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "input",
-      "data": {
-        "description": "(input node)",
-        "id": "input.33",
-        "label": "x2",
-        "parent": "atom.0.update"
-      }
-    },
-    {
-      "classes": "output",
-      "data": {
-        "description": "(output node)",
-        "id": "output.34",
+        "description": "<code>x1'</code> <small>(w7 : Int)</small>",
+        "id": "output.24",
         "label": "x1'",
         "parent": "atom.0.init"
       }
@@ -384,17 +294,53 @@ const graphData = {
     {
       "classes": "output",
       "data": {
-        "description": "(output node)",
-        "id": "output.35",
+        "description": "<code>x1'</code> <small>(w7 : Int)</small>",
+        "id": "output.25",
         "label": "x1'",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "<code>x2'</code> <small>(w8 : Int)</small>",
+        "id": "output.26",
+        "label": "x2'",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "<code>x2'</code> <small>(w8 : Int)</small>",
+        "id": "output.27",
+        "label": "x2'",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "<code>x0'</code> <small>(w6 : Int)</small>",
+        "id": "output.28",
+        "label": "x0'",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "output",
+      "data": {
+        "description": "<code>x0'</code> <small>(w6 : Int)</small>",
+        "id": "output.29",
+        "label": "x0'",
         "parent": "atom.0.update"
       }
     },
     {
       "classes": "input",
       "data": {
-        "description": "(input node)",
-        "id": "input.36",
+        "description": "<code>x3'</code> <small>(w9 : Int)</small>",
+        "id": "input.30",
         "label": "x3'",
         "parent": "atom.0.init"
       }
@@ -402,7 +348,61 @@ const graphData = {
     {
       "classes": "input",
       "data": {
-        "description": "(input node)",
+        "description": "<code>x5'</code> <small>(w11 : Int)</small>",
+        "id": "input.31",
+        "label": "x5'",
+        "parent": "atom.0.init"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "<code>x0</code> <small>(w0 : Int)</small>",
+        "id": "input.32",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "<code>x0</code> <small>(w0 : Int)</small>",
+        "id": "input.33",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "<code>x0</code> <small>(w0 : Int)</small>",
+        "id": "input.34",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "<code>x0</code> <small>(w0 : Int)</small>",
+        "id": "input.35",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "<code>x0</code> <small>(w0 : Int)</small>",
+        "id": "input.36",
+        "label": "x0",
+        "parent": "atom.0.update"
+      }
+    },
+    {
+      "classes": "input",
+      "data": {
+        "description": "<code>x0</code> <small>(w0 : Int)</small>",
         "id": "input.37",
         "label": "x0",
         "parent": "atom.0.update"
@@ -411,7 +411,7 @@ const graphData = {
     {
       "classes": "input",
       "data": {
-        "description": "(input node)",
+        "description": "<code>x0</code> <small>(w0 : Int)</small>",
         "id": "input.38",
         "label": "x0",
         "parent": "atom.0.update"
@@ -420,63 +420,63 @@ const graphData = {
     {
       "classes": "input",
       "data": {
-        "description": "(input node)",
+        "description": "<code>x1</code> <small>(w1 : Int)</small>",
         "id": "input.39",
-        "label": "x0",
+        "label": "x1",
         "parent": "atom.0.update"
       }
     },
     {
       "classes": "input",
       "data": {
-        "description": "(input node)",
+        "description": "<code>x1</code> <small>(w1 : Int)</small>",
         "id": "input.40",
-        "label": "x0",
+        "label": "x1",
         "parent": "atom.0.update"
       }
     },
     {
       "classes": "input",
       "data": {
-        "description": "(input node)",
+        "description": "<code>x1</code> <small>(w1 : Int)</small>",
         "id": "input.41",
-        "label": "x0",
+        "label": "x1",
         "parent": "atom.0.update"
       }
     },
     {
       "classes": "input",
       "data": {
-        "description": "(input node)",
+        "description": "<code>x1</code> <small>(w1 : Int)</small>",
         "id": "input.42",
-        "label": "x0",
+        "label": "x1",
         "parent": "atom.0.update"
       }
     },
     {
       "classes": "input",
       "data": {
-        "description": "(input node)",
+        "description": "<code>x1</code> <small>(w1 : Int)</small>",
         "id": "input.43",
-        "label": "x0",
+        "label": "x1",
         "parent": "atom.0.update"
       }
     },
     {
-      "classes": "output",
+      "classes": "input",
       "data": {
-        "description": "(output node)",
-        "id": "output.44",
-        "label": "x0'",
-        "parent": "atom.0.init"
+        "description": "<code>x2</code> <small>(w2 : Int)</small>",
+        "id": "input.44",
+        "label": "x2",
+        "parent": "atom.0.update"
       }
     },
     {
-      "classes": "output",
+      "classes": "input",
       "data": {
-        "description": "(output node)",
-        "id": "output.45",
-        "label": "x0'",
+        "description": "<code>x2</code> <small>(w2 : Int)</small>",
+        "id": "input.45",
+        "label": "x2",
         "parent": "atom.0.update"
       }
     },
@@ -490,130 +490,10 @@ const graphData = {
     },
     {
       "data": {
-        "id": "wire.13.8.10",
-        "label": "w13",
-        "source": "term.8",
-        "target": "term.10"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.23.19.20",
-        "label": "w23",
-        "source": "term.19",
-        "target": "term.20"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.1..8",
-        "label": "w1",
-        "source": "input.24",
-        "target": "term.8"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.1..9",
-        "label": "w1",
-        "source": "input.25",
-        "target": "term.9"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.1..16",
-        "label": "w1",
-        "source": "input.26",
-        "target": "term.16"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.1..18",
-        "label": "w1",
-        "source": "input.27",
-        "target": "term.18"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.1..19",
-        "label": "w1",
-        "source": "input.28",
-        "target": "term.19"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.11..7",
-        "label": "w11",
-        "source": "input.29",
-        "target": "term.7"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.8.7.",
-        "label": "w8",
-        "source": "term.7",
-        "target": "output.30"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.8.23.",
-        "label": "w8",
-        "source": "term.23",
-        "target": "output.31"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.20.16.17",
-        "label": "w20",
-        "source": "term.16",
-        "target": "term.17"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.19.14.15",
-        "label": "w19",
-        "source": "term.14",
-        "target": "term.15"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.2..17",
-        "label": "w2",
-        "source": "input.32",
-        "target": "term.17"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.2..23",
-        "label": "w2",
-        "source": "input.33",
+        "id": "wire.25.22.23",
+        "label": "w25",
+        "source": "term.22",
         "target": "term.23"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.17.12.15",
-        "label": "w17",
-        "source": "term.12",
-        "target": "term.15"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.12.4.5",
-        "label": "w12",
-        "source": "term.4",
-        "target": "term.5"
       }
     },
     {
@@ -626,18 +506,10 @@ const graphData = {
     },
     {
       "data": {
-        "id": "wire.7.6.",
-        "label": "w7",
-        "source": "term.6",
-        "target": "output.34"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.7.20.",
-        "label": "w7",
-        "source": "term.20",
-        "target": "output.35"
+        "id": "wire.19.14.15",
+        "label": "w19",
+        "source": "term.14",
+        "target": "term.15"
       }
     },
     {
@@ -650,6 +522,134 @@ const graphData = {
     },
     {
       "data": {
+        "id": "wire.7.6.",
+        "label": "w7",
+        "source": "term.6",
+        "target": "output.24"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.7.20.",
+        "label": "w7",
+        "source": "term.20",
+        "target": "output.25"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.8.7.",
+        "label": "w8",
+        "source": "term.7",
+        "target": "output.26"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.8.23.",
+        "label": "w8",
+        "source": "term.23",
+        "target": "output.27"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.13.8.10",
+        "label": "w13",
+        "source": "term.8",
+        "target": "term.10"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.6.5.",
+        "label": "w6",
+        "source": "term.5",
+        "target": "output.28"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.6.15.",
+        "label": "w6",
+        "source": "term.15",
+        "target": "output.29"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.9..4",
+        "label": "w9",
+        "source": "input.30",
+        "target": "term.4"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.11..7",
+        "label": "w11",
+        "source": "input.31",
+        "target": "term.7"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..8",
+        "label": "w0",
+        "source": "input.32",
+        "target": "term.8"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..9",
+        "label": "w0",
+        "source": "input.33",
+        "target": "term.9"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..12",
+        "label": "w0",
+        "source": "input.34",
+        "target": "term.12"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..14",
+        "label": "w0",
+        "source": "input.35",
+        "target": "term.14"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..16",
+        "label": "w0",
+        "source": "input.36",
+        "target": "term.16"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..18",
+        "label": "w0",
+        "source": "input.37",
+        "target": "term.18"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.0..19",
+        "label": "w0",
+        "source": "input.38",
+        "target": "term.19"
+      }
+    },
+    {
+      "data": {
         "id": "wire.15.10.15",
         "label": "w15",
         "source": "term.10",
@@ -658,64 +658,40 @@ const graphData = {
     },
     {
       "data": {
-        "id": "wire.9..4",
-        "label": "w9",
-        "source": "input.36",
-        "target": "term.4"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.0..8",
-        "label": "w0",
-        "source": "input.37",
+        "id": "wire.1..8",
+        "label": "w1",
+        "source": "input.39",
         "target": "term.8"
       }
     },
     {
       "data": {
-        "id": "wire.0..9",
-        "label": "w0",
-        "source": "input.38",
+        "id": "wire.1..9",
+        "label": "w1",
+        "source": "input.40",
         "target": "term.9"
       }
     },
     {
       "data": {
-        "id": "wire.0..12",
-        "label": "w0",
-        "source": "input.39",
-        "target": "term.12"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.0..14",
-        "label": "w0",
-        "source": "input.40",
-        "target": "term.14"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.0..16",
-        "label": "w0",
+        "id": "wire.1..16",
+        "label": "w1",
         "source": "input.41",
         "target": "term.16"
       }
     },
     {
       "data": {
-        "id": "wire.0..18",
-        "label": "w0",
+        "id": "wire.1..18",
+        "label": "w1",
         "source": "input.42",
         "target": "term.18"
       }
     },
     {
       "data": {
-        "id": "wire.0..19",
-        "label": "w0",
+        "id": "wire.1..19",
+        "label": "w1",
         "source": "input.43",
         "target": "term.19"
       }
@@ -730,34 +706,50 @@ const graphData = {
     },
     {
       "data": {
-        "id": "wire.21.17.20",
-        "label": "w21",
-        "source": "term.17",
+        "id": "wire.20.16.17",
+        "label": "w20",
+        "source": "term.16",
+        "target": "term.17"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.12.4.5",
+        "label": "w12",
+        "source": "term.4",
+        "target": "term.5"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.17.12.15",
+        "label": "w17",
+        "source": "term.12",
+        "target": "term.15"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.23.19.20",
+        "label": "w23",
+        "source": "term.19",
         "target": "term.20"
       }
     },
     {
       "data": {
-        "id": "wire.25.22.23",
-        "label": "w25",
-        "source": "term.22",
+        "id": "wire.2..17",
+        "label": "w2",
+        "source": "input.44",
+        "target": "term.17"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.2..23",
+        "label": "w2",
+        "source": "input.45",
         "target": "term.23"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.6.5.",
-        "label": "w6",
-        "source": "term.5",
-        "target": "output.44"
-      }
-    },
-    {
-      "data": {
-        "id": "wire.6.15.",
-        "label": "w6",
-        "source": "term.15",
-        "target": "output.45"
       }
     },
     {
@@ -766,6 +758,14 @@ const graphData = {
         "label": "w16",
         "source": "term.11",
         "target": "term.12"
+      }
+    },
+    {
+      "data": {
+        "id": "wire.21.17.20",
+        "label": "w21",
+        "source": "term.17",
+        "target": "term.20"
       }
     },
     {
@@ -800,9 +800,11 @@ const cy = cytoscape({
     }},
     { selector: 'node.input', style: {
         'background-color': '#77feb5',
+        'shape': 'ellipse',
     }},
     { selector: 'node.output', style: {
         'background-color': '#fe77b5',
+        'shape': 'ellipse',
     }},
     { selector: ':parent', style: {
         'label': 'data(label)',

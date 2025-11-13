@@ -57,7 +57,7 @@ impl fmt::Display for IType {
             IType::Abs => write!(f, "Abs"),
             IType::Next => write!(f, "Next"),
             IType::Init => write!(f, "Init"),
-            IType::Assign => write!(f, "Assign"),
+            IType::Assign => write!(f, "Id"),
         }
     }
 }

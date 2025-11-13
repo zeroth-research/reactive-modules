@@ -1,4 +1,4 @@
-use base::{module::Module, atom::Atom, term::Term};
+use base::{module::Module, atom::Atom, term::Term, wire::Wire};
 use crate::{dtype::DType, itype::IType};
 use visual::html::Descriptor;
 use std::cell::RefCell;
@@ -13,12 +13,15 @@ use std::collections::HashMap;
 pub struct SmvDescriptor {
 	/// Map from numeric wire index -> display name (e.g. "x0" or "x0'").
 	wire_names: RefCell<HashMap<usize, String>>,
+	/// Cache the module wires so describe_input/describe_output can look up wire dtypes.
+	module_wires: RefCell<Option<Wire<DType>>>,
 }
 
 impl SmvDescriptor {
 	pub fn new() -> Self {
 		SmvDescriptor {
 			wire_names: RefCell::new(HashMap::new()),
+			module_wires: RefCell::new(None),
 		}
 	}
 
@@ -173,6 +176,9 @@ impl SmvDescriptor {
 
 impl Descriptor<DType, IType> for SmvDescriptor {
 	fn describe_module(&self, module: &Module<DType, IType>) -> String {
+		// Cache module wires for describe_input/describe_output
+		*self.module_wires.borrow_mut() = Some(module.wire()[0].clone());
+		
 		// Build wire name map first so describe_wire_id can use it.
 		self.populate_wire_names(module);
 
@@ -364,8 +370,8 @@ impl Descriptor<DType, IType> for SmvDescriptor {
 			for (idx, dtype) in writes_v.iter() {
 				let name = self.describe_wire_id(*idx);
 				rows.push_str(&format!(
-					"<tr><td><strong>writes</strong></td><td><code>{}</code> <small>({} : {})</small></td></tr>",
-					name, name, dtype
+					"<tr><td><strong>writes</strong></td><td><code>{}</code> <small>(w{} : {})</small></td></tr>",
+					name, idx, dtype
 				));
 			}
 		}
@@ -373,8 +379,8 @@ impl Descriptor<DType, IType> for SmvDescriptor {
 			for (idx, dtype) in reads_v.iter() {
 				let name = self.describe_wire_id(*idx);
 				rows.push_str(&format!(
-					"<tr><td><strong>reads</strong></td><td><code>{}</code> <small>({} : {})</small></td></tr>",
-					name, name, dtype
+					"<tr><td><strong>reads</strong></td><td><code>{}</code> <small>(w{} : {})</small></td></tr>",
+					name, idx, dtype
 				));
 			}
 		}
@@ -535,5 +541,23 @@ impl Descriptor<DType, IType> for SmvDescriptor {
 	fn describe_wire_label_for_edge(&self, id: usize) -> String {
 		// Explicitly return the internal wire name for edge labels.
 		format!("w{}", id)
+	}
+
+	fn describe_input(&self, id: usize) -> String {
+		let user_name = self.describe_wire_id(id);
+		let dtype = self.module_wires.borrow()
+			.as_ref()
+			.and_then(|wires| wires.iter().find(|(w, _)| *w == id).map(|(_, d)| d.clone()))
+			.unwrap_or_else(|| DType::Int);
+		format!("<code>{}</code> <small>(w{} : {})</small>", user_name, id, dtype)
+	}
+
+	fn describe_output(&self, id: usize) -> String {
+		let user_name = self.describe_wire_id(id);
+		let dtype = self.module_wires.borrow()
+			.as_ref()
+			.and_then(|wires| wires.iter().find(|(w, _)| *w == id).map(|(_, d)| d.clone()))
+			.unwrap_or_else(|| DType::Int);
+		format!("<code>{}</code> <small>(w{} : {})</small>", user_name, id, dtype)
 	}
 }
