@@ -1,7 +1,6 @@
 use toy::context::Context;
 
-use base::atom::Atom;
-use base::module::Module;
+use base::{Atom, Module};
 
 use toy::dtype::Type;
 use toy::instruction::Instruction;

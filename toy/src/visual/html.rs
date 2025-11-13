@@ -170,7 +170,7 @@ impl Descriptor<Type, Instruction> for Context {
         self.wire_name(id)
     }
 
-    fn describe_term_label(&self, term: &Term<Type, Instruction>) -> String {
-        term.itype().to_string()   
+    fn describe_term_label(&self, term: &ToyTerm) -> String {
+        term.itype().to_string()
     }
 }

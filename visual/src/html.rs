@@ -68,7 +68,11 @@ pub trait Descriptor<T, I> {
     /// Context-aware flow renderer which receives the list of all terms
     /// in the atom (init or update). The default implementation falls
     /// back to `describe_term_flow` for backward compatibility.
-    fn describe_term_flow_with_context(&self, term: &Term<T, I>, _atom_terms: &[&Term<T, I>]) -> String {
+    fn describe_term_flow_with_context(
+        &self,
+        term: &Term<T, I>,
+        _atom_terms: &[&Term<T, I>],
+    ) -> String {
         self.describe_term_flow(term)
     }
 
@@ -103,6 +107,7 @@ pub trait Descriptor<T, I> {
 struct DefaultDescriptor {}
 impl<T, I> Descriptor<T, I> for DefaultDescriptor
 where
+    I: std::fmt::Display,
     Module<T, I>: std::fmt::Display,
     Atom<T, I>: std::fmt::Display,
     Term<T, I>: std::fmt::Display,
@@ -121,7 +126,7 @@ where
 
     fn describe_term_label(&self, term: &Term<T, I>) -> String {
         // Default: use the full term display as the node label.
-        term.to_string()
+        term.itype().to_string()
     }
 }
 
@@ -166,7 +171,7 @@ where
         // Add a node for the whole atom. We'll populate its description
         // after we compute the init/update flow summaries so the atom
         // panel can include both as subtitles.
-    let atom_node_index = nodes.len();
+        let atom_node_index = nodes.len();
         nodes.push(Node {
             data: NodeData {
                 id: format!("atom.{atom_id}"),
@@ -176,7 +181,7 @@ where
             },
             classes: Some("atom".into()),
         });
-    // atom node recorded inline; we'll pick up descriptions later.
+        // atom node recorded inline; we'll pick up descriptions later.
 
         // Add a node for the atom init terms and update terms
         let atom_id_init = format!("atom.{atom_id}.init");
@@ -215,9 +220,7 @@ where
         let update_flows: Vec<String> = atom
             .update()
             .iter()
-            .filter(|t| {
-                t.writes().iter().any(|p| next_wires.contains(&p.0))
-            })
+            .filter(|t| t.writes().iter().any(|p| next_wires.contains(&p.0)))
             .map(|t| descr.describe_term_flow_with_context(t, &update_terms))
             .filter(|s| !s.is_empty())
             .collect();
@@ -294,7 +297,7 @@ where
             },
             classes: Some("atom-update".into()),
         });
-        
+
         // Add a dummy invisible edge to hint that Init comes before Update
         edges.push(Edge {
             data: EdgeData {
@@ -463,10 +466,25 @@ where
         .map(|(w, _)| descr.describe_wire_id(w))
         .collect();
 
-    let obs_html = if obs_list.is_empty() { "<em>(none)</em>".into() } else { obs_list.join(", ") };
-    let _intf_html = if intf_list.is_empty() { "<em>(none)</em>".into() } else { intf_list.join(", ") };
-    let prvt_html = if prvt_list.is_empty() { "<em>(none)</em>".into() } else { prvt_list.join(", ") };
-    wire_table.push_str(&format!("<tr><td colspan=2>{}</td><td>{}</td></tr>\n", obs_html, prvt_html));
+    let obs_html = if obs_list.is_empty() {
+        "<em>(none)</em>".into()
+    } else {
+        obs_list.join(", ")
+    };
+    let _intf_html = if intf_list.is_empty() {
+        "<em>(none)</em>".into()
+    } else {
+        intf_list.join(", ")
+    };
+    let prvt_html = if prvt_list.is_empty() {
+        "<em>(none)</em>".into()
+    } else {
+        prvt_list.join(", ")
+    };
+    wire_table.push_str(&format!(
+        "<tr><td colspan=2>{}</td><td>{}</td></tr>\n",
+        obs_html, prvt_html
+    ));
     // row: extl | ctrl (colspan 2)
     let extl_list: Vec<String> = module.extl()[0]
         .iter()
@@ -476,15 +494,30 @@ where
         .iter()
         .map(|(w, _)| descr.describe_wire_id(w))
         .collect();
-    let extl_html = if extl_list.is_empty() { "<em>(none)</em>".into() } else { extl_list.join(", ") };
-    let ctrl_html = if ctrl_list.is_empty() { "<em>(none)</em>".into() } else { ctrl_list.join(", ") };
-    wire_table.push_str(&format!("<tr><td>{}</td><td colspan=2>{}</td></tr>\n", extl_html, ctrl_html));
+    let extl_html = if extl_list.is_empty() {
+        "<em>(none)</em>".into()
+    } else {
+        extl_list.join(", ")
+    };
+    let ctrl_html = if ctrl_list.is_empty() {
+        "<em>(none)</em>".into()
+    } else {
+        ctrl_list.join(", ")
+    };
+    wire_table.push_str(&format!(
+        "<tr><td>{}</td><td colspan=2>{}</td></tr>\n",
+        extl_html, ctrl_html
+    ));
     // row: full wire list
     let wire_list: Vec<String> = module.wire()[0]
         .iter()
         .map(|(w, _)| descr.describe_wire_id(w))
         .collect();
-    let wire_html = if wire_list.is_empty() { "<em>(none)</em>".into() } else { wire_list.join(", ") };
+    let wire_html = if wire_list.is_empty() {
+        "<em>(none)</em>".into()
+    } else {
+        wire_list.join(", ")
+    };
     wire_table.push_str(&format!("<tr><td colspan=3>{}</td></tr>\n", wire_html));
     wire_table.push_str("</table>\n");
 
@@ -503,9 +536,14 @@ where
                             // match only top-level atom ids like `atom.0` (no
                             // `.init` or `.update` suffix). Skip cluster nodes
                             // such as `atom.0.init` and `atom.0.update`.
-                            if s.starts_with("atom.") && !(s.contains(".init") || s.contains(".update")) {
+                            if s.starts_with("atom.")
+                                && !(s.contains(".init") || s.contains(".update"))
+                            {
                                 if let Some(desc) = dobj.get("description") {
-                                    atoms_html.push_str(&format!("<hr><div>{}</div>", desc.as_str().unwrap_or("")));
+                                    atoms_html.push_str(&format!(
+                                        "<hr><div>{}</div>",
+                                        desc.as_str().unwrap_or("")
+                                    ));
                                 }
                             }
                         }
@@ -519,9 +557,18 @@ where
     // and `obs` points to intf+extl. The SVG shows labeled boxes and
     // arrows; the actual variable lists are rendered below the graphic.
     // This gives a clearer visual overlap than a pure HTML table.
-    let prvt_list: Vec<String> = module.prvt()[0].iter().map(|(w, _)| descr.describe_wire_id(w)).collect();
-    let intf_list: Vec<String> = module.intf()[0].iter().map(|(w, _)| descr.describe_wire_id(w)).collect();
-    let extl_list: Vec<String> = module.extl()[0].iter().map(|(w, _)| descr.describe_wire_id(w)).collect();
+    let prvt_list: Vec<String> = module.prvt()[0]
+        .iter()
+        .map(|(w, _)| descr.describe_wire_id(w))
+        .collect();
+    let intf_list: Vec<String> = module.intf()[0]
+        .iter()
+        .map(|(w, _)| descr.describe_wire_id(w))
+        .collect();
+    let extl_list: Vec<String> = module.extl()[0]
+        .iter()
+        .map(|(w, _)| descr.describe_wire_id(w))
+        .collect();
 
     // Build inline, comma-separated variable strings so each box shows
     // its variables on a single horizontal line.
@@ -543,7 +590,8 @@ where
         extl_list.join(", ")
     };
 
-                let svg_block = format!(r##"
+    let svg_block = format!(
+        r##"
         <div style="display:flex;flex-direction:column;align-items:center;margin:0;padding:0;">
         <svg width="100%" height="120" viewBox="0 0 600 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
             <!-- We'll split the vertical area above the wire row into two bands -->
@@ -586,10 +634,11 @@ where
                         <path d="M450 16 V56 H470 V96" fill="none" stroke="#666" stroke-width="1.6" marker-end="url(#arrow)"/>
         </svg>
         </div>
-    "##, prvt_inline, intf_inline, extl_inline);
+    "##,
+        prvt_inline, intf_inline, extl_inline
+    );
 
-                let wire_table = svg_block;
-
+    let wire_table = svg_block;
 
     let module_html = format!("<h2>Module</h2>{}<h2>Atoms</h2>{}", wire_table, atoms_html);
     if let Some(obj) = module_json.as_object_mut() {
@@ -812,3 +861,4 @@ cy.on('tap', (evt) => {{
     File::create(path)?.write_all(html.as_bytes())?;
     Ok(())
 }
+
