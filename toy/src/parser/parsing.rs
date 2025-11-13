@@ -255,7 +255,8 @@ impl Parser {
     ///
     /// `ty` -- expected type of the resulting expression
     fn build_expr(&mut self, pair: Pair<Rule>, ty: Type) -> Vec<ToyTerm> {
-        match pair.as_rule() {
+        let rule = pair.as_rule();
+        match rule {
             //              pair_a      op_       pair_b
             // expr  =   { expr_1 ~ (logic_op  ~ expr_1)* }
             // expr_1  = { expr_2 ~ (cmp_op  ~ expr_2)* }
@@ -263,8 +264,12 @@ impl Parser {
             Rule::expr | Rule::expr_1 | Rule::expr_2 => {
                 let mut inner = pair.into_inner();
                 let pair_a = inner.next().unwrap();
-                // TODO:  The `ty` passed from the top is the type of the resulting expression,
-                // but the sub-expressions can have different types. Therefore, we must set `ty` based on the op_.
+                // infert the expected type of the sub-expressions
+                let ty = match rule {
+                    Rule::expr | Rule::expr_1 => Type::Bool,
+                    Rule::expr_2 => Type::Real,
+                    _ => ty,
+                };
                 let mut terms = self.build_expr(pair_a, ty);
 
                 while let Some(pair_b) = inner.next() {
