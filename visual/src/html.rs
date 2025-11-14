@@ -33,6 +33,7 @@ struct EdgeData {
     source: String,
     target: String,
     label: String,
+    description: String,
 }
 
 #[derive(Serialize)]
@@ -60,6 +61,10 @@ pub trait Descriptor<T, I> {
         how: DescriptionContext,
     ) -> String;
     fn describe_term(&self, term: &Term<T, I>, how: DescriptionContext) -> String;
+
+    fn describe_wire(&self, id: usize, how: DescriptionContext) -> String {
+        self.describe_wire_id(id, how)
+    }
 
     fn describe_wire_id(&self, id: usize, _how: DescriptionContext) -> String {
         format!("w{id}")
@@ -182,6 +187,7 @@ where
                 source: atom_id_init.clone(),
                 target: atom_id_update.clone(),
                 label: "".into(),
+                description: "".into(),
             },
         });
 
@@ -237,8 +243,11 @@ where
             .map(|x| *x),
     );
 
+    // map wire ids to nodes of already existing input values
+    let mut input_nodes: HashMap<usize, String> = HashMap::new();
     for wire in wires {
         let wire_name = descr.describe_wire_id(wire, DescriptionContext::Edge);
+        let wire_descr = descr.describe_wire(wire, DescriptionContext::Edge);
 
         if let (Some(srcs), Some(dests)) = (wire_written_by.get(&wire), wire_read_by.get(&wire)) {
             for src in srcs {
@@ -249,6 +258,7 @@ where
                             source: format!("term.{}", *src),
                             target: format!("term.{}", *dst),
                             label: wire_name.clone(),
+                            description: wire_descr.clone(),
                         },
                     });
                 }
@@ -265,7 +275,7 @@ where
                 nodes.push(Node {
                     data: NodeData {
                         id: id_str.clone(),
-                        label: wire_name.clone(),
+                        label: descr.describe_wire_id(id, DescriptionContext::Node),
                         description: descr.describe_output(wire),
                         // TODO: we could set the parent to be the parent of this parent
                         parent: Some(parent),
@@ -278,34 +288,42 @@ where
                         source: format!("term.{}", *src),
                         target: id_str.clone(),
                         label: wire_name.clone(),
+                        description: wire_descr.clone(),
                     },
                 });
             }
         } else if let Some(dsts) = wire_read_by.get(&wire) {
             // wires only read, ie, external inputs
+            let mut id_str: String;
             for dst in dsts {
-                let nd = &nodes[*dst];
-                let parent = nd.data.parent.as_ref().unwrap().clone();
+                if let Some(node) = input_nodes.get(&wire) {
+                    id_str = node.clone();
+                } else {
+                    let nd = &nodes[*dst];
+                    let parent = nd.data.parent.as_ref().unwrap().clone();
 
-                // create new "input" node
-                let id = nodes.len();
-                let id_str = format!("input.{id}");
-                nodes.push(Node {
-                    data: NodeData {
-                        id: id_str.clone(),
-                        label: wire_name.clone(),
-                        description: descr.describe_input(wire),
-                        // TODO: we could set the parent to be the parent of this parent
-                        parent: Some(parent),
-                    },
-                    classes: Some("input".into()),
-                });
+                    // create new "input" node
+                    let id = nodes.len();
+                    id_str = format!("input.{id}");
+                    nodes.push(Node {
+                        data: NodeData {
+                            id: id_str.clone(),
+                            label: descr.describe_wire_id(wire, DescriptionContext::Node),
+                            description: descr.describe_input(wire),
+                            // TODO: we could set the parent to be the parent of this parent
+                            parent: Some(parent),
+                        },
+                        classes: Some("input".into()),
+                    });
+                    input_nodes.insert(wire, id_str.clone());
+                }
                 edges.push(Edge {
                     data: EdgeData {
                         id: format!("wire.{}..{}", wire, *dst),
                         source: id_str.clone(),
                         target: format!("term.{}", *dst),
                         label: wire_name.clone(),
+                        description: wire_descr.clone(),
                     },
                 });
             }
@@ -341,7 +359,7 @@ where
     // Serialize into vis-network JSON
     let json = serde_json::to_string_pretty(&data).unwrap();
 
-    let module_name = module.name().unwrap_or("<unnamed>");
+    let module_name = module.name().unwrap_or("");
     //let module_dump = module.to_string();
 
     let html = format!(
@@ -492,7 +510,7 @@ const cy = cytoscape({{
 // --- Info Panel Logic ---
 const infoDiv = document.getElementById('info');
 
-    cy.on('tap', 'node', (evt) => {{
+cy.on('tap', 'node', (evt) => {{
     const node = evt.target;
     const data = node.data();
 
@@ -507,6 +525,25 @@ const infoDiv = document.getElementById('info');
         `;
     }}
 }});
+
+/// We do not have anything interesting to show about wires now
+///cy.on('tap', 'edge', (evt) => {{
+///    const edge = evt.target;
+///    const data = edge.data();
+///
+///    // Use the full HTML description provided by the descriptor when
+///    // available. Fall back to a simple heading if no description is set.
+///    if (data.description && data.description.length > 0) {{
+///        infoDiv.innerHTML = data.description;
+///    }} else {{
+///        infoDiv.innerHTML = `
+///            <h2>${{data.label}}</h2>
+///            <p>No description available.</p>
+///        `;
+///    }}
+///}});
+
+
 
 cy.on('tap', (evt) => {{
   // Click on background → reset info panel
