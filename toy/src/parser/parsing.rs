@@ -272,18 +272,30 @@ impl Parser {
                 //    _ => ty,
                 //};
                 let mut terms = self.build_expr(pair_a, ty);
+                let mut wire_l: Wire<Type>;
 
                 while let Some(pair_b) = inner.next() {
-                    // this is the left-hand-side input to the term that we will parse next
-                    let wire_l = terms.last().unwrap().writes().clone();
+                    // get the left-hand-side input wire to the term that we will parse next
+                    // FIXME: make this more efficient
+                    wire_l = terms.last().unwrap().writes().clone();
+                    if matches!(terms.last().unwrap().itype(), Instruction::Id) {
+                        // the last created element was an Id instruction, so remove it
+                        let last_term = terms.pop().unwrap();
+                        wire_l = last_term.reads().clone();
+                    }
+
                     let op_ = pair_b.as_rule();
                     let op_str = pair_b.as_str();
                     let terms_b = self.build_expr(inner.next().unwrap(), ty);
                     if terms_b.is_empty() {
                         panic!("Couldn't build terms");
                     }
-                    let wire_r = terms_b.last().unwrap().writes().clone();
-                    terms.extend(terms_b);
+                    let mut wire_r = terms_b.last().unwrap().writes().clone();
+                    if matches!(terms_b.last().unwrap().itype(), Instruction::Id) {
+                        wire_r = terms_b.last().unwrap().reads().clone();
+                    } else {
+                        terms.extend(terms_b);
+                    }
 
                     match op_ {
                         Rule::logic_op => {
