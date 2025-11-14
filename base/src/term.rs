@@ -36,6 +36,24 @@ impl<D, I> Term<D, I> {
     pub fn itype(&self) -> &I {
         &self.itype
     }
+
+    pub fn writes_wire(&self, wire_id: usize) -> bool {
+        for (id, _) in &self.write {
+            if id == wire_id {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn reads_wire(&self, wire_id: usize) -> bool {
+        for (id, _) in &self.read {
+            if id == wire_id {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl<D: fmt::Display, I: fmt::Display> fmt::Display for Term<D, I> {
