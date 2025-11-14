@@ -248,7 +248,11 @@ impl Descriptor<Type, Instruction> for Context {
 
     fn describe_atom_section(&self, atom: &ToyAtom, sec: &str, how: DescriptionContext) -> String {
         if matches!(how, DescriptionContext::Node) {
-            return format!("Atom {sec}");
+            return match sec {
+                "init" => "Init".into(),
+                "update" => "Update".into(),
+                _ => panic!("Invalid section"),
+            };
         }
 
         let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
