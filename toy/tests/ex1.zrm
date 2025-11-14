@@ -1,6 +1,6 @@
 module Counter {
   external y0, z0 : Int
-  interface x, y, z : Int
+  interface w, x, y, z : Int
 
   atom {
     controls x, y, z reads x, y, z # awaits y0, z0 
@@ -14,5 +14,18 @@ module Counter {
       [] !(x < y \or x < z) -> x' := 0
     }
   }
+
+  atom {
+    controls w reads x, y, z
+
+    init {
+      [] true -> w' := 3
+    }
+
+    update {
+      []  (x < y \and x >= z) -> w' := x + 1 
+    }
+  }
+
 }
 
