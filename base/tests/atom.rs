@@ -29,7 +29,7 @@
 //     let next = latched.twin(5).unwrap();
 //
 //     let _atom =
-        //         Atom::with_module_wire(&[latched, next], vec![init_term], vec![update_term]).unwrap();
+//         Atom::with_module_wire(&[latched, next], vec![init_term], vec![update_term]).unwrap();
 // }
 
 // #[test]

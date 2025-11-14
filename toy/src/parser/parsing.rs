@@ -265,11 +265,12 @@ impl Parser {
                 let mut inner = pair.into_inner();
                 let pair_a = inner.next().unwrap();
                 // infert the expected type of the sub-expressions
-                let ty = match rule {
-                    Rule::expr | Rule::expr_1 => Type::Bool,
-                    Rule::expr_2 => Type::Real,
-                    _ => ty,
-                };
+                // TODO: now we parse only integers, no support for floats at this moment
+                //let ty = match rule {
+                //    Rule::expr | Rule::expr_1 => Type::Bool,
+                //    Rule::expr_2 => Type::Real,
+                //    _ => ty,
+                //};
                 let mut terms = self.build_expr(pair_a, ty);
 
                 while let Some(pair_b) = inner.next() {

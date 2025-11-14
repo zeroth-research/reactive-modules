@@ -1,8 +1,8 @@
 use crate::dtype::DType;
+use crate::itype::IType;
 use base::module::Module;
 use base::term::Term;
 use base::wire::Wire;
-use crate::itype::IType;
 
 /// Kind of an expression node for the neutral, owned expression AST.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,12 +65,18 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
     let mut out = String::new();
     out.push_str("structure State where\n");
     for (_name, idx, dtype) in wires.iter().take(var_count) {
-        let ty = match dtype { DType::Int => "Int", DType::Bool => "Bool" };
+        let ty = match dtype {
+            DType::Int => "Int",
+            DType::Bool => "Bool",
+        };
         out.push_str(&format!("  x{} : {}\n", idx, ty));
     }
     out.push_str("\nstructure ExternalParams where\n");
     for (_name, idx, dtype) in wires.iter().skip(var_count) {
-        let ty = match dtype { DType::Int => "Int", DType::Bool => "Bool" };
+        let ty = match dtype {
+            DType::Int => "Int",
+            DType::Bool => "Bool",
+        };
         out.push_str(&format!("  x{} : {}\n", idx, ty));
     }
     out.push_str("\n");
@@ -94,15 +100,25 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
             ExprKind::Number => expr.text.clone().unwrap_or_default(),
             ExprKind::Ident => {
                 let nm = expr.text.as_ref().map(|s| s.as_str()).unwrap_or("");
-                if let Some((_, idx, _)) = wires.iter().find(|(s,_,_)| s == nm) {
-                    if context == "params" { format!("params.x{}", idx) }
-                    else if context == "s" { format!("s.x{}", idx) }
-                    else { format!("x{}", idx) }
-                } else { expr.text.clone().unwrap_or_default() }
+                if let Some((_, idx, _)) = wires.iter().find(|(s, _, _)| s == nm) {
+                    if context == "params" {
+                        format!("params.x{}", idx)
+                    } else if context == "s" {
+                        format!("s.x{}", idx)
+                    } else {
+                        format!("x{}", idx)
+                    }
+                } else {
+                    expr.text.clone().unwrap_or_default()
+                }
             }
             ExprKind::Cond => {
-                if expr.children.is_empty() { return expr.text.clone().unwrap_or_default(); }
-                if expr.children.len() == 1 { return expr_to_lean(&expr.children[0], wires, context); }
+                if expr.children.is_empty() {
+                    return expr.text.clone().unwrap_or_default();
+                }
+                if expr.children.len() == 1 {
+                    return expr_to_lean(&expr.children[0], wires, context);
+                }
                 // expect [cond, then, else]
                 let cond_node = &expr.children[0];
                 let then_node = &expr.children[1];
@@ -146,11 +162,21 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
                 String::new()
             }
             ExprKind::Or => {
-                let parts: Vec<String> = expr.children.iter().map(|c| expr_to_lean(c, wires, "s")).filter(|s| !s.is_empty()).collect();
+                let parts: Vec<String> = expr
+                    .children
+                    .iter()
+                    .map(|c| expr_to_lean(c, wires, "s"))
+                    .filter(|s| !s.is_empty())
+                    .collect();
                 parts.join(" ∨ ")
             }
             ExprKind::And => {
-                let parts: Vec<String> = expr.children.iter().map(|c| expr_to_lean(c, wires, "s")).filter(|s| !s.is_empty()).collect();
+                let parts: Vec<String> = expr
+                    .children
+                    .iter()
+                    .map(|c| expr_to_lean(c, wires, "s"))
+                    .filter(|s| !s.is_empty())
+                    .collect();
                 parts.join(" ∧ ")
             }
             ExprKind::Cmp => {
@@ -159,7 +185,12 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
                 while let Some(op_node) = iter.next() {
                     let right = expr_to_lean(iter.next().unwrap(), wires, "s");
                     let op_s = match op_node.kind {
-                        ExprKind::LT => " < ", ExprKind::LE => " <= ", ExprKind::GT => " > ", ExprKind::GE => " >= ", ExprKind::EQ => " = ", _ => " < ",
+                        ExprKind::LT => " < ",
+                        ExprKind::LE => " <= ",
+                        ExprKind::GT => " > ",
+                        ExprKind::GE => " >= ",
+                        ExprKind::EQ => " = ",
+                        _ => " < ",
                     };
                     out = format!("{}{}{}", out, op_s, right);
                 }
@@ -172,14 +203,22 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
                 while let Some(op_node) = iter.next() {
                     let right = expr_to_lean(iter.next().unwrap(), wires, "s");
                     let op_s = match op_node.kind {
-                        ExprKind::PLUS => " + ", ExprKind::MINUS => " - ", ExprKind::TIMES => " * ", ExprKind::DIVIDE => " / ", _ => " + ",
+                        ExprKind::PLUS => " + ",
+                        ExprKind::MINUS => " - ",
+                        ExprKind::TIMES => " * ",
+                        ExprKind::DIVIDE => " / ",
+                        _ => " + ",
                     };
                     acc = format!("{}{}{}", acc, op_s, right);
                 }
                 acc
             }
             ExprKind::Primary | ExprKind::Factor | ExprKind::Assign => {
-                if let Some(inner) = expr.children.get(0) { expr_to_lean(inner, wires, "s") } else { String::new() }
+                if let Some(inner) = expr.children.get(0) {
+                    expr_to_lean(inner, wires, "s")
+                } else {
+                    String::new()
+                }
             }
             ExprKind::True => "True".to_string(),
             ExprKind::False => "False".to_string(),
@@ -195,7 +234,7 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
             let l = leaf(expr_node);
             if l.kind == ExprKind::Ident {
                 if let Some(name) = l.text.as_ref() {
-                    if let Some((_, idx, _)) = wires.iter().find(|(s,_,_)| s == name) {
+                    if let Some((_, idx, _)) = wires.iter().find(|(s, _, _)| s == name) {
                         // If the RHS is an IVAR (index >= var_count) render as params.x{idx}
                         if *idx >= var_count {
                             // Heuristic: IVARs used in init often originate from
@@ -211,7 +250,10 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
             parts.push(format!("x{} := {}", i, expr));
         } else {
             let ty = wires[i].2;
-            let val = match ty { DType::Int => "0", DType::Bool => "False" };
+            let val = match ty {
+                DType::Int => "0",
+                DType::Bool => "False",
+            };
             parts.push(format!("x{} := {}", i, val));
         }
     }
@@ -238,15 +280,21 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
         let cond_expr = view.next_exprs[ci].as_ref().unwrap();
 
         // collect identifiers used in cond expression (by index)
-        fn collect_idents(e: &Expr, wires: &[(String, usize, DType)], out: &mut std::collections::HashSet<usize>) {
+        fn collect_idents(
+            e: &Expr,
+            wires: &[(String, usize, DType)],
+            out: &mut std::collections::HashSet<usize>,
+        ) {
             if e.kind == ExprKind::Ident {
                 if let Some(name) = e.text.as_ref() {
-                    if let Some((_, idx, _)) = wires.iter().find(|(s,_,_)| s == name) {
+                    if let Some((_, idx, _)) = wires.iter().find(|(s, _, _)| s == name) {
                         out.insert(*idx);
                     }
                 }
             }
-            for c in e.children.iter() { collect_idents(c, wires, out); }
+            for c in e.children.iter() {
+                collect_idents(c, wires, out);
+            }
         }
 
         // Extract the actual condition, then and else subexpressions by
@@ -255,7 +303,9 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
         let mut parts: Vec<&Expr> = Vec::new();
         for child in cond_expr.children.iter() {
             if let Some(t) = child.text.as_ref() {
-                if t == "?" || t == ":" { continue; }
+                if t == "?" || t == ":" {
+                    continue;
+                }
             }
             parts.push(child);
         }
@@ -273,7 +323,8 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
             let is_identity = match view.next_exprs.get(i) {
                 Some(Some(expr_node)) => {
                     let l = leaf(expr_node);
-                    l.kind == ExprKind::Ident && l.text.as_ref().map(|s| s.as_str()) == Some(wires[i].0.as_str())
+                    l.kind == ExprKind::Ident
+                        && l.text.as_ref().map(|s| s.as_str()) == Some(wires[i].0.as_str())
                 }
                 Some(None) => true,
                 None => true,
@@ -283,13 +334,13 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
             }
         }
 
-    // Render condition
-    let cond_render = expr_to_lean(cond_part, &wires, "s");
+        // Render condition
+        let cond_render = expr_to_lean(cond_part, &wires, "s");
         out.push_str(&format!("  if {} then\n", cond_render));
 
         // Render then/else as { s with xci := ... } if only ci changes
-    let then_s = expr_to_lean(then_part, &wires, "s");
-    let else_s = expr_to_lean(else_part, &wires, "s");
+        let then_s = expr_to_lean(then_part, &wires, "s");
+        let else_s = expr_to_lean(else_part, &wires, "s");
 
         out.push_str(&format!("    {{ s with x{} := {} }}\n", ci, then_s));
         out.push_str(&format!("  else\n    {{ s with x{} := {} }}\n", ci, else_s));
@@ -325,8 +376,10 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
 
     // Build separate maps for init and update terms so we don't clobber
     // init terms with update terms that share the same next wire indices.
-    let mut init_term_map: std::collections::HashMap<usize, &Term<DType, IType>> = std::collections::HashMap::new();
-    let mut update_term_map: std::collections::HashMap<usize, &Term<DType, IType>> = std::collections::HashMap::new();
+    let mut init_term_map: std::collections::HashMap<usize, &Term<DType, IType>> =
+        std::collections::HashMap::new();
+    let mut update_term_map: std::collections::HashMap<usize, &Term<DType, IType>> =
+        std::collections::HashMap::new();
     for atom in atoms.iter() {
         for t in atom.init().iter() {
             for (widx, _) in t.write().iter() {
@@ -349,19 +402,41 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
         wires: &[(String, usize, DType)],
         term_map: &std::collections::HashMap<usize, &Term<DType, IType>>,
     ) -> Expr {
-        use base::term::TermWire;
         use crate::itype::IType::*;
+        use base::term::TermWire;
 
         // If this index is a latched or unprimed IVAR, render as Ident x{idx}
         if idx < n {
-            return Expr { kind: ExprKind::Ident, text: Some(format!("x{}", idx)), children: vec![] };
+            return Expr {
+                kind: ExprKind::Ident,
+                text: Some(format!("x{}", idx)),
+                children: vec![],
+            };
         }
 
         // If there's a term that writes this index, expand it.
-    if let Some(t) = term_map.get(&idx) {
+        if let Some(t) = term_map.get(&idx) {
             match t.itype() {
-                ConstInt(v) => Expr { kind: ExprKind::Number, text: Some(v.to_string()), children: vec![] },
-                ConstBool(b) => if *b { Expr { kind: ExprKind::True, text: None, children: vec![] } } else { Expr { kind: ExprKind::False, text: None, children: vec![] } },
+                ConstInt(v) => Expr {
+                    kind: ExprKind::Number,
+                    text: Some(v.to_string()),
+                    children: vec![],
+                },
+                ConstBool(b) => {
+                    if *b {
+                        Expr {
+                            kind: ExprKind::True,
+                            text: None,
+                            children: vec![],
+                        }
+                    } else {
+                        Expr {
+                            kind: ExprKind::False,
+                            text: None,
+                            children: vec![],
+                        }
+                    }
+                }
                 Assign => {
                     // render source as identifier
                     if let Some((ridx, _)) = t.read().iter().next() {
@@ -369,11 +444,19 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
                         // map it back to its unprimed base (ridx - n) to allow params mapping.
                         if ridx >= n && !term_map.contains_key(&ridx) {
                             let base = ridx - n;
-                            return Expr { kind: ExprKind::Ident, text: Some(format!("x{}", base)), children: vec![] };
+                            return Expr {
+                                kind: ExprKind::Ident,
+                                text: Some(format!("x{}", base)),
+                                children: vec![],
+                            };
                         }
                         return build_expr_for_index(ridx, n, var_count, wires, term_map);
                     }
-                    Expr { kind: ExprKind::Ident, text: Some(String::new()), children: vec![] }
+                    Expr {
+                        kind: ExprKind::Ident,
+                        text: Some(String::new()),
+                        children: vec![],
+                    }
                 }
                 Lt | Le | Gt | Ge | Eq => {
                     // Build interleaved children: left, op, right
@@ -382,100 +465,223 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
                     let mut iter = rwire.iter();
                     if let Some((lidx, _)) = iter.next() {
                         if lidx >= n && !term_map.contains_key(&lidx) {
-                            children.push(Expr { kind: ExprKind::Ident, text: Some(format!("x{}", lidx - n)), children: vec![] });
+                            children.push(Expr {
+                                kind: ExprKind::Ident,
+                                text: Some(format!("x{}", lidx - n)),
+                                children: vec![],
+                            });
                         } else {
-                            children.push(build_expr_for_index(lidx, n, var_count, wires, term_map));
+                            children
+                                .push(build_expr_for_index(lidx, n, var_count, wires, term_map));
                         }
                     }
                     // op node
-                    let op_kind = match t.itype() { Lt => ExprKind::LT, Le => ExprKind::LE, Gt => ExprKind::GT, Ge => ExprKind::GE, Eq => ExprKind::EQ, _ => ExprKind::EQ };
-                    children.push(Expr { kind: op_kind, text: None, children: vec![] });
+                    let op_kind = match t.itype() {
+                        Lt => ExprKind::LT,
+                        Le => ExprKind::LE,
+                        Gt => ExprKind::GT,
+                        Ge => ExprKind::GE,
+                        Eq => ExprKind::EQ,
+                        _ => ExprKind::EQ,
+                    };
+                    children.push(Expr {
+                        kind: op_kind,
+                        text: None,
+                        children: vec![],
+                    });
                     if let Some((ridx, _)) = iter.next() {
                         if ridx >= n && !term_map.contains_key(&ridx) {
-                            children.push(Expr { kind: ExprKind::Ident, text: Some(format!("x{}", ridx - n)), children: vec![] });
+                            children.push(Expr {
+                                kind: ExprKind::Ident,
+                                text: Some(format!("x{}", ridx - n)),
+                                children: vec![],
+                            });
                         } else {
-                            children.push(build_expr_for_index(ridx, n, var_count, wires, term_map));
+                            children
+                                .push(build_expr_for_index(ridx, n, var_count, wires, term_map));
                         }
                     }
-                    Expr { kind: ExprKind::Cmp, text: None, children }
+                    Expr {
+                        kind: ExprKind::Cmp,
+                        text: None,
+                        children,
+                    }
                 }
                 Or => {
-                    let children = t.read().iter().map(|(ridx, _)| {
-                        if ridx >= n && !term_map.contains_key(&ridx) {
-                            Expr { kind: ExprKind::Ident, text: Some(format!("x{}", ridx - n)), children: vec![] }
-                        } else { build_expr_for_index(ridx, n, var_count, wires, term_map) }
-                    }).collect();
-                    Expr { kind: ExprKind::Or, text: None, children }
+                    let children = t
+                        .read()
+                        .iter()
+                        .map(|(ridx, _)| {
+                            if ridx >= n && !term_map.contains_key(&ridx) {
+                                Expr {
+                                    kind: ExprKind::Ident,
+                                    text: Some(format!("x{}", ridx - n)),
+                                    children: vec![],
+                                }
+                            } else {
+                                build_expr_for_index(ridx, n, var_count, wires, term_map)
+                            }
+                        })
+                        .collect();
+                    Expr {
+                        kind: ExprKind::Or,
+                        text: None,
+                        children,
+                    }
                 }
                 And => {
-                    let children = t.read().iter().map(|(ridx, _)| {
-                        if ridx >= n && !term_map.contains_key(&ridx) {
-                            Expr { kind: ExprKind::Ident, text: Some(format!("x{}", ridx - n)), children: vec![] }
-                        } else { build_expr_for_index(ridx, n, var_count, wires, term_map) }
-                    }).collect();
-                    Expr { kind: ExprKind::And, text: None, children }
+                    let children = t
+                        .read()
+                        .iter()
+                        .map(|(ridx, _)| {
+                            if ridx >= n && !term_map.contains_key(&ridx) {
+                                Expr {
+                                    kind: ExprKind::Ident,
+                                    text: Some(format!("x{}", ridx - n)),
+                                    children: vec![],
+                                }
+                            } else {
+                                build_expr_for_index(ridx, n, var_count, wires, term_map)
+                            }
+                        })
+                        .collect();
+                    Expr {
+                        kind: ExprKind::And,
+                        text: None,
+                        children,
+                    }
                 }
                 Add | Sub | Mul | Div => {
                     // Build interleaved children: a op b op c ... using the op kind
-                    let op_kind = match t.itype() { Add => ExprKind::PLUS, Sub => ExprKind::MINUS, Mul => ExprKind::TIMES, Div => ExprKind::DIVIDE, _ => ExprKind::PLUS };
+                    let op_kind = match t.itype() {
+                        Add => ExprKind::PLUS,
+                        Sub => ExprKind::MINUS,
+                        Mul => ExprKind::TIMES,
+                        Div => ExprKind::DIVIDE,
+                        _ => ExprKind::PLUS,
+                    };
                     let mut children: Vec<Expr> = vec![];
                     let rwire = t.read();
                     let mut iter = rwire.iter();
                     if let Some((first, _)) = iter.next() {
                         if first >= n && !term_map.contains_key(&first) {
-                            children.push(Expr { kind: ExprKind::Ident, text: Some(format!("x{}", first - n)), children: vec![] });
+                            children.push(Expr {
+                                kind: ExprKind::Ident,
+                                text: Some(format!("x{}", first - n)),
+                                children: vec![],
+                            });
                         } else {
-                            children.push(build_expr_for_index(first, n, var_count, wires, term_map));
+                            children
+                                .push(build_expr_for_index(first, n, var_count, wires, term_map));
                         }
                     }
                     while let Some((r, _)) = iter.next() {
                         // op node
-                        children.push(Expr { kind: op_kind.clone(), text: None, children: vec![] });
+                        children.push(Expr {
+                            kind: op_kind.clone(),
+                            text: None,
+                            children: vec![],
+                        });
                         if r >= n && !term_map.contains_key(&r) {
-                            children.push(Expr { kind: ExprKind::Ident, text: Some(format!("x{}", r - n)), children: vec![] });
+                            children.push(Expr {
+                                kind: ExprKind::Ident,
+                                text: Some(format!("x{}", r - n)),
+                                children: vec![],
+                            });
                         } else {
                             children.push(build_expr_for_index(r, n, var_count, wires, term_map));
                         }
                     }
-                    Expr { kind: ExprKind::Arith, text: None, children }
+                    Expr {
+                        kind: ExprKind::Arith,
+                        text: None,
+                        children,
+                    }
                 }
                 Cond => {
                     // Cond expects three read args: cond, then, else
                     let mut children: Vec<Expr> = vec![];
                     for (ridx, _) in t.read().iter() {
                         if ridx >= n && !term_map.contains_key(&ridx) {
-                            children.push(Expr { kind: ExprKind::Ident, text: Some(format!("x{}", ridx - n)), children: vec![] });
+                            children.push(Expr {
+                                kind: ExprKind::Ident,
+                                text: Some(format!("x{}", ridx - n)),
+                                children: vec![],
+                            });
                         } else {
-                            children.push(build_expr_for_index(ridx, n, var_count, wires, term_map));
+                            children
+                                .push(build_expr_for_index(ridx, n, var_count, wires, term_map));
                         }
                     }
-                    Expr { kind: ExprKind::Cond, text: None, children }
+                    Expr {
+                        kind: ExprKind::Cond,
+                        text: None,
+                        children,
+                    }
                 }
                 Abs => {
                     // Unary abs: single read argument
                     if let Some((ridx, _)) = t.read().iter().next() {
                         if ridx >= n && !term_map.contains_key(&ridx) {
-                            Expr { kind: ExprKind::Abs, text: None, children: vec![Expr { kind: ExprKind::Ident, text: Some(format!("x{}", ridx - n)), children: vec![] }] }
+                            Expr {
+                                kind: ExprKind::Abs,
+                                text: None,
+                                children: vec![Expr {
+                                    kind: ExprKind::Ident,
+                                    text: Some(format!("x{}", ridx - n)),
+                                    children: vec![],
+                                }],
+                            }
                         } else {
-                            Expr { kind: ExprKind::Abs, text: None, children: vec![build_expr_for_index(ridx, n, var_count, wires, term_map)] }
+                            Expr {
+                                kind: ExprKind::Abs,
+                                text: None,
+                                children: vec![build_expr_for_index(
+                                    ridx, n, var_count, wires, term_map,
+                                )],
+                            }
                         }
                     } else {
-                        Expr { kind: ExprKind::Abs, text: None, children: vec![] }
+                        Expr {
+                            kind: ExprKind::Abs,
+                            text: None,
+                            children: vec![],
+                        }
                     }
                 }
                 Not => {
-                    let children = t.read().iter().map(|(ridx, _)| build_expr_for_index(ridx, n, var_count, wires, term_map)).collect();
-                    Expr { kind: ExprKind::NOT, text: None, children }
+                    let children = t
+                        .read()
+                        .iter()
+                        .map(|(ridx, _)| build_expr_for_index(ridx, n, var_count, wires, term_map))
+                        .collect();
+                    Expr {
+                        kind: ExprKind::NOT,
+                        text: None,
+                        children,
+                    }
                 }
-                _ => Expr { kind: ExprKind::Primary, text: Some(format!("{:?}", t.itype())), children: vec![] },
+                _ => Expr {
+                    kind: ExprKind::Primary,
+                    text: Some(format!("{:?}", t.itype())),
+                    children: vec![],
+                },
             }
         } else {
             // No producer: this may be a primed IVAR index; map back to base
             if idx >= n {
                 let base = idx - n;
-                return Expr { kind: ExprKind::Ident, text: Some(format!("x{}", base)), children: vec![] };
+                return Expr {
+                    kind: ExprKind::Ident,
+                    text: Some(format!("x{}", base)),
+                    children: vec![],
+                };
             }
-            Expr { kind: ExprKind::Ident, text: Some(format!("x{}", idx)), children: vec![] }
+            Expr {
+                kind: ExprKind::Ident,
+                text: Some(format!("x{}", idx)),
+                children: vec![],
+            }
         }
     }
 
@@ -490,10 +696,17 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
         for t in atom.init().iter() {
             // find writes matching var index + n
             for (widx, _) in t.write().iter() {
-                if widx >= n { // write into next space
+                if widx >= n {
+                    // write into next space
                     let vidx = widx - n;
                     if vidx < var_count {
-                        init_exprs[vidx] = Some(build_expr_for_index(widx, n, var_count, &wires, &init_term_map));
+                        init_exprs[vidx] = Some(build_expr_for_index(
+                            widx,
+                            n,
+                            var_count,
+                            &wires,
+                            &init_term_map,
+                        ));
                     }
                 }
             }
@@ -503,7 +716,13 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
                 if widx >= n {
                     let vidx = widx - n;
                     if vidx < var_count {
-                        next_exprs[vidx] = Some(build_expr_for_index(widx, n, var_count, &wires, &update_term_map));
+                        next_exprs[vidx] = Some(build_expr_for_index(
+                            widx,
+                            n,
+                            var_count,
+                            &wires,
+                            &update_term_map,
+                        ));
                     }
                 }
             }
@@ -530,15 +749,27 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
                                 // Abs read should point at a primed IVAR index
                                 if let Some((abs_ridx, _)) = abs_term.read().iter().next() {
                                     // Map primed IVAR back to base if needed
-                                    let base = if abs_ridx >= n && !init_term_map.contains_key(&abs_ridx) {
+                                    let base = if abs_ridx >= n
+                                        && !init_term_map.contains_key(&abs_ridx)
+                                    {
                                         abs_ridx - n
                                     } else {
                                         abs_ridx
                                     };
                                     // Record init expr as Abs(Ident(x{base}))
-                                    init_exprs[vidx] = Some(Expr { kind: ExprKind::Abs, text: None, children: vec![Expr { kind: ExprKind::Ident, text: Some(format!("x{}", base)), children: vec![] }] });
+                                    init_exprs[vidx] = Some(Expr {
+                                        kind: ExprKind::Abs,
+                                        text: None,
+                                        children: vec![Expr {
+                                            kind: ExprKind::Ident,
+                                            text: Some(format!("x{}", base)),
+                                            children: vec![],
+                                        }],
+                                    });
                                     // Also record source ivar if applicable
-                                    if base >= var_count { init_abs_src[vidx] = Some(base); }
+                                    if base >= var_count {
+                                        init_abs_src[vidx] = Some(base);
+                                    }
                                 }
                             }
                         }
@@ -548,8 +779,13 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
         }
     }
 
-    to_lean(&LeanModule { wires, var_count, init_exprs, next_exprs, init_abs_src })
-
+    to_lean(&LeanModule {
+        wires,
+        var_count,
+        init_exprs,
+        next_exprs,
+        init_abs_src,
+    })
 }
 
 /// Render a vector of Terms into a Lean expression string by following the
@@ -562,8 +798,8 @@ pub fn render_terms_to_lean(
     wires: &[(String, usize, DType)],
     var_count: usize,
 ) -> String {
-    use std::collections::HashMap;
     use base::term::TermWire;
+    use std::collections::HashMap;
 
     // Map primary written index -> term
     let mut map: HashMap<usize, &Term<DType, IType>> = HashMap::new();
@@ -605,32 +841,64 @@ pub fn render_terms_to_lean(
         }
         match t.itype() {
             ConstInt(v) => v.to_string(),
-            ConstBool(b) => if *b { "True".to_string() } else { "False".to_string() },
+            ConstBool(b) => {
+                if *b {
+                    "True".to_string()
+                } else {
+                    "False".to_string()
+                }
+            }
             Assign => {
                 // assign reads a single source
-                if let Some(a) = args.get(0) { render_idx(*a, map, wires, var_count) } else { String::new() }
+                if let Some(a) = args.get(0) {
+                    render_idx(*a, map, wires, var_count)
+                } else {
+                    String::new()
+                }
             }
             Lt | Le | Gt | Ge | Eq => {
                 if args.len() >= 2 {
                     let left = render_idx(args[0], map, wires, var_count);
                     let right = render_idx(args[1], map, wires, var_count);
                     let op = match t.itype() {
-                        Lt => " < ", Le => " ≤ ", Gt => " > ", Ge => " ≥ ", Eq => " = ", _ => " = ",
+                        Lt => " < ",
+                        Le => " ≤ ",
+                        Gt => " > ",
+                        Ge => " ≥ ",
+                        Eq => " = ",
+                        _ => " = ",
                     };
                     format!("{}{}{}", left, op, right)
-                } else { String::new() }
+                } else {
+                    String::new()
+                }
             }
             Or => {
-                let parts: Vec<String> = args.iter().map(|i| render_idx(*i, map, wires, var_count)).collect();
+                let parts: Vec<String> = args
+                    .iter()
+                    .map(|i| render_idx(*i, map, wires, var_count))
+                    .collect();
                 parts.join(" ∨ ")
             }
             And => {
-                let parts: Vec<String> = args.iter().map(|i| render_idx(*i, map, wires, var_count)).collect();
+                let parts: Vec<String> = args
+                    .iter()
+                    .map(|i| render_idx(*i, map, wires, var_count))
+                    .collect();
                 parts.join(" ∧ ")
             }
             Add | Sub | Mul | Div => {
-                let op = match t.itype() { Add => " + ", Sub => " - ", Mul => " * ", Div => " / ", _ => " + " };
-                let parts: Vec<String> = args.iter().map(|i| render_idx(*i, map, wires, var_count)).collect();
+                let op = match t.itype() {
+                    Add => " + ",
+                    Sub => " - ",
+                    Mul => " * ",
+                    Div => " / ",
+                    _ => " + ",
+                };
+                let parts: Vec<String> = args
+                    .iter()
+                    .map(|i| render_idx(*i, map, wires, var_count))
+                    .collect();
                 parts.join(op)
             }
             Abs => {
@@ -659,7 +927,9 @@ pub fn render_terms_to_lean(
                             Lt => {
                                 // extract cond_term read args
                                 let mut carr: Vec<usize> = Vec::new();
-                                for (i, _) in cond_term.read().iter() { carr.push(i); }
+                                for (i, _) in cond_term.read().iter() {
+                                    carr.push(i);
+                                }
                                 if carr.len() >= 2 {
                                     let left_idx = carr[0];
                                     let right_idx = carr[1];
@@ -676,10 +946,16 @@ pub fn render_terms_to_lean(
                     }
 
                     format!("if {} then {} else {}", c, th, el)
-                } else { String::new() }
+                } else {
+                    String::new()
+                }
             }
             Not => {
-                if args.len() >= 1 { format!("¬{}", render_idx(args[0], map, wires, var_count)) } else { String::new() }
+                if args.len() >= 1 {
+                    format!("¬{}", render_idx(args[0], map, wires, var_count))
+                } else {
+                    String::new()
+                }
             }
             _ => format!("{:?}", t.itype()),
         }
@@ -687,8 +963,12 @@ pub fn render_terms_to_lean(
 
     // pick the first index in out_wire to render
     let mut outs: Vec<usize> = Vec::new();
-    for (i, _) in out_wire.iter() { outs.push(i); }
-    if outs.is_empty() { return String::new(); }
+    for (i, _) in out_wire.iter() {
+        outs.push(i);
+    }
+    if outs.is_empty() {
+        return String::new();
+    }
     render_idx(outs[0], &map, wires, var_count)
 }
 
@@ -699,8 +979,8 @@ pub fn collect_used_vars(
     out_wire: &Wire<DType>,
     var_count: usize,
 ) -> Vec<usize> {
-    use std::collections::{HashMap, HashSet};
     use base::term::TermWire;
+    use std::collections::{HashMap, HashSet};
 
     let mut map: HashMap<usize, &Term<DType, IType>> = HashMap::new();
     for t in terms.iter() {

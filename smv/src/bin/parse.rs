@@ -1,16 +1,16 @@
-use std::{process, fs};
+use base::module::Module;
 use base::term::TermWire;
 use base::{Term, Wire};
-use base::module::Module;
 use smv::dtype::DType;
 use smv::itype::IType;
+use std::{fs, process};
 
 use clap::Parser as ClapParser;
-use smv::lean::{to_lean_from_module, render_terms_to_lean, collect_used_vars};
+use smv::lean::{collect_used_vars, render_terms_to_lean, to_lean_from_module};
 use smv::smv::parse_smv;
 
-use visual::html;
 use smv::html::SmvDescriptor;
+use visual::html;
 
 fn build_obligations() -> (
     Vec<Term<DType, IType>>, // invariant
@@ -226,7 +226,7 @@ fn main() {
     fs::write(out_path, full).unwrap();
 
     let modules = vec![module];
-    
+
     if modules.len() > 0 {
         println!("Modules parsed successfully!");
     }
@@ -249,5 +249,4 @@ fn main() {
             }
         }
     }
-
 }

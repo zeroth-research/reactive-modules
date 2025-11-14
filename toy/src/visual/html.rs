@@ -6,7 +6,7 @@ use std::fmt::Write;
 use crate::dtype::Type;
 use crate::instruction::Instruction;
 
-use visual::html::Descriptor;
+use visual::html::{DescriptionContext, Descriptor};
 
 impl Context {
     fn wire_name(&self, id: usize) -> String {
@@ -147,17 +147,21 @@ impl Context {
 }
 
 impl Descriptor<Type, Instruction> for Context {
-    fn describe_module(&self, module: &ToyModule) -> String {
+    fn describe_module(&self, module: &ToyModule, _how: DescriptionContext) -> String {
         let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
         format!("<pre>\n{}</pre>", self.dump_module(module, &fmt))
     }
 
-    fn describe_atom(&self, atom: &ToyAtom) -> String {
+    fn describe_atom(&self, atom: &ToyAtom, _how: DescriptionContext) -> String {
         let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
         format!("<pre>\n{}</pre>", self.dump_atom(atom, &fmt))
     }
 
-    fn describe_term(&self, term: &ToyTerm) -> String {
+    fn describe_term(&self, term: &ToyTerm, how: DescriptionContext) -> String {
+        if matches!(how, DescriptionContext::Node) {
+            return term.itype().to_string();
+        }
+
         let fmt = HashMap::from([("EMPH_START", "<i>"), ("EMPH_END", "</i>")]);
         format!(
             "<pre>\n{}\n\nraw:\n\n{}</pre>",
@@ -166,11 +170,7 @@ impl Descriptor<Type, Instruction> for Context {
         )
     }
 
-    fn describe_wire_id(&self, id: usize) -> String {
+    fn describe_wire_id(&self, id: usize, _how: DescriptionContext) -> String {
         self.wire_name(id)
-    }
-
-    fn describe_term_label(&self, term: &ToyTerm) -> String {
-        term.itype().to_string()
     }
 }
