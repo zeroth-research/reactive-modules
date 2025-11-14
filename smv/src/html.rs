@@ -1,7 +1,7 @@
 use crate::{dtype::DType, itype::IType};
 use base::{atom::Atom, module::Module, term::Term, wire::Wire};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use visual::html::{DescriptionContext, Descriptor};
 
 /// A small, SMV-specific HTML descriptor used by the visualiser.
@@ -18,25 +18,31 @@ pub struct SmvDescriptor {
 }
 
 impl SmvDescriptor {
-    pub fn new() -> Self {
-        SmvDescriptor {
+    pub fn new(module: &Module<DType, IType>) -> Self {
+        let d = SmvDescriptor {
             wire_names: RefCell::new(HashMap::new()),
             module_wires: RefCell::new(None),
-        }
+        };
+        // Cache module wires for describe_input/describe_output
+        *d.module_wires.borrow_mut() = Some(module.wire()[0].clone());
+
+        // Build wire name map first so describe_wire_id can use it.
+        d.populate_wire_names(module);
+
+        d
     }
 
     fn describe_term_flow_with_context(
         &self,
         term: &Term<DType, IType>,
-        atom_terms: &[&Term<DType, IType>],
+        atom_terms: &[Term<DType, IType>],
     ) -> String {
         use crate::itype::IType;
-        use std::collections::HashSet;
 
         // Build map from wire -> term that writes it (within this atom)
         let mut writer_map: std::collections::HashMap<usize, &Term<DType, IType>> =
             std::collections::HashMap::new();
-        for &t in atom_terms.iter() {
+        for t in atom_terms.iter() {
             for (wi, _dt) in t.writes().iter() {
                 writer_map.insert(wi, t);
             }
@@ -50,7 +56,7 @@ impl SmvDescriptor {
             writer_map: &std::collections::HashMap<usize, &Term<DType, IType>>,
             visited: &mut HashSet<usize>,
         ) -> String {
-            let name = rec.describe_wire_id(idx, DescriptionContext::Edge);
+            let name = rec.describe_wire_id(idx, DescriptionContext::Inline);
             if !name.starts_with('w') {
                 return format!("<code>{}</code>", name);
             }
@@ -166,7 +172,7 @@ impl SmvDescriptor {
         }
         // Use the first write that exists as the target label
         if let Some(w) = term.writes().get_single() {
-            let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
+            let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
             return format!("{} → <code>{}</code>", expr, tgt);
         }
         expr
@@ -354,62 +360,223 @@ impl SmvDescriptor {
     }
 }
 
+// FIXME: this is duplicated with the `toy` create
+fn module_variables_diagram(prvt: &Vec<String>, intf: &Vec<String>, extl: &Vec<String>) -> String {
+    format!(
+        r##"
+        <div style="display:flex;flex-direction:column;align-items:center;margin:0;padding:0;">
+        <svg width="100%" height="120" viewBox="0 0 600 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+            <!-- We'll split the vertical area above the wire row into two bands -->
+            <!-- ctrl will be centered in the top band, obs centered in the middle band -->
+
+                <!-- ctrl and obs side-by-side: split the horizontal space into two halves -->
+                <rect x="40" y="-20" width="220" height="36" rx="8" fill="#fff2cc" stroke="#b08900"/>
+                <text x="150" y="4" font-size="20" text-anchor="middle" fill="#111">ctrl</text>
+
+                <rect x="340" y="-20" width="220" height="36" rx="8" fill="#e6ffe6" stroke="#2f8f3a"/>
+                <text x="450" y="4" font-size="20" text-anchor="middle" fill="#111">obs</text>
+
+            <!-- bottom boxes: prvt, intf, extl (aligned horizontally on the same baseline) -->
+            <!-- prvt: pastel red, intf: pastel yellow, extl: pastel blue -->
+            <rect x="60" y="96" width="140" height="50" rx="8" fill="#ffe5e5" stroke="#d16a6a"/>
+            <text x="130" y="118" font-size="20" text-anchor="middle" fill="#111">prvt</text>
+            <text x="130" y="134" font-size="16" text-anchor="middle" fill="#111">{}</text>
+            <rect x="230" y="96" width="140" height="50" rx="8" fill="#fff8d6" stroke="#d1b35a"/>
+            <text x="300" y="118" font-size="20" text-anchor="middle" fill="#111">intf</text>
+            <text x="300" y="134" font-size="16" text-anchor="middle" fill="#111">{}</text>
+            <rect x="400" y="96" width="140" height="50" rx="8" fill="#d0e7ff" stroke="#6b9bd1"/>
+            <text x="470" y="118" font-size="20" text-anchor="middle" fill="#111">extl</text>
+            <text x="470" y="134" font-size="16" text-anchor="middle" fill="#111">{}</text>
+            <!-- arrows: from ctrl center (300,56) to prvt center (130,162) and intf center (300,162) -->
+            <defs>
+                <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+                    <path d="M0,0 L10,5 L0,10 z" fill="#666"/>
+                </marker>
+            </defs>
+                    <!-- arrows originate at bottom edge of ctrl (y=16) and hit top edge of targets (y=96) -->
+                        <!-- orthogonal (axis-aligned) paths from ctrl bottom to targets -->
+                        <path d="M150 16 V56 H130 V96" fill="none" stroke="#666" stroke-width="1.6" marker-end="url(#arrow)"/>
+                            <!-- route to intf offset slightly left to avoid overlapping the obs->intf path -->
+                            <path d="M150 16 V56 H285 V96" fill="none" stroke="#666" stroke-width="1.6" marker-end="url(#arrow)"/>
+                <!-- arrows: from obs center (450,38) to intf center (300,162) and extl center (470,162) -->
+                    <!-- arrows originate at bottom edge of obs (y=16) and hit top edge of targets (y=96) -->
+                        <!-- orthogonal (axis-aligned) paths from obs bottom to targets -->
+                            <!-- route to intf offset slightly right to avoid overlapping the ctrl->intf path -->
+                            <path d="M450 16 V56 H315 V96" fill="none" stroke="#666" stroke-width="1.6" marker-end="url(#arrow)"/>
+                        <path d="M450 16 V56 H470 V96" fill="none" stroke="#666" stroke-width="1.6" marker-end="url(#arrow)"/>
+        </svg>
+        </div>
+    "##,
+        prvt.join(", "),
+        intf.join(", "),
+        extl.join(", ")
+    )
+}
+
 impl Descriptor<DType, IType> for SmvDescriptor {
     fn describe_module(&self, module: &Module<DType, IType>, _how: DescriptionContext) -> String {
-        // Cache module wires for describe_input/describe_output
-        *self.module_wires.borrow_mut() = Some(module.wire()[0].clone());
-
-        // Build wire name map first so describe_wire_id can use it.
-        self.populate_wire_names(module);
-
-        // Create a simple HTML table showing latched vs next names and indices
-        let pair = module.wire();
-        let latched = &pair[0];
-        let next = &pair[1];
-
-        let mut rows = String::new();
-        rows.push_str("<tr><th>Name</th><th>Latched idx</th><th>Next idx</th><th>Type</th></tr>");
-
-        // Build indexable vectors with owned values so we can safely index by position
-        let latched_v: Vec<(usize, String)> = latched
+        //let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
+        //format!("<pre>\n{}</pre>", self.dump_module(module, &fmt))
+        let prvt = module.prvt()[0]
             .iter()
-            .map(|p| (p.0, format!("{:?}", p.1)))
-            .collect();
-        let next_v: Vec<usize> = next.iter().map(|p| p.0).collect();
-        let max = std::cmp::max(latched_v.len(), next_v.len());
-        for i in 0..max {
-            let (lat_idx_s, dtype_s) = latched_v
-                .get(i)
-                .map(|p| (p.0.to_string(), p.1.clone()))
-                .unwrap_or_else(|| ("".into(), "".into()));
-            let name = latched_v
-                .get(i)
-                .map(|p| self.describe_wire_id(p.0, DescriptionContext::Edge))
-                .unwrap_or_else(|| "".into());
-            let prim_idx = next_v
-                .get(i)
-                .map(|p| p.to_string())
-                .unwrap_or_else(|| "".into());
+            .map(|(wire_id, _)| self.describe_wire_id(wire_id, DescriptionContext::Inline))
+            .collect::<Vec<String>>();
+        let intf = module.intf()[0]
+            .iter()
+            .map(|(wire_id, _)| self.describe_wire_id(wire_id, DescriptionContext::Inline))
+            .collect::<Vec<String>>();
+        let extl = module.extl()[0]
+            .iter()
+            .map(|(wire_id, _)| self.describe_wire_id(wire_id, DescriptionContext::Inline))
+            .collect::<Vec<String>>();
 
-            rows.push_str(&format!(
-                "<tr><td><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td></tr>",
-                name, lat_idx_s, prim_idx, dtype_s
+        // Append per-atom summaries: iterate over elements to find only
+        // the top-level atom nodes (ids like `atom.<n>`). The element
+        // list also contains the atom.init / atom.update cluster nodes
+        // (which start with `atom.` as well) — we must avoid duplicating
+        // the content by filtering those out.
+        let mut atoms_html = String::new();
+        for (atom_id, atom) in module.atoms().iter().enumerate() {
+            atoms_html.push_str(&format!(
+                "<hr><h3>Atom {atom_id}</h3><div>{}</div>",
+                self.describe_atom(atom, DescriptionContext::Inline)
             ));
         }
 
         format!(
-            "<h3>Wires</h3><table>{}</table><hr><pre>{}</pre>",
-            rows, module
+            "<h2>Module</h2>{}<h2>Atoms</h2>{}",
+            module_variables_diagram(&prvt, &intf, &extl),
+            atoms_html
         )
     }
 
-    fn describe_atom(&self, atom: &Atom<DType, IType>, _how: DescriptionContext) -> String {
-        format!("<pre>{}</pre>", atom)
+    fn describe_atom(&self, atom: &Atom<DType, IType>, how: DescriptionContext) -> String {
+        let mut html = String::new();
+
+        if matches!(how, DescriptionContext::Standalone) {
+            html.push_str("<h2>Atom</h2>\n".into());
+        }
+
+        // Build a small controls/waits/reads table for the atom using the
+        // descriptor's wire naming so the atom panel shows the key ports.
+        let ctrl_wires: Vec<String> = atom
+            .ctrl()
+            .iter()
+            .map(|(w, _)| self.describe_wire_id(w, DescriptionContext::Inline))
+            .collect();
+        let wait_wires: Vec<String> = atom
+            .wait()
+            .iter()
+            .map(|(w, _)| self.describe_wire_id(w, DescriptionContext::Inline))
+            .collect();
+        let read_wires: Vec<String> = atom
+            .read()
+            .iter()
+            .map(|(w, _)| self.describe_wire_id(w, DescriptionContext::Inline))
+            .collect();
+
+        let fmt_list = |v: Vec<String>| {
+            if v.is_empty() {
+                "<em>(none)</em>".into()
+            } else {
+                format!("{}", v.join(", "))
+            }
+        };
+
+        let ctrl_html = fmt_list(ctrl_wires);
+        let wait_html = fmt_list(wait_wires);
+        let read_html = fmt_list(read_wires);
+
+        html.push_str(format!(
+            "<table><tr><td><strong>ctrl</strong></td><td>{}</td></tr><tr><td><strong>wait</strong></td><td>{}</td></tr><tr><td><strong>read</strong></td><td>{}</td></tr></table>",
+            ctrl_html, wait_html, read_html
+        ).as_str());
+
+        html.push_str("<h4>Init</h4>".into());
+
+        let next_wires: HashSet<usize> = atom.ctrl().iter().map(|p| p.0).collect();
+        for term in atom.init() {
+            // consider only output terms (the rest will be shown by
+            // `describe_term_flow_with_context`)
+            if term.writes().iter().any(|w| next_wires.contains(&w.0)) {
+                html.push_str(
+                    self.describe_term_flow_with_context(term, atom.init())
+                        .as_str(),
+                );
+                html.push_str("</br>\n");
+            }
+        }
+
+        html.push_str("<h4>Update</h4>".into());
+        for term in atom.update() {
+            if term.writes().iter().any(|w| next_wires.contains(&w.0)) {
+                html.push_str(
+                    self.describe_term_flow_with_context(term, atom.update())
+                        .as_str(),
+                );
+                html.push_str("</br>\n");
+            }
+        }
+
+        html
+    }
+
+    fn describe_atom_section(
+        &self,
+        atom: &Atom<DType, IType>,
+        sec: &str,
+        how: DescriptionContext,
+    ) -> String {
+        let mut html = String::new();
+
+        if matches!(how, DescriptionContext::Node) {
+            return match sec {
+                "init" => "Init".into(),
+                "update" => "Update".into(),
+                _ => panic!("Invalid section"),
+            };
+        }
+
+        let next_wires: HashSet<usize> = atom.ctrl().iter().map(|p| p.0).collect();
+        if sec == "init" {
+            html.push_str("<h4>Init</h4>".into());
+
+            for term in atom.init() {
+                // consider only output terms (the rest will be shown by
+                // `describe_term_flow_with_context`)
+                if term.writes().iter().any(|w| next_wires.contains(&w.0)) {
+                    html.push_str(
+                        self.describe_term_flow_with_context(term, atom.init())
+                            .as_str(),
+                    );
+                    html.push_str("</br>\n");
+                }
+            }
+        } else if sec == "update" {
+            html.push_str("<h4>Update</h4>".into());
+            for term in atom.update() {
+                if term.writes().iter().any(|w| next_wires.contains(&w.0)) {
+                    html.push_str(
+                        self.describe_term_flow_with_context(term, atom.update())
+                            .as_str(),
+                    );
+                    html.push_str("</br>\n");
+                }
+            }
+        } else {
+            panic!("Invalid section");
+        }
+
+        html
     }
 
     fn describe_term(&self, term: &Term<DType, IType>, how: DescriptionContext) -> String {
         if matches!(how, DescriptionContext::Node) {
             return self.describe_term_label(term);
+        }
+
+        if matches!(how, DescriptionContext::Inline) {
+            return self.describe_term_flow(term);
         }
 
         use crate::itype::IType;
@@ -424,7 +591,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
         rows.push_str("<table>");
         if !writes_v.is_empty() {
             for (idx, dtype) in writes_v.iter() {
-                let name = self.describe_wire_id(*idx, DescriptionContext::Edge);
+                let name = self.describe_wire_id(*idx, DescriptionContext::Inline);
                 rows.push_str(&format!(
 					"<tr><td><strong>writes</strong></td><td><code>{}</code> <small>(w{} : {})</small></td></tr>",
 					name, idx, dtype
@@ -433,7 +600,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
         }
         if !reads_v.is_empty() {
             for (idx, dtype) in reads_v.iter() {
-                let name = self.describe_wire_id(*idx, DescriptionContext::Edge);
+                let name = self.describe_wire_id(*idx, DescriptionContext::Inline);
                 rows.push_str(&format!(
 					"<tr><td><strong>reads</strong></td><td><code>{}</code> <small>(w{} : {})</small></td></tr>",
 					name, idx, dtype
@@ -448,14 +615,14 @@ impl Descriptor<DType, IType> for SmvDescriptor {
         match it {
             IType::ConstInt(v) => {
                 if let Some(w) = term.writes().get_single() {
-                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
+                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
                     title_html = "<h3>Constant (Int)</h3>".into();
                     extra = format!("<p><code>{}</code> → <code>{}</code></p>", v, tgt);
                 }
             }
             IType::ConstBool(b) => {
                 if let Some(w) = term.writes().get_single() {
-                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
+                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
                     title_html = "<h3>Constant (Bool)</h3>".into();
                     extra = format!("<p><code>{}</code> → <code>{}</code></p>", b, tgt);
                 }
@@ -472,9 +639,9 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                             IType::Div => "/",
                             _ => "?",
                         };
-                        let src1 = self.describe_wire_id(rds[0].0, DescriptionContext::Edge);
-                        let src2 = self.describe_wire_id(rds[1].0, DescriptionContext::Edge);
-                        let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
+                        let src1 = self.describe_wire_id(rds[0].0, DescriptionContext::Inline);
+                        let src2 = self.describe_wire_id(rds[1].0, DescriptionContext::Inline);
+                        let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
                         let title_str = match it {
                             IType::Add => "Addition",
                             IType::Sub => "Subtraction",
@@ -493,8 +660,8 @@ impl Descriptor<DType, IType> for SmvDescriptor {
             IType::Not => {
                 if let (Some(w), Some(r)) = (term.writes().get_single(), term.reads().get_single())
                 {
-                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
-                    let src = self.describe_wire_id(r.0, DescriptionContext::Edge);
+                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.0, DescriptionContext::Inline);
                     extra = format!("<p><code>!{}</code> → <code>{}</code></p>", src, tgt);
                 }
             }
@@ -503,9 +670,9 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                     let rds: Vec<_> = term.reads().iter().collect();
                     if rds.len() >= 2 {
                         let op = if let IType::And = it { "∧" } else { "∨" };
-                        let src1 = self.describe_wire_id(rds[0].0, DescriptionContext::Edge);
-                        let src2 = self.describe_wire_id(rds[1].0, DescriptionContext::Edge);
-                        let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
+                        let src1 = self.describe_wire_id(rds[0].0, DescriptionContext::Inline);
+                        let src2 = self.describe_wire_id(rds[1].0, DescriptionContext::Inline);
+                        let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
                         extra = format!(
                             "<p><code>{}</code> {} <code>{}</code> → <code>{}</code></p>",
                             src1, op, src2, tgt
@@ -525,9 +692,9 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                             IType::Eq => "==",
                             _ => "?",
                         };
-                        let src1 = self.describe_wire_id(rds[0].0, DescriptionContext::Edge);
-                        let src2 = self.describe_wire_id(rds[1].0, DescriptionContext::Edge);
-                        let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
+                        let src1 = self.describe_wire_id(rds[0].0, DescriptionContext::Inline);
+                        let src2 = self.describe_wire_id(rds[1].0, DescriptionContext::Inline);
+                        let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
                         let title_str = match it {
                             IType::Lt => "Less Than",
                             IType::Le => "Less Than or Equal",
@@ -547,8 +714,8 @@ impl Descriptor<DType, IType> for SmvDescriptor {
             IType::Next => {
                 if let (Some(w), Some(r)) = (term.writes().get_single(), term.reads().get_single())
                 {
-                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
-                    let src = self.describe_wire_id(r.0, DescriptionContext::Edge);
+                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.0, DescriptionContext::Inline);
                     extra = format!(
                         "<p><code>{}</code> → <code>{}</code> <small>(next)</small></p>",
                         src, tgt
@@ -559,14 +726,14 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                 let rds: Vec<_> = term.reads().iter().collect();
                 let writes_v: Vec<_> = term.writes().iter().collect();
                 if !writes_v.is_empty() {
-                    let tgt = self.describe_wire_id(writes_v[0].0, DescriptionContext::Edge);
+                    let tgt = self.describe_wire_id(writes_v[0].0, DescriptionContext::Inline);
                     if !rds.is_empty() {
                         let srcs: Vec<String> = rds
                             .iter()
                             .map(|r| {
                                 format!(
                                     "<code>{}</code>",
-                                    self.describe_wire_id(r.0, DescriptionContext::Edge)
+                                    self.describe_wire_id(r.0, DescriptionContext::Inline)
                                 )
                             })
                             .collect();
@@ -583,16 +750,16 @@ impl Descriptor<DType, IType> for SmvDescriptor {
             IType::Assign => {
                 if let (Some(w), Some(r)) = (term.writes().get_single(), term.reads().get_single())
                 {
-                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
-                    let src = self.describe_wire_id(r.0, DescriptionContext::Edge);
+                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.0, DescriptionContext::Inline);
                     extra = format!("<p><code>{}</code> → <code>{}</code></p>", src, tgt);
                 }
             }
             IType::Abs => {
                 if let (Some(w), Some(r)) = (term.writes().get_single(), term.reads().get_single())
                 {
-                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
-                    let src = self.describe_wire_id(r.0, DescriptionContext::Edge);
+                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.0, DescriptionContext::Inline);
                     title_html = format!("<h3>Absolute Value</h3>");
                     extra = format!("<p>|<code>{}</code>| → <code>{}</code></p>", src, tgt);
                 }
@@ -601,10 +768,10 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                 let rds: Vec<_> = term.reads().iter().collect();
                 if let Some(w) = term.writes().get_single() {
                     if rds.len() >= 3 {
-                        let tgt = self.describe_wire_id(w.0, DescriptionContext::Edge);
-                        let c = self.describe_wire_id(rds[0].0, DescriptionContext::Edge);
-                        let t = self.describe_wire_id(rds[1].0, DescriptionContext::Edge);
-                        let e = self.describe_wire_id(rds[2].0, DescriptionContext::Edge);
+                        let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
+                        let c = self.describe_wire_id(rds[0].0, DescriptionContext::Inline);
+                        let t = self.describe_wire_id(rds[1].0, DescriptionContext::Inline);
+                        let e = self.describe_wire_id(rds[2].0, DescriptionContext::Inline);
                         title_html = format!("<h3>Ternary Condition</h3>");
                         extra = format!(
                             "<p><code>{}</code> ? <code>{}</code> : <code>{}</code> → <code>{}</code></p>",
@@ -625,7 +792,11 @@ impl Descriptor<DType, IType> for SmvDescriptor {
         }
 
         let map = self.wire_names.borrow();
-        map.get(&id).cloned().unwrap_or_else(|| format!("w{}", id))
+        if let Some(name) = map.get(&id) {
+            return name.clone();
+        }
+
+        format!("w{id}")
     }
 
     fn describe_input(&self, id: usize) -> String {
@@ -637,7 +808,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
             .and_then(|wires| wires.iter().find(|(w, _)| *w == id).map(|(_, d)| d.clone()))
             .unwrap_or_else(|| DType::Int);
         format!(
-            "<code>{}</code> <small>(w{} : {})</small>",
+            "<h4>Input wire</h4>\n<code>{}</code> <small>(w{} : {})</small>",
             user_name, id, dtype
         )
     }
@@ -651,7 +822,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
             .and_then(|wires| wires.iter().find(|(w, _)| *w == id).map(|(_, d)| d.clone()))
             .unwrap_or_else(|| DType::Int);
         format!(
-            "<code>{}</code> <small>(w{} : {})</small>",
+            "<h4>Output wire</h4>\n<code>{}</code> <small>(w{} : {})</small>",
             user_name, id, dtype
         )
     }

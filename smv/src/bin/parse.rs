@@ -147,7 +147,7 @@ fn dump_to_html(modules: &Vec<Module<DType, IType>>, args: &Cli) {
         };
 
         // Use our SMV descriptor for nicer HTML descriptions
-        let descr = SmvDescriptor::new();
+        let descr = SmvDescriptor::new(module);
         html::write_to_html(module, path.as_str(), Some(&descr))
             .inspect_err(|err| {
                 eprintln!("Failed writing the module to file {}", path);
