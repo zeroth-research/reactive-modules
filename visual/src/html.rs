@@ -53,6 +53,12 @@ pub enum DescriptionContext {
 pub trait Descriptor<T, I> {
     fn describe_module(&self, module: &Module<T, I>, how: DescriptionContext) -> String;
     fn describe_atom(&self, atom: &Atom<T, I>, how: DescriptionContext) -> String;
+    fn describe_atom_section(
+        &self,
+        atom: &Atom<T, I>,
+        sec: &str,
+        how: DescriptionContext,
+    ) -> String;
     fn describe_term(&self, term: &Term<T, I>, how: DescriptionContext) -> String;
 
     fn describe_wire_id(&self, id: usize, _how: DescriptionContext) -> String {
@@ -88,6 +94,15 @@ where
 
     fn describe_atom(&self, atom: &Atom<T, I>, _how: DescriptionContext) -> String {
         atom.to_string()
+    }
+
+    fn describe_atom_section(
+        &self,
+        _atom: &Atom<T, I>,
+        sec: &str,
+        _how: DescriptionContext,
+    ) -> String {
+        format!("Atom {}", sec)
     }
 
     fn describe_term(&self, term: &Term<T, I>, _how: DescriptionContext) -> String {
@@ -136,8 +151,12 @@ where
         nodes.push(Node {
             data: NodeData {
                 id: atom_id_init.clone(),
-                label: "Init".into(),
-                description: "atom init section".into(),
+                label: descr.describe_atom_section(atom, "init", DescriptionContext::Node),
+                description: descr.describe_atom_section(
+                    atom,
+                    "init",
+                    DescriptionContext::Standalone,
+                ),
                 parent: Some(format!("atom.{atom_id}")),
             },
             classes: Some("atom-init".into()),
@@ -146,8 +165,12 @@ where
         nodes.push(Node {
             data: NodeData {
                 id: atom_id_update.clone(),
-                label: "Update".into(),
-                description: "atom update section".into(),
+                label: descr.describe_atom_section(atom, "update", DescriptionContext::Node),
+                description: descr.describe_atom_section(
+                    atom,
+                    "update",
+                    DescriptionContext::Standalone,
+                ),
                 parent: Some(format!("atom.{atom_id}")),
             },
             classes: Some("atom-update".into()),
@@ -338,7 +361,7 @@ where
     body {{
       margin: 0;
       display: flex;
-      height: 100vh;
+      min-height: 100vh;
       font-family: sans-serif;
     }}
     #cy {{
