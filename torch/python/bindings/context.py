@@ -78,7 +78,7 @@ class Context:
         vars: list[str],
         init: Callable[[], None],
         update: Callable[[], None],
-        name: str = None,
+        name: str | None = None,
     ) -> WrappedModule:
         cur_vars = [self.var(name) for name in vars]
         nxt_vars = [self.var(f"{name}'") for name in vars]
@@ -106,15 +106,16 @@ class Context:
     def module_from_fn(
         self,
         fun: Callable[[], None],
+        name: str | None = None
     ) -> WrappedModule:
 
-        update, cur_vars, outputs = self.trace(fun)
-        print(cur_vars)
+        update, cur_vars, _ = self.trace(fun)
 
-        #cur_vars = [self.var(name) for name in cur_vars]
-        nxt_vars = [self.var(f"{name}'") for name in cur_vars]
-        print(cur_vars)
-        print(nxt_vars)
+        nxt_vars = [self.var(f"{v.name}'") for v in cur_vars]
+
+        cur_vars = [v.unwrap() for v in cur_vars]
+        nxt_vars =[v.unwrap() for v in nxt_vars]
+
 
         atom = WrappedAtom(
             self.context_,

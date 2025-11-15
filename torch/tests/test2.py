@@ -7,8 +7,7 @@ import torch as tch
 
 
 def fun(x, y):
-    # straightline programs can be written without using our API,
-    # all should work automatically
+    # straightline programs can be written without using our API
     t = tch.Tensor([1, 1, 1])
     s = (2 * x * t + y).sum()
 

@@ -275,7 +275,7 @@ where
                 nodes.push(Node {
                     data: NodeData {
                         id: id_str.clone(),
-                        label: descr.describe_wire_id(id, DescriptionContext::Node),
+                        label: descr.describe_wire_id(wire, DescriptionContext::Node),
                         description: descr.describe_output(wire),
                         // TODO: we could set the parent to be the parent of this parent
                         parent: Some(parent),
