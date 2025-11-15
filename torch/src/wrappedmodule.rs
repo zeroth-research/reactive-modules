@@ -1,19 +1,11 @@
-use std::fmt;
-
 use crate::context::Context;
-use crate::pyval::PyVal;
 use crate::term::{TorchDType, TorchOp, TorchTerm};
 
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use crate::wrappedatom::{WrappedAtom, vars_to_wiring};
-use base::{Atom, Module, Wire};
-
-#[cfg(feature = "visual-html")]
-use crate::html::*;
-
-type WireTy = Wire<TorchDType>;
+use base::Module;
 
 #[pyclass]
 pub struct WrappedModule {
@@ -27,7 +19,7 @@ unsafe impl Sync for WrappedModule {}
 impl WrappedModule {
     #[new]
     fn new(
-        ctx: &Bound<'_, Context>,
+        _ctx: &Bound<'_, Context>,
         // current-state variables
         latched: &Bound<'_, PyList>,
         // next-state variables
@@ -38,7 +30,6 @@ impl WrappedModule {
         let latched = vars_to_wiring(latched).unwrap();
         let next = vars_to_wiring(next).unwrap();
 
-        let ctx: &mut Context = &mut ctx.borrow_mut();
         let atom: &WrappedAtom = &atom.borrow();
 
         Self {
