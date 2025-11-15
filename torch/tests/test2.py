@@ -2,26 +2,23 @@ import sys
 from os.path import dirname, join as pathjoin
 sys.path.append(pathjoin(dirname(__file__), "../python"))
 
-from bindings.term import Var
-from bindings.context import Context
-
+from zrmtorch.module import Module
 import torch as tch
 
 
+def fun(x, y):
+    # straightline programs can be written without using our API,
+    # all should work automatically
+    t = tch.Tensor([1, 1, 1])
+    s = (2 * x * t + y).sum()
 
-ctx = Context()
+    # however, we cannot do branching (if-then-else) when tracing,
+    # so for conditions and branches, we need to use our API
+    b = zrm.eq(s, 0)
+    return zrm.ifthenelse(b, x, x + 1)
 
-def init():
-    zrm.gc(True, [next(x) == tch.Tensor([0, 0, 0]), next(y) == next(y0), next(z) == next(z0)])
 
-def update():
-   # zrm.gc(x < y | ((x < z) & (x < y)), [next(x) == (x + 1)]),
-   # zrm.gc(~(x < y | (x < z)), [next(x) == tch.Tensor([0, 0, 0])])
+module = Module.from_fn(fun)
+module.to_html("/tmp/fn.html", open=True)
 
-    Guard[(x < y | ((x < z) & (x < y)))] >> [next(x) == (x + 1)],
-    Guard[~(x < y | (x < z))]            >> [next(x) == tch.Tensor([0, 0, 0])]
-
-module = ctx.module(["x", "y", "z", "y0", "z0"], init, update)
-module.dbg()
-module.to_html(ctx.context_, "/tmp/mod.html")
 

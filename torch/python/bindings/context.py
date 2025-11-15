@@ -103,6 +103,34 @@ class Context:
             module.set_name(name)
         return module
 
+    def module_from_fn(
+        self,
+        fun: Callable[[], None],
+    ) -> WrappedModule:
+
+        update, cur_vars, outputs = self.trace(fun)
+        print(cur_vars)
+
+        #cur_vars = [self.var(name) for name in cur_vars]
+        nxt_vars = [self.var(f"{name}'") for name in cur_vars]
+        print(cur_vars)
+        print(nxt_vars)
+
+        atom = WrappedAtom(
+            self.context_,
+            cur_vars,
+            nxt_vars,
+            [],
+            [t.unwrap() for t in update],
+        )
+
+        # TODO: here we unnecessarily copy the terms (they are once copied into
+        # Atom and then again into Module)
+        module = WrappedModule(self.context_, cur_vars, nxt_vars, atom)
+        if name is not None:
+            module.set_name(name)
+        return module
+
     def trace_with_vars(self, fun: Callable, vars: list[Var]):
         """
         Trace a function, assuming given variables `vars`. The function should
