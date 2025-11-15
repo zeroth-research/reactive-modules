@@ -4,7 +4,7 @@ use std::fmt::Write;
 
 use crate::{DType, IType, TorchAtom, TorchModule, TorchTerm};
 
-use visual::html::Descriptor;
+use visual::html::{DescriptionContext, Descriptor};
 
 impl Context {
     fn wire_name(&self, id: usize) -> String {
@@ -118,6 +118,28 @@ impl Context {
         s
     }
 
+    fn dump_atom_section(&self, atom: &TorchAtom, sec: &str, fmt: &HashMap<&str, &str>) -> String {
+        let mut s = String::new();
+
+        match sec {
+            "init" => {
+                for term in atom.init().iter() {
+                    write!(s, "  ").unwrap();
+                    writeln!(s, "{}", self.dump_term(term, fmt)).unwrap();
+                }
+            }
+            "update" => {
+                for term in atom.update().iter() {
+                    write!(s, "  ").unwrap();
+                    writeln!(s, "{}", self.dump_term(term, fmt)).unwrap();
+                }
+            }
+            _ => panic!("Invalid section"),
+        }
+
+        s
+    }
+
     fn dump_term(&self, term: &TorchTerm, fmt: &HashMap<&str, &str>) -> String {
         let empty_str = "";
         let fmt_emph = fmt.get("EMPH_START").unwrap_or(&empty_str);
@@ -148,7 +170,11 @@ impl Context {
 }
 
 impl Descriptor<DType, IType> for Context {
-    fn describe_module(&self, module: &TorchModule) -> String {
+    fn describe_module(&self, module: &TorchModule, how: DescriptionContext) -> String {
+        if matches!(how, DescriptionContext::Node) {
+            return format!("Module {}", module.name().unwrap_or(""));
+        }
+
         let fmt = HashMap::from([
             ("BOLD_START", "<b>"),
             ("BOLD_END", "</b>"),
@@ -159,7 +185,11 @@ impl Descriptor<DType, IType> for Context {
         format!("<pre>\n{}</pre>", self.dump_module(module, &fmt))
     }
 
-    fn describe_atom(&self, atom: &TorchAtom) -> String {
+    fn describe_atom(&self, atom: &TorchAtom, how: DescriptionContext) -> String {
+        if matches!(how, DescriptionContext::Node) {
+            return "Atom".into();
+        }
+
         let fmt = HashMap::from([
             ("BOLD_START", "<b>"),
             ("BOLD_END", "</b>"),
@@ -167,10 +197,42 @@ impl Descriptor<DType, IType> for Context {
             ("COLOR_TERM_OP", "<span style=\"color: #E88914\">"),
             ("COLOR_CLEAR", "</span>"),
         ]);
-        format!("<pre>\n{}</pre>", self.dump_atom(atom, &fmt))
+        format!("<h2>Atom</h2><pre>\n{}</pre>", self.dump_atom(atom, &fmt))
     }
 
-    fn describe_term(&self, term: &TorchTerm) -> String {
+    fn describe_atom_section(
+        &self,
+        atom: &TorchAtom,
+        sec: &str,
+        how: DescriptionContext,
+    ) -> String {
+        if matches!(how, DescriptionContext::Node) {
+            return match sec {
+                "init" => "Init".into(),
+                "update" => "Update".into(),
+                _ => panic!("Invalid section"),
+            };
+        }
+
+        let fmt = HashMap::from([
+            ("BOLD_START", "<b>"),
+            ("BOLD_END", "</b>"),
+            ("COLOR_TERM_LHS", "<span style=\"color: #106EE2\">"),
+            ("COLOR_TERM_OP", "<span style=\"color: #E88914\">"),
+            ("COLOR_CLEAR", "</span>"),
+        ]);
+        format!(
+            "<h2>Atom {}</h2><pre>\n{}</pre>",
+            sec,
+            self.dump_atom_section(atom, sec, &fmt)
+        )
+    }
+
+    fn describe_term(&self, term: &TorchTerm, how: DescriptionContext) -> String {
+        if matches!(how, DescriptionContext::Node) {
+            return term.itype().to_string();
+        }
+
         let fmt = HashMap::from([
             //("EMPH_START", "<i>"),
             //("EMPH_END", "</i>"),
@@ -185,7 +247,7 @@ impl Descriptor<DType, IType> for Context {
         )
     }
 
-    fn describe_wire_id(&self, id: usize) -> String {
+    fn describe_wire_id(&self, id: usize, _how: DescriptionContext) -> String {
         self.wire_name(id)
     }
 }

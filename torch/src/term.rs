@@ -107,16 +107,16 @@ impl fmt::Display for TorchOp {
                 let flat = t.view([-1]);
 
                 if let Ok(vals) = Vec::<f64>::try_from(&flat) {
-                    write!(f, "Const([");
+                    let _ = write!(f, "Const([");
                     for (n, v) in vals.iter().take(3).enumerate() {
                         if n == 0 {
-                            write!(f, "{}", v);
+                            let _ = write!(f, "{}", v);
                         } else {
-                            write!(f, " {}", v);
+                            let _ = write!(f, " {}", v);
                         }
                     }
                     if flat.numel() > 3 {
-                        write!(f, " ...");
+                        let _ = write!(f, " ...");
                     }
                     write!(f, "])")
                 } else {
