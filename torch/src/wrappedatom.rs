@@ -1,5 +1,3 @@
-use std::fmt;
-
 use crate::context::Context;
 use crate::pyval::PyVal;
 use crate::term::{TorchDType, TorchOp, TorchTerm};
