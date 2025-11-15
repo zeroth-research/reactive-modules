@@ -10,22 +10,9 @@ module Counter {
     }
 
     update {
-      []  (x < y \or (x < z && x < z)) -> x' := x + 1 
+      []  (x < y \or x < z) -> x' := x + 1 
       [] !(x < y \or x < z) -> x' := 0
     }
   }
-
-  atom {
-    controls w reads x, y, z
-
-    init {
-      [] true -> w' := 3
-    }
-
-    update {
-      []  (x < y \and x >= z) -> w' := x + 1 
-    }
-  }
-
 }
 
