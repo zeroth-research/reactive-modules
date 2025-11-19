@@ -37,7 +37,7 @@ struct Cli {
 }
 
 #[cfg(feature = "visual-html")]
-fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli, ctx: &Context) -> Result<(), std::io::Error> {
+fn dump_to_html(modules: &[ToyModule], args: &Cli, ctx: &Context) -> Result<(), std::io::Error> {
     // TODO: enable output to cusom file/dir
     //if args.output.is_some() {
     //    let tmp = &args.output.unwrap();
@@ -100,7 +100,7 @@ fn main() {
 
     let modules = parser.parse(input);
 
-    if modules.len() > 0 {
+    if !modules.is_empty() {
         println!("Modules parsed successfully!");
     }
 
