@@ -16,7 +16,7 @@ impl Context {
         format!("w{id}")
     }
 
-    fn dump_module(&self, module: &ToyModule, fmt: &HashMap<&str, &str>) -> String {
+    fn _dump_module(&self, module: &ToyModule, fmt: &HashMap<&str, &str>) -> String {
         let empty_str = "";
         let fmt_bold = fmt.get("BOLD_START").unwrap_or(&empty_str);
         let fmt_bold_end = fmt.get("BOLD_END").unwrap_or(&empty_str);
