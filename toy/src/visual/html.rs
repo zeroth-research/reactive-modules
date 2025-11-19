@@ -140,7 +140,7 @@ impl Context {
             .unwrap();
         }
 
-        write!(s, "\n").unwrap();
+        writeln!(s).unwrap();
         for atom in module.atoms() {
             writeln!(s, "{}", self.dump_atom(atom, fmt)).unwrap();
         }
@@ -167,7 +167,7 @@ impl Context {
                 write!(s, ", {}", self.wire_name(wr)).unwrap();
             }
         }
-        write!(s, "\n").unwrap();
+        writeln!(s).unwrap();
         for (i, (wr, _)) in atom.read().iter().enumerate() {
             if i == 0 {
                 write!(s, " {fmt_bold}reads{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
@@ -175,7 +175,7 @@ impl Context {
                 write!(s, ", {}", self.wire_name(wr)).unwrap();
             }
         }
-        write!(s, "\n").unwrap();
+        writeln!(s).unwrap();
         for (i, (wr, _)) in atom.wait().iter().enumerate() {
             if i == 0 {
                 write!(s, " {fmt_bold}awaits{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
@@ -183,7 +183,7 @@ impl Context {
                 write!(s, ", {}", self.wire_name(wr)).unwrap();
             }
         }
-        write!(s, "\n").unwrap();
+        writeln!(s).unwrap();
         writeln!(s, "\n{fmt_bold}init{fmt_bold_end}").unwrap();
 
         for term in atom.init().iter() {
@@ -332,10 +332,10 @@ where
 
             // gather information for creating edges
             for (wire, _) in term.writes() {
-                wire_written_by.entry(wire).or_insert(Vec::new()).push(id);
+                wire_written_by.entry(wire).or_default().push(id);
             }
             for (wire, _) in term.reads() {
-                wire_read_by.entry(wire).or_insert(Vec::new()).push(id);
+                wire_read_by.entry(wire).or_default().push(id);
             }
         }
 
@@ -354,19 +354,16 @@ where
 
             // gather information for creating edges
             for (wire, _) in term.writes() {
-                wire_written_by.entry(wire).or_insert(Vec::new()).push(id);
+                wire_written_by.entry(wire).or_default().push(id);
             }
             for (wire, _) in term.reads() {
-                wire_read_by.entry(wire).or_insert(Vec::new()).push(id);
+                wire_read_by.entry(wire).or_default().push(id);
             }
         }
     }
 
     let wires: HashSet<usize> = HashSet::from_iter(
-        wire_written_by
-            .keys()
-            .chain(wire_read_by.keys())
-            .map(|x| *x),
+        wire_written_by.keys().chain(wire_read_by.keys()).copied(), //.map(|x| *x),
     );
 
     for wire in wires {
@@ -458,8 +455,8 @@ pub fn write_to_html(
 ) -> Result<(), std::io::Error> {
     //let palette = ["#8ecae6", "#219ebc", "#ffb703", "#fb8500"];
 
-    let data = if ctx.is_some() {
-        module_to_graph(module, ctx.unwrap())
+    let data = if let Some(descr) = ctx {
+        module_to_graph(module, descr)
     } else {
         module_to_graph(module, &DefaultDescriptor {})
     };
