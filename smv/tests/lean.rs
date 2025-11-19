@@ -5,13 +5,14 @@ use smv::smv::parse_smv;
 use smv::{dtype::DType, itype::IType};
 use std::fs;
 
+type TermType = Term<DType, IType>;
 // Build the obligation Term vectors (Büchi, invariant, variant) used by the
 // tests. Kept as a separate function so the test body stays concise and the
 // obligation construction can be reused or unit-tested independently.
 fn build_obligations() -> (
-    Vec<Term<DType, IType>>, // invariant
-    Vec<Term<DType, IType>>, // variant
-    Vec<Term<DType, IType>>, // buchi
+    Vec<TermType>, // invariant
+    Vec<TermType>, // variant
+    Vec<TermType>, // buchi
 ) {
     // invariant: x0 <= x1 ∨ x0 <= x2
     let invariant: Vec<Term<DType, IType>> = vec![

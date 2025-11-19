@@ -19,7 +19,7 @@ pub fn twin(wire: &Wire<DType>, offset: isize) -> Result<Wire<DType>, &'static s
         if ni < 0 {
             return Err("index underflow");
         }
-        shifted.push((ni as usize, d.clone()));
+        shifted.push((ni as usize, *d));
     }
     Ok(Wire::from_iter(shifted))
 }
@@ -807,43 +807,43 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                 Rule::abs_call => {
                     // abs(inner) where inner may be ident/number/etc. If inner is ident, treat similarly
                     if let Some(inner) = leaf.clone().into_inner().next()
-                        && inner.as_rule() == Rule::ident {
-                            let nm = inner.as_str().to_string();
-                            if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm)
-                            {
-                                if *ridx < var_count {
-                                    let read = Wire::one(*ridx, *rdtype);
-                                    init_terms.push(Term::new(
-                                        IType::Assign,
-                                        write.clone(),
-                                        read.clone(),
-                                    ));
-                                    classify_reads_from_wire(
-                                        &read,
-                                        var_count,
-                                        n,
-                                        &mut read_latched,
-                                        &mut wait_latched,
-                                    );
-                                } else {
-                                    let unprimed = Wire::one(*ridx, *rdtype);
-                                    let primed = Wire::one(*ridx + n, *rdtype);
-                                    init_terms.push(Term::new(
-                                        IType::Assign,
-                                        write.clone(),
-                                        primed.clone(),
-                                    ));
-                                    classify_reads_from_wire(
-                                        &unprimed,
-                                        var_count,
-                                        n,
-                                        &mut read_latched,
-                                        &mut wait_latched,
-                                    );
-                                }
-                                continue;
+                        && inner.as_rule() == Rule::ident
+                    {
+                        let nm = inner.as_str().to_string();
+                        if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
+                            if *ridx < var_count {
+                                let read = Wire::one(*ridx, *rdtype);
+                                init_terms.push(Term::new(
+                                    IType::Assign,
+                                    write.clone(),
+                                    read.clone(),
+                                ));
+                                classify_reads_from_wire(
+                                    &read,
+                                    var_count,
+                                    n,
+                                    &mut read_latched,
+                                    &mut wait_latched,
+                                );
+                            } else {
+                                let unprimed = Wire::one(*ridx, *rdtype);
+                                let primed = Wire::one(*ridx + n, *rdtype);
+                                init_terms.push(Term::new(
+                                    IType::Assign,
+                                    write.clone(),
+                                    primed.clone(),
+                                ));
+                                classify_reads_from_wire(
+                                    &unprimed,
+                                    var_count,
+                                    n,
+                                    &mut read_latched,
+                                    &mut wait_latched,
+                                );
                             }
+                            continue;
                         }
+                    }
                     // fallback: explicitly expand abs(inner) here so we can
                     // ensure the final Cond writes directly into the primed
                     // `write` wire and that the term reads use primed IVAR
@@ -1025,27 +1025,27 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                 }
                 Rule::abs_call => {
                     if let Some(inner) = leaf.clone().into_inner().next()
-                        && inner.as_rule() == Rule::ident {
-                            let nm = inner.as_str().to_string();
-                            if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm)
-                            {
-                                let read = Wire::one(*ridx, *rdtype);
-                                update_terms.push(Term::new(
-                                    IType::Assign,
-                                    write.clone(),
-                                    read.clone(),
-                                ));
-                                classify_reads_from_wire(
-                                    &read,
-                                    var_count,
-                                    n,
-                                    &mut read_latched,
-                                    &mut wait_latched,
-                                );
-                                // done
-                                continue;
-                            }
+                        && inner.as_rule() == Rule::ident
+                    {
+                        let nm = inner.as_str().to_string();
+                        if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
+                            let read = Wire::one(*ridx, *rdtype);
+                            update_terms.push(Term::new(
+                                IType::Assign,
+                                write.clone(),
+                                read.clone(),
+                            ));
+                            classify_reads_from_wire(
+                                &read,
+                                var_count,
+                                n,
+                                &mut read_latched,
+                                &mut wait_latched,
+                            );
+                            // done
+                            continue;
                         }
+                    }
                     let (_final_write, read_union) = lower_expr_to_terms(
                         expr_pair.clone(),
                         &wires,

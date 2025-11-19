@@ -211,16 +211,8 @@ impl SmvDescriptor {
         use crate::itype::IType;
 
         let it = term.itype();
-        let writes: Vec<(usize, DType)> = term
-            .writes()
-            .iter()
-            .map(|(i, d)| (i, *d))
-            .collect();
-        let reads: Vec<(usize, DType)> = term
-            .reads()
-            .iter()
-            .map(|(i, d)| (i, *d))
-            .collect();
+        let writes: Vec<(usize, DType)> = term.writes().iter().map(|(i, d)| (i, *d)).collect();
+        let reads: Vec<(usize, DType)> = term.reads().iter().map(|(i, d)| (i, *d)).collect();
 
         let emit_tgt = |widx: usize| {
             format!(
@@ -251,20 +243,19 @@ impl SmvDescriptor {
                 }
             }
             IType::Add | IType::Sub | IType::Mul | IType::Div => {
-                if !reads.is_empty() && !writes.is_empty()
-                    && reads.len() >= 2 {
-                        let op = match it {
-                            IType::Add => "+",
-                            IType::Sub => "-",
-                            IType::Mul => "*",
-                            IType::Div => "/",
-                            _ => "?",
-                        };
-                        let src1 = emit_src(&reads[0]);
-                        let src2 = emit_src(&reads[1]);
-                        let tgt = emit_tgt(writes[0].0);
-                        return format!("{} {} {} → {}", src1, op, src2, tgt);
-                    }
+                if !reads.is_empty() && !writes.is_empty() && reads.len() >= 2 {
+                    let op = match it {
+                        IType::Add => "+",
+                        IType::Sub => "-",
+                        IType::Mul => "*",
+                        IType::Div => "/",
+                        _ => "?",
+                    };
+                    let src1 = emit_src(&reads[0]);
+                    let src2 = emit_src(&reads[1]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("{} {} {} → {}", src1, op, src2, tgt);
+                }
                 String::new()
             }
             IType::Not => {
@@ -276,32 +267,30 @@ impl SmvDescriptor {
                 String::new()
             }
             IType::And | IType::Or => {
-                if !reads.is_empty() && !writes.is_empty()
-                    && reads.len() >= 2 {
-                        let op = if let IType::And = it { "∧" } else { "∨" };
-                        let src1 = emit_src(&reads[0]);
-                        let src2 = emit_src(&reads[1]);
-                        let tgt = emit_tgt(writes[0].0);
-                        return format!("{} {} {} → {}", src1, op, src2, tgt);
-                    }
+                if !reads.is_empty() && !writes.is_empty() && reads.len() >= 2 {
+                    let op = if let IType::And = it { "∧" } else { "∨" };
+                    let src1 = emit_src(&reads[0]);
+                    let src2 = emit_src(&reads[1]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("{} {} {} → {}", src1, op, src2, tgt);
+                }
                 String::new()
             }
             IType::Lt | IType::Le | IType::Gt | IType::Ge | IType::Eq => {
-                if !reads.is_empty() && !writes.is_empty()
-                    && reads.len() >= 2 {
-                        let op = match it {
-                            IType::Lt => "<",
-                            IType::Le => "<=",
-                            IType::Gt => ">",
-                            IType::Ge => ">=",
-                            IType::Eq => "==",
-                            _ => "?",
-                        };
-                        let src1 = emit_src(&reads[0]);
-                        let src2 = emit_src(&reads[1]);
-                        let tgt = emit_tgt(writes[0].0);
-                        return format!("{} {} {} → {}", src1, op, src2, tgt);
-                    }
+                if !reads.is_empty() && !writes.is_empty() && reads.len() >= 2 {
+                    let op = match it {
+                        IType::Lt => "<",
+                        IType::Le => "<=",
+                        IType::Gt => ">",
+                        IType::Ge => ">=",
+                        IType::Eq => "==",
+                        _ => "?",
+                    };
+                    let src1 = emit_src(&reads[0]);
+                    let src2 = emit_src(&reads[1]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("{} {} {} → {}", src1, op, src2, tgt);
+                }
                 String::new()
             }
             IType::Next | IType::Assign => {
@@ -337,14 +326,13 @@ impl SmvDescriptor {
                 String::new()
             }
             IType::Cond => {
-                if !writes.is_empty()
-                    && reads.len() >= 3 {
-                        let c = emit_src(&reads[0]);
-                        let t = emit_src(&reads[1]);
-                        let e = emit_src(&reads[2]);
-                        let tgt = emit_tgt(writes[0].0);
-                        return format!("({}) ? ({}) : ({}) → {}", c, t, e, tgt);
-                    }
+                if !writes.is_empty() && reads.len() >= 3 {
+                    let c = emit_src(&reads[0]);
+                    let t = emit_src(&reads[1]);
+                    let e = emit_src(&reads[2]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("({}) ? ({}) : ({}) → {}", c, t, e, tgt);
+                }
                 String::new()
             }
         }
@@ -357,7 +345,7 @@ impl SmvDescriptor {
 }
 
 // FIXME: this is duplicated with the `toy` create
-fn module_variables_diagram(prvt: &Vec<String>, intf: &Vec<String>, extl: &Vec<String>) -> String {
+fn module_variables_diagram(prvt: &[String], intf: &[String], extl: &[String]) -> String {
     format!(
         r##"
         <div style="display:flex;flex-direction:column;align-items:center;margin:0;padding:0;">
@@ -763,17 +751,18 @@ impl Descriptor<DType, IType> for SmvDescriptor {
             IType::Cond => {
                 let rds: Vec<_> = term.reads().iter().collect();
                 if let Some(w) = term.writes().get_single()
-                    && rds.len() >= 3 {
-                        let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
-                        let c = self.describe_wire_id(rds[0].0, DescriptionContext::Inline);
-                        let t = self.describe_wire_id(rds[1].0, DescriptionContext::Inline);
-                        let e = self.describe_wire_id(rds[2].0, DescriptionContext::Inline);
-                        title_html = "<h3>Ternary Condition</h3>".to_string();
-                        extra = format!(
-                            "<p><code>{}</code> ? <code>{}</code> : <code>{}</code> → <code>{}</code></p>",
-                            c, t, e, tgt
-                        );
-                    }
+                    && rds.len() >= 3
+                {
+                    let tgt = self.describe_wire_id(w.0, DescriptionContext::Inline);
+                    let c = self.describe_wire_id(rds[0].0, DescriptionContext::Inline);
+                    let t = self.describe_wire_id(rds[1].0, DescriptionContext::Inline);
+                    let e = self.describe_wire_id(rds[2].0, DescriptionContext::Inline);
+                    title_html = "<h3>Ternary Condition</h3>".to_string();
+                    extra = format!(
+                        "<p><code>{}</code> ? <code>{}</code> : <code>{}</code> → <code>{}</code></p>",
+                        c, t, e, tgt
+                    );
+                }
             }
         }
 

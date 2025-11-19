@@ -12,10 +12,12 @@ use smv::smv::parse_smv;
 use smv::html::SmvDescriptor;
 use visual::html;
 
+type TermType = Term<DType, IType>;
+
 fn build_obligations() -> (
-    Vec<Term<DType, IType>>, // invariant
-    Vec<Term<DType, IType>>, // variant
-    Vec<Term<DType, IType>>, // buchi
+    Vec<TermType>, // invariant
+    Vec<TermType>, // variant
+    Vec<TermType>, // buchi
 ) {
     // invariant: x0 <= x1 ∨ x0 <= x2
     let invariant: Vec<Term<DType, IType>> = vec![
