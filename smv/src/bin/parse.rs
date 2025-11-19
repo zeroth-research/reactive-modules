@@ -137,7 +137,7 @@ struct Cli {
     stdout: bool,
 }
 
-fn dump_to_html(modules: &Vec<Module<DType, IType>>, args: &Cli) {
+fn dump_to_html(modules: &[Module<DType, IType>], args: &Cli) -> Result<(), std::io::Error> {
     for (n, module) in modules.iter().enumerate() {
         let module_name = module.name();
         let path = if module_name.is_some() {
@@ -161,14 +161,24 @@ fn dump_to_html(modules: &Vec<Module<DType, IType>>, args: &Cli) {
             println!("Openning in web browser...");
             #[cfg(target_os = "macos")]
             {
-                process::Command::new("open").arg(path).spawn().unwrap();
+                process::Command::new("open")
+                    .arg(path)
+                    .spawn()
+                    .unwrap()
+                    .wait()?;
             }
             #[cfg(target_os = "linux")]
             {
-                process::Command::new("xdg-open").arg(path).spawn().unwrap();
+                process::Command::new("xdg-open")
+                    .arg(path)
+                    .spawn()
+                    .unwrap()
+                    .wait()?;
             }
         }
     }
+
+    Ok(())
 }
 
 // cargo run --bin parse --package smv smv/tests/counter.smv --dump html --open
@@ -227,7 +237,7 @@ fn main() {
 
     let modules = vec![module];
 
-    if modules.len() > 0 {
+    if !modules.is_empty() {
         println!("Modules parsed successfully!");
     }
 
@@ -241,7 +251,9 @@ fn main() {
         match method.as_str() {
             "html" | "HTML" => {
                 // dump_to_html(&modules, &args, parser.ctx());
-                dump_to_html(&modules, &args);
+                if let Err(msg) = dump_to_html(&modules, &args) {
+                    eprintln!("Failed dumping module to HTML: {msg}");
+                }
             }
             _ => {
                 eprint!("Unknown `dump` method.");

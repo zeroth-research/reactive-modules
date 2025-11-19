@@ -79,11 +79,11 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
         };
         out.push_str(&format!("  x{} : {}\n", idx, ty));
     }
-    out.push_str("\n");
+    out.push('\n');
 
     // Small helper: drill down single-child chains to the leaf node.
     // Used for simple identifier detection in init/update rendering.
-    fn leaf<'a>(e: &'a Expr) -> &'a Expr {
+    fn leaf(e: &Expr) -> &Expr {
         let mut cur = e;
         loop {
             if cur.children.len() == 1 {
@@ -99,7 +99,7 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
         match expr.kind {
             ExprKind::Number => expr.text.clone().unwrap_or_default(),
             ExprKind::Ident => {
-                let nm = expr.text.as_ref().map(|s| s.as_str()).unwrap_or("");
+                let nm = expr.text.as_deref().unwrap_or("");
                 if let Some((_, idx, _)) = wires.iter().find(|(s, _, _)| s == nm) {
                     if context == "params" {
                         format!("params.x{}", idx)
@@ -127,7 +127,7 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
                 // Try to detect the relu pattern: if (left < 0) ? 0 : left
                 // and render it as Int.natAbs <context>.xN when appropriate.
                 fn is_zero(n: &Expr) -> bool {
-                    n.kind == ExprKind::Number && n.text.as_ref().map(|s| s.as_str()) == Some("0")
+                    n.kind == ExprKind::Number && n.text.as_deref() == Some("0")
                 }
 
                 if cond_node.kind == ExprKind::Cmp && is_zero(then_node) {
@@ -155,7 +155,7 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
 
             ExprKind::Abs => {
                 // Unary abs node: render as Int.natAbs <child>
-                if let Some(child) = expr.children.get(0) {
+                if let Some(child) = expr.children.first() {
                     let c = expr_to_lean(child, wires, context);
                     return format!("Int.natAbs {}", c);
                 }
@@ -214,7 +214,7 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
                 acc
             }
             ExprKind::Primary | ExprKind::Factor | ExprKind::Assign => {
-                if let Some(inner) = expr.children.get(0) {
+                if let Some(inner) = expr.children.first() {
                     expr_to_lean(inner, wires, "s")
                 } else {
                     String::new()
@@ -232,9 +232,9 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
     for i in 0..var_count {
         if let Some(expr_node) = &view.init_exprs[i] {
             let l = leaf(expr_node);
-            if l.kind == ExprKind::Ident {
-                if let Some(name) = l.text.as_ref() {
-                    if let Some((_, idx, _)) = wires.iter().find(|(s, _, _)| s == name) {
+            if l.kind == ExprKind::Ident
+                && let Some(name) = l.text.as_ref()
+                    && let Some((_, idx, _)) = wires.iter().find(|(s, _, _)| s == name) {
                         // If the RHS is an IVAR (index >= var_count) render as params.x{idx}
                         if *idx >= var_count {
                             // Heuristic: IVARs used in init often originate from
@@ -244,9 +244,7 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
                             continue;
                         }
                     }
-                }
-            }
-            let expr = expr_to_lean(expr_node, &wires, "params");
+            let expr = expr_to_lean(expr_node, wires, "params");
             parts.push(format!("x{} := {}", i, expr));
         } else {
             let ty = wires[i].2;
@@ -268,12 +266,11 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
     // Find the index of the first conditional next expression, if any.
     let mut cond_idx: Option<usize> = None;
     for i in 0..var_count {
-        if let Some(Some(expr_node)) = view.next_exprs.get(i) {
-            if expr_node.kind == ExprKind::Cond {
+        if let Some(Some(expr_node)) = view.next_exprs.get(i)
+            && expr_node.kind == ExprKind::Cond {
                 cond_idx = Some(i);
                 break;
             }
-        }
     }
 
     if let Some(ci) = cond_idx {
@@ -285,13 +282,11 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
             wires: &[(String, usize, DType)],
             out: &mut std::collections::HashSet<usize>,
         ) {
-            if e.kind == ExprKind::Ident {
-                if let Some(name) = e.text.as_ref() {
-                    if let Some((_, idx, _)) = wires.iter().find(|(s, _, _)| s == name) {
+            if e.kind == ExprKind::Ident
+                && let Some(name) = e.text.as_ref()
+                    && let Some((_, idx, _)) = wires.iter().find(|(s, _, _)| s == name) {
                         out.insert(*idx);
                     }
-                }
-            }
             for c in e.children.iter() {
                 collect_idents(c, wires, out);
             }
@@ -302,19 +297,18 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
         // parser may include as separate leaf nodes.
         let mut parts: Vec<&Expr> = Vec::new();
         for child in cond_expr.children.iter() {
-            if let Some(t) = child.text.as_ref() {
-                if t == "?" || t == ":" {
+            if let Some(t) = child.text.as_ref()
+                && (t == "?" || t == ":") {
                     continue;
                 }
-            }
             parts.push(child);
         }
-        let cond_part = parts.get(0).copied().unwrap_or(cond_expr);
+        let cond_part = parts.first().copied().unwrap_or(cond_expr);
         let then_part = parts.get(1).copied().unwrap_or(cond_expr);
         let else_part = parts.get(2).copied().unwrap_or(cond_expr);
 
         let mut idents_used = std::collections::HashSet::new();
-        collect_idents(cond_part, &wires, &mut idents_used);
+        collect_idents(cond_part, wires, &mut idents_used);
 
         // Emit let bindings for identity vars (except the conditional var).
         // We keep this simple: if a var's next is identity, emit a `let` to
@@ -324,7 +318,7 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
                 Some(Some(expr_node)) => {
                     let l = leaf(expr_node);
                     l.kind == ExprKind::Ident
-                        && l.text.as_ref().map(|s| s.as_str()) == Some(wires[i].0.as_str())
+                        && l.text.as_deref() == Some(wires[i].0.as_str())
                 }
                 Some(None) => true,
                 None => true,
@@ -335,12 +329,12 @@ pub fn to_lean(view: &LeanModule) -> Result<String, &'static str> {
         }
 
         // Render condition
-        let cond_render = expr_to_lean(cond_part, &wires, "s");
+        let cond_render = expr_to_lean(cond_part, wires, "s");
         out.push_str(&format!("  if {} then\n", cond_render));
 
         // Render then/else as { s with xci := ... } if only ci changes
-        let then_s = expr_to_lean(then_part, &wires, "s");
-        let else_s = expr_to_lean(else_part, &wires, "s");
+        let then_s = expr_to_lean(then_part, wires, "s");
+        let else_s = expr_to_lean(else_part, wires, "s");
 
         out.push_str(&format!("    {{ s with x{} := {} }}\n", ci, then_s));
         out.push_str(&format!("  else\n    {{ s with x{} := {} }}\n", ci, else_s));
@@ -575,7 +569,7 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
                                 .push(build_expr_for_index(first, n, var_count, wires, term_map));
                         }
                     }
-                    while let Some((r, _)) = iter.next() {
+                    for (r, _) in iter {
                         // op node
                         children.push(Expr {
                             kind: op_kind.clone(),
@@ -740,12 +734,12 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
         let widx = *widx;
         if widx >= n {
             let vidx = widx - n;
-            if vidx < var_count {
-                if let IType::Assign = t.itype() {
+            if vidx < var_count
+                && let IType::Assign = t.itype() {
                     // The Assign should read from a temp produced by an Abs
-                    if let Some((ridx, _)) = t.read().iter().next() {
-                        if let Some(abs_term) = init_term_map.get(&ridx) {
-                            if let IType::Abs = abs_term.itype() {
+                    if let Some((ridx, _)) = t.read().iter().next()
+                        && let Some(abs_term) = init_term_map.get(&ridx)
+                            && let IType::Abs = abs_term.itype() {
                                 // Abs read should point at a primed IVAR index
                                 if let Some((abs_ridx, _)) = abs_term.read().iter().next() {
                                     // Map primed IVAR back to base if needed
@@ -772,10 +766,7 @@ pub fn to_lean_from_module(m: &Module<DType, IType>) -> Result<String, &'static 
                                     }
                                 }
                             }
-                        }
-                    }
                 }
-            }
         }
     }
 
@@ -850,7 +841,7 @@ pub fn render_terms_to_lean(
             }
             Assign => {
                 // assign reads a single source
-                if let Some(a) = args.get(0) {
+                if let Some(a) = args.first() {
                     render_idx(*a, map, wires, var_count)
                 } else {
                     String::new()
@@ -902,7 +893,7 @@ pub fn render_terms_to_lean(
                 parts.join(op)
             }
             Abs => {
-                if args.len() >= 1 {
+                if !args.is_empty() {
                     let inner = render_idx(args[0], map, wires, var_count);
                     return format!("Int.natAbs {}", inner);
                 }
@@ -922,28 +913,24 @@ pub fn render_terms_to_lean(
                     // We check that the condition is a comparison term (Lt)
                     // whose right side is 0, the `then` branch is 0 and the
                     // `else` branch equals the condition's left expression.
-                    if let Some(cond_term) = map.get(&c_idx) {
-                        match cond_term.itype() {
-                            Lt => {
-                                // extract cond_term read args
-                                let mut carr: Vec<usize> = Vec::new();
-                                for (i, _) in cond_term.read().iter() {
-                                    carr.push(i);
-                                }
-                                if carr.len() >= 2 {
-                                    let left_idx = carr[0];
-                                    let right_idx = carr[1];
-                                    let left_s = render_idx(left_idx, map, wires, var_count);
-                                    let right_s = render_idx(right_idx, map, wires, var_count);
-                                    // Compare strings: then must be 0, right side 0, else equals left
-                                    if right_s == "0" && th == "0" && el == left_s {
-                                        return format!("relu ({})", left_s);
-                                    }
+                    if let Some(cond_term) = map.get(&c_idx)
+                        && let Lt = cond_term.itype() {
+                            // extract cond_term read args
+                            let mut carr: Vec<usize> = Vec::new();
+                            for (i, _) in cond_term.read().iter() {
+                                carr.push(i);
+                            }
+                            if carr.len() >= 2 {
+                                let left_idx = carr[0];
+                                let right_idx = carr[1];
+                                let left_s = render_idx(left_idx, map, wires, var_count);
+                                let right_s = render_idx(right_idx, map, wires, var_count);
+                                // Compare strings: then must be 0, right side 0, else equals left
+                                if right_s == "0" && th == "0" && el == left_s {
+                                    return format!("relu ({})", left_s);
                                 }
                             }
-                            _ => {}
                         }
-                    }
 
                     format!("if {} then {} else {}", c, th, el)
                 } else {
@@ -951,7 +938,7 @@ pub fn render_terms_to_lean(
                 }
             }
             Not => {
-                if args.len() >= 1 {
+                if !args.is_empty() {
                     format!("¬{}", render_idx(args[0], map, wires, var_count))
                 } else {
                     String::new()

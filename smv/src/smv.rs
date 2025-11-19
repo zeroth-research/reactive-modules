@@ -806,8 +806,8 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                 }
                 Rule::abs_call => {
                     // abs(inner) where inner may be ident/number/etc. If inner is ident, treat similarly
-                    if let Some(inner) = leaf.clone().into_inner().next() {
-                        if inner.as_rule() == Rule::ident {
+                    if let Some(inner) = leaf.clone().into_inner().next()
+                        && inner.as_rule() == Rule::ident {
                             let nm = inner.as_str().to_string();
                             if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm)
                             {
@@ -844,7 +844,6 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                                 continue;
                             }
                         }
-                    }
                     // fallback: explicitly expand abs(inner) here so we can
                     // ensure the final Cond writes directly into the primed
                     // `write` wire and that the term reads use primed IVAR
@@ -1025,8 +1024,8 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                     }
                 }
                 Rule::abs_call => {
-                    if let Some(inner) = leaf.clone().into_inner().next() {
-                        if inner.as_rule() == Rule::ident {
+                    if let Some(inner) = leaf.clone().into_inner().next()
+                        && inner.as_rule() == Rule::ident {
                             let nm = inner.as_str().to_string();
                             if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm)
                             {
@@ -1047,7 +1046,6 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                                 continue;
                             }
                         }
-                    }
                     let (_final_write, read_union) = lower_expr_to_terms(
                         expr_pair.clone(),
                         &wires,
