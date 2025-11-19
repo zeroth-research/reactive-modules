@@ -113,6 +113,12 @@ impl Val {
     }
 }
 
+impl Default for Val {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl fmt::Display for Val {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
