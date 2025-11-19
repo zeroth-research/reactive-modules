@@ -146,7 +146,7 @@ impl Context {
     }
 }
 
-fn module_variables_diagram(prvt: &Vec<String>, intf: &Vec<String>, extl: &Vec<String>) -> String {
+fn module_variables_diagram(prvt: &[String], intf: &[String], extl: &[String]) -> String {
     format!(
         r##"
         <div style="display:flex;flex-direction:column;align-items:center;margin:0;padding:0;">
