@@ -25,7 +25,7 @@ pub struct ModuleParser;
 #[derive(Debug)]
 struct Var {
     name: String,
-    primed: bool,
+    _primed: bool,
 }
 
 pub struct Parser {
@@ -473,7 +473,10 @@ fn parse_var_list(pair: Pair<Rule>) -> Vec<Var> {
                 name.pop();
                 primed = true;
             }
-            Var { name, primed }
+            Var {
+                name,
+                _primed: primed,
+            }
         })
         .collect()
 }

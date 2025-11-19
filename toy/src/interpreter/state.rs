@@ -2,13 +2,13 @@ use crate::val::Val;
 use std::collections::HashMap;
 
 pub struct State {
-    values: HashMap<usize, Val>,
+    _values: HashMap<usize, Val>,
 }
 
 impl State {
     pub fn new() -> Self {
         Self {
-            values: HashMap::new(),
+            _values: HashMap::new(),
         }
     }
 }
