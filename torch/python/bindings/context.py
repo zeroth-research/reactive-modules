@@ -4,6 +4,8 @@ from typing import Callable, Any
 from .term import Term, Var, NextVar, Assignment
 import inspect
 
+from itertools import chain
+
 WrappedModule = libzrm_torch.WrappedModule
 WrappedAtom = libzrm_torch.WrappedAtom
 
@@ -26,7 +28,10 @@ class GuardImpl:
 
 
 def handle_return_value(r):
-    # transform the return value into a list
+    """
+    Transform the return value into a list
+    """
+
     if r is None:
         r = []
     elif isinstance(r, tuple):
@@ -104,9 +109,7 @@ class Context:
         return module
 
     def module_from_fn(
-        self,
-        fun: Callable[[], None],
-        name: str | None = None
+        self, fun: Callable[[], None], name: str | None = None
     ) -> WrappedModule:
 
         update, cur_vars, _ = self.trace(fun)
@@ -114,8 +117,7 @@ class Context:
         nxt_vars = [self.var(f"{v.name}'") for v in cur_vars]
 
         cur_vars = [v.unwrap() for v in cur_vars]
-        nxt_vars =[v.unwrap() for v in nxt_vars]
-
+        nxt_vars = [v.unwrap() for v in nxt_vars]
 
         atom = WrappedAtom(
             self.context_,
@@ -131,6 +133,74 @@ class Context:
         if name is not None:
             module.set_name(name)
         return module
+
+    def module_from_methods(
+        self,
+        ctrl: str | tuple[str],
+        extl: str | tuple[str],
+        init: Callable[[], None],
+        update: Callable[[], None],
+        name: str | None = None,
+    ) -> WrappedModule:
+        if isinstance(ctrl, str):
+            ctrl = self.var(ctrl)
+            cur_vars = [ctrl]
+            ctrl_tuple = (ctrl,)
+        else:
+            ctrl = tuple(self.var(name) for name in ctrl)
+            cur_vars = [*ctrl]
+            ctrl_tuple = ctrl
+
+        if isinstance(extl, str):
+            extl = self.var(extl)
+            cur_vars.append(extl)
+        else:
+            extl = tuple(self.var(name) for name in extl)
+            cur_vars.extend(extl)
+
+        nxt_vars = (self.var(f"{v.name}'") for v in cur_vars)
+
+        # trace the init function
+        if init:
+            init_terms, _, init_ret = self.trace(init, extl)
+            # assign the result of the function to the primed control variables
+            assert len(init_ret) == len(ctrl_tuple)
+            for cv, val in zip(ctrl_tuple, init_ret):
+                t = self.term("Id", [val], [self.next_var(cv)])
+                init_terms.append(t)
+        else:
+            init_terms = []
+
+        # trace the update function
+        update_terms, _, update_ret = self.trace(update, ctrl, extl)
+        # assign the result of the function to the primed control variables
+        assert len(update_ret) == len(ctrl_tuple)
+        for cv, val in zip(ctrl_tuple, update_ret):
+            t = self.term("Id", [val], [self.next_var(cv)])
+            update_terms.append(t)
+
+        cur_vars = [v.unwrap() for v in cur_vars]
+        nxt_vars = [v.unwrap() for v in nxt_vars]
+        atom = WrappedAtom(
+            self.context_,
+            cur_vars,
+            nxt_vars,
+            [t.unwrap() for t in init_terms],
+            [t.unwrap() for t in update_terms],
+        )
+
+        atom.dbg()
+
+        # TODO: here we unnecessarily copy the terms (they are once copied into
+        # Atom and then again into Module)
+        module = WrappedModule(self.context_, cur_vars, nxt_vars, atom)
+        if name is not None:
+            module.set_name(name)
+        return module
+
+    def _choose(self, *args):
+        reads = list(chain.from_iterable(args))
+        return self.term("Choose", reads).outvar
 
     def trace_with_vars(self, fun: Callable, vars: list[Var]):
         """
@@ -213,9 +283,13 @@ class Context:
             assert "next" not in fun.__globals__
             fun.__globals__["zrm"] = self
             fun.__globals__["next"] = self.next_var
+            fun.__globals__["Choose"] = self._choose
+            fun.__globals__["Case"] = lambda cond, res: (cond, res)
             r = fun(*all_args)
             del fun.__globals__["next"]
             del fun.__globals__["zrm"]
+            del fun.__globals__["Case"]
+            del fun.__globals__["Choose"]
             return r
 
         r = wrapped_fun()

@@ -2,7 +2,7 @@ import sys
 from os.path import dirname, join as pathjoin
 sys.path.append(pathjoin(dirname(__file__), "../python"))
 
-from zrmtorch.module import Module
+from zrmtorch.module import SimpleModule
 import torch as tch
 
 
@@ -17,6 +17,6 @@ def update():
     Guard[(x < y | ((x < z) & (x < y)))] >> [next(x) == (x + 1)],
     Guard[~(x < y | (x < z))]            >> [next(x) == tch.Tensor([0, 0, 0])]
 
-module = Module(["x", "y", "z", "y0", "z0"], init, update, name="Counter")
+module = SimpleModule(["x", "y", "z", "y0", "z0"], init, update, name="Counter")
 module.to_html("/tmp/mod.html", open=True)
 
