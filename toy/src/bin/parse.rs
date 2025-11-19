@@ -37,7 +37,7 @@ struct Cli {
 }
 
 #[cfg(feature = "visual-html")]
-fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli, ctx: &Context) {
+fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli, ctx: &Context) -> Result<(), std::io::Error> {
     // TODO: enable output to cusom file/dir
     //if args.output.is_some() {
     //    let tmp = &args.output.unwrap();
@@ -67,14 +67,24 @@ fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli, ctx: &Context) {
             println!("Openning in web browser...");
             #[cfg(target_os = "macos")]
             {
-                process::Command::new("open").arg(path).spawn().unwrap();
+                process::Command::new("open")
+                    .arg(path)
+                    .spawn()
+                    .unwrap()
+                    .wait()?;
             }
             #[cfg(target_os = "linux")]
             {
-                process::Command::new("xdg-open").arg(path).spawn().unwrap();
+                process::Command::new("xdg-open")
+                    .arg(path)
+                    .spawn()
+                    .unwrap()
+                    .wait()?;
             }
         }
     }
+
+    Ok(())
 }
 
 #[cfg(not(feature = "visual-html"))]
@@ -103,7 +113,9 @@ fn main() {
     if let Some(method) = &args.dump {
         match method.as_str() {
             "html" | "HTML" => {
-                dump_to_html(&modules, &args, parser.ctx());
+                if let Err(e) = dump_to_html(&modules, &args, parser.ctx()) {
+                    eprint!("Failed dumping to HTML: {}", e);
+                }
             }
             _ => {
                 eprint!("Unknown `dump` method.");
