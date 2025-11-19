@@ -2,7 +2,7 @@ import sys
 from os.path import dirname, join as pathjoin
 sys.path.append(pathjoin(dirname(__file__), "../python"))
 
-from zrmtorch.module import Module
+from zrmtorch.module import SimpleModule
 import torch as tch
 
 
@@ -17,7 +17,7 @@ def fun(x, y):
     return zrm.ifthenelse(b, x, x + 1)
 
 
-module = Module.from_fn(fun)
+module = SimpleModule.from_fn(fun)
 module.to_html("/tmp/fn.html", open=True)
 
 

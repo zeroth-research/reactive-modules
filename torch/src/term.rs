@@ -18,8 +18,11 @@ pub enum TorchOp {
     Mul,
     Sub,
     Div,
-    // If-then-else
+    // Id term
+    Id,
+    // If-then-else and Choose
     Ite,
+    Choose,
     // Boolean terms
     //
     Neg,
@@ -50,7 +53,10 @@ impl TorchOp {
             "Div" => TorchOp::Div,
             "Sum" => TorchOp::Sum,
             // -----
+            "Id" => TorchOp::Id,
+            // -----
             "Ite" => TorchOp::Ite,
+            "Choose" => TorchOp::Choose,
             // -----
             "Neg" => TorchOp::Neg,
             "Or" => TorchOp::Or,
@@ -77,7 +83,9 @@ impl Clone for TorchOp {
             TorchOp::Mul => TorchOp::Mul,
             TorchOp::Div => TorchOp::Div,
             TorchOp::Sum => TorchOp::Sum,
+            TorchOp::Id => TorchOp::Id,
             TorchOp::Ite => TorchOp::Ite,
+            TorchOp::Choose => TorchOp::Choose,
             TorchOp::Neg => TorchOp::Neg,
             TorchOp::And => TorchOp::And,
             TorchOp::Or => TorchOp::Or,
@@ -99,7 +107,9 @@ impl fmt::Display for TorchOp {
             TorchOp::Mul => write!(f, "Mul"),
             TorchOp::Div => write!(f, "Div"),
             TorchOp::Sum => write!(f, "Sum"),
+            TorchOp::Id => write!(f, "Id"),
             TorchOp::Ite => write!(f, "Ite"),
+            TorchOp::Choose => write!(f, "Choose"),
             TorchOp::Neg => write!(f, "Neg"),
             TorchOp::And => write!(f, "And"),
             TorchOp::Or => write!(f, "Or"),
