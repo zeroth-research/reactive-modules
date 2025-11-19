@@ -92,8 +92,8 @@ impl Parser {
             }
         }
 
-        let latched = Wire::try_from_iter(latched.iter().map(|x| *x)).unwrap();
-        let next = Wire::try_from_iter(next.iter().map(|x| *x)).unwrap();
+        let latched = Wire::try_from_iter(latched.iter().copied()).unwrap();
+        let next = Wire::try_from_iter(next.iter().copied()).unwrap();
 
         let atoms_pair = inner.next().unwrap();
         let mut atoms = Vec::new();
@@ -304,7 +304,7 @@ impl Parser {
                         _ => panic!("Invalid operation"),
                     }
                 }
-                return terms;
+                terms
             }
             Rule::var | Rule::primed_var => {
                 let var = pair.as_str();
@@ -312,17 +312,17 @@ impl Parser {
                 let out = self.ctx.tmp_wire(ty);
                 let term = mk_id(wire, out).unwrap();
 
-                return vec![term];
+                vec![term]
             }
             Rule::boolconst => match pair.as_str() {
                 "true" => {
                     let out = self.ctx.tmp_wire(Type::Bool);
                     let term = mk_const(&Val::Bool(true), out);
                     match term {
-                        Ok(t) => return vec![t],
+                        Ok(t) => vec![t],
                         Err(e) => {
                             dbg!("ERROR: {}", e);
-                            return vec![];
+                            vec![]
                         }
                     }
                 }
@@ -330,7 +330,7 @@ impl Parser {
                     let out = self.ctx.tmp_wire(Type::Bool);
                     let term = mk_const(&Val::Bool(false), out);
                     match term {
-                        Ok(t) => return vec![t],
+                        Ok(t) => vec![t],
                         Err(e) => {
                             dbg!("ERROR: {}", e);
                             vec![]
@@ -396,6 +396,12 @@ impl Parser {
     }
 }
 
+impl Default for Parser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn create_logic_term(
     op: &str,
     wire_l: &Wire<Type>,
@@ -416,15 +422,13 @@ fn create_arith_term(
     wire_r: &Wire<Type>,
     write: Wire<Type>,
 ) -> Result<ToyTerm, &'static str> {
-    let term = match op {
+    match op {
         "+" => mk_add(Wire::concat(wire_l, wire_r), write),
         "-" => mk_sub(Wire::concat(wire_l, wire_r), write),
         "*" => mk_mul(Wire::concat(wire_l, wire_r), write),
         "/" => mk_div(Wire::concat(wire_l, wire_r), write),
-        _ => return Err("Invalid operation"),
-    };
-
-    term
+        _ => Err("Invalid operation"),
+    }
 }
 
 fn parse_decl_variables(pair: Pair<'_, Rule>) -> HashMap<&str, (Vec<Var>, Type)> {
