@@ -70,10 +70,8 @@ pub fn construct(
                 if !reads.len() == 1 {
                     return Err("Logical and/or must read two values");
                 }
-            } else {
-                if !reads.len() == 2 {
-                    return Err("Logical and/or must read two values");
-                }
+            } else if !reads.len() == 2 {
+                return Err("Logical and/or must read two values");
             }
 
             for ty in types {
