@@ -72,7 +72,7 @@ impl<D: Clone> Wire<D> {
 
     pub fn extend(&self, other: &Wire<D>) -> Wire<D> {
         let mut w = self.clone();
-        w.vec.extend(other.clone().into_iter());
+        w.vec.extend(other.clone());
         w
     }
 }
