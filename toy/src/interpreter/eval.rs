@@ -2,16 +2,12 @@ use crate::dtype::Type;
 use crate::instruction::{ArithOp, CmpOp, Instruction, LogicalOp};
 use crate::val::Val;
 
-pub fn eval(
-    op: Instruction,
-    read: &Vec<&Val>,
-    write: &mut Vec<&mut Val>,
-) -> Result<(), &'static str> {
+pub fn eval(op: Instruction, read: &[&Val], write: &mut [&mut Val]) -> Result<(), &'static str> {
     match op {
         Instruction::Const(val) => {
             // passing a wrong number of arguments is a programmatical error,
             // use asserts instead of returning Err()
-            debug_assert!(read.len() == 0);
+            debug_assert!(read.is_empty());
             debug_assert!(write.len() == 1);
             *write[0] = val;
         }
