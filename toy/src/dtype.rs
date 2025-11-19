@@ -9,8 +9,10 @@ pub enum Type {
     Bool,
 }
 
-impl Type {
-    pub fn from_str(ty: &str) -> Result<Self, &'static str> {
+impl std::str::FromStr for Type {
+    type Err = &'static str;
+
+    fn from_str(ty: &str) -> Result<Self, Self::Err> {
         match ty {
             "Real" => Ok(Type::Real),
             "NReal" => Ok(Type::NReal),

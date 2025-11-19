@@ -455,7 +455,12 @@ fn parse_var_block(pair: Pair<Rule>) -> (Vec<Var>, Type) {
     // intf_vars = { "interface" ~ var_list ~ ":" ~ type_ }
     let mut inner = pair.into_inner();
     let vars = parse_var_list(inner.next().unwrap());
-    let ty = Type::from_str(inner.next().unwrap().as_str()).expect("Invalid type");
+    let ty: Type = inner
+        .next()
+        .unwrap()
+        .as_str()
+        .parse()
+        .expect("Invalid type");
     (vars, ty)
 }
 
