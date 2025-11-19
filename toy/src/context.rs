@@ -4,7 +4,6 @@ use base::wire::Wire;
 
 use crate::dtype::Type;
 
-///
 // Context for building modules and atoms.
 // This is Toy-specific, it will be replaced in the future.
 pub struct Context {
@@ -22,7 +21,7 @@ impl Context {
     }
 
     pub fn get_name(&self, id: usize) -> Option<&str> {
-        self.names.get(&id).and_then(|s| Some(s.as_str()))
+        self.names.get(&id).map(|s| s.as_str())
     }
 
     pub fn get(&self, name: &str) -> Wire<Type> {
@@ -46,7 +45,7 @@ impl Context {
         if res.0 == new_id {
             // the entry was just inserted
             let _inserted = self.names.insert(new_id, name);
-            assert!(_inserted == None);
+            assert!(_inserted.is_none());
         }
         res
     }
@@ -96,5 +95,11 @@ impl Context {
         }
 
         Wire::from_iter(tmp)
+    }
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
     }
 }
