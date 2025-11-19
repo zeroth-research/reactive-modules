@@ -1,3 +1,3 @@
-pub mod parser;
+pub mod parsing;
 
-pub use parser::Parser;
+pub use parsing::Parser;
