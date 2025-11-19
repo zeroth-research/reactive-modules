@@ -206,10 +206,10 @@ where
 
             // gather information for creating edges
             for (wire, _) in term.writes() {
-                wire_written_by.entry(wire).or_insert(Vec::new()).push(id);
+                wire_written_by.entry(wire).or_default().push(id);
             }
             for (wire, _) in term.reads() {
-                wire_read_by.entry(wire).or_insert(Vec::new()).push(id);
+                wire_read_by.entry(wire).or_default().push(id);
             }
         }
 
@@ -228,20 +228,16 @@ where
 
             // gather information for creating edges
             for (wire, _) in term.writes() {
-                wire_written_by.entry(wire).or_insert(Vec::new()).push(id);
+                wire_written_by.entry(wire).or_default().push(id);
             }
             for (wire, _) in term.reads() {
-                wire_read_by.entry(wire).or_insert(Vec::new()).push(id);
+                wire_read_by.entry(wire).or_default().push(id);
             }
         }
     }
 
-    let wires: HashSet<usize> = HashSet::from_iter(
-        wire_written_by
-            .keys()
-            .chain(wire_read_by.keys())
-            .map(|x| *x),
-    );
+    let wires: HashSet<usize> =
+        HashSet::from_iter(wire_written_by.keys().chain(wire_read_by.keys()).copied());
 
     // map wire ids to nodes of already existing input values
     let mut input_nodes: HashMap<usize, String> = HashMap::new();
@@ -350,8 +346,8 @@ where
 {
     //let palette = ["#8ecae6", "#219ebc", "#ffb703", "#fb8500"];
 
-    let data = if descr.is_some() {
-        module_to_graph(module, descr.unwrap())
+    let data = if let Some(descriptor) = descr {
+        module_to_graph(module, descriptor)
     } else {
         module_to_graph(module, &DefaultDescriptor {})
     };
