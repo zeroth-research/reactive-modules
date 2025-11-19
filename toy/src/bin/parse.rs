@@ -48,8 +48,8 @@ fn dump_to_html(modules: &[ToyModule], args: &Cli, ctx: &Context) -> Result<(), 
 
     for (n, module) in modules.iter().enumerate() {
         let module_name = module.name();
-        let path = if module_name.is_some() {
-            format!("{}.{}.html", args.spec, module_name.unwrap())
+        let path = if let Some(name) = module_name {
+            format!("{}.{}.html", args.spec, name)
         } else {
             format!("{}.module-{}.html", args.spec, n)
         };
