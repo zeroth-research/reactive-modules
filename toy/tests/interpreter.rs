@@ -1,6 +1,6 @@
 use toy::context::Context;
 use toy::dtype::Type;
-use toy::interpreter::{Interpreter, eval};
+use toy::interpreter::Interpreter;
 
 mod example_module;
 
@@ -22,6 +22,6 @@ mod tests {
 
         // build module
         let module = build_module(&mut ctx);
-        let interpreter = Interpreter::new(&module);
+        let _interpreter = Interpreter::new(&module);
     }
 }
