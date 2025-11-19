@@ -1,9 +1,7 @@
-use std::collections::HashMap;
 use toy::context::Context;
 
 use base::atom::Atom;
 use base::module::Module;
-use base::wire::Wire;
 
 use toy::dtype::Type;
 use toy::instruction::Instruction;
@@ -72,7 +70,7 @@ pub fn build_module(ctx: &mut Context) -> Module<Type, Instruction> {
     Module::observable([latched, next], vec![atom]).expect("Failed building module")
 }
 
-pub fn build_prop(ctx: &mut Context) -> Vec<Term> {
+pub fn _build_prop(ctx: &mut Context) -> Vec<Term> {
     let reads = ctx.get_vars(&["x", "y"]);
     let wire16 = ctx.tmp_wire(Type::Bool).clone();
     let xeqy = mk_eq(reads, wire16.clone()).unwrap();

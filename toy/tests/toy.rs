@@ -24,7 +24,7 @@ mod tests {
         let module = build_module(&mut ctx);
         dbg!(module);
 
-        let _prop = build_prop(&mut ctx);
+        let _prop = _build_prop(&mut ctx);
         //dbg!(prop);
     }
 }
