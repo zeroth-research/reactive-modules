@@ -142,8 +142,8 @@ struct Cli {
 fn dump_to_html(modules: &[Module<DType, IType>], args: &Cli) -> Result<(), std::io::Error> {
     for (n, module) in modules.iter().enumerate() {
         let module_name = module.name();
-        let path = if module_name.is_some() {
-            format!("{}.{}.html", args.spec, module_name.unwrap())
+        let path = if let Some(name) = module_name {
+            format!("{}.{}.html", args.spec, name)
         } else {
             format!("{}.module-{}.html", args.spec, n)
         };
