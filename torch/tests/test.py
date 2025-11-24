@@ -1,5 +1,6 @@
 import sys
 from os.path import dirname, join as pathjoin
+
 sys.path.append(pathjoin(dirname(__file__), "../python"))
 
 from bindings.term import Var
@@ -43,11 +44,7 @@ print("--- Building atom ---\n")
 inputs = [inp.wrapped_term() for inp in inputs if isinstance(inp, Var)]
 outputs = [out.wrapped_term() for out in outputs if isinstance(out, Var)]
 atom = bindings.libzrm_torch.WrappedAtom(
-    ctx.context_,
-    inputs,
-    outputs,
-    [],
-    [t.term_ for t in terms]
+    ctx.context_, inputs, outputs, [], [t.term_ for t in terms]
 )
 
 atom.dbg()
