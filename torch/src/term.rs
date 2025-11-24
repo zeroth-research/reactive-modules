@@ -5,15 +5,17 @@ use std::fmt;
 pub enum TorchOp {
     // constants are special terms
     Const(tch::Tensor),
-    // comparisons
+    // comparisons (element-wise)
     Eq,
     Neq,
     Lt,
     Le,
     Gt,
     Ge,
-    // arithmetic
+    // element-wise product and sum
+    Prod,
     Sum,
+    // standard arithmetic
     Add,
     Mul,
     Sub,
@@ -23,8 +25,9 @@ pub enum TorchOp {
     // If-then-else and Choose
     Ite,
     Choose,
-    // Boolean terms
-    //
+    // Boolean operations
+    // Tensor([1]) is true and Tensor([0]) is false atm.
+    // We might want to add explicit Bool type
     Neg,
     Or,
     And,
