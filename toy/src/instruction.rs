@@ -80,3 +80,25 @@ impl fmt::Display for Instruction {
         }
     }
 }
+
+impl std::str::FromStr for Instruction {
+    type Err = String;
+
+    fn from_str(ins: &str) -> Result<Self, Self::Err> {
+        match ins {
+            "Id" => Ok(Instruction::Id),
+            "Ite" => Ok(Instruction::Ite),
+            "Logical::And" => Ok(Instruction::Logical(LogicalOp::And)),
+            "Logical::Or" => Ok(Instruction::Logical(LogicalOp::Or)),
+            "Logical::Not" => Ok(Instruction::Logical(LogicalOp::Not)),
+            "Arith::Add" => Ok(Instruction::Arith(ArithOp::Add)),
+            "Arith::Sub" => Ok(Instruction::Arith(ArithOp::Sub)),
+            "Arith::Mul" => Ok(Instruction::Arith(ArithOp::Mul)),
+            "Arith::Div" => Ok(Instruction::Arith(ArithOp::Div)),
+            "Cmp::Eq" => Ok(Instruction::Cmp(CmpOp::Eq)),
+            "Cmp::Le" => Ok(Instruction::Cmp(CmpOp::Le)),
+            "Cmp::Lt" => Ok(Instruction::Cmp(CmpOp::Lt)),
+            _ => Err(format!("Cannot convert `{}` to Instruction", ins)),
+        }
+    }
+}
