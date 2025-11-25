@@ -1,0 +1,105 @@
+// right now we support only in prenex form
+start: _modules
+
+
+///////////////////////////////////////////////////////////
+/// Module
+///////////////////////////////////////////////////////////
+_modules: module+
+
+module: "module" name "{" module_body "}"
+module_body: decl_variables atoms
+
+decl_variables: ext_vars intf_vars | intf_vars ext_vars 
+ext_vars: "external" var_list ":" type
+intf_vars: "interface" var_list ":" type
+
+var_list: var ("," var)*
+var: name
+primed_var: name"'"
+type: name
+
+
+///////////////////////////////////////////////////////////
+/// Atoms
+///////////////////////////////////////////////////////////
+atoms: atom+
+atom: "atom" name "{" atom_body "}"
+atom_body: atom_variables atom_funs
+atom_funs: atom_init? atom_update | atom_update atom_init 
+
+atom_variables: atom_controls (atom_reads | atom_awaits)* | (atom_reads | atom_awaits)* | atom_controls 
+atom_controls: "controls " var_list
+atom_reads: "reads" var_list
+atom_awaits: "awaits" var_list
+atom_init: "init" "{" _guarded_command_list "}"
+atom_update: "update" "{" _guarded_command_list "}"
+
+_guarded_command_list: guarded_command+
+guarded_command: "[]" boolexpr "->" assignments
+
+assignments: assign (";" assign)* ";"?
+assign: primed_var ":=" expr
+
+?expr: arithexpr | boolexpr
+
+
+///////////////////////////////////////////////////////////
+/// Boolexpr
+///////////////////////////////////////////////////////////
+
+boolexpr: _bool_1 (_bool_1)* 
+
+//// logical AND and OR are called land and lor to avoid
+//// conflicts with python keywords
+_bool_1: land | lor
+?land: _bool_2 "&&" _bool_2 | _bool_2 "\and" _bool_2 | _bool_2
+?lor: _bool_2 "||"  _bool_2 | _bool_2 "\or"  _bool_2 | _bool_2
+
+_bool_2: neg | _bool_3
+neg: "!" _bool_3 | "~" _bool_3
+
+_bool_3: boolconst | cmp | "(" _bool_1 ")"
+cmp: arithexpr cmp_eq arithexpr | arithexpr cmp_lt arithexpr | arithexpr cmp_gt arithexpr | arithexpr cmp_le arithexpr | arithexpr cmp_ge arithexpr 
+cmp_le: "<=" | "\le"
+cmp_ge: ">=" | "\ge"
+cmp_lt: "<" | "\lt"
+cmp_gt: ">" | "\gt"
+cmp_eq: "=" | "\eq"
+cmp_neq: "!=" | "\neq"
+
+boolconst: const_true | const_false
+const_true: "true"
+const_false: "false"
+
+///////////////////////////////////////////////////////////
+/// Arithexpr
+///////////////////////////////////////////////////////////
+
+arithexpr: _arithexpr_1 (_arithexpr_1)* 
+
+_arithexpr_1: mul | div
+?mul: _arithexpr_2 "*"  _arithexpr_2 | _arithexpr_2
+?div: _arithexpr_2 "/"  _arithexpr_2 | _arithexpr_2
+
+_arithexpr_2: add | sub
+?add: _arithexpr_3 "+"  _arithexpr_3 | _arithexpr_3
+?sub: _arithexpr_3 "-"  _arithexpr_3 | _arithexpr_3
+
+_arithexpr_3: minus | _arithexpr_4
+minus: "-" _arithexpr_3
+
+_arithexpr_4: constant | var | primed_var | "(" _arithexpr_1 ")"
+
+constant: constint | constfloat
+
+constfloat: FLOAT
+constint: INT
+
+name: NAME
+
+%import common.FLOAT
+%import common.SIGNED_INT -> INT
+%import common.CNAME -> NAME
+%import common.WS
+%ignore WS
