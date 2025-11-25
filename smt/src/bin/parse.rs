@@ -103,4 +103,3 @@ fn main() {
     //TODO: call the SMT parser (which will be in smt/src/smt.rs) and generate the SMT file
     smt::smt::parse_modules(&modules);
 }
-

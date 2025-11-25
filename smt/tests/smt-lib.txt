@@ -1,0 +1,71 @@
+; ========================================
+; MODULE <unnamed>
+; ========================================
+
+; =====================
+; = Wire Declarations =
+; =====================
+
+; Latched Wires:
+(declare-fun w3 () Real)
+(declare-fun w4 () Int)
+(declare-fun w5 () Bool)
+(declare-fun w0 () Real)
+(declare-fun w1 () Int)
+(declare-fun w2 () Bool)
+
+; Next Wires:
+(declare-fun w9 () Real)
+(declare-fun w10 () Int)
+(declare-fun w11 () Bool)
+(declare-fun w6 () Real)
+(declare-fun w7 () Int)
+(declare-fun w8 () Bool)
+
+; Temporary Wires:
+(declare-fun w12 () Real)
+(declare-fun w13 () Int)
+(declare-fun w14 () Bool)
+(declare-fun w15 () Real)
+(declare-fun w16 () Real)
+(declare-fun w17 () Real)
+(declare-fun w18 () Real)
+(declare-fun w19 () Bool)
+(declare-fun w20 () Int)
+(declare-fun w21 () Bool)
+(declare-fun w22 () Bool)
+(declare-fun w23 () Bool)
+(declare-fun w24 () Bool)
+
+; ==============================
+; ATOM 0:
+; ==============================
+
+; ==============
+; = Init Terms =
+; ==============
+
+(assert (= w12 3.14))
+(assert (= w13 42))
+(assert (= w14 true))
+(assert (= w6 (+ w9 w12)))
+(assert (= w7 (- w10 w13)))
+(assert (= w8 (and w11 w14)))
+
+; ================
+; = Update Terms =
+; ================
+
+(assert (= w15 4.2))
+(assert (= w16 12.3))
+(assert (= w17 (* w0 w15)))
+(assert (= w6 (/ w16 w17)))
+(assert (= w7 w1))
+(assert (= w18 50.05))
+(assert (= w19 (< w0 w18)))
+(assert (= w20 0))
+(assert (= w21 (= w1 w20)))
+(assert (= w22 (or w19 w21)))
+(assert (= w23 (not w2)))
+(assert (= w24 false))
+(assert (= w8 (ite w22 w23 w24)))
