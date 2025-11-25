@@ -1,0 +1,9 @@
+[package]
+name = "smt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base = { path = "../base" }
+visual = { path = "../visual", features = ["html"] }
+clap = { version = "4.5.51", features = ["derive"] }
