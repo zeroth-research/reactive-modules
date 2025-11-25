@@ -1,0 +1,26 @@
+[project]
+name = "zrth"
+requires-python = ">=3.11,<3.14"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+dynamic = ["version"]
+description = "Zeroth reactive modules Python interface"
+readme = "README.md"
+
+dependencies = [
+  "maturin==1.9",
+  "pysmt>=0.9.6",
+]
+
+[build-system]
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "zrth._zrth"
+
