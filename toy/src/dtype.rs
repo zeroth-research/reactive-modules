@@ -8,14 +8,14 @@ pub enum Type {
 }
 
 impl std::str::FromStr for Type {
-    type Err = &'static str;
+    type Err = String;
 
     fn from_str(ty: &str) -> Result<Self, Self::Err> {
         match ty {
             "Real" => Ok(Type::Real),
             "Int" => Ok(Type::Int),
             "Bool" => Ok(Type::Bool),
-            _ => Err("Invalid Type (cannot convert from this str)"),
+            _ => Err(format!("Cannot convert `{}` to Type", ty)),
         }
     }
 }
