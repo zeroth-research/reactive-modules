@@ -446,12 +446,12 @@ impl Descriptor<DType, IType> for Context {
     }
 
     fn describe_wire_id(&self, id: usize, how: DescriptionContext) -> String {
-    if matches!(how, DescriptionContext::Node) {
-        self.wire_name(id)
-    } else {
-        format!("w{}", id)
+        if matches!(how, DescriptionContext::Node) {
+            self.wire_name(id)
+        } else {
+            format!("w{}", id)
+        }
     }
-}
 }
 
 
