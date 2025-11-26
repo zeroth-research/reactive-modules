@@ -14,7 +14,7 @@ pub fn eval(op: Instruction, read: &[&Val], write: &mut [&mut Val]) -> Result<()
         Instruction::Id => {
             debug_assert!(read.len() == 1);
             debug_assert!(write.len() == 1);
-            *write[0] = *read[0];
+            *write[0] = read[0].clone();
         }
         // Comparisons
         Instruction::Cmp(op) => {
@@ -59,9 +59,9 @@ pub fn eval(op: Instruction, read: &[&Val], write: &mut [&mut Val]) -> Result<()
                 && let Val::Bool(cond) = read[0]
             {
                 if *cond {
-                    *write[0] = *read[1];
+                    *write[0] = read[1].clone();
                 } else {
-                    *write[0] = *read[2];
+                    *write[0] = read[2].clone();
                 }
             } else {
                 return Err(
