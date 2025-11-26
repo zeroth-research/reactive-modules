@@ -26,10 +26,10 @@ pub fn construct(
             }
         }
         Instruction::Cmp(_) => {
-            if !reads.len() == 2 {
+            if reads.len() != 2 {
                 return Err("Comparison must read two values");
             }
-            if !writes.len() == 1 {
+            if writes.len() != 1 {
                 return Err("Comparison must write 1 value");
             }
             let out = writes.iter().next().unwrap();
@@ -38,10 +38,10 @@ pub fn construct(
             }
         }
         Instruction::Ite => {
-            if !writes.len() == 1 {
+            if writes.len() != 1 {
                 return Err("Logical operation must write one wire");
             }
-            if !reads.len() == 3 {
+            if reads.len() != 3 {
                 return Err("Ite must read three wires");
             }
 
@@ -60,17 +60,17 @@ pub fn construct(
         }
 
         Instruction::Logical(op) => {
-            if !writes.len() == 1 {
+            if writes.len() != 1 {
                 return Err("Logical operation must write one wire");
             }
 
             let types: Vec<&Type> = reads.iter().map(|(_, ty)| ty).collect();
 
             if matches!(op, LogicalOp::Not) {
-                if !reads.len() == 1 {
+                if reads.len() != 1 {
                     return Err("Logical and/or must read two values");
                 }
-            } else if !reads.len() == 2 {
+            } else if reads.len() != 2 {
                 return Err("Logical and/or must read two values");
             }
 
@@ -81,10 +81,10 @@ pub fn construct(
             }
         }
         Instruction::Id => {
-            if !reads.len() == 1 {
+            if reads.len() != 1 {
                 return Err("Id must read one wire");
             }
-            if !writes.len() == 1 {
+            if writes.len() != 1 {
                 return Err("Id must write one wire");
             }
             let in_ = reads.iter().next().unwrap();
@@ -94,10 +94,10 @@ pub fn construct(
             }
         }
         Instruction::Arith(_) => {
-            if !reads.len() == 2 {
+            if reads.len() != 2 {
                 return Err("Add/Sub/Mul/Div must read two wires");
             }
-            if !writes.len() == 1 {
+            if writes.len() != 1 {
                 return Err("Sum must write one wire");
             }
             let out_ = writes.iter().next().unwrap();
