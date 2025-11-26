@@ -51,7 +51,7 @@ pub fn construct(
                 return Err("Ite first argument must be Bool");
             }
             if *types[1] != *types[2] {
-                return Err("Ite second and thrid arguments must have the same type");
+                return Err("Ite second and third arguments must have the same type");
             }
             let out_ty = writes.iter().next().unwrap().1;
             if *out_ty != *types[1] {
