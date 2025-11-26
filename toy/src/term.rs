@@ -58,7 +58,34 @@ pub fn construct(
                 return Err("Ite must write the same type as the second and third arguments");
             }
         }
+        Instruction::Choose => {
+            if writes.len() != 1 {
+                return Err("Logical operation must write one wire");
+            }
 
+            if reads.is_empty() || !reads.len().is_multiple_of(2) {
+                return Err("Choose must read non-zero even number of wires");
+            }
+
+            // even types must be bool
+            let types = reads.wires().map(Wire::dtype).collect::<Vec<&Type>>();
+            for (n, ty) in types.iter().enumerate() {
+                if n % 2 == 0 {
+                    if **ty != Type::Bool {
+                        return Err("Even types in Choose must be Bool");
+                    }
+                } else if *ty != types[1] {
+                    return Err("Odd types in Choose must be all the same");
+                }
+            }
+
+            // odd types must be the same
+            // out type must be the same as odd types
+            let out_ty = writes.wires().next().unwrap().dtype();
+            if *out_ty != *types[1] {
+                return Err("Choose must write the same type as the odd arguments");
+            }
+        }
         Instruction::Logical(op) => {
             if writes.len() != 1 {
                 return Err("Logical operation must write one wire");
