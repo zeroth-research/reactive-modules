@@ -1,104 +1,134 @@
-use crate::itype::ArithOp;
-use crate::{dtype::DType, itype::IType};
-use base::{atom::Atom, module::Module, term::Term, wire::Wire};
+use crate::{dtype::DType, itype::IType, itype::Val, itype::ArithOp, itype::LogicalOp, itype::CmpOp};
+use base::{atom::Atom, module::Module, term::Term};
 use visual::html::{DescriptionContext, Descriptor};
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::fmt::Write;
+use std::collections::HashMap;
 
 
-pub struct SmtDescriptor {
-    // Map from numeric wire index -> display name (e.g. "x0" or "x0'").
+pub struct Context {
     wire_names: RefCell<HashMap<usize, String>>,
-    // Cache the module wires so describe_input/describe_output can look up wire dtypes.
-    module_wires: RefCell<Option<Wire<DType>>>,
-    id_to_name: HashMap<usize, String>,
+    wire_dtypes: HashMap<usize, DType>,
 }
 
-impl SmtDescriptor {
+impl Context {
     pub fn new(module: &Module<DType, IType>) -> Self {
-        let d = SmtDescriptor {
+        let mut wire_dtypes = HashMap::new();
+        
+        // Cache all wire dtypes from latched and next
+        for (wire_id, dtype) in module.wire()[0].iter() {
+            wire_dtypes.insert(wire_id, *dtype);
+        }
+        for (wire_id, dtype) in module.wire()[1].iter() {
+            wire_dtypes.insert(wire_id, *dtype);
+        }
+
+        let d = Context {
             wire_names: RefCell::new(HashMap::new()),
-            module_wires: RefCell::new(None),
-            id_to_name: HashMap::new(),
+            wire_dtypes,
         };
-        // Cache module wires for describe_input/describe_output
-        *d.module_wires.borrow_mut() = Some(module.wire()[0].clone());
-
-        // Build wire name map first so describe_wire_id can use it.
         d.populate_wire_names(module);
-
         d
     }
 
-    pub fn get_name(&self, id: usize) -> Option<&str> {
-        self.id_to_name.get(&id).and_then(|s| Some(s.as_str()))
+    fn trace_wire_expression(&self, wire_id: usize, terms: &[Term<DType, IType>]) -> String {
+        let term = terms
+            .iter()
+            .find(|t| t.writes().iter().any(|(w, _)|w == wire_id));
+
+        match term {
+            None => {
+                // No term writes to this wire; it must be an input or external wire.
+                return self.wire_name(wire_id);
+            }
+            Some(term) => {
+                // Wire is written by a term, expand based on operation type.
+                match term.itype() {
+                    IType::Const(val) => {
+                        return format!("{}", val);
+                    }
+                    IType::Arith(op) => {
+                        let read_wires: Vec<String> = term
+                            .reads()
+                            .iter()
+                            .map(|(w, _)| self.trace_wire_expression(w, terms))
+                            .collect();
+                        let op_str = match op {
+                            ArithOp::Add => "+",
+                            ArithOp::Sub => "-",
+                            ArithOp::Mul => "*",
+                            ArithOp::Div => "/",
+                        };
+                        return format!("({} {} {})",
+                            read_wires[0],
+                            op_str,
+                            read_wires[1]
+                        );
+                    }
+                    IType::Logical(op) => {
+                        let read_wires: Vec<String> = term
+                            .reads()
+                            .iter()
+                            .map(|(w, _)| self.trace_wire_expression(w, terms))
+                            .collect();
+                        match op {
+                            LogicalOp::Not => {
+                                return format!("!{}", read_wires[0]);
+                            }
+                            LogicalOp::And => {
+                                return format!("({} ∧ {})", read_wires[0], read_wires[1]);
+                            }
+                            LogicalOp::Or => {
+                                return format!("({} ∨ {})", read_wires[0], read_wires[1]);
+                            }
+                        }
+                    }
+                    IType::Cmp(op) => {
+                        let read_wires: Vec<String> = term
+                            .reads()
+                            .iter()
+                            .map(|(w, _)| self.trace_wire_expression(w, terms))
+                            .collect();
+                        let op_str = match op {
+                            CmpOp::Eq => "==",
+                            CmpOp::Lt => "<",
+                            CmpOp::Le => "<=",
+                            CmpOp::Gt => ">",
+                            CmpOp::Ge => ">=",
+                        };
+                        return format!("({} {} {})",
+                            read_wires[0],
+                            op_str,
+                            read_wires[1]
+                        );
+                    }
+                    IType::Id => {
+                        // Identity: just pass through the input
+                        let input_id = term.reads().iter().next().unwrap().0;
+                        return self.trace_wire_expression(input_id, terms);
+                    }
+                    IType::Cond => {
+                        // Ternary: condition ? true_val : false_val
+                        let cond_id = term.reads().iter().next().unwrap().0;
+                        let true_id = term.reads().iter().nth(1).unwrap().0;
+                        let false_id = term.reads().iter().nth(2).unwrap().0;
+                        
+                        let cond_expr = self.trace_wire_expression(cond_id, terms);
+                        let true_expr = self.trace_wire_expression(true_id, terms);
+                        let false_expr = self.trace_wire_expression(false_id, terms);
+                        
+                        return format!("{} ? {} : {}", cond_expr, true_expr, false_expr);
+                    }
+                }
+            }
+        }
     }
 
     fn wire_name(&self, id: usize) -> String {
-        if let Some(name) = self.get_name(id) {
-            return name.into();
-        }
-        format!("w{id}")
-    }
-
-    fn dump_atom_section(&self, atom: &Atom<DType, IType>, sec: &str, fmt: &HashMap<&str, &str>) -> String {
-        let mut s = String::new();
-
-        match sec {
-            "init" => {
-                for term in atom.init().iter() {
-                    write!(s, "  ").unwrap();
-                    writeln!(s, "{}", self.dump_term(term, fmt)).unwrap();
-                }
-            }
-            "update" => {
-                for term in atom.update().iter() {
-                    write!(s, "  ").unwrap();
-                    writeln!(s, "{}", self.dump_term(term, fmt)).unwrap();
-                }
-            }
-            _ => panic!("Invalid section"),
-        }
-
-        s
-    }
-
-    fn dump_term(&self, term: &Term<DType, IType>, fmt: &HashMap<&str, &str>) -> String {
-        let empty_str = "";
-        let fmt_emph = fmt.get("EMPH_START").unwrap_or(&empty_str);
-        let fmt_emph_end = fmt.get("EMPH_END").unwrap_or(&empty_str);
-        let color_term_lhs = fmt.get("COLOR_TERM_LHS").unwrap_or(&empty_str);
-        let color_term_op = fmt.get("COLOR_TERM_OP").unwrap_or(&empty_str);
-        let color_clr = fmt.get("COLOR_CLEAR").unwrap_or(&empty_str);
-
-        let reads = term
-            .reads()
-            .iter()
-            .map(|(id, _)| self.wire_name(id))
-            .collect::<Vec<String>>()
-            .join(", ");
-
-        let writes = term
-            .writes()
-            .iter()
-            .map(|(id, _)| self.wire_name(id))
-            .collect::<Vec<String>>()
-            .join(", ");
-
-        format!(
-            "{color_term_lhs}{writes}{color_clr} = {color_term_op}{fmt_emph}{}{fmt_emph_end}{color_clr}({reads})",
-            term.itype()
-        )
-    }
-
-    // TODO: improve with term context
-    fn describe_term_flow_with_context(
-        &self,
-        term: &Term<DType, IType>,
-        _atom_terms: &[Term<DType, IType>],
-    ) -> String {
-        format!("Term: {}", term)
+        self.wire_names
+            .borrow()
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| format!("w{}", id))
     }
 
     fn populate_wire_names(&self, module: &Module<DType, IType>) {
@@ -109,32 +139,34 @@ impl SmtDescriptor {
         let mut map = self.wire_names.borrow_mut();
         map.clear();
 
-        // Assign names by position in the latched vector: x0, x1, ...
-        for (pos, (idx, _dtype)) in latched.iter().enumerate() {
-            map.insert(idx, format!("x{}", pos));
+        // Name by wire ID: w0→x0, w1→x1, w2→x2, w3→x3, w4→x4, w5→x5 ...
+        for (wire_id, _dtype) in latched.iter() {
+            map.insert(wire_id, format!("x{}", wire_id));
         }
 
-        // For the next wires, assign xN' for the corresponding position
-        for (pos, (nidx, _dtype)) in next.iter().enumerate() {
-            map.insert(nidx, format!("x{}'", pos));
+        // Name by wire ID offset: w6→x0', w7→x1', w8→x2', w9→x3', w10→x4', w11→x5'
+        for (wire_id, _dtype) in next.iter() {
+            // Assuming next wires are offset by the number of latched wires
+            let base_id = wire_id - latched.len();
+            map.insert(wire_id, format!("x{}'", base_id));
         }
     }
 }
 
-impl Descriptor<DType, IType> for SmtDescriptor {
+impl Descriptor<DType, IType> for Context {
     fn describe_module(&self, module: &Module<DType, IType>, _how: DescriptionContext) -> String {
         // Describe the module with its variables classified into prvt, intf, extl
         let prvt = module.prvt()[0]
             .iter()
-            .map(|(wire_id, _)| self.describe_wire_id(wire_id, DescriptionContext::Inline))
+            .map(|(wire_id, _)| self.wire_name(wire_id))
             .collect::<Vec<String>>();
         let intf = module.intf()[0]
             .iter()
-            .map(|(wire_id, _)| self.describe_wire_id(wire_id, DescriptionContext::Inline))
+            .map(|(wire_id, _)| self.wire_name(wire_id))
             .collect::<Vec<String>>();
         let extl = module.extl()[0]
             .iter()
-            .map(|(wire_id, _)| self.describe_wire_id(wire_id, DescriptionContext::Inline))
+            .map(|(wire_id, _)| self.wire_name(wire_id))
             .collect::<Vec<String>>();
 
         // Now describe each atom in the module
@@ -155,76 +187,42 @@ impl Descriptor<DType, IType> for SmtDescriptor {
     }
 
     fn describe_atom(&self, atom: &Atom<DType, IType>, how: DescriptionContext) -> String {
-        let mut html = String::new();
+        let mut atom_header = String::new();
+        let mut atom_body = String::new();
+        let mut atom_footer = String::new();
 
-        // Header
         if matches!(how, DescriptionContext::Standalone) {
-            html.push_str("<h2>Atom</h2>\n");
+            atom_header.push_str("Atom\n");
         }
 
-        // Name
         let ctrl_wires: Vec<String> = atom
             .ctrl()
             .iter()
-            .map(|(w, _)| self.describe_wire_id(w, DescriptionContext::Inline))
+            .map(|(w, _)| self.wire_name(w))
             .collect();
         let wait_wires: Vec<String> = atom
             .wait()
             .iter()
-            .map(|(w, _)| self.describe_wire_id(w, DescriptionContext::Inline))
+            .map(|(w, _)| self.wire_name(w))
             .collect();
         let read_wires: Vec<String> = atom
             .read()
             .iter()
-            .map(|(w, _)| self.describe_wire_id(w, DescriptionContext::Inline))
+            .map(|(w, _)| self.wire_name(w))
             .collect();
 
-        // Helper to format wire lists
-        let fmt_list = |v: Vec<String>| {
-            if v.is_empty() {
-                "<em>(none)</em>".into()
-            } else {
-                v.join(", ").to_string()
-            }
-        };
-
-        let ctrl_html = fmt_list(ctrl_wires);
-        let wait_html = fmt_list(wait_wires);
-        let read_html = fmt_list(read_wires);
-
-        html.push_str(format!(
-            "<table><tr><td><strong>ctrl</strong></td><td>{}</td></tr><tr><td><strong>wait</strong></td><td>{}</td></tr><tr><td><strong>read</strong></td><td>{}</td></tr></table>",
-            ctrl_html, wait_html, read_html
+        atom_body.push_str(format!(
+            "<table><tr><td><strong>ctrl</strong></td><td><code>{}</code></td></tr><tr><td><strong>wait</strong></td><td><code>{}</code></td></tr><tr><td><strong>read</strong></td><td><code>{}</code></td></tr></table>",
+            ctrl_wires.join(", "), wait_wires.join(", "), read_wires.join(", ")
         ).as_str());
 
-        html.push_str("<h4>Init</h4>");
-
-        let next_wires: HashSet<usize> = atom.ctrl().iter().map(|p| p.0).collect();
-        for term in atom.init() {
-            // consider only output terms (the rest will be shown by
-            // `describe_term_flow_with_context`)
-            if term.writes().iter().any(|w| next_wires.contains(&w.0)) {
-                html.push_str(
-                    self.describe_term_flow_with_context(term, atom.init())
-                        .as_str(),
-                );
-                html.push_str("</br>\n");
-            }
-        }
-
-        html.push_str("<h4>Update</h4>");
-        for term in atom.update() {
-            if term.writes().iter().any(|w| next_wires.contains(&w.0)) {
-                html.push_str(
-                    self.describe_term_flow_with_context(term, atom.update())
-                        .as_str(),
-                );
-                html.push_str("</br>\n");
-            }
-        }
-
-        html
-
+        atom_footer.push_str(&self.describe_atom_section(atom, "init", DescriptionContext::Inline));
+        atom_footer.push_str(&self.describe_atom_section(atom, "update", DescriptionContext::Inline));
+        
+        format!(
+            "<h2>{}</h2><div>{}</div><div>{}</div>",
+            atom_header, atom_body, atom_footer
+        )
     }
 
     fn describe_atom_section(&self, atom: &Atom<DType, IType>, sec: &str, how: DescriptionContext) -> String {
@@ -236,17 +234,32 @@ impl Descriptor<DType, IType> for SmtDescriptor {
             };
         }
 
-        let fmt = HashMap::from([
-            ("BOLD_START", "<b>"),
-            ("BOLD_END", "</b>"),
-            ("COLOR_TERM_LHS", "<span style=\"color: #106EE2\">"),
-            ("COLOR_TERM_OP", "<span style=\"color: #E88914\">"),
-            ("COLOR_CLEAR", "</span>"),
-        ]);
+        let section_header = match sec {
+            "init" => "Init",
+            "update" => "Update",
+            _ => panic!("Invalid section"),
+        };
+
+        let terms = match sec {
+            "init" => atom.init(),
+            "update" => atom.update(),
+            _ => panic!("Invalid section"),
+        };
+
+        let section_body = atom.ctrl()
+            .iter()
+            .map(|(output_wire, _)| {
+                let expr = self.trace_wire_expression(output_wire, terms);
+                let wire_name = self.wire_name(output_wire);
+                format!("<code>{} → {}</code>", expr, wire_name)
+            })
+            .collect::<Vec<String>>()
+            .join("<br>\n");
+
         format!(
-            "<h2>Atom {}</h2><pre>\n{}</pre>",
-            sec,
-            self.dump_atom_section(atom, sec, &fmt)
+            "<h3>{}</h3><p>{}</p>",
+            section_header,
+            section_body
         )
     }
 
@@ -255,23 +268,187 @@ impl Descriptor<DType, IType> for SmtDescriptor {
             return term.itype().to_string();
         }
 
+        let mut term_header;
+        let term_body;
+        let mut term_footer = String::new();
+
+        for wire in term.writes() {
+            let wire_id = wire.0;
+            let wire_name = self.wire_name(wire_id);
+            let wire_dtype = &wire.1;
+            term_footer.push_str(&format!(
+                "<strong>writes</strong> <code>→</code> <small>{} (w{} : {})</small></p>",
+                wire_name, wire_id, wire_dtype
+            ));
+        }
+        for wire in term.reads() {
+            let wire_id = wire.0;
+            let wire_name = self.wire_name(wire_id);
+            let wire_dtype = &wire.1;
+            term_footer.push_str(&format!(
+                "<strong>reads</strong> <code>←</code> <small>{} (w{} : {})</small></p>",
+                wire_name, wire_id, wire_dtype
+            ));
+        }
+
         match term.itype() {
             IType::Const(val) => {
-                return format!("<h3>Constant</h3><p><code>{}</code> → <code>w{}</code></p><hr>",
+                term_header = format!("Constant");
+                term_body = format!("<code>{}</code> → <code>{}</code>",
                     val,
-                    term.writes().iter().next().map(|(idx, _)| idx).unwrap()
+                    self.wire_name(term.writes().iter().next().map(|(idx, _)| idx).unwrap())
+                );
+                match val {
+                    Val::None => {},
+                    Val::Real(_v) => {
+                        term_header.extend(" (Real)".chars());
+                    }
+                    Val::Int(_v) => {
+                        term_header.extend(" (Int)".chars());
+                    }
+                    Val::Bool(_v) => {
+                        term_header.extend(" (Bool)".chars());
+                    }
+                }
+            }
+            IType::Arith(val) => {
+                let op = match val {
+                    ArithOp::Add => {
+                        term_header = format!("Addition");
+                        "+"
+                    }
+                    ArithOp::Sub => {
+                        term_header = format!("Subtraction");
+                        "-"
+                    }
+                    ArithOp::Mul => {
+                        term_header = format!("Multiplication");
+                        "*"
+                    }
+                    ArithOp::Div => {
+                        term_header = format!("Division");
+                        "/"
+                    }
+                };
+                term_body = format!("<code>{}</code> {} <code>{}</code> → <code>{}</code>",
+                    self.wire_name(term.reads().iter().next().map(|(idx, _)| idx).unwrap()),
+                    op,
+                    self.wire_name(term.reads().iter().nth(1).map(|(idx, _)| idx).unwrap()),
+                    self.wire_name(term.writes().iter().next().map(|(idx, _)| idx).unwrap())
                 );
             }
-            IType::Arith(ArithOp::Add) => {
-                return format!("<h3>Addition</h3><p><code>w{}</code> + <code>w{}</code> → <code>w{}</code></p><hr>",
-                    term.reads().iter().next().map(|(idx, _)| idx).unwrap(),
-                    term.reads().iter().nth(1).map(|(idx, _)| idx).unwrap(),
-                    term.writes().iter().next().map(|(idx, _)| idx).unwrap()
+            IType::Logical(val) => {
+                let op = match val {
+                    LogicalOp::Not => {
+                        term_header = format!("Logical Not");
+                        "!"
+                    }
+                    LogicalOp::And => {
+                        term_header = format!("Logical And");
+                        "∧"
+                    }
+                    LogicalOp::Or => {
+                        term_header = format!("Logical Or");
+                        "∨"
+                    }
+                };
+                if let LogicalOp::Not = val {
+                    term_body = format!("{} <code>{}</code> → <code>{}</code>",
+                        op,
+                        self.wire_name(term.reads().iter().next().map(|(idx, _)| idx).unwrap()),
+                        self.wire_name(term.writes().iter().next().map(|(idx, _)| idx).unwrap())
+                    );
+                } else {
+                    term_body = format!("<code>{}</code> {} <code>{}</code> → <code>{}</code>",
+                        self.wire_name(term.reads().iter().next().map(|(idx, _)| idx).unwrap()),
+                        op,
+                        self.wire_name(term.reads().iter().nth(1).map(|(idx, _)| idx).unwrap()),
+                        self.wire_name(term.writes().iter().next().map(|(idx, _)| idx).unwrap())
+                    );
+                }
+            }
+            IType::Cmp(val) => {
+                let op = match val {
+                    CmpOp::Eq => {
+                        term_header = format!("Equal");
+                        "=="
+                    }
+                    CmpOp::Lt => {
+                        term_header = format!("Less Than");
+                        "<"
+                    }
+                    CmpOp::Le => {
+                        term_header = format!("Less Equal");
+                        "<="
+                    }
+                    CmpOp::Gt => {
+                        term_header = format!("Greater Than");
+                        ">"
+                    }
+                    CmpOp::Ge => {
+                        term_header = format!("Greater Equal");
+                        ">="
+                    }
+                };
+                term_body = format!("<code>{}</code> {} <code>{}</code> → <code>{}</code>",
+                    self.wire_name(term.reads().iter().next().map(|(idx, _)| idx).unwrap()),
+                    op,
+                    self.wire_name(term.reads().iter().nth(1).map(|(idx, _)| idx).unwrap()),
+                    self.wire_name(term.writes().iter().next().map(|(idx, _)| idx).unwrap())
                 );
             }
-            _ => format!("<h3>{}</h3><p><code>{}</code> → <code>{}</code></p><hr>", term.itype(), term.reads(), term.writes()),
+            IType::Id => {
+                term_header = format!("Identity");
+                term_body = format!(
+                    "<code>{}</code> → <code>{}</code>",
+                    self.wire_name(term.reads().iter().next().map(|(idx, _)| idx).unwrap()),
+                    self.wire_name(term.writes().iter().next().map(|(idx, _)| idx).unwrap())
+                );
+            }
+            IType::Cond => {
+                term_header = format!("Ternary Condition");
+                term_body = format!(
+                    "<code>{}</code> ? <code>{}</code> : <code>{}</code> → <code>{}</code>",
+                    self.wire_name(term.reads().iter().next().map(|(idx, _)| idx).unwrap()),
+                    self.wire_name(term.reads().iter().nth(1).map(|(idx, _)| idx).unwrap()),
+                    self.wire_name(term.reads().iter().nth(2).map(|(idx, _)| idx).unwrap()),
+                    self.wire_name(term.writes().iter().next().map(|(idx, _)| idx).unwrap())
+                );
+            }
         }
+        format!(
+            "<h3>{}</h3><p>{}</p><hr>{}",
+            term_header,
+            term_body,
+            term_footer
+        )
     }
+
+    fn describe_input(&self, id: usize) -> String {
+        let name = self.wire_name(id);
+        let dtype = self.wire_dtypes.get(&id).copied().unwrap_or(DType::Int);
+        format!(
+            "<h4>Input wire</h4>\n<code>{}</code> <small>(w{} : {})</small>",
+            name, id, dtype
+        )
+    }
+
+    fn describe_output(&self, id: usize) -> String {
+        let name = self.wire_name(id);
+        let dtype = self.wire_dtypes.get(&id).copied().unwrap_or(DType::Int);
+        format!(
+            "<h4>Output wire</h4>\n<code>{}</code> <small>(w{} : {})</small>",
+            name, id, dtype
+        )
+    }
+
+    fn describe_wire_id(&self, id: usize, how: DescriptionContext) -> String {
+    if matches!(how, DescriptionContext::Node) {
+        self.wire_name(id)
+    } else {
+        format!("w{}", id)
+    }
+}
 }
 
 

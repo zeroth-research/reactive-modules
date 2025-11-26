@@ -1,6 +1,6 @@
 use smt::dtype::DType;
 use smt::itype::IType;
-use smt::html::SmtDescriptor;
+use smt::html::Context;
 
 use base::module::Module;
 use visual::html;
@@ -32,7 +32,7 @@ fn dump_to_html(modules: &[Module<DType, IType>], args: &Cli) -> Result<(), std:
             format!("smt/tests/module-{}.html", n)
         };
 
-        let descr = SmtDescriptor::new(module);
+        let descr = Context::new(module);
         html::write_to_html(module, path.as_str(), Some(&descr))
             .inspect_err(|err| {
                 eprintln!("Failed writing the module to file {}", path);
