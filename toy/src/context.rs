@@ -24,12 +24,17 @@ impl Context {
         self.names.get(&id).map(|s| s.as_str())
     }
 
-    pub fn get(&self, name: &str) -> Interface<Type> {
+    pub fn get(&self, name: &str) -> (usize, Type) {
+        let (id, ty) = self.vars.get(name).expect("Not existing value");
+        (*id, *ty)
+    }
+
+    pub fn get_intf(&self, name: &str) -> Interface<Type> {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
         Interface::single(*id, *ty)
     }
 
-    pub fn get_with_type(&self, name: &str) -> (Interface<Type>, Type) {
+    pub fn get_intf_with_type(&self, name: &str) -> (Interface<Type>, Type) {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
         (Interface::single(*id, *ty), *ty)
     }
@@ -50,8 +55,8 @@ impl Context {
         res
     }
 
-    /// Does not check if the type is compatible if the var exists
-    fn tmp_var(&mut self, ty: Type) -> usize {
+    /// TODO: Does not check if the type is compatible if the var exists
+    pub fn tmp_var(&mut self, ty: Type) -> usize {
         let new_id = self.vars.len();
         self.vars
             .entry(format!("__c_{}", new_id))
@@ -60,7 +65,7 @@ impl Context {
         new_id
     }
 
-    pub fn tmp_wire(&mut self, ty: Type) -> Interface<Type> {
+    pub fn tmp_intf(&mut self, ty: Type) -> Interface<Type> {
         Interface::single(self.tmp_var(ty), ty)
     }
 

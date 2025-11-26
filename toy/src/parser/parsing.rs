@@ -202,8 +202,8 @@ impl Parser {
                     }
 
                     assert!(var_name.ends_with('\'')); // the assigned variable must be primed
-                    let primed_var = self.ctx.get(var_name);
-                    let var: Interface<Type> = self.ctx.get(&var_name[..var_name.len() - 1]);
+                    let primed_var = self.ctx.get_intf(var_name);
+                    let var = self.ctx.get_intf(&var_name[..var_name.len() - 1]);
                     let ite = mk_ite(
                         Interface::sequence(
                             [&cond, expr.last().unwrap().write(), &var]
@@ -251,12 +251,12 @@ impl Parser {
         let term = mk_cmp(
             op,
             Interface::sequence(wire_l.wires().chain(wire_r.wires()).cloned()).unwrap(),
-            self.ctx.tmp_wire(Type::Bool),
+            self.ctx.tmp_intf(Type::Bool),
         )
         .unwrap();
 
         if negate {
-            let not = mk_not(term.write().clone(), self.ctx.tmp_wire(Type::Bool)).unwrap();
+            let not = mk_not(term.write().clone(), self.ctx.tmp_intf(Type::Bool)).unwrap();
             return vec![term, not];
         }
         vec![term]
@@ -307,7 +307,7 @@ impl Parser {
 
                     match op_ {
                         Rule::logic_op => {
-                            let write_wire = self.ctx.tmp_wire(Type::Bool);
+                            let write_wire = self.ctx.tmp_intf(Type::Bool);
                             terms.push(
                                 create_logic_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),
                             )
@@ -319,7 +319,7 @@ impl Parser {
                                 let (_, ty2) = wire_r.wires().next().unwrap().into();
                                 debug_assert!(ty == ty2);
                             }
-                            let write_wire = self.ctx.tmp_wire(*ty);
+                            let write_wire = self.ctx.tmp_intf(*ty);
                             terms.push(
                                 create_arith_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),
                             )
@@ -334,15 +334,15 @@ impl Parser {
             }
             Rule::var | Rule::primed_var => {
                 let var = pair.as_str();
-                let (wire, ty) = self.ctx.get_with_type(var);
-                let out = self.ctx.tmp_wire(ty);
+                let (wire, ty) = self.ctx.get_intf_with_type(var);
+                let out = self.ctx.tmp_intf(ty);
                 let term = mk_id(wire, out).unwrap();
 
                 vec![term]
             }
             Rule::boolconst => match pair.as_str() {
                 "true" => {
-                    let out = self.ctx.tmp_wire(Type::Bool);
+                    let out = self.ctx.tmp_intf(Type::Bool);
                     let term = mk_const(&Val::Bool(true), out);
                     match term {
                         Ok(t) => vec![t],
@@ -353,7 +353,7 @@ impl Parser {
                     }
                 }
                 "false" => {
-                    let out = self.ctx.tmp_wire(Type::Bool);
+                    let out = self.ctx.tmp_intf(Type::Bool);
                     let term = mk_const(&Val::Bool(false), out);
                     match term {
                         Ok(t) => vec![t],
@@ -367,7 +367,7 @@ impl Parser {
             },
             Rule::constant => {
                 let c = Val::from_str(pair.as_str(), ty).unwrap();
-                vec![mk_const(&c, self.ctx.tmp_wire(ty)).unwrap()]
+                vec![mk_const(&c, self.ctx.tmp_intf(ty)).unwrap()]
             }
             Rule::expr_atom => {
                 // expr_atom = { (not_op | minus_op)? ~ expr_primary}
@@ -380,7 +380,7 @@ impl Parser {
                         expr.push(
                             mk_not(
                                 expr.last().unwrap().write().clone(),
-                                self.ctx.tmp_wire(Type::Bool),
+                                self.ctx.tmp_intf(Type::Bool),
                             )
                             .unwrap(),
                         );
@@ -409,7 +409,7 @@ impl Parser {
 
             let var = lhs.as_str();
             assert!(var.ends_with('\'')); // the variable must be primed
-            let (_, ty) = self.ctx.get_with_type(var);
+            let (_, ty) = self.ctx.get_intf_with_type(var);
             let expr = self.build_expr(rhs, ty);
             if expr.is_empty() {
                 dbg!("Failed creating an assignment");
