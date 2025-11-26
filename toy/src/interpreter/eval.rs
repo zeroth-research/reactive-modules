@@ -86,7 +86,7 @@ pub fn eval(op: Instruction, read: &[&Val], write: &mut [&mut Val]) -> Result<()
                     return Err("Couldn't use the input values");
                 }
             } else {
-                return Err("Can compare only values with the same type for LT");
+                return Err("Binary arithmetic operations must read wires with the same type");
             }
         }
     }
