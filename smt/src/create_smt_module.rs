@@ -43,7 +43,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     init.push(Term::new(IType::Const(Val::Int(42)), Wire::one(13, DType::Int), Wire::none()));
     init.push(Term::new(IType::Const(Val::Bool(true)), Wire::one(14, DType::Bool), Wire::none()));
 
-    init.push(Term::new(IType::Arith(ArithOp::Add), Wire::one(6, DType::Real), Wire::from_iter(vec![(9, DType::Int), (12, DType::Int)])));
+    init.push(Term::new(IType::Arith(ArithOp::Add), Wire::one(6, DType::Real), Wire::from_iter(vec![(9, DType::Real), (12, DType::Real)])));
     init.push(Term::new(IType::Arith(ArithOp::Sub), Wire::one(7, DType::Int), Wire::from_iter(vec![(10, DType::Int), (13, DType::Int)])));
     init.push(Term::new(IType::Logical(LogicalOp::And), Wire::one(8, DType::Bool), Wire::from_iter(vec![(11, DType::Bool), (14, DType::Bool)])));
 
