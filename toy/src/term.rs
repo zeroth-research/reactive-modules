@@ -12,7 +12,7 @@ pub fn construct(
     reads: Interface<Type>,
     writes: Interface<Type>,
 ) -> Result<Term, &'static str> {
-    match ins {
+    match &ins {
         Instruction::Const(val) => {
             if !reads.is_empty() {
                 return Err("Const should read nothing");
@@ -143,7 +143,7 @@ pub fn construct(
 }
 
 pub fn mk_const(val: &Val, write: Interface<Type>) -> Result<Term, &'static str> {
-    construct(Instruction::Const(*val), Interface::empty(), write)
+    construct(Instruction::Const(val.clone()), Interface::empty(), write)
 }
 
 pub fn mk_id(read: Interface<Type>, write: Interface<Type>) -> Result<Term, &'static str> {

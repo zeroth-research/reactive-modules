@@ -23,7 +23,7 @@ pub enum ArithOp {
     Div,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     // constant and identity terms
     Const(Val),
