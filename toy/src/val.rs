@@ -42,8 +42,14 @@ impl Val {
 
     pub(crate) fn div(&self, rhs: &Val) -> Option<Self> {
         match (self, rhs) {
-            (Val::Real(x), Val::Real(y)) => Some(Val::Real(x / y)),
-            (Val::Int(x), Val::Int(y)) => Some(Val::Int(x / y)),
+            (Val::Real(x), Val::Real(y)) => {
+                assert!(*y != 0.0);
+                Some(Val::Real(x / y))
+            }
+            (Val::Int(x), Val::Int(y)) => {
+                assert!(*y != 0);
+                Some(Val::Int(x / y))
+            }
             _ => None,
         }
     }
