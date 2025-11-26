@@ -50,7 +50,7 @@ boolconst = @{ "true" | "false" }
 
 constant       = @{ ASCII_DIGIT+ ~ ( "." ~ ASCII_DIGIT+ )? }
 
-// An iIdentifier can start with an underscore and it has to have at least one letter before any number appears
+// An Identifier can start with an underscore and it has to have at least one letter before any number appears
 ident         = @{ "_"* ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 var           = @{ "_"* ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 primed_var           = @{ "_"* ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* ~ "'" }
