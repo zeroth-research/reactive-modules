@@ -69,6 +69,9 @@ pub fn eval(op: Instruction, read: &[&Val], write: &mut [&mut Val]) -> Result<()
                 );
             }
         }
+        Instruction::Choose => {
+            todo!()
+        }
         // arith
         Instruction::Arith(op) => {
             debug_assert!(read.len() == 2);

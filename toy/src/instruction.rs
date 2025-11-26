@@ -33,6 +33,7 @@ pub enum Instruction {
     // Logical ops
     Logical(LogicalOp),
     Ite,
+    Choose,
     // arith
     Arith(ArithOp),
 }
@@ -77,6 +78,7 @@ impl fmt::Display for Instruction {
             Instruction::Arith(op) => write!(f, "Arith::{}", op),
             Instruction::Cmp(op) => write!(f, "Cmp::{}", op),
             Instruction::Ite => write!(f, "Ite"),
+            Instruction::Choose => write!(f, "Choose"),
         }
     }
 }
@@ -88,6 +90,7 @@ impl std::str::FromStr for Instruction {
         match ins {
             "Id" => Ok(Instruction::Id),
             "Ite" => Ok(Instruction::Ite),
+            "Choose" => Ok(Instruction::Choose),
             "Logical::And" => Ok(Instruction::Logical(LogicalOp::And)),
             "Logical::Or" => Ok(Instruction::Logical(LogicalOp::Or)),
             "Logical::Not" => Ok(Instruction::Logical(LogicalOp::Not)),
