@@ -53,10 +53,9 @@ def from_pysmt_type(ty) -> str:
         return "Bool"
     raise NotImplementedError(f"Unknown type: {ty}")
 
-
-class Context(ContextBase):
-    def __init__(self):
-        super().__init__(_zrth.smt.WrappedContext())
+class PySMTContext(ContextBase):
+    def __init__(self, ctx_impl):
+        super().__init__(ctx_impl)
 
     def var(self, name: str, ty: str) -> Symbol:
         return Symbol(name, to_pysmt_type(ty))
@@ -78,17 +77,27 @@ class Context(ContextBase):
                 for v in map(lambda s: s.split(":"), V)
             )
             cur_vars = [*ctrl]
-        elif isinstance(ctrl, (tuple, list)):
-            if not all(":" in v for v in ctrl):
-                raise RuntimeError("A variable is missing a type annotation")
-            ctrl = tuple(
-                self.var(v[0].strip(), v[1].strip())
-                for v in map(lambda s: s.split(":"), ctrl)
-            )
+        elif isinstance(ctrl, (tuple, list)) and len(ctrl) > 0:
+            if isinstance(ctrl[0], str):
+                if not all(":" in v for v in ctrl):
+                    raise RuntimeError("A variable is missing a type annotation")
+                ctrl = tuple(
+                    self.var(v[0].strip(), v[1].strip())
+                    for v in map(lambda s: s.split(":"), ctrl)
+                )
+            elif isinstance(ctrl[0], Expr):
+                if not all(isinstance(c, Expr) and c.is_symbol() for c in ctrl):
+                    raise RuntimeError(
+                        f"Expected variables to be all PySMT variables, got: {ctrl}"
+                    )
+            else:
+                raise RuntimeError(
+                    f"Expected variables to be a tuple of strings or PySMT variables, got: {ctrl}"
+                )
             cur_vars = [*ctrl]
         else:
             raise RuntimeError(
-                f"Expect variables to be a string, tuple or list, got: {ctrl}"
+                f"Expect variables to be a non-empty string, tuple or list, got: {ctrl}"
             )
 
         if isinstance(extl, str):
@@ -99,14 +108,23 @@ class Context(ContextBase):
                 self.var(v[0].strip(), v[1].strip())
                 for v in map(lambda s: s.split(":"), V)
             )
-            cur_vars.extend(extl)
-        elif isinstance(extl, (tuple, list)):
-            if not all(":" in v for v in extl):
-                raise RuntimeError("A variable is missing a type annotation")
-            extl = tuple(
-                self.var(v[0].strip(), v[1].strip())
-                for v in map(lambda s: s.split(":"), extl)
-            )
+        elif isinstance(extl, (tuple, list)) and len(extl) > 0:
+            if isinstance(extl[0], str):
+                if not all(":" in v for v in extl):
+                    raise RuntimeError("A variable is missing a type annotation")
+                extl = tuple(
+                    self.var(v[0].strip(), v[1].strip())
+                    for v in map(lambda s: s.split(":"), extl)
+                )
+            elif isinstance(extl[0], Expr):
+                if not all(isinstance(c, Expr) and c.is_symbol() for c in extl):
+                    raise RuntimeError(
+                        f"Expected variables to be all PySMT variables, got: {extl}"
+                    )
+            else:
+                raise RuntimeError(
+                    f"Expected variables to be a tuple of strings or PySMT variables, got: {extl}"
+                )
             cur_vars.extend(extl)
         else:
             raise RuntimeError(
@@ -114,6 +132,40 @@ class Context(ContextBase):
             )
 
         return ctrl, extl, cur_vars
+
+    # TODO: get rid of it in the SMT context
+    def trace(self, fun: Callable, *args, **kwargs):
+        """
+        Execute a given function with binding our names like `next` into it.
+        """
+        # we want to access the context from the function in order to
+        # create terms via API that we cannot map to Python operations.
+        # For that, we need to add it as a new argument.
+        def wrapped_fun():
+            assert "next" not in fun.__globals__
+            fun.__globals__["next"] = self.next_var
+            r = fun(*args, **kwargs)
+            del fun.__globals__["next"]
+            return r
+
+        r = wrapped_fun()
+
+        return handle_return_value(r)
+
+    def get_pyval_sym(self, sym: Expr) -> PyVal:
+        assert sym.is_symbol(), sym
+
+        return self._context.get_sym(
+            sym.symbol_name(), from_pysmt_type(sym.symbol_type())
+        )
+
+
+
+
+
+class Context(PySMTContext):
+    def __init__(self):
+        super().__init__(_zrth.smt.WrappedContext())
 
     def module_from_methods(
         self,
@@ -165,29 +217,6 @@ class Context(ContextBase):
 
     def _cond(self, cnd, iftrue, iffalse):
         return Cond(args)
-
-
-    def trace(self, fun: Callable, *args, **kwargs):
-        # we want to access the context from the function in order to
-        # create terms via API that we cannot map to Python operations.
-        # For that, we need to add it as a new argument.
-        def wrapped_fun():
-            assert "next" not in fun.__globals__
-            fun.__globals__["next"] = self.next_var
-            r = fun(*args, **kwargs)
-            del fun.__globals__["next"]
-            return r
-
-        r = wrapped_fun()
-
-        return handle_return_value(r)
-
-    def get_pyval_sym(self, sym: Expr) -> PyVal:
-        assert sym.is_symbol(), sym
-
-        return self._context.get_sym(
-            sym.symbol_name(), from_pysmt_type(sym.symbol_type())
-        )
 
     def to_terms(self, ctrl, extl, init_ret, update_ret) -> (list, list, list, list):
         """
