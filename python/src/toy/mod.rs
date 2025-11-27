@@ -1,5 +1,4 @@
 mod pyval;
-mod util;
 mod wrappedatom;
 mod wrappedcontext;
 mod wrappedmodule;

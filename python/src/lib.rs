@@ -1,4 +1,5 @@
 mod toy;
+mod util;
 
 use pyo3::prelude::*;
 
