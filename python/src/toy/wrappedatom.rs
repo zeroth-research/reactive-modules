@@ -3,7 +3,7 @@ use std::fmt;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::toy::pyval::PyVal;
+use crate::pyval::PyVal;
 use crate::toy::wrappedcontext::WrappedContext;
 use crate::toy::wrappedterm::WrappedTerm;
 use crate::util::str_to_pyerr;
