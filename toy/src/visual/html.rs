@@ -9,7 +9,7 @@ use crate::IType;
 use base::Wire;
 use visual::html::{DescriptionContext, Descriptor};
 
-impl Context {
+impl Context<DType> {
     fn wire_name(&self, id: usize) -> String {
         if let Some(name) = self.get_name(id) {
             return name.into();
@@ -206,7 +206,7 @@ fn module_variables_diagram(prvt: &[String], intf: &[String], extl: &[String]) -
 
 ///
 /// HTML descriptor for Context
-impl Descriptor<DType, IType> for Context {
+impl Descriptor<DType, IType> for Context<DType> {
     fn describe_module(&self, module: &ToyModule, _how: DescriptionContext) -> String {
         //let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
         //format!("<pre>\n{}</pre>", self.dump_module(module, &fmt))
