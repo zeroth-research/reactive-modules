@@ -26,8 +26,11 @@ impl Context {
             wire_names: RefCell::new(HashMap::new()),
             wire_dtypes,
         };
-        d.populate_wire_names(module);
         d
+    }
+
+    pub fn add_name(&self, id: usize, name: &str) {
+        self.wire_names.borrow_mut().insert(id, name.to_string());
     }
 
     fn trace_wire_expression(&self, wire_id: usize, terms: &[Term<DType, IType>]) -> String {
@@ -131,7 +134,7 @@ impl Context {
             .unwrap_or_else(|| format!("w{}", id))
     }
 
-    fn populate_wire_names(&self, module: &Module<DType, IType>) {
+    pub fn populate_default_wire_names(&self, module: &Module<DType, IType>) {
         let pair = module.wire();
         let latched = &pair[0];
         let next = &pair[1];
