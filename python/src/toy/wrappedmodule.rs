@@ -5,13 +5,11 @@ use crate::toy::wrappedatom::{WrappedAtom, vars_to_wiring};
 use crate::toy::wrappedcontext::WrappedContext;
 
 use base::Module;
-use toy::ToyTerm;
-use toy::dtype::Type;
-use toy::instruction::Instruction;
+use toy::{ToyModule, ToyTerm};
 
 #[pyclass]
 pub struct WrappedModule {
-    module: Module<Type, Instruction>,
+    module: ToyModule,
 }
 
 // It is safe to share this struct for the same reasons as for PyTensor
@@ -41,14 +39,22 @@ impl WrappedModule {
                     .init()
                     .iter()
                     .map(|term| {
-                        ToyTerm::new(*term.itype(), term.writes().clone(), term.reads().clone())
+                        ToyTerm::new(
+                            term.itype().clone(),
+                            term.writes().clone(),
+                            term.reads().clone(),
+                        )
                     })
                     .collect::<Vec<ToyTerm>>(),
                 atom.atom
                     .update()
                     .iter()
                     .map(|term| {
-                        ToyTerm::new(*term.itype(), term.writes().clone(), term.reads().clone())
+                        ToyTerm::new(
+                            term.itype().clone(),
+                            term.writes().clone(),
+                            term.reads().clone(),
+                        )
                     })
                     .collect::<Vec<ToyTerm>>(),
             )

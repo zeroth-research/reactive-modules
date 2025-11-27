@@ -11,17 +11,16 @@ use crate::toy::wrappedterm::WrappedTerm;
 use base::atom::Atom;
 use base::wire::Wire;
 
-use toy::dtype::Type as DType;
-use toy::instruction::Instruction;
 use toy::term::Term;
 use toy::term::construct as new_term;
 use toy::val::Val;
+use toy::{DType, IType, ToyAtom};
 
 type WireTy = Wire<DType>;
 
 #[pyclass]
 pub struct WrappedAtom {
-    pub(crate) atom: Atom<DType, Instruction>,
+    pub(crate) atom: ToyAtom,
 }
 
 // It is safe to share this struct for the same reasons as for PyTensor
@@ -37,7 +36,7 @@ unsafe impl Sync for WrappedAtom {}
 ///
 /// The values from the input vector `pyvals` get translated as follows:
 /// `PyVal::Sym(x)` gets translated into the identifier `x`, and other [PyVal]
-/// values (constants) get translated into a new nullary term `Instruction::Const` that is added
+/// values (constants) get translated into a new nullary term `IType::Const` that is added
 /// to `result` and the output wire of this term is used as the translated identifier.
 /// This new term simply returns the value of this constant. This is to workaround the fact that
 /// we do not have wires that represent constants.
@@ -45,7 +44,7 @@ unsafe impl Sync for WrappedAtom {}
 /// # Examples
 ///
 ///  If the input is `[PyVal::Sym(2), PyVal::I64(7)]`, then when translating
-/// `PyVal::I64(7)`, a term `Term { Instruction::Const, reads: [], writes: [19]}` gets generated
+/// `PyVal::I64(7)`, a term `Term { IType::Const, reads: [], writes: [19]}` gets generated
 /// and added to `results`, where 19 is just an example value. This value is obtained
 /// from the `ctx` object. The translated vector returned from this function is then `[2, 19]`.
 fn process_pyvals(
@@ -65,7 +64,7 @@ fn process_pyvals(
             PyVal::Int(val) => {
                 let var = ctx.ctx.tmp_var(DType::Int);
                 let term = new_term(
-                    Instruction::Const(Val::Int(*val)),
+                    IType::Const(Val::Int(*val)),
                     Wire::none(),
                     Wire::one(var, DType::Int),
                 )
@@ -76,7 +75,7 @@ fn process_pyvals(
             PyVal::Bool(val) => {
                 let var = ctx.ctx.tmp_var(DType::Bool);
                 let term = new_term(
-                    Instruction::Const(Val::Bool(*val)),
+                    IType::Const(Val::Bool(*val)),
                     Wire::none(),
                     Wire::one(var, DType::Bool),
                 )
@@ -114,7 +113,7 @@ fn wterms_to_terms(ctx: &mut WrappedContext, terms: &Bound<'_, PyList>) -> PyRes
 
         let write = Wire::from_iter(wargs.into_iter());
         let read = Wire::from_iter(rargs.into_iter());
-        let term = new_term(wterm.op, read, write).map_err(str_to_pyerr)?;
+        let term = new_term(wterm.op.clone(), read, write).map_err(str_to_pyerr)?;
         result.push(term);
     }
 
