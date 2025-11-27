@@ -1,6 +1,6 @@
 use smt::dtype::DType;
-use smt::itype::IType;
 use smt::html::Context;
+use smt::itype::IType;
 
 use base::module::Module;
 use visual::html;
@@ -33,6 +33,8 @@ fn dump_to_html(modules: &[Module<DType, IType>], args: &Cli) -> Result<(), std:
         };
 
         let descr = Context::new(module);
+        descr.populate_default_wire_names(module);
+
         html::write_to_html(module, path.as_str(), Some(&descr))
             .inspect_err(|err| {
                 eprintln!("Failed writing the module to file {}", path);
@@ -101,3 +103,4 @@ fn main() {
     //TODO: call the SMT parser (which will be in smt/src/smt.rs) and generate the SMT file
     smt::smt::parse_modules(&modules);
 }
+
