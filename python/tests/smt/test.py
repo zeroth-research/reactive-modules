@@ -16,7 +16,7 @@ class Module(smt.Module):
 
 m1 = Module("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
 m1.dbg()
-#m1.to_html("/tmp/toy.html", open=True)
+m1.to_html("/tmp/smt.html", open=True)
 
 # m2 = Module()
 #
