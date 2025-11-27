@@ -104,3 +104,27 @@ impl fmt::Display for IType {
         }
     }
 }
+
+impl std::str::FromStr for IType {
+    type Err = String;
+
+    fn from_str(ins: &str) -> Result<Self, Self::Err> {
+        match ins {
+            "Id" => Ok(IType::Id),
+            "Cond" => Ok(IType::Cond),
+            "Logical::And" => Ok(IType::Logical(LogicalOp::And)),
+            "Logical::Or" => Ok(IType::Logical(LogicalOp::Or)),
+            "Logical::Not" => Ok(IType::Logical(LogicalOp::Not)),
+            "Arith::Add" => Ok(IType::Arith(ArithOp::Add)),
+            "Arith::Sub" => Ok(IType::Arith(ArithOp::Sub)),
+            "Arith::Mul" => Ok(IType::Arith(ArithOp::Mul)),
+            "Arith::Div" => Ok(IType::Arith(ArithOp::Div)),
+            "Cmp::Eq" => Ok(IType::Cmp(CmpOp::Eq)),
+            "Cmp::Le" => Ok(IType::Cmp(CmpOp::Le)),
+            "Cmp::Lt" => Ok(IType::Cmp(CmpOp::Lt)),
+            "Cmp::Ge" => Ok(IType::Cmp(CmpOp::Ge)),
+            "Cmp::Gt" => Ok(IType::Cmp(CmpOp::Gt)),
+            _ => Err(format!("Cannot convert `{}` to IType", ins)),
+        }
+    }
+}
