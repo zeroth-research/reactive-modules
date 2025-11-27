@@ -1,5 +1,5 @@
-use toy::instruction::{ArithOp, Instruction};
 use toy::interpreter::eval;
+use toy::itype::{ArithOp, IType};
 use toy::val::Val;
 
 #[cfg(test)]
@@ -9,17 +9,17 @@ mod tests {
     #[test]
     fn test_const() {
         let mut res: Val = Val::new();
-        assert!(eval(Instruction::Const(Val::Bool(true)), &[], &mut [&mut res]) == Ok(()));
+        assert!(eval(IType::Const(Val::Bool(true)), &[], &mut [&mut res]) == Ok(()));
         assert!(res == Val::Bool(true));
 
-        assert!(eval(Instruction::Const(Val::Int(-13)), &[], &mut [&mut res]) == Ok(()));
+        assert!(eval(IType::Const(Val::Int(-13)), &[], &mut [&mut res]) == Ok(()));
         assert!(res == Val::Int(-13));
     }
 
     #[test]
     fn test_id() {
         let mut res: Val = Val::new();
-        assert!(eval(Instruction::Id, &[&Val::Int(42)], &mut [&mut res]) == Ok(()));
+        assert!(eval(IType::Id, &[&Val::Int(42)], &mut [&mut res]) == Ok(()));
         assert!(res == Val::Int(42));
     }
 
@@ -27,7 +27,7 @@ mod tests {
     #[should_panic]
     fn test_id_fail() {
         let mut res: Val = Val::new();
-        assert!(eval(Instruction::Id, &[], &mut [&mut res]) == Ok(()));
+        assert!(eval(IType::Id, &[], &mut [&mut res]) == Ok(()));
         assert!(res == Val::Int(42));
     }
 
@@ -37,7 +37,7 @@ mod tests {
         let mut res: Val = Val::new();
         assert!(
             eval(
-                Instruction::Id,
+                IType::Id,
                 &[&Val::Int(32), &Val::None],
                 &mut [&mut res]
             ) == Ok(())
@@ -50,7 +50,7 @@ mod tests {
         let mut res: Val = Val::new();
         assert!(
             eval(
-                Instruction::Arith(ArithOp::Add),
+                IType::Arith(ArithOp::Add),
                 &[&Val::Int(42), &Val::Int(43)],
                 &mut [&mut res]
             ) == Ok(())
@@ -59,7 +59,7 @@ mod tests {
 
         assert!(
             eval(
-                Instruction::Arith(ArithOp::Add),
+                IType::Arith(ArithOp::Add),
                 &[&Val::Real(42.0), &Val::Real(43.0)],
                 &mut [&mut res]
             ) == Ok(())
@@ -69,7 +69,7 @@ mod tests {
         // invalid arguments
         assert!(
             eval(
-                Instruction::Arith(ArithOp::Add),
+                IType::Arith(ArithOp::Add),
                 &[&Val::Int(42), &Val::Real(43.0)],
                 &mut [&mut res]
             )

@@ -1,10 +1,9 @@
 use base::module::Module;
 //use std::fs::metadata;
 use std::process;
+
+use toy::ToyModule;
 use toy::context::Context;
-use toy::dtype::Type;
-use toy::instruction::Instruction;
-type ToyModule = Module<Type, Instruction>;
 
 use toy::parser::Parser;
 

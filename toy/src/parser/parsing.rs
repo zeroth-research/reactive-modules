@@ -3,9 +3,9 @@ use pest::iterators::Pair;
 use std::collections::HashMap;
 use std::iter::zip;
 
+use crate::DType;
 use crate::context::Context;
-use crate::dtype::Type;
-use crate::instruction::{CmpOp, Instruction, LogicalOp};
+use crate::itype::{CmpOp, IType, LogicalOp};
 use crate::term::*;
 use crate::val::Val;
 
@@ -14,9 +14,9 @@ use base::module::Module;
 use base::term::Term;
 use base::wire::Interface;
 
-type ToyModule = Module<Type, Instruction>;
-type ToyAtom = Atom<Type, Instruction>;
-type ToyTerm = Term<Type, Instruction>;
+type ToyModule = Module<DType, IType>;
+type ToyAtom = Atom<DType, IType>;
+type ToyTerm = Term<DType, IType>;
 
 #[derive(pest_derive::Parser)]
 #[grammar = "parser/grammar.pest"]
@@ -65,7 +65,7 @@ impl Parser {
         modules
     }
 
-    fn parse_module(&mut self, pair: Pair<Rule>) -> Module<Type, Instruction> {
+    fn parse_module(&mut self, pair: Pair<Rule>) -> Module<DType, IType> {
         // module = { "module" ~ ident ~ "{" ~ module_body ~ "}" }
         let mut inner = pair.into_inner();
         //let name = inner.next().unwrap().as_str().to_string();
@@ -73,7 +73,7 @@ impl Parser {
         //module.set_name(name.as_str());
     }
 
-    fn parse_module_body(&mut self, pair: Pair<Rule>) -> Module<Type, Instruction> {
+    fn parse_module_body(&mut self, pair: Pair<Rule>) -> Module<DType, IType> {
         // module_body   = { decl_variables ~ atoms }
         let mut inner = pair.into_inner();
         let decl_vars = parse_decl_variables(inner.next().unwrap());
@@ -102,11 +102,7 @@ impl Parser {
         ToyModule::observable(zip(latched, next).map(|([x], [y])| (x, y)), atoms).unwrap()
     }
 
-    fn parse_atom(
-        &mut self,
-        pair: Pair<Rule>,
-        module_wires: &[Interface<Type>; 2],
-    ) -> Atom<Type, Instruction> {
+    fn parse_atom(&mut self, pair: Pair<Rule>, module_wires: &[Interface<DType>; 2]) -> ToyAtom {
         // atom = { "atom" ~ "{" ~ atom_body ~ "}" }
         let mut inner = pair.into_inner();
         let body = inner.next().unwrap();
@@ -181,7 +177,7 @@ impl Parser {
                 let mut inner = g.into_inner();
                 // guarded_command  = { "[]" ~ expr ~ "->" ~ assignments }
                 let expr_pair = inner.next().unwrap();
-                let guard = self.build_expr(expr_pair, Type::Bool);
+                let guard = self.build_expr(expr_pair, DType::Bool);
                 let assigns = self.parse_assignments(inner.next().unwrap());
 
                 if guard.is_empty() {
@@ -226,8 +222,8 @@ impl Parser {
     fn create_cmp_term(
         &mut self,
         op: &str,
-        wire_l: &Interface<Type>,
-        wire_r: &Interface<Type>,
+        wire_l: &Interface<DType>,
+        wire_r: &Interface<DType>,
     ) -> Vec<ToyTerm> {
         let mut negate = false;
         let op = match op {
@@ -251,12 +247,12 @@ impl Parser {
         let term = mk_cmp(
             op,
             Interface::sequence(wire_l.wires().chain(wire_r.wires()).cloned()).unwrap(),
-            self.ctx.tmp_intf(Type::Bool),
+            self.ctx.tmp_intf(DType::Bool),
         )
         .unwrap();
 
         if negate {
-            let not = mk_not(term.write().clone(), self.ctx.tmp_intf(Type::Bool)).unwrap();
+            let not = mk_not(term.write().clone(), self.ctx.tmp_intf(DType::Bool)).unwrap();
             return vec![term, not];
         }
         vec![term]
@@ -264,7 +260,7 @@ impl Parser {
 
     ///
     /// `ty` -- expected type of the resulting expression
-    fn build_expr(&mut self, pair: Pair<Rule>, ty: Type) -> Vec<ToyTerm> {
+    fn build_expr(&mut self, pair: Pair<Rule>, ty: DType) -> Vec<ToyTerm> {
         match pair.as_rule() {
             //              pair_a      op_       pair_b
             // expr  =   { expr_1 ~ (logic_op  ~ expr_1)* }
@@ -275,18 +271,18 @@ impl Parser {
                 let pair_a = inner.next().unwrap();
                 // TODO: now we parse only integers, no support for floats at this moment
                 //let ty = match rule {
-                //    Rule::expr | Rule::expr_1 => Type::Bool,
-                //    Rule::expr_2 => Type::Real,
+                //    Rule::expr | Rule::expr_1 => DType::Bool,
+                //    Rule::expr_2 => DType::Real,
                 //    _ => ty,
                 //};
                 let mut terms = self.build_expr(pair_a, ty);
-                let mut wire_l: Interface<Type>;
+                let mut wire_l: Interface<DType>;
 
                 while let Some(pair_b) = inner.next() {
                     // get the left-hand-side input wire to the term that we will parse next
                     // FIXME: make this more efficient
                     wire_l = terms.last().unwrap().write().clone();
-                    if matches!(terms.last().unwrap().itype(), Instruction::Id) {
+                    if matches!(terms.last().unwrap().itype(), IType::Id) {
                         // the last created element was an Id instruction, so remove it
                         let last_term = terms.pop().unwrap();
                         wire_l = last_term.read().clone();
@@ -299,7 +295,7 @@ impl Parser {
                         panic!("Couldn't build terms");
                     }
                     let mut wire_r = terms_b.last().unwrap().write().clone();
-                    if matches!(terms_b.last().unwrap().itype(), Instruction::Id) {
+                    if matches!(terms_b.last().unwrap().itype(), IType::Id) {
                         wire_r = terms_b.last().unwrap().read().clone();
                     } else {
                         terms.extend(terms_b);
@@ -307,7 +303,7 @@ impl Parser {
 
                     match op_ {
                         Rule::logic_op => {
-                            let write_wire = self.ctx.tmp_intf(Type::Bool);
+                            let write_wire = self.ctx.tmp_intf(DType::Bool);
                             terms.push(
                                 create_logic_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),
                             )
@@ -342,7 +338,7 @@ impl Parser {
             }
             Rule::boolconst => match pair.as_str() {
                 "true" => {
-                    let out = self.ctx.tmp_intf(Type::Bool);
+                    let out = self.ctx.tmp_intf(DType::Bool);
                     let term = mk_const(&Val::Bool(true), out);
                     match term {
                         Ok(t) => vec![t],
@@ -353,7 +349,7 @@ impl Parser {
                     }
                 }
                 "false" => {
-                    let out = self.ctx.tmp_intf(Type::Bool);
+                    let out = self.ctx.tmp_intf(DType::Bool);
                     let term = mk_const(&Val::Bool(false), out);
                     match term {
                         Ok(t) => vec![t],
@@ -380,7 +376,7 @@ impl Parser {
                         expr.push(
                             mk_not(
                                 expr.last().unwrap().write().clone(),
-                                self.ctx.tmp_intf(Type::Bool),
+                                self.ctx.tmp_intf(DType::Bool),
                             )
                             .unwrap(),
                         );
@@ -430,9 +426,9 @@ impl Default for Parser {
 
 fn create_logic_term(
     op: &str,
-    wire_l: &Interface<Type>,
-    wire_r: &Interface<Type>,
-    write: Interface<Type>,
+    wire_l: &Interface<DType>,
+    wire_r: &Interface<DType>,
+    write: Interface<DType>,
 ) -> Result<ToyTerm, &'static str> {
     let op = match op {
         "&&" | "\\and" => LogicalOp::And,
@@ -448,9 +444,9 @@ fn create_logic_term(
 
 fn create_arith_term(
     op: &str,
-    wire_l: &Interface<Type>,
-    wire_r: &Interface<Type>,
-    write: Interface<Type>,
+    wire_l: &Interface<DType>,
+    wire_r: &Interface<DType>,
+    write: Interface<DType>,
 ) -> Result<ToyTerm, &'static str> {
     let args = [wire_l.clone(), wire_r.clone()].into_iter().flatten();
     match op {
@@ -462,8 +458,8 @@ fn create_arith_term(
     }
 }
 
-fn parse_decl_variables(pair: Pair<'_, Rule>) -> HashMap<&str, (Vec<Var>, Type)> {
-    let mut vars: HashMap<&str, (Vec<Var>, Type)> = HashMap::new();
+fn parse_decl_variables(pair: Pair<'_, Rule>) -> HashMap<&str, (Vec<Var>, DType)> {
+    let mut vars: HashMap<&str, (Vec<Var>, DType)> = HashMap::new();
 
     for p in pair.into_inner() {
         match p.as_rule() {
@@ -481,12 +477,12 @@ fn parse_decl_variables(pair: Pair<'_, Rule>) -> HashMap<&str, (Vec<Var>, Type)>
     vars
 }
 
-fn parse_var_block(pair: Pair<Rule>) -> (Vec<Var>, Type) {
+fn parse_var_block(pair: Pair<Rule>) -> (Vec<Var>, DType) {
     // ext_vars = { "external" ~ var_list ~ ":" ~ type_ }
     // intf_vars = { "interface" ~ var_list ~ ":" ~ type_ }
     let mut inner = pair.into_inner();
     let vars = parse_var_list(inner.next().unwrap());
-    let ty: Type = inner
+    let ty: DType = inner
         .next()
         .unwrap()
         .as_str()

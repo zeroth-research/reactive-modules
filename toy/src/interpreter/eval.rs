@@ -1,23 +1,23 @@
-use crate::dtype::Type;
-use crate::instruction::{ArithOp, CmpOp, Instruction, LogicalOp};
+use crate::DType;
+use crate::itype::{ArithOp, CmpOp, IType, LogicalOp};
 use crate::val::Val;
 
-pub fn eval(op: Instruction, read: &[&Val], write: &mut [&mut Val]) -> Result<(), &'static str> {
+pub fn eval(op: IType, read: &[&Val], write: &mut [&mut Val]) -> Result<(), &'static str> {
     match op {
-        Instruction::Const(val) => {
+        IType::Const(val) => {
             // passing a wrong number of arguments is a programmatical error,
             // use asserts instead of returning Err()
             debug_assert!(read.is_empty());
             debug_assert!(write.len() == 1);
             *write[0] = val;
         }
-        Instruction::Id => {
+        IType::Id => {
             debug_assert!(read.len() == 1);
             debug_assert!(write.len() == 1);
             *write[0] = read[0].clone();
         }
         // Comparisons
-        Instruction::Cmp(op) => {
+        IType::Cmp(op) => {
             debug_assert!(read.len() == 2);
             debug_assert!(write.len() == 1);
             if read[0].same_type(read[1]) {
@@ -30,7 +30,7 @@ pub fn eval(op: Instruction, read: &[&Val], write: &mut [&mut Val]) -> Result<()
                 return Err("Can compare only values with the same type for EQ");
             }
         }
-        Instruction::Logical(op) => {
+        IType::Logical(op) => {
             debug_assert!(write.len() == 1);
             if matches!(op, LogicalOp::Not)
                 && let Val::Bool(b) = read[0]
@@ -51,10 +51,10 @@ pub fn eval(op: Instruction, read: &[&Val], write: &mut [&mut Val]) -> Result<()
                 return Err("Or/And expects two boolean inputs");
             }
         }
-        Instruction::Ite => {
+        IType::Ite => {
             debug_assert!(read.len() == 3);
             debug_assert!(write.len() == 1);
-            if read[0].has_type(&Type::Bool)
+            if read[0].has_type(&DType::Bool)
                 && read[1].same_type(read[2])
                 && let Val::Bool(cond) = read[0]
             {
@@ -69,11 +69,11 @@ pub fn eval(op: Instruction, read: &[&Val], write: &mut [&mut Val]) -> Result<()
                 );
             }
         }
-        Instruction::Choose => {
+        IType::Choose => {
             todo!()
         }
         // arith
-        Instruction::Arith(op) => {
+        IType::Arith(op) => {
             debug_assert!(read.len() == 2);
             debug_assert!(write.len() == 1);
             if read[0].same_type(read[1]) {

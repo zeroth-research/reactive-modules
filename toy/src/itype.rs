@@ -24,7 +24,7 @@ pub enum ArithOp {
 }
 
 #[derive(Debug, Clone)]
-pub enum Instruction {
+pub enum IType {
     // constant and identity terms
     Const(Val),
     Id,
@@ -69,39 +69,39 @@ impl fmt::Display for ArithOp {
     }
 }
 
-impl fmt::Display for Instruction {
+impl fmt::Display for IType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Instruction::Const(v) => write!(f, "Const({})", v),
-            Instruction::Id => write!(f, "Id"),
-            Instruction::Logical(op) => write!(f, "Logical::{}", op),
-            Instruction::Arith(op) => write!(f, "Arith::{}", op),
-            Instruction::Cmp(op) => write!(f, "Cmp::{}", op),
-            Instruction::Ite => write!(f, "Ite"),
-            Instruction::Choose => write!(f, "Choose"),
+            IType::Const(v) => write!(f, "Const({})", v),
+            IType::Id => write!(f, "Id"),
+            IType::Logical(op) => write!(f, "Logical::{}", op),
+            IType::Arith(op) => write!(f, "Arith::{}", op),
+            IType::Cmp(op) => write!(f, "Cmp::{}", op),
+            IType::Ite => write!(f, "Ite"),
+            IType::Choose => write!(f, "Choose"),
         }
     }
 }
 
-impl std::str::FromStr for Instruction {
+impl std::str::FromStr for IType {
     type Err = String;
 
     fn from_str(ins: &str) -> Result<Self, Self::Err> {
         match ins {
-            "Id" => Ok(Instruction::Id),
-            "Ite" => Ok(Instruction::Ite),
-            "Choose" => Ok(Instruction::Choose),
-            "Logical::And" => Ok(Instruction::Logical(LogicalOp::And)),
-            "Logical::Or" => Ok(Instruction::Logical(LogicalOp::Or)),
-            "Logical::Not" => Ok(Instruction::Logical(LogicalOp::Not)),
-            "Arith::Add" => Ok(Instruction::Arith(ArithOp::Add)),
-            "Arith::Sub" => Ok(Instruction::Arith(ArithOp::Sub)),
-            "Arith::Mul" => Ok(Instruction::Arith(ArithOp::Mul)),
-            "Arith::Div" => Ok(Instruction::Arith(ArithOp::Div)),
-            "Cmp::Eq" => Ok(Instruction::Cmp(CmpOp::Eq)),
-            "Cmp::Le" => Ok(Instruction::Cmp(CmpOp::Le)),
-            "Cmp::Lt" => Ok(Instruction::Cmp(CmpOp::Lt)),
-            _ => Err(format!("Cannot convert `{}` to Instruction", ins)),
+            "Id" => Ok(IType::Id),
+            "Ite" => Ok(IType::Ite),
+            "Choose" => Ok(IType::Choose),
+            "Logical::And" => Ok(IType::Logical(LogicalOp::And)),
+            "Logical::Or" => Ok(IType::Logical(LogicalOp::Or)),
+            "Logical::Not" => Ok(IType::Logical(LogicalOp::Not)),
+            "Arith::Add" => Ok(IType::Arith(ArithOp::Add)),
+            "Arith::Sub" => Ok(IType::Arith(ArithOp::Sub)),
+            "Arith::Mul" => Ok(IType::Arith(ArithOp::Mul)),
+            "Arith::Div" => Ok(IType::Arith(ArithOp::Div)),
+            "Cmp::Eq" => Ok(IType::Cmp(CmpOp::Eq)),
+            "Cmp::Le" => Ok(IType::Cmp(CmpOp::Le)),
+            "Cmp::Lt" => Ok(IType::Cmp(CmpOp::Lt)),
+            _ => Err(format!("Cannot convert `{}` to IType", ins)),
         }
     }
 }

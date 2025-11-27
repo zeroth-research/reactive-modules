@@ -3,8 +3,8 @@ use crate::{ToyAtom, ToyModule, ToyTerm};
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use crate::dtype::Type;
-use crate::instruction::Instruction;
+use crate::IType;
+use crate::DType;
 
 use base::Wire;
 use visual::html::{DescriptionContext, Descriptor};
@@ -206,7 +206,7 @@ fn module_variables_diagram(prvt: &[String], intf: &[String], extl: &[String]) -
 
 ///
 /// HTML descriptor for Context
-impl Descriptor<Type, Instruction> for Context {
+impl Descriptor<DType, IType> for Context {
     fn describe_module(&self, module: &ToyModule, _how: DescriptionContext) -> String {
         //let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
         //format!("<pre>\n{}</pre>", self.dump_module(module, &fmt))

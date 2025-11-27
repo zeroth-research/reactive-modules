@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use base::wire::Interface;
 
-use crate::dtype::Type;
+use crate::dtype::DType;
 
 // Context for building modules and atoms.
 // This is Toy-specific, it will be replaced in the future.
 pub struct Context {
-    vars: HashMap<String, (usize, Type)>,
+    vars: HashMap<String, (usize, DType)>,
     // XXX: it would be more efficient make the hash map point to the Entry in `vars`
     names: HashMap<usize, String>,
 }
@@ -24,17 +24,17 @@ impl Context {
         self.names.get(&id).map(|s| s.as_str())
     }
 
-    pub fn get(&self, name: &str) -> (usize, Type) {
+    pub fn get(&self, name: &str) -> (usize, DType) {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
         (*id, *ty)
     }
 
-    pub fn get_intf(&self, name: &str) -> Interface<Type> {
+    pub fn get_intf(&self, name: &str) -> Interface<DType> {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
         Interface::single(*id, *ty)
     }
 
-    pub fn get_intf_with_type(&self, name: &str) -> (Interface<Type>, Type) {
+    pub fn get_intf_with_type(&self, name: &str) -> (Interface<DType>, DType) {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
         (Interface::single(*id, *ty), *ty)
     }
@@ -43,7 +43,7 @@ impl Context {
     /// Does not check if the type is compatible if the var exists
     /// This method also remembers names of variables in `self.names`, because
     /// here we are creating named variables
-    pub fn var(&mut self, name: &str, ty: Type) -> (usize, Type) {
+    pub fn var(&mut self, name: &str, ty: DType) -> (usize, DType) {
         let new_id = self.vars.len();
         let name = name.to_string();
         let res = *self.vars.entry(name.clone()).or_insert((new_id, ty));
@@ -56,7 +56,7 @@ impl Context {
     }
 
     /// TODO: Does not check if the type is compatible if the var exists
-    pub fn tmp_var(&mut self, ty: Type) -> usize {
+    pub fn tmp_var(&mut self, ty: DType) -> usize {
         let new_id = self.vars.len();
         self.vars
             .entry(format!("__c_{}", new_id))
@@ -65,12 +65,12 @@ impl Context {
         new_id
     }
 
-    pub fn tmp_intf(&mut self, ty: Type) -> Interface<Type> {
+    pub fn tmp_intf(&mut self, ty: DType) -> Interface<DType> {
         Interface::single(self.tmp_var(ty), ty)
     }
 
-    pub fn get_vars(&self, names: &[&'static str]) -> Interface<Type> {
-        let mut vars: Vec<(usize, Type)> = Vec::with_capacity(names.len());
+    pub fn get_vars(&self, names: &[&'static str]) -> Interface<DType> {
+        let mut vars: Vec<(usize, DType)> = Vec::with_capacity(names.len());
         for name in names {
             let v = self.vars.get(*name).expect("Invalid variable");
             vars.push(*v);
@@ -80,11 +80,11 @@ impl Context {
     }
 
     // Union several wires
-    pub fn concat<'a, I>(&self, wires: I) -> Interface<Type>
+    pub fn concat<'a, I>(&self, wires: I) -> Interface<DType>
     where
-        I: IntoIterator<Item = &'a Interface<Type>>,
+        I: IntoIterator<Item = &'a Interface<DType>>,
     {
-        let mut tmp: Vec<(usize, Type)> = Vec::new();
+        let mut tmp: Vec<(usize, DType)> = Vec::new();
         for wire in wires {
             tmp.extend(wire.wires().map(|w| (w.id(), *w.dtype())))
         }
@@ -92,7 +92,7 @@ impl Context {
         Interface::sequence(tmp).unwrap()
     }
 
-    pub fn vars(&mut self, ty: Type, names: &[&'static str]) -> Interface<Type> {
+    pub fn vars(&mut self, ty: DType, names: &[&'static str]) -> Interface<DType> {
         let mut tmp = Vec::with_capacity(names.len());
         for name in names {
             let v = self.var(name, ty);

@@ -1,5 +1,5 @@
 use toy::context::Context;
-use toy::dtype::Type;
+use toy::dtype::DType;
 use toy::interpreter::Interpreter;
 
 mod example_module;
@@ -16,7 +16,7 @@ mod tests {
 
         // create variables
         ctx.vars(
-            Type::Int,
+            DType::Int,
             &["x", "y", "z", "y0", "z0", "x'", "y'", "z'", "y0'", "z0'"],
         );
 

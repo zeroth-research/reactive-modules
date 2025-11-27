@@ -1,11 +1,11 @@
 use pyo3::prelude::*;
 
 use crate::toy::pyval::PyVal;
-use toy::instruction::Instruction;
+use toy::IType;
 
 #[pyclass]
 pub struct WrappedTerm {
-    pub op: Instruction,
+    pub op: IType,
     pub reads: Vec<PyVal>,
     pub writes: Vec<PyVal>,
 }
@@ -27,7 +27,10 @@ impl WrappedTerm {
     }
 
     fn __repr__(&self) -> String {
-        format!("WrappedTerm({:?}, {:?}, {:?})", self.op, self.reads, self.writes)
+        format!(
+            "WrappedTerm({:?}, {:?}, {:?})",
+            self.op, self.reads, self.writes
+        )
     }
 
     fn __str__(&self) -> String {

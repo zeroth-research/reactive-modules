@@ -2,10 +2,9 @@ use toy::context::Context;
 
 use base::Module;
 
-use toy::dtype::Type;
-use toy::instruction::Instruction;
 use toy::term::*;
 use toy::val::Val;
+use toy::{DType, IType};
 
 use std::iter::zip;
 
@@ -20,29 +19,29 @@ fn init(ctx: &mut Context) -> Vec<Term> {
 fn update(ctx: &mut Context) -> Vec<Term> {
     // wire10 = x < y
     let reads = ctx.get_vars(&["x", "y"]);
-    let wire10 = ctx.tmp_intf(Type::Bool).clone();
+    let wire10 = ctx.tmp_intf(DType::Bool).clone();
     let xlty = mk_lt(reads, wire10.clone()).unwrap();
 
     // wire11 = x < z
     let reads = ctx.get_vars(&["x", "z"]);
-    let wire11 = ctx.tmp_intf(Type::Bool);
+    let wire11 = ctx.tmp_intf(DType::Bool);
     let xltz = mk_lt(reads, wire11.clone()).unwrap();
 
     // wire12 = wire10 || wire11
-    let wire12 = ctx.tmp_intf(Type::Bool);
+    let wire12 = ctx.tmp_intf(DType::Bool);
     let reads = ctx.concat(&[wire10, wire11]);
     let or = mk_or(reads, wire12.clone()).unwrap();
 
     // zero
-    let const0 = ctx.tmp_intf(Type::Int).clone();
+    let const0 = ctx.tmp_intf(DType::Int).clone();
     let term0 = mk_const(&Val::Int(0), const0.clone()).unwrap();
 
     // one
-    let const1 = ctx.tmp_intf(Type::Int).clone();
+    let const1 = ctx.tmp_intf(DType::Int).clone();
     let term1 = mk_const(&Val::Int(1), const1.clone()).unwrap();
 
     // wire15 = vars[0] + const1
-    let wire15 = ctx.tmp_intf(Type::Int).clone();
+    let wire15 = ctx.tmp_intf(DType::Int).clone();
     let x = ctx.get_intf("x");
     let reads = ctx.concat(&[x, const1]);
     let sum = mk_add(reads, wire15.clone()).unwrap();
@@ -58,7 +57,7 @@ fn update(ctx: &mut Context) -> Vec<Term> {
     vec![xlty, xltz, or, term0, term1, sum, ite, id_y, id_z]
 }
 
-pub fn build_module(ctx: &mut Context) -> Module<Type, Instruction> {
+pub fn build_module(ctx: &mut Context) -> Module<DType, IType> {
     let init_terms = init(ctx);
     let update_terms = update(ctx);
 
@@ -75,14 +74,14 @@ pub fn build_module(ctx: &mut Context) -> Module<Type, Instruction> {
 
 pub fn _build_prop(ctx: &mut Context) -> Vec<Term> {
     let reads = ctx.get_vars(&["x", "y"]);
-    let wire16 = ctx.tmp_intf(Type::Bool).clone();
+    let wire16 = ctx.tmp_intf(DType::Bool).clone();
     let xeqy = mk_eq(reads, wire16.clone()).unwrap();
 
     let reads = ctx.get_vars(&["x", "z"]);
-    let wire17 = ctx.tmp_intf(Type::Bool).clone();
+    let wire17 = ctx.tmp_intf(DType::Bool).clone();
     let xeqz = mk_eq(reads, wire17.clone()).unwrap();
 
-    let out = ctx.tmp_intf(Type::Bool);
+    let out = ctx.tmp_intf(DType::Bool);
     let or = mk_or(ctx.concat(&[wire16, wire17]), out).expect("Failed creating term");
 
     vec![xeqy, xeqz, or]

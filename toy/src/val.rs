@@ -1,4 +1,4 @@
-use crate::{dtype::Type, mat::MatVecIter, mat::VecIter};
+use crate::{dtype::DType, mat::MatVecIter, mat::VecIter};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -56,26 +56,26 @@ impl Val {
         }
     }
 
-    pub fn get_type(&self) -> Type {
+    pub fn get_type(&self) -> DType {
         match self {
             Val::None => panic!("None has no type"),
-            Val::Real(_) => Type::Real,
-            Val::Int(_) => Type::Int,
-            Val::Bool(_) => Type::Bool,
+            Val::Real(_) => DType::Real,
+            Val::Int(_) => DType::Int,
+            Val::Bool(_) => DType::Bool,
             Val::MatInt(v) => {
                 let n = v.len();
                 let m = if n > 0 { v[0].len() } else { 0 };
-                Type::MatInt(n, m)
+                DType::MatInt(n, m)
             }
             Val::MatReal(v) => {
                 let n = v.len();
                 let m = if n > 0 { v[0].len() } else { 0 };
-                Type::MatReal(n, m)
+                DType::MatReal(n, m)
             }
         }
     }
 
-    pub fn has_type(&self, ty: &Type) -> bool {
+    pub fn has_type(&self, ty: &DType) -> bool {
         if matches!(self, Val::None) {
             return false;
         }
@@ -86,24 +86,24 @@ impl Val {
         self.get_type() == rhs.get_type()
     }
 
-    pub fn from_str(val: &str, ty: Type) -> Option<Val> {
+    pub fn from_str(val: &str, ty: DType) -> Option<Val> {
         match ty {
-            Type::Bool => {
+            DType::Bool => {
                 if let Ok(val) = val.parse() {
                     return Some(Val::Bool(val));
                 }
             }
-            Type::Int => {
+            DType::Int => {
                 if let Ok(val) = val.parse() {
                     return Some(Val::Int(val));
                 }
             }
-            Type::Real => {
+            DType::Real => {
                 if let Ok(val) = val.parse() {
                     return Some(Val::Real(val));
                 }
             }
-            Type::MatInt(m, n) => {
+            DType::MatInt(m, n) => {
                 let vecs = MatVecIter::new(val)
                     .map(|s| VecIter::<i64>::new(s).collect::<Vec<i64>>())
                     .collect::<Vec<Vec<i64>>>();
@@ -114,7 +114,7 @@ impl Val {
                 }
                 return None;
             }
-            Type::MatReal(m, n) => {
+            DType::MatReal(m, n) => {
                 let vecs = MatVecIter::new(val)
                     .map(|s| VecIter::<f64>::new(s).collect::<Vec<f64>>())
                     .collect::<Vec<Vec<f64>>>();
