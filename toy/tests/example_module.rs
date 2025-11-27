@@ -1,11 +1,8 @@
-use toy::context::Context;
-
-use base::Module;
-
 use base::wire::Interface;
 use toy::term::*;
 use toy::val::Val;
-use toy::{DType, IType};
+
+use toy::{DType, ToyContext, ToyModule};
 
 use std::iter::zip;
 
@@ -14,7 +11,7 @@ fn concat_intf<D: Eq + Clone>(items: &[&Interface<D>]) -> Interface<D> {
     Interface::sequence(i).unwrap()
 }
 
-fn init(ctx: &mut Context) -> Vec<Term> {
+fn init(ctx: &mut ToyContext) -> Vec<Term> {
     let init_x = mk_const(&Val::Int(0), ctx.get_intf("x'")).unwrap();
     let init_y = mk_id(ctx.get_intf("y0'"), ctx.get_intf("y'")).unwrap();
     let init_z = mk_id(ctx.get_intf("z0'"), ctx.get_intf("z'")).unwrap();
@@ -22,7 +19,7 @@ fn init(ctx: &mut Context) -> Vec<Term> {
     vec![init_x, init_y, init_z]
 }
 
-fn update(ctx: &mut Context) -> Vec<Term> {
+fn update(ctx: &mut ToyContext) -> Vec<Term> {
     // wire10 = x < y
     let reads = ctx.get_vars(&["x", "y"]);
     let wire10 = ctx.tmp_intf(DType::Bool).clone();
@@ -63,14 +60,14 @@ fn update(ctx: &mut Context) -> Vec<Term> {
     vec![xlty, xltz, or, term0, term1, sum, ite, id_y, id_z]
 }
 
-pub fn build_module(ctx: &mut Context) -> Module<DType, IType> {
+pub fn build_module(ctx: &mut ToyContext) -> ToyModule {
     let init_terms = init(ctx);
     let update_terms = update(ctx);
 
     let latched = ctx.get_vars(&["x", "y", "z", "y0", "z0"]);
     let next = ctx.get_vars(&["x'", "y'", "z'", "y0'", "z0'"]);
 
-    Module::sequential(
+    ToyModule::sequential(
         zip(latched, next).map(|([l], [n])| [l, n]),
         init_terms,
         update_terms,
@@ -78,7 +75,7 @@ pub fn build_module(ctx: &mut Context) -> Module<DType, IType> {
     .expect("Failed building module")
 }
 
-pub fn _build_prop(ctx: &mut Context) -> Vec<Term> {
+pub fn _build_prop(ctx: &mut ToyContext) -> Vec<Term> {
     let reads = ctx.get_vars(&["x", "y"]);
     let wire16 = ctx.tmp_intf(DType::Bool).clone();
     let xeqy = mk_eq(reads, wire16.clone()).unwrap();

@@ -3,20 +3,17 @@ use pest::iterators::Pair;
 use std::collections::HashMap;
 use std::iter::zip;
 
-use crate::DType;
-use crate::context::Context;
-use crate::itype::{CmpOp, IType, LogicalOp};
+use crate::ToyContext as Ctx;
+use crate::itype::{CmpOp, LogicalOp};
 use crate::term::*;
 use crate::val::Val;
+use crate::{DType, IType, ToyAtom, ToyModule, ToyTerm};
 
 use base::atom::Atom;
 use base::module::Module;
 use base::term::Term;
 use base::wire::Interface;
-
-type ToyModule = Module<DType, IType>;
-type ToyAtom = Atom<DType, IType>;
-type ToyTerm = Term<DType, IType>;
+use base::wire::Wire;
 
 #[derive(pest_derive::Parser)]
 #[grammar = "parser/grammar.pest"]
@@ -29,17 +26,15 @@ struct Var {
 }
 
 pub struct Parser {
-    ctx: Context,
+    ctx: Ctx,
 }
 
 impl Parser {
     pub fn new() -> Self {
-        Parser {
-            ctx: Context::new(),
-        }
+        Parser { ctx: Ctx::new() }
     }
 
-    pub fn ctx(&self) -> &Context {
+    pub fn ctx(&self) -> &Ctx {
         &self.ctx
     }
 

@@ -16,3 +16,4 @@ pub type ToyModule = base::module::Module<DType, IType>;
 pub type ToyAtom = base::atom::Atom<DType, IType>;
 pub type ToyTerm = base::term::Term<DType, IType>;
 pub type ToyWire = base::wire::Wire<DType>;
+pub type ToyContext = crate::context::Context<DType>;

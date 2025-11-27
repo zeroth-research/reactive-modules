@@ -2,8 +2,8 @@ use base::module::Module;
 //use std::fs::metadata;
 use std::process;
 
+use toy::ToyContext;
 use toy::ToyModule;
-use toy::context::Context;
 
 use toy::parser::Parser;
 
@@ -35,7 +35,7 @@ struct Cli {
 }
 
 #[cfg(feature = "visual-html")]
-fn dump_to_html(modules: &[ToyModule], args: &Cli, ctx: &Context) -> Result<(), std::io::Error> {
+fn dump_to_html(modules: &[ToyModule], args: &Cli, ctx: &ToyContext) -> Result<(), std::io::Error> {
     // TODO: enable output to cusom file/dir
     for (n, module) in modules.iter().enumerate() {
         let module_name: Option<String> = None; //module.name();
