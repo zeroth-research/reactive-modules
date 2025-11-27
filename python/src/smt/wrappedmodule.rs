@@ -65,12 +65,12 @@ impl WrappedModule {
         }
     }
 
-    // #[cfg(feature = "visual-html")]
-    // fn to_html(&self, ctx: &Bound<'_, WrappedContext>, path: &str) {
-    //     let ctx: &WrappedContext = &ctx.borrow();
-    //     //visual::html::write_to_html(self.module, path, Some(ctx))
-    //     let _ = visual::html::write_to_html(&self.module, path, Some(&ctx.ctx));
-    // }
+    #[cfg(feature = "visual-html")]
+    fn to_html(&self, ctx: &Bound<'_, WrappedContext>, path: &str) {
+        let ctx: &WrappedContext = &ctx.borrow();
+        let _ =
+            visual::html::write_to_html(&self.module, path, Some(&ctx.to_smt_ctx(&self.module)));
+    }
 
     fn set_name(&mut self, name: &str) {
         self.module.set_name(name);

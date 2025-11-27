@@ -22,6 +22,10 @@ impl<D: Copy + Eq> Context<D> {
         self.names.get(&id).map(|s| s.as_str())
     }
 
+    pub fn names(&self) -> &HashMap<usize, String> {
+        &self.names
+    }
+
     pub fn get(&self, name: &str) -> (usize, D) {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
         (*id, *ty)
