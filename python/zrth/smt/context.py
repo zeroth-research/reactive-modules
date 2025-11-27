@@ -6,34 +6,16 @@ import pysmt.operators as op
 from zrth import _zrth
 from zrth.context import Context as ContextBase
 
-from typing import Callable
+from typing import Callable, Any
 
 import inspect
 
 from itertools import chain
 
 PyVal = _zrth.PyVal
-WrappedModule = _zrth.toy.WrappedModule
-WrappedAtom = _zrth.toy.WrappedAtom
-WrappedTerm = _zrth.toy.WrappedTerm
-
-
-class Choose:
-    def __init__(self, reads: list):
-        self.reads: list = reads
-
-    def args(self):
-        return self.reads
-
-
-class Case:
-    def __init__(self, cond, result):
-        assert isinstance(cond, (bool, Expr, Choose)), cond
-        self.cond = cond
-        self.result = result
-
-    def args(self):
-        return (self.cond, self.result)
+WrappedModule = _zrth.smt.WrappedModule
+WrappedAtom = _zrth.smt.WrappedAtom
+WrappedTerm = _zrth.smt.WrappedTerm
 
 
 def handle_return_value(r):
@@ -74,7 +56,7 @@ def from_pysmt_type(ty) -> str:
 
 class Context(ContextBase):
     def __init__(self):
-        super().__init__(_zrth.toy.WrappedContext())
+        super().__init__(_zrth.smt.WrappedContext())
 
     def var(self, name: str, ty: str) -> Symbol:
         return Symbol(name, to_pysmt_type(ty))
@@ -181,11 +163,9 @@ class Context(ContextBase):
             module.set_name(name)
         return module
 
-    def _choose(self, *args):
-        return Choose(args)
+    def _cond(self, cnd, iftrue, iffalse):
+        return Cond(args)
 
-    def _case(self, cond, res):
-        return Case(cond, res)
 
     def trace(self, fun: Callable, *args, **kwargs):
         # we want to access the context from the function in order to
@@ -193,15 +173,9 @@ class Context(ContextBase):
         # For that, we need to add it as a new argument.
         def wrapped_fun():
             assert "next" not in fun.__globals__
-            assert "Choose" not in fun.__globals__
-            assert "Case" not in fun.__globals__
             fun.__globals__["next"] = self.next_var
-            fun.__globals__["Choose"] = self._choose
-            fun.__globals__["Case"] = self._case
             r = fun(*args, **kwargs)
             del fun.__globals__["next"]
-            del fun.__globals__["Case"]
-            del fun.__globals__["Choose"]
             return r
 
         r = wrapped_fun()
@@ -286,49 +260,46 @@ class ToTerms:
 
         terms = self.terms
 
-        if isinstance(formula, Case):
-            return [args]
-        elif isinstance(formula, Choose):
-            reads = list(chain.from_iterable(args))
-            assert len(reads) > 0 and len(reads) % 2 == 0, reads
-            out = self._ctx.tmp_sym(reads[1].ty())
-            terms.append(WrappedTerm("Choose", reads=reads, writes=[out]))
-            return [out]
-        else:
-            assert all(isinstance(a, PyVal) for a in args), args
-            opty = formula.node_type()
-            if opty == op.SYMBOL:
-                return [
-                    self._ctx.get_sym(
-                        formula.symbol_name(), from_pysmt_type(formula.symbol_type())
-                    )
-                ]
-            elif opty == op.PLUS:
-                assert len(args) == 2
-                assert args[0].ty() == args[1].ty(), args
-                out = self._ctx.tmp_sym(args[0].ty())
-                terms.append(WrappedTerm("Arith::Add", reads=args, writes=[out]))
-                return [out]
-            elif opty == op.LT:
-                assert len(args) == 2
-                out = self._ctx.tmp_sym("Bool")
-                terms.append(WrappedTerm("Cmp::Lt", reads=args, writes=[out]))
-                return [out]
-            elif opty == op.OR:
-                assert len(args) == 2
-                out = self._ctx.tmp_sym("Bool")
-                terms.append(WrappedTerm("Logical::Or", reads=args, writes=[out]))
-                return [out]
-            elif opty == op.NOT:
-                assert len(args) == 1
-                out = self._ctx.tmp_sym("Bool")
-                terms.append(WrappedTerm("Logical::Not", reads=args, writes=[out]))
-                return [out]
-            if opty == op.INT_CONSTANT:
-                return [PyVal.int(formula.constant_value())]
-            else:
-                raise NotImplementedError(
-                    f"Not implemented translation of operation: {formula} {type(formula)}"
+        assert all(isinstance(a, PyVal) for a in args), args
+        opty = formula.node_type()
+        if opty == op.SYMBOL:
+            return [
+                self._ctx.get_sym(
+                    formula.symbol_name(), from_pysmt_type(formula.symbol_type())
                 )
+            ]
+        elif opty == op.PLUS:
+            assert len(args) == 2
+            assert args[0].ty() == args[1].ty(), args
+            out = self._ctx.tmp_sym(args[0].ty())
+            terms.append(WrappedTerm("Arith::Add", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.LT:
+            assert len(args) == 2
+            out = self._ctx.tmp_sym("Bool")
+            terms.append(WrappedTerm("Cmp::Lt", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.OR:
+            assert len(args) == 2
+            out = self._ctx.tmp_sym("Bool")
+            terms.append(WrappedTerm("Logical::Or", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.NOT:
+            assert len(args) == 1
+            out = self._ctx.tmp_sym("Bool")
+            terms.append(WrappedTerm("Logical::Not", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.ITE:
+            assert len(args) == 3
+            assert args[1].ty() == args[2].ty(), args
+            out = self._ctx.tmp_sym(args[1].ty())
+            terms.append(WrappedTerm("Cond", reads=args, writes=[out]))
+            return [out]
+        if opty == op.INT_CONSTANT:
+            return [PyVal.int(formula.constant_value())]
+        else:
+            raise NotImplementedError(
+                f"Not implemented translation of operation: {formula} {type(formula)}"
+            )
 
         raise RuntimeError("Unreachable")

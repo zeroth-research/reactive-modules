@@ -19,11 +19,11 @@ class Context:
     def unwrap(self):
         return self._context
 
-   #def fresh_var_id(self) -> int:
-   #    return self._context.fresh_var()
-   #
-   #def get_var_id(self, name: str) -> int:
-   #    return self._context.get_var(name)
+    # def fresh_var_id(self) -> int:
+    #    return self._context.fresh_var()
+    #
+    # def get_var_id(self, name: str) -> int:
+    #    return self._context.get_var(name)
 
     def _start_gathering_terms(self) -> None:
         assert self._terms is None, "Already gathering terms"
