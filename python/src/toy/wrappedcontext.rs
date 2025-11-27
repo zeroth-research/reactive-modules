@@ -5,7 +5,7 @@ use crate::toy::pyval::PyVal;
 /// Context for generating Atoms and Modules from Python
 #[pyclass]
 pub struct WrappedContext {
-    pub(crate) ctx: toy::context::Context,
+    pub(crate) ctx: toy::ToyContext,
 }
 
 impl Default for WrappedContext {
