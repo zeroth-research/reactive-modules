@@ -35,13 +35,7 @@ mod tests {
     #[should_panic]
     fn test_id_fail2() {
         let mut res: Val = Val::new();
-        assert!(
-            eval(
-                IType::Id,
-                &[&Val::Int(32), &Val::None],
-                &mut [&mut res]
-            ) == Ok(())
-        );
+        assert!(eval(IType::Id, &[&Val::Int(32), &Val::None], &mut [&mut res]) == Ok(()));
         assert!(res == Val::Int(42));
     }
 

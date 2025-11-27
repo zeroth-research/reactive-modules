@@ -3,8 +3,8 @@ use crate::{ToyAtom, ToyModule, ToyTerm};
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use crate::IType;
 use crate::DType;
+use crate::IType;
 
 use base::Wire;
 use visual::html::{DescriptionContext, Descriptor};

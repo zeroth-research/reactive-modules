@@ -5,8 +5,8 @@ pub use eval::eval;
 
 pub use state::State;
 
-use crate::IType;
 use crate::DType;
+use crate::IType;
 use base::module::Module;
 
 pub struct Interpreter<'a> {
