@@ -4,9 +4,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use crate::toy::pyval::PyVal;
-use crate::toy::util::str_to_pyerr;
 use crate::toy::wrappedcontext::WrappedContext;
 use crate::toy::wrappedterm::WrappedTerm;
+use crate::util::str_to_pyerr;
 
 use base::atom::Atom;
 use base::wire::Wire;
