@@ -1,4 +1,5 @@
 from pysmt.shortcuts import Symbol, Or, LT, Int, Not, Ite
+from pysmt.typing import INT
 import zrth.smt as smt
 import zrth.toy as toy
 
@@ -15,8 +16,9 @@ class SmtModule(smt.Module):
         return xn, y, z
 
 
-m1 = SmtModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
-m1.dbg()
+x, y, z = (Symbol(v, INT) for v in ('x', 'y', 'z'))
+m1 = SmtModule(ctrl=(x, y, z), extl="y0: Int, z0: Int")
+#m1.dbg()
 m1.to_html("/tmp/smt.html", open=True)
 
 
@@ -37,7 +39,7 @@ class ToyModule(toy.Module):
 
 
 m2 = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
-m2.dbg()
+#m2.dbg()
 m2.to_html("/tmp/toy.html", open=True)
 
 
