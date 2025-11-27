@@ -79,19 +79,6 @@ impl Context {
         Interface::sequence(vars).unwrap()
     }
 
-    // Union several wires
-    pub fn concat<'a, I>(&self, wires: I) -> Interface<DType>
-    where
-        I: IntoIterator<Item = &'a Interface<DType>>,
-    {
-        let mut tmp: Vec<(usize, DType)> = Vec::new();
-        for wire in wires {
-            tmp.extend(wire.wires().map(|w| (w.id(), *w.dtype())))
-        }
-
-        Interface::sequence(tmp).unwrap()
-    }
-
     pub fn vars(&mut self, ty: DType, names: &[&'static str]) -> Interface<DType> {
         let mut tmp = Vec::with_capacity(names.len());
         for name in names {

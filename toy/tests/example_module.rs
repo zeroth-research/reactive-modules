@@ -2,11 +2,17 @@ use toy::context::Context;
 
 use base::Module;
 
+use base::wire::Interface;
 use toy::term::*;
 use toy::val::Val;
 use toy::{DType, IType};
 
 use std::iter::zip;
+
+fn concat_intf<D: Eq + Clone>(items: &[&Interface<D>]) -> Interface<D> {
+    let i = items.iter().map(|intf| intf.wires()).flatten().cloned();
+    Interface::sequence(i).unwrap()
+}
 
 fn init(ctx: &mut Context) -> Vec<Term> {
     let init_x = mk_const(&Val::Int(0), ctx.get_intf("x'")).unwrap();
@@ -29,7 +35,7 @@ fn update(ctx: &mut Context) -> Vec<Term> {
 
     // wire12 = wire10 || wire11
     let wire12 = ctx.tmp_intf(DType::Bool);
-    let reads = ctx.concat(&[wire10, wire11]);
+    let reads = concat_intf(&[&wire10, &wire11]);
     let or = mk_or(reads, wire12.clone()).unwrap();
 
     // zero
@@ -43,11 +49,11 @@ fn update(ctx: &mut Context) -> Vec<Term> {
     // wire15 = vars[0] + const1
     let wire15 = ctx.tmp_intf(DType::Int).clone();
     let x = ctx.get_intf("x");
-    let reads = ctx.concat(&[x, const1]);
+    let reads = concat_intf(&[&x, &const1]);
     let sum = mk_add(reads, wire15.clone()).unwrap();
 
     // wire5 = ite(wire12, wire15, const0)
-    let reads = ctx.concat(&[wire12, wire15, const0]);
+    let reads = concat_intf(&[&wire12, &wire15, &const0]);
     let ite = mk_ite(reads, ctx.get_intf("x'")).unwrap();
 
     // y' := y
@@ -82,7 +88,7 @@ pub fn _build_prop(ctx: &mut Context) -> Vec<Term> {
     let xeqz = mk_eq(reads, wire17.clone()).unwrap();
 
     let out = ctx.tmp_intf(DType::Bool);
-    let or = mk_or(ctx.concat(&[wire16, wire17]), out).expect("Failed creating term");
+    let or = mk_or(concat_intf(&[&wire16, &wire17]), out).expect("Failed creating term");
 
     vec![xeqy, xeqz, or]
 }
