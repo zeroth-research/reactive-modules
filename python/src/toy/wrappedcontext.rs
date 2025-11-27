@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::toy::pyval::PyVal;
+use crate::pyval::PyVal;
 
 /// Context for generating Atoms and Modules from Python
 #[pyclass]
