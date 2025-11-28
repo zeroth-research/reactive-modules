@@ -1,6 +1,7 @@
 from pysmt.shortcuts import Symbol, Or, LT, Int, Not
 import zrth.toy as toy
 
+
 class Module(toy.Module):
 
     def init(self, extl) -> None:
@@ -9,10 +10,8 @@ class Module(toy.Module):
 
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl
-        yn = Choose(
-            Case(True, True)
-        )
-        xn =  Choose(
+        yn = Choose(Case(True, True))
+        xn = Choose(
             Case(yn, x + 1),
             Case(Or(x < y, x < z), x + Int(1)),
             Case(Not(Or(x < y, x < z)), Int(0)),
@@ -34,4 +33,3 @@ m1.to_html("/tmp/toy.html", open=True)
 # m = m1 | m2
 #
 # smt_m = m.to('smt')
-

@@ -1,6 +1,7 @@
 from pysmt.shortcuts import Symbol, Or, LT, Int, Not, Ite
 import zrth.smt as smt
 
+
 class Module(smt.Module):
 
     def init(self, extl) -> None:
@@ -9,7 +10,7 @@ class Module(smt.Module):
 
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl
-        xn =  Ite(Or(x < y, x < z), x + Int(1), Int(0))
+        xn = Ite(Or(x < y, x < z), x + Int(1), Int(0))
 
         return xn, y, z
 
@@ -27,4 +28,3 @@ m1.to_html("/tmp/smt.html", open=True)
 # m = m1 | m2
 #
 # smt_m = m.to('smt')
-
