@@ -16,140 +16,127 @@ pub fn parse_modules(modules: &[Module<DType, IType>]) -> String {
         let wires_ltc = &pair[0];
         let wires_nxt = &pair[1];
 
-        let offset = wires_ltc.len();
-
         out.push_str("\n; Latched Wires:\n");
         for (id, dtype) in wires_ltc.iter() {
-            let name = wire_name(id, offset);
+            let name = wire_name(id);
             out.push_str(&format!("(declare-fun {} () {})\n", name, dtype));
         }
 
         out.push_str("\n; Next Wires:\n");
         for (id, dtype) in wires_nxt.iter() {
-            let name = wire_name(id, offset);
+            let name = wire_name(id);
             out.push_str(&format!("(declare-fun {} () {})\n", name, dtype));
+        }
+
+        let mut temp_wires: std::collections::HashMap<usize, DType> = std::collections::HashMap::new();
+
+        for atom in module.atoms() {
+            for term in atom.init().iter().chain(atom.update().iter()) {
+                for (wire_id, dtype) in term.writes().iter() {
+                    if !wires_ltc.iter().any(|(id, _)| id == wire_id) &&
+                    !wires_nxt.iter().any(|(id, _)| id == wire_id) {
+                        temp_wires.insert(wire_id, *dtype);
+                    }
+                }
+            }
+        }
+
+        if !temp_wires.is_empty() {
+            out.push_str("\n; Temporary Wires:\n");
+            let mut temp_vec: Vec<_> = temp_wires.into_iter().collect();
+            temp_vec.sort_by_key(|(id, _)| *id);
+            
+            for (id, dtype) in temp_vec {
+                out.push_str(&format!("(declare-fun {} () {})\n", wire_name(id), dtype));
+            }
         }
 
         for (atom_index, atom) in module.atoms().iter().enumerate() {
             out.push_str(&format!("\n; ==============================\n; ATOM {}:\n; ==============================\n", atom_index));
-            
-            // Get the output wires (what this atom controls)
-            let output_wires: Vec<usize> = atom.ctrl().iter().map(|(w, _)| w).collect();
 
             let init = atom.init();
             let update = atom.update();
             
             out.push_str("\n; ==============\n; = Init Terms =\n; ==============\n\n");
-            for &output_wire in &output_wires {
-                let expr = smt_trace_expr(output_wire, init, offset);
-                let wire = wire_name(output_wire, offset);
-                out.push_str(&format!("(assert (= {} {}))\n", wire, expr));
+            for term in init {
+                let (write_id, _) = term.writes().iter().next().unwrap();
+                let expr = smt_expr(term);
+                out.push_str(&format!("(assert (= {} {}))\n", wire_name(write_id), expr));
             }
 
             out.push_str("\n; ================\n; = Update Terms =\n; ================\n\n");
-            for &output_wire in &output_wires {
-                let expr = smt_trace_expr(output_wire, update, offset);
-                let wire = wire_name(output_wire, offset);
-                out.push_str(&format!("(assert (= {} {}))\n", wire, expr));
+            for term in update {
+                let (write_id, _) = term.writes().iter().next().unwrap();
+                let expr = smt_expr(term);
+                out.push_str(&format!("(assert (= {} {}))\n", wire_name(write_id), expr));
             }
         }
     }
     out
 }
 
-fn wire_name(id: usize, offset: usize) -> String {
-    if id >= offset {
-        format!("w{}_{}", id - offset, 1)
-    } else {
-        format!("w{}_{}", id, 0)
-    }
+fn wire_name(id: usize) -> String {
+    format!("w{}", id)
 }
 
-fn smt_trace_expr(wire_id: usize, terms: &[Term<DType, IType>], offset: usize) -> String {
-    // Find the term that writes to this wire
-    let term = terms.iter().find(|t| t.writes().iter().any(|(w, _)| w == wire_id));
-    
-    match term {
-        None => {
-            // No term writes this wire: it's an input
-            wire_name(wire_id, offset)
-        }
-        Some(term) => {
-            // Some term writes this wire: recursively trace it
-            match term.itype() {
-                IType::Const(val) => match val {
-                    Val::Real(x) => x.to_string(),
-                    Val::Int(x) => x.to_string(),
-                    Val::Bool(b) => b.to_string(),
-                    Val::None => panic!("Cannot emit None"),
-                },
-                IType::Arith(op) => {
-                    let input1 = term.reads().iter().nth(0).unwrap().0;
-                    let input2 = term.reads().iter().nth(1).unwrap().0;
-                    
-                    let expr1 = smt_trace_expr(input1, terms, offset);
-                    let expr2 = smt_trace_expr(input2, terms, offset);
-                    
-                    match op {
-                        ArithOp::Add => format!("(+ {} {})", expr1, expr2),
-                        ArithOp::Sub => format!("(- {} {})", expr1, expr2),
-                        ArithOp::Mul => format!("(* {} {})", expr1, expr2),
-                        ArithOp::Div => format!("(/ {} {})", expr1, expr2),
-                    }
-                }
-                IType::Logical(op) => {
-                    match op {
-                        LogicalOp::Not => {
-                            let input = term.reads().iter().nth(0).unwrap().0;
-                            let expr = smt_trace_expr(input, terms, offset);
-                            return format!("(not {})", expr);
-                        }
-                        LogicalOp::And | LogicalOp::Or => {
-                            let input1 = term.reads().iter().nth(0).unwrap().0;
-                            let input2 = term.reads().iter().nth(1).unwrap().0;
-                            
-                            let expr1 = smt_trace_expr(input1, terms, offset);
-                            let expr2 = smt_trace_expr(input2, terms, offset);
-
-                            match op {
-                                LogicalOp::And => format!("(and {} {})", expr1, expr2),
-                                LogicalOp::Or  => format!("(or {} {})", expr1, expr2),
-                                _ => unreachable!(),
-                            }
-                        }
-                    }
-                }
-                IType::Cmp(op) => {
-                    let input1 = term.reads().iter().nth(0).unwrap().0;
-                    let input2 = term.reads().iter().nth(1).unwrap().0;
-
-                    let expr1 = smt_trace_expr(input1, terms, offset);
-                    let expr2 = smt_trace_expr(input2, terms, offset);
-
-                    match op {
-                        CmpOp::Eq => format!("(= {} {})", expr1, expr2),
-                        CmpOp::Lt => format!("(< {} {})", expr1, expr2),
-                        CmpOp::Le => format!("(<= {} {})", expr1, expr2),
-                        CmpOp::Gt => format!("(> {} {})", expr1, expr2),
-                        CmpOp::Ge => format!("(>= {} {})", expr1, expr2),
-                    }
-                }
-                IType::Id => {
-                    let input_id = term.reads().iter().nth(0).unwrap().0;
-                    smt_trace_expr(input_id, terms, offset)
-                }
-                IType::Cond => {
-                    let cond_id = term.reads().iter().nth(0).unwrap().0;
-                    let then_id = term.reads().iter().nth(1).unwrap().0;
-                    let else_id = term.reads().iter().nth(2).unwrap().0;
-
-                    let cond_expr = smt_trace_expr(cond_id, terms, offset);
-                    let then_expr = smt_trace_expr(then_id, terms, offset);
-                    let else_expr = smt_trace_expr(else_id, terms, offset);
-
-                    format!("(ite {} {} {})", cond_expr, then_expr, else_expr)
-                }
+fn smt_expr(term: &Term<DType, IType>) -> String {
+    match term.itype() {
+        IType::Const(val) => match val {
+            Val::Real(x) => x.to_string(),
+            Val::Int(x) => x.to_string(),
+            Val::Bool(b) => b.to_string(),
+            Val::None => panic!("Cannot emit None"),
+        },
+        
+        IType::Arith(op) => {
+            let args: Vec<String> = term.reads().iter()
+                .map(|(id, _)| wire_name(id))
+                .collect();
+            
+            match op {
+                ArithOp::Add => format!("(+ {} {})", args[0], args[1]),
+                ArithOp::Sub => format!("(- {} {})", args[0], args[1]),
+                ArithOp::Mul => format!("(* {} {})", args[0], args[1]),
+                ArithOp::Div => format!("(/ {} {})", args[0], args[1]),
             }
+        }
+        
+        IType::Logical(op) => {
+            let args: Vec<String> = term.reads().iter()
+                .map(|(id, _)| wire_name(id))
+                .collect();
+            
+            match op {
+                LogicalOp::Not => format!("(not {})", args[0]),
+                LogicalOp::And => format!("(and {} {})", args[0], args[1]),
+                LogicalOp::Or  => format!("(or {} {})", args[0], args[1]),
+            }
+        }
+        
+        IType::Cmp(op) => {
+            let args: Vec<String> = term.reads().iter()
+                .map(|(id, _)| wire_name(id))
+                .collect();
+            
+            match op {
+                CmpOp::Eq => format!("(= {} {})", args[0], args[1]),
+                CmpOp::Lt => format!("(< {} {})", args[0], args[1]),
+                CmpOp::Le => format!("(<= {} {})", args[0], args[1]),
+                CmpOp::Gt => format!("(> {} {})", args[0], args[1]),
+                CmpOp::Ge => format!("(>= {} {})", args[0], args[1]),
+            }
+        }
+        
+        IType::Id => {
+            let (id, _) = term.reads().iter().next().unwrap();
+            wire_name(id)
+        }
+        
+        IType::Cond => {
+            let c = wire_name(term.reads().iter().nth(0).unwrap().0);
+            let t = wire_name(term.reads().iter().nth(1).unwrap().0);
+            let e = wire_name(term.reads().iter().nth(2).unwrap().0);
+            format!("(ite {} {} {})", c, t, e)
         }
     }
 }
