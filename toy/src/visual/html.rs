@@ -124,10 +124,35 @@ impl Context<DType> {
         s
     }
 
+    fn dump_atom_section(&self, atom: &ToyAtom, sec: &str, fmt: &HashMap<&str, &str>) -> String {
+        let mut s = String::new();
+
+        match sec {
+            "init" => {
+                for term in atom.init().iter() {
+                    write!(s, "  ").unwrap();
+                    writeln!(s, "{}", self.dump_term(term, fmt)).unwrap();
+                }
+            }
+            "update" => {
+                for term in atom.update().iter() {
+                    write!(s, "  ").unwrap();
+                    writeln!(s, "{}", self.dump_term(term, fmt)).unwrap();
+                }
+            }
+            _ => panic!("Invalid section"),
+        }
+
+        s
+    }
+
     fn dump_term(&self, term: &ToyTerm, fmt: &HashMap<&str, &str>) -> String {
         let empty_str = "";
         let fmt_emph = fmt.get("EMPH_START").unwrap_or(&empty_str);
         let fmt_emph_end = fmt.get("EMPH_END").unwrap_or(&empty_str);
+        let color_term_lhs = fmt.get("COLOR_TERM_LHS").unwrap_or(&empty_str);
+        let color_term_op = fmt.get("COLOR_TERM_OP").unwrap_or(&empty_str);
+        let color_clr = fmt.get("COLOR_CLEAR").unwrap_or(&empty_str);
 
         let reads = term
             .read()
@@ -146,7 +171,7 @@ impl Context<DType> {
             .join(", ");
 
         format!(
-            "{writes} = {fmt_emph}{}{fmt_emph_end}({reads})",
+            "{color_term_lhs}{writes}{color_clr} = {color_term_op}{fmt_emph}{}{fmt_emph_end}{color_clr}({reads})",
             term.itype()
         )
     }
@@ -243,12 +268,21 @@ impl Descriptor<DType, IType> for Context<DType> {
     }
 
     fn describe_atom(&self, atom: &ToyAtom, how: DescriptionContext) -> String {
-        match how {
-            DescriptionContext::Node => "Atom".into(),
-            _ => {
-                let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
-                format!("<h2>Atom</h2>\n<pre>{}</pre>", self.dump_atom(atom, &fmt))
-            }
+        if matches!(how, DescriptionContext::Node) {
+            return "Atom".into();
+        }
+
+        let fmt = HashMap::from([
+            ("BOLD_START", "<b>"),
+            ("BOLD_END", "</b>"),
+            ("COLOR_TERM_LHS", "<span style=\"color: #106EE2\">"),
+            ("COLOR_TERM_OP", "<span style=\"color: #E88914\">"),
+            ("COLOR_CLEAR", "</span>"),
+        ]);
+        if matches!(how, DescriptionContext::Inline) {
+            format!("<pre>\n{}</pre>", self.dump_atom(atom, &fmt))
+        } else {
+            format!("<h2>Atom</h2><pre>\n{}</pre>", self.dump_atom(atom, &fmt))
         }
     }
 
@@ -261,31 +295,18 @@ impl Descriptor<DType, IType> for Context<DType> {
             };
         }
 
-        let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
-
-        match sec {
-            "init" => {
-                let terms = atom
-                    .init()
-                    .iter()
-                    .map(|t| self.dump_term(t, &fmt))
-                    .collect::<Vec<String>>()
-                    .join("\n");
-
-                format!("<h2>Atom {}</h2>\n<pre>{}</pre>", sec, terms)
-            }
-            "update" => {
-                let terms = atom
-                    .update()
-                    .iter()
-                    .map(|t| self.dump_term(t, &fmt))
-                    .collect::<Vec<String>>()
-                    .join("\n");
-
-                format!("<h2>Atom {}</h2>\n<pre>{}</pre>", sec, terms)
-            }
-            _ => panic!("Invalid atom section"),
-        }
+        let fmt = HashMap::from([
+            ("BOLD_START", "<b>"),
+            ("BOLD_END", "</b>"),
+            ("COLOR_TERM_LHS", "<span style=\"color: #106EE2\">"),
+            ("COLOR_TERM_OP", "<span style=\"color: #E88914\">"),
+            ("COLOR_CLEAR", "</span>"),
+        ]);
+        format!(
+            "<h2>Atom {}</h2><pre>\n{}</pre>",
+            sec,
+            self.dump_atom_section(atom, sec, &fmt)
+        )
     }
 
     fn describe_term(&self, term: &ToyTerm, how: DescriptionContext) -> String {
@@ -293,7 +314,13 @@ impl Descriptor<DType, IType> for Context<DType> {
             return term.itype().to_string();
         }
 
-        let fmt = HashMap::from([("EMPH_START", "<i>"), ("EMPH_END", "</i>")]);
+        let fmt = HashMap::from([
+            //("EMPH_START", "<i>"),
+            //("EMPH_END", "</i>"),
+            ("COLOR_TERM_LHS", "<span style=\"color: #106EE2\">"),
+            ("COLOR_TERM_OP", "<span style=\"color: #E88914\">"),
+            ("COLOR_CLEAR", "</span>"),
+        ]);
         format!(
             "<pre>\n{}\n\nraw:\n\n{}</pre>",
             self.dump_term(term, &fmt),
