@@ -1,4 +1,4 @@
-# Connecting toy crate to Python
+# Accessing Zeroth crates from Python
 
 ## Setup
 
@@ -8,7 +8,8 @@ Install [uv](https://github.com/astral-sh/uv) and run
 
 ```shell
 uv sync
-uv run cargo build
+uv run maturin develop
+uv run tests/test.py
 ```
 
 
@@ -49,18 +50,9 @@ virtual environment.
 
 ### Building manually
 
-
 ```sh
 cargo build
 ```
 
 TBD: the need to rename `libzrm_toy.dylib` into `zrm_toy.so`, otherwise Python will not load it.
-
-## Usage
-
-### With uv
-
-```shell
-uv run tests/test.py
-```
 
