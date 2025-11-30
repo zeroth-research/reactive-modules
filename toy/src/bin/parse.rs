@@ -1,7 +1,6 @@
+use base::module::Module;
 //use std::fs::metadata;
 use std::process;
-
-use base::module::Module;
 use toy::context::Context;
 use toy::dtype::Type;
 use toy::instruction::Instruction;
@@ -47,7 +46,7 @@ fn dump_to_html(modules: &[ToyModule], args: &Cli, ctx: &Context) -> Result<(), 
     //}
 
     for (n, module) in modules.iter().enumerate() {
-        let module_name = module.name();
+        let module_name: Option<String> = None;//module.name();
         let path = if let Some(name) = module_name {
             format!("{}.{}.html", args.spec, name)
         } else {

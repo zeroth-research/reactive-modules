@@ -1,7 +1,7 @@
 use crate::atom::Atom;
 use crate::term::Term;
-use crate::wire::Wire;
-use std::collections::{HashMap, HashSet};
+use crate::wire::{Interface, Wire};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
 
@@ -16,27 +16,21 @@ pub struct Module<D, I> {
     ///     |     obs     | prvt |
     ///     *--------------------*
     ///     | extl |    ctrl     |
-    ///     *--------------------*
-    ///     |        wire        |
     ///     *====================*
     /// ```
     ///  Wires are organised in pairs of identical twins where
     ///  - 0: latched wires
     ///  - 1: next wires
-    extl: [Wire<D>; 2],
-    intf: [Wire<D>; 2],
-    prvt: [Wire<D>; 2],
-    obs: [Wire<D>; 2],
-    ctrl: [Wire<D>; 2],
-    wire: [Wire<D>; 2],
+    extl: Interface<D, 2>,
+    intf: Interface<D, 2>,
+    prvt: Interface<D, 2>,
+    obs: Interface<D, 2>,
+    ctrl: Interface<D, 2>,
 
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
     /// as defined in the reactive modules paper.
     atoms: Vec<Atom<D, I>>,
-
-    // Optional name, useful mainly for debugging and visualizing
-    name: Option<String>,
 }
 
 impl<D, I> Module<D, I> {
@@ -44,186 +38,166 @@ impl<D, I> Module<D, I> {
         &self.atoms
     }
 
-    pub fn extl(&self) -> &[Wire<D>; 2] {
+    pub fn extl(&self) -> &Interface<D, 2> {
         &self.extl
     }
 
-    pub fn intf(&self) -> &[Wire<D>; 2] {
+    pub fn intf(&self) -> &Interface<D, 2> {
         &self.intf
     }
 
-    pub fn prvt(&self) -> &[Wire<D>; 2] {
+    pub fn prvt(&self) -> &Interface<D, 2> {
         &self.prvt
     }
 
-    pub fn ctrl(&self) -> &[Wire<D>; 2] {
+    pub fn ctrl(&self) -> &Interface<D, 2> {
         &self.ctrl
     }
 
-    pub fn obs(&self) -> &[Wire<D>; 2] {
+    pub fn obs(&self) -> &Interface<D, 2> {
         &self.obs
     }
 
     pub fn is_closed(&self) -> bool {
-        self.extl[0].is_empty()
+        self.extl.is_empty()
     }
 
     pub fn is_open(&self) -> bool {
-        !self.extl[0].is_empty()
-    }
-
-    pub fn set_name(&mut self, name: &str) {
-        self.name = Some(name.to_string());
-    }
-
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+        !self.extl.is_empty()
     }
 }
 
 impl<D: Clone + Eq + Debug, I> Module<D, I> {
-    /// Creates a new module **without performing any consistency or visibility checks**.
+    /// Constructs a module **without performing any consistency or visibility checks**.
     ///
-    /// This constructor provides complete control to the caller and performs no inference
-    /// or validation. It should be used only when redundant automation would otherwise
-    /// be repeated (for example, when all necessary checks and inferences have already
-    /// been performed externally).
+    /// This constructor provides **full control** to the caller and performs no inference
+    /// or validation. It should be used only when all necessary checks or automation
+    /// have already been handled externally.
     ///
+    /// Unlike the other constructors, which automatically infer wire visibility and module
+    /// properties, `new_unchecked` allows manually specifying all wire sets and atoms.
+    /// This is useful for advanced scenarios or for optimising performance when redundant
+    /// automation would otherwise occur.
+    ///
+    /// # Wire layout and visibility
+    ///
+    /// Wire visibility and organization within a module can be visualized as follows:
+    ///
+    /// ```text
+    ///     *====================*
+    ///     | extl | intf | prvt |
+    ///     *--------------------*
+    ///     |     obs     | prvt |
+    ///     *--------------------*
+    ///     | extl |    ctrl     |
+    ///     *====================*
+    /// ```
     /// # Parameters
-    /// - `extl`: External wires (input wires).
-    /// - `intf`: Interface wires (output wires).
-    /// - `prvt`: Private wires (hidden wires).
-    /// - `obs`: Observable wires (visible wires)
-    /// - `ctrl`: Controlled wires (state-holding wires).
-    /// - `wire`: The full set of wires
-    /// - `atoms`: A list of atoms defining the module’s internal behaviour.
+    /// - `extl` are external wires, exposed to the environment (module inputs).
+    /// - `intf` are interface wires, forming the module’s public outputs.
+    /// - `prvt` are private wires, hidden from external access.
+    /// - `obs` are observable wires, visible through the module interface.
+    /// - `ctrl` are controlled wires, used for state management and internal coordination.
+    /// - `atoms`: The list of atoms defining the module’s internal behaviour.
     ///
     /// # Returns
     /// The constructed module.
     ///
     /// # Safety
-    /// This function performs **no validation or inference**.
-    /// It is the caller’s responsibility to ensure all wires, atoms, and interfaces
-    /// are well-formed and consistent.
+    /// This function performs **no validation or inference**. It is the caller’s
+    /// responsibility to ensure that all wires, atoms, and interfaces are well-formed
+    /// and consistent.
     ///
     /// # See Also
-    /// - [`partially_observable`], for safe construction with partial visibility.
-    /// - [`observable`], for fully observable modules.
+    /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
+    /// - [`Module::partially_observable`], [`Module::observable`], [`Module::sequential`],
+    ///   [`Module::combinatorial`] for safe, automated module construction
     pub fn new_unchecked(
-        extl: [Wire<D>; 2],
-        intf: [Wire<D>; 2],
-        prvt: [Wire<D>; 2],
-        obs: [Wire<D>; 2],
-        ctrl: [Wire<D>; 2],
-        wire: [Wire<D>; 2],
+        extl: Interface<D, 2>,
+        intf: Interface<D, 2>,
+        prvt: Interface<D, 2>,
+        obs: Interface<D, 2>,
+        ctrl: Interface<D, 2>,
         atoms: Vec<Atom<D, I>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
-            debug_assert_eq!(extl[0].len(), extl[1].len());
-            debug_assert_eq!(intf[0].len(), intf[1].len());
-            debug_assert_eq!(prvt[0].len(), prvt[1].len());
-            debug_assert_eq!(ctrl[0].len(), ctrl[1].len());
-            debug_assert_eq!(obs[0].len(), obs[1].len());
-            debug_assert_eq!(wire[0].len(), wire[1].len());
+            debug_assert_eq!(obs.len(), extl.len() + intf.len());
+            debug_assert_eq!(ctrl.len(), intf.len() + prvt.len());
 
             let mut ltc_to_dtype: HashMap<usize, &D> = HashMap::new();
             let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
-            for ((ltc, dtype), (nxt, ntype)) in wire[0].iter().zip(wire[1].iter()) {
-                debug_assert_eq!(dtype, ntype);
-                // check that indices are unique, and store them
-                debug_assert!(ltc_to_dtype.insert(ltc, dtype).is_none());
-                debug_assert!(nxt_to_ltc.insert(nxt, ltc).is_none());
-            }
 
-            let mut obs_ltc: HashSet<usize> = HashSet::new();
-            for ((ltc, dtype), (nxt, ntype)) in obs[0].iter().zip(obs[1].iter()) {
-                debug_assert_eq!(dtype, ntype);
-                // check consistency with other wires
-                debug_assert_eq!(ltc_to_dtype.get(&ltc), Some(&dtype));
-                debug_assert_eq!(nxt_to_ltc.get(&nxt), Some(&ltc));
+            let mut extl_ltc: HashSet<usize> = HashSet::new();
+            for [ltc, nxt] in &extl {
+                debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 // check that indices are unique, and store them
-                debug_assert!(obs_ltc.insert(ltc));
-            }
+                debug_assert!(ltc_to_dtype.insert(ltc.id(), ltc.dtype()).is_none());
+                debug_assert!(nxt_to_ltc.insert(nxt.id(), ltc.id()).is_none());
 
-            let mut ctrl_ltc: HashSet<usize> = HashSet::new();
-            for ((ltc, dtype), (nxt, ntype)) in ctrl[0].iter().zip(ctrl[1].iter()) {
-                debug_assert_eq!(dtype, ntype);
-                // check consistency with other wires
-                debug_assert_eq!(ltc_to_dtype.get(&ltc), Some(&dtype));
-                debug_assert_eq!(nxt_to_ltc.get(&nxt), Some(&ltc));
-                // check that indices are unique, and store them
-                debug_assert!(ctrl_ltc.insert(ltc));
-            }
-
-            let mut prvt_ltc: HashSet<usize> = HashSet::new();
-            for ((ltc, dtype), (nxt, ntype)) in prvt[0].iter().zip(prvt[1].iter()) {
-                debug_assert_eq!(dtype, ntype);
-                // check consistency with other wires
-                debug_assert_eq!(ltc_to_dtype.get(&ltc), Some(&dtype));
-                debug_assert_eq!(nxt_to_ltc.get(&nxt), Some(&ltc));
-                debug_assert!(!obs_ltc.contains(&ltc));
-                debug_assert!(ctrl_ltc.contains(&ltc));
-                // check that indices are unique, and store them
-                debug_assert!(prvt_ltc.insert(ltc));
+                extl_ltc.insert(ltc.id());
             }
 
             let mut intf_ltc: HashSet<usize> = HashSet::new();
-            for ((ltc, dtype), (nxt, ntype)) in intf[0].iter().zip(intf[1].iter()) {
-                debug_assert_eq!(dtype, ntype);
-                // check consistency with other wires
-                debug_assert_eq!(ltc_to_dtype.get(&ltc), Some(&dtype));
-                debug_assert_eq!(nxt_to_ltc.get(&nxt), Some(&ltc));
-                debug_assert!(obs_ltc.contains(&ltc));
-                debug_assert!(ctrl_ltc.contains(&ltc));
-                debug_assert!(!prvt_ltc.contains(&ltc));
+            for [ltc, nxt] in &intf {
+                debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 // check that indices are unique, and store them
-                debug_assert!(intf_ltc.insert(ltc));
+                debug_assert!(ltc_to_dtype.insert(ltc.id(), ltc.dtype()).is_none());
+                debug_assert!(nxt_to_ltc.insert(nxt.id(), ltc.id()).is_none());
+
+                intf_ltc.insert(ltc.id());
             }
 
-            let mut extl_ltc: HashSet<usize> = HashSet::new();
-            for ((ltc, dtype), (nxt, ntype)) in extl[0].iter().zip(extl[1].iter()) {
-                debug_assert_eq!(dtype, ntype);
-                // check consistency with other wires
-                debug_assert_eq!(ltc_to_dtype.get(&ltc), Some(&dtype));
-                debug_assert_eq!(nxt_to_ltc.get(&nxt), Some(&ltc));
-                debug_assert!(obs_ltc.contains(&ltc));
-                debug_assert!(!ctrl_ltc.contains(&ltc));
-                debug_assert!(!prvt_ltc.contains(&ltc));
-                debug_assert!(!intf_ltc.contains(&ltc));
+            let mut prvt_ltc: HashSet<usize> = HashSet::new();
+            for [ltc, nxt] in &prvt {
+                debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 // check that indices are unique, and store them
-                debug_assert!(extl_ltc.insert(ltc));
+                debug_assert!(ltc_to_dtype.insert(ltc.id(), ltc.dtype()).is_none());
+                debug_assert!(nxt_to_ltc.insert(nxt.id(), ltc.id()).is_none());
+
+                prvt_ltc.insert(ltc.id());
             }
 
-            // check that extl, intf, and prvt contain obs, ctrl, and wire
-            for (ltc, _) in ctrl[0].iter() {
-                debug_assert!(intf_ltc.contains(&ltc) || prvt_ltc.contains(&ltc));
+            let mut obs_ltc: HashSet<usize> = HashSet::new();
+            for [ltc, nxt] in &obs {
+                debug_assert_eq!(ltc.dtype(), nxt.dtype());
+                // check consistency with other wires
+                debug_assert_eq!(ltc_to_dtype.get(&ltc.id()), Some(&ltc.dtype()));
+                debug_assert_eq!(nxt_to_ltc.get(&nxt.id()), Some(&ltc.id()));
+                // check that indices are unique
+                debug_assert!(obs_ltc.insert(ltc.id()));
+
+                debug_assert!(extl_ltc.contains(&ltc.id()) || intf_ltc.contains(&ltc.id()));
             }
-            for (ltc, _) in obs[0].iter() {
-                debug_assert!(extl_ltc.contains(&ltc) || intf_ltc.contains(&ltc));
-            }
-            for (ltc, _) in wire[0].iter() {
-                debug_assert!(
-                    extl_ltc.contains(&ltc) || intf_ltc.contains(&ltc) || prvt_ltc.contains(&ltc)
-                );
+
+            let mut ctrl_ltc: HashSet<usize> = HashSet::new();
+            for [ltc, nxt] in &ctrl {
+                debug_assert_eq!(ltc.dtype(), nxt.dtype());
+                // check consistency with other wires
+                debug_assert_eq!(ltc_to_dtype.get(&ltc.id()), Some(&ltc.dtype()));
+                debug_assert_eq!(nxt_to_ltc.get(&nxt.id()), Some(&ltc.id()));
+                // check that indices are unique
+                debug_assert!(ctrl_ltc.insert(ltc.id()));
+
+                debug_assert!(intf_ltc.contains(&ltc.id()) || prvt_ltc.contains(&ltc.id()));
             }
 
             let nxt_to_dtype_get = |w| nxt_to_ltc.get(&w).and_then(|z| ltc_to_dtype.get(z));
 
             // check atoms consistency
-            let mut written: HashSet<usize> = HashSet::from_iter(extl[1].iter().map(|(w, _)| w));
+            let mut written: HashSet<usize> = HashSet::from_iter(extl[1].iter().map(Wire::id));
             for atom in atoms.iter() {
-                for (ltc, dtype) in atom.read.iter() {
+                for (ltc, dtype) in atom.read().wires().map(Into::into) {
                     // reads are latched, and dtype matches
                     debug_assert_eq!(Some(&dtype), ltc_to_dtype.get(&ltc));
                 }
-                for (nxt, dtype) in atom.wait.iter() {
+                for (nxt, dtype) in atom.wait().wires().map(Into::into) {
                     // awaits are next, and dtype matches
                     debug_assert_eq!(Some(&dtype), nxt_to_dtype_get(nxt));
                     // await order is consistent
                     debug_assert!(written.contains(&nxt));
                 }
-                for (nxt, dtype) in atom.ctrl.iter() {
+                for (nxt, dtype) in atom.ctrl().wires().map(Into::into) {
                     // controls are next, and dtype matches
                     debug_assert_eq!(Some(&dtype), nxt_to_dtype_get(nxt));
                     // controls are disjoint
@@ -232,11 +206,17 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             }
 
             // check that all module control wires are written/controlled by an atom
-            for (nxt, _) in ctrl[1].iter() {
+            for nxt in ctrl[1].iter().map(Wire::id) {
                 debug_assert!(written.contains(&nxt));
             }
 
-            // TODO check that temporaries are decoupled from module wires
+            // check that temporaries are decoupled from module wires and other atoms
+            let mut module_temp = HashSet::new();
+            for lc in atoms.iter().map(Atom::temp).flat_map(Interface::ids) {
+                debug_assert!(!ltc_to_dtype.contains_key(&lc));
+                debug_assert!(!nxt_to_ltc.contains_key(&lc));
+                debug_assert!(module_temp.insert(lc));
+            }
         }
 
         Module {
@@ -245,113 +225,132 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             prvt,
             obs,
             ctrl,
-            wire,
             atoms,
-            name: None,
         }
     }
 
-    /// Constructs a **fully observable module** from the given atoms.
+    /// Constructs a **fully observable module** from a set of atoms.
     ///
-    /// This constructor automatically infers external and interface wires from the provided atoms.
-    /// The resulting module exposes all of its wires publicly (i.e. it has no private state).
+    /// A fully observable module exposes all of its wires (`obs`) publicly, so that
+    /// no internal state remains hidden. This is useful when the entire behaviour
+    /// of the module should be visible through its interface.
+    ///
+    /// The module is composed of the provided atoms, and wire visibility is automatically
+    /// inferred from the atoms. Unlike partially observable modules, there are no private wires,
+    /// so the module’s interface is entirely transparent.
     ///
     /// # Parameters
-    /// - `obs`: The pair of observable wires (inputs and outputs).
-    /// - `atoms`: The atoms defining the module’s behaviour.
+    /// - `obs`: The pair of observable wires `[latched, next]` representing the module’s interface.
+    /// - `atoms`: An iterable collection of atoms defining the module’s internal behaviour.
     ///
     /// # Returns
-    /// A `Result` containing the constructed module if successful, or an error string
-    /// if the construction fails.
-    ///
-    /// # Notes
-    /// This constructor represents the fully observable case, where `m.prvt().is_empty()`.
+    /// A `Result` containing the constructed fully observable module if successful,
+    /// or an error string if inference or consistency checks fail.
     ///
     /// # See Also
     /// - [`partially_observable`], for modules with private state.
-    /// - [`sequential`], for purely sequential modules that are fully observable by default.
+    /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn observable<A>(obs: [Wire<D>; 2], atoms: A) -> Result<Self, &'static str>
+    pub fn observable<T, O, A>(obs: O, atoms: A) -> Result<Self, &'static str>
     where
+        T: Into<[Wire<D>; 2]>,
+        O: IntoIterator<Item = T>,
         A: IntoIterator<Item = Atom<D, I>> + Sized,
     {
-        Self::partially_observable(obs, [Wire::none(), Wire::none()], atoms)
+        let prvt: std::iter::Empty<[Wire<D>; 2]> = std::iter::empty();
+        Self::partially_observable(obs, prvt, atoms)
     }
 
-    /// Constructs a **partially observable module** from the given atoms.
+    /// Constructs a **partially observable module** from a sequence of atoms.
     ///
-    /// A partially observable module exposes a subset of its wires (`obs`) while keeping
-    /// others private (`prvt`). The external and interface wires is automatically inferred from
-    /// the provided atoms.
+    /// A partially observable module exposes only a subset of its wires (`obs`) while
+    /// keeping others private (`prvt`). This allows encapsulation of internal state
+    /// or logic that should not be visible externally.
+    ///
+    /// The module is composed of the provided atoms, and the visibility of each wire
+    /// is automatically inferred from the atoms. Unlike fully observable modules,
+    /// some internal wires remain hidden, giving the user control over the module’s interface.
     ///
     /// # Parameters
-    /// - `obs`: The pair of observable wires (inputs and outputs).
-    /// - `prvt`: The pair of private wires (internal to the module).
-    /// - `atoms`: The atoms that define the module’s internal behaviour.
+    /// - `obs`: The pair of observable wires `[latched, next]` representing the module’s interface.
+    /// - `prvt`: The pair of private wires that remain hidden from external access.
+    /// - `atoms`: An iterable collection of atoms defining the module’s internal behaviour.
     ///
-    /// # Behaviour
-    /// Observability is a property of modules, as modules define interfaces.
-    /// A module is fully observable when its private wire set is empty.
-    /// This constructor allows partial observability, supporting modules with private state.
+    /// # Returns
+    /// A `Result` containing the constructed partially observable module if successful,
+    /// or an error string if inference or consistency checks fail.
     ///
     /// # See Also
-    /// - [`observable`], for constructing fully observable modules.
-    /// - [`new_unchecked`], for manually constructing a module without automation.
-    pub fn partially_observable<A>(
-        obs: [Wire<D>; 2],
-        prvt: [Wire<D>; 2],
+    /// - [`observable`], for constructing modules where all wires are visible.
+    /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
+    /// - [`new_unchecked`], for manual module creation.
+    pub fn partially_observable<T, U, O, P, A>(
+        obs: O,
+        prvt: P,
         atoms: A,
     ) -> Result<Self, &'static str>
     where
+        T: Into<[Wire<D>; 2]>,
+        U: Into<[Wire<D>; 2]>,
+        O: IntoIterator<Item = T>,
+        P: IntoIterator<Item = U>,
         A: IntoIterator<Item = Atom<D, I>> + Sized,
     {
-        // Check and store wire index + dtype information
-        if obs[0].len() != obs[1].len() || prvt[0].len() != prvt[1].len() {
-            return Err("len mismatch in latched and next wires");
-        }
-
-        let wire_0 = Vec::from_iter(obs[0].vec.iter().chain(prvt[0].vec.iter()).cloned());
-        let wire_1 = Vec::from_iter(obs[1].vec.iter().chain(prvt[1].vec.iter()).cloned());
-
         let mut ltc_to_dtype: HashMap<usize, &D> = HashMap::new();
         let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
-        for ((ltc, dtype), (nxt, ntype)) in wire_0.iter().zip(wire_1.iter()) {
-            if dtype != ntype {
-                return Err("dtype mismatch in latched and next wires");
-            }
-            if ltc_to_dtype.insert(*ltc, dtype).is_some() {
+
+        let obs = Interface::try_from_iter(obs)?;
+        let prvt = Interface::try_from_iter(prvt)?;
+
+        for [ltc, nxt] in obs.iter().chain(prvt.iter()) {
+            debug_assert_eq!(ltc.dtype(), nxt.dtype());
+            // if ltc.dtype() != nxt.dtype() {
+            //     return Err("dtype mismatch in latched and next wires");
+            // }
+            if ltc_to_dtype.insert(ltc.id(), ltc.dtype()).is_some() {
                 return Err("duplicate latched wire");
             }
-            if nxt_to_ltc.insert(*nxt, *ltc).is_some() {
+            if nxt_to_ltc.insert(nxt.id(), ltc.id()).is_some() {
                 return Err("duplicate next wire");
             }
         }
 
         // Check atoms consistency and infer control wires
         let mut ctrl_nxt: HashSet<usize> = HashSet::new();
+        let mut temp: BTreeMap<usize, D> = BTreeMap::new();
         let atoms_iter = atoms.into_iter();
         let mut past_atoms: Vec<Atom<D, I>> = Vec::with_capacity(atoms_iter.size_hint().0);
         for atom in atoms_iter {
-            for (ltc, dtype) in atom.read.iter() {
+            for (ltc, dtype) in atom.read().wires().map(Into::into) {
                 if ltc_to_dtype.get(&ltc) != Some(&dtype) {
-                    return Err("atom read not latched or dtype mismatch");
+                    return Err("invalid read wire or dtype mismatch");
                 }
             }
-            for (nxt, dtype) in atom.wait.iter() {
-                if nxt_to_ltc.get(&nxt).and_then(|i| ltc_to_dtype.get(i)) != Some(&dtype) {
-                    return Err("atom await not next or dtype mismatch");
+            for (nxt, dtype) in atom.wait().wires().map(Into::into) {
+                let expected_dtype = nxt_to_ltc.get(&nxt);
+                if expected_dtype.is_none_or(|i| ltc_to_dtype.get(i) != Some(&dtype)) {
+                    return Err("invalid await wire or dtype mismatch");
                 }
             }
-            for (nxt, dtype) in atom.ctrl.iter() {
-                if nxt_to_ltc.get(&nxt).and_then(|i| ltc_to_dtype.get(i)) != Some(&dtype) {
-                    return Err("atom control not next or dtype mismatch");
+            for (nxt, dtype) in atom.ctrl().wires().map(Into::into) {
+                let expected_dtype = nxt_to_ltc.get(&nxt);
+                if expected_dtype.is_none_or(|i| ltc_to_dtype.get(i) != Some(&dtype)) {
+                    return Err("invalid control wire or dtype mismatch");
                 }
                 if !ctrl_nxt.insert(nxt) {
                     return Err("shared or duplicate atom control wire");
                 }
             }
 
-            // TODO check that temporaries are decoupled from module wires
+            for (lc, dtype) in atom.temp().wires().map(Into::into) {
+                debug_assert!(!ctrl_nxt.contains(&lc));
+                if ltc_to_dtype.contains_key(&lc) || nxt_to_ltc.contains_key(&lc) {
+                    return Err("temp wires coupled with module wires");
+                }
+                if temp.insert(lc, dtype.clone()).is_some() {
+                    return Err("temp wires could with other atom");
+                }
+            }
 
             for past_atom in &past_atoms {
                 if past_atom.awaits(&atom) {
@@ -362,76 +361,95 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         }
 
         // Check that private wires are controlled
-        for (nxt, _) in prvt[1].iter() {
+        for nxt in prvt[1].iter().map(Wire::id) {
             if !ctrl_nxt.contains(&nxt) {
                 return Err("private wire not controlled");
             }
         }
 
         // Build intf and extl wires based on inferred control set
-        let mut extl_0: Vec<(usize, D)> = Vec::with_capacity(obs[0].len() - ctrl_nxt.len());
-        let mut extl_1: Vec<(usize, D)> = Vec::with_capacity(obs[0].len() - ctrl_nxt.len());
-        let mut intf_0: Vec<(usize, D)> = Vec::with_capacity(ctrl_nxt.len() - prvt[0].len());
-        let mut intf_1: Vec<(usize, D)> = Vec::with_capacity(ctrl_nxt.len() - prvt[0].len());
+        let mut extl: Vec<[Wire<D>; 2]> = Vec::with_capacity(obs[0].len() - ctrl_nxt.len());
+        let mut intf: Vec<[Wire<D>; 2]> = Vec::with_capacity(ctrl_nxt.len() - prvt[0].len());
+        let mut ctrl: Vec<[Wire<D>; 2]> = Vec::with_capacity(ctrl_nxt.len());
 
-        for ((ltc, _), (nxt, dtype)) in obs[0].iter().zip(obs[1].iter()) {
-            if ctrl_nxt.contains(&nxt) {
-                intf_0.push((ltc, dtype.clone()));
-                intf_1.push((nxt, dtype.clone()));
+        for [ltc, nxt] in obs.iter() {
+            if ctrl_nxt.contains(&nxt.id()) {
+                intf.push([ltc.clone(), nxt.clone()]);
+                ctrl.push([ltc.clone(), nxt.clone()]);
             } else {
-                extl_0.push((ltc, dtype.clone()));
-                extl_1.push((nxt, dtype.clone()));
+                extl.push([ltc.clone(), nxt.clone()]);
             }
         }
 
-        let ctrl_0: Vec<(usize, D)> = intf_0.iter().chain(prvt[0].vec.iter()).cloned().collect();
-        let ctrl_1: Vec<(usize, D)> = intf_1.iter().chain(prvt[1].vec.iter()).cloned().collect();
+        for [ltc, nxt] in prvt.iter() {
+            ctrl.push([ltc.clone(), nxt.clone()]);
+        }
 
-        // Build wire pairs
-        let extl = [Wire::new_unchecked(extl_0), Wire::new_unchecked(extl_1)];
-        let ctrl = [Wire::new_unchecked(ctrl_0), Wire::new_unchecked(ctrl_1)];
-        let intf = [Wire::new_unchecked(intf_0), Wire::new_unchecked(intf_1)];
-        let wire = [Wire::new_unchecked(wire_0), Wire::new_unchecked(wire_1)];
+        let extl = Interface::<D, 2>::from_iter_unchecked(extl);
+        let ctrl = Interface::<D, 2>::from_iter_unchecked(ctrl);
+        let intf = Interface::<D, 2>::from_iter_unchecked(intf);
 
-        Ok(Self::new_unchecked(
-            extl, intf, prvt, obs, ctrl, wire, past_atoms,
-        ))
+        Ok(Self::new_unchecked(extl, intf, prvt, obs, ctrl, past_atoms))
     }
 
-    /// Constructs a **purely sequential and fully observable module** from
-    /// an initialisation and update pair.
+    /// Constructs a **sequential module** from an initialisation and update sequences of terms.
     ///
-    /// Sequential modules define behaviour that evolves over time.
-    /// They are composed of one sequential atom, which relates latched and next wires
-    /// through explicit `init` and `update` definitions.
-    ///
-    /// By default, sequential modules are **fully observable**, as they expose
-    /// their input/output interface and maintain no private state.
+    /// A sequential module represents **time-dependent behaviour**, with state evolving
+    /// across discrete steps. It is composed of a single [`Atom::sequential`] atom,
+    /// and is **fully observable by default**.
     ///
     /// # Parameters
-    /// - `obs`: The pair of observable wires (inputs and outputs).
-    /// - `init`: The initialisation function or structure defining the initial state.
-    /// - `update`: The update function or structure defining the next-state transition.
+    /// - `obs`: The pair of observable wires `[latched, next]` representing the module’s interface.
+    /// - `init`: The set of terms defining the module’s initial state.
+    /// - `update`: The set of terms defining the module’s state update at each time step.
     ///
     /// # Returns
-    /// A `Result` containing the sequential module if successful, or an error string
-    /// if construction fails.
-    ///
-    /// # Behaviour
-    /// This constructor indicates that the module is *purely sequential*, containing exactly
-    /// one sequential atom. Sequential atoms differ from combinatorial atoms in that they
-    /// relate wires across time steps.
+    /// A `Result` containing the constructed sequential module if successful,
+    /// or an error string if inference or consistency checks fail.
     ///
     /// # See Also
-    /// - [`observable`], for general-purpose fully observable modules.
-    /// - [`partially_observable`], for modules with private state.
-    /// - `combinatorial`, for constructing time-independent modules (to be implemented).
-    pub fn sequential<V, U>(obs: [Wire<D>; 2], init: V, update: U) -> Result<Self, &'static str>
+    /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
+    /// - [`Atom::sequential`], for creating individual sequential atoms.
+    pub fn sequential<T, O, V, U>(obs: O, init: V, update: U) -> Result<Self, &'static str>
     where
+        T: Into<[Wire<D>; 2]>,
+        O: IntoIterator<Item = T>,
         V: IntoIterator<Item = Term<D, I>>,
         U: IntoIterator<Item = Term<D, I>>,
     {
-        let atom = Atom::with_module_wire(&obs, Vec::from_iter(init), Vec::from_iter(update))?;
+        let obs = Interface::from_iter(obs);
+        let atom = Atom::sequential(&obs[0], &obs[1], init, update)?;
+        Self::observable(obs, [atom])
+    }
+}
+
+impl<D: Eq + Clone + Debug, I: Clone> Module<D, I> {
+    /// Constructs a **purely combinatorial module** from an assignment sequence of terms.
+    ///
+    /// A combinatorial module represents a **stateless, time-independent** relationship
+    /// between observable wires. It is composed of a single [`Atom::combinatorial`] atom,
+    /// and is **fully observable by default**.
+    ///
+    /// # Parameters
+    /// - `obs`: The pair of observable wires `[latched, next]` representing the module’s interface.
+    /// - `assign`: The set of combinatorial assignment terms defining how the output is
+    ///   computed from the input.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed combinatorial module if successful,
+    /// or an error string if inference or consistency checks fail.
+    ///
+    /// # See Also
+    /// - [`Module::sequential`], for constructing stateful, sequential modules.
+    /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
+    pub fn combinatorial<T, O, V>(obs: O, assign: V) -> Result<Self, &'static str>
+    where
+        T: Into<[Wire<D>; 2]>,
+        O: IntoIterator<Item = T>,
+        V: IntoIterator<Item = Term<D, I>>,
+    {
+        let obs = Interface::from_iter(obs);
+        let atom = Atom::combinatorial(&obs[1], assign)?;
         Self::observable(obs, [atom])
     }
 }
@@ -444,22 +462,22 @@ impl<D: fmt::Display, I: fmt::Display> Module<D, I> {
         const INDENT2: &str = "    ";
 
         writeln!(f, "{pad}{BOLD}module{RESET}")?;
-        if !self.extl[0].is_empty() {
+        if !self.extl.is_empty() {
             writeln!(f, "{pad}{INDENT}{BOLD}external{RESET}")?;
         }
-        for ((ltc, _), (nxt, dtype)) in self.extl[0].iter().zip(self.extl[1].iter()) {
+        for [(ltc, _), (nxt, dtype)] in self.extl.iter().map(|w| w.map(Into::into)) {
             writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {dtype}")?;
         }
-        if !self.intf[0].is_empty() {
+        if !self.intf.is_empty() {
             writeln!(f, "{pad}{INDENT}{BOLD}interface{RESET}")?;
         }
-        for ((ltc, _), (nxt, dtype)) in self.intf[0].iter().zip(self.intf[1].iter()) {
+        for [(ltc, _), (nxt, dtype)] in self.intf.iter().map(|w| w.map(Into::into)) {
             writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {dtype}")?;
         }
-        if !self.prvt[0].is_empty() {
+        if !self.prvt.is_empty() {
             writeln!(f, "{pad}{INDENT}{BOLD}private{RESET}")?;
         }
-        for ((ltc, _), (nxt, dtype)) in self.prvt[0].iter().zip(self.prvt[1].iter()) {
+        for [(ltc, _), (nxt, dtype)] in self.prvt.iter().map(|w| w.map(Into::into)) {
             writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {dtype}")?;
         }
         for atom in &self.atoms {

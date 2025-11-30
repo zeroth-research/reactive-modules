@@ -8,6 +8,8 @@ use toy::instruction::Instruction;
 use toy::term::*;
 use toy::val::Val;
 
+use std::iter::zip;
+
 fn init(ctx: &mut Context) -> Vec<Term> {
     let init_x = mk_const(&Val::Int(0), ctx.get("x'")).unwrap();
     let init_y = mk_id(ctx.get("y0'"), ctx.get("y'")).unwrap();
@@ -64,10 +66,15 @@ pub fn build_module(ctx: &mut Context) -> Module<Type, Instruction> {
     let latched = ctx.get_vars(&["x", "y", "z", "y0", "z0"]);
     let next = ctx.get_vars(&["x'", "y'", "z'", "y0'", "z0'"]);
 
-    let atom = Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
-        .expect("failed creating atom");
+    // let atom = Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
+    //     .expect("failed creating atom");
 
-    Module::observable([latched, next], vec![atom]).expect("Failed building module")
+    Module::sequential(
+        zip(latched, next).map(|([l], [n])| [l, n]),
+        init_terms,
+        update_terms,
+    )
+    .expect("Failed building module")
 }
 
 pub fn _build_prop(ctx: &mut Context) -> Vec<Term> {

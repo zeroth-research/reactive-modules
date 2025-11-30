@@ -10,9 +10,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use base::atom::Atom;
-use base::wire::Wire;
+use base::wire::Interface;
 
-type WireTy = Wire<TorchDType>;
+type WireTy = Interface<TorchDType>;
 
 #[pyclass]
 pub struct PyAtom {
@@ -58,8 +58,8 @@ fn process_pyvals(
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new(
                     TorchOp::Const(tensor.tensor.shallow_clone()),
-                    Wire::one(var, "tensor"),
-                    Wire::none(),
+                    Interface::one(var, "tensor"),
+                    Interface::none(),
                 ));
                 args.push(var);
             }
@@ -67,8 +67,8 @@ fn process_pyvals(
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new(
                     TorchOp::Const(tch::Tensor::from_slice(&[*val])),
-                    Wire::one(var, "tensor"),
-                    Wire::none(),
+                    Interface::one(var, "tensor"),
+                    Interface::none(),
                 ));
                 args.push(var);
             }
@@ -76,8 +76,8 @@ fn process_pyvals(
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new(
                     TorchOp::Const(tch::Tensor::from_slice(&[*val])),
-                    Wire::one(var, "tensor"),
-                    Wire::none(),
+                    Interface::one(var, "tensor"),
+                    Interface::none(),
                 ));
                 args.push(var);
             }
@@ -113,8 +113,8 @@ fn pyterms_to_torchterms(ctx: &mut Context, terms: &Bound<'_, PyList>) -> PyResu
         let rargs = process_pyvals(ctx, &pyterm.reads, &mut result);
         let wargs = process_pyvals(ctx, &pyterm.writes, &mut result);
 
-        let write = Wire::from_iter(wargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
-        let read = Wire::from_iter(rargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
+        let write = Interface::from_iter(wargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
+        let read = Interface::from_iter(rargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
         result.push(TorchTerm::new(pyterm.op.clone(), write, read));
     }
 
@@ -134,7 +134,7 @@ fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<WireTy> {
         }
     }
 
-    Wire::from_iter(names.into_iter(), "tensor").map_err(str_to_pyerr)
+    Interface::from_iter(names.into_iter(), "tensor").map_err(str_to_pyerr)
 }
 
 #[pymethods]
@@ -154,7 +154,7 @@ impl PyAtom {
         let init = pyterms_to_torchterms(ctx, init).unwrap();
         let update = pyterms_to_torchterms(ctx, update).unwrap();
 
-        let atom = Atom::new_unchecked(read, write, Wire::none(), init, update);
+        let atom = Atom::new_unchecked(read, write, Interface::none(), init, update);
         Self { atom }
     }
 

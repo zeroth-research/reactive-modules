@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-
 use pest::Parser as PestParser;
 use pest::iterators::Pair;
+use std::collections::HashMap;
+use std::iter::zip;
 
 use crate::context::Context;
 use crate::dtype::Type;
@@ -12,7 +12,7 @@ use crate::val::Val;
 use base::atom::Atom;
 use base::module::Module;
 use base::term::Term;
-use base::wire::Wire;
+use base::wire::Interface;
 
 type ToyModule = Module<Type, Instruction>;
 type ToyAtom = Atom<Type, Instruction>;
@@ -70,7 +70,7 @@ impl Parser {
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap().as_str().to_string();
         let mut module = self.parse_module_body(inner.next().unwrap());
-        module.set_name(name.as_str());
+        //module.set_name(name.as_str());
 
         module
     }
@@ -92,8 +92,8 @@ impl Parser {
             }
         }
 
-        let latched = Wire::try_from_iter(latched.iter().copied()).unwrap();
-        let next = Wire::try_from_iter(next.iter().copied()).unwrap();
+        let latched = Interface::sequence(latched.iter().copied()).unwrap();
+        let next = Interface::sequence(next.iter().copied()).unwrap();
 
         let atoms_pair = inner.next().unwrap();
         let mut atoms = Vec::new();
@@ -101,13 +101,13 @@ impl Parser {
             atoms.push(self.parse_atom(a, &[latched.clone(), next.clone()]));
         }
 
-        ToyModule::observable([latched, next], atoms).unwrap()
+        ToyModule::observable(zip(latched, next).map(|([x], [y])| (x, y)), atoms).unwrap()
     }
 
     fn parse_atom(
         &mut self,
         pair: Pair<Rule>,
-        module_wires: &[Wire<Type>; 2],
+        module_Interfaces: &[Interface<Type>; 2],
     ) -> Atom<Type, Instruction> {
         // atom = { "atom" ~ "{" ~ atom_body ~ "}" }
         let mut inner = pair.into_inner();
@@ -164,10 +164,16 @@ impl Parser {
             }
         }
 
-        // TODO: check the inferred wires with parsed spec for variables
+        // TODO: check the inferred Interfaces with parsed spec for variables
 
         assert!(!update.is_empty());
-        ToyAtom::with_module_wire(module_wires, init, update).unwrap()
+        ToyAtom::sequential(
+            module_Interfaces[0].wires(),
+            module_Interfaces[1].wires(),
+            init,
+            update,
+        )
+        .unwrap()
     }
 
     fn parse_guarded_commands(&mut self, pair: Pair<Rule>) -> Vec<ToyTerm> {
@@ -190,7 +196,7 @@ impl Parser {
                     return vec![];
                 }
 
-                let cond = guard.last().unwrap().writes().clone();
+                let cond = guard.last().unwrap().write().clone();
                 terms.extend(guard);
                 for (var_name, expr) in assigns {
                     if expr.is_empty() {
@@ -199,9 +205,15 @@ impl Parser {
 
                     assert!(var_name.ends_with('\'')); // the assigned variable must be primed
                     let primed_var = self.ctx.get(var_name);
-                    let var = self.ctx.get(&var_name[..var_name.len() - 1]);
+                    let var: Interface<Type> = self.ctx.get(&var_name[..var_name.len() - 1]).into();
                     let ite = mk_ite(
-                        Wire::from_wires(&[&cond, expr.last().unwrap().writes(), &var]),
+                        Interface::sequence(
+                            [&cond, expr.last().unwrap().write(), &var]
+                                .into_iter()
+                                .flatten()
+                                .map(|[i]| i.clone()),
+                        )
+                        .unwrap(),
                         primed_var,
                     )
                     .unwrap();
@@ -216,8 +228,8 @@ impl Parser {
     fn create_cmp_term(
         &mut self,
         op: &str,
-        wire_l: &Wire<Type>,
-        wire_r: &Wire<Type>,
+        Interface_l: &Interface<Type>,
+        Interface_r: &Interface<Type>,
     ) -> Vec<ToyTerm> {
         let mut negate = false;
         let op = match op {
@@ -240,13 +252,13 @@ impl Parser {
         };
         let term = mk_cmp(
             op,
-            Wire::concat(wire_l, wire_r),
+            Interface::sequence(Interface_l.wires().chain(Interface_r.wires()).cloned()).unwrap(),
             self.ctx.tmp_wire(Type::Bool),
         )
         .unwrap();
 
         if negate {
-            let not = mk_not(term.writes().clone(), self.ctx.tmp_wire(Type::Bool)).unwrap();
+            let not = mk_not(term.write().clone(), self.ctx.tmp_wire(Type::Bool)).unwrap();
             return vec![term, not];
         }
         vec![term]
@@ -269,28 +281,28 @@ impl Parser {
 
                 while let Some(pair_b) = inner.next() {
                     // this is the left-hand-side input to the term that we will parse next
-                    let wire_l = terms.last().unwrap().writes().clone();
+                    let wire_l = terms.last().unwrap().write().clone();
                     let op_ = pair_b.as_rule();
                     let op_str = pair_b.as_str();
                     let terms_b = self.build_expr(inner.next().unwrap(), ty);
                     if terms_b.is_empty() {
                         panic!("Couldn't build terms");
                     }
-                    let wire_r = terms_b.last().unwrap().writes().clone();
+                    let wire_r = terms_b.last().unwrap().write().clone();
                     terms.extend(terms_b);
 
                     match op_ {
                         Rule::logic_op => {
-                            let write_wire = self.ctx.tmp_wire(Type::Bool);
+                            let write_wire = self.ctx.tmp_wire(Type::Bool).into();
                             terms.push(
                                 create_logic_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),
                             )
                         }
                         Rule::arith_op => {
-                            let (_, ty) = wire_l.get_single().unwrap();
+                            let (_, ty) = wire_l.wires().next().unwrap().into();
                             #[cfg(debug_assertions)]
                             {
-                                let (_, ty2) = wire_r.get_single().unwrap();
+                                let (_, ty2) = wire_r.wires().next().unwrap().into();
                                 debug_assert!(ty == ty2);
                             }
                             let write_wire = self.ctx.tmp_wire(*ty);
@@ -308,9 +320,9 @@ impl Parser {
             }
             Rule::var | Rule::primed_var => {
                 let var = pair.as_str();
-                let (wire, ty) = self.ctx.get_with_type(var);
+                let (Interface, ty) = self.ctx.get_with_type(var);
                 let out = self.ctx.tmp_wire(ty);
-                let term = mk_id(wire, out).unwrap();
+                let term = mk_id(Interface, out).unwrap();
 
                 vec![term]
             }
@@ -353,7 +365,7 @@ impl Parser {
                         assert!(!expr.is_empty());
                         expr.push(
                             mk_not(
-                                expr.last().unwrap().writes().clone(),
+                                expr.last().unwrap().write().clone(),
                                 self.ctx.tmp_wire(Type::Bool),
                             )
                             .unwrap(),
@@ -404,29 +416,45 @@ impl Default for Parser {
 
 fn create_logic_term(
     op: &str,
-    wire_l: &Wire<Type>,
-    wire_r: &Wire<Type>,
-    write: Wire<Type>,
+    Interface_l: &Interface<Type>,
+    Interface_r: &Interface<Type>,
+    write: Interface<Type>,
 ) -> Result<ToyTerm, &'static str> {
     let op = match op {
         "&&" | "\\and" => LogicalOp::And,
         "||" | "\\or" => LogicalOp::Or,
         _ => unreachable!(),
     };
-    mk_logical(op, Wire::concat(wire_l, wire_r), write)
+    mk_logical(
+        op,
+        Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
+        write,
+    )
 }
 
 fn create_arith_term(
     op: &str,
-    wire_l: &Wire<Type>,
-    wire_r: &Wire<Type>,
-    write: Wire<Type>,
+    Interface_l: &Interface<Type>,
+    Interface_r: &Interface<Type>,
+    write: Interface<Type>,
 ) -> Result<ToyTerm, &'static str> {
     match op {
-        "+" => mk_add(Wire::concat(wire_l, wire_r), write),
-        "-" => mk_sub(Wire::concat(wire_l, wire_r), write),
-        "*" => mk_mul(Wire::concat(wire_l, wire_r), write),
-        "/" => mk_div(Wire::concat(wire_l, wire_r), write),
+        "+" => mk_add(
+            Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
+            write,
+        ),
+        "-" => mk_sub(
+            Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
+            write,
+        ),
+        "*" => mk_mul(
+            Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
+            write,
+        ),
+        "/" => mk_div(
+            Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
+            write,
+        ),
         _ => Err("Invalid operation"),
     }
 }
