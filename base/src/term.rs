@@ -103,14 +103,38 @@ impl<D: fmt::Display, I: fmt::Display> fmt::Display for Term<D, I> {
     }
 }
 
-pub(crate) struct Block<D, I> {
-    pub(crate) terms: Vec<Term<D, I>>,
-    pub(crate) read: Interface<D>,
-    pub(crate) write: Interface<D>,
+#[derive(Debug, Clone)]
+pub struct Block<D, I> {
+    terms: Vec<Term<D, I>>,
+    read: Interface<D>,
+    write: Interface<D>,
+}
+
+impl<D, I> Block<D, I> {
+    pub fn iter(&self) -> impl Iterator<Item = &Term<D, I>> {
+        self.terms.iter()
+    }
+
+    pub fn read(&self) -> &Interface<D> {
+        &self.read
+    }
+
+    pub fn write(&self) -> &Interface<D> {
+        &self.write
+    }
+}
+
+impl<'a, D, I> IntoIterator for &'a Block<D, I> {
+    type Item = &'a Term<D, I>;
+    type IntoIter = std::slice::Iter<'a, Term<D, I>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.terms.iter()
+    }
 }
 
 impl<D: Eq + Clone, I> Block<D, I> {
-    pub fn try_from_iter<V: IntoIterator<Item = Term<D, I>>>(
+    pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<D, I>>>(
         iter: V,
     ) -> Result<Self, &'static str> {
         let mut read: HashMap<usize, D> = HashMap::new();

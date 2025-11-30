@@ -186,7 +186,7 @@ impl<'a, D, const N: usize> IntoIterator for &'a Interface<D, N> {
 
     fn into_iter(self) -> Self::IntoIter {
         IterRef {
-            iters: std::array::from_fn(|i| self.wires[i].iter()),
+            iters: from_fn(|i| self.wires[i].iter()),
         }
     }
 }

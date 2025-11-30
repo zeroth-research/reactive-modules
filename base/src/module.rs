@@ -385,9 +385,9 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             ctrl.push([ltc.clone(), nxt.clone()]);
         }
 
-        let extl = Interface::<D, 2>::from_iter_unchecked(extl);
-        let ctrl = Interface::<D, 2>::from_iter_unchecked(ctrl);
-        let intf = Interface::<D, 2>::from_iter_unchecked(intf);
+        let extl = Interface::from_iter_unchecked(extl);
+        let ctrl = Interface::from_iter_unchecked(ctrl);
+        let intf = Interface::from_iter_unchecked(intf);
 
         Ok(Self::new_unchecked(extl, intf, prvt, obs, ctrl, past_atoms))
     }

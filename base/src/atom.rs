@@ -16,18 +16,18 @@ pub struct Atom<D, I> {
     temp: Interface<D>,
 
     /// Corresponds to the initial action.
-    init: Vec<Term<D, I>>,
+    init: Block<D, I>,
     /// Corresponds to the update action.
-    update: Vec<Term<D, I>>,
+    update: Block<D, I>,
     // flow: Vec<Term<I>>, // the default flow must be a constant so the derivative is 0
 }
 impl<D, I> Atom<D, I> {
     /// Returns a reference to the initial action.
-    pub fn init(&self) -> &[Term<D, I>] {
+    pub fn init(&self) -> &Block<D, I> {
         &self.init
     }
     /// Returns a reference to the update action.
-    pub fn update(&self) -> &[Term<D, I>] {
+    pub fn update(&self) -> &Block<D, I> {
         &self.update
     }
 
@@ -65,8 +65,8 @@ impl<D: Eq, I> Atom<D, I> {
         wait: Interface<D>,
         read: Interface<D>,
         temp: Interface<D>,
-        init: Vec<Term<D, I>>,
-        update: Vec<Term<D, I>>,
+        init: Block<D, I>,
+        update: Block<D, I>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -222,11 +222,11 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         let mut read: BTreeMap<usize, D> = BTreeMap::new();
         let mut temp: BTreeMap<usize, D> = BTreeMap::new();
 
-        for (rd, dtype) in init.read.into_iter().map(|[w]| w.into()) {
+        for (rd, dtype) in init.read().iter().map(|[w]| w.into()) {
             // init can only read from await wires
             let next_dtype = next.get(&rd);
-            if next_dtype.is_some_and(|&d| d == &dtype) {
-                wait.insert(rd, dtype);
+            if next_dtype.is_some_and(|&d| d == dtype) {
+                wait.insert(rd, dtype.clone());
                 continue;
             } else if next_dtype.is_some() {
                 return Err("dtype mismatch");
@@ -239,20 +239,20 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             }
         }
 
-        for (rd, dtype) in update.read.into_iter().map(|[w]| w.into()) {
+        for (rd, dtype) in update.read().iter().map(|[w]| w.into()) {
             // if the update reads from a next wire, then this is awaited
             // otherwise, this must be read from outside the atom
             let latched_dtype = latched.get(&rd);
-            if latched_dtype.is_some_and(|&d| d == &dtype) {
-                read.insert(rd, dtype);
+            if latched_dtype.is_some_and(|&d| d == dtype) {
+                read.insert(rd, dtype.clone());
                 continue;
             } else if latched_dtype.is_some() {
                 return Err("dtype mismatch");
             }
 
             let next_dtype = next.get(&rd);
-            if next_dtype.is_some_and(|&d| d == &dtype) {
-                wait.insert(rd, dtype);
+            if next_dtype.is_some_and(|&d| d == dtype) {
+                wait.insert(rd, dtype.clone());
                 continue;
             } else if next_dtype.is_some() {
                 return Err("dtype mismatch");
@@ -261,7 +261,7 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             return Err("invalid wire");
         }
 
-        for (wt, dtype) in [init.write, update.write]
+        for (wt, dtype) in [init.write(), update.write()]
             .into_iter()
             .flatten()
             .map(|[w]| w.into())
@@ -269,8 +269,8 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             // if the init/update writes to a next wire, then this wire is controlled
             // otherwise, this wire must be temporary
             let next_dtype = next.get(&wt);
-            if next_dtype.is_some_and(|&d| d == &dtype) {
-                ctrl.insert(wt, dtype);
+            if next_dtype.is_some_and(|&d| d == dtype) {
+                ctrl.insert(wt, dtype.clone());
                 continue;
             } else if next_dtype.is_some() {
                 return Err("dtype mismatch");
@@ -279,7 +279,7 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             if latched.contains_key(&wt) {
                 return Err("invalid write");
             } else {
-                temp.insert(wt, dtype);
+                temp.insert(wt, dtype.clone());
             }
         }
 
@@ -288,8 +288,8 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             Interface::sequence(wait)?,
             Interface::sequence(read)?,
             Interface::sequence(temp)?,
-            init.terms,
-            update.terms,
+            init,
+            update,
         ))
     }
 }
@@ -335,11 +335,11 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
         let mut wait: BTreeMap<usize, D> = BTreeMap::new();
         let mut temp: BTreeMap<usize, D> = BTreeMap::new();
 
-        for (rd, dtype) in assign.read.into_iter().map(|[w]| w.into()) {
+        for (rd, dtype) in assign.read().iter().map(|[w]| w.into()) {
             //  can only read from await wires
             let expected_dtype = next.get(&rd);
-            if expected_dtype.is_some_and(|&d| d == &dtype) {
-                wait.insert(rd, dtype);
+            if expected_dtype.is_some_and(|&d| d == dtype) {
+                wait.insert(rd, dtype.clone());
             } else if expected_dtype.is_some() {
                 return Err("dtype mismatch");
             } else {
@@ -347,16 +347,16 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
             }
         }
 
-        for (wt, dtype) in assign.write.into_iter().map(|[w]| w.into()) {
+        for (wt, dtype) in assign.write().iter().map(|[w]| w.into()) {
             // if it writes to a next wire, then this wire is controlled
             // otherwise, this wire must be temporary
             let expected_dtype = next.get(&wt);
-            if expected_dtype.is_some_and(|&d| d == &dtype) {
-                ctrl.insert(wt, dtype);
+            if expected_dtype.is_some_and(|&d| d == dtype) {
+                ctrl.insert(wt, dtype.clone());
             } else if expected_dtype.is_some() {
                 return Err("dtype mismatch");
             } else {
-                temp.insert(wt, dtype);
+                temp.insert(wt, dtype.clone());
             }
         }
 
@@ -365,8 +365,8 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
             Interface::sequence(wait)?,
             Interface::none(),
             Interface::sequence(temp)?,
-            assign.terms.clone(),
-            assign.terms,
+            assign.clone(),
+            assign,
         ))
     }
 }
