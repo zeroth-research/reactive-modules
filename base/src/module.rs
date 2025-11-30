@@ -112,7 +112,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`Module::partially_observable`], [`Module::observable`], [`Module::sequential`],
     ///   [`Module::combinatorial`] for safe, automated module construction
-    pub fn new_unchecked(
+    fn new_unchecked(
         extl: Interface<D, 2>,
         intf: Interface<D, 2>,
         prvt: Interface<D, 2>,

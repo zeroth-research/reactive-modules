@@ -68,11 +68,9 @@ impl Parser {
     fn parse_module(&mut self, pair: Pair<Rule>) -> Module<Type, Instruction> {
         // module = { "module" ~ ident ~ "{" ~ module_body ~ "}" }
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
-        let mut module = self.parse_module_body(inner.next().unwrap());
+        //let name = inner.next().unwrap().as_str().to_string();
+        self.parse_module_body(inner.next().unwrap())
         //module.set_name(name.as_str());
-
-        module
     }
 
     fn parse_module_body(&mut self, pair: Pair<Rule>) -> Module<Type, Instruction> {
@@ -107,7 +105,7 @@ impl Parser {
     fn parse_atom(
         &mut self,
         pair: Pair<Rule>,
-        module_Interfaces: &[Interface<Type>; 2],
+        module_wires: &[Interface<Type>; 2],
     ) -> Atom<Type, Instruction> {
         // atom = { "atom" ~ "{" ~ atom_body ~ "}" }
         let mut inner = pair.into_inner();
@@ -168,8 +166,8 @@ impl Parser {
 
         assert!(!update.is_empty());
         ToyAtom::sequential(
-            module_Interfaces[0].wires(),
-            module_Interfaces[1].wires(),
+            module_wires[0].wires(),
+            module_wires[1].wires(),
             init,
             update,
         )
@@ -205,7 +203,7 @@ impl Parser {
 
                     assert!(var_name.ends_with('\'')); // the assigned variable must be primed
                     let primed_var = self.ctx.get(var_name);
-                    let var: Interface<Type> = self.ctx.get(&var_name[..var_name.len() - 1]).into();
+                    let var: Interface<Type> = self.ctx.get(&var_name[..var_name.len() - 1]);
                     let ite = mk_ite(
                         Interface::sequence(
                             [&cond, expr.last().unwrap().write(), &var]
@@ -228,8 +226,8 @@ impl Parser {
     fn create_cmp_term(
         &mut self,
         op: &str,
-        Interface_l: &Interface<Type>,
-        Interface_r: &Interface<Type>,
+        wire_l: &Interface<Type>,
+        wire_r: &Interface<Type>,
     ) -> Vec<ToyTerm> {
         let mut negate = false;
         let op = match op {
@@ -252,7 +250,7 @@ impl Parser {
         };
         let term = mk_cmp(
             op,
-            Interface::sequence(Interface_l.wires().chain(Interface_r.wires()).cloned()).unwrap(),
+            Interface::sequence(wire_l.wires().chain(wire_r.wires()).cloned()).unwrap(),
             self.ctx.tmp_wire(Type::Bool),
         )
         .unwrap();
@@ -293,7 +291,7 @@ impl Parser {
 
                     match op_ {
                         Rule::logic_op => {
-                            let write_wire = self.ctx.tmp_wire(Type::Bool).into();
+                            let write_wire = self.ctx.tmp_wire(Type::Bool);
                             terms.push(
                                 create_logic_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),
                             )
@@ -320,9 +318,9 @@ impl Parser {
             }
             Rule::var | Rule::primed_var => {
                 let var = pair.as_str();
-                let (Interface, ty) = self.ctx.get_with_type(var);
+                let (wire, ty) = self.ctx.get_with_type(var);
                 let out = self.ctx.tmp_wire(ty);
-                let term = mk_id(Interface, out).unwrap();
+                let term = mk_id(wire, out).unwrap();
 
                 vec![term]
             }
@@ -416,8 +414,8 @@ impl Default for Parser {
 
 fn create_logic_term(
     op: &str,
-    Interface_l: &Interface<Type>,
-    Interface_r: &Interface<Type>,
+    wire_l: &Interface<Type>,
+    wire_r: &Interface<Type>,
     write: Interface<Type>,
 ) -> Result<ToyTerm, &'static str> {
     let op = match op {
@@ -427,34 +425,23 @@ fn create_logic_term(
     };
     mk_logical(
         op,
-        Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
+        Interface::from_iter([wire_l.clone(), wire_r.clone()].into_iter().flatten()),
         write,
     )
 }
 
 fn create_arith_term(
     op: &str,
-    Interface_l: &Interface<Type>,
-    Interface_r: &Interface<Type>,
+    wire_l: &Interface<Type>,
+    wire_r: &Interface<Type>,
     write: Interface<Type>,
 ) -> Result<ToyTerm, &'static str> {
+    let args = [wire_l.clone(), wire_r.clone()].into_iter().flatten();
     match op {
-        "+" => mk_add(
-            Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
-            write,
-        ),
-        "-" => mk_sub(
-            Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
-            write,
-        ),
-        "*" => mk_mul(
-            Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
-            write,
-        ),
-        "/" => mk_div(
-            Interface::from_iter([Interface_l, Interface_r].into_iter().cloned().flatten()),
-            write,
-        ),
+        "+" => mk_add(Interface::from_iter(args), write),
+        "-" => mk_sub(Interface::from_iter(args), write),
+        "*" => mk_mul(Interface::from_iter(args), write),
+        "/" => mk_div(Interface::from_iter(args), write),
         _ => Err("Invalid operation"),
     }
 }

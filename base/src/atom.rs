@@ -60,7 +60,7 @@ impl<D: Eq, I> Atom<D, I> {
 
     /// Creates an atom from its components. This method checks the inputs only using assertions
     /// in debug mode.
-    pub fn new_unchecked(
+    fn new_unchecked(
         ctrl: Interface<D>,
         wait: Interface<D>,
         read: Interface<D>,

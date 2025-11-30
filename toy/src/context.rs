@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use base::wire::{Interface, Wire};
+use base::wire::Interface;
 
 use crate::dtype::Type;
 
@@ -81,7 +81,7 @@ impl Context {
     {
         let mut tmp: Vec<(usize, Type)> = Vec::new();
         for wire in wires {
-            tmp.extend(wire.wires().map(|w| (w.id(), w.dtype().clone())))
+            tmp.extend(wire.wires().map(|w| (w.id(), *w.dtype())))
         }
 
         Interface::sequence(tmp).unwrap()

@@ -42,19 +42,6 @@ impl<D> From<(usize, D)> for Wire<D> {
     }
 }
 
-// impl<D> From<[Wire<D>; 1]> for Wire<D> {
-//     fn from(w: [Wire<D>; 1]) -> Self {
-//         let [w] = w;
-//         w
-//     }
-// }
-
-// impl<D> From<(usize, D)> for [Wire<D>; 1] {
-//     fn from(w: (usize, D)) -> Self {
-//         [Self::new(w.0, w.1)]
-//     }
-// }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interface<D, const N: usize = 1> {
     wires: [Vec<Wire<D>>; N],
@@ -137,18 +124,6 @@ impl<D, const N: usize> Iterator for IterOwned<D, N> {
     type Item = [Wire<D>; N];
 
     fn next(&mut self) -> Option<Self::Item> {
-        // let out: [Option<Wire<D>>; N] = from_fn(|i| self.iters[i].next());
-        // //let mut out: [Option<Wire<D>>; N] = from_fn(|_| None);
-        //
-        // //self.iters.iter_mut().map(|i| i.next())
-        //
-        // // let mut out: [Wire<D>; N] =
-        // // for (o, i) in out.iter_mut().zip(self.iters.iter_mut()) {
-        // //     o = Some(i.next()?);
-        // // }
-        // //
-        // Some(out.map(Option::unwrap))
-
         let out: [Option<Wire<D>>; N] = from_fn(|i| self.iters[i].next());
         debug_assert!(out.iter().all(Option::is_some) || out.iter().all(Option::is_none));
         out[0].is_some().then(|| out.map(Option::unwrap))
@@ -191,33 +166,6 @@ impl<'a, D, const N: usize> IntoIterator for &'a Interface<D, N> {
     }
 }
 
-#[macro_export]
-macro_rules! wire {
-    // case 1: multiple (index, dtype) pairs — requires each in ()
-    ( $( ($x:expr, $y:expr) ),+ $(,)? ) => {{
-        let tmp = [ $( ($x, $y) ),+ ];
-        tmp.into_iter().collect::<base::wire::Wire<_>>()
-    }};
-
-    // case 2: wires are passed as references, and are automatically cloned
-    ( $( &$x:expr ),* $(,)? ) => {{
-        let tmp = [ $( &$x ),* ];
-        tmp.into_iter().flatten().map(|(w, d)| (w, d.clone())).collect::<base::wire::Wire<_>>()
-    }};
-
-    // case 3: wires are passed as single elements
-    ( $( $x:expr ),* $(,)? ) => {{
-        let tmp = [ $( $x ),* ];
-        tmp.into_iter().flatten().collect::<base::wire::Wire<_>>()
-    }};
-}
-
-// impl<D: Eq, T: Into<Wire<D>>> FromIterator<T> for Interface<D> {
-//     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-//         Self::from_iter(iter.into_iter())
-//     }
-// }
-
 /// from_iter is unchecked. Use at your own risk
 impl<D: Eq, T: Into<[Wire<D>; N]>, const N: usize> FromIterator<T> for Interface<D, N> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
@@ -249,61 +197,6 @@ impl<D: Eq> TryFrom<Interface<D>> for (usize, D) {
         let mut it = x.wires.into_iter().flatten().map(Into::into);
         it.next().ok_or(())
     }
-}
-
-// impl<D: Eq + Clone> From<&[Wire<D>]> for Interface<D> {
-//     fn from(v: &[Wire<D>]) -> Self {
-//         Self::from_iter(v.iter().cloned())
-//     }
-// }
-//
-// impl<D: Eq + Clone, const N: usize> From<[&Wire<D>; N]> for Interface<D> {
-//     fn from(v: [&Wire<D>; N]) -> Self {
-//         Self::from_iter(v.into_iter().cloned())
-//     }
-// }
-//
-// impl<D: Eq, const N: usize> From<[Wire<D>; N]> for Interface<D> {
-//     fn from(v: [Wire<D>; N]) -> Self {
-//         Self::from_iter(v.into_iter())
-//     }
-// }
-//
-// impl<D: Eq, const N: usize> From<[(usize, D); N]> for Interface<D> {
-//     fn from(v: [(usize, D); N]) -> Self {
-//         Self::from_iter(v.into_iter())
-//     }
-// }
-//
-// impl<D: Eq> From<Wire<D>> for Interface<D> {
-//     fn from(w: Wire<D>) -> Self {
-//         Self::from_iter([w])
-//     }
-// }
-//
-// impl<D: Eq + Clone> From<&Wire<D>> for Interface<D> {
-//     fn from(w: &Wire<D>) -> Self {
-//         Self::from(w.clone())
-//     }
-// }
-//
-// impl<D: Eq> From<(usize, D)> for Interface<D> {
-//     fn from(p: (usize, D)) -> Self {
-//         Self::from_iter([p])
-//     }
-// }
-
-#[macro_export]
-macro_rules! interface {
-    () => (
-        $crate::wire::Interface::none()
-    );
-    // ($elem:expr; $n:expr) => (
-    //     $crate::vec::from_elem($elem, $n)
-    // );
-    ($($x:expr),+ $(,)?) => (
-        $crate::wire::Interface::from_iter([$($x),+].into_iter())
-    );
 }
 
 impl<D: Eq, const N: usize> Interface<D, N> {
