@@ -48,7 +48,7 @@ pub struct Interface<D, const N: usize = 1> {
 }
 
 impl<D, const N: usize> Interface<D, N> {
-    pub fn none() -> Interface<D, N> {
+    pub fn empty() -> Interface<D, N> {
         Self {
             wires: [(); N].map(|_| Vec::new()),
         }
@@ -56,7 +56,7 @@ impl<D, const N: usize> Interface<D, N> {
 }
 
 impl<D: Eq> Interface<D> {
-    pub fn one(offset: usize, dtype: D) -> Interface<D> {
+    pub fn single(offset: usize, dtype: D) -> Interface<D> {
         Self::from_iter_unchecked([[Wire::new(offset, dtype)]])
     }
 }

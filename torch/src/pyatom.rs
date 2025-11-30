@@ -56,28 +56,28 @@ fn process_pyvals(
             PyVal::Sym(var_id) => args.push(*var_id),
             PyVal::Tensor(tensor) => {
                 let var = ctx.fresh_var();
-                result.push(TorchTerm::new(
+                result.push(TorchTerm::new_unchecked(
                     TorchOp::Const(tensor.tensor.shallow_clone()),
-                    Interface::one(var, "tensor"),
-                    Interface::none(),
+                    Interface::single(var, "tensor"),
+                    Interface::empty(),
                 ));
                 args.push(var);
             }
             PyVal::F64(val) => {
                 let var = ctx.fresh_var();
-                result.push(TorchTerm::new(
+                result.push(TorchTerm::new_unchecked(
                     TorchOp::Const(tch::Tensor::from_slice(&[*val])),
-                    Interface::one(var, "tensor"),
-                    Interface::none(),
+                    Interface::single(var, "tensor"),
+                    Interface::empty(),
                 ));
                 args.push(var);
             }
             PyVal::I64(val) => {
                 let var = ctx.fresh_var();
-                result.push(TorchTerm::new(
+                result.push(TorchTerm::new_unchecked(
                     TorchOp::Const(tch::Tensor::from_slice(&[*val])),
-                    Interface::one(var, "tensor"),
-                    Interface::none(),
+                    Interface::single(var, "tensor"),
+                    Interface::empty(),
                 ));
                 args.push(var);
             }
@@ -115,7 +115,7 @@ fn pyterms_to_torchterms(ctx: &mut Context, terms: &Bound<'_, PyList>) -> PyResu
 
         let write = Interface::from_iter(wargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
         let read = Interface::from_iter(rargs.into_iter(), "tensor").map_err(str_to_pyerr)?;
-        result.push(TorchTerm::new(pyterm.op.clone(), write, read));
+        result.push(TorchTerm::new_unchecked(pyterm.op.clone(), write, read));
     }
 
     Ok(result)
@@ -154,7 +154,7 @@ impl PyAtom {
         let init = pyterms_to_torchterms(ctx, init).unwrap();
         let update = pyterms_to_torchterms(ctx, update).unwrap();
 
-        let atom = Atom::new_unchecked(read, write, Interface::none(), init, update);
+        let atom = Atom::new_unchecked(read, write, Interface::empty(), init, update);
         Self { atom }
     }
 

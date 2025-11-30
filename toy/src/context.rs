@@ -26,12 +26,12 @@ impl Context {
 
     pub fn get(&self, name: &str) -> Interface<Type> {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
-        Interface::one(*id, *ty)
+        Interface::single(*id, *ty)
     }
 
     pub fn get_with_type(&self, name: &str) -> (Interface<Type>, Type) {
         let (id, ty) = self.vars.get(name).expect("Not existing value");
-        (Interface::one(*id, *ty), *ty)
+        (Interface::single(*id, *ty), *ty)
     }
 
     /// Get or create a variable
@@ -61,7 +61,7 @@ impl Context {
     }
 
     pub fn tmp_wire(&mut self, ty: Type) -> Interface<Type> {
-        Interface::one(self.tmp_var(ty), ty)
+        Interface::single(self.tmp_var(ty), ty)
     }
 
     pub fn get_vars(&self, names: &[&'static str]) -> Interface<Type> {

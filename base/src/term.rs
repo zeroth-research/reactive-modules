@@ -21,7 +21,7 @@ pub struct Term<D, I> {
 }
 
 impl<D, I> Term<D, I> {
-    pub fn new(itype: I, write: Interface<D>, read: Interface<D>) -> Self {
+    pub fn new_unchecked(itype: I, write: Interface<D>, read: Interface<D>) -> Self {
         Self { itype, write, read }
     }
 
@@ -46,7 +46,7 @@ impl<D: Eq, I> Term<D, I> {
         W: IntoIterator<Item = T>,
         R: IntoIterator<Item = U>,
     {
-        Ok(Self::new(
+        Ok(Self::new_unchecked(
             itype,
             Interface::unique(write)?,
             Interface::sequence(read)?,
@@ -58,10 +58,10 @@ impl<D: Eq, I> Term<D, I> {
         T: Into<Wire<D>>,
         W: IntoIterator<Item = T>,
     {
-        Ok(Self::new(
+        Ok(Self::new_unchecked(
             itype,
             Interface::unique(write)?,
-            Interface::none(),
+            Interface::empty(),
         ))
     }
 }

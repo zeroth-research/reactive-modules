@@ -112,11 +112,11 @@ pub fn construct(
         }
     }
 
-    Ok(Term::new(ins, writes, reads))
+    Ok(Term::new_unchecked(ins, writes, reads))
 }
 
 pub fn mk_const(val: &Val, write: Interface<Type>) -> Result<Term, &'static str> {
-    construct(Instruction::Const(*val), Interface::none(), write)
+    construct(Instruction::Const(*val), Interface::empty(), write)
 }
 
 pub fn mk_id(read: Interface<Type>, write: Interface<Type>) -> Result<Term, &'static str> {

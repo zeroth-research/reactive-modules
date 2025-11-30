@@ -2,7 +2,7 @@ use base::wire::Interface;
 
 #[test]
 fn can_instantiate_wire() {
-    let x = Interface::one(0, "real");
+    let x = Interface::single(0, "real");
     let y = Interface::sequence((4..14).map(|i| (i, "int"))).unwrap();
 
     let w = Interface::try_from_iter(x.into_iter().chain(y));

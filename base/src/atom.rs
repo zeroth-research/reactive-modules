@@ -284,10 +284,10 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         }
 
         Ok(Self::new_unchecked(
-            Interface::sequence(ctrl)?,
-            Interface::sequence(wait)?,
-            Interface::sequence(read)?,
-            Interface::sequence(temp)?,
+            Interface::from_wires_unchecked(ctrl),
+            Interface::from_wires_unchecked(wait),
+            Interface::from_wires_unchecked(read),
+            Interface::from_wires_unchecked(temp),
             init,
             update,
         ))
@@ -361,10 +361,10 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
         }
 
         Ok(Self::new_unchecked(
-            Interface::sequence(ctrl)?,
-            Interface::sequence(wait)?,
-            Interface::none(),
-            Interface::sequence(temp)?,
+            Interface::from_wires_unchecked(ctrl),
+            Interface::from_wires_unchecked(wait),
+            Interface::empty(),
+            Interface::from_wires_unchecked(temp),
             assign.clone(),
             assign,
         ))
