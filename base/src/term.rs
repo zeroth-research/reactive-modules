@@ -131,6 +131,14 @@ impl<D, I> Block<D, I> {
     pub fn write(&self) -> &Interface<D> {
         &self.write
     }
+
+    pub(crate) fn empty() -> Self {
+        Self {
+            terms: Vec::new(),
+            read: Interface::empty(),
+            write: Interface::empty(),
+        }
+    }
 }
 
 impl<'a, D, I> IntoIterator for &'a Block<D, I> {

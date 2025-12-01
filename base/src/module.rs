@@ -1,4 +1,5 @@
 use crate::atom::Atom;
+use crate::kahn;
 use crate::term::Term;
 use crate::wire::{Interface, Wire};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -26,6 +27,7 @@ pub struct Module<D, I> {
     prvt: Interface<D, 2>,
     obs: Interface<D, 2>,
     ctrl: Interface<D, 2>,
+    temp: Interface<D>,
 
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
@@ -64,6 +66,22 @@ impl<D, I> Module<D, I> {
 
     pub fn is_open(&self) -> bool {
         !self.extl.is_empty()
+    }
+
+    pub fn temp(&self) -> impl Iterator<Item = &Wire<D>> {
+        self.temp.wires()
+    }
+
+    pub fn empty() -> Self {
+        Module {
+            extl: Interface::empty(),
+            intf: Interface::empty(),
+            prvt: Interface::empty(),
+            obs: Interface::empty(),
+            ctrl: Interface::empty(),
+            temp: Interface::empty(),
+            atoms: Vec::new(),
+        }
     }
 }
 
@@ -118,6 +136,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         prvt: Interface<D, 2>,
         obs: Interface<D, 2>,
         ctrl: Interface<D, 2>,
+        temp: Interface<D>,
         atoms: Vec<Atom<D, I>>,
     ) -> Self {
         #[cfg(debug_assertions)]
@@ -211,12 +230,18 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             }
 
             // check that temporaries are decoupled from module wires and other atoms
-            let mut module_temp = HashSet::new();
-            for lc in atoms.iter().map(Atom::temp).flat_map(Interface::ids) {
-                debug_assert!(!ltc_to_dtype.contains_key(&lc));
-                debug_assert!(!nxt_to_ltc.contains_key(&lc));
-                debug_assert!(module_temp.insert(lc));
+            let mut module_temp: HashMap<usize, &D> = HashMap::new();
+            for lc in atoms.iter().flat_map(Atom::temp) {
+                debug_assert!(!ltc_to_dtype.contains_key(&lc.id()));
+                debug_assert!(!nxt_to_ltc.contains_key(&lc.id()));
+                debug_assert!(module_temp.insert(lc.id(), lc.dtype()).is_none());
             }
+            debug_assert!(module_temp.len() == temp.len());
+            debug_assert!(temp.iter().all(|[wire]| {
+                module_temp
+                    .get(&wire.id())
+                    .is_some_and(|&dtype| dtype == wire.dtype())
+            }));
         }
 
         Module {
@@ -225,6 +250,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             prvt,
             obs,
             ctrl,
+            temp,
             atoms,
         }
     }
@@ -339,7 +365,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
                 }
             }
 
-            for (lc, dtype) in atom.temp().wires().map(Into::into) {
+            for (lc, dtype) in atom.temp().map(Into::into) {
                 debug_assert!(!ctrl_nxt.contains(&lc));
                 if ltc_to_dtype.contains_key(&lc) || nxt_to_ltc.contains_key(&lc) {
                     return Err("temp wires coupled with module wires");
@@ -385,8 +411,11 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let extl = Interface::from_iter_unchecked(extl);
         let ctrl = Interface::from_iter_unchecked(ctrl);
         let intf = Interface::from_iter_unchecked(intf);
+        let temp = Interface::from_wires_unchecked(temp);
 
-        Ok(Self::new_unchecked(extl, intf, prvt, obs, ctrl, past_atoms))
+        Ok(Self::new_unchecked(
+            extl, intf, prvt, obs, ctrl, temp, past_atoms,
+        ))
     }
 
     /// Constructs a **sequential module** from an initialisation and update sequences of terms.
@@ -417,6 +446,225 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let obs = Interface::from_iter(obs);
         let atom = Atom::sequential(&obs[0], &obs[1], init, update)?;
         Self::observable(obs, [atom])
+    }
+
+    pub fn partially_observable_sequential<TO, TP, O, P, V, U>(
+        obs: O,
+        prvt: P,
+        init: V,
+        update: U,
+    ) -> Result<Self, &'static str>
+    where
+        TO: Into<[Wire<D>; 2]>,
+        TP: Into<[Wire<D>; 2]>,
+        O: IntoIterator<Item = TO>,
+        P: IntoIterator<Item = TP>,
+        V: IntoIterator<Item = Term<D, I>>,
+        U: IntoIterator<Item = Term<D, I>>,
+    {
+        let obs = Interface::try_from_iter(obs)?;
+        let prvt = Interface::try_from_iter(prvt)?;
+        let latched = obs[0].iter().chain(prvt[0].iter());
+        let next = obs[1].iter().chain(prvt[1].iter());
+        let atom = Atom::sequential(latched, next, init, update)?;
+        Self::partially_observable(obs, prvt, [atom])
+    }
+
+    /// Constructs the *parallel composition* of several `Module` instances.
+    ///
+    /// This function takes an iterator of modules and returns a new module that
+    /// represents all of them composed in parallel, coupling all shared observable
+    /// wires.
+    ///
+    /// # Semantics
+    ///
+    /// Observable wires with identical id across modules are *coupled* in the composed
+    /// module. Coupling means that these wires represent the same value in the resulting system.
+    ///
+    /// # Error Conditions
+    ///
+    /// - A module attempts to couple a *private* or *temporary* wire with another module
+    /// - A coupled wire is *controlled by more than one module*
+    /// - Await dependency is cyclic
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Module<D, I>)` containing the composed module.
+    /// - `Err(&'static str)` describing the reason composition failed.
+    ///
+    pub fn parallel<M>(modules: M) -> Result<Self, &'static str>
+    where
+        M: IntoIterator<Item = Self>,
+    {
+        let mut latched: HashSet<usize> = HashSet::new();
+        let mut next: HashSet<usize> = HashSet::new();
+        let mut restricted: HashSet<usize> = HashSet::new();
+
+        let mut extl: HashMap<usize, Wire<D>> = HashMap::new();
+        let mut intf: HashMap<usize, Wire<D>> = HashMap::new();
+
+        let mut extl_stack: Vec<[Wire<D>; 2]> = Vec::new();
+        let mut intf_stack: Vec<[Wire<D>; 2]> = Vec::new();
+        let mut prvt_stack: Vec<[Wire<D>; 2]> = Vec::new();
+        let mut obs_stack: Vec<[Wire<D>; 2]> = Vec::new();
+        let mut ctrl_stack: Vec<[Wire<D>; 2]> = Vec::new();
+        let mut temp_stack: Vec<[Wire<D>; 1]> = Vec::new();
+        let mut atoms_stack: Vec<Atom<D, I>> = Vec::new();
+
+        let mut await_graph: Vec<Vec<usize>> = Vec::new();
+
+        for module in modules {
+            //============================================================
+            // Ensure decoupling and restrict visibility
+            //============================================================
+
+            // Check that observables are either uncoupled or coupled in right direction
+            obs_stack.reserve(module.obs.len());
+            for [ltc, nxt] in module.obs {
+                debug_assert_eq!(ltc.dtype(), nxt.dtype());
+                if latched.contains(&nxt.id()) || next.contains(&ltc.id()) {
+                    return Err("invalid coupling (direction)");
+                }
+                if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
+                    return Err("invalid coupling (restricted)");
+                }
+                // stack observables that are not already present (avoid duplication)
+                if latched.insert(ltc.id()) {
+                    debug_assert!(!next.contains(&nxt.id()));
+                    next.insert(nxt.id());
+                    obs_stack.push([ltc, nxt]);
+                }
+            }
+
+            // Check that privates are uncoupled and restrict them
+            prvt_stack.reserve(module.prvt.len());
+            for [ltc, nxt] in module.prvt {
+                debug_assert_eq!(ltc.dtype(), nxt.dtype());
+                if !latched.insert(ltc.id()) || !next.insert(nxt.id()) {
+                    return Err("invalid coupling (private)");
+                }
+                if latched.contains(&nxt.id()) || next.contains(&ltc.id()) {
+                    return Err("invalid coupling (direction)");
+                }
+                debug_assert!(!restricted.contains(&ltc.id()) && !restricted.contains(&nxt.id()));
+                restricted.insert(ltc.id());
+                restricted.insert(nxt.id());
+
+                prvt_stack.push([ltc, nxt]);
+            }
+
+            // Check that temporaries are uncoupled and restrict them
+            temp_stack.reserve(module.temp.len());
+            for [tmp] in module.temp {
+                if latched.contains(&tmp.id()) || next.contains(&tmp.id()) {
+                    return Err("invalid coupling (temp)");
+                }
+                if !restricted.insert(tmp.id()) {
+                    return Err("invalid coupling (temp)");
+                }
+
+                temp_stack.push([tmp]);
+            }
+
+            //============================================================
+            // Couple external and interface variables
+            //============================================================
+            extl_stack.reserve(module.extl.len());
+            for [ltc, nxt] in module.extl {
+                debug_assert_eq!(ltc.dtype(), nxt.dtype());
+                if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
+                    return Err("invalid coupling (restricted)");
+                }
+
+                // check whether the wire is coupled (controlled by other atom), or
+                // consider it as external otherwise
+                if let Some(coupled) = intf.get(&ltc.id()) {
+                    if coupled.id() != nxt.id() {
+                        return Err("wire id mismatch");
+                    } else if coupled.dtype() != nxt.dtype() {
+                        return Err("wire dtype mismatch");
+                    }
+                } else {
+                    extl.insert(ltc.id(), nxt.clone());
+                    extl_stack.push([ltc, nxt]);
+                }
+            }
+
+            intf_stack.reserve(module.intf.len());
+            for [ltc, nxt] in module.intf {
+                debug_assert_eq!(ltc.dtype(), nxt.dtype());
+                if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
+                    return Err("invalid coupling (restricted)");
+                }
+
+                // check whether the wire is coupled (external of other atom), and
+                // consider it as interface wire then
+                if let Some(coupled) = extl.remove(&ltc.id()) {
+                    if coupled.id() != nxt.id() {
+                        return Err("next wire mismatch");
+                    } else if coupled.dtype() != nxt.dtype() {
+                        return Err("dtype mismatch");
+                    }
+                }
+
+                if intf.insert(ltc.id(), nxt.clone()).is_some() {
+                    return Err("invalid coupling (shared control)");
+                }
+
+                intf_stack.push([ltc, nxt]);
+            }
+
+            ctrl_stack.extend(module.ctrl);
+
+            //============================================================
+            // Populate await graph
+            //============================================================
+            for this_atom in module.atoms {
+                let this_idx = atoms_stack.len();
+                let mut this_adj = Vec::new();
+                for (other_idx, other_atom) in atoms_stack.iter().enumerate() {
+                    if this_atom.awaits(other_atom) {
+                        await_graph[other_idx].push(this_idx);
+                    }
+                    if other_atom.awaits(&this_atom) {
+                        this_adj.push(other_idx);
+                    }
+                }
+                atoms_stack.push(this_atom);
+                await_graph.push(this_adj);
+            }
+        }
+
+        //============================================================
+        // Reorder atoms and remove coupled wires from the externals
+        //============================================================
+
+        let await_order = kahn(&await_graph).ok_or("invalid await dependency")?;
+        debug_assert!(await_order.len() == await_graph.len());
+
+        let mut atoms: Vec<Atom<D, I>> = Vec::with_capacity(await_graph.len());
+        for idx in await_order {
+            atoms.push(std::mem::take(&mut atoms_stack[idx]));
+        }
+
+        let extl_stack = extl_stack
+            .into_iter()
+            .filter(|wire| extl.contains_key(&wire[0].id()));
+
+        //============================================================
+        // Collect and construct
+        //============================================================
+
+        let extl = Interface::from_iter_unchecked(extl_stack);
+        let intf = Interface::from_iter_unchecked(intf_stack);
+        let prvt = Interface::from_iter_unchecked(prvt_stack);
+        let obs = Interface::from_iter_unchecked(obs_stack);
+        let ctrl = Interface::from_iter_unchecked(ctrl_stack);
+        let temp = Interface::from_iter_unchecked(temp_stack);
+
+        Ok(Module::new_unchecked(
+            extl, intf, prvt, obs, ctrl, temp, atoms,
+        ))
     }
 }
 

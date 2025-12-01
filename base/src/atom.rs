@@ -47,8 +47,25 @@ impl<D, I> Atom<D, I> {
         &self.read
     }
 
-    pub fn temp(&self) -> &Interface<D> {
-        &self.temp
+    pub fn temp(&self) -> impl Iterator<Item = &Wire<D>> {
+        self.temp.wires()
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            ctrl: Interface::empty(),
+            wait: Interface::empty(),
+            read: Interface::empty(),
+            temp: Interface::empty(),
+            init: Block::empty(),
+            update: Block::empty(),
+        }
+    }
+}
+
+impl<D, I> Default for Atom<D, I> {
+    fn default() -> Self {
+        Self::empty()
     }
 }
 

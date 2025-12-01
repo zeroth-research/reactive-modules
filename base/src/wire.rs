@@ -67,6 +67,12 @@ impl<D, const N: usize> Interface<D, N> {
     }
 }
 
+impl<D, const N: usize> Default for Interface<D, N> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 impl<D: Eq> Interface<D> {
     pub fn single(id: usize, dtype: D) -> Interface<D> {
         Self::from_iter_unchecked([[Wire::new(id, dtype)]])
