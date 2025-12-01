@@ -2,7 +2,7 @@ use base::term::Term;
 use std::fmt;
 
 #[derive(Debug)]
-pub enum TorchOp {
+pub enum IType {
     // constants are special terms
     Const(tch::Tensor),
     // comparisons (element-wise)
@@ -34,92 +34,92 @@ pub enum TorchOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TorchDType {
+pub enum DType {
     Tensor,
 }
 
-pub type TorchTerm = Term<TorchDType, TorchOp>;
+pub type TorchTerm = Term<DType, IType>;
 
-impl TorchOp {
+impl IType {
     pub fn from_str(s: &str) -> Self {
         match s {
-            "Eq" => TorchOp::Eq,
-            "Neq" => TorchOp::Neq,
-            "Lt" => TorchOp::Lt,
-            "Le" => TorchOp::Le,
-            "Gt" => TorchOp::Gt,
-            "Ge" => TorchOp::Ge,
+            "Eq" => IType::Eq,
+            "Neq" => IType::Neq,
+            "Lt" => IType::Lt,
+            "Le" => IType::Le,
+            "Gt" => IType::Gt,
+            "Ge" => IType::Ge,
             // -----
-            "Add" => TorchOp::Add,
-            "Sub" => TorchOp::Sub,
-            "Mul" => TorchOp::Mul,
-            "Div" => TorchOp::Div,
-            "Sum" => TorchOp::Sum,
-            "Prod" => TorchOp::Prod,
+            "Add" => IType::Add,
+            "Sub" => IType::Sub,
+            "Mul" => IType::Mul,
+            "Div" => IType::Div,
+            "Sum" => IType::Sum,
+            "Prod" => IType::Prod,
             // -----
-            "Id" => TorchOp::Id,
+            "Id" => IType::Id,
             // -----
-            "Ite" => TorchOp::Ite,
-            "Choose" => TorchOp::Choose,
+            "Ite" => IType::Ite,
+            "Choose" => IType::Choose,
             // -----
-            "Neg" => TorchOp::Neg,
-            "Or" => TorchOp::Or,
-            "And" => TorchOp::And,
+            "Neg" => IType::Neg,
+            "Or" => IType::Or,
+            "And" => IType::And,
             // -----
             "Const" => panic!("Const cannot be constructed from a &str"),
-            oth => panic!("Invalid TorchOp: {} (maybe just not added yet)", oth),
+            oth => panic!("Invalid IType: {} (maybe just not added yet)", oth),
         }
     }
 }
 
-impl Clone for TorchOp {
+impl Clone for IType {
     fn clone(&self) -> Self {
         match self {
-            TorchOp::Const(v) => Self::Const(v.shallow_clone()),
-            TorchOp::Eq => TorchOp::Eq,
-            TorchOp::Neq => TorchOp::Neq,
-            TorchOp::Lt => TorchOp::Lt,
-            TorchOp::Le => TorchOp::Le,
-            TorchOp::Gt => TorchOp::Gt,
-            TorchOp::Ge => TorchOp::Ge,
-            TorchOp::Add => TorchOp::Add,
-            TorchOp::Sub => TorchOp::Sub,
-            TorchOp::Mul => TorchOp::Mul,
-            TorchOp::Div => TorchOp::Div,
-            TorchOp::Sum => TorchOp::Sum,
-            TorchOp::Prod => TorchOp::Prod,
-            TorchOp::Id => TorchOp::Id,
-            TorchOp::Ite => TorchOp::Ite,
-            TorchOp::Choose => TorchOp::Choose,
-            TorchOp::Neg => TorchOp::Neg,
-            TorchOp::And => TorchOp::And,
-            TorchOp::Or => TorchOp::Or,
+            IType::Const(v) => Self::Const(v.shallow_clone()),
+            IType::Eq => IType::Eq,
+            IType::Neq => IType::Neq,
+            IType::Lt => IType::Lt,
+            IType::Le => IType::Le,
+            IType::Gt => IType::Gt,
+            IType::Ge => IType::Ge,
+            IType::Add => IType::Add,
+            IType::Sub => IType::Sub,
+            IType::Mul => IType::Mul,
+            IType::Div => IType::Div,
+            IType::Sum => IType::Sum,
+            IType::Prod => IType::Prod,
+            IType::Id => IType::Id,
+            IType::Ite => IType::Ite,
+            IType::Choose => IType::Choose,
+            IType::Neg => IType::Neg,
+            IType::And => IType::And,
+            IType::Or => IType::Or,
         }
     }
 }
 
-impl fmt::Display for TorchOp {
+impl fmt::Display for IType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TorchOp::Eq => write!(f, "Eq"),
-            TorchOp::Neq => write!(f, "Neq"),
-            TorchOp::Lt => write!(f, "Lt"),
-            TorchOp::Le => write!(f, "Le"),
-            TorchOp::Gt => write!(f, "Gt"),
-            TorchOp::Ge => write!(f, "Ge"),
-            TorchOp::Add => write!(f, "Add"),
-            TorchOp::Sub => write!(f, "Sub"),
-            TorchOp::Mul => write!(f, "Mul"),
-            TorchOp::Div => write!(f, "Div"),
-            TorchOp::Sum => write!(f, "Sum"),
-            TorchOp::Prod => write!(f, "Prod"),
-            TorchOp::Id => write!(f, "Id"),
-            TorchOp::Ite => write!(f, "Ite"),
-            TorchOp::Choose => write!(f, "Choose"),
-            TorchOp::Neg => write!(f, "Neg"),
-            TorchOp::And => write!(f, "And"),
-            TorchOp::Or => write!(f, "Or"),
-            TorchOp::Const(t) => {
+            IType::Eq => write!(f, "Eq"),
+            IType::Neq => write!(f, "Neq"),
+            IType::Lt => write!(f, "Lt"),
+            IType::Le => write!(f, "Le"),
+            IType::Gt => write!(f, "Gt"),
+            IType::Ge => write!(f, "Ge"),
+            IType::Add => write!(f, "Add"),
+            IType::Sub => write!(f, "Sub"),
+            IType::Mul => write!(f, "Mul"),
+            IType::Div => write!(f, "Div"),
+            IType::Sum => write!(f, "Sum"),
+            IType::Prod => write!(f, "Prod"),
+            IType::Id => write!(f, "Id"),
+            IType::Ite => write!(f, "Ite"),
+            IType::Choose => write!(f, "Choose"),
+            IType::Neg => write!(f, "Neg"),
+            IType::And => write!(f, "And"),
+            IType::Or => write!(f, "Or"),
+            IType::Const(t) => {
                 let flat = t.view([-1]);
 
                 if let Ok(vals) = Vec::<f64>::try_from(&flat) {
@@ -143,10 +143,10 @@ impl fmt::Display for TorchOp {
     }
 }
 
-impl fmt::Display for TorchDType {
+impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TorchDType::Tensor => write!(f, "Tensor"),
+            DType::Tensor => write!(f, "Tensor"),
         }
     }
 }
