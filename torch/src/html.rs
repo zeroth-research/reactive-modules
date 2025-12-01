@@ -59,7 +59,7 @@ impl Context {
             .unwrap();
         }
 
-        write!(s, "\n").unwrap();
+        writeln!(s).unwrap();
         for atom in module.atoms() {
             writeln!(s, "{}", self.dump_atom(atom, fmt)).unwrap();
         }
@@ -86,7 +86,7 @@ impl Context {
                 write!(s, ", {}", self.wire_name(wr)).unwrap();
             }
         }
-        write!(s, "\n").unwrap();
+        writeln!(s).unwrap();
         for (i, (wr, _)) in atom.read().iter().enumerate() {
             if i == 0 {
                 write!(s, " {fmt_bold}reads{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
@@ -94,7 +94,7 @@ impl Context {
                 write!(s, ", {}", self.wire_name(wr)).unwrap();
             }
         }
-        write!(s, "\n").unwrap();
+        writeln!(s).unwrap();
         for (i, (wr, _)) in atom.wait().iter().enumerate() {
             if i == 0 {
                 write!(s, " {fmt_bold}awaits{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
@@ -102,7 +102,7 @@ impl Context {
                 write!(s, ", {}", self.wire_name(wr)).unwrap();
             }
         }
-        write!(s, "\n").unwrap();
+        writeln!(s).unwrap();
         writeln!(s, "\n{fmt_bold}init{fmt_bold_end}").unwrap();
 
         for term in atom.init().iter() {
