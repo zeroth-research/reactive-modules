@@ -2,6 +2,9 @@ mod smt;
 mod toy;
 mod util;
 
+#[cfg(feature = "pytorch")]
+mod torch;
+
 pub mod pyval;
 pub use pyval::PyVal;
 
@@ -27,6 +30,17 @@ fn _zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     smt.add_class::<smt::WrappedContext>()?;
 
     m.add_submodule(&smt)?;
+
+    #[cfg(feature = "pytorch")]
+    {
+        let torch = PyModule::new(py, "torch")?;
+        torch.add_class::<torch::WrappedTerm>()?;
+        torch.add_class::<torch::WrappedAtom>()?;
+        torch.add_class::<torch::WrappedModule>()?;
+        torch.add_class::<torch::WrappedContext>()?;
+
+        m.add_submodule(&torch)?;
+    }
 
     Ok(())
 }

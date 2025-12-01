@@ -83,6 +83,11 @@ fn process_pyvals(
                 result.push(term);
                 args.push((var, DType::Bool));
             }
+            #[cfg(feature = "pytorch")]
+            PyVal::Tensor(_) => {
+                // translate to a matrix if the tensor is a matrix. Otherwise fail
+                todo!()
+            }
         }
     }
 

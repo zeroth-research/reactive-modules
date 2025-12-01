@@ -1,0 +1,47 @@
+use pyo3::prelude::*;
+
+use crate::PyVal;
+
+// the context in `toy` crate is generic,
+// we'll use it until we have the context in `base`.
+use torch::DType;
+use toy::context::Context;
+
+/// Context for generating Atoms and Modules from Python
+#[pyclass]
+pub struct WrappedContext {
+    pub(crate) ctx: Context<DType>,
+}
+
+impl Default for WrappedContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[pymethods]
+impl WrappedContext {
+    #[new]
+    pub fn new() -> Self {
+        Self {
+            ctx: Context::<DType>::new(),
+        }
+    }
+
+    pub fn fresh_var(&mut self) -> usize {
+        self.ctx.tmp_var(DType::Tensor)
+    }
+
+    pub fn tmp_var(&mut self) -> PyVal {
+        PyVal::Sym(self.ctx.tmp_var(DType::Tensor), "Tensor".to_string())
+    }
+
+    pub fn get(&mut self, name: &str) -> usize {
+        self.ctx.get(name).0
+    }
+
+    pub fn var(&mut self, name: &str) -> PyVal {
+        let (id, _) = self.ctx.var(name, DType::Tensor);
+        PyVal::Sym(id, "Tensor".to_string())
+    }
+}

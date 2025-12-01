@@ -1,6 +1,22 @@
 use base::term::Term;
 use std::fmt;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DType {
+    Tensor,
+}
+
+impl std::str::FromStr for DType {
+    type Err = String;
+
+    fn from_str(ty: &str) -> Result<Self, Self::Err> {
+        match ty {
+            "Tensor" => Ok(DType::Tensor),
+            _ => Err(format!("Cannot convert `{}` to DType", ty)),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum IType {
     // constants are special terms
@@ -31,11 +47,6 @@ pub enum IType {
     Neg,
     Or,
     And,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DType {
-    Tensor,
 }
 
 pub type TorchTerm = Term<DType, IType>;
