@@ -1,9 +1,6 @@
-use pyo3::prelude::*;
-
 use std::collections::HashMap;
 
 /// Context for generating Atoms and Modules from Python
-#[pyclass]
 pub struct Context {
     // maps names of variables to numerical identifiers in wires
     name_to_id: HashMap<String, usize>, // TODO: should we keep track of variable types?
@@ -16,9 +13,7 @@ impl Default for Context {
     }
 }
 
-#[pymethods]
 impl Context {
-    #[new]
     pub fn new() -> Self {
         Self {
             name_to_id: HashMap::new(),
