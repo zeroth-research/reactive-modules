@@ -40,34 +40,36 @@ pub enum DType {
 
 pub type TorchTerm = Term<DType, IType>;
 
-impl IType {
-    pub fn from_str(s: &str) -> Self {
+impl std::str::FromStr for IType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<IType, Self::Err> {
         match s {
-            "Eq" => IType::Eq,
-            "Neq" => IType::Neq,
-            "Lt" => IType::Lt,
-            "Le" => IType::Le,
-            "Gt" => IType::Gt,
-            "Ge" => IType::Ge,
+            "Eq" => Ok(IType::Eq),
+            "Neq" => Ok(IType::Neq),
+            "Lt" => Ok(IType::Lt),
+            "Le" => Ok(IType::Le),
+            "Gt" => Ok(IType::Gt),
+            "Ge" => Ok(IType::Ge),
             // -----
-            "Add" => IType::Add,
-            "Sub" => IType::Sub,
-            "Mul" => IType::Mul,
-            "Div" => IType::Div,
-            "Sum" => IType::Sum,
-            "Prod" => IType::Prod,
+            "Add" => Ok(IType::Add),
+            "Sub" => Ok(IType::Sub),
+            "Mul" => Ok(IType::Mul),
+            "Div" => Ok(IType::Div),
+            "Sum" => Ok(IType::Sum),
+            "Prod" => Ok(IType::Prod),
             // -----
-            "Id" => IType::Id,
+            "Id" => Ok(IType::Id),
             // -----
-            "Ite" => IType::Ite,
-            "Choose" => IType::Choose,
+            "Ite" => Ok(IType::Ite),
+            "Choose" => Ok(IType::Choose),
             // -----
-            "Neg" => IType::Neg,
-            "Or" => IType::Or,
-            "And" => IType::And,
+            "Neg" => Ok(IType::Neg),
+            "Or" => Ok(IType::Or),
+            "And" => Ok(IType::And),
             // -----
-            "Const" => panic!("Const cannot be constructed from a &str"),
-            oth => panic!("Invalid IType: {} (maybe just not added yet)", oth),
+            "Const" => Err("Const cannot be constructed from a &str".into()),
+            oth => Err(format!("Invalid IType: {} (maybe just not added yet)", oth)),
         }
     }
 }

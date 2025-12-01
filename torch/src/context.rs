@@ -41,12 +41,12 @@ impl Context {
         if res == new_id {
             // the entry was just inserted, remember the name
             let _inserted = self.id_to_name.insert(new_id, name);
-            assert!(_inserted == None);
+            assert!(_inserted.is_none());
         }
         res
     }
 
     pub fn get_name(&self, id: usize) -> Option<&str> {
-        self.id_to_name.get(&id).and_then(|s| Some(s.as_str()))
+        self.id_to_name.get(&id).map(|s| s.as_str())
     }
 }
