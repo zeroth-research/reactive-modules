@@ -12,7 +12,7 @@ pub struct Atom<D, I> {
     wait: Interface<D>,
     /// Corresponds to read variables.
     read: Interface<D>,
-
+    /// Corresponds to temporary, local wires.
     temp: Interface<D>,
 
     /// Corresponds to the initial action.

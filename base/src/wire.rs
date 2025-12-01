@@ -42,7 +42,19 @@ impl<D> From<(usize, D)> for Wire<D> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// An interface consisting of `N`-tuples of wires of data type `D`.
+///
+/// # Overview
+/// `Interface<D, N>` represents a *local bundle* of wires.
+/// Conceptually, it behaves like a sequence of tuples, where each tuple
+/// contains exactly `N` elements of type `Wire<D>`. Each tuple can be seen
+/// an element of type [Wire<D>; N], where all wires within each tuple are
+/// guaranteed to have the same dtype.
+///
+/// # Type Parameters
+/// - `D`: the data type carried by each wire.
+/// - `N`: the arity of the interface (number of wires in each tuple).
+#[derive(Debug, Clone)]
 pub struct Interface<D, const N: usize = 1> {
     wires: [Vec<Wire<D>>; N],
 }
@@ -56,8 +68,8 @@ impl<D, const N: usize> Interface<D, N> {
 }
 
 impl<D: Eq> Interface<D> {
-    pub fn single(offset: usize, dtype: D) -> Interface<D> {
-        Self::from_iter_unchecked([[Wire::new(offset, dtype)]])
+    pub fn single(id: usize, dtype: D) -> Interface<D> {
+        Self::from_iter_unchecked([[Wire::new(id, dtype)]])
     }
 }
 

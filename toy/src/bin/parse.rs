@@ -87,7 +87,7 @@ fn dump_to_html(modules: &[ToyModule], args: &Cli, ctx: &Context) -> Result<(), 
 }
 
 #[cfg(not(feature = "visual-html"))]
-fn dump_to_html2(modules: &Vec<ToyModule>, args: &Cli) {
+fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli) {
     eprintln!("HTML visualization is disabled, enable the feature \"visual-html\"");
     process::exit(1);
 }
