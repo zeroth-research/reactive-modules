@@ -348,7 +348,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
                     return Err("temp wires coupled with module wires");
                 }
                 if temp.insert(lc, dtype.clone()).is_some() {
-                    return Err("temp wires could with other atom");
+                    return Err("temp wires coupled with other atom");
                 }
             }
 

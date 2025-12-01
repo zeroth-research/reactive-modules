@@ -65,9 +65,6 @@ pub fn build_module(ctx: &mut Context) -> Module<Type, Instruction> {
     let latched = ctx.get_vars(&["x", "y", "z", "y0", "z0"]);
     let next = ctx.get_vars(&["x'", "y'", "z'", "y0'", "z0'"]);
 
-    // let atom = Atom::with_module_wire(&[latched.clone(), next.clone()], init_terms, update_terms)
-    //     .expect("failed creating atom");
-
     Module::sequential(
         zip(latched, next).map(|([l], [n])| [l, n]),
         init_terms,

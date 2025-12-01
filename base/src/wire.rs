@@ -138,7 +138,7 @@ impl<D, const N: usize> Iterator for IterOwned<D, N> {
     fn next(&mut self) -> Option<Self::Item> {
         let out: [Option<Wire<D>>; N] = from_fn(|i| self.iters[i].next());
         debug_assert!(out.iter().all(Option::is_some) || out.iter().all(Option::is_none));
-        out[0].is_some().then(|| out.map(Option::unwrap))
+        (N != 0 && out[0].is_some()).then(|| out.map(Option::unwrap))
     }
 }
 
@@ -152,7 +152,7 @@ impl<'a, D, const N: usize> Iterator for IterRef<'a, D, N> {
     fn next(&mut self) -> Option<Self::Item> {
         let out: [Option<&Wire<D>>; N] = from_fn(|i| self.iters[i].next());
         debug_assert!(out.iter().all(Option::is_some) || out.iter().all(Option::is_none));
-        out[0].is_some().then(|| out.map(Option::unwrap))
+        (N != 0 && out[0].is_some()).then(|| out.map(Option::unwrap))
     }
 }
 
