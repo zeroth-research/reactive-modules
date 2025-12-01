@@ -2,6 +2,7 @@
 name = "zrth-python"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [lib]
 name = "zrth"
@@ -13,6 +14,9 @@ toy = { path = "../toy" }
 smt = { path = "../smt" }
 pyo3 = { version = "0.24" }
 visual = { path = "../visual", features=["html"], optional = true }
+torch = { path = "../torch", optional = true }
+tch = { features = ["python-extension"], version = "0.22", optional = true}
+pyo3-tch = { version = "0.22", optional = true }
 
 
 
@@ -20,4 +24,5 @@ visual = { path = "../visual", features=["html"], optional = true }
 default = ["visual-html"]
 # dumping modules to HTML
 visual-html = ["visual/html", "toy/visual-html"]
+pytorch = ["torch", "pyo3-tch", "tch", "tch/python-extension"]
 

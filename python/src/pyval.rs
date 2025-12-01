@@ -1,6 +1,9 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyInt};
 
+#[cfg(feature = "pytorch")]
+use crate::torch::pytensor::PyTensor;
+
 // A wrapper around a value that carries also the type of the value.
 // We need it to know what we pass.
 #[derive(Debug, Clone)]
@@ -12,20 +15,28 @@ pub enum PyVal {
     Sym(usize, String),
     Int(i64),
     Bool(bool),
+    #[cfg(feature = "pytorch")]
+    Tensor(PyTensor),
 }
 
 #[pymethods]
 impl PyVal {
     #[new]
     fn new(obj: &Bound<'_, PyAny>) -> PyResult<PyVal> {
+        #[cfg(feature = "pytorch")]
+        {
+            if let Ok(tensor) = obj.extract::<PyTensor>() {
+                return Ok(PyVal::Tensor(tensor));
+            }
+        }
+
         if obj.is_instance_of::<PyInt>() {
             let val: i64 = obj.extract()?;
             Ok(PyVal::Int(val))
         //} else if obj.is_instance_of::<PyFloat>() {
         //    let val: f64 = obj.extract()?;
         //    Ok(PyVal::F64(val))
-        //} else if let Ok(tensor) = obj.extract::<PyTensor>() {
-        //    Ok(PyVal::Tensor(tensor))
+        //}
         } else if obj.is_instance_of::<PyBool>() {
             let val: bool = obj.extract()?;
             Ok(PyVal::Bool(val))
@@ -49,11 +60,19 @@ impl PyVal {
         Ok(PyVal::Bool(val))
     }
 
+    #[cfg(feature = "pytorch")]
+    #[staticmethod]
+    fn tensor(val: PyTensor) -> PyResult<PyVal> {
+        Ok(PyVal::Tensor(val))
+    }
+
     fn ty(&self) -> String {
         match self {
             PyVal::Int(_) => "Int".to_string(),
             PyVal::Bool(_) => "Bool".to_string(),
             PyVal::Sym(_, ty) => ty.clone(),
+            #[cfg(feature = "pytorch")]
+            PyVal::Tensor(_) => "Tensor".to_string(),
         }
     }
 

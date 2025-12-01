@@ -1,29 +1,19 @@
-use std::fmt;
+use crate::pyval::PyVal;
+use crate::torch::wrappedcontext::WrappedContext;
+use crate::torch::wrappedterm::WrappedTerm;
+use torch::{DType, IType, TorchTerm};
 
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::PyVal;
-use crate::smt::wrappedcontext::WrappedContext;
-use crate::smt::wrappedterm::WrappedTerm;
-use crate::util::str_to_pyerr;
-
-use base::wire::Wire;
-
-use smt::dtype::DType;
-use smt::itype::{IType, Val};
+use base::Atom;
+use base::Wire;
 
 type WireTy = Wire<DType>;
-type SmtAtom = base::Atom<DType, IType>;
-type SmtTerm = base::Term<DType, IType>;
 
 #[pyclass]
 pub struct WrappedAtom {
-    pub(crate) atom: SmtAtom,
-}
-
-fn new_term(op: IType, reads: Wire<DType>, writes: Wire<DType>) -> Result<SmtTerm, &'static str> {
-    Ok(SmtTerm::new(op, writes, reads))
+    pub(crate) atom: Atom<DType, IType>,
 }
 
 // It is safe to share this struct for the same reasons as for PyTensor
@@ -53,43 +43,49 @@ unsafe impl Sync for WrappedAtom {}
 fn process_pyvals(
     ctx: &mut WrappedContext,
     pyvals: &Vec<PyVal>,
-    result: &mut Vec<SmtTerm>,
-) -> Vec<(usize, DType)> {
-    let mut args: Vec<(usize, DType)> = vec![];
+    result: &mut Vec<TorchTerm>,
+) -> Vec<usize> {
+    let mut args: Vec<usize> = vec![];
 
     // FIXME: get rid of the code duplication
     for r in pyvals {
         match r {
-            PyVal::Sym(var_id, ty) => {
-                let ty: DType = ty.parse().expect("Failed parsing DType");
-                args.push((*var_id, ty));
-            }
-            PyVal::Int(val) => {
-                let var = ctx.ctx.tmp_var(DType::Int);
-                let term = new_term(
-                    IType::Const(Val::Int(*val)),
+            PyVal::Sym(var_id, _) => args.push(*var_id),
+            PyVal::Tensor(tensor) => {
+                let var = ctx.fresh_var();
+                result.push(TorchTerm::new(
+                    IType::Const(tensor.tensor.shallow_clone()),
+                    Wire::one(var, DType::Tensor),
                     Wire::none(),
-                    Wire::one(var, DType::Int),
-                )
-                .expect("Failed creating a constant term for a pyval");
-                result.push(term);
-                args.push((var, DType::Int));
+                ));
+                args.push(var);
+            }
+            //PyVal::F64(val) => {
+            //    let var = ctx.fresh_var();
+            //    result.push(TorchTerm::new(
+            //        IType::Const(tch::Tensor::from_slice(&[*val])),
+            //        Wire::one(var, DType::Tensor),
+            //        Wire::none(),
+            //    ));
+            //    args.push(var);
+            //}
+            PyVal::Int(val) => {
+                let var = ctx.fresh_var();
+                result.push(TorchTerm::new(
+                    IType::Const(tch::Tensor::from_slice(&[*val])),
+                    Wire::one(var, DType::Tensor),
+                    Wire::none(),
+                ));
+                args.push(var);
             }
             PyVal::Bool(val) => {
-                let var = ctx.ctx.tmp_var(DType::Bool);
-                let term = new_term(
-                    IType::Const(Val::Bool(*val)),
+                let var = ctx.fresh_var();
+                result.push(TorchTerm::new(
+                    IType::Const(tch::Tensor::from_slice(&[*val])),
+                    Wire::one(var, DType::Tensor),
                     Wire::none(),
-                    Wire::one(var, DType::Bool),
-                )
-                .expect("Failed creating a term for a boolean value");
-                result.push(term);
-                args.push((var, DType::Bool));
-            }
-            #[cfg(feature = "pytorch")]
-            PyVal::Tensor(_) => {
-                // translate to a matrix if the tensor is a matrix. Otherwise fail
-                todo!()
+                ));
+                args.push(var);
             }
         }
     }
@@ -97,15 +93,18 @@ fn process_pyvals(
     args
 }
 
-/// Translate a list of [WrappedTerm]s into a vector of [Term]s.
+/// Translate a list of [WrappedTerm]s into a vector of [TorchTerm]s.
 /// The results is wrapped in [PyResult] so that we can easily propagate errors
 /// back to Python.
 ///
 /// The resulting vector can be longer that the input vector, because we may generate new
-/// [Term] terms that represent read or written constants (these we can represent as [PyVal]s
-/// in `WrappedTerm.reads` and `WrappedTerm.writes`, but in [Term]s the wires cannot take "constant"
+/// [TorchTerm] terms that represent read or written constants (these we can represent as [PyVal]s
+/// in `WrappedTerm.reads` and `WrappedTerm.writes`, but in [TorchTerm]s the wires cannot take "constant"
 /// values.)
-fn wterms_to_terms(ctx: &mut WrappedContext, terms: &Bound<'_, PyList>) -> PyResult<Vec<SmtTerm>> {
+fn wterms_to_torchterms(
+    ctx: &mut WrappedContext,
+    terms: &Bound<'_, PyList>,
+) -> PyResult<Vec<TorchTerm>> {
     let mut result = vec![];
 
     for item in terms {
@@ -119,10 +118,9 @@ fn wterms_to_terms(ctx: &mut WrappedContext, terms: &Bound<'_, PyList>) -> PyRes
         let rargs = process_pyvals(ctx, &wterm.reads, &mut result);
         let wargs = process_pyvals(ctx, &wterm.writes, &mut result);
 
-        let write = Wire::from_iter(wargs.into_iter());
-        let read = Wire::from_iter(rargs.into_iter());
-        let term = new_term(wterm.op.clone(), read, write).map_err(str_to_pyerr)?;
-        result.push(term);
+        let write = Wire::from_iter(wargs.into_iter().map(|val| (val, DType::Tensor)));
+        let read = Wire::from_iter(rargs.into_iter().map(|val| (val, DType::Tensor)));
+        result.push(TorchTerm::new(wterm.op.clone(), write, read));
     }
 
     Ok(result)
@@ -131,64 +129,63 @@ fn wterms_to_terms(ctx: &mut WrappedContext, terms: &Bound<'_, PyList>) -> PyRes
 /// Translate a list of `PyVal::Sym` values into a wiring. This is a simple version of
 /// [process_pyvals] where we assume no constants are in the input vector.
 pub(crate) fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<WireTy> {
-    let mut names: Vec<(usize, String)> = Vec::new();
+    let mut names: Vec<usize> = Vec::new();
     for item in vals {
         let pyval: &Bound<'_, PyVal> = item.downcast()?;
         let pyval = pyval.borrow();
         match &*pyval {
-            PyVal::Sym(var_id, ty) => names.push((*var_id, ty.clone())),
+            PyVal::Sym(var_id, _) => names.push(*var_id),
             _ => panic!("Invalid input variable: {:?}", pyval),
         }
     }
 
     Ok(Wire::from_iter(
-        names
-            .into_iter()
-            .map(|(val, ty)| (val, ty.parse().expect("Invalid type"))),
+        names.into_iter().map(|val| (val, DType::Tensor)),
     ))
 }
 
 #[pymethods]
 impl WrappedAtom {
+    //fn new_unchecked(
+    //    ctx: &Bound<'_, WrappedContext>,
+    //    read: &Bound<'_, PyList>,
+    //    ctrl: &Bound<'_, PyList>,
+    //    init: &Bound<'_, PyList>,
+    //    update: &Bound<'_, PyList>,
+    //) -> Self {
+    //    let read = vars_to_wiring(read).unwrap();
+    //    let ctrl = vars_to_wiring(ctrl).unwrap();
+    //
+    //    let ctx: &mut WrappedContext = &mut ctx.borrow_mut();
+    //    let init = wterms_to_torchterms(ctx, init).unwrap();
+    //    let update = wterms_to_torchterms(ctx, update).unwrap();
+    //
+    //    let atom = Atom::new_unchecked(read, ctrl, Wire::none(), init, update);
+    //    Self { atom }
+    //}
+
     #[new]
     fn new(
         ctx: &Bound<'_, WrappedContext>,
-        read: &Bound<'_, PyList>,
-        write: &Bound<'_, PyList>,
+        // variables
+        latched: &Bound<'_, PyList>,
+        next: &Bound<'_, PyList>,
+        // init and update
         init: &Bound<'_, PyList>,
         update: &Bound<'_, PyList>,
     ) -> Self {
-        let read = vars_to_wiring(read).unwrap();
-        let write = vars_to_wiring(write).unwrap();
+        let latched = vars_to_wiring(latched).unwrap();
+        let next = vars_to_wiring(next).unwrap();
 
         let ctx: &mut WrappedContext = &mut ctx.borrow_mut();
-        let init = wterms_to_terms(ctx, init).unwrap();
-        let update = wterms_to_terms(ctx, update).unwrap();
+        let init = wterms_to_torchterms(ctx, init).unwrap();
+        let update = wterms_to_torchterms(ctx, update).unwrap();
 
-        let atom = SmtAtom::new_unchecked(read, write, Wire::none(), init, update);
+        let atom = Atom::with_module_wire(&[latched, next], init, update).unwrap();
         Self { atom }
     }
 
     fn dbg(&self) {
         println!("{}", self.atom);
-    }
-}
-
-impl std::fmt::Debug for WrappedAtom {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Reads: {:?}", self.atom.read())?;
-        writeln!(f, "Controls: {:?}", self.atom.ctrl())?;
-        writeln!(f, "Awaits: NOT IMPLEMENTED {:?}", self.atom.wait())?;
-        writeln!(f, "-------------")?;
-        writeln!(f, "Init:")?;
-        for term in self.atom.init() {
-            writeln!(f, "  {:?}", term)?;
-        }
-        writeln!(f, "-------------")?;
-        writeln!(f, "Update:")?;
-        for term in self.atom.update() {
-            writeln!(f, "  {:?}", term)?;
-        }
-        writeln!(f, "-------------")
     }
 }
