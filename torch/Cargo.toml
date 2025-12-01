@@ -2,17 +2,11 @@
 name = "torch"
 version = "0.1.0"
 edition = "2024"
-build = "build.rs"
-
-[lib]
-name = "zrm_torch"
-crate-type = ["cdylib"]
+#build = "build.rs"
 
 [dependencies]
 base = { path = "../base" }
-pyo3 = { version = "0.24" }
-pyo3-tch = { version = "0.22" }
-tch = { features = ["python-extension"], version = "0.22" }
+tch = { version = "0.22" }
 visual = { path = "../visual", features=["html"], optional = true }
 
 [features]

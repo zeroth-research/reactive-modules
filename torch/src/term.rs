@@ -55,6 +55,7 @@ impl TorchOp {
             "Mul" => TorchOp::Mul,
             "Div" => TorchOp::Div,
             "Sum" => TorchOp::Sum,
+            "Prod" => TorchOp::Prod,
             // -----
             "Id" => TorchOp::Id,
             // -----
@@ -86,6 +87,7 @@ impl Clone for TorchOp {
             TorchOp::Mul => TorchOp::Mul,
             TorchOp::Div => TorchOp::Div,
             TorchOp::Sum => TorchOp::Sum,
+            TorchOp::Prod => TorchOp::Prod,
             TorchOp::Id => TorchOp::Id,
             TorchOp::Ite => TorchOp::Ite,
             TorchOp::Choose => TorchOp::Choose,
@@ -110,6 +112,7 @@ impl fmt::Display for TorchOp {
             TorchOp::Mul => write!(f, "Mul"),
             TorchOp::Div => write!(f, "Div"),
             TorchOp::Sum => write!(f, "Sum"),
+            TorchOp::Prod => write!(f, "Prod"),
             TorchOp::Id => write!(f, "Id"),
             TorchOp::Ite => write!(f, "Ite"),
             TorchOp::Choose => write!(f, "Choose"),
