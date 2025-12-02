@@ -21,11 +21,12 @@ class MyModule(ztch.Module):
         y = state * Tensor([0, 1, 0])
         z = state * Tensor([0, 0, 1])
         return result1
-       #return Choose(
-       #    Case((x < y | (x < z)), result1),
-       #    Case(~(x < y | (x < z)), result2),
-       #)
+
+    # return Choose(
+    #    Case((x < y | (x < z)), result1),
+    #    Case(~(x < y | (x < z)), result2),
+    # )
 
 
 m = MyModule(ctrl="xyz", extl="yz0")
-#m.to_html("/tmp/torch.html", open=True)
+# m.to_html("/tmp/torch.html", open=True)
