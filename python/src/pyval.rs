@@ -6,6 +6,7 @@ use crate::torch::pytensor::PyTensor;
 
 // A wrapper around a value that carries also the type of the value.
 // We need it to know what we pass.
+#[cfg(feature = "pytorch")]
 #[derive(Debug, Clone)]
 #[pyclass]
 pub enum PyVal {
@@ -15,8 +16,19 @@ pub enum PyVal {
     Sym(usize, String),
     Int(i64),
     Bool(bool),
-    #[cfg(feature = "pytorch")]
     Tensor(PyTensor),
+}
+
+#[cfg(not(feature = "pytorch"))]
+#[derive(Debug, Clone)]
+#[pyclass]
+pub enum PyVal {
+    // `Sym` is an identifier (a symbol) in a wire.
+    // Every symbol is represented by an `usize` number (see [Wire]).
+    // It has also associated the type of the value which is the second parameter
+    Sym(usize, String),
+    Int(i64),
+    Bool(bool),
 }
 
 #[pymethods]
