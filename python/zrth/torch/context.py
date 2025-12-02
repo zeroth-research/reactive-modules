@@ -1,6 +1,8 @@
+from sympy.printing.str import Relational
 from zrth import _zrth
 from zrth.context import Context as ContextBase
-#from . term import Var, Term
+
+# from . term import Var, Term
 
 from typing import Callable, Any
 
@@ -13,24 +15,51 @@ WrappedModule = _zrth.torch.WrappedModule
 WrappedAtom = _zrth.torch.WrappedAtom
 WrappedTerm = _zrth.torch.WrappedTerm
 
-from sympy import Expr, Symbol, Add, Lt, Or, Not, ITE, Mul
+from sympy import Expr, Symbol, Add, Lt, Gt, Le, Ge, Eq, Or, And, Not, ITE, Mul
+from sympy.core.relational import Boolean
 from sympy.core.sympify import converter
 from torch import Tensor as TorchTensor
 
+
 class Tensor_(Expr):
     """A SymPy expression node that holds a PyTorch tensor"""
-    is_commutative = False   # treat tensors like non-commutative atoms
+
+    # is_commutative = False   # treat tensors like non-commutative atoms
+    # TODO: forbid simplification (they could use commutativity)
+    # treat tensors as reals so that we can compare them (more precisely: we can create comparison expressions).
+    # We will never actually compare them in Python. But because of setting this, we must set `is_commutative = False`
+    is_real = True
 
     def __new__(cls, tensor):
         obj = super().__new__(cls)
-        obj.tensor = tensor   # store the actual PyTorch tensor
+        obj.tensor = tensor  # store the actual PyTorch tensor
         return obj
 
     def _sympystr(self, printer):
         return f"Tensor({self.tensor})"
 
+
+# register converter from torch.Tensor to our wrapper, so that
+# sympy expressions work with tensors
 converter[TorchTensor] = lambda x: Tensor_(x)
 
+
+class Choose:
+    def __init__(self, reads: list):
+        self.reads: list = reads
+
+    def args(self):
+        return self.reads
+
+
+class Case:
+    def __init__(self, cond, result):
+        assert isinstance(cond, (bool, Expr, Choose, Boolean)), (cond, type(cond))
+        self.cond = cond
+        self.result = result
+
+    def args(self):
+        return (self.cond, self.result)
 
 
 def handle_return_value(r):
@@ -58,6 +87,7 @@ def from_sympy_type(ty) -> str:
         return "Bool"
     raise NotImplementedError(f"Unknown type: {ty}")
 
+
 class SympyContext(ContextBase):
     def __init__(self, ctx_impl):
         super().__init__(ctx_impl)
@@ -74,11 +104,11 @@ class SympyContext(ContextBase):
 
     def _parse_variables(self, ctrl, extl):
         if isinstance(ctrl, str):
-            ctrl = tuple( self.var(v.strip()) for v in ctrl.split(",") )
+            ctrl = tuple(self.var(v.strip()) for v in ctrl.split(","))
             cur_vars = [*ctrl]
         elif isinstance(ctrl, (tuple, list)) and len(ctrl) > 0:
             if isinstance(ctrl[0], str):
-                ctrl = tuple( self.var(v) for v in ctrl)
+                ctrl = tuple(self.var(v) for v in ctrl)
             elif isinstance(ctrl[0], Symbol):
                 if not all(isinstance(c, Symbol) and c.is_symbol() for c in ctrl):
                     raise RuntimeError(
@@ -95,13 +125,10 @@ class SympyContext(ContextBase):
             )
 
         if isinstance(extl, str):
-            extl = tuple(
-                self.var(v)
-                for v in  extl.split(",")
-            )
+            extl = tuple(self.var(v) for v in extl.split(","))
         elif isinstance(extl, (tuple, list)) and len(extl) > 0:
             if isinstance(extl[0], str):
-                extl = tuple( self.var(v) for v in extl)
+                extl = tuple(self.var(v) for v in extl)
             elif isinstance(extl[0], Symbol):
                 if not all(isinstance(c, Symbol) and c.is_symbol() for c in extl):
                     raise RuntimeError(
@@ -119,19 +146,27 @@ class SympyContext(ContextBase):
 
         return ctrl, extl, cur_vars
 
-    # TODO: get rid of it in the SMT context
+    def _choose(self, *args):
+        return Choose(args)
+
+    def _case(self, cond, res):
+        return Case(cond, res)
+
     def trace(self, fun: Callable, *args, **kwargs):
-        """
-        Execute a given function with binding our names like `next` into it.
-        """
         # we want to access the context from the function in order to
         # create terms via API that we cannot map to Python operations.
         # For that, we need to add it as a new argument.
         def wrapped_fun():
             assert "next" not in fun.__globals__
+            assert "Choose" not in fun.__globals__
+            assert "Case" not in fun.__globals__
             fun.__globals__["next"] = self.next_var
+            fun.__globals__["Choose"] = self._choose
+            fun.__globals__["Case"] = self._case
             r = fun(*args, **kwargs)
             del fun.__globals__["next"]
+            del fun.__globals__["Case"]
+            del fun.__globals__["Choose"]
             return r
 
         r = wrapped_fun()
@@ -141,10 +176,7 @@ class SympyContext(ContextBase):
     def get_pyval_sym(self, sym: Expr) -> PyVal:
         assert sym.is_symbol, sym
 
-        return self._context.var( sym.name)
-
-
-
+        return self._context.var(sym.name)
 
 
 class Context(SympyContext):
@@ -251,11 +283,9 @@ class TranslateToTerms:
         # TO OVERRIDE
         return formula.args()
 
-
     def visit_node(formula, args):
         # TO OVERRIDE
         print(" " * depth, "Visiting node", formula, args)
-
 
     def translate(self, formula):
         """
@@ -268,7 +298,7 @@ class TranslateToTerms:
 
     def _visit(self, formula, depth=0):
 
-        print(" " * depth, "Visiting", formula)
+        # print(" " * depth, "Visiting", formula)
 
         args = []
         for child in self.get_children(formula):
@@ -277,7 +307,28 @@ class TranslateToTerms:
         return self.visit_node(formula, args)
 
 
+def rel_to_str(opty: Relational) -> str:
+    if opty == Lt:
+        return "Lt"
+    if opty == Gt:
+        return "Gt"
+    if opty == Le:
+        return "Le"
+    if opty == Ge:
+        return "Ge"
+    if opty == Eq:
+        return "Eq"
 
+    raise NotImplementedError(f"Unknown relation: {opty}")
+
+
+def arith_to_str(opty) -> str:
+    if opty == Add:
+        return "Add"
+    if opty == Mul:
+        return "Mul"
+
+    raise NotImplementedError(f"Unknown operation: {opty}")
 
 
 # NOTE: we want to handle also Choose objects and therefore we have to
@@ -291,6 +342,8 @@ class SympyToTerms(TranslateToTerms):
 
     @classmethod
     def get_children(cls, formula):
+        if isinstance(formula, (Choose, Case)):
+            return formula.args()
         return formula.args
 
     def visit_node(self, formula, args):
@@ -302,34 +355,36 @@ class SympyToTerms(TranslateToTerms):
             return [PyVal.bool(formula)]
         elif isinstance(formula, int):
             return [PyVal.int(formula)]
+        elif isinstance(formula, Case):
+            return [args]
+        elif isinstance(formula, Choose):
+            reads = list(chain.from_iterable(args))
+            assert len(reads) > 0 and len(reads) % 2 == 0, reads
+            out = self._ctx.tmp_var()
+            terms.append(WrappedTerm("Choose", reads=reads, writes=[out]))
+            return [out]
 
         assert all(isinstance(a, PyVal) for a in args), args
         opty = formula.func
         if opty == Symbol:
-            return [
-                self._ctx.var( formula.name)
-            ]
-        elif opty == Add:
+            return [self._ctx.var(formula.name)]
+        elif opty in (Add, Mul):
             assert len(args) == 2
             assert args[0].ty() == args[1].ty(), args
             out = self._ctx.tmp_var()
-            terms.append(WrappedTerm("Add", reads=args, writes=[out]))
+            terms.append(WrappedTerm(arith_to_str(opty), reads=args, writes=[out]))
             return [out]
-        elif opty == Mul:
-            assert len(args) == 2
-            assert args[0].ty() == args[1].ty(), args
-            out = self._ctx.tmp_var()
-            terms.append(WrappedTerm("Mul", reads=args, writes=[out]))
             return [out]
-        elif opty == Lt:
+        elif opty in (Lt, Gt, Eq, Le, Ge):
             assert len(args) == 2
             out = self._ctx.tmp_var()
-            terms.append(WrappedTerm("Lt", reads=args, writes=[out]))
+            terms.append(WrappedTerm(rel_to_str(opty), reads=args, writes=[out]))
             return [out]
-        elif opty == Or:
+        elif opty in (Or, And):
             assert len(args) == 2
             out = self._ctx.tmp_var()
-            terms.append(WrappedTerm("Or", reads=args, writes=[out]))
+            op = "Or" if opty == Or else "And"
+            terms.append(WrappedTerm(op, reads=args, writes=[out]))
             return [out]
         elif opty == Not:
             assert len(args) == 1

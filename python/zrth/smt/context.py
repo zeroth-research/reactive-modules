@@ -53,6 +53,7 @@ def from_pysmt_type(ty) -> str:
         return "Bool"
     raise NotImplementedError(f"Unknown type: {ty}")
 
+
 class PySMTContext(ContextBase):
     def __init__(self, ctx_impl):
         super().__init__(ctx_impl)
@@ -138,6 +139,7 @@ class PySMTContext(ContextBase):
         """
         Execute a given function with binding our names like `next` into it.
         """
+
         # we want to access the context from the function in order to
         # create terms via API that we cannot map to Python operations.
         # For that, we need to add it as a new argument.
@@ -158,9 +160,6 @@ class PySMTContext(ContextBase):
         return self._context.get_sym(
             sym.symbol_name(), from_pysmt_type(sym.symbol_type())
         )
-
-
-
 
 
 class Context(PySMTContext):
