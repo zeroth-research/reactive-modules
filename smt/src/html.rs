@@ -22,11 +22,11 @@ impl Context {
             wire_dtypes.insert(wire_id, *dtype);
         }
 
-        let d = Context {
+        
+        Context {
             wire_names: RefCell::new(HashMap::new()),
             wire_dtypes,
-        };
-        d
+        }
     }
 
     pub fn add_name(&self, id: usize, name: &str) {
@@ -41,13 +41,13 @@ impl Context {
         match term {
             None => {
                 // No term writes to this wire; it must be an input or external wire.
-                return self.wire_name(wire_id);
+                self.wire_name(wire_id)
             }
             Some(term) => {
                 // Wire is written by a term, expand based on operation type.
                 match term.itype() {
                     IType::Const(val) => {
-                        return format!("{}", val);
+                        format!("{}", val)
                     }
                     IType::Arith(op) => {
                         let read_wires: Vec<String> = term
@@ -61,11 +61,11 @@ impl Context {
                             ArithOp::Mul => "*",
                             ArithOp::Div => "/",
                         };
-                        return format!("({} {} {})",
+                        format!("({} {} {})",
                             read_wires[0],
                             op_str,
                             read_wires[1]
-                        );
+                        )
                     }
                     IType::Logical(op) => {
                         let read_wires: Vec<String> = term
@@ -75,13 +75,13 @@ impl Context {
                             .collect();
                         match op {
                             LogicalOp::Not => {
-                                return format!("!{}", read_wires[0]);
+                                format!("!{}", read_wires[0])
                             }
                             LogicalOp::And => {
-                                return format!("({} ∧ {})", read_wires[0], read_wires[1]);
+                                format!("({} ∧ {})", read_wires[0], read_wires[1])
                             }
                             LogicalOp::Or => {
-                                return format!("({} ∨ {})", read_wires[0], read_wires[1]);
+                                format!("({} ∨ {})", read_wires[0], read_wires[1])
                             }
                         }
                     }
@@ -98,16 +98,16 @@ impl Context {
                             CmpOp::Gt => ">",
                             CmpOp::Ge => ">=",
                         };
-                        return format!("({} {} {})",
+                        format!("({} {} {})",
                             read_wires[0],
                             op_str,
                             read_wires[1]
-                        );
+                        )
                     }
                     IType::Id => {
                         // Identity: just pass through the input
                         let input_id = term.reads().iter().next().unwrap().0;
-                        return self.trace_wire_expression(input_id, terms);
+                        self.trace_wire_expression(input_id, terms)
                     }
                     IType::Cond => {
                         // Ternary: condition ? true_val : false_val
@@ -119,7 +119,7 @@ impl Context {
                         let true_expr = self.trace_wire_expression(true_id, terms);
                         let false_expr = self.trace_wire_expression(false_id, terms);
                         
-                        return format!("{} ? {} : {}", cond_expr, true_expr, false_expr);
+                        format!("{} ? {} : {}", cond_expr, true_expr, false_expr)
                     }
                 }
             }
@@ -296,7 +296,7 @@ impl Descriptor<DType, IType> for Context {
 
         match term.itype() {
             IType::Const(val) => {
-                term_header = format!("Constant");
+                term_header = "Constant".to_string();
                 term_body = format!("<code>{}</code> → <code>{}</code>",
                     val,
                     self.wire_name(term.writes().iter().next().map(|(idx, _)| idx).unwrap())
@@ -304,32 +304,32 @@ impl Descriptor<DType, IType> for Context {
                 match val {
                     Val::None => {},
                     Val::Real(_v) => {
-                        term_header.extend(" (Real)".chars());
+                        term_header.push_str(" (Real)");
                     }
                     Val::Int(_v) => {
-                        term_header.extend(" (Int)".chars());
+                        term_header.push_str(" (Int)");
                     }
                     Val::Bool(_v) => {
-                        term_header.extend(" (Bool)".chars());
+                        term_header.push_str(" (Bool)");
                     }
                 }
             }
             IType::Arith(val) => {
                 let op = match val {
                     ArithOp::Add => {
-                        term_header = format!("Addition");
+                        term_header = "Addition".to_string();
                         "+"
                     }
                     ArithOp::Sub => {
-                        term_header = format!("Subtraction");
+                        term_header = "Subtraction".to_string();
                         "-"
                     }
                     ArithOp::Mul => {
-                        term_header = format!("Multiplication");
+                        term_header = "Multiplication".to_string();
                         "*"
                     }
                     ArithOp::Div => {
-                        term_header = format!("Division");
+                        term_header = "Division".to_string();
                         "/"
                     }
                 };
@@ -343,15 +343,15 @@ impl Descriptor<DType, IType> for Context {
             IType::Logical(val) => {
                 let op = match val {
                     LogicalOp::Not => {
-                        term_header = format!("Logical Not");
+                        term_header = "Logical Not".to_string();
                         "!"
                     }
                     LogicalOp::And => {
-                        term_header = format!("Logical And");
+                        term_header = "Logical And".to_string();
                         "∧"
                     }
                     LogicalOp::Or => {
-                        term_header = format!("Logical Or");
+                        term_header = "Logical Or".to_string();
                         "∨"
                     }
                 };
@@ -373,23 +373,23 @@ impl Descriptor<DType, IType> for Context {
             IType::Cmp(val) => {
                 let op = match val {
                     CmpOp::Eq => {
-                        term_header = format!("Equal");
+                        term_header = "Equal".to_string();
                         "=="
                     }
                     CmpOp::Lt => {
-                        term_header = format!("Less Than");
+                        term_header = "Less Than".to_string();
                         "<"
                     }
                     CmpOp::Le => {
-                        term_header = format!("Less Equal");
+                        term_header = "Less Equal".to_string();
                         "<="
                     }
                     CmpOp::Gt => {
-                        term_header = format!("Greater Than");
+                        term_header = "Greater Than".to_string();
                         ">"
                     }
                     CmpOp::Ge => {
-                        term_header = format!("Greater Equal");
+                        term_header = "Greater Equal".to_string();
                         ">="
                     }
                 };
@@ -401,7 +401,7 @@ impl Descriptor<DType, IType> for Context {
                 );
             }
             IType::Id => {
-                term_header = format!("Identity");
+                term_header = "Identity".to_string();
                 term_body = format!(
                     "<code>{}</code> → <code>{}</code>",
                     self.wire_name(term.reads().iter().next().map(|(idx, _)| idx).unwrap()),
@@ -409,7 +409,7 @@ impl Descriptor<DType, IType> for Context {
                 );
             }
             IType::Cond => {
-                term_header = format!("Ternary Condition");
+                term_header = "Ternary Condition".to_string();
                 term_body = format!(
                     "<code>{}</code> ? <code>{}</code> : <code>{}</code> → <code>{}</code>",
                     self.wire_name(term.reads().iter().next().map(|(idx, _)| idx).unwrap()),

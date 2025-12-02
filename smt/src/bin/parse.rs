@@ -103,7 +103,7 @@ fn main() {
     //TODO: call the SMT parser (which will be in smt/src/smt.rs) and generate the SMT file
     let smt_lib = smt::smt::parse_modules(&modules);
 
-    let out_path = format!("{}/tests/smt-lib.txt", env!("CARGO_MANIFEST_DIR"));
+    let out_path = format!("{}/tests/smt-lib.smt2", env!("CARGO_MANIFEST_DIR"));
     std::fs::create_dir_all(format!("{}/tests", env!("CARGO_MANIFEST_DIR"))).unwrap();
     fs::write(out_path, smt_lib).unwrap();
 }

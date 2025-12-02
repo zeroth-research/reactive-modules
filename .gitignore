@@ -6,3 +6,4 @@ target
 *.smv
 *.lean
 *.smt
+*.smt2
