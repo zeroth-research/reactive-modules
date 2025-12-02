@@ -10,7 +10,7 @@ pub fn parse_modules(modules: &[Module<DType, IType>]) -> String {
     for module in modules {
         out.push_str(&format!("; ========================================\n; MODULE {}\n; ========================================\n", module.name().unwrap_or("<unnamed>")));
 
-        out.push_str(&format!("\n; =====================\n; = Wire Declarations =\n; =====================\n"));
+        out.push_str("\n; =====================\n; = Wire Declarations =\n; =====================\n");
 
         let pair = module.wire();
         let wires_ltc = &pair[0];
@@ -133,7 +133,7 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
         }
         
         IType::Cond => {
-            let c = wire_name(term.reads().iter().nth(0).unwrap().0);
+            let c = wire_name(term.reads().iter().next().unwrap().0);
             let t = wire_name(term.reads().iter().nth(1).unwrap().0);
             let e = wire_name(term.reads().iter().nth(2).unwrap().0);
             format!("(ite {} {} {})", c, t, e)

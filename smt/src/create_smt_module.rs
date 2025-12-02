@@ -39,7 +39,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     let mut update = vec![];
 
     // === INIT FLOW ===
-    init.push(Term::new(IType::Const(Val::Real(3.14)), Wire::one(12, DType::Real), Wire::none()));
+    init.push(Term::new(IType::Const(Val::Real(3.24)), Wire::one(12, DType::Real), Wire::none()));
     init.push(Term::new(IType::Const(Val::Int(42)), Wire::one(13, DType::Int), Wire::none()));
     init.push(Term::new(IType::Const(Val::Bool(true)), Wire::one(14, DType::Bool), Wire::none()));
 
