@@ -304,9 +304,6 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
 
         for [ltc, nxt] in obs.iter().chain(prvt.iter()) {
             debug_assert_eq!(ltc.dtype(), nxt.dtype());
-            // if ltc.dtype() != nxt.dtype() {
-            //     return Err("dtype mismatch in latched and next wires");
-            // }
             if ltc_to_dtype.insert(ltc.id(), ltc.dtype()).is_some() {
                 return Err("duplicate latched wire");
             }

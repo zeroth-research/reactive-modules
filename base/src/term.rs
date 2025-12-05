@@ -166,7 +166,7 @@ impl<D: Eq + Clone, I> Block<D, I> {
                     return Err("write after write");
                 }
             }
-            write.extend(term.write().wires().cloned().map(Into::into));
+            write.extend(term.write().wires().cloned());
         }
 
         debug_assert!(read_set.iter().all(|k| !write_to_dtype.contains_key(k)));
