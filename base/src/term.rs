@@ -1,5 +1,5 @@
 use crate::wire::{Interface, Wire};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 /// A single term corresponds to a single instruction
@@ -137,34 +137,42 @@ impl<D: Eq + Clone, I> Block<D, I> {
     pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<D, I>>>(
         iter: V,
     ) -> Result<Self, &'static str> {
-        let mut read: HashMap<usize, D> = HashMap::new();
-        let mut write: HashMap<usize, D> = HashMap::new();
-        let vec: Vec<Term<D, I>> = Vec::from_iter(iter);
+        let mut read_set: HashSet<usize> = HashSet::new();
+        let mut write_to_dtype: HashMap<usize, &D> = HashMap::new();
 
-        for term in vec.iter() {
+        let mut read: Vec<Wire<D>> = Vec::new();
+        let mut write: Vec<Wire<D>> = Vec::new();
+
+        let terms: Vec<Term<D, I>> = Vec::from_iter(iter);
+
+        for term in terms.iter() {
             for (rd, dtype) in term.read().wires().map(Into::into) {
-                let expected_dtype = write.get(&rd);
+                let expected_dtype = write_to_dtype.get(&rd);
                 // if it hasn't been written before in the block, then it's read
                 if expected_dtype.is_none() {
-                    read.insert(rd, dtype.clone());
-                } else if expected_dtype.is_some_and(|d| d != dtype) {
+                    read_set.insert(rd);
+                    read.push((rd, dtype.clone()).into());
+                } else if expected_dtype.is_some_and(|&d| d != dtype) {
                     return Err("dtype mismatch");
                 }
             }
+
             for (wt, dtype) in term.write().wires().map(Into::into) {
-                if read.contains_key(&wt) {
+                if read_set.contains(&wt) {
                     return Err("read before write");
                 }
-                if write.insert(wt, dtype.clone()).is_some() {
+                write.push((wt, dtype.clone()).into());
+                if write_to_dtype.insert(wt, dtype).is_some() {
                     return Err("write after write");
                 }
             }
+            write.extend(term.write().wires().cloned().map(Into::into));
         }
 
-        debug_assert!(read.keys().all(|k| !write.contains_key(k)));
+        debug_assert!(read_set.iter().all(|k| !write_to_dtype.contains_key(k)));
 
         Ok(Block {
-            terms: vec,
+            terms,
             read: Interface::from_wires_unchecked(read),
             write: Interface::from_wires_unchecked(write),
         })
