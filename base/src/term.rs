@@ -115,10 +115,20 @@ impl<D, I> Block<D, I> {
         self.terms.iter()
     }
 
+    /// Returns a reference to the *read interface* of the block.
+    ///
+    /// The read interface lists all wires that must be provided externally
+    /// for the block to operate, and are not written internally by the block.
+    /// These wires are inputs required by the block as a whole.
     pub fn read(&self) -> &Interface<D> {
         &self.read
     }
 
+    /// Returns a reference to the *write interface* of the block.
+    ///
+    /// The write interface lists all wires that the block writes, including the
+    /// wires that are both written and read within the block. These wires represent
+    /// the outputs of the block as a whole; they can all be read outside the block.
     pub fn write(&self) -> &Interface<D> {
         &self.write
     }
