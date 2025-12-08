@@ -28,14 +28,18 @@ pub enum IType {
     // constant and identity terms
     Const(Val),
     Id,
+    // arith
+    Arith(ArithOp),
     // Comparisons
     Cmp(CmpOp),
     // Logical ops
     Logical(LogicalOp),
+    // Conditionals and filtering
     Ite,
+    // Choose non-deterministically one of the values that is not Val::None
     Choose,
-    // arith
-    Arith(ArithOp),
+    // Takes a bool and value and acts as Id if the bool is true, otherwise returns Val::None
+    Filter,
 }
 
 impl fmt::Display for CmpOp {
@@ -79,6 +83,7 @@ impl fmt::Display for IType {
             IType::Cmp(op) => write!(f, "Cmp::{}", op),
             IType::Ite => write!(f, "Ite"),
             IType::Choose => write!(f, "Choose"),
+            IType::Filter => write!(f, "Filter"),
         }
     }
 }
@@ -91,6 +96,7 @@ impl std::str::FromStr for IType {
             "Id" => Ok(IType::Id),
             "Ite" => Ok(IType::Ite),
             "Choose" => Ok(IType::Choose),
+            "Filter" => Ok(IType::Filter),
             "Logical::And" => Ok(IType::Logical(LogicalOp::And)),
             "Logical::Or" => Ok(IType::Logical(LogicalOp::Or)),
             "Logical::Not" => Ok(IType::Logical(LogicalOp::Not)),

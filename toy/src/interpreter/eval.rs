@@ -72,6 +72,24 @@ pub fn eval(op: IType, read: &[&Val], write: &mut [&mut Val]) -> Result<(), &'st
         IType::Choose => {
             todo!()
         }
+        IType::Filter => {
+            debug_assert!(read.len() == 2);
+            debug_assert!(write.len() == 1);
+            if read[0].has_type(&DType::Bool)
+                && write[0].same_type(read[1])
+                && let Val::Bool(cond) = read[0]
+            {
+                if *cond {
+                    *write[0] = read[1].clone();
+                } else {
+                    *write[0] = Val::None
+                }
+            } else {
+                return Err(
+                    "Ite expects first input be boolean and then two values of the same type",
+                );
+            }
+        }
         // arith
         IType::Arith(op) => {
             debug_assert!(read.len() == 2);

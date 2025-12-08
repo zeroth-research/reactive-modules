@@ -60,30 +60,37 @@ pub fn construct(
         }
         IType::Choose => {
             if writes.len() != 1 {
-                return Err("Logical operation must write one wire");
+                return Err("Choose must write one wire");
             }
 
-            if reads.is_empty() || !reads.len().is_multiple_of(2) {
-                return Err("Choose must read non-zero even number of wires");
+            if reads.is_empty() {
+                return Err("Choose must read non-zero number of wires");
             }
 
-            // even types must be bool
+            let out_ty = writes.wires().next().unwrap().dtype();
             let types = reads.wires().map(Wire::dtype).collect::<Vec<&DType>>();
-            for (n, ty) in types.iter().enumerate() {
-                if n % 2 == 0 {
-                    if **ty != DType::Bool {
-                        return Err("Even types in Choose must be Bool");
-                    }
-                } else if *ty != types[1] {
-                    return Err("Odd types in Choose must be all the same");
+            for ty in types {
+                if out_ty != ty {
+                    return Err("Inputs and outputs to Choose must have the same type");
                 }
             }
+        }
+        IType::Filter => {
+            if writes.len() != 1 {
+                return Err("Filter must write one wire");
+            }
 
-            // odd types must be the same
-            // out type must be the same as odd types
+            if reads.len() != 2 {
+                return Err("Filter must read two wires");
+            }
+
             let out_ty = writes.wires().next().unwrap().dtype();
-            if *out_ty != *types[1] {
-                return Err("Choose must write the same type as the odd arguments");
+            let types = reads.wires().map(Wire::dtype).collect::<Vec<&DType>>();
+            if out_ty != types[1] {
+                return Err("The second argument of Filter must have the same type as its output");
+            }
+            if *types[0] != DType::Bool {
+                return Err("The first argument of Filter must be Bool");
             }
         }
         IType::Logical(op) => {
