@@ -201,6 +201,10 @@ pub fn mk_ite(read: Interface<DType>, write: Interface<DType>) -> Result<Term, &
     construct(IType::Ite, read, write)
 }
 
+pub fn mk_filter(read: Interface<DType>, write: Interface<DType>) -> Result<Term, &'static str> {
+    construct(IType::Filter, read, write)
+}
+
 pub fn mk_add(read: Interface<DType>, write: Interface<DType>) -> Result<Term, &'static str> {
     construct(IType::Arith(ArithOp::Add), read, write)
 }

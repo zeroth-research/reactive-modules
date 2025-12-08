@@ -41,6 +41,11 @@ impl<D: Copy + Eq> Context<D> {
         (Interface::single(*id, *ty), *ty)
     }
 
+    pub fn get_intf_with_id(&self, name: &str) -> (Interface<D>, usize) {
+        let (id, ty) = self.vars.get(name).expect("Not existing value");
+        (Interface::single(*id, *ty), *id)
+    }
+
     /// Get or create a variable
     /// Does not check if the type is compatible if the var exists
     /// This method also remembers names of variables in `self.names`, because
