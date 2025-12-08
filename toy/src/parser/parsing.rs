@@ -1,6 +1,6 @@
 use pest::Parser as PestParser;
 use pest::iterators::Pair;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::iter::zip;
 
 use crate::ToyContext as Ctx;
@@ -9,11 +9,8 @@ use crate::term::*;
 use crate::val::Val;
 use crate::{DType, IType, ToyAtom, ToyModule, ToyTerm};
 
-use base::atom::Atom;
 use base::module::Module;
-use base::term::Term;
 use base::wire::Interface;
-use base::wire::Wire;
 
 #[derive(pest_derive::Parser)]
 #[grammar = "parser/grammar.pest"]
@@ -25,9 +22,22 @@ struct Var {
     _primed: bool,
 }
 
+impl Var {
+    fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    fn primed_name(&self) -> String {
+        debug_assert!(!self.name.ends_with('\''));
+        format!("{}'", self.name)
+    }
+}
+
 pub struct Parser {
     ctx: Ctx,
 }
+
+type StrErr = &'static str;
 
 impl Parser {
     pub fn new() -> Self {
@@ -63,12 +73,13 @@ impl Parser {
     fn parse_module(&mut self, pair: Pair<Rule>) -> Module<DType, IType> {
         // module = { "module" ~ ident ~ "{" ~ module_body ~ "}" }
         let mut inner = pair.into_inner();
-        //let name = inner.next().unwrap().as_str().to_string();
+        let _name = inner.next().unwrap().as_str().to_string();
         self.parse_module_body(inner.next().unwrap())
+            .expect("Failed parsing a module")
         //module.set_name(name.as_str());
     }
 
-    fn parse_module_body(&mut self, pair: Pair<Rule>) -> Module<DType, IType> {
+    fn parse_module_body(&mut self, pair: Pair<Rule>) -> Result<Module<DType, IType>, StrErr> {
         // module_body   = { decl_variables ~ atoms }
         let mut inner = pair.into_inner();
         let decl_vars = parse_decl_variables(inner.next().unwrap());
@@ -79,9 +90,9 @@ impl Parser {
         for (vars, ty) in decl_vars.values() {
             for v in vars {
                 // latched variables
-                latched.push(self.ctx.var(v.name.as_str(), *ty));
+                latched.push(self.ctx.var(v.name(), *ty));
                 // next variables
-                next.push(self.ctx.var(format!("{}'", v.name).as_str(), *ty));
+                next.push(self.ctx.var(v.primed_name().as_str(), *ty));
             }
         }
 
@@ -91,13 +102,17 @@ impl Parser {
         let atoms_pair = inner.next().unwrap();
         let mut atoms = Vec::new();
         for a in atoms_pair.into_inner() {
-            atoms.push(self.parse_atom(a, &[latched.clone(), next.clone()]));
+            atoms.push(self.parse_atom(a, &[latched.clone(), next.clone()])?);
         }
 
-        ToyModule::observable(zip(latched, next).map(|([x], [y])| (x, y)), atoms).unwrap()
+        ToyModule::observable(zip(latched, next).map(|([x], [y])| (x, y)), atoms)
     }
 
-    fn parse_atom(&mut self, pair: Pair<Rule>, module_wires: &[Interface<DType>; 2]) -> ToyAtom {
+    fn parse_atom(
+        &mut self,
+        pair: Pair<Rule>,
+        module_wires: &[Interface<DType>; 2],
+    ) -> Result<ToyAtom, StrErr> {
         // atom = { "atom" ~ "{" ~ atom_body ~ "}" }
         let mut inner = pair.into_inner();
         let body = inner.next().unwrap();
@@ -139,11 +154,16 @@ impl Parser {
                     for f in child.into_inner() {
                         match f.as_rule() {
                             Rule::atom_init => {
-                                init = self.parse_guarded_commands(f.into_inner().next().unwrap());
+                                init = self.parse_guarded_commands(
+                                    f.into_inner().next().unwrap(),
+                                    vars["controls"].as_slice(),
+                                );
                             }
                             Rule::atom_update => {
-                                update =
-                                    self.parse_guarded_commands(f.into_inner().next().unwrap());
+                                update = self.parse_guarded_commands(
+                                    f.into_inner().next().unwrap(),
+                                    vars["controls"].as_slice(),
+                                );
                             }
                             _ => {}
                         }
@@ -162,17 +182,21 @@ impl Parser {
             init,
             update,
         )
-        .unwrap()
     }
 
-    fn parse_guarded_commands(&mut self, pair: Pair<Rule>) -> Vec<ToyTerm> {
+    fn parse_guarded_commands(&mut self, pair: Pair<Rule>, ctrl: &[Var]) -> Vec<ToyTerm> {
         let mut terms: Vec<ToyTerm> = Vec::new();
+        // we need to group the expressions by the variable they define
+        let mut exprs_per_var: HashMap<&str, Vec<Interface<DType>>> = HashMap::new();
+
         for g in pair.into_inner() {
             if g.as_rule() == Rule::guarded_command {
                 let mut inner = g.into_inner();
                 // guarded_command  = { "[]" ~ expr ~ "->" ~ assignments }
                 let expr_pair = inner.next().unwrap();
                 let guard = self.build_expr(expr_pair, DType::Bool);
+                // assignments are a vector of (variable name, terms) meaning "assign the result of
+                // terms into `name`"
                 let assigns = self.parse_assignments(inner.next().unwrap());
 
                 if guard.is_empty() {
@@ -187,29 +211,69 @@ impl Parser {
 
                 let cond = guard.last().unwrap().write().clone();
                 terms.extend(guard);
+                let mut assigned_variables: HashSet<&str> = HashSet::new();
                 for (var_name, expr) in assigns {
+                    debug_assert!(var_name.ends_with('\'')); // the assigned variable must be primed
                     if expr.is_empty() {
                         panic!("Failed building assignment");
                     }
 
-                    assert!(var_name.ends_with('\'')); // the assigned variable must be primed
-                    let primed_var = self.ctx.get_intf(var_name);
-                    let var = self.ctx.get_intf(&var_name[..var_name.len() - 1]);
-                    let ite = mk_ite(
+                    if !assigned_variables.insert(var_name) {
+                        panic!("Variable `{var_name}` assigned multiple times!")
+                    }
+
+                    let expr_out = expr.last().unwrap().write();
+                    assert!(!expr_out.is_empty());
+                    let fltr = mk_filter(
                         Interface::sequence(
-                            [&cond, expr.last().unwrap().write(), &var]
-                                .into_iter()
-                                .flatten()
-                                .map(|[i]| i.clone()),
+                            [&cond, expr_out].into_iter().flatten().map(|[i]| i.clone()),
                         )
                         .unwrap(),
-                        primed_var,
+                        self.ctx.tmp_intf(*expr_out.wires().last().unwrap().dtype()),
                     )
                     .unwrap();
+
+                    // this filter term is going to be input into a choose statement later
+                    exprs_per_var
+                        .entry(var_name)
+                        .or_default()
+                        .push(fltr.write().clone());
+
                     terms.extend(expr);
-                    terms.push(ite);
+                    terms.push(fltr);
                 }
             }
+        }
+
+        // add Choose terms -- they choose which assignemt is used
+        for (var_name, inputs) in exprs_per_var.iter() {
+            // get the write variable
+            let primed_var = self.ctx.get_intf(var_name);
+            // add the choose term
+            let reads = Interface::sequence(
+                inputs
+                    .iter()
+                    .flat_map(|i| {
+                        debug_assert!(i.len() == 1);
+                        i.wires()
+                    })
+                    .cloned(),
+            )
+            .unwrap();
+            terms.push(construct(IType::Choose, reads, primed_var).unwrap());
+        }
+
+        // we have to write all ctrl variables, so for those that were not defined,
+        // copy their current value
+        for var in ctrl {
+            let primed_name = var.primed_name();
+            if exprs_per_var.contains_key(primed_name.as_str()) {
+                continue;
+            }
+
+            let primed_var = self.ctx.get_intf(&primed_name);
+            let var = self.ctx.get_intf(var.name());
+            terms.push(construct(IType::Id, var, primed_var).unwrap());
         }
         terms
     }
