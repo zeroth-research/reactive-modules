@@ -126,8 +126,7 @@ impl<D, I> Block<D, I> {
 
     /// Returns a reference to the *write interface* of the block.
     ///
-    /// The write interface lists all wires that the block writes, including the
-    /// wires that are both written and read within the block. These wires represent
+    /// The write interface lists all wires that the block writes. These wires represent
     /// the outputs of the block as a whole; they can all be read outside the block.
     pub fn write(&self) -> &Interface<D> {
         &self.write
