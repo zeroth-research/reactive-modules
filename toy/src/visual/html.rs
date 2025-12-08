@@ -7,7 +7,7 @@ use std::fmt::Write;
 use crate::dtype::Type;
 use crate::instruction::Instruction;
 
-use base::{Atom, Module, Term};
+use base::{Atom, Module, Term, Wire};
 
 use serde::Serialize;
 use std::fs::File;
@@ -106,36 +106,39 @@ impl Context {
 
         writeln!(s, " {fmt_bold}external{fmt_bold_end}").unwrap();
         let extl = module.extl();
-        for ((ltc, _), (nxt, dtype)) in extl[0].iter().zip(extl[1].iter()) {
+        for [ltc, nxt] in extl {
             writeln!(
                 s,
-                "   {}, {}: {dtype}",
-                self.wire_name(ltc),
-                self.wire_name(nxt)
+                "   {}, {}: {}",
+                self.wire_name(ltc.id()),
+                self.wire_name(nxt.id()),
+                ltc.dtype()
             )
             .unwrap();
         }
 
         writeln!(s, " {fmt_bold}interface{fmt_bold_end}").unwrap();
         let intf = module.intf();
-        for ((ltc, _), (nxt, dtype)) in intf[0].iter().zip(intf[1].iter()) {
+        for [ltc, nxt] in intf {
             writeln!(
                 s,
-                "   {}, {}: {dtype}",
-                self.wire_name(ltc),
-                self.wire_name(nxt)
+                "   {}, {}: {}",
+                self.wire_name(ltc.id()),
+                self.wire_name(nxt.id()),
+                ltc.dtype()
             )
             .unwrap();
         }
 
         writeln!(s, " {fmt_bold}private{fmt_bold_end}").unwrap();
         let prvt = module.prvt();
-        for ((ltc, _), (nxt, dtype)) in prvt[0].iter().zip(prvt[1].iter()) {
+        for [ltc, nxt] in prvt {
             writeln!(
                 s,
-                "   {}, {}: {dtype}",
-                self.wire_name(ltc),
-                self.wire_name(nxt)
+                "   {}, {}: {}",
+                self.wire_name(ltc.id()),
+                self.wire_name(nxt.id()),
+                ltc.dtype()
             )
             .unwrap();
         }
@@ -155,7 +158,7 @@ impl Context {
 
         let mut s = String::new();
         writeln!(s, "{fmt_bold}atom{fmt_bold_end}").unwrap();
-        for (i, (wr, _)) in atom.ctrl().iter().enumerate() {
+        for (i, wr) in atom.ctrl().wires().map(Wire::id).enumerate() {
             if i == 0 {
                 write!(
                     s,
@@ -168,7 +171,7 @@ impl Context {
             }
         }
         writeln!(s).unwrap();
-        for (i, (wr, _)) in atom.read().iter().enumerate() {
+        for (i, wr) in atom.read().wires().map(Wire::id).enumerate() {
             if i == 0 {
                 write!(s, " {fmt_bold}reads{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
             } else {
@@ -176,7 +179,7 @@ impl Context {
             }
         }
         writeln!(s).unwrap();
-        for (i, (wr, _)) in atom.wait().iter().enumerate() {
+        for (i, wr) in atom.wait().wires().map(Wire::id).enumerate() {
             if i == 0 {
                 write!(s, " {fmt_bold}awaits{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
             } else {
@@ -205,16 +208,18 @@ impl Context {
         let fmt_emph_end = fmt.get("EMPH_END").unwrap_or(&empty_str);
 
         let reads = term
-            .reads()
-            .iter()
-            .map(|(id, _)| self.wire_name(id))
+            .read()
+            .wires()
+            .map(Wire::id)
+            .map(|id| self.wire_name(id))
             .collect::<Vec<String>>()
             .join(", ");
 
         let writes = term
-            .writes()
-            .iter()
-            .map(|(id, _)| self.wire_name(id))
+            .write()
+            .wires()
+            .map(Wire::id)
+            .map(|id| self.wire_name(id))
             .collect::<Vec<String>>()
             .join(", ");
 
@@ -262,7 +267,7 @@ where
     let mut wire_written_by: HashMap<usize, Vec<usize>> = HashMap::new();
     let mut wire_read_by: HashMap<usize, Vec<usize>> = HashMap::new();
 
-    let module_name = module.name().unwrap_or("");
+    let module_name = "<name not found>";
 
     nodes.push(Node {
         data: NodeData {
@@ -331,10 +336,10 @@ where
             });
 
             // gather information for creating edges
-            for (wire, _) in term.writes() {
+            for wire in term.write().ids() {
                 wire_written_by.entry(wire).or_default().push(id);
             }
-            for (wire, _) in term.reads() {
+            for wire in term.read().ids() {
                 wire_read_by.entry(wire).or_default().push(id);
             }
         }
@@ -353,10 +358,10 @@ where
             });
 
             // gather information for creating edges
-            for (wire, _) in term.writes() {
+            for wire in term.write().ids() {
                 wire_written_by.entry(wire).or_default().push(id);
             }
-            for (wire, _) in term.reads() {
+            for wire in term.read().ids() {
                 wire_read_by.entry(wire).or_default().push(id);
             }
         }
@@ -464,7 +469,7 @@ pub fn write_to_html(
     // Serialize into vis-network JSON
     let json = serde_json::to_string_pretty(&data).unwrap();
 
-    let module_name = module.name().unwrap_or("<unnamed>");
+    let module_name = "<store name in context>";
     //let module_dump = module.to_string();
 
     let html = format!(
