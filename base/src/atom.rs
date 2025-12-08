@@ -283,6 +283,15 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             }
         }
 
+        for (&ctr, _) in ctrl.iter() {
+            if !init.write().ids().any(|wrt| wrt == ctr) {
+                return Err("unassigned control wire after init");
+            }
+            if !update.write().ids().any(|wrt| wrt == ctr) {
+                return Err("unassigned control wire after update");
+            }
+        }
+
         Ok(Self::new_unchecked(
             Interface::from_wires_unchecked(ctrl),
             Interface::from_wires_unchecked(wait),
