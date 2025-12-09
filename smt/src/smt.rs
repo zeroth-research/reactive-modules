@@ -1,82 +1,163 @@
+use std::collections::HashSet;
+
 use crate::dtype::DType;
-use crate::itype::{IType, Val, ArithOp, LogicalOp, CmpOp};
+use crate::itype::{ArithOp, CmpOp, IType, LogicalOp, Val};
 
-use base::Term;
-use base::module::Module;
+use base::{Atom, Module, Term};
 
-pub fn parse_modules(modules: &[Module<DType, IType>]) -> String {
-    let mut out = String::new();
+type SmtAtom = Atom<DType, IType>;
+type SmtModule = Module<DType, IType>;
 
-    for module in modules {
-        out.push_str(&format!("; ========================================\n; MODULE {}\n; ========================================\n", module.name().unwrap_or("<unnamed>")));
+pub struct AtomSmtLibTranslator<'a>(&'a SmtAtom);
 
-        out.push_str("\n; =====================\n; = Wire Declarations =\n; =====================\n");
+impl AtomSmtLibTranslator<'_> {
+    pub fn ctrl(&self) -> Vec<String> {
+        self.0
+            .ctrl()
+            .iter()
+            .map(|(id, ty)| declare_var(id, ty))
+            .collect::<Vec<String>>()
+    }
 
-        let pair = module.wire();
-        let wires_ltc = &pair[0];
-        let wires_nxt = &pair[1];
+    pub fn read(&self) -> Vec<String> {
+        self.0
+            .read()
+            .iter()
+            .map(|(id, ty)| declare_var(id, ty))
+            .collect::<Vec<String>>()
+    }
 
-        out.push_str("\n; Latched Wires:\n");
-        for (id, dtype) in wires_ltc.iter() {
-            let name = wire_name(id);
-            out.push_str(&format!("(declare-fun {} () {})\n", name, dtype));
-        }
+    pub fn wait(&self) -> Vec<String> {
+        self.0
+            .wait()
+            .iter()
+            .map(|(id, ty)| declare_var(id, ty))
+            .collect::<Vec<String>>()
+    }
 
-        out.push_str("\n; Next Wires:\n");
-        for (id, dtype) in wires_nxt.iter() {
-            let name = wire_name(id);
-            out.push_str(&format!("(declare-fun {} () {})\n", name, dtype));
-        }
+    // Temporary wires
+    pub fn temp(&self) -> Vec<String> {
+        let mut ret: Vec<String> = Vec::new();
 
-        let mut temp_wires: std::collections::HashMap<usize, DType> = std::collections::HashMap::new();
-
-        for atom in module.atoms() {
-            for term in atom.init().iter().chain(atom.update().iter()) {
-                for (wire_id, dtype) in term.writes().iter() {
-                    if !wires_ltc.iter().any(|(id, _)| id == wire_id) &&
-                    !wires_nxt.iter().any(|(id, _)| id == wire_id) {
-                        temp_wires.insert(wire_id, *dtype);
-                    }
+        // temporary are those variables that are written to but are not controlled
+        // (these could be also private, but we do not have private variables atm.)
+        let ctrl: HashSet<usize> = HashSet::from_iter(self.0.ctrl().iter().map(|(id, _)| id));
+        for term in self.0.init().iter().chain(self.0.update().iter()) {
+            for (wire_id, ty) in term.writes().iter() {
+                if !ctrl.contains(&wire_id) {
+                    ret.push(declare_var(wire_id, ty))
                 }
             }
         }
 
-        if !temp_wires.is_empty() {
-            out.push_str("\n; Temporary Wires:\n");
-            let mut temp_vec: Vec<_> = temp_wires.into_iter().collect();
-            temp_vec.sort_by_key(|(id, _)| *id);
-            
-            for (id, dtype) in temp_vec {
-                out.push_str(&format!("(declare-fun {} () {})\n", wire_name(id), dtype));
-            }
-        }
-
-        for (atom_index, atom) in module.atoms().iter().enumerate() {
-            out.push_str(&format!("\n; ==============================\n; ATOM {}:\n; ==============================\n", atom_index));
-
-            let init = atom.init();
-            let update = atom.update();
-            
-            out.push_str("\n; ==============\n; = Init Terms =\n; ==============\n\n");
-            for term in init {
-                let (write_id, _) = term.writes().iter().next().unwrap();
-                let expr = smt_expr(term);
-                out.push_str(&format!("(assert (= {} {}))\n", wire_name(write_id), expr));
-            }
-
-            out.push_str("\n; ================\n; = Update Terms =\n; ================\n\n");
-            for term in update {
-                let (write_id, _) = term.writes().iter().next().unwrap();
-                let expr = smt_expr(term);
-                out.push_str(&format!("(assert (= {} {}))\n", wire_name(write_id), expr));
-            }
-        }
+        ret
     }
-    out
+
+    // return a list of smtlib assertions (as String) that represent the init terms
+    pub fn init(&self) -> Vec<String> {
+        self.0
+            .init()
+            .iter()
+            .map(|term| {
+                let (write_id, _) = term.writes().iter().next().unwrap();
+                format!("(assert (= {} {}))", wire_name(write_id), smt_expr(term))
+            })
+            .collect()
+    }
+
+    // return a list of smtlib assertions (as String) that represent the update terms
+    pub fn update(&self) -> Vec<String> {
+        self.0
+            .update()
+            .iter()
+            .map(|term| {
+                let (write_id, _) = term.writes().iter().next().unwrap();
+                format!("(assert (= {} {}))", wire_name(write_id), smt_expr(term))
+            })
+            .collect()
+    }
+
+    fn to_smtlib(&self) -> String {
+        format!(
+            ";;; Atom\n\n;; Controls\n{}\n\n;; Reads\n{}\n\n;; Awaits\n{}\n\n;; Temporary\n{}\n\n;; Init\n{}\n\n;; Update\n{}",
+            self.ctrl().join("\n"),
+            self.read().join("\n"),
+            self.wait().join("\n"),
+            self.temp().join("\n"),
+            self.init().join("\n"),
+            self.update().join("\n"),
+        )
+    }
+
+    fn body_to_smtlib(&self) -> String {
+        format!(
+            ";;; Atom\n\n;; Temporary\n{}\n\n;; Init\n{}\n\n;; Update\n{}",
+            self.temp().join("\n"),
+            self.init().join("\n"),
+            self.update().join("\n"),
+        )
+    }
+}
+
+pub struct ModuleSmtLibTranslator<'a>(&'a SmtModule);
+
+impl ModuleSmtLibTranslator<'_> {
+    /// return smtlib declarations of `intf` variables
+    fn intf(&self) -> Vec<String> {
+        let vars = self.0.intf();
+        vars[0]
+            .iter()
+            .chain(vars[1].iter())
+            .map(|(id, ty)| declare_var(id, ty))
+            .collect::<Vec<String>>()
+    }
+
+    /// return smtlib declarations of `extl` variables
+    fn extl(&self) -> Vec<String> {
+        let vars = self.0.extl();
+        vars[0]
+            .iter()
+            .chain(vars[1].iter())
+            .map(|(id, ty)| declare_var(id, ty))
+            .collect::<Vec<String>>()
+    }
+
+    fn to_smtlib(&self) -> String {
+        // we do not consider private variables atm.
+        // debug_assert!(self.0.prvt().is_empty());
+
+        format!(
+            ";;; Module\n\n;; Interface\n{}\n\n;; External\n{}\n\n;; Atoms\n\n{}",
+            self.intf().join("\n"),
+            self.extl().join("\n"),
+            self.0
+                .atoms()
+                .iter()
+                .map(|atom| AtomSmtLibTranslator(atom).body_to_smtlib())
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
+    }
+}
+
+pub fn module_to_smtlib(module: &Module<DType, IType>) -> String {
+    ModuleSmtLibTranslator(module).to_smtlib()
+}
+
+pub fn parse_modules(modules: &[Module<DType, IType>]) -> String {
+    modules
+        .iter()
+        .map(module_to_smtlib)
+        .collect::<Vec<String>>()
+        .join("\n")
 }
 
 fn wire_name(id: usize) -> String {
     format!("w{}", id)
+}
+
+fn declare_var(id: usize, ty: &DType) -> String {
+    format!("(declare-fun {} () {})", wire_name(id), ty)
 }
 
 fn smt_expr(term: &Term<DType, IType>) -> String {
@@ -87,12 +168,10 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
             Val::Bool(b) => b.to_string(),
             Val::None => panic!("Cannot emit None"),
         },
-        
+
         IType::Arith(op) => {
-            let args: Vec<String> = term.reads().iter()
-                .map(|(id, _)| wire_name(id))
-                .collect();
-            
+            let args: Vec<String> = term.reads().iter().map(|(id, _)| wire_name(id)).collect();
+
             match op {
                 ArithOp::Add => format!("(+ {} {})", args[0], args[1]),
                 ArithOp::Sub => format!("(- {} {})", args[0], args[1]),
@@ -100,24 +179,20 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
                 ArithOp::Div => format!("(/ {} {})", args[0], args[1]),
             }
         }
-        
+
         IType::Logical(op) => {
-            let args: Vec<String> = term.reads().iter()
-                .map(|(id, _)| wire_name(id))
-                .collect();
-            
+            let args: Vec<String> = term.reads().iter().map(|(id, _)| wire_name(id)).collect();
+
             match op {
                 LogicalOp::Not => format!("(not {})", args[0]),
                 LogicalOp::And => format!("(and {} {})", args[0], args[1]),
-                LogicalOp::Or  => format!("(or {} {})", args[0], args[1]),
+                LogicalOp::Or => format!("(or {} {})", args[0], args[1]),
             }
         }
-        
+
         IType::Cmp(op) => {
-            let args: Vec<String> = term.reads().iter()
-                .map(|(id, _)| wire_name(id))
-                .collect();
-            
+            let args: Vec<String> = term.reads().iter().map(|(id, _)| wire_name(id)).collect();
+
             match op {
                 CmpOp::Eq => format!("(= {} {})", args[0], args[1]),
                 CmpOp::Lt => format!("(< {} {})", args[0], args[1]),
@@ -126,12 +201,12 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
                 CmpOp::Ge => format!("(>= {} {})", args[0], args[1]),
             }
         }
-        
+
         IType::Id => {
             let (id, _) = term.reads().iter().next().unwrap();
             wire_name(id)
         }
-        
+
         IType::Cond => {
             let c = wire_name(term.reads().iter().next().unwrap().0);
             let t = wire_name(term.reads().iter().nth(1).unwrap().0);
