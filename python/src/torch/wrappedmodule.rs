@@ -5,7 +5,7 @@ use torch::{DType, IType, TorchTerm};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::torch::wrappedatom::{vars_to_wiring, wterms_to_torchterms};
+use crate::torch::{vars_to_wiring, wterms_to_torchterms};
 use base::Module;
 
 #[pyclass]

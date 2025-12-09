@@ -39,7 +39,6 @@ fn _zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     {
         let torch = PyModule::new(py, "torch")?;
         torch.add_class::<torch::WrappedTerm>()?;
-        torch.add_class::<torch::WrappedAtom>()?;
         torch.add_class::<torch::WrappedModule>()?;
         torch.add_class::<torch::WrappedContext>()?;
 
