@@ -1,11 +1,12 @@
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use std::iter::zip;
 
-use crate::toy::wrappedatom::{WrappedAtom, vars_to_wiring};
 use crate::toy::wrappedcontext::WrappedContext;
+use crate::toy::{vars_to_wiring, wterms_to_terms};
 
 use base::Module;
-use toy::{ToyModule, ToyTerm};
+use toy::ToyModule;
 
 #[pyclass]
 pub struct WrappedModule {
@@ -19,46 +20,26 @@ unsafe impl Sync for WrappedModule {}
 impl WrappedModule {
     #[new]
     fn new(
-        _ctx: &Bound<'_, WrappedContext>,
+        ctx: &Bound<'_, WrappedContext>,
         // current-state variables
         latched: &Bound<'_, PyList>,
         // next-state variables
         next: &Bound<'_, PyList>,
-        // list of atoms
-        atom: &Bound<'_, WrappedAtom>,
+        // init terms
+        init: &Bound<'_, PyList>,
+        // update terms
+        update: &Bound<'_, PyList>,
     ) -> Self {
         let latched = vars_to_wiring(latched).unwrap();
         let next = vars_to_wiring(next).unwrap();
 
-        let atom: &WrappedAtom = &atom.borrow();
+        let ctx: &mut WrappedContext = &mut ctx.borrow_mut();
+        let init = wterms_to_terms(ctx, init).unwrap();
+        let update = wterms_to_terms(ctx, update).unwrap();
 
         Self {
-            module: Module::sequential(
-                [latched, next],
-                atom.atom
-                    .init()
-                    .iter()
-                    .map(|term| {
-                        ToyTerm::new(
-                            term.itype().clone(),
-                            term.writes().clone(),
-                            term.reads().clone(),
-                        )
-                    })
-                    .collect::<Vec<ToyTerm>>(),
-                atom.atom
-                    .update()
-                    .iter()
-                    .map(|term| {
-                        ToyTerm::new(
-                            term.itype().clone(),
-                            term.writes().clone(),
-                            term.reads().clone(),
-                        )
-                    })
-                    .collect::<Vec<ToyTerm>>(),
-            )
-            .expect("Failed creating module"),
+            module: Module::sequential(zip(latched, next).map(|([l], [n])| [l, n]), init, update)
+                .expect("Failed creating module"),
         }
     }
 
@@ -74,17 +55,11 @@ impl WrappedModule {
         match ty {
             "smt" => {
                 let smt_module: base::Module<smt::dtype::DType, smt::itype::IType> =
-                    toy::conversions::ModuleConverter(&self.module)
-                        .try_into()
-                        .unwrap();
+                    toy::conversions::to_smt(&self.module).unwrap();
                 return crate::smt::WrappedModule { module: smt_module };
             }
             _ => panic!("Cannot tranlate to {}", ty),
         }
-    }
-
-    fn set_name(&mut self, name: &str) {
-        self.module.set_name(name);
     }
 
     fn dbg(&self) {

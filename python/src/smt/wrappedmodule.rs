@@ -1,12 +1,14 @@
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::smt::wrappedatom::{WrappedAtom, vars_to_wiring};
 use crate::smt::wrappedcontext::WrappedContext;
+use crate::smt::{vars_to_wiring, wterms_to_torchterms};
 
 use base::Module;
 use smt::dtype::DType;
 use smt::itype::IType;
+
+use std::iter::zip;
 
 type SmtTerm = base::Term<DType, IType>;
 
@@ -22,46 +24,26 @@ unsafe impl Sync for WrappedModule {}
 impl WrappedModule {
     #[new]
     fn new(
-        _ctx: &Bound<'_, WrappedContext>,
+        ctx: &Bound<'_, WrappedContext>,
         // current-state variables
         latched: &Bound<'_, PyList>,
         // next-state variables
         next: &Bound<'_, PyList>,
-        // list of atoms
-        atom: &Bound<'_, WrappedAtom>,
+        // init terms
+        init: &Bound<'_, PyList>,
+        // update terms
+        update: &Bound<'_, PyList>,
     ) -> Self {
         let latched = vars_to_wiring(latched).unwrap();
         let next = vars_to_wiring(next).unwrap();
 
-        let atom: &WrappedAtom = &atom.borrow();
+        let ctx: &mut WrappedContext = &mut ctx.borrow_mut();
+        let init = wterms_to_torchterms(ctx, init).unwrap();
+        let update = wterms_to_torchterms(ctx, update).unwrap();
 
         Self {
-            module: Module::sequential(
-                [latched, next],
-                atom.atom
-                    .init()
-                    .iter()
-                    .map(|term| {
-                        SmtTerm::new(
-                            term.itype().clone(),
-                            term.writes().clone(),
-                            term.reads().clone(),
-                        )
-                    })
-                    .collect::<Vec<SmtTerm>>(),
-                atom.atom
-                    .update()
-                    .iter()
-                    .map(|term| {
-                        SmtTerm::new(
-                            term.itype().clone(),
-                            term.writes().clone(),
-                            term.reads().clone(),
-                        )
-                    })
-                    .collect::<Vec<SmtTerm>>(),
-            )
-            .expect("Failed creating module"),
+            module: Module::sequential(zip(latched, next).map(|([l], [n])| [l, n]), init, update)
+                .expect("Failed creating module"),
         }
     }
 
@@ -77,7 +59,8 @@ impl WrappedModule {
     }
 
     fn set_name(&mut self, name: &str) {
-        self.module.set_name(name);
+        unimplemented!()
+        //self.module.set_name(name);
     }
 
     fn dbg(&self) {

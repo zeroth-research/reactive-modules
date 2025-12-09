@@ -15,6 +15,7 @@ pub enum PyVal {
     // It has also associated the type of the value which is the second parameter
     Sym(usize, String),
     Int(i64),
+    Real(f64),
     Bool(bool),
     Tensor(PyTensor),
 }
