@@ -25,36 +25,39 @@ impl Context {
 
         writeln!(s, " {fmt_bold}external{fmt_bold_end}").unwrap();
         let extl = module.extl();
-        for ((ltc, _), (nxt, dtype)) in extl[0].iter().zip(extl[1].iter()) {
+        for (ltc, nxt) in extl[0].iter().zip(extl[1].iter()) {
             writeln!(
                 s,
-                "   {}, {}: {dtype}",
-                self.wire_name(ltc),
-                self.wire_name(nxt)
+                "   {}, {}: {}",
+                self.wire_name(ltc.id()),
+                self.wire_name(nxt.id()),
+                ltc.dtype()
             )
             .unwrap();
         }
 
         writeln!(s, " {fmt_bold}interface{fmt_bold_end}").unwrap();
         let intf = module.intf();
-        for ((ltc, _), (nxt, dtype)) in intf[0].iter().zip(intf[1].iter()) {
+        for (ltc, nxt) in intf[0].iter().zip(intf[1].iter()) {
             writeln!(
                 s,
-                "   {}, {}: {dtype}",
-                self.wire_name(ltc),
-                self.wire_name(nxt)
+                "   {}, {}: {}",
+                self.wire_name(ltc.id()),
+                self.wire_name(nxt.id()),
+                ltc.dtype()
             )
             .unwrap();
         }
 
         writeln!(s, " {fmt_bold}private{fmt_bold_end}").unwrap();
         let prvt = module.prvt();
-        for ((ltc, _), (nxt, dtype)) in prvt[0].iter().zip(prvt[1].iter()) {
+        for (ltc, nxt) in prvt[0].iter().zip(prvt[1].iter()) {
             writeln!(
                 s,
-                "   {}, {}: {dtype}",
-                self.wire_name(ltc),
-                self.wire_name(nxt)
+                "   {}, {}: {}",
+                self.wire_name(ltc.id()),
+                self.wire_name(nxt.id()),
+                ltc.dtype()
             )
             .unwrap();
         }
@@ -74,32 +77,42 @@ impl Context {
 
         let mut s = String::new();
         writeln!(s, "{fmt_bold}atom{fmt_bold_end}").unwrap();
-        for (i, (wr, _)) in atom.ctrl().iter().enumerate() {
+        for (i, wr) in atom.ctrl().wires().enumerate() {
             if i == 0 {
                 write!(
                     s,
                     " {fmt_bold}controls{fmt_bold_end} {}",
-                    self.wire_name(wr)
+                    self.wire_name(wr.id())
                 )
                 .unwrap();
             } else {
-                write!(s, ", {}", self.wire_name(wr)).unwrap();
+                write!(s, ", {}", self.wire_name(wr.id())).unwrap();
             }
         }
         writeln!(s).unwrap();
-        for (i, (wr, _)) in atom.read().iter().enumerate() {
+        for (i, wr) in atom.read().wires().enumerate() {
             if i == 0 {
-                write!(s, " {fmt_bold}reads{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
+                write!(
+                    s,
+                    " {fmt_bold}reads{fmt_bold_end} {}",
+                    self.wire_name(wr.id())
+                )
+                .unwrap();
             } else {
-                write!(s, ", {}", self.wire_name(wr)).unwrap();
+                write!(s, ", {}", self.wire_name(wr.id())).unwrap();
             }
         }
         writeln!(s).unwrap();
-        for (i, (wr, _)) in atom.wait().iter().enumerate() {
+        for (i, wr) in atom.wait().wires().enumerate() {
             if i == 0 {
-                write!(s, " {fmt_bold}awaits{fmt_bold_end} {}", self.wire_name(wr)).unwrap();
+                write!(
+                    s,
+                    " {fmt_bold}awaits{fmt_bold_end} {}",
+                    self.wire_name(wr.id())
+                )
+                .unwrap();
             } else {
-                write!(s, ", {}", self.wire_name(wr)).unwrap();
+                write!(s, ", {}", self.wire_name(wr.id())).unwrap();
             }
         }
         writeln!(s).unwrap();
@@ -149,16 +162,16 @@ impl Context {
         let color_clr = fmt.get("COLOR_CLEAR").unwrap_or(&empty_str);
 
         let reads = term
-            .reads()
-            .iter()
-            .map(|(id, _)| self.wire_name(id))
+            .read()
+            .ids()
+            .map(|id| self.wire_name(id))
             .collect::<Vec<String>>()
             .join(", ");
 
         let writes = term
-            .writes()
-            .iter()
-            .map(|(id, _)| self.wire_name(id))
+            .write()
+            .ids()
+            .map(|id| self.wire_name(id))
             .collect::<Vec<String>>()
             .join(", ");
 
@@ -172,7 +185,7 @@ impl Context {
 impl Descriptor<DType, IType> for Context {
     fn describe_module(&self, module: &TorchModule, how: DescriptionContext) -> String {
         if matches!(how, DescriptionContext::Node) {
-            return format!("Module {}", module.name().unwrap_or(""));
+            return "Module".to_string();
         }
 
         let fmt = HashMap::from([
