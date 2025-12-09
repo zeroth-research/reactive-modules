@@ -992,6 +992,7 @@ dependencies = [
  "clap",
  "pest",
  "pest_derive",
+ "smt",
  "visual",
 ]
 
