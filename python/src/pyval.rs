@@ -27,6 +27,7 @@ pub enum PyVal {
     // Every symbol is represented by an `usize` number (see [Wire]).
     // It has also associated the type of the value which is the second parameter
     Sym(usize, String),
+    Real(f64),
     Int(i64),
     Bool(bool),
 }
@@ -63,6 +64,11 @@ impl PyVal {
     }
 
     #[staticmethod]
+    fn real(val: f64) -> PyResult<PyVal> {
+        Ok(PyVal::Real(val))
+    }
+
+    #[staticmethod]
     fn int(val: i64) -> PyResult<PyVal> {
         Ok(PyVal::Int(val))
     }
@@ -80,6 +86,7 @@ impl PyVal {
 
     fn ty(&self) -> String {
         match self {
+            PyVal::Real(_) => "Real".to_string(),
             PyVal::Int(_) => "Int".to_string(),
             PyVal::Bool(_) => "Bool".to_string(),
             PyVal::Sym(_, ty) => ty.clone(),
