@@ -1,3 +1,4 @@
+#[cfg(feature = "conversions-smt")]
 mod smt;
 
 // we must wrap ToyModule, because we cannot define traits for it otherwise (it is foreign from the

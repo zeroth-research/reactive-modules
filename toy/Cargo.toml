@@ -5,13 +5,14 @@ edition = "2024"
 
 [dependencies]
 base = { path = "../base" }
-smt = { path = "../smt" }
 clap = { version = "4.5.51", features = ["derive"] }
 pest = "2.8.3"
 pest_derive = "2.8.3"
+smt = { path = "../smt", optional = true}
 visual = { path = "../visual", features=["html"], optional = true }
 
 [features]
 default = ["visual-html"]
 # dumping modules to HTML
 visual-html = ["visual", "visual/html"]
+conversions-smt = ["smt"]
