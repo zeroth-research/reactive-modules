@@ -1,12 +1,12 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyInt};
 
-#[cfg(feature = "pytorch")]
+#[cfg(feature = "enable-torch")]
 use crate::torch::pytensor::PyTensor;
 
 // A wrapper around a value that carries also the type of the value.
 // We need it to know what we pass.
-#[cfg(feature = "pytorch")]
+#[cfg(feature = "enable-torch")]
 #[derive(Debug, Clone)]
 #[pyclass]
 pub enum PyVal {
@@ -19,7 +19,7 @@ pub enum PyVal {
     Tensor(PyTensor),
 }
 
-#[cfg(not(feature = "pytorch"))]
+#[cfg(not(feature = "enable-torch"))]
 #[derive(Debug, Clone)]
 #[pyclass]
 pub enum PyVal {
@@ -35,7 +35,7 @@ pub enum PyVal {
 impl PyVal {
     #[new]
     fn new(obj: &Bound<'_, PyAny>) -> PyResult<PyVal> {
-        #[cfg(feature = "pytorch")]
+        #[cfg(feature = "enable-torch")]
         {
             if let Ok(tensor) = obj.extract::<PyTensor>() {
                 return Ok(PyVal::Tensor(tensor));
@@ -72,7 +72,7 @@ impl PyVal {
         Ok(PyVal::Bool(val))
     }
 
-    #[cfg(feature = "pytorch")]
+    #[cfg(feature = "enable-torch")]
     #[staticmethod]
     fn tensor(val: PyTensor) -> PyResult<PyVal> {
         Ok(PyVal::Tensor(val))
@@ -83,7 +83,7 @@ impl PyVal {
             PyVal::Int(_) => "Int".to_string(),
             PyVal::Bool(_) => "Bool".to_string(),
             PyVal::Sym(_, ty) => ty.clone(),
-            #[cfg(feature = "pytorch")]
+            #[cfg(feature = "enable-torch")]
             PyVal::Tensor(_) => "Tensor".to_string(),
         }
     }
