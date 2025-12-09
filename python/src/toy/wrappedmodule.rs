@@ -69,6 +69,7 @@ impl WrappedModule {
         let _ = visual::html::write_to_html(&self.module, path, Some(&ctx.ctx));
     }
 
+    #[cfg(feature = "enable-smt")]
     fn translate_to(&self, ty: &str) -> crate::smt::WrappedModule {
         match ty {
             "smt" => {

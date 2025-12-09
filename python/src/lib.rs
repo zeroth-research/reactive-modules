@@ -1,3 +1,4 @@
+#[cfg(feature = "enable-smt")]
 mod smt;
 mod toy;
 mod util;
@@ -23,13 +24,16 @@ fn _zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_submodule(&toy)?;
 
-    let smt = PyModule::new(py, "smt")?;
-    smt.add_class::<smt::WrappedTerm>()?;
-    smt.add_class::<smt::WrappedAtom>()?;
-    smt.add_class::<smt::WrappedModule>()?;
-    smt.add_class::<smt::WrappedContext>()?;
+    #[cfg(feature = "enable-smt")]
+    {
+        let smt = PyModule::new(py, "smt")?;
+        smt.add_class::<smt::WrappedTerm>()?;
+        smt.add_class::<smt::WrappedAtom>()?;
+        smt.add_class::<smt::WrappedModule>()?;
+        smt.add_class::<smt::WrappedContext>()?;
 
-    m.add_submodule(&smt)?;
+        m.add_submodule(&smt)?;
+    }
 
     #[cfg(feature = "enable-torch")]
     {
