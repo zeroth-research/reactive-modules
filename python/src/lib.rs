@@ -2,7 +2,7 @@ mod smt;
 mod toy;
 mod util;
 
-#[cfg(feature = "pytorch")]
+#[cfg(feature = "enable-torch")]
 mod torch;
 
 pub mod pyval;
@@ -31,7 +31,7 @@ fn _zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_submodule(&smt)?;
 
-    #[cfg(feature = "pytorch")]
+    #[cfg(feature = "enable-torch")]
     {
         let torch = PyModule::new(py, "torch")?;
         torch.add_class::<torch::WrappedTerm>()?;

@@ -24,5 +24,5 @@ pyo3-tch = { version = "0.22", optional = true }
 default = ["visual-html"]
 # dumping modules to HTML
 visual-html = ["visual/html", "toy/visual-html"]
-pytorch = ["torch", "pyo3-tch", "tch", "tch/python-extension"]
+enable-torch = ["torch", "pyo3-tch", "tch", "tch/python-extension"]
 

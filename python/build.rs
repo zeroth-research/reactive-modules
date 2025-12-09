@@ -1,5 +1,5 @@
 fn get_python_flags() {
-    #[cfg(feature = "pytorch")]
+    #[cfg(feature = "enable-torch")]
     {
         use std::path::Path;
         use std::process::Command;
