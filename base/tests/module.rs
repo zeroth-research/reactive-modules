@@ -169,3 +169,53 @@ fn example_peterson1() {
     assert_eq!(m.extl()[0].len(), 2);
     assert_eq!(m.intf()[0].len(), 2);
 }
+
+#[test]
+fn module_write_all_ctrl() {
+    let x = Wire::new(0, "real");
+    let xn = Wire::new(1, "real");
+    let y = Wire::new(2, "real");
+    let yn = Wire::new(3, "real");
+
+    let x0 = Wire::new(4, "real");
+    let xn0 = Wire::new(5, "real");
+
+    let update: Vec<Term<&str, &str>> = [term!("ID", [xn.clone()], [x.clone()]).unwrap()].to_vec();
+
+    let obs = Interface::from_iter([
+        [x.clone(), xn.clone()],
+        [y.clone(), yn.clone()],
+        [x0, xn0.clone()],
+    ]);
+
+    let m = Module::sequential(obs.clone(), vec![], update.clone());
+    assert!(m.is_err_and(|msg| { msg == "unassigned control wire after init" }));
+
+    let init: Vec<Term<&str, &str>> = [term!("ID", [xn0.clone()], [xn.clone()]).unwrap()].to_vec();
+    let m = Module::sequential(obs.clone(), init, update.clone());
+    assert!(m.is_err_and(|msg| {
+        dbg!(&msg);
+        msg == "unassigned control wire after init"
+    }));
+
+    let init: Vec<Term<&str, &str>> = [
+        term!("ID", [xn.clone()], [xn0.clone()]).unwrap(),
+        term!("ID", [yn.clone()], [xn0]).unwrap(),
+    ]
+    .to_vec();
+
+    let m = Module::sequential(obs.clone(), init.clone(), update);
+    assert!(m.is_err_and(|msg| {
+        dbg!(&msg);
+        msg == "unassigned control wire after update"
+    }));
+
+    let update: Vec<Term<&str, &str>> = [
+        term!("ID", [xn.clone()], [x.clone()]).unwrap(),
+        term!("ID", [yn], [y.clone()]).unwrap(),
+    ]
+    .to_vec();
+
+    let m = Module::sequential(obs.clone(), init, update);
+    assert!(m.is_ok());
+}
