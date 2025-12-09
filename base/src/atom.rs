@@ -233,7 +233,7 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             }
 
             if latched.contains_key(&rd) {
-                return Err("invalid read");
+                return Err("Init reads latched wire");
             } else {
                 return Err("invalid wire");
             }
