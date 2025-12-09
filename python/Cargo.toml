@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 base = { path = "../base" }
 toy = { path = "../toy" }
-smt = { path = "../smt" }
+smt = { path = "../smt", optional = true}
 pyo3 = { version = "0.24" }
 visual = { path = "../visual", features=["html"], optional = true }
 torch = { path = "../torch", optional = true }
@@ -25,4 +25,5 @@ default = ["visual-html"]
 # dumping modules to HTML
 visual-html = ["visual/html", "toy/visual-html"]
 enable-torch = ["torch", "pyo3-tch", "tch", "tch/python-extension"]
+enable-smt = ["smt"]
 
