@@ -324,6 +324,12 @@ class ToTerms:
                 out = self._ctx.tmp_sym("Bool")
                 terms.append(WrappedTerm("Logical::Not", reads=args, writes=[out]))
                 return [out]
+            elif opty == op.ITE:
+                assert len(args) == 3
+                assert args[1].ty() == args[2].ty(), args
+                out = self._ctx.tmp_sym(args[1].ty())
+                terms.append(WrappedTerm("Ite", reads=args, writes=[out]))
+                return [out]
             if opty == op.INT_CONSTANT:
                 return [PyVal.int(formula.constant_value())]
             else:

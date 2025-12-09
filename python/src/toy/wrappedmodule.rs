@@ -69,6 +69,19 @@ impl WrappedModule {
         let _ = visual::html::write_to_html(&self.module, path, Some(&ctx.ctx));
     }
 
+    fn translate_to(&self, ty: &str) -> crate::smt::WrappedModule {
+        match ty {
+            "smt" => {
+                let smt_module: base::Module<smt::dtype::DType, smt::itype::IType> =
+                    toy::conversions::ModuleConverter(&self.module)
+                        .try_into()
+                        .unwrap();
+                return crate::smt::WrappedModule { module: smt_module };
+            }
+            _ => panic!("Cannot tranlate to {}", ty),
+        }
+    }
+
     fn set_name(&mut self, name: &str) {
         self.module.set_name(name);
     }

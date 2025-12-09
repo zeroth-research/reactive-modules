@@ -53,10 +53,11 @@ class ToyModule(toy.Module):
 
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl
-        xn = Choose(
-            Case(Or(x < y, x < z), x + Int(1)),
-            Case(Not(Or(x < y, x < z)), Int(0)),
-        )
+        xn = Ite(Or(x < y, x < z), x + Int(1), Int(0))
+       #xn = Choose(
+       #    Case(Or(x < y, x < z), x + Int(1)),
+       #    Case(Not(Or(x < y, x < z)), Int(0)),
+       #)
 
         return xn, y, z
 
@@ -101,7 +102,9 @@ m_torch.dbg()
 
 # compose modules
 # m = m1 | m2
-m = m_smt
+m = m_toy.translate_to('smt')
+print(m)
+m.dbg()
 
 
 def buchi(a, b, c):
@@ -118,12 +121,27 @@ def rank(a, b, c):
     )
 
 
-# TODO: now the obligation uses m.init() which already are PySMT formulas.
-# We need to translate init from the reactive module to PySMT and use it
-# In this example, it does not make any difference as the PySMT formulas
-# should be exactly the same (or equivalent), because we simply go
-# PySMT -> list of terms -> PySMT. It becomes interesting when the list
-# of terms gets modified (e.g., by composing with another module).
+smtlib_str = m.to_smtlib()
+
+from pysmt.smtlib.parser import SmtLibParser
+from io import StringIO
+
+print(smtlib_str)
+script = SmtLibParser().get_script(StringIO(smtlib_str))
+print(script)
+
+# print('=======')
+# exprs = []
+# for a in script.filter_by_command_name("assert"):
+#     print(a.args)
+#     exprs.extend(a.args)
+#
+# X, Y, Z = exprs[-3:]
+# print(X, Y, Z)
+# print(And(exprs))
+#
+
+
 def obligation1(m):
     return And(y0 >= Int(0), z0 >= Int(0)), inv(*m.init((y0, z0)))
 

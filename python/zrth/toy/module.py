@@ -1,5 +1,8 @@
 from .context import Context
 from typing import Callable, Any
+from copy import copy
+
+from .. smt.module import Module as SmtModule
 
 
 class Module:
@@ -10,7 +13,12 @@ class Module:
         name: str = None,
         ctx: Context = None,
     ):
-        assert ctrl, "Need controlled variables"
+        if ctrl is None:
+            # will build other way
+            # FIXME: this is hacky!
+            self._ctx = None
+            self._module = None
+            return
 
         if not hasattr(self, "update"):
             raise RuntimeError(f"Module {type(self)} has no `update` method.")
@@ -27,6 +35,14 @@ class Module:
 
     def dbg(self) -> None:
         self._module.dbg()
+
+    def translate_to(self, ty: str) -> "Module":
+        new = SmtModule(None)
+        # FIXME: this works now, but we'll need a translation
+        # between contexts in general..
+        new._ctx = self._ctx
+        new._module = self._module.translate_to(ty)
+        return new
 
     def to_html(self, path: str, open: bool = False):
         self._module.to_html(self._ctx.unwrap(), path)
