@@ -58,15 +58,15 @@ fn process_pyvals(
                 ));
                 args.push(var);
             }
-            //PyVal::F64(val) => {
-            //    let var = ctx.fresh_var();
-            //    result.push(TorchTerm::new(
-            //        IType::Const(tch::Tensor::from_slice(&[*val])),
-            //        Wire::one(var, DType::Tensor),
-            //        Wire::none(),
-            //    ));
-            //    args.push(var);
-            //}
+            PyVal::Real(val) => {
+                let var = ctx.fresh_var();
+                result.push(TorchTerm::new_unchecked(
+                    IType::Const(tch::Tensor::from_slice(&[*val])),
+                    Interface::single(var, DType::Tensor),
+                    Interface::empty(),
+                ));
+                args.push(var);
+            }
             PyVal::Int(val) => {
                 let var = ctx.fresh_var();
                 result.push(TorchTerm::new_unchecked(
