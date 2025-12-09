@@ -10,6 +10,7 @@ use visual::html;
 #[cfg(feature = "visual-html")]
 use visual::html::Descriptor;
 
+#[cfg(feature = "conversions-smt")]
 use toy::conversions::ModuleConverter;
 
 #[derive(ClapParser)]
@@ -130,6 +131,7 @@ fn main() {
     for (n, module) in modules.iter().enumerate() {
         if let Some(to) = &args.to {
             match to.as_str() {
+                #[cfg(feature = "conversions-smt")]
                 "smt" => {
                     let module = ModuleConverter(module).try_into();
                     let module = match module {
