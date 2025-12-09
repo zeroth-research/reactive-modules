@@ -53,7 +53,6 @@ pub fn create_test_module() -> Module<DType, IType> {
     update.push(Term::new(IType::Arith(ArithOp::Mul), Wire::one(17, DType::Real), Wire::from_iter(vec![(0, DType::Real), (15, DType::Real)])));
     update.push(Term::new(IType::Arith(ArithOp::Div), Wire::one(6, DType::Real), Wire::from_iter(vec![(16, DType::Real), (17, DType::Real)])));
     
-
     update.push(Term::new(IType::Id, Wire::one(7, DType::Real), Wire::one(1, DType::Real)));
 
     update.push(Term::new(IType::Const(Val::Real(50.05)), Wire::one(18, DType::Real), Wire::none()));
@@ -65,15 +64,19 @@ pub fn create_test_module() -> Module<DType, IType> {
     update.push(Term::new(IType::Const(Val::Bool(false)), Wire::one(24, DType::Bool), Wire::none()));
     update.push(Term::new(IType::Cond, Wire::one(8, DType::Bool), Wire::from_iter(vec![(22, DType::Bool), (23, DType::Bool), (24, DType::Bool)])));
 
-    let atom = Atom::new_unchecked(intf_nxt.clone(), extl_nxt.clone(), intf_ltc.clone(), init, update);
+//     let atom = Atom::new_unchecked(intf_nxt.clone(), extl_nxt.clone(), intf_ltc.clone(), init, update);
     
-    Module::new_unchecked(
-        [extl_ltc, extl_nxt],                // extl - external wires [latched, next]
-        [intf_ltc, intf_nxt],                // intf - interface wires [latched, next]
-        [prvt_ltc, prvt_nxt],                // prvt - private wires [latched, next]
-        [obs_ltc, obs_nxt],                   // obs  - observable wires [latched, next]
-        [ctrl_ltc, ctrl_nxt],                // ctrl - controlled wires [latched, next]
-        [all_ltc, all_nxt],                  // wire - all wires [latched, next]
-        vec![atom],
-    )
+//     Module::new_unchecked(
+//         [extl_ltc, extl_nxt],                // extl - external wires [latched, next]
+//         [intf_ltc, intf_nxt],                // intf - interface wires [latched, next]
+//         [prvt_ltc, prvt_nxt],                // prvt - private wires [latched, next]
+//         [obs_ltc, obs_nxt],                   // obs  - observable wires [latched, next]
+//         [ctrl_ltc, ctrl_nxt],                // ctrl - controlled wires [latched, next]
+//         [all_ltc, all_nxt],                  // wire - all wires [latched, next]
+//         vec![atom],
+//     )
+// }
+    let obs_wires = extl_ltc.clone().extend(&intf_ltc).zip(&extl_nxt.clone().extend(&intf_nxt));
+
+    Module::sequential(obs_wires, init, update)
 }

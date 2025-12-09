@@ -296,26 +296,65 @@ class ToTerms:
                     formula.symbol_name(), from_pysmt_type(formula.symbol_type())
                 )
             ]
+        elif opty == op.INT_CONSTANT:
+            return [PyVal.int(formula.constant_value())]
+        elif opty == op.REAL_CONSTANT:
+            return [PyVal.real(formula.constant_value())]
+        elif opty == op.BOOL_CONSTANT:
+            return [PyVal.bool(formula.constant_value())]
         elif opty == op.PLUS:
             assert len(args) == 2
             assert args[0].ty() == args[1].ty(), args
             out = self._ctx.tmp_sym(args[0].ty())
             terms.append(WrappedTerm("Arith::Add", reads=args, writes=[out]))
             return [out]
-        elif opty == op.LT:
+        elif opty == op.MINUS:
+            assert len(args) == 2
+            assert args[0].ty() == args[1].ty(), args
+            out = self._ctx.tmp_sym(args[0].ty())
+            terms.append(WrappedTerm("Arith::Sub", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.TIMES:
+            assert len(args) == 2
+            assert args[0].ty() == args[1].ty(), args
+            out = self._ctx.tmp_sym(args[0].ty())
+            terms.append(WrappedTerm("Arith::Mul", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.DIV:
+            assert len(args) == 2
+            assert args[0].ty() == args[1].ty(), args
+            out = self._ctx.tmp_sym(args[0].ty())
+            terms.append(WrappedTerm("Arith::Div", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.NOT:
+            assert len(args) == 1
+            out = self._ctx.tmp_sym("Bool")
+            terms.append(WrappedTerm("Logical::Not", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.AND:
             assert len(args) == 2
             out = self._ctx.tmp_sym("Bool")
-            terms.append(WrappedTerm("Cmp::Lt", reads=args, writes=[out]))
+            terms.append(WrappedTerm("Logical::And", reads=args, writes=[out]))
             return [out]
         elif opty == op.OR:
             assert len(args) == 2
             out = self._ctx.tmp_sym("Bool")
             terms.append(WrappedTerm("Logical::Or", reads=args, writes=[out]))
             return [out]
-        elif opty == op.NOT:
-            assert len(args) == 1
+        elif opty == op.EQUALS:
+            assert len(args) == 2
             out = self._ctx.tmp_sym("Bool")
-            terms.append(WrappedTerm("Logical::Not", reads=args, writes=[out]))
+            terms.append(WrappedTerm("Cmp::Eq", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.LT:
+            assert len(args) == 2
+            out = self._ctx.tmp_sym("Bool")
+            terms.append(WrappedTerm("Cmp::Lt", reads=args, writes=[out]))
+            return [out]
+        elif opty == op.LE:
+            assert len(args) == 2
+            out = self._ctx.tmp_sym("Bool")
+            terms.append(WrappedTerm("Cmp::Le", reads=args, writes=[out]))
             return [out]
         elif opty == op.ITE:
             assert len(args) == 3
@@ -323,8 +362,6 @@ class ToTerms:
             out = self._ctx.tmp_sym(args[1].ty())
             terms.append(WrappedTerm("Cond", reads=args, writes=[out]))
             return [out]
-        if opty == op.INT_CONSTANT:
-            return [PyVal.int(formula.constant_value())]
         else:
             raise NotImplementedError(
                 f"Not implemented translation of operation: {formula} {type(formula)}"

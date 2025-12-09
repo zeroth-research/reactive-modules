@@ -64,6 +64,17 @@ fn process_pyvals(
                 let ty: DType = ty.parse().expect("Failed parsing DType");
                 args.push((*var_id, ty));
             }
+            PyVal::Real(val) => {
+                let var = ctx.ctx.tmp_var(DType::Real);
+                let term = new_term(
+                    IType::Const(Val::Real(*val)),
+                    Wire::none(),
+                    Wire::one(var, DType::Real),
+                )
+                .expect("Failed creating a constant term for a pyval");
+                result.push(term);
+                args.push((var, DType::Real));
+            }
             PyVal::Int(val) => {
                 let var = ctx.ctx.tmp_var(DType::Int);
                 let term = new_term(
@@ -165,7 +176,7 @@ impl WrappedAtom {
         let init = wterms_to_terms(ctx, init).unwrap();
         let update = wterms_to_terms(ctx, update).unwrap();
 
-        let atom = SmtAtom::new_unchecked(read, write, Wire::none(), init, update);
+        let atom = SmtAtom::sequential(read, write, init, update);
         Self { atom }
     }
 

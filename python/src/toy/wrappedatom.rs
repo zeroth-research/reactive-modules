@@ -61,6 +61,17 @@ fn process_pyvals(
                 let ty: DType = ty.parse().expect("Failed parsing DType");
                 args.push((*var_id, ty));
             }
+            PyVal::Real(val) => {
+                let var = ctx.ctx.tmp_var(DType::Real);
+                let term = new_term(
+                    IType::Const(Val::Real(*val)),
+                    Wire::none(),
+                    Wire::one(var, DType::Real),
+                )
+                .expect("Failed creating a constant term for a pyval");
+                result.push(term);
+                args.push((var, DType::Real));
+            }
             PyVal::Int(val) => {
                 let var = ctx.ctx.tmp_var(DType::Int);
                 let term = new_term(
@@ -147,24 +158,24 @@ pub(crate) fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<WireTy> {
 
 #[pymethods]
 impl WrappedAtom {
-    #[new]
-    fn new(
-        ctx: &Bound<'_, WrappedContext>,
-        read: &Bound<'_, PyList>,
-        write: &Bound<'_, PyList>,
-        init: &Bound<'_, PyList>,
-        update: &Bound<'_, PyList>,
-    ) -> Self {
-        let read = vars_to_wiring(read).unwrap();
-        let write = vars_to_wiring(write).unwrap();
-
-        let ctx: &mut WrappedContext = &mut ctx.borrow_mut();
-        let init = wterms_to_terms(ctx, init).unwrap();
-        let update = wterms_to_terms(ctx, update).unwrap();
-
-        let atom = Atom::new_unchecked(read, write, Wire::none(), init, update);
-        Self { atom }
-    }
+    //#[new]
+    //fn new(
+    //    ctx: &Bound<'_, WrappedContext>,
+    //    read: &Bound<'_, PyList>,
+    //    write: &Bound<'_, PyList>,
+    //    init: &Bound<'_, PyList>,
+    //    update: &Bound<'_, PyList>,
+    //) -> Self {
+    //    let read = vars_to_wiring(read).unwrap();
+    //    let write = vars_to_wiring(write).unwrap();
+    //
+    //    let ctx: &mut WrappedContext = &mut ctx.borrow_mut();
+    //    let init = wterms_to_terms(ctx, init).unwrap();
+    //    let update = wterms_to_terms(ctx, update).unwrap();
+    //
+    //    let atom = Atom::sequential(read, write, init, update);
+    //    Self { atom }
+    //}
 
     fn dbg(&self) {
         println!("{}", self.atom);
