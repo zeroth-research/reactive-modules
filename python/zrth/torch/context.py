@@ -12,7 +12,6 @@ from itertools import chain
 
 PyVal = _zrth.PyVal
 WrappedModule = _zrth.torch.WrappedModule
-WrappedAtom = _zrth.torch.WrappedAtom
 WrappedTerm = _zrth.torch.WrappedTerm
 
 from sympy import Expr, Symbol, Add, Lt, Gt, Le, Ge, Eq, Or, And, Not, ITE, Mul
@@ -216,19 +215,9 @@ class Context(SympyContext):
             ctrl, extl, init_ret, update_ret
         )
 
-        atom = WrappedAtom(
-            self._context,
-            cur_vars,
-            nxt_vars,
-            init_terms,
-            update_terms,
-        )
-
-        # TODO: here we unnecessarily copy the terms (they are once copied into
-        # Atom and then again into Module)
-        module = WrappedModule(self._context, cur_vars, nxt_vars, atom)
-        if name is not None:
-            module.set_name(name)
+        module = WrappedModule(self._context, cur_vars, nxt_vars, init_terms, update_terms)
+       #if name is not None:
+       #    module.set_name(name)
         return module
 
     def _cond(self, cnd, iftrue, iffalse):
