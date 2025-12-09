@@ -332,3 +332,25 @@ impl Descriptor<DType, IType> for Context<DType> {
         self.wire_name(id)
     }
 }
+
+impl Descriptor<DType, IType> for &Context<DType> {
+    fn describe_module(&self, module: &ToyModule, how: DescriptionContext) -> String {
+        (*self).describe_module(module, how)
+    }
+
+    fn describe_atom(&self, atom: &ToyAtom, how: DescriptionContext) -> String {
+        (*self).describe_atom(atom, how)
+    }
+
+    fn describe_atom_section(&self, atom: &ToyAtom, sec: &str, how: DescriptionContext) -> String {
+        (*self).describe_atom_section(atom, sec, how)
+    }
+
+    fn describe_term(&self, term: &ToyTerm, how: DescriptionContext) -> String {
+        (*self).describe_term(term, how)
+    }
+
+    fn describe_wire_id(&self, id: usize, how: DescriptionContext) -> String {
+        (*self).describe_wire_id(id, how)
+    }
+}

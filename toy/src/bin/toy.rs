@@ -1,9 +1,5 @@
-use base::module::Module;
 //use std::fs::metadata;
 use std::process;
-
-use toy::ToyContext;
-use toy::ToyModule;
 
 use toy::parser::Parser;
 
@@ -11,6 +7,10 @@ use clap::Parser as ClapParser;
 
 #[cfg(feature = "visual-html")]
 use visual::html;
+#[cfg(feature = "visual-html")]
+use visual::html::Descriptor;
+
+use toy::conversions::ModuleConverter;
 
 #[derive(ClapParser)]
 struct Cli {
@@ -22,8 +22,8 @@ struct Cli {
     dump: Option<String>,
 
     // output file/dir
-    // #[arg(long)]
-    // output: Option<String>,
+    #[arg(long)]
+    to: Option<String>,
 
     // open dump module (if module is dumped)
     #[arg(long, default_value_t = false)]
@@ -35,53 +35,85 @@ struct Cli {
 }
 
 #[cfg(feature = "visual-html")]
-fn dump_to_html(modules: &[ToyModule], args: &Cli, ctx: &ToyContext) -> Result<(), std::io::Error> {
-    // TODO: enable output to cusom file/dir
-    for (n, module) in modules.iter().enumerate() {
-        let module_name: Option<String> = None; //module.name();
-        let path = if let Some(name) = module_name {
-            format!("{}.{}.html", args.spec, name)
-        } else {
-            format!("{}.module-{}.html", args.spec, n)
-        };
+fn dump_to_html<D, I, C>(
+    module: &base::Module<D, I>,
+    module_name: &str,
+    args: &Cli,
+    ctx: Option<&C>,
+) -> Result<(), std::io::Error>
+where
+    I: std::fmt::Display,
+    D: std::fmt::Display,
+    C: Descriptor<D, I>,
+{
+    let path = format!("{}.{}.html", args.spec, module_name);
 
-        html::write_to_html(module, path.as_str(), Some(ctx))
-            .inspect_err(|err| {
-                eprintln!("Failed writing the module to file {}", path);
-                eprintln!("{}", err)
-            })
-            .expect("Failed generating HTML");
+    html::write_to_html(module, path.as_str(), ctx)
+        .inspect_err(|err| {
+            eprintln!("Failed writing the module to file {}", path);
+            eprintln!("{}", err)
+        })
+        .expect("Failed generating HTML");
 
-        println!("Module written to `{}`", path);
+    println!("Module written to `{}`", path);
 
-        if args.open {
-            println!("Openning in web browser...");
-            #[cfg(target_os = "macos")]
-            {
-                process::Command::new("open")
-                    .arg(path)
-                    .spawn()
-                    .unwrap()
-                    .wait()?;
-            }
-            #[cfg(target_os = "linux")]
-            {
-                process::Command::new("xdg-open")
-                    .arg(path)
-                    .spawn()
-                    .unwrap()
-                    .wait()?;
-            }
+    if args.open {
+        println!("Openning in web browser...");
+        #[cfg(target_os = "macos")]
+        {
+            process::Command::new("open")
+                .arg(path)
+                .spawn()
+                .unwrap()
+                .wait()?;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            process::Command::new("xdg-open")
+                .arg(path)
+                .spawn()
+                .unwrap()
+                .wait()?;
         }
     }
 
     Ok(())
 }
 
-#[cfg(not(feature = "visual-html"))]
-fn dump_to_html(modules: &Vec<ToyModule>, args: &Cli) {
-    eprintln!("HTML visualization is disabled, enable the feature \"visual-html\"");
-    process::exit(1);
+fn dump_module<D, I, C>(module: &base::Module<D, I>, idx: usize, args: &Cli, ctx: Option<C>)
+where
+    I: std::fmt::Display,
+    D: std::fmt::Display + std::cmp::Eq + Copy,
+    C: Descriptor<D, I>,
+{
+    // get or create the name of the module for displaying
+    let module_name: Option<String> = None; // module.name();
+    let module_name = if let Some(name) = module_name {
+        name.to_string()
+    } else {
+        format!("Module {idx}")
+    };
+
+    // dump the module to stdout if required
+    if args.stdout {
+        println!("## Module `{}`", &module_name);
+        println!("{}", &module);
+    }
+
+    #[cfg(feature = "visual-html")]
+    if let Some(method) = &args.dump {
+        match method.as_str() {
+            "html" | "HTML" => {
+                if let Err(e) = dump_to_html(module, module_name.as_str(), args, ctx.as_ref()) {
+                    eprint!("Failed dumping to HTML: {}", e);
+                }
+            }
+            _ => {
+                eprint!("Unknown `dump` method: {method}.");
+                process::exit(-1);
+            }
+        }
+    }
 }
 
 fn main() {
@@ -95,23 +127,28 @@ fn main() {
         println!("Modules parsed successfully!");
     }
 
-    if args.stdout {
-        for module in &modules {
-            println!("{}", &module);
-        }
-    }
-
-    if let Some(method) = &args.dump {
-        match method.as_str() {
-            "html" | "HTML" => {
-                if let Err(e) = dump_to_html(&modules, &args, parser.ctx()) {
-                    eprint!("Failed dumping to HTML: {}", e);
+    for (n, module) in modules.iter().enumerate() {
+        if let Some(to) = &args.to {
+            match to.as_str() {
+                "smt" => {
+                    let module = ModuleConverter(module).try_into();
+                    let module = match module {
+                        Err(e) => {
+                            eprintln!("Failed translating module to {to}: {e}");
+                            process::exit(-1)
+                        }
+                        Ok(m) => m,
+                    };
+                    let ctx: Option<smt::html::Context> = None;
+                    dump_module(&module, n, &args, ctx);
+                }
+                _ => {
+                    eprintln!("Invalid translation type. Do not know how to translate to `{to}`");
+                    process::exit(-1)
                 }
             }
-            _ => {
-                eprint!("Unknown `dump` method.");
-                process::exit(1);
-            }
+        } else {
+            dump_module(module, n, &args, Some(parser.ctx()));
         }
     }
 }
