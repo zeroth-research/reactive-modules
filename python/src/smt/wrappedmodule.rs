@@ -12,7 +12,7 @@ type SmtTerm = base::Term<DType, IType>;
 
 #[pyclass]
 pub struct WrappedModule {
-    module: Module<DType, IType>,
+    pub(crate) module: Module<DType, IType>,
 }
 
 // It is safe to share this struct for the same reasons as for PyTensor
@@ -63,6 +63,10 @@ impl WrappedModule {
             )
             .expect("Failed creating module"),
         }
+    }
+
+    fn to_smtlib(&self) -> String {
+        smt::smt::module_to_smtlib(&self.module)
     }
 
     #[cfg(feature = "visual-html")]

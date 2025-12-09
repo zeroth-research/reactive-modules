@@ -9,7 +9,13 @@ class Module:
         name: str = None,
         ctx: Context = None,
     ):
-        assert ctrl, "Need controlled variables"
+
+        if ctrl is None:
+            # will build other way
+            # FIXME: this is hacky!
+            self._ctx = None
+            self._module = None
+            return
 
         if not hasattr(self, "update"):
             raise RuntimeError(f"Module {type(self)} has no `update` method.")
@@ -26,6 +32,9 @@ class Module:
 
     def dbg(self) -> None:
         self._module.dbg()
+
+    def to_smtlib(self) -> str:
+        return self._module.to_smtlib()
 
     def to_html(self, path: str, open: bool = False):
         self._module.to_html(self._ctx.unwrap(), path)
