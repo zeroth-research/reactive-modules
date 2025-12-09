@@ -1,10 +1,11 @@
 use crate::torch::wrappedcontext::WrappedContext;
+use std::iter::zip;
 use torch::{DType, IType, TorchTerm};
 
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::torch::wrappedatom::{WrappedAtom, vars_to_wiring};
+use crate::torch::wrappedatom::{vars_to_wiring, wterms_to_torchterms};
 use base::Module;
 
 #[pyclass]
@@ -17,48 +18,30 @@ unsafe impl Sync for WrappedModule {}
 
 #[pymethods]
 impl WrappedModule {
+    /// Construct a new (fully observable) module with a single atom
+    /// defined by `init` and `update` lists of terms
     #[new]
     fn new(
-        _ctx: &Bound<'_, WrappedContext>,
+        ctx: &Bound<'_, WrappedContext>,
         // current-state variables
         latched: &Bound<'_, PyList>,
         // next-state variables
         next: &Bound<'_, PyList>,
-        // list of atoms
-        atom: &Bound<'_, WrappedAtom>,
+        // init terms
+        init: &Bound<'_, PyList>,
+        // update terms
+        update: &Bound<'_, PyList>,
     ) -> Self {
         let latched = vars_to_wiring(latched).unwrap();
         let next = vars_to_wiring(next).unwrap();
 
-        let atom: &WrappedAtom = &atom.borrow();
+        let ctx: &mut WrappedContext = &mut ctx.borrow_mut();
+        let init = wterms_to_torchterms(ctx, init).unwrap();
+        let update = wterms_to_torchterms(ctx, update).unwrap();
 
         Self {
-            module: Module::sequential(
-                [latched, next],
-                atom.atom
-                    .init()
-                    .iter()
-                    .map(|term| {
-                        TorchTerm::new(
-                            term.itype().clone(),
-                            term.writes().clone(),
-                            term.reads().clone(),
-                        )
-                    })
-                    .collect::<Vec<TorchTerm>>(),
-                atom.atom
-                    .update()
-                    .iter()
-                    .map(|term| {
-                        TorchTerm::new(
-                            term.itype().clone(),
-                            term.writes().clone(),
-                            term.reads().clone(),
-                        )
-                    })
-                    .collect::<Vec<TorchTerm>>(),
-            )
-            .expect("Failed creating module"),
+            module: Module::sequential(zip(latched, next).map(|([l], [n])| [l, n]), init, update)
+                .expect("Failed creating module"),
         }
     }
 
