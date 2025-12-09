@@ -156,14 +156,14 @@ class SympyContext(ContextBase):
         # create terms via API that we cannot map to Python operations.
         # For that, we need to add it as a new argument.
         def wrapped_fun():
-            assert "next" not in fun.__globals__
+            assert "nxt" not in fun.__globals__
             assert "Choose" not in fun.__globals__
             assert "Case" not in fun.__globals__
-            fun.__globals__["next"] = self.next_var
+            fun.__globals__["nxt"] = self.next_var
             fun.__globals__["Choose"] = self._choose
             fun.__globals__["Case"] = self._case
             r = fun(*args, **kwargs)
-            del fun.__globals__["next"]
+            del fun.__globals__["nxt"]
             del fun.__globals__["Case"]
             del fun.__globals__["Choose"]
             return r
@@ -195,14 +195,16 @@ class Context(SympyContext):
         """
 
         ctrl, extl, cur_vars = self._parse_variables(ctrl, extl)
+        extl_nxt = [self.next_var(v) for v in extl]
 
         # if the user uses a single variable, it is more natural in the `init` and `update` to unwrap it
         ctrl_arg = ctrl[0] if len(ctrl) == 1 else ctrl
         extl_arg = extl[0] if len(extl) == 1 else extl
+        extl_nxt_arg = extl_nxt[0] if len(extl_nxt) == 1 else extl_nxt
 
         # trace the init function
         if init:
-            init_ret = self.trace(init, extl_arg)
+            init_ret = self.trace(init, extl_nxt_arg)
             assert len(init_ret) == len(ctrl)
         else:
             init_terms = []

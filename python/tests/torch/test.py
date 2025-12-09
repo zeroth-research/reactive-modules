@@ -8,9 +8,9 @@ from torch import Tensor
 
 class MyModule(ztch.Module):
 
-    def init(self, extl):
+    def init(self, extl_nxt):
         # extl is a vector with dimension 2
-        return extl * Tensor([[0, 0], [1, 0], [0, 1]])
+        return extl_nxt * Tensor([[0, 0], [1, 0], [0, 1]])
 
     def update(self, state, inp):
         # state = (x, y, z) is a vector with dimension 3,
@@ -29,4 +29,5 @@ class MyModule(ztch.Module):
 
 
 m = MyModule(ctrl="xyz", extl="yz0")
+m.dbg()
 # m.to_html("/tmp/torch.html", open=True)
