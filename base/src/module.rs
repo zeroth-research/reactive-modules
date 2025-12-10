@@ -7,7 +7,7 @@ use std::fmt;
 use std::fmt::Debug;
 
 /// This data structure corresponds to the module of reactive modules.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Module<D, I> {
     /// Correspond to the wires of the module divided by visibility
     /// ```text
