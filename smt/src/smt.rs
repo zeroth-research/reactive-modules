@@ -170,7 +170,7 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
         },
 
         IType::Arith(op) => {
-            let args: Vec<String> = term.reads().iter().map(|(id, _)| wire_name(id)).collect();
+            let args: Vec<String> = term.read().wires().map(|w| wire_name(w.id())).collect();
 
             match op {
                 ArithOp::Add => format!("(+ {} {})", args[0], args[1]),
@@ -181,7 +181,7 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
         }
 
         IType::Logical(op) => {
-            let args: Vec<String> = term.reads().iter().map(|(id, _)| wire_name(id)).collect();
+            let args: Vec<String> = term.read().wires().map(|w| wire_name(w.id())).collect();
 
             match op {
                 LogicalOp::Not => format!("(not {})", args[0]),
@@ -191,7 +191,7 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
         }
 
         IType::Cmp(op) => {
-            let args: Vec<String> = term.reads().iter().map(|(id, _)| wire_name(id)).collect();
+            let args: Vec<String> = term.read().wires().map(|w| wire_name(w.id())).collect();
 
             match op {
                 CmpOp::Eq => format!("(= {} {})", args[0], args[1]),
@@ -203,14 +203,14 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
         }
 
         IType::Id => {
-            let (id, _) = term.reads().iter().next().unwrap();
+            let id = term.read().wires().next().unwrap().id();
             wire_name(id)
         }
 
         IType::Cond => {
-            let c = wire_name(term.reads().iter().next().unwrap().0);
-            let t = wire_name(term.reads().iter().nth(1).unwrap().0);
-            let e = wire_name(term.reads().iter().nth(2).unwrap().0);
+            let c = wire_name(term.read().wires().next().unwrap().id());
+            let t = wire_name(term.read().wires().nth(1).unwrap().id());
+            let e = wire_name(term.read().wires().nth(2).unwrap().id());
             format!("(ite {} {} {})", c, t, e)
         }
     }

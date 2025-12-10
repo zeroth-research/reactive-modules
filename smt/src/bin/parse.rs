@@ -25,12 +25,7 @@ struct Cli {
 
 fn dump_to_html(modules: &[Module<DType, IType>], args: &Cli) -> Result<(), std::io::Error> {
     for (n, module) in modules.iter().enumerate() {
-        let module_name = module.name();
-        let path = if let Some(name) = module_name {
-            format!("{}.html", name)
-        } else {
-            format!("smt/tests/module-{}.html", n)
-        };
+        let path = format!("smt/tests/module-{}.html", n);
 
         let descr = Context::new(module);
         descr.populate_default_wire_names(module);
