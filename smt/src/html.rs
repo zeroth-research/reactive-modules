@@ -15,16 +15,16 @@ impl Context {
         let mut wire_dtypes = HashMap::new();
 
         for [ltc, nxt] in module.intf() {
-            wire_dtypes.insert(ltc.id(), ltc.dtype().clone());
-            wire_dtypes.insert(nxt.id(), nxt.dtype().clone());
+            wire_dtypes.insert(ltc.id(), *ltc.dtype());
+            wire_dtypes.insert(nxt.id(), *nxt.dtype());
         }
         for [ltc, nxt] in module.extl() {
-            wire_dtypes.insert(ltc.id(), ltc.dtype().clone());
-            wire_dtypes.insert(nxt.id(), nxt.dtype().clone());
+            wire_dtypes.insert(ltc.id(), *ltc.dtype());
+            wire_dtypes.insert(nxt.id(), *nxt.dtype());
         }
         for [ltc, nxt] in module.prvt() {
-            wire_dtypes.insert(ltc.id(), ltc.dtype().clone());
-            wire_dtypes.insert(nxt.id(), nxt.dtype().clone());
+            wire_dtypes.insert(ltc.id(), *ltc.dtype());
+            wire_dtypes.insert(nxt.id(), *nxt.dtype());
         }
 
         Context {
