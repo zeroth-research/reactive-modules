@@ -75,7 +75,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     update.push(Term::function(IType::Arith(ArithOp::Mul), [Wire::new(17, DType::Real)], [Wire::new(0, DType::Real), Wire::new(15, DType::Real)]).unwrap());
     update.push(Term::function(IType::Arith(ArithOp::Div), [Wire::new(6, DType::Real)], [Wire::new(16, DType::Real), Wire::new(17, DType::Real)]).unwrap());
     
-    update.push(Term::function(IType::Id, [Wire::new(7, DType::Real)], [Wire::new(1, DType::Real)]).unwrap());
+    update.push(Term::function(IType::Id, [Wire::new(7, DType::Int)], [Wire::new(1, DType::Int)]).unwrap());
 
     update.push(Term::function(IType::Const(Val::Real(50.05)), [Wire::new(18, DType::Real)], vec![] as Vec<Wire<DType>>).unwrap());
     update.push(Term::function(IType::Cmp(CmpOp::Lt), [Wire::new(19, DType::Bool)], [Wire::new(0, DType::Real), Wire::new(18, DType::Real)]).unwrap());
