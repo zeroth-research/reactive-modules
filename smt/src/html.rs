@@ -13,21 +13,12 @@ pub struct Context {
 impl Context {
     pub fn new(module: &Module<DType, IType>) -> Self {
         let mut wire_dtypes = HashMap::new();
-        
-        // Cache all wire dtypes from latched and next
-        // for (wire_id, dtype) in module.wire()[0].iter() {
-        //     wire_dtypes.insert(wire_id, *dtype);
-        // }
-        // for (wire_id, dtype) in module.wire()[1].iter() {
-        //     wire_dtypes.insert(wire_id, *dtype);
-        // }
 
-        // TO-CHECK: did the order change?
-        for [ltc, nxt] in module.extl() {
+        for [ltc, nxt] in module.intf() {
             wire_dtypes.insert(ltc.id(), ltc.dtype().clone());
             wire_dtypes.insert(nxt.id(), nxt.dtype().clone());
         }
-        for [ltc, nxt] in module.intf() {
+        for [ltc, nxt] in module.extl() {
             wire_dtypes.insert(ltc.id(), ltc.dtype().clone());
             wire_dtypes.insert(nxt.id(), nxt.dtype().clone());
         }
@@ -36,7 +27,6 @@ impl Context {
             wire_dtypes.insert(nxt.id(), nxt.dtype().clone());
         }
 
-        
         Context {
             wire_names: RefCell::new(HashMap::new()),
             wire_dtypes,
@@ -149,20 +139,16 @@ impl Context {
     }
 
     pub fn populate_default_wire_names(&self, module: &Module<DType, IType>) {
-        // let pair = module.wire();
-        // let latched = &pair[0];
-        // let next = &pair[1];
-
-        let extl_pairs = module.extl();
         let intf_pairs = module.intf();
+        let extl_pairs = module.extl();
         let prvt_pairs = module.prvt();
 
         let mut all_pairs = Vec::new();
 
-        for [ltc, nxt] in extl_pairs {
+        for [ltc, nxt] in intf_pairs {
             all_pairs.push([ltc, nxt]);
         }
-        for [ltc, nxt] in intf_pairs {
+        for [ltc, nxt] in extl_pairs {
             all_pairs.push([ltc, nxt]);
         }
         for [ltc, nxt] in prvt_pairs {
@@ -172,52 +158,25 @@ impl Context {
         let mut map = self.wire_names.borrow_mut();
         map.clear();
 
-        // TO-CHECK: did the naming change?
         for (idx, [ltc, nxt]) in all_pairs.iter().enumerate() {
             map.insert(ltc.id(), format!("x{}", idx));
             map.insert(nxt.id(), format!("x{}'", idx));
         }
-
-        // // Name by wire ID: w0→x0, w1→x1, w2→x2, w3→x3, w4→x4, w5→x5 ...
-        // for (wire_id, _dtype) in latched.iter() {
-        //     map.insert(wire_id, format!("x{}", wire_id));
-        // }
-
-        // // Name by wire ID offset: w6→x0', w7→x1', w8→x2', w9→x3', w10→x4', w11→x5'
-        // for (wire_id, _dtype) in next.iter() {
-        //     // Assuming next wires are offset by the number of latched wires
-        //     let base_id = wire_id - latched.len();
-        //     map.insert(wire_id, format!("x{}'", base_id));
-        // }
     }
 }
 
 impl Descriptor<DType, IType> for Context {
     fn describe_module(&self, module: &Module<DType, IType>, _how: DescriptionContext) -> String {
         // Describe the module with its variables classified into prvt, intf, extl
-        // let prvt = module.prvt()[0]
-        //     .iter()
-        //     .map(|(wire_id, _)| self.wire_name(wire_id))
-        //     .collect::<Vec<String>>();
-        // let intf = module.intf()[0]
-        //     .iter()
-        //     .map(|(wire_id, _)| self.wire_name(wire_id))
-        //     .collect::<Vec<String>>();
-        // let extl = module.extl()[0]
-        //     .iter()
-        //     .map(|(wire_id, _)| self.wire_name(wire_id))
-        //     .collect::<Vec<String>>();
-
-        // TO-CHECK: did the order change?
-        let prvt: Vec<String> = module.prvt()
-            .into_iter()
-            .map(|[ltc, _]| self.wire_name(ltc.id()))
-            .collect();
         let intf: Vec<String> = module.intf()
             .into_iter()
             .map(|[ltc, _]| self.wire_name(ltc.id()))
             .collect();
         let extl: Vec<String> = module.extl()
+            .into_iter()
+            .map(|[ltc, _]| self.wire_name(ltc.id()))
+            .collect();
+        let prvt: Vec<String> = module.prvt()
             .into_iter()
             .map(|[ltc, _]| self.wire_name(ltc.id()))
             .collect();
@@ -293,19 +252,12 @@ impl Descriptor<DType, IType> for Context {
             _ => panic!("Invalid section"),
         };
 
-        // let terms = match sec {
-        //     "init" => atom.init(),
-        //     "update" => atom.update(),
-        //     _ => panic!("Invalid section"),
-        // };
-
         let terms_block = match sec {
             "init" => atom.init(),
             "update" => atom.update(),
             _ => panic!("Invalid section"),
         };
         let terms: Vec<Term<DType, IType>> = terms_block.iter().cloned().collect();
-
 
         let section_body = atom.ctrl()
             .wires()
