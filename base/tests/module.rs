@@ -270,13 +270,13 @@ fn can_compose_example_peterson1_with_empty_module() {
 }
 
 #[test]
-fn can_instantiate_example_tiny1_right() {
+fn can_instantiate_example_tiny1_0123() {
     let m = example_tiny1((0, 1), (2, 3), true, 4).unwrap();
     assert!(m.is_open());
 }
 
 #[test]
-fn can_instantiate_example_tiny2_right() {
+fn can_instantiate_example_tiny1_2301() {
     let m = example_tiny1((2, 3), (0, 1), true, 4).unwrap();
     assert!(m.is_open());
 }
@@ -299,7 +299,7 @@ fn cannot_compose_example_tiny1_with_cyclic_await() {
 }
 
 #[test]
-fn can_compose_example_tiny1_without_cyclic_await_and_overllaping_prvt() {
+fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
     let m1 = example_tiny1((0, 1), (2, 3), true, 4).unwrap();
     let m2 = example_tiny1((2, 3), (0, 1), false, 7).unwrap();
 
@@ -308,7 +308,7 @@ fn can_compose_example_tiny1_without_cyclic_await_and_overllaping_prvt() {
 }
 
 #[test]
-fn can_compose_three_tiny1_without_cyclic_await_and_overllaping_prvt() {
+fn can_compose_three_tiny1_without_cyclic_await_and_overlapping_prvt() {
     let m1 = example_tiny1((0, 1), (2, 3), true, 4).unwrap();
     let m2 = example_tiny1((2, 3), (0, 1), false, 7).unwrap();
     let m3 = example_tiny1((2, 3), (10, 11), false, 12).unwrap();

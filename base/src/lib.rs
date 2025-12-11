@@ -26,8 +26,6 @@ pub use crate::wire::Wire;
 /// * Emits them in order and updates neighbours.
 ///
 /// Runs in **O(V + E)** time.
-///
-/// ```
 pub(crate) fn kahn(graph: &[Vec<usize>]) -> Option<Vec<usize>> {
     let n = graph.len();
     let mut indeg: Vec<usize> = vec![0; n];

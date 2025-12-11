@@ -236,7 +236,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
                 debug_assert!(!nxt_to_ltc.contains_key(&lc.id()));
                 debug_assert!(module_temp.insert(lc.id(), lc.dtype()).is_none());
             }
-            debug_assert!(module_temp.len() == temp.len());
+            debug_assert_eq!(module_temp.len(), temp.len());
             debug_assert!(temp.iter().all(|[wire]| {
                 module_temp
                     .get(&wire.id())
@@ -640,7 +640,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         //============================================================
 
         let await_order = kahn(&await_graph).ok_or("invalid await dependency")?;
-        debug_assert!(await_order.len() == await_graph.len());
+        debug_assert_eq!(await_order.len(), await_graph.len());
 
         let mut atoms: Vec<Atom<D, I>> = Vec::with_capacity(await_graph.len());
         for idx in await_order {
