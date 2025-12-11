@@ -14,7 +14,6 @@ from itertools import chain
 
 PyVal = _zrth.PyVal
 WrappedModule = _zrth.smt.WrappedModule
-WrappedAtom = _zrth.smt.WrappedAtom
 WrappedTerm = _zrth.smt.WrappedTerm
 
 
@@ -134,7 +133,6 @@ class PySMTContext(ContextBase):
 
         return ctrl, extl, cur_vars
 
-    # TODO: get rid of it in the SMT context
     def trace(self, fun: Callable, *args, **kwargs):
         """
         Execute a given function with binding our names like `next` into it.
@@ -144,10 +142,10 @@ class PySMTContext(ContextBase):
         # create terms via API that we cannot map to Python operations.
         # For that, we need to add it as a new argument.
         def wrapped_fun():
-            assert "next" not in fun.__globals__
-            fun.__globals__["next"] = self.next_var
+            assert "nxt" not in fun.__globals__
+            fun.__globals__["nxt"] = self.next_var
             r = fun(*args, **kwargs)
-            del fun.__globals__["next"]
+            del fun.__globals__["nxt"]
             return r
 
         r = wrapped_fun()
@@ -199,19 +197,9 @@ class Context(PySMTContext):
             ctrl, extl, init_ret, update_ret
         )
 
-        atom = WrappedAtom(
-            self._context,
-            cur_vars,
-            nxt_vars,
-            init_terms,
-            update_terms,
-        )
-
-        # TODO: here we unnecessarily copy the terms (they are once copied into
-        # Atom and then again into Module)
-        module = WrappedModule(self._context, cur_vars, nxt_vars, atom)
-        if name is not None:
-            module.set_name(name)
+        module = WrappedModule(self._context, cur_vars, nxt_vars, init_terms, update_terms)
+       #if name is not None:
+       #    module.set_name(name)
         return module
 
     def _cond(self, cnd, iftrue, iffalse):
