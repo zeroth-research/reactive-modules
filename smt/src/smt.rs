@@ -14,24 +14,24 @@ impl AtomSmtLibTranslator<'_> {
     pub fn ctrl(&self) -> Vec<String> {
         self.0
             .ctrl()
-            .iter()
-            .map(|(id, ty)| declare_var(id, ty))
+            .wires()
+            .map(|w| declare_var(w.id(), w.dtype()))
             .collect::<Vec<String>>()
     }
 
     pub fn read(&self) -> Vec<String> {
         self.0
             .read()
-            .iter()
-            .map(|(id, ty)| declare_var(id, ty))
+            .wires()
+            .map(|w| declare_var(w.id(), w.dtype()))
             .collect::<Vec<String>>()
     }
 
     pub fn wait(&self) -> Vec<String> {
         self.0
             .wait()
-            .iter()
-            .map(|(id, ty)| declare_var(id, ty))
+            .wires()
+            .map(|w| declare_var(w.id(), w.dtype()))
             .collect::<Vec<String>>()
     }
 
@@ -41,11 +41,11 @@ impl AtomSmtLibTranslator<'_> {
 
         // temporary are those variables that are written to but are not controlled
         // (these could be also private, but we do not have private variables atm.)
-        let ctrl: HashSet<usize> = HashSet::from_iter(self.0.ctrl().iter().map(|(id, _)| id));
+        let ctrl: HashSet<usize> = HashSet::from_iter(self.0.ctrl().ids());
         for term in self.0.init().iter().chain(self.0.update().iter()) {
-            for (wire_id, ty) in term.writes().iter() {
-                if !ctrl.contains(&wire_id) {
-                    ret.push(declare_var(wire_id, ty))
+            for wire in term.write().wires() {
+                if !ctrl.contains(&wire.id()) {
+                    ret.push(declare_var(wire.id(), wire.dtype()))
                 }
             }
         }
@@ -59,7 +59,7 @@ impl AtomSmtLibTranslator<'_> {
             .init()
             .iter()
             .map(|term| {
-                let (write_id, _) = term.writes().iter().next().unwrap();
+                let write_id = term.write().ids().next().unwrap();
                 format!("(assert (= {} {}))", wire_name(write_id), smt_expr(term))
             })
             .collect()
@@ -71,7 +71,7 @@ impl AtomSmtLibTranslator<'_> {
             .update()
             .iter()
             .map(|term| {
-                let (write_id, _) = term.writes().iter().next().unwrap();
+                let write_id = term.write().ids().next().unwrap();
                 format!("(assert (= {} {}))", wire_name(write_id), smt_expr(term))
             })
             .collect()
@@ -108,7 +108,7 @@ impl ModuleSmtLibTranslator<'_> {
         vars[0]
             .iter()
             .chain(vars[1].iter())
-            .map(|(id, ty)| declare_var(id, ty))
+            .map(|w| declare_var(w.id(), w.dtype()))
             .collect::<Vec<String>>()
     }
 
@@ -118,7 +118,7 @@ impl ModuleSmtLibTranslator<'_> {
         vars[0]
             .iter()
             .chain(vars[1].iter())
-            .map(|(id, ty)| declare_var(id, ty))
+            .map(|w| declare_var(w.id(), w.dtype()))
             .collect::<Vec<String>>()
     }
 
