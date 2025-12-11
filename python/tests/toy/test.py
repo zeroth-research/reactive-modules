@@ -6,7 +6,7 @@ class Module(toy.Module):
 
     def init(self, extl) -> None:
         y0, z0 = extl
-        return 0, y0, z0  # = x, y, z
+        return 0, nxt(y0), nxt(z0)  # = x, y, z
 
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl

@@ -7,9 +7,9 @@ class Module(smt.Module):
 
     def init(self, extl) -> None:
         a, b, c = extl
-        x_i = Plus(a, Real(3.24))
-        y_i = Minus(b, Int(42))
-        z_i = And(c, Not(Bool(True)))
+        x_i = Plus(nxt(a), Real(3.24))
+        y_i = Minus(nxt(b), Int(42))
+        z_i = And(nxt(c), Not(Bool(True)))
         return x_i, y_i, z_i
 
     def update(self, ctrl, extl) -> None:

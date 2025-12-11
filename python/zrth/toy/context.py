@@ -14,7 +14,6 @@ from itertools import chain
 
 PyVal = _zrth.PyVal
 WrappedModule = _zrth.toy.WrappedModule
-WrappedAtom = _zrth.toy.WrappedAtom
 WrappedTerm = _zrth.toy.WrappedTerm
 
 
@@ -166,19 +165,9 @@ class Context(ContextBase):
             ctrl, extl, init_ret, update_ret
         )
 
-        atom = WrappedAtom(
-            self._context,
-            cur_vars,
-            nxt_vars,
-            init_terms,
-            update_terms,
-        )
-
-        # TODO: here we unnecessarily copy the terms (they are once copied into
-        # Atom and then again into Module)
-        module = WrappedModule(self._context, cur_vars, nxt_vars, atom)
-        if name is not None:
-            module.set_name(name)
+        module = WrappedModule(self._context, cur_vars, nxt_vars, init_terms, update_terms)
+       #if name is not None:
+       #    module.set_name(name)
         return module
 
     def _choose(self, *args):
@@ -192,14 +181,14 @@ class Context(ContextBase):
         # create terms via API that we cannot map to Python operations.
         # For that, we need to add it as a new argument.
         def wrapped_fun():
-            assert "next" not in fun.__globals__
+            assert "nxt" not in fun.__globals__
             assert "Choose" not in fun.__globals__
             assert "Case" not in fun.__globals__
-            fun.__globals__["next"] = self.next_var
+            fun.__globals__["nxt"] = self.next_var
             fun.__globals__["Choose"] = self._choose
             fun.__globals__["Case"] = self._case
             r = fun(*args, **kwargs)
-            del fun.__globals__["next"]
+            del fun.__globals__["nxt"]
             del fun.__globals__["Case"]
             del fun.__globals__["Choose"]
             return r
