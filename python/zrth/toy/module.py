@@ -2,7 +2,7 @@ from .context import Context
 from typing import Callable, Any
 from copy import copy
 
-from .. smt.module import Module as SmtModule
+from ..smt.module import Module as SmtModule
 
 
 class Module:

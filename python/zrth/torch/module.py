@@ -1,28 +1,58 @@
 from .context import Context
+from ..expr import Expr
 
 
 class Module:
     def __init__(
         self,
-        ctrl: str | tuple[str],
+        ctrl: str | tuple[str] | None,
         extl: str | tuple[str] | None = None,
         name: str = None,
         ctx: Context = None,
     ):
-        assert ctrl, "Need controlled variables"
+        if ctrl is None:
+            # this is a blank module, it is gonig to be populated
+            # from outside (e.g., when wrapping an already existing :class:`WrappedModule`
+            # into this class)
+            self._ctx = None
+            self._module = None
+            return
 
         if not hasattr(self, "update"):
             raise RuntimeError(f"Module {type(self)} has no `update` method.")
 
         self._ctx = ctx or Context()
 
-        # TODO: check also the signature of init and update
+        self.init = self._wrap_method(self.init) if hasattr(self, "init") else None
+        self.update = self._wrap_method(self.update)
 
-        init = self.init if hasattr(self, "init") else None
         extl = extl or ()
         self._module = self._ctx.module_from_methods(
-            ctrl, extl, init, self.update, name=name
+            ctrl, extl, self.init, self.update, name=name
         )
+
+    def _wrap_method(self, m):
+        """
+        Wrap method such that if it is given symbolic arguments,
+        it will be traced and otherwise it will get executed normally.
+        """
+
+        def wrapper(*args):
+            if any(isinstance(a, Expr) for a in args):
+                return self._ctx.trace(m, *args)
+
+            return m(*args)
+
+        return wrapper
+
+    def fresh_variable(self):
+        return self._ctx.fresh_var()
+
+    def constant(self, *args):
+        return self._ctx.constant(*args)
+
+    def choose(self, *args):
+        return self._ctx.choose_impl(*args)
 
     def dbg(self) -> None:
         self._module.dbg()

@@ -1,6 +1,9 @@
 class Expr:
     """
-    A minimalistic representation of an expression
+    A minimalistic representation of an expression.
+
+    We use this class during translating Python code into reactive modules terms.
+    It is nothing else than a symbolic representation of a computation of a value.
     """
 
     __cnt = 0
@@ -12,23 +15,28 @@ class Expr:
         Expr.__cnt += 1
         self.id = Expr.__cnt
 
+        # self.typecheck()
+
+    # def typecheck(self) -> None:
+    #    pass
+
     def __rmatmul__(self, rhs):
-        return Expr("matmul", [self, rhs])
+        return Expr("arith.matmul", [self, rhs])
 
     def __add__(self, rhs):
-        return Expr("add", [self, rhs])
+        return Expr("arith.add", [self, rhs])
 
     def __lt__(self, rhs):
-        return Expr("lt", [self, rhs])
+        return Expr("cmp.lt", [self, rhs])
 
     def __gt__(self, rhs):
-        return Expr("gt", [self, rhs])
+        return Expr("cmp.gt", [self, rhs])
 
     def __or__(self, rhs):
-        return Expr("or", [self, rhs])
+        return Expr("logic.or", [self, rhs])
 
     def __invert__(self):
-        return Expr("not", [self])
+        return Expr("logic.not", [self])
 
     def __str__(self) -> str:
         return f'<{self.id}> {self.op}({", ".join(map(str, self.args))})'
@@ -47,3 +55,64 @@ class Var(Expr):
 
     def __str__(self):
         return f"Var({self.name})"
+
+
+###
+# Transform an expression using a visitor pattern
+class Transform:
+
+    def transform(self, formula):
+        return self._visit(formula)
+
+    def default(self, expr: Expr, args: list):
+        return [expr]
+
+    def _visit(self, expr: Expr, depth=0):
+
+        # print(" " * depth, "Visiting", expr)
+
+        before_all = getattr(self, "before_all", None)
+
+        translated_args = []
+        if isinstance(expr, Expr):
+            for child in expr.get_children():
+                translated_args.extend(self._visit(child, depth + 1))
+
+        if before_all is not None:
+            before_all(expr, translated_args)
+
+        # this is an expression, recur into the children
+        if isinstance(expr, Expr):
+            # operations are named 'group.group.op' (with arbitrary many groups).
+            # Find the most specific handler by checking methods
+            #  visit_group_group_op
+            #  visit_group_group
+            #  visit_group
+            names = expr.op.split(".")
+            op = []
+            # find the most generic method the transformer has
+            while names:
+                method = getattr(self, f'visit_{"_".join(names)}', None)
+                if method:
+                    break
+                op.append(names[-1])
+                names = names[:-1]
+
+            if method:
+                if op:
+                    # partially qualified name, add the "op" parameter
+                    op = reversed(op)
+                    return method(expr, translated_args, ".".join(op))
+                # fully qualified name, do not add the "op" parameter
+                return method(expr, translated_args)
+
+        else:
+            method = getattr(self, f"visit_ty_{type(expr)}", None)
+            if method is None:
+                # try a generic type visitor
+                method = getattr(self, f"visit_ty", None)
+            if method:
+                return method(expr, translated_args)
+
+        if method is None:
+            return self.default(expr, translated_args)
