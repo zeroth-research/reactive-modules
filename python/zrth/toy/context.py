@@ -165,9 +165,11 @@ class Context(ContextBase):
             ctrl, extl, init_ret, update_ret
         )
 
-        module = WrappedModule(self._context, cur_vars, nxt_vars, init_terms, update_terms)
-       #if name is not None:
-       #    module.set_name(name)
+        module = WrappedModule(
+            self._context, cur_vars, nxt_vars, init_terms, update_terms
+        )
+        # if name is not None:
+        #    module.set_name(name)
         return module
 
     def _choose(self, *args):
