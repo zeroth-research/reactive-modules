@@ -58,6 +58,16 @@ impl<D, I> Module<D, I> {
         &self.obs
     }
 
+    /// Returns an iterator over latched wires.
+    pub fn latched(&self) -> impl Iterator<Item = &Wire<D>> {
+        self.obs.iter().chain(self.prvt.iter()).map(|pair| pair[0])
+    }
+
+    /// Returns an iterator over next wires.
+    pub fn next(&self) -> impl Iterator<Item = &Wire<D>> {
+        self.obs.iter().chain(self.prvt.iter()).map(|pair| pair[1])
+    }
+
     pub fn is_closed(&self) -> bool {
         self.extl.is_empty()
     }
