@@ -3,7 +3,9 @@ use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DType {
-    Tensor,
+    None,   // No value
+    Tensor, // Tensor
+    Bool,   // Boolean
 }
 
 impl std::str::FromStr for DType {
@@ -11,7 +13,9 @@ impl std::str::FromStr for DType {
 
     fn from_str(ty: &str) -> Result<Self, Self::Err> {
         match ty {
-            "Tensor" => Ok(DType::Tensor),
+            "None" => Ok(DType::Tensor),
+            "Bool" => Ok(DType::Bool),
+            "Tensor" => Ok(DType::None),
             _ => Err(format!("Cannot convert `{}` to DType", ty)),
         }
     }
@@ -28,7 +32,7 @@ pub enum IType {
     Le,
     Gt,
     Ge,
-    // element-wise product and sum
+    // product and sum of elements of the tensor
     Prod,
     Sum,
     // standard arithmetic
@@ -36,15 +40,15 @@ pub enum IType {
     Mul,
     Sub,
     Div,
+    MatMul,
     // Id term
     Id,
     // If-then-else and Choose
     Ite,
     Choose,
+    Filter,
     // Boolean operations
-    // Tensor([1]) is true and Tensor([0]) is false atm.
-    // We might want to add explicit Bool type
-    Neg,
+    Not,
     Or,
     And,
 }
@@ -67,6 +71,7 @@ impl std::str::FromStr for IType {
             "Sub" => Ok(IType::Sub),
             "Mul" => Ok(IType::Mul),
             "Div" => Ok(IType::Div),
+            "MatMul" => Ok(IType::MatMul),
             "Sum" => Ok(IType::Sum),
             "Prod" => Ok(IType::Prod),
             // -----
@@ -74,8 +79,9 @@ impl std::str::FromStr for IType {
             // -----
             "Ite" => Ok(IType::Ite),
             "Choose" => Ok(IType::Choose),
+            "Filter" => Ok(IType::Filter),
             // -----
-            "Neg" => Ok(IType::Neg),
+            "Not" => Ok(IType::Not),
             "Or" => Ok(IType::Or),
             "And" => Ok(IType::And),
             // -----
@@ -99,12 +105,14 @@ impl Clone for IType {
             IType::Sub => IType::Sub,
             IType::Mul => IType::Mul,
             IType::Div => IType::Div,
+            IType::MatMul => IType::MatMul,
             IType::Sum => IType::Sum,
             IType::Prod => IType::Prod,
             IType::Id => IType::Id,
             IType::Ite => IType::Ite,
             IType::Choose => IType::Choose,
-            IType::Neg => IType::Neg,
+            IType::Filter => IType::Filter,
+            IType::Not => IType::Not,
             IType::And => IType::And,
             IType::Or => IType::Or,
         }
@@ -123,13 +131,15 @@ impl fmt::Display for IType {
             IType::Add => write!(f, "Add"),
             IType::Sub => write!(f, "Sub"),
             IType::Mul => write!(f, "Mul"),
+            IType::MatMul => write!(f, "MatMul"),
             IType::Div => write!(f, "Div"),
             IType::Sum => write!(f, "Sum"),
             IType::Prod => write!(f, "Prod"),
             IType::Id => write!(f, "Id"),
             IType::Ite => write!(f, "Ite"),
             IType::Choose => write!(f, "Choose"),
-            IType::Neg => write!(f, "Neg"),
+            IType::Filter => write!(f, "Filter"),
+            IType::Not => write!(f, "Not"),
             IType::And => write!(f, "And"),
             IType::Or => write!(f, "Or"),
             IType::Const(t) => {
@@ -160,6 +170,8 @@ impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DType::Tensor => write!(f, "Tensor"),
+            DType::Bool => write!(f, "Bool"),
+            DType::None => write!(f, "None"),
         }
     }
 }
