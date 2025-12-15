@@ -219,3 +219,43 @@ fn module_write_all_ctrl() {
     let m = Module::sequential(obs.clone(), init, update);
     assert!(m.is_ok());
 }
+
+#[test]
+fn intf_iterators1() {
+    let m = example_counter().unwrap();
+
+    assert!(m.extl().ids().collect::<Vec<usize>>() == vec![3, 4, 8, 9]);
+    assert!(m.intf().ids().collect::<Vec<usize>>() == vec![0, 1, 2, 5, 6, 7]);
+    assert!(m.ctrl().ids().collect::<Vec<usize>>() == vec![0, 1, 2, 5, 6, 7]);
+    assert!(m.obs().ids().collect::<Vec<usize>>() == (0..=9).collect::<Vec<usize>>());
+    assert!(m.prvt().ids().collect::<Vec<usize>>().is_empty());
+    assert!(m.latched().map(Wire::id).collect::<Vec<usize>>() == (0..=4).collect::<Vec<usize>>());
+    assert!(m.next().map(Wire::id).collect::<Vec<usize>>() == (5..=9).collect::<Vec<usize>>());
+
+    // hide an interface wire
+    let wires = m.obs().clone();
+    let mut obs: Vec<[Wire<&'static str>; 2]> = Vec::new();
+    let mut prvt: Vec<[Wire<&'static str>; 2]> = Vec::new();
+    // make wire 2 (and 7) private
+    for [ltc, nxt] in wires {
+        if ltc.id() == 2 {
+            prvt.push([ltc, nxt]);
+        } else {
+            obs.push([ltc, nxt]);
+        }
+    }
+    let obs = Interface::from_iter(obs);
+    let prvt = Interface::from_iter(prvt);
+
+    let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned()).unwrap();
+
+    assert!(m.extl().ids().collect::<Vec<usize>>() == vec![3, 4, 8, 9]);
+    assert!(m.intf().ids().collect::<Vec<usize>>() == vec![0, 1, 5, 6]);
+    assert!(m.ctrl().ids().collect::<Vec<usize>>() == vec![0, 1, 2, 5, 6, 7]);
+    assert!(m.obs().ids().collect::<Vec<usize>>() == vec![0, 1, 3, 4, 5, 6, 8, 9]);
+    assert!(m.prvt().ids().collect::<Vec<usize>>() == vec![2, 7]);
+    // latched = latched obs + prvt
+    assert!(m.latched().map(Wire::id).collect::<Vec<usize>>() == vec![0, 1, 3, 4, 2]);
+    // next = next obs + prvt
+    assert!(m.next().map(Wire::id).collect::<Vec<usize>>() == vec![5, 6, 8, 9, 7]);
+}
