@@ -1,4 +1,4 @@
-use base::Wire;
+use base::wire::{Interface, Wire};
 use smt::dtype::DType as DTypeSMT;
 use smt::itype::IType as ITypeSMT;
 use std::collections::HashMap;
@@ -56,27 +56,6 @@ impl TryInto<smt::itype::Val> for Val {
         (&self).try_into()
     }
 }
-
-//
-// impl TryInto<ITypeSMT> for IType {
-//     type Error = &'static str;
-//
-//     fn try_into(self) -> Result<ITypeSMT, Self::Error> {
-//         match self {
-//             ITypeSMT::Const(val) => IType::Const(val),
-//             ITypeSMT::Arith(op) => IType::Arith(op.into()),
-//             _ => Err("Cannot convert this type to smt::dtype::DType"),
-//             //// Logical operations
-//             //Logical(LogicalOp),
-//             //// Comparisons
-//             //Cmp(CmpOp),
-//             //// Identity
-//             //Id,
-//             //// Conditional expression (ternary operator)
-//             //Cond,
-//         }
-//     }
-// }
 
 struct SmtTranslator {
     // We use this map to keep mapping of our wires to wires in the translated module.
@@ -140,50 +119,51 @@ impl SmtTranslator {
     }
 
     fn translate_term(&mut self, term: &ToyTerm) -> Result<Vec<SmtTerm>, Err> {
-        let read = Wire::try_from_iter(
-            term.reads()
-                .iter()
-                .map(|(id, ty)| self.get_wire(id, ty).unwrap()),
-        )?;
-        let write = Wire::try_from_iter(
-            term.writes()
-                .iter()
-                .map(|(id, ty)| self.get_wire(id, ty).unwrap()),
-        )?;
+        let read: Vec<(usize, DTypeSMT)> = term
+            .read()
+            .wires()
+            .map(|w| self.get_wire(w.id(), w.dtype()).unwrap())
+            .collect();
+        let write: Vec<(usize, DTypeSMT)> = term
+            .write()
+            .wires()
+            .map(|w| self.get_wire(w.id(), w.dtype()).unwrap())
+            .collect();
+
         match term.itype() {
             IType::Id => {
                 debug_assert!(read.len() == 1);
                 debug_assert!(write.len() == 1);
-                Ok(vec![SmtTerm::new(ITypeSMT::Id, write, read)])
+                Ok(vec![SmtTerm::function(ITypeSMT::Id, write, read)?])
             }
             IType::Const(val) => {
                 debug_assert!(read.is_empty());
                 debug_assert!(write.len() == 1);
-                Ok(vec![SmtTerm::new(
+                Ok(vec![SmtTerm::function(
                     ITypeSMT::Const(val.try_into()?),
                     write,
                     read,
-                )])
+                )?])
             }
             IType::Cmp(op) => {
                 debug_assert!(read.len() == 2);
                 debug_assert!(write.len() == 1);
                 match op {
-                    CmpOp::Lt => Ok(vec![SmtTerm::new(
+                    CmpOp::Lt => Ok(vec![SmtTerm::function(
                         ITypeSMT::Cmp(smt::itype::CmpOp::Lt),
                         write,
                         read,
-                    )]),
-                    CmpOp::Le => Ok(vec![SmtTerm::new(
+                    )?]),
+                    CmpOp::Le => Ok(vec![SmtTerm::function(
                         ITypeSMT::Cmp(smt::itype::CmpOp::Le),
                         write,
                         read,
-                    )]),
-                    CmpOp::Eq => Ok(vec![SmtTerm::new(
+                    )?]),
+                    CmpOp::Eq => Ok(vec![SmtTerm::function(
                         ITypeSMT::Cmp(smt::itype::CmpOp::Eq),
                         write,
                         read,
-                    )]),
+                    )?]),
                 }
             }
             IType::Logical(op) => {
@@ -191,27 +171,27 @@ impl SmtTranslator {
                 match op {
                     LogicalOp::And => {
                         debug_assert!(read.len() == 2);
-                        Ok(vec![SmtTerm::new(
+                        Ok(vec![SmtTerm::function(
                             ITypeSMT::Logical(smt::itype::LogicalOp::And),
                             write,
                             read,
-                        )])
+                        )?])
                     }
                     LogicalOp::Or => {
                         debug_assert!(read.len() == 2);
-                        Ok(vec![SmtTerm::new(
+                        Ok(vec![SmtTerm::function(
                             ITypeSMT::Logical(smt::itype::LogicalOp::Or),
                             write,
                             read,
-                        )])
+                        )?])
                     }
                     LogicalOp::Not => {
                         debug_assert!(read.len() == 1);
-                        Ok(vec![SmtTerm::new(
+                        Ok(vec![SmtTerm::function(
                             ITypeSMT::Logical(smt::itype::LogicalOp::Not),
                             write,
                             read,
-                        )])
+                        )?])
                     }
                 }
             }
@@ -220,33 +200,34 @@ impl SmtTranslator {
                 debug_assert!(read.len() == 2);
                 debug_assert!(write.len() == 1);
                 match op {
-                    ArithOp::Add => Ok(vec![SmtTerm::new(
+                    ArithOp::Add => Ok(vec![SmtTerm::function(
                         ITypeSMT::Arith(smt::itype::ArithOp::Add),
                         write,
                         read,
-                    )]),
-                    ArithOp::Sub => Ok(vec![SmtTerm::new(
+                    )?]),
+                    ArithOp::Sub => Ok(vec![SmtTerm::function(
                         ITypeSMT::Arith(smt::itype::ArithOp::Sub),
                         write,
                         read,
-                    )]),
-                    ArithOp::Mul => Ok(vec![SmtTerm::new(
+                    )?]),
+                    ArithOp::Mul => Ok(vec![SmtTerm::function(
                         ITypeSMT::Arith(smt::itype::ArithOp::Mul),
                         write,
                         read,
-                    )]),
-                    ArithOp::Div => Ok(vec![SmtTerm::new(
+                    )?]),
+                    ArithOp::Div => Ok(vec![SmtTerm::function(
                         ITypeSMT::Arith(smt::itype::ArithOp::Div),
                         write,
                         read,
-                    )]),
+                    )?]),
                 }
             }
             IType::Ite => {
                 debug_assert!(read.len() == 3);
                 debug_assert!(write.len() == 1);
-                Ok(vec![SmtTerm::new(ITypeSMT::Cond, write, read)])
+                Ok(vec![SmtTerm::function(ITypeSMT::Cond, write, read)?])
             }
+            IType::Filter => Err("Translating Filter not implemented right now"),
             IType::Choose => Err("Translating Choose not implemented right now"),
         }
     }
@@ -265,40 +246,35 @@ impl SmtTranslator {
         Ok((init, update))
     }
 
-    fn translate_wire(&mut self, wire: &Wire<DType>) -> Result<Wire<DTypeSMT>, Err> {
-        let mut vec0: Vec<(usize, DTypeSMT)> = Vec::new();
-        for (id, ty) in wire.iter() {
-            vec0.push((self.map_id_(id), ty.try_into()?));
-        }
-
-        Ok(Wire::try_from_iter(vec0.into_iter())?)
-    }
-
     fn translate_variables(
         &mut self,
-        variables: &[Wire<DType>; 2],
-    ) -> Result<[Wire<DTypeSMT>; 2], Err> {
-        Ok([
-            self.translate_wire(&variables[0])?,
-            self.translate_wire(&variables[1])?,
-        ])
+        variables: &Interface<DType, 2>,
+    ) -> Result<Interface<DTypeSMT, 2>, Err> {
+        let mut latched: Vec<Wire<DTypeSMT>> = Vec::new();
+        let mut nxt: Vec<Wire<DTypeSMT>> = Vec::new();
+        for w in variables.iter() {
+            latched.push(Wire::new(self.map_id_(w[0].id()), w[0].dtype().try_into()?));
+            nxt.push(Wire::new(self.map_id_(w[1].id()), w[1].dtype().try_into()?));
+        }
+
+        Interface::try_from_iter(latched.into_iter().zip(nxt).map(|(w1, w2)| [w1, w2]))
     }
 }
 
 #[cfg(debug_assertions)]
 fn check_variables(
     translator: &SmtTranslator,
-    orig_vars: &[Wire<DType>; 2],
-    new_vars: &[Wire<DTypeSMT>; 2],
+    orig_vars: &Interface<DType, 2>,
+    new_vars: &Interface<DTypeSMT, 2>,
 ) {
-    for ((id1, ty1), (id2, ty2)) in new_vars[0].iter().zip(orig_vars[0].iter()) {
+    for (w1, w2) in new_vars.wires().zip(orig_vars.wires()) {
         // check that the mapped ID matches
-        if let Some(id) = translator.get_mapped_id(id2) {
-            debug_assert!(id == id1);
+        if let Some(id) = translator.get_mapped_id(w2.id()) {
+            debug_assert!(id == w1.id());
         }
         // check that the mapped type matches
-        let ty: DTypeSMT = ty2.try_into().unwrap();
-        debug_assert!(ty == *ty1);
+        let ty: DTypeSMT = w2.dtype().try_into().unwrap();
+        debug_assert!(ty == *w1.dtype());
     }
 }
 
@@ -321,7 +297,6 @@ impl<'a> TryInto<SmtModule> for ModuleConverter<'a> {
         let prvt = translator.translate_variables(self.0.prvt())?;
         let obs = translator.translate_variables(self.0.obs())?;
         let ctrl = translator.translate_variables(self.0.ctrl())?;
-        let wire = translator.translate_variables(self.0.wire())?;
 
         #[cfg(debug_assertions)]
         {
@@ -331,7 +306,6 @@ impl<'a> TryInto<SmtModule> for ModuleConverter<'a> {
                 debug_assert!(prvt[i].len() == self.0.prvt()[i].len());
                 debug_assert!(obs[i].len() == self.0.obs()[i].len());
                 debug_assert!(ctrl[i].len() == self.0.ctrl()[i].len());
-                debug_assert!(wire[i].len() == self.0.wire()[i].len());
             }
 
             check_variables(&translator, self.0.extl(), &extl);
@@ -339,23 +313,20 @@ impl<'a> TryInto<SmtModule> for ModuleConverter<'a> {
             check_variables(&translator, self.0.prvt(), &prvt);
             check_variables(&translator, self.0.obs(), &obs);
             check_variables(&translator, self.0.ctrl(), &ctrl);
-            check_variables(&translator, self.0.wire(), &wire);
         }
+
+        let wire: Vec<[&Wire<DTypeSMT>; 2]> = obs.iter().chain(prvt.iter()).collect();
 
         // TODO: to private, add extra wires created during translation
         // (now there are none)
 
         let mut atoms: Vec<SmtAtom> = Vec::new();
-        for ((init, update), atom) in atom_funs.into_iter().zip(self.0.atoms()) {
-            //atoms.push(SmtAtom::with_module_wire(&wire, init, update)?);
-            let ctrl_a = translator.translate_wire(atom.ctrl())?;
-            let wait_a = translator.translate_wire(atom.wait())?;
-            let read_a = translator.translate_wire(atom.read())?;
-            atoms.push(SmtAtom::new_unchecked(ctrl_a, wait_a, read_a, init, update));
+        for (init, update) in atom_funs.into_iter() {
+            let latched = wire.iter().map(|[w1, _]| *w1);
+            let next = wire.iter().map(|[_, w2]| *w2);
+            atoms.push(SmtAtom::sequential(latched, next, init, update)?);
         }
 
-        Ok(SmtModule::new_unchecked(
-            extl, intf, prvt, obs, ctrl, wire, atoms,
-        ))
+        SmtModule::partially_observable(obs, prvt, atoms)
     }
 }
