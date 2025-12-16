@@ -88,16 +88,19 @@ class PySMTContext(ContextBase):
             elif isinstance(ctrl[0], Expr):
                 if not all(isinstance(c, Expr) and c.is_symbol() for c in ctrl):
                     raise RuntimeError(
-                        f"Expected variables to be all PySMT variables, got: {ctrl}"
+                        f"Expected variables to be all PySMT variables, got: {
+                            ctrl}"
                     )
             else:
                 raise RuntimeError(
-                    f"Expected variables to be a tuple of strings or PySMT variables, got: {ctrl}"
+                    f"Expected variables to be a tuple of strings or PySMT variables, got: {
+                        ctrl}"
                 )
             cur_vars = [*ctrl]
         else:
             raise RuntimeError(
-                f"Expect variables to be a non-empty string, tuple or list, got: {ctrl}"
+                f"Expect variables to be a non-empty string, tuple or list, got: {
+                    ctrl}"
             )
 
         if isinstance(extl, str):
@@ -119,11 +122,13 @@ class PySMTContext(ContextBase):
             elif isinstance(extl[0], Expr):
                 if not all(isinstance(c, Expr) and c.is_symbol() for c in extl):
                     raise RuntimeError(
-                        f"Expected variables to be all PySMT variables, got: {extl}"
+                        f"Expected variables to be all PySMT variables, got: {
+                            extl}"
                     )
             else:
                 raise RuntimeError(
-                    f"Expected variables to be a tuple of strings or PySMT variables, got: {extl}"
+                    f"Expected variables to be a tuple of strings or PySMT variables, got: {
+                        extl}"
                 )
             cur_vars.extend(extl)
         else:
@@ -182,9 +187,12 @@ class Context(PySMTContext):
         ctrl_arg = ctrl[0] if len(ctrl) == 1 else ctrl
         extl_arg = extl[0] if len(extl) == 1 else extl
 
+        extl_nxt = [self.next_var(v) for v in extl]
+        extl_nxt_arg = extl_nxt[0] if len(extl_nxt) == 1 else extl_nxt
+
         # trace the init function
         if init:
-            init_ret = self.trace(init, extl_arg)
+            init_ret = self.trace(init, extl_nxt_arg)
             assert len(init_ret) == len(ctrl)
         else:
             init_terms = []
@@ -354,7 +362,8 @@ class ToTerms:
             return [out]
         else:
             raise NotImplementedError(
-                f"Not implemented translation of operation: {formula} {type(formula)}"
+                f"Not implemented translation of operation: {
+                    formula} {type(formula)}"
             )
 
         raise RuntimeError("Unreachable")
