@@ -1,3 +1,5 @@
+from io import StringIO
+from pysmt.smtlib.parser import SmtLibParser
 from pysmt.shortcuts import (
     Symbol,
     Or,
@@ -17,15 +19,15 @@ import zrth.toy as toy
 import sympy as sp
 
 ######################################################################
-## SMT
+# SMT
 ######################################################################
 
 
 class SmtModule(smt.Module):
 
-    def init(self, extl) -> None:
-        y0, z0 = extl
-        return Int(0), nxt(y0), nxt(z0)  # = x, y, z
+    def init(self, extl_nxt) -> None:
+        y0, z0 = extl_nxt
+        return Int(0), y0, z0  # = x, y, z
 
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl
@@ -41,23 +43,23 @@ m_smt = SmtModule(ctrl=(x, y, z), extl=(y0, z0))
 
 
 ######################################################################
-## Toy
+# Toy
 ######################################################################
 
 
 class ToyModule(toy.Module):
 
-    def init(self, extl) -> None:
-        y0, z0 = extl
-        return 0, nxt(y0), nxt(z0)  # = x, y, z
+    def init(self, extl_nxt) -> None:
+        y0, z0 = extl_nxt
+        return 0, y0, z0  # = x, y, z
 
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl
         xn = Ite(Or(x < y, x < z), x + Int(1), Int(0))
-       #xn = Choose(
+       # xn = Choose(
        #    Case(Or(x < y, x < z), x + Int(1)),
        #    Case(Not(Or(x < y, x < z)), Int(0)),
-       #)
+       # )
 
         return xn, y, z
 
@@ -99,7 +101,7 @@ m_torch.dbg()
 
 
 ######################################################################
-## Obligations
+# Obligations
 ######################################################################
 
 # compose modules
@@ -125,8 +127,6 @@ def rank(a, b, c):
 
 smtlib_str = m.to_smtlib()
 
-from pysmt.smtlib.parser import SmtLibParser
-from io import StringIO
 
 print(smtlib_str)
 script = SmtLibParser().get_script(StringIO(smtlib_str))

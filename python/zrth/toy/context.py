@@ -149,10 +149,12 @@ class Context(ContextBase):
         # if the user uses a single variable, it is more natural in the `init` and `update` to unwrap it
         ctrl_arg = ctrl[0] if len(ctrl) == 1 else ctrl
         extl_arg = extl[0] if len(extl) == 1 else extl
+        extl_nxt = [self.next_var(v) for v in extl]
+        extl_nxt_arg = extl_nxt[0] if len(extl_nxt) == 1 else extl_nxt
 
         # trace the init function
         if init:
-            init_ret = self.trace(init, extl_arg)
+            init_ret = self.trace(init, extl_nxt_arg)
             assert len(init_ret) == len(ctrl)
         else:
             init_terms = []
@@ -325,7 +327,8 @@ class ToTerms:
                 return [PyVal.int(formula.constant_value())]
             else:
                 raise NotImplementedError(
-                    f"Not implemented translation of operation: {formula} {type(formula)}"
+                    f"Not implemented translation of operation: {
+                        formula} {type(formula)}"
                 )
 
         raise RuntimeError("Unreachable")
