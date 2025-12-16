@@ -27,4 +27,21 @@ mod tests {
         let _prop = _build_prop(&mut ctx);
         //dbg!(prop);
     }
+
+    #[cfg(feature = "conversions-smt")]
+    #[test]
+    fn conversions_smt1() {
+        let mut ctx = Context::new();
+        ctx.vars(
+            DType::Int,
+            &["x", "y", "z", "y0", "z0", "x'", "y'", "z'", "y0'", "z0'"],
+        );
+
+        // build module
+        let module = build_module(&mut ctx);
+        let _smt_module: base::Module<smt::dtype::DType, smt::itype::IType> =
+            toy::conversions::ModuleConverter(&module)
+                .try_into()
+                .unwrap();
+    }
 }
