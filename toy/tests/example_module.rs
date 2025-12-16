@@ -7,7 +7,7 @@ use toy::{DType, ToyContext, ToyModule};
 use std::iter::zip;
 
 fn concat_intf<D: Eq + Clone>(items: &[&Interface<D>]) -> Interface<D> {
-    let i = items.iter().map(|intf| intf.wires()).flatten().cloned();
+    let i = items.iter().flat_map(|intf| intf.wires()).cloned();
     Interface::sequence(i).unwrap()
 }
 
