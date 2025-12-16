@@ -1,6 +1,6 @@
 use crate::atom::Atom;
-use crate::kahn;
 use crate::term::Term;
+use crate::topological_order;
 use crate::wire::{Interface, Wire};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
@@ -639,7 +639,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         // Reorder atoms and remove coupled wires from the externals
         //============================================================
 
-        let await_order = kahn(&await_graph).ok_or("invalid await dependency")?;
+        let await_order = topological_order(&await_graph).ok_or("invalid await dependency")?;
         debug_assert_eq!(await_order.len(), await_graph.len());
 
         let mut atoms: Vec<Atom<D, I>> = Vec::with_capacity(await_graph.len());
