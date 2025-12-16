@@ -68,27 +68,29 @@ m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
 
 
 ######################################################################
-## Torch
+# Torch
 ######################################################################
 
 
 class TorchModule(ztch.Module):
 
-    def init(self, extl):
+    def init(self, extl_nxt):
         # extl is a vector with dimension 2
-        return extl * Tensor([[0, 0], [1, 0], [0, 1]])
+        return Tensor([[0, 0], [1, 0], [0, 1]]) @ extl_nxt
 
     def update(self, state, inp):
         # state = (x, y, z) is a vector with dimension 3,
         # inp = (y0, z0) is a vector with dimension 2
         result1 = state + Tensor([1, 0, 0])
-        result2 = state * Tensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]])
-        x = state * Tensor([1, 0, 0])
-        y = state * Tensor([0, 1, 0])
-        z = state * Tensor([0, 0, 1])
-        return Choose(
-            Case(sp.Or(x < y, x < z), result1),
-            Case(sp.Not(sp.Or(x < y, x < z)), result2),
+        result2 = Tensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]]) @ state
+        x = Tensor([1, 0, 0]) @ state
+        y = Tensor([0, 1, 0]) @ state
+        z = Tensor([0, 0, 1]) @ state
+
+        cond = (x < y) or (x < z)
+        return self.choose(
+            (cond, result1),
+            (~cond, result2),
         )
 
 
