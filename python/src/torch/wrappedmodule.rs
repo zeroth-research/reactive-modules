@@ -1,6 +1,6 @@
 use crate::torch::wrappedcontext::WrappedContext;
 use std::iter::zip;
-use torch::{DType, IType, TorchTerm};
+use torch::{DType, IType};
 
 use pyo3::prelude::*;
 use pyo3::types::PyList;

@@ -10,8 +10,6 @@ use smt::itype::IType;
 
 use std::iter::zip;
 
-type SmtTerm = base::Term<DType, IType>;
-
 #[pyclass]
 pub struct WrappedModule {
     pub(crate) module: Module<DType, IType>,
@@ -56,11 +54,6 @@ impl WrappedModule {
         let ctx: &WrappedContext = &ctx.borrow();
         let _ =
             visual::html::write_to_html(&self.module, path, Some(&ctx.to_smt_ctx(&self.module)));
-    }
-
-    fn set_name(&mut self, name: &str) {
-        unimplemented!()
-        //self.module.set_name(name);
     }
 
     fn dbg(&self) {
