@@ -1,6 +1,7 @@
 use base::wire::{Interface, Wire};
 use smt::dtype::DType as DTypeSMT;
 use smt::itype::IType as ITypeSMT;
+use std::cmp::max;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -57,13 +58,17 @@ impl TryInto<smt::itype::Val> for Val {
     }
 }
 
+/// A helpre struct for translating a toy module into an smt module.
+/// The translation must map atoms to atoms (one to one), terms to terms (possibly one to many
+/// if a single term needs to be encoded into multiple smt terms) and wires
+/// to wires (one to one, possibly adding new wires if there are new terms added).
 struct SmtTranslator {
     // We use this map to keep mapping of our wires to wires in the translated module.
-    // The values is the triple (id, orig_type, new_type).
-    // We keep also the original type to make do checks if everything is correct.
+    // The values are ((new_id, new_type), orig_type).
+    // We keep the original type to do checks if everything is correct.
     wires_mapping: HashMap<usize, ((usize, DTypeSMT), DType)>,
 
-    // our ID counter for wires
+    // our ID counter for created wire IDs
     id_cnt: usize,
 }
 
@@ -77,13 +82,63 @@ impl SmtTranslator {
             // so that it is easier to catch bugs. We'll can go with 0
             // when the implementation is done and working.
             // (Then, we can actually avoid mapping most of the IDs)
-            id_cnt: 0xfeaf,
+            id_cnt: 1_000_000,
         }
     }
 
-    fn get_wire(&mut self, id: usize, ty: &DType) -> Result<(usize, DTypeSMT), Err> {
-        return Ok((id, ty.try_into()?));
+    /// Remap all variables of module so that they have ID greater by 1 000 000.
+    /// This must be done before the translation itself as the function does not
+    /// check for existing IDs (and it makes no sense to do that in the middle
+    /// of translation). Note that calling this funciton is optional, the translation
+    /// will work without it, only the IDs will not be easily eye-mappable to the original
+    /// IDs.
+    fn remap_variables(&mut self, module: &crate::ToyModule) -> Result<(), Err> {
+        let mut max_id: usize = 0;
+        const OFFSET: usize = 1_000_000;
 
+        // process the module wires
+        for [wl, wn] in module.extl().iter().chain(module.ctrl().iter()) {
+            let new_id = wl.id() + OFFSET;
+            let new_ty = (wl.dtype()).try_into()?;
+            assert!(!self.wires_mapping.contains_key(&new_id));
+            self.wires_mapping
+                .insert(wl.id(), ((new_id, new_ty), *wl.dtype()));
+
+            let new_id = wn.id() + OFFSET;
+            let new_ty = (wn.dtype()).try_into()?;
+            assert!(!self.wires_mapping.contains_key(&new_id));
+            self.wires_mapping
+                .insert(wn.id(), ((new_id, new_ty), *wn.dtype()));
+
+            max_id = max(wl.id(), max_id);
+            max_id = max(wn.id(), max_id);
+        }
+
+        // process temporary wires in atoms (other wires used in atoms are already
+        // included in the module wires)
+        for atom in module.atoms() {
+            for w in atom.temp().wires() {
+                let new_id = w.id() + OFFSET;
+                let new_ty = (w.dtype()).try_into()?;
+                assert!(!self.wires_mapping.contains_key(&new_id));
+                self.wires_mapping
+                    .insert(w.id(), ((new_id, new_ty), *w.dtype()));
+
+                max_id = max(w.id(), max_id);
+            }
+        }
+
+        // assign new wires completely different IDs so that we can directly
+        // see they are new
+        // TODO: check overflows..
+        self.id_cnt = 2 * (OFFSET + max_id);
+
+        Ok(())
+    }
+
+    /// Get a pair of (mapped_id, smt_type) for toy's id and type. If the id has not been mapped
+    /// yet, it is mapped.
+    fn get_wire(&mut self, id: usize, ty: &DType) -> Result<(usize, DTypeSMT), Err> {
         if let Some((pair, known_ty)) = self.wires_mapping.get(&id) {
             debug_assert!(known_ty == ty);
             debug_assert!(pair.1 == (*ty).try_into().unwrap());
@@ -96,9 +151,8 @@ impl SmtTranslator {
         }
     }
 
+    /// Get a mapped ID, return None if this ID is not mapped
     fn get_mapped_id(&self, id: usize) -> Option<usize> {
-        return Some(id);
-
         if let Some(val) = self.wires_mapping.get(&id) {
             return Some(val.0.0);
         }
@@ -107,7 +161,6 @@ impl SmtTranslator {
 
     /// Get a mapped ID or a new fresh ID to use
     fn map_id_(&mut self, id: usize) -> usize {
-        return id;
         if let Some(val) = self.wires_mapping.get(&id) {
             val.0.0
         } else {
@@ -284,6 +337,13 @@ impl<'a> TryInto<SmtModule> for ModuleConverter<'a> {
     fn try_into(self) -> Result<SmtModule, Self::Error> {
         // translate atoms, variables will be then derived automatically
         let mut translator = SmtTranslator::new();
+
+        // this step is optional: we map variables such that they are shifted by 1000000 compared
+        // to the variables of the Toy module. Using this offset helps finding bugs
+        // in the translation since the IDs will be likely different from those in Toy module
+        // (where they start from 0), second, we still can see quite easily what was the original ID.
+        translator.remap_variables(self.0)?;
+
         let mut atom_funs: Vec<(Vec<SmtTerm>, Vec<SmtTerm>)> = Vec::new();
         for atom in self.0.atoms() {
             let (init, update) = translator.translate_atom(atom)?;
