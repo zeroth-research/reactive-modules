@@ -25,7 +25,7 @@ struct Cli {
 
 fn dump_to_html(modules: &[Module<DType, IType>], args: &Cli) -> Result<(), std::io::Error> {
     fs::create_dir_all("smt/tests")?;
-    
+
     for (n, module) in modules.iter().enumerate() {
         let path = format!("smt/tests/module-{}.html", n);
 

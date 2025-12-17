@@ -1,9 +1,10 @@
-use crate::{dtype::DType, itype::IType, itype::Val, itype::ArithOp, itype::LogicalOp, itype::CmpOp};
+use crate::{
+    dtype::DType, itype::ArithOp, itype::CmpOp, itype::IType, itype::LogicalOp, itype::Val,
+};
 use base::{atom::Atom, module::Module, term::Term};
-use visual::html::{DescriptionContext, Descriptor};
 use std::cell::RefCell;
 use std::collections::HashMap;
-
+use visual::html::{DescriptionContext, Descriptor};
 
 pub struct Context {
     wire_names: RefCell<HashMap<usize, String>>,
@@ -65,11 +66,7 @@ impl Context {
                             ArithOp::Mul => "*",
                             ArithOp::Div => "/",
                         };
-                        format!("({} {} {})",
-                            read_wires[0],
-                            op_str,
-                            read_wires[1]
-                        )
+                        format!("({} {} {})", read_wires[0], op_str, read_wires[1])
                     }
                     IType::Logical(op) => {
                         let read_wires: Vec<String> = term
@@ -102,11 +99,7 @@ impl Context {
                             CmpOp::Gt => ">",
                             CmpOp::Ge => ">=",
                         };
-                        format!("({} {} {})",
-                            read_wires[0],
-                            op_str,
-                            read_wires[1]
-                        )
+                        format!("({} {} {})", read_wires[0], op_str, read_wires[1])
                     }
                     IType::Id => {
                         // Identity: just pass through the input
@@ -118,11 +111,11 @@ impl Context {
                         let cond_id = term.read().wires().next().unwrap().id();
                         let true_id = term.read().wires().nth(1).unwrap().id();
                         let false_id = term.read().wires().nth(2).unwrap().id();
-                        
+
                         let cond_expr = self.trace_wire_expression(cond_id, terms);
                         let true_expr = self.trace_wire_expression(true_id, terms);
                         let false_expr = self.trace_wire_expression(false_id, terms);
-                        
+
                         format!("{} ? {} : {}", cond_expr, true_expr, false_expr)
                     }
                 }
@@ -168,15 +161,18 @@ impl Context {
 impl Descriptor<DType, IType> for Context {
     fn describe_module(&self, module: &Module<DType, IType>, _how: DescriptionContext) -> String {
         // Describe the module with its variables classified into prvt, intf, extl
-        let intf: Vec<String> = module.intf()
+        let intf: Vec<String> = module
+            .intf()
             .into_iter()
             .map(|[ltc, _]| self.wire_name(ltc.id()))
             .collect();
-        let extl: Vec<String> = module.extl()
+        let extl: Vec<String> = module
+            .extl()
             .into_iter()
             .map(|[ltc, _]| self.wire_name(ltc.id()))
             .collect();
-        let prvt: Vec<String> = module.prvt()
+        let prvt: Vec<String> = module
+            .prvt()
             .into_iter()
             .map(|[ltc, _]| self.wire_name(ltc.id()))
             .collect();
@@ -189,7 +185,7 @@ impl Descriptor<DType, IType> for Context {
                 self.describe_atom(atom, DescriptionContext::Inline)
             ));
         }
-        
+
         // Combine module variable diagram and atoms description
         format!(
             "<h2>Module</h2>{}<h2>Atoms</h2>{}",
@@ -229,15 +225,24 @@ impl Descriptor<DType, IType> for Context {
         ).as_str());
 
         atom_footer.push_str(&self.describe_atom_section(atom, "init", DescriptionContext::Inline));
-        atom_footer.push_str(&self.describe_atom_section(atom, "update", DescriptionContext::Inline));
-        
+        atom_footer.push_str(&self.describe_atom_section(
+            atom,
+            "update",
+            DescriptionContext::Inline,
+        ));
+
         format!(
             "<h2>{}</h2><div>{}</div><div>{}</div>",
             atom_header, atom_body, atom_footer
         )
     }
 
-    fn describe_atom_section(&self, atom: &Atom<DType, IType>, sec: &str, how: DescriptionContext) -> String {
+    fn describe_atom_section(
+        &self,
+        atom: &Atom<DType, IType>,
+        sec: &str,
+        how: DescriptionContext,
+    ) -> String {
         if matches!(how, DescriptionContext::Node) {
             return match sec {
                 "init" => "Init".into(),
@@ -259,7 +264,8 @@ impl Descriptor<DType, IType> for Context {
         };
         let terms: Vec<Term<DType, IType>> = terms_block.iter().cloned().collect();
 
-        let section_body = atom.ctrl()
+        let section_body = atom
+            .ctrl()
             .wires()
             .map(|output_wire| {
                 let expr = self.trace_wire_expression(output_wire.id(), &terms);
@@ -269,11 +275,7 @@ impl Descriptor<DType, IType> for Context {
             .collect::<Vec<String>>()
             .join("<br>\n");
 
-        format!(
-            "<h3>{}</h3><p>{}</p>",
-            section_header,
-            section_body
-        )
+        format!("<h3>{}</h3><p>{}</p>", section_header, section_body)
     }
 
     fn describe_term(&self, term: &Term<DType, IType>, how: DescriptionContext) -> String {
@@ -307,12 +309,13 @@ impl Descriptor<DType, IType> for Context {
         match term.itype() {
             IType::Const(val) => {
                 term_header = "Constant".to_string();
-                term_body = format!("<code>{}</code> → <code>{}</code>",
+                term_body = format!(
+                    "<code>{}</code> → <code>{}</code>",
                     val,
                     self.wire_name(term.write().wires().next().map(|w| w.id()).unwrap())
                 );
                 match val {
-                    Val::None => {},
+                    Val::None => {}
                     Val::Real(_v) => {
                         term_header.push_str(" (Real)");
                     }
@@ -343,7 +346,8 @@ impl Descriptor<DType, IType> for Context {
                         "/"
                     }
                 };
-                term_body = format!("<code>{}</code> {} <code>{}</code> → <code>{}</code>",
+                term_body = format!(
+                    "<code>{}</code> {} <code>{}</code> → <code>{}</code>",
                     self.wire_name(term.read().wires().next().map(|w| w.id()).unwrap()),
                     op,
                     self.wire_name(term.read().wires().nth(1).map(|w| w.id()).unwrap()),
@@ -366,13 +370,15 @@ impl Descriptor<DType, IType> for Context {
                     }
                 };
                 if let LogicalOp::Not = val {
-                    term_body = format!("{} <code>{}</code> → <code>{}</code>",
+                    term_body = format!(
+                        "{} <code>{}</code> → <code>{}</code>",
                         op,
                         self.wire_name(term.read().wires().next().map(|w| w.id()).unwrap()),
                         self.wire_name(term.write().wires().next().map(|w| w.id()).unwrap())
                     );
                 } else {
-                    term_body = format!("<code>{}</code> {} <code>{}</code> → <code>{}</code>",
+                    term_body = format!(
+                        "<code>{}</code> {} <code>{}</code> → <code>{}</code>",
                         self.wire_name(term.read().wires().next().map(|w| w.id()).unwrap()),
                         op,
                         self.wire_name(term.read().wires().nth(1).map(|w| w.id()).unwrap()),
@@ -403,7 +409,8 @@ impl Descriptor<DType, IType> for Context {
                         ">="
                     }
                 };
-                term_body = format!("<code>{}</code> {} <code>{}</code> → <code>{}</code>",
+                term_body = format!(
+                    "<code>{}</code> {} <code>{}</code> → <code>{}</code>",
                     self.wire_name(term.read().wires().next().map(|w| w.id()).unwrap()),
                     op,
                     self.wire_name(term.read().wires().nth(1).map(|w| w.id()).unwrap()),
@@ -431,9 +438,7 @@ impl Descriptor<DType, IType> for Context {
         }
         format!(
             "<h3>{}</h3><p>{}</p><hr>{}",
-            term_header,
-            term_body,
-            term_footer
+            term_header, term_body, term_footer
         )
     }
 
@@ -463,7 +468,6 @@ impl Descriptor<DType, IType> for Context {
         }
     }
 }
-
 
 /// Generate an SVG diagram showing the module variable classification
 /// into private (prvt), interface (intf), and external (extl) variables.
