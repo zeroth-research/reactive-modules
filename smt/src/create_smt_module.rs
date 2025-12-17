@@ -1,31 +1,31 @@
-use base::{atom::Atom, module::Module, term::Term, wire::Wire};
 use crate::dtype::DType;
 use crate::itype::{ArithOp, CmpOp, IType, LogicalOp, Val};
+use base::{atom::Atom, module::Module, term::Term, wire::Wire};
 
 pub fn create_test_module() -> Module<DType, IType> {
     // Interface wires: w0-w2 (latched), w6-w8 (next)
-    let intf_ltc = vec!{
+    let intf_ltc = vec![
         Wire::new(0, DType::Real),
         Wire::new(1, DType::Int),
         Wire::new(2, DType::Bool),
-    };
-    let intf_nxt = vec!{
+    ];
+    let intf_nxt = vec![
         Wire::new(6, DType::Real),
         Wire::new(7, DType::Int),
         Wire::new(8, DType::Bool),
-    };
+    ];
 
     // // External wires: w3-w5 (latched), w9-w11 (next)
-    let extl_ltc = vec!{
+    let extl_ltc = vec![
         Wire::new(3, DType::Real),
         Wire::new(4, DType::Int),
         Wire::new(5, DType::Bool),
-    };
-    let extl_nxt = vec!{
+    ];
+    let extl_nxt = vec![
         Wire::new(9, DType::Real),
         Wire::new(10, DType::Int),
         Wire::new(11, DType::Bool),
-    };
+    ];
 
     // // Private wires: none
     let prvt_ltc = vec![];
@@ -61,36 +61,175 @@ pub fn create_test_module() -> Module<DType, IType> {
     let mut update = vec![];
 
     // === INIT FLOW ===
-    init.push(Term::function(IType::Const(Val::Real(3.24)), [Wire::new(12, DType::Real)], vec![] as Vec<Wire<DType>>).unwrap());
-    init.push(Term::function(IType::Const(Val::Int(42)), [Wire::new(13, DType::Int)], vec![] as Vec<Wire<DType>>).unwrap());
-    init.push(Term::function(IType::Const(Val::Bool(true)), [Wire::new(14, DType::Bool)], vec![] as Vec<Wire<DType>>).unwrap());
+    init.push(
+        Term::function(
+            IType::Const(Val::Real(3.24)),
+            [Wire::new(12, DType::Real)],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    init.push(
+        Term::function(
+            IType::Const(Val::Int(42)),
+            [Wire::new(13, DType::Int)],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    init.push(
+        Term::function(
+            IType::Const(Val::Bool(true)),
+            [Wire::new(14, DType::Bool)],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
 
-    init.push(Term::function(IType::Arith(ArithOp::Add), [Wire::new(6, DType::Real)], [Wire::new(9, DType::Real), Wire::new(12, DType::Real)]).unwrap());
-    init.push(Term::function(IType::Arith(ArithOp::Sub), [Wire::new(7, DType::Int)], [Wire::new(10, DType::Int), Wire::new(13, DType::Int)]).unwrap());
-    init.push(Term::function(IType::Logical(LogicalOp::And), [Wire::new(8, DType::Bool)], [Wire::new(11, DType::Bool), Wire::new(14, DType::Bool)]).unwrap());
+    init.push(
+        Term::function(
+            IType::Arith(ArithOp::Add),
+            [Wire::new(6, DType::Real)],
+            [Wire::new(9, DType::Real), Wire::new(12, DType::Real)],
+        )
+        .unwrap(),
+    );
+    init.push(
+        Term::function(
+            IType::Arith(ArithOp::Sub),
+            [Wire::new(7, DType::Int)],
+            [Wire::new(10, DType::Int), Wire::new(13, DType::Int)],
+        )
+        .unwrap(),
+    );
+    init.push(
+        Term::function(
+            IType::Logical(LogicalOp::And),
+            [Wire::new(8, DType::Bool)],
+            [Wire::new(11, DType::Bool), Wire::new(14, DType::Bool)],
+        )
+        .unwrap(),
+    );
 
     // === UPDATE FLOW ===
-    update.push(Term::function(IType::Const(Val::Real(4.20)), [Wire::new(15, DType::Real)], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Const(Val::Real(12.3)), [Wire::new(16, DType::Real)], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Arith(ArithOp::Mul), [Wire::new(17, DType::Real)], [Wire::new(0, DType::Real), Wire::new(15, DType::Real)]).unwrap());
-    update.push(Term::function(IType::Arith(ArithOp::Div), [Wire::new(6, DType::Real)], [Wire::new(16, DType::Real), Wire::new(17, DType::Real)]).unwrap());
-    
-    update.push(Term::function(IType::Id, [Wire::new(7, DType::Int)], [Wire::new(1, DType::Int)]).unwrap());
+    update.push(
+        Term::function(
+            IType::Const(Val::Real(4.20)),
+            [Wire::new(15, DType::Real)],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Const(Val::Real(12.3)),
+            [Wire::new(16, DType::Real)],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Arith(ArithOp::Mul),
+            [Wire::new(17, DType::Real)],
+            [Wire::new(0, DType::Real), Wire::new(15, DType::Real)],
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Arith(ArithOp::Div),
+            [Wire::new(6, DType::Real)],
+            [Wire::new(16, DType::Real), Wire::new(17, DType::Real)],
+        )
+        .unwrap(),
+    );
 
-    update.push(Term::function(IType::Const(Val::Real(50.05)), [Wire::new(18, DType::Real)], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Cmp(CmpOp::Lt), [Wire::new(19, DType::Bool)], [Wire::new(0, DType::Real), Wire::new(18, DType::Real)]).unwrap());
-    update.push(Term::function(IType::Const(Val::Int(0)), [Wire::new(20, DType::Int)], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Cmp(CmpOp::Eq), [Wire::new(21, DType::Bool)], [Wire::new(1, DType::Int), Wire::new(20, DType::Int)]).unwrap());
-    update.push(Term::function(IType::Logical(LogicalOp::Or), [Wire::new(22, DType::Bool)], [Wire::new(19, DType::Bool), Wire::new(21, DType::Bool)]).unwrap());
-    update.push(Term::function(IType::Logical(LogicalOp::Not), [Wire::new(23, DType::Bool)], [Wire::new(2, DType::Bool)]).unwrap());
-    update.push(Term::function(IType::Const(Val::Bool(false)), [Wire::new(24, DType::Bool)], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Cond, [Wire::new(8, DType::Bool)], [Wire::new(22, DType::Bool), Wire::new(23, DType::Bool), Wire::new(24, DType::Bool)]).unwrap());
+    update.push(
+        Term::function(
+            IType::Id,
+            [Wire::new(7, DType::Int)],
+            [Wire::new(1, DType::Int)],
+        )
+        .unwrap(),
+    );
 
-    let obs_pairs = obs_ltc.iter()
+    update.push(
+        Term::function(
+            IType::Const(Val::Real(50.05)),
+            [Wire::new(18, DType::Real)],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Cmp(CmpOp::Lt),
+            [Wire::new(19, DType::Bool)],
+            [Wire::new(0, DType::Real), Wire::new(18, DType::Real)],
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Const(Val::Int(0)),
+            [Wire::new(20, DType::Int)],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Cmp(CmpOp::Eq),
+            [Wire::new(21, DType::Bool)],
+            [Wire::new(1, DType::Int), Wire::new(20, DType::Int)],
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Logical(LogicalOp::Or),
+            [Wire::new(22, DType::Bool)],
+            [Wire::new(19, DType::Bool), Wire::new(21, DType::Bool)],
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Logical(LogicalOp::Not),
+            [Wire::new(23, DType::Bool)],
+            [Wire::new(2, DType::Bool)],
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Const(Val::Bool(false)),
+            [Wire::new(24, DType::Bool)],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Cond,
+            [Wire::new(8, DType::Bool)],
+            [
+                Wire::new(22, DType::Bool),
+                Wire::new(23, DType::Bool),
+                Wire::new(24, DType::Bool),
+            ],
+        )
+        .unwrap(),
+    );
+
+    let obs_pairs = obs_ltc
+        .iter()
         .zip(obs_nxt.iter())
         .map(|(ltc, nxt)| [ltc.clone(), nxt.clone()]);
 
-    let prvt_pairs = prvt_ltc.iter()
+    let prvt_pairs = prvt_ltc
+        .iter()
         .zip(prvt_nxt.iter())
         .map(|(ltc, nxt)| [ltc.clone(), nxt.clone()]);
 
