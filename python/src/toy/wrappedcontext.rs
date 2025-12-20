@@ -19,7 +19,7 @@ impl WrappedContext {
     #[new]
     pub fn new() -> Self {
         Self {
-            ctx: toy::context::Context::new(),
+            ctx: toy::ToyContext::new(),
         }
     }
 

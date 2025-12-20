@@ -10,6 +10,7 @@ pest = "2.8.3"
 pest_derive = "2.8.3"
 smt = { path = "../smt", optional = true}
 visual = { path = "../visual", features=["html"], optional = true }
+common = { path = "../common"}
 
 [features]
 default = ["visual-html"]

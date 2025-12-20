@@ -47,7 +47,11 @@ impl WrappedModule {
     fn to_html(&self, ctx: &Bound<'_, WrappedContext>, path: &str) {
         let ctx: &WrappedContext = &ctx.borrow();
         //visual::html::write_to_html(self.module, path, Some(ctx))
-        let _ = visual::html::write_to_html(&self.module, path, Some(&ctx.ctx));
+        let _ = visual::html::write_to_html(
+            &self.module,
+            path,
+            Some(&toy::visual::html::HTMLDescriptor::new(&ctx.ctx)),
+        );
     }
 
     #[cfg(feature = "enable-smt")]
