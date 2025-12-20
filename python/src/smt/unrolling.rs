@@ -5,8 +5,8 @@ use pyo3::prelude::*;
 use smt::dtype::DType;
 use smt::itype::IType;
 
-use bmc::transition::WiredTransitions;
 use bmc::unrolling::ModuleUnrolling;
+use common::transition::WiredTransitions;
 
 use super::wrappedcontext::WrappedContext;
 use super::wrappedmodule::WrappedModule;

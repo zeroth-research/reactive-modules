@@ -1,5 +1,5 @@
+use crate::context::Context;
 use base::{Interface, Term, Wire};
-use common::context::Context;
 use std::collections::{HashMap, HashSet};
 
 type Err = &'static str;
@@ -338,13 +338,13 @@ mod aux {
 
 impl<D: Copy + Eq, I: Copy> WiredTransitions<D, I> {
     pub fn wire_transition(
-        mut self,
+        &mut self,
         t: &Transition<D, I>,
         ctx: &mut Context<D>,
-    ) -> Result<Self, Err> {
+    ) -> Result<(), Err> {
         if self.transitions.is_empty() {
             self.transitions.push(t.clone());
-            return Ok(self);
+            return Ok(());
         }
 
         // the input interface of the new transition here is the last interface in this transitions
@@ -398,7 +398,7 @@ impl<D: Copy + Eq, I: Copy> WiredTransitions<D, I> {
         self.transitions
             .push(Transition::new(intf_in, intf_env, intf_out, terms));
 
-        Ok(self)
+        Ok(())
     }
 }
 
