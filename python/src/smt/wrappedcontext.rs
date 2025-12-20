@@ -2,11 +2,9 @@ use pyo3::prelude::*;
 
 use crate::PyVal;
 
-// the context in `toy` crate is generic,
-// we'll use it until we have the context in `base`.
+use common::context::Context;
 use smt::dtype::DType;
 use smt::itype::IType;
-use toy::context::Context;
 
 /// Context for generating Atoms and Modules from Python
 #[pyclass]

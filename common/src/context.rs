@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use base::wire::Interface;
+use base::Interface;
 
 // Context for building modules and atoms.
 // This is Toy-specific, it will be replaced in the future.
@@ -22,7 +22,7 @@ impl<D: Copy + Eq> Context<D> {
     /// We do not have names in this case, so assign some dummy names.
     /// This is useful if we need to create new variables and make sure
     /// they are not already used ("in the current context")
-    pub fn from_module<IT>(module: &base::Module<D, IT>) {
+    pub fn from_module<IT>(module: &base::Module<D, IT>) -> Self {
         let mut ctx: Context<D> = Context::new();
 
         // create variables in the context for module wires
@@ -37,6 +37,8 @@ impl<D: Copy + Eq> Context<D> {
                 ctx.var(format!("tmp_{}", w.id()).as_str(), *w.dtype());
             }
         }
+
+        ctx
     }
 
     pub fn get_name(&self, id: usize) -> Option<&str> {
@@ -93,8 +95,22 @@ impl<D: Copy + Eq> Context<D> {
         new_id
     }
 
+    pub fn tmp_wire(&mut self, ty: &D) -> base::Wire<D> {
+        base::Wire::new(self.tmp_var(*ty), *ty)
+    }
+
     pub fn tmp_intf(&mut self, ty: D) -> Interface<D> {
         Interface::single(self.tmp_var(ty), ty)
+    }
+
+    // create a copy of interface with new unused wires
+    // TODO: rename, but we need to rename `tmp_intf` first
+    pub fn fresh_intf(&mut self, intf: &Interface<D, 1>) -> Interface<D, 1> {
+        Interface::sequence(
+            intf.wires()
+                .map(|w| base::Wire::new(self.tmp_var(*w.dtype()), *w.dtype())),
+        )
+        .unwrap()
     }
 
     pub fn get_vars(&self, names: &[&'static str]) -> Interface<D> {

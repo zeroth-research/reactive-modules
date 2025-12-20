@@ -1,4 +1,3 @@
-use crate::context::Context;
 use crate::{ToyAtom, ToyModule, ToyTerm};
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -9,9 +8,17 @@ use crate::IType;
 use base::Wire;
 use visual::html::{DescriptionContext, Descriptor};
 
-impl Context<DType> {
+pub struct HTMLDescriptor<'a> {
+    ctx: &'a crate::ToyContext,
+}
+
+impl<'a> HTMLDescriptor<'a> {
+    pub fn new(ctx: &'a crate::ToyContext) -> Self {
+        Self { ctx }
+    }
+
     fn wire_name(&self, id: usize) -> String {
-        if let Some(name) = self.get_name(id) {
+        if let Some(name) = self.ctx.get_name(id) {
             return name.into();
         }
         format!("w{id}")
@@ -231,7 +238,7 @@ fn module_variables_diagram(prvt: &[String], intf: &[String], extl: &[String]) -
 
 ///
 /// HTML descriptor for Context
-impl Descriptor<DType, IType> for Context<DType> {
+impl Descriptor<DType, IType> for HTMLDescriptor<'_> {
     fn describe_module(&self, module: &ToyModule, _how: DescriptionContext) -> String {
         //let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
         //format!("<pre>\n{}</pre>", self.dump_module(module, &fmt))
@@ -339,7 +346,7 @@ impl Descriptor<DType, IType> for Context<DType> {
     }
 }
 
-impl Descriptor<DType, IType> for &Context<DType> {
+impl Descriptor<DType, IType> for &HTMLDescriptor<'_> {
     fn describe_module(&self, module: &ToyModule, how: DescriptionContext) -> String {
         (*self).describe_module(module, how)
     }
