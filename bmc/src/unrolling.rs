@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::transition::{Transition, WiredTransitions};
 use base::{Interface, Term, Wire};
 use common::context::Context;
+use common::transition::{Transition, WiredTransitions};
 
 /// A helper struct to keep mapping between wire IDs
 struct WiresMapping {
