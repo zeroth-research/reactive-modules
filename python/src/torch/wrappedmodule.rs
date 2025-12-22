@@ -21,7 +21,7 @@ impl WrappedModule {
     /// Construct a new (fully observable) module with a single atom
     /// defined by `init` and `update` lists of terms
     #[new]
-    fn new(
+    fn sequential(
         ctx: &Bound<'_, WrappedContext>,
         // current-state variables
         latched: &Bound<'_, PyList>,
