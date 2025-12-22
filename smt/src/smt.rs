@@ -77,7 +77,7 @@ impl AtomSmtLibTranslator<'_> {
             .collect()
     }
 
-    fn to_smtlib(&self) -> String {
+    pub fn to_smtlib(&self) -> String {
         format!(
             ";;; Atom\n\n;; Controls\n{}\n\n;; Reads\n{}\n\n;; Awaits\n{}\n\n;; Temporary\n{}\n\n;; Init\n{}\n\n;; Update\n{}",
             self.ctrl().join("\n"),
@@ -122,7 +122,7 @@ impl ModuleSmtLibTranslator<'_> {
             .collect::<Vec<String>>()
     }
 
-    fn to_smtlib(&self) -> String {
+    pub fn to_smtlib(&self) -> String {
         // we do not consider private variables atm.
         // debug_assert!(self.0.prvt().is_empty());
 
