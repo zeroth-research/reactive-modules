@@ -299,7 +299,7 @@ class Translate(ExprTransform):
 
     def visit_arith(self, expr, args, op):
         assert len(expr.args) == 2
-        assert args[0].ty() == args[1].ty(), args
+        assert args[0].dtype() == args[1].dtype(), args
         out = self._ctx.tmp_var()
         self.terms.append(WrappedTerm(
             arith_to_str(op), reads=args, writes=[out]))
@@ -327,7 +327,7 @@ class Translate(ExprTransform):
 
     def visit_ite(self, expr, args):
         assert len(args) == 3
-        assert args[1].ty() == args[2].ty(), args
+        assert args[1].dtype() == args[2].dtype(), args
         out = self._ctx.tmp_var()
         self.terms.append(WrappedTerm("Cond", reads=args, writes=[out]))
         return [out]

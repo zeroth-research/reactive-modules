@@ -85,7 +85,7 @@ impl PyVal {
         Ok(PyVal::Tensor(val))
     }
 
-    fn ty(&self) -> String {
+    fn dtype(&self) -> String {
         match self {
             PyVal::Real(_) => "Real".to_string(),
             PyVal::Int(_) => "Int".to_string(),
