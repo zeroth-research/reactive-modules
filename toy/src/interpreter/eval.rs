@@ -72,7 +72,7 @@ pub fn eval(op: IType, read: &[&Val], write: &mut [&mut Val]) -> Result<(), &'st
         IType::Choose => {
             todo!()
         }
-        IType::Filter => {
+        IType::IfThen => {
             debug_assert!(read.len() == 2);
             debug_assert!(write.len() == 1);
             if read[0].has_type(&DType::Bool)

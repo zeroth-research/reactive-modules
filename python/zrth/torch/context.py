@@ -115,7 +115,7 @@ class Context_(ContextBase):
         return ctrl, extl, cur_vars
 
     def _choose_expr(self, *args):
-        return Expr("choose", [Expr("filter", [*arg]) for arg in args])
+        return Expr("choose", [Expr("ifthen", [*arg]) for arg in args])
 
     def _choose_concrete(self, *args):
         sat_args = [arg for arg in args if arg[0]]
@@ -332,10 +332,10 @@ class Translate(ExprTransform):
         self.terms.append(WrappedTerm("Cond", reads=args, writes=[out]))
         return [out]
 
-    def visit_filter(self, expr, args):
+    def visit_ifthen(self, expr, args):
         assert len(args) == 2
         out = self._ctx.tmp_var()
-        self.terms.append(WrappedTerm("Filter", reads=args, writes=[out]))
+        self.terms.append(WrappedTerm("IfThen", reads=args, writes=[out]))
         return [out]
 
     def visit_choose(self, expr, args):

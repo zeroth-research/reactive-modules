@@ -75,22 +75,22 @@ pub fn construct(
                 }
             }
         }
-        IType::Filter => {
+        IType::IfThen => {
             if writes.len() != 1 {
-                return Err("Filter must write one wire");
+                return Err("IfThen must write one wire");
             }
 
             if reads.len() != 2 {
-                return Err("Filter must read two wires");
+                return Err("IfThen must read two wires");
             }
 
             let out_ty = writes.wires().next().unwrap().dtype();
             let types = reads.wires().map(Wire::dtype).collect::<Vec<&DType>>();
             if out_ty != types[1] {
-                return Err("The second argument of Filter must have the same type as its output");
+                return Err("The second argument of IfThen must have the same type as its output");
             }
             if *types[0] != DType::Bool {
-                return Err("The first argument of Filter must be Bool");
+                return Err("The first argument of IfThen must be Bool");
             }
         }
         IType::Logical(op) => {
@@ -201,8 +201,8 @@ pub fn mk_ite(read: Interface<DType>, write: Interface<DType>) -> Result<Term, &
     construct(IType::Ite, read, write)
 }
 
-pub fn mk_filter(read: Interface<DType>, write: Interface<DType>) -> Result<Term, &'static str> {
-    construct(IType::Filter, read, write)
+pub fn mk_ifthen(read: Interface<DType>, write: Interface<DType>) -> Result<Term, &'static str> {
+    construct(IType::IfThen, read, write)
 }
 
 pub fn mk_add(read: Interface<DType>, write: Interface<DType>) -> Result<Term, &'static str> {

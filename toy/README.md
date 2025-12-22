@@ -6,7 +6,7 @@ The [data types](src/dtype.rs) support `Int` (Rust's `i64`), `Real` (Rust's `f64
 and `Bool` (booleans). There is also a partial support for matrices of `Int` or `Real`.
 [Instructions](src/instruction.rs) support basic arithmetic on the data types (basic arithmetics, logical operations on booleans, etc.).
 There are two instruction for conditionals which are `Ite` (if-then-else) with the classical meaning and `Choose`
-(together with `Filter` which is basically the Rust's `Option`) which is a guarded non-deterministic choice.
+(together with `IfThen` which is basically the Rust's `Option`) which is a guarded non-deterministic choice.
 
 ## Input
 
