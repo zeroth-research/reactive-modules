@@ -21,7 +21,7 @@ unsafe impl Sync for WrappedModule {}
 #[pymethods]
 impl WrappedModule {
     #[new]
-    fn new(
+    fn sequential(
         ctx: &Bound<'_, WrappedContext>,
         // current-state variables
         latched: &Bound<'_, PyList>,
