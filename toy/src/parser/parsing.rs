@@ -224,7 +224,7 @@ impl Parser {
 
                     let expr_out = expr.last().unwrap().write();
                     assert!(!expr_out.is_empty());
-                    let fltr = mk_filter(
+                    let fltr = mk_ifthen(
                         Interface::sequence(
                             [&cond, expr_out].into_iter().flatten().map(|[i]| i.clone()),
                         )

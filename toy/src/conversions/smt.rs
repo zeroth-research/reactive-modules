@@ -280,7 +280,7 @@ impl SmtTranslator {
                 debug_assert!(write.len() == 1);
                 Ok(vec![SmtTerm::function(ITypeSMT::Cond, write, read)?])
             }
-            IType::Filter => Err("Translating Filter not implemented right now"),
+            IType::IfThen => Err("Translating IfThen not implemented right now"),
             IType::Choose => Err("Translating Choose not implemented right now"),
         }
     }

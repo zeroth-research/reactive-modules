@@ -43,10 +43,15 @@ pub enum IType {
     MatMul,
     // Id term
     Id,
-    // If-then-else and Choose
+    // If-then-else construct
     Ite,
+    // IfThen is the same as Ite(cond, x, None). The thing is that we do not need to
+    // create the None constant which may be very beneficial in some situations.
+    // This construct is at this moment used exclusively to input values into `Choose`
+    // statement
+    IfThen,
+    // Non-deterministic choice from input values which are not None
     Choose,
-    Filter,
     // Boolean operations
     Not,
     Or,
@@ -79,7 +84,7 @@ impl std::str::FromStr for IType {
             // -----
             "Ite" => Ok(IType::Ite),
             "Choose" => Ok(IType::Choose),
-            "Filter" => Ok(IType::Filter),
+            "IfThen" => Ok(IType::IfThen),
             // -----
             "Not" => Ok(IType::Not),
             "Or" => Ok(IType::Or),
@@ -111,7 +116,7 @@ impl Clone for IType {
             IType::Id => IType::Id,
             IType::Ite => IType::Ite,
             IType::Choose => IType::Choose,
-            IType::Filter => IType::Filter,
+            IType::IfThen => IType::IfThen,
             IType::Not => IType::Not,
             IType::And => IType::And,
             IType::Or => IType::Or,
@@ -138,7 +143,7 @@ impl fmt::Display for IType {
             IType::Id => write!(f, "Id"),
             IType::Ite => write!(f, "Ite"),
             IType::Choose => write!(f, "Choose"),
-            IType::Filter => write!(f, "Filter"),
+            IType::IfThen => write!(f, "IfThen"),
             IType::Not => write!(f, "Not"),
             IType::And => write!(f, "And"),
             IType::Or => write!(f, "Or"),

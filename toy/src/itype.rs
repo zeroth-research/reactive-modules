@@ -34,12 +34,14 @@ pub enum IType {
     Cmp(CmpOp),
     // Logical ops
     Logical(LogicalOp),
-    // Conditionals and filtering
+    // If-then-else
     Ite,
+    // Takes a bool and a value and acts as Id if the bool is true, otherwise returns Val::None.
+    // That is, it is fundamentally `Ite(cond, val, None)` (but without having to create None
+    // via a term)
+    IfThen,
     // Choose non-deterministically one of the values that is not Val::None
     Choose,
-    // Takes a bool and value and acts as Id if the bool is true, otherwise returns Val::None
-    Filter,
 }
 
 impl fmt::Display for CmpOp {
@@ -83,7 +85,7 @@ impl fmt::Display for IType {
             IType::Cmp(op) => write!(f, "Cmp::{}", op),
             IType::Ite => write!(f, "Ite"),
             IType::Choose => write!(f, "Choose"),
-            IType::Filter => write!(f, "Filter"),
+            IType::IfThen => write!(f, "IfThen"),
         }
     }
 }
@@ -96,7 +98,7 @@ impl std::str::FromStr for IType {
             "Id" => Ok(IType::Id),
             "Ite" => Ok(IType::Ite),
             "Choose" => Ok(IType::Choose),
-            "Filter" => Ok(IType::Filter),
+            "IfThen" => Ok(IType::IfThen),
             "Logical::And" => Ok(IType::Logical(LogicalOp::And)),
             "Logical::Or" => Ok(IType::Logical(LogicalOp::Or)),
             "Logical::Not" => Ok(IType::Logical(LogicalOp::Not)),
