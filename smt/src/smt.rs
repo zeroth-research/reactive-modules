@@ -162,7 +162,7 @@ fn declare_var(id: usize, ty: &DType) -> String {
 
 fn smt_expr(term: &Term<DType, IType>) -> String {
     match term.itype() {
-        IType::Const(val) => match val {
+        IType::Num(val) => match val {
             Val::Real(x) => x.to_string(),
             Val::Int(x) => x.to_string(),
             Val::Bool(b) => b.to_string(),

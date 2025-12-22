@@ -193,7 +193,7 @@ impl SmtTranslator {
                 debug_assert!(read.is_empty());
                 debug_assert!(write.len() == 1);
                 Ok(vec![SmtTerm::function(
-                    ITypeSMT::Const(val.try_into()?),
+                    ITypeSMT::Num(val.try_into()?),
                     write,
                     read,
                 )?])

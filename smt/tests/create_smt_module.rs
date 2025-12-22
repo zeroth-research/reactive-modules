@@ -63,7 +63,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     // === INIT FLOW ===
     init.push(
         Term::function(
-            IType::Const(Val::Real(3.24)),
+            IType::Num(Val::Real(3.24)),
             [Wire::new(12, DType::Real)],
             vec![] as Vec<Wire<DType>>,
         )
@@ -71,7 +71,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     );
     init.push(
         Term::function(
-            IType::Const(Val::Int(42)),
+            IType::Num(Val::Int(42)),
             [Wire::new(13, DType::Int)],
             vec![] as Vec<Wire<DType>>,
         )
@@ -79,7 +79,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     );
     init.push(
         Term::function(
-            IType::Const(Val::Bool(true)),
+            IType::Num(Val::Bool(true)),
             [Wire::new(14, DType::Bool)],
             vec![] as Vec<Wire<DType>>,
         )
@@ -114,7 +114,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     // === UPDATE FLOW ===
     update.push(
         Term::function(
-            IType::Const(Val::Real(4.20)),
+            IType::Num(Val::Real(4.20)),
             [Wire::new(15, DType::Real)],
             vec![] as Vec<Wire<DType>>,
         )
@@ -122,7 +122,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     );
     update.push(
         Term::function(
-            IType::Const(Val::Real(12.3)),
+            IType::Num(Val::Real(12.3)),
             [Wire::new(16, DType::Real)],
             vec![] as Vec<Wire<DType>>,
         )
@@ -156,7 +156,7 @@ pub fn create_test_module() -> Module<DType, IType> {
 
     update.push(
         Term::function(
-            IType::Const(Val::Real(50.05)),
+            IType::Num(Val::Real(50.05)),
             [Wire::new(18, DType::Real)],
             vec![] as Vec<Wire<DType>>,
         )
@@ -172,7 +172,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     );
     update.push(
         Term::function(
-            IType::Const(Val::Int(0)),
+            IType::Num(Val::Int(0)),
             [Wire::new(20, DType::Int)],
             vec![] as Vec<Wire<DType>>,
         )
@@ -204,7 +204,7 @@ pub fn create_test_module() -> Module<DType, IType> {
     );
     update.push(
         Term::function(
-            IType::Const(Val::Bool(false)),
+            IType::Num(Val::Bool(false)),
             [Wire::new(24, DType::Bool)],
             vec![] as Vec<Wire<DType>>,
         )
