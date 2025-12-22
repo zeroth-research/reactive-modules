@@ -283,13 +283,13 @@ class Translate(ExprTransform):
     # def forall(self, expr: Expr, args: list):
     #    assert all(isinstance(a, PyVal) for a in args), args
 
-    def visit_ty_bool(self, expr):
+    def visit_type_bool(self, expr):
         return [PyVal.bool(expr)]
 
-    def visit_ty_int(self, expr):
+    def visit_type_int(self, expr):
         return [PyVal.int(expr)]
 
-    def visit_ty(self, expr, args):
+    def visit_type(self, expr, args):
         if isinstance(expr, Tensor):
             return [PyVal.tensor(expr)]
         return self.default(expr, args)

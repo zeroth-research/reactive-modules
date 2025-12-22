@@ -107,10 +107,10 @@ class Transform:
                 return method(expr, translated_args)
 
         else:
-            method = getattr(self, f"visit_ty_{type(expr)}", None)
+            method = getattr(self, f"visit_type_{type(expr)}", None)
             if method is None:
                 # try a generic type visitor
-                method = getattr(self, f"visit_ty", None)
+                method = getattr(self, "visit_type", None)
             if method:
                 return method(expr, translated_args)
 
