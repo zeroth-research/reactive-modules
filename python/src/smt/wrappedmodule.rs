@@ -64,8 +64,11 @@ impl WrappedModule {
     #[cfg(feature = "visual-html")]
     fn to_html(&self, ctx: &Bound<'_, WrappedContext>, path: &str) {
         let ctx: &WrappedContext = &ctx.borrow();
-        let _ =
-            visual::html::write_to_html(&self.module, path, Some(&ctx.to_smt_ctx(&self.module)));
+        let _ = visual::html::module::write_to_html(
+            &self.module,
+            path,
+            Some(&ctx.to_smt_ctx(&self.module)),
+        );
     }
 
     fn dbg(&self) {

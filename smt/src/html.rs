@@ -4,7 +4,7 @@ use crate::{
 use base::{atom::Atom, module::Module, term::Term};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use visual::html::{DescriptionContext, Descriptor};
+use visual::html::module::{DescriptionContext, Descriptor};
 
 pub struct Context {
     wire_names: RefCell<HashMap<usize, String>>,

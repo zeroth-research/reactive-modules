@@ -8,7 +8,7 @@ use clap::Parser as ClapParser;
 #[cfg(feature = "visual-html")]
 use visual::html;
 #[cfg(feature = "visual-html")]
-use visual::html::Descriptor;
+use visual::html::module::Descriptor;
 
 #[cfg(feature = "conversions-smt")]
 use toy::conversions::ModuleConverter;
@@ -49,7 +49,7 @@ where
 {
     let path = format!("{}.{}.html", args.spec, module_name);
 
-    html::write_to_html(module, path.as_str(), ctx)
+    html::module::write_to_html(module, path.as_str(), ctx)
         .inspect_err(|err| {
             eprintln!("Failed writing the module to file {}", path);
             eprintln!("{}", err)
