@@ -4,9 +4,9 @@ import zrth.toy as toy
 
 class Module(toy.Module):
 
-    def init(self, extl_nxt) -> None:
-        y0, z0 = extl_nxt
-        return 0, y0, z0  # = x, y, z
+    def init(self, extl) -> None:
+        y0, z0 = extl
+        return 0, self.nxt(y0), self.nxt(z0)  # = x, y, z
 
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl

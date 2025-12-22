@@ -3,14 +3,16 @@ from pysmt.typing import INT, REAL, BOOL
 from pysmt.logics import QF_NRA
 import zrth.smt as smt
 
+nxt = smt.nxt
+
 
 class Module(smt.Module):
 
-    def init(self, extl_nxt) -> None:
-        a, b, c = extl_nxt
-        x_i = Plus(a, Real(3.24))
-        y_i = Minus(b, Int(42))
-        z_i = And(c, Not(Bool(True)))
+    def init(self, extl) -> None:
+        a, b, c = extl
+        x_i = Plus(nxt(a), Real(3.24))
+        y_i = Minus(nxt(b), Int(42))
+        z_i = And(nxt(c), Not(Bool(True)))
         return x_i, y_i, z_i
 
     def update(self, ctrl, extl) -> None:
@@ -42,7 +44,7 @@ m.to_html("/tmp/smt.html", open=False)
 
 def obligation1(m):
     x_i, y_i, z_i = m.init(extl)
-    pre = And(a >= Real(0), b >= Int(42), Or(c, Not(c)))
+    pre = And(nxt(a) >= Real(0), nxt(b) >= Int(42), Or(nxt(c), Not(nxt(c))))
     post = And(x_i >= Real(0), y_i >= Int(0), Not(z_i))
     return pre, post
 
