@@ -51,7 +51,7 @@ impl Context {
             Some(term) => {
                 // Wire is written by a term, expand based on operation type.
                 match term.itype() {
-                    IType::Const(val) => {
+                    IType::Num(val) => {
                         format!("{}", val)
                     }
                     IType::Arith(op) => {
@@ -307,8 +307,8 @@ impl Descriptor<DType, IType> for Context {
         }
 
         match term.itype() {
-            IType::Const(val) => {
-                term_header = "Constant".to_string();
+            IType::Num(val) => {
+                term_header = "Number".to_string();
                 term_body = format!(
                     "<code>{}</code> → <code>{}</code>",
                     val,

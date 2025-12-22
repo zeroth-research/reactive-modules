@@ -34,8 +34,8 @@ pub enum CmpOp {
 
 #[derive(Debug, Copy, Clone)]
 pub enum IType {
-    // Constant
-    Const(Val),
+    // Constant number
+    Num(Val),
     // Arithmetic operations
     Arith(ArithOp),
     // Logical operations
@@ -95,7 +95,7 @@ impl fmt::Display for CmpOp {
 impl fmt::Display for IType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IType::Const(v) => write!(f, "{}", v),
+            IType::Num(v) => write!(f, "{}", v),
             IType::Arith(op) => write!(f, "{}", op),
             IType::Logical(op) => write!(f, "{}", op),
             IType::Cmp(op) => write!(f, "{}", op),

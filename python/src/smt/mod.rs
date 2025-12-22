@@ -32,7 +32,7 @@ fn new_term(op: IType, reads: Intf, writes: Intf) -> Result<SmtTerm, &'static st
 ///
 /// The values from the input vector `pyvals` get translated as follows:
 /// `PyVal::Sym(x)` gets translated into the identifier `x`, and other [PyVal]
-/// values (constants) get translated into a new nullary term `IType::Const` that is added
+/// values (constants) get translated into a new nullary term `IType::Num` that is added
 /// to `result` and the output wire of this term is used as the translated identifier.
 /// This new term simply returns the value of this constant. This is to workaround the fact that
 /// we do not have wires that represent constants.
@@ -40,7 +40,7 @@ fn new_term(op: IType, reads: Intf, writes: Intf) -> Result<SmtTerm, &'static st
 /// # Examples
 ///
 ///  If the input is `[PyVal::Sym(2), PyVal::I64(7)]`, then when translating
-/// `PyVal::I64(7)`, a term `Term { IType::Const, reads: [], writes: [19]}` gets generated
+/// `PyVal::I64(7)`, a term `Term { IType::Num, reads: [], writes: [19]}` gets generated
 /// and added to `results`, where 19 is just an example value. This value is obtained
 /// from the `ctx` object. The translated vector returned from this function is then `[2, 19]`.
 fn process_pyvals(
@@ -60,7 +60,7 @@ fn process_pyvals(
             PyVal::Real(val) => {
                 let var = ctx.ctx.tmp_var(DType::Real);
                 let term = new_term(
-                    IType::Const(Val::Real(*val)),
+                    IType::Num(Val::Real(*val)),
                     Interface::empty(),
                     Interface::single(var, DType::Real),
                 )
@@ -71,7 +71,7 @@ fn process_pyvals(
             PyVal::Int(val) => {
                 let var = ctx.ctx.tmp_var(DType::Int);
                 let term = new_term(
-                    IType::Const(Val::Int(*val)),
+                    IType::Num(Val::Int(*val)),
                     Interface::empty(),
                     Interface::single(var, DType::Int),
                 )
@@ -82,7 +82,7 @@ fn process_pyvals(
             PyVal::Bool(val) => {
                 let var = ctx.ctx.tmp_var(DType::Bool);
                 let term = new_term(
-                    IType::Const(Val::Bool(*val)),
+                    IType::Num(Val::Bool(*val)),
                     Interface::empty(),
                     Interface::single(var, DType::Bool),
                 )
