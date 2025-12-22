@@ -4,7 +4,7 @@ use std::fmt::Write;
 
 use crate::{DType, IType, TorchAtom, TorchModule, TorchTerm};
 
-use visual::html::{DescriptionContext, Descriptor};
+use visual::html::module::{DescriptionContext, Descriptor};
 
 impl Context {
     fn wire_name(&self, id: usize) -> String {

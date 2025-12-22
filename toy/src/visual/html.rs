@@ -6,7 +6,7 @@ use crate::DType;
 use crate::IType;
 
 use base::Wire;
-use visual::html::{DescriptionContext, Descriptor};
+use visual::html::module::{DescriptionContext, Descriptor};
 
 pub struct HTMLDescriptor<'a> {
     ctx: &'a crate::ToyContext,
