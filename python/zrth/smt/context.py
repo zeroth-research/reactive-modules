@@ -302,26 +302,26 @@ class ToTerms:
             return [PyVal.bool(formula.constant_value())]
         elif opty == op.PLUS:
             assert len(args) == 2
-            assert args[0].ty() == args[1].ty(), args
-            out = self._ctx.tmp_sym(args[0].ty())
+            assert args[0].dtype() == args[1].dtype(), args
+            out = self._ctx.tmp_sym(args[0].dtype())
             terms.append(WrappedTerm("Arith::Add", reads=args, writes=[out]))
             return [out]
         elif opty == op.MINUS:
             assert len(args) == 2
-            assert args[0].ty() == args[1].ty(), args
-            out = self._ctx.tmp_sym(args[0].ty())
+            assert args[0].dtype() == args[1].dtype(), args
+            out = self._ctx.tmp_sym(args[0].dtype())
             terms.append(WrappedTerm("Arith::Sub", reads=args, writes=[out]))
             return [out]
         elif opty == op.TIMES:
             assert len(args) == 2
-            assert args[0].ty() == args[1].ty(), args
-            out = self._ctx.tmp_sym(args[0].ty())
+            assert args[0].dtype() == args[1].dtype(), args
+            out = self._ctx.tmp_sym(args[0].dtype())
             terms.append(WrappedTerm("Arith::Mul", reads=args, writes=[out]))
             return [out]
         elif opty == op.DIV:
             assert len(args) == 2
-            assert args[0].ty() == args[1].ty(), args
-            out = self._ctx.tmp_sym(args[0].ty())
+            assert args[0].dtype() == args[1].dtype(), args
+            out = self._ctx.tmp_sym(args[0].dtype())
             terms.append(WrappedTerm("Arith::Div", reads=args, writes=[out]))
             return [out]
         elif opty == op.NOT:
@@ -356,8 +356,8 @@ class ToTerms:
             return [out]
         elif opty == op.ITE:
             assert len(args) == 3
-            assert args[1].ty() == args[2].ty(), args
-            out = self._ctx.tmp_sym(args[1].ty())
+            assert args[1].dtype() == args[2].dtype(), args
+            out = self._ctx.tmp_sym(args[1].dtype())
             terms.append(WrappedTerm("Cond", reads=args, writes=[out]))
             return [out]
         else:

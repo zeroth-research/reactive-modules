@@ -295,7 +295,7 @@ class ToTerms:
         elif isinstance(formula, Choose):
             reads = list(chain.from_iterable(args))
             assert len(reads) > 0 and len(reads) % 2 == 0, reads
-            out = self._ctx.tmp_sym(reads[1].ty())
+            out = self._ctx.tmp_sym(reads[1].dtype())
             terms.append(WrappedTerm("Choose", reads=reads, writes=[out]))
             return [out]
         else:
@@ -309,8 +309,8 @@ class ToTerms:
                 ]
             elif opty == op.PLUS:
                 assert len(args) == 2
-                assert args[0].ty() == args[1].ty(), args
-                out = self._ctx.tmp_sym(args[0].ty())
+                assert args[0].dtype() == args[1].dtype(), args
+                out = self._ctx.tmp_sym(args[0].dtype())
                 terms.append(WrappedTerm(
                     "Arith::Add", reads=args, writes=[out]))
                 return [out]
@@ -333,8 +333,8 @@ class ToTerms:
                 return [out]
             elif opty == op.ITE:
                 assert len(args) == 3
-                assert args[1].ty() == args[2].ty(), args
-                out = self._ctx.tmp_sym(args[1].ty())
+                assert args[1].dtype() == args[2].dtype(), args
+                out = self._ctx.tmp_sym(args[1].dtype())
                 terms.append(WrappedTerm("Ite", reads=args, writes=[out]))
                 return [out]
             if opty == op.INT_CONSTANT:
