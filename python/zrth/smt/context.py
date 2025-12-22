@@ -53,6 +53,14 @@ def from_pysmt_type(ty) -> str:
     raise NotImplementedError(f"Unknown type: {ty}")
 
 
+def nxt(var: Symbol) -> Symbol:
+    """
+    Get next variable for `var`.
+    """
+    assert isinstance(var, Expr), var
+    return Symbol(f"nxt({var.symbol_name()})", var.symbol_type())
+
+
 class PySMTContext(ContextBase):
     def __init__(self, ctx_impl):
         super().__init__(ctx_impl)
@@ -60,12 +68,12 @@ class PySMTContext(ContextBase):
     def var(self, name: str, ty: str) -> Symbol:
         return Symbol(name, to_pysmt_type(ty))
 
-    def next_var(self, var: Symbol) -> Symbol:
+    @staticmethod
+    def next_var(var: Symbol) -> Symbol:
         """
         Get next variable for `var`.
         """
-        assert isinstance(var, Expr), var
-        return Symbol(f"{var.symbol_name()}'", var.symbol_type())
+        return nxt(var)
 
     def _parse_variables(self, ctrl, extl):
         if isinstance(ctrl, str):
@@ -80,7 +88,8 @@ class PySMTContext(ContextBase):
         elif isinstance(ctrl, (tuple, list)) and len(ctrl) > 0:
             if isinstance(ctrl[0], str):
                 if not all(":" in v for v in ctrl):
-                    raise RuntimeError("A variable is missing a type annotation")
+                    raise RuntimeError(
+                        "A variable is missing a type annotation")
                 ctrl = tuple(
                     self.var(v[0].strip(), v[1].strip())
                     for v in map(lambda s: s.split(":"), ctrl)
@@ -114,7 +123,8 @@ class PySMTContext(ContextBase):
         elif isinstance(extl, (tuple, list)) and len(extl) > 0:
             if isinstance(extl[0], str):
                 if not all(":" in v for v in extl):
-                    raise RuntimeError("A variable is missing a type annotation")
+                    raise RuntimeError(
+                        "A variable is missing a type annotation")
                 extl = tuple(
                     self.var(v[0].strip(), v[1].strip())
                     for v in map(lambda s: s.split(":"), extl)
@@ -142,20 +152,7 @@ class PySMTContext(ContextBase):
         """
         Execute a given function with binding our names like `next` into it.
         """
-
-        # we want to access the context from the function in order to
-        # create terms via API that we cannot map to Python operations.
-        # For that, we need to add it as a new argument.
-        def wrapped_fun():
-            assert "nxt" not in fun.__globals__
-            fun.__globals__["nxt"] = self.next_var
-            r = fun(*args, **kwargs)
-            del fun.__globals__["nxt"]
-            return r
-
-        r = wrapped_fun()
-
-        return handle_return_value(r)
+        return handle_return_value(fun(*args, **kwargs))
 
     def get_pyval_sym(self, sym: Expr) -> PyVal:
         assert sym.is_symbol(), sym
@@ -188,11 +185,11 @@ class Context(PySMTContext):
         extl_arg = extl[0] if len(extl) == 1 else extl
 
         extl_nxt = [self.next_var(v) for v in extl]
-        extl_nxt_arg = extl_nxt[0] if len(extl_nxt) == 1 else extl_nxt
+        # extl_nxt_arg = extl_nxt[0] if len(extl_nxt) == 1 else extl_nxt
 
         # trace the init function
         if init:
-            init_ret = self.trace(init, extl_nxt_arg)
+            init_ret = self.trace(init, extl_arg)
             assert len(init_ret) == len(ctrl)
         else:
             init_terms = []
@@ -230,7 +227,8 @@ class Context(PySMTContext):
             # map the output of the expression to the output wire
             assert len(outvar) == 1
             init_terms.append(
-                WrappedTerm("Id", outvar, [self.get_pyval_sym(self.next_var(var))])
+                WrappedTerm("Id", outvar, [
+                            self.get_pyval_sym(self.next_var(var))])
             )
 
         update_terms = []
@@ -242,11 +240,13 @@ class Context(PySMTContext):
             # map the output of the expression to the output wire
             assert len(outvar) == 1
             update_terms.append(
-                WrappedTerm("Id", outvar, [self.get_pyval_sym(self.next_var(var))])
+                WrappedTerm("Id", outvar, [
+                            self.get_pyval_sym(self.next_var(var))])
             )
 
         cur_vars = [self.get_pyval_sym(v) for v in chain(ctrl, extl)]
-        nxt_vars = [self.get_pyval_sym(self.next_var(v)) for v in chain(ctrl, extl)]
+        nxt_vars = [self.get_pyval_sym(self.next_var(v))
+                    for v in chain(ctrl, extl)]
         return cur_vars, nxt_vars, init_terms, update_terms
 
 

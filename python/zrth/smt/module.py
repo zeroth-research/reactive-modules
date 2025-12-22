@@ -1,4 +1,4 @@
-from .context import Context
+from .context import Context, nxt
 
 
 class Module:
@@ -32,6 +32,10 @@ class Module:
 
     def dbg(self) -> None:
         self._module.dbg()
+
+    @staticmethod
+    def nxt(v):
+        return nxt(v)
 
     def to_smtlib(self) -> str:
         return self._module.to_smtlib()

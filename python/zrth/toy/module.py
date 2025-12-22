@@ -1,4 +1,4 @@
-from .context import Context
+from .context import Context, nxt
 from typing import Callable, Any
 from copy import copy
 
@@ -32,6 +32,10 @@ class Module:
         self._module = self._ctx.module_from_methods(
             ctrl, extl, init, self.update, name=name
         )
+
+    @staticmethod
+    def nxt(v):
+        return nxt(v)
 
     def dbg(self) -> None:
         self._module.dbg()

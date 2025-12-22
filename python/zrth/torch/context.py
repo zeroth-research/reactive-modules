@@ -1,3 +1,4 @@
+from torch import Tensor
 from random import randrange
 from zrth import _zrth
 from zrth.context import Context as ContextBase
@@ -12,8 +13,6 @@ from itertools import chain
 PyVal = _zrth.PyVal
 WrappedModule = _zrth.torch.WrappedModule
 WrappedTerm = _zrth.torch.WrappedTerm
-
-from torch import Tensor
 
 
 def handle_return_value(r):
@@ -30,6 +29,14 @@ def handle_return_value(r):
 
     # return [x.var if isinstance(x, Assignment) else x for x in r]
     return r
+
+
+def nxt(var: Var) -> Var:
+    """
+    Get next variable for `var`.
+    """
+    assert isinstance(var, Var), var
+    return Var(f"nxt({var.name})")
 
 
 class Context_(ContextBase):
@@ -51,12 +58,12 @@ class Context_(ContextBase):
     def constant(self, *args):
         return Tensor(*args)
 
-    def next_var(self, var: Var) -> Var:
+    @staticmethod
+    def next_var(var: Var) -> Var:
         """
         Get next variable for `var`.
         """
-        assert isinstance(var, Var), var
-        return Var(f"{var.name}'")
+        return nxt(var)
 
     def _parse_variables(self, ctrl, extl):
         if isinstance(ctrl, str):
@@ -68,16 +75,19 @@ class Context_(ContextBase):
             elif isinstance(ctrl[0], Var):
                 if not all(isinstance(c, Var) and c.is_symbol() for c in ctrl):
                     raise RuntimeError(
-                        f"Expected variables to be all sympy variables, got: {ctrl}"
+                        f"Expected variables to be all sympy variables, got: {
+                            ctrl}"
                     )
             else:
                 raise RuntimeError(
-                    f"Expected variables to be a tuple of strings or sympy variables, got: {ctrl}"
+                    f"Expected variables to be a tuple of strings or sympy variables, got: {
+                        ctrl}"
                 )
             cur_vars = [*ctrl]
         else:
             raise RuntimeError(
-                f"Expect variables to be a non-empty string, tuple or list, got: {ctrl}"
+                f"Expect variables to be a non-empty string, tuple or list, got: {
+                    ctrl}"
             )
 
         if isinstance(extl, str):
@@ -88,11 +98,13 @@ class Context_(ContextBase):
             elif isinstance(extl[0], Var):
                 if not all(isinstance(c, Var) and c.is_symbol() for c in extl):
                     raise RuntimeError(
-                        f"Expected variables to be all sympy variables, got: {extl}"
+                        f"Expected variables to be all sympy variables, got: {
+                            extl}"
                     )
             else:
                 raise RuntimeError(
-                    f"Expected variables to be a tuple of strings or sympy variables, got: {extl}"
+                    f"Expected variables to be a tuple of strings or sympy variables, got: {
+                        extl}"
                 )
             cur_vars.extend(extl)
         else:
@@ -152,11 +164,11 @@ class Context(Context_):
         # if the user uses a single variable, it is more natural in the `init` and `update` to unwrap it
         ctrl_arg = ctrl[0] if len(ctrl) == 1 else ctrl
         extl_arg = extl[0] if len(extl) == 1 else extl
-        extl_nxt_arg = extl_nxt[0] if len(extl_nxt) == 1 else extl_nxt
+        # extl_nxt_arg = extl_nxt[0] if len(extl_nxt) == 1 else extl_nxt
 
         # trace the init function (the function will be traced upon given symbolic arguments)
         if init:
-            init_ret = handle_return_value(init(extl_nxt_arg))
+            init_ret = handle_return_value(init(extl_arg))
             assert len(init_ret) == len(ctrl), (init_ret, ctrl)
         else:
             init_terms = []
@@ -193,7 +205,8 @@ class Context(Context_):
             # map the output of the expression to the output wire
             assert len(outvar) == 1, outvar
             init_terms.append(
-                WrappedTerm("Id", outvar, [self.var_to_pyval(self.next_var(var))])
+                WrappedTerm("Id", outvar, [
+                            self.var_to_pyval(self.next_var(var))])
             )
 
         update_terms = []
@@ -205,11 +218,13 @@ class Context(Context_):
             # map the output of the expression to the output wire
             assert len(outvar) == 1
             update_terms.append(
-                WrappedTerm("Id", outvar, [self.var_to_pyval(self.next_var(var))])
+                WrappedTerm("Id", outvar, [
+                            self.var_to_pyval(self.next_var(var))])
             )
 
         cur_vars = [self.var_to_pyval(v) for v in chain(ctrl, extl)]
-        nxt_vars = [self.var_to_pyval(self.next_var(v)) for v in chain(ctrl, extl)]
+        nxt_vars = [self.var_to_pyval(self.next_var(v))
+                    for v in chain(ctrl, extl)]
         return cur_vars, nxt_vars, init_terms, update_terms
 
 
@@ -259,7 +274,8 @@ class Translate(ExprTransform):
         return self.terms, r
 
     def default(self, expr, args):
-        raise NotImplementedError(f"Not implemented translation of operation: `{expr}`")
+        raise NotImplementedError(
+            f"Not implemented translation of operation: `{expr}`")
 
     # def before_all(self, expr: Expr, args: list):
     #    print("VIS", expr, type(expr))
@@ -285,13 +301,15 @@ class Translate(ExprTransform):
         assert len(expr.args) == 2
         assert args[0].ty() == args[1].ty(), args
         out = self._ctx.tmp_var()
-        self.terms.append(WrappedTerm(arith_to_str(op), reads=args, writes=[out]))
+        self.terms.append(WrappedTerm(
+            arith_to_str(op), reads=args, writes=[out]))
         return [out]
 
     def visit_cmp(self, expr, args, op):
         assert len(args) == 2
         out = self._ctx.tmp_var()
-        self.terms.append(WrappedTerm(rel_to_str(op), reads=args, writes=[out]))
+        self.terms.append(WrappedTerm(
+            rel_to_str(op), reads=args, writes=[out]))
         return [out]
 
     def visit_logic(self, expr, args, op):

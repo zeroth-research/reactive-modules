@@ -18,16 +18,16 @@ import zrth.smt as smt
 import zrth.toy as toy
 import sympy as sp
 
+
 ######################################################################
 # SMT
 ######################################################################
 
-
 class SmtModule(smt.Module):
 
-    def init(self, extl_nxt) -> None:
-        y0, z0 = extl_nxt
-        return Int(0), y0, z0  # = x, y, z
+    def init(self, extl) -> None:
+        y0, z0 = extl
+        return Int(0), self.nxt(y0), self.nxt(z0)  # = x, y, z
 
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl
@@ -46,12 +46,11 @@ m_smt = SmtModule(ctrl=(x, y, z), extl=(y0, z0))
 # Toy
 ######################################################################
 
-
 class ToyModule(toy.Module):
 
-    def init(self, extl_nxt) -> None:
-        y0, z0 = extl_nxt
-        return 0, y0, z0  # = x, y, z
+    def init(self, extl) -> None:
+        y0, z0 = extl
+        return 0, nxt(y0), nxt(z0)  # = x, y, z
 
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl
@@ -73,12 +72,11 @@ m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
 # Torch
 ######################################################################
 
-
 class TorchModule(ztch.Module):
 
-    def init(self, extl_nxt):
+    def init(self, extl):
         # extl is a vector with dimension 2
-        return Tensor([[0, 0], [1, 0], [0, 1]]) @ extl_nxt
+        return Tensor([[0, 0], [1, 0], [0, 1]]) @ self.nxt(extl)
 
     def update(self, state, inp):
         # state = (x, y, z) is a vector with dimension 3,
@@ -145,7 +143,7 @@ print(script)
 
 
 def obligation1(m):
-    return And(y0 >= Int(0), z0 >= Int(0)), inv(*m.init((y0, z0)))
+    return And(smt.nxt(y0) >= Int(0), smt.nxt(z0) >= Int(0)), inv(*m.init((y0, z0)))
 
 
 # TODO: now the obligation uses m.update() which already are PySMT formulas.

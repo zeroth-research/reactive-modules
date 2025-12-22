@@ -1,5 +1,5 @@
-from .context import Context
-from ..expr import Expr
+from .context import Context, nxt
+from ..expr import Expr, Var
 
 
 class Module:
@@ -23,7 +23,8 @@ class Module:
 
         self._ctx = ctx or Context()
 
-        self.init = self._wrap_method(self.init) if hasattr(self, "init") else None
+        self.init = self._wrap_method(
+            self.init) if hasattr(self, "init") else None
         self.update = self._wrap_method(self.update)
 
         extl = extl or ()
@@ -50,6 +51,13 @@ class Module:
 
     def constant(self, *args):
         return self._ctx.constant(*args)
+
+    @staticmethod
+    def nxt(v):
+        if isinstance(v, Var):
+            return nxt(v)
+        # else this is a constant already describing next value
+        return v
 
     def choose(self, *args):
         return self._ctx.choose_impl(*args)
