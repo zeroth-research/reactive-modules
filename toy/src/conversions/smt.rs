@@ -117,7 +117,7 @@ impl SmtTranslator {
         // process temporary wires in atoms (other wires used in atoms are already
         // included in the module wires)
         for atom in module.atoms() {
-            for w in atom.temp().wires() {
+            for w in atom.temp() {
                 let new_id = w.id() + OFFSET;
                 let new_ty = (w.dtype()).try_into()?;
                 assert!(!self.wires_mapping.contains_key(&new_id));
