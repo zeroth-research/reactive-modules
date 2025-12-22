@@ -69,7 +69,6 @@ fn dump_to_html(modules: &[Module<DType, IType>], args: &Cli) -> Result<(), std:
 fn main() {
     let args = Cli::parse();
 
-    let module = smt::create_smt_module::create_test_module();
     let modules = vec![module];
 
     if !modules.is_empty() {

@@ -1,6 +1,6 @@
-use crate::dtype::DType;
-use crate::itype::{ArithOp, CmpOp, IType, LogicalOp, Val};
 use base::{atom::Atom, module::Module, term::Term, wire::Wire};
+use smt::dtype::DType;
+use smt::itype::{ArithOp, CmpOp, IType, LogicalOp, Val};
 
 pub fn create_test_module() -> Module<DType, IType> {
     // Interface wires: w0-w2 (latched), w6-w8 (next)
@@ -28,8 +28,8 @@ pub fn create_test_module() -> Module<DType, IType> {
     ];
 
     // // Private wires: none
-    let prvt_ltc = vec![];
-    let prvt_nxt = vec![];
+    let prvt_ltc: Vec<Wire<DType>> = vec![];
+    let prvt_nxt: Vec<Wire<DType>> = vec![];
 
     // // Controlled wires: intf + prvt (separate latched and next)
     let mut ctrl_ltc = Vec::new();
@@ -40,10 +40,10 @@ pub fn create_test_module() -> Module<DType, IType> {
     ctrl_nxt.extend_from_slice(&prvt_nxt);
 
     // // Observable wires: intf + extl (separate latched and next)
-    let mut obs_ltc = Vec::new();
+    let mut obs_ltc: Vec<Wire<DType>> = Vec::new();
     obs_ltc.extend_from_slice(&intf_ltc);
     obs_ltc.extend_from_slice(&extl_ltc);
-    let mut obs_nxt = Vec::new();
+    let mut obs_nxt: Vec<Wire<DType>> = Vec::new();
     obs_nxt.extend_from_slice(&intf_nxt);
     obs_nxt.extend_from_slice(&extl_nxt);
 
@@ -236,4 +236,9 @@ pub fn create_test_module() -> Module<DType, IType> {
     let atom = Atom::sequential(all_ltc.iter(), all_nxt.iter(), init, update).unwrap();
 
     Module::partially_observable(obs_pairs, prvt_pairs, [atom]).unwrap()
+}
+
+#[test]
+fn create_module_1() {
+    let _module = create_test_module();
 }
