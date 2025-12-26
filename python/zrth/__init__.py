@@ -1,1 +1,1 @@
-from zrth import _zrth
+from .zrth import *

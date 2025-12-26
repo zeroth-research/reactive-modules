@@ -12,8 +12,7 @@ pub use pyval::PyVal;
 use pyo3::prelude::*;
 
 #[pymodule]
-#[pyo3(name = "_zrth")]
-fn _zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVal>()?;
 
     let toy = PyModule::new(py, "toy")?;
@@ -43,5 +42,31 @@ fn _zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_submodule(&torch)?;
     }
 
+    m.add_class::<IType>()?;
+    m.add_class::<DType>()?;
+    m.add_class::<Wire>()?;
+    m.add_class::<Term>()?;
+
     Ok(())
+}
+
+mod term;
+mod wire;
+
+use crate::term::Term;
+use crate::wire::Wire;
+use pyo3::prelude::*;
+
+#[pyclass]
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum IType {
+    A,
+    B,
+}
+
+#[pyclass]
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum DType {
+    C,
+    D,
 }
