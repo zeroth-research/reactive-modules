@@ -215,7 +215,7 @@ impl<D: Eq + Clone, I> Atom<D, I> {
     /// # See Also
     /// - [`Atom::combinatorial`], for constructing combinatorial atoms.
     /// - [`Module::sequential`], for creating sequential modules.
-    pub fn sequential<'a, L, N, V, U>(
+    pub fn sequential<'a, L, N, S, V, T, U>(
         latched: L,
         next: N,
         init: V,
@@ -224,8 +224,10 @@ impl<D: Eq + Clone, I> Atom<D, I> {
     where
         L: IntoIterator<Item = &'a Wire<D>>,
         N: IntoIterator<Item = &'a Wire<D>>,
-        V: IntoIterator<Item = Term<D, I>>,
-        U: IntoIterator<Item = Term<D, I>>,
+        S: Into<Term<D, I>>,
+        V: IntoIterator<Item = S>,
+        T: Into<Term<D, I>>,
+        U: IntoIterator<Item = T>,
         D: 'a,
     {
         let latched: HashMap<usize, &D> = latched.into_iter().map(Into::into).collect();
@@ -348,9 +350,10 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
     /// # See Also
     /// - [`Atom::sequential`], for constructing sequential atoms.
     /// - [`Module::combinatorial`], for combinatorial modules.
-    pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, &'static str>
+    pub fn combinatorial<'a, T, N, V>(next: N, assign: V) -> Result<Self, &'static str>
     where
-        V: IntoIterator<Item = Term<D, I>>,
+        T: Into<Term<D, I>>,
+        V: IntoIterator<Item = T>,
         N: IntoIterator<Item = &'a Wire<D>>,
         D: 'a,
     {

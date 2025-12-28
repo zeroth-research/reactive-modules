@@ -151,7 +151,7 @@ impl<'a, D, I> IntoIterator for &'a Block<D, I> {
 }
 
 impl<D: Eq + Clone, I> Block<D, I> {
-    pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<D, I>>>(
+    pub(crate) fn try_from_iter<T: Into<Term<D, I>>, V: IntoIterator<Item = T>>(
         iter: V,
     ) -> Result<Self, &'static str> {
         let mut read_set: HashSet<usize> = HashSet::new();
@@ -160,7 +160,7 @@ impl<D: Eq + Clone, I> Block<D, I> {
         let mut read: Vec<Wire<D>> = Vec::new();
         let mut write: Vec<Wire<D>> = Vec::new();
 
-        let terms: Vec<Term<D, I>> = Vec::from_iter(iter);
+        let terms: Vec<Term<D, I>> = Vec::from_iter(iter.into_iter().map(Into::into));
 
         for term in terms.iter() {
             for (rd, dtype) in term.read().wires().map(Into::into) {

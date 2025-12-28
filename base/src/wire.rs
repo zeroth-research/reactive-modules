@@ -230,7 +230,7 @@ impl<D: Eq> TryFrom<Interface<D>> for (usize, D) {
 }
 
 impl<D: Eq, const N: usize> Interface<D, N> {
-    fn collect<T: Into<[Wire<D>; N]>, I: IntoIterator<Item = T>>(iter: I) -> Self {
+    fn collect<W: Into<Wire<D>>, T: Into<[W; N]>, I: IntoIterator<Item = T>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let mut wires: [Vec<Wire<D>>; N] = match iter.size_hint() {
             (_, Some(upper)) => [(); N].map(|_| Vec::with_capacity(upper)),
@@ -239,14 +239,14 @@ impl<D: Eq, const N: usize> Interface<D, N> {
 
         for indexed_wire in iter.map(Into::into) {
             for (to, from) in wires.iter_mut().zip(indexed_wire) {
-                to.push(from)
+                to.push(from.into())
             }
         }
 
         Self { wires }
     }
 
-    pub fn try_from_iter<T: Into<[Wire<D>; N]>, I: IntoIterator<Item = T>>(
+    pub fn try_from_iter<W: Into<Wire<D>>, T: Into<[W; N]>, I: IntoIterator<Item = T>>(
         iter: I,
     ) -> Result<Self, &'static str> {
         let interface = Self::collect(iter);
