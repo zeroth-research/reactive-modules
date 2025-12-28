@@ -16,8 +16,8 @@ impl Wire {
     }
 }
 
-impl Wire {
-    pub(crate) fn base(&self) -> &base::Wire<DType> {
-        &self.base
+impl From<Wire> for base::Wire<DType> {
+    fn from(wire: Wire) -> Self {
+        wire.base
     }
 }

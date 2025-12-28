@@ -1,5 +1,5 @@
 use super::wire::Wire;
-use super::{DType, IType};
+use super::{DType, IType, try_iter_extract};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 
@@ -16,23 +16,16 @@ impl Term {
         write: &Bound<'_, PyAny>,
         read: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
-        // TODO: make the base take IntoIterator<Result<Wire>>
-        let write = write.try_iter()?.map(|item| {
-            let item = item.unwrap();
-            let wire = item.extract::<Wire>().unwrap();
-            wire.base().clone()
-        });
-        let read = read.try_iter()?.map(|item| {
-            let item = item.unwrap();
-            let wire = item.extract::<Wire>().unwrap();
-            wire.base().clone()
-        });
+        let write = try_iter_extract::<Wire>(write)?;
+        let read = try_iter_extract::<Wire>(read)?;
 
-        // TODO: make base errors automatically cast into PyErr
-        let base = match (base::Term::function(itype, write, read)) {
-            Ok(base) => base,
-            Err(msg) => return Err(PyException::new_err(msg)),
-        };
-        Ok(Term { base })
+        // TODO: make the base take result iterators to avoid unwrap
+        let write = write.into_iter().map(Result::unwrap);
+        let read = read.into_iter().map(Result::unwrap);
+
+        match (base::Term::function(itype, write, read)) {
+            Ok(base) => Ok(Term { base }),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
     }
 }
