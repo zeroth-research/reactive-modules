@@ -3,8 +3,10 @@ use crate::wire::Wire;
 use crate::{DType, IType, try_iter_extract, try_iter_pair_extract};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 #[pyclass]
+#[derive(Debug, Clone)]
 pub struct Module {
     base: base::Module<DType, IType>,
 }
@@ -26,6 +28,10 @@ impl Module {
         let init = init.into_iter().map(Result::unwrap);
         let update = update.into_iter().map(Result::unwrap);
 
+        let obs = obs.map(|(l, n)| (l.into(), n.into()));
+        let init = init.map(Into::into);
+        let update = update.map(Into::into);
+
         match base::Module::sequential(obs, init, update) {
             Ok(base) => Ok(Module { base }),
             Err(msg) => Err(PyException::new_err(msg)),
@@ -41,7 +47,24 @@ impl Module {
         let obs = obs.into_iter().map(Result::unwrap);
         let assign = assign.into_iter().map(Result::unwrap);
 
+        let obs = obs.map(|(l, n)| (l.into(), n.into()));
+        let assign = assign.map(Into::into);
+
         match base::Module::combinatorial(obs, assign) {
+            Ok(base) => Ok(Module { base }),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*args))]
+    pub fn parallel(args: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        let modules = try_iter_extract::<Self>(args)?;
+        // TODO: make base take result iterator to avoid unwrap
+        let modules = modules.into_iter().map(Result::unwrap);
+        let modules = modules.map(Into::into);
+
+        match base::Module::parallel(modules) {
             Ok(base) => Ok(Module { base }),
             Err(msg) => Err(PyException::new_err(msg)),
         }
