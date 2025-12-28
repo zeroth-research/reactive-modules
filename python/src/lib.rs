@@ -47,6 +47,7 @@ fn _zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         ll.add_class::<torch::ll::DType>()?;
         ll.add_class::<torch::ll::Wire>()?;
         ll.add_class::<torch::ll::Term>()?;
+        ll.add_class::<torch::ll::Module>()?;
 
         // _zrth.torch.ll
         torch.add_submodule(&ll)?;
