@@ -46,15 +46,18 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DType>()?;
     m.add_class::<Wire>()?;
     m.add_class::<Term>()?;
+    m.add_class::<Module>()?;
 
     m.add_class::<MyTensor>()?;
 
     Ok(())
 }
 
+mod module;
 mod term;
 mod wire;
 
+use crate::module::Module;
 use crate::term::Term;
 use crate::wire::Wire;
 use pyo3::PyClass;
@@ -99,5 +102,17 @@ where
     let iter = iter
         .try_iter()?
         .map(|i| i?.extract::<P>().map_err(PyErr::from));
+    Ok(iter)
+}
+
+pub(crate) fn try_iter_pair_extract<P>(
+    iter: &Bound<'_, PyAny>,
+) -> PyResult<impl Iterator<Item = PyResult<(P, P)>>>
+where
+    P: Clone + PyClass,
+{
+    let iter = iter
+        .try_iter()?
+        .map(|i| i?.extract::<(P, P)>().map_err(PyErr::from));
     Ok(iter)
 }

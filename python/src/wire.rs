@@ -9,8 +9,8 @@ pub struct Wire {
 
 #[pymethods]
 impl Wire {
-    #[staticmethod]
-    pub fn new(id: usize, dtype: DType) -> Self {
+    #[new]
+    pub fn new(dtype: DType, id: usize) -> Self {
         let base = base::Wire::new(id, dtype);
         Self { base }
     }
