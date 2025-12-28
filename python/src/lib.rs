@@ -47,6 +47,8 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Wire>()?;
     m.add_class::<Term>()?;
 
+    m.add_class::<MyTensor>()?;
+
     Ok(())
 }
 
@@ -55,18 +57,47 @@ mod wire;
 
 use crate::term::Term;
 use crate::wire::Wire;
+use pyo3::PyClass;
+//use pyo3::impl_::pyclass::ExtractPyClassWithClone;
 use pyo3::prelude::*;
 
 #[pyclass]
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum IType {
-    A,
-    B,
+pub struct MyTensor {
+    data: Vec<usize>,
+}
+
+#[pymethods]
+impl MyTensor {
+    #[new]
+    pub fn new(data: Vec<usize>) -> Self {
+        Self { data }
+    }
 }
 
 #[pyclass]
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum DType {
+pub enum IType {
+    A(),
+    B(),
+    C(MyTensor),
+}
+
+#[pyclass]
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum DType {
     C,
     D,
+}
+
+pub(crate) fn try_iter_extract<P>(
+    iter: &Bound<'_, PyAny>,
+) -> PyResult<impl Iterator<Item = PyResult<P>>>
+where
+    P: Clone + PyClass,
+{
+    let iter = iter
+        .try_iter()?
+        .map(|i| i?.extract::<P>().map_err(PyErr::from));
+    Ok(iter)
 }
