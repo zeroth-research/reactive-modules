@@ -277,11 +277,10 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// - [`partially_observable`], for modules with private state.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn observable<W, P, O, A>(obs: O, atoms: A) -> Result<Self, &'static str>
+    pub fn observable<T, O, A>(obs: O, atoms: A) -> Result<Self, &'static str>
     where
-        W: Into<Wire<D>>,
-        P: Into<[W; 2]>,
-        O: IntoIterator<Item = P>,
+        T: Into<[Wire<D>; 2]>,
+        O: IntoIterator<Item = T>,
         A: IntoIterator<Item = Atom<D, I>> + Sized,
     {
         Self::new(obs, std::iter::empty::<T>(), atoms)
@@ -310,16 +309,14 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// - [`observable`], for constructing modules where all wires are visible.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn partially_observable<W, T, Z, U, O, P, A>(
+    pub fn partially_observable<T, U, O, P, A>(
         obs: O,
         prvt: P,
         atoms: A,
     ) -> Result<Self, &'static str>
     where
-        W: Into<Wire<D>>,
-        T: Into<[W; 2]>,
-        Z: Into<Wire<D>>,
-        U: Into<[Z; 2]>,
+        T: Into<[Wire<D>; 2]>,
+        U: Into<[Wire<D>; 2]>,
         O: IntoIterator<Item = T>,
         P: IntoIterator<Item = U>,
         A: IntoIterator<Item = Atom<D, I>> + Sized,
@@ -439,17 +436,16 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// # See Also
     /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn sequential<W, R, O, S, V, T, U>(obs: O, init: V, update: U) -> Result<Self, &'static str>
+    pub fn sequential<T, O, V, U>(obs: O, init: V, update: U) -> Result<Self, &'static str>
     where
-        W: Into<Wire<D>>,
-        R: Into<[W; 2]>,
-        O: IntoIterator<Item = R>,
-        S: Into<Term<D, I>>,
-        V: IntoIterator<Item = S>,
-        T: Into<Term<D, I>>,
-        U: IntoIterator<Item = T>,
+        T: Into<[Wire<D>; 2]>,
+        O: IntoIterator<Item = T>,
+        V: IntoIterator<Item = Term<D, I>>,
+        U: IntoIterator<Item = Term<D, I>>,
     {
-        Self::sequential(obs, std::iter::empty::<T>(), init, update)
+        let obs = Interface::from_iter(obs);
+        let atom = Atom::sequential(obs.latched(), obs.next(), init, update)?;
+        Self::observable(obs, [atom])
     }
 
     pub fn sequential<TO, TP, O, P, V, U>(
@@ -691,15 +687,13 @@ impl<D: Eq + Clone + Debug, I: Clone> Module<D, I> {
     /// # See Also
     /// - [`Module::sequential_observable`], for constructing stateful, sequential modules.
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
-    pub fn combinatorial<W, P, O, T, V>(obs: O, assign: V) -> Result<Self, &'static str>
+    pub fn combinatorial<T, O, V>(obs: O, assign: V) -> Result<Self, &'static str>
     where
-        W: Into<Wire<D>>,
-        P: Into<[W; 2]>,
-        O: IntoIterator<Item = P>,
-        T: Into<Term<D, I>>,
-        V: IntoIterator<Item = T>,
+        T: Into<[Wire<D>; 2]>,
+        O: IntoIterator<Item = T>,
+        V: IntoIterator<Item = Term<D, I>>,
     {
-        let obs = Interface::try_from_iter(obs)?;
+        let obs = Interface::from_iter(obs);
         let atom = Atom::combinatorial(obs.next(), assign)?;
         Self::observable(obs, [atom])
     }
