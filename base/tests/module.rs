@@ -229,8 +229,7 @@ fn module_write_all_ctrl() {
         [x0, xn0.clone()],
     ]);
 
-    let init = std::iter::empty::<Term<&str, &str>>();
-    let m = Module::sequential(obs.clone(), init, update.clone());
+    let m = Module::sequential(obs.clone(), vec![], update.clone());
     assert!(m.is_err_and(|msg| { msg == "unassigned control wire after init" }));
 
     let init: Vec<Term<&str, &str>> = [term!("ID", [xn0.clone()], [xn.clone()]).unwrap()].to_vec();
