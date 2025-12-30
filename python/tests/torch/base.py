@@ -47,9 +47,30 @@ class MyTestCase(unittest.TestCase):
         q = Module.sequential([x, y], init, update)
 
         assign = [Term(it.A(), [z[1]], [y[1]])]
-        r = Module.combinatorial([y, z], assign)
+        r = Module.combinatorial(assign=assign, obs=(z, y))
 
         m = Module.parallel(p, q, r)
+
+        c = m.ctrl()
+        print(c)
+
+        for (ltc, nxt) in c:
+            print(f'({ltc}, {nxt})')
+
+    def test_interface(self):
+        x = Wire(dt.C, 0)
+        y = Wire(dt.D, 1)
+        f = Term(it.A(), [x, y], [x, y])
+
+        w = f.write()
+        r = f.read()
+        r2 = f.read()
+        assert (r is not r2)
+        assert (r is not w)
+        assert (w == r)
+
+        for wire in r:
+            print('-->', wire)
 
 
 if __name__ == '__main__':

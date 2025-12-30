@@ -54,7 +54,7 @@ impl<D> From<(usize, D)> for Wire<D> {
 /// # Type Parameters
 /// - `D`: the data type carried by each wire.
 /// - `N`: the arity of the interface (number of wires in each tuple).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interface<D, const N: usize = 1> {
     wires: [Vec<Wire<D>>; N],
 }
@@ -83,6 +83,16 @@ impl<D, const N: usize> Index<usize> for Interface<D, N> {
     type Output = [Wire<D>];
     fn index(&self, index: usize) -> &Self::Output {
         self.wires[index].as_slice()
+    }
+}
+
+impl<D, const N: usize> Interface<D, N> {
+    pub fn wire(&self, i: usize, j: usize) -> &Wire<D> {
+        &self.wires[i][j]
+    }
+
+    pub fn entry(&self, j: usize) -> [&Wire<D>; N] {
+        from_fn(|i| &self.wires[i][j])
     }
 }
 
@@ -307,15 +317,22 @@ impl<D: fmt::Display, const N: usize> fmt::Display for Interface<D, N> {
         let mut first = true;
         for wires in self {
             if !first {
-                write!(f, ", ")?;
+                write!(f, "; ")?;
             }
-            write!(f, "x{} ", wires[0].id)?;
+            write!(f, "w{} ", wires[0].id)?;
             for w in wires.iter().take(N).skip(1) {
-                write!(f, ", x{} ", w.id)?;
+                write!(f, ", w{} ", w.id)?;
             }
             write!(f, ": {}", wires[0].dtype)?;
             first = false;
         }
+        Ok(())
+    }
+}
+
+impl<D: fmt::Display> fmt::Display for Wire<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} : {}", self.id, self.dtype)?;
         Ok(())
     }
 }
