@@ -11,11 +11,11 @@ crate-type = ["cdylib"]
 [dependencies]
 base = { path = "../base" }
 toy = { path = "../toy" }
-smt = { path = "../smt", optional = true}
+smt = { path = "../smt", optional = true }
 pyo3 = { version = "0.24" }
-visual = { path = "../visual", features=["html"], optional = true }
+visual = { path = "../visual", features = ["html"], optional = true }
 torch = { path = "../torch", optional = true }
-tch = { features = ["python-extension"], version = "0.22", optional = true}
+tch = { features = ["python-extension"], version = "0.22", optional = true }
 pyo3-tch = { version = "0.22", optional = true }
 
 
@@ -26,4 +26,3 @@ default = ["visual-html"]
 visual-html = ["visual/html", "toy/visual-html"]
 enable-torch = ["torch", "pyo3-tch", "tch", "tch/python-extension"]
 enable-smt = ["smt", "toy/conversions-smt"]
-
