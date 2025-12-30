@@ -99,6 +99,16 @@ impl<D, const N: usize> Interface<D, N> {
 }
 
 impl<D, const N: usize> Interface<D, N> {
+    pub fn wire(&self, i: usize, j: usize) -> &Wire<D> {
+        &self.wires[i][j]
+    }
+
+    pub fn entry(&self, j: usize) -> [&Wire<D>; N] {
+        from_fn(|i| &self.wires[i][j])
+    }
+}
+
+impl<D, const N: usize> Interface<D, N> {
     pub fn iter(&self) -> impl Iterator<Item = [&Wire<D>; N]> {
         IterRef {
             iters: std::array::from_fn(|i| self.wires[i].iter()),

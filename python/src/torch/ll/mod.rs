@@ -10,6 +10,8 @@ pub use wire::Wire;
 use pyo3::PyClass;
 use pyo3::prelude::*;
 
+use std::fmt;
+
 #[pyclass]
 #[derive(Debug, Clone)]
 pub enum IType {
@@ -25,26 +27,35 @@ pub enum DType {
     D,
 }
 
-pub(crate) fn try_iter_extract<P>(
-    iter: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = PyResult<P>>>
+impl fmt::Display for DType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DType::C => write!(f, "C"),
+            DType::D => write!(f, "D"),
+        }
+    }
+}
+
+pub(crate) fn try_iter_borrow<'py, P>(
+    iter: &Bound<'py, PyAny>,
+) -> PyResult<impl Iterator<Item = PyResult<PyRef<'py, P>>>>
 where
-    P: Clone + PyClass,
+    P: PyClass,
 {
     let iter = iter
         .try_iter()?
-        .map(|i| i?.extract::<P>().map_err(PyErr::from));
+        .map(|i| i?.extract::<PyRef<P>>().map_err(PyErr::from));
     Ok(iter)
 }
 
-pub(crate) fn try_iter_pair_extract<P>(
-    iter: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = PyResult<(P, P)>>>
+pub(crate) fn try_iter_borrow2<'py, P>(
+    iter: &Bound<'py, PyAny>,
+) -> PyResult<impl Iterator<Item = PyResult<[PyRef<'py, P>; 2]>>>
 where
-    P: Clone + PyClass,
+    P: PyClass,
 {
     let iter = iter
         .try_iter()?
-        .map(|i| i?.extract::<(P, P)>().map_err(PyErr::from));
+        .map(|i| i?.extract::<[PyRef<'py, P>; 2]>().map_err(PyErr::from));
     Ok(iter)
 }
