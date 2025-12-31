@@ -7,9 +7,8 @@ mod util;
 mod torch;
 
 pub mod pyval;
-pub use pyval::PyVal;
-
 use pyo3::prelude::*;
+pub use pyval::PyVal;
 
 #[pymodule]
 #[pyo3(name = "_zrth")]

@@ -61,6 +61,14 @@ impl Term {
     fn read(slf: PyRef<'_, Self>) -> PyResult<TermInterface> {
         Self::interface(slf, TermInterfaceType::Read)
     }
+
+    fn __str__(&self) -> String {
+        self.base.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.base)
+    }
 }
 
 impl Term {
@@ -84,7 +92,7 @@ impl From<base::Term<DType, IType>> for Term {
 }
 
 #[derive(Clone)]
-enum TermInterfaceType {
+pub(crate) enum TermInterfaceType {
     Read,
     Write,
 }
@@ -147,13 +155,16 @@ impl TermInterfaceIter {
 
     fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Wire> {
         let result: Option<Wire> = {
-            let base_module = &slf.module.borrow(slf.py()).base;
-            let base_interface = match slf.interface {
-                TermInterfaceType::Read => base_module.read(),
-                TermInterfaceType::Write => base_module.write(),
+            let term = &slf.module.borrow(slf.py()).base;
+            let interface = match slf.interface {
+                TermInterfaceType::Read => term.read(),
+                TermInterfaceType::Write => term.write(),
             };
-            (slf.index < base_interface.len())
-                .then(|| base_interface.entry(slf.index)[0].clone().into())
+            if slf.index < interface.len() {
+                Some(interface.wire(0, slf.index).clone().into())
+            } else {
+                None
+            }
         };
         slf.index += 1;
         result
