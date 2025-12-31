@@ -53,6 +53,7 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+mod atom;
 mod module;
 mod term;
 mod wire;
@@ -61,7 +62,6 @@ use crate::module::Module;
 use crate::term::Term;
 use crate::wire::Wire;
 use pyo3::PyClass;
-use pyo3::prelude::*;
 use std::fmt;
 
 #[pyclass]
@@ -98,6 +98,16 @@ impl fmt::Display for DType {
         match self {
             DType::C => write!(f, "C"),
             DType::D => write!(f, "D"),
+        }
+    }
+}
+
+impl fmt::Display for IType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IType::A() => write!(f, "A"),
+            IType::B() => write!(f, "B"),
+            IType::C(_) => write!(f, "C(tensor)"),
         }
     }
 }

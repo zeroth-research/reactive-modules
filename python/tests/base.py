@@ -56,6 +56,9 @@ class MyTestCase(unittest.TestCase):
         for (ltc, nxt) in c:
             print(f'({ltc}, {nxt})')
 
+        for atom in m.atoms():
+            print(atom)
+
     def test_interface(self):
         x = Wire(dt.C, 0)
         y = Wire(dt.D, 1)
