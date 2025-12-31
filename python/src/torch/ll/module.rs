@@ -1,3 +1,4 @@
+use super::atom::Atom;
 use super::term::Term;
 use super::wire::Wire;
 use super::{DType, IType, try_iter_borrow, try_iter_borrow2};
@@ -91,6 +92,20 @@ impl Module {
     fn ctrl(slf: PyRef<'_, Self>) -> PyResult<ModuleInterface> {
         Self::interface(slf, ModuleInterfaceType::Ctrl)
     }
+
+    fn atoms(slf: PyRef<'_, Self>) -> PyResult<ModuleAtoms> {
+        let py = slf.py();
+        let module = slf.into_pyobject(py)?.unbind();
+        Ok(ModuleAtoms { module })
+    }
+
+    fn __str__(&self) -> String {
+        self.base.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.base)
+    }
 }
 
 impl From<base::Module<DType, IType>> for Module {
@@ -100,12 +115,13 @@ impl From<base::Module<DType, IType>> for Module {
 }
 
 impl Module {
-    fn interface(slf: PyRef<'_, Self>, mitype: ModuleInterfaceType) -> PyResult<ModuleInterface> {
+    fn interface(
+        slf: PyRef<'_, Self>,
+        interface: ModuleInterfaceType,
+    ) -> PyResult<ModuleInterface> {
         let py = slf.py();
-        Ok(ModuleInterface {
-            module: slf.into_pyobject(py)?.unbind(),
-            interface: mitype,
-        })
+        let module = slf.into_pyobject(py)?.unbind();
+        Ok(ModuleInterface { module, interface })
     }
 }
 
@@ -125,19 +141,17 @@ struct ModuleInterface {
 #[pymethods]
 impl ModuleInterface {
     fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Py<ModuleInterfaceIter>> {
-        Py::new(
-            py,
-            ModuleInterfaceIter {
-                module: self.module.clone_ref(py),
-                interface: self.interface.clone(),
-                index: 0,
-            },
-        )
+        let iter = ModuleInterfaceIter {
+            module: self.module.clone_ref(py),
+            interface: self.interface.clone(),
+            index: 0,
+        };
+        Py::new(py, iter)
     }
 
-    fn __str__(slf: PyRef<'_, Self>) -> String {
-        let base_module = &slf.module.borrow(slf.py()).base;
-        match slf.interface {
+    fn __str__<'py>(&self, py: Python<'py>) -> String {
+        let base_module = &self.module.borrow(py).base;
+        match self.interface {
             ModuleInterfaceType::Extl => base_module.extl().to_string(),
             ModuleInterfaceType::Intf => base_module.intf().to_string(),
             ModuleInterfaceType::Prvt => base_module.prvt().to_string(),
@@ -162,20 +176,59 @@ impl ModuleInterfaceIter {
 
     fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<[Wire; 2]> {
         let result = {
-            let base_module = &slf.module.borrow(slf.py()).base;
-            let base_interface = match slf.interface {
-                ModuleInterfaceType::Extl => base_module.extl(),
-                ModuleInterfaceType::Intf => base_module.intf(),
-                ModuleInterfaceType::Prvt => base_module.prvt(),
-                ModuleInterfaceType::Obs => base_module.obs(),
-                ModuleInterfaceType::Ctrl => base_module.ctrl(),
+            let module = &slf.module.borrow(slf.py()).base;
+            let interface = match slf.interface {
+                ModuleInterfaceType::Extl => module.extl(),
+                ModuleInterfaceType::Intf => module.intf(),
+                ModuleInterfaceType::Prvt => module.prvt(),
+                ModuleInterfaceType::Obs => module.obs(),
+                ModuleInterfaceType::Ctrl => module.ctrl(),
             };
-            (slf.index < base_interface.len()).then(|| {
-                base_interface
-                    .entry(slf.index)
-                    .map(Clone::clone)
-                    .map(Wire::from)
-            })
+            if slf.index < interface.len() {
+                Some(interface.entry(slf.index).map(Clone::clone).map(Wire::from))
+            } else {
+                None
+            }
+        };
+        slf.index += 1;
+        result
+    }
+}
+
+#[pyclass]
+struct ModuleAtoms {
+    module: Py<Module>,
+}
+
+#[pymethods]
+impl ModuleAtoms {
+    fn __iter__<'py>(slf: PyRef<'_, Self>) -> PyResult<Py<ModuleAtomsIter>> {
+        let py = slf.py();
+        let module = slf.module.clone_ref(py);
+        Py::new(py, ModuleAtomsIter { module, index: 0 })
+    }
+}
+
+#[pyclass]
+struct ModuleAtomsIter {
+    module: Py<Module>,
+    index: usize,
+}
+
+#[pymethods]
+impl ModuleAtomsIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Atom> {
+        let result = {
+            let module = &slf.module.borrow(slf.py()).base;
+            if slf.index < module.atoms().len() {
+                Some(module.atom(slf.index).clone().into())
+            } else {
+                None
+            }
         };
         slf.index += 1;
         result
