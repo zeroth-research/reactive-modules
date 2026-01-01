@@ -47,8 +47,9 @@ impl fmt::Display for IType {
     }
 }
 
+
 pub(crate) fn try_iter_borrow<'py, P>(
-    iter: &Bound<'py, PyAny>,
+    iter: &'py Bound<'py, PyAny>,
 ) -> PyResult<impl Iterator<Item = PyResult<PyRef<'py, P>>>>
 where
     P: PyClass,

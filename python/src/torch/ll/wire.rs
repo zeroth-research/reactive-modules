@@ -1,7 +1,7 @@
 use super::DType;
 use pyo3::prelude::*;
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Debug, Eq, PartialEq)]
 pub struct Wire {
     base: base::Wire<DType>,
