@@ -2,7 +2,7 @@ use super::atom::Atom;
 use super::term::Term;
 use super::wire::Wire;
 use super::{DType, IType, try_iter_borrow, try_iter_borrow2};
-use pyo3::exceptions::{PyException, PyIndexError};
+use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
@@ -12,57 +12,105 @@ pub struct Module {
     base: base::Module<DType, IType>,
 }
 
+fn try_iter_cloned2(
+    seq: &Bound<'_, PyAny>,
+) -> PyResult<impl Iterator<Item = [base::Wire<DType>; 2]>> {
+    let seq = try_iter_borrow2::<Wire>(seq)?;
+    let seq = seq.into_iter().map(Result::unwrap);
+    let seq = seq.map(|r| r.map(|r| r.base().clone()));
+    Ok(seq)
+}
+
 #[pymethods]
 impl Module {
     #[staticmethod]
-    #[pyo3(signature = (obs, init, update))]
+    #[pyo3(signature = (init, update, obs = None, *, ctrl = None, extl = None, intf = None, prvt = None))]
     fn sequential(
-        obs: &Bound<'_, PyAny>,
         init: &Bound<'_, PyAny>,
         update: &Bound<'_, PyAny>,
+        obs: Option<&Bound<'_, PyAny>>,
+        ctrl: Option<&Bound<'_, PyAny>>,
+        extl: Option<&Bound<'_, PyAny>>,
+        intf: Option<&Bound<'_, PyAny>>,
+        prvt: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let obs = try_iter_borrow2::<Wire>(obs)?;
-        let init = try_iter_borrow::<Term>(init)?;
-        let update = try_iter_borrow::<Term>(update)?;
-
         // TODO: make base take result iterator to avoid unwrap
-        let obs = obs.into_iter().map(Result::unwrap);
+        let init = try_iter_borrow::<Term>(init)?;
         let init = init.into_iter().map(Result::unwrap);
-        let update = update.into_iter().map(Result::unwrap);
-
-        let obs = obs.map(|r| r.map(|r| r.base().clone()));
         let init = init.map(|r| r.base().clone());
+
+        let update = try_iter_borrow::<Term>(update)?;
+        let update = update.into_iter().map(Result::unwrap);
         let update = update.map(|r| r.base().clone());
 
-        match base::Module::sequential(obs, init, update) {
+        let module = match (obs, ctrl, extl, intf, prvt) {
+            (Some(obs), None, None, None, Some(prvt)) => {
+                let obs = try_iter_cloned2(obs)?;
+                let prvt = try_iter_cloned2(prvt)?;
+                base::Module::sequential(obs, prvt, init, update)
+            }
+            (Some(wires), None, None, None, None) => {
+                let wires = try_iter_cloned2(wires)?;
+                base::Module::sequential_observable(wires, init, update)
+            }
+            (None, Some(_state), Some(_input), Some(_output), None) => {
+                todo!() //moore
+            }
+            (None, None, Some(_extl), Some(_intf), Some(_prvt)) => {
+                todo!() //sequential declared
+            }
+            (Some(_obs), Some(_ctrl), Some(_extl), Some(_intf), Some(_prvt)) => {
+                todo!() //sequential fully declared
+            }
+            (None, None, None, Some(_intf), Some(_prvt)) => {
+                todo!() //sequential closed
+            }
+            _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
+        };
+
+        match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (obs, assign))]
-    fn combinatorial(obs: &Bound<'_, PyAny>, assign: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let obs = try_iter_borrow2::<Wire>(obs)?;
-        let assign = try_iter_borrow::<Term>(assign)?;
-
+    #[pyo3(signature = (assign, obs = None, *, extl = None, intf = None))]
+    fn combinatorial(
+        assign: &Bound<'_, PyAny>,
+        obs: Option<&Bound<'_, PyAny>>,
+        extl: Option<&Bound<'_, PyAny>>,
+        intf: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
         // TODO: make base take result iterator to avoid unwrap
-        let obs = obs.into_iter().map(Result::unwrap);
+        let assign = try_iter_borrow::<Term>(assign)?;
         let assign = assign.into_iter().map(Result::unwrap);
-
-        let obs = obs.map(|r| r.map(|r| r.base().clone()));
         let assign = assign.map(|r| r.base().clone());
 
-        match base::Module::combinatorial(obs, assign) {
+        let module = match (obs, extl, intf) {
+            (Some(obs), None, None) => {
+                let obs = try_iter_cloned2(obs)?;
+                base::Module::combinatorial(obs, assign)
+            }
+            (None, Some(_extl), Some(_intf)) => {
+                todo!() // combinatorial declared
+            }
+            (None, None, Some(_intf)) => {
+                todo!() // constant
+            }
+            _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
+        };
+
+        match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (*args))]
-    fn parallel(args: &Bound<'_, PyTuple>) -> PyResult<Self> {
-        let modules = try_iter_borrow::<Self>(args)?;
+    #[pyo3(signature = (*modules))]
+    fn parallel(modules: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        let modules = try_iter_borrow::<Self>(modules)?;
         // TODO: make base take result iterator to avoid unwrap
         let modules = modules.into_iter().map(Result::unwrap);
         let modules = modules.map(|r| r.base.clone());

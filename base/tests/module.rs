@@ -51,7 +51,7 @@ fn example_counter() -> Result<Module<&'static str, &'static str>, &'static str>
 
     let obs = Interface::from_iter([[x0, x1], [y0, y1], [z0, z1], [y00, y01], [z00, z01]]);
 
-    Module::sequential(obs, init, update)
+    Module::sequential_observable(obs, init, update)
 }
 
 #[allow(clippy::vec_init_then_push)]
@@ -113,7 +113,7 @@ fn example_peterson1() -> Result<Module<&'static str, &'static str>, &'static st
     );
 
     let obs = Interface::from_iter([pc1, x1, pc2, x2]);
-    Module::sequential(obs, init, update)
+    Module::sequential_observable(obs, init, update)
 }
 
 fn example_tiny1(
@@ -150,7 +150,7 @@ fn example_tiny1(
     let obs = Interface::from_iter([external, interface]);
     let prvt = Interface::from_iter([private]);
 
-    Module::partially_observable_sequential(obs, prvt, [init], [cons, update])
+    Module::sequential(obs, prvt, [init], [cons, update])
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn can_instantiate_partially_observable_module() {
     let obs = Interface::from_iter(obs);
     let prvt = Interface::from_iter(prvt);
 
-    let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
+    let m = Module::new(obs, prvt, m.atoms().iter().cloned());
     //print!("{}", m);
     assert!(m.is_ok());
 }
@@ -196,7 +196,7 @@ fn cannot_instantiate_external_unobservable_wire() {
     let obs = Interface::from_iter(obs);
     let prvt = Interface::from_iter(prvt);
 
-    let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
+    let m = Module::new(obs, prvt, m.atoms().iter().cloned());
     //print!("{}", m);
 
     assert!(m.is_err());
@@ -229,11 +229,11 @@ fn module_write_all_ctrl() {
         [x0, xn0.clone()],
     ]);
 
-    let m = Module::sequential(obs.clone(), vec![], update.clone());
+    let m = Module::sequential_observable(obs.clone(), vec![], update.clone());
     assert!(m.is_err_and(|msg| { msg == "unassigned control wire after init" }));
 
     let init: Vec<Term<&str, &str>> = [term!("ID", [xn0.clone()], [xn.clone()]).unwrap()].to_vec();
-    let m = Module::sequential(obs.clone(), init, update.clone());
+    let m = Module::sequential_observable(obs.clone(), init, update.clone());
     assert!(m.is_err_and(|msg| {
         dbg!(&msg);
         msg == "unassigned control wire after init"
@@ -245,7 +245,7 @@ fn module_write_all_ctrl() {
     ]
     .to_vec();
 
-    let m = Module::sequential(obs.clone(), init.clone(), update);
+    let m = Module::sequential_observable(obs.clone(), init.clone(), update);
     assert!(m.is_err_and(|msg| {
         dbg!(&msg);
         msg == "unassigned control wire after update"
@@ -257,7 +257,7 @@ fn module_write_all_ctrl() {
     ]
     .to_vec();
 
-    let m = Module::sequential(obs.clone(), init, update);
+    let m = Module::sequential_observable(obs.clone(), init, update);
     assert!(m.is_ok());
 }
 

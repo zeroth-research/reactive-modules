@@ -23,32 +23,33 @@ class MyTestCase(unittest.TestCase):
 
     def test_module_sequential(self):
         x = (Wire(dt.C, 0), Wire(dt.C, 1))
-        init = Term(it.A(), [x[1]])
-        update = Term(it.A(), [x[1]], [x[0]])
-        m = Module.sequential([x], [init], [update])
+        init = [Term(it.A(), [x[1]])]
+        update = [Term(it.A(), [x[1]], [x[0]])]
+        m = Module.sequential(init, update, [x])
 
     def test_module_combinatorial(self):
         x = (Wire(dt.C, 0), Wire(dt.C, 1))
 
-        assign = Term(it.A(), [x[1]])
-        m = Module.combinatorial([x], [assign])
+        assign = [Term(it.A(), [x[1]])]
+        m = Module.combinatorial(assign, [x])
 
     def test_module_parallel(self):
         x = (Wire(dt.C, 0), Wire(dt.C, 1))
         y = (Wire(dt.C, 2), Wire(dt.C, 3))
         z = (Wire(dt.C, 4), Wire(dt.C, 5))
         w = (Wire(dt.C, 6), Wire(dt.C, 7))
+        v = (Wire(dt.C, 8), Wire(dt.C, 9))
 
         init = [Term(it.A(), [x[1]])]
         update = [Term(it.A(), [x[1]], [x[0], y[1]])]
-        p = Module.sequential([x, y], init, update)
+        p = Module.sequential(init, update, obs=[x, y])
 
-        init = [Term(it.A(), [y[1]])]
-        update = [Term(it.A(), [y[1]], [x[0]])]
-        q = Module.sequential([x, y], init, update)
+        init = [Term(it.A(), [y[1], v[1]])]
+        update = [Term(it.A(), [y[1], v[1]], [x[0], v[0]])]
+        q = Module.sequential(init, update, obs=[x, y], prvt=[v])
 
         assign = [Term(it.A(), [z[1]], [y[1], w[1]])]
-        r = Module.combinatorial(assign=assign, obs=(z, y, w))
+        r = Module.combinatorial(assign, obs=(z, y, w))
 
         m = Module.parallel(p, q, r)
 
@@ -64,7 +65,7 @@ class MyTestCase(unittest.TestCase):
         print(m.intf())
         assert (m.intf() == [x, y, z])
         assert (m.extl() == [w])
-        assert (m.prvt() == [])
+        assert (m.prvt() == [v])
 
     def test_interface(self):
         x = Wire(dt.C, 0)

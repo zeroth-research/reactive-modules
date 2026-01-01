@@ -83,7 +83,7 @@ pub fn build_module(ctx: &mut ToyContext) -> ToyModule {
     let latched = ctx.get_intf(&["x", "y", "z", "y0", "z0"]).unwrap();
     let next = ctx.get_intf(&["x'", "y'", "z'", "y0'", "z0'"]).unwrap();
 
-    ToyModule::sequential(
+    ToyModule::sequential_observable(
         zip(latched, next).map(|([l], [n])| [l, n]),
         init_terms,
         update_terms,
