@@ -1,6 +1,6 @@
 use crate::wire::Wire;
 use crate::{DType, IType, try_iter_borrow};
-use pyo3::exceptions::PyException;
+use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 
 #[pyclass]
@@ -96,77 +96,68 @@ pub(crate) enum TermInterfaceType {
     Read,
     Write,
 }
-#[pyclass]
+#[pyclass(sequence)]
 struct TermInterface {
     term: Py<Term>,
     interface: TermInterfaceType,
 }
+
 #[pymethods]
 impl TermInterface {
-    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Py<TermInterfaceIter>> {
-        Py::new(
-            py,
-            TermInterfaceIter {
-                module: self.term.clone_ref(py),
-                interface: self.interface.clone(),
-                index: 0,
-            },
-        )
-    }
-
-    fn __str__(slf: PyRef<'_, Self>) -> String {
-        let base_term = &slf.term.borrow(slf.py()).base;
-        match slf.interface {
+    fn __str__<'py>(&self, py: Python<'py>) -> String {
+        let base_term = &self.term.borrow(py).base;
+        match self.interface {
             TermInterfaceType::Read => base_term.read().to_string(),
             TermInterfaceType::Write => base_term.write().to_string(),
         }
     }
 
-    fn __eq__(&self, other: PyRef<'_, TermInterface>) -> bool {
+    fn __eq__<'py>(&self, other: &Bound<'py, PyAny>) -> bool {
         let py = other.py();
-        let this_term = self.term.borrow(py);
-        let other_term = other.term.borrow(py);
-
-        let this_interface = match self.interface {
-            TermInterfaceType::Read => this_term.base.read(),
-            TermInterfaceType::Write => this_term.base.write(),
-        };
-        let other_interface = match other.interface {
-            TermInterfaceType::Read => other_term.base.read(),
-            TermInterfaceType::Write => other_term.base.write(),
+        let this = &self.term.borrow(py).base;
+        let other = match try_iter_borrow::<Wire>(other) {
+            Ok(other) => other,
+            Err(_) => return false,
         };
 
-        this_interface == other_interface
-    }
-}
+        let this = match self.interface {
+            TermInterfaceType::Read => this.read(),
+            TermInterfaceType::Write => this.write(),
+        };
 
-#[pyclass]
-struct TermInterfaceIter {
-    module: Py<Term>,
-    interface: TermInterfaceType,
-    index: usize,
-}
-
-#[pymethods]
-impl TermInterfaceIter {
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Wire> {
-        let result: Option<Wire> = {
-            let term = &slf.module.borrow(slf.py()).base;
-            let interface = match slf.interface {
-                TermInterfaceType::Read => term.read(),
-                TermInterfaceType::Write => term.write(),
-            };
-            if slf.index < interface.len() {
-                Some(interface.wire(0, slf.index).clone().into())
-            } else {
-                None
+        let mut this = this.wires();
+        let mut other = other.into_iter();
+        loop {
+            match (this.next(), other.next()) {
+                (Some(this), Some(Ok(other))) => {
+                    if this != other.base() {
+                        return false;
+                    }
+                }
+                (None, None) => return true,
+                _ => return false,
             }
+        }
+    }
+
+    fn __getitem__<'py>(&self, index: usize, py: Python<'py>) -> PyResult<Wire> {
+        let term = &self.term.borrow(py).base;
+        let interface = match self.interface {
+            TermInterfaceType::Read => term.read(),
+            TermInterfaceType::Write => term.write(),
         };
-        slf.index += 1;
-        result
+        if index < interface.len() {
+            Ok(interface.wire(0, index).clone().into())
+        } else {
+            Err(PyIndexError::new_err("index out of bounds"))
+        }
+    }
+
+    fn __len__<'py>(&self, py: Python<'py>) -> usize {
+        let term = &self.term.borrow(py).base;
+        match self.interface {
+            TermInterfaceType::Read => term.read().len(),
+            TermInterfaceType::Write => term.write().len(),
+        }
     }
 }

@@ -2,7 +2,7 @@ use crate::atom::Atom;
 use crate::term::Term;
 use crate::wire::Wire;
 use crate::{DType, IType, try_iter_borrow, try_iter_borrow2};
-use pyo3::exceptions::PyException;
+use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
@@ -133,22 +133,13 @@ enum ModuleInterfaceType {
     Obs,
     Ctrl,
 }
-#[pyclass]
+#[pyclass(sequence)]
 struct ModuleInterface {
     module: Py<Module>,
     interface: ModuleInterfaceType,
 }
 #[pymethods]
 impl ModuleInterface {
-    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Py<ModuleInterfaceIter>> {
-        let iter = ModuleInterfaceIter {
-            module: self.module.clone_ref(py),
-            interface: self.interface.clone(),
-            index: 0,
-        };
-        Py::new(py, iter)
-    }
-
     fn __str__<'py>(&self, py: Python<'py>) -> String {
         let base_module = &self.module.borrow(py).base;
         match self.interface {
@@ -159,78 +150,83 @@ impl ModuleInterface {
             ModuleInterfaceType::Ctrl => base_module.ctrl().to_string(),
         }
     }
-}
 
-#[pyclass]
-struct ModuleInterfaceIter {
-    module: Py<Module>,
-    interface: ModuleInterfaceType,
-    index: usize,
-}
-
-#[pymethods]
-impl ModuleInterfaceIter {
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<[Wire; 2]> {
-        let result = {
-            let module = &slf.module.borrow(slf.py()).base;
-            let interface = match slf.interface {
-                ModuleInterfaceType::Extl => module.extl(),
-                ModuleInterfaceType::Intf => module.intf(),
-                ModuleInterfaceType::Prvt => module.prvt(),
-                ModuleInterfaceType::Obs => module.obs(),
-                ModuleInterfaceType::Ctrl => module.ctrl(),
-            };
-            if slf.index < interface.len() {
-                Some(interface.entry(slf.index).map(Clone::clone).map(Wire::from))
-            } else {
-                None
-            }
+    fn __getitem__<'py>(&self, index: usize, py: Python<'py>) -> PyResult<[Wire; 2]> {
+        let module = &self.module.borrow(py).base;
+        let interface = match self.interface {
+            ModuleInterfaceType::Extl => module.extl(),
+            ModuleInterfaceType::Intf => module.intf(),
+            ModuleInterfaceType::Prvt => module.prvt(),
+            ModuleInterfaceType::Obs => module.obs(),
+            ModuleInterfaceType::Ctrl => module.ctrl(),
         };
-        slf.index += 1;
-        result
+        if index < interface.len() {
+            let entry = interface.entry(index).map(Clone::clone);
+            Ok(entry.map(Wire::from))
+        } else {
+            Err(PyIndexError::new_err("index out of bounds"))
+        }
+    }
+
+    fn __len__<'py>(&self, py: Python<'py>) -> usize {
+        let module = &self.module.borrow(py).base;
+        match self.interface {
+            ModuleInterfaceType::Extl => module.extl().len(),
+            ModuleInterfaceType::Intf => module.intf().len(),
+            ModuleInterfaceType::Prvt => module.prvt().len(),
+            ModuleInterfaceType::Obs => module.obs().len(),
+            ModuleInterfaceType::Ctrl => module.ctrl().len(),
+        }
+    }
+
+    fn __eq__<'py>(&self, other: &Bound<'py, PyAny>) -> bool {
+        let py = other.py();
+        let this = &self.module.borrow(py).base;
+        let other = match try_iter_borrow2::<Wire>(other) {
+            Ok(other) => other,
+            Err(_) => return false,
+        };
+
+        let this = match self.interface {
+            ModuleInterfaceType::Extl => this.extl(),
+            ModuleInterfaceType::Intf => this.intf(),
+            ModuleInterfaceType::Prvt => this.prvt(),
+            ModuleInterfaceType::Obs => this.obs(),
+            ModuleInterfaceType::Ctrl => this.ctrl(),
+        };
+
+        let mut this = this.iter();
+        let mut other = other.into_iter();
+        loop {
+            match (this.next(), other.next()) {
+                (Some(this), Some(Ok(other))) => {
+                    if this.iter().zip(other).any(|(&a, b)| a != b.base()) {
+                        return false;
+                    }
+                }
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
     }
 }
 
-#[pyclass]
+#[pyclass(sequence)]
 struct ModuleAtoms {
     module: Py<Module>,
 }
 
 #[pymethods]
 impl ModuleAtoms {
-    fn __iter__<'py>(slf: PyRef<'_, Self>) -> PyResult<Py<ModuleAtomsIter>> {
-        let py = slf.py();
-        let module = slf.module.clone_ref(py);
-        Py::new(py, ModuleAtomsIter { module, index: 0 })
-    }
-}
-
-#[pyclass]
-struct ModuleAtomsIter {
-    module: Py<Module>,
-    index: usize,
-}
-
-#[pymethods]
-impl ModuleAtomsIter {
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
+    fn __getitem__<'py>(&self, index: usize, py: Python<'py>) -> PyResult<Atom> {
+        let module = &self.module.borrow(py).base;
+        let atoms = module.atoms();
+        let result = atoms.get(index).map(Clone::clone).map(Into::into);
+        result.ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Atom> {
-        let result = {
-            let module = &slf.module.borrow(slf.py()).base;
-            if slf.index < module.atoms().len() {
-                Some(module.atom(slf.index).clone().into())
-            } else {
-                None
-            }
-        };
-        slf.index += 1;
-        result
+    fn __len__<'py>(&self, py: Python<'py>) -> usize {
+        let module = &self.module.borrow(py).base;
+        module.atoms().len()
     }
 }

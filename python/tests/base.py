@@ -36,6 +36,7 @@ class MyTestCase(unittest.TestCase):
         x = (Wire(dt.C, 0), Wire(dt.C, 1))
         y = (Wire(dt.C, 2), Wire(dt.C, 3))
         z = (Wire(dt.C, 4), Wire(dt.C, 5))
+        w = (Wire(dt.C, 6), Wire(dt.C, 7))
 
         init = [Term(it.A(), [x[1]])]
         update = [Term(it.A(), [x[1]], [x[0], y[1]])]
@@ -45,8 +46,8 @@ class MyTestCase(unittest.TestCase):
         update = [Term(it.A(), [y[1]], [x[0]])]
         q = Module.sequential([x, y], init, update)
 
-        assign = [Term(it.A(), [z[1]], [y[1]])]
-        r = Module.combinatorial(assign=assign, obs=(z, y))
+        assign = [Term(it.A(), [z[1]], [y[1], w[1]])]
+        r = Module.combinatorial(assign=assign, obs=(z, y, w))
 
         m = Module.parallel(p, q, r)
 
@@ -59,6 +60,11 @@ class MyTestCase(unittest.TestCase):
         for atom in m.atoms():
             print(atom)
 
+        print(m.intf())
+        assert (m.intf() == [x, y, z])
+        assert (m.extl() == [w])
+        assert (m.prvt() == [])
+
     def test_interface(self):
         x = Wire(dt.C, 0)
         y = Wire(dt.D, 1)
@@ -70,9 +76,14 @@ class MyTestCase(unittest.TestCase):
         assert (r is not r2)
         assert (r is not w)
         assert (w == r)
+        assert (w == [x, y])
+        assert ([x, y] == w)
 
         for wire in r:
             print('-->', wire)
+
+        for i in range(len(w)):
+            print('-->', w[i])
 
 
 if __name__ == '__main__':
