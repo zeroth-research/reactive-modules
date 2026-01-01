@@ -25,7 +25,7 @@ impl Context {
 
         writeln!(s, " {fmt_bold}external{fmt_bold_end}").unwrap();
         let extl = module.extl();
-        for (ltc, nxt) in extl[0].iter().zip(extl[1].iter()) {
+        for (ltc, nxt) in extl.latched().iter().zip(extl.next().iter()) {
             writeln!(
                 s,
                 "   {}, {}: {}",
@@ -38,7 +38,7 @@ impl Context {
 
         writeln!(s, " {fmt_bold}interface{fmt_bold_end}").unwrap();
         let intf = module.intf();
-        for (ltc, nxt) in intf[0].iter().zip(intf[1].iter()) {
+        for (ltc, nxt) in intf.latched().iter().zip(intf.next().iter()) {
             writeln!(
                 s,
                 "   {}, {}: {}",
@@ -51,7 +51,7 @@ impl Context {
 
         writeln!(s, " {fmt_bold}private{fmt_bold_end}").unwrap();
         let prvt = module.prvt();
-        for (ltc, nxt) in prvt[0].iter().zip(prvt[1].iter()) {
+        for (ltc, nxt) in prvt.latched().iter().zip(prvt.next().iter()) {
             writeln!(
                 s,
                 "   {}, {}: {}",

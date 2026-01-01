@@ -67,7 +67,7 @@ pub fn build_module(ctx: &mut ToyContext) -> ToyModule {
     let latched = ctx.get_vars(&["x", "y", "z", "y0", "z0"]);
     let next = ctx.get_vars(&["x'", "y'", "z'", "y0'", "z0'"]);
 
-    ToyModule::sequential(
+    ToyModule::sequential_observable(
         zip(latched, next).map(|([l], [n])| [l, n]),
         init_terms,
         update_terms,

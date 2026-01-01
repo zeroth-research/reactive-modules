@@ -235,7 +235,7 @@ pub fn create_test_module() -> Module<DType, IType> {
 
     let atom = Atom::sequential(all_ltc.iter(), all_nxt.iter(), init, update).unwrap();
 
-    Module::partially_observable(obs_pairs, prvt_pairs, [atom]).unwrap()
+    Module::new(obs_pairs, prvt_pairs, [atom]).unwrap()
 }
 
 #[test]

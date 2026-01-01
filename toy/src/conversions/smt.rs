@@ -360,13 +360,11 @@ impl<'a> TryInto<SmtModule> for ModuleConverter<'a> {
 
         #[cfg(debug_assertions)]
         {
-            for i in 0..=1 {
-                debug_assert!(extl[i].len() == self.0.extl()[i].len());
-                debug_assert!(intf[i].len() == self.0.intf()[i].len());
-                debug_assert!(prvt[i].len() == self.0.prvt()[i].len());
-                debug_assert!(obs[i].len() == self.0.obs()[i].len());
-                debug_assert!(ctrl[i].len() == self.0.ctrl()[i].len());
-            }
+            debug_assert!(extl.len() == self.0.extl().len());
+            debug_assert!(intf.len() == self.0.intf().len());
+            debug_assert!(prvt.len() == self.0.prvt().len());
+            debug_assert!(obs.len() == self.0.obs().len());
+            debug_assert!(ctrl.len() == self.0.ctrl().len());
 
             check_variables(&translator, self.0.extl(), &extl);
             check_variables(&translator, self.0.intf(), &intf);
@@ -387,6 +385,6 @@ impl<'a> TryInto<SmtModule> for ModuleConverter<'a> {
             atoms.push(SmtAtom::sequential(latched, next, init, update)?);
         }
 
-        SmtModule::partially_observable(obs, prvt, atoms)
+        SmtModule::new(obs, prvt, atoms)
     }
 }

@@ -40,8 +40,12 @@ impl WrappedModule {
         let update = wterms_to_torchterms(ctx, update).unwrap();
 
         Self {
-            module: Module::sequential(zip(latched, next).map(|([l], [n])| [l, n]), init, update)
-                .expect("Failed creating module"),
+            module: Module::sequential_observable(
+                zip(latched, next).map(|([l], [n])| [l, n]),
+                init,
+                update,
+            )
+            .expect("Failed creating module"),
         }
     }
 

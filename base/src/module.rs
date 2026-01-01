@@ -128,7 +128,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     ///
     /// # See Also
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    /// - [`Module::partially_observable`], [`Module::observable`], [`Module::sequential`],
+    /// - [`Module::new`], [`Module::observable`], [`Module::sequential_observable`],
     ///   [`Module::combinatorial`] for safe, automated module construction
     fn new_unchecked(
         extl: Interface<D, 2>,
@@ -283,8 +283,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         O: IntoIterator<Item = T>,
         A: IntoIterator<Item = Atom<D, I>> + Sized,
     {
-        let prvt: std::iter::Empty<[Wire<D>; 2]> = std::iter::empty();
-        Self::partially_observable(obs, prvt, atoms)
+        Self::new(obs, std::iter::empty::<T>(), atoms)
     }
 
     /// Constructs a **partially observable module** from a sequence of atoms.
@@ -310,11 +309,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// - [`observable`], for constructing modules where all wires are visible.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn partially_observable<T, U, O, P, A>(
-        obs: O,
-        prvt: P,
-        atoms: A,
-    ) -> Result<Self, &'static str>
+    pub fn new<T, U, O, P, A>(obs: O, prvt: P, atoms: A) -> Result<Self, &'static str>
     where
         T: Into<[Wire<D>; 2]>,
         U: Into<[Wire<D>; 2]>,
@@ -425,7 +420,8 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// and is **fully observable by default**.
     ///
     /// # Parameters
-    /// - `obs`: The pair of observable wires `[latched, next]` representing the module’s interface.
+    /// - `obs`: The sequence of `[latched, next]`-wire pairs representing the module’s observables.
+    /// - `prvt`: The sequence of `[latched, next]`-wire pairs representing the module’s hidden state.
     /// - `init`: The set of terms defining the module’s initial state.
     /// - `update`: The set of terms defining the module’s state update at each time step.
     ///
@@ -436,19 +432,21 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// # See Also
     /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn sequential<T, O, V, U>(obs: O, init: V, update: U) -> Result<Self, &'static str>
+    pub fn sequential_observable<T, O, V, U>(
+        obs: O,
+        init: V,
+        update: U,
+    ) -> Result<Self, &'static str>
     where
         T: Into<[Wire<D>; 2]>,
         O: IntoIterator<Item = T>,
         V: IntoIterator<Item = Term<D, I>>,
         U: IntoIterator<Item = Term<D, I>>,
     {
-        let obs = Interface::from_iter(obs);
-        let atom = Atom::sequential(obs.latched(), obs.next(), init, update)?;
-        Self::observable(obs, [atom])
+        Self::sequential(obs, std::iter::empty::<T>(), init, update)
     }
 
-    pub fn partially_observable_sequential<TO, TP, O, P, V, U>(
+    pub fn sequential<TO, TP, O, P, V, U>(
         obs: O,
         prvt: P,
         init: V,
@@ -467,7 +465,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let latched = obs.latched().iter().chain(prvt.latched().iter());
         let next = obs.next().iter().chain(prvt.next().iter());
         let atom = Atom::sequential(latched, next, init, update)?;
-        Self::partially_observable(obs, prvt, [atom])
+        Self::new(obs, prvt, [atom])
     }
 
     /// Constructs the *parallel composition* of several `Module` instances.
@@ -685,7 +683,7 @@ impl<D: Eq + Clone + Debug, I: Clone> Module<D, I> {
     /// or an error string if inference or consistency checks fail.
     ///
     /// # See Also
-    /// - [`Module::sequential`], for constructing stateful, sequential modules.
+    /// - [`Module::sequential_observable`], for constructing stateful, sequential modules.
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
     pub fn combinatorial<T, O, V>(obs: O, assign: V) -> Result<Self, &'static str>
     where
