@@ -3,7 +3,7 @@ use crate::{DType, IType, try_iter_borrow};
 use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 
-#[pyclass]
+#[pyclass(frozen)]
 pub(crate) struct Term {
     base: base::Term<DType, IType>,
 }
@@ -102,30 +102,29 @@ struct TermInterface {
     interface: TermInterfaceType,
 }
 
-#[pymethods]
 impl TermInterface {
-    fn __str__<'py>(&self, py: Python<'py>) -> String {
-        let base_term = &self.term.borrow(py).base;
+    fn base(&self) -> &base::Interface<DType> {
+        let base = &self.term.get().base;
         match self.interface {
-            TermInterfaceType::Read => base_term.read().to_string(),
-            TermInterfaceType::Write => base_term.write().to_string(),
+            TermInterfaceType::Read => base.read(),
+            TermInterfaceType::Write => base.write(),
         }
     }
+}
 
-    fn __eq__<'py>(&self, other: &Bound<'py, PyAny>) -> bool {
-        let py = other.py();
-        let this = &self.term.borrow(py).base;
+#[pymethods]
+impl TermInterface {
+    fn __str__(&self) -> String {
+        self.base().to_string()
+    }
+
+    fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
         let other = match try_iter_borrow::<Wire>(other) {
             Ok(other) => other,
             Err(_) => return false,
         };
 
-        let this = match self.interface {
-            TermInterfaceType::Read => this.read(),
-            TermInterfaceType::Write => this.write(),
-        };
-
-        let mut this = this.wires();
+        let mut this = self.base().wires();
         let mut other = other.into_iter();
         loop {
             match (this.next(), other.next()) {
@@ -140,12 +139,8 @@ impl TermInterface {
         }
     }
 
-    fn __getitem__<'py>(&self, index: usize, py: Python<'py>) -> PyResult<Wire> {
-        let term = &self.term.borrow(py).base;
-        let interface = match self.interface {
-            TermInterfaceType::Read => term.read(),
-            TermInterfaceType::Write => term.write(),
-        };
+    fn __getitem__(&self, index: usize) -> PyResult<Wire> {
+        let interface = self.base();
         if index < interface.len() {
             Ok(interface.wire(0, index).clone().into())
         } else {
@@ -153,11 +148,7 @@ impl TermInterface {
         }
     }
 
-    fn __len__<'py>(&self, py: Python<'py>) -> usize {
-        let term = &self.term.borrow(py).base;
-        match self.interface {
-            TermInterfaceType::Read => term.read().len(),
-            TermInterfaceType::Write => term.write().len(),
-        }
+    fn __len__(&self) -> usize {
+        self.base().len()
     }
 }

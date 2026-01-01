@@ -6,7 +6,7 @@ use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
     base: base::Module<DType, IType>,
@@ -138,28 +138,27 @@ struct ModuleInterface {
     module: Py<Module>,
     interface: ModuleInterfaceType,
 }
-#[pymethods]
-impl ModuleInterface {
-    fn __str__<'py>(&self, py: Python<'py>) -> String {
-        let base_module = &self.module.borrow(py).base;
-        match self.interface {
-            ModuleInterfaceType::Extl => base_module.extl().to_string(),
-            ModuleInterfaceType::Intf => base_module.intf().to_string(),
-            ModuleInterfaceType::Prvt => base_module.prvt().to_string(),
-            ModuleInterfaceType::Obs => base_module.obs().to_string(),
-            ModuleInterfaceType::Ctrl => base_module.ctrl().to_string(),
-        }
-    }
 
-    fn __getitem__<'py>(&self, index: usize, py: Python<'py>) -> PyResult<[Wire; 2]> {
-        let module = &self.module.borrow(py).base;
-        let interface = match self.interface {
+impl ModuleInterface {
+    fn base(&self) -> &base::Interface<DType, 2> {
+        let module = &self.module.get().base;
+        match self.interface {
             ModuleInterfaceType::Extl => module.extl(),
             ModuleInterfaceType::Intf => module.intf(),
             ModuleInterfaceType::Prvt => module.prvt(),
             ModuleInterfaceType::Obs => module.obs(),
             ModuleInterfaceType::Ctrl => module.ctrl(),
-        };
+        }
+    }
+}
+#[pymethods]
+impl ModuleInterface {
+    fn __str__(&self) -> String {
+        self.base().to_string()
+    }
+
+    fn __getitem__(&self, index: usize) -> PyResult<[Wire; 2]> {
+        let interface = self.base();
         if index < interface.len() {
             let entry = interface.entry(index).map(Clone::clone);
             Ok(entry.map(Wire::from))
@@ -168,34 +167,17 @@ impl ModuleInterface {
         }
     }
 
-    fn __len__<'py>(&self, py: Python<'py>) -> usize {
-        let module = &self.module.borrow(py).base;
-        match self.interface {
-            ModuleInterfaceType::Extl => module.extl().len(),
-            ModuleInterfaceType::Intf => module.intf().len(),
-            ModuleInterfaceType::Prvt => module.prvt().len(),
-            ModuleInterfaceType::Obs => module.obs().len(),
-            ModuleInterfaceType::Ctrl => module.ctrl().len(),
-        }
+    fn __len__(&self) -> usize {
+        self.base().len()
     }
 
-    fn __eq__<'py>(&self, other: &Bound<'py, PyAny>) -> bool {
-        let py = other.py();
-        let this = &self.module.borrow(py).base;
+    fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
         let other = match try_iter_borrow2::<Wire>(other) {
             Ok(other) => other,
             Err(_) => return false,
         };
 
-        let this = match self.interface {
-            ModuleInterfaceType::Extl => this.extl(),
-            ModuleInterfaceType::Intf => this.intf(),
-            ModuleInterfaceType::Prvt => this.prvt(),
-            ModuleInterfaceType::Obs => this.obs(),
-            ModuleInterfaceType::Ctrl => this.ctrl(),
-        };
-
-        let mut this = this.iter();
+        let mut this = self.base().iter();
         let mut other = other.into_iter();
         loop {
             match (this.next(), other.next()) {
@@ -218,15 +200,15 @@ struct ModuleAtoms {
 
 #[pymethods]
 impl ModuleAtoms {
-    fn __getitem__<'py>(&self, index: usize, py: Python<'py>) -> PyResult<Atom> {
-        let module = &self.module.borrow(py).base;
+    fn __getitem__(&self, index: usize) -> PyResult<Atom> {
+        let module = &self.module.get().base;
         let atoms = module.atoms();
         let result = atoms.get(index).map(Clone::clone).map(Into::into);
         result.ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
-    fn __len__<'py>(&self, py: Python<'py>) -> usize {
-        let module = &self.module.borrow(py).base;
+    fn __len__(&self) -> usize {
+        let module = &self.module.get().base;
         module.atoms().len()
     }
 }
