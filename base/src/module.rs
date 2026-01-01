@@ -72,10 +72,6 @@ impl<D, I> Module<D, I> {
         self.temp.wires()
     }
 
-    pub fn atom(&self, index: usize) -> &Atom<D, I> {
-        &self.atoms[index]
-    }
-
     pub fn empty() -> Self {
         Module {
             extl: Interface::empty(),

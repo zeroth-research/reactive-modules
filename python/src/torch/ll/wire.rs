@@ -2,6 +2,7 @@ use super::DType;
 use pyo3::prelude::*;
 
 #[pyclass]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Wire {
     base: base::Wire<DType>,
 }
