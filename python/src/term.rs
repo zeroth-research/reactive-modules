@@ -140,12 +140,9 @@ impl TermInterface {
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        let interface = self.base();
-        if index < interface.len() {
-            Ok(interface.wire(0, index).clone().into())
-        } else {
-            Err(PyIndexError::new_err("index out of bounds"))
-        }
+        let item = self.base().wire(0, index);
+        item.and_then(|w| Some(w.clone().into()))
+            .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
     fn __len__(&self) -> usize {

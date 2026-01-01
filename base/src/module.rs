@@ -204,7 +204,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             let nxt_to_dtype_get = |w| nxt_to_ltc.get(&w).and_then(|z| ltc_to_dtype.get(z));
 
             // check atoms consistency
-            let mut written: HashSet<usize> = HashSet::from_iter(extl[1].iter().map(Wire::id));
+            let mut written: HashSet<usize> = HashSet::from_iter(extl.next().iter().map(Wire::id));
             for atom in atoms.iter() {
                 for (ltc, dtype) in atom.read().wires().map(Into::into) {
                     // reads are latched, and dtype matches
@@ -225,7 +225,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             }
 
             // check that all module control wires are written/controlled by an atom
-            for nxt in ctrl[1].iter().map(Wire::id) {
+            for nxt in ctrl.next().iter().map(Wire::id) {
                 debug_assert!(written.contains(&nxt));
             }
 
@@ -384,15 +384,15 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         }
 
         // Check that private wires are controlled
-        for nxt in prvt[1].iter().map(Wire::id) {
+        for nxt in prvt.next().iter().map(Wire::id) {
             if !ctrl_nxt.contains(&nxt) {
                 return Err("private wire not controlled");
             }
         }
 
         // Build intf and extl wires based on inferred control set
-        let mut extl: Vec<[Wire<D>; 2]> = Vec::with_capacity(obs[0].len() - ctrl_nxt.len());
-        let mut intf: Vec<[Wire<D>; 2]> = Vec::with_capacity(ctrl_nxt.len() - prvt[0].len());
+        let mut extl: Vec<[Wire<D>; 2]> = Vec::with_capacity(obs.len() - ctrl_nxt.len());
+        let mut intf: Vec<[Wire<D>; 2]> = Vec::with_capacity(ctrl_nxt.len() - prvt.len());
         let mut ctrl: Vec<[Wire<D>; 2]> = Vec::with_capacity(ctrl_nxt.len());
 
         for [ltc, nxt] in obs.iter() {
@@ -444,7 +444,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         U: IntoIterator<Item = Term<D, I>>,
     {
         let obs = Interface::from_iter(obs);
-        let atom = Atom::sequential(&obs[0], &obs[1], init, update)?;
+        let atom = Atom::sequential(obs.latched(), obs.next(), init, update)?;
         Self::observable(obs, [atom])
     }
 
@@ -464,8 +464,8 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     {
         let obs = Interface::try_from_iter(obs)?;
         let prvt = Interface::try_from_iter(prvt)?;
-        let latched = obs[0].iter().chain(prvt[0].iter());
-        let next = obs[1].iter().chain(prvt[1].iter());
+        let latched = obs.latched().iter().chain(prvt.latched().iter());
+        let next = obs.next().iter().chain(prvt.next().iter());
         let atom = Atom::sequential(latched, next, init, update)?;
         Self::partially_observable(obs, prvt, [atom])
     }
@@ -694,7 +694,7 @@ impl<D: Eq + Clone + Debug, I: Clone> Module<D, I> {
         V: IntoIterator<Item = Term<D, I>>,
     {
         let obs = Interface::from_iter(obs);
-        let atom = Atom::combinatorial(&obs[1], assign)?;
+        let atom = Atom::combinatorial(obs.next(), assign)?;
         Self::observable(obs, [atom])
     }
 }
