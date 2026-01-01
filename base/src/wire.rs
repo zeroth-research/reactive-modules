@@ -2,7 +2,6 @@ use std::array::from_fn;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
-use std::ops::Index;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wire<D> {
@@ -79,20 +78,23 @@ impl<D: Eq> Interface<D> {
     }
 }
 
-impl<D, const N: usize> Index<usize> for Interface<D, N> {
-    type Output = [Wire<D>];
-    fn index(&self, index: usize) -> &Self::Output {
-        self.wires[index].as_slice()
+impl<D> Interface<D, 2> {
+    pub fn latched(&self) -> &[Wire<D>] {
+        self.wires[0].as_slice()
+    }
+
+    pub fn next(&self) -> &[Wire<D>] {
+        self.wires[1].as_slice()
     }
 }
 
 impl<D, const N: usize> Interface<D, N> {
-    pub fn wire(&self, i: usize, j: usize) -> &Wire<D> {
-        &self.wires[i][j]
+    pub fn wire(&self, time: usize, index: usize) -> Option<&Wire<D>> {
+        self.wires.get(time).and_then(|v| v.get(index))
     }
 
-    pub fn entry(&self, j: usize) -> [&Wire<D>; N] {
-        from_fn(|i| &self.wires[i][j])
+    pub fn entry(&self, index: usize) -> Option<[&Wire<D>; N]> {
+        (index < self.len()).then(|| from_fn(|i| &self.wires[i][index]))
     }
 }
 

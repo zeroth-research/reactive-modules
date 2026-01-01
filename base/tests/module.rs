@@ -207,8 +207,8 @@ fn can_instantiate_example_peterson1() {
     let m = example_peterson1().unwrap();
 
     assert!(m.is_open());
-    assert_eq!(m.extl()[0].len(), 2);
-    assert_eq!(m.intf()[0].len(), 2);
+    assert_eq!(m.extl().len(), 2);
+    assert_eq!(m.intf().len(), 2);
 }
 
 #[test]

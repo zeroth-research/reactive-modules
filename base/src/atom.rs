@@ -99,7 +99,7 @@ impl<D: Eq, I> Atom<D, I> {
             for id in init
                 .iter()
                 .chain(update.iter())
-                .flat_map(|t| t.write()[0].iter())
+                .flat_map(|t| t.write().wires())
                 .map(Wire::id)
             {
                 debug_assert!(!decl.contains_key(&id), "wire {id} undeclared");

@@ -158,13 +158,9 @@ impl ModuleInterface {
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<[Wire; 2]> {
-        let interface = self.base();
-        if index < interface.len() {
-            let entry = interface.entry(index).map(Clone::clone);
-            Ok(entry.map(Wire::from))
-        } else {
-            Err(PyIndexError::new_err("index out of bounds"))
-        }
+        let item = self.base().entry(index);
+        item.and_then(|i| Some(i.map(Clone::clone).map(Wire::from)))
+            .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
     fn __len__(&self) -> usize {
