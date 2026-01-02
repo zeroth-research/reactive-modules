@@ -1,7 +1,6 @@
 use super::atom::Atom;
-use super::term::Term;
 use super::wire::Wire;
-use super::{DType, IType, try_iter_borrow, try_iter_borrow2};
+use super::{DType, IType, try_iter_borrow, try_array2_iter_borrow, try_wire2_iter_cloned, try_term_iter_cloned};
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
@@ -10,15 +9,6 @@ use pyo3::types::PyTuple;
 #[derive(Debug)]
 pub struct Module {
     base: base::Module<DType, IType>,
-}
-
-fn try_iter_cloned2(
-    seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = [base::Wire<DType>; 2]>> {
-    let seq = try_iter_borrow2::<Wire>(seq)?;
-    let seq = seq.into_iter().map(Result::unwrap);
-    let seq = seq.map(|r| r.map(|r| r.base().clone()));
-    Ok(seq)
 }
 
 #[pymethods]
@@ -34,23 +24,17 @@ impl Module {
         intf: Option<&Bound<'_, PyAny>>,
         prvt: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        // TODO: make base take result iterator to avoid unwrap
-        let init = try_iter_borrow::<Term>(init)?;
-        let init = init.into_iter().map(Result::unwrap);
-        let init = init.map(|r| r.base().clone());
-
-        let update = try_iter_borrow::<Term>(update)?;
-        let update = update.into_iter().map(Result::unwrap);
-        let update = update.map(|r| r.base().clone());
+        let init = try_term_iter_cloned(&init)?;
+        let update = try_term_iter_cloned(&update)?;
 
         let module = match (obs, ctrl, extl, intf, prvt) {
             (Some(obs), None, None, None, Some(prvt)) => {
-                let obs = try_iter_cloned2(obs)?;
-                let prvt = try_iter_cloned2(prvt)?;
+                let obs = try_wire2_iter_cloned(obs)?;
+                let prvt = try_wire2_iter_cloned(prvt)?;
                 base::Module::sequential(obs, prvt, init, update)
             }
             (Some(wires), None, None, None, None) => {
-                let wires = try_iter_cloned2(wires)?;
+                let wires = try_wire2_iter_cloned(wires)?;
                 base::Module::sequential_observable(wires, init, update)
             }
             (None, Some(_state), Some(_input), Some(_output), None) => {
@@ -82,14 +66,11 @@ impl Module {
         extl: Option<&Bound<'_, PyAny>>,
         intf: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        // TODO: make base take result iterator to avoid unwrap
-        let assign = try_iter_borrow::<Term>(assign)?;
-        let assign = assign.into_iter().map(Result::unwrap);
-        let assign = assign.map(|r| r.base().clone());
+        let assign = try_term_iter_cloned(&assign)?;
 
         let module = match (obs, extl, intf) {
             (Some(obs), None, None) => {
-                let obs = try_iter_cloned2(obs)?;
+                let obs = try_wire2_iter_cloned(obs)?;
                 base::Module::combinatorial(obs, assign)
             }
             (None, Some(_extl), Some(_intf)) => {
@@ -216,7 +197,7 @@ impl ModuleInterface {
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
-        let other = match try_iter_borrow2::<Wire>(other) {
+        let other = match try_array2_iter_borrow::<Wire>(other) {
             Ok(other) => other,
             Err(_) => return false,
         };
