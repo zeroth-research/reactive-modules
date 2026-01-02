@@ -1,5 +1,5 @@
 use super::wire::Wire;
-use super::{DType, IType, try_iter_borrow};
+use super::{DType, IType, try_iter_borrow, try_wire_iter_cloned};
 use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 
@@ -12,15 +12,8 @@ pub struct Term {
 impl Term {
     #[staticmethod]
     fn function(itype: IType, write: &Bound<'_, PyAny>, read: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let write = try_iter_borrow::<Wire>(write)?;
-        let read = try_iter_borrow::<Wire>(read)?;
-
-        // TODO: make the base take result iterators to avoid unwrap
-        let write = write.into_iter().map(Result::unwrap);
-        let read = read.into_iter().map(Result::unwrap);
-
-        let write = write.map(|r| r.base().clone());
-        let read = read.map(|r| r.base().clone());
+        let write = try_wire_iter_cloned(write)?;
+        let read = try_wire_iter_cloned(read)?;
 
         match base::Term::function(itype, write, read) {
             Ok(base) => Ok(base.into()),
@@ -30,10 +23,7 @@ impl Term {
 
     #[staticmethod]
     fn constant(itype: IType, write: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let write = try_iter_borrow::<Wire>(write)?;
-        // TODO: make the base take result iterators to avoid unwrap
-        let write = write.into_iter().map(Result::unwrap);
-        let write = write.map(|r| r.base().clone());
+        let write = try_wire_iter_cloned(write)?;
 
         match base::Term::constant(itype, write) {
             Ok(base) => Ok(base.into()),
