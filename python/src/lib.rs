@@ -26,6 +26,7 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         smt.add_class::<smt::WrappedTerm>()?;
         smt.add_class::<smt::WrappedModule>()?;
         smt.add_class::<smt::WrappedContext>()?;
+        smt.add_class::<smt::WrappedWiredTransitions>()?;
         smt.add_class::<smt::PyVal>()?;
 
         m.add_submodule(&smt)?;
