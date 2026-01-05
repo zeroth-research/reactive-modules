@@ -2,8 +2,9 @@ use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
+use crate::smt::unrolling::WrappedTransition;
 use crate::smt::wrappedcontext::WrappedContext;
-use crate::smt::{vars_to_wiring, wterms_to_torchterms};
+use crate::smt::{vars_to_wiring, wterms_to_terms};
 
 use base::Module;
 use smt::dtype::DType;
@@ -37,8 +38,8 @@ impl WrappedModule {
         let next = vars_to_wiring(next).unwrap();
 
         let ctx: &mut WrappedContext = &mut ctx.borrow_mut();
-        let init = wterms_to_torchterms(ctx, init).unwrap();
-        let update = wterms_to_torchterms(ctx, update).unwrap();
+        let init = wterms_to_terms(ctx, init).unwrap();
+        let update = wterms_to_terms(ctx, update).unwrap();
 
         Self {
             module: Module::sequential_observable(
@@ -59,6 +60,14 @@ impl WrappedModule {
             Some("update") => smt::smt::module_update_to_smtlib(&self.module),
             _ => panic!("Invalid `what` argument: `{}`", what.unwrap()),
         }
+    }
+
+    fn init_as_transition(&self) -> WrappedTransition {
+        WrappedTransition(common::transition::Transition::from_module_init(&self.module).unwrap())
+    }
+
+    fn update_as_transition(&self) -> WrappedTransition {
+        WrappedTransition(common::transition::Transition::from_module_update(&self.module).unwrap())
     }
 
     #[cfg(feature = "visual-html")]

@@ -1,2 +1,2 @@
-from .module import Module, Unrolling
+from .module import Module, ModuleUnrolling, Unrolling
 from .context import nxt, Context

@@ -93,8 +93,7 @@ fn process_pyvals(
                 args.push((var, DType::Bool));
             }
             PyVal::Tensor(_) => {
-                // translate to a matrix if the tensor is a matrix. Otherwise fail
-                todo!()
+                panic!("Tensors are not supported by SMT reactive modules")
             }
         }
     }
@@ -110,7 +109,7 @@ fn process_pyvals(
 /// [TorchTerm] terms that represent read or written constants (these we can represent as [PyVal]s
 /// in `WrappedTerm.reads` and `WrappedTerm.writes`, but in [TorchTerm]s the wires cannot take "constant"
 /// values.)
-pub(crate) fn wterms_to_torchterms(
+pub(crate) fn wterms_to_terms(
     ctx: &mut WrappedContext,
     terms: &Bound<'_, PyList>,
 ) -> PyResult<Vec<SmtTerm>> {

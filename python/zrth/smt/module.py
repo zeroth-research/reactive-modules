@@ -4,6 +4,17 @@ from .. import smt as zrth_smt
 WrappedModule = zrth_smt.WrappedModule
 
 
+class Transition:
+    def __init__(self, /, impl):
+        self._wrappedtransition = impl
+
+    def unwrap(self):
+        return self._wrappedtransition
+
+    def dbg(self):
+        return self._wrappedtransition.dbg()
+
+
 class Module:
     def __init__(
         self,
@@ -77,8 +88,17 @@ class Module:
     def __repr__(self) -> str:
         return self._module.__repr__()
 
+    def ctx(self):
+        return self._ctx
+
     def unwrap(self):
         return self._module
+
+    def init_as_transition(self):
+        return Transition(impl=self._module.init_as_transition())
+
+    def update_as_transition(self):
+        return Transition(impl=self._module.update_as_transition())
 
     def to_html(self, path: str, open: bool = False):
         self._module.to_html(self._ctx.unwrap(), path)
@@ -116,8 +136,8 @@ class Unrolling:
     def __init__(self) -> None:
         self._transitions = _zrth.smt.WrappedWiredTransitions()
 
-    def wire_transition(self, t):
-        self._transitions.wire_transition(t)
+    def wire_transition(self, t, ctx):
+        self._transitions.wire_transition(t.unwrap(), ctx.unwrap())
 
     def dbg(self):
         self._transitions.dbg()
