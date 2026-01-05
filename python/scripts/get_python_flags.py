@@ -17,7 +17,8 @@ def python_libdir_and_name():
     soname_list = sysconfig.get_config_vars("INSTSONAME")
 
     if not libdir_list or not soname_list:
-        raise RuntimeError("Couldn't get Python LIBDIR / INSTSONAME from sysconfig")
+        raise RuntimeError(
+            "Couldn't get Python LIBDIR / INSTSONAME from sysconfig")
 
     libdir = libdir_list[0]  # e.g. /Users/me/.venv/lib
     soname = soname_list[0]  # e.g. libpython3.13.dylib
@@ -53,7 +54,9 @@ def emit_rustc_flags(py_libdir, py_libname, torch_lib):
     print(f"cargo:rustc-link-search=native={py_libdir}")
 
     # 2. Link against libpython
-    print(f"cargo:rustc-link-lib={py_libname}")
+    # NOTE: this is not necessary at this moment and `py_libname` can be
+    # incorrect on other systems than on MacOS
+    # print(f"cargo:rustc-link-lib={py_libname}")
 
     # 3. Add rpath for Python's libdir so the final binary can find libpython3.X.dylib at runtime
     print(f"cargo:rustc-link-arg=-Wl,-rpath,{py_libdir}")
@@ -72,7 +75,8 @@ def emit_rustc_flags(py_libdir, py_libname, torch_lib):
         # Let downstream crates know we're using the PyTorch build of libtorch
         print("cargo:rustc-env=LIBTORCH_USE_PYTORCH=1")
     else:
-        print("cargo:warning=Could not import torch in build environment", file=sys.stderr)
+        print("cargo:warning=Could not import torch in build environment",
+              file=sys.stderr)
         sys.exit(1)
 
     # Tell Cargo when to rerun the build script:
