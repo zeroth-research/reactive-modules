@@ -59,8 +59,8 @@ rebuild-python:
     cd python && source .venv/bin/activate  && LIBTORCH_USE_PYTORCH=1 {{ CARGO }} build --package torch
     # now build the python crate
     cd python && uv run maturin develop --features enable-torch  --features enable-smt
-    @echo "Now you can go into the `python` directory and use `uv run <script.py>`"\
-          "(or `uv run python` to get Python interpreter with `zrth` available)"
+    @echo "Now you can go into the \`python\` directory and use \`uv run <script.py>\`"\
+          "(or \`uv run python\` to get Python interpreter with \`zrth\` available)"
 
 # Build Python with all possible bindings (assuming `rebuild-python` was run previously)
 build-python:
