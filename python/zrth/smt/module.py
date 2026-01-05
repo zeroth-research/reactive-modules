@@ -1,5 +1,4 @@
 from .context import Context, nxt
-
 from .. import smt as zrth_smt
 
 WrappedModule = zrth_smt.WrappedModule
@@ -78,6 +77,9 @@ class Module:
     def __repr__(self) -> str:
         return self._module.__repr__()
 
+    def unwrap(self):
+        return self._module
+
     def to_html(self, path: str, open: bool = False):
         self._module.to_html(self._ctx.unwrap(), path)
 
@@ -90,3 +92,35 @@ class Module:
             else:
                 _ = run(["open", path])
             # FIXME: not exhaustive
+
+
+class ModuleUnrolling:
+    def __init__(self, m: Module) -> None:
+        self._module = m
+        self._transitions = _zrth.smt.WrappedWiredTransitions()
+
+    def init(self):
+        self._transitions.init(self._module.unwrap(), self._module._ctx.unwrap())
+
+    def step(self):
+        self._transitions.step(self._module.unwrap(), self._module._ctx.unwrap())
+
+    def dbg(self):
+        self._transitions.dbg()
+
+    def last_state(self):
+        self._transitions.last_state()
+
+
+class Unrolling:
+    def __init__(self) -> None:
+        self._transitions = _zrth.smt.WrappedWiredTransitions()
+
+    def wire_transition(self, t):
+        self._transitions.wire_transition(t)
+
+    def dbg(self):
+        self._transitions.dbg()
+
+    def last_state(self):
+        self._transitions.last_state()

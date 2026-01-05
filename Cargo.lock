@@ -1138,6 +1138,7 @@ name = "zrth-python"
 version = "0.1.0"
 dependencies = [
  "base",
+ "bmc",
  "common",
  "pyo3",
  "pyo3-tch",
