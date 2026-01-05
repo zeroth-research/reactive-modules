@@ -18,6 +18,27 @@ impl<D: Copy + Eq> Context<D> {
         }
     }
 
+    /// Create a context and populate it from a module.
+    /// We do not have names in this case, so assign some dummy names.
+    /// This is useful if we need to create new variables and make sure
+    /// they are not already used ("in the current context")
+    pub fn from_module<IT>(module: &base::Module<D, IT>) {
+        let mut ctx: Context<D> = Context::new();
+
+        // create variables in the context for module wires
+        for [wl, wn] in module.ctrl().iter().chain(module.extl()) {
+            ctx.var(format!("x{}", wl.id()).as_str(), *wl.dtype());
+            ctx.var(format!("x{}", wn.id()).as_str(), *wn.dtype());
+        }
+
+        // create variables in the context for temporary wires
+        for atom in module.atoms() {
+            for w in atom.temp() {
+                ctx.var(format!("tmp_{}", w.id()).as_str(), *w.dtype());
+            }
+        }
+    }
+
     pub fn get_name(&self, id: usize) -> Option<&str> {
         self.names.get(&id).map(|s| s.as_str())
     }
