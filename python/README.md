@@ -69,12 +69,37 @@ may different slightly (because they are simply different crates with different 
 
 For more examples, see the [`tests`](tests/) directory.
 
+### Building with Poetry
 
-## Manual setup and build
+If you do not wish to use the `uv` package manager, here is how
+to build the crate using Poetry and Pyenv (steps to use Pip instead of Poetry
+are analogous).
 
-```shell
-uv sync
-uv run maturin develop
-uv run tests/test.py
+Before building the workspace, it is necessary to install the required Python
+packages. You might need to use `pyenv` and `virtualenv` to do the setup
+successfully, depending on your system. Also make sure to have `poetry` installed.
+
+```sh
+# install the right Python version *including shared libraries*.
+# At the moment of writing, PyO3 supports Python 3.10--3.13.
+env PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install 3.13
+
+# start a new shell with the installed Python
+pyenv shell 3.13
+
+# create a virtual environment with all dependencies
+poetry install
+
+# activate the virtual environment:
+$(poetry env activate)
+
+# build the crate (pick features that you want)
+cd python
+maturin develop --features enable-torch,enable-smt,enable-toy
+python tests/test.py
 ```
+
+The command above will build the crate and install the Python package into the
+virtual environment, so that if you have activated the virtual environment,
+you can use the `zrth` Python package.
 
