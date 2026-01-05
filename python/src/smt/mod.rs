@@ -58,7 +58,7 @@ fn process_pyvals(
                 args.push((*var_id, ty));
             }
             PyVal::Real(val) => {
-                let var = ctx.ctx.tmp_var(DType::Real);
+                let var = ctx.ctx.tmp_id();
                 let term = new_term(
                     IType::Num(Val::Real(*val)),
                     Interface::empty(),
@@ -69,7 +69,7 @@ fn process_pyvals(
                 args.push((var, DType::Real));
             }
             PyVal::Int(val) => {
-                let var = ctx.ctx.tmp_var(DType::Int);
+                let var = ctx.ctx.tmp_id();
                 let term = new_term(
                     IType::Num(Val::Int(*val)),
                     Interface::empty(),
@@ -80,7 +80,7 @@ fn process_pyvals(
                 args.push((var, DType::Int));
             }
             PyVal::Bool(val) => {
-                let var = ctx.ctx.tmp_var(DType::Bool);
+                let var = ctx.ctx.tmp_id();
                 let term = new_term(
                     IType::Num(Val::Bool(*val)),
                     Interface::empty(),

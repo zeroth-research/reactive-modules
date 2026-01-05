@@ -29,15 +29,15 @@ impl WrappedContext {
     }
 
     pub fn fresh_var(&mut self) -> usize {
-        self.ctx.tmp_var(DType::Tensor)
+        self.ctx.tmp_id()
     }
 
     pub fn tmp_var(&mut self) -> PyVal {
-        PyVal::Sym(self.ctx.tmp_var(DType::Tensor), "Tensor".to_string())
+        PyVal::Sym(self.ctx.tmp_id(), "Tensor".to_string())
     }
 
     pub fn get(&mut self, name: &str) -> usize {
-        self.ctx.get(name).0
+        self.ctx.get(name).unwrap().0
     }
 
     pub fn var(&mut self, name: &str) -> PyVal {

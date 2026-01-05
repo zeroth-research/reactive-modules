@@ -28,12 +28,11 @@ impl WrappedContext {
     }
 
     pub fn tmp_sym(&mut self, ty: &str) -> PyVal {
-        let id = self.ctx.tmp_var(ty.parse().expect("Invalid type str"));
-        PyVal::Sym(id, ty.to_string())
+        PyVal::Sym(self.ctx.tmp_id(), ty.to_string())
     }
 
     pub fn get(&mut self, name: &str) -> PyVal {
-        let (id, ty) = self.ctx.get(name);
+        let (id, ty) = self.ctx.get(name).unwrap();
         PyVal::Sym(id, ty.to_string())
     }
 

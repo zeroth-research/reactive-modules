@@ -15,7 +15,7 @@ mod tests {
         let mut ctx = ToyContext::new();
 
         // create variables
-        ctx.vars(
+        ctx.intf(
             DType::Int,
             &["x", "y", "z", "y0", "z0", "x'", "y'", "z'", "y0'", "z0'"],
         );
