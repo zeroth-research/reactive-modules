@@ -40,35 +40,56 @@ m = Module(ctrl=ctrl, extl=extl)
 
 ###############
 
-# I, T = m.to_transitions()
-#
-# U = smt.Unrolling()
-# state = m.fresh_variables()
-# U += Transition(m.new_env(), I, state)
-#
-# for i in range(5):
-#   old_state = state
-#   state = m.fresh_variables()
-#   new_extl = m.fresh_env()
-#
-#   # unroll
-#   U += Transition(old_state, T, (new_state, new_extl))
-
-
+# ################################
+# Automated module unrolling
+# ################################
 U = smt.ModuleUnrolling(m)
 U.init()
 for i in range(5):
     U.step()
-U.dbg()
+# U.dbg()
 
+# ################################
+# Manual module unrolling (still without manually creating states)
+# ################################
+ctx = m.ctx()
 U = smt.Unrolling()
-U.wire_transition(m.init_as_transition())
+T = m.init_as_transition()
 
-T = m.update_as_transitions()
+# wire in the initial transition (since the unrolling is empty,
+# this is basically `push`)
+U.wire_transition(T, ctx)
+
+T = m.update_as_transition()
+# wire the `update` transition 3x to the unrolling
 for i in range(3):
-    U.wire_transition(T)
+    U.wire_transition(T, ctx)
 
 U.dbg()
-# U.terms()
-# U.as_pysmt_expr()
-# print(U.last_state())
+
+
+# ################################################################
+# Fully manual module unrolling (sketch, code not working (yet?))
+# ################################################################
+I = m.init_as_transition()
+
+raise NotImplementedError("Not implemented from here")
+last_out = I.output(ctx)
+I = I.as_pysmt_expr()
+
+unrolling = [I]
+
+T = m.update_as_transition()
+T_in = T.input(ctx)
+T_out = T.output(ctx)
+T_env = [e for e_pair in T.env(ctx) for e in e_pair]
+T = T.as_pysmt_expr()
+
+for i in range(3):
+    new_out = [smt.fresh_var(v.dtype()) for v in last_out]
+    new_env = [smt.fresh_var(v.dtype()) for v in T_env]
+    new_T = T.subst(list(zip(T_in, last_out)) +
+                    list(zip(T_out, new_out)) +
+                    list(zip(T_env, new_env)))
+    unrolling.append(new_T)
+    last_out = new_out
