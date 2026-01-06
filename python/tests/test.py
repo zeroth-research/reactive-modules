@@ -1,6 +1,8 @@
+from sys import stderr
 from io import StringIO
 from pysmt.smtlib.parser import SmtLibParser
 from pysmt.shortcuts import (
+    TRUE,
     Symbol,
     Or,
     Int,
@@ -12,6 +14,7 @@ from pysmt.shortcuts import (
     get_model,
 )
 from pysmt.typing import INT
+from pysmt.exceptions import NoSolverAvailableError
 import zrth.torch as ztch
 from torch import Tensor
 import zrth.smt as smt
@@ -99,7 +102,7 @@ m_torch.dbg()
 
 
 ######################################################################
-# Obligations
+# Module composition and translation
 ######################################################################
 
 # compose modules
@@ -107,6 +110,28 @@ m_torch.dbg()
 m = m_toy.translate_to('smt')
 print(m)
 m.dbg()
+
+
+smtlib_str = m.to_smtlib()
+print(smtlib_str)
+
+script = SmtLibParser().get_script(StringIO(smtlib_str))
+print(script)
+
+# print('=======')
+# exprs = []
+# for a in script.filter_by_command_name("assert"):
+#     print(a.args)
+#     exprs.extend(a.args)
+#
+# X, Y, Z = exprs[-3:]
+# print(X, Y, Z)
+# print(And(exprs))
+
+
+######################################################################
+# Obligations
+######################################################################
 
 
 def buchi(a, b, c):
@@ -123,25 +148,6 @@ def rank(a, b, c):
     )
 
 
-smtlib_str = m.to_smtlib()
-
-
-print(smtlib_str)
-script = SmtLibParser().get_script(StringIO(smtlib_str))
-print(script)
-
-# print('=======')
-# exprs = []
-# for a in script.filter_by_command_name("assert"):
-#     print(a.args)
-#     exprs.extend(a.args)
-#
-# X, Y, Z = exprs[-3:]
-# print(X, Y, Z)
-# print(And(exprs))
-#
-
-
 def obligation1(m):
     return And(smt.nxt(y0) >= Int(0), smt.nxt(z0) >= Int(0)), inv(*m.init((y0, z0)))
 
@@ -153,6 +159,17 @@ def obligation2(m):
         And(inv(x, y, z), Not(buchi(x, y, z))),
         rank(*m.update((x, y, z), None)) < rank(x, y, z),
     )
+
+
+# check if we have the solver and bail out if not,
+# because we cannot continue with this test
+#
+try:
+    get_model(TRUE(), solver_name="cvc5")
+except NoSolverAvailableError:
+    raise RuntimeError(
+        "Continuing this test requires CVC5 solver. "
+        "You can install it using `uv pip install cvc5` (assuming just + uv build).")
 
 
 def is_valid(pre, post):
