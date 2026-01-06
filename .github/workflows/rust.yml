@@ -9,7 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-# TODO: at the moment, we skip the `torch` crate due to python linking issues
+# TODO: at the moment, we skip the `torch` crate due to python2 linking issues
 jobs:
   rustfmt:
     runs-on: ubuntu-latest
