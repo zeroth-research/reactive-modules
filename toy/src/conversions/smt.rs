@@ -385,6 +385,6 @@ impl<'a> TryInto<SmtModule> for ModuleConverter<'a> {
             atoms.push(SmtAtom::sequential(latched, next, init, update)?);
         }
 
-        SmtModule::partially_observable(obs, prvt, atoms)
+        SmtModule::new(obs, prvt, atoms)
     }
 }
