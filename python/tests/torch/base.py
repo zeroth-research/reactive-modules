@@ -9,12 +9,12 @@ from torch import Tensor
 
 class MyTestCase(unittest.TestCase):
     def test_wire_new(self):
-        x = Wire(dt.C, 0)
-        y = Wire(dt.D, 1)
+        x = Wire(dt.Bool(), 0)
+        y = Wire(dt.Bool(), 1)
 
     def test_term_new(self):
-        x = Wire(dt.C, 0)
-        y = Wire(dt.D, 1)
+        x = Wire(dt.Bool(), 0)
+        y = Wire(dt.Tensor([2, 2, 3]), 1)
         f = Term.function(it.A(), [x, y], [x])
         t = Tensor([3, 4, 5])
         g = Term.function(it.C(t), [x], [y])
@@ -22,23 +22,23 @@ class MyTestCase(unittest.TestCase):
         h = Term(it.A(), [x])
 
     def test_module_sequential(self):
-        x = (Wire(dt.C, 0), Wire(dt.C, 1))
+        x = (Wire(dt.Bool(), 0), Wire(dt.Bool(), 1))
         init = [Term(it.A(), [x[1]])]
         update = [Term(it.A(), [x[1]], [x[0]])]
         m = Module.sequential(init, update, [x])
 
     def test_module_combinatorial(self):
-        x = (Wire(dt.C, 0), Wire(dt.C, 1))
+        x = (Wire(dt.Bool(), 0), Wire(dt.Bool(), 1))
 
         assign = [Term(it.A(), [x[1]])]
         m = Module.combinatorial(assign, [x])
 
     def test_module_parallel(self):
-        x = (Wire(dt.C, 0), Wire(dt.C, 1))
-        y = (Wire(dt.C, 2), Wire(dt.C, 3))
-        z = (Wire(dt.C, 4), Wire(dt.C, 5))
-        w = (Wire(dt.C, 6), Wire(dt.C, 7))
-        v = (Wire(dt.C, 8), Wire(dt.C, 9))
+        x = (Wire(dt.Tensor([2, 2, 3]), 0), Wire(dt.Tensor([2, 2, 3]), 1))
+        y = (Wire(dt.Bool(), 2), Wire(dt.Bool(), 3))
+        z = (Wire(dt.Bool(), 4), Wire(dt.Bool(), 5))
+        w = (Wire(dt.Bool(), 6), Wire(dt.Bool(), 7))
+        v = (Wire(dt.Bool(), 8), Wire(dt.Bool(), 9))
 
         init = [Term(it.A(), [x[1]])]
         update = [Term(it.A(), [x[1]], [x[0], y[1]])]
@@ -68,8 +68,8 @@ class MyTestCase(unittest.TestCase):
         assert (m.prvt() == [v])
 
     def test_interface(self):
-        x = Wire(dt.C, 0)
-        y = Wire(dt.D, 1)
+        x = Wire(dt.Bool(), 0)
+        y = Wire(dt.Bool(), 1)
         f = Term(it.A(), [x, y], [x, y])
 
         w = f.write()

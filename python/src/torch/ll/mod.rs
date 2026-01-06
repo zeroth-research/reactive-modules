@@ -21,18 +21,28 @@ pub enum IType {
     C(PyTensor),
 }
 
+// This is a copy of torch::DType.
+// It is easier to duplicate the code that embedding torch::DType.
 #[pyclass]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DType {
-    C,
-    D,
+    Bool(),
+    Tensor(Vec<usize>),
 }
 
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DType::C => write!(f, "C"),
-            DType::D => write!(f, "D"),
+            DType::Bool() => write!(f, "Bool"),
+            DType::Tensor(shape) => write!(
+                f,
+                "Tensor<{}>",
+                shape
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
         }
     }
 }
@@ -46,7 +56,6 @@ impl fmt::Display for IType {
         }
     }
 }
-
 
 fn try_iter_borrow<'py, P>(
     iter: &'py Bound<'py, PyAny>,
@@ -101,4 +110,3 @@ fn try_wire_iter_cloned(
     let seq = seq.map(|r| r.base().clone());
     Ok(seq)
 }
-
