@@ -105,9 +105,9 @@ impl ModuleSmtLibTranslator<'_> {
     /// return smtlib declarations of `intf` variables
     fn intf(&self) -> Vec<String> {
         let vars = self.0.intf();
-        vars[0]
+        vars.latched()
             .iter()
-            .chain(vars[1].iter())
+            .chain(vars.next().iter())
             .map(|w| declare_var(w.id(), w.dtype()))
             .collect::<Vec<String>>()
     }
@@ -115,9 +115,9 @@ impl ModuleSmtLibTranslator<'_> {
     /// return smtlib declarations of `extl` variables
     fn extl(&self) -> Vec<String> {
         let vars = self.0.extl();
-        vars[0]
+        vars.latched()
             .iter()
-            .chain(vars[1].iter())
+            .chain(vars.next().iter())
             .map(|w| declare_var(w.id(), w.dtype()))
             .collect::<Vec<String>>()
     }

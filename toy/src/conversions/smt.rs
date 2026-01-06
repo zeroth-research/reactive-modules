@@ -360,13 +360,11 @@ impl<'a> TryInto<SmtModule> for ModuleConverter<'a> {
 
         #[cfg(debug_assertions)]
         {
-            for i in 0..=1 {
-                debug_assert!(extl[i].len() == self.0.extl()[i].len());
-                debug_assert!(intf[i].len() == self.0.intf()[i].len());
-                debug_assert!(prvt[i].len() == self.0.prvt()[i].len());
-                debug_assert!(obs[i].len() == self.0.obs()[i].len());
-                debug_assert!(ctrl[i].len() == self.0.ctrl()[i].len());
-            }
+            debug_assert!(extl.latched().len() == self.0.extl().latched().len());
+            debug_assert!(intf.latched().len() == self.0.intf().latched().len());
+            debug_assert!(prvt.latched().len() == self.0.prvt().latched().len());
+            debug_assert!(obs.latched().len() == self.0.obs().latched().len());
+            debug_assert!(ctrl.latched().len() == self.0.ctrl().latched().len());
 
             check_variables(&translator, self.0.extl(), &extl);
             check_variables(&translator, self.0.intf(), &intf);

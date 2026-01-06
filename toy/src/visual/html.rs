@@ -242,15 +242,21 @@ impl Descriptor<DType, IType> for HTMLDescriptor<'_> {
     fn describe_module(&self, module: &ToyModule, _how: DescriptionContext) -> String {
         //let fmt = HashMap::from([("BOLD_START", "<b>"), ("BOLD_END", "</b>")]);
         //format!("<pre>\n{}</pre>", self.dump_module(module, &fmt))
-        let prvt = module.prvt()[0]
+        let prvt = module
+            .prvt()
+            .latched()
             .iter()
             .map(|wire| self.describe_wire_id(wire.id(), DescriptionContext::Inline))
             .collect::<Vec<String>>();
-        let intf = module.intf()[0]
+        let intf = module
+            .intf()
+            .latched()
             .iter()
             .map(|wire| self.describe_wire_id(wire.id(), DescriptionContext::Inline))
             .collect::<Vec<String>>();
-        let extl = module.extl()[0]
+        let extl = module
+            .extl()
+            .latched()
             .iter()
             .map(|wire| self.describe_wire_id(wire.id(), DescriptionContext::Inline))
             .collect::<Vec<String>>();
