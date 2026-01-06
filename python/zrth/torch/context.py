@@ -75,19 +75,16 @@ class Context_(ContextBase):
             elif isinstance(ctrl[0], Var):
                 if not all(isinstance(c, Var) and c.is_symbol() for c in ctrl):
                     raise RuntimeError(
-                        f"Expected variables to be all sympy variables, got: {
-                            ctrl}"
+                        f"Expected variables to be all sympy variables, got: {ctrl}"
                     )
             else:
                 raise RuntimeError(
-                    f"Expected variables to be a tuple of strings or sympy variables, got: {
-                        ctrl}"
+                    f"Expected variables to be a tuple of strings or sympy variables, got: {ctrl}"
                 )
             cur_vars = [*ctrl]
         else:
             raise RuntimeError(
-                f"Expect variables to be a non-empty string, tuple or list, got: {
-                    ctrl}"
+                f"Expect variables to be a non-empty string, tuple or list, got: {ctrl}"
             )
 
         if isinstance(extl, str):
@@ -98,13 +95,11 @@ class Context_(ContextBase):
             elif isinstance(extl[0], Var):
                 if not all(isinstance(c, Var) and c.is_symbol() for c in extl):
                     raise RuntimeError(
-                        f"Expected variables to be all sympy variables, got: {
-                            extl}"
+                        f"Expected variables to be all sympy variables, got: {extl}"
                     )
             else:
                 raise RuntimeError(
-                    f"Expected variables to be a tuple of strings or sympy variables, got: {
-                        extl}"
+                    f"Expected variables to be a tuple of strings or sympy variables, got: {extl}"
                 )
             cur_vars.extend(extl)
         else:

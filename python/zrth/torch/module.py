@@ -23,8 +23,7 @@ class Module:
 
         self._ctx = ctx or Context()
 
-        self.init = self._wrap_method(
-            self.init) if hasattr(self, "init") else None
+        self.init = self._wrap_method(self.init) if hasattr(self, "init") else None
         self.update = self._wrap_method(self.update)
 
         extl = extl or ()

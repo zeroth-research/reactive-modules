@@ -231,8 +231,7 @@ class Context(ContextBase):
             # map the output of the expression to the output wire
             assert len(outvar) == 1
             init_terms.append(
-                WrappedTerm("Id", outvar, [
-                            self.get_pyval_sym(self.next_var(var))])
+                WrappedTerm("Id", outvar, [self.get_pyval_sym(self.next_var(var))])
             )
 
         update_terms = []
@@ -244,13 +243,11 @@ class Context(ContextBase):
             # map the output of the expression to the output wire
             assert len(outvar) == 1
             update_terms.append(
-                WrappedTerm("Id", outvar, [
-                            self.get_pyval_sym(self.next_var(var))])
+                WrappedTerm("Id", outvar, [self.get_pyval_sym(self.next_var(var))])
             )
 
         cur_vars = [self.get_pyval_sym(v) for v in chain(ctrl, extl)]
-        nxt_vars = [self.get_pyval_sym(self.next_var(v))
-                    for v in chain(ctrl, extl)]
+        nxt_vars = [self.get_pyval_sym(self.next_var(v)) for v in chain(ctrl, extl)]
         return cur_vars, nxt_vars, init_terms, update_terms
 
 
@@ -311,8 +308,7 @@ class ToTerms:
                 assert len(args) == 2
                 assert args[0].dtype() == args[1].dtype(), args
                 out = self._ctx.tmp_sym(args[0].dtype())
-                terms.append(WrappedTerm(
-                    "Arith::Add", reads=args, writes=[out]))
+                terms.append(WrappedTerm("Arith::Add", reads=args, writes=[out]))
                 return [out]
             elif opty == op.LT:
                 assert len(args) == 2
@@ -322,14 +318,12 @@ class ToTerms:
             elif opty == op.OR:
                 assert len(args) == 2
                 out = self._ctx.tmp_sym("Bool")
-                terms.append(WrappedTerm(
-                    "Logical::Or", reads=args, writes=[out]))
+                terms.append(WrappedTerm("Logical::Or", reads=args, writes=[out]))
                 return [out]
             elif opty == op.NOT:
                 assert len(args) == 1
                 out = self._ctx.tmp_sym("Bool")
-                terms.append(WrappedTerm(
-                    "Logical::Not", reads=args, writes=[out]))
+                terms.append(WrappedTerm("Logical::Not", reads=args, writes=[out]))
                 return [out]
             elif opty == op.ITE:
                 assert len(args) == 3

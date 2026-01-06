@@ -88,8 +88,7 @@ class PySMTContext(ContextBase):
         elif isinstance(ctrl, (tuple, list)) and len(ctrl) > 0:
             if isinstance(ctrl[0], str):
                 if not all(":" in v for v in ctrl):
-                    raise RuntimeError(
-                        "A variable is missing a type annotation")
+                    raise RuntimeError("A variable is missing a type annotation")
                 ctrl = tuple(
                     self.var(v[0].strip(), v[1].strip())
                     for v in map(lambda s: s.split(":"), ctrl)
@@ -97,19 +96,16 @@ class PySMTContext(ContextBase):
             elif isinstance(ctrl[0], Expr):
                 if not all(isinstance(c, Expr) and c.is_symbol() for c in ctrl):
                     raise RuntimeError(
-                        f"Expected variables to be all PySMT variables, got: {
-                            ctrl}"
+                        f"Expected variables to be all PySMT variables, got: {ctrl}"
                     )
             else:
                 raise RuntimeError(
-                    f"Expected variables to be a tuple of strings or PySMT variables, got: {
-                        ctrl}"
+                    f"Expected variables to be a tuple of strings or PySMT variables, got: {ctrl}"
                 )
             cur_vars = [*ctrl]
         else:
             raise RuntimeError(
-                f"Expect variables to be a non-empty string, tuple or list, got: {
-                    ctrl}"
+                f"Expect variables to be a non-empty string, tuple or list, got: {ctrl}"
             )
 
         if isinstance(extl, str):
@@ -123,8 +119,7 @@ class PySMTContext(ContextBase):
         elif isinstance(extl, (tuple, list)) and len(extl) > 0:
             if isinstance(extl[0], str):
                 if not all(":" in v for v in extl):
-                    raise RuntimeError(
-                        "A variable is missing a type annotation")
+                    raise RuntimeError("A variable is missing a type annotation")
                 extl = tuple(
                     self.var(v[0].strip(), v[1].strip())
                     for v in map(lambda s: s.split(":"), extl)
@@ -132,13 +127,11 @@ class PySMTContext(ContextBase):
             elif isinstance(extl[0], Expr):
                 if not all(isinstance(c, Expr) and c.is_symbol() for c in extl):
                     raise RuntimeError(
-                        f"Expected variables to be all PySMT variables, got: {
-                            extl}"
+                        f"Expected variables to be all PySMT variables, got: {extl}"
                     )
             else:
                 raise RuntimeError(
-                    f"Expected variables to be a tuple of strings or PySMT variables, got: {
-                        extl}"
+                    f"Expected variables to be a tuple of strings or PySMT variables, got: {extl}"
                 )
             cur_vars.extend(extl)
         else:
@@ -227,8 +220,7 @@ class Context(PySMTContext):
             # map the output of the expression to the output wire
             assert len(outvar) == 1
             init_terms.append(
-                WrappedTerm("Id", outvar, [
-                            self.get_pyval_sym(self.next_var(var))])
+                WrappedTerm("Id", outvar, [self.get_pyval_sym(self.next_var(var))])
             )
 
         update_terms = []
@@ -240,13 +232,11 @@ class Context(PySMTContext):
             # map the output of the expression to the output wire
             assert len(outvar) == 1
             update_terms.append(
-                WrappedTerm("Id", outvar, [
-                            self.get_pyval_sym(self.next_var(var))])
+                WrappedTerm("Id", outvar, [self.get_pyval_sym(self.next_var(var))])
             )
 
         cur_vars = [self.get_pyval_sym(v) for v in chain(ctrl, extl)]
-        nxt_vars = [self.get_pyval_sym(self.next_var(v))
-                    for v in chain(ctrl, extl)]
+        nxt_vars = [self.get_pyval_sym(self.next_var(v)) for v in chain(ctrl, extl)]
         return cur_vars, nxt_vars, init_terms, update_terms
 
 
