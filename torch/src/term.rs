@@ -48,10 +48,13 @@ pub enum IType {
     // IfThen is the same as Ite(cond, x, None). The thing is that we do not need to
     // create the None constant which may be very beneficial in some situations.
     // This construct is at this moment used exclusively to input values into `Choose`
-    // statement
+    // and `ChooseOr` statements
     IfThen,
     // Non-deterministic choice from input values which are not None
     Choose,
+    // Non-deterministic choice from input values which are not None
+    // the last argument is the default values and *cannot* be None
+    ChooseOr,
     // Boolean operations
     Not,
     Or,
@@ -84,6 +87,7 @@ impl std::str::FromStr for IType {
             // -----
             "Ite" => Ok(IType::Ite),
             "Choose" => Ok(IType::Choose),
+            "ChooseOr" => Ok(IType::ChooseOr),
             "IfThen" => Ok(IType::IfThen),
             // -----
             "Not" => Ok(IType::Not),
@@ -116,6 +120,7 @@ impl Clone for IType {
             IType::Id => IType::Id,
             IType::Ite => IType::Ite,
             IType::Choose => IType::Choose,
+            IType::ChooseOr => IType::ChooseOr,
             IType::IfThen => IType::IfThen,
             IType::Not => IType::Not,
             IType::And => IType::And,
@@ -143,6 +148,7 @@ impl fmt::Display for IType {
             IType::Id => write!(f, "Id"),
             IType::Ite => write!(f, "Ite"),
             IType::Choose => write!(f, "Choose"),
+            IType::ChooseOr => write!(f, "ChooseOr"),
             IType::IfThen => write!(f, "IfThen"),
             IType::Not => write!(f, "Not"),
             IType::And => write!(f, "And"),
