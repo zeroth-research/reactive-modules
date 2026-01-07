@@ -1,9 +1,17 @@
 from pysmt.shortcuts import Symbol, Or, LT, Int, Not
 import zrth.toy as toy
 
+from pysmt.environment import Environment, reset_env, get_env
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def pysmt_fresh_env():
+    reset_env()
+    get_env().enable_infix_notation = True
+
 
 class Module(toy.Module):
-
     def init(self, extl) -> None:
         y0, z0 = extl
         return 0, self.nxt(y0), self.nxt(z0)  # = x, y, z
@@ -20,16 +28,12 @@ class Module(toy.Module):
         return xn, y, z
 
 
-m1 = Module("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
-m1.dbg()
-m1.to_html("/tmp/toy.html", open=True)
+def test_module():
+    m1 = Module("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
+    assert m1
 
-# m2 = Module()
-#
-# m2.rename({'x': 'w'})
-# m2.hide('y', 'z')
-#
-# # Compose the modules
-# m = m1 | m2
-#
-# smt_m = m.to('smt')
+
+if __name__ == "__main__":
+    m1 = Module("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
+    m1.dbg()
+    m1.to_html("/tmp/toy.html", open=True)

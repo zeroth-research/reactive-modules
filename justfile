@@ -36,6 +36,9 @@ build-all:
 test:
     {{ CARGO }} test {{ features_flag }}
 
+test-python:
+    @just run-python pytest
+
 # Clean the current build
 clean:
     {{ CARGO }} clean

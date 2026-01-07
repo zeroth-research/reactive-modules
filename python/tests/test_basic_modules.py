@@ -14,12 +14,21 @@ from pysmt.shortcuts import (
     get_model,
 )
 from pysmt.typing import INT
-from pysmt.exceptions import NoSolverAvailableError
 import zrth.torch as ztch
 from torch import Tensor
 import zrth.smt as smt
 import zrth.toy as toy
-import sympy as sp
+
+from pysmt.environment import Environment, reset_env, get_env
+import pytest
+
+
+# make sure every test gets its own new PySMT environment
+# to avoid Symbol clashes
+@pytest.fixture(autouse=True)
+def pysmt_fresh_env():
+    reset_env()
+    get_env().enable_infix_notation = True
 
 
 ######################################################################
@@ -39,10 +48,14 @@ class SmtModule(smt.Module):
         return xn, y, z
 
 
-x, y, z = (Symbol(v, INT) for v in ("x", "y", "z"))
-y0, z0 = (Symbol(v, INT) for v in ("y0", "z0"))
-m_smt = SmtModule(ctrl=(x, y, z), extl=(y0, z0))
-# m_smt.to_html("/tmp/smt.html", open=True)
+def test_counter_smt():
+    # other tests will use PySMT too, so isolate the environment
+
+    x, y, z = (Symbol(v, INT) for v in ("x", "y", "z"))
+    y0, z0 = (Symbol(v, INT) for v in ("y0", "z0"))
+    m_smt = SmtModule(ctrl=(x, y, z), extl=(y0, z0))
+    assert m_smt
+    # m_smt.to_html("/tmp/smt.html", open=True)
 
 
 ######################################################################
@@ -66,9 +79,11 @@ class ToyModule(toy.Module):
         return xn, y, z
 
 
-m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
-# m_toy.dbg()
-# m_toy.to_html("/tmp/toy.html", open=True)
+def test_counter_toy():
+    m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
+    assert m_toy
+    # m_toy.dbg()
+    # m_toy.to_html("/tmp/toy.html", open=True)
 
 
 ######################################################################
@@ -96,36 +111,44 @@ class TorchModule(ztch.Module):
         )
 
 
-m_torch = TorchModule(ctrl="xyz", extl="yz0")
-m_torch.dbg()
+def test_counter_torch():
+    m_torch = TorchModule(ctrl="xyz", extl="yz0")
+    assert m_torch
+    m_torch.dbg()
 
 
 ######################################################################
 # Module composition and translation
 ######################################################################
 
-# compose modules
-# m = m1 | m2
-m = m_toy.translate_to("smt")
-print(m)
-m.dbg()
+
+def test_toy_to_smt():
+    m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
+    m = m_toy.translate_to("smt")
+    assert m
+    print(m)
 
 
-smtlib_str = m.to_smtlib()
-print(smtlib_str)
+def test_toy_to_smt_to_smtlib():
+    m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
+    m = m_toy.translate_to("smt")
+    assert m
 
-script = SmtLibParser().get_script(StringIO(smtlib_str))
-print(script)
+    smtlib_str = m.to_smtlib()
+    print(smtlib_str)
 
-# print('=======')
-# exprs = []
-# for a in script.filter_by_command_name("assert"):
-#     print(a.args)
-#     exprs.extend(a.args)
-#
-# X, Y, Z = exprs[-3:]
-# print(X, Y, Z)
-# print(And(exprs))
+    script = SmtLibParser().get_script(StringIO(smtlib_str))
+    print(script)
+
+    # print('=======')
+    # exprs = []
+    # for a in script.filter_by_command_name("assert"):
+    #     print(a.args)
+    #     exprs.extend(a.args)
+    #
+    # X, Y, Z = exprs[-3:]
+    # print(X, Y, Z)
+    # print(And(exprs))
 
 
 ######################################################################
@@ -147,31 +170,6 @@ def rank(a, b, c):
     )
 
 
-def obligation1(m):
-    return And(smt.nxt(y0) >= Int(0), smt.nxt(z0) >= Int(0)), inv(*m.init((y0, z0)))
-
-
-# TODO: now the obligation uses m.update() which already are PySMT formulas.
-# We need to translate update from the reactive module to PySMT and use it.
-def obligation2(m):
-    return (
-        And(inv(x, y, z), Not(buchi(x, y, z))),
-        rank(*m.update((x, y, z), None)) < rank(x, y, z),
-    )
-
-
-# check if we have the solver and bail out if not,
-# because we cannot continue with this test
-#
-try:
-    get_model(TRUE(), solver_name="cvc5")
-except NoSolverAvailableError:
-    raise RuntimeError(
-        "Continuing this test requires CVC5 solver. "
-        "You can install it using `uv pip install cvc5` (assuming just + uv build)."
-    )
-
-
 def is_valid(pre, post):
     # print("PRE: ", pre.serialize())
     # print("POST: ", post.serialize())
@@ -182,20 +180,46 @@ def is_valid(pre, post):
     return False
 
 
-obligations = [obligation1(m_smt), obligation2(m_smt)]
+def test_obligations():
+    pytest.importorskip("cvc5")
 
+    x, y, z = (Symbol(v, INT) for v in ("x", "y", "z"))
+    y0, z0 = (Symbol(v, INT) for v in ("y0", "z0"))
 
-failed = False
-for n, (pre, post) in enumerate(obligations):
-    print(f"Obligation {n} ... ", end="")
-    if is_valid(pre, post):
-        print("\033[1;32mproved\033[0m")
+    m_smt = SmtModule(ctrl=(x, y, z), extl=(y0, z0))
+
+    def obligation1(m):
+        return And(smt.nxt(y0) >= Int(0), smt.nxt(z0) >= Int(0)), inv(*m.init((y0, z0)))
+
+    # TODO: now the obligation uses m.update() which already are PySMT formulas.
+    # We need to translate update from the reactive module to PySMT and use it.
+    def obligation2(m):
+        return (
+            And(inv(x, y, z), Not(buchi(x, y, z))),
+            rank(*m.update((x, y, z), None)) < rank(x, y, z),
+        )
+
+    obligations = [obligation1(m_smt), obligation2(m_smt)]
+
+    failed = False
+    for n, (pre, post) in enumerate(obligations):
+        print(f"Obligation {n} ... ", end="")
+        if is_valid(pre, post):
+            print("\033[1;32mproved\033[0m")
+        else:
+            print("\033[1;31NOT proved\033[0m")
+            failed = True
+            break
+
+    if failed:
+        print("\033[1;31mProof failed!\033[0m")
     else:
-        print("\033[1;31NOT proved\033[0m")
-        failed = True
-        break
+        print("\033[1;32mAll proved!\033[0m")
 
-if failed:
-    print("\033[1;31mProof failed!\033[0m")
-else:
-    print("\033[1;32mAll proved!\033[0m")
+    assert not failed
+
+
+if __name__ == "__main__":
+    test_counter_toy()
+    test_counter_smt()
+    test_counter_torch()
