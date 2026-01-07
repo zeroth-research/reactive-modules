@@ -271,7 +271,6 @@ class ToTerms:
         return self.terms, r
 
     def walk(self, formula, depth=0):
-
         # constants
         # NOTE: check for bool must be before int (bool is an instance of int in Python...)
         if isinstance(formula, bool):
@@ -335,8 +334,7 @@ class ToTerms:
                 return [PyVal.int(formula.constant_value())]
             else:
                 raise NotImplementedError(
-                    f"Not implemented translation of operation: {
-                        formula} {type(formula)}"
+                    f"Not implemented translation of operation: {formula} {type(formula)}"
                 )
 
         raise RuntimeError("Unreachable")
