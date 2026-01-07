@@ -6,13 +6,13 @@ from torch import Tensor
 
 
 def test_wire_new():
-    x = Wire(dt.Bool(), 0)
-    y = Wire(dt.Bool(), 1)
+    x = Wire(dt.bool(), 0)
+    y = Wire(dt.bool(), 1)
 
 
 def test_term_new():
-    x = Wire(dt.Bool(), 0)
-    y = Wire(dt.Tensor([2, 2, 3]), 1)
+    x = Wire(dt.bool(), 0)
+    y = Wire(dt.tensor([2, 2, 3]), 1)
     f = Term.function(it.A(), [x, y], [x])
     t = Tensor([3, 4, 5])
     g = Term.function(it.C(t), [x], [y])
@@ -21,25 +21,25 @@ def test_term_new():
 
 
 def test_module_sequential():
-    x = (Wire(dt.Bool(), 0), Wire(dt.Bool(), 1))
+    x = (Wire(dt.bool(), 0), Wire(dt.bool(), 1))
     init = [Term(it.A(), [x[1]])]
     update = [Term(it.A(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
 
 
 def test_module_combinatorial():
-    x = (Wire(dt.Bool(), 0), Wire(dt.Bool(), 1))
+    x = (Wire(dt.bool(), 0), Wire(dt.bool(), 1))
 
     assign = [Term(it.A(), [x[1]])]
     m = Module.combinatorial(assign, [x])
 
 
 def test_module_parallel():
-    x = (Wire(dt.Tensor([2, 2, 3]), 0), Wire(dt.Tensor([2, 2, 3]), 1))
-    y = (Wire(dt.Bool(), 2), Wire(dt.Bool(), 3))
-    z = (Wire(dt.Bool(), 4), Wire(dt.Bool(), 5))
-    w = (Wire(dt.Bool(), 6), Wire(dt.Bool(), 7))
-    v = (Wire(dt.Bool(), 8), Wire(dt.Bool(), 9))
+    x = (Wire(dt.tensor([2, 2, 3]), 0), Wire(dt.tensor([2, 2, 3]), 1))
+    y = (Wire(dt.bool(), 2), Wire(dt.bool(), 3))
+    z = (Wire(dt.bool(), 4), Wire(dt.bool(), 5))
+    w = (Wire(dt.bool(), 6), Wire(dt.bool(), 7))
+    v = (Wire(dt.bool(), 8), Wire(dt.bool(), 9))
 
     init = [Term(it.A(), [x[1]])]
     update = [Term(it.A(), [x[1]], [x[0], y[1]])]
@@ -70,8 +70,8 @@ def test_module_parallel():
 
 
 def test_interface():
-    x = Wire(dt.Bool(), 0)
-    y = Wire(dt.Bool(), 1)
+    x = Wire(dt.bool(), 0)
+    y = Wire(dt.bool(), 1)
     f = Term(it.A(), [x, y], [x, y])
 
     w = f.write()
