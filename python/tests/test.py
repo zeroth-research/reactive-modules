@@ -26,8 +26,8 @@ import sympy as sp
 # SMT
 ######################################################################
 
-class SmtModule(smt.Module):
 
+class SmtModule(smt.Module):
     def init(self, extl) -> None:
         y0, z0 = extl
         return Int(0), self.nxt(y0), self.nxt(z0)  # = x, y, z
@@ -49,8 +49,8 @@ m_smt = SmtModule(ctrl=(x, y, z), extl=(y0, z0))
 # Toy
 ######################################################################
 
-class ToyModule(toy.Module):
 
+class ToyModule(toy.Module):
     def init(self, extl) -> None:
         y0, z0 = extl
         return 0, nxt(y0), nxt(z0)  # = x, y, z
@@ -58,10 +58,10 @@ class ToyModule(toy.Module):
     def update(self, ctrl, extl) -> None:
         x, y, z = ctrl
         xn = Ite(Or(x < y, x < z), x + Int(1), Int(0))
-       # xn = Choose(
-       #    Case(Or(x < y, x < z), x + Int(1)),
-       #    Case(Not(Or(x < y, x < z)), Int(0)),
-       # )
+        # xn = Choose(
+        #    Case(Or(x < y, x < z), x + Int(1)),
+        #    Case(Not(Or(x < y, x < z)), Int(0)),
+        # )
 
         return xn, y, z
 
@@ -75,8 +75,8 @@ m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
 # Torch
 ######################################################################
 
-class TorchModule(ztch.Module):
 
+class TorchModule(ztch.Module):
     def init(self, extl):
         # extl is a vector with dimension 2
         return Tensor([[0, 0], [1, 0], [0, 1]]) @ self.nxt(extl)
@@ -91,9 +91,8 @@ class TorchModule(ztch.Module):
         z = Tensor([0, 0, 1]) @ state
 
         cond = (x < y) or (x < z)
-        return self.choose(
-            (cond, result1),
-            (~cond, result2),
+        return ztch.choose(
+            ztch.IfThen(cond, result1), ztch.IfThen(~cond, result2), state
         )
 
 
@@ -107,7 +106,7 @@ m_torch.dbg()
 
 # compose modules
 # m = m1 | m2
-m = m_toy.translate_to('smt')
+m = m_toy.translate_to("smt")
 print(m)
 m.dbg()
 
@@ -169,7 +168,8 @@ try:
 except NoSolverAvailableError:
     raise RuntimeError(
         "Continuing this test requires CVC5 solver. "
-        "You can install it using `uv pip install cvc5` (assuming just + uv build).")
+        "You can install it using `uv pip install cvc5` (assuming just + uv build)."
+    )
 
 
 def is_valid(pre, post):

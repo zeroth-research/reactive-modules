@@ -4,7 +4,7 @@ from zrth import _zrth
 from zrth.context import Context as ContextBase
 from zrth.expr import Expr, Var, Transform as ExprTransform
 
-from typing import Callable
+from typing import Callable, Any
 
 from itertools import chain
 
@@ -37,6 +37,84 @@ def nxt(var: Var) -> Var:
     return Var(f"nxt({var.name})")
 
 
+class IfThen(Expr):
+    """
+    An expression representing `IfThen` term.
+
+    This expression is used inside `Choose` terms.
+    """
+
+    def __init__(self, cond: Expr | bool, expr: Any):
+        super().__init__("ifthen", [cond, expr])
+
+    def cond(self):
+        return self.get_children()[0]
+
+    def expr(self):
+        return self.get_children()[1]
+
+    def is_concrete(self) -> bool:
+        return not any(isinstance(c, Expr) for c in self.get_children())
+
+
+def is_concrete_choose(alist: list[Any]) -> bool:
+    print("--- choose ---")
+    print(isinstance(alist[-1], Expr))
+    print(any(not a.is_concrete() for a in alist[:-1]))
+    print("--- end choose ---")
+    last = alist[-1]
+    # the last arg is IfThen
+    if isinstance(last, IfThen):
+        return all(a.is_concrete() for a in alist)
+
+    # the last arg is not IfThen (it is the default)
+    return not isinstance(alist[-1], Expr) and all(a.is_concrete() for a in alist[:-1])
+
+
+def _choose(alist):
+    assert all(isinstance(a, IfThen) for a in alist), alist
+    if all(a.is_concrete() for a in alist):
+        # execute choose concretely
+        sat_args = [arg for arg in alist if arg.cond()]
+        if sat_args:
+            return sat_args[randrange(len(sat_args))].expr()
+
+        # return None
+        raise RuntimeError("No satisfiable branch in a choose statement")
+
+    return Expr("choose", alist)
+
+
+def _choose_or(alist):
+    choices = alist[:-1]
+    last = alist[-1]
+
+    # the last argument may not be `IfThen`, in which case
+    # it is the default (unconditional) argument
+    assert not isinstance(last, IfThen), alist
+    assert all(isinstance(a, IfThen) for a in choices), alist
+
+    if not isinstance(last, Expr) and all(a.is_concrete() for a in choices):
+        # execute choose_or concretely
+        sat_args = [arg for arg in choices if arg.cond()]
+        if sat_args:
+            return sat_args[randrange(len(sat_args))].expr()
+        return last
+
+    return Expr("choose_or", alist)
+
+
+def choose(*args):
+    """
+    Implementation of choose construct.
+    """
+    alist = list(args)
+    if isinstance(alist[-1], IfThen):
+        return _choose(alist)
+    else:
+        return _choose_or(alist)
+
+
 class Context_(ContextBase):
     __next_fresh_var = 0
 
@@ -44,7 +122,6 @@ class Context_(ContextBase):
         super().__init__(ctx_impl)
         # map variables to terms that define them
         self.var_to_term: dict[Var, Term] = {}
-        self.choose_impl = self._choose_concrete
 
     def var(self, name: str) -> Var:
         return Var(name)
@@ -107,29 +184,11 @@ class Context_(ContextBase):
 
         return ctrl, extl, cur_vars
 
-    def _choose_expr(self, *args):
-        return Expr("choose", [Expr("ifthen", [*arg]) for arg in args])
-
-    def _choose_concrete(self, *args):
-        sat_args = [arg for arg in args if arg[0]]
-        if sat_args:
-            return sat_args[randrange(len(sat_args))][1]
-
-        return None
-
     def trace(self, fun: Callable, *args, **kwargs):
-        assert self.choose_impl == self._choose_concrete, self.choose_impl
-        # we are now creating expressions, pick the right interpretation of the
-        # `choose` method
-        self.choose_impl = self._choose_expr
-
         # print("----- tracing ----")
         # run the function
         r = fun(*args, **kwargs)
         # print("----- finished tracing ----")
-
-        # we are not creating expressions anymore, reset
-        self.choose_impl = self._choose_concrete
 
         return r
 
@@ -329,4 +388,10 @@ class Translate(ExprTransform):
         assert len(args) > 0, args
         out = self._ctx.tmp_var()
         self.terms.append(WrappedTerm("Choose", reads=args, writes=[out]))
+        return [out]
+
+    def visit_choose_or(self, expr, args):
+        assert len(args) > 0, args
+        out = self._ctx.tmp_var()
+        self.terms.append(WrappedTerm("ChooseOr", reads=args, writes=[out]))
         return [out]

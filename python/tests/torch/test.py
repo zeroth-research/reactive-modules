@@ -4,11 +4,10 @@ from os.path import dirname, join as pathjoin
 
 from torch import Tensor
 
-from zrth.torch import Module as TorchModule
+from zrth.torch import Module as TorchModule, IfThen
 
 
 class MyModule(TorchModule):
-
     def init(self, extl):
         # extl is a vector with dimension 2
         return Tensor([[0, 0], [1, 0], [0, 1]]) @ self.nxt(extl)
@@ -24,8 +23,8 @@ class MyModule(TorchModule):
 
         cond = (x < y) or (x < z)
         return self.choose(
-            (cond, result1),
-            (~cond, result2),
+            IfThen(cond, result1),
+            IfThen(~cond, result2),
         )
 
 

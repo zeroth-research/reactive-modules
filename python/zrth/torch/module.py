@@ -1,4 +1,4 @@
-from .context import Context, nxt
+from .context import Context, nxt, choose
 from ..expr import Expr, Var
 
 
@@ -58,8 +58,9 @@ class Module:
         # else this is a constant already describing next value
         return v
 
-    def choose(self, *args):
-        return self._ctx.choose_impl(*args)
+    @staticmethod
+    def choose(*args):
+        return choose(*args)
 
     def dbg(self) -> None:
         self._module.dbg()
