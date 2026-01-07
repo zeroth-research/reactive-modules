@@ -1,11 +1,11 @@
 use base::term::Term;
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DType {
-    None,   // No value
-    Tensor, // Tensor
-    Bool,   // Boolean
+    None,               // No value
+    Tensor(Vec<usize>), // Tensor with a given shape
+    Bool,               // Boolean
 }
 
 impl std::str::FromStr for DType {
@@ -13,9 +13,9 @@ impl std::str::FromStr for DType {
 
     fn from_str(ty: &str) -> Result<Self, Self::Err> {
         match ty {
-            "None" => Ok(DType::Tensor),
+            "None" => Ok(DType::None),
             "Bool" => Ok(DType::Bool),
-            "Tensor" => Ok(DType::None),
+            //"Tensor" => Ok(DType::Tensor(todo!())),
             _ => Err(format!("Cannot convert `{}` to DType", ty)),
         }
     }
@@ -180,7 +180,15 @@ impl fmt::Display for IType {
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DType::Tensor => write!(f, "Tensor"),
+            DType::Tensor(shape) => write!(
+                f,
+                "Tensor({})",
+                shape
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
             DType::Bool => write!(f, "Bool"),
             DType::None => write!(f, "None"),
         }
