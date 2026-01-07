@@ -4,11 +4,8 @@ import zrth.toy as toy
 from pysmt.environment import Environment, reset_env, get_env
 import pytest
 
-
-@pytest.fixture(autouse=True)
-def pysmt_fresh_env():
-    reset_env()
-    get_env().enable_infix_notation = True
+# use the `pysmt_fresh_env` fixture
+from ..smt.test_basic import pysmt_fresh_env
 
 
 class Module(toy.Module):

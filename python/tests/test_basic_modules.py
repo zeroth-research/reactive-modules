@@ -25,11 +25,7 @@ import pytest
 
 # make sure every test gets its own new PySMT environment
 # to avoid Symbol clashes
-@pytest.fixture(autouse=True)
-def pysmt_fresh_env():
-    reset_env()
-    get_env().enable_infix_notation = True
-
+from .smt.test_basic import pysmt_fresh_env
 
 ######################################################################
 # SMT
