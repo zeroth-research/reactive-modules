@@ -1,4 +1,5 @@
-from .context import Context, nxt, choose
+from .context import Context
+from .exprs import nxt, choose
 from ..expr import Expr, Var
 
 
