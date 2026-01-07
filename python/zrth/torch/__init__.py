@@ -1,2 +1,3 @@
 from .module import Module
-from .context import nxt, choose, IfThen
+from .context import Context
+from .exprs import nxt, choose, IfThen
