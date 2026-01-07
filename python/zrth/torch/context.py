@@ -4,9 +4,7 @@ from zrth import _zrth
 from zrth.context import Context as ContextBase
 from zrth.expr import Expr, Var, Transform as ExprTransform
 
-from typing import Callable, Any
-
-import inspect
+from typing import Callable
 
 from itertools import chain
 
@@ -200,8 +198,7 @@ class Context(Context_):
             # map the output of the expression to the output wire
             assert len(outvar) == 1, outvar
             init_terms.append(
-                WrappedTerm("Id", outvar, [
-                            self.var_to_pyval(self.next_var(var))])
+                WrappedTerm("Id", outvar, [self.var_to_pyval(self.next_var(var))])
             )
 
         update_terms = []
@@ -213,13 +210,11 @@ class Context(Context_):
             # map the output of the expression to the output wire
             assert len(outvar) == 1
             update_terms.append(
-                WrappedTerm("Id", outvar, [
-                            self.var_to_pyval(self.next_var(var))])
+                WrappedTerm("Id", outvar, [self.var_to_pyval(self.next_var(var))])
             )
 
         cur_vars = [self.var_to_pyval(v) for v in chain(ctrl, extl)]
-        nxt_vars = [self.var_to_pyval(self.next_var(v))
-                    for v in chain(ctrl, extl)]
+        nxt_vars = [self.var_to_pyval(self.next_var(v)) for v in chain(ctrl, extl)]
         return cur_vars, nxt_vars, init_terms, update_terms
 
 
@@ -269,8 +264,7 @@ class Translate(ExprTransform):
         return self.terms, r
 
     def default(self, expr, args):
-        raise NotImplementedError(
-            f"Not implemented translation of operation: `{expr}`")
+        raise NotImplementedError(f"Not implemented translation of operation: `{expr}`")
 
     # def before_all(self, expr: Expr, args: list):
     #    print("VIS", expr, type(expr))
@@ -296,15 +290,13 @@ class Translate(ExprTransform):
         assert len(expr.args) == 2
         assert args[0].dtype() == args[1].dtype(), args
         out = self._ctx.tmp_var()
-        self.terms.append(WrappedTerm(
-            arith_to_str(op), reads=args, writes=[out]))
+        self.terms.append(WrappedTerm(arith_to_str(op), reads=args, writes=[out]))
         return [out]
 
     def visit_cmp(self, expr, args, op):
         assert len(args) == 2
         out = self._ctx.tmp_var()
-        self.terms.append(WrappedTerm(
-            rel_to_str(op), reads=args, writes=[out]))
+        self.terms.append(WrappedTerm(rel_to_str(op), reads=args, writes=[out]))
         return [out]
 
     def visit_logic(self, expr, args, op):
