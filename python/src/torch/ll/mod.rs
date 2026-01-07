@@ -1,37 +1,18 @@
 mod atom;
 mod dtype;
+mod itype;
 mod module;
 mod term;
 mod wire;
 
-use super::pytensor::PyTensor;
 pub use dtype::DType;
+pub use itype::IType;
 pub use module::Module;
 pub use term::Term;
 pub use wire::Wire;
 
 use pyo3::PyClass;
 use pyo3::prelude::*;
-
-use std::fmt;
-
-#[pyclass]
-#[derive(Debug, Clone)]
-pub enum IType {
-    A(),
-    B(),
-    C(PyTensor),
-}
-
-impl fmt::Display for IType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IType::A() => write!(f, "A"),
-            IType::B() => write!(f, "B"),
-            IType::C(_) => write!(f, "C(tensor)"),
-        }
-    }
-}
 
 fn try_iter_borrow<'py, P>(
     iter: &'py Bound<'py, PyAny>,
