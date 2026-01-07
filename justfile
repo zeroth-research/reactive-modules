@@ -39,6 +39,10 @@ test:
 test-python:
     @just run-python pytest
 
+test-all:
+    {{ CARGO }} test --all-features {{ profile_flag }}
+    @just test-python
+
 # Clean the current build
 clean:
     {{ CARGO }} clean
