@@ -5,7 +5,6 @@ from torch import Tensor
 from zrth import _zrth
 
 PyVal = _zrth.PyVal
-WrappedTerm = _zrth.torch.WrappedTerm
 
 
 def to_terms(ctx, ctrl, extl, init_ret, update_ret) -> (list, list, list, list):

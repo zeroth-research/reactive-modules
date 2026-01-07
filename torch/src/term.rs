@@ -24,7 +24,8 @@ impl std::str::FromStr for DType {
 #[derive(Debug)]
 pub enum IType {
     // constants are special terms
-    Const(tch::Tensor),
+    ConstTensor(tch::Tensor),
+    ConstBool(bool),
     // comparisons (element-wise)
     Eq,
     Neq,
@@ -94,7 +95,8 @@ impl std::str::FromStr for IType {
             "Or" => Ok(IType::Or),
             "And" => Ok(IType::And),
             // -----
-            "Const" => Err("Const cannot be constructed from a &str".into()),
+            "ConstTensor" => Err("Const cannot be constructed from a &str atm".into()),
+            "ConstBool" => Err("Const cannot be constructed from a &str atm".into()),
             oth => Err(format!("Invalid IType: {} (maybe just not added yet)", oth)),
         }
     }
@@ -103,7 +105,8 @@ impl std::str::FromStr for IType {
 impl Clone for IType {
     fn clone(&self) -> Self {
         match self {
-            IType::Const(v) => Self::Const(v.shallow_clone()),
+            IType::ConstTensor(v) => Self::ConstTensor(v.shallow_clone()),
+            IType::ConstBool(v) => Self::ConstBool(*v),
             IType::Eq => IType::Eq,
             IType::Neq => IType::Neq,
             IType::Lt => IType::Lt,
@@ -153,7 +156,8 @@ impl fmt::Display for IType {
             IType::Not => write!(f, "Not"),
             IType::And => write!(f, "And"),
             IType::Or => write!(f, "Or"),
-            IType::Const(t) => {
+            IType::ConstBool(v) => write!(f, "Const({})", v),
+            IType::ConstTensor(t) => {
                 let flat = t.view([-1]);
 
                 if let Ok(vals) = Vec::<f64>::try_from(&flat) {
