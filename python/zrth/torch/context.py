@@ -6,10 +6,9 @@ from zrth.expr import Expr, Var
 from typing import Callable
 
 
-WrappedModule = _zrth.torch.WrappedModule
-
 from .translation import to_terms
 from .exprs import nxt
+from .ll import *
 
 
 class Context(ContextBase):
@@ -96,9 +95,9 @@ class Context(ContextBase):
         init: Callable[[], None],
         update: Callable[[], None],
         name: str | None = None,
-    ) -> WrappedModule:
+    ) -> Module:
         """
-        Create the Rust module (:class:`WrappedModule`) from the `init` and `update` methods.
+        Create the Rust module (:class:`torch.ll.Module`) from the `init` and `update` methods.
         """
 
         # parse and create tuples of input variables
@@ -127,9 +126,7 @@ class Context(ContextBase):
         )
 
         # create the Rust module
-        return WrappedModule(
-            self._context, cur_vars, nxt_vars, init_terms, update_terms
-        )
+        return Module(self._context, cur_vars, nxt_vars, init_terms, update_terms)
 
 
 def handle_return_value(r):
