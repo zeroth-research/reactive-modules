@@ -57,20 +57,6 @@ class IfThen(Expr):
         return not any(isinstance(c, Expr) for c in self.get_children())
 
 
-def is_concrete_choose(alist: list[Any]) -> bool:
-    print("--- choose ---")
-    print(isinstance(alist[-1], Expr))
-    print(any(not a.is_concrete() for a in alist[:-1]))
-    print("--- end choose ---")
-    last = alist[-1]
-    # the last arg is IfThen
-    if isinstance(last, IfThen):
-        return all(a.is_concrete() for a in alist)
-
-    # the last arg is not IfThen (it is the default)
-    return not isinstance(alist[-1], Expr) and all(a.is_concrete() for a in alist[:-1])
-
-
 def _choose(alist):
     assert all(isinstance(a, IfThen) for a in alist), alist
     if all(a.is_concrete() for a in alist):
