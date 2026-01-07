@@ -1,9 +1,11 @@
 mod atom;
+mod dtype;
 mod module;
 mod term;
 mod wire;
 
 use super::pytensor::PyTensor;
+pub use dtype::DType;
 pub use module::Module;
 pub use term::Term;
 pub use wire::Wire;
@@ -19,32 +21,6 @@ pub enum IType {
     A(),
     B(),
     C(PyTensor),
-}
-
-// This is a copy of torch::DType.
-// It is easier to duplicate the code that embedding torch::DType.
-#[pyclass]
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum DType {
-    Bool(),
-    Tensor(Vec<usize>),
-}
-
-impl fmt::Display for DType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DType::Bool() => write!(f, "Bool"),
-            DType::Tensor(shape) => write!(
-                f,
-                "Tensor<{}>",
-                shape
-                    .iter()
-                    .map(|x| x.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-        }
-    }
 }
 
 impl fmt::Display for IType {

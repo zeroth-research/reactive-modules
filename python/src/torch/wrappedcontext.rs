@@ -1,3 +1,4 @@
+use super::ll;
 use pyo3::prelude::*;
 
 use crate::PyVal;
@@ -40,8 +41,8 @@ impl WrappedContext {
         self.ctx.get(name).unwrap().0
     }
 
-    //pub fn var(&mut self, name: &str) -> PyVal {
-    //    let (id, _) = self.ctx.var(name, DType::Tensor);
-    //    PyVal::Sym(id, "Tensor".to_string())
-    //}
+    pub fn var(&mut self, name: &str, dtype: ll::DType) -> PyVal {
+        let (id, ty) = self.ctx.var(name, dtype.into());
+        PyVal::Sym(id, ty.to_string())
+    }
 }
