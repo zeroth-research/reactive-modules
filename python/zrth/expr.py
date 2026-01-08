@@ -3,7 +3,16 @@ class Expr:
     A minimalistic representation of an expression.
 
     We use this class during translating Python code into reactive modules terms.
-    It is nothing else than a symbolic representation of a computation of a value.
+    It is nothing else than a symbolic representation of a computation of a value:
+    an `Expr` is basically a node in an abstract-syntax tree. As such, it has
+    some attributes and *children*.
+
+    We deliberately use strings for operations so that this class
+    is as flexible as possible, it is temporary until we have a global IType.
+
+    :param op: name of the operation of the expression
+    :param ty: a string representing the type of the expression
+    :param args: a list of expression arguments (children)
     """
 
     __cnt = 0
@@ -15,52 +24,16 @@ class Expr:
         Expr.__cnt += 1
         self.id = Expr.__cnt
 
-        # self.typecheck()
-
-    # def typecheck(self) -> None:
-    #    pass
-
-    def __rmatmul__(self, rhs):
-        return Expr("arith.matmul", [self, rhs])
-
-    def __add__(self, rhs):
-        return Expr("arith.add", [self, rhs])
-
-    def __lt__(self, rhs):
-        return Expr("cmp.lt", [self, rhs])
-
-    def __gt__(self, rhs):
-        return Expr("cmp.gt", [self, rhs])
-
-    def __or__(self, rhs):
-        return Expr("logic.or", [self, rhs])
-
-    def __invert__(self):
-        return Expr("logic.not", [self])
-
     def __str__(self) -> str:
-        return f'<{self.id}> {self.op}({", ".join(map(str, self.args))})'
+        return f"<{self.id}> {self.op}({', '.join(map(str, self.args))})"
 
     def get_children(self) -> list:
-        op = self.op
-        if op in ("const", "var"):
-            return []
         return self.args
-
-
-class Var(Expr):
-    def __init__(self, name):
-        super().__init__("var", [])
-        self.name = name
-
-    def __str__(self):
-        return f"Var({self.name})"
 
 
 ###
 # Transform an expression using a visitor pattern
 class Transform:
-
     def transform(self, formula):
         return self._visit(formula)
 
@@ -68,7 +41,6 @@ class Transform:
         return [expr]
 
     def _visit(self, expr: Expr, depth=0):
-
         # print(" " * depth, "Visiting", expr)
 
         before_all = getattr(self, "before_all", None)
@@ -92,7 +64,7 @@ class Transform:
             op = []
             # find the most generic method the transformer has
             while names:
-                method = getattr(self, f'visit_{"_".join(names)}', None)
+                method = getattr(self, f"visit_{'_'.join(names)}", None)
                 if method:
                     break
                 op.append(names[-1])

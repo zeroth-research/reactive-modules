@@ -176,7 +176,7 @@ class Context(ContextBase):
         )
 
         module = WrappedModule(
-            self._context, cur_vars, nxt_vars, init_terms, update_terms
+            self.unwrap(), cur_vars, nxt_vars, init_terms, update_terms
         )
         # if name is not None:
         #    module.set_name(name)
@@ -212,7 +212,7 @@ class Context(ContextBase):
     def get_pyval_sym(self, sym: Expr) -> PyVal:
         assert sym.is_symbol(), sym
 
-        return self._context.get_sym(
+        return self.unwrap().get_sym(
             sym.symbol_name(), from_pysmt_type(sym.symbol_type())
         )
 

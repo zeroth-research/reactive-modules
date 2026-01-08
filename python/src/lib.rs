@@ -48,17 +48,12 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         // the high-level API for Torch integration
         let torch = PyModule::new(py, "torch")?;
         torch.add_class::<torch::RustContext>()?;
+        torch.add_class::<torch::IType>()?;
+        torch.add_class::<torch::DType>()?;
+        torch.add_class::<torch::Wire>()?;
+        torch.add_class::<torch::Term>()?;
+        torch.add_class::<torch::Module>()?;
 
-        // add the low-level API
-        let ll = PyModule::new(py, "ll")?;
-        ll.add_class::<torch::ll::IType>()?;
-        ll.add_class::<torch::ll::DType>()?;
-        ll.add_class::<torch::ll::Wire>()?;
-        ll.add_class::<torch::ll::Term>()?;
-        ll.add_class::<torch::ll::Module>()?;
-
-        // _zrth.torch.ll
-        torch.add_submodule(&ll)?;
         m.add_submodule(&torch)?;
     }
 

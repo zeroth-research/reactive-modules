@@ -7,17 +7,26 @@ class Context:
     crates. See, e.g., :class:`toy.Context`.
     """
 
-    def __init__(self, ctx_impl):
+    def __init__(self, rust_ctx):
         """
         :param: ctx_impl  is the Rust context object.
         """
-        self._context = ctx_impl
+        self._rust_context = rust_ctx
+        # when we are tracing code, we create terms and we store them
+        # in lists that are here. The lists form a stack,
+        # the user can push a new frame (list) and pop an old one
+        # to distinguish terms during tracing different parts of code
+        self._terms_frames = []
+
+    def push_terms_frame(self, f: list) -> None:
+        self._terms_frames.append(f)
+
+    def pop_terms_frame(self) -> list:
+        return self._terms_frames.pop()
+
+    def add_term(self, term):
+        if self._terms_frames:
+            self._terms_frames[-1].append(term)
 
     def unwrap(self):
-        return self._context
-
-    # def fresh_var_id(self) -> int:
-    #    return self._context.fresh_var()
-    #
-    # def get_var_id(self, name: str) -> int:
-    #    return self._context.get_var(name)
+        return self._rust_context

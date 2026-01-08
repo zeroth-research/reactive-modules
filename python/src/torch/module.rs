@@ -1,6 +1,9 @@
 use super::atom::Atom;
 use super::wire::Wire;
-use super::{DType, IType, try_iter_borrow, try_array2_iter_borrow, try_wire2_iter_cloned, try_term_iter_cloned};
+use super::{
+    DType, IType, try_array2_iter_borrow, try_iter_borrow, try_term_iter_cloned,
+    try_wire2_iter_cloned,
+};
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;

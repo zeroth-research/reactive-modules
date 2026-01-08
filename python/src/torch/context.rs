@@ -1,12 +1,9 @@
-use super::ll;
 use pyo3::prelude::*;
-
-use crate::PyVal;
 
 // the context in `toy` crate is generic,
 // we'll use it until we have the context in `base`.
+use super::{DType, Wire};
 use common::context::Context;
-use torch::DType;
 
 /// Context for generating Atoms and Modules from Python
 #[pyclass]
@@ -29,20 +26,20 @@ impl RustContext {
         }
     }
 
-    pub fn fresh_var(&mut self) -> usize {
+    pub fn fresh_wire_id(&mut self) -> usize {
         self.ctx.tmp_id()
     }
 
-    pub fn tmp_var(&mut self) -> PyVal {
-        PyVal::Sym(self.ctx.tmp_id(), "Tensor".to_string())
+    pub fn tmp_wire(&mut self, dtype: DType) -> Wire {
+        Wire::new(self.ctx.tmp_id(), dtype)
     }
 
-    pub fn get(&mut self, name: &str) -> usize {
-        self.ctx.get(name).unwrap().0
-    }
+    //pub fn get(&mut self, name: &str, dtype: DType) -> PyResult<Wire> {
+    //    self.ctx.get(name).unwrap().0
+    //}
 
-    pub fn var(&mut self, name: &str, dtype: ll::DType) -> PyVal {
+    pub fn wire(&mut self, name: &str, dtype: DType) -> Wire {
         let (id, ty) = self.ctx.var(name, dtype.into());
-        PyVal::Sym(id, ty.to_string())
+        Wire::new(id, DType::from(ty))
     }
 }

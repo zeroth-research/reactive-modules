@@ -1,21 +1,20 @@
-from zrth.torch.ll import Wire, Term, Module, mk_term
-from zrth.torch.ll import DType as dt
-from zrth.torch.ll import IType as it
+from zrth.torch.ll import Wire, Term, Module, DType as dt, IType as it
+from zrth.torch import mk_term
 
 from torch import Tensor
 
 
 def test_wire_new():
-    x = Wire(dt.bool(), 0)
-    y = Wire(dt.bool(), 1)
+    x = Wire(0, dt.bool())
+    y = Wire(1, dt.bool())
 
 
 def test_term_new():
-    x = Wire(dt.tensor([2, 2, 3]), 1)
-    y = Wire(dt.tensor([2, 2, 3]), 2)
-    xn = Wire(dt.tensor([2, 2, 3]), 3)
-    w4 = Wire(dt.tensor([3]), 4)
-    w5 = Wire(dt.tensor([3]), 5)
+    x = Wire(1, dt.tensor([2, 2, 3]))
+    y = Wire(2, dt.tensor([2, 2, 3]))
+    xn = Wire(3, dt.tensor([2, 2, 3]))
+    w4 = Wire(4, dt.tensor([3]))
+    w5 = Wire(5, dt.tensor([3]))
 
     # test `function` ctor
     f = Term.function(it.mk_add(), [xn], [x, y])
@@ -23,44 +22,44 @@ def test_term_new():
     h = Term.function(it.mk_const_tensor(Tensor([3, 4, 6])), [w5], [])
 
     # test `new` ctor
-    Term(it.mk_lt(), [Wire(dt.bool(), 6)], [w4, w5])
-    Term(it.mk_const_tensor(Tensor([3, 2, 1])), [Wire(dt.tensor([3]), 7)])
+    Term(it.mk_lt(), [Wire(6, dt.bool())], [w4, w5])
+    Term(it.mk_const_tensor(Tensor([3, 2, 1])), [Wire(7, dt.tensor([3]))])
 
 
 def test_mk_term():
-    x = Wire(dt.tensor([2, 2, 3]), 1)
-    y = Wire(dt.tensor([2, 2, 3]), 2)
-    xn = Wire(dt.tensor([2, 2, 3]), 3)
+    x = Wire(1, dt.tensor([2, 2, 3]))
+    y = Wire(2, dt.tensor([2, 2, 3]))
+    xn = Wire(3, dt.tensor([2, 2, 3]))
 
     f = mk_term(it.mk_add(), [xn], [x, y])
-    g = mk_term(it.mk_const_tensor(Tensor([3, 4, 5])), [Wire(dt.tensor([3]), 4)], [])
-    h = mk_term(it.mk_const_tensor(Tensor([3, 4, 6])), [Wire(dt.tensor([3]), 5)], [])
+    g = mk_term(it.mk_const_tensor(Tensor([3, 4, 5])), [Wire(4, dt.tensor([3]))], [])
+    h = mk_term(it.mk_const_tensor(Tensor([3, 4, 6])), [Wire(5, dt.tensor([3]))], [])
 
     # test `new` ctor
-    t1 = mk_term(it.mk_lt(), [Wire(dt.bool(), 6)], [g, h])
-    t2 = mk_term(it.mk_const_tensor(Tensor([3, 2, 1])), [Wire(dt.tensor([3]), 7)])
+    t1 = mk_term(it.mk_lt(), [Wire(6, dt.bool())], [g, h])
+    t2 = mk_term(it.mk_const_tensor(Tensor([3, 2, 1])), [Wire(7, dt.tensor([3]))])
 
 
 def test_module_sequential():
-    x = (Wire(dt.bool(), 0), Wire(dt.bool(), 1))
+    x = (Wire(0, dt.bool()), Wire(1, dt.bool()))
     init = [Term(it.mk_const_bool(True), [x[1]])]
     update = [Term(it.mk_id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
 
 
 def test_module_combinatorial():
-    x = (Wire(dt.bool(), 0), Wire(dt.bool(), 1))
+    x = (Wire(0, dt.bool()), Wire(1, dt.bool()))
 
     assign = [Term(it.mk_const_bool(False), [x[1]])]
     m = Module.combinatorial(assign, [x])
 
 
 def test_module_parallel():
-    x = (Wire(dt.bool(), 0), Wire(dt.bool(), 1))
-    y = (Wire(dt.bool(), 2), Wire(dt.bool(), 3))
-    z = (Wire(dt.bool(), 4), Wire(dt.bool(), 5))
-    w = (Wire(dt.bool(), 6), Wire(dt.bool(), 7))
-    v = (Wire(dt.bool(), 8), Wire(dt.bool(), 9))
+    x = (Wire(0, dt.bool()), Wire(1, dt.bool()))
+    y = (Wire(2, dt.bool()), Wire(3, dt.bool()))
+    z = (Wire(4, dt.bool()), Wire(5, dt.bool()))
+    w = (Wire(6, dt.bool()), Wire(7, dt.bool()))
+    v = (Wire(8, dt.bool()), Wire(9, dt.bool()))
 
     init = [Term(it.mk_const_bool(False), [x[1]])]
     update = [Term(it.mk_and(), [x[1]], [x[0], y[1]])]
@@ -94,9 +93,9 @@ def test_module_parallel():
 
 
 def test_interface():
-    x = Wire(dt.bool(), 0)
-    y = Wire(dt.bool(), 1)
-    xn = Wire(dt.bool(), 2)
+    x = Wire(0, dt.bool())
+    y = Wire(1, dt.bool())
+    xn = Wire(2, dt.bool())
     f = Term(it.mk_id(), [xn], [x, y])
     f2 = Term(it.mk_id(), [xn], [x, y])
 
