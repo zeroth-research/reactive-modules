@@ -36,7 +36,7 @@ fn _zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     {
         // the high-level API for Torch integration
         let torch = PyModule::new(py, "torch")?;
-        torch.add_class::<torch::WrappedContext>()?;
+        torch.add_class::<torch::RustContext>()?;
 
         // add the low-level API
         let ll = PyModule::new(py, "ll")?;

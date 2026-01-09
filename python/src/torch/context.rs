@@ -10,18 +10,18 @@ use torch::DType;
 
 /// Context for generating Atoms and Modules from Python
 #[pyclass]
-pub struct WrappedContext {
+pub struct RustContext {
     pub(crate) ctx: Context<DType>,
 }
 
-impl Default for WrappedContext {
+impl Default for RustContext {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[pymethods]
-impl WrappedContext {
+impl RustContext {
     #[new]
     pub fn new() -> Self {
         Self {
