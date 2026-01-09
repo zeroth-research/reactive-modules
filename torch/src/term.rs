@@ -8,6 +8,15 @@ pub enum DType {
     Bool,               // Boolean
 }
 
+fn parse_dim(dim: &str) -> Option<Vec<usize>> {
+    Some(
+        dim.split(',')
+            .map(str::parse)
+            .collect::<Result<_, _>>()
+            .ok()?,
+    )
+}
+
 impl std::str::FromStr for DType {
     type Err = String;
 
@@ -16,7 +25,16 @@ impl std::str::FromStr for DType {
             "None" => Ok(DType::None),
             "Bool" => Ok(DType::Bool),
             //"Tensor" => Ok(DType::Tensor(todo!())),
-            _ => Err(format!("Cannot convert `{}` to DType", ty)),
+            _ => {
+                if let Some(dim) = ty.strip_prefix("Tensor<")
+                    && let Some(inner) = dim.strip_suffix(">")
+                    && let Some(dims) = parse_dim(inner)
+                {
+                    return Ok(DType::Tensor(dims));
+                }
+
+                Err(format!("Cannot convert `{}` to DType", ty))
+            }
         }
     }
 }
