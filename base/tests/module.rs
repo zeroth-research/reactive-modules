@@ -316,3 +316,130 @@ fn can_compose_three_tiny1_without_cyclic_await_and_overlapping_prvt() {
     let m4 = Module::parallel([m1, m2, m3]);
     assert!(m4.is_ok());
 }
+
+#[test]
+fn compose_seq() {
+    // define two modules:
+    //  M1: read external "y" and write it to "x"
+    //  M2: read external "x" and write it to "z"
+    //
+    //  M1 and M2 are compatible (disjoint interface variables and acyclic waiting dependencies),
+    //  and we test that they are composable
+    let x = Wire::new(0, "real");
+    let xn = Wire::new(1, "real");
+    let y = Wire::new(2, "real");
+    let yn = Wire::new(3, "real");
+    let z = Wire::new(4, "real");
+    let zn = Wire::new(5, "real");
+
+    let assign: Vec<Term<&str, &str>> = [term!("ID", [xn.clone()], [yn.clone()]).unwrap()].to_vec();
+    let obs = Interface::from_iter([[x.clone(), xn.clone()], [y.clone(), yn.clone()]]);
+    let m1 = Module::combinatorial(obs.clone(), assign.clone()).unwrap();
+
+    let assign: Vec<Term<&str, &str>> = [term!("ID", [zn.clone()], [xn.clone()]).unwrap()].to_vec();
+    let obs = Interface::from_iter([[x.clone(), xn.clone()], [z.clone(), zn.clone()]]);
+    let m2 = Module::combinatorial(obs.clone(), assign.clone()).unwrap();
+
+    Module::parallel([m1, m2]).unwrap();
+}
+
+#[test]
+fn compose_seq_2() {
+    let (x, xn) = (Wire::new(0, "real"), Wire::new(1, "real"));
+    let (y, yn) = (Wire::new(2, "real"), Wire::new(3, "real"));
+    let (z, zn) = (Wire::new(4, "real"), Wire::new(5, "real"));
+    let (y0, y0n) = (Wire::new(6, "real"), Wire::new(7, "real"));
+    let (z0, z0n) = (Wire::new(8, "real"), Wire::new(9, "real"));
+    let (inv, invn) = (Wire::new(10, "real"), Wire::new(11, "real"));
+
+    // class Module(smt.Module):
+    //     def init(self, extl) -> None:
+    //         y0, z0 = extl
+    //         return Int(0), nxt(y0), nxt(z0)  # = x, y, z
+    //
+    //     def update(self, ctrl, extl) -> None:
+    //         x, y, z = ctrl
+    //
+    //         cond = Or(x < y, x < z)
+    //         xn = Ite(cond, x + Int(1), Int(0))
+    //
+    //         return xn, y, z
+    //
+    let init: Vec<Term<&str, &str>> = [
+        term!("Const(0)", [xn.clone()]).unwrap(),
+        term!("Id", [yn.clone()], [y0n.clone()]).unwrap(),
+        term!("Id", [zn.clone()], [z0n.clone()]).unwrap(),
+    ]
+    .to_vec();
+
+    let tmps = [
+        Wire::new(12, "real"),
+        Wire::new(13, "real"),
+        Wire::new(14, "real"),
+        Wire::new(15, "real"),
+        Wire::new(16, "real"),
+        Wire::new(17, "real"),
+    ];
+    let update: Vec<Term<&str, &str>> = [
+        term!("Lt", [tmps[0].clone()], [x.clone(), y.clone()]).unwrap(),
+        term!("Lt", [tmps[1].clone()], [x.clone(), z.clone()]).unwrap(),
+        term!("Or", [tmps[2].clone()], [tmps[0].clone(), tmps[1].clone()]).unwrap(),
+        term!("Const(0)", [tmps[3].clone()]).unwrap(),
+        term!("Const(1)", [tmps[4].clone()]).unwrap(),
+        term!("Add", [tmps[5].clone()], [x.clone(), tmps[4].clone()]).unwrap(),
+        term!(
+            "Ite",
+            [xn.clone()],
+            [tmps[2].clone(), tmps[5].clone(), tmps[3].clone()]
+        )
+        .unwrap(),
+        term!("Id", [yn.clone()], [y.clone()]).unwrap(),
+        term!("Id", [zn.clone()], [z.clone()]).unwrap(),
+    ]
+    .to_vec();
+    let obs = Interface::from_iter([
+        [x.clone(), xn.clone()],
+        [y.clone(), yn.clone()],
+        [z.clone(), zn.clone()],
+        [y0.clone(), y0n.clone()],
+        [z0.clone(), z0n.clone()],
+    ]);
+    let m1 = Module::sequential_observable(obs.clone(), init, update).unwrap();
+
+    //
+    // class Inv(smt.Module):
+    //     def init(self, extl) -> None:
+    //         x, y, z = extl
+    //         return Or(nxt(x) <= nxt(y), nxt(x) <= nxt(z))
+    //
+    //     def update(self, inv, extl) -> None:
+    //         x, y, z = extl
+    //         return Or(nxt(x) <= nxt(y), nxt(x) <= nxt(z))
+    let tmps = [
+        Wire::new(18, "real"),
+        Wire::new(19, "real"),
+        Wire::new(20, "real"),
+    ];
+    let assign: Vec<Term<&str, &str>> = [
+        term!("Le", [tmps[0].clone()], [xn.clone(), yn.clone()]).unwrap(),
+        term!("Le", [tmps[1].clone()], [xn.clone(), zn.clone()]).unwrap(),
+        term!("Or", [tmps[2].clone()], [tmps[0].clone(), tmps[1].clone()]).unwrap(),
+        term!("Id", [invn.clone()], [tmps[2].clone()]).unwrap(),
+    ]
+    .to_vec();
+
+    let obs = Interface::from_iter([
+        [x.clone(), xn.clone()],
+        [y.clone(), yn.clone()],
+        [z.clone(), zn.clone()],
+        [inv.clone(), invn.clone()],
+    ]);
+    let m2 = Module::combinatorial(obs.clone(), assign.clone()).unwrap();
+
+    Module::parallel([m1.clone(), m2]).unwrap();
+
+    // try to use a `sequential_observable` ctor instead of combinatorial
+    let m2 = Module::sequential_observable(obs.clone(), assign.clone(), assign).unwrap();
+    let _m = Module::parallel([m1, m2]).unwrap();
+    println!("{}", _m);
+}
