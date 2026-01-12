@@ -3,6 +3,7 @@ use pyo3::types::PyList;
 
 use crate::smt::wrappedcontext::WrappedContext;
 use crate::smt::{vars_to_wiring, wterms_to_torchterms};
+use crate::util::str_to_pyerr;
 
 use base::Module;
 use smt::dtype::DType;
@@ -62,5 +63,27 @@ impl WrappedModule {
 
     fn dbg(&self) {
         println!("{}", self.module);
+    }
+
+    #[staticmethod]
+    fn parallel(items: &Bound<'_, PyList>) -> PyResult<WrappedModule> {
+        // get Rust references to modules
+        let refs = items.iter().map(|item| {
+            let py_ref: PyRef<WrappedModule> =
+                item.extract().expect("List item is not WrappedModule");
+            py_ref.module.clone()
+        });
+
+        Ok(WrappedModule {
+            module: base::Module::parallel(refs).map_err(str_to_pyerr)?,
+        })
+    }
+
+    fn __str__(&self) -> String {
+        self.module.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.module)
     }
 }
