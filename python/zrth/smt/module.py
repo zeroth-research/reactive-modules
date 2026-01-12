@@ -1,5 +1,9 @@
 from .context import Context, nxt
 
+from zrth import _zrth
+
+WrappedModule = _zrth.smt.WrappedModule
+
 
 class Module:
     def __init__(
@@ -9,7 +13,6 @@ class Module:
         name: str = None,
         ctx: Context = None,
     ):
-
         if ctrl is None:
             # will build other way
             # FIXME: this is hacky!
@@ -33,9 +36,16 @@ class Module:
     def dbg(self) -> None:
         self._module.dbg()
 
+    def unwrap(self) -> WrappedModule:
+        return self._module
+
     @staticmethod
     def nxt(v):
         return nxt(v)
+
+    @staticmethod
+    def parallel(modules: list) -> WrappedModule:
+        return WrappedModule.parallel([m.unwrap() for m in modules])
 
     def to_smtlib(self) -> str:
         return self._module.to_smtlib()
