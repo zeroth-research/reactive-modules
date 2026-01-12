@@ -200,7 +200,7 @@ class Context(PySMTContext):
         )
         # if name is not None:
         #    module.set_name(name)
-        return module
+        return module, ctrl, extl
 
     def _cond(self, cnd, iftrue, iffalse):
         return Cond(args)
