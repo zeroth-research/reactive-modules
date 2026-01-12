@@ -10,29 +10,24 @@ type SmtModule = Module<DType, IType>;
 
 pub struct AtomSmtLibTranslator<'a>(&'a SmtAtom);
 
+pub fn wires_decls<'a, T: IntoIterator<Item = &'a base::Wire<DType>>>(wires: T) -> Vec<String> {
+    wires
+        .into_iter()
+        .map(|w| declare_var(w.id(), w.dtype()))
+        .collect::<Vec<String>>()
+}
+
 impl AtomSmtLibTranslator<'_> {
     pub fn ctrl(&self) -> Vec<String> {
-        self.0
-            .ctrl()
-            .wires()
-            .map(|w| declare_var(w.id(), w.dtype()))
-            .collect::<Vec<String>>()
+        wires_decls(self.0.ctrl().wires())
     }
 
     pub fn read(&self) -> Vec<String> {
-        self.0
-            .read()
-            .wires()
-            .map(|w| declare_var(w.id(), w.dtype()))
-            .collect::<Vec<String>>()
+        wires_decls(self.0.read().wires())
     }
 
     pub fn wait(&self) -> Vec<String> {
-        self.0
-            .wait()
-            .wires()
-            .map(|w| declare_var(w.id(), w.dtype()))
-            .collect::<Vec<String>>()
+        wires_decls(self.0.wait().wires())
     }
 
     // Temporary wires
