@@ -50,8 +50,15 @@ impl WrappedModule {
         }
     }
 
-    fn to_smtlib(&self) -> String {
-        smt::smt::module_to_smtlib(&self.module)
+    #[pyo3(signature = (what = None))]
+    fn to_smtlib(&self, what: Option<&str>) -> String {
+        match what {
+            Some("module") | None => smt::smt::module_to_smtlib(&self.module),
+            Some("variables") => smt::smt::module_variables_to_smtlib(&self.module),
+            Some("init") => smt::smt::module_init_to_smtlib(&self.module),
+            Some("update") => smt::smt::module_update_to_smtlib(&self.module),
+            _ => panic!("Invalid `what` argument: `{}`", what.unwrap()),
+        }
     }
 
     #[cfg(feature = "visual-html")]
