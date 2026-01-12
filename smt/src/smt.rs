@@ -72,24 +72,35 @@ impl AtomSmtLibTranslator<'_> {
             .collect()
     }
 
-    pub fn to_smtlib(&self) -> String {
+    /// Declare variables that are defined in this atom, i.e., temporary variables
+    /// (all others are declared on the level of the module)
+    pub fn temps_to_smtlib(&self) -> String {
+        format!(";;; Temporary\n{}", self.temp().join("\n"),)
+    }
+
+    pub fn methods_to_smtlib(&self) -> String {
         format!(
-            ";;; Atom\n\n;; Controls\n{}\n\n;; Reads\n{}\n\n;; Awaits\n{}\n\n;; Temporary\n{}\n\n;; Init\n{}\n\n;; Update\n{}",
-            self.ctrl().join("\n"),
-            self.read().join("\n"),
-            self.wait().join("\n"),
-            self.temp().join("\n"),
+            ";; Init\n{}\n\n;; Update\n{}",
             self.init().join("\n"),
             self.update().join("\n"),
         )
     }
 
-    fn body_to_smtlib(&self) -> String {
+    pub fn to_smtlib(&self) -> String {
         format!(
-            ";;; Atom\n\n;; Temporary\n{}\n\n;; Init\n{}\n\n;; Update\n{}",
-            self.temp().join("\n"),
-            self.init().join("\n"),
-            self.update().join("\n"),
+            ";;; {}\n\n;;\n\n{}",
+            self.temps_to_smtlib(),
+            self.methods_to_smtlib(),
+        )
+    }
+
+    pub fn to_smtlib_full(&self) -> String {
+        format!(
+            ";;; Atom\n\n;; Controls\n{}\n\n;; Reads\n{}\n\n;; Awaits\n{}\n\n{}",
+            self.ctrl().join("\n"),
+            self.read().join("\n"),
+            self.wait().join("\n"),
+            self.to_smtlib(),
         )
     }
 }
@@ -98,7 +109,7 @@ pub struct ModuleSmtLibTranslator<'a>(&'a SmtModule);
 
 impl ModuleSmtLibTranslator<'_> {
     /// return smtlib declarations of `intf` variables
-    fn intf(&self) -> Vec<String> {
+    pub fn intf(&self) -> Vec<String> {
         let vars = self.0.intf();
         vars.latched()
             .iter()
@@ -108,7 +119,7 @@ impl ModuleSmtLibTranslator<'_> {
     }
 
     /// return smtlib declarations of `extl` variables
-    fn extl(&self) -> Vec<String> {
+    pub fn extl(&self) -> Vec<String> {
         let vars = self.0.extl();
         vars.latched()
             .iter()
@@ -117,18 +128,79 @@ impl ModuleSmtLibTranslator<'_> {
             .collect::<Vec<String>>()
     }
 
-    pub fn to_smtlib(&self) -> String {
-        // we do not consider private variables atm.
-        // debug_assert!(self.0.prvt().is_empty());
+    /// return smtlib declarations of `temp` variables from all atoms
+    pub fn temp(&self) -> Vec<String> {
+        wires_decls(self.0.temp())
+    }
 
+    pub fn observable_variables_to_smtlib(&self) -> String {
         format!(
-            ";;; Module\n\n;; Interface\n{}\n\n;; External\n{}\n\n;; Atoms\n\n{}",
+            ";; Interface\n{}\n\n;; External\n{}",
             self.intf().join("\n"),
             self.extl().join("\n"),
+        )
+    }
+
+    pub fn variables_to_smtlib(&self) -> String {
+        format!(
+            "{}\n\n;; Temporary\n{}",
+            self.observable_variables_to_smtlib(),
+            self.temp().join("\n"),
+        )
+    }
+
+    pub fn to_smtlib(&self) -> String {
+        // we do not consider private variables atm.
+        if !self.0.prvt().is_empty() {
+            unimplemented!()
+        }
+
+        format!(
+            ";;; Module\n\n{}\n\n;; Atoms\n{}",
+            self.variables_to_smtlib(),
             self.0
                 .atoms()
                 .iter()
-                .map(|atom| AtomSmtLibTranslator(atom).body_to_smtlib())
+                .enumerate()
+                .map(|(n, atom)| format!(
+                    "\n;; --- Atom {} ---\n{}",
+                    n,
+                    AtomSmtLibTranslator(atom).methods_to_smtlib()
+                ))
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
+    }
+
+    pub fn init_to_smtlib(&self) -> String {
+        format!(
+            "{}",
+            self.0
+                .atoms()
+                .iter()
+                .enumerate()
+                .map(|(n, atom)| format!(
+                    "\n;; --- Atom {} ---\n{}",
+                    n,
+                    AtomSmtLibTranslator(atom).init().join("\n")
+                ))
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
+    }
+
+    pub fn update_to_smtlib(&self) -> String {
+        format!(
+            "{}",
+            self.0
+                .atoms()
+                .iter()
+                .enumerate()
+                .map(|(n, atom)| format!(
+                    "\n;; --- Atom {} ---\n{}",
+                    n,
+                    AtomSmtLibTranslator(atom).update().join("\n")
+                ))
                 .collect::<Vec<String>>()
                 .join("\n")
         )
@@ -137,6 +209,18 @@ impl ModuleSmtLibTranslator<'_> {
 
 pub fn module_to_smtlib(module: &Module<DType, IType>) -> String {
     ModuleSmtLibTranslator(module).to_smtlib()
+}
+
+pub fn module_init_to_smtlib(module: &Module<DType, IType>) -> String {
+    ModuleSmtLibTranslator(module).init_to_smtlib()
+}
+
+pub fn module_update_to_smtlib(module: &Module<DType, IType>) -> String {
+    ModuleSmtLibTranslator(module).update_to_smtlib()
+}
+
+pub fn module_variables_to_smtlib(module: &Module<DType, IType>) -> String {
+    ModuleSmtLibTranslator(module).variables_to_smtlib()
 }
 
 pub fn parse_modules(modules: &[Module<DType, IType>]) -> String {
