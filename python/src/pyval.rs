@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyInt};
 
@@ -83,6 +84,35 @@ impl PyVal {
     #[staticmethod]
     fn tensor(val: PyTensor) -> PyResult<PyVal> {
         Ok(PyVal::Tensor(val))
+    }
+
+    fn to_int(&self) -> PyResult<i64> {
+        match self {
+            PyVal::Int(v) => Ok(*v),
+            _ => Err(PyValueError::new_err("PyVal is not Int")),
+        }
+    }
+
+    fn to_bool(&self) -> PyResult<bool> {
+        match self {
+            PyVal::Bool(v) => Ok(*v),
+            _ => Err(PyValueError::new_err("PyVal is not Bool")),
+        }
+    }
+
+    #[cfg(feature = "enable-torch")]
+    fn to_tensor(&self) -> PyResult<PyTensor> {
+        match self {
+            PyVal::Tensor(v) => Ok(v.clone()),
+            _ => Err(PyValueError::new_err("PyVal is not Tensor")),
+        }
+    }
+
+    fn to_wire(&self) -> PyResult<(usize, String)> {
+        match self {
+            PyVal::Sym(id, ty) => Ok((*id, ty.clone())),
+            _ => Err(PyValueError::new_err("PyVal is not Sym")),
+        }
     }
 
     fn dtype(&self) -> String {
