@@ -6,16 +6,46 @@ use std::fmt;
 // ============================================================================
 
 #[pyclass]
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MyTensor {
-    data: Vec<usize>,
+    data: Vec<f32>,
+    shape: Vec<usize>,
 }
 
 #[pymethods]
 impl MyTensor {
     #[new]
-    pub fn new(data: Vec<usize>) -> Self {
-        Self { data }
+    #[pyo3(signature = (data, shape = None))]
+    pub fn new(data: Vec<f32>, shape: Option<Vec<usize>>) -> Self {
+        let shape = shape.unwrap_or_else(|| vec![data.len()]);
+        Self { data, shape }
+    }
+    
+    #[getter]
+    pub fn data(&self) -> Vec<f32> {
+        self.data.clone()
+    }
+    
+    #[getter]
+    pub fn shape(&self) -> Vec<usize> {
+        self.shape.clone()
+    }
+    
+    fn __repr__(&self) -> String {
+        format!("MyTensor(shape={:?}, data=[...{}])", self.shape, self.data.len())
+    }
+}
+
+// Implement Eq manually since f32 doesn't implement Eq
+impl Eq for MyTensor {}
+
+impl std::hash::Hash for MyTensor {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.shape.hash(state);
+        // For f32, we hash the bit representation
+        for &f in &self.data {
+            f.to_bits().hash(state);
+        }
     }
 }
 
