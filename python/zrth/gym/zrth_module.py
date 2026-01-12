@@ -1,45 +1,40 @@
 from .converter import convert_to_module
+from .context import Context
 
 
 class Module:
     """Base class for reactive modules with automatic conversion"""
+    
+    _global_context = None
+    
+    @classmethod
+    def get_global_context(cls):
+        """Get or create the shared global context"""
+        if cls._global_context is None:
+            cls._global_context = Context()
+        return cls._global_context
 
     def __init__(self, ctx=None, names=None):
         """Initialize module
         
         Args:
-            ctx: Context object for wire registry (optional for legacy use)
+            ctx: Context object for wire registry (if None, uses global shared context)
             names: Dictionary with 'extl', 'intf', 'prvt' keys mapping to lists of wire names
                    Example: {'extl': ['observation'], 'intf': ['q_values'], 'prvt': []}
         """
-        if names is not None:
-            # New API: auto-converting reactive module
-            self.ctx = ctx
-            self.extl = names.get('extl', [])
-            self.intf = names.get('intf', [])
-            self.prvt = names.get('prvt', [])
-            
-            # Will be set after conversion
-            self._reactive_module = None
-            self._wire_pairs = {}  # name -> (latched_wire, next_wire)
-        else:
-            # Legacy API: just wire declarations
-            self.ctx = None
-            self.extl = []
-            self.intf = []
-            self.prvt = []
-            self._reactive_module = None
-            self._wire_pairs = {}
+        self.ctx = ctx if ctx is not None else Module.get_global_context()
+        self.extl = names.get('extl', []) if names else []
+        self.intf = names.get('intf', []) if names else []
+        self.prvt = names.get('prvt', []) if names else []
+        
+        # Will be set after conversion
+        self._reactive_module = None
         
     def _finalize_conversion(self):
         """Called automatically after subclass __init__ completes"""
         if self.ctx is not None:
             # Convert to reactive module
             self._reactive_module = convert_to_module(self.ctx, self)
-            
-            # Extract wire pairs from the converted module
-            if hasattr(self._reactive_module, '_wire_pairs_dict'):
-                self._wire_pairs = self._reactive_module._wire_pairs_dict
         
     @property
     def obs(self):
@@ -50,52 +45,7 @@ class Module:
     def ctrl(self):
         """Controlled wires: interface outputs + private wires"""
         return self.intf + self.prvt
-    
-    @property
-    def intf_wires(self):
-        """Get interface wires as list of (latched, next) wire pairs"""
-        return [self._wire_pairs[name] for name in self.intf if name in self._wire_pairs]
-    
-    @property
-    def intf_named(self):
-        """Get interface as list of (name, (latched, next)) tuples"""
-        return [(name, self._wire_pairs[name]) for name in self.intf if name in self._wire_pairs]
-    
-    @property
-    def extl_wires(self):
-        """Get external wires as list of (latched, next) wire pairs"""
-        return [self._wire_pairs[name] for name in self.extl if name in self._wire_pairs]
-    
-    @property
-    def extl_named(self):
-        """Get external as list of (name, (latched, next)) tuples"""
-        return [(name, self._wire_pairs[name]) for name in self.extl if name in self._wire_pairs]
-    
-    @property
-    def prvt_wires(self):
-        """Get private wires as list of (latched, next) wire pairs"""
-        return [self._wire_pairs[name] for name in self.prvt if name in self._wire_pairs]
-    
-    @property
-    def prvt_named(self):
-        """Get private as list of (name, (latched, next)) tuples"""
-        return [(name, self._wire_pairs[name]) for name in self.prvt if name in self._wire_pairs]
 
-    def init(self, **inputs):
-        """Initialize module state"""
-        raise NotImplementedError
-
-    def update(self, **inputs):
-        """Update module (one tick/step)"""
-        raise NotImplementedError
-    
-    def to_rust_module(self):
-        """Convert this Python module to Rust Module representation
-        
-        This will be implemented later to bridge to zrth._zrth.toy.Module
-        """
-        raise NotImplementedError("Rust bridge not yet implemented")
-    
     def __init_subclass__(cls, **kwargs):
         """Hook to automatically call conversion after subclass __init__"""
         super().__init_subclass__(**kwargs)

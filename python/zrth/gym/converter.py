@@ -4,7 +4,7 @@ import ast
 import textwrap
 from typing import Any
 from .context import Context
-from .backend import Wire, DType, IType, Term, Module, create_const, create_term
+from zrth import Wire, DType, IType, Term, Module, MyTensor
 
 # Import Rust types (will fail until we have proper bindings)
 # from zrth._zrth.torch import Wire, Term, Module, IType, DType
@@ -63,12 +63,12 @@ def _convert_torch_module(ctx: Context, module: torch.nn.Module):
     
     # Step 3: Create wire pairs using Context
     # Use Tensor dtype for torch backend
-    obs_latched = ctx.var('observation_l', 'Tensor')
-    obs_next = ctx.var('observation_n', 'Tensor')
+    obs_latched = ctx.wire('observation_l', 'Tensor')
+    obs_next = ctx.wire('observation_n', 'Tensor')
     obs_pair = (obs_latched, obs_next)
     
-    qval_latched = ctx.var('q_values_l', 'Tensor')
-    qval_next = ctx.var('q_values_n', 'Tensor')
+    qval_latched = ctx.wire('q_values_l', 'Tensor')
+    qval_next = ctx.wire('q_values_n', 'Tensor')
     qval_pair = (qval_latched, qval_next)
     
     # Track named wire pairs for module metadata
@@ -88,7 +88,7 @@ def _convert_torch_module(ctx: Context, module: torch.nn.Module):
     
     print(f"Total wire pairs: {len(all_wire_pairs)}")
     
-    module = Module.combinatorial(all_wire_pairs, terms)
+    module = Module.combinatorial(assign=terms, obs=all_wire_pairs)
     
     # Note: Can't attach metadata to Rust Module object
     # Store wire pairs mapping separately if needed
@@ -137,20 +137,20 @@ def _parse_torch_graph(graph, module, ctx, temp_wire_pairs, input_pair, output_p
         temp_matmul_n = ctx.tmp_wire('Tensor')
         temp_matmul = (temp_matmul_l, temp_matmul_n)
         temp_wire_pairs.append(temp_matmul)
-        terms.append(create_term('MatMul', [current_pair[1]], [temp_matmul[1]]))
+        terms.append(Term(IType.MatMul(), [temp_matmul[1]], [current_pair[1]]))
         
         # Add bias: temp_matmul -> temp_add
         # TODO: Add bias constants when torch backend supports them
         
         if is_last_layer:
             # Last layer outputs to the final output wire
-            terms.append(create_term('Add', [temp_matmul[1]], [output_pair[1]]))
+            terms.append(Term(IType.Add(), [output_pair[1]], [temp_matmul[1]]))
         else:
             temp_add_l = ctx.tmp_wire('Tensor')
             temp_add_n = ctx.tmp_wire('Tensor')
             temp_add = (temp_add_l, temp_add_n)
             temp_wire_pairs.append(temp_add)
-            terms.append(create_term('Add', [temp_matmul[1]], [temp_add[1]]))
+            terms.append(Term(IType.Add(), [temp_add[1]], [temp_matmul[1]]))
             
             # Apply ReLU if detected: Ite(Gt(x, 0), x, 0)
             if has_relu:
@@ -160,14 +160,14 @@ def _parse_torch_graph(graph, module, ctx, temp_wire_pairs, input_pair, output_p
                 gt_temp_n = ctx.tmp_wire('Bool')
                 gt_temp = (gt_temp_l, gt_temp_n)
                 temp_wire_pairs.append(gt_temp)
-                terms.append(create_term('Gt', [temp_add[1]], [gt_temp[1]]))
+                terms.append(Term(IType.Gt(), [gt_temp[1]], [temp_add[1]]))
                 
                 # Ite(gt_result, temp_add, 0) -> activated
                 activated_l = ctx.tmp_wire('Tensor')
                 activated_n = ctx.tmp_wire('Tensor')
                 activated_pair = (activated_l, activated_n)
                 temp_wire_pairs.append(activated_pair)
-                terms.append(create_term('Ite', [gt_temp[1], temp_add[1]], [activated_pair[1]]))
+                terms.append(Term(IType.Ite(), [activated_pair[1]], [gt_temp[1], temp_add[1]]))
                 
                 current_pair = activated_pair
             else:
@@ -193,20 +193,20 @@ def _convert_gym_env(ctx: Context, env):
     
     # External wires (inputs)
     for name in env.extl:
-        latched = ctx.var(f'{name}_l', 'Tensor')
-        next_wire = ctx.var(f'{name}_n', 'Tensor')
+        latched = ctx.wire(f'{name}_l', 'Tensor')
+        next_wire = ctx.wire(f'{name}_n', 'Tensor')
         wire_pairs[name] = (latched, next_wire)
     
     # Interface wires (outputs)
     for name in env.intf:
-        latched = ctx.var(f'{name}_l', 'Tensor')
-        next_wire = ctx.var(f'{name}_n', 'Tensor')
+        latched = ctx.wire(f'{name}_l', 'Tensor')
+        next_wire = ctx.wire(f'{name}_n', 'Tensor')
         wire_pairs[name] = (latched, next_wire)
     
     # Private wires (internal state)
     for name in env.prvt:
-        latched = ctx.var(f'{name}_l', 'Tensor')
-        next_wire = ctx.var(f'{name}_n', 'Tensor')
+        latched = ctx.wire(f'{name}_l', 'Tensor')
+        next_wire = ctx.wire(f'{name}_n', 'Tensor')
         wire_pairs[name] = (latched, next_wire)
     
     # Track temp wire pairs (will be populated during parsing)
@@ -220,16 +220,13 @@ def _convert_gym_env(ctx: Context, env):
     print(f"Generated {len(terms)} terms")
     
     # Build sequential module structure
-    # mylib API: Module.sequential([list_of_wire_pairs], [init_terms], [update_terms])
+    # zrth API: Module.sequential(init, update, obs=..., prvt=...)
     obs_list = [wire_pairs[name] for name in env.extl + env.intf]
-    ctrl_list = [wire_pairs[name] for name in env.intf + env.prvt]
-    prvt_list = temp_wire_pairs
-    
-    all_wire_pairs = obs_list + ctrl_list + prvt_list
+    prvt_list = [wire_pairs[name] for name in env.prvt] + temp_wire_pairs
     
     # For sequential: init and update are the same terms for now
     # TODO: Separate init logic if needed
-    module = Module.sequential(all_wire_pairs, terms, terms)
+    module = Module.sequential(init=terms, update=terms, obs=obs_list, prvt=prvt_list)
     
     # Note: Can't attach metadata to Rust Module object
     # Store wire pairs mapping separately if needed
@@ -319,7 +316,7 @@ class StepMethodVisitor(ast.NodeVisitor):
             result_pair = self._convert_expr(node.value)
             
             # Connect result to the wire's 'next'
-            self.terms.append(create_term('Id', [result_pair[0]], [self.wire_pairs[wire_name][1]]))
+            self.terms.append(Term(IType.Id(), [self.wire_pairs[wire_name][1]], [result_pair[0]]))
         
     def _convert_expr(self, expr):
         """Convert an expression AST node to wire pair
@@ -344,8 +341,11 @@ class StepMethodVisitor(ast.NodeVisitor):
             else:
                 raise ValueError(f"Unknown variable: {var_name}")
         elif isinstance(expr, ast.Constant):
-            # Constant value - wrap in Const
-            return (create_const(float(expr.value)), None)
+            # Constant value - wrap in Const term
+            # TODO: Properly convert constant to tensor data
+            const_wire = self.ctx.tmp_wire('Tensor')
+            tensor_data = MyTensor([int(expr.value)])  # Convert to tensor format
+            return (const_wire, None)  # Placeholder - needs proper Const term handling
         else:
             raise ValueError(f"Unsupported expression type: {type(expr).__name__}")
     
@@ -362,7 +362,7 @@ class StepMethodVisitor(ast.NodeVisitor):
                 result_n = self.ctx.tmp_wire('Tensor')
                 result_pair = (result_l, result_n)
                 self.temp_wire_pairs.append(result_pair)
-                self.terms.append(create_term('Argmax', [obj_pair[0]], [result_pair[1]]))
+                self.terms.append(Term(IType.Argmax(), [result_pair[1]], [obj_pair[0]]))
                 return result_pair
             elif method == 'item':
                 # .item() is just value extraction, pass through
@@ -388,14 +388,14 @@ class StepMethodVisitor(ast.NodeVisitor):
                 lt_n = self.ctx.tmp_wire('Tensor')
                 lt_pair = (lt_l, lt_n)
                 self.temp_wire_pairs.append(lt_pair)
-                self.terms.append(create_term('Lt', [a_pair[0], b_pair[0]], [lt_pair[1]]))
+                self.terms.append(Term(IType.Lt(), [lt_pair[1]], [a_pair[0], b_pair[0]]))
                 
                 # Ite(lt, a, b)
                 result_l = self.ctx.tmp_wire('Tensor')
                 result_n = self.ctx.tmp_wire('Tensor')
                 result_pair = (result_l, result_n)
                 self.temp_wire_pairs.append(result_pair)
-                self.terms.append(create_term('Ite', [lt_pair[0], a_pair[0], b_pair[0]], [result_pair[1]]))
+                self.terms.append(Term(IType.Ite(), [result_pair[1]], [lt_pair[0], a_pair[0], b_pair[0]]))
                 return result_pair
                 
             elif func_name == 'max':
@@ -410,14 +410,14 @@ class StepMethodVisitor(ast.NodeVisitor):
                 gt_n = self.ctx.tmp_wire('Tensor')
                 gt_pair = (gt_l, gt_n)
                 self.temp_wire_pairs.append(gt_pair)
-                self.terms.append(create_term('Gt', [a_pair[0], b_pair[0]], [gt_pair[1]]))
+                self.terms.append(Term(IType.Gt(), [gt_pair[1]], [a_pair[0], b_pair[0]]))
                 
                 # Ite(gt, a, b)
                 result_l = self.ctx.tmp_wire('Tensor')
                 result_n = self.ctx.tmp_wire('Tensor')
                 result_pair = (result_l, result_n)
                 self.temp_wire_pairs.append(result_pair)
-                self.terms.append(create_term('Ite', [gt_pair[0], a_pair[0], b_pair[0]], [result_pair[1]]))
+                self.terms.append(Term(IType.Ite(), [result_pair[1]], [gt_pair[0], a_pair[0], b_pair[0]]))
                 return result_pair
             else:
                 raise ValueError(f"Unsupported function: {func_name}")
@@ -445,7 +445,9 @@ class StepMethodVisitor(ast.NodeVisitor):
         result_n = self.ctx.tmp_wire('Tensor')
         result_pair = (result_l, result_n)
         self.temp_wire_pairs.append(result_pair)
-        self.terms.append(create_term(itype, [left_pair[0], right_pair[0]], [result_pair[1]]))
+        # Map string to IType enum variant
+        itype_enum = getattr(IType, itype)()
+        self.terms.append(Term(itype_enum, [result_pair[1]], [left_pair[0], right_pair[0]]))
         return result_pair
     
     def _convert_compare(self, compare):
@@ -474,7 +476,9 @@ class StepMethodVisitor(ast.NodeVisitor):
         result_n = self.ctx.tmp_wire('Tensor')
         result_pair = (result_l, result_n)
         self.temp_wire_pairs.append(result_pair)
-        self.terms.append(create_term(itype, [left_pair[0], right_pair[0]], [result_pair[1]]))
+        # Map string to IType enum variant
+        itype_enum = getattr(IType, itype)()
+        self.terms.append(Term(itype_enum, [result_pair[1]], [left_pair[0], right_pair[0]]))
         return result_pair
     
     def _convert_ifexp(self, ifexp):
@@ -487,7 +491,7 @@ class StepMethodVisitor(ast.NodeVisitor):
         result_n = self.ctx.tmp_wire('Tensor')
         result_pair = (result_l, result_n)
         self.temp_wire_pairs.append(result_pair)
-        self.terms.append(create_term('Ite', [cond_pair[0], true_pair[0], false_pair[0]], [result_pair[1]]))
+        self.terms.append(Term(IType.Ite(), [result_pair[1]], [cond_pair[0], true_pair[0], false_pair[0]]))
         return result_pair
     
     def _convert_attribute(self, attr):

@@ -1,10 +1,5 @@
-"""Test composition of QNetwork and SimpleEnv modules"""
-
-from rl import Context, QNetwork, SimpleEnv, HAS_RUST_BINDINGS
-from rl.backend import Module
-
-print(f"Backend status: {'Real Rust bindings' if HAS_RUST_BINDINGS else 'Mock bindings'}")
-print()
+from . import Context, QNetwork, SimpleEnv
+from zrth import Module
 
 
 def test_full_composition():

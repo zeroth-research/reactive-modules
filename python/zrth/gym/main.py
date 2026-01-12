@@ -1,4 +1,4 @@
-from rl import Context, SimpleEnv, DQNAgent
+from . import Context, SimpleEnv, DQNAgent
 import numpy as np
 import torch
 import random

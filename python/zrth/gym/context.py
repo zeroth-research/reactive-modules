@@ -1,15 +1,22 @@
-from .backend import Wire, DType as MockDType
 import zrth
+from zrth import Wire
+
+_DTYPE_TENSOR = zrth.DType.Tensor()
+_DTYPE_BOOL = zrth.DType.Bool()
+_DTYPE_INT = zrth.DType.Int()
+_DTYPE_FLOAT = zrth.DType.Float()
+
+_DTYPE_MAP = {
+    'Tensor': _DTYPE_TENSOR,
+    'Bool': _DTYPE_BOOL,
+    'Int': _DTYPE_INT,
+    'Float': _DTYPE_FLOAT,
+}
 
 
 def _get_real_dtype(dtype_str):
     """Convert string dtype to real DType enum"""
-    dtype_map = {
-        'Tensor': zrth.DType.C,
-        'Bool': zrth.DType.D,
-        'None': zrth.DType.C,
-    }
-    return dtype_map.get(dtype_str, zrth.DType.C)
+    return _DTYPE_MAP.get(dtype_str, _DTYPE_TENSOR)
 
 
 class Context:
@@ -21,49 +28,52 @@ class Context:
     
     def __init__(self):
         self.name_to_id = {}  # str -> int
+        self.id_to_name = {}  # int -> str
         self._wire_counter = 0
-        self._wire_dtypes = {}  # id -> dtype (for tracking)
+        self._wire_dtypes = {}  # id -> DType enum
         
-    def fresh_var(self):
-        """Create unnamed temporary variable
+    def fresh_wire_id(self):
+        """Create unnamed temporary wire ID
         
         Returns:
             Wire ID (int)
         """
         v = self._wire_counter
         self._wire_counter += 1
-        self.name_to_id[f"__c_{v}"] = v
+        name = f"__c_{v}"
+        self.name_to_id[name] = v
+        self.id_to_name[v] = name
         return v
     
-    def get_var(self, name: str):
-        """Get or create named variable
+    def get_wire_id(self, name: str):
+        """Get or create named wire ID
         
         Args:
-            name: Variable name
+            name: Wire name
             
         Returns:
             Wire ID (int)
         """
         if name not in self.name_to_id:
-            self.name_to_id[name] = self._wire_counter
+            wid = self._wire_counter
             self._wire_counter += 1
+            self.name_to_id[name] = wid
+            self.id_to_name[wid] = name
         return self.name_to_id[name]
     
-    def var(self, name: str, dtype):
-        """Get or create named variable with dtype
+    def wire(self, name: str, dtype):
+        """Get or create named wire with dtype
         
         Args:
-            name: Variable name
+            name: Wire name
             dtype: Datatype (string like 'Tensor', 'Bool')
             
         Returns:
             Wire object
         """
-        wire_id = self.get_var(name)
-        self._wire_dtypes[wire_id] = dtype
-        # Convert string dtype to RealDType enum
+        wire_id = self.get_wire_id(name)
         real_dtype = _get_real_dtype(dtype)
-        # NOTE: Wire constructor is Wire(dtype, id) NOT Wire(id, dtype)
+        self._wire_dtypes[wire_id] = real_dtype
         return Wire(real_dtype, wire_id)
     
     def tmp_wire(self, dtype):
@@ -75,11 +85,9 @@ class Context:
         Returns:
             Wire object
         """
-        wire_id = self.fresh_var()
-        self._wire_dtypes[wire_id] = dtype
-        # Convert string dtype to RealDType enum
+        wire_id = self.fresh_wire_id()
         real_dtype = _get_real_dtype(dtype)
-        # NOTE: Wire constructor is Wire(dtype, id) NOT Wire(id, dtype)
+        self._wire_dtypes[wire_id] = real_dtype
         return Wire(real_dtype, wire_id)
     
     def has_wire(self, name):
@@ -110,14 +118,11 @@ class Context:
         Returns:
             Name or None
         """
-        for name, wid in self.name_to_id.items():
-            if wid == wire_id:
-                return name
-        return None
+        return self.id_to_name.get(wire_id)
     
     def __str__(self):
         result = f"Context with {self._wire_counter} wires:\n"
         for name, wid in sorted(self.name_to_id.items(), key=lambda x: x[1]):
-            dtype = self._wire_dtypes.get(wid, '?')
+            dtype = self._wire_dtypes.get(wid, _DTYPE_TENSOR)
             result += f"  {name} (id={wid}): {dtype}\n"
         return result

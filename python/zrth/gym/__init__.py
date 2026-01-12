@@ -5,7 +5,7 @@ from .qnetwork import QNetwork
 from .simple_env import SimpleEnv
 from .agent import DQNAgent
 from .context import Context
-from .backend import Wire, DType, IType, Term, Module as BackendModule
+from zrth import Wire, DType, IType, Term, Module as BackendModule, MyTensor
 
 __all__ = [
     'Module',

@@ -1,6 +1,6 @@
-from rl import Context, QNetwork, SimpleEnv
+from . import Context, QNetwork, SimpleEnv
 
-print("Testing with real mylib bindings")
+print("Testing with real zrth bindings")
 print()
 
 
@@ -9,10 +9,10 @@ def test_qnetwork_conversion():
     
     ctx = Context()
     qnet = QNetwork(
-        ctx,
         names={'extl': ['observation'], 'intf': ['q_values'], 'prvt': []},
         state_size=1,
-        action_size=2
+        action_size=2,
+        ctx=ctx
     )
     
     print("Converting QNetwork...")
@@ -20,7 +20,7 @@ def test_qnetwork_conversion():
     print(f"Context after QNetwork: {ctx.num_wires()} wires")
     print(f"\nWire access:")
     print(f"  qnet.intf = {qnet.intf}")
-    print(f"  qnet.intf_named = {qnet.intf_named}")
+    print(f"  qnet.extl = {qnet.extl}")
 
 
 def test_simpleenv_conversion():
@@ -28,8 +28,8 @@ def test_simpleenv_conversion():
     
     ctx = Context()
     env = SimpleEnv(
-        ctx,
-        names={'extl': ['q_values'], 'intf': ['observation', 'reward', 'terminated'], 'prvt': ['state']}
+        names={'extl': ['q_values'], 'intf': ['observation', 'reward', 'terminated'], 'prvt': ['state']},
+        ctx=ctx
     )
     
     print("Converting SimpleEnv...")
@@ -38,7 +38,8 @@ def test_simpleenv_conversion():
     print(ctx)
     print(f"\nWire access:")
     print(f"  env.intf = {env.intf}")
-    print(f"  env.intf_named = {env.intf_named}")
+    print(f"  env.extl = {env.extl}")
+    print(f"  env.prvt = {env.prvt}")
 
 
 if __name__ == '__main__':

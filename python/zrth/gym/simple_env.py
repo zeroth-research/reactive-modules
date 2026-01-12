@@ -4,12 +4,12 @@ from .zrth_module import Module
 
 
 class SimpleEnv(gym.Env, Module):
-    def __init__(self, ctx, names):
+    def __init__(self, names, ctx=None):
         """Initialize simple chain environment
         
         Args:
-            ctx: Context object for wire registry
             names: Dictionary with wire declarations, e.g. {'extl': ['q_values'], 'intf': ['observation', 'reward', 'terminated'], 'prvt': ['state']}
+            ctx: Context object for wire registry (if None, uses global shared context)
         """
         gym.Env.__init__(self)
         Module.__init__(self, ctx, names)

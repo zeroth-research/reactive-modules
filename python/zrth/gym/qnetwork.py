@@ -4,16 +4,16 @@ from .zrth_module import Module
 
 
 class QNetwork(nn.Module, Module):
-    def __init__(self, ctx, names, state_size, action_size, hidden_size=2, seed=42):
+    def __init__(self, names, state_size, action_size, hidden_size=2, seed=42, ctx=None):
         """Initialize Q-Network
         
         Args:
-            ctx: Context object for wire registry
             names: Dictionary with wire declarations, e.g. {'extl': ['observation'], 'intf': ['q_values'], 'prvt': []}
             state_size: Dimension of input state
             action_size: Number of actions
             hidden_size: Hidden layer size
             seed: Random seed
+            ctx: Context object for wire registry (if None, uses global shared context)
         """
         nn.Module.__init__(self)
         Module.__init__(self, ctx, names)
