@@ -41,151 +41,188 @@ def convert_to_module(ctx: Context, python_object: Any):
 
 
 def _convert_torch_module(ctx: Context, module: torch.nn.Module):
-    """Convert PyTorch module to reactive Module"""
-    print(f"Converting PyTorch module: {type(module).__name__}")
-    
-    # Step 1: Trace the module
-    # Get input size from first layer
+    # Trace the module
     first_layer = None
     for layer in module.children():
         if isinstance(layer, torch.nn.Linear):
             first_layer = layer
             break
-    
     if first_layer is None:
         raise ValueError("Can't find Linear layer to determine input shape")
     
     input_size = first_layer.in_features
-    print(f"Detected input size: {input_size}")
     example_input = torch.zeros(1, input_size)
-    
     traced = torch.jit.trace(module, example_input)
-    print(f"Traced graph:\n{traced.graph}")
     
-    # Step 2: Get output size
-    last_layer = None
-    for layer in module.children():
-        if isinstance(layer, torch.nn.Linear):
-            last_layer = layer
+    # Validate single input/output constraint
+    if len(module.extl) != 1 or len(module.intf) != 1:
+        raise ValueError(f"Only single input/output modules supported. Got {len(module.extl)} inputs, {len(module.intf)} outputs")
     
-    output_size = last_layer.out_features if last_layer else 2
-    print(f"Detected output size: {output_size}")
+    # Create wire pairs dynamically from module metadata
+    wire_pairs = {}
+    for name in module.extl + module.intf:
+        latched = ctx.wire(f'{name}_l', 'Tensor')
+        next_wire = ctx.wire(f'{name}_n', 'Tensor')
+        wire_pairs[name] = (latched, next_wire)
     
-    # Step 3: Create wire pairs using Context
-    # Use Tensor dtype for torch backend
-    obs_latched = ctx.wire('observation_l', 'Tensor')
-    obs_next = ctx.wire('observation_n', 'Tensor')
-    obs_pair = (obs_latched, obs_next)
+    # Extract input and output pairs
+    input_pair = wire_pairs[module.extl[0]]
+    output_pair = wire_pairs[module.intf[0]]
     
-    qval_latched = ctx.wire('q_values_l', 'Tensor')
-    qval_next = ctx.wire('q_values_n', 'Tensor')
-    qval_pair = (qval_latched, qval_next)
+    # Parse TorchScript graph to extract operation sequence
+    operations = _parse_torchscript_graph(traced.graph, module)
+
+    # Translate operations to Terms
+    terms = []
+    current_wire = input_pair[1]  # Start with input's 'next' wire
     
-    # Track named wire pairs for module metadata
-    named_wire_pairs = {'observation': obs_pair, 'q_values': qval_pair}
+    for op in operations:
+        if op['type'] == 'linear':
+            new_terms, current_wire = _translate_linear(ctx, current_wire, op['layer'])
+            terms.extend(new_terms)
+        elif op['type'] == 'relu':
+            new_terms, current_wire = _translate_relu(ctx, current_wire)
+            terms.extend(new_terms)
+        else:
+            raise ValueError(f"Unsupported operation: {op['type']}")
     
-    # Step 4: Parse graph and generate Terms
-    # Note: temp wires are created internally and don't need to be tracked
-    terms = _parse_torch_graph(traced.graph, module, ctx, obs_pair, qval_pair)
+    # Connect final wire to output
+    terms.append(Term(IType.Id(), [output_pair[1]], [current_wire]))
     
-    print(f"Created wires: {list(named_wire_pairs.keys())}")
-    print(f"Context now has: {ctx.num_wires()} wires")
-    print(f"Generated {len(terms)} terms")
-    
-    # Step 5: Build Module
-    # Only interface wires (input/output) need to be pairs in the Module
-    all_wire_pairs = [obs_pair, qval_pair]
-    
-    print(f"Total wire pairs: {len(all_wire_pairs)}")
-    
-    module = Module.combinatorial(assign=terms, obs=all_wire_pairs)
-    
-    # Note: Can't attach metadata to Rust Module object
-    # Store wire pairs mapping separately if needed
+    # Build Module
+    obs = [wire_pairs[name] for name in module.extl + module.intf]
+    module = Module.combinatorial(assign=terms, obs=obs)
     
     return module
 
 
-def _parse_torch_graph(graph, module, ctx, input_pair, output_pair):
-    """Parse traced graph and generate Terms
+def _parse_torchscript_graph(graph, module):
+    """Parse TorchScript graph to extract operation sequence
     
     Args:
-        graph: TorchScript graph
-        module: Original PyTorch module (to get parameters)
-        ctx: Context for creating temp wires
-        input_pair: (latched, next) for input wire
-        output_pair: (latched, next) for output wire
+        graph: TorchScript graph from traced module
+        module: Original PyTorch module (for layer objects)
         
     Returns:
-        List of Term representations
+        List of operation dicts: [{'type': 'linear', 'layer': layer_obj}, {'type': 'relu'}, ...]
+    """
+    operations = []
+    
+    # Maps: layer names to layer objects
+    layer_map = {}
+    for name, layer in module.named_children():
+        layer_map[name] = layer
+    
+    # Maps: output_name -> (layer_name, layer_object)
+    getattr_outputs = {}
+    
+    # Parse graph nodes in execution order
+    for node in graph.nodes():
+        kind = node.kind()
+        
+        if kind == 'prim::GetAttr':
+            # GetAttr extracts a layer: %fc1 = prim::GetAttr[name="fc1"](%self)
+            layer_name = node.s('name')  # Get the 'name' attribute
+            output_name = node.output().debugName()  # e.g., "%fc1"
+            
+            if layer_name in layer_map:
+                getattr_outputs[output_name] = (layer_name, layer_map[layer_name])
+                
+        elif kind == 'prim::CallMethod':
+            # CallMethod calls layer.forward(): %result = prim::CallMethod[name="forward"](%fc1, %input)
+            method_name = node.s('name')
+            
+            if method_name == 'forward':
+                # First input is the layer object, check if it's a tracked layer
+                inputs = list(node.inputs())
+                if len(inputs) >= 1:
+                    layer_ref = inputs[0].debugName()
+                    
+                    if layer_ref in getattr_outputs:
+                        layer_name, layer_obj = getattr_outputs[layer_ref]
+                        
+                        # Check layer type and add appropriate operation
+                        if isinstance(layer_obj, torch.nn.Linear):
+                            operations.append({'type': 'linear', 'layer': layer_obj})
+                        else:
+                            raise ValueError(f"Unsupported layer type: {type(layer_obj).__name__}")
+                            
+        elif kind == 'aten::relu':
+            operations.append({'type': 'relu'})
+            
+        # Ignore other internal operations
+        elif kind in ['prim::Constant', 'prim::ListConstruct']:
+            continue
+            
+        # Everything else is unsupported
+        else:
+            raise ValueError(f"Unsupported operation: {kind}")
+    
+    return operations
+
+
+def _translate_linear(ctx, input_wire, layer):
+    """Translate Linear layer to Terms
+    
+    Args:
+        ctx: Context for creating temp wires
+        input_wire: Input wire ID
+        layer: torch.nn.Linear layer object
+        
+    Returns:
+        (terms, output_wire): List of Terms and output wire ID
     """
     terms = []
     
-    # Extract Linear layers to get weights and biases
-    layers = []
-    for layer in module.children():
-        if isinstance(layer, torch.nn.Linear):
-            layers.append(layer)
+    # Create weight constant
+    weight_wire = ctx.tmp_wire('Tensor')
+    weight_tensor = torch_to_mytensor(layer.weight.data)
+    terms.append(Term(IType.Const(weight_tensor), [weight_wire]))
     
-    if len(layers) == 0:
-        raise ValueError("No Linear layers found in module")
+    # MatMul: input × weight -> temp_matmul
+    temp_matmul = ctx.tmp_wire('Tensor')
+    terms.append(Term(IType.MatMul(), [temp_matmul], [input_wire, weight_wire]))
     
-    # Parse graph to detect activations between layers
-    graph_str = str(graph)
-    has_relu = 'aten::relu' in graph_str
+    # Create bias constant
+    bias_wire = ctx.tmp_wire('Tensor')
+    bias_tensor = torch_to_mytensor(layer.bias.data)
+    terms.append(Term(IType.Const(bias_tensor), [bias_wire]))
     
-    # Current wire pair tracks the output of the previous layer
-    current_pair = input_pair
+    # Add: matmul + bias -> output
+    output_wire = ctx.tmp_wire('Tensor')
+    terms.append(Term(IType.Add(), [output_wire], [temp_matmul, bias_wire]))
     
-    for i, layer in enumerate(layers):
-        is_last_layer = (i == len(layers) - 1)
+    return terms, output_wire
+
+
+def _translate_relu(ctx, input_wire):
+    """Translate ReLU activation to Terms
+    
+    Implements: max(0, x) = Ite(Gt(x, 0), x, 0)
+    
+    Args:
+        ctx: Context for creating temp wires
+        input_wire: Input wire ID
         
-        # Create weight constant
-        weight_wire = ctx.tmp_wire('Tensor')
-        weight_tensor = torch_to_mytensor(layer.weight.data)
-        terms.append(Term(IType.Const(weight_tensor), [weight_wire]))
-        
-        # MatMul: current × weight -> temp_matmul
-        temp_matmul = ctx.tmp_wire('Tensor')
-        terms.append(Term(IType.MatMul(), [temp_matmul], [current_pair[1], weight_wire]))
-        
-        # Create bias constant
-        bias_wire = ctx.tmp_wire('Tensor')
-        bias_tensor = torch_to_mytensor(layer.bias.data)
-        terms.append(Term(IType.Const(bias_tensor), [bias_wire]))
-        
-        if is_last_layer:
-            # Last layer outputs to the final output wire
-            terms.append(Term(IType.Add(), [output_pair[1]], [temp_matmul, bias_wire]))
-        else:
-            temp_add = ctx.tmp_wire('Tensor')
-            terms.append(Term(IType.Add(), [temp_add], [temp_matmul, bias_wire]))
-            
-            # Apply ReLU if detected: Ite(Gt(x, 0), x, 0)
-            if has_relu:
-                # Create zero constant
-                zero_wire = ctx.tmp_wire('Tensor')
-                zero_tensor = MyTensor([0.0], [1])
-                terms.append(Term(IType.Const(zero_tensor), [zero_wire]))
-                
-                # Gt(temp_add, 0)
-                gt_temp = ctx.tmp_wire('Bool')
-                terms.append(Term(IType.Gt(), [gt_temp], [temp_add, zero_wire]))
-                
-                # Ite(gt_result, temp_add, 0) -> activated
-                activated = ctx.tmp_wire('Tensor')
-                terms.append(Term(IType.Ite(), [activated], [gt_temp, temp_add, zero_wire]))
-                
-                # Update current to use single wire for next layer
-                # Create a pair with the activated wire as the 'next' value
-                temp_pair_l = ctx.tmp_wire('Tensor')
-                current_pair = (temp_pair_l, activated)
-            else:
-                # Create a pair with temp_add as the 'next' value
-                temp_pair_l = ctx.tmp_wire('Tensor')
-                current_pair = (temp_pair_l, temp_add)
+    Returns:
+        (terms, output_wire): List of Terms and output wire ID
+    """
+    terms = []
     
-    return terms
+    # Create zero constant
+    zero_wire = ctx.tmp_wire('Tensor')
+    zero_tensor = MyTensor([0.0], [1])
+    terms.append(Term(IType.Const(zero_tensor), [zero_wire]))
+    
+    # Gt(input, 0)
+    gt_wire = ctx.tmp_wire('Bool')
+    terms.append(Term(IType.Gt(), [gt_wire], [input_wire, zero_wire]))
+    
+    # Ite(gt_result, input, 0) -> activated
+    output_wire = ctx.tmp_wire('Tensor')
+    terms.append(Term(IType.Ite(), [output_wire], [gt_wire, input_wire, zero_wire]))
+    
+    return terms, output_wire
 
 
 def _convert_gym_env(ctx: Context, env):
