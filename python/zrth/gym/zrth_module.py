@@ -14,18 +14,19 @@ class Module:
             cls._global_context = Context()
         return cls._global_context
 
-    def __init__(self, ctx=None, names=None):
+    def __init__(self, extl, intf, prvt=[], ctx=None):
         """Initialize module
         
         Args:
             ctx: Context object for wire registry (if None, uses global shared context)
-            names: Dictionary with 'extl', 'intf', 'prvt' keys mapping to lists of wire names
-                   Example: {'extl': ['observation'], 'intf': ['q_values'], 'prvt': []}
+            extl: List of external input wire names
+            intf: List of interface output wire names
+            prvt: List of private wire names (optional)
         """
         self.ctx = ctx if ctx is not None else Module.get_global_context()
-        self.extl = names.get('extl', []) if names else []
-        self.intf = names.get('intf', []) if names else []
-        self.prvt = names.get('prvt', []) if names else []
+        self.extl = extl
+        self.intf = intf
+        self.prvt = prvt
         
         # Will be set after conversion
         self._reactive_module = None

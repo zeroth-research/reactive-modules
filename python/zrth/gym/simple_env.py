@@ -4,15 +4,17 @@ from .zrth_module import Module
 
 
 class SimpleEnv(gym.Env, Module):
-    def __init__(self, names, ctx=None):
+    def __init__(self, extl, intf, prvt=[], ctx=None):
         """Initialize simple chain environment
         
         Args:
-            names: Dictionary with wire declarations, e.g. {'extl': ['q_values'], 'intf': ['observation', 'reward', 'terminated'], 'prvt': ['state']}
+            extl: List of external input wire names
+            intf: List of interface output wire names
+            prvt: List of private wire names (optional)
             ctx: Context object for wire registry (if None, uses global shared context)
         """
         gym.Env.__init__(self)
-        Module.__init__(self, ctx, names)
+        Module.__init__(self, extl, intf, prvt, ctx)
         
         # Gym spaces
         self.action_space = spaces.Discrete(2)
