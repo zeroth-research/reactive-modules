@@ -14,7 +14,7 @@ class Module:
             cls._global_context = Context()
         return cls._global_context
 
-    def __init__(self, extl, intf, prvt=[], ctx=None):
+    def __init__(self, extl, intf, prvt=None, ctx=None):
         """Initialize module
         
         Args:
@@ -45,7 +45,7 @@ class Module:
     @property
     def ctrl(self):
         """Controlled wires: interface outputs + private wires"""
-        return self.intf + self.prvt
+        return self.intf + (self.prvt if self.prvt is not None else [])
 
     def __init_subclass__(cls, **kwargs):
         """Hook to automatically call conversion after subclass __init__"""

@@ -1,4 +1,4 @@
-from . import Context, QNetwork, SimpleEnv
+from zrth.gym import Context, QNetwork, SimpleEnv
 from zrth import Module
 
 
