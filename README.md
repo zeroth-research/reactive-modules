@@ -91,6 +91,8 @@ You can use `cargo test -- --exact module::test` to run a single test with fully
 
 To run a concrete Python test, go to the `python` crate and run `uv run pytest file.py::test-name`,
 e.g., `uv run pytest tests/test_basic_modules.py::test_counter_torch`.
+Alternatively, you can use `just pytest [file::test]` from anywhere in the project
+to run all or any concrete test.
 
 ## Advanced building
 
