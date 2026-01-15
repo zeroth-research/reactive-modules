@@ -50,6 +50,12 @@ class Module:
     def to_smtlib(self) -> str:
         return self._module.to_smtlib()
 
+    def __str__(self) -> str:
+        return self._module.__str__()
+
+    def __repr__(self) -> str:
+        return self._module.__repr__()
+
     def to_html(self, path: str, open: bool = False):
         self._module.to_html(self._ctx.unwrap(), path)
 
