@@ -7,13 +7,13 @@ pub use wrappedmodule::WrappedModule;
 pub use wrappedterm::WrappedTerm;
 
 use crate::pyval::PyVal;
-use crate::util::str_to_pyerr;
 
 use base::wire::Interface;
 use toy::val::Val;
 use toy::{DType, IType, ToyTerm};
 type Intf = Interface<DType>;
 
+use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
@@ -122,9 +122,9 @@ fn wterms_to_terms(ctx: &mut WrappedContext, terms: &Bound<'_, PyList>) -> PyRes
         let rargs = process_pyvals(ctx, &wterm.reads, &mut result);
         let wargs = process_pyvals(ctx, &wterm.writes, &mut result);
 
-        let write = Interface::sequence(wargs.into_iter()).map_err(str_to_pyerr)?;
-        let read = Interface::sequence(rargs.into_iter()).map_err(str_to_pyerr)?;
-        let term = new_term(wterm.op.clone(), read, write).map_err(str_to_pyerr)?;
+        let write = Interface::sequence(wargs.into_iter()).map_err(PyException::new_err)?;
+        let read = Interface::sequence(rargs.into_iter()).map_err(PyException::new_err)?;
+        let term = new_term(wterm.op.clone(), read, write).map_err(PyException::new_err)?;
         result.push(term);
     }
 
@@ -149,5 +149,5 @@ pub(crate) fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<Intf> {
             .into_iter()
             .map(|(val, ty)| (val, ty.parse().expect("Invalid type"))),
     )
-    .map_err(str_to_pyerr)?)
+    .map_err(PyException::new_err)?)
 }
