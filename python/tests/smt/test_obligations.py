@@ -1,3 +1,4 @@
+from io import StringIO
 from pysmt.shortcuts import (
     Symbol,
     Or,
@@ -15,7 +16,10 @@ from pysmt.shortcuts import (
     Bool,
     get_model,
     Iff,
+    Solver,
+    substitute,
 )
+from pysmt.smtlib.parser import SmtLibParser
 from pysmt.typing import INT, REAL, BOOL
 from pysmt.logics import QF_NRA
 import zrth.smt as smt
@@ -59,53 +63,114 @@ class Inv(smt.Module):
         return Or(nxt(x) <= nxt(y), nxt(x) <= nxt(z))
 
 
-def is_valid(pre, post):
-    # print(" PRE: ", pre.serialize())
-    # print(" POST: ", post.serialize())
-    # print(" PROVING: ", And(pre, Not(post)).simplify().serialize())
-    m = get_model(And(pre, Not(post)), solver_name="cvc5", logic=QF_NRA)
-    if m is None:
-        # print("\033[1;34m.. PROVED\033[0m")
-        return True
-    # print("\033[1;31m.. NOT PROVED\033[0m\n", m)
-    return False
-
-
 def test_obligations():
     x, y, z, y0, z0 = (Symbol(v, INT) for v in ("x", "y", "z", "y0", "z0"))
     inv = Symbol("inv", BOOL)
 
     ctx = smt.Context()
     m = Module(ctrl=(x, y, z), extl=(y0, z0), ctx=ctx)
-    print("=== m ===")
     m_inv = Inv(ctrl=(inv,), extl=(x, y, z), ctx=ctx)
-    print("=== m_inv ===")
-
     m_obl = smt.Module.parallel([m, m_inv])
-    # m_obl.to_html(ctx.unwrap(), "/tmp/m_obl.html")
+
     print(m_obl)
 
-    print(m_obl.to_smtlib())
+    ############
+    ## Prove the invariant
+    ############
 
-    # Init Obligations
+    # first, reset the PySMT environment to make sure
+    # nothing interfers with creating modules
+    reset_env()
+    get_env().enable_infix_notation = True
 
-    # failed = False
-    # obligations = [
-    #     obligation1(m),
-    #     obligation2(m),
-    # ]
-    # for n, (pre, post) in enumerate(obligations):
-    #     print(f"Obligation {n + 1}\n", end="")
-    #     if is_valid(pre, post):
-    #         print("\033[1;32mProved\033[0m")
-    #     else:
-    #         print("\033[1;31mNOT Proved\033[0m")
-    #         failed = True
-    #         break
-    #
-    # if failed:
-    #     print("\033[1;31mProof Failed!\033[0m")
-    # else:
-    #     print("\033[1;32mAll Proved!\033[0m")
-    #
-    # assert not failed
+    parser = SmtLibParser()
+
+    # get smtlib string for variables
+    decls = m_obl.to_smtlib("variables")
+
+    # declare variables (`get_script` will load them into the PySMT environment)
+    parser.get_script(StringIO(decls))
+
+    # map module variables to variables in the formula
+    env = get_env()
+    fm = env.formula_manager
+    intf_wires = {
+        s: (
+            fm.get_symbol(f"w{ctx.get_wire_id(s)}"),
+            fm.get_symbol(f"w{ctx.get_wire_id(nxt(s))}"),
+        )
+        for s in (x, y, z, y0, z0, inv)
+    }
+
+    # get the smtlib string for invariant predicate (it doesn't matter if we use init or update here)
+    inv_str = m_inv.to_smtlib("init")
+    init_str = m_obl.to_smtlib("init")
+    update_str = m_obl.to_smtlib("update")
+
+    solver = Solver(name="cvc5", logic="LIA")
+
+    ### Base case
+
+    solver.push()
+
+    # add assumption on initial inputs
+    solver.add_assertion(intf_wires[y0][1] >= 0)
+    solver.add_assertion(intf_wires[z0][1] >= 0)
+
+    # check invariant violation
+    solver.add_assertion(Not(intf_wires[inv][1]))
+
+    script = parser.get_script(StringIO(decls + init_str))
+    for formula in (cmd.args[0] for cmd in script.commands if cmd.name == "assert"):
+        solver.add_assertion(formula)
+
+    if solver.solve():
+        print("\033[1;31mBase case failed!\033[0m")
+        print("CEX:")
+        for s, w in intf_wires.items():
+            print(f"{s} ({w}) = {(solver.get_value(w[0]), solver.get_value(w[1]))}")
+    else:
+        print("\033[1;32mBase case proved!\033[0m")
+
+    solver.pop()
+
+    ### Induction step
+
+    solver.push()
+
+    # get the invariant and re-map the next values (which represet the output)
+    # to latched values (so that they represent the input) to the update
+    S = {s[1]: s[0] for s in intf_wires.values()}
+    script = parser.get_script(StringIO(decls + inv_str))
+    for formula in (cmd.args[0] for cmd in script.commands if cmd.name == "assert"):
+        formula = substitute(formula, S)
+        solver.add_assertion(formula)
+
+    # state that the assertion holds
+    solver.add_assertion(intf_wires[inv][0])
+
+    # basic assumptions
+    # TODO: we should not need these!
+    solver.add_assertion(intf_wires[x][0] >= 0)
+    solver.add_assertion(intf_wires[y][0] >= 0)
+    solver.add_assertion(intf_wires[z][0] >= 0)
+
+    # take the update step
+    script = parser.get_script(StringIO(decls + update_str))
+    for formula in (cmd.args[0] for cmd in script.commands if cmd.name == "assert"):
+        solver.add_assertion(formula)
+
+    # check invariant violation
+    solver.add_assertion(Not(intf_wires[inv][1]))
+
+    if solver.solve():
+        print("\033[1;31mInduction step failed!\033[0m")
+        print("CEX:")
+        for s, w in intf_wires.items():
+            print(f"{s} ({w}) = {(solver.get_value(w[0]), solver.get_value(w[1]))}")
+        print("------")
+        print(solver.get_model())
+    else:
+        print("\033[1;32mInduction step proved!\033[0m")
+
+    solver.pop()
