@@ -80,7 +80,7 @@ impl<D: Clone + Eq> Context<D> {
             vars.push(v.clone());
         }
 
-        Some(Interface::sequence(vars).ok()?)
+        Interface::sequence(vars).ok()
     }
 
     /// Return a reference to the HashMap with names

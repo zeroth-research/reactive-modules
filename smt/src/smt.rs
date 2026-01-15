@@ -173,37 +173,35 @@ impl ModuleSmtLibTranslator<'_> {
     }
 
     pub fn init_to_smtlib(&self) -> String {
-        format!(
-            "{}",
-            self.0
-                .atoms()
-                .iter()
-                .enumerate()
-                .map(|(n, atom)| format!(
+        self.0
+            .atoms()
+            .iter()
+            .enumerate()
+            .map(|(n, atom)| {
+                format!(
                     "\n;; --- Atom {} ---\n{}",
                     n,
                     AtomSmtLibTranslator(atom).init().join("\n")
-                ))
-                .collect::<Vec<String>>()
-                .join("\n")
-        )
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
     }
 
     pub fn update_to_smtlib(&self) -> String {
-        format!(
-            "{}",
-            self.0
-                .atoms()
-                .iter()
-                .enumerate()
-                .map(|(n, atom)| format!(
+        self.0
+            .atoms()
+            .iter()
+            .enumerate()
+            .map(|(n, atom)| {
+                format!(
                     "\n;; --- Atom {} ---\n{}",
                     n,
                     AtomSmtLibTranslator(atom).update().join("\n")
-                ))
-                .collect::<Vec<String>>()
-                .join("\n")
-        )
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
     }
 }
 
