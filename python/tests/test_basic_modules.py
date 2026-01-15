@@ -90,7 +90,7 @@ def test_counter_toy():
 class TorchModule(ztch.Module):
     def init(self, extl):
         # extl is a vector with dimension 2
-        return Tensor([[0, 0], [1, 0], [0, 1]]) @ self.nxt(extl)
+        return Tensor([[0, 0], [1, 0], [0, 1]]) @ ztch.nxt(extl)
 
     def update(self, state, inp):
         # state = (x, y, z) is a vector with dimension 3,
@@ -103,14 +103,14 @@ class TorchModule(ztch.Module):
 
         cond = (x < y) or (x < z)
         return ztch.choose(
-            ztch.IfThen(cond, result1), ztch.IfThen(~cond, result2), state
+            ztch.ifthen(cond, result1), ztch.ifthen(~cond, result2), state
         )
 
 
 def test_counter_torch():
-    m_torch = TorchModule(ctrl="xyz", extl="yz0")
+    m_torch = TorchModule(ctrl="xyz: Tensor<3>", extl="yz0: Tensor<2>")
     assert m_torch
-    m_torch.dbg()
+    print(m_torch)
 
 
 ######################################################################

@@ -3,6 +3,7 @@ use pyo3::types::PyList;
 
 use crate::smt::wrappedcontext::WrappedContext;
 use crate::smt::{vars_to_wiring, wterms_to_torchterms};
+use crate::util::str_to_pyerr;
 
 use base::Module;
 use smt::dtype::DType;
@@ -49,8 +50,15 @@ impl WrappedModule {
         }
     }
 
-    fn to_smtlib(&self) -> String {
-        smt::smt::module_to_smtlib(&self.module)
+    #[pyo3(signature = (what = None))]
+    fn to_smtlib(&self, what: Option<&str>) -> String {
+        match what {
+            Some("module") | None => smt::smt::module_to_smtlib(&self.module),
+            Some("variables") => smt::smt::module_variables_to_smtlib(&self.module),
+            Some("init") => smt::smt::module_init_to_smtlib(&self.module),
+            Some("update") => smt::smt::module_update_to_smtlib(&self.module),
+            _ => panic!("Invalid `what` argument: `{}`", what.unwrap()),
+        }
     }
 
     #[cfg(feature = "visual-html")]
@@ -62,5 +70,27 @@ impl WrappedModule {
 
     fn dbg(&self) {
         println!("{}", self.module);
+    }
+
+    #[staticmethod]
+    fn parallel(items: &Bound<'_, PyList>) -> PyResult<WrappedModule> {
+        // get Rust references to modules
+        let refs = items.iter().map(|item| {
+            let py_ref: PyRef<WrappedModule> =
+                item.extract().expect("List item is not WrappedModule");
+            py_ref.module.clone()
+        });
+
+        Ok(WrappedModule {
+            module: base::Module::parallel(refs).map_err(str_to_pyerr)?,
+        })
+    }
+
+    fn __str__(&self) -> String {
+        self.module.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.module)
     }
 }

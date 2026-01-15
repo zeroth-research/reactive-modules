@@ -150,9 +150,7 @@ class PySMTContext(ContextBase):
     def get_pyval_sym(self, sym: Expr) -> PyVal:
         assert sym.is_symbol(), sym
 
-        return self._context.get_sym(
-            sym.symbol_name(), from_pysmt_type(sym.symbol_type())
-        )
+        return self.unwrap().sym(sym.symbol_name(), from_pysmt_type(sym.symbol_type()))
 
 
 class Context(PySMTContext):
@@ -196,14 +194,17 @@ class Context(PySMTContext):
         )
 
         module = WrappedModule(
-            self._context, cur_vars, nxt_vars, init_terms, update_terms
+            self.unwrap(), cur_vars, nxt_vars, init_terms, update_terms
         )
         # if name is not None:
         #    module.set_name(name)
-        return module
+        return module, ctrl, extl
 
     def _cond(self, cnd, iftrue, iffalse):
         return Cond(args)
+
+    def get_wire_id(self, sym: Symbol) -> int:
+        return self.unwrap().get_wire_id(sym.symbol_name())
 
     def to_terms(self, ctrl, extl, init_ret, update_ret) -> (list, list, list, list):
         """
@@ -279,7 +280,7 @@ class ToTerms:
         opty = formula.node_type()
         if opty == op.SYMBOL:
             return [
-                self._ctx.get_sym(
+                self._ctx.sym(
                     formula.symbol_name(), from_pysmt_type(formula.symbol_type())
                 )
             ]

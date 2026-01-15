@@ -1,4 +1,4 @@
-use toy::context::Context;
+use toy::ToyContext;
 use toy::dtype::DType;
 use toy::interpreter::Interpreter;
 
@@ -12,10 +12,10 @@ mod tests {
 
     #[test]
     fn toy_example() {
-        let mut ctx = Context::new();
+        let mut ctx = ToyContext::new();
 
         // create variables
-        ctx.vars(
+        ctx.intf(
             DType::Int,
             &["x", "y", "z", "y0", "z0", "x'", "y'", "z'", "y0'", "z0'"],
         );

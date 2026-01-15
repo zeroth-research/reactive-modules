@@ -7,9 +7,8 @@ mod util;
 mod torch;
 
 pub mod pyval;
-pub use pyval::PyVal;
-
 use pyo3::prelude::*;
+pub use pyval::PyVal;
 
 mod atom;
 mod module;
@@ -46,10 +45,14 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[cfg(feature = "enable-torch")]
     {
+        // the high-level API for Torch integration
         let torch = PyModule::new(py, "torch")?;
-        torch.add_class::<torch::WrappedTerm>()?;
-        torch.add_class::<torch::WrappedModule>()?;
-        torch.add_class::<torch::WrappedContext>()?;
+        torch.add_class::<torch::RustContext>()?;
+        torch.add_class::<torch::IType>()?;
+        torch.add_class::<torch::DType>()?;
+        torch.add_class::<torch::Wire>()?;
+        torch.add_class::<torch::Term>()?;
+        torch.add_class::<torch::Module>()?;
 
         m.add_submodule(&torch)?;
     }

@@ -1,146 +1,73 @@
-pub(crate) mod pytensor;
-mod wrappedcontext;
-mod wrappedmodule;
-mod wrappedterm;
+mod context;
+pub mod pytensor;
 
-pub use wrappedcontext::WrappedContext;
-pub use wrappedmodule::WrappedModule;
-pub use wrappedterm::WrappedTerm;
+mod atom;
+mod dtype;
+mod itype;
+mod module;
+mod term;
+mod wire;
 
-use crate::pyval::PyVal;
-use torch::{DType, IType, TorchTerm};
+pub use context::RustContext;
+pub use dtype::DType;
+pub use itype::IType;
+pub use module::Module;
+pub use term::Term;
+pub use wire::Wire;
 
+use pyo3::PyClass;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
 
-use base::wire::Interface;
-
-use crate::util::str_to_pyerr;
-
-type Intf = Interface<DType>;
-
-/// Translate a vector of [PyVal]s into a vector of wire identifiers (`Vec<usize>`).
-///
-/// This function is used when translating [WrappedTerm]s into [Term](base::term::Term)s. This translation
-/// is using a vector `result` where the translated [Term](base::term::Term)s are stored.
-/// This vector is passed also to this function and used as described below.
-///
-/// The values from the input vector `pyvals` get translated as follows:
-/// `PyVal::Sym(x)` gets translated into the identifier `x`, and other [PyVal]
-/// values (constants) get translated into a new nullary term `IType::Const` that is added
-/// to `result` and the output wire of this term is used as the translated identifier.
-/// This new term simply returns the value of this constant. This is to workaround the fact that
-/// we do not have wires that represent constants.
-///
-/// # Examples
-///
-///  If the input is `[PyVal::Sym(2), PyVal::I64(7)]`, then when translating
-/// `PyVal::I64(7)`, a term `Term { IType::Const, reads: [], writes: [19]}` gets generated
-/// and added to `results`, where 19 is just an example value. This value is obtained
-/// from the `ctx` object. The translated vector returned from this function is then `[2, 19]`.
-fn process_pyvals(
-    ctx: &mut WrappedContext,
-    pyvals: &Vec<PyVal>,
-    result: &mut Vec<TorchTerm>,
-) -> Vec<usize> {
-    let mut args: Vec<usize> = vec![];
-
-    // FIXME: get rid of the code duplication
-    for r in pyvals {
-        match r {
-            PyVal::Sym(var_id, _) => args.push(*var_id),
-            PyVal::Tensor(tensor) => {
-                let var = ctx.fresh_var();
-                result.push(TorchTerm::new_unchecked(
-                    IType::Const(tensor.tensor.shallow_clone()),
-                    Interface::single(var, DType::Tensor),
-                    Interface::empty(),
-                ));
-                args.push(var);
-            }
-            PyVal::Real(val) => {
-                let var = ctx.fresh_var();
-                result.push(TorchTerm::new_unchecked(
-                    IType::Const(tch::Tensor::from_slice(&[*val])),
-                    Interface::single(var, DType::Tensor),
-                    Interface::empty(),
-                ));
-                args.push(var);
-            }
-            PyVal::Int(val) => {
-                let var = ctx.fresh_var();
-                result.push(TorchTerm::new_unchecked(
-                    IType::Const(tch::Tensor::from_slice(&[*val])),
-                    Interface::single(var, DType::Tensor),
-                    Interface::empty(),
-                ));
-                args.push(var);
-            }
-            PyVal::Bool(val) => {
-                let var = ctx.fresh_var();
-                result.push(TorchTerm::new_unchecked(
-                    IType::Const(tch::Tensor::from_slice(&[*val])),
-                    Interface::single(var, DType::Tensor),
-                    Interface::empty(),
-                ));
-                args.push(var);
-            }
-        }
-    }
-
-    args
+fn try_iter_borrow<'py, P>(
+    iter: &'py Bound<'py, PyAny>,
+) -> PyResult<impl Iterator<Item = PyResult<PyRef<'py, P>>>>
+where
+    P: PyClass,
+{
+    let iter = iter
+        .try_iter()?
+        .map(|i| i?.extract::<PyRef<P>>().map_err(PyErr::from));
+    Ok(iter)
 }
 
-/// Translate a list of [WrappedTerm]s into a vector of [TorchTerm]s.
-/// The results is wrapped in [PyResult] so that we can easily propagate errors
-/// back to Python.
-///
-/// The resulting vector can be longer that the input vector, because we may generate new
-/// [TorchTerm] terms that represent read or written constants (these we can represent as [PyVal]s
-/// in `WrappedTerm.reads` and `WrappedTerm.writes`, but in [TorchTerm]s the wires cannot take "constant"
-/// values.)
-pub(crate) fn wterms_to_torchterms(
-    ctx: &mut WrappedContext,
-    terms: &Bound<'_, PyList>,
-) -> PyResult<Vec<TorchTerm>> {
-    let mut result = vec![];
-
-    for item in terms {
-        let wterm: &Bound<'_, WrappedTerm> = item.downcast()?;
-        let wterm = wterm.borrow();
-
-        // Translate `wterm.reads` and `wterm.writes` into vectors of wire identifiers.
-        // Because constants have no wire identifiers, we translate each constant
-        // into a term and we use the identifier of this term's output wire in place of this
-        // constant. See the docstring of [process_pyvals].
-        let rargs = process_pyvals(ctx, &wterm.reads, &mut result);
-        let wargs = process_pyvals(ctx, &wterm.writes, &mut result);
-
-        let write = Interface::sequence(wargs.into_iter().map(|val| (val, DType::Tensor)))
-            .map_err(str_to_pyerr)?;
-        let read = Interface::sequence(rargs.into_iter().map(|val| (val, DType::Tensor)))
-            .map_err(str_to_pyerr)?;
-        result.push(TorchTerm::new_unchecked(wterm.op.clone(), write, read));
-    }
-
-    Ok(result)
+fn try_array2_iter_borrow<'py, P>(
+    iter: &Bound<'py, PyAny>,
+) -> PyResult<impl Iterator<Item = PyResult<[PyRef<'py, P>; 2]>>>
+where
+    P: PyClass,
+{
+    let iter = iter
+        .try_iter()?
+        .map(|i| i?.extract::<[PyRef<'py, P>; 2]>().map_err(PyErr::from));
+    Ok(iter)
 }
 
-/// Translate a list of `PyVal::Sym` values into a wiring. This is a simple version of
-/// [process_pyvals] where we assume no constants are in the input vector.
-pub(crate) fn vars_to_wiring(vals: &Bound<'_, PyList>) -> PyResult<Intf> {
-    let mut names: Vec<usize> = Vec::new();
-    for item in vals {
-        let pyval: &Bound<'_, PyVal> = item.downcast()?;
-        let pyval = pyval.borrow();
-        match &*pyval {
-            PyVal::Sym(var_id, _) => names.push(*var_id),
-            _ => panic!("Invalid input variable: {:?}", pyval),
-        }
-    }
+fn try_wire2_iter_cloned(
+    seq: &Bound<'_, PyAny>,
+) -> PyResult<impl Iterator<Item = [base::Wire<DType>; 2]>> {
+    // TODO: make base take result iterator to avoid unwrap
+    let seq = try_array2_iter_borrow::<Wire>(seq)?;
+    let seq = seq.into_iter().map(Result::unwrap);
+    let seq = seq.map(|r| r.map(|r| r.base().clone()));
+    Ok(seq)
+}
 
-    Ok(
-        Interface::sequence(names.into_iter().map(|val| (val, DType::Tensor)))
-            .map_err(str_to_pyerr)?,
-    )
+fn try_term_iter_cloned(
+    seq: &Bound<'_, PyAny>,
+) -> PyResult<impl Iterator<Item = base::Term<DType, IType>>> {
+    // TODO: make base take result iterator to avoid unwrap
+    let seq = try_iter_borrow::<Term>(seq)?;
+    let seq = seq.into_iter().map(Result::unwrap);
+    let seq = seq.map(|r| r.base().clone());
+    Ok(seq)
+}
+
+fn try_wire_iter_cloned(
+    seq: &Bound<'_, PyAny>,
+) -> PyResult<impl Iterator<Item = base::Wire<DType>>> {
+    // TODO: make base take result iterator to avoid unwrap
+    let seq = try_iter_borrow::<Wire>(seq)?;
+    let seq = seq.into_iter().map(Result::unwrap);
+    let seq = seq.map(|r| r.base().clone());
+    Ok(seq)
 }
