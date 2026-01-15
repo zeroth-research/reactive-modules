@@ -1,7 +1,6 @@
 #[cfg(feature = "enable-smt")]
 mod smt;
 mod toy;
-mod util;
 
 #[cfg(feature = "enable-torch")]
 mod torch;
