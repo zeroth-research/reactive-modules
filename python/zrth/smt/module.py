@@ -69,8 +69,8 @@ class Module:
     def parallel(modules: list) -> WrappedModule:
         return WrappedModule.parallel([m.unwrap() for m in modules])
 
-    def to_smtlib(self) -> str:
-        return self._module.to_smtlib()
+    def to_smtlib(self, what: str = None) -> str:
+        return self._module.to_smtlib(what)
 
     def __str__(self) -> str:
         return self._module.__str__()
