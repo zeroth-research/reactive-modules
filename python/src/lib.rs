@@ -1,6 +1,5 @@
 #[cfg(feature = "enable-smt")]
 mod smt;
-mod toy;
 
 #[cfg(feature = "enable-torch")]
 mod torch;
@@ -24,13 +23,6 @@ use pyo3::PyClass;
 #[pymodule]
 fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVal>()?;
-
-    let toy = PyModule::new(py, "toy")?;
-    toy.add_class::<toy::WrappedTerm>()?;
-    toy.add_class::<toy::WrappedModule>()?;
-    toy.add_class::<toy::WrappedContext>()?;
-
-    m.add_submodule(&toy)?;
 
     #[cfg(feature = "enable-smt")]
     {
