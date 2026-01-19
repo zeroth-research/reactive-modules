@@ -248,7 +248,7 @@ impl Parser {
         // add Choose terms -- they choose which assignemt is used
         for (var_name, inputs) in exprs_per_var.iter() {
             // get the write variable
-            let primed_var = self.ctx.get_intf(var_name);
+            let primed_var = self.ctx.get_intf(&[var_name]).unwrap();
             // add the choose term
             let reads = Interface::sequence(
                 inputs
@@ -271,8 +271,8 @@ impl Parser {
                 continue;
             }
 
-            let primed_var = self.ctx.get_intf(&primed_name);
-            let var = self.ctx.get_intf(var.name());
+            let primed_var = self.ctx.get_intf(&[&primed_name]).unwrap();
+            let var = self.ctx.get_intf(&[var.name()]).unwrap();
             terms.push(construct(IType::Id, var, primed_var).unwrap());
         }
         terms
@@ -389,9 +389,10 @@ impl Parser {
             }
             Rule::var | Rule::primed_var => {
                 let var = pair.as_str();
-                let (wire, ty) = self.ctx.get_intf_with_type(var);
+                let (id, ty) = self.ctx.get(var).unwrap();
                 let out = self.ctx.tmp_intf(ty);
-                let term = mk_id(wire, out).unwrap();
+                let term =
+                    mk_id(Interface::sequence([base::Wire::new(id, ty)]).unwrap(), out).unwrap();
 
                 vec![term]
             }
@@ -464,7 +465,7 @@ impl Parser {
 
             let var = lhs.as_str();
             assert!(var.ends_with('\'')); // the variable must be primed
-            let (_, ty) = self.ctx.get_intf_with_type(var);
+            let (_, ty) = self.ctx.get(var).unwrap();
             let expr = self.build_expr(rhs, ty);
             if expr.is_empty() {
                 dbg!("Failed creating an assignment");

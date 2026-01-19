@@ -1,11 +1,20 @@
 use base::term::Term;
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DType {
-    None,   // No value
-    Tensor, // Tensor
-    Bool,   // Boolean
+    None,               // No value
+    Tensor(Vec<usize>), // Tensor with a given shape
+    Bool,               // Boolean
+}
+
+fn parse_dim(dim: &str) -> Option<Vec<usize>> {
+    Some(
+        dim.split(',')
+            .map(str::parse)
+            .collect::<Result<_, _>>()
+            .ok()?,
+    )
 }
 
 impl std::str::FromStr for DType {
@@ -13,10 +22,19 @@ impl std::str::FromStr for DType {
 
     fn from_str(ty: &str) -> Result<Self, Self::Err> {
         match ty {
-            "None" => Ok(DType::Tensor),
+            "None" => Ok(DType::None),
             "Bool" => Ok(DType::Bool),
-            "Tensor" => Ok(DType::None),
-            _ => Err(format!("Cannot convert `{}` to DType", ty)),
+            //"Tensor" => Ok(DType::Tensor(todo!())),
+            _ => {
+                if let Some(dim) = ty.strip_prefix("Tensor<")
+                    && let Some(inner) = dim.strip_suffix(">")
+                    && let Some(dims) = parse_dim(inner)
+                {
+                    return Ok(DType::Tensor(dims));
+                }
+
+                Err(format!("Cannot convert `{}` to DType", ty))
+            }
         }
     }
 }
@@ -24,7 +42,8 @@ impl std::str::FromStr for DType {
 #[derive(Debug)]
 pub enum IType {
     // constants are special terms
-    Const(tch::Tensor),
+    ConstTensor(tch::Tensor),
+    ConstBool(bool),
     // comparisons (element-wise)
     Eq,
     Neq,
@@ -94,7 +113,8 @@ impl std::str::FromStr for IType {
             "Or" => Ok(IType::Or),
             "And" => Ok(IType::And),
             // -----
-            "Const" => Err("Const cannot be constructed from a &str".into()),
+            "ConstTensor" => Err("Const cannot be constructed from a &str atm".into()),
+            "ConstBool" => Err("Const cannot be constructed from a &str atm".into()),
             oth => Err(format!("Invalid IType: {} (maybe just not added yet)", oth)),
         }
     }
@@ -103,7 +123,8 @@ impl std::str::FromStr for IType {
 impl Clone for IType {
     fn clone(&self) -> Self {
         match self {
-            IType::Const(v) => Self::Const(v.shallow_clone()),
+            IType::ConstTensor(v) => Self::ConstTensor(v.shallow_clone()),
+            IType::ConstBool(v) => Self::ConstBool(*v),
             IType::Eq => IType::Eq,
             IType::Neq => IType::Neq,
             IType::Lt => IType::Lt,
@@ -153,7 +174,8 @@ impl fmt::Display for IType {
             IType::Not => write!(f, "Not"),
             IType::And => write!(f, "And"),
             IType::Or => write!(f, "Or"),
-            IType::Const(t) => {
+            IType::ConstBool(v) => write!(f, "Const({})", v),
+            IType::ConstTensor(t) => {
                 let flat = t.view([-1]);
 
                 if let Ok(vals) = Vec::<f64>::try_from(&flat) {
@@ -180,7 +202,15 @@ impl fmt::Display for IType {
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DType::Tensor => write!(f, "Tensor"),
+            DType::Tensor(shape) => write!(
+                f,
+                "Tensor({})",
+                shape
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
             DType::Bool => write!(f, "Bool"),
             DType::None => write!(f, "None"),
         }

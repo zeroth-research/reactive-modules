@@ -43,6 +43,10 @@ test-all:
     {{ CARGO }} test --all-features {{ profile_flag }}
     @just test-python
 
+# Run all or a concrete python test
+pytest *args:
+    cd python && uv run pytest {{ args }}
+
 # Clean the current build
 clean:
     {{ CARGO }} clean

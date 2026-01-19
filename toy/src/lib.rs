@@ -1,4 +1,3 @@
-pub mod context;
 pub mod conversions;
 pub mod dtype;
 pub mod interpreter;
@@ -17,4 +16,4 @@ pub type ToyModule = base::module::Module<DType, IType>;
 pub type ToyAtom = base::atom::Atom<DType, IType>;
 pub type ToyTerm = base::term::Term<DType, IType>;
 pub type ToyWire = base::wire::Wire<DType>;
-pub type ToyContext = crate::context::Context<DType>;
+pub type ToyContext = common::context::Context<DType>;

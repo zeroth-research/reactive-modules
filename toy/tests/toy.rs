@@ -1,6 +1,6 @@
 use toy::dtype::DType;
 
-use toy::context::Context;
+use toy::ToyContext;
 
 mod example_module;
 
@@ -12,10 +12,10 @@ mod tests {
 
     #[test]
     fn toy_example() {
-        let mut ctx = Context::new();
+        let mut ctx = ToyContext::new();
 
         // create variables
-        ctx.vars(
+        ctx.intf(
             DType::Int,
             &["x", "y", "z", "y0", "z0", "x'", "y'", "z'", "y0'", "z0'"],
         );
@@ -31,8 +31,8 @@ mod tests {
     #[cfg(feature = "conversions-smt")]
     #[test]
     fn conversions_smt1() {
-        let mut ctx = Context::new();
-        ctx.vars(
+        let mut ctx = ToyContext::new();
+        ctx.intf(
             DType::Int,
             &["x", "y", "z", "y0", "z0", "x'", "y'", "z'", "y0'", "z0'"],
         );

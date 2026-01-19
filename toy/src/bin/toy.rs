@@ -81,7 +81,7 @@ where
     Ok(())
 }
 
-fn dump_module<D, I, C>(module: &base::Module<D, I>, idx: usize, args: &Cli, ctx: Option<C>)
+fn dump_module<D, I, C>(module: &base::Module<D, I>, idx: usize, args: &Cli, descr: Option<C>)
 where
     I: std::fmt::Display,
     D: std::fmt::Display + std::cmp::Eq + Copy,
@@ -105,7 +105,7 @@ where
     if let Some(method) = &args.dump {
         match method.as_str() {
             "html" | "HTML" => {
-                if let Err(e) = dump_to_html(module, module_name.as_str(), args, ctx.as_ref()) {
+                if let Err(e) = dump_to_html(module, module_name.as_str(), args, descr.as_ref()) {
                     eprint!("Failed dumping to HTML: {}", e);
                 }
             }
@@ -150,7 +150,12 @@ fn main() {
                 }
             }
         } else {
-            dump_module(module, n, &args, Some(parser.ctx()));
+            dump_module(
+                module,
+                n,
+                &args,
+                Some(toy::visual::html::HTMLDescriptor::new(parser.ctx())),
+            );
         }
     }
 }
