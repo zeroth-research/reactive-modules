@@ -1,4 +1,4 @@
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyValueError, prelude::*};
 use std::fmt;
 
 use crate::pytensor::PyTensor;
@@ -16,11 +16,42 @@ pub enum DType {
     Float(),
 }
 
+fn parse_dim(dim: &str) -> Option<Vec<usize>> {
+    Some(
+        dim.split(',')
+            .map(str::parse)
+            .collect::<Result<_, _>>()
+            .ok()?,
+    )
+}
+
+impl std::str::FromStr for DType {
+    type Err = String;
+
+    fn from_str(ty: &str) -> Result<Self, Self::Err> {
+        match ty {
+            "Bool" => Ok(DType::Bool()),
+            "Int" => Ok(DType::Int()),
+            "Float" => Ok(DType::Float()),
+            _ => {
+                if let Some(dim) = ty.strip_prefix("Tensor<")
+                    && let Some(inner) = dim.strip_suffix(">")
+                    && let Some(dims) = parse_dim(inner)
+                {
+                    return Ok(DType::Tensor(dims));
+                }
+
+                Err(format!("Cannot convert `{}` to DType", ty))
+            }
+        }
+    }
+}
+
 #[pymethods]
 impl DType {
     #[staticmethod]
-    fn from_str(_s: &str) -> PyResult<Self> {
-        todo!()
+    fn from_str(s: &str) -> PyResult<Self> {
+        s.parse().map_err(|e| PyValueError::new_err(e))
     }
 
     /// Get the data dimensions of this data type
