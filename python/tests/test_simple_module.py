@@ -6,7 +6,7 @@ from torch import Tensor
 
 from zrth.torch.module import Module as TorchModule
 from zrth.torch.ll import DType
-from zrth.expr import ifthen, nxt, choose, sym
+from zrth.expr import nxt, ite, sym
 
 
 class MyModule(TorchModule):
@@ -24,10 +24,7 @@ class MyModule(TorchModule):
         z = Tensor([0, 0, 1]) @ state
 
         cond = (x < y) or (x < z)
-        return choose(
-            ifthen(cond, result1),
-            ifthen(~cond, result2),
-        )
+        return ite(cond, result1, result2)
 
 
 def test_ctor():
@@ -52,8 +49,8 @@ def test_execute_symbolic():
     m = MyModule(ctrl="xyz: Tensor<3>", extl="yz0: Tensor<2>")
     assert m
 
-    extl = sym("extl", DType.tensor([2]))
-    s = sym("state", DType.tensor([3]))
+    extl = sym("extl", DType.Tensor([2]))
+    s = sym("state", DType.Tensor([3]))
     s_init = m.init(extl)
     print("## Symbolic init:")
     print(s_init)

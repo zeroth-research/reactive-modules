@@ -1,4 +1,4 @@
-from ..expr import nxt, choose, Expr, Sym, sym
+from ..expr import nxt, Expr, Sym, sym
 from .. import get_ctx
 
 from .ll import DType, Module as RustModule

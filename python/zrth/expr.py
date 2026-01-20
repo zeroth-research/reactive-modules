@@ -53,7 +53,7 @@ class Expr:
             dtype = args[0].dtype()
             assert dtype == args[1].dtype()
             self._out_wire: Wire = args[1].wire()
-            self._term: Term = Term(IType.mk_id(), [self._out_wire], [args[0].wire()])
+            self._term: Term = Term(IType.Id(), [self._out_wire], [args[0].wire()])
             self._dtype: DType = dtype
         else:
             itype, dtype = op_to_itype_dtype(op, args)
@@ -122,13 +122,13 @@ def matmul_dtype(dt1, dt2):
     if len(dim2) == 1:
         # tensor @ vector
         if dim1[-1] == dim2[0]:
-            return DType.tensor(dim1[:-1])
+            return DType.Tensor(dim1[:-1])
         else:
             raise RuntimeError("Unsupported tensor @ vector operation")
     elif len(dim1) == len(dim2) == 2:
         # matrix @ matrix
         if dim1[-1] == dim2[0]:
-            return DType.tensor([dim1[0], dim2[1]])
+            return DType.Tensor([dim1[0], dim2[1]])
         else:
             raise RuntimeError(
                 "Unsupported matrix multiplication, dimensions do not match"
@@ -156,42 +156,48 @@ def op_to_itype_dtype(op: str, args) -> tuple[IType, DType]:
     if op == "arith.add":
         assert len(args) == 2
         assert args[0].dtype() == args[1].dtype()
-        return IType.mk_add(), args[0].dtype()
+        return IType.Add(), args[0].dtype()
 
     if op == "arith.matmul":
         assert len(args) == 2
         dtype = matmul_dtype(args[0].dtype(), args[1].dtype())
-        return IType.mk_matmul(), dtype
+        return IType.MatMul(), dtype
 
     if op == "cmp.lt":
         assert len(args) == 2
         assert args[0].dtype() == args[1].dtype()
-        return IType.mk_lt(), DType.bool()
+        return IType.Lt(), DType.Bool()
 
     if op == "logic.or":
         assert len(args) == 2
-        assert args[0].dtype() == args[1].dtype() == DType.mk_bool()
-        return IType.mk_or(), args[0].dtype()
+        assert args[0].dtype() == args[1].dtype() == DType.Bool()
+        return IType.Or(), args[0].dtype()
 
     if op == "logic.not":
         assert len(args) == 1
-        assert args[0].dtype() == DType.bool()
-        return IType.mk_not(), args[0].dtype()
+        assert args[0].dtype() == DType.Bool()
+        return IType.Not(), args[0].dtype()
 
-    if op == "ifthen":
-        assert len(args) == 2
-        assert args[0].dtype() == DType.bool()
-        return IType.mk_ifthen(), args[1].dtype()
+    if op == "ite":
+        assert len(args) == 3
+        assert args[0].dtype() == DType.Bool()
+        assert args[1].dtype() == args[2].dtype()
+        return IType.Ite(), args[1].dtype()
 
-    if op == "choose":
-        assert len(args) > 0
-        assert all(a.dtype() == args[0].dtype() for a in args)
-        return IType.mk_choose(), args[0].dtype()
-
-    if op == "choose_or":
-        assert len(args) > 0
-        assert all(a.dtype() == args[0].dtype() for a in args)
-        return IType.mk_choose(), args[0].dtype()
+    # if op == "ifthen":
+    #     assert len(args) == 2
+    #     assert args[0].dtype() == DType.bool()
+    #     return IType.IfThen(), args[1].dtype()
+    #
+    # if op == "choose":
+    #     assert len(args) > 0
+    #     assert all(a.dtype() == args[0].dtype() for a in args)
+    #     return IType.mk_choose(), args[0].dtype()
+    #
+    # if op == "choose_or":
+    #     assert len(args) > 0
+    #     assert all(a.dtype() == args[0].dtype() for a in args)
+    #     return IType.mk_choose(), args[0].dtype()
 
     raise NotImplementedError(f"Translation not implemented for {op}")
 
@@ -200,14 +206,11 @@ def const_to_itype_dtype(val) -> tuple[IType, DType]:
     """
     Translate operation with arguments into itype and the return dtype.
     """
-    if isinstance(val, bool):
-        return IType.mk_const_bool(val), DType.mk_bool()
-
-    if isinstance(val, (int, float)):
-        return IType.mk_const_tensor(Tensor([val])), DType.tensor([1])
+    if isinstance(val, (int, float, bool)):
+        return IType.Tensor(Tensor([val])), DType.Tensor([1])
 
     if isinstance(val, Tensor):
-        return IType.mk_const_tensor(val), DType.tensor(val.size())
+        return IType.Tensor(val), DType.Tensor(val.size())
 
     raise NotImplementedError(f"Unimplemented constant: {val} ({type(val)})")
 
@@ -284,113 +287,144 @@ def input_sym(name: str, ty: DType) -> Sym:
     return s
 
 
-class IfThen:
+class Ite(Expr):
     """
-    An object representing `IfThen` term.
-    """
-
-    def __init__(self, cond: Expr | bool, expr: Any):
-        pass
-
-    def cond(self):
-        pass
-
-    def expr(self):
-        pass
-
-    def is_concrete(self) -> bool:
-        pass
-
-
-class IfThenExpr(IfThen, Expr):
-    """
-    An expression representing `IfThen` term.
-
-    This expression is used inside `Choose` terms.
+    An expression representing `Ite` term.
     """
 
-    def __init__(self, cond: Expr | bool, expr: Any):
-        Expr.__init__(self, "ifthen", cond, expr)
+    def __init__(self, cond: Expr | bool, iftrue: Any, iffalse: Any):
+        Expr.__init__(self, "ite", cond, iftrue, iffalse)
 
     def cond(self):
         return self.get_children()[0]
 
-    def expr(self):
+    def if_true(self):
         return self.get_children()[1]
 
-    def is_concrete(self) -> bool:
-        return False
+    def if_false(self):
+        return self.get_children()[2]
 
 
-class IfThenConcrete(IfThen):
+def ite(cond, iftrue, iffalse):
     """
-    An expression representing `IfThen` term.
-
-    This expression is used inside `Choose` terms.
+    Implement if-then-else construct for straght-line code:
+    if cond is concrete Python bool or int, `ite` is evaluated
+    as Python's if-else block. Otherwise an expression is created.
     """
+    if any(isinstance(val, Expr) for val in (cond, iftrue, iffalse)):
+        return Ite(cond, iftrue, iffalse)
 
-    def __init__(self, cond: bool, expr: Any):
-        self._cond = cond
-        self._expr = expr
-
-    def cond(self):
-        return self._cond
-
-    def expr(self):
-        return self._expr
-
-    def is_concrete(self) -> bool:
-        return True
+    return iftrue if cond else iffalse
 
 
-def ifthen(cond, act):
-    if isinstance(cond, Expr) or isinstance(act, Expr):
-        return IfThenExpr(cond, act)
-    return IfThenConcrete(cond, act)
+# class IfThen:
+#     """
+#     An object representing `IfThen` term.
+#     """
+#
+#     def __init__(self, cond: Expr | bool, expr: Any):
+#         pass
+#
+#     def cond(self):
+#         pass
+#
+#     def expr(self):
+#         pass
+#
+#     def is_concrete(self) -> bool:
+#         pass
+#
+#
+# class IfThenExpr(IfThen, Expr):
+#     """
+#     An expression representing `IfThen` term.
+#
+#     This expression is used inside `Choose` terms.
+#     """
+#
+#     def __init__(self, cond: Expr | bool, expr: Any):
+#         Expr.__init__(self, "ifthen", cond, expr)
+#
+#     def cond(self):
+#         return self.get_children()[0]
+#
+#     def expr(self):
+#         return self.get_children()[1]
+#
+#     def is_concrete(self) -> bool:
+#         return False
+#
+#
+# class IfThenConcrete(IfThen):
+#     """
+#     An expression representing `IfThen` term.
+#
+#     This expression is used inside `Choose` terms.
+#     """
+#
+#     def __init__(self, cond: bool, expr: Any):
+#         self._cond = cond
+#         self._expr = expr
+#
+#     def cond(self):
+#         return self._cond
+#
+#     def expr(self):
+#         return self._expr
+#
+#     def is_concrete(self) -> bool:
+#         return True
+#
+#
+# def ifthen(cond, act):
+#     if isinstance(cond, Expr) or isinstance(act, Expr):
+#         return IfThenExpr(cond, act)
+#     return IfThenConcrete(cond, act)
+#
 
-
-def _choose(alist):
-    assert all(isinstance(a, IfThen) for a in alist), alist
-    if all(a.is_concrete() for a in alist):
-        # execute choose concretely
-        sat_args = [arg for arg in alist if arg.cond()]
-        if sat_args:
-            return sat_args[randrange(len(sat_args))].expr()
-
-        # return None
-        raise RuntimeError("No satisfiable branch in a choose statement")
-
-    return Expr("choose", *alist)
-
-
-def _choose_or(alist):
-    choices = alist[:-1]
-    last = alist[-1]
-
-    # the last argument may not be `IfThen`, in which case
-    # it is the default (unconditional) argument
-    assert not isinstance(last, IfThen), alist
-    assert all(isinstance(a, IfThen) for a in choices), alist
-
-    if not isinstance(last, Expr) and all(a.is_concrete() for a in choices):
-        # execute choose_or concretely
-        sat_args = [arg for arg in choices if arg.cond()]
-        if sat_args:
-            return sat_args[randrange(len(sat_args))].expr()
-        return last
-
-    return Expr("choose_or", *alist)
-
-
-def choose(*args):
-    """
-    Implementation of choose construct.
-    """
-    alist = list(args)
-    if isinstance(alist[-1], IfThen):
-        return _choose(alist)
-    else:
-        return _choose_or(alist)
+# def _choose(alist):
+#     assert all(isinstance(a, IfThen) for a in alist), alist
+#     if all(a.is_concrete() for a in alist):
+#         # execute choose concretely
+#         sat_args = [arg for arg in alist if arg.cond()]
+#         if sat_args:
+#             return sat_args[randrange(len(sat_args))].expr()
+#
+#         # return None
+#         raise RuntimeError("No satisfiable branch in a choose statement")
+#
+#     return Expr("choose", *alist)
+#
+#
+# def _choose_or(alist):
+#     choices = alist[:-1]
+#     last = alist[-1]
+#
+#     # the last argument may not be `IfThen`, in which case
+#     # it is the default (unconditional) argument
+#     assert not isinstance(last, IfThen), alist
+#     assert all(isinstance(a, IfThen) for a in choices), alist
+#
+#     if not isinstance(last, Expr) and all(a.is_concrete() for a in choices):
+#         # execute choose_or concretely
+#         sat_args = [arg for arg in choices if arg.cond()]
+#         if sat_args:
+#             return sat_args[randrange(len(sat_args))].expr()
+#         return last
+#
+#     return Expr("choose_or", *alist)
+#
+#
+# def choose(*args):
+#     """
+#     Implementation of choose construct.
+#     """
+#     alist = list(args)
+#     if isinstance(alist[-1], IfThen):
+#         return _choose(alist)
+#     else:
+#         return _choose_or(alist)
+#
 
 
 ###

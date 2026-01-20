@@ -18,7 +18,7 @@ import zrth.torch as ztch
 from zrth.torch.module import Module as TorchRM
 from torch import Tensor
 import zrth.smt as smt
-from zrth.expr import nxt, choose, ifthen
+from zrth.expr import nxt, ite
 
 from pysmt.environment import Environment, reset_env, get_env
 import pytest
@@ -75,7 +75,7 @@ class TorchModule(TorchRM):
         z = Tensor([0, 0, 1]) @ state
 
         cond = (x < y) or (x < z)
-        return choose(ifthen(cond, result1), ifthen(~cond, result2), state)
+        return ite(cond, result1, result2)
 
 
 def test_counter_torch():
