@@ -1,15 +1,12 @@
-from .module import Module
-from .context import Context
-from .global_ctx import get_ctx, set_ctx
-from .ll import Wire, Term, DType, IType
-
-
-def to_wire(w: Wire | Term) -> Wire:
+def to_wire(w):
     """
     Take a wire or a term and get a wire for it.
     For wires, this function is identity, for terms it returns the write wire
     (which we can do, because our terms has a single unique write wire)
     """
+    # FIXME
+    from .ll import Wire, Term
+
     if isinstance(w, Wire):
         return w
 
@@ -21,6 +18,9 @@ def to_wire(w: Wire | Term) -> Wire:
 
 
 def mk_term(itype, write, read=None):
+    # FIXME
+    from .ll import Term
+
     if read is None:
         read = []
 

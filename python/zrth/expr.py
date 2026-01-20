@@ -5,7 +5,7 @@ from typing import Callable, Any
 from torch import Tensor
 
 from .torch.ll import DType, IType, Term, Wire
-from .torch.global_ctx import get_ctx
+from . import get_ctx
 
 
 class Expr:
