@@ -1,3 +1,10 @@
+from zrth import _zrth
+from .torch.ll import DType, Wire
+
+from torch import Tensor
+from typing import Callable
+
+
 class Context:
     """
     Context object used to hold information about known variables,
@@ -7,7 +14,7 @@ class Context:
     crates. See, e.g., :class:`toy.Context`.
     """
 
-    def __init__(self, rust_ctx):
+    def __init__(self, rust_ctx=_zrth.torch.RustContext()):
         """
         :param: ctx_impl  is the Rust context object.
         """
@@ -30,3 +37,6 @@ class Context:
 
     def unwrap(self):
         return self._rust_context
+
+    def tmp_wire(self, dtype: DType) -> Wire:
+        return self.unwrap().tmp_wire(dtype)

@@ -15,6 +15,7 @@ from pysmt.shortcuts import (
 )
 from pysmt.typing import INT
 import zrth.torch as ztch
+from zrth.torch.module import Module as TorchRM
 from torch import Tensor
 import zrth.smt as smt
 from zrth.expr import nxt, choose, ifthen
@@ -59,7 +60,7 @@ def test_counter_smt():
 ######################################################################
 
 
-class TorchModule(ztch.Module):
+class TorchModule(TorchRM):
     def init(self, extl):
         # extl is a vector with dimension 2
         return Tensor([[0, 0], [1, 0], [0, 1]]) @ nxt(extl)
