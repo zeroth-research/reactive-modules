@@ -1,50 +1,63 @@
 use pyo3::prelude::*;
 use std::fmt;
 
+use crate::pytensor::PyTensor;
+
 // ============================================================================
-// Tensor wrapper for constants
+// DType enum (wire data types)
 // ============================================================================
 
 #[pyclass]
-#[derive(Debug, Clone, PartialEq)]
-pub struct MyTensor {
-    data: Vec<f32>,
-    shape: Vec<usize>,
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum DType {
+    Tensor(Vec<usize>),
+    Bool(),
+    Int(),
+    Float(),
 }
 
 #[pymethods]
-impl MyTensor {
-    #[new]
-    #[pyo3(signature = (data, shape = None))]
-    pub fn new(data: Vec<f32>, shape: Option<Vec<usize>>) -> Self {
-        let shape = shape.unwrap_or_else(|| vec![data.len()]);
-        Self { data, shape }
+impl DType {
+    #[staticmethod]
+    fn from_str(_s: &str) -> PyResult<Self> {
+        todo!()
     }
-    
-    #[getter]
-    pub fn data(&self) -> Vec<f32> {
-        self.data.clone()
+
+    /// Get the data dimensions of this data type
+    fn dims(&self) -> Vec<usize> {
+        match &self {
+            DType::Bool() | DType::Int() | DType::Float() => vec![1],
+            DType::Tensor(shape) => shape.clone(),
+        }
     }
-    
-    #[getter]
-    pub fn shape(&self) -> Vec<usize> {
-        self.shape.clone()
+
+    fn is_tensor(&self) -> bool {
+        match &self {
+            DType::Tensor(_) => true,
+            _ => false,
+        }
     }
-    
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self == other
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
     fn __repr__(&self) -> String {
-        format!("MyTensor(shape={:?}, data=[...{}])", self.shape, self.data.len())
+        format!("{:?}", self)
     }
 }
 
-// Implement Eq manually since f32 doesn't implement Eq
-impl Eq for MyTensor {}
-
-impl std::hash::Hash for MyTensor {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.shape.hash(state);
-        // For f32, we hash the bit representation
-        for &f in &self.data {
-            f.to_bits().hash(state);
+impl fmt::Display for DType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DType::Tensor(_) => write!(f, "Tensor<...>"),
+            DType::Bool() => write!(f, "Bool"),
+            DType::Int() => write!(f, "Int"),
+            DType::Float() => write!(f, "Float"),
         }
     }
 }
@@ -54,7 +67,7 @@ impl std::hash::Hash for MyTensor {
 // ============================================================================
 
 #[pyclass]
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum IType {
     // Arithmetic operations
     Add(),
@@ -62,7 +75,7 @@ pub enum IType {
     Mul(),
     Div(),
     MatMul(),
-    
+
     // Comparison operations
     Eq(),
     Neq(),
@@ -70,39 +83,22 @@ pub enum IType {
     Le(),
     Gt(),
     Ge(),
-    
+
     // Logical operations
     And(),
     Or(),
     Not(),
-    
+
     // Control flow
     Ite(),
-    
+
     // Special operations
     Id(),
     Argmax(),
-    
+
     // Constants
-    Const(MyTensor),
+    Tensor(PyTensor),
 }
-
-// ============================================================================
-// DType enum (wire data types)
-// ============================================================================
-
-#[pyclass]
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum DType {
-    Tensor(),
-    Bool(),
-    Int(),
-    Float(),
-}
-
-// ============================================================================
-// Display implementations
-// ============================================================================
 
 impl fmt::Display for IType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -124,18 +120,9 @@ impl fmt::Display for IType {
             IType::Ite() => write!(f, "Ite"),
             IType::Id() => write!(f, "Id"),
             IType::Argmax() => write!(f, "Argmax"),
-            IType::Const(_) => write!(f, "Const(tensor)"),
+            IType::Tensor(_) => write!(f, "Tensor(...)"),
         }
     }
 }
 
-impl fmt::Display for DType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DType::Tensor() => write!(f, "Tensor"),
-            DType::Bool() => write!(f, "Bool"),
-            DType::Int() => write!(f, "Int"),
-            DType::Float() => write!(f, "Float"),
-        }
-    }
-}
+unsafe impl Sync for IType {}

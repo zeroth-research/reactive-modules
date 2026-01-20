@@ -1,12 +1,13 @@
+mod pyval;
 mod wrappedcontext;
 mod wrappedmodule;
 mod wrappedterm;
 
+pub use pyval::PyVal;
 pub use wrappedcontext::WrappedContext;
 pub use wrappedmodule::WrappedModule;
 pub use wrappedterm::WrappedTerm;
 
-use crate::pyval::PyVal;
 use smt::dtype::DType;
 use smt::itype::{IType, Val};
 
@@ -89,7 +90,6 @@ fn process_pyvals(
                 result.push(term);
                 args.push((var, DType::Bool));
             }
-            #[cfg(feature = "enable-torch")]
             PyVal::Tensor(_) => {
                 // translate to a matrix if the tensor is a matrix. Otherwise fail
                 todo!()

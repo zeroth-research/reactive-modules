@@ -69,7 +69,7 @@ rebuild-python:
     cd python && uv sync --no-build-package zrth --no-install-project
     cd python && source .venv/bin/activate  && LIBTORCH_USE_PYTORCH=1 {{ CARGO }} build --package torch
     # now build the python crate
-    cd python && uv run maturin develop --features enable-torch  --features enable-smt
+    cd python && uv run maturin develop  --features enable-smt
     @echo "Now you can go into the \`python\` directory and use \`uv run <script.py>\`"\
           "(or \`uv run python\` to get Python interpreter with \`zrth\` available)"
 
@@ -78,7 +78,7 @@ build-python:
     # re-build the workspace
     @just build
     # now build the python crate
-    cd python && uv run maturin develop --features enable-torch,enable-smt
+    cd python && uv run maturin develop --features enable-smt
 
 # Run a command inside the `python` crate (with rebuilding the Python crate). The command given is executed from *within* the `python` crate, i.e., with paths relative to the root of the crate.
 run-python *args:

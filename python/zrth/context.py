@@ -1,8 +1,4 @@
-from zrth import _zrth
-from .torch.ll import DType, Wire
-
-from torch import Tensor
-from typing import Callable
+from . import DType, Wire, RustContext
 
 
 class Context:
@@ -14,7 +10,7 @@ class Context:
     crates. See, e.g., :class:`toy.Context`.
     """
 
-    def __init__(self, rust_ctx=_zrth.torch.RustContext()):
+    def __init__(self, rust_ctx=RustContext()):
         """
         :param: ctx_impl  is the Rust context object.
         """

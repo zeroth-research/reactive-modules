@@ -1,11 +1,9 @@
-from zrth import _zrth
 from random import randrange
 
-from typing import Callable, Any
+from typing import Any
 from torch import Tensor
 
-from .torch.ll import DType, IType, Term, Wire
-from . import get_ctx
+from . import DType, IType, Term, Wire, get_ctx
 
 
 class Expr:

@@ -1,8 +1,8 @@
 from .context import Context, nxt
 
-from zrth import _zrth
+from .. import smt as zrth_smt
 
-WrappedModule = _zrth.smt.WrappedModule
+WrappedModule = zrth_smt.WrappedModule
 
 
 class Module:

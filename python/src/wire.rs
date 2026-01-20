@@ -10,7 +10,7 @@ pub(crate) struct Wire {
 #[pymethods]
 impl Wire {
     #[new]
-    fn new(dtype: DType, id: usize) -> Self {
+    pub(crate) fn new(id: usize, dtype: DType) -> Self {
         let base = base::Wire::new(id, dtype);
         Self { base }
     }
