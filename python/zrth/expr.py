@@ -131,7 +131,7 @@ def matmul_dtype(dt1, dt2):
             return DType.Tensor([dim1[0], dim2[1]])
         else:
             raise RuntimeError(
-                "Unsupported matrix multiplication, dimensions do not match"
+                f"Unsupported matrix multiplication, dimensions do not match: {dim1} x {dim2}"
             )
 
     # TODO: allow broadcasting
