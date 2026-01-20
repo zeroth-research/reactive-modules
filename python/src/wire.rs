@@ -15,6 +15,14 @@ impl Wire {
         Self { base }
     }
 
+    fn id(&self) -> usize {
+        self.base.id()
+    }
+
+    fn dtype(&self) -> DType {
+        self.base.dtype().clone()
+    }
+
     fn __str__(&self) -> String {
         self.base.to_string()
     }
