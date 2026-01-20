@@ -38,8 +38,8 @@ impl<D: Clone + Eq> Context<D> {
 
         // create variables in the context for module wires
         for [wl, wn] in module.ctrl().iter().chain(module.extl()) {
-            ctx.var(format!("x{}", wl.id()).as_str(), wl.dtype().clone());
-            ctx.var(format!("x{}", wn.id()).as_str(), wn.dtype().clone());
+            let _ = ctx.var(format!("x{}", wl.id()).as_str(), &wl.dtype().clone());
+            let _ = ctx.var(format!("x{}", wn.id()).as_str(), &wn.dtype().clone());
         }
 
         // create variables in the context for temporary wires
@@ -95,10 +95,10 @@ impl<D: Clone + Eq> Context<D> {
     }
 
     /// Create an interface for named wires
-    pub fn intf(&mut self, ty: D, names: &[&'static str]) -> Interface<D> {
+    pub fn intf(&mut self, ty: &D, names: &[&'static str]) -> Interface<D> {
         let mut tmp = Vec::with_capacity(names.len());
         for name in names {
-            let v = self.var(name, ty.clone());
+            let v = self.var(name, ty);
             tmp.push(v)
         }
 
@@ -122,16 +122,16 @@ impl<D: Clone + Eq> Context<D> {
     }
 
     /// Get or create a variable
-    /// Does not check if the type is compatible if the var exists
+    /// Does not check if the type is compatible when the var exists
     /// This method also remembers names of variables in `self.names`, because
     /// here we are creating named variables
-    pub fn var(&mut self, name: &str, ty: D) -> (usize, D) {
+    pub fn var(&mut self, name: &str, dtype: &D) -> (usize, D) {
         let new_id = self.get_next_id();
         let name = name.to_string();
         let res = self
             .vars
             .entry(name.clone())
-            .or_insert((new_id, ty.clone()));
+            .or_insert((new_id, dtype.clone()));
 
         // clone the data-type
         let res = (res.0, res.1.clone());
