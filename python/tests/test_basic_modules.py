@@ -17,6 +17,7 @@ from pysmt.typing import INT
 import zrth.torch as ztch
 from torch import Tensor
 import zrth.smt as smt
+from zrth.expr import nxt, choose, ifthen
 
 from pysmt.environment import Environment, reset_env, get_env
 import pytest
@@ -61,7 +62,7 @@ def test_counter_smt():
 class TorchModule(ztch.Module):
     def init(self, extl):
         # extl is a vector with dimension 2
-        return Tensor([[0, 0], [1, 0], [0, 1]]) @ ztch.nxt(extl)
+        return Tensor([[0, 0], [1, 0], [0, 1]]) @ nxt(extl)
 
     def update(self, state, inp):
         # state = (x, y, z) is a vector with dimension 3,
@@ -73,9 +74,7 @@ class TorchModule(ztch.Module):
         z = Tensor([0, 0, 1]) @ state
 
         cond = (x < y) or (x < z)
-        return ztch.choose(
-            ztch.ifthen(cond, result1), ztch.ifthen(~cond, result2), state
-        )
+        return choose(ifthen(cond, result1), ifthen(~cond, result2), state)
 
 
 def test_counter_torch():

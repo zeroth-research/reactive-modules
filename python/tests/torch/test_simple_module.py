@@ -4,7 +4,8 @@ from os.path import dirname, join as pathjoin
 
 from torch import Tensor
 
-from zrth.torch import Module as TorchModule, ifthen, nxt, choose, sym, DType
+from zrth.torch import Module as TorchModule, DType
+from zrth.expr import ifthen, nxt, choose, sym
 
 
 class MyModule(TorchModule):
