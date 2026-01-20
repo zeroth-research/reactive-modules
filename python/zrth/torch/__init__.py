@@ -1,7 +1,6 @@
 from .module import Module
 from .context import Context
 from .global_ctx import get_ctx, set_ctx
-from .exprs import sym, nxt, choose, ifthen, Sym
 from .ll import Wire, Term, DType, IType
 
 

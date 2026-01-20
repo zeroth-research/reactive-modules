@@ -1136,7 +1136,6 @@ dependencies = [
  "smt",
  "tch",
  "torch",
- "toy",
  "visual",
 ]
 
