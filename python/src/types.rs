@@ -159,7 +159,26 @@ impl fmt::Display for IType {
             IType::Ite() => write!(f, "Ite"),
             IType::Id() => write!(f, "Id"),
             IType::Argmax() => write!(f, "Argmax"),
-            IType::Tensor(_) => write!(f, "Tensor(...)"),
+            IType::Tensor(t) => {
+                let flat = t.tensor.view([-1]);
+
+                if let Ok(vals) = Vec::<f64>::try_from(&flat) {
+                    let _ = write!(f, "Tensor([");
+                    for (n, v) in vals.iter().take(5).enumerate() {
+                        if n == 0 {
+                            let _ = write!(f, "{}", v);
+                        } else {
+                            let _ = write!(f, " {}", v);
+                        }
+                    }
+                    if flat.numel() > 3 {
+                        let _ = write!(f, " ...");
+                    }
+                    write!(f, "])")
+                } else {
+                    write!(f, "Tensor({})", flat)
+                }
+            }
         }
     }
 }
