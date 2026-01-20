@@ -1,4 +1,10 @@
 from .zrth import *
+from .context import Context
+
+
+#####################################################################
+# Wire/Term helpers
+#####################################################################
 
 
 def to_wire(w: Wire | Term) -> Wire:
@@ -24,9 +30,9 @@ def mk_term(itype, write, read=None) -> Term:
     return Term(itype, [to_wire(w) for w in write], [to_wire(w) for w in read])
 
 
-# from .expr import sym, nxt, choose, ifthen, Sym
-
-from .context import Context
+#####################################################################
+# Global context
+#####################################################################
 
 # Term are created in this global context.
 # The context can be switched manually, but that is for advanced users
