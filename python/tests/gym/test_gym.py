@@ -1,4 +1,5 @@
-from zrth.gym import Context, QNetwork, SimpleEnv
+from zrth.gym import QNetwork, SimpleEnv
+from zrth import Context
 # from zrth import Module
 
 
@@ -54,4 +55,3 @@ if __name__ == "__main__":
     # print("\n" + "="*60 + "\n")
     # env = test_simpleenv_conversion()
     # composed = Module.parallel(qnet._reactive_module, env._reactive_module)
-

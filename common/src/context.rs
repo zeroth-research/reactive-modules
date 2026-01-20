@@ -29,6 +29,10 @@ impl<D: Clone + Eq> Context<D> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.names.len() + self.temps.len()
+    }
+
     /// Create a context and populate it from a module.
     /// We do not have names in this case, so assign some dummy names.
     /// This is useful if we need to create new variables and make sure

@@ -3,7 +3,7 @@ import inspect
 import ast
 import textwrap
 from typing import Any
-from .context import Context
+from ..context import Context
 from zrth import Wire, DType, IType, Term, Module
 from zrth.expr import matmul_dtype
 
@@ -221,4 +221,3 @@ def _translate_relu(ctx, input_wire):
 
 def _convert_gym_env(ctx: Context, env):
     return NotImplementedError("Gym environment conversion not implemented yet")
-
