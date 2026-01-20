@@ -1,17 +1,14 @@
 fn get_python_flags() {
-    #[cfg(feature = "enable-torch")]
-    {
-        use std::path::Path;
-        use std::process::Command;
+    use std::path::Path;
+    use std::process::Command;
 
-        let status = Command::new("python3")
-            .arg(Path::new("scripts/get_python_flags.py"))
-            .status()
-            .expect("Failed getting Python flags");
+    let status = Command::new("python3")
+        .arg(Path::new("scripts/get_python_flags.py"))
+        .status()
+        .expect("Failed getting Python flags");
 
-        if !status.success() {
-            panic!("Failed getting Python flags")
-        }
+    if !status.success() {
+        panic!("Failed getting Python flags")
     }
 }
 

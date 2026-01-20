@@ -14,9 +14,8 @@ common = { path = "../common" }
 smt = { path = "../smt", optional = true }
 pyo3 = { version = "0.24" }
 visual = { path = "../visual", features = ["html"], optional = true }
-torch = { path = "../torch", optional = true }
-tch = { features = ["python-extension"], version = "0.22", optional = true }
-pyo3-tch = { version = "0.22", optional = true }
+tch = { features = ["python-extension"], version = "0.22" }
+pyo3-tch = { version = "0.22" }
 
 
 
@@ -24,5 +23,4 @@ pyo3-tch = { version = "0.22", optional = true }
 default = ["visual-html"]
 # dumping modules to HTML
 visual-html = ["visual/html"]
-enable-torch = ["torch", "pyo3-tch", "tch", "tch/python-extension"]
 enable-smt = ["smt"]

@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 // the context in `toy` crate is generic,
 // we'll use it until we have the context in `base`.
-use super::{DType, Wire};
+use crate::{DType, Wire};
 use common::context::Context;
 
 /// Context for generating Atoms and Modules from Python
@@ -26,11 +26,11 @@ impl RustContext {
         }
     }
 
-    pub fn fresh_wire_id(&mut self) -> usize {
+    fn fresh_wire_id(&mut self) -> usize {
         self.ctx.tmp_id()
     }
 
-    pub fn tmp_wire(&mut self, dtype: DType) -> Wire {
+    fn tmp_wire(&mut self, dtype: DType) -> Wire {
         Wire::new(self.ctx.tmp_id(), dtype)
     }
 
@@ -38,7 +38,7 @@ impl RustContext {
     //    self.ctx.get(name).unwrap().0
     //}
 
-    pub fn wire(&mut self, name: &str, dtype: DType) -> Wire {
+    fn wire(&mut self, name: &str, dtype: DType) -> Wire {
         let (id, ty) = self.ctx.var(name, dtype.into());
         Wire::new(id, DType::from(ty))
     }

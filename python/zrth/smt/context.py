@@ -3,7 +3,6 @@ from pysmt.typing import INT, REAL, BOOL
 from pysmt.fnode import FNode as Expr
 import pysmt.operators as op
 
-from zrth import _zrth
 from zrth.context import Context as ContextBase
 
 from typing import Callable, Any
@@ -12,9 +11,11 @@ import inspect
 
 from itertools import chain
 
-PyVal = _zrth.PyVal
-WrappedModule = _zrth.smt.WrappedModule
-WrappedTerm = _zrth.smt.WrappedTerm
+from .. import smt as zrth_smt
+
+PyVal = zrth_smt.PyVal
+WrappedModule = zrth_smt.WrappedModule
+WrappedTerm = zrth_smt.WrappedTerm
 
 
 def handle_return_value(r):
@@ -155,7 +156,7 @@ class PySMTContext(ContextBase):
 
 class Context(PySMTContext):
     def __init__(self):
-        super().__init__(_zrth.smt.WrappedContext())
+        super().__init__(zrth_smt.WrappedContext())
 
     def module_from_methods(
         self,
