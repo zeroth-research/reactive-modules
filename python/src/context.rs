@@ -26,20 +26,24 @@ impl RustContext {
         }
     }
 
+    /// Get a new unused ID for a wire
     fn fresh_wire_id(&mut self) -> usize {
         self.ctx.tmp_id()
     }
 
+    /// Create a temporary wire. It is a simple wrapper
+    /// around [fresh_wire_id].
     fn tmp_wire(&mut self, dtype: DType) -> Wire {
-        Wire::new(self.ctx.tmp_id(), dtype)
+        Wire::new(self.fresh_wire_id(), dtype)
+    }
+
+    /// Get or create a wire with associated name.
+    fn named_wire(&mut self, name: &str, dtype: &DType) -> Wire {
+        let (id, ty) = self.ctx.var(name, dtype);
+        Wire::new(id, ty)
     }
 
     //pub fn get(&mut self, name: &str, dtype: DType) -> PyResult<Wire> {
     //    self.ctx.get(name).unwrap().0
     //}
-
-    fn wire(&mut self, name: &str, dtype: DType) -> Wire {
-        let (id, ty) = self.ctx.var(name, dtype.into());
-        Wire::new(id, DType::from(ty))
-    }
 }

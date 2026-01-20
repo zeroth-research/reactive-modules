@@ -16,7 +16,7 @@ mod tests {
 
         // create variables
         ctx.intf(
-            DType::Int,
+            &DType::Int,
             &["x", "y", "z", "y0", "z0", "x'", "y'", "z'", "y0'", "z0'"],
         );
 
@@ -33,7 +33,7 @@ mod tests {
     fn conversions_smt1() {
         let mut ctx = ToyContext::new();
         ctx.intf(
-            DType::Int,
+            &DType::Int,
             &["x", "y", "z", "y0", "z0", "x'", "y'", "z'", "y0'", "z0'"],
         );
 

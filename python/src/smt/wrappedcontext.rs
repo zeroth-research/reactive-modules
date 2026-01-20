@@ -29,7 +29,7 @@ impl WrappedContext {
 
     /// Get or create a new named wire (symbol)
     pub fn sym(&mut self, name: &str, ty: &str) -> PyVal {
-        let (id, _) = self.ctx.var(name, ty.parse().expect("Invalid type str"));
+        let (id, _) = self.ctx.var(name, &ty.parse().expect("Invalid type str"));
         PyVal::Sym(id, ty.to_string())
     }
 
