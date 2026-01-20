@@ -38,7 +38,7 @@ impl RustContext {
     }
 
     /// Get or create a wire with associated name.
-    fn named_wire(&mut self, name: &str, dtype: &DType) -> Wire {
+    fn wire(&mut self, name: &str, dtype: &DType) -> Wire {
         let (id, ty) = self.ctx.var(name, dtype);
         Wire::new(id, ty)
     }
@@ -46,4 +46,8 @@ impl RustContext {
     //pub fn get(&mut self, name: &str, dtype: DType) -> PyResult<Wire> {
     //    self.ctx.get(name).unwrap().0
     //}
+
+    fn __len__(&self) -> usize {
+        self.ctx.len()
+    }
 }
