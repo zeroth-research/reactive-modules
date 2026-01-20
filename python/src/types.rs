@@ -85,10 +85,18 @@ impl DType {
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DType::Tensor(_) => write!(f, "Tensor<...>"),
             DType::Bool() => write!(f, "Bool"),
             DType::Int() => write!(f, "Int"),
             DType::Float() => write!(f, "Float"),
+            DType::Tensor(shape) => write!(
+                f,
+                "Tensor<{}>",
+                shape
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
         }
     }
 }
