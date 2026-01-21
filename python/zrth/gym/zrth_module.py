@@ -5,11 +5,6 @@ from .. import Context, get_ctx
 class Module:
     """Base class for reactive modules with automatic conversion"""
 
-    @classmethod
-    def get_global_context(cls):
-        """Get or create the shared global context"""
-        return get_ctx()
-
     def __init__(self, extl, intf, prvt=None, ctx=None):
         """Initialize module
 
@@ -19,7 +14,7 @@ class Module:
             intf: List of interface output wire names
             prvt: List of private wire names (optional)
         """
-        self.ctx = ctx if ctx is not None else Module.get_global_context()
+        self.ctx = ctx if ctx is not None else get_ctx()
         self.extl = extl
         self.intf = intf
         self.prvt = prvt
