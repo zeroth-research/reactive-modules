@@ -78,7 +78,7 @@ class TorchModule(ReactiveModule):
 
 
 def test_counter_torch():
-    m_torch = TorchModule(ctrl="xyz: Tensor<3>", extl="yz0: Tensor<2>")
+    m_torch = TorchModule(intf="xyz: Tensor<3>", extl="yz0: Tensor<2>")
     assert m_torch
     print(m_torch)
 
