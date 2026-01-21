@@ -1,9 +1,8 @@
 from ..expr import nxt, Expr, Sym, sym
 from .. import get_ctx
+from .. import DType, Module as RustModule
 
-from .ll import DType, Module as RustModule
-
-from typing import Callable, Any
+from typing import Callable
 
 
 class Module:

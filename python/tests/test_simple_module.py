@@ -5,7 +5,7 @@ from os.path import dirname, join as pathjoin
 from torch import Tensor
 
 from zrth.torch.module import Module as TorchModule
-from zrth.torch.ll import DType
+from zrth import DType
 from zrth.expr import nxt, ite, sym
 
 
