@@ -5,10 +5,10 @@ from torch import Tensor
 
 from zrth import DType
 from zrth.expr import nxt, ite, sym
-from zrth.module import Module
+from zrth.module import ReactiveModule
 
 
-class MyModule(Module):
+class MyModule(ReactiveModule):
     def init(self, extl):
         # extl is a vector with dimension 2
         return Tensor([[0, 0], [1, 0], [0, 1]]) @ nxt(extl)

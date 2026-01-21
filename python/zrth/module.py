@@ -5,7 +5,23 @@ from . import DType, Module as RustModule
 from typing import Callable
 
 
-class Module:
+class ReactiveModule:
+    """
+    A wrapper around `zrth.Module` defined in `src/module.rs`.
+
+    This wrapper exists so that we can define reactive modules
+    by defining Python classes in the spirit of
+
+    ```
+    class MyModule(ReactiveModule):
+      def init(...)
+      def update(...)
+    ```
+
+    This class automatically converts `init` and `update` to wiring diagrams
+    and generates `zrth.Module` from that.
+    """
+
     def __init__(
         self,
         ctrl: str | tuple[str] | None,
@@ -35,20 +51,6 @@ class Module:
 
         # store the context this module was created in
         self._ctx = get_ctx()
-
-    # def _wrap_method(self, m):
-    #    """
-    #    Wrap method such that if it is given symbolic arguments,
-    #    it will be traced and otherwise it will get executed normally.
-    #    """
-    #
-    #    def wrapper(*args):
-    #        if any(isinstance(a, Expr) for a in args):
-    #            return self._ctx.trace(m, *args)
-    #
-    #        return m(*args)
-    #
-    #    return wrapper
 
     def __repr__(self) -> str:
         return self._module.__repr__()

@@ -1,5 +1,6 @@
 from .zrth import *
 from .context import Context
+from .module import ReactiveModule
 
 
 #####################################################################
