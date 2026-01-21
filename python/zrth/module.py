@@ -1,6 +1,6 @@
 from .expr import nxt, Expr, Sym, sym
-from . import get_ctx
-from . import DType, Module as RustModule
+from .context import get_ctx
+from .zrth import DType, Module as RustModule
 
 from typing import Callable
 
@@ -26,6 +26,7 @@ class ReactiveModule:
         self,
         ctrl: str | tuple[str] | None,
         extl: str | tuple[str] | None = None,
+        priv: str | tuple[str] | None = None,
         name: str = None,
     ):
         if ctrl is None:
@@ -35,6 +36,9 @@ class ReactiveModule:
             self._ctx = None
             self._module = None
             return
+
+        if priv is not None:
+            raise NotImplementedError("Private variables not implemented yet")
 
         if not hasattr(self, "update"):
             raise RuntimeError(f"Module {type(self)} has no `update` method.")

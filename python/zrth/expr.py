@@ -3,7 +3,8 @@ from random import randrange
 from typing import Any
 from torch import Tensor
 
-from . import DType, IType, Term, Wire, get_ctx
+from .zrth import DType, IType, Term, Wire
+from .context import get_ctx
 
 
 class Expr:
