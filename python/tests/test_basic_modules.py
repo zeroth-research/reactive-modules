@@ -14,7 +14,7 @@ from pysmt.shortcuts import (
     get_model,
 )
 from pysmt.typing import INT
-from zrth.module import Module
+from zrth.module import ReactiveModule
 from torch import Tensor
 import zrth.smt as smt
 from zrth.expr import nxt, ite
@@ -59,7 +59,7 @@ def test_counter_smt():
 ######################################################################
 
 
-class TorchModule(Module):
+class TorchModule(ReactiveModule):
     def init(self, extl):
         # extl is a vector with dimension 2
         return Tensor([[0, 0], [1, 0], [0, 1]]) @ nxt(extl)
