@@ -1,5 +1,4 @@
 def test_importing():
-    import zrth
+    from zrth import zrth
 
     assert zrth
-    assert zrth._zrth

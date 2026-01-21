@@ -15,9 +15,10 @@ from pysmt.shortcuts import (
 )
 from pysmt.typing import INT
 import zrth.torch as ztch
+from zrth.torch.module import Module as TorchRM
 from torch import Tensor
 import zrth.smt as smt
-import zrth.toy as toy
+from zrth.expr import nxt, ite
 
 from pysmt.environment import Environment, reset_env, get_env
 import pytest
@@ -55,42 +56,14 @@ def test_counter_smt():
 
 
 ######################################################################
-# Toy
-######################################################################
-
-
-class ToyModule(toy.Module):
-    def init(self, extl) -> None:
-        y0, z0 = extl
-        return 0, nxt(y0), nxt(z0)  # = x, y, z
-
-    def update(self, ctrl, extl) -> None:
-        x, y, z = ctrl
-        xn = Ite(Or(x < y, x < z), x + Int(1), Int(0))
-        # xn = Choose(
-        #    Case(Or(x < y, x < z), x + Int(1)),
-        #    Case(Not(Or(x < y, x < z)), Int(0)),
-        # )
-
-        return xn, y, z
-
-
-def test_counter_toy():
-    m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
-    assert m_toy
-    # m_toy.dbg()
-    # m_toy.to_html("/tmp/toy.html", open=True)
-
-
-######################################################################
 # Torch
 ######################################################################
 
 
-class TorchModule(ztch.Module):
+class TorchModule(TorchRM):
     def init(self, extl):
         # extl is a vector with dimension 2
-        return Tensor([[0, 0], [1, 0], [0, 1]]) @ ztch.nxt(extl)
+        return Tensor([[0, 0], [1, 0], [0, 1]]) @ nxt(extl)
 
     def update(self, state, inp):
         # state = (x, y, z) is a vector with dimension 3,
@@ -102,49 +75,13 @@ class TorchModule(ztch.Module):
         z = Tensor([0, 0, 1]) @ state
 
         cond = (x < y) or (x < z)
-        return ztch.choose(
-            ztch.ifthen(cond, result1), ztch.ifthen(~cond, result2), state
-        )
+        return ite(cond, result1, result2)
 
 
 def test_counter_torch():
     m_torch = TorchModule(ctrl="xyz: Tensor<3>", extl="yz0: Tensor<2>")
     assert m_torch
     print(m_torch)
-
-
-######################################################################
-# Module composition and translation
-######################################################################
-
-
-def test_toy_to_smt():
-    m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
-    m = m_toy.translate_to("smt")
-    assert m
-    print(m)
-
-
-def test_toy_to_smt_to_smtlib():
-    m_toy = ToyModule("x: Int, y: Int, z: Int", ("y0: Int", "z0: Int"))
-    m = m_toy.translate_to("smt")
-    assert m
-
-    smtlib_str = m.to_smtlib()
-    print(smtlib_str)
-
-    script = SmtLibParser().get_script(StringIO(smtlib_str))
-    print(script)
-
-    # print('=======')
-    # exprs = []
-    # for a in script.filter_by_command_name("assert"):
-    #     print(a.args)
-    #     exprs.extend(a.args)
-    #
-    # X, Y, Z = exprs[-3:]
-    # print(X, Y, Z)
-    # print(And(exprs))
 
 
 ######################################################################

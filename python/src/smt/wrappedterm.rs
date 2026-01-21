@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::PyVal;
+use crate::smt::PyVal;
 use smt::itype::IType;
 
 #[pyclass]

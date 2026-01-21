@@ -1135,8 +1135,6 @@ dependencies = [
  "pyo3-tch",
  "smt",
  "tch",
- "torch",
- "toy",
  "visual",
 ]
 

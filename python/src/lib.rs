@@ -1,60 +1,34 @@
 #[cfg(feature = "enable-smt")]
 mod smt;
-mod toy;
-mod util;
 
-#[cfg(feature = "enable-torch")]
-mod torch;
-
-pub mod pyval;
 use pyo3::prelude::*;
-pub use pyval::PyVal;
 
 mod atom;
+mod context;
 mod module;
+mod pytensor;
 mod term;
 mod types;
 mod wire;
 
+use crate::context::RustContext;
 use crate::module::Module;
 use crate::term::Term;
-use crate::types::{DType, IType, MyTensor};
+use crate::types::{DType, IType};
 use crate::wire::Wire;
 use pyo3::PyClass;
 
 #[pymodule]
 fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyVal>()?;
-
-    let toy = PyModule::new(py, "toy")?;
-    toy.add_class::<toy::WrappedTerm>()?;
-    toy.add_class::<toy::WrappedModule>()?;
-    toy.add_class::<toy::WrappedContext>()?;
-
-    m.add_submodule(&toy)?;
-
     #[cfg(feature = "enable-smt")]
     {
         let smt = PyModule::new(py, "smt")?;
         smt.add_class::<smt::WrappedTerm>()?;
         smt.add_class::<smt::WrappedModule>()?;
         smt.add_class::<smt::WrappedContext>()?;
+        smt.add_class::<smt::PyVal>()?;
 
         m.add_submodule(&smt)?;
-    }
-
-    #[cfg(feature = "enable-torch")]
-    {
-        // the high-level API for Torch integration
-        let torch = PyModule::new(py, "torch")?;
-        torch.add_class::<torch::RustContext>()?;
-        torch.add_class::<torch::IType>()?;
-        torch.add_class::<torch::DType>()?;
-        torch.add_class::<torch::Wire>()?;
-        torch.add_class::<torch::Term>()?;
-        torch.add_class::<torch::Module>()?;
-
-        m.add_submodule(&torch)?;
     }
 
     m.add_class::<IType>()?;
@@ -62,8 +36,7 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Wire>()?;
     m.add_class::<Term>()?;
     m.add_class::<Module>()?;
-
-    m.add_class::<MyTensor>()?;
+    m.add_class::<RustContext>()?;
 
     Ok(())
 }

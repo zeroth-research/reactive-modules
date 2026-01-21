@@ -90,9 +90,9 @@ impl Parser {
         for (vars, ty) in decl_vars.values() {
             for v in vars {
                 // latched variables
-                latched.push(self.ctx.var(v.name(), *ty));
+                latched.push(self.ctx.var(v.name(), ty));
                 // next variables
-                next.push(self.ctx.var(v.primed_name().as_str(), *ty));
+                next.push(self.ctx.var(v.primed_name().as_str(), ty));
             }
         }
 
@@ -229,7 +229,8 @@ impl Parser {
                             [&cond, expr_out].into_iter().flatten().map(|[i]| i.clone()),
                         )
                         .unwrap(),
-                        self.ctx.tmp_intf(*expr_out.wires().last().unwrap().dtype()),
+                        self.ctx
+                            .tmp_intf(expr_out.wires().last().unwrap().dtype().clone()),
                     )
                     .unwrap();
 
@@ -374,7 +375,7 @@ impl Parser {
                                 let (_, ty2) = wire_r.wires().next().unwrap().into();
                                 debug_assert!(ty == ty2);
                             }
-                            let write_wire = self.ctx.tmp_intf(*ty);
+                            let write_wire = self.ctx.tmp_intf(ty.clone());
                             terms.push(
                                 create_arith_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),
                             )

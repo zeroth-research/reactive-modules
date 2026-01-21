@@ -1,9 +1,9 @@
+use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use crate::smt::wrappedcontext::WrappedContext;
 use crate::smt::{vars_to_wiring, wterms_to_torchterms};
-use crate::util::str_to_pyerr;
 
 use base::Module;
 use smt::dtype::DType;
@@ -82,7 +82,7 @@ impl WrappedModule {
         });
 
         Ok(WrappedModule {
-            module: base::Module::parallel(refs).map_err(str_to_pyerr)?,
+            module: base::Module::parallel(refs).map_err(PyException::new_err)?,
         })
     }
 
