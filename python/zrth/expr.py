@@ -48,14 +48,14 @@ class Expr:
             name, dtype = args
             assert isinstance(name, str), name
             assert isinstance(dtype, DType), (type(dtype), dtype)
-            self._out_wire: Wire = ctx.unwrap().wire(name, dtype)
+            self._out_wire: Wire = ctx.wire(name, dtype)
             self._term = None
             self._dtype: DType = dtype
         elif op == "const":
             assert len(args) == 1
             val = args[0]
             itype, dtype = const_to_itype_dtype(val)
-            self._out_wire: Wire = ctx.unwrap().tmp_wire(dtype)
+            self._out_wire: Wire = ctx.tmp_wire(dtype)
             self._term: Term = Term(itype, [self._out_wire], [])
             self._dtype: DType = dtype
         elif op == "assign":  # FIXME: do not have this as a special case
@@ -67,7 +67,7 @@ class Expr:
             self._dtype: DType = dtype
         else:
             itype, dtype = op_to_itype_dtype(op, args)
-            self._out_wire: Wire = ctx.unwrap().tmp_wire(dtype)
+            self._out_wire: Wire = ctx.tmp_wire(dtype)
             self._term: Term = Term(itype, [self._out_wire], [a.wire() for a in args])
             self._dtype: DType = dtype
 
