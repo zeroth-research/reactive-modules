@@ -10,39 +10,61 @@ use crate::pytensor::PyTensor;
 #[pyclass]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DType {
-    Tensor(Vec<usize>),
-    Bool(),
-    Int(),
-    Float(),
+    // at this moment, we keep the DType flat and encode the type
+    // of elements in the names
+    TensorBool(Vec<usize>),
+    TensorInt(Vec<usize>),
+    TensorFloat(Vec<usize>),
 }
 
-fn parse_dim(dim: &str) -> Option<Vec<usize>> {
-    Some(
-        dim.split(',')
+enum PrimitiveType {
+    Bool,
+    Int,
+    Float,
+}
+
+fn parse_dim_with_type(dim_and_type: &str) -> Option<(Vec<usize>, PrimitiveType)> {
+    if let Some((dim, ptype)) = dim_and_type.split_once(';') {
+        let dim = dim
+            .split(',')
             .map(str::parse)
             .collect::<Result<_, _>>()
-            .ok()?,
-    )
+            .ok()?;
+
+        let ptype = match ptype.trim() {
+            "Bool" => PrimitiveType::Bool,
+            "Int" => PrimitiveType::Int,
+            "Float" => PrimitiveType::Float,
+            _ => return None,
+        };
+
+        return Some((dim, ptype));
+    }
+
+    None
 }
 
 impl std::str::FromStr for DType {
     type Err = String;
 
     fn from_str(ty: &str) -> Result<Self, Self::Err> {
-        match ty {
-            "Bool" => Ok(DType::Bool()),
-            "Int" => Ok(DType::Int()),
-            "Float" => Ok(DType::Float()),
-            _ => {
-                if let Some(dim) = ty.strip_prefix("Tensor<")
-                    && let Some(inner) = dim.strip_suffix(">")
-                    && let Some(dims) = parse_dim(inner)
-                {
-                    return Ok(DType::Tensor(dims));
-                }
+        if let Some(dim) = ty.strip_prefix("Tensor<")
+            && let Some(inner) = dim.strip_suffix(">")
+            && let Some((dims, ptype)) = parse_dim_with_type(inner)
+        {
+            return match ptype {
+                PrimitiveType::Float => Ok(DType::TensorFloat(dims)),
+                PrimitiveType::Int => Ok(DType::TensorInt(dims)),
+                PrimitiveType::Bool => Ok(DType::TensorBool(dims)),
+            };
+        }
 
-                Err(format!("Cannot convert `{}` to DType", ty))
-            }
+        // try also aliases
+        match ty {
+            "Float" => Ok(DType::TensorFloat(vec![1])),
+            "Int" => Ok(DType::TensorInt(vec![1])),
+            "Bool" => Ok(DType::TensorBool(vec![1])),
+            _ => Err(format!("Cannot convert `{}` to DType", ty)),
         }
     }
 }
@@ -57,14 +79,19 @@ impl DType {
     /// Get the data dimensions of this data type
     fn dims(&self) -> Vec<usize> {
         match &self {
-            DType::Bool() | DType::Int() | DType::Float() => vec![1],
-            DType::Tensor(shape) => shape.clone(),
+            DType::TensorFloat(shape) => shape.clone(),
+            DType::TensorInt(shape) => shape.clone(),
+            DType::TensorBool(shape) => shape.clone(),
         }
     }
 
-    fn is_tensor(&self) -> bool {
-        match &self {
-            DType::Tensor(_) => true,
+    /// Return whether the type of elements is the same
+    // This method is necesary because we do not expose [PrimitiveType]
+    fn eq_dtype(&self, other: &Self) -> bool {
+        match (self, other) {
+            (DType::TensorFloat(_), DType::TensorFloat(_)) => true,
+            (DType::TensorInt(_), DType::TensorInt(_)) => true,
+            (DType::TensorBool(_), DType::TensorBool(_)) => true,
             _ => false,
         }
     }
@@ -82,21 +109,36 @@ impl DType {
     }
 }
 
+impl fmt::Display for PrimitiveType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PrimitiveType::Bool => write!(f, "Bool"),
+            PrimitiveType::Int => write!(f, "Int"),
+            PrimitiveType::Float => write!(f, "Float"),
+        }
+    }
+}
+
+fn format_tensor(shape: &Vec<usize>, ptype: PrimitiveType) -> String {
+    format!(
+        "Tensor<{}; {}>",
+        shape
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join(", "),
+        ptype
+    )
+}
+
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DType::Bool() => write!(f, "Bool"),
-            DType::Int() => write!(f, "Int"),
-            DType::Float() => write!(f, "Float"),
-            DType::Tensor(shape) => write!(
-                f,
-                "Tensor<{}>",
-                shape
-                    .iter()
-                    .map(|x| x.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
+            DType::TensorFloat(shape) => {
+                write!(f, "{}", format_tensor(shape, PrimitiveType::Float))
+            }
+            DType::TensorInt(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Int)),
+            DType::TensorBool(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Bool)),
         }
     }
 }
