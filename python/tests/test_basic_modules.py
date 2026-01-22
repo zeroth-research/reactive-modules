@@ -15,7 +15,7 @@ from pysmt.shortcuts import (
 )
 from pysmt.typing import INT
 from zrth import ReactiveModule
-from torch import Tensor
+from torch import IntTensor
 from zrth.expr import nxt, ite
 
 import pytest
@@ -63,23 +63,23 @@ def test_counter_smt():
 class TorchModule(ReactiveModule):
     def init(self, extl):
         # extl is a vector with dimension 2
-        return Tensor([[0, 0], [1, 0], [0, 1]]) @ nxt(extl)
+        return IntTensor([[0, 0], [1, 0], [0, 1]]) @ nxt(extl)
 
     def update(self, state, inp):
         # state = (x, y, z) is a vector with dimension 3,
         # inp = (y0, z0) is a vector with dimension 2
-        result1 = state + Tensor([1, 0, 0])
-        result2 = Tensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]]) @ state
-        x = Tensor([1, 0, 0]) @ state
-        y = Tensor([0, 1, 0]) @ state
-        z = Tensor([0, 0, 1]) @ state
+        result1 = state + IntTensor([1, 0, 0])
+        result2 = IntTensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]]) @ state
+        x = IntTensor([1, 0, 0]) @ state
+        y = IntTensor([0, 1, 0]) @ state
+        z = IntTensor([0, 0, 1]) @ state
 
         cond = (x < y) or (x < z)
         return ite(cond, result1, result2)
 
 
 def test_counter_torch():
-    m_torch = TorchModule(intf="xyz: Tensor<3>", extl="yz0: Tensor<2>")
+    m_torch = TorchModule(intf="xyz: Tensor<3; Int>", extl="yz0: Tensor<2; Int>")
     assert m_torch
     print(m_torch)
 

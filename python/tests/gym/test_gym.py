@@ -5,8 +5,8 @@ from zrth import Context
 def qnetwork():
     ctx = Context()
     qnet = QNetwork(
-        extl=["observation: Tensor<1>"],
-        intf=["q_values: Tensor<2>"],
+        extl=["observation: Tensor<1; Float>"],
+        intf=["q_values: Tensor<2; Float>"],
         state_size=1,
         action_size=2,
         hidden_size=2,
@@ -27,9 +27,13 @@ def test_qnetwork_conversion():
 def simpleenv():
     ctx = Context()
     env = SimpleEnv(
-        extl=["q_values: Tensor<2>"],
-        intf=["observation: Tensor<1>", "reward: Tensor<1>", "terminated: Tensor<1>"],
-        prvt=["state: Tensor<1>"],
+        extl=["q_values: Tensor<2; Float>"],
+        intf=[
+            "observation: Tensor<1; Float>",
+            "reward: Tensor<1; Float>",
+            "terminated: Tensor<1; Float>",
+        ],
+        prvt=["state: Tensor<1; Float>"],
         ctx=ctx,
     )
 
