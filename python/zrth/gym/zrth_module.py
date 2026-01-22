@@ -1,4 +1,4 @@
-from zrth.module import ReactiveModuleDef
+from zrth.module import ReactiveModuleDef, call_convert_after_init
 from .converter import convert_to_module
 from .. import Context, get_ctx
 
@@ -23,20 +23,7 @@ class Module(ReactiveModuleDef):
         The conversion *must* be done after subclasses are fully initialized
         because the conversion uses data from the classes
         """
-        super().__init_subclass__(**kwargs)
-
-        # Save original __init__
-        original_init = cls.__init__
-
-        # Wrap the init to call `convert` after the original init finishes
-        def wrapped_init(self, *args, **kwargs):
-            # Call original __init__
-            original_init(self, *args, **kwargs)
-
-            self.convert()
-
-        # Replace __init__ with wrapped version
-        cls.__init__ = wrapped_init
+        call_convert_after_init(__class__, cls, **kwargs)
 
     def convert(self):
         """
