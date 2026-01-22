@@ -50,8 +50,8 @@ def _convert_torch_module(ctx: Context, module: torch.nn.Module):
     # Create wire pairs dynamically from module metadata
     wire_pairs = {}
     for name in module.extl + module.intf:
-        latched = ctx.wire(f"{name}_l", DType.Tensor(example_input.size()))
-        next_wire = ctx.wire(f"{name}_n", DType.Tensor(example_input.size()))
+        latched = ctx.wire(f"{name}_l", DType.TensorFloat(example_input.size()))
+        next_wire = ctx.wire(f"{name}_n", DType.TensorFloat(example_input.size()))
         wire_pairs[name] = (latched, next_wire)
 
     # Extract input and output pairs
@@ -170,7 +170,7 @@ def _translate_linear(ctx, input_wire, layer):
 
     # Create weight constant
     weight_tensor = layer.weight.data
-    weight_wire = ctx.tmp_wire(DType.Tensor(weight_tensor.size()))
+    weight_wire = ctx.tmp_wire(DType.TensorFloat(weight_tensor.size()))
     terms.append(Term(IType.Tensor(weight_tensor), [weight_wire]))
 
     # MatMul: input × weight -> temp_matmul
@@ -179,7 +179,7 @@ def _translate_linear(ctx, input_wire, layer):
 
     # Create bias constant
     bias_tensor = layer.bias.data
-    bias_wire = ctx.tmp_wire(DType.Tensor(bias_tensor.size()))
+    bias_wire = ctx.tmp_wire(DType.TensorFloat(bias_tensor.size()))
     terms.append(Term(IType.Tensor(bias_tensor), [bias_wire]))
 
     # Add: matmul + bias -> output
@@ -205,15 +205,15 @@ def _translate_relu(ctx, input_wire):
 
     # Create zero constant
     zero_tensor = torch.Tensor([[0.0], [1.0]])
-    zero_wire = ctx.tmp_wire(DType.Tensor(zero_tensor.size()))
+    zero_wire = ctx.tmp_wire(DType.TensorFloat(zero_tensor.size()))
     terms.append(Term(IType.Tensor(zero_tensor), [zero_wire]))
 
     # Gt(input, 0)
-    gt_wire = ctx.tmp_wire(DType.Bool())
+    gt_wire = ctx.tmp_wire(DType.Bool)
     terms.append(Term(IType.Gt(), [gt_wire], [input_wire, zero_wire]))
 
     # Ite(gt_result, input, 0) -> activated
-    output_wire = ctx.tmp_wire(DType.Tensor(zero_tensor.size()))
+    output_wire = ctx.tmp_wire(DType.TensorFloat(zero_tensor.size()))
     terms.append(Term(IType.Ite(), [output_wire], [gt_wire, input_wire, zero_wire]))
 
     return terms, output_wire

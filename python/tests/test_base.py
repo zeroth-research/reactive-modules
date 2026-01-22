@@ -4,16 +4,16 @@ from torch import Tensor
 
 
 def test_wire_new():
-    x = Wire(0, dt.Bool())
-    y = Wire(1, dt.Bool())
+    x = Wire(0, dt.Bool)
+    y = Wire(1, dt.Bool)
 
 
 def test_term_new():
-    x = Wire(1, dt.Tensor([2, 2, 3]))
-    y = Wire(2, dt.Tensor([2, 2, 3]))
-    xn = Wire(3, dt.Tensor([2, 2, 3]))
-    w4 = Wire(4, dt.Tensor([3]))
-    w5 = Wire(5, dt.Tensor([3]))
+    x = Wire(1, dt.TensorInt([2, 2, 3]))
+    y = Wire(2, dt.TensorInt([2, 2, 3]))
+    xn = Wire(3, dt.TensorInt([2, 2, 3]))
+    w4 = Wire(4, dt.TensorFloat([3]))
+    w5 = Wire(5, dt.TensorInt([3]))
 
     # test `function` ctor
     f = Term.function(it.Add(), [xn], [x, y])
@@ -21,44 +21,44 @@ def test_term_new():
     h = Term.function(it.Tensor(Tensor([3, 4, 6])), [w5], [])
 
     # test `new` ctor
-    Term(it.Lt(), [Wire(6, dt.Bool())], [w4, w5])
-    Term(it.Tensor(Tensor([3, 2, 1])), [Wire(7, dt.Tensor([3]))])
+    Term(it.Lt(), [Wire(6, dt.Bool)], [w4, w5])
+    Term(it.Tensor(Tensor([3, 2, 1])), [Wire(7, dt.TensorInt([3]))])
 
 
 def test_mk_term():
-    x = Wire(1, dt.Tensor([2, 2, 3]))
-    y = Wire(2, dt.Tensor([2, 2, 3]))
-    xn = Wire(3, dt.Tensor([2, 2, 3]))
+    x = Wire(1, dt.TensorInt([2, 2, 3]))
+    y = Wire(2, dt.TensorInt([2, 2, 3]))
+    xn = Wire(3, dt.TensorInt([2, 2, 3]))
 
     f = mk_term(it.Add(), [xn], [x, y])
-    g = mk_term(it.Tensor(Tensor([3, 4, 5])), [Wire(4, dt.Tensor([3]))], [])
-    h = mk_term(it.Tensor(Tensor([3, 4, 6])), [Wire(5, dt.Tensor([3]))], [])
+    g = mk_term(it.Tensor(Tensor([3, 4, 5])), [Wire(4, dt.TensorInt([3]))], [])
+    h = mk_term(it.Tensor(Tensor([3, 4, 6])), [Wire(5, dt.TensorInt([3]))], [])
 
     # test `new` ctor
-    t1 = mk_term(it.Lt(), [Wire(6, dt.Bool())], [g, h])
-    t2 = mk_term(it.Tensor(Tensor([3, 2, 1])), [Wire(7, dt.Tensor([3]))])
+    t1 = mk_term(it.Lt(), [Wire(6, dt.Bool)], [g, h])
+    t2 = mk_term(it.Tensor(Tensor([3, 2, 1])), [Wire(7, dt.TensorInt([3]))])
 
 
 def test_module_sequential():
-    x = (Wire(0, dt.Bool()), Wire(1, dt.Bool()))
+    x = (Wire(0, dt.Bool), Wire(1, dt.Bool))
     init = [Term(it.Tensor(Tensor([True])), [x[1]])]
     update = [Term(it.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
 
 
 def test_module_combinatorial():
-    x = (Wire(0, dt.Bool()), Wire(1, dt.Bool()))
+    x = (Wire(0, dt.Bool), Wire(1, dt.Bool))
 
     assign = [Term(it.Tensor(Tensor([False])), [x[1]])]
     m = Module.combinatorial(assign, [x])
 
 
 def test_module_parallel():
-    x = (Wire(0, dt.Bool()), Wire(1, dt.Bool()))
-    y = (Wire(2, dt.Bool()), Wire(3, dt.Bool()))
-    z = (Wire(4, dt.Bool()), Wire(5, dt.Bool()))
-    w = (Wire(6, dt.Bool()), Wire(7, dt.Bool()))
-    v = (Wire(8, dt.Bool()), Wire(9, dt.Bool()))
+    x = (Wire(0, dt.Bool), Wire(1, dt.Bool))
+    y = (Wire(2, dt.Bool), Wire(3, dt.Bool))
+    z = (Wire(4, dt.Bool), Wire(5, dt.Bool))
+    w = (Wire(6, dt.Bool), Wire(7, dt.Bool))
+    v = (Wire(8, dt.Bool), Wire(9, dt.Bool))
 
     init = [Term(it.Tensor(Tensor([False])), [x[1]])]
     update = [Term(it.And(), [x[1]], [x[0], y[1]])]
@@ -92,9 +92,9 @@ def test_module_parallel():
 
 
 def test_interface():
-    x = Wire(0, dt.Bool())
-    y = Wire(1, dt.Bool())
-    xn = Wire(2, dt.Bool())
+    x = Wire(0, dt.Bool)
+    y = Wire(1, dt.Bool)
+    xn = Wire(2, dt.Bool)
     f = Term(it.Id(), [xn], [x, y])
     f2 = Term(it.Id(), [xn], [x, y])
 
