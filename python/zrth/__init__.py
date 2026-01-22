@@ -7,6 +7,11 @@ from .module import ReactiveModule
 # Wire/Term helpers
 #####################################################################
 
+# Add type aliases to the DType object
+DType.Bool = DType.TensorBool([1])
+DType.Int = DType.TensorInt([1])
+DType.Float = DType.TensorFloat([1])
+
 
 def to_wire(w: Wire | Term) -> Wire:
     """

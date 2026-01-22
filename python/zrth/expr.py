@@ -1,10 +1,14 @@
 from random import randrange
 
-from typing import Any
-from torch import Tensor
+from typing import Any, TypeAlias
+import torch
 
 from .zrth import DType, IType, Term, Wire
 from .context import get_ctx
+
+
+# types that we can convert to [Expr]
+type ToExpr = Expr | int | bool | float | torch.Tensor
 
 
 class Expr:
@@ -27,6 +31,7 @@ class Expr:
     __cnt = 0
 
     def __init__(self, op: str, *args):
+        assert isinstance(op, str), type(op)
         self.op = op
         # FIXME: this special handling of "sym"
         self.args = list(args) if op != "sym" else []
@@ -34,6 +39,10 @@ class Expr:
         Expr.__cnt += 1
         self.id = Expr.__cnt
         ctx = get_ctx()
+
+        assert all(not isinstance(a, Expr) or a.ctx() is ctx for a in args), (
+            "Expr must be created in the same context as its arguments"
+        )
 
         if op == "sym":
             name, dtype = args
@@ -86,26 +95,36 @@ class Expr:
         """
         return self._out_wire
 
-    def __rmatmul__(self, lhs):
-        return Expr("arith.matmul", to_expr(lhs), self)
+    def __eq__(self, oth):
+        return (
+            isinstance(self, Expr)
+            and self.op == oth.op
+            and self.get_children() == oth.get_children()
+        )
 
-    def __matmul__(self, rhs):
-        return Expr("arith.matmul", self, to_expr(rhs))
+    def __rmatmul__(self, lhs: ToExpr) -> "Expr":
+        return MatMul(lhs, self)
 
-    def __add__(self, rhs):
-        return Expr("arith.add", self, to_expr(rhs))
+    def __matmul__(self, rhs: ToExpr) -> "Expr":
+        return MatMul(self, rhs)
 
-    def __lt__(self, rhs):
-        return Expr("cmp.lt", self, to_expr(rhs))
+    def __add__(self, rhs: ToExpr) -> "Expr":
+        return Add(self, rhs)
 
-    def __gt__(self, rhs):
-        return Expr("cmp.gt", self, to_expr(rhs))
+    def __mul__(self, rhs: ToExpr) -> "Expr":
+        return Mul(self, rhs)
 
-    def __or__(self, rhs):
-        return Expr("logic.or", self, to_expr(rhs))
+    def __lt__(self, rhs: ToExpr) -> "Expr":
+        return Lt(self, rhs)
 
-    def __invert__(self):
-        return Expr("logic.not", self)
+    def __gt__(self, rhs: ToExpr) -> "Expr":
+        return Gt(self, rhs)
+
+    def __or__(self, rhs: ToExpr) -> "Expr":
+        return Or(self, rhs)
+
+    def __invert__(self) -> "Expr":
+        return Not(self)
 
     def __str__(self) -> str:
         return f"<{self.id}> {self.op}({', '.join(map(str, self.args))})"
@@ -114,22 +133,22 @@ class Expr:
         return self.args
 
 
-def matmul_dtype(dt1, dt2):
-    assert dt1.is_tensor()
-    assert dt2.is_tensor()
+def matmul_dtype(dt1: DType, dt2: DType) -> DType:
+    assert dt1.eq_dtype(dt2), f"DTypes have different element types: {dt1}, {dt2}"
+
     dim1 = dt1.dims()
     dim2 = dt2.dims()
 
     if len(dim2) == 1:
         # tensor @ vector
         if dim1[-1] == dim2[0]:
-            return DType.Tensor(dim1[:-1])
+            return type(dt1)(dim1[:-1])
         else:
             raise RuntimeError("Unsupported tensor @ vector operation")
     elif len(dim1) == len(dim2) == 2:
         # matrix @ matrix
         if dim1[-1] == dim2[0]:
-            return DType.Tensor([dim1[0], dim2[1]])
+            return type(dt1)([dim1[0], dim2[1]])
         else:
             raise RuntimeError(
                 f"Unsupported matrix multiplication, dimensions do not match: {dim1} x {dim2}"
@@ -148,40 +167,45 @@ def matmul_dtype(dt1, dt2):
 # TODO: we do typechecking here, this should be probably somewhere else
 # (I mean, we can keep the assertions, but we should do proper typechecking
 # somewhere else...)
-def op_to_itype_dtype(op: str, args) -> tuple[IType, DType]:
+def op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
     """
     Translate operation with arguments into itype and the return dtype.
     """
     assert all(isinstance(a, Expr) for a in args), args
-
-    if op == "arith.add":
-        assert len(args) == 2
-        assert args[0].dtype() == args[1].dtype()
-        return IType.Add(), args[0].dtype()
 
     if op == "arith.matmul":
         assert len(args) == 2
         dtype = matmul_dtype(args[0].dtype(), args[1].dtype())
         return IType.MatMul(), dtype
 
+    if op == "arith.add":
+        assert len(args) == 2
+        assert args[0].dtype() == args[1].dtype(), (args[0].dtype(), args[1].dtype())
+        return IType.Add(), args[0].dtype()
+
+    if op == "arith.mul":
+        assert len(args) == 2
+        assert args[0].dtype() == args[1].dtype(), (args[0].dtype(), args[1].dtype())
+        return IType.Mul(), args[0].dtype()
+
     if op == "cmp.lt":
         assert len(args) == 2
         assert args[0].dtype() == args[1].dtype()
-        return IType.Lt(), DType.Bool()
+        return IType.Lt(), DType.Bool
 
     if op == "logic.or":
         assert len(args) == 2
-        assert args[0].dtype() == args[1].dtype() == DType.Bool()
+        assert args[0].dtype() == args[1].dtype() == DType.Bool
         return IType.Or(), args[0].dtype()
 
     if op == "logic.not":
         assert len(args) == 1
-        assert args[0].dtype() == DType.Bool()
+        assert args[0].dtype() == DType.Bool
         return IType.Not(), args[0].dtype()
 
     if op == "ite":
         assert len(args) == 3
-        assert args[0].dtype() == DType.Bool()
+        assert args[0].dtype() == DType.Bool
         assert args[1].dtype() == args[2].dtype()
         return IType.Ite(), args[1].dtype()
 
@@ -207,11 +231,34 @@ def const_to_itype_dtype(val) -> tuple[IType, DType]:
     """
     Translate operation with arguments into itype and the return dtype.
     """
-    if isinstance(val, (int, float, bool)):
-        return IType.Tensor(Tensor([val])), DType.Tensor([1])
+    if isinstance(val, bool):
+        return IType.Tensor(torch.Tensor([val])), DType.Bool
+    if isinstance(val, float):
+        return IType.Tensor(torch.Tensor([val])), DType.Float
+    if isinstance(val, int):
+        return IType.Tensor(torch.Tensor([val])), DType.Int
 
-    if isinstance(val, Tensor):
-        return IType.Tensor(val), DType.Tensor(val.size())
+    if isinstance(val, torch.Tensor):
+        dtype = val.dtype
+
+        if dtype == torch.bool:
+            return IType.Tensor(val), DType.TensorBool(val.size())
+
+        if dtype in (
+            torch.int,
+            torch.long,
+            torch.uint64,
+            torch.uint32,
+            torch.uint8,
+            torch.uint16,
+            torch.short,
+        ):
+            return IType.Tensor(val), DType.TensorInt(val.size())
+
+        if dtype in (torch.float, torch.float32, torch.float64):
+            return IType.Tensor(val), DType.TensorFloat(val.size())
+
+        raise NotImplementedError(f"Unsupported tensor element type: {dtype}")
 
     raise NotImplementedError(f"Unimplemented constant: {val} ({type(val)})")
 
@@ -222,6 +269,8 @@ class Sym(Expr):
     """
 
     def __init__(self, name, dtype, create_pair=True):
+        if isinstance(dtype, str):
+            dtype = DType.from_str(dtype)
         super().__init__("sym", name, dtype)
         self._name = name
         if create_pair:
@@ -243,6 +292,9 @@ class Sym(Expr):
         else:
             raise RuntimeError("Symbol has only two items: 0 (latched) and 1 (next)")
 
+    def __hash__(self) -> int:
+        return hash(self._name)
+
     @property
     def name(self):
         return self._name
@@ -257,10 +309,10 @@ class Sym(Expr):
         return f"Sym({self._name} : {self.dtype()})"
 
 
-def to_expr(val: Any) -> Expr:
+def to_expr(val: ToExpr) -> Expr:
     if isinstance(val, Expr):
         return val
-    if isinstance(val, (int, bool, float, Tensor)):
+    if isinstance(val, (int, bool, float, torch.Tensor)):
         return Expr("const", val)
     raise NotImplementedError(f"Cannot covert object to Expr: {val} ({type(val)})")
 
@@ -279,43 +331,6 @@ def sym(name: str, ty: DType, create_pair=True) -> Sym:
     # if create_pair:
     #     return (s, s.nxt())
     # return s
-
-
-def input_sym(name: str, ty: DType) -> Sym:
-    s = Sym(name, ty, create_pair=True)
-    if create_pair:
-        return (s, s.nxt())
-    return s
-
-
-class Ite(Expr):
-    """
-    An expression representing `Ite` term.
-    """
-
-    def __init__(self, cond: Expr | bool, iftrue: Any, iffalse: Any):
-        Expr.__init__(self, "ite", cond, iftrue, iffalse)
-
-    def cond(self):
-        return self.get_children()[0]
-
-    def if_true(self):
-        return self.get_children()[1]
-
-    def if_false(self):
-        return self.get_children()[2]
-
-
-def ite(cond, iftrue, iffalse):
-    """
-    Implement if-then-else construct for straght-line code:
-    if cond is concrete Python bool or int, `ite` is evaluated
-    as Python's if-else block. Otherwise an expression is created.
-    """
-    if any(isinstance(val, Expr) for val in (cond, iftrue, iffalse)):
-        return Ite(cond, iftrue, iffalse)
-
-    return iftrue if cond else iffalse
 
 
 # class IfThen:
@@ -485,3 +500,145 @@ class Transform:
 
         if method is None:
             return self.default(expr, translated_args)
+
+
+#####
+# Expr classes for nicer expression construction
+#####
+
+
+class Ite(Expr):
+    """
+    An expression representing `Ite` term.
+    """
+
+    def __init__(self, cond: Expr | bool, iftrue: Any, iffalse: Any):
+        Expr.__init__(self, "ite", cond, iftrue, iffalse)
+
+    def cond(self):
+        return self.get_children()[0]
+
+    def if_true(self):
+        return self.get_children()[1]
+
+    def if_false(self):
+        return self.get_children()[2]
+
+
+class BinaryExpr(Expr):
+    def __init__(self, op, lhs: ToExpr, rhs: ToExpr):
+        super().__init__(op, to_expr(lhs), to_expr(rhs))
+
+    @property
+    def lhs(self):
+        return self.get_children()[0]
+
+    @property
+    def rhs(self):
+        return self.get_children()[1]
+
+
+class MatMul(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("arith.matmul", lhs, rhs)
+
+
+class Add(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("arith.add", lhs, rhs)
+
+
+class Mul(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("arith.mul", lhs, rhs)
+
+
+class Lt(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("cmp.lt", lhs, rhs)
+
+
+class Gt(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("cmp.gt", lhs, rhs)
+
+
+class Or(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("logic.or", lhs, rhs)
+
+
+class And(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("logic.and", lhs, rhs)
+
+
+class Not(Expr):
+    def __init__(self, expr: ToExpr):
+        super().__init__("logic.not", to_expr(expr))
+
+
+#####
+# Helper functions to create expressions or evaluate the values concretely
+#####
+def ite(cond, iftrue, iffalse):
+    """
+    Implement if-then-else construct for straght-line code:
+    if cond is concrete Python bool or int, `ite` is evaluated
+    as Python's if-else block. Otherwise an expression is created.
+    """
+    if any(isinstance(val, Expr) for val in (cond, iftrue, iffalse)):
+        return Ite(cond, iftrue, iffalse)
+
+    return iftrue if cond else iffalse
+
+
+def matmul(lhs: ToExpr, rhs: ToExpr) -> MatMul | torch.Tensor:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return MatMul(lhs, rhs)
+    return lhs @ rhs
+
+
+def add(lhs, rhs) -> Add | int | float:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Add(lhs, rhs)
+    return lhs + rhs
+
+
+def mul(lhs: ToExpr, rhs: ToExpr) -> Mul | torch.Tensor | float | int:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Mul(lhs, rhs)
+    return lhs * rhs
+
+
+def lt(lhs, rhs) -> Lt | bool:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Lt(lhs, rhs)
+    return lhs < rhs
+
+
+def gt(lhs, rhs) -> Gt | bool:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Gt(lhs, rhs)
+    return lhs > rhs
+
+
+# Logical or (we have to avoid clash with Python keyword 'or')
+def lor(lhs, rhs) -> Or | bool:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Or(lhs, rhs)
+    return lhs or rhs
+
+
+# Logical and
+def land(lhs, rhs) -> And | bool:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return And(lhs, rhs)
+    return lhs and rhs
+
+
+# Logical not
+def lnot(e) -> And | bool:
+    if isinstance(e, Expr):
+        return Not(e)
+    return not e
