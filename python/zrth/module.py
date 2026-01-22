@@ -56,7 +56,8 @@ class ReactiveModuleDef:
     you can call `convert` directly from *their* `__init__`.
     If you know that you will inherit from `MyModule*` exactly once
     (the child sub-class will be the one that actually defines the reactive module),
-    you can call `convert` from the sub-class by overriding it with `__init_subclass__`.
+    you can make the sub-class `__init__` to call `convert` by calling `call_convert_after_init`
+    from `__init_subclass__` (or via Python metaclasses).
     See [ReactiveModule.__init_subclass__] for an example.
     """
 
@@ -191,23 +192,30 @@ class ReactiveModule(ReactiveModuleDef):
     def __init_subclass__(cls, **kwargs):
         """
         Hook to automatically call conversion after subclass' __init__.
-        The conversion *must* be done after subclasses are fully initialized
-        because the conversion uses data from the classes
         """
-        super().__init_subclass__(**kwargs)
+        call_convert_after_init(__class__, cls, **kwargs)
 
-        # Save original __init__
-        original_init = cls.__init__
 
-        # Wrap the init to call `convert` after the original init finishes
-        def wrapped_init(self, *args, **kwargs):
-            # Call original __init__
-            original_init(self, *args, **kwargs)
+def call_convert_after_init(thiscls, cls, **kwargs):
+    """
+    Hook to automatically call conversion after subclass' __init__.
+    The conversion *must* be done after subclasses are fully initialized
+    because the conversion uses data from the classes
+    """
+    super(thiscls).__init_subclass__(**kwargs)
 
-            self.convert()
+    # Save original __init__
+    original_init = cls.__init__
 
-        # Replace __init__ with wrapped version
-        cls.__init__ = wrapped_init
+    # Wrap the init to call `convert` after the original init finishes
+    def wrapped_init(self, *args, **kwargs):
+        # Call original __init__
+        original_init(self, *args, **kwargs)
+
+        self.convert()
+
+    # Replace __init__ with wrapped version
+    cls.__init__ = wrapped_init
 
 
 def parse_variables(variables) -> tuple[Sym]:
