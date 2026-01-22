@@ -229,8 +229,7 @@ impl Parser {
                             [&cond, expr_out].into_iter().flatten().map(|[i]| i.clone()),
                         )
                         .unwrap(),
-                        self.ctx
-                            .tmp_intf(expr_out.wires().last().unwrap().dtype().clone()),
+                        self.ctx.tmp_intf(*expr_out.wires().last().unwrap().dtype()),
                     )
                     .unwrap();
 
@@ -375,7 +374,7 @@ impl Parser {
                                 let (_, ty2) = wire_r.wires().next().unwrap().into();
                                 debug_assert!(ty == ty2);
                             }
-                            let write_wire = self.ctx.tmp_intf(ty.clone());
+                            let write_wire = self.ctx.tmp_intf(*ty);
                             terms.push(
                                 create_arith_term(op_str, &wire_l, &wire_r, write_wire).unwrap(),
                             )
