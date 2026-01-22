@@ -33,6 +33,10 @@ impl<D: Clone + Eq> Context<D> {
         self.names.len() + self.temps.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.temps.is_empty()
+    }
+
     /// Create a context and populate it from a module.
     /// We do not have names in this case, so assign some dummy names.
     /// This is useful if we need to create new variables and make sure

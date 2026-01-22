@@ -1,5 +1,6 @@
 from .zrth import *
-from .context import Context
+from .context import Context, get_ctx, set_ctx
+from .module import ReactiveModule
 
 
 #####################################################################
@@ -28,24 +29,3 @@ def mk_term(itype, write, read=None) -> Term:
         read = []
 
     return Term(itype, [to_wire(w) for w in write], [to_wire(w) for w in read])
-
-
-#####################################################################
-# Global context
-#####################################################################
-
-# Term are created in this global context.
-# The context can be switched manually, but that is for advanced users
-_global_context = Context()
-
-
-def set_ctx(ctx: Context) -> Context:
-    global _global_context
-    old = _global_context
-    _global_context = ctx
-    return old
-
-
-def get_ctx() -> Context:
-    global _global_context
-    return _global_context

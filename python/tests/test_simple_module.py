@@ -1,15 +1,14 @@
 import sys
 from os.path import dirname, join as pathjoin
 
-
 from torch import Tensor
 
-from zrth.torch.module import Module as TorchModule
 from zrth import DType
 from zrth.expr import nxt, ite, sym
+from zrth import ReactiveModule
 
 
-class MyModule(TorchModule):
+class MyModule(ReactiveModule):
     def init(self, extl):
         # extl is a vector with dimension 2
         return Tensor([[0, 0], [1, 0], [0, 1]]) @ nxt(extl)
@@ -28,14 +27,14 @@ class MyModule(TorchModule):
 
 
 def test_ctor():
-    m = MyModule(ctrl="xyz: Tensor<3>", extl="yz0: Tensor<2>")
+    m = MyModule(intf="xyz: Tensor<3>", extl="yz0: Tensor<2>")
     assert m
     print(m)
     # m.to_html("/tmp/torch.html", open=True)
 
 
 def test_execute_concrete():
-    m = MyModule(ctrl="xyz: Tensor<3>", extl="yz0: Tensor<2>")
+    m = MyModule(intf="xyz: Tensor<3>", extl="yz0: Tensor<2>")
     assert m
 
     state = Tensor([0, 1, 2])
@@ -46,7 +45,7 @@ def test_execute_concrete():
 
 
 def test_execute_symbolic():
-    m = MyModule(ctrl="xyz: Tensor<3>", extl="yz0: Tensor<2>")
+    m = MyModule(intf="xyz: Tensor<3>", extl="yz0: Tensor<2>")
     assert m
 
     extl = sym("extl", DType.Tensor([2]))

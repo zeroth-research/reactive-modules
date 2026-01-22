@@ -14,15 +14,15 @@ from pysmt.shortcuts import (
     get_model,
 )
 from pysmt.typing import INT
-import zrth.torch as ztch
-from zrth.torch.module import Module as TorchRM
+from zrth import ReactiveModule
 from torch import Tensor
-import zrth.smt as smt
 from zrth.expr import nxt, ite
 
-from pysmt.environment import Environment, reset_env, get_env
 import pytest
 
+
+import zrth.smt as smt
+from pysmt.environment import Environment, reset_env, get_env
 
 # make sure every test gets its own new PySMT environment
 # to avoid Symbol clashes
@@ -60,7 +60,7 @@ def test_counter_smt():
 ######################################################################
 
 
-class TorchModule(TorchRM):
+class TorchModule(ReactiveModule):
     def init(self, extl):
         # extl is a vector with dimension 2
         return Tensor([[0, 0], [1, 0], [0, 1]]) @ nxt(extl)
@@ -79,7 +79,7 @@ class TorchModule(TorchRM):
 
 
 def test_counter_torch():
-    m_torch = TorchModule(ctrl="xyz: Tensor<3>", extl="yz0: Tensor<2>")
+    m_torch = TorchModule(intf="xyz: Tensor<3>", extl="yz0: Tensor<2>")
     assert m_torch
     print(m_torch)
 

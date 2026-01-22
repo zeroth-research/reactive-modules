@@ -1,24 +1,21 @@
 from zrth.gym import QNetwork, SimpleEnv
 from zrth import Context
-# from zrth import Module
 
 
 def qnetwork():
     ctx = Context()
     qnet = QNetwork(
-        extl=["observation"],
-        intf=["q_values"],
+        extl=["observation: Tensor<1>"],
+        intf=["q_values: Tensor<2>"],
         state_size=1,
         action_size=2,
         hidden_size=2,
         ctx=ctx,
     )
 
-    print(f"QNetwork reactive module:\n{qnet._reactive_module}")
+    print("QNetwork reactive module:")
+    print(qnet)
     print(ctx)
-    print("\nWires:")
-    print(f"  qnet.intf = {qnet.intf}")
-    print(f"  qnet.extl = {qnet.extl}")
 
     return qnet
 
@@ -30,18 +27,15 @@ def test_qnetwork_conversion():
 def simpleenv():
     ctx = Context()
     env = SimpleEnv(
-        extl=["q_values"],
-        intf=["observation", "reward", "terminated"],
-        prvt=["state"],
+        extl=["q_values: Tensor<2>"],
+        intf=["observation: Tensor<1>", "reward: Tensor<1>", "terminated: Tensor<1>"],
+        prvt=["state: Tensor<1>"],
         ctx=ctx,
     )
 
-    print(f"\nSimpleEnv reactive module: {env._reactive_module}")
+    print("\nSimpleEnv reactive module:")
+    print(env)
     print(ctx)
-    print("\nWire access:")
-    print(f"  env.intf = {env.intf}")
-    print(f"  env.extl = {env.extl}")
-    print(f"  env.prvt = {env.prvt}")
 
     return env
 
