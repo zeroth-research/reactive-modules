@@ -76,6 +76,8 @@ class Context(ContextBase):
         Returns:
             Wire ID (int)
         """
+        assert isinstance(name, str), (name, type(name))
+
         if name not in self.name_to_id:
             wid = self.unwrap().fresh_wire_id()
             self.name_to_id[name] = wid
@@ -92,6 +94,9 @@ class Context(ContextBase):
         Returns:
             Wire object
         """
+        assert isinstance(name, str), (name, type(name))
+        assert isinstance(dtype, DType), (dtype, type(dtype))
+
         wire_id = self.get_wire_id(name)
         self._wire_dtypes[wire_id] = dtype
         return Wire(wire_id, dtype)
@@ -105,11 +110,13 @@ class Context(ContextBase):
         Returns:
             Wire object
         """
+        assert isinstance(dtype, DType), (dtype, type(dtype))
+
         wire_id = self.fresh_wire_id()
         self._wire_dtypes[wire_id] = dtype
         return Wire(wire_id, dtype)
 
-    def has_wire(self, name) -> bool:
+    def has_wire(self, name: str) -> bool:
         """Check if a wire is declared
 
         Args:
@@ -118,6 +125,7 @@ class Context(ContextBase):
         Returns:
             True if wire exists
         """
+        assert isinstance(name, str), (name, type(name))
         return name in self.name_to_id
 
     def num_wires(self) -> int:
@@ -137,9 +145,10 @@ class Context(ContextBase):
         Returns:
             Name or None
         """
+        assert isinstance(wire_id, int), (wire_id, type(wire_id))
         return self.id_to_name.get(wire_id)
 
-    def __str__(self):
+    def __str__(self) -> str:
         result = f"Context with {self.num_wires()} wires:\n"
         for name, wid in sorted(self.name_to_id.items(), key=lambda x: x[1]):
             dtype = self._wire_dtypes[wid]
