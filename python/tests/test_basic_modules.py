@@ -14,14 +14,15 @@ from pysmt.shortcuts import (
     get_model,
 )
 from pysmt.typing import INT
-from zrth.module import ReactiveModule
+from zrth import ReactiveModule
 from torch import Tensor
-import zrth.smt as smt
 from zrth.expr import nxt, ite
 
-from pysmt.environment import Environment, reset_env, get_env
 import pytest
 
+
+import zrth.smt as smt
+from pysmt.environment import Environment, reset_env, get_env
 
 # make sure every test gets its own new PySMT environment
 # to avoid Symbol clashes

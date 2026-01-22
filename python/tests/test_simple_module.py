@@ -5,7 +5,7 @@ from torch import Tensor
 
 from zrth import DType
 from zrth.expr import nxt, ite, sym
-from zrth.module import ReactiveModule
+from zrth import ReactiveModule
 
 
 class MyModule(ReactiveModule):
