@@ -66,11 +66,10 @@ class ReactiveModuleDef:
         intf: str | tuple[str] | Sym | tuple[Sym] | None = None,
         extl: str | tuple[str] | Sym | tuple[Sym] | None = None,
         prvt: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        ctx: Context = None,
         rust_module: RustModule = None,
         name: str = None,
     ):
-        self._ctx = ctx or get_ctx()
+        self._ctx = get_ctx()
         self._intf = parse_variables(intf)
         self._extl = parse_variables(extl)
         self._prvt = parse_variables(prvt)
@@ -168,10 +167,9 @@ class ReactiveModule(ReactiveModuleDef):
         intf: str | tuple[str] | Sym | tuple[Sym] | None,
         extl: str | tuple[str] | Sym | tuple[Sym] | None = None,
         prvt: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        ctx: Context = None,
         name: str = None,
     ):
-        super().__init__(intf, extl, prvt, ctx=ctx, name=name)
+        super().__init__(intf, extl, prvt, name=name)
 
         # convert will be called automatically after sub-class's __init__ finishes
 

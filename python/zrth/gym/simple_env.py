@@ -4,9 +4,9 @@ from .zrth_module import Module
 
 
 class SimpleEnv(gym.Env, Module):
-    def __init__(self, extl, intf, prvt=[], ctx=None):
+    def __init__(self, extl, intf, prvt=None):
         """Initialize simple chain environment
-        
+
         Args:
             extl: List of external input wire names
             intf: List of interface output wire names
@@ -14,25 +14,25 @@ class SimpleEnv(gym.Env, Module):
             ctx: Context object for wire registry (if None, uses global shared context)
         """
         gym.Env.__init__(self)
-        Module.__init__(self, extl, intf, prvt, ctx)
-        
+        Module.__init__(self, extl, intf, prvt)
+
         # Gym spaces
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Discrete(2)
-        
+
         self.state = 0  # True state (private, not directly observable)
-        
+
         # _finalize_conversion() is called automatically after this by __init_subclass__
-        
+
     def _get_observation(self):
         # Agent only sees if it's at goal or not (partial observability)
         return 1 if self.state == 2 else 0
-        
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.state = 0  # True state (private)
         return self._get_observation(), {}  # Return partial observation
-    
+
     def step(self, q_values):
         action = q_values.argmax().item()
         # action 0 = move left, action 1 = move right
@@ -40,13 +40,14 @@ class SimpleEnv(gym.Env, Module):
             self.state = min(self.state + 1, 2)
         else:  # left
             self.state = max(self.state - 1, 0)
-        
+
         # Reward +1 if we reach state 2, otherwise 0
         reward = 1.0 if self.state == 2 else 0.0
-        
+
         # Episode terminates when reaching state 2
-        terminated = (self.state == 2)
+        terminated = self.state == 2
         truncated = False
-        
+
         observation = self._get_observation()  # Get partial observation
         return observation, reward, terminated, truncated, {}
+

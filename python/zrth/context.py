@@ -175,3 +175,9 @@ def set_ctx(ctx: Context) -> Context:
 def get_ctx() -> Context:
     global _global_context
     return _global_context
+
+
+def reset_ctx() -> Context:
+    global _global_context
+    _global_context = Context()
+    return _global_context

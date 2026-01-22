@@ -6,7 +6,7 @@ from .. import Context, get_ctx
 class Module(ReactiveModuleDef):
     """Base class for reactive modules with automatic conversion"""
 
-    def __init__(self, extl, intf, prvt=None, ctx=None):
+    def __init__(self, extl, intf, prvt=None):
         """Initialize module
 
         Args:
@@ -15,7 +15,7 @@ class Module(ReactiveModuleDef):
             intf: List of interface output wire names
             prvt: List of private wire names (optional)
         """
-        super().__init__(intf, extl, prvt, ctx=ctx)
+        super().__init__(intf, extl, prvt)
 
     def __init_subclass__(cls, **kwargs):
         """
@@ -32,6 +32,5 @@ class Module(ReactiveModuleDef):
         Convert self into a reactive module and save it in `self._module`
         """
         assert self._module is None
-        assert self._ctx is not None
 
-        self._module = convert_to_module(self._ctx, self)
+        self._module = convert_to_module(self)

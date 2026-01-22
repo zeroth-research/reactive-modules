@@ -3,16 +3,15 @@ import inspect
 import ast
 import textwrap
 from typing import Any
-from ..context import Context
+from zrth.context import get_ctx
 from zrth import Wire, DType, IType, Term, Module
 from zrth.expr import matmul_dtype
 
 
-def convert_to_module(ctx: Context, python_object: Any):
+def convert_to_module(python_object: Any):
     """Convert a Python object to a reactive Module
 
     Args:
-        ctx: Context for wire management
         python_object: Object to convert (QNetwork, SimpleEnv, etc.)
 
     Returns:
@@ -20,14 +19,14 @@ def convert_to_module(ctx: Context, python_object: Any):
     """
     # Detect module type
     if hasattr(python_object, "forward") and isinstance(python_object, torch.nn.Module):
-        return _convert_torch_module(ctx, python_object)
+        return _convert_torch_module(python_object)
     elif hasattr(python_object, "step") and hasattr(python_object, "reset"):
-        return _convert_gym_env(ctx, python_object)
+        return _convert_gym_env(python_object)
     else:
         raise ValueError(f"Don't know how to convert {type(python_object)}")
 
 
-def _convert_torch_module(ctx: Context, module: torch.nn.Module):
+def _convert_torch_module(module: torch.nn.Module):
     # Trace the module
     first_layer = None
     for layer in module.children():
@@ -47,39 +46,28 @@ def _convert_torch_module(ctx: Context, module: torch.nn.Module):
             f"Only single input/output modules supported. Got {len(module.extl)} inputs, {len(module.intf)} outputs"
         )
 
-    # Create wire pairs dynamically from module metadata
-    wire_pairs = {}
-    for name in module.extl + module.intf:
-        latched = ctx.wire(f"{name}_l", DType.TensorFloat(example_input.size()))
-        next_wire = ctx.wire(f"{name}_n", DType.TensorFloat(example_input.size()))
-        wire_pairs[name] = (latched, next_wire)
-
-    # Extract input and output pairs
-    input_pair = wire_pairs[module.extl[0]]
-    output_pair = wire_pairs[module.intf[0]]
-
     # Parse TorchScript graph to extract operation sequence
     operations = _parse_torchscript_graph(traced.graph, module)
 
     # Translate operations to Terms
     terms = []
-    current_wire = input_pair[1]  # Start with input's 'next' wire
+    current_wire = module.extl[0].nxt().wire()
 
     for op in operations:
         if op["type"] == "linear":
-            new_terms, current_wire = _translate_linear(ctx, current_wire, op["layer"])
+            new_terms, current_wire = _translate_linear(current_wire, op["layer"])
             terms.extend(new_terms)
         elif op["type"] == "relu":
-            new_terms, current_wire = _translate_relu(ctx, current_wire)
+            new_terms, current_wire = _translate_relu(current_wire)
             terms.extend(new_terms)
         else:
             raise ValueError(f"Unsupported operation: {op['type']}")
 
     # Connect final wire to output
-    terms.append(Term(IType.Id(), [output_pair[1]], [current_wire]))
+    terms.append(Term(IType.Id(), [module.intf[0].nxt().wire()], [current_wire]))
 
     # Build Module
-    obs = [wire_pairs[name] for name in module.extl + module.intf]
+    obs = [(s.wire(), s.nxt().wire()) for s in module.extl + module.intf]
 
     # TODO: Return terms and obs instead of creating the module here.
     # The issue is that Module.combinatorial expects different args then Module.sequential.
@@ -155,11 +143,10 @@ def _parse_torchscript_graph(graph, module):
     return operations
 
 
-def _translate_linear(ctx, input_wire, layer):
+def _translate_linear(input_wire, layer):
     """Translate Linear layer to Terms
 
     Args:
-        ctx: Context for creating temp wires
         input_wire: Input wire ID
         layer: torch.nn.Linear layer object
 
@@ -169,6 +156,7 @@ def _translate_linear(ctx, input_wire, layer):
     terms = []
 
     # Create weight constant
+    ctx = get_ctx()
     weight_tensor = layer.weight.data
     weight_wire = ctx.tmp_wire(DType.TensorFloat(weight_tensor.size()))
     terms.append(Term(IType.Tensor(weight_tensor), [weight_wire]))
@@ -189,18 +177,18 @@ def _translate_linear(ctx, input_wire, layer):
     return terms, output_wire
 
 
-def _translate_relu(ctx, input_wire):
+def _translate_relu(input_wire):
     """Translate ReLU activation to Terms
 
     Implements: max(0, x) = Ite(Gt(x, 0), x, 0)
 
     Args:
-        ctx: Context for creating temp wires
         input_wire: Input wire ID
 
     Returns:
         (terms, output_wire): List of Terms and output wire ID
     """
+    ctx = get_ctx()
     terms = []
 
     # Create zero constant
@@ -219,5 +207,5 @@ def _translate_relu(ctx, input_wire):
     return terms, output_wire
 
 
-def _convert_gym_env(ctx: Context, env):
+def _convert_gym_env(env):
     return NotImplementedError("Gym environment conversion not implemented yet")
