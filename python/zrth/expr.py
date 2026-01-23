@@ -95,9 +95,9 @@ class Expr:
         """
         return self._out_wire
 
-    def __eq__(self, oth):
+    def __eq__(self, oth) -> bool:
         return (
-            isinstance(self, Expr)
+            isinstance(oth, Expr)
             and self.op == oth.op
             and self.get_children() == oth.get_children()
         )
@@ -153,9 +153,6 @@ class Expr:
     ###
     # Operators
     ###
-    def __rmatmul__(self, lhs: ToExpr) -> "Expr":
-        return MatMul(lhs, self)
-
     def __matmul__(self, rhs: ToExpr) -> "Expr":
         return self.matmul(rhs)
 
@@ -165,17 +162,49 @@ class Expr:
     def __mul__(self, rhs: ToExpr) -> "Expr":
         return self.mul(rhs)
 
+    def __sub__(self, rhs: ToExpr) -> "Expr":
+        return self.sub(rhs)
+
+    def __div__(self, rhs: ToExpr) -> "Expr":
+        return self.div(rhs)
+
+    def __rmul__(self, lhs: ToExpr) -> "Expr":
+        return Mul(lhs, self)
+
+    def __rmatmul__(self, lhs: ToExpr) -> "Expr":
+        return MatMul(lhs, self)
+
+    def __radd__(self, lhs: ToExpr) -> "Expr":
+        return Add(lhs, self)
+
+    def __rmul__(self, lhs: ToExpr) -> "Expr":
+        return Mul(lhs, self)
+
+    def __rsub__(self, lhs: ToExpr) -> "Expr":
+        return Sub(lhs, self)
+
+    def __rdiv__(self, lhs: ToExpr) -> "Expr":
+        return Div(lhs, self)
+
     def __lt__(self, rhs: ToExpr) -> "Expr":
-        return Lt(self, rhs)
+        return self.lt(rhs)
 
     def __gt__(self, rhs: ToExpr) -> "Expr":
-        return Gt(self, rhs)
+        return self.gt(rhs)
+
+    def __le__(self, rhs: ToExpr) -> "Expr":
+        return self.le(rhs)
+
+    def __ge__(self, rhs: ToExpr) -> "Expr":
+        return self.ge(rhs)
 
     def __or__(self, rhs: ToExpr) -> "Expr":
         return Or(self, rhs)
 
+    # we represent not as the inversion of expr, i.e., `~e`
+    # as `not` cannot be overriden
     def __invert__(self) -> "Expr":
-        return Not(self)
+        return self.lnot()
 
     def __str__(self) -> str:
         return f"<{self.id}> {self.op}({', '.join(map(str, self.args))})"
