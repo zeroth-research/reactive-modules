@@ -175,6 +175,7 @@ pub enum IType {
 
     // Special operations
     Id(),
+    // index of maximal value in the flattened tensor
     Argmax(),
 
     // Constants
