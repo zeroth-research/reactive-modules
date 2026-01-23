@@ -102,17 +102,68 @@ class Expr:
             and self.get_children() == oth.get_children()
         )
 
+    ###
+    # Operations on this expression
+    ###
+    def matmul(self, rhs: ToExpr) -> "Expr":
+        return MatMul(self, rhs)
+
+    def add(self, rhs: ToExpr) -> "Expr":
+        return Add(self, rhs)
+
+    def mul(self, rhs: ToExpr) -> "Expr":
+        return Mul(self, rhs)
+
+    def sub(self, rhs: ToExpr) -> "Expr":
+        return Sub(self, rhs)
+
+    def div(self, rhs: ToExpr) -> "Expr":
+        return Div(self, rhs)
+
+    def eq(self, rhs: ToExpr) -> "Expr":
+        return Eq(self, rhs)
+
+    def neq(self, rhs: ToExpr) -> "Expr":
+        return Neq(self, rhs)
+
+    def lt(self, rhs: ToExpr) -> "Expr":
+        return Lt(self, rhs)
+
+    def gt(self, rhs: ToExpr) -> "Expr":
+        return Gt(self, rhs)
+
+    def le(self, rhs: ToExpr) -> "Expr":
+        return Le(self, rhs)
+
+    def ge(self, rhs: ToExpr) -> "Expr":
+        return Ge(self, rhs)
+
+    def land(self, rhs: ToExpr) -> "Expr":
+        return And(self, rhs)
+
+    def lor(self, rhs: ToExpr) -> "Expr":
+        return Or(self, rhs)
+
+    def lnot(self) -> "Expr":
+        return Not(self)
+
+    def ite(self, iftrue: ToExpr, iffalse: ToExpr) -> "Expr":
+        return Ite(self, iftrue, iffalse)
+
+    ###
+    # Operators
+    ###
     def __rmatmul__(self, lhs: ToExpr) -> "Expr":
         return MatMul(lhs, self)
 
     def __matmul__(self, rhs: ToExpr) -> "Expr":
-        return MatMul(self, rhs)
+        return self.matmul(rhs)
 
     def __add__(self, rhs: ToExpr) -> "Expr":
-        return Add(self, rhs)
+        return self.add(rhs)
 
     def __mul__(self, rhs: ToExpr) -> "Expr":
-        return Mul(self, rhs)
+        return self.mul(rhs)
 
     def __lt__(self, rhs: ToExpr) -> "Expr":
         return Lt(self, rhs)
@@ -750,3 +801,7 @@ def lnot(e) -> And | bool:
     if isinstance(e, Expr):
         return Not(e)
     return not e
+
+
+def const(x: int | bool | float | torch.Tensor) -> Expr:
+    return to_expr(x)
