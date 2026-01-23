@@ -1,482 +1,395 @@
-# RL to Reactive Modules Converter
+# Gym Converter
 
-This package provides automatic conversion from Python reinforcement learning code (PyTorch networks and Gymnasium environments) to reactive modules that can be composed, verified, and synthesized.
+This module converts Python gymnasium environments and PyTorch neural networks into reactive dataflow modules. The converter enables compositional reasoning about agent-environment interactions by transforming imperative Python code into a functional reactive representation.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Key Concepts](#key-concepts)
+- [How It Works](#how-it-works)
+- [Static Single Assignment (SSA)](#static-single-assignment-ssa)
+- [Limitations](#limitations)
+- [Design Decisions](#design-decisions)
+- [Future Enhancements](#future-enhancements)
+- [Examples](#examples)
 
 ## Overview
 
-The converter analyzes Python code and generates reactive module representations with:
-- **Wire declarations**: Typed signals that connect modules
-- **Terms**: Computational operations over wires
-- **Modules**: Combinatorial or sequential reactive components
+The converter transforms:
+- **Gymnasium environments** (with `reset()` and `step()` methods) → Sequential reactive modules
+- **PyTorch neural networks** (with `forward()` method) → Combinatorial reactive modules
 
-## Files
+These modules can then be composed together to create complete agent-environment systems that are amenable to formal analysis, verification, and symbolic reasoning.
+
+The converter uses a **global context pattern** where all functions access the reactive module context via `get_ctx()`, eliminating the need to pass context parameters explicitly.
+
+## Architecture
 
 ### Core Components
 
-#### `backend.py`
-**Purpose**: Backend abstraction layer for Rust bindings
+1. **Wire Pairs**: Represent synchronous state boundaries
+   - `(latched, next)` - read current value, write next value
+   - Used for: interface outputs, external inputs, private state
 
-**Design choices**:
-- Automatically detects if real Rust bindings (`zrth._zrth.torch`) are available
-- Falls back to mock implementations for testing without Rust
-- Provides unified interface: `Wire`, `Term`, `Module`, `IType`, `DType`
-- Mock implementations mirror expected Rust API
+2. **Terms**: Atomic dataflow operations
+   - `IType` operations: Add, Sub, Mul, Eq, Lt, Ite, Argmax, etc.
+   - Connect input wires to output wires
+   - Each wire written exactly once (SSA property)
 
-**Key classes**:
-- `Wire(dtype, id)`: Represents a typed wire with unique ID
-- `Term(itype, inputs, outputs)`: Represents a computational operation
-- `Module`: Factory methods for `combinatorial()`, `sequential()`, `parallel()`
-- `IType`: Instruction types (Add, MatMul, Ite, Argmax, etc.)
-- `DType`: Data types (Tensor, Bool, None)
+3. **Modules**: Collections of Terms with wire interfaces
+   - `Sequential`: Has init and update phases (for stateful environments)
+   - `Combinatorial`: Single assignment phase (for stateless networks)
 
-**Helper functions**:
-- `create_wire(dtype_str, id)`: String-to-DType conversion
-- `create_const(value)`: Wrap constant as IType.Const
-- `create_term(itype_str, inputs, outputs)`: String-to-IType conversion
+### Conversion Pipeline
 
-**Status**: ✅ Complete, ready for real Rust bindings
+```
+Python Source Code
+    ↓
+AST Parsing (inspect + ast modules)
+    ↓
+MethodVisitor (AST Visitor Pattern)
+    ↓
+Term Generation (with SSA transform)
+    ↓
+Wire Assignment Validation
+    ↓
+Reactive Module (via Module.sequential or Module.combinatorial)
+```
 
----
+**Global Context**: All functions use `get_ctx()` to access the reactive module context. This is initialized once with `set_ctx(Context())` at the start of your program.
 
-#### `converter.py`
-**Purpose**: Automatic conversion from Python objects to reactive Modules
+## Key Concepts
 
-**Design choices**:
-- **Generic, not hardcoded**: Works with any PyTorch network or Gym environment
-- **Two-phase approach**: 
-  1. PyTorch: Trace computation graph
-  2. Gym: Parse AST of step() method
-- **Automatic wire discovery**: Extracts inputs/outputs from code structure
-- **Wire pairing**: Creates (latched, next) pairs automatically
-- **Temporary wires**: Separate management for internal computations
+### Wire Semantics
 
-**Main function**:
-- `convert_to_module(ctx, python_object)`: Dispatcher that detects type and converts
+**Single Wires** (temporary computation):
+```python
+temp = x + 1
+```
+→ Single wire `w10` for temporary value
 
-**PyTorch Conversion** (`_convert_torch_module`):
-- Uses `torch.jit.trace()` to capture computation graph
-- Detects input size from first Linear layer
-- Detects output size from last Linear layer
-- Parses traced graph for operations (Linear, ReLU)
-- Maps Linear to: MatMul(weight, input) + Add(result, bias)
-- Maps ReLU to: Ite(Gt(x, 0), x, 0)
-- Supports arbitrary number of layers
+**Wire Pairs** (state/interface boundaries):
+```python
+self.state = self.state + 1
+```
+→ Pair `(state_l, state_n)`:
+- `state_l`: Read current state (latched)
+- `state_n`: Write next state
 
-**Gym Environment Conversion** (`_convert_gym_env`):
-- Requires environment to inherit from `SequentialModule`
-- Reads wire declarations: `extl`, `intf`, `prvt`
-- Uses AST visitor pattern to parse `step()` method
-- Automatically inlines simple helper methods
+### Term Structure
 
-**AST Visitor** (`StepMethodVisitor`):
-- Converts Python statements to Terms
-- Supports: assignments, arithmetic, comparisons, conditionals, method calls
-- Special handling for: `argmax()`, `min()`, `max()`, `.item()`
-- Maps Python operators to ITypes:
-  - `+, -, *, /` → Add, Sub, Mul, Div
-  - `==, !=, <, <=, >, >=` → Eq, Neq, Lt, Le, Gt, Ge
-  - `a if cond else b` → Ite(cond, a, b)
-  - `min(a, b)` → Ite(Lt(a, b), a, b)
-  - `max(a, b)` → Ite(Gt(a, b), a, b)
+Each Term represents a single operation:
+```
+IType output_wire; input_wire1, input_wire2
+```
 
-**Wire Manager** (`WireManager`):
-- Manages unique ID assignment
-- Creates named wire pairs (for declared wires)
-- Creates temp wire pairs (for intermediate computations)
-- Tracks both types separately
+Example:
+```
+Add w10; w8, w9     # w10 = w8 + w9
+Ite w15; w12, w13, w14   # w15 = w12 ? w13 : w14
+```
 
-**Status**: ✅ Complete for PyTorch and basic Gym environments
+### Sequential vs Combinatorial
 
----
+**Sequential Module** (environment):
+- **init**: Reset behavior - initializes all state
+- **update**: Step behavior - updates state based on inputs
+- Has private state that persists across steps
 
-#### `context.py`
-**Purpose**: Wire registry for name-to-dtype mapping
+**Combinatorial Module** (neural network):
+- Single **assign** phase - pure function from input to output
+- No state, just computation
 
-**Design choices**:
-- Simple dictionary-based registry
-- Stores only `name → dtype`, not IDs
-- Shared across all modules
-- IDs are assigned by converter, not stored here
+## How It Works
 
-**API**:
-- `declare_wire(name, dtype)`: Register a wire
-- `has_wire(name)`: Check if wire exists
-- `get_dtype(name)`: Get wire's dtype
-- `all_wires()`: List all wire names
-- `num_wires()`: Count wires
+### 1. AST Parsing
 
-**Status**: ✅ Complete
+Extract Python source code and parse into Abstract Syntax Tree:
 
----
+```python
+method_source = inspect.getsource(env.step)
+tree = ast.parse(textwrap.dedent(method_source))
+```
 
-### Module Base Classes
+### 2. AST Visitor Pattern
 
-#### `zrth_module.py`
-**Purpose**: Abstract base classes for Python-side reactive modules
+`MethodVisitor` traverses the AST and generates Terms:
 
-**Design choices**:
-- Provides structure for declaring wires
-- Does NOT implement reactive semantics (that's Rust's job)
-- Used for interface declaration only
+```python
+class MethodVisitor(ast.NodeVisitor):
+    def __init__(self, env, wire_pairs):
+        self.env = env
+        self.ctx = get_ctx()  # Global context access
+        self.wire_pairs = wire_pairs
+        self.temp_vars = {}   # SSA variable tracking
+        self.scopes = []      # Conditional scope tracking
+        self.written_wires = set()
+    
+    def visit_Assign(self, node): ...
+    def visit_If(self, node): ...
+    def visit_Return(self, node): ...
+    def _convert_expr(self, expr): ...
+```
 
-**Classes**:
-- `Module`: Base class with wire declaration support
-- `SequentialModule`: For stateful modules (environments)
-- `CombinatorialModule`: For stateless modules (neural networks)
+**Supported constructs**:
+- Variable assignment: `x = expr`
+- State update: `self.state = expr`
+- Arithmetic: `+`, `-`, `*`, `/`
+- Comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- Conditionals: `if/else` statements with SSA merging, ternary `a if cond else b`
+- Method calls: `.argmax()`, `.item()`, `min()`, `max()`
+- Method inlining: Simple helper methods with single return
 
-**Wire categories**:
-- `extl`: External inputs (read but not controlled)
-- `intf`: Interface signals (controlled and exposed)
-- `prvt`: Private state (controlled but hidden)
+### 3. Wire Tracking
 
-**Derived properties**:
-- `obs = extl + intf`: Observable wires
-- `ctrl = intf + prvt`: Controlled wires
+**temp_vars**: Maps variable names to current wire IDs
+```python
+self.temp_vars = {
+    'action': w17,
+    'state': w30,
+    'reward': w35
+}
+```
 
-**Status**: ✅ Complete
+Reading a variable looks up its wire in `temp_vars`.
 
----
+### 4. Expression Conversion
 
-### Example RL Components
+Every expression converts to a wire ID:
 
-#### `qnetwork.py`
-**Purpose**: Example Q-network (combinatorial module)
+```python
+# self.state + 1
+state_wire = self.temp_vars['state']  # w8
+const_wire = create_constant(1)        # w20
+result_wire = create_add(state_wire, const_wire)  # w21
+```
 
-**Details**:
-- Simple feedforward network: fc1 → ReLU → fc2
-- Input: observation (state)
-- Output: q_values (Q-value for each action)
-- Inherits from both `nn.Module` and `CombinatorialModule`
+Generates Terms:
+```
+Const(tensor) w20;
+Add w21; w8, w20
+```
 
-**Wire declarations**:
-- `extl = ['observation']`
-- `intf = ['q_values']`
-- `prvt = []`
+## Static Single Assignment (SSA)
 
-**Status**: ✅ Complete, used for testing
+SSA is the **key technique** that enables correct handling of control flow, particularly if/else statements.
 
----
+### The Problem
 
-#### `simple_env.py`
-**Purpose**: Example 3-state chain environment (sequential module)
+Without SSA, both branches of an if/else would write to the same output wire:
 
-**Details**:
-- States: 0, 1, 2 (goal at 2)
-- Actions: 0 (left), 1 (right)
-- Partial observability: agent sees 0 or 1 (not full state)
-- Takes q_values as input, does argmax internally
-- Inherits from both `gym.Env` and `SequentialModule`
+```python
+if action == 1:
+    self.state = self.state + 1  # writes to state_n
+else:
+    self.state = self.state - 1  # writes to state_n again!
+```
 
-**Wire declarations**:
-- `extl = ['q_values']`
-- `intf = ['observation', 'reward', 'terminated']`
-- `prvt = ['state']`
+This causes a "write after write" error because each wire must be written exactly once.
 
-**State transitions**:
-- Right action: `state = min(state + 1, 2)`
-- Left action: `state = max(state - 1, 0)`
-- Reward: 1.0 if state == 2, else 0.0
-- Terminated: True if state == 2
+### The SSA Solution
 
-**Status**: ✅ Complete, used for testing
+SSA ensures each wire is written exactly once by:
 
----
+1. **Separate Scopes**: Each branch computes in isolation
+   - Track scope depth with `self.scopes` stack
+   - Assignments inside branches only update `temp_vars`, don't write to output wires
 
-#### `agent.py`
-**Purpose**: DQN training agent (not converted to reactive module)
+2. **Branch Isolation**: Both branches evaluate independently
+   - If-branch: `self.state = ...` → updates `temp_vars['state']` to `w24`
+   - Else-branch: `self.state = ...` → updates `temp_vars['state']` to `w29`
 
-**Details**:
-- Simplified DQN without replay buffer or target network
-- Used only for training, not part of reactive system
-- Provides `get_q_values()` and `train()` methods
+3. **Explicit Merging**: At convergence point, use Ite to merge
+   ```
+   Ite w30; w19, w24, w29    # w30 = condition ? w24 : w29
+   Id w9; w30                 # Write merged result to output
+   ```
 
-**Status**: ✅ Complete for basic training
+### SSA Example
 
----
+Python code:
+```python
+def step(self, q_values):
+    action = q_values.argmax()
+    if action == 1:
+        self.state = min(self.state + 1, 2)
+    else:
+        self.state = max(self.state - 1, 0)
+    return self.state
+```
 
-#### `main.py`
-**Purpose**: Training script demonstrating RL components
+Generated Terms (simplified):
+```
+Argmax w17; w0                    # action = q_values.argmax()
+Eq w19; w17, 1                    # action == 1
 
-**Details**:
-- Creates QNetwork and SimpleEnv
-- Trains with epsilon-greedy exploration
-- 500 episodes, prints progress every 50
+# If-branch: compute state + 1, clamped to 2
+Add w21; w8, 1
+Lt w23; w21, 2
+Ite w24; w23, w21, 2              # min(state+1, 2)
 
-**Status**: ✅ Complete, training works
+# Else-branch: compute state - 1, clamped to 0
+Sub w26; w8, 1
+Gt w28; w26, 0
+Ite w29; w28, w26, 0              # max(state-1, 0)
 
----
+# Merge with SSA
+Ite w30; w19, w24, w29            # SSA merge: condition ? if_value : else_value
+Id w9; w30                        # Write to state_n output wire (once!)
+Id w3; w30                        # Return value -> observation_n
+```
 
-### Tests
+## Limitations
 
-#### `test_converter.py`
-**Purpose**: Test individual module conversions
+### Current Limitations
 
-**Tests**:
-- QNetwork → Combinatorial module (6 terms)
-- SimpleEnv → Sequential module (14 terms)
+1. **No Loops**
+   - Cannot handle `for` or `while` loops
+   - Reason: Unbounded iteration doesn't map to finite dataflow graph
+   
+2. **No Complex Data Structures**
+   - Arrays/lists: Only simple tensor operations
+   - Reason: Reactive modules operate on atomic data types (Tensor, Bool)
 
-**Status**: ✅ Passing
+3. **Limited Control Flow**
+   - If/else: ✅ Supported with SSA
+   - Nested if/else: ✅ Supported
+   - Match statements: ❌ Not yet implemented
+   - Try/except: ❌ Not supported (no exceptions in dataflow)
 
----
+4. **Method Call Restrictions**
+   - Only simple helper methods can be inlined
+   - No recursive calls
+   - No side effects (besides state updates)
 
-#### `test_composition.py`
-**Purpose**: Test full conversion and composition pipeline
+### Why These Limitations Exist
 
-**Demonstrates**:
-1. Converting QNetwork and SimpleEnv
-2. Shared context with 5 wires
-3. Module composition with `Module.parallel()`
-4. Closed-loop RL system
+The reactive module formalism is designed for:
+- **Finite, bounded computation**: Every module has fixed size
+- **Synchronous execution**: Init and update phases execute atomically
+- **Compositional reasoning**: Modules compose algebraically
 
-**Status**: ✅ Passing with mocks
-
----
-
-### Package Files
-
-#### `__init__.py`
-**Purpose**: Package exports and imports
-
-**Exports**: All major classes and functions
-
-**Status**: ✅ Complete
-
----
+These properties are incompatible with:
+- Unbounded loops (unless unrolled)
+- Mutable complex data structures
+- Arbitrary side effects
 
 ## Design Decisions
 
-### 1. Context vs Module Separation
-**Decision**: Context stores names only, not IDs
-- Context: Wire registry (name → dtype)
-- Module: Contains actual Wire objects with IDs
-- Composition: Matches by name, Rust handles ID remapping
+### Why AST Over Alternatives?
 
-**Rationale**: Clean separation of concerns, enables module reuse
+I evaluated three approaches:
 
-### 2. Wire Pairing
-**Decision**: Converter creates (latched, next) pairs automatically
-- Every wire becomes two Wire objects
-- Latched: Current value (read from)
-- Next: New value (write to)
+#### 1. AST Parsing ✅ (Chosen)
 
-**Rationale**: Reactive semantics require explicit time steps
+**Pros**:
+- Clean, high-level representation
+- Easy to debug (matches source code)
+- Good error messages with line numbers
+- Full type information available
+- Can implement SSA at AST level
 
-### 3. Backend Abstraction
-**Decision**: Mock implementations for development without Rust
-- Single import switch: mocks vs real bindings
-- No code changes needed when Rust becomes available
+**Cons**:
+- Requires parsing source code
+- More verbose to implement
 
-**Rationale**: Enables parallel Python/Rust development
+**Verdict**: Best balance of clarity and capability.
 
-### 4. Generic Conversion
-**Decision**: Analyze code automatically
-- PyTorch: Trace and parse graph
-- Gym: Parse AST
+#### 2. Bytecode Analysis ❌
 
-**Rationale**: Works with future modules without modification
+**Pros**:
+- No source code needed
+- Closer to actual execution
 
-### 5. Torch Backend
-**Decision**: Use torch ITypes (MatMul, Ite)
-- Tensor-level operations, not scalar
-- DType.Tensor for all wires
+**Cons**:
+- Harder to debug (obscure instructions)
+- Worse error messages (no line numbers)
+- More complex SSA implementation
+- Still can't handle loops without unrolling
 
-**Rationale**: Better match for neural networks, simpler Terms
+**Verdict**: No significant advantage, much harder to use.
 
----
+#### 3. Custom DSL ❌
 
-## What's Missing / TODOs
+**Pros**:
+- Complete control over semantics
+- Easy to implement
 
-### Immediate TODOs
+**Cons**:
+- Users must learn new language
+- No IDE support
+- Poor Python interop
+- Defeats purpose of Python-based development
 
-1. **Rust Bindings Integration**
-   - ❓ Confirm `IType.Argmax` exists in torch backend
-   - ❓ Clarify wire pairing semantics in Module constructors
-   - ❓ Does Rust expect flat list `[w0_latched, w0_next, w1_latched, w1_next]` or pairs?
-   - ❓ Test with real Rust Module.parallel()
+**Verdict**: Too much friction for users.
 
-2. **Additional PyTorch Operations**
-   - Batch normalization
-   - Dropout (should be removed in trace)
-   - Other activation functions (Tanh, Sigmoid, etc.)
-   - Convolutional layers
-   - Recurrent layers
+## Code Organization
 
-3. **Advanced Gym Features**
-   - Multi-dimensional observation spaces
-   - Continuous action spaces
-   - More complex state update logic
-   - If/else statements (not just ternary)
-   - While loops / for loops
+The converter is organized into three main sections:
 
-4. **Error Handling**
-   - Better error messages for unsupported patterns
-   - Validation of generated Terms
-   - Type checking
+1. **Main Entry Point**
+   - `convert_to_module()`: Dispatch based on object type
 
-5. **Obligations**
-   - Support for safety properties
-   - Constraint generation
-   - Integration with verification tools
+2. **PyTorch Module Conversion**
+   - TorchScript graph parsing
+   - Direct Sym wire access (no parameter parsing needed)
+   - Linear layer and ReLU activation translation
 
-### Future Enhancements
+3. **Gym Environment Conversion**
+   - Method parsing with AST
+   - Wire pair creation from Sym objects  
+   - Wire validation
+   - MethodVisitor with SSA for control flow
 
-1. **Optimization**
-   - Constant folding
-   - Common subexpression elimination
-   - Dead code removal
+## Future Enhancements
 
-2. **Visualization**
-   - Graph visualization of Terms
-   - Wire flow diagrams
-   - Module composition diagrams
+### 1. Loop Unrolling (ROI: Medium)
 
-3. **More Backends**
-   - Support for SMT backend (discrete state spaces)
-   - Support for toy backend (simple examples)
-   - Backend selection based on module types
-
-4. **Advanced Composition**
-   - Sequential composition (not just parallel)
-   - Hierarchical composition
-   - Module libraries
-
-5. **Integration with Training**
-   - Convert trained model → verify → deploy pipeline
-   - Property-guided training
-   - Counterexample-guided training
-
----
-
-## Requirements for Rust
-
-### Required Interface in `zrth._zrth.torch`
-
+**Approach**:
 ```python
-# Wire class
-class Wire:
-    def __init__(self, dtype: DType, id: int): ...
-    @property
-    def dtype(self) -> DType: ...
-    @property
-    def id(self) -> int: ...
-
-# DType enum
-class DType:
-    Tensor: DType
-    Bool: DType
-    None: DType  # Note: Python uses None_
-
-# IType - must support all these variants
-class IType:
-    # Arithmetic
-    Add: IType
-    Sub: IType
-    Mul: IType
-    Div: IType
-    MatMul: IType
-    
-    # Comparison
-    Eq: IType
-    Neq: IType
-    Lt: IType
-    Le: IType
-    Gt: IType
-    Ge: IType
-    
-    # Logical
-    And: IType
-    Or: IType
-    Not: IType
-    
-    # Control flow
-    Ite: IType  # If-then-else
-    
-    # Special
-    Id: IType  # Identity/pass-through
-    Argmax: IType  # ❓ VERIFY THIS EXISTS
-    
-    # Aggregation (may not be used yet)
-    Sum: IType
-    Prod: IType
-    
-    @staticmethod
-    def Const(tensor: torch.Tensor) -> IType: ...
-
-# Term class
-class Term:
-    def __init__(self, itype: IType, inputs: List[Wire | IType.Const], outputs: List[Wire]): ...
-
-# Module class
-class Module:
-    @staticmethod
-    def combinatorial(obs_wires: List[Wire], prvt_wires: List[Wire], terms: List[Term]) -> Module: ...
-    
-    @staticmethod
-    def sequential(obs_wires: List[Wire], ctrl_wires: List[Wire], prvt_wires: List[Wire], terms: List[Term]) -> Module: ...
-    
-    @staticmethod
-    def parallel(modules: List[Module], shared_wires: List[str]) -> Module: ...
+for i in range(3):
+    x = x + 1
 ```
 
-### Critical Questions
-
-1. **Argmax**: Does `IType.Argmax` exist? If not, how should we represent argmax operations?
-
-2. **Wire Lists**: When we pass wire lists to Module constructors, should they be:
-   - Option A: Flat `[latched0, next0, latched1, next1, ...]`
-   - Option B: Pairs `[(latched0, next0), (latched1, next1), ...]`
-   - Option C: Just latched wires, Rust manages pairs internally
-
-3. **Shared Wires**: In `Module.parallel(modules, shared_wires)`, the `shared_wires` parameter is a list of wire **names** (strings). How does Rust:
-   - Look up wires by name in each module?
-   - Handle ID remapping/unification?
-   - Detect wire compatibility (dtype matching)?
-
-4. **Const Handling**: Can `IType.Const(tensor)` be used directly in Term inputs, or does it need wrapping?
-
----
-
-## Testing Instructions
-
-### With Mocks (Current)
-```bash
-cd python
-uv run ./rl/test_converter.py      # Test individual conversions
-uv run ./rl/test_composition.py    # Test full composition
-uv run ./rl/main.py                 # Test training
-```
-
-### With Real Rust Bindings (Future)
-1. Implement `zrth._zrth.torch` with required interface
-2. Run same tests - should automatically use real bindings
-3. Verify composed module can execute
-
----
-
-## Example Usage
-
+Unroll to:
 ```python
-from rl import Context, QNetwork, SimpleEnv
-from rl.converter import convert_to_module
-from rl.backend import Module
-
-# Create shared context
-ctx = Context()
-
-# Convert components
-qnet = QNetwork(state_size=1, action_size=2)
-qnet_module = convert_to_module(ctx, qnet)
-
-env = SimpleEnv()
-env_module = convert_to_module(ctx, env)
-
-# Compose
-composed = Module.parallel(
-    [qnet_module, env_module],
-    shared_wires=['observation', 'q_values']
-)
-
-# Now `composed` is a complete reactive system:
-# - Closed-loop RL agent + environment
-# - Can be verified, simulated, or synthesized
+x = x + 1
+x = x + 1
+x = x + 1
 ```
+
+**Limitations**:
+- Only constant bounds
+- Must be unrollable (no dynamic iteration)
+
+**Use case**: Fixed-size arrays, matrix operations
+
+### 2. Control Flow Graph (ROI: Low)
+
+**Approach**: Build CFG, insert phi nodes at merge points
+
+**Limitations**:
+- Complex implementation
+- Still can't handle unbounded loops
+- SSA already handles most cases
+
+**Verdict**: Not worth it for current use cases.
+
+### 3. Match Statement Support (ROI: High)
+
+**Approach**: Convert match to nested if/elif/else
+
+**Benefit**: Better pattern matching support
+
+**Verdict**: Easy win if needed.
+
+### 4. Array/Tensor Operations (ROI: High)
+
+**Approach**: Add IType operations for indexing, slicing
+
+**Benefit**: More expressive computations
+
+**Limitation**: Fixed-size tensors only
+
+**Verdict**: High value if use cases emerge.
