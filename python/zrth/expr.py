@@ -161,6 +161,75 @@ def matmul_dtype(dt1: DType, dt2: DType) -> DType:
     )
 
 
+def arith_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
+    assert len(args) == 2
+
+    if op == "arith.matmul":
+        dtype = matmul_dtype(args[0].dtype(), args[1].dtype())
+        return IType.MatMul(), dtype
+
+    if op == "arith.add":
+        assert args[0].dtype() == args[1].dtype(), (args[0].dtype(), args[1].dtype())
+        return IType.Add(), args[0].dtype()
+
+    if op == "arith.mul":
+        assert args[0].dtype() == args[1].dtype(), (args[0].dtype(), args[1].dtype())
+        return IType.Mul(), args[0].dtype()
+
+    if op == "arith.sub":
+        assert args[0].dtype() == args[1].dtype(), (args[0].dtype(), args[1].dtype())
+        return IType.Sub(), args[0].dtype()
+
+    if op == "arith.div":
+        assert args[0].dtype() == args[1].dtype(), (args[0].dtype(), args[1].dtype())
+        return IType.Div(), args[0].dtype()
+
+    raise NotImplementedError(f"Unsupported arith op: {op}")
+
+
+def cmp_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
+    assert len(args) == 2
+    assert args[0].dtype() == args[1].dtype()
+
+    if op == "cmp.lt":
+        return IType.Lt(), DType.Bool
+
+    if op == "cmp.gt":
+        return IType.Gt(), DType.Bool
+
+    if op == "cmp.le":
+        return IType.Le(), DType.Bool
+
+    if op == "cmp.ge":
+        return IType.Ge(), DType.Bool
+
+    if op == "cmp.eq":
+        return IType.Eq(), DType.Bool
+
+    if op == "cmp.neq":
+        return IType.Neq(), DType.Bool
+
+    raise NotImplementedError(f"Unsupported cmp op: {op}")
+
+
+def logic_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
+    if op == "logic.not":
+        assert len(args) == 1
+        assert args[0].dtype() == DType.Bool
+        return IType.Not(), DType.Bool
+
+    assert len(args) == 2
+    assert args[0].dtype() == args[1].dtype() == DType.Bool
+
+    if op == "logic.or":
+        return IType.Or(), DType.Bool
+
+    if op == "logic.and":
+        return IType.And(), DType.Bool
+
+    raise NotImplementedError(f"Unsupported logic op: {op}")
+
+
 # until we have global itypes with hierarchy (for visitors)
 # and terms for variables (if ever), we use strings for representing
 # operations, so we have to translate them to IType
@@ -173,35 +242,14 @@ def op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
     """
     assert all(isinstance(a, Expr) for a in args), args
 
-    if op == "arith.matmul":
-        assert len(args) == 2
-        dtype = matmul_dtype(args[0].dtype(), args[1].dtype())
-        return IType.MatMul(), dtype
+    if op.startswith("arith."):
+        return arith_op_to_itype_dtype(op, args)
 
-    if op == "arith.add":
-        assert len(args) == 2
-        assert args[0].dtype() == args[1].dtype(), (args[0].dtype(), args[1].dtype())
-        return IType.Add(), args[0].dtype()
+    if op.startswith("cmp."):
+        return cmp_op_to_itype_dtype(op, args)
 
-    if op == "arith.mul":
-        assert len(args) == 2
-        assert args[0].dtype() == args[1].dtype(), (args[0].dtype(), args[1].dtype())
-        return IType.Mul(), args[0].dtype()
-
-    if op == "cmp.lt":
-        assert len(args) == 2
-        assert args[0].dtype() == args[1].dtype()
-        return IType.Lt(), DType.Bool
-
-    if op == "logic.or":
-        assert len(args) == 2
-        assert args[0].dtype() == args[1].dtype() == DType.Bool
-        return IType.Or(), args[0].dtype()
-
-    if op == "logic.not":
-        assert len(args) == 1
-        assert args[0].dtype() == DType.Bool
-        return IType.Not(), args[0].dtype()
+    if op.startswith("logic."):
+        return logic_op_to_itype_dtype(op, args)
 
     if op == "ite":
         assert len(args) == 3
@@ -209,20 +257,9 @@ def op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
         assert args[1].dtype() == args[2].dtype()
         return IType.Ite(), args[1].dtype()
 
-    # if op == "ifthen":
-    #     assert len(args) == 2
-    #     assert args[0].dtype() == DType.bool()
-    #     return IType.IfThen(), args[1].dtype()
-    #
-    # if op == "choose":
-    #     assert len(args) > 0
-    #     assert all(a.dtype() == args[0].dtype() for a in args)
-    #     return IType.mk_choose(), args[0].dtype()
-    #
-    # if op == "choose_or":
-    #     assert len(args) > 0
-    #     assert all(a.dtype() == args[0].dtype() for a in args)
-    #     return IType.mk_choose(), args[0].dtype()
+    if op == "id":
+        assert len(args) == 1
+        return IType.Id(), args[0].dtype()
 
     raise NotImplementedError(f"Translation not implemented for {op}")
 
@@ -548,9 +585,19 @@ class Add(BinaryExpr):
         super().__init__("arith.add", lhs, rhs)
 
 
+class Sub(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("arith.sub", lhs, rhs)
+
+
 class Mul(BinaryExpr):
     def __init__(self, lhs: ToExpr, rhs: ToExpr):
         super().__init__("arith.mul", lhs, rhs)
+
+
+class Div(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("arith.div", lhs, rhs)
 
 
 class Lt(BinaryExpr):
@@ -561,6 +608,26 @@ class Lt(BinaryExpr):
 class Gt(BinaryExpr):
     def __init__(self, lhs: ToExpr, rhs: ToExpr):
         super().__init__("cmp.gt", lhs, rhs)
+
+
+class Le(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("cmp.le", lhs, rhs)
+
+
+class Ge(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("cmp.ge", lhs, rhs)
+
+
+class Eq(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("cmp.eq", lhs, rhs)
+
+
+class Neq(BinaryExpr):
+    def __init__(self, lhs: ToExpr, rhs: ToExpr):
+        super().__init__("cmp.neq", lhs, rhs)
 
 
 class Or(BinaryExpr):
@@ -576,6 +643,11 @@ class And(BinaryExpr):
 class Not(Expr):
     def __init__(self, expr: ToExpr):
         super().__init__("logic.not", to_expr(expr))
+
+
+class Id(Expr):
+    def __init__(self, e: ToExpr):
+        super().__init__("id", e)
 
 
 #####
@@ -611,6 +683,18 @@ def mul(lhs: ToExpr, rhs: ToExpr) -> Mul | torch.Tensor | float | int:
     return lhs * rhs
 
 
+def div(lhs: ToExpr, rhs: ToExpr) -> Div | torch.Tensor | float | int:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Div(lhs, rhs)
+    return lhs / rhs
+
+
+def sub(lhs: ToExpr, rhs: ToExpr) -> Sub | torch.Tensor | float | int:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Sub(lhs, rhs)
+    return lhs - rhs
+
+
 def lt(lhs, rhs) -> Lt | bool:
     if isinstance(lhs, Expr) or isinstance(rhs, Expr):
         return Lt(lhs, rhs)
@@ -621,6 +705,30 @@ def gt(lhs, rhs) -> Gt | bool:
     if isinstance(lhs, Expr) or isinstance(rhs, Expr):
         return Gt(lhs, rhs)
     return lhs > rhs
+
+
+def ge(lhs, rhs) -> Ge | bool:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Ge(lhs, rhs)
+    return lhs >= rhs
+
+
+def le(lhs, rhs) -> Le | bool:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Le(lhs, rhs)
+    return lhs <= rhs
+
+
+def eq(lhs, rhs) -> Eq | bool:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Eq(lhs, rhs)
+    return lhs == rhs
+
+
+def neq(lhs, rhs) -> Neq | bool:
+    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
+        return Neq(lhs, rhs)
+    return lhs != rhs
 
 
 # Logical or (we have to avoid clash with Python keyword 'or')
