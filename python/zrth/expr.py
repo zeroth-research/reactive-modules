@@ -120,6 +120,9 @@ class Expr:
     def matmul(self, rhs: ToExpr) -> "Expr":
         return MatMul(self, rhs)
 
+    def argmax(self) -> "Expr":
+        return Argmax(self, rhs)
+
     def add(self, rhs: ToExpr) -> "Expr":
         return Add(self, rhs)
 
@@ -349,6 +352,10 @@ def op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
 
     if op.startswith("logic."):
         return logic_op_to_itype_dtype(op, args)
+
+    if op == "argmax":
+        assert len(args) == 1
+        return IType.Argmax(), DType.Int
 
     if op == "ite":
         assert len(args) == 3
@@ -694,6 +701,11 @@ class Ite(Expr):
         return self.get_children()[2]
 
 
+class Argmax(Expr):
+    def __init__(self, e: ToExpr):
+        super().__init__("argmax", to_expr(e))
+
+
 class BinaryExpr(Expr):
     def __init__(self, op, lhs: ToExpr, rhs: ToExpr):
         super().__init__(op, to_expr(lhs), to_expr(rhs))
@@ -795,6 +807,18 @@ def ite(cond, iftrue, iffalse):
         return Ite(cond, iftrue, iffalse)
 
     return iftrue if cond else iffalse
+
+
+def argmax(t: ToExpr) -> Argmax | int:
+    """
+    Argmax of a flattened tensor. Note that torch.Tensor.argmax()
+    returns a tensor, while we return int to match the Term.
+    (torch.Tensor.argmax() returns tensor becaues it is more generic
+     -- it may work on unflattened tensors)
+    """
+    if isinstance(t, Expr):
+        return Argmax(t)
+    return t.argmax().item()
 
 
 def matmul(lhs: ToExpr, rhs: ToExpr) -> MatMul | torch.Tensor:
