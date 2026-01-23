@@ -21,10 +21,17 @@ class Expr:
     some attributes and *children*.
 
     We deliberately use strings for operations so that this class
-    is as flexible as possible, it is temporary until we have a global IType.
+    is as flexible as possible, it may be temporary until we have a global IType.
+
+    Every expression is assigned a type ([DType]). This type is computed automatically
+    from the operation and its arguments.
+
+    The underlying [Term] is created together with the expression in the current global
+    context. If necessary to create the term in other context, one can switch contexts
+    using [set_ctx]. Note that all childern of an expression must be created in the
+    same context.
 
     :param op: name of the operation of the expression
-    :param ty: a string representing the type of the expression
     :param args: a list of expression arguments (children)
     """
 
@@ -96,6 +103,11 @@ class Expr:
         return self._out_wire
 
     def __eq__(self, oth) -> bool:
+        """
+        Compute if two terms are syntactically the same.
+        To create experssion that states that two expressions
+        are the same, see `eq` method.
+        """
         return (
             isinstance(oth, Expr)
             and self.op == oth.op
@@ -214,6 +226,14 @@ class Expr:
 
 
 def matmul_dtype(dt1: DType, dt2: DType) -> DType:
+    """
+    Given two DTypes `d1` and `d2`, compute the DType which results
+    from their matrix multiplication (assuming the broadcasting multiplication
+    implemented in PyTorch).
+
+    TODO: This function is incomplete, at this moment it basically Unsupported
+    only matrix multiplication with no broadcasting.
+    """
     assert dt1.eq_dtype(dt2), f"DTypes have different element types: {dt1}, {dt2}"
 
     dim1 = dt1.dims()
@@ -310,15 +330,14 @@ def logic_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]
     raise NotImplementedError(f"Unsupported logic op: {op}")
 
 
-# until we have global itypes with hierarchy (for visitors)
-# and terms for variables (if ever), we use strings for representing
+# At this moment, we use strings for representing
 # operations, so we have to translate them to IType
 # TODO: we do typechecking here, this should be probably somewhere else
 # (I mean, we can keep the assertions, but we should do proper typechecking
 # somewhere else...)
 def op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
     """
-    Translate operation with arguments into itype and the return dtype.
+    Translate operation with arguments into IType and the return DType.
     """
     assert all(isinstance(a, Expr) for a in args), args
 
@@ -346,7 +365,8 @@ def op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
 
 def const_to_itype_dtype(val) -> tuple[IType, DType]:
     """
-    Translate operation with arguments into itype and the return dtype.
+    Translate Python value into IType that represents this constant and
+    its associated DType.
     """
     if isinstance(val, bool):
         return IType.Tensor(torch.Tensor([val])), DType.Bool
@@ -383,6 +403,15 @@ def const_to_itype_dtype(val) -> tuple[IType, DType]:
 class Sym(Expr):
     """
     An expression representing a Symbol
+
+    If `create_pair = True` in `__init__`, an associated `Sym` is automatically
+    created that represents the "updated" value of this `Sym`.
+    This is the default behavior. In the situations when we do not need the "updated"
+    `Sym`, we can call the `__init__` with `create_pair = False`.
+
+    The symbol for the "updated" value is accessible via `nxt` (next) method.
+    Alternatively, one can access it via `self[1]` and the old value via `self[0]`
+    (which is just an alias for `self`).
     """
 
     def __init__(self, name, dtype, create_pair=True):
@@ -396,10 +425,21 @@ class Sym(Expr):
             self._nxt = None
 
     def nxt(self):
+        """
+        Get the associated `Sym` representing the updated (next) value
+        of `self`. If there is none (`self` was created with `create_pair = False`),
+        raise an error.
+        """
         if self._nxt is None:
             raise RuntimeError(f"Symbol {self._name} has no next symbol associated")
 
         return self._nxt
+
+    def updated(self):
+        """
+        An alias for `nxt`, this terminology is used in the paper about reactive modules
+        """
+        return self.nxt()
 
     def __getitem__(self, item: int) -> "Sym":
         if item == 0:
@@ -425,8 +465,16 @@ class Sym(Expr):
     def __str__(self):
         return f"Sym({self._name} : {self.dtype()})"
 
+    def __repr__(self):
+        assoc = f"; assoc `{self._nxt.name if self._nxt is not None else ''}`"
+        return f"Sym({self._name} : {self.dtype()}{assoc})"
+
 
 def to_expr(val: ToExpr) -> Expr:
+    """
+    Convert a Python value to Expr
+    """
+
     if isinstance(val, Expr):
         return val
     if isinstance(val, (int, bool, float, torch.Tensor)):
@@ -436,18 +484,22 @@ def to_expr(val: ToExpr) -> Expr:
 
 def nxt(var: Sym) -> Sym:
     """
-    Get next variable for `var`.
+    A helper function to get updated (next) variable for `var`.
+    This way we can write `nxt(x)`.
     """
     assert isinstance(var, Sym), var
     return var.nxt()
 
 
+# An alias for `nxt`
+updated = nxt
+
+
 def sym(name: str, ty: DType, create_pair=True) -> Sym:
+    """
+    Create a symbol
+    """
     return Sym(name, ty, create_pair=create_pair)
-    # s = Sym(name, ty, create_pair=create_pair)
-    # if create_pair:
-    #     return (s, s.nxt())
-    # return s
 
 
 # class IfThen:
