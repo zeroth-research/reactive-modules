@@ -18,7 +18,7 @@ def qnetwork():
 
 
 def test_qnetwork_conversion():
-    return qnetwork()
+    _ = qnetwork()
 
 
 def simpleenv():
@@ -39,14 +39,14 @@ def simpleenv():
 
 
 def test_simpleenv_conversion():
-    return simpleenv()
+    _ = simpleenv()
 
 
 if __name__ == "__main__":
-    reset_ctx()
+    _ = reset_ctx()
     qnet = qnetwork()
     print("\n" + "="*60 + "\n")
-    env = test_simpleenv_conversion()
+    env = simpleenv()
     print("\n" + "="*60 + "\n")
     composed = Module.parallel(qnet._module, env._module)
     print(composed)

@@ -181,7 +181,7 @@ def _translate_relu(input_wire):
 
     zero_tensor = torch.Tensor([[0.0], [1.0]])
     zero_wire = ctx.tmp_wire(DType.TensorFloat(zero_tensor.size()))
-    terms.append(Term(IType.TensorFloat(zero_tensor), [zero_wire]))
+    terms.append(Term(IType.Tensor(zero_tensor), [zero_wire]))
 
     gt_wire = ctx.tmp_wire(DType.Bool)
     terms.append(Term(IType.Gt(), [gt_wire], [input_wire, zero_wire]))
@@ -460,7 +460,7 @@ class MethodVisitor(ast.NodeVisitor):
         b_wire = self._convert_expr(args[1])
         
         cmp_type = IType.Lt() if func_name == 'min' else IType.Gt()
-        cmp_wire = self.ctx.tmp_wire(DType.Bool())
+        cmp_wire = self.ctx.tmp_wire(DType.Bool)
         self.terms.append(Term(cmp_type, [cmp_wire], [a_wire, b_wire]))
         
         result = self.ctx.tmp_wire(a_wire.dtype())
@@ -493,7 +493,7 @@ class MethodVisitor(ast.NodeVisitor):
         if op_type not in self.COMPARE_OPS:
             raise ValueError(f"Unsupported comparison operator: {op_type.__name__}")
         
-        result = self.ctx.tmp_wire(DType.Bool())
+        result = self.ctx.tmp_wire(DType.Bool)
         itype_enum = getattr(IType, self.COMPARE_OPS[op_type])()
         self.terms.append(Term(itype_enum, [result], [left_wire, right_wire]))
         return result
