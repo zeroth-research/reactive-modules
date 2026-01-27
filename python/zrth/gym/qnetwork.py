@@ -14,11 +14,10 @@ class QNetwork(nn.Module, Module):
             extl: List of external input wire names
             intf: List of interface output wire names
             seed: Random seed
-            ctx: Context object for wire registry (if None, uses global shared context)
         """
         nn.Module.__init__(self)
         Module.__init__(self, extl, intf)
-
+        
         # Neural network layers
         self.seed = torch.manual_seed(seed)
         self.fc1 = nn.Linear(state_size, hidden_size)

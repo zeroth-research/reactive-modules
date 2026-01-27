@@ -1,9 +1,8 @@
 from zrth.gym import QNetwork, SimpleEnv
-from zrth import reset_ctx
+from zrth import reset_ctx, Module
 
 
 def qnetwork():
-    ctx = reset_ctx()
     qnet = QNetwork(
         extl=["observation: Tensor<1; Float>"],
         intf=["q_values: Tensor<2; Float>"],
@@ -13,8 +12,7 @@ def qnetwork():
     )
 
     print("QNetwork reactive module:")
-    print(qnet)
-    print(ctx)
+    print(qnet.unwrap())
 
     return qnet
 
@@ -24,7 +22,6 @@ def test_qnetwork_conversion():
 
 
 def simpleenv():
-    ctx = reset_ctx()
     env = SimpleEnv(
         extl=["q_values: Tensor<2; Float>"],
         intf=[
@@ -36,8 +33,7 @@ def simpleenv():
     )
 
     print("\nSimpleEnv reactive module:")
-    print(env)
-    print(ctx)
+    print(env.unwrap())
 
     return env
 
@@ -47,7 +43,10 @@ def test_simpleenv_conversion():
 
 
 if __name__ == "__main__":
+    _ = reset_ctx()
     qnet = qnetwork()
-    # print("\n" + "="*60 + "\n")
-    # env = test_simpleenv_conversion()
-    # composed = Module.parallel(qnet._reactive_module, env._reactive_module)
+    print("\n" + "="*60 + "\n")
+    env = simpleenv()
+    print("\n" + "="*60 + "\n")
+    composed = Module.parallel(qnet.unwrap(), env.unwrap())
+    print(composed)

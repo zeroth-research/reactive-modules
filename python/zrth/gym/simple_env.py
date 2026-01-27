@@ -11,11 +11,10 @@ class SimpleEnv(gym.Env, Module):
             extl: List of external input wire names
             intf: List of interface output wire names
             prvt: List of private wire names (optional)
-            ctx: Context object for wire registry (if None, uses global shared context)
         """
         gym.Env.__init__(self)
         Module.__init__(self, extl, intf, prvt)
-
+        
         # Gym spaces
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Discrete(2)
@@ -31,8 +30,11 @@ class SimpleEnv(gym.Env, Module):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.state = 0  # True state (private)
-        return self._get_observation(), {}  # Return partial observation
-
+        observation = self._get_observation()
+        reward = 0.0  # No reward at reset
+        terminated = False  # Episode just started
+        return observation, reward, terminated  # Return partial observation
+    
     def step(self, q_values):
         action = q_values.argmax().item()
         # action 0 = move left, action 1 = move right
@@ -49,5 +51,4 @@ class SimpleEnv(gym.Env, Module):
         truncated = False
 
         observation = self._get_observation()  # Get partial observation
-        return observation, reward, terminated, truncated, {}
-
+        return observation, reward, terminated, truncated

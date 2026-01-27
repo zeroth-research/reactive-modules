@@ -1,6 +1,5 @@
 from zrth.module import ReactiveModuleDef, call_convert_after_init
 from .converter import convert_to_module
-from .. import Context, get_ctx
 
 
 class Module(ReactiveModuleDef):
@@ -10,7 +9,6 @@ class Module(ReactiveModuleDef):
         """Initialize module
 
         Args:
-            ctx: Context object for wire registry (if None, uses global shared context)
             extl: List of external input wire names
             intf: List of interface output wire names
             prvt: List of private wire names (optional)
