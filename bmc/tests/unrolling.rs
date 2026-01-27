@@ -51,7 +51,7 @@ fn example_counter() -> Result<Module<&'static str, &'static str>, &'static str>
 
     let obs = Interface::from_iter([[x0, x1], [y0, y1], [z0, z1], [y00, y01], [z00, z01]]);
 
-    Module::sequential(obs, Interface::empty(), init, update)
+    Module::sequential_observable(obs, init, update)
 }
 
 #[test]

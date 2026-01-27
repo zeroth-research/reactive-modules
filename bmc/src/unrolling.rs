@@ -56,12 +56,12 @@ impl WiresMapping {
 /// a sequence of transitions in the form of [WiredTransitions] object
 /// and initialize/extend it with terms from the module.
 /// The sequence of transitions is external to [ModuleUnrolling].
-pub struct ModuleUnrolling<'c, 'm, D: Copy + Eq, I> {
+pub struct ModuleUnrolling<'c, 'm, D: Clone + Eq, I> {
     pub(crate) ctx: &'c mut Context<D>,
     pub(crate) module: &'m base::Module<D, I>,
 }
 
-impl<'c, 'm, D: Copy + Eq + std::fmt::Debug, I: Clone + std::fmt::Debug>
+impl<'c, 'm, D: Clone + Eq + std::fmt::Debug, I: Clone + std::fmt::Debug>
     ModuleUnrolling<'c, 'm, D, I>
 {
     pub fn new(module: &'m base::Module<D, I>, ctx: &'c mut Context<D>) -> Self {
@@ -104,8 +104,8 @@ impl<'c, 'm, D: Copy + Eq + std::fmt::Debug, I: Clone + std::fmt::Debug>
                 Interface::try_from_iter(self.module.extl().iter().map(|w| {
                     debug_assert!(w[0].dtype() == w[1].dtype());
                     [
-                        self.ctx.tmp_wire(*w[0].dtype()),
-                        self.ctx.tmp_wire(*w[1].dtype()),
+                        self.ctx.tmp_wire(w[0].dtype().clone()),
+                        self.ctx.tmp_wire(w[1].dtype().clone()),
                     ]
                 }))
                 .unwrap(),
@@ -173,7 +173,7 @@ impl<'c, 'm, D: Copy + Eq + std::fmt::Debug, I: Clone + std::fmt::Debug>
                     map.insert(w.id(), new);
                     new
                 };
-                Wire::new(new_id, *w.dtype())
+                Wire::new(new_id, w.dtype().clone())
             })
             .collect();
 
@@ -189,7 +189,7 @@ impl<'c, 'm, D: Copy + Eq + std::fmt::Debug, I: Clone + std::fmt::Debug>
                     map.insert(w.id(), new);
                     new
                 };
-                Wire::new(new_id, *w.dtype())
+                Wire::new(new_id, w.dtype().clone())
             })
             .collect();
 

@@ -4,13 +4,19 @@ from .module import ReactiveModule
 
 
 #####################################################################
-# Wire/Term helpers
+# IType and DType
 #####################################################################
+
 
 # Add type aliases to the DType object
 DType.Bool = DType.TensorBool([1])
 DType.Int = DType.TensorInt([1])
 DType.Float = DType.TensorFloat([1])
+
+
+#####################################################################
+# Wire/Term helpers
+#####################################################################
 
 
 def to_wire(w: Wire | Term) -> Wire:
@@ -34,3 +40,16 @@ def mk_term(itype, write, read=None) -> Term:
         read = []
 
     return Term(itype, [to_wire(w) for w in write], [to_wire(w) for w in read])
+
+
+#####################################################################
+# Transitions
+#####################################################################
+
+
+# override WiredTransitions.wire_transition to pass there the global context
+orig_wire_transition = WiredTransitions.wire_transition
+
+WiredTransitions.wire_transition = lambda self, t: orig_wire_transition(
+    self, t, get_ctx().unwrap()
+)

@@ -9,12 +9,15 @@ mod module;
 mod pytensor;
 mod term;
 mod types;
+mod unrolling;
 mod wire;
 
+use crate::atom::Atom;
 use crate::context::RustContext;
 use crate::module::Module;
 use crate::term::Term;
 use crate::types::{DType, IType};
+use crate::unrolling::{Transition, WiredTransitions};
 use crate::wire::Wire;
 use pyo3::PyClass;
 
@@ -38,6 +41,9 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Term>()?;
     m.add_class::<Module>()?;
     m.add_class::<RustContext>()?;
+
+    m.add_class::<Transition>()?;
+    m.add_class::<WiredTransitions>()?;
 
     Ok(())
 }

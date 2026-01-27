@@ -115,7 +115,8 @@ impl<D: Clone + Eq, I: Clone> Transition<D, I> {
         let intf_in: Interface<D> = Interface::empty();
 
         // the environemnt inputs are the external wires of the module
-        // (although the init can use only 'next' wires)
+        // (although the init can use only 'next' wires, we have to clone
+        // both latched and next)
         let intf_env = module.extl().clone();
 
         // the output interface here are the *next* controlled wires
@@ -305,7 +306,7 @@ mod aux {
     }
 
     /// A helper function to  re-map term to use new IDs
-    pub fn map_term<D: Copy + Eq, I: Copy>(
+    pub fn map_term<D: Clone + Eq, I: Clone>(
         term: &Term<D, I>,
         map: &mut WiresMapping,
         ctx: &mut Context<D>,
@@ -322,7 +323,7 @@ mod aux {
                     map.insert(w.id(), new);
                     new
                 };
-                Wire::new(new_id, *w.dtype())
+                Wire::new(new_id, w.dtype().clone())
             })
             .collect();
 
@@ -338,15 +339,15 @@ mod aux {
                     map.insert(w.id(), new);
                     new
                 };
-                Wire::new(new_id, *w.dtype())
+                Wire::new(new_id, w.dtype().clone())
             })
             .collect();
 
-        Term::function(*term.itype(), write, read)
+        Term::function(term.itype().clone(), write, read)
     }
 }
 
-impl<D: Copy + Eq, I: Copy> WiredTransitions<D, I> {
+impl<D: Clone + Eq, I: Clone> WiredTransitions<D, I> {
     pub fn wire_transition(
         &mut self,
         t: &Transition<D, I>,
@@ -372,7 +373,7 @@ impl<D: Copy + Eq, I: Copy> WiredTransitions<D, I> {
         let intf_env = if let Some(intf_env) = &t.intf_env {
             Some(Interface::try_from_iter(intf_env.iter().map(|w| {
                 debug_assert!(w[0].dtype() == w[1].dtype());
-                [ctx.tmp_wire(*w[0].dtype()), ctx.tmp_wire(*w[1].dtype())]
+                [ctx.tmp_wire(w[0].dtype().clone()), ctx.tmp_wire(w[1].dtype().clone())]
             }))?)
         } else {
             None
