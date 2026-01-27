@@ -12,7 +12,7 @@ def qnetwork():
     )
 
     print("QNetwork reactive module:")
-    print(qnet._module)
+    print(qnet.unwrap())
 
     return qnet
 
@@ -33,7 +33,7 @@ def simpleenv():
     )
 
     print("\nSimpleEnv reactive module:")
-    print(env._module)
+    print(env.unwrap())
 
     return env
 
@@ -48,5 +48,5 @@ if __name__ == "__main__":
     print("\n" + "="*60 + "\n")
     env = simpleenv()
     print("\n" + "="*60 + "\n")
-    composed = Module.parallel(qnet._module, env._module)
+    composed = Module.parallel(qnet.unwrap(), env.unwrap())
     print(composed)
