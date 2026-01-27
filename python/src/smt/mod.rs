@@ -1,11 +1,9 @@
 mod pyval;
-mod unrolling;
 mod wrappedcontext;
 mod wrappedmodule;
 mod wrappedterm;
 
 pub use pyval::PyVal;
-pub use unrolling::WrappedWiredTransitions;
 pub use wrappedcontext::WrappedContext;
 pub use wrappedmodule::WrappedModule;
 pub use wrappedterm::WrappedTerm;

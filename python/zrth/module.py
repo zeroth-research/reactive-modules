@@ -1,6 +1,6 @@
 from .expr import nxt, Expr, Sym, sym
 from .context import Context, get_ctx
-from .zrth import DType, Module as RustModule
+from .zrth import DType, Module as RustModule, Transition
 
 from typing import Callable
 
@@ -101,6 +101,12 @@ class ReactiveModuleDef:
     def ctrl(self):
         """Controlled wires: interface outputs + private wires"""
         return self.intf + (self.prvt or [])
+
+    def init_as_transition(self) -> Transition:
+        return self._module.init_as_transition()
+
+    def update_as_transition(self) -> Transition:
+        return self._module.update_as_transition()
 
     def unwrap(self) -> RustModule:
         return self._module

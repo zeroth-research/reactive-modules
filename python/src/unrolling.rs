@@ -1,67 +1,53 @@
-use crate::smt::PyVal;
 use pyo3::prelude::*;
 
-use pyo3::types::PyList;
+use pyo3::exceptions::PyValueError;
+use pyo3::types::PyAny;
 
 use base::Interface;
 
 // the context in `toy` crate is generic,
 // we'll use it until we have the context in `base`.
-use smt::dtype::DType;
-use smt::itype::IType;
+use crate::{DType, IType};
 
 use bmc::unrolling::ModuleUnrolling;
-use common::transition::{Transition, WiredTransitions};
 
-use super::wrappedcontext::WrappedContext;
-use super::wrappedmodule::WrappedModule;
+use crate::context::RustContext;
+use crate::module::Module;
+use crate::{try_term_iter_cloned, try_wire_iter_cloned};
 
 #[pyclass]
-pub struct WrappedTransition(pub(crate) Transition<DType, IType>);
-
-fn vars_to_intf(vars: &[Py<PyVal>]) -> Interface<DType> {
-    Interface::sequence(vars.iter().map(|val| match val.get() {
-        PyVal::Sym(id, ty) => {
-            let ty: DType = ty.parse().expect("Failed parsing DType");
-            base::Wire::new(*id, ty)
-        }
-        _ => panic!("Invalid PyVal, expected PyVal::Sym"),
-    }))
-    .unwrap()
-}
+pub struct Transition(pub(crate) common::transition::Transition<DType, IType>);
 
 #[pymethods]
-impl WrappedTransition {
+impl Transition {
     #[new]
     pub fn new(
-        ctx: &Bound<'_, WrappedContext>,
-        vars_in: Vec<Py<PyVal>>,
-        vars_env: Vec<Py<PyVal>>,
-        vars_env_new: Vec<Py<PyVal>>,
-        vars_out: Vec<Py<PyVal>>,
-        terms: &Bound<'_, PyList>,
-    ) -> Self {
-        let intf_in = vars_to_intf(&vars_in);
-        let intf_out = vars_to_intf(&vars_out);
-        let intf_env = if vars_env.is_empty() {
-            assert!(vars_env_new.is_empty());
+        vars_in: &Bound<'_, PyAny>,
+        vars_env: &Bound<'_, PyAny>,
+        vars_env_new: &Bound<'_, PyAny>,
+        vars_out: &Bound<'_, PyAny>,
+        terms: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let intf_in =
+            Interface::sequence(try_wire_iter_cloned(vars_in)?).map_err(PyValueError::new_err)?;
+        let intf_out =
+            Interface::sequence(try_wire_iter_cloned(vars_out)?).map_err(PyValueError::new_err)?;
+        let tmp_env = Interface::try_from_iter(
+            try_wire_iter_cloned(vars_env)?.zip(try_wire_iter_cloned(vars_env_new)?),
+        )
+        .map_err(PyValueError::new_err)?;
+
+        let intf_env = if tmp_env.is_empty() {
             None
         } else {
-            Some(
-                Interface::try_from_iter(
-                    vars_to_intf(&vars_env)
-                        .into_iter()
-                        .zip(vars_to_intf(&vars_env_new).into_iter())
-                        .map(|(w1, w2)| [w1[0].clone(), w2[0].clone()]),
-                )
-                .unwrap(),
-            )
+            Some(tmp_env)
         };
 
-        let ctx: &mut WrappedContext = &mut ctx.borrow_mut();
-        let terms = crate::smt::wterms_to_terms(ctx, terms).unwrap();
+        let terms = try_term_iter_cloned(&terms)?.collect::<Vec<base::Term<DType, IType>>>();
 
-        Self(Transition::new(intf_in, intf_env, intf_out, terms))
+        Ok(Self(common::transition::Transition::new(
+            intf_in, intf_env, intf_out, terms,
+        )))
     }
 
     pub fn dbg(&self) {
@@ -83,53 +69,53 @@ impl WrappedTransition {
 }
 
 #[pyclass]
-pub struct WrappedWiredTransitions {
-    pub(crate) transitions: WiredTransitions<DType, IType>,
+pub struct WiredTransitions {
+    pub(crate) transitions: common::transition::WiredTransitions<DType, IType>,
 }
 
-impl Default for WrappedWiredTransitions {
+impl Default for WiredTransitions {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[pymethods]
-impl WrappedWiredTransitions {
+impl WiredTransitions {
     #[new]
     pub fn new() -> Self {
         Self {
-            transitions: WiredTransitions::new(),
+            transitions: common::transition::WiredTransitions::new(),
         }
     }
 
-    pub fn init(
+    fn init(
         self_: Bound<'_, Self>,
-        module: &Bound<'_, WrappedModule>,
-        ctx: &Bound<'_, WrappedContext>,
+        module: &Bound<'_, Module>,
+        ctx: &Bound<'_, RustContext>,
     ) {
         let module = module.borrow();
         let mut ctx = ctx.borrow_mut();
 
-        let mut unroll = ModuleUnrolling::<DType, IType>::new(&module.module, &mut ctx.ctx);
+        let mut unroll = ModuleUnrolling::<DType, IType>::new(&module.base, &mut ctx.ctx);
         unroll.init_ref(&mut self_.borrow_mut().transitions);
     }
 
-    pub fn step(
+    fn step(
         self_: Bound<'_, Self>,
-        module: &Bound<'_, WrappedModule>,
-        ctx: &Bound<'_, WrappedContext>,
+        module: &Bound<'_, Module>,
+        ctx: &Bound<'_, RustContext>,
     ) {
         let module = module.borrow();
         let mut ctx = ctx.borrow_mut();
 
-        let mut unroll = ModuleUnrolling::<DType, IType>::new(&module.module, &mut ctx.ctx);
+        let mut unroll = ModuleUnrolling::<DType, IType>::new(&module.base, &mut ctx.ctx);
         unroll.step_ref(&mut self_.borrow_mut().transitions);
     }
 
-    pub fn wire_transition(
+    fn wire_transition(
         self_: Bound<'_, Self>,
-        t: &Bound<'_, WrappedTransition>,
-        ctx: &Bound<'_, WrappedContext>,
+        t: &Bound<'_, Transition>,
+        ctx: &Bound<'_, RustContext>,
     ) {
         let t = t.borrow();
         let slf = &mut self_.borrow_mut().transitions;
@@ -137,7 +123,7 @@ impl WrappedWiredTransitions {
         slf.wire_transition(&t.0, &mut ctx.ctx).unwrap();
     }
 
-    pub fn dbg(&self) {
+    fn dbg(&self) {
         for transition in &self.transitions {
             println!("---------------------------");
             if let Some(intf_env) = transition.intf_env() {
@@ -156,7 +142,7 @@ impl WrappedWiredTransitions {
     }
 
     #[cfg(feature = "visual-html")]
-    fn to_html(&self, _ctx: &Bound<'_, WrappedContext>, path: &str) {
+    fn to_html(&self, _ctx: &Bound<'_, RustContext>, path: &str) {
         //let ctx: &WrappedContext = &ctx.borrow();
         let _ = visual::html::unrolling::write_to_html(
             &self.transitions,

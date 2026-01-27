@@ -15,17 +15,6 @@ def open_html(path: str) -> None:
     # FIXME: not exhaustive
 
 
-class Transition:
-    def __init__(self, /, impl):
-        self._wrappedtransition = impl
-
-    def unwrap(self):
-        return self._wrappedtransition
-
-    def dbg(self):
-        return self._wrappedtransition.dbg()
-
-
 class Module:
     def __init__(
         self,
@@ -105,55 +94,8 @@ class Module:
     def unwrap(self):
         return self._module
 
-    def init_as_transition(self):
-        return Transition(impl=self._module.init_as_transition())
-
-    def update_as_transition(self):
-        return Transition(impl=self._module.update_as_transition())
-
     def to_html(self, path: str, open: bool = False):
         self._module.to_html(self._ctx.unwrap(), path)
 
         if open:
             open_html(path)
-
-
-class ModuleUnrolling:
-    def __init__(self, m: Module) -> None:
-        self._module = m
-        # initialized by `init`
-        self._transitions = None
-
-    def init(self):
-        self._transitions = _zrth.smt.WrappedWiredTransitions()
-        self._transitions.init(self._module.unwrap(), self._module._ctx.unwrap())
-
-    def step(self):
-        assert self._transitions
-        self._transitions.step(self._module.unwrap(), self._module._ctx.unwrap())
-
-    def to_html(self, path: str, open: bool = False):
-        self._transitions.to_html(self._module._ctx.unwrap(), path)
-
-        if open:
-            open_html(path)
-
-    def dbg(self):
-        self._transitions.dbg()
-
-    def last_state(self):
-        self._transitions.last_state()
-
-
-class Unrolling:
-    def __init__(self) -> None:
-        self._transitions = _zrth.smt.WrappedWiredTransitions()
-
-    def wire_transition(self, t, ctx):
-        self._transitions.wire_transition(t.unwrap(), ctx.unwrap())
-
-    def dbg(self):
-        self._transitions.dbg()
-
-    def last_state(self):
-        self._transitions.last_state()

@@ -2,7 +2,6 @@ use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::smt::unrolling::WrappedTransition;
 use crate::smt::wrappedcontext::WrappedContext;
 use crate::smt::{vars_to_wiring, wterms_to_terms};
 
@@ -60,14 +59,6 @@ impl WrappedModule {
             Some("update") => smt::smt::module_update_to_smtlib(&self.module),
             _ => panic!("Invalid `what` argument: `{}`", what.unwrap()),
         }
-    }
-
-    fn init_as_transition(&self) -> WrappedTransition {
-        WrappedTransition(common::transition::Transition::from_module_init(&self.module).unwrap())
-    }
-
-    fn update_as_transition(&self) -> WrappedTransition {
-        WrappedTransition(common::transition::Transition::from_module_update(&self.module).unwrap())
     }
 
     #[cfg(feature = "visual-html")]

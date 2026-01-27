@@ -1,5 +1,3 @@
-use crate::atom::Atom;
-use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::PyTuple;
@@ -7,7 +5,7 @@ use pyo3::types::PyTuple;
 #[pyclass(frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
-    base: base::Module<DType, IType>,
+    pub(crate) base: base::Module<DType, IType>,
 }
 
 #[pymethods]
@@ -125,6 +123,14 @@ impl Module {
         let py = slf.py();
         let module = slf.into_pyobject(py)?.unbind();
         Ok(ModuleAtoms { module })
+    }
+
+    fn init_as_transition(&self) -> Transition {
+        Transition(common::transition::Transition::from_module_init(&self.base).unwrap())
+    }
+
+    fn update_as_transition(&self) -> Transition {
+        Transition(common::transition::Transition::from_module_update(&self.base).unwrap())
     }
 
     fn __str__(&self) -> String {

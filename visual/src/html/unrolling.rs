@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 
-use base::{Interface, Term};
+use base::Interface;
 
 use common::transition::{Transition, WiredTransitions};
 
