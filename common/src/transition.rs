@@ -16,7 +16,13 @@ type Err = &'static str;
 ///
 ///
 /// If the transition represents one round of a reactive module, then `intf_in = crtl[0]`,
-/// `intf_env = extl[1]`, `intf_out = ctrl[1]`.
+/// `intf_env = extl[1]`, `intf_out = ctrl[1]` for an update round. For an init round,
+/// it is the same except `intf_in` is empty. This is also a reason why we cannot have
+/// `intf` of type `Interface<DType, 2>` instead of `intf_in` and `intf_out` (we couldn't
+/// have `intf[0]` empty while `intf[1]` non-empty in the initial round).
+/// We can change that in the future and have `InitTransition` and `UpdateTransition` or something
+/// like that, if necessary.
+///
 ///
 /// # Examples
 ///
