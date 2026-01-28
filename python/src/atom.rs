@@ -129,7 +129,7 @@ enum AtomTermType {
 
 /// An accessor for a Term in an [Atom]
 #[pyclass(frozen)]
-struct AtomTerm {
+pub(crate) struct AtomTerm {
     atom: Py<Atom>,
     typ: AtomTermType,
     idx: usize,
@@ -149,6 +149,10 @@ impl AtomTerm {
 impl AtomTerm {
     fn __str__(&self) -> String {
         self.get().to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.get())
     }
 
     fn itype(&self) -> IType {

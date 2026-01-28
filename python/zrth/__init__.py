@@ -1,6 +1,9 @@
 from .zrth import *
 from .context import Context, get_ctx, set_ctx, reset_ctx
 from .module import ReactiveModule
+from .expr import Sym
+
+from typing import Generator
 
 
 #####################################################################
@@ -53,3 +56,64 @@ orig_wire_transition = WiredTransitions.wire_transition
 WiredTransitions.wire_transition = lambda self, t: orig_wire_transition(
     self, t, get_ctx().unwrap()
 )
+
+
+def process_subst_pair(
+    lhs: Wire | Sym, rhs: Wire | Sym
+) -> Generator[tuple[Wire, Wire]]:
+    if isinstance(lhs, Sym):
+        if lhs.has_nxt():
+            lhs = (lhs.wire(), lhs.nxt().wire())
+        else:
+            lhs = (lhs.wire(),)
+    else:
+        assert isinstance(lhs, Wire), lhs
+        lhs = (lhs,)
+    if isinstance(rhs, Sym):
+        if rhs.has_nxt():
+            rhs = (rhs.wire(), rhs.nxt().wire())
+        else:
+            rhs = (rhs.wire(),)
+    else:
+        assert isinstance(rhs, Wire), rhs
+        rhs = (rhs,)
+
+    if len(lhs) != len(rhs):
+        raise RuntimeError("Invalid mapping")
+    for l, r in zip(lhs, rhs):
+        yield l, r
+
+
+def remap_term(term, subst: dict) -> Term:
+    """
+    Create a new [Term] with re-mapping wires according to substitutions given in `subst`.
+    If a wire `w` is not found in `subst`, a new wire `wn` with fresh ID (and the same DType)
+    is created and the mapping is updated with `w -> wn`. The updated mapping is returned
+    as the second return value from this function (the first one is the new term).
+
+    The substitutions is a dictonary mapping either [Wire]s to [Wire]s or [Sym]s to [Sym]s.
+    In the case of [Sym]s, they are mapped to their wires. If a [Sym] has associated next [Sym],
+    wires of both the latched and next [Sym]s are used for the substitution.
+    """
+    # make sure the substitution is wire-to-wire
+    subst = {l: r for k, v in subst.items() for l, r in process_subst_pair(k, v)}
+    ctx = get_ctx()
+
+    def new_wire(w: Wire) -> Wire:
+        map_w: int | None = subst.get(w)
+        if map_w is None:
+            # this is a temporary (or unmapped wire)
+            # create a new mapping
+            new_w = Wire(ctx.fresh_wire_id(), w.dtype())
+            subst[w] = new_w
+            return new_w
+        return map_w
+
+    read = [new_wire(w) for w in term.read()]
+    write = [new_wire(w) for w in term.write()]
+
+    return mk_term(term.itype(), write, read), subst
+
+
+Term.remap = lambda self, subst: remap_term(self, subst)
+AtomTerm.remap = lambda self, subst: remap_term(self, subst)

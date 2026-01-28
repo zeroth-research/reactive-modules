@@ -4,7 +4,7 @@ from typing import Any, TypeAlias
 import torch
 
 from .zrth import DType, IType, Term, Wire
-from .context import get_ctx
+from .context import get_ctx, Context
 
 
 # types that we can convert to [Expr]
@@ -52,10 +52,11 @@ class Expr:
         )
 
         if op == "sym":
-            name, dtype = args
+            name, dtype, wire = args
             assert isinstance(name, str), name
             assert isinstance(dtype, DType), (type(dtype), dtype)
-            self._out_wire: Wire = ctx.wire(name, dtype)
+            assert wire is None or isinstance(wire, Wire), (type(wire), wire)
+            self._out_wire: Wire = wire or ctx.wire(name, dtype)
             self._term = None
             self._dtype: DType = dtype
         elif op == "const":
@@ -87,16 +88,16 @@ class Expr:
         # (expressions used together should be created together)
         self._ctx = ctx
 
-    def ctx(self):
+    def ctx(self) -> Context:
         return self._ctx
 
-    def term(self):
+    def term(self) -> Term:
         return self._term
 
-    def dtype(self):
+    def dtype(self) -> DType:
         return self._dtype
 
-    def wire(self):
+    def wire(self) -> Wire:
         """
         Get the output wire of this expression's term.
         """
@@ -411,30 +412,38 @@ class Sym(Expr):
     """
     An expression representing a Symbol
 
-    If `create_pair = True` in `__init__`, an associated `Sym` is automatically
+    If `assoc = True` in `__init__`, an associated `Sym` is automatically
     created that represents the "updated" value of this `Sym`.
     This is the default behavior. In the situations when we do not need the "updated"
-    `Sym`, we can call the `__init__` with `create_pair = False`.
+    `Sym`, we can call the `__init__` with `assoc = None` or `assoc = False`.
+    If `assoc` is instance of [Sym], this [Sym] is used as the associated symbol.
 
     The symbol for the "updated" value is accessible via `nxt` (next) method.
     Alternatively, one can access it via `self[1]` and the old value via `self[0]`
     (which is just an alias for `self`).
     """
 
-    def __init__(self, name, dtype, create_pair=True):
+    def __init__(self, name: str, dtype: DType, assoc=True, wire=None):
         if isinstance(dtype, str):
             dtype = DType.from_str(dtype)
-        super().__init__("sym", name, dtype)
+        super().__init__("sym", name, dtype, wire)
         self._name = name
-        if create_pair:
-            self._nxt = Sym(f"{name}'", dtype, create_pair=False)
+        if assoc:
+            if assoc is True:
+                self._nxt = Sym(f"{name}'", dtype, assoc=False)
+            elif isinstance(assoc, Sym):
+                self._nxt = assoc
+            else:
+                raise ValueError(
+                    f"Invalid value for argument `assoc`, it should be an instance of Sym or bool, got: `{assoc}`"
+                )
         else:
             self._nxt = None
 
     def nxt(self):
         """
         Get the associated `Sym` representing the updated (next) value
-        of `self`. If there is none (`self` was created with `create_pair = False`),
+        of `self`. If there is none (`self` was created with `assoc = False`),
         raise an error.
         """
         if self._nxt is None:
@@ -447,6 +456,9 @@ class Sym(Expr):
         An alias for `nxt`, this terminology is used in the paper about reactive modules
         """
         return self.nxt()
+
+    def has_nxt(self):
+        return self._nxt is not None
 
     def __getitem__(self, item: int) -> "Sym":
         if item == 0:
@@ -463,11 +475,19 @@ class Sym(Expr):
     def name(self):
         return self._name
 
+    @staticmethod
+    def from_sym(sym: "Sym", assoc=None) -> "Sym":
+        if isinstance(sym, Sym):
+            assoc = assoc or (sym.nxt() if sym.has_nxt() else None)
+            return Sym(sym.name, sym.dtype(), assoc=assoc, wire=sym.wire())
+
+        raise RuntimeError(f"Expected Sym, got {type(sym)}")
+
     def fresh(self, name: str) -> "Sym":
         """
         Create a symbol of the same type with a new name
         """
-        return Sym(name, self.dtype(), create_pair=(self._nxt is not None))
+        return Sym(name, self.dtype(), assoc=(self._nxt is not None))
 
     def __str__(self):
         return f"Sym({self._name} : {self.dtype()})"
@@ -502,11 +522,11 @@ def nxt(var: Sym) -> Sym:
 updated = nxt
 
 
-def sym(name: str, ty: DType, create_pair=True) -> Sym:
+def sym(name: str, ty: DType, assoc: Sym | bool | None = True) -> Sym:
     """
     Create a symbol
     """
-    return Sym(name, ty, create_pair=create_pair)
+    return Sym(name, ty, assoc=assoc)
 
 
 # class IfThen:
