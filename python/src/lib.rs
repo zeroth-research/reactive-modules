@@ -1,5 +1,5 @@
-#[cfg(feature = "enable-smt")]
-mod smt;
+//#[cfg(feature = "enable-smt")]
+//mod smt;
 
 use pyo3::prelude::*;
 
@@ -20,17 +20,17 @@ use pyo3::PyClass;
 
 #[pymodule]
 fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    #[cfg(feature = "enable-smt")]
-    {
-        let smt = PyModule::new(py, "smt")?;
-        smt.add_class::<smt::WrappedTerm>()?;
-        smt.add_class::<smt::WrappedModule>()?;
-        smt.add_class::<smt::WrappedContext>()?;
-        smt.add_class::<smt::WrappedWiredTransitions>()?;
-        smt.add_class::<smt::PyVal>()?;
-
-        m.add_submodule(&smt)?;
-    }
+    //#[cfg(feature = "enable-smt")]
+    //{
+    //    let smt = PyModule::new(py, "smt")?;
+    //    smt.add_class::<smt::WrappedTerm>()?;
+    //    smt.add_class::<smt::WrappedModule>()?;
+    //    smt.add_class::<smt::WrappedContext>()?;
+    //    smt.add_class::<smt::WrappedWiredTransitions>()?;
+    //    smt.add_class::<smt::PyVal>()?;
+    //
+    //    m.add_submodule(&smt)?;
+    //}
 
     m.add_class::<IType>()?;
     m.add_class::<DType>()?;
