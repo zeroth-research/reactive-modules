@@ -61,42 +61,43 @@ def test_unroll_semimanual():
     for i in range(3):
         U.wire_transition(T)
 
-    U.dbg()
+    # U.dbg()
+
+
+def test_unroll_manual():
+    """
+    Manual module unrolling
+    """
+
+    m = MyModule(intf="xyz: Tensor<3; Int>", extl="yz0: Tensor<2; Int>")
+    assert m
+
+    U = bmc.WiredTransitions()
+
+    # wire in the initial transition
+    # U += m.init_as_transition()
+
+    T = m.update_as_transition()
+
+    print(T.intf_in())
+    print(T.intf_out())
+    print(T.intf_env())
+
+    print(list(T.intf_in()))
+    print(list(T.intf_out()))
+    print(list(T.intf_env()))
+    # wire the `update` transition 3x to the unrolling
+    # for i in range(3):
+    #    new_env = [Sym(f"{s.name}_{i}") for s in T.intf_env]
+    #    new_in = [Sym(f"{s.name}_{i}") for s in T.intf_in]
+    #    new_out = [Sym(f"{s.name}_{i}") for s in T.out]
+    #
+    #    U += T.remap({})
+
+    # U.dbg()
 
 
 if __name__ == "__main__":
     test_unroll_auto()
     test_unroll_semimanual()
-
-# # ################################
-# # Manual module unrolling (still without manually creating states)
-# # ################################
-
-#
-# # ################################################################
-# # Fully manual module unrolling (sketch, code not working (yet?))
-# # ################################################################
-# I = m.init_as_transition()
-#
-# raise NotImplementedError("Not implemented from here")
-# last_out = I.output(ctx)
-# I = I.as_pysmt_expr()
-#
-# unrolling = [I]
-#
-# T = m.update_as_transition()
-# T_in = T.input(ctx)
-# T_out = T.output(ctx)
-# T_env = [e for e_pair in T.env(ctx) for e in e_pair]
-# T = T.as_pysmt_expr()
-#
-# for i in range(3):
-#     new_out = [smt.fresh_var(v.dtype()) for v in last_out]
-#     new_env = [smt.fresh_var(v.dtype()) for v in T_env]
-#     new_T = T.subst(
-#         list(zip(T_in, last_out))
-#         + list(zip(T_out, new_out))
-#         + list(zip(T_env, new_env))
-#     )
-#     unrolling.append(new_T)
-#     last_out = new_out
+    test_unroll_manual()

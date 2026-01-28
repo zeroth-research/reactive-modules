@@ -1,13 +1,13 @@
 use pyo3::prelude::*;
 
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::types::PyAny;
 
 use base::Interface;
 
 // the context in `toy` crate is generic,
 // we'll use it until we have the context in `base`.
-use crate::{DType, IType};
+use crate::{DType, IType, Wire};
 
 use bmc::unrolling::ModuleUnrolling;
 
@@ -15,7 +15,7 @@ use crate::context::RustContext;
 use crate::module::Module;
 use crate::{try_term_iter_cloned, try_wire_iter_cloned};
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct Transition(pub(crate) common::transition::Transition<DType, IType>);
 
 #[pymethods]
@@ -50,6 +50,30 @@ impl Transition {
         )))
     }
 
+    fn intf_in(slf: PyRef<'_, Self>) -> PyResult<TransitionInterface> {
+        let py = slf.py();
+        let transition = slf.into_pyobject(py)?.unbind();
+        Ok(TransitionInterface {
+            transition,
+            interface: TransitionInterfaceType::In,
+        })
+    }
+
+    fn intf_out(slf: PyRef<'_, Self>) -> PyResult<TransitionInterface> {
+        let py = slf.py();
+        let transition = slf.into_pyobject(py)?.unbind();
+        Ok(TransitionInterface {
+            transition,
+            interface: TransitionInterfaceType::Out,
+        })
+    }
+
+    fn intf_env(slf: PyRef<'_, Self>) -> PyResult<TransitionEnvInterface> {
+        let py = slf.py();
+        let transition = slf.into_pyobject(py)?.unbind();
+        Ok(TransitionEnvInterface { transition })
+    }
+
     pub fn dbg(&self) {
         println!("---------------------------");
         println!("Transition:");
@@ -79,6 +103,90 @@ impl Default for WiredTransitions {
     }
 }
 
+#[derive(Clone)]
+enum TransitionInterfaceType {
+    In,
+    Out,
+}
+
+#[pyclass(sequence)]
+struct TransitionInterface {
+    transition: Py<Transition>,
+    interface: TransitionInterfaceType,
+}
+
+#[pymethods]
+impl TransitionInterface {
+    fn __getitem__(&self, index: usize) -> PyResult<Wire> {
+        let transition = &self.transition.get().0;
+        // item.and_then(|i| Some(i.map(Clone::clone).map(Wire::from)))
+        //     .ok_or(PyIndexError::new_err("index out of bounds"))
+        match self.interface {
+            TransitionInterfaceType::In => transition
+                .intf_in()
+                .entry(index)
+                .and_then(|w| Some(Wire::from(w[0].clone())))
+                .ok_or(PyIndexError::new_err("index out of bounds")),
+
+            TransitionInterfaceType::Out => transition
+                .intf_out()
+                .entry(index)
+                .and_then(|w| Some(Wire::from(w[0].clone())))
+                .ok_or(PyIndexError::new_err("index out of bounds")),
+        }
+    }
+
+    fn __len__(&self) -> usize {
+        let transition = &self.transition.get().0;
+        match self.interface {
+            TransitionInterfaceType::In => transition.intf_in().len(),
+            TransitionInterfaceType::Out => transition.intf_out().len(),
+        }
+    }
+
+    fn __str__(&self) -> String {
+        let transition = &self.transition.get().0;
+        match self.interface {
+            TransitionInterfaceType::In => transition.intf_in().to_string(),
+            TransitionInterfaceType::Out => transition.intf_out().to_string(),
+        }
+    }
+}
+
+#[pyclass(sequence)]
+struct TransitionEnvInterface {
+    transition: Py<Transition>,
+}
+
+#[pymethods]
+impl TransitionEnvInterface {
+    fn __getitem__(&self, index: usize) -> PyResult<(Wire, Wire)> {
+        match &self.transition.get().0.intf_env() {
+            None => Err(PyIndexError::new_err("interface is empty")),
+            Some(intf) => intf
+                .entry(index)
+                .map(|w| (w[0].clone().into(), w[1].clone().into()))
+                .ok_or_else(|| PyIndexError::new_err("index out of bounds")),
+        }
+    }
+
+    fn __len__(&self) -> usize {
+        self.transition
+            .get()
+            .0
+            .intf_env()
+            .map_or(0, |intf| intf.len())
+    }
+
+    fn __str__(&self) -> String {
+        self.transition
+            .get()
+            .0
+            .intf_env()
+            .map_or("()".to_string(), |intf| intf.to_string())
+    }
+}
+
 #[pymethods]
 impl WiredTransitions {
     #[new]
@@ -88,11 +196,7 @@ impl WiredTransitions {
         }
     }
 
-    fn init(
-        self_: Bound<'_, Self>,
-        module: &Bound<'_, Module>,
-        ctx: &Bound<'_, RustContext>,
-    ) {
+    fn init(self_: Bound<'_, Self>, module: &Bound<'_, Module>, ctx: &Bound<'_, RustContext>) {
         let module = module.borrow();
         let mut ctx = ctx.borrow_mut();
 
@@ -100,11 +204,7 @@ impl WiredTransitions {
         unroll.init_ref(&mut self_.borrow_mut().transitions);
     }
 
-    fn step(
-        self_: Bound<'_, Self>,
-        module: &Bound<'_, Module>,
-        ctx: &Bound<'_, RustContext>,
-    ) {
+    fn step(self_: Bound<'_, Self>, module: &Bound<'_, Module>, ctx: &Bound<'_, RustContext>) {
         let module = module.borrow();
         let mut ctx = ctx.borrow_mut();
 

@@ -78,6 +78,12 @@ impl<D: Eq> Interface<D> {
     }
 }
 
+impl<D> Interface<D, 1> {
+    pub fn as_slice(&self) -> &[Wire<D>] {
+        self.wires[0].as_slice()
+    }
+}
+
 impl<D> Interface<D, 2> {
     pub fn latched(&self) -> &[Wire<D>] {
         self.wires[0].as_slice()
