@@ -34,6 +34,14 @@ impl Wire {
     fn __eq__(&self, other: &Self) -> bool {
         self.base == other.base
     }
+
+    // Wires should be identified by their ID.
+    // If there are two wires with same IDs and different types
+    // that are used by the same code, it is an error.
+    // So hash only by ID
+    fn __hash__(&self) -> usize {
+        self.id()
+    }
 }
 
 impl Wire {

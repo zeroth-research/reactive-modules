@@ -223,6 +223,44 @@ impl WiredTransitions {
         slf.wire_transition(&t.0, &mut ctx.ctx).unwrap();
     }
 
+    fn __iadd__(self_: Bound<'_, Self>, t: &Bound<'_, Transition>) {
+        let t = t.borrow();
+        let slf = &mut self_.borrow_mut().transitions;
+        slf.push(t.0.clone()).unwrap();
+    }
+
+    fn __add__(self_: Bound<'_, Self>, t: &Bound<'_, Transition>) -> Self {
+        let mut new = Self {
+            transitions: self_.borrow().transitions.clone(),
+        };
+        new.transitions.push(t.borrow().0.clone()).unwrap();
+        new
+    }
+
+    fn __len__(&self) -> usize {
+        self.transitions.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.transitions.is_empty()
+    }
+
+    // fn last(slf: Bound<'_, Self>) -> PyResult<TransitionRef> {
+    //     let py = slf.py();
+    //     let pywt = slf.into_pyobject(py)?.unbind();
+    //     if pywt.borrow(py).is_empty() {
+    //         return Err(PyIndexError::new_err(
+    //             "last called on empty WiredTransitions",
+    //         ));
+    //     }
+    //
+    //     let n = pywt.borrow(py).__len__() - 1;
+    //     Ok(TransitionRef {
+    //         transitions: pywt,
+    //         idx: n,
+    //     })
+    // }
+
     fn dbg(&self) {
         for transition in &self.transitions {
             println!("---------------------------");

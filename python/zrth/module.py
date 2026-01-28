@@ -102,6 +102,10 @@ class ReactiveModuleDef:
         """Controlled wires: interface outputs + private wires"""
         return self.intf + (self.prvt or [])
 
+    @property
+    def atoms(self):
+        return self.unwrap().atoms()
+
     def init_as_transition(self) -> Transition:
         return self._module.init_as_transition()
 
@@ -256,7 +260,7 @@ def parse_variables(variables) -> tuple[Sym]:
             if not ":" in v:
                 raise RuntimeError(f"A variable `{v}` is missing a type annotation")
             v = v.split(":")
-            v = sym(v[0].strip(), DType.from_str(v[1].strip()), create_pair=True)[0]
+            v = sym(v[0].strip(), DType.from_str(v[1].strip()), assoc=True)[0]
         elif not isinstance(v, Sym):
             raise RuntimeError(
                 f"A variable must be given as a string or `Sym` object, got {v} ({type(v)})"

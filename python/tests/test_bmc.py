@@ -1,7 +1,7 @@
 from torch import IntTensor
 
 from zrth import DType
-from zrth.expr import nxt, ite, sym
+from zrth.expr import nxt, ite, Sym
 from zrth import ReactiveModule
 import zrth.bmc as bmc
 
@@ -24,21 +24,71 @@ class MyModule(ReactiveModule):
         return ite(cond, result1, result2)
 
 
-def test_unroll_auto():
+def test_unroll_manual():
     """
-    Automated module unrolling
+    Manual module unrolling
     """
 
     m = MyModule(intf="xyz: Tensor<3; Int>", extl="yz0: Tensor<2; Int>")
     assert m
-    # m.to_html("/tmp/torch.html", open=True)
 
-    U = bmc.ModuleUnrolling(m)
-    U.init()
-    for i in range(10):
-        U.step()
+    # get the module terms
+    init_terms = [term for atom in m.atoms for term in atom.init()]
+    update_terms = [term for atom in m.atoms for term in atom.update()]
+
+    transitions = [init_terms]
+    # track used symbols for printing (but eventually for later usage)
+    interfaces = [[(s, s.nxt()) for s in m.extl]]
+
+    N = 4
+
+    # chain the `update` N times
+    last_env: list[Sym] = [s.nxt() for s in m.extl]
+    last_out: list[Sym] = [s.nxt() for s in m.ctrl]
+    for i in range(1, N + 1):
+        renaming = {}
+
+        # create new environment variables
+        new_env = [Sym(f"{s.nxt().name}_{i}", s.dtype(), assoc=False) for s in m.extl]
+
+        # create new output wires
+        new_out: list[Sym] = [
+            Sym(f"{s.nxt().name}_{i}", s.dtype(), assoc=False) for s in m.ctrl
+        ]
+
+        # rewire the environment wires
+        renaming.update({e.wire(): l for e, l in zip(m.extl, last_env)})
+        renaming.update({e.nxt().wire(): n for e, n in zip(m.extl, new_env)})
+
+        # wire inputs of `update` to outputs of the last `transitions`
+        renaming.update({s.wire(): lw.wire() for s, lw in zip(m.ctrl, last_out)})
+
+        # rename the new outputs
+        renaming.update({s.nxt().wire(): o.wire() for s, o in zip(m.ctrl, new_out)})
+
+        new_terms = []
+        for term in update_terms:
+            new_term, renaming = term.remap(renaming)
+            new_terms.append(new_term)
+
+        transitions.append(new_terms)
+
+        interfaces.append([(o, n) for o, n in zip(last_out, new_out)])
+        last_out = new_out
+
+    # ##########
+    # print it!
+    # ##########
+    for n in range(len(transitions)):
+        print("-----")
+        for l, u in interfaces[n]:
+            print(f"{l} = w{l.wire().id()}")
+            print(f"{u} = w{u.wire().id()}")
+        print("-----")
+        for term in transitions[n]:
+            print(term)
+
     # U.dbg()
-    # U.to_html("/tmp/unroll.html", open=True)
 
 
 def test_unroll_semimanual():
@@ -64,37 +114,21 @@ def test_unroll_semimanual():
     # U.dbg()
 
 
-def test_unroll_manual():
+def test_unroll_auto():
     """
-    Manual module unrolling
+    Automated module unrolling
     """
 
     m = MyModule(intf="xyz: Tensor<3; Int>", extl="yz0: Tensor<2; Int>")
     assert m
+    # m.to_html("/tmp/torch.html", open=True)
 
-    U = bmc.WiredTransitions()
-
-    # wire in the initial transition
-    # U += m.init_as_transition()
-
-    T = m.update_as_transition()
-
-    print(T.intf_in())
-    print(T.intf_out())
-    print(T.intf_env())
-
-    print(list(T.intf_in()))
-    print(list(T.intf_out()))
-    print(list(T.intf_env()))
-    # wire the `update` transition 3x to the unrolling
-    # for i in range(3):
-    #    new_env = [Sym(f"{s.name}_{i}") for s in T.intf_env]
-    #    new_in = [Sym(f"{s.name}_{i}") for s in T.intf_in]
-    #    new_out = [Sym(f"{s.name}_{i}") for s in T.out]
-    #
-    #    U += T.remap({})
-
+    U = bmc.ModuleUnrolling(m)
+    U.init()
+    for i in range(10):
+        U.step()
     # U.dbg()
+    # U.to_html("/tmp/unroll.html", open=True)
 
 
 if __name__ == "__main__":

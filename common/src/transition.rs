@@ -102,6 +102,10 @@ impl<D, I> Transition<D, I> {
     pub fn terms(&self) -> std::slice::Iter<'_, Term<D, I>> {
         self.transition.iter()
     }
+
+    pub fn term(&self, idx: usize) -> Option<&Term<D, I>> {
+        self.transition.get(idx)
+    }
 }
 
 impl<D: Clone + Eq, I: Clone> Transition<D, I> {
@@ -191,7 +195,7 @@ impl<D, I> IntoIterator for Transition<D, I> {
 /// of every transition wires with the input of the next transition.
 /// Note that by the input interface here we mean `Transition::intf_in`.
 /// The environment inputs `Transition::intf_env` may or may not be wired.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WiredTransitions<D, I> {
     // TODO: remove pub
     pub transitions: Vec<Transition<D, I>>,
@@ -208,6 +212,10 @@ impl<D, I> WiredTransitions<D, I> {
         Self {
             transitions: Vec::new(),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.transitions.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -255,6 +263,10 @@ impl<D: Eq, I> WiredTransitions<D, I> {
 
         self.transitions.push(t);
         Ok(())
+    }
+
+    pub fn last(&self) -> Option<&Transition<D, I>> {
+        self.transitions.last()
     }
 
     pub fn last_interface(&self) -> Option<&Interface<D>> {
@@ -379,7 +391,10 @@ impl<D: Clone + Eq, I: Clone> WiredTransitions<D, I> {
         let intf_env = if let Some(intf_env) = &t.intf_env {
             Some(Interface::try_from_iter(intf_env.iter().map(|w| {
                 debug_assert!(w[0].dtype() == w[1].dtype());
-                [ctx.tmp_wire(w[0].dtype().clone()), ctx.tmp_wire(w[1].dtype().clone())]
+                [
+                    ctx.tmp_wire(w[0].dtype().clone()),
+                    ctx.tmp_wire(w[1].dtype().clone()),
+                ]
             }))?)
         } else {
             None
