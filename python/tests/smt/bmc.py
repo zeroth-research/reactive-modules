@@ -35,7 +35,7 @@ extl = (a, b, c)
 
 m = Module(ctrl=ctrl, extl=extl)
 # m.dbg()
-# m.to_html("/tmp/smt.html", open=False)
+m.to_html("/tmp/smt.html", open=False)
 
 
 ###############
@@ -45,9 +45,10 @@ m = Module(ctrl=ctrl, extl=extl)
 # ################################
 U = smt.ModuleUnrolling(m)
 U.init()
-for i in range(5):
+for i in range(10):
     U.step()
 # U.dbg()
+U.to_html("/tmp/unroll.html", open=True)
 
 # ################################
 # Manual module unrolling (still without manually creating states)

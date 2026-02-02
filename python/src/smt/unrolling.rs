@@ -154,4 +154,13 @@ impl WrappedWiredTransitions {
             println!("Out: {}", transition.intf_out());
         }
     }
+
+    #[cfg(feature = "visual-html")]
+    fn to_html(&self, _ctx: &Bound<'_, WrappedContext>, path: &str) {
+        //let ctx: &WrappedContext = &ctx.borrow();
+        let _ = visual::html::unrolling::write_to_html(
+            &self.transitions,
+            path, //Some(&ctx.to_smt_ctx(&self.module)),
+        );
+    }
 }
