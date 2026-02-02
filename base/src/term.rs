@@ -132,6 +132,19 @@ impl<D, I> Block<D, I> {
         &self.write
     }
 
+    /// Return a reference to the n-th term in the block
+    pub fn get(&self, n: usize) -> Option<&Term<D, I>> {
+        self.terms.get(n)
+    }
+
+    pub fn len(&self) -> usize {
+        self.terms.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.terms.is_empty()
+    }
+
     pub(crate) fn empty() -> Self {
         Self {
             terms: Vec::new(),
