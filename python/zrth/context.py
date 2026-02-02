@@ -103,6 +103,7 @@ class Context(ContextBase):
         self._wire_dtypes[wire_id] = dtype
         return Wire(wire_id, dtype)
 
+    @override
     def tmp_wire(self, dtype: DType) -> Wire:
         """Create temporary wire
 
@@ -114,9 +115,9 @@ class Context(ContextBase):
         """
         assert isinstance(dtype, DType), (dtype, type(dtype))
 
-        wire_id = self.fresh_wire_id()
-        self._wire_dtypes[wire_id] = dtype
-        return Wire(wire_id, dtype)
+        wire = super().tmp_wire(dtype)
+        self._wire_dtypes[wire.id()] = wire.dtype()
+        return wire
 
     def has_wire(self, name: str) -> bool:
         """Check if a wire is declared
