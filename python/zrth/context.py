@@ -1,4 +1,6 @@
-from .zrth import DType, Wire, RustContext
+from typing import override
+
+from .zrth import DType, Wire, Term, RustContext
 
 
 class ContextBase:
@@ -14,28 +16,28 @@ class ContextBase:
     XXX: we currently do not use named wires with `RustContext`
     """
 
-    def __init__(self, rust_ctx=None):
+    def __init__(self, rust_ctx: RustContext | None = None):
         """
         :param: ctx_impl  is the Rust context object.
         """
-        self._rust_context = rust_ctx or RustContext()
+        self._rust_context: RustContext = rust_ctx or RustContext()
         # when we are tracing code, we create terms and we store them
         # in lists that are here. The lists form a stack,
         # the user can push a new frame (list) and pop an old one
         # to distinguish terms during tracing different parts of code
-        self._terms_frames = []
+        self._terms_frames: list[list[Term]] = []
 
-    def push_terms_frame(self, f: list) -> None:
+    def push_terms_frame(self, f: list[Term]) -> None:
         self._terms_frames.append(f)
 
-    def pop_terms_frame(self) -> list:
+    def pop_terms_frame(self) -> list[Term]:
         return self._terms_frames.pop()
 
-    def add_term(self, term):
+    def add_term(self, term: Term) -> None:
         if self._terms_frames:
             self._terms_frames[-1].append(term)
 
-    def unwrap(self):
+    def unwrap(self) -> RustContext:
         return self._rust_context
 
     def tmp_wire(self, dtype: DType) -> Wire:
@@ -49,7 +51,7 @@ class Context(ContextBase):
     Follows the common-ctx API pattern for future compatibility.
     """
 
-    def __init__(self, rust_ctx=None):
+    def __init__(self, rust_ctx: RustContext | None = None):
         super().__init__(rust_ctx)
         self.name_to_id: dict[str, int] = {}  # str -> int
         self.id_to_name: dict[int, str] = {}  # int -> str
@@ -61,8 +63,8 @@ class Context(ContextBase):
         Returns:
             Wire ID (int)
         """
-        v = self.unwrap().fresh_wire_id()
-        name = f"__c_{v}"
+        v: int = self.unwrap().fresh_wire_id()
+        name: str = f"__c_{v}"
         self.name_to_id[name] = v
         self.id_to_name[v] = name
         return v
@@ -148,6 +150,7 @@ class Context(ContextBase):
         assert isinstance(wire_id, int), (wire_id, type(wire_id))
         return self.id_to_name.get(wire_id)
 
+    @override
     def __str__(self) -> str:
         result = f"Context with {self.num_wires()} wires:\n"
         for name, wid in sorted(self.name_to_id.items(), key=lambda x: x[1]):

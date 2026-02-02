@@ -1,6 +1,4 @@
-from random import randrange
-
-from typing import Any, TypeAlias
+from typing import Any, override
 import torch
 
 from .zrth import DType, IType, Term, Wire
@@ -39,13 +37,13 @@ class Expr:
 
     def __init__(self, op: str, *args):
         assert isinstance(op, str), type(op)
-        self.op = op
+        self.op: str = op
         # FIXME: this special handling of "sym"
-        self.args = list(args) if op != "sym" else []
+        self.args: list[Expr] = list(args) if op != "sym" else []
 
         Expr.__cnt += 1
         self.id = Expr.__cnt
-        ctx = get_ctx()
+        ctx: Context = get_ctx()
 
         assert all(not isinstance(a, Expr) or a.ctx() is ctx for a in args), (
             "Expr must be created in the same context as its arguments"
@@ -61,7 +59,7 @@ class Expr:
             self._dtype: DType = dtype
         elif op == "const":
             assert len(args) == 1
-            val = args[0]
+            val: ToExpr = args[0]
             itype, dtype = const_to_itype_dtype(val)
             self._out_wire: Wire = ctx.tmp_wire(dtype)
             self._term: Term = Term(itype, [self._out_wire], [])
@@ -86,7 +84,7 @@ class Expr:
         # Store the context this expression was created in.
         # At the moment, it is rather for checking consistency
         # (expressions used together should be created together)
-        self._ctx = ctx
+        self._ctx: Context = ctx
 
     def ctx(self) -> Context:
         return self._ctx
@@ -103,7 +101,8 @@ class Expr:
         """
         return self._out_wire
 
-    def __eq__(self, oth) -> bool:
+    @override
+    def __eq__(self, oth: object) -> bool:
         """
         Compute if two terms are syntactically the same.
         To create experssion that states that two expressions
