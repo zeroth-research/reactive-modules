@@ -32,6 +32,11 @@ class DType:
     @override
     def __repr__(self) -> str: ...
 
+    # defined in `zrth.__init__.py`
+    Int: DType
+    Float: DType
+    Bool: DType
+
 class IType:
     @staticmethod
     def Add() -> IType: ...

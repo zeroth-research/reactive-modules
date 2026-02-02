@@ -49,13 +49,14 @@ class Expr:
             "Expr must be created in the same context as its arguments"
         )
 
+        self._term: Term | None = None
+
         if op == "sym":
             name, dtype, wire = args
             assert isinstance(name, str), name
             assert isinstance(dtype, DType), (type(dtype), dtype)
             assert wire is None or isinstance(wire, Wire), (type(wire), wire)
             self._out_wire: Wire = wire or ctx.wire(name, dtype)
-            self._term = None
             self._dtype: DType = dtype
         elif op == "const":
             assert len(args) == 1
@@ -89,7 +90,7 @@ class Expr:
     def ctx(self) -> Context:
         return self._ctx
 
-    def term(self) -> Term:
+    def term(self) -> Term | None:
         return self._term
 
     def dtype(self) -> DType:
@@ -218,10 +219,11 @@ class Expr:
     def __invert__(self) -> "Expr":
         return self.lnot()
 
+    @override
     def __str__(self) -> str:
         return f"<{self.id}> {self.op}({', '.join(map(str, self.args))})"
 
-    def get_children(self) -> list:
+    def get_children(self) -> list["Expr"]:
         return self.args
 
 
@@ -315,6 +317,7 @@ def cmp_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
 def logic_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
     if op == "logic.not":
         assert len(args) == 1
+        assert isinstance(args[0], Expr), args[0]
         assert args[0].dtype() == DType.Bool
         return IType.Not(), DType.Bool
 
@@ -362,12 +365,13 @@ def op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
 
     if op == "id":
         assert len(args) == 1
+        assert isinstance(args[0], Expr), args[0]
         return IType.Id(), args[0].dtype()
 
     raise NotImplementedError(f"Translation not implemented for {op}")
 
 
-def const_to_itype_dtype(val) -> tuple[IType, DType]:
+def const_to_itype_dtype(val: bool | float | int | torch.Tensor) -> tuple[IType, DType]:
     """
     Translate Python value into IType that represents this constant and
     its associated DType.
@@ -379,29 +383,29 @@ def const_to_itype_dtype(val) -> tuple[IType, DType]:
     if isinstance(val, int):
         return IType.Tensor(torch.Tensor([val])), DType.Int
 
-    if isinstance(val, torch.Tensor):
-        dtype = val.dtype
+    if not isinstance(val, torch.Tensor):
+        raise NotImplementedError(f"Unimplemented constant: {val} ({type(val)})")
 
-        if dtype == torch.bool:
-            return IType.Tensor(val), DType.TensorBool(val.size())
+    dtype = val.dtype
 
-        if dtype in (
-            torch.int,
-            torch.long,
-            torch.uint64,
-            torch.uint32,
-            torch.uint8,
-            torch.uint16,
-            torch.short,
-        ):
-            return IType.Tensor(val), DType.TensorInt(val.size())
+    if dtype == torch.bool:
+        return IType.Tensor(val), DType.TensorBool(val.size())
 
-        if dtype in (torch.float, torch.float32, torch.float64):
-            return IType.Tensor(val), DType.TensorFloat(val.size())
+    if dtype in (
+        torch.int,
+        torch.long,
+        torch.uint64,
+        torch.uint32,
+        torch.uint8,
+        torch.uint16,
+        torch.short,
+    ):
+        return IType.Tensor(val), DType.TensorInt(val.size())
 
-        raise NotImplementedError(f"Unsupported tensor element type: {dtype}")
+    if dtype in (torch.float, torch.float32, torch.float64):
+        return IType.Tensor(val), DType.TensorFloat(val.size())
 
-    raise NotImplementedError(f"Unimplemented constant: {val} ({type(val)})")
+    raise NotImplementedError(f"Unsupported tensor element type: {dtype}")
 
 
 class Sym(Expr):
@@ -423,7 +427,8 @@ class Sym(Expr):
         if isinstance(dtype, str):
             dtype = DType.from_str(dtype)
         super().__init__("sym", name, dtype, wire)
-        self._name = name
+        self._name: str = name
+        self._nxt: Sym | None = None
         if assoc:
             if assoc is True:
                 self._nxt = Sym(f"{name}'", dtype, assoc=False)
@@ -433,8 +438,6 @@ class Sym(Expr):
                 raise ValueError(
                     f"Invalid value for argument `assoc`, it should be an instance of Sym or bool, got: `{assoc}`"
                 )
-        else:
-            self._nxt = None
 
     def nxt(self):
         """
