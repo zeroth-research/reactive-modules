@@ -84,8 +84,8 @@ def test_concrete():
     assert a == 9
     assert m == 18
     assert b == 14
-    assert g == False
-    assert n == True
+    assert not g
+    assert n
 
 
 def test_argmax_concrete():

@@ -423,7 +423,7 @@ class Sym(Expr):
     (which is just an alias for `self`).
     """
 
-    def __init__(self, name: str, dtype: DType, assoc=True, wire=None):
+    def __init__(self, name: str, dtype: DType | str, assoc=True, wire=None):
         if isinstance(dtype, str):
             dtype = DType.from_str(dtype)
         super().__init__("sym", name, dtype, wire)
@@ -828,7 +828,7 @@ def ite(cond, iftrue, iffalse):
     return iftrue if cond else iffalse
 
 
-def argmax(t: ToExpr) -> Argmax | int:
+def argmax(t: ToExpr) -> Argmax | int | float:
     """
     Argmax of a flattened tensor. Note that torch.Tensor.argmax()
     returns a tensor, while we return int to match the Term.
