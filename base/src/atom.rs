@@ -1,7 +1,10 @@
 use crate::term::{Block, Term};
 use crate::wire::{Interface, Wire};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+
+#[cfg(debug_assertions)]
+use std::collections::HashSet;
 
 /// This data structure corresponds to the atom of reactive modules.
 #[derive(Debug, Clone)]
