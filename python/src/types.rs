@@ -27,6 +27,7 @@ fn parse_dim_with_type(dim_and_type: &str) -> Option<(Vec<usize>, PrimitiveType)
     if let Some((dim, ptype)) = dim_and_type.split_once(';') {
         let dim = dim
             .split(',')
+            .map(str::trim)
             .map(str::parse)
             .collect::<Result<_, _>>()
             .ok()?;
