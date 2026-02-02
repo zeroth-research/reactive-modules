@@ -1,8 +1,7 @@
 use base::{Interface, Module, Term, Wire, term};
 use common::context::Context;
 use common::transition::WiredTransitions;
-
-use bmc::ModuleUnrolling;
+use common::unrolling::ModuleUnrolling;
 
 #[allow(clippy::vec_init_then_push)]
 fn example_counter() -> Result<Module<&'static str, &'static str>, &'static str> {

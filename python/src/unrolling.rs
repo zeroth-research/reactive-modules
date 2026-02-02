@@ -9,7 +9,7 @@ use base::Interface;
 // we'll use it until we have the context in `base`.
 use crate::{DType, IType, Wire};
 
-use bmc::unrolling::ModuleUnrolling;
+use common::unrolling::ModuleUnrolling;
 
 use crate::context::RustContext;
 use crate::module::Module;

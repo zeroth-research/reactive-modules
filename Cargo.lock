@@ -105,14 +105,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bmc"
-version = "0.1.0"
-dependencies = [
- "base",
- "common",
-]
-
-[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1139,7 +1131,6 @@ name = "zrth-python"
 version = "0.1.0"
 dependencies = [
  "base",
- "bmc",
  "common",
  "pyo3",
  "pyo3-tch",

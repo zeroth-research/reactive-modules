@@ -11,7 +11,6 @@ crate-type = ["cdylib"]
 [dependencies]
 base = { path = "../base" }
 common = { path = "../common" }
-bmc = { path = "../bmc" }
 smt = { path = "../smt", optional = true}
 pyo3 = { version = "0.24" }
 visual = { path = "../visual", features = ["html"], optional = true }
