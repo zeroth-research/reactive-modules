@@ -121,7 +121,7 @@ class Expr:
         return MatMul(self, rhs)
 
     def argmax(self) -> "Expr":
-        return Argmax(self, rhs)
+        return Argmax(self)
 
     def add(self, rhs: ToExpr) -> "Expr":
         return Add(self, rhs)
@@ -191,9 +191,6 @@ class Expr:
 
     def __radd__(self, lhs: ToExpr) -> "Expr":
         return Add(lhs, self)
-
-    def __rmul__(self, lhs: ToExpr) -> "Expr":
-        return Mul(lhs, self)
 
     def __rsub__(self, lhs: ToExpr) -> "Expr":
         return Sub(lhs, self)
