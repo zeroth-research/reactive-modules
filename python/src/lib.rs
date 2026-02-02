@@ -22,7 +22,7 @@ use crate::wire::Wire;
 use pyo3::PyClass;
 
 #[pymodule]
-fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     //#[cfg(feature = "enable-smt")]
     //{
     //    let smt = PyModule::new(py, "smt")?;
