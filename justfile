@@ -64,13 +64,13 @@ rebuild:
 rebuild-python:
     # clean the build
     @just clean
-    # build the `torch` crate and make sure it uses the libtorch that will
-    # be used also by the `python` crate
-    #cd python && uv sync --no-build-package zrth --no-install-project
-    #cd python && source .venv/bin/activate  && LIBTORCH_USE_PYTORCH=1 {{ CARGO }} build --package torch
-    # now build the python crate
+    #DISABLED: build the `torch` crate and make sure it uses the libtorch that will
+    #DISABLED:  be used also by the `python` crate
+    #DISABLED: cd python && uv sync --no-build-package zrth --no-install-project
+    #DISABLED: cd python && source .venv/bin/activate  && LIBTORCH_USE_PYTORCH=1 {{ CARGO }} build --package torch
+    #DISABLED:  now build the python crate
     @just build-all
-    #cd python && uv run maturin develop  --features enable-torch
+    #DISABLED: cd python && uv run maturin develop  --features enable-torch
     @echo "Now you can go into the \`python\` directory and use \`uv run <script.py>\`"\
           "(or \`uv run python\` to get Python interpreter with \`zrth\` available)"
 
