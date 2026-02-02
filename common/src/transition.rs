@@ -92,6 +92,10 @@ impl<D, I> Transition<D, I> {
     pub fn intf_out(&self) -> &Interface<D> {
         &self.intf_out
     }
+
+    pub fn terms(&self) -> std::slice::Iter<'_, Term<D, I>> {
+        self.transition.iter()
+    }
 }
 
 impl<D: Clone + Eq, I: Clone> Transition<D, I> {
@@ -192,7 +196,7 @@ impl<D: Eq, I> Default for WiredTransitions<D, I> {
     }
 }
 
-impl<D: Eq, I> WiredTransitions<D, I> {
+impl<D, I> WiredTransitions<D, I> {
     pub fn new() -> Self {
         Self {
             transitions: Vec::new(),
@@ -203,6 +207,12 @@ impl<D: Eq, I> WiredTransitions<D, I> {
         self.transitions.is_empty()
     }
 
+    pub fn iter(&self) -> std::slice::Iter<'_, Transition<D, I>> {
+        self.transitions.iter()
+    }
+}
+
+impl<D: Eq, I> WiredTransitions<D, I> {
     /// Push a new transition to this sequence.
     ///
     /// If we're in a debug build, wiring is checked. Otherwise,
