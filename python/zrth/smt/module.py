@@ -4,6 +4,17 @@ from .. import smt as zrth_smt
 WrappedModule = zrth_smt.WrappedModule
 
 
+def open_html(path: str) -> None:
+    from sys import platform
+    from subprocess import run
+
+    if platform == "linux":
+        _ = run(["xdg-open", path])
+    else:
+        _ = run(["open", path])
+    # FIXME: not exhaustive
+
+
 class Transition:
     def __init__(self, /, impl):
         self._wrappedtransition = impl
@@ -104,26 +115,28 @@ class Module:
         self._module.to_html(self._ctx.unwrap(), path)
 
         if open:
-            from sys import platform
-            from subprocess import run
-
-            if platform == "linux":
-                _ = run(["xdg-open", path])
-            else:
-                _ = run(["open", path])
-            # FIXME: not exhaustive
+            open_html(path)
 
 
 class ModuleUnrolling:
     def __init__(self, m: Module) -> None:
         self._module = m
-        self._transitions = _zrth.smt.WrappedWiredTransitions()
+        # initialized by `init`
+        self._transitions = None
 
     def init(self):
+        self._transitions = _zrth.smt.WrappedWiredTransitions()
         self._transitions.init(self._module.unwrap(), self._module._ctx.unwrap())
 
     def step(self):
+        assert self._transitions
         self._transitions.step(self._module.unwrap(), self._module._ctx.unwrap())
+
+    def to_html(self, path: str, open: bool = False):
+        self._transitions.to_html(self._module._ctx.unwrap(), path)
+
+        if open:
+            open_html(path)
 
     def dbg(self):
         self._transitions.dbg()
