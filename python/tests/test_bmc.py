@@ -36,7 +36,7 @@ def test_unroll_manual():
     init_terms = [term for atom in m.atoms for term in atom.init()]
     update_terms = [term for atom in m.atoms for term in atom.update()]
 
-    transitions = [init_terms]
+    terms = [init_terms]
     # track used symbols for printing (but eventually for later usage)
     interfaces = [[(s, s.nxt()) for s in m.extl]]
 
@@ -48,47 +48,51 @@ def test_unroll_manual():
     for i in range(1, N + 1):
         renaming = {}
 
-        # create new environment variables
+        ## create new environment variables
+        # `assoc=False` in `Sym` means that the symbol will not have associated `next` value,
+        # because we do not need it. If it is left out, everything will still work, we just create
+        # some unused wires..
         new_env = [Sym(f"{s.nxt().name}_{i}", s.dtype(), assoc=False) for s in m.extl]
 
-        # create new output wires
+        ## create new output wires
         new_out: list[Sym] = [
             Sym(f"{s.nxt().name}_{i}", s.dtype(), assoc=False) for s in m.ctrl
         ]
 
-        # rewire the environment wires
+        ## rewire the environment wires
         renaming.update({e.wire(): l for e, l in zip(m.extl, last_env)})
         renaming.update({e.nxt().wire(): n for e, n in zip(m.extl, new_env)})
 
-        # wire inputs of `update` to outputs of the last `transitions`
+        ## wire inputs of `update` to outputs of the last `terms`
         renaming.update({s.wire(): lw.wire() for s, lw in zip(m.ctrl, last_out)})
 
-        # rename the new outputs
+        ## rename the new outputs
         renaming.update({s.nxt().wire(): o.wire() for s, o in zip(m.ctrl, new_out)})
 
+        ## create the new terms to be appended to our list of terms:
+        # we take every term in the `update_terms` and remap wires to our new symbols.
+        # Private wires are renamed automatically by `remap`
         new_terms = []
         for term in update_terms:
             new_term, renaming = term.remap(renaming)
             new_terms.append(new_term)
 
-        transitions.append(new_terms)
+        terms.append(new_terms)
 
         interfaces.append([(o, n) for o, n in zip(last_out, new_out)])
         last_out = new_out
 
     # ##########
-    # print it!
+    # All done, print it!
     # ##########
-    for n in range(len(transitions)):
+    for n in range(len(terms)):
         print("-----")
         for l, u in interfaces[n]:
             print(f"{l} = w{l.wire().id()}")
             print(f"{u} = w{u.wire().id()}")
         print("-----")
-        for term in transitions[n]:
+        for term in terms[n]:
             print(term)
-
-    # U.dbg()
 
 
 def test_unroll_semimanual():
