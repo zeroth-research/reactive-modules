@@ -252,6 +252,12 @@ def matmul_dtype(dt1: DType, dt2: DType) -> DType:
             return type(dt1)(dim1[:-1])
         else:
             raise RuntimeError("Unsupported tensor @ vector operation")
+    elif len(dim1) == 1 and len(dim2) == 2:
+        # vector @ matrix: [n] @ [n, m] -> [m]
+        if dim1[0] == dim2[0]:
+            return type(dt1)([dim2[1]])
+        else:
+            raise RuntimeError(f"Vector @ matrix dimension mismatch: {dim1} @ {dim2}")
     elif len(dim1) == len(dim2) == 2:
         # matrix @ matrix
         if dim1[-1] == dim2[0]:

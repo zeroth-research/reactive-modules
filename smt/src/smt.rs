@@ -18,96 +18,60 @@ pub fn wires_decls<'a, T: IntoIterator<Item = &'a base::Wire<DType>>>(wires: T) 
 }
 
 impl AtomSmtLibTranslator<'_> {
-    pub fn ctrl(&self) -> Vec<String> {
-        wires_decls(self.0.ctrl().wires())
-    }
+    fn method_to_smtlib<'a, T>(&self, terms: T, state_wires: &HashSet<usize>) -> String 
+    where T: IntoIterator<Item = &'a Term<DType, IType>>
+    {
+        let mut let_bindings = Vec::new();
+        let mut state_assigns = Vec::new();
 
-    pub fn read(&self) -> Vec<String> {
-        wires_decls(self.0.read().wires())
-    }
-
-    pub fn wait(&self) -> Vec<String> {
-        wires_decls(self.0.wait().wires())
-    }
-
-    // Temporary wires
-    pub fn temp(&self) -> Vec<String> {
-        let mut ret: Vec<String> = Vec::new();
-
-        // temporary are those variables that are written to but are not controlled
-        // (these could be also private, but we do not have private variables atm.)
-        let ctrl: HashSet<usize> = HashSet::from_iter(self.0.ctrl().ids());
-        for term in self.0.init().iter().chain(self.0.update().iter()) {
-            for wire in term.write().wires() {
-                if !ctrl.contains(&wire.id()) {
-                    ret.push(declare_var(wire.id(), wire.dtype()))
-                }
+        for term in terms {
+            let wire_id = term.write().ids().next().unwrap();
+            let expr = smt_expr(term);
+            
+            if state_wires.contains(&wire_id) {
+                state_assigns.push(format!("(= {} {})", wire_name(wire_id), expr));
+            } else {
+                let_bindings.push(format!("({} {})", wire_name(wire_id), expr));
             }
         }
 
-        ret
+        if let_bindings.is_empty() {
+            state_assigns.iter().map(|s| format!("(assert {})", s)).collect::<Vec<_>>().join("\n")
+        } else {
+            format!(
+                "(assert\n  (let ({})\n    (and {})))",
+                let_bindings.join("\n        "),
+                state_assigns.join("\n         ")
+            )
+        }
     }
 
-    // return a list of smtlib assertions (as String) that represent the init terms
-    pub fn init(&self) -> Vec<String> {
-        self.0
-            .init()
-            .iter()
-            .map(|term| {
-                let write_id = term.write().ids().next().unwrap();
-                format!("(assert (= {} {}))", wire_name(write_id), smt_expr(term))
-            })
-            .collect()
+    pub fn init(&self, state_wires: &HashSet<usize>) -> String {
+        self.method_to_smtlib(self.0.init().iter(), state_wires)
     }
 
-    // return a list of smtlib assertions (as String) that represent the update terms
-    pub fn update(&self) -> Vec<String> {
-        self.0
-            .update()
-            .iter()
-            .map(|term| {
-                let write_id = term.write().ids().next().unwrap();
-                format!("(assert (= {} {}))", wire_name(write_id), smt_expr(term))
-            })
-            .collect()
-    }
-
-    /// Declare variables that are defined in this atom, i.e., temporary variables
-    /// (all others are declared on the level of the module)
-    pub fn temps_to_smtlib(&self) -> String {
-        format!(";;; Temporary\n{}", self.temp().join("\n"),)
-    }
-
-    pub fn methods_to_smtlib(&self) -> String {
-        format!(
-            ";; Init\n{}\n\n;; Update\n{}",
-            self.init().join("\n"),
-            self.update().join("\n"),
-        )
-    }
-
-    pub fn to_smtlib(&self) -> String {
-        format!(
-            ";;; {}\n\n;;\n\n{}",
-            self.temps_to_smtlib(),
-            self.methods_to_smtlib(),
-        )
-    }
-
-    pub fn to_smtlib_full(&self) -> String {
-        format!(
-            ";;; Atom\n\n;; Controls\n{}\n\n;; Reads\n{}\n\n;; Awaits\n{}\n\n{}",
-            self.ctrl().join("\n"),
-            self.read().join("\n"),
-            self.wait().join("\n"),
-            self.to_smtlib(),
-        )
+    pub fn update(&self, state_wires: &HashSet<usize>) -> String {
+        self.method_to_smtlib(self.0.update().iter(), state_wires)
     }
 }
 
 pub struct ModuleSmtLibTranslator<'a>(&'a SmtModule);
 
 impl ModuleSmtLibTranslator<'_> {
+    fn state_wire_ids(&self) -> HashSet<usize> {
+        let mut ids = HashSet::new();
+        // Collect intf, extl, prvt wire IDs (both latched and next)
+        for wire in self.0.intf().latched().iter().chain(self.0.intf().next().iter()) {
+            ids.insert(wire.id());
+        }
+        for wire in self.0.extl().latched().iter().chain(self.0.extl().next().iter()) {
+            ids.insert(wire.id());
+        }
+        for wire in self.0.prvt().latched().iter().chain(self.0.prvt().next().iter()) {
+            ids.insert(wire.id());
+        }
+        ids
+    }
     /// return smtlib declarations of `intf` variables
     pub fn intf(&self) -> Vec<String> {
         let vars = self.0.intf();
@@ -128,12 +92,7 @@ impl ModuleSmtLibTranslator<'_> {
             .collect::<Vec<String>>()
     }
 
-    /// return smtlib declarations of `temp` variables from all atoms
-    pub fn temp(&self) -> Vec<String> {
-        wires_decls(self.0.temp())
-    }
-
-    pub fn observable_variables_to_smtlib(&self) -> String {
+    pub fn variables_to_smtlib(&self) -> String {
         format!(
             ";; Interface\n{}\n\n;; External\n{}",
             self.intf().join("\n"),
@@ -141,20 +100,13 @@ impl ModuleSmtLibTranslator<'_> {
         )
     }
 
-    pub fn variables_to_smtlib(&self) -> String {
-        format!(
-            "{}\n\n;; Temporary\n{}",
-            self.observable_variables_to_smtlib(),
-            self.temp().join("\n"),
-        )
-    }
-
     pub fn to_smtlib(&self) -> String {
-        // we do not consider private variables atm.
         if !self.0.prvt().is_empty() {
             unimplemented!()
         }
 
+        let state_wires = self.state_wire_ids();
+        
         format!(
             ";;; Module\n\n{}\n\n;; Atoms\n{}",
             self.variables_to_smtlib(),
@@ -162,17 +114,22 @@ impl ModuleSmtLibTranslator<'_> {
                 .atoms()
                 .iter()
                 .enumerate()
-                .map(|(n, atom)| format!(
-                    "\n;; --- Atom {} ---\n{}",
-                    n,
-                    AtomSmtLibTranslator(atom).methods_to_smtlib()
-                ))
+                .map(|(n, atom)| {
+                    let translator = AtomSmtLibTranslator(atom);
+                    format!(
+                        "\n;; --- Atom {} ---\n;; Init\n{}\n\n;; Update\n{}",
+                        n,
+                        translator.init(&state_wires),
+                        translator.update(&state_wires)
+                    )
+                })
                 .collect::<Vec<String>>()
                 .join("\n")
         )
     }
 
     pub fn init_to_smtlib(&self) -> String {
+        let state_wires = self.state_wire_ids();
         self.0
             .atoms()
             .iter()
@@ -181,7 +138,7 @@ impl ModuleSmtLibTranslator<'_> {
                 format!(
                     "\n;; --- Atom {} ---\n{}",
                     n,
-                    AtomSmtLibTranslator(atom).init().join("\n")
+                    AtomSmtLibTranslator(atom).init(&state_wires)
                 )
             })
             .collect::<Vec<String>>()
@@ -189,6 +146,7 @@ impl ModuleSmtLibTranslator<'_> {
     }
 
     pub fn update_to_smtlib(&self) -> String {
+        let state_wires = self.state_wire_ids();
         self.0
             .atoms()
             .iter()
@@ -197,7 +155,7 @@ impl ModuleSmtLibTranslator<'_> {
                 format!(
                     "\n;; --- Atom {} ---\n{}",
                     n,
-                    AtomSmtLibTranslator(atom).update().join("\n")
+                    AtomSmtLibTranslator(atom).update(&state_wires)
                 )
             })
             .collect::<Vec<String>>()
