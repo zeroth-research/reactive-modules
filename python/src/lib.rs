@@ -22,13 +22,10 @@ use pyo3::PyClass;
 fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "enable-smt")]
     {
-        let smt = PyModule::new(py, "smt")?;
-        smt.add_class::<smt::WrappedTerm>()?;
-        smt.add_class::<smt::WrappedModule>()?;
-        smt.add_class::<smt::WrappedContext>()?;
-        smt.add_class::<smt::PyVal>()?;
-
-        m.add_submodule(&smt)?;
+        m.add_class::<smt::WrappedTerm>()?;
+        m.add_class::<smt::WrappedModule>()?;
+        m.add_class::<smt::WrappedContext>()?;
+        m.add_class::<smt::PyVal>()?;
     }
 
     m.add_class::<IType>()?;

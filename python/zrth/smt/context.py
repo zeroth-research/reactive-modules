@@ -11,11 +11,7 @@ import inspect
 
 from itertools import chain
 
-from .. import smt as zrth_smt
-
-PyVal = zrth_smt.PyVal
-WrappedModule = zrth_smt.WrappedModule
-WrappedTerm = zrth_smt.WrappedTerm
+from zrth import PyVal, WrappedContext, WrappedModule, WrappedTerm
 
 
 def handle_return_value(r):
@@ -156,7 +152,7 @@ class PySMTContext(ContextBase):
 
 class Context(PySMTContext):
     def __init__(self):
-        super().__init__(zrth_smt.WrappedContext())
+        super().__init__(WrappedContext())
 
     def module_from_methods(
         self,
