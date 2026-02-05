@@ -180,6 +180,10 @@ pub enum IType {
 
     // Constants
     Tensor(PyTensor),
+
+    // Symbol referring to uninterpreted constants or functions,
+    // whose signature is known in the context, i.e., the current theory
+    Uninterpreted(String),
 }
 
 impl fmt::Display for IType {
@@ -222,6 +226,7 @@ impl fmt::Display for IType {
                     write!(f, "Tensor({})", flat)
                 }
             }
+            IType::Uninterpreted(t) => write!(f, "{t}"),
         }
     }
 }
