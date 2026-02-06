@@ -1,5 +1,5 @@
 from zrth import Wire, Term, Module, DType as dt, IType as it, mk_term
-
+import unittest
 from torch import Tensor
 
 
@@ -116,5 +116,4 @@ def test_interface():
 
 
 if __name__ == "__main__":
-    test_module_parallel()
-    test_interface()
+    unittest.main()

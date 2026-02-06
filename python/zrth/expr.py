@@ -35,8 +35,8 @@ class Expr:
 
     __cnt = 0
 
-    def __init__(self, op: str, *args):
-        assert isinstance(op, str), type(op)
+    def __init__(self, op: str | IType, *args):
+        assert isinstance(op, str) or isinstance(op, IType), type(op)
         self.op: str = op
         # FIXME: this special handling of "sym"
         self.args: list[Expr] = list(args) if op != "sym" else []
@@ -51,7 +51,12 @@ class Expr:
 
         self._term: Term | None = None
 
-        if op == "sym":
+        if isinstance(op, IType):
+            # typecheck arguments and propose output wire
+            self._dtype: DType = infer_dtype(op, [*args], ctx)
+            self._out_wire: Wire = ctx.tmp_wire(self._dtype)
+            self._term: Term = Term(op, [self._out_wire], [a.wire() for a in args])
+        elif op == "sym":
             name, dtype, wire = args
             assert isinstance(name, str), name
             assert isinstance(dtype, DType), (type(dtype), dtype)
@@ -929,3 +934,21 @@ def lnot(e) -> And | bool:
 
 def const(x: int | bool | float | torch.Tensor) -> Expr:
     return to_expr(x)
+
+
+def Real(x: float | str, ctx=_global_context):
+    if isinstance(x, float):
+        return Expr("const", x, ctx=ctx)
+    elif isinstance(x, str):
+        # register symbol into context
+        ctx.declare_const(x, DType.TensorReal([1]))
+        return Expr(IType.Uninterpreted(x), ctx=ctx)
+
+
+# this function is specific to expressions, that's why it is here
+def infer_dtype(itype: IType, args: [Expr], ctx) -> DType:
+    match itype:
+        case IType.Uninterpreted(name):
+            return ctx.get_dtype(name)
+        case _:
+            raise Exception("unimplemented")
