@@ -15,12 +15,14 @@ pub enum DType {
     TensorBool(Vec<usize>),
     TensorInt(Vec<usize>),
     TensorFloat(Vec<usize>),
+    TensorReal(Vec<usize>), // this indicates the type used for reasoning, as in LRA for example
 }
 
 enum PrimitiveType {
     Bool,
     Int,
     Float,
+    Real,
 }
 
 fn parse_dim_with_type(dim_and_type: &str) -> Option<(Vec<usize>, PrimitiveType)> {
@@ -56,6 +58,7 @@ impl std::str::FromStr for DType {
                 PrimitiveType::Float => Ok(DType::TensorFloat(dims)),
                 PrimitiveType::Int => Ok(DType::TensorInt(dims)),
                 PrimitiveType::Bool => Ok(DType::TensorBool(dims)),
+                PrimitiveType::Real => Ok(DType::TensorReal(dims)),
             };
         }
 
@@ -82,6 +85,7 @@ impl DType {
             DType::TensorFloat(shape) => shape.clone(),
             DType::TensorInt(shape) => shape.clone(),
             DType::TensorBool(shape) => shape.clone(),
+            DType::TensorReal(shape) => shape.clone(),
         }
     }
 
@@ -92,6 +96,7 @@ impl DType {
             (DType::TensorFloat(_), DType::TensorFloat(_)) => true,
             (DType::TensorInt(_), DType::TensorInt(_)) => true,
             (DType::TensorBool(_), DType::TensorBool(_)) => true,
+            (DType::TensorReal(_), DType::TensorReal(_)) => true,
             _ => false,
         }
     }
@@ -115,6 +120,7 @@ impl fmt::Display for PrimitiveType {
             PrimitiveType::Bool => write!(f, "Bool"),
             PrimitiveType::Int => write!(f, "Int"),
             PrimitiveType::Float => write!(f, "Float"),
+            PrimitiveType::Real => write!(f, "Real"),
         }
     }
 }
@@ -139,6 +145,7 @@ impl fmt::Display for DType {
             }
             DType::TensorInt(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Int)),
             DType::TensorBool(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Bool)),
+            DType::TensorReal(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Real)),
         }
     }
 }
