@@ -27,6 +27,8 @@ class ContextBase:
         # to distinguish terms during tracing different parts of code
         self._terms_frames: list[list[Term]] = []
 
+        self.uninterpreted = {}
+
     def push_terms_frame(self, f: list[Term]) -> None:
         self._terms_frames.append(f)
 
@@ -42,6 +44,19 @@ class ContextBase:
 
     def tmp_wire(self, dtype: DType) -> Wire:
         return self.unwrap().tmp_wire(dtype)
+
+    def declare_const(self, name: str, dtype: DType):
+        if name in self.uninterpreted:
+            raise KeyError(f"Uninterpreted function/constant '{name}' already exists")
+        self.uninterpreted[name] = dtype
+
+    def get_dtype(self, name: str):
+        try:
+            return self.uninterpreted[name]
+        except KeyError:
+            raise KeyError(
+                f"Uninterpreted function/constant '{name}' does not exists"
+            ) from None
 
 
 class Context(ContextBase):

@@ -35,24 +35,28 @@ class Expr:
 
     __cnt = 0
 
-    def __init__(self, op: str, *args):
-        assert isinstance(op, str), type(op)
-        self.op: str = op
+    def __init__(self, op: str | IType, *args, ctx=None):
+        assert isinstance(op, str) or isinstance(op, IType), type(op)
+        self.op = op
         # FIXME: this special handling of "sym"
         self.args: list[Expr] = list(args) if op != "sym" else []
 
         Expr.__cnt += 1
         self.id = Expr.__cnt
-        ctx: Context = get_ctx()
+        ctx: Context = ctx or get_ctx()
 
         assert all(not isinstance(a, Expr) or a.ctx() is ctx for a in args), (
             "Expr must be created in the same context as its arguments"
         )
 
-        self._term: Term | None = None
+        if isinstance(op, IType):
+            # typecheck arguments and propose output wire
+            self._dtype: DType = infer_dtype(op, [*args], ctx)
+            self._out_wire: Wire = ctx.tmp_wire(self._dtype)
+            self._term: Term = Term(op, [self._out_wire], [a.wire() for a in args])
 
-        if op == "sym":
-            name, dtype, wire = args
+        elif op == "sym":
+            name, dtype = args
             assert isinstance(name, str), name
             assert isinstance(dtype, DType), (type(dtype), dtype)
             assert wire is None or isinstance(wire, Wire), (type(wire), wire)
@@ -110,9 +114,9 @@ class Expr:
         are the same, see `eq` method.
         """
         return (
-            isinstance(oth, Expr)
-            and self.op == oth.op
-            and self.get_children() == oth.get_children()
+                isinstance(oth, Expr)
+                and self.op == oth.op
+                and self.get_children() == oth.get_children()
         )
 
     ###
@@ -121,8 +125,8 @@ class Expr:
     def matmul(self, rhs: ToExpr) -> "Expr":
         return MatMul(self, rhs)
 
-    def argmax(self) -> "Expr":
-        return Argmax(self)
+    def argmax(self, rhs) -> "Expr":
+        return Argmax(self, rhs)
 
     def add(self, rhs: ToExpr) -> "Expr":
         return Add(self, rhs)
@@ -388,8 +392,21 @@ def const_to_itype_dtype(val: bool | float | int | torch.Tensor) -> tuple[IType,
 
     dtype = val.dtype
 
+<<<<<<< HEAD
     if dtype == torch.bool:
         return IType.Tensor(val), DType.TensorBool(val.size())
+=======
+        if dtype in (
+                torch.int,
+                torch.long,
+                torch.uint64,
+                torch.uint32,
+                torch.uint8,
+                torch.uint16,
+                torch.short,
+        ):
+            return IType.Tensor(val), DType.TensorInt(val.size())
+>>>>>>> 1548b3b (Added stub for declaration of uninterpreted constants)
 
     if dtype in (
         torch.int,
@@ -929,3 +946,21 @@ def lnot(e) -> And | bool:
 
 def const(x: int | bool | float | torch.Tensor) -> Expr:
     return to_expr(x)
+
+
+def Real(x: float | str, ctx=_global_context):
+    if isinstance(x, float):
+        return Expr("const", x, ctx=ctx)
+    elif isinstance(x, str):
+        # register symbol into context
+        ctx.declare_const(x, DType.TensorReal([1]))
+        return Expr(IType.Uninterpreted(x), ctx=ctx)
+
+
+# this function is specific to expressions, that's why it is here
+def infer_dtype(itype: IType, args: [Expr], ctx) -> DType:
+    match itype:
+        case IType.Uninterpreted(name):
+            return ctx.get_dtype(name)
+        case _:
+            raise Exception("unimplemented")
