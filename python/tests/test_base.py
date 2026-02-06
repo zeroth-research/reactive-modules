@@ -1,5 +1,4 @@
 from zrth import Wire, Term, Module, DType as dt, IType as it, mk_term
-import unittest
 from torch import Tensor
 
 
@@ -113,7 +112,3 @@ def test_interface():
 
     for i in range(len(w)):
         print("-->", w[i])
-
-
-if __name__ == "__main__":
-    unittest.main()
