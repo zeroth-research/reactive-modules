@@ -241,7 +241,8 @@ def matmul_dtype(dt1: DType, dt2: DType) -> DType:
     TODO: This function is incomplete, at this moment it basically Unsupported
     only matrix multiplication with no broadcasting.
     """
-    assert dt1.eq_dtype(dt2), f"DTypes have different element types: {dt1}, {dt2}"
+    if not dt1.eq_dtype(dt2):
+        raise RuntimeError(f"DTypes have different element types: {dt1}, {dt2}")
 
     dim1 = dt1.dims()
     dim2 = dt2.dims()
@@ -249,7 +250,7 @@ def matmul_dtype(dt1: DType, dt2: DType) -> DType:
     if len(dim2) == 1:
         # tensor @ vector
         if dim1[-1] == dim2[0]:
-            return type(dt1)(dim1[:-1])
+            return dt1.reshape(dim1[:-1])
         else:
             raise RuntimeError("Unsupported tensor @ vector operation")
     elif len(dim1) == 1 and len(dim2) == 2:
@@ -261,7 +262,7 @@ def matmul_dtype(dt1: DType, dt2: DType) -> DType:
     elif len(dim1) == len(dim2) == 2:
         # matrix @ matrix
         if dim1[-1] == dim2[0]:
-            return type(dt1)([dim1[0], dim2[1]])
+            return dt1.reshape([dim1[0], dim2[1]])
         else:
             raise RuntimeError(
                 f"Unsupported matrix multiplication, dimensions do not match: {dim1} x {dim2}"
@@ -439,7 +440,7 @@ def const_to_itype_dtype(val: bool | float | int | torch.Tensor) -> tuple[IType,
     dtype = val.dtype
 
     if dtype == torch.bool:
-        return IType.Tensor(val), DType.TensorBool(val.size())
+        return IType.Tensor(val), DType.TensorBool(list(val.size()))
 
     if dtype in (
         torch.int,
@@ -450,10 +451,10 @@ def const_to_itype_dtype(val: bool | float | int | torch.Tensor) -> tuple[IType,
         torch.uint16,
         torch.short,
     ):
-        return IType.Tensor(val), DType.TensorInt(val.size())
+        return IType.Tensor(val), DType.TensorInt(list(val.size()))
 
     if dtype in (torch.float, torch.float32, torch.float64):
-        return IType.Tensor(val), DType.TensorFloat(val.size())
+        return IType.Tensor(val), DType.TensorFloat(list(val.size()))
 
     raise NotImplementedError(f"Unsupported tensor element type: {dtype}")
 
@@ -878,7 +879,7 @@ def ite(cond, iftrue, iffalse):
     return iftrue if cond else iffalse
 
 
-def argmax(t: ToExpr) -> Argmax | int | float:
+def argmax(t: torch.Tensor | Expr) -> Argmax | int | float:
     """
     Argmax of a flattened tensor. Note that torch.Tensor.argmax()
     returns a tensor, while we return int to match the Term.
@@ -890,7 +891,7 @@ def argmax(t: ToExpr) -> Argmax | int | float:
     return t.argmax().item()
 
 
-def matmul(lhs: ToExpr, rhs: ToExpr) -> MatMul | torch.Tensor:
+def matmul(lhs: torch.Tensor | Expr, rhs: torch.Tensor | Expr) -> MatMul | torch.Tensor:
     if isinstance(lhs, Expr) or isinstance(rhs, Expr):
         return MatMul(lhs, rhs)
     return lhs @ rhs
@@ -971,7 +972,7 @@ def land(lhs, rhs) -> And | bool:
 
 
 # Logical not
-def lnot(e) -> And | bool:
+def lnot(e) -> Not | bool:
     if isinstance(e, Expr):
         return Not(e)
     return not e
