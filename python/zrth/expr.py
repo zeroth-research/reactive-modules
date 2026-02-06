@@ -33,13 +33,15 @@ class Expr:
     :param args: a list of expression arguments (children)
     """
 
-    __cnt = 0
+    __cnt: int = 0
 
     def __init__(self, op: str | IType, *args):
         assert isinstance(op, str) or isinstance(op, IType), type(op)
         self.op: str = op
         # FIXME: this special handling of "sym"
-        self.args: list[Expr] = list(args) if op != "sym" else []
+        self.args: list[Expr] = (
+            list(args) if op not in ("sym", "input", "output") else []
+        )
 
         Expr.__cnt += 1
         self.id = Expr.__cnt
@@ -51,18 +53,34 @@ class Expr:
 
         self._term: Term | None = None
 
-        if isinstance(op, IType):
-            # typecheck arguments and propose output wire
-            self._dtype: DType = infer_dtype(op, [*args], ctx)
-            self._out_wire: Wire = ctx.tmp_wire(self._dtype)
-            self._term: Term = Term(op, [self._out_wire], [a.wire() for a in args])
-        elif op == "sym":
-            name, dtype, wire = args
+        if op == "input":
+            assert len(args) == 2
+            name, dtype = args
             assert isinstance(name, str), name
-            assert isinstance(dtype, DType), (type(dtype), dtype)
-            assert wire is None or isinstance(wire, Wire), (type(wire), wire)
-            self._out_wire: Wire = wire or ctx.wire(name, dtype)
+            assert isinstance(dtype, DType), dtype
+
+            if ctx.get_input_symbol(name) is not None:
+                raise RuntimeError(f"Input symbol `{name}` created multiple times")
+
             self._dtype: DType = dtype
+            self._out_wire: Wire = ctx.wire(f"inp.{name}", dtype)
+            self._term: Term = Term(IType.Input(name), [self._out_wire], [])
+
+            ctx.add_input_symbol(self)
+        elif op == "output":
+            assert len(args) == 2
+            name, dtype = args
+            assert isinstance(name, str), name
+            assert isinstance(dtype, DType), dtype
+
+            if ctx.get_output_symbol(name) is not None:
+                raise RuntimeError(f"Output symbol `{name}` created multiple times")
+
+            self._dtype: DType = dtype
+            self._out_wire: Wire = ctx.wire(f"out.{name}", dtype)
+            self._term: Term = Term(IType.Output(name), [self._out_wire], [])
+
+            ctx.add_output_symbol(self)
         elif op == "const":
             assert len(args) == 1
             val: ToExpr = args[0]
@@ -422,90 +440,50 @@ def const_to_itype_dtype(val: bool | float | int | torch.Tensor) -> tuple[IType,
 
 class Sym(Expr):
     """
-    An expression representing a Symbol
-
-    If `assoc = True` in `__init__`, an associated `Sym` is automatically
-    created that represents the "updated" value of this `Sym`.
-    This is the default behavior. In the situations when we do not need the "updated"
-    `Sym`, we can call the `__init__` with `assoc = None` or `assoc = False`.
-    If `assoc` is instance of [Sym], this [Sym] is used as the associated symbol.
-
-    The symbol for the "updated" value is accessible via `nxt` (next) method.
-    Alternatively, one can access it via `self[1]` and the old value via `self[0]`
-    (which is just an alias for `self`).
+    An expression representing an uninterpreted symbol
     """
 
-    def __init__(self, name: str, dtype: DType | str, assoc=True, wire=None):
+    def __init__(self, typ: str, name: str, dtype: DType | str):
         if isinstance(dtype, str):
             dtype = DType.from_str(dtype)
-        super().__init__("sym", name, dtype, wire)
+        assert typ in ("input", "output"), typ
+        self._typ: str = typ
         self._name: str = name
-        self._nxt: Sym | None = None
-        if assoc:
-            if assoc is True:
-                self._nxt = Sym(f"{name}'", dtype, assoc=False)
-            elif isinstance(assoc, Sym):
-                self._nxt = assoc
-            else:
-                raise ValueError(
-                    f"Invalid value for argument `assoc`, it should be an instance of Sym or bool, got: `{assoc}`"
-                )
 
-    def nxt(self):
-        """
-        Get the associated `Sym` representing the updated (next) value
-        of `self`. If there is none (`self` was created with `assoc = False`),
-        raise an error.
-        """
-        if self._nxt is None:
-            raise RuntimeError(f"Symbol {self._name} has no next symbol associated")
-
-        return self._nxt
-
-    def updated(self):
-        """
-        An alias for `nxt`, this terminology is used in the paper about reactive modules
-        """
-        return self.nxt()
-
-    def has_nxt(self):
-        return self._nxt is not None
-
-    def __getitem__(self, item: int) -> "Sym":
-        if item == 0:
-            return self
-        if item == 1:
-            return self.nxt()
-        else:
-            raise RuntimeError("Symbol has only two items: 0 (latched) and 1 (next)")
+        super().__init__(typ, name, dtype)
 
     def __hash__(self) -> int:
-        return hash(self._name)
+        return hash(self._name + self._typ)
 
     @property
     def name(self):
         return self._name
 
-    @staticmethod
-    def from_sym(sym: "Sym", assoc=None) -> "Sym":
-        if isinstance(sym, Sym):
-            assoc = assoc or (sym.nxt() if sym.has_nxt() else None)
-            return Sym(sym.name, sym.dtype(), assoc=assoc, wire=sym.wire())
+    def __repr__(self):
+        return f"Sym({self._typ} {self._name} : {self.dtype()})"
 
-        raise RuntimeError(f"Expected Sym, got {type(sym)}")
 
-    def fresh(self, name: str) -> "Sym":
-        """
-        Create a symbol of the same type with a new name
-        """
-        return Sym(name, self.dtype(), assoc=(self._nxt is not None))
+class Output(Sym):
+    def __init__(self, name: str, dtype: DType | str):
+        super().__init__("output", name, dtype)
 
     def __str__(self):
-        return f"Sym({self._name} : {self.dtype()})"
+        return f"({self._name} : {self.dtype()}) →"
 
-    def __repr__(self):
-        assoc = f"; assoc `{self._nxt.name if self._nxt is not None else ''}`"
-        return f"Sym({self._name} : {self.dtype()}{assoc})"
+
+class Input(Sym):
+    def __init__(self, name: str, dtype: DType | str):
+        super().__init__("input", name, dtype)
+
+    def nxt(self) -> Output:
+        s = self.ctx().get_output_symbol(self.name)
+        if s is None:
+            raise RuntimeError(f"There is no output {self.name}")
+        assert s.dtype() == self.dtype(), "Types mismatch"
+        return s
+
+    def __str__(self):
+        return f"→ ({self._name} : {self.dtype()})"
 
 
 def to_expr(val: ToExpr) -> Expr:
@@ -520,24 +498,43 @@ def to_expr(val: ToExpr) -> Expr:
     raise NotImplementedError(f"Cannot covert object to Expr: {val} ({type(val)})")
 
 
-def nxt(var: Sym) -> Sym:
+def inp(name: str, dtype: DType | str, ctx: Context | None = None) -> Input:
+    ctx: Context = ctx or get_ctx()
+    if isinstance(dtype, str):
+        dtype = DType.from_str(dtype)
+    s = ctx.get_input_symbol(name)
+    if s is None:
+        s = Input(name, dtype)
+    assert s.dtype() == dtype, (s.dtype(), dtype)
+    return s
+
+
+def out(name: str, dtype: DType, ctx: Context | None = None) -> Output:
+    ctx: Context = ctx or get_ctx()
+    if isinstance(dtype, str):
+        dtype = DType.from_str(dtype)
+    s = ctx.get_output_symbol(name)
+    if s is None:
+        s = Output(name, dtype)
+    assert s.dtype() == dtype
+    return s
+
+
+def sym(name: str, dtype: DType, ctx: Context | None = None) -> (Input, Output):
+    return inp(name, dtype, ctx), out(name, dtype, ctx)
+
+
+def nxt(var: Input) -> Output:
     """
     A helper function to get updated (next) variable for `var`.
     This way we can write `nxt(x)`.
     """
-    assert isinstance(var, Sym), var
+    assert isinstance(var, Input), var
     return var.nxt()
 
 
 # An alias for `nxt`
 updated = nxt
-
-
-def sym(name: str, ty: DType, assoc: Sym | bool | None = True) -> Sym:
-    """
-    Create a symbol
-    """
-    return Sym(name, ty, assoc=assoc)
 
 
 # class IfThen:
@@ -943,20 +940,37 @@ def const(x: int | bool | float | torch.Tensor) -> Expr:
     return to_expr(x)
 
 
-def Real(x: float | str, ctx=None):
-    ctx = ctx or get_ctx()
+def Real(x: float | str) -> Expr:
     if isinstance(x, float):
         return Expr("const", x)
-    elif isinstance(x, str):
-        # register symbol into context
-        ctx.declare_const(x, DType.TensorReal([1]))
-        return Expr(IType.Uninterpreted(x))
+    if isinstance(x, str):
+        return Input(x, DType.Real)
+
+    raise ValueError("Invalid argument, expected `float` or `str`")
 
 
-# this function is specific to expressions, that's why it is here
-def infer_dtype(itype: IType, args: list[Expr], ctx) -> DType:
-    match itype:
-        case IType.Uninterpreted(name):
-            return ctx.get_dtype(name)
-        case _:
-            raise Exception("unimplemented")
+def Int(x: int | str) -> Expr:
+    if isinstance(x, int):
+        return Expr("const", x)
+    if isinstance(x, str):
+        return Input(x, DType.Int)
+
+    raise ValueError("Invalid argument, expected `int` or `str`")
+
+
+def Bool(x: bool | str) -> Expr:
+    if isinstance(x, int):
+        return Expr("const", x)
+    if isinstance(x, str):
+        return Input(x, DType.Bool)
+
+    raise ValueError("Invalid argument, expected `bool` or `str`")
+
+
+def Float(x: float | str) -> Expr:
+    if isinstance(x, int):
+        return Expr("const", x)
+    if isinstance(x, str):
+        return Input(x, DType.Float)
+
+    raise ValueError("Invalid argument, expected `float` or `str`")

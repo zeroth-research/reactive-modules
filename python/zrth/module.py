@@ -1,4 +1,4 @@
-from .expr import nxt, Expr, Sym, sym
+from .expr import nxt, Expr, Input, sym
 from .context import Context, get_ctx
 from .zrth import DType, Module as RustModule, Transition
 
@@ -63,9 +63,9 @@ class ReactiveModuleDef:
 
     def __init__(
         self,
-        intf: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        extl: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        prvt: str | tuple[str] | Sym | tuple[Sym] | None = None,
+        intf: str | tuple[str] | Input | tuple[Input] | None = None,
+        extl: str | tuple[str] | Input | tuple[Input] | None = None,
+        prvt: str | tuple[str] | Input | tuple[Input] | None = None,
         rust_module: RustModule = None,
         name: str = None,
     ):
@@ -174,9 +174,9 @@ class ReactiveModule(ReactiveModuleDef):
 
     def __init__(
         self,
-        intf: str | tuple[str] | Sym | tuple[Sym] | None,
-        extl: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        prvt: str | tuple[str] | Sym | tuple[Sym] | None = None,
+        intf: str | tuple[str] | Input | tuple[Input] | None,
+        extl: str | tuple[str] | Input | tuple[Input] | None = None,
+        prvt: str | tuple[str] | Input | tuple[Input] | None = None,
         name: str = None,
     ):
         super().__init__(intf, extl, prvt, name=name)
@@ -226,7 +226,7 @@ def call_convert_after_init(thiscls, cls, **kwargs):
     cls.__init__ = wrapped_init
 
 
-def parse_variables(variables) -> tuple[Sym]:
+def parse_variables(variables) -> tuple[Input]:
     """
     Parse variables (ctrl or extl) given to the module.
 
@@ -259,15 +259,14 @@ def parse_variables(variables) -> tuple[Sym]:
         if isinstance(v, str):
             if not ":" in v:
                 raise RuntimeError(f"A variable `{v}` is missing a type annotation")
-            v = v.split(":")
-            v = sym(v[0].strip(), DType.from_str(v[1].strip()), assoc=True)[0]
-        elif not isinstance(v, Sym):
+            v: list[str] = v.split(":")
+            name, dtype = v[0].strip(), DType.from_str(v[1].strip())
+            # create input and output symbols (but return only the input)
+            v = sym(name, dtype)[0]
+        elif not isinstance(v, Input):
             raise RuntimeError(
-                f"A variable must be given as a string or `Sym` object, got {v} ({type(v)})"
+                f"A variable must be given as a string or `Input` object, got {v} ({type(v)})"
             )
-            # test if the symbol has been created with next symbol,
-            # this is a requirement
-            v.nxt()
 
         syms.append(v)
 
@@ -275,8 +274,8 @@ def parse_variables(variables) -> tuple[Sym]:
 
 
 def rust_module_from_methods(
-    ctrl: tuple[Sym],
-    extl: tuple[Sym],
+    ctrl: tuple[Input],
+    extl: tuple[Input],
     init: Callable[[], None],
     update: Callable[[], None],
     name: str | None = None,
@@ -284,9 +283,9 @@ def rust_module_from_methods(
     """
     Create the Rust module from the `init` and `update` methods.
     """
-    assert all(isinstance(v, Sym) for v in ctrl)
-    assert all(isinstance(v, Sym) for v in extl)
-    # assert all(isinstance(v, Sym) for v in prvt)
+    assert all(isinstance(v, Input) for v in ctrl)
+    assert all(isinstance(v, Input) for v in extl)
+    # assert all(isinstance(v, Input) for v in prvt)
 
     # take only the latched Symbols from the tuples of variables,
     # next values will be accessed through `nxt` or `[1]`
@@ -296,7 +295,7 @@ def rust_module_from_methods(
 
     # trace the init function
     if init:
-        # say context to gather terms
+        # instruct context to gather terms
         init_ret, init_terms = trace_fun(ctrl, init, extl_arg)
         assert len(init_ret) == len(ctrl), (init_ret, ctrl)
     else:

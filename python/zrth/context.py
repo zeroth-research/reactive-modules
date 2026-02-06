@@ -72,6 +72,34 @@ class Context(ContextBase):
         self.id_to_name: dict[int, str] = {}  # int -> str
         self._wire_dtypes: dict[int, DType] = {}  # id -> DType enum
 
+        # input and output symbols
+        self._inputs: dict[str, "Input"] = {}
+        self._outputs: dict[str, "Output"] = {}
+
+    def get_input_symbol(self, name: str):
+        s = self._inputs.get(name)
+        if s is None:
+            return None
+        # inputs and outputs correspond with named wires
+        # assert self.name_to_id.get(name) is not None
+        return s
+
+    def get_output_symbol(self, name: str):
+        s = self._outputs.get(name)
+        if s is None:
+            return None
+        # inputs and outputs correspond with named wires
+        # assert self.name_to_id.get(name) is not None
+        return s
+
+    def add_input_symbol(self, s: "Input") -> None:
+        assert s.name not in self._inputs
+        self._inputs[s.name] = s
+
+    def add_output_symbol(self, s: "Output") -> None:
+        assert s.name not in self._outputs
+        self._outputs[s.name] = s
+
     def fresh_wire_id(self) -> int:
         """Create unnamed temporary wire ID
 
@@ -172,6 +200,13 @@ class Context(ContextBase):
         for name, wid in sorted(self.name_to_id.items(), key=lambda x: x[1]):
             dtype = self._wire_dtypes[wid]
             result += f"  {name} (id={wid}): {dtype}\n"
+
+        result += "\n Inputs:\n"
+        for s in self._inputs.values():
+            result += f"  {s.name} (id={s.wire().id()}): {s.dtype()}\n"
+        result += "\n Outputs:\n"
+        for s in self._outputs.values():
+            result += f"  {s.name} (id={s.wire().id()}): {s.dtype()}\n"
         return result
 
 

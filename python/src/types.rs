@@ -199,9 +199,11 @@ pub enum IType {
     // Constants
     Tensor(PyTensor),
 
-    // Symbol referring to uninterpreted constants or functions,
-    // whose signature is known in the context, i.e., the current theory
-    Uninterpreted(String),
+    // Terms representing inputs and outputs identified by a name of
+    // a variable/symbol/parameter/... . These could be as well named `Load` and `Store`.
+    // When translating to SMT, these should refer to uninterpreted constants or functions,
+    Input(String),
+    Output(String),
 }
 
 impl fmt::Display for IType {
@@ -244,7 +246,8 @@ impl fmt::Display for IType {
                     write!(f, "Tensor({})", flat)
                 }
             }
-            IType::Uninterpreted(t) => write!(f, "{t}"),
+            IType::Input(t) => write!(f, "→{t}"),
+            IType::Output(t) => write!(f, "{t}→"),
         }
     }
 }

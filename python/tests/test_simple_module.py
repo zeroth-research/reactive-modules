@@ -48,18 +48,18 @@ def test_execute_symbolic():
     m = MyModule(intf="xyz: Tensor<3; Int>", extl="yz0: Tensor<2; Int>")
     assert m
 
-    extl = sym("extl", DType.TensorInt([2]))
-    s = sym("state", DType.TensorInt([3]))
+    extl = sym("extl", DType.TensorInt([2]))[0]
+    s = sym("state", DType.TensorInt([3]))[0]
     s_init = m.init(extl)
     print("## Symbolic init:")
     print(s_init)
 
-    extl = extl.fresh("extl2")
+    extl = sym("extl2", DType.TensorInt([2]))[0]
     s = m.update(s_init, extl)
     print("## Symbolic state:")
     print(s)
 
-    extl = extl.fresh("extl3")
+    extl = sym("extl3", DType.TensorInt([2]))[0]
     s = m.update(s, extl)
     print("## Symbolic state:")
     print(s)

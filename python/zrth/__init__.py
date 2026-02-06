@@ -15,6 +15,7 @@ from typing import Generator
 DType.Bool = DType.TensorBool([1])
 DType.Int = DType.TensorInt([1])
 DType.Float = DType.TensorFloat([1])
+DType.Real = DType.TensorReal([1])
 
 
 #####################################################################

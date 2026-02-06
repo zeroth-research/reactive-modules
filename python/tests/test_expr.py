@@ -1,10 +1,11 @@
 from torch import IntTensor
-from zrth import DType, get_ctx
+from zrth import DType, get_ctx, set_ctx, Context
 from zrth.expr import *
 
 
 def expr_direct():
-    s1, s2 = Sym("x", "Int"), Sym("y", "Int")
+    set_ctx(Context())
+    s1, s2 = Input("x", "Int"), Input("y", "Int")
     a = Expr("arith.add", s1, to_expr(6))
     m = Expr("arith.mul", to_expr(2), a)
     b = Expr("arith.mul", to_expr(2), s2)
@@ -18,7 +19,8 @@ def expr_direct():
 
 
 def expr_ctors():
-    s1, s2 = Sym("x", "Int"), Sym("y", "Int")
+    set_ctx(Context())
+    s1, s2 = Input("x", "Int"), Input("y", "Int")
     a = Add(s1, 6)
     m = Mul(2, a)
     b = Mul(2, s2)
@@ -32,7 +34,8 @@ def expr_ctors():
 
 
 def expr_funs():
-    s1, s2 = sym("x", "Int"), sym("y", "Int")
+    set_ctx(Context())
+    s1, s2 = inp("x", "Int"), inp("y", "Int")
     a = add(s1, 6)
     m = mul(2, a)
     b = mul(2, s2)
@@ -46,7 +49,8 @@ def expr_funs():
 
 
 def expr_methods():
-    s1, s2 = sym("x", "Int"), sym("y", "Int")
+    set_ctx(Context())
+    s1, s2 = inp("x", "Int"), inp("y", "Int")
     a = s1.add(6)
     m = const(2).mul(a)
     b = const(2).mul(s2)
