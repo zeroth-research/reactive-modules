@@ -1,7 +1,6 @@
 from torch import IntTensor
 from zrth import DType, get_ctx
 from zrth.expr import *
-import unittest
 
 
 def expr_direct():
@@ -97,7 +96,3 @@ def test_argmax_concrete():
 def test_terminal():
     a = Real(0.9)
     b = Real("b")
-
-
-if __name__ == "__main__":
-    unittest.main()
