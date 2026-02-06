@@ -102,6 +102,16 @@ impl DType {
         }
     }
 
+    /// Create the same (Tensor) dtype but with a different shape
+    fn reshape(&self, shape: Vec<usize>) -> Self {
+        match self {
+            DType::TensorBool(_) => DType::TensorBool(shape),
+            DType::TensorInt(_) => DType::TensorInt(shape),
+            DType::TensorFloat(_) => DType::TensorFloat(shape),
+            DType::TensorReal(_) => DType::TensorReal(shape),
+        }
+    }
+
     fn __eq__(&self, other: &Self) -> bool {
         self == other
     }
