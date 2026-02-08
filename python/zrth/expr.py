@@ -1,5 +1,6 @@
 from typing import Any, override
 import torch
+from torch.utils.checkpoint import checkpoint
 
 from .zrth import DType, IType, Term, Wire
 from .context import get_ctx, Context
@@ -29,17 +30,18 @@ class Expr:
     using [set_ctx]. Note that all childern of an expression must be created in the
     same context.
 
-    :param op: name of the operation of the expression
+    :param itype: name of the operation of the expression
     :param args: a list of expression arguments (children)
     """
 
     __cnt = 0
 
-    def __init__(self, op: str | IType, *args, ctx=None):
-        assert isinstance(op, str) or isinstance(op, IType), type(op)
-        self.op = op
+
+    def __init__(self, itype: IType, dtype: DType, *args, ctx=_global_context):
+        assert isinstance(itype, str) or isinstance(itype, IType), type(itype)
+        self.op = itype
         # FIXME: this special handling of "sym"
-        self.args: list[Expr] = list(args) if op != "sym" else []
+        self.args = list(args) if itype != "sym" else []
 
         Expr.__cnt += 1
         self.id = Expr.__cnt
@@ -49,27 +51,26 @@ class Expr:
             "Expr must be created in the same context as its arguments"
         )
 
-        if isinstance(op, IType):
+        if isinstance(itype, IType):
             # typecheck arguments and propose output wire
-            self._dtype: DType = infer_dtype(op, [*args], ctx)
-            self._out_wire: Wire = Wire(self._dtype)
-            self._term: Term = Term(op, [self._out_wire], [a.wire() for a in args])
-
-        elif op == "sym":
+            self._dtype: DType = dtype  # infer_dtype(itype, [*args], ctx)
+            self._out_wire: Wire = ctx.tmp_wire(self._dtype)
+            self._term: Term = Term(itype, [self._out_wire], [a.wire() for a in args])
+        elif itype == "sym":
             name, dtype = args
             assert isinstance(name, str), name
             assert isinstance(dtype, DType), (type(dtype), dtype)
             assert wire is None or isinstance(wire, Wire), (type(wire), wire)
             self._out_wire: Wire = wire or Wire(dtype)
             self._dtype: DType = dtype
-        elif op == "const":
+        elif itype == "const":
             assert len(args) == 1
             val: ToExpr = args[0]
             itype, dtype = const_to_itype_dtype(val)
             self._out_wire: Wire = Wire(dtype)
             self._term: Term = Term(itype, [self._out_wire], [])
             self._dtype: DType = dtype
-        elif op == "assign":  # FIXME: do not have this as a special case
+        elif itype == "assign":  # FIXME: do not have this as a special case
             assert len(args) == 2
             dtype = args[0].dtype()
             assert dtype == args[1].dtype()
@@ -77,7 +78,7 @@ class Expr:
             self._term: Term = Term(IType.Id(), [self._out_wire], [args[0].wire()])
             self._dtype: DType = dtype
         else:
-            itype, dtype = op_to_itype_dtype(op, args)
+            itype, dtype = op_to_itype_dtype(itype, args)
             self._out_wire: Wire = ctx.tmp_wire(dtype)
             self._term: Term = Term(itype, [self._out_wire], [a.wire() for a in args])
             self._dtype: DType = dtype
@@ -129,7 +130,7 @@ class Expr:
         return Argmax(self, rhs)
 
     def add(self, rhs: ToExpr) -> "Expr":
-        return Add(self, rhs)
+        return add(self, rhs)
 
     def mul(self, rhs: ToExpr) -> "Expr":
         return Mul(self, rhs)
@@ -174,7 +175,7 @@ class Expr:
     # Operators
     ###
     def __matmul__(self, rhs: ToExpr) -> "Expr":
-        return self.matmul(rhs)
+        return matmul(self, rhs)
 
     def __add__(self, rhs: ToExpr) -> "Expr":
         return self.add(rhs)
@@ -786,8 +787,8 @@ class Argmax(Expr):
 
 
 class BinaryExpr(Expr):
-    def __init__(self, op, lhs: ToExpr, rhs: ToExpr):
-        super().__init__(op, to_expr(lhs), to_expr(rhs))
+    def __init__(self, itype, lhs: ToExpr, rhs: ToExpr):
+        super().__init__(itype, to_expr(lhs), to_expr(rhs))
 
     @property
     def lhs(self):
@@ -900,111 +901,163 @@ def argmax(t: torch.Tensor | Expr) -> Argmax | int | float:
     return t.argmax().item()
 
 
-def matmul(lhs: torch.Tensor | Expr, rhs: torch.Tensor | Expr) -> MatMul | torch.Tensor:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return MatMul(lhs, rhs)
-    return lhs @ rhs
+# ========================================
+# Matrix multiplication
+# ========================================
 
 
-def add(lhs, rhs) -> Add | int | float:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Add(lhs, rhs)
-    return lhs + rhs
+def matmul(lhs: Expr, rhs: Expr) -> Expr:
+    if lhs.ctx() != rhs.ctx():
+        raise Exception("ctx mismatch")
+    dtype = matmul_dtype(lhs.dtype(), rhs.dtype())
+    return Expr(IType.MatMul(), dtype, lhs, rhs, ctx=lhs.ctx())
 
 
-def mul(lhs: ToExpr, rhs: ToExpr) -> Mul | torch.Tensor | float | int:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Mul(lhs, rhs)
-    return lhs * rhs
+# ========================================
+# Elementwise arithmetic operations
+# ========================================
 
 
-def div(lhs: ToExpr, rhs: ToExpr) -> Div | torch.Tensor | float | int:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Div(lhs, rhs)
-    return lhs / rhs
+def elementwise_arith_op(itype, lhs, rhs):
+    if lhs.ctx() != rhs.ctx():
+        raise Exception("ctx mismatch")
+    match lhs.dtype(), rhs.dtype():
+        case DType.Real(lsize), DType.Real(rsize):
+            if lsize != rsize:
+                raise Exception("size mismatch")
+        case DType.TensorFloat(lsize), DType.TensorFloat(rsize):
+            if lsize != rsize:
+                raise Exception("size mismatch")
+        case DType.TensorInt(lsize), DType.TensorInt(rsize):
+            if lsize != rsize:
+                raise Exception("size mismatch")
+        case _, _:
+            raise Exception("invalid dtype")
+
+    return Expr(itype, lhs.dtype(), lhs, rhs, ctx=lhs.ctx())
 
 
-def sub(lhs: ToExpr, rhs: ToExpr) -> Sub | torch.Tensor | float | int:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Sub(lhs, rhs)
-    return lhs - rhs
+def add(lhs: Expr, rhs: Expr) -> Expr:
+    return elementwise_arith_op(IType.Add(), lhs, rhs)
 
 
-def lt(lhs, rhs) -> Lt | bool:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Lt(lhs, rhs)
-    return lhs < rhs
+def mul(lhs: ToExpr, rhs: ToExpr) -> Expr:
+    return elementwise_arith_op(IType.Mul(), lhs, rhs)
 
 
-def gt(lhs, rhs) -> Gt | bool:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Gt(lhs, rhs)
-    return lhs > rhs
+def div(lhs: ToExpr, rhs: ToExpr) -> Expr:
+    return elementwise_arith_op(IType.Div(), lhs, rhs)
 
 
-def ge(lhs, rhs) -> Ge | bool:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Ge(lhs, rhs)
-    return lhs >= rhs
+def sub(lhs: ToExpr, rhs: ToExpr) -> Expr:
+    return elementwise_arith_op(IType.Sub(), lhs, rhs)
 
 
-def le(lhs, rhs) -> Le | bool:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Le(lhs, rhs)
-    return lhs <= rhs
+# ========================================
+# Elementwise predicates
+# ========================================
+def elementwise_predicate(itype, lhs, rhs):
+    if lhs.ctx() != rhs.ctx():
+        raise Exception("ctx mismatch")
+    size = None
+    match lhs.dtype(), rhs.dtype():
+        case DType.Real(lsize), DType.Real(rsize):
+            if lsize != rsize:
+                raise Exception("size mismatch")
+            size = lsize
+        case DType.TensorFloat(lsize), DType.TensorFloat(rsize):
+            if lsize != rsize:
+                raise Exception("size mismatch")
+            size = lsize
+        case DType.TensorInt(lsize), DType.TensorInt(rsize):
+            if lsize != rsize:
+                raise Exception("size mismatch")
+            size = lsize
+        case _, _:
+            raise Exception("invalid dtype")
+
+    return Expr(itype, DType.TensorBool(size), lhs, rhs, ctx=lhs.ctx())
 
 
-def eq(lhs, rhs) -> Eq | bool:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Eq(lhs, rhs)
-    return lhs == rhs
+def lt(lhs, rhs) -> Expr:
+    return elementwise_predicate(IType.Lt(), lhs, rhs)
 
 
-def neq(lhs, rhs) -> Neq | bool:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Neq(lhs, rhs)
-    return lhs != rhs
+def gt(lhs, rhs) -> Expr:
+    return elementwise_predicate(IType.Gt(), lhs, rhs)
+
+
+def ge(lhs, rhs) -> Expr:
+    return elementwise_predicate(IType.Ge(), lhs, rhs)
+
+
+def le(lhs, rhs) -> Expr:
+    return elementwise_predicate(IType.Le(), lhs, rhs)
+
+
+def eq(lhs, rhs) -> Expr:
+    return elementwise_predicate(IType.Eq(), lhs, rhs)
+
+
+def neq(lhs, rhs) -> Expr:
+    return elementwise_predicate(IType.Neq(), lhs, rhs)
+
+
+# ========================================
+# Elementwise logical operators
+# ========================================
+
+
+def elementwise_logic_op(itype, lhs, rhs):
+    if lhs.ctx() != rhs.ctx():
+        raise Exception("ctx mismatch")
+    match lhs.dtype(), rhs.dtype():
+        case DType.TensorBool(lsize), DType.TensorBool(rsize):
+            if lsize != rsize:
+                raise Exception("size mismatch")
+        case _, _:
+            raise Exception("invalid dtype")
+
+    return Expr(itype, lhs.dtype(), lhs, rhs, ctx=lhs.ctx())
 
 
 # Logical or (we have to avoid clash with Python keyword 'or')
-def lor(lhs, rhs) -> Or | bool:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return Or(lhs, rhs)
-    return lhs or rhs
+def lor(lhs, rhs) -> Expr:
+    return elementwise_logic_op(IType.Or(), lhs, rhs)
 
 
 # Logical and
-def land(lhs, rhs) -> And | bool:
-    if isinstance(lhs, Expr) or isinstance(rhs, Expr):
-        return And(lhs, rhs)
-    return lhs and rhs
+def land(lhs, rhs) -> Expr:
+    return elementwise_logic_op(IType.And(), lhs, rhs)
 
 
 # Logical not
-def lnot(e) -> Not | bool:
-    if isinstance(e, Expr):
-        return Not(e)
-    return not e
+def lnot(e: Expr) -> Expr:
+    if not isinstance(e.dtype(), DType.TensorBool):
+        raise Exception("invalid dtype")
+
+    return Expr(IType.Not, e.dtype(), e, ctx=e.ctx())
+
+
+# ========================================
+# Terminals
+# ========================================
 
 
 def const(x: int | bool | float | torch.Tensor) -> Expr:
     return to_expr(x)
 
 
-def Real(x: float | str, ctx=None):
-    ctx = ctx or get_ctx()
+def Real(x: float | str | torch.Tensor, ctx=_global_context):
     if isinstance(x, float):
-        return Expr("const", x)
+        dtype = DType.Real([1])
+        t = torch.Tensor([x])
+        return Expr(itype=IType.Tensor(t), dtype=dtype, ctx=ctx)
+    elif isinstance(x, torch.Tensor):
+        dtype = DType.Real(x.size())
+        return Expr(itype=IType.Tensor(x), dtype=dtype, ctx=ctx)
     elif isinstance(x, str):
         # register symbol into context
-        ctx.declare_const(x, DType.TensorReal([1]))
-        return Expr(IType.Uninterpreted(x))
-
-
-# this function is specific to expressions, that's why it is here
-def infer_dtype(itype: IType, args: list[Expr], ctx) -> DType:
-    match itype:
-        case IType.Uninterpreted(name):
-            return ctx.get_dtype(name)
-        case _:
-            raise Exception("unimplemented")
+        dtype = DType.Real([1])
+        ctx.declare_const(x, dtype)
+        return Expr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
