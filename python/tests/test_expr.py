@@ -96,3 +96,5 @@ def test_argmax_concrete():
 def test_terminal():
     a = Real(0.9)
     b = Real("b")
+    c = a + b
+    d = a @ b
