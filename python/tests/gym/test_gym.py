@@ -27,7 +27,7 @@ def simpleenv():
         intf=[
             "observation: Tensor<1; Float>",
             "reward: Tensor<1; Float>",
-            "terminated: Tensor<1; Float>",
+            "terminated: Tensor<1; Bool>",
         ],
         prvt=["state: Tensor<1; Float>"],
     )
