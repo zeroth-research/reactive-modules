@@ -4,7 +4,7 @@ import ast
 import textwrap
 from typing import Any
 from zrth.context import get_ctx
-from zrth import DType, IType, Term, Module
+from zrth import DType, Module
 from zrth.expr import Expr
 
 
@@ -75,8 +75,7 @@ def _convert_torch_module(module: torch.nn.Module):
         else:
             raise ValueError(f"Unsupported operation: {op['type']}")
 
-    # Add final assignment to output interface wire
-    terms.append(Term(IType.Id(), [module.intf[0].nxt().wire()], [current_expr.wire()]))
+    Expr("assign", current_expr, module.intf[0].nxt())
     
     ctx.pop_terms_frame()
 
@@ -306,7 +305,6 @@ class MethodVisitor(ast.NodeVisitor):
     
     def __init__(self, env, syms):
         self.env = env
-        self.ctx = get_ctx()
         self.syms = syms
         self.temp_vars = {}
         self.scopes = []
@@ -348,17 +346,13 @@ class MethodVisitor(ast.NodeVisitor):
                 self.temp_vars[var] = merged_expr
                 
                 if var in self.syms and var not in self.written_wires:
-                    output_wire = self.syms[var].nxt().wire()
-                    term = Term(IType.Id(), [output_wire], [merged_expr.wire()])
-                    self.ctx.add_term(term)
+                    Expr("assign", merged_expr, self.syms[var].nxt())
                     self.written_wires.add(var)
             elif if_expr is not None:
                 self.temp_vars[var] = if_expr
                 
                 if var in self.syms and var not in parent_scope and var not in self.written_wires:
-                    output_wire = self.syms[var].nxt().wire()
-                    term = Term(IType.Id(), [output_wire], [if_expr.wire()])
-                    self.ctx.add_term(term)
+                    Expr("assign", if_expr, self.syms[var].nxt())
                     self.written_wires.add(var)
     
     def visit_Assign(self, node):
@@ -379,9 +373,7 @@ class MethodVisitor(ast.NodeVisitor):
             self.temp_vars[wire_name] = result_expr
             
             if len(self.scopes) == 0:
-                output_wire = self.syms[wire_name].nxt().wire()
-                term = Term(IType.Id(), [output_wire], [result_expr.wire()])
-                self.ctx.add_term(term)
+                Expr("assign", result_expr, self.syms[wire_name].nxt())
                 self.written_wires.add(wire_name)
     
     def visit_Return(self, node):
@@ -390,9 +382,7 @@ class MethodVisitor(ast.NodeVisitor):
             wire_name = item.name
             if wire_name in self.temp_vars and wire_name not in self.written_wires:
                 result_expr = self.temp_vars[wire_name]
-                output_wire = self.syms[wire_name].nxt().wire()
-                term = Term(IType.Id(), [output_wire], [result_expr.wire()])
-                self.ctx.add_term(term)
+                Expr("assign", result_expr, self.syms[wire_name].nxt())
         
     def _convert_expr(self, expr):
         """Convert AST expression node to Expr object"""
