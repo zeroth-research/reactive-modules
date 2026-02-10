@@ -18,7 +18,7 @@ pub fn wires_decls<'a, T: IntoIterator<Item = &'a base::Wire<DType>>>(wires: T) 
 }
 
 impl AtomSmtLibTranslator<'_> {
-    fn method_to_smtlib<'a, T>(&self, terms: T, state_wires: &HashSet<usize>) -> String 
+    fn method_to_smtlib<'a, T>(&self, terms: T, state_wires: &HashSet<usize>) -> Vec<String>
     where T: IntoIterator<Item = &'a Term<DType, IType>>
     {
         let mut let_bindings = Vec::new();
@@ -36,22 +36,34 @@ impl AtomSmtLibTranslator<'_> {
         }
 
         if let_bindings.is_empty() {
-            state_assigns.iter().map(|s| format!("(assert {})", s)).collect::<Vec<_>>().join("\n")
+            state_assigns.iter().map(|s| format!("(assert {})", s)).collect()
         } else {
-            format!(
+            vec![format!(
                 "(assert\n  (let ({})\n    (and {})))",
                 let_bindings.join("\n        "),
                 state_assigns.join("\n         ")
-            )
+            )]
         }
     }
 
-    pub fn init(&self, state_wires: &HashSet<usize>) -> String {
+    pub fn init(&self, state_wires: &HashSet<usize>) -> Vec<String> {
         self.method_to_smtlib(self.0.init().iter(), state_wires)
     }
 
-    pub fn update(&self, state_wires: &HashSet<usize>) -> String {
+    pub fn update(&self, state_wires: &HashSet<usize>) -> Vec<String> {
         self.method_to_smtlib(self.0.update().iter(), state_wires)
+    }
+
+    pub fn ctrl(&self) -> Vec<String> {
+        wires_decls(self.0.ctrl().wires())
+    }
+
+    pub fn read(&self) -> Vec<String> {
+        wires_decls(self.0.read().wires())
+    }
+
+    pub fn wait(&self) -> Vec<String> {
+        wires_decls(self.0.wait().wires())
     }
 }
 
@@ -119,8 +131,8 @@ impl ModuleSmtLibTranslator<'_> {
                     format!(
                         "\n;; --- Atom {} ---\n;; Init\n{}\n\n;; Update\n{}",
                         n,
-                        translator.init(&state_wires),
-                        translator.update(&state_wires)
+                        translator.init(&state_wires).join("\n"),
+                        translator.update(&state_wires).join("\n")
                     )
                 })
                 .collect::<Vec<String>>()
@@ -138,7 +150,7 @@ impl ModuleSmtLibTranslator<'_> {
                 format!(
                     "\n;; --- Atom {} ---\n{}",
                     n,
-                    AtomSmtLibTranslator(atom).init(&state_wires)
+                    AtomSmtLibTranslator(atom).init(&state_wires).join("\n")
                 )
             })
             .collect::<Vec<String>>()
@@ -155,7 +167,7 @@ impl ModuleSmtLibTranslator<'_> {
                 format!(
                     "\n;; --- Atom {} ---\n{}",
                     n,
-                    AtomSmtLibTranslator(atom).update(&state_wires)
+                    AtomSmtLibTranslator(atom).update(&state_wires).join("\n")
                 )
             })
             .collect::<Vec<String>>()
