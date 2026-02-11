@@ -936,17 +936,18 @@ def const(x: int | bool | float | torch.Tensor) -> Expr:
     return to_expr(x)
 
 
-def Real(x: float | str, ctx=_global_context):
+def Real(x: float | str, ctx=None):
+    ctx = ctx or get_ctx()
     if isinstance(x, float):
-        return Expr("const", x, ctx=ctx)
+        return Expr("const", x)
     elif isinstance(x, str):
         # register symbol into context
         ctx.declare_const(x, DType.TensorReal([1]))
-        return Expr(IType.Uninterpreted(x), ctx=ctx)
+        return Expr(IType.Uninterpreted(x))
 
 
 # this function is specific to expressions, that's why it is here
-def infer_dtype(itype: IType, args: [Expr], ctx) -> DType:
+def infer_dtype(itype: IType, args: list[Expr], ctx) -> DType:
     match itype:
         case IType.Uninterpreted(name):
             return ctx.get_dtype(name)
