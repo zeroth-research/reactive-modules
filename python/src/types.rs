@@ -201,7 +201,7 @@ pub enum IType {
 
     // Terms representing inputs and outputs identified by a name of
     // a variable/symbol/parameter/... . These could be as well named `Load` and `Store`.
-    // When translating to SMT, these should refer to uninterpreted constants or functions,
+    // When translating to SMT, these should refer to uninterpreted constants
     Input(String),
     Output(String),
 }
