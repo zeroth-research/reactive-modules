@@ -1,4 +1,4 @@
-from .expr import nxt, Expr, Sym, sym
+from .eexpr import nxt, Expr, Sym, sym
 from .context import Context, get_ctx
 from .zrth import DType, Module as RustModule, Transition
 
@@ -62,12 +62,12 @@ class ReactiveModuleDef:
     """
 
     def __init__(
-        self,
-        intf: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        extl: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        prvt: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        rust_module: RustModule = None,
-        name: str = None,
+            self,
+            intf: str | tuple[str] | Sym | tuple[Sym] | None = None,
+            extl: str | tuple[str] | Sym | tuple[Sym] | None = None,
+            prvt: str | tuple[str] | Sym | tuple[Sym] | None = None,
+            rust_module: RustModule = None,
+            name: str = None,
     ):
         self._ctx = get_ctx()
         self._intf_syms = parse_variables(intf)
@@ -173,11 +173,11 @@ class ReactiveModule(ReactiveModuleDef):
     """
 
     def __init__(
-        self,
-        intf: str | tuple[str] | Sym | tuple[Sym] | None,
-        extl: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        prvt: str | tuple[str] | Sym | tuple[Sym] | None = None,
-        name: str = None,
+            self,
+            intf: str | tuple[str] | Sym | tuple[Sym] | None,
+            extl: str | tuple[str] | Sym | tuple[Sym] | None = None,
+            prvt: str | tuple[str] | Sym | tuple[Sym] | None = None,
+            name: str = None,
     ):
         super().__init__(intf, extl, prvt, name=name)
 
@@ -275,11 +275,11 @@ def parse_variables(variables) -> tuple[Sym]:
 
 
 def rust_module_from_methods(
-    ctrl: tuple[Sym],
-    extl: tuple[Sym],
-    init: Callable[[], None],
-    update: Callable[[], None],
-    name: str | None = None,
+        ctrl: tuple[Sym],
+        extl: tuple[Sym],
+        init: Callable[[], None],
+        update: Callable[[], None],
+        name: str | None = None,
 ) -> RustModule:
     """
     Create the Rust module from the `init` and `update` methods.

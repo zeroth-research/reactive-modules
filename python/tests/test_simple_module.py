@@ -4,7 +4,7 @@ from os.path import dirname, join as pathjoin
 from torch import IntTensor
 
 from zrth import DType
-from zrth.expr import nxt, ite, sym
+from zrth.eexpr import nxt, ite, sym
 from zrth import ReactiveModule
 
 

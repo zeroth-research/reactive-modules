@@ -1,6 +1,8 @@
 from torch import IntTensor
 from zrth import DType, get_ctx
-from zrth.expr import *
+from zrth.eexpr import *
+import unittest
+import zrth.expr as expr
 
 
 def expr_direct():
@@ -98,3 +100,13 @@ def test_terminal():
     b = Real("b")
     c = a + b
     d = a @ b
+
+
+def test_boolean():
+    a = expr.Bool(True)
+    b = expr.Bool("a")
+    c = a & b
+    d = a | c
+    e = expr.conj(a, b, c, d)
+
+    print("\nd = ", e, "\n")
