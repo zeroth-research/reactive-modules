@@ -1,9 +1,40 @@
-from .zrth import *
+from .zrth import (
+    DType,
+    IType,
+    Wire,
+    Term,
+    Module,
+    RustContext,
+    Transition,
+    WiredTransitions,
+    AtomTerm,
+)
 from .context import Context, get_ctx, set_ctx, reset_ctx
 from .module import ReactiveModule
-from .expr import Sym
+from .expr import Sym, Input, Output
 
 from typing import Generator
+
+__all__ = [
+    "DType",
+    "IType",
+    "Wire",
+    "Term",
+    "Atom",
+    "Module",
+    "RustContext",
+    "Transition",
+    "WiredTransitions",
+    "ReactiveModule",
+    "Input",
+    "Output",
+    "Context",
+    "get_ctx",
+    "set_ctx",
+    "reset_ctx",
+    "to_wire",
+    "mk_term",
+]
 
 
 #####################################################################
@@ -63,29 +94,24 @@ def process_subst_pair(
     lhs: Wire | Sym, rhs: Wire | Sym
 ) -> Generator[tuple[Wire, Wire]]:
     if isinstance(lhs, Sym):
-        if lhs.has_nxt():
-            lhs = (lhs.wire(), lhs.nxt().wire())
-        else:
-            lhs = (lhs.wire(),)
+        lwires = (lhs.wire(),)
     else:
         assert isinstance(lhs, Wire), lhs
-        lhs = (lhs,)
+        lwires = (lhs,)
+
     if isinstance(rhs, Sym):
-        if rhs.has_nxt():
-            rhs = (rhs.wire(), rhs.nxt().wire())
-        else:
-            rhs = (rhs.wire(),)
+        rwires = (rhs.wire(),)
     else:
         assert isinstance(rhs, Wire), rhs
-        rhs = (rhs,)
+        rwires = (rhs,)
 
-    if len(lhs) != len(rhs):
+    if len(lwires) != len(rwires):
         raise RuntimeError("Invalid mapping")
-    for l, r in zip(lhs, rhs):
-        yield l, r
+    for lw, rw in zip(lwires, rwires):
+        yield lw, rw
 
 
-def remap_term(term, subst: dict) -> Term:
+def remap_term(term, subst: dict) -> tuple[Term, dict[Wire, Wire]]:
     """
     Create a new [Term] with re-mapping wires according to substitutions given in `subst`.
     If a wire `w` is not found in `subst`, a new wire `wn` with fresh ID (and the same DType)
