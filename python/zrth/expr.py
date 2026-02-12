@@ -20,7 +20,7 @@ class Expr:
 
         self._wire = self._term.write()[0]
         self._dtype = self._wire.dtype()
-        self._dims = self._dtype.dims()
+        self._shape = self._dtype.shape
 
         self._args = [*args]
 
@@ -36,8 +36,9 @@ class Expr:
     def wire(self):
         return self._wire
 
-    def dims(self):
-        return self._dims
+    @property
+    def shape(self):
+        return self._shape
 
     def args(self):
         return self._args
@@ -68,7 +69,7 @@ def elementwise_op(itype, first, *others):
         raise Exception("type coercion unsupported")
     dtype = first.dtype()
     ctx = first.ctx()
-    dims = dtype.dims()
+    shape = first.shape
     for arg in others:
         if not isinstance(arg, Expr):
             raise Exception("type coercion unsupported")
@@ -76,7 +77,7 @@ def elementwise_op(itype, first, *others):
         if arg.ctx() != ctx:
             raise Exception("ctx mismatch")
 
-        if dims != arg.dims():
+        if shape != arg.shape:
             raise Exception("size mismatch")
         elif dtype != arg.dtype():
             raise Exception("dtype mismatch")
@@ -119,31 +120,36 @@ def neg(e: Expr) -> Expr:
 # ========================================
 
 
-def Bool(x: bool | str | torch.Tensor, ctx=_global_context):
+def Bool(x: bool | str | torch.Tensor, shape=None, ctx=_global_context):
     if isinstance(x, bool):
+        assert shape is None
         dtype = DType.Bool([1])
         t = torch.Tensor([x])
         return Expr(itype=IType.Tensor(t), dtype=dtype, ctx=ctx)
     elif isinstance(x, torch.Tensor):
-        dtype = DType.Bool(x.size())
+        assert shape is None or shape == x.shape
+        assert x.dtype == torch.bool
+        dtype = DType.Bool(x.shape)
         return Expr(itype=IType.Tensor(x), dtype=dtype, ctx=ctx)
     elif isinstance(x, str):
         # register symbol into context
-        dtype = DType.Bool([1])
+        dtype = DType.Bool(shape if shape is not None else [1])
         ctx.declare_const(x, dtype)
         return Expr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
 
 
-def Real(x: float | str | torch.Tensor, ctx=None):
+def Real(x: float | str | torch.Tensor, shape=None, ctx=_global_context):
     if isinstance(x, float):
-        dtype = DType.TensorReal([1])
+        assert shape is None
+        dtype = DType.Real([1])
         t = torch.Tensor([x])
         return Expr(itype=IType.Tensor(t), dtype=dtype, ctx=ctx)
     elif isinstance(x, torch.Tensor):
-        dtype = DType.TensorReal(x.size())
+        assert shape is None or shape == x.shape
+        dtype = DType.Real(x.shape)
         return Expr(itype=IType.Tensor(x), dtype=dtype, ctx=ctx)
     elif isinstance(x, str):
         # register symbol into context
-        dtype = DType.TensorReal([1])
+        dtype = DType.Real(shape if shape is not None else [1])
         (ctx or get_ctx()).declare_const(x, dtype)
         return Expr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
