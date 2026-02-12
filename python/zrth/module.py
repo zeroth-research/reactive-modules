@@ -226,7 +226,7 @@ def call_convert_after_init(thiscls, cls, **kwargs):
     cls.__init__ = wrapped_init
 
 
-def parse_variables(variables) -> tuple[Input]:
+def parse_variables(variables) -> list[Input]:
     """
     Parse variables (ctrl or extl) given to the module.
 
@@ -243,7 +243,7 @@ def parse_variables(variables) -> tuple[Input]:
     :return: a list of `Sym` objects.
     """
     if not variables:
-        return ()
+        return []
 
     if isinstance(variables, str):
         V = variables.split(",")
@@ -254,10 +254,10 @@ def parse_variables(variables) -> tuple[Input]:
             f"Expect variables to be a string, tuple or list, got: {variables}"
         )
 
-    syms = []
+    syms: list[Input] = []
     for v in V:
         if isinstance(v, str):
-            if not ":" in v:
+            if ":" not in v:
                 raise RuntimeError(f"A variable `{v}` is missing a type annotation")
             v: list[str] = v.split(":")
             name, dtype = v[0].strip(), DType.from_str(v[1].strip())
