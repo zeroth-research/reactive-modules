@@ -13,7 +13,7 @@ type ToExpr = Expr | int | bool | float | torch.Tensor
 class Expr:
     def __init__(self, itype: IType, dtype: DType, *args, ctx):
         # super().__init__(self, itype, [ctx.tmp_wire(self._dtype)], [a.wire() for a in args])
-        self._term = Term(itype, [ctx.tmp_wire(dtype)], [a.wire() for a in args])
+        self._term = Term(itype, [ctx.tmp_wire(dtype)], [a.wire for a in args])
         self._ctx = ctx
 
         self._itype = itype
@@ -24,15 +24,15 @@ class Expr:
 
         self._args = [*args]
 
+    @property
     def ctx(self) -> Context:
         return self._ctx
 
+    @property
     def dtype(self):
         return self._dtype
 
-    def itype(self):
-        return self._itype
-
+    @property
     def wire(self):
         return self._wire
 
@@ -40,11 +40,16 @@ class Expr:
     def shape(self):
         return self._shape
 
+    @property
     def args(self):
         return self._args
 
     # def argmax(self) -> "Expr":
     #     return Argmax(self)
+
+    @property
+    def itype(self):
+        return self._itype
 
     def __and__(self, rhs: "Expr") -> "Expr":
         return conj(self, rhs)
@@ -58,28 +63,28 @@ class Expr:
     @override
     def __str__(self) -> str:
         return (
-            f"{self.itype()}({', '.join(map(str, self._args))})"
+            f"{self._itype}({', '.join(map(str, self._args))})"
             if self._args
-            else f"{self.itype()}"
+            else f"{self._itype}"
         )
 
 
 def elementwise_op(itype, first, *others):
     if not isinstance(first, Expr):
         raise Exception("type coercion unsupported")
-    dtype = first.dtype()
-    ctx = first.ctx()
+    dtype = first.dtype
+    ctx = first.ctx
     shape = first.shape
     for arg in others:
         if not isinstance(arg, Expr):
             raise Exception("type coercion unsupported")
 
-        if arg.ctx() != ctx:
+        if arg.ctx != ctx:
             raise Exception("ctx mismatch")
 
         if shape != arg.shape:
             raise Exception("size mismatch")
-        elif dtype != arg.dtype():
+        elif dtype != arg.dtype:
             raise Exception("dtype mismatch")
 
     return Expr(itype, dtype, first, *others, ctx=ctx)
@@ -91,7 +96,7 @@ def elementwise_op(itype, first, *others):
 
 
 def elementwise_bool_op(itype, first: Expr, *others):
-    if not isinstance(first.dtype(), DType.Bool):
+    if not isinstance(first.dtype, DType.Bool):
         raise Exception("invalid dtype")
 
     return elementwise_op(itype, first, *others)
