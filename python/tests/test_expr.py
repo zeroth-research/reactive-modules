@@ -1,4 +1,4 @@
-from torch import IntTensor
+from torch import IntTensor, tensor
 from zrth import DType, get_ctx
 from zrth.eexpr import *
 import unittest
@@ -105,6 +105,16 @@ def test_terminal():
 def test_boolean():
     a = expr.Bool(True)
     b = expr.Bool("a")
+    c = a & b
+    d = a | c
+    e = expr.conj(a, b, c, d)
+
+    print("\nd = ", e, "\n")
+
+
+def test_bitarray():
+    a = expr.Bool(tensor([True, True]))
+    b = expr.Bool("a", shape=(2,))
     c = a & b
     d = a | c
     e = expr.conj(a, b, c, d)
