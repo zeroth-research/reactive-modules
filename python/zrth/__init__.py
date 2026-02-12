@@ -58,15 +58,14 @@ def mk_DTypeReal(shape: None | list[int] = None) -> DType:
     return DType.TensorReal(shape)
 
 
+#####################################################################
+# Wire/Term helpers
+#####################################################################
+
 DType.Bool = mk_DTypeBool  # ty: ignore
 DType.Int = mk_DTypeInt  # ty: ignore
 DType.Float = mk_DTypeFloat  # ty: ignore
 DType.Real = mk_DTypeReal  # ty: ignore
-
-
-#####################################################################
-# Wire/Term helpers
-#####################################################################
 
 
 def to_wire(w: Wire | Term) -> Wire:

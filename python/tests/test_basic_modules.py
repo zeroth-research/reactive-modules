@@ -1,7 +1,6 @@
 from zrth import ReactiveModule
 from torch import IntTensor
-from zrth.expr import nxt, ite
-
+from zrth.eexpr import nxt, ite
 
 ######################################################################
 # Torch

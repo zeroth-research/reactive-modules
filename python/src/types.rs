@@ -83,12 +83,12 @@ impl DType {
     }
 
     /// Get the data dimensions of this data type
-    fn dims(&self) -> Vec<usize> {
+    fn dims(&self) -> &Vec<usize> {
         match &self {
-            DType::TensorFloat(shape) => shape.clone(),
-            DType::TensorInt(shape) => shape.clone(),
-            DType::TensorBool(shape) => shape.clone(),
-            DType::TensorReal(shape) => shape.clone(),
+            DType::TensorFloat(shape) => shape,
+            DType::TensorInt(shape) => shape,
+            DType::TensorBool(shape) => shape,
+            DType::TensorReal(shape) => shape,
         }
     }
 
