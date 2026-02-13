@@ -396,6 +396,44 @@ class MethodVisitor(ast.NodeVisitor):
                 Expr("assign", result_expr, self.syms[wire_name].nxt())
                 self.written_wires.add(wire_name)
     
+    def visit_AugAssign(self, node):
+        """Handle augmented assignment (+=, -=, *=, /=)
+        
+        Expands augmented assignment to regular assignment with binary operation.
+        Example: self.x += 5 becomes self.x = self.x + 5
+        """
+        if isinstance(node.target, ast.Attribute) and node.target.attr in self.syms:
+            wire_name = node.target.attr
+            
+            # Get current value
+            if wire_name in self.temp_vars:
+                left_expr = self.temp_vars[wire_name]
+            else:
+                left_expr = self.syms[wire_name]
+            
+            right_expr = self._convert_expr(node.value)
+            
+            # Map augmented op to binary op
+            op_type = type(node.op)
+            if op_type == ast.Add:
+                result_expr = Expr("arith.add", left_expr, right_expr)
+            elif op_type == ast.Sub:
+                result_expr = Expr("arith.sub", left_expr, right_expr)
+            elif op_type == ast.Mult:
+                result_expr = Expr("arith.mul", left_expr, right_expr)
+            elif op_type == ast.Div:
+                result_expr = Expr("arith.div", left_expr, right_expr)
+            else:
+                raise ValueError(f"Unsupported augmented assignment operator: {op_type.__name__}")
+            
+            self.temp_vars[wire_name] = result_expr
+            
+            if len(self.scopes) == 0:
+                Expr("assign", result_expr, self.syms[wire_name].nxt())
+                self.written_wires.add(wire_name)
+        else:
+            raise ValueError("Augmented assignment only supported for self.attribute wires")
+    
     def visit_Return(self, node):
         """Assign interface wires from temp_vars (return values ignored)"""
         for item in self.env.intf:
@@ -411,6 +449,8 @@ class MethodVisitor(ast.NodeVisitor):
             return self._convert_call(expr)
         elif isinstance(expr, ast.BinOp):
             return self._convert_binop(expr)
+        elif isinstance(expr, ast.UnaryOp):
+            return self._convert_unaryop(expr)
         elif isinstance(expr, ast.BoolOp):
             return self._convert_boolop(expr)
         elif isinstance(expr, ast.Compare):
@@ -481,6 +521,29 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
         
         return Expr(self.BINARY_OPS[op_type], left_expr, right_expr)
+    
+    def _convert_unaryop(self, unaryop):
+        """Convert unary operation (not, -, +)
+        
+        Handles:
+        - not x: Ite(x, False, True)
+        - -x: arith.sub(0, x)
+        - +x: no-op, returns x
+        """
+        operand_expr = self._convert_expr(unaryop.operand)
+        
+        op_type = type(unaryop.op)
+        if op_type == ast.Not:
+            false_val = self._convert_constant(ast.Constant(False), operand_expr.dtype())
+            true_val = self._convert_constant(ast.Constant(True), operand_expr.dtype())
+            return Expr("ite", operand_expr, false_val, true_val)
+        elif op_type == ast.USub:
+            zero = self._convert_constant(ast.Constant(0), operand_expr.dtype())
+            return Expr("arith.sub", zero, operand_expr)
+        elif op_type == ast.UAdd:
+            return operand_expr
+        else:
+            raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
     
     def _convert_boolop(self, boolop):
         """Convert boolean operation (and/or) to nested Ite expressions
