@@ -1,4 +1,4 @@
-from zrth.gym import SimpleQNet, SimpleEnv, GridWorldEnv, GridWorldQNet
+from zrth.gym import SimpleQNet, SimpleEnv, GridWorldEnv, GridWorldQNet, ComplexDecisionEnv
 from zrth import reset_ctx, Module
 
 
@@ -86,6 +86,31 @@ def test_gridworldenv_conversion():
     _ = gridworldenv()
 
 
+def complexdecisionenv():
+    env = ComplexDecisionEnv(
+        extl=["q_values: Tensor<10; Float>"],
+        intf=[
+            "observation: Tensor<1; Float>",
+            "reward: Tensor<1; Float>",
+            "terminated: Tensor<1; Bool>",
+        ],
+        prvt=[
+            "score: Tensor<1; Float>",
+            "multiplier: Tensor<1; Float>",
+            "bonus_active: Tensor<1; Bool>",
+        ],
+    )
+
+    print("\nComplexDecisionEnv reactive module:")
+    print(env.unwrap())
+
+    return env
+
+
+def test_complexdecisionenv_conversion():
+    _ = complexdecisionenv()
+
+
 if __name__ == "__main__":
     _ = reset_ctx()
     qnet = simpleqnet()
@@ -107,3 +132,7 @@ if __name__ == "__main__":
     print("=" * 60)
     composed2 = Module.parallel(qnet3.unwrap(), gridenv.unwrap())
     print(composed2)
+    
+    print("\n" + "="*60 + "\n")
+    print("=" * 60)
+    complexenv = complexdecisionenv()
