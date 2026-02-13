@@ -12,8 +12,10 @@ type ToExpr = Expr | int | bool | float | torch.Tensor
 
 class Expr:
     def __init__(self, itype: IType, dtype: DType, *args, ctx):
+        assert all(isinstance(arg, Expr) for arg in args)
         # super().__init__(self, itype, [ctx.tmp_wire(self._dtype)], [a.wire() for a in args])
         self._term = Term(itype, [ctx.tmp_wire(dtype)], [a.wire for a in args])
+
         self._ctx = ctx
 
         self._itype = itype
@@ -23,6 +25,8 @@ class Expr:
         self._shape = self._dtype.shape
 
         self._args = [*args]
+
+        return self
 
     @property
     def ctx(self) -> Context:
@@ -69,14 +73,39 @@ class Expr:
         )
 
 
-def elementwise_op(itype, first, *others):
-    if not isinstance(first, Expr):
+class BExpr(Expr):
+    def __and__(self, rhs: "BExpr") -> "BExpr":
+        return conj(self, rhs)
+
+    def __or__(self, rhs: "BExpr") -> "BExpr":
+        return disj(self, rhs)
+
+    def __invert__(self) -> "BExpr":
+        return neg(self)
+
+
+class AExpr(Expr):
+    def __add__(self, other: "AExpr") -> "AExpr":
+        return add(self, other)
+
+    def __mul__(self, other: "AExpr") -> "AExpr":
+        return mul(self, other)
+
+    def __sub__(self, other: "AExpr") -> "AExpr":
+        return sub(self, other)
+
+    def __truediv__(self, other: "AExpr") -> "AExpr":
+        return div(self, other)
+
+
+def elementwise_op(cls, itype, first, *others):
+    if not isinstance(first, cls):
         raise Exception("type coercion unsupported")
     dtype = first.dtype
     ctx = first.ctx
     shape = first.shape
     for arg in others:
-        if not isinstance(arg, Expr):
+        if not isinstance(arg, cls):
             raise Exception("type coercion unsupported")
 
         if arg.ctx != ctx:
@@ -87,7 +116,7 @@ def elementwise_op(itype, first, *others):
         elif dtype != arg.dtype:
             raise Exception("dtype mismatch")
 
-    return Expr(itype, dtype, first, *others, ctx=ctx)
+    return Expr.__new__(cls, itype, dtype, first, *others, ctx=ctx)
 
 
 # ========================================
@@ -95,25 +124,25 @@ def elementwise_op(itype, first, *others):
 # ========================================
 
 
-def elementwise_bool_op(itype, first: Expr, *others):
+def elementwise_bool_op(itype, first: BExpr, *others):
     if not isinstance(first.dtype, DType.Bool):
         raise Exception("invalid dtype")
 
-    return elementwise_op(itype, first, *others)
+    return elementwise_op(BExpr, itype, first, *others)
 
 
 # Logical or (we have to avoid clash with Python keyword 'or')
-def disj(first: Expr, *others) -> Expr:
+def disj(first: BExpr, *others) -> BExpr:
     return elementwise_bool_op(IType.Or(), first, *others)
 
 
 # Logical and
-def conj(first: Expr, *others) -> Expr:
+def conj(first: BExpr, *others) -> BExpr:
     return elementwise_bool_op(IType.And(), first, *others)
 
 
 # Logical not
-def neg(e: Expr) -> Expr:
+def neg(e: BExpr) -> BExpr:
     if not isinstance(e.dtype(), DType.TensorBool):
         raise Exception("invalid dtype")
 
@@ -121,40 +150,68 @@ def neg(e: Expr) -> Expr:
 
 
 # ========================================
+# Elementwise arithmetics operators
+# ========================================
+
+
+def elementwise_arith_op(itype, first: Expr, *others):
+    if not isinstance(first.dtype, (DType.Real, DType.Int)):
+        raise Exception("invalid dtype")
+
+    return elementwise_op(AExpr, itype, first, *others)
+
+
+def add(first: AExpr, *others) -> AExpr:
+    return elementwise_arith_op(IType.Add(), first, *others)
+
+
+def mul(first: AExpr, *others) -> AExpr:
+    return elementwise_arith_op(IType.Mul(), first, *others)
+
+
+def div(num: AExpr, den: AExpr) -> AExpr:
+    return elementwise_arith_op(IType.Div(), num, den)
+
+
+def sub(min: AExpr, sub: AExpr) -> AExpr:
+    return elementwise_arith_op(IType.Sub(), min, sub)
+
+
+# ========================================
 # Terminals
 # ========================================
 
 
-def Bool(x: bool | str | torch.Tensor, shape=None, ctx=_global_context):
+def Bool(x: bool | str | torch.Tensor, shape=None, ctx=_global_context) -> BExpr:
     if isinstance(x, bool):
         assert shape is None
         dtype = DType.Bool([1])
         t = torch.Tensor([x])
-        return Expr(itype=IType.Tensor(t), dtype=dtype, ctx=ctx)
+        return BExpr(itype=IType.Tensor(t), dtype=dtype, ctx=ctx)
     elif isinstance(x, torch.Tensor):
         assert shape is None or shape == x.shape
         assert x.dtype == torch.bool
         dtype = DType.Bool(x.shape)
-        return Expr(itype=IType.Tensor(x), dtype=dtype, ctx=ctx)
+        return BExpr(itype=IType.Tensor(x), dtype=dtype, ctx=ctx)
     elif isinstance(x, str):
         # register symbol into context
         dtype = DType.Bool(shape if shape is not None else [1])
         ctx.declare_const(x, dtype)
-        return Expr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
+        return BExpr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
 
 
-def Real(x: float | str | torch.Tensor, shape=None, ctx=_global_context):
+def Real(x: float | str | torch.Tensor, shape=None, ctx=_global_context) -> AExpr:
     if isinstance(x, float):
         assert shape is None
         dtype = DType.Real([1])
         t = torch.Tensor([x])
-        return Expr(itype=IType.Tensor(t), dtype=dtype, ctx=ctx)
+        return AExpr(itype=IType.Tensor(t), dtype=dtype, ctx=ctx)
     elif isinstance(x, torch.Tensor):
         assert shape is None or shape == x.shape
         dtype = DType.Real(x.shape)
-        return Expr(itype=IType.Tensor(x), dtype=dtype, ctx=ctx)
+        return AExpr(itype=IType.Tensor(x), dtype=dtype, ctx=ctx)
     elif isinstance(x, str):
         # register symbol into context
         dtype = DType.Real(shape if shape is not None else [1])
         (ctx or get_ctx()).declare_const(x, dtype)
-        return Expr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
+        return AExpr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)

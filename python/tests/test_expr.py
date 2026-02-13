@@ -120,3 +120,13 @@ def test_bitarray():
     e = expr.conj(a, b, c, d)
 
     print("\nd = ", e, "\n")
+
+
+def test_arith():
+    a = expr.Real(2.1)
+    b = expr.Real("a")
+    c = a + b
+    d = a / c
+    e = expr.mul(a, b, c, d)
+
+    print("\nd = ", e, "\n")
