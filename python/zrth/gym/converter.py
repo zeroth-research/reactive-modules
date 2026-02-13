@@ -2,6 +2,7 @@ import torch
 import inspect
 import ast
 import textwrap
+from contextlib import contextmanager
 from typing import Any
 from zrth.context import get_ctx
 from zrth import DType, Module
@@ -213,9 +214,9 @@ def _convert_gym_env(env):
     obs = [(s.wire(), s.nxt().wire()) for s in env.extl + env.intf]
     prvt = [(s.wire(), s.nxt().wire()) for s in env.prvt]
     
-    required_intf_wires = [syms[item.name].nxt().wire() for item in env.intf]
-    _ensure_wires_assigned(init_terms, required_intf_wires, mode='init')
-    _ensure_wires_assigned(update_terms, required_intf_wires, mode='update')
+    required_wires = [syms[item.name].nxt().wire() for item in env.intf + env.prvt]
+    _ensure_wires_assigned(init_terms, required_wires, mode='init')
+    _ensure_wires_assigned(update_terms, required_wires, mode='update')
     
     return Module.sequential(init=init_terms, update=update_terms, obs=obs, prvt=prvt)
 
@@ -241,7 +242,7 @@ def _parse_method(env, method, syms):
     ctx.push_terms_frame(terms)
     
     visitor = MethodVisitor(env, syms)
-    # Store Sym objects (which are Expr) in temp_vars for method arguments
+    # Initialize temp_vars with method arguments that are wires
     visitor.temp_vars.update({
         arg.arg: syms[arg.arg]
         for arg in func_def.args.args
@@ -271,20 +272,20 @@ def _ensure_wires_assigned(terms, required_wires, mode):
         for wire in term.write():
             written_ids.add(wire.id())
     
-    for wire in required_wires:
-        if wire.id() not in written_ids:
-            raise ValueError(
-                f"Interface wire (id={wire.id()}) was not assigned in {mode}() method. "
-                f"Ensure you define a variable matching your intf declaration. "
-                f"Variable names must match exactly with the interface wire names."
-            )
+    missing_ids = [w.id() for w in required_wires if w.id() not in written_ids]
+    if missing_ids:
+        raise ValueError(
+            f"Wire(s) with id(s) {missing_ids} not assigned in {mode}() method. "
+            f"Ensure all interface and private wires are written. "
+            f"Written: {sorted(written_ids)}, Required: {sorted(w.id() for w in required_wires)}"
+        )
 
 
 class MethodVisitor(ast.NodeVisitor):
-    """AST visitor to convert Python methods to reactive Terms using Expr API
+    """AST visitor to convert Python methods to reactive Terms
     
-    All intermediate values are stored as Expr objects in temp_vars.
-    Terms are collected automatically via context's terms_frame mechanism.
+    Intermediate values are stored as Expr objects in temp_vars.
+    Terms are collected via context's terms_frame mechanism.
     """
     
     BINARY_OPS = {
@@ -310,49 +311,68 @@ class MethodVisitor(ast.NodeVisitor):
         self.scopes = []
         self.written_wires = set()
     
+    @contextmanager
+    def _scope(self, scope_name):
+        """Context manager for scope tracking
+        
+        Ensures scope cleanup even if exceptions occur during branch processing.
+        """
+        self.scopes.append(scope_name)
+        try:
+            yield
+        finally:
+            self.scopes.pop()
+    
     def visit_If(self, node):
         """Handle if/else with SSA: evaluate both branches, merge with Ite
         
-        Ensures each wire is written exactly once by merging diverged variables
-        with Ite expressions at the merge point.
+        Ensures each wire is written exactly once by merging branches.
         """
         cond_expr = self._convert_expr(node.test)
         
         parent_scope = dict(self.temp_vars)
         
-        self.scopes.append('if')
-        for stmt in node.body:
-            self.visit(stmt)
+        with self._scope('if'):
+            for stmt in node.body:
+                self.visit(stmt)
         if_scope_after = dict(self.temp_vars)
-        self.scopes.pop()
         
         self.temp_vars = dict(parent_scope)
         
-        self.scopes.append('else')
-        if node.orelse:
-            for stmt in node.orelse:
-                self.visit(stmt)
+        with self._scope('else'):
+            if node.orelse:
+                for stmt in node.orelse:
+                    self.visit(stmt)
         else_scope_after = dict(self.temp_vars)
-        self.scopes.pop()
         
         all_vars = set(if_scope_after.keys()) | set(else_scope_after.keys())
         
         for var in all_vars:
-            if_expr = if_scope_after.get(var, parent_scope.get(var))
-            else_expr = else_scope_after.get(var, parent_scope.get(var))
+            # Resolve variable from if branch: branch → parent → initial Sym
+            if_expr = if_scope_after.get(var)
+            if if_expr is None:
+                if_expr = parent_scope.get(var)
+            if if_expr is None and var in self.syms:
+                if_expr = self.syms[var]
             
-            if if_expr != else_expr:
+            # Resolve variable from else branch: branch → parent → initial Sym
+            else_expr = else_scope_after.get(var)
+            if else_expr is None:
+                else_expr = parent_scope.get(var)
+            if else_expr is None and var in self.syms:
+                else_expr = self.syms[var]
+            
+            # Same value in both branches - no Ite needed
+            if if_expr is else_expr:
+                self.temp_vars[var] = if_expr
+            elif if_expr is not None and else_expr is not None:
+                # Values diverged - need Ite to merge
                 merged_expr = Expr("ite", cond_expr, if_expr, else_expr)
                 self.temp_vars[var] = merged_expr
                 
+                # Assign wire if not yet written
                 if var in self.syms and var not in self.written_wires:
                     Expr("assign", merged_expr, self.syms[var].nxt())
-                    self.written_wires.add(var)
-            elif if_expr is not None:
-                self.temp_vars[var] = if_expr
-                
-                if var in self.syms and var not in parent_scope and var not in self.written_wires:
-                    Expr("assign", if_expr, self.syms[var].nxt())
                     self.written_wires.add(var)
     
     def visit_Assign(self, node):
@@ -383,6 +403,7 @@ class MethodVisitor(ast.NodeVisitor):
             if wire_name in self.temp_vars and wire_name not in self.written_wires:
                 result_expr = self.temp_vars[wire_name]
                 Expr("assign", result_expr, self.syms[wire_name].nxt())
+                self.written_wires.add(wire_name)
         
     def _convert_expr(self, expr):
         """Convert AST expression node to Expr object"""
@@ -390,6 +411,8 @@ class MethodVisitor(ast.NodeVisitor):
             return self._convert_call(expr)
         elif isinstance(expr, ast.BinOp):
             return self._convert_binop(expr)
+        elif isinstance(expr, ast.BoolOp):
+            return self._convert_boolop(expr)
         elif isinstance(expr, ast.Compare):
             return self._convert_compare(expr)
         elif isinstance(expr, ast.IfExp):
@@ -458,6 +481,31 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
         
         return Expr(self.BINARY_OPS[op_type], left_expr, right_expr)
+    
+    def _convert_boolop(self, boolop):
+        """Convert boolean operation (and/or) to nested Ite expressions
+        
+        Python: a and b -> Ite(a, b, False)
+        Python: a or b  -> Ite(a, True, b)
+        """
+        if len(boolop.values) < 2:
+            raise ValueError("BoolOp must have at least 2 operands")
+        
+        exprs = [self._convert_expr(val) for val in boolop.values]
+        is_and = isinstance(boolop.op, ast.And)
+        
+        if not is_and and not isinstance(boolop.op, ast.Or):
+            raise ValueError(f"Unsupported boolean operator: {type(boolop.op).__name__}")
+        
+        # Build nested Ite from right to left
+        result = exprs[-1]
+        for expr in reversed(exprs[:-1]):
+            false_val = self._convert_constant(ast.Constant(False), result.dtype())
+            true_val = self._convert_constant(ast.Constant(True), result.dtype())
+            # and: Ite(a, b, False)  |  or: Ite(a, True, b)
+            result = Expr("ite", expr, result if is_and else true_val, 
+                         false_val if is_and else result)
+        return result
     
     def _convert_compare(self, compare):
         """Convert comparison operation"""
@@ -533,7 +581,7 @@ class MethodVisitor(ast.NodeVisitor):
     def _convert_attribute(self, attr):
         """Convert attribute access (self.state, etc.)
         
-        Checks temp_vars first, falls back to Sym for state reads.
+        Checks temp_vars first, then falls back to Sym for wire reads.
         """
         if isinstance(attr.value, ast.Name) and attr.value.id == 'self':
             wire_name = attr.attr
