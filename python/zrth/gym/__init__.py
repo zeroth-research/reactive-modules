@@ -2,7 +2,7 @@
 
 from .zrth_module import Module
 from .qnetworks import SimpleQNet, GridWorldQNet
-from .environments import SimpleEnv, GridWorldEnv
+from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv
 from .agent import DQNAgent
 from zrth import Wire, DType, IType, Term, Module as BackendModule
 
@@ -13,6 +13,7 @@ __all__ = [
     "GridWorldQNet",
     "SimpleEnv",
     "GridWorldEnv",
+    "ComplexDecisionEnv",
     "DQNAgent",
     "Wire",
     "DType",
