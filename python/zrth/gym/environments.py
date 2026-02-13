@@ -87,27 +87,15 @@ class GridWorldEnv(gym.Env, Module):
     def step(self, q_values):
         action = q_values.argmax().item()
         
-        # # Update position based on action (with boundary checking)
-        # if action == 0:  # up
-        #     self.y = max(self.y - 1, 0)
-        # elif action == 1:  # down
-        #     self.y = min(self.y + 1, 2)
-        # elif action == 2:  # left
-        #     self.x = max(self.x - 1, 0)
-        # else:  # right (action == 3)
-        #     self.x = min(self.x + 1, 2)
-
         # Update position based on action (with boundary checking)
         if action == 0:  # up
             self.y = max(self.y - 1, 0)
+        elif action == 1:  # down
+            self.y = min(self.y + 1, 2)
+        elif action == 2:  # left
             self.x = max(self.x - 1, 0)
-        # elif action == 1:  # down
-        #     self.y = min(self.y + 1, 2)
-        # elif action == 2:  # left
-        #     self.x = max(self.x - 1, 0)
         else:  # right (action == 3)
             self.x = min(self.x + 1, 2)
-            self.y = min(self.y + 1, 2)
         
         # Check if reached goal
         at_goal_x = self.x == 2
@@ -119,4 +107,114 @@ class GridWorldEnv(gym.Env, Module):
         truncated = False
         
         observation = self.y * 3 + self.x  # Flatten position
+        return observation, reward, terminated, truncated
+
+class ComplexDecisionEnv(gym.Env, Module):
+    """Environment testing: nested decisions, boolean ops, augmented assignments, numpy"""
+    
+    def __init__(self, extl, intf, prvt):
+        """Initialize complex decision environment
+        
+        Tests:
+        - Nested if/elif/else (3 levels deep)
+        - Boolean operations (and, or, not)
+        - Augmented assignments (+=, -=, *=)
+        
+        Args:
+            extl: List of external input wire names
+            intf: List of interface output wire names  
+            prvt: List of private wire names
+        """
+        gym.Env.__init__(self)
+        Module.__init__(self, extl, intf, prvt)
+        
+        # Gym spaces
+        self.action_space = spaces.Discrete(10)  # 10 possible actions
+        self.observation_space = spaces.Box(low=0, high=10, shape=(1,))
+        
+        # Private state variables
+        self.score = 0.0
+        self.multiplier = 1.0
+        self.bonus_active = False
+        
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.score = 0.0
+        self.multiplier = 1.0
+        self.bonus_active = False
+        
+        observation = self.score
+        reward = 0.0
+        terminated = False
+        return observation, reward, terminated
+    
+    def step(self, q_values):
+        action = q_values.argmax().item()
+        
+        # Test augmented assignments
+        self.score += 1.0  # Increment score every step
+        
+        # Test nested if/elif/else with boolean operations
+        if action < 3:
+            # Low actions (0, 1, 2)
+            if action == 0:
+                self.multiplier *= 2.0  # Double multiplier
+                self.bonus_active = True
+            elif action == 1:
+                self.multiplier -= 0.5  # Decrease multiplier
+                # Test boolean AND
+                if self.multiplier > 0.0 and self.bonus_active:
+                    self.score += 5.0
+            else:  # action == 2
+                self.bonus_active = False
+                self.score -= 1.0  # Penalty
+        elif action < 7:
+            # Mid actions (3, 4, 5, 6)
+            if action == 3:
+                # Test boolean OR
+                if self.score > 10.0 or self.bonus_active:
+                    self.multiplier += 1.0
+            elif action == 4:
+                # Test boolean NOT
+                if not self.bonus_active:
+                    self.score += 2.0
+            elif action == 5:
+                # Test nested boolean operations
+                high_score = self.score > 5.0
+                has_bonus = self.bonus_active
+                good_multiplier = self.multiplier >= 1.0
+                
+                # (high_score AND has_bonus) OR good_multiplier
+                if (high_score and has_bonus) or good_multiplier:
+                    self.score *= 1.5
+            else:  # action == 6
+                # Reset bonus but keep score
+                self.bonus_active = False
+                self.multiplier = 1.0
+        else:
+            # High actions (7, 8, 9)
+            if action == 7:
+                # Test comparison chains (if supported)
+                if self.score >= 0.0:  # Simplified for now
+                    if self.score <= 20.0:
+                        self.bonus_active = True
+            elif action == 8:
+                # Big bonus with conditions
+                if self.multiplier > 1.0:
+                    bonus = self.multiplier * 10.0
+                    self.score += bonus
+            else:  # action == 9
+                # Reset everything
+                self.score = 0.0
+                self.multiplier = 1.0
+                self.bonus_active = False
+        
+        # Calculate reward using private state
+        reward = self.score * self.multiplier
+        
+        # Terminate if score too high or too low
+        terminated = self.score > 100.0 or self.score < -10.0
+        truncated = False
+        
+        observation = self.score
         return observation, reward, terminated, truncated
