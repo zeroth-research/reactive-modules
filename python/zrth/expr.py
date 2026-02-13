@@ -97,26 +97,49 @@ class AExpr(Expr):
     def __truediv__(self, other: "AExpr") -> "AExpr":
         return div(self, other)
 
+    def __lt__(self, other: "AExpr") -> BExpr:
+        return lt(self, other)
 
-def elementwise_op(cls, itype, first, *others):
-    if not isinstance(first, cls):
+    def __gt__(self, other: "AExpr") -> BExpr:
+        return gt(self, other)
+
+    def __le__(self, other: "AExpr") -> BExpr:
+        return le(self, other)
+
+    def __ge__(self, other: "AExpr") -> BExpr:
+        return ge(self, other)
+
+    def __eq__(self, other: "AExpr") -> BExpr:
+        return eq(self, other)
+
+    def __ne__(self, other: "AExpr") -> BExpr:
+        return neq(self, other)
+
+
+def elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
+    if not isinstance(first, Expr):
         raise Exception("type coercion unsupported")
-    dtype = first.dtype
     ctx = first.ctx
     shape = first.shape
     for arg in others:
-        if not isinstance(arg, cls):
+        if not isinstance(arg, Expr):
             raise Exception("type coercion unsupported")
-
         if arg.ctx != ctx:
             raise Exception("ctx mismatch")
-
         if shape != arg.shape:
             raise Exception("size mismatch")
-        elif dtype != arg.dtype:
+        if rtype != arg.dtype:
             raise Exception("dtype mismatch")
 
-    return Expr.__new__(cls, itype, dtype, first, *others, ctx=ctx)
+    match wtype:
+        case DType.Bool():
+            return BExpr(itype, wtype, first, *others, ctx=ctx)
+        case DType.Real():
+            return AExpr(itype, wtype, first, *others, ctx=ctx)
+        case DType.Int():
+            return AExpr(itype, wtype, first, *others, ctx=ctx)
+        case _:
+            raise NotImplementedError
 
 
 # ========================================
@@ -128,7 +151,7 @@ def elementwise_bool_op(itype, first: BExpr, *others):
     if not isinstance(first.dtype, DType.Bool):
         raise Exception("invalid dtype")
 
-    return elementwise_op(BExpr, itype, first, *others)
+    return elementwise_op(itype, first.dtype, first.dtype, first, *others)
 
 
 # Logical or (we have to avoid clash with Python keyword 'or')
@@ -143,10 +166,10 @@ def conj(first: BExpr, *others) -> BExpr:
 
 # Logical not
 def neg(e: BExpr) -> BExpr:
-    if not isinstance(e.dtype(), DType.TensorBool):
+    if not isinstance(e.dtype, DType.Bool):
         raise Exception("invalid dtype")
 
-    return Expr(IType.Not, e.dtype(), e, ctx=e.ctx())
+    return Expr(IType.Not, e.dtype, e, ctx=e.ctx())
 
 
 # ========================================
@@ -158,7 +181,7 @@ def elementwise_arith_op(itype, first: Expr, *others):
     if not isinstance(first.dtype, (DType.Real, DType.Int)):
         raise Exception("invalid dtype")
 
-    return elementwise_op(AExpr, itype, first, *others)
+    return elementwise_op(itype, first.dtype, first.dtype, first, *others)
 
 
 def add(first: AExpr, *others) -> AExpr:
@@ -175,6 +198,43 @@ def div(num: AExpr, den: AExpr) -> AExpr:
 
 def sub(min: AExpr, sub: AExpr) -> AExpr:
     return elementwise_arith_op(IType.Sub(), min, sub)
+
+
+# ========================================
+# Elementwise predicates
+# ========================================
+
+def elementwise_predicate(itype, lhs: AExpr, rhs: AExpr):
+    if not isinstance(lhs.dtype, (DType.Real, DType.Int)):
+        raise Exception("invalid dtype")
+    if not isinstance(rhs.dtype, (DType.Real, DType.Int)):
+        raise Exception("invalid dtype")
+
+    return elementwise_op(itype, DType.Bool(lhs.shape), lhs.dtype, lhs, rhs)
+
+
+def lt(lhs: AExpr, rhs: AExpr) -> BExpr:
+    return elementwise_predicate(IType.Lt(), lhs, rhs)
+
+
+def gt(lhs: AExpr, rhs: AExpr) -> BExpr:
+    return elementwise_predicate(IType.Gt(), lhs, rhs)
+
+
+def ge(lhs: AExpr, rhs: AExpr) -> BExpr:
+    return elementwise_predicate(IType.Ge(), lhs, rhs)
+
+
+def le(lhs: AExpr, rhs: AExpr) -> BExpr:
+    return elementwise_predicate(IType.Le(), lhs, rhs)
+
+
+def eq(lhs: AExpr, rhs: AExpr) -> BExpr:
+    return elementwise_predicate(IType.Eq(), lhs, rhs)
+
+
+def neq(lhs: AExpr, rhs: AExpr) -> BExpr:
+    return elementwise_predicate(IType.Neq(), lhs, rhs)
 
 
 # ========================================
