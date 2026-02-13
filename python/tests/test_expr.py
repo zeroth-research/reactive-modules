@@ -1,5 +1,5 @@
 from torch import IntTensor, tensor
-from zrth import DType, get_ctx
+from zrth import DType, get_ctx, Context
 from zrth.eexpr import *
 import zrth.expr as expr
 
@@ -102,8 +102,9 @@ def test_terminal():
 
 
 def test_boolean():
-    a = expr.Bool(True)
-    b = expr.Bool("a")
+    ctx = Context()
+    a = expr.Bool(True, ctx=ctx)
+    b = expr.Bool("a", ctx=ctx)
     c = a & b
     d = a | c
     e = expr.conj(a, b, c, d)
@@ -112,8 +113,9 @@ def test_boolean():
 
 
 def test_bitarray():
-    a = expr.Bool(tensor([True, True]))
-    b = expr.Bool("a", shape=(2,))
+    ctx = Context()
+    a = expr.Bool(tensor([True, True]), ctx=ctx)
+    b = expr.Bool("a", shape=(2,), ctx=ctx)
     c = a & b
     d = a | c
     e = expr.conj(a, b, c, d)
@@ -122,8 +124,9 @@ def test_bitarray():
 
 
 def test_arith():
-    a = expr.Real(2.1)
-    b = expr.Real("a")
+    ctx = Context()
+    a = expr.Real(2.1, ctx=ctx)
+    b = expr.Real("a", ctx=ctx)
     c = a + b
     d = a / c
     e = expr.mul(a, b, c, d)
@@ -132,8 +135,9 @@ def test_arith():
 
 
 def test_predicate():
-    a = expr.Real(tensor([2.1, 3.1]))
-    b = expr.Real("a", shape=(2,))
+    ctx = Context()
+    a = expr.Real(tensor([2.1, 3.1]), ctx=ctx)
+    b = expr.Real("a", shape=(2,), ctx=ctx)
     c = a <= b
     d = a == b
 
