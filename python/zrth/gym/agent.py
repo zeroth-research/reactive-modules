@@ -5,16 +5,16 @@ import torch.optim as optim
 
 class DQNAgent:
     def __init__(self, state_size, action_size, hidden_size, lr=0.001, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
-        from .qnetwork import QNetwork  # Import here to avoid circular dependency
+        from .qnetworks import SimpleQNet
         
         self.state_size = state_size
         self.action_size = action_size
         self.gamma = gamma  # Discount factor
         
         # Q-network
-        self.q_network = QNetwork(
-            extl=["observation: Tensor<1>"],
-            intf=["q_values: Tensor<2>"],
+        self.q_network = SimpleQNet(
+            extl=["observation: Tensor<1; Float>"],
+            intf=["q_values: Tensor<2; Float>"],
             state_size=1,
             action_size=2,
             hidden_size=2,

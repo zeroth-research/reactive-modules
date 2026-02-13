@@ -1,0 +1,122 @@
+import gymnasium as gym
+from gymnasium import spaces
+from .zrth_module import Module
+
+
+class SimpleEnv(gym.Env, Module):
+    def __init__(self, extl, intf, prvt=None):
+        """Initialize simple chain environment
+
+        Args:
+            extl: List of external input wire names
+            intf: List of interface output wire names
+            prvt: List of private wire names (optional)
+        """
+        gym.Env.__init__(self)
+        Module.__init__(self, extl, intf, prvt)
+        
+        # Gym spaces
+        self.action_space = spaces.Discrete(2)
+        self.observation_space = spaces.Discrete(2)
+
+        self.state = 0  # True state (private, not directly observable)
+
+        # _finalize_conversion() is called automatically after this by __init_subclass__
+
+    def _get_observation(self):
+        # Agent only sees if it's at goal or not (partial observability)
+        return 1 if self.state == 2 else 0
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.state = 0  # True state (private)
+        observation = self._get_observation()
+        reward = 0.0  # No reward at reset
+        terminated = False  # Episode just started
+        return observation, reward, terminated  # Return partial observation
+    
+    def step(self, q_values):
+        action = q_values.argmax().item()
+        # action 0 = move left, action 1 = move right
+        if action == 1:  # right
+            self.state = min(self.state + 1, 2)
+        else:  # left
+            self.state = max(self.state - 1, 0)
+
+        # Reward +1 if we reach state 2, otherwise 0
+        reward = 1.0 if self.state == 2 else 0.0
+
+        # Episode terminates when reaching state 2
+        terminated = self.state == 2
+        truncated = False
+
+        observation = self._get_observation()  # Get partial observation
+        return observation, reward, terminated, truncated
+
+
+class GridWorldEnv(gym.Env, Module):
+    def __init__(self, extl, intf, prvt):
+        """Initialize 3x3 grid world environment
+
+        Args:
+            extl: List of external input wire names
+            intf: List of interface output wire names
+            prvt: List of private wire names (x, y coordinates)
+        """
+        gym.Env.__init__(self)
+        Module.__init__(self, extl, intf, prvt)
+        
+        # Gym spaces
+        self.action_space = spaces.Discrete(4)  # up, down, left, right
+        self.observation_space = spaces.Discrete(9)  # 3x3 grid positions
+
+        self.x = 0  # x coordinate (private)
+        self.y = 0  # y coordinate (private)
+        self.goal_x = 2
+        self.goal_y = 2
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.x = 0  # Start at origin
+        self.y = 0
+        observation = self.y * 3 + self.x  # Flatten 2D position to 1D
+        reward = 0.0
+        terminated = False
+        return observation, reward, terminated
+    
+    def step(self, q_values):
+        action = q_values.argmax().item()
+        
+        # # Update position based on action (with boundary checking)
+        # if action == 0:  # up
+        #     self.y = max(self.y - 1, 0)
+        # elif action == 1:  # down
+        #     self.y = min(self.y + 1, 2)
+        # elif action == 2:  # left
+        #     self.x = max(self.x - 1, 0)
+        # else:  # right (action == 3)
+        #     self.x = min(self.x + 1, 2)
+
+        # Update position based on action (with boundary checking)
+        if action == 0:  # up
+            self.y = max(self.y - 1, 0)
+            self.x = max(self.x - 1, 0)
+        # elif action == 1:  # down
+        #     self.y = min(self.y + 1, 2)
+        # elif action == 2:  # left
+        #     self.x = max(self.x - 1, 0)
+        else:  # right (action == 3)
+            self.x = min(self.x + 1, 2)
+            self.y = min(self.y + 1, 2)
+        
+        # Check if reached goal
+        at_goal_x = self.x == 2
+        at_goal_y = self.y == 2
+        at_goal = at_goal_x and at_goal_y
+        
+        reward = 1.0 if at_goal else 0.0
+        terminated = at_goal
+        truncated = False
+        
+        observation = self.y * 3 + self.x  # Flatten position
+        return observation, reward, terminated, truncated
