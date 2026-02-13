@@ -1,7 +1,6 @@
 from torch import IntTensor, tensor
 from zrth import DType, get_ctx
 from zrth.eexpr import *
-import unittest
 import zrth.expr as expr
 
 
@@ -130,3 +129,13 @@ def test_arith():
     e = expr.mul(a, b, c, d)
 
     print("\nd = ", e, "\n")
+
+
+def test_predicate():
+    a = expr.Real(tensor([2.1, 3.1]))
+    b = expr.Real("a", shape=(2,))
+    c = a <= b
+    d = a == b
+
+    print("\nc iff", c)
+    print("d iff", d, "\n")
