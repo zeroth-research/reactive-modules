@@ -6,9 +6,9 @@ import random
 if __name__ == "__main__":
     # Initialize environment with automatic conversion
     env = SimpleEnv(
-        extl=["q_values: Tensor<2>"],
-        intf=["observation: Tensor<1>", "reward: Tensor<1>", "terminated: Tensor<1>"],
-        prvt=["state: Tensor<1>"],
+        extl=["q_values: Tensor<2; Float>"],
+        intf=["observation: Tensor<1; Float>", "reward: Tensor<1; Float>", "terminated: Tensor<1; Bool>"],
+        prvt=["state: Tensor<1; Float>"],
     )
 
     state_size = 1  # Single binary observation (0 or 1)
