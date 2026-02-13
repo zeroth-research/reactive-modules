@@ -7,7 +7,7 @@ use crate::pytensor::PyTensor;
 // DType enum (wire data types)
 // ============================================================================
 
-#[pyclass]
+#[pyclass(eq, str)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DType {
     // at this moment, we keep the DType flat and encode the type
@@ -111,18 +111,6 @@ impl DType {
             DType::TensorReal(_) => DType::TensorReal(shape),
         }
     }
-
-    fn __eq__(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{:?}", self)
-    }
 }
 
 impl fmt::Display for PrimitiveType {
@@ -165,7 +153,7 @@ impl fmt::Display for DType {
 // IType enum (flat structure for PyO3 compatibility)
 // ============================================================================
 
-#[pyclass]
+#[pyclass(str)]
 #[derive(Debug, Clone)]
 pub enum IType {
     // Arithmetic operations
