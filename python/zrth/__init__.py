@@ -9,6 +9,7 @@ from .zrth import (
     Module,
     AtomTerm,
 )
+
 from .context import Context, get_ctx, set_ctx, reset_ctx
 from .module import ReactiveModule
 from .expr import Sym
@@ -66,6 +67,23 @@ DType.Bool = mk_DTypeBool  # ty: ignore
 DType.Int = mk_DTypeInt  # ty: ignore
 DType.Float = mk_DTypeFloat  # ty: ignore
 DType.Real = mk_DTypeReal  # ty: ignore
+
+
+# Add type aliases to the DType object
+def Bool(*shape):
+    return DType.Bool([*shape])
+
+
+def Int(*shape):
+    return DType.Int([*shape])
+
+
+def Real(*shape):
+    return DType.Real([*shape])
+
+
+def Float(*args):
+    return DType.Float([*args])
 
 
 def to_wire(w: Wire | Term) -> Wire:

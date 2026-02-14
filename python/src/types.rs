@@ -1,7 +1,7 @@
+use crate::pytensor::PyTensor;
+use pyo3::types::PyTuple;
 use pyo3::{exceptions::PyValueError, prelude::*};
 use std::fmt;
-
-use crate::pytensor::PyTensor;
 
 // ============================================================================
 // DType enum (wire data types)
