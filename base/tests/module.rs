@@ -443,3 +443,21 @@ fn compose_seq_2() {
     let _m = Module::parallel([m1, m2]).unwrap();
     println!("{}", _m);
 }
+
+#[test]
+fn more_controlled_than_external() {
+    let x = [Wire::new(0, "A"), Wire::new(1, "A")];
+    let y = [Wire::new(2, "B"), Wire::new(3, "B")];
+    let z = [Wire::new(4, "C"), Wire::new(5, "C")];
+
+    let init = Term::constant("A", [y[1].clone(), z[1].clone()]).unwrap();
+    let update = Term::function(
+        "A",
+        [y[1].clone(), z[1].clone()],
+        [y[0].clone(), z[0].clone()],
+    )
+    .unwrap();
+
+    let m = Module::sequential([x], [y, z], [init], [update]);
+    assert!(m.is_ok());
+}
