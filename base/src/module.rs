@@ -386,8 +386,8 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         }
 
         // Build intf and extl wires based on inferred control set
-        let mut extl: Vec<[Wire<D>; 2]> = Vec::with_capacity(obs.len() - ctrl_nxt.len());
         let mut intf: Vec<[Wire<D>; 2]> = Vec::with_capacity(ctrl_nxt.len() - prvt.len());
+        let mut extl: Vec<[Wire<D>; 2]> = Vec::with_capacity(obs.len() - intf.len());
         let mut ctrl: Vec<[Wire<D>; 2]> = Vec::with_capacity(ctrl_nxt.len());
 
         for [ltc, nxt] in obs.iter() {
