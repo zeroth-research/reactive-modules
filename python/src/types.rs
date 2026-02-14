@@ -174,7 +174,8 @@ pub enum IType {
     Sub(),
     Mul(),
     Div(),
-    MatMul(),
+    MatMul(), // consider differentiation between matmul operators, or parameterisation.
+    // To be designed with compliance with lower level platform in mind
 
     // Comparison operations
     Eq(),

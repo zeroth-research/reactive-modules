@@ -95,10 +95,8 @@ def test_argmax_concrete():
 
 
 def test_terminal():
-    a = Real(0.9)
-    b = Real("b")
-    c = a + b
-    d = a @ b
+    a = expr.Real(0.9)
+    b = expr.Real("b")
 
 
 def test_boolean():
@@ -143,3 +141,43 @@ def test_predicate():
 
     print("\nc iff", c)
     print("d iff", d, "\n")
+
+
+def test_ite():
+    ctx = Context()
+    a = expr.Real(torch.tensor([2.1, 3.1]), ctx=ctx)
+    b = expr.Real("b", shape=(2,), ctx=ctx)
+    c = expr.Real("c", ctx=ctx)
+
+    d = expr.ite(c, a, b)
+
+    print("\nd =", d)
+    print("type(d) =", type(d))
+
+
+def test_dtype_comparison():
+    ctx = Context()
+    a = expr.Real("a", ctx=ctx)
+    b = expr.Real("b", shape=[2], ctx=ctx)
+    c = expr.Bool("c", shape=[2], ctx=ctx)
+    assert type(a.dtype) == type(b.dtype)
+    assert type(b.dtype) != type(c.dtype)
+
+
+def test_matmul():
+    ctx = Context()
+    a = expr.Real(torch.tensor([[2.1, 3.1], [4.1, 5.1]]), ctx=ctx)
+    b = expr.Real("b", shape=(2, 2), ctx=ctx)
+    c = a @ b
+    print("\nc =", c)
+
+    d = expr.Real("d", shape=(2,), ctx=ctx)
+    e = a @ d
+    print("e =", e)
+
+
+def test_argmax():
+    ctx = Context()
+    a = expr.Real("a", shape=(2,), ctx=ctx)
+    b = expr.argmax(a)
+    print("\nb =", b)
