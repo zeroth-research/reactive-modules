@@ -1,9 +1,8 @@
 from typing import Any, override
-import torch
-from torch.utils.checkpoint import checkpoint
 
 from .zrth import DType, IType, Term, Wire
 from .context import get_ctx, Context
+import torch
 
 
 # types that we can convert to [Expr]
@@ -115,6 +114,9 @@ class AExpr(Expr):
     def __ne__(self, other: "AExpr") -> BExpr:
         return neq(self, other)
 
+    def __matmul__(self, other):
+        return matmul(self, other)
+
 
 def elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
     if not isinstance(first, Expr):
@@ -204,6 +206,7 @@ def sub(min: AExpr, sub: AExpr) -> AExpr:
 # Elementwise predicates
 # ========================================
 
+
 def elementwise_predicate(itype, lhs: AExpr, rhs: AExpr):
     if not isinstance(lhs.dtype, (DType.Real, DType.Int)):
         raise Exception("invalid dtype")
@@ -235,6 +238,69 @@ def eq(lhs: AExpr, rhs: AExpr) -> BExpr:
 
 def neq(lhs: AExpr, rhs: AExpr) -> BExpr:
     return elementwise_predicate(IType.Neq(), lhs, rhs)
+
+
+# ========================================
+# Control Flow
+# ========================================
+
+
+def ite(cond: BExpr, iftrue: Expr, iffalse: Expr):
+    if not cond.shape == [1]:
+        raise Exception("invalid Boolean condition")
+    if iftrue.dtype != iffalse.dtype:
+        raise Exception("dtype mismatch")
+    if iftrue.ctx != cond.ctx or iffalse.ctx != cond.ctx:
+        raise Exception("ctx mismatch")
+
+    assert isinstance(iftrue, (BExpr, AExpr))
+    return Expr.__new__(
+        type(iftrue), IType.Ite(), iftrue.dtype, cond, iftrue, iffalse, ctx=cond.ctx
+    )
+
+
+# ========================================
+# Tensor operations
+# ========================================
+
+
+def argmax(arg: Expr):
+    if len(arg.shape) > 1:
+        raise NotImplementedError(
+            "argmax not supported on matrices or higher-dimensional tensors"
+        )
+    return AExpr(IType.Argmax(), DType.Int([1]), arg, ctx=arg.ctx)
+
+
+def matmul(lhs: Expr, rhs: Expr):
+    if lhs.ctx != rhs.ctx:
+        raise RuntimeError("ctx mismatch")
+    if type(lhs.dtype) != type(rhs.dtype):
+        raise RuntimeError(f"basic dtype mismatch: {lhs.dtype}, {rhs.dtype}")
+    assert type(lhs) == type(rhs)
+
+    if len(lhs.shape) == 2 and len(rhs.shape) == 1:
+        # matrix @ vector
+        if lhs.shape[-1] != rhs.shape[0]:
+            raise RuntimeError("size mismatch")
+
+        wtype = type(lhs.dtype)(lhs.shape[:-1])
+
+        # TODO: differentiate itype to eliminate ambiguity, or parameterise it
+        return Expr.__new__(type(lhs), IType.MatMul(), wtype, lhs, rhs, ctx=lhs.ctx)
+
+    elif len(lhs.shape) == len(rhs.shape) == 2:
+        # matrix @ matrix
+        if lhs.shape[-1] != rhs.shape[0]:
+            raise RuntimeError("size mismatch")
+
+        wtype = type(lhs.dtype)([lhs.shape[0], rhs.shape[1]])
+
+        return Expr.__new__(type(lhs), IType.MatMul(), wtype, lhs, rhs, ctx=lhs.ctx)
+
+    raise RuntimeError(f"Unsupported matrix multiplication {lhs.shape} x {rhs.shape}")
+
+    # TODO: allow broadcasting
 
 
 # ========================================
