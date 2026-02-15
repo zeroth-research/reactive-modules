@@ -104,7 +104,7 @@ def remap_term(term, subst: dict) -> Term:
         if map_w is None:
             # this is a temporary (or unmapped wire)
             # create a new mapping
-            new_w = Wire(ctx.fresh_wire_id(), w.dtype())
+            new_w = Wire(w.dtype())
             subst[w] = new_w
             return new_w
         return map_w

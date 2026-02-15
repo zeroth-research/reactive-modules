@@ -34,14 +34,14 @@ impl RustContext {
     /// Create a temporary wire. It is a simple wrapper
     /// around [fresh_wire_id].
     fn tmp_wire(&mut self, dtype: DType) -> Wire {
-        Wire::new(self.fresh_wire_id(), dtype)
+        Wire::new(dtype)
     }
 
     /// Get or create a wire with associated name.
-    fn wire(&mut self, name: &str, dtype: &DType) -> Wire {
-        let (id, ty) = self.ctx.var(name, dtype);
-        Wire::new(id, ty)
-    }
+    // fn wire(&mut self, name: &str, dtype: &DType) -> Wire {
+    //     let (id, ty) = self.ctx.var(name, dtype);
+    //     Wire::new(id, ty)
+    // }
 
     //pub fn get(&mut self, name: &str, dtype: DType) -> PyResult<Wire> {
     //    self.ctx.get(name).unwrap().0

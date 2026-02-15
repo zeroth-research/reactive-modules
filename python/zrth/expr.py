@@ -52,7 +52,7 @@ class Expr:
         if isinstance(op, IType):
             # typecheck arguments and propose output wire
             self._dtype: DType = infer_dtype(op, [*args], ctx)
-            self._out_wire: Wire = ctx.tmp_wire(self._dtype)
+            self._out_wire: Wire = Wire(self._dtype)
             self._term: Term = Term(op, [self._out_wire], [a.wire() for a in args])
 
         elif op == "sym":
@@ -60,13 +60,13 @@ class Expr:
             assert isinstance(name, str), name
             assert isinstance(dtype, DType), (type(dtype), dtype)
             assert wire is None or isinstance(wire, Wire), (type(wire), wire)
-            self._out_wire: Wire = wire or ctx.wire(name, dtype)
+            self._out_wire: Wire = wire or Wire(dtype)
             self._dtype: DType = dtype
         elif op == "const":
             assert len(args) == 1
             val: ToExpr = args[0]
             itype, dtype = const_to_itype_dtype(val)
-            self._out_wire: Wire = ctx.tmp_wire(dtype)
+            self._out_wire: Wire = Wire(dtype)
             self._term: Term = Term(itype, [self._out_wire], [])
             self._dtype: DType = dtype
         elif op == "assign":  # FIXME: do not have this as a special case
@@ -346,37 +346,37 @@ def logic_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]
 
 def tensor_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
     """Translate tensor operations to IType and output DType
-    
+
     Note: Actual execution is not yet implemented (will panic with todo!())
     These are stubs to allow converter development and testing.
     """
-    
+
     if op == "tensor.get":
         # arr[i, j] -> scalar element
         # TODO: Proper type inference from tensor element type
         assert len(args) >= 2  # array + at least 1 index
         return IType.TensorGet(), DType.Float
-    
+
     if op == "tensor.set":
         # set(arr, i, j, val) -> new array (immutable update)
         assert len(args) >= 3
         return IType.TensorSet(), args[0].dtype()
-    
+
     if op == "tensor.sum":
         # sum(arr) -> scalar
         assert len(args) == 1
         return IType.TensorSum(), DType.Float
-    
+
     if op == "tensor.mean":
         # mean(arr) -> scalar
         assert len(args) == 1
         return IType.TensorMean(), DType.Float
-    
+
     if op == "tensor.max":
         # max(arr) -> scalar
         assert len(args) == 1
         return IType.TensorMax(), DType.Float
-    
+
     raise NotImplementedError(f"Tensor operation {op} not implemented")
 
 
