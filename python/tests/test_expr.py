@@ -100,9 +100,8 @@ def test_terminal():
 
 
 def test_boolean():
-    ctx = Context()
-    a = expr.Bool(True, ctx=ctx)
-    b = expr.Bool("a", ctx=ctx)
+    a = expr.Bool(True)
+    b = expr.Bool("a")
     c = a & b
     d = a | c
     e = expr.conj(a, b, c, d)
@@ -111,9 +110,8 @@ def test_boolean():
 
 
 def test_bitarray():
-    ctx = Context()
-    a = expr.Bool(tensor([True, True]), ctx=ctx)
-    b = expr.Bool("a", shape=(2,), ctx=ctx)
+    a = expr.Bool(tensor([True, True]))
+    b = expr.Bool("a", shape=(2,))
     c = a & b
     d = a | c
     e = expr.conj(a, b, c, d)
@@ -122,9 +120,8 @@ def test_bitarray():
 
 
 def test_arith():
-    ctx = Context()
-    a = expr.Real(2.1, ctx=ctx)
-    b = expr.Real("a", ctx=ctx)
+    a = expr.Real(2.1)
+    b = expr.Real("a")
     c = a + b
     d = a / c
     e = expr.mul(a, b, c, d)
@@ -133,9 +130,8 @@ def test_arith():
 
 
 def test_predicate():
-    ctx = Context()
-    a = expr.Real(tensor([2.1, 3.1]), ctx=ctx)
-    b = expr.Real("a", shape=(2,), ctx=ctx)
+    a = expr.Real(tensor([2.1, 3.1]))
+    b = expr.Real("a", shape=(2,))
     c = a <= b
     d = a == b
 
@@ -144,10 +140,9 @@ def test_predicate():
 
 
 def test_ite():
-    ctx = Context()
-    a = expr.Real(torch.tensor([2.1, 3.1]), ctx=ctx)
-    b = expr.Real("b", shape=(2,), ctx=ctx)
-    c = expr.Real("c", ctx=ctx)
+    a = expr.Real(torch.tensor([2.1, 3.1]))
+    b = expr.Real("b", shape=(2,))
+    c = expr.Real("c")
 
     d = expr.ite(c, a, b)
 
@@ -156,28 +151,25 @@ def test_ite():
 
 
 def test_dtype_comparison():
-    ctx = Context()
-    a = expr.Real("a", ctx=ctx)
-    b = expr.Real("b", shape=[2], ctx=ctx)
-    c = expr.Bool("c", shape=[2], ctx=ctx)
+    a = expr.Real("a")
+    b = expr.Real("b", shape=[2])
+    c = expr.Bool("c", shape=[2])
     assert type(a.dtype) == type(b.dtype)
     assert type(b.dtype) != type(c.dtype)
 
 
 def test_matmul():
-    ctx = Context()
-    a = expr.Real(torch.tensor([[2.1, 3.1], [4.1, 5.1]]), ctx=ctx)
-    b = expr.Real("b", shape=(2, 2), ctx=ctx)
+    a = expr.Real(tensor([[2.1, 3.1], [4.1, 5.1]]))
+    b = expr.Real("b", shape=(2, 2))
     c = a @ b
     print("\nc =", c)
 
-    d = expr.Real("d", shape=(2,), ctx=ctx)
+    d = expr.Real("d", shape=(2,))
     e = a @ d
     print("e =", e)
 
 
 def test_argmax():
-    ctx = Context()
-    a = expr.Real("a", shape=(2,), ctx=ctx)
+    a = expr.Real("a", shape=(2,))
     b = expr.argmax(a)
     print("\nb =", b)

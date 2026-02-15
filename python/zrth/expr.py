@@ -1,7 +1,6 @@
 from typing import Any, override
 
 from .zrth import DType, IType, Term, Wire
-from .context import get_ctx, Context
 import torch
 
 
@@ -308,7 +307,7 @@ def matmul(lhs: Expr, rhs: Expr):
 # ========================================
 
 
-def Bool(x: bool | str | torch.Tensor, shape=None, ctx=_global_context) -> BExpr:
+def Bool(x: bool | str | torch.Tensor, shape=None) -> BExpr:
     if isinstance(x, bool):
         assert shape is None
         dtype = DType.Bool([1])
@@ -322,11 +321,10 @@ def Bool(x: bool | str | torch.Tensor, shape=None, ctx=_global_context) -> BExpr
     elif isinstance(x, str):
         # register symbol into context
         dtype = DType.Bool(shape if shape is not None else [1])
-        ctx.declare_const(x, dtype)
-        return BExpr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
+        return BExpr(itype=IType.Uninterpreted(x), dtype=dtype)
 
 
-def Real(x: float | str | torch.Tensor, shape=None, ctx=_global_context) -> AExpr:
+def Real(x: float | str | torch.Tensor, shape=None) -> AExpr:
     if isinstance(x, float):
         assert shape is None
         dtype = DType.Real([1])
@@ -339,5 +337,4 @@ def Real(x: float | str | torch.Tensor, shape=None, ctx=_global_context) -> AExp
     elif isinstance(x, str):
         # register symbol into context
         dtype = DType.Real(shape if shape is not None else [1])
-        (ctx or get_ctx()).declare_const(x, dtype)
-        return AExpr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
+        return AExpr(itype=IType.Uninterpreted(x), dtype=dtype)
