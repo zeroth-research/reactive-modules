@@ -7,7 +7,7 @@ if __name__ == "__main__":
     # Initialize environment with automatic conversion
     env = SimpleEnv(
         extl=["q_values: Tensor<2; Float>"],
-        intf=["observation: Tensor<1; Float>", "reward: Tensor<1; Float>", "terminated: Tensor<1; Bool>"],
+        intf=["observation: Tensor<1; Float>", "reward: Tensor<1; Float>", "terminated: Tensor<1; Bool>", "truncated: Tensor<1; Bool>"],
         prvt=["state: Tensor<1; Float>"],
     )
 
@@ -22,7 +22,7 @@ if __name__ == "__main__":
 
     # Training
     for episode in range(num_episodes):
-        state, _, _ = env.reset()
+        state, _, _, _ = env.reset()
         state = np.array([state], dtype=np.float32)
         total_reward = 0
 
@@ -58,7 +58,7 @@ if __name__ == "__main__":
             )
 
     # Test the trained agent
-    state, _, _ = env.reset()
+    state, _, _, _ = env.reset()
     state = np.array([state], dtype=np.float32)
     agent.epsilon = 0  # No exploration, pure exploitation
 

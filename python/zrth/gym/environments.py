@@ -12,14 +12,13 @@ class SimpleEnv(gym.Env, Module):
             intf: List of interface output wire names
             prvt: List of private wire names (optional)
         """
+        # TODO: Can we do the conversion before calling the Module __init__? Aka, when calling __new__? The problem might be that we cannot infer the types
         gym.Env.__init__(self)
         Module.__init__(self, extl, intf, prvt)
         
         # Gym spaces
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Discrete(2)
-
-        self.state = 0  # True state (private, not directly observable)
 
         # _finalize_conversion() is called automatically after this by __init_subclass__
 
@@ -71,8 +70,6 @@ class GridWorldEnv(gym.Env, Module):
         self.action_space = spaces.Discrete(4)  # up, down, left, right
         self.observation_space = spaces.Discrete(9)  # 3x3 grid positions
 
-        self.x = 0  # x coordinate (private)
-        self.y = 0  # y coordinate (private)
         self.goal_x = 2
         self.goal_y = 2
 
@@ -133,11 +130,6 @@ class ComplexDecisionEnv(gym.Env, Module):
         # Gym spaces
         self.action_space = spaces.Discrete(10)  # 10 possible actions
         self.observation_space = spaces.Box(low=0, high=10, shape=(1,))
-        
-        # Private state variables
-        self.score = 0.0
-        self.multiplier = 1.0
-        self.bonus_active = False
         
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -243,8 +235,6 @@ class EarlyReturnEnv(gym.Env, Module):
         self.action_space = spaces.Discrete(5)
         self.observation_space = spaces.Box(low=-10, high=10, shape=(1,))
         
-        self.counter = 0.0
-        
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.counter = 0.0
@@ -310,8 +300,6 @@ class ComparisonChainEnv(gym.Env, Module):
         
         self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(low=0, high=20, shape=(1,))
-        
-        self.value = 5.0
         
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
