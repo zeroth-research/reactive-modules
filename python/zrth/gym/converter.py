@@ -435,14 +435,42 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError("Augmented assignment only supported for self.attribute wires")
     
     def visit_Return(self, node):
-        """Assign interface wires from temp_vars (return values ignored)"""
-        for item in self.env.intf:
-            wire_name = item.name
-            if wire_name in self.temp_vars and wire_name not in self.written_wires:
-                result_expr = self.temp_vars[wire_name]
-                Expr("assign", result_expr, self.syms[wire_name].nxt())
-                self.written_wires.add(wire_name)
+        """Handle return statement
         
+        For early returns (inside if/else), stores values in temp_vars.
+        For final return, writes interface wires from temp_vars.
+        """
+        # Parse return value if present
+        if node.value is not None:
+            # Handle tuple return: return a, b, c
+            if isinstance(node.value, ast.Tuple):
+                if len(node.value.elts) != len(self.env.intf):
+                    raise ValueError(
+                        f"Return tuple length ({len(node.value.elts)}) "
+                        f"doesn't match interface wires ({len(self.env.intf)})"
+                    )
+                for wire_sym, value_node in zip(self.env.intf, node.value.elts):
+                    wire_name = wire_sym.name
+                    self.temp_vars[wire_name] = self._convert_expr(value_node)
+            else:
+                # Single return value
+                if len(self.env.intf) != 1:
+                    raise ValueError(
+                        f"Single return value but {len(self.env.intf)} interface wires"
+                    )
+                wire_name = self.env.intf[0].name
+                self.temp_vars[wire_name] = self._convert_expr(node.value)
+        
+        # If at top level (not in if/else), write interface wires
+        if len(self.scopes) == 0:
+            for item in self.env.intf:
+                wire_name = item.name
+                if wire_name in self.temp_vars and wire_name not in self.written_wires:
+                    result_expr = self.temp_vars[wire_name]
+                    Expr("assign", result_expr, self.syms[wire_name].nxt())
+                    self.written_wires.add(wire_name)
+        # If inside if/else, values are in temp_vars and will be merged by visit_If
+    
     def _convert_expr(self, expr):
         """Convert AST expression node to Expr object"""
         if isinstance(expr, ast.Call):
@@ -571,22 +599,52 @@ class MethodVisitor(ast.NodeVisitor):
         return result
     
     def _convert_compare(self, compare):
-        """Convert comparison operation"""
-        if len(compare.ops) != 1 or len(compare.comparators) != 1:
-            raise ValueError("Only simple comparisons supported")
+        """Convert comparison operation
         
-        left_expr = self._convert_expr(compare.left)
+        Handles both simple comparisons (a < b) and chains (a < b < c).
+        Chains are expanded: a < b < c becomes (a < b) and (b < c)
+        """
+        # Simple case: single comparison
+        if len(compare.ops) == 1 and len(compare.comparators) == 1:
+            left_expr = self._convert_expr(compare.left)
+            
+            if isinstance(compare.comparators[0], ast.Constant):
+                right_expr = self._convert_constant(compare.comparators[0], left_expr.dtype())
+            else:
+                right_expr = self._convert_expr(compare.comparators[0])
+            
+            op_type = type(compare.ops[0])
+            if op_type not in self.COMPARE_OPS:
+                raise ValueError(f"Unsupported comparison operator: {op_type.__name__}")
+            
+            return Expr(self.COMPARE_OPS[op_type], left_expr, right_expr)
         
-        if isinstance(compare.comparators[0], ast.Constant):
-            right_expr = self._convert_constant(compare.comparators[0], left_expr.dtype())
-        else:
-            right_expr = self._convert_expr(compare.comparators[0])
+        # Comparison chain: a < b < c becomes (a < b) and (b < c)
+        comparisons = []
+        left = compare.left
         
-        op_type = type(compare.ops[0])
-        if op_type not in self.COMPARE_OPS:
-            raise ValueError(f"Unsupported comparison operator: {op_type.__name__}")
+        for op, comparator in zip(compare.ops, compare.comparators):
+            left_expr = self._convert_expr(left)
+            
+            if isinstance(comparator, ast.Constant):
+                right_expr = self._convert_constant(comparator, left_expr.dtype())
+            else:
+                right_expr = self._convert_expr(comparator)
+            
+            op_type = type(op)
+            if op_type not in self.COMPARE_OPS:
+                raise ValueError(f"Unsupported comparison operator: {op_type.__name__}")
+            
+            comparisons.append(Expr(self.COMPARE_OPS[op_type], left_expr, right_expr))
+            left = comparator
         
-        return Expr(self.COMPARE_OPS[op_type], left_expr, right_expr)
+        # Combine with AND: (a < b) and (b < c)
+        result = comparisons[0]
+        for comp in comparisons[1:]:
+            false_val = self._convert_constant(ast.Constant(False), result.dtype())
+            result = Expr("ite", result, comp, false_val)
+        
+        return result
     
     def _convert_ifexp(self, ifexp):
         """Convert ternary conditional to Ite"""

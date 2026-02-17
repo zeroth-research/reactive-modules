@@ -1,4 +1,4 @@
-from zrth.gym import SimpleQNet, SimpleEnv, GridWorldEnv, GridWorldQNet, ComplexDecisionEnv
+from zrth.gym import SimpleQNet, SimpleEnv, GridWorldEnv, GridWorldQNet, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv
 from zrth import reset_ctx, Module
 
 
@@ -28,6 +28,7 @@ def simpleenv():
             "observation: Tensor<1; Float>",
             "reward: Tensor<1; Float>",
             "terminated: Tensor<1; Bool>",
+            "truncated: Tensor<1; Bool>",
         ],
         prvt=["state: Tensor<1; Float>"],
     )
@@ -69,6 +70,7 @@ def gridworldenv():
             "observation: Tensor<1; Float>",
             "reward: Tensor<1; Float>",
             "terminated: Tensor<1; Bool>",
+            "truncated: Tensor<1; Bool>",
         ],
         prvt=[
             "x: Tensor<1; Float>",
@@ -93,6 +95,7 @@ def complexdecisionenv():
             "observation: Tensor<1; Float>",
             "reward: Tensor<1; Float>",
             "terminated: Tensor<1; Bool>",
+            "truncated: Tensor<1; Bool>",
         ],
         prvt=[
             "score: Tensor<1; Float>",
@@ -109,6 +112,50 @@ def complexdecisionenv():
 
 def test_complexdecisionenv_conversion():
     _ = complexdecisionenv()
+
+
+def earlyreturnenv():
+    env = EarlyReturnEnv(
+        extl=["q_values: Tensor<5; Float>"],
+        intf=[
+            "observation: Tensor<1; Float>",
+            "reward: Tensor<1; Float>",
+            "terminated: Tensor<1; Bool>",
+            "truncated: Tensor<1; Bool>",
+        ],
+        prvt=["counter: Tensor<1; Float>"],
+    )
+
+    print("\nEarlyReturnEnv reactive module:")
+    print(env.unwrap())
+
+    return env
+
+
+def test_earlyreturnenv_conversion():
+    _ = earlyreturnenv()
+
+
+def comparisonchainenv():
+    env = ComparisonChainEnv(
+        extl=["q_values: Tensor<3; Float>"],
+        intf=[
+            "observation: Tensor<1; Float>",
+            "reward: Tensor<1; Float>",
+            "terminated: Tensor<1; Bool>",
+            "truncated: Tensor<1; Bool>",
+        ],
+        prvt=["value: Tensor<1; Float>"],
+    )
+
+    print("\nComparisonChainEnv reactive module:")
+    print(env.unwrap())
+
+    return env
+
+
+def test_comparisonchainenv_conversion():
+    _ = comparisonchainenv()
 
 
 if __name__ == "__main__":
@@ -136,3 +183,13 @@ if __name__ == "__main__":
     print("\n" + "="*60 + "\n")
     print("=" * 60)
     complexenv = complexdecisionenv()
+    
+    print("\n" + "="*60 + "\n")
+    print("=" * 60)
+    print("Testing EarlyReturnEnv (early returns in if/else)")
+    earlyenv = earlyreturnenv()
+    
+    print("\n" + "="*60 + "\n")
+    print("=" * 60)
+    print("Testing ComparisonChainEnv (comparison chains like 0 < x < 10)")
+    compenv = comparisonchainenv()
