@@ -33,7 +33,8 @@ class SimpleEnv(gym.Env, Module):
         observation = self._get_observation()
         reward = 0.0  # No reward at reset
         terminated = False  # Episode just started
-        return observation, reward, terminated  # Return partial observation
+        truncated = False
+        return observation, reward, terminated, truncated
     
     def step(self, q_values):
         action = q_values.argmax().item()
@@ -82,7 +83,8 @@ class GridWorldEnv(gym.Env, Module):
         observation = self.y * 3 + self.x  # Flatten 2D position to 1D
         reward = 0.0
         terminated = False
-        return observation, reward, terminated
+        truncated = False
+        return observation, reward, terminated, truncated
     
     def step(self, q_values):
         action = q_values.argmax().item()
@@ -146,7 +148,8 @@ class ComplexDecisionEnv(gym.Env, Module):
         observation = self.score
         reward = 0.0
         terminated = False
-        return observation, reward, terminated
+        truncated = False
+        return observation, reward, terminated, truncated
     
     def step(self, q_values):
         action = q_values.argmax().item()
@@ -217,4 +220,133 @@ class ComplexDecisionEnv(gym.Env, Module):
         truncated = False
         
         observation = self.score
+        return observation, reward, terminated, truncated
+
+class EarlyReturnEnv(gym.Env, Module):
+    """Environment testing early returns in if/else branches"""
+    
+    def __init__(self, extl, intf, prvt):
+        """Initialize early return test environment
+        
+        Tests:
+        - Early returns inside if/else branches
+        - Return value merging across branches
+        
+        Args:
+            extl: List of external input wire names
+            intf: List of interface output wire names
+            prvt: List of private wire names
+        """
+        gym.Env.__init__(self)
+        Module.__init__(self, extl, intf, prvt)
+        
+        self.action_space = spaces.Discrete(5)
+        self.observation_space = spaces.Box(low=-10, high=10, shape=(1,))
+        
+        self.counter = 0.0
+        
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.counter = 0.0
+        observation = self.counter
+        reward = 0.0
+        terminated = False
+        truncated = False
+        return observation, reward, terminated, truncated
+    
+    def step(self, q_values):
+        action = q_values.argmax().item()
+        
+        # Early return cases
+        if action == 0:
+            # Immediate termination with zero reward
+            observation = 0.0
+            reward = 0.0
+            terminated = True
+            truncated = False
+            return observation, reward, terminated, truncated
+        
+        if action == 1:
+            # Small penalty and terminate
+            observation = self.counter
+            reward = -1.0
+            terminated = True
+            truncated = False
+            return observation, reward, terminated, truncated
+        
+        # Normal processing for other actions
+        self.counter += 1.0
+        
+        if action == 2:
+            reward = 1.0
+        elif action == 3:
+            reward = 2.0
+        else:
+            reward = 0.5
+        
+        observation = self.counter
+        terminated = False
+        truncated = False
+        return observation, reward, terminated, truncated
+
+
+class ComparisonChainEnv(gym.Env, Module):
+    """Environment testing comparison chains (a < b < c)"""
+    
+    def __init__(self, extl, intf, prvt):
+        """Initialize comparison chain test environment
+        
+        Tests:
+        - Comparison chains: 0 < x < 10
+        - Multiple chained comparisons
+        
+        Args:
+            extl: List of external input wire names
+            intf: List of interface output wire names
+            prvt: List of private wire names
+        """
+        gym.Env.__init__(self)
+        Module.__init__(self, extl, intf, prvt)
+        
+        self.action_space = spaces.Discrete(3)
+        self.observation_space = spaces.Box(low=0, high=20, shape=(1,))
+        
+        self.value = 5.0
+        
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.value = 5.0
+        observation = self.value
+        reward = 0.0
+        terminated = False
+        truncated = False
+        return observation, reward, terminated, truncated
+    
+    def step(self, q_values):
+        action = q_values.argmax().item()
+        
+        # Update value based on action
+        if action == 0:
+            self.value -= 2.0
+        elif action == 1:
+            self.value += 0.0  # No change
+        else:
+            self.value += 3.0
+        
+        # Use comparison chains to determine reward
+        if 0.0 < self.value < 10.0:
+            # Value is in the sweet spot
+            reward = 10.0
+        elif 10.0 <= self.value <= 15.0:
+            # Value is acceptable
+            reward = 5.0
+        else:
+            # Value is out of range
+            reward = 0.0
+        
+        # Terminate if value goes negative or too high
+        terminated = self.value < 0.0 or self.value > 20.0
+        truncated = False
+        
+        observation = self.value
         return observation, reward, terminated, truncated
