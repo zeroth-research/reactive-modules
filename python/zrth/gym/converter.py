@@ -28,6 +28,8 @@ def convert_to_module(python_object: Any):
         return _convert_gym_env(python_object)
     else:
         raise ValueError(f"Don't know how to convert {type(python_object)}")
+    
+# TODO: Get rid of the global context, only use a local context then gets thrown away after conversion.
 
 
 # ============================================================================
@@ -370,7 +372,6 @@ class MethodVisitor(ast.NodeVisitor):
                 merged_expr = Expr("ite", cond_expr, if_expr, else_expr)
                 self.temp_vars[var] = merged_expr
                 
-                # Assign wire if not yet written
                 if var in self.syms and var not in self.written_wires:
                     Expr("assign", merged_expr, self.syms[var].nxt())
                     self.written_wires.add(var)
@@ -405,7 +406,6 @@ class MethodVisitor(ast.NodeVisitor):
         if isinstance(node.target, ast.Attribute) and node.target.attr in self.syms:
             wire_name = node.target.attr
             
-            # Get current value
             if wire_name in self.temp_vars:
                 left_expr = self.temp_vars[wire_name]
             else:
@@ -413,7 +413,6 @@ class MethodVisitor(ast.NodeVisitor):
             
             right_expr = self._convert_expr(node.value)
             
-            # Map augmented op to binary op
             op_type = type(node.op)
             if op_type == ast.Add:
                 result_expr = Expr("arith.add", left_expr, right_expr)
@@ -440,9 +439,7 @@ class MethodVisitor(ast.NodeVisitor):
         For early returns (inside if/else), stores values in temp_vars.
         For final return, writes interface wires from temp_vars.
         """
-        # Parse return value if present
         if node.value is not None:
-            # Handle tuple return: return a, b, c
             if isinstance(node.value, ast.Tuple):
                 if len(node.value.elts) != len(self.env.intf):
                     raise ValueError(
@@ -453,7 +450,6 @@ class MethodVisitor(ast.NodeVisitor):
                     wire_name = wire_sym.name
                     self.temp_vars[wire_name] = self._convert_expr(value_node)
             else:
-                # Single return value
                 if len(self.env.intf) != 1:
                     raise ValueError(
                         f"Single return value but {len(self.env.intf)} interface wires"
@@ -461,7 +457,7 @@ class MethodVisitor(ast.NodeVisitor):
                 wire_name = self.env.intf[0].name
                 self.temp_vars[wire_name] = self._convert_expr(node.value)
         
-        # If at top level (not in if/else), write interface wires
+        # At top level: write interface wires immediately
         if len(self.scopes) == 0:
             for item in self.env.intf:
                 wire_name = item.name
@@ -469,7 +465,7 @@ class MethodVisitor(ast.NodeVisitor):
                     result_expr = self.temp_vars[wire_name]
                     Expr("assign", result_expr, self.syms[wire_name].nxt())
                     self.written_wires.add(wire_name)
-        # If inside if/else, values are in temp_vars and will be merged by visit_If
+        # Inside if/else: values stay in temp_vars, merged by visit_If
     
     def _convert_expr(self, expr):
         """Convert AST expression node to Expr object"""
@@ -593,9 +589,13 @@ class MethodVisitor(ast.NodeVisitor):
         for expr in reversed(exprs[:-1]):
             false_val = self._convert_constant(ast.Constant(False), result.dtype())
             true_val = self._convert_constant(ast.Constant(True), result.dtype())
-            # and: Ite(a, b, False)  |  or: Ite(a, True, b)
-            result = Expr("ite", expr, result if is_and else true_val, 
-                         false_val if is_and else result)
+            
+            if is_and:
+                # a and b -> Ite(a, b, False)
+                result = Expr("ite", expr, result, false_val)
+            else:
+                # a or b -> Ite(a, True, b)
+                result = Expr("ite", expr, true_val, result)
         return result
     
     def _convert_compare(self, compare):
@@ -604,22 +604,6 @@ class MethodVisitor(ast.NodeVisitor):
         Handles both simple comparisons (a < b) and chains (a < b < c).
         Chains are expanded: a < b < c becomes (a < b) and (b < c)
         """
-        # Simple case: single comparison
-        if len(compare.ops) == 1 and len(compare.comparators) == 1:
-            left_expr = self._convert_expr(compare.left)
-            
-            if isinstance(compare.comparators[0], ast.Constant):
-                right_expr = self._convert_constant(compare.comparators[0], left_expr.dtype())
-            else:
-                right_expr = self._convert_expr(compare.comparators[0])
-            
-            op_type = type(compare.ops[0])
-            if op_type not in self.COMPARE_OPS:
-                raise ValueError(f"Unsupported comparison operator: {op_type.__name__}")
-            
-            return Expr(self.COMPARE_OPS[op_type], left_expr, right_expr)
-        
-        # Comparison chain: a < b < c becomes (a < b) and (b < c)
         comparisons = []
         left = compare.left
         
@@ -638,7 +622,7 @@ class MethodVisitor(ast.NodeVisitor):
             comparisons.append(Expr(self.COMPARE_OPS[op_type], left_expr, right_expr))
             left = comparator
         
-        # Combine with AND: (a < b) and (b < c)
+        # Combine with AND (single comparison returns directly)
         result = comparisons[0]
         for comp in comparisons[1:]:
             false_val = self._convert_constant(ast.Constant(False), result.dtype())
