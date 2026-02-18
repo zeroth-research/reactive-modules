@@ -29,7 +29,10 @@ def convert_to_module(python_object: Any):
     else:
         raise ValueError(f"Don't know how to convert {type(python_object)}")
     
-# TODO: Get rid of the global context, only use a local context then gets thrown away after conversion.
+# TODO: Get rid of the global context, only use a local context then gets thrown away after conversion (will it go in the converter or in the module?).
+# Use hash tables for that. Probably that means going back to creating terms directly in the converter, instead of using the Expr API and relying on the context to collect terms. The converter can maintain its own local context and then create the final module at the end. This will also make it easier to convert multiple modules in the same program without interference.
+# The IDs will be created globally tho.
+# TODO: Convert before __init__, in __new__
 
 
 # ============================================================================
@@ -180,6 +183,7 @@ def _translate_relu(input_expr):
     Returns:
         Output Expr (terms collected automatically via terms_frame)
     """
+    # TODO: create an IType that is a ReLU operation directly, to avoid the overhead of multiple operations and intermediate expressions.
     input_shape = input_expr.dtype().dims()
     zero_tensor = torch.zeros(input_shape)
     zero_expr = Expr("const", zero_tensor)
@@ -496,15 +500,22 @@ class MethodVisitor(ast.NodeVisitor):
             method = call.func.attr
             obj = call.func.value
             
+            # Handle module/name-based calls first (np.*, self.*)
+            # TODO: This only handles NumPy common aliases. For arbitrary aliases (import numpy as mynp),
+            # would need to track imports and resolve module names.
+            if isinstance(obj, ast.Name):
+                name = obj.id
+                if name in ('np', 'numpy'):
+                    return self._convert_numpy_creation(method, call.args)
+                elif name == 'self':
+                    return self._inline_method(method, call.args)
+            
+            # Handle generic methods that work on any object
             if method == 'argmax':
                 obj_expr = self._convert_expr(obj)
                 return Expr("argmax", obj_expr)
-                
             elif method == 'item':
                 return self._convert_expr(obj)
-                
-            elif isinstance(obj, ast.Name) and obj.id == 'self':
-                return self._inline_method(method, call.args)
             else:
                 raise ValueError(f"Unsupported method: {method}")
                 
@@ -530,6 +541,77 @@ class MethodVisitor(ast.NodeVisitor):
         cmp_expr = Expr(cmp_op, a_expr, b_expr)
         
         return Expr("ite", cmp_expr, a_expr, b_expr)
+    
+    def _convert_numpy_creation(self, func_name, args):
+        """Convert NumPy array creation to torch equivalent.
+        
+        Supports compile-time conversion of:
+        - np.zeros(shape) -> Expr("const", torch.zeros(shape))
+        - np.ones(shape) -> Expr("const", torch.ones(shape))
+        - np.array(data) -> Expr("const", torch.tensor(data))
+        
+        Shape and data must be Python literals (evaluated at conversion time).
+        """
+        if func_name == 'zeros':
+            if len(args) != 1:
+                raise ValueError(f"np.zeros() requires 1 argument, got {len(args)}")
+            shape = self._eval_shape(args[0])
+            return Expr("const", torch.zeros(*shape))
+            
+        elif func_name == 'ones':
+            if len(args) != 1:
+                raise ValueError(f"np.ones() requires 1 argument, got {len(args)}")
+            shape = self._eval_shape(args[0])
+            return Expr("const", torch.ones(*shape))
+            
+        elif func_name == 'array':
+            if len(args) != 1:
+                raise ValueError(f"np.array() requires 1 argument, got {len(args)}")
+            data = self._eval_literal(args[0])
+            return Expr("const", torch.tensor(data))
+            
+        else:
+            raise ValueError(f"Unsupported NumPy function: np.{func_name}()")
+    
+    def _eval_shape(self, shape_node):
+        """Evaluate shape argument at compile time.
+        
+        Accepts:
+        - Single int: np.zeros(5) -> (5,)
+        - Tuple: np.zeros((3, 3)) -> (3, 3)
+        - List: np.zeros([10]) -> (10,)
+        
+        Returns:
+            Tuple of ints representing the shape
+        """
+        if isinstance(shape_node, ast.Constant):
+            return (shape_node.value,)
+        elif isinstance(shape_node, (ast.Tuple, ast.List)):
+            shape = []
+            for elt in shape_node.elts:
+                if not isinstance(elt, ast.Constant):
+                    raise ValueError(f"Shape must be constant, got {type(elt).__name__}")
+                shape.append(elt.value)
+            return tuple(shape)
+        else:
+            raise ValueError(f"Shape must be int or tuple, got {type(shape_node).__name__}")
+    
+    def _eval_literal(self, data_node):
+        """Recursively evaluate Python literal for np.array() data.
+        
+        Supports nested lists/tuples of constants only.
+        Examples: [1, 2, 3], [[1, 2], [3, 4]], (1.0, 2.0, 3.0)
+        
+        Returns:
+            Python list/scalar that can be passed to torch.tensor()
+        """
+        if isinstance(data_node, ast.Constant):
+            return data_node.value
+        elif isinstance(data_node, (ast.List, ast.Tuple)):
+            return [self._eval_literal(elt) for elt in data_node.elts]
+        else:
+            raise ValueError(f"np.array() data must be literal, got {type(data_node).__name__}")
+    
     
     def _convert_binop(self, binop):
         """Convert binary operation"""
