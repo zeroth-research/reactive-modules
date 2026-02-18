@@ -186,6 +186,13 @@ pub enum IType {
     // index of maximal value in the flattened tensor
     Argmax(),
 
+    // Tensor operations
+    TensorGet(),
+    TensorSet(),
+    TensorSum(),
+    TensorMean(),
+    TensorMax(),
+
     // Constants
     Tensor(PyTensor),
 
@@ -214,6 +221,11 @@ impl fmt::Display for IType {
             IType::Ite() => write!(f, "Ite"),
             IType::Id() => write!(f, "Id"),
             IType::Argmax() => write!(f, "Argmax"),
+            IType::TensorGet() => write!(f, "TensorGet"),
+            IType::TensorSet() => write!(f, "TensorSet"),
+            IType::TensorSum() => write!(f, "TensorSum"),
+            IType::TensorMean() => write!(f, "TensorMean"),
+            IType::TensorMax() => write!(f, "TensorMax"),
             IType::Tensor(t) => {
                 let flat = t.tensor.view([-1]);
 

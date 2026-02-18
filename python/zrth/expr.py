@@ -343,6 +343,42 @@ def logic_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]
     raise NotImplementedError(f"Unsupported logic op: {op}")
 
 
+def tensor_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
+    """Translate tensor operations to IType and output DType
+    
+    Note: Actual execution is not yet implemented (will panic with todo!())
+    These are stubs to allow converter development and testing.
+    """
+    
+    if op == "tensor.get":
+        # arr[i, j] -> scalar element
+        # TODO: Proper type inference from tensor element type
+        assert len(args) >= 2  # array + at least 1 index
+        return IType.TensorGet(), DType.Float
+    
+    if op == "tensor.set":
+        # set(arr, i, j, val) -> new array (immutable update)
+        assert len(args) >= 3
+        return IType.TensorSet(), args[0].dtype()
+    
+    if op == "tensor.sum":
+        # sum(arr) -> scalar
+        assert len(args) == 1
+        return IType.TensorSum(), DType.Float
+    
+    if op == "tensor.mean":
+        # mean(arr) -> scalar
+        assert len(args) == 1
+        return IType.TensorMean(), DType.Float
+    
+    if op == "tensor.max":
+        # max(arr) -> scalar
+        assert len(args) == 1
+        return IType.TensorMax(), DType.Float
+    
+    raise NotImplementedError(f"Tensor operation {op} not implemented")
+
+
 # At this moment, we use strings for representing
 # operations, so we have to translate them to IType
 # TODO: we do typechecking here, this should be probably somewhere else
@@ -362,6 +398,9 @@ def op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
 
     if op.startswith("logic."):
         return logic_op_to_itype_dtype(op, args)
+
+    if op.startswith("tensor."):
+        return tensor_op_to_itype_dtype(op, args)
 
     if op == "argmax":
         assert len(args) == 1
