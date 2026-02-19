@@ -54,20 +54,20 @@ class Expr:
         if isinstance(op, IType):
             # typecheck arguments and propose output wire
             self._dtype: DType = infer_dtype(op, [*args], ctx)
-            self._out_wire: Wire = ctx.tmp_wire(self._dtype)
+            self._out_wire: Wire = Wire(self._dtype)
             self._term: Term = Term(op, [self._out_wire], [a.wire() for a in args])
         elif op == "sym":
             name, dtype, wire = args
             assert isinstance(name, str), name
             assert isinstance(dtype, DType), (type(dtype), dtype)
             assert wire is None or isinstance(wire, Wire), (type(wire), wire)
-            self._out_wire: Wire = wire or ctx.wire(name, dtype)
+            self._out_wire: Wire = wire or Wire(dtype)
             self._dtype: DType = dtype
         elif op == "const":
             assert len(args) == 1
             val: ToExpr = args[0]
             itype, dtype = const_to_itype_dtype(val)
-            self._out_wire: Wire = ctx.tmp_wire(dtype)
+            self._out_wire: Wire = Wire(dtype)
             self._term: Term = Term(itype, [self._out_wire], [])
             self._dtype: DType = dtype
         elif op == "assign":  # FIXME: do not have this as a special case
@@ -241,7 +241,8 @@ def matmul_dtype(dt1: DType, dt2: DType) -> DType:
     TODO: This function is incomplete, at this moment it basically Unsupported
     only matrix multiplication with no broadcasting.
     """
-    assert dt1.eq_dtype(dt2), f"DTypes have different element types: {dt1}, {dt2}"
+    if not dt1.eq_dtype(dt2):
+        raise RuntimeError(f"DTypes have different element types: {dt1}, {dt2}")
 
     dim1 = dt1.dims()
     dim2 = dt2.dims()
@@ -249,7 +250,7 @@ def matmul_dtype(dt1: DType, dt2: DType) -> DType:
     if len(dim2) == 1:
         # tensor @ vector
         if dim1[-1] == dim2[0]:
-            return type(dt1)(dim1[:-1])
+            return dt1.reshape(dim1[:-1])
         else:
             raise RuntimeError("Unsupported tensor @ vector operation")
     elif len(dim1) == 1 and len(dim2) == 2:
@@ -261,7 +262,7 @@ def matmul_dtype(dt1: DType, dt2: DType) -> DType:
     elif len(dim1) == len(dim2) == 2:
         # matrix @ matrix
         if dim1[-1] == dim2[0]:
-            return type(dt1)([dim1[0], dim2[1]])
+            return dt1.reshape([dim1[0], dim2[1]])
         else:
             raise RuntimeError(
                 f"Unsupported matrix multiplication, dimensions do not match: {dim1} x {dim2}"
@@ -346,37 +347,37 @@ def logic_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]
 
 def tensor_op_to_itype_dtype(op: str, args: tuple[ToExpr]) -> tuple[IType, DType]:
     """Translate tensor operations to IType and output DType
-    
+
     Note: Actual execution is not yet implemented (will panic with todo!())
     These are stubs to allow converter development and testing.
     """
-    
+
     if op == "tensor.get":
         # arr[i, j] -> scalar element
         # TODO: Proper type inference from tensor element type
         assert len(args) >= 2  # array + at least 1 index
         return IType.TensorGet(), DType.Float
-    
+
     if op == "tensor.set":
         # set(arr, i, j, val) -> new array (immutable update)
         assert len(args) >= 3
         return IType.TensorSet(), args[0].dtype()
-    
+
     if op == "tensor.sum":
         # sum(arr) -> scalar
         assert len(args) == 1
         return IType.TensorSum(), DType.Float
-    
+
     if op == "tensor.mean":
         # mean(arr) -> scalar
         assert len(args) == 1
         return IType.TensorMean(), DType.Float
-    
+
     if op == "tensor.max":
         # max(arr) -> scalar
         assert len(args) == 1
         return IType.TensorMax(), DType.Float
-    
+
     raise NotImplementedError(f"Tensor operation {op} not implemented")
 
 
@@ -439,7 +440,7 @@ def const_to_itype_dtype(val: bool | float | int | torch.Tensor) -> tuple[IType,
     dtype = val.dtype
 
     if dtype == torch.bool:
-        return IType.Tensor(val), DType.TensorBool(val.size())
+        return IType.Tensor(val), DType.TensorBool(list(val.size()))
 
     if dtype in (
         torch.int,
@@ -450,10 +451,10 @@ def const_to_itype_dtype(val: bool | float | int | torch.Tensor) -> tuple[IType,
         torch.uint16,
         torch.short,
     ):
-        return IType.Tensor(val), DType.TensorInt(val.size())
+        return IType.Tensor(val), DType.TensorInt(list(val.size()))
 
     if dtype in (torch.float, torch.float32, torch.float64):
-        return IType.Tensor(val), DType.TensorFloat(val.size())
+        return IType.Tensor(val), DType.TensorFloat(list(val.size()))
 
     raise NotImplementedError(f"Unsupported tensor element type: {dtype}")
 
@@ -878,7 +879,7 @@ def ite(cond, iftrue, iffalse):
     return iftrue if cond else iffalse
 
 
-def argmax(t: ToExpr) -> Argmax | int | float:
+def argmax(t: torch.Tensor | Expr) -> Argmax | int | float:
     """
     Argmax of a flattened tensor. Note that torch.Tensor.argmax()
     returns a tensor, while we return int to match the Term.
@@ -890,7 +891,7 @@ def argmax(t: ToExpr) -> Argmax | int | float:
     return t.argmax().item()
 
 
-def matmul(lhs: ToExpr, rhs: ToExpr) -> MatMul | torch.Tensor:
+def matmul(lhs: torch.Tensor | Expr, rhs: torch.Tensor | Expr) -> MatMul | torch.Tensor:
     if isinstance(lhs, Expr) or isinstance(rhs, Expr):
         return MatMul(lhs, rhs)
     return lhs @ rhs
@@ -971,7 +972,7 @@ def land(lhs, rhs) -> And | bool:
 
 
 # Logical not
-def lnot(e) -> And | bool:
+def lnot(e) -> Not | bool:
     if isinstance(e, Expr):
         return Not(e)
     return not e

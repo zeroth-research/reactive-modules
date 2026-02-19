@@ -1,5 +1,6 @@
 use crate::DType;
 use pyo3::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[pyclass(frozen)]
 #[derive(Debug, Eq, PartialEq)]
@@ -7,11 +8,16 @@ pub(crate) struct Wire {
     base: base::Wire<DType>,
 }
 
+static NEXT: AtomicUsize = AtomicUsize::new(0);
+
 #[pymethods]
 impl Wire {
     #[new]
-    pub(crate) fn new(id: usize, dtype: DType) -> Self {
-        let base = base::Wire::new(id, dtype);
+    pub(crate) fn new(dtype: DType) -> Self {
+        let base = base::Wire::new(NEXT.fetch_add(1, Ordering::Relaxed), dtype);
+        if base.id() == usize::MAX {
+            panic!("wire id overflow");
+        }
         Self { base }
     }
 
