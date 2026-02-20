@@ -181,7 +181,7 @@ def _translate_linear(input_wire: Wire, layer, terms: list[Term]) -> Wire:
 def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
     """Translate ReLU activation to reactive operations
 
-    Implements: max(0, x) = Ite(Gt(x, 0), x, 0)
+    Implements: max(0, x)
 
     Args:
         input_wire: Input Wire
@@ -190,21 +190,9 @@ def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
     Returns:
         Output Wire
     """
-    # TODO: create an IType for ReLU and use that instead of decomposing into Gt/Ite
-    input_shape = input_wire.dtype().dims()
-    zero_tensor = torch.zeros(input_shape)
-    zero_itype = IType.Tensor(zero_tensor)
-    zero_wire = Wire(DType.TensorFloat(input_shape))
-    zero_term = Term(zero_itype, [zero_wire], [])
-    terms.append(zero_term)
-    
-    gt_wire = Wire(DType.Bool)
-    gt_term = Term(IType.Gt(), [gt_wire], [input_wire, zero_wire])
-    terms.append(gt_term)
-    
     output_wire = Wire(input_wire.dtype())
-    ite_term = Term(IType.Ite(), [output_wire], [gt_wire, input_wire, zero_wire])
-    terms.append(ite_term)
+    relu_term = Term(IType.ReLU(), [output_wire], [input_wire])
+    terms.append(relu_term)
     
     return output_wire
 
