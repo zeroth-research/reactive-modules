@@ -922,7 +922,7 @@ def elementwise_arith_op(itype, lhs, rhs):
     if lhs.ctx() != rhs.ctx():
         raise Exception("ctx mismatch")
     match lhs.dtype(), rhs.dtype():
-        case DType.Real(lsize), DType.Real(rsize):
+        case DType.TensorReal(lsize), DType.TensorReal(rsize):
             if lsize != rsize:
                 raise Exception("size mismatch")
         case DType.TensorFloat(lsize), DType.TensorFloat(rsize):
@@ -961,7 +961,7 @@ def elementwise_predicate(itype, lhs, rhs):
         raise Exception("ctx mismatch")
     size = None
     match lhs.dtype(), rhs.dtype():
-        case DType.Real(lsize), DType.Real(rsize):
+        case DType.TensorReal(lsize), DType.TensorReal(rsize):
             if lsize != rsize:
                 raise Exception("size mismatch")
             size = lsize
