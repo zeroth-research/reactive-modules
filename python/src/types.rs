@@ -111,6 +111,16 @@ impl DType {
             DType::TensorReal(_) => DType::TensorReal(shape),
         }
     }
+
+    /// Get the kind/variant of this dtype
+    fn kind(&self) -> &'static str {
+        match self {
+            DType::TensorBool(_) => "TensorBool",
+            DType::TensorInt(_) => "TensorInt",
+            DType::TensorFloat(_) => "TensorFloat",
+            DType::TensorReal(_) => "TensorReal",
+        }
+    }
 }
 
 impl fmt::Display for PrimitiveType {
