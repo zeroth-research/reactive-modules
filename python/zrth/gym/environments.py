@@ -4,23 +4,23 @@ from .zrth_module import Module
 
 
 class SimpleEnv(gym.Env, Module):
-    def __init__(self, extl, intf, prvt=None):
-        """Initialize simple chain environment
-
-        Args:
-            extl: List of external input wire names
-            intf: List of interface output wire names
-            prvt: List of private wire names (optional)
-        """
-        # TODO: Can we do the conversion before calling the Module __init__? Aka, when calling __new__? The problem might be that we cannot infer the types
+    """Simple chain environment with partial observability"""
+    
+    extl = ["q_values: Tensor<2; Float>"]
+    intf = [
+        "observation: Tensor<1; Float>",
+        "reward: Tensor<1; Float>",
+        "terminated: Tensor<1; Bool>",
+        "truncated: Tensor<1; Bool>",
+    ]
+    prvt = ["state: Tensor<1; Float>"]
+    
+    def __init__(self):
+        """Initialize simple chain environment"""
         gym.Env.__init__(self)
-        Module.__init__(self, extl, intf, prvt)
         
-        # Gym spaces
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Discrete(2)
-
-        # _finalize_conversion() is called automatically after this by __init_subclass__
 
     def _get_observation(self):
         # Agent only sees if it's at goal or not (partial observability)
@@ -55,18 +55,24 @@ class SimpleEnv(gym.Env, Module):
 
 
 class GridWorldEnv(gym.Env, Module):
-    def __init__(self, extl, intf, prvt):
-        """Initialize 3x3 grid world environment
-
-        Args:
-            extl: List of external input wire names
-            intf: List of interface output wire names
-            prvt: List of private wire names (x, y coordinates)
-        """
+    """3x3 grid world environment"""
+    
+    extl = ["q_values: Tensor<4; Float>"]
+    intf = [
+        "observation: Tensor<1; Float>",
+        "reward: Tensor<1; Float>",
+        "terminated: Tensor<1; Bool>",
+        "truncated: Tensor<1; Bool>",
+    ]
+    prvt = [
+        "x: Tensor<1; Float>",
+        "y: Tensor<1; Float>",
+    ]
+    
+    def __init__(self):
+        """Initialize 3x3 grid world environment"""
         gym.Env.__init__(self)
-        Module.__init__(self, extl, intf, prvt)
         
-        # Gym spaces
         self.action_space = spaces.Discrete(4)  # up, down, left, right
         self.observation_space = spaces.Discrete(9)  # 3x3 grid positions
 
@@ -111,23 +117,29 @@ class GridWorldEnv(gym.Env, Module):
 class ComplexDecisionEnv(gym.Env, Module):
     """Environment testing: nested decisions, boolean ops, augmented assignments, numpy"""
     
-    def __init__(self, extl, intf, prvt):
+    extl = ["q_values: Tensor<10; Float>"]
+    intf = [
+        "observation: Tensor<1; Float>",
+        "reward: Tensor<1; Float>",
+        "terminated: Tensor<1; Bool>",
+        "truncated: Tensor<1; Bool>",
+    ]
+    prvt = [
+        "score: Tensor<1; Float>",
+        "multiplier: Tensor<1; Float>",
+        "bonus_active: Tensor<1; Bool>",
+    ]
+    
+    def __init__(self):
         """Initialize complex decision environment
         
         Tests:
         - Nested if/elif/else (3 levels deep)
         - Boolean operations (and, or, not)
         - Augmented assignments (+=, -=, *=)
-        
-        Args:
-            extl: List of external input wire names
-            intf: List of interface output wire names  
-            prvt: List of private wire names
         """
         gym.Env.__init__(self)
-        Module.__init__(self, extl, intf, prvt)
         
-        # Gym spaces
         self.action_space = spaces.Discrete(10)  # 10 possible actions
         self.observation_space = spaces.Box(low=0, high=10, shape=(1,))
         
@@ -217,20 +229,23 @@ class ComplexDecisionEnv(gym.Env, Module):
 class EarlyReturnEnv(gym.Env, Module):
     """Environment testing early returns in if/else branches"""
     
-    def __init__(self, extl, intf, prvt):
+    extl = ["q_values: Tensor<5; Float>"]
+    intf = [
+        "observation: Tensor<1; Float>",
+        "reward: Tensor<1; Float>",
+        "terminated: Tensor<1; Bool>",
+        "truncated: Tensor<1; Bool>",
+    ]
+    prvt = ["counter: Tensor<1; Float>"]
+    
+    def __init__(self):
         """Initialize early return test environment
         
         Tests:
         - Early returns inside if/else branches
         - Return value merging across branches
-        
-        Args:
-            extl: List of external input wire names
-            intf: List of interface output wire names
-            prvt: List of private wire names
         """
         gym.Env.__init__(self)
-        Module.__init__(self, extl, intf, prvt)
         
         self.action_space = spaces.Discrete(5)
         self.observation_space = spaces.Box(low=-10, high=10, shape=(1,))
@@ -283,20 +298,23 @@ class EarlyReturnEnv(gym.Env, Module):
 class ComparisonChainEnv(gym.Env, Module):
     """Environment testing comparison chains (a < b < c)"""
     
-    def __init__(self, extl, intf, prvt):
+    extl = ["q_values: Tensor<3; Float>"]
+    intf = [
+        "observation: Tensor<1; Float>",
+        "reward: Tensor<1; Float>",
+        "terminated: Tensor<1; Bool>",
+        "truncated: Tensor<1; Bool>",
+    ]
+    prvt = ["value: Tensor<1; Float>"]
+    
+    def __init__(self):
         """Initialize comparison chain test environment
         
         Tests:
         - Comparison chains: 0 < x < 10
         - Multiple chained comparisons
-        
-        Args:
-            extl: List of external input wire names
-            intf: List of interface output wire names
-            prvt: List of private wire names
         """
         gym.Env.__init__(self)
-        Module.__init__(self, extl, intf, prvt)
         
         self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(low=0, high=20, shape=(1,))
