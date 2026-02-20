@@ -1,5 +1,4 @@
 use crate::pytensor::PyTensor;
-use pyo3::types::PyTuple;
 use pyo3::{exceptions::PyValueError, prelude::*};
 use std::fmt;
 
