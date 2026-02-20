@@ -1,34 +1,49 @@
-from zrth.module import ReactiveModuleDef, call_convert_after_init
+from zrth.module import ReactiveModuleDef
 from .converter import convert_to_module
 
 
 class Module(ReactiveModuleDef):
-    """Base class for reactive modules with automatic conversion"""
+    """Base class for reactive modules with automatic conversion
+    
+    Subclasses must declare wires as class attributes:
+    - extl: List of external input wire names
+    - intf: List of interface output wire names
+    - prvt: List of private wire names (optional)
+    """
 
-    def __init__(self, extl, intf, prvt=None):
-        """Initialize module
-
-        Args:
-            extl: List of external input wire names
-            intf: List of interface output wire names
-            prvt: List of private wire names (optional)
+    def __new__(cls, *args, **kwargs):
+        """Create instance and automatically convert to reactive Module
+        
+        This method:
+        1. Creates instance of subclass
+        2. Gets wire declarations from class attributes
+        3. Initializes ReactiveModuleDef with wires
+        4. Calls subclass __init__ to set up layers/methods
+        5. Converts to reactive Module and returns it
         """
-        super().__init__(intf, extl, prvt)
-
-    def __init_subclass__(cls, **kwargs):
-        """
-        Hook to automatically call conversion after subclass' __init__.
-        The conversion *must* be done after subclasses are fully initialized
-        because the conversion uses data from the classes
-        """
-        call_convert_after_init(__class__, cls, **kwargs)
-
-    def convert(self):
-        """
-        Called automatically after subclass __init__ completes.
-
-        Convert self into a reactive module and save it in `self._module`
-        """
-        assert self._module is None
-
-        self._module = convert_to_module(self)
+        # Create instance of the subclass
+        instance = object.__new__(cls)
+        
+        # Get wire declarations from class attributes
+        extl = cls.__dict__.get('extl', [])
+        intf = cls.__dict__.get('intf', [])
+        prvt = cls.__dict__.get('prvt', None)
+        
+        # Delete class attributes to prevent shadowing ReactiveModuleDef properties
+        for attr in ['extl', 'intf', 'prvt']:
+            if attr in cls.__dict__:
+                delattr(cls, attr)
+        
+        # Initialize ReactiveModuleDef with wires
+        ReactiveModuleDef.__init__(instance, intf, extl, prvt)
+        
+        # Call subclass __init__ to set up layers, methods, etc.
+        # This is where nn.Linear layers get created for networks
+        # or reset/step methods are defined for environments
+        cls.__init__(instance, *args, **kwargs)
+        
+        # Convert the fully initialized instance to reactive Module
+        module = convert_to_module(instance)
+        
+        # Return the Rust Module instead of Python instance
+        return module
