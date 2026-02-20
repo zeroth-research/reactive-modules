@@ -12,7 +12,6 @@ from .zrth import (
 
 from .context import Context, get_ctx, set_ctx, reset_ctx
 from .module import ReactiveModule
-from .expr import Sym
 
 from typing import Generator
 
@@ -96,8 +95,8 @@ def to_wire(w: Wire | Term) -> Wire:
         return w
 
     if isinstance(w, Term):
-        assert len(w.write()) == 1
-        return w.write()[0]
+        assert len(w.write) == 1
+        return w.write[0]
 
     raise ValueError(f"Invalid argument, expected Wire or Term, got {type(w)}")
 
@@ -122,30 +121,31 @@ WiredTransitions.wire_transition = lambda self, t: orig_wire_transition(
 )
 
 
-def process_subst_pair(
-    lhs: Wire | Sym, rhs: Wire | Sym
-) -> Generator[tuple[Wire, Wire]]:
-    if isinstance(lhs, Sym):
-        if lhs.has_nxt():
-            lhs = (lhs.wire(), lhs.nxt().wire())
-        else:
-            lhs = (lhs.wire(),)
-    else:
-        assert isinstance(lhs, Wire), lhs
-        lhs = (lhs,)
-    if isinstance(rhs, Sym):
-        if rhs.has_nxt():
-            rhs = (rhs.wire(), rhs.nxt().wire())
-        else:
-            rhs = (rhs.wire(),)
-    else:
-        assert isinstance(rhs, Wire), rhs
-        rhs = (rhs,)
+def process_subst_pair(lhs: Wire, rhs: Wire) -> Generator[tuple[Wire, Wire]]:
+    raise NotImplementedError()
 
-    if len(lhs) != len(rhs):
-        raise RuntimeError("Invalid mapping")
-    for l, r in zip(lhs, rhs):
-        yield l, r
+
+# if isinstance(lhs, Sym):
+#    if lhs.has_nxt():
+#        lhs = (lhs.wire(), lhs.nxt().wire())
+#    else:
+#        lhs = (lhs.wire(),)
+# else:
+#    assert isinstance(lhs, Wire), lhs
+#    lhs = (lhs,)
+# if isinstance(rhs, Sym):
+#    if rhs.has_nxt():
+#        rhs = (rhs.wire(), rhs.nxt().wire())
+#    else:
+#        rhs = (rhs.wire(),)
+# else:
+#    assert isinstance(rhs, Wire), rhs
+#    rhs = (rhs,)
+#
+# if len(lhs) != len(rhs):
+#    raise RuntimeError("Invalid mapping")
+# for l, r in zip(lhs, rhs):
+#    yield l, r
 
 
 def remap_term(term, subst: dict) -> Term:
