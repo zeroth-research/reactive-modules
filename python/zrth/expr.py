@@ -36,7 +36,7 @@ class Expr:
 
     __cnt = 0
 
-    def __init__(self, itype: IType, dtype: DType, *args, ctx=_global_context):
+    def __init__(self, itype: IType, dtype: DType, *args, ctx=None):
         assert isinstance(itype, str) or isinstance(itype, IType), type(itype)
         self.op = itype
         # FIXME: this special handling of "sym"
@@ -44,7 +44,7 @@ class Expr:
 
         Expr.__cnt += 1
         self.id = Expr.__cnt
-        ctx: Context = get_ctx()
+        ctx: Context = ctx or get_ctx()
 
         assert all(not isinstance(a, Expr) or a.ctx() is ctx for a in args), (
             "Expr must be created in the same context as its arguments"
@@ -1037,7 +1037,7 @@ def const(x: int | bool | float | torch.Tensor) -> Expr:
     return to_expr(x)
 
 
-def Real(x: float | str | torch.Tensor, ctx=_global_context):
+def Real(x: float | str | torch.Tensor, ctx=None):
     if isinstance(x, float):
         dtype = DType.TensorReal([1])
         t = torch.Tensor([x])
@@ -1048,5 +1048,5 @@ def Real(x: float | str | torch.Tensor, ctx=_global_context):
     elif isinstance(x, str):
         # register symbol into context
         dtype = DType.TensorReal([1])
-        ctx.declare_const(x, dtype)
+        (ctx or get_ctx()).declare_const(x, dtype)
         return Expr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
