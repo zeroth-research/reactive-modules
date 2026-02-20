@@ -142,7 +142,7 @@ def test_predicate():
 
 
 def test_ite():
-    a = expr.Real(torch.tensor([2.1, 3.1]))
+    a = expr.Real(tensor([2.1, 3.1]))
     b = expr.Real("b", shape=(2,))
     c = expr.Real("c")
 
