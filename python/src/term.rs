@@ -43,12 +43,19 @@ impl Term {
         }
     }
 
+    #[getter]
     fn write(slf: PyRef<'_, Self>) -> PyResult<TermInterface> {
         Self::interface(slf, TermInterfaceType::Write)
     }
 
+    #[getter]
     fn read(slf: PyRef<'_, Self>) -> PyResult<TermInterface> {
         Self::interface(slf, TermInterfaceType::Read)
+    }
+
+    #[getter]
+    fn itype(&self) -> IType {
+        self.base.itype().clone()
     }
 
     fn __str__(&self) -> String {
