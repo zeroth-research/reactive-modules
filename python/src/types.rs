@@ -15,7 +15,7 @@ pub enum DType {
     TensorBool(Vec<usize>),
     TensorInt(Vec<usize>),
     TensorFloat(Vec<usize>),
-    Real(Vec<usize>), // this indicates the type used for reasoning, as in LRA for example
+    TensorReal(Vec<usize>),
 }
 
 enum PrimitiveType {
@@ -38,6 +38,7 @@ fn parse_dim_with_type(dim_and_type: &str) -> Option<(Vec<usize>, PrimitiveType)
             "Bool" => PrimitiveType::Bool,
             "Int" => PrimitiveType::Int,
             "Float" => PrimitiveType::Float,
+            "Real" => PrimitiveType::Real,
             _ => return None,
         };
 
@@ -59,7 +60,7 @@ impl std::str::FromStr for DType {
                 PrimitiveType::Float => Ok(DType::TensorFloat(dims)),
                 PrimitiveType::Int => Ok(DType::TensorInt(dims)),
                 PrimitiveType::Bool => Ok(DType::TensorBool(dims)),
-                PrimitiveType::Real => Ok(DType::Real(dims)),
+                PrimitiveType::Real => Ok(DType::TensorReal(dims)),
             };
         }
 
@@ -68,6 +69,7 @@ impl std::str::FromStr for DType {
             "Float" => Ok(DType::TensorFloat(vec![1])),
             "Int" => Ok(DType::TensorInt(vec![1])),
             "Bool" => Ok(DType::TensorBool(vec![1])),
+            "Real" => Ok(DType::TensorReal(vec![1])),
             _ => Err(format!("Cannot convert `{}` to DType", ty)),
         }
     }
@@ -86,7 +88,7 @@ impl DType {
             DType::TensorFloat(shape) => shape.clone(),
             DType::TensorInt(shape) => shape.clone(),
             DType::TensorBool(shape) => shape.clone(),
-            DType::Real(shape) => shape.clone(),
+            DType::TensorReal(shape) => shape.clone(),
         }
     }
 
@@ -97,7 +99,7 @@ impl DType {
             (DType::TensorFloat(_), DType::TensorFloat(_)) => true,
             (DType::TensorInt(_), DType::TensorInt(_)) => true,
             (DType::TensorBool(_), DType::TensorBool(_)) => true,
-            (DType::Real(_), DType::Real(_)) => true,
+            (DType::TensorReal(_), DType::TensorReal(_)) => true,
             _ => false,
         }
     }
@@ -154,7 +156,7 @@ impl fmt::Display for DType {
             }
             DType::TensorInt(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Int)),
             DType::TensorBool(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Bool)),
-            DType::Real(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Real)),
+            DType::TensorReal(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Real)),
         }
     }
 }

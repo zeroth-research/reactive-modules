@@ -1039,14 +1039,14 @@ def const(x: int | bool | float | torch.Tensor) -> Expr:
 
 def Real(x: float | str | torch.Tensor, ctx=_global_context):
     if isinstance(x, float):
-        dtype = DType.Real([1])
+        dtype = DType.TensorReal([1])
         t = torch.Tensor([x])
         return Expr(itype=IType.Tensor(t), dtype=dtype, ctx=ctx)
     elif isinstance(x, torch.Tensor):
-        dtype = DType.Real(x.size())
+        dtype = DType.TensorReal(x.size())
         return Expr(itype=IType.Tensor(x), dtype=dtype, ctx=ctx)
     elif isinstance(x, str):
         # register symbol into context
-        dtype = DType.Real([1])
+        dtype = DType.TensorReal([1])
         ctx.declare_const(x, dtype)
         return Expr(itype=IType.Uninterpreted(x), dtype=dtype, ctx=ctx)
