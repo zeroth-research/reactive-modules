@@ -60,13 +60,13 @@ def test_module_parallel():
     w = (Wire(dt.Bool()), Wire(dt.Bool()))
     v = (Wire(dt.Bool()), Wire(dt.Bool()))
 
-    init = [Term(it.Tensor(torch.Tensor([False])), [x[1]])]
+    init = [Term(it.Tensor(Tensor([False])), [x[1]])]
     update = [Term(it.And(), [x[1]], [x[0], y[1]])]
     p = Module.sequential(init, update, obs=[x, y])
 
     init = [
-        Term(it.Tensor(torch.Tensor([False])), [v[1]]),
-        Term(it.Tensor(torch.Tensor([False])), [y[1]]),
+        Term(it.Tensor(Tensor([False])), [v[1]]),
+        Term(it.Tensor(Tensor([False])), [y[1]]),
     ]
     update = [Term(it.And(), [v[1]], [v[0], x[0]]), Term(it.Id(), [y[1]], [x[0]])]
     q = Module.sequential(init, update, obs=[x, y], prvt=[v])
