@@ -1,11 +1,10 @@
 """Reinforcement Learning with Reactive Modules"""
 
-from .zrth_module import Module
+from .zrth_module import ExtendedModule
 from .qnetworks import SimpleQNet, GridWorldQNet
 from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv
 from .agent import DQNAgent
-from zrth import Wire, DType, IType, Term, Module as BackendModule
-
+from zrth import Wire, DType, IType, Term, Module
 
 __all__ = [
     "Module",
@@ -21,5 +20,5 @@ __all__ = [
     "DType",
     "IType",
     "Term",
-    "BackendModule",
+    "ExtendedModule",
 ]
