@@ -12,9 +12,9 @@ from typing import Generator
 
 
 # Add type aliases to the DType object
-DType.Bool = DType.TensorBool([1])
-DType.Int = DType.TensorInt([1])
-DType.Float = DType.TensorFloat([1])
+# DType.Bool = DType.TensorBool([1])
+# DType.Int = DType.TensorInt([1])
+# DType.Float = DType.TensorFloat([1])
 
 
 #####################################################################
@@ -59,7 +59,7 @@ WiredTransitions.wire_transition = lambda self, t: orig_wire_transition(
 
 
 def process_subst_pair(
-    lhs: Wire | Sym, rhs: Wire | Sym
+        lhs: Wire | Sym, rhs: Wire | Sym
 ) -> Generator[tuple[Wire, Wire]]:
     if isinstance(lhs, Sym):
         if lhs.has_nxt():

@@ -12,10 +12,10 @@ use crate::pytensor::PyTensor;
 pub enum DType {
     // at this moment, we keep the DType flat and encode the type
     // of elements in the names
-    TensorBool(Vec<usize>),
-    TensorInt(Vec<usize>),
-    TensorFloat(Vec<usize>),
-    TensorReal(Vec<usize>), // this indicates the type used for reasoning, as in LRA for example
+    Bool(Vec<usize>),
+    Int(Vec<usize>),
+    Float(Vec<usize>),
+    Real(Vec<usize>), // this indicates the type used for reasoning, as in LRA for example
 }
 
 enum PrimitiveType {
@@ -56,18 +56,18 @@ impl std::str::FromStr for DType {
             && let Some((dims, ptype)) = parse_dim_with_type(inner)
         {
             return match ptype {
-                PrimitiveType::Float => Ok(DType::TensorFloat(dims)),
-                PrimitiveType::Int => Ok(DType::TensorInt(dims)),
-                PrimitiveType::Bool => Ok(DType::TensorBool(dims)),
-                PrimitiveType::Real => Ok(DType::TensorReal(dims)),
+                PrimitiveType::Float => Ok(DType::Float(dims)),
+                PrimitiveType::Int => Ok(DType::Int(dims)),
+                PrimitiveType::Bool => Ok(DType::Bool(dims)),
+                PrimitiveType::Real => Ok(DType::Real(dims)),
             };
         }
 
         // try also aliases
         match ty {
-            "Float" => Ok(DType::TensorFloat(vec![1])),
-            "Int" => Ok(DType::TensorInt(vec![1])),
-            "Bool" => Ok(DType::TensorBool(vec![1])),
+            "Float" => Ok(DType::Float(vec![1])),
+            "Int" => Ok(DType::Int(vec![1])),
+            "Bool" => Ok(DType::Bool(vec![1])),
             _ => Err(format!("Cannot convert `{}` to DType", ty)),
         }
     }
@@ -83,10 +83,10 @@ impl DType {
     /// Get the data dimensions of this data type
     fn dims(&self) -> Vec<usize> {
         match &self {
-            DType::TensorFloat(shape) => shape.clone(),
-            DType::TensorInt(shape) => shape.clone(),
-            DType::TensorBool(shape) => shape.clone(),
-            DType::TensorReal(shape) => shape.clone(),
+            DType::Float(shape) => shape.clone(),
+            DType::Int(shape) => shape.clone(),
+            DType::Bool(shape) => shape.clone(),
+            DType::Real(shape) => shape.clone(),
         }
     }
 
@@ -94,10 +94,10 @@ impl DType {
     // This method is necesary because we do not expose [PrimitiveType]
     fn eq_dtype(&self, other: &Self) -> bool {
         match (self, other) {
-            (DType::TensorFloat(_), DType::TensorFloat(_)) => true,
-            (DType::TensorInt(_), DType::TensorInt(_)) => true,
-            (DType::TensorBool(_), DType::TensorBool(_)) => true,
-            (DType::TensorReal(_), DType::TensorReal(_)) => true,
+            (DType::Float(_), DType::Float(_)) => true,
+            (DType::Int(_), DType::Int(_)) => true,
+            (DType::Bool(_), DType::Bool(_)) => true,
+            (DType::Real(_), DType::Real(_)) => true,
             _ => false,
         }
     }
@@ -105,20 +105,20 @@ impl DType {
     /// Create the same (Tensor) dtype but with a different shape
     fn reshape(&self, shape: Vec<usize>) -> Self {
         match self {
-            DType::TensorBool(_) => DType::TensorBool(shape),
-            DType::TensorInt(_) => DType::TensorInt(shape),
-            DType::TensorFloat(_) => DType::TensorFloat(shape),
-            DType::TensorReal(_) => DType::TensorReal(shape),
+            DType::Bool(_) => DType::Bool(shape),
+            DType::Int(_) => DType::Int(shape),
+            DType::Float(_) => DType::Float(shape),
+            DType::Real(_) => DType::Real(shape),
         }
     }
 
     /// Get the kind/variant of this dtype
     fn kind(&self) -> &'static str {
         match self {
-            DType::TensorBool(_) => "TensorBool",
-            DType::TensorInt(_) => "TensorInt",
-            DType::TensorFloat(_) => "TensorFloat",
-            DType::TensorReal(_) => "TensorReal",
+            DType::Bool(_) => "TensorBool",
+            DType::Int(_) => "TensorInt",
+            DType::Float(_) => "TensorFloat",
+            DType::Real(_) => "TensorReal",
         }
     }
 }
@@ -149,12 +149,12 @@ fn format_tensor(shape: &Vec<usize>, ptype: PrimitiveType) -> String {
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DType::TensorFloat(shape) => {
+            DType::Float(shape) => {
                 write!(f, "{}", format_tensor(shape, PrimitiveType::Float))
             }
-            DType::TensorInt(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Int)),
-            DType::TensorBool(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Bool)),
-            DType::TensorReal(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Real)),
+            DType::Int(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Int)),
+            DType::Bool(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Bool)),
+            DType::Real(shape) => write!(f, "{}", format_tensor(shape, PrimitiveType::Real)),
         }
     }
 }
