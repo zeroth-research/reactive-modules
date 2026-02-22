@@ -1,8 +1,8 @@
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
-use pyo3::types::PyTuple;
+use pyo3::types::{PyDict, PyTuple};
 
-#[pyclass(frozen)]
+#[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
     pub(crate) base: base::Module<DType, IType>,
@@ -10,8 +10,33 @@ pub(crate) struct Module {
 
 #[pymethods]
 impl Module {
+    #[new]
+    #[pyo3(signature = (*_args, init = None, update = None, assign = None, obs = None, ctrl = None, extl = None, intf = None, prvt = None, **_kwargs)
+    )]
+    fn new(
+        _args: &Bound<'_, PyTuple>,
+        init: Option<&Bound<'_, PyAny>>,
+        update: Option<&Bound<'_, PyAny>>,
+        assign: Option<&Bound<'_, PyAny>>,
+        obs: Option<&Bound<'_, PyAny>>,
+        ctrl: Option<&Bound<'_, PyAny>>,
+        extl: Option<&Bound<'_, PyAny>>,
+        intf: Option<&Bound<'_, PyAny>>,
+        prvt: Option<&Bound<'_, PyAny>>,
+        _kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        match (init, update, assign) {
+            (Some(init), Some(update), None) => {
+                Self::sequential(init, update, obs, ctrl, extl, intf, prvt)
+            }
+            (None, None, Some(assign)) => Self::combinatorial(assign, obs, extl, intf),
+            _ => Err(PyTypeError::new_err("unsupported wires declaration")),
+        }
+    }
+
     #[staticmethod]
-    #[pyo3(signature = (init, update, obs = None, *, ctrl = None, extl = None, intf = None, prvt = None))]
+    #[pyo3(signature = (init, update, obs = None, *, ctrl = None, extl = None, intf = None, prvt = None)
+    )]
     fn sequential(
         init: &Bound<'_, PyAny>,
         update: &Bound<'_, PyAny>,
