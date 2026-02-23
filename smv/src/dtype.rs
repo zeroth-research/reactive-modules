@@ -4,6 +4,8 @@ use std::fmt;
 pub enum DType {
     Bool,
     Int,
+    UWord(u32),
+    SWord(u32),
 }
 
 impl fmt::Display for DType {
@@ -11,6 +13,8 @@ impl fmt::Display for DType {
         match self {
             DType::Bool => write!(f, "Bool"),
             DType::Int => write!(f, "Int"),
+            DType::UWord(n) => write!(f, "UWord{}", n),
+            DType::SWord(n) => write!(f, "SWord{}", n),
         }
     }
 }

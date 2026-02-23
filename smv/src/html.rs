@@ -184,6 +184,54 @@ impl SmvDescriptor {
                         .collect();
                     srcs.join(", ")
                 }
+                IType::BitSelect(h, l) => {
+                    let rds: Vec<_> = term.read().iter().collect();
+                    if let Some([wire]) = rds.first() {
+                        let s = render_wire(rec, wire.id(), writer_map, visited);
+                        return format!("{}[{}:{}]", s, h, l);
+                    }
+                    String::new()
+                }
+                IType::Extend(n) => {
+                    let rds: Vec<_> = term.read().iter().collect();
+                    if let Some([wire]) = rds.first() {
+                        let s = render_wire(rec, wire.id(), writer_map, visited);
+                        return format!("extend({}, {})", s, n);
+                    }
+                    String::new()
+                }
+                IType::ToBool => {
+                    let rds: Vec<_> = term.read().iter().collect();
+                    if let Some([wire]) = rds.first() {
+                        let s = render_wire(rec, wire.id(), writer_map, visited);
+                        return format!("bool({})", s);
+                    }
+                    String::new()
+                }
+                IType::ToWord1 => {
+                    let rds: Vec<_> = term.read().iter().collect();
+                    if let Some([wire]) = rds.first() {
+                        let s = render_wire(rec, wire.id(), writer_map, visited);
+                        return format!("word1({})", s);
+                    }
+                    String::new()
+                }
+                IType::ToUnsigned => {
+                    let rds: Vec<_> = term.read().iter().collect();
+                    if let Some([wire]) = rds.first() {
+                        let s = render_wire(rec, wire.id(), writer_map, visited);
+                        return format!("unsigned({})", s);
+                    }
+                    String::new()
+                }
+                IType::ToSigned => {
+                    let rds: Vec<_> = term.read().iter().collect();
+                    if let Some([wire]) = rds.first() {
+                        let s = render_wire(rec, wire.id(), writer_map, visited);
+                        return format!("signed({})", s);
+                    }
+                    String::new()
+                }
             }
         }
 
@@ -382,6 +430,54 @@ impl SmvDescriptor {
                     let e = emit_src(&reads[2]);
                     let tgt = emit_tgt(writes[0].0);
                     return format!("({}) ? ({}) : ({}) → {}", c, t, e, tgt);
+                }
+                String::new()
+            }
+            IType::BitSelect(h, l) => {
+                if !reads.is_empty() && !writes.is_empty() {
+                    let src = emit_src(&reads[0]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("{}[{}:{}] → {}", src, h, l, tgt);
+                }
+                String::new()
+            }
+            IType::Extend(n) => {
+                if !reads.is_empty() && !writes.is_empty() {
+                    let src = emit_src(&reads[0]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("extend({}, {}) → {}", src, n, tgt);
+                }
+                String::new()
+            }
+            IType::ToBool => {
+                if !reads.is_empty() && !writes.is_empty() {
+                    let src = emit_src(&reads[0]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("bool({}) → {}", src, tgt);
+                }
+                String::new()
+            }
+            IType::ToWord1 => {
+                if !reads.is_empty() && !writes.is_empty() {
+                    let src = emit_src(&reads[0]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("word1({}) → {}", src, tgt);
+                }
+                String::new()
+            }
+            IType::ToUnsigned => {
+                if !reads.is_empty() && !writes.is_empty() {
+                    let src = emit_src(&reads[0]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("unsigned({}) → {}", src, tgt);
+                }
+                String::new()
+            }
+            IType::ToSigned => {
+                if !reads.is_empty() && !writes.is_empty() {
+                    let src = emit_src(&reads[0]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("signed({}) → {}", src, tgt);
                 }
                 String::new()
             }
@@ -831,6 +927,60 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                         "<p><code>{}</code> ? <code>{}</code> : <code>{}</code> → <code>{}</code></p>",
                         c, t, e, tgt
                     );
+                }
+            }
+            IType::BitSelect(h, l) => {
+                if let (Some(w), Some(r)) = (term.write().wires().next(), term.read().wires().next())
+                {
+                    let tgt = self.describe_wire_id(w.id(), DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.id(), DescriptionContext::Inline);
+                    title_html = "<h3>Bit Select</h3>".to_string();
+                    extra = format!("<p><code>{}</code>[{}:{}] → <code>{}</code></p>", src, h, l, tgt);
+                }
+            }
+            IType::Extend(n) => {
+                if let (Some(w), Some(r)) = (term.write().wires().next(), term.read().wires().next())
+                {
+                    let tgt = self.describe_wire_id(w.id(), DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.id(), DescriptionContext::Inline);
+                    title_html = "<h3>Extend</h3>".to_string();
+                    extra = format!("<p>extend(<code>{}</code>, {}) → <code>{}</code></p>", src, n, tgt);
+                }
+            }
+            IType::ToBool => {
+                if let (Some(w), Some(r)) = (term.write().wires().next(), term.read().wires().next())
+                {
+                    let tgt = self.describe_wire_id(w.id(), DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.id(), DescriptionContext::Inline);
+                    title_html = "<h3>To Bool</h3>".to_string();
+                    extra = format!("<p>bool(<code>{}</code>) → <code>{}</code></p>", src, tgt);
+                }
+            }
+            IType::ToWord1 => {
+                if let (Some(w), Some(r)) = (term.write().wires().next(), term.read().wires().next())
+                {
+                    let tgt = self.describe_wire_id(w.id(), DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.id(), DescriptionContext::Inline);
+                    title_html = "<h3>To Word1</h3>".to_string();
+                    extra = format!("<p>word1(<code>{}</code>) → <code>{}</code></p>", src, tgt);
+                }
+            }
+            IType::ToUnsigned => {
+                if let (Some(w), Some(r)) = (term.write().wires().next(), term.read().wires().next())
+                {
+                    let tgt = self.describe_wire_id(w.id(), DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.id(), DescriptionContext::Inline);
+                    title_html = "<h3>To Unsigned</h3>".to_string();
+                    extra = format!("<p>unsigned(<code>{}</code>) → <code>{}</code></p>", src, tgt);
+                }
+            }
+            IType::ToSigned => {
+                if let (Some(w), Some(r)) = (term.write().wires().next(), term.read().wires().next())
+                {
+                    let tgt = self.describe_wire_id(w.id(), DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.id(), DescriptionContext::Inline);
+                    title_html = "<h3>To Signed</h3>".to_string();
+                    extra = format!("<p>signed(<code>{}</code>) → <code>{}</code></p>", src, tgt);
                 }
             }
         }

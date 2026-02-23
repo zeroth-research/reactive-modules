@@ -524,29 +524,160 @@ fn lower_expr_to_terms(
             enforce(&final_write, terms, write, vec![])
         }
 
+        Rule::word_lit_expr => {
+            let mut children = expr_pair.into_inner();
+            let word_lit = children.next().unwrap(); // word_literal
+            let s = word_lit.as_str();
+            // Parse word literal: 0ud16_0 or 0sd32_300
+            let signed = s.as_bytes()[1] == b's';
+            let rest = &s[3..]; // skip "0ud" or "0sd"
+            let underscore_pos = rest.find('_').unwrap();
+            let width: u32 = rest[..underscore_pos].parse().unwrap();
+            let value: i64 = rest[underscore_pos + 1..].parse().unwrap();
+            let dtype = if signed {
+                DType::SWord(width)
+            } else {
+                DType::UWord(width)
+            };
+
+            let write = match &final_write {
+                Some(w) => w.clone(),
+                None => {
+                    let w = Wire::new(*temp_index, dtype);
+                    *temp_index += 1;
+                    w
+                }
+            };
+            terms.push(
+                Term::function::<Wire<DType>, Wire<DType>, _, _>(
+                    IType::ConstInt(value),
+                    [write.clone()],
+                    vec![],
+                )
+                .unwrap(),
+            );
+
+            // Check for bit_select
+            if let Some(bs) = children.next()
+                && bs.as_rule() == Rule::bit_select
+            {
+                let mut bs_inner = bs.into_inner();
+                let high: u32 = bs_inner.next().unwrap().as_str().parse().unwrap();
+                let low: u32 = bs_inner.next().unwrap().as_str().parse().unwrap();
+                let bs_write = match &final_write {
+                    Some(w) => w.clone(),
+                    None => {
+                        let w = Wire::new(*temp_index, DType::UWord(high - low + 1));
+                        *temp_index += 1;
+                        w
+                    }
+                };
+                terms.push(
+                    Term::function(
+                        IType::BitSelect(high, low),
+                        [bs_write.clone()],
+                        vec![write.clone()],
+                    )
+                    .unwrap(),
+                );
+                return enforce(&final_write, terms, bs_write, vec![]);
+            }
+            enforce(&final_write, terms, write, vec![])
+        }
+
+        Rule::paren_expr => {
+            let mut inner_expr_pair = None;
+            let mut bit_sel = None;
+            for child in expr_pair.into_inner() {
+                if is_expr_rule(child.as_rule()) {
+                    inner_expr_pair = Some(child);
+                } else if child.as_rule() == Rule::bit_select {
+                    bit_sel = Some(child);
+                }
+            }
+            let (w, reads) = lower_expr_to_terms(
+                inner_expr_pair.unwrap(),
+                ctx,
+                if bit_sel.is_some() { None } else { final_write.clone() },
+                temp_index,
+                terms,
+            );
+            if let Some(bs) = bit_sel {
+                let mut bs_inner = bs.into_inner();
+                let high: u32 = bs_inner.next().unwrap().as_str().parse().unwrap();
+                let low: u32 = bs_inner.next().unwrap().as_str().parse().unwrap();
+                let bs_write = match &final_write {
+                    Some(fw) => fw.clone(),
+                    None => {
+                        let bw = Wire::new(*temp_index, DType::UWord(high - low + 1));
+                        *temp_index += 1;
+                        bw
+                    }
+                };
+                terms.push(
+                    Term::function(
+                        IType::BitSelect(high, low),
+                        [bs_write.clone()],
+                        vec![w],
+                    )
+                    .unwrap(),
+                );
+                return enforce(&final_write, terms, bs_write, reads);
+            }
+            enforce(&final_write, terms, w, reads)
+        }
+
+        Rule::builtin_call => {
+            let mut children_iter = expr_pair.into_inner();
+            let fn_pair = children_iter.next().unwrap(); // BUILTIN_FN
+            let fn_name = fn_pair.as_str();
+            let first_arg = children_iter.find(|p| is_expr_rule(p.as_rule())).unwrap();
+            let (arg_w, arg_reads) =
+                lower_expr_to_terms(first_arg, ctx, None, temp_index, terms);
+
+            let (itype, out_dtype) = match fn_name {
+                "bool" => (IType::ToBool, DType::Bool),
+                "word1" => (IType::ToWord1, DType::UWord(1)),
+                "unsigned" => (IType::ToUnsigned, DType::UWord(32)),
+                "signed" => (IType::ToSigned, DType::SWord(32)),
+                "extend" => {
+                    let width_pair = children_iter
+                        .find(|p| p.as_rule() == Rule::number || is_expr_rule(p.as_rule()))
+                        .unwrap();
+                    // Peel down to the number leaf
+                    let mut leaf = width_pair;
+                    while let Some(inner) = leaf.clone().into_inner().next() {
+                        if inner.as_rule() == Rule::number {
+                            leaf = inner;
+                            break;
+                        }
+                        leaf = inner;
+                    }
+                    let width: u32 = leaf.as_str().parse().unwrap();
+                    (IType::Extend(width), DType::UWord(32))
+                }
+                _ => unreachable!("unexpected builtin function: {}", fn_name),
+            };
+
+            let write = match &final_write {
+                Some(w) => w.clone(),
+                None => {
+                    let w = Wire::new(*temp_index, out_dtype);
+                    *temp_index += 1;
+                    w
+                }
+            };
+            terms.push(
+                Term::function(itype, [write.clone()], vec![arg_w]).unwrap(),
+            );
+            enforce(&final_write, terms, write, arg_reads)
+        }
+
         Rule::abs_call => {
             let mut inner_expr: Option<Pair<Rule>> = None;
             for child in expr_pair.clone().into_inner() {
                 match child.as_rule() {
-                    Rule::expr_cond
-                    | Rule::expr_implies
-                    | Rule::expr_iff
-                    | Rule::expr_or
-                    | Rule::expr_and
-                    | Rule::expr_not
-                    | Rule::expr_cmp
-                    | Rule::expr_arith
-                    | Rule::expr_mod
-                    | Rule::expr_term
-                    | Rule::neg_expr
-                    | Rule::expr_assign
-                    | Rule::case_expr
-                    | Rule::next_expr
-                    | Rule::abs_call
-                    | Rule::ident
-                    | Rule::number
-                    | Rule::TRUE
-                    | Rule::FALSE => {
+                    r if is_expr_rule(r) => {
                         inner_expr = Some(child);
                         break;
                     }
@@ -696,6 +827,22 @@ fn resolve_type(
         Rule::BOOLEAN => Ok(DType::Bool),
         Rule::INTEGER => Ok(DType::Int),
         Rule::range_type => Ok(DType::Int), // ignore bounds
+        Rule::word_type => {
+            let mut signed = false;
+            let mut width = 0u32;
+            for child in inner.into_inner() {
+                match child.as_rule() {
+                    Rule::SIGNED_KW => signed = true,
+                    Rule::number => width = child.as_str().parse().unwrap(),
+                    _ => {}
+                }
+            }
+            if signed {
+                Ok(DType::SWord(width))
+            } else {
+                Ok(DType::UWord(width))
+            }
+        }
         Rule::enum_type => {
             // Collect enum values and assign sequential integer codes
             let mut code: i64 = 0;
@@ -1094,7 +1241,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<ParseResult, &'static str> {
             // default init: constant zero / false
             let default_val = match dtype {
                 DType::Bool => IType::ConstBool(false),
-                DType::Int => IType::ConstInt(0),
+                DType::Int | DType::UWord(_) | DType::SWord(_) => IType::ConstInt(0),
             };
             let write = Wire::new(idx + n, *dtype);
             init_terms.push(
@@ -1280,6 +1427,10 @@ fn is_expr_rule(rule: Rule) -> bool {
             | Rule::case_expr
             | Rule::next_expr
             | Rule::abs_call
+            | Rule::builtin_call
+            | Rule::word_lit_expr
+            | Rule::word_literal
+            | Rule::paren_expr
             | Rule::ident
             | Rule::number
             | Rule::TRUE

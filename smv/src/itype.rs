@@ -40,6 +40,14 @@ pub enum IType {
     Next,
     Init,
     Assign,
+
+    // Word-level operations
+    BitSelect(u32, u32),
+    Extend(u32),
+    ToBool,
+    ToWord1,
+    ToUnsigned,
+    ToSigned,
 }
 
 impl fmt::Display for IType {
@@ -70,6 +78,12 @@ impl fmt::Display for IType {
             IType::Next => write!(f, "Next"),
             IType::Init => write!(f, "Init"),
             IType::Assign => write!(f, "Assign"),
+            IType::BitSelect(h, l) => write!(f, "BitSelect[{}:{}]", h, l),
+            IType::Extend(n) => write!(f, "Extend({})", n),
+            IType::ToBool => write!(f, "ToBool"),
+            IType::ToWord1 => write!(f, "ToWord1"),
+            IType::ToUnsigned => write!(f, "ToUnsigned"),
+            IType::ToSigned => write!(f, "ToSigned"),
         }
     }
 }
