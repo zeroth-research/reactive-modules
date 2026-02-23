@@ -1,5 +1,5 @@
-use base::{atom::Atom, module::Module, term::Term, wire::Wire};
-use smv::{dtype::DType, itype::IType, smv::parse_smv, smv::twin};
+use base::{module::Module, term::Term, wire::Wire};
+use smv::{dtype::DType, itype::IType, smv::parse_smv};
 use std::collections::HashMap;
 
 struct Context {
@@ -108,35 +108,18 @@ fn build_manual_module() -> Module<DType, IType> {
     let init_terms = init(&mut ctx);
 
     let latched = ctx.get_vars(vec!["x", "y", "z", "y0", "z0"]);
-    let next = twin(&latched, NEXT_OFFSET).expect("Failed getting primed variables");
+    let next: Vec<Wire<DType>> = latched.iter()
+        .map(|w| Wire::new(w.id() + NEXT_OFFSET as usize, *w.dtype()))
+        .collect();
 
-    // Construct atom using sequential API
-    // ctrl wires: x', y', z' (latched ids 0,1,2 → next ids 5,6,7)
-    let ctrl_latched: Vec<Wire<DType>> = vec![
-        Wire::new(0, DType::Int),
-        Wire::new(1, DType::Int),
-        Wire::new(2, DType::Int),
-    ];
-    // wait wires: y0, z0 (latched ids 3,4 → next ids 8,9)
-    let wait_latched: Vec<Wire<DType>> = vec![
-        Wire::new(3, DType::Int),
-        Wire::new(4, DType::Int),
-    ];
-    let ctrl_next = twin(&ctrl_latched, NEXT_OFFSET).expect("ctrl twin");
-    let wait_next = twin(&wait_latched, NEXT_OFFSET).expect("wait twin");
-    
-    let atom = Atom::sequential(
-        ctrl_latched.iter().chain(wait_latched.iter()),
-        ctrl_next.iter().chain(wait_next.iter()),
-        init_terms,
-        update_terms,
-    ).unwrap();
-
-    let obs_pairs = latched.iter().zip(next.iter()).map(|(l, n)| [l.clone(), n.clone()]).collect::<Vec<_>>();
-    Module::new(
+    let obs_pairs: Vec<[Wire<DType>; 2]> = latched.iter().zip(next.iter())
+        .map(|(l, n)| [l.clone(), n.clone()])
+        .collect();
+    Module::sequential(
         obs_pairs,
         std::iter::empty::<[Wire<DType>; 2]>(),
-        vec![atom],
+        init_terms,
+        update_terms,
     ).unwrap()
 }
 
@@ -162,54 +145,14 @@ fn counter_smv() {
     "#;
 
     let parsed_module = parse_smv(input).unwrap();
-    // Instead of printing to stdout during tests, write the same debug output
-    // that `dump_debug` would print into files under the smv crate tests
-    // directory so CI / editors don't get noisy output. Build the manual
-    // module using the handcrafted `build_manual_module` so the test truly
-    // exercises the manual builder.
+    let manual_module = build_manual_module();
+
     let parsed_out = format!("{:#?}", parsed_module);
-    let manual_out = format!("{:#?}", build_manual_module());
-
-    // Use the crate manifest dir to get a stable path to the smv crate
-    let crate_root = env!("CARGO_MANIFEST_DIR");
-    let parsed_path = std::path::Path::new(crate_root).join("tests/parsed.md");
-    let manual_path = std::path::Path::new(crate_root).join("tests/manual.md");
-
-    std::fs::write(&parsed_path, &parsed_out).expect("failed to write parsed.md");
-    std::fs::write(&manual_path, &manual_out).expect("failed to write manual.md");
-
-    // Build a textual diff (same semantics as debug_utils::compare_debug) and write to diff.md
-    let a_str = parsed_out.clone();
-    let b_str = manual_out.clone();
-    let a_lines: Vec<&str> = a_str.lines().collect();
-    let b_lines: Vec<&str> = b_str.lines().collect();
-
-    let mut diff_out = String::new();
-    diff_out.push_str("==================== Comparing Parsed vs Manual ====================\n");
-    for (i, (la, lb)) in a_lines.iter().zip(b_lines.iter()).enumerate() {
-        if la.trim() != lb.trim() {
-            diff_out.push_str(&format!("❌ Line {} differs:\n", i + 1));
-            diff_out.push_str(&format!("  Parsed: {}\n", la));
-            diff_out.push_str(&format!("  Manual: {}\n", lb));
-        }
-    }
-    if a_lines.len() != b_lines.len() {
-        diff_out.push_str(&format!(
-            "\n⚠️ Different number of lines ({} vs {})\n",
-            a_lines.len(),
-            b_lines.len()
-        ));
-    }
-    diff_out.push_str("==============================================================\n");
-
-    let diff_path = std::path::Path::new(crate_root).join("tests/diff.md");
-    std::fs::write(&diff_path, diff_out).expect("failed to write diff.md");
+    let manual_out = format!("{:#?}", manual_module);
 
     // Assert wire-range sections (extl, intf, ctrl, obs) match between parsed and manual modules.
-    let parsed_str = parsed_out.clone();
-    let manual_str = manual_out.clone();
-    let parsed_lines: Vec<&str> = parsed_str.lines().collect();
-    let manual_lines: Vec<&str> = manual_str.lines().collect();
+    let parsed_lines: Vec<&str> = parsed_out.lines().collect();
+    let manual_lines: Vec<&str> = manual_out.lines().collect();
 
     fn extract_section(lines: &[&str], header: &str) -> String {
         for (i, &line) in lines.iter().enumerate() {
