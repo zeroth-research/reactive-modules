@@ -76,8 +76,8 @@ fn main() {
     let args = Cli::parse();
     let input = std::fs::read_to_string(&args.spec).expect("Cannot read the input file");
 
-    let module = parse_smv(&input).unwrap();
-    let modules = vec![module];
+    let result = parse_smv(&input).unwrap();
+    let modules = vec![result.module];
 
     println!("Modules parsed successfully!");
 

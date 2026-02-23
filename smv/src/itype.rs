@@ -11,11 +11,16 @@ pub enum IType {
     Sub,
     Mul,
     Div,
+    Mod,
+    Neg,
 
     // Boolean operations
     Not,
     And,
     Or,
+    Xor,
+    Xnor,
+    Implies,
 
     // Comparisons
     Lt,
@@ -23,6 +28,7 @@ pub enum IType {
     Gt,
     Ge,
     Eq,
+    Neq,
 
     // Conditional expression (ternary operator)
     Cond,
@@ -45,14 +51,20 @@ impl fmt::Display for IType {
             IType::Sub => write!(f, "Sub"),
             IType::Mul => write!(f, "Mul"),
             IType::Div => write!(f, "Div"),
+            IType::Mod => write!(f, "Mod"),
+            IType::Neg => write!(f, "Neg"),
             IType::Not => write!(f, "Not"),
             IType::And => write!(f, "And"),
             IType::Or => write!(f, "Or"),
+            IType::Xor => write!(f, "Xor"),
+            IType::Xnor => write!(f, "Xnor"),
+            IType::Implies => write!(f, "Implies"),
             IType::Lt => write!(f, "Lt"),
             IType::Le => write!(f, "Le"),
             IType::Gt => write!(f, "Gt"),
             IType::Ge => write!(f, "Ge"),
             IType::Eq => write!(f, "Eq"),
+            IType::Neq => write!(f, "Neq"),
             IType::Cond => write!(f, "Cond"),
             IType::Abs => write!(f, "Abs"),
             IType::Next => write!(f, "Next"),

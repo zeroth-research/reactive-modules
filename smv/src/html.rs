@@ -88,7 +88,7 @@ impl SmvDescriptor {
             match it {
                 IType::ConstInt(v) => format!("<code>{}</code>", v),
                 IType::ConstBool(b) => format!("<code>{}</code>", b),
-                IType::Add | IType::Sub | IType::Mul | IType::Div => {
+                IType::Add | IType::Sub | IType::Mul | IType::Div | IType::Mod => {
                     let rds: Vec<_> = term.read().iter().collect();
                     if rds.len() >= 2 {
                         let op = match it {
@@ -96,11 +96,20 @@ impl SmvDescriptor {
                             IType::Sub => "-",
                             IType::Mul => "*",
                             IType::Div => "/",
+                            IType::Mod => "mod",
                             _ => "?",
                         };
                         let a = render_wire(rec, rds[0][0].id(), writer_map, visited);
                         let b = render_wire(rec, rds[1][0].id(), writer_map, visited);
                         return format!("{} {} {}", a, op, b);
+                    }
+                    String::new()
+                }
+                IType::Neg => {
+                    let rds: Vec<_> = term.read().iter().collect();
+                    if let Some([wire]) = rds.first() {
+                        let s = render_wire(rec, wire.id(), writer_map, visited);
+                        return format!("-{}", s);
                     }
                     String::new()
                 }
@@ -112,17 +121,24 @@ impl SmvDescriptor {
                     }
                     String::new()
                 }
-                IType::And | IType::Or => {
+                IType::And | IType::Or | IType::Xor | IType::Xnor | IType::Implies => {
                     let rds: Vec<_> = term.read().iter().collect();
                     if rds.len() >= 2 {
-                        let op = if let IType::And = it { "∧" } else { "∨" };
+                        let op = match it {
+                            IType::And => "∧",
+                            IType::Or => "∨",
+                            IType::Xor => "xor",
+                            IType::Xnor => "↔",
+                            IType::Implies => "→",
+                            _ => "?",
+                        };
                         let a = render_wire(rec, rds[0][0].id(), writer_map, visited);
                         let b = render_wire(rec, rds[1][0].id(), writer_map, visited);
                         return format!("{} {} {}", a, op, b);
                     }
                     String::new()
                 }
-                IType::Lt | IType::Le | IType::Gt | IType::Ge | IType::Eq => {
+                IType::Lt | IType::Le | IType::Gt | IType::Ge | IType::Eq | IType::Neq => {
                     let rds: Vec<_> = term.read().iter().collect();
                     if rds.len() >= 2 {
                         let op = match it {
@@ -131,6 +147,7 @@ impl SmvDescriptor {
                             IType::Gt => ">",
                             IType::Ge => ">=",
                             IType::Eq => "==",
+                            IType::Neq => "!=",
                             _ => "?",
                         };
                         let a = render_wire(rec, rds[0][0].id(), writer_map, visited);
@@ -258,19 +275,28 @@ impl SmvDescriptor {
                     format!("<code>{}</code>", b)
                 }
             }
-            IType::Add | IType::Sub | IType::Mul | IType::Div => {
+            IType::Add | IType::Sub | IType::Mul | IType::Div | IType::Mod => {
                 if !reads.is_empty() && !writes.is_empty() && reads.len() >= 2 {
                     let op = match it {
                         IType::Add => "+",
                         IType::Sub => "-",
                         IType::Mul => "*",
                         IType::Div => "/",
+                        IType::Mod => "mod",
                         _ => "?",
                     };
                     let src1 = emit_src(&reads[0]);
                     let src2 = emit_src(&reads[1]);
                     let tgt = emit_tgt(writes[0].0);
                     return format!("{} {} {} → {}", src1, op, src2, tgt);
+                }
+                String::new()
+            }
+            IType::Neg => {
+                if !reads.is_empty() && !writes.is_empty() {
+                    let src = emit_src(&reads[0]);
+                    let tgt = emit_tgt(writes[0].0);
+                    return format!("-{} → {}", src, tgt);
                 }
                 String::new()
             }
@@ -282,9 +308,16 @@ impl SmvDescriptor {
                 }
                 String::new()
             }
-            IType::And | IType::Or => {
+            IType::And | IType::Or | IType::Xor | IType::Xnor | IType::Implies => {
                 if !reads.is_empty() && !writes.is_empty() && reads.len() >= 2 {
-                    let op = if let IType::And = it { "∧" } else { "∨" };
+                    let op = match it {
+                        IType::And => "∧",
+                        IType::Or => "∨",
+                        IType::Xor => "xor",
+                        IType::Xnor => "↔",
+                        IType::Implies => "→",
+                        _ => "?",
+                    };
                     let src1 = emit_src(&reads[0]);
                     let src2 = emit_src(&reads[1]);
                     let tgt = emit_tgt(writes[0].0);
@@ -292,7 +325,7 @@ impl SmvDescriptor {
                 }
                 String::new()
             }
-            IType::Lt | IType::Le | IType::Gt | IType::Ge | IType::Eq => {
+            IType::Lt | IType::Le | IType::Gt | IType::Ge | IType::Eq | IType::Neq => {
                 if !reads.is_empty() && !writes.is_empty() && reads.len() >= 2 {
                     let op = match it {
                         IType::Lt => "<",
@@ -300,6 +333,7 @@ impl SmvDescriptor {
                         IType::Gt => ">",
                         IType::Ge => ">=",
                         IType::Eq => "==",
+                        IType::Neq => "!=",
                         _ => "?",
                     };
                     let src1 = emit_src(&reads[0]);
@@ -627,8 +661,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                     extra = format!("<p><code>{}</code> → <code>{}</code></p>", b, tgt);
                 }
             }
-            IType::Add | IType::Sub | IType::Mul | IType::Div => {
-                // Binary arithmetic: expect one write and two reads
+            IType::Add | IType::Sub | IType::Mul | IType::Div | IType::Mod => {
                 if let Some(w) = term.write().wires().next() {
                     let rds: Vec<_> = term.read().wires().collect();
                     if rds.len() >= 2 {
@@ -637,6 +670,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                             IType::Sub => "-",
                             IType::Mul => "*",
                             IType::Div => "/",
+                            IType::Mod => "mod",
                             _ => "?",
                         };
                         let src1 = self.describe_wire_id(rds[0].id(), DescriptionContext::Inline);
@@ -647,6 +681,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                             IType::Sub => "Subtraction",
                             IType::Mul => "Multiplication",
                             IType::Div => "Division",
+                            IType::Mod => "Modulo",
                             _ => "Arithmetic",
                         };
                         title_html = format!("<h3>{}</h3>", title_str);
@@ -657,6 +692,15 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                     }
                 }
             }
+            IType::Neg => {
+                if let (Some(w), Some(r)) = (term.write().wires().next(), term.read().wires().next())
+                {
+                    let tgt = self.describe_wire_id(w.id(), DescriptionContext::Inline);
+                    let src = self.describe_wire_id(r.id(), DescriptionContext::Inline);
+                    title_html = "<h3>Negation</h3>".to_string();
+                    extra = format!("<p><code>-{}</code> → <code>{}</code></p>", src, tgt);
+                }
+            }
             IType::Not => {
                 if let (Some(w), Some(r)) = (term.write().wires().next(), term.read().wires().next())
                 {
@@ -665,11 +709,18 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                     extra = format!("<p><code>!{}</code> → <code>{}</code></p>", src, tgt);
                 }
             }
-            IType::And | IType::Or => {
+            IType::And | IType::Or | IType::Xor | IType::Xnor | IType::Implies => {
                 if let Some(w) = term.write().wires().next() {
                     let rds: Vec<_> = term.read().wires().collect();
                     if rds.len() >= 2 {
-                        let op = if let IType::And = it { "∧" } else { "∨" };
+                        let op = match it {
+                            IType::And => "∧",
+                            IType::Or => "∨",
+                            IType::Xor => "xor",
+                            IType::Xnor => "↔",
+                            IType::Implies => "→",
+                            _ => "?",
+                        };
                         let src1 = self.describe_wire_id(rds[0].id(), DescriptionContext::Inline);
                         let src2 = self.describe_wire_id(rds[1].id(), DescriptionContext::Inline);
                         let tgt = self.describe_wire_id(w.id(), DescriptionContext::Inline);
@@ -680,7 +731,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                     }
                 }
             }
-            IType::Lt | IType::Le | IType::Gt | IType::Ge | IType::Eq => {
+            IType::Lt | IType::Le | IType::Gt | IType::Ge | IType::Eq | IType::Neq => {
                 if let Some(w) = term.write().wires().next() {
                     let rds: Vec<_> = term.read().wires().collect();
                     if rds.len() >= 2 {
@@ -690,6 +741,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                             IType::Gt => ">",
                             IType::Ge => ">=",
                             IType::Eq => "==",
+                            IType::Neq => "!=",
                             _ => "?",
                         };
                         let src1 = self.describe_wire_id(rds[0].id(), DescriptionContext::Inline);
@@ -701,6 +753,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                             IType::Gt => "Greater Than",
                             IType::Ge => "Greater Than or Equal",
                             IType::Eq => "Equality",
+                            IType::Neq => "Not Equal",
                             _ => "Comparison",
                         };
                         title_html = format!("<h3>{}</h3>", title_str);
