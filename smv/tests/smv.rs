@@ -144,7 +144,7 @@ fn counter_smv() {
             next(z) := z;
     "#;
 
-    let parsed_module = parse_smv(input).unwrap();
+    let parsed_module = parse_smv(input).unwrap().module;
     let manual_module = build_manual_module();
 
     let parsed_out = format!("{:#?}", parsed_module);
@@ -178,4 +178,267 @@ fn counter_smv() {
         let m = extract_section(&manual_lines, header);
         assert_eq!(p.trim(), m.trim(), "Wire section {} differs", header);
     }
+}
+
+// ==============================
+// New tests for NuSMV 2.1 grammar
+// ==============================
+
+#[test]
+fn case_esac() {
+    let input = r#"
+        MODULE main
+        VAR x : integer;
+        ASSIGN
+          init(x) := 0;
+          next(x) := case
+            x < 5  : x + 1;
+            TRUE   : 0;
+          esac;
+    "#;
+    let result = parse_smv(input).unwrap();
+    // Module should have 1 state var → 2 obs wires (latched + next)
+    let obs_count: usize = result.module.obs().iter().map(|arr| arr.len()).sum();
+    assert_eq!(obs_count, 2, "expected 2 obs wires for 1 state var");
+}
+
+#[test]
+fn not_precedence() {
+    // !a = b must parse as !(a = b), not (!a) = b
+    let input = r#"
+        MODULE main
+        VAR a : boolean; b : boolean;
+        ASSIGN
+          init(a) := FALSE; init(b) := FALSE;
+          next(a) := !a = b;
+          next(b) := b;
+    "#;
+    let result = parse_smv(input).unwrap();
+    // Find the update terms: should contain Eq followed by Not
+    let update_has_eq_then_not = result.module.atoms().iter().any(|atom| {
+        let terms: Vec<_> = atom.update().iter().collect();
+        let eq_pos = terms.iter().position(|t| matches!(t.itype(), IType::Eq));
+        let not_pos = terms.iter().position(|t| matches!(t.itype(), IType::Not));
+        match (eq_pos, not_pos) {
+            (Some(e), Some(n)) => e < n, // Eq must come before Not
+            _ => false,
+        }
+    });
+    assert!(update_has_eq_then_not, "!a = b should parse as !(a = b): Eq before Not");
+}
+
+#[test]
+fn neq_operator() {
+    let input = r#"
+        MODULE main
+        VAR x : integer; y : integer;
+        ASSIGN
+          init(x) := 0; init(y) := 1;
+          next(x) := (x != y) ? x + 1 : 0;
+          next(y) := y;
+    "#;
+    let result = parse_smv(input).unwrap();
+    // Should contain a Neq term
+    let has_neq = result.module.atoms().iter().any(|atom| {
+        atom.update().iter().any(|t| matches!(t.itype(), IType::Neq))
+    });
+    assert!(has_neq, "expected Neq term in update");
+}
+
+#[test]
+fn mod_operator() {
+    let input = r#"
+        MODULE main
+        VAR x : integer;
+        ASSIGN
+          init(x) := 0;
+          next(x) := x mod 3;
+    "#;
+    let result = parse_smv(input).unwrap();
+    let has_mod = result.module.atoms().iter().any(|atom| {
+        atom.update().iter().any(|t| matches!(t.itype(), IType::Mod))
+    });
+    assert!(has_mod, "expected Mod term in update");
+}
+
+#[test]
+fn implies_iff_xor() {
+    let input = r#"
+        MODULE main
+        VAR a : boolean; b : boolean; c : boolean;
+        ASSIGN
+          init(a) := FALSE; init(b) := TRUE; init(c) := FALSE;
+          next(a) := a -> b;
+          next(b) := a <-> b;
+          next(c) := a xor c;
+    "#;
+    let result = parse_smv(input).unwrap();
+    let all_update_itypes: Vec<String> = result.module.atoms().iter()
+        .flat_map(|atom| atom.update().iter().map(|t| format!("{}", t.itype())))
+        .collect();
+    assert!(all_update_itypes.iter().any(|s| s == "Implies"), "expected Implies");
+    assert!(all_update_itypes.iter().any(|s| s == "Xnor"), "expected Xnor (for <->)");
+    assert!(all_update_itypes.iter().any(|s| s == "Xor"), "expected Xor");
+}
+
+#[test]
+fn unary_minus() {
+    let input = r#"
+        MODULE main
+        VAR x : integer;
+        ASSIGN
+          init(x) := -1;
+          next(x) := -x;
+    "#;
+    let result = parse_smv(input).unwrap();
+    let has_neg = result.module.atoms().iter().any(|atom| {
+        atom.update().iter().any(|t| matches!(t.itype(), IType::Neg))
+    });
+    assert!(has_neg, "expected Neg term in update for -x");
+}
+
+#[test]
+fn define_expansion() {
+    let input = r#"
+        MODULE main
+        DEFINE inc := x + 1;
+        VAR x : integer;
+        ASSIGN
+          init(x) := 0;
+          next(x) := inc;
+    "#;
+    let result = parse_smv(input).unwrap();
+    // The DEFINE should be expanded: update should contain Add (from x + 1)
+    let has_add = result.module.atoms().iter().any(|atom| {
+        atom.update().iter().any(|t| matches!(t.itype(), IType::Add))
+    });
+    assert!(has_add, "DEFINE inc := x + 1 should expand to Add term");
+}
+
+#[test]
+fn range_type() {
+    let input = r#"
+        MODULE main
+        VAR x : 0..10;
+        ASSIGN
+          init(x) := 0;
+          next(x) := (x < 10) ? x + 1 : 0;
+    "#;
+    let result = parse_smv(input).unwrap();
+    let obs_count: usize = result.module.obs().iter().map(|arr| arr.len()).sum();
+    assert_eq!(obs_count, 2, "range type should map to Int, 1 state var → 2 obs wires");
+}
+
+#[test]
+fn enum_type() {
+    let input = r#"
+        MODULE main
+        VAR state : {idle, running, done};
+        ASSIGN
+          init(state) := idle;
+          next(state) := case
+            state = idle    : running;
+            state = running : done;
+            TRUE            : idle;
+          esac;
+    "#;
+    let result = parse_smv(input).unwrap();
+    // Should parse successfully, enum values mapped to ConstInt
+    let has_const_int = result.module.atoms().iter().any(|atom| {
+        atom.update().iter().any(|t| matches!(t.itype(), IType::ConstInt(_)))
+    });
+    assert!(has_const_int, "enum values should be lowered to ConstInt");
+}
+
+#[test]
+fn init_trans_sections() {
+    let input = r#"
+        MODULE main
+        VAR x : integer;
+        ASSIGN
+          next(x) := x + 1;
+        INIT
+          x = 0;
+        TRANS
+          next(x) < 100;
+    "#;
+    let result = parse_smv(input).unwrap();
+    assert!(!result.init_constraints.is_empty(), "expected init constraint terms");
+    assert!(!result.trans_constraints.is_empty(), "expected trans constraint terms");
+}
+
+#[test]
+fn invar_section() {
+    let input = r#"
+        MODULE main
+        IVAR y0 : integer;
+        VAR x : integer;
+        ASSIGN
+          init(x) := y0;
+          next(x) := x;
+        INVAR
+          x >= 0;
+    "#;
+    let result = parse_smv(input).unwrap();
+    assert!(!result.invar_constraints.is_empty(), "expected invar constraint terms");
+}
+
+#[test]
+fn frozenvar() {
+    let input = r#"
+        MODULE main
+        FROZENVAR c : integer;
+        VAR x : integer;
+        ASSIGN
+          init(x) := c;
+          next(x) := x + c;
+    "#;
+    let result = parse_smv(input).unwrap();
+    // Frozen var treated as state var with identity update: 2 state vars → 4 obs wires
+    let obs_count: usize = result.module.obs().iter().map(|arr| arr.len()).sum();
+    assert_eq!(obs_count, 4, "frozen var + state var → 4 obs wires");
+}
+
+#[test]
+fn nested_case() {
+    let input = r#"
+        MODULE main
+        VAR x : integer; y : integer;
+        ASSIGN
+          init(x) := 0; init(y) := 0;
+          next(x) := case
+            x < 5 : case
+              y = 0 : 1;
+              TRUE  : 2;
+            esac;
+            TRUE : 0;
+          esac;
+          next(y) := y;
+    "#;
+    let result = parse_smv(input).unwrap();
+    // Should have multiple Cond terms from nested case
+    let cond_count: usize = result.module.atoms().iter()
+        .flat_map(|atom| atom.update().iter())
+        .filter(|t| matches!(t.itype(), IType::Cond))
+        .count();
+    assert!(cond_count >= 2, "nested case should produce at least 2 Cond terms, got {}", cond_count);
+}
+
+#[test]
+fn keyword_in_ident() {
+    let input = r#"
+        MODULE main
+        VAR module_count : integer; order : integer; modify : integer;
+        ASSIGN
+          init(module_count) := 0;
+          init(order) := 0;
+          init(modify) := 0;
+          next(module_count) := module_count + 1;
+          next(order) := order;
+          next(modify) := modify;
+    "#;
+    let result = parse_smv(input).unwrap();
+    // Should parse without keyword conflicts; 3 state vars → 6 obs wires
+    let obs_count: usize = result.module.obs().iter().map(|arr| arr.len()).sum();
+    assert_eq!(obs_count, 6, "3 state vars → 6 obs wires");
 }
