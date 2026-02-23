@@ -54,7 +54,7 @@ def test_numpy_zeros():
 
     # Check that grid wire exists with correct shape
     assert "Tensor<3, 3; Float>" in init_str
-    print(f"✓ np.zeros((3, 3)) -> Tensor<3, 3; Float>")
+    print("✓ np.zeros((3, 3)) -> Tensor<3, 3; Float>")
 
 
 def test_numpy_ones():
@@ -66,7 +66,7 @@ def test_numpy_ones():
 
     # Check that weights wire exists with correct shape
     assert "Tensor<5; Float>" in init_str
-    print(f"✓ np.ones(5) -> Tensor<5; Float>")
+    print("✓ np.ones(5) -> Tensor<5; Float>")
 
 
 def test_numpy_array_1d():
@@ -78,7 +78,7 @@ def test_numpy_array_1d():
 
     # Check that values wire exists with correct shape
     assert "Tensor<3; Float>" in init_str
-    print(f"✓ np.array([1.0, 2.0, 3.0]) -> Tensor<3; Float>")
+    print("✓ np.array([1.0, 2.0, 3.0]) -> Tensor<3; Float>")
 
 
 def test_numpy_array_2d():
@@ -90,7 +90,7 @@ def test_numpy_array_2d():
 
     # Check that matrix wire exists with correct shape
     assert "Tensor<2, 2; Float>" in init_str
-    print(f"✓ np.array([[1.0, 2.0], [3.0, 4.0]]) -> Tensor<2, 2; Float>")
+    print("✓ np.array([[1.0, 2.0], [3.0, 4.0]]) -> Tensor<2, 2; Float>")
 
 
 if __name__ == "__main__":
