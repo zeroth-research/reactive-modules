@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IType {
     // Values and variables
     ConstBool(bool),
@@ -57,7 +57,7 @@ impl fmt::Display for IType {
             IType::Abs => write!(f, "Abs"),
             IType::Next => write!(f, "Next"),
             IType::Init => write!(f, "Init"),
-            IType::Assign => write!(f, "Id"),
+            IType::Assign => write!(f, "Assign"),
         }
     }
 }

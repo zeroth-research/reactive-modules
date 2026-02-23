@@ -533,7 +533,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
             return match sec {
                 "init" => "Init".into(),
                 "update" => "Update".into(),
-                _ => panic!("Invalid section"),
+                _ => format!("Unknown: {sec}"),
             };
         }
 
@@ -564,7 +564,7 @@ impl Descriptor<DType, IType> for SmvDescriptor {
                 }
             }
         } else {
-            panic!("Invalid section");
+            html.push_str(&format!("<h4>Unknown: {sec}</h4>"));
         }
 
         html

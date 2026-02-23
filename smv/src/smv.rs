@@ -1,4 +1,3 @@
-use base::atom::Atom;
 use base::module::Module;
 use base::term::Term;
 use base::wire::Wire;
@@ -8,58 +7,6 @@ use pest_derive::Parser;
 
 use crate::dtype::DType;
 use crate::itype::IType;
-
-/// Return a twin of wires by shifting every index by `offset` (signed).
-/// Returns Err on overflow/underflow.
-/// TODO: this method of creating next variables should be removed in the future
-pub fn twin(wires: &[Wire<DType>], offset: isize) -> Result<Vec<Wire<DType>>, &'static str> {
-    let mut shifted: Vec<Wire<DType>> = Vec::with_capacity(wires.len());
-    for wire in wires.iter() {
-        let ni = (wire.id() as isize).checked_add(offset).ok_or("index overflow")?;
-        if ni < 0 {
-            return Err("index underflow");
-        }
-        shifted.push(Wire::new(ni as usize, *wire.dtype()));
-    }
-    Ok(shifted)
-}
-
-// Helper: classify read wires returned by expression parsing into latched
-// vs ivar (wait) wires. `var_count` is the number of VAR declarations;
-// indices < var_count are latched, indices >= var_count are IVARs.
-fn classify_reads(
-    read: &[Wire<DType>],
-    var_count: usize,
-    read_latched: &mut Vec<Wire<DType>>,
-    wait_latched: &mut Vec<Wire<DType>>,
-) {
-    // Helper: append a single wire into target if not present
-    fn add_unique(target: &mut Vec<Wire<DType>>, idx: usize, dtype: DType) {
-        if !target.iter().any(|w| w.id() == idx) {
-            target.push(Wire::new(idx, dtype));
-        }
-    }
-
-    for wire in read.iter() {
-        let ri = wire.id();
-        let rdtype = wire.dtype();
-        if ri < var_count {
-            add_unique(read_latched, ri, *rdtype);
-        } else {
-            add_unique(wait_latched, ri, *rdtype);
-        }
-    }
-}
-
-// Small wrapper that returns (IType, read) by calling the main build_expr.
-fn build_expr_no_write(
-    expr_pair: Pair<Rule>,
-    wires: &[(String, usize, DType)],
-    offset: usize,
-) -> (IType, Wire<DType>) {
-    let (itype, _write, read) = build_expr(expr_pair, wires, offset);
-    (itype, read)
-}
 
 // Lower an expression into a sequence of Terms. `final_write` when provided
 // is the wire where the final result must be written (e.g., the next wire of
@@ -257,7 +204,7 @@ fn lower_expr_to_terms(
                     Rule::GT => IType::Gt,
                     Rule::GE => IType::Ge,
                     Rule::EQ => IType::Eq,
-                    _ => IType::Lt,
+                    _ => unreachable!("unexpected cmp op"),
                 };
                 terms.push(Term::function(tag, [write.clone()], read).unwrap());
                 // accumulate original-variable reads
@@ -282,7 +229,7 @@ fn lower_expr_to_terms(
                 let tag = match op.as_rule() {
                     Rule::PLUS => IType::Add,
                     Rule::MINUS => IType::Sub,
-                    _ => IType::Add,
+                    _ => unreachable!("unexpected arith op"),
                 };
                 terms.push(Term::function(tag, [write.clone()], read).unwrap());
                 // accumulate original-variable reads
@@ -314,7 +261,7 @@ fn lower_expr_to_terms(
                 let tag = match op.as_rule() {
                     Rule::TIMES => IType::Mul,
                     Rule::DIVIDE => IType::Div,
-                    _ => IType::Mul,
+                    _ => unreachable!("unexpected term op"),
                 };
                 terms.push(Term::function(tag, [write.clone()], read).unwrap());
                 left_read.extend_from_slice(&right_read);
@@ -333,9 +280,9 @@ fn lower_expr_to_terms(
                 let write = match &final_write {
                     Some(w) => w.clone(),
                     None => {
-                        Wire::new(*temp_index, DType::Bool);
+                        let w = Wire::new(*temp_index, DType::Bool);
                         *temp_index += 1;
-                        Wire::new(*temp_index - 1, DType::Bool)
+                        w
                     }
                 };
                 terms.push(Term::function(IType::Not, [write.clone()], vec![sub_wire]).unwrap());
@@ -367,9 +314,9 @@ fn lower_expr_to_terms(
             let write = match &final_write {
                 Some(w) => w.clone(),
                 None => {
-                    Wire::new(*temp_index, DType::Int);
+                    let w = Wire::new(*temp_index, DType::Int);
                     *temp_index += 1;
-                    Wire::new(*temp_index - 1, DType::Int)
+                    w
                 }
             };
             terms.push(Term::function::<Wire<DType>, Wire<DType>, _, _>(
@@ -400,9 +347,9 @@ fn lower_expr_to_terms(
             let write = match &final_write {
                 Some(w) => w.clone(),
                 None => {
-                    Wire::new(*temp_index, DType::Bool);
+                    let w = Wire::new(*temp_index, DType::Bool);
                     *temp_index += 1;
-                    Wire::new(*temp_index - 1, DType::Bool)
+                    w
                 }
             };
             terms.push(Term::function::<Wire<DType>, Wire<DType>, _, _>(
@@ -417,9 +364,9 @@ fn lower_expr_to_terms(
             let write = match &final_write {
                 Some(w) => w.clone(),
                 None => {
-                    Wire::new(*temp_index, DType::Bool);
+                    let w = Wire::new(*temp_index, DType::Bool);
                     *temp_index += 1;
-                    Wire::new(*temp_index - 1, DType::Bool)
+                    w
                 }
             };
             terms.push(Term::function::<Wire<DType>, Wire<DType>, _, _>(
@@ -509,35 +456,6 @@ fn lower_expr_to_terms(
     }
 }
 
-// Classify reads from a read-union Vec<Wire> but only consider original wires
-// (indices < n). `var_count` splits vars vs ivars.
-fn classify_reads_from_wire(
-    read: &[Wire<DType>],
-    var_count: usize,
-    n: usize,
-    read_latched: &mut Vec<Wire<DType>>,
-    wait_latched: &mut Vec<Wire<DType>>,
-) {
-    // Helper: append a single wire into target if not present
-    fn add_unique(target: &mut Vec<Wire<DType>>, idx: usize, dtype: DType) {
-        if !target.iter().any(|w| w.id() == idx) {
-            target.push(Wire::new(idx, dtype));
-        }
-    }
-
-    for wire in read.iter() {
-        let ri = wire.id();
-        let rdtype = wire.dtype();
-        if ri < var_count {
-            add_unique(read_latched, ri, *rdtype);
-        } else if ri < n {
-            add_unique(wait_latched, ri, *rdtype);
-        } else {
-            // temps and other generated wires are ignored for classification
-        }
-    }
-}
-
 #[derive(Parser)]
 #[grammar = "smv.pest"]
 pub struct SMVParser;
@@ -587,7 +505,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                             let dtype = match dtype_rule.as_str() {
                                 "boolean" => DType::Bool,
                                 "integer" => DType::Int,
-                                _ => DType::Bool,
+                                _ => return Err("unsupported type"),
                             };
                             ivar_decls.push((name, dtype));
                         }
@@ -604,7 +522,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                             let dtype = match dtype_rule.as_str() {
                                 "boolean" => DType::Bool,
                                 "integer" => DType::Int,
-                                _ => DType::Bool,
+                                _ => return Err("unsupported type"),
                             };
                             var_decls.push((name, dtype));
                         }
@@ -697,18 +615,6 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
     let mut init_terms: Vec<Term<DType, IType>> = vec![];
     let mut update_terms: Vec<Term<DType, IType>> = vec![];
 
-    let mut ctrl_latched = vec![];
-    let mut wait_latched = vec![];
-    let mut read_latched = vec![];
-
-    // Pre-populate wait_latched from IVAR declarations (they live after vars)
-    for (i, (_name, dtype)) in ivar_decls.iter().enumerate() {
-        let index = var_count + i;
-        if !wait_latched.iter().any(|w: &Wire<DType>| w.id() == index) {
-            wait_latched.push(Wire::new(index, *dtype));
-        }
-    }
-
     // temporaries start at 2*n to avoid colliding with latched/next ranges
     let mut temp_index: usize = 2 * n;
     for i in 0..var_count {
@@ -734,7 +640,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
             match leaf.as_rule() {
                 Rule::number => {
                     let sval = leaf.as_str();
-                    let parsed = sval.parse::<i64>().expect("invalid numeric literal");
+                    let parsed = sval.parse::<i64>().map_err(|_| "invalid numeric literal")?;
                     init_terms.push(Term::function::<Wire<DType>, Wire<DType>, _, _>(
                         IType::ConstInt(parsed),
                         [write.clone()],
@@ -744,44 +650,19 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                 Rule::ident => {
                     let nm = leaf.as_str().to_string();
                     if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
-                        // If the RHS is an IVAR (index >= var_count) then the
-                        // semantic init should use the IVAR's primed twin as the
-                        // source value (so the init term reads from ridx + n).
-                        // However, for classification of which original
-                        // variables are read (to compute wait_latched), we must
-                        // report the unprimed IVAR index. So emit an Assign
-                        // reading from the primed wire but classify using the
-                        // original unprimed wire.
                         if *ridx < var_count {
                             let read = Wire::new(*ridx, *rdtype);
-                            init_terms.push(Term::function(IType::Assign, [write.clone()], vec![read.clone()]).unwrap());
-                            classify_reads_from_wire(
-                                &[read],
-                                var_count,
-                                n,
-                                &mut read_latched,
-                                &mut wait_latched,
-                            );
+                            init_terms.push(Term::function(IType::Assign, [write.clone()], vec![read]).unwrap());
                         } else {
-                            let unprimed = Wire::new(*ridx, *rdtype);
                             let primed = Wire::new(*ridx + n, *rdtype);
                             init_terms.push(Term::function(
                                 IType::Assign,
                                 [write.clone()],
-                                vec![primed.clone()],
+                                vec![primed],
                             ).unwrap());
-                            // classify based on the unprimed IVAR index so the
-                            // module's wait_latched set includes this IVAR.
-                            classify_reads_from_wire(
-                                &[unprimed],
-                                var_count,
-                                n,
-                                &mut read_latched,
-                                &mut wait_latched,
-                            );
                         }
                     } else {
-                        let (_final_write, read_union) = lower_expr_to_terms(
+                        lower_expr_to_terms(
                             expr_pair.clone(),
                             &wires,
                             var_count,
@@ -789,13 +670,6 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                             Some(write.clone()),
                             &mut temp_index,
                             &mut init_terms,
-                        );
-                        classify_reads_from_wire(
-                            &read_union,
-                            var_count,
-                            n,
-                            &mut read_latched,
-                            &mut wait_latched,
                         );
                     }
                 }
@@ -811,42 +685,20 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                                 init_terms.push(Term::function(
                                     IType::Assign,
                                     [write.clone()],
-                                    vec![read.clone()],
+                                    vec![read],
                                 ).unwrap());
-                                classify_reads_from_wire(
-                                    &[read],
-                                    var_count,
-                                    n,
-                                    &mut read_latched,
-                                    &mut wait_latched,
-                                );
                             } else {
-                                let unprimed = Wire::new(*ridx, *rdtype);
                                 let primed = Wire::new(*ridx + n, *rdtype);
                                 init_terms.push(Term::function(
                                     IType::Assign,
                                     [write.clone()],
-                                    vec![primed.clone()],
+                                    vec![primed],
                                 ).unwrap());
-                                classify_reads_from_wire(
-                                    &[unprimed],
-                                    var_count,
-                                    n,
-                                    &mut read_latched,
-                                    &mut wait_latched,
-                                );
                             }
                             continue;
                         }
                     }
-                    // fallback: explicitly expand abs(inner) here so we can
-                    // ensure the final Cond writes directly into the primed
-                    // `write` wire and that the term reads use primed IVAR
-                    // indices while classification uses the original (unprimed)
-                    // inner reads. This keeps the Module representation
-                    // deterministic and avoids leaving an Abs term in a temp.
-                    // Lower the inner expression first (no final_write so it
-                    // may produce temps).
+                    // Fallback: lower the full abs expression.
                     // Find the actual inner expression inside the abs(...) pair
                     let mut inner_expr: Option<Pair<Rule>> = None;
                     for child in leaf.clone().into_inner() {
@@ -868,7 +720,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                         }
                     }
 
-                    let (inner_w, inner_read) = if let Some(p) = inner_expr {
+                    let (inner_w, _inner_read) = if let Some(p) = inner_expr {
                         lower_expr_to_terms(
                             p,
                             &wires,
@@ -879,7 +731,6 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                             &mut init_terms,
                         )
                     } else {
-                        // fallback to lowering the full leaf if we couldn't find a child
                         lower_expr_to_terms(
                             leaf.clone(),
                             &wires,
@@ -891,43 +742,22 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                         )
                     };
 
-                    // build a mapped view of the inner wire for term reads:
-                    // if an inner entry is an IVAR (var_count <= i < n) then
-                    // for init we must read its primed twin (i + n). Other
-                    // indices are used as-is.
-                    let mut mapped_inner = vec![];
+                    // If the inner wire is an IVAR, read its primed twin for init.
                     let i = inner_w.id();
                     let dt = inner_w.dtype();
-                    if i < n && i >= var_count {
-                        mapped_inner.push(Wire::new(i + n, *dt));
+                    let abs_read = if i < n && i >= var_count {
+                        Wire::new(i + n, *dt)
                     } else {
-                        mapped_inner.push(Wire::new(i, *dt));
-                    }
+                        Wire::new(i, *dt)
+                    };
 
-                    // Emit an Abs term that writes into a temporary, then an
-                    // Assign from that temporary into the primed `write` wire.
-                    // The Abs term's read should reference primed IVAR indices
-                    // (mapped_inner) while classification uses the original
-                    // inner_read (unprimed).
                     let temp_w = Wire::new(temp_index, DType::Int);
                     temp_index += 1;
-                    init_terms.push(Term::function(IType::Abs, [temp_w.clone()], mapped_inner.clone()).unwrap());
-
-                    // Move the Abs result into the variable's primed next wire
-                    init_terms.push(Term::function(IType::Assign, [write.clone()], vec![temp_w.clone()]).unwrap());
-
-                    // classification: report original reads from inner_read
-                    classify_reads_from_wire(
-                        &inner_read,
-                        var_count,
-                        n,
-                        &mut read_latched,
-                        &mut wait_latched,
-                    );
+                    init_terms.push(Term::function(IType::Abs, [temp_w.clone()], vec![abs_read]).unwrap());
+                    init_terms.push(Term::function(IType::Assign, [write.clone()], vec![temp_w]).unwrap());
                 }
                 _ => {
-                    // fallback to full lowering
-                    let (_final_write, read_union) = lower_expr_to_terms(
+                    lower_expr_to_terms(
                         expr_pair.clone(),
                         &wires,
                         var_count,
@@ -935,13 +765,6 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                         Some(write.clone()),
                         &mut temp_index,
                         &mut init_terms,
-                    );
-                    classify_reads_from_wire(
-                        &read_union,
-                        var_count,
-                        n,
-                        &mut read_latched,
-                        &mut wait_latched,
                     );
                 }
             }
@@ -957,11 +780,6 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
 
         // UPDATE
         if let Some((_, expr_pair)) = next_assigns.iter().find(|(n, _)| n == name) {
-            // include this var in ctrl (latched) — avoid duplicates
-            if !ctrl_latched.iter().any(|w: &Wire<DType>| w.id() == *idx) {
-                ctrl_latched.push(Wire::new(*idx, *dtype));
-            }
-
             // detect simple single-leaf RHS (drill down single-child chains)
             let mut leaf = expr_pair.clone();
             loop {
@@ -980,7 +798,7 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
             match leaf.as_rule() {
                 Rule::number => {
                     let sval = leaf.as_str();
-                    let parsed = sval.parse::<i64>().expect("invalid numeric literal");
+                    let parsed = sval.parse::<i64>().map_err(|_| "invalid numeric literal")?;
                     update_terms.push(Term::function::<Wire<DType>, Wire<DType>, _, _>(
                         IType::ConstInt(parsed),
                         [write.clone()],
@@ -991,16 +809,9 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                     let nm = leaf.as_str().to_string();
                     if let Some((_, ridx, rdtype)) = wires.iter().find(|(n, _, _)| n == &nm) {
                         let read = Wire::new(*ridx, *rdtype);
-                        update_terms.push(Term::function(IType::Assign, [write.clone()], vec![read.clone()]).unwrap());
-                        classify_reads_from_wire(
-                            &[read],
-                            var_count,
-                            n,
-                            &mut read_latched,
-                            &mut wait_latched,
-                        );
+                        update_terms.push(Term::function(IType::Assign, [write.clone()], vec![read]).unwrap());
                     } else {
-                        let (_final_write, read_union) = lower_expr_to_terms(
+                        lower_expr_to_terms(
                             expr_pair.clone(),
                             &wires,
                             var_count,
@@ -1008,13 +819,6 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                             Some(write.clone()),
                             &mut temp_index,
                             &mut update_terms,
-                        );
-                        classify_reads_from_wire(
-                            &read_union,
-                            var_count,
-                            n,
-                            &mut read_latched,
-                            &mut wait_latched,
                         );
                     }
                 }
@@ -1028,20 +832,12 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                             update_terms.push(Term::function(
                                 IType::Assign,
                                 [write.clone()],
-                                vec![read.clone()],
+                                vec![read],
                             ).unwrap());
-                            classify_reads_from_wire(
-                                &[read],
-                                var_count,
-                                n,
-                                &mut read_latched,
-                                &mut wait_latched,
-                            );
-                            // done
                             continue;
                         }
                     }
-                    let (_final_write, read_union) = lower_expr_to_terms(
+                    lower_expr_to_terms(
                         expr_pair.clone(),
                         &wires,
                         var_count,
@@ -1049,17 +845,10 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                         Some(write.clone()),
                         &mut temp_index,
                         &mut update_terms,
-                    );
-                    classify_reads_from_wire(
-                        &read_union,
-                        var_count,
-                        n,
-                        &mut read_latched,
-                        &mut wait_latched,
                     );
                 }
                 _ => {
-                    let (_final_write, read_union) = lower_expr_to_terms(
+                    lower_expr_to_terms(
                         expr_pair.clone(),
                         &wires,
                         var_count,
@@ -1067,246 +856,25 @@ fn build_module(file_pair: Pair<Rule>) -> Result<Module<DType, IType>, &'static 
                         Some(write.clone()),
                         &mut temp_index,
                         &mut update_terms,
-                    );
-                    classify_reads_from_wire(
-                        &read_union,
-                        var_count,
-                        n,
-                        &mut read_latched,
-                        &mut wait_latched,
                     );
                 }
             }
         } else {
             // default update: next(var) := var
-            if !ctrl_latched.iter().any(|w: &Wire<DType>| w.id() == *idx) {
-                ctrl_latched.push(Wire::new(*idx, *dtype));
-            }
             let write = Wire::new(idx + n, *dtype);
             let read = Wire::new(*idx, *dtype);
             update_terms.push(Term::function(IType::Assign, [write], vec![read]).unwrap());
         }
     }
 
-    // Step 5: create single Atom for the module using next-twinned ctrl/wait
-    let latched_start = latched.first().map(|w| w.id()).unwrap_or(0);
-    let next_start = next_wire.first().map(|w| w.id()).unwrap_or(0);
-    let offset: isize = (next_start as isize) - (latched_start as isize);
-    let ctrl_next = twin(&ctrl_latched, offset).unwrap();
-    let wait_next = twin(&wait_latched, offset).unwrap();
-    let atom = Atom::sequential(
-        ctrl_latched.iter().chain(wait_latched.iter()),
-        ctrl_next.iter().chain(wait_next.iter()),
-        init_terms,
-        update_terms,
-    ).unwrap();
-
-    // Use the Module::new constructor which will infer extl/intf/prvt
-    // from the provided observable wires and atoms.
+    // Step 5: construct module using Module::sequential
     let obs_pairs: Vec<[Wire<DType>; 2]> = latched.iter().zip(next_wire.iter())
         .map(|(l, n)| [l.clone(), n.clone()])
         .collect();
-    Module::new(
+    Module::sequential(
         obs_pairs,
         std::iter::empty::<[Wire<DType>; 2]>(),
-        vec![atom],
+        init_terms,
+        update_terms,
     )
-}
-
-fn build_expr(
-    expr_pair: Pair<Rule>,
-    wires: &[(String, usize, DType)],
-    offset: usize,
-) -> (IType, Wire<DType>, Wire<DType>) {
-    match expr_pair.as_rule() {
-        // conditional ?: (expr_cond)
-        Rule::expr_cond => {
-            let mut inner = expr_pair.into_inner();
-            let cond_pair = inner.next().unwrap();
-            let cond = build_expr(cond_pair, wires, offset);
-
-            if inner.peek().is_some() {
-                // consume "?" and parse branches
-                inner.next(); // skip '?'
-                let then_pair = inner.next().unwrap();
-                let _then_b = build_expr(then_pair, wires, offset);
-                inner.next(); // skip ':'
-                let else_pair = inner.next().unwrap();
-                let _else_b = build_expr(else_pair, wires, offset);
-
-                // safely combine reads without borrowing
-                let read = cond.2.clone();
-                // read tracking disabled
-                // read tracking disabled
-
-                (IType::Cond, Wire::new(offset, DType::Bool), read)
-            } else {
-                cond
-            }
-        }
-
-        // boolean OR
-        Rule::expr_or => {
-            let mut inner = expr_pair.into_inner();
-            let (left_itype, left_write, left_read) = build_expr(inner.next().unwrap(), wires, offset);
-            let mut combined = (left_itype, left_write, left_read);
-            while let Some(_next_pair) = inner.next() {
-                // next_pair is the OR token, next() is the rhs
-                let _rhs = build_expr(inner.next().unwrap(), wires, offset);
-                let read = combined.2.clone(); // simplified
-                combined = (IType::Or, Wire::new(offset, DType::Bool), read);
-            }
-            combined
-        }
-
-        // boolean AND
-        Rule::expr_and => {
-            let mut inner = expr_pair.into_inner();
-            let (left_itype, left_write, left_read) = build_expr(inner.next().unwrap(), wires, offset);
-            let mut combined = (left_itype, left_write, left_read);
-            while inner.peek().is_some() {
-                let _rhs = build_expr(inner.next().unwrap(), wires, offset);
-                let read = combined.2.clone(); // simplified
-                combined = (IType::And, Wire::new(offset, DType::Bool), read);
-            }
-            combined
-        }
-
-        // comparison level (expr_cmp): may chain comparisons, but we'll fold left-to-right
-        Rule::expr_cmp => {
-            let mut inner = expr_pair.into_inner();
-            let first = inner.next().unwrap();
-            let mut left = build_expr(first, wires, offset);
-
-            while let Some(op) = inner.next() {
-                let right_pair = inner.next().unwrap();
-                let _right = build_expr(right_pair, wires, offset);
-                let read = left.2.clone(); // simplified
-                left = match op.as_rule() {
-                    Rule::LT => (IType::Lt, Wire::new(offset, DType::Bool), read),
-                    Rule::LE => (IType::Le, Wire::new(offset, DType::Bool), read),
-                    Rule::GT => (IType::Gt, Wire::new(offset, DType::Bool), read),
-                    Rule::GE => (IType::Ge, Wire::new(offset, DType::Bool), read),
-                    Rule::EQ => (IType::Eq, Wire::new(offset, DType::Bool), read),
-                    _ => left, // shouldn't happen
-                };
-            }
-            left
-        }
-
-        // arithmetic (+,-)
-        Rule::expr_arith => {
-            let mut inner = expr_pair.into_inner();
-            let first_term = inner.next().unwrap();
-            let mut left = build_expr(first_term, wires, offset);
-
-            while let Some(op) = inner.next() {
-                let right_term = inner.next().unwrap();
-                let _right = build_expr(right_term, wires, offset);
-                let combined_read = left.2.clone(); // simplified
-
-                left = match op.as_rule() {
-                    Rule::PLUS => (IType::Add, Wire::new(offset, DType::Int), combined_read),
-                    Rule::MINUS => (IType::Sub, Wire::new(offset, DType::Int), combined_read),
-                    _ => {
-                        left = build_expr(op, wires, offset);
-                        continue;
-                    }
-                };
-            }
-            left
-        }
-
-        // term level (*,/)
-        Rule::expr_term => {
-            let mut inner = expr_pair.into_inner();
-            let first_primary = inner.next().unwrap();
-            let mut left = build_expr(first_primary, wires, offset);
-
-            while let Some(op) = inner.next() {
-                let right_primary = inner.next().unwrap();
-                let _right = build_expr(right_primary, wires, offset);
-                let combined_read = left.2.clone(); // simplified
-
-                left = match op.as_rule() {
-                    Rule::TIMES => (IType::Mul, Wire::new(offset, DType::Int), combined_read),
-                    Rule::DIVIDE => (IType::Div, Wire::new(offset, DType::Int), combined_read),
-                    _ => {
-                        left = build_expr(op, wires, offset);
-                        continue;
-                    }
-                };
-            }
-            left
-        }
-
-        // factor level: NOT or primary
-        Rule::expr_factor => {
-            let mut inner = expr_pair.into_inner();
-            let first = inner.next().unwrap();
-            if first.as_rule() == Rule::NOT {
-                // next item is the factor being negated
-                let inner_factor = inner.next().unwrap();
-                let (_sub_itype, _, sub_read) = build_expr(inner_factor, wires, offset);
-                (IType::Not, Wire::new(offset, DType::Bool), sub_read)
-            } else {
-                // first is a primary expression
-                build_expr(first, wires, offset)
-            }
-        }
-
-        Rule::expr_assign => {
-            let mut inner = expr_pair.into_inner();
-            let _target = inner.next().unwrap();
-            let value_expr = inner.next().unwrap();
-            let rhs = build_expr(value_expr, wires, offset);
-            (IType::Assign, Wire::new(0, DType::Bool), rhs.2.clone())
-        }
-
-        // primary tokens
-        Rule::number => {
-            let sval = expr_pair.as_str();
-            let parsed = sval.parse::<i64>().expect("invalid numeric literal");
-            (IType::ConstInt(parsed), Wire::new(0, DType::Int), Wire::new(0, DType::Int))
-        }
-
-        Rule::ident => {
-            let name = expr_pair.as_str().to_string();
-            if let Some((_, idx, dtype)) = wires.iter().find(|(n, _, _)| n == &name) {
-                // Variable references are represented by Assign with the read wire set to the variable
-                (IType::Assign, Wire::new(0, DType::Bool), Wire::new(idx + offset, *dtype))
-            } else {
-                (IType::Assign, Wire::new(0, DType::Bool), Wire::new(0, DType::Bool))
-            }
-        }
-
-        Rule::TRUE => (IType::ConstBool(false), Wire::new(0, DType::Bool), Wire::new(0, DType::Bool)),
-        Rule::FALSE => (IType::ConstBool(false), Wire::new(0, DType::Bool), Wire::new(0, DType::Bool)),
-
-        Rule::expr_primary => {
-            // unwrap parenthesized expression or forward to inner
-            if let Some(inner) = expr_pair.into_inner().next() {
-                build_expr(inner, wires, offset)
-            } else {
-                (IType::ConstBool(false), Wire::new(0, DType::Bool), Wire::new(0, DType::Bool)) // unreachable fallback
-            }
-        }
-
-        Rule::abs_call => {
-            // abs(expr) — hacky: treat as identity of inner expression
-            if let Some(inner) = expr_pair.into_inner().next() {
-                build_expr(inner, wires, offset)
-            } else {
-                (IType::ConstBool(false), Wire::new(0, DType::Bool), Wire::new(0, DType::Bool))
-            }
-        }
-
-        _ => {
-            if let Some(inner) = expr_pair.clone().into_inner().next() {
-                build_expr(inner, wires, offset)
-            } else {
-                panic!("unhandled expr in helper: {:?}", expr_pair.as_rule())
-            }
-        }
-    }
 }
