@@ -1,0 +1,139 @@
+// ==============================
+// NuSMV Subset Grammar (Pest)
+// ==============================
+//
+// Supports modules, variables, assignments, arithmetic,
+// boolean logic, comparisons, and ternary conditionals (? :)
+// including assignment expressions inside conditionals.
+//
+// Example:
+//
+// MODULE main
+// IVAR
+//   y0 : integer;
+// VAR
+//   x : integer;
+//   y : integer;
+// ASSIGN
+//   init(x) := 0;
+//   (x < y) ? next(x) := x + 1 : next(x) := 0;
+// ===========================================
+
+WHITESPACE  = _{ " " | "\t" | NEWLINE }
+NEWLINE     = _{ "\r\n" | "\n" | "\r" }
+COMMENT     = _{ "--" ~ (!NEWLINE ~ ANY)* }
+
+file        =  { SOI ~ module_decl ~ EOI }
+
+module_decl =  { MODULE ~ ident ~ ( "(" ~ param_list? ~ ")" )? ~ module_body }
+
+param_list  =  { ident ~ ("," ~ ident)* }
+
+module_body =  { (ivar_section | var_section | define_section | assign_section | invar_section | init_section | trans_section)* }
+
+invar_section = { INVAR ~ expr ~ ";" }
+init_section = { INIT_KW ~ expr ~ ";" }
+trans_section = { TRANS ~ expr ~ ";" }
+
+ivar_section =  { IVAR ~ ivar_decl+ }
+ivar_decl    =  { ident ~ ":" ~ type_spec ~ ";" }
+
+var_section  =  { VAR ~ var_decl+ }
+var_decl     =  { ident ~ ":" ~ type_spec ~ ";" }
+
+type_spec    =  { BOOLEAN | INTEGER | enum_type }
+enum_type    =  { ENUM ~ "{" ~ enum_value_list ~ "}" }
+enum_value_list = { ident ~ ("," ~ ident)* }
+
+define_section = { DEFINE ~ define_decl+ }
+define_decl    = { ident ~ ":=" ~ expr ~ ";" }
+
+assign_section = { ASSIGN ~ assign_stmt+ }
+assign_stmt    = {
+    ( init_ref | next_ref | ident ) ~ ":=" ~ expr ~ ";"
+}
+
+init_ref = { INIT ~ "(" ~ ident ~ ")" }
+next_ref = { NEXT ~ "(" ~ ident ~ ")" }
+
+// =============================
+// EXPRESSIONS
+// =============================
+
+expr         = _{ expr_cond }
+
+// Conditional (supports ternary ? :)
+expr_cond    = { expr_or ~ (QUESTION ~ expr ~ COLON ~ expr)? }
+
+// Boolean OR
+expr_or      = { expr_and ~ (OR ~ expr_and)* }
+
+// Boolean AND
+expr_and     = { expr_cmp ~ (AND ~ expr_cmp)* }
+
+// Comparison (<, <=, =, >, >=)
+expr_cmp     = { expr_arith ~ ((LT | LE | GT | GE | EQ) ~ expr_arith)* }
+
+// Arithmetic (+, -)
+expr_arith   = { expr_term ~ ((PLUS | MINUS) ~ expr_term)* }
+
+// Term (*, /)
+expr_term    = { expr_factor ~ ((TIMES | DIVIDE) ~ expr_factor)* }
+
+// Factor (NOT or primary)
+expr_factor  = _{ (NOT ~ expr_factor) | expr_primary }
+
+// Assignment used as an expression (for ternary branches)
+expr_assign  = { ( init_ref | next_ref | ident ) ~ ":=" ~ expr }
+
+// Primary expressions
+expr_primary = _{
+      TRUE
+    | FALSE
+    | abs_call
+    | ident
+    | number
+    | "(" ~ expr ~ ")"
+    | expr_assign
+}
+
+abs_call = { ABS ~ "(" ~ expr ~ ")" }
+
+// =============================
+// TERMINALS
+// =============================
+
+MODULE   =  @{ "MODULE" }
+IVAR     =  @{ "IVAR" }
+VAR      =  @{ "VAR" }
+DEFINE   =  @{ "DEFINE" }
+ASSIGN   =  @{ "ASSIGN" }
+INIT     =  @{ "init" }
+INIT_KW  =  @{ "INIT" }
+ABS      =  @{ "abs" }
+TRANS    =  @{ "TRANS" }
+NEXT     =  @{ "next" }
+INVAR    =  @{ "INVAR" }
+BOOLEAN  =  @{ "boolean" }
+INTEGER  =  @{ "integer" }
+ENUM     =  @{ "enum" }
+TRUE     =  @{ "TRUE" }
+FALSE    =  @{ "FALSE" }
+
+QUESTION =  @{ "?" }
+COLON    =  @{ ":" }
+LT       =  @{ "<" }
+LE       =  @{ "<=" }
+GT       =  @{ ">" }
+GE       =  @{ ">=" }
+EQ       =  @{ "=" }
+AND      =  @{ "&" | "and" }
+OR       =  @{ "|" | "or" }
+NOT      =  @{ "!" | "not" }
+PLUS     =  @{ "+" }
+MINUS    =  @{ "-" }
+TIMES    =  @{ "*" }
+DIVIDE   =  @{ "/" }
+
+ident    =  @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+number   =  @{ ASCII_DIGIT+ }
