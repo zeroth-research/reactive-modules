@@ -363,8 +363,14 @@ fn init_trans_sections() {
           next(x) < 100;
     "#;
     let result = parse_smv(input).unwrap();
-    assert!(!result.init_constraints.is_empty(), "expected init constraint terms");
-    assert!(!result.trans_constraints.is_empty(), "expected trans constraint terms");
+    assert!(
+        result.init_constraints.is_empty(),
+        "INIT x = 0 should be promoted to init assign"
+    );
+    assert!(
+        !result.trans_constraints.is_empty(),
+        "TRANS next(x) < 100 has LT, not EQ — stays as constraint"
+    );
 }
 
 #[test]
@@ -464,12 +470,217 @@ fn word_type_and_literal() {
     let result = parse_smv(input).unwrap();
     let obs_count: usize = result.module.obs().iter().map(|arr| arr.len()).sum();
     assert_eq!(obs_count, 4, "2 state vars → 4 obs wires");
-    assert!(!result.init_constraints.is_empty(), "expected init constraint terms");
-    assert!(!result.trans_constraints.is_empty(), "expected trans constraint terms");
+    assert!(
+        result.init_constraints.is_empty(),
+        "INIT constraints should be promoted"
+    );
+    assert!(
+        result.trans_constraints.is_empty(),
+        "TRANS constraints should be promoted"
+    );
+    let has_add = result
+        .module
+        .atoms()
+        .iter()
+        .any(|atom| atom.update().iter().any(|t| matches!(t.itype(), IType::Add)));
+    assert!(has_add, "expected Add in module update from x + 0ud16_1");
 }
 
 #[test]
 fn builtin_bool_word1() {
+    let input = r#"
+        MODULE main
+        VAR a : unsigned word[1]; b : boolean;
+        ASSIGN
+          init(a) := 0ud1_0; init(b) := FALSE;
+          next(a) := word1(b);
+          next(b) := bool(a);
+    "#;
+    let result = parse_smv(input).unwrap();
+    let all_update_itypes: Vec<String> = result
+        .module
+        .atoms()
+        .iter()
+        .flat_map(|atom| atom.update().iter().map(|t| format!("{}", t.itype())))
+        .collect();
+    assert!(
+        all_update_itypes.iter().any(|s| s == "ToBool"),
+        "expected ToBool in update, got {:?}",
+        all_update_itypes
+    );
+    assert!(
+        all_update_itypes.iter().any(|s| s == "ToWord1"),
+        "expected ToWord1 in update, got {:?}",
+        all_update_itypes
+    );
+}
+
+#[test]
+fn builtin_unsigned_extend() {
+    let input = r#"
+        MODULE main
+        VAR x : unsigned word[16]; y : unsigned word[32];
+        ASSIGN
+          init(x) := 0ud16_0; init(y) := 0ud32_0;
+          next(x) := x;
+          next(y) := extend(x, 16) + unsigned(0sd32_42);
+    "#;
+    let result = parse_smv(input).unwrap();
+    let all_update_itypes: Vec<String> = result
+        .module
+        .atoms()
+        .iter()
+        .flat_map(|atom| atom.update().iter().map(|t| format!("{}", t.itype())))
+        .collect();
+    assert!(
+        all_update_itypes.iter().any(|s| s == "Extend(16)"),
+        "expected Extend(16) in update, got {:?}",
+        all_update_itypes
+    );
+    assert!(
+        all_update_itypes.iter().any(|s| s == "ToUnsigned"),
+        "expected ToUnsigned in update, got {:?}",
+        all_update_itypes
+    );
+}
+
+#[test]
+fn bit_select() {
+    let input = r#"
+        MODULE main
+        VAR x : unsigned word[32]; y : unsigned word[16];
+        ASSIGN
+          init(x) := 0ud32_0; init(y) := 0ud16_0;
+          next(x) := x;
+          next(y) := (x)[15:0];
+    "#;
+    let result = parse_smv(input).unwrap();
+    let all_update_itypes: Vec<String> = result
+        .module
+        .atoms()
+        .iter()
+        .flat_map(|atom| atom.update().iter().map(|t| format!("{}", t.itype())))
+        .collect();
+    assert!(
+        all_update_itypes.iter().any(|s| s == "BitSelect[15:0]"),
+        "expected BitSelect[15:0] in update, got {:?}",
+        all_update_itypes
+    );
+}
+
+/// INVAR promotion: single-target `var = expr` promoted to define + update
+/// when the variable has no existing ASSIGN/TRANS next entry.
+#[test]
+fn invar_promoted_as_define() {
+    // y has no TRANS/ASSIGN next, so INVAR y = extend(x, 16) is promotable.
+    let input = r#"
+        MODULE main
+        VAR x : unsigned word[16]; y : unsigned word[32];
+        INVAR
+          y = extend(x, 16);
+        TRANS
+          next(x) = x;
+    "#;
+    let result = parse_smv(input).unwrap();
+    assert!(
+        result.invar_constraints.is_empty(),
+        "single-target INVAR y = extend(x, 16) should be promoted"
+    );
+    assert!(
+        result.trans_constraints.is_empty(),
+        "TRANS constraints should be promoted"
+    );
+    let all_update_itypes: Vec<String> = result
+        .module
+        .atoms()
+        .iter()
+        .flat_map(|atom| atom.update().iter().map(|t| format!("{}", t.itype())))
+        .collect();
+    assert!(
+        all_update_itypes.iter().any(|s| s == "Extend(16)"),
+        "expected Extend(16) in update from promoted INVAR, got {:?}",
+        all_update_itypes
+    );
+}
+
+/// INVAR with duplicate targets stays as constraint (not promoted).
+#[test]
+fn invar_duplicate_target_stays_constraint() {
+    let input = r#"
+        MODULE main
+        VAR x : unsigned word[32]; y : unsigned word[16];
+        INVAR
+          y = (x)[15:0];
+        INVAR
+          y = 0sd32_100[15:0];
+        TRANS
+          next(x) = x;
+        TRANS
+          next(y) = y;
+    "#;
+    let result = parse_smv(input).unwrap();
+    assert!(
+        !result.invar_constraints.is_empty(),
+        "duplicate-target INVARs should stay as constraints"
+    );
+    let all_itypes: Vec<String> = result
+        .invar_constraints
+        .iter()
+        .map(|t| format!("{}", t.itype()))
+        .collect();
+    assert!(
+        all_itypes.iter().any(|s| s == "BitSelect[15:0]"),
+        "expected BitSelect[15:0] in invar constraints, got {:?}",
+        all_itypes
+    );
+}
+
+/// INVAR with non-EQ operator stays as constraint.
+#[test]
+fn invar_non_eq_stays_constraint() {
+    let input = r#"
+        MODULE main
+        VAR x : integer;
+        TRANS next(x) = x + 1;
+        INVAR x >= 0;
+        INVAR x < 100;
+    "#;
+    let result = parse_smv(input).unwrap();
+    assert!(
+        result.trans_constraints.is_empty(),
+        "TRANS should be promoted"
+    );
+    // Each INVAR expression may lower to multiple terms (sub-expressions + comparison).
+    assert!(
+        result.invar_constraints.len() >= 2,
+        "both non-EQ INVARs should stay as constraints, got {} terms",
+        result.invar_constraints.len()
+    );
+}
+
+/// INVAR not promoted when variable already has ASSIGN next.
+#[test]
+fn invar_with_existing_assign_stays_constraint() {
+    let input = r#"
+        MODULE main
+        VAR x : integer; y : integer;
+        ASSIGN
+          init(x) := 0; init(y) := 0;
+          next(x) := x + 1;
+          next(y) := y;
+        INVAR y = x;
+    "#;
+    let result = parse_smv(input).unwrap();
+    assert!(
+        !result.invar_constraints.is_empty(),
+        "INVAR y = x should stay as constraint when y already has ASSIGN next"
+    );
+}
+
+/// When TRANS entries are promoted first, INVAR targeting the same variables
+/// stays as constraints (not promoted to define_map to avoid conflicts).
+#[test]
+fn invar_blocked_by_trans_stays_constraint() {
     let input = r#"
         MODULE main
         VAR a : unsigned word[1]; b : boolean;
@@ -483,7 +694,16 @@ fn builtin_bool_word1() {
           next(b) = b;
     "#;
     let result = parse_smv(input).unwrap();
-    assert!(!result.invar_constraints.is_empty(), "expected invar constraints");
+    // TRANS entries promote first (a and b both get next_assigns).
+    // INVARs can't promote because both variables already have next_assigns.
+    assert!(
+        result.trans_constraints.is_empty(),
+        "TRANS should be promoted"
+    );
+    assert!(
+        !result.invar_constraints.is_empty(),
+        "INVARs should stay as constraints when TRANS already provides next_assigns"
+    );
     let all_itypes: Vec<String> = result
         .invar_constraints
         .iter()
@@ -502,65 +722,6 @@ fn builtin_bool_word1() {
 }
 
 #[test]
-fn builtin_unsigned_extend() {
-    let input = r#"
-        MODULE main
-        VAR x : unsigned word[16]; y : unsigned word[32];
-        INVAR
-          y = extend(x, 16);
-        INVAR
-          y = unsigned(0sd32_42);
-        TRANS
-          next(x) = x;
-        TRANS
-          next(y) = y;
-    "#;
-    let result = parse_smv(input).unwrap();
-    let all_itypes: Vec<String> = result
-        .invar_constraints
-        .iter()
-        .map(|t| format!("{}", t.itype()))
-        .collect();
-    assert!(
-        all_itypes.iter().any(|s| s == "Extend(16)"),
-        "expected Extend(16) in invar constraints, got {:?}",
-        all_itypes
-    );
-    assert!(
-        all_itypes.iter().any(|s| s == "ToUnsigned"),
-        "expected ToUnsigned in invar constraints, got {:?}",
-        all_itypes
-    );
-}
-
-#[test]
-fn bit_select() {
-    let input = r#"
-        MODULE main
-        VAR x : unsigned word[32]; y : unsigned word[16];
-        INVAR
-          y = (x)[15:0];
-        INVAR
-          y = 0sd32_100[15:0];
-        TRANS
-          next(x) = x;
-        TRANS
-          next(y) = y;
-    "#;
-    let result = parse_smv(input).unwrap();
-    let all_itypes: Vec<String> = result
-        .invar_constraints
-        .iter()
-        .map(|t| format!("{}", t.itype()))
-        .collect();
-    assert!(
-        all_itypes.iter().any(|s| s == "BitSelect[15:0]"),
-        "expected BitSelect[15:0] in invar constraints, got {:?}",
-        all_itypes
-    );
-}
-
-#[test]
 fn semicolon_free_sections() {
     let input = r#"
         MODULE main
@@ -573,15 +734,53 @@ fn semicolon_free_sections() {
     "#;
     let result = parse_smv(input).unwrap();
     assert!(
-        !result.init_constraints.is_empty(),
-        "expected init constraints from semicolon-free INIT"
+        result.init_constraints.is_empty(),
+        "INIT constraints should be promoted"
     );
     assert!(
         !result.invar_constraints.is_empty(),
-        "expected invar constraints from semicolon-free INVAR"
+        "INVAR x >= 0 has GE — stays as constraint"
     );
     assert!(
-        !result.trans_constraints.is_empty(),
-        "expected trans constraints from semicolon-free TRANS"
+        result.trans_constraints.is_empty(),
+        "TRANS constraints should be promoted"
+    );
+    let has_add = result
+        .module
+        .atoms()
+        .iter()
+        .any(|atom| atom.update().iter().any(|t| matches!(t.itype(), IType::Add)));
+    assert!(has_add, "expected Add in module update from x + 1");
+}
+
+#[test]
+fn hrm_word_level() {
+    let input = include_str!("../../hrm_word_level_no_prop.smv");
+    let result = parse_smv(input).unwrap();
+    assert!(
+        result.init_constraints.is_empty(),
+        "all INIT should be promoted, got {} constraints",
+        result.init_constraints.len()
+    );
+    assert!(
+        result.trans_constraints.is_empty(),
+        "all TRANS should be promoted, got {} constraints",
+        result.trans_constraints.len()
+    );
+    assert!(
+        result.invar_constraints.is_empty(),
+        "all INVAR should be promoted, got {} constraints",
+        result.invar_constraints.len()
+    );
+    let update_count: usize = result
+        .module
+        .atoms()
+        .iter()
+        .flat_map(|atom| atom.update().iter())
+        .count();
+    assert!(
+        update_count > 124,
+        "expected >124 update terms, got {}",
+        update_count
     );
 }
