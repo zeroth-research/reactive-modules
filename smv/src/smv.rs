@@ -870,6 +870,104 @@ fn resolve_type(
     }
 }
 
+/// Unwrap single-child expression wrappers to reach the leaf node.
+fn peel_single_child<'a>(pair: &Pair<'a, Rule>) -> Pair<'a, Rule> {
+    let mut current = pair.clone();
+    loop {
+        let mut inner = current.clone().into_inner();
+        match (inner.next(), inner.next()) {
+            (Some(child), None) => current = child,
+            _ => return current,
+        }
+    }
+}
+
+/// Peel through expression precedence chain (expr_cond → ... → expr_cmp),
+/// returning Some(expr_cmp) if the expression is a simple comparison.
+/// Returns None if any level has multiple children before reaching expr_cmp.
+fn peel_to_cmp<'a>(pair: &Pair<'a, Rule>) -> Option<Pair<'a, Rule>> {
+    let mut current = pair.clone();
+    loop {
+        match current.as_rule() {
+            Rule::expr_cmp => return Some(current),
+            Rule::expr_cond | Rule::expr_implies | Rule::expr_iff | Rule::expr_or
+            | Rule::expr_and | Rule::expr_not => {
+                let mut inner = current.clone().into_inner();
+                let first = inner.next()?;
+                if inner.next().is_some() {
+                    return None; // compound expression at this level
+                }
+                current = first;
+            }
+            _ => return None,
+        }
+    }
+}
+
+/// Detect `var = expr` pattern in INIT/INVAR constraint expressions.
+/// Returns (var_name, rhs_expr) if the expression matches.
+fn try_extract_init_assign<'a>(
+    expr: &Pair<'a, Rule>,
+    var_names: &HashSet<String>,
+) -> Option<(String, Pair<'a, Rule>)> {
+    let cmp = peel_to_cmp(expr)?;
+    let mut children = cmp.into_inner();
+    let lhs = children.next()?;
+    let op = children.next()?;
+    let rhs = children.next()?;
+    if children.next().is_some() {
+        return None; // chained comparison
+    }
+    if op.as_rule() != Rule::EQ {
+        return None;
+    }
+    let lhs_leaf = peel_single_child(&lhs);
+    if lhs_leaf.as_rule() != Rule::ident {
+        return None;
+    }
+    let name = lhs_leaf.as_str().to_string();
+    if !var_names.contains(&name) {
+        return None;
+    }
+    Some((name, rhs))
+}
+
+/// Detect `next(var) = expr` pattern in TRANS constraint expressions.
+/// Returns (var_name, rhs_expr) if the expression matches.
+fn try_extract_trans_assign<'a>(
+    expr: &Pair<'a, Rule>,
+    var_names: &HashSet<String>,
+) -> Option<(String, Pair<'a, Rule>)> {
+    let cmp = peel_to_cmp(expr)?;
+    let mut children = cmp.into_inner();
+    let lhs = children.next()?;
+    let op = children.next()?;
+    let rhs = children.next()?;
+    if children.next().is_some() {
+        return None; // chained comparison
+    }
+    if op.as_rule() != Rule::EQ {
+        return None;
+    }
+    let lhs_leaf = peel_single_child(&lhs);
+    if lhs_leaf.as_rule() != Rule::next_expr {
+        return None;
+    }
+    // Extract ident from next(ident)
+    let inner = lhs_leaf
+        .into_inner()
+        .find(|p: &Pair<Rule>| p.as_rule() != Rule::NEXT)?;
+    let ident_leaf = peel_single_child(&inner);
+    if ident_leaf.as_rule() != Rule::ident {
+        return None;
+    }
+    let name = ident_leaf.as_str().to_string();
+    if !var_names.contains(&name) {
+        return None;
+    }
+    Some((name, rhs))
+}
+
 fn build_module(file_pair: Pair<Rule>) -> Result<ParseResult, &'static str> {
     let mut var_decls: Vec<(String, DType)> = vec![];
     let mut ivar_decls: Vec<(String, DType)> = vec![];
@@ -1038,6 +1136,74 @@ fn build_module(file_pair: Pair<Rule>) -> Result<ParseResult, &'static str> {
         let index = wires.len();
         wires.push((name.clone(), index, *dtype));
     }
+
+    // === Constraint-to-assignment promotion ===
+    // Pattern-match INIT/TRANS/INVAR constraint expressions and promote
+    // assignment patterns (var = expr, next(var) = expr) to module assignments.
+    let var_names: HashSet<String> = var_decls.iter().map(|(n, _)| n.clone()).collect();
+
+    // TRANS promotion: next(var) = expr → next_assigns
+    let mut remaining_trans = vec![];
+    for expr in trans_exprs.drain(..) {
+        if let Some((name, rhs)) = try_extract_trans_assign(&expr, &var_names) {
+            if !next_assigns.iter().any(|(n, _)| n == &name) {
+                next_assigns.push((name, rhs));
+            } else {
+                remaining_trans.push(expr);
+            }
+        } else {
+            remaining_trans.push(expr);
+        }
+    }
+    trans_exprs = remaining_trans;
+
+    // INIT promotion: var = expr → init_assigns
+    let mut remaining_init = vec![];
+    for expr in init_exprs.drain(..) {
+        if let Some((name, rhs)) = try_extract_init_assign(&expr, &var_names) {
+            if !init_assigns.iter().any(|(n, _)| n == &name) {
+                init_assigns.push((name, rhs));
+            } else {
+                remaining_init.push(expr);
+            }
+        } else {
+            remaining_init.push(expr);
+        }
+    }
+    init_exprs = remaining_init;
+
+    // INVAR promotion: var = expr → define_map + init_assigns + next_assigns
+    // First pass: count targets per variable
+    let mut invar_target_count: HashMap<String, usize> = HashMap::new();
+    let mut invar_parsed: Vec<Option<(String, Pair<Rule>)>> = vec![];
+    for expr in &invar_exprs {
+        if let Some((name, rhs)) = try_extract_init_assign(expr, &var_names) {
+            *invar_target_count.entry(name.clone()).or_insert(0) += 1;
+            invar_parsed.push(Some((name, rhs)));
+        } else {
+            invar_parsed.push(None);
+        }
+    }
+    // Second pass: promote single-target INVARs as defines + update assignments.
+    // Only promote if the variable doesn't already have an ASSIGN/TRANS next entry,
+    // otherwise the define expansion would incorrectly replace wire reads.
+    // NOT added to init_assigns because INVAR expressions may read latched wires
+    // which are unavailable during init (Module::sequential init block can only
+    // read wait wires, not read/latched wires).
+    let mut remaining_invar = vec![];
+    for (expr, parsed) in invar_exprs.drain(..).zip(invar_parsed.into_iter()) {
+        match parsed {
+            Some((name, rhs))
+                if invar_target_count.get(&name) == Some(&1)
+                    && !next_assigns.iter().any(|(n, _)| n == &name) =>
+            {
+                define_map.insert(name.clone(), rhs.clone());
+                next_assigns.push((name, rhs));
+            }
+            _ => remaining_invar.push(expr),
+        }
+    }
+    invar_exprs = remaining_invar;
 
     let n = wires.len();
     let var_count = var_decls.len();
