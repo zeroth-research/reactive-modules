@@ -3,150 +3,49 @@ import inspect
 import ast
 import textwrap
 from contextlib import contextmanager
-from typing import Any
-from zrth import DType, Module, Wire, Term, IType
+from zrth import DType, Wire, Term, IType
 from zrth.module import WirePair
 
 
-def convert_method(method, args, result):
-    return None
-
-
-# ============================================================================
-# Main Entry Point
-# ============================================================================
-
-
-def convert_to_module(python_object: Any):
-    """Convert a Python object to a reactive Module
+def convert_method(
+    method,
+    wires: dict[str, WirePair],
+    result: list[Wire],
+    cls=None,
+) -> list[Term]:
+    """Convert a Python method to a list of Terms.
 
     Args:
-        python_object: Object to convert (QNetwork, SimpleEnv, etc.)
+        method: Unbound method to convert (e.g. cls.reset, cls.step, cls.forward)
+        wires: All named wire pairs available to the method - both method
+               parameters (by parameter name) and self.* attributes (by attr name)
+        result: Ordered list of next-wires matched positionally to the return tuple
+        cls: Class owning the method, needed only for inlining self.helper() calls
 
     Returns:
-        Rust Module object
+        List of Terms representing the method as a reactive diagram
     """
-    if hasattr(python_object, "forward") and isinstance(python_object, torch.nn.Module):
-        return _convert_torch_module(python_object)
-    elif hasattr(python_object, "step") and hasattr(python_object, "reset"):
-        return _convert_gym_env(python_object)
-    else:
-        raise ValueError(f"Don't know how to convert {type(python_object)}")
+    source = textwrap.dedent(inspect.getsource(method))
+    func_def = ast.parse(source).body[0]
+    if not isinstance(func_def, ast.FunctionDef):
+        raise ValueError(f"Expected function definition, got {type(func_def).__name__}")
 
+    # Seed temp_vars with current-wires for params that appear in wires dict
+    param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
+    visitor = MethodVisitor(wires, result, cls=cls)
+    visitor.temp_vars.update(
+        {name: wires[name][0] for name in param_names if name in wires}
+    )
 
-# TODO: Convert before __init__, in __new__
+    for stmt in func_def.body:
+        visitor.visit(stmt)
+
+    return visitor.terms
 
 
 # ============================================================================
-# PyTorch Module Conversion
+# PyTorch Layer Helpers (used by NN conversion)
 # ============================================================================
-
-
-def _convert_torch_module(module: torch.nn.Module):
-    """Convert PyTorch module to reactive Module
-
-    Args:
-        module: PyTorch module with extl/intf wire declarations
-
-    Returns:
-        Combinatorial Module
-    """
-    first_layer = None
-    for layer in module.children():
-        if isinstance(layer, torch.nn.Linear):
-            first_layer = layer
-            break
-    if first_layer is None:
-        raise ValueError("Can't find Linear layer to determine input shape")
-
-    input_size = first_layer.in_features
-    example_input = torch.zeros(1, input_size)
-    traced = torch.jit.trace(module, example_input)
-
-    if len(module.extl) != 1 or len(module.intf) != 1:
-        raise ValueError(
-            f"Only single input/output modules supported. Got {len(module.extl)} inputs, {len(module.intf)} outputs"
-        )
-
-    operations = _parse_torchscript_graph(traced.graph, module)
-
-    terms = []
-    current_wire = module.extl2[0].nxt()
-
-    for op in operations:
-        if op["type"] == "linear":
-            current_wire = _translate_linear(current_wire, op["layer"], terms)
-        elif op["type"] == "relu":
-            current_wire = _translate_relu(current_wire, terms)
-        else:
-            raise ValueError(f"Unsupported operation: {op['type']}")
-
-    output_wire: Wire = module.intf2[0].nxt()
-    term = Term(IType.Id(), [output_wire], [current_wire])
-    terms.append(term)
-
-    obs = module.extl2 + module.intf2
-    module = Module.combinatorial(assign=terms, obs=obs)
-
-    return module
-
-
-def _parse_torchscript_graph(graph, module):
-    """Parse TorchScript graph to extract operation sequence
-
-    Args:
-        graph: TorchScript graph from traced module
-        module: Original PyTorch module (for layer objects)
-
-    Returns:
-        List of operation dicts: [{'type': 'linear', 'layer': layer_obj}, {'type': 'relu'}, ...]
-    """
-    operations = []
-
-    layer_map = {}
-    for name, layer in module.named_children():
-        layer_map[name] = layer
-
-    getattr_outputs = {}
-
-    for node in graph.nodes():
-        kind = node.kind()
-
-        if kind == "prim::GetAttr":
-            layer_name = node.s("name")
-            output_name = node.output().debugName()
-
-            if layer_name in layer_map:
-                getattr_outputs[output_name] = (layer_name, layer_map[layer_name])
-
-        elif kind == "prim::CallMethod":
-            method_name = node.s("name")
-
-            if method_name == "forward":
-                inputs = list(node.inputs())
-                if len(inputs) >= 1:
-                    layer_ref = inputs[0].debugName()
-
-                    if layer_ref in getattr_outputs:
-                        layer_name, layer_obj = getattr_outputs[layer_ref]
-
-                        if isinstance(layer_obj, torch.nn.Linear):
-                            operations.append({"type": "linear", "layer": layer_obj})
-                        else:
-                            raise ValueError(
-                                f"Unsupported layer type: {type(layer_obj).__name__}"
-                            )
-
-        elif kind == "aten::relu":
-            operations.append({"type": "relu"})
-
-        elif kind in ["prim::Constant", "prim::ListConstruct"]:
-            continue
-
-        else:
-            raise ValueError(f"Unsupported operation: {kind}")
-
-    return operations
 
 
 def _translate_linear(input_wire: Wire, layer, terms: list[Term]) -> Wire:
@@ -168,9 +67,7 @@ def _translate_linear(input_wire: Wire, layer, terms: list[Term]) -> Wire:
     weight_term = Term(weight_itype, [weight_wire], [])
     terms.append(weight_term)
 
-    matmul_dtype = DType.TensorFloat(
-        [input_wire.dtype().shape[0], weight_tensor.shape[1]]
-    )
+    matmul_dtype = DType.TensorFloat([input_wire.dtype().shape[0], weight_tensor.shape[1]])
     matmul_wire = Wire(matmul_dtype)
     matmul_term = Term(IType.MatMul(), [matmul_wire], [input_wire, weight_wire])
     terms.append(matmul_term)
@@ -207,114 +104,6 @@ def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
     return output_wire
 
 
-# ============================================================================
-# Gym Environment Conversion
-# ============================================================================
-
-
-def _convert_gym_env(env):
-    """Convert gym environment to reactive Module
-
-    Args:
-        env: Environment with reset() and step() methods, and extl/intf/prvt wire declarations
-
-    Returns:
-        Sequential Module
-    """
-    if not all(hasattr(env, attr) for attr in ("extl", "intf", "prvt")):
-        raise ValueError(
-            "Environment must declare extl, intf, prvt wires (SequentialModule)"
-        )
-
-    # wire_pairs = {
-    #    name: wp
-    #    for name, wp in zip(
-    #        env.extl_names + env.intf_names + env.prvt_names,
-    #        env.extl + env.intf + env.prvt,
-    #    )
-    # }
-    wire_pairs = env.name_to_wires()
-    wire_to_name = {w[0]: name for name, w in wire_pairs.items()}
-    # TODO: check if we need also next wires in this mapping
-    wire_to_name.update({w[1]: name for name, w in wire_pairs.items()})
-
-    init_terms = _parse_method(env, env.reset, wire_pairs, wire_to_name)
-    update_terms = _parse_method(env, env.step, wire_pairs, wire_to_name)
-
-    required_wires = [wp[1] for wp in env.intf2 + env.prvt2]
-    _ensure_wires_assigned(init_terms, required_wires, mode="init")
-    _ensure_wires_assigned(update_terms, required_wires, mode="update")
-
-    return Module.sequential(
-        init=init_terms, update=update_terms, obs=env.extl2 + env.intf2, prvt=env.prvt2
-    )
-
-
-def _parse_method(env, method, wire_pairs, wire_to_name):
-    """Parse Python method and generate Terms using AST analysis
-
-    Args:
-        env: Environment object
-        method: Method to parse (reset or step)
-        wire_pairs: Dict mapping wire names to (current_wire, next_wire) tuples
-
-    Returns:
-        List of Terms
-    """
-    source = textwrap.dedent(inspect.getsource(method))
-    func_def = ast.parse(source).body[0]
-    if not isinstance(func_def, ast.FunctionDef):
-        raise ValueError("Expected function definition")
-
-    visitor = MethodVisitor(env, wire_pairs, wire_to_name)
-    visitor.temp_vars.update(
-        {
-            arg.arg: wire_pairs[arg.arg][0]
-            for arg in func_def.args.args
-            if arg.arg != "self" and arg.arg in wire_pairs
-        }
-    )
-
-    for stmt in func_def.body:
-        visitor.visit(stmt)
-
-    # After visiting all statements, write interface wires from temp_vars
-    for wire in env.intf:
-        wire_name = wire_to_name[wire]
-        if wire_name in visitor.temp_vars and wire_name not in visitor.written_wires:
-            result_wire = visitor.temp_vars[wire_name]
-            output_wire = wire_pairs[wire_name][1]
-            term = Term(IType.Id(), [output_wire], [result_wire])
-            visitor.terms.append(term)
-            visitor.written_wires.add(wire_name)
-
-    return visitor.terms
-
-
-def _ensure_wires_assigned(terms, required_wires, mode):
-    """Validate all required wires are assigned
-
-    Args:
-        terms: List of Terms to check
-        required_wires: List of Wire objects that must be written
-        mode: String ('init' or 'update') for error messages
-
-    Raises:
-        ValueError: If any required wire is not assigned
-    """
-    written_ids = set()
-    for term in terms:
-        for wire in term.write:
-            written_ids.add(wire.id())
-
-    missing_ids = [w.id() for w in required_wires if w.id() not in written_ids]
-    if missing_ids:
-        raise ValueError(
-            f"Wire(s) with id(s) {missing_ids} not assigned in {mode}() method. "
-            f"Ensure all interface and private wires are written. "
-            f"Written: {sorted(written_ids)}, Required: {sorted(w.id() for w in required_wires)}"
-        )
-
 
 class MethodVisitor(ast.NodeVisitor):
     """AST visitor to convert Python methods to reactive Terms
@@ -339,11 +128,14 @@ class MethodVisitor(ast.NodeVisitor):
     }
 
     def __init__(
-        self, env, wire_pairs: dict[str, WirePair], wire_to_name: dict[Wire, str]
+        self,
+        wire_pairs: dict[str, WirePair],
+        result_wires: list[Wire],
+        cls=None,
     ):
-        self.env = env
         self.wire_pairs = wire_pairs
-        self.wire_to_name = wire_to_name
+        self.result_wires = result_wires
+        self.cls = cls
         self.terms = []
         self.temp_vars = {}
         self.scopes = []
@@ -500,36 +292,31 @@ class MethodVisitor(ast.NodeVisitor):
                 "Augmented assignment only supported for self.attribute wires"
             )
 
-    def visit_Return(self, node):
-        """Handle return statement
+    def visit_Expr(self, node):
+        """Silently skip bare expression statements (e.g. super().reset(seed=seed))"""
+        pass
 
-        Stores return values in temp_vars. Actual wire writes happen in _parse_method.
-        """
-        # Parse return values into temp_vars
-        if node.value is not None:
-            if isinstance(node.value, ast.Tuple):
-                if len(node.value.elts) != len(self.env.intf):
-                    raise ValueError(
-                        f"Return tuple length ({len(node.value.elts)}) "
-                        f"doesn't match interface wires ({len(self.env.intf)})"
-                    )
-                for wire, value_node in zip(self.env.intf, node.value.elts):
-                    wire_name = self.wire_to_name[wire]
-                    target_dtype = wire.dtype()
-                    self.temp_vars[wire_name] = self._convert_expr(
-                        value_node, target_dtype=target_dtype
-                    )
-            else:
-                if len(self.env.intf) != 1:
-                    raise ValueError(
-                        f"Single return value but {len(self.env.intf)} interface wires"
-                    )
-                wire = self.env.intf[0]
-                wire_name = self.wire_to_name[wire]
-                target_dtype = wire.dtype()
-                self.temp_vars[wire_name] = self._convert_expr(
-                    node.value, target_dtype=target_dtype
-                )
+    def visit_Return(self, node):
+        """Handle return statement: zip return values positionally with result_wires"""
+        if node.value is None:
+            return
+
+        value_nodes = (
+            node.value.elts
+            if isinstance(node.value, ast.Tuple)
+            else [node.value]
+        )
+
+        if len(value_nodes) != len(self.result_wires):
+            raise ValueError(
+                f"Return has {len(value_nodes)} value(s) but "
+                f"{len(self.result_wires)} result wire(s) were declared"
+            )
+
+        for result_wire, value_node in zip(self.result_wires, value_nodes):
+            target_dtype = result_wire.dtype()
+            src_wire = self._convert_expr(value_node, target_dtype=target_dtype)
+            self.terms.append(Term(IType.Id(), [result_wire], [src_wire]))
 
     def _convert_expr(self, expr, target_dtype=None):
         """Convert AST expression node to Wire object
@@ -574,6 +361,12 @@ class MethodVisitor(ast.NodeVisitor):
                     return self._convert_numpy_creation(
                         method, call.args, target_dtype=target_dtype
                     )
+                elif name == "torch":
+                    if method == "relu":
+                        input_wire = self._convert_expr(call.args[0], target_dtype=target_dtype)
+                        return _translate_relu(input_wire, self.terms)
+                    else:
+                        raise ValueError(f"Unsupported torch function: torch.{method}")
                 elif name == "self":
                     return self._inline_method(method, call.args)
 
@@ -961,10 +754,10 @@ class MethodVisitor(ast.NodeVisitor):
 
     def _inline_method(self, method_name, args):
         """Inline simple method by extracting its return expression"""
-        if not hasattr(self.env, method_name):
+        if self.cls is None or not hasattr(self.cls, method_name):
             raise ValueError(f"Method not found: {method_name}")
 
-        method = getattr(self.env, method_name)
+        method = getattr(self.cls, method_name)
         source = textwrap.dedent(inspect.getsource(method))
         method_def = ast.parse(source).body[0]
         if not isinstance(method_def, ast.FunctionDef):

@@ -15,12 +15,15 @@ class Env(Module, gym.Env):
         truncated = [Wire(DType.TensorBool([1])), Wire(DType.TensorBool([1]))]
 
         # TODO: infer
-        state = [Wire(DType.TensorInt([1])), Wire(DType.TensorInt([1]))]
+        state = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
 
-        args = (q_values)
-        result = (observation[1], reward[1], terminated[1], truncated[1])
-        reset = convert_method(cls.reset, args, result)
-        step = convert_method(cls.step, args, result)
+        wires = {
+            'q_values': q_values,
+            'state': state,
+        }
+        result = [observation[1], reward[1], terminated[1], truncated[1]]
+        reset = convert_method(cls.reset, wires, result, cls=cls)
+        step = convert_method(cls.step, wires, result, cls=cls)
 
         obs = [q_values, observation, reward, terminated, truncated]
         prvt = [state]
@@ -30,12 +33,12 @@ class NN(Module, nn.Module):
     
     def __new__(cls, *args, **kwargs):
         # TODO: trace the init for q_values and observation sizes
-        q_values = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
         observation = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
-
-        args = (observation)
-        result = (q_values)
-        forward = convert_method(cls.forward, args, result)
+        q_values = [Wire(DType.TensorFloat([2])), Wire(DType.TensorFloat([2]))]
+        
+        wires = {'observation': observation}
+        result = [q_values[1]]
+        forward = convert_method(cls.forward, wires, result, cls=cls)
 
         obs = [observation, q_values]
         return super().__new__(cls, assign=forward, obs=obs)
