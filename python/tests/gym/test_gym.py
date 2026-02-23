@@ -4,15 +4,13 @@ from zrth import reset_ctx, Module
 
 def simpleqnet():
     qnet = SimpleQNet(
-        extl=["observation: Tensor<1; Float>"],
-        intf=["q_values: Tensor<2; Float>"],
         state_size=1,
         action_size=2,
         hidden_size=2,
     )
 
     print("QNetwork reactive module:")
-    print(qnet.unwrap())
+    print(qnet)
 
     return qnet
 
@@ -22,19 +20,10 @@ def test_simpleqnet_conversion():
 
 
 def simpleenv():
-    env = SimpleEnv(
-        extl=["q_values: Tensor<2; Float>"],
-        intf=[
-            "observation: Tensor<1; Float>",
-            "reward: Tensor<1; Float>",
-            "terminated: Tensor<1; Bool>",
-            "truncated: Tensor<1; Bool>",
-        ],
-        prvt=["state: Tensor<1; Float>"],
-    )
+    env = SimpleEnv()
 
     print("\nSimpleEnv reactive module:")
-    print(env.unwrap())
+    print(env)
 
     return env
 
@@ -45,8 +34,6 @@ def test_simpleenv_conversion():
 
 def gridworldqnet():
     qnet = GridWorldQNet(
-        extl=["observation: Tensor<1; Float>"],
-        intf=["q_values: Tensor<4; Float>"],
         state_size=1,
         action_size=4,
         hidden_size1=8,
@@ -54,7 +41,7 @@ def gridworldqnet():
     )
 
     print("GridWorldQNet reactive module:")
-    print(qnet.unwrap())
+    print(qnet)
 
     return qnet
 
@@ -64,22 +51,10 @@ def test_gridworldqnet_conversion():
 
 
 def gridworldenv():
-    env = GridWorldEnv(
-        extl=["q_values: Tensor<4; Float>"],
-        intf=[
-            "observation: Tensor<1; Float>",
-            "reward: Tensor<1; Float>",
-            "terminated: Tensor<1; Bool>",
-            "truncated: Tensor<1; Bool>",
-        ],
-        prvt=[
-            "x: Tensor<1; Float>",
-            "y: Tensor<1; Float>",
-        ],
-    )
+    env = GridWorldEnv()
 
     print("\nGridWorldEnv reactive module:")
-    print(env.unwrap())
+    print(env)
 
     return env
 
@@ -89,23 +64,10 @@ def test_gridworldenv_conversion():
 
 
 def complexdecisionenv():
-    env = ComplexDecisionEnv(
-        extl=["q_values: Tensor<10; Float>"],
-        intf=[
-            "observation: Tensor<1; Float>",
-            "reward: Tensor<1; Float>",
-            "terminated: Tensor<1; Bool>",
-            "truncated: Tensor<1; Bool>",
-        ],
-        prvt=[
-            "score: Tensor<1; Float>",
-            "multiplier: Tensor<1; Float>",
-            "bonus_active: Tensor<1; Bool>",
-        ],
-    )
+    env = ComplexDecisionEnv()
 
     print("\nComplexDecisionEnv reactive module:")
-    print(env.unwrap())
+    print(env)
 
     return env
 
@@ -115,19 +77,10 @@ def test_complexdecisionenv_conversion():
 
 
 def earlyreturnenv():
-    env = EarlyReturnEnv(
-        extl=["q_values: Tensor<5; Float>"],
-        intf=[
-            "observation: Tensor<1; Float>",
-            "reward: Tensor<1; Float>",
-            "terminated: Tensor<1; Bool>",
-            "truncated: Tensor<1; Bool>",
-        ],
-        prvt=["counter: Tensor<1; Float>"],
-    )
+    env = EarlyReturnEnv()
 
     print("\nEarlyReturnEnv reactive module:")
-    print(env.unwrap())
+    print(env)
 
     return env
 
@@ -137,19 +90,10 @@ def test_earlyreturnenv_conversion():
 
 
 def comparisonchainenv():
-    env = ComparisonChainEnv(
-        extl=["q_values: Tensor<3; Float>"],
-        intf=[
-            "observation: Tensor<1; Float>",
-            "reward: Tensor<1; Float>",
-            "terminated: Tensor<1; Bool>",
-            "truncated: Tensor<1; Bool>",
-        ],
-        prvt=["value: Tensor<1; Float>"],
-    )
+    env = ComparisonChainEnv()
 
     print("\nComparisonChainEnv reactive module:")
-    print(env.unwrap())
+    print(env)
 
     return env
 
@@ -164,7 +108,7 @@ if __name__ == "__main__":
     print("\n" + "="*60 + "\n")
     env = simpleenv()
     print("\n" + "="*60 + "\n")
-    composed = Module.parallel(qnet.unwrap(), env.unwrap())
+    composed = Module.parallel(qnet, env)
     print(composed)
     
     print("\n" + "="*60 + "\n")
@@ -177,7 +121,7 @@ if __name__ == "__main__":
     
     print("\n" + "="*60 + "\n")
     print("=" * 60)
-    composed2 = Module.parallel(qnet3.unwrap(), gridenv.unwrap())
+    composed2 = Module.parallel(qnet3, gridenv)
     print(composed2)
     
     print("\n" + "="*60 + "\n")

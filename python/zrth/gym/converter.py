@@ -4,9 +4,7 @@ import ast
 import textwrap
 from contextlib import contextmanager
 from typing import Any
-from zrth.context import get_ctx
-from zrth import DType, Module
-from zrth.expr import Expr
+from zrth import DType, Module, Wire, Term, IType
 
 
 # ============================================================================
@@ -28,10 +26,7 @@ def convert_to_module(python_object: Any):
         return _convert_gym_env(python_object)
     else:
         raise ValueError(f"Don't know how to convert {type(python_object)}")
-    
-# TODO: Get rid of the global context, only use a local context then gets thrown away after conversion (will it go in the converter or in the module?).
-# Use hash tables for that. Probably that means going back to creating terms directly in the converter, instead of using the Expr API and relying on the context to collect terms. The converter can maintain its own local context and then create the final module at the end. This will also make it easier to convert multiple modules in the same program without interference.
-# The IDs will be created globally tho.
+
 # TODO: Convert before __init__, in __new__
 
 
@@ -40,7 +35,7 @@ def convert_to_module(python_object: Any):
 # ============================================================================
 
 def _convert_torch_module(module: torch.nn.Module):
-    """Convert PyTorch module to reactive Module using Expr API
+    """Convert PyTorch module to reactive Module
     
     Args:
         module: PyTorch module with extl/intf wire declarations
@@ -67,23 +62,20 @@ def _convert_torch_module(module: torch.nn.Module):
 
     operations = _parse_torchscript_graph(traced.graph, module)
 
-    ctx = get_ctx()
     terms = []
-    ctx.push_terms_frame(terms)
-
-    current_expr = module.extl[0].nxt()
+    current_wire = module.extl[0].nxt().wire()
 
     for op in operations:
         if op["type"] == "linear":
-            current_expr = _translate_linear(current_expr, op["layer"])
+            current_wire = _translate_linear(current_wire, op["layer"], terms)
         elif op["type"] == "relu":
-            current_expr = _translate_relu(current_expr)
+            current_wire = _translate_relu(current_wire, terms)
         else:
             raise ValueError(f"Unsupported operation: {op['type']}")
 
-    Expr("assign", current_expr, module.intf[0].nxt())
-    
-    ctx.pop_terms_frame()
+    output_wire = module.intf[0].nxt().wire()
+    term = Term(IType.Id(), [output_wire], [current_wire])
+    terms.append(term)
 
     obs = [(s.wire(), s.nxt().wire()) for s in module.extl + module.intf]
     module = Module.combinatorial(assign=terms, obs=obs)
@@ -149,50 +141,60 @@ def _parse_torchscript_graph(graph, module):
     return operations
 
 
-def _translate_linear(input_expr, layer):
+def _translate_linear(input_wire: Wire, layer, terms: list[Term]) -> Wire:
     """Translate PyTorch Linear layer to reactive operations
 
+    Creates: output = input * weight + bias
+
     Args:
-        input_expr: Input Expr
+        input_wire: Input Wire
         layer: torch.nn.Linear layer
+        terms: List to append Terms to
 
     Returns:
-        Output Expr (terms collected automatically via terms_frame)
+        Output Wire
     """
     weight_tensor = layer.weight.data.t().contiguous()
-    weight_expr = Expr("const", weight_tensor)
+    weight_itype = IType.Tensor(weight_tensor)
+    weight_wire = Wire(DType.TensorFloat(list(weight_tensor.shape)))
+    weight_term = Term(weight_itype, [weight_wire], [])
+    terms.append(weight_term)
     
-    matmul_expr = Expr("arith.matmul", input_expr, weight_expr)
+    matmul_dtype = DType.TensorFloat([input_wire.dtype().dims()[0], weight_tensor.shape[1]])
+    matmul_wire = Wire(matmul_dtype)
+    matmul_term = Term(IType.MatMul(), [matmul_wire], [input_wire, weight_wire])
+    terms.append(matmul_term)
     
     bias_tensor = layer.bias.data
-    bias_expr = Expr("const", bias_tensor)
+    bias_itype = IType.Tensor(bias_tensor)
+    bias_wire = Wire(DType.TensorFloat(list(bias_tensor.shape)))
+    bias_term = Term(bias_itype, [bias_wire], [])
+    terms.append(bias_term)
     
-    output_expr = Expr("arith.add", matmul_expr, bias_expr)
+    output_wire = Wire(DType.TensorFloat(list(bias_tensor.shape)))
+    add_term = Term(IType.Add(), [output_wire], [matmul_wire, bias_wire])
+    terms.append(add_term)
     
-    return output_expr
+    return output_wire
 
 
-def _translate_relu(input_expr):
+def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
     """Translate ReLU activation to reactive operations
 
-    Implements: max(0, x) = Ite(Gt(x, 0), x, 0)
+    Implements: max(0, x)
 
     Args:
-        input_expr: Input Expr
+        input_wire: Input Wire
+        terms: List to append Terms to
 
     Returns:
-        Output Expr (terms collected automatically via terms_frame)
+        Output Wire
     """
-    # TODO: create an IType that is a ReLU operation directly, to avoid the overhead of multiple operations and intermediate expressions.
-    input_shape = input_expr.dtype().dims()
-    zero_tensor = torch.zeros(input_shape)
-    zero_expr = Expr("const", zero_tensor)
+    output_wire = Wire(input_wire.dtype())
+    relu_term = Term(IType.ReLU(), [output_wire], [input_wire])
+    terms.append(relu_term)
     
-    gt_expr = Expr("cmp.gt", input_expr, zero_expr)
-    
-    output_expr = Expr("ite", gt_expr, input_expr, zero_expr)
-    
-    return output_expr
+    return output_wire
 
 
 # ============================================================================
@@ -200,7 +202,7 @@ def _translate_relu(input_expr):
 # ============================================================================
 
 def _convert_gym_env(env):
-    """Convert gym environment to reactive Module using Expr API
+    """Convert gym environment to reactive Module
     
     Args:
         env: Environment with reset() and step() methods, and extl/intf/prvt wire declarations
@@ -208,32 +210,34 @@ def _convert_gym_env(env):
     Returns:
         Sequential Module
     """
-    # Validate wire declarations
     if not all(hasattr(env, attr) for attr in ('extl', 'intf', 'prvt')):
         raise ValueError("Environment must declare extl, intf, prvt wires (SequentialModule)")
     
-    syms = {sym.name: sym for sym in env.extl + env.intf + env.prvt}
+    wire_pairs = {
+        sym.name: (sym.wire(), sym.nxt().wire())
+        for sym in env.extl + env.intf + env.prvt
+    }
     
-    init_terms = _parse_method(env, env.reset, syms)
-    update_terms = _parse_method(env, env.step, syms)
+    init_terms = _parse_method(env, env.reset, wire_pairs)
+    update_terms = _parse_method(env, env.step, wire_pairs)
     
     obs = [(s.wire(), s.nxt().wire()) for s in env.extl + env.intf]
     prvt = [(s.wire(), s.nxt().wire()) for s in env.prvt]
     
-    required_wires = [syms[item.name].nxt().wire() for item in env.intf + env.prvt]
+    required_wires = [wire_pairs[item.name][1] for item in env.intf + env.prvt]
     _ensure_wires_assigned(init_terms, required_wires, mode='init')
     _ensure_wires_assigned(update_terms, required_wires, mode='update')
     
     return Module.sequential(init=init_terms, update=update_terms, obs=obs, prvt=prvt)
 
 
-def _parse_method(env, method, syms):
-    """Parse Python method and generate Terms using AST analysis and Expr API
+def _parse_method(env, method, wire_pairs):
+    """Parse Python method and generate Terms using AST analysis
     
     Args:
         env: Environment object
         method: Method to parse (reset or step)
-        syms: Dict mapping wire names to Sym objects
+        wire_pairs: Dict mapping wire names to (current_wire, next_wire) tuples
         
     Returns:
         List of Terms
@@ -243,23 +247,27 @@ def _parse_method(env, method, syms):
     if not isinstance(func_def, ast.FunctionDef):
         raise ValueError("Expected function definition")
     
-    ctx = get_ctx()
-    terms = []
-    ctx.push_terms_frame(terms)
-    
-    visitor = MethodVisitor(env, syms)
-    # Initialize temp_vars with method arguments that are wires
+    visitor = MethodVisitor(env, wire_pairs)
     visitor.temp_vars.update({
-        arg.arg: syms[arg.arg]
+        arg.arg: wire_pairs[arg.arg][0]
         for arg in func_def.args.args
-        if arg.arg != 'self' and arg.arg in syms
+        if arg.arg != 'self' and arg.arg in wire_pairs
     })
     
     for stmt in func_def.body:
         visitor.visit(stmt)
     
-    ctx.pop_terms_frame()
-    return terms
+    # After visiting all statements, write interface wires from temp_vars
+    for item in env.intf:
+        wire_name = item.name
+        if wire_name in visitor.temp_vars and wire_name not in visitor.written_wires:
+            result_wire = visitor.temp_vars[wire_name]
+            output_wire = wire_pairs[wire_name][1]
+            term = Term(IType.Id(), [output_wire], [result_wire])
+            visitor.terms.append(term)
+            visitor.written_wires.add(wire_name)
+    
+    return visitor.terms
 
 
 def _ensure_wires_assigned(terms, required_wires, mode):
@@ -290,29 +298,29 @@ def _ensure_wires_assigned(terms, required_wires, mode):
 class MethodVisitor(ast.NodeVisitor):
     """AST visitor to convert Python methods to reactive Terms
     
-    Intermediate values are stored as Expr objects in temp_vars.
-    Terms are collected via context's terms_frame mechanism.
+    Intermediate values are stored as Wire objects in temp_vars.
     """
     
     BINARY_OPS = {
-        ast.Add: 'arith.add',
-        ast.Sub: 'arith.sub',
-        ast.Mult: 'arith.mul',
-        ast.Div: 'arith.div',
+        ast.Add: IType.Add,
+        ast.Sub: IType.Sub,
+        ast.Mult: IType.Mul,
+        ast.Div: IType.Div,
     }
     
     COMPARE_OPS = {
-        ast.Eq: 'cmp.eq',
-        ast.NotEq: 'cmp.neq',
-        ast.Lt: 'cmp.lt',
-        ast.LtE: 'cmp.le',
-        ast.Gt: 'cmp.gt',
-        ast.GtE: 'cmp.ge',
+        ast.Eq: IType.Eq,
+        ast.NotEq: IType.Neq,
+        ast.Lt: IType.Lt,
+        ast.LtE: IType.Le,
+        ast.Gt: IType.Gt,
+        ast.GtE: IType.Ge,
     }
     
-    def __init__(self, env, syms):
+    def __init__(self, env, wire_pairs):
         self.env = env
-        self.syms = syms
+        self.wire_pairs = wire_pairs
+        self.terms = []
         self.temp_vars = {}
         self.scopes = []
         self.written_wires = set()
@@ -334,7 +342,7 @@ class MethodVisitor(ast.NodeVisitor):
         
         Ensures each wire is written exactly once by merging branches.
         """
-        cond_expr = self._convert_expr(node.test)
+        cond_wire = self._convert_expr(node.test)
         
         parent_scope = dict(self.temp_vars)
         
@@ -354,30 +362,40 @@ class MethodVisitor(ast.NodeVisitor):
         all_vars = set(if_scope_after.keys()) | set(else_scope_after.keys())
         
         for var in all_vars:
-            # Resolve variable from if branch: branch → parent → initial Sym
-            if_expr = if_scope_after.get(var)
-            if if_expr is None:
-                if_expr = parent_scope.get(var)
-            if if_expr is None and var in self.syms:
-                if_expr = self.syms[var]
+            # Resolve variable from if branch (branch →parent → wire_pairs input)
+            if_wire = if_scope_after.get(var)
+            if if_wire is None:
+                if_wire = parent_scope.get(var)
+            if if_wire is None and var in self.wire_pairs:
+                if_wire = self.wire_pairs[var][0]
             
-            # Resolve variable from else branch: branch → parent → initial Sym
-            else_expr = else_scope_after.get(var)
-            if else_expr is None:
-                else_expr = parent_scope.get(var)
-            if else_expr is None and var in self.syms:
-                else_expr = self.syms[var]
+            # Resolve variable from else branch (branch → parent → wire_pairs input)
+            else_wire = else_scope_after.get(var)
+            if else_wire is None:
+                else_wire = parent_scope.get(var)
+            if else_wire is None and var in self.wire_pairs:
+                else_wire = self.wire_pairs[var][0]
             
-            # Same value in both branches - no Ite needed
-            if if_expr is else_expr:
-                self.temp_vars[var] = if_expr
-            elif if_expr is not None and else_expr is not None:
-                # Values diverged - need Ite to merge
-                merged_expr = Expr("ite", cond_expr, if_expr, else_expr)
-                self.temp_vars[var] = merged_expr
+            # If values differ, merge with Ite
+            if if_wire != else_wire and if_wire is not None and else_wire is not None:
+                merged_wire = Wire(if_wire.dtype())
+                self.terms.append(Term(IType.Ite(), [merged_wire], [cond_wire, if_wire, else_wire]))
+                self.temp_vars[var] = merged_wire
                 
-                if var in self.syms and var not in self.written_wires:
-                    Expr("assign", merged_expr, self.syms[var].nxt())
+                # If this is a state wire and we're at top level, write the merged value to output
+                if var in self.wire_pairs and len(self.scopes) == 0 and var not in self.written_wires:
+                    output_wire = self.wire_pairs[var][1]
+                    term = Term(IType.Id(), [output_wire], [merged_wire])
+                    self.terms.append(term)
+                    self.written_wires.add(var)
+            elif if_wire is not None:
+                self.temp_vars[var] = if_wire
+                
+                # Only write if at top level, not already written, and is a wire pair, AND was actually written in this if (not from parent/input)
+                if var in self.wire_pairs and len(self.scopes) == 0 and var not in parent_scope and var not in self.written_wires:
+                    output_wire = self.wire_pairs[var][1]
+                    term = Term(IType.Id(), [output_wire], [if_wire])
+                    self.terms.append(term)
                     self.written_wires.add(var)
     
     def visit_Assign(self, node):
@@ -389,16 +407,20 @@ class MethodVisitor(ast.NodeVisitor):
         
         if isinstance(target, ast.Name):
             var_name = target.id
-            result_expr = self._convert_expr(node.value)
-            self.temp_vars[var_name] = result_expr
+            result_wire = self._convert_expr(node.value)
+            self.temp_vars[var_name] = result_wire
             
-        elif isinstance(target, ast.Attribute) and target.attr in self.syms:
+        elif isinstance(target, ast.Attribute) and target.attr in self.wire_pairs:
             wire_name = target.attr
-            result_expr = self._convert_expr(node.value)
-            self.temp_vars[wire_name] = result_expr
+            target_dtype = self.wire_pairs[wire_name][1].dtype()
+            result_wire = self._convert_expr(node.value, target_dtype=target_dtype)
+            self.temp_vars[wire_name] = result_wire
             
             if len(self.scopes) == 0:
-                Expr("assign", result_expr, self.syms[wire_name].nxt())
+                # Not in conditional - write directly to output wire
+                output_wire = self.wire_pairs[wire_name][1]
+                term = Term(IType.Id(), [output_wire], [result_wire])
+                self.terms.append(term)
                 self.written_wires.add(wire_name)
     
     def visit_AugAssign(self, node):
@@ -407,32 +429,31 @@ class MethodVisitor(ast.NodeVisitor):
         Expands augmented assignment to regular assignment with binary operation.
         Example: self.x += 5 becomes self.x = self.x + 5
         """
-        if isinstance(node.target, ast.Attribute) and node.target.attr in self.syms:
+        if isinstance(node.target, ast.Attribute) and node.target.attr in self.wire_pairs:
             wire_name = node.target.attr
             
             if wire_name in self.temp_vars:
-                left_expr = self.temp_vars[wire_name]
+                left_wire = self.temp_vars[wire_name]
             else:
-                left_expr = self.syms[wire_name]
+                left_wire = self.wire_pairs[wire_name][0]
             
-            right_expr = self._convert_expr(node.value)
+            target_dtype = self.wire_pairs[wire_name][1].dtype()
+            right_wire = self._convert_expr(node.value, target_dtype=target_dtype)
             
             op_type = type(node.op)
-            if op_type == ast.Add:
-                result_expr = Expr("arith.add", left_expr, right_expr)
-            elif op_type == ast.Sub:
-                result_expr = Expr("arith.sub", left_expr, right_expr)
-            elif op_type == ast.Mult:
-                result_expr = Expr("arith.mul", left_expr, right_expr)
-            elif op_type == ast.Div:
-                result_expr = Expr("arith.div", left_expr, right_expr)
-            else:
+            if op_type not in self.BINARY_OPS:
                 raise ValueError(f"Unsupported augmented assignment operator: {op_type.__name__}")
             
-            self.temp_vars[wire_name] = result_expr
+            result_wire = Wire(left_wire.dtype())
+            itype_cls = self.BINARY_OPS[op_type]
+            self.terms.append(Term(itype_cls(), [result_wire], [left_wire, right_wire]))
+            
+            self.temp_vars[wire_name] = result_wire
             
             if len(self.scopes) == 0:
-                Expr("assign", result_expr, self.syms[wire_name].nxt())
+                output_wire = self.wire_pairs[wire_name][1]
+                term = Term(IType.Id(), [output_wire], [result_wire])
+                self.terms.append(term)
                 self.written_wires.add(wire_name)
         else:
             raise ValueError("Augmented assignment only supported for self.attribute wires")
@@ -440,9 +461,9 @@ class MethodVisitor(ast.NodeVisitor):
     def visit_Return(self, node):
         """Handle return statement
         
-        For early returns (inside if/else), stores values in temp_vars.
-        For final return, writes interface wires from temp_vars.
+        Stores return values in temp_vars. Actual wire writes happen in _parse_method.
         """
+        # Parse return values into temp_vars
         if node.value is not None:
             if isinstance(node.value, ast.Tuple):
                 if len(node.value.elts) != len(self.env.intf):
@@ -452,49 +473,46 @@ class MethodVisitor(ast.NodeVisitor):
                     )
                 for wire_sym, value_node in zip(self.env.intf, node.value.elts):
                     wire_name = wire_sym.name
-                    self.temp_vars[wire_name] = self._convert_expr(value_node)
+                    target_dtype = self.wire_pairs[wire_name][1].dtype()
+                    self.temp_vars[wire_name] = self._convert_expr(value_node, target_dtype=target_dtype)
             else:
                 if len(self.env.intf) != 1:
                     raise ValueError(
                         f"Single return value but {len(self.env.intf)} interface wires"
                     )
                 wire_name = self.env.intf[0].name
-                self.temp_vars[wire_name] = self._convert_expr(node.value)
-        
-        # At top level: write interface wires immediately
-        if len(self.scopes) == 0:
-            for item in self.env.intf:
-                wire_name = item.name
-                if wire_name in self.temp_vars and wire_name not in self.written_wires:
-                    result_expr = self.temp_vars[wire_name]
-                    Expr("assign", result_expr, self.syms[wire_name].nxt())
-                    self.written_wires.add(wire_name)
-        # Inside if/else: values stay in temp_vars, merged by visit_If
+                target_dtype = self.wire_pairs[wire_name][1].dtype()
+                self.temp_vars[wire_name] = self._convert_expr(node.value, target_dtype=target_dtype)
     
-    def _convert_expr(self, expr):
-        """Convert AST expression node to Expr object"""
+    def _convert_expr(self, expr, target_dtype=None):
+        """Convert AST expression node to Wire object
+        
+        Args:
+            expr: AST expression node
+            target_dtype: Optional target dtype for type propagation (used for constants)
+        """
         if isinstance(expr, ast.Call):
-            return self._convert_call(expr)
+            return self._convert_call(expr, target_dtype=target_dtype)
         elif isinstance(expr, ast.BinOp):
-            return self._convert_binop(expr)
+            return self._convert_binop(expr, target_dtype=target_dtype)
         elif isinstance(expr, ast.UnaryOp):
-            return self._convert_unaryop(expr)
+            return self._convert_unaryop(expr, target_dtype=target_dtype)
         elif isinstance(expr, ast.BoolOp):
             return self._convert_boolop(expr)
         elif isinstance(expr, ast.Compare):
             return self._convert_compare(expr)
         elif isinstance(expr, ast.IfExp):
-            return self._convert_ifexp(expr)
+            return self._convert_ifexp(expr, target_dtype=target_dtype)
         elif isinstance(expr, ast.Attribute):
             return self._convert_attribute(expr)
         elif isinstance(expr, ast.Name):
             return self._convert_name(expr)
         elif isinstance(expr, ast.Constant):
-            return self._convert_constant(expr)
+            return self._convert_constant(expr, target_dtype)
         else:
             raise ValueError(f"Unsupported expression type: {type(expr).__name__}")
     
-    def _convert_call(self, call):
+    def _convert_call(self, call, target_dtype=None):
         """Convert method/function call"""
         if isinstance(call.func, ast.Attribute):
             method = call.func.attr
@@ -506,14 +524,16 @@ class MethodVisitor(ast.NodeVisitor):
             if isinstance(obj, ast.Name):
                 name = obj.id
                 if name in ('np', 'numpy'):
-                    return self._convert_numpy_creation(method, call.args)
+                    return self._convert_numpy_creation(method, call.args, target_dtype=target_dtype)
                 elif name == 'self':
                     return self._inline_method(method, call.args)
             
             # Handle generic methods that work on any object
             if method == 'argmax':
-                obj_expr = self._convert_expr(obj)
-                return Expr("argmax", obj_expr)
+                obj_wire = self._convert_expr(obj)
+                result = Wire(DType.TensorFloat([1]))
+                self.terms.append(Term(IType.Argmax(), [result], [obj_wire]))
+                return result
             elif method == 'item':
                 return self._convert_expr(obj)
             else:
@@ -530,48 +550,80 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unsupported call type: {type(call.func).__name__}")
     
     def _convert_minmax(self, args, func_name):
-        """Convert min/max to Ite: min(a,b) -> Ite(Lt(a,b), a, b)"""
+        """Convert min/max to conditional: min(a,b) -> Ite(Lt(a,b), a, b)"""
         if len(args) != 2:
             raise ValueError(f"{func_name}() requires 2 arguments")
         
-        a_expr = self._convert_expr(args[0])
-        b_expr = self._convert_expr(args[1])
+        a_wire = self._convert_expr(args[0])
+        b_wire = self._convert_expr(args[1])
         
-        cmp_op = "cmp.lt" if func_name == 'min' else "cmp.gt"
-        cmp_expr = Expr(cmp_op, a_expr, b_expr)
+        cmp_type = IType.Lt() if func_name == 'min' else IType.Gt()
+        cmp_wire = Wire(DType.Bool)
+        self.terms.append(Term(cmp_type, [cmp_wire], [a_wire, b_wire]))
         
-        return Expr("ite", cmp_expr, a_expr, b_expr)
+        result = Wire(a_wire.dtype())
+        self.terms.append(Term(IType.Ite(), [result], [cmp_wire, a_wire, b_wire]))
+        return result
     
-    def _convert_numpy_creation(self, func_name, args):
+    def _convert_numpy_creation(self, func_name, args, target_dtype=None):
         """Convert NumPy array creation to torch equivalent.
-        
+
         Supports compile-time conversion of:
-        - np.zeros(shape) -> Expr("const", torch.zeros(shape))
-        - np.ones(shape) -> Expr("const", torch.ones(shape))
-        - np.array(data) -> Expr("const", torch.tensor(data))
+        - np.zeros(shape) -> Wire with Tensor term
+        - np.ones(shape) -> Wire with Tensor term
+        - np.array(data) -> Wire with Tensor term
         
         Shape and data must be Python literals (evaluated at conversion time).
+        Respects target_dtype for creating TensorInt/Float/Bool arrays.
         """
         if func_name == 'zeros':
             if len(args) != 1:
                 raise ValueError(f"np.zeros() requires 1 argument, got {len(args)}")
             shape = self._eval_shape(args[0])
-            return Expr("const", torch.zeros(*shape))
+            
+            if target_dtype and target_dtype.kind() == "TensorInt":
+                tensor_data = torch.zeros(*shape, dtype=torch.long)
+            elif target_dtype and target_dtype.kind() == "TensorBool":
+                tensor_data = torch.zeros(*shape, dtype=torch.bool)
+            else:
+                tensor_data = torch.zeros(*shape, dtype=torch.float32)
             
         elif func_name == 'ones':
             if len(args) != 1:
                 raise ValueError(f"np.ones() requires 1 argument, got {len(args)}")
             shape = self._eval_shape(args[0])
-            return Expr("const", torch.ones(*shape))
+            
+            if target_dtype and target_dtype.kind() == "TensorInt":
+                tensor_data = torch.ones(*shape, dtype=torch.long)
+            elif target_dtype and target_dtype.kind() == "TensorBool":
+                tensor_data = torch.ones(*shape, dtype=torch.bool)
+            else:
+                tensor_data = torch.ones(*shape, dtype=torch.float32)
             
         elif func_name == 'array':
             if len(args) != 1:
                 raise ValueError(f"np.array() requires 1 argument, got {len(args)}")
             data = self._eval_literal(args[0])
-            return Expr("const", torch.tensor(data))
             
+            if target_dtype and target_dtype.kind() == "TensorInt":
+                tensor_data = torch.tensor(data, dtype=torch.long)
+            elif target_dtype and target_dtype.kind() == "TensorBool":
+                tensor_data = torch.tensor(data, dtype=torch.bool)
+            else:
+                tensor_data = torch.tensor(data, dtype=torch.float32)
+        
         else:
             raise ValueError(f"Unsupported NumPy function: np.{func_name}()")
+        
+        shape = list(tensor_data.size())
+        if target_dtype:
+            dtype = target_dtype.reshape(shape)
+        else:
+            dtype = DType.TensorFloat(shape)
+        
+        const_wire = Wire(dtype)
+        self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
+        return const_wire
     
     def _eval_shape(self, shape_node):
         """Evaluate shape argument at compile time.
@@ -613,41 +665,65 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"np.array() data must be literal, got {type(data_node).__name__}")
     
     
-    def _convert_binop(self, binop):
-        """Convert binary operation"""
-        left_expr = self._convert_expr(binop.left)
+    def _convert_binop(self, binop, target_dtype=None):
+        """Convert binary operation
         
-        if isinstance(binop.right, ast.Constant):
-            right_expr = self._convert_constant(binop.right, left_expr.dtype())
+        Dtype propagation:
+        - With target_dtype: both operands inherit it (e.g., self.x = 2 + 3 → both TensorInt)
+        - Without: right operand inherits from left (e.g., self.x + 3 → 3 matches x's dtype)
+        """
+        if target_dtype:
+            # Top-down propagation: assignment target determines operand types
+            left_wire = self._convert_expr(binop.left, target_dtype=target_dtype)
+            right_wire = self._convert_expr(binop.right, target_dtype=target_dtype)
+            result_dtype = target_dtype
         else:
-            right_expr = self._convert_expr(binop.right)
+            # Bottom-up inference: left operand determines right
+            left_wire = self._convert_expr(binop.left)
+            right_wire = self._convert_expr(binop.right, target_dtype=left_wire.dtype())
+            result_dtype = left_wire.dtype()
         
         op_type = type(binop.op)
         if op_type not in self.BINARY_OPS:
             raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
         
-        return Expr(self.BINARY_OPS[op_type], left_expr, right_expr)
+        result = Wire(result_dtype)
+        itype_cls = self.BINARY_OPS[op_type]
+        self.terms.append(Term(itype_cls(), [result], [left_wire, right_wire]))
+        return result
     
-    def _convert_unaryop(self, unaryop):
+    def _convert_unaryop(self, unaryop, target_dtype=None):
         """Convert unary operation (not, -, +)
         
-        Handles:
-        - not x: Ite(x, False, True)
-        - -x: arith.sub(0, x)
-        - +x: no-op, returns x
+        - not x: Always returns Bool
+        - -x: Propagates target_dtype to operand and zero constant
+        - +x: No-op, returns operand with target_dtype propagated
         """
-        operand_expr = self._convert_expr(unaryop.operand)
-        
         op_type = type(unaryop.op)
         if op_type == ast.Not:
-            false_val = self._convert_constant(ast.Constant(False), operand_expr.dtype())
-            true_val = self._convert_constant(ast.Constant(True), operand_expr.dtype())
-            return Expr("ite", operand_expr, false_val, true_val)
+            # not x -> Ite(x, False, True) - always Bool
+            operand_wire = self._convert_expr(unaryop.operand)
+            false_wire = self._convert_constant(ast.Constant(False))
+            true_wire = self._convert_constant(ast.Constant(True))
+            result = Wire(DType.Bool)
+            self.terms.append(Term(IType.Ite(), [result], [operand_wire, false_wire, true_wire]))
+            return result
         elif op_type == ast.USub:
-            zero = self._convert_constant(ast.Constant(0), operand_expr.dtype())
-            return Expr("arith.sub", zero, operand_expr)
+            # -x -> 0 - x
+            # If target_dtype provided, use it for the constant and result
+            if target_dtype:
+                operand_wire = self._convert_expr(unaryop.operand, target_dtype=target_dtype)
+                zero_wire = self._convert_constant(ast.Constant(0), target_dtype=target_dtype)
+                result_dtype = target_dtype
+            else:
+                operand_wire = self._convert_expr(unaryop.operand)
+                zero_wire = self._convert_constant(ast.Constant(0), target_dtype=operand_wire.dtype())
+                result_dtype = operand_wire.dtype()
+            result = Wire(result_dtype)
+            self.terms.append(Term(IType.Sub(), [result], [zero_wire, operand_wire]))
+            return result
         elif op_type == ast.UAdd:
-            return operand_expr
+            return self._convert_expr(unaryop.operand, target_dtype=target_dtype)
         else:
             raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
     
@@ -660,24 +736,26 @@ class MethodVisitor(ast.NodeVisitor):
         if len(boolop.values) < 2:
             raise ValueError("BoolOp must have at least 2 operands")
         
-        exprs = [self._convert_expr(val) for val in boolop.values]
+        wires = [self._convert_expr(val) for val in boolop.values]
         is_and = isinstance(boolop.op, ast.And)
         
         if not is_and and not isinstance(boolop.op, ast.Or):
             raise ValueError(f"Unsupported boolean operator: {type(boolop.op).__name__}")
         
         # Build nested Ite from right to left
-        result = exprs[-1]
-        for expr in reversed(exprs[:-1]):
-            false_val = self._convert_constant(ast.Constant(False), result.dtype())
-            true_val = self._convert_constant(ast.Constant(True), result.dtype())
+        result = wires[-1]
+        for wire in reversed(wires[:-1]):
+            false_wire = self._convert_constant(ast.Constant(False))
+            true_wire = self._convert_constant(ast.Constant(True))
             
+            merged = Wire(DType.Bool)
             if is_and:
                 # a and b -> Ite(a, b, False)
-                result = Expr("ite", expr, result, false_val)
+                self.terms.append(Term(IType.Ite(), [merged], [wire, result, false_wire]))
             else:
                 # a or b -> Ite(a, True, b)
-                result = Expr("ite", expr, true_val, result)
+                self.terms.append(Term(IType.Ite(), [merged], [wire, true_wire, result]))
+            result = merged
         return result
     
     def _convert_compare(self, compare):
@@ -686,39 +764,47 @@ class MethodVisitor(ast.NodeVisitor):
         Handles both simple comparisons (a < b) and chains (a < b < c).
         Chains are expanded: a < b < c becomes (a < b) and (b < c)
         """
-        comparisons = []
+        comparison_wires = []
         left = compare.left
         
         for op, comparator in zip(compare.ops, compare.comparators):
-            left_expr = self._convert_expr(left)
-            
-            if isinstance(comparator, ast.Constant):
-                right_expr = self._convert_constant(comparator, left_expr.dtype())
-            else:
-                right_expr = self._convert_expr(comparator)
+            left_wire = self._convert_expr(left)
+            right_wire = self._convert_expr(comparator, target_dtype=left_wire.dtype())
             
             op_type = type(op)
             if op_type not in self.COMPARE_OPS:
                 raise ValueError(f"Unsupported comparison operator: {op_type.__name__}")
             
-            comparisons.append(Expr(self.COMPARE_OPS[op_type], left_expr, right_expr))
+            cmp_wire = Wire(DType.Bool)
+            itype_cls = self.COMPARE_OPS[op_type]
+            self.terms.append(Term(itype_cls(), [cmp_wire], [left_wire, right_wire]))
+            comparison_wires.append(cmp_wire)
             left = comparator
         
         # Combine with AND (single comparison returns directly)
-        result = comparisons[0]
-        for comp in comparisons[1:]:
-            false_val = self._convert_constant(ast.Constant(False), result.dtype())
-            result = Expr("ite", result, comp, false_val)
+        result = comparison_wires[0]
+        for comp_wire in comparison_wires[1:]:
+            false_wire = self._convert_constant(ast.Constant(False))
+            merged = Wire(DType.Bool)
+            # result and comp_wire -> Ite(result, comp_wire, False)
+            self.terms.append(Term(IType.Ite(), [merged], [result, comp_wire, false_wire]))
+            result = merged
         
         return result
     
-    def _convert_ifexp(self, ifexp):
-        """Convert ternary conditional to Ite"""
-        cond_expr = self._convert_expr(ifexp.test)
-        true_expr = self._convert_expr(ifexp.body)
-        false_expr = self._convert_expr(ifexp.orelse)
+    def _convert_ifexp(self, ifexp, target_dtype=None):
+        """Convert ternary conditional to Ite
         
-        return Expr("ite", cond_expr, true_expr, false_expr)
+        Propagates target_dtype to both branches (e.g., self.x = 5 if c else 10 → both TensorInt)
+        """
+        cond_wire = self._convert_expr(ifexp.test)
+        true_wire = self._convert_expr(ifexp.body, target_dtype=target_dtype)
+        false_wire = self._convert_expr(ifexp.orelse, target_dtype=target_dtype)
+        
+        result_dtype = target_dtype if target_dtype else true_wire.dtype()
+        result = Wire(result_dtype)
+        self.terms.append(Term(IType.Ite(), [result], [cond_wire, true_wire, false_wire]))
+        return result
     
     def _convert_name(self, name):
         """Convert variable reference"""
@@ -729,46 +815,62 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unknown variable: {var_name}")
     
     def _convert_constant(self, constant, target_dtype=None):
-        """Convert constant literal to Expr
+        """Convert constant literal to Wire with Tensor term
         
         Args:
             constant: AST Constant node
-            target_dtype: Optional dtype to match. If None, defaults to float tensors.
+            target_dtype: Optional dtype (inferred from context). Defaults to TensorFloat if None.
         """
         value = constant.value
         
         if isinstance(value, bool):
-            return Expr("const", value)
+            tensor_data = torch.tensor([value])
+            dtype = DType.TensorBool([1])
+        
         elif isinstance(value, (int, float)):
             if target_dtype is None:
-                # Default to float tensor
-                tensor_data = torch.Tensor([float(value)])
-            elif isinstance(target_dtype, DType.TensorInt):
+                # TODO: Consider inferring dtype from value (int vs float) or raising error instead of defaulting
+                target_dtype = DType.TensorFloat([])
+                tensor_data = torch.tensor([float(value)], dtype=torch.float32)
+            elif target_dtype.kind() == "TensorInt":
                 tensor_data = torch.tensor([int(value)], dtype=torch.long)
-            elif isinstance(target_dtype, DType.TensorFloat):
+            elif target_dtype.kind() == "TensorFloat":
                 tensor_data = torch.tensor([float(value)], dtype=torch.float32)
-            elif target_dtype == DType.Int:
-                return Expr("const", int(value))
-            elif target_dtype == DType.Float:
-                return Expr("const", float(value))
-            elif target_dtype == DType.Bool:
-                return Expr("const", bool(value))
+            elif target_dtype.kind() == "TensorBool":
+                tensor_data = torch.tensor([bool(value)])
             else:
-                # Fallback to float tensor
-                tensor_data = torch.tensor([float(value)], dtype=torch.float32)
-            return Expr("const", tensor_data)
-        elif isinstance(value, (list, tuple)):
-            tensor_data = torch.Tensor(value)
-            return Expr("const", tensor_data)
-        elif isinstance(value, torch.Tensor):
-            return Expr("const", value)
+                raise ValueError(f"Unsupported target dtype kind: {target_dtype.kind()}")
+            
+            dtype = target_dtype.reshape([1])
+        
+        elif isinstance(value, (list, tuple, torch.Tensor)):
+            if isinstance(value, torch.Tensor):
+                tensor_data = value
+            else:
+                if target_dtype and target_dtype.kind() == "TensorInt":
+                    tensor_data = torch.tensor(value, dtype=torch.long)
+                elif target_dtype and target_dtype.kind() == "TensorBool":
+                    tensor_data = torch.tensor(value, dtype=torch.bool)
+                else:
+                    tensor_data = torch.tensor(value, dtype=torch.float32)
+            
+            if target_dtype:
+                dtype = target_dtype.reshape(list(tensor_data.size()))
+            else:
+                dtype = DType.TensorFloat(list(tensor_data.size()))
+        
         else:
             raise ValueError(f"Unsupported constant type: {type(value)}")
+        
+        const_wire = Wire(dtype)
+        self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
+        return const_wire
     
     def _convert_attribute(self, attr):
-        """Convert attribute access (self.state, etc.)
+        """Convert attribute access: self.state, self.observation, etc.
         
-        Checks temp_vars first, then falls back to Sym for wire reads.
+        First checks temp_vars for locally-assigned values (within this method).
+        Falls back to latched wire (reading state from previous cycle).
         """
         if isinstance(attr.value, ast.Name) and attr.value.id == 'self':
             wire_name = attr.attr
@@ -776,8 +878,8 @@ class MethodVisitor(ast.NodeVisitor):
             if wire_name in self.temp_vars:
                 return self.temp_vars[wire_name]
             
-            if wire_name in self.syms:
-                return self.syms[wire_name]
+            if wire_name in self.wire_pairs:
+                return self.wire_pairs[wire_name][0]
             else:
                 raise ValueError(f"Unknown wire: {wire_name}")
         else:

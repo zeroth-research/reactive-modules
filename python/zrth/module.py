@@ -70,9 +70,9 @@ class ReactiveModuleDef:
         name: str = None,
     ):
         self._ctx = get_ctx()
-        self._intf = parse_variables(intf)
-        self._extl = parse_variables(extl)
-        self._prvt = parse_variables(prvt)
+        self._intf_syms = parse_variables(intf)
+        self._extl_syms = parse_variables(extl)
+        self._prvt_syms = parse_variables(prvt)
 
         # Not used ATM
         self._name = name
@@ -82,15 +82,15 @@ class ReactiveModuleDef:
 
     @property
     def intf(self):
-        return self._intf
+        return self._intf_syms
 
     @property
     def extl(self):
-        return self._extl
+        return self._extl_syms
 
     @property
     def prvt(self):
-        return self._prvt
+        return self._prvt_syms
 
     @property
     def obs(self):

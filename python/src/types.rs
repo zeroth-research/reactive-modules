@@ -111,6 +111,16 @@ impl DType {
             DType::TensorReal(_) => DType::TensorReal(shape),
         }
     }
+
+    /// Get the kind/variant of this dtype
+    fn kind(&self) -> &'static str {
+        match self {
+            DType::TensorBool(_) => "TensorBool",
+            DType::TensorInt(_) => "TensorInt",
+            DType::TensorFloat(_) => "TensorFloat",
+            DType::TensorReal(_) => "TensorReal",
+        }
+    }
 }
 
 impl fmt::Display for PrimitiveType {
@@ -183,6 +193,8 @@ pub enum IType {
     Id(),
     // index of maximal value in the flattened tensor
     Argmax(),
+    // ReLU activation: max(0, x)
+    ReLU(),
 
     // Tensor operations
     TensorGet(),
@@ -219,6 +231,7 @@ impl fmt::Display for IType {
             IType::Ite() => write!(f, "Ite"),
             IType::Id() => write!(f, "Id"),
             IType::Argmax() => write!(f, "Argmax"),
+            IType::ReLU() => write!(f, "ReLU"),
             IType::TensorGet() => write!(f, "TensorGet"),
             IType::TensorSet() => write!(f, "TensorSet"),
             IType::TensorSum() => write!(f, "TensorSum"),
