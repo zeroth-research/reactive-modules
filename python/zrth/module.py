@@ -1,7 +1,6 @@
-# from .context import Context, get_ctx
 from .zrth import DType, Module as RustModule, Transition, Wire
 
-from typing import Callable
+from typing import Iterable
 
 
 class WirePair(tuple):
@@ -75,9 +74,9 @@ class ReactiveModuleDef:
 
     def __init__(
         self,
-        intf: str | tuple[str, ...] | None = None,
-        extl: str | tuple[str, ...] | None = None,
-        prvt: str | tuple[str, ...] | None = None,
+        intf: str | Iterable[str] | None = None,
+        extl: str | Iterable[str] | None = None,
+        prvt: str | Iterable[str] | None = None,
         rust_module: None | RustModule = None,
         name: None | str = None,
     ):
