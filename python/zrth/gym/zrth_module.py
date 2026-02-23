@@ -1,49 +1,42 @@
-from zrth.module import ReactiveModuleDef
-from .converter import convert_to_module
+from zrth import Module, Wire, DType
+from .converter import convert_method
+import gymnasium as gym
+import torch.nn as nn
 
 
-class Module(ReactiveModuleDef):
-    """Base class for reactive modules with automatic conversion
-    
-    Subclasses must declare wires as class attributes:
-    - extl: List of external input wire names
-    - intf: List of interface output wire names
-    - prvt: List of private wire names (optional)
-    """
+class Env(Module, gym.Env):
 
     def __new__(cls, *args, **kwargs):
-        """Create instance and automatically convert to reactive Module
-        
-        This method:
-        1. Creates instance of subclass
-        2. Gets wire declarations from class attributes
-        3. Initializes ReactiveModuleDef with wires
-        4. Calls subclass __init__ to set up layers/methods
-        5. Converts to reactive Module and returns it
-        """
-        # Create instance of the subclass
-        instance = object.__new__(cls)
-        
-        # Get wire declarations from class attributes
-        extl = cls.__dict__.get('extl', [])
-        intf = cls.__dict__.get('intf', [])
-        prvt = cls.__dict__.get('prvt', None)
-        
-        # Delete class attributes to prevent shadowing ReactiveModuleDef properties
-        for attr in ['extl', 'intf', 'prvt']:
-            if attr in cls.__dict__:
-                delattr(cls, attr)
-        
-        # Initialize ReactiveModuleDef with wires
-        ReactiveModuleDef.__init__(instance, intf, extl, prvt)
-        
-        # Call subclass __init__ to set up layers, methods, etc.
-        # This is where nn.Linear layers get created for networks
-        # or reset/step methods are defined for environments
-        cls.__init__(instance, *args, **kwargs)
-        
-        # Convert the fully initialized instance to reactive Module
-        module = convert_to_module(instance)
-        
-        # Return the Rust Module instead of Python instance
-        return module
+        # TODO: trace the init for q_values and observation sizes
+        q_values = [Wire(DType.TensorFloat([2])), Wire(DType.TensorFloat([2]))]
+        observation = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
+        reward = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
+        terminated = [Wire(DType.TensorBool([1])), Wire(DType.TensorBool([1]))]
+        truncated = [Wire(DType.TensorBool([1])), Wire(DType.TensorBool([1]))]
+
+        # TODO: infer
+        state = [Wire(DType.TensorInt([1])), Wire(DType.TensorInt([1]))]
+
+        args = (q_values)
+        result = (observation[1], reward[1], terminated[1], truncated[1])
+        reset = convert_method(cls.reset, args, result)
+        step = convert_method(cls.step, args, result)
+
+        obs = [q_values, observation, reward, terminated, truncated]
+        prvt = [state]
+        return super().__new__(cls, init=reset, update=step, obs=obs, prvt=prvt)
+
+class NN(Module, nn.Module):
+    
+    def __new__(cls, *args, **kwargs):
+        # TODO: trace the init for q_values and observation sizes
+        q_values = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
+        observation = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
+
+        args = (observation)
+        result = (q_values)
+        forward = convert_method(cls.forward, args, result)
+
+        obs = [observation, q_values]
+        return super().__new__(cls, assign=forward, obs=obs)
+
