@@ -1,5 +1,7 @@
 """Reinforcement Learning with Reactive Modules"""
 
+
+from .zrth_module import Env, NN
 from .qnetworks import SimpleQNet, GridWorldQNet
 from .environments import (
     SimpleEnv,
@@ -10,7 +12,10 @@ from .environments import (
 )
 from .agent import DQNAgent
 
+
 __all__ = [
+    "Env",
+    "NN",
     "SimpleQNet",
     "GridWorldQNet",
     "SimpleEnv",

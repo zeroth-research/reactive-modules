@@ -8,6 +8,10 @@ from zrth import DType, Module, Wire, Term, IType
 from zrth.module import WirePair
 
 
+def convert_method(method, args, result):
+    return None
+
+
 # ============================================================================
 # Main Entry Point
 # ============================================================================
