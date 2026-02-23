@@ -32,9 +32,9 @@ param_list  =  { ident ~ ("," ~ ident)* }
 
 module_body =  { (ivar_section | var_section | frozenvar_section | define_section | assign_section | invar_section | init_section | trans_section | fairness_section | justice_section | compassion_section | constants_section)* }
 
-invar_section = { INVAR ~ (expr ~ ";")+ }
-init_section  = { INIT_KW ~ (expr ~ ";")+ }
-trans_section = { TRANS ~ (expr ~ ";")+ }
+invar_section = { INVAR ~ expr ~ ";"? }
+init_section  = { INIT_KW ~ expr ~ ";"? }
+trans_section = { TRANS ~ expr ~ ";"? }
 
 fairness_section    = { FAIRNESS ~ expr ~ ";" }
 justice_section     = { JUSTICE ~ expr ~ ";" }
@@ -50,7 +50,8 @@ var_decl     =  { ident ~ ":" ~ type_spec ~ ";" }
 frozenvar_section = { FROZENVAR ~ frozenvar_decl+ }
 frozenvar_decl    = { ident ~ ":" ~ type_spec ~ ";" }
 
-type_spec    =  { range_type | BOOLEAN | INTEGER | enum_type }
+type_spec    =  { word_type | range_type | BOOLEAN | INTEGER | enum_type }
+word_type    =  { (UNSIGNED_KW | SIGNED_KW) ~ WORD_KW ~ "[" ~ number ~ "]" }
 range_type   =  { number ~ ".." ~ number }
 enum_type    =  { "{" ~ enum_value ~ ("," ~ enum_value)* ~ "}" }
 enum_value   =  { ident | number }
@@ -117,15 +118,22 @@ expr_primary  = _{
     | FALSE
     | case_expr
     | abs_call
+    | builtin_call
     | next_expr
+    | word_lit_expr
     | ident
     | number
-    | "(" ~ expr ~ ")"
+    | paren_expr
     | expr_assign
 }
 
-abs_call    = { ABS ~ "(" ~ expr ~ ")" }
-next_expr   = { NEXT ~ "(" ~ expr ~ ")" }
+abs_call      = { ABS ~ "(" ~ expr ~ ")" }
+builtin_call  = { BUILTIN_FN ~ "(" ~ expr ~ ("," ~ expr)* ~ ")" }
+next_expr     = { NEXT ~ "(" ~ expr ~ ")" }
+bit_select    = { "[" ~ number ~ ":" ~ number ~ "]" }
+paren_expr    = { "(" ~ expr ~ ")" ~ bit_select? }
+word_lit_expr = { word_literal ~ bit_select? }
+word_literal  = @{ "0" ~ ("u" | "s") ~ "d" ~ ASCII_DIGIT+ ~ "_" ~ ASCII_DIGIT+ }
 case_expr   = { CASE ~ case_branch+ ~ ESAC }
 case_branch = { expr ~ ":" ~ expr ~ ";" }
 
@@ -146,6 +154,10 @@ NEXT        =  @{ "next" ~ !(ASCII_ALPHANUMERIC | "_") }
 INVAR       =  @{ "INVAR" ~ !(ASCII_ALPHANUMERIC | "_") }
 BOOLEAN     =  @{ "boolean" ~ !(ASCII_ALPHANUMERIC | "_") }
 INTEGER     =  @{ "integer" ~ !(ASCII_ALPHANUMERIC | "_") }
+UNSIGNED_KW =  @{ "unsigned" ~ !(ASCII_ALPHANUMERIC | "_") }
+SIGNED_KW   =  @{ "signed" ~ !(ASCII_ALPHANUMERIC | "_") }
+WORD_KW     =  @{ "word" ~ !(ASCII_ALPHANUMERIC | "_") }
+BUILTIN_FN  =  @{ ("bool" | "word1" | "unsigned" | "signed" | "extend") ~ !(ASCII_ALPHANUMERIC | "_") }
 TRUE        =  @{ "TRUE" ~ !(ASCII_ALPHANUMERIC | "_") }
 FALSE       =  @{ "FALSE" ~ !(ASCII_ALPHANUMERIC | "_") }
 CASE        =  @{ "case" ~ !(ASCII_ALPHANUMERIC | "_") }

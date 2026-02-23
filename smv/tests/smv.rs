@@ -442,3 +442,146 @@ fn keyword_in_ident() {
     let obs_count: usize = result.module.obs().iter().map(|arr| arr.len()).sum();
     assert_eq!(obs_count, 6, "3 state vars → 6 obs wires");
 }
+
+// ==============================
+// Word-level support tests
+// ==============================
+
+#[test]
+fn word_type_and_literal() {
+    let input = r#"
+        MODULE main
+        VAR x : unsigned word[16]; y : signed word[32];
+        INIT
+          x = 0ud16_0;
+        INIT
+          y = 0sd32_100;
+        TRANS
+          next(x) = x + 0ud16_1;
+        TRANS
+          next(y) = y;
+    "#;
+    let result = parse_smv(input).unwrap();
+    let obs_count: usize = result.module.obs().iter().map(|arr| arr.len()).sum();
+    assert_eq!(obs_count, 4, "2 state vars → 4 obs wires");
+    assert!(!result.init_constraints.is_empty(), "expected init constraint terms");
+    assert!(!result.trans_constraints.is_empty(), "expected trans constraint terms");
+}
+
+#[test]
+fn builtin_bool_word1() {
+    let input = r#"
+        MODULE main
+        VAR a : unsigned word[1]; b : boolean;
+        INVAR
+          b = bool(a);
+        INVAR
+          a = word1(b);
+        TRANS
+          next(a) = a;
+        TRANS
+          next(b) = b;
+    "#;
+    let result = parse_smv(input).unwrap();
+    assert!(!result.invar_constraints.is_empty(), "expected invar constraints");
+    let all_itypes: Vec<String> = result
+        .invar_constraints
+        .iter()
+        .map(|t| format!("{}", t.itype()))
+        .collect();
+    assert!(
+        all_itypes.iter().any(|s| s == "ToBool"),
+        "expected ToBool in invar constraints, got {:?}",
+        all_itypes
+    );
+    assert!(
+        all_itypes.iter().any(|s| s == "ToWord1"),
+        "expected ToWord1 in invar constraints, got {:?}",
+        all_itypes
+    );
+}
+
+#[test]
+fn builtin_unsigned_extend() {
+    let input = r#"
+        MODULE main
+        VAR x : unsigned word[16]; y : unsigned word[32];
+        INVAR
+          y = extend(x, 16);
+        INVAR
+          y = unsigned(0sd32_42);
+        TRANS
+          next(x) = x;
+        TRANS
+          next(y) = y;
+    "#;
+    let result = parse_smv(input).unwrap();
+    let all_itypes: Vec<String> = result
+        .invar_constraints
+        .iter()
+        .map(|t| format!("{}", t.itype()))
+        .collect();
+    assert!(
+        all_itypes.iter().any(|s| s == "Extend(16)"),
+        "expected Extend(16) in invar constraints, got {:?}",
+        all_itypes
+    );
+    assert!(
+        all_itypes.iter().any(|s| s == "ToUnsigned"),
+        "expected ToUnsigned in invar constraints, got {:?}",
+        all_itypes
+    );
+}
+
+#[test]
+fn bit_select() {
+    let input = r#"
+        MODULE main
+        VAR x : unsigned word[32]; y : unsigned word[16];
+        INVAR
+          y = (x)[15:0];
+        INVAR
+          y = 0sd32_100[15:0];
+        TRANS
+          next(x) = x;
+        TRANS
+          next(y) = y;
+    "#;
+    let result = parse_smv(input).unwrap();
+    let all_itypes: Vec<String> = result
+        .invar_constraints
+        .iter()
+        .map(|t| format!("{}", t.itype()))
+        .collect();
+    assert!(
+        all_itypes.iter().any(|s| s == "BitSelect[15:0]"),
+        "expected BitSelect[15:0] in invar constraints, got {:?}",
+        all_itypes
+    );
+}
+
+#[test]
+fn semicolon_free_sections() {
+    let input = r#"
+        MODULE main
+        VAR x : integer; y : boolean;
+        INIT x = 0
+        INIT y = FALSE
+        INVAR x >= 0
+        TRANS next(x) = x + 1
+        TRANS next(y) = y
+    "#;
+    let result = parse_smv(input).unwrap();
+    assert!(
+        !result.init_constraints.is_empty(),
+        "expected init constraints from semicolon-free INIT"
+    );
+    assert!(
+        !result.invar_constraints.is_empty(),
+        "expected invar constraints from semicolon-free INVAR"
+    );
+    assert!(
+        !result.trans_constraints.is_empty(),
+        "expected trans constraints from semicolon-free TRANS"
+    );
+}
