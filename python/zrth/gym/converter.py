@@ -4,12 +4,11 @@ import ast
 import textwrap
 from contextlib import contextmanager
 from zrth import DType, Wire, Term, IType
-from zrth.module import WirePair
 
 
 def convert_method(
     method,
-    wires: dict[str, WirePair],
+    wires: dict[str, tuple[Wire, Wire]],
     result: list[Wire],
     cls=None,
 ) -> list[Term]:
@@ -129,7 +128,7 @@ class MethodVisitor(ast.NodeVisitor):
 
     def __init__(
         self,
-        wire_pairs: dict[str, WirePair],
+        wire_pairs: dict[str, tuple[Wire, Wire]],
         result_wires: list[Wire],
         cls=None,
     ):

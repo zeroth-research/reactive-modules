@@ -1,0 +1,160 @@
+MODULE main
+
+VAR hrm_enhanced_ebmc_dut_dbg_pulse_rejected : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_dbg_first_pulse_seen : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_dbg_interval_count : unsigned word[16];
+VAR hrm_enhanced_ebmc_dut_arrhythmia_alert : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_heart_rate_valid : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_heart_rate : unsigned word[16];
+VAR hrm_enhanced_ebmc_dut_pulse : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_reset : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_clk : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_ARRHYTHMIA_TIMEOUT : signed word[32];
+VAR hrm_enhanced_ebmc_dut_MIN_PULSE_INTERVAL : signed word[32];
+VAR hrm_enhanced_ebmc_dut_MAX_BPM : signed word[32];
+VAR hrm_enhanced_ebmc_dut_TICKS_PER_SEC : signed word[32];
+VAR Verilog__HeartRateMonitorEnhanced_100__16_40_180__300__heart_rate_aux3 : unsigned word[16];
+VAR hrm_enhanced_ebmc_assert_17 : boolean;
+VAR hrm_enhanced_ebmc_assert_15 : boolean;
+VAR hrm_enhanced_ebmc_assert_13 : boolean;
+VAR hrm_enhanced_ebmc_assert_11 : boolean;
+VAR hrm_enhanced_ebmc_assert_9 : boolean;
+VAR hrm_enhanced_ebmc_assume_7 : boolean;
+VAR hrm_enhanced_ebmc_assume_5 : boolean;
+VAR hrm_enhanced_ebmc_assume_4 : boolean;
+VAR hrm_enhanced_ebmc_assume_3 : boolean;
+VAR hrm_enhanced_ebmc_assume_2 : boolean;
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__bpm_calc : unsigned word[32];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__period : unsigned word[32];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__pulse_rejected : unsigned word[1];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__first_pulse_seen : unsigned word[1];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__interval_count : unsigned word[16];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__dbg_pulse_rejected : unsigned word[1];
+VAR HeartRateMonitorEnhanced_pulse : unsigned word[1];
+VAR Verilog__HeartRateMonitorEnhanced_100__16_40_180__300__bpm_calc_aux2 : unsigned word[32];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__heart_rate_valid : unsigned word[1];
+VAR HeartRateMonitorEnhanced_reset : unsigned word[1];
+VAR Verilog__HeartRateMonitorEnhanced_100__16_40_180__300__interval_count_aux0 : unsigned word[16];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__heart_rate : unsigned word[16];
+VAR HeartRateMonitorEnhanced_clk : unsigned word[1];
+VAR hrm_enhanced_ebmc_cover_25 : boolean;
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__pulse : unsigned word[1];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__reset : unsigned word[1];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__clk : unsigned word[1];
+VAR HeartRateMonitorEnhanced_MAX_BPM : signed word[32];
+VAR hrm_enhanced_ebmc_cover_23 : boolean;
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__ARRHYTHMIA_TIMEOUT : signed word[32];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__MIN_PULSE_INTERVAL : signed word[32];
+VAR ebmc_past4_1 : unsigned word[16];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__MAX_BPM : signed word[32];
+VAR HeartRateMonitorEnhanced_BPM_SCALE : signed word[32];
+VAR hrm_enhanced_ebmc_cover_21 : boolean;
+VAR ebmc_past3_1 : unsigned word[16];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__MIN_BPM : signed word[32];
+VAR ebmc_past2_1 : boolean;
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__COUNTER_WIDTH : signed word[32];
+VAR hrm_enhanced_ebmc_f_past_valid : boolean;
+VAR hrm_enhanced_ebmc_assert_12 : boolean;
+VAR hrm_enhanced_ebmc_ARRHYTHMIA_TIMEOUT : signed word[32];
+VAR hrm_enhanced_ebmc_MAX_BPM : signed word[32];
+VAR hrm_enhanced_ebmc_dut_heart_rate_aux4 : unsigned word[16];
+VAR hrm_enhanced_ebmc_MIN_BPM : signed word[32];
+VAR hrm_enhanced_ebmc_assert_10 : boolean;
+VAR hrm_enhanced_ebmc_dut_heart_rate_aux3 : unsigned word[16];
+VAR hrm_enhanced_ebmc_TICKS_PER_SEC : signed word[32];
+VAR hrm_enhanced_ebmc_dbg_pulse_rejected : boolean;
+VAR hrm_enhanced_ebmc_assume_1 : boolean;
+VAR HeartRateMonitorEnhanced_bpm_calc : unsigned word[32];
+VAR hrm_enhanced_ebmc_assert_16 : boolean;
+VAR hrm_enhanced_ebmc_dbg_first_pulse_seen : boolean;
+VAR HeartRateMonitorEnhanced_period : unsigned word[32];
+VAR hrm_enhanced_ebmc_dbg_interval_count : unsigned word[16];
+VAR HeartRateMonitorEnhanced_pulse_rejected : unsigned word[1];
+VAR hrm_enhanced_ebmc_arrhythmia_alert : boolean;
+VAR HeartRateMonitorEnhanced_first_pulse_seen : unsigned word[1];
+VAR hrm_enhanced_ebmc_assert_14 : boolean;
+VAR hrm_enhanced_ebmc_heart_rate_valid : boolean;
+VAR HeartRateMonitorEnhanced_interval_count : unsigned word[16];
+VAR hrm_enhanced_ebmc_heart_rate : unsigned word[16];
+VAR HeartRateMonitorEnhanced_dbg_pulse_rejected : unsigned word[1];
+VAR HeartRateMonitorEnhanced_MIN_BPM : signed word[32];
+VAR hrm_enhanced_ebmc_dut_interval_count : unsigned word[16];
+VAR Verilog__HeartRateMonitorEnhanced_interval_count_aux0 : unsigned word[16];
+VAR hrm_enhanced_ebmc_COUNTER_WIDTH : signed word[32];
+VAR HeartRateMonitorEnhanced_dbg_first_pulse_seen : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_bpm_calc_aux2 : unsigned word[32];
+VAR hrm_enhanced_ebmc_pulse : boolean;
+VAR Verilog__HeartRateMonitorEnhanced_100__16_40_180__300__period_aux1 : unsigned word[32];
+VAR Verilog__HeartRateMonitorEnhanced_100__16_40_180__300__heart_rate_aux4 : unsigned word[16];
+VAR HeartRateMonitorEnhanced_heart_rate : unsigned word[16];
+VAR hrm_enhanced_ebmc_dut_period_aux1 : unsigned word[32];
+VAR hrm_enhanced_ebmc_reset : boolean;
+VAR hrm_enhanced_ebmc_assert_8 : boolean;
+VAR hrm_enhanced_ebmc_dut_interval_count_aux0 : unsigned word[16];
+VAR hrm_enhanced_ebmc_clk : boolean;
+VAR hrm_enhanced_ebmc_dut_bpm_calc : unsigned word[32];
+VAR Verilog__HeartRateMonitorEnhanced_heart_rate_aux4 : unsigned word[16];
+VAR hrm_enhanced_ebmc_cover_24 : boolean;
+VAR hrm_enhanced_ebmc_dut_period : unsigned word[32];
+VAR Verilog__HeartRateMonitorEnhanced_heart_rate_aux3 : unsigned word[16];
+VAR HeartRateMonitorEnhanced_ARRHYTHMIA_TIMEOUT : signed word[32];
+VAR hrm_enhanced_ebmc_dut_first_pulse_seen : unsigned word[1];
+VAR Verilog__HeartRateMonitorEnhanced_period_aux1 : unsigned word[32];
+VAR hrm_enhanced_ebmc_cover_22 : boolean;
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__dbg_interval_count : unsigned word[16];
+VAR hrm_enhanced_ebmc_dut_COUNTER_WIDTH : signed word[32];
+VAR HeartRateMonitorEnhanced_arrhythmia_alert : unsigned word[1];
+VAR hrm_enhanced_ebmc_assert_19 : boolean;
+VAR hrm_enhanced_ebmc_cover_20 : boolean;
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__TICKS_PER_SEC : signed word[32];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__arrhythmia_alert : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_BPM_SCALE : signed word[32];
+VAR HeartRateMonitorEnhanced_heart_rate_valid : unsigned word[1];
+VAR HeartRateMonitorEnhanced_TICKS_PER_SEC : signed word[32];
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__dbg_first_pulse_seen : unsigned word[1];
+VAR hrm_enhanced_ebmc_dut_MIN_BPM : signed word[32];
+VAR HeartRateMonitorEnhanced_dbg_interval_count : unsigned word[16];
+VAR ebmc_past1_1 : boolean;
+VAR HeartRateMonitorEnhanced_100__16_40_180__300__BPM_SCALE : signed word[32];
+VAR HeartRateMonitorEnhanced_COUNTER_WIDTH : signed word[32];
+VAR hrm_enhanced_ebmc_assume_6 : boolean;
+VAR hrm_enhanced_ebmc_dut_pulse_rejected : unsigned word[1];
+VAR Verilog__HeartRateMonitorEnhanced_bpm_calc_aux2 : unsigned word[32];
+VAR HeartRateMonitorEnhanced_MIN_PULSE_INTERVAL : signed word[32];
+VAR hrm_enhanced_ebmc_assert_18 : boolean;
+
+INIT hrm_enhanced_ebmc_f_past_valid = FALSE
+INIT ebmc_past1_1 = FALSE
+INIT ebmc_past2_1 = FALSE
+INIT ebmc_past3_1 = 0ud16_0
+INIT ebmc_past4_1 = 0ud16_0
+INVAR hrm_enhanced_ebmc_dut_heart_rate_aux4 = (hrm_enhanced_ebmc_dut_period_aux1 != unsigned(0sd32_0)?hrm_enhanced_ebmc_dut_bpm_calc_aux2:0ud32_0)[15:0]
+INVAR hrm_enhanced_ebmc_dut_heart_rate_aux3 = (hrm_enhanced_ebmc_dut_period_aux1 != unsigned(0sd32_0)?hrm_enhanced_ebmc_dut_bpm_calc_aux2:0ud32_0)[15:0]
+INVAR hrm_enhanced_ebmc_dut_bpm_calc_aux2 = unsigned(0sd32_6000) / hrm_enhanced_ebmc_dut_period_aux1
+INVAR hrm_enhanced_ebmc_dut_period_aux1 = extend(hrm_enhanced_ebmc_dut_interval_count, 16) + unsigned(0sd32_1)
+INVAR hrm_enhanced_ebmc_dut_interval_count_aux0 = hrm_enhanced_ebmc_dut_interval_count + extend(0ud1_1, 15)
+INVAR hrm_enhanced_ebmc_dut_dbg_interval_count = hrm_enhanced_ebmc_dut_interval_count
+INVAR hrm_enhanced_ebmc_dut_dbg_first_pulse_seen = hrm_enhanced_ebmc_dut_first_pulse_seen
+INVAR hrm_enhanced_ebmc_dut_dbg_pulse_rejected = hrm_enhanced_ebmc_dut_pulse_rejected
+INVAR hrm_enhanced_ebmc_dut_arrhythmia_alert = word1(bool(hrm_enhanced_ebmc_dut_first_pulse_seen) & hrm_enhanced_ebmc_dut_interval_count >= 0sd32_300[15:0])
+INVAR hrm_enhanced_ebmc_dut_clk = word1(hrm_enhanced_ebmc_clk)
+INVAR hrm_enhanced_ebmc_dut_reset = word1(hrm_enhanced_ebmc_reset)
+INVAR hrm_enhanced_ebmc_dut_pulse = word1(hrm_enhanced_ebmc_pulse)
+INVAR hrm_enhanced_ebmc_heart_rate = hrm_enhanced_ebmc_dut_heart_rate
+INVAR hrm_enhanced_ebmc_heart_rate_valid = bool(hrm_enhanced_ebmc_dut_heart_rate_valid)
+INVAR hrm_enhanced_ebmc_arrhythmia_alert = bool(hrm_enhanced_ebmc_dut_arrhythmia_alert)
+INVAR hrm_enhanced_ebmc_dbg_interval_count = hrm_enhanced_ebmc_dut_dbg_interval_count
+INVAR hrm_enhanced_ebmc_dbg_first_pulse_seen = bool(hrm_enhanced_ebmc_dut_dbg_first_pulse_seen)
+INVAR hrm_enhanced_ebmc_dbg_pulse_rejected = bool(hrm_enhanced_ebmc_dut_dbg_pulse_rejected)
+TRANS next(hrm_enhanced_ebmc_dut_bpm_calc) = (bool(hrm_enhanced_ebmc_dut_reset)?hrm_enhanced_ebmc_dut_bpm_calc:bool(hrm_enhanced_ebmc_dut_pulse)?bool(hrm_enhanced_ebmc_dut_first_pulse_seen) & hrm_enhanced_ebmc_dut_interval_count < 0sd32_30[15:0]?hrm_enhanced_ebmc_dut_bpm_calc:bool(hrm_enhanced_ebmc_dut_first_pulse_seen)?hrm_enhanced_ebmc_dut_period_aux1 != unsigned(0sd32_0)?hrm_enhanced_ebmc_dut_bpm_calc_aux2:0ud32_0:hrm_enhanced_ebmc_dut_bpm_calc:hrm_enhanced_ebmc_dut_bpm_calc)
+TRANS next(hrm_enhanced_ebmc_dut_period) = (bool(hrm_enhanced_ebmc_dut_reset)?hrm_enhanced_ebmc_dut_period:bool(hrm_enhanced_ebmc_dut_pulse)?bool(hrm_enhanced_ebmc_dut_first_pulse_seen) & hrm_enhanced_ebmc_dut_interval_count < 0sd32_30[15:0]?hrm_enhanced_ebmc_dut_period:bool(hrm_enhanced_ebmc_dut_first_pulse_seen)?hrm_enhanced_ebmc_dut_period_aux1:hrm_enhanced_ebmc_dut_period:hrm_enhanced_ebmc_dut_period)
+TRANS next(hrm_enhanced_ebmc_dut_pulse_rejected) = (bool(hrm_enhanced_ebmc_dut_reset)?0ud1_0:bool(hrm_enhanced_ebmc_dut_pulse)?bool(hrm_enhanced_ebmc_dut_first_pulse_seen) & hrm_enhanced_ebmc_dut_interval_count < 0sd32_30[15:0]?0ud1_1:0ud1_0:0ud1_0)
+TRANS next(hrm_enhanced_ebmc_dut_first_pulse_seen) = (bool(hrm_enhanced_ebmc_dut_reset)?0ud1_0:bool(hrm_enhanced_ebmc_dut_pulse)?bool(hrm_enhanced_ebmc_dut_first_pulse_seen) & hrm_enhanced_ebmc_dut_interval_count < 0sd32_30[15:0]?hrm_enhanced_ebmc_dut_first_pulse_seen:0ud1_1:hrm_enhanced_ebmc_dut_first_pulse_seen)
+TRANS next(hrm_enhanced_ebmc_dut_interval_count) = (bool(hrm_enhanced_ebmc_dut_reset)?0ud16_0:bool(hrm_enhanced_ebmc_dut_pulse)?bool(hrm_enhanced_ebmc_dut_first_pulse_seen) & hrm_enhanced_ebmc_dut_interval_count < 0sd32_30[15:0]?hrm_enhanced_ebmc_dut_interval_count != 0ud16_65535?hrm_enhanced_ebmc_dut_interval_count_aux0:hrm_enhanced_ebmc_dut_interval_count:0ud16_0:hrm_enhanced_ebmc_dut_interval_count != 0ud16_65535?hrm_enhanced_ebmc_dut_interval_count_aux0:hrm_enhanced_ebmc_dut_interval_count)
+TRANS next(hrm_enhanced_ebmc_dut_heart_rate) = (bool(hrm_enhanced_ebmc_dut_reset)?0ud16_0:bool(hrm_enhanced_ebmc_dut_pulse)?bool(hrm_enhanced_ebmc_dut_first_pulse_seen) & hrm_enhanced_ebmc_dut_interval_count < 0sd32_30[15:0]?hrm_enhanced_ebmc_dut_heart_rate:bool(hrm_enhanced_ebmc_dut_first_pulse_seen)?(hrm_enhanced_ebmc_dut_period_aux1 != unsigned(0sd32_0)?hrm_enhanced_ebmc_dut_bpm_calc_aux2:0ud32_0) >= unsigned(0sd32_40) & (hrm_enhanced_ebmc_dut_period_aux1 != unsigned(0sd32_0)?hrm_enhanced_ebmc_dut_bpm_calc_aux2:0ud32_0) <= unsigned(0sd32_180)?hrm_enhanced_ebmc_dut_heart_rate_aux3:(hrm_enhanced_ebmc_dut_period_aux1 != unsigned(0sd32_0)?hrm_enhanced_ebmc_dut_bpm_calc_aux2:0ud32_0) > unsigned(0sd32_180)?0ud16_180:hrm_enhanced_ebmc_dut_heart_rate_aux4:hrm_enhanced_ebmc_dut_heart_rate:hrm_enhanced_ebmc_dut_heart_rate)
+TRANS next(hrm_enhanced_ebmc_dut_heart_rate_valid) = (bool(hrm_enhanced_ebmc_dut_reset)?0ud1_0:bool(hrm_enhanced_ebmc_dut_pulse)?bool(hrm_enhanced_ebmc_dut_first_pulse_seen) & hrm_enhanced_ebmc_dut_interval_count < 0sd32_30[15:0]?hrm_enhanced_ebmc_dut_heart_rate_valid:bool(hrm_enhanced_ebmc_dut_first_pulse_seen)?(hrm_enhanced_ebmc_dut_period_aux1 != unsigned(0sd32_0)?hrm_enhanced_ebmc_dut_bpm_calc_aux2:0ud32_0) >= unsigned(0sd32_40) & (hrm_enhanced_ebmc_dut_period_aux1 != unsigned(0sd32_0)?hrm_enhanced_ebmc_dut_bpm_calc_aux2:0ud32_0) <= unsigned(0sd32_180)?0ud1_1:(hrm_enhanced_ebmc_dut_period_aux1 != unsigned(0sd32_0)?hrm_enhanced_ebmc_dut_bpm_calc_aux2:0ud32_0) > unsigned(0sd32_180)?0ud1_0:0ud1_0:hrm_enhanced_ebmc_dut_heart_rate_valid:hrm_enhanced_ebmc_dut_heart_rate_valid)
+TRANS next(hrm_enhanced_ebmc_f_past_valid) = TRUE
+TRANS next(ebmc_past1_1) = hrm_enhanced_ebmc_pulse
+TRANS next(ebmc_past2_1) = hrm_enhanced_ebmc_reset
+TRANS next(ebmc_past3_1) = hrm_enhanced_ebmc_dbg_interval_count
+TRANS next(ebmc_past4_1) = hrm_enhanced_ebmc_heart_rate

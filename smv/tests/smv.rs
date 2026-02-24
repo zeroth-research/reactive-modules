@@ -755,7 +755,7 @@ fn semicolon_free_sections() {
 
 #[test]
 fn hrm_word_level() {
-    let input = include_str!("../../hrm_word_level_no_prop.smv");
+    let input = include_str!("hrm_word_level_no_prop.smv");
     let result = parse_smv(input).unwrap();
     assert!(
         result.init_constraints.is_empty(),
