@@ -1,5 +1,4 @@
-# from zrth.gym import SimpleQNet, SimpleEnv, GridWorldEnv, GridWorldQNet, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv
-from zrth.gym import SimpleQNet, SimpleEnv
+from zrth.gym import SimpleQNet, SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv
 from zrth import Module
 
 
@@ -51,56 +50,56 @@ def test_simpleenv_conversion():
 #     _ = gridworldqnet()
 
 
-# def gridworldenv():
-#     env = GridWorldEnv()
+def gridworldenv():
+    env = GridWorldEnv()
 
-#     print("\nGridWorldEnv reactive module:")
-#     print(env)
+    print("\nGridWorldEnv reactive module:")
+    print(env)
 
-#     return env
-
-
-# def test_gridworldenv_conversion():
-#     _ = gridworldenv()
+    return env
 
 
-# def complexdecisionenv():
-#     env = ComplexDecisionEnv()
-
-#     print("\nComplexDecisionEnv reactive module:")
-#     print(env)
-
-#     return env
+def test_gridworldenv_conversion():
+    _ = gridworldenv()
 
 
-# def test_complexdecisionenv_conversion():
-#     _ = complexdecisionenv()
+def complexdecisionenv():
+    env = ComplexDecisionEnv()
+
+    print("\nComplexDecisionEnv reactive module:")
+    print(env)
+
+    return env
 
 
-# def earlyreturnenv():
-#     env = EarlyReturnEnv()
-
-#     print("\nEarlyReturnEnv reactive module:")
-#     print(env)
-
-#     return env
+def test_complexdecisionenv_conversion():
+    _ = complexdecisionenv()
 
 
-# def test_earlyreturnenv_conversion():
-#     _ = earlyreturnenv()
+def earlyreturnenv():
+    env = EarlyReturnEnv()
+
+    print("\nEarlyReturnEnv reactive module:")
+    print(env)
+
+    return env
 
 
-# def comparisonchainenv():
-#     env = ComparisonChainEnv()
-
-#     print("\nComparisonChainEnv reactive module:")
-#     print(env)
-
-#     return env
+def test_earlyreturnenv_conversion():
+    _ = earlyreturnenv()
 
 
-# def test_comparisonchainenv_conversion():
-#     _ = comparisonchainenv()
+def comparisonchainenv():
+    env = ComparisonChainEnv()
+
+    print("\nComparisonChainEnv reactive module:")
+    print(env)
+
+    return env
+
+
+def test_comparisonchainenv_conversion():
+    _ = comparisonchainenv()
 
 
 if __name__ == "__main__":
@@ -112,28 +111,19 @@ if __name__ == "__main__":
     # print(composed)
     
     # print("\n" + "="*60 + "\n")
-    # print("=" * 60)
     # qnet3 = gridworldqnet()
-    
+    print("\n" + "="*60 + "\n")
+    gridenv = gridworldenv()
     # print("\n" + "="*60 + "\n")
-    # print("=" * 60)
-    # gridenv = gridworldenv()
-    
-    # print("\n" + "="*60 + "\n")
-    # print("=" * 60)
     # composed2 = Module.parallel(qnet3, gridenv)
     # print(composed2)
     
-    # print("\n" + "="*60 + "\n")
-    # print("=" * 60)
-    # complexenv = complexdecisionenv()
+    print("\n" + "="*60 + "\n")
+    complexenv = complexdecisionenv()
     
-    # print("\n" + "="*60 + "\n")
-    # print("=" * 60)
-    # print("Testing EarlyReturnEnv (early returns in if/else)")
-    # earlyenv = earlyreturnenv()
+    print("\n" + "="*60 + "\n")
+    earlyenv = earlyreturnenv()
     
-    # print("\n" + "="*60 + "\n")
-    # print("=" * 60)
-    # print("Testing ComparisonChainEnv (comparison chains like 0 < x < 10)")
-    # compenv = comparisonchainenv()
+    print("\n" + "="*60 + "\n")
+    print("=" * 60)
+    compenv = comparisonchainenv()
