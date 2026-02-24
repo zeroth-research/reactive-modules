@@ -167,7 +167,14 @@ class AccessAnalyzer(ast.NodeVisitor):
         if not self.current:
             return
 
-        if isinstance(node.func, ast.Name):
+        if isinstance(node.func, ast.Attribute):
+            if isinstance(node.func.value, ast.Name) and node.func.value.id == "self":
+                # self.method() — record as a call, not an attribute read
+                self.current.calls.add(node.func.attr)
+                for arg in node.args:
+                    self.visit(arg)
+                return
+        elif isinstance(node.func, ast.Name):
             self.current.calls.add(node.func.id)
 
         self.generic_visit(node)

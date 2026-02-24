@@ -1,9 +1,15 @@
 from gymnasium import spaces
 from .zrth_module import Env
 
+# TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
+from zrth.zrth import DType
 
 class SimpleEnv(Env):
     """Simple chain environment with partial observability"""
+    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
+    state: DType.Float([1])
+    q_values: DType.Float([2])
+    observation: DType.Float([1])
     
     def __init__(self):
         """Initialize simple chain environment"""
@@ -37,7 +43,7 @@ class SimpleEnv(Env):
         reward = 1.0 if self.state == 2 else 0.0
 
         # Episode terminates when reaching state 2
-        terminated = self.state == 2
+        terminated = self._get_observation() == 1
         truncated = False
 
         observation = self._get_observation()  # Get partial observation
