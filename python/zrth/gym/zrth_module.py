@@ -8,14 +8,13 @@ class Env(Module, gym.Env):
 
     def __new__(cls, *args, **kwargs):
         # TODO: trace the init for q_values and observation sizes
-        q_values = [Wire(DType.TensorFloat([2])), Wire(DType.TensorFloat([2]))]
-        observation = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
-        reward = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
-        terminated = [Wire(DType.TensorBool([1])), Wire(DType.TensorBool([1]))]
-        truncated = [Wire(DType.TensorBool([1])), Wire(DType.TensorBool([1]))]
-
+        q_values = [Wire(DType.Float([2])), Wire(DType.Float([2]))]
+        observation = [Wire(DType.Float([1])), Wire(DType.Float([1]))]
+        reward = [Wire(DType.Float([1])), Wire(DType.Float([1]))]
+        terminated = [Wire(DType.Bool([1])), Wire(DType.Bool([1]))]
+        truncated = [Wire(DType.Bool([1])), Wire(DType.Bool([1]))]
         # TODO: infer
-        state = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
+        state = [Wire(DType.Float([1])), Wire(DType.Float([1]))]
 
         wires = {
             'q_values': q_values,
@@ -33,8 +32,8 @@ class NN(Module, nn.Module):
     
     def __new__(cls, *args, **kwargs):
         # TODO: trace the init for q_values and observation sizes
-        observation = [Wire(DType.TensorFloat([1])), Wire(DType.TensorFloat([1]))]
-        q_values = [Wire(DType.TensorFloat([2])), Wire(DType.TensorFloat([2]))]
+        observation = [Wire(DType.Float([1])), Wire(DType.Float([1]))]
+        q_values = [Wire(DType.Float([2])), Wire(DType.Float([2]))]
         
         wires = {'observation': observation}
         result = [q_values[1]]
