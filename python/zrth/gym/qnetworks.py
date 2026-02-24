@@ -6,9 +6,6 @@ from .zrth_module import NN
 class SimpleQNet(NN):
     """Simple Q-Network with one hidden layer"""
     
-    extl = ["observation: Tensor<1; Float>"]
-    intf = ["q_values: Tensor<2; Float>"]
-    
     def __init__(self, state_size, action_size, hidden_size, seed=42):
         """Initialize Q-Network
 

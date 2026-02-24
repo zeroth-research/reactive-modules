@@ -104,12 +104,12 @@ def test_simpleenv_conversion():
 
 
 if __name__ == "__main__":
-    qnet = simpleqnet()
-    print("\n" + "="*60 + "\n")
+    # qnet = simpleqnet()
+    # print("\n" + "="*60 + "\n")
     env = simpleenv()
-    print("\n" + "="*60 + "\n")
-    composed = Module.parallel(qnet, env)
-    print(composed)
+    # print("\n" + "="*60 + "\n")
+    # composed = Module.parallel(qnet, env)
+    # print(composed)
     
     # print("\n" + "="*60 + "\n")
     # print("=" * 60)
