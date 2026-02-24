@@ -1,4 +1,5 @@
-from zrth.gym import SimpleQNet, SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv
+from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv
+from .qnetworks import SimpleQNet
 from zrth import Module
 
 
@@ -125,5 +126,4 @@ if __name__ == "__main__":
     earlyenv = earlyreturnenv()
     
     print("\n" + "="*60 + "\n")
-    print("=" * 60)
     compenv = comparisonchainenv()

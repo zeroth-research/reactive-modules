@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .zrth_module import NN
+from zrth.gym import NN
 
 
 class SimpleQNet(NN):

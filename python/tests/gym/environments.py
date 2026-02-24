@@ -1,5 +1,5 @@
 from gymnasium import spaces
-from .zrth_module import Env
+from zrth.gym import Env
 
 # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
 from zrth.zrth import DType
