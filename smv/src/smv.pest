@@ -1,0 +1,193 @@
+// ==============================
+// NuSMV 2.1 Grammar (Pest)
+// ==============================
+//
+// Supports modules, variables (VAR, IVAR, FROZENVAR), assignments,
+// DEFINE macros, standalone INIT/TRANS/INVAR sections, arithmetic,
+// boolean logic, comparisons, case..esac, and ternary conditionals (? :).
+//
+// Expression precedence (low to high):
+//   expr_cond       (? :)          our extension
+//   expr_implies    (->)           right-associative
+//   expr_iff        (<->, xnor)
+//   expr_or         (|, or, xor)
+//   expr_and        (&, and)
+//   expr_not        (!, not)
+//   expr_cmp        (=, !=, <, >, <=, >=)
+//   expr_arith      (+, -)
+//   expr_mod        (mod)
+//   expr_term       (*, /)
+//   neg_expr        (unary -)      HIGHEST
+// ===========================================
+
+WHITESPACE  = _{ " " | "\t" | NEWLINE }
+NEWLINE     = _{ "\r\n" | "\n" | "\r" }
+COMMENT     = _{ "--" ~ (!NEWLINE ~ ANY)* }
+
+file        =  { SOI ~ module_decl ~ EOI }
+
+module_decl =  { MODULE ~ ident ~ ( "(" ~ param_list? ~ ")" )? ~ module_body }
+
+param_list  =  { ident ~ ("," ~ ident)* }
+
+module_body =  { (ivar_section | var_section | frozenvar_section | define_section | assign_section | invar_section | init_section | trans_section | fairness_section | justice_section | compassion_section | constants_section)* }
+
+invar_section = { INVAR ~ expr ~ ";"? }
+init_section  = { INIT_KW ~ expr ~ ";"? }
+trans_section = { TRANS ~ expr ~ ";"? }
+
+fairness_section    = { FAIRNESS ~ expr ~ ";" }
+justice_section     = { JUSTICE ~ expr ~ ";" }
+compassion_section  = { COMPASSION ~ "(" ~ expr ~ "," ~ expr ~ ")" ~ ";" }
+constants_section   = { CONSTANTS ~ ident ~ ("," ~ ident)* ~ ";" }
+
+ivar_section =  { IVAR ~ ivar_decl+ }
+ivar_decl    =  { ident ~ ":" ~ type_spec ~ ";" }
+
+var_section  =  { VAR ~ var_decl+ }
+var_decl     =  { ident ~ ":" ~ type_spec ~ ";" }
+
+frozenvar_section = { FROZENVAR ~ frozenvar_decl+ }
+frozenvar_decl    = { ident ~ ":" ~ type_spec ~ ";" }
+
+type_spec    =  { word_type | range_type | BOOLEAN | INTEGER | enum_type }
+word_type    =  { (UNSIGNED_KW | SIGNED_KW) ~ WORD_KW ~ "[" ~ number ~ "]" }
+range_type   =  { number ~ ".." ~ number }
+enum_type    =  { "{" ~ enum_value ~ ("," ~ enum_value)* ~ "}" }
+enum_value   =  { ident | number }
+
+define_section = { DEFINE ~ define_decl+ }
+define_decl    = { ident ~ ":=" ~ expr ~ ";" }
+
+assign_section = { ASSIGN ~ assign_stmt+ }
+assign_stmt    = {
+    ( init_ref | next_ref | ident ) ~ ":=" ~ expr ~ ";"
+}
+
+init_ref = { INIT ~ "(" ~ ident ~ ")" }
+next_ref = { NEXT ~ "(" ~ ident ~ ")" }
+
+// =============================
+// EXPRESSIONS
+// =============================
+
+expr          = _{ expr_cond }
+
+// Conditional (supports ternary ? :)
+expr_cond     = { expr_implies ~ (QUESTION ~ expr ~ COLON ~ expr)? }
+
+// Boolean implication (right-associative via optional recursion)
+expr_implies  = { expr_iff ~ (IMPLIES_OP ~ expr_implies)? }
+
+// Boolean equivalence (<->, xnor)
+expr_iff      = { expr_or ~ ((IFF | XNOR) ~ expr_or)* }
+
+// Boolean OR / XOR
+expr_or       = { expr_and ~ ((OR | XOR) ~ expr_and)* }
+
+// Boolean AND
+expr_and      = { expr_not ~ (AND ~ expr_not)* }
+
+// Boolean NOT (prefix, between comparisons and AND per NuSMV spec)
+expr_not      = { NOT ~ expr_not | expr_cmp }
+
+// Comparison (=, !=, <, <=, >, >=)
+expr_cmp      = { expr_arith ~ ((LE | GE | NEQ | LT | GT | EQ) ~ expr_arith)* }
+
+// Arithmetic (+, -)
+expr_arith    = { expr_mod ~ ((PLUS | MINUS) ~ expr_mod)* }
+
+// Modulo
+expr_mod      = { expr_term ~ (MOD ~ expr_term)* }
+
+// Term (*, /)
+expr_term     = { expr_unary ~ ((TIMES | DIVIDE) ~ expr_unary)* }
+
+// Unary minus (silent, delegates to neg_expr or primary)
+expr_unary    = _{ neg_expr | expr_primary }
+
+// Named rule for unary negation so the lowerer can match on it
+neg_expr      = { MINUS ~ (neg_expr | expr_primary) }
+
+// Assignment used as an expression (for ternary branches)
+expr_assign   = { ( init_ref | next_ref | ident ) ~ ":=" ~ expr }
+
+// Primary expressions
+expr_primary  = _{
+      TRUE
+    | FALSE
+    | case_expr
+    | abs_call
+    | builtin_call
+    | next_expr
+    | word_lit_expr
+    | ident
+    | number
+    | paren_expr
+    | expr_assign
+}
+
+abs_call      = { ABS ~ "(" ~ expr ~ ")" }
+builtin_call  = { BUILTIN_FN ~ "(" ~ expr ~ ("," ~ expr)* ~ ")" }
+next_expr     = { NEXT ~ "(" ~ expr ~ ")" }
+bit_select    = { "[" ~ number ~ ":" ~ number ~ "]" }
+paren_expr    = { "(" ~ expr ~ ")" ~ bit_select? }
+word_lit_expr = { word_literal ~ bit_select? }
+word_literal  = @{ "0" ~ ("u" | "s") ~ "d" ~ ASCII_DIGIT+ ~ "_" ~ ASCII_DIGIT+ }
+case_expr   = { CASE ~ case_branch+ ~ ESAC }
+case_branch = { expr ~ ":" ~ expr ~ ";" }
+
+// =============================
+// TERMINALS
+// =============================
+
+MODULE      =  @{ "MODULE" ~ !(ASCII_ALPHANUMERIC | "_") }
+IVAR        =  @{ "IVAR" ~ !(ASCII_ALPHANUMERIC | "_") }
+VAR         =  @{ "VAR" ~ !(ASCII_ALPHANUMERIC | "_") }
+DEFINE      =  @{ "DEFINE" ~ !(ASCII_ALPHANUMERIC | "_") }
+ASSIGN      =  @{ "ASSIGN" ~ !(ASCII_ALPHANUMERIC | "_") }
+INIT        =  @{ "init" ~ !(ASCII_ALPHANUMERIC | "_") }
+INIT_KW     =  @{ "INIT" ~ !(ASCII_ALPHANUMERIC | "_") }
+ABS         =  @{ "abs" ~ !(ASCII_ALPHANUMERIC | "_") }
+TRANS       =  @{ "TRANS" ~ !(ASCII_ALPHANUMERIC | "_") }
+NEXT        =  @{ "next" ~ !(ASCII_ALPHANUMERIC | "_") }
+INVAR       =  @{ "INVAR" ~ !(ASCII_ALPHANUMERIC | "_") }
+BOOLEAN     =  @{ "boolean" ~ !(ASCII_ALPHANUMERIC | "_") }
+INTEGER     =  @{ "integer" ~ !(ASCII_ALPHANUMERIC | "_") }
+UNSIGNED_KW =  @{ "unsigned" ~ !(ASCII_ALPHANUMERIC | "_") }
+SIGNED_KW   =  @{ "signed" ~ !(ASCII_ALPHANUMERIC | "_") }
+WORD_KW     =  @{ "word" ~ !(ASCII_ALPHANUMERIC | "_") }
+BUILTIN_FN  =  @{ ("bool" | "word1" | "unsigned" | "signed" | "extend") ~ !(ASCII_ALPHANUMERIC | "_") }
+TRUE        =  @{ "TRUE" ~ !(ASCII_ALPHANUMERIC | "_") }
+FALSE       =  @{ "FALSE" ~ !(ASCII_ALPHANUMERIC | "_") }
+CASE        =  @{ "case" ~ !(ASCII_ALPHANUMERIC | "_") }
+ESAC        =  @{ "esac" ~ !(ASCII_ALPHANUMERIC | "_") }
+FROZENVAR   =  @{ "FROZENVAR" ~ !(ASCII_ALPHANUMERIC | "_") }
+FAIRNESS    =  @{ "FAIRNESS" ~ !(ASCII_ALPHANUMERIC | "_") }
+JUSTICE     =  @{ "JUSTICE" ~ !(ASCII_ALPHANUMERIC | "_") }
+COMPASSION  =  @{ "COMPASSION" ~ !(ASCII_ALPHANUMERIC | "_") }
+CONSTANTS   =  @{ "CONSTANTS" ~ !(ASCII_ALPHANUMERIC | "_") }
+
+QUESTION    =  @{ "?" }
+COLON       =  @{ ":" }
+IFF         =  @{ "<->" }
+IMPLIES_OP  =  @{ "->" }
+NEQ         =  @{ "!=" }
+LE          =  @{ "<=" }
+GE          =  @{ ">=" }
+LT          =  @{ "<" }
+GT          =  @{ ">" }
+EQ          =  @{ "=" }
+AND         =  @{ "&" | "and" ~ !(ASCII_ALPHANUMERIC | "_") }
+OR          =  @{ "|" | "or" ~ !(ASCII_ALPHANUMERIC | "_") }
+XOR         =  @{ "xor" ~ !(ASCII_ALPHANUMERIC | "_") }
+XNOR        =  @{ "xnor" ~ !(ASCII_ALPHANUMERIC | "_") }
+NOT         =  @{ "!" | "not" ~ !(ASCII_ALPHANUMERIC | "_") }
+MOD         =  @{ "mod" ~ !(ASCII_ALPHANUMERIC | "_") }
+PLUS        =  @{ "+" }
+MINUS       =  @{ "-" }
+TIMES       =  @{ "*" }
+DIVIDE      =  @{ "/" }
+
+ident       =  @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | "$" | "#")* }
+number      =  @{ ASCII_DIGIT+ }
