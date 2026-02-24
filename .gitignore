@@ -5,7 +5,7 @@ target
 # Added by Marco
 *.html
 *.txt
-*.smv
+# *.smv
 *.lean
 *.smt
 *.smt2
