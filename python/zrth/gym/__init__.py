@@ -5,10 +5,10 @@ from .zrth_module import Env, NN
 from .qnetworks import SimpleQNet
 from .environments import (
     SimpleEnv,
-    # GridWorldEnv,
-    # ComplexDecisionEnv,
-    # EarlyReturnEnv,
-    # ComparisonChainEnv,
+    GridWorldEnv,
+    ComplexDecisionEnv,
+    EarlyReturnEnv,
+    ComparisonChainEnv,
 )
 from .agent import DQNAgent
 
@@ -19,9 +19,9 @@ __all__ = [
     "SimpleQNet",
     "GridWorldQNet",
     "SimpleEnv",
-    # "GridWorldEnv",
-    # "ComplexDecisionEnv",
-    # "EarlyReturnEnv",
-    # "ComparisonChainEnv",
+    "GridWorldEnv",
+    "ComplexDecisionEnv",
+    "EarlyReturnEnv",
+    "ComparisonChainEnv",
     "DQNAgent",
 ]
