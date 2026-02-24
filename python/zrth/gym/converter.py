@@ -29,7 +29,9 @@ def convert_method(
     if not isinstance(func_def, ast.FunctionDef):
         raise ValueError(f"Expected function definition, got {type(func_def).__name__}")
 
-    # Seed temp_vars with current-wires for params that appear in wires dict
+    # Normalize early returns to single-exit form before visiting
+    func_def.body = _normalize_early_returns(func_def.body)
+
     param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
     visitor = MethodVisitor(wires, result, cls=cls)
     visitor.temp_vars.update(
@@ -39,7 +41,87 @@ def convert_method(
     for stmt in func_def.body:
         visitor.visit(stmt)
 
+    for i, result_wire in enumerate(result):
+        src = visitor.temp_vars.get(f"_ret_{i}")
+        if src is None:
+            raise ValueError(f"Method has no return value for result {i}")
+        visitor.terms.append(Term(IType.Id(), [result_wire], [src]))
+
     return visitor.terms
+
+
+def _normalize_early_returns(stmts: list) -> list:
+    """Convert early-return patterns to single-exit form.
+
+    Transforms:
+        if cond:
+            ...
+            return val      ← replaced with _ret_i = val assignments
+        rest...
+        return final
+    Into:
+        if cond:
+            ...
+            _ret_0 = val0
+            _ret_1 = val1
+        else:
+            rest...
+            return final    ← visit_Return stores _ret_i in temp_vars
+
+    Both branches then set _ret_i, so visit_If SSA-merges them via Ite.
+    Applied recursively so multiple consecutive early returns are all folded in.
+    """
+    result = []
+    idx = 0
+    while idx < len(stmts):
+        stmt = stmts[idx]
+
+        # Detect: if without else whose body ends with a return
+        if (
+            isinstance(stmt, ast.If)
+            and not stmt.orelse
+            and stmt.body
+            and isinstance(stmt.body[-1], ast.Return)
+        ):
+            ret = stmt.body[-1]
+            values = (
+                ret.value.elts if isinstance(ret.value, ast.Tuple)
+                else ([ret.value] if ret.value else [])
+            )
+            # Replace return with _ret_i = value assignments so SSA sees both branches
+            ret_assigns = [
+                ast.fix_missing_locations(ast.copy_location(
+                    ast.Assign(
+                        targets=[ast.Name(id=f"_ret_{i}", ctx=ast.Store())],
+                        value=val,
+                        type_comment=None,
+                    ),
+                    ret,
+                ))
+                for i, val in enumerate(values)
+            ]
+            body = _normalize_early_returns(stmt.body[:-1]) + ret_assigns
+            rest = _normalize_early_returns(stmts[idx + 1:])
+            result.append(ast.copy_location(
+                ast.If(test=stmt.test, body=body or [ast.Pass()], orelse=rest),
+                stmt,
+            ))
+            return result  # rest is consumed into the else; nothing left to process
+
+        if isinstance(stmt, ast.If):
+            stmt = ast.copy_location(
+                ast.If(
+                    test=stmt.test,
+                    body=_normalize_early_returns(stmt.body),
+                    orelse=_normalize_early_returns(stmt.orelse) if stmt.orelse else [],
+                ),
+                stmt,
+            )
+
+        result.append(stmt)
+        idx += 1
+
+    return result
 
 
 # ============================================================================
@@ -142,10 +224,7 @@ class MethodVisitor(ast.NodeVisitor):
 
     @contextmanager
     def _scope(self, scope_name):
-        """Context manager for scope tracking
-
-        Ensures scope cleanup even if exceptions occur during branch processing.
-        """
+        """Push/pop scope for top-level write detection."""
         self.scopes.append(scope_name)
         try:
             yield
@@ -153,10 +232,7 @@ class MethodVisitor(ast.NodeVisitor):
             self.scopes.pop()
 
     def visit_If(self, node):
-        """Handle if/else with SSA: evaluate both branches, merge with Ite
-
-        Ensures each wire is written exactly once by merging branches.
-        """
+        """Handle if/else with SSA: evaluate both branches, merge with Ite."""
         cond_wire = self._convert_expr(node.test)
 
         parent_scope = dict(self.temp_vars)
@@ -174,24 +250,28 @@ class MethodVisitor(ast.NodeVisitor):
                     self.visit(stmt)
         else_scope_after = dict(self.temp_vars)
 
+        # In a normalized early-return branch (contains _ret_*), plain locals are dead
+        # after the return — only wire_pairs and _ret_* should escape.
+        if any(k.startswith("_ret_") for k in if_scope_after):
+            if_scope_after = {k: v for k, v in if_scope_after.items() if k in self.wire_pairs or k.startswith("_ret_")}
+        if any(k.startswith("_ret_") for k in else_scope_after):
+            else_scope_after = {k: v for k, v in else_scope_after.items() if k in self.wire_pairs or k.startswith("_ret_")}
+
         all_vars = set(if_scope_after.keys()) | set(else_scope_after.keys())
 
         for var in all_vars:
-            # Resolve variable from if branch (branch →parent → wire_pairs input)
             if_wire = if_scope_after.get(var)
             if if_wire is None:
                 if_wire = parent_scope.get(var)
             if if_wire is None and var in self.wire_pairs:
                 if_wire = self.wire_pairs[var][0]
 
-            # Resolve variable from else branch (branch → parent → wire_pairs input)
             else_wire = else_scope_after.get(var)
             if else_wire is None:
                 else_wire = parent_scope.get(var)
             if else_wire is None and var in self.wire_pairs:
                 else_wire = self.wire_pairs[var][0]
 
-            # If values differ, merge with Ite
             if if_wire != else_wire and if_wire is not None and else_wire is not None:
                 merged_wire = Wire(if_wire.dtype())
                 self.terms.append(
@@ -212,7 +292,7 @@ class MethodVisitor(ast.NodeVisitor):
             elif if_wire is not None:
                 self.temp_vars[var] = if_wire
 
-                # Only write if at top level, not already written, and is a wire pair, AND was actually written in this if (not from parent/input)
+                # Write only if top-level, not yet written, and newly assigned in this branch
                 if (
                     var in self.wire_pairs
                     and len(self.scopes) == 0
@@ -243,18 +323,13 @@ class MethodVisitor(ast.NodeVisitor):
             self.temp_vars[wire_name] = result_wire
 
             if len(self.scopes) == 0:
-                # Not in conditional - write directly to output wire
                 output_wire = self.wire_pairs[wire_name][1]
                 term = Term(IType.Id(), [output_wire], [result_wire])
                 self.terms.append(term)
                 self.written_wires.add(wire_name)
 
     def visit_AugAssign(self, node):
-        """Handle augmented assignment (+=, -=, *=, /=)
-
-        Expands augmented assignment to regular assignment with binary operation.
-        Example: self.x += 5 becomes self.x = self.x + 5
-        """
+        """Handle augmented assignment (+=, -=, *=, /=)."""
         if (
             isinstance(node.target, ast.Attribute)
             and node.target.attr in self.wire_pairs
@@ -312,10 +387,9 @@ class MethodVisitor(ast.NodeVisitor):
                 f"{len(self.result_wires)} result wire(s) were declared"
             )
 
-        for result_wire, value_node in zip(self.result_wires, value_nodes):
-            target_dtype = result_wire.dtype()
-            src_wire = self._convert_expr(value_node, target_dtype=target_dtype)
-            self.terms.append(Term(IType.Id(), [result_wire], [src_wire]))
+        for i, (result_wire, value_node) in enumerate(zip(self.result_wires, value_nodes)):
+            src_wire = self._convert_expr(value_node, target_dtype=result_wire.dtype())
+            self.temp_vars[f"_ret_{i}"] = src_wire
 
     def _convert_expr(self, expr, target_dtype=None):
         """Convert AST expression node to Wire object
@@ -369,7 +443,6 @@ class MethodVisitor(ast.NodeVisitor):
                 elif name == "self":
                     return self._inline_method(method, call.args)
 
-            # Handle generic methods that work on any object
             if method == "argmax":
                 obj_wire = self._convert_expr(obj)
                 result = Wire(DType.TensorFloat([1]))
@@ -519,12 +592,10 @@ class MethodVisitor(ast.NodeVisitor):
         - Without: right operand inherits from left (e.g., self.x + 3 → 3 matches x's dtype)
         """
         if target_dtype:
-            # Top-down propagation: assignment target determines operand types
             left_wire = self._convert_expr(binop.left, target_dtype=target_dtype)
             right_wire = self._convert_expr(binop.right, target_dtype=target_dtype)
             result_dtype = target_dtype
         else:
-            # Bottom-up inference: left operand determines right
             left_wire = self._convert_expr(binop.left)
             right_wire = self._convert_expr(binop.right, target_dtype=left_wire.dtype())
             result_dtype = left_wire.dtype()
@@ -558,7 +629,6 @@ class MethodVisitor(ast.NodeVisitor):
             return result
         elif op_type == ast.USub:
             # -x -> 0 - x
-            # If target_dtype provided, use it for the constant and result
             if target_dtype:
                 operand_wire = self._convert_expr(
                     unaryop.operand, target_dtype=target_dtype
@@ -646,7 +716,6 @@ class MethodVisitor(ast.NodeVisitor):
         for comp_wire in comparison_wires[1:]:
             false_wire = self._convert_constant(ast.Constant(False))
             merged = Wire(DType.Bool())
-            # result and comp_wire -> Ite(result, comp_wire, False)
             self.terms.append(
                 Term(IType.Ite(), [merged], [result, comp_wire, false_wire])
             )
@@ -733,11 +802,7 @@ class MethodVisitor(ast.NodeVisitor):
         return const_wire
 
     def _convert_attribute(self, attr):
-        """Convert attribute access: self.state, self.observation, etc.
-
-        First checks temp_vars for locally-assigned values (within this method).
-        Falls back to latched wire (reading state from previous cycle).
-        """
+        """Convert self.attr: returns locally-assigned wire if available, else the input wire."""
         if isinstance(attr.value, ast.Name) and attr.value.id == "self":
             wire_name = attr.attr
 
