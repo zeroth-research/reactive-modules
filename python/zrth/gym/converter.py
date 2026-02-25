@@ -129,41 +129,30 @@ def _normalize_early_returns(stmts: list) -> list:
 # ============================================================================
 
 
-def _translate_linear(input_wire: Wire, layer, terms: list[Term]) -> Wire:
-    """Translate PyTorch Linear layer to reactive operations
+def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term]):
+    """Translate a linear layer to a single IType.Linear term.
 
-    Creates: output = input * weight + bias
+    Creates: output = input @ weight + bias
+    Weight and bias wires are dangling (no term writes them) — they are
+    external parameters to be connected later.
 
     Args:
         input_wire: Input Wire
-        layer: torch.nn.Linear layer
+        out_features: Number of output features
         terms: List to append Terms to
 
     Returns:
-        Output Wire
+        (output_wire, weight_wire, bias_wire)
     """
-    weight_tensor = layer.weight.data.t().contiguous()
-    weight_itype = IType.Tensor(weight_tensor)
-    weight_wire = Wire(DType.Float(list(weight_tensor.shape)))
-    weight_term = Term(weight_itype, [weight_wire], [])
-    terms.append(weight_term)
+    in_features = input_wire.dtype().shape[-1]
 
-    matmul_dtype = DType.Float([input_wire.dtype().shape[0], weight_tensor.shape[1]])
-    matmul_wire = Wire(matmul_dtype)
-    matmul_term = Term(IType.MatMul(), [matmul_wire], [input_wire, weight_wire])
-    terms.append(matmul_term)
+    weight_wire = Wire(DType.Float([in_features, out_features]))
+    bias_wire = Wire(DType.Float([out_features]))
+    output_wire = Wire(DType.Float([out_features]))
 
-    bias_tensor = layer.bias.data
-    bias_itype = IType.Tensor(bias_tensor)
-    bias_wire = Wire(DType.Float(list(bias_tensor.shape)))
-    bias_term = Term(bias_itype, [bias_wire], [])
-    terms.append(bias_term)
+    terms.append(Term(IType.Linear(), [output_wire], [input_wire, weight_wire, bias_wire]))
 
-    output_wire = Wire(DType.Float(list(bias_tensor.shape)))
-    add_term = Term(IType.Add(), [output_wire], [matmul_wire, bias_wire])
-    terms.append(add_term)
-
-    return output_wire
+    return output_wire, weight_wire, bias_wire
 
 
 def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
