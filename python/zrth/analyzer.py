@@ -75,6 +75,7 @@ class AbstractValue:
             and other.kind == ValueKind.CONST
             and self.type_ == other.type_
         ):
+            assert self.type_ is not None
             return AbstractValue.typed(self.type_)
         # Same type from CONST/TYPED mix
         if self.type_ is not None and self.type_ == other.type_:
@@ -85,8 +86,10 @@ class AbstractValue:
     def __repr__(self) -> str:
         match self.kind:
             case ValueKind.CONST:
+                assert self.type_ is not None
                 return f"Const({self.value!r}: {self.type_.__name__})"
             case ValueKind.TYPED:
+                assert self.type_ is not None
                 return f"Typed({self.type_.__name__})"
             case ValueKind.CALL_RESULT:
                 t = f": {self.type_.__name__}" if self.type_ else ""
@@ -328,6 +331,7 @@ class AbstractInterpreter:
         initial = AbstractState()
 
         # Bind parameters
+        assert self.func_def is not None
         args = self.func_def.args
         if args.vararg or args.kwarg or args.kw_defaults:
             raise UnsupportedFeatureError(
@@ -336,9 +340,9 @@ class AbstractInterpreter:
         if args.posonlyargs:
             raise UnsupportedFeatureError("positional-only args not yet supported")
 
+        # defaults = args.defaults
+        # kw_defaults = args.kw_defaults
         all_params = args.args + args.kwonlyargs
-        defaults = args.defaults
-        kw_defaults = args.kw_defaults
 
         if arg_values is None:
             arg_values = {}
