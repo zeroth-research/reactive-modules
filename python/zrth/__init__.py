@@ -7,6 +7,7 @@ from .zrth import (
     Transition,
     WiredTransitions,
     Module,
+    AtomTerm,
 )
 
 from .context import Context, get_ctx, set_ctx, reset_ctx
@@ -27,7 +28,7 @@ def mk_DTypeBool(shape: None | list[int] = None) -> DType:
     """
     if shape is None:
         shape = [1]
-    return DType.Bool(shape)
+    return DType.TensorBool(shape)
 
 
 def mk_DTypeInt(shape: None | list[int] = None) -> DType:
@@ -36,7 +37,7 @@ def mk_DTypeInt(shape: None | list[int] = None) -> DType:
     """
     if shape is None:
         shape = [1]
-    return DType.Int(shape)
+    return DType.TensorInt(shape)
 
 
 def mk_DTypeFloat(shape: None | list[int] = None) -> DType:
@@ -45,7 +46,7 @@ def mk_DTypeFloat(shape: None | list[int] = None) -> DType:
     """
     if shape is None:
         shape = [1]
-    return DType.Float(shape)
+    return DType.TensorFloat(shape)
 
 
 def mk_DTypeReal(shape: None | list[int] = None) -> DType:
@@ -54,7 +55,7 @@ def mk_DTypeReal(shape: None | list[int] = None) -> DType:
     """
     if shape is None:
         shape = [1]
-    return DType.Real(shape)
+    return DType.TensorReal(shape)
 
 
 #####################################################################
@@ -179,6 +180,7 @@ def remap_term(term, subst: dict) -> Term:
 
 
 Term.remap = lambda self, subst: remap_term(self, subst)
+AtomTerm.remap = lambda self, subst: remap_term(self, subst)
 
 __all__ = [
     "Wire",
