@@ -230,12 +230,47 @@ def _infer_spaces_from_init(cls, args, kwargs):
 
     return q_values_dtype, observation_dtype
 
+def _infer_layers_from_init(cls, args, kwargs):
+    """Analyze __init__ to extract nn.Linear layers and their sizes.
+
+    Returns:
+        Ordered dict {name: (in_features, out_features)} for each nn.Linear layer.
+    """
+    params = list(inspect.signature(cls.__init__).parameters.keys())
+    params.remove("self")
+
+    arg_values = {}
+    for i, val in enumerate(args):
+        arg_values[params[i]] = AbstractValue.const(val)
+    for k, v in kwargs.items():
+        arg_values[k] = AbstractValue.const(v)
+
+    interp = AbstractInterpreter(cls.__init__)
+    results = interp.analyze(arg_values=arg_values)
+    merged = join_states(results)
+
+    self_attrs = merged.attrs.get("self", {})
+    layers = {}
+    for attr_name, attr_val in self_attrs.items():
+        if attr_val.call_repr is None:
+            continue
+        try:
+            name, pos_args, _ = _parse_call_repr(attr_val.call_repr)
+        except (ValueError, SyntaxError):
+            continue
+        if name == "Linear" and len(pos_args) >= 2:
+            layers[attr_name] = (pos_args[0], pos_args[1])
+
+    if not layers:
+        raise ValueError("No nn.Linear layers found in __init__")
+
+    return layers
+
 
 class Env(Module, gym.Env):
 
     def __new__(cls, *args, **kwargs):
         q_values_dtype, observation_dtype = _infer_spaces_from_init(cls, args, kwargs)
-        print(f"Inferred q_values dtype: {q_values_dtype}, observation dtype: {observation_dtype}")
 
         # TODO: use params
         prvt, params, attr_vals = _classify_attrs(cls, ['reset', 'step'])
@@ -257,8 +292,8 @@ class Env(Module, gym.Env):
         }
         result = [observation[1], reward[1], terminated[1], truncated[1]]
 
-        reset = convert_method(cls.reset, wires, result, cls=cls)
-        step = convert_method(cls.step, wires, result, cls=cls)
+        reset, _ = convert_method(cls.reset, wires, result, cls=cls)
+        step, _ = convert_method(cls.step, wires, result, cls=cls)
 
         obs = [q_values, observation, reward, terminated, truncated]
         return super().__new__(cls, init=reset, update=step, obs=obs, prvt=list(prvt_wires.values()))
@@ -266,14 +301,24 @@ class Env(Module, gym.Env):
 class NN(Module, nn.Module):
     
     def __new__(cls, *args, **kwargs):
-        # TODO: trace the init for q_values and observation sizes
-        observation = [Wire(DType.Float([1])), Wire(DType.Float([1]))]
-        q_values = [Wire(DType.Float([2])), Wire(DType.Float([2]))]
-        
-        wires = {'observation': observation}
-        result = [q_values[1]]
-        forward = convert_method(cls.forward, wires, result, cls=cls)
+        layers = _infer_layers_from_init(cls, args, kwargs)
+        layer_list = list(layers.values())
+        obs_size = layer_list[0][0]   # first layer's in_features
+        qval_size = layer_list[-1][1] # last layer's out_features
 
-        obs = [observation, q_values]
+        observation = [Wire(DType.Float([obs_size])), Wire(DType.Float([obs_size]))]
+        q_values = [Wire(DType.Float([qval_size])), Wire(DType.Float([qval_size]))]
+
+        # Use forward's parameter name as wire key so the converter can resolve it.
+        # Combinatorial atoms read next wires (index 1), so pass [next, latched]
+        # — the converter reads index 0 which must be the next wire.
+        forward_params = [p for p in inspect.signature(cls.forward).parameters if p != "self"]
+        obs_param = forward_params[0]
+        wires = {obs_param: [observation[1], observation[0]]}
+        result = [q_values[1]]
+        layer_out_features = {name: out for name, (_, out) in layers.items()}
+        forward, param_wires = convert_method(cls.forward, wires, result, cls=cls, layers=layer_out_features)
+
+        obs = [observation, q_values] + param_wires
         return super().__new__(cls, assign=forward, obs=obs)
 

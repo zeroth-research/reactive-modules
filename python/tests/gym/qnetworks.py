@@ -26,30 +26,27 @@ class SimpleQNet(NN):
         return self.fc2(x)
 
 
-# class GridWorldQNet(nn.Module, Module):
-#     """Three-layer Q-Network for grid world"""
+class GridWorldQNet(NN):
+    """Three-layer Q-Network for grid world"""
     
-#     extl = ["observation: Tensor<1; Float>"]
-#     intf = ["q_values: Tensor<4; Float>"]
-    
-#     def __init__(self, state_size, action_size, hidden_size1, hidden_size2, seed=42):
-#         """Initialize three-layer Q-Network
+    def __init__(self, state_size, action_size, hidden_size1, hidden_size2, seed=42):
+        """Initialize three-layer Q-Network
 
-#         Args:
-#             state_size: Dimension of input state
-#             action_size: Number of actions
-#             hidden_size1: First hidden layer size
-#             hidden_size2: Second hidden layer size
-#             seed: Random seed
-#         """
-#         nn.Module.__init__(self)
+        Args:
+            state_size: Dimension of input state
+            action_size: Number of actions
+            hidden_size1: First hidden layer size
+            hidden_size2: Second hidden layer size
+            seed: Random seed
+        """
+        super().__init__()
         
-#         self.seed = torch.manual_seed(seed)
-#         self.fc1 = nn.Linear(state_size, hidden_size1)
-#         self.fc2 = nn.Linear(hidden_size1, hidden_size2)
-#         self.fc3 = nn.Linear(hidden_size2, action_size)
+        self.seed = torch.manual_seed(seed)
+        self.fc1 = nn.Linear(state_size, hidden_size1)
+        self.fc2 = nn.Linear(hidden_size1, hidden_size2)
+        self.fc3 = nn.Linear(hidden_size2, action_size)
 
-#     def forward(self, state):
-#         x = torch.relu(self.fc1(state))
-#         x = torch.relu(self.fc2(x))
-#         return self.fc3(x)
+    def forward(self, state):
+        x = torch.relu(self.fc1(state))
+        x = torch.relu(self.fc2(x))
+        return self.fc3(x)
