@@ -7,9 +7,9 @@ import inspect
 import ast
 
 _PYTHON_TYPE_TO_DTYPE = {
-    bool: DType.Bool([1]),
-    float: DType.Float([1]),
-    int: DType.Int([1]),
+    bool: DType.Bool,
+    float: DType.Float,
+    int: DType.Int,
 }
 
 _GYM_SPACE_TO_DTYPE = {
@@ -98,20 +98,53 @@ def _classify_attrs(cls, roots):
 
     return prvt, params, attr_vals
 
+def _infer_shape_and_elem_type(value):
+    """Recursively derive tensor shape and element type from a Python value."""
+    if isinstance(value, bool):  # before int — bool is a subclass of int
+        return [], bool
+    if isinstance(value, (int, float)):
+        return [], type(value)
+    if isinstance(value, (list, tuple)):
+        if len(value) == 0:
+            raise ValueError("Cannot infer shape from empty collection")
+        inner_shape, elem_type = _infer_shape_and_elem_type(value[0])
+        return [len(value)] + inner_shape, elem_type
+    raise ValueError(f"Unsupported element type: {type(value).__name__}")
+
 def _infer_dtype(name, abstract_value):
-    """Infer a DType from an AbstractValue's Python type."""
-    if abstract_value is None or abstract_value.type_ is None:
+    """Infer a DType from an AbstractValue."""
+    if abstract_value is None:
         raise ValueError(
             f"Cannot infer DType for private attribute '{name}': "
             f"analyzer returned {abstract_value}"
         )
-    dtype = _PYTHON_TYPE_TO_DTYPE.get(abstract_value.type_)
-    if dtype is None:
+
+    # CONST: derive shape and element type from the actual value
+    if abstract_value.is_const():
+        shape, elem_type = _infer_shape_and_elem_type(abstract_value.value)
+        if not shape:
+            shape = [1]  # standalone scalar → 1-element tensor
+        dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(elem_type)
+        if dtype_fn is None:
+            raise ValueError(
+                f"Cannot infer DType for private attribute '{name}': "
+                f"unsupported element type '{elem_type.__name__}'"
+            )
+        return dtype_fn(shape)
+
+    # TYPED: only scalar primitives (no shape info without a value)
+    if abstract_value.type_ is None:
+        raise ValueError(
+            f"Cannot infer DType for private attribute '{name}': "
+            f"analyzer returned {abstract_value}"
+        )
+    dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(abstract_value.type_)
+    if dtype_fn is None:
         raise ValueError(
             f"Cannot infer DType for private attribute '{name}': "
             f"unsupported Python type '{abstract_value.type_.__name__}'"
         )
-    return dtype
+    return dtype_fn([1])
 
 def _parse_call_repr(call_repr):
     """Parse an AbstractValue call_repr string into (func_name, args, kwargs).
