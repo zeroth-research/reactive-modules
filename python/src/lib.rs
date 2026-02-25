@@ -12,7 +12,7 @@ mod types;
 mod unrolling;
 mod wire;
 
-use crate::atom::{Atom, AtomTerm};
+use crate::atom::Atom;
 use crate::context::RustContext;
 use crate::module::Module;
 use crate::term::Term;
@@ -23,25 +23,12 @@ use pyo3::PyClass;
 
 #[pymodule]
 fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    //#[cfg(feature = "enable-smt")]
-    //{
-    //    let smt = PyModule::new(py, "smt")?;
-    //    smt.add_class::<smt::WrappedTerm>()?;
-    //    smt.add_class::<smt::WrappedModule>()?;
-    //    smt.add_class::<smt::WrappedContext>()?;
-    //    smt.add_class::<smt::WrappedWiredTransitions>()?;
-    //    smt.add_class::<smt::PyVal>()?;
-    //
-    //    m.add_submodule(&smt)?;
-    //}
-
     m.add_class::<IType>()?;
     m.add_class::<DType>()?;
     m.add_class::<Wire>()?;
     m.add_class::<Term>()?;
     m.add_class::<Module>()?;
     m.add_class::<RustContext>()?;
-    m.add_class::<AtomTerm>()?;
 
     m.add_class::<Transition>()?;
     m.add_class::<WiredTransitions>()?;

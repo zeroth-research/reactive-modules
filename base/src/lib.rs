@@ -8,6 +8,7 @@ pub mod wire;
 
 pub use crate::atom::Atom;
 pub use crate::module::Module;
+pub use crate::term::Block;
 pub use crate::term::Term;
 pub use crate::wire::Interface;
 pub use crate::wire::Wire;
