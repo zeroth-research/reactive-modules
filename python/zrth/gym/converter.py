@@ -144,22 +144,22 @@ def _translate_linear(input_wire: Wire, layer, terms: list[Term]) -> Wire:
     """
     weight_tensor = layer.weight.data.t().contiguous()
     weight_itype = IType.Tensor(weight_tensor)
-    weight_wire = Wire(DType.TensorFloat(list(weight_tensor.shape)))
+    weight_wire = Wire(DType.Float(list(weight_tensor.shape)))
     weight_term = Term(weight_itype, [weight_wire], [])
     terms.append(weight_term)
 
-    matmul_dtype = DType.TensorFloat([input_wire.dtype().shape[0], weight_tensor.shape[1]])
+    matmul_dtype = DType.Float([input_wire.dtype().shape[0], weight_tensor.shape[1]])
     matmul_wire = Wire(matmul_dtype)
     matmul_term = Term(IType.MatMul(), [matmul_wire], [input_wire, weight_wire])
     terms.append(matmul_term)
 
     bias_tensor = layer.bias.data
     bias_itype = IType.Tensor(bias_tensor)
-    bias_wire = Wire(DType.TensorFloat(list(bias_tensor.shape)))
+    bias_wire = Wire(DType.Float(list(bias_tensor.shape)))
     bias_term = Term(bias_itype, [bias_wire], [])
     terms.append(bias_term)
 
-    output_wire = Wire(DType.TensorFloat(list(bias_tensor.shape)))
+    output_wire = Wire(DType.Float(list(bias_tensor.shape)))
     add_term = Term(IType.Add(), [output_wire], [matmul_wire, bias_wire])
     terms.append(add_term)
 
@@ -445,7 +445,7 @@ class MethodVisitor(ast.NodeVisitor):
 
             if method == "argmax":
                 obj_wire = self._convert_expr(obj)
-                result = Wire(DType.TensorFloat([1]))
+                result = Wire(DType.Float([1]))
                 self.terms.append(Term(IType.Argmax(), [result], [obj_wire]))
                 return result
             elif method == "item":
@@ -488,16 +488,16 @@ class MethodVisitor(ast.NodeVisitor):
         - np.array(data) -> Wire with Tensor term
 
         Shape and data must be Python literals (evaluated at conversion time).
-        Respects target_dtype for creating TensorInt/Float/Bool arrays.
+        Respects target_dtype for creating Int/Float/Bool arrays.
         """
         if func_name == "zeros":
             if len(args) != 1:
                 raise ValueError(f"np.zeros() requires 1 argument, got {len(args)}")
             shape = self._eval_shape(args[0])
 
-            if target_dtype and target_dtype.kind() == "TensorInt":
+            if target_dtype and target_dtype.kind() == "Int":
                 tensor_data = torch.zeros(*shape, dtype=torch.long)
-            elif target_dtype and target_dtype.kind() == "TensorBool":
+            elif target_dtype and target_dtype.kind() == "Bool":
                 tensor_data = torch.zeros(*shape, dtype=torch.bool)
             else:
                 tensor_data = torch.zeros(*shape, dtype=torch.float32)
@@ -507,9 +507,9 @@ class MethodVisitor(ast.NodeVisitor):
                 raise ValueError(f"np.ones() requires 1 argument, got {len(args)}")
             shape = self._eval_shape(args[0])
 
-            if target_dtype and target_dtype.kind() == "TensorInt":
+            if target_dtype and target_dtype.kind() == "Int":
                 tensor_data = torch.ones(*shape, dtype=torch.long)
-            elif target_dtype and target_dtype.kind() == "TensorBool":
+            elif target_dtype and target_dtype.kind() == "Bool":
                 tensor_data = torch.ones(*shape, dtype=torch.bool)
             else:
                 tensor_data = torch.ones(*shape, dtype=torch.float32)
@@ -519,9 +519,9 @@ class MethodVisitor(ast.NodeVisitor):
                 raise ValueError(f"np.array() requires 1 argument, got {len(args)}")
             data = self._eval_literal(args[0])
 
-            if target_dtype and target_dtype.kind() == "TensorInt":
+            if target_dtype and target_dtype.kind() == "Int":
                 tensor_data = torch.tensor(data, dtype=torch.long)
-            elif target_dtype and target_dtype.kind() == "TensorBool":
+            elif target_dtype and target_dtype.kind() == "Bool":
                 tensor_data = torch.tensor(data, dtype=torch.bool)
             else:
                 tensor_data = torch.tensor(data, dtype=torch.float32)
@@ -533,7 +533,7 @@ class MethodVisitor(ast.NodeVisitor):
         if target_dtype:
             dtype = target_dtype.reshape(shape)
         else:
-            dtype = DType.TensorFloat(shape)
+            dtype = DType.Float(shape)
 
         const_wire = Wire(dtype)
         self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
@@ -588,7 +588,7 @@ class MethodVisitor(ast.NodeVisitor):
         """Convert binary operation
 
         Dtype propagation:
-        - With target_dtype: both operands inherit it (e.g., self.x = 2 + 3 → both TensorInt)
+        - With target_dtype: both operands inherit it (e.g., self.x = 2 + 3 → both Int)
         - Without: right operand inherits from left (e.g., self.x + 3 → 3 matches x's dtype)
         """
         if target_dtype:
@@ -726,7 +726,7 @@ class MethodVisitor(ast.NodeVisitor):
     def _convert_ifexp(self, ifexp, target_dtype=None):
         """Convert ternary conditional to Ite
 
-        Propagates target_dtype to both branches (e.g., self.x = 5 if c else 10 → both TensorInt)
+        Propagates target_dtype to both branches (e.g., self.x = 5 if c else 10 → both Int)
         """
         cond_wire = self._convert_expr(ifexp.test)
         true_wire = self._convert_expr(ifexp.body, target_dtype=target_dtype)
@@ -752,18 +752,18 @@ class MethodVisitor(ast.NodeVisitor):
 
         Args:
             constant: AST Constant node
-            target_dtype: Optional dtype (inferred from context). Defaults to TensorFloat if None.
+            target_dtype: Optional dtype (inferred from context). Defaults to Float if None.
         """
         value = constant.value
 
         if isinstance(value, bool):
             tensor_data = torch.tensor([value])
-            dtype = DType.TensorBool([1])
+            dtype = DType.Bool([1])
 
         elif isinstance(value, (int, float)):
             if target_dtype is None:
                 # TODO: Consider inferring dtype from value (int vs float) or raising error instead of defaulting
-                target_dtype = DType.TensorFloat([])
+                target_dtype = DType.Float([])
                 tensor_data = torch.tensor([float(value)], dtype=torch.float32)
             elif target_dtype.kind() == "TensorInt":
                 tensor_data = torch.tensor([int(value)], dtype=torch.long)
@@ -782,9 +782,9 @@ class MethodVisitor(ast.NodeVisitor):
             if isinstance(value, torch.Tensor):
                 tensor_data = value
             else:
-                if target_dtype and target_dtype.kind() == "TensorInt":
+                if target_dtype and target_dtype.kind() == "Int":
                     tensor_data = torch.tensor(value, dtype=torch.long)
-                elif target_dtype and target_dtype.kind() == "TensorBool":
+                elif target_dtype and target_dtype.kind() == "Bool":
                     tensor_data = torch.tensor(value, dtype=torch.bool)
                 else:
                     tensor_data = torch.tensor(value, dtype=torch.float32)
@@ -792,7 +792,7 @@ class MethodVisitor(ast.NodeVisitor):
             if target_dtype:
                 dtype = target_dtype.reshape(list(tensor_data.size()))
             else:
-                dtype = DType.TensorFloat(list(tensor_data.size()))
+                dtype = DType.Float(list(tensor_data.size()))
 
         else:
             raise ValueError(f"Unsupported constant type: {type(value)}")
