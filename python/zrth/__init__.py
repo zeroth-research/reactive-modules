@@ -121,7 +121,7 @@ WiredTransitions.wire_transition = lambda self, t: orig_wire_transition(
 )
 
 
-def process_subst_pair(lhs: Wire, rhs: Wire) -> Generator[tuple[Wire, Wire]]:
+def process_subst_pair(lhs: Wire, rhs: Wire) -> Generator[tuple[Wire, Wire], None, None]:
     raise NotImplementedError()
 
 

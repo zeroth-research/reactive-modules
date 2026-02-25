@@ -1,4 +1,4 @@
-from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv
+from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv, TwoBitCounterEnv
 from .qnetworks import SimpleQNet
 from zrth import Module
 
@@ -103,6 +103,19 @@ def test_comparisonchainenv_conversion():
     _ = comparisonchainenv()
 
 
+def twobitcounterenv():
+    env = TwoBitCounterEnv()
+
+    print("\nTwoBitCounterEnv reactive module:")
+    print(env)
+
+    return env
+
+
+def test_twobitcounterenv_conversion():
+    _ = twobitcounterenv()
+
+
 if __name__ == "__main__":
     # qnet = simpleqnet()
     # print("\n" + "="*60 + "\n")
@@ -127,3 +140,7 @@ if __name__ == "__main__":
     
     print("\n" + "="*60 + "\n")
     compenv = comparisonchainenv()
+
+    print("\n" + "="*60 + "\n")
+    bitco = twobitcounterenv()
+

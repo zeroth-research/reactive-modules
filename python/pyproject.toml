@@ -13,6 +13,7 @@ description = "Zeroth reactive modules Python interface"
 readme = "README.md"
 
 dependencies = [
+    "gymnasium>=1.2.3",
     "maturin==1.9",
     # for toy and smt crates
     "pysmt>=0.9.6",
