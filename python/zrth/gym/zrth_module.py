@@ -21,7 +21,7 @@ def _classify_attrs(cls, roots):
     for name, method in inspect.getmembers(cls, predicate=inspect.isfunction):
         methods[name] = method
 
-    # Analyze each method: extract self.* reads, writes, and calls to other methods
+    # Analyze each method: extract self.* reads, writes, calls, and attr values
     summaries = {}
     for name, method in methods.items():
         try:
@@ -44,7 +44,10 @@ def _classify_attrs(cls, roots):
         calls = read_attrs & set(methods.keys())
         read_attrs -= calls
 
-        summaries[name] = (read_attrs, written_attrs, calls)
+        # AbstractValue for each self.* attr (from merged.attrs)
+        attr_values = merged.attrs.get("self", {})
+
+        summaries[name] = (read_attrs, written_attrs, calls, attr_values)
 
     # BFS from roots, following calls
     visited = set()
@@ -54,16 +57,20 @@ def _classify_attrs(cls, roots):
         if name in visited or name not in summaries:
             continue
         visited.add(name)
-        _, _, calls = summaries[name]
+        _, _, calls, _ = summaries[name]
         queue.extend(calls)
 
-    # Collect self.* reads/writes from all relevant methods
+    # Collect self.* reads/writes/values from all relevant methods
     read_self = set()
     written_self = set()
+    attr_vals = {}
     for name in visited:
-        ra, wa, _ = summaries[name]
+        ra, wa, _, av = summaries[name]
         read_self |= ra
         written_self |= wa
+        for attr, val in av.items():
+            if attr not in attr_vals:
+                attr_vals[attr] = val
 
     prvt = written_self & read_self
     write_only = written_self - read_self
@@ -75,35 +82,46 @@ def _classify_attrs(cls, roots):
             f"These must be made observable."
         )
 
-    return prvt, params
+    return prvt, params, attr_vals
+
+_PYTHON_TYPE_TO_DTYPE = {
+    bool: DType.Bool([1]),
+    float: DType.Float([1]),
+    int: DType.Int([1]),
+}
+
+def _infer_dtype(name, abstract_value):
+    """Infer a DType from an AbstractValue's Python type."""
+    if abstract_value is None or abstract_value.type_ is None:
+        raise ValueError(
+            f"Cannot infer DType for private attribute '{name}': "
+            f"analyzer returned {abstract_value}"
+        )
+    dtype = _PYTHON_TYPE_TO_DTYPE.get(abstract_value.type_)
+    if dtype is None:
+        raise ValueError(
+            f"Cannot infer DType for private attribute '{name}': "
+            f"unsupported Python type '{abstract_value.type_.__name__}'"
+        )
+    return dtype
 
 class Env(Module, gym.Env):
 
     def __new__(cls, *args, **kwargs):
         # TODO: use params
-        prvt, params = _classify_attrs(cls, ['reset', 'step'])
-        print('@@@@@@@@')
-        print(prvt)
-        print('@@@@@@@@')
-        print(params)
-        print('@@@@@@@@')
+        prvt, params, attr_vals = _classify_attrs(cls, ['reset', 'step'])
         annotations = cls.__annotations__
-        
+
         q_values_dtype = annotations.get('q_values')
         observation_dtype = annotations.get('observation')
         if q_values_dtype is None:
             raise ValueError("Add 'q_values: DType.XXX([shape])' to the class body.")
         if observation_dtype is None:
             raise ValueError("Add 'observation: DType.XXX([shape])' to the class body.")
-        
+
         prvt_wires = {}
         for name in prvt:
-            if name not in annotations:
-                raise ValueError(
-                    f"Private attribute '{name}' needs a type annotation. "
-                    f"Add '{name}: DType.XXX([shape])' to the class body."
-                )
-            dtype = annotations[name]
+            dtype = _infer_dtype(name, attr_vals.get(name))
             prvt_wires[name] = [Wire(dtype), Wire(dtype)]
 
         q_values = [Wire(q_values_dtype), Wire(q_values_dtype)]

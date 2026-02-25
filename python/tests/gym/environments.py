@@ -10,7 +10,6 @@ class SimpleEnv(Env):
     # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
     q_values: DType.Float([2])
     observation: DType.Float([1])
-    state: DType.Float([1])
     
     def __init__(self):
         """Initialize simple chain environment"""
@@ -57,8 +56,6 @@ class GridWorldEnv(Env):
     # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
     q_values: DType.Float([4])
     observation: DType.Float([1])
-    x: DType.Float([1])
-    y: DType.Float([1])
     
     def __init__(self):
         """Initialize 3x3 grid world environment"""
@@ -111,9 +108,6 @@ class ComplexDecisionEnv(Env):
     # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
     q_values: DType.Float([10])
     observation: DType.Float([1])
-    score: DType.Float([1])
-    multiplier: DType.Float([1])
-    bonus_active: DType.Bool([1])
     
     def __init__(self):
         """Initialize complex decision environment
@@ -217,7 +211,6 @@ class EarlyReturnEnv(Env):
     # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
     q_values: DType.Float([5])
     observation: DType.Float([1])
-    counter: DType.Float([1])
     
     def __init__(self):
         """Initialize early return test environment
@@ -286,8 +279,6 @@ class TwoBitCounterEnv(Env):
     # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
     q_values: DType.Float([2])
     observation: DType.Bool([1])
-    b0: DType.Bool([1])  # LSB
-    b1: DType.Bool([1])  # MSB
 
     def __init__(self):
         """Initialize 2-bit counter environment"""
@@ -333,7 +324,6 @@ class ComparisonChainEnv(Env):
     # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
     q_values: DType.Float([5])
     observation: DType.Float([1])
-    value: DType.Float([1])
     
     def __init__(self):
         """Initialize comparison chain test environment
