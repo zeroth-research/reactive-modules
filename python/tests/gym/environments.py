@@ -276,6 +276,57 @@ class EarlyReturnEnv(Env):
         return observation, reward, terminated, truncated
 
 
+class TwoBitCounterEnv(Env):
+    """2-bit digital circuit counter: b1b0 counts 00→01→10→11→00 on enable.
+
+    b0_next = b0 XOR enable
+    b1_next = b1 XOR (b0 AND enable)
+    """
+
+    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
+    q_values: DType.Float([2])
+    observation: DType.Bool([1])
+    b0: DType.Bool([1])  # LSB
+    b1: DType.Bool([1])  # MSB
+
+    def __init__(self):
+        """Initialize 2-bit counter environment"""
+        super().__init__()
+
+        self.action_space = spaces.Discrete(2)   # 0 = hold, 1 = enable
+        self.observation_space = spaces.MultiBinary(1)
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.b0 = False
+        self.b1 = False
+        observation = self.b1
+        reward = 0.0
+        terminated = False
+        truncated = False
+        return observation, reward, terminated, truncated
+
+    def step(self, q_values):
+        action = q_values.argmax().item()
+
+        old_b0 = self.b0  # capture LSB before update
+
+        # b0_next = b0 XOR enable  (NOT b0 when enabled)
+        if action == 1:
+            self.b0 = False if self.b0 else True
+
+        # b1_next = b1 XOR (b0_old AND enable)  (NOT b1 when b0_old AND enabled)
+        if action == 1:
+            if old_b0:
+                self.b1 = False if self.b1 else True
+
+        reward = 0.0
+        terminated = False
+        truncated = False
+        observation = self.b1
+        return observation, reward, terminated, truncated
+
+
 class ComparisonChainEnv(Env):
     """Environment testing comparison chains (a < b < c)"""
 
