@@ -86,6 +86,8 @@ class AccessAnalyzer(ast.NodeVisitor):
         source = textwrap.dedent(inspect.getsource(obj))
         tree = ast.parse(source)
 
+        print("TREE", ast.dump(tree, indent=1))
+
         self.visit(tree)
 
         # propagate_effects(self.functions)
@@ -117,6 +119,7 @@ class AccessAnalyzer(ast.NodeVisitor):
         if not self.current:
             return
 
+        print("Name", ast.dump(node, indent=1))
         if isinstance(node.ctx, ast.Load):
             self.current.read_vars.add(node.id)
         elif isinstance(node.ctx, ast.Store):
