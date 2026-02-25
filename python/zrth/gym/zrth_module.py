@@ -69,7 +69,8 @@ def _classify_attrs(cls, roots):
         read_self |= ra
         written_self |= wa
         for attr, val in av.items():
-            if attr not in attr_vals:
+            existing = attr_vals.get(attr)
+            if existing is None or (val.is_const() and not existing.is_const()):
                 attr_vals[attr] = val
 
     prvt = written_self & read_self
