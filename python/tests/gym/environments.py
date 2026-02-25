@@ -1,16 +1,10 @@
 from gymnasium import spaces
 from zrth.gym import Env
 
-# TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-from zrth.zrth import DType
 
 class SimpleEnv(Env):
     """Simple chain environment with partial observability"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([2])
-    observation: DType.Float([1])
-    
     def __init__(self):
         """Initialize simple chain environment"""
         super().__init__()
@@ -53,10 +47,6 @@ class SimpleEnv(Env):
 class GridWorldEnv(Env):
     """3x3 grid world environment"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([4])
-    observation: DType.Float([1])
-    
     def __init__(self):
         """Initialize 3x3 grid world environment"""
         super().__init__()
@@ -105,10 +95,6 @@ class GridWorldEnv(Env):
 class ComplexDecisionEnv(Env):
     """Environment testing: nested decisions, boolean ops, augmented assignments, numpy"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([10])
-    observation: DType.Float([1])
-    
     def __init__(self):
         """Initialize complex decision environment
         
@@ -208,10 +194,6 @@ class ComplexDecisionEnv(Env):
 class EarlyReturnEnv(Env):
     """Environment testing early returns in if/else branches"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([5])
-    observation: DType.Float([1])
-    
     def __init__(self):
         """Initialize early return test environment
         
@@ -276,10 +258,6 @@ class TwoBitCounterEnv(Env):
     b1_next = b1 XOR (b0 AND enable)
     """
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([2])
-    observation: DType.Bool([1])
-
     def __init__(self):
         """Initialize 2-bit counter environment"""
         super().__init__()
@@ -321,10 +299,6 @@ class TwoBitCounterEnv(Env):
 class ComparisonChainEnv(Env):
     """Environment testing comparison chains (a < b < c)"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([5])
-    observation: DType.Float([1])
-    
     def __init__(self):
         """Initialize comparison chain test environment
         
