@@ -30,8 +30,8 @@ def add(x, y):
 
 class A:
     def __init__(self):
-        self.x = 0
-        self.y = 0
+        self.x: int = 0
+        self.y: float = 0.0
 
     def add(self) -> int:
         self.z = 3
@@ -45,10 +45,10 @@ def test_class():
 
 
 class B:
-    def __init__(self):
-        self.a = A()
-        if self.a.x == 0:
-            tmp = self.a.y
+    def __init__(self, xx: int):
+        self.a: A = A()
+        if self.a.x == xx:
+            tmp: float = self.a.y
             self.a.z = 3
 
 
