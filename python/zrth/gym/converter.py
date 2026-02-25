@@ -11,6 +11,7 @@ def convert_method(
     wires: dict[str, tuple[Wire, Wire]],
     result: list[Wire],
     cls=None,
+    layers: dict[str, int] | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 
@@ -33,7 +34,7 @@ def convert_method(
     func_def.body = _normalize_early_returns(func_def.body)
 
     param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
-    visitor = MethodVisitor(wires, result, cls=cls)
+    visitor = MethodVisitor(wires, result, cls=cls, layers=layers)
     visitor.temp_vars.update(
         {name: wires[name][0] for name in param_names if name in wires}
     )
@@ -47,7 +48,7 @@ def convert_method(
             raise ValueError(f"Method has no return value for result {i}")
         visitor.terms.append(Term(IType.Id(), [result_wire], [src]))
 
-    return visitor.terms
+    return visitor.terms, visitor.layer_params
 
 
 def _normalize_early_returns(stmts: list) -> list:
@@ -202,10 +203,13 @@ class MethodVisitor(ast.NodeVisitor):
         wire_pairs: dict[str, tuple[Wire, Wire]],
         result_wires: list[Wire],
         cls=None,
+        layers: dict[str, int] | None = None,
     ):
         self.wire_pairs = wire_pairs
         self.result_wires = result_wires
         self.cls = cls
+        self.layers = layers or {}
+        self.layer_params = []
         self.terms = []
         self.temp_vars = {}
         self.scopes = []
@@ -806,7 +810,15 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unsupported attribute access: {ast.unparse(attr)}")
 
     def _inline_method(self, method_name, args):
-        """Inline simple method by extracting its return expression"""
+        """Inline simple method or dispatch to layer translator."""
+        if method_name in self.layers:
+            input_wire = self._convert_expr(args[0])
+            out_features = self.layers[method_name]
+            output_wire, weight_wire, bias_wire = _translate_linear(input_wire, out_features, self.terms)
+            self.layer_params.append([Wire(weight_wire.dtype()), weight_wire])
+            self.layer_params.append([Wire(bias_wire.dtype()), bias_wire])
+            return output_wire
+
         if self.cls is None or not hasattr(self.cls, method_name):
             raise ValueError(f"Method not found: {method_name}")
 
