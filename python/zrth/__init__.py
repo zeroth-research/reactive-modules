@@ -7,7 +7,6 @@ from .zrth import (
     Transition,
     WiredTransitions,
     Module,
-    AtomTerm,
 )
 
 from .context import Context, get_ctx, set_ctx, reset_ctx
@@ -121,7 +120,9 @@ WiredTransitions.wire_transition = lambda self, t: orig_wire_transition(
 )
 
 
-def process_subst_pair(lhs: Wire, rhs: Wire) -> Generator[tuple[Wire, Wire], None, None]:
+def process_subst_pair(
+    lhs: Wire, rhs: Wire
+) -> Generator[tuple[Wire, Wire], None, None]:
     raise NotImplementedError()
 
 
@@ -180,7 +181,6 @@ def remap_term(term, subst: dict) -> Term:
 
 
 Term.remap = lambda self, subst: remap_term(self, subst)
-AtomTerm.remap = lambda self, subst: remap_term(self, subst)
 
 __all__ = [
     "Wire",
