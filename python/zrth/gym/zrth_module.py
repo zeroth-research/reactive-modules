@@ -1,5 +1,5 @@
 from zrth import Module, Wire, DType
-from zrth.gym.analyzer import AccessAnalyzer
+from zrth.analyzer import AbstractInterpreter, UnsupportedFeatureError, join_states
 from .converter import convert_method
 import gymnasium as gym
 import torch.nn as nn
@@ -14,8 +14,39 @@ def _classify_attrs(cls, roots):
     Raises:
         ValueError: if any attribute is written but never read back
     """
-    summaries = AccessAnalyzer().analyze(cls)
+    import inspect
 
+    # Collect all methods from the class
+    methods = {}
+    for name, method in inspect.getmembers(cls, predicate=inspect.isfunction):
+        methods[name] = method
+
+    # Analyze each method: extract self.* reads, writes, and calls to other methods
+    summaries = {}
+    for name, method in methods.items():
+        try:
+            interp = AbstractInterpreter(method)
+            states = interp.analyze()
+        except (UnsupportedFeatureError, NotImplementedError):
+            continue
+        merged = join_states(states)
+
+        read_attrs = set()
+        written_attrs = set()
+        for r in merged.reads:
+            if r.name.startswith("self."):
+                read_attrs.add(r.name[5:])
+        for w in merged.writes:
+            if w.name.startswith("self."):
+                written_attrs.add(w.name[5:])
+
+        # self.xxx reads where xxx is a class method = calls (not data reads)
+        calls = read_attrs & set(methods.keys())
+        read_attrs -= calls
+
+        summaries[name] = (read_attrs, written_attrs, calls)
+
+    # BFS from roots, following calls
     visited = set()
     queue = list(roots)
     while queue:
@@ -23,19 +54,20 @@ def _classify_attrs(cls, roots):
         if name in visited or name not in summaries:
             continue
         visited.add(name)
-        queue.extend(summaries[name].calls)
-    relevant = {name: summaries[name] for name in visited}
+        _, _, calls = summaries[name]
+        queue.extend(calls)
 
-    read_self = {}
-    written_self = {}
+    # Collect self.* reads/writes from all relevant methods
+    read_self = set()
+    written_self = set()
+    for name in visited:
+        ra, wa, _ = summaries[name]
+        read_self |= ra
+        written_self |= wa
 
-    for _, sm in relevant.items():
-        read_self.update(sm.read_attrs.get('self', {}))
-        written_self.update(sm.written_attrs.get('self', {}))
-
-    prvt = set(written_self.keys()) & set(read_self.keys())
-    write_only = set(written_self.keys()) - set(read_self.keys())
-    params = set(read_self.keys()) - set(written_self.keys())
+    prvt = written_self & read_self
+    write_only = written_self - read_self
+    params = read_self - written_self
 
     if write_only:
         raise ValueError(
@@ -50,6 +82,11 @@ class Env(Module, gym.Env):
     def __new__(cls, *args, **kwargs):
         # TODO: use params
         prvt, params = _classify_attrs(cls, ['reset', 'step'])
+        print('@@@@@@@@')
+        print(prvt)
+        print('@@@@@@@@')
+        print(params)
+        print('@@@@@@@@')
         annotations = cls.__annotations__
         
         q_values_dtype = annotations.get('q_values')
