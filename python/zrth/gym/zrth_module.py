@@ -1,8 +1,22 @@
 from zrth import Module, Wire, DType
-from zrth.analyzer import AbstractInterpreter, UnsupportedFeatureError, join_states
+from zrth.analyzer import AbstractInterpreter, UnsupportedFeatureError, join_states, AbstractValue
 from .converter import convert_method
 import gymnasium as gym
 import torch.nn as nn
+import inspect
+import ast
+
+_PYTHON_TYPE_TO_DTYPE = {
+    bool: DType.Bool([1]),
+    float: DType.Float([1]),
+    int: DType.Int([1]),
+}
+
+_GYM_SPACE_TO_DTYPE = {
+    "Discrete": DType.Int,
+    "Box": DType.Float,
+    "MultiBinary": DType.Bool,
+}
 
 def _classify_attrs(cls, roots):
     """Classify self.* attributes used in the given root methods (and their callees).
@@ -14,7 +28,6 @@ def _classify_attrs(cls, roots):
     Raises:
         ValueError: if any attribute is written but never read back
     """
-    import inspect
 
     # Collect all methods from the class
     methods = {}
@@ -85,12 +98,6 @@ def _classify_attrs(cls, roots):
 
     return prvt, params, attr_vals
 
-_PYTHON_TYPE_TO_DTYPE = {
-    bool: DType.Bool([1]),
-    float: DType.Float([1]),
-    int: DType.Int([1]),
-}
-
 def _infer_dtype(name, abstract_value):
     """Infer a DType from an AbstractValue's Python type."""
     if abstract_value is None or abstract_value.type_ is None:
@@ -106,19 +113,99 @@ def _infer_dtype(name, abstract_value):
         )
     return dtype
 
+def _parse_call_repr(call_repr):
+    """Parse an AbstractValue call_repr string into (func_name, args, kwargs).
+
+    E.g. "spaces.Discrete(2)" -> ("Discrete", [2], {})
+         "spaces.Box(low=0, high=10, shape=(1,))" -> ("Box", [], {"low": 0, "high": 10, "shape": (1,)})
+    """
+    node = ast.parse(call_repr, mode='eval').body
+    if not isinstance(node, ast.Call):
+        raise ValueError(f"Expected a call expression, got: {call_repr}")
+
+    # Extract the short name (last segment of dotted name)
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        name = func.attr
+    elif isinstance(func, ast.Name):
+        name = func.id
+    else:
+        raise ValueError(f"Cannot extract function name from: {call_repr}")
+
+    pos_args = [ast.literal_eval(a) for a in node.args]
+    kw_args = {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}
+    return name, pos_args, kw_args
+
+def _gym_space_to_dtype(space_name, pos_args, kw_args, is_q_values):
+    """Convert a parsed gym space into a DType.
+
+    For q_values (is_q_values=True): always Float, shape = number of actions.
+    For observation (is_q_values=False): type from _GYM_SPACE_TO_DTYPE, shape from space.
+    """
+    dtype_fn = _GYM_SPACE_TO_DTYPE.get(space_name)
+    if dtype_fn is None:
+        raise ValueError(f"Unsupported gym space type: {space_name}")
+
+    if space_name == "Discrete":
+        n = pos_args[0]
+        if is_q_values:
+            return DType.Float([n])
+        else:
+            return dtype_fn([1])
+    elif space_name == "Box":
+        shape = kw_args.get("shape")
+        if shape is None and len(pos_args) > 2:
+            shape = pos_args[2]
+        if shape is None:
+            raise ValueError("Box space requires a 'shape' argument")
+        return dtype_fn(list(shape))
+    elif space_name == "MultiBinary":
+        n = pos_args[0]
+        return dtype_fn([n])
+    else:
+        raise ValueError(f"Unsupported gym space type: {space_name}")
+
+def _infer_spaces_from_init(cls, args, kwargs):
+    """Analyze __init__ to infer q_values and observation DTypes from gym spaces."""
+    params = list(inspect.signature(cls.__init__).parameters.keys())
+    params.remove("self")
+
+    arg_values = {}
+    for i, val in enumerate(args):
+        arg_values[params[i]] = AbstractValue.const(val)
+    for k, v in kwargs.items():
+        arg_values[k] = AbstractValue.const(v)
+
+    interp = AbstractInterpreter(cls.__init__)
+    results = interp.analyze(arg_values=arg_values)
+    merged = join_states(results)
+
+    self_attrs = merged.attrs.get("self", {})
+    action_space_val = self_attrs.get("action_space")
+    observation_space_val = self_attrs.get("observation_space")
+
+    if action_space_val is None or action_space_val.call_repr is None:
+        raise ValueError("Cannot infer action_space from __init__: not found or not a call")
+    if observation_space_val is None or observation_space_val.call_repr is None:
+        raise ValueError("Cannot infer observation_space from __init__: not found or not a call")
+
+    a_name, a_args, a_kwargs = _parse_call_repr(action_space_val.call_repr)
+    o_name, o_args, o_kwargs = _parse_call_repr(observation_space_val.call_repr)
+
+    q_values_dtype = _gym_space_to_dtype(a_name, a_args, a_kwargs, is_q_values=True)
+    observation_dtype = _gym_space_to_dtype(o_name, o_args, o_kwargs, is_q_values=False)
+
+    return q_values_dtype, observation_dtype
+
+
 class Env(Module, gym.Env):
 
     def __new__(cls, *args, **kwargs):
+        q_values_dtype, observation_dtype = _infer_spaces_from_init(cls, args, kwargs)
+        print(f"Inferred q_values dtype: {q_values_dtype}, observation dtype: {observation_dtype}")
+
         # TODO: use params
         prvt, params, attr_vals = _classify_attrs(cls, ['reset', 'step'])
-        annotations = cls.__annotations__
-
-        q_values_dtype = annotations.get('q_values')
-        observation_dtype = annotations.get('observation')
-        if q_values_dtype is None:
-            raise ValueError("Add 'q_values: DType.XXX([shape])' to the class body.")
-        if observation_dtype is None:
-            raise ValueError("Add 'observation: DType.XXX([shape])' to the class body.")
 
         prvt_wires = {}
         for name in prvt:

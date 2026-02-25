@@ -356,7 +356,6 @@ class AbstractInterpreter:
                 annot = param.annotation
                 value = AbstractValue.top()
                 if annot is not None:
-                    print(ast.dump(annot))
                     if not isinstance(annot, ast.Name):
                         raise NotImplementedError("Unsupported type annotation")
                     ty = ANNOT_SUPPORTED_TYPES.get(annot.id)
@@ -899,8 +898,10 @@ class AbstractInterpreter:
             v, s = self._eval_expr(arg, s)
             arg_vals.append(v)
 
+        kw_vals = []
         for kw in expr.keywords:
             v, s = self._eval_expr(kw.value, s)
+            kw_vals.append((kw.arg, v))
 
         # Try to compute result for known builtins with const args
         if func_name and func_name in KNOWN_BUILTINS:
@@ -934,6 +935,11 @@ class AbstractInterpreter:
                     arg_reprs.append(repr(av.value))
                 else:
                     arg_reprs.append("?")
+            for kw_name, kw_val in kw_vals:
+                if kw_val.is_const():
+                    arg_reprs.append(f"{kw_name}={repr(kw_val.value)}")
+                else:
+                    arg_reprs.append(f"{kw_name}=?")
             call_repr = f"{func_name}({', '.join(arg_reprs)})"
             return AbstractValue.call_result(call_repr), s
 
