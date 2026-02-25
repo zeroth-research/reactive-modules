@@ -25,7 +25,7 @@ class B:
 
 def test_1():
     example = """
-def compute(x, y, config):
+def compute(x:int, y, config: A):
     result = x + y
     config.total = result
     
@@ -51,6 +51,8 @@ def compute(x, y, config):
 
     print("\n" + "=" * 60 + "\n")
 
+
+def test_2():
     example2 = """
 def classify(score):
     if score >= 90:
@@ -69,6 +71,8 @@ def classify(score):
     states2 = interp2.analyze({"score": AbstractValue.typed(int)})
     print(format_results(states2))
 
+
+def test_3():
     interp2 = AbstractInterpreter(B.__init__)
     states2 = interp2.analyze({"score": AbstractValue.typed(int)})
     print(format_results(states2))

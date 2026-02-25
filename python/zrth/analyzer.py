@@ -278,6 +278,7 @@ KNOWN_BUILTINS: Dict[str, type] = {
     "open": object,
 }
 
+ANNOT_SUPPORTED_TYPES = {"int": int, "float": float, "bool": bool}
 
 # ---------------------------------------------------------------------------
 # Abstract Interpreter
@@ -352,7 +353,16 @@ class AbstractInterpreter:
             if name in arg_values:
                 initial.env[name] = arg_values[name]
             else:
-                initial.env[name] = AbstractValue.top()
+                annot = param.annotation
+                value = AbstractValue.top()
+                if annot is not None:
+                    print(ast.dump(annot))
+                    if not isinstance(annot, ast.Name):
+                        raise NotImplementedError("Unsupported type annotation")
+                    ty = ANNOT_SUPPORTED_TYPES.get(annot.id)
+                    if ty is not None:
+                        value = AbstractValue.typed(ty)
+                initial.env[name] = value
 
         return self._interpret_block(self.func_def.body, initial)
 
