@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 
 mod atom;
 mod context;
+mod lean;
 mod module;
 mod pytensor;
 mod term;
