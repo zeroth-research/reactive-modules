@@ -6,11 +6,7 @@ import random
 
 if __name__ == "__main__":
     # Initialize environment with automatic conversion
-    env = SimpleEnv(
-        extl=["q_values: Tensor<2; Float>"],
-        intf=["observation: Tensor<1; Float>", "reward: Tensor<1; Float>", "terminated: Tensor<1; Bool>", "truncated: Tensor<1; Bool>"],
-        prvt=["state: Tensor<1; Float>"],
-    )
+    env = SimpleEnv()
 
     state_size = 1  # Single binary observation (0 or 1)
     action_size = env.action_space.n
