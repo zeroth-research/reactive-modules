@@ -366,7 +366,7 @@ class HeartODE(Env):
         self.heart_rate_base = heart_rate_base
         self.heart_rate_variability_amplitude = heart_rate_variability_amplitude
 
-        self.x = 0.0
+        self.x = 1.0
         self.dxdt = 0.0
         self.heart_rate = 0.0
 
@@ -375,7 +375,7 @@ class HeartODE(Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.x = 0.0
+        self.x = 1.0
         self.dxdt = 0.0
         self.heart_rate = self.heart_rate_base + self.heart_rate_variability_amplitude * self.x
         return self.heart_rate, 0.0, False, False
