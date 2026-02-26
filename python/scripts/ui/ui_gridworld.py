@@ -1,7 +1,7 @@
 """Interactive TUI for GridWorldEnv — navigate a 3×3 grid to the corner.
 
 Run with:
-    cd python && uv run python scripts/ui_gridworld.py
+    cd python && uv run python scripts/ui/ui_gridworld.py
 
 Actions:
     0  up

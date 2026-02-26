@@ -1,7 +1,7 @@
 """Step through the 2-bit counter using the Python interpreter.
 
 Run with:
-    cd python && uv run python tests/run_twobitcounter.py
+    cd python && uv run python scripts/ui/run_twobitcounter.py
 """
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
@@ -40,35 +40,34 @@ def show(interp, b0, b1, label=""):
     print(f"  b1={b1_val}  b0={b0_val}  ({b1_val * 2 + b0_val}){tag}")
 
 
-if __name__ == "__main__":
-    m, b0, b1, enable = make_twobitcounter()
-    interp = Interpreter(m)
+m, b0, b1, enable = make_twobitcounter()
+interp = Interpreter(m)
 
-    EN  = {enable[1].id(): torch.tensor([True])}
-    HLD = {enable[1].id(): torch.tensor([False])}
+EN  = {enable[1].id(): torch.tensor([True])}
+HLD = {enable[1].id(): torch.tensor([False])}
 
-    print("=== init ===")
-    interp.initialize()
-    show(interp, b0, b1, "reset")
+print("=== init ===")
+interp.initialize()
+show(interp, b0, b1, "reset")
 
-    print("\n=== count up (enable=1 each step) ===")
-    for _ in range(4):
-        interp.step(EN)
-        show(interp, b0, b1)
-
-    print("\n=== hold (enable=0) ===")
+print("\n=== count up (enable=1 each step) ===")
+for _ in range(4):
     interp.step(EN)
-    show(interp, b0, b1, "count to 1")
-    for _ in range(3):
-        interp.step(HLD)
-        show(interp, b0, b1, "hold")
+    show(interp, b0, b1)
 
-    print("\n=== mixed ===")
-    interp.initialize()
-    show(interp, b0, b1, "reset")
-    for label, inputs in [
-        ("enable", EN), ("hold",   HLD), ("enable", EN),
-        ("hold",   HLD), ("enable", EN), ("enable", EN),
-    ]:
-        interp.step(inputs)
-        show(interp, b0, b1, label)
+print("\n=== hold (enable=0) ===")
+interp.step(EN)
+show(interp, b0, b1, "count to 1")
+for _ in range(3):
+    interp.step(HLD)
+    show(interp, b0, b1, "hold")
+
+print("\n=== mixed ===")
+interp.initialize()
+show(interp, b0, b1, "reset")
+for label, inputs in [
+    ("enable", EN), ("hold",   HLD), ("enable", EN),
+    ("hold",   HLD), ("enable", EN), ("enable", EN),
+]:
+    interp.step(inputs)
+    show(interp, b0, b1, label)
