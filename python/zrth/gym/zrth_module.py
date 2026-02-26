@@ -18,6 +18,12 @@ _GYM_SPACE_TO_DTYPE = {
     "MultiBinary": DType.Bool,
 }
 
+def _to_python(v):
+    """Convert numpy scalars to plain Python types for the abstract interpreter."""
+    if hasattr(v, 'item'):
+        return v.item()
+    return v
+
 def _classify_attrs(cls, roots, init_attr_vals=None):
     """Classify self.* attributes used in the given root methods (and their callees).
 
@@ -213,9 +219,9 @@ def _infer_spaces_from_init(cls, args, kwargs):
 
     arg_values = {}
     for i, val in enumerate(args):
-        arg_values[params[i]] = AbstractValue.const(val)
+        arg_values[params[i]] = AbstractValue.const(_to_python(val))
     for k, v in kwargs.items():
-        arg_values[k] = AbstractValue.const(v)
+        arg_values[k] = AbstractValue.const(_to_python(v))
 
     interp = AbstractInterpreter(cls.__init__)
     results = interp.analyze(arg_values=arg_values)
@@ -249,9 +255,9 @@ def _infer_layers_from_init(cls, args, kwargs):
 
     arg_values = {}
     for i, val in enumerate(args):
-        arg_values[params[i]] = AbstractValue.const(val)
+        arg_values[params[i]] = AbstractValue.const(_to_python(val))
     for k, v in kwargs.items():
-        arg_values[k] = AbstractValue.const(v)
+        arg_values[k] = AbstractValue.const(_to_python(v))
 
     interp = AbstractInterpreter(cls.__init__)
     results = interp.analyze(arg_values=arg_values)
