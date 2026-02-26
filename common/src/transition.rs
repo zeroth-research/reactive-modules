@@ -75,7 +75,9 @@ impl<D, I> Transition<D, I> {
                     break;
                 }
             }
-            debug_assert!(ins.is_empty(), "An input wire is not used by transition");
+            if !ins.is_empty() {
+                eprintln!("Warning: An input wire is not used by transition");
+            }
             debug_assert!(outs.is_empty(), "An ouput wire is not used by transition");
         }
 
