@@ -7,8 +7,9 @@ from .zrth import (
     Transition,
     WiredTransitions,
     Module,
-    Interpreter,
 )
+
+from .interpreter import Interpreter
 
 from .context import Context, get_ctx, set_ctx, reset_ctx
 from .module import ReactiveModule
