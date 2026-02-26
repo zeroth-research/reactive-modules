@@ -115,22 +115,30 @@ fn wire_name(id: usize) -> String {
 fn to_expr(term: &base::Term<DType, IType>) -> String {
     let args: Vec<String> = term.read().wires().map(|w| wire_name(w.id())).collect();
     match term.itype() {
-        IType::Id() => format!("{}", args[0]),
+        // arithmetic
         IType::Add() => format!("({} + {})", args[0], args[1]),
         IType::Sub() => format!("({} - {})", args[0], args[1]),
         IType::Mul() => format!("({} * {})", args[0], args[1]),
         IType::Div() => format!("({} / {})", args[0], args[1]),
+        // comparisons
         IType::Eq() => format!("({} = {})", args[0], args[1]),
         IType::Le() => format!("({} ≤ {})", args[0], args[1]),
         IType::Ge() => format!("({} ≥ {})", args[0], args[1]),
+        IType::Lt() => format!("({} < {})", args[0], args[1]),
+        IType::Gt() => format!("({} > {})", args[0], args[1]),
+        // boolean operations
         IType::And() => format!("({} ∧ {})", args[0], args[1]),
         IType::Or() => format!("({} ∨ {})", args[0], args[1]),
         IType::Not() => format!("(¬ {})", args[0]),
-        IType::Ite() => format!("(if {} then {} else {})", args[0], args[1], args[2]),
+        // tensors
         IType::Tensor(t) => {
             debug_assert!(args.is_empty());
             tensor_to_lean(&t.tensor)
         }
+        IType::Argmax() => format!("(argmax {})", args[0]),
+        // other
+        IType::Id() => format!("{}", args[0]),
+        IType::Ite() => format!("(if {} then {} else {})", args[0], args[1], args[2]),
         _ => format!("TODO {}", term),
     }
 }
