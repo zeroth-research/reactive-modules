@@ -1,22 +1,12 @@
 from .environments import SimpleEnv
+from .qnetworks import SimpleQNet
 from .agent import DQNAgent
 import numpy as np
 import torch
 import random
 
-if __name__ == "__main__":
-    # Initialize environment with automatic conversion
-    env = SimpleEnv()
 
-    state_size = 1  # Single binary observation (0 or 1)
-    action_size = env.action_space.n
-    hidden_size = 2
-    agent = DQNAgent(state_size, action_size, hidden_size)
-
-    # Training parameters
-    num_episodes = 500
-    max_steps = 50
-
+def train(env, agent, num_episodes=500, max_steps=50):
     # Training
     for episode in range(num_episodes):
         state, _, _, _ = env.reset()
@@ -71,3 +61,14 @@ if __name__ == "__main__":
         if terminated or truncated:
             print("Goal reached!")
             break
+    return
+
+if __name__ == "__main__":
+    num_episodes = 500
+    max_steps = 50
+
+    env = SimpleEnv()
+    q_network = SimpleQNet(state_size=1, action_size=env.action_space.n, hidden_size=2,)
+    agent = DQNAgent(q_network)
+
+    train(env, agent, num_episodes, max_steps)
