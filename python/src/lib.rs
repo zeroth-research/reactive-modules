@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 
 mod atom;
 mod context;
+mod interpreter;
 mod lean;
 mod module;
 mod pytensor;
@@ -33,6 +34,8 @@ fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<Transition>()?;
     m.add_class::<WiredTransitions>()?;
+
+    m.add_class::<interpreter::Interpreter>()?;
 
     Ok(())
 }

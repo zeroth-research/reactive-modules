@@ -7,6 +7,7 @@ from .zrth import (
     Transition,
     WiredTransitions,
     Module,
+    Interpreter,
 )
 
 from .context import Context, get_ctx, set_ctx, reset_ctx
@@ -20,6 +21,13 @@ from typing import Generator
 #####################################################################
 
 
+# Save original Rust enum constructors before monkey-patching
+_orig_Bool = DType.TensorBool
+_orig_Int = DType.TensorInt
+_orig_Float = DType.TensorFloat
+_orig_Real = DType.TensorReal
+
+
 # Add type aliases and convenient function
 def mk_DTypeBool(shape: None | list[int] = None) -> DType:
     """
@@ -27,34 +35,34 @@ def mk_DTypeBool(shape: None | list[int] = None) -> DType:
     """
     if shape is None:
         shape = [1]
-    return DType.TensorBool(shape)
+    return _orig_Bool(shape)
 
 
 def mk_DTypeInt(shape: None | list[int] = None) -> DType:
     """
-    Create a Int DType. If shape is given, create a tensor of bools
+    Create a Int DType. If shape is given, create a tensor of ints
     """
     if shape is None:
         shape = [1]
-    return DType.TensorInt(shape)
+    return _orig_Int(shape)
 
 
 def mk_DTypeFloat(shape: None | list[int] = None) -> DType:
     """
-    Create a Float DType. If shape is given, create a tensor of bools
+    Create a Float DType. If shape is given, create a tensor of floats
     """
     if shape is None:
         shape = [1]
-    return DType.TensorFloat(shape)
+    return _orig_Float(shape)
 
 
 def mk_DTypeReal(shape: None | list[int] = None) -> DType:
     """
-    Create a Real DType. If shape is given, create a tensor of bools
+    Create a Real DType. If shape is given, create a tensor of reals
     """
     if shape is None:
         shape = [1]
-    return DType.TensorReal(shape)
+    return _orig_Real(shape)
 
 
 #####################################################################
@@ -194,4 +202,5 @@ __all__ = [
     "to_wire",
     "mk_term",
     "ReactiveModule",
+    "Interpreter",
 ]
