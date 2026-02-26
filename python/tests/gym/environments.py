@@ -385,3 +385,42 @@ class HeartODE(Env):
         self.x = self.x + self.dt * self.dxdt
         self.heart_rate = self.heart_rate_base + self.heart_rate_variability_amplitude * self.x
         return self.heart_rate, 0.0, False, False
+
+
+class ArrayEnv(Env):
+    """Environment using multi-dimensional list literals as private state."""
+
+    def __init__(self):
+        super().__init__()
+
+        self.action_space = spaces.Discrete(2)
+        self.observation_space = spaces.Discrete(1)
+
+        self.grid = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+        self.weights = [1.0, 1.0, 1.0, 1.0, 1.0]
+        self.values = [1.0, 2.0, 3.0]
+        self.matrix = [[1.0, 2.0], [3.0, 4.0]]
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.grid = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+        self.weights = [1.0, 1.0, 1.0, 1.0, 1.0]
+        self.values = [1.0, 2.0, 3.0]
+        self.matrix = [[1.0, 2.0], [3.0, 4.0]]
+        observation = 0
+        reward = 0.0
+        terminated = False
+        truncated = False
+        return observation, reward, terminated, truncated
+
+    def step(self, q_values):
+        action = q_values.argmax().item()
+        self.grid = self.grid
+        self.weights = self.weights
+        self.values = self.values
+        self.matrix = self.matrix
+        observation = 0
+        reward = 0.0
+        terminated = action > 10
+        truncated = False
+        return observation, reward, terminated, truncated

@@ -1,4 +1,4 @@
-from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv, TwoBitCounterEnv, HeartODE
+from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv, TwoBitCounterEnv, HeartODE, ArrayEnv
 from .qnetworks import SimpleQNet, GridWorldQNet
 from zrth import Module
 
@@ -127,6 +127,14 @@ def heartode():
 
 def test_heartode_conversion():
     _ = heartode()
+
+
+def test_arrayenv_conversion():
+    env = ArrayEnv()
+    module_str = str(env)
+    assert "Tensor<3, 3; Float>" in module_str  # grid
+    assert "Tensor<5; Float>" in module_str      # weights
+    assert "Tensor<2, 2; Float>" in module_str   # matrix
 
 
 if __name__ == "__main__":
