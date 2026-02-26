@@ -117,7 +117,7 @@ def test_twobitcounterenv_conversion():
 
 
 def heartode():
-    env = HeartODE(60.0, 5, 1, 0.1)
+    env = HeartODE(60.0, 5.0, 1.0, 0.1)
 
     print("\nHeartODE reactive module:")
     print(env)
