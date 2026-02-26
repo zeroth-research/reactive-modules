@@ -290,7 +290,7 @@ class Env(Module, gym.Env):
         param_wires = {}
         for name in params:
             dtype = _infer_dtype(name, attr_vals.get(name))
-            param_wires[name] = [Wire(dtype), Wire(dtype)]
+            param_wires[name] = Wire(dtype)
 
         q_values = [Wire(q_values_dtype), Wire(q_values_dtype)]
         observation = [Wire(observation_dtype), Wire(observation_dtype)]
@@ -298,22 +298,16 @@ class Env(Module, gym.Env):
         terminated = [Wire(DType.Bool([1])), Wire(DType.Bool([1]))]
         truncated = [Wire(DType.Bool([1])), Wire(DType.Bool([1]))]
 
-        # Converter reads wire_pairs[name][0]. For params, init and update
-        # both need to read the next wire (init can't read latched), so swap
-        # [latched, next] → [next, latched] in the converter's view.
-        param_wires_swapped = {n: [w[1], w[0]] for n, w in param_wires.items()}
-
         wires = {
             'q_values': q_values,
             **prvt_wires,
-            **param_wires_swapped,
         }
         result = [observation[1], reward[1], terminated[1], truncated[1]]
 
-        reset, _ = convert_method(cls.reset, wires, result, cls=cls)
-        step, _ = convert_method(cls.step, wires, result, cls=cls)
+        reset = convert_method(cls.reset, wires, result, cls=cls, params=param_wires)
+        step = convert_method(cls.step, wires, result, cls=cls, params=param_wires)
 
-        obs = [q_values, observation, reward, terminated, truncated] + list(param_wires.values())
+        obs = [q_values, observation, reward, terminated, truncated]
         return super().__new__(cls, init=reset, update=step, obs=obs, prvt=list(prvt_wires.values()))
 
 class NN(Module, nn.Module):
@@ -335,8 +329,8 @@ class NN(Module, nn.Module):
         wires = {obs_param: [observation[1], observation[0]]}
         result = [q_values[1]]
         layer_out_features = {name: out for name, (_, out) in layers.items()}
-        forward, param_wires = convert_method(cls.forward, wires, result, cls=cls, layers=layer_out_features)
+        forward = convert_method(cls.forward, wires, result, cls=cls, layers=layer_out_features)
 
-        obs = [observation, q_values] + param_wires
+        obs = [observation, q_values]
         return super().__new__(cls, assign=forward, obs=obs)
 
