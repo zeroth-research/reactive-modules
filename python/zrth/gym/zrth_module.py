@@ -18,7 +18,7 @@ _GYM_SPACE_TO_DTYPE = {
     "MultiBinary": DType.Bool,
 }
 
-def _classify_attrs(cls, roots):
+def _classify_attrs(cls, roots, init_attr_vals=None):
     """Classify self.* attributes used in the given root methods (and their callees).
 
     Returns:
@@ -89,6 +89,14 @@ def _classify_attrs(cls, roots):
     prvt = written_self & read_self
     write_only = written_self - read_self
     params = read_self - written_self
+
+    # Fall back to __init__ values for prvt/param attrs that are Top/missing
+    if init_attr_vals:
+        for attr in prvt | params:
+            val = attr_vals.get(attr)
+            init_val = init_attr_vals.get(attr)
+            if init_val is not None and (val is None or not val.is_const()):
+                attr_vals[attr] = init_val
 
     if write_only:
         raise ValueError(
@@ -228,7 +236,7 @@ def _infer_spaces_from_init(cls, args, kwargs):
     q_values_dtype = _gym_space_to_dtype(a_name, a_args, a_kwargs, is_q_values=True)
     observation_dtype = _gym_space_to_dtype(o_name, o_args, o_kwargs, is_q_values=False)
 
-    return q_values_dtype, observation_dtype
+    return q_values_dtype, observation_dtype, self_attrs
 
 def _infer_layers_from_init(cls, args, kwargs):
     """Analyze __init__ to extract nn.Linear layers and their sizes.
@@ -270,15 +278,19 @@ def _infer_layers_from_init(cls, args, kwargs):
 class Env(Module, gym.Env):
 
     def __new__(cls, *args, **kwargs):
-        q_values_dtype, observation_dtype = _infer_spaces_from_init(cls, args, kwargs)
+        q_values_dtype, observation_dtype, init_attrs = _infer_spaces_from_init(cls, args, kwargs)
 
-        # TODO: use params
-        prvt, params, attr_vals = _classify_attrs(cls, ['reset', 'step'])
+        prvt, params, attr_vals = _classify_attrs(cls, ['reset', 'step'], init_attr_vals=init_attrs)
 
         prvt_wires = {}
         for name in prvt:
             dtype = _infer_dtype(name, attr_vals.get(name))
             prvt_wires[name] = [Wire(dtype), Wire(dtype)]
+
+        param_wires = {}
+        for name in params:
+            dtype = _infer_dtype(name, attr_vals.get(name))
+            param_wires[name] = [Wire(dtype), Wire(dtype)]
 
         q_values = [Wire(q_values_dtype), Wire(q_values_dtype)]
         observation = [Wire(observation_dtype), Wire(observation_dtype)]
@@ -286,16 +298,22 @@ class Env(Module, gym.Env):
         terminated = [Wire(DType.Bool([1])), Wire(DType.Bool([1]))]
         truncated = [Wire(DType.Bool([1])), Wire(DType.Bool([1]))]
 
+        # Converter reads wire_pairs[name][0]. For params, init and update
+        # both need to read the next wire (init can't read latched), so swap
+        # [latched, next] → [next, latched] in the converter's view.
+        param_wires_swapped = {n: [w[1], w[0]] for n, w in param_wires.items()}
+
         wires = {
             'q_values': q_values,
             **prvt_wires,
+            **param_wires_swapped,
         }
         result = [observation[1], reward[1], terminated[1], truncated[1]]
 
         reset, _ = convert_method(cls.reset, wires, result, cls=cls)
         step, _ = convert_method(cls.step, wires, result, cls=cls)
 
-        obs = [q_values, observation, reward, terminated, truncated]
+        obs = [q_values, observation, reward, terminated, truncated] + list(param_wires.values())
         return super().__new__(cls, init=reset, update=step, obs=obs, prvt=list(prvt_wires.values()))
 
 class NN(Module, nn.Module):

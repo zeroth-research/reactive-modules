@@ -348,3 +348,40 @@ class ComparisonChainEnv(Env):
         
         observation = self.value
         return observation, reward, terminated, truncated
+    
+
+class HeartODE(Env):
+    def __init__(
+            self,
+            heart_rate_base: float = 60,
+            heart_rate_variability_amplitude=5,
+            frequency=1,
+            dt=0.1):
+        super().__init__(
+        )
+
+        self.action_space = spaces.Discrete(1)
+        self.observation_space = spaces.MultiBinary(1)
+
+        self.heart_rate_base = heart_rate_base
+        self.heart_rate_variability_amplitude = heart_rate_variability_amplitude
+
+        self.x = 0
+        self.dxdt = 0
+        self.heart_rate = 0.0
+
+        self.dt = dt
+        self.frequency = frequency
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.x = 0
+        self.dxdt = 0
+        self.heart_rate = self.heart_rate_base + self.heart_rate_variability_amplitude * self.x
+        return self.heart_rate, 0.0, False, False
+    
+    def step(self, q_values):
+        self.dxdt = self.dxdt - self.dt * self.frequency * self.frequency * self.x
+        self.x = self.x + self.dt * self.dxdt
+        self.heart_rate = self.heart_rate_base + self.heart_rate_variability_amplitude * self.x
+        return self.heart_rate, 0.0, False, False

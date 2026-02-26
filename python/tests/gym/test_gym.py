@@ -1,4 +1,4 @@
-from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv, TwoBitCounterEnv
+from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv, TwoBitCounterEnv, HeartODE
 from .qnetworks import SimpleQNet, GridWorldQNet
 from zrth import Module
 
@@ -116,6 +116,19 @@ def test_twobitcounterenv_conversion():
     _ = twobitcounterenv()
 
 
+def heartode():
+    env = HeartODE(60.0, 5, 1, 0.1)
+
+    print("\nHeartODE reactive module:")
+    print(env)
+
+    return env
+
+
+def test_heartode_conversion():
+    _ = heartode()
+
+
 if __name__ == "__main__":
     qnet = simpleqnet()
     print("\n" + "="*60 + "\n")
@@ -144,3 +157,5 @@ if __name__ == "__main__":
     print("\n" + "="*60 + "\n")
     bitco = twobitcounterenv()
 
+    print("\n" + "="*60 + "\n")
+    heart = heartode()
