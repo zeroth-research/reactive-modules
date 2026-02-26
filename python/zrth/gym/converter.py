@@ -412,6 +412,8 @@ class MethodVisitor(ast.NodeVisitor):
             return self._convert_name(expr)
         elif isinstance(expr, ast.Constant):
             return self._convert_constant(expr, target_dtype)
+        elif isinstance(expr, (ast.List, ast.Tuple)):
+            return self._convert_list_literal(expr, target_dtype)
         else:
             raise ValueError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -792,6 +794,30 @@ class MethodVisitor(ast.NodeVisitor):
 
         else:
             raise ValueError(f"Unsupported constant type: {type(value)}")
+
+        const_wire = Wire(dtype)
+        self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
+        return const_wire
+
+    def _convert_list_literal(self, node, target_dtype=None):
+        """Convert a list/tuple literal to a Wire with Tensor term.
+
+        Evaluates the nested literal at compile time and creates a constant tensor.
+        """
+        data = self._eval_literal(node)
+
+        if target_dtype and target_dtype.kind() == "Int":
+            tensor_data = torch.tensor(data, dtype=torch.long)
+        elif target_dtype and target_dtype.kind() == "Bool":
+            tensor_data = torch.tensor(data, dtype=torch.bool)
+        else:
+            tensor_data = torch.tensor(data, dtype=torch.float32)
+
+        shape = list(tensor_data.size())
+        if target_dtype:
+            dtype = target_dtype.reshape(shape)
+        else:
+            dtype = DType.Float(shape)
 
         const_wire = Wire(dtype)
         self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
