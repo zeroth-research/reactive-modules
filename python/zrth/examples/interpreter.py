@@ -1,6 +1,22 @@
 import torch
 
 
+def _zero_tensor(dtype):
+    """Create a zero tensor matching the given DType."""
+    kind = dtype.kind()
+    shape = list(dtype.shape)
+    if kind == "TensorBool":
+        return torch.zeros(shape, dtype=torch.bool)
+    elif kind == "TensorInt":
+        return torch.zeros(shape, dtype=torch.long)
+    elif kind == "TensorFloat":
+        return torch.zeros(shape, dtype=torch.float32)
+    elif kind == "TensorReal":
+        return torch.zeros(shape, dtype=torch.float64)
+    else:
+        raise RuntimeError(f"unknown dtype kind: {kind}")
+
+
 def _eval(itype, read):
     name = type(itype).__name__
     fn = _EVAL.get(name)
@@ -45,6 +61,7 @@ _EVAL = {
     "IType_TensorMax":  lambda it, r: [r[0].max()],
     "IType_TensorGet":  lambda it, r: [r[0].view(-1)[int(r[1].item())]],
     "IType_TensorSet":  lambda it, r: _tensor_set(r[0], r[1], r[2]),
+    "IType_Linear":     lambda it, r: [r[0] @ r[1] + r[2]],
     "IType_Uninterpreted": lambda it, r: _uninterpreted(it),
 }
 
@@ -80,6 +97,13 @@ class Interpreter:
         if env_inputs is not None:
             for wire_id, tensor in env_inputs.items():
                 self.state[wire_id] = tensor
+        # Auto-initialize any external wires not yet in state
+        extl = self.module.extl()
+        for i in range(len(extl)):
+            ltc, nxt = extl[i]
+            for w in (ltc, nxt):
+                if w.id() not in self.state:
+                    self.state[w.id()] = _zero_tensor(w.dtype())
 
     def _execute(self, block_type):
         atoms = self.module.atoms()
