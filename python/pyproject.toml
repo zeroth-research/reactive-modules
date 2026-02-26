@@ -18,6 +18,7 @@ dependencies = [
     # for toy and smt crates
     "pysmt>=0.9.6",
     # for torch crate
+    "textual>=8.0.0",
     "torch==2.9.0",
 ]
 
