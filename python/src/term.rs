@@ -54,7 +54,7 @@ impl Term {
     }
 
     #[getter]
-    fn itype(&self) -> IType {
+    pub fn itype(&self) -> IType {
         self.base.itype().clone()
     }
 
