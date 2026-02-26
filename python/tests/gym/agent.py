@@ -13,11 +13,9 @@ class DQNAgent:
         
         # Q-network
         self.q_network = SimpleQNet(
-            extl=["observation: Tensor<1; Float>"],
-            intf=["q_values: Tensor<2; Float>"],
-            state_size=1,
-            action_size=2,
-            hidden_size=2,
+            state_size=state_size,
+            action_size=action_size,
+            hidden_size=hidden_size,
         )
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
 
