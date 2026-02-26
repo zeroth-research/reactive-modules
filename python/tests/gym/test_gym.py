@@ -20,6 +20,19 @@ def test_simpleqnet_conversion():
     _ = simpleqnet()
 
 
+def test_simpleqnet_interpr():
+    from zrth.examples import Interpreter
+
+    m = simpleqnet()
+    interp = Interpreter(m)
+    interp.initialize()
+
+    interp.step()
+    print("----")
+    for k, t in interp.state_dict().items():
+        print(f"{k} -> {t}")
+
+
 def simpleenv():
     env = SimpleEnv()
 

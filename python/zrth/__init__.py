@@ -21,13 +21,6 @@ from typing import Generator
 #####################################################################
 
 
-# Save original Rust enum constructors to avoid infinite recursion after monkey-patching
-_orig_Bool = DType.TensorBool
-_orig_Int = DType.TensorInt
-_orig_Float = DType.TensorFloat
-_orig_Real = DType.TensorReal
-
-
 # Add type aliases and convenient function
 def mk_DTypeBool(shape: None | list[int] = None) -> DType:
     """
@@ -35,7 +28,7 @@ def mk_DTypeBool(shape: None | list[int] = None) -> DType:
     """
     if shape is None:
         shape = [1]
-    return _orig_Bool(shape)
+    return DType.TensorBool(shape)
 
 
 def mk_DTypeInt(shape: None | list[int] = None) -> DType:
@@ -44,7 +37,7 @@ def mk_DTypeInt(shape: None | list[int] = None) -> DType:
     """
     if shape is None:
         shape = [1]
-    return _orig_Int(shape)
+    return DType.TensorInt(shape)
 
 
 def mk_DTypeFloat(shape: None | list[int] = None) -> DType:
@@ -53,7 +46,7 @@ def mk_DTypeFloat(shape: None | list[int] = None) -> DType:
     """
     if shape is None:
         shape = [1]
-    return _orig_Float(shape)
+    return DType.TensorFloat(shape)
 
 
 def mk_DTypeReal(shape: None | list[int] = None) -> DType:
@@ -62,7 +55,7 @@ def mk_DTypeReal(shape: None | list[int] = None) -> DType:
     """
     if shape is None:
         shape = [1]
-    return _orig_Real(shape)
+    return DType.TensorReal(shape)
 
 
 #####################################################################
