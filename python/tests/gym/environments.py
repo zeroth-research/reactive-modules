@@ -353,9 +353,9 @@ class ComparisonChainEnv(Env):
 class HeartODE(Env):
     def __init__(
             self,
-            heart_rate_base = 60,
-            heart_rate_variability_amplitude=5,
-            frequency=1,
+            heart_rate_base=60.0,
+            heart_rate_variability_amplitude=5.0,
+            frequency=1.0,
             dt=0.1):
         super().__init__(
         )

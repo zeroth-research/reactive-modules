@@ -12,6 +12,7 @@ def convert_method(
     result: list[Wire],
     cls=None,
     layers: dict[str, int] | None = None,
+    params: dict[str, Wire] | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 
@@ -21,6 +22,7 @@ def convert_method(
                parameters (by parameter name) and self.* attributes (by attr name)
         result: Ordered list of next-wires matched positionally to the return tuple
         cls: Class owning the method, needed only for inlining self.helper() calls
+        params: Read-only parameter wires (single wires, not pairs) for self.* constants
 
     Returns:
         List of Terms representing the method as a reactive diagram
@@ -34,7 +36,7 @@ def convert_method(
     func_def.body = _normalize_early_returns(func_def.body)
 
     param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
-    visitor = MethodVisitor(wires, result, cls=cls, layers=layers)
+    visitor = MethodVisitor(wires, result, cls=cls, layers=layers, params=params)
     visitor.temp_vars.update(
         {name: wires[name][0] for name in param_names if name in wires}
     )
@@ -48,7 +50,7 @@ def convert_method(
             raise ValueError(f"Method has no return value for result {i}")
         visitor.terms.append(Term(IType.Id(), [result_wire], [src]))
 
-    return visitor.terms, visitor.layer_params
+    return visitor.terms
 
 
 def _normalize_early_returns(stmts: list) -> list:
@@ -204,12 +206,13 @@ class MethodVisitor(ast.NodeVisitor):
         result_wires: list[Wire],
         cls=None,
         layers: dict[str, int] | None = None,
+        params: dict[str, Wire] | None = None,
     ):
         self.wire_pairs = wire_pairs
         self.result_wires = result_wires
         self.cls = cls
         self.layers = layers or {}
-        self.layer_params = []
+        self.params = params or {}
         self.terms = []
         self.temp_vars = {}
         self.scopes = []
@@ -804,8 +807,11 @@ class MethodVisitor(ast.NodeVisitor):
 
             if wire_name in self.wire_pairs:
                 return self.wire_pairs[wire_name][0]
-            else:
-                raise ValueError(f"Unknown wire: {wire_name}")
+
+            if wire_name in self.params:
+                return self.params[wire_name]
+
+            raise ValueError(f"Unknown wire: {wire_name}")
         else:
             raise ValueError(f"Unsupported attribute access: {ast.unparse(attr)}")
 
@@ -814,9 +820,7 @@ class MethodVisitor(ast.NodeVisitor):
         if method_name in self.layers:
             input_wire = self._convert_expr(args[0])
             out_features = self.layers[method_name]
-            output_wire, weight_wire, bias_wire = _translate_linear(input_wire, out_features, self.terms)
-            self.layer_params.append([Wire(weight_wire.dtype()), weight_wire])
-            self.layer_params.append([Wire(bias_wire.dtype()), bias_wire])
+            output_wire, _, _ = _translate_linear(input_wire, out_features, self.terms)
             return output_wire
 
         if self.cls is None or not hasattr(self.cls, method_name):
