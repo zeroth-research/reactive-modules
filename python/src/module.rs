@@ -126,26 +126,39 @@ impl Module {
         }
     }
 
+    #[getter]
     fn extl(slf: PyRef<'_, Self>) -> PyResult<ModuleInterface> {
         Self::interface(slf, ModuleInterfaceType::Extl)
     }
 
+    #[getter]
     fn intf(slf: PyRef<'_, Self>) -> PyResult<ModuleInterface> {
         Self::interface(slf, ModuleInterfaceType::Intf)
     }
 
+    #[getter]
     fn prvt(slf: PyRef<'_, Self>) -> PyResult<ModuleInterface> {
         Self::interface(slf, ModuleInterfaceType::Prvt)
     }
 
+    #[getter]
     fn obs(slf: PyRef<'_, Self>) -> PyResult<ModuleInterface> {
         Self::interface(slf, ModuleInterfaceType::Obs)
     }
 
+    #[getter]
     fn ctrl(slf: PyRef<'_, Self>) -> PyResult<ModuleInterface> {
         Self::interface(slf, ModuleInterfaceType::Ctrl)
     }
 
+    #[getter]
+    fn param(slf: PyRef<'_, Self>) -> PyResult<ModuleParam> {
+        let py = slf.py();
+        let module = slf.into_pyobject(py)?.unbind();
+        Ok(ModuleParam { module })
+    }
+
+    #[getter]
     fn atoms(slf: PyRef<'_, Self>) -> PyResult<ModuleAtoms> {
         let py = slf.py();
         let module = slf.into_pyobject(py)?.unbind();
@@ -271,5 +284,55 @@ impl ModuleAtoms {
     fn __len__(&self) -> usize {
         let module = &self.module.get().base;
         module.atoms().len()
+    }
+}
+
+#[pyclass(sequence)]
+struct ModuleParam {
+    module: Py<Module>,
+}
+
+impl ModuleParam {
+    fn base(&self) -> &base::Interface<DType> {
+        let module = &self.module.get().base;
+        module.param()
+    }
+}
+
+#[pymethods]
+impl ModuleParam {
+    fn __str__(&self) -> String {
+        self.base().to_string()
+    }
+
+    fn __getitem__(&self, index: usize) -> PyResult<Wire> {
+        let item = self.base().wire(0, index);
+        item.and_then(|w| Some(w.clone().into()))
+            .ok_or(PyIndexError::new_err("index out of bounds"))
+    }
+
+    fn __len__(&self) -> usize {
+        self.base().len()
+    }
+
+    fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
+        let other = match try_iter_borrow::<Wire>(other) {
+            Ok(other) => other,
+            Err(_) => return false,
+        };
+
+        let mut this = self.base().wires();
+        let mut other = other.into_iter();
+        loop {
+            match (this.next(), other.next()) {
+                (Some(this), Some(Ok(other))) => {
+                    if this != other.base() {
+                        return false;
+                    }
+                }
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
     }
 }
