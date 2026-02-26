@@ -81,8 +81,8 @@ class GridWorldEnv(Env):
             self.x = min(self.x + 1, 2)
         
         # Check if reached goal
-        at_goal_x = self.x == 2
-        at_goal_y = self.y == 2
+        at_goal_x = self.x == self.goal_x
+        at_goal_y = self.y == self.goal_y
         at_goal = at_goal_x and at_goal_y
         
         reward = 1.0 if at_goal else 0.0
@@ -353,7 +353,7 @@ class ComparisonChainEnv(Env):
 class HeartODE(Env):
     def __init__(
             self,
-            heart_rate_base: float = 60,
+            heart_rate_base = 60,
             heart_rate_variability_amplitude=5,
             frequency=1,
             dt=0.1):
@@ -361,13 +361,13 @@ class HeartODE(Env):
         )
 
         self.action_space = spaces.Discrete(1)
-        self.observation_space = spaces.MultiBinary(1)
+        self.observation_space = spaces.Box(low=0.0, high=100.0, shape=(1,))
 
         self.heart_rate_base = heart_rate_base
         self.heart_rate_variability_amplitude = heart_rate_variability_amplitude
 
-        self.x = 0
-        self.dxdt = 0
+        self.x = 0.0
+        self.dxdt = 0.0
         self.heart_rate = 0.0
 
         self.dt = dt
@@ -375,8 +375,8 @@ class HeartODE(Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.x = 0
-        self.dxdt = 0
+        self.x = 0.0
+        self.dxdt = 0.0
         self.heart_rate = self.heart_rate_base + self.heart_rate_variability_amplitude * self.x
         return self.heart_rate, 0.0, False, False
     
