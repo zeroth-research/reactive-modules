@@ -1,5 +1,6 @@
 import torch
-from zrth import Wire, Term, Module, DType as dt, IType as it, Interpreter
+from zrth import Wire, Term, Module, DType as dt, IType as it
+from zrth.examples import Interpreter
 
 
 def _make_counter():

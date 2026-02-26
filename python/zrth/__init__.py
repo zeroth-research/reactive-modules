@@ -9,7 +9,6 @@ from .zrth import (
     Module,
 )
 
-from .interpreter import Interpreter
 
 from .context import Context, get_ctx, set_ctx, reset_ctx
 from .module import ReactiveModule
@@ -22,7 +21,7 @@ from typing import Generator
 #####################################################################
 
 
-# Save original Rust enum constructors before monkey-patching
+# Save original Rust enum constructors to avoid infinite recursion after monkey-patching
 _orig_Bool = DType.TensorBool
 _orig_Int = DType.TensorInt
 _orig_Float = DType.TensorFloat
@@ -203,5 +202,4 @@ __all__ = [
     "to_wire",
     "mk_term",
     "ReactiveModule",
-    "Interpreter",
 ]
