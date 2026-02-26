@@ -28,6 +28,7 @@ pub struct Module<D, I> {
     obs: Interface<D, 2>,
     ctrl: Interface<D, 2>,
     temp: Interface<D>,
+    param: Interface<D>,
 
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
@@ -72,6 +73,10 @@ impl<D, I> Module<D, I> {
         self.temp.wires()
     }
 
+    pub fn param(&self) -> &Interface<D> {
+        &self.param
+    }
+
     pub fn empty() -> Self {
         Module {
             extl: Interface::empty(),
@@ -80,6 +85,7 @@ impl<D, I> Module<D, I> {
             obs: Interface::empty(),
             ctrl: Interface::empty(),
             temp: Interface::empty(),
+            param: Interface::empty(),
             atoms: Vec::new(),
         }
     }
@@ -137,6 +143,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         obs: Interface<D, 2>,
         ctrl: Interface<D, 2>,
         temp: Interface<D>,
+        param: Interface<D>,
         atoms: Vec<Atom<D, I>>,
     ) -> Self {
         #[cfg(debug_assertions)]
@@ -242,6 +249,21 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
                     .get(&wire.id())
                     .is_some_and(|&dtype| dtype == wire.dtype())
             }));
+
+            // check that parameters are decoupled from module wires and other atoms
+            let mut module_param: HashMap<usize, &D> = HashMap::new();
+            for lc in atoms.iter().map(Atom::param).flat_map(Interface::wires) {
+                debug_assert!(!ltc_to_dtype.contains_key(&lc.id()));
+                debug_assert!(!nxt_to_ltc.contains_key(&lc.id()));
+                debug_assert!(module_param.insert(lc.id(), lc.dtype()).is_none());
+                debug_assert!(!module_temp.contains_key(&lc.id()));
+            }
+            debug_assert_eq!(module_param.len(), param.len());
+            debug_assert!(param.iter().all(|[wire]| {
+                module_param
+                    .get(&wire.id())
+                    .is_some_and(|&dtype| dtype == wire.dtype())
+            }));
         }
 
         Module {
@@ -251,6 +273,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             obs,
             ctrl,
             temp,
+            param,
             atoms,
         }
     }
@@ -336,6 +359,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         // Check atoms consistency and infer control wires
         let mut ctrl_nxt: HashSet<usize> = HashSet::new();
         let mut temp: BTreeMap<usize, D> = BTreeMap::new();
+        let mut param: BTreeMap<usize, D> = BTreeMap::new();
         let atoms_iter = atoms.into_iter();
         let mut past_atoms: Vec<Atom<D, I>> = Vec::with_capacity(atoms_iter.size_hint().0);
         for atom in atoms_iter {
@@ -367,6 +391,18 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
                 }
                 if temp.insert(lc, dtype.clone()).is_some() {
                     return Err("temp wires coupled with other atom");
+                }
+            }
+
+            for (lc, dtype) in atom.param().wires().map(Into::into) {
+                if ltc_to_dtype.contains_key(&lc) || nxt_to_ltc.contains_key(&lc) {
+                    return Err("param wires coupled with module wires");
+                }
+                if param.insert(lc, dtype.clone()).is_some() {
+                    return Err("param wires coupled with other atom");
+                }
+                if temp.contains_key(&lc) {
+                    return Err("param wires coupled with other atom (temps)");
                 }
             }
 
@@ -407,9 +443,10 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let ctrl = Interface::from_iter_unchecked(ctrl);
         let intf = Interface::from_iter_unchecked(intf);
         let temp = Interface::from_wires_unchecked(temp);
+        let param = Interface::from_wires_unchecked(param);
 
         Ok(Self::new_unchecked(
-            extl, intf, prvt, obs, ctrl, temp, past_atoms,
+            extl, intf, prvt, obs, ctrl, temp, param, past_atoms,
         ))
     }
 
@@ -507,6 +544,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let mut obs_stack: Vec<[Wire<D>; 2]> = Vec::new();
         let mut ctrl_stack: Vec<[Wire<D>; 2]> = Vec::new();
         let mut temp_stack: Vec<[Wire<D>; 1]> = Vec::new();
+        let mut param_stack: Vec<[Wire<D>; 1]> = Vec::new();
         let mut atoms_stack: Vec<Atom<D, I>> = Vec::new();
 
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
@@ -562,6 +600,18 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
                 }
 
                 temp_stack.push([tmp]);
+            }
+
+            // Check that parameters are uncoupled and restrict them
+            param_stack.reserve(module.param.len());
+            for [prm] in module.param {
+                if latched.contains(&prm.id()) || next.contains(&prm.id()) {
+                    return Err("invalid coupling (param)");
+                }
+                if !restricted.insert(prm.id()) {
+                    return Err("invalid coupling (param)");
+                }
+                param_stack.push([prm]);
             }
 
             //============================================================
@@ -659,9 +709,10 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let obs = Interface::from_iter_unchecked(obs_stack);
         let ctrl = Interface::from_iter_unchecked(ctrl_stack);
         let temp = Interface::from_iter_unchecked(temp_stack);
+        let param = Interface::from_iter_unchecked(param_stack);
 
         Ok(Module::new_unchecked(
-            extl, intf, prvt, obs, ctrl, temp, atoms,
+            extl, intf, prvt, obs, ctrl, temp, param, atoms,
         ))
     }
 }
