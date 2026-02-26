@@ -1,5 +1,5 @@
-from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv, TwoBitCounterEnv
-from .qnetworks import SimpleQNet
+from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv, TwoBitCounterEnv, HeartODE
+from .qnetworks import SimpleQNet, GridWorldQNet
 from zrth import Module
 
 
@@ -33,22 +33,22 @@ def test_simpleenv_conversion():
     _ = simpleenv()
 
 
-# def gridworldqnet():
-#     qnet = GridWorldQNet(
-#         state_size=1,
-#         action_size=4,
-#         hidden_size1=8,
-#         hidden_size2=4,
-#     )
+def gridworldqnet():
+    qnet = GridWorldQNet(
+        state_size=1,
+        action_size=4,
+        hidden_size1=8,
+        hidden_size2=4,
+    )
 
-#     print("GridWorldQNet reactive module:")
-#     print(qnet)
+    print("GridWorldQNet reactive module:")
+    print(qnet)
 
-#     return qnet
+    return qnet
 
 
-# def test_gridworldqnet_conversion():
-#     _ = gridworldqnet()
+def test_gridworldqnet_conversion():
+    _ = gridworldqnet()
 
 
 def gridworldenv():
@@ -116,21 +116,34 @@ def test_twobitcounterenv_conversion():
     _ = twobitcounterenv()
 
 
+def heartode():
+    env = HeartODE(60.0, 5.0, 1.0, 0.1)
+
+    print("\nHeartODE reactive module:")
+    print(env)
+
+    return env
+
+
+def test_heartode_conversion():
+    _ = heartode()
+
+
 if __name__ == "__main__":
-    # qnet = simpleqnet()
-    # print("\n" + "="*60 + "\n")
+    qnet = simpleqnet()
+    print("\n" + "="*60 + "\n")
     env = simpleenv()
-    # print("\n" + "="*60 + "\n")
-    # composed = Module.parallel(qnet, env)
-    # print(composed)
+    print("\n" + "="*60 + "\n")
+    composed = Module.parallel(qnet, env)
+    print(composed)
     
-    # print("\n" + "="*60 + "\n")
-    # qnet3 = gridworldqnet()
+    print("\n" + "="*60 + "\n")
+    qnet3 = gridworldqnet()
     print("\n" + "="*60 + "\n")
     gridenv = gridworldenv()
-    # print("\n" + "="*60 + "\n")
-    # composed2 = Module.parallel(qnet3, gridenv)
-    # print(composed2)
+    print("\n" + "="*60 + "\n")
+    composed2 = Module.parallel(qnet3, gridenv)
+    print(composed2)
     
     print("\n" + "="*60 + "\n")
     complexenv = complexdecisionenv()
@@ -144,3 +157,5 @@ if __name__ == "__main__":
     print("\n" + "="*60 + "\n")
     bitco = twobitcounterenv()
 
+    print("\n" + "="*60 + "\n")
+    heart = heartode()

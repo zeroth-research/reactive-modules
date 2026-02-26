@@ -11,6 +11,7 @@ def convert_method(
     wires: dict[str, tuple[Wire, Wire]],
     result: list[Wire],
     cls=None,
+    layers: dict[str, int] | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 
@@ -33,7 +34,7 @@ def convert_method(
     func_def.body = _normalize_early_returns(func_def.body)
 
     param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
-    visitor = MethodVisitor(wires, result, cls=cls)
+    visitor = MethodVisitor(wires, result, cls=cls, layers=layers)
     visitor.temp_vars.update(
         {name: wires[name][0] for name in param_names if name in wires}
     )
@@ -47,7 +48,7 @@ def convert_method(
             raise ValueError(f"Method has no return value for result {i}")
         visitor.terms.append(Term(IType.Id(), [result_wire], [src]))
 
-    return visitor.terms
+    return visitor.terms, visitor.layer_params
 
 
 def _normalize_early_returns(stmts: list) -> list:
@@ -129,41 +130,30 @@ def _normalize_early_returns(stmts: list) -> list:
 # ============================================================================
 
 
-def _translate_linear(input_wire: Wire, layer, terms: list[Term]) -> Wire:
-    """Translate PyTorch Linear layer to reactive operations
+def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term]):
+    """Translate a linear layer to a single IType.Linear term.
 
-    Creates: output = input * weight + bias
+    Creates: output = input @ weight + bias
+    Weight and bias wires are dangling (no term writes them) — they are
+    external parameters to be connected later.
 
     Args:
         input_wire: Input Wire
-        layer: torch.nn.Linear layer
+        out_features: Number of output features
         terms: List to append Terms to
 
     Returns:
-        Output Wire
+        (output_wire, weight_wire, bias_wire)
     """
-    weight_tensor = layer.weight.data.t().contiguous()
-    weight_itype = IType.Tensor(weight_tensor)
-    weight_wire = Wire(DType.TensorFloat(list(weight_tensor.shape)))
-    weight_term = Term(weight_itype, [weight_wire], [])
-    terms.append(weight_term)
+    in_features = input_wire.dtype().shape[-1]
 
-    matmul_dtype = DType.TensorFloat([input_wire.dtype().shape[0], weight_tensor.shape[1]])
-    matmul_wire = Wire(matmul_dtype)
-    matmul_term = Term(IType.MatMul(), [matmul_wire], [input_wire, weight_wire])
-    terms.append(matmul_term)
+    weight_wire = Wire(DType.Float([in_features, out_features]))
+    bias_wire = Wire(DType.Float([out_features]))
+    output_wire = Wire(DType.Float([out_features]))
 
-    bias_tensor = layer.bias.data
-    bias_itype = IType.Tensor(bias_tensor)
-    bias_wire = Wire(DType.TensorFloat(list(bias_tensor.shape)))
-    bias_term = Term(bias_itype, [bias_wire], [])
-    terms.append(bias_term)
+    terms.append(Term(IType.Linear(), [output_wire], [input_wire, weight_wire, bias_wire]))
 
-    output_wire = Wire(DType.TensorFloat(list(bias_tensor.shape)))
-    add_term = Term(IType.Add(), [output_wire], [matmul_wire, bias_wire])
-    terms.append(add_term)
-
-    return output_wire
+    return output_wire, weight_wire, bias_wire
 
 
 def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
@@ -213,10 +203,13 @@ class MethodVisitor(ast.NodeVisitor):
         wire_pairs: dict[str, tuple[Wire, Wire]],
         result_wires: list[Wire],
         cls=None,
+        layers: dict[str, int] | None = None,
     ):
         self.wire_pairs = wire_pairs
         self.result_wires = result_wires
         self.cls = cls
+        self.layers = layers or {}
+        self.layer_params = []
         self.terms = []
         self.temp_vars = {}
         self.scopes = []
@@ -445,7 +438,7 @@ class MethodVisitor(ast.NodeVisitor):
 
             if method == "argmax":
                 obj_wire = self._convert_expr(obj)
-                result = Wire(DType.TensorFloat([1]))
+                result = Wire(DType.Float([1]))
                 self.terms.append(Term(IType.Argmax(), [result], [obj_wire]))
                 return result
             elif method == "item":
@@ -488,16 +481,16 @@ class MethodVisitor(ast.NodeVisitor):
         - np.array(data) -> Wire with Tensor term
 
         Shape and data must be Python literals (evaluated at conversion time).
-        Respects target_dtype for creating TensorInt/Float/Bool arrays.
+        Respects target_dtype for creating Int/Float/Bool arrays.
         """
         if func_name == "zeros":
             if len(args) != 1:
                 raise ValueError(f"np.zeros() requires 1 argument, got {len(args)}")
             shape = self._eval_shape(args[0])
 
-            if target_dtype and target_dtype.kind() == "TensorInt":
+            if target_dtype and target_dtype.kind() == "Int":
                 tensor_data = torch.zeros(*shape, dtype=torch.long)
-            elif target_dtype and target_dtype.kind() == "TensorBool":
+            elif target_dtype and target_dtype.kind() == "Bool":
                 tensor_data = torch.zeros(*shape, dtype=torch.bool)
             else:
                 tensor_data = torch.zeros(*shape, dtype=torch.float32)
@@ -507,9 +500,9 @@ class MethodVisitor(ast.NodeVisitor):
                 raise ValueError(f"np.ones() requires 1 argument, got {len(args)}")
             shape = self._eval_shape(args[0])
 
-            if target_dtype and target_dtype.kind() == "TensorInt":
+            if target_dtype and target_dtype.kind() == "Int":
                 tensor_data = torch.ones(*shape, dtype=torch.long)
-            elif target_dtype and target_dtype.kind() == "TensorBool":
+            elif target_dtype and target_dtype.kind() == "Bool":
                 tensor_data = torch.ones(*shape, dtype=torch.bool)
             else:
                 tensor_data = torch.ones(*shape, dtype=torch.float32)
@@ -519,9 +512,9 @@ class MethodVisitor(ast.NodeVisitor):
                 raise ValueError(f"np.array() requires 1 argument, got {len(args)}")
             data = self._eval_literal(args[0])
 
-            if target_dtype and target_dtype.kind() == "TensorInt":
+            if target_dtype and target_dtype.kind() == "Int":
                 tensor_data = torch.tensor(data, dtype=torch.long)
-            elif target_dtype and target_dtype.kind() == "TensorBool":
+            elif target_dtype and target_dtype.kind() == "Bool":
                 tensor_data = torch.tensor(data, dtype=torch.bool)
             else:
                 tensor_data = torch.tensor(data, dtype=torch.float32)
@@ -533,7 +526,7 @@ class MethodVisitor(ast.NodeVisitor):
         if target_dtype:
             dtype = target_dtype.reshape(shape)
         else:
-            dtype = DType.TensorFloat(shape)
+            dtype = DType.Float(shape)
 
         const_wire = Wire(dtype)
         self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
@@ -588,7 +581,7 @@ class MethodVisitor(ast.NodeVisitor):
         """Convert binary operation
 
         Dtype propagation:
-        - With target_dtype: both operands inherit it (e.g., self.x = 2 + 3 → both TensorInt)
+        - With target_dtype: both operands inherit it (e.g., self.x = 2 + 3 → both Int)
         - Without: right operand inherits from left (e.g., self.x + 3 → 3 matches x's dtype)
         """
         if target_dtype:
@@ -726,7 +719,7 @@ class MethodVisitor(ast.NodeVisitor):
     def _convert_ifexp(self, ifexp, target_dtype=None):
         """Convert ternary conditional to Ite
 
-        Propagates target_dtype to both branches (e.g., self.x = 5 if c else 10 → both TensorInt)
+        Propagates target_dtype to both branches (e.g., self.x = 5 if c else 10 → both Int)
         """
         cond_wire = self._convert_expr(ifexp.test)
         true_wire = self._convert_expr(ifexp.body, target_dtype=target_dtype)
@@ -752,18 +745,18 @@ class MethodVisitor(ast.NodeVisitor):
 
         Args:
             constant: AST Constant node
-            target_dtype: Optional dtype (inferred from context). Defaults to TensorFloat if None.
+            target_dtype: Optional dtype (inferred from context). Defaults to Float if None.
         """
         value = constant.value
 
         if isinstance(value, bool):
             tensor_data = torch.tensor([value])
-            dtype = DType.TensorBool([1])
+            dtype = DType.Bool([1])
 
         elif isinstance(value, (int, float)):
             if target_dtype is None:
                 # TODO: Consider inferring dtype from value (int vs float) or raising error instead of defaulting
-                target_dtype = DType.TensorFloat([])
+                target_dtype = DType.Float([])
                 tensor_data = torch.tensor([float(value)], dtype=torch.float32)
             elif target_dtype.kind() == "TensorInt":
                 tensor_data = torch.tensor([int(value)], dtype=torch.long)
@@ -782,9 +775,9 @@ class MethodVisitor(ast.NodeVisitor):
             if isinstance(value, torch.Tensor):
                 tensor_data = value
             else:
-                if target_dtype and target_dtype.kind() == "TensorInt":
+                if target_dtype and target_dtype.kind() == "Int":
                     tensor_data = torch.tensor(value, dtype=torch.long)
-                elif target_dtype and target_dtype.kind() == "TensorBool":
+                elif target_dtype and target_dtype.kind() == "Bool":
                     tensor_data = torch.tensor(value, dtype=torch.bool)
                 else:
                     tensor_data = torch.tensor(value, dtype=torch.float32)
@@ -792,7 +785,7 @@ class MethodVisitor(ast.NodeVisitor):
             if target_dtype:
                 dtype = target_dtype.reshape(list(tensor_data.size()))
             else:
-                dtype = DType.TensorFloat(list(tensor_data.size()))
+                dtype = DType.Float(list(tensor_data.size()))
 
         else:
             raise ValueError(f"Unsupported constant type: {type(value)}")
@@ -817,7 +810,15 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unsupported attribute access: {ast.unparse(attr)}")
 
     def _inline_method(self, method_name, args):
-        """Inline simple method by extracting its return expression"""
+        """Inline simple method or dispatch to layer translator."""
+        if method_name in self.layers:
+            input_wire = self._convert_expr(args[0])
+            out_features = self.layers[method_name]
+            output_wire, weight_wire, bias_wire = _translate_linear(input_wire, out_features, self.terms)
+            self.layer_params.append([Wire(weight_wire.dtype()), weight_wire])
+            self.layer_params.append([Wire(bias_wire.dtype()), bias_wire])
+            return output_wire
+
         if self.cls is None or not hasattr(self.cls, method_name):
             raise ValueError(f"Method not found: {method_name}")
 

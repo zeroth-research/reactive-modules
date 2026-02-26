@@ -1,17 +1,10 @@
 from gymnasium import spaces
 from zrth.gym import Env
 
-# TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-from zrth.zrth import DType
 
 class SimpleEnv(Env):
     """Simple chain environment with partial observability"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([2])
-    observation: DType.Float([1])
-    state: DType.Float([1])
-    
     def __init__(self):
         """Initialize simple chain environment"""
         super().__init__()
@@ -54,12 +47,6 @@ class SimpleEnv(Env):
 class GridWorldEnv(Env):
     """3x3 grid world environment"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([4])
-    observation: DType.Float([1])
-    x: DType.Float([1])
-    y: DType.Float([1])
-    
     def __init__(self):
         """Initialize 3x3 grid world environment"""
         super().__init__()
@@ -94,8 +81,8 @@ class GridWorldEnv(Env):
             self.x = min(self.x + 1, 2)
         
         # Check if reached goal
-        at_goal_x = self.x == 2
-        at_goal_y = self.y == 2
+        at_goal_x = self.x == self.goal_x
+        at_goal_y = self.y == self.goal_y
         at_goal = at_goal_x and at_goal_y
         
         reward = 1.0 if at_goal else 0.0
@@ -108,13 +95,6 @@ class GridWorldEnv(Env):
 class ComplexDecisionEnv(Env):
     """Environment testing: nested decisions, boolean ops, augmented assignments, numpy"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([10])
-    observation: DType.Float([1])
-    score: DType.Float([1])
-    multiplier: DType.Float([1])
-    bonus_active: DType.Bool([1])
-    
     def __init__(self):
         """Initialize complex decision environment
         
@@ -214,11 +194,6 @@ class ComplexDecisionEnv(Env):
 class EarlyReturnEnv(Env):
     """Environment testing early returns in if/else branches"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([5])
-    observation: DType.Float([1])
-    counter: DType.Float([1])
-    
     def __init__(self):
         """Initialize early return test environment
         
@@ -283,12 +258,6 @@ class TwoBitCounterEnv(Env):
     b1_next = b1 XOR (b0 AND enable)
     """
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([2])
-    observation: DType.Bool([1])
-    b0: DType.Bool([1])  # LSB
-    b1: DType.Bool([1])  # MSB
-
     def __init__(self):
         """Initialize 2-bit counter environment"""
         super().__init__()
@@ -330,11 +299,6 @@ class TwoBitCounterEnv(Env):
 class ComparisonChainEnv(Env):
     """Environment testing comparison chains (a < b < c)"""
 
-    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
-    q_values: DType.Float([5])
-    observation: DType.Float([1])
-    value: DType.Float([1])
-    
     def __init__(self):
         """Initialize comparison chain test environment
         
@@ -384,3 +348,40 @@ class ComparisonChainEnv(Env):
         
         observation = self.value
         return observation, reward, terminated, truncated
+    
+
+class HeartODE(Env):
+    def __init__(
+            self,
+            heart_rate_base = 60,
+            heart_rate_variability_amplitude=5,
+            frequency=1,
+            dt=0.1):
+        super().__init__(
+        )
+
+        self.action_space = spaces.Discrete(1)
+        self.observation_space = spaces.Box(low=0.0, high=100.0, shape=(1,))
+
+        self.heart_rate_base = heart_rate_base
+        self.heart_rate_variability_amplitude = heart_rate_variability_amplitude
+
+        self.x = 0.0
+        self.dxdt = 0.0
+        self.heart_rate = 0.0
+
+        self.dt = dt
+        self.frequency = frequency
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.x = 0.0
+        self.dxdt = 0.0
+        self.heart_rate = self.heart_rate_base + self.heart_rate_variability_amplitude * self.x
+        return self.heart_rate, 0.0, False, False
+    
+    def step(self, q_values):
+        self.dxdt = self.dxdt - self.dt * self.frequency * self.frequency * self.x
+        self.x = self.x + self.dt * self.dxdt
+        self.heart_rate = self.heart_rate_base + self.heart_rate_variability_amplitude * self.x
+        return self.heart_rate, 0.0, False, False
