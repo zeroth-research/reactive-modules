@@ -17,7 +17,8 @@ pub struct Atom<D, I> {
     read: Interface<D>,
     /// Corresponds to temporary, local wires.
     temp: Interface<D>,
-
+    /// Corresponds to parameter wires.
+    param: Interface<D>,
     /// Corresponds to the initial action.
     init: Block<D, I>,
     /// Corresponds to the update action.
@@ -54,12 +55,17 @@ impl<D, I> Atom<D, I> {
         self.temp.wires()
     }
 
+    pub fn param(&self) -> &Interface<D> {
+        &self.param
+    }
+
     pub fn empty() -> Self {
         Self {
             ctrl: Interface::empty(),
             wait: Interface::empty(),
             read: Interface::empty(),
             temp: Interface::empty(),
+            param: Interface::empty(),
             init: Block::empty(),
             update: Block::empty(),
         }
@@ -85,6 +91,7 @@ impl<D: Eq, I> Atom<D, I> {
         wait: Interface<D>,
         read: Interface<D>,
         temp: Interface<D>,
+        param: Interface<D>,
         init: Block<D, I>,
         update: Block<D, I>,
     ) -> Self {
@@ -95,52 +102,49 @@ impl<D: Eq, I> Atom<D, I> {
             //================================================================================
             let mut decl: HashMap<usize, &D> = HashMap::new();
             // declare read and await, don't allow repetition
-            for (w, dtype) in read.wires().chain(wait.wires()).map(Into::into) {
-                debug_assert!(decl.insert(w, dtype).is_none(), "wire {w} doubly declared");
+            {
+                let read_wait_param = read.wires().chain(wait.wires()).chain(param.wires());
+                for (w, dtype) in read_wait_param.map(Into::into) {
+                    debug_assert!(decl.insert(w, dtype).is_none(), "wire {w} doubly declared");
+                }
             }
             // check that read and wait are read only
-            for id in init
-                .iter()
-                .chain(update.iter())
-                .flat_map(|t| t.write().wires())
-                .map(Wire::id)
             {
-                debug_assert!(!decl.contains_key(&id), "wire {id} undeclared");
+                let init_update = init.iter().chain(update.iter());
+                for id in init_update.flat_map(|t| t.write().wires()).map(Wire::id) {
+                    debug_assert!(!decl.contains_key(&id), "wire {id} undeclared");
+                }
             }
             // declare ctrl and temp, don't allow repetition
             for (w, dtype) in ctrl.wires().chain(temp.wires()).map(Into::into) {
                 debug_assert!(decl.insert(w, dtype).is_none(), "wire {w} doubly declared");
             }
             // check that read wires of terms have consistent dtype
-            for (w, dtype) in init
-                .iter()
-                .chain(update.iter())
-                .flat_map(|t| t.read().wires())
-                .map(Into::into)
             {
-                debug_assert!(
-                    decl.insert(w, dtype).is_some_and(|d| d == dtype),
-                    "wire {w} undeclared or dtype mismatch"
-                );
+                let init_update = init.iter().chain(update.iter());
+                for (w, dtype) in init_update.flat_map(|t| t.read().wires()).map(Into::into) {
+                    debug_assert!(
+                        decl.insert(w, dtype).is_some_and(|d| d == dtype),
+                        "wire {w} undeclared or dtype mismatch"
+                    );
+                }
             }
             // check that write wires of terms have consistent dtype
-            for (w, dtype) in init
-                .iter()
-                .chain(update.iter())
-                .flat_map(|t| t.write().wires())
-                .map(Into::into)
             {
-                debug_assert!(
-                    decl.insert(w, dtype).is_some_and(|d| d == dtype),
-                    "wire {w} undeclared or dtype mismatch"
-                );
+                let init_update = init.iter().chain(update.iter());
+                for (w, dtype) in init_update.flat_map(|t| t.write().wires()).map(Into::into) {
+                    debug_assert!(
+                        decl.insert(w, dtype).is_some_and(|d| d == dtype),
+                        "wire {w} undeclared or dtype mismatch"
+                    );
+                }
             }
 
             //================================================================================
             // Check init terms
             //================================================================================
             // the init terms can initially read from the await wires of the atom
-            let mut written = HashSet::<usize>::from_iter(wait.ids());
+            let mut written = HashSet::<usize>::from_iter(wait.ids().chain(param.ids()));
             for term in init.iter() {
                 // all read wires were written before in the block
                 debug_assert!(
@@ -161,7 +165,8 @@ impl<D: Eq, I> Atom<D, I> {
             // Check update terms
             //================================================================================
             // the update block can initially read from the read and await wires of the atom
-            let mut written = HashSet::<usize>::from_iter(read.ids().chain(wait.ids()));
+            let mut written =
+                HashSet::<usize>::from_iter(read.ids().chain(wait.ids()).chain(param.ids()));
             for term in update.iter() {
                 // all read wires were written before in the block
                 debug_assert!(
@@ -184,6 +189,7 @@ impl<D: Eq, I> Atom<D, I> {
             wait,
             read,
             temp,
+            param,
             init,
             update,
         }
@@ -240,6 +246,7 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         let mut ctrl: BTreeMap<usize, D> = BTreeMap::new();
         let mut wait: BTreeMap<usize, D> = BTreeMap::new();
         let mut read: BTreeMap<usize, D> = BTreeMap::new();
+        let mut param: BTreeMap<usize, D> = BTreeMap::new();
         let mut temp: BTreeMap<usize, D> = BTreeMap::new();
 
         for (rd, dtype) in init.read().iter().map(|[w]| w.into()) {
@@ -254,9 +261,10 @@ impl<D: Eq + Clone, I> Atom<D, I> {
 
             if latched.contains_key(&rd) {
                 return Err("Init reads latched wire");
-            } else {
-                return Err("invalid wire");
             }
+
+            // dangling read wires are parameters
+            param.insert(rd, dtype.clone());
         }
 
         for (rd, dtype) in update.read().iter().map(|[w]| w.into()) {
@@ -278,7 +286,8 @@ impl<D: Eq + Clone, I> Atom<D, I> {
                 return Err("dtype mismatch");
             }
 
-            return Err("invalid wire");
+            // dangling read wires are parameters
+            param.insert(rd, dtype.clone());
         }
 
         for (wt, dtype) in [init.write(), update.write()]
@@ -297,7 +306,9 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             }
 
             if latched.contains_key(&wt) {
-                return Err("invalid write");
+                return Err("write on latched");
+            } else if param.contains_key(&wt) {
+                return Err("write on param");
             } else {
                 temp.insert(wt, dtype.clone());
             }
@@ -317,6 +328,7 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             Interface::from_wires_unchecked(wait),
             Interface::from_wires_unchecked(read),
             Interface::from_wires_unchecked(temp),
+            Interface::from_wires_unchecked(param),
             init,
             update,
         ))
@@ -363,6 +375,7 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
         let mut ctrl: BTreeMap<usize, D> = BTreeMap::new();
         let mut wait: BTreeMap<usize, D> = BTreeMap::new();
         let mut temp: BTreeMap<usize, D> = BTreeMap::new();
+        let mut param: BTreeMap<usize, D> = BTreeMap::new();
 
         for (rd, dtype) in assign.read().iter().map(|[w]| w.into()) {
             //  can only read from await wires
@@ -372,7 +385,7 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
             } else if expected_dtype.is_some() {
                 return Err("dtype mismatch");
             } else {
-                return Err("invalid wire");
+                param.insert(rd, dtype.clone());
             }
         }
 
@@ -394,6 +407,7 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
             Interface::from_wires_unchecked(wait),
             Interface::empty(),
             Interface::from_wires_unchecked(temp),
+            Interface::from_wires_unchecked(param),
             assign.clone(),
             assign,
         ))

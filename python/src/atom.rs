@@ -17,16 +17,24 @@ impl From<base::Atom<DType, IType>> for Atom {
 
 #[pymethods]
 impl Atom {
+    #[getter]
     fn read(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
         Self::interface(slf, AtomInterfaceType::Read)
     }
 
+    #[getter]
     fn ctrl(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
         Self::interface(slf, AtomInterfaceType::Ctrl)
     }
 
+    #[getter]
     fn wait(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
         Self::interface(slf, AtomInterfaceType::Await)
+    }
+
+    #[getter]
+    fn param(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
+        Self::interface(slf, AtomInterfaceType::Param)
     }
 
     fn init(slf: Bound<'_, Self>) -> AtomBlock {
@@ -65,6 +73,7 @@ enum AtomInterfaceType {
     Read,
     Ctrl,
     Await,
+    Param,
 }
 
 #[pyclass(sequence)]
@@ -80,6 +89,7 @@ impl AtomInterface {
             AtomInterfaceType::Read => atom.read(),
             AtomInterfaceType::Await => atom.wait(),
             AtomInterfaceType::Ctrl => atom.ctrl(),
+            AtomInterfaceType::Param => atom.param(),
         }
     }
 }

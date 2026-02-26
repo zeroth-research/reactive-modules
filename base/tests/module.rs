@@ -461,3 +461,24 @@ fn more_controlled_than_external() {
     let m = Module::sequential([x], [y, z], [init], [update]);
     assert!(m.is_ok());
 }
+
+#[test]
+fn module_with_parameter() {
+    let x = [Wire::new(0, "A"), Wire::new(1, "A")];
+    let y = [Wire::new(2, "B"), Wire::new(3, "B")];
+    let z = [Wire::new(4, "C"), Wire::new(5, "C")];
+    let p = Wire::new(6, "P");
+
+    let init =
+        Term::function("i", [y[1].clone(), z[1].clone()], [p.clone(), x[1].clone()]).unwrap();
+    let update = Term::function(
+        "u",
+        [y[1].clone(), z[1].clone()],
+        [p.clone(), x[1].clone(), y[0].clone(), z[0].clone()],
+    )
+    .unwrap();
+
+    let m = Module::sequential([x], [y, z], [init], [update]);
+    println!("{:?}", m);
+    assert!(m.is_ok());
+}
