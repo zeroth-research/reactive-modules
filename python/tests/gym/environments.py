@@ -384,3 +384,57 @@ class ComparisonChainEnv(Env):
         
         observation = self.value
         return observation, reward, terminated, truncated
+
+
+class HeartRateMonitorEnv(Env):
+    """Heart rate monitor: counts clock cycles between pulse edges to compute BPM.
+
+    Action 0 = no pulse this tick, action 1 = heartbeat pulse this tick.
+
+    The interval counter saturates at (2**COUNTER_WIDTH - 1).
+    BPM is computed as BPM_SCALE / interval_count, saturated at 0xFFFF.
+    The first pulse seen sets `first_pulse_seen`; BPM is only computed on
+    subsequent pulses (so the first pulse just primes the counter).
+    """
+
+    def __init__(self, ticks_per_sec: int = 100):
+        super().__init__()
+
+        self.action_space      = spaces.Discrete(2)                          # 0=no pulse, 1=pulse
+        self.observation_space = spaces.Box(low=0, high=65535, shape=(1,))   # heart_rate BPM
+
+        self.ticks_per_sec = ticks_per_sec
+        self.bpm_scale     = 60 * ticks_per_sec  # = 6000 at 100 Hz
+        self.max_count     = 65535               # 2**16 - 1
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.interval_count    = 0
+        self.heart_rate        = 0
+        self.first_pulse_seen  = False
+        return self.heart_rate, 0.0, False, False
+
+    def step(self, q_values):
+        action = q_values.argmax().item()  # 0 = no pulse, 1 = pulse
+
+        # Saturating interval counter increments every tick
+        if self.interval_count < self.max_count:
+            self.interval_count += 1
+
+        if action == 1:  # pulse this tick
+            if self.first_pulse_seen:
+                # Divide-by-zero guard (interval_count is at least 1 here)
+                if self.interval_count > 0:
+                    bpm = self.bpm_scale / self.interval_count
+                else:
+                    bpm = self.max_count
+                # Saturate at 0xFFFF
+                self.heart_rate = min(bpm, self.max_count)
+            # Prime the counter for next interval
+            self.first_pulse_seen = True
+            self.interval_count   = 0
+
+        reward     = 0.0
+        terminated = False
+        truncated  = False
+        return self.heart_rate, reward, terminated, truncated
