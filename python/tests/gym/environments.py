@@ -397,6 +397,13 @@ class HeartRateMonitorEnv(Env):
     subsequent pulses (so the first pulse just primes the counter).
     """
 
+    # TODO: remove this when we can get the DType from the analyzer instead of hardcoding it here
+    q_values: DType.Float([2])
+    observation: DType.Float([1])
+    interval_count: DType.Float([1])
+    heart_rate: DType.Float([1])
+    first_pulse_seen: DType.Bool([1])
+
     def __init__(self, ticks_per_sec: int = 100):
         super().__init__()
 
