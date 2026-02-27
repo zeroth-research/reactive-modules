@@ -26,9 +26,9 @@ class SimpleEnv(Env):
         return observation, reward, terminated, truncated
     
     def step(self, q_values):
-        action = q_values.argmax().item()
+        q_values = q_values.argmax().item()
         # action 0 = move left, action 1 = move right
-        if action == 1:  # right
+        if q_values == 1:  # right
             self.state = min(self.state + 1, 2)
         else:  # left
             self.state = max(self.state - 1, 0)
@@ -67,8 +67,8 @@ class GridWorldEnv(Env):
         truncated = False
         return observation, reward, terminated, truncated
     
-    def step(self, q_values):
-        action = q_values.argmax().item()
+    def step(self, action):
+        action = action.argmax().item()
         
         # Update position based on action (with boundary checking)
         if action == 0:  # up
@@ -120,8 +120,8 @@ class ComplexDecisionEnv(Env):
         truncated = False
         return observation, reward, terminated, truncated
     
-    def step(self, q_values):
-        action = q_values.argmax().item()
+    def step(self, action):
+        action = action.argmax().item()
         
         # Test augmented assignments
         self.score += 1.0  # Increment score every step
@@ -215,8 +215,8 @@ class EarlyReturnEnv(Env):
         truncated = False
         return observation, reward, terminated, truncated
     
-    def step(self, q_values):
-        action = q_values.argmax().item()
+    def step(self, action):
+        action = action.argmax().item()
         
         # Early return cases
         if action == 0:
@@ -275,8 +275,8 @@ class TwoBitCounterEnv(Env):
         truncated = False
         return observation, reward, terminated, truncated
 
-    def step(self, q_values):
-        action = q_values.argmax().item()
+    def step(self, action):
+        action = action.argmax().item()
 
         old_b0 = self.b0  # capture LSB before update
 
@@ -320,8 +320,8 @@ class ComparisonChainEnv(Env):
         truncated = False
         return observation, reward, terminated, truncated
     
-    def step(self, q_values):
-        action = q_values.argmax().item()
+    def step(self, action):
+        action = action.argmax().item()
         
         # Update value based on action
         if action == 0:
@@ -380,7 +380,7 @@ class HeartODE(Env):
         self.heart_rate = self.heart_rate_base + self.heart_rate_variability_amplitude * self.x
         return self.heart_rate, 0.0, False, False
     
-    def step(self, q_values):
+    def step(self, action):
         self.dxdt = self.dxdt - self.dt * self.frequency * self.frequency * self.x
         self.x = self.x + self.dt * self.dxdt
         self.heart_rate = self.heart_rate_base + self.heart_rate_variability_amplitude * self.x
@@ -413,8 +413,8 @@ class ArrayEnv(Env):
         truncated = False
         return observation, reward, terminated, truncated
 
-    def step(self, q_values):
-        action = q_values.argmax().item()
+    def step(self, action):
+        action = action.argmax().item()
         self.grid = self.grid
         self.weights = self.weights
         self.values = self.values
