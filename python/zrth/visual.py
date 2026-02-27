@@ -10,7 +10,15 @@ Usage::
     env = SimpleEnv()
     env.reset()
     env.step(tensor)             # wire values update in the browser
+
+File-watch workflow::
+
+    # scripts/visual/ui_watch.py
+    import zrth.visual
+    zrth.visual.watch("module_def.py")   # blocks; edit & save to update browser
 """
+import os
+import time
 
 
 def start(port: int = 7777) -> None:
@@ -40,3 +48,46 @@ def push(module) -> None:
         _visual_push_module(module)
     except Exception:
         pass
+
+
+def _exec_file(path: str) -> None:
+    """Execute *path* in a fresh namespace, printing any exception."""
+    ns: dict = {}
+    with open(path) as fh:
+        code = compile(fh.read(), path, "exec")
+    try:
+        exec(code, ns)  # noqa: S102
+    except Exception as exc:
+        print(f"[watch] Error in {os.path.basename(path)}: {exc}")
+
+
+def watch(path: str, port: int = 7777) -> None:
+    """Start the server, execute *path* once, then block watching for changes.
+
+    Each time the file is saved the server re-executes it so the browser
+    graph updates live.  Press Ctrl-C to stop.
+
+    The file is run in its own fresh namespace on every reload — any call to
+    ``zrth.visual.push(module)`` inside it pushes the new graph to the browser.
+    """
+    start(port)
+
+    path = os.path.abspath(path)
+    _exec_file(path)
+    mtime = os.path.getmtime(path)
+
+    print(f"Watching {path}")
+    print("Edit and save the file to update the browser.  Ctrl-C to stop.\n")
+    try:
+        while True:
+            time.sleep(0.3)
+            try:
+                new_mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if new_mtime != mtime:
+                mtime = new_mtime
+                print(f"[watch] reloading {os.path.basename(path)} …")
+                _exec_file(path)
+    except KeyboardInterrupt:
+        print("\n[watch] Stopped.")
