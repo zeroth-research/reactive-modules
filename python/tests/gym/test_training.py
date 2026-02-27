@@ -3,6 +3,7 @@ from .environments import SimpleEnv
 from .qnetworks import SimpleQNet
 from .agent import DQNAgent
 from .train import train
+from zrth import Wire, DType
 
 
 def test_training():
@@ -10,9 +11,20 @@ def test_training():
     num_episodes = 500
     max_steps = 50
 
-    env = SimpleEnv()
-    q_network = SimpleQNet(state_size=1, action_size=env.action_space.n, hidden_size=2,)
+    action = [Wire(DType.Float([2])), Wire(DType.Float([2]))]
+    input = [Wire(DType.Float([1])), Wire(DType.Float([1]))]
+
+    env = SimpleEnv(action=action)
+    q_network = SimpleQNet(extl=input, state_size=1, action_size=env.action_space.n, hidden_size=2,)
     agent = DQNAgent(q_network)
+
+    print(f'Env action wires: {env.action}')
+    print(f'Env observation wires: {env.observation}')
+    print(f'Env reward wires: {env.reward}')
+    print(f'Env terminated wires: {env.terminated}')
+    print(f'Env truncated wires: {env.truncated}')
+    print(f'QNetwork input wires: {q_network.extl}')
+    print(f'QNetwork output wires: {q_network.intf}')
 
     print("\nPARAMETERS BEFORE TRAINING:")
     params_before = []
