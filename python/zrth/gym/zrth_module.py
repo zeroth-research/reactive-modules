@@ -24,6 +24,32 @@ def _to_python(v):
         return v.item()
     return v
 
+def _is_wire_pair(obj):
+    """Check if obj is a wire pair: a list/tuple of exactly 2 Wire objects."""
+    return isinstance(obj, (list, tuple)) and len(obj) == 2 and all(isinstance(w, Wire) for w in obj)
+
+def _validate_observable_wires(wires, expected_dtype, name):
+    """Validate user-provided external wires.
+
+    Accepts:
+    - Wire pair: [Wire, Wire] or (Wire, Wire)
+    - Tuple of wire pairs: ([Wire, Wire], ...) — recognized but not yet supported
+
+    Raises ValueError on invalid format, NotImplementedError on tuple-of-pairs.
+    """
+    if _is_wire_pair(wires):
+        for w in wires:
+            if w.dtype() != expected_dtype:
+                raise ValueError(
+                    f"DType mismatch for '{name}': expected {expected_dtype}, got {w.dtype()}"
+                )
+        return list(wires)
+    if isinstance(wires, (list, tuple)) and len(wires) > 0 and all(_is_wire_pair(item) for item in wires):
+        raise NotImplementedError("Tuple of wire pairs not yet supported")
+    raise ValueError(
+        f"Invalid wire format for '{name}': expected [Wire, Wire] or tuple of wire pairs"
+    )
+
 def _classify_attrs(cls, roots, init_attr_vals=None):
     """Classify self.* attributes used in the given root methods (and their callees).
 
@@ -183,11 +209,11 @@ def _parse_call_repr(call_repr):
     kw_args = {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}
     return name, pos_args, kw_args
 
-def _gym_space_to_dtype(space_name, pos_args, kw_args, is_q_values):
+def _gym_space_to_dtype(space_name, pos_args, kw_args, is_action):
     """Convert a parsed gym space into a DType.
 
-    For q_values (is_q_values=True): always Float, shape = number of actions.
-    For observation (is_q_values=False): type from _GYM_SPACE_TO_DTYPE, shape from space.
+    For action (is_action=True): always Float, shape = number of actions.
+    For observation (is_action=False): type from _GYM_SPACE_TO_DTYPE, shape from space.
     """
     dtype_fn = _GYM_SPACE_TO_DTYPE.get(space_name)
     if dtype_fn is None:
@@ -195,7 +221,7 @@ def _gym_space_to_dtype(space_name, pos_args, kw_args, is_q_values):
 
     if space_name == "Discrete":
         n = pos_args[0]
-        if is_q_values:
+        if is_action:
             return DType.Float([n])
         else:
             return dtype_fn([1])
@@ -212,9 +238,16 @@ def _gym_space_to_dtype(space_name, pos_args, kw_args, is_q_values):
     else:
         raise ValueError(f"Unsupported gym space type: {space_name}")
 
+def _unwrap(method):
+    """Follow __wrapped__ chain to get the original unwrapped method."""
+    while hasattr(method, '__wrapped__'):
+        method = method.__wrapped__
+    return method
+
 def _infer_spaces_from_init(cls, args, kwargs):
-    """Analyze __init__ to infer q_values and observation DTypes from gym spaces."""
-    params = list(inspect.signature(cls.__init__).parameters.keys())
+    """Analyze __init__ to infer action and observation DTypes from gym spaces."""
+    init = _unwrap(cls.__init__)
+    params = list(inspect.signature(init).parameters.keys())
     params.remove("self")
 
     arg_values = {}
@@ -223,7 +256,7 @@ def _infer_spaces_from_init(cls, args, kwargs):
     for k, v in kwargs.items():
         arg_values[k] = AbstractValue.const(_to_python(v))
 
-    interp = AbstractInterpreter(cls.__init__)
+    interp = AbstractInterpreter(init)
     results = interp.analyze(arg_values=arg_values)
     merged = join_states(results)
 
@@ -239,10 +272,10 @@ def _infer_spaces_from_init(cls, args, kwargs):
     a_name, a_args, a_kwargs = _parse_call_repr(action_space_val.call_repr)
     o_name, o_args, o_kwargs = _parse_call_repr(observation_space_val.call_repr)
 
-    q_values_dtype = _gym_space_to_dtype(a_name, a_args, a_kwargs, is_q_values=True)
-    observation_dtype = _gym_space_to_dtype(o_name, o_args, o_kwargs, is_q_values=False)
+    action_dtype = _gym_space_to_dtype(a_name, a_args, a_kwargs, is_action=True)
+    observation_dtype = _gym_space_to_dtype(o_name, o_args, o_kwargs, is_action=False)
 
-    return q_values_dtype, observation_dtype, self_attrs
+    return action_dtype, observation_dtype, self_attrs
 
 def _infer_layers_from_init(cls, args, kwargs):
     """Analyze __init__ to extract nn.Linear layers and their sizes.
@@ -250,7 +283,8 @@ def _infer_layers_from_init(cls, args, kwargs):
     Returns:
         Ordered dict {name: (in_features, out_features)} for each nn.Linear layer.
     """
-    params = list(inspect.signature(cls.__init__).parameters.keys())
+    init = _unwrap(cls.__init__)
+    params = list(inspect.signature(init).parameters.keys())
     params.remove("self")
 
     arg_values = {}
@@ -259,7 +293,7 @@ def _infer_layers_from_init(cls, args, kwargs):
     for k, v in kwargs.items():
         arg_values[k] = AbstractValue.const(_to_python(v))
 
-    interp = AbstractInterpreter(cls.__init__)
+    interp = AbstractInterpreter(init)
     results = interp.analyze(arg_values=arg_values)
     merged = join_states(results)
 
@@ -283,8 +317,32 @@ def _infer_layers_from_init(cls, args, kwargs):
 
 class Env(Module, gym.Env):
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if '__init__' not in cls.__dict__:
+            return
+        original_init = cls.__dict__['__init__']
+        def wrapped_init(self, *args, **kwargs):
+            kwargs.pop("action", None)
+            kwargs.pop("observation", None)
+            kwargs.pop("reward", None)
+            kwargs.pop("terminated", None)
+            kwargs.pop("truncated", None)
+            return original_init(self, *args, **kwargs)
+        wrapped_init.__wrapped__ = original_init
+        cls.__init__ = wrapped_init
+
     def __new__(cls, *args, **kwargs):
-        q_values_dtype, observation_dtype, init_attrs = _infer_spaces_from_init(cls, args, kwargs)
+        step_params = [p for p in inspect.signature(cls.step).parameters if p != "self"]
+        action_param = step_params[0]
+
+        user_action = kwargs.pop("action", None)
+        user_observation = kwargs.pop("observation", None)
+        user_reward = kwargs.pop("reward", None)
+        user_terminated = kwargs.pop("terminated", None)
+        user_truncated = kwargs.pop("truncated", None)
+
+        action_dtype, observation_dtype, init_attrs = _infer_spaces_from_init(cls, args, kwargs)
 
         prvt, params, attr_vals = _classify_attrs(cls, ['reset', 'step'], init_attr_vals=init_attrs)
 
@@ -298,14 +356,36 @@ class Env(Module, gym.Env):
             dtype = _infer_dtype(name, attr_vals.get(name))
             param_wires[name] = Wire(dtype)
 
-        q_values = [Wire(q_values_dtype), Wire(q_values_dtype)]
-        observation = [Wire(observation_dtype), Wire(observation_dtype)]
-        reward = [Wire(DType.Float([1])), Wire(DType.Float([1]))]
-        terminated = [Wire(DType.Bool([1])), Wire(DType.Bool([1]))]
-        truncated = [Wire(DType.Bool([1])), Wire(DType.Bool([1]))]
+        if user_action is not None:
+            action = _validate_observable_wires(user_action, action_dtype, "action")
+        else:
+            action = [Wire(action_dtype), Wire(action_dtype)]
+
+        if user_observation is not None:
+            observation = _validate_observable_wires(user_observation, observation_dtype, "observation")
+        else:
+            observation = [Wire(observation_dtype), Wire(observation_dtype)]
+
+        reward_dtype = DType.Float([1])
+        if user_reward is not None:
+            reward = _validate_observable_wires(user_reward, reward_dtype, "reward")
+        else:
+            reward = [Wire(reward_dtype), Wire(reward_dtype)]
+
+        terminated_dtype = DType.Bool([1])
+        if user_terminated is not None:
+            terminated = _validate_observable_wires(user_terminated, terminated_dtype, "terminated")
+        else:
+            terminated = [Wire(terminated_dtype), Wire(terminated_dtype)]
+
+        truncated_dtype = DType.Bool([1])
+        if user_truncated is not None:
+            truncated = _validate_observable_wires(user_truncated, truncated_dtype, "truncated")
+        else:
+            truncated = [Wire(truncated_dtype), Wire(truncated_dtype)]
 
         wires = {
-            'q_values': q_values,
+            action_param: action,
             **prvt_wires,
         }
         result = [observation[1], reward[1], terminated[1], truncated[1]]
@@ -313,30 +393,66 @@ class Env(Module, gym.Env):
         reset = convert_method(cls.reset, wires, result, cls=cls, params=param_wires)
         step = convert_method(cls.step, wires, result, cls=cls, params=param_wires)
 
-        obs = [q_values, observation, reward, terminated, truncated]
-        return super().__new__(cls, init=reset, update=step, obs=obs, prvt=list(prvt_wires.values()))
+        obs = [action, observation, reward, terminated, truncated]
+        instance = super().__new__(cls, init=reset, update=step, obs=obs, prvt=list(prvt_wires.values()))
+
+        instance.action = action
+        instance.observation = observation
+        instance.reward = reward
+        instance.terminated = terminated
+        instance.truncated = truncated
+
+        return instance
 
 class NN(Module, nn.Module):
-    
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if '__init__' not in cls.__dict__:
+            return
+        original_init = cls.__dict__['__init__']
+        def wrapped_init(self, *args, **kwargs):
+            kwargs.pop("extl", None)
+            kwargs.pop("intf", None)
+            return original_init(self, *args, **kwargs)
+        wrapped_init.__wrapped__ = original_init
+        cls.__init__ = wrapped_init
+
     def __new__(cls, *args, **kwargs):
+        forward_params = [p for p in inspect.signature(cls.forward).parameters if p != "self"]
+        obs_param = forward_params[0]
+
+        user_extl = kwargs.pop("extl", None)
+        user_intf = kwargs.pop("intf", None)
+
         layers = _infer_layers_from_init(cls, args, kwargs)
         layer_list = list(layers.values())
         obs_size = layer_list[0][0]   # first layer's in_features
         qval_size = layer_list[-1][1] # last layer's out_features
 
-        observation = [Wire(DType.Float([obs_size])), Wire(DType.Float([obs_size]))]
-        q_values = [Wire(DType.Float([qval_size])), Wire(DType.Float([qval_size]))]
+        extl_dtype = DType.Float([obs_size])
+        if user_extl is not None:
+            extl = _validate_observable_wires(user_extl, extl_dtype, "extl")
+        else:
+            extl = [Wire(extl_dtype), Wire(extl_dtype)]
 
-        # Use forward's parameter name as wire key so the converter can resolve it.
+        intf_dtype = DType.Float([qval_size])
+        if user_intf is not None:
+            intf = _validate_observable_wires(user_intf, intf_dtype, "intf")
+        else:
+            intf = [Wire(intf_dtype), Wire(intf_dtype)]
+
         # Combinatorial atoms read next wires (index 1), so pass [next, latched]
         # — the converter reads index 0 which must be the next wire.
-        forward_params = [p for p in inspect.signature(cls.forward).parameters if p != "self"]
-        obs_param = forward_params[0]
-        wires = {obs_param: [observation[1], observation[0]]}
-        result = [q_values[1]]
+        wires = {obs_param: [extl[1], extl[0]]}
+        result = [intf[1]]
         layer_out_features = {name: out for name, (_, out) in layers.items()}
         forward = convert_method(cls.forward, wires, result, cls=cls, layers=layer_out_features)
 
-        obs = [observation, q_values]
-        return super().__new__(cls, assign=forward, obs=obs)
+        obs = [extl, intf]
+        instance = super().__new__(cls, assign=forward, obs=obs)
 
+        instance.extl = extl
+        instance.intf = intf
+
+        return instance
