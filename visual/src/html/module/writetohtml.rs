@@ -261,6 +261,23 @@ where
     Graph { elements }
 }
 
+/// Serialise `module` to a JSON string suitable for pushing over the live WebSocket.
+///
+/// The returned string has the shape `{"type":"graph","elements":[…]}` where
+/// `elements` is a Cytoscape.js element array.
+pub fn module_to_live_json<T, I>(module: &Module<T, I>) -> String
+where
+    T: fmt::Display,
+    I: fmt::Display,
+{
+    let graph = module_to_graph(module, &DefaultDescriptor {});
+    serde_json::json!({
+        "type": "graph",
+        "elements": graph.elements,
+    })
+    .to_string()
+}
+
 pub fn write_to_html<T, I, D: Descriptor<T, I>>(
     module: &Module<T, I>,
     path: &str,

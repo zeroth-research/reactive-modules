@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Reactive Module Visualiser</title>
+
+  <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+  <script src="https://unpkg.com/layout-base/layout-base.js"></script>
+  <script src="https://unpkg.com/cose-base/cose-base.js"></script>
+  <script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      background: #1a1a1a;
+      color: #ddd;
+      overflow: hidden;
+    }
+    #cy {
+      flex: 1;
+      border-right: 1px solid #333;
+    }
+    #sidebar {
+      width: 340px;
+      display: flex;
+      flex-direction: column;
+      background: #1e1e1e;
+    }
+    #status-bar {
+      padding: 6px 12px;
+      font-size: 11px;
+      background: #111;
+      border-bottom: 1px solid #333;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+    #status-dot.connected   { background: #4caf50; }
+    #status-dot.disconnected { background: #f44336; }
+    #status-text { color: #888; }
+    #info {
+      flex: 1;
+      padding: 14px;
+      overflow-y: auto;
+    }
+    #info h2 { margin: 0 0 8px; font-size: 14px; color: #eee; font-weight: 600; }
+    #info h3 { font-size: 12px; color: #bbb; margin: 10px 0 4px; }
+    #info p  { margin: 3px 0; color: #999; font-size: 12px; line-height: 1.5; }
+    #info code { background: #2a2a2a; padding: 1px 4px; border-radius: 3px; font-size: 11px; color: #ce9178; }
+    .hint { color: #555; font-size: 11px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+
+<div id="cy"></div>
+<div id="sidebar">
+  <div id="status-bar">
+    <div id="status-dot" class="disconnected"></div>
+    <span id="status-text">disconnected</span>
+  </div>
+  <div id="info">
+    <h2>Reactive Module Visualiser</h2>
+    <p>Waiting for a module…</p>
+    <p class="hint">
+      Call <code>zrth.visual.start()</code> in Python, then define
+      an <code>Env</code> or <code>NN</code> subclass to see its
+      dataflow graph here.
+    </p>
+  </div>
+</div>
+
+<script>
+cytoscape.use(cytoscapeDagre);
+
+const LAYOUT_OPTS = {
+  name: 'dagre',
+  rankDir: 'LR',
+  nodeSep: 30,
+  edgeSep: 30,
+  rankSep: 100,
+  ranker: 'network-simplex',
+  animate: true,
+  animationDuration: 350,
+  fit: true,
+  padding: 24,
+};
+
+const cy = cytoscape({
+  container: document.getElementById('cy'),
+  elements: [],
+  style: [
+    { selector: 'node', style: {
+        'label': 'data(label)',
+        'text-valign': 'center',
+        'color': '#ddd',
+        'background-color': '#2a5080',
+        'border-width': 1,
+        'border-color': '#3a6090',
+        'font-size': 11,
+        'width': 'label',
+        'height': 'label',
+        'shape': 'rectangle',
+        'padding': '0.8em',
+    }},
+    { selector: 'node.input', style: {
+        'background-color': '#1a5c34',
+        'border-color': '#2a7c44',
+        'shape': 'ellipse',
+    }},
+    { selector: 'node.output', style: {
+        'background-color': '#5c1a3a',
+        'border-color': '#7c2a4a',
+        'shape': 'ellipse',
+    }},
+    { selector: ':parent', style: {
+        'label': 'data(label)',
+        'text-valign': 'top',
+        'text-halign': 'center',
+        'background-color': '#111',
+        'background-opacity': 0.5,
+        'border-width': 1,
+        'border-color': '#444',
+        'shape': 'round-rectangle',
+        'padding': '24px',
+        'font-weight': '600',
+        'font-size': 12,
+        'color': '#888',
+    }},
+    { selector: 'edge', style: {
+        'width': 1.5,
+        'label': 'data(label)',
+        'line-color': '#444',
+        'color': '#888',
+        'text-background-color': '#1a1a1a',
+        'text-background-opacity': 0.85,
+        'text-background-shape': 'roundrectangle',
+        'text-background-padding': '2px',
+        'curve-style': 'bezier',
+        'target-arrow-shape': 'triangle',
+        'target-arrow-color': '#444',
+        'font-size': 9,
+        'edge-text-rotation': 'autorotate',
+    }},
+    { selector: 'edge[id^="order."]', style: {
+        'opacity': 0, 'width': 0, 'label': '',
+    }},
+    { selector: 'edge.has-value', style: {
+        'line-color': '#2a7a4a',
+        'target-arrow-color': '#2a7a4a',
+        'color': '#6ec88e',
+        'width': 2,
+    }},
+    { selector: 'node:selected', style: {
+        'border-width': 2,
+        'border-color': '#e07030',
+    }},
+    { selector: 'edge:selected', style: {
+        'line-color': '#e07030',
+        'target-arrow-color': '#e07030',
+    }},
+  ],
+  layout: { name: 'preset' },
+});
+
+// --- Info panel ---
+const infoDiv = document.getElementById('info');
+
+cy.on('tap', 'node', evt => {
+  const data = evt.target.data();
+  if (data.description && data.description.length > 0) {
+    infoDiv.innerHTML = data.description;
+  } else {
+    infoDiv.innerHTML = `<h2>${data.label}</h2><p>No description available.</p>`;
+  }
+});
+
+cy.on('tap', evt => {
+  if (evt.target === cy) {
+    infoDiv.innerHTML = `<h2>Node Information</h2><p>Click any node to see details.</p>`;
+  }
+});
+
+// --- WebSocket ---
+const dot  = document.getElementById('status-dot');
+const text = document.getElementById('status-text');
+let ws, retryTimer;
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+
+  ws.onopen = () => {
+    dot.className  = 'connected';
+    text.textContent = 'connected';
+    clearTimeout(retryTimer);
+  };
+
+  ws.onclose = () => {
+    dot.className  = 'disconnected';
+    text.textContent = 'disconnected — retrying…';
+    retryTimer = setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = evt => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+
+    if (msg.type === 'graph') {
+      cy.elements().remove();
+      cy.add(msg.elements);
+      cy.layout(LAYOUT_OPTS).run();
+      infoDiv.innerHTML = `<h2>Node Information</h2><p>Click any node to see details.</p>`;
+    }
+
+    if (msg.type === 'values') {
+      // msg.values: { "<wire_id_str>": "<value_string>" }
+      Object.entries(msg.values).forEach(([wireId, val]) => {
+        // Edge IDs: wire.<wireId>.<src>.<dst>  or  wire.<wireId>..<dst>  or  wire.<wireId>.<src>.
+        const prefix = `wire.${wireId}.`;
+        cy.edges().forEach(edge => {
+          if (edge.id().startsWith(prefix)) {
+            const base = edge.data('label').replace(/ \[.*?\]$/, '');
+            edge.data('label', `${base} [${val}]`);
+            edge.addClass('has-value');
+          }
+        });
+      });
+    }
+  };
+}
+
+connect();
+</script>
+
+</body>
+</html>

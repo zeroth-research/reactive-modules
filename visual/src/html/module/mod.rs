@@ -2,7 +2,7 @@ use base::{Atom, Module, Term};
 
 mod writetohtml;
 
-pub use writetohtml::write_to_html;
+pub use writetohtml::{write_to_html, module_to_live_json};
 
 /// Specifies in which context an element (like Wire, Term or Atom) are shown in the HTML page
 pub enum DescriptionContext {

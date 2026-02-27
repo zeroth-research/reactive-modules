@@ -16,11 +16,14 @@ pyo3 = { version = "0.24" }
 visual = { path = "../visual", features = ["html"], optional = true }
 tch = { features = ["python-extension"], version = "0.22" }
 pyo3-tch = { version = "0.22" }
+serde_json = { version = "1.0", optional = true }
 
 
 
 [features]
-default = ["visual-html"]
+default = ["visual-html", "visual-server"]
 # dumping modules to HTML
-visual-html = ["visual/html"]
+visual-html = ["dep:visual", "visual/html"]
+# live HTTP+WebSocket visualisation server
+visual-server = ["dep:visual", "visual/server", "dep:serde_json"]
 enable-smt = ["smt"]

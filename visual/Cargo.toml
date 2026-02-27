@@ -8,8 +8,12 @@ base = { path = "../base" }
 common = { path = "../common" }
 serde = { version = "1.0", features = ["derive"], optional = true  }
 serde_json = { version = "1.0", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time"], optional = true }
+axum = { version = "0.7", features = ["ws"], optional = true }
 
 [features]
 default = ["html"]
 # dumping modules to HTML
 html = ["serde/derive", "serde_json"]
+# live HTTP+WebSocket visualisation server
+server = ["html", "dep:tokio", "dep:axum"]

@@ -275,6 +275,29 @@ def _infer_layers_from_init(cls, args, kwargs):
     return layers
 
 
+def _visual_push(module):
+    """Push module graph to the live server, if running. Silent no-op otherwise."""
+    try:
+        from zrth.zrth import _visual_push_module
+        _visual_push_module(module)
+    except Exception:
+        pass
+
+
+def _visual_push_values(env, wire_map):
+    """Push current instance attribute values (keyed by wire ID) to the live server."""
+    try:
+        from zrth.zrth import _visual_push_values
+        values = {}
+        for wire_id, name in wire_map.items():
+            val = getattr(env, name, None)
+            if val is not None:
+                values[wire_id] = str(val)
+        _visual_push_values(values)
+    except Exception:
+        pass
+
+
 class Env(Module, gym.Env):
 
     def __new__(cls, *args, **kwargs):
@@ -314,7 +337,26 @@ class Env(Module, gym.Env):
         step, _ = convert_method(cls.step, wires, result, cls=cls)
 
         obs = [q_values, observation, reward, terminated, truncated] + list(param_wires.values())
-        return super().__new__(cls, init=reset, update=step, obs=obs, prvt=list(prvt_wires.values()))
+        instance = super().__new__(cls, init=reset, update=step, obs=obs, prvt=list(prvt_wires.values()))
+
+        # Auto-push graph to the visual server on first instantiation.
+        _visual_push(instance)
+
+        # Build wire-id → attribute-name map and wrap step() to push live values.
+        wire_map = {
+            **{w[0].id(): name for name, w in prvt_wires.items()},
+            **{w[0].id(): name for name, w in param_wires.items()},
+        }
+        if not getattr(cls, '_visual_wrapped', False):
+            _orig_step = cls.step
+            def _step_with_values(self_arg, qv, _wm=wire_map, _os=_orig_step):
+                result = _os(self_arg, qv)
+                _visual_push_values(self_arg, _wm)
+                return result
+            cls.step = _step_with_values
+            cls._visual_wrapped = True
+
+        return instance
 
 class NN(Module, nn.Module):
     
@@ -338,5 +380,7 @@ class NN(Module, nn.Module):
         forward, param_wires = convert_method(cls.forward, wires, result, cls=cls, layers=layer_out_features)
 
         obs = [observation, q_values] + param_wires
-        return super().__new__(cls, assign=forward, obs=obs)
+        instance = super().__new__(cls, assign=forward, obs=obs)
+        _visual_push(instance)
+        return instance
 

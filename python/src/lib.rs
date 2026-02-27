@@ -13,6 +13,9 @@ mod types;
 mod unrolling;
 mod wire;
 
+#[cfg(feature = "visual-server")]
+mod visual;
+
 use crate::atom::Atom;
 use crate::context::RustContext;
 use crate::module::Module;
@@ -33,6 +36,13 @@ fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<Transition>()?;
     m.add_class::<WiredTransitions>()?;
+
+    #[cfg(feature = "visual-server")]
+    {
+        m.add_function(wrap_pyfunction!(visual::_visual_start, m)?)?;
+        m.add_function(wrap_pyfunction!(visual::_visual_push_module, m)?)?;
+        m.add_function(wrap_pyfunction!(visual::_visual_push_values, m)?)?;
+    }
 
     Ok(())
 }
