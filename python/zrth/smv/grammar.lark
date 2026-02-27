@@ -1,0 +1,132 @@
+// NuSMV 2.1 Grammar (Lark)
+//
+// Expression precedence (low → high):
+//   ternary       (? :)
+//   implies       (->)           right-associative
+//   iff           (<->, xnor)
+//   or_expr       (|, or, xor)
+//   and_expr      (&, and)
+//   not_expr      (!, not)
+//   cmp_expr      (=, !=, <, >, <=, >=)
+//   arith_expr    (+, -)
+//   mod_expr      (mod)
+//   term_expr     (*, /)
+//   unary         (unary -)
+
+start: module_decl
+
+module_decl: "MODULE" IDENT ("(" param_list ")")? body_section*
+
+param_list: IDENT ("," IDENT)*
+
+?body_section: var_section
+    | ivar_section
+    | frozenvar_section
+    | define_section
+    | assign_section
+    | invar_section
+    | init_section
+    | trans_section
+    | fairness_section
+    | justice_section
+    | compassion_section
+    | constants_section
+
+var_section: "VAR" var_decl+
+var_decl: IDENT ":" type_spec ";"
+
+ivar_section: "IVAR" var_decl+
+
+frozenvar_section: "FROZENVAR" var_decl+
+
+define_section: "DEFINE" define_decl+
+define_decl: IDENT ":=" expr ";"
+
+assign_section: "ASSIGN" assign_stmt+
+assign_stmt: assign_target ":=" expr ";"
+?assign_target: init_ref | next_ref | IDENT -> bare_assign
+init_ref: "init" "(" IDENT ")"
+next_ref: "next" "(" IDENT ")"
+
+invar_section: "INVAR" expr ";"?
+init_section: "INIT" expr ";"?
+trans_section: "TRANS" expr ";"?
+
+fairness_section: "FAIRNESS" expr ";"
+justice_section: "JUSTICE" expr ";"
+compassion_section: "COMPASSION" "(" expr "," expr ")" ";"
+constants_section: "CONSTANTS" IDENT ("," IDENT)* ";"
+
+// --- Types ---
+
+type_spec: word_type | range_type | "boolean" -> type_bool | "integer" -> type_int | enum_type
+word_type: SIGN "word" "[" NUMBER "]"
+SIGN: "unsigned" | "signed"
+range_type: NUMBER ".." NUMBER
+enum_type: "{" enum_value ("," enum_value)* "}"
+enum_value: IDENT | NUMBER
+
+// --- Expressions (precedence climbing) ---
+// ? prefix = inline single-child nodes automatically
+
+?expr: ternary
+
+?ternary: implies
+    | implies "?" expr ":" expr -> ternary
+
+?implies: iff
+    | iff "->" implies -> implies_expr
+
+?iff: or_expr (IFF_OP or_expr)*
+IFF_OP: "<->" | "xnor"
+
+?or_expr: and_expr (OR_OP and_expr)*
+OR_OP: "|" | "or" | "xor"
+
+?and_expr: not_expr (AND_OP not_expr)*
+AND_OP: "&" | "and"
+
+?not_expr: NOT_OP not_expr -> not_expr
+    | cmp_expr
+NOT_OP: "!" | "not"
+
+?cmp_expr: arith_expr (CMP_OP arith_expr)*
+CMP_OP: "!=" | "<=" | ">=" | "<" | ">" | "="
+
+?arith_expr: mod_expr (ARITH_OP mod_expr)*
+ARITH_OP: "+" | "-"
+
+?mod_expr: term_expr ("mod" term_expr)*  -> mod_expr
+
+?term_expr: unary (TERM_OP unary)*
+TERM_OP: "*" | "/"
+
+?unary: "-" unary -> neg
+    | primary
+
+?primary: "TRUE"                            -> true_lit
+    | "FALSE"                               -> false_lit
+    | "case" case_branch+ "esac"            -> case_expr
+    | "abs" "(" expr ")"                    -> abs_call
+    | BUILTIN "(" expr ("," expr)* ")"      -> builtin_call
+    | "next" "(" expr ")"                   -> next_expr
+    | WORD_LIT bit_select?                  -> word_lit
+    | "(" expr ")" bit_select?              -> paren_expr
+    | IDENT                                 -> var_ref
+    | NUMBER                                -> int_lit
+
+case_branch: expr ":" expr ";"
+
+bit_select: "[" NUMBER ":" NUMBER "]"
+
+BUILTIN: "bool" | "word1" | "unsigned" | "signed" | "extend"
+
+WORD_LIT: "0" ("u"|"s") "d" /[0-9]+/ "_" /[0-9]+/
+
+IDENT: /[A-Za-z_][A-Za-z0-9_$#]*/
+NUMBER: /[0-9]+/
+
+%import common.WS
+%ignore WS
+COMMENT: /--[^\n]*/
+%ignore COMMENT

@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[pyclass(frozen)]
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct Wire {
     base: base::Wire<DType>,
 }

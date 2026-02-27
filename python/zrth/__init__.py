@@ -7,6 +7,8 @@ from .zrth import (
 )
 
 
+from .smv import parse_smv
+
 
 #####################################################################
 # IType and DType
@@ -28,6 +30,15 @@ def Real(*shape):
 
 def Float(*args):
     return DType.Float([*args])
+
+
+def UWord(width: int):
+    return DType.UWord(width)
+
+
+def SWord(width: int):
+    return DType.SWord(width)
+
 
 
 __all__ = [

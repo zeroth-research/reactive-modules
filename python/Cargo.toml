@@ -17,8 +17,6 @@ visual = { path = "../visual", features = ["html"], optional = true }
 tch = { features = ["python-extension"], version = "0.22" }
 pyo3-tch = { version = "0.22" }
 
-
-
 [features]
 default = ["visual-html"]
 # dumping modules to HTML
