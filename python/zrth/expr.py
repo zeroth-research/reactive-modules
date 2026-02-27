@@ -108,6 +108,58 @@ class AExpr(Expr):
         return matmul(self, other)
 
 
+class WExpr(Expr):
+    """Expression class for word-level (bitvector) types."""
+
+    def __add__(self, other: "WExpr") -> "WExpr":
+        return w_add(self, other)
+
+    def __sub__(self, other: "WExpr") -> "WExpr":
+        return w_sub(self, other)
+
+    def __mul__(self, other: "WExpr") -> "WExpr":
+        return w_mul(self, other)
+
+    def __truediv__(self, other: "WExpr") -> "WExpr":
+        return w_div(self, other)
+
+    def __mod__(self, other: "WExpr") -> "WExpr":
+        return w_mod(self, other)
+
+    def __neg__(self) -> "WExpr":
+        return w_neg(self)
+
+    def __and__(self, other: "WExpr") -> "WExpr":
+        return w_and(self, other)
+
+    def __or__(self, other: "WExpr") -> "WExpr":
+        return w_or(self, other)
+
+    def __xor__(self, other: "WExpr") -> "WExpr":
+        return w_xor(self, other)
+
+    def __invert__(self) -> "WExpr":
+        return w_not(self)
+
+    def __lt__(self, other: "WExpr") -> BExpr:
+        return w_lt(self, other)
+
+    def __gt__(self, other: "WExpr") -> BExpr:
+        return w_gt(self, other)
+
+    def __le__(self, other: "WExpr") -> BExpr:
+        return w_le(self, other)
+
+    def __ge__(self, other: "WExpr") -> BExpr:
+        return w_ge(self, other)
+
+    def __eq__(self, other: "WExpr") -> BExpr:  # ty: ignore
+        return w_eq(self, other)
+
+    def __ne__(self, other: "WExpr") -> BExpr:  # ty: ignore
+        return w_neq(self, other)
+
+
 def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
     if not isinstance(first, Expr):
         raise Exception("type coercion unsupported")
@@ -127,6 +179,8 @@ def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
             return AExpr(itype, wtype, first, *others)
         case DType.Int(_):
             return AExpr(itype, wtype, first, *others)
+        case DType.UWord(_) | DType.SWord(_):
+            return WExpr(itype, wtype, first, *others)
         case _:
             raise NotImplementedError
 
@@ -241,6 +295,97 @@ def ite(cond: BExpr, iftrue: Expr, iffalse: Expr):
     assert isinstance(iftrue, (BExpr, AExpr))
     assert type(iftrue) is type(iffalse)
     return type(iftrue)(IType.Ite(), iftrue.dtype, cond, iftrue, iffalse)
+
+
+# ========================================
+# Word-level operators
+# ========================================
+
+
+def _word_arith_op(itype, first: WExpr, *others):
+    if not isinstance(first.dtype, (DType.UWord, DType.SWord)):
+        raise Exception("invalid dtype for word-level op")
+    return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
+
+
+def _word_predicate(itype, lhs: WExpr, rhs: WExpr):
+    if not isinstance(lhs.dtype, (DType.UWord, DType.SWord)):
+        raise Exception("invalid dtype for word-level op")
+    return _elementwise_op(itype, DType.Bool([1]), lhs.dtype, lhs, rhs)
+
+
+def w_add(first: WExpr, *others) -> WExpr:
+    return _word_arith_op(IType.Add(), first, *others)
+
+
+def w_sub(first: WExpr, *others) -> WExpr:
+    return _word_arith_op(IType.Sub(), first, *others)
+
+
+def w_mul(first: WExpr, *others) -> WExpr:
+    return _word_arith_op(IType.Mul(), first, *others)
+
+
+def w_div(num: WExpr, den: WExpr) -> WExpr:
+    return _word_arith_op(IType.Div(), num, den)
+
+
+def w_mod(num: WExpr, den: WExpr) -> WExpr:
+    return _word_arith_op(IType.Mod(), num, den)
+
+
+def w_neg(e: WExpr) -> WExpr:
+    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
+        raise Exception("invalid dtype for word-level op")
+    return WExpr(IType.Neg(), e.dtype, e)
+
+
+def w_abs(e: WExpr) -> WExpr:
+    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
+        raise Exception("invalid dtype for word-level op")
+    return WExpr(IType.Abs(), e.dtype, e)
+
+
+def w_and(first: WExpr, *others) -> WExpr:
+    return _word_arith_op(IType.And(), first, *others)
+
+
+def w_or(first: WExpr, *others) -> WExpr:
+    return _word_arith_op(IType.Or(), first, *others)
+
+
+def w_xor(first: WExpr, *others) -> WExpr:
+    return _word_arith_op(IType.Xor(), first, *others)
+
+
+def w_not(e: WExpr) -> WExpr:
+    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
+        raise Exception("invalid dtype for word-level op")
+    return WExpr(IType.Not(), e.dtype, e)
+
+
+def w_lt(lhs: WExpr, rhs: WExpr) -> BExpr:
+    return _word_predicate(IType.Lt(), lhs, rhs)
+
+
+def w_gt(lhs: WExpr, rhs: WExpr) -> BExpr:
+    return _word_predicate(IType.Gt(), lhs, rhs)
+
+
+def w_le(lhs: WExpr, rhs: WExpr) -> BExpr:
+    return _word_predicate(IType.Le(), lhs, rhs)
+
+
+def w_ge(lhs: WExpr, rhs: WExpr) -> BExpr:
+    return _word_predicate(IType.Ge(), lhs, rhs)
+
+
+def w_eq(lhs: WExpr, rhs: WExpr) -> BExpr:
+    return _word_predicate(IType.Eq(), lhs, rhs)
+
+
+def w_neq(lhs: WExpr, rhs: WExpr) -> BExpr:
+    return _word_predicate(IType.Neq(), lhs, rhs)
 
 
 # ========================================
