@@ -13,6 +13,8 @@ def _zero_tensor(dtype):
         return torch.zeros(shape, dtype=torch.float32)
     elif kind == "TensorReal":
         return torch.zeros(shape, dtype=torch.float64)
+    elif kind in ("UWord", "SWord"):
+        return torch.zeros([1], dtype=torch.long)
     else:
         raise RuntimeError(f"unknown dtype kind: {kind}")
 
@@ -63,6 +65,24 @@ _EVAL = {
     "IType_TensorSet":  lambda it, r: _tensor_set(r[0], r[1], r[2]),
     "IType_Linear":     lambda it, r: [r[0] @ r[1] + r[2]],
     "IType_Uninterpreted": lambda it, r: _uninterpreted(it),
+    # Arithmetic extensions
+    "IType_Mod":        lambda it, r: [r[0] % r[1]],
+    "IType_Neg":        lambda it, r: [-r[0]],
+    "IType_Abs":        lambda it, r: [r[0].abs()],
+    # Logical extensions
+    "IType_Xor":        lambda it, r: [r[0].logical_xor(r[1])],
+    "IType_Xnor":       lambda it, r: [r[0].logical_xor(r[1]).logical_not()],
+    "IType_Implies":    lambda it, r: [r[0].logical_not().logical_or(r[1])],
+    # Constants
+    "IType_ConstBool":  lambda it, r: [torch.tensor([it._0], dtype=torch.bool)],
+    "IType_ConstInt":   lambda it, r: [torch.tensor([it._0], dtype=torch.long)],
+    # Word-level operations
+    "IType_BitSelect":  lambda it, r: [((r[0] >> it._1) & ((1 << (it._0 - it._1 + 1)) - 1))],
+    "IType_Extend":     lambda it, r: [r[0] & ((1 << it._0) - 1)],
+    "IType_ToBool":     lambda it, r: [r[0].bool()],
+    "IType_ToWord1":    lambda it, r: [r[0].long() & 1],
+    "IType_ToUnsigned":  lambda it, r: [r[0].abs()],
+    "IType_ToSigned":   lambda it, r: [r[0]],
 }
 
 
@@ -98,7 +118,7 @@ class Interpreter:
             for wire_id, tensor in env_inputs.items():
                 self.state[wire_id] = tensor
         # Auto-initialize any external wires not yet in state
-        extl = self.module.extl()
+        extl = self.module.extl
         for i in range(len(extl)):
             ltc, nxt = extl[i]
             for w in (ltc, nxt):
@@ -106,7 +126,7 @@ class Interpreter:
                     self.state[w.id()] = _zero_tensor(w.dtype())
 
     def _execute(self, block_type):
-        atoms = self.module.atoms()
+        atoms = self.module.atoms
         for atom_idx in range(len(atoms)):
             atom = atoms[atom_idx]
             block = atom.init() if block_type == "init" else atom.update()
@@ -118,7 +138,7 @@ class Interpreter:
                     self.state[term.write[j].id()] = results[j]
 
     def _latch(self):
-        ctrl = self.module.ctrl()
+        ctrl = self.module.ctrl
         for i in range(len(ctrl)):
             ltc, nxt = ctrl[i]
             nxt_id = nxt.id()

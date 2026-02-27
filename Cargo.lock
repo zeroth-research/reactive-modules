@@ -880,18 +880,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "smv"
-version = "0.1.0"
-dependencies = [
- "base",
- "clap",
- "pest",
- "pest_derive",
- "pest_generator",
- "visual",
-]
-
-[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
