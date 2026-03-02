@@ -76,19 +76,19 @@ def test_module_parallel():
 
     m = Module.parallel(p, q, r)
 
-    c = m.ctrl()
+    c = m.ctrl
     print(c)
 
     for ltc, nxt in c:
         print(f"({ltc}, {nxt})")
 
-    for atom in m.atoms():
+    for atom in m.atoms:
         print(atom)
 
-    print(m.intf())
-    assert m.intf() == [x, y, z]
-    assert m.extl() == [w]
-    assert m.prvt() == [v]
+    print(m.intf)
+    assert m.intf == [x, y, z]
+    assert m.extl == [w]
+    assert m.prvt == [v]
 
 
 def test_interface():

@@ -28,7 +28,7 @@ def test_training():
 
     print("\nPARAMETERS BEFORE TRAINING:")
     params_before = []
-    for nn_atom in q_network.atoms():
+    for nn_atom in q_network.atoms:
         for param in nn_atom.param:
             print(f"Param wire: {param}, ID: {param.id}")
             params_before.append(param)
@@ -38,7 +38,7 @@ def test_training():
     
     print("\nPARAMETERS AFTER TRAINING:")
     params_after = []
-    for nn_atom in q_network.atoms():
+    for nn_atom in q_network.atoms:
         for param in nn_atom.param:
             print(f"Param wire: {param}, ID: {param.id}")
             params_after.append(param)
