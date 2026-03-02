@@ -4,7 +4,6 @@ use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
 mod atom;
-mod lean;
 mod module;
 mod pytensor;
 mod term;
