@@ -3,13 +3,10 @@ from .zrth import (
     DType,
     IType,
     Term,
-    RustContext,
     Transition,
-    WiredTransitions,
     Module,
 )
 
-from .context import Context, get_ctx, set_ctx, reset_ctx
 from .module import ReactiveModule
 
 from typing import Generator
@@ -112,14 +109,6 @@ def mk_term(itype, write, read=None) -> Term:
 #####################################################################
 
 
-# override WiredTransitions.wire_transition to pass there the global context
-orig_wire_transition = WiredTransitions.wire_transition
-
-WiredTransitions.wire_transition = lambda self, t: orig_wire_transition(
-    self, t, get_ctx().unwrap()
-)
-
-
 def process_subst_pair(
     lhs: Wire, rhs: Wire
 ) -> Generator[tuple[Wire, Wire], None, None]:
@@ -188,9 +177,7 @@ __all__ = [
     "IType",
     "Term",
     "Module",
-    "RustContext",
     "Transition",
-    "WiredTransitions",
     "to_wire",
     "mk_term",
     "ReactiveModule",
