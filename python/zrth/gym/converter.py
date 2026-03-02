@@ -3,7 +3,7 @@ import inspect
 import ast
 import textwrap
 from contextlib import contextmanager
-from zrth import DType, Wire, Term, IType
+from zrth import Wire, Term, IType, Float, Bool
 
 
 def convert_method(
@@ -88,27 +88,32 @@ def _normalize_early_returns(stmts: list) -> list:
         ):
             ret = stmt.body[-1]
             values = (
-                ret.value.elts if isinstance(ret.value, ast.Tuple)
+                ret.value.elts
+                if isinstance(ret.value, ast.Tuple)
                 else ([ret.value] if ret.value else [])
             )
             # Replace return with _ret_i = value assignments so SSA sees both branches
             ret_assigns = [
-                ast.fix_missing_locations(ast.copy_location(
-                    ast.Assign(
-                        targets=[ast.Name(id=f"_ret_{i}", ctx=ast.Store())],
-                        value=val,
-                        type_comment=None,
-                    ),
-                    ret,
-                ))
+                ast.fix_missing_locations(
+                    ast.copy_location(
+                        ast.Assign(
+                            targets=[ast.Name(id=f"_ret_{i}", ctx=ast.Store())],
+                            value=val,
+                            type_comment=None,
+                        ),
+                        ret,
+                    )
+                )
                 for i, val in enumerate(values)
             ]
             body = _normalize_early_returns(stmt.body[:-1]) + ret_assigns
-            rest = _normalize_early_returns(stmts[idx + 1:])
-            result.append(ast.copy_location(
-                ast.If(test=stmt.test, body=body or [ast.Pass()], orelse=rest),
-                stmt,
-            ))
+            rest = _normalize_early_returns(stmts[idx + 1 :])
+            result.append(
+                ast.copy_location(
+                    ast.If(test=stmt.test, body=body or [ast.Pass()], orelse=rest),
+                    stmt,
+                )
+            )
             return result  # rest is consumed into the else; nothing left to process
 
         if isinstance(stmt, ast.If):
@@ -149,11 +154,13 @@ def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term]):
     """
     in_features = input_wire.dtype().shape[-1]
 
-    weight_wire = Wire(DType.Float([in_features, out_features]))
-    bias_wire = Wire(DType.Float([out_features]))
-    output_wire = Wire(DType.Float([out_features]))
+    weight_wire = Wire(Float(in_features, out_features))
+    bias_wire = Wire(Float(out_features))
+    output_wire = Wire(Float(out_features))
 
-    terms.append(Term(IType.Linear(), [output_wire], [input_wire, weight_wire, bias_wire]))
+    terms.append(
+        Term(IType.Linear(), [output_wire], [input_wire, weight_wire, bias_wire])
+    )
 
     return output_wire, weight_wire, bias_wire
 
@@ -175,7 +182,6 @@ def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
     terms.append(relu_term)
 
     return output_wire
-
 
 
 class MethodVisitor(ast.NodeVisitor):
@@ -249,9 +255,17 @@ class MethodVisitor(ast.NodeVisitor):
         # In a normalized early-return branch (contains _ret_*), plain locals are dead
         # after the return — only wire_pairs and _ret_* should escape.
         if any(k.startswith("_ret_") for k in if_scope_after):
-            if_scope_after = {k: v for k, v in if_scope_after.items() if k in self.wire_pairs or k.startswith("_ret_")}
+            if_scope_after = {
+                k: v
+                for k, v in if_scope_after.items()
+                if k in self.wire_pairs or k.startswith("_ret_")
+            }
         if any(k.startswith("_ret_") for k in else_scope_after):
-            else_scope_after = {k: v for k, v in else_scope_after.items() if k in self.wire_pairs or k.startswith("_ret_")}
+            else_scope_after = {
+                k: v
+                for k, v in else_scope_after.items()
+                if k in self.wire_pairs or k.startswith("_ret_")
+            }
 
         all_vars = set(if_scope_after.keys()) | set(else_scope_after.keys())
 
@@ -372,9 +386,7 @@ class MethodVisitor(ast.NodeVisitor):
             return
 
         value_nodes = (
-            node.value.elts
-            if isinstance(node.value, ast.Tuple)
-            else [node.value]
+            node.value.elts if isinstance(node.value, ast.Tuple) else [node.value]
         )
 
         if len(value_nodes) != len(self.result_wires):
@@ -383,7 +395,9 @@ class MethodVisitor(ast.NodeVisitor):
                 f"{len(self.result_wires)} result wire(s) were declared"
             )
 
-        for i, (result_wire, value_node) in enumerate(zip(self.result_wires, value_nodes)):
+        for i, (result_wire, value_node) in enumerate(
+            zip(self.result_wires, value_nodes)
+        ):
             src_wire = self._convert_expr(value_node, target_dtype=result_wire.dtype())
             self.temp_vars[f"_ret_{i}"] = src_wire
 
@@ -434,7 +448,9 @@ class MethodVisitor(ast.NodeVisitor):
                     )
                 elif name == "torch":
                     if method == "relu":
-                        input_wire = self._convert_expr(call.args[0], target_dtype=target_dtype)
+                        input_wire = self._convert_expr(
+                            call.args[0], target_dtype=target_dtype
+                        )
                         return _translate_relu(input_wire, self.terms)
                     else:
                         raise ValueError(f"Unsupported torch function: torch.{method}")
@@ -443,7 +459,7 @@ class MethodVisitor(ast.NodeVisitor):
 
             if method == "argmax":
                 obj_wire = self._convert_expr(obj)
-                result = Wire(DType.Float([1]))
+                result = Wire(Float(1))
                 self.terms.append(Term(IType.Argmax(), [result], [obj_wire]))
                 return result
             elif method == "item":
@@ -470,7 +486,7 @@ class MethodVisitor(ast.NodeVisitor):
         b_wire = self._convert_expr(args[1])
 
         cmp_type = IType.Lt() if func_name == "min" else IType.Gt()
-        cmp_wire = Wire(DType.Bool())
+        cmp_wire = Wire(Bool())
         self.terms.append(Term(cmp_type, [cmp_wire], [a_wire, b_wire]))
 
         result = Wire(a_wire.dtype())
@@ -531,7 +547,7 @@ class MethodVisitor(ast.NodeVisitor):
         if target_dtype:
             dtype = target_dtype.reshape(shape)
         else:
-            dtype = DType.Float(shape)
+            dtype = Float(shape)
 
         const_wire = Wire(dtype)
         self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
@@ -620,7 +636,7 @@ class MethodVisitor(ast.NodeVisitor):
             operand_wire = self._convert_expr(unaryop.operand)
             false_wire = self._convert_constant(ast.Constant(False))
             true_wire = self._convert_constant(ast.Constant(True))
-            result = Wire(DType.Bool())
+            result = Wire(Bool())
             self.terms.append(
                 Term(IType.Ite(), [result], [operand_wire, false_wire, true_wire])
             )
@@ -672,7 +688,7 @@ class MethodVisitor(ast.NodeVisitor):
             false_wire = self._convert_constant(ast.Constant(False))
             true_wire = self._convert_constant(ast.Constant(True))
 
-            merged = Wire(DType.Bool())
+            merged = Wire(Bool())
             if is_and:
                 # a and b -> Ite(a, b, False)
                 self.terms.append(
@@ -703,7 +719,7 @@ class MethodVisitor(ast.NodeVisitor):
             if op_type not in self.COMPARE_OPS:
                 raise ValueError(f"Unsupported comparison operator: {op_type.__name__}")
 
-            cmp_wire = Wire(DType.Bool())
+            cmp_wire = Wire(Bool())
             itype_cls = self.COMPARE_OPS[op_type]
             self.terms.append(Term(itype_cls(), [cmp_wire], [left_wire, right_wire]))
             comparison_wires.append(cmp_wire)
@@ -713,7 +729,7 @@ class MethodVisitor(ast.NodeVisitor):
         result = comparison_wires[0]
         for comp_wire in comparison_wires[1:]:
             false_wire = self._convert_constant(ast.Constant(False))
-            merged = Wire(DType.Bool())
+            merged = Wire(Bool())
             self.terms.append(
                 Term(IType.Ite(), [merged], [result, comp_wire, false_wire])
             )
@@ -756,18 +772,18 @@ class MethodVisitor(ast.NodeVisitor):
 
         if isinstance(value, bool):
             tensor_data = torch.tensor([value])
-            dtype = DType.Bool([1])
+            dtype = Bool(1)
 
         elif isinstance(value, (int, float)):
             if target_dtype is None:
                 # TODO: Consider inferring dtype from value (int vs float) or raising error instead of defaulting
-                target_dtype = DType.Float([])
+                target_dtype = Float()
                 tensor_data = torch.tensor([float(value)], dtype=torch.float32)
-            elif target_dtype.kind() == "TensorInt":
+            elif target_dtype.kind() == "Int":
                 tensor_data = torch.tensor([int(value)], dtype=torch.long)
-            elif target_dtype.kind() == "TensorFloat":
+            elif target_dtype.kind() == "Float":
                 tensor_data = torch.tensor([float(value)], dtype=torch.float32)
-            elif target_dtype.kind() == "TensorBool":
+            elif target_dtype.kind() == "Bool":
                 tensor_data = torch.tensor([bool(value)])
             else:
                 raise ValueError(
@@ -790,7 +806,7 @@ class MethodVisitor(ast.NodeVisitor):
             if target_dtype:
                 dtype = target_dtype.reshape(list(tensor_data.size()))
             else:
-                dtype = DType.Float(list(tensor_data.size()))
+                dtype = Float(*list(tensor_data.size()))
 
         else:
             raise ValueError(f"Unsupported constant type: {type(value)}")
@@ -817,7 +833,7 @@ class MethodVisitor(ast.NodeVisitor):
         if target_dtype:
             dtype = target_dtype.reshape(shape)
         else:
-            dtype = DType.Float(shape)
+            dtype = Float(shape)
 
         const_wire = Wire(dtype)
         self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
