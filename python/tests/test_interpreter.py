@@ -1,6 +1,6 @@
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
-from zrth.examples import Interpreter
+from interpreter import Interpreter, _eval
 
 
 def _make_counter():
@@ -37,6 +37,22 @@ def test_counter():
         interp.step()
     val = interp.get(x[0].id())
     assert int(val.item()) == 10
+
+
+def test_basic_interpreter_counter():
+    m, x = _make_counter()
+
+    assert m.closed()
+
+    state = {}
+    for t in (t for a in m.atoms for t in a.init):
+        state.update(zip(t.write, _eval(t.itype, [state[w] for w in t.read])))
+
+    state = {ltc: state[nxt] for (ltc, nxt) in m.ctrl}
+    for t in (t for a in m.atoms for t in a.update):
+        state.update(zip(t.write, _eval(t.itype, [state[w] for w in t.read])))
+
+    assert state[x[1]] == 1
 
 
 def test_boolean_logic():

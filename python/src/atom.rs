@@ -37,6 +37,7 @@ impl Atom {
         Self::interface(slf, AtomInterfaceType::Param)
     }
 
+    #[getter]
     fn init(slf: Bound<'_, Self>) -> AtomBlock {
         AtomBlock {
             atom: slf.unbind(),
@@ -44,6 +45,7 @@ impl Atom {
         }
     }
 
+    #[getter]
     fn update(slf: Bound<'_, Self>) -> AtomBlock {
         AtomBlock {
             atom: slf.unbind(),

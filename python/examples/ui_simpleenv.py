@@ -1,7 +1,7 @@
 """Interactive TUI for SimpleEnv — a 3-state chain with partial observability.
 
 Run with:
-    cd python && uv run python scripts/ui/ui_simpleenv.py
+    cd python && uv run python examples/ui_simpleenv.py
 
 Actions:
     0  left  (move state toward 0)
@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, "tests")
 
 from gym.environments import SimpleEnv
-from zrth.examples import EnvApp
+from tui import EnvApp
 
 EnvApp(
     SimpleEnv(),

@@ -4,7 +4,7 @@ Two apps are available:
 
 ``InterpreterApp`` — for hand-built modules (e.g. the 2-bit counter)::
 
-    from zrth.examples.tui import InterpreterApp
+    from tui import InterpreterApp
     import torch
 
     app = InterpreterApp(
@@ -17,7 +17,7 @@ Two apps are available:
 
 ``EnvApp`` — for gym ``Env`` subclasses; wires are discovered automatically::
 
-    from zrth.examples.tui import EnvApp
+    from tui import EnvApp
     from my_envs import SimpleEnv
 
     EnvApp(SimpleEnv(), action_labels=["left", "right"]).run()
@@ -42,7 +42,7 @@ from textual.binding import Binding
 from textual.widgets import Header, Footer, DataTable, Label, Static
 from textual.containers import Horizontal, Vertical
 
-from .interpreter import Interpreter
+from interpreter import Interpreter
 
 
 # ── tensor helpers ────────────────────────────────────────────────────────────

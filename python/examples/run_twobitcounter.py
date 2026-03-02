@@ -1,11 +1,11 @@
 """Step through the 2-bit counter using the Python interpreter.
 
 Run with:
-    cd python && uv run python scripts/ui/run_twobitcounter.py
+    cd python && uv run python examples/run_twobitcounter.py
 """
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
-from zrth.examples import Interpreter
+from interpreter import Interpreter
 
 
 def make_twobitcounter():
