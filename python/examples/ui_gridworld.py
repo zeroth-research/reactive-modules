@@ -1,7 +1,7 @@
 """Interactive TUI for GridWorldEnv — navigate a 3×3 grid to the corner.
 
 Run with:
-    cd python && uv run python scripts/ui/ui_gridworld.py
+    cd python && uv run python examples/ui_gridworld.py
 
 Actions:
     0  up
@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, "tests")
 
 from gym.environments import GridWorldEnv
-from zrth.examples import EnvApp
+from tui import EnvApp
 
 EnvApp(
     GridWorldEnv(),

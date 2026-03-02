@@ -1,11 +1,11 @@
 """Interactive TUI for the 2-bit counter — powered by InterpreterApp.
 
 Run with:
-    cd python && uv run python scripts/ui/ui_twobitcounter.py
+    cd python && uv run python examples/ui_twobitcounter.py
 """
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
-from zrth.examples import InterpreterApp
+from tui import InterpreterApp
 
 
 def make_twobitcounter():

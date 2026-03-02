@@ -163,6 +163,15 @@ impl Module {
         Ok(ModuleAtoms { module })
     }
 
+    fn closed(&self) -> bool {
+        self.base.is_closed()
+    }
+
+    fn open(&self) -> bool {
+        self.base.is_open()
+    }
+
+
     fn __str__(&self) -> String {
         self.base.to_string()
     }

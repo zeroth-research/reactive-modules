@@ -30,7 +30,7 @@ def test_simpleqnet_conversion():
 
 
 def test_simpleqnet_interpr():
-    from zrth.examples import Interpreter
+    from interpreter import Interpreter
 
     m = simpleqnet()
     interp = Interpreter(m)
