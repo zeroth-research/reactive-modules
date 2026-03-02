@@ -7,7 +7,6 @@ from .zrth import (
     Module,
 )
 
-from .module import ReactiveModule
 
 from typing import Generator
 
@@ -180,5 +179,4 @@ __all__ = [
     "Transition",
     "to_wire",
     "mk_term",
-    "ReactiveModule",
 ]
