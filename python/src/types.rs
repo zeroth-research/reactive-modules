@@ -35,18 +35,6 @@ impl DType {
         }
     }
 
-    /// Return whether the type of elements is the same
-    // This method is necesary because we do not expose [PrimitiveType]
-    fn eq_dtype(&self, other: &Self) -> bool {
-        match (self, other) {
-            (DType::Float(_), DType::Float(_)) => true,
-            (DType::Int(_), DType::Int(_)) => true,
-            (DType::Bool(_), DType::Bool(_)) => true,
-            (DType::Real(_), DType::Real(_)) => true,
-            _ => false,
-        }
-    }
-
     /// Create the same (Tensor) dtype but with a different shape
     fn reshape(&self, shape: Vec<usize>) -> Self {
         match self {
@@ -68,35 +56,30 @@ impl DType {
     }
 }
 
+fn shape_to_string(shape: &Vec<usize>) -> String {
+    shape
+        .iter()
+        .map(|d| d.to_string())
+        .collect::<Vec<String>>()
+        .join(", ")
+}
+
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let shape = match self {
+        match self {
             DType::Float(shape) => {
-                write!(f, "Float(")?;
-                shape
+                write!(f, "Float({})", shape_to_string(shape))?;
             }
             DType::Int(shape) => {
-                write!(f, "Int(")?;
-                shape
+                write!(f, "Int({})", shape_to_string(shape))?;
             }
             DType::Bool(shape) => {
-                write!(f, "Bool(")?;
-                shape
+                write!(f, "Bool({})", shape_to_string(shape))?;
             }
             DType::Real(shape) => {
-                write!(f, "Real(")?;
-                shape
+                write!(f, "Real({})", shape_to_string(shape))?;
             }
         };
-        let mut first: bool = true;
-        for dim in shape {
-            if !first {
-                write!(f, ", ")?;
-                first = false;
-            }
-            write!(f, "{}", dim)?;
-        }
-        write!(f, ")")?;
         Ok(())
     }
 }
