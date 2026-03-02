@@ -1,4 +1,4 @@
-from zrth import Wire, Term, Module, DType as dt, IType as it, mk_term
+from zrth import Wire, Term, Module, DType as dt, IType as it
 from torch import Tensor
 
 
@@ -23,20 +23,6 @@ def test_term_new():
     # test `new` ctor
     Term(it.Lt(), [Wire(dt.Bool())], [w4, w5])
     Term(it.Tensor(Tensor([3, 2, 1])), [Wire(dt.TensorInt([3]))])
-
-
-def test_mk_term():
-    x = Wire(dt.TensorInt([2, 2, 3]))
-    y = Wire(dt.TensorInt([2, 2, 3]))
-    xn = Wire(dt.TensorInt([2, 2, 3]))
-
-    _ = mk_term(it.Add(), [xn], [x, y])
-    g = mk_term(it.Tensor(Tensor([3, 4, 5])), [Wire(dt.TensorInt([3]))], [])
-    h = mk_term(it.Tensor(Tensor([3, 4, 6])), [Wire(dt.TensorInt([3]))], [])
-
-    # test `new` ctor
-    _ = mk_term(it.Lt(), [Wire(dt.Bool())], [g, h])
-    _ = mk_term(it.Tensor(Tensor([3, 2, 1])), [Wire(dt.TensorInt([3]))])
 
 
 def test_module_sequential():
