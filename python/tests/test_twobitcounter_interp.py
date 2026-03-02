@@ -9,7 +9,7 @@ Counting sequence (enable=1 each step):
 """
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
-from zrth.examples import Interpreter
+from interpreter import Interpreter
 
 
 def _make_twobitcounter():

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
-from lark import Lark, Tree, Token
+from lark import Lark, Transformer, Tree, Token
 
 from ..zrth import Wire, DType, IType, Term, Module
 
@@ -13,8 +15,10 @@ from ..zrth import Wire, DType, IType, Term, Module
 # 1. Lark parser init
 # ---------------------------------------------------------------------------
 
-_GRAMMAR = (Path(__file__).parent / "grammar.lark").read_text()
-_PARSER = Lark(_GRAMMAR, parser="earley", propagate_positions=True)
+@lru_cache(maxsize=1)
+def _get_parser():
+    grammar = (Path(__file__).parent / "grammar.lark").read_text()
+    return Lark(grammar, parser="earley", propagate_positions=True)
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +35,7 @@ def parse_smv(
     *overrides* lets the caller supply pre-existing wires for specific
     variables (used for module composition via shared wires).
     """
-    tree = _PARSER.parse(text)
+    tree = _get_parser().parse(text)
     decls = _collect_declarations(tree)
     _promote_constraints(decls)
     return _build_module(decls, overrides or {})
@@ -59,40 +63,74 @@ def _typed_children(section: Tree, data: str):
     return (c for c in section.children if isinstance(c, Tree) and c.data == data)
 
 
-_VAR_SECTIONS = {"var_section": "var_decls", "ivar_section": "ivar_decls", "frozenvar_section": "frozen_decls"}
-_CONSTRAINT_SECTIONS = {"init_section": "init_exprs", "trans_section": "trans_exprs", "invar_section": "invar_exprs"}
 _ASSIGN_TARGETS = {"init_ref": "init_assigns", "next_ref": "next_assigns", "bare_assign": "init_assigns"}
 
 
+def _var_collector(attr):
+    def method(self, children):
+        target = getattr(self.decls, attr)
+        for child in children:
+            if isinstance(child, tuple):
+                target.append(child)
+    return method
+
+
+class _DeclCollector(Transformer):
+    """Lark Transformer that collects SMV declarations into a _Decls struct."""
+
+    def __init__(self):
+        super().__init__()
+        self.decls = _Decls()
+
+    # --- variable declarations ----------------------------------------------
+
+    def var_decl(self, children):
+        return (str(children[0]), _resolve_type(children[1], self.decls.enum_values))
+
+    var_section = _var_collector("var_decls")
+    ivar_section = _var_collector("ivar_decls")
+    frozenvar_section = _var_collector("frozen_decls")
+
+    # --- defines ------------------------------------------------------------
+
+    def define_decl(self, children):
+        return (str(children[0]), children[1])
+
+    def define_section(self, children):
+        for child in children:
+            if isinstance(child, tuple):
+                self.decls.define_map[child[0]] = child[1]
+
+    # --- assignments --------------------------------------------------------
+
+    def assign_stmt(self, children):
+        target_node, expr = children[0], children[1]
+        if isinstance(target_node, Tree) and target_node.data in _ASSIGN_TARGETS:
+            return (_ASSIGN_TARGETS[target_node.data], str(target_node.children[0]), expr)
+        return ("init_assigns", str(target_node), expr)
+
+    def assign_section(self, children):
+        for child in children:
+            if isinstance(child, tuple) and len(child) == 3:
+                attr, name, expr = child
+                getattr(self.decls, attr)[name] = expr
+
+    # --- constraint sections ------------------------------------------------
+
+    def init_section(self, children):
+        self.decls.init_exprs.append(children[0])
+
+    def trans_section(self, children):
+        self.decls.trans_exprs.append(children[0])
+
+    def invar_section(self, children):
+        self.decls.invar_exprs.append(children[0])
+
+
 def _collect_declarations(tree: Tree) -> _Decls:
-    d = _Decls()
-    module = tree.children[0]  # module_decl
-    for section in module.children:
-        if not isinstance(section, Tree):
-            continue
-        name = section.data
-
-        if name in _VAR_SECTIONS:
-            target = getattr(d, _VAR_SECTIONS[name])
-            for decl in _typed_children(section, "var_decl"):
-                target.append((str(decl.children[0]), _resolve_type(decl.children[1], d.enum_values)))
-
-        elif name in _CONSTRAINT_SECTIONS:
-            getattr(d, _CONSTRAINT_SECTIONS[name]).append(section.children[0])
-
-        elif name == "define_section":
-            for decl in _typed_children(section, "define_decl"):
-                d.define_map[str(decl.children[0])] = decl.children[1]
-
-        elif name == "assign_section":
-            for stmt in _typed_children(section, "assign_stmt"):
-                target_node, expr = stmt.children[0], stmt.children[1]
-                if isinstance(target_node, Tree) and target_node.data in _ASSIGN_TARGETS:
-                    getattr(d, _ASSIGN_TARGETS[target_node.data])[str(target_node.children[0])] = expr
-                else:
-                    d.init_assigns[str(target_node)] = expr
-
-    return d
+    collector = _DeclCollector()
+    collector.transform(tree)
+    return collector.decls
 
 
 # ---------------------------------------------------------------------------
@@ -267,8 +305,7 @@ class _Lowerer:
                 return self._lower_name(str(tree), target)
             if tree.type == "NUMBER":
                 return self._emit_const(IType.ConstInt(int(str(tree))), target)
-            # Shouldn't happen
-            return self._emit_const(IType.ConstBool(False), target)
+            raise ValueError(f"unexpected token type: {tree.type}")
 
         name = tree.data
 
@@ -294,7 +331,7 @@ class _Lowerer:
         # Fallback: descend into single child
         if tree.children:
             return self.lower(tree.children[0], target)
-        return self._emit_const(IType.ConstBool(False), target)
+        raise ValueError(f"unexpected empty tree: {tree.data}")
 
     # --- binary ops ---------------------------------------------------------
 
@@ -410,7 +447,8 @@ class _Lowerer:
             latched, next_w = self.name_map[name]
             w = next_w if self.is_init else latched
             return self._enforce(w, target)
-        # Unknown name — emit zero
+        # Unknown name — emit zero with warning
+        warnings.warn(f"undeclared variable '{name}', defaulting to 0")
         return self._emit_const(IType.ConstInt(0), target)
 
     # --- helpers ------------------------------------------------------------

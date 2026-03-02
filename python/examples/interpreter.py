@@ -1,4 +1,5 @@
 import torch
+from zrth import IType
 
 
 def _zero_tensor(dtype):
@@ -20,10 +21,9 @@ def _zero_tensor(dtype):
 
 
 def _eval(itype, read):
-    name = type(itype).__name__
-    fn = _EVAL.get(name)
+    fn = _EVAL.get(type(itype))
     if fn is None:
-        raise RuntimeError(f"cannot evaluate instruction type '{name}'")
+        raise RuntimeError(f"cannot evaluate instruction type '{type(itype).__name__}'")
     return fn(itype, read)
 
 
@@ -39,50 +39,50 @@ def _uninterpreted(itype):
 
 
 _EVAL = {
-    "IType_Tensor":     lambda it, r: [it._0.clone()],
-    "IType_Id":         lambda it, r: [r[0].clone()],
-    "IType_Add":        lambda it, r: [r[0] + r[1]],
-    "IType_Sub":        lambda it, r: [r[0] - r[1]],
-    "IType_Mul":        lambda it, r: [r[0] * r[1]],
-    "IType_Div":        lambda it, r: [r[0] / r[1]],
-    "IType_MatMul":     lambda it, r: [r[0] @ r[1]],
-    "IType_Eq":         lambda it, r: [r[0].eq(r[1])],
-    "IType_Neq":        lambda it, r: [r[0].ne(r[1])],
-    "IType_Lt":         lambda it, r: [r[0].lt(r[1])],
-    "IType_Le":         lambda it, r: [r[0].le(r[1])],
-    "IType_Gt":         lambda it, r: [r[0].gt(r[1])],
-    "IType_Ge":         lambda it, r: [r[0].ge(r[1])],
-    "IType_And":        lambda it, r: [r[0].logical_and(r[1])],
-    "IType_Or":         lambda it, r: [r[0].logical_or(r[1])],
-    "IType_Not":        lambda it, r: [r[0].logical_not()],
-    "IType_Ite":        lambda it, r: [torch.where(r[0], r[1], r[2])],
-    "IType_Argmax":     lambda it, r: [r[0].argmax()],
-    "IType_ReLU":       lambda it, r: [r[0].relu()],
-    "IType_TensorSum":  lambda it, r: [r[0].sum()],
-    "IType_TensorMean": lambda it, r: [r[0].mean()],
-    "IType_TensorMax":  lambda it, r: [r[0].max()],
-    "IType_TensorGet":  lambda it, r: [r[0].view(-1)[int(r[1].item())]],
-    "IType_TensorSet":  lambda it, r: _tensor_set(r[0], r[1], r[2]),
-    "IType_Linear":     lambda it, r: [r[0] @ r[1] + r[2]],
-    "IType_Uninterpreted": lambda it, r: _uninterpreted(it),
+    type(IType.Tensor(torch.zeros(1))): lambda it, r: [it._0.clone()],
+    type(IType.Id()): lambda it, r: [r[0].clone()],
+    type(IType.Add()): lambda it, r: [r[0] + r[1]],
+    type(IType.Sub()): lambda it, r: [r[0] - r[1]],
+    type(IType.Mul()): lambda it, r: [r[0] * r[1]],
+    type(IType.Div()): lambda it, r: [r[0] / r[1]],
+    type(IType.MatMul()): lambda it, r: [r[0] @ r[1]],
+    type(IType.Eq()): lambda it, r: [r[0].eq(r[1])],
+    type(IType.Neq()): lambda it, r: [r[0].ne(r[1])],
+    type(IType.Lt()): lambda it, r: [r[0].lt(r[1])],
+    type(IType.Le()): lambda it, r: [r[0].le(r[1])],
+    type(IType.Gt()): lambda it, r: [r[0].gt(r[1])],
+    type(IType.Ge()): lambda it, r: [r[0].ge(r[1])],
+    type(IType.And()): lambda it, r: [r[0].logical_and(r[1])],
+    type(IType.Or()): lambda it, r: [r[0].logical_or(r[1])],
+    type(IType.Not()): lambda it, r: [r[0].logical_not()],
+    type(IType.Ite()): lambda it, r: [torch.where(r[0], r[1], r[2])],
+    type(IType.Argmax()): lambda it, r: [r[0].argmax()],
+    type(IType.ReLU()): lambda it, r: [r[0].relu()],
+    type(IType.TensorSum()): lambda it, r: [r[0].sum()],
+    type(IType.TensorMean()): lambda it, r: [r[0].mean()],
+    type(IType.TensorMax()): lambda it, r: [r[0].max()],
+    type(IType.TensorGet()): lambda it, r: [r[0].view(-1)[int(r[1].item())]],
+    type(IType.TensorSet()): lambda it, r: _tensor_set(r[0], r[1], r[2]),
+    type(IType.Linear()): lambda it, r: [r[0] @ r[1] + r[2]],
+    type(IType.Uninterpreted("")): lambda it, r: _uninterpreted(it),
     # Arithmetic extensions
-    "IType_Mod":        lambda it, r: [r[0] % r[1]],
-    "IType_Neg":        lambda it, r: [-r[0]],
-    "IType_Abs":        lambda it, r: [r[0].abs()],
+    type(IType.Mod()): lambda it, r: [r[0] % r[1]],
+    type(IType.Neg()): lambda it, r: [-r[0]],
+    type(IType.Abs()): lambda it, r: [r[0].abs()],
     # Logical extensions
-    "IType_Xor":        lambda it, r: [r[0].logical_xor(r[1])],
-    "IType_Xnor":       lambda it, r: [r[0].logical_xor(r[1]).logical_not()],
-    "IType_Implies":    lambda it, r: [r[0].logical_not().logical_or(r[1])],
+    type(IType.Xor()): lambda it, r: [r[0].logical_xor(r[1])],
+    type(IType.Xnor()): lambda it, r: [r[0].logical_xor(r[1]).logical_not()],
+    type(IType.Implies()): lambda it, r: [r[0].logical_not().logical_or(r[1])],
     # Constants
-    "IType_ConstBool":  lambda it, r: [torch.tensor([it._0], dtype=torch.bool)],
-    "IType_ConstInt":   lambda it, r: [torch.tensor([it._0], dtype=torch.long)],
+    type(IType.ConstBool(False)): lambda it, r: [torch.tensor([it._0], dtype=torch.bool)],
+    type(IType.ConstInt(0)): lambda it, r: [torch.tensor([it._0], dtype=torch.long)],
     # Word-level operations
-    "IType_BitSelect":  lambda it, r: [((r[0] >> it._1) & ((1 << (it._0 - it._1 + 1)) - 1))],
-    "IType_Extend":     lambda it, r: [r[0] & ((1 << it._0) - 1)],
-    "IType_ToBool":     lambda it, r: [r[0].bool()],
-    "IType_ToWord1":    lambda it, r: [r[0].long() & 1],
-    "IType_ToUnsigned":  lambda it, r: [r[0].abs()],
-    "IType_ToSigned":   lambda it, r: [r[0]],
+    type(IType.BitSelect(0, 0)): lambda it, r: [((r[0] >> it._1) & ((1 << (it._0 - it._1 + 1)) - 1))],
+    type(IType.Extend(0)): lambda it, r: [r[0] & ((1 << it._0) - 1)],
+    type(IType.ToBool()): lambda it, r: [r[0].bool()],
+    type(IType.ToWord1()): lambda it, r: [r[0].long() & 1],
+    type(IType.ToUnsigned()): lambda it, r: [r[0].abs()],
+    type(IType.ToSigned()): lambda it, r: [r[0]],
 }
 
 
@@ -93,6 +93,11 @@ class Interpreter:
         self.initialized = False
 
     def initialize(self, env_inputs=None):
+        """Run the init block and latch.
+
+        External wires not provided in *env_inputs* are automatically
+        initialized to zero tensors (matching their declared dtype).
+        """
         self._load_env_inputs(env_inputs)
         self._execute("init")
         self._latch()
@@ -111,7 +116,7 @@ class Interpreter:
         return self.state[wire_id].clone()
 
     def state_dict(self):
-        return {wid: t.clone() for wid, t in self.state.items()}
+        return dict(self.state)
 
     def _load_env_inputs(self, env_inputs):
         if env_inputs is not None:
@@ -129,7 +134,7 @@ class Interpreter:
         atoms = self.module.atoms
         for atom_idx in range(len(atoms)):
             atom = atoms[atom_idx]
-            block = atom.init() if block_type == "init" else atom.update()
+            block = atom.init if block_type == "init" else atom.update
             for i in range(len(block)):
                 term = block[i]
                 read = [self.state[term.read[j].id()] for j in range(len(term.read))]
