@@ -1,6 +1,3 @@
-//#[cfg(feature = "enable-smt")]
-//mod smt;
-
 use pyo3::PyClass;
 use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
