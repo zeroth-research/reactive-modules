@@ -121,11 +121,11 @@ def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
             raise Exception("dtype mismatch")
 
     match wtype:
-        case DType.TensorBool(_):
+        case DType.Bool(_):
             return BExpr(itype, wtype, first, *others)
-        case DType.TensorReal(_):
+        case DType.Real(_):
             return AExpr(itype, wtype, first, *others)
-        case DType.TensorInt(_):
+        case DType.Int(_):
             return AExpr(itype, wtype, first, *others)
         case _:
             raise NotImplementedError
@@ -137,8 +137,8 @@ def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
 
 
 def _elementwise_bool_op(itype, first: BExpr, *others):
-    if not isinstance(first.dtype, DType.TensorBool):
-        raise Exception("invalid dtype")
+    if first.dtype.kind() != "Bool":
+        raise ValueError(f"invalid dtype, expected Bool(...), got: `{first.dtype}`")
 
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
 
@@ -155,8 +155,8 @@ def conj(first: BExpr, *others) -> BExpr:
 
 # Logical not
 def neg(e: BExpr) -> BExpr:
-    if not isinstance(e.dtype, DType.TensorBool):
-        raise Exception("invalid dtype")
+    if e.dtype.kind() != "Bool":
+        raise ValueError(f"invalid dtype, expected Bool(...), got: `{first.dtype}`")
 
     return BExpr(IType.Not(), e.dtype, e)
 
@@ -167,7 +167,7 @@ def neg(e: BExpr) -> BExpr:
 
 
 def _elementwise_arith_op(itype, first: Expr, *others):
-    if not isinstance(first.dtype, (DType.TensorReal, DType.TensorInt)):
+    if not isinstance(first.dtype, (DType.Real, DType.Int)):
         raise Exception("invalid dtype")
 
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
@@ -195,9 +195,9 @@ def sub(min: AExpr, sub: AExpr) -> AExpr:
 
 
 def _elementwise_predicate(itype, lhs: AExpr, rhs: AExpr):
-    if not isinstance(lhs.dtype, (DType.TensorReal, DType.TensorInt)):
+    if not isinstance(lhs.dtype, (DType.Real, DType.Int)):
         raise Exception("invalid dtype")
-    if not isinstance(rhs.dtype, (DType.TensorReal, DType.TensorInt)):
+    if not isinstance(rhs.dtype, (DType.Real, DType.Int)):
         raise Exception("invalid dtype")
 
     return _elementwise_op(itype, DType.Bool(lhs.shape), lhs.dtype, lhs, rhs)

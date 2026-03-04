@@ -2,8 +2,6 @@ use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
 
-use crate::lean::ModuleTranslator;
-
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
@@ -163,18 +161,6 @@ impl Module {
         let py = slf.py();
         let module = slf.into_pyobject(py)?.unbind();
         Ok(ModuleAtoms { module })
-    }
-
-    fn init_as_transition(&self) -> Transition {
-        Transition(common::transition::Transition::from_module_init(&self.base).unwrap())
-    }
-
-    fn update_as_transition(&self) -> Transition {
-        Transition(common::transition::Transition::from_module_update(&self.base).unwrap())
-    }
-
-    fn to_lean(&self) -> String {
-        ModuleTranslator(&self.base).to_lean()
     }
 
     fn __str__(&self) -> String {

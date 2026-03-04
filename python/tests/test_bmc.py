@@ -95,47 +95,5 @@
 #             print(term)
 #
 #
-# def test_unroll_semimanual():
-#     """
-#     Semi-manual module unrolling
-#     """
-#
-#     m = MyModule(intf="xyz: Tensor<3; Int>", extl="yz0: Tensor<2; Int>")
-#     assert m
-#
-#     U = bmc.WiredTransitions()
-#     T = m.init_as_transition()
-#
-#     # wire in the initial transition (since the unrolling is empty,
-#     # this is basically `push`)
-#     U.wire_transition(T)
-#
-#     T = m.update_as_transition()
-#     # wire the `update` transition 3x to the unrolling
-#     for i in range(3):
-#         U.wire_transition(T)
-#
-#     # U.dbg()
-#
-#
-# def test_unroll_auto():
-#     """
-#     Automated module unrolling
-#     """
-#
-#     m = MyModule(intf="xyz: Tensor<3; Int>", extl="yz0: Tensor<2; Int>")
-#     assert m
-#     # m.to_html("/tmp/torch.html", open=True)
-#
-#     U = bmc.ModuleUnrolling(m)
-#     U.init()
-#     for i in range(10):
-#         U.step()
-#     # U.dbg()
-#     # U.to_html("/tmp/unroll.html", open=True)
-#
-#
 # if __name__ == "__main__":
-#     test_unroll_auto()
-#     test_unroll_semimanual()
 #     test_unroll_manual()

@@ -784,12 +784,13 @@ class AbstractInterpreter:
                 return float
             return int
         # String repetition
-        if lt == str and rt == int and isinstance(op, ast.Mult):
+        if lt is str and rt is int and isinstance(op, ast.Mult):
             return str
-        if lt == str and rt == str and isinstance(op, ast.Add):
-            return str
-        if lt == list and rt == list and isinstance(op, ast.Add):
-            return list
+        if isinstance(op, ast.Add):
+            if lt is str and rt is str:
+                return str
+            if lt is list and rt is list:
+                return list
         return None
 
     def _eval_unaryop_value(

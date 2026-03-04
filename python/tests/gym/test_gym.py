@@ -1,4 +1,13 @@
-from .environments import SimpleEnv, GridWorldEnv, ComplexDecisionEnv, EarlyReturnEnv, ComparisonChainEnv, TwoBitCounterEnv, HeartODE, ArrayEnv
+from .environments import (
+    SimpleEnv,
+    GridWorldEnv,
+    ComplexDecisionEnv,
+    EarlyReturnEnv,
+    ComparisonChainEnv,
+    TwoBitCounterEnv,
+    HeartODE,
+    ArrayEnv,
+)
 from .qnetworks import SimpleQNet, GridWorldQNet
 from zrth import Module
 
@@ -132,38 +141,41 @@ def test_heartode_conversion():
 def test_arrayenv_conversion():
     env = ArrayEnv()
     module_str = str(env)
-    assert "Tensor<3, 3; Float>" in module_str  # grid
-    assert "Tensor<5; Float>" in module_str      # weights
-    assert "Tensor<2, 2; Float>" in module_str   # matrix
+    if "Float(3, 3)" not in module_str:
+        raise AssertionError(module_str)  # grid
+    if "Float(5)" not in module_str:  # weights
+        raise AssertionError(module_str)  # grid
+    if "Float(2, 2)" not in module_str:  # matrix
+        raise AssertionError(module_str)  # grid
 
 
 if __name__ == "__main__":
     qnet = simpleqnet()
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
     env = simpleenv()
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
     composed = Module.parallel(qnet, env)
     print(composed)
-    
-    print("\n" + "="*60 + "\n")
+
+    print("\n" + "=" * 60 + "\n")
     qnet3 = gridworldqnet()
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
     gridenv = gridworldenv()
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
     composed2 = Module.parallel(qnet3, gridenv)
     print(composed2)
-    
-    print("\n" + "="*60 + "\n")
+
+    print("\n" + "=" * 60 + "\n")
     complexenv = complexdecisionenv()
-    
-    print("\n" + "="*60 + "\n")
+
+    print("\n" + "=" * 60 + "\n")
     earlyenv = earlyreturnenv()
-    
-    print("\n" + "="*60 + "\n")
+
+    print("\n" + "=" * 60 + "\n")
     compenv = comparisonchainenv()
 
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
     bitco = twobitcounterenv()
 
-    print("\n" + "="*60 + "\n")
+    print("\n" + "=" * 60 + "\n")
     heart = heartode()

@@ -452,7 +452,7 @@ class NN(Module, nn.Module):
         obs = [extl, intf]
         instance = super().__new__(cls, assign=forward, obs=obs)
 
-        instance.extl = extl
-        instance.intf = intf
+        # instance.extl = extl
+        # instance.intf = intf
 
         return instance
