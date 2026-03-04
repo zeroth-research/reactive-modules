@@ -163,14 +163,6 @@ impl Module {
         Ok(ModuleAtoms { module })
     }
 
-    fn init_as_transition(&self) -> Transition {
-        Transition(common::transition::Transition::from_module_init(&self.base).unwrap())
-    }
-
-    fn update_as_transition(&self) -> Transition {
-        Transition(common::transition::Transition::from_module_update(&self.base).unwrap())
-    }
-
     fn __str__(&self) -> String {
         self.base.to_string()
     }
