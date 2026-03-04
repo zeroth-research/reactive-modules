@@ -3,7 +3,6 @@ from .zrth import (
     DType,
     IType,
     Term,
-    Transition,
     Module,
 )
 
@@ -36,5 +35,4 @@ __all__ = [
     "IType",
     "Term",
     "Module",
-    "Transition",
 ]
