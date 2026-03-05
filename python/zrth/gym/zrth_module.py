@@ -1,6 +1,6 @@
 from zrth import Module, Wire, DType
 from zrth.analyzer import AbstractInterpreter, UnsupportedFeatureError, join_states, AbstractValue
-from .converter import convert_method
+from zrth.analyzer import convert_method
 import gymnasium as gym
 import torch.nn as nn
 import inspect
