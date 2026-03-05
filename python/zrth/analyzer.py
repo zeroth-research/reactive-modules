@@ -158,6 +158,34 @@ class AbstractState:
         return obj_attrs.get(attr, AbstractValue.top())
 
 
+def _merge_dicts(states, get_dict):
+    """Merge dicts from multiple states using AbstractValue.join."""
+    all_keys: Set[str] = set()
+    for s in states:
+        all_keys |= get_dict(s).keys()
+    merged: Dict[str, AbstractValue] = {}
+    for k in all_keys:
+        vals = [get_dict(s).get(k, AbstractValue.bottom()) for s in states]
+        result = vals[0]
+        for v in vals[1:]:
+            result = result.join(v)
+        merged[k] = result
+    return merged
+
+
+def _dedup_records(states, get_list):
+    """Collect AccessRecords from all states, deduplicating by (name, line, col)."""
+    seen: Set[Tuple[str, int, int]] = set()
+    out = []
+    for s in states:
+        for r in get_list(s):
+            key = (r.name, r.lineno, r.col_offset)
+            if key not in seen:
+                seen.add(key)
+                out.append(r)
+    return out
+
+
 def join_states(states: List[AbstractState]) -> AbstractState:
     """Join multiple path states into one (merge at control-flow join point)."""
     if not states:
@@ -167,54 +195,19 @@ def join_states(states: List[AbstractState]) -> AbstractState:
     if len(states) == 1:
         return states[0]
 
-    # Merge environments
-    all_keys: Set[str] = set()
-    for s in states:
-        all_keys |= s.env.keys()
-    merged_env: Dict[str, AbstractValue] = {}
-    for k in all_keys:
-        vals = [s.env.get(k, AbstractValue.bottom()) for s in states]
-        merged = vals[0]
-        for v in vals[1:]:
-            merged = merged.join(v)
-        merged_env[k] = merged
+    merged_env = _merge_dicts(states, lambda s: s.env)
 
-    # Merge attrs
+    # Merge attrs (nested: object -> attr -> value)
     all_objs: Set[str] = set()
     for s in states:
         all_objs |= s.attrs.keys()
-    merged_attrs: Dict[str, Dict[str, AbstractValue]] = {}
-    for obj in all_objs:
-        all_attr_keys: Set[str] = set()
-        for s in states:
-            if obj in s.attrs:
-                all_attr_keys |= s.attrs[obj].keys()
-        merged_attrs[obj] = {}
-        for ak in all_attr_keys:
-            vals = [
-                s.attrs.get(obj, {}).get(ak, AbstractValue.bottom()) for s in states
-            ]
-            merged = vals[0]
-            for v in vals[1:]:
-                merged = merged.join(v)
-            merged_attrs[obj][ak] = merged
+    merged_attrs = {
+        obj: _merge_dicts(states, lambda s, o=obj: s.attrs.get(o, {}))
+        for obj in all_objs
+    }
 
-    # Collect all reads/writes from all paths
-    all_reads = []
-    all_writes = []
-    seen_reads: Set[Tuple[str, int, int]] = set()
-    seen_writes: Set[Tuple[str, int, int]] = set()
-    for s in states:
-        for r in s.reads:
-            key = (r.name, r.lineno, r.col_offset)
-            if key not in seen_reads:
-                seen_reads.add(key)
-                all_reads.append(r)
-        for w in s.writes:
-            key = (w.name, w.lineno, w.col_offset)
-            if key not in seen_writes:
-                seen_writes.add(key)
-                all_writes.append(w)
+    all_reads = _dedup_records(states, lambda s: s.reads)
+    all_writes = _dedup_records(states, lambda s: s.writes)
 
     # Merge return values
     ret_vals = [s.returned for s in states]
@@ -345,8 +338,6 @@ class AbstractInterpreter:
         if args.posonlyargs:
             raise UnsupportedFeatureError("positional-only args not yet supported")
 
-        # defaults = args.defaults
-        # kw_defaults = args.kw_defaults
         all_params = args.args + args.kwonlyargs
 
         if arg_values is None:
@@ -444,31 +435,19 @@ class AbstractInterpreter:
         elif isinstance(stmt, ast.Raise):
             return self._interpret_raise(stmt, state)
 
-        elif isinstance(stmt, (ast.For, ast.While, ast.AsyncFor)):
-            raise UnsupportedFeatureError("Loops are not supported")
-
-        elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            raise UnsupportedFeatureError("Nested function definitions not supported")
-
-        elif isinstance(stmt, ast.ClassDef):
-            raise UnsupportedFeatureError("Class definitions not supported")
-
-        elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
-            raise UnsupportedFeatureError("Import statements not supported")
-
-        elif isinstance(stmt, ast.Try):
-            raise UnsupportedFeatureError("Try/except not yet supported")
-
-        elif isinstance(stmt, ast.With):
-            raise UnsupportedFeatureError("With statements not yet supported")
-
-        elif isinstance(stmt, ast.Global):
-            raise UnsupportedFeatureError("Global statements not supported")
-
-        elif isinstance(stmt, ast.Nonlocal):
-            raise UnsupportedFeatureError("Nonlocal statements not supported")
-
         else:
+            _UNSUPPORTED_STMTS = {
+                ast.For: "Loops", ast.While: "Loops", ast.AsyncFor: "Loops",
+                ast.FunctionDef: "Nested function definitions",
+                ast.AsyncFunctionDef: "Nested function definitions",
+                ast.ClassDef: "Class definitions",
+                ast.Import: "Import statements", ast.ImportFrom: "Import statements",
+                ast.Try: "Try/except", ast.With: "With statements",
+                ast.Global: "Global statements", ast.Nonlocal: "Nonlocal statements",
+            }
+            msg = _UNSUPPORTED_STMTS.get(type(stmt))
+            if msg:
+                raise UnsupportedFeatureError(f"{msg} not supported")
             raise UnsupportedFeatureError(
                 f"Statement type {type(stmt).__name__} not supported"
             )
@@ -689,20 +668,6 @@ class AbstractInterpreter:
             val, s = self._eval_expr(expr.value, s)
             s.write_var(expr.target.id, val, expr.target)
             return val, s
-
-        elif isinstance(
-            expr, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
-        ):
-            raise UnsupportedFeatureError("Comprehensions not yet supported")
-
-        elif isinstance(expr, ast.Lambda):
-            raise UnsupportedFeatureError("Lambda expressions not yet supported")
-
-        elif isinstance(expr, ast.Await):
-            raise UnsupportedFeatureError("Await expressions not supported")
-
-        elif isinstance(expr, ast.Yield):
-            raise UnsupportedFeatureError("Yield expressions not supported")
 
         elif isinstance(expr, ast.Slice):
             # Evaluate bounds for tracking
@@ -980,22 +945,10 @@ class AbstractInterpreter:
             if not v.is_const():
                 all_const = False
 
+        py_type = {ast.List: list, ast.Tuple: tuple, ast.Set: set}[type(expr)]
         if all_const:
-            raw = [e.value for e in elts]
-            if isinstance(expr, ast.List):
-                return AbstractValue.const(raw), s
-            elif isinstance(expr, ast.Tuple):
-                return AbstractValue.const(tuple(raw)), s
-            elif isinstance(expr, ast.Set):
-                return AbstractValue.const(set(raw)), s
-
-        if isinstance(expr, ast.List):
-            return AbstractValue.typed(list), s
-        elif isinstance(expr, ast.Tuple):
-            return AbstractValue.typed(tuple), s
-        elif isinstance(expr, ast.Set):
-            return AbstractValue.typed(set), s
-        return AbstractValue.top(), s
+            return AbstractValue.const(py_type(e.value for e in elts)), s
+        return AbstractValue.typed(py_type), s
 
     def _eval_dict(
         self, expr: ast.Dict, state: AbstractState
@@ -1094,55 +1047,311 @@ def format_results(states: List[AbstractState]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# AST-to-Terms Converter
+# Module helpers (used by Env / NN metaclass logic)
 # ---------------------------------------------------------------------------
 
+_PYTHON_TYPE_TO_DTYPE = {
+    bool: DType.Bool,
+    float: DType.Float,
+    int: DType.Int,
+}
 
-def convert_method(
-    method,
-    wires: dict[str, tuple[Wire, Wire]],
-    result: list[Wire],
-    cls=None,
-    layers: dict[str, int] | None = None,
-    params: dict[str, Wire] | None = None,
-) -> list[Term]:
-    """Convert a Python method to a list of Terms.
+_GYM_SPACE_TO_DTYPE = {
+    "Discrete": DType.Int,
+    "Box": DType.Float,
+    "MultiBinary": DType.Bool,
+}
 
-    Args:
-        method: Unbound method to convert (e.g. cls.reset, cls.step, cls.forward)
-        wires: All named wire pairs available to the method - both method
-               parameters (by parameter name) and self.* attributes (by attr name)
-        result: Ordered list of next-wires matched positionally to the return tuple
-        cls: Class owning the method, needed only for inlining self.helper() calls
-        params: Read-only parameter wires (single wires, not pairs) for self.* constants
 
-    Returns:
-        List of Terms representing the method as a reactive diagram
+def _to_python(v):
+    """Convert numpy scalars to plain Python types for the abstract interpreter."""
+    if hasattr(v, 'item'):
+        return v.item()
+    return v
+
+
+def _unwrap(method):
+    """Follow __wrapped__ chain to get the original function."""
+    while hasattr(method, '__wrapped__'):
+        method = method.__wrapped__
+    return method
+
+
+def wire_pair(dtype):
+    """Create a [latched, next] wire pair for the given dtype."""
+    return [Wire(dtype), Wire(dtype)]
+
+
+def resolve_wire(name, dtype, user_val=None):
+    """Return a validated [latched, next] wire pair for an observable signal.
+
+    If user_val is None, creates a fresh pair from dtype.
+    If user_val is a wire pair, validates its dtype and returns it.
     """
-    source = textwrap.dedent(inspect.getsource(method))
-    func_def = ast.parse(source).body[0]
-    if not isinstance(func_def, ast.FunctionDef):
-        raise ValueError(f"Expected function definition, got {type(func_def).__name__}")
-
-    # Normalize early returns to single-exit form before visiting
-    func_def.body = _normalize_early_returns(func_def.body)
-
-    param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
-    visitor = MethodVisitor(wires, result, cls=cls, layers=layers, params=params)
-    visitor.temp_vars.update(
-        {name: wires[name][0] for name in param_names if name in wires}
+    if user_val is None:
+        return wire_pair(dtype)
+    is_pair = isinstance(user_val, (list, tuple)) and len(user_val) == 2 and all(isinstance(w, Wire) for w in user_val)
+    if is_pair:
+        for w in user_val:
+            if w.dtype() != dtype:
+                raise ValueError(
+                    f"DType mismatch for '{name}': expected {dtype}, got {w.dtype()}"
+                )
+        return list(user_val)
+    if isinstance(user_val, (list, tuple)) and len(user_val) > 0 and all(
+        isinstance(item, (list, tuple)) and len(item) == 2 and all(isinstance(w, Wire) for w in item)
+        for item in user_val
+    ):
+        raise NotImplementedError("Tuple of wire pairs not yet supported")
+    raise ValueError(
+        f"Invalid wire format for '{name}': expected [Wire, Wire] or tuple of wire pairs"
     )
 
-    for stmt in func_def.body:
-        visitor.visit(stmt)
 
-    for i, result_wire in enumerate(result):
-        src = visitor.temp_vars.get(f"_ret_{i}")
-        if src is None:
-            raise ValueError(f"Method has no return value for result {i}")
-        visitor.terms.append(Term(IType.Id(), [result_wire], [src]))
+def wrap_init(cls, kwargs_to_strip):
+    """Wrap cls.__init__ to silently drop kwargs consumed by __new__.
 
-    return visitor.terms
+    __new__ pops wire-override kwargs before the user's __init__ sees them.
+    Without this wrapper those kwargs would reach the user's __init__ as
+    unexpected keyword arguments. Only wraps if cls defines __init__ directly;
+    an inherited __init__ was already wrapped when the ancestor was defined.
+    """
+    if '__init__' not in cls.__dict__:
+        return
+    original_init = cls.__dict__['__init__']
+    def wrapped_init(self, *args, **kw):
+        for k in kwargs_to_strip:
+            kw.pop(k, None)
+        return original_init(self, *args, **kw)
+    wrapped_init.__wrapped__ = original_init
+    cls.__init__ = wrapped_init
+
+
+def _infer_shape_and_elem_type(value):
+    """Recursively derive tensor shape and element type from a Python value."""
+    if isinstance(value, bool):      # before int -- bool subclasses int
+        return [], bool
+    if isinstance(value, (int, float)):
+        return [], type(value)
+    if isinstance(value, (list, tuple)):
+        if not value:
+            raise ValueError("Cannot infer shape from empty collection")
+        inner_shape, elem_type = _infer_shape_and_elem_type(value[0])
+        return [len(value)] + inner_shape, elem_type
+    raise ValueError(f"Unsupported element type: {type(value).__name__}")
+
+
+def infer_dtype(name, abstract_value):
+    """Infer a DType from an AbstractValue."""
+    if abstract_value is None:
+        raise ValueError(f"Cannot infer DType for '{name}': analyzer returned None")
+
+    if abstract_value.is_const():
+        shape, elem_type = _infer_shape_and_elem_type(abstract_value.value)
+        dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(elem_type)
+        if dtype_fn is None:
+            raise ValueError(
+                f"Cannot infer DType for '{name}': unsupported element type '{elem_type.__name__}'"
+            )
+        return dtype_fn(shape or [1])
+
+    if abstract_value.type_ is None:
+        raise ValueError(f"Cannot infer DType for '{name}': analyzer returned {abstract_value}")
+    dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(abstract_value.type_)
+    if dtype_fn is None:
+        raise ValueError(
+            f"Cannot infer DType for '{name}': unsupported Python type '{abstract_value.type_.__name__}'"
+        )
+    return dtype_fn([1])
+
+
+def _parse_call_repr(call_repr):
+    """Parse an AbstractValue call_repr string into (func_name, pos_args, kw_args).
+
+    E.g. "spaces.Discrete(2)" -> ("Discrete", [2], {})
+         "spaces.Box(low=0, high=10, shape=(1,))" -> ("Box", [], {"low": 0, "high": 10, "shape": (1,)})
+    """
+    node = ast.parse(call_repr, mode='eval').body
+    if not isinstance(node, ast.Call):
+        raise ValueError(f"Expected a call expression, got: {call_repr}")
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        name = func.attr
+    elif isinstance(func, ast.Name):
+        name = func.id
+    else:
+        raise ValueError(f"Cannot extract function name from: {call_repr}")
+    pos_args = [ast.literal_eval(a) for a in node.args]
+    kw_args = {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}
+    return name, pos_args, kw_args
+
+
+def _gym_space_to_dtype(space_name, pos_args, kw_args, is_action):
+    """Convert a parsed gym space into a DType.
+
+    For action (is_action=True): always Float, shape = number of actions.
+    For observation (is_action=False): element type from _GYM_SPACE_TO_DTYPE.
+    """
+    dtype_fn = _GYM_SPACE_TO_DTYPE.get(space_name)
+    if dtype_fn is None:
+        raise ValueError(f"Unsupported gym space type: {space_name}")
+
+    if space_name == "Discrete":
+        n = pos_args[0]
+        return DType.Float([n]) if is_action else dtype_fn([1])
+    elif space_name == "Box":
+        shape = kw_args.get("shape") or (pos_args[2] if len(pos_args) > 2 else None)
+        if shape is None:
+            raise ValueError("Box space requires a 'shape' argument")
+        return dtype_fn(list(shape))
+    else:  # MultiBinary
+        return dtype_fn([pos_args[0]])
+
+
+def infer_spaces(self_attrs):
+    """Extract action and observation DTypes from analyzed __init__ self attrs."""
+    action_space_val = self_attrs.get("action_space")
+    observation_space_val = self_attrs.get("observation_space")
+
+    if action_space_val is None or action_space_val.call_repr is None:
+        raise ValueError("Cannot infer action_space from __init__: not found or not a call")
+    if observation_space_val is None or observation_space_val.call_repr is None:
+        raise ValueError("Cannot infer observation_space from __init__: not found or not a call")
+
+    a_name, a_args, a_kwargs = _parse_call_repr(action_space_val.call_repr)
+    o_name, o_args, o_kwargs = _parse_call_repr(observation_space_val.call_repr)
+
+    return (
+        _gym_space_to_dtype(a_name, a_args, a_kwargs, is_action=True),
+        _gym_space_to_dtype(o_name, o_args, o_kwargs, is_action=False),
+    )
+
+
+def infer_layers(self_attrs):
+    """Extract nn.Linear layer sizes from analyzed __init__ self attrs.
+
+    Returns:
+        dict {attr_name: (in_features, out_features)} for each nn.Linear attr.
+    """
+    layers = {}
+    for attr_name, attr_val in self_attrs.items():
+        if attr_val.call_repr is None:
+            continue
+        try:
+            name, pos_args, _ = _parse_call_repr(attr_val.call_repr)
+        except (ValueError, SyntaxError):
+            continue
+        if name == "Linear" and len(pos_args) >= 2:
+            layers[attr_name] = (pos_args[0], pos_args[1])
+
+    if not layers:
+        raise ValueError("No nn.Linear layers found in __init__")
+
+    return layers
+
+
+def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
+    """Classify self.* attributes used in root methods (and their callees).
+
+    Walks cls.__mro__ up to (but not including) base_cls, so only user-defined
+    methods are analyzed -- not framework methods from Env, Module, gym.Env, etc.
+
+    Args:
+        cls:        The class to analyze.
+        roots:      Method names to start from (e.g. ['reset', 'step']).
+        init_attrs: Optional dict[str, AbstractValue] from analyze_init, used
+                    as a fallback for attrs whose values are unknown in roots.
+        base_cls:   Stop walking the MRO at this class (exclusive). Pass Env or
+                    NN to exclude framework-level methods from analysis.
+
+    Returns:
+        prvt:      set -- attributes both read and written (private mutable state)
+        params:    set -- attributes only read (constants set in __init__)
+        attr_vals: dict[str, AbstractValue] -- best-known value for each attr
+
+    Raises:
+        ValueError: if any attribute is written but never read back.
+    """
+    # Collect user-defined methods by walking the MRO up to base_cls.
+    # Iterate most-derived-first; setdefault keeps the most-derived definition.
+    methods = {}
+    for klass in cls.__mro__:
+        if klass is base_cls or klass is object:
+            break
+        for name, val in klass.__dict__.items():
+            if callable(val) and not isinstance(val, (staticmethod, classmethod)):
+                methods.setdefault(name, val)
+
+    # Analyze each method individually
+    summaries = {}
+    for name, method in methods.items():
+        try:
+            merged = join_states(AbstractInterpreter(method).analyze())
+        except (UnsupportedFeatureError, NotImplementedError):
+            continue
+        read_attrs    = {r.name[5:] for r in merged.reads  if r.name.startswith("self.")}
+        written_attrs = {w.name[5:] for w in merged.writes if w.name.startswith("self.")}
+        # self.foo reads where foo is a known method -> calls, not data reads
+        calls = read_attrs & set(methods.keys())
+        read_attrs -= calls
+        summaries[name] = (read_attrs, written_attrs, calls, merged.attrs.get("self", {}))
+
+    # BFS from roots, following intra-class calls
+    visited, queue = set(), list(roots)
+    while queue:
+        name = queue.pop()
+        if name in visited or name not in summaries:
+            continue
+        visited.add(name)
+        queue.extend(summaries[name][2])  # calls
+
+    read_self, written_self, attr_vals = set(), set(), {}
+    for name in visited:
+        ra, wa, _, av = summaries[name]
+        read_self    |= ra
+        written_self |= wa
+        for attr, val in av.items():
+            existing = attr_vals.get(attr)
+            if existing is None or (val.is_const() and not existing.is_const()):
+                attr_vals[attr] = val
+
+    prvt      = written_self & read_self
+    params    = read_self - written_self
+    write_only = written_self - read_self
+
+    # Use init_attrs as a fallback for attrs with missing or non-const values
+    if init_attrs:
+        for attr in prvt | params:
+            val = attr_vals.get(attr)
+            init_val = init_attrs.get(attr)
+            if init_val is not None and (val is None or not val.is_const()):
+                attr_vals[attr] = init_val
+
+    if write_only:
+        raise ValueError(
+            f"Attributes written in {roots} but never read back: {sorted(write_only)}. "
+            f"These must be made observable."
+        )
+
+    return prvt, params, attr_vals
+
+
+def analyze_init(cls, args, kwargs):
+    """Run the abstract interpreter on cls.__init__ and return self.* attribute values.
+
+    Returns:
+        dict[str, AbstractValue] -- the self.* attrs inferred from __init__
+    """
+    init = _unwrap(cls.__init__)
+    param_names = [p for p in inspect.signature(init).parameters if p != "self"]
+    arg_values = {param_names[i]: AbstractValue.const(_to_python(v)) for i, v in enumerate(args)}
+    arg_values.update({k: AbstractValue.const(_to_python(v)) for k, v in kwargs.items()})
+    return join_states(AbstractInterpreter(init).analyze(arg_values=arg_values)).attrs.get("self", {})
+
+
+# ---------------------------------------------------------------------------
+# AST-to-Terms Converter
+# ---------------------------------------------------------------------------
 
 
 def _torch_dtype(target_dtype):
@@ -1898,304 +2107,48 @@ class MethodVisitor(ast.NodeVisitor):
         return self._convert_expr(return_stmt.value)
 
 
-# ---------------------------------------------------------------------------
-# Module helpers (used by Env / NN metaclass logic)
-# ---------------------------------------------------------------------------
-
-_PYTHON_TYPE_TO_DTYPE = {
-    bool: DType.Bool,
-    float: DType.Float,
-    int: DType.Int,
-}
-
-_GYM_SPACE_TO_DTYPE = {
-    "Discrete": DType.Int,
-    "Box": DType.Float,
-    "MultiBinary": DType.Bool,
-}
-
-
-def _to_python(v):
-    """Convert numpy scalars to plain Python types for the abstract interpreter."""
-    if hasattr(v, 'item'):
-        return v.item()
-    return v
-
-
-def wire_pair(dtype):
-    """Create a [latched, next] wire pair for the given dtype."""
-    return [Wire(dtype), Wire(dtype)]
-
-
-def _unwrap(method):
-    """Follow __wrapped__ chain to get the original function."""
-    while hasattr(method, '__wrapped__'):
-        method = method.__wrapped__
-    return method
-
-
-def resolve_wire(name, dtype, user_val=None):
-    """Return a validated [latched, next] wire pair for an observable signal.
-
-    If user_val is None, creates a fresh pair from dtype.
-    If user_val is a wire pair, validates its dtype and returns it.
-    """
-    if user_val is None:
-        return wire_pair(dtype)
-    is_pair = isinstance(user_val, (list, tuple)) and len(user_val) == 2 and all(isinstance(w, Wire) for w in user_val)
-    if is_pair:
-        for w in user_val:
-            if w.dtype() != dtype:
-                raise ValueError(
-                    f"DType mismatch for '{name}': expected {dtype}, got {w.dtype()}"
-                )
-        return list(user_val)
-    if isinstance(user_val, (list, tuple)) and len(user_val) > 0 and all(
-        isinstance(item, (list, tuple)) and len(item) == 2 and all(isinstance(w, Wire) for w in item)
-        for item in user_val
-    ):
-        raise NotImplementedError("Tuple of wire pairs not yet supported")
-    raise ValueError(
-        f"Invalid wire format for '{name}': expected [Wire, Wire] or tuple of wire pairs"
-    )
-
-
-def wrap_init(cls, kwargs_to_strip):
-    """Wrap cls.__init__ to silently drop kwargs consumed by __new__.
-
-    __new__ pops wire-override kwargs before the user's __init__ sees them.
-    Without this wrapper those kwargs would reach the user's __init__ as
-    unexpected keyword arguments. Only wraps if cls defines __init__ directly;
-    an inherited __init__ was already wrapped when the ancestor was defined.
-    """
-    if '__init__' not in cls.__dict__:
-        return
-    original_init = cls.__dict__['__init__']
-    def wrapped_init(self, *args, **kw):
-        for k in kwargs_to_strip:
-            kw.pop(k, None)
-        return original_init(self, *args, **kw)
-    wrapped_init.__wrapped__ = original_init
-    cls.__init__ = wrapped_init
-
-
-def analyze_init(cls, args, kwargs):
-    """Run the abstract interpreter on cls.__init__ and return self.* attribute values.
-
-    Returns:
-        dict[str, AbstractValue] -- the self.* attrs inferred from __init__
-    """
-    init = _unwrap(cls.__init__)
-    param_names = [p for p in inspect.signature(init).parameters if p != "self"]
-    arg_values = {param_names[i]: AbstractValue.const(_to_python(v)) for i, v in enumerate(args)}
-    arg_values.update({k: AbstractValue.const(_to_python(v)) for k, v in kwargs.items()})
-    return join_states(AbstractInterpreter(init).analyze(arg_values=arg_values)).attrs.get("self", {})
-
-
-def infer_spaces(self_attrs):
-    """Extract action and observation DTypes from analyzed __init__ self attrs."""
-    action_space_val = self_attrs.get("action_space")
-    observation_space_val = self_attrs.get("observation_space")
-
-    if action_space_val is None or action_space_val.call_repr is None:
-        raise ValueError("Cannot infer action_space from __init__: not found or not a call")
-    if observation_space_val is None or observation_space_val.call_repr is None:
-        raise ValueError("Cannot infer observation_space from __init__: not found or not a call")
-
-    a_name, a_args, a_kwargs = _parse_call_repr(action_space_val.call_repr)
-    o_name, o_args, o_kwargs = _parse_call_repr(observation_space_val.call_repr)
-
-    return (
-        _gym_space_to_dtype(a_name, a_args, a_kwargs, is_action=True),
-        _gym_space_to_dtype(o_name, o_args, o_kwargs, is_action=False),
-    )
-
-
-def infer_layers(self_attrs):
-    """Extract nn.Linear layer sizes from analyzed __init__ self attrs.
-
-    Returns:
-        dict {attr_name: (in_features, out_features)} for each nn.Linear attr.
-    """
-    layers = {}
-    for attr_name, attr_val in self_attrs.items():
-        if attr_val.call_repr is None:
-            continue
-        try:
-            name, pos_args, _ = _parse_call_repr(attr_val.call_repr)
-        except (ValueError, SyntaxError):
-            continue
-        if name == "Linear" and len(pos_args) >= 2:
-            layers[attr_name] = (pos_args[0], pos_args[1])
-
-    if not layers:
-        raise ValueError("No nn.Linear layers found in __init__")
-
-    return layers
-
-
-def _parse_call_repr(call_repr):
-    """Parse an AbstractValue call_repr string into (func_name, pos_args, kw_args).
-
-    E.g. "spaces.Discrete(2)" -> ("Discrete", [2], {})
-         "spaces.Box(low=0, high=10, shape=(1,))" -> ("Box", [], {"low": 0, "high": 10, "shape": (1,)})
-    """
-    node = ast.parse(call_repr, mode='eval').body
-    if not isinstance(node, ast.Call):
-        raise ValueError(f"Expected a call expression, got: {call_repr}")
-    func = node.func
-    if isinstance(func, ast.Attribute):
-        name = func.attr
-    elif isinstance(func, ast.Name):
-        name = func.id
-    else:
-        raise ValueError(f"Cannot extract function name from: {call_repr}")
-    pos_args = [ast.literal_eval(a) for a in node.args]
-    kw_args = {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}
-    return name, pos_args, kw_args
-
-
-def _gym_space_to_dtype(space_name, pos_args, kw_args, is_action):
-    """Convert a parsed gym space into a DType.
-
-    For action (is_action=True): always Float, shape = number of actions.
-    For observation (is_action=False): element type from _GYM_SPACE_TO_DTYPE.
-    """
-    dtype_fn = _GYM_SPACE_TO_DTYPE.get(space_name)
-    if dtype_fn is None:
-        raise ValueError(f"Unsupported gym space type: {space_name}")
-
-    if space_name == "Discrete":
-        n = pos_args[0]
-        return DType.Float([n]) if is_action else dtype_fn([1])
-    elif space_name == "Box":
-        shape = kw_args.get("shape") or (pos_args[2] if len(pos_args) > 2 else None)
-        if shape is None:
-            raise ValueError("Box space requires a 'shape' argument")
-        return dtype_fn(list(shape))
-    else:  # MultiBinary
-        return dtype_fn([pos_args[0]])
-
-
-def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
-    """Classify self.* attributes used in root methods (and their callees).
-
-    Walks cls.__mro__ up to (but not including) base_cls, so only user-defined
-    methods are analyzed -- not framework methods from Env, Module, gym.Env, etc.
+def convert_method(
+    method,
+    wires: dict[str, tuple[Wire, Wire]],
+    result: list[Wire],
+    cls=None,
+    layers: dict[str, int] | None = None,
+    params: dict[str, Wire] | None = None,
+) -> list[Term]:
+    """Convert a Python method to a list of Terms.
 
     Args:
-        cls:        The class to analyze.
-        roots:      Method names to start from (e.g. ['reset', 'step']).
-        init_attrs: Optional dict[str, AbstractValue] from analyze_init, used
-                    as a fallback for attrs whose values are unknown in roots.
-        base_cls:   Stop walking the MRO at this class (exclusive). Pass Env or
-                    NN to exclude framework-level methods from analysis.
+        method: Unbound method to convert (e.g. cls.reset, cls.step, cls.forward)
+        wires: All named wire pairs available to the method - both method
+               parameters (by parameter name) and self.* attributes (by attr name)
+        result: Ordered list of next-wires matched positionally to the return tuple
+        cls: Class owning the method, needed only for inlining self.helper() calls
+        params: Read-only parameter wires (single wires, not pairs) for self.* constants
 
     Returns:
-        prvt:      set -- attributes both read and written (private mutable state)
-        params:    set -- attributes only read (constants set in __init__)
-        attr_vals: dict[str, AbstractValue] -- best-known value for each attr
-
-    Raises:
-        ValueError: if any attribute is written but never read back.
+        List of Terms representing the method as a reactive diagram
     """
-    # Collect user-defined methods by walking the MRO up to base_cls.
-    # Iterate most-derived-first; setdefault keeps the most-derived definition.
-    methods = {}
-    for klass in cls.__mro__:
-        if klass is base_cls or klass is object:
-            break
-        for name, val in klass.__dict__.items():
-            if callable(val) and not isinstance(val, (staticmethod, classmethod)):
-                methods.setdefault(name, val)
+    source = textwrap.dedent(inspect.getsource(method))
+    func_def = ast.parse(source).body[0]
+    if not isinstance(func_def, ast.FunctionDef):
+        raise ValueError(f"Expected function definition, got {type(func_def).__name__}")
 
-    # Analyze each method individually
-    summaries = {}
-    for name, method in methods.items():
-        try:
-            merged = join_states(AbstractInterpreter(method).analyze())
-        except (UnsupportedFeatureError, NotImplementedError):
-            continue
-        read_attrs    = {r.name[5:] for r in merged.reads  if r.name.startswith("self.")}
-        written_attrs = {w.name[5:] for w in merged.writes if w.name.startswith("self.")}
-        # self.foo reads where foo is a known method -> calls, not data reads
-        calls = read_attrs & set(methods.keys())
-        read_attrs -= calls
-        summaries[name] = (read_attrs, written_attrs, calls, merged.attrs.get("self", {}))
+    # Normalize early returns to single-exit form before visiting
+    func_def.body = _normalize_early_returns(func_def.body)
 
-    # BFS from roots, following intra-class calls
-    visited, queue = set(), list(roots)
-    while queue:
-        name = queue.pop()
-        if name in visited or name not in summaries:
-            continue
-        visited.add(name)
-        queue.extend(summaries[name][2])  # calls
+    param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
+    visitor = MethodVisitor(wires, result, cls=cls, layers=layers, params=params)
+    visitor.temp_vars.update(
+        {name: wires[name][0] for name in param_names if name in wires}
+    )
 
-    read_self, written_self, attr_vals = set(), set(), {}
-    for name in visited:
-        ra, wa, _, av = summaries[name]
-        read_self    |= ra
-        written_self |= wa
-        for attr, val in av.items():
-            existing = attr_vals.get(attr)
-            if existing is None or (val.is_const() and not existing.is_const()):
-                attr_vals[attr] = val
+    for stmt in func_def.body:
+        visitor.visit(stmt)
 
-    prvt      = written_self & read_self
-    params    = read_self - written_self
-    write_only = written_self - read_self
+    for i, result_wire in enumerate(result):
+        src = visitor.temp_vars.get(f"_ret_{i}")
+        if src is None:
+            raise ValueError(f"Method has no return value for result {i}")
+        visitor.terms.append(Term(IType.Id(), [result_wire], [src]))
 
-    # Use init_attrs as a fallback for attrs with missing or non-const values
-    if init_attrs:
-        for attr in prvt | params:
-            val = attr_vals.get(attr)
-            init_val = init_attrs.get(attr)
-            if init_val is not None and (val is None or not val.is_const()):
-                attr_vals[attr] = init_val
-
-    if write_only:
-        raise ValueError(
-            f"Attributes written in {roots} but never read back: {sorted(write_only)}. "
-            f"These must be made observable."
-        )
-
-    return prvt, params, attr_vals
-
-
-def _infer_shape_and_elem_type(value):
-    """Recursively derive tensor shape and element type from a Python value."""
-    if isinstance(value, bool):      # before int -- bool subclasses int
-        return [], bool
-    if isinstance(value, (int, float)):
-        return [], type(value)
-    if isinstance(value, (list, tuple)):
-        if not value:
-            raise ValueError("Cannot infer shape from empty collection")
-        inner_shape, elem_type = _infer_shape_and_elem_type(value[0])
-        return [len(value)] + inner_shape, elem_type
-    raise ValueError(f"Unsupported element type: {type(value).__name__}")
-
-
-def infer_dtype(name, abstract_value):
-    """Infer a DType from an AbstractValue."""
-    if abstract_value is None:
-        raise ValueError(f"Cannot infer DType for '{name}': analyzer returned None")
-
-    if abstract_value.is_const():
-        shape, elem_type = _infer_shape_and_elem_type(abstract_value.value)
-        dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(elem_type)
-        if dtype_fn is None:
-            raise ValueError(
-                f"Cannot infer DType for '{name}': unsupported element type '{elem_type.__name__}'"
-            )
-        return dtype_fn(shape or [1])
-
-    if abstract_value.type_ is None:
-        raise ValueError(f"Cannot infer DType for '{name}': analyzer returned {abstract_value}")
-    dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(abstract_value.type_)
-    if dtype_fn is None:
-        raise ValueError(
-            f"Cannot infer DType for '{name}': unsupported Python type '{abstract_value.type_.__name__}'"
-        )
-    return dtype_fn([1])
+    return visitor.terms
