@@ -7,9 +7,6 @@ from .zrth import (
 )
 
 
-from .smv import parse_smv
-
-
 #####################################################################
 # IType and DType
 #####################################################################
@@ -32,13 +29,7 @@ def Float(*args):
     return DType.Float([*args])
 
 
-def UWord(width: int):
-    return DType.UWord(width)
-
-
-def SWord(width: int):
-    return DType.SWord(width)
-
+from .module import Env, NN
 
 
 __all__ = [
@@ -47,4 +38,6 @@ __all__ = [
     "IType",
     "Term",
     "Module",
+    "Env",
+    "NN",
 ]
