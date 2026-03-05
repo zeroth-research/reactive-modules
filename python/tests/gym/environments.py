@@ -1,5 +1,5 @@
 from gymnasium import spaces
-from zrth.gym import Env
+from zrth import Env
 
 
 class SimpleEnv(Env):
