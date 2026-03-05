@@ -1922,7 +1922,7 @@ def _to_python(v):
     return v
 
 
-def _wire_pair(dtype):
+def wire_pair(dtype):
     """Create a [latched, next] wire pair for the given dtype."""
     return [Wire(dtype), Wire(dtype)]
 
@@ -1934,14 +1934,14 @@ def _unwrap(method):
     return method
 
 
-def _resolve_wire(name, dtype, user_val=None):
+def resolve_wire(name, dtype, user_val=None):
     """Return a validated [latched, next] wire pair for an observable signal.
 
     If user_val is None, creates a fresh pair from dtype.
     If user_val is a wire pair, validates its dtype and returns it.
     """
     if user_val is None:
-        return _wire_pair(dtype)
+        return wire_pair(dtype)
     is_pair = isinstance(user_val, (list, tuple)) and len(user_val) == 2 and all(isinstance(w, Wire) for w in user_val)
     if is_pair:
         for w in user_val:
@@ -1960,7 +1960,7 @@ def _resolve_wire(name, dtype, user_val=None):
     )
 
 
-def _wrap_init(cls, kwargs_to_strip):
+def wrap_init(cls, kwargs_to_strip):
     """Wrap cls.__init__ to silently drop kwargs consumed by __new__.
 
     __new__ pops wire-override kwargs before the user's __init__ sees them.
@@ -1979,7 +1979,7 @@ def _wrap_init(cls, kwargs_to_strip):
     cls.__init__ = wrapped_init
 
 
-def _analyze_init(cls, args, kwargs):
+def analyze_init(cls, args, kwargs):
     """Run the abstract interpreter on cls.__init__ and return self.* attribute values.
 
     Returns:
@@ -1992,7 +1992,7 @@ def _analyze_init(cls, args, kwargs):
     return join_states(AbstractInterpreter(init).analyze(arg_values=arg_values)).attrs.get("self", {})
 
 
-def _infer_spaces(self_attrs):
+def infer_spaces(self_attrs):
     """Extract action and observation DTypes from analyzed __init__ self attrs."""
     action_space_val = self_attrs.get("action_space")
     observation_space_val = self_attrs.get("observation_space")
@@ -2011,7 +2011,7 @@ def _infer_spaces(self_attrs):
     )
 
 
-def _infer_layers(self_attrs):
+def infer_layers(self_attrs):
     """Extract nn.Linear layer sizes from analyzed __init__ self attrs.
 
     Returns:
@@ -2077,7 +2077,7 @@ def _gym_space_to_dtype(space_name, pos_args, kw_args, is_action):
         return dtype_fn([pos_args[0]])
 
 
-def _classify_attrs(cls, roots, init_attrs=None, base_cls=None):
+def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
     """Classify self.* attributes used in root methods (and their callees).
 
     Walks cls.__mro__ up to (but not including) base_cls, so only user-defined
@@ -2086,7 +2086,7 @@ def _classify_attrs(cls, roots, init_attrs=None, base_cls=None):
     Args:
         cls:        The class to analyze.
         roots:      Method names to start from (e.g. ['reset', 'step']).
-        init_attrs: Optional dict[str, AbstractValue] from _analyze_init, used
+        init_attrs: Optional dict[str, AbstractValue] from analyze_init, used
                     as a fallback for attrs whose values are unknown in roots.
         base_cls:   Stop walking the MRO at this class (exclusive). Pass Env or
                     NN to exclude framework-level methods from analysis.
@@ -2177,7 +2177,7 @@ def _infer_shape_and_elem_type(value):
     raise ValueError(f"Unsupported element type: {type(value).__name__}")
 
 
-def _infer_dtype(name, abstract_value):
+def infer_dtype(name, abstract_value):
     """Infer a DType from an AbstractValue."""
     if abstract_value is None:
         raise ValueError(f"Cannot infer DType for '{name}': analyzer returned None")
