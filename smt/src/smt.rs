@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 
 use crate::dtype::DType;
 use crate::itype::{ArithOp, CmpOp, IType, LogicalOp, Val};
@@ -10,24 +11,30 @@ type SmtModule = Module<DType, IType>;
 
 pub struct AtomSmtLibTranslator<'a>(&'a SmtAtom);
 
-pub fn wires_decls<'a, T: IntoIterator<Item = &'a base::Wire<DType>>>(wires: T) -> Vec<String> {
-    wires
-        .into_iter()
-        .map(|w| declare_var(w.id(), w.dtype()))
-        .collect::<Vec<String>>()
+pub fn wires_decls<'a>(
+    wires: impl IntoIterator<Item = &'a base::Wire<DType>>,
+    w: &mut impl fmt::Write,
+) -> fmt::Result {
+    for wire in wires {
+        writeln!(w, "{}", declare_var(wire.id(), wire.dtype()))?;
+    }
+    Ok(())
 }
 
 impl AtomSmtLibTranslator<'_> {
-    fn method_to_smtlib<'a, T>(&self, terms: T, state_wires: &HashSet<usize>) -> Vec<String>
-    where T: IntoIterator<Item = &'a Term<DType, IType>>
-    {
+    fn method_to_smtlib<'a>(
+        &self,
+        terms: impl IntoIterator<Item = &'a Term<DType, IType>>,
+        state_wires: &HashSet<usize>,
+        w: &mut impl fmt::Write,
+    ) -> fmt::Result {
         let mut let_bindings = Vec::new();
         let mut state_assigns = Vec::new();
 
         for term in terms {
             let wire_id = term.write().ids().next().unwrap();
             let expr = smt_expr(term);
-            
+
             if state_wires.contains(&wire_id) {
                 state_assigns.push(format!("(= {} {})", wire_name(wire_id), expr));
             } else {
@@ -36,34 +43,38 @@ impl AtomSmtLibTranslator<'_> {
         }
 
         if let_bindings.is_empty() {
-            state_assigns.iter().map(|s| format!("(assert {})", s)).collect()
+            for s in &state_assigns {
+                writeln!(w, "(assert {})", s)?;
+            }
         } else {
-            vec![format!(
+            writeln!(
+                w,
                 "(assert\n  (let ({})\n    (and {})))",
                 let_bindings.join("\n        "),
                 state_assigns.join("\n         ")
-            )]
+            )?;
         }
+        Ok(())
     }
 
-    pub fn init(&self, state_wires: &HashSet<usize>) -> Vec<String> {
-        self.method_to_smtlib(self.0.init().iter(), state_wires)
+    pub fn init(&self, state_wires: &HashSet<usize>, w: &mut impl fmt::Write) -> fmt::Result {
+        self.method_to_smtlib(self.0.init().iter(), state_wires, w)
     }
 
-    pub fn update(&self, state_wires: &HashSet<usize>) -> Vec<String> {
-        self.method_to_smtlib(self.0.update().iter(), state_wires)
+    pub fn update(&self, state_wires: &HashSet<usize>, w: &mut impl fmt::Write) -> fmt::Result {
+        self.method_to_smtlib(self.0.update().iter(), state_wires, w)
     }
 
-    pub fn ctrl(&self) -> Vec<String> {
-        wires_decls(self.0.ctrl().wires())
+    pub fn ctrl(&self, w: &mut impl fmt::Write) -> fmt::Result {
+        wires_decls(self.0.ctrl().wires(), w)
     }
 
-    pub fn read(&self) -> Vec<String> {
-        wires_decls(self.0.read().wires())
+    pub fn read(&self, w: &mut impl fmt::Write) -> fmt::Result {
+        wires_decls(self.0.read().wires(), w)
     }
 
-    pub fn wait(&self) -> Vec<String> {
-        wires_decls(self.0.wait().wires())
+    pub fn wait(&self, w: &mut impl fmt::Write) -> fmt::Result {
+        wires_decls(self.0.wait().wires(), w)
     }
 }
 
@@ -84,119 +95,106 @@ impl ModuleSmtLibTranslator<'_> {
         }
         ids
     }
-    /// return smtlib declarations of `intf` variables
-    pub fn intf(&self) -> Vec<String> {
+
+    /// Write smtlib declarations of `intf` variables
+    pub fn intf(&self, w: &mut impl fmt::Write) -> fmt::Result {
         let vars = self.0.intf();
-        vars.latched()
-            .iter()
-            .chain(vars.next().iter())
-            .map(|w| declare_var(w.id(), w.dtype()))
-            .collect::<Vec<String>>()
+        for wire in vars.latched().iter().chain(vars.next().iter()) {
+            writeln!(w, "{}", declare_var(wire.id(), wire.dtype()))?;
+        }
+        Ok(())
     }
 
-    /// return smtlib declarations of `extl` variables
-    pub fn extl(&self) -> Vec<String> {
+    /// Write smtlib declarations of `extl` variables
+    pub fn extl(&self, w: &mut impl fmt::Write) -> fmt::Result {
         let vars = self.0.extl();
-        vars.latched()
-            .iter()
-            .chain(vars.next().iter())
-            .map(|w| declare_var(w.id(), w.dtype()))
-            .collect::<Vec<String>>()
+        for wire in vars.latched().iter().chain(vars.next().iter()) {
+            writeln!(w, "{}", declare_var(wire.id(), wire.dtype()))?;
+        }
+        Ok(())
     }
 
-    pub fn variables_to_smtlib(&self) -> String {
-        format!(
-            ";; Interface\n{}\n\n;; External\n{}",
-            self.intf().join("\n"),
-            self.extl().join("\n"),
-        )
+    pub fn variables_to_smtlib(&self, w: &mut impl fmt::Write) -> fmt::Result {
+        writeln!(w, ";; Interface")?;
+        self.intf(w)?;
+        writeln!(w, "\n;; External")?;
+        self.extl(w)
     }
 
-    pub fn to_smtlib(&self) -> String {
+    pub fn to_smtlib(&self, w: &mut impl fmt::Write) -> fmt::Result {
         if !self.0.prvt().is_empty() {
             unimplemented!()
         }
 
         let state_wires = self.state_wire_ids();
-        
-        format!(
-            ";;; Module\n\n{}\n\n;; Atoms\n{}",
-            self.variables_to_smtlib(),
-            self.0
-                .atoms()
-                .iter()
-                .enumerate()
-                .map(|(n, atom)| {
-                    let translator = AtomSmtLibTranslator(atom);
-                    format!(
-                        "\n;; --- Atom {} ---\n;; Init\n{}\n\n;; Update\n{}",
-                        n,
-                        translator.init(&state_wires).join("\n"),
-                        translator.update(&state_wires).join("\n")
-                    )
-                })
-                .collect::<Vec<String>>()
-                .join("\n")
-        )
+
+        writeln!(w, ";;; Module\n")?;
+        self.variables_to_smtlib(w)?;
+        writeln!(w, "\n;; Atoms")?;
+
+        for (n, atom) in self.0.atoms().iter().enumerate() {
+            let translator = AtomSmtLibTranslator(atom);
+            writeln!(w, "\n;; --- Atom {} ---", n)?;
+            writeln!(w, ";; Init")?;
+            translator.init(&state_wires, w)?;
+            writeln!(w, "\n;; Update")?;
+            translator.update(&state_wires, w)?;
+        }
+        Ok(())
     }
 
-    pub fn init_to_smtlib(&self) -> String {
+    pub fn init_to_smtlib(&self, w: &mut impl fmt::Write) -> fmt::Result {
         let state_wires = self.state_wire_ids();
-        self.0
-            .atoms()
-            .iter()
-            .enumerate()
-            .map(|(n, atom)| {
-                format!(
-                    "\n;; --- Atom {} ---\n{}",
-                    n,
-                    AtomSmtLibTranslator(atom).init(&state_wires).join("\n")
-                )
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
+        for (n, atom) in self.0.atoms().iter().enumerate() {
+            writeln!(w, "\n;; --- Atom {} ---", n)?;
+            AtomSmtLibTranslator(atom).init(&state_wires, w)?;
+        }
+        Ok(())
     }
 
-    pub fn update_to_smtlib(&self) -> String {
+    pub fn update_to_smtlib(&self, w: &mut impl fmt::Write) -> fmt::Result {
         let state_wires = self.state_wire_ids();
-        self.0
-            .atoms()
-            .iter()
-            .enumerate()
-            .map(|(n, atom)| {
-                format!(
-                    "\n;; --- Atom {} ---\n{}",
-                    n,
-                    AtomSmtLibTranslator(atom).update(&state_wires).join("\n")
-                )
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
+        for (n, atom) in self.0.atoms().iter().enumerate() {
+            writeln!(w, "\n;; --- Atom {} ---", n)?;
+            AtomSmtLibTranslator(atom).update(&state_wires, w)?;
+        }
+        Ok(())
     }
 }
 
-pub fn module_to_smtlib(module: &Module<DType, IType>) -> String {
-    ModuleSmtLibTranslator(module).to_smtlib()
+pub fn module_to_smtlib(module: &Module<DType, IType>, w: &mut impl fmt::Write) -> fmt::Result {
+    ModuleSmtLibTranslator(module).to_smtlib(w)
 }
 
-pub fn module_init_to_smtlib(module: &Module<DType, IType>) -> String {
-    ModuleSmtLibTranslator(module).init_to_smtlib()
+pub fn module_init_to_smtlib(
+    module: &Module<DType, IType>,
+    w: &mut impl fmt::Write,
+) -> fmt::Result {
+    ModuleSmtLibTranslator(module).init_to_smtlib(w)
 }
 
-pub fn module_update_to_smtlib(module: &Module<DType, IType>) -> String {
-    ModuleSmtLibTranslator(module).update_to_smtlib()
+pub fn module_update_to_smtlib(
+    module: &Module<DType, IType>,
+    w: &mut impl fmt::Write,
+) -> fmt::Result {
+    ModuleSmtLibTranslator(module).update_to_smtlib(w)
 }
 
-pub fn module_variables_to_smtlib(module: &Module<DType, IType>) -> String {
-    ModuleSmtLibTranslator(module).variables_to_smtlib()
+pub fn module_variables_to_smtlib(
+    module: &Module<DType, IType>,
+    w: &mut impl fmt::Write,
+) -> fmt::Result {
+    ModuleSmtLibTranslator(module).variables_to_smtlib(w)
 }
 
-pub fn parse_modules(modules: &[Module<DType, IType>]) -> String {
-    modules
-        .iter()
-        .map(module_to_smtlib)
-        .collect::<Vec<String>>()
-        .join("\n")
+pub fn parse_modules(
+    modules: &[Module<DType, IType>],
+    w: &mut impl fmt::Write,
+) -> fmt::Result {
+    for module in modules {
+        module_to_smtlib(module, w)?;
+    }
+    Ok(())
 }
 
 fn wire_name(id: usize) -> String {
