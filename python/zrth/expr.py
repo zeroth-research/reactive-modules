@@ -3,7 +3,6 @@ from typing import Any, override
 from .zrth import DType, IType, Term, Wire
 import torch
 
-
 # types that we can convert to [Expr]
 type ToExpr = Expr | int | bool | float | torch.Tensor
 
@@ -16,7 +15,7 @@ class Expr:
         self._itype = itype
 
         self._wire = self._term.write[0]
-        self._dtype = self._wire.dtype()
+        self._dtype = self._wire.dtype
         self._shape = self._dtype.shape
 
         self._args = [*args]

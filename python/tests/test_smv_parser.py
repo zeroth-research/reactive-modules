@@ -132,7 +132,7 @@ def test_enum_type():
     assert "state" in name_map
     # state should have TensorInt dtype (enum mapped to int)
     latched, _ = name_map["state"]
-    assert isinstance(latched.dtype(), DType.Int)
+    assert isinstance(latched.dtype, DType.Int)
 
 
 def test_frozen_var():

@@ -7,12 +7,12 @@ from zrth import Wire, Term, IType, Float, Bool
 
 
 def convert_method(
-    method,
-    wires: dict[str, tuple[Wire, Wire]],
-    result: list[Wire],
-    cls=None,
-    layers: dict[str, int] | None = None,
-    params: dict[str, Wire] | None = None,
+        method,
+        wires: dict[str, tuple[Wire, Wire]],
+        result: list[Wire],
+        cls=None,
+        layers: dict[str, int] | None = None,
+        params: dict[str, Wire] | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 
@@ -81,10 +81,10 @@ def _normalize_early_returns(stmts: list) -> list:
 
         # Detect: if without else whose body ends with a return
         if (
-            isinstance(stmt, ast.If)
-            and not stmt.orelse
-            and stmt.body
-            and isinstance(stmt.body[-1], ast.Return)
+                isinstance(stmt, ast.If)
+                and not stmt.orelse
+                and stmt.body
+                and isinstance(stmt.body[-1], ast.Return)
         ):
             ret = stmt.body[-1]
             values = (
@@ -107,7 +107,7 @@ def _normalize_early_returns(stmts: list) -> list:
                 for i, val in enumerate(values)
             ]
             body = _normalize_early_returns(stmt.body[:-1]) + ret_assigns
-            rest = _normalize_early_returns(stmts[idx + 1 :])
+            rest = _normalize_early_returns(stmts[idx + 1:])
             result.append(
                 ast.copy_location(
                     ast.If(test=stmt.test, body=body or [ast.Pass()], orelse=rest),
@@ -152,7 +152,7 @@ def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term]):
     Returns:
         (output_wire, weight_wire, bias_wire)
     """
-    in_features = input_wire.dtype().shape[-1]
+    in_features = input_wire.dtype.shape[-1]
 
     weight_wire = Wire(Float(in_features, out_features))
     bias_wire = Wire(Float(out_features))
@@ -177,7 +177,7 @@ def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
     Returns:
         Output Wire
     """
-    output_wire = Wire(input_wire.dtype())
+    output_wire = Wire(input_wire.dtype)
     relu_term = Term(IType.ReLU(), [output_wire], [input_wire])
     terms.append(relu_term)
 
@@ -207,12 +207,12 @@ class MethodVisitor(ast.NodeVisitor):
     }
 
     def __init__(
-        self,
-        wire_pairs: dict[str, tuple[Wire, Wire]],
-        result_wires: list[Wire],
-        cls=None,
-        layers: dict[str, int] | None = None,
-        params: dict[str, Wire] | None = None,
+            self,
+            wire_pairs: dict[str, tuple[Wire, Wire]],
+            result_wires: list[Wire],
+            cls=None,
+            layers: dict[str, int] | None = None,
+            params: dict[str, Wire] | None = None,
     ):
         self.wire_pairs = wire_pairs
         self.result_wires = result_wires
@@ -283,7 +283,7 @@ class MethodVisitor(ast.NodeVisitor):
                 else_wire = self.wire_pairs[var][0]
 
             if if_wire != else_wire and if_wire is not None and else_wire is not None:
-                merged_wire = Wire(if_wire.dtype())
+                merged_wire = Wire(if_wire.dtype)
                 self.terms.append(
                     Term(IType.Ite(), [merged_wire], [cond_wire, if_wire, else_wire])
                 )
@@ -291,9 +291,9 @@ class MethodVisitor(ast.NodeVisitor):
 
                 # If this is a state wire and we're at top level, write the merged value to output
                 if (
-                    var in self.wire_pairs
-                    and len(self.scopes) == 0
-                    and var not in self.written_wires
+                        var in self.wire_pairs
+                        and len(self.scopes) == 0
+                        and var not in self.written_wires
                 ):
                     output_wire = self.wire_pairs[var][1]
                     term = Term(IType.Id(), [output_wire], [merged_wire])
@@ -304,10 +304,10 @@ class MethodVisitor(ast.NodeVisitor):
 
                 # Write only if top-level, not yet written, and newly assigned in this branch
                 if (
-                    var in self.wire_pairs
-                    and len(self.scopes) == 0
-                    and var not in parent_scope
-                    and var not in self.written_wires
+                        var in self.wire_pairs
+                        and len(self.scopes) == 0
+                        and var not in parent_scope
+                        and var not in self.written_wires
                 ):
                     output_wire = self.wire_pairs[var][1]
                     term = Term(IType.Id(), [output_wire], [if_wire])
@@ -328,7 +328,7 @@ class MethodVisitor(ast.NodeVisitor):
 
         elif isinstance(target, ast.Attribute) and target.attr in self.wire_pairs:
             wire_name = target.attr
-            target_dtype = self.wire_pairs[wire_name][1].dtype()
+            target_dtype = self.wire_pairs[wire_name][1].dtype
             result_wire = self._convert_expr(node.value, target_dtype=target_dtype)
             self.temp_vars[wire_name] = result_wire
 
@@ -341,8 +341,8 @@ class MethodVisitor(ast.NodeVisitor):
     def visit_AugAssign(self, node):
         """Handle augmented assignment (+=, -=, *=, /=)."""
         if (
-            isinstance(node.target, ast.Attribute)
-            and node.target.attr in self.wire_pairs
+                isinstance(node.target, ast.Attribute)
+                and node.target.attr in self.wire_pairs
         ):
             wire_name = node.target.attr
 
@@ -351,7 +351,7 @@ class MethodVisitor(ast.NodeVisitor):
             else:
                 left_wire = self.wire_pairs[wire_name][0]
 
-            target_dtype = self.wire_pairs[wire_name][1].dtype()
+            target_dtype = self.wire_pairs[wire_name][1].dtype
             right_wire = self._convert_expr(node.value, target_dtype=target_dtype)
 
             op_type = type(node.op)
@@ -360,7 +360,7 @@ class MethodVisitor(ast.NodeVisitor):
                     f"Unsupported augmented assignment operator: {op_type.__name__}"
                 )
 
-            result_wire = Wire(left_wire.dtype())
+            result_wire = Wire(left_wire.dtype)
             itype_cls = self.BINARY_OPS[op_type]
             self.terms.append(Term(itype_cls(), [result_wire], [left_wire, right_wire]))
 
@@ -396,9 +396,9 @@ class MethodVisitor(ast.NodeVisitor):
             )
 
         for i, (result_wire, value_node) in enumerate(
-            zip(self.result_wires, value_nodes)
+                zip(self.result_wires, value_nodes)
         ):
-            src_wire = self._convert_expr(value_node, target_dtype=result_wire.dtype())
+            src_wire = self._convert_expr(value_node, target_dtype=result_wire.dtype)
             self.temp_vars[f"_ret_{i}"] = src_wire
 
     def _convert_expr(self, expr, target_dtype=None):
@@ -489,7 +489,7 @@ class MethodVisitor(ast.NodeVisitor):
         cmp_wire = Wire(Bool())
         self.terms.append(Term(cmp_type, [cmp_wire], [a_wire, b_wire]))
 
-        result = Wire(a_wire.dtype())
+        result = Wire(a_wire.dtype)
         self.terms.append(Term(IType.Ite(), [result], [cmp_wire, a_wire, b_wire]))
         return result
 
@@ -611,8 +611,8 @@ class MethodVisitor(ast.NodeVisitor):
             result_dtype = target_dtype
         else:
             left_wire = self._convert_expr(binop.left)
-            right_wire = self._convert_expr(binop.right, target_dtype=left_wire.dtype())
-            result_dtype = left_wire.dtype()
+            right_wire = self._convert_expr(binop.right, target_dtype=left_wire.dtype)
+            result_dtype = left_wire.dtype
 
         op_type = type(binop.op)
         if op_type not in self.BINARY_OPS:
@@ -654,9 +654,9 @@ class MethodVisitor(ast.NodeVisitor):
             else:
                 operand_wire = self._convert_expr(unaryop.operand)
                 zero_wire = self._convert_constant(
-                    ast.Constant(0), target_dtype=operand_wire.dtype()
+                    ast.Constant(0), target_dtype=operand_wire.dtype
                 )
-                result_dtype = operand_wire.dtype()
+                result_dtype = operand_wire.dtype
             result = Wire(result_dtype)
             self.terms.append(Term(IType.Sub(), [result], [zero_wire, operand_wire]))
             return result
@@ -713,7 +713,7 @@ class MethodVisitor(ast.NodeVisitor):
 
         for op, comparator in zip(compare.ops, compare.comparators):
             left_wire = self._convert_expr(left)
-            right_wire = self._convert_expr(comparator, target_dtype=left_wire.dtype())
+            right_wire = self._convert_expr(comparator, target_dtype=left_wire.dtype)
 
             op_type = type(op)
             if op_type not in self.COMPARE_OPS:
@@ -746,7 +746,7 @@ class MethodVisitor(ast.NodeVisitor):
         true_wire = self._convert_expr(ifexp.body, target_dtype=target_dtype)
         false_wire = self._convert_expr(ifexp.orelse, target_dtype=target_dtype)
 
-        result_dtype = target_dtype if target_dtype else true_wire.dtype()
+        result_dtype = target_dtype if target_dtype else true_wire.dtype
         result = Wire(result_dtype)
         self.terms.append(
             Term(IType.Ite(), [result], [cond_wire, true_wire, false_wire])
