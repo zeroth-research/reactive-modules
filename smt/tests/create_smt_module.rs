@@ -3,29 +3,25 @@ use smt::dtype::DType;
 use smt::itype::{ArithOp, CmpOp, IType, LogicalOp, Val};
 
 pub fn create_test_module() -> Module<DType, IType> {
+    let w0 = Wire::new(DType::Real);
+    let w1 = Wire::new(DType::Int);
+    let w2 = Wire::new(DType::Bool);
+    let w3 = Wire::new(DType::Real);
+    let w4 = Wire::new(DType::Int);
+    let w5 = Wire::new(DType::Bool);
+    let w6 = Wire::new(DType::Real);
+    let w7 = Wire::new(DType::Int);
+    let w8 = Wire::new(DType::Bool);
+    let w9 = Wire::new(DType::Real);
+    let w10 = Wire::new(DType::Int);
+    let w11 = Wire::new(DType::Bool);
     // Interface wires: w0-w2 (latched), w6-w8 (next)
-    let intf_ltc = vec![
-        Wire::new(0, DType::Real),
-        Wire::new(1, DType::Int),
-        Wire::new(2, DType::Bool),
-    ];
-    let intf_nxt = vec![
-        Wire::new(6, DType::Real),
-        Wire::new(7, DType::Int),
-        Wire::new(8, DType::Bool),
-    ];
+    let intf_ltc = vec![w0.clone(), w1.clone(), w2.clone()];
+    let intf_nxt = vec![w6.clone(), w7.clone(), w8.clone()];
 
     // // External wires: w3-w5 (latched), w9-w11 (next)
-    let extl_ltc = vec![
-        Wire::new(3, DType::Real),
-        Wire::new(4, DType::Int),
-        Wire::new(5, DType::Bool),
-    ];
-    let extl_nxt = vec![
-        Wire::new(9, DType::Real),
-        Wire::new(10, DType::Int),
-        Wire::new(11, DType::Bool),
-    ];
+    let extl_ltc = vec![w3.clone(), w4.clone(), w5.clone()];
+    let extl_nxt = vec![w9.clone(), w10.clone(), w11.clone()];
 
     // // Private wires: none
     let prvt_ltc: Vec<Wire<DType>> = vec![];
@@ -60,27 +56,30 @@ pub fn create_test_module() -> Module<DType, IType> {
     let mut init = vec![];
     let mut update = vec![];
 
+    let w12 = Wire::new(DType::Real);
     // === INIT FLOW ===
     init.push(
         Term::function(
             IType::Num(Val::Real(3.24)),
-            [Wire::new(12, DType::Real)],
+            [w12.clone()],
             vec![] as Vec<Wire<DType>>,
         )
         .unwrap(),
     );
+    let w13 = Wire::new(DType::Int);
     init.push(
         Term::function(
             IType::Num(Val::Int(42)),
-            [Wire::new(13, DType::Int)],
+            [w13.clone()],
             vec![] as Vec<Wire<DType>>,
         )
         .unwrap(),
     );
+    let w14 = Wire::new(DType::Bool);
     init.push(
         Term::function(
             IType::Num(Val::Bool(true)),
-            [Wire::new(14, DType::Bool)],
+            [w14.clone()],
             vec![] as Vec<Wire<DType>>,
         )
         .unwrap(),
@@ -89,123 +88,120 @@ pub fn create_test_module() -> Module<DType, IType> {
     init.push(
         Term::function(
             IType::Arith(ArithOp::Add),
-            [Wire::new(6, DType::Real)],
-            [Wire::new(9, DType::Real), Wire::new(12, DType::Real)],
+            [w6.clone()],
+            [w9.clone(), w12.clone()],
         )
         .unwrap(),
     );
     init.push(
         Term::function(
             IType::Arith(ArithOp::Sub),
-            [Wire::new(7, DType::Int)],
-            [Wire::new(10, DType::Int), Wire::new(13, DType::Int)],
+            [w7.clone()],
+            [w10.clone(), w13.clone()],
         )
         .unwrap(),
     );
     init.push(
         Term::function(
             IType::Logical(LogicalOp::And),
-            [Wire::new(8, DType::Bool)],
-            [Wire::new(11, DType::Bool), Wire::new(14, DType::Bool)],
+            [w8.clone()],
+            [w11.clone(), w14.clone()],
         )
         .unwrap(),
     );
 
+    let w15 = Wire::new(DType::Real);
     // === UPDATE FLOW ===
     update.push(
         Term::function(
             IType::Num(Val::Real(4.20)),
-            [Wire::new(15, DType::Real)],
+            [w15.clone()],
             vec![] as Vec<Wire<DType>>,
         )
         .unwrap(),
     );
+    let w16 = Wire::new(DType::Real);
     update.push(
         Term::function(
             IType::Num(Val::Real(12.3)),
-            [Wire::new(16, DType::Real)],
+            [w16.clone()],
             vec![] as Vec<Wire<DType>>,
         )
         .unwrap(),
     );
+    let w17 = Wire::new(DType::Real);
     update.push(
         Term::function(
             IType::Arith(ArithOp::Mul),
-            [Wire::new(17, DType::Real)],
-            [Wire::new(0, DType::Real), Wire::new(15, DType::Real)],
+            [w17.clone()],
+            [w0.clone(), w15.clone()],
         )
         .unwrap(),
     );
     update.push(
         Term::function(
             IType::Arith(ArithOp::Div),
-            [Wire::new(6, DType::Real)],
-            [Wire::new(16, DType::Real), Wire::new(17, DType::Real)],
+            [w6.clone()],
+            [w16.clone(), w17.clone()],
         )
         .unwrap(),
     );
 
-    update.push(
-        Term::function(
-            IType::Id,
-            [Wire::new(7, DType::Int)],
-            [Wire::new(1, DType::Int)],
-        )
-        .unwrap(),
-    );
+    update.push(Term::function(IType::Id, [w7.clone()], [w1.clone()]).unwrap());
 
+    let w18 = Wire::new(DType::Real);
     update.push(
         Term::function(
             IType::Num(Val::Real(50.05)),
-            [Wire::new(18, DType::Real)],
+            [w18.clone()],
             vec![] as Vec<Wire<DType>>,
         )
         .unwrap(),
     );
+    let w19 = Wire::new(DType::Bool);
     update.push(
         Term::function(
             IType::Cmp(CmpOp::Lt),
-            [Wire::new(19, DType::Bool)],
-            [Wire::new(0, DType::Real), Wire::new(18, DType::Real)],
+            [w19.clone()],
+            [w0.clone(), w18.clone()],
         )
         .unwrap(),
     );
+    let w20 = Wire::new(DType::Int);
     update.push(
         Term::function(
             IType::Num(Val::Int(0)),
-            [Wire::new(20, DType::Int)],
+            [w20.clone()],
             vec![] as Vec<Wire<DType>>,
         )
         .unwrap(),
     );
+    let w21 = Wire::new(DType::Bool);
     update.push(
         Term::function(
             IType::Cmp(CmpOp::Eq),
-            [Wire::new(21, DType::Bool)],
-            [Wire::new(1, DType::Int), Wire::new(20, DType::Int)],
+            [w21.clone()],
+            [w1.clone(), w20.clone()],
         )
         .unwrap(),
     );
+    let w22 = Wire::new(DType::Bool);
     update.push(
         Term::function(
             IType::Logical(LogicalOp::Or),
-            [Wire::new(22, DType::Bool)],
-            [Wire::new(19, DType::Bool), Wire::new(21, DType::Bool)],
+            [w22.clone()],
+            [w19.clone(), w21.clone()],
         )
         .unwrap(),
     );
-    update.push(
-        Term::function(
-            IType::Logical(LogicalOp::Not),
-            [Wire::new(23, DType::Bool)],
-            [Wire::new(2, DType::Bool)],
-        )
-        .unwrap(),
-    );
+    let w23 = Wire::new(DType::Bool);
+    update
+        .push(Term::function(IType::Logical(LogicalOp::Not), [w23.clone()], [w2.clone()]).unwrap());
+    let w24 = Wire::new(DType::Bool);
     update.push(
         Term::function(
             IType::Num(Val::Bool(false)),
-            [Wire::new(24, DType::Bool)],
+            [w24.clone()],
             vec![] as Vec<Wire<DType>>,
         )
         .unwrap(),
@@ -213,12 +209,8 @@ pub fn create_test_module() -> Module<DType, IType> {
     update.push(
         Term::function(
             IType::Cond,
-            [Wire::new(8, DType::Bool)],
-            [
-                Wire::new(22, DType::Bool),
-                Wire::new(23, DType::Bool),
-                Wire::new(24, DType::Bool),
-            ],
+            [w8.clone()],
+            [w22.clone(), w23.clone(), w24.clone()],
         )
         .unwrap(),
     );

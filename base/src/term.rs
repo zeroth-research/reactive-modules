@@ -176,23 +176,23 @@ impl<D: Eq + Clone, I> Block<D, I> {
         let terms: Vec<Term<D, I>> = Vec::from_iter(iter);
 
         for term in terms.iter() {
-            for (rd, dtype) in term.read().wires().map(Into::into) {
-                let expected_dtype = write_to_dtype.get(&rd);
+            for rd in term.read().wires() {
+                let expected_dtype = write_to_dtype.get(&rd.id());
                 // if it hasn't been written before in the block, then it's read
                 if expected_dtype.is_none() {
-                    read_set.insert(rd);
-                    read.push((rd, dtype.clone()).into());
-                } else if expected_dtype.is_some_and(|&d| d != dtype) {
+                    read_set.insert(rd.id());
+                    read.push(rd.clone());
+                } else if expected_dtype.is_some_and(|&d| d != rd.dtype()) {
                     return Err("dtype mismatch");
                 }
             }
 
-            for (wt, dtype) in term.write().wires().map(Into::into) {
-                if read_set.contains(&wt) {
+            for wt in term.write().wires() {
+                if read_set.contains(&wt.id()) {
                     return Err("read before write");
                 }
-                write.push((wt, dtype.clone()).into());
-                if write_to_dtype.insert(wt, dtype).is_some() {
+                write.push(wt.clone());
+                if write_to_dtype.insert(wt.id(), wt.dtype()).is_some() {
                     return Err("write after write");
                 }
             }

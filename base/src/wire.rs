@@ -2,12 +2,15 @@ use std::array::from_fn;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wire<D> {
     id: usize,
     dtype: D,
 }
+
+static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 impl<D> Wire<D> {
     pub fn id(&self) -> usize {
@@ -18,7 +21,11 @@ impl<D> Wire<D> {
         &self.dtype
     }
 
-    pub fn new(id: usize, dtype: D) -> Self {
+    pub fn new(dtype: D) -> Self {
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        if id == usize::MAX {
+            panic!("wire id overflow");
+        }
         Self { id, dtype }
     }
 }
@@ -35,11 +42,14 @@ impl<'a, D> From<&'a Wire<D>> for (usize, &'a D) {
     }
 }
 
-impl<D> From<(usize, D)> for Wire<D> {
-    fn from(w: (usize, D)) -> Self {
-        Self::new(w.0, w.1)
-    }
-}
+// impl<D> From<(usize, D)> for Wire<D> {
+//     fn from(w: (usize, D)) -> Self {
+//         Self {
+//             id: w.0,
+//             dtype: w.1,
+//         }
+//     }
+// }
 
 /// An interface consisting of `N`-tuples of wires of data type `D`.
 ///
@@ -72,11 +82,11 @@ impl<D, const N: usize> Default for Interface<D, N> {
     }
 }
 
-impl<D: Eq> Interface<D> {
-    pub fn single(id: usize, dtype: D) -> Interface<D> {
-        Self::from_iter_unchecked([[Wire::new(id, dtype)]])
-    }
-}
+// impl<D: Eq> Interface<D> {
+//     pub fn single(id: usize, dtype: D) -> Interface<D> {
+//         Self::from_iter_unchecked([[Wire::new(id, dtype)]])
+//     }
+// }
 
 impl<D> Interface<D, 1> {
     pub fn as_slice(&self) -> &[Wire<D>] {
