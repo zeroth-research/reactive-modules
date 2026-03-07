@@ -5,10 +5,10 @@ from interpreter import Interpreter, _eval
 
 def _make_counter():
     """Simple counter: init x=0, update x'=x+1."""
-    x = (Wire(dt.Int()), Wire(dt.Int()))
+    x = (Wire(dt.Int([1])), Wire(dt.Int([1])))
 
     init = [Term(it.Tensor(torch.tensor([0], dtype=torch.int64)), [x[1]])]
-    one = Wire(dt.Int())
+    one = Wire(dt.Int([1]))
     update = [
         Term(it.Tensor(torch.tensor([1], dtype=torch.int64)), [one]),
         Term(it.Add(), [x[1]], [x[0], one]),
@@ -57,9 +57,9 @@ def test_basic_interpreter_counter():
 
 def test_boolean_logic():
     """AND/OR/NOT: state wires computed from each other."""
-    a = (Wire(dt.Bool()), Wire(dt.Bool()))
-    b = (Wire(dt.Bool()), Wire(dt.Bool()))
-    c = (Wire(dt.Bool()), Wire(dt.Bool()))
+    a = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
+    b = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
+    c = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
 
     # init: a=True, b=False, c=not(a)=False
     init = [
@@ -97,18 +97,18 @@ def test_boolean_logic():
 
 def test_ite():
     """Ite branching: cond toggles, x depends on previous x."""
-    cond = (Wire(dt.Bool()), Wire(dt.Bool()))
-    x = (Wire(dt.Int()), Wire(dt.Int()))
+    cond = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
+    x = (Wire(dt.Int([1])), Wire(dt.Int([1])))
 
     init = [
         Term(it.Tensor(torch.tensor([True])), [cond[1]]),
         Term(it.Tensor(torch.tensor([0], dtype=torch.int64)), [x[1]]),
     ]
 
-    one = Wire(dt.Int())
-    two = Wire(dt.Int())
-    tmp1 = Wire(dt.Int())
-    tmp2 = Wire(dt.Int())
+    one = Wire(dt.Int([1]))
+    two = Wire(dt.Int([1]))
+    tmp1 = Wire(dt.Int([1]))
+    tmp2 = Wire(dt.Int([1]))
 
     # update: cond'=not(cond), x'=ite(cond, x+1, x+2)
     update = [
@@ -169,10 +169,10 @@ def test_tensor_reductions():
     """TensorSum, TensorMean, TensorMax, Argmax as temp wires computed from state."""
     # Only data is state; reduction outputs are temp wires
     data = (Wire(dt.Float([4])), Wire(dt.Float([4])))
-    sum_wire = Wire(dt.Float())
-    mean_wire = Wire(dt.Float())
-    max_wire = Wire(dt.Float())
-    argmax_wire = Wire(dt.Int())
+    sum_wire = Wire(dt.Float([1]))
+    mean_wire = Wire(dt.Float([1]))
+    max_wire = Wire(dt.Float([1]))
+    argmax_wire = Wire(dt.Int([1]))
 
     init = [
         Term(it.Tensor(torch.tensor([-1.0, 2.0, 3.0, -4.0])), [data[1]]),
@@ -200,10 +200,10 @@ def test_tensor_reductions():
 def test_comparisons():
     """Eq and Lt comparisons."""
     # a and b are state; comparison results are temp wires
-    a = (Wire(dt.Int()), Wire(dt.Int()))
-    b = (Wire(dt.Int()), Wire(dt.Int()))
-    eq_wire = Wire(dt.Bool())
-    lt_wire = Wire(dt.Bool())
+    a = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    b = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    eq_wire = Wire(dt.Bool([1]))
+    lt_wire = Wire(dt.Bool([1]))
 
     init = [
         Term(it.Tensor(torch.tensor([3], dtype=torch.int64)), [a[1]]),
@@ -212,9 +212,9 @@ def test_comparisons():
         Term(it.Lt(), [lt_wire], [a[1], b[1]]),
     ]
 
-    one = Wire(dt.Int())
-    eq_wire2 = Wire(dt.Bool())
-    lt_wire2 = Wire(dt.Bool())
+    one = Wire(dt.Int([1]))
+    eq_wire2 = Wire(dt.Bool([1]))
+    lt_wire2 = Wire(dt.Bool([1]))
     # update: a'=a+1, b'=b, compute fresh comparison temps
     update = [
         Term(it.Tensor(torch.tensor([1], dtype=torch.int64)), [one]),
@@ -274,8 +274,8 @@ def test_step_before_init_raises():
 
 def test_env_inputs():
     """Module with external inputs: counter that adds env input each step."""
-    x = (Wire(dt.Int()), Wire(dt.Int()))
-    env = (Wire(dt.Int()), Wire(dt.Int()))
+    x = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    env = (Wire(dt.Int([1])), Wire(dt.Int([1])))
 
     init = [
         Term(it.Tensor(torch.tensor([0], dtype=torch.int64)), [x[1]]),

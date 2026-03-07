@@ -217,7 +217,7 @@ def _try_extract_assign(
 # 5. Type resolution
 # ---------------------------------------------------------------------------
 
-_SIMPLE_TYPES = {"type_bool": DType.TensorBool, "type_int": DType.TensorInt, "range_type": DType.TensorInt}
+_SIMPLE_TYPES = {"type_bool": DType.Bool, "type_int": DType.Int, "range_type": DType.Int}
 
 
 def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> DType:
@@ -236,13 +236,13 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> DType:
                     name = _extract_name(ev.children[0])
                     if name is not None:
                         enum_values.setdefault(name, code)
-                return DType.TensorInt([1])
+                return DType.Int([1])
     # Token fallback
     text = str(tree).strip()
     if text == "boolean":
-        return DType.TensorBool([1])
+        return DType.Bool([1])
     if text == "integer":
-        return DType.TensorInt([1])
+        return DType.Int([1])
     raise ValueError(f"unsupported type: {tree}")
 
 
@@ -456,7 +456,7 @@ class _Lowerer:
     def _fresh(self, target: Wire | None) -> Wire:
         if target is not None:
             return target
-        return Wire(DType.TensorInt([1]))
+        return Wire(DType.Int([1]))
 
     def _emit_const(self, itype, target: Wire | None) -> Wire:
         w = self._fresh(target)
@@ -508,7 +508,7 @@ def _build_module(
         if init_expr is not None:
             init_low.lower(init_expr, next_w)
         else:
-            default = IType.ConstBool(False) if isinstance(dtype, DType.TensorBool) else IType.ConstInt(0)
+            default = IType.ConstBool(False) if isinstance(dtype, DType.Bool) else IType.ConstInt(0)
             init_low.terms.append(Term(default, [next_w]))
 
         # --- UPDATE ---

@@ -18,9 +18,9 @@ def _make_twobitcounter():
     Returns (module, b0_wires, b1_wires, enable_wires).
     enable is an external input: pass via step({enable[1].id(): tensor}).
     """
-    b0 = (Wire(dt.Bool()), Wire(dt.Bool()))  # (current, next)
-    b1 = (Wire(dt.Bool()), Wire(dt.Bool()))
-    enable = (Wire(dt.Bool()), Wire(dt.Bool()))
+    b0 = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))  # (current, next)
+    b1 = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
+    enable = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
 
     # init: b0=False, b1=False
     init = [
@@ -29,9 +29,9 @@ def _make_twobitcounter():
     ]
 
     # Intermediate wires
-    not_b0 = Wire(dt.Bool())
-    not_b1 = Wire(dt.Bool())
-    b0_and_enable = Wire(dt.Bool())
+    not_b0 = Wire(dt.Bool([1]))
+    not_b1 = Wire(dt.Bool([1]))
+    b0_and_enable = Wire(dt.Bool([1]))
 
     update = [
         # not_b0 = NOT b0

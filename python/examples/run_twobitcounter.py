@@ -9,13 +9,13 @@ from interpreter import Interpreter
 
 
 def make_twobitcounter():
-    b0 = (Wire(dt.Bool()), Wire(dt.Bool()))  # (latched, next)
-    b1 = (Wire(dt.Bool()), Wire(dt.Bool()))
-    enable = (Wire(dt.Bool()), Wire(dt.Bool()))
+    b0 = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))  # (latched, next)
+    b1 = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
+    enable = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
 
-    not_b0 = Wire(dt.Bool())
-    not_b1 = Wire(dt.Bool())
-    b0_and_enable = Wire(dt.Bool())
+    not_b0 = Wire(dt.Bool([1]))
+    not_b1 = Wire(dt.Bool([1]))
+    b0_and_enable = Wire(dt.Bool([1]))
 
     init = [
         Term(it.Tensor(torch.tensor([False])), [b0[1]]),

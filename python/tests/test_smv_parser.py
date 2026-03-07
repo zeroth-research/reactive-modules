@@ -39,7 +39,7 @@ def test_counter_init_terms():
 
     # The module has atoms; first atom covers init/update
     atom = module.atoms[0]
-    init_terms = atom.init()
+    init_terms = atom.init
     assert len(init_terms) > 0
 
     # At least one init term should be ConstInt(0) for x
@@ -77,7 +77,7 @@ def test_wire_overrides():
     text = (FIXTURES / "counter.smv").read_text()
 
     # Create override wires for 'x'
-    dtype = DType.TensorInt([1])
+    dtype = DType.Int([1])
     ov_l = Wire(dtype)
     ov_n = Wire(dtype)
 
@@ -110,7 +110,7 @@ def test_define_expansion():
 
     # The update terms should contain Add (from doubled := x + x)
     atom = module.atoms[0]
-    update_itypes = [str(t.itype) for t in atom.update()]
+    update_itypes = [str(t.itype) for t in atom.update]
     assert any("Add" in it for it in update_itypes), f"Expected Add in update terms, got {update_itypes}"
 
 
@@ -132,7 +132,7 @@ def test_enum_type():
     assert "state" in name_map
     # state should have TensorInt dtype (enum mapped to int)
     latched, _ = name_map["state"]
-    assert isinstance(latched.dtype(), DType.TensorInt)
+    assert isinstance(latched.dtype(), DType.Int)
 
 
 def test_frozen_var():
@@ -152,5 +152,5 @@ def test_frozen_var():
 
     # Should have an Id() term in update for the frozen var
     atom = module.atoms[0]
-    update_itypes = [str(t.itype) for t in atom.update()]
+    update_itypes = [str(t.itype) for t in atom.update]
     assert any("Id" in it for it in update_itypes)
