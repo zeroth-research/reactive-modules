@@ -2,9 +2,10 @@ use std::array::from_fn;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Wire<D> {
     id: usize,
     dtype: D,
@@ -30,6 +31,20 @@ impl<D> Wire<D> {
     }
 }
 
+impl<D> PartialEq for Wire<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<D> Eq for Wire<D> {}
+
+impl<D> Hash for Wire<D> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 impl<D> From<Wire<D>> for (usize, D) {
     fn from(w: Wire<D>) -> Self {
         (w.id, w.dtype)
@@ -41,15 +56,6 @@ impl<'a, D> From<&'a Wire<D>> for (usize, &'a D) {
         (w.id, &w.dtype)
     }
 }
-
-// impl<D> From<(usize, D)> for Wire<D> {
-//     fn from(w: (usize, D)) -> Self {
-//         Self {
-//             id: w.0,
-//             dtype: w.1,
-//         }
-//     }
-// }
 
 /// An interface consisting of `N`-tuples of wires of data type `D`.
 ///

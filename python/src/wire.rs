@@ -1,8 +1,9 @@
 use crate::DType;
 use pyo3::prelude::*;
+use std::fmt;
 
-#[pyclass(frozen)]
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[pyclass(frozen, eq, hash, str)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub(crate) struct Wire {
     base: base::Wire<DType>,
 }
@@ -23,20 +24,8 @@ impl Wire {
         self.base.dtype().clone()
     }
 
-    fn __str__(&self) -> String {
-        self.base.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!("{:?}", self.base)
-    }
-
-    fn __eq__(&self, other: &Self) -> bool {
-        self.base == other.base
-    }
-
-    fn __hash__(&self) -> usize {
-        self.id()
     }
 }
 
@@ -49,5 +38,11 @@ impl Wire {
 impl From<base::Wire<DType>> for Wire {
     fn from(base: base::Wire<DType>) -> Self {
         Self { base }
+    }
+}
+
+impl fmt::Display for Wire {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.base.fmt(f)
     }
 }
