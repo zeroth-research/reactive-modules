@@ -3,6 +3,9 @@ import inspect
 import ast
 import textwrap
 from contextlib import contextmanager
+
+from zrth.zrth import DType
+
 from zrth import Wire, Term, IType, Float, Bool
 
 
@@ -509,9 +512,9 @@ class MethodVisitor(ast.NodeVisitor):
                 raise ValueError(f"np.zeros() requires 1 argument, got {len(args)}")
             shape = self._eval_shape(args[0])
 
-            if target_dtype and target_dtype.kind() == "Int":
+            if target_dtype and isinstance(target_dtype, DType.Int):
                 tensor_data = torch.zeros(*shape, dtype=torch.long)
-            elif target_dtype and target_dtype.kind() == "Bool":
+            elif target_dtype and isinstance(target_dtype, DType.Bool):
                 tensor_data = torch.zeros(*shape, dtype=torch.bool)
             else:
                 tensor_data = torch.zeros(*shape, dtype=torch.float32)
@@ -521,9 +524,9 @@ class MethodVisitor(ast.NodeVisitor):
                 raise ValueError(f"np.ones() requires 1 argument, got {len(args)}")
             shape = self._eval_shape(args[0])
 
-            if target_dtype and target_dtype.kind() == "Int":
+            if target_dtype and isinstance(target_dtype, DType.Int):
                 tensor_data = torch.ones(*shape, dtype=torch.long)
-            elif target_dtype and target_dtype.kind() == "Bool":
+            elif target_dtype and isinstance(target_dtype, DType.Bool):
                 tensor_data = torch.ones(*shape, dtype=torch.bool)
             else:
                 tensor_data = torch.ones(*shape, dtype=torch.float32)
@@ -533,9 +536,9 @@ class MethodVisitor(ast.NodeVisitor):
                 raise ValueError(f"np.array() requires 1 argument, got {len(args)}")
             data = self._eval_literal(args[0])
 
-            if target_dtype and target_dtype.kind() == "Int":
+            if target_dtype and isinstance(target_dtype, DType.Int):
                 tensor_data = torch.tensor(data, dtype=torch.long)
-            elif target_dtype and target_dtype.kind() == "Bool":
+            elif target_dtype and isinstance(target_dtype, DType.Bool):
                 tensor_data = torch.tensor(data, dtype=torch.bool)
             else:
                 tensor_data = torch.tensor(data, dtype=torch.float32)
@@ -779,15 +782,15 @@ class MethodVisitor(ast.NodeVisitor):
                 # TODO: Consider inferring dtype from value (int vs float) or raising error instead of defaulting
                 target_dtype = Float()
                 tensor_data = torch.tensor([float(value)], dtype=torch.float32)
-            elif target_dtype.kind() == "Int":
+            elif isinstance(target_dtype, DType.Int):
                 tensor_data = torch.tensor([int(value)], dtype=torch.long)
-            elif target_dtype.kind() == "Float":
+            elif isinstance(target_dtype, DType.Float):
                 tensor_data = torch.tensor([float(value)], dtype=torch.float32)
-            elif target_dtype.kind() == "Bool":
+            elif isinstance(target_dtype, DType.Bool):
                 tensor_data = torch.tensor([bool(value)])
             else:
                 raise ValueError(
-                    f"Unsupported target dtype kind: {target_dtype.kind()}"
+                    f"Unsupported target dtype kind: {target_dtype}"
                 )
 
             dtype = target_dtype.reshape([1])
@@ -796,9 +799,9 @@ class MethodVisitor(ast.NodeVisitor):
             if isinstance(value, torch.Tensor):
                 tensor_data = value
             else:
-                if target_dtype and target_dtype.kind() == "Int":
+                if target_dtype and isinstance(target_dtype, DType.Int):
                     tensor_data = torch.tensor(value, dtype=torch.long)
-                elif target_dtype and target_dtype.kind() == "Bool":
+                elif target_dtype and isinstance(target_dtype, DType.Bool):
                     tensor_data = torch.tensor(value, dtype=torch.bool)
                 else:
                     tensor_data = torch.tensor(value, dtype=torch.float32)
@@ -822,9 +825,9 @@ class MethodVisitor(ast.NodeVisitor):
         """
         data = self._eval_literal(node)
 
-        if target_dtype and target_dtype.kind() == "Int":
+        if target_dtype and isinstance(target_dtype, DType.Int):
             tensor_data = torch.tensor(data, dtype=torch.long)
-        elif target_dtype and target_dtype.kind() == "Bool":
+        elif target_dtype and isinstance(target_dtype, DType.Bool):
             tensor_data = torch.tensor(data, dtype=torch.bool)
         else:
             tensor_data = torch.tensor(data, dtype=torch.float32)
