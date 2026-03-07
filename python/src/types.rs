@@ -1,6 +1,6 @@
 use crate::pytensor::PyTensor;
-use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 use std::fmt;
 
 // ============================================================================
@@ -20,87 +20,8 @@ pub enum DType {
     SWord(u32),
 }
 
-
-enum PrimitiveType {
-    Bool,
-    Int,
-    Float,
-    Real,
-}
-
-fn parse_dim_with_type(dim_and_type: &str) -> Option<(Vec<usize>, PrimitiveType)> {
-    if let Some((dim, ptype)) = dim_and_type.split_once(';') {
-        let dim = dim
-            .split(',')
-            .map(str::trim)
-            .map(str::parse)
-            .collect::<Result<_, _>>()
-            .ok()?;
-
-        let ptype = match ptype.trim() {
-            "Bool" => PrimitiveType::Bool,
-            "Int" => PrimitiveType::Int,
-            "Float" => PrimitiveType::Float,
-            "Real" => PrimitiveType::Real,
-            _ => return None,
-        };
-
-        return Some((dim, ptype));
-    }
-
-    None
-}
-
-impl std::str::FromStr for DType {
-    type Err = String;
-
-    fn from_str(ty: &str) -> Result<Self, Self::Err> {
-        if let Some(dim) = ty.strip_prefix("Tensor<")
-            && let Some(inner) = dim.strip_suffix(">")
-            && let Some((dims, ptype)) = parse_dim_with_type(inner)
-        {
-            return match ptype {
-                PrimitiveType::Float => Ok(DType::Float(dims)),
-                PrimitiveType::Int => Ok(DType::Int(dims)),
-                PrimitiveType::Bool => Ok(DType::Bool(dims)),
-                PrimitiveType::Real => Ok(DType::Real(dims)),
-            };
-        }
-
-        // Word-level types: UWord<N> / SWord<N>
-        if let Some(inner) = ty.strip_prefix("UWord<").and_then(|s| s.strip_suffix(">")) {
-            let width: u32 = inner
-                .trim()
-                .parse()
-                .map_err(|_| format!("Invalid UWord width: `{}`", inner))?;
-            return Ok(DType::UWord(width));
-        }
-        if let Some(inner) = ty.strip_prefix("SWord<").and_then(|s| s.strip_suffix(">")) {
-            let width: u32 = inner
-                .trim()
-                .parse()
-                .map_err(|_| format!("Invalid SWord width: `{}`", inner))?;
-            return Ok(DType::SWord(width));
-        }
-
-        // try also aliases
-        match ty {
-            "Float" => Ok(DType::Float(vec![1])),
-            "Int" => Ok(DType::Int(vec![1])),
-            "Bool" => Ok(DType::Bool(vec![1])),
-            "Real" => Ok(DType::Real(vec![1])),
-            _ => Err(format!("Cannot convert `{}` to DType", ty)),
-        }
-    }
-}
-
 #[pymethods]
 impl DType {
-    // #[staticmethod]
-    // fn from_str(s: &str) -> PyResult<Self> {
-    //     s.parse().map_err(|e| PyValueError::new_err(e))
-    // }
-
     /// Get the data dimensions of this data type
     #[getter]
     fn shape(&self) -> Vec<usize> {
@@ -110,19 +31,6 @@ impl DType {
             DType::Bool(shape) => shape.clone(),
             DType::Real(shape) => shape.clone(),
             DType::UWord(_) | DType::SWord(_) => vec![1],
-        }
-    }
-
-    /// Return whether the type of elements is the same
-    fn eq_dtype(&self, other: &Self) -> bool {
-        match (self, other) {
-            (DType::Float(_), DType::Float(_)) => true,
-            (DType::Int(_), DType::Int(_)) => true,
-            (DType::Bool(_), DType::Bool(_)) => true,
-            (DType::Real(_), DType::Real(_)) => true,
-            (DType::UWord(_), DType::UWord(_)) => true,
-            (DType::SWord(_), DType::SWord(_)) => true,
-            _ => false,
         }
     }
 
@@ -138,50 +46,40 @@ impl DType {
             }
         }
     }
-
-    /// Get the kind/variant of this dtype
-    fn kind(&self) -> &'static str {
-        match self {
-            DType::Bool(_) => "Bool",
-            DType::Int(_) => "Int",
-            DType::Float(_) => "Float",
-            DType::Real(_) => "Real",
-            DType::UWord(_) => "UWord",
-            DType::SWord(_) => "SWord",
-        }
-    }
-
-    /// Get the bit width for word-level types, None for tensor types
-    fn width(&self) -> Option<u32> {
-        match self {
-            DType::UWord(w) | DType::SWord(w) => Some(*w),
-            _ => None,
-        }
-    }
 }
 
-fn shape_to_string(shape: &Vec<usize>) -> String {
-    shape
-        .iter()
-        .map(|d| d.to_string())
-        .collect::<Vec<String>>()
-        .join(", ")
+fn fmt_comma_separated(f: &mut fmt::Formatter<'_>, items: &Vec<usize>) -> fmt::Result {
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{item}")?;
+    }
+    Ok(())
 }
 
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DType::Float(shape) => {
-                write!(f, "Float({})", shape_to_string(shape))?;
+                write!(f, "Float(")?;
+                fmt_comma_separated(f, shape)?;
+                write!(f, ")")?;
             }
             DType::Int(shape) => {
-                write!(f, "Int({})", shape_to_string(shape))?;
+                write!(f, "Int(")?;
+                fmt_comma_separated(f, shape)?;
+                write!(f, ")")?;
             }
             DType::Bool(shape) => {
-                write!(f, "Bool({})", shape_to_string(shape))?;
+                write!(f, "Bool(")?;
+                fmt_comma_separated(f, shape)?;
+                write!(f, ")")?;
             }
             DType::Real(shape) => {
-                write!(f, "Real({})", shape_to_string(shape))?;
+                write!(f, "Real(")?;
+                fmt_comma_separated(f, shape)?;
+                write!(f, ")")?;
             }
             DType::UWord(n) => {
                 write!(f, "UWord<{}>", n)?;
@@ -198,7 +96,7 @@ impl fmt::Display for DType {
 // IType enum (flat structure for PyO3 compatibility)
 // ============================================================================
 
-#[pyclass(str)]
+#[pyclass(str, frozen)]
 #[derive(Debug, Clone)]
 pub enum IType {
     // Arithmetic operations
@@ -331,5 +229,3 @@ impl fmt::Display for IType {
         }
     }
 }
-
-unsafe impl Sync for IType {}

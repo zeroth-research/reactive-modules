@@ -190,7 +190,7 @@ def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
 
 
 def _elementwise_bool_op(itype, first: BExpr, *others):
-    if first.dtype.kind() != "Bool":
+    if not isinstance(first.dtype, DType.Bool):
         raise ValueError(f"invalid dtype, expected Bool(...), got: `{first.dtype}`")
 
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
@@ -208,8 +208,8 @@ def conj(first: BExpr, *others) -> BExpr:
 
 # Logical not
 def neg(e: BExpr) -> BExpr:
-    if e.dtype.kind() != "Bool":
-        raise ValueError(f"invalid dtype, expected Bool(...), got: `{first.dtype}`")
+    if not isinstance(e.dtype, DType.Bool):
+        raise ValueError(f"invalid dtype, expected Bool(...), got: `{e.dtype}`")
 
     return BExpr(IType.Not(), e.dtype, e)
 
