@@ -243,74 +243,74 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         let init = Block::try_from_iter(init)?;
         let update = Block::try_from_iter(update)?;
 
-        let mut ctrl: BTreeMap<usize, D> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, D> = BTreeMap::new();
-        let mut read: BTreeMap<usize, D> = BTreeMap::new();
-        let mut param: BTreeMap<usize, D> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, D> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut read: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut param: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<D>> = BTreeMap::new();
 
-        for (rd, dtype) in init.read().iter().map(|[w]| w.into()) {
+        for rd in init.read().iter().map(|[w]| w) {
             // init can only read from await wires
-            let next_dtype = next.get(&rd);
-            if next_dtype.is_some_and(|&d| d == dtype) {
-                wait.insert(rd, dtype.clone());
+            let next_dtype = next.get(&rd.id());
+            if next_dtype.is_some_and(|&d| d == rd.dtype()) {
+                wait.insert(rd.id(), rd.clone());
                 continue;
             } else if next_dtype.is_some() {
                 return Err("dtype mismatch");
             }
 
-            if latched.contains_key(&rd) {
+            if latched.contains_key(&rd.id()) {
                 return Err("Init reads latched wire");
             }
 
             // dangling read wires are parameters
-            param.insert(rd, dtype.clone());
+            param.insert(rd.id(), rd.clone());
         }
 
-        for (rd, dtype) in update.read().iter().map(|[w]| w.into()) {
+        for rd in update.read().iter().map(|[w]| w) {
             // if the update reads from a next wire, then this is awaited
             // otherwise, this must be read from outside the atom
-            let latched_dtype = latched.get(&rd);
-            if latched_dtype.is_some_and(|&d| d == dtype) {
-                read.insert(rd, dtype.clone());
+            let latched_dtype = latched.get(&rd.id());
+            if latched_dtype.is_some_and(|&d| d == rd.dtype()) {
+                read.insert(rd.id(), rd.clone());
                 continue;
             } else if latched_dtype.is_some() {
                 return Err("dtype mismatch");
             }
 
-            let next_dtype = next.get(&rd);
-            if next_dtype.is_some_and(|&d| d == dtype) {
-                wait.insert(rd, dtype.clone());
+            let next_dtype = next.get(&rd.id());
+            if next_dtype.is_some_and(|&d| d == rd.dtype()) {
+                wait.insert(rd.id(), rd.clone());
                 continue;
             } else if next_dtype.is_some() {
                 return Err("dtype mismatch");
             }
 
             // dangling read wires are parameters
-            param.insert(rd, dtype.clone());
+            param.insert(rd.id(), rd.clone());
         }
 
-        for (wt, dtype) in [init.write(), update.write()]
+        for wt in [init.write(), update.write()]
             .into_iter()
             .flatten()
-            .map(|[w]| w.into())
+            .map(|[w]| w)
         {
             // if the init/update writes to a next wire, then this wire is controlled
             // otherwise, this wire must be temporary
-            let next_dtype = next.get(&wt);
-            if next_dtype.is_some_and(|&d| d == dtype) {
-                ctrl.insert(wt, dtype.clone());
+            let next_dtype = next.get(&wt.id());
+            if next_dtype.is_some_and(|&d| d == wt.dtype()) {
+                ctrl.insert(wt.id(), wt.clone());
                 continue;
             } else if next_dtype.is_some() {
                 return Err("dtype mismatch");
             }
 
-            if latched.contains_key(&wt) {
+            if latched.contains_key(&wt.id()) {
                 return Err("write on latched");
-            } else if param.contains_key(&wt) {
+            } else if param.contains_key(&wt.id()) {
                 return Err("write on param");
             } else {
-                temp.insert(wt, dtype.clone());
+                temp.insert(wt.id(), wt.clone());
             }
         }
 
@@ -324,11 +324,11 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         }
 
         Ok(Self::new_unchecked(
-            Interface::from_wires_unchecked(ctrl),
-            Interface::from_wires_unchecked(wait),
-            Interface::from_wires_unchecked(read),
-            Interface::from_wires_unchecked(temp),
-            Interface::from_wires_unchecked(param),
+            Interface::from_wires_unchecked(ctrl.into_values()),
+            Interface::from_wires_unchecked(wait.into_values()),
+            Interface::from_wires_unchecked(read.into_values()),
+            Interface::from_wires_unchecked(temp.into_values()),
+            Interface::from_wires_unchecked(param.into_values()),
             init,
             update,
         ))
@@ -372,42 +372,42 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
         let next: HashMap<usize, &D> = next.into_iter().map(Into::into).collect();
         let assign = Block::try_from_iter(assign)?;
 
-        let mut ctrl: BTreeMap<usize, D> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, D> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, D> = BTreeMap::new();
-        let mut param: BTreeMap<usize, D> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut param: BTreeMap<usize, Wire<D>> = BTreeMap::new();
 
-        for (rd, dtype) in assign.read().iter().map(|[w]| w.into()) {
+        for rd in assign.read().iter().map(|[w]| w) {
             //  can only read from await wires
-            let expected_dtype = next.get(&rd);
-            if expected_dtype.is_some_and(|&d| d == dtype) {
-                wait.insert(rd, dtype.clone());
+            let expected_dtype = next.get(&rd.id());
+            if expected_dtype.is_some_and(|&d| d == rd.dtype()) {
+                wait.insert(rd.id(), rd.clone());
             } else if expected_dtype.is_some() {
                 return Err("dtype mismatch");
             } else {
-                param.insert(rd, dtype.clone());
+                param.insert(rd.id(), rd.clone());
             }
         }
 
-        for (wt, dtype) in assign.write().iter().map(|[w]| w.into()) {
+        for wt in assign.write().iter().map(|[w]| w) {
             // if it writes to a next wire, then this wire is controlled
             // otherwise, this wire must be temporary
-            let expected_dtype = next.get(&wt);
-            if expected_dtype.is_some_and(|&d| d == dtype) {
-                ctrl.insert(wt, dtype.clone());
+            let expected_dtype = next.get(&wt.id());
+            if expected_dtype.is_some_and(|&d| d == wt.dtype()) {
+                ctrl.insert(wt.id(), wt.clone());
             } else if expected_dtype.is_some() {
                 return Err("dtype mismatch");
             } else {
-                temp.insert(wt, dtype.clone());
+                temp.insert(wt.id(), wt.clone());
             }
         }
 
         Ok(Self::new_unchecked(
-            Interface::from_wires_unchecked(ctrl),
-            Interface::from_wires_unchecked(wait),
+            Interface::from_wires_unchecked(ctrl.into_values()),
+            Interface::from_wires_unchecked(wait.into_values()),
             Interface::empty(),
-            Interface::from_wires_unchecked(temp),
-            Interface::from_wires_unchecked(param),
+            Interface::from_wires_unchecked(temp.into_values()),
+            Interface::from_wires_unchecked(param.into_values()),
             assign.clone(),
             assign,
         ))

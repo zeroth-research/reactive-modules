@@ -136,6 +136,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`Module::new`], [`Module::observable`], [`Module::sequential_observable`],
     ///   [`Module::combinatorial`] for safe, automated module construction
+    #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
         extl: Interface<D, 2>,
         intf: Interface<D, 2>,
@@ -340,7 +341,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         P: IntoIterator<Item = U>,
         A: IntoIterator<Item = Atom<D, I>> + Sized,
     {
-        let mut ltc_to_dtype: HashMap<usize, &D> = HashMap::new();
+        let mut ltc_set: HashSet<usize> = HashSet::new();
         let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
 
         let obs = Interface::try_from_iter(obs)?;
@@ -348,7 +349,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
 
         for [ltc, nxt] in obs.iter().chain(prvt.iter()) {
             debug_assert_eq!(ltc.dtype(), nxt.dtype());
-            if ltc_to_dtype.insert(ltc.id(), ltc.dtype()).is_some() {
+            if !ltc_set.insert(ltc.id()) {
                 return Err("duplicate latched wire");
             }
             if nxt_to_ltc.insert(nxt.id(), ltc.id()).is_some() {
@@ -358,25 +359,25 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
 
         // Check atoms consistency and infer control wires
         let mut ctrl_nxt: HashSet<usize> = HashSet::new();
-        let mut temp: BTreeMap<usize, D> = BTreeMap::new();
-        let mut param: BTreeMap<usize, D> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut param: BTreeMap<usize, Wire<D>> = BTreeMap::new();
         let atoms_iter = atoms.into_iter();
         let mut past_atoms: Vec<Atom<D, I>> = Vec::with_capacity(atoms_iter.size_hint().0);
         for atom in atoms_iter {
-            for (ltc, dtype) in atom.read().wires().map(Into::into) {
-                if ltc_to_dtype.get(&ltc) != Some(&dtype) {
+            for ltc in atom.read().wires().map(Wire::id) {
+                if !ltc_set.contains(&ltc) {
                     return Err("invalid read wire or dtype mismatch");
                 }
             }
-            for (nxt, dtype) in atom.wait().wires().map(Into::into) {
+            for nxt in atom.wait().wires().map(Wire::id) {
                 let expected_dtype = nxt_to_ltc.get(&nxt);
-                if expected_dtype.is_none_or(|i| ltc_to_dtype.get(i) != Some(&dtype)) {
+                if expected_dtype.is_none_or(|i| !ltc_set.contains(i)) {
                     return Err("invalid await wire or dtype mismatch");
                 }
             }
-            for (nxt, dtype) in atom.ctrl().wires().map(Into::into) {
+            for nxt in atom.ctrl().wires().map(Wire::id) {
                 let expected_dtype = nxt_to_ltc.get(&nxt);
-                if expected_dtype.is_none_or(|i| ltc_to_dtype.get(i) != Some(&dtype)) {
+                if expected_dtype.is_none_or(|i| !ltc_set.contains(i)) {
                     return Err("invalid control wire or dtype mismatch");
                 }
                 if !ctrl_nxt.insert(nxt) {
@@ -384,24 +385,24 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
                 }
             }
 
-            for (lc, dtype) in atom.temp().map(Into::into) {
-                debug_assert!(!ctrl_nxt.contains(&lc));
-                if ltc_to_dtype.contains_key(&lc) || nxt_to_ltc.contains_key(&lc) {
+            for lc in atom.temp() {
+                debug_assert!(!ctrl_nxt.contains(&lc.id()));
+                if ltc_set.contains(&lc.id()) || nxt_to_ltc.contains_key(&lc.id()) {
                     return Err("temp wires coupled with module wires");
                 }
-                if temp.insert(lc, dtype.clone()).is_some() {
+                if temp.insert(lc.id(), lc.clone()).is_some() {
                     return Err("temp wires coupled with other atom");
                 }
             }
 
-            for (lc, dtype) in atom.param().wires().map(Into::into) {
-                if ltc_to_dtype.contains_key(&lc) || nxt_to_ltc.contains_key(&lc) {
+            for lc in atom.param().wires() {
+                if ltc_set.contains(&lc.id()) || nxt_to_ltc.contains_key(&lc.id()) {
                     return Err("param wires coupled with module wires");
                 }
-                if param.insert(lc, dtype.clone()).is_some() {
+                if param.insert(lc.id(), lc.clone()).is_some() {
                     return Err("param wires coupled with other atom");
                 }
-                if temp.contains_key(&lc) {
+                if temp.contains_key(&lc.id()) {
                     return Err("param wires coupled with other atom (temps)");
                 }
             }
@@ -442,8 +443,8 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let extl = Interface::from_iter_unchecked(extl);
         let ctrl = Interface::from_iter_unchecked(ctrl);
         let intf = Interface::from_iter_unchecked(intf);
-        let temp = Interface::from_wires_unchecked(temp);
-        let param = Interface::from_wires_unchecked(param);
+        let temp = Interface::from_wires_unchecked(temp.into_values());
+        let param = Interface::from_wires_unchecked(param.into_values());
 
         Ok(Self::new_unchecked(
             extl, intf, prvt, obs, ctrl, temp, param, past_atoms,
