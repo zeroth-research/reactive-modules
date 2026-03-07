@@ -6,45 +6,49 @@ use base::wire::Wire;
 
 #[allow(clippy::vec_init_then_push)]
 fn example_counter() -> Result<Module<&'static str, &'static str>, &'static str> {
-    let x0 = Wire::new(0, "real");
-    let y0 = Wire::new(1, "real");
-    let z0 = Wire::new(2, "real");
-    let y00 = Wire::new(3, "real");
-    let z00 = Wire::new(4, "real");
-    let x1 = Wire::new(5, "real");
-    let y1 = Wire::new(6, "real");
-    let z1 = Wire::new(7, "real");
-    let y01 = Wire::new(8, "real");
-    let z01 = Wire::new(9, "real");
+    let x0 = Wire::new("real");
+    let y0 = Wire::new("real");
+    let z0 = Wire::new("real");
+    let y00 = Wire::new("real");
+    let z00 = Wire::new("real");
+    let x1 = Wire::new("real");
+    let y1 = Wire::new("real");
+    let z1 = Wire::new("real");
+    let y01 = Wire::new("real");
+    let z01 = Wire::new("real");
 
     let mut init: Vec<Term<&str, &str>> = Vec::new();
 
-    init.push(term!("ZERO", [(10, "real")])?);
+    let tmp1 = Wire::new("real");
+    init.push(term!("ZERO", [tmp1.clone()])?);
 
-    init.push(term!("ID", [x1.clone()], [(10, "real")])?);
-    init.push(term!("ABS", [(11, "bool")], [y01.clone()])?);
-    init.push(term!("ID", [y1.clone()], [(11, "bool")])?);
-    init.push(term!("ABS", [(12, "bool")], [z01.clone()])?);
-    init.push(term!("ID", [z1.clone()], [(12, "bool")])?);
+    let tmp2 = Wire::new("bool");
+    let tmp3 = Wire::new("bool");
+    init.push(term!("ID", [x1.clone()], [tmp1.clone()])?);
+    init.push(term!("ABS", [tmp2.clone()], [y01.clone()])?);
+    init.push(term!("ID", [y1.clone()], [tmp2.clone()])?);
+    init.push(term!("ABS", [tmp3.clone()], [z01.clone()])?);
+    init.push(term!("ID", [z1.clone()], [tmp3.clone()])?);
 
     let mut update: Vec<Term<&str, &str>> = Vec::new();
 
-    update.push(term!("ZERO", [(10, "real")])?);
-    update.push(term!("LEQ", [(13, "bool")], [x0.clone(), y0.clone()])?);
-    update.push(term!("LEQ", [(14, "bool")], [x0.clone(), z0.clone()])?);
-    update.push(term!("OR", [(15, "bool")], [(13, "bool"), (14, "bool")])?);
+    let tmp4 = Wire::new("bool");
+    let tmp5 = Wire::new("bool");
+    let tmp6 = Wire::new("bool");
+    update.push(term!("ZERO", [tmp1.clone()])?);
+    update.push(term!("LEQ", [tmp4.clone()], [x0.clone(), y0.clone()])?);
+    update.push(term!("LEQ", [tmp5.clone()], [x0.clone(), z0.clone()])?);
+    update.push(term!("OR", [tmp6.clone()], [tmp4.clone(), tmp5.clone()])?);
 
-    update.push(term!("ONE", [(16, "real")])?);
-    update.push(term!(
-        "ADD",
-        [(17, "real")],
-        [x0.clone(), (16, "real").into()]
-    )?);
+    let tmp7 = Wire::new("real");
+    let tmp8 = Wire::new("real");
+    update.push(term!("ONE", [tmp7.clone()])?);
+    update.push(term!("ADD", [tmp8.clone()], [x0.clone(), tmp7.clone()])?);
 
     update.push(term!(
         "ITE",
         [x1.clone()],
-        [(15, "bool"), (17, "real"), (10, "real")]
+        [tmp6.clone(), tmp8.clone(), tmp1.clone()]
     )?);
     update.push(term!("ID", [y1.clone()], [y0.clone()])?);
     update.push(term!("ID", [z1.clone()], [z0.clone()])?);
@@ -57,37 +61,41 @@ fn example_counter() -> Result<Module<&'static str, &'static str>, &'static str>
 #[allow(clippy::vec_init_then_push)]
 fn example_peterson1() -> Result<Module<&'static str, &'static str>, &'static str> {
     let stype = "{outCS, reqCS, inCS}";
-    let pc1: [Wire<&str>; 2] = [(0, stype), (1, stype)].map(Into::into);
-    let x1: [Wire<&str>; 2] = [(2, "bool"), (3, "bool")].map(Into::into);
-    let pc2: [Wire<&str>; 2] = [(4, stype), (5, stype)].map(Into::into);
-    let x2: [Wire<&str>; 2] = [(6, "bool"), (7, "bool")].map(Into::into);
+    let pc1: [Wire<&str>; 2] = [Wire::new(stype), Wire::new(stype)];
+    let x1: [Wire<&str>; 2] = [Wire::new("bool"), Wire::new("bool")].map(Into::into);
+    let pc2: [Wire<&str>; 2] = [Wire::new(stype), Wire::new(stype)].map(Into::into);
+    let x2: [Wire<&str>; 2] = [Wire::new("bool"), Wire::new("bool")].map(Into::into);
 
     let mut init: Vec<Term<&str, &str>> = Vec::new();
     init.push(term!("CONST(outCS)", [pc1[1].clone()]).unwrap());
     init.push(term!("CONST(true)", [x1[1].clone()]).unwrap());
 
     let mut update: Vec<Term<&str, &str>> = Vec::new();
-    let out_cs = Wire::new(8, stype);
-    let cond1 = Wire::new(9, "bool");
+    let out_cs = Wire::new(stype);
+    let cond1 = Wire::new("bool");
     update.push(term!("CONST(outCS)", [out_cs.clone()]).unwrap());
     update.push(term!("EQ", [cond1.clone()], [out_cs.clone(), pc1[0].clone()]).unwrap());
 
-    let req_cs = Wire::new(10, stype);
-    let cond2 = Wire::new(15, "bool");
+    let req_cs = Wire::new(stype);
+    let cond2 = Wire::new("bool");
     update.push(term!("CONST(reqCS)", [req_cs.clone()]).unwrap());
-    update.push(term!("EQ", [(11, "bool")], [req_cs.clone(), pc1[0].clone()]).unwrap());
+    let tmp11 = Wire::new("bool");
+    update.push(term!("EQ", [tmp11.clone()], [req_cs.clone(), pc1[0].clone()]).unwrap());
 
-    update.push(term!("EQ", [(12, "bool")], [out_cs.clone(), pc2[0].clone()]).unwrap());
-    update.push(term!("NEQ", [(13, "bool")], [x1[0].clone(), x2[0].clone()]).unwrap());
-    update.push(term!("OR", [(14, "bool")], [(12, "bool"), (13, "bool")]).unwrap());
-    update.push(term!("AND", [cond2.clone()], [(14, "bool"), (11, "bool")]).unwrap());
+    let tmp12 = Wire::new("bool");
+    let tmp13 = Wire::new("bool");
+    let tmp14 = Wire::new("bool");
+    update.push(term!("EQ", [tmp12.clone()], [out_cs.clone(), pc2[0].clone()]).unwrap());
+    update.push(term!("NEQ", [tmp13.clone()], [x1[0].clone(), x2[0].clone()]).unwrap());
+    update.push(term!("OR", [tmp14.clone()], [tmp12.clone(), tmp13.clone()]).unwrap());
+    update.push(term!("AND", [cond2.clone()], [tmp14.clone(), tmp11.clone()]).unwrap());
 
-    let in_cs = Wire::new(16, stype);
-    let cond3 = Wire::new(17, "bool");
+    let in_cs = Wire::new(stype);
+    let cond3 = Wire::new("bool");
     update.push(term!("CONST(inCS)", [in_cs.clone()]).unwrap());
     update.push(term!("EQ", [cond3.clone()], [in_cs.clone(), pc1[0].clone()]).unwrap());
 
-    let const_true = Wire::new(18, "bool");
+    let const_true = Wire::new("bool");
     update.push(term!("CONST(true)", [const_true.clone()]).unwrap());
 
     update.push(
@@ -117,15 +125,12 @@ fn example_peterson1() -> Result<Module<&'static str, &'static str>, &'static st
 }
 
 fn example_tiny1(
-    external: (usize, usize),
-    interface: (usize, usize),
+    external: [Wire<&'static str>; 2],
+    interface: [Wire<&'static str>; 2],
     wait: bool,
-    base: usize,
 ) -> Result<Module<&'static str, &'static str>, &'static str> {
-    let external = [Wire::new(external.0, "Tny"), Wire::new(external.1, "Tny")];
-    let interface = [Wire::new(interface.0, "Tny"), Wire::new(interface.1, "Tny")];
-    let private = [Wire::new(base, "Tny"), Wire::new(base + 1, "Tny")];
-    let temp = Wire::new(base + 2, "Tny");
+    let private = [Wire::new("Tny"), Wire::new("Tny")];
+    let temp = Wire::new("Tny");
 
     let cons = Term::constant("CONST", [temp.clone()]).unwrap();
 
@@ -184,10 +189,11 @@ fn can_instantiate_partially_observable_module() {
 fn cannot_instantiate_external_unobservable_wire() {
     let m = example_counter().unwrap();
     let wires = m.obs().clone();
+    let obswire = wires.wire(0, 3).unwrap().clone();
     let mut obs: Vec<[Wire<&'static str>; 2]> = Vec::new();
     let mut prvt: Vec<[Wire<&'static str>; 2]> = Vec::new();
     for [ltc, nxt] in wires {
-        if ltc.id() == 3 {
+        if ltc.id() == obswire.id() {
             prvt.push([ltc, nxt]);
         } else {
             obs.push([ltc, nxt]);
@@ -197,7 +203,7 @@ fn cannot_instantiate_external_unobservable_wire() {
     let prvt = Interface::from_iter(prvt);
 
     let m = Module::new(obs, prvt, m.atoms().iter().cloned());
-    //print!("{}", m);
+    print!("{:?}", m);
 
     assert!(m.is_err());
 }
@@ -213,13 +219,13 @@ fn can_instantiate_example_peterson1() {
 
 #[test]
 fn module_write_all_ctrl() {
-    let x = Wire::new(0, "real");
-    let xn = Wire::new(1, "real");
-    let y = Wire::new(2, "real");
-    let yn = Wire::new(3, "real");
+    let x = Wire::new("real");
+    let xn = Wire::new("real");
+    let y = Wire::new("real");
+    let yn = Wire::new("real");
 
-    let x0 = Wire::new(4, "real");
-    let xn0 = Wire::new(5, "real");
+    let x0 = Wire::new("real");
+    let xn0 = Wire::new("real");
 
     let update: Vec<Term<&str, &str>> = [term!("ID", [xn.clone()], [x.clone()]).unwrap()].to_vec();
 
@@ -271,28 +277,36 @@ fn can_compose_example_peterson1_with_empty_module() {
 
 #[test]
 fn can_instantiate_example_tiny1_0123() {
-    let m = example_tiny1((0, 1), (2, 3), true, 4).unwrap();
+    let x = [Wire::new("Tny"), Wire::new("Tny")];
+    let y = [Wire::new("Tny"), Wire::new("Tny")];
+    let m = example_tiny1(x, y, true).unwrap();
     assert!(m.is_open());
 }
 
 #[test]
 fn can_instantiate_example_tiny1_2301() {
-    let m = example_tiny1((2, 3), (0, 1), true, 4).unwrap();
+    let x = [Wire::new("Tny"), Wire::new("Tny")];
+    let y = [Wire::new("Tny"), Wire::new("Tny")];
+    let m = example_tiny1(y, x, true).unwrap();
     assert!(m.is_open());
 }
 #[test]
-fn cannot_compose_example_tiny1_with_overlapping_prvt() {
-    let m1 = example_tiny1((0, 1), (2, 3), false, 4).unwrap();
-    let m2 = example_tiny1((2, 3), (0, 1), false, 4).unwrap();
+fn can_compose_example_tiny1() {
+    let x = [Wire::new("Tny"), Wire::new("Tny")];
+    let y = [Wire::new("Tny"), Wire::new("Tny")];
+    let m1 = example_tiny1(x.clone(), y.clone(), false).unwrap();
+    let m2 = example_tiny1(y, x, false).unwrap();
 
     let m3 = Module::parallel([m1, m2]);
-    assert!(m3.is_err());
+    assert!(m3.is_ok());
 }
 
 #[test]
 fn cannot_compose_example_tiny1_with_cyclic_await() {
-    let m1 = example_tiny1((0, 1), (2, 3), true, 4).unwrap();
-    let m2 = example_tiny1((2, 3), (0, 1), true, 7).unwrap();
+    let x = [Wire::new("Tny"), Wire::new("Tny")];
+    let y = [Wire::new("Tny"), Wire::new("Tny")];
+    let m1 = example_tiny1(x.clone(), y.clone(), true).unwrap();
+    let m2 = example_tiny1(y, x, true).unwrap();
 
     let m3 = Module::parallel([m1, m2]);
     assert!(m3.is_err());
@@ -300,8 +314,10 @@ fn cannot_compose_example_tiny1_with_cyclic_await() {
 
 #[test]
 fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let m1 = example_tiny1((0, 1), (2, 3), true, 4).unwrap();
-    let m2 = example_tiny1((2, 3), (0, 1), false, 7).unwrap();
+    let x = [Wire::new("Tny"), Wire::new("Tny")];
+    let y = [Wire::new("Tny"), Wire::new("Tny")];
+    let m1 = example_tiny1(x.clone(), y.clone(), true).unwrap();
+    let m2 = example_tiny1(y, x, false).unwrap();
 
     let m3 = Module::parallel([m1, m2]);
     assert!(m3.is_ok());
@@ -309,9 +325,12 @@ fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
 
 #[test]
 fn can_compose_three_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let m1 = example_tiny1((0, 1), (2, 3), true, 4).unwrap();
-    let m2 = example_tiny1((2, 3), (0, 1), false, 7).unwrap();
-    let m3 = example_tiny1((2, 3), (10, 11), false, 12).unwrap();
+    let x = [Wire::new("Tny"), Wire::new("Tny")];
+    let y = [Wire::new("Tny"), Wire::new("Tny")];
+    let z = [Wire::new("Tny"), Wire::new("Tny")];
+    let m1 = example_tiny1(x.clone(), y.clone(), true).unwrap();
+    let m2 = example_tiny1(y.clone(), x.clone(), false).unwrap();
+    let m3 = example_tiny1(y, z, false).unwrap();
 
     let m4 = Module::parallel([m1, m2, m3]);
     assert!(m4.is_ok());
@@ -325,12 +344,12 @@ fn compose_seq() {
     //
     //  M1 and M2 are compatible (disjoint interface variables and acyclic waiting dependencies),
     //  and we test that they are composable
-    let x = Wire::new(0, "real");
-    let xn = Wire::new(1, "real");
-    let y = Wire::new(2, "real");
-    let yn = Wire::new(3, "real");
-    let z = Wire::new(4, "real");
-    let zn = Wire::new(5, "real");
+    let x = Wire::new("real");
+    let xn = Wire::new("real");
+    let y = Wire::new("real");
+    let yn = Wire::new("real");
+    let z = Wire::new("real");
+    let zn = Wire::new("real");
 
     let assign: Vec<Term<&str, &str>> = [term!("ID", [xn.clone()], [yn.clone()]).unwrap()].to_vec();
     let obs = Interface::from_iter([[x.clone(), xn.clone()], [y.clone(), yn.clone()]]);
@@ -345,12 +364,12 @@ fn compose_seq() {
 
 #[test]
 fn compose_seq_2() {
-    let (x, xn) = (Wire::new(0, "real"), Wire::new(1, "real"));
-    let (y, yn) = (Wire::new(2, "real"), Wire::new(3, "real"));
-    let (z, zn) = (Wire::new(4, "real"), Wire::new(5, "real"));
-    let (y0, y0n) = (Wire::new(6, "real"), Wire::new(7, "real"));
-    let (z0, z0n) = (Wire::new(8, "real"), Wire::new(9, "real"));
-    let (inv, invn) = (Wire::new(10, "real"), Wire::new(11, "real"));
+    let (x, xn) = (Wire::new("real"), Wire::new("real"));
+    let (y, yn) = (Wire::new("real"), Wire::new("real"));
+    let (z, zn) = (Wire::new("real"), Wire::new("real"));
+    let (y0, y0n) = (Wire::new("real"), Wire::new("real"));
+    let (z0, z0n) = (Wire::new("real"), Wire::new("real"));
+    let (inv, invn) = (Wire::new("real"), Wire::new("real"));
 
     // class Module(smt.Module):
     //     def init(self, extl) -> None:
@@ -373,12 +392,12 @@ fn compose_seq_2() {
     .to_vec();
 
     let tmps = [
-        Wire::new(12, "real"),
-        Wire::new(13, "real"),
-        Wire::new(14, "real"),
-        Wire::new(15, "real"),
-        Wire::new(16, "real"),
-        Wire::new(17, "real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
     ];
     let update: Vec<Term<&str, &str>> = [
         term!("Lt", [tmps[0].clone()], [x.clone(), y.clone()]).unwrap(),
@@ -415,11 +434,7 @@ fn compose_seq_2() {
     //     def update(self, inv, extl) -> None:
     //         x, y, z = extl
     //         return Or(nxt(x) <= nxt(y), nxt(x) <= nxt(z))
-    let tmps = [
-        Wire::new(18, "real"),
-        Wire::new(19, "real"),
-        Wire::new(20, "real"),
-    ];
+    let tmps = [Wire::new("real"), Wire::new("real"), Wire::new("real")];
     let assign: Vec<Term<&str, &str>> = [
         term!("Le", [tmps[0].clone()], [xn.clone(), yn.clone()]).unwrap(),
         term!("Le", [tmps[1].clone()], [xn.clone(), zn.clone()]).unwrap(),
@@ -446,9 +461,9 @@ fn compose_seq_2() {
 
 #[test]
 fn more_controlled_than_external() {
-    let x = [Wire::new(0, "A"), Wire::new(1, "A")];
-    let y = [Wire::new(2, "B"), Wire::new(3, "B")];
-    let z = [Wire::new(4, "C"), Wire::new(5, "C")];
+    let x = [Wire::new("A"), Wire::new("A")];
+    let y = [Wire::new("B"), Wire::new("B")];
+    let z = [Wire::new("C"), Wire::new("C")];
 
     let init = Term::constant("A", [y[1].clone(), z[1].clone()]).unwrap();
     let update = Term::function(
@@ -464,10 +479,10 @@ fn more_controlled_than_external() {
 
 #[test]
 fn module_with_parameter() {
-    let x = [Wire::new(0, "A"), Wire::new(1, "A")];
-    let y = [Wire::new(2, "B"), Wire::new(3, "B")];
-    let z = [Wire::new(4, "C"), Wire::new(5, "C")];
-    let p = Wire::new(6, "P");
+    let x = [Wire::new("A"), Wire::new("A")];
+    let y = [Wire::new("B"), Wire::new("B")];
+    let z = [Wire::new("C"), Wire::new("C")];
+    let p = Wire::new("P");
 
     let init =
         Term::function("i", [y[1].clone(), z[1].clone()], [p.clone(), x[1].clone()]).unwrap();
