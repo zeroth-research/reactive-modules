@@ -20,13 +20,6 @@ pub enum DType {
     SWord(u32),
 }
 
-// Keep TensorBool etc. as aliases for backward compatibility in Python code
-impl DType {
-    pub fn tensor_bool(shape: Vec<usize>) -> Self { DType::Bool(shape) }
-    pub fn tensor_int(shape: Vec<usize>) -> Self { DType::Int(shape) }
-    pub fn tensor_float(shape: Vec<usize>) -> Self { DType::Float(shape) }
-    pub fn tensor_real(shape: Vec<usize>) -> Self { DType::Real(shape) }
-}
 
 enum PrimitiveType {
     Bool,
@@ -149,10 +142,10 @@ impl DType {
     /// Get the kind/variant of this dtype
     fn kind(&self) -> &'static str {
         match self {
-            DType::Bool(_) => "TensorBool",
-            DType::Int(_) => "TensorInt",
-            DType::Float(_) => "TensorFloat",
-            DType::Real(_) => "TensorReal",
+            DType::Bool(_) => "Bool",
+            DType::Int(_) => "Int",
+            DType::Float(_) => "Float",
+            DType::Real(_) => "Real",
             DType::UWord(_) => "UWord",
             DType::SWord(_) => "SWord",
         }

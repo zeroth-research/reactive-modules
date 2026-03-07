@@ -6,13 +6,13 @@ def _zero_tensor(dtype):
     """Create a zero tensor matching the given DType."""
     kind = dtype.kind()
     shape = list(dtype.shape)
-    if kind == "TensorBool":
+    if kind == "Bool":
         return torch.zeros(shape, dtype=torch.bool)
-    elif kind == "TensorInt":
+    elif kind == "Int":
         return torch.zeros(shape, dtype=torch.long)
-    elif kind == "TensorFloat":
+    elif kind == "Float":
         return torch.zeros(shape, dtype=torch.float32)
-    elif kind == "TensorReal":
+    elif kind == "Real":
         return torch.zeros(shape, dtype=torch.float64)
     elif kind in ("UWord", "SWord"):
         return torch.zeros([1], dtype=torch.long)
@@ -129,6 +129,12 @@ class Interpreter:
             for w in (ltc, nxt):
                 if w.id() not in self.state:
                     self.state[w.id()] = _zero_tensor(w.dtype())
+        # Auto-initialize parameter wires not yet in state
+        param = self.module.param
+        for i in range(len(param)):
+            w = param[i]
+            if w.id() not in self.state:
+                self.state[w.id()] = _zero_tensor(w.dtype())
 
     def _execute(self, block_type):
         atoms = self.module.atoms
