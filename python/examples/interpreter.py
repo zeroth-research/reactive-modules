@@ -127,14 +127,14 @@ class Interpreter:
         for i in range(len(extl)):
             ltc, nxt = extl[i]
             for w in (ltc, nxt):
-                if w.id() not in self.state:
-                    self.state[w.id()] = _zero_tensor(w.dtype())
+                if w.id not in self.state:
+                    self.state[w.id] = _zero_tensor(w.dtype)
         # Auto-initialize parameter wires not yet in state
         param = self.module.param
         for i in range(len(param)):
             w = param[i]
-            if w.id() not in self.state:
-                self.state[w.id()] = _zero_tensor(w.dtype())
+            if w.id not in self.state:
+                self.state[w.id] = _zero_tensor(w.dtype)
 
     def _execute(self, block_type):
         atoms = self.module.atoms
@@ -143,15 +143,15 @@ class Interpreter:
             block = atom.init if block_type == "init" else atom.update
             for i in range(len(block)):
                 term = block[i]
-                read = [self.state[term.read[j].id()] for j in range(len(term.read))]
+                read = [self.state[term.read[j].id] for j in range(len(term.read))]
                 results = _eval(term.itype, read)
                 for j in range(len(term.write)):
-                    self.state[term.write[j].id()] = results[j]
+                    self.state[term.write[j].id] = results[j]
 
     def _latch(self):
         ctrl = self.module.ctrl
         for i in range(len(ctrl)):
             ltc, nxt = ctrl[i]
-            nxt_id = nxt.id()
+            nxt_id = nxt.id
             if nxt_id in self.state:
-                self.state[ltc.id()] = self.state[nxt_id].clone()
+                self.state[ltc.id] = self.state[nxt_id].clone()

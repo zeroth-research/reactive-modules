@@ -16,10 +16,12 @@ impl Wire {
         Self { base }
     }
 
+    #[getter]
     fn id(&self) -> usize {
         self.base.id()
     }
 
+    #[getter]
     fn dtype(&self) -> DType {
         self.base.dtype().clone()
     }

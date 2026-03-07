@@ -16,7 +16,7 @@ def _make_twobitcounter():
     """Build the 2-bit counter module.
 
     Returns (module, b0_wires, b1_wires, enable_wires).
-    enable is an external input: pass via step({enable[1].id(): tensor}).
+    enable is an external input: pass via step({enable[1].id: tensor}).
     """
     b0 = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))  # (current, next)
     b1 = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
@@ -51,18 +51,18 @@ def _make_twobitcounter():
 
 
 def _enable(wire):
-    return {wire[1].id(): torch.tensor([True])}
+    return {wire[1].id: torch.tensor([True])}
 
 
 def _hold(wire):
-    return {wire[1].id(): torch.tensor([False])}
+    return {wire[1].id: torch.tensor([False])}
 
 
 def _bits(interp, b0, b1):
     """Return (b1_val, b0_val) as booleans — (MSB, LSB)."""
     return (
-        bool(interp.get(b1[0].id()).item()),
-        bool(interp.get(b0[0].id()).item()),
+        bool(interp.get(b1[0].id).item()),
+        bool(interp.get(b0[0].id).item()),
     )
 
 
@@ -83,9 +83,9 @@ def test_count_sequence():
 
     expected = [
         (False, False),  # 0: initial state
-        (False, True),   # 1: after step 1
-        (True,  False),  # 2: after step 2
-        (True,  True),   # 3: after step 3
+        (False, True),  # 1: after step 1
+        (True, False),  # 2: after step 2
+        (True, True),  # 3: after step 3
         (False, False),  # 0: after step 4 (wraps)
     ]
 
@@ -119,21 +119,21 @@ def test_mixed_enable_and_hold():
     interp = Interpreter(m)
     interp.initialize()
 
-    interp.step(_enable(enable))   # 0 -> 1
+    interp.step(_enable(enable))  # 0 -> 1
     assert _bits(interp, b0, b1) == (False, True)
 
-    interp.step(_hold(enable))     # hold at 1
+    interp.step(_hold(enable))  # hold at 1
     assert _bits(interp, b0, b1) == (False, True)
 
-    interp.step(_enable(enable))   # 1 -> 2
+    interp.step(_enable(enable))  # 1 -> 2
     assert _bits(interp, b0, b1) == (True, False)
 
-    interp.step(_hold(enable))     # hold at 2
-    interp.step(_hold(enable))     # hold at 2
+    interp.step(_hold(enable))  # hold at 2
+    interp.step(_hold(enable))  # hold at 2
     assert _bits(interp, b0, b1) == (True, False)
 
-    interp.step(_enable(enable))   # 2 -> 3
+    interp.step(_enable(enable))  # 2 -> 3
     assert _bits(interp, b0, b1) == (True, True)
 
-    interp.step(_enable(enable))   # 3 -> 0 (wrap)
+    interp.step(_enable(enable))  # 3 -> 0 (wrap)
     assert _bits(interp, b0, b1) == (False, False)

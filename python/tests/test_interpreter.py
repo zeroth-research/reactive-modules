@@ -22,20 +22,20 @@ def test_counter():
     interp = Interpreter(m)
     interp.initialize()
 
-    val = interp.get(x[0].id())
+    val = interp.get(x[0].id)
     assert int(val.item()) == 0
 
     interp.step()
-    val = interp.get(x[0].id())
+    val = interp.get(x[0].id)
     assert int(val.item()) == 1
 
     interp.step()
-    val = interp.get(x[0].id())
+    val = interp.get(x[0].id)
     assert int(val.item()) == 2
 
     for _ in range(8):
         interp.step()
-    val = interp.get(x[0].id())
+    val = interp.get(x[0].id)
     assert int(val.item()) == 10
 
 
@@ -78,21 +78,21 @@ def test_boolean_logic():
     interp.initialize()
 
     # After init: a=True, b=False, c=False
-    assert bool(interp.get(a[0].id()).item()) is True
-    assert bool(interp.get(b[0].id()).item()) is False
-    assert bool(interp.get(c[0].id()).item()) is False
+    assert bool(interp.get(a[0].id).item()) is True
+    assert bool(interp.get(b[0].id).item()) is False
+    assert bool(interp.get(c[0].id).item()) is False
 
     interp.step()
     # a'=and(T,F)=F, b'=or(T,F)=T, c'=not(F)=T
-    assert bool(interp.get(a[0].id()).item()) is False
-    assert bool(interp.get(b[0].id()).item()) is True
-    assert bool(interp.get(c[0].id()).item()) is True
+    assert bool(interp.get(a[0].id).item()) is False
+    assert bool(interp.get(b[0].id).item()) is True
+    assert bool(interp.get(c[0].id).item()) is True
 
     interp.step()
     # a'=and(F,T)=F, b'=or(F,T)=T, c'=not(T)=F
-    assert bool(interp.get(a[0].id()).item()) is False
-    assert bool(interp.get(b[0].id()).item()) is True
-    assert bool(interp.get(c[0].id()).item()) is False
+    assert bool(interp.get(a[0].id).item()) is False
+    assert bool(interp.get(b[0].id).item()) is True
+    assert bool(interp.get(c[0].id).item()) is False
 
 
 def test_ite():
@@ -124,18 +124,18 @@ def test_ite():
     interp.initialize()
 
     # After init: cond=True, x=0
-    assert bool(interp.get(cond[0].id()).item()) is True
-    assert int(interp.get(x[0].id()).item()) == 0
+    assert bool(interp.get(cond[0].id).item()) is True
+    assert int(interp.get(x[0].id).item()) == 0
 
     interp.step()
     # cond'=not(T)=F, x'=ite(T, 0+1, 0+2)=1
-    assert bool(interp.get(cond[0].id()).item()) is False
-    assert int(interp.get(x[0].id()).item()) == 1
+    assert bool(interp.get(cond[0].id).item()) is False
+    assert int(interp.get(x[0].id).item()) == 1
 
     interp.step()
     # cond'=not(F)=T, x'=ite(F, 1+1, 1+2)=3
-    assert bool(interp.get(cond[0].id()).item()) is True
-    assert int(interp.get(x[0].id()).item()) == 3
+    assert bool(interp.get(cond[0].id).item()) is True
+    assert int(interp.get(x[0].id).item()) == 3
 
 
 def test_tensor_ops():
@@ -154,15 +154,15 @@ def test_tensor_ops():
     interp.initialize()
 
     expected = torch.tensor([-1.0, 2.0, 3.0, -4.0])
-    assert torch.equal(interp.get(data[0].id()), expected)
+    assert torch.equal(interp.get(data[0].id), expected)
 
     interp.step()
     # data' = relu([-1,2,3,-4]) = [0,2,3,0]
-    assert torch.equal(interp.get(data[0].id()), expected.relu())
+    assert torch.equal(interp.get(data[0].id), expected.relu())
 
     interp.step()
     # data' = relu([0,2,3,0]) = [0,2,3,0] (fixed point)
-    assert torch.equal(interp.get(data[0].id()), expected.relu())
+    assert torch.equal(interp.get(data[0].id), expected.relu())
 
 
 def test_tensor_reductions():
@@ -191,10 +191,10 @@ def test_tensor_reductions():
 
     expected = torch.tensor([-1.0, 2.0, 3.0, -4.0])
     # Check temp wire values persisted in state after init
-    assert float(interp.get(sum_wire.id()).item()) == float(expected.sum().item())
-    assert float(interp.get(mean_wire.id()).item()) == float(expected.mean().item())
-    assert float(interp.get(max_wire.id()).item()) == float(expected.max().item())
-    assert int(interp.get(argmax_wire.id()).item()) == int(expected.argmax().item())
+    assert float(interp.get(sum_wire.id).item()) == float(expected.sum().item())
+    assert float(interp.get(mean_wire.id).item()) == float(expected.mean().item())
+    assert float(interp.get(max_wire.id).item()) == float(expected.max().item())
+    assert int(interp.get(argmax_wire.id).item()) == int(expected.argmax().item())
 
 
 def test_comparisons():
@@ -228,26 +228,26 @@ def test_comparisons():
     interp.initialize()
 
     # After init: a=3, b=5, eq(3,5)=F, lt(3,5)=T
-    assert bool(interp.get(eq_wire.id()).item()) is False
-    assert bool(interp.get(lt_wire.id()).item()) is True
+    assert bool(interp.get(eq_wire.id).item()) is False
+    assert bool(interp.get(lt_wire.id).item()) is True
 
     interp.step()
     # a'=3+1=4, b'=5; eq(3,5)=F, lt(3,5)=T (computed from latched a=3, b=5)
-    assert int(interp.get(a[0].id()).item()) == 4
-    assert bool(interp.get(eq_wire2.id()).item()) is False
-    assert bool(interp.get(lt_wire2.id()).item()) is True
+    assert int(interp.get(a[0].id).item()) == 4
+    assert bool(interp.get(eq_wire2.id).item()) is False
+    assert bool(interp.get(lt_wire2.id).item()) is True
 
     interp.step()
     # a'=5, b'=5; eq(4,5)=F, lt(4,5)=T
-    assert int(interp.get(a[0].id()).item()) == 5
-    assert bool(interp.get(eq_wire2.id()).item()) is False
-    assert bool(interp.get(lt_wire2.id()).item()) is True
+    assert int(interp.get(a[0].id).item()) == 5
+    assert bool(interp.get(eq_wire2.id).item()) is False
+    assert bool(interp.get(lt_wire2.id).item()) is True
 
     interp.step()
     # a'=6, b'=5; eq(5,5)=T, lt(5,5)=F
-    assert int(interp.get(a[0].id()).item()) == 6
-    assert bool(interp.get(eq_wire2.id()).item()) is True
-    assert bool(interp.get(lt_wire2.id()).item()) is False
+    assert int(interp.get(a[0].id).item()) == 6
+    assert bool(interp.get(eq_wire2.id).item()) is True
+    assert bool(interp.get(lt_wire2.id).item()) is False
 
 
 def test_state_dict():
@@ -258,7 +258,7 @@ def test_state_dict():
 
     sd = interp.state_dict()
     assert isinstance(sd, dict)
-    assert x[0].id() in sd
+    assert x[0].id in sd
 
 
 def test_step_before_init_raises():
@@ -287,12 +287,12 @@ def test_env_inputs():
     interp = Interpreter(m)
     interp.initialize()
 
-    assert int(interp.get(x[0].id()).item()) == 0
+    assert int(interp.get(x[0].id).item()) == 0
 
     # Step with env input = 5
-    interp.step({env[1].id(): torch.tensor([5], dtype=torch.int64)})
-    assert int(interp.get(x[0].id()).item()) == 5
+    interp.step({env[1].id: torch.tensor([5], dtype=torch.int64)})
+    assert int(interp.get(x[0].id).item()) == 5
 
     # Step with env input = 3
-    interp.step({env[1].id(): torch.tensor([3], dtype=torch.int64)})
-    assert int(interp.get(x[0].id()).item()) == 8
+    interp.step({env[1].id: torch.tensor([3], dtype=torch.int64)})
+    assert int(interp.get(x[0].id).item()) == 8
