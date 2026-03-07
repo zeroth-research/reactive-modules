@@ -15,17 +15,23 @@ class Wire:
     def __hash__(self) -> int: ...
 
 class DType:
-    class TensorBool:
+    class Bool:
         def __init__(self, shape: list[int]) -> None: ...
 
-    class TensorInt:
+    class Int:
         def __init__(self, shape: list[int]) -> None: ...
 
-    class TensorFloat:
+    class Float:
         def __init__(self, shape: list[int]) -> None: ...
 
-    class TensorReal:
+    class Real:
         def __init__(self, shape: list[int]) -> None: ...
+
+    class UWord:
+        def __init__(self, width: int) -> None: ...
+
+    class SWord:
+        def __init__(self, width: int) -> None: ...
 
     @staticmethod
     def from_str(s: str) -> DType: ...
