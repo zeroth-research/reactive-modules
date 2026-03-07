@@ -1,23 +1,22 @@
 import torch
-from zrth import IType
+from zrth import IType, DType
 
 
 def _zero_tensor(dtype):
     """Create a zero tensor matching the given DType."""
-    kind = dtype.kind()
     shape = list(dtype.shape)
-    if kind == "Bool":
+    if isinstance(dtype, DType.Bool):
         return torch.zeros(shape, dtype=torch.bool)
-    elif kind == "Int":
+    elif isinstance(dtype, DType.Int):
         return torch.zeros(shape, dtype=torch.long)
-    elif kind == "Float":
+    elif isinstance(dtype, DType.Float):
         return torch.zeros(shape, dtype=torch.float32)
-    elif kind == "Real":
+    elif isinstance(dtype, DType.Real):
         return torch.zeros(shape, dtype=torch.float64)
-    elif kind in ("UWord", "SWord"):
+    elif isinstance(dtype, (DType.UWord, DType.SWord)):
         return torch.zeros([1], dtype=torch.long)
     else:
-        raise RuntimeError(f"unknown dtype kind: {kind}")
+        raise RuntimeError(f"unknown dtype kind: {dtype}")
 
 
 def _eval(itype, read):
