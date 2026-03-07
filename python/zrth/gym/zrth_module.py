@@ -18,15 +18,18 @@ _GYM_SPACE_TO_DTYPE = {
     "MultiBinary": DType.Bool,
 }
 
+
 def _to_python(v):
     """Convert numpy scalars to plain Python types for the abstract interpreter."""
     if hasattr(v, 'item'):
         return v.item()
     return v
 
+
 def _is_wire_pair(obj):
     """Check if obj is a wire pair: a list/tuple of exactly 2 Wire objects."""
     return isinstance(obj, (list, tuple)) and len(obj) == 2 and all(isinstance(w, Wire) for w in obj)
+
 
 def _validate_observable_wires(wires, expected_dtype, name):
     """Validate user-provided external wires.
@@ -39,9 +42,9 @@ def _validate_observable_wires(wires, expected_dtype, name):
     """
     if _is_wire_pair(wires):
         for w in wires:
-            if w.dtype() != expected_dtype:
+            if w.dtype != expected_dtype:
                 raise ValueError(
-                    f"DType mismatch for '{name}': expected {expected_dtype}, got {w.dtype()}"
+                    f"DType mismatch for '{name}': expected {expected_dtype}, got {w.dtype}"
                 )
         return list(wires)
     if isinstance(wires, (list, tuple)) and len(wires) > 0 and all(_is_wire_pair(item) for item in wires):
@@ -49,6 +52,7 @@ def _validate_observable_wires(wires, expected_dtype, name):
     raise ValueError(
         f"Invalid wire format for '{name}': expected [Wire, Wire] or tuple of wire pairs"
     )
+
 
 def _classify_attrs(cls, roots, init_attr_vals=None):
     """Classify self.* attributes used in the given root methods (and their callees).
@@ -138,6 +142,7 @@ def _classify_attrs(cls, roots, init_attr_vals=None):
 
     return prvt, params, attr_vals
 
+
 def _infer_shape_and_elem_type(value):
     """Recursively derive tensor shape and element type from a Python value."""
     if isinstance(value, bool):  # before int — bool is a subclass of int
@@ -150,6 +155,7 @@ def _infer_shape_and_elem_type(value):
         inner_shape, elem_type = _infer_shape_and_elem_type(value[0])
         return [len(value)] + inner_shape, elem_type
     raise ValueError(f"Unsupported element type: {type(value).__name__}")
+
 
 def _infer_dtype(name, abstract_value):
     """Infer a DType from an AbstractValue."""
@@ -186,6 +192,7 @@ def _infer_dtype(name, abstract_value):
         )
     return dtype_fn([1])
 
+
 def _parse_call_repr(call_repr):
     """Parse an AbstractValue call_repr string into (func_name, args, kwargs).
 
@@ -208,6 +215,7 @@ def _parse_call_repr(call_repr):
     pos_args = [ast.literal_eval(a) for a in node.args]
     kw_args = {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}
     return name, pos_args, kw_args
+
 
 def _gym_space_to_dtype(space_name, pos_args, kw_args, is_action):
     """Convert a parsed gym space into a DType.
@@ -238,11 +246,13 @@ def _gym_space_to_dtype(space_name, pos_args, kw_args, is_action):
     else:
         raise ValueError(f"Unsupported gym space type: {space_name}")
 
+
 def _unwrap(method):
     """Follow __wrapped__ chain to get the original unwrapped method."""
     while hasattr(method, '__wrapped__'):
         method = method.__wrapped__
     return method
+
 
 def _infer_spaces_from_init(cls, args, kwargs):
     """Analyze __init__ to infer action and observation DTypes from gym spaces."""
@@ -276,6 +286,7 @@ def _infer_spaces_from_init(cls, args, kwargs):
     observation_dtype = _gym_space_to_dtype(o_name, o_args, o_kwargs, is_action=False)
 
     return action_dtype, observation_dtype, self_attrs
+
 
 def _infer_layers_from_init(cls, args, kwargs):
     """Analyze __init__ to extract nn.Linear layers and their sizes.
@@ -322,6 +333,7 @@ class Env(Module, gym.Env):
         if '__init__' not in cls.__dict__:
             return
         original_init = cls.__dict__['__init__']
+
         def wrapped_init(self, *args, **kwargs):
             kwargs.pop("action", None)
             kwargs.pop("observation", None)
@@ -329,6 +341,7 @@ class Env(Module, gym.Env):
             kwargs.pop("terminated", None)
             kwargs.pop("truncated", None)
             return original_init(self, *args, **kwargs)
+
         wrapped_init.__wrapped__ = original_init
         cls.__init__ = wrapped_init
 
@@ -404,6 +417,7 @@ class Env(Module, gym.Env):
 
         return instance
 
+
 class NN(Module, nn.Module):
 
     def __init_subclass__(cls, **kwargs):
@@ -411,10 +425,12 @@ class NN(Module, nn.Module):
         if '__init__' not in cls.__dict__:
             return
         original_init = cls.__dict__['__init__']
+
         def wrapped_init(self, *args, **kwargs):
             kwargs.pop("extl", None)
             kwargs.pop("intf", None)
             return original_init(self, *args, **kwargs)
+
         wrapped_init.__wrapped__ = original_init
         cls.__init__ = wrapped_init
 
@@ -427,8 +443,8 @@ class NN(Module, nn.Module):
 
         layers = _infer_layers_from_init(cls, args, kwargs)
         layer_list = list(layers.values())
-        obs_size = layer_list[0][0]   # first layer's in_features
-        qval_size = layer_list[-1][1] # last layer's out_features
+        obs_size = layer_list[0][0]  # first layer's in_features
+        qval_size = layer_list[-1][1]  # last layer's out_features
 
         extl_dtype = DType.Float([obs_size])
         if user_extl is not None:
