@@ -1,208 +1,155 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::dtype::DType;
 use crate::itype::{ArithOp, CmpOp, IType, LogicalOp, Val};
 
-use base::{Atom, Module, Term};
+use base::Term;
 
-type SmtAtom = Atom<DType, IType>;
-type SmtModule = Module<DType, IType>;
+/// Errors that can occur during SMT-LIB assertion generation.
+#[derive(Debug)]
+pub enum SmtError {
+    /// A term reads a wire that is written by a later term (bad topological order).
+    BadOrder { wire_id: usize, read_by_term: usize, written_by_term: usize },
+    /// Two terms write the same wire.
+    DuplicateWrite { wire_id: usize, first_term: usize, second_term: usize },
+    /// A formatting error occurred while writing output.
+    Fmt(fmt::Error),
+}
 
-pub struct AtomSmtLibTranslator<'a>(&'a SmtAtom);
+impl fmt::Display for SmtError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SmtError::BadOrder { wire_id, read_by_term, written_by_term } => {
+                write!(
+                    f,
+                    "bad order: wire w{} is read by term {} but written by later term {}",
+                    wire_id, read_by_term, written_by_term
+                )
+            }
+            SmtError::DuplicateWrite { wire_id, first_term, second_term } => {
+                write!(
+                    f,
+                    "duplicate write: wire w{} is written by both term {} and term {}",
+                    wire_id, first_term, second_term
+                )
+            }
+            SmtError::Fmt(e) => write!(f, "format error: {}", e),
+        }
+    }
+}
 
-pub fn wires_decls<'a>(
+impl From<fmt::Error> for SmtError {
+    fn from(e: fmt::Error) -> Self {
+        SmtError::Fmt(e)
+    }
+}
+
+/// Write `(declare-fun wi () Sort)` for each wire.
+pub fn declare<'a>(
     wires: impl IntoIterator<Item = &'a base::Wire<DType>>,
     w: &mut impl fmt::Write,
 ) -> fmt::Result {
     for wire in wires {
-        writeln!(w, "{}", declare_var(wire.id(), wire.dtype()))?;
+        writeln!(w, "(declare-fun {} () {})", wire_name(wire.id()), wire.dtype())?;
     }
     Ok(())
 }
 
-impl AtomSmtLibTranslator<'_> {
-    fn method_to_smtlib<'a>(
-        &self,
-        terms: impl IntoIterator<Item = &'a Term<DType, IType>>,
-        state_wires: &HashSet<usize>,
-        w: &mut impl fmt::Write,
-    ) -> fmt::Result {
-        let mut let_bindings = Vec::new();
-        let mut state_assigns = Vec::new();
+/// Write an SMT-LIB assertion for a sequence of terms (a closed diagram).
+///
+/// Intermediate wires (written by one term, read by another) become `let`-bindings.
+/// Output wires (written but not read by any term) become equalities inside the assertion.
+///
+/// # Errors
+///
+/// Returns `SmtError::BadOrder` if a term reads a wire written by a later term,
+/// `SmtError::DuplicateWrite` if two terms write the same wire.
+pub fn assert_terms<'a>(
+    terms: impl IntoIterator<Item = &'a Term<DType, IType>>,
+    w: &mut impl fmt::Write,
+) -> Result<(), SmtError> {
+    let terms: Vec<&Term<DType, IType>> = terms.into_iter().collect();
+    if terms.is_empty() {
+        return Ok(());
+    }
 
-        for term in terms {
-            let wire_id = term.write().ids().next().unwrap();
-            let expr = smt_expr(term);
+    // Pass 1a: collect all writes and check for duplicates
+    let mut written_by: HashMap<usize, usize> = HashMap::new(); // wire_id -> term_index
+    for (i, term) in terms.iter().enumerate() {
+        for wire_id in term.write().ids() {
+            if let Some(&prev) = written_by.get(&wire_id) {
+                return Err(SmtError::DuplicateWrite {
+                    wire_id,
+                    first_term: prev,
+                    second_term: i,
+                });
+            }
+            written_by.insert(wire_id, i);
+        }
+    }
 
-            if state_wires.contains(&wire_id) {
-                state_assigns.push(format!("(= {} {})", wire_name(wire_id), expr));
-            } else {
-                let_bindings.push(format!("({} {})", wire_name(wire_id), expr));
+    // Pass 1b: collect reads and validate ordering
+    let mut read_set: HashSet<usize> = HashSet::new();
+    for (i, term) in terms.iter().enumerate() {
+        for wire_id in term.read().ids() {
+            read_set.insert(wire_id);
+            if let Some(&writer) = written_by.get(&wire_id) {
+                if writer >= i {
+                    return Err(SmtError::BadOrder {
+                        wire_id,
+                        read_by_term: i,
+                        written_by_term: writer,
+                    });
+                }
             }
         }
+    }
 
-        if let_bindings.is_empty() {
-            for s in &state_assigns {
-                writeln!(w, "(assert {})", s)?;
-            }
+    // Pass 2: classify and emit
+    // Intermediate: written AND read by another term -> let-binding
+    // Output: written but NOT read by any term -> equality
+    let mut let_bindings = Vec::new();
+    let mut equalities = Vec::new();
+
+    for term in &terms {
+        let wire_id = term.write().ids().next().unwrap();
+        let expr = smt_expr(term);
+
+        if read_set.contains(&wire_id) {
+            let_bindings.push(format!("({} {})", wire_name(wire_id), expr));
         } else {
-            writeln!(
-                w,
-                "(assert\n  (let ({})\n    (and {})))",
-                let_bindings.join("\n        "),
-                state_assigns.join("\n         ")
-            )?;
+            equalities.push(format!("(= {} {})", wire_name(wire_id), expr));
         }
-        Ok(())
     }
 
-    pub fn init(&self, state_wires: &HashSet<usize>, w: &mut impl fmt::Write) -> fmt::Result {
-        self.method_to_smtlib(self.0.init().iter(), state_wires, w)
-    }
-
-    pub fn update(&self, state_wires: &HashSet<usize>, w: &mut impl fmt::Write) -> fmt::Result {
-        self.method_to_smtlib(self.0.update().iter(), state_wires, w)
-    }
-
-    pub fn ctrl(&self, w: &mut impl fmt::Write) -> fmt::Result {
-        wires_decls(self.0.ctrl().wires(), w)
-    }
-
-    pub fn read(&self, w: &mut impl fmt::Write) -> fmt::Result {
-        wires_decls(self.0.read().wires(), w)
-    }
-
-    pub fn wait(&self, w: &mut impl fmt::Write) -> fmt::Result {
-        wires_decls(self.0.wait().wires(), w)
-    }
-}
-
-pub struct ModuleSmtLibTranslator<'a>(&'a SmtModule);
-
-impl ModuleSmtLibTranslator<'_> {
-    fn state_wire_ids(&self) -> HashSet<usize> {
-        let mut ids = HashSet::new();
-        // Collect intf, extl, prvt wire IDs (both latched and next)
-        for wire in self.0.intf().latched().iter().chain(self.0.intf().next().iter()) {
-            ids.insert(wire.id());
+    if let_bindings.is_empty() {
+        for eq in &equalities {
+            writeln!(w, "(assert {})", eq)?;
         }
-        for wire in self.0.extl().latched().iter().chain(self.0.extl().next().iter()) {
-            ids.insert(wire.id());
+    } else {
+        write!(w, "(assert\n  (let (")?;
+        for (i, binding) in let_bindings.iter().enumerate() {
+            if i > 0 {
+                write!(w, "\n        ")?;
+            }
+            write!(w, "{}", binding)?;
         }
-        for wire in self.0.prvt().latched().iter().chain(self.0.prvt().next().iter()) {
-            ids.insert(wire.id());
+        write!(w, ")\n    (and ")?;
+        for (i, eq) in equalities.iter().enumerate() {
+            if i > 0 {
+                write!(w, "\n         ")?;
+            }
+            write!(w, "{}", eq)?;
         }
-        ids
+        writeln!(w, ")))")?;
     }
 
-    /// Write smtlib declarations of `intf` variables
-    pub fn intf(&self, w: &mut impl fmt::Write) -> fmt::Result {
-        let vars = self.0.intf();
-        for wire in vars.latched().iter().chain(vars.next().iter()) {
-            writeln!(w, "{}", declare_var(wire.id(), wire.dtype()))?;
-        }
-        Ok(())
-    }
-
-    /// Write smtlib declarations of `extl` variables
-    pub fn extl(&self, w: &mut impl fmt::Write) -> fmt::Result {
-        let vars = self.0.extl();
-        for wire in vars.latched().iter().chain(vars.next().iter()) {
-            writeln!(w, "{}", declare_var(wire.id(), wire.dtype()))?;
-        }
-        Ok(())
-    }
-
-    pub fn variables_to_smtlib(&self, w: &mut impl fmt::Write) -> fmt::Result {
-        writeln!(w, ";; Interface")?;
-        self.intf(w)?;
-        writeln!(w, "\n;; External")?;
-        self.extl(w)
-    }
-
-    pub fn to_smtlib(&self, w: &mut impl fmt::Write) -> fmt::Result {
-        if !self.0.prvt().is_empty() {
-            unimplemented!()
-        }
-
-        let state_wires = self.state_wire_ids();
-
-        writeln!(w, ";;; Module\n")?;
-        self.variables_to_smtlib(w)?;
-        writeln!(w, "\n;; Atoms")?;
-
-        for (n, atom) in self.0.atoms().iter().enumerate() {
-            let translator = AtomSmtLibTranslator(atom);
-            writeln!(w, "\n;; --- Atom {} ---", n)?;
-            writeln!(w, ";; Init")?;
-            translator.init(&state_wires, w)?;
-            writeln!(w, "\n;; Update")?;
-            translator.update(&state_wires, w)?;
-        }
-        Ok(())
-    }
-
-    pub fn init_to_smtlib(&self, w: &mut impl fmt::Write) -> fmt::Result {
-        let state_wires = self.state_wire_ids();
-        for (n, atom) in self.0.atoms().iter().enumerate() {
-            writeln!(w, "\n;; --- Atom {} ---", n)?;
-            AtomSmtLibTranslator(atom).init(&state_wires, w)?;
-        }
-        Ok(())
-    }
-
-    pub fn update_to_smtlib(&self, w: &mut impl fmt::Write) -> fmt::Result {
-        let state_wires = self.state_wire_ids();
-        for (n, atom) in self.0.atoms().iter().enumerate() {
-            writeln!(w, "\n;; --- Atom {} ---", n)?;
-            AtomSmtLibTranslator(atom).update(&state_wires, w)?;
-        }
-        Ok(())
-    }
-}
-
-pub fn module_to_smtlib(module: &Module<DType, IType>, w: &mut impl fmt::Write) -> fmt::Result {
-    ModuleSmtLibTranslator(module).to_smtlib(w)
-}
-
-pub fn module_init_to_smtlib(
-    module: &Module<DType, IType>,
-    w: &mut impl fmt::Write,
-) -> fmt::Result {
-    ModuleSmtLibTranslator(module).init_to_smtlib(w)
-}
-
-pub fn module_update_to_smtlib(
-    module: &Module<DType, IType>,
-    w: &mut impl fmt::Write,
-) -> fmt::Result {
-    ModuleSmtLibTranslator(module).update_to_smtlib(w)
-}
-
-pub fn module_variables_to_smtlib(
-    module: &Module<DType, IType>,
-    w: &mut impl fmt::Write,
-) -> fmt::Result {
-    ModuleSmtLibTranslator(module).variables_to_smtlib(w)
-}
-
-pub fn parse_modules(
-    modules: &[Module<DType, IType>],
-    w: &mut impl fmt::Write,
-) -> fmt::Result {
-    for module in modules {
-        module_to_smtlib(module, w)?;
-    }
     Ok(())
 }
 
 fn wire_name(id: usize) -> String {
     format!("w{}", id)
-}
-
-fn declare_var(id: usize, ty: &DType) -> String {
-    format!("(declare-fun {} () {})", wire_name(id), ty)
 }
 
 fn smt_expr(term: &Term<DType, IType>) -> String {
