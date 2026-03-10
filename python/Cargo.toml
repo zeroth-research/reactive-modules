@@ -10,8 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 base = { path = "../base" }
-common = { path = "../common" }
-smt = { path = "../smt", optional = true}
+smt = { path = "../smt", optional = true }
 pyo3 = { version = "0.24" }
 visual = { path = "../visual", features = ["html"], optional = true }
 tch = { features = ["python-extension"], version = "0.22" }
