@@ -17,10 +17,10 @@ Every state variable is a **wire pair** `(latched, next)`:
 
 ```python
 import torch
-from zrth import Wire, Term, Module, DType as dt, IType as it
+from zrth import Wire, Term, Module, Int, Bool, IType as it
 
 # A wire pair for our state variable x
-x = (Wire(dt.Int()), Wire(dt.Int()))
+x = (Wire(Int()), Wire(Int()))
 #     ^ latched          ^ next
 ```
 
@@ -36,7 +36,7 @@ are listed in dependency order — here we first create the constant `1`,
 then add it to the latched value `x[0]`:
 
 ```python
-one = Wire(dt.Int())
+one = Wire(Int())
 update = [
     Term(it.Tensor(torch.tensor([1], dtype=torch.int64)), [one]),
     Term(it.Add(), [x[1]], [x[0], one]),   # next_x = x + 1

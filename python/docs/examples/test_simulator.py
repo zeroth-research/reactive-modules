@@ -1,10 +1,10 @@
 """Minimal reactive module simulator — companion to docs/simulator-tutorial.md.
 
 This file is a pytest-discoverable test that keeps the tutorial examples
-up-to-date. Run with: cd python && uv run pytest ../docs/examples/
+up-to-date. Run with: just pytest docs/examples
 """
 import torch
-from zrth import Wire, Term, Module, DType as dt, IType as it
+from zrth import Wire, Term, Module, Int, Bool, IType as it
 
 
 # ---------------------------------------------------------------------------
@@ -42,11 +42,11 @@ def evaluate(itype, inputs):
 
 def make_counter():
     """Counter module: x starts at 0, incremented by 1 each step."""
-    x = (Wire(dt.Int()), Wire(dt.Int()))
+    x = (Wire(Int()), Wire(Int()))
 
     init = [Term(it.Tensor(torch.tensor([0], dtype=torch.int64)), [x[1]])]
 
-    one = Wire(dt.Int())
+    one = Wire(Int())
     update = [
         Term(it.Tensor(torch.tensor([1], dtype=torch.int64)), [one]),
         Term(it.Add(), [x[1]], [x[0], one]),
@@ -117,7 +117,7 @@ def test_multi_step():
 
 def test_boolean_toggle():
     """A boolean that flips every step: init=True, update=NOT(prev)."""
-    flag = (Wire(dt.Bool()), Wire(dt.Bool()))
+    flag = (Wire(Bool()), Wire(Bool()))
 
     init = [Term(it.Tensor(torch.tensor([True])), [flag[1]])]
     update = [Term(it.Not(), [flag[1]], [flag[0]])]
