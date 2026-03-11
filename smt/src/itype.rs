@@ -42,6 +42,9 @@ pub enum IType {
     Logical(LogicalOp),
     // Comparisons
     Cmp(CmpOp),
+    // Transcendental functions
+    Sin,
+    Cos,
     // Identity
     Id,
     // Conditional expression (ternary operator)
@@ -99,6 +102,8 @@ impl fmt::Display for IType {
             IType::Arith(op) => write!(f, "{}", op),
             IType::Logical(op) => write!(f, "{}", op),
             IType::Cmp(op) => write!(f, "{}", op),
+            IType::Sin => write!(f, "Sin"),
+            IType::Cos => write!(f, "Cos"),
             IType::Id => write!(f, "Id"),
             IType::Cond => write!(f, "Cond"),
         }
@@ -124,6 +129,8 @@ impl std::str::FromStr for IType {
             "Cmp::Lt" => Ok(IType::Cmp(CmpOp::Lt)),
             "Cmp::Ge" => Ok(IType::Cmp(CmpOp::Ge)),
             "Cmp::Gt" => Ok(IType::Cmp(CmpOp::Gt)),
+            "Sin" => Ok(IType::Sin),
+            "Cos" => Ok(IType::Cos),
             _ => Err(format!("Cannot convert `{}` to IType", ins)),
         }
     }

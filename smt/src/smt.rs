@@ -194,6 +194,16 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
             }
         }
 
+        IType::Sin => {
+            let arg = wire_name(term.read().wires().next().unwrap().id());
+            format!("(sin {})", arg)
+        }
+
+        IType::Cos => {
+            let arg = wire_name(term.read().wires().next().unwrap().id());
+            format!("(cos {})", arg)
+        }
+
         IType::Id => {
             let id = term.read().wires().next().unwrap().id();
             wire_name(id)
