@@ -129,6 +129,10 @@ pub enum IType {
     // Control flow
     Ite(),
 
+    // Transcendental functions
+    Sin(),
+    Cos(),
+
     // Special operations
     Id(),
     // index of maximal value in the flattened tensor
@@ -175,6 +179,8 @@ impl fmt::Display for IType {
             IType::Neg() => write!(f, "Neg"),
             IType::Abs() => write!(f, "Abs"),
             IType::MatMul() => write!(f, "MatMul"),
+            IType::Sin() => write!(f, "Sin"),
+            IType::Cos() => write!(f, "Cos"),
             IType::Eq() => write!(f, "Eq"),
             IType::Neq() => write!(f, "Neq"),
             IType::Lt() => write!(f, "Lt"),

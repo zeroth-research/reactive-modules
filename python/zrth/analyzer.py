@@ -1763,8 +1763,23 @@ class MethodVisitor(ast.NodeVisitor):
                             call.args[0], target_dtype=target_dtype
                         )
                         return _translate_relu(input_wire, self.terms)
+                    elif method in ("sin", "cos"):
+                        input_wire = self._convert_expr(call.args[0], target_dtype=target_dtype)
+                        itype = IType.Sin() if method == "sin" else IType.Cos()
+                        result = Wire(input_wire.dtype)
+                        self.terms.append(Term(itype, [result], [input_wire]))
+                        return result
                     else:
                         raise ValueError(f"Unsupported torch function: torch.{method}")
+                elif name == "math":
+                    if method in ("sin", "cos"):
+                        input_wire = self._convert_expr(call.args[0], target_dtype=target_dtype)
+                        itype = IType.Sin() if method == "sin" else IType.Cos()
+                        result = Wire(input_wire.dtype)
+                        self.terms.append(Term(itype, [result], [input_wire]))
+                        return result
+                    else:
+                        raise ValueError(f"Unsupported math function: math.{method}")
                 elif name == "self":
                     return self._inline_method(method, call.args)
 
