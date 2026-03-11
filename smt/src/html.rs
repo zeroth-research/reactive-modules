@@ -106,6 +106,14 @@ impl Context {
                         let input_id = term.read().wires().next().unwrap().id();
                         self.trace_wire_expression(input_id, terms)
                     }
+                    IType::Sin => {
+                        let arg = self.trace_wire_expression(term.read().wires().next().unwrap().id(), terms);
+                        format!("sin({})", arg)
+                    }
+                    IType::Cos => {
+                        let arg = self.trace_wire_expression(term.read().wires().next().unwrap().id(), terms);
+                        format!("cos({})", arg)
+                    }
                     IType::Cond => {
                         // Ternary: condition ? true_val : false_val
                         let cond_id = term.read().wires().next().unwrap().id();
@@ -414,6 +422,22 @@ impl Descriptor<DType, IType> for Context {
                     self.wire_name(term.read().wires().next().map(|w| w.id()).unwrap()),
                     op,
                     self.wire_name(term.read().wires().nth(1).map(|w| w.id()).unwrap()),
+                    self.wire_name(term.write().wires().next().map(|w| w.id()).unwrap())
+                );
+            }
+            IType::Sin => {
+                term_header = "Sine".to_string();
+                term_body = format!(
+                    "sin(<code>{}</code>) → <code>{}</code>",
+                    self.wire_name(term.read().wires().next().map(|w| w.id()).unwrap()),
+                    self.wire_name(term.write().wires().next().map(|w| w.id()).unwrap())
+                );
+            }
+            IType::Cos => {
+                term_header = "Cosine".to_string();
+                term_body = format!(
+                    "cos(<code>{}</code>) → <code>{}</code>",
+                    self.wire_name(term.read().wires().next().map(|w| w.id()).unwrap()),
                     self.wire_name(term.write().wires().next().map(|w| w.id()).unwrap())
                 );
             }
