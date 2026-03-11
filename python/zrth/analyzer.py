@@ -1093,9 +1093,9 @@ def resolve_wire(name, dtype, user_val=None):
     is_pair = isinstance(user_val, (list, tuple)) and len(user_val) == 2 and all(isinstance(w, Wire) for w in user_val)
     if is_pair:
         for w in user_val:
-            if w.dtype() != dtype:
+            if w.dtype != dtype:
                 raise ValueError(
-                    f"DType mismatch for '{name}': expected {dtype}, got {w.dtype()}"
+                    f"DType mismatch for '{name}': expected {dtype}, got {w.dtype}"
                 )
         return list(user_val)
     if isinstance(user_val, (list, tuple)) and len(user_val) > 0 and all(
@@ -1358,10 +1358,10 @@ def _torch_dtype(target_dtype):
     """Map a DType to the corresponding torch dtype. Defaults to float32."""
     if target_dtype is None:
         return torch.float32
-    kind = target_dtype.kind()
-    if kind == "Int":
+    name = type(target_dtype).__name__  # e.g. "DType_Int", "DType_Bool", "DType_Float"
+    if name.endswith("_Int"):
         return torch.long
-    if kind == "Bool":
+    if name.endswith("_Bool"):
         return torch.bool
     return torch.float32
 
@@ -1465,7 +1465,7 @@ def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term]):
     Returns:
         (output_wire, weight_wire, bias_wire)
     """
-    in_features = input_wire.dtype().shape[-1]
+    in_features = input_wire.dtype.shape[-1]
 
     weight_wire = Wire(Float(in_features, out_features))
     bias_wire = Wire(Float(out_features))
@@ -1490,7 +1490,7 @@ def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
     Returns:
         Output Wire
     """
-    output_wire = Wire(input_wire.dtype())
+    output_wire = Wire(input_wire.dtype)
     relu_term = Term(IType.ReLU(), [output_wire], [input_wire])
     terms.append(relu_term)
 
@@ -1596,7 +1596,7 @@ class MethodVisitor(ast.NodeVisitor):
                 else_wire = self.wire_pairs[var][0]
 
             if if_wire != else_wire and if_wire is not None and else_wire is not None:
-                merged_wire = Wire(if_wire.dtype())
+                merged_wire = Wire(if_wire.dtype)
                 self.terms.append(
                     Term(IType.Ite(), [merged_wire], [cond_wire, if_wire, else_wire])
                 )
@@ -1641,7 +1641,7 @@ class MethodVisitor(ast.NodeVisitor):
 
         elif isinstance(target, ast.Attribute) and target.attr in self.wire_pairs:
             wire_name = target.attr
-            target_dtype = self.wire_pairs[wire_name][1].dtype()
+            target_dtype = self.wire_pairs[wire_name][1].dtype
             result_wire = self._convert_expr(node.value, target_dtype=target_dtype)
             self.temp_vars[wire_name] = result_wire
 
@@ -1664,7 +1664,7 @@ class MethodVisitor(ast.NodeVisitor):
             else:
                 left_wire = self.wire_pairs[wire_name][0]
 
-            target_dtype = self.wire_pairs[wire_name][1].dtype()
+            target_dtype = self.wire_pairs[wire_name][1].dtype
             right_wire = self._convert_expr(node.value, target_dtype=target_dtype)
 
             op_type = type(node.op)
@@ -1673,7 +1673,7 @@ class MethodVisitor(ast.NodeVisitor):
                     f"Unsupported augmented assignment operator: {op_type.__name__}"
                 )
 
-            result_wire = Wire(left_wire.dtype())
+            result_wire = Wire(left_wire.dtype)
             itype_cls = self.BINARY_OPS[op_type]
             self.terms.append(Term(itype_cls(), [result_wire], [left_wire, right_wire]))
 
@@ -1711,7 +1711,7 @@ class MethodVisitor(ast.NodeVisitor):
         for i, (result_wire, value_node) in enumerate(
             zip(self.result_wires, value_nodes)
         ):
-            src_wire = self._convert_expr(value_node, target_dtype=result_wire.dtype())
+            src_wire = self._convert_expr(value_node, target_dtype=result_wire.dtype)
             self.temp_vars[f"_ret_{i}"] = src_wire
 
     def _convert_expr(self, expr, target_dtype=None):
@@ -1800,7 +1800,7 @@ class MethodVisitor(ast.NodeVisitor):
         cmp_wire = Wire(Bool())
         self.terms.append(Term(cmp_type, [cmp_wire], [a_wire, b_wire]))
 
-        result = Wire(a_wire.dtype())
+        result = Wire(a_wire.dtype)
         self.terms.append(Term(IType.Ite(), [result], [cmp_wire, a_wire, b_wire]))
         return result
 
@@ -1888,8 +1888,8 @@ class MethodVisitor(ast.NodeVisitor):
             result_dtype = target_dtype
         else:
             left_wire = self._convert_expr(binop.left)
-            right_wire = self._convert_expr(binop.right, target_dtype=left_wire.dtype())
-            result_dtype = left_wire.dtype()
+            right_wire = self._convert_expr(binop.right, target_dtype=left_wire.dtype)
+            result_dtype = left_wire.dtype
 
         op_type = type(binop.op)
         if op_type not in self.BINARY_OPS:
@@ -1931,9 +1931,9 @@ class MethodVisitor(ast.NodeVisitor):
             else:
                 operand_wire = self._convert_expr(unaryop.operand)
                 zero_wire = self._convert_constant(
-                    ast.Constant(0), target_dtype=operand_wire.dtype()
+                    ast.Constant(0), target_dtype=operand_wire.dtype
                 )
-                result_dtype = operand_wire.dtype()
+                result_dtype = operand_wire.dtype
             result = Wire(result_dtype)
             self.terms.append(Term(IType.Sub(), [result], [zero_wire, operand_wire]))
             return result
@@ -1990,7 +1990,7 @@ class MethodVisitor(ast.NodeVisitor):
 
         for op, comparator in zip(compare.ops, compare.comparators):
             left_wire = self._convert_expr(left)
-            right_wire = self._convert_expr(comparator, target_dtype=left_wire.dtype())
+            right_wire = self._convert_expr(comparator, target_dtype=left_wire.dtype)
 
             op_type = type(op)
             if op_type not in self.COMPARE_OPS:
@@ -2023,7 +2023,7 @@ class MethodVisitor(ast.NodeVisitor):
         true_wire = self._convert_expr(ifexp.body, target_dtype=target_dtype)
         false_wire = self._convert_expr(ifexp.orelse, target_dtype=target_dtype)
 
-        result_dtype = target_dtype if target_dtype else true_wire.dtype()
+        result_dtype = target_dtype if target_dtype else true_wire.dtype
         result = Wire(result_dtype)
         self.terms.append(
             Term(IType.Ite(), [result], [cond_wire, true_wire, false_wire])
