@@ -1287,7 +1287,7 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
     for name, method in methods.items():
         try:
             merged = join_states(AbstractInterpreter(method).analyze())
-        except (UnsupportedFeatureError, NotImplementedError):
+        except (UnsupportedFeatureError, NotImplementedError, OSError):
             continue
         read_attrs    = {r.name[5:] for r in merged.reads  if r.name.startswith("self.")}
         written_attrs = {w.name[5:] for w in merged.writes if w.name.startswith("self.")}
@@ -1702,11 +1702,13 @@ class MethodVisitor(ast.NodeVisitor):
             node.value.elts if isinstance(node.value, ast.Tuple) else [node.value]
         )
 
-        if len(value_nodes) != len(self.result_wires):
+        if len(value_nodes) < len(self.result_wires):
             raise ValueError(
                 f"Return has {len(value_nodes)} value(s) but "
                 f"{len(self.result_wires)} result wire(s) were declared"
             )
+        # Truncate extra return values (e.g. gym's trailing info dict)
+        value_nodes = value_nodes[: len(self.result_wires)]
 
         for i, (result_wire, value_node) in enumerate(
             zip(self.result_wires, value_nodes)
