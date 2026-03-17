@@ -6,7 +6,6 @@ target
 *.html
 *.txt
 # *.smv
-*.lean
 *.smt
 *.smt2
 *.so
