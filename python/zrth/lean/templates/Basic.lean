@@ -1,5 +1,5 @@
 import Cslib.Foundations.Semantics.LTS.Basic
-import Certificates.LTL
+import Core.LTL
 
 /-  ----------------------------------------------------------------
  Sets of states

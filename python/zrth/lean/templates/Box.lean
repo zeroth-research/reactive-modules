@@ -219,3 +219,13 @@ end Box
 @[simp] theorem ite_vt_tail (p : Prop) [Decidable p] (a b : ValTuple (t :: ts)) :
     (if p then a else b).2 = if p then a.2 else b.2 := by
   split <;> rfl
+
+
+theorem parseq (A: Box α β) (B: Box α' β'):
+    (A ⊗ B).fn = (fun (x: ValTuple (α ++ α')) =>
+                    let a := A.fn (x.split α).1
+                    let b := B.fn (x.split α).2
+                    ValTuple.append β a b)
+  := by simp [Box.par]
+
+
