@@ -1,25 +1,9 @@
-"""Tests for the Module-to-Lean4 Box wiring diagram converter."""
+"""Tests for the Module-to-Lean4 functional converter."""
 
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
-from zrth.lean.diagram import ModuleToLean4, dtype_to_lean_ty, itype_name
+from zrth.lean.diagram import ModuleToLean4, itype_name
 from zrth.lean.project import generate_main_lean, generate_certificate_lean
-
-
-def test_dtype_bool_scalar():
-    assert dtype_to_lean_ty(Wire(dt.Bool([1]))) == ".bool"
-
-
-def test_dtype_int_scalar():
-    assert dtype_to_lean_ty(Wire(dt.Int([1]))) == ".int"
-
-
-def test_dtype_int_matrix():
-    assert dtype_to_lean_ty(Wire(dt.Int([3, 2]))) == ".mat 3 2"
-
-
-def test_dtype_int_vector():
-    assert dtype_to_lean_ty(Wire(dt.Int([3]))) == ".mat 3 1"
 
 
 def test_itype_name_strips_prefix():
@@ -75,11 +59,13 @@ def _make_matrix_module():
     return Module.sequential(init, update, obs=[x, u])
 
 
+# ── Two-bit counter ──────────────────────────────────────────────────
+
+
 def test_twobitcounter_generates_lean():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "open Box" in lean
     assert "def init" in lean
     assert "def update" in lean
 
@@ -88,63 +74,56 @@ def test_twobitcounter_has_constants():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    # init uses two Tensor(False) constants
     assert "def c0 : Bool := false" in lean
     assert "def c1 : Bool := false" in lean
+
+
+def test_twobitcounter_update_has_let_bindings():
+    m = _make_twobitcounter()
+    lean = ModuleToLean4(m).to_lean()
+
+    assert "let x0" in lean
+    assert "let x1" in lean
 
 
 def test_twobitcounter_update_has_expected_ops():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "not" in lean
-    assert "ite" in lean
-    assert "and" in lean
+    assert "!" in lean  # not
+    assert "if " in lean  # ite
+    assert "&&" in lean  # and
 
 
-def test_twobitcounter_has_layer_defs():
+def test_twobitcounter_init_signature():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
-    assert "def L1" in lean
-    assert "def L2" in lean
 
-
-def test_twobitcounter_has_layer_lemmas():
-    m = _make_twobitcounter()
-    lean = ModuleToLean4(m).to_lean()
-    assert "theorem L1_1" in lean
-    assert "by rfl" in lean
-
-
-def test_twobitcounter_update_uses_layers():
-    m = _make_twobitcounter()
-    lean = ModuleToLean4(m).to_lean()
-    assert "L1 ≫" in lean
+    assert "def init (s : Bool) : Bool × Bool" in lean
 
 
 def test_twobitcounter_update_signature():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    # update takes (b0_latched, b1_latched, enable_next) and returns (b0_next, b1_next)
-    assert "def update : Box [.bool, .bool, .bool] [.bool, .bool]" in lean
+    assert "def update (s : Bool × Bool × Bool) : Bool × Bool" in lean
 
 
-# ── Matrix module ────────────────────────────────────────────────────────
-
-
-def test_matrix_module_has_layer_defs():
-    m = _make_matrix_module()
+def test_twobitcounter_output_tuple():
+    m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
-    assert "def L1" in lean
-    assert "def L2" in lean
+
+    # Output should be a plain tuple like (x1, x4)
+    assert "(x1, x4)" in lean
+
+
+# ── Matrix module ────────────────────────────────────────────────────
 
 
 def test_matrix_module_generates_lean():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "open Box" in lean
     assert "def init" in lean
     assert "def update" in lean
 
@@ -162,24 +141,25 @@ def test_matrix_module_uses_matmul_and_matadd():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "matMul" in lean
-    assert "matAdd" in lean
+    assert "MatMul" in lean
+    assert "MatAdd" in lean
 
 
 def test_matrix_init_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    # init takes u (mat 2 1) and produces x (mat 3 1)
-    assert "def init : Box [.mat 2 1] [.mat 3 1]" in lean
+    assert "def init (s : (Fin 2 → Fin 1 → Int)) : (Fin 3 → Fin 1 → Int)" in lean
 
 
 def test_matrix_update_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    # update takes (x_latched, u_next) and produces x_next
-    assert "def update : Box [.mat 3 1, .mat 2 1] [.mat 3 1]" in lean
+    assert (
+        "def update (s : (Fin 3 → Fin 1 → Int) × (Fin 2 → Fin 1 → Int)) : (Fin 3 → Fin 1 → Int)"
+        in lean
+    )
 
 
 # ── Main.lean generation ────────────────────────────────────────────────
@@ -193,7 +173,6 @@ def test_main_lean_bool_module():
     assert "parseExtl" in src
     assert "showCtrl" in src
     assert "def main" in src
-    assert "ValTuple.append" in src
 
 
 def test_main_lean_matrix_module():
@@ -211,20 +190,17 @@ def test_main_lean_bool_signatures():
     m = _make_twobitcounter()
     src = generate_main_lean("Rea", m, "ReactiveModule")
 
-    # parseExtl takes 1 bool (enable)
-    assert "ValTuple [.bool]" in src
-    # showCtrl takes 2 bools (b0, b1)
-    assert "ValTuple [.bool, .bool]" in src
+    # parseExtl returns Bool, showCtrl takes Bool × Bool
+    assert "Bool" in src
+    assert "Bool × Bool" in src
 
 
 def test_main_lean_matrix_signatures():
     m = _make_matrix_module()
     src = generate_main_lean("Rea", m, "ReactiveModule")
 
-    # parseExtl takes u (mat 2 1)
-    assert "ValTuple [.mat 2 1]" in src
-    # showCtrl takes x (mat 3 1)
-    assert "ValTuple [.mat 3 1]" in src
+    assert "Fin 2 → Fin 1 → Int" in src
+    assert "Fin 3 → Fin 1 → Int" in src
 
 
 # ── Certificate generation ───────────────────────────────────────────
@@ -234,14 +210,21 @@ def _cert_for(make_module, module_name="ReactiveModule"):
     m = make_module()
     m2l = ModuleToLean4(m)
     m2l.to_lean()
-    return generate_certificate_lean("Rea", m, module_name, m2l.const_names, m2l.update_layer_count)
+    return generate_certificate_lean("Rea", m, module_name, m2l.const_names)
 
 
 def test_certificate_bool_has_rm():
     cert = _cert_for(_make_twobitcounter)
     assert "def RM : ReactiveModule" in cert
-    assert "ValTuple [.bool]" in cert
-    assert "ValTuple [.bool, .bool]" in cert
+    assert "(Bool)" in cert
+    assert "(Bool × Bool)" in cert
+
+
+def test_certificate_bool_rm_uses_plain_functions():
+    cert = _cert_for(_make_twobitcounter)
+    # Should use init directly, not init.fn
+    assert "init := init" in cert
+    assert ".fn" not in cert
 
 
 def test_certificate_bool_has_theorems():
@@ -252,21 +235,15 @@ def test_certificate_bool_has_theorems():
     assert "theorem hinv" in cert
 
 
-def test_certificate_bool_has_box_simp():
+def test_certificate_bool_has_simp_mod():
     cert = _cert_for(_make_twobitcounter)
-    assert 'macro "box_simp"' in cert
+    assert 'macro "simp_mod"' in cert
     assert "init, update, inv" in cert
 
 
 def test_certificate_bool_has_constants_in_simp():
     cert = _cert_for(_make_twobitcounter)
     assert "c0, c1" in cert
-
-
-def test_certificate_bool_has_layers_in_simp():
-    cert = _cert_for(_make_twobitcounter)
-    assert "L1" in cert
-    assert "L2" in cert
 
 
 def test_certificate_bool_has_sorry():
@@ -277,11 +254,30 @@ def test_certificate_bool_has_sorry():
 def test_certificate_matrix_has_rm():
     cert = _cert_for(_make_matrix_module)
     assert "def RM : ReactiveModule" in cert
-    assert "ValTuple [.mat 2 1]" in cert
-    assert "ValTuple [.mat 3 1]" in cert
+    assert "Fin 2 → Fin 1 → Int" in cert
+    assert "Fin 3 → Fin 1 → Int" in cert
+
+
+def test_certificate_has_hrank():
+    cert = _cert_for(_make_twobitcounter)
+    assert "theorem hrank" in cert
+    # Should not be commented out
+    for line in cert.splitlines():
+        if "theorem hrank" in line:
+            assert not line.lstrip().startswith("--"), "hrank should not be commented out"
+            break
+
+
+def test_certificate_has_buchi():
+    cert = _cert_for(_make_twobitcounter)
+    assert "def buchi" in cert
+    # Should not be commented out
+    for line in cert.splitlines():
+        if "def buchi" in line:
+            assert not line.lstrip().startswith("--"), "buchi should not be commented out"
+            break
 
 
 def test_certificate_matrix_has_constants_in_simp():
     cert = _cert_for(_make_matrix_module)
-    # matrix module has c0 (A), c1 (B), c2 (e1)
     assert "c0" in cert
