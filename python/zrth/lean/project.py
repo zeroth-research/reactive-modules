@@ -8,7 +8,13 @@ import textwrap
 from pathlib import Path
 
 from zrth import Module, Wire
-from .diagram import ModuleToLean4, _product_type, _append_expr, dtype_to_lean_native
+from .diagram import (
+    ModuleToLean4,
+    _compile_block_functional,
+    _product_type,
+    _append_expr,
+    dtype_to_lean_native,
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -164,15 +170,13 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
             lines.append(f"    let v ← parseIntOrFail tokens[{offset} + k]!")
             lines.append(f"    arr{i} := arr{i}.push v")
             lines.append(
-                f"  let {var} : Fin {m} → Fin {n} → Int := fun i j => arr{i}.get! (i.val * {n} + j.val)"
+                f"  let {var} : Fin {m} → Fin {n} → Int := fun i j => arr{i}[i.val * {n} + j.val]!"
             )
             offset += m * n
         parse_vars.append(var)
 
     # Build ValTuple literal: (e0, (e1, ()))
-    vt = "()"
-    for var in reversed(parse_vars):
-        vt = f"({var}, {vt})"
+    vt = f"({', '.join(reversed(parse_vars))})"
     lines.append(f"  pure {vt}")
     lines.append("")
 
@@ -182,10 +186,8 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     destr_vars: list[str] = []
     for i in range(len(ctrl_next)):
         destr_vars.append(f"v{i}")
-    # Build destructuring pattern: let (v0, (v1, ())) := v
-    pat = "()"
-    for var in reversed(destr_vars):
-        pat = f"({var}, {pat})"
+    # Build destructuring pattern: let (v0, v1) := v
+    pat = f"({', '.join(reversed(destr_vars))})"
     lines.append(f"  let {pat} := v")
 
     # Format each variable
@@ -242,9 +244,14 @@ def generate_certificate_lean(
     project_name: str,
     module: Module,
     module_name: str,
-    const_names: list[str],
+    m2l: ModuleToLean4,
+    inv_terms: list | None = None,
+    init_pre_terms: list | None = None,
+    update_pre_terms: list | None = None,
+    ranking_terms: list | None = None,
+    p_terms: list | None = None,
 ) -> str:
-    """Generate Certificate.lean skeleton with sorry/TODO for user-provided parts."""
+    """Generate Certificate.lean with compiled or placeholder definitions."""
     extl_next = [pair[1] for pair in module.extl]
     ctrl_next = [pair[1] for pair in module.ctrl]
 
@@ -252,6 +259,21 @@ def generate_certificate_lean(
     extl_native = _product_type(extl_next)
     ctrl_native = _product_type(ctrl_next)
     append = _append_expr("x", len(ctrl_latched), "e", len(extl_next))
+
+    # Extract constants from certificate term lists
+    existing_const_count = len(m2l._const_defs)
+    for terms in [inv_terms, init_pre_terms, update_pre_terms, ranking_terms, p_terms]:
+        if terms is not None:
+            m2l._extract_constants(terms)
+    cert_const_defs = m2l._const_defs[existing_const_count:]
+    const_names = list(m2l._constants.values())
+
+    def _cert_body(terms, block_inputs, param_name):
+        """Compile a certificate term list into a Lean function body."""
+        output = [terms[-1].write[0]]
+        return _compile_block_functional(
+            terms, block_inputs, output, m2l._constants, param_name
+        )
 
     lines: list[str] = []
 
@@ -261,31 +283,59 @@ def generate_certificate_lean(
     lines.append(f"import {project_name}.{module_name}")
     lines.append("")
 
-    # User-provided definitions (with defaults / TODOs)
-    lines.append(
-        "-- TODO: precondition on initial inputs, provided by user (defaults to `True`)"
-    )
-    lines.append(f"def init_pre (e : {extl_native}) : Prop := True")
+    # Certificate-specific constants (if any)
+    if cert_const_defs:
+        for cdef in cert_const_defs:
+            lines.append(cdef)
+        lines.append("")
+
+    # init_pre
+    if init_pre_terms is not None:
+        body = _cert_body(init_pre_terms, extl_next, "e")
+        lines.append(f"def init_pre (e : {extl_native}) : Prop :=")
+        lines.append(body)
+    else:
+        lines.append(f"def init_pre (e : {extl_native}) : Prop := True")
     lines.append("")
-    lines.append(
-        "-- TODO: precondition on inputs in every update round, provided by user (defaults to `True`)"
-    )
-    lines.append(f"def update_pre (e : {extl_native}) : Prop := True")
+
+    # update_pre
+    if update_pre_terms is not None:
+        body = _cert_body(update_pre_terms, extl_next, "e")
+        lines.append(f"def update_pre (e : {extl_native}) : Prop :=")
+        lines.append(body)
+    else:
+        lines.append(f"def update_pre (e : {extl_native}) : Prop := True")
     lines.append("")
-    lines.append("-- TODO: invariant of the system, provided by user")
-    lines.append(f"def inv (s : {ctrl_native}) : Prop := True")
+
+    # inv
+    if inv_terms is not None:
+        body = _cert_body(inv_terms, ctrl_next, "s")
+        lines.append(f"def inv (s : {ctrl_native}) : Prop :=")
+        lines.append(body)
+    else:
+        lines.append(f"def inv (s : {ctrl_native}) : Prop := True")
     lines.append("")
-    lines.append(
-        "-- TODO: property to prove to hold infinitely often, provided by user"
-    )
-    lines.append(f"def P (s : {ctrl_native}) : Prop := sorry")
+
+    # P
+    if p_terms is not None:
+        body = _cert_body(p_terms, ctrl_next, "s")
+        lines.append(f"def P (s : {ctrl_native}) : Prop :=")
+        lines.append(body)
+    else:
+        lines.append(f"def P (s : {ctrl_native}) : Prop := sorry")
     lines.append("")
+
     # DecidablePred P — must come after P and before ranking
-    lines.append("-- TODO: update if P is changed")
     lines.append("instance : DecidablePred P := inferInstance")
     lines.append("")
-    lines.append("-- TODO: ranking function on (¬P ∧ inv)-states, provided by user")
-    lines.append(f"def ranking (s : {ctrl_native}) : Nat := sorry")
+
+    # ranking
+    if ranking_terms is not None:
+        body = _cert_body(ranking_terms, ctrl_next, "s")
+        lines.append(f"def ranking (s : {ctrl_native}) : Nat :=")
+        lines.append(body)
+    else:
+        lines.append(f"def ranking (s : {ctrl_native}) : Nat := sorry")
     lines.append("")
     lines.append("")
 
@@ -309,7 +359,7 @@ def generate_certificate_lean(
     simp_lemmas = "init, update, inv"
     if const_list:
         simp_lemmas += f",\n               {const_list}"
-    simp_lemmas += ",\n               MatAdd_apply, MatMul_apply, MatZero_apply"
+    simp_lemmas += ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
     simp_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
     simp_lemmas += ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
     lines.append(f"    simp only [{simp_lemmas}]")
@@ -318,18 +368,46 @@ def generate_certificate_lean(
     lines.append("    <;> (try (split <;> split <;> simp_all <;> omega))))")
     lines.append("")
 
+    # simp_inv tactic — reduces module defs then solves CNF goals
+    lines.append("-- tactic that reduces module definitions and solves CNF invariant goals")
+    lines.append('macro "simp_inv" : tactic =>')
+    lines.append("  `(tactic| (")
+    inv_lemmas = "RM, ReactiveModule.init, ReactiveModule.update,\n"
+    inv_lemmas += "               ReactiveModule.init_pre, ReactiveModule.update_pre,\n"
+    inv_lemmas += "               init, update, inv, init_pre, update_pre"
+    if const_list:
+        inv_lemmas += f",\n               {const_list}"
+    inv_lemmas += ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
+    inv_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
+    inv_lemmas += ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
+    lines.append(f"    simp only [{inv_lemmas}] at *")
+    lines.append("    <;> first")
+    lines.append("      | trivial")
+    lines.append("      | omega")
+    lines.append("      | (simp_all; omega)")
+    lines.append("      | (repeat' constructor)")
+    lines.append("        <;> first")
+    lines.append("          | trivial | omega")
+    lines.append("          | (simp_all; omega)")
+    lines.append("          | (left; omega) | (right; omega)")
+    lines.append("          | (left; simp_all; omega) | (right; simp_all; omega)")
+    lines.append("          | (right; right; omega) | (right; right; simp_all; omega)")
+    lines.append("      | (split <;> simp_all <;> omega)")
+    lines.append("      | (split <;> split <;> simp_all <;> omega)))")
+    lines.append("")
+
     # init_inv theorem
     lines.append("theorem init_inv :")
     lines.append("  ∀ s, RM.init_pre s → inv (RM.init s) := by")
     lines.append("   intro s hpre")
-    lines.append("   simp [RM, inv, init]")
+    lines.append("   simp_inv")
     lines.append("")
 
     # step_inv theorem
     lines.append("theorem step_inv :")
     lines.append("  ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by")
-    lines.append("   intro s e hpre")
-    lines.append("   simp_all [RM, inv, update]")
+    lines.append("   intro s e ⟨hpre, hinv⟩")
+    lines.append("   simp_inv")
     lines.append("")
     lines.append("")
 
@@ -381,11 +459,7 @@ def generate_certificate_lean(
     lines.append("    unfold inv at *")
     lines.append("    simp only [RM, ReactiveModule.update]")
     lines.append("    unfold update")
-    lines.append("    simp")
-    lines.append("    by_cases l")
-    lines.append("    . simp_all")
-    lines.append("    . simp_all")
-    lines.append("      simp [RM, update_pre] at *")
+    lines.append("    simp_mod")
     lines.append("")
     lines.append("def buchi := rule_buchi")
     lines.append("  lts")
@@ -428,6 +502,11 @@ def create_project(
     project_name: str = "Rea",
     template_dir: Path = TEMPLATE_DIR,
     executable: bool = False,
+    inv_terms: list | None = None,
+    init_pre_terms: list | None = None,
+    update_pre_terms: list | None = None,
+    ranking_terms: list | None = None,
+    p_terms: list | None = None,
 ) -> Path:
     """
     Create a full Lean4 project.
@@ -489,7 +568,12 @@ def create_project(
             project_name,
             module,
             module_name,
-            m2l.const_names,
+            m2l,
+            inv_terms=inv_terms,
+            init_pre_terms=init_pre_terms,
+            update_pre_terms=update_pre_terms,
+            ranking_terms=ranking_terms,
+            p_terms=p_terms,
         )
     )
     print(f"Wrote {cert_file}")

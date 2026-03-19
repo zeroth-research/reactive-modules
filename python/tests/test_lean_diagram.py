@@ -137,12 +137,12 @@ def test_matrix_module_has_matrix_constants():
     assert "Fin 3 → Fin 1 → Int" in lean
 
 
-def test_matrix_module_uses_matmul_and_matadd():
+def test_matrix_module_uses_matmul_and_add():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
     assert "MatMul" in lean
-    assert "MatAdd" in lean
+    assert "(x1 + x2)" in lean
 
 
 def test_matrix_init_signature():
@@ -210,7 +210,7 @@ def _cert_for(make_module, module_name="ReactiveModule"):
     m = make_module()
     m2l = ModuleToLean4(m)
     m2l.to_lean()
-    return generate_certificate_lean("Rea", m, module_name, m2l.const_names)
+    return generate_certificate_lean("Rea", m, module_name, m2l)
 
 
 def test_certificate_bool_has_rm():

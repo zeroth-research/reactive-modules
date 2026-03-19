@@ -176,6 +176,7 @@ def _compile_block_functional(
     block_inputs: list[Wire],
     block_outputs: list[Wire],
     constants: dict[int, str],
+    param_name: str = "s",
 ) -> Optional[str]:
     """Compile a block into a Lean function body with let-bindings.
 
@@ -190,7 +191,7 @@ def _compile_block_functional(
     wire_expr: dict[int, str] = {}
     for i, w in enumerate(block_inputs):
         acc = _accessor(i, n_inputs)
-        wire_expr[w.id] = f"s{acc}"
+        wire_expr[w.id] = f"{param_name}{acc}"
 
     var_counter = 0
     let_lines: list[str] = []
