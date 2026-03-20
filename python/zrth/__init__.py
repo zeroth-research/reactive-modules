@@ -30,6 +30,7 @@ def Float(*args):
 
 
 from .module import Env, Simulator, NN
+from .smv import parse_smv
 
 
 __all__ = [

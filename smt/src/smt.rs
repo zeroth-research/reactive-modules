@@ -94,15 +94,14 @@ pub fn assert_terms<'a>(
     for (i, term) in terms.iter().enumerate() {
         for wire_id in term.read().ids() {
             read_set.insert(wire_id);
-            if let Some(&writer) = written_by.get(&wire_id) {
-                if writer >= i {
+            if let Some(&writer) = written_by.get(&wire_id)
+                && writer >= i {
                     return Err(SmtError::BadOrder {
                         wire_id,
                         read_by_term: i,
                         written_by_term: writer,
                     });
                 }
-            }
         }
     }
 
