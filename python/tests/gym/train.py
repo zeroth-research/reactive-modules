@@ -1,6 +1,3 @@
-from .environments import SimpleEnv
-from .qnetworks import SimpleQNet
-from .agent import DQNAgent
 import numpy as np
 import torch
 import random
@@ -9,7 +6,7 @@ import random
 def train(env, agent, num_episodes=500, max_steps=50):
     # Training
     for episode in range(num_episodes):
-        state, _, _, _ = env.reset()
+        state, _ = env.reset()
         state = np.array([state], dtype=np.float32)
         total_reward = 0
 
@@ -23,7 +20,7 @@ def train(env, agent, num_episodes=500, max_steps=50):
                 q_values = torch.FloatTensor([random.random(), random.random()])
 
             # Environment does argmax and executes
-            next_state, reward, terminated, truncated = env.step(q_values)
+            next_state, reward, terminated, truncated, _ = env.step(q_values)
             next_state = np.array([next_state], dtype=np.float32)
             done = terminated or truncated
 
@@ -45,14 +42,14 @@ def train(env, agent, num_episodes=500, max_steps=50):
             )
 
     # Test the trained agent
-    state, _, _, _ = env.reset()
+    state, _ = env.reset()
     state = np.array([state], dtype=np.float32)
     agent.epsilon = 0  # No exploration, pure exploitation
 
     print("\nTesting trained agent:")
     for step in range(10):
         q_values = agent.get_q_values(state)
-        next_state, reward, terminated, truncated = env.step(q_values)
+        next_state, reward, terminated, truncated, _ = env.step(q_values)
         action = q_values.argmax().item()  # For display
         print(
             f"State: {int(state[0])}, Action: {action}, Q-values: {q_values.tolist()}, Reward: {reward}, Next State: {next_state}"
@@ -64,6 +61,10 @@ def train(env, agent, num_episodes=500, max_steps=50):
     return
 
 if __name__ == "__main__":
+    from tests.gym.environments import SimpleEnv
+    from tests.gym.qnetworks import SimpleQNet
+    from tests.gym.agent import DQNAgent
+
     num_episodes = 500
     max_steps = 50
 

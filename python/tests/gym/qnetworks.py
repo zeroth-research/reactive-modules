@@ -1,9 +1,8 @@
 import torch
 import torch.nn as nn
-from zrth import NN
 
 
-class SimpleQNet(NN):
+class SimpleQNet(nn.Module):
     """Simple Q-Network with one hidden layer"""
     
     def __init__(self, state_size, action_size, hidden_size, seed=42):
@@ -26,7 +25,7 @@ class SimpleQNet(NN):
         return self.fc2(x)
 
 
-class GridWorldQNet(NN):
+class GridWorldQNet(nn.Module):
     """Three-layer Q-Network for grid world"""
     
     def __init__(self, state_size, action_size, hidden_size1, hidden_size2, seed=42):

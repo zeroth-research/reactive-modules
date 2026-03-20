@@ -71,7 +71,8 @@ _EVAL = {
     type(IType.Cos()): lambda it, r: [r[0].cos()],
     # Activation / neural
     type(IType.ReLU()): lambda it, r: [r[0].relu()],
-    type(IType.Linear()): lambda it, r: [r[0] @ r[1] + r[2]],
+    type(IType.Tanh()): lambda it, r: [r[0].tanh()],
+    type(IType.Linear()): lambda it, r: [r[0] @ r[1].T + r[2]],
     type(IType.Argmax()): lambda it, r: [r[0].argmax()],
     # Tensor operations
     type(IType.TensorSum()): lambda it, r: [r[0].sum()],

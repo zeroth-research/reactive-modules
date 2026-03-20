@@ -29,7 +29,7 @@ def Float(*args):
     return DType.Float([*args])
 
 
-from .module import Env, NN
+from .module import Env, Simulator, NN
 
 
 __all__ = [
@@ -39,5 +39,6 @@ __all__ = [
     "Term",
     "Module",
     "Env",
+    "Simulator",
     "NN",
 ]
