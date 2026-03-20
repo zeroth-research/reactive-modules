@@ -99,15 +99,15 @@ def _extract_env_module(env_instance, **kwargs):
 
     prvt_wires = {name: wire_pair(infer_dtype(name, attr_vals.get(name))) for name in prvt}
 
-    # Bake parameters as constant terms (live values from instance)
-    param_wires = {}
-    param_const_terms = []
+    # Bake parameters as constant terms (written to temp wires, no param interface needed)
+    const_wires = {}
+    const_terms = []
     for name in params:
         value = getattr(env_instance, name)
         dtype = infer_dtype(name, AbstractValue.const(value))
         wire = Wire(dtype)
-        param_wires[name] = wire
-        param_const_terms.append(_value_to_const_term(value, wire))
+        const_wires[name] = [wire, wire]  # fake pair so analyzer resolves self.name
+        const_terms.append(_value_to_const_term(value, wire))
 
     action      = resolve_wire("action",      action_dtype,      user_wires["action"])
     observation = resolve_wire("observation", observation_dtype, user_wires["observation"])
@@ -115,14 +115,14 @@ def _extract_env_module(env_instance, **kwargs):
     terminated  = resolve_wire("terminated",  DType.Bool([1]),  user_wires["terminated"])
     truncated   = resolve_wire("truncated",   DType.Bool([1]),  user_wires["truncated"])
 
-    wires = {action_param: action, **prvt_wires}
+    wires = {action_param: action, **prvt_wires, **const_wires}
 
     # gym reset returns (obs, info) → 1 result wire; step returns 4
     reset_result = [observation[1]]
     step_result  = [observation[1], reward[1], terminated[1], truncated[1]]
 
-    reset_terms = convert_method(env_cls.reset, wires, reset_result, cls=env_cls, params=param_wires)
-    step_terms  = convert_method(env_cls.step,  wires, step_result,  cls=env_cls, params=param_wires)
+    reset_terms = convert_method(env_cls.reset, wires, reset_result, cls=env_cls)
+    step_terms  = convert_method(env_cls.step,  wires, step_result,  cls=env_cls)
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [
@@ -131,9 +131,9 @@ def _extract_env_module(env_instance, **kwargs):
         Term(IType.ConstBool(False), [truncated[1]], []),
     ]
 
-    # Prepend constant terms so param wires have values before they're read
-    reset_terms = param_const_terms + reset_terms
-    step_terms  = [_value_to_const_term(getattr(env_instance, n), param_wires[n])
+    # Prepend constant terms so wires have values before they're read
+    reset_terms = const_terms + reset_terms
+    step_terms  = [_value_to_const_term(getattr(env_instance, n), const_wires[n][0])
                    for n in params] + step_terms
 
     obs = [action, observation, reward, terminated, truncated]
@@ -142,8 +142,6 @@ def _extract_env_module(env_instance, **kwargs):
     wire_names = {}
     for name, pair in prvt_wires.items():
         wire_names[name] = (pair[0], pair[1])  # (latched, next)
-    for name, wire in param_wires.items():
-        wire_names[name] = (wire, None)  # params have no next wire
 
     return dict(init=reset_terms, update=step_terms, obs=obs, prvt=list(prvt_wires.values()),
                 _wire_names=wire_names)
@@ -222,18 +220,13 @@ class _SymbolicInterpreter:
             raise ValueError(f"Module needs at least 2 observable wire pairs, got {n_obs}")
 
     def _init_wires(self):
-        """Zero-initialize all external and parameter wires."""
+        """Zero-initialize all external wires."""
         extl = self.extl
         for i in range(len(extl)):
             ltc, nxt = extl[i]
             for w in (ltc, nxt):
                 if w.id not in self._state:
                     self._state[w.id] = zero_tensor(w.dtype)
-        param = self.param
-        for i in range(len(param)):
-            w = param[i]
-            if w.id not in self._state:
-                self._state[w.id] = zero_tensor(w.dtype)
 
     def _execute(self, block_type):
         atoms = self.atoms
