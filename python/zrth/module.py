@@ -138,12 +138,12 @@ def _extract_env_module(env_instance, **kwargs):
 
     obs = [action, observation, reward, terminated, truncated]
 
-    # Build name → latched wire mapping for Env.__getattr__
+    # Build name → (latched, next) wire mapping
     wire_names = {}
     for name, pair in prvt_wires.items():
-        wire_names[name] = pair[0]  # latched wire
+        wire_names[name] = (pair[0], pair[1])  # (latched, next)
     for name, wire in param_wires.items():
-        wire_names[name] = wire
+        wire_names[name] = (wire, None)  # params have no next wire
 
     return dict(init=reset_terms, update=step_terms, obs=obs, prvt=list(prvt_wires.values()),
                 _wire_names=wire_names)
@@ -279,7 +279,7 @@ class _SymbolicInterpreter:
         wire_names = object.__getattribute__(self, '_wire_names')
         if name in wire_names:
             state = object.__getattribute__(self, '_state')
-            wire = wire_names[name]
+            wire = wire_names[name][0]  # read from latched wire
             if wire.id in state:
                 val = state[wire.id]
                 return val.item() if val.numel() == 1 else val.detach().clone()
@@ -331,14 +331,24 @@ class Env(_SymbolicInterpreter, Module, gym.Wrapper):
             extracted = _extract_env_module(gym_env, **kwargs)
             wire_names = extracted.pop('_wire_names', {})
             env_module = Module.__new__(Module, **extracted)
+            # Record env atom ctrl wires before composition
+            env_ctrl_ids = set()
+            env_atom = env_module.atoms[0]
+            for j in range(len(env_atom.ctrl)):
+                env_ctrl_ids.add(env_atom.ctrl[j].id)
             modules = [env_module] + modules
             backing_env = gym_env
         else:
-            # Inherit wire_names from any Env in the modules
+            # Inherit wire_names and env atom ctrl IDs from the source Env
             wire_names = {}
+            env_ctrl_ids = set()
             for a in args:
                 if isinstance(a, Env):
                     wire_names.update(a._wire_names)
+                    if a._env_atom_idx is not None:
+                        src_atom = a.atoms[a._env_atom_idx]
+                        for j in range(len(src_atom.ctrl)):
+                            env_ctrl_ids.add(src_atom.ctrl[j].id)
 
         if backing_env is None:
             raise TypeError("Env requires exactly 1 gym.Env, got 0")
@@ -350,6 +360,16 @@ class Env(_SymbolicInterpreter, Module, gym.Wrapper):
             instance = Module.__new__(cls, *modules)
         instance._wire_names = wire_names
         instance._backing_env = backing_env
+
+        # Find the env atom index in the composed module (may be reordered by topo sort)
+        instance._env_atom_idx = None
+        for idx in range(len(instance.atoms)):
+            atom = instance.atoms[idx]
+            atom_ctrl_ids = {atom.ctrl[j].id for j in range(len(atom.ctrl))}
+            if atom_ctrl_ids == env_ctrl_ids:
+                instance._env_atom_idx = idx
+                break
+
         return instance
 
     def __init__(self, *args, **kwargs):
@@ -359,21 +379,121 @@ class Env(_SymbolicInterpreter, Module, gym.Wrapper):
         self._initialized = False
         self._setup_wire_pairs()
 
-    def reset(self, *, seed=None, options=None):
+    def _execute(self, block_type):
+        """Execute atoms in order, delegating the env atom to the real gym.Env."""
+        atoms = self.atoms
+        env_atom_idx = object.__getattribute__(self, '_env_atom_idx')
+        for atom_idx in range(len(atoms)):
+            if env_atom_idx is not None and atom_idx == env_atom_idx:
+                if block_type == "init":
+                    self._run_real_env_init()
+                else:
+                    self._run_real_env_step()
+            else:
+                atom = atoms[atom_idx]
+                block = atom.init if block_type == "init" else atom.update
+                for i in range(len(block)):
+                    term = block[i]
+                    read = [self._state[term.read[j].id] for j in range(len(term.read))]
+                    results = eval_itype(term.itype, read)
+                    for j in range(len(term.write)):
+                        self._state[term.write[j].id] = results[j]
+
+    def _run_real_env_init(self):
+        """Write the real gym.Env's post-reset state to symbolic wires.
+
+        The real env has already been reset by Env.reset() before _execute("init").
+        We read the env's current state to populate the symbolic wires.
+        """
+        # Read observation from stored reset result
+        obs = object.__getattribute__(self, '_last_reset_obs')
+
+        obs_tensor = torch.as_tensor(obs, dtype=torch.float32)
+        if obs_tensor.dim() == 0:
+            obs_tensor = obs_tensor.unsqueeze(0)
+        self._state[self._observation_pair[1].id] = obs_tensor
+
+        # Write default reward/terminated/truncated to next wires
+        if self._reward_pair:
+            self._state[self._reward_pair[1].id] = torch.tensor([0.0])
+        if self._terminated_pair:
+            self._state[self._terminated_pair[1].id] = torch.tensor([0.0])
+        if self._truncated_pair:
+            self._state[self._truncated_pair[1].id] = torch.tensor([0.0])
+
+        # Write private state from real env to next wires
+        self._sync_private_state_from_env()
+
+    def _run_real_env_step(self):
+        """Run the real gym.Env step and write outputs to symbolic wires."""
+        # Read action from symbolic state (latched action wire)
+        action = self._state[self._action_pair[0].id]
+        action_val = action.item() if action.numel() == 1 else action.numpy()
+
         # Run real env
+        gym_result = self.env.step(action_val)
+        obs, reward, terminated, truncated = gym_result[0], gym_result[1], gym_result[2], gym_result[3]
+
+        # Write outputs to next wires
+        obs_tensor = torch.as_tensor(obs, dtype=torch.float32)
+        if obs_tensor.dim() == 0:
+            obs_tensor = obs_tensor.unsqueeze(0)
+        self._state[self._observation_pair[1].id] = obs_tensor
+
+        if self._reward_pair:
+            self._state[self._reward_pair[1].id] = torch.tensor([float(reward)])
+        if self._terminated_pair:
+            self._state[self._terminated_pair[1].id] = torch.tensor([1.0 if terminated else 0.0])
+        if self._truncated_pair:
+            self._state[self._truncated_pair[1].id] = torch.tensor([1.0 if truncated else 0.0])
+
+        # Write private state from real env to next wires
+        self._sync_private_state_from_env()
+
+    def _sync_private_state_from_env(self):
+        """Read private state from the real env and write to symbolic next wires."""
+        wire_names = object.__getattribute__(self, '_wire_names')
+        for name, (latched, nxt) in wire_names.items():
+            if nxt is None:
+                continue  # skip params (no next wire)
+            value = getattr(self.env, name, None)
+            if value is not None:
+                if isinstance(value, bool):
+                    self._state[nxt.id] = torch.tensor([1.0 if value else 0.0])
+                elif isinstance(value, (int, float)):
+                    self._state[nxt.id] = torch.tensor([float(value)])
+                elif isinstance(value, torch.Tensor):
+                    self._state[nxt.id] = value.clone()
+
+    def reset(self, *, seed=None, options=None):
+        self._state = {}
+        self._init_wires()
+        # Reset the real env first (so _run_real_env_init can read its state)
         gym_result = self.env.reset(seed=seed, options=options)
-        # Run symbolic interpreter
-        self._symbolic_reset()
-        return gym_result
+        self._last_reset_obs = gym_result[0] if isinstance(gym_result, tuple) else gym_result
+        self._execute("init")
+        self._latch()
+        self._initialized = True
+        obs = self._read_wire(self._observation_pair[0])
+        return obs.numpy(), {}
 
     def step(self, action):
         if not self._initialized:
             raise RuntimeError("call reset() before step()")
-        # Run real env
-        gym_result = self.env.step(action)
-        # Run symbolic interpreter
-        self._symbolic_step(action)
-        return gym_result
+        # Write action to symbolic state (latched wire, so env atom can read it)
+        action_tensor = torch.as_tensor(action, dtype=torch.float32)
+        if action_tensor.dim() == 0:
+            action_tensor = action_tensor.unsqueeze(0)
+        self._state[self._action_pair[0].id] = action_tensor
+        # Execute all atoms (env atom delegates to real env, others run symbolically)
+        self._execute("update")
+        self._latch()
+        # Read results from symbolic state
+        obs = self._read_wire(self._observation_pair[0])
+        reward = self._read_wire(self._reward_pair[0]).item() if self._reward_pair else 0.0
+        terminated = bool(self._read_wire(self._terminated_pair[0]).item()) if self._terminated_pair else False
+        truncated = bool(self._read_wire(self._truncated_pair[0]).item()) if self._truncated_pair else False
+        return obs.numpy(), reward, terminated, truncated, {}
 
 
 # ============================================================================
