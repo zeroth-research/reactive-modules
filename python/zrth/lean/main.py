@@ -15,27 +15,32 @@ def main():
         help="Path to a Python file defining the module (must contain a callable that returns a Module).",
     )
     parser.add_argument(
-        "-o", "--output-dir",
+        "-o",
+        "--output-dir",
         default=".",
         help="Directory where the Lean project will be created (default: current directory).",
     )
     parser.add_argument(
-        "-n", "--module-name",
+        "-n",
+        "--module-name",
         default="ReactiveModule",
         help="Name for the generated Lean module file (default: ReactiveModule).",
     )
     parser.add_argument(
-        "-p", "--project-name",
+        "-p",
+        "--project-name",
         default="Rea",
         help="Name of the Lean package / library (default: Rea).",
     )
     parser.add_argument(
-        "-d", "--module-def",
+        "-d",
+        "--module-def",
         default="module",
         help="Name of the function or class in the Python file that produces the Module (default: module).",
     )
     parser.add_argument(
-        "-x", "--executable",
+        "-x",
+        "--executable",
         action="store_true",
         help="Generate Main.lean and add [[lean_exe]] to lakefile for a runnable binary.",
     )
@@ -46,7 +51,6 @@ def main():
     project_dir = create_project(
         output_dir=Path(args.output_dir),
         module=module,
-        module_name=args.module_name,
         project_name=args.project_name,
         executable=args.executable,
     )

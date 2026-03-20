@@ -171,7 +171,7 @@ def itype_name(itype) -> str:
     return name
 
 
-def _compile_block_functional(
+def _translate_terms(
     terms,
     block_inputs: list[Wire],
     block_outputs: list[Wire],
@@ -287,13 +287,13 @@ class ModuleToLean4:
         # Compile both blocks
         init_inputs = list(extl_next)
         init_outputs = list(ctrl_next)
-        init_body = _compile_block_functional(
+        init_body = _translate_terms(
             init_terms, init_inputs, init_outputs, self._constants
         )
 
         update_inputs = ctrl_latched + extl_next
         update_outputs = list(ctrl_next)
-        update_body = _compile_block_functional(
+        update_body = _translate_terms(
             update_terms, update_inputs, update_outputs, self._constants
         )
 
