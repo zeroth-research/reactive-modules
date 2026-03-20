@@ -149,8 +149,7 @@ fn test_assert_bad_order() {
     let shared = Wire::new(DType::Real);
     let out_wire = Wire::new(DType::Real);
     let input = Wire::new(DType::Real);
-    let terms = vec![
-        Term::function(
+    let terms = [Term::function(
             IType::Arith(ArithOp::Add),
             [out_wire],
             [input, shared.clone()],
@@ -159,8 +158,7 @@ fn test_assert_bad_order() {
             IType::Num(Val::Real(5.0)),
             [shared],
             vec![] as Vec<Wire<DType>>,
-        ).unwrap(),
-    ];
+        ).unwrap()];
 
     let mut out = String::new();
     let result = assert_terms(terms.iter(), &mut out);
@@ -171,8 +169,7 @@ fn test_assert_bad_order() {
 fn test_assert_duplicate_write() {
     // Both terms write the same wire
     let shared = Wire::new(DType::Real);
-    let terms = vec![
-        Term::function(
+    let terms = [Term::function(
             IType::Num(Val::Real(1.0)),
             [shared.clone()],
             vec![] as Vec<Wire<DType>>,
@@ -181,8 +178,7 @@ fn test_assert_duplicate_write() {
             IType::Num(Val::Real(2.0)),
             [shared],
             vec![] as Vec<Wire<DType>>,
-        ).unwrap(),
-    ];
+        ).unwrap()];
 
     let mut out = String::new();
     let result = assert_terms(terms.iter(), &mut out);
