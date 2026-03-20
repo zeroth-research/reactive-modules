@@ -95,6 +95,26 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     )
 
 
+def _is_scalar_tensor(wire: Wire) -> bool:
+    """True if the wire carries a scalar Bool or Int (not a matrix)."""
+    dt = wire.dtype
+    if isinstance(dt, DType.Bool):
+        return True
+    if isinstance(dt, DType.Int):
+        shape = dt.shape
+        return shape == [] or shape == [1]
+    return False
+
+
+def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
+    """Return an inline Lean literal for a scalar tensor."""
+    if isinstance(wire.dtype, DType.Bool):
+        return "true" if bool(tensor.item()) else "false"
+    if isinstance(wire.dtype, DType.Int):
+        return str(int(tensor.item()))
+    raise ValueError(f"Cannot inline tensor with dtype={wire.dtype}")
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # Part E: Block Compiler (core algorithm)
 # ══════════════════════════════════════════════════════════════════════════
@@ -203,7 +223,11 @@ def _translate_terms(
 
         if name in ("Tensor", "ConstBool", "ConstInt"):
             if name == "Tensor":
-                expr = constants[write_wires[0].id]
+                wire_id = write_wires[0].id
+                if wire_id in constants:
+                    expr = constants[wire_id]
+                else:
+                    expr = _tensor_to_lean_inline(term.itype._0, write_wires[0])
             elif name == "ConstBool":
                 val = bool(term.itype._0)
                 expr = "true" if val else "false"
@@ -251,11 +275,18 @@ class ModuleToLean4:
         return name
 
     def _extract_constants(self, terms) -> None:
-        """Pre-scan terms for Tensor constants and generate top-level definitions."""
+        """Pre-scan terms for matrix Tensor constants and generate top-level definitions.
+
+        Scalar Bool/Int tensors are inlined directly in the function body.
+        Only matrix tensors (shape with dim >= 2 or vector with size > 1) get
+        top-level named definitions.
+        """
         for term in terms:
             name_str = itype_name(term.itype)
             if name_str == "Tensor":
                 out_wire = term.write[0]
+                if _is_scalar_tensor(out_wire):
+                    continue
                 const_name = self._next_const_name()
                 self._constants[out_wire.id] = const_name
                 tensor = term.itype._0
