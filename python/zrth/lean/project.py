@@ -10,7 +10,7 @@ from pathlib import Path
 from zrth import Module, Wire
 from .diagram import (
     ModuleToLean4,
-    _compile_block_functional,
+    _translate_terms,
     _product_type,
     _append_expr,
     dtype_to_lean_native,
@@ -271,9 +271,7 @@ def generate_certificate_lean(
     def _cert_body(terms, block_inputs, param_name):
         """Compile a certificate term list into a Lean function body."""
         output = [terms[-1].write[0]]
-        return _compile_block_functional(
-            terms, block_inputs, output, m2l._constants, param_name
-        )
+        return _translate_terms(terms, block_inputs, output, m2l._constants, param_name)
 
     lines: list[str] = []
 
@@ -359,7 +357,9 @@ def generate_certificate_lean(
     simp_lemmas = "init, update, inv"
     if const_list:
         simp_lemmas += f",\n               {const_list}"
-    simp_lemmas += ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
+    simp_lemmas += (
+        ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
+    )
     simp_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
     simp_lemmas += ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
     lines.append(f"    simp only [{simp_lemmas}]")
@@ -369,7 +369,9 @@ def generate_certificate_lean(
     lines.append("")
 
     # simp_inv tactic — reduces module defs then solves CNF goals
-    lines.append("-- tactic that reduces module definitions and solves CNF invariant goals")
+    lines.append(
+        "-- tactic that reduces module definitions and solves CNF invariant goals"
+    )
     lines.append('macro "simp_inv" : tactic =>')
     lines.append("  `(tactic| (")
     inv_lemmas = "RM, ReactiveModule.init, ReactiveModule.update,\n"
@@ -377,7 +379,9 @@ def generate_certificate_lean(
     inv_lemmas += "               init, update, inv, init_pre, update_pre"
     if const_list:
         inv_lemmas += f",\n               {const_list}"
-    inv_lemmas += ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
+    inv_lemmas += (
+        ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
+    )
     inv_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
     inv_lemmas += ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
     lines.append(f"    simp only [{inv_lemmas}] at *")
@@ -498,8 +502,7 @@ import Core.Box
 def create_project(
     output_dir: Path,
     module: Module,
-    module_name: str = "ReactiveModule",
-    project_name: str = "Rea",
+    project_name: str = "Certificate",
     template_dir: Path = TEMPLATE_DIR,
     executable: bool = False,
     inv_terms: list | None = None,
@@ -555,6 +558,7 @@ def create_project(
             )
 
     # Generate reactive module files
+    module_name = project_name
     mod_file, m2l = generate_module_file(src_dir, project_name, module, module_name)
     assert mod_file.exists()
     print(f"++ Generated {mod_file} ++")
@@ -597,11 +601,6 @@ def create_project(
     print()
     print(f"DONE: Project created at: {project_dir}")
     return project_dir
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# Main
-# ══════════════════════════════════════════════════════════════════════════
 
 
 def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
