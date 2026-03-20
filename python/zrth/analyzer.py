@@ -1047,7 +1047,7 @@ def format_results(states: List[AbstractState]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Module helpers (used by Env / NN metaclass logic)
+# Module helpers (used by Env / NN wrapping logic)
 # ---------------------------------------------------------------------------
 
 _PYTHON_TYPE_TO_DTYPE = {
@@ -1062,19 +1062,6 @@ _GYM_SPACE_TO_DTYPE = {
     "MultiBinary": DType.Bool,
 }
 
-
-def _to_python(v):
-    """Convert numpy scalars to plain Python types for the abstract interpreter."""
-    if hasattr(v, 'item'):
-        return v.item()
-    return v
-
-
-def _unwrap(method):
-    """Follow __wrapped__ chain to get the original function."""
-    while hasattr(method, '__wrapped__'):
-        method = method.__wrapped__
-    return method
 
 
 def wire_pair(dtype):
@@ -1107,24 +1094,6 @@ def resolve_wire(name, dtype, user_val=None):
         f"Invalid wire format for '{name}': expected [Wire, Wire] or tuple of wire pairs"
     )
 
-
-def wrap_init(cls, kwargs_to_strip):
-    """Wrap cls.__init__ to silently drop kwargs consumed by __new__.
-
-    __new__ pops wire-override kwargs before the user's __init__ sees them.
-    Without this wrapper those kwargs would reach the user's __init__ as
-    unexpected keyword arguments. Only wraps if cls defines __init__ directly;
-    an inherited __init__ was already wrapped when the ancestor was defined.
-    """
-    if '__init__' not in cls.__dict__:
-        return
-    original_init = cls.__dict__['__init__']
-    def wrapped_init(self, *args, **kw):
-        for k in kwargs_to_strip:
-            kw.pop(k, None)
-        return original_init(self, *args, **kw)
-    wrapped_init.__wrapped__ = original_init
-    cls.__init__ = wrapped_init
 
 
 def _infer_shape_and_elem_type(value):
@@ -1207,47 +1176,6 @@ def _gym_space_to_dtype(space_name, pos_args, kw_args, is_action):
     else:  # MultiBinary
         return dtype_fn([pos_args[0]])
 
-
-def infer_spaces(self_attrs):
-    """Extract action and observation DTypes from analyzed __init__ self attrs."""
-    action_space_val = self_attrs.get("action_space")
-    observation_space_val = self_attrs.get("observation_space")
-
-    if action_space_val is None or action_space_val.call_repr is None:
-        raise ValueError("Cannot infer action_space from __init__: not found or not a call")
-    if observation_space_val is None or observation_space_val.call_repr is None:
-        raise ValueError("Cannot infer observation_space from __init__: not found or not a call")
-
-    a_name, a_args, a_kwargs = _parse_call_repr(action_space_val.call_repr)
-    o_name, o_args, o_kwargs = _parse_call_repr(observation_space_val.call_repr)
-
-    return (
-        _gym_space_to_dtype(a_name, a_args, a_kwargs, is_action=True),
-        _gym_space_to_dtype(o_name, o_args, o_kwargs, is_action=False),
-    )
-
-
-def infer_layers(self_attrs):
-    """Extract nn.Linear layer sizes from analyzed __init__ self attrs.
-
-    Returns:
-        dict {attr_name: (in_features, out_features)} for each nn.Linear attr.
-    """
-    layers = {}
-    for attr_name, attr_val in self_attrs.items():
-        if attr_val.call_repr is None:
-            continue
-        try:
-            name, pos_args, _ = _parse_call_repr(attr_val.call_repr)
-        except (ValueError, SyntaxError):
-            continue
-        if name == "Linear" and len(pos_args) >= 2:
-            layers[attr_name] = (pos_args[0], pos_args[1])
-
-    if not layers:
-        raise ValueError("No nn.Linear layers found in __init__")
-
-    return layers
 
 
 def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
@@ -1335,18 +1263,6 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
 
     return prvt, params, attr_vals
 
-
-def analyze_init(cls, args, kwargs):
-    """Run the abstract interpreter on cls.__init__ and return self.* attribute values.
-
-    Returns:
-        dict[str, AbstractValue] -- the self.* attrs inferred from __init__
-    """
-    init = _unwrap(cls.__init__)
-    param_names = [p for p in inspect.signature(init).parameters if p != "self"]
-    arg_values = {param_names[i]: AbstractValue.const(_to_python(v)) for i, v in enumerate(args)}
-    arg_values.update({k: AbstractValue.const(_to_python(v)) for k, v in kwargs.items()})
-    return join_states(AbstractInterpreter(init).analyze(arg_values=arg_values)).attrs.get("self", {})
 
 
 # ---------------------------------------------------------------------------
@@ -1450,17 +1366,21 @@ def _normalize_early_returns(stmts: list) -> list:
 # ============================================================================
 
 
-def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term]):
+def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term], layer=None):
     """Translate a linear layer to a single IType.Linear term.
 
     Creates: output = input @ weight + bias
-    Weight and bias wires are dangling (no term writes them) -- they are
-    external parameters to be connected later.
+
+    If *layer* is a live ``nn.Linear`` instance, Tensor terms with references
+    to the actual weight/bias tensors are prepended so that training updates
+    flow through automatically.  Otherwise the weight/bias wires are dangling
+    (external parameters to be connected later).
 
     Args:
         input_wire: Input Wire
         out_features: Number of output features
         terms: List to append Terms to
+        layer: Optional live nn.Linear instance for tensor references
 
     Returns:
         (output_wire, weight_wire, bias_wire)
@@ -1471,11 +1391,23 @@ def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term]):
     bias_wire = Wire(Float(out_features))
     output_wire = Wire(Float(out_features))
 
+    if layer is not None:
+        terms.append(Term(IType.Tensor(layer.weight), [weight_wire], []))
+        terms.append(Term(IType.Tensor(layer.bias), [bias_wire], []))
+
     terms.append(
         Term(IType.Linear(), [output_wire], [input_wire, weight_wire, bias_wire])
     )
 
     return output_wire, weight_wire, bias_wire
+
+
+def _translate_tanh(input_wire: Wire, terms: list[Term]) -> Wire:
+    """Translate Tanh activation to reactive operations."""
+    output_wire = Wire(input_wire.dtype)
+    tanh_term = Term(IType.Tanh(), [output_wire], [input_wire])
+    terms.append(tanh_term)
+    return output_wire
 
 
 def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
@@ -1526,12 +1458,14 @@ class MethodVisitor(ast.NodeVisitor):
         cls=None,
         layers: dict[str, int] | None = None,
         params: dict[str, Wire] | None = None,
+        live_layers: dict | None = None,
     ):
         self.wire_pairs = wire_pairs
         self.result_wires = result_wires
         self.cls = cls
         self.layers = layers or {}
         self.params = params or {}
+        self.live_layers = live_layers or {}
         self.terms = []
         self.temp_vars = {}
         self.scopes = []
@@ -1765,6 +1699,11 @@ class MethodVisitor(ast.NodeVisitor):
                             call.args[0], target_dtype=target_dtype
                         )
                         return _translate_relu(input_wire, self.terms)
+                    elif method == "tanh":
+                        input_wire = self._convert_expr(
+                            call.args[0], target_dtype=target_dtype
+                        )
+                        return _translate_tanh(input_wire, self.terms)
                     elif method in ("sin", "cos"):
                         input_wire = self._convert_expr(call.args[0], target_dtype=target_dtype)
                         itype = IType.Sin() if method == "sin" else IType.Cos()
@@ -2103,7 +2042,8 @@ class MethodVisitor(ast.NodeVisitor):
         if method_name in self.layers:
             input_wire = self._convert_expr(args[0])
             out_features = self.layers[method_name]
-            output_wire, _, _ = _translate_linear(input_wire, out_features, self.terms)
+            layer = self.live_layers.get(method_name)
+            output_wire, _, _ = _translate_linear(input_wire, out_features, self.terms, layer=layer)
             return output_wire
 
         if self.cls is None or not hasattr(self.cls, method_name):
@@ -2131,6 +2071,7 @@ def convert_method(
     cls=None,
     layers: dict[str, int] | None = None,
     params: dict[str, Wire] | None = None,
+    live_layers: dict | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 
@@ -2141,6 +2082,7 @@ def convert_method(
         result: Ordered list of next-wires matched positionally to the return tuple
         cls: Class owning the method, needed only for inlining self.helper() calls
         params: Read-only parameter wires (single wires, not pairs) for self.* constants
+        live_layers: Optional dict of {layer_name: nn.Linear} for live tensor references
 
     Returns:
         List of Terms representing the method as a reactive diagram
@@ -2154,7 +2096,7 @@ def convert_method(
     func_def.body = _normalize_early_returns(func_def.body)
 
     param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
-    visitor = MethodVisitor(wires, result, cls=cls, layers=layers, params=params)
+    visitor = MethodVisitor(wires, result, cls=cls, layers=layers, params=params, live_layers=live_layers)
     visitor.temp_vars.update(
         {name: wires[name][0] for name in param_names if name in wires}
     )

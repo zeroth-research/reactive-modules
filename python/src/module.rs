@@ -25,6 +25,18 @@ impl Module {
         prvt: Option<&Bound<'_, PyAny>>,
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
+        if _args.len() > 0 {
+            if init.is_some() || update.is_some() || assign.is_some() || obs.is_some()
+                || ctrl.is_some() || extl.is_some() || intf.is_some() || prvt.is_some()
+                || _kwargs.is_some()
+            {
+                return Err(PyTypeError::new_err(
+                    "positional Module arguments cannot be combined with keyword arguments"
+                ));
+            }
+            return Self::parallel(_args);
+        }
+
         match (init, update, assign) {
             (Some(init), Some(update), None) => {
                 Self::sequential(init, update, obs, ctrl, extl, intf, prvt)

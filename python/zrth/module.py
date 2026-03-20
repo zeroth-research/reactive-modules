@@ -1,8 +1,7 @@
 import torch
 from zrth import Module, Wire, DType, IType, Term
 from zrth.analyzer import (
-    convert_method, analyze_init, infer_spaces, infer_layers,
-    classify_attrs, infer_dtype, wire_pair, resolve_wire, wrap_init,
+    convert_method, classify_attrs, infer_dtype, wire_pair, resolve_wire,
     AbstractValue,
 )
 from zrth.eval import eval_itype, zero_tensor
@@ -12,105 +11,7 @@ import inspect
 
 
 # ============================================================================
-# _ModuleEnv: wraps a Module as a runnable gym.Env
-# ============================================================================
-
-class _ModuleEnv(gym.Env):
-    """A gym.Env backed by a symbolic Module, evaluated via the term interpreter."""
-
-    def __init__(self, module):
-        super().__init__()
-        self.module = module
-        self._state = {}
-        self._initialized = False
-
-        # Convention: obs = [action, observation, reward, terminated, truncated]
-        n_obs = len(module.obs)
-        if n_obs >= 5:
-            self._action_pair = module.obs[0]
-            self._observation_pair = module.obs[1]
-            self._reward_pair = module.obs[2]
-            self._terminated_pair = module.obs[3]
-            self._truncated_pair = module.obs[4]
-        elif n_obs >= 2:
-            # Minimal: first pair is input, second is output
-            self._action_pair = module.obs[0]
-            self._observation_pair = module.obs[1]
-            self._reward_pair = None
-            self._terminated_pair = None
-            self._truncated_pair = None
-        else:
-            raise ValueError(f"Module needs at least 2 observable wire pairs, got {n_obs}")
-
-    def reset(self, *, seed=None, options=None):
-        super().reset(seed=seed, options=options)
-        self._state = {}
-        self._init_wires()
-        self._execute("init")
-        self._latch()
-        self._initialized = True
-        obs = self._read_wire(self._observation_pair[0])
-        return obs.numpy(), {}
-
-    def step(self, action):
-        if not self._initialized:
-            raise RuntimeError("call reset() before step()")
-        # Load action into the next wire of the action pair
-        action_tensor = torch.as_tensor(action, dtype=torch.float32)
-        if action_tensor.dim() == 0:
-            action_tensor = action_tensor.unsqueeze(0)
-        self._state[self._action_pair[1].id] = action_tensor
-
-        self._execute("update")
-        self._latch()
-
-        obs = self._read_wire(self._observation_pair[0])
-        reward = self._read_wire(self._reward_pair[0]).item() if self._reward_pair else 0.0
-        terminated = bool(self._read_wire(self._terminated_pair[0]).item()) if self._terminated_pair else False
-        truncated = bool(self._read_wire(self._truncated_pair[0]).item()) if self._truncated_pair else False
-
-        return obs.numpy(), reward, terminated, truncated, {}
-
-    def _init_wires(self):
-        """Zero-initialize all external and parameter wires."""
-        extl = self.module.extl
-        for i in range(len(extl)):
-            ltc, nxt = extl[i]
-            for w in (ltc, nxt):
-                if w.id not in self._state:
-                    self._state[w.id] = zero_tensor(w.dtype)
-        param = self.module.param
-        for i in range(len(param)):
-            w = param[i]
-            if w.id not in self._state:
-                self._state[w.id] = zero_tensor(w.dtype)
-
-    def _execute(self, block_type):
-        atoms = self.module.atoms
-        for atom_idx in range(len(atoms)):
-            atom = atoms[atom_idx]
-            block = atom.init if block_type == "init" else atom.update
-            for i in range(len(block)):
-                term = block[i]
-                read = [self._state[term.read[j].id] for j in range(len(term.read))]
-                results = eval_itype(term.itype, read)
-                for j in range(len(term.write)):
-                    self._state[term.write[j].id] = results[j]
-
-    def _latch(self):
-        ctrl = self.module.ctrl
-        for i in range(len(ctrl)):
-            ltc, nxt = ctrl[i]
-            nxt_id = nxt.id
-            if nxt_id in self._state:
-                self._state[ltc.id] = self._state[nxt_id].clone()
-
-    def _read_wire(self, wire):
-        return self._state[wire.id].clone()
-
-
-# ============================================================================
-# Helpers for forward wrapping (instance → Module)
+# Helpers
 # ============================================================================
 
 def _space_to_dtype(space, is_action=False):
@@ -148,9 +49,7 @@ def _instance_to_init_attrs(instance):
         elif isinstance(value, torch.Tensor):
             attrs[name] = AbstractValue.const(value)
         elif isinstance(value, gym.spaces.Space):
-            # Reconstruct call_repr for spaces so infer_spaces can work
             attrs[name] = _space_to_abstract(name, value)
-        # Skip non-analyzable attributes
     return attrs
 
 
@@ -169,8 +68,12 @@ def _space_to_abstract(name, space):
         raise ValueError(f"Cannot convert space '{name}' of type {type(space).__name__}")
 
 
-def _wrap_gym_env(env_instance, **kwargs):
-    """Forward wrap: extract Module from a gym.Env instance."""
+# ============================================================================
+# Module extraction
+# ============================================================================
+
+def _extract_env_module(env_instance, **kwargs):
+    """Analyze a gym.Env instance and extract a symbolic Module."""
     env_cls = type(env_instance)
 
     user_wires = {
@@ -185,11 +88,9 @@ def _wrap_gym_env(env_instance, **kwargs):
         p for p in inspect.signature(env_cls.step).parameters if p != "self"
     )
 
-    # Infer spaces directly from the instance's attributes
     action_dtype = _space_to_dtype(env_instance.action_space, is_action=True)
     observation_dtype = _space_to_dtype(env_instance.observation_space, is_action=False)
 
-    # Reconstruct init_attrs from live instance for classify_attrs fallback
     init_attrs = _instance_to_init_attrs(env_instance)
 
     prvt, params, attr_vals = classify_attrs(
@@ -198,7 +99,7 @@ def _wrap_gym_env(env_instance, **kwargs):
 
     prvt_wires = {name: wire_pair(infer_dtype(name, attr_vals.get(name))) for name in prvt}
 
-    # Bake parameters as constant terms instead of param wires
+    # Bake parameters as constant terms (live values from instance)
     param_wires = {}
     param_const_terms = []
     for name in params:
@@ -214,9 +115,9 @@ def _wrap_gym_env(env_instance, **kwargs):
     terminated  = resolve_wire("terminated",  DType.Bool([1]),  user_wires["terminated"])
     truncated   = resolve_wire("truncated",   DType.Bool([1]),  user_wires["truncated"])
 
-    wires  = {action_param: action, **prvt_wires}
+    wires = {action_param: action, **prvt_wires}
 
-    # gym reset returns (obs, info) → 1 result wire; step returns (obs, rew, term, trunc, info) → 4
+    # gym reset returns (obs, info) → 1 result wire; step returns 4
     reset_result = [observation[1]]
     step_result  = [observation[1], reward[1], terminated[1], truncated[1]]
 
@@ -236,93 +137,24 @@ def _wrap_gym_env(env_instance, **kwargs):
                    for n in params] + step_terms
 
     obs = [action, observation, reward, terminated, truncated]
-    module = Module(init=reset_terms, update=step_terms, obs=obs, prvt=list(prvt_wires.values()))
 
-    # Return a _ModuleEnv that also holds the original env for delegation
-    wrapped = _WrappedEnv(module, env_instance)
-    wrapped.action      = action
-    wrapped.observation = observation
-    wrapped.reward      = reward
-    wrapped.terminated  = terminated
-    wrapped.truncated   = truncated
-    return wrapped
+    # Build name → latched wire mapping for Env.__getattr__
+    wire_names = {}
+    for name, pair in prvt_wires.items():
+        wire_names[name] = pair[0]  # latched wire
+    for name, wire in param_wires.items():
+        wire_names[name] = wire
 
-
-class _WrappedEnv(gym.Wrapper):
-    """Wraps a gym.Env and attaches an extracted Module."""
-
-    def __init__(self, module, env):
-        super().__init__(env)
-        self.module = module
+    return dict(init=reset_terms, update=step_terms, obs=obs, prvt=list(prvt_wires.values()),
+                _wire_names=wire_names)
 
 
-# ============================================================================
-# Env
-# ============================================================================
+def _extract_nn_module(nn_instance, **kwargs):
+    """Analyze an nn.Module instance and extract a symbolic Module.
 
-class Env(Module, gym.Env):
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        wrap_init(cls, ("action", "observation", "reward", "terminated", "truncated"))
-
-    def __new__(cls, *args, **kwargs):
-        # Reverse wrapping: Env(module) → runnable gym.Env
-        if cls is Env and args and isinstance(args[0], Module):
-            return _ModuleEnv(args[0])
-
-        # Forward wrapping: Env(gym_env_instance) → Module + gym.Wrapper
-        if cls is Env and args and isinstance(args[0], gym.Env):
-            return _wrap_gym_env(args[0], **kwargs)
-
-        action_param = next(p for p in inspect.signature(cls.step).parameters if p != "self")
-
-        user_wires = {
-            "action":      kwargs.pop("action",      None),
-            "observation": kwargs.pop("observation", None),
-            "reward":      kwargs.pop("reward",      None),
-            "terminated":  kwargs.pop("terminated",  None),
-            "truncated":   kwargs.pop("truncated",   None),
-        }
-
-        init_attrs = analyze_init(cls, args, kwargs)
-        action_dtype, observation_dtype = infer_spaces(init_attrs)
-        prvt, params, attr_vals = classify_attrs(
-            cls, ['reset', 'step'], init_attrs=init_attrs, base_cls=Env
-        )
-
-        prvt_wires  = {name: wire_pair(infer_dtype(name, attr_vals.get(name))) for name in prvt}
-        param_wires = {name: Wire(infer_dtype(name, attr_vals.get(name))) for name in params}
-
-        action      = resolve_wire("action",      action_dtype,      user_wires["action"])
-        observation = resolve_wire("observation", observation_dtype, user_wires["observation"])
-        reward      = resolve_wire("reward",      DType.Float([1]), user_wires["reward"])
-        terminated  = resolve_wire("terminated",  DType.Bool([1]),  user_wires["terminated"])
-        truncated   = resolve_wire("truncated",   DType.Bool([1]),  user_wires["truncated"])
-
-        wires  = {action_param: action, **prvt_wires}
-        result = [observation[1], reward[1], terminated[1], truncated[1]]
-
-        reset = convert_method(cls.reset, wires, result, cls=cls, params=param_wires)
-        step  = convert_method(cls.step,  wires, result, cls=cls, params=param_wires)
-
-        obs      = [action, observation, reward, terminated, truncated]
-        instance = super().__new__(cls, init=reset, update=step, obs=obs, prvt=list(prvt_wires.values()))
-
-        instance.action      = action
-        instance.observation = observation
-        instance.reward      = reward
-        instance.terminated  = terminated
-        instance.truncated   = truncated
-
-        return instance
-
-# ============================================================================
-# NN
-# ============================================================================
-
-def _wrap_nn_module(nn_instance, **kwargs):
-    """Forward wrap: extract Module from an nn.Module instance."""
+    Uses live tensor references for weight/bias so that training updates
+    flow through to the symbolic module automatically.
+    """
     nn_cls = type(nn_instance)
 
     user_extl = kwargs.pop("extl", None)
@@ -334,9 +166,11 @@ def _wrap_nn_module(nn_instance, **kwargs):
 
     # Infer layer structure from the actual nn.Module instance
     layers = {}
+    live_layers = {}
     for name, child in nn_instance.named_modules():
         if isinstance(child, nn.Linear):
             layers[name] = (child.in_features, child.out_features)
+            live_layers[name] = child
 
     if not layers:
         raise ValueError("No nn.Linear layers found in the module")
@@ -353,54 +187,276 @@ def _wrap_nn_module(nn_instance, **kwargs):
     result = [intf[1]]
 
     layer_out_features = {name: out for name, (_, out) in layers.items()}
-    forward = convert_method(nn_cls.forward, wires, result, cls=nn_cls, layers=layer_out_features)
+    forward = convert_method(
+        nn_cls.forward, wires, result, cls=nn_cls,
+        layers=layer_out_features, live_layers=live_layers,
+    )
 
-    obs    = [extl, intf]
-    module = Module(assign=forward, obs=obs)
-
-    # Attach the module and original nn instance for reference
-    nn_instance._module = module
-    return module
+    obs = [extl, intf]
+    return dict(assign=forward, obs=obs)
 
 
-class NN(Module, nn.Module):
+# ============================================================================
+# Shared symbolic interpreter mixin
+# ============================================================================
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        wrap_init(cls, ("extl", "intf"))
+class _SymbolicInterpreter:
+    """Mixin providing symbolic state management and term evaluation."""
+
+    def _setup_wire_pairs(self):
+        """Set up wire pair references from obs. Call after Module is constructed."""
+        n_obs = len(self.obs)
+        if n_obs >= 5:
+            self._action_pair = self.obs[0]
+            self._observation_pair = self.obs[1]
+            self._reward_pair = self.obs[2]
+            self._terminated_pair = self.obs[3]
+            self._truncated_pair = self.obs[4]
+        elif n_obs >= 2:
+            self._action_pair = self.obs[0]
+            self._observation_pair = self.obs[1]
+            self._reward_pair = None
+            self._terminated_pair = None
+            self._truncated_pair = None
+        else:
+            raise ValueError(f"Module needs at least 2 observable wire pairs, got {n_obs}")
+
+    def _init_wires(self):
+        """Zero-initialize all external and parameter wires."""
+        extl = self.extl
+        for i in range(len(extl)):
+            ltc, nxt = extl[i]
+            for w in (ltc, nxt):
+                if w.id not in self._state:
+                    self._state[w.id] = zero_tensor(w.dtype)
+        param = self.param
+        for i in range(len(param)):
+            w = param[i]
+            if w.id not in self._state:
+                self._state[w.id] = zero_tensor(w.dtype)
+
+    def _execute(self, block_type):
+        atoms = self.atoms
+        for atom_idx in range(len(atoms)):
+            atom = atoms[atom_idx]
+            block = atom.init if block_type == "init" else atom.update
+            for i in range(len(block)):
+                term = block[i]
+                read = [self._state[term.read[j].id] for j in range(len(term.read))]
+                results = eval_itype(term.itype, read)
+                for j in range(len(term.write)):
+                    self._state[term.write[j].id] = results[j]
+
+    def _latch(self):
+        ctrl = self.ctrl
+        for i in range(len(ctrl)):
+            ltc, nxt = ctrl[i]
+            nxt_id = nxt.id
+            if nxt_id in self._state:
+                self._state[ltc.id] = self._state[nxt_id].clone()
+
+    def _read_wire(self, wire):
+        return self._state[wire.id].detach().clone()
+
+    def _symbolic_reset(self):
+        """Reset the symbolic interpreter state."""
+        self._state = {}
+        self._init_wires()
+        self._execute("init")
+        self._latch()
+        self._initialized = True
+
+    def _symbolic_step(self, action):
+        """Advance the symbolic interpreter by one step."""
+        action_tensor = torch.as_tensor(action, dtype=torch.float32)
+        if action_tensor.dim() == 0:
+            action_tensor = action_tensor.unsqueeze(0)
+        self._state[self._action_pair[0].id] = action_tensor
+        self._execute("update")
+        self._latch()
+
+    def __getattr__(self, name):
+        wire_names = object.__getattribute__(self, '_wire_names')
+        if name in wire_names:
+            state = object.__getattribute__(self, '_state')
+            wire = wire_names[name]
+            if wire.id in state:
+                val = state[wire.id]
+                return val.item() if val.numel() == 1 else val.detach().clone()
+        raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
+
+
+# ============================================================================
+# Env: wraps a gym.Env as a gym.Wrapper with symbolic Module
+# ============================================================================
+
+class Env(_SymbolicInterpreter, Module, gym.Wrapper):
+    """A gym.Wrapper backed by a symbolic Module.
+
+    Runs both the real gym.Env and the symbolic interpreter in lockstep.
+    Gym methods (render, close, etc.) delegate to the original env.
+    Symbolic state is available for inspection and validation.
+
+    Usage:
+        Env(gym_env)                    → extract Module, wrap env
+        Env(gym_env, module1, module2)  → extract + compose with other modules
+    """
 
     def __new__(cls, *args, **kwargs):
-        # Forward wrapping: NN(nn_module_instance) → Module
-        if cls is NN and args and isinstance(args[0], nn.Module):
-            return _wrap_nn_module(args[0], **kwargs)
+        # Separate args: raw gym.Envs need extraction, Modules go straight to composition
+        raw_envs = []       # raw gym.Env instances (not already wrapped as Module)
+        modules = []        # all Modules (including Env/NN instances)
+        backing_env = None  # the gym.Env for delegation (unwrapped)
 
-        obs_param = next(p for p in inspect.signature(cls.forward).parameters if p != "self")
+        for a in args:
+            if isinstance(a, Module):
+                modules.append(a)
+                # If it's an Env (gym.Wrapper), unwrap to find the backing gym.Env
+                if isinstance(a, Env):
+                    env = a.unwrapped  # walk wrapper chain to base env
+                    if backing_env is not None:
+                        raise TypeError("Env requires exactly 1 gym.Env, got multiple")
+                    backing_env = env
+            elif isinstance(a, gym.Env):
+                raw_envs.append(a)
+            else:
+                raise TypeError(f"Expected gym.Env or Module, got {type(a)}")
 
-        user_extl = kwargs.pop("extl", None)
-        user_intf = kwargs.pop("intf", None)
+        if len(raw_envs) > 1 or (len(raw_envs) == 1 and backing_env is not None):
+            raise TypeError("Env requires exactly 1 gym.Env, got multiple")
 
-        init_attrs = analyze_init(cls, args, kwargs)
-        layers     = infer_layers(init_attrs)
-        layer_list = list(layers.values())
-        obs_size   = layer_list[0][0]   # first layer's in_features
-        qval_size  = layer_list[-1][1]  # last layer's out_features
+        if len(raw_envs) == 1:
+            # Extract Module from the raw gym.Env
+            gym_env = raw_envs[0]
+            extracted = _extract_env_module(gym_env, **kwargs)
+            wire_names = extracted.pop('_wire_names', {})
+            env_module = Module.__new__(Module, **extracted)
+            modules = [env_module] + modules
+            backing_env = gym_env
+        else:
+            # Inherit wire_names from any Env in the modules
+            wire_names = {}
+            for a in args:
+                if isinstance(a, Env):
+                    wire_names.update(a._wire_names)
 
-        extl = resolve_wire("extl", DType.Float([obs_size]),  user_extl)
-        intf = resolve_wire("intf", DType.Float([qval_size]), user_intf)
+        if backing_env is None:
+            raise TypeError("Env requires exactly 1 gym.Env, got 0")
 
-        # Combinatorial modules have no latched state, so the "input" wire is
-        # index 1 (next) rather than index 0 (latched). The converter always
-        # reads index 0 as the input, so we swap the pair here.
-        wires  = {obs_param: [extl[1], extl[0]]}
-        result = [intf[1]]
-
-        layer_out_features = {name: out for name, (_, out) in layers.items()}
-        forward = convert_method(cls.forward, wires, result, cls=cls, layers=layer_out_features)
-
-        obs      = [extl, intf]
-        instance = super().__new__(cls, assign=forward, obs=obs)
-
-        # instance.extl = extl
-        # instance.intf = intf
-
+        # Compose all modules
+        if len(modules) == 1:
+            instance = Module.__new__(cls, modules[0])
+        else:
+            instance = Module.__new__(cls, *modules)
+        instance._wire_names = wire_names
+        instance._backing_env = backing_env
         return instance
+
+    def __init__(self, *args, **kwargs):
+        backing_env = object.__getattribute__(self, '_backing_env')
+        gym.Wrapper.__init__(self, backing_env)
+        self._state = {}
+        self._initialized = False
+        self._setup_wire_pairs()
+
+    def reset(self, *, seed=None, options=None):
+        # Run real env
+        gym_result = self.env.reset(seed=seed, options=options)
+        # Run symbolic interpreter
+        self._symbolic_reset()
+        return gym_result
+
+    def step(self, action):
+        if not self._initialized:
+            raise RuntimeError("call reset() before step()")
+        # Run real env
+        gym_result = self.env.step(action)
+        # Run symbolic interpreter
+        self._symbolic_step(action)
+        return gym_result
+
+
+# ============================================================================
+# Simulator: runs pure symbolic Modules as a gym.Env
+# ============================================================================
+
+class Simulator(_SymbolicInterpreter, Module, gym.Env):
+    """A gym.Env that runs a symbolic Module via the term interpreter.
+
+    For pure Modules (no backing gym.Env). Use Env() for gym.Env instances.
+
+    Usage:
+        Simulator(module)               → run a single module
+        Simulator(module1, module2)     → compose and run
+    """
+
+    def __new__(cls, *modules):
+        for m in modules:
+            if isinstance(m, gym.Env) and not isinstance(m, Module):
+                raise TypeError("Use Env() for gym.Env instances, Simulator is for pure Modules")
+            if not isinstance(m, Module):
+                raise TypeError(f"Expected Module, got {type(m)}")
+
+        if len(modules) == 1:
+            instance = Module.__new__(cls, modules[0])
+        else:
+            instance = Module.__new__(cls, *modules)
+        instance._wire_names = {}
+        return instance
+
+    def __init__(self, *modules):
+        gym.Env.__init__(self)
+        self._state = {}
+        self._initialized = False
+        self._setup_wire_pairs()
+
+    def reset(self, *, seed=None, options=None):
+        gym.Env.reset(self, seed=seed, options=options)
+        self._symbolic_reset()
+        obs = self._read_wire(self._observation_pair[0])
+        return obs.numpy(), {}
+
+    def step(self, action):
+        if not self._initialized:
+            raise RuntimeError("call reset() before step()")
+        self._symbolic_step(action)
+
+        obs = self._read_wire(self._observation_pair[0])
+        reward = self._read_wire(self._reward_pair[0]).item() if self._reward_pair else 0.0
+        terminated = bool(self._read_wire(self._terminated_pair[0]).item()) if self._terminated_pair else False
+        truncated = bool(self._read_wire(self._truncated_pair[0]).item()) if self._truncated_pair else False
+
+        return obs.numpy(), reward, terminated, truncated, {}
+
+
+# ============================================================================
+# NN: wraps an nn.Module and extracts a symbolic Module
+# ============================================================================
+
+class NN(Module, nn.Module):
+    """An nn.Module backed by a symbolic Module with live tensor references.
+
+    Inherits both Module (symbolic reactive module) and nn.Module (trainable).
+
+    Usage:
+        wrapped = NN(nn_module_instance)
+        wrapped.parameters()   # returns original nn.Module parameters
+        wrapped(x)             # runs forward pass via original nn.Module
+        wrapped.atoms          # symbolic module structure
+
+    Training the original nn.Module automatically updates the symbolic module
+    because IType.Tensor holds a reference to the live weight tensors.
+    """
+
+    def __new__(cls, nn_module, **kwargs):
+        if not isinstance(nn_module, nn.Module):
+            raise TypeError(f"Expected nn.Module, got {type(nn_module)}")
+        parts = _extract_nn_module(nn_module, **kwargs)
+        return Module.__new__(cls, **parts)
+
+    def __init__(self, nn_module, **kwargs):
+        nn.Module.__init__(self)
+        self.inner = nn_module
+
+    def forward(self, x):
+        return self.inner(x)
