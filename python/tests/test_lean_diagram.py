@@ -70,12 +70,13 @@ def test_twobitcounter_generates_lean():
     assert "def update" in lean
 
 
-def test_twobitcounter_has_constants():
+def test_twobitcounter_has_inlined_scalars():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def c0 : Bool := false" in lean
-    assert "def c1 : Bool := false" in lean
+    # Scalar Bool constants are inlined, not top-level defs
+    assert "def c0" not in lean
+    assert "let x0 := false" in lean
 
 
 def test_twobitcounter_update_has_let_bindings():
@@ -241,9 +242,10 @@ def test_certificate_bool_has_simp_mod():
     assert "init, update, inv" in cert
 
 
-def test_certificate_bool_has_constants_in_simp():
+def test_certificate_bool_has_no_scalar_constants_in_simp():
     cert = _cert_for(_make_twobitcounter)
-    assert "c0, c1" in cert
+    # Bool module has no matrix constants, so no c0/c1 in simp
+    assert "c0, c1" not in cert
 
 
 def test_certificate_bool_has_sorry():
