@@ -44,12 +44,6 @@ class Interpreter:
             for w in (ltc, nxt):
                 if w.id not in self.state:
                     self.state[w.id] = _zero_tensor(w.dtype)
-        # Auto-initialize parameter wires not yet in state
-        param = self.module.param
-        for i in range(len(param)):
-            w = param[i]
-            if w.id not in self.state:
-                self.state[w.id] = _zero_tensor(w.dtype)
 
     def _execute(self, block_type):
         atoms = self.module.atoms
