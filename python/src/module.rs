@@ -26,12 +26,18 @@ impl Module {
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
         if _args.len() > 0 {
-            if init.is_some() || update.is_some() || assign.is_some() || obs.is_some()
-                || ctrl.is_some() || extl.is_some() || intf.is_some() || prvt.is_some()
+            if init.is_some()
+                || update.is_some()
+                || assign.is_some()
+                || obs.is_some()
+                || ctrl.is_some()
+                || extl.is_some()
+                || intf.is_some()
+                || prvt.is_some()
                 || _kwargs.is_some()
             {
                 return Err(PyTypeError::new_err(
-                    "positional Module arguments cannot be combined with keyword arguments"
+                    "positional Module arguments cannot be combined with keyword arguments",
                 ));
             }
             return Self::parallel(_args);
@@ -162,13 +168,6 @@ impl Module {
     }
 
     #[getter]
-    fn param(slf: PyRef<'_, Self>) -> PyResult<ModuleParam> {
-        let py = slf.py();
-        let module = slf.into_pyobject(py)?.unbind();
-        Ok(ModuleParam { module })
-    }
-
-    #[getter]
     fn atoms(slf: PyRef<'_, Self>) -> PyResult<ModuleAtoms> {
         let py = slf.py();
         let module = slf.into_pyobject(py)?.unbind();
@@ -182,7 +181,6 @@ impl Module {
     fn open(&self) -> bool {
         self.base.is_open()
     }
-
 
     fn __str__(&self) -> String {
         self.base.to_string()
@@ -291,55 +289,5 @@ impl ModuleAtoms {
     fn __len__(&self) -> usize {
         let module = &self.module.get().base;
         module.atoms().len()
-    }
-}
-
-#[pyclass(sequence)]
-struct ModuleParam {
-    module: Py<Module>,
-}
-
-impl ModuleParam {
-    fn base(&self) -> &base::Interface<DType> {
-        let module = &self.module.get().base;
-        module.param()
-    }
-}
-
-#[pymethods]
-impl ModuleParam {
-    fn __str__(&self) -> String {
-        self.base().to_string()
-    }
-
-    fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        let item = self.base().wire(0, index);
-        item.and_then(|w| Some(w.clone().into()))
-            .ok_or(PyIndexError::new_err("index out of bounds"))
-    }
-
-    fn __len__(&self) -> usize {
-        self.base().len()
-    }
-
-    fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
-        let other = match try_iter_borrow::<Wire>(other) {
-            Ok(other) => other,
-            Err(_) => return false,
-        };
-
-        let mut this = self.base().wires();
-        let mut other = other.into_iter();
-        loop {
-            match (this.next(), other.next()) {
-                (Some(this), Some(Ok(other))) => {
-                    if this != other.base() {
-                        return false;
-                    }
-                }
-                (None, None) => return true,
-                _ => return false,
-            }
-        }
     }
 }

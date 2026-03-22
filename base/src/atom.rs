@@ -17,8 +17,6 @@ pub struct Atom<D, I> {
     read: Interface<D>,
     /// Corresponds to temporary, local wires.
     temp: Interface<D>,
-    /// Corresponds to parameter wires.
-    param: Interface<D>,
     /// Corresponds to the initial action.
     init: Block<D, I>,
     /// Corresponds to the update action.
@@ -55,17 +53,12 @@ impl<D, I> Atom<D, I> {
         self.temp.wires()
     }
 
-    pub fn param(&self) -> &Interface<D> {
-        &self.param
-    }
-
     pub fn empty() -> Self {
         Self {
             ctrl: Interface::empty(),
             wait: Interface::empty(),
             read: Interface::empty(),
             temp: Interface::empty(),
-            param: Interface::empty(),
             init: Block::empty(),
             update: Block::empty(),
         }
@@ -91,7 +84,6 @@ impl<D: Eq, I> Atom<D, I> {
         wait: Interface<D>,
         read: Interface<D>,
         temp: Interface<D>,
-        param: Interface<D>,
         init: Block<D, I>,
         update: Block<D, I>,
     ) -> Self {
@@ -103,7 +95,7 @@ impl<D: Eq, I> Atom<D, I> {
             let mut decl: HashMap<usize, &D> = HashMap::new();
             // declare read and await, don't allow repetition
             {
-                let read_wait_param = read.wires().chain(wait.wires()).chain(param.wires());
+                let read_wait_param = read.wires().chain(wait.wires());
                 for (w, dtype) in read_wait_param.map(Into::into) {
                     debug_assert!(decl.insert(w, dtype).is_none(), "wire {w} doubly declared");
                 }
@@ -144,7 +136,7 @@ impl<D: Eq, I> Atom<D, I> {
             // Check init terms
             //================================================================================
             // the init terms can initially read from the await wires of the atom
-            let mut written = HashSet::<usize>::from_iter(wait.ids().chain(param.ids()));
+            let mut written = HashSet::<usize>::from_iter(wait.ids());
             for term in init.iter() {
                 // all read wires were written before in the block
                 debug_assert!(
@@ -165,8 +157,7 @@ impl<D: Eq, I> Atom<D, I> {
             // Check update terms
             //================================================================================
             // the update block can initially read from the read and await wires of the atom
-            let mut written =
-                HashSet::<usize>::from_iter(read.ids().chain(wait.ids()).chain(param.ids()));
+            let mut written = HashSet::<usize>::from_iter(read.ids().chain(wait.ids()));
             for term in update.iter() {
                 // all read wires were written before in the block
                 debug_assert!(
@@ -189,7 +180,6 @@ impl<D: Eq, I> Atom<D, I> {
             wait,
             read,
             temp,
-            param,
             init,
             update,
         }
@@ -246,7 +236,6 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         let mut ctrl: BTreeMap<usize, Wire<D>> = BTreeMap::new();
         let mut wait: BTreeMap<usize, Wire<D>> = BTreeMap::new();
         let mut read: BTreeMap<usize, Wire<D>> = BTreeMap::new();
-        let mut param: BTreeMap<usize, Wire<D>> = BTreeMap::new();
         let mut temp: BTreeMap<usize, Wire<D>> = BTreeMap::new();
 
         for rd in init.read().iter().map(|[w]| w) {
@@ -263,8 +252,8 @@ impl<D: Eq + Clone, I> Atom<D, I> {
                 return Err("Init reads latched wire");
             }
 
-            // dangling read wires are parameters
-            param.insert(rd.id(), rd.clone());
+            // dangling read wires are invalid
+            return Err("Invalid read wire");
         }
 
         for rd in update.read().iter().map(|[w]| w) {
@@ -287,7 +276,7 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             }
 
             // dangling read wires are parameters
-            param.insert(rd.id(), rd.clone());
+            return Err("Invalid read wire");
         }
 
         for wt in [init.write(), update.write()]
@@ -307,8 +296,6 @@ impl<D: Eq + Clone, I> Atom<D, I> {
 
             if latched.contains_key(&wt.id()) {
                 return Err("write on latched");
-            } else if param.contains_key(&wt.id()) {
-                return Err("write on param");
             } else {
                 temp.insert(wt.id(), wt.clone());
             }
@@ -328,7 +315,6 @@ impl<D: Eq + Clone, I> Atom<D, I> {
             Interface::from_wires_unchecked(wait.into_values()),
             Interface::from_wires_unchecked(read.into_values()),
             Interface::from_wires_unchecked(temp.into_values()),
-            Interface::from_wires_unchecked(param.into_values()),
             init,
             update,
         ))
@@ -407,7 +393,6 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
             Interface::from_wires_unchecked(wait.into_values()),
             Interface::empty(),
             Interface::from_wires_unchecked(temp.into_values()),
-            Interface::from_wires_unchecked(param.into_values()),
             assign.clone(),
             assign,
         ))
