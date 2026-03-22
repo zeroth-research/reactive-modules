@@ -128,7 +128,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     ///
     /// # See Also
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    /// - [`Module::new`], [`Module::observable`], [`Module::sequential_observable`],
+    /// - [`Module::partially_observable`], [`Module::observable`], [`Module::sequential_observable`],
     ///   [`Module::combinatorial`] for safe, automated module construction
     #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
@@ -284,7 +284,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         O: IntoIterator<Item = T>,
         A: IntoIterator<Item = Atom<D, I>> + Sized,
     {
-        Self::new(obs, std::iter::empty::<T>(), atoms)
+        Self::partially_observable(obs, std::iter::empty::<T>(), atoms)
     }
 
     /// Constructs a **partially observable module** from a sequence of atoms.
@@ -310,7 +310,11 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// - [`observable`], for constructing modules where all wires are visible.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn new<T, U, O, P, A>(obs: O, prvt: P, atoms: A) -> Result<Self, &'static str>
+    pub fn partially_observable<T, U, O, P, A>(
+        obs: O,
+        prvt: P,
+        atoms: A,
+    ) -> Result<Self, &'static str>
     where
         T: Into<[Wire<D>; 2]>,
         U: Into<[Wire<D>; 2]>,
@@ -466,7 +470,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let latched = obs.latched().iter().chain(prvt.latched().iter());
         let next = obs.next().iter().chain(prvt.next().iter());
         let atom = Atom::sequential(latched, next, init, update)?;
-        Self::new(obs, prvt, [atom])
+        Self::partially_observable(obs, prvt, [atom])
     }
 
     /// Constructs the *parallel composition* of several `Module` instances.
