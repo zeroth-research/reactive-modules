@@ -55,12 +55,54 @@ pub fn create_test_module() -> Module<DType, IType> {
     let w12 = Wire::new(DType::Real);
     let w13 = Wire::new(DType::Int);
     let w14 = Wire::new(DType::Bool);
-    init.push(Term::function(IType::Num(Val::Real(3.24)), [w12.clone()], vec![] as Vec<Wire<DType>>).unwrap());
-    init.push(Term::function(IType::Num(Val::Int(42)), [w13.clone()], vec![] as Vec<Wire<DType>>).unwrap());
-    init.push(Term::function(IType::Num(Val::Bool(true)), [w14.clone()], vec![] as Vec<Wire<DType>>).unwrap());
-    init.push(Term::function(IType::Arith(ArithOp::Add), [w6.clone()], [w9.clone(), w12.clone()]).unwrap());
-    init.push(Term::function(IType::Arith(ArithOp::Sub), [w7.clone()], [w10.clone(), w13.clone()]).unwrap());
-    init.push(Term::function(IType::Logical(LogicalOp::And), [w8.clone()], [w11.clone(), w14.clone()]).unwrap());
+    init.push(
+        Term::function(
+            IType::Num(Val::Real(3.24)),
+            [w12.clone()],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    init.push(
+        Term::function(
+            IType::Num(Val::Int(42)),
+            [w13.clone()],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    init.push(
+        Term::function(
+            IType::Num(Val::Bool(true)),
+            [w14.clone()],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    init.push(
+        Term::function(
+            IType::Arith(ArithOp::Add),
+            [w6.clone()],
+            [w9.clone(), w12.clone()],
+        )
+        .unwrap(),
+    );
+    init.push(
+        Term::function(
+            IType::Arith(ArithOp::Sub),
+            [w7.clone()],
+            [w10.clone(), w13.clone()],
+        )
+        .unwrap(),
+    );
+    init.push(
+        Term::function(
+            IType::Logical(LogicalOp::And),
+            [w8.clone()],
+            [w11.clone(), w14.clone()],
+        )
+        .unwrap(),
+    );
 
     // === UPDATE FLOW ===
     // Constants and intermediates leading to w6, w7, w8
@@ -74,24 +116,108 @@ pub fn create_test_module() -> Module<DType, IType> {
     let w22 = Wire::new(DType::Bool);
     let w23 = Wire::new(DType::Bool);
     let w24 = Wire::new(DType::Bool);
-    update.push(Term::function(IType::Num(Val::Real(4.20)), [w15.clone()], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Num(Val::Real(12.3)), [w16.clone()], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Arith(ArithOp::Mul), [w17.clone()], [w0.clone(), w15.clone()]).unwrap());
-    update.push(Term::function(IType::Arith(ArithOp::Div), [w6.clone()], [w16.clone(), w17.clone()]).unwrap());
+    update.push(
+        Term::function(
+            IType::Num(Val::Real(4.20)),
+            [w15.clone()],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Num(Val::Real(12.3)),
+            [w16.clone()],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Arith(ArithOp::Mul),
+            [w17.clone()],
+            [w0.clone(), w15.clone()],
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Arith(ArithOp::Div),
+            [w6.clone()],
+            [w16.clone(), w17.clone()],
+        )
+        .unwrap(),
+    );
     update.push(Term::function(IType::Id, [w7.clone()], [w1.clone()]).unwrap());
-    update.push(Term::function(IType::Num(Val::Real(50.05)), [w18.clone()], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Cmp(CmpOp::Lt), [w19.clone()], [w0.clone(), w18.clone()]).unwrap());
-    update.push(Term::function(IType::Num(Val::Int(0)), [w20.clone()], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Cmp(CmpOp::Eq), [w21.clone()], [w1.clone(), w20.clone()]).unwrap());
-    update.push(Term::function(IType::Logical(LogicalOp::Or), [w22.clone()], [w19.clone(), w21.clone()]).unwrap());
-    update.push(Term::function(IType::Logical(LogicalOp::Not), [w23.clone()], [w2.clone()]).unwrap());
-    update.push(Term::function(IType::Num(Val::Bool(false)), [w24.clone()], vec![] as Vec<Wire<DType>>).unwrap());
-    update.push(Term::function(IType::Cond, [w8.clone()], [w22.clone(), w23.clone(), w24.clone()]).unwrap());
+    update.push(
+        Term::function(
+            IType::Num(Val::Real(50.05)),
+            [w18.clone()],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Cmp(CmpOp::Lt),
+            [w19.clone()],
+            [w0.clone(), w18.clone()],
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Num(Val::Int(0)),
+            [w20.clone()],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Cmp(CmpOp::Eq),
+            [w21.clone()],
+            [w1.clone(), w20.clone()],
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Logical(LogicalOp::Or),
+            [w22.clone()],
+            [w19.clone(), w21.clone()],
+        )
+        .unwrap(),
+    );
+    update
+        .push(Term::function(IType::Logical(LogicalOp::Not), [w23.clone()], [w2.clone()]).unwrap());
+    update.push(
+        Term::function(
+            IType::Num(Val::Bool(false)),
+            [w24.clone()],
+            vec![] as Vec<Wire<DType>>,
+        )
+        .unwrap(),
+    );
+    update.push(
+        Term::function(
+            IType::Cond,
+            [w8.clone()],
+            [w22.clone(), w23.clone(), w24.clone()],
+        )
+        .unwrap(),
+    );
 
-    let obs_pairs = obs_ltc.iter().zip(obs_nxt.iter()).map(|(l, n)| [l.clone(), n.clone()]);
-    let prvt_pairs = prvt_ltc.iter().zip(prvt_nxt.iter()).map(|(l, n)| [l.clone(), n.clone()]);
+    let obs_pairs = obs_ltc
+        .iter()
+        .zip(obs_nxt.iter())
+        .map(|(l, n)| [l.clone(), n.clone()]);
+    let prvt_pairs = prvt_ltc
+        .iter()
+        .zip(prvt_nxt.iter())
+        .map(|(l, n)| [l.clone(), n.clone()]);
     let atom = Atom::sequential(all_ltc.iter(), all_nxt.iter(), init, update).unwrap();
-    Module::new(obs_pairs, prvt_pairs, [atom]).unwrap()
+    Module::partially_observable(obs_pairs, prvt_pairs, [atom]).unwrap()
 }
 
 #[test]
@@ -122,10 +248,22 @@ fn test_assert_init() {
     assert_terms(atom.init().iter(), &mut out).unwrap();
 
     // Should contain let-bindings for intermediates and equalities for outputs
-    assert!(out.contains("3.24"), "expected constant 3.24, got:\n{}", out);
+    assert!(
+        out.contains("3.24"),
+        "expected constant 3.24, got:\n{}",
+        out
+    );
     assert!(out.contains("42"), "expected constant 42, got:\n{}", out);
-    assert!(out.contains("true"), "expected constant true, got:\n{}", out);
-    assert!(out.contains("(assert"), "expected assert wrapper, got:\n{}", out);
+    assert!(
+        out.contains("true"),
+        "expected constant true, got:\n{}",
+        out
+    );
+    assert!(
+        out.contains("(assert"),
+        "expected assert wrapper, got:\n{}",
+        out
+    );
 }
 
 #[test]
@@ -138,9 +276,21 @@ fn test_assert_update() {
 
     // Check structural properties of update terms
     assert!(out.contains("4.2"), "expected constant 4.2, got:\n{}", out);
-    assert!(out.contains("12.3"), "expected constant 12.3, got:\n{}", out);
-    assert!(out.contains("50.05"), "expected constant 50.05, got:\n{}", out);
-    assert!(out.contains("(assert"), "expected assert wrapper, got:\n{}", out);
+    assert!(
+        out.contains("12.3"),
+        "expected constant 12.3, got:\n{}",
+        out
+    );
+    assert!(
+        out.contains("50.05"),
+        "expected constant 50.05, got:\n{}",
+        out
+    );
+    assert!(
+        out.contains("(assert"),
+        "expected assert wrapper, got:\n{}",
+        out
+    );
 }
 
 #[test]
@@ -149,16 +299,20 @@ fn test_assert_bad_order() {
     let shared = Wire::new(DType::Real);
     let out_wire = Wire::new(DType::Real);
     let input = Wire::new(DType::Real);
-    let terms = [Term::function(
+    let terms = [
+        Term::function(
             IType::Arith(ArithOp::Add),
             [out_wire],
             [input, shared.clone()],
-        ).unwrap(),
+        )
+        .unwrap(),
         Term::function(
             IType::Num(Val::Real(5.0)),
             [shared],
             vec![] as Vec<Wire<DType>>,
-        ).unwrap()];
+        )
+        .unwrap(),
+    ];
 
     let mut out = String::new();
     let result = assert_terms(terms.iter(), &mut out);
@@ -169,16 +323,20 @@ fn test_assert_bad_order() {
 fn test_assert_duplicate_write() {
     // Both terms write the same wire
     let shared = Wire::new(DType::Real);
-    let terms = [Term::function(
+    let terms = [
+        Term::function(
             IType::Num(Val::Real(1.0)),
             [shared.clone()],
             vec![] as Vec<Wire<DType>>,
-        ).unwrap(),
+        )
+        .unwrap(),
         Term::function(
             IType::Num(Val::Real(2.0)),
             [shared],
             vec![] as Vec<Wire<DType>>,
-        ).unwrap()];
+        )
+        .unwrap(),
+    ];
 
     let mut out = String::new();
     let result = assert_terms(terms.iter(), &mut out);

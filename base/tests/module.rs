@@ -180,7 +180,7 @@ fn can_instantiate_partially_observable_module() {
     let obs = Interface::from_iter(obs);
     let prvt = Interface::from_iter(prvt);
 
-    let m = Module::new(obs, prvt, m.atoms().iter().cloned());
+    let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
     //print!("{}", m);
     assert!(m.is_ok());
 }
@@ -202,7 +202,7 @@ fn cannot_instantiate_external_unobservable_wire() {
     let obs = Interface::from_iter(obs);
     let prvt = Interface::from_iter(prvt);
 
-    let m = Module::new(obs, prvt, m.atoms().iter().cloned());
+    let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
     print!("{:?}", m);
 
     assert!(m.is_err());
