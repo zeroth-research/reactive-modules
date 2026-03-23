@@ -264,6 +264,13 @@ class _SymbolicInterpreter:
         action_tensor = torch.as_tensor(action, dtype=torch.float32)
         if action_tensor.dim() == 0:
             action_tensor = action_tensor.unsqueeze(0)
+        # One-hot encode for Discrete action spaces
+        if hasattr(self, 'env') and isinstance(getattr(self.env, 'action_space', None), gym.spaces.Discrete):
+            if action_tensor.numel() == 1:
+                idx = int(action_tensor.item())
+                one_hot = torch.zeros(self.env.action_space.n)
+                one_hot[idx] = 1.0
+                action_tensor = one_hot
         self._state[self._action_pair[0].id] = action_tensor
         self._execute("update")
         self._latch()
@@ -280,10 +287,10 @@ class _SymbolicInterpreter:
 
 
 # ============================================================================
-# Env: wraps a gym.Env as a gym.Wrapper with symbolic Module
+# zrth.gym.Wrapper: wraps a gym.Env as a gym.Wrapper with symbolic Module
 # ============================================================================
 
-class Env(_SymbolicInterpreter, Module, gym.Wrapper):
+class Wrapper(_SymbolicInterpreter, Module, gym.Wrapper):
     """A gym.Wrapper backed by a symbolic Module.
 
     Runs both the real gym.Env and the symbolic interpreter in lockstep.
@@ -291,8 +298,11 @@ class Env(_SymbolicInterpreter, Module, gym.Wrapper):
     Symbolic state is available for inspection and validation.
 
     Usage:
-        Env(gym_env)                    → extract Module, wrap env
-        Env(gym_env, module1, module2)  → extract + compose with other modules
+        from zrth.gym import Wrapper
+
+        Wrapper(gym_env)                        → extract Module, wrap env
+        Wrapper(gym_env, module1, module2)      → extract + compose with other modules
+        Wrapper(wrapped_env, module1)           → unwrap + compose
     """
 
     def __new__(cls, *args, **kwargs):
@@ -421,10 +431,9 @@ class Env(_SymbolicInterpreter, Module, gym.Wrapper):
         """Run the real gym.Env step and write outputs to symbolic wires."""
         # Read action from symbolic state (latched action wire)
         action = self._state[self._action_pair[0].id]
-        action_val = action.item() if action.numel() == 1 else action.numpy()
 
-        # Run real env
-        gym_result = self.env.step(action_val)
+        # Run real env — pass tensor directly so discrete envs can use .argmax()
+        gym_result = self.env.step(action)
         obs, reward, terminated, truncated = gym_result[0], gym_result[1], gym_result[2], gym_result[3]
 
         # Write outputs to next wires
@@ -477,6 +486,13 @@ class Env(_SymbolicInterpreter, Module, gym.Wrapper):
         action_tensor = torch.as_tensor(action, dtype=torch.float32)
         if action_tensor.dim() == 0:
             action_tensor = action_tensor.unsqueeze(0)
+        # One-hot encode for Discrete action spaces
+        if isinstance(getattr(self.env, 'action_space', None), gym.spaces.Discrete):
+            if action_tensor.numel() == 1:
+                idx = int(action_tensor.item())
+                one_hot = torch.zeros(self.env.action_space.n)
+                one_hot[idx] = 1.0
+                action_tensor = one_hot
         self._state[self._action_pair[0].id] = action_tensor
         # Execute all atoms (env atom delegates to real env, others run symbolically)
         self._execute("update")
@@ -490,23 +506,25 @@ class Env(_SymbolicInterpreter, Module, gym.Wrapper):
 
 
 # ============================================================================
-# Simulator: runs pure symbolic Modules as a gym.Env
+# zrth.gym.Env: runs pure symbolic Modules as a gym.Env
 # ============================================================================
 
-class Simulator(_SymbolicInterpreter, Module, gym.Env):
+class Env(_SymbolicInterpreter, Module, gym.Env):
     """A gym.Env that runs a symbolic Module via the term interpreter.
 
-    For pure Modules (no backing gym.Env). Use Env() for gym.Env instances.
+    For pure Modules (no backing gym.Env). Use Wrapper() for gym.Env instances.
 
     Usage:
-        Simulator(module)               → run a single module
-        Simulator(module1, module2)     → compose and run
+        from zrth.gym import Env
+
+        Env(module)                → run a single module
+        Env(module1, module2)      → compose and run
     """
 
     def __new__(cls, *modules):
         for m in modules:
             if isinstance(m, gym.Env) and not isinstance(m, Module):
-                raise TypeError("Use Env() for gym.Env instances, Simulator is for pure Modules")
+                raise TypeError("Use Wrapper() for gym.Env instances, Env is for pure Modules")
             if not isinstance(m, Module):
                 raise TypeError(f"Expected Module, got {type(m)}")
 
@@ -541,9 +559,19 @@ class Simulator(_SymbolicInterpreter, Module, gym.Env):
 
         return obs.numpy(), reward, terminated, truncated, {}
 
+    def get(self, wire_id):
+        """Retrieve the current value of a wire by ID."""
+        if wire_id not in self._state:
+            raise RuntimeError(f"wire w{wire_id} not in state")
+        return self._state[wire_id].clone()
+
+    def state_dict(self):
+        """Return a copy of the current state."""
+        return dict(self._state)
+
 
 # ============================================================================
-# NN: wraps an nn.Module and extracts a symbolic Module
+# zrth.torch.Module: wraps an nn.Module and extracts a symbolic Module
 # ============================================================================
 
 class NN(Module, nn.Module):
@@ -552,7 +580,9 @@ class NN(Module, nn.Module):
     Inherits both Module (symbolic reactive module) and nn.Module (trainable).
 
     Usage:
-        wrapped = NN(nn_module_instance)
+        from zrth.torch import Module
+
+        wrapped = Module(nn_module_instance)
         wrapped.parameters()   # returns original nn.Module parameters
         wrapped(x)             # runs forward pass via original nn.Module
         wrapped.atoms          # symbolic module structure

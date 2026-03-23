@@ -29,8 +29,13 @@ def Float(*args):
     return DType.Float([*args])
 
 
-from .module import Env, Simulator, NN
+from .module import Wrapper, Env, NN
 from .smv import parse_smv
+
+# Submodule access: from zrth.gym import Env, Wrapper
+#                   from zrth.torch import Module
+from . import gym as gym
+from . import torch as torch
 
 
 __all__ = [
@@ -39,7 +44,7 @@ __all__ = [
     "IType",
     "Term",
     "Module",
+    "Wrapper",
     "Env",
-    "Simulator",
     "NN",
 ]

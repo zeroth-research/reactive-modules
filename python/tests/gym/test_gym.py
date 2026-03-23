@@ -9,7 +9,8 @@ from .environments import (
     ArrayEnv,
 )
 from .qnetworks import SimpleQNet, GridWorldQNet
-from zrth import Module, Env, NN
+from zrth.gym import Wrapper
+from zrth.torch import Module
 
 
 def simpleqnet():
@@ -18,7 +19,7 @@ def simpleqnet():
         action_size=2,
         hidden_size=2,
     )
-    wrapped = NN(nn_module)
+    wrapped = Module(nn_module)
 
     print("QNetwork reactive module:")
     print(wrapped)
@@ -32,7 +33,7 @@ def test_simpleqnet_conversion():
 
 def simpleenv():
     env = SimpleEnv()
-    wrapped = Env(env)
+    wrapped = Wrapper(env)
 
     print("\nSimpleEnv reactive module:")
     print(wrapped)
@@ -51,7 +52,7 @@ def gridworldqnet():
         hidden_size1=8,
         hidden_size2=4,
     )
-    wrapped = NN(nn_module)
+    wrapped = Module(nn_module)
 
     print("GridWorldQNet reactive module:")
     print(wrapped)
@@ -65,7 +66,7 @@ def test_gridworldqnet_conversion():
 
 def gridworldenv():
     env = GridWorldEnv()
-    wrapped = Env(env)
+    wrapped = Wrapper(env)
 
     print("\nGridWorldEnv reactive module:")
     print(wrapped)
@@ -79,7 +80,7 @@ def test_gridworldenv_conversion():
 
 def complexdecisionenv():
     env = ComplexDecisionEnv()
-    wrapped = Env(env)
+    wrapped = Wrapper(env)
 
     print("\nComplexDecisionEnv reactive module:")
     print(wrapped)
@@ -93,7 +94,7 @@ def test_complexdecisionenv_conversion():
 
 def earlyreturnenv():
     env = EarlyReturnEnv()
-    wrapped = Env(env)
+    wrapped = Wrapper(env)
 
     print("\nEarlyReturnEnv reactive module:")
     print(wrapped)
@@ -107,7 +108,7 @@ def test_earlyreturnenv_conversion():
 
 def comparisonchainenv():
     env = ComparisonChainEnv()
-    wrapped = Env(env)
+    wrapped = Wrapper(env)
 
     print("\nComparisonChainEnv reactive module:")
     print(wrapped)
@@ -121,7 +122,7 @@ def test_comparisonchainenv_conversion():
 
 def twobitcounterenv():
     env = TwoBitCounterEnv()
-    wrapped = Env(env)
+    wrapped = Wrapper(env)
 
     print("\nTwoBitCounterEnv reactive module:")
     print(wrapped)
@@ -135,7 +136,7 @@ def test_twobitcounterenv_conversion():
 
 def heartode():
     env = HeartODE(60.0, 5.0, 1.0, 0.1)
-    wrapped = Env(env)
+    wrapped = Wrapper(env)
 
     print("\nHeartODE reactive module:")
     print(wrapped)
@@ -149,7 +150,7 @@ def test_heartode_conversion():
 
 def test_arrayenv_conversion():
     env = ArrayEnv()
-    wrapped = Env(env)
+    wrapped = Wrapper(env)
     module_str = str(wrapped)
     if "Float(3, 3)" not in module_str:
         raise AssertionError(module_str)  # grid
@@ -164,7 +165,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60 + "\n")
     env = simpleenv()
     print("\n" + "=" * 60 + "\n")
-    composed = Module.parallel(qnet, env)
+    composed = Wrapper(env, qnet)
     print(composed)
 
     print("\n" + "=" * 60 + "\n")
@@ -172,7 +173,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60 + "\n")
     gridenv = gridworldenv()
     print("\n" + "=" * 60 + "\n")
-    composed2 = Module.parallel(qnet3, gridenv)
+    composed2 = Wrapper(gridenv, qnet3)
     print(composed2)
 
     print("\n" + "=" * 60 + "\n")
