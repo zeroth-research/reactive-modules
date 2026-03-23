@@ -308,17 +308,17 @@ class Wrapper(_SymbolicInterpreter, Module, gym.Wrapper):
     def __new__(cls, *args, **kwargs):
         # Separate args: raw gym.Envs need extraction, Modules go straight to composition
         raw_envs = []       # raw gym.Env instances (not already wrapped as Module)
-        modules = []        # all Modules (including Env/NN instances)
+        modules = []        # all Modules (including Wrapper/NN instances)
         backing_env = None  # the gym.Env for delegation (unwrapped)
 
         for a in args:
             if isinstance(a, Module):
                 modules.append(a)
-                # If it's an Env (gym.Wrapper), unwrap to find the backing gym.Env
-                if isinstance(a, Env):
+                # If it's a Wrapper (gym.Wrapper), unwrap to find the backing gym.Env
+                if isinstance(a, Wrapper):
                     env = a.unwrapped  # walk wrapper chain to base env
                     if backing_env is not None:
-                        raise TypeError("Env requires exactly 1 gym.Env, got multiple")
+                        raise TypeError("Wrapper requires exactly 1 gym.Env, got multiple")
                     backing_env = env
             elif isinstance(a, gym.Env):
                 raw_envs.append(a)
@@ -326,7 +326,7 @@ class Wrapper(_SymbolicInterpreter, Module, gym.Wrapper):
                 raise TypeError(f"Expected gym.Env or Module, got {type(a)}")
 
         if len(raw_envs) > 1 or (len(raw_envs) == 1 and backing_env is not None):
-            raise TypeError("Env requires exactly 1 gym.Env, got multiple")
+            raise TypeError("Wrapper requires exactly 1 gym.Env, got multiple")
 
         if len(raw_envs) == 1:
             # Extract Module from the raw gym.Env
@@ -342,11 +342,11 @@ class Wrapper(_SymbolicInterpreter, Module, gym.Wrapper):
             modules = [env_module] + modules
             backing_env = gym_env
         else:
-            # Inherit wire_names and env atom ctrl IDs from the source Env
+            # Inherit wire_names and env atom ctrl IDs from the source Wrapper
             wire_names = {}
             env_ctrl_ids = set()
             for a in args:
-                if isinstance(a, Env):
+                if isinstance(a, Wrapper):
                     wire_names.update(a._wire_names)
                     if a._env_atom_idx is not None:
                         src_atom = a.atoms[a._env_atom_idx]
@@ -354,7 +354,7 @@ class Wrapper(_SymbolicInterpreter, Module, gym.Wrapper):
                             env_ctrl_ids.add(src_atom.ctrl[j].id)
 
         if backing_env is None:
-            raise TypeError("Env requires exactly 1 gym.Env, got 0")
+            raise TypeError("Wrapper requires exactly 1 gym.Env, got 0")
 
         # Compose all modules
         if len(modules) == 1:
