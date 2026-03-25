@@ -9,8 +9,8 @@ IType operation to its Lean equivalent.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, Callable
+from dataclasses import dataclass
+from typing import Callable
 
 from zrth import Module, Wire, DType, Term
 
