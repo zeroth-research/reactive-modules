@@ -174,6 +174,54 @@ theorem rule_buchi {State: Type u} {Label : Type v} [DecidableEq State]
       rw [this]
       exact hbx
 
+
+/-- a stronger version of rule_buchi (stronger in `hrank`) -/
+theorem rule_buchi' {State: Type u} {Label : Type v} [DecidableEq State]
+    (lts : LTS' State Label)             -- the LTS
+    (B : State → Prop) [DecidablePred B]      -- proposition `B`
+    (I : StateSet State)                      -- invariant `I`
+    (hinv : lts.StateSet_isInvariant I)
+    (V : State → Nat)                         -- ranking function on
+                                              -- (I ∧ ¬B)-states
+    -- assume `V` is a function such that whenever `B` does not hold,
+    -- then in next steps the value of `V` decreases
+    (hrank : ∀ s s', I s ∧ ¬(B s) ∧ (∃ l, lts.Tr s l s') → V s' < V s) :
+    -- Then then `B` holds infinitely many times
+    ∀ ss μs, lts.ωTrace ss μs → ss ⊧ G (F (AP B)) := by
+  intro ss μs htr
+  simp [LTLFormula.sem]
+  simp [<- drop_get_zero]
+  have hI := lts.trace_states_in_invariant I hinv htr
+  have hstep : ∀ j, ∃ l, lts.Tr (ss.get j) l (ss.get (j + 1)) := by
+    intro j; exists μs.get j; exact htr.2 j
+  intro i
+  suffices ∀ k n, V (ss.get n) ≤ k → ∃ x, B (ss.get (n + x)) from
+    this (V (ss.get i)) i (Nat.le_refl _)
+  intro k
+  induction k with
+  | zero =>
+    intro n hv
+    exists 0
+    simp
+    if hb : B (ss.get n) then
+      exact hb
+    else
+      have : V (ss.get n) ≤ V (ss.get (n + 1)) := by simp_all
+      exact absurd (hrank _ _ ⟨ (hI n), hb, (hstep n)⟩) (Nat.not_lt.mpr this)
+  | succ k ih =>
+    intro n hv
+    if hb : B (ss.get n) then
+      exact ⟨0, by simp; exact hb⟩
+    else
+      have hdec := hrank _ _ ⟨ hI n, hb, (hstep n)⟩
+      obtain ⟨x, hbx⟩ := ih (n + 1) (by omega)
+      exists x + 1
+      have : n + (x + 1) = n + 1 + x := by omega
+      rw [this]
+      exact hbx
+
+
+
 end proof_rules
 
 structure ReactiveModule (Extl: Type u) (State: Type u) where
