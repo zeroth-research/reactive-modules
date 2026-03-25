@@ -220,25 +220,22 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     # main function
     main_append = _append_expr("state", len(ctrl_next), "extl", len(extl_next))
 
-    lines.append("def main : IO Unit := do")
-    lines.append("  let stdin ← IO.getStdin")
-    lines.append("  let line0 ← stdin.getLine")
-    lines.append("  if line0.trimAscii.toString.isEmpty then return")
-    lines.append(
-        '  let extl0 ← parseExtl (line0.trimAscii.toString.splitOn " " |>.toArray)'
-    )
-    lines.append("  let mut state := init extl0")
-    lines.append("  IO.println (showCtrl state)")
-    lines.append("  repeat do")
-    lines.append("    let line ← stdin.getLine")
-    lines.append("    if line.trimAscii.toString.isEmpty then break")
-    lines.append(
-        '    let extl ← parseExtl (line.trimAscii.toString.splitOn " " |>.toArray)'
-    )
-    lines.append(f"    let state' := update {main_append}")
-    lines.append("    IO.println (showCtrl state')")
-    lines.append("    state := state'")
-    lines.append("")
+    lines.append(f"""\
+def main : IO Unit := do
+  let stdin ← IO.getStdin
+  let line0 ← stdin.getLine
+  if line0.trimAscii.toString.isEmpty then return
+  let extl0 ← parseExtl (line0.trimAscii.toString.splitOn " " |>.toArray)
+  let mut state := init extl0
+  IO.println (showCtrl state)
+  repeat do
+    let line ← stdin.getLine
+    if line.trimAscii.toString.isEmpty then break
+    let extl ← parseExtl (line.trimAscii.toString.splitOn " " |>.toArray)
+    let state' := update {main_append}
+    IO.println (showCtrl state')
+    state := state'
+""")
 
     return "\n".join(lines)
 
