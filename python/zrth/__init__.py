@@ -1,10 +1,4 @@
-from .zrth import (
-    Wire,
-    DType,
-    IType,
-    Term,
-    Module,
-)
+from .zrth import Wire, DType, IType, Term, Module
 
 
 #####################################################################
@@ -36,7 +30,6 @@ from .smv import parse_smv
 #                   from zrth.torch import Module
 from . import gym as gym
 from . import torch as torch
-
 
 __all__ = [
     "Wire",
