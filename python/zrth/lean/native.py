@@ -125,7 +125,7 @@ def _translate_terms(
         name = itype_name(term.itype)
 
         if name in ("Tensor", "ConstBool", "ConstInt"):
-            expr = _constant_expr(name, term, w, constants)
+            expr = _constant_expr(name, term, write_wires[0], constants)
         else:
             input_exprs = [wire_expr[w.id] for w in read_wires]
             it_name = itype_name(term.itype)
