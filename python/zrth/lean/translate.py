@@ -168,31 +168,53 @@ class ModuleToLean4:
 
         return "\n".join(lines)
 
+    # Simp lemmas for reducing a single circuit layer
+    _LAYER_SIMP = [
+        "Box.par", "ValTuple.split", "ValTuple.append",
+        "Box.id", "Box.dup", "Box.swap", "Box.destr", "Box.const",
+        "Box.not", "Box.and", "Box.or", "Box.ite",
+        "Box.add", "Box.sub", "Box.mul", "Box.neg",
+        "Box.lt", "Box.le", "Box.gt", "Box.ge", "Box.eq", "Box.neq",
+        "Box.min", "Box.max", "Box.matMul", "Box.matAdd",
+        "ite_pair",
+    ]
+
+    def _simp_circ_macro(self) -> str:
+        """Generate the simp_circ helper tactic macro."""
+        layer_simp = ",\n    ".join(self._LAYER_SIMP)
+        lines = []
+        lines.append("/-- Reduce one circuit layer: unfolds the given lemma,")
+        lines.append("    then simplifies all Box/ValTuple plumbing. -/")
+        lines.append('macro "simp_circ" "[" ls:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>')
+        lines.append("  `(tactic| simp only [$ls,*,")
+        lines.append(f"    {layer_simp}])")
+        return "\n".join(lines)
+
     def _equiv_proof_tactic(
         self,
         input_wires: list[Wire],
         layer_names: list[str],
         block_name: str,
     ) -> str:
-        """Generate proof tactic for equivalence theorem."""
-        simp_names = [f"Circ.{n}" for n in layer_names]
-        simp_names.append(f"Circ.{block_name}")
-        simp_names.append(block_name)
+        """Generate layer-by-layer proof tactic for equivalence theorem.
 
-        all_bool = all(isinstance(w.dtype, DType.Bool) for w in input_wires)
-        n = len(input_wires)
+        Unfolds one circuit layer at a time to keep intermediate terms small.
+        """
+        const_names = ", ".join(self.const_names) if self.const_names else ""
 
-        if all_bool:
-            # Case-split on all Bool inputs, then decide
-            if n == 1:
-                return "  intro s; cases s <;> decide"
-            else:
-                vars = [f"s{i}" for i in range(n)]
-                intro = f"intro ⟨{', '.join(vars)}⟩"
-                cases = " <;> ".join(f"cases {v}" for v in vars)
-                return f"  {intro}; {cases} <;> decide"
-        else:
-            return f"  intro s; simp [{', '.join(simp_names)}]"
+        proof = []
+        proof.append("  intro s")
+        # Step 1: unfold the composed circuit and sequential composition
+        proof.append(f"  simp_circ [Circ.{block_name}, Box.seq]")
+        # Step 2: reduce each layer from innermost to outermost
+        for name in layer_names:
+            proof.append(f"  simp_circ [Circ.{name}]")
+        # Step 3: match with functional definition
+        final_simp = [block_name, "ite_pair"]
+        if const_names:
+            final_simp.append(const_names)
+        proof.append(f"  simp [{', '.join(final_simp)}]")
+        return "\n".join(proof)
 
     def to_lean_equiv_theorems(self, atom) -> str:
         """Generate theorems proving circuit ≡ functional."""
@@ -203,6 +225,12 @@ class ModuleToLean4:
         ctrl_next = [pair[1] for pair in m.ctrl]
 
         lines: list[str] = []
+
+        # Emit simp_circ helper tactic
+        has_theorems = bool(self._init_layer_names or self._update_layer_names)
+        if has_theorems:
+            lines.append(self._simp_circ_macro())
+            lines.append("")
 
         # Init equivalence theorem
         init_inputs = list(extl_next)
