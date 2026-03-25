@@ -220,6 +220,10 @@ end Box
     (if p then a else b).2 = if p then a.2 else b.2 := by
   split <;> rfl
 
+@[simp] theorem ite_pair (p : Prop) [Decidable p] (a b : α) (c d : β) :
+    (if p then (a, c) else (b, d)) = (if p then a else b, if p then c else d) := by
+  split <;> rfl
+
 
 theorem parseq (A: Box α β) (B: Box α' β'):
     (A ⊗ B).fn = (fun (x: ValTuple (α ++ α')) =>
