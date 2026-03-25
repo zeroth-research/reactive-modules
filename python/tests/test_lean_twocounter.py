@@ -2,7 +2,6 @@
 
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it, Bool, Int
-from zrth.lean.diagram import ModuleToLean4, itype_name
 from zrth.lean.project import (
     create_project,
 )
