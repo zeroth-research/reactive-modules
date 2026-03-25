@@ -192,6 +192,7 @@ def _append_expr(var1: str, count1: int, var2: str, count2: int) -> str:
 @dataclass
 class CircLayer:
     """A single layer in a circuit composition."""
+
     in_tys: list[str]
     out_tys: list[str]
     body: str
@@ -346,32 +347,9 @@ def _translate_terms(
     return "\n".join(let_lines + [result_line])
 
 
-def _translate_terms_circ(
-    terms,
-    block_inputs: list[Wire],
-    block_outputs: list[Wire],
-    constants: dict[int, str],
-    param_name: str = "s",
-) -> list[CircLayer]:
-    """Compile a block of terms into a list of CircLayer objects.
-
-    Each CircLayer represents one layer of the circuit composition.
-    Returns empty list if there are no terms.
-    """
-    term_list = [terms[i] for i in range(len(terms))]
-    if not term_list:
-        return []
-
-    # Map wire_id -> Lean expression (variable name or input accessor)
-    # TODO: do this once (we use it also in `_translate_terms`)
-    n_inputs = len(block_inputs)
-    wire_expr: dict[int, str] = {}
-    for i, w in enumerate(block_inputs):
-        acc = _accessor(i, n_inputs)
-        wire_expr[w.id] = f"{param_name}{acc}"
-
-    # output wires to terms
-    wire_to_term: dict[Wire, Term] = {t.write[0]: t for t in term_list}
+def _circ_translate_body(
+    block_inputs: list[Wire], block_outputs: list[Wire], wire_to_term: dict[Wire, Term]
+) -> list[list[Wire]]:
 
     # output layer are just the terms writing to output wires. However,
     # there are no terms e.g., for inputs (unless we want to create new
@@ -408,12 +386,18 @@ def _translate_terms_circ(
             layers.append(new_layer)
 
         if not have_new:
-            break
+            return layers
 
-    # compute swapping wires
+    raise RuntimeError("Unreachable")
+
+
+def _cicr_compute_swapping(
+    block_inputs: list[Wire],
+    block_outputs: list[Wire],
+    wires_ord: dict[Wire, int],
+    layer: list[Wire],
+) -> tuple[list[CircLayer], list[Wire]]:
     swapping: list[CircLayer] = []
-    wires_ord = {w: n for n, w in enumerate(block_inputs)}
-    layer = layers[-1]
     while True:
         new_layer: list[Wire] = []
         boxes: list[str] = []
@@ -450,16 +434,25 @@ def _translate_terms_circ(
                 i += 2
 
         if not changed:
-            break
+            return swapping, layer
         assert boxes
-        swapping.append(CircLayer(
-            in_tys=list(in_ty), out_tys=list(out_ty),
-            body=" ⊗ ".join(boxes),
-        ))
+        swapping.append(
+            CircLayer(
+                in_tys=list(in_ty),
+                out_tys=list(out_ty),
+                body=" ⊗ ".join(boxes),
+            )
+        )
         assert len(new_layer) == len(layer)
         layer = new_layer
 
-    # duplication of wires
+    raise RuntimeError("Unreachable")
+
+
+def _circ_compute_dups(
+    block_inputs: list[Wire], wires_ord: dict[Wire, int], layer: list[Wire]
+) -> tuple[list[CircLayer], list[Wire]]:
+    layers = []
     while True:
         new_layer: list[Wire] = []
         boxes: list[str] = []
@@ -492,22 +485,30 @@ def _translate_terms_circ(
                 i += 2
 
         if not changed:
-            break
+            return layers, layer
+
         assert boxes
 
-        swapping.append(CircLayer(
-            in_tys=list(in_ty), out_tys=list(out_ty),
-            body=" ⊗ ".join(boxes),
-        ))
+        layers.append(
+            CircLayer(
+                in_tys=list(in_ty),
+                out_tys=list(out_ty),
+                body=" ⊗ ".join(boxes),
+            )
+        )
         assert len(new_layer) < len(layer)
         layer = new_layer
 
-    # deletion of unused wires
-    if len(block_inputs) != len(layer):
+    raise RuntimeError("Unreachable")
+
+
+def _circ_comput_dels(block_inputs: list[Wire], last_layer: list[Wire]):
+    dels = []
+    if len(block_inputs) != len(last_layer):
         boxes = []
         in_ty, out_ty = [], []
         for w in block_inputs:
-            if w in layer:
+            if w in last_layer:
                 boxes.append(f"@Box.id {dtype_to_lean_ty(w)}")
                 in_ty.append(dtype_to_lean_ty(w))
                 out_ty.append(dtype_to_lean_ty(w))
@@ -515,12 +516,59 @@ def _translate_terms_circ(
                 boxes.append(f"@Box.destr {dtype_to_lean_ty(w)}")
                 in_ty.append(dtype_to_lean_ty(w))
         assert boxes
-        swapping.append(CircLayer(
-            in_tys=list(in_ty), out_tys=list(out_ty),
-            body=" ⊗ ".join(boxes),
-        ))
+        dels.append(
+            CircLayer(
+                in_tys=list(in_ty),
+                out_tys=list(out_ty),
+                body=" ⊗ ".join(boxes),
+            )
+        )
+    return dels
 
-    result: list[CircLayer] = list(reversed(swapping))
+
+def _translate_terms_circ(
+    terms,
+    block_inputs: list[Wire],
+    block_outputs: list[Wire],
+    constants: dict[int, str],
+    param_name: str = "s",
+) -> list[CircLayer]:
+    """Compile a block of terms into a list of CircLayer objects.
+
+    Each CircLayer represents one layer of the circuit composition.
+    Returns empty list if there are no terms.
+    """
+    term_list = [terms[i] for i in range(len(terms))]
+    if not term_list:
+        return []
+
+    # Map wire_id -> Lean expression (variable name or input accessor)
+    # TODO: do this once (we use it also in `_translate_terms`)
+    n_inputs = len(block_inputs)
+    wire_expr: dict[int, str] = {}
+    for i, w in enumerate(block_inputs):
+        acc = _accessor(i, n_inputs)
+        wire_expr[w.id] = f"{param_name}{acc}"
+
+    # output wires to terms
+    wire_to_term: dict[Wire, Term] = {t.write[0]: t for t in term_list}
+    # order of the input wires
+    wires_ord: dict[Wire, int] = {w: n for n, w in enumerate(block_inputs)}
+
+    layers = _circ_translate_body(block_inputs, block_outputs, wire_to_term)
+
+    # compute swapping wires
+    swapping, last_layer = _cicr_compute_swapping(
+        block_inputs, block_outputs, wires_ord, layers[-1]
+    )
+
+    # duplication of wires
+    dups, last_layer = _circ_compute_dups(block_inputs, wires_ord, last_layer)
+
+    # deletion of unused wires
+    dels = _circ_comput_dels(block_inputs, last_layer)
+
+    result: list[CircLayer] = list(reversed(swapping + dups + dels))
 
     for n, layer in enumerate(reversed(layers)):
         if not layer:
@@ -558,10 +606,13 @@ def _translate_terms_circ(
                     in_ty.extend([dtype_to_lean_ty(u) for u in term.read])
                     out_ty.extend([dtype_to_lean_ty(u) for u in term.write])
         assert boxes
-        result.append(CircLayer(
-            in_tys=list(in_ty), out_tys=list(out_ty),
-            body=" ⊗ ".join(boxes),
-        ))
+        result.append(
+            CircLayer(
+                in_tys=list(in_ty),
+                out_tys=list(out_ty),
+                body=" ⊗ ".join(boxes),
+            )
+        )
 
     return result
 
@@ -607,8 +658,11 @@ class ModuleToLean4:
                 self._const_defs.append(lean_def)
 
     def _emit_named_layers(
-        self, block_name: str, circ_layers: list[CircLayer],
-        dom: str, cod: str,
+        self,
+        block_name: str,
+        circ_layers: list[CircLayer],
+        dom: str,
+        cod: str,
     ) -> tuple[list[str], list[str]]:
         """Emit named @[simp] definitions for each layer and a composed definition.
 
@@ -681,7 +735,10 @@ class ModuleToLean4:
             init_dom = _ty_list(init_inputs)
             init_cod = _ty_list(init_outputs)
             layer_lines, self._init_layer_names = self._emit_named_layers(
-                "init", init_layers, init_dom, init_cod,
+                "init",
+                init_layers,
+                init_dom,
+                init_cod,
             )
             lines.extend(layer_lines)
 
@@ -691,7 +748,10 @@ class ModuleToLean4:
             upd_dom = _ty_list(update_inputs)
             upd_cod = _ty_list(update_outputs)
             layer_lines, self._update_layer_names = self._emit_named_layers(
-                "update", update_layers, upd_dom, upd_cod,
+                "update",
+                update_layers,
+                upd_dom,
+                upd_cod,
             )
             lines.extend(layer_lines)
 
@@ -721,7 +781,10 @@ class ModuleToLean4:
         return "\n".join(lines)
 
     def _equiv_proof_tactic(
-        self, input_wires: list[Wire], layer_names: list[str], block_name: str,
+        self,
+        input_wires: list[Wire],
+        layer_names: list[str],
+        block_name: str,
     ) -> str:
         """Generate proof tactic for equivalence theorem."""
         simp_names = [f"Circ.{n}" for n in layer_names]
@@ -767,9 +830,13 @@ class ModuleToLean4:
             lines.append(f"    Circ.init.fn {lhs_input} =")
             lines.append(f"    let r := init s")
             lines.append(f"    {rhs_output} := by")
-            lines.append(self._equiv_proof_tactic(
-                init_inputs, self._init_layer_names, "init",
-            ))
+            lines.append(
+                self._equiv_proof_tactic(
+                    init_inputs,
+                    self._init_layer_names,
+                    "init",
+                )
+            )
             lines.append("")
 
         # Update equivalence theorem
@@ -785,9 +852,13 @@ class ModuleToLean4:
             lines.append(f"    Circ.update.fn {lhs_input} =")
             lines.append(f"    let r := update s")
             lines.append(f"    {rhs_output} := by")
-            lines.append(self._equiv_proof_tactic(
-                update_inputs, self._update_layer_names, "update",
-            ))
+            lines.append(
+                self._equiv_proof_tactic(
+                    update_inputs,
+                    self._update_layer_names,
+                    "update",
+                )
+            )
             lines.append("")
 
         return "\n".join(lines)
