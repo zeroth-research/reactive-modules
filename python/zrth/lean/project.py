@@ -261,6 +261,8 @@ def generate_certificate_lean(
     append = _append_expr("x", len(ctrl_latched), "e", len(extl_next))
 
     # Extract constants from certificate term lists
+    # TODO: remove the dependency on ModuleToLean4
+    # (make generating the certificate part of that class)
     existing_const_count = len(m2l._const_defs)
     for terms in [inv_terms, init_pre_terms, update_pre_terms, ranking_terms, p_terms]:
         if terms is not None:
@@ -479,26 +481,6 @@ def generate_certificate_lean(
     return "\n".join(lines)
 
 
-def generate_module_file(
-    src_dir: Path, project_name: str, module: Module, module_name: str
-) -> tuple[Path, ModuleToLean4]:
-    """
-    Generate .lean file with reactive module. Returns (Path, ModuleToLean4).
-    """
-    out = src_dir / f"{module_name}.lean"
-    print(f"Generating `{out.absolute()}`")
-
-    m2l = ModuleToLean4(module)
-
-    out.write_text(f"""\
-/- Code generated for reactive module `{module_name}` -/
-import Core.Box
-
-{m2l.to_lean()}
-""")
-    return out, m2l
-
-
 def create_project(
     output_dir: Path,
     module: Module,
@@ -524,6 +506,7 @@ def create_project(
     """
     project_dir = output_dir / project_name
     src_dir = project_dir / project_name
+    module_name = project_name
 
     # Create directory structure
     src_dir.mkdir(parents=True, exist_ok=True)
@@ -539,7 +522,12 @@ def create_project(
     toolchain.write_text(LEAN_TOOLCHAIN + "\n")
     print(f"Wrote {toolchain}")
 
-    # Copy core template files to Core/ package
+    # Write root module
+    root_module = src_dir.parent / f"{project_name}.lean"
+    root_module.write_text(generate_root(project_name, [module_name]))
+    print(f"Wrote root module {root_module}")
+
+    # Copy template files to Core/ package
     core_dir = project_dir / "Core"
     core_dir.mkdir(parents=True, exist_ok=True)
     for tmpl_name in CORE_FILES:
@@ -557,13 +545,26 @@ def create_project(
                 f"WARNING: Template {tmpl_name} not found at {src_path}, wrote placeholder"
             )
 
-    # Generate reactive module files
-    module_name = project_name
-    mod_file, m2l = generate_module_file(src_dir, project_name, module, module_name)
+    # ----------------------------------------------------------
+    # Generate reactive module (init and update)
+    # ----------------------------------------------------------
+    m2l = ModuleToLean4(module)
+
+    mod_file = src_dir / f"{module_name}.lean"
+    print(f"Generating `{mod_file.absolute()}`")
+
+    mod_file.write_text(f"""\
+/- Code generated for reactive module `{module_name}` -/
+import Core.Box
+
+{m2l.to_lean()}
+""")
     assert mod_file.exists()
     print(f"++ Generated {mod_file} ++")
 
-    # Generate Certificate.lean skeleton
+    # ----------------------------------------------------------
+    # Generate Certificate.lean
+    # ----------------------------------------------------------
     cert_dir = project_dir / "Certificate"
     cert_dir.mkdir(parents=True, exist_ok=True)
     cert_file = cert_dir / "Certificate.lean"
@@ -587,12 +588,9 @@ def create_project(
     cert_wrapper.write_text("import Certificate.Certificate\n")
     print(f"Wrote {cert_wrapper}")
 
-    # Write root module
-    root_module = src_dir.parent / f"{project_name}.lean"
-    root_module.write_text(generate_root(project_name, [module_name]))
-    print(f"Wrote root module {root_module}")
-
+    # ----------------------------------------------------------
     # Generate Main.lean for executable
+    # ----------------------------------------------------------
     if executable:
         main_lean = project_dir / "Main.lean"
         main_lean.write_text(generate_main_lean(project_name, module, module_name))
