@@ -189,6 +189,47 @@ def _append_expr(var1: str, count1: int, var2: str, count2: int) -> str:
     return _build_tuple(parts)
 
 
+@dataclass
+class CircLayer:
+    """A single layer in a circuit composition."""
+    in_tys: list[str]
+    out_tys: list[str]
+    body: str
+
+
+def _native_to_vt(param: str, n_wires: int) -> str:
+    """Generate native-to-ValTuple conversion expression.
+
+    n=0: "()"
+    n=1: "(s, ())"
+    n=2: "(s.1, (s.2, ()))"
+    n=3: "(s.1, (s.2.1, (s.2.2, ())))"
+    """
+    if n_wires == 0:
+        return "()"
+    parts = [f"{param}{_accessor(i, n_wires)}" for i in range(n_wires)]
+    result = "()"
+    for p in reversed(parts):
+        result = f"({p}, {result})"
+    return result
+
+
+def _vt_to_native(param: str, n_wires: int) -> str:
+    """Generate ValTuple-to-native conversion expression.
+
+    n=0: "()"
+    n=1: "v.1"
+    n=2: "(v.1, v.2.1)"
+    n=3: "(v.1, v.2.1, v.2.2.1)"
+    """
+    if n_wires == 0:
+        return "()"
+    if n_wires == 1:
+        return f"{param}.1"
+    parts = [f"{param}{'.2' * i}.1" for i in range(n_wires)]
+    return "(" + ", ".join(parts) + ")"
+
+
 # Map operations to Lean expression builder (takes list of arg strings)
 _LEAN_OP: dict[str, Callable] = {
     "Not": lambda a: f"!{a[0]}",
@@ -311,11 +352,15 @@ def _translate_terms_circ(
     block_outputs: list[Wire],
     constants: dict[int, str],
     param_name: str = "s",
-) -> str:
-    """Compile a block of terms into a Lean Boxes"""
+) -> list[CircLayer]:
+    """Compile a block of terms into a list of CircLayer objects.
+
+    Each CircLayer represents one layer of the circuit composition.
+    Returns empty list if there are no terms.
+    """
     term_list = [terms[i] for i in range(len(terms))]
     if not term_list:
-        return "sorry /- no terms -/"
+        return []
 
     # Map wire_id -> Lean expression (variable name or input accessor)
     # TODO: do this once (we use it also in `_translate_terms`)
@@ -366,7 +411,7 @@ def _translate_terms_circ(
             break
 
     # compute swapping wires
-    swapping = []
+    swapping: list[CircLayer] = []
     wires_ord = {w: n for n, w in enumerate(block_inputs)}
     layer = layers[-1]
     while True:
@@ -407,11 +452,10 @@ def _translate_terms_circ(
         if not changed:
             break
         assert boxes
-        swapping.append(
-            "  (({}): Box [{}] [{}])".format(
-                " ⊗ ".join(boxes), ", ".join(in_ty), ", ".join(out_ty)
-            )
-        )
+        swapping.append(CircLayer(
+            in_tys=list(in_ty), out_tys=list(out_ty),
+            body=" ⊗ ".join(boxes),
+        ))
         assert len(new_layer) == len(layer)
         layer = new_layer
 
@@ -451,33 +495,38 @@ def _translate_terms_circ(
             break
         assert boxes
 
-        swapping.append(
-            "  (({}): Box [{}] [{}])".format(
-                " ⊗ ".join(boxes), ", ".join(in_ty), ", ".join(out_ty)
-            )
-        )
+        swapping.append(CircLayer(
+            in_tys=list(in_ty), out_tys=list(out_ty),
+            body=" ⊗ ".join(boxes),
+        ))
         assert len(new_layer) < len(layer)
         layer = new_layer
 
     # deletion of unused wires
     if len(block_inputs) != len(layer):
         boxes = []
+        in_ty, out_ty = [], []
         for w in block_inputs:
             if w in layer:
-                boxes.append(f"@Box.id {dtype_to_lean_ty(layer[i])}")
+                boxes.append(f"@Box.id {dtype_to_lean_ty(w)}")
+                in_ty.append(dtype_to_lean_ty(w))
+                out_ty.append(dtype_to_lean_ty(w))
             else:
-                boxes.append("Box.destr")
+                boxes.append(f"@Box.destr {dtype_to_lean_ty(w)}")
+                in_ty.append(dtype_to_lean_ty(w))
         assert boxes
-        swapping.append("  ({})".format(" ⊗ ".join(boxes)))
+        swapping.append(CircLayer(
+            in_tys=list(in_ty), out_tys=list(out_ty),
+            body=" ⊗ ".join(boxes),
+        ))
 
-    lines: list[str] = list(reversed(swapping))
+    result: list[CircLayer] = list(reversed(swapping))
 
     for n, layer in enumerate(reversed(layers)):
         if not layer:
             # if there are unused variables, the first layer can be empty
             assert n == 0
             continue
-        # lines.append("/- layer -/")
         boxes: list[str] = []
         in_ty, out_ty = [], []
         for w in layer:
@@ -509,14 +558,12 @@ def _translate_terms_circ(
                     in_ty.extend([dtype_to_lean_ty(u) for u in term.read])
                     out_ty.extend([dtype_to_lean_ty(u) for u in term.write])
         assert boxes
-        lines.append(
-            "  (({}: Box [{}] [{}]))".format(
-                " ⊗ ".join(boxes), ", ".join(in_ty), ", ".join(out_ty)
-            )
-        )
+        result.append(CircLayer(
+            in_tys=list(in_ty), out_tys=list(out_ty),
+            body=" ⊗ ".join(boxes),
+        ))
 
-    return " ≫ \n".join(lines)
-    ## return "\n".join(_lines + [result_line])
+    return result
 
 
 # ====================================================================
@@ -559,6 +606,38 @@ class ModuleToLean4:
                 lean_def = _tensor_to_lean_def(const_name, tensor, out_wire)
                 self._const_defs.append(lean_def)
 
+    def _emit_named_layers(
+        self, block_name: str, circ_layers: list[CircLayer],
+        dom: str, cod: str,
+    ) -> tuple[list[str], list[str]]:
+        """Emit named @[simp] definitions for each layer and a composed definition.
+
+        Returns (lines, layer_names) where layer_names includes both
+        individual layer names and the composed definition name.
+        """
+        lines: list[str] = []
+        layer_names: list[str] = []
+
+        for i, layer in enumerate(circ_layers):
+            name = f"{block_name}_l{i}"
+            in_tys = ", ".join(layer.in_tys)
+            out_tys = ", ".join(layer.out_tys)
+            lines.append(f"@[simp] def {name} : Box [{in_tys}] [{out_tys}] :=")
+            lines.append(f"  {layer.body}")
+            lines.append("")
+            layer_names.append(name)
+
+        # Composed definition
+        if len(layer_names) == 1:
+            lines.append(f"@[simp] def {block_name} : Box {dom} {cod} :=")
+            lines.append(f"  {layer_names[0]}")
+        else:
+            lines.append(f"@[simp] def {block_name} : Box {dom} {cod} :=")
+            lines.append(f"  {' ≫ '.join(layer_names)}")
+        lines.append("")
+
+        return lines, layer_names
+
     def to_lean_circuit(self, atom) -> str:
         """Generate the full Lean4 source for this module as a combinational circuit"""
         m = self.module
@@ -582,36 +661,39 @@ class ModuleToLean4:
         # Compile both blocks
         init_inputs = list(extl_next)
         init_outputs = list(ctrl_next)
-        init_body = _translate_terms_circ(
+        init_layers = _translate_terms_circ(
             init_terms, init_inputs, init_outputs, self._constants
         )
 
         update_inputs = ctrl_latched + extl_next
         update_outputs = list(ctrl_next)
-        update_body = _translate_terms_circ(
+        update_layers = _translate_terms_circ(
             update_terms, update_inputs, update_outputs, self._constants
         )
 
         # Render output
         lines = []
-
         lines.append("namespace Circ")
 
-        # Init definition
-        if init_body:
+        # Init definition with named layers
+        self._init_layer_names: list[str] = []
+        if init_layers:
             init_dom = _ty_list(init_inputs)
             init_cod = _ty_list(init_outputs)
-            lines.append(f"@[simp] def init : Box {init_dom} {init_cod} :=")
-            lines.append(init_body)
-            lines.append("")
+            layer_lines, self._init_layer_names = self._emit_named_layers(
+                "init", init_layers, init_dom, init_cod,
+            )
+            lines.extend(layer_lines)
 
-        # Update definition
-        if update_body:
+        # Update definition with named layers
+        self._update_layer_names: list[str] = []
+        if update_layers:
             upd_dom = _ty_list(update_inputs)
             upd_cod = _ty_list(update_outputs)
-            lines.append(f"@[simp] def update : Box {upd_dom} {upd_cod} :=")
-            lines.append(update_body)
-            lines.append("")
+            layer_lines, self._update_layer_names = self._emit_named_layers(
+                "update", update_layers, upd_dom, upd_cod,
+            )
+            lines.extend(layer_lines)
 
         lines.append("end Circ")
 
@@ -638,6 +720,78 @@ class ModuleToLean4:
 
         return "\n".join(lines)
 
+    def _equiv_proof_tactic(
+        self, input_wires: list[Wire], layer_names: list[str], block_name: str,
+    ) -> str:
+        """Generate proof tactic for equivalence theorem."""
+        simp_names = [f"Circ.{n}" for n in layer_names]
+        simp_names.append(f"Circ.{block_name}")
+        simp_names.append(block_name)
+
+        all_bool = all(isinstance(w.dtype, DType.Bool) for w in input_wires)
+        n = len(input_wires)
+
+        if all_bool:
+            # Case-split on all Bool inputs, then native_decide
+            if n == 1:
+                return f"  intro s; cases s <;> native_decide"
+            else:
+                vars = [f"s{i}" for i in range(n)]
+                intro = f"intro ⟨{', '.join(vars)}⟩"
+                cases = " <;> ".join(f"cases {v}" for v in vars)
+                return f"  {intro}; {cases} <;> native_decide"
+        else:
+            return f"  intro s; simp [{', '.join(simp_names)}]"
+
+    def to_lean_equiv_theorems(self, atom) -> str:
+        """Generate theorems proving circuit ≡ functional."""
+        m = self.module
+
+        extl_next = [pair[1] for pair in m.extl]
+        ctrl_latched = [pair[0] for pair in m.ctrl]
+        ctrl_next = [pair[1] for pair in m.ctrl]
+
+        lines: list[str] = []
+
+        # Init equivalence theorem
+        init_inputs = list(extl_next)
+        n_extl = len(init_inputs)
+        n_ctrl = len(ctrl_next)
+
+        if self._init_layer_names:
+            init_native = _product_type(init_inputs)
+            lhs_input = _native_to_vt("s", n_extl)
+            rhs_output = _native_to_vt("r", n_ctrl)
+
+            lines.append(f"theorem init_circ_eq : ∀ (s : {init_native}),")
+            lines.append(f"    Circ.init.fn {lhs_input} =")
+            lines.append(f"    let r := init s")
+            lines.append(f"    {rhs_output} := by")
+            lines.append(self._equiv_proof_tactic(
+                init_inputs, self._init_layer_names, "init",
+            ))
+            lines.append("")
+
+        # Update equivalence theorem
+        update_inputs = ctrl_latched + extl_next
+        n_update = len(update_inputs)
+
+        if self._update_layer_names:
+            update_native = _product_type(update_inputs)
+            lhs_input = _native_to_vt("s", n_update)
+            rhs_output = _native_to_vt("r", n_ctrl)
+
+            lines.append(f"theorem update_circ_eq : ∀ (s : {update_native}),")
+            lines.append(f"    Circ.update.fn {lhs_input} =")
+            lines.append(f"    let r := update s")
+            lines.append(f"    {rhs_output} := by")
+            lines.append(self._equiv_proof_tactic(
+                update_inputs, self._update_layer_names, "update",
+            ))
+            lines.append("")
+
+        return "\n".join(lines)
+
     def to_lean(self, circuit: bool = False) -> str:
         """Generate the full Lean4 source for this module."""
         m = self.module
@@ -651,10 +805,11 @@ class ModuleToLean4:
 
         atom = atoms[0]
 
-        return "{}\n\n{}\n\n{}".format(
+        return "{}\n\n{}\n\n{}\n\n{}".format(
             self.translate_constants(atom),
             self.to_lean_circuit(atom),
             self.to_lean_functional(atom),
+            self.to_lean_equiv_theorems(atom),
         )
 
     def to_lean_functional(self, atom) -> str:
