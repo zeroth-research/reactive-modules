@@ -1,22 +1,5 @@
 import torch
-from .zrth import IType, DType
-
-
-def zero_tensor(dtype):
-    """Create a zero tensor matching the given DType."""
-    shape = list(dtype.shape)
-    if isinstance(dtype, DType.Bool):
-        return torch.zeros(shape, dtype=torch.bool)
-    elif isinstance(dtype, DType.Int):
-        return torch.zeros(shape, dtype=torch.long)
-    elif isinstance(dtype, DType.Float):
-        return torch.zeros(shape, dtype=torch.float32)
-    elif isinstance(dtype, DType.Real):
-        return torch.zeros(shape, dtype=torch.float64)
-    elif isinstance(dtype, (DType.UWord, DType.SWord)):
-        return torch.zeros([1], dtype=torch.long)
-    else:
-        raise RuntimeError(f"unknown dtype kind: {dtype}")
+from .zrth import IType
 
 
 def eval_itype(itype, read):
@@ -24,6 +7,46 @@ def eval_itype(itype, read):
     fn = _EVAL.get(type(itype))
     if fn is None:
         raise RuntimeError(f"cannot evaluate instruction type '{type(itype).__name__}'")
+    return fn(itype, read)
+
+
+# ============================================================================
+# Interpreter helpers (shared by zrth.gym.Wrapper, zrth.gym.Env)
+# ============================================================================
+
+def execute_atoms(state, atoms, block_type):
+    """Evaluate all atoms symbolically."""
+    for atom in atoms:
+        block = atom.init if block_type == "init" else atom.update
+        for term in block:
+            read = [state[w.id] for w in term.read]
+            results = eval_itype(term.itype, read)
+            for w, val in zip(term.write, results):
+                state[w.id] = val
+
+
+def latch(state, ctrl):
+    """Copy next wire values to latched wires."""
+    for ltc, nxt in ctrl:
+        if nxt.id in state:
+            state[ltc.id] = state[nxt.id].clone()
+
+
+def read_wire(state, wire):
+    """Read a wire value from state."""
+    return state[wire.id].detach().clone()
+
+
+def getattr_wire(self, name):
+    """__getattr__ helper for named wire access."""
+    wire_names = object.__getattribute__(self, '_wire_names')
+    if name in wire_names:
+        state = object.__getattribute__(self, '_state')
+        wire = wire_names[name][0]  # read from latched wire
+        if wire.id in state:
+            val = state[wire.id]
+            return val.item() if val.numel() == 1 else val.detach().clone()
+    raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
     return fn(itype, read)
 
 

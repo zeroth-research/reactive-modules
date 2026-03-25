@@ -1,3 +1,3 @@
-from ..module import NN as Module
+from .module import Module
 
 __all__ = ["Module"]
