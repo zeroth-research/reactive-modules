@@ -1,0 +1,146 @@
+"""
+Translate a Python Module (reactive module with init/update blocks)
+into Lean4 code.
+
+Python modules store computations as a flat list of Terms (SSA-style dataflow).
+We translate each Term into a `let` binding in a Lean function, mapping each
+IType operation to its Lean equivalent.
+"""
+
+from __future__ import annotations
+from zrth.lean.common import _constant_expr, itype_name, _accessor
+
+from typing import Callable
+
+from zrth import Wire, DType
+
+
+def dtype_to_lean_native(wire: Wire) -> str:
+    """Map a Wire's DType to a native Lean type (Bool, Int, Fin m → Fin n → Int)."""
+    dt = wire.dtype
+    shape = dt.shape
+
+    if isinstance(dt, DType.Bool):
+        if shape == [1] or shape == []:
+            return "Bool"
+        raise ValueError(f"Unsupported Bool shape: {shape}")
+
+    if isinstance(dt, DType.Int):
+        if shape == [1] or shape == []:
+            return "Int"
+        if len(shape) == 1:
+            return f"(Fin {shape[0]} → Fin 1 → Int)"
+        if len(shape) == 2:
+            return f"(Fin {shape[0]} → Fin {shape[1]} → Int)"
+        raise ValueError(f"Unsupported Int shape: {shape}")
+
+    raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
+
+
+def _product_type(wires: list[Wire]) -> str:
+    """Build a right-nested product type: [w1, w2] -> 'Bool × Bool', [w1] -> 'Bool'."""
+    if not wires:
+        return "Unit"
+    if len(wires) == 1:
+        return dtype_to_lean_native(wires[0])
+    parts = [dtype_to_lean_native(w) for w in wires]
+    return " × ".join(parts)
+
+
+def _build_tuple(exprs: list[str]) -> str:
+    """Build a tuple literal: [] -> '()', ['a'] -> 'a', ['a','b'] -> '(a, b)'."""
+    if not exprs:
+        return "()"
+    if len(exprs) == 1:
+        return exprs[0]
+    return "(" + ", ".join(exprs) + ")"
+
+
+def _append_expr(var1: str, count1: int, var2: str, count2: int) -> str:
+    """Generate an expression that concatenates two tuples into one.
+
+    E.g. _append_expr("x", 2, "e", 1) -> "(x.1, x.2, e)"
+    """
+    parts = []
+    for i in range(count1):
+        acc = _accessor(i, count1)
+        parts.append(f"{var1}{acc}")
+    for i in range(count2):
+        acc = _accessor(i, count2)
+        parts.append(f"{var2}{acc}")
+    return _build_tuple(parts)
+
+
+# Map operations to Lean expression builder (takes list of arg strings)
+_LEAN_OP: dict[str, Callable] = {
+    "Not": lambda a: f"!{a[0]}",
+    "And": lambda a: f"({a[0]} && {a[1]})",
+    "Or": lambda a: f"({a[0]} || {a[1]})",
+    "Ite": lambda a: f"if {a[0]} then {a[1]} else {a[2]}",
+    "Add": lambda a: f"({a[0]} + {a[1]})",
+    "Sub": lambda a: f"({a[0]} - {a[1]})",
+    "Mul": lambda a: f"({a[0]} * {a[1]})",
+    "Neg": lambda a: f"(-{a[0]})",
+    "Lt": lambda a: f"decide ({a[0]} < {a[1]})",
+    "Le": lambda a: f"decide ({a[0]} ≤ {a[1]})",
+    "Gt": lambda a: f"decide ({a[1]} < {a[0]})",
+    "Ge": lambda a: f"decide ({a[1]} ≤ {a[0]})",
+    "Eq": lambda a: f"({a[0]} == {a[1]})",
+    "Neq": lambda a: f"({a[0]} != {a[1]})",
+    "Min": lambda a: f"Min.min {a[0]} {a[1]}",
+    "Max": lambda a: f"Max.max {a[0]} {a[1]}",
+    "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
+    "Id": lambda a: a[0],
+}
+
+
+def _translate_terms(
+    terms,
+    block_inputs: list[Wire],
+    block_outputs: list[Wire],
+    constants: dict[int, str],
+    param_name: str = "s",
+) -> str:
+    """Compile a block of terms into a Lean function body with let-bindings.
+
+    Returns the body string (let x0 := ...; ... ; (x1, x2)) or "sorry" if no terms.
+    """
+    term_list = [terms[i] for i in range(len(terms))]
+    if not term_list:
+        return "sorry /- no terms -/"
+
+    # Map wire_id -> Lean expression (variable name or input accessor)
+    n_inputs = len(block_inputs)
+    wire_expr: dict[int, str] = {}
+    for i, w in enumerate(block_inputs):
+        acc = _accessor(i, n_inputs)
+        wire_expr[w.id] = f"{param_name}{acc}"
+
+    var_counter = 0
+    let_lines: list[str] = []
+
+    for term in term_list:
+        read_wires = [term.read[i] for i in range(len(term.read))]
+        write_wires = [term.write[i] for i in range(len(term.write))]
+        name = itype_name(term.itype)
+
+        if name in ("Tensor", "ConstBool", "ConstInt"):
+            expr = _constant_expr(name, term, w, constants)
+        else:
+            input_exprs = [wire_expr[w.id] for w in read_wires]
+            it_name = itype_name(term.itype)
+            if it_name not in _LEAN_OP:
+                raise ValueError(f"No Lean expression mapping for: {it_name}")
+            expr = _LEAN_OP[it_name](input_exprs)
+
+        # Each term writes exactly one wire
+        var = f"x{var_counter}"
+        var_counter += 1
+        wire_expr[write_wires[0].id] = var
+        let_lines.append(f"  let {var} := {expr}")
+
+    # Build output tuple
+    out_exprs = [wire_expr[w.id] for w in block_outputs]
+    result_line = f"  {_build_tuple(out_exprs)}"
+
+    return "\n".join(let_lines + [result_line])

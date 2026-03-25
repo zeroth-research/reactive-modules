@@ -8,13 +8,14 @@ import textwrap
 from pathlib import Path
 
 from zrth import Module, Wire
-from .diagram import (
-    ModuleToLean4,
+from .native import (
     _translate_terms,
     _product_type,
     _append_expr,
     dtype_to_lean_native,
 )
+
+from .translate import ModuleToLean4
 
 
 # ══════════════════════════════════════════════════════════════════════════
