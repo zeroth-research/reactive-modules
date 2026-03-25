@@ -2,7 +2,8 @@
 
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
-from zrth.lean.diagram import ModuleToLean4, itype_name
+from zrth.lean import ModuleToLean4
+from zrth.lean.common import itype_name
 from zrth.lean.project import generate_main_lean, generate_certificate_lean
 
 
@@ -266,7 +267,9 @@ def test_certificate_has_hrank():
     # Should not be commented out
     for line in cert.splitlines():
         if "theorem hrank" in line:
-            assert not line.lstrip().startswith("--"), "hrank should not be commented out"
+            assert not line.lstrip().startswith("--"), (
+                "hrank should not be commented out"
+            )
             break
 
 
@@ -276,7 +279,9 @@ def test_certificate_has_buchi():
     # Should not be commented out
     for line in cert.splitlines():
         if "def buchi" in line:
-            assert not line.lstrip().startswith("--"), "buchi should not be commented out"
+            assert not line.lstrip().startswith("--"), (
+                "buchi should not be commented out"
+            )
             break
 
 
