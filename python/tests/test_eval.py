@@ -5,7 +5,7 @@ multi-step execution of hand-built modules.
 """
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
-from zrth.eval import eval_itype, zero_tensor
+from zrth.eval import eval_itype
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -17,13 +17,6 @@ def _run_module(module, n_steps, env_inputs_fn=None):
     env_inputs_fn(step) returns a dict of {wire_id: tensor} or None.
     """
     state = {}
-
-    # Zero-init external wires
-    for i in range(len(module.extl)):
-        ltc, nxt = module.extl[i]
-        for w in (ltc, nxt):
-            if w.id not in state:
-                state[w.id] = zero_tensor(w.dtype)
 
     def execute(block_type):
         for atom_idx in range(len(module.atoms)):

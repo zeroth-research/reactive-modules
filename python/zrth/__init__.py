@@ -29,7 +29,7 @@ def Float(*args):
     return DType.Float([*args])
 
 
-from .module import Wrapper, Env, NN
+from .gym import Wrapper, Env
 from .smv import parse_smv
 
 # Submodule access: from zrth.gym import Env, Wrapper
@@ -46,5 +46,4 @@ __all__ = [
     "Module",
     "Wrapper",
     "Env",
-    "NN",
 ]
