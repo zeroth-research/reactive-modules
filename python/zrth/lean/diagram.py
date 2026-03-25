@@ -285,6 +285,24 @@ def itype_name(itype) -> str:
     return name
 
 
+def _constant_expr(
+    const_name: str, term: Term, w: Wire, constants: dict[int, str]
+) -> str:
+    if const_name == "Tensor":
+        wire_id = w.id
+        if wire_id in constants:
+            return constants[wire_id]
+        else:
+            return _tensor_to_lean_inline(term.itype._0, w)
+    elif const_name == "ConstBool":
+        val = bool(term.itype._0)
+        return "true" if val else "false"
+    else:
+        return str(int(term.itype._0))
+
+    raise NotImplementedError
+
+
 def _translate_terms(
     terms,
     block_inputs: list[Wire],
@@ -316,17 +334,7 @@ def _translate_terms(
         name = itype_name(term.itype)
 
         if name in ("Tensor", "ConstBool", "ConstInt"):
-            if name == "Tensor":
-                wire_id = write_wires[0].id
-                if wire_id in constants:
-                    expr = constants[wire_id]
-                else:
-                    expr = _tensor_to_lean_inline(term.itype._0, write_wires[0])
-            elif name == "ConstBool":
-                val = bool(term.itype._0)
-                expr = "true" if val else "false"
-            else:
-                expr = str(int(term.itype._0))
+            expr = _constant_expr(name, term, w, constants)
         else:
             input_exprs = [wire_expr[w.id] for w in read_wires]
             it_name = itype_name(term.itype)
@@ -587,17 +595,7 @@ def _translate_terms_circ(
                 name = itype_name(term.itype)
 
                 if name in ("Tensor", "ConstBool", "ConstInt"):
-                    if name == "Tensor":
-                        wire_id = w.id
-                        if wire_id in constants:
-                            expr = constants[wire_id]
-                        else:
-                            expr = _tensor_to_lean_inline(term.itype._0, w)
-                    elif name == "ConstBool":
-                        val = bool(term.itype._0)
-                        expr = "true" if val else "false"
-                    else:
-                        expr = str(int(term.itype._0))
+                    expr = _constant_expr(name, term, w, constants)
 
                     boxes.append(f"Box.const {dtype_to_lean_ty(w)} {expr}")
                     out_ty.append(dtype_to_lean_ty(w))
