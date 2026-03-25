@@ -28,7 +28,7 @@ instance (t : Ty) : DecidableEq t.denote := by
   cases t <;> simp [Ty.denote] <;> infer_instance
 
 /-- tuple of values -/
-def ValTuple : List Ty → Type
+@[simp] def ValTuple : List Ty → Type
   | []      => Unit
   | t :: ts => t.denote × ValTuple ts
 
@@ -40,11 +40,11 @@ instance [DecidableEq (t.denote)] [DecidableEq (ValTuple ts)] :
 
 namespace ValTuple
 
-def append : (xs : List Ty) → ValTuple xs → ValTuple ys → ValTuple (xs ++ ys)
+@[simp] def append : (xs : List Ty) → ValTuple xs → ValTuple ys → ValTuple (xs ++ ys)
   | [],     (),       bs => bs
   | _::xs, (a, rest), bs => (a, append xs rest bs)
 
-def split : (xs : List Ty) → ValTuple (xs ++ ys) → ValTuple xs × ValTuple ys
+@[simp] def split : (xs : List Ty) → ValTuple (xs ++ ys) → ValTuple xs × ValTuple ys
   | [],     h         => ((), h)
   | _::xs, (a, rest)  =>
     let (l, r) := split xs rest
