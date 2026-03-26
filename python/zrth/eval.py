@@ -14,27 +14,30 @@ def eval_itype(itype, read):
 # Interpreter helpers (shared by zrth.gym.Wrapper, zrth.gym.Env)
 # ============================================================================
 
-def execute_atoms(state, atoms, block_type):
-    """Evaluate all atoms symbolically."""
+def _execute_block(state, atoms, get_block):
+    """Evaluate a block from each atom."""
     for atom in atoms:
-        block = atom.init if block_type == "init" else atom.update
-        for term in block:
-            read = [state[w.id] for w in term.read]
+        for term in get_block(atom):
+            read = [state[w] for w in term.read]
             results = eval_itype(term.itype, read)
             for w, val in zip(term.write, results):
-                state[w.id] = val
+                state[w] = val
 
 
-def latch(state, ctrl):
-    """Copy next wire values to latched wires."""
-    for ltc, nxt in ctrl:
-        if nxt.id in state:
-            state[ltc.id] = state[nxt.id].clone()
+def execute_init(state, atoms):
+    """Evaluate the init block of all atoms."""
+    _execute_block(state, atoms, lambda a: a.init)
+
+
+def execute_update(state, atoms):
+    """Evaluate the update block of all atoms."""
+    _execute_block(state, atoms, lambda a: a.update)
+
 
 
 def read_wire(state, wire):
     """Read a wire value from state."""
-    return state[wire.id].detach().clone()
+    return state[wire].detach().clone()
 
 
 def getattr_wire(self, name):
@@ -43,8 +46,8 @@ def getattr_wire(self, name):
     if name in wire_names:
         state = object.__getattribute__(self, '_state')
         wire = wire_names[name][0]  # read from latched wire
-        if wire.id in state:
-            val = state[wire.id]
+        if wire in state:
+            val = state[wire]
             return val.item() if val.numel() == 1 else val.detach().clone()
     raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
     return fn(itype, read)

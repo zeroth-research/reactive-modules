@@ -7,7 +7,7 @@ from ..analyzer import (
     convert_method, classify_attrs, infer_dtype, wire_pair, resolve_wire,
     AbstractValue,
 )
-from ..eval import eval_itype, execute_atoms, latch, read_wire, getattr_wire
+from ..eval import eval_itype, execute_init, execute_update, read_wire, getattr_wire
 
 
 # ============================================================================
@@ -213,7 +213,7 @@ class Wrapper(Module, gym.Wrapper):
             extracted = _extract_env_module(gym_env, **kwargs)
             wire_names = extracted.pop('_wire_names', {})
             env_module = Module.__new__(Module, **extracted)
-            env_ctrl_ids = {w.id for w in env_module.atoms[0].ctrl}
+            env_ctrl_ids = {w for w in env_module.atoms[0].ctrl}
             modules = [env_module] + modules
             backing_env = gym_env
         else:
@@ -223,7 +223,7 @@ class Wrapper(Module, gym.Wrapper):
                 if isinstance(a, Wrapper):
                     wire_names.update(a._wire_names)
                     if a._env_atom_idx is not None:
-                        env_ctrl_ids = {w.id for w in a.atoms[a._env_atom_idx].ctrl}
+                        env_ctrl_ids = {w for w in a.atoms[a._env_atom_idx].ctrl}
 
         if backing_env is None:
             raise TypeError("Wrapper requires exactly 1 gym.Env, got 0")
@@ -237,7 +237,7 @@ class Wrapper(Module, gym.Wrapper):
 
         instance._env_atom_idx = None
         for idx, atom in enumerate(instance.atoms):
-            if {w.id for w in atom.ctrl} == env_ctrl_ids:
+            if {w for w in atom.ctrl} == env_ctrl_ids:
                 instance._env_atom_idx = idx
                 break
 
@@ -262,11 +262,11 @@ class Wrapper(Module, gym.Wrapper):
             value = getattr(self.env, name, None)
             if value is not None:
                 if isinstance(value, bool):
-                    self._state[nxt.id] = torch.tensor([1.0 if value else 0.0])
+                    self._state[nxt] = torch.tensor([1.0 if value else 0.0])
                 elif isinstance(value, (int, float)):
-                    self._state[nxt.id] = torch.tensor([float(value)])
+                    self._state[nxt] = torch.tensor([float(value)])
                 elif isinstance(value, torch.Tensor):
-                    self._state[nxt.id] = value.clone()
+                    self._state[nxt] = value.clone()
 
     def reset(self, *, seed=None, options=None):
         self._state = {}
@@ -281,22 +281,24 @@ class Wrapper(Module, gym.Wrapper):
                 obs_tensor = torch.as_tensor(reset_obs, dtype=torch.float32)
                 if obs_tensor.dim() == 0:
                     obs_tensor = obs_tensor.unsqueeze(0)
-                self._state[p['observation'][1].id] = obs_tensor
+                self._state[p['observation'][1]] = obs_tensor
                 if p['reward']:
-                    self._state[p['reward'][1].id] = torch.tensor([0.0])
+                    self._state[p['reward'][1]] = torch.tensor([0.0])
                 if p['terminated']:
-                    self._state[p['terminated'][1].id] = torch.tensor([0.0])
+                    self._state[p['terminated'][1]] = torch.tensor([0.0])
                 if p['truncated']:
-                    self._state[p['truncated'][1].id] = torch.tensor([0.0])
+                    self._state[p['truncated'][1]] = torch.tensor([0.0])
                 self._sync_private_state_from_env()
             else:
                 for term in atom.init:
-                    read = [self._state[w.id] for w in term.read]
+                    read = [self._state[w] for w in term.read]
                     results = eval_itype(term.itype, read)
                     for w, val in zip(term.write, results):
-                        self._state[w.id] = val
+                        self._state[w] = val
 
-        latch(self._state, self.ctrl)
+        for ltc, nxt in self.ctrl:
+            if nxt in self._state:
+                self._state[ltc] = self._state[nxt].clone()
         self._initialized = True
         return read_wire(self._state, p['observation'][0]).numpy(), {}
 
@@ -315,31 +317,33 @@ class Wrapper(Module, gym.Wrapper):
                 one_hot = torch.zeros(self.env.action_space.n)
                 one_hot[idx] = 1.0
                 action_tensor = one_hot
-        self._state[p['action'][0].id] = action_tensor
+        self._state[p['action'][0]] = action_tensor
 
         for atom_idx, atom in enumerate(self.atoms):
             if env_atom_idx is not None and atom_idx == env_atom_idx:
-                gym_result = self.env.step(self._state[p['action'][0].id])
+                gym_result = self.env.step(self._state[p['action'][0]])
                 obs, reward, terminated, truncated = gym_result[0], gym_result[1], gym_result[2], gym_result[3]
                 obs_tensor = torch.as_tensor(obs, dtype=torch.float32)
                 if obs_tensor.dim() == 0:
                     obs_tensor = obs_tensor.unsqueeze(0)
-                self._state[p['observation'][1].id] = obs_tensor
+                self._state[p['observation'][1]] = obs_tensor
                 if p['reward']:
-                    self._state[p['reward'][1].id] = torch.tensor([float(reward)])
+                    self._state[p['reward'][1]] = torch.tensor([float(reward)])
                 if p['terminated']:
-                    self._state[p['terminated'][1].id] = torch.tensor([1.0 if terminated else 0.0])
+                    self._state[p['terminated'][1]] = torch.tensor([1.0 if terminated else 0.0])
                 if p['truncated']:
-                    self._state[p['truncated'][1].id] = torch.tensor([1.0 if truncated else 0.0])
+                    self._state[p['truncated'][1]] = torch.tensor([1.0 if truncated else 0.0])
                 self._sync_private_state_from_env()
             else:
                 for term in atom.update:
-                    read = [self._state[w.id] for w in term.read]
+                    read = [self._state[w] for w in term.read]
                     results = eval_itype(term.itype, read)
                     for w, val in zip(term.write, results):
-                        self._state[w.id] = val
+                        self._state[w] = val
 
-        latch(self._state, self.ctrl)
+        for ltc, nxt in self.ctrl:
+            if nxt in self._state:
+                self._state[ltc] = self._state[nxt].clone()
         obs = read_wire(self._state, p['observation'][0])
         reward = read_wire(self._state, p['reward'][0]).item() if p['reward'] else 0.0
         terminated = bool(read_wire(self._state, p['terminated'][0]).item()) if p['terminated'] else False
@@ -390,8 +394,10 @@ class Env(Module, gym.Env):
         gym.Env.reset(self, seed=seed, options=options)
         self._state = {}
 
-        execute_atoms(self._state, self.atoms, "init")
-        latch(self._state, self.ctrl)
+        execute_init(self._state, self.atoms)
+        for ltc, nxt in self.ctrl:
+            if nxt in self._state:
+                self._state[ltc] = self._state[nxt].clone()
         self._initialized = True
         return read_wire(self._state, self._pairs['observation'][0]).numpy(), {}
 
@@ -402,9 +408,11 @@ class Env(Module, gym.Env):
         action_tensor = torch.as_tensor(action, dtype=torch.float32)
         if action_tensor.dim() == 0:
             action_tensor = action_tensor.unsqueeze(0)
-        self._state[p['action'][0].id] = action_tensor
-        execute_atoms(self._state, self.atoms, "update")
-        latch(self._state, self.ctrl)
+        self._state[p['action'][0]] = action_tensor
+        execute_update(self._state, self.atoms)
+        for ltc, nxt in self.ctrl:
+            if nxt in self._state:
+                self._state[ltc] = self._state[nxt].clone()
 
         obs = read_wire(self._state, p['observation'][0])
         reward = read_wire(self._state, p['reward'][0]).item() if p['reward'] else 0.0
@@ -413,11 +421,11 @@ class Env(Module, gym.Env):
 
         return obs.numpy(), reward, terminated, truncated, {}
 
-    def get(self, wire_id):
-        """Retrieve the current value of a wire by ID."""
-        if wire_id not in self._state:
-            raise RuntimeError(f"wire w{wire_id} not in state")
-        return self._state[wire_id].clone()
+    def get(self, wire):
+        """Retrieve the current value of a wire."""
+        if wire not in self._state:
+            raise RuntimeError(f"wire {wire} not in state")
+        return self._state[wire].clone()
 
     def state_dict(self):
         """Return a copy of the current state."""
