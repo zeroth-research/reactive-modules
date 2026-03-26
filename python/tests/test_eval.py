@@ -5,7 +5,7 @@ multi-step execution of hand-built modules.
 """
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
-from zrth.eval import eval_itype
+from zrth.eval import eval_itype, execute_init, execute_update
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -13,32 +13,15 @@ from zrth.eval import eval_itype
 def _run_module(module, n_steps, env_inputs_fn=None):
     """Run a hand-built module for n_steps, returning state after each step.
 
-    Uses the same logic as _SymbolicInterpreter: init → latch → (update → latch)*n.
-    env_inputs_fn(step) returns a dict of {wire_id: tensor} or None.
+    env_inputs_fn(step) returns a dict of {wire: tensor} or None.
     """
     state = {}
 
-    def execute(block_type):
-        for atom_idx in range(len(module.atoms)):
-            atom = module.atoms[atom_idx]
-            block = atom.init if block_type == "init" else atom.update
-            for i in range(len(block)):
-                term = block[i]
-                read = [state[term.read[j].id] for j in range(len(term.read))]
-                results = eval_itype(term.itype, read)
-                for j in range(len(term.write)):
-                    state[term.write[j].id] = results[j]
-
-    def latch():
-        ctrl = module.ctrl
-        for i in range(len(ctrl)):
-            ltc, nxt = ctrl[i]
-            if nxt.id in state:
-                state[ltc.id] = state[nxt.id].clone()
-
     # Init
-    execute("init")
-    latch()
+    execute_init(state, module.atoms)
+    for ltc, nxt in module.ctrl:
+        if nxt in state:
+            state[ltc] = state[nxt].clone()
 
     history = [dict(state)]
 
@@ -47,10 +30,12 @@ def _run_module(module, n_steps, env_inputs_fn=None):
         if env_inputs_fn:
             inputs = env_inputs_fn(step)
             if inputs:
-                for wire_id, tensor in inputs.items():
-                    state[wire_id] = tensor
-        execute("update")
-        latch()
+                for wire, tensor in inputs.items():
+                    state[wire] = tensor
+        execute_update(state, module.atoms)
+        for ltc, nxt in module.ctrl:
+            if nxt in state:
+                state[ltc] = state[nxt].clone()
         history.append(dict(state))
 
     return state, history
@@ -58,7 +43,7 @@ def _run_module(module, n_steps, env_inputs_fn=None):
 
 def _get(state, wire):
     """Read a wire value from state."""
-    return state[wire.id]
+    return state[wire]
 
 
 # ── counter ──────────────────────────────────────────────────────────────────
@@ -228,10 +213,10 @@ def test_tensor_reductions():
     state, _ = _run_module(m, 0)
 
     expected = torch.tensor([-1.0, 2.0, 3.0, -4.0])
-    assert float(state[sum_wire.id].item()) == float(expected.sum().item())
-    assert float(state[mean_wire.id].item()) == float(expected.mean().item())
-    assert float(state[max_wire.id].item()) == float(expected.max().item())
-    assert int(state[argmax_wire.id].item()) == int(expected.argmax().item())
+    assert float(state[sum_wire].item()) == float(expected.sum().item())
+    assert float(state[mean_wire].item()) == float(expected.mean().item())
+    assert float(state[max_wire].item()) == float(expected.max().item())
+    assert int(state[argmax_wire].item()) == int(expected.argmax().item())
 
 
 # ── comparisons ──────────────────────────────────────────────────────────────
@@ -264,23 +249,23 @@ def test_comparisons():
     state, history = _run_module(m, 3)
 
     # After init: a=3, b=5, eq(3,5)=F, lt(3,5)=T
-    assert bool(history[0][eq_wire.id].item()) is False
-    assert bool(history[0][lt_wire.id].item()) is True
+    assert bool(history[0][eq_wire].item()) is False
+    assert bool(history[0][lt_wire].item()) is True
 
     # Step 1: a'=4; eq(3,5)=F, lt(3,5)=T
     assert int(_get(history[1], a[0]).item()) == 4
-    assert bool(history[1][eq_wire2.id].item()) is False
-    assert bool(history[1][lt_wire2.id].item()) is True
+    assert bool(history[1][eq_wire2].item()) is False
+    assert bool(history[1][lt_wire2].item()) is True
 
     # Step 2: a'=5; eq(4,5)=F, lt(4,5)=T
     assert int(_get(history[2], a[0]).item()) == 5
-    assert bool(history[2][eq_wire2.id].item()) is False
-    assert bool(history[2][lt_wire2.id].item()) is True
+    assert bool(history[2][eq_wire2].item()) is False
+    assert bool(history[2][lt_wire2].item()) is True
 
     # Step 3: a'=6; eq(5,5)=T, lt(5,5)=F
     assert int(_get(history[3], a[0]).item()) == 6
-    assert bool(history[3][eq_wire2.id].item()) is True
-    assert bool(history[3][lt_wire2.id].item()) is False
+    assert bool(history[3][eq_wire2].item()) is True
+    assert bool(history[3][lt_wire2].item()) is False
 
 
 # ── env inputs ───────────────────────────────────────────────────────────────
@@ -299,8 +284,8 @@ def test_env_inputs():
     m = Module.sequential(init, update, obs=[x, env])
 
     inputs_seq = [
-        {env[1].id: torch.tensor([5], dtype=torch.int64)},
-        {env[1].id: torch.tensor([3], dtype=torch.int64)},
+        {env[1]: torch.tensor([5], dtype=torch.int64)},
+        {env[1]: torch.tensor([3], dtype=torch.int64)},
     ]
     state, history = _run_module(m, 2, env_inputs_fn=lambda step: inputs_seq[step])
 
@@ -338,7 +323,7 @@ def _make_twobitcounter():
 
 
 def _bits(state, b0, b1):
-    return (bool(state[b1[0].id].item()), bool(state[b0[0].id].item()))
+    return (bool(state[b1[0]].item()), bool(state[b0[0]].item()))
 
 
 def test_twobitcounter_initial_state():
@@ -350,7 +335,7 @@ def test_twobitcounter_initial_state():
 def test_twobitcounter_count_sequence():
     """Stepping with enable=True cycles 00->01->10->11->00."""
     m, b0, b1, enable = _make_twobitcounter()
-    EN = {enable[1].id: torch.tensor([True])}
+    EN = {enable[1]: torch.tensor([True])}
 
     state, history = _run_module(m, 4, env_inputs_fn=lambda _: EN)
 
@@ -368,8 +353,8 @@ def test_twobitcounter_count_sequence():
 def test_twobitcounter_hold():
     """Enable=False leaves state unchanged."""
     m, b0, b1, enable = _make_twobitcounter()
-    EN = {enable[1].id: torch.tensor([True])}
-    HLD = {enable[1].id: torch.tensor([False])}
+    EN = {enable[1]: torch.tensor([True])}
+    HLD = {enable[1]: torch.tensor([False])}
 
     # Advance to state 2, then hold 3 steps
     inputs = [EN, EN, HLD, HLD, HLD]
@@ -384,8 +369,8 @@ def test_twobitcounter_hold():
 def test_twobitcounter_mixed():
     """Interleaved enable/hold steps."""
     m, b0, b1, enable = _make_twobitcounter()
-    EN = {enable[1].id: torch.tensor([True])}
-    HLD = {enable[1].id: torch.tensor([False])}
+    EN = {enable[1]: torch.tensor([True])}
+    HLD = {enable[1]: torch.tensor([False])}
 
     inputs = [EN, HLD, EN, HLD, HLD, EN, EN]
     state, history = _run_module(m, 7, env_inputs_fn=lambda s: inputs[s])
