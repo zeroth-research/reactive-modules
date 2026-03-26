@@ -70,6 +70,50 @@ namespace ValTuple
     if p then ValTuple.append xs a c else ValTuple.append xs b c := by
   split <;> rfl
 
+
+@[simp] theorem split_cons_fst_fst (a : t.denote) (rest : ValTuple (ts ++ ys)) :
+    (ValTuple.split (t :: ts) (a, rest)).1.1 = a := rfl
+
+@[simp] theorem split_cons_fst_snd (a : t.denote) (rest : ValTuple (ts ++ ys)) :
+    (ValTuple.split (t :: ts) (a, rest)).1.2 = (ValTuple.split ts rest).1 := rfl
+
+
+-- @[simp] theorem split_singleton_snd (v : ValTuple (t :: ts)) :
+--     (ValTuple.split [t] v).2 = v.2 := rfl
+
+-- @[simp] theorem split_singleton_fst (v : ValTuple (t :: ts)) :
+--     (ValTuple.split [t] v).1 = (v.1, ()) := rfl
+
+-- @[simp] theorem split_cons_snd (a : t.denote) (rest : ValTuple (ts ++ ys)) :
+--     (ValTuple.split (t :: ts) (a, rest)).2 = (ValTuple.split ts rest).2 := rfl
+
+-- @[simp] theorem split_pair_fst (a : t₁.denote) (b : t₂.denote) (rest : ValTuple ys) :
+--     (ValTuple.split [t₁, t₂] (a, b, rest)).1 = ((a, b, ()): ValTuple [t₁, t₂]) := rfl
+
+-- @[simp] theorem split_pair_snd (a : t₁.denote) (b : t₂.denote) (rest : ValTuple ys) :
+--     (ValTuple.split [t₁, t₂] (a, b, rest)).2 = rest := rfl
+
+  @[simp] theorem split_singleton_fst (v : ValTuple ([t] ++ ys)) :
+      (ValTuple.split [t] v).1 = (v.1, ()) := rfl
+
+  @[simp] theorem split_singleton_snd (v : ValTuple ([t] ++ ys)) :
+      (ValTuple.split [t] v).2 = v.2 := rfl
+
+  @[simp] theorem split_2_fst (v : ValTuple ([t₁, t₂] ++ ys)) :
+      (ValTuple.split [t₁, t₂] v).1 = (v.1, v.2.1, ()) := rfl
+
+  @[simp] theorem split_2_snd (v : ValTuple ([t₁, t₂] ++ ys)) :
+      (ValTuple.split [t₁, t₂] v).2 = v.2.2 := rfl
+
+  @[simp] theorem split_3_fst (v : ValTuple ([t₁, t₂, t₃] ++ ys)) :
+      (ValTuple.split [t₁, t₂, t₃] v).1 = (v.1, v.2.1, v.2.2.1, ()) := rfl
+
+  @[simp] theorem split_3_snd (v : ValTuple ([t₁, t₂, t₃] ++ ys)) :
+      (ValTuple.split [t₁, t₂, t₃] v).2 = v.2.2.2 := rfl
+
+
+
+
 syntax "val!" "(" term,* ")" : term
 
 macro_rules
@@ -192,6 +236,14 @@ end Box
 @[simp] theorem MatZero_apply {m n : Nat} (i : Fin m) (j : Fin n) :
     MatZero i j = 0 := rfl
 
+instance : HAdd (Fin m → Fin n → Int) (Fin m → Fin n → Int) (Fin m → Fin n → Int) where
+  hAdd := MatAdd
+
+@[simp] theorem MatAdd_eq_add {m n : Nat} (a b : Fin m → Fin n → Int) :
+    MatAdd a b = a + b := rfl
+
+
+/- ite simplifications -/
 @[simp] theorem ite_fst (p : Prop) [Decidable p] (a b : α × β) :
     (if p then a else b).1 = if p then a.1 else b.1 := by
   split <;> rfl
