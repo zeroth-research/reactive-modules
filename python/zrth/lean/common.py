@@ -1,5 +1,5 @@
 from zrth.lean.constants import _tensor_to_lean_inline
-from zrth import Term, Wire
+from zrth import Term, Wire, DType
 
 
 def _accessor(pos: int, total: int) -> str:
@@ -15,6 +15,32 @@ def _accessor(pos: int, total: int) -> str:
     if pos == total - 1:
         return ".2" * pos
     return ".2" * pos + ".1"
+
+
+def dtype_to_lean_type(wire: Wire) -> str:
+    """Map a Wire's DType to a native Lean type (Bool, Int, Fin m → Fin n → Int)."""
+    dt = wire.dtype
+    shape = dt.shape
+
+    if isinstance(dt, DType.Bool):
+        ty = "Bool"
+    elif isinstance(dt, DType.Int):
+        ty = "Int"
+    elif isinstance(dt, DType.Float):
+        ty = "Float"
+    else:
+        raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
+
+    if shape == [1] or shape == []:
+        return ty
+    elif len(shape) == 1:
+        return f"(Mat {ty} {shape[0]} 1)"
+    elif len(shape) == 2:
+        return f"(Mat {ty} {shape[0]} {shape[1]})"
+    else:
+        raise ValueError(f"Unsupported Bool shape: {shape}")
+
+    raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
 
 
 def itype_name(itype) -> str:

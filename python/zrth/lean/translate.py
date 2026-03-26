@@ -207,8 +207,6 @@ class ModuleToLean4:
         "Box.neq",
         "Box.min",
         "Box.max",
-        "Box.matMul",
-        "Box.matAdd",
         "ite_pair",
     ]
 

@@ -8,11 +8,10 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.common import _accessor
+from zrth.lean.common import _accessor, dtype_to_lean_type
 from zrth.lean.constants import (
     _tensor_to_lean_inline,
     _is_scalar_tensor,
-    _tensor_to_lean_def,
 )
 
 from dataclasses import dataclass
@@ -20,33 +19,11 @@ from dataclasses import dataclass
 from zrth import Module, Wire, DType, Term
 
 
-def dtype_to_lean_ty(wire: Wire) -> str:
-    """Map a Wire's DType to a Lean Ty expression (.bool, .int, .mat m n)."""
-    dt = wire.dtype
-    shape = dt.shape
-
-    if isinstance(dt, DType.Bool):
-        if shape == [1] or shape == []:
-            return ".bool"
-        raise ValueError(f"Unsupported Bool shape: {shape}")
-
-    if isinstance(dt, DType.Int):
-        if shape == [1] or shape == []:
-            return ".int"
-        if len(shape) == 1:
-            return f"(.mat {shape[0]} 1)"
-        if len(shape) == 2:
-            return f"(.mat {shape[0]} {shape[1]})"
-        raise ValueError(f"Unsupported Int shape: {shape}")
-
-    raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
-
-
 def _ty_list(wires: list[Wire]) -> str:
     """Build a right-nested product type: [w1, w2] -> 'Bool × Bool', [w1] -> 'Bool'."""
     if not wires:
         return "[]"
-    parts = [dtype_to_lean_ty(w) for w in wires]
+    parts = [dtype_to_lean_type(w) for w in wires]
     return "[{}]".format(" , ".join(parts))
 
 
@@ -110,8 +87,8 @@ _LEAN_OP_BOX: dict[str, str] = {
     "Neq": "Box.neq",
     "Min": "Box.min",
     "Max": "Box.max",
-    "MatMul": "Box.matMul",
-    "MatAdd": "Box.matAdd",
+    "MatMul": "Box.mul",
+    "MatAdd": "Box.add",
     "Id": "Box.id",
 }
 
@@ -204,28 +181,28 @@ def _cicr_compute_swapping(
         while i < N:
             if i >= N - 1:
                 # emit ID, this is the last wire or this and next wire are correctly ordered
-                boxes.append(f"@Box.id {dtype_to_lean_ty(layer[i])}")
+                boxes.append(f"@Box.id {dtype_to_lean_type(layer[i])}")
                 new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_ty(layer[i]))
-                out_ty.append(dtype_to_lean_ty(layer[i]))
+                in_ty.append(dtype_to_lean_type(layer[i]))
+                out_ty.append(dtype_to_lean_type(layer[i]))
                 i += 1
             elif wires_ord[layer[i]] <= wires_ord[layer[i + 1]]:
-                boxes.append(f"@Box.id {dtype_to_lean_ty(layer[i])}")
+                boxes.append(f"@Box.id {dtype_to_lean_type(layer[i])}")
                 new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_ty(layer[i]))
-                out_ty.append(dtype_to_lean_ty(layer[i]))
+                in_ty.append(dtype_to_lean_type(layer[i]))
+                out_ty.append(dtype_to_lean_type(layer[i]))
                 i += 1
             else:
                 changed = True
                 boxes.append(
-                    f"@Box.swap {dtype_to_lean_ty(layer[i])} {dtype_to_lean_ty(layer[i + 1])}"
+                    f"@Box.swap {dtype_to_lean_type(layer[i])} {dtype_to_lean_type(layer[i + 1])}"
                 )
                 new_layer.append(layer[i + 1])
                 new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_ty(layer[i]))
-                in_ty.append(dtype_to_lean_ty(layer[i + 1]))
-                out_ty.append(dtype_to_lean_ty(layer[i + 1]))
-                out_ty.append(dtype_to_lean_ty(layer[i]))
+                in_ty.append(dtype_to_lean_type(layer[i]))
+                in_ty.append(dtype_to_lean_type(layer[i + 1]))
+                out_ty.append(dtype_to_lean_type(layer[i + 1]))
+                out_ty.append(dtype_to_lean_type(layer[i]))
                 # `swap` consumes two wires
                 i += 2
 
@@ -259,24 +236,24 @@ def _circ_compute_dups(
         while i < N:
             if i >= N - 1:
                 # emit ID, this is the last wire or this and next wire are correctly ordered
-                boxes.append(f"@Box.id {dtype_to_lean_ty(layer[i])}")
+                boxes.append(f"@Box.id {dtype_to_lean_type(layer[i])}")
                 new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_ty(layer[i]))
-                out_ty.append(dtype_to_lean_ty(layer[i]))
+                in_ty.append(dtype_to_lean_type(layer[i]))
+                out_ty.append(dtype_to_lean_type(layer[i]))
                 i += 1
             elif wires_ord[layer[i]] != wires_ord[layer[i + 1]]:
-                boxes.append(f"@Box.id {dtype_to_lean_ty(layer[i])}")
+                boxes.append(f"@Box.id {dtype_to_lean_type(layer[i])}")
                 new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_ty(layer[i]))
-                out_ty.append(dtype_to_lean_ty(layer[i]))
+                in_ty.append(dtype_to_lean_type(layer[i]))
+                out_ty.append(dtype_to_lean_type(layer[i]))
                 i += 1
             else:
                 changed = True
-                boxes.append(f"@Box.dup {dtype_to_lean_ty(layer[i])}")
+                boxes.append(f"@Box.dup {dtype_to_lean_type(layer[i])}")
                 new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_ty(layer[i]))
-                out_ty.append(dtype_to_lean_ty(layer[i]))
-                out_ty.append(dtype_to_lean_ty(layer[i]))
+                in_ty.append(dtype_to_lean_type(layer[i]))
+                out_ty.append(dtype_to_lean_type(layer[i]))
+                out_ty.append(dtype_to_lean_type(layer[i]))
                 # `dup` consumes two wires
                 i += 2
 
@@ -305,12 +282,12 @@ def _circ_comput_dels(block_inputs: list[Wire], last_layer: list[Wire]):
         in_ty, out_ty = [], []
         for w in block_inputs:
             if w in last_layer:
-                boxes.append(f"@Box.id {dtype_to_lean_ty(w)}")
-                in_ty.append(dtype_to_lean_ty(w))
-                out_ty.append(dtype_to_lean_ty(w))
+                boxes.append(f"@Box.id {dtype_to_lean_type(w)}")
+                in_ty.append(dtype_to_lean_type(w))
+                out_ty.append(dtype_to_lean_type(w))
             else:
-                boxes.append(f"@Box.destr {dtype_to_lean_ty(w)}")
-                in_ty.append(dtype_to_lean_ty(w))
+                boxes.append(f"@Box.destr {dtype_to_lean_type(w)}")
+                in_ty.append(dtype_to_lean_type(w))
         assert boxes
         dels.append(
             CircLayer(
@@ -375,9 +352,9 @@ def _translate_terms_circ(
         in_ty, out_ty = [], []
         for w in layer:
             if w in block_inputs:
-                boxes.append(f"@Box.id {dtype_to_lean_ty(w)}")
-                in_ty.append(dtype_to_lean_ty(w))
-                out_ty.append(dtype_to_lean_ty(w))
+                boxes.append(f"@Box.id {dtype_to_lean_type(w)}")
+                in_ty.append(dtype_to_lean_type(w))
+                out_ty.append(dtype_to_lean_type(w))
             else:
                 term = wire_to_term[w]
                 name = itype_name(term.itype)
@@ -385,15 +362,12 @@ def _translate_terms_circ(
                 if name in ("Tensor", "ConstBool", "ConstInt"):
                     expr = _constant_expr(name, term, w, constants)
 
-                    boxes.append(f"Box.const {dtype_to_lean_ty(w)} {expr}")
-                    out_ty.append(dtype_to_lean_ty(w))
+                    boxes.append(f"@Box.const {dtype_to_lean_type(w)} {expr}")
+                    out_ty.append(dtype_to_lean_type(w))
                 else:
-                    if name in ("Add", "Sub") and not _is_scalar_tensor(w):
-                        # this is a matrix operation
-                        name = "Mat" + name
                     boxes.append(_LEAN_OP_BOX[name])
-                    in_ty.extend([dtype_to_lean_ty(u) for u in term.read])
-                    out_ty.extend([dtype_to_lean_ty(u) for u in term.write])
+                    in_ty.extend([dtype_to_lean_type(u) for u in term.read])
+                    out_ty.extend([dtype_to_lean_type(u) for u in term.write])
         assert boxes
         result.append(
             CircLayer(
