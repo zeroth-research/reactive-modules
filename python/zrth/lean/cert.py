@@ -3,6 +3,9 @@ from zrth import Module
 from .translate import ModuleToLean4
 
 
+# TODO: move the parts that does not change into .lean file.
+# Or use templating engine, e.g., `Jinja2`.
+#
 def generate_certificate_lean(
     project_name: str,
     module: Module,
@@ -15,6 +18,7 @@ def generate_certificate_lean(
     p_terms: list | None = None,
 ) -> str:
     """Generate Certificate.lean with compiled or placeholder definitions."""
+
     extl_next = [pair[1] for pair in module.extl]
     ctrl_next = [pair[1] for pair in module.ctrl]
 
@@ -103,22 +107,18 @@ def generate_certificate_lean(
     lines.append("")
 
     # ReactiveModule definition
-    lines.append("def RM : ReactiveModule")
-    lines.append(f"          ({extl_native}) ({ctrl_native})")
-    lines.append(":= {")
-    lines.append("    init := init")
-    lines.append(f"    update := fun x e => update {append}")
-    lines.append("    init_pre := init_pre")
-    lines.append("    update_pre := update_pre")
-    lines.append("}")
-    lines.append("")
+    lines.append(f"""\
+def RM : ReactiveModule ({extl_native}) ({ctrl_native}) := {{
+    init := init
+    update := fun x e => update {append}
+    init_pre := init_pre
+    update_pre := update_pre
+}}
+""")
 
     # simp_mod tactic — unfolds module definitions for proof automation
     const_list = ", ".join(const_names) if const_names else ""
 
-    lines.append("-- tactic that unfolds module definitions and simplifies")
-    lines.append('macro "simp_mod" : tactic =>')
-    lines.append("  `(tactic| (")
     simp_lemmas = "init, update, inv"
     if const_list:
         simp_lemmas += f",\n               {const_list}"
@@ -127,18 +127,17 @@ def generate_certificate_lean(
     )
     simp_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
     simp_lemmas += ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
-    lines.append(f"    simp only [{simp_lemmas}]")
-    lines.append("    <;> (try omega)")
-    lines.append("    <;> (try (split <;> simp_all <;> omega))")
-    lines.append("    <;> (try (split <;> split <;> simp_all <;> omega))))")
-    lines.append("")
 
-    # simp_inv tactic — reduces module defs then solves CNF goals
-    lines.append(
-        "-- tactic that reduces module definitions and solves CNF invariant goals"
-    )
-    lines.append('macro "simp_inv" : tactic =>')
-    lines.append("  `(tactic| (")
+    lines.append(f"""\
+-- tactic that unfolds module definitions and simplifies
+macro "simp_mod" : tactic =>
+  `(tactic| (
+    simp only [{simp_lemmas}]
+    <;> (try omega)
+    <;> (try (split <;> simp_all <;> omega))
+    <;> (try (split <;> split <;> simp_all <;> omega))))
+""")
+
     inv_lemmas = "RM, ReactiveModule.init, ReactiveModule.update,\n"
     inv_lemmas += "               ReactiveModule.init_pre, ReactiveModule.update_pre,\n"
     inv_lemmas += "               init, update, inv, init_pre, update_pre"
@@ -149,96 +148,87 @@ def generate_certificate_lean(
     )
     inv_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
     inv_lemmas += ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
-    lines.append(f"    simp only [{inv_lemmas}] at *")
-    lines.append("    <;> first")
-    lines.append("      | trivial")
-    lines.append("      | omega")
-    lines.append("      | (simp_all; omega)")
-    lines.append("      | (repeat' constructor)")
-    lines.append("        <;> first")
-    lines.append("          | trivial | omega")
-    lines.append("          | (simp_all; omega)")
-    lines.append("          | (left; omega) | (right; omega)")
-    lines.append("          | (left; simp_all; omega) | (right; simp_all; omega)")
-    lines.append("          | (right; right; omega) | (right; right; simp_all; omega)")
-    lines.append("      | (split <;> simp_all <;> omega)")
-    lines.append("      | (split <;> split <;> simp_all <;> omega)))")
-    lines.append("")
+
+    # simp_inv tactic — reduces module defs then solves CNF goals
+    lines.append(f"""\
+-- tactic that reduces module definitions and solves CNF invariant goals
+macro "simp_inv" : tactic =>
+  `(tactic| (
+    simp only [{inv_lemmas}] at *
+    <;> first
+      | trivial
+      | omega
+      | (simp_all; omega)
+      | (repeat' constructor)
+        <;> first
+          | trivial | omega
+          | (simp_all; omega)
+          | (left; omega) | (right; omega)
+          | (left; simp_all; omega) | (right; simp_all; omega)
+          | (right; right; omega) | (right; right; simp_all; omega)
+      | (split <;> simp_all <;> omega)
+      | (split <;> split <;> simp_all <;> omega)))
+""")
 
     # init_inv theorem
-    lines.append("theorem init_inv :")
-    lines.append("  ∀ s, RM.init_pre s → inv (RM.init s) := by")
-    lines.append("   intro s hpre")
-    lines.append("   simp_inv")
-    lines.append("")
+    lines.append("""\
+theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+   intro s hpre
+   simp_inv
 
-    # step_inv theorem
-    lines.append("theorem step_inv :")
-    lines.append("  ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by")
-    lines.append("   intro s e ⟨hpre, hinv⟩")
-    lines.append("   simp_inv")
-    lines.append("")
-    lines.append("")
+theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+   intro s e ⟨hpre, hinv⟩
+   simp_inv
+""")
 
     # LTS section
-    lines.append("section LTS")
-    lines.append("")
-    lines.append("def lts := RM.toLTS'")
-    lines.append("")
+    lines.append("section LTS\n")
+    lines.append("def lts := RM.toLTS'\n")
 
     # hinv' theorem
-    lines.append("theorem hinv' : lts.StateSet_isInductiveInitial inv := by")
-    lines.append("  unfold LTS'.StateSet_isInductiveInitial")
-    lines.append("  unfold LTS'.StateSet_isInductive")
-    lines.append("  constructor")
-    lines.append("  · intro s hs")
-    lines.append("    unfold lts at hs")
-    lines.append(
-        "    simp [ReactiveModule.toLTS', ReactiveModule.LTS_init, RM, init_pre] at hs"
-    )
-    lines.append("    unfold inv")
-    lines.append("    simp [Membership.mem]")
-    lines.append("  · intro s s' ⟨hs, l, hstep⟩")
-    lines.append("    unfold lts at hstep")
-    lines.append(
-        "    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at hstep"
-    )
-    lines.append("    rw [← hstep.2]")
-    lines.append("    exact step_inv s l ⟨hstep.1, hs⟩")
-    lines.append("")
+    lines.append("""\
+theorem hinv' : lts.StateSet_isInductiveInitial inv := by
+  unfold LTS'.StateSet_isInductiveInitial
+  unfold LTS'.StateSet_isInductive
+  constructor
+  · intro s hs
+    unfold lts at hs
+    simp [ReactiveModule.toLTS', ReactiveModule.LTS_init, RM, init_pre] at hs
+    unfold inv
+    simp [Membership.mem]
+  · intro s s' ⟨hs, l, hstep⟩
+    unfold lts at hstep
+    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at hstep
+    rw [← hstep.2]
+    exact step_inv s l ⟨hstep.1, hs⟩
 
-    # hinv theorem
-    lines.append("theorem hinv : lts.StateSet_isInvariant inv := by")
-    lines.append("  apply LTS'.StateSet_ind_init_is_inv lts")
-    lines.append("  exact hinv'")
-    lines.append("")
-    lines.append("")
+theorem hinv : lts.StateSet_isInvariant inv := by
+  apply LTS'.StateSet_ind_init_is_inv lts
+  exact hinv'
 
-    # hrank theorem
-    lines.append("theorem hrank : ∀ s s', inv s → ¬(P s) → (∃ l, lts.Tr s l s') →")
-    lines.append("    ranking s' < ranking s := by")
-    lines.append("    intro s s' hi hP htr")
-    lines.append("    unfold lts at htr")
-    lines.append(
-        "    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at htr"
-    )
-    lines.append("    obtain ⟨l, hpre, heq⟩ := htr")
-    lines.append("    rw [← heq]")
-    lines.append("    unfold ranking P at *")
-    lines.append("    unfold inv at *")
-    lines.append("    simp only [RM, ReactiveModule.update]")
-    lines.append("    unfold update")
-    lines.append("    simp_mod")
-    lines.append("")
-    lines.append("def buchi := rule_buchi")
-    lines.append("  lts")
-    lines.append("  P")
-    lines.append("  inv")
-    lines.append("  hinv")
-    lines.append("  ranking")
-    lines.append("  hrank")
-    lines.append("")
-    lines.append("end LTS")
-    lines.append("")
+theorem hrank : ∀ s s', inv s → ¬(P s) → (∃ l, lts.Tr s l s') →
+    ranking s' < ranking s := by
+    intro s s' hi hP htr
+    unfold lts at htr
+    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at htr
+    obtain ⟨l, hpre, heq⟩ := htr
+    rw [← heq]
+    unfold ranking P at *
+    unfold inv at *
+    simp only [RM, ReactiveModule.update]
+    unfold update
+    simp_mod
+
+def buchi := rule_buchi
+  lts
+  P
+  inv
+  hinv
+  ranking
+  hrank
+
+""")
+
+    lines.append("end LTS\n")
 
     return "\n".join(lines)
