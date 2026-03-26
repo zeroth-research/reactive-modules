@@ -110,7 +110,8 @@ _LEAN_OP_BOX: dict[str, str] = {
     "Neq": "Box.neq",
     "Min": "Box.min",
     "Max": "Box.max",
-    "MatMul": "Box.matmul",
+    "MatMul": "Box.matMul",
+    "MatAdd": "Box.matAdd",
     "Id": "Box.id",
 }
 
@@ -387,6 +388,9 @@ def _translate_terms_circ(
                     boxes.append(f"Box.const {dtype_to_lean_ty(w)} {expr}")
                     out_ty.append(dtype_to_lean_ty(w))
                 else:
+                    if name in ("Add", "Sub") and not _is_scalar_tensor(w):
+                        # this is a matrix operation
+                        name = "Mat" + name
                     boxes.append(_LEAN_OP_BOX[name])
                     in_ty.extend([dtype_to_lean_ty(u) for u in term.read])
                     out_ty.extend([dtype_to_lean_ty(u) for u in term.write])
