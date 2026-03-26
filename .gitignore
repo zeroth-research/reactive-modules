@@ -3,7 +3,6 @@ target
 .idea
 
 # Added by Marco
-*.html
 *.txt
 # *.smv
 *.lean
