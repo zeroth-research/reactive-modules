@@ -36,21 +36,9 @@ class Expr:
     def args(self):
         return self._args
 
-    # def argmax(self) -> "Expr":
-    #     return Argmax(self)
-
     @property
     def itype(self):
         return self._itype
-
-    # def __and__(self, rhs: "Expr") -> "Expr":
-    #    return conj(self, rhs)
-    #
-    # def __or__(self, rhs: "Expr") -> "Expr":
-    #    return disj(self, rhs)
-    #
-    # def __invert__(self) -> "Expr":
-    #    return neg(self)
 
     @override
     def __str__(self) -> str:
@@ -97,10 +85,10 @@ class AExpr(Expr):
     def __ge__(self, other: "AExpr") -> BExpr:
         return ge(self, other)
 
-    def __eq__(self, other: "AExpr") -> BExpr:  # ty: ignore
+    def __eq__(self, other: "AExpr") -> BExpr:
         return eq(self, other)
 
-    def __ne__(self, other: "AExpr") -> BExpr:  # ty: ignore
+    def __ne__(self, other: "AExpr") -> BExpr:
         return neq(self, other)
 
     def __matmul__(self, other):
@@ -152,10 +140,10 @@ class WExpr(Expr):
     def __ge__(self, other: "WExpr") -> BExpr:
         return w_ge(self, other)
 
-    def __eq__(self, other: "WExpr") -> BExpr:  # ty: ignore
+    def __eq__(self, other: "WExpr") -> BExpr:
         return w_eq(self, other)
 
-    def __ne__(self, other: "WExpr") -> BExpr:  # ty: ignore
+    def __ne__(self, other: "WExpr") -> BExpr:
         return w_neq(self, other)
 
 
