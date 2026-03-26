@@ -92,23 +92,24 @@ class ModuleToLean4:
             )
         atom = atoms[0]
 
-        extl_next = [pair[1] for pair in m.extl]
-        ctrl_latched = [pair[0] for pair in m.ctrl]
-        ctrl_next = [pair[1] for pair in m.ctrl]
+        extl_next: list[Wire] = [pair[1] for pair in m.extl]
+        ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
+        ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
+        params: list[Wire] = [x for x in m.param]
 
         # Extract constants from both blocks
         init_terms = atom.init
         update_terms = atom.update
 
         # Compile both blocks
-        init_inputs = list(extl_next)
-        init_outputs = list(ctrl_next)
+        init_inputs = extl_next + params
+        init_outputs = ctrl_next
         init_layers = _translate_terms_circ(
             init_terms, init_inputs, init_outputs, self._constants
         )
 
-        update_inputs = ctrl_latched + extl_next
-        update_outputs = list(ctrl_next)
+        update_inputs = ctrl_latched + extl_next + params
+        update_outputs = ctrl_next
         update_layers = _translate_terms_circ(
             update_terms, update_inputs, update_outputs, self._constants
         )
