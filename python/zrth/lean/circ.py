@@ -34,9 +34,9 @@ def dtype_to_lean_ty(wire: Wire) -> str:
         if shape == [1] or shape == []:
             return ".int"
         if len(shape) == 1:
-            return f".mat {shape[0]} 1"
+            return f"(.mat {shape[0]} 1)"
         if len(shape) == 2:
-            return f".mat {shape[0]} {shape[1]}"
+            return f"(.mat {shape[0]} {shape[1]})"
         raise ValueError(f"Unsupported Int shape: {shape}")
 
     raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
