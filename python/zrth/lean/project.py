@@ -3,6 +3,8 @@ Build a Lean4 project with Mathlib, Cslib, and a custom git dependency,
 copy template library files, and generate a diagram Lean file.
 """
 
+from zrth.lean.common import dtype_to_lean_type
+
 from zrth.lean.cert import generate_certificate_lean
 
 import shutil
@@ -11,10 +13,8 @@ from pathlib import Path
 
 from zrth import Module, Wire
 from .native import (
-    _translate_terms,
     _product_type,
     _append_expr,
-    dtype_to_lean_native,
 )
 
 from .translate import ModuleToLean4
@@ -153,7 +153,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     offset = 0
     parse_vars: list[str] = []
     for i, w in enumerate(extl_next):
-        ty = dtype_to_lean_native(w)
+        ty = dtype_to_lean_type(w)
         var = f"e{i}"
         if ty == "Bool":
             lines.append(f"  let {var} := parseBool tokens[{offset}]!")
@@ -196,7 +196,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     # Format each variable
     show_parts: list[str] = []
     for i, w in enumerate(ctrl_next):
-        ty = dtype_to_lean_native(w)
+        ty = dtype_to_lean_type(w)
         var = f"v{i}"
         if ty == "Bool":
             show_parts.append(f"showBool {var}")
