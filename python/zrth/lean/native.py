@@ -8,33 +8,11 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.common import _constant_expr, itype_name, _accessor
+from zrth.lean.common import _constant_expr, itype_name, _accessor, dtype_to_lean_type
 
 from typing import Callable
 
 from zrth import Wire, DType
-
-
-def dtype_to_lean_native(wire: Wire) -> str:
-    """Map a Wire's DType to a native Lean type (Bool, Int, Fin m → Fin n → Int)."""
-    dt = wire.dtype
-    shape = dt.shape
-
-    if isinstance(dt, DType.Bool):
-        if shape == [1] or shape == []:
-            return "Bool"
-        raise ValueError(f"Unsupported Bool shape: {shape}")
-
-    if isinstance(dt, DType.Int):
-        if shape == [1] or shape == []:
-            return "Int"
-        if len(shape) == 1:
-            return f"(Fin {shape[0]} → Fin 1 → Int)"
-        if len(shape) == 2:
-            return f"(Fin {shape[0]} → Fin {shape[1]} → Int)"
-        raise ValueError(f"Unsupported Int shape: {shape}")
-
-    raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
 
 
 def _product_type(wires: list[Wire]) -> str:
@@ -42,8 +20,8 @@ def _product_type(wires: list[Wire]) -> str:
     if not wires:
         return "Unit"
     if len(wires) == 1:
-        return dtype_to_lean_native(wires[0])
-    parts = [dtype_to_lean_native(w) for w in wires]
+        return dtype_to_lean_type(wires[0])
+    parts = [dtype_to_lean_type(w) for w in wires]
     return " × ".join(parts)
 
 
