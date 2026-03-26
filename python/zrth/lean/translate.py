@@ -170,12 +170,44 @@ class ModuleToLean4:
 
     # Simp lemmas for reducing a single circuit layer
     _LAYER_SIMP = [
-        "Box.par", "ValTuple.split", "ValTuple.append",
-        "Box.id", "Box.dup", "Box.swap", "Box.destr", "Box.const",
-        "Box.not", "Box.and", "Box.or", "Box.ite",
-        "Box.add", "Box.sub", "Box.mul", "Box.neg",
-        "Box.lt", "Box.le", "Box.gt", "Box.ge", "Box.eq", "Box.neq",
-        "Box.min", "Box.max", "Box.matMul", "Box.matAdd",
+        "Box.par",
+        "ValTuple.split",
+        "ValTuple.append",
+        "ValTuple.append_split",
+        "ValTuple.append_ite",
+        "ValTuple.split_singleton_fst",
+        "ValTuple.split_singleton_snd",
+        "ValTuple.split_cons_fst_fst",
+        "ValTuple.split_cons_fst_snd",
+        "ValTuple.split_2_fst",
+        "ValTuple.split_2_snd",
+        "ValTuple.split_3_fst",
+        "ValTuple.split_3_snd",
+        "ValTuple.split_nil",
+        "ValTuple.split_nil_snd",
+        "Box.id",
+        "Box.dup",
+        "Box.swap",
+        "Box.destr",
+        "Box.const",
+        "Box.not",
+        "Box.and",
+        "Box.or",
+        "Box.ite",
+        "Box.add",
+        "Box.sub",
+        "Box.mul",
+        "Box.neg",
+        "Box.lt",
+        "Box.le",
+        "Box.gt",
+        "Box.ge",
+        "Box.eq",
+        "Box.neq",
+        "Box.min",
+        "Box.max",
+        "Box.matMul",
+        "Box.matAdd",
         "ite_pair",
     ]
 
@@ -185,7 +217,9 @@ class ModuleToLean4:
         lines = []
         lines.append("/-- Reduce one circuit layer: unfolds the given lemma,")
         lines.append("    then simplifies all Box/ValTuple plumbing. -/")
-        lines.append('macro "simp_circ" "[" ls:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>')
+        lines.append(
+            'macro "simp_circ" "[" ls:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>'
+        )
         lines.append("  `(tactic| simp only [$ls,*,")
         lines.append(f"    {layer_simp}])")
         return "\n".join(lines)

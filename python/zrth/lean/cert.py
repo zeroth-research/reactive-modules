@@ -93,7 +93,12 @@ def generate_certificate_lean(
     lines.append("")
 
     # DecidablePred P — must come after P and before ranking
-    lines.append("instance : DecidablePred P := inferInstance")
+    if p_terms is not None:
+        lines.append(
+            "instance : DecidablePred P := fun s => by unfold P; dsimp; infer_instance"
+        )
+    else:
+        lines.append("instance : DecidablePred P := sorry")
     lines.append("")
 
     # ranking
@@ -215,9 +220,15 @@ theorem hrank : ∀ s s', inv s → ¬(P s) → (∃ l, lts.Tr s l s') →
     rw [← heq]
     unfold ranking P at *
     unfold inv at *
-    simp only [RM, ReactiveModule.update]
-    unfold update
-    simp_mod
+    try simp [RM, ReactiveModule.update]
+    first
+      | contradiction
+      | simp at hP
+        unfold update
+        simp_mod
+   -- simp only [RM, ReactiveModule.update]
+   -- unfold update
+   -- simp_mod
 
 def buchi := rule_buchi
   lts
