@@ -33,11 +33,6 @@ impl Atom {
     }
 
     #[getter]
-    fn param(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
-        Self::interface(slf, AtomInterfaceType::Param)
-    }
-
-    #[getter]
     fn init(slf: Bound<'_, Self>) -> AtomBlock {
         AtomBlock {
             atom: slf.unbind(),
@@ -75,7 +70,6 @@ enum AtomInterfaceType {
     Read,
     Ctrl,
     Await,
-    Param,
 }
 
 #[pyclass(sequence)]
@@ -91,7 +85,6 @@ impl AtomInterface {
             AtomInterfaceType::Read => atom.read(),
             AtomInterfaceType::Await => atom.wait(),
             AtomInterfaceType::Ctrl => atom.ctrl(),
-            AtomInterfaceType::Param => atom.param(),
         }
     }
 }

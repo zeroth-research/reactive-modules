@@ -9,46 +9,36 @@ from .environments import (
     ArrayEnv,
 )
 from .qnetworks import SimpleQNet, GridWorldQNet
-from zrth import Module
+from zrth.gym import Wrapper
+from zrth.torch import Module
 
 
 def simpleqnet():
-    qnet = SimpleQNet(
+    nn_module = SimpleQNet(
         state_size=1,
         action_size=2,
         hidden_size=2,
     )
+    wrapped = Module(nn_module)
 
     print("QNetwork reactive module:")
-    print(qnet)
+    print(wrapped)
 
-    return qnet
+    return wrapped
 
 
 def test_simpleqnet_conversion():
     _ = simpleqnet()
 
 
-def test_simpleqnet_interpr():
-    from interpreter import Interpreter
-
-    m = simpleqnet()
-    interp = Interpreter(m)
-    interp.initialize()
-
-    interp.step()
-    print("----")
-    for k, t in interp.state_dict().items():
-        print(f"{k} -> {t}")
-
-
 def simpleenv():
     env = SimpleEnv()
+    wrapped = Wrapper(env)
 
     print("\nSimpleEnv reactive module:")
-    print(env)
+    print(wrapped)
 
-    return env
+    return wrapped
 
 
 def test_simpleenv_conversion():
@@ -56,17 +46,18 @@ def test_simpleenv_conversion():
 
 
 def gridworldqnet():
-    qnet = GridWorldQNet(
+    nn_module = GridWorldQNet(
         state_size=1,
         action_size=4,
         hidden_size1=8,
         hidden_size2=4,
     )
+    wrapped = Module(nn_module)
 
     print("GridWorldQNet reactive module:")
-    print(qnet)
+    print(wrapped)
 
-    return qnet
+    return wrapped
 
 
 def test_gridworldqnet_conversion():
@@ -75,11 +66,12 @@ def test_gridworldqnet_conversion():
 
 def gridworldenv():
     env = GridWorldEnv()
+    wrapped = Wrapper(env)
 
     print("\nGridWorldEnv reactive module:")
-    print(env)
+    print(wrapped)
 
-    return env
+    return wrapped
 
 
 def test_gridworldenv_conversion():
@@ -88,11 +80,12 @@ def test_gridworldenv_conversion():
 
 def complexdecisionenv():
     env = ComplexDecisionEnv()
+    wrapped = Wrapper(env)
 
     print("\nComplexDecisionEnv reactive module:")
-    print(env)
+    print(wrapped)
 
-    return env
+    return wrapped
 
 
 def test_complexdecisionenv_conversion():
@@ -101,11 +94,12 @@ def test_complexdecisionenv_conversion():
 
 def earlyreturnenv():
     env = EarlyReturnEnv()
+    wrapped = Wrapper(env)
 
     print("\nEarlyReturnEnv reactive module:")
-    print(env)
+    print(wrapped)
 
-    return env
+    return wrapped
 
 
 def test_earlyreturnenv_conversion():
@@ -114,11 +108,12 @@ def test_earlyreturnenv_conversion():
 
 def comparisonchainenv():
     env = ComparisonChainEnv()
+    wrapped = Wrapper(env)
 
     print("\nComparisonChainEnv reactive module:")
-    print(env)
+    print(wrapped)
 
-    return env
+    return wrapped
 
 
 def test_comparisonchainenv_conversion():
@@ -127,11 +122,12 @@ def test_comparisonchainenv_conversion():
 
 def twobitcounterenv():
     env = TwoBitCounterEnv()
+    wrapped = Wrapper(env)
 
     print("\nTwoBitCounterEnv reactive module:")
-    print(env)
+    print(wrapped)
 
-    return env
+    return wrapped
 
 
 def test_twobitcounterenv_conversion():
@@ -140,11 +136,12 @@ def test_twobitcounterenv_conversion():
 
 def heartode():
     env = HeartODE(60.0, 5.0, 1.0, 0.1)
+    wrapped = Wrapper(env)
 
     print("\nHeartODE reactive module:")
-    print(env)
+    print(wrapped)
 
-    return env
+    return wrapped
 
 
 def test_heartode_conversion():
@@ -153,7 +150,8 @@ def test_heartode_conversion():
 
 def test_arrayenv_conversion():
     env = ArrayEnv()
-    module_str = str(env)
+    wrapped = Wrapper(env)
+    module_str = str(wrapped)
     if "Float(3, 3)" not in module_str:
         raise AssertionError(module_str)  # grid
     if "Float(5)" not in module_str:  # weights
@@ -167,7 +165,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60 + "\n")
     env = simpleenv()
     print("\n" + "=" * 60 + "\n")
-    composed = Module.parallel(qnet, env)
+    composed = Wrapper(env, qnet)
     print(composed)
 
     print("\n" + "=" * 60 + "\n")
@@ -175,7 +173,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60 + "\n")
     gridenv = gridworldenv()
     print("\n" + "=" * 60 + "\n")
-    composed2 = Module.parallel(qnet3, gridenv)
+    composed2 = Wrapper(gridenv, qnet3)
     print(composed2)
 
     print("\n" + "=" * 60 + "\n")

@@ -1,210 +1,154 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 use crate::dtype::DType;
 use crate::itype::{ArithOp, CmpOp, IType, LogicalOp, Val};
 
-use base::{Atom, Module, Term};
+use base::Term;
 
-type SmtAtom = Atom<DType, IType>;
-type SmtModule = Module<DType, IType>;
-
-pub struct AtomSmtLibTranslator<'a>(&'a SmtAtom);
-
-pub fn wires_decls<'a, T: IntoIterator<Item = &'a base::Wire<DType>>>(wires: T) -> Vec<String> {
-    wires
-        .into_iter()
-        .map(|w| declare_var(w.id(), w.dtype()))
-        .collect::<Vec<String>>()
+/// Errors that can occur during SMT-LIB assertion generation.
+#[derive(Debug)]
+pub enum SmtError {
+    /// A term reads a wire that is written by a later term (bad topological order).
+    BadOrder { wire_id: usize, read_by_term: usize, written_by_term: usize },
+    /// Two terms write the same wire.
+    DuplicateWrite { wire_id: usize, first_term: usize, second_term: usize },
+    /// A formatting error occurred while writing output.
+    Fmt(fmt::Error),
 }
 
-impl AtomSmtLibTranslator<'_> {
-    fn method_to_smtlib<'a, T>(&self, terms: T, state_wires: &HashSet<usize>) -> Vec<String>
-    where T: IntoIterator<Item = &'a Term<DType, IType>>
-    {
-        let mut let_bindings = Vec::new();
-        let mut state_assigns = Vec::new();
-
-        for term in terms {
-            let wire_id = term.write().ids().next().unwrap();
-            let expr = smt_expr(term);
-            
-            if state_wires.contains(&wire_id) {
-                state_assigns.push(format!("(= {} {})", wire_name(wire_id), expr));
-            } else {
-                let_bindings.push(format!("({} {})", wire_name(wire_id), expr));
+impl fmt::Display for SmtError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SmtError::BadOrder { wire_id, read_by_term, written_by_term } => {
+                write!(
+                    f,
+                    "bad order: wire w{} is read by term {} but written by later term {}",
+                    wire_id, read_by_term, written_by_term
+                )
             }
+            SmtError::DuplicateWrite { wire_id, first_term, second_term } => {
+                write!(
+                    f,
+                    "duplicate write: wire w{} is written by both term {} and term {}",
+                    wire_id, first_term, second_term
+                )
+            }
+            SmtError::Fmt(e) => write!(f, "format error: {}", e),
         }
+    }
+}
 
-        if let_bindings.is_empty() {
-            state_assigns.iter().map(|s| format!("(assert {})", s)).collect()
+impl From<fmt::Error> for SmtError {
+    fn from(e: fmt::Error) -> Self {
+        SmtError::Fmt(e)
+    }
+}
+
+/// Write `(declare-fun wi () Sort)` for each wire.
+pub fn declare<'a>(
+    wires: impl IntoIterator<Item = &'a base::Wire<DType>>,
+    w: &mut impl fmt::Write,
+) -> fmt::Result {
+    for wire in wires {
+        writeln!(w, "(declare-fun {} () {})", wire_name(wire.id()), wire.dtype())?;
+    }
+    Ok(())
+}
+
+/// Write an SMT-LIB assertion for a sequence of terms (a closed diagram).
+///
+/// Intermediate wires (written by one term, read by another) become `let`-bindings.
+/// Output wires (written but not read by any term) become equalities inside the assertion.
+///
+/// # Errors
+///
+/// Returns `SmtError::BadOrder` if a term reads a wire written by a later term,
+/// `SmtError::DuplicateWrite` if two terms write the same wire.
+pub fn assert_terms<'a>(
+    terms: impl IntoIterator<Item = &'a Term<DType, IType>>,
+    w: &mut impl fmt::Write,
+) -> Result<(), SmtError> {
+    let terms: Vec<&Term<DType, IType>> = terms.into_iter().collect();
+    if terms.is_empty() {
+        return Ok(());
+    }
+
+    // Pass 1a: collect all writes and check for duplicates
+    let mut written_by: HashMap<usize, usize> = HashMap::new(); // wire_id -> term_index
+    for (i, term) in terms.iter().enumerate() {
+        for wire_id in term.write().ids() {
+            if let Some(&prev) = written_by.get(&wire_id) {
+                return Err(SmtError::DuplicateWrite {
+                    wire_id,
+                    first_term: prev,
+                    second_term: i,
+                });
+            }
+            written_by.insert(wire_id, i);
+        }
+    }
+
+    // Pass 1b: collect reads and validate ordering
+    let mut read_set: HashSet<usize> = HashSet::new();
+    for (i, term) in terms.iter().enumerate() {
+        for wire_id in term.read().ids() {
+            read_set.insert(wire_id);
+            if let Some(&writer) = written_by.get(&wire_id)
+                && writer >= i {
+                    return Err(SmtError::BadOrder {
+                        wire_id,
+                        read_by_term: i,
+                        written_by_term: writer,
+                    });
+                }
+        }
+    }
+
+    // Pass 2: classify and emit
+    // Intermediate: written AND read by another term -> let-binding
+    // Output: written but NOT read by any term -> equality
+    let mut let_bindings = Vec::new();
+    let mut equalities = Vec::new();
+
+    for term in &terms {
+        let wire_id = term.write().ids().next().unwrap();
+        let expr = smt_expr(term);
+
+        if read_set.contains(&wire_id) {
+            let_bindings.push(format!("({} {})", wire_name(wire_id), expr));
         } else {
-            vec![format!(
-                "(assert\n  (let ({})\n    (and {})))",
-                let_bindings.join("\n        "),
-                state_assigns.join("\n         ")
-            )]
+            equalities.push(format!("(= {} {})", wire_name(wire_id), expr));
         }
     }
 
-    pub fn init(&self, state_wires: &HashSet<usize>) -> Vec<String> {
-        self.method_to_smtlib(self.0.init().iter(), state_wires)
-    }
-
-    pub fn update(&self, state_wires: &HashSet<usize>) -> Vec<String> {
-        self.method_to_smtlib(self.0.update().iter(), state_wires)
-    }
-
-    pub fn ctrl(&self) -> Vec<String> {
-        wires_decls(self.0.ctrl().wires())
-    }
-
-    pub fn read(&self) -> Vec<String> {
-        wires_decls(self.0.read().wires())
-    }
-
-    pub fn wait(&self) -> Vec<String> {
-        wires_decls(self.0.wait().wires())
-    }
-}
-
-pub struct ModuleSmtLibTranslator<'a>(&'a SmtModule);
-
-impl ModuleSmtLibTranslator<'_> {
-    fn state_wire_ids(&self) -> HashSet<usize> {
-        let mut ids = HashSet::new();
-        // Collect intf, extl, prvt wire IDs (both latched and next)
-        for wire in self.0.intf().latched().iter().chain(self.0.intf().next().iter()) {
-            ids.insert(wire.id());
+    if let_bindings.is_empty() {
+        for eq in &equalities {
+            writeln!(w, "(assert {})", eq)?;
         }
-        for wire in self.0.extl().latched().iter().chain(self.0.extl().next().iter()) {
-            ids.insert(wire.id());
+    } else {
+        write!(w, "(assert\n  (let (")?;
+        for (i, binding) in let_bindings.iter().enumerate() {
+            if i > 0 {
+                write!(w, "\n        ")?;
+            }
+            write!(w, "{}", binding)?;
         }
-        for wire in self.0.prvt().latched().iter().chain(self.0.prvt().next().iter()) {
-            ids.insert(wire.id());
+        write!(w, ")\n    (and ")?;
+        for (i, eq) in equalities.iter().enumerate() {
+            if i > 0 {
+                write!(w, "\n         ")?;
+            }
+            write!(w, "{}", eq)?;
         }
-        ids
-    }
-    /// return smtlib declarations of `intf` variables
-    pub fn intf(&self) -> Vec<String> {
-        let vars = self.0.intf();
-        vars.latched()
-            .iter()
-            .chain(vars.next().iter())
-            .map(|w| declare_var(w.id(), w.dtype()))
-            .collect::<Vec<String>>()
+        writeln!(w, ")))")?;
     }
 
-    /// return smtlib declarations of `extl` variables
-    pub fn extl(&self) -> Vec<String> {
-        let vars = self.0.extl();
-        vars.latched()
-            .iter()
-            .chain(vars.next().iter())
-            .map(|w| declare_var(w.id(), w.dtype()))
-            .collect::<Vec<String>>()
-    }
-
-    pub fn variables_to_smtlib(&self) -> String {
-        format!(
-            ";; Interface\n{}\n\n;; External\n{}",
-            self.intf().join("\n"),
-            self.extl().join("\n"),
-        )
-    }
-
-    pub fn to_smtlib(&self) -> String {
-        if !self.0.prvt().is_empty() {
-            unimplemented!()
-        }
-
-        let state_wires = self.state_wire_ids();
-        
-        format!(
-            ";;; Module\n\n{}\n\n;; Atoms\n{}",
-            self.variables_to_smtlib(),
-            self.0
-                .atoms()
-                .iter()
-                .enumerate()
-                .map(|(n, atom)| {
-                    let translator = AtomSmtLibTranslator(atom);
-                    format!(
-                        "\n;; --- Atom {} ---\n;; Init\n{}\n\n;; Update\n{}",
-                        n,
-                        translator.init(&state_wires).join("\n"),
-                        translator.update(&state_wires).join("\n")
-                    )
-                })
-                .collect::<Vec<String>>()
-                .join("\n")
-        )
-    }
-
-    pub fn init_to_smtlib(&self) -> String {
-        let state_wires = self.state_wire_ids();
-        self.0
-            .atoms()
-            .iter()
-            .enumerate()
-            .map(|(n, atom)| {
-                format!(
-                    "\n;; --- Atom {} ---\n{}",
-                    n,
-                    AtomSmtLibTranslator(atom).init(&state_wires).join("\n")
-                )
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-    }
-
-    pub fn update_to_smtlib(&self) -> String {
-        let state_wires = self.state_wire_ids();
-        self.0
-            .atoms()
-            .iter()
-            .enumerate()
-            .map(|(n, atom)| {
-                format!(
-                    "\n;; --- Atom {} ---\n{}",
-                    n,
-                    AtomSmtLibTranslator(atom).update(&state_wires).join("\n")
-                )
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-    }
-}
-
-pub fn module_to_smtlib(module: &Module<DType, IType>) -> String {
-    ModuleSmtLibTranslator(module).to_smtlib()
-}
-
-pub fn module_init_to_smtlib(module: &Module<DType, IType>) -> String {
-    ModuleSmtLibTranslator(module).init_to_smtlib()
-}
-
-pub fn module_update_to_smtlib(module: &Module<DType, IType>) -> String {
-    ModuleSmtLibTranslator(module).update_to_smtlib()
-}
-
-pub fn module_variables_to_smtlib(module: &Module<DType, IType>) -> String {
-    ModuleSmtLibTranslator(module).variables_to_smtlib()
-}
-
-pub fn parse_modules(modules: &[Module<DType, IType>]) -> String {
-    modules
-        .iter()
-        .map(module_to_smtlib)
-        .collect::<Vec<String>>()
-        .join("\n")
+    Ok(())
 }
 
 fn wire_name(id: usize) -> String {
     format!("w{}", id)
-}
-
-fn declare_var(id: usize, ty: &DType) -> String {
-    format!("(declare-fun {} () {})", wire_name(id), ty)
 }
 
 fn smt_expr(term: &Term<DType, IType>) -> String {
@@ -247,6 +191,16 @@ fn smt_expr(term: &Term<DType, IType>) -> String {
                 CmpOp::Gt => format!("(> {} {})", args[0], args[1]),
                 CmpOp::Ge => format!("(>= {} {})", args[0], args[1]),
             }
+        }
+
+        IType::Sin => {
+            let arg = wire_name(term.read().wires().next().unwrap().id());
+            format!("(sin {})", arg)
+        }
+
+        IType::Cos => {
+            let arg = wire_name(term.read().wires().next().unwrap().id());
+            format!("(cos {})", arg)
         }
 
         IType::Id => {

@@ -129,12 +129,18 @@ pub enum IType {
     // Control flow
     Ite(),
 
+    // Transcendental functions
+    Sin(),
+    Cos(),
+
     // Special operations
     Id(),
     // index of maximal value in the flattened tensor
     Argmax(),
     // ReLU activation: max(0, x)
     ReLU(),
+    // Tanh activation
+    Tanh(),
     // Linear layer: output = input @ weight + bias
     // Reads: [input, weight, bias], Writes: [output]
     Linear(),
@@ -175,6 +181,8 @@ impl fmt::Display for IType {
             IType::Neg() => write!(f, "Neg"),
             IType::Abs() => write!(f, "Abs"),
             IType::MatMul() => write!(f, "MatMul"),
+            IType::Sin() => write!(f, "Sin"),
+            IType::Cos() => write!(f, "Cos"),
             IType::Eq() => write!(f, "Eq"),
             IType::Neq() => write!(f, "Neq"),
             IType::Lt() => write!(f, "Lt"),
@@ -191,6 +199,7 @@ impl fmt::Display for IType {
             IType::Id() => write!(f, "Id"),
             IType::Argmax() => write!(f, "Argmax"),
             IType::ReLU() => write!(f, "ReLU"),
+            IType::Tanh() => write!(f, "Tanh"),
             IType::Linear() => write!(f, "Linear"),
             IType::TensorGet() => write!(f, "TensorGet"),
             IType::TensorSet() => write!(f, "TensorSet"),

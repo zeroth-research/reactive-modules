@@ -7,9 +7,6 @@ from .zrth import (
 )
 
 
-from .smv import parse_smv
-
-
 #####################################################################
 # IType and DType
 #####################################################################
@@ -32,13 +29,13 @@ def Float(*args):
     return DType.Float([*args])
 
 
-def UWord(width: int):
-    return DType.UWord(width)
+from .gym import Wrapper, Env
+from .smv import parse_smv
 
-
-def SWord(width: int):
-    return DType.SWord(width)
-
+# Submodule access: from zrth.gym import Env, Wrapper
+#                   from zrth.torch import Module
+from . import gym as gym
+from . import torch as torch
 
 
 __all__ = [
@@ -47,4 +44,6 @@ __all__ = [
     "IType",
     "Term",
     "Module",
+    "Wrapper",
+    "Env",
 ]

@@ -1,8 +1,8 @@
+import gymnasium as gym
 from gymnasium import spaces
-from zrth.gym import Env
 
 
-class SimpleEnv(Env):
+class SimpleEnv(gym.Env):
     """Simple chain environment with partial observability"""
 
     def __init__(self):
@@ -20,11 +20,8 @@ class SimpleEnv(Env):
         super().reset(seed=seed)
         self.state = 0  # True state (private)
         observation = self._get_observation()
-        reward = 0.0  # No reward at reset
-        terminated = False  # Episode just started
-        truncated = False
-        return observation, reward, terminated, truncated
-    
+        return observation, {}
+
     def step(self, q_values):
         q_values = q_values.argmax().item()
         # action 0 = move left, action 1 = move right
@@ -41,10 +38,10 @@ class SimpleEnv(Env):
         truncated = False
 
         observation = self._get_observation()  # Get partial observation
-        return observation, reward, terminated, truncated
+        return observation, reward, terminated, truncated, {}
 
 
-class GridWorldEnv(Env):
+class GridWorldEnv(gym.Env):
     """3x3 grid world environment"""
 
     def __init__(self):
@@ -92,7 +89,7 @@ class GridWorldEnv(Env):
         observation = self.y * 3 + self.x  # Flatten position
         return observation, reward, terminated, truncated
 
-class ComplexDecisionEnv(Env):
+class ComplexDecisionEnv(gym.Env):
     """Environment testing: nested decisions, boolean ops, augmented assignments, numpy"""
 
     def __init__(self):
@@ -191,7 +188,7 @@ class ComplexDecisionEnv(Env):
         observation = self.score
         return observation, reward, terminated, truncated
 
-class EarlyReturnEnv(Env):
+class EarlyReturnEnv(gym.Env):
     """Environment testing early returns in if/else branches"""
 
     def __init__(self):
@@ -251,7 +248,7 @@ class EarlyReturnEnv(Env):
         return observation, reward, terminated, truncated
 
 
-class TwoBitCounterEnv(Env):
+class TwoBitCounterEnv(gym.Env):
     """2-bit digital circuit counter: b1b0 counts 00→01→10→11→00 on enable.
 
     b0_next = b0 XOR enable
@@ -296,7 +293,7 @@ class TwoBitCounterEnv(Env):
         return observation, reward, terminated, truncated
 
 
-class ComparisonChainEnv(Env):
+class ComparisonChainEnv(gym.Env):
     """Environment testing comparison chains (a < b < c)"""
 
     def __init__(self):
@@ -350,7 +347,7 @@ class ComparisonChainEnv(Env):
         return observation, reward, terminated, truncated
     
 
-class HeartODE(Env):
+class HeartODE(gym.Env):
     def __init__(
             self,
             heart_rate_base=60.0,
@@ -387,7 +384,7 @@ class HeartODE(Env):
         return self.heart_rate, 0.0, False, False
 
 
-class ArrayEnv(Env):
+class ArrayEnv(gym.Env):
     """Environment using multi-dimensional list literals as private state."""
 
     def __init__(self):

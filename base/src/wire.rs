@@ -88,12 +88,6 @@ impl<D, const N: usize> Default for Interface<D, N> {
     }
 }
 
-// impl<D: Eq> Interface<D> {
-//     pub fn single(id: usize, dtype: D) -> Interface<D> {
-//         Self::from_iter_unchecked([[Wire::new(id, dtype)]])
-//     }
-// }
-
 impl<D> Interface<D, 1> {
     pub fn as_slice(&self) -> &[Wire<D>] {
         self.wires[0].as_slice()

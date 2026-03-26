@@ -1,10 +1,3 @@
-"""Reinforcement Learning with Reactive Modules"""
+from .module import Env, Wrapper
 
-
-from .zrth_module import Env, NN
-
-
-__all__ = [
-    "Env",
-    "NN",
-]
+__all__ = ["Env", "Wrapper"]

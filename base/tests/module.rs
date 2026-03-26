@@ -180,7 +180,7 @@ fn can_instantiate_partially_observable_module() {
     let obs = Interface::from_iter(obs);
     let prvt = Interface::from_iter(prvt);
 
-    let m = Module::new(obs, prvt, m.atoms().iter().cloned());
+    let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
     //print!("{}", m);
     assert!(m.is_ok());
 }
@@ -202,7 +202,7 @@ fn cannot_instantiate_external_unobservable_wire() {
     let obs = Interface::from_iter(obs);
     let prvt = Interface::from_iter(prvt);
 
-    let m = Module::new(obs, prvt, m.atoms().iter().cloned());
+    let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
     print!("{:?}", m);
 
     assert!(m.is_err());
@@ -478,7 +478,7 @@ fn more_controlled_than_external() {
 }
 
 #[test]
-fn module_with_parameter() {
+fn module_with_invalid_read() {
     let x = [Wire::new("A"), Wire::new("A")];
     let y = [Wire::new("B"), Wire::new("B")];
     let z = [Wire::new("C"), Wire::new("C")];
@@ -495,5 +495,5 @@ fn module_with_parameter() {
 
     let m = Module::sequential([x], [y, z], [init], [update]);
     println!("{:?}", m);
-    assert!(m.is_ok());
+    assert!(m.is_err());
 }
