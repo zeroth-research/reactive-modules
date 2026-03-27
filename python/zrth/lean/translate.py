@@ -207,6 +207,8 @@ class ModuleToLean4:
         "Box.neq",
         "Box.min",
         "Box.max",
+        "Box.nnLinear",
+        "Box.relu",
         "ite_pair",
     ]
 
@@ -253,9 +255,10 @@ class ModuleToLean4:
         """Generate theorems proving circuit ≡ functional."""
         m = self.module
 
-        extl_next = [pair[1] for pair in m.extl]
-        ctrl_latched = [pair[0] for pair in m.ctrl]
-        ctrl_next = [pair[1] for pair in m.ctrl]
+        extl_next: list[Wire] = [pair[1] for pair in m.extl]
+        ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
+        ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
+        params: list[Wire] = [x for x in m.param]
 
         lines: list[str] = []
 
@@ -266,13 +269,13 @@ class ModuleToLean4:
             lines.append("")
 
         # Init equivalence theorem
-        init_inputs = list(extl_next)
-        n_extl = len(init_inputs)
+        init_inputs = extl_next + params
+        n_inputs = len(init_inputs)
         n_ctrl = len(ctrl_next)
 
         if self._init_layer_names:
             init_native = _product_type(init_inputs)
-            lhs_input = _native_to_vt("s", n_extl)
+            lhs_input = _native_to_vt("s", n_inputs)
             rhs_output = _native_to_vt("r", n_ctrl)
 
             lines.append(f"theorem init_circ_eq : ∀ (s : {init_native}),")
@@ -289,7 +292,7 @@ class ModuleToLean4:
             lines.append("")
 
         # Update equivalence theorem
-        update_inputs = ctrl_latched + extl_next
+        update_inputs = ctrl_latched + extl_next + params
         n_update = len(update_inputs)
 
         if self._update_layer_names:
@@ -335,22 +338,24 @@ class ModuleToLean4:
     def to_lean_functional(self, atom) -> str:
         m = self.module
 
-        extl_next = [pair[1] for pair in m.extl]
-        ctrl_latched = [pair[0] for pair in m.ctrl]
-        ctrl_next = [pair[1] for pair in m.ctrl]
+        # TODO: we should handle also `extl_latched`
+        extl_next: list[Wire] = [pair[1] for pair in m.extl]
+        ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
+        ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
+        params: list[Wire] = [x for x in m.param]
 
         init_terms = atom.init
         update_terms = atom.update
 
         # Compile both blocks
-        init_inputs = list(extl_next)
-        init_outputs = list(ctrl_next)
+        init_inputs = extl_next + params
+        init_outputs = ctrl_next
         init_body = _translate_terms(
             init_terms, init_inputs, init_outputs, self._constants
         )
 
-        update_inputs = ctrl_latched + extl_next
-        update_outputs = list(ctrl_next)
+        update_inputs = ctrl_latched + extl_next + params
+        update_outputs = ctrl_next
         update_body = _translate_terms(
             update_terms, update_inputs, update_outputs, self._constants
         )

@@ -28,8 +28,32 @@ instance [HMul t t t][AddCommMonoid t]: HMul (Mat t m k) (Mat t k n) (Mat t m n)
 
 def MatZero [OfNat t 0]: Mat t m n := fun _ _ => (0 : t)
 
+def MatTranspose (A : Mat t m n) : Mat t n m := fun i j => A j i
+
+
+/-- Affine layer: `nnLinear x A b = x * Aᵀ + b` -/
+def affineLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t]
+    (x : Mat t m k) (A : Mat t n k) (b : Mat t m n) : Mat t m n :=
+  MatMul x (MatTranspose A) + b
+
+/-- Element-wise ReLU: `relu x i j = max 0 (x i j)` -/
+def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
+  fun i j => Max.max 0 (x i j)
+
 
 /-! Helper lemmas for simp -/
+@[simp] theorem affineLinear_apply [HMul t t t] [AddCommMonoid t] [HAdd t t t]
+    (x : Mat t m k) (A : Mat t n k) (b : Mat t m n) (i : Fin m) (j : Fin n) :
+    affineLinear x A b i j = Finset.sum Finset.univ (fun l => x i l * A j l) + b i j := by
+  simp [affineLinear]
+  unfold MatMul MatTranspose
+  exact (congrArg (((fun i j => ∑ l, x i l * A j l) + b) i) ∘ fun a => a) rfl
+
+
+@[simp] theorem relu_apply [Max t] [OfNat t 0]
+    (x : Mat t m n) (i : Fin m) (j : Fin n) :
+    ReLu x i j = Max.max 0 (x i j) := rfl
+
 @[simp] theorem MatAdd_apply {m n : Nat} (a b : Fin m → Fin n → Int) (i : Fin m) (j : Fin n) :
     MatAdd a b i j = a i j + b i j := rfl
 
@@ -45,6 +69,14 @@ def MatZero [OfNat t 0]: Mat t m n := fun _ _ => (0 : t)
 @[simp] theorem MatMul_eq_mul {m n : Nat} [HMul t t t] [AddCommMonoid t]
   (a : Mat t m k) (b : Mat t k n) :
     MatMul a b = a * b := rfl
+
+/- coercion between single-element matrix and the element
+instance {t: Type} : Coe t (Mat t 1 1) where
+  coe x := fun _ _ => x
+
+instance {t: Type} : Coe (Mat t 1 1) t where
+  coe m := m 0 0
+-/
 
 
 
@@ -239,6 +271,14 @@ infixr:75 " ⊗ " => par
 --   ⟨fun val!(a) => val!(a i j)⟩
 
 
+
+@[simp] def nnLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t] {m k n : Nat}
+    : Box [Mat t m k, Mat t n k, Mat t m n] [Mat t m n] :=
+  ⟨fun val!(x, A, b) => val!(affineLinear x A b)⟩
+
+@[simp] def relu [Max t] [OfNat t 0] {m n : Nat}
+    : Box [Mat t m n] [Mat t m n] :=
+  ⟨fun val!(x) => val!(ReLu x)⟩
 
 end Box
 

@@ -90,6 +90,8 @@ _LEAN_OP_BOX: dict[str, str] = {
     "MatMul": "Box.mul",
     "MatAdd": "Box.add",
     "Id": "Box.id",
+    "Linear": "Box.nnLinear",
+    "ReLU": "Box.relu",
 }
 
 

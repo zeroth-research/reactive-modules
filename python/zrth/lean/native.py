@@ -69,6 +69,8 @@ _LEAN_OP: dict[str, Callable] = {
     "Max": lambda a: f"Max.max {a[0]} {a[1]}",
     "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
     "Id": lambda a: a[0],
+    "Linear": lambda a: f"affineLinear {a[0]} {a[1]} {a[2]}",
+    "ReLU": lambda a: f"Max.max 0 {a[0]}",
 }
 
 
