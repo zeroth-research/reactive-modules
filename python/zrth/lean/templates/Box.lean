@@ -123,7 +123,19 @@ theorem Mat_1_1_eq (f : Mat t 1 1) : f = fun _ _ => f 0 0 := by
 /-       (if p then a else b) = fun _ _ => if p then a 0 0 else b 0 0 := by -/
 /-     ext i j; fin_cases i; fin_cases j; split <;> rfl -/
 
+  instance [LT t] : LT (Mat t 1 1) where
+    lt a b := a 0 0 < b 0 0
 
+  instance [LE t] : LE (Mat t 1 1) where
+    le a b := a 0 0 ≤ b 0 0
+
+  instance [LT t] [DecidableRel (· < · : t → t → Prop)] :
+      DecidableRel (· < · : Mat t 1 1 → Mat t 1 1 → Prop) :=
+    fun a b => inferInstanceAs (Decidable (a 0 0 < b 0 0))
+
+  instance [LE t] [DecidableRel (· ≤ · : t → t → Prop)] :
+      DecidableRel (· ≤ · : Mat t 1 1 → Mat t 1 1 → Prop) :=
+    fun a b => inferInstanceAs (Decidable (a 0 0 ≤ b 0 0))
 
 /-- Flattened tuple of values. We could use regular tuples, but then
     the composition of boxes would give us nested tuples, e.g.
@@ -252,35 +264,35 @@ infixr:75 " ⊗ " => par
 @[simp] def neg {t: Type} [Neg t]: Box [t] [t] :=
   ⟨fun val!(a) => val!(-a)⟩
 
-@[simp] def eq {t : Type} [DecidableEq t] : Box [t, t] [Bool] :=
-  ⟨fun val!(a, b) => val!(a == b)⟩
+@[simp] def eq {t : Type} [DecidableEq t] : Box [t, t] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => decide (a == b))⟩
 
-@[simp] def neq {t : Type} [DecidableEq t] : Box [t, t] [Bool] :=
-  ⟨fun val!(a, b) => val!(a != b)⟩
+@[simp] def neq {t : Type} [DecidableEq t] : Box [t, t] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => decide (a != b))⟩
 
-@[simp] def le {t: Type} [LE t] [DecidableRel (· ≤ ·: t → t → Prop)]: Box [t, t] [Bool] :=
-  ⟨fun val!(a, b) => val!(a ≤ b)⟩
+@[simp] def le {t: Type} [LE t] [DecidableRel (· ≤ ·: t → t → Prop)]: Box [t, t] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => decide (a ≤ b))⟩
 
-@[simp] def gt {t: Type} [LE t] [DecidableRel (· ≤ ·: t → t → Prop)]: Box [t, t] [Bool] :=
-  ⟨fun val!(a, b) => val!(¬(b ≤ a))⟩
+@[simp] def gt {t: Type} [LE t] [DecidableRel (· ≤ ·: t → t → Prop)]: Box [t, t] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => decide (¬(b ≤ a)))⟩
 
-@[simp] def ge {t: Type} [LT t] [DecidableRel (· < · : t → t → Prop)] : Box [t, t] [Bool] :=
-  ⟨fun val!(a, b) => val!(¬(b < a))⟩
+@[simp] def ge {t: Type} [LT t] [DecidableRel (· < · : t → t → Prop)] : Box [t, t] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => decide (¬(b < a)))⟩
 
-@[simp] def lt {t: Type} [LT t] [DecidableRel (· < · : t → t → Prop)] : Box [t, t] [Bool] :=
-  ⟨fun val!(a, b) => val!(a < b)⟩
+@[simp] def lt {t: Type} [LT t] [DecidableRel (· < · : t → t → Prop)] : Box [t, t] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => decide (a < b))⟩
 
 -- @[simp] def and {t: Type} [Coe t Bool] [Coe Prop t]: Box [t, t] [Bool] :=
 --   ⟨fun val!(a, b) => val!(a ∧ b)⟩
 
 @[simp] def and: Box [Mat Bool 1 1, Mat Bool 1 1] [Mat Bool 1 1] :=
-  ⟨fun val!(a, b) => val!(fun _ _ => (a 0 0 ∧ b 0 0))⟩
+  ⟨fun val!(a, b) => val!(fun _ _ => (a 0 0 && b 0 0))⟩
 
 @[simp] def not: Box [Mat Bool 1 1] [Mat Bool 1 1] :=
   ⟨fun val!(a) => val!(fun _ _ => ¬(a 0 0))⟩
 
 @[simp] def or: Box [Mat Bool 1 1, Mat Bool 1 1] [Mat Bool 1 1] :=
-  ⟨fun val!(a, b) => val!(fun _ _ => (a 0 0 ∨ b 0 0))⟩
+  ⟨fun val!(a, b) => val!(fun _ _ => (a 0 0 || b 0 0))⟩
 
 @[simp] def min {t: Type} [Min t]: Box [t, t] [t] :=
   ⟨fun val!(a, b) => val!(Min.min a b)⟩
