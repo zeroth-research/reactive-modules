@@ -112,6 +112,17 @@ instance : Coe (Mat Bool 1 1) Bool where
 @[simp] theorem coe_mat_bool (m : Mat Bool 1 1) :
   Coe.coe m = m 0 0 := by rfl
 
+theorem Mat_1_1_eq (f : Mat t 1 1) : f = fun _ _ => f 0 0 := by
+  ext i j;
+  have hi: i = ⟨ 0, by simp ⟩ := by exact Fin.fin_one_eq_zero i
+  have hj: j = ⟨ 0, by simp ⟩ := by exact Fin.fin_one_eq_zero j
+  rw [hi, hj]
+  rfl
+
+/- theorem ite_Mat_1_1 (p : Prop) [Decidable p] (a b : Mat t 1 1) : -/
+/-       (if p then a else b) = fun _ _ => if p then a 0 0 else b 0 0 := by -/
+/-     ext i j; fin_cases i; fin_cases j; split <;> rfl -/
+
 
 
 /-- Flattened tuple of values. We could use regular tuples, but then

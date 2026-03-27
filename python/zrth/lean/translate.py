@@ -1,8 +1,7 @@
 from zrth.lean.native import _product_type, _translate_terms
 from zrth.lean.circ import CircLayer, _translate_terms_circ, _ty_list, _native_to_vt
-from zrth.lean.constants import _is_scalar_tensor, _tensor_to_lean_def
-from zrth.lean.common import itype_name
-from zrth import Module, Wire, DType
+from zrth.lean.common import itype_name, _is_scalar_tensor, _tensor_to_lean_def
+from zrth import Module, Wire
 
 
 # ====================================================================
@@ -249,6 +248,8 @@ class ModuleToLean4:
         if const_names:
             final_simp.append(const_names)
         proof.append(f"  simp [{', '.join(final_simp)}]")
+        proof.append("  try simp only [Mat_1_1_eq]; simp")
+        proof.append("  try grind")
         return "\n".join(proof)
 
     def to_lean_equiv_theorems(self, atom) -> str:

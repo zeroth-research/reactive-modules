@@ -8,15 +8,11 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.common import _accessor, dtype_to_lean_type
-from zrth.lean.constants import (
-    _tensor_to_lean_inline,
-    _is_scalar_tensor,
-)
+from zrth.lean.common import _accessor, dtype_to_lean_type, _tensor_to_lean_inline
 
 from dataclasses import dataclass
 
-from zrth import Module, Wire, DType, Term
+from zrth import Wire, Term
 
 
 def _ty_list(wires: list[Wire]) -> str:
