@@ -101,14 +101,17 @@ def test_twobitcounter_init_signature():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def init (s : Bool) : Bool × Bool" in lean
+    assert "def init (s : (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)" in lean
 
 
 def test_twobitcounter_update_signature():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def update (s : Bool × Bool × Bool) : Bool × Bool" in lean
+    assert (
+        "def update (s : (Mat Bool 1 1) × (Mat Bool 1 1) × (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)"
+        in lean
+    )
 
 
 def test_twobitcounter_output_tuple():
@@ -134,9 +137,9 @@ def test_matrix_module_has_matrix_constants():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "Fin 3 → Fin 2 → Int" in lean
-    assert "Fin 3 → Fin 3 → Int" in lean
-    assert "Fin 3 → Fin 1 → Int" in lean
+    assert "Mat Int 3 2" in lean
+    assert "Mat Int 3 3" in lean
+    assert "Mat Int 3 1" in lean
 
 
 def test_matrix_module_uses_matmul_and_add():
@@ -151,17 +154,14 @@ def test_matrix_init_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def init (s : (Fin 2 → Fin 1 → Int)) : (Fin 3 → Fin 1 → Int)" in lean
+    assert "def init (s : (Mat Int 2 1)) : (Mat Int 3 1)" in lean
 
 
 def test_matrix_update_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert (
-        "def update (s : (Fin 3 → Fin 1 → Int) × (Fin 2 → Fin 1 → Int)) : (Fin 3 → Fin 1 → Int)"
-        in lean
-    )
+    assert "def update (s : (Mat Int 3 1) × (Mat Int 2 1)) : (Mat Int 3 1)" in lean
 
 
 # ── Main.lean generation ────────────────────────────────────────────────
@@ -193,16 +193,16 @@ def test_main_lean_bool_signatures():
     src = generate_main_lean("Rea", m, "ReactiveModule")
 
     # parseExtl returns Bool, showCtrl takes Bool × Bool
-    assert "Bool" in src
-    assert "Bool × Bool" in src
+    assert "Mat Bool 1 1" in src
+    assert "(Mat Bool 1 1) × (Mat Bool 1 1)" in src
 
 
 def test_main_lean_matrix_signatures():
     m = _make_matrix_module()
     src = generate_main_lean("Rea", m, "ReactiveModule")
 
-    assert "Fin 2 → Fin 1 → Int" in src
-    assert "Fin 3 → Fin 1 → Int" in src
+    assert "Mat Int 2 1" in src
+    assert "Mat Int 3 1" in src
 
 
 # ── Certificate generation ───────────────────────────────────────────
@@ -218,8 +218,8 @@ def _cert_for(make_module, module_name="ReactiveModule"):
 def test_certificate_bool_has_rm():
     cert = _cert_for(_make_twobitcounter)
     assert "def RM : ReactiveModule" in cert
-    assert "(Bool)" in cert
-    assert "(Bool × Bool)" in cert
+    assert "(Mat Bool 1 1)" in cert
+    assert "(Mat Bool 1 1) × (Mat Bool 1 1)" in cert
 
 
 def test_certificate_bool_rm_uses_plain_functions():
@@ -257,8 +257,8 @@ def test_certificate_bool_has_sorry():
 def test_certificate_matrix_has_rm():
     cert = _cert_for(_make_matrix_module)
     assert "def RM : ReactiveModule" in cert
-    assert "Fin 2 → Fin 1 → Int" in cert
-    assert "Fin 3 → Fin 1 → Int" in cert
+    assert "Mat Int 2 1" in cert
+    assert "Mat Int 3 1" in cert
 
 
 def test_certificate_has_hrank():
