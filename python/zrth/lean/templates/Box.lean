@@ -78,14 +78,40 @@ def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
   (a : Mat t m k) (b : Mat t k n) :
     MatMul a b = a * b := rfl
 
+-- This complicates the proofs..
 /- coercion between single-element matrix and the element -/
-instance {t: Type} : Coe t (Mat t 1 1) where
-  coe x := fun _ _ => x
+-- instance {t: Type} : Coe t (Mat t 1 1) where
+--   coe x := fun _ _ => x
 
-/-
+-- instance : Coe (Mat Bool 1 1) Bool where
+--   coe m := m 0 0
+
+-- instance : Coe (Mat Real 1 1) Real where
+--   coe m := m 0 0
+
+-- instance : Coe (Mat Int 1 1) Int where
+--   coe m := m 0 0
+
+/- break ValTuple...
 instance {t: Type} : Coe (Mat t 1 1) t where
   coe m := m 0 0
 -/
+
+instance : Coe Bool (Mat Bool 1 1) where
+  coe x := fun _  _ => x
+
+instance : Coe (Mat Bool 1 1) Bool where
+  coe m := m 0 0
+
+
+
+/- this might be necessary to automate the proofs -/
+@[simp] theorem coe_bool_mat (b : Bool) :
+  Coe.coe b = ((fun _ _ => b): Mat Bool 1 1) := by rfl
+
+@[simp] theorem coe_mat_bool (m : Mat Bool 1 1) :
+  Coe.coe m = m 0 0 := by rfl
+
 
 
 /-- Flattened tuple of values. We could use regular tuples, but then
@@ -141,22 +167,6 @@ namespace ValTuple
 
 @[simp] theorem split_cons_fst_snd (a : t) (rest : ValTuple (ts ++ ys)) :
     (ValTuple.split (t :: ts) (a, rest)).1.2 = (ValTuple.split ts rest).1 := rfl
-
-
--- @[simp] theorem split_singleton_snd (v : ValTuple (t :: ts)) :
---     (ValTuple.split [t] v).2 = v.2 := rfl
-
--- @[simp] theorem split_singleton_fst (v : ValTuple (t :: ts)) :
---     (ValTuple.split [t] v).1 = (v.1, ()) := rfl
-
--- @[simp] theorem split_cons_snd (a : t.denote) (rest : ValTuple (ts ++ ys)) :
---     (ValTuple.split (t :: ts) (a, rest)).2 = (ValTuple.split ts rest).2 := rfl
-
--- @[simp] theorem split_pair_fst (a : t₁.denote) (b : t₂.denote) (rest : ValTuple ys) :
---     (ValTuple.split [t₁, t₂] (a, b, rest)).1 = ((a, b, ()): ValTuple [t₁, t₂]) := rfl
-
--- @[simp] theorem split_pair_snd (a : t₁.denote) (b : t₂.denote) (rest : ValTuple ys) :
---     (ValTuple.split [t₁, t₂] (a, b, rest)).2 = rest := rfl
 
   @[simp] theorem split_singleton_fst (v : ValTuple ([t] ++ ys)) :
       (ValTuple.split [t] v).1 = (v.1, ()) := rfl
@@ -249,14 +259,17 @@ infixr:75 " ⊗ " => par
 @[simp] def lt {t: Type} [LT t] [DecidableRel (· < · : t → t → Prop)] : Box [t, t] [Bool] :=
   ⟨fun val!(a, b) => val!(a < b)⟩
 
-@[simp] def and : Box [Bool, Bool] [Bool] :=
-  ⟨fun val!(a, b) => val!(a ∧ b)⟩
+-- @[simp] def and {t: Type} [Coe t Bool] [Coe Prop t]: Box [t, t] [Bool] :=
+--   ⟨fun val!(a, b) => val!(a ∧ b)⟩
 
-@[simp] def not : Box [Bool] [Bool] :=
-  ⟨fun val!(a) => val!(¬a)⟩
+@[simp] def and: Box [Mat Bool 1 1, Mat Bool 1 1] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => (a 0 0 ∧ b 0 0))⟩
 
-@[simp] def or : Box [Bool, Bool] [Bool] :=
-  ⟨fun val!(a, b) => val!(a ∨ b)⟩
+@[simp] def not: Box [Mat Bool 1 1] [Mat Bool 1 1] :=
+  ⟨fun val!(a) => val!(fun _ _ => ¬(a 0 0))⟩
+
+@[simp] def or: Box [Mat Bool 1 1, Mat Bool 1 1] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => (a 0 0 ∨ b 0 0))⟩
 
 @[simp] def min {t: Type} [Min t]: Box [t, t] [t] :=
   ⟨fun val!(a, b) => val!(Min.min a b)⟩
@@ -264,8 +277,8 @@ infixr:75 " ⊗ " => par
 @[simp] def max {t: Type} [Max t]: Box [t, t] [t] :=
   ⟨fun val!(a, b) => val!(Max.max a b)⟩
 
-@[simp] def ite {t: Type}: Box [Bool, t, t] [t] :=
-  ⟨fun val!(c, a, b) => if c then val!(a) else val!(b)⟩
+@[simp] def ite {t: Type}: Box [Mat Bool 1 1, t, t] [t] :=
+  ⟨fun val!(c, a, b) => if c 0 0 then val!(a) else val!(b)⟩
 
 -- @[simp] def matAdd {m n : Nat} : Box [.mat m n, .mat m n] [.mat m n] :=
 --   ⟨fun val!(a, b) => val!(MatAdd a b)⟩
