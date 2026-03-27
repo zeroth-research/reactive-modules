@@ -49,17 +49,14 @@ def _serialize_module(module):
             "update": _serialize_terms(atom.update, atom_idx, "update", counter),
         })
 
-    def wire_info(pairs):
-        result = []
-        for ltc, nxt in pairs:
-            result.append({"id": ltc.id, "dtype": str(ltc.dtype)})
-            result.append({"id": nxt.id, "dtype": str(nxt.dtype)})
-        return result
+    def wire_pairs(iface):
+        return [{"ltc": ltc.id, "nxt": nxt.id, "dtype": str(ltc.dtype)} for ltc, nxt in iface]
 
     return {
         "atoms": atoms,
-        "externals": wire_info(module.extl),
-        "interfaces": wire_info(module.intf),
+        "extl": wire_pairs(module.extl),
+        "intf": wire_pairs(module.intf),
+        "prvt": wire_pairs(module.prvt),
     }
 
 
