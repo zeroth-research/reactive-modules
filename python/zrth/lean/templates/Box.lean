@@ -57,6 +57,11 @@ def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
     (x : Mat t m n) (i : Fin m) (j : Fin n) :
     ReLu x i j = Max.max 0 (x i j) := rfl
 
+  @[simp] theorem ReLu_eq_sup (x : Mat t m n) [Max t] [OfNat t 0] :
+      ReLu x = 0 ⊔ x := by
+    ext i j; simp [ReLu]
+
+
 @[simp] theorem MatAdd_apply {m n : Nat} (a b : Fin m → Fin n → Int) (i : Fin m) (j : Fin n) :
     MatAdd a b i j = a i j + b i j := rfl
 
