@@ -1,5 +1,6 @@
 import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 import Mathlib.Data.Fintype.Basic
+import Mathlib.Data.Real.Basic
 
 /-! A simple version of wiring diagrams. The main object
     is `Box` which is a node in the wiring diagram.
@@ -70,16 +71,14 @@ def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
   (a : Mat t m k) (b : Mat t k n) :
     MatMul a b = a * b := rfl
 
-/- coercion between single-element matrix and the element
+/- coercion between single-element matrix and the element -/
 instance {t: Type} : Coe t (Mat t 1 1) where
   coe x := fun _ _ => x
 
+/-
 instance {t: Type} : Coe (Mat t 1 1) t where
   coe m := m 0 0
 -/
-
-
-
 
 
 /-- Flattened tuple of values. We could use regular tuples, but then

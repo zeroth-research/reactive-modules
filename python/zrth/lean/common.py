@@ -27,7 +27,8 @@ def dtype_to_lean_type(wire: Wire) -> str:
     elif isinstance(dt, DType.Int):
         ty = "Int"
     elif isinstance(dt, DType.Float):
-        ty = "Float"
+        # TODO: Float is *NOT* Real, but we stick to that for proofs atm
+        ty = "Real"
     else:
         raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
 
