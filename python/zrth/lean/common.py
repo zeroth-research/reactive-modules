@@ -17,8 +17,9 @@ def _accessor(pos: int, total: int) -> str:
     return ".2" * pos + ".1"
 
 
-def dtype_to_lean_type(wire: Wire) -> str:
+def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
     """Map a Wire's DType to a native Lean type (Bool, Int, Fin m → Fin n → Int)."""
+
     dt = wire.dtype
     shape = dt.shape
 
@@ -33,13 +34,13 @@ def dtype_to_lean_type(wire: Wire) -> str:
         raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
 
     if shape == [1] or shape == []:
-        return ty
+        return ty if simple_types else f"(Mat {ty} 1 1)"
     elif len(shape) == 1:
         return f"(Mat {ty} 1 {shape[0]})"
     elif len(shape) == 2:
         return f"(Mat {ty} {shape[0]} {shape[1]})"
     else:
-        raise ValueError(f"Unsupported Bool shape: {shape}")
+        raise ValueError(f"Unsupported DType shape: {shape}")
 
     raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
 
