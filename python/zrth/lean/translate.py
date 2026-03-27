@@ -248,8 +248,13 @@ class ModuleToLean4:
         if const_names:
             final_simp.append(const_names)
         proof.append(f"  simp [{', '.join(final_simp)}]")
-        proof.append("  try simp only [Mat_1_1_eq]; simp")
+        proof.append("  try exact List.ofFn_inj.mp rfl")
         proof.append("  try grind")
+        proof.append("  try simp only [Mat_1_1_eq]")
+        proof.append("  try simp")
+        proof.append("  try grind")
+        proof.append(f"  try simp [{', '.join(final_simp)}]")
+        proof.append("  try exact List.ofFn_inj.mp rfl")
         return "\n".join(proof)
 
     def to_lean_equiv_theorems(self, atom) -> str:
