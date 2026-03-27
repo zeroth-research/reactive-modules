@@ -6,102 +6,68 @@
 <title>Module Viewer</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #0d1117;
-  color: #c9d1d9;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-header {
-  padding: 12px 20px;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; height: 100vh; display: flex; flex-direction: column; }
+header { padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 12px; }
 header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
 #status { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #1f2d3d; color: #58a6ff; }
 #status.connected { background: #1f3d2a; color: #3fb950; }
 #status.disconnected { background: #3d1f2a; color: #f85149; }
 #module-info { font-size: 13px; color: #8b949e; }
-
 .main { display: flex; flex: 1; overflow: hidden; }
-#graph { flex: 1; position: relative; overflow: hidden; }
+#graph { flex: 1; overflow: hidden; }
 #graph svg { width: 100%; height: 100%; }
-
-#sidebar {
-  width: 320px;
-  background: #161b22;
-  border-left: 1px solid #30363d;
-  padding: 16px;
-  overflow-y: auto;
-  font-size: 13px;
-}
-
+#sidebar { width: 320px; background: #161b22; border-left: 1px solid #30363d; padding: 16px; overflow-y: auto; font-size: 13px; }
 #sidebar h2 { font-size: 14px; font-weight: 600; color: #e6edf3; margin-bottom: 12px; }
 .section { margin-bottom: 16px; }
 .section-title { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
 .wire-list { list-style: none; }
 .wire-list li { padding: 3px 0; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
-
-.wire-tag {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 11px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-}
-.wire-tag.extl { background: #1f3d2a; color: #3fb950; }
-.wire-tag.intf { background: #3d1f2a; color: #f85149; }
+.wire-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; }
 .wire-tag.ctrl { background: #1f2d3d; color: #58a6ff; }
 
+.module-box { fill: none; stroke: #30363d; stroke-width: 2; rx: 8; stroke-dasharray: 6 4; }
 .atom-box { fill: #161b22; stroke: #30363d; stroke-width: 1.5; rx: 6; cursor: pointer; }
 .atom-box:hover { stroke: #58a6ff; }
+.atom-box.expanded { stroke: #58a6ff; stroke-width: 2; }
 .atom-label { fill: #e6edf3; font-size: 12px; font-weight: 600; pointer-events: none; }
-
 .term-box { stroke-width: 1; rx: 4; cursor: pointer; }
 .term-box.init { fill: #1f2d3d; stroke: #58a6ff; }
 .term-box.update { fill: #1f3d2a; stroke: #3fb950; }
 .term-box:hover { stroke-width: 2; }
 .term-label { fill: #c9d1d9; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; pointer-events: none; }
-
-.port-box { stroke-width: 1; rx: 4; cursor: pointer; }
-.port-box.read { fill: #2d1f3d; stroke: #a371f7; }
-.port-box.write { fill: #3d2d1f; stroke: #d2a838; }
-.port-label { fill: #c9d1d9; font-size: 10px; font-family: 'SF Mono', 'Fira Code', monospace; pointer-events: none; }
-
 .section-label { fill: #8b949e; font-size: 10px; font-family: 'SF Mono', 'Fira Code', monospace; text-transform: uppercase; letter-spacing: 0.5px; pointer-events: none; }
 .section-divider { stroke: #30363d; stroke-width: 1; stroke-dasharray: 4 3; }
-
+.section-toggle { fill: #8b949e; font-size: 10px; cursor: pointer; }
+.section-toggle:hover { fill: #e6edf3; }
+.wire-circle { fill: #0d1117; stroke-width: 1.5; cursor: pointer; }
+.wire-circle.extl { stroke: #3fb950; }
+.wire-circle.intf { stroke: #f85149; }
+.wire-circle.dangling-left { stroke: #a371f7; }
+.wire-circle.dangling-right { stroke: #d2a838; }
+.wire-circle-label { font-size: 9px; font-family: 'SF Mono', 'Fira Code', monospace; pointer-events: none; }
+.wire-circle-label.extl { fill: #3fb950; }
+.wire-circle-label.intf { fill: #f85149; }
+.wire-circle-label.dangling-left { fill: #a371f7; }
+.wire-circle-label.dangling-right { fill: #d2a838; }
 .wire-line { fill: none; stroke: #6e7681; stroke-width: 1.5; opacity: 0.5; }
 .wire-line:hover, .wire-line.highlighted { stroke: #58a6ff; stroke-width: 2.5; opacity: 1; }
-
+.wire-line.shared { stroke: #58a6ff; opacity: 0.4; stroke-width: 2; }
+.wire-line.shared:hover, .wire-line.shared.highlighted { opacity: 1; stroke-width: 3; }
 #tooltip { position: fixed; display: none; padding: 2px 8px; background: #30363d; color: #e6edf3; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; border-radius: 4px; pointer-events: none; z-index: 100; }
 </style>
 </head>
 <body>
-
 <div id="tooltip"></div>
-
 <header>
   <h1>Module Viewer</h1>
   <span id="status" class="disconnected">connecting...</span>
   <span id="module-info"></span>
 </header>
-
 <div class="main">
   <div id="graph"><svg id="canvas"></svg></div>
   <div id="sidebar">
     <h2>Details</h2>
-    <div id="detail-content">
-      <p style="color: #8b949e;">Click an element to inspect it.</p>
-    </div>
+    <div id="detail-content"><p style="color: #8b949e;">Click an element to inspect it.</p></div>
   </div>
 </div>
 
@@ -113,288 +79,367 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   const statusEl = document.getElementById('status');
   const tooltip = document.getElementById('tooltip');
 
-  let MODULE = null;
-  let viewBox = { x: 0, y: 0, w: 800, h: 600 };
-  let hasRendered = false;
-  let selection = null;
+  let MODULE = null, viewBox = { x: 0, y: 0, w: 800, h: 600 }, hasRendered = false, selection = null;
+  const expanded = {}, sectionOpen = {};
 
-  // ── Constants ─────────────────────────────────────────────────────
-  const ATOM_PAD = 20, ATOM_GAP_Y = 40, ATOM_HEADER_H = 24, MARGIN = 40;
+  const MARGIN = 40, MODULE_PAD = 30;
+  const ATOM_PAD = 16, ATOM_GAP_X = 80, ATOM_COLLAPSED_W = 140, ATOM_COLLAPSED_H = 48, ATOM_HEADER_H = 28;
   const TERM_W = 100, TERM_H = 32, TERM_GAP_X = 24, TERM_ROW_GAP = 8;
-  const PORT_W = 60, PORT_H = 24;
-  const SECTION_GAP_Y = 16, SECTION_LABEL_H = 18;
+  const SECTION_GAP_Y = 12, SECTION_LABEL_H = 20;
+  const CIRCLE_R = 12, CIRCLE_GAP = 8, CIRCLE_COL_W = CIRCLE_R * 2 + 20;
 
-  // ── WebSocket ─────────────────────────────────────────────────────
+  // ── WebSocket ─────────────────────────────────────────────────
   function connect() {
     const ws = new WebSocket(`ws://127.0.0.1:{{WS_PORT}}`);
     ws.onopen = () => { statusEl.textContent = 'live'; statusEl.className = 'connected'; };
     ws.onclose = () => { statusEl.textContent = 'disconnected'; statusEl.className = 'disconnected'; setTimeout(connect, 2000); };
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.type === 'full') { MODULE = msg.data; render(); refreshDetail(); }
-    };
+    ws.onmessage = (e) => { const msg = JSON.parse(e.data); if (msg.type === 'full') { MODULE = msg.data; render(); refreshDetail(); } };
   }
   connect();
 
-  // ── SVG helper ────────────────────────────────────────────────────
+  // ── SVG helper ────────────────────────────────────────────────
   function el(tag, attrs) {
     const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
-    if (attrs) for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'textContent') e.textContent = v;
-      else e.setAttribute(k, v);
-    }
+    if (attrs) for (const [k, v] of Object.entries(attrs))
+      k === 'textContent' ? e.textContent = v : e.setAttribute(k, v);
     return e;
   }
 
-  // ── Render ────────────────────────────────────────────────────────
+  function drawWire(positions, wid, x1, y1, x2, y2, cls) {
+    const cx = (x1 + x2) / 2;
+    const path = el('path', { class: `wire-line ${cls || ''}`, d: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`, 'data-wire-id': wid });
+    path.addEventListener('mouseenter', () => highlightWire(wid, true));
+    path.addEventListener('mouseleave', () => highlightWire(wid, false));
+    svg.appendChild(path);
+  }
+
+  // ── Classify wires ────────────────────────────────────────────
+  function classifyWires(mod) {
+    const ctrlByAtom = mod.atoms.map(a => new Set(a.ctrl.map(w => w.id)));
+    const readByAtom = mod.atoms.map(a => new Set([...a.read.map(w => w.id), ...a.wait.map(w => w.id)]));
+    const extlByWire = {}, intfByWire = {};
+    mod.extl.forEach((p, i) => { extlByWire[p.ltc] = i; extlByWire[p.nxt] = i; });
+    mod.intf.forEach((p, i) => { intfByWire[p.ltc] = i; intfByWire[p.nxt] = i; });
+    const extlIds = new Set(Object.keys(extlByWire).map(Number));
+    const intfIds = new Set(Object.keys(intfByWire).map(Number));
+    const shared = new Set();
+    for (let i = 0; i < mod.atoms.length; i++)
+      for (let j = 0; j < mod.atoms.length; j++)
+        if (i !== j) for (const wid of ctrlByAtom[i]) if (readByAtom[j].has(wid)) shared.add(wid);
+    return { ctrlByAtom, readByAtom, extlByWire, intfByWire, extlIds, intfIds, shared };
+  }
+
+  // ── Term layout ───────────────────────────────────────────────
+  function layoutTermBlock(terms, startX, startY, phase, positions) {
+    if (!terms.length) return { w: 0, h: 0 };
+    const writerIdx = {};
+    for (let i = 0; i < terms.length; i++) for (const wid of terms[i].writes) writerIdx[wid] = i;
+
+    const depths = new Array(terms.length).fill(0);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < terms.length; i++)
+        for (const wid of terms[i].reads) {
+          const wi = writerIdx[wid];
+          if (wi !== undefined && depths[wi] + 1 > depths[i]) { depths[i] = depths[wi] + 1; changed = true; }
+        }
+    }
+
+    const maxDepth = Math.max(0, ...depths);
+    const columns = Array.from({length: maxDepth + 1}, () => []);
+    for (let i = 0; i < terms.length; i++) columns[depths[i]].push(terms[i]);
+
+    const centerY = {};
+    let xOffset = startX;
+    for (let d = 0; d <= maxDepth; d++) {
+      const sorted = columns[d].map(term => {
+        const ys = term.reads.map(wid => writerIdx[wid] !== undefined ? centerY[terms[writerIdx[wid]].id] : null).filter(y => y != null);
+        return { term, ideal: ys.length ? ys.reduce((a, b) => a + b) / ys.length : startY + TERM_H / 2 };
+      }).sort((a, b) => a.ideal - b.ideal);
+
+      let nextY = startY;
+      for (const { term, ideal } of sorted) {
+        const y = Math.max(nextY, ideal - TERM_H / 2);
+        positions[term.id] = { x: xOffset, y, w: TERM_W, h: TERM_H, phase };
+        centerY[term.id] = y + TERM_H / 2;
+        nextY = y + TERM_H + TERM_ROW_GAP;
+      }
+      xOffset += TERM_W + TERM_GAP_X;
+    }
+
+    let maxY = startY;
+    for (const [, pos] of Object.entries(positions))
+      if (pos.phase === phase) maxY = Math.max(maxY, pos.y + pos.h);
+    return { w: xOffset - startX - TERM_GAP_X, h: maxY - startY };
+  }
+
+  // ── Find circle for a wire ────────────────────────────────────
+  function findCircle(positions, cls, mod, aid, wid, side) {
+    const dk = `dangle_${side === 'read' ? 'l' : 'r'}_${aid}_${wid}`;
+    if (positions[dk]) return positions[dk];
+    if (side === 'read' && cls.extlByWire[wid] !== undefined) {
+      const ek = `extl_${mod.extl[cls.extlByWire[wid]].ltc}`;
+      if (positions[ek]) return positions[ek];
+    }
+    if (side === 'write' && cls.intfByWire[wid] !== undefined) {
+      const ik = `intf_${mod.intf[cls.intfByWire[wid]].ltc}`;
+      if (positions[ik]) return positions[ik];
+    }
+    return null;
+  }
+
+  // ── Find term points for a wire across atoms ──────────────────
+  function findTermPoints(mod, atomId, wid, side, positions) {
+    const points = [];
+    const atom = mod.atoms.find(a => a.id === atomId);
+    if (expanded[atomId]) {
+      for (const [pk, terms] of [['init', atom.init], ['update', atom.update]]) {
+        if (sectionOpen[`${atomId}_${pk}`] === false) continue;
+        for (const t of terms)
+          if ((side === 'write' ? t.writes : t.reads).includes(wid) && positions[t.id])
+            points.push(side === 'write'
+              ? { x: positions[t.id].x + positions[t.id].w, y: positions[t.id].y + positions[t.id].h / 2 }
+              : { x: positions[t.id].x, y: positions[t.id].y + positions[t.id].h / 2 });
+      }
+    }
+    return points;
+  }
+
+  // ── Render ────────────────────────────────────────────────────
   function render() {
     if (!MODULE) return;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-    info.textContent = `${MODULE.atoms.length} atom(s), ${MODULE.externals.length / 2} external(s)`;
+    const mod = MODULE;
+    info.textContent = `${mod.atoms.length} atom(s), ${mod.extl.length} external(s), ${mod.intf.length} interface(s)`;
 
-    // Build term lookup: term.id → term data
     const termData = {};
-    for (const atom of MODULE.atoms)
-      for (const terms of [atom.init, atom.update])
-        for (const t of terms) termData[t.id] = t;
+    for (const atom of mod.atoms) for (const terms of [atom.init, atom.update]) for (const t of terms) termData[t.id] = t;
 
-    let yOffset = MARGIN;
-    const positions = {};  // node id → {x, y, w, h, phase, isPort?, wireId?}
-    const atomBoxes = [];
+    const cls = classifyWires(mod);
+    const positions = {}, atomCenters = {};
 
-    // ── Layout block with read/write ports ────────────────────────
-    function layoutBlock(terms, startX, startY, phase) {
-      if (!terms.length) return { w: 0, h: 0 };
+    // ── Layout atoms left-to-right ──────────────────────────────
+    let atomX = MARGIN + MODULE_PAD + CIRCLE_COL_W;
+    const atomY0 = MARGIN + MODULE_PAD + 20;
 
-      const writerIdx = {};
-      for (let i = 0; i < terms.length; i++)
-        for (const wid of terms[i].writes) writerIdx[wid] = i;
+    for (const atom of mod.atoms) {
+      const aid = atom.id, isExpanded = !!expanded[aid];
+      const leftWires = [...new Set([...atom.read.map(w => w.id), ...atom.wait.map(w => w.id)])].filter(wid => !cls.shared.has(wid) && !cls.extlIds.has(wid));
+      const rightWires = atom.ctrl.map(w => w.id).filter(wid => !cls.shared.has(wid) && !cls.intfIds.has(wid));
+      const leftColW = leftWires.length ? CIRCLE_COL_W : 0;
+      const rightColW = rightWires.length ? CIRCLE_COL_W : 0;
 
-      // Identify ports
-      const readPortIds = new Set();
-      const writePortIds = new Set();
-      for (const t of terms) {
-        for (const wid of t.reads)
-          if (writerIdx[wid] === undefined) readPortIds.add(wid);
-        for (const wid of t.writes)
-          if (!terms.some(t2 => t2.reads.includes(wid))) writePortIds.add(wid);
-      }
-
-      // Compute depths via relaxation
-      const depths = new Array(terms.length).fill(0);
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (let i = 0; i < terms.length; i++)
-          for (const wid of terms[i].reads) {
-            const wi = writerIdx[wid];
-            if (wi !== undefined && depths[wi] + 1 > depths[i]) {
-              depths[i] = depths[wi] + 1;
-              changed = true;
-            }
+      let atomW = ATOM_COLLAPSED_W, atomH = ATOM_COLLAPSED_H;
+      if (isExpanded) {
+        let innerH = ATOM_HEADER_H + ATOM_PAD, maxBlockW = 200;
+        for (const [key, terms] of [['init', atom.init], ['update', atom.update]]) {
+          if (!terms.length) continue;
+          if (key === 'update' && atom.init.length) innerH += SECTION_GAP_Y;
+          innerH += SECTION_LABEL_H;
+          if (sectionOpen[`${aid}_${key}`] !== false) {
+            const layout = layoutTermBlock(terms, atomX + leftColW + ATOM_PAD, atomY0 + innerH, `a${aid}_${key}`, positions);
+            innerH += layout.h;
+            maxBlockW = Math.max(maxBlockW, layout.w);
           }
-      }
-
-      const maxDepth = Math.max(0, ...depths);
-      const columns = Array.from({length: maxDepth + 1}, () => []);
-      for (let i = 0; i < terms.length; i++) columns[depths[i]].push(terms[i]);
-
-      const centerY = {};
-      let xOffset = startX;
-
-      // Place column of nodes, centered on ideal Y positions
-      function placeColumn(items, w, h, getIdealY, makeEntry) {
-        const sorted = items.map((item, i) => ({ item, ideal: getIdealY(item, i) }));
-        sorted.sort((a, b) => a.ideal - b.ideal);
-        let nextY = startY;
-        for (const { item, ideal } of sorted) {
-          const y = Math.max(nextY, ideal - h / 2);
-          const entry = makeEntry(item, xOffset, y, w, h);
-          positions[entry.id] = entry;
-          centerY[entry.id] = y + h / 2;
-          nextY = y + h + TERM_ROW_GAP;
         }
-        xOffset += w + TERM_GAP_X;
+        atomW = maxBlockW + ATOM_PAD * 2;
+        atomH = innerH + ATOM_PAD;
       }
 
-      // Read ports
-      if (readPortIds.size > 0) {
-        placeColumn([...readPortIds], PORT_W, PORT_H,
-          () => startY + PORT_H / 2,
-          (wid, x, y, w, h) => {
-            const id = `${phase}_rport_${wid}`;
-            return { id, x, y, w, h, phase, isPort: 'read', wireId: wid };
-          });
-      }
+      const boxX = atomX + leftColW;
+      atomCenters[aid] = { x: boxX, y: atomY0, w: atomW, h: atomH };
 
-      // Term columns
-      for (let d = 0; d <= maxDepth; d++) {
-        placeColumn(columns[d], TERM_W, TERM_H,
-          (term) => {
-            const ys = term.reads.map(wid => {
-              if (writerIdx[wid] !== undefined) return centerY[terms[writerIdx[wid]].id];
-              return centerY[`${phase}_rport_${wid}`];
-            }).filter(y => y != null);
-            return ys.length ? ys.reduce((a, b) => a + b) / ys.length : startY + TERM_H / 2;
-          },
-          (term, x, y, w, h) => ({ id: term.id, x, y, w, h, phase }));
-      }
-
-      // Write ports
-      if (writePortIds.size > 0) {
-        placeColumn([...writePortIds], PORT_W, PORT_H,
-          (wid) => {
-            const wi = writerIdx[wid];
-            return wi !== undefined ? (centerY[terms[wi].id] || startY + PORT_H / 2) : startY + PORT_H / 2;
-          },
-          (wid, x, y, w, h) => {
-            const id = `${phase}_wport_${wid}`;
-            return { id, x, y, w, h, phase, isPort: 'write', wireId: wid };
-          });
-      }
-
-      let maxY = startY;
-      for (const [key, pos] of Object.entries(positions))
-        if (pos.phase === phase) maxY = Math.max(maxY, pos.y + pos.h);
-
-      return { w: xOffset - startX - TERM_GAP_X, h: maxY - startY };
+      const circleSpacing = CIRCLE_R * 2 + CIRCLE_GAP;
+      leftWires.forEach((wid, i) => {
+        positions[`dangle_l_${aid}_${wid}`] = {
+          x: atomX + leftColW / 2, y: atomY0 + atomH / 2 + (i - (leftWires.length - 1) / 2) * circleSpacing,
+          r: CIRCLE_R, wireId: wid, type: 'dangling-left', side: 'left', atomId: aid,
+        };
+      });
+      rightWires.forEach((wid, i) => {
+        positions[`dangle_r_${aid}_${wid}`] = {
+          x: boxX + atomW + rightColW / 2, y: atomY0 + atomH / 2 + (i - (rightWires.length - 1) / 2) * circleSpacing,
+          r: CIRCLE_R, wireId: wid, type: 'dangling-right', side: 'right', atomId: aid,
+        };
+      });
+      atomX += leftColW + atomW + rightColW + ATOM_GAP_X;
     }
 
-    // ── Layout atoms ──────────────────────────────────────────────
-    for (const atom of MODULE.atoms) {
-      const hasInit = atom.init.length > 0, hasUpdate = atom.update.length > 0;
-      let innerY = yOffset + ATOM_HEADER_H + ATOM_PAD, maxBlockW = 300;
+    const moduleW = atomX - ATOM_GAP_X + MODULE_PAD + CIRCLE_COL_W - MARGIN;
+    const maxAtomH = Math.max(...Object.values(atomCenters).map(a => a.h));
+    const moduleH = Math.max(200, maxAtomH) + MODULE_PAD * 2 + 40;
 
-      let initH = 0;
-      if (hasInit) {
-        innerY += SECTION_LABEL_H;
-        const layout = layoutBlock(atom.init, MARGIN + ATOM_PAD, innerY, `a${atom.id}_init`);
-        initH = layout.h;
-        maxBlockW = Math.max(maxBlockW, layout.w);
-        innerY += initH;
+    // ── Interface circles (before Y-shift) ──────────────────────
+    const intfItems = mod.intf.map(pair => {
+      let idealY = null;
+      for (const atom of mod.atoms) {
+        if (!expanded[atom.id]) continue;
+        for (const terms of [atom.init, atom.update])
+          for (const t of terms)
+            if (t.writes.includes(pair.nxt) && positions[t.id])
+              idealY = positions[t.id].y + positions[t.id].h / 2;
       }
+      if (idealY === null)
+        for (const atom of mod.atoms)
+          if (atom.ctrl.some(w => w.id === pair.nxt)) { const ac = atomCenters[atom.id]; if (ac) idealY = ac.y + ac.h / 2; }
+      return { pair, ideal: idealY || atomY0 + ATOM_COLLAPSED_H / 2 };
+    }).sort((a, b) => a.ideal - b.ideal);
 
-      let updateH = 0;
-      if (hasUpdate) {
-        if (hasInit) innerY += SECTION_GAP_Y;
-        innerY += SECTION_LABEL_H;
-        const layout = layoutBlock(atom.update, MARGIN + ATOM_PAD, innerY, `a${atom.id}_update`);
-        updateH = layout.h;
-        maxBlockW = Math.max(maxBlockW, layout.w);
-        innerY += updateH;
-      }
-
-      const atomW = maxBlockW + ATOM_PAD * 2;
-      const atomH = innerY - yOffset + ATOM_PAD;
-      atomBoxes.push({ x: MARGIN, y: yOffset, w: atomW, h: atomH, atom, hasInit, hasUpdate, initH, updateH });
-      yOffset += atomH + ATOM_GAP_Y;
+    let nextIntfY = atomY0;
+    for (const { pair, ideal } of intfItems) {
+      const cy = Math.max(nextIntfY, ideal);
+      positions[`intf_${pair.ltc}`] = { x: MARGIN + moduleW + CIRCLE_COL_W / 2, y: cy, r: CIRCLE_R, wireId: pair.ltc, nxtId: pair.nxt, displayId: pair.nxt, dtype: pair.dtype, type: 'intf' };
+      nextIntfY = cy + CIRCLE_R * 2 + CIRCLE_GAP;
     }
 
-    const totalW = Math.max(800, ...atomBoxes.map(a => a.x + a.w + MARGIN));
-    const totalH = Math.max(600, yOffset + MARGIN);
+    // ── Y-shift to center ───────────────────────────────────────
+    const yShift = (moduleH - maxAtomH) / 2 + MARGIN - atomY0;
+    if (Math.abs(yShift) > 1) {
+      for (const ac of Object.values(atomCenters)) ac.y += yShift;
+      for (const pos of Object.values(positions)) if (pos.y !== undefined) pos.y += yShift;
+    }
+
+    // ── External circles (after Y-shift) ────────────────────────
+    const moduleCenterY = MARGIN + moduleH / 2;
+    mod.extl.forEach((pair, i) => {
+      positions[`extl_${pair.ltc}`] = {
+        x: MARGIN - CIRCLE_COL_W / 2, y: moduleCenterY + (i - (mod.extl.length - 1) / 2) * (CIRCLE_R * 2 + CIRCLE_GAP),
+        r: CIRCLE_R, wireId: pair.ltc, nxtId: pair.nxt, displayId: pair.ltc, dtype: pair.dtype, type: 'extl',
+      };
+    });
+
+    // ── Set viewBox ─────────────────────────────────────────────
     if (!hasRendered) {
-      viewBox = { x: 0, y: 0, w: totalW, h: totalH };
-      svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
+      viewBox = { x: 0, y: 0, w: MARGIN * 2 + moduleW + CIRCLE_COL_W, h: MARGIN * 2 + moduleH };
+      svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
       hasRendered = true;
     }
 
-    // ── Draw atom boxes ───────────────────────────────────────────
-    for (const ab of atomBoxes) {
+    // ── Draw module box ─────────────────────────────────────────
+    svg.appendChild(el('rect', { class: 'module-box', x: MARGIN, y: MARGIN, width: moduleW, height: moduleH }));
+
+    // ── Draw atom boxes ─────────────────────────────────────────
+    for (const atom of mod.atoms) {
+      const aid = atom.id, ac = atomCenters[aid], isExpanded = !!expanded[aid];
       const g = el('g');
-      g.appendChild(el('rect', { class: 'atom-box', x: ab.x, y: ab.y, width: ab.w, height: ab.h }));
+      g.appendChild(el('rect', { class: `atom-box${isExpanded ? ' expanded' : ''}`, x: ac.x, y: ac.y, width: ac.w, height: ac.h }));
 
-      const waitStr = ab.atom.wait.length ? `  awaits: ${ab.atom.wait.map(w => 'w' + w.id).join(', ')}` : '';
-      g.appendChild(el('text', {
-        class: 'atom-label', x: ab.x + 12, y: ab.y + 18,
-        textContent: `Atom ${ab.atom.id} — ctrl: ${ab.atom.ctrl.map(w => 'w' + w.id).join(', ')}${waitStr}`,
-      }));
+      const waitStr = atom.wait.length ? `  awaits: ${atom.wait.map(w => 'w' + w.id).join(', ')}` : '';
+      const toggle = el('text', { class: 'section-toggle', x: ac.x + 12, y: ac.y + 18, textContent: isExpanded ? '▼' : '▶' });
+      toggle.addEventListener('click', (e) => { e.stopPropagation(); expanded[aid] = !isExpanded; render(); refreshDetail(); });
+      g.appendChild(toggle);
+      g.appendChild(el('text', { class: 'atom-label', x: ac.x + 26, y: ac.y + 18, textContent: `Atom ${aid}${waitStr}` }));
 
-      let labelY = ab.y + ATOM_HEADER_H + ATOM_PAD;
-      if (ab.hasInit) {
-        g.appendChild(el('text', { class: 'section-label', x: ab.x + 12, y: labelY + 12, textContent: 'init' }));
-        labelY += SECTION_LABEL_H + ab.initH;
-      }
-      if (ab.hasUpdate) {
-        if (ab.hasInit) {
-          labelY += SECTION_GAP_Y;
-          g.appendChild(el('line', { class: 'section-divider', x1: ab.x + 10, y1: labelY - SECTION_GAP_Y / 2, x2: ab.x + ab.w - 10, y2: labelY - SECTION_GAP_Y / 2 }));
+      if (isExpanded) {
+        let labelY = ac.y + ATOM_HEADER_H + ATOM_PAD;
+        for (const [key, terms] of [['init', atom.init], ['update', atom.update]]) {
+          if (!terms.length) continue;
+          if (key === 'update' && atom.init.length) {
+            labelY += SECTION_GAP_Y;
+            g.appendChild(el('line', { class: 'section-divider', x1: ac.x + 10, y1: labelY - SECTION_GAP_Y / 2, x2: ac.x + ac.w - 10, y2: labelY - SECTION_GAP_Y / 2 }));
+          }
+          const open = sectionOpen[`${aid}_${key}`] !== false;
+          const st = el('text', { class: 'section-toggle', x: ac.x + 12, y: labelY + 14, textContent: `${open ? '▼' : '▶'} ${key} (${terms.length})` });
+          st.addEventListener('click', (e) => { e.stopPropagation(); sectionOpen[`${aid}_${key}`] = !open; render(); refreshDetail(); });
+          g.appendChild(st);
+          if (open) {
+            let blockH = 0;
+            const phase = `a${aid}_${key}`;
+            for (const [, pos] of Object.entries(positions)) if (pos.phase === phase) blockH = Math.max(blockH, pos.y + pos.h - (labelY + SECTION_LABEL_H));
+            labelY += SECTION_LABEL_H + blockH;
+          } else { labelY += SECTION_LABEL_H; }
         }
-        g.appendChild(el('text', { class: 'section-label', x: ab.x + 12, y: labelY + 12, textContent: 'update' }));
       }
 
-      g.addEventListener('click', (e) => { e.stopPropagation(); showAtomDetail(ab.atom); });
+      g.addEventListener('click', (e) => { e.stopPropagation(); showAtomDetail(atom); });
       svg.appendChild(g);
     }
 
-    // ── Draw nodes (terms + ports) ────────────────────────────────
+    // ── Draw term nodes ─────────────────────────────────────────
     for (const [key, pos] of Object.entries(positions)) {
+      if (pos.type) continue;
       const g = el('g');
-      if (pos.isPort) {
-        g.appendChild(el('rect', { class: `port-box ${pos.isPort}`, x: pos.x, y: pos.y, width: pos.w, height: pos.h }));
-        g.appendChild(el('text', { class: 'port-label', x: pos.x + pos.w / 2, y: pos.y + pos.h / 2 + 3, 'text-anchor': 'middle', textContent: `w${pos.wireId}` }));
-        g.addEventListener('click', (e) => { e.stopPropagation(); showWireDetail(pos.wireId); });
-      } else {
-        g.appendChild(el('rect', { class: `term-box ${pos.phase.includes('init') ? 'init' : 'update'}`, x: pos.x, y: pos.y, width: pos.w, height: pos.h }));
-        const td = termData[key];
-        let label = td ? td.label : key;
-        if (label.startsWith('Tensor(') && label.length > 12) label = 'Tensor';
-        g.appendChild(el('text', { class: 'term-label', x: pos.x + pos.w / 2, y: pos.y + pos.h / 2 + 4, 'text-anchor': 'middle', textContent: label }));
-        if (td) g.addEventListener('click', (e) => { e.stopPropagation(); showTermDetail(td, pos.phase); });
-      }
+      g.appendChild(el('rect', { class: `term-box ${pos.phase.includes('init') ? 'init' : 'update'}`, x: pos.x, y: pos.y, width: pos.w, height: pos.h }));
+      const td = termData[key];
+      let label = td ? td.label : key;
+      if (label.startsWith('Tensor(') && label.length > 12) label = 'Tensor';
+      g.appendChild(el('text', { class: 'term-label', x: pos.x + pos.w / 2, y: pos.y + pos.h / 2 + 4, 'text-anchor': 'middle', textContent: label }));
+      if (td) g.addEventListener('click', (e) => { e.stopPropagation(); showTermDetail(td, pos.phase); });
       svg.appendChild(g);
     }
 
-    // ── Draw wires ────────────────────────────────────────────────
-    for (const atom of MODULE.atoms) {
+    // ── Draw circles ────────────────────────────────────────────
+    for (const [, pos] of Object.entries(positions)) {
+      if (!pos.type) continue;
+      const g = el('g');
+      g.appendChild(el('circle', { class: `wire-circle ${pos.type}`, cx: pos.x, cy: pos.y, r: pos.r }));
+      const did = pos.displayId !== undefined ? pos.displayId : pos.wireId;
+      g.appendChild(el('text', { class: `wire-circle-label ${pos.type}`, x: pos.x, y: pos.y - pos.r - 4, 'text-anchor': 'middle', textContent: `w${did}` }));
+      g.addEventListener('click', (e) => { e.stopPropagation(); showWireDetail(did); });
+      svg.appendChild(g);
+    }
+
+    // ── Draw internal wires ─────────────────────────────────────
+    for (const atom of mod.atoms) {
+      if (!expanded[atom.id]) continue;
+      const aid = atom.id;
       for (const [phaseKey, terms] of [['init', atom.init], ['update', atom.update]]) {
-        const phase = `a${atom.id}_${phaseKey}`;
-
+        if (sectionOpen[`${aid}_${phaseKey}`] === false) continue;
         const writerOf = {};
-        for (const t of terms)
-          for (const wid of t.writes) writerOf[wid] = t.id;
-        for (const [key, pos] of Object.entries(positions))
-          if (pos.isPort === 'read' && pos.phase === phase) writerOf[pos.wireId] = key;
+        for (const t of terms) for (const wid of t.writes) writerOf[wid] = t.id;
 
-        const readersOf = {};
-        for (const t of terms)
-          for (const wid of t.reads) (readersOf[wid] ||= []).push(t.id);
-        for (const [key, pos] of Object.entries(positions))
-          if (pos.isPort === 'write' && pos.phase === phase) (readersOf[pos.wireId] ||= []).push(key);
-
-        for (const [wid, readers] of Object.entries(readersOf)) {
-          const srcId = writerOf[wid];
-          if (!srcId) continue;
-          const src = positions[srcId];
+        for (const t of terms) {
+          const dst = positions[t.id];
+          if (!dst) continue;
+          for (const wid of t.reads) {
+            if (writerOf[wid]) {
+              const src = positions[writerOf[wid]];
+              if (src) drawWire(positions, wid, src.x + src.w, src.y + src.h / 2, dst.x, dst.y + dst.h / 2);
+            } else {
+              const c = findCircle(positions, cls, mod, aid, wid, 'read');
+              if (c) drawWire(positions, wid, c.x + (c.r || 0), c.y, dst.x, dst.y + dst.h / 2);
+            }
+          }
+        }
+        for (const t of terms) {
+          const src = positions[t.id];
           if (!src) continue;
-          for (const dstId of readers) {
-            const dst = positions[dstId];
-            if (!dst) continue;
-            const x1 = src.x + src.w, y1 = src.y + src.h / 2;
-            const x2 = dst.x, y2 = dst.y + dst.h / 2;
-            const cx = (x1 + x2) / 2;
-            const path = el('path', { class: 'wire-line', d: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`, 'data-wire-id': wid });
-            path.addEventListener('mouseenter', () => highlightWire(wid, true));
-            path.addEventListener('mouseleave', () => highlightWire(wid, false));
-            path.addEventListener('click', (e) => { e.stopPropagation(); showWireDetail(wid); });
-            svg.appendChild(path);
+          for (const wid of t.writes) {
+            if (terms.some(t2 => t2.reads.includes(wid))) continue;
+            const c = findCircle(positions, cls, mod, aid, wid, 'write');
+            if (c) drawWire(positions, wid, src.x + src.w, src.y + src.h / 2, c.x - (c.r || 0), c.y);
           }
         }
       }
     }
+
+    // ── Draw shared wires ───────────────────────────────────────
+    for (const wid of cls.shared) {
+      let srcId = null, dstId = null;
+      for (const a of mod.atoms) {
+        if (a.ctrl.some(w => w.id === wid)) srcId = a.id;
+        if ([...a.read, ...a.wait].some(w => w.id === wid)) dstId = a.id;
+      }
+      if (srcId === null || dstId === null) continue;
+
+      let srcPts = findTermPoints(mod, srcId, wid, 'write', positions);
+      if (!srcPts.length) { const ac = atomCenters[srcId]; srcPts = [{ x: ac.x + ac.w, y: ac.y + ac.h / 2 }]; }
+      let dstPts = findTermPoints(mod, dstId, wid, 'read', positions);
+      if (!dstPts.length) { const ac = atomCenters[dstId]; dstPts = [{ x: ac.x, y: ac.y + ac.h / 2 }]; }
+
+      for (const sp of srcPts) for (const dp of dstPts) drawWire(positions, wid, sp.x, sp.y, dp.x, dp.y, 'shared');
+    }
   }
 
-  // ── Interaction ───────────────────────────────────────────────────
+  // ── Interaction ───────────────────────────────────────────────
   function highlightWire(wid, on) {
     svg.querySelectorAll(`.wire-line[data-wire-id="${wid}"]`).forEach(e => e.classList.toggle('highlighted', on));
     tooltip.textContent = on ? `w${wid}` : '';
     tooltip.style.display = on ? 'block' : 'none';
   }
-
-  svg.addEventListener('mousemove', (e) => {
-    tooltip.style.left = (e.clientX + 12) + 'px';
-    tooltip.style.top = (e.clientY - 8) + 'px';
-  });
+  svg.addEventListener('mousemove', (e) => { tooltip.style.left = (e.clientX + 12) + 'px'; tooltip.style.top = (e.clientY - 8) + 'px'; });
 
   function showAtomDetail(atom) { selection = { type: 'atom', id: atom.id }; renderAtomDetail(atom); }
   function showTermDetail(term, phase) { selection = { type: 'term', id: term.id, phase }; renderTermDetail(term, phase); }
@@ -402,73 +447,47 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
 
   function formatTermChain(term) {
     const reads = term.reads.length ? term.reads.map(w => `<span class="wire-tag">w${w}</span>`).join(', ') + ' → ' : '';
-    const writes = term.writes.map(w => `<span class="wire-tag ctrl">w${w}</span>`).join(', ');
-    return `<li>${reads}<b>${term.label}</b> → ${writes}</li>`;
+    return `<li>${reads}<b>${term.label}</b> → ${term.writes.map(w => `<span class="wire-tag ctrl">w${w}</span>`).join(', ')}</li>`;
   }
 
   function renderAtomDetail(atom) {
     detail.innerHTML = `
-      <div class="section">
-        <div class="section-title">Atom ${atom.id}</div>
+      <div class="section"><div class="section-title">Atom ${atom.id}</div>
         <ul class="wire-list">
           <li><b>Controls:</b> ${atom.ctrl.map(w => `<span class="wire-tag ctrl">w${w.id} : ${w.dtype}</span>`).join(' ')}</li>
           <li><b>Awaits:</b> ${atom.wait.length ? atom.wait.map(w => `<span class="wire-tag">w${w.id}</span>`).join(' ') : '—'}</li>
           <li><b>Reads:</b> ${atom.read.map(w => `<span class="wire-tag">w${w.id} : ${w.dtype}</span>`).join(' ')}</li>
-        </ul>
-      </div>
-      <div class="section">
-        <div class="section-title">Init (${atom.init.length} terms)</div>
-        <ul class="wire-list">${atom.init.map(formatTermChain).join('')}</ul>
-      </div>
-      <div class="section">
-        <div class="section-title">Update (${atom.update.length} terms)</div>
-        <ul class="wire-list">${atom.update.map(formatTermChain).join('')}</ul>
-      </div>`;
+        </ul></div>
+      <div class="section"><div class="section-title">Init (${atom.init.length} terms)</div>
+        <ul class="wire-list">${atom.init.map(formatTermChain).join('')}</ul></div>
+      <div class="section"><div class="section-title">Update (${atom.update.length} terms)</div>
+        <ul class="wire-list">${atom.update.map(formatTermChain).join('')}</ul></div>`;
   }
 
   function renderTermDetail(term, phase) {
-    detail.innerHTML = `
-      <div class="section">
-        <div class="section-title">${term.label} <span style="color:#8b949e">(${phase})</span></div>
-        <ul class="wire-list">
-          <li><b>Reads:</b> ${term.reads.map(w => `<span class="wire-tag">w${w}</span>`).join(' ') || '—'}</li>
-          <li><b>Writes:</b> ${term.writes.map(w => `<span class="wire-tag ctrl">w${w}</span>`).join(' ')}</li>
-        </ul>
-      </div>`;
+    detail.innerHTML = `<div class="section"><div class="section-title">${term.label} <span style="color:#8b949e">(${phase})</span></div>
+      <ul class="wire-list">
+        <li><b>Reads:</b> ${term.reads.map(w => `<span class="wire-tag">w${w}</span>`).join(' ') || '—'}</li>
+        <li><b>Writes:</b> ${term.writes.map(w => `<span class="wire-tag ctrl">w${w}</span>`).join(' ')}</li>
+      </ul></div>`;
   }
 
-  function renderWireDetail(wid) {
-    detail.innerHTML = `<div class="section"><div class="section-title">Wire w${wid}</div></div>`;
-  }
+  function renderWireDetail(wid) { detail.innerHTML = `<div class="section"><div class="section-title">Wire w${wid}</div></div>`; }
 
   function refreshDetail() {
     if (!selection || !MODULE) return;
-    if (selection.type === 'atom') {
-      const atom = MODULE.atoms.find(a => a.id === selection.id);
-      if (atom) renderAtomDetail(atom);
-    } else if (selection.type === 'term') {
-      for (const atom of MODULE.atoms)
-        for (const terms of [atom.init, atom.update]) {
-          const term = terms.find(t => t.id === selection.id);
-          if (term) { renderTermDetail(term, selection.phase); return; }
-        }
-    } else if (selection.type === 'wire') {
-      renderWireDetail(selection.id);
-    }
+    if (selection.type === 'atom') { const a = MODULE.atoms.find(a => a.id === selection.id); if (a) renderAtomDetail(a); }
+    else if (selection.type === 'term') { for (const a of MODULE.atoms) for (const ts of [a.init, a.update]) { const t = ts.find(t => t.id === selection.id); if (t) { renderTermDetail(t, selection.phase); return; } } }
+    else if (selection.type === 'wire') renderWireDetail(selection.id);
   }
 
-  svg.addEventListener('click', () => {
-    selection = null;
-    detail.innerHTML = '<p style="color: #8b949e;">Click an element to inspect it.</p>';
-  });
+  svg.addEventListener('click', () => { selection = null; detail.innerHTML = '<p style="color: #8b949e;">Click an element to inspect it.</p>'; });
 
-  // ── Pan & Zoom ────────────────────────────────────────────────────
+  // ── Pan & Zoom ────────────────────────────────────────────────
   let isPanning = false, startPt = { x: 0, y: 0 };
-
   svg.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const scale = e.deltaY > 0 ? 1.1 : 0.9;
-    const rect = svg.getBoundingClientRect();
+    const scale = e.deltaY > 0 ? 1.1 : 0.9, rect = svg.getBoundingClientRect();
     const mx = (e.clientX - rect.left) / rect.width * viewBox.w + viewBox.x;
     const my = (e.clientY - rect.top) / rect.height * viewBox.h + viewBox.y;
     viewBox.w *= scale; viewBox.h *= scale;
@@ -476,22 +495,8 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     viewBox.y = my - (e.clientY - rect.top) / rect.height * viewBox.h;
     svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
   });
-
-  svg.addEventListener('mousedown', (e) => {
-    if (e.target === svg || e.target.classList.contains('atom-box')) {
-      isPanning = true; startPt = { x: e.clientX, y: e.clientY };
-    }
-  });
-
-  window.addEventListener('mousemove', (e) => {
-    if (!isPanning) return;
-    const rect = svg.getBoundingClientRect();
-    viewBox.x -= (e.clientX - startPt.x) / rect.width * viewBox.w;
-    viewBox.y -= (e.clientY - startPt.y) / rect.height * viewBox.h;
-    startPt = { x: e.clientX, y: e.clientY };
-    svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
-  });
-
+  svg.addEventListener('mousedown', (e) => { if (e.target === svg || e.target.classList.contains('atom-box') || e.target.classList.contains('module-box')) { isPanning = true; startPt = { x: e.clientX, y: e.clientY }; } });
+  window.addEventListener('mousemove', (e) => { if (!isPanning) return; const rect = svg.getBoundingClientRect(); viewBox.x -= (e.clientX - startPt.x) / rect.width * viewBox.w; viewBox.y -= (e.clientY - startPt.y) / rect.height * viewBox.h; startPt = { x: e.clientX, y: e.clientY }; svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`); });
   window.addEventListener('mouseup', () => { isPanning = false; });
 })();
 </script>
