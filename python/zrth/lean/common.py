@@ -35,7 +35,7 @@ def dtype_to_lean_type(wire: Wire) -> str:
     if shape == [1] or shape == []:
         return ty
     elif len(shape) == 1:
-        return f"(Mat {ty} {shape[0]} 1)"
+        return f"(Mat {ty} 1 {shape[0]})"
     elif len(shape) == 2:
         return f"(Mat {ty} {shape[0]} {shape[1]})"
     else:
