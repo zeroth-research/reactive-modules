@@ -32,10 +32,12 @@ def MatZero [OfNat t 0]: Mat t m n := fun _ _ => (0 : t)
 def MatTranspose (A : Mat t m n) : Mat t n m := fun i j => A j i
 
 
-/-- Affine layer: `nnLinear x A b = x * Aᵀ + b` -/
+/-- Affine layer: `nnLinear x A b = x * A + b` (NOTE: `A` is not transposed
+    as in `torch.nn.Linear`!)
+-/
 def affineLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t]
-    (x : Mat t m k) (A : Mat t n k) (b : Mat t m n) : Mat t m n :=
-  MatMul x (MatTranspose A) + b
+    (x : Mat t m k) (A : Mat t k n) (b : Mat t m n) : Mat t m n :=
+  MatMul x A + b
 
 /-- Element-wise ReLU: `relu x i j = max 0 (x i j)` -/
 def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
@@ -44,11 +46,11 @@ def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
 
 /-! Helper lemmas for simp -/
 @[simp] theorem affineLinear_apply [HMul t t t] [AddCommMonoid t] [HAdd t t t]
-    (x : Mat t m k) (A : Mat t n k) (b : Mat t m n) (i : Fin m) (j : Fin n) :
-    affineLinear x A b i j = Finset.sum Finset.univ (fun l => x i l * A j l) + b i j := by
+    (x : Mat t m k) (A : Mat t k n) (b : Mat t m n) (i : Fin m) (j : Fin n) :
+    affineLinear x A b i j = Finset.sum Finset.univ (fun l => x i l * A l j) + b i j := by
   simp [affineLinear]
-  unfold MatMul MatTranspose
-  exact (congrArg (((fun i j => ∑ l, x i l * A j l) + b) i) ∘ fun a => a) rfl
+  unfold MatMul
+  exact (congrArg (((fun i j => ∑ l, x i l * A l j) + b) i) ∘ fun a => a) rfl
 
 
 @[simp] theorem relu_apply [Max t] [OfNat t 0]
@@ -272,7 +274,7 @@ infixr:75 " ⊗ " => par
 
 
 @[simp] def nnLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t] {m k n : Nat}
-    : Box [Mat t m k, Mat t n k, Mat t m n] [Mat t m n] :=
+    : Box [Mat t m k, Mat t k n, Mat t m n] [Mat t m n] :=
   ⟨fun val!(x, A, b) => val!(affineLinear x A b)⟩
 
 @[simp] def relu [Max t] [OfNat t 0] {m n : Nat}
