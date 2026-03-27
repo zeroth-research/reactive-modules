@@ -95,7 +95,7 @@ class ModuleToLean4:
         extl_next: list[Wire] = [pair[1] for pair in m.extl]
         ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
         ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
-        params: list[Wire] = [x for x in m.param]
+        params: list[Wire] = []  # [x for x in m.param]
 
         # Extract constants from both blocks
         init_terms = atom.init
@@ -258,7 +258,7 @@ class ModuleToLean4:
         extl_next: list[Wire] = [pair[1] for pair in m.extl]
         ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
         ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
-        params: list[Wire] = [x for x in m.param]
+        params: list[Wire] = []  # [x for x in m.param]
 
         lines: list[str] = []
 
@@ -342,7 +342,7 @@ class ModuleToLean4:
         extl_next: list[Wire] = [pair[1] for pair in m.extl]
         ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
         ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
-        params: list[Wire] = [x for x in m.param]
+        params: list[Wire] = []  # [x for x in m.param]
 
         init_terms = atom.init
         update_terms = atom.update
