@@ -25,11 +25,13 @@ def _serialize_terms(terms, atom_idx, phase, counter):
     for term in terms:
         tid = f"a{atom_idx}_{phase}_{counter[0]}"
         counter[0] += 1
+        writes = list(term.write)
         result.append({
             "id": tid,
             "label": str(term.itype),
             "reads": [w.id for w in term.read],
-            "writes": [w.id for w in term.write],
+            "writes": [w.id for w in writes],
+            "dtype": str(writes[0].dtype) if writes else None,
         })
     return result
 
@@ -66,17 +68,28 @@ def _find_free_port():
         return s.getsockname()[1]
 
 
-def show(module, poll=0.5, open_browser=True):
+def show(module, names=None, poll=0.5, open_browser=True):
     """Start a live visualizer for the given module.
 
     Args:
         module: A zrth Module (or Wrapper/Env/torch.Module instance).
+        names: Optional dict mapping wire IDs (int) to display names (str).
+               If None, circles show no labels (topology only).
         poll: Interval in seconds between state pushes.
         open_browser: Whether to open the browser automatically.
 
     Returns:
         A stop function that shuts down the server.
     """
+    wire_names = {}
+    if names:
+        for k, v in names.items():
+            if isinstance(k, (list, tuple)) and len(k) == 2:
+                # Wire pair: latched gets name, next gets name'
+                wire_names[k[0].id if hasattr(k[0], 'id') else int(k[0])] = str(v)
+                wire_names[k[1].id if hasattr(k[1], 'id') else int(k[1])] = str(v) + "'"
+            else:
+                wire_names[k.id if hasattr(k, 'id') else int(k)] = str(v)
     http_port = _find_free_port()
     ws_port = _find_free_port()
 
@@ -100,6 +113,7 @@ def show(module, poll=0.5, open_browser=True):
     async def ws_handler(websocket):
         while not stop_event.is_set():
             data = _serialize_module(module)
+            data['wire_names'] = wire_names
             try:
                 await websocket.send(json.dumps({"type": "full", "data": data}))
             except websockets.exceptions.ConnectionClosed:
