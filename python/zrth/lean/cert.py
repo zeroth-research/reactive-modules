@@ -130,9 +130,13 @@ def RM : ReactiveModule ({extl_native}) ({ctrl_native}) := {{
         simp_lemmas += f",\n               {const_list}"
     simp_lemmas += (
         ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
+        ",\n               mul_Mat_apply, add_Mat_apply"
     )
     simp_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
-    simp_lemmas += ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
+    simp_lemmas += (
+        ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
+        ",\n               Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
+    )
 
     lines.append(f"""\
 -- tactic that unfolds module definitions and simplifies
@@ -151,16 +155,39 @@ macro "simp_mod" : tactic =>
         inv_lemmas += f",\n               {const_list}"
     inv_lemmas += (
         ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
+        ",\n               mul_Mat_apply, add_Mat_apply"
     )
     inv_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
-    inv_lemmas += ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
+    inv_lemmas += (
+        ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
+        ",\n               Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
+    )
 
     # simp_inv tactic — reduces module defs then solves CNF goals
+    # Split into two phases: (1) unfold module wrappers, (2) simplify arithmetic
+    arith_lemmas = "init, update, inv, init_pre, update_pre"
+    if const_list:
+        arith_lemmas += f",\n               {const_list}"
+    arith_lemmas += (
+        ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
+        ",\n               mul_Mat_apply, add_Mat_apply"
+    )
+    arith_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
+    arith_lemmas += (
+        ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
+        ",\n               Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
+    )
+
     lines.append(f"""\
 -- tactic that reduces module definitions and solves CNF invariant goals
 macro "simp_inv" : tactic =>
   `(tactic| (
-    simp only [{inv_lemmas}] at *
+    -- Phase 1: unfold module wrappers
+    try simp only [RM, ReactiveModule.init, ReactiveModule.update,
+               ReactiveModule.init_pre, ReactiveModule.update_pre] at *
+    -- Phase 2: unfold and simplify
+    try dsimp only [inv, init, update, init_pre, update_pre] at *
+    simp [{arith_lemmas}] at *
     <;> first
       | trivial
       | omega
@@ -199,9 +226,10 @@ theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
   · intro s hs
     unfold lts at hs
-    simp [ReactiveModule.toLTS', ReactiveModule.LTS_init, RM, init_pre] at hs
-    unfold inv
-    simp [Membership.mem]
+    simp [ReactiveModule.toLTS', ReactiveModule.LTS_init, RM] at hs
+    obtain ⟨l, hpre, hl⟩ := hs
+    rw [← hl]
+    exact init_inv l hpre
   · intro s s' ⟨hs, l, hstep⟩
     unfold lts at hstep
     simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at hstep

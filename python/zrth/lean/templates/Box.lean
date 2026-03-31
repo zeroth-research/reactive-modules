@@ -78,6 +78,16 @@ def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
   (a : Mat t m k) (b : Mat t k n) :
     MatMul a b = a * b := rfl
 
+/-- Reduce `(a * b) i j` directly (needed because `MatMul_eq_mul` rewrites
+    `MatMul` away before `MatMul_apply` can fire). -/
+@[simp] theorem mul_Mat_apply [HMul t t t] [AddCommMonoid t]
+    (a : Mat t m k) (b : Mat t k n) (i : Fin m) (j : Fin n) :
+    (a * b) i j = Finset.sum Finset.univ (fun l => a i l * b l j) := rfl
+
+@[simp] theorem add_Mat_apply [HAdd t t t]
+    (a b : Mat t m n) (i : Fin m) (j : Fin n) :
+    (a + b) i j = a i j + b i j := rfl
+
 -- This complicates the proofs..
 /- coercion between single-element matrix and the element -/
 -- instance {t: Type} : Coe t (Mat t 1 1) where
