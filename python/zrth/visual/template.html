@@ -36,18 +36,20 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
 .toggle { fill: #8b949e; font-size: 10px; cursor: pointer; }
 .toggle:hover { fill: #e6edf3; }
 
-.circ { fill: #0d1117; stroke-width: 1.5; cursor: pointer; }
-.circ.extl { stroke: #58a6ff; } .circ.intf { stroke: #d2a838; } .circ.prvt { stroke: #f85149; }
-.circ.wait { stroke: #a371f7; } .circ.read { stroke: #3fb950; } .circ.ctrl { stroke: #d2a838; }
-.clbl { font-size: 9px; font-family: 'SF Mono', 'Fira Code', monospace; pointer-events: none; }
-.clbl.extl { fill: #58a6ff; } .clbl.intf { fill: #d2a838; } .clbl.prvt { fill: #f85149; }
-.clbl.wait { fill: #a371f7; } .clbl.read { fill: #3fb950; } .clbl.ctrl { fill: #d2a838; }
+.circ { stroke-width: 1.5; cursor: pointer; }
+.circ.extl { fill: #58a6ff; stroke: #58a6ff; } .circ.intf { fill: #d2a838; stroke: #d2a838; } .circ.prvt { fill: #f85149; stroke: #f85149; }
+.circ.wait { fill: #a371f7; stroke: #a371f7; } .circ.read { fill: #3fb950; stroke: #3fb950; } .circ.ctrl { fill: #d2a838; stroke: #d2a838; }
+.clbl { font-size: 9px; font-family: 'SF Mono', 'Fira Code', monospace; pointer-events: none; fill: #e6edf3; }
 
 .wire { fill: none; stroke: #6e7681; stroke-width: 1.5; opacity: 0.5; }
 .wire:hover, .wire.highlighted, .wire.hover-hl { stroke: #58a6ff; stroke-width: 2.5; opacity: 1; }
 .faded { opacity: 0.12; }
 .faded.wire:hover, .faded.hover-hl { opacity: 0.7; stroke: #58a6ff; stroke-width: 2; }
 #tooltip { position: fixed; display: none; padding: 2px 8px; background: #30363d; color: #e6edf3; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; border-radius: 4px; pointer-events: none; z-index: 100; }
+.dd-label { padding: 2px 8px; border-radius: 4px; background: #1f2d3d; color: #58a6ff; border: 1px solid #30363d; cursor: pointer; user-select: none; font-size: 12px; }
+.dd-menu { display: none; position: absolute; top: 100%; left: 0; margin-top: 2px; background: #161b22; border: 1px solid #30363d; border-radius: 4px; z-index: 50; min-width: 80px; }
+.dd-menu div { padding: 4px 10px; cursor: pointer; color: #c9d1d9; }
+.dd-menu div:hover { background: #1f2d3d; }
 </style>
 </head>
 <body>
@@ -55,6 +57,18 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
 <header>
   <h1>Module Viewer</h1>
   <span id="status" class="disconnected">connecting...</span>
+  <div style="display:inline-block;position:relative;">
+    <span id="sec-label" class="dd-label">init ▾</span>
+    <div id="sec-menu" class="dd-menu">
+      <div data-val="0">init</div><div data-val="1">update</div><div data-val="2">both</div>
+    </div>
+  </div>
+  <div style="display:inline-block;position:relative;">
+    <span id="exp-label" class="dd-label">collapse all ▾</span>
+    <div id="exp-menu" class="dd-menu" style="min-width:100px;">
+      <div data-val="collapse">collapse all</div><div data-val="expand">expand all</div>
+    </div>
+  </div>
   <span id="breadcrumb"></span>
 </header>
 <div class="main">
@@ -68,28 +82,71 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   let MOD=null, vb={x:0,y:0,w:800,h:600}, rendered=false;
   const exp={}, secOpen={};
   let focus={level:'module',atom:null,term:null,wire:null};
+  let secMode=0;
 
-  const M=40,MP=30, AP=16,AGX=80,ACW=140,ACH=48,AHH=28, TW=100,TH=32,TGX=24,TRG=8, SGY=12,SLH=20, CR=12,CG=18,CCW=CR*2+20;
+  // ── Dropdowns ──────────────────────────────────────────────
+  const secLabel=document.getElementById('sec-label'), secMenu=document.getElementById('sec-menu');
+  const expLabel=document.getElementById('exp-label'), expMenu=document.getElementById('exp-menu');
+  const secNames={0:'init',1:'update',2:'both'};
 
+  secLabel.addEventListener('click',e=>{e.stopPropagation();secMenu.style.display=secMenu.style.display==='none'?'block':'none';expMenu.style.display='none';});
+  expLabel.addEventListener('click',e=>{e.stopPropagation();expMenu.style.display=expMenu.style.display==='none'?'block':'none';secMenu.style.display='none';});
+  document.addEventListener('click',()=>{secMenu.style.display='none';expMenu.style.display='none';});
+
+  secMenu.querySelectorAll('[data-val]').forEach(d=>d.addEventListener('click',e=>{
+    e.stopPropagation();secMode=+d.dataset.val;for(const k of Object.keys(secOpen))delete secOpen[k];secMenu.style.display='none';render();
+  }));
+  expMenu.querySelectorAll('[data-val]').forEach(d=>d.addEventListener('click',e=>{
+    e.stopPropagation();const expand=d.dataset.val==='expand';if(MOD)for(const a of MOD.atoms)exp[a.id]=expand;for(const k of Object.keys(secOpen))delete secOpen[k];expMenu.style.display='none';render();
+  }));
+
+  function syncToggles(){
+    if(!MOD)return;
+    const expanded=MOD.atoms.filter(a=>exp[a.id]);
+    let secText='- - -';
+    if(!expanded.length)secText=secNames[secMode];
+    else{
+      let ai=true,au=true,ab=true;
+      for(const a of expanded){const i=isSecOpen(a.id,'init'),u=isSecOpen(a.id,'update');if(!i||u)ai=false;if(i||!u)au=false;if(!i||!u)ab=false;}
+      if(ai)secText='init';else if(au)secText='update';else if(ab)secText='both';
+    }
+    secLabel.textContent=secText+' ▾';
+    const allExp=MOD.atoms.every(a=>exp[a.id]),allCol=MOD.atoms.every(a=>!exp[a.id]);
+    expLabel.textContent=(allExp?'expand all':allCol?'collapse all':'- - -')+' ▾';
+  }
+
+  // ── Constants ──────────────────────────────────────────────
+  const M=40,MP=30, AP=16,AGX=80,ACW=140,ACH=48,AHH=28, TW=100,TH=32,TGX=24,TRG=8, SGY=12,SLH=20, CR=4,CG=15,CCW=CR*2+20;
+
+  // ── WebSocket ──────────────────────────────────────────────
   function connect(){const ws=new WebSocket(`ws://127.0.0.1:{{WS_PORT}}`);ws.onopen=()=>{statusEl.textContent='live';statusEl.className='connected';};ws.onclose=()=>{statusEl.textContent='disconnected';statusEl.className='disconnected';setTimeout(connect,2000);};ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='full'){MOD=m.data;render();}};} connect();
 
+  // ── Helpers ────────────────────────────────────────────────
   function el(tag,a){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);if(a)for(const[k,v]of Object.entries(a))k==='textContent'?e.textContent=v:e.setAttribute(k,v);return e;}
   function bz(x1,y1,x2,y2){const c=(x1+x2)/2;return`M ${x1} ${y1} C ${c} ${y1}, ${c} ${y2}, ${x2} ${y2}`;}
+  function wn(){return MOD&&MOD.wire_names||{};}
+
+  function isSecOpen(aid,k){
+    const key=`${aid}_${k}`;
+    if(secOpen[key]!==undefined)return secOpen[key];
+    if(secMode===0)return k==='init';
+    if(secMode===1)return k==='update';
+    return true;
+  }
 
   function shortLabel(t){
     if(!t)return'?';
-    const l=t.label, dt=t.dtype;
-    const shortDt=dt?dt.replace(/\(.*\)/,''):'';
-    if(l.startsWith('Tensor('))return`Tensor(${shortDt})`;
-    if(l.startsWith('Const:'))return`Const(${shortDt})`;
+    const l=t.label, dt=t.dtype, sd=dt?dt.replace(/\(.*\)/,''):'';
+    if(l.startsWith('Tensor('))return`Tensor(${sd})`;
+    if(l.startsWith('Const:'))return`Const(${sd})`;
     return l;
   }
 
   function classify(mod){
     const shared=new Set();
-    const cs=mod.atoms.map(a=>new Set(a.ctrl.map(w=>w.id))), rs=mod.atoms.map(a=>new Set([...a.read.map(w=>w.id),...a.wait.map(w=>w.id)]));
+    const cs=mod.atoms.map(a=>new Set(a.ctrl.map(w=>w.id))),rs=mod.atoms.map(a=>new Set([...a.read.map(w=>w.id),...a.wait.map(w=>w.id)]));
     for(let i=0;i<mod.atoms.length;i++)for(let j=0;j<mod.atoms.length;j++)if(i!==j)for(const w of cs[i])if(rs[j].has(w))shared.add(w);
-    const extl=new Set(),intf=new Set(); mod.extl.forEach(p=>{extl.add(p.ltc);extl.add(p.nxt);}); mod.intf.forEach(p=>{intf.add(p.ltc);intf.add(p.nxt);});
+    const extl=new Set(),intf=new Set();mod.extl.forEach(p=>{extl.add(p.ltc);extl.add(p.nxt);});mod.intf.forEach(p=>{intf.add(p.ltc);intf.add(p.nxt);});
     return{shared,extl,intf};
   }
 
@@ -104,40 +161,57 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     return{w:xo-sx-TGX,h:maxY-sy};
   }
 
+  // ── Render ─────────────────────────────────────────────────
   function render(){
-    if(!MOD)return; while(svg.firstChild)svg.removeChild(svg.firstChild);
-    const mod=MOD, cls=classify(mod);
+    if(!MOD)return;while(svg.firstChild)svg.removeChild(svg.firstChild);
+    const mod=MOD,cls=classify(mod);
     const td={};for(const a of mod.atoms)for(const ts of[a.init,a.update])for(const t of ts)td[t.id]=t;
-    const pos={}, ac={}, grp={}, wireEls=[];
+    const pos={},ac={},grp={},wireEls=[];
+
+    // Build module circle lookup: wire ID → module circle key
+    // (built after circles are placed, used by section A)
+    let modLookup=null;
+    function getModLookup(){
+      if(modLookup)return modLookup;
+      modLookup={l:{},r:{}};
+      for(const[k,p]of Object.entries(pos)){
+        if(!p.isCircle||!p.modCircle)continue;
+        if(k.startsWith('ml_')){modLookup.l[p.ltc]=k;modLookup.l[p.nxt]=k;}
+        else{modLookup.r[p.ltc]=k;modLookup.r[p.nxt]=k;}
+      }
+      return modLookup;
+    }
 
     // ── Layout atoms ─────────────────────────────────────────
-    let ax=M+MP+CCW; const ay0=M+MP+20;
+    let ax=M+MP+CCW;const ay0=M+MP+20;
     for(const atom of mod.atoms){
-      const aid=atom.id, isExp=!!exp[aid];
+      const aid=atom.id,isExp=!!exp[aid];
       const aLw=[...new Set([...atom.read.map(w=>w.id),...atom.wait.map(w=>w.id)])];
       const aRw=[...new Set(atom.ctrl.map(w=>w.id))];
-      // Dangling only for layout width
       const dLw=aLw.filter(w=>!cls.shared.has(w)&&!cls.extl.has(w));
       const dRw=aRw.filter(w=>!cls.shared.has(w)&&!cls.intf.has(w));
-      const lcw=dLw.length?CCW:0, rcw=dRw.length?CCW:0;
+      const lcw=dLw.length?CCW:0,rcw=dRw.length?CCW:0;
 
-      let aw=ACW, ah=ACH;
-      if(isExp){let ih=AHH+AP,mbw=200;for(const[k,ts]of[['init',atom.init],['update',atom.update]]){if(!ts.length)continue;if(k==='update'&&atom.init.length)ih+=SGY;ih+=SLH;if(secOpen[`${aid}_${k}`]!==false){const lo=layoutTerms(ts,ax+lcw+AP,ay0+ih,`a${aid}_${k}`,pos);ih+=lo.h;mbw=Math.max(mbw,lo.w);}}aw=mbw+AP*2;ah=ih+AP;}
+      let aw=ACW,ah=ACH;
+      if(isExp){let ih=AHH+AP,mbw=200;for(const[k,ts]of[['init',atom.init],['update',atom.update]]){if(!ts.length)continue;if(k==='update'&&atom.init.length)ih+=SGY;ih+=SLH;if(isSecOpen(aid,k)){const lo=layoutTerms(ts,ax+lcw+AP,ay0+ih,`a${aid}_${k}`,pos);ih+=lo.h;mbw=Math.max(mbw,lo.w);}}aw=mbw+AP*2;ah=ih+AP;}
 
-      const bx=ax+lcw; ac[aid]={x:bx,y:ay0,w:aw,h:ah};
-      // Atom circles — always created for ALL wires
-      const cs2=CR*2+CG, lCx=lcw>0?ax+lcw/2:bx-CCW/2, rCx=rcw>0?bx+aw+rcw/2:bx+aw+CCW/2;
+      const bx=ax+lcw;ac[aid]={x:bx,y:ay0,w:aw,h:ah};
+      const cs2=CR*2+CG,lCx=lcw>0?ax+lcw/2:bx-CCW/2,rCx=rcw>0?bx+aw+rcw/2:bx+aw+CCW/2;
       aLw.forEach((wid,i)=>{const role=atom.wait.some(w=>w.id===wid)?'wait':'read';pos[`cl_${aid}_${wid}`]={x:lCx,y:ay0+ah/2+(i-(aLw.length-1)/2)*cs2,r:CR,wid,role,side:'left',atomId:aid,isCircle:true};});
       aRw.forEach((wid,i)=>{pos[`cr_${aid}_${wid}`]={x:rCx,y:ay0+ah/2+(i-(aRw.length-1)/2)*cs2,r:CR,wid,role:'ctrl',side:'right',atomId:aid,isCircle:true};});
       ax+=lcw+aw+rcw+AGX;
     }
 
-    const modW=ax-AGX+MP+CCW-M, maxAH=Math.max(...Object.values(ac).map(a=>a.h)), modH=Math.max(200,maxAH)+MP*2+40;
+    const modW=ax-AGX+MP+CCW-M,maxAH=Math.max(...Object.values(ac).map(a=>a.h)),modH=Math.max(200,maxAH)+MP*2+40;
 
     // ── Module circles ───────────────────────────────────────
     const allP=[...mod.extl.map(p=>({...p,role:'extl'})),...mod.intf.map(p=>({...p,role:'intf'})),...mod.prvt.map(p=>({...p,role:'prvt'}))];
-    function placeSide(items,x,mk){const sp=CR*2+CG,th=items.length*sp-CG;const same=items.length>1&&items.every(it=>Math.abs(it.ideal-items[0].ideal)<2);if(same){const sy=items[0].ideal-th/2;items.forEach((it,i)=>{const e=mk(it.pair,x,sy+i*sp);pos[e.k]=e.v;});}else{items.sort((a,b)=>a.ideal-b.ideal);let ny=ay0;for(const it of items){const cy=Math.max(ny,it.ideal);const e=mk(it.pair,x,cy);pos[e.k]=e.v;ny=cy+sp;}}}
-
+    function placeSide(items,x,mk){
+      const sp=CR*2+CG,th=items.length*sp-CG;
+      const same=items.length>1&&items.every(it=>Math.abs(it.ideal-items[0].ideal)<2);
+      if(same){const sy=items[0].ideal-th/2;items.forEach((it,i)=>{const e=mk(it.pair,x,sy+i*sp);pos[e.k]=e.v;});}
+      else{items.sort((a,b)=>a.ideal-b.ideal);let ny=ay0;for(const it of items){const cy=Math.max(ny,it.ideal);const e=mk(it.pair,x,cy);pos[e.k]=e.v;ny=cy+sp;}}
+    }
     placeSide(allP.map(p=>{let iy=null;for(const a of mod.atoms){if(exp[a.id])for(const ts of[a.init,a.update])for(const t of ts)if(t.writes.includes(p.nxt)&&pos[t.id])iy=pos[t.id].y+pos[t.id].h/2;if(iy===null&&a.ctrl.some(w=>w.id===p.nxt)&&ac[a.id])iy=ac[a.id].y+ac[a.id].h/2;}return{pair:p,ideal:iy||ay0+ACH/2};}),M+modW+CCW/2,(p,x,y)=>({k:`mr_${p.nxt}`,v:{x,y,r:CR,wid:p.nxt,ltc:p.ltc,nxt:p.nxt,did:p.nxt,role:p.role,isCircle:true,modCircle:true}}));
     placeSide(allP.map(p=>{let iy=null;for(const a of mod.atoms){if(exp[a.id])for(const ts of[a.init,a.update])for(const t of ts)if(t.reads.includes(p.ltc)&&pos[t.id])iy=pos[t.id].y+pos[t.id].h/2;if(iy===null&&[...a.read,...a.wait].some(w=>w.id===p.ltc)&&ac[a.id])iy=ac[a.id].y+ac[a.id].h/2;}return{pair:p,ideal:iy||ay0+ACH/2};}),M-CCW/2,(p,x,y)=>({k:`ml_${p.ltc}`,v:{x,y,r:CR,wid:p.ltc,ltc:p.ltc,nxt:p.nxt,did:p.ltc,role:p.role,isCircle:true,modCircle:true}}));
 
@@ -146,7 +220,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     if(Math.abs(ys)>1){for(const a of Object.values(ac))a.y+=ys;for(const p of Object.values(pos))if(p.y!==undefined)p.y+=ys;}
     if(!rendered){vb={x:0,y:0,w:M*2+modW+CCW,h:M*2+modH};svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`);rendered=true;}
 
-    // ── Draw ─────────────────────────────────────────────────
+    // ── Draw elements ────────────────────────────────────────
     // Module box
     const modStyle=focus.level==='module'?'stroke:#58a6ff;':'stroke:#30363d;stroke-dasharray:6 4;';
     const mg=el('g');mg.appendChild(el('rect',{class:'mod-box',x:M,y:M,width:modW,height:modH,style:modStyle}));mg.addEventListener('click',e=>{e.stopPropagation();setFocus('module');});svg.appendChild(mg);grp['mod']=mg;
@@ -160,48 +234,41 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
       const ws=atom.wait.length?`  awaits: ${atom.wait.map(w=>'w'+w.id).join(', ')}`:'';
       const tg=el('text',{class:'toggle',x:a.x+12,y:a.y+18,textContent:isExp?'▼':'▶'});tg.addEventListener('click',e=>{e.stopPropagation();exp[aid]=!isExp;render();});g.appendChild(tg);
       g.appendChild(el('text',{class:'atom-label',x:a.x+26,y:a.y+18,textContent:`Atom ${aid}${ws}`}));
-      if(isExp){let ly=a.y+AHH+AP;for(const[k,ts]of[['init',atom.init],['update',atom.update]]){if(!ts.length)continue;if(k==='update'&&atom.init.length){ly+=SGY;g.appendChild(el('line',{class:'divider',x1:a.x+10,y1:ly-SGY/2,x2:a.x+a.w-10,y2:ly-SGY/2}));}const op=secOpen[`${aid}_${k}`]!==false;const st=el('text',{class:'toggle',x:a.x+12,y:ly+14,textContent:`${op?'▼':'▶'} ${k} (${ts.length})`});st.addEventListener('click',e=>{e.stopPropagation();secOpen[`${aid}_${k}`]=!op;render();});g.appendChild(st);if(op){let bh=0;const ph=`a${aid}_${k}`;for(const[,p]of Object.entries(pos))if(p.phase===ph)bh=Math.max(bh,p.y+p.h-(ly+SLH));ly+=SLH+bh;}else ly+=SLH;}}
+      if(isExp){let ly=a.y+AHH+AP;for(const[k,ts]of[['init',atom.init],['update',atom.update]]){if(!ts.length)continue;if(k==='update'&&atom.init.length){ly+=SGY;g.appendChild(el('line',{class:'divider',x1:a.x+10,y1:ly-SGY/2,x2:a.x+a.w-10,y2:ly-SGY/2}));}const op=isSecOpen(aid,k);const st=el('text',{class:'toggle',x:a.x+12,y:ly+14,textContent:`${op?'▼':'▶'} ${k} (${ts.length})`});st.addEventListener('click',e=>{e.stopPropagation();secOpen[`${aid}_${k}`]=!op;render();});g.appendChild(st);if(op){let bh=0;const ph=`a${aid}_${k}`;for(const[,p]of Object.entries(pos))if(p.phase===ph)bh=Math.max(bh,p.y+p.h-(ly+SLH));ly+=SLH+bh;}else ly+=SLH;}}
       g.addEventListener('click',e=>{e.stopPropagation();setFocus('atom',aid);});
       svg.appendChild(g);grp[`a_${aid}`]=g;
     }
 
     // Terms
-    for(const[k,p]of Object.entries(pos)){if(p.isCircle)continue;const g=el('g');g.appendChild(el('rect',{class:`term-box ${p.phase.includes('init')?'init':'update'}`,x:p.x,y:p.y,width:p.w,height:p.h}));const t=td[k];const lbl=shortLabel(t);g.appendChild(el('text',{class:'term-label',x:p.x+p.w/2,y:p.y+p.h/2+4,'text-anchor':'middle',textContent:lbl}));if(t){const aid=k.match(/^a(\d+)_/);g.addEventListener('click',e=>{e.stopPropagation();setFocus('term',aid?+aid[1]:null,k);});}svg.appendChild(g);grp[`t_${k}`]=g;}
+    for(const[k,p]of Object.entries(pos)){if(p.isCircle)continue;const g=el('g');g.appendChild(el('rect',{class:`term-box ${p.phase.includes('init')?'init':'update'}`,x:p.x,y:p.y,width:p.w,height:p.h}));const t=td[k];g.appendChild(el('text',{class:'term-label',x:p.x+p.w/2,y:p.y+p.h/2+4,'text-anchor':'middle',textContent:shortLabel(t)}));if(t){const aid=k.match(/^a(\d+)_/);g.addEventListener('click',e=>{e.stopPropagation();setFocus('term',aid?+aid[1]:null,k);});}svg.appendChild(g);grp[`t_${k}`]=g;}
 
     // Circles
-    const wn=mod.wire_names||{};
-    for(const[k,p]of Object.entries(pos)){if(!p.isCircle)continue;const g=el('g');g.appendChild(el('circle',{class:`circ ${p.role}`,cx:p.x,cy:p.y,r:p.r}));const cWid=p.did||p.wid;const lbl=wn[cWid]||'';if(lbl)g.appendChild(el('text',{class:`clbl ${p.role}`,x:p.x,y:p.y-p.r-4,'text-anchor':'middle',textContent:lbl}));g.addEventListener('mouseenter',()=>hlW(cWid,true));g.addEventListener('mouseleave',()=>hlW(cWid,false));g.addEventListener('click',e=>{e.stopPropagation();setFocus('wire',null,null,cWid);});svg.appendChild(g);grp[`c_${k}`]=g;}
+    const names=wn();
+    for(const[k,p]of Object.entries(pos)){if(!p.isCircle)continue;const g=el('g');g.appendChild(el('circle',{class:`circ ${p.role}`,cx:p.x,cy:p.y,r:p.r}));const cWid=p.did||p.wid;const lbl=names[cWid]||'';if(lbl)g.appendChild(el('text',{class:'clbl',x:p.x,y:p.y-p.r-3,'text-anchor':'middle',textContent:lbl}));g.addEventListener('mouseenter',()=>hlW(cWid,true));g.addEventListener('mouseleave',()=>hlW(cWid,false));g.addEventListener('click',e=>{e.stopPropagation();setFocus('wire',null,null,cWid);});svg.appendChild(g);grp[`c_${k}`]=g;}
 
-    // ── WIRES — always drawn, visibility controlled by focus ──
+    // ── Wires ────────────────────────────────────────────────
     function addW(wid,x1,y1,x2,y2,tag,straight,aid){const d=straight?`M ${x1} ${y1} L ${x2} ${y2}`:bz(x1,y1,x2,y2);const p=el('path',{class:'wire',d,'data-wire-id':wid});if(tag)p.dataset.tag=tag;p.addEventListener('mouseenter',()=>hlW(wid,true));p.addEventListener('mouseleave',()=>hlW(wid,false));p.addEventListener('click',e=>{e.stopPropagation();setFocus('wire',null,null,wid);});svg.appendChild(p);wireEls.push({wid,el:p,tag:tag||'',aid:aid!=null?aid:null});}
 
-    // A: Module circle ↔ atom circle (non-shared wires only)
+    // A: Module circle ↔ atom circle (non-shared)
+    const ml=getModLookup();
     for(const[k,p]of Object.entries(pos)){
-      if(!p.isCircle||p.atomId===undefined)continue;
-      if(cls.shared.has(p.wid)) continue; // shared wires handled in E+F
-      // Left atom circle → find ANY left module circle that has this wire in its pair
-      if(p.side==='left'){
-        const ml=pos[`ml_${p.wid}`]; if(ml){ addW(p.wid,ml.x+ml.r,ml.y,p.x-p.r,p.y,'seg_mc_ac'); continue; }
-        // Wire might be nxt of a pair whose ltc is the module circle key
-        for(const[mk,mv]of Object.entries(pos)){ if(mk.startsWith('ml_')&&mv.isCircle&&mv.nxt===p.wid){ addW(p.wid,mv.x+mv.r,mv.y,p.x-p.r,p.y,'seg_mc_ac'); break; } }
-      } else {
-        const mr=pos[`mr_${p.wid}`]; if(mr){ addW(p.wid,p.x+p.r,p.y,mr.x-mr.r,mr.y,'seg_mc_ac'); continue; }
-        for(const[mk,mv]of Object.entries(pos)){ if(mk.startsWith('mr_')&&mv.isCircle&&mv.ltc===p.wid){ addW(p.wid,p.x+p.r,p.y,mv.x-mv.r,mv.y,'seg_mc_ac'); break; } }
-      }
+      if(!p.isCircle||p.atomId===undefined||cls.shared.has(p.wid))continue;
+      const mk=p.side==='left'?ml.l[p.wid]:ml.r[p.wid];
+      if(mk){const mc=pos[mk];if(p.side==='left')addW(p.wid,mc.x+mc.r,mc.y,p.x-p.r,p.y,'seg_mc_ac');else addW(p.wid,p.x+p.r,p.y,mc.x-mc.r,mc.y,'seg_mc_ac');}
     }
 
     // B: Atom circle ↔ terms/box
     for(const atom of mod.atoms){
-      const aid=atom.id, a=ac[aid];
+      const aid=atom.id,a=ac[aid];
       if(exp[aid]){
         for(const[pk,terms]of[['init',atom.init],['update',atom.update]]){
-          if(secOpen[`${aid}_${pk}`]===false)continue;
+          if(!isSecOpen(aid,pk))continue;
           const wr={};for(const t of terms)for(const w of t.writes)wr[w]=t.id;
-          for(const t of terms){const dst=pos[t.id];if(!dst)continue;for(const w of t.reads){if(wr[w]){}else{const ck=pos[`cl_${aid}_${w}`];if(ck)addW(w,ck.x+ck.r,ck.y,dst.x,dst.y+dst.h/2,'seg_ac_term',false,aid);}}}
+          for(const t of terms){const dst=pos[t.id];if(!dst)continue;for(const w of t.reads){if(!wr[w]){const ck=pos[`cl_${aid}_${w}`];if(ck)addW(w,ck.x+ck.r,ck.y,dst.x,dst.y+dst.h/2,'seg_ac_term',false,aid);}}}
           for(const t of terms){const src=pos[t.id];if(!src)continue;for(const w of t.writes){if(terms.some(t2=>t2.reads.includes(w)))continue;const ck=pos[`cr_${aid}_${w}`];if(ck)addW(w,src.x+src.w,src.y+src.h/2,ck.x-ck.r,ck.y,'seg_ac_term',false,aid);}}
         }
       } else {
-        for(const[k,p]of Object.entries(pos)){
+        for(const[kk,p]of Object.entries(pos)){
           if(!p.isCircle||p.atomId!==aid)continue;
           if(p.side==='left')addW(p.wid,p.x+p.r,p.y,a.x,a.y+a.h/2,'seg_ac_box',true,aid);
           else addW(p.wid,a.x+a.w,a.y+a.h/2,p.x-p.r,p.y,'seg_ac_box',true,aid);
@@ -213,55 +280,44 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     for(const atom of mod.atoms){
       if(!exp[atom.id])continue;const aid=atom.id;
       for(const[pk,terms]of[['init',atom.init],['update',atom.update]]){
-        if(secOpen[`${aid}_${pk}`]===false)continue;
+        if(!isSecOpen(aid,pk))continue;
         const wr={};for(const t of terms)for(const w of t.writes)wr[w]=t.id;
         for(const t of terms){const dst=pos[t.id];if(!dst)continue;for(const w of t.reads){if(wr[w]){const src=pos[wr[w]];if(src)addW(w,src.x+src.w,src.y+src.h/2,dst.x,dst.y+dst.h/2,'seg_internal',false,aid);}}}
       }
     }
 
-    // D: Pass-through lines (atom circle left→right, shown in module view to bypass circle)
+    // D: Bypass lines (atom circle pass-through, shown in module view)
     for(const[k,p]of Object.entries(pos)){
-      if(!p.isCircle||p.modCircle)continue; // atom circles only
+      if(!p.isCircle||p.modCircle)continue;
       addW(p.wid,p.x-p.r,p.y,p.x+p.r,p.y,'seg_bypass',true);
     }
 
-    // E: Shared wires between atoms (atom circle ↔ atom circle)
-    // F: Module circle connects to midpoint of shared wire
+    // E+F: Shared wires (atom↔atom) + T-junction to module circle
     for(const wid of cls.shared){
       let srcAid=null,dstAid=null;
       for(const a of mod.atoms){if(a.ctrl.some(w=>w.id===wid))srcAid=a.id;if([...a.read,...a.wait].some(w=>w.id===wid))dstAid=a.id;}
       if(srcAid===null||dstAid===null)continue;
-      const srcCk=pos[`cr_${srcAid}_${wid}`], dstCk=pos[`cl_${dstAid}_${wid}`];
+      const srcCk=pos[`cr_${srcAid}_${wid}`],dstCk=pos[`cl_${dstAid}_${wid}`];
       if(srcCk&&dstCk){
         addW(wid,srcCk.x+srcCk.r,srcCk.y,dstCk.x-dstCk.r,dstCk.y,'seg_shared');
-        // T-junction: module circle connects to midpoint of shared segment
-        const midX=(srcCk.x+srcCk.r+dstCk.x-dstCk.r)/2, midY=(srcCk.y+dstCk.y)/2;
-        // Right module circle (nxt wire — written by src atom)
-        const mr=pos[`mr_${wid}`]; if(mr) addW(wid,midX,midY,mr.x-mr.r,mr.y,'seg_mc_shared');
+        const midX=(srcCk.x+srcCk.r+dstCk.x-dstCk.r)/2,midY=(srcCk.y+dstCk.y)/2;
+        const mr=pos[`mr_${wid}`];if(mr)addW(wid,midX,midY,mr.x-mr.r,mr.y,'seg_mc_shared');
       }
     }
 
-    // ── FOCUS: control visibility ────────────────────────────
+    // ── Focus visibility ─────────────────────────────────────
     const focAtom=focus.atom;
 
-    // Module view: hide atom circles + bypass visible
-    // Other views: atom circles visible (fading handled below), bypass hidden
-    for(const[k,p]of Object.entries(pos)){
-      if(!p.isCircle||p.modCircle)continue;
-      const g=grp[`c_${k}`];if(!g)continue;
-      g.style.display=(focus.level==='module')?'none':'';
-    }
-    for(const w of wireEls){
-      if(w.tag==='seg_bypass') w.el.style.display=(focus.level==='module')?'':'none';
-      // seg_mc_ac and seg_mc_shared are always visible (never hidden)
-    }
+    // Atom circles: hidden in module view, visible otherwise
+    for(const[k,p]of Object.entries(pos)){if(!p.isCircle||p.modCircle)continue;const g=grp[`c_${k}`];if(g)g.style.display=focus.level==='module'?'none':'';}
+    // Bypass: visible only in module view
+    for(const w of wireEls){if(w.tag==='seg_bypass')w.el.style.display=focus.level==='module'?'':'none';}
 
-    // Fading for non-module views
+    // Fading
     if(focus.level!=='module'){
       for(const g of Object.values(grp))g.classList.add('faded');
       for(const w of wireEls)if(w.el.style.display!=='none')w.el.classList.add('faded');
       const show=g=>{if(g)g.classList.remove('faded');};
-      const hl=g=>{if(g){g.classList.remove('faded');g.classList.add('highlighted');}};
 
       show(grp['mod']);
 
@@ -271,18 +327,18 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
         show(grp[`a_${focAtom}`]);
         for(const[k,p]of Object.entries(pos))if(!p.isCircle&&p.phase&&p.phase.startsWith(`a${focAtom}_`))show(grp[`t_${k}`]);
         for(const[k,p]of Object.entries(pos))if(p.isCircle&&p.atomId===focAtom)show(grp[`c_${k}`]);
-        const atomWids=new Set();
-        for(const w of[...atom.ctrl,...atom.read,...atom.wait])atomWids.add(w.id);
-        for(const t of[...atom.init,...atom.update])for(const w of[...t.reads,...t.writes])atomWids.add(w);
         for(const w of wireEls)if(w.aid===focAtom&&(w.tag==='seg_ac_term'||w.tag==='seg_ac_box'||w.tag==='seg_internal'))show(w.el);
       }
       else if(focus.level==='term'){
-        const tid=focus.term, t=td[tid];
-        if(t){show(grp[`t_${tid}`]);const aid=tid.match(/^a(\d+)_/);if(aid)show(grp[`a_${+aid[1]}`]);
-        const cw=new Set([...t.reads,...t.writes]);
-        const tAid=tid.match(/^a(\d+)_/)?+tid.match(/^a(\d+)_/)[1]:null;
-        for(const w of wireEls)if(cw.has(w.wid)&&w.aid===tAid&&(w.tag==='seg_ac_term'||w.tag==='seg_internal')){show(w.el);w.el.classList.add('highlighted');}
-        for(const[k,p]of Object.entries(pos))if(p.isCircle&&p.atomId!=null&&cw.has(p.wid))show(grp[`c_${k}`]);}
+        const tid=focus.term,t=td[tid];
+        if(t){
+          show(grp[`t_${tid}`]);
+          const aidM=tid.match(/^a(\d+)_/),tAid=aidM?+aidM[1]:null;
+          if(tAid!=null)show(grp[`a_${tAid}`]);
+          const cw=new Set([...t.reads,...t.writes]);
+          for(const w of wireEls)if(cw.has(w.wid)&&w.aid===tAid&&(w.tag==='seg_ac_term'||w.tag==='seg_internal')){show(w.el);w.el.classList.add('highlighted');}
+          for(const[k,p]of Object.entries(pos))if(p.isCircle&&p.atomId!=null&&cw.has(p.wid))show(grp[`c_${k}`]);
+        }
       }
       else if(focus.level==='wire'){
         const wid=focus.wire;
@@ -293,34 +349,23 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
       }
     }
 
-    updateBC(); showFocusDetail();
+    updateBC();showFocusDetail();syncToggles();
   }
 
+  // ── Focus & navigation ─────────────────────────────────────
   function setFocus(l,a,t,w){focus={level:l,atom:a!=null?a:null,term:t||null,wire:w!=null?w:null};render();}
   function updateBC(){const p=[`<span style="cursor:pointer" onclick="document.getElementById('canvas').dispatchEvent(new CustomEvent('nav',{detail:'module'}))">Module</span>`];if(focus.atom!=null)p.push(`Atom ${focus.atom}`);if(focus.term)p.push('Term');if(focus.wire!=null)p.push(`Wire w${focus.wire}`);bcEl.innerHTML=p.join(' › ');}
   svg.addEventListener('nav',e=>{if(e.detail==='module')setFocus('module');});
   svg.addEventListener('focusWire',e=>{setFocus('wire',focus.atom,focus.term,e.detail);});
   svg.addEventListener('focusTerm',e=>{const aid=e.detail.match(/^a(\d+)_/);setFocus('term',aid?+aid[1]:focus.atom,e.detail);});
 
-  function wn(){return MOD&&MOD.wire_names||{};}
+  // ── Detail panel helpers ───────────────────────────────────
   function wlbl(wid){const n=wn()[wid];return n?`${n} (w${wid})`:`w${wid}`;}
   function wlink(wid){return`<a href="#" style="color:#58a6ff;text-decoration:none;" onclick="event.preventDefault();document.getElementById('canvas').dispatchEvent(new CustomEvent('focusWire',{detail:${wid}}))">${wlbl(wid)}</a>`;}
   function tlink(tid,label){return`<a href="#" style="color:#58a6ff;text-decoration:none;" onclick="event.preventDefault();document.getElementById('canvas').dispatchEvent(new CustomEvent('focusTerm',{detail:'${tid}'}))">${label}</a>`;}
-
-  // Find dtype for a wire
-  function wdtype(wid){
-    for(const list of[MOD.extl,MOD.intf,MOD.prvt])for(const p of list)if(p.ltc===wid||p.nxt===wid)return p.dtype;
-    for(const a of MOD.atoms){for(const w of[...a.ctrl,...a.read,...a.wait])if(w.id===wid)return w.dtype;}
-    return null;
-  }
-
-  // Find visibility for a wire
-  function wvis(wid){
-    for(const p of MOD.extl)if(p.ltc===wid||p.nxt===wid)return'external';
-    for(const p of MOD.intf)if(p.ltc===wid||p.nxt===wid)return'interface';
-    for(const p of MOD.prvt)if(p.ltc===wid||p.nxt===wid)return'private';
-    return'temp';
-  }
+  function wdtype(wid){for(const list of[MOD.extl,MOD.intf,MOD.prvt])for(const p of list)if(p.ltc===wid||p.nxt===wid)return p.dtype;for(const a of MOD.atoms)for(const w of[...a.ctrl,...a.read,...a.wait])if(w.id===wid)return w.dtype;return null;}
+  function wvis(wid){for(const p of MOD.extl)if(p.ltc===wid||p.nxt===wid)return'external';for(const p of MOD.intf)if(p.ltc===wid||p.nxt===wid)return'interface';for(const p of MOD.prvt)if(p.ltc===wid||p.nxt===wid)return'private';return'temp';}
+  function findTd(tid){for(const a of MOD.atoms)for(const ts of[a.init,a.update]){const t=ts.find(t=>t.id===tid);if(t)return t;}return null;}
 
   function showFocusDetail(){
     if(focus.level==='atom'&&focus.atom!=null){const a=MOD.atoms.find(a=>a.id===focus.atom);if(a)showAtomDetail(a);}
@@ -329,73 +374,49 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     else detail.innerHTML='<p style="color:#8b949e;">Click an element to inspect.</p>';
   }
 
-  function findTd(tid){for(const a of MOD.atoms)for(const ts of[a.init,a.update]){const t=ts.find(t=>t.id===tid);if(t)return t;}return null;}
-
   function showTermDetail(t,tid){
-    const phase=tid.includes('init')?'init':'update';
-    const sl=shortLabel(t);
-    // Value section: show for Tensor, Const, Linear
+    const phase=tid.includes('init')?'init':'update',sl=shortLabel(t);
     let valHtml='';
     if(t.label.startsWith('Tensor('))valHtml=`<div class="section"><div class="section-title">Value</div><p style="font-family:monospace;font-size:11px;word-break:break-all;">${t.label}</p></div>`;
     else if(t.label.startsWith('Const:'))valHtml=`<div class="section"><div class="section-title">Value</div><p style="font-family:monospace;font-size:11px;">${t.label.replace('Const: ','')}</p></div>`;
     else if(t.label==='Linear'&&t.reads.length===3){
-      // Linear reads: [input, weight, bias] — find the Tensor terms that produce weight and bias
-      const weightTerm=findTd(Object.keys(td).find(k=>td[k].writes.includes(t.reads[1])));
-      const biasTerm=findTd(Object.keys(td).find(k=>td[k].writes.includes(t.reads[2])));
-      valHtml=`<div class="section"><div class="section-title">Parameters</div>
-        <p style="font-family:monospace;font-size:11px;word-break:break-all;"><b>weight:</b> ${weightTerm?weightTerm.label:'?'}</p>
-        <p style="font-family:monospace;font-size:11px;word-break:break-all;"><b>bias:</b> ${biasTerm?biasTerm.label:'?'}</p></div>`;
+      const wt=findTd(Object.keys(MOD.atoms.reduce((a,at)=>[...a,...at.init,...at.update],[]).reduce((m,tt)=>{for(const w of tt.writes)m[w]=tt.id;return m;},{})).find(k=>+k===t.reads[1]));
+      const bt=findTd(Object.keys(MOD.atoms.reduce((a,at)=>[...a,...at.init,...at.update],[]).reduce((m,tt)=>{for(const w of tt.writes)m[w]=tt.id;return m;},{})).find(k=>+k===t.reads[2]));
+      // Simpler: search all terms for the one writing the weight/bias wire
+      let weightLabel='?',biasLabel='?';
+      for(const a of MOD.atoms)for(const ts of[a.init,a.update])for(const tt of ts){if(tt.writes.includes(t.reads[1]))weightLabel=tt.label;if(tt.writes.includes(t.reads[2]))biasLabel=tt.label;}
+      valHtml=`<div class="section"><div class="section-title">Parameters</div><p style="font-family:monospace;font-size:11px;word-break:break-all;"><b>weight:</b> ${weightLabel}</p><p style="font-family:monospace;font-size:11px;word-break:break-all;"><b>bias:</b> ${biasLabel}</p></div>`;
     }
     detail.innerHTML=`
-      <div class="section"><div class="section-title">${sl} <span style="color:#8b949e">(${phase})</span></div>
-        ${t.dtype?`<p style="color:#8b949e;font-size:11px;">Output dtype: ${t.dtype}</p>`:''}</div>
-      <div class="section"><div class="section-title">Reads</div>
-        <ul class="wire-list">${t.reads.length?t.reads.map(w=>`<li>${wlink(w)}</li>`).join(''):'<li style="color:#8b949e">none</li>'}</ul></div>
-      <div class="section"><div class="section-title">Writes</div>
-        <ul class="wire-list">${t.writes.map(w=>`<li>${wlink(w)}</li>`).join('')}</ul></div>
-      ${valHtml}`;
+      <div class="section"><div class="section-title">${sl} <span style="color:#8b949e">(${phase})</span></div>${t.dtype?`<p style="color:#8b949e;font-size:11px;">Output dtype: ${t.dtype}</p>`:''}</div>
+      <div class="section"><div class="section-title">Reads</div><ul class="wire-list">${t.reads.length?t.reads.map(w=>`<li>${wlink(w)}</li>`).join(''):'<li style="color:#8b949e">none</li>'}</ul></div>
+      <div class="section"><div class="section-title">Writes</div><ul class="wire-list">${t.writes.map(w=>`<li>${wlink(w)}</li>`).join('')}</ul></div>${valHtml}`;
   }
 
   function showWireDetail(wid){
-    const name=wn()[wid], dtype=wdtype(wid), vis=wvis(wid);
+    const name=wn()[wid],dtype=wdtype(wid),vis=wvis(wid);
     const writers=[],readers=[];
-    for(const a of MOD.atoms){
-      for(const[phase,ts]of[['init',a.init],['update',a.update]])for(const t of ts){
-        if(t.writes.includes(wid))writers.push({t,phase,aid:a.id});
-        if(t.reads.includes(wid))readers.push({t,phase,aid:a.id});
-      }
-    }
+    for(const a of MOD.atoms)for(const[phase,ts]of[['init',a.init],['update',a.update]])for(const t of ts){if(t.writes.includes(wid))writers.push({t,phase,aid:a.id});if(t.reads.includes(wid))readers.push({t,phase,aid:a.id});}
     detail.innerHTML=`
-      <div class="section"><div class="section-title">Wire w${wid}${name?` — ${name}`:''}</div>
-        <ul class="wire-list">
-          <li><b>Visibility:</b> ${vis}</li>
-          ${dtype?`<li><b>Dtype:</b> ${dtype}</li>`:''}
-          ${name?`<li><b>Name:</b> ${name}</li>`:''}
-        </ul></div>
-      <div class="section"><div class="section-title">Written by</div>
-        <ul class="wire-list">${writers.length?writers.map(w=>`<li>${tlink(w.t.id,w.t.label)} <span style="color:#8b949e">(${w.phase}, Atom ${w.aid})</span></li>`).join(''):'<li style="color:#8b949e">none</li>'}</ul></div>
-      <div class="section"><div class="section-title">Read by</div>
-        <ul class="wire-list">${readers.length?readers.map(w=>`<li>${tlink(w.t.id,w.t.label)} <span style="color:#8b949e">(${w.phase}, Atom ${w.aid})</span></li>`).join(''):'<li style="color:#8b949e">none</li>'}</ul></div>`;
+      <div class="section"><div class="section-title">Wire w${wid}${name?` — ${name}`:''}</div><ul class="wire-list"><li><b>Visibility:</b> ${vis}</li>${dtype?`<li><b>Dtype:</b> ${dtype}</li>`:''}${name?`<li><b>Name:</b> ${name}</li>`:''}</ul></div>
+      <div class="section"><div class="section-title">Written by</div><ul class="wire-list">${writers.length?writers.map(w=>`<li>${tlink(w.t.id,w.t.label)} <span style="color:#8b949e">(${w.phase}, Atom ${w.aid})</span></li>`).join(''):'<li style="color:#8b949e">none</li>'}</ul></div>
+      <div class="section"><div class="section-title">Read by</div><ul class="wire-list">${readers.length?readers.map(w=>`<li>${tlink(w.t.id,w.t.label)} <span style="color:#8b949e">(${w.phase}, Atom ${w.aid})</span></li>`).join(''):'<li style="color:#8b949e">none</li>'}</ul></div>`;
   }
+
   function showAtomDetail(a){
     const fmtT=t=>{const r=t.reads.length?t.reads.map(w=>wlink(w)).join(', ')+' → ':'';return`<li>${r}<b>${tlink(t.id,t.label)}</b> → ${t.writes.map(w=>wlink(w)).join(', ')}</li>`;};
     detail.innerHTML=`
-      <div class="section"><div class="section-title">Atom ${a.id}</div>
-        <ul class="wire-list">
-          <li><b>Ctrl:</b> ${a.ctrl.map(w=>wlink(w.id)).join(' ')}</li>
-          <li><b>Awaits:</b> ${a.wait.length?a.wait.map(w=>wlink(w.id)).join(' '):'—'}</li>
-          <li><b>Reads:</b> ${a.read.map(w=>wlink(w.id)).join(' ')}</li>
-        </ul></div>
-      <div class="section"><div class="section-title">Init (${a.init.length})</div>
-        <ul class="wire-list">${a.init.map(fmtT).join('')}</ul></div>
-      <div class="section"><div class="section-title">Update (${a.update.length})</div>
-        <ul class="wire-list">${a.update.map(fmtT).join('')}</ul></div>`;
+      <div class="section"><div class="section-title">Atom ${a.id}</div><ul class="wire-list"><li><b>Ctrl:</b> ${a.ctrl.map(w=>wlink(w.id)).join(' ')}</li><li><b>Awaits:</b> ${a.wait.length?a.wait.map(w=>wlink(w.id)).join(' '):'—'}</li><li><b>Reads:</b> ${a.read.map(w=>wlink(w.id)).join(' ')}</li></ul></div>
+      <div class="section"><div class="section-title">Init (${a.init.length})</div><ul class="wire-list">${a.init.map(fmtT).join('')}</ul></div>
+      <div class="section"><div class="section-title">Update (${a.update.length})</div><ul class="wire-list">${a.update.map(fmtT).join('')}</ul></div>`;
   }
 
-  function hlW(wid,on){svg.querySelectorAll(`.wire[data-wire-id="${wid}"]`).forEach(e=>e.classList.toggle('hover-hl',on));const wn=MOD&&MOD.wire_names||{};ttip.textContent=on?(wn[wid]||`w${wid}`):'';ttip.style.display=on?'block':'none';}
+  // ── Interaction ────────────────────────────────────────────
+  function hlW(wid,on){svg.querySelectorAll(`.wire[data-wire-id="${wid}"]`).forEach(e=>e.classList.toggle('hover-hl',on));const n=wn();ttip.textContent=on?(n[wid]||`w${wid}`):'';ttip.style.display=on?'block':'none';}
   svg.addEventListener('mousemove',e=>{ttip.style.left=(e.clientX+12)+'px';ttip.style.top=(e.clientY-8)+'px';});
   svg.addEventListener('click',()=>{if(focus.level==='wire')setFocus('atom',focus.atom);else if(focus.level==='term')setFocus('atom',focus.atom);else if(focus.level==='atom')setFocus('module');});
 
+  // ── Pan & Zoom ─────────────────────────────────────────────
   let pan=false,drag=false,sp={x:0,y:0};
   svg.addEventListener('wheel',e=>{e.preventDefault();const s=e.deltaY>0?1.1:0.9,r=svg.getBoundingClientRect();const mx=(e.clientX-r.left)/r.width*vb.w+vb.x,my=(e.clientY-r.top)/r.height*vb.h+vb.y;vb.w*=s;vb.h*=s;vb.x=mx-(e.clientX-r.left)/r.width*vb.w;vb.y=my-(e.clientY-r.top)/r.height*vb.h;svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`);});
   svg.addEventListener('mousedown',e=>{pan=true;drag=false;sp={x:e.clientX,y:e.clientY};});
