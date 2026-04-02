@@ -151,6 +151,150 @@ def test_inf_counter_generates_lean():
     )
 
 
+def _make_P(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
+    """Property P: x = 0, i.e., [1,0,0] @ state == [[0]]."""
+    s = ctrl[0][1]  # state' : Mat Int 3 1
+
+    row_x = Wire(Int(1, 3))
+    x = Wire(Int(1, 1))
+    zero = Wire(Int(1, 1))
+    out = Wire(Bool(1, 1))
+
+    return [
+        Term(it.Tensor(torch.tensor([[1, 0, 0]])), write=[row_x]),
+        Term(it.MatMul(), write=[x], read=[row_x, s]),
+        Term(it.Tensor(torch.tensor([[0]])), write=[zero]),
+        Term(it.Eq(), write=[out], read=[x, zero]),
+    ]
+
+
+def _make_inv(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
+    """Invariant: x >= 0 ∧ (x <= y ∨ x <= z)."""
+    s = ctrl[0][1]  # state' : Mat Int 3 1
+
+    # Extract x, y, z
+    row_x = Wire(Int(1, 3))
+    row_y = Wire(Int(1, 3))
+    row_z = Wire(Int(1, 3))
+    x = Wire(Int(1, 1))
+    y = Wire(Int(1, 1))
+    z = Wire(Int(1, 1))
+
+    zero = Wire(Int(1, 1))
+    x_ge_0 = Wire(Bool(1, 1))  # x >= 0
+    x_le_y = Wire(Bool(1, 1))  # x <= y
+    x_le_z = Wire(Bool(1, 1))  # x <= z
+    disj = Wire(Bool(1, 1))  # x <= y ∨ x <= z
+    out = Wire(Bool(1, 1))  # x >= 0 ∧ (x <= y ∨ x <= z)
+
+    return [
+        # Extract x, y, z
+        Term(it.Tensor(torch.tensor([[1, 0, 0]])), write=[row_x]),
+        Term(it.MatMul(), write=[x], read=[row_x, s]),
+        Term(it.Tensor(torch.tensor([[0, 1, 0]])), write=[row_y]),
+        Term(it.MatMul(), write=[y], read=[row_y, s]),
+        Term(it.Tensor(torch.tensor([[0, 0, 1]])), write=[row_z]),
+        Term(it.MatMul(), write=[z], read=[row_z, s]),
+        # x >= 0
+        Term(it.Tensor(torch.tensor([[0]])), write=[zero]),
+        Term(it.Ge(), write=[x_ge_0], read=[x, zero]),
+        # x <= y ∨ x <= z
+        Term(it.Le(), write=[x_le_y], read=[x, y]),
+        Term(it.Le(), write=[x_le_z], read=[x, z]),
+        Term(it.Or(), write=[disj], read=[x_le_y, x_le_z]),
+        # conjunction
+        Term(it.And(), write=[out], read=[x_ge_0, disj]),
+    ]
+
+
+def _make_init_pre(extl: list[tuple[Wire, Wire]]) -> list[Term]:
+    """init_pre: y0 >= 0 ∧ z0 >= 0 (external inputs are non-negative)."""
+    e = extl[0][1]  # extl' : Mat Int 2 1
+
+    # Extract y0, z0
+    row_y0 = Wire(Int(1, 2))
+    row_z0 = Wire(Int(1, 2))
+    y0 = Wire(Int(1, 1))
+    z0 = Wire(Int(1, 1))
+
+    zero = Wire(Int(1, 1))
+    y0_ge_0 = Wire(Bool(1, 1))
+    z0_ge_0 = Wire(Bool(1, 1))
+    out = Wire(Bool(1, 1))
+
+    return [
+        Term(it.Tensor(torch.tensor([[1, 0]])), write=[row_y0]),
+        Term(it.MatMul(), write=[y0], read=[row_y0, e]),
+        Term(it.Tensor(torch.tensor([[0, 1]])), write=[row_z0]),
+        Term(it.MatMul(), write=[z0], read=[row_z0, e]),
+        Term(it.Tensor(torch.tensor([[0]])), write=[zero]),
+        Term(it.Ge(), write=[y0_ge_0], read=[y0, zero]),
+        Term(it.Ge(), write=[z0_ge_0], read=[z0, zero]),
+        Term(it.And(), write=[out], read=[y0_ge_0, z0_ge_0]),
+    ]
+
+
+def _make_ranking(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
+    """Ranking function: if P(s) then 0 else max(s 1 0, s 2 0) - s 0 0.
+
+    i.e., if x = 0 then 0 else max(y, z) - x.
+    """
+    s = ctrl[0][1]  # state' : Mat Int 3 1
+
+    # Extract x, y, z
+    row_x = Wire(Int(1, 3))
+    row_y = Wire(Int(1, 3))
+    row_z = Wire(Int(1, 3))
+    x = Wire(Int(1, 1))
+    y = Wire(Int(1, 1))
+    z = Wire(Int(1, 1))
+
+    # P(s): x == 0
+    zero = Wire(Int(1, 1))
+    p = Wire(Bool(1, 1))
+
+    # max(y, z) = if y >= z then y else z
+    y_ge_z = Wire(Bool(1, 1))
+    max_yz = Wire(Int(1, 1))
+
+    # max(y, z) - x + 1
+    diff = Wire(Int(1, 1))
+    one = Wire(Int(1, 1))
+    diff_plus_1 = Wire(Int(1, 1))
+
+    # if P then 0 else diff + 1
+    ite_result = Wire(Int(1, 1))
+
+    # Extract scalar from Mat Int 1 1 and convert to Nat
+    scalar = Wire(Int(1))
+    out = Wire(Int(1))
+
+    return [
+        # Extract x, y, z
+        Term(it.Tensor(torch.tensor([[1, 0, 0]])), write=[row_x]),
+        Term(it.MatMul(), write=[x], read=[row_x, s]),
+        Term(it.Tensor(torch.tensor([[0, 1, 0]])), write=[row_y]),
+        Term(it.MatMul(), write=[y], read=[row_y, s]),
+        Term(it.Tensor(torch.tensor([[0, 0, 1]])), write=[row_z]),
+        Term(it.MatMul(), write=[z], read=[row_z, s]),
+        # P(s): x == 0
+        Term(it.Tensor(torch.tensor([[0]])), write=[zero]),
+        Term(it.Eq(), write=[p], read=[x, zero]),
+        # max(y, z) = if y >= z then y else z
+        Term(it.Ge(), write=[y_ge_z], read=[y, z]),
+        Term(it.Ite(), write=[max_yz], read=[y_ge_z, y, z]),
+        # max(y, z) - x + 1
+        Term(it.Sub(), write=[diff], read=[max_yz, x]),
+        Term(it.Tensor(torch.tensor([[1]])), write=[one]),
+        Term(it.Add(), write=[diff_plus_1], read=[diff, one]),
+        # if P then 0 else max(y,z) - x + 1
+        Term(it.Ite(), write=[ite_result], read=[p, zero, diff_plus_1]),
+        # Extract scalar and convert to Nat
+        Term(it.TensorGet(), write=[scalar], read=[ite_result]),
+        Term(it.ToUnsigned(), write=[out], read=[scalar]),
+    ]
+
+
 def test_counter_generates_lean():
     m = _make_counter()
 
@@ -159,4 +303,8 @@ def test_counter_generates_lean():
         module=m,
         project_name="Counter",
         executable=True,
+        p_terms=_make_P(m.ctrl),
+        inv_terms=_make_inv(m.ctrl),
+        init_pre_terms=_make_init_pre(m.extl),
+        ranking_terms=_make_ranking(m.ctrl),
     )
