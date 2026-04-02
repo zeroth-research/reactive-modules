@@ -165,7 +165,7 @@ macro "simp_mod" : tactic =>
 
     # simp_inv tactic — reduces module defs then solves CNF goals
     # Split into two phases: (1) unfold module wrappers, (2) simplify arithmetic
-    arith_lemmas = "init, update, inv, init_pre, update_pre"
+    arith_lemmas = "init, update, inv, init_pre, update_pre, P, ranking"
     if const_list:
         arith_lemmas += f",\n               {const_list}"
     arith_lemmas += (
@@ -200,7 +200,8 @@ macro "simp_inv" : tactic =>
           | (left; simp_all; omega) | (right; simp_all; omega)
           | (right; right; omega) | (right; right; simp_all; omega)
       | (split <;> simp_all <;> omega)
-      | (split <;> split <;> simp_all <;> omega)))
+      | (split <;> split <;> simp_all <;> omega)
+      | (split <;> split <;> split <;> simp_all <;> omega)))
 """)
 
     # init_inv theorem
@@ -247,17 +248,8 @@ theorem hrank : ∀ s s', inv s → ¬(P s) → (∃ l, lts.Tr s l s') →
     simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at htr
     obtain ⟨l, hpre, heq⟩ := htr
     rw [← heq]
-    unfold ranking P at *
-    unfold inv at *
-    try simp [RM, ReactiveModule.update]
-    first
-      | contradiction
-      | simp at hP
-        unfold update
-        simp_mod
-   -- simp only [RM, ReactiveModule.update]
-   -- unfold update
-   -- simp_mod
+    try simp_inv
+    all_goals sorry
 
 def buchi := rule_buchi
   lts
