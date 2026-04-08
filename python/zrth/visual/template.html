@@ -32,13 +32,12 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
 .term-box.update { fill: #1f3d2a; stroke: #3fb950; }
 .term-box:hover { stroke-width: 2; }
 .term-label { fill: #c9d1d9; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; pointer-events: none; }
-.divider { stroke: #30363d; stroke-width: 1; stroke-dasharray: 4 3; }
 .toggle { fill: #8b949e; font-size: 10px; cursor: pointer; }
 .toggle:hover { fill: #e6edf3; }
 
 .circ { stroke-width: 1.5; cursor: pointer; }
-.circ.extl { fill: #58a6ff; stroke: #58a6ff; } .circ.intf { fill: #d2a838; stroke: #d2a838; } .circ.prvt { fill: #f85149; stroke: #f85149; }
-.circ.wait { fill: #a371f7; stroke: #a371f7; } .circ.read { fill: #3fb950; stroke: #3fb950; } .circ.ctrl { fill: #d2a838; stroke: #d2a838; }
+.circ.extl { fill: #233ffa; stroke: #233ffa; } .circ.intf { fill: #ffff49; stroke: #ffff49; } .circ.prvt { fill: #ff4343; stroke: #ff4343; }
+.circ.wait { fill: #ad6fe6; stroke: #ad6fe6; } .circ.read { fill: #4cff55; stroke: #4cff55; } .circ.ctrl { fill: #ffb730; stroke: #ffb730; }
 .clbl { font-size: 9px; font-family: 'SF Mono', 'Fira Code', monospace; pointer-events: none; fill: #e6edf3; }
 
 .wire { fill: none; stroke: #6e7681; stroke-width: 1.5; opacity: 0.5; }
@@ -60,7 +59,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   <div style="display:inline-block;position:relative;">
     <span id="sec-label" class="dd-label">init ▾</span>
     <div id="sec-menu" class="dd-menu">
-      <div data-val="0">init</div><div data-val="1">update</div><div data-val="2">both</div>
+      <div data-val="0">init</div><div data-val="1">update</div>
     </div>
   </div>
   <div style="display:inline-block;position:relative;">
@@ -80,37 +79,29 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   const svg=document.getElementById('canvas'), detail=document.getElementById('detail-content');
   const statusEl=document.getElementById('status'), bcEl=document.getElementById('breadcrumb'), ttip=document.getElementById('tooltip');
   let MOD=null, vb={x:0,y:0,w:800,h:600}, rendered=false;
-  const exp={}, secOpen={};
+  const exp={};
   let focus={level:'module',atom:null,term:null,wire:null};
-  let secMode=0;
+  let secMode=0; // 0=init, 1=update
 
   // ── Dropdowns ──────────────────────────────────────────────
   const secLabel=document.getElementById('sec-label'), secMenu=document.getElementById('sec-menu');
   const expLabel=document.getElementById('exp-label'), expMenu=document.getElementById('exp-menu');
-  const secNames={0:'init',1:'update',2:'both'};
+  const secNames={0:'init',1:'update'};
 
   secLabel.addEventListener('click',e=>{e.stopPropagation();secMenu.style.display=secMenu.style.display==='none'?'block':'none';expMenu.style.display='none';});
   expLabel.addEventListener('click',e=>{e.stopPropagation();expMenu.style.display=expMenu.style.display==='none'?'block':'none';secMenu.style.display='none';});
   document.addEventListener('click',()=>{secMenu.style.display='none';expMenu.style.display='none';});
 
   secMenu.querySelectorAll('[data-val]').forEach(d=>d.addEventListener('click',e=>{
-    e.stopPropagation();secMode=+d.dataset.val;for(const k of Object.keys(secOpen))delete secOpen[k];secMenu.style.display='none';render();
+    e.stopPropagation();secMode=+d.dataset.val;secMenu.style.display='none';render();
   }));
   expMenu.querySelectorAll('[data-val]').forEach(d=>d.addEventListener('click',e=>{
-    e.stopPropagation();const expand=d.dataset.val==='expand';if(MOD)for(const a of MOD.atoms)exp[a.id]=expand;for(const k of Object.keys(secOpen))delete secOpen[k];expMenu.style.display='none';render();
+    e.stopPropagation();const expand=d.dataset.val==='expand';if(MOD)for(const a of MOD.atoms)exp[a.id]=expand;expMenu.style.display='none';render();
   }));
 
   function syncToggles(){
     if(!MOD)return;
-    const expanded=MOD.atoms.filter(a=>exp[a.id]);
-    let secText='- - -';
-    if(!expanded.length)secText=secNames[secMode];
-    else{
-      let ai=true,au=true,ab=true;
-      for(const a of expanded){const i=isSecOpen(a.id,'init'),u=isSecOpen(a.id,'update');if(!i||u)ai=false;if(i||!u)au=false;if(!i||!u)ab=false;}
-      if(ai)secText='init';else if(au)secText='update';else if(ab)secText='both';
-    }
-    secLabel.textContent=secText+' ▾';
+    secLabel.textContent=secNames[secMode]+' ▾';
     const allExp=MOD.atoms.every(a=>exp[a.id]),allCol=MOD.atoms.every(a=>!exp[a.id]);
     expLabel.textContent=(allExp?'expand all':allCol?'collapse all':'- - -')+' ▾';
   }
@@ -125,15 +116,6 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   function el(tag,a){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);if(a)for(const[k,v]of Object.entries(a))k==='textContent'?e.textContent=v:e.setAttribute(k,v);return e;}
   function bz(x1,y1,x2,y2){const c=(x1+x2)/2;return`M ${x1} ${y1} C ${c} ${y1}, ${c} ${y2}, ${x2} ${y2}`;}
   function wn(){return MOD&&MOD.wire_names||{};}
-
-  function isSecOpen(aid,k){
-    const key=`${aid}_${k}`;
-    if(secOpen[key]!==undefined)return secOpen[key];
-    if(secMode===0)return k==='init';
-    if(secMode===1)return k==='update';
-    return true;
-  }
-
   function shortLabel(t){
     if(!t)return'?';
     const l=t.label, dt=t.dtype, sd=dt?dt.replace(/\(.*\)/,''):'';
@@ -168,19 +150,8 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     const td={};for(const a of mod.atoms)for(const ts of[a.init,a.update])for(const t of ts)td[t.id]=t;
     const pos={},ac={},grp={},wireEls=[];
 
-    // Build module circle lookup: wire ID → module circle key
-    // (built after circles are placed, used by section A)
-    let modLookup=null;
-    function getModLookup(){
-      if(modLookup)return modLookup;
-      modLookup={l:{},r:{}};
-      for(const[k,p]of Object.entries(pos)){
-        if(!p.isCircle||!p.modCircle)continue;
-        if(k.startsWith('ml_')){modLookup.l[p.ltc]=k;modLookup.l[p.nxt]=k;}
-        else{modLookup.r[p.ltc]=k;modLookup.r[p.nxt]=k;}
-      }
-      return modLookup;
-    }
+    // Module circle lookup (populated after circles placed, used by section A)
+    const modL={l:{},r:{}};
 
     // ── Layout atoms ─────────────────────────────────────────
     let ax=M+MP+CCW;const ay0=M+MP+20;
@@ -193,11 +164,15 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
       const lcw=dLw.length?CCW:0,rcw=dRw.length?CCW:0;
 
       let aw=ACW,ah=ACH;
-      if(isExp){let ih=AHH+AP,mbw=200;for(const[k,ts]of[['init',atom.init],['update',atom.update]]){if(!ts.length)continue;if(k==='update'&&atom.init.length)ih+=SGY;ih+=SLH;if(isSecOpen(aid,k)){const lo=layoutTerms(ts,ax+lcw+AP,ay0+ih,`a${aid}_${k}`,pos);ih+=lo.h;mbw=Math.max(mbw,lo.w);}}aw=mbw+AP*2;ah=ih+AP;}
+      if(isExp){const activeKey=secMode===0?'init':'update';const activeTerms=activeKey==='init'?atom.init:atom.update;let ih=AHH+AP,mbw=200;if(activeTerms.length){ih+=SLH;const lo=layoutTerms(activeTerms,ax+lcw+AP,ay0+ih,`a${aid}_${activeKey}`,pos);ih+=lo.h;mbw=Math.max(mbw,lo.w);}aw=mbw+AP*2;ah=ih+AP;}
 
       const bx=ax+lcw;ac[aid]={x:bx,y:ay0,w:aw,h:ah};
       const cs2=CR*2+CG,lCx=lcw>0?ax+lcw/2:bx-CCW/2,rCx=rcw>0?bx+aw+rcw/2:bx+aw+CCW/2;
-      aLw.forEach((wid,i)=>{const role=atom.wait.some(w=>w.id===wid)?'wait':'read';pos[`cl_${aid}_${wid}`]={x:lCx,y:ay0+ah/2+(i-(aLw.length-1)/2)*cs2,r:CR,wid,role,side:'left',atomId:aid,isCircle:true};});
+      // Sort atom circles: wait first, then read (left); ctrl sorted by id (right)
+      const waitIds=new Set(atom.wait.map(w=>w.id));
+      aLw.sort((a,b)=>{const aw=waitIds.has(a)?0:1,bw=waitIds.has(b)?0:1;return aw!==bw?aw-bw:a-b;});
+      aRw.sort((a,b)=>a-b);
+      aLw.forEach((wid,i)=>{const role=waitIds.has(wid)?'wait':'read';pos[`cl_${aid}_${wid}`]={x:lCx,y:ay0+ah/2+(i-(aLw.length-1)/2)*cs2,r:CR,wid,role,side:'left',atomId:aid,isCircle:true};});
       aRw.forEach((wid,i)=>{pos[`cr_${aid}_${wid}`]={x:rCx,y:ay0+ah/2+(i-(aRw.length-1)/2)*cs2,r:CR,wid,role:'ctrl',side:'right',atomId:aid,isCircle:true};});
       ax+=lcw+aw+rcw+AGX;
     }
@@ -205,19 +180,23 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     const modW=ax-AGX+MP+CCW-M,maxAH=Math.max(...Object.values(ac).map(a=>a.h)),modH=Math.max(200,maxAH)+MP*2+40;
 
     // ── Module circles ───────────────────────────────────────
+    const rolePri={extl:0,intf:1,prvt:2};
     const allP=[...mod.extl.map(p=>({...p,role:'extl'})),...mod.intf.map(p=>({...p,role:'intf'})),...mod.prvt.map(p=>({...p,role:'prvt'}))];
-    function placeSide(items,x,mk){
-      const sp=CR*2+CG,th=items.length*sp-CG;
-      const same=items.length>1&&items.every(it=>Math.abs(it.ideal-items[0].ideal)<2);
-      if(same){const sy=items[0].ideal-th/2;items.forEach((it,i)=>{const e=mk(it.pair,x,sy+i*sp);pos[e.k]=e.v;});}
-      else{items.sort((a,b)=>a.ideal-b.ideal);let ny=ay0;for(const it of items){const cy=Math.max(ny,it.ideal);const e=mk(it.pair,x,cy);pos[e.k]=e.v;ny=cy+sp;}}
+    function placeSide(items,x,mk,centerY){
+      const sp=CR*2+CG;
+      // Fixed order: extl → intf → prvt, then by wire id within each group
+      items.sort((a,b)=>{const rp=(rolePri[a.pair.role]||0)-(rolePri[b.pair.role]||0);return rp!==0?rp:(a.pair.ltc-b.pair.ltc);});
+      if(!items.length)return;
+      const th=items.length*sp-CG,cy0=centerY-th/2;
+      items.forEach((it,i)=>{const e=mk(it.pair,x,cy0+i*sp);pos[e.k]=e.v;});
     }
-    placeSide(allP.map(p=>{let iy=null;for(const a of mod.atoms){if(exp[a.id])for(const ts of[a.init,a.update])for(const t of ts)if(t.writes.includes(p.nxt)&&pos[t.id])iy=pos[t.id].y+pos[t.id].h/2;if(iy===null&&a.ctrl.some(w=>w.id===p.nxt)&&ac[a.id])iy=ac[a.id].y+ac[a.id].h/2;}return{pair:p,ideal:iy||ay0+ACH/2};}),M+modW+CCW/2,(p,x,y)=>({k:`mr_${p.nxt}`,v:{x,y,r:CR,wid:p.nxt,ltc:p.ltc,nxt:p.nxt,did:p.nxt,role:p.role,isCircle:true,modCircle:true}}));
-    placeSide(allP.map(p=>{let iy=null;for(const a of mod.atoms){if(exp[a.id])for(const ts of[a.init,a.update])for(const t of ts)if(t.reads.includes(p.ltc)&&pos[t.id])iy=pos[t.id].y+pos[t.id].h/2;if(iy===null&&[...a.read,...a.wait].some(w=>w.id===p.ltc)&&ac[a.id])iy=ac[a.id].y+ac[a.id].h/2;}return{pair:p,ideal:iy||ay0+ACH/2};}),M-CCW/2,(p,x,y)=>({k:`ml_${p.ltc}`,v:{x,y,r:CR,wid:p.ltc,ltc:p.ltc,nxt:p.nxt,did:p.ltc,role:p.role,isCircle:true,modCircle:true}}));
+    const modCenterY=M+modH/2;
+    placeSide(allP.map(p=>({pair:p})),M+modW+CCW/2,(p,x,y)=>({k:`mr_${p.nxt}`,v:{x,y,r:CR,wid:p.nxt,ltc:p.ltc,nxt:p.nxt,did:p.nxt,role:p.role,isCircle:true,modCircle:true}}),modCenterY);
+    placeSide(allP.map(p=>({pair:p})),M-CCW/2,(p,x,y)=>({k:`ml_${p.ltc}`,v:{x,y,r:CR,wid:p.ltc,ltc:p.ltc,nxt:p.nxt,did:p.ltc,role:p.role,isCircle:true,modCircle:true}}),modCenterY);
 
-    // Y-shift
+    // Y-shift atoms and their circles (not module circles)
     const ys=(modH-maxAH)/2+M-ay0;
-    if(Math.abs(ys)>1){for(const a of Object.values(ac))a.y+=ys;for(const p of Object.values(pos))if(p.y!==undefined)p.y+=ys;}
+    if(Math.abs(ys)>1){for(const a of Object.values(ac))a.y+=ys;for(const p of Object.values(pos))if(p.y!==undefined&&!p.modCircle)p.y+=ys;}
     if(!rendered){vb={x:0,y:0,w:M*2+modW+CCW,h:M*2+modH};svg.setAttribute('viewBox',`${vb.x} ${vb.y} ${vb.w} ${vb.h}`);rendered=true;}
 
     // ── Draw elements ────────────────────────────────────────
@@ -234,7 +213,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
       const ws=atom.wait.length?`  awaits: ${atom.wait.map(w=>'w'+w.id).join(', ')}`:'';
       const tg=el('text',{class:'toggle',x:a.x+12,y:a.y+18,textContent:isExp?'▼':'▶'});tg.addEventListener('click',e=>{e.stopPropagation();exp[aid]=!isExp;render();});g.appendChild(tg);
       g.appendChild(el('text',{class:'atom-label',x:a.x+26,y:a.y+18,textContent:`Atom ${aid}${ws}`}));
-      if(isExp){let ly=a.y+AHH+AP;for(const[k,ts]of[['init',atom.init],['update',atom.update]]){if(!ts.length)continue;if(k==='update'&&atom.init.length){ly+=SGY;g.appendChild(el('line',{class:'divider',x1:a.x+10,y1:ly-SGY/2,x2:a.x+a.w-10,y2:ly-SGY/2}));}const op=isSecOpen(aid,k);const st=el('text',{class:'toggle',x:a.x+12,y:ly+14,textContent:`${op?'▼':'▶'} ${k} (${ts.length})`});st.addEventListener('click',e=>{e.stopPropagation();secOpen[`${aid}_${k}`]=!op;render();});g.appendChild(st);if(op){let bh=0;const ph=`a${aid}_${k}`;for(const[,p]of Object.entries(pos))if(p.phase===ph)bh=Math.max(bh,p.y+p.h-(ly+SLH));ly+=SLH+bh;}else ly+=SLH;}}
+      if(isExp){let ly=a.y+AHH+AP;const activeKey=secMode===0?'init':'update';const activeTerms=activeKey==='init'?atom.init:atom.update;if(activeTerms.length){g.appendChild(el('text',{class:'toggle',x:a.x+12,y:ly+14,textContent:`${activeKey} (${activeTerms.length})`,style:'cursor:default;'}));let bh=0;const ph=`a${aid}_${activeKey}`;for(const[,p]of Object.entries(pos))if(p.phase===ph)bh=Math.max(bh,p.y+p.h-(ly+SLH));ly+=SLH+bh;}}
       g.addEventListener('click',e=>{e.stopPropagation();setFocus('atom',aid);});
       svg.appendChild(g);grp[`a_${aid}`]=g;
     }
@@ -250,10 +229,11 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     function addW(wid,x1,y1,x2,y2,tag,straight,aid){const d=straight?`M ${x1} ${y1} L ${x2} ${y2}`:bz(x1,y1,x2,y2);const p=el('path',{class:'wire',d,'data-wire-id':wid});if(tag)p.dataset.tag=tag;p.addEventListener('mouseenter',()=>hlW(wid,true));p.addEventListener('mouseleave',()=>hlW(wid,false));p.addEventListener('click',e=>{e.stopPropagation();setFocus('wire',null,null,wid);});svg.appendChild(p);wireEls.push({wid,el:p,tag:tag||'',aid:aid!=null?aid:null});}
 
     // A: Module circle ↔ atom circle (non-shared)
-    const ml=getModLookup();
+    // Populate module circle lookup
+    for(const[k,p]of Object.entries(pos)){if(!p.isCircle||!p.modCircle)continue;if(k.startsWith('ml_')){modL.l[p.ltc]=k;modL.l[p.nxt]=k;}else{modL.r[p.ltc]=k;modL.r[p.nxt]=k;}}
     for(const[k,p]of Object.entries(pos)){
       if(!p.isCircle||p.atomId===undefined||cls.shared.has(p.wid))continue;
-      const mk=p.side==='left'?ml.l[p.wid]:ml.r[p.wid];
+      const mk=p.side==='left'?modL.l[p.wid]:modL.r[p.wid];
       if(mk){const mc=pos[mk];if(p.side==='left')addW(p.wid,mc.x+mc.r,mc.y,p.x-p.r,p.y,'seg_mc_ac');else addW(p.wid,p.x+p.r,p.y,mc.x-mc.r,mc.y,'seg_mc_ac');}
     }
 
@@ -261,12 +241,10 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     for(const atom of mod.atoms){
       const aid=atom.id,a=ac[aid];
       if(exp[aid]){
-        for(const[pk,terms]of[['init',atom.init],['update',atom.update]]){
-          if(!isSecOpen(aid,pk))continue;
-          const wr={};for(const t of terms)for(const w of t.writes)wr[w]=t.id;
-          for(const t of terms){const dst=pos[t.id];if(!dst)continue;for(const w of t.reads){if(!wr[w]){const ck=pos[`cl_${aid}_${w}`];if(ck)addW(w,ck.x+ck.r,ck.y,dst.x,dst.y+dst.h/2,'seg_ac_term',false,aid);}}}
-          for(const t of terms){const src=pos[t.id];if(!src)continue;for(const w of t.writes){if(terms.some(t2=>t2.reads.includes(w)))continue;const ck=pos[`cr_${aid}_${w}`];if(ck)addW(w,src.x+src.w,src.y+src.h/2,ck.x-ck.r,ck.y,'seg_ac_term',false,aid);}}
-        }
+        const terms=secMode===0?atom.init:atom.update;
+        const wr={};for(const t of terms)for(const w of t.writes)wr[w]=t.id;
+        for(const t of terms){const dst=pos[t.id];if(!dst)continue;for(const w of t.reads){if(!wr[w]){const ck=pos[`cl_${aid}_${w}`];if(ck)addW(w,ck.x+ck.r,ck.y,dst.x,dst.y+dst.h/2,'seg_ac_term',false,aid);}}}
+        for(const t of terms){const src=pos[t.id];if(!src)continue;for(const w of t.writes){if(terms.some(t2=>t2.reads.includes(w)))continue;const ck=pos[`cr_${aid}_${w}`];if(ck)addW(w,src.x+src.w,src.y+src.h/2,ck.x-ck.r,ck.y,'seg_ac_term',false,aid);}}
       } else {
         for(const[kk,p]of Object.entries(pos)){
           if(!p.isCircle||p.atomId!==aid)continue;
@@ -279,11 +257,9 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     // C: Internal term→term
     for(const atom of mod.atoms){
       if(!exp[atom.id])continue;const aid=atom.id;
-      for(const[pk,terms]of[['init',atom.init],['update',atom.update]]){
-        if(!isSecOpen(aid,pk))continue;
-        const wr={};for(const t of terms)for(const w of t.writes)wr[w]=t.id;
-        for(const t of terms){const dst=pos[t.id];if(!dst)continue;for(const w of t.reads){if(wr[w]){const src=pos[wr[w]];if(src)addW(w,src.x+src.w,src.y+src.h/2,dst.x,dst.y+dst.h/2,'seg_internal',false,aid);}}}
-      }
+      const terms=secMode===0?atom.init:atom.update;
+      const wr={};for(const t of terms)for(const w of t.writes)wr[w]=t.id;
+      for(const t of terms){const dst=pos[t.id];if(!dst)continue;for(const w of t.reads){if(wr[w]){const src=pos[wr[w]];if(src)addW(w,src.x+src.w,src.y+src.h/2,dst.x,dst.y+dst.h/2,'seg_internal',false,aid);}}}
     }
 
     // D: Bypass lines (atom circle pass-through, shown in module view)
@@ -305,13 +281,24 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
       }
     }
 
+    // ── Hide orphan circles and their wires ───────────────────
+    for(const[k,p]of Object.entries(pos)){
+      if(!p.isCircle)continue;
+      const hasWire=wireEls.some(w=>w.el.style.display!=='none'&&w.wid===p.wid&&(w.tag==='seg_ac_term'||w.tag==='seg_ac_box'||w.tag==='seg_shared'||w.tag==='seg_mc_shared'));
+      if(!hasWire){
+        const g=grp[`c_${k}`];if(g)g.style.display='none';
+        // Also hide all wires for this orphan circle
+        for(const w of wireEls)if(w.wid===p.wid&&(w.tag==='seg_mc_ac'||w.tag==='seg_bypass'||w.tag==='seg_mc_shared'))w.el.style.display='none';
+      }
+    }
+
     // ── Focus visibility ─────────────────────────────────────
     const focAtom=focus.atom;
 
     // Atom circles: hidden in module view, visible otherwise
-    for(const[k,p]of Object.entries(pos)){if(!p.isCircle||p.modCircle)continue;const g=grp[`c_${k}`];if(g)g.style.display=focus.level==='module'?'none':'';}
-    // Bypass: visible only in module view
-    for(const w of wireEls){if(w.tag==='seg_bypass')w.el.style.display=focus.level==='module'?'':'none';}
+    for(const[k,p]of Object.entries(pos)){if(!p.isCircle||p.modCircle)continue;const g=grp[`c_${k}`];if(g&&g.style.display!=='none')g.style.display=focus.level==='module'?'none':'';}
+    // Bypass: visible only in module view, unless already hidden by orphan check
+    for(const w of wireEls){if(w.tag==='seg_bypass'&&w.el.style.display!=='none')w.el.style.display=focus.level==='module'?'':'none';}
 
     // Fading
     if(focus.level!=='module'){
@@ -380,9 +367,6 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     if(t.label.startsWith('Tensor('))valHtml=`<div class="section"><div class="section-title">Value</div><p style="font-family:monospace;font-size:11px;word-break:break-all;">${t.label}</p></div>`;
     else if(t.label.startsWith('Const:'))valHtml=`<div class="section"><div class="section-title">Value</div><p style="font-family:monospace;font-size:11px;">${t.label.replace('Const: ','')}</p></div>`;
     else if(t.label==='Linear'&&t.reads.length===3){
-      const wt=findTd(Object.keys(MOD.atoms.reduce((a,at)=>[...a,...at.init,...at.update],[]).reduce((m,tt)=>{for(const w of tt.writes)m[w]=tt.id;return m;},{})).find(k=>+k===t.reads[1]));
-      const bt=findTd(Object.keys(MOD.atoms.reduce((a,at)=>[...a,...at.init,...at.update],[]).reduce((m,tt)=>{for(const w of tt.writes)m[w]=tt.id;return m;},{})).find(k=>+k===t.reads[2]));
-      // Simpler: search all terms for the one writing the weight/bias wire
       let weightLabel='?',biasLabel='?';
       for(const a of MOD.atoms)for(const ts of[a.init,a.update])for(const tt of ts){if(tt.writes.includes(t.reads[1]))weightLabel=tt.label;if(tt.writes.includes(t.reads[2]))biasLabel=tt.label;}
       valHtml=`<div class="section"><div class="section-title">Parameters</div><p style="font-family:monospace;font-size:11px;word-break:break-all;"><b>weight:</b> ${weightLabel}</p><p style="font-family:monospace;font-size:11px;word-break:break-all;"><b>bias:</b> ${biasLabel}</p></div>`;
