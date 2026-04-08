@@ -125,20 +125,22 @@ macro_rules! impl_op_trait {
     };
 }
 
-/// Helper: emit a single `From<$ty> for Types` impl with optional generics.
+/// Helper: emit a single `From<$ty> for <enum>` impl with optional generics.
+/// The first argument is the target enum name.
 #[macro_export]
 macro_rules! impl_from_type {
-    ([$($gen:tt)*] $variant:ident => $ty:ty) => {
-        impl<$($gen)*> From<$ty> for Types {
-            fn from(_: $ty) -> Types {
-                Types::$variant
+    ($enum_name:ident, [$($gen:tt)*] $variant:ident => $ty:ty) => {
+        impl<$($gen)*> From<$ty> for $enum_name {
+            fn from(_: $ty) -> $enum_name {
+                $enum_name::$variant
             }
         }
     };
 }
 
-/// Generate a `Types` enum with [`DType`] impl and `From` conversions
-/// for each type variant. Supports optional generics in `[...]`.
+/// Generate an enum with [`DType`] impl and `From` conversions
+/// for each type variant. An optional first argument names the enum
+/// (defaults to `Types`). Supports optional generics in `[...]`.
 ///
 /// Each entry is `VariantName => ConcreteType`. The variant name goes
 /// into the enum; the concrete type is used in the `From` impl.
@@ -146,26 +148,37 @@ macro_rules! impl_from_type {
 /// ### Examples
 ///
 /// ```ignore
-/// mk_types_enum!(Nat => Nat);                          // simple
-/// mk_types_enum!([const N: usize] BV => BV<N>);        // generic
-/// mk_types_enum!(Nat => Nat, Int => Int);              // multiple
+/// mk_types_enum!(Nat => Nat);                              // enum Types { Nat }
+/// mk_types_enum!(MyTypes, Nat => Nat);                     // enum MyTypes { Nat }
+/// mk_types_enum!([const N: usize] BV => BV<N>);            // generic
+/// mk_types_enum!(MyTypes, [const N: usize] BV => BV<N>);   // generic + custom name
 /// ```
 #[macro_export]
 macro_rules! mk_types_enum {
-    ($gen:tt $($variant:ident => $ty:ty),+ $(,)?) => {
+    // Core: custom name + generics
+    ($name:ident, $gen:tt $($variant:ident => $ty:ty),+ $(,)?) => {
         #[derive(Copy, Clone)]
-        pub enum Types {
+        pub enum $name {
             $($variant,)+
         }
 
-        impl DType for Types {}
+        impl DType for $name {}
 
         $(
-            impl_from_type!($gen $variant => $ty);
+            $crate::impl_from_type!($name, $gen $variant => $ty);
         )+
     };
+    // Custom name, no generics
+    ($name:ident, $($variant:ident => $ty:ty),+ $(,)?) => {
+        $crate::mk_types_enum!($name, [] $($variant => $ty),+);
+    };
+    // Default name (Types) + generics
+    ($gen:tt $($variant:ident => $ty:ty),+ $(,)?) => {
+        $crate::mk_types_enum!(Types, $gen $($variant => $ty),+);
+    };
+    // Default name (Types), no generics
     ($($variant:ident => $ty:ty),+ $(,)?) => {
-        mk_types_enum!([] $($variant => $ty),+);
+        $crate::mk_types_enum!(Types, [] $($variant => $ty),+);
     };
 }
 
@@ -180,13 +193,20 @@ macro_rules! mk_one_op {
     };
 }
 
-/// Generate operation structs, an `Operations` enum with [`IType`] impl,
-/// trait impls, and `From` conversions. Supports optional generics in `[...]`.
+/// Generate operation structs, a named enum with [`IType`] impl,
+/// trait impls, and `From` conversions. An optional first argument
+/// names the enum (defaults to `Operations`). Supports optional
+/// generics in `[...]`.
 ///
 /// ### Examples
 ///
 /// ```ignore
 /// mk_ops!(
+///     Add(Nat, Nat) => Nat,
+///     Id(Nat) => Nat
+/// );
+///
+/// mk_ops!(NatOps,
 ///     Add(Nat, Nat) => Nat,
 ///     Id(Nat) => Nat
 /// );
@@ -198,141 +218,114 @@ macro_rules! mk_one_op {
 /// ```
 #[macro_export]
 macro_rules! mk_ops {
-    ($gen:tt $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?) => {
+    // Core: custom name + generics
+    ($name:ident, $gen:tt $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?) => {
         $(
             mk_one_op!($gen $op_name($($arg),+) => $ret);
         )*
 
         #[derive(Copy, Clone)]
-        pub enum Operations {
+        pub enum $name {
             $($op_name,)*
         }
 
-        impl $crate::IType for Operations {}
+        impl $crate::IType for $name {}
 
         $(
-            impl From<$op_name> for Operations {
-                fn from(_: $op_name) -> Operations {
-                    Operations::$op_name
+            impl From<$op_name> for $name {
+                fn from(_: $op_name) -> $name {
+                    $name::$op_name
                 }
             }
         )*
     };
+    // Custom name, no generics
+    ($name:ident, $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?) => {
+        $crate::mk_ops!($name, [] $($op_name($($arg),+) => $ret),*);
+    };
+    // Default name (Operations) + generics
+    ($gen:tt $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?) => {
+        $crate::mk_ops!(Operations, $gen $($op_name($($arg),+) => $ret),*);
+    };
+    // Default name (Operations), no generics
     ($($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?) => {
-        mk_ops!([] $($op_name($($arg),+) => $ret),*);
+        $crate::mk_ops!(Operations, [] $($op_name($($arg),+) => $ret),*);
     };
 }
 
-/// Generate a theory **module** with types, operations, enums, and `From`
-/// conversions.
+/// Generate types, operations, enums, and a theory struct with all
+/// necessary trait impls and `From` conversions.
 ///
-/// The macro has two forms depending on whether the types are freshly
-/// created or pre-existing.
+/// An optional `{DType, IType, Theory}` prefix names the generated
+/// enums and struct (defaults to `Types`, `Operations`, `Theory`).
 ///
 /// # Form 1 — Fresh types
 ///
-/// Creates new unit structs for each type listed in `Types(...)`, with
-/// `Clone + PartialEq` derives and a [`Type`] trait impl, together with
-/// operation structs, a `Types` enum ([`DType`]), an `Operations` enum
-/// ([`IType`]), and all `From` conversions.
+/// Creates new unit structs for each type listed in `Types(...)`.
 ///
 /// ```ignore
-/// mk_theory_mod!(
-///     <module-name>, Types(<Type1>, <Type2>, ...),
-///     <Op>(<Arg>, <Arg>, <Arg>) => <Ret>,   // ternary
-///     <Op>(<Arg>, <Arg>) => <Ret>,          // binary
-///     <Op>(<Arg>)        => <Ret>,          // unary
-/// );
-/// ```
-///
-/// Example — natural numbers:
-///
-/// ```ignore
-/// mk_theory_mod!(
-///     nat, Types(Nat),
+/// mk_theory!(
+///     Types(Nat),
 ///     Add(Nat, Nat) => Nat,
-///     Mul(Nat, Nat) => Nat,
 ///     Id(Nat)       => Nat
 /// );
-/// // Defines:
-/// //   nat::Nat         (Type)
-/// //   nat::Add,        (Operation)
-/// //   nat::Mul,        (Operation)
-/// //   nat::Id,         (Operation)
-/// //   nat::Types       (DType),
-/// //   nat::Operations  (IType)
+///
+/// // With custom names for the generated DType, IType, and Theory:
+/// mk_theory!({NatTypes, NatOps, NatTh}
+///     Types(Nat),
+///     Add(Nat, Nat) => Nat,
+///     Id(Nat)       => Nat
+/// );
 /// ```
 ///
 /// # Form 2 — Pre-existing / generic types
 ///
 /// Types must already be defined and in scope. A `[generics]` prefix
-/// provides the generic parameters, and each type entry uses
-/// `Variant => Type` syntax to map an enum variant name to the
-/// (possibly generic) type.
+/// provides generic parameters, and each type entry uses
+/// `Variant => Type` syntax.
 ///
 /// ```ignore
-/// mk_theory_mod!([<generics>]
-///     <module>, Types(<Variant> => <Type>, ...),
-///     <Op>(<ArgType>, <ArgType>) => <RetType>,
-///     <Op>(<ArgType>)            => <RetType>,
+/// mk_theory!([const N: usize]
+///     Types(BV => BV<N>),
+///     Add(BV<N>, BV<N>) => BV<N>
+/// );
+///
+/// // With custom names:
+/// mk_theory!([const N: usize] {BvTypes, BvOps, BvTh}
+///     Types(BV => BV<N>),
+///     Add(BV<N>, BV<N>) => BV<N>
 /// );
 /// ```
-///
-/// The `[generics]` clause is forwarded to every `impl` block, so
-/// operation trait impls and `From` conversions are generic. The
-/// `Types` and `Operations` enums themselves are not generic — only
-/// the impls are.
-///
-/// Example — bitvectors with a const-generic width:
-///
-/// ```ignore
-/// #[derive(Clone)]
-/// struct BV<const N: usize>();
-/// impl<const N: usize> Type for BV<N> {}
-///
-/// mk_theory_mod!([const N: usize]
-///     bv, Types(BV => BV<N>),
-///     Add(BV<N>, BV<N>) => BV<N>,
-///     Mul(BV<N>, BV<N>) => BV<N>,
-///     Id(BV<N>)         => BV<N>
-/// );
-/// // Available: bv::Add, bv::Types, bv::Operations
-/// // BV<N> comes from the outer scope via `use super::*`
-/// ```
-///
-/// # Building blocks
-///
-/// Internally, both forms delegate to [`mk_types_enum!`] and
-/// [`mk_ops!`], which can also be used directly for finer control
-/// (e.g. mixing pre-existing types with custom enum layouts).
 #[macro_export]
 macro_rules! mk_theory {
-    // Generic arm: pre-existing types, optional generics
+    // Generic + custom names (core)
     (
+        {$dt:ident, $it:ident, $th:ident}
         [$($gen:tt)*]
         Types($($variant:ident => $ty:ty),+),
         $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
     ) => {
-        pub struct Theory {}
+        pub struct $th {}
 
-        $crate::mk_types_enum!([$($gen)*] $($variant => $ty),+);
+        $crate::mk_types_enum!($dt, [$($gen)*] $($variant => $ty),+);
 
-        $crate::mk_ops!([$($gen)*] $($op_name($($arg),+) => $ret),*);
+        $crate::mk_ops!($it, [$($gen)*] $($op_name($($arg),+) => $ret),*);
 
-        $crate::impl_theory_types!([$($gen)*] Theory, $($ty),+);
-        $crate::impl_theory_ops!(Theory, $($op_name),*);
+        $crate::impl_theory_types!([$($gen)*] $th, $($ty),+);
+        $crate::impl_theory_ops!($th, $($op_name),*);
 
-        impl $crate::Theory for Theory {
-            type DT = Types;
-            type IT = Operations;
+        impl $crate::Theory for $th {
+            type DT = $dt;
+            type IT = $it;
         }
     };
-    // Simple arm: fresh type structs, no generics
+    // Simple + custom names (core)
     (
+        {$dt:ident, $it:ident, $th:ident}
         Types($($type_name:ident),+),
         $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
     ) => {
-        pub struct Theory {}
+        pub struct $th {}
 
         $(
             #[derive(Clone, PartialEq)]
@@ -341,23 +334,111 @@ macro_rules! mk_theory {
         )+
         use $crate::*;
 
-        $crate::mk_types_enum!($($type_name => $type_name),+);
+        $crate::mk_types_enum!($dt, $($type_name => $type_name),+);
 
-        $crate::mk_ops!($($op_name($($arg),+) => $ret),*);
+        $crate::mk_ops!($it, $($op_name($($arg),+) => $ret),*);
 
-        $crate::impl_theory_types!(Theory, $($type_name),+);
-        $crate::impl_theory_ops!(Theory, $($op_name),*);
+        $crate::impl_theory_types!($th, $($type_name),+);
+        $crate::impl_theory_ops!($th, $($op_name),*);
 
-        impl $crate::Theory for Theory {
-            type DT = Types;
-            type IT = Operations;
+        impl $crate::Theory for $th {
+            type DT = $dt;
+            type IT = $it;
         }
+    };
+    // Generic, default names
+    (
+        [$($gen:tt)*]
+        Types($($variant:ident => $ty:ty),+),
+        $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
+    ) => {
+        $crate::mk_theory!(
+            {Types, Operations, Theory}
+            [$($gen)*]
+            Types($($variant => $ty),+),
+            $($op_name($($arg),+) => $ret),*
+        );
+    };
+    // Simple, default names
+    (
+        Types($($type_name:ident),+),
+        $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
+    ) => {
+        $crate::mk_theory!(
+            {Types, Operations, Theory}
+            Types($($type_name),+),
+            $($op_name($($arg),+) => $ret),*
+        );
     };
 }
 
+/// Like [`mk_theory!`], but wraps everything in a `pub mod`.
+///
+/// An optional `{DType, IType, Theory}` prefix names the generated
+/// enums and struct (defaults to `Types`, `Operations`, `Theory`).
+///
+/// ```ignore
+/// mk_theory_mod!(
+///     nat, Types(Nat),
+///     Add(Nat, Nat) => Nat,
+///     Id(Nat)       => Nat
+/// );
+///
+/// // With custom names:
+/// mk_theory_mod!({NatTypes, NatOps, NatTh}
+///     nat, Types(Nat),
+///     Add(Nat, Nat) => Nat,
+///     Id(Nat)       => Nat
+/// );
+///
+/// // With generics:
+/// mk_theory_mod!([const N: usize]
+///     bv, Types(BV => BV<N>),
+///     Add(BV<N>, BV<N>) => BV<N>
+/// );
+///
+/// // With generics + custom names:
+/// mk_theory_mod!([const N: usize] {BvTypes, BvOps, BvTh}
+///     bv, Types(BV => BV<N>),
+///     Add(BV<N>, BV<N>) => BV<N>
+/// );
+/// ```
 #[macro_export]
 macro_rules! mk_theory_mod {
-    // Generic arm: pre-existing types, optional generics
+    // Generic + custom names
+    (
+        {$dt:ident, $it:ident, $th:ident}
+        [$($gen:tt)*]
+        $mod_name:ident, Types($($variant:ident => $ty:ty),+),
+        $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
+    ) => {
+        pub mod $mod_name {
+            use super::*;
+            use $crate::*;
+
+            $crate::mk_theory!(
+                {$dt, $it, $th}
+                [$($gen)*]
+                Types($($variant => $ty),+),
+                $($op_name($($arg),+) => $ret),*
+            );
+        }
+    };
+    // Simple + custom names
+    (
+        {$dt:ident, $it:ident, $th:ident}
+        $mod_name:ident, Types($($type_name:ident),+),
+        $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
+    ) => {
+        pub mod $mod_name {
+            $crate::mk_theory!(
+                {$dt, $it, $th}
+                Types($($type_name),+),
+                $($op_name($($arg),+) => $ret),*
+            );
+        }
+    };
+    // Generic, default names
     (
         [$($gen:tt)*]
         $mod_name:ident, Types($($variant:ident => $ty:ty),+),
@@ -373,7 +454,7 @@ macro_rules! mk_theory_mod {
             );
         }
     };
-    // Simple arm: fresh type structs, no generics
+    // Simple, default names
     (
         $mod_name:ident, Types($($type_name:ident),+),
         $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
