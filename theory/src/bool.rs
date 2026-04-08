@@ -1,6 +1,6 @@
 use crate::*;
 
-mk_theory!(
+mk_theory_mod!(
     bools, Types(Bool),
     And(Bool, Bool) => Bool,
     Or(Bool, Bool) => Bool,

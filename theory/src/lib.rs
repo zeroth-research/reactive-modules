@@ -237,7 +237,7 @@ macro_rules! mk_ops {
 /// ([`IType`]), and all `From` conversions.
 ///
 /// ```ignore
-/// mk_theory!(
+/// mk_theory_mod!(
 ///     <module-name>, Types(<Type1>, <Type2>, ...),
 ///     <Op>(<Arg>, <Arg>, <Arg>) => <Ret>,   // ternary
 ///     <Op>(<Arg>, <Arg>) => <Ret>,          // binary
@@ -248,7 +248,7 @@ macro_rules! mk_ops {
 /// Example — natural numbers:
 ///
 /// ```ignore
-/// mk_theory!(
+/// mk_theory_mod!(
 ///     nat, Types(Nat),
 ///     Add(Nat, Nat) => Nat,
 ///     Mul(Nat, Nat) => Nat,
@@ -271,7 +271,7 @@ macro_rules! mk_ops {
 /// (possibly generic) type.
 ///
 /// ```ignore
-/// mk_theory!([<generics>]
+/// mk_theory_mod!([<generics>]
 ///     <module>, Types(<Variant> => <Type>, ...),
 ///     <Op>(<ArgType>, <ArgType>) => <RetType>,
 ///     <Op>(<ArgType>)            => <RetType>,
@@ -290,7 +290,7 @@ macro_rules! mk_ops {
 /// struct BV<const N: usize>();
 /// impl<const N: usize> Type for BV<N> {}
 ///
-/// mk_theory!([const N: usize]
+/// mk_theory_mod!([const N: usize]
 ///     bv, Types(BV => BV<N>),
 ///     Add(BV<N>, BV<N>) => BV<N>,
 ///     Mul(BV<N>, BV<N>) => BV<N>,
@@ -306,7 +306,7 @@ macro_rules! mk_ops {
 /// [`mk_ops!`], which can also be used directly for finer control
 /// (e.g. mixing pre-existing types with custom enum layouts).
 #[macro_export]
-macro_rules! mk_theory {
+macro_rules! mk_theory_mod {
     // Generic arm: pre-existing types, optional generics
     (
         [$($gen:tt)*]
