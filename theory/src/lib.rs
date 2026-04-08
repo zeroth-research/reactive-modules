@@ -306,6 +306,56 @@ macro_rules! mk_ops {
 /// [`mk_ops!`], which can also be used directly for finer control
 /// (e.g. mixing pre-existing types with custom enum layouts).
 #[macro_export]
+macro_rules! mk_theory {
+    // Generic arm: pre-existing types, optional generics
+    (
+        [$($gen:tt)*]
+        Types($($variant:ident => $ty:ty),+),
+        $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
+    ) => {
+        pub struct Theory {}
+
+        $crate::mk_types_enum!([$($gen)*] $($variant => $ty),+);
+
+        $crate::mk_ops!([$($gen)*] $($op_name($($arg),+) => $ret),*);
+
+        $crate::impl_theory_types!([$($gen)*] Theory, $($ty),+);
+        $crate::impl_theory_ops!(Theory, $($op_name),*);
+
+        impl $crate::Theory for Theory {
+            type DT = Types;
+            type IT = Operations;
+        }
+    };
+    // Simple arm: fresh type structs, no generics
+    (
+        Types($($type_name:ident),+),
+        $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
+    ) => {
+        pub struct Theory {}
+
+        $(
+            #[derive(Clone, PartialEq)]
+            pub struct $type_name();
+            impl $crate::Type for $type_name {}
+        )+
+        use $crate::*;
+
+        $crate::mk_types_enum!($($type_name => $type_name),+);
+
+        $crate::mk_ops!($($op_name($($arg),+) => $ret),*);
+
+        $crate::impl_theory_types!(Theory, $($type_name),+);
+        $crate::impl_theory_ops!(Theory, $($op_name),*);
+
+        impl $crate::Theory for Theory {
+            type DT = Types;
+            type IT = Operations;
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! mk_theory_mod {
     // Generic arm: pre-existing types, optional generics
     (
@@ -317,19 +367,10 @@ macro_rules! mk_theory_mod {
             use super::*;
             use $crate::*;
 
-            pub struct Theory {}
-
-            $crate::mk_types_enum!([$($gen)*] $($variant => $ty),+);
-
-            $crate::mk_ops!([$($gen)*] $($op_name($($arg),+) => $ret),*);
-
-            $crate::impl_theory_types!([$($gen)*] Theory, $($ty),+);
-            $crate::impl_theory_ops!(Theory, $($op_name),*);
-
-            impl $crate::Theory for Theory {
-                type DT = Types;
-                type IT = Operations;
-            }
+            $crate::mk_theory!([$($gen)*]
+                Types($($variant => $ty),+),
+                $($op_name($($arg),+) => $ret),*
+            );
         }
     };
     // Simple arm: fresh type structs, no generics
@@ -338,26 +379,10 @@ macro_rules! mk_theory_mod {
         $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
     ) => {
         pub mod $mod_name {
-            pub struct Theory {}
-
-            $(
-                #[derive(Clone, PartialEq)]
-                pub struct $type_name();
-                impl $crate::Type for $type_name {}
-            )+
-            use $crate::*;
-
-            $crate::mk_types_enum!($($type_name => $type_name),+);
-
-            $crate::mk_ops!($($op_name($($arg),+) => $ret),*);
-
-            $crate::impl_theory_types!(Theory, $($type_name),+);
-            $crate::impl_theory_ops!(Theory, $($op_name),*);
-
-            impl $crate::Theory for Theory {
-                type DT = Types;
-                type IT = Operations;
-            }
+            $crate::mk_theory!(
+                Types($($type_name),+),
+                $($op_name($($arg),+) => $ret),*
+            );
         }
     };
 }
