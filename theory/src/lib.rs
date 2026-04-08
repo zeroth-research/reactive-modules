@@ -221,7 +221,7 @@ macro_rules! mk_ops {
     // Core: custom name + generics
     ($name:ident, $gen:tt $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?) => {
         $(
-            mk_one_op!($gen $op_name($($arg),+) => $ret);
+            $crate::mk_one_op!($gen $op_name($($arg),+) => $ret);
         )*
 
         #[derive(Copy, Clone)]
@@ -300,11 +300,13 @@ macro_rules! mk_ops {
 macro_rules! mk_theory {
     // Generic + custom names (core)
     (
-        {$dt:ident, $it:ident, $th:ident}
         [$($gen:tt)*]
+        {$dt:ident, $it:ident, $th:ident}
         Types($($variant:ident => $ty:ty),+),
         $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
     ) => {
+        use $crate::*;
+
         pub struct $th {}
 
         $crate::mk_types_enum!($dt, [$($gen)*] $($variant => $ty),+);
@@ -353,8 +355,8 @@ macro_rules! mk_theory {
         $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
     ) => {
         $crate::mk_theory!(
-            {Types, Operations, Theory}
             [$($gen)*]
+            {Types, Operations, Theory}
             Types($($variant => $ty),+),
             $($op_name($($arg),+) => $ret),*
         );
@@ -407,18 +409,17 @@ macro_rules! mk_theory {
 macro_rules! mk_theory_mod {
     // Generic + custom names
     (
-        {$dt:ident, $it:ident, $th:ident}
         [$($gen:tt)*]
+        {$dt:ident, $it:ident, $th:ident}
         $mod_name:ident, Types($($variant:ident => $ty:ty),+),
         $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
     ) => {
         pub mod $mod_name {
             use super::*;
-            use $crate::*;
 
             $crate::mk_theory!(
-                {$dt, $it, $th}
                 [$($gen)*]
+                {$dt, $it, $th}
                 Types($($variant => $ty),+),
                 $($op_name($($arg),+) => $ret),*
             );
@@ -446,7 +447,6 @@ macro_rules! mk_theory_mod {
     ) => {
         pub mod $mod_name {
             use super::*;
-            use $crate::*;
 
             $crate::mk_theory!([$($gen)*]
                 Types($($variant => $ty),+),
