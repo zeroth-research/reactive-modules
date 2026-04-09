@@ -193,6 +193,17 @@ macro_rules! mk_one_op {
     };
 }
 
+/// Helper: emit operation structs + trait impls for a list of fresh ops.
+/// Generics are passed as a single token tree `[...]`.
+#[macro_export]
+macro_rules! mk_op_structs {
+    ($gen:tt $($op_name:ident($($arg:ty),+) => $ret:ty),*) => {
+        $(
+            $crate::mk_one_op!($gen $op_name($($arg),+) => $ret);
+        )*
+    };
+}
+
 /// Generate operation structs, a named enum with [`IType`] impl,
 /// trait impls, and `From` conversions. An optional first argument
 /// names the enum (defaults to `Operations`). Supports optional
@@ -304,6 +315,7 @@ macro_rules! mk_theory {
         {$dt:ident, $it:ident, $th:ident}
         Types($($variant:ident => $ty:ty),+),
         $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
+        $(; $([$($ext_gen:tt)*] $ext_variant:ident => $ext_ty:ty),+ $(,)?)?
     ) => {
         use $crate::*;
 
@@ -311,10 +323,34 @@ macro_rules! mk_theory {
 
         $crate::mk_types_enum!($dt, [$($gen)*] $($variant => $ty),+);
 
-        $crate::mk_ops!($it, [$($gen)*] $($op_name($($arg),+) => $ret),*);
+        $crate::mk_op_structs!([$($gen)*] $($op_name($($arg),+) => $ret),*);
+
+        #[derive(Copy, Clone)]
+        pub enum $it {
+            $($op_name,)*
+            $($($ext_variant,)+)?
+        }
+
+        impl $crate::IType for $it {}
+
+        $(
+            impl From<$op_name> for $it {
+                fn from(_: $op_name) -> $it { $it::$op_name }
+            }
+        )*
+
+        $($(
+            impl<$($ext_gen)*> From<$ext_ty> for $it {
+                fn from(_: $ext_ty) -> $it { $it::$ext_variant }
+            }
+        )+)?
 
         $crate::impl_theory_types!([$($gen)*] $th, $($ty),+);
         $crate::impl_theory_ops!($th, $($op_name),*);
+
+        $($(
+            impl<$($ext_gen)*> $crate::TheoryOperation<$th> for $ext_ty {}
+        )+)?
 
         impl $crate::Theory for $th {
             type DT = $dt;
@@ -326,6 +362,7 @@ macro_rules! mk_theory {
         {$dt:ident, $it:ident, $th:ident}
         Types($($type_name:ident),+),
         $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
+        $(; $([$($ext_gen:tt)*] $ext_variant:ident => $ext_ty:ty),+ $(,)?)?
     ) => {
         pub struct $th {}
 
@@ -338,10 +375,34 @@ macro_rules! mk_theory {
 
         $crate::mk_types_enum!($dt, $($type_name => $type_name),+);
 
-        $crate::mk_ops!($it, $($op_name($($arg),+) => $ret),*);
+        $crate::mk_op_structs!([] $($op_name($($arg),+) => $ret),*);
+
+        #[derive(Copy, Clone)]
+        pub enum $it {
+            $($op_name,)*
+            $($($ext_variant,)+)?
+        }
+
+        impl $crate::IType for $it {}
+
+        $(
+            impl From<$op_name> for $it {
+                fn from(_: $op_name) -> $it { $it::$op_name }
+            }
+        )*
+
+        $($(
+            impl<$($ext_gen)*> From<$ext_ty> for $it {
+                fn from(_: $ext_ty) -> $it { $it::$ext_variant }
+            }
+        )+)?
 
         $crate::impl_theory_types!($th, $($type_name),+);
         $crate::impl_theory_ops!($th, $($op_name),*);
+
+        $($(
+            impl<$($ext_gen)*> $crate::TheoryOperation<$th> for $ext_ty {}
+        )+)?
 
         impl $crate::Theory for $th {
             type DT = $dt;
@@ -353,23 +414,27 @@ macro_rules! mk_theory {
         [$($gen:tt)*]
         Types($($variant:ident => $ty:ty),+),
         $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
+        $(; $([$($ext_gen:tt)*] $ext_variant:ident => $ext_ty:ty),+ $(,)?)?
     ) => {
         $crate::mk_theory!(
             [$($gen)*]
             {Types, Operations, Theory}
             Types($($variant => $ty),+),
             $($op_name($($arg),+) => $ret),*
+            $(; $([$($ext_gen)*] $ext_variant => $ext_ty),+)?
         );
     };
     // Simple, default names
     (
         Types($($type_name:ident),+),
         $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
+        $(; $([$($ext_gen:tt)*] $ext_variant:ident => $ext_ty:ty),+ $(,)?)?
     ) => {
         $crate::mk_theory!(
             {Types, Operations, Theory}
             Types($($type_name),+),
             $($op_name($($arg),+) => $ret),*
+            $(; $([$($ext_gen)*] $ext_variant => $ext_ty),+)?
         );
     };
 }
@@ -413,6 +478,7 @@ macro_rules! mk_theory_mod {
         {$dt:ident, $it:ident, $th:ident}
         $mod_name:ident, Types($($variant:ident => $ty:ty),+),
         $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
+        $(; $([$($ext_gen:tt)*] $ext_variant:ident => $ext_ty:ty),+ $(,)?)?
     ) => {
         pub mod $mod_name {
             use super::*;
@@ -422,6 +488,7 @@ macro_rules! mk_theory_mod {
                 {$dt, $it, $th}
                 Types($($variant => $ty),+),
                 $($op_name($($arg),+) => $ret),*
+                $(; $([$($ext_gen)*] $ext_variant => $ext_ty),+)?
             );
         }
     };
@@ -430,12 +497,14 @@ macro_rules! mk_theory_mod {
         {$dt:ident, $it:ident, $th:ident}
         $mod_name:ident, Types($($type_name:ident),+),
         $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
+        $(; $([$($ext_gen:tt)*] $ext_variant:ident => $ext_ty:ty),+ $(,)?)?
     ) => {
         pub mod $mod_name {
             $crate::mk_theory!(
                 {$dt, $it, $th}
                 Types($($type_name),+),
                 $($op_name($($arg),+) => $ret),*
+                $(; $([$($ext_gen)*] $ext_variant => $ext_ty),+)?
             );
         }
     };
@@ -444,6 +513,7 @@ macro_rules! mk_theory_mod {
         [$($gen:tt)*]
         $mod_name:ident, Types($($variant:ident => $ty:ty),+),
         $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
+        $(; $([$($ext_gen:tt)*] $ext_variant:ident => $ext_ty:ty),+ $(,)?)?
     ) => {
         pub mod $mod_name {
             use super::*;
@@ -451,6 +521,7 @@ macro_rules! mk_theory_mod {
             $crate::mk_theory!([$($gen)*]
                 Types($($variant => $ty),+),
                 $($op_name($($arg),+) => $ret),*
+                $(; $([$($ext_gen)*] $ext_variant => $ext_ty),+)?
             );
         }
     };
@@ -458,11 +529,13 @@ macro_rules! mk_theory_mod {
     (
         $mod_name:ident, Types($($type_name:ident),+),
         $($op_name:ident($($arg:ident),+) => $ret:ident),* $(,)?
+        $(; $([$($ext_gen:tt)*] $ext_variant:ident => $ext_ty:ty),+ $(,)?)?
     ) => {
         pub mod $mod_name {
             $crate::mk_theory!(
                 Types($($type_name),+),
                 $($op_name($($arg),+) => $ret),*
+                $(; $([$($ext_gen)*] $ext_variant => $ext_ty),+)?
             );
         }
     };

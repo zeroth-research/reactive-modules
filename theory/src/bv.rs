@@ -2,7 +2,7 @@ use crate::{Type, mk_theory_mod};
 
 /// Bitvector type parametrized by its size
 #[derive(Clone)]
-struct BV<const N: usize>();
+pub struct BV<const N: usize>();
 impl<const N: usize> Type for BV<N> {}
 
 mk_theory_mod!(
