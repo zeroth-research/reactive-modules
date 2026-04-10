@@ -1,14 +1,22 @@
 /*!
 # Matrices
 
-A Matrix type is parametrized by another [Type]
-and its dimensions `M` and `N` which are `usize`.
-
-This code makes available: TODO
+Provides [`Mat<T, M, N>`], a matrix type parameterized by an element
+[`Type`] `T` and dimensions `M x N`. Operations include [`Add`],
+[`Id`], and [`MatMul<T, A, B, C>`] (which requires `T: Copy`),
+all bundled into a [`Theory`].
 
 ## Examples
-TODO
 
+```
+use std::marker::PhantomData;
+use theory::mat::*;
+use theory::int::Int;
+
+let _: Types = Mat::<Int, 2, 3>(PhantomData).into();
+let _: Operations = Add().into();
+let _: Operations = MatMul::<Int, 2, 3, 4> { t: PhantomData }.into();
+```
 */
 
 use std::marker::PhantomData;

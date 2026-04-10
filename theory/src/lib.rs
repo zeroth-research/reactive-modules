@@ -5,11 +5,21 @@ pub mod mat;
 pub mod nat;
 pub mod real;
 
-/// TODO: add/finish doc-commet describing the overall picture
+/// A framework for defining algebraic theories as Rust types.
 ///
-/// Typically, [Type] and [Operation] are empty structs or
-/// enums and [IType] and [DType] are **non-empty** enums
-/// into which [Type]s and [Operation]s map (using `From` traits)
+/// A **theory** binds a set of data types and a set of operations over
+/// those types. The key traits form two parallel hierarchies:
+///
+/// - **Data**: [`Type`] (concrete type markers) → [`DType`] (enum collecting them)
+/// - **Operations**: [`Operation`] (concrete op markers) → [`IType`] (enum collecting them)
+/// - **Binding**: [`Theory`] ties a [`DType`] and an [`IType`] together.
+///
+/// Typically, [`Type`] and [`Operation`] are unit structs, while [`DType`]
+/// and [`IType`] are enums into which they map via `From` impls.
+///
+/// The [`mk_theory!`] macro generates all of these from a concise declaration.
+/// Helper traits [`TheoryType`] and [`TheoryOperation`] provide shorthand
+/// bounds for generic code that works over any theory.
 
 /// [Type]s are used to construct [DType].
 ///

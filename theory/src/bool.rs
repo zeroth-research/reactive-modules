@@ -1,11 +1,18 @@
 /*!
 # Booleans and operations on booleans.
 
-This code makes available: TODO
+Provides the [`Bool`] type with operations [`And`], [`Or`], [`Xor`],
+[`Not`], and [`Id`], bundled into a [`Theory`].
 
 ## Examples
-TODO
 
+```
+use theory::bool::*;
+
+let _: Types = Bool().into();
+let _: Operations = And().into();
+let _: Operations = Not().into();
+```
 */
 
 use crate::*;

@@ -1,11 +1,17 @@
 /*!
 # BitVectors of fixed length
 
-This code makes available: TODO
+Provides the [`BV<N>`] type (parameterized by bit-width `N`) with
+operations [`Add`], [`Mul`], and [`Id`], bundled into a [`Theory`].
 
 ## Examples
-TODO
 
+```
+use theory::bv::*;
+
+let _: Types = BV::<8>().into();
+let _: Operations = Add().into();
+```
 */
 
 use crate::{Type, mk_theory};
