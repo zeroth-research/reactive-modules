@@ -1,11 +1,16 @@
 use std::marker::PhantomData;
-use theory::mat::{self, Mat, MatMul, Add, Id};
-use theory::{Type, Operation, Operation1To1, Operation2To1, TheoryType, TheoryOperation};
+use theory::mat::{self, Add, Id, Mat, MatMul};
+use theory::{Operation, Operation1To1, Operation2To1, TheoryType, Type};
+
+struct Wire<T: theory::Theory> {
+    _id: usize,
+    dtype: T::DT,
+}
 
 struct Term<T: theory::Theory> {
-    itype: T::IT,
-    read: Vec<T::DT>,
-    write: Vec<T::DT>,
+    _itype: T::IT,
+    _read: Vec<T::DT>,
+    _write: Vec<T::DT>,
 }
 
 impl<T: theory::Theory> Term<T> {
@@ -19,9 +24,9 @@ impl<T: theory::Theory> Term<T> {
         O: Operation2To1<T1, T2, R>,
     {
         Term {
-            itype: op.into(),
-            read: vec![read.0.into(), read.1.into()],
-            write: vec![write.into()],
+            _itype: op.into(),
+            _read: vec![read.0.into(), read.1.into()],
+            _write: vec![write.into()],
         }
     }
 
@@ -35,9 +40,9 @@ impl<T: theory::Theory> Term<T> {
         O: Operation1To1<T1, R>,
     {
         Term {
-            itype: op.into(),
-            read: vec![read.into()],
-            write: vec![write.into()],
+            _itype: op.into(),
+            _read: vec![read.into()],
+            _write: vec![write.into()],
         }
     }
 }
@@ -46,8 +51,7 @@ fn mat<T: Type, const M: usize, const N: usize>() -> Mat<T, M, N> {
     Mat(PhantomData)
 }
 
-fn matmul<T: Type + Copy, const A: usize, const B: usize, const C: usize>(
-) -> MatMul<T, A, B, C> {
+fn matmul<T: Type + Copy, const A: usize, const B: usize, const C: usize>() -> MatMul<T, A, B, C> {
     MatMul { t: PhantomData }
 }
 
@@ -55,7 +59,7 @@ fn matmul<T: Type + Copy, const A: usize, const B: usize, const C: usize>(
 
 #[test]
 fn test_mat_int_add() {
-    use theory::int::int::Int;
+    use theory::int::Int;
     let _: Term<mat::Theory> = Term::mk_bin_op(
         Add(),
         (mat::<Int, 2, 3>(), mat::<Int, 2, 3>()),
@@ -65,12 +69,8 @@ fn test_mat_int_add() {
 
 #[test]
 fn test_mat_int_id() {
-    use theory::int::int::Int;
-    let _: Term<mat::Theory> = Term::mk_unary_op(
-        Id(),
-        mat::<Int, 4, 4>(),
-        mat::<Int, 4, 4>(),
-    );
+    use theory::int::Int;
+    let _: Term<mat::Theory> = Term::mk_unary_op(Id(), mat::<Int, 4, 4>(), mat::<Int, 4, 4>());
 }
 
 // --- Mat<BV<N>, M, K> with Add and Id ---
@@ -88,11 +88,8 @@ fn test_mat_bv_add() {
 #[test]
 fn test_mat_bv_id() {
     use theory::bv::BV;
-    let _: Term<mat::Theory> = Term::mk_unary_op(
-        Id(),
-        mat::<BV<32>, 2, 5>(),
-        mat::<BV<32>, 2, 5>(),
-    );
+    let _: Term<mat::Theory> =
+        Term::mk_unary_op(Id(), mat::<BV<32>, 2, 5>(), mat::<BV<32>, 2, 5>());
 }
 
 // --- MatMul requires T: Type + Copy.

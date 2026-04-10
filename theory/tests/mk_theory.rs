@@ -7,8 +7,7 @@ mod default_simple {
 
     mk_theory!(
         Types(Nat),
-        Add(Nat, Nat) => Nat,
-        Id(Nat) => Nat
+        { Add(Nat, Nat) => Nat, Id(Nat) => Nat }
     );
 }
 
@@ -19,8 +18,7 @@ mod custom_simple {
 
     mk_theory!({NatTypes, NatOps, NatTh}
         Types(Nat),
-        Add(Nat, Nat) => Nat,
-        Id(Nat) => Nat
+        { Add(Nat, Nat) => Nat, Id(Nat) => Nat }
     );
 }
 
@@ -33,10 +31,13 @@ mod generic_default {
     pub struct BV<const N: usize>();
     impl<const N: usize> Type for BV<N> {}
 
-    mk_theory!([const N: usize]
-        Types(BV => BV<N>),
-        Add(BV<N>, BV<N>) => BV<N>,
-        Id(BV<N>) => BV<N>
+    mk_theory!(
+        Types([const N: usize] BV => BV<N>),
+        {
+            [const N: usize]
+            Add(BV<N>, BV<N>) => BV<N>,
+            Id(BV<N>) => BV<N>
+        }
     );
 }
 
@@ -49,10 +50,13 @@ mod generic_custom {
     pub struct BV<const N: usize>();
     impl<const N: usize> Type for BV<N> {}
 
-    mk_theory!([const N: usize] {BvTypes, BvOps, BvTh}
-        Types(BV => BV<N>),
-        Add(BV<N>, BV<N>) => BV<N>,
-        Id(BV<N>) => BV<N>
+    mk_theory!({BvTypes, BvOps, BvTh}
+        Types([const N: usize] BV => BV<N>),
+        {
+            [const N: usize]
+            Add(BV<N>, BV<N>) => BV<N>,
+            Id(BV<N>) => BV<N>
+        }
     );
 }
 
