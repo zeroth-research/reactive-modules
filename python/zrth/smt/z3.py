@@ -11,7 +11,6 @@ def z3_eval_itype(itype, read):
     return fn(itype, read)
 
 
-
 def make_z3_vars(name, dtype):
     """Create fresh Z3 variables from a DType, returning a list."""
     shape = dtype._0 if hasattr(dtype, '_0') else [1]

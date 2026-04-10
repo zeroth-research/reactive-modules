@@ -253,9 +253,12 @@ class Wrapper(Module, gym.Wrapper):
     def __getattr__(self, name):
         return getattr_wire(self, name)
 
-    @property
-    def wire_names(self):
-        return object.__getattribute__(self, '_wire_names')
+    def get_prvt(self, name):
+        """Look up a private wire pair by name. Returns (latched, next)."""
+        wire_names = object.__getattribute__(self, '_wire_names')
+        if name not in wire_names:
+            raise KeyError(f"no private wire named '{name}'")
+        return wire_names[name]
 
     def _sync_private_state_from_env(self):
         """Read private state from the real env and write to symbolic next wires."""
