@@ -1,5 +1,8 @@
 import Cslib.Foundations.Semantics.LTS.Basic
+--import Cslib.Automata.NA.Basic
 import Core.LTL
+import Core.Mat
+import Mathlib.Algebra.Order.BigOperators.Group.Finset
 
 /-  ----------------------------------------------------------------
  Sets of states
@@ -139,6 +142,52 @@ theorem rule_buchi {State: Type u} {Label : Type v} [DecidableEq State]
                                               -- (I ∧ ¬B)-states
     -- assume `V` is a function such that whenever `B` does not hold,
     -- then in next steps the value of `V` decreases
+    (hrank : ∀ s s', I s ∧ ¬(B s) ∧ (∃ l, lts.Tr s l s') → V s' < V s) :
+    -- Then then `B` holds infinitely many times
+    ∀ ss μs, lts.ωTrace ss μs → ss ⊧ G (F (AP B)) := by
+  intro ss μs htr
+  simp [LTLFormula.sem]
+  simp [<- drop_get_zero]
+  have hI := lts.trace_states_in_invariant I hinv htr
+  have hstep : ∀ j, ∃ l, lts.Tr (ss.get j) l (ss.get (j + 1)) := by
+    intro j; exists μs.get j; exact htr.2 j
+  intro i
+  suffices ∀ k n, V (ss.get n) ≤ k → ∃ x, B (ss.get (n + x)) from
+    this (V (ss.get i)) i (Nat.le_refl _)
+  intro k
+  induction k with
+  | zero =>
+    intro n hv
+    exists 0
+    simp
+    if hb : B (ss.get n) then
+      exact hb
+    else
+      have : V (ss.get n) ≤ V (ss.get (n + 1)) := by simp_all
+      exact absurd (hrank _ _ ⟨ (hI n), hb, (hstep n)⟩) (Nat.not_lt.mpr this)
+  | succ k ih =>
+    intro n hv
+    if hb : B (ss.get n) then
+      exact ⟨0, by simp; exact hb⟩
+    else
+      have hdec := hrank _ _ ⟨ hI n, hb, (hstep n)⟩
+      obtain ⟨x, hbx⟩ := ih (n + 1) (by omega)
+      exists x + 1
+      have : n + (x + 1) = n + 1 + x := by omega
+      rw [this]
+      exact hbx
+
+
+/-- a weaker version of rule_buchi -/
+theorem rule_buchi' {State: Type u} {Label : Type v} [DecidableEq State]
+    (lts : LTS' State Label)                  -- the LTS
+    (B : State → Prop) [DecidablePred B]      -- proposition `B`
+    (I : StateSet State)                      -- invariant `I`
+    (hinv : lts.StateSet_isInvariant I)
+    (V : State → Nat)                         -- ranking function on
+                                              -- (I ∧ ¬B)-states
+    -- assume `V` is a function such that whenever `B` does not hold,
+    -- then in next steps the value of `V` decreases
     (hrank : ∀ s s', I s → ¬(B s) → (∃ l, lts.Tr s l s') → V s' < V s) :
     -- Then then `B` holds infinitely many times
     ∀ ss μs, lts.ωTrace ss μs → ss ⊧ G (F (AP B)) := by
@@ -174,51 +223,70 @@ theorem rule_buchi {State: Type u} {Label : Type v} [DecidableEq State]
       rw [this]
       exact hbx
 
-
-/-- a stronger version of rule_buchi (stronger in `hrank`) -/
-theorem rule_buchi' {State: Type u} {Label : Type v} [DecidableEq State]
+theorem rule_buchi_mat_nat
+    {State: Type u} {Label : Type v} [DecidableEq State]
+    ----------
     (lts : LTS' State Label)             -- the LTS
     (B : State → Prop) [DecidablePred B]      -- proposition `B`
     (I : StateSet State)                      -- invariant `I`
     (hinv : lts.StateSet_isInvariant I)
-    (V : State → Nat)                         -- ranking function on
+    (V : State → (Mat Nat v₁ v₂))             -- ranking function on
                                               -- (I ∧ ¬B)-states
-    -- assume `V` is a function such that whenever `B` does not hold,
+    -- assume `V` is a **bounded** function such that whenever `B` does not hold,
     -- then in next steps the value of `V` decreases
-    (hrank : ∀ s s', I s ∧ ¬(B s) ∧ (∃ l, lts.Tr s l s') → V s' < V s) :
+    --(h_rankpos: ∀ x y, V(s x y) ≥ 0)
+    (h_rank : ∀ s s', I s ∧ ¬(B s) ∧ (∃ l, lts.Tr s l s')
+              → (V s' ≤ V s) ∧ (∃ x y, (V s') x y < (V s) x y)):
     -- Then then `B` holds infinitely many times
     ∀ ss μs, lts.ωTrace ss μs → ss ⊧ G (F (AP B)) := by
-  intro ss μs htr
-  simp [LTLFormula.sem]
-  simp [<- drop_get_zero]
-  have hI := lts.trace_states_in_invariant I hinv htr
-  have hstep : ∀ j, ∃ l, lts.Tr (ss.get j) l (ss.get (j + 1)) := by
-    intro j; exists μs.get j; exact htr.2 j
-  intro i
-  suffices ∀ k n, V (ss.get n) ≤ k → ∃ x, B (ss.get (n + x)) from
-    this (V (ss.get i)) i (Nat.le_refl _)
-  intro k
-  induction k with
-  | zero =>
-    intro n hv
-    exists 0
-    simp
-    if hb : B (ss.get n) then
-      exact hb
-    else
-      have : V (ss.get n) ≤ V (ss.get (n + 1)) := by simp_all
-      exact absurd (hrank _ _ ⟨ (hI n), hb, (hstep n)⟩) (Nat.not_lt.mpr this)
-  | succ k ih =>
-    intro n hv
-    if hb : B (ss.get n) then
-      exact ⟨0, by simp; exact hb⟩
-    else
-      have hdec := hrank _ _ ⟨ hI n, hb, (hstep n)⟩
-      obtain ⟨x, hbx⟩ := ih (n + 1) (by omega)
-      exists x + 1
-      have : n + (x + 1) = n + 1 + x := by omega
-      rw [this]
-      exact hbx
+  apply rule_buchi lts B I hinv
+    (fun s => Finset.sum Finset.univ (fun i => Finset.sum Finset.univ (fun j => (V s) i j)))
+  intro s s' ⟨hIs, hBs, htr⟩
+  obtain ⟨hle, x, y, hlt⟩ := h_rank s s' ⟨hIs, hBs, htr⟩
+  exact Finset.sum_lt_sum
+    (fun i _ => Finset.sum_le_sum (fun j _ => hle i j))
+    ⟨x, Finset.mem_univ x, Finset.sum_lt_sum (fun j _ => hle x j)
+      ⟨y, Finset.mem_univ y, hlt⟩⟩
+
+
+theorem rule_buchi_mat_int
+    {State: Type u} {Label : Type v} [DecidableEq State]
+    ----------
+    (lts : LTS' State Label)                  -- the LTS
+    (B : State → Prop) [DecidablePred B]      -- proposition `B`
+    (I : StateSet State)                      -- invariant `I`
+    (hinv : lts.StateSet_isInvariant I)
+    (V : State → (Mat Int v₁ v₂))             -- ranking function on
+                                              -- (I ∧ ¬B)-states
+    -- assume `V` is a **bounded** function such that whenever `B` does not hold,
+    -- then in next steps the value of `V` decreases
+    (h_rankpos: ∀ s x y, (V s) x y ≥ 0)
+    (h_rank : ∀ s s', I s ∧ ¬(B s) ∧ (∃ l, lts.Tr s l s')
+              → (V s' ≤ V s) ∧ (∃ x y, (V s') x y < (V s) x y)):
+    -- Then then `B` holds infinitely many times
+    ∀ ss μs, lts.ωTrace ss μs → ss ⊧ G (F (AP B)) := by
+    apply rule_buchi_mat_nat lts B I hinv (fun s i j => (V s i j).toNat)
+    intro s s' ⟨hIs, hBs, htr⟩
+    obtain ⟨hle, x, y, hlt⟩ := h_rank s s' ⟨hIs, hBs, htr⟩
+    refine ⟨fun i j => ?_, x, y, ?_⟩
+    · have h1 : (V s') i j ≥ 0 := h_rankpos s' i j
+      have h2 : (V s') i j ≤ (V s) i j := hle i j
+      exact Int.toNat_le_toNat (hle i j)
+    · have := h_rankpos s x y
+      have := h_rankpos s' x y
+      omega
+
+
+
+/- theorem rule_LTL {State: Type u} {Label : Type v} -- [DecidableEq State] -/
+/-     (lts : LTS' State Label)                  -- the LTS -/
+/-     (A_neg: Cslib.Automata.NA.Buchi)          -- buchi automaton representing negation of property -/
+/-     --(I : StateSet State)                      -- invariant `I` -/
+/-     -- (hinv : lts.StateSet_isInvariant I) -/
+/-     -- (V : State → Nat)                         -- ranking function on -/
+/-     : Accept (lts ∩ A_neg) ↔  -/
+
+
 
 
 
