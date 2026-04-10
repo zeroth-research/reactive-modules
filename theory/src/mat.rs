@@ -1,3 +1,16 @@
+/*!
+# Matrices
+
+A Matrix type is parametrized by another [Type]
+and its dimensions `M` and `N` which are `usize`.
+
+This code makes available: TODO
+
+## Examples
+TODO
+
+*/
+
 use std::marker::PhantomData;
 
 use crate::*;

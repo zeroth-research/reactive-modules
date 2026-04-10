@@ -1,7 +1,17 @@
-use crate::mk_theory_mod;
+/*!
+# Integers (mathematical)
 
-mk_theory_mod!(
-    int, Types(Int),
+This code makes available: TODO
+
+## Examples
+TODO
+
+*/
+
+use crate::mk_theory;
+
+mk_theory!(
+    Types(Int),
     Add(Int, Int) => Int,
     Mul(Int, Int) => Int,
     Id(Int) => Int

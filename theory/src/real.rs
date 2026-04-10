@@ -1,3 +1,13 @@
+/*!
+# Real numbers
+
+This code makes available: TODO
+
+## Examples
+TODO
+
+*/
+
 use crate::mk_theory_mod;
 
 mk_theory_mod!(
