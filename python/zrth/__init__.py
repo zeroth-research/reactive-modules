@@ -31,6 +31,7 @@ def Float(*args):
 
 from .gym import Wrapper, Env
 from .smv import parse_smv
+from .smt import z3
 
 # Submodule access: from zrth.gym import Env, Wrapper
 #                   from zrth.torch import Module
