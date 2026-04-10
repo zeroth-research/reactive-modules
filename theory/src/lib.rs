@@ -317,6 +317,7 @@ macro_rules! mk_theory {
         $($op_name:ident($($arg:ty),+) => $ret:ty),* $(,)?
         $(; $([$($ext_gen:tt)*] $ext_variant:ident => $ext_ty:ty),+ $(,)?)?
     ) => {
+        #[allow(unused)]
         use $crate::*;
 
         pub struct $th {}
