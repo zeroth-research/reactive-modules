@@ -253,6 +253,10 @@ class Wrapper(Module, gym.Wrapper):
     def __getattr__(self, name):
         return getattr_wire(self, name)
 
+    @property
+    def wire_names(self):
+        return object.__getattribute__(self, '_wire_names')
+
     def _sync_private_state_from_env(self):
         """Read private state from the real env and write to symbolic next wires."""
         wire_names = object.__getattribute__(self, '_wire_names')
