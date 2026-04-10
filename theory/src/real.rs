@@ -12,7 +12,9 @@ use crate::mk_theory;
 
 mk_theory!(
     Types(Real),
-    Add(Real, Real) => Real,
-    Mul(Real, Real) => Real,
-    Id(Real) => Real
+    {
+        Add(Real, Real) => Real,
+        Mul(Real, Real) => Real,
+        Id(Real) => Real
+    }
 );

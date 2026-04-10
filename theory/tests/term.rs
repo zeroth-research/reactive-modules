@@ -51,15 +51,20 @@ macro_rules! mk_term {
 
 #[test]
 fn test_typecheck1() {
-    use theory::nat::nat::*;
+    use theory::nat::*;
     let _: Term<Theory> = mk_term!(Add(), (Nat(), Nat()), Nat());
     let _: Term<Theory> = mk_term!(Id(), Nat(), Nat());
 }
 
 #[test]
 fn test_typecheck2() {
-    use theory::int::int;
-    use theory::nat::nat;
-    let _: Term<nat::Theory> = mk_term!(nat::Add(), (nat::Nat(), nat::Nat()), nat::Nat());
-    let _: Term<int::Theory> = mk_term!(int::Id(), int::Int(), int::Int());
+    {
+        use theory::nat::Theory as NatTheory;
+        use theory::nat::*;
+        let _: Term<NatTheory> = mk_term!(Add(), (Nat(), Nat()), Nat());
+    }
+
+    {
+        let _: Term<int::Theory> = mk_term!(int::Id(), int::Int(), int::Int());
+    }
 }

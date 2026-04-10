@@ -35,11 +35,14 @@ impl<T: Type + Copy, const A: usize, const B: usize, const C: usize>
 }
 
 mk_theory!(
-    [T: Type, const M: usize, const N: usize]
-    Types(Mat => Mat<T, M, N>),
-    Add(Mat<T, M, N>, Mat<T, M, N>) => Mat<T, M, N>,
-    Id(Mat<T, M, N>) => Mat<T, M, N>
-    ;
-    [T: Type + Copy, const A: usize, const B: usize, const C: usize]
-    MatMul => MatMul<T, A, B, C>
+    Types([T: Type, const M: usize, const N: usize] Mat => Mat<T, M, N>),
+    {
+        [T: Type, const M: usize, const N: usize]
+        Add(Mat<T, M, N>, Mat<T, M, N>) => Mat<T, M, N>,
+        Id(Mat<T, M, N>) => Mat<T, M, N>
+    }
+    {
+        [T: Type + Copy, const A: usize, const B: usize, const C: usize]
+        MatMul => MatMul<T, A, B, C>
+    }
 );
