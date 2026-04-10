@@ -1,11 +1,17 @@
 /*!
 # Integers (mathematical)
 
-This code makes available: TODO
+Provides the [`Int`] type with operations [`Add`], [`Mul`],
+and [`Id`], bundled into a [`Theory`].
 
 ## Examples
-TODO
 
+```
+use theory::int::*;
+
+let _: Types = Int().into();
+let _: Operations = Add().into();
+```
 */
 
 use crate::mk_theory;

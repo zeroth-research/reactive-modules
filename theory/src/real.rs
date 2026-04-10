@@ -1,11 +1,17 @@
 /*!
 # Real numbers
 
-This code makes available: TODO
+Provides the [`Real`] type with operations [`Add`], [`Mul`],
+and [`Id`], bundled into a [`Theory`].
 
 ## Examples
-TODO
 
+```
+use theory::real::*;
+
+let _: Types = Real().into();
+let _: Operations = Add().into();
+```
 */
 
 use crate::mk_theory;
