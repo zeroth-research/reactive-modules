@@ -24,30 +24,6 @@ mod custom_simple {
     );
 }
 
-// --- mk_theory_mod with default names ---
-
-mod default_mod {
-    use theory::mk_theory_mod;
-
-    mk_theory_mod!(
-        mynat, Types(Nat),
-        Add(Nat, Nat) => Nat,
-        Id(Nat) => Nat
-    );
-}
-
-// --- mk_theory_mod with custom names ---
-
-mod custom_mod {
-    use theory::mk_theory_mod;
-
-    mk_theory_mod!({MyTypes, MyOps, MyTh}
-        mynat, Types(Nat),
-        Add(Nat, Nat) => Nat,
-        Id(Nat) => Nat
-    );
-}
-
 // --- mk_theory with generics + default names ---
 
 mod generic_default {
@@ -75,22 +51,6 @@ mod generic_custom {
 
     mk_theory!([const N: usize] {BvTypes, BvOps, BvTh}
         Types(BV => BV<N>),
-        Add(BV<N>, BV<N>) => BV<N>,
-        Id(BV<N>) => BV<N>
-    );
-}
-
-// --- mk_theory_mod with generics + custom names ---
-
-mod generic_custom_mod {
-    use theory::{Type, mk_theory_mod};
-
-    #[derive(Clone)]
-    pub struct BV<const N: usize>();
-    impl<const N: usize> Type for BV<N> {}
-
-    mk_theory_mod!([const N: usize] {BvTypes, BvOps, BvTh}
-        mybv, Types(BV => BV<N>),
         Add(BV<N>, BV<N>) => BV<N>,
         Id(BV<N>) => BV<N>
     );
@@ -129,28 +89,6 @@ fn test_custom_names() {
 }
 
 #[test]
-fn test_default_mod() {
-    use default_mod::mynat::*;
-
-    let _: <Theory as theory::Theory>::DT = Types::Nat;
-    let _: <Theory as theory::Theory>::IT = Operations::Add;
-
-    let _: Types = Nat().into();
-    let _: Operations = Add().into();
-}
-
-#[test]
-fn test_custom_mod() {
-    use custom_mod::mynat::*;
-
-    let _: <MyTh as theory::Theory>::DT = MyTypes::Nat;
-    let _: <MyTh as theory::Theory>::IT = MyOps::Add;
-
-    let _: MyTypes = Nat().into();
-    let _: MyOps = Add().into();
-}
-
-#[test]
 fn test_generic_default() {
     use generic_default::*;
 
@@ -168,18 +106,6 @@ fn test_generic_custom() {
 
     let _: BvTypes = BV::<32>().into();
     let _: BvOps = Add().into();
-}
-
-#[test]
-fn test_generic_custom_mod() {
-    use generic_custom_mod::BV;
-    use generic_custom_mod::mybv::*;
-
-    let _: <BvTh as theory::Theory>::DT = BvTypes::BV;
-    let _: <BvTh as theory::Theory>::IT = BvOps::Add;
-
-    let _: BvTypes = BV::<64>().into();
-    let _: BvOps = Id().into();
 }
 
 // Verify TheoryType and TheoryOperation impls work with custom names

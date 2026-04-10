@@ -8,10 +8,10 @@ TODO
 
 */
 
-use crate::mk_theory_mod;
+use crate::mk_theory;
 
-mk_theory_mod!(
-    real, Types(Real),
+mk_theory!(
+    Types(Real),
     Add(Real, Real) => Real,
     Mul(Real, Real) => Real,
     Id(Real) => Real

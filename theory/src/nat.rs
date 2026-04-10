@@ -8,10 +8,10 @@ TODO
 
 */
 
-use crate::mk_theory_mod;
+use crate::mk_theory;
 
-mk_theory_mod!(
-    nat, Types(Nat),
+mk_theory!(
+    Types(Nat),
     Add(Nat, Nat) => Nat,
     Mul(Nat, Nat) => Nat,
     Id(Nat) => Nat
