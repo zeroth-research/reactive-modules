@@ -3,35 +3,12 @@ import torch
 from ..zrth import IType, DType
 
 
-def z3_eval_itype(itype, read):
+def eval(itype, read):
     """Evaluate a single instruction type, producing Z3 expressions."""
     fn = _Z3_EVAL.get(type(itype))
     if fn is None:
         raise RuntimeError(f"cannot translate instruction type '{type(itype).__name__}' to Z3")
     return fn(itype, read)
-
-
-def make_z3_vars(name, dtype):
-    """Create fresh Z3 variables from a DType, returning a list."""
-    shape = dtype._0 if hasattr(dtype, '_0') else [1]
-    n = 1
-    for d in shape:
-        n *= d
-
-    if isinstance(dtype, (DType.Float, DType.Real)):
-        if n == 1:
-            return [z3.Real(name)]
-        return [z3.Real(f"{name}_{i}") for i in range(n)]
-    elif isinstance(dtype, DType.Bool):
-        if n == 1:
-            return [z3.Bool(name)]
-        return [z3.Bool(f"{name}_{i}") for i in range(n)]
-    elif isinstance(dtype, DType.Int):
-        if n == 1:
-            return [z3.Int(name)]
-        return [z3.Int(f"{name}_{i}") for i in range(n)]
-    else:
-        raise NotImplementedError(f"make_z3_vars: unsupported dtype {dtype}")
 
 
 def _tensor_to_z3(tensor):
