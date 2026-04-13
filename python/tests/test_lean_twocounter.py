@@ -90,7 +90,7 @@ def test_twobitcounter_generates_lean():
         project_name="TwoBitCertificate",
         executable=True,
         cert_data=CertificateData(
-            p_terms=_make_P(m.ctrl),
-            ranking_terms=_make_ranking(m.ctrl),
+            prp=_make_P(m.ctrl),
+            ranking=_make_ranking(m.ctrl),
         ),
     )

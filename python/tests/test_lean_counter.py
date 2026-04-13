@@ -305,9 +305,9 @@ def test_counter_generates_lean():
         project_name="Counter",
         executable=True,
         cert_data=CertificateData(
-            p_terms=_make_P(m.ctrl),
-            inv_terms=_make_inv(m.ctrl),
-            init_pre_terms=_make_init_pre(m.extl),
-            ranking_terms=_make_ranking(m.ctrl),
+            prp=_make_P(m.ctrl),
+            inv=_make_inv(m.ctrl),
+            init_pre=_make_init_pre(m.extl),
+            ranking=_make_ranking(m.ctrl),
         ),
     )
