@@ -46,6 +46,10 @@ def _exprs_to_terms(cert_data: CertificateData, module, source: str) -> Certific
     var_names = _state_var_names(source)
     wires = {name: pair for name, pair in zip(var_names, module.ctrl)}
 
+    if isinstance(cert_data.prp, str):
+        fn = _make_callable("prp", var_names, cert_data.prp)
+        cert_data.prp = convert_method(fn, wires, [Wire(Bool(1))])
+
     if isinstance(cert_data.inv, str):
         fn = _make_callable("inv", var_names, cert_data.inv)
         cert_data.inv = convert_method(fn, wires, [Wire(Bool(1))])
