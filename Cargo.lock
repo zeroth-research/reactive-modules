@@ -818,6 +818,7 @@ name = "types"
 version = "0.1.0"
 dependencies = [
  "base",
+ "theory",
 ]
 
 [[package]]

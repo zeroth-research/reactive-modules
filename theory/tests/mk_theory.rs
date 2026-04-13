@@ -27,7 +27,7 @@ mod custom_simple {
 mod generic_default {
     use theory::{Type, mk_theory};
 
-    #[derive(Clone)]
+    #[derive(Clone, Copy, PartialEq)]
     pub struct BV<const N: usize>();
     impl<const N: usize> Type for BV<N> {}
 
@@ -46,7 +46,7 @@ mod generic_default {
 mod generic_custom {
     use theory::{Type, mk_theory};
 
-    #[derive(Clone)]
+    #[derive(Clone, Copy, PartialEq)]
     pub struct BV<const N: usize>();
     impl<const N: usize> Type for BV<N> {}
 

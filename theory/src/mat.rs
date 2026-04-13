@@ -15,7 +15,7 @@ use theory::int::Int;
 
 let _: Types = Mat::<Int, 2, 3>(PhantomData).into();
 let _: Operations = Add().into();
-let _: Operations = MatMul::<Int, 2, 3, 4> { t: PhantomData }.into();
+let _: Operations = MatMul::<Int, 2, 3, 4> ( PhantomData ).into();
 ```
 */
 
@@ -24,20 +24,27 @@ use std::marker::PhantomData;
 use crate::*;
 
 /// Bitvector type parametrized by its size
-#[derive(Clone)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Mat<T: Type, const M: usize, const N: usize>(pub std::marker::PhantomData<T>);
 impl<T: Type, const M: usize, const N: usize> Type for Mat<T, M, N> {}
 
-#[derive(Copy, Clone)]
-pub struct MatMul<T: Type, const A: usize, const B: usize, const C: usize> {
-    pub t: PhantomData<T>,
-}
-impl<T: Type + Copy, const A: usize, const B: usize, const C: usize> Operation
-    for MatMul<T, A, B, C>
-{
-}
+#[derive(Copy, Clone, PartialEq)]
+pub struct MatMul<T: Type, const A: usize, const B: usize, const C: usize>(pub PhantomData<T>);
+impl<T: Type, const A: usize, const B: usize, const C: usize> Operation for MatMul<T, A, B, C> {}
 
-impl<T: Type + Copy, const A: usize, const B: usize, const C: usize>
+// matrix constant represented by an object of type `C`
+// TODO: C and T is not connected anyhow -- we need to somehow specify
+// that C can represent matrices with elements in `T: Type`.
+// Now it is really a run-time check (if the programmer writes it...)
+#[derive(Clone, Copy, PartialEq)]
+pub struct MatConst<C, const A: usize, const B: usize>(pub C);
+impl<C: Clone + PartialEq, const A: usize, const B: usize> Operation for MatConst<C, A, B> {}
+
+impl<C: Clone + PartialEq, T: Type, const A: usize, const B: usize>
+    Operation0To1<Mat<T, A, B>> for MatConst<C, A, B> {}
+
+
+impl<T: Type, const A: usize, const B: usize, const C: usize>
     Operation2To1<Mat<T, A, B>, Mat<T, B, C>, Mat<T, A, C>> for MatMul<T, A, B, C>
 {
 }
