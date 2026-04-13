@@ -23,10 +23,12 @@ dependencies = [
     "torch==2.9.0",
 ]
 
-# [project.optional-dependencies]
-# torch = [
-#     "torch==2.9.0",
-# ]
+[project.optional-dependencies]
+# AI-based inference of invariants and ranking functions (TA2MagicAI).
+# Install with: pip install zrth[ai]  or  uv pip install zrth[ai]
+ai = [
+    "anthropic>=0.52",
+]
 
 [build-system]
 requires = [

@@ -5,6 +5,7 @@ from zrth import Wire, Term, Module, DType as dt, IType as it, Bool, Int
 from zrth.lean.project import (
     create_project,
 )
+from zrth.lean.cert import CertificateData
 
 from zrth.expr import Expr, Bool as BoolConst
 
@@ -88,6 +89,8 @@ def test_twobitcounter_generates_lean():
         module=m,
         project_name="TwoBitCertificate",
         executable=True,
-        p_terms=_make_P(m.ctrl),
-        ranking_terms=_make_ranking(m.ctrl),
+        cert_data=CertificateData(
+            p_terms=_make_P(m.ctrl),
+            ranking_terms=_make_ranking(m.ctrl),
+        ),
     )
