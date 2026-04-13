@@ -34,6 +34,9 @@ ai-local = [
     "openai>=1.0",
 ]
 
+[project.scripts]
+verith = "zrth.lean.main:main"
+
 [build-system]
 requires = [
     "maturin>=1.9,<2.0",
