@@ -1,5 +1,5 @@
-pub mod dtype;
-pub mod itype;
+mod dtype;
+mod itype;
 
-pub use dtype::DType;
+pub use dtype::DTypes;
 pub use itype::uninterpreted::Uninterpreted;

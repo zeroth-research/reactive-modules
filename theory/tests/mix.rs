@@ -66,3 +66,26 @@ mk_theory!(
         MatMul => MatMul<T, A, B, C>
     }
 );
+
+fn mat<T: Type, const M: usize, const N: usize>() -> Mat<T, M, N> {
+    Mat(std::marker::PhantomData)
+}
+
+fn matmul<T: Type + Copy, const A: usize, const B: usize, const C: usize>() -> MatMul<T, A, B, C> {
+    MatMul(std::marker::PhantomData)
+}
+
+#[test]
+fn test_mat_add() {
+    let _: Term<Theory> = Term::mk_bin_op(
+        Add(),
+        (mat::<bools::Bool, 2, 3>(), mat::<bools::Bool, 2, 3>()),
+        mat::<bools::Bool, 2, 3>(),
+    );
+
+    let _: Term<Theory> = Term::mk_bin_op(
+        matmul(),
+        (mat::<bools::Bool, 2, 3>(), mat::<bools::Bool, 3, 3>()),
+        mat::<bools::Bool, 2, 3>(),
+    );
+}

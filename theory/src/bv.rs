@@ -17,7 +17,7 @@ let _: Operations = Add().into();
 use crate::{Type, mk_theory};
 
 /// Bitvector type parametrized by its size
-#[derive(Clone)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct BV<const N: usize>();
 impl<const N: usize> Type for BV<N> {}
 

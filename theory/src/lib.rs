@@ -29,18 +29,19 @@ pub mod real;
 pub trait Type: Clone {}
 
 /// [DType] is a an enum of [Type]s used in a [Theory]
-pub trait DType: Clone {}
+pub trait DType: Clone + Copy {}
 
 /// [Operation] represents a function on values
 /// of a given data type. It is used to construct [IType]
 /// (in the same way as [Type] is used to construct [DType]).
-pub trait Operation: Copy {}
+pub trait Operation: Clone {}
 
 /// [IType] is an enum of operations present in a theory
-pub trait IType: Copy {}
+pub trait IType: Clone + Copy {}
 
 /// Traits representing unary, binary and ternary operations.
 /// These traits can be used to do static type-checking.
+pub trait Operation0To1<R: Type>: Operation {}
 pub trait Operation1To1<T1: Type, R: Type>: Operation {}
 pub trait Operation2To1<T1: Type, T2: Type, R: Type>: Operation {}
 pub trait Operation3To1<T1: Type, T2: Type, T3: Type, R: Type>: Operation {}

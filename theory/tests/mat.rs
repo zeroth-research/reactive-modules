@@ -52,7 +52,7 @@ fn mat<T: Type, const M: usize, const N: usize>() -> Mat<T, M, N> {
 }
 
 fn matmul<T: Type + Copy, const A: usize, const B: usize, const C: usize>() -> MatMul<T, A, B, C> {
-    MatMul { t: PhantomData }
+    MatMul(PhantomData)
 }
 
 // --- Mat<Int, M, N> with Add and Id ---
@@ -92,9 +92,6 @@ fn test_mat_bv_id() {
         Term::mk_unary_op(Id(), mat::<BV<32>, 2, 5>(), mat::<BV<32>, 2, 5>());
 }
 
-// --- MatMul requires T: Type + Copy.
-// Int and BV don't derive Copy, so we define a Copy element type.
-
 #[derive(Clone, Copy)]
 struct Scalar();
 impl Type for Scalar {}
@@ -109,11 +106,15 @@ fn test_matmul() {
     );
 }
 
+fn MatMulX<T: Type, const M: usize, const N: usize, const X: usize>() -> MatMul<T, M, N, X> {
+    mat::MatMul::<T, M, N, X>(PhantomData)
+}
+
 #[test]
 fn test_matmul_square() {
     // Square: (3x3) * (3x3) -> (3x3)
     let _: Term<mat::Theory> = Term::mk_bin_op(
-        matmul::<Scalar, 3, 3, 3>(),
+        mat::MatMul::<Scalar, 3, 3, 3>(PhantomData),
         (mat::<Scalar, 3, 3>(), mat::<Scalar, 3, 3>()),
         mat::<Scalar, 3, 3>(),
     );
