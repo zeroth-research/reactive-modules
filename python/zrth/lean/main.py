@@ -44,7 +44,10 @@ def _exprs_to_terms(cert_data: CertificateData, module, source: str) -> Certific
     from zrth.analyzer import convert_method
 
     var_names = _state_var_names(source)
-    wires = {name: pair for name, pair in zip(var_names, module.ctrl)}
+    # cert_body evaluates inv/ranking/prp against ctrl_next (the [1] wire of each
+    # ctrl pair).  convert_method reads from wires[name][0], so we point both
+    # slots at the next-state wire so the generated terms read from ctrl_next.
+    wires = {name: (pair[1], pair[1]) for name, pair in zip(var_names, module.ctrl)}
 
     if isinstance(cert_data.prp, str):
         fn = _make_callable("prp", var_names, cert_data.prp)
