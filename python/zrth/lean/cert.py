@@ -1,6 +1,20 @@
+from dataclasses import dataclass
+
 from zrth.lean.native import _product_type, _append_expr, _translate_terms
 from zrth import Module, Wire
 from .translate import ModuleToLean4
+from ..expr import Expr
+
+
+@dataclass
+class CertificateData:
+    """Data needed to generate a Lean certificate."""
+
+    prp: str | Expr
+    inv: Expr | str | None = None
+    init_pre: Expr | str | None = None
+    update_pre: Expr | str | None = None
+    ranking: Expr | str | None = None
 
 
 # TODO: move the parts that does not change into .lean file.
@@ -11,13 +25,15 @@ def generate_certificate_lean(
     module: Module,
     module_name: str,
     m2l: ModuleToLean4,
-    inv_terms: list | None = None,
-    init_pre_terms: list | None = None,
-    update_pre_terms: list | None = None,
-    ranking_terms: list | None = None,
-    p_terms: list | None = None,
+    cert_data: CertificateData,
 ) -> str:
     """Generate Certificate.lean with compiled or placeholder definitions."""
+    # TODO: these might be strings atm, we need to FIX this
+    inv_terms = cert_data.inv
+    init_pre_terms = cert_data.init_pre
+    update_pre_terms = cert_data.update_pre
+    ranking_terms = cert_data.ranking
+    p_terms = cert_data.prp
 
     extl_next: list[Wire] = [pair[1] for pair in module.extl]
     ctrl_next: list[Wire] = [pair[1] for pair in module.ctrl]
