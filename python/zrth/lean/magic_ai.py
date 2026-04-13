@@ -1,6 +1,7 @@
 """AI-based inference of invariants and ranking functions.
 
-Requires the 'ai' optional dependency: pip install zrth[ai]
+For Claude API: pip install zrth[ai]
+For local LLMs (Ollama, vLLM, etc.): pip install zrth[ai-local]
 """
 
 from .cert import CertificateData
@@ -10,6 +11,11 @@ try:
     import anthropic
 except ImportError:
     anthropic = None
+
+try:
+    import openai
+except ImportError:
+    openai = None
 
 GENERATE_SYSTEM = """\
 You are a formal verification expert. Given the source code of a reactive module \
@@ -90,26 +96,71 @@ def _describe_preconditions(cd: CertificateData) -> str:
     return "\n".join(parts)
 
 
-class TA2MagicAI(TA2Magic):
-    """Infers invariants and ranking functions using Claude."""
+def _make_client(base_url: str | None, model: str):
+    """Return a chat callable: (system, user) -> str."""
+    if base_url is not None:
+        if openai is None:
+            raise ImportError(
+                "openai package is required for local LLM support. "
+                "Install with: pip install zrth[ai-local]"
+            )
+        client = openai.OpenAI(base_url=base_url, api_key="unused")
 
-    def __init__(
-        self, source: str, model: str = "claude-sonnet-4-6", max_attempts: int = 5
-    ):
-        super().__init__(source)
+        def chat(system: str, user: str) -> str:
+            resp = client.chat.completions.create(
+                model=model,
+                max_tokens=1024,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            )
+            return resp.choices[0].message.content
+
+        return chat
+    else:
         if anthropic is None:
             raise ImportError(
                 "anthropic package is required for TA2MagicAI. "
                 "Install with: pip install zrth[ai]"
             )
-        self.client = anthropic.Anthropic()
-        self.model = model
+        client = anthropic.Anthropic()
+
+        def chat(system: str, user: str) -> str:
+            resp = client.messages.create(
+                model=model,
+                max_tokens=1024,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+            return resp.content[0].text
+
+        return chat
+
+
+class TA2MagicAI(TA2Magic):
+    """Infers invariants and ranking functions using an LLM.
+
+    By default uses Claude via the Anthropic API (requires ANTHROPIC_API_KEY).
+    Pass `base_url` to use a local LLM via any OpenAI-compatible API instead,
+    e.g. base_url="http://localhost:11434/v1" for Ollama.
+    """
+
+    def __init__(
+        self,
+        source: str,
+        model: str = "claude-sonnet-4-6",
+        max_attempts: int = 5,
+        base_url: str | None = None,
+    ):
+        super().__init__(source)
         self.max_attempts = max_attempts
+        self._chat = _make_client(base_url, model)
 
     def infer(self, cd: CertificateData) -> CertificateData:
         feedback = None
         for attempt in range(self.max_attempts):
-            print(f"Generating invariant and ranking funciton (attempt {attempt})")
+            print(f"Generating invariant and ranking function (attempt {attempt})")
             inv, ranking = self._generate(cd, feedback)
             print("Candidates:")
             print(f"  inv: {inv}")
@@ -138,14 +189,7 @@ class TA2MagicAI(TA2Magic):
                 "\nPlease try again with a corrected invariant and ranking function."
             )
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=GENERATE_SYSTEM,
-            messages=[{"role": "user", "content": user_msg}],
-        )
-
-        text = response.content[0].text
+        text = self._chat(GENERATE_SYSTEM, user_msg)
         return self._parse_generate_response(text)
 
     def _verify(
@@ -160,14 +204,7 @@ class TA2MagicAI(TA2Magic):
             f"Proposed ranking function: {ranking}\n"
         )
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=VERIFY_SYSTEM,
-            messages=[{"role": "user", "content": user_msg}],
-        )
-
-        text = response.content[0].text.strip()
+        text = self._chat(VERIFY_SYSTEM, user_msg).strip()
         if text.startswith("CORRECT"):
             return True, None
         return False, text
@@ -179,9 +216,9 @@ class TA2MagicAI(TA2Magic):
         for line in text.strip().splitlines():
             line = line.strip()
             if line.startswith("INVARIANT:"):
-                inv = line[len("INVARIANT:") :].strip()
+                inv = line[len("INVARIANT:"):].strip()
             elif line.startswith("RANKING:"):
-                ranking = line[len("RANKING:") :].strip()
+                ranking = line[len("RANKING:"):].strip()
         if inv is None or ranking is None:
             raise ValueError(f"Failed to parse AI response:\n{text}")
         return inv, ranking
