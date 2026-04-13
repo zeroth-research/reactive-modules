@@ -69,9 +69,19 @@ def main():
 
     args = parser.parse_args()
 
+    if args.infer and not args.property:
+        parser.error("--infer requires --property")
+
     cert_data: CertificateData | None = None
     if args.property:
         cert_data = CertificateData(prp=args.property)
+
+    if args.infer:
+        from .magic_ai import TA2MagicAI
+
+        source = Path(args.module_file).read_text()
+        magic = TA2MagicAI(source, model=args.model, base_url=args.base_url)
+        cert_data = magic.infer(cert_data)
 
     module = load_module_from_file(args.module_file, module_def=args.module_def)
     project_dir = create_project(
