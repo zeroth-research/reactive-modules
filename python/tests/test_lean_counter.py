@@ -5,6 +5,7 @@ from zrth import Wire, Term, Module, DType as dt, IType as it, Bool, Int
 from zrth.lean.project import (
     create_project,
 )
+from zrth.lean.cert import CertificateData
 
 from zrth.expr import Expr, Bool as BoolConst
 
@@ -303,8 +304,10 @@ def test_counter_generates_lean():
         module=m,
         project_name="Counter",
         executable=True,
-        p_terms=_make_P(m.ctrl),
-        inv_terms=_make_inv(m.ctrl),
-        init_pre_terms=_make_init_pre(m.extl),
-        ranking_terms=_make_ranking(m.ctrl),
+        cert_data=CertificateData(
+            p_terms=_make_P(m.ctrl),
+            inv_terms=_make_inv(m.ctrl),
+            init_pre_terms=_make_init_pre(m.extl),
+            ranking_terms=_make_ranking(m.ctrl),
+        ),
     )

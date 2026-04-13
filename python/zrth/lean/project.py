@@ -5,7 +5,7 @@ copy template library files, and generate a diagram Lean file.
 
 from zrth.lean.common import dtype_to_lean_type
 
-from zrth.lean.cert import generate_certificate_lean
+from zrth.lean.cert import generate_certificate_lean, CertificateData
 
 import shutil
 import textwrap
@@ -246,11 +246,7 @@ def create_project(
     project_name: str = "Certificate",
     template_dir: Path = TEMPLATE_DIR,
     executable: bool = False,
-    inv_terms: list | None = None,
-    init_pre_terms: list | None = None,
-    update_pre_terms: list | None = None,
-    ranking_terms: list | None = None,
-    p_terms: list | None = None,
+    cert_data: CertificateData | None = None,
 ) -> Path:
     """
     Create a full Lean4 project.
@@ -333,11 +329,7 @@ import Core.Box
             module,
             module_name,
             m2l,
-            inv_terms=inv_terms,
-            init_pre_terms=init_pre_terms,
-            update_pre_terms=update_pre_terms,
-            ranking_terms=ranking_terms,
-            p_terms=p_terms,
+            cert_data=cert_data,
         )
     )
     print(f"Wrote {cert_file}")
