@@ -1,4 +1,63 @@
-"""CLI entry point for generating a Lean4 project from a reactive module."""
+"""CLI entry point for generating a Lean4 project from a reactive module.
+
+Entry point: ``uv run verith``
+
+Quick start
+-----------
+A *module file* is a Python file that defines a ``module()`` function (or
+class) returning a :class:`zrth.Module`.  Optionally it may also define plain
+``init()`` / ``update()`` functions so that the AI inference (``--infer``) can
+read the high-level logic.
+
+Generate a bare Lean project (all certificate fields left as ``sorry``)::
+
+    uv run verith mymodule.py -o out/ -p MyProject
+
+Pass a property so the certificate knows what to prove::
+
+    uv run verith mymodule.py -P "x == 0" -o out/ -p MyProject
+
+Ask the AI to infer the invariant and ranking function automatically::
+
+    uv run verith mymodule.py -P "x == 0" --infer -o out/ -p MyProject
+
+Use a local LLM via Ollama instead of Claude::
+
+    uv run verith mymodule.py -P "x == 0" --infer \\
+        --model qwen3-coder --base-url http://localhost:11434/v1 \\
+        -o out/ -p MyProject
+
+AI inference requirements
+-------------------------
+* **Claude (default)**: set ``ANTHROPIC_API_KEY`` and install
+  ``pip install zrth[ai]``.
+* **Local LLM (Ollama, vLLM, …)**: install ``pip install zrth[ai-local]``
+  and provide ``--base-url`` pointing to an OpenAI-compatible endpoint.
+
+Module file format
+------------------
+The file must expose a callable named ``module`` (override with ``-d``) that
+returns a :class:`zrth.Module`::
+
+    # mymodule.py
+    from zrth import Wire, Module, DType as dt
+    from zrth.analyzer import convert_method
+
+    def init():
+        return 0
+
+    def update(old_x):
+        x = old_x + 1
+        if x == 10:
+            return 0
+        return x
+
+    def module() -> Module:
+        state = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+        init_terms   = convert_method(init,   {},               [state[1]])
+        update_terms = convert_method(update, {"old_x": state}, [state[1]])
+        return Module.sequential(init_terms, update_terms, obs=[state])
+"""
 
 import argparse
 import ast
@@ -64,9 +123,31 @@ def _exprs_to_terms(cert_data: CertificateData, module, source: str) -> Certific
     return cert_data
 
 
+_EPILOG = """\
+examples:
+  # bare project — all certificate fields left as sorry
+  uv run verith mymodule.py -o out/ -p MyProject
+
+  # pass a property (certificate stub with known P)
+  uv run verith mymodule.py -P "x == 0" -o out/ -p MyProject
+
+  # AI inference with Claude (requires ANTHROPIC_API_KEY + pip install zrth[ai])
+  uv run verith mymodule.py -P "x == 0" --infer -o out/ -p MyProject
+
+  # AI inference with Ollama (requires pip install zrth[ai-local])
+  uv run verith mymodule.py -P "x == 0" --infer \\
+      --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p MyProject
+"""
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate a Lean4 project from a Python reactive module definition."
+        description=(
+            "Generate a Lean4 certificate project from a Python reactive module. "
+            "With --infer an LLM automatically finds the invariant and ranking function."
+        ),
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "module_file",
