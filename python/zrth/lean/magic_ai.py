@@ -207,7 +207,19 @@ class TA2MagicAI(TA2Magic):
         text = self._chat(VERIFY_SYSTEM, user_msg).strip()
         if text.startswith("CORRECT"):
             return True, None
-        return False, text
+        elif text.startswith("WRONG"):
+            return False, text
+        else:
+            # The format of the answer was wrong. We could be more clever here,
+            # but try to let the AI correct itself.
+            user_msg = (
+                f"You were checking invariants and ranking functions and answered\n\n{text}."
+                "\n\nYou were required to answer either 'CORRECT' (a single word) or 'WRONG: <reason>' (a single line). Do it."
+            )
+            text = self._chat(VERIFY_SYSTEM, user_msg).strip()
+            if text.startswith("CORRECT"):
+                return True, None
+            return False, text
 
     @staticmethod
     def _parse_generate_response(text: str) -> tuple[str, str]:
@@ -216,9 +228,9 @@ class TA2MagicAI(TA2Magic):
         for line in text.strip().splitlines():
             line = line.strip()
             if line.startswith("INVARIANT:"):
-                inv = line[len("INVARIANT:"):].strip()
+                inv = line[len("INVARIANT:") :].strip()
             elif line.startswith("RANKING:"):
-                ranking = line[len("RANKING:"):].strip()
+                ranking = line[len("RANKING:") :].strip()
         if inv is None or ranking is None:
             raise ValueError(f"Failed to parse AI response:\n{text}")
         return inv, ranking
