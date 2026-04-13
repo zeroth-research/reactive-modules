@@ -10,7 +10,7 @@ from ..expr import Expr
 class CertificateData:
     """Data needed to generate a Lean certificate."""
 
-    prp: str | Expr
+    prp: str | Expr | None = None
     inv: Expr | str | None = None
     init_pre: Expr | str | None = None
     update_pre: Expr | str | None = None
@@ -25,15 +25,21 @@ def generate_certificate_lean(
     module: Module,
     module_name: str,
     m2l: ModuleToLean4,
-    cert_data: CertificateData,
+    cert_data: CertificateData | None = None,
 ) -> str:
     """Generate Certificate.lean with compiled or placeholder definitions."""
-    # TODO: these might be strings atm, we need to FIX this
-    inv_terms = cert_data.inv
-    init_pre_terms = cert_data.init_pre
-    update_pre_terms = cert_data.update_pre
-    ranking_terms = cert_data.ranking
-    p_terms = cert_data.prp
+    if cert_data is None:
+        cert_data = CertificateData()
+
+    def _as_terms(v):
+        """Return v if it is a list of Terms, else None (strings are not yet compiled)."""
+        return v if isinstance(v, list) else None
+
+    inv_terms = _as_terms(cert_data.inv)
+    init_pre_terms = _as_terms(cert_data.init_pre)
+    update_pre_terms = _as_terms(cert_data.update_pre)
+    ranking_terms = _as_terms(cert_data.ranking)
+    p_terms = _as_terms(cert_data.prp)
 
     extl_next: list[Wire] = [pair[1] for pair in module.extl]
     ctrl_next: list[Wire] = [pair[1] for pair in module.ctrl]
