@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 
+from .cert import CertificateData
 from .project import create_project, load_module_from_file
 
 
@@ -44,8 +45,33 @@ def main():
         action="store_true",
         help="Generate Main.lean and add [[lean_exe]] to lakefile for a runnable binary.",
     )
+    parser.add_argument(
+        "-P",
+        "--property",
+        default=None,
+        help="Property expression to verify (e.g. 'x == 0'). Required when using --infer.",
+    )
+    parser.add_argument(
+        "--infer",
+        action="store_true",
+        help="Use AI (TA2MagicAI) to infer the invariant and ranking function for --property.",
+    )
+    parser.add_argument(
+        "--model",
+        default="claude-sonnet-4-6",
+        help="LLM model to use for inference (default: claude-sonnet-4-6).",
+    )
+    parser.add_argument(
+        "--base-url",
+        default=None,
+        help="OpenAI-compatible base URL for local LLMs, e.g. http://localhost:11434/v1 for Ollama.",
+    )
 
     args = parser.parse_args()
+
+    cert_data: CertificateData | None = None
+    if args.property:
+        cert_data = CertificateData(prp=args.property)
 
     module = load_module_from_file(args.module_file, module_def=args.module_def)
     project_dir = create_project(
@@ -53,6 +79,7 @@ def main():
         module=module,
         project_name=args.project_name,
         executable=args.executable,
+        cert_data=cert_data,
     )
     print(f"\nProject ready at: {project_dir}")
 
