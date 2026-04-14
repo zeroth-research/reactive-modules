@@ -58,6 +58,7 @@ _LEAN_OP: dict[str, Callable] = {
     "Add": lambda a: f"({a[0]} + {a[1]})",
     "Sub": lambda a: f"({a[0]} - {a[1]})",
     "Mul": lambda a: f"({a[0]} * {a[1]})",
+    "Mod": lambda a: f"({a[0]} % {a[1]})",
     "Neg": lambda a: f"(-{a[0]})",
     "Lt": lambda a: f"decide ({a[0]} 0 0 < {a[1]} 0 0)",
     "Le": lambda a: f"decide ({a[0]} 0 0 ≤ {a[1]} 0 0)",
