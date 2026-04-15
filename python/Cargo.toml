@@ -12,12 +12,9 @@ crate-type = ["cdylib"]
 base = { path = "../base" }
 smt = { path = "../smt", optional = true }
 pyo3 = { version = "0.24" }
-visual = { path = "../visual", features = ["html"], optional = true }
 tch = { features = ["python-extension"], version = "0.22" }
 pyo3-tch = { version = "0.22" }
 
 [features]
-default = ["visual-html"]
 # dumping modules to HTML
-visual-html = ["visual/html"]
 enable-smt = ["smt"]

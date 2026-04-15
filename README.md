@@ -2,7 +2,8 @@
 
 Representation and manipulation of *reactive modules* in Rust and Python.
 
-[Reactive modules]((https://link.springer.com/article/10.1023/A:1008739929481)) are a model for defining reactive systems,
+[Reactive modules]((https://link.springer.com/article/10.1023/A:1008739929481)) are a model for defining reactive
+systems,
 i.e., "machines" that in loop compute outputs for incoming inputs.
 This project contains a generic Rust representation of reactive modules with computation steps (atoms)
 defined using wiring diagrams, several concrete instances of reactive modules (e.g., reactive modules
@@ -25,8 +26,7 @@ You can `just` using Cargo or Homebrew (or any other way
 brew install just # or `cargo install just`
 ```
 
-
-### Building without Python interface 
+### Building without Python interface
 
 To build the project without a Python interface, simply run
 
@@ -62,7 +62,6 @@ Any later build of the `python` crate can be done using
 just build-python
 ```
 
-
 ## Project structure
 
 Crates are structured as follows.
@@ -72,11 +71,9 @@ Crates are structured as follows.
  - python    # Python API to access the crates
  - smt       # an instance of reactive modules suitable for translating to SMT expressions
  - torch     # an instance of reactive modules where operations work with torch tensors
- - toy       # an instance of reactive modules for prototyping
- - visual    # crate confining code for visualizing reactive modules
-```
+ ```
 
- For details on each crate see its own README.
+For details on each crate see its own README.
 
 ## Running tests
 
@@ -109,18 +106,17 @@ Note that for successfully running `build-all`, the environment for the python c
 
 You can also select only some of the features when building the project. Available features are:
 
-| Feature              | Default | Description                                        |
-|----------------------|---------|----------------------------------------------------|
-| `visual/html`          | `ON`  | Support for dumping modules to HTML                    |
-| `toy/visual-html`      | `ON`  | Support for dumping toy modules to HTML                |
-| `toy/conversions-smt`  | `OFF` | Enable converting toy modules to smt modules           |
-| `python/visual-html`   | `ON`  | Support for dumping modules defined in Python to HTML  |
-| `python/enable-torch`  | `OFF` | Enable Python bindings for torch modules               |
-| `python/enable-smt`    | `OFF` | Enable Python bindings for smt modules                 |
+| Feature               | Default | Description                                           |
+|-----------------------|---------|-------------------------------------------------------|
+| `visual/html`         | `ON`    | Support for dumping modules to HTML                   |
+| `toy/visual-html`     | `ON`    | Support for dumping toy modules to HTML               |
+| `toy/conversions-smt` | `OFF`   | Enable converting toy modules to smt modules          |
+| `python/visual-html`  | `ON`    | Support for dumping modules defined in Python to HTML |
+| `python/enable-torch` | `OFF`   | Enable Python bindings for torch modules              |
+| `python/enable-smt`   | `OFF`   | Enable Python bindings for smt modules                |
 
 For building the project with only some features, edit the justfile and rebuild the project
 or run `just FEATURES=<list of features> build`.
-
 
 ### Building without `just` and `uv`
 
