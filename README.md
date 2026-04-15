@@ -70,7 +70,6 @@ Crates are structured as follows.
  - base      # core data-structures
  - python    # Python API to access the crates
  - smt       # an instance of reactive modules suitable for translating to SMT expressions
- - torch     # an instance of reactive modules where operations work with torch tensors
  ```
 
 For details on each crate see its own README.
