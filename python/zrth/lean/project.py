@@ -35,7 +35,8 @@ LEAN_TOOLCHAIN = f"leanprover/lean4:{MATHLIB_REV}"
 
 # Template files to copy into Core package
 TEMPLATE_DIR = Path(__file__).parent / "templates"
-CORE_FILES = ["Basic.lean", "Box.lean", "LTL.lean"]
+CORE_FILES = ["Basic.lean", "Box.lean", "LTL.lean", "Mat.lean"]
+LEAN_AI_FILES = ["LeanAI.lean", "LeanAI"]
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -52,6 +53,12 @@ def generate_lakefile(project_name: str, executable: bool = False) -> str:
 
         [[lean_lib]]
         name = "Core"
+
+        [[lean_lib]]
+        name = "LeanAI"
+
+        [[lean_lib]]
+        name = "Certificate"
 
         [[lean_lib]]
         name = "{project_name}"
@@ -283,21 +290,38 @@ def create_project(
     print(f"Wrote root module {root_module}")
 
     # Copy template files to Core/ package
+    # TODO: put these templates into `Core/` subfolder in `templates`
     core_dir = project_dir / "Core"
     core_dir.mkdir(parents=True, exist_ok=True)
     for tmpl_name in CORE_FILES:
         src_path = template_dir / tmpl_name
         dst_path = core_dir / tmpl_name
         if src_path.exists():
-            shutil.copy2(src_path, dst_path)
-            print(f"Copied template {tmpl_name} -> Core/")
+            if src_path.is_dir():
+                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                print(f"Copied template directory {tmpl_name} -> Core/")
+            else:
+                shutil.copy2(src_path, dst_path)
+                print(f"Copied template file {tmpl_name} -> Core/")
         else:
-            dst_path.write_text(
-                f"-- TODO: replace with actual {tmpl_name}\n"
-                f"-- Expected at: {src_path}\n"
+            raise RuntimeError(
+                f"WARNING: Template file/dir `{tmpl_name}` not found at {src_path}"
             )
-            print(
-                f"WARNING: Template {tmpl_name} not found at {src_path}, wrote placeholder"
+
+    # Copy template files to Core/ package
+    for tmpl_name in LEAN_AI_FILES:
+        src_path = template_dir / tmpl_name
+        dst_path = project_dir / tmpl_name
+        if src_path.exists():
+            if src_path.is_dir():
+                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                print(f"Copied template directory {tmpl_name} -> /")
+            else:
+                shutil.copy2(src_path, dst_path)
+                print(f"Copied template file {tmpl_name} -> /")
+        else:
+            raise RuntimeError(
+                f"WARNING: Template file/dir `{tmpl_name}` not found at {src_path}"
             )
 
     # ----------------------------------------------------------
