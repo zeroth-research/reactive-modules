@@ -9,8 +9,6 @@ This project contains a generic Rust representation of reactive modules with com
 defined using wiring diagrams, several concrete instances of reactive modules (e.g., reactive modules
 that use torch tensors as values for computations) and bindings in Python for the Rust code.
 
-Examples and tutorials: TBD
-
 ## Building
 
 For building, you need the standard Rust development environment and Cargo.
@@ -69,7 +67,7 @@ Crates are structured as follows.
 ```sh
  - base      # core data-structures
  - python    # Python API to access the crates
- - smt       # an instance of reactive modules suitable for translating to SMT expressions
+ - tutorials # Tutorials and use cases
  ```
 
 For details on each crate see its own README.
@@ -102,20 +100,6 @@ just build-all
 
 Note that for successfully running `build-all`, the environment for the python crate needs to be set up first
 (e.g., by running `just rebuild-python` before).
-
-You can also select only some of the features when building the project. Available features are:
-
-| Feature               | Default | Description                                           |
-|-----------------------|---------|-------------------------------------------------------|
-| `visual/html`         | `ON`    | Support for dumping modules to HTML                   |
-| `toy/visual-html`     | `ON`    | Support for dumping toy modules to HTML               |
-| `toy/conversions-smt` | `OFF`   | Enable converting toy modules to smt modules          |
-| `python/visual-html`  | `ON`    | Support for dumping modules defined in Python to HTML |
-| `python/enable-torch` | `OFF`   | Enable Python bindings for torch modules              |
-| `python/enable-smt`   | `OFF`   | Enable Python bindings for smt modules                |
-
-For building the project with only some features, edit the justfile and rebuild the project
-or run `just FEATURES=<list of features> build`.
 
 ### Building without `just` and `uv`
 
@@ -163,7 +147,7 @@ source .venv/bin/activate
 cd python 
 
 # build the crate (pick features that you want)
-maturin develop --features enable-torch,enable-smt
+maturin develop
 
 # run a test
 python tests/test.py
