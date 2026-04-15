@@ -1,9 +1,0 @@
-[package]
-name = "torch"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-base = { path = "../base" }
-tch = { version = "0.22" }
-

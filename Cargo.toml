@@ -1,4 +1,4 @@
 [workspace]
-members = ["base", "torch", "python", "smt"]
+members = ["base", "python", "smt"]
 default-members = ["base"]
 resolver = "3"
