@@ -2,14 +2,8 @@
 name = "torch"
 version = "0.1.0"
 edition = "2024"
-#build = "build.rs"
 
 [dependencies]
 base = { path = "../base" }
 tch = { version = "0.22" }
-visual = { path = "../visual", features=["html"], optional = true }
 
-[features]
-default = ["visual-html"]
-# dumping modules to HTML
-visual-html = ["visual", "visual/html"]
