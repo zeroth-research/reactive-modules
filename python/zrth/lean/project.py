@@ -68,6 +68,11 @@ def generate_lakefile(project_name: str, executable: bool = False) -> str:
         scope = "leanprover"
         rev = "{CSLIB_REV}"
 
+        [[require]]
+        name = "smt"
+        git = "https://github.com/ufmg-smite/lean-smt.git"
+        rev = "main"
+
        #[[require]]
        #name = "mylib"
        #git = "{PROOFS_URL}"

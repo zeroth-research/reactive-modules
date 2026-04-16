@@ -11,3 +11,5 @@ target
 *.so
 *.lock
 __pycache__/
+tutorials/generated/Counter/.lake/
+tutorials/.ipynb_checkpoints/
