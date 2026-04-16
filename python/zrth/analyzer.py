@@ -2094,7 +2094,7 @@ class MethodVisitor(ast.NodeVisitor):
 
 
 def convert_method(
-    method,
+    method: str | Callable,
     wires: dict[str, tuple[Wire, Wire]],
     result: list[Wire],
     cls=None,
@@ -2105,7 +2105,7 @@ def convert_method(
     """Convert a Python method to a list of Terms.
 
     Args:
-        method: Unbound method to convert (e.g. cls.reset, cls.step, cls.forward)
+        method: Unbound method or function source string to convert
         wires: All named wire pairs available to the method - both method
                parameters (by parameter name) and self.* attributes (by attr name)
         result: Ordered list of next-wires matched positionally to the return tuple
@@ -2116,7 +2116,10 @@ def convert_method(
     Returns:
         List of Terms representing the method as a reactive diagram
     """
-    source = textwrap.dedent(inspect.getsource(method))
+    if isinstance(method, str):
+        source = textwrap.dedent(method)
+    else:
+        source = textwrap.dedent(inspect.getsource(method))
     func_def = ast.parse(source).body[0]
     if not isinstance(func_def, ast.FunctionDef):
         raise ValueError(f"Expected function definition, got {type(func_def).__name__}")
