@@ -14,3 +14,5 @@ target
 python/uv.lock
 __pycache__/
 .ipynb_checkpoints/
+tutorials/generated/Counter/.lake/
+tutorials/.ipynb_checkpoints/

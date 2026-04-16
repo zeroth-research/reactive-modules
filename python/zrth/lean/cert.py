@@ -68,9 +68,12 @@ def generate_certificate_lean(
     lines: list[str] = []
 
     # Imports
+    lines.append("import Smt")
     lines.append("import Mathlib.Algebra.BigOperators.Fin")
     lines.append("import Core.Basic")
     lines.append(f"import {project_name}.{module_name}")
+    lines.append("")
+    lines.append("open Lean Elab Tactic Smt")
     lines.append("")
 
     # Certificate-specific constants (if any)
@@ -144,97 +147,96 @@ def RM : ReactiveModule ({extl_native}) ({ctrl_native}) := {{
 }}
 """)
 
-    # simp_mod tactic — unfolds module definitions for proof automation
+    # Build the list of all definitions to unfold
     const_list = ", ".join(const_names) if const_names else ""
 
-    simp_lemmas = "init, update, inv"
-    if const_list:
-        simp_lemmas += f",\n               {const_list}"
-    simp_lemmas += (
-        ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
-        ",\n               mul_Mat_apply, add_Mat_apply"
-    )
-    simp_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
-    simp_lemmas += (
-        ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
-        ",\n               Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
-    )
+    # All definitions that need unfolding for proof automation
+    # Note: ReactiveModule fields are handled by dsimp/simp, not unfold (universe polymorphic)
+    unfold_defs = [
+        "RM", "init", "update", "inv", "init_pre", "update_pre", "P", "ranking",
+    ]
+    unfold_defs.extend(const_names)
 
+    unfold_list = ", ".join(f"``{d}" for d in unfold_defs)
+
+    # simp lemmas for reducing matrix expressions to bare integers
+    simp_mat = "MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
+    simp_mat += ", mul_Mat_apply, add_Mat_apply"
+    simp_mat += ", Bool.or_eq_true, decide_eq_true_eq"
+    simp_mat += ", Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
+    simp_mat += ", Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
+
+    # All definitions as simp lemmas (for simp-based reduction)
+    all_defs = "init, update, inv, init_pre, update_pre, P, ranking"
+    if const_list:
+        all_defs += f", {const_list}"
+
+    # unfold_all tactic — unfolds all module + certificate definitions
     lines.append(f"""\
--- tactic that unfolds module definitions and simplifies
-macro "simp_mod" : tactic =>
+-- Unfold all module and certificate definitions
+elab "unfold_all" : tactic => do
+  for f in [{unfold_list}] do
+    try
+      evalTactic (← `(tactic| unfold $(mkIdent f)))
+    catch _ =>
+      continue
+
+-- Simplify matrix expressions to bare Int arithmetic
+-- Phase 1: unfold RM projections and all definitions (no matrix reduction)
+macro "unfold_mod" : tactic =>
   `(tactic| (
-    simp only [{simp_lemmas}]
-    <;> (try omega)
-    <;> (try (split <;> simp_all <;> omega))
-    <;> (try (split <;> split <;> simp_all <;> omega))))
+    first | (unfold RM at *; dsimp at *) | skip
+    unfold_all; unfold_all; unfold_all))
+
+-- Phase 2: reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
+macro "simp_mat" : tactic =>
+  `(tactic| simp [{all_defs}, {simp_mat}])
 """)
 
-    inv_lemmas = "RM, ReactiveModule.init, ReactiveModule.update,\n"
-    inv_lemmas += "               ReactiveModule.init_pre, ReactiveModule.update_pre,\n"
-    inv_lemmas += "               init, update, inv, init_pre, update_pre"
-    if const_list:
-        inv_lemmas += f",\n               {const_list}"
-    inv_lemmas += (
-        ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
-        ",\n               mul_Mat_apply, add_Mat_apply"
-    )
-    inv_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
-    inv_lemmas += (
-        ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
-        ",\n               Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
-    )
+    # zeroth_hammer: unfold_mod → simp_mat (goal only) → omega/case-split/smt
+    lines.append("""\
+syntax "zeroth_hammer" : tactic
 
-    # simp_inv tactic — reduces module defs then solves CNF goals
-    # Split into two phases: (1) unfold module wrappers, (2) simplify arithmetic
-    arith_lemmas = "init, update, inv, init_pre, update_pre, P, ranking"
-    if const_list:
-        arith_lemmas += f",\n               {const_list}"
-    arith_lemmas += (
-        ",\n               MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
-        ",\n               mul_Mat_apply, add_Mat_apply"
-    )
-    arith_lemmas += ",\n               Bool.or_eq_true, decide_eq_true_eq"
-    arith_lemmas += (
-        ",\n               Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
-        ",\n               Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
-    )
-
-    lines.append(f"""\
--- tactic that reduces module definitions and solves CNF invariant goals
-macro "simp_inv" : tactic =>
-  `(tactic| (
-    -- Phase 1: unfold module wrappers
-    try simp only [RM, ReactiveModule.init, ReactiveModule.update,
-               ReactiveModule.init_pre, ReactiveModule.update_pre] at *
-    -- Phase 2: unfold and simplify
-    try dsimp only [inv, init, update, init_pre, update_pre] at *
-    simp [{arith_lemmas}] at *
-    <;> first
-      | trivial
-      | omega
-      | (simp_all; omega)
-      | (repeat' constructor)
-        <;> first
-          | trivial | omega
-          | (simp_all; omega)
-          | (left; omega) | (right; omega)
-          | (left; simp_all; omega) | (right; simp_all; omega)
-          | (right; right; omega) | (right; right; simp_all; omega)
-      | (split <;> simp_all <;> omega)
-      | (split <;> split <;> simp_all <;> omega)
-      | (split <;> split <;> split <;> simp_all <;> omega)))
+elab_rules : tactic
+  | `(tactic| zeroth_hammer) => do
+      -- Pre-step: clear ReactiveModule wrappers if present
+      try evalTactic (← `(tactic| unfold RM at *)) catch _ => pure ()
+      -- 1. simp with all defs + matrix lemmas on goal, then omega
+      try
+        evalTactic (← `(tactic| simp_mat; omega))
+        return
+      catch _ => pure ()
+      -- 2. case-split cascade — handles branching on ite
+      try
+        evalTactic (← `(tactic|
+          simp_mat
+          <;> first
+            | omega
+            | (simp_all; omega)
+            | (split <;> simp_all <;> omega)
+            | (split <;> split <;> simp_all <;> omega)
+            | (split <;> split <;> split <;> simp_all <;> omega)))
+        return
+      catch _ => pure ()
+      -- 3. smt fallback (cvc5) after full reduction
+      try
+        evalTactic (← `(tactic| simp_mat; smt))
+        return
+      catch _ => pure ()
+      -- 4. bare smt
+      evalTactic (← `(tactic| smt))
 """)
 
     # init_inv theorem
     lines.append("""\
+
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
-   simp_inv
+   zeroth_hammer
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
-   simp_inv
+   zeroth_hammer
 """)
 
     # LTS section
@@ -263,15 +265,14 @@ theorem hinv : lts.StateSet_isInvariant inv := by
   apply LTS'.StateSet_ind_init_is_inv lts
   exact hinv'
 
-theorem hrank : ∀ s s', inv s → ¬(P s) → (∃ l, lts.Tr s l s') →
+theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
-    intro s s' hi hP htr
+    intro s s' ⟨hi, hP, htr⟩
     unfold lts at htr
     simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at htr
     obtain ⟨l, hpre, heq⟩ := htr
     rw [← heq]
-    try simp_inv
-    all_goals sorry
+    zeroth_hammer
 
 def buchi := rule_buchi
   lts
