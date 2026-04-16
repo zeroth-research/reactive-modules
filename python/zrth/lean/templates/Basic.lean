@@ -1,7 +1,7 @@
 import Cslib.Foundations.Semantics.LTS.Basic
 --import Cslib.Automata.NA.Basic
 import Core.LTL
-import Core.Mat
+import Core.Basic
 import Mathlib.Algebra.Order.BigOperators.Group.Finset
 
 /-  ----------------------------------------------------------------
