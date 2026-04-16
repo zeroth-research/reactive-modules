@@ -1243,13 +1243,24 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
             if existing is None or (val.is_const() and not existing.is_const()):
                 attr_vals[attr] = val
 
-    prvt      = written_self & read_self
-    params    = read_self - written_self
-    write_only = written_self - read_self
+    prvt_names  = written_self & read_self
+    param_names = read_self - written_self
+    write_only_names = written_self - read_self
+
+    # Order by declaration in __init__ for deterministic iteration
+    if init_attrs:
+        decl_order = list(init_attrs.keys())
+        prvt       = [n for n in decl_order if n in prvt_names]
+        params     = [n for n in decl_order if n in param_names]
+        write_only = [n for n in decl_order if n in write_only_names]
+    else:
+        prvt       = sorted(prvt_names)
+        params     = sorted(param_names)
+        write_only = sorted(write_only_names)
 
     # Use init_attrs as a fallback for attrs with missing or non-const values
     if init_attrs:
-        for attr in prvt | params:
+        for attr in prvt + params:
             val = attr_vals.get(attr)
             init_val = init_attrs.get(attr)
             if init_val is not None and (val is None or not val.is_const()):
@@ -1257,7 +1268,7 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
 
     if write_only:
         raise ValueError(
-            f"Attributes written in {roots} but never read back: {sorted(write_only)}. "
+            f"Attributes written in {roots} but never read back: {write_only}. "
             f"These must be made observable."
         )
 
