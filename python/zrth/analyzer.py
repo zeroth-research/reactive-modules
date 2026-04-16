@@ -1247,16 +1247,15 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
     param_names = read_self - written_self
     write_only_names = written_self - read_self
 
-    # Order by declaration in __init__ for deterministic iteration
-    if init_attrs:
-        decl_order = list(init_attrs.keys())
-        prvt       = [n for n in decl_order if n in prvt_names]
-        params     = [n for n in decl_order if n in param_names]
-        write_only = [n for n in decl_order if n in write_only_names]
-    else:
-        prvt       = sorted(prvt_names)
-        params     = sorted(param_names)
-        write_only = sorted(write_only_names)
+    # Order by declaration in __init__ for deterministic iteration,
+    # with any names not in __init__ appended in sorted order
+    decl_order = list(init_attrs.keys()) if init_attrs else []
+    def ordered(names):
+        return [n for n in decl_order if n in names] + sorted(names - set(decl_order))
+
+    prvt       = ordered(prvt_names)
+    params     = ordered(param_names)
+    write_only = ordered(write_only_names)
 
     # Use init_attrs as a fallback for attrs with missing or non-const values
     if init_attrs:
