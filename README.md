@@ -9,6 +9,9 @@ This project contains a generic Rust representation of reactive modules with com
 defined using wiring diagrams, several concrete instances of reactive modules (e.g., reactive modules
 that use torch tensors as values for computations) and bindings in Python for the Rust code.
 
+DISCLAIMER: the project is under heavy development and unstable.
+It lacks documentation in many places and can change at any moment.
+
 ## Building
 
 For building, you need the standard Rust development environment and Cargo.
