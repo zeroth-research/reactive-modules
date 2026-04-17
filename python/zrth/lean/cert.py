@@ -63,7 +63,9 @@ def generate_certificate_lean(
     def _cert_body(terms, block_inputs, param_name):
         """Compile a certificate term list into a Lean function body."""
         output = [terms[-1].write[0]]
-        return _translate_terms(terms, block_inputs, output, m2l._constants, param_name)
+        return _translate_terms(
+            terms, (block_inputs,), output, m2l._constants, [param_name]
+        )
 
     lines: list[str] = []
 
