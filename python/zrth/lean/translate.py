@@ -79,7 +79,7 @@ class ModuleToLean4:
 
         return lines, layer_names
 
-    def to_lean_circuit(self, atom) -> str:
+    def atom_to_lean_circuit(self, atom) -> str:
         """Generate the full Lean4 source for this module as a combinational circuit"""
         m = self.module
 
@@ -91,26 +91,34 @@ class ModuleToLean4:
             )
         atom = atoms[0]
 
+        extl_latched: list[Wire] = [pair[0] for pair in m.extl]
         extl_next: list[Wire] = [pair[1] for pair in m.extl]
         ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
         ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
-        params: list[Wire] = []  # [x for x in m.param]
 
         # Extract constants from both blocks
         init_terms = atom.init
         update_terms = atom.update
 
         # Compile both blocks
-        init_inputs = extl_next + params
+        init_inputs = extl_next
         init_outputs = ctrl_next
         init_layers = _translate_terms_circ(
-            init_terms, init_inputs, init_outputs, self._constants
+            init_terms,
+            (init_inputs,),
+            init_outputs,
+            self._constants,
+            param_names=["extl_n"],
         )
 
-        update_inputs = ctrl_latched + extl_next + params
+        update_inputs = (ctrl_latched, extl_latched, extl_next)
         update_outputs = ctrl_next
         update_layers = _translate_terms_circ(
-            update_terms, update_inputs, update_outputs, self._constants
+            update_terms,
+            update_inputs,
+            update_outputs,
+            self._constants,
+            param_names=["ctrl", "extl_l", "extl_n"],
         )
 
         # Render output
@@ -133,7 +141,7 @@ class ModuleToLean4:
         # Update definition with named layers
         self._update_layer_names: list[str] = []
         if update_layers:
-            upd_dom = _ty_list(update_inputs)
+            upd_dom = f"(ctrl: {_ty_list(ctrl_latched)}) (extl_l: {_ty_list(extl_latched)}) (extl_n: {_ty_list(extl_next)})"
             upd_cod = _ty_list(update_outputs)
             layer_lines, self._update_layer_names = self._emit_named_layers(
                 "update",
@@ -321,7 +329,7 @@ class ModuleToLean4:
 
         return "\n".join(lines)
 
-    def to_lean(self, circuit: bool = False) -> str:
+    def to_lean_functional(self) -> str:
         """Generate the full Lean4 source for this module."""
         m = self.module
 
@@ -334,54 +342,83 @@ class ModuleToLean4:
 
         atom = atoms[0]
 
-        return "{}\n\n{}\n\n{}\n\n{}".format(
+        return "{}\n\n{}".format(
             self.translate_constants(atom),
-            self.to_lean_circuit(atom),
-            self.to_lean_functional(atom),
+            self.atom_to_lean_functional(atom),
+        )
+
+    def to_lean_circ(self) -> str:
+        m = self.module
+
+        # Extract single atom (assume single atom for now)
+        atoms = list(m.atoms)
+        if len(atoms) != 1:
+            raise ValueError(
+                f"ModuleToLean4 currently supports single-atom modules, got {len(atoms)}"
+            )
+
+        atom = atoms[0]
+
+        return "{}\n\n{}".format(
+            self.atom_to_lean_circuit(atom),
             self.to_lean_equiv_theorems(atom),
         )
 
-    def to_lean_functional(self, atom) -> str:
+    def to_lean(self, circuit: bool = True) -> str:
+        """Generate the full Lean4 source for this module."""
+        if circuit:
+            return f"{self.to_lean_functional()}\n\n{self.to_lean_circ()}"
+        else:
+            return self.to_lean_functional()
+
+    def atom_to_lean_functional(self, atom) -> str:
         m = self.module
 
         # TODO: we should handle also `extl_latched`
+        extl_latched: list[Wire] = [pair[0] for pair in m.extl]
         extl_next: list[Wire] = [pair[1] for pair in m.extl]
         ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
         ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
-        params: list[Wire] = []  # [x for x in m.param]
 
         init_terms = atom.init
         update_terms = atom.update
 
         # Compile both blocks
-        init_inputs = extl_next + params
+        init_inputs = (extl_next,)
         init_outputs = ctrl_next
         init_body = _translate_terms(
-            init_terms, init_inputs, init_outputs, self._constants
+            init_terms,
+            init_inputs,
+            init_outputs,
+            self._constants,
+            param_names=["extl_n"],
         )
 
-        update_inputs = ctrl_latched + extl_next + params
+        update_inputs = (ctrl_latched, extl_latched, extl_next)
         update_outputs = ctrl_next
         update_body = _translate_terms(
-            update_terms, update_inputs, update_outputs, self._constants
+            update_terms,
+            update_inputs,
+            update_outputs,
+            self._constants,
+            param_names=["ctrl", "extl_l", "extl_n"],
         )
 
         # Render output
         lines = []
 
         # Init definition
+        cod = _product_type(ctrl_latched)
         if init_body:
-            init_dom = _product_type(init_inputs)
-            init_cod = _product_type(init_outputs)
-            lines.append(f"@[simp] def init (s : {init_dom}) : {init_cod} :=")
+            init_dom = f"(extl_n: {_product_type(extl_next)})"
+            lines.append(f"@[simp] def init {init_dom} : {cod} :=")
             lines.append(init_body)
             lines.append("")
 
         # Update definition
         if update_body:
-            upd_dom = _product_type(update_inputs)
-            upd_cod = _product_type(update_outputs)
-            lines.append(f"@[simp] def update (s : {upd_dom}) : {upd_cod} :=")
+            upd_dom = f"(ctrl: {_product_type(ctrl_latched)}) (extl_l: {_product_type(extl_latched)}) (extl_n: {_product_type(extl_next)})"
+            lines.append(f"@[simp] def update {upd_dom} : {cod} :=")
             lines.append(update_body)
             lines.append("")
 

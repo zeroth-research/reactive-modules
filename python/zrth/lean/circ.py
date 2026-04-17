@@ -8,6 +8,7 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
+from numpy import block
 from zrth.lean.common import _accessor, dtype_to_lean_type, _tensor_to_lean_inline
 
 from dataclasses import dataclass
@@ -88,6 +89,7 @@ _LEAN_OP_BOX: dict[str, str] = {
     "Id": "Box.id",
     "Linear": "Box.nnLinear",
     "ReLU": "Box.relu",
+    "Argmax": "Box.argmax",
 }
 
 
@@ -119,7 +121,9 @@ def _constant_expr(
 
 
 def _circ_translate_body(
-    block_inputs: list[Wire], block_outputs: list[Wire], wire_to_term: dict[Wire, Term]
+    block_inputs: list[Wire],
+    block_outputs: list[Wire],
+    wire_to_term: dict[Wire, Term],
 ) -> list[list[Wire]]:
 
     # output layer are just the terms writing to output wires. However,
@@ -299,10 +303,10 @@ def _circ_comput_dels(block_inputs: list[Wire], last_layer: list[Wire]):
 
 def _translate_terms_circ(
     terms,
-    block_inputs: list[Wire],
+    block_inputs: tuple[list[Wire], ...],
     block_outputs: list[Wire],
     constants: dict[int, str],
-    param_name: str = "s",
+    param_names: list[str],
 ) -> list[CircLayer]:
     """Compile a block of terms into a list of CircLayer objects.
 
@@ -313,31 +317,35 @@ def _translate_terms_circ(
     if not term_list:
         return []
 
-    # Map wire_id -> Lean expression (variable name or input accessor)
+    # Map wire_id -> Lean expression
     # TODO: do this once (we use it also in `_translate_terms`)
-    n_inputs = len(block_inputs)
+
     wire_expr: dict[int, str] = {}
-    for i, w in enumerate(block_inputs):
-        acc = _accessor(i, n_inputs)
-        wire_expr[w.id] = f"{param_name}{acc}"
+    all_inputs = [w for wires in block_inputs for w in wires]
+    for name, wires in zip(param_names, block_inputs):
+        n_inputs = len(wires)
+        for i, w in enumerate(wires):
+            acc = _accessor(i, n_inputs)
+            wire_expr[w.id] = f"{name}{acc}"
+            print(f"{w.id} => {wire_expr[w.id]}")
 
     # output wires to terms
     wire_to_term: dict[Wire, Term] = {t.write[0]: t for t in term_list}
     # order of the input wires
-    wires_ord: dict[Wire, int] = {w: n for n, w in enumerate(block_inputs)}
+    wires_ord: dict[Wire, int] = {w: n for n, w in enumerate(all_inputs)}
 
-    layers = _circ_translate_body(block_inputs, block_outputs, wire_to_term)
+    layers = _circ_translate_body(all_inputs, block_outputs, wire_to_term)
 
     # compute swapping wires
     swapping, last_layer = _cicr_compute_swapping(
-        block_inputs, block_outputs, wires_ord, layers[-1]
+        all_inputs, block_outputs, wires_ord, layers[-1]
     )
 
     # duplication of wires
-    dups, last_layer = _circ_compute_dups(block_inputs, wires_ord, last_layer)
+    dups, last_layer = _circ_compute_dups(all_inputs, wires_ord, last_layer)
 
     # deletion of unused wires
-    dels = _circ_comput_dels(block_inputs, last_layer)
+    dels = _circ_comput_dels(all_inputs, last_layer)
 
     result: list[CircLayer] = list(reversed(swapping + dups + dels))
 
@@ -349,7 +357,7 @@ def _translate_terms_circ(
         boxes: list[str] = []
         in_ty, out_ty = [], []
         for w in layer:
-            if w in block_inputs:
+            if w in all_inputs:
                 boxes.append(f"@Box.id {dtype_to_lean_type(w)}")
                 in_ty.append(dtype_to_lean_type(w))
                 out_ty.append(dtype_to_lean_type(w))

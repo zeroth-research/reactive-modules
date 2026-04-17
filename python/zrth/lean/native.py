@@ -74,15 +74,16 @@ _LEAN_OP: dict[str, Callable] = {
     "ReLU": lambda a: f"Max.max 0 {a[0]}",
     "TensorGet": lambda a: f"({a[0]} 0 0)",
     "ToUnsigned": lambda a: f"({a[0]}).toNat",
+    "Argmax": lambda a: f"argmax({a[0]})",
 }
 
 
 def _translate_terms(
     terms,
-    block_inputs: list[Wire],
+    block_inputs: tuple[list[Wire], ...],
     block_outputs: list[Wire],
     constants: dict[int, str],
-    param_name: str = "s",
+    param_names: list[str],
 ) -> str:
     """Compile a block of terms into a Lean function body with let-bindings.
 
@@ -93,11 +94,14 @@ def _translate_terms(
         return "sorry /- no terms -/"
 
     # Map wire_id -> Lean expression (variable name or input accessor)
-    n_inputs = len(block_inputs)
     wire_expr: dict[int, str] = {}
-    for i, w in enumerate(block_inputs):
-        acc = _accessor(i, n_inputs)
-        wire_expr[w.id] = f"{param_name}{acc}"
+    all_inputs = [w for wires in block_inputs for w in wires]
+    for name, wires in zip(param_names, block_inputs):
+        n_inputs = len(wires)
+        for i, w in enumerate(wires):
+            acc = _accessor(i, n_inputs)
+            wire_expr[w.id] = f"{name}{acc}"
+            print(f"{w.id} => {wire_expr[w.id]}")
 
     var_counter = 0
     let_lines: list[str] = []
