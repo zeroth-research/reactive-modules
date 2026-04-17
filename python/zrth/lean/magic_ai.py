@@ -18,15 +18,16 @@ except ImportError:
     openai = None
 
 GENERATE_SYSTEM = """\
-You are a formal verification expert. Given the source code of a reactive module \
+You are a formal verification expert. Given Lean4 source code of a reactive module \
 and a property, your task is to find an inductive invariant and a ranking function \
 that together prove that the property holds infinitely often (G(F(prp))).
 
-A reactive module has:
-- `init(...)`: returns the initial state
-- `update(old_state, ...)`: returns the new state each iteration
+The Lean4 module has:
+- `init (e : ExtlNative) : CtrlNative` — computes the initial state from external inputs
+- `update (s : CtrlNative × ExtlNative) : CtrlNative` — computes the next state
 
 This encodes an infinite loop: initialize state, then repeatedly update.
+State components are accessed via `.1`, `.2.1`, `.2.2.1`, etc. (left-nested tuples).
 
 The module may have PRECONDITIONS on its inputs:
 - `init_pre`: constraint on the inputs to `init`
@@ -35,45 +36,46 @@ The module may have PRECONDITIONS on its inputs:
 These preconditions are assumed to hold — you may rely on them when proving \
 the invariant and ranking function.
 
-An INDUCTIVE INVARIANT `inv(state)` must satisfy:
-1. For all inputs satisfying init_pre: inv(init(inputs)) is true
-2. For all states and inputs satisfying update_pre: \
-if inv(state) then inv(update(state, inputs)) is true
+An INDUCTIVE INVARIANT `inv : CtrlNative → Prop` must satisfy:
+1. For all inputs satisfying init_pre: inv (init inputs) holds
+2. For all states s and inputs satisfying update_pre: \
+if inv s then inv (update (s, inputs)) holds
 
-A RANKING FUNCTION `ranking(state) -> Nat` must satisfy:
-- For all states and inputs satisfying update_pre: \
-if inv(state) AND NOT prp(state), then ranking(update(state, inputs)) < ranking(state)
-- ranking(state) >= 0 (always, since it returns Nat)
+A RANKING FUNCTION `ranking : CtrlNative → ℕ` must satisfy:
+- For all states s and inputs satisfying update_pre: \
+if inv s ∧ ¬ prp s, then ranking (update (s, inputs)) < ranking s
+- ranking s ≥ 0 always (guaranteed since it returns ℕ)
 
 This proves that the system cannot stay in non-prp states forever, \
 so prp must hold infinitely often.
 
 Reply with EXACTLY this format (NO OTHER TEXT):
-INVARIANT: <expression using state variables>
-RANKING: <expression using state variables>
+INVARIANT: <Lean4 expression of type CtrlNative → Prop>
+RANKING: <Lean4 expression of type CtrlNative → ℕ>
 
-Use Python-like syntax for the expressions. State variables are the return values \
-of init/update. Use `and`, `or`, `not` for logical connectives, `>=`, `<=`, `==` \
-for comparisons.
+Use Lean4 syntax. Access state components with `.1`, `.2.1`, etc. \
+Use `∧`, `∨`, `¬` for logical connectives and `≤`, `<`, `=` for comparisons.
 """
 
 VERIFY_SYSTEM = """\
 You are a formal verification auditor. You will be given:
-1. Source code of a reactive module (init + update functions)
+1. Lean4 source code of a reactive module (init + update functions)
 2. A property `prp` that should hold infinitely often
 3. Preconditions on inputs (init_pre, update_pre) — assume these always hold
 4. A proposed invariant and ranking function
 
+The state type is `CtrlNative` (a left-nested tuple). \
+Components are accessed via `.1`, `.2.1`, `.2.2.1`, etc.
+
 Your job is to rigorously check whether the invariant and ranking function \
 are correct. Specifically, check ALL of the following:
 
-1. INIT: For all inputs satisfying init_pre, does inv(init(inputs)) hold?
-2. INDUCTIVE: For all states and inputs satisfying update_pre, \
-if inv(state) holds, does inv(update(state, inputs)) hold?
-3. RANKING DECREASE: For all states and inputs satisfying update_pre, \
-if inv(state) AND NOT prp(state), \
-does ranking(update(state, inputs)) < ranking(state)?
-4. RANKING NON-NEGATIVE: Is ranking(state) >= 0 always?
+1. INIT: For all inputs satisfying init_pre, does inv (init inputs) hold?
+2. INDUCTIVE: For all states s and inputs satisfying update_pre, \
+if inv s holds, does inv (update (s, inputs)) hold?
+3. RANKING DECREASE: For all states s and inputs satisfying update_pre, \
+if inv s ∧ ¬ prp s, does ranking (update (s, inputs)) < ranking s?
+4. RANKING NON-NEGATIVE: Is ranking s ≥ 0 always? (trivially true for ℕ)
 
 Think through edge cases. Be thorough.
 

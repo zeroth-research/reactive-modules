@@ -109,16 +109,13 @@ def _exprs_to_terms(cert_data: CertificateData, module, source: str) -> Certific
     wires = {name: (pair[1], pair[1]) for name, pair in zip(var_names, module.ctrl)}
 
     if isinstance(cert_data.prp, str):
-        fn = _make_callable("prp", var_names, cert_data.prp)
-        cert_data.prp = convert_method(fn, wires, [Wire(Bool(1))])
+        cert_data.prp = convert_method(cert_data.prp, wires, [Wire(Bool(1))])
 
     if isinstance(cert_data.inv, str):
-        fn = _make_callable("inv", var_names, cert_data.inv)
-        cert_data.inv = convert_method(fn, wires, [Wire(Bool(1))])
+        cert_data.inv = convert_method(cert_data.inv, wires, [Wire(Bool(1))])
 
     if isinstance(cert_data.ranking, str):
-        fn = _make_callable("ranking", var_names, cert_data.ranking)
-        cert_data.ranking = convert_method(fn, wires, [Wire(Int(1))])
+        cert_data.ranking = convert_method(cert_data.ranking, wires, [Wire(Int(1))])
 
     return cert_data
 
