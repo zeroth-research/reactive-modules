@@ -11,7 +11,7 @@ import shutil
 import textwrap
 from pathlib import Path
 
-from zrth import Module, Wire
+from zrth import Module, Wire, Wrapper
 from .native import (
     _product_type,
     _append_expr,
@@ -100,6 +100,7 @@ def generate_root(project_name: str, modules_names: list[str]) -> str:
     ]
     for dname in modules_names:
         lines.append(f"import {project_name}.{dname}")
+        lines.append(f"import {project_name}.{dname}Circ")
     return "\n".join(lines) + "\n"
 
 
@@ -341,8 +342,28 @@ def create_project(
 /- Code generated for reactive module `{module_name}` -/
 import Core.Box
 
-{m2l.to_lean()}
+{m2l.to_lean_functional()}
 """)
+    assert mod_file.exists()
+    print(f"++ Generated {mod_file} ++")
+
+    mod_file = src_dir / f"{module_name}Circ.lean"
+    print(f"Generating `{mod_file.absolute()}`")
+
+    mod_file.write_text(f"""\
+/- Code generated for reactive module `{module_name}` as circuit -/
+import Core.Box
+
+{m2l.to_lean_circ()}
+""")
+    assert mod_file.exists()
+    print(f"++ Generated {mod_file} ++")
+
+    # -- empty file for data --
+    mod_file = src_dir / f"{module_name}Data.lean"
+    print(f"Generating `{mod_file.absolute()}`")
+
+    mod_file.write_text("")
     assert mod_file.exists()
     print(f"++ Generated {mod_file} ++")
 
@@ -415,4 +436,6 @@ def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
         )
 
     module_def = getattr(module, module_def)
+    if not isinstance(module_def, Module):
+        return Wrapper(module_def())
     return module_def()

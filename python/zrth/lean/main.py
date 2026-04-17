@@ -67,6 +67,9 @@ from pathlib import Path
 from .cert import CertificateData
 from .project import create_project, load_module_from_file
 
+from zrth import Wire, Bool, Int
+from zrth.analyzer import convert_method
+
 
 def _state_var_names(source: str) -> list[str]:
     """Extract state variable names from the update function's parameters.
@@ -77,7 +80,7 @@ def _state_var_names(source: str) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == "update":
             params = [arg.arg for arg in node.args.args if arg.arg != "self"]
-            return [p[len("old_"):] if p.startswith("old_") else p for p in params]
+            return [p[len("old_") :] if p.startswith("old_") else p for p in params]
     raise ValueError("No 'update' function found in source")
 
 
@@ -99,8 +102,6 @@ def _make_callable(fn_name: str, params: list[str], expr: str):
 
 def _exprs_to_terms(cert_data: CertificateData, module, source: str) -> CertificateData:
     """Convert inv/ranking expression strings in cert_data to lists of Terms."""
-    from zrth import Wire, Bool, Int
-    from zrth.analyzer import convert_method
 
     var_names = _state_var_names(source)
     # cert_body evaluates inv/ranking/prp against ctrl_next (the [1] wire of each
@@ -212,17 +213,10 @@ def main():
         cert_data = CertificateData(prp=args.property)
 
     source: str | None = None
-    if args.infer:
-        from .magic_ai import TA2MagicAI
-
-        source = Path(args.module_file).read_text()
-        magic = TA2MagicAI(source, model=args.model, base_url=args.base_url)
-        cert_data = magic.infer(cert_data)
-
     module = load_module_from_file(args.module_file, module_def=args.module_def)
+    print(module)
 
-    if args.infer and cert_data is not None and source is not None:
-        cert_data = _exprs_to_terms(cert_data, module, source)
+    print(".. Generating lean code")
     project_dir = create_project(
         output_dir=Path(args.output_dir),
         module=module,
@@ -230,6 +224,36 @@ def main():
         executable=args.executable,
         cert_data=cert_data,
     )
+
+    # FIXME: this is brittle, we rely on hard-coded staff in `create_project`
+    lean_code = project_dir / f"{args.project_name}.lean"
+
+    print(".. Doing TA2Magic")
+    if args.infer:
+        from .magic_ai import TA2MagicAI
+
+        magic = TA2MagicAI(
+            lean_code.read_text(), model=args.model, base_url=args.base_url
+        )
+        cert_data = magic.infer(cert_data)
+
+        data_file = project_dir / f"{args.project_name}Data.lean"
+        data_lines = [
+            f"/- Inferred certificate data for `{args.project_name}` -/",
+            f"import {args.project_name}.{args.project_name}",
+            "",
+        ]
+        if isinstance(cert_data.prp, str):
+            data_lines.append(f"-- Property: {cert_data.prp}")
+            data_lines.append("")
+        for field in ("inv", "init_pre", "update_pre", "ranking"):
+            value = getattr(cert_data, field)
+            if isinstance(value, str):
+                data_lines.append(f"def {field} := {value}")
+                data_lines.append("")
+        data_file.write_text("\n".join(data_lines) + "\n")
+        print(f"Wrote {data_file}")
+
     print(f"\nProject ready at: {project_dir}")
 
 
