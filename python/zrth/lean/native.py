@@ -89,41 +89,33 @@ def _translate_terms(
 
     Returns the body string (let x0 := ...; ... ; (x1, x2)) or "sorry" if no terms.
     """
-    term_list = [terms[i] for i in range(len(terms))]
+    term_list = list(terms)
     if not term_list:
         return "sorry /- no terms -/"
 
     # Map wire_id -> Lean expression (variable name or input accessor)
     wire_expr: dict[int, str] = {}
-    all_inputs = [w for wires in block_inputs for w in wires]
     for name, wires in zip(param_names, block_inputs):
         n_inputs = len(wires)
         for i, w in enumerate(wires):
-            acc = _accessor(i, n_inputs)
-            wire_expr[w.id] = f"{name}{acc}"
-            print(f"{w.id} => {wire_expr[w.id]}")
+            wire_expr[w.id] = f"{name}{_accessor(i, n_inputs)}"
 
-    var_counter = 0
     let_lines: list[str] = []
 
-    for term in term_list:
-        read_wires = [term.read[i] for i in range(len(term.read))]
-        write_wires = [term.write[i] for i in range(len(term.write))]
+    for var_counter, term in enumerate(term_list):
         name = itype_name(term.itype)
 
         if name in ("Tensor", "ConstBool", "ConstInt"):
-            expr = _constant_expr(name, term, write_wires[0], constants)
+            expr = _constant_expr(name, term, term.write[0], constants)
         else:
-            input_exprs = [wire_expr[w.id] for w in read_wires]
-            it_name = itype_name(term.itype)
-            if it_name not in _LEAN_OP:
-                raise ValueError(f"No Lean expression mapping for: {it_name}")
-            expr = _LEAN_OP[it_name](input_exprs)
+            if name not in _LEAN_OP:
+                raise ValueError(f"No Lean expression mapping for: {name}")
+            input_exprs = [wire_expr[w.id] for w in term.read]
+            expr = _LEAN_OP[name](input_exprs)
 
         # Each term writes exactly one wire
         var = f"x{var_counter}"
-        var_counter += 1
-        wire_expr[write_wires[0].id] = var
+        wire_expr[term.write[0].id] = var
         let_lines.append(f"  let {var} := {expr}")
 
     # Build output tuple

@@ -34,14 +34,11 @@ def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
 
     if shape == [1] or shape == []:
         return ty if simple_types else f"(Mat {ty} 1 1)"
-    elif len(shape) == 1:
+    if len(shape) == 1:
         return f"(Mat {ty} 1 {shape[0]})"
-    elif len(shape) == 2:
+    if len(shape) == 2:
         return f"(Mat {ty} {shape[0]} {shape[1]})"
-    else:
-        raise ValueError(f"Unsupported DType shape: {shape}")
-
-    raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
+    raise ValueError(f"Unsupported DType shape: {shape}")
 
 
 def itype_name(itype) -> str:
@@ -60,18 +57,12 @@ def _constant_expr(
     const_name: str, term: Term, w: Wire, constants: dict[int, str]
 ) -> str:
     if const_name == "Tensor":
-        wire_id = w.id
-        if wire_id in constants:
-            return constants[wire_id]
-        else:
-            return _tensor_to_lean_inline(term.itype._0, w)
-    elif const_name == "ConstBool":
-        val = bool(term.itype._0)
-        return "true" if val else "false"
-    else:
-        return str(int(term.itype._0))
-
-    raise NotImplementedError
+        if w.id in constants:
+            return constants[w.id]
+        return _tensor_to_lean_inline(term.itype._0, w)
+    if const_name == "ConstBool":
+        return "true" if bool(term.itype._0) else "false"
+    return str(int(term.itype._0))
 
 
 def _get_dtype_item(dtype: DType, item) -> str:
@@ -96,16 +87,6 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     """
     shape = wire.dtype.shape
 
-    # Scalar bool constant
-    # if isinstance(wire.dtype, DType.Bool):
-    #     val = bool(tensor.item())
-    #     lean_val = "true" if val else "false"
-    #     return f"@[simp] def {name} : Bool := {lean_val}\n"
-    #
-    # # Scalar int constant
-    # if isinstance(wire.dtype, DType.Int) and (shape == [1] or shape == []):
-    #     val = int(tensor.item())
-    #     return f"@[simp] def {name} : Int := {val}\n"
     if shape == [1] or shape == []:
         val = _get_dtype_item(wire.dtype, tensor.item())
         ty = dtype_to_lean_type(wire)

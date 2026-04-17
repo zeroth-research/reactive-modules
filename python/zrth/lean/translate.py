@@ -114,7 +114,6 @@ class ModuleToLean4:
             (init_inputs,),
             init_outputs,
             self._constants,
-            param_names=["extl_n"],
         )
 
         update_inputs = (ctrl_latched, extl_latched, extl_next)
@@ -124,7 +123,6 @@ class ModuleToLean4:
             update_inputs,
             update_outputs,
             self._constants,
-            param_names=["ctrl", "extl_l", "extl_n"],
         )
 
         # Render output
