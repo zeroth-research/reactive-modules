@@ -20,6 +20,11 @@
  scope = "leanprover"
  rev = "v4.28.0"
 
+ [[require]]
+ name = "smt"
+ git = "https://github.com/ufmg-smite/lean-smt.git"
+ rev = "main"
+
 #[[require]]
 #name = "mylib"
 #git = "https://github.com/zeroth/proof-prototyping"

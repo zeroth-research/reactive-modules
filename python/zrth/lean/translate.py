@@ -1,5 +1,11 @@
 from zrth.lean.native import _product_type, _translate_terms
-from zrth.lean.circ import CircLayer, _translate_terms_circ, _ty_list, _native_to_vt
+from zrth.lean.circ import (
+    CircLayer,
+    _translate_terms_circ,
+    _ty_list,
+    _native_to_vt,
+    _natives_to_vt,
+)
 from zrth.lean.common import itype_name, _is_scalar_tensor, _tensor_to_lean_def
 from zrth import Module, Wire
 
@@ -234,7 +240,7 @@ class ModuleToLean4:
 
     def _equiv_proof_tactic(
         self,
-        input_wires: list[Wire],
+        intro_vars: list[str],
         layer_names: list[str],
         block_name: str,
     ) -> str:
@@ -245,7 +251,7 @@ class ModuleToLean4:
         const_names = ", ".join(self.const_names) if self.const_names else ""
 
         proof = []
-        proof.append("  intro s")
+        proof.append(f"  intro {' '.join(intro_vars)}")
         # Step 1: unfold the composed circuit and sequential composition
         proof.append(f"  simp_circ [Circ.{block_name}, Box.seq]")
         # Step 2: reduce each layer from innermost to outermost
@@ -269,10 +275,10 @@ class ModuleToLean4:
         """Generate theorems proving circuit ≡ functional."""
         m = self.module
 
+        extl_latched: list[Wire] = [pair[0] for pair in m.extl]
         extl_next: list[Wire] = [pair[1] for pair in m.extl]
         ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
         ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
-        params: list[Wire] = []  # [x for x in m.param]
 
         lines: list[str] = []
 
@@ -282,23 +288,22 @@ class ModuleToLean4:
             lines.append(self._simp_circ_macro())
             lines.append("")
 
-        # Init equivalence theorem
-        init_inputs = extl_next + params
-        n_inputs = len(init_inputs)
         n_ctrl = len(ctrl_next)
 
+        # Init equivalence theorem
         if self._init_layer_names:
-            init_native = _product_type(init_inputs)
-            lhs_input = _native_to_vt("s", n_inputs)
+            n_extl_n = len(extl_next)
+            init_binder = f"(extl_n : {_product_type(extl_next)})"
+            lhs_input = _natives_to_vt([("extl_n", n_extl_n)])
             rhs_output = _native_to_vt("r", n_ctrl)
 
-            lines.append(f"theorem init_circ_eq : ∀ (s : {init_native}),")
+            lines.append(f"theorem init_circ_eq : ∀ {init_binder},")
             lines.append(f"    Circ.init.fn {lhs_input} =")
-            lines.append("    let r := init s")
+            lines.append("    let r := init extl_n")
             lines.append(f"    {rhs_output} := by")
             lines.append(
                 self._equiv_proof_tactic(
-                    init_inputs,
+                    ["extl_n"],
                     self._init_layer_names,
                     "init",
                 )
@@ -306,21 +311,27 @@ class ModuleToLean4:
             lines.append("")
 
         # Update equivalence theorem
-        update_inputs = ctrl_latched + extl_next + params
-        n_update = len(update_inputs)
-
         if self._update_layer_names:
-            update_native = _product_type(update_inputs)
-            lhs_input = _native_to_vt("s", n_update)
+            n_ctrl_l = len(ctrl_latched)
+            n_extl_l = len(extl_latched)
+            n_extl_n = len(extl_next)
+            update_binders = (
+                f"(ctrl : {_product_type(ctrl_latched)}) "
+                f"(extl_l : {_product_type(extl_latched)}) "
+                f"(extl_n : {_product_type(extl_next)})"
+            )
+            lhs_input = _natives_to_vt(
+                [("ctrl", n_ctrl_l), ("extl_l", n_extl_l), ("extl_n", n_extl_n)]
+            )
             rhs_output = _native_to_vt("r", n_ctrl)
 
-            lines.append(f"theorem update_circ_eq : ∀ (s : {update_native}),")
+            lines.append(f"theorem update_circ_eq : ∀ {update_binders},")
             lines.append(f"    Circ.update.fn {lhs_input} =")
-            lines.append("    let r := update s")
+            lines.append("    let r := update ctrl extl_l extl_n")
             lines.append(f"    {rhs_output} := by")
             lines.append(
                 self._equiv_proof_tactic(
-                    update_inputs,
+                    ["ctrl", "extl_l", "extl_n"],
                     self._update_layer_names,
                     "update",
                 )

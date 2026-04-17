@@ -50,6 +50,25 @@ def _native_to_vt(param: str, n_wires: int) -> str:
     return result
 
 
+def _natives_to_vt(params: list[tuple[str, int]]) -> str:
+    """Generate native-to-ValTuple conversion from multiple native args.
+
+    Each (name, n) contributes n accessors; all are concatenated into a single
+    right-nested ValTuple. Example: [("ctrl", 2), ("extl_n", 1)] ->
+    "(ctrl.1, (ctrl.2, (extl_n, ())))".
+    """
+    parts: list[str] = []
+    for name, n in params:
+        if n == 0:
+            continue
+        for i in range(n):
+            parts.append(f"{name}{_accessor(i, n)}")
+    result = "()"
+    for p in reversed(parts):
+        result = f"({p}, {result})"
+    return result
+
+
 def _vt_to_native(param: str, n_wires: int) -> str:
     """Generate ValTuple-to-native conversion expression.
 
