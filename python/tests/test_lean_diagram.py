@@ -3,7 +3,7 @@
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
 from zrth.lean import ModuleToLean4
-from zrth.lean.common import itype_name
+from zrth.lean.common import LeanContext, itype_name
 from zrth.lean.project import generate_main_lean, generate_certificate_lean
 
 
@@ -215,9 +215,8 @@ def test_main_lean_matrix_signatures():
 
 def _cert_for(make_module, module_name="ReactiveModule"):
     m = make_module()
-    m2l = ModuleToLean4(m)
-    m2l.to_lean()
-    return generate_certificate_lean("Rea", m, module_name, m2l)
+    ctx = LeanContext(m)
+    return generate_certificate_lean("Rea", module_name, ctx)
 
 
 def test_certificate_bool_has_rm():

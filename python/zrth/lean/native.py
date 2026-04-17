@@ -8,7 +8,13 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.common import _constant_expr, itype_name, _accessor, dtype_to_lean_type
+from zrth.lean.common import (
+    ConstantRegistry,
+    _constant_expr,
+    itype_name,
+    _accessor,
+    dtype_to_lean_type,
+)
 
 from typing import Callable
 
@@ -80,12 +86,14 @@ _LEAN_OP: dict[str, Callable] = {
 
 def _translate_terms(
     terms,
-    block_inputs: tuple[list[Wire], ...],
+    input_bindings: dict[int, str],
     block_outputs: list[Wire],
-    constants: dict[int, str],
-    param_names: list[str],
+    constants: ConstantRegistry,
 ) -> str:
     """Compile a block of terms into a Lean function body with let-bindings.
+
+    `input_bindings` maps block-input wire IDs to their Lean accessor expressions
+    (e.g. ``{w.id: "ctrl.1"}``) — pre-built by the caller via `_bind_wires`.
 
     Returns the body string (let x0 := ...; ... ; (x1, x2)) or "sorry" if no terms.
     """
@@ -93,13 +101,7 @@ def _translate_terms(
     if not term_list:
         return "sorry /- no terms -/"
 
-    # Map wire_id -> Lean expression (variable name or input accessor)
-    wire_expr: dict[int, str] = {}
-    for name, wires in zip(param_names, block_inputs):
-        n_inputs = len(wires)
-        for i, w in enumerate(wires):
-            wire_expr[w.id] = f"{name}{_accessor(i, n_inputs)}"
-
+    wire_expr: dict[int, str] = dict(input_bindings)
     let_lines: list[str] = []
 
     for var_counter, term in enumerate(term_list):

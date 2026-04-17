@@ -9,6 +9,7 @@ IType operation to its Lean equivalent.
 
 from __future__ import annotations
 from zrth.lean.common import (
+    ConstantRegistry,
     _accessor,
     _constant_expr,
     dtype_to_lean_type,
@@ -264,7 +265,7 @@ def _translate_terms_circ(
     terms,
     block_inputs: tuple[list[Wire], ...],
     block_outputs: list[Wire],
-    constants: dict[int, str],
+    constants: ConstantRegistry,
 ) -> list[CircLayer]:
     """Compile a block of terms into a list of CircLayer objects.
 

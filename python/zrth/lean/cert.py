@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 
 from zrth.lean.native import _product_type, _append_expr, _translate_terms
-from zrth import Module, Wire
-from .translate import ModuleToLean4
+from zrth.lean.common import LeanContext, _bind_wires
 from ..expr import Expr
 
 
@@ -17,14 +16,12 @@ class CertificateData:
     ranking: Expr | str | None = None
 
 
-# TODO: move the parts that does not change into .lean file.
-# Or use templating engine, e.g., `Jinja2`.
-#
+# TODO: move the parts that do not change into a .lean file.
+# Or use a templating engine, e.g. `Jinja2`.
 def generate_certificate_lean(
     project_name: str,
-    module: Module,
     module_name: str,
-    m2l: ModuleToLean4,
+    ctx: LeanContext,
     cert_data: CertificateData | None = None,
 ) -> str:
     """Generate Certificate.lean with compiled or placeholder definitions."""
@@ -41,35 +38,27 @@ def generate_certificate_lean(
     ranking_terms = _as_terms(cert_data.ranking)
     p_terms = _as_terms(cert_data.prp)
 
-    extl_next: list[Wire] = [pair[1] for pair in module.extl]
-    ctrl_next: list[Wire] = [pair[1] for pair in module.ctrl]
-    ctrl_latched: list[Wire] = [p[0] for p in module.ctrl]
-    params: list[Wire] = []  # [x for x in module.param]
+    extl_next = ctx.extl_next
+    ctrl_next = ctx.ctrl_next
+    ctrl_latched = ctx.ctrl_latched
 
-    extl_native = _product_type(extl_next + params)
+    extl_native = _product_type(extl_next)
     ctrl_native = _product_type(ctrl_next)
     append = _append_expr("x", len(ctrl_latched), "e", len(extl_next))
 
-    # Extract constants from certificate term lists
-    # TODO: remove the dependency on ModuleToLean4
-    # (make generating the certificate part of that class)
-    existing_const_count = len(m2l._const_defs)
-    for terms in [inv_terms, init_pre_terms, update_pre_terms, ranking_terms, p_terms]:
-        if terms is not None:
-            m2l._extract_constants(terms)
-    cert_const_defs = m2l._const_defs[existing_const_count:]
-    const_names = list(m2l._constants.values())
+    # Precomputed wire bindings for cert-local param names ("e" and "s").
+    e_bindings = _bind_wires([("e", extl_next)])
+    s_bindings = _bind_wires([("s", ctrl_next)])
 
-    def _cert_body(terms, block_inputs, param_name):
+    def _cert_body(terms, bindings):
         """Compile a certificate term list into a Lean function body."""
         output = [terms[-1].write[0]]
-        return _translate_terms(
-            terms, (block_inputs,), output, m2l._constants, [param_name]
-        )
+        return _translate_terms(terms, bindings, output, ctx.constants)
+
+    const_names = ctx.constants.names()
 
     lines: list[str] = []
 
-    # Imports
     lines.append("import Smt")
     lines.append("import Mathlib.Algebra.BigOperators.Fin")
     lines.append("import Core.Basic")
@@ -78,15 +67,9 @@ def generate_certificate_lean(
     lines.append("open Lean Elab Tactic Smt")
     lines.append("")
 
-    # Certificate-specific constants (if any)
-    if cert_const_defs:
-        for cdef in cert_const_defs:
-            lines.append(cdef)
-        lines.append("")
-
     # init_pre
     if init_pre_terms is not None:
-        body = _cert_body(init_pre_terms, extl_next, "e")
+        body = _cert_body(init_pre_terms, e_bindings)
         lines.append(f"def init_pre (e : {extl_native}) : Prop :=")
         lines.append(body)
     else:
@@ -95,7 +78,7 @@ def generate_certificate_lean(
 
     # update_pre
     if update_pre_terms is not None:
-        body = _cert_body(update_pre_terms, extl_next, "e")
+        body = _cert_body(update_pre_terms, e_bindings)
         lines.append(f"def update_pre (e : {extl_native}) : Prop :=")
         lines.append(body)
     else:
@@ -104,7 +87,7 @@ def generate_certificate_lean(
 
     # inv
     if inv_terms is not None:
-        body = _cert_body(inv_terms, ctrl_next, "s")
+        body = _cert_body(inv_terms, s_bindings)
         lines.append(f"def inv (s : {ctrl_native}) : Prop :=")
         lines.append(body)
     else:
@@ -113,7 +96,7 @@ def generate_certificate_lean(
 
     # P
     if p_terms is not None:
-        body = _cert_body(p_terms, ctrl_next, "s")
+        body = _cert_body(p_terms, s_bindings)
         lines.append(f"def P (s : {ctrl_native}) : Prop :=")
         lines.append(body)
     else:
@@ -131,7 +114,7 @@ def generate_certificate_lean(
 
     # ranking
     if ranking_terms is not None:
-        body = _cert_body(ranking_terms, ctrl_next, "s")
+        body = _cert_body(ranking_terms, s_bindings)
         lines.append(f"def ranking (s : {ctrl_native}) : Nat :=")
         lines.append(body)
     else:
@@ -149,7 +132,6 @@ def RM : ReactiveModule ({extl_native}) ({ctrl_native}) := {{
 }}
 """)
 
-    # Build the list of all definitions to unfold
     const_list = ", ".join(const_names) if const_names else ""
 
     # All definitions that need unfolding for proof automation
@@ -161,19 +143,16 @@ def RM : ReactiveModule ({extl_native}) ({ctrl_native}) := {{
 
     unfold_list = ", ".join(f"``{d}" for d in unfold_defs)
 
-    # simp lemmas for reducing matrix expressions to bare integers
     simp_mat = "MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
     simp_mat += ", mul_Mat_apply, add_Mat_apply"
     simp_mat += ", Bool.or_eq_true, decide_eq_true_eq"
     simp_mat += ", Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
     simp_mat += ", Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
 
-    # All definitions as simp lemmas (for simp-based reduction)
     all_defs = "init, update, inv, init_pre, update_pre, P, ranking"
     if const_list:
         all_defs += f", {const_list}"
 
-    # unfold_all tactic — unfolds all module + certificate definitions
     lines.append(f"""\
 -- Unfold all module and certificate definitions
 elab "unfold_all" : tactic => do
@@ -195,7 +174,6 @@ macro "simp_mat" : tactic =>
   `(tactic| simp [{all_defs}, {simp_mat}])
 """)
 
-    # zeroth_hammer: unfold_mod → simp_mat (goal only) → omega/case-split/smt
     lines.append("""\
 syntax "zeroth_hammer" : tactic
 
@@ -229,7 +207,6 @@ elab_rules : tactic
       evalTactic (← `(tactic| smt))
 """)
 
-    # init_inv theorem
     lines.append("""\
 
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
@@ -241,11 +218,9 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    zeroth_hammer
 """)
 
-    # LTS section
     lines.append("section LTS\n")
     lines.append("def lts := RM.toLTS'\n")
 
-    # hinv' theorem
     lines.append("""\
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   unfold LTS'.StateSet_isInductiveInitial
