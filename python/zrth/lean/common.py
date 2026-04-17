@@ -1,4 +1,4 @@
-from zrth import Term, Wire, DType
+from zrth import Term, Wire, DType, Module
 
 
 def _accessor(pos: int, total: int) -> str:
@@ -53,16 +53,109 @@ def itype_name(itype) -> str:
 # ======================================================================
 #  Constants
 # ======================================================================
+class ConstantRegistry:
+    """Registry of matrix constants (wire_id -> Lean name + top-level def).
+
+    Scalar Bool/Int tensors are inlined at their use site and not registered.
+    """
+
+    def __init__(self):
+        self._by_id: dict[int, str] = {}
+        self._defs: list[str] = []
+        self._counter = 0
+
+    def intern(self, term: Term) -> None:
+        """If term is a matrix Tensor, mint a name and top-level def for it.
+
+        Idempotent: calling again for the same output wire is a no-op.
+        """
+        if itype_name(term.itype) != "Tensor":
+            return
+        out_wire = term.write[0]
+        if _is_scalar_tensor(out_wire) or out_wire.id in self._by_id:
+            return
+        name = f"c{self._counter}"
+        self._counter += 1
+        self._by_id[out_wire.id] = name
+        self._defs.append(_tensor_to_lean_def(name, term.itype._0, out_wire))
+
+    def lookup(self, wire_id: int) -> str | None:
+        return self._by_id.get(wire_id)
+
+    def names(self) -> list[str]:
+        return list(self._by_id.values())
+
+    def defs(self) -> list[str]:
+        return list(self._defs)
+
+
 def _constant_expr(
-    const_name: str, term: Term, w: Wire, constants: dict[int, str]
+    const_name: str, term: Term, w: Wire, constants: "ConstantRegistry"
 ) -> str:
     if const_name == "Tensor":
-        if w.id in constants:
-            return constants[w.id]
+        name = constants.lookup(w.id)
+        if name is not None:
+            return name
         return _tensor_to_lean_inline(term.itype._0, w)
     if const_name == "ConstBool":
         return "true" if bool(term.itype._0) else "false"
     return str(int(term.itype._0))
+
+
+def _bind_wires(params: list[tuple[str, list[Wire]]]) -> dict[int, str]:
+    """Map each input wire id to its Lean accessor expression.
+
+    E.g. [("ctrl", [w0, w1]), ("extl_n", [w2])] ->
+        {w0.id: "ctrl.1", w1.id: "ctrl.2", w2.id: "extl_n"}
+    """
+    out: dict[int, str] = {}
+    for name, wires in params:
+        n = len(wires)
+        for i, w in enumerate(wires):
+            out[w.id] = f"{name}{_accessor(i, n)}"
+    return out
+
+
+class LeanContext:
+    """Pre-computed artifacts shared by module and certificate codegen.
+
+    Runs a one-time discovery pass over the module's init/update terms (and
+    optionally the certificate terms) to populate the constant registry and
+    the wire-name bindings for each block. Read-only after construction;
+    codegen consumers do not mutate it.
+    """
+
+    def __init__(self, module: Module, cert_terms: "list | None" = None):
+        atoms = list(module.atoms)
+        if len(atoms) != 1:
+            raise ValueError(
+                f"LeanContext currently supports single-atom modules, got {len(atoms)}"
+            )
+
+        self.module = module
+        self.atom = atoms[0]
+
+        self.extl_latched: list[Wire] = [p[0] for p in module.extl]
+        self.extl_next: list[Wire] = [p[1] for p in module.extl]
+        self.ctrl_latched: list[Wire] = [p[0] for p in module.ctrl]
+        self.ctrl_next: list[Wire] = [p[1] for p in module.ctrl]
+
+        self.constants = ConstantRegistry()
+        for term in self.atom.init:
+            self.constants.intern(term)
+        for term in self.atom.update:
+            self.constants.intern(term)
+        for term in cert_terms or []:
+            self.constants.intern(term)
+
+        self.init_wire_names = _bind_wires([("extl_n", self.extl_next)])
+        self.update_wire_names = _bind_wires(
+            [
+                ("ctrl", self.ctrl_latched),
+                ("extl_l", self.extl_latched),
+                ("extl_n", self.extl_next),
+            ]
+        )
 
 
 def _get_dtype_item(dtype: DType, item) -> str:
