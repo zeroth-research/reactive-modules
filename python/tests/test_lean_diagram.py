@@ -101,7 +101,9 @@ def test_twobitcounter_init_signature():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def init (s : (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)" in lean
+    assert (
+        "def init (extl_n: (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)" in lean
+    )
 
 
 def test_twobitcounter_update_signature():
@@ -109,7 +111,7 @@ def test_twobitcounter_update_signature():
     lean = ModuleToLean4(m).to_lean()
 
     assert (
-        "def update (s : (Mat Bool 1 1) × (Mat Bool 1 1) × (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)"
+        "def update (ctrl: (Mat Bool 1 1) × (Mat Bool 1 1)) (extl_l: (Mat Bool 1 1)) (extl_n: (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)"
         in lean
     )
 
@@ -154,14 +156,17 @@ def test_matrix_init_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def init (s : (Mat Int 2 1)) : (Mat Int 3 1)" in lean
+    assert "def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1)" in lean
 
 
 def test_matrix_update_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def update (s : (Mat Int 3 1) × (Mat Int 2 1)) : (Mat Int 3 1)" in lean
+    assert (
+        "def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1)"
+        in lean
+    )
 
 
 # ── Main.lean generation ────────────────────────────────────────────────
@@ -239,7 +244,7 @@ def test_certificate_bool_has_theorems():
 
 def test_certificate_bool_has_simp_mod():
     cert = _cert_for(_make_twobitcounter)
-    assert 'macro "simp_mod"' in cert
+    assert 'macro "simp_mat"' in cert
     assert "init, update, inv" in cert
 
 

@@ -436,6 +436,7 @@ def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
         )
 
     module_def = getattr(module, module_def)
-    if not isinstance(module_def, Module):
-        return Wrapper(module_def())
-    return module_def()
+    result = module_def()
+    if isinstance(result, Module):
+        return result
+    return Wrapper(result)
