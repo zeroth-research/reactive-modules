@@ -1,13 +1,11 @@
 """Tests for the Module-to-Lean4 functional converter."""
 
 import torch
-from zrth import Wire, Term, Module, DType as dt, IType as it, Bool, Int
+from zrth import Wire, Term, Module, IType as it, Bool, Int
 from zrth.lean.project import (
     create_project,
 )
 from zrth.lean.cert import CertificateData
-
-from zrth.expr import Expr, Bool as BoolConst
 
 from os.path import dirname
 from pathlib import Path
