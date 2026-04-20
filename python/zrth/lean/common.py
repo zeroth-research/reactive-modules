@@ -98,8 +98,18 @@ def _constant_expr(
             return name
         return _tensor_to_lean_inline(term.itype._0, w)
     if const_name == "ConstBool":
-        return "true" if bool(term.itype._0) else "false"
-    return str(int(term.itype._0))
+        val = "true" if bool(term.itype._0) else "false"
+        return f"(fun _ _ => {val})"
+    return f"(fun _ _ => ({int(term.itype._0)} : Int))"
+
+
+def _any_float_wire(*wire_lists: list[Wire]) -> bool:
+    """True if any wire across the given lists has a Float dtype."""
+    for wires in wire_lists:
+        for w in wires:
+            if isinstance(w.dtype, DType.Float):
+                return True
+    return False
 
 
 def _bind_wires(params: list[tuple[str, list[Wire]]]) -> dict[int, str]:
@@ -147,6 +157,17 @@ class LeanContext:
             self.constants.intern(term)
         for term in cert_terms or []:
             self.constants.intern(term)
+
+        # Modules that use Float/Real require `noncomputable` on defs that
+        # compare or branch on real-typed values (Real lacks decidable equality).
+        self.uses_real = _any_float_wire(
+            self.extl_latched,
+            self.extl_next,
+            self.ctrl_latched,
+            self.ctrl_next,
+            [t.write[0] for t in self.atom.init],
+            [t.write[0] for t in self.atom.update],
+        )
 
         self.init_wire_names = _bind_wires([("extl_n", self.extl_next)])
         self.update_wire_names = _bind_wires(
@@ -223,9 +244,10 @@ def _is_scalar_tensor(wire: Wire) -> bool:
 
 
 def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
-    """Return an inline Lean literal for a scalar tensor."""
+    """Return an inline `Mat _ 1 1` literal for a scalar tensor."""
     if isinstance(wire.dtype, DType.Bool):
-        return "true" if bool(tensor.item()) else "false"
+        val = "true" if bool(tensor.item()) else "false"
+        return f"(fun _ _ => {val})"
     if isinstance(wire.dtype, DType.Int):
-        return str(int(tensor.item()))
+        return f"(fun _ _ => ({int(tensor.item())} : Int))"
     raise ValueError(f"Cannot inline tensor with dtype={wire.dtype}")
