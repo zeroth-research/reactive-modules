@@ -1,26 +1,38 @@
 /*!
-# Integers (mathematical)
+# Int numbers
 
-Provides the [`Int`] type with operations [`Add`], [`Mul`],
-and [`Id`], bundled into a [`Theory`].
+TODO: add description
 
 ## Examples
 
 ```
-use theory::int::*;
-
-let _: Types = Int().into();
-let _: Operations = Add().into();
+// TODO: add examples
 ```
 */
 
-use crate::mk_theory;
+use crate::*;
 
-mk_theory!(
-    Types(Int),
-    {
-        Add(Int, Int) => Int,
-        Mul(Int, Int) => Int,
-        Id(Int) => Int
+pub enum IntDType {
+    Int,
+}
+
+/// TODO: write "formal" semantics
+pub enum Int {
+    Const(String),
+    Add,
+    Mul,
+    Id,
+}
+
+impl Theory for Int {
+    type DType = IntDType;
+
+    fn _check(&self, read: &[Self::DType], write: &[Self::DType]) -> bool {
+        match self {
+            // TODO: check `s` are all digits
+            Int::Const(s) => return read.len() == 0 && write.len() == 1 && !s.is_empty(),
+            Int::Id => return read.len() == 1 && write.len() == 1,
+            Int::Add | Int::Mul => return read.len() == 2 && write.len() == 1,
+        }
     }
-);
+}

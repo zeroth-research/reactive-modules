@@ -1,26 +1,38 @@
 /*!
 # Natural numbers
 
-Provides the [`Nat`] type with operations [`Add`], [`Mul`],
-and [`Id`], bundled into a [`Theory`].
+TODO: add description
 
 ## Examples
 
 ```
-use theory::nat::*;
-
-let _: Types = Nat().into();
-let _: Operations = Add().into();
+// TODO: add examples
 ```
 */
 
-use crate::mk_theory;
+use crate::*;
 
-mk_theory!(
-    Types(Nat),
-    {
-        Add(Nat, Nat) => Nat,
-        Mul(Nat, Nat) => Nat,
-        Id(Nat) => Nat
+pub enum NatDType {
+    Nat,
+}
+
+/// TODO: write "formal" semantics
+pub enum Nat {
+    Const(String),
+    Add,
+    Mul,
+    Id,
+}
+
+impl Theory for Nat {
+    type DType = NatDType;
+
+    fn _check(&self, read: &[Self::DType], write: &[Self::DType]) -> bool {
+        match self {
+            // TODO: check `s` are all digits
+            Nat::Const(s) => return read.len() == 0 && write.len() == 1 && !s.is_empty(),
+            Nat::Id => return read.len() == 1 && write.len() == 1,
+            Nat::Add | Nat::Mul => return read.len() == 2 && write.len() == 1,
+        }
     }
-);
+}

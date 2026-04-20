@@ -1,63 +1,72 @@
 /*!
-# Matrices
+# Matrices with parametric element type
+  and shape given in runtime.
 
-Provides [`Mat<T, M, N>`], a matrix type parameterized by an element
-[`Type`] `T` and dimensions `M x N`. Operations include [`Add`],
-[`Id`], and [`MatMul<T, A, B, C>`] (which requires `T: Copy`),
-all bundled into a [`Theory`].
+TODO: add description
 
 ## Examples
 
 ```
-use std::marker::PhantomData;
-use theory::mat::*;
-use theory::int::Int;
-
-let _: Types = Mat::<Int, 2, 3>(PhantomData).into();
-let _: Operations = Add().into();
-let _: Operations = MatMul::<Int, 2, 3, 4> ( PhantomData ).into();
+// TODO: add examples
 ```
 */
 
-use std::marker::PhantomData;
-
 use crate::*;
 
-/// Bitvector type parametrized by its size
-#[derive(Clone, Copy, PartialEq)]
-pub struct Mat<T: Type, const M: usize, const N: usize>(pub std::marker::PhantomData<T>);
-impl<T: Type, const M: usize, const N: usize> Type for Mat<T, M, N> {}
-
 #[derive(Copy, Clone, PartialEq)]
-pub struct MatMul<T: Type, const A: usize, const B: usize, const C: usize>(pub PhantomData<T>);
-impl<T: Type, const A: usize, const B: usize, const C: usize> Operation for MatMul<T, A, B, C> {}
-
-// matrix constant represented by an object of type `C`
-// TODO: C and T is not connected anyhow -- we need to somehow specify
-// that C can represent matrices with elements in `T: Type`.
-// Now it is really a run-time check (if the programmer writes it...)
-#[derive(Clone, Copy, PartialEq)]
-pub struct MatConst<C, const A: usize, const B: usize>(pub C);
-impl<C: Clone + PartialEq, const A: usize, const B: usize> Operation for MatConst<C, A, B> {}
-
-impl<C: Clone + PartialEq, T: Type, const A: usize, const B: usize>
-    Operation0To1<Mat<T, A, B>> for MatConst<C, A, B> {}
-
-
-impl<T: Type, const A: usize, const B: usize, const C: usize>
-    Operation2To1<Mat<T, A, B>, Mat<T, B, C>, Mat<T, A, C>> for MatMul<T, A, B, C>
-{
+pub enum MatDType<T: PartialEq> {
+    Mat(usize, usize),
+    _Phantom(std::marker::PhantomData<T>),
 }
 
-mk_theory!(
-    Types([T: Type, const M: usize, const N: usize] Mat => Mat<T, M, N>),
-    {
-        [T: Type, const M: usize, const N: usize]
-        Add(Mat<T, M, N>, Mat<T, M, N>) => Mat<T, M, N>,
-        Id(Mat<T, M, N>) => Mat<T, M, N>
+/// TODO: write "formal" semantics
+#[derive(Clone, PartialEq)]
+pub enum Mat<T> {
+    // TODO: use bitarray
+    Const(Vec<Vec<T>>),
+    Add,
+    Mul,
+    MatMul,
+    Prod,
+    Sum,
+    Id,
+}
+
+impl<T: PartialEq> Theory for Mat<T> {
+    type DType = MatDType<T>;
+
+    fn _check(&self, read: &[Self::DType], write: &[Self::DType]) -> bool {
+        match self {
+            Mat::Const(cm) => {
+                read.len() == 0
+                    && write.len() == 1
+                    && match &write[0] {
+                        MatDType::Mat(i, j) => {
+                            cm.len() == *i && cm.iter().all(|row| row.len() == *j)
+                        }
+                        _ => false,
+                    }
+            }
+            Mat::Prod | Mat::Sum => {
+                read.len() == 1
+                    && write.len() == 1
+                    && match write[0] {
+                        MatDType::Mat(1, 1) => true,
+                        _ => false,
+                    }
+            }
+            Mat::Id => read.len() == 1 && write.len() == 1 && read[0] == write[0],
+            Mat::Add | Mat::Mul => read.len() == 2 && write.len() == 1 && read[0] == write[0],
+            Mat::MatMul => {
+                read.len() == 2
+                    && write.len() == 1
+                    && match (&read[0], &read[1], &write[0]) {
+                        (MatDType::Mat(d1, d2), MatDType::Mat(d3, d4), MatDType::Mat(d5, d6)) => {
+                            d2 == d3 && d1 == d5 && d4 == d6
+                        }
+                        _ => false,
+                    }
+            }
+        }
     }
-    {
-        [T: Type + Copy, const A: usize, const B: usize, const C: usize]
-        MatMul => MatMul<T, A, B, C>
-    }
-);
+}

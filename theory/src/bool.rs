@@ -1,30 +1,40 @@
 /*!
 # Booleans and operations on booleans.
 
-Provides the [`Bool`] type with operations [`And`], [`Or`], [`Xor`],
-[`Not`], and [`Id`], bundled into a [`Theory`].
+TODO: add description
 
 ## Examples
 
 ```
-use theory::bool::*;
-
-let _: Types = Bool().into();
-let _: Operations = And().into();
-let _: Operations = Not().into();
+// TODO: add examples
 ```
 */
 
 use crate::*;
 
-// Create the theory of booleans
-mk_theory!(
-    Types(Bool),
-    {
-        And(Bool, Bool) => Bool,
-        Or(Bool, Bool) => Bool,
-        Xor(Bool, Bool) => Bool,
-        Not(Bool) => Bool,
-        Id(Bool) => Bool
+pub enum PropDType {
+    Bool,
+}
+
+/// TODO: write "formal" semantics
+pub enum Prop {
+    Const(bool),
+    And,
+    Or,
+    Xor,
+    Not,
+    Id,
+}
+
+impl Theory for Prop {
+    type DType = PropDType;
+
+    fn _check(&self, read: &[Self::DType], write: &[Self::DType]) -> bool {
+        match self {
+            Prop::Const(_) => return read.len() == 0 && write.len() == 1,
+            Prop::Not | Prop::Id => return read.len() == 1 && write.len() == 1,
+            Prop::Xor => return read.len() == 2 && write.len() == 1,
+            _ => return write.len() == 1,
+        }
     }
-);
+}
