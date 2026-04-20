@@ -75,9 +75,9 @@ def test_twobitcounter_has_inlined_scalars():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    # Scalar Bool constants are inlined, not top-level defs
+    # Scalar Bool constants are inlined as Mat-typed literals, not top-level defs
     assert "def c0" not in lean
-    assert "let x0 := false" in lean
+    assert "let x0 := (fun _ _ => false)" in lean
 
 
 def test_twobitcounter_update_has_let_bindings():

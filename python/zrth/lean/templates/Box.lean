@@ -43,6 +43,17 @@ def affineLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t]
 def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
   fun i j => Max.max 0 (x i j)
 
+/-- Maximum element of a matrix, returned as a `Mat t 1 1`.
+    (Kept under the name `argmax` to match the Python IR; the Python layer
+    treats the output type as matching the input element type.) -/
+def argmax {t : Type} [Max t] [Inhabited t] {m n : Nat}
+    (x : Mat t m n) : Mat t 1 1 :=
+  fun _ _ =>
+    (List.finRange m).foldl
+      (fun acc i =>
+        (List.finRange n).foldl (fun a j => Max.max a (x i j)) acc)
+      default
+
 
 /-! Helper lemmas for simp -/
 @[simp] theorem affineLinear_apply [HMul t t t] [AddCommMonoid t] [HAdd t t t]
@@ -331,6 +342,10 @@ infixr:75 " ⊗ " => par
 @[simp] def relu [Max t] [OfNat t 0] {m n : Nat}
     : Box [Mat t m n] [Mat t m n] :=
   ⟨fun val!(x) => val!(ReLu x)⟩
+
+@[simp] def argmax {t : Type} [Max t] [Inhabited t] {m n : Nat}
+    : Box [Mat t m n] [Mat t 1 1] :=
+  ⟨fun val!(x) => val!(_root_.argmax x)⟩
 
 end Box
 

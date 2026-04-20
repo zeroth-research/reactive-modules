@@ -55,32 +55,34 @@ def _append_expr(var1: str, count1: int, var2: str, count2: int) -> str:
     return _build_tuple(parts)
 
 
-# Map operations to Lean expression builder (takes list of arg strings)
+# Map operations to Lean expression builder (takes list of arg strings).
+# Operands and results are all `Mat _ 1 1` (scalar) — element-wise ops extract
+# position `0 0` and re-wrap as a constant matrix.
 _LEAN_OP: dict[str, Callable] = {
-    "Not": lambda a: f"!{a[0]}",
-    "And": lambda a: f"({a[0]} && {a[1]})",
-    "Or": lambda a: f"({a[0]} || {a[1]})",
-    "Ite": lambda a: f"if {a[0]} then {a[1]} else {a[2]}",
+    "Not": lambda a: f"(fun _ _ => !({a[0]} 0 0))",
+    "And": lambda a: f"(fun _ _ => ({a[0]} 0 0 && {a[1]} 0 0))",
+    "Or": lambda a: f"(fun _ _ => ({a[0]} 0 0 || {a[1]} 0 0))",
+    "Ite": lambda a: f"(if {a[0]} 0 0 then {a[1]} else {a[2]})",
     "Add": lambda a: f"({a[0]} + {a[1]})",
     "Sub": lambda a: f"({a[0]} - {a[1]})",
     "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Mod": lambda a: f"({a[0]} % {a[1]})",
+    "Mod": lambda a: f"(fun _ _ => ({a[0]} 0 0 % {a[1]} 0 0))",
     "Neg": lambda a: f"(-{a[0]})",
-    "Lt": lambda a: f"decide ({a[0]} 0 0 < {a[1]} 0 0)",
-    "Le": lambda a: f"decide ({a[0]} 0 0 ≤ {a[1]} 0 0)",
-    "Gt": lambda a: f"decide ({a[1]} 0 0 < {a[0]} 0 0)",
-    "Ge": lambda a: f"decide ({a[1]} 0 0 ≤ {a[0]} 0 0)",
-    "Eq": lambda a: f"({a[0]} == {a[1]})",
-    "Neq": lambda a: f"({a[0]} != {a[1]})",
-    "Min": lambda a: f"Min.min {a[0]} {a[1]}",
-    "Max": lambda a: f"Max.max {a[0]} {a[1]}",
+    "Lt": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 < {a[1]} 0 0))",
+    "Le": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≤ {a[1]} 0 0))",
+    "Gt": lambda a: f"(fun _ _ => decide ({a[1]} 0 0 < {a[0]} 0 0))",
+    "Ge": lambda a: f"(fun _ _ => decide ({a[1]} 0 0 ≤ {a[0]} 0 0))",
+    "Eq": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 = {a[1]} 0 0))",
+    "Neq": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≠ {a[1]} 0 0))",
+    "Min": lambda a: f"(fun i j => Min.min ({a[0]} i j) ({a[1]} i j))",
+    "Max": lambda a: f"(fun i j => Max.max ({a[0]} i j) ({a[1]} i j))",
     "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
     "Id": lambda a: a[0],
     "Linear": lambda a: f"affineLinear {a[0]} {a[1]} {a[2]}",
-    "ReLU": lambda a: f"Max.max 0 {a[0]}",
+    "ReLU": lambda a: f"ReLu {a[0]}",
     "TensorGet": lambda a: f"({a[0]} 0 0)",
-    "ToUnsigned": lambda a: f"({a[0]}).toNat",
-    "Argmax": lambda a: f"argmax({a[0]})",
+    "ToUnsigned": lambda a: f"(fun _ _ => Int.toNat ({a[0]} 0 0))",
+    "Argmax": lambda a: f"argmax {a[0]}",
 }
 
 
@@ -116,9 +118,11 @@ def _translate_terms(
             expr = _LEAN_OP[name](input_exprs)
 
         # Each term writes exactly one wire
+        write_wire = term.write[0]
         var = f"x{var_counter}"
-        wire_expr[term.write[0].id] = var
-        let_lines.append(f"  let {var} := {expr}")
+        wire_expr[write_wire.id] = var
+        ty = dtype_to_lean_type(write_wire)
+        let_lines.append(f"  let {var} : {ty} := {expr}")
 
     # Build output tuple
     out_exprs = [wire_expr[w.id] for w in block_outputs]

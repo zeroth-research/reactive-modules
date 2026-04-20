@@ -366,6 +366,7 @@ import Core.Box
     mod_file.write_text(f"""\
 /- Code generated for reactive module `{module_name}` as circuit -/
 import Core.Box
+import {project_name}.{module_name}
 
 {m2l.to_lean_circ()}
 """)

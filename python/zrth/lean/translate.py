@@ -91,10 +91,8 @@ class ModuleToLean4:
             lines.extend(layer_lines)
 
         if update_layers:
-            upd_dom = (
-                f"(ctrl: {_ty_list(ctx.ctrl_latched)}) "
-                f"(extl_l: {_ty_list(ctx.extl_latched)}) "
-                f"(extl_n: {_ty_list(ctx.extl_next)})"
+            upd_dom = _ty_list(
+                ctx.ctrl_latched + ctx.extl_latched + ctx.extl_next
             )
             upd_cod = _ty_list(update_outputs)
             layer_lines, self._update_layer_names = self._emit_named_layers(
@@ -294,10 +292,11 @@ class ModuleToLean4:
 
         lines = []
         cod = _product_type(ctx.ctrl_next)
+        noncomp = "noncomputable " if ctx.uses_real else ""
 
         if init_body:
             init_dom = f"(extl_n: {_product_type(ctx.extl_next)})"
-            lines.append(f"@[simp] def init {init_dom} : {cod} :=")
+            lines.append(f"@[simp] {noncomp}def init {init_dom} : {cod} :=")
             lines.append(init_body)
             lines.append("")
 
@@ -307,7 +306,7 @@ class ModuleToLean4:
                 f"(extl_l: {_product_type(ctx.extl_latched)}) "
                 f"(extl_n: {_product_type(ctx.extl_next)})"
             )
-            lines.append(f"@[simp] def update {upd_dom} : {cod} :=")
+            lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
             lines.append(update_body)
             lines.append("")
 
