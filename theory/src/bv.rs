@@ -1,32 +1,41 @@
 /*!
-# BitVectors of fixed length
+# Bit-vectors of fixed length
 
-Provides the [`BV<N>`] type (parameterized by bit-width `N`) with
-operations [`Add`], [`Mul`], and [`Id`], bundled into a [`Theory`].
+TODO: add description
 
 ## Examples
 
 ```
-use theory::bv::*;
-
-let _: Types = BV::<8>().into();
-let _: Operations = Add().into();
+// TODO: add examples
 ```
 */
 
-use crate::{Type, mk_theory};
+use crate::*;
 
-/// Bitvector type parametrized by its size
-#[derive(Clone, Copy, PartialEq)]
-pub struct BV<const N: usize>();
-impl<const N: usize> Type for BV<N> {}
+pub enum BVDType<const N: usize> {
+    BV,
+}
 
-mk_theory!(
-    Types([const N: usize] BV => BV<N>),
-    {
-        [const N: usize]
-        Add(BV<N>, BV<N>) => BV<N>,
-        Mul(BV<N>, BV<N>) => BV<N>,
-        Id(BV<N>) => BV<N>
+/// TODO: write "formal" semantics
+pub enum BV<const N: usize> {
+    // TODO: use bitarray
+    Const(String),
+    And,
+    Or,
+    Xor,
+    Not,
+    Id,
+}
+
+impl<const N: usize> Theory for BV<N> {
+    type DType = BVDType<N>;
+
+    fn _check(&self, read: &[Self::DType], write: &[Self::DType]) -> bool {
+        match self {
+            BV::Const(_) => return read.len() == 0 && write.len() == 1,
+            BV::Not | BV::Id => return read.len() == 1 && write.len() == 1,
+            BV::Xor => return read.len() == 2 && write.len() == 1,
+            _ => return write.len() == 1,
+        }
     }
-);
+}
