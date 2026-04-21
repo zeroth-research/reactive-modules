@@ -194,9 +194,13 @@ infixr:75 " ⊗ " => par
     : Box [Mat t m n] [Mat t m n] :=
   ⟨fun val!(x) => val!(ReLu x)⟩
 
-@[simp] def argmax {t : Type} [Max t] [Inhabited t] {m n : Nat}
-    : Box [Mat t m n] [Mat t 1 1] :=
-  ⟨fun val!(x) => val!(_root_.argmax x)⟩
+@[simp] def argmax_1d {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [Inhabited t]
+    {n : Nat} : Box [Mat t 1 n] [Mat Int 1 1] :=
+  ⟨fun val!(x) => val!(fun i j => ((_root_.argmax_1d x) i j : Int))⟩
+
+@[simp] def argmax {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [Inhabited t]
+    {m n : Nat} : Box [Mat t m n] [Mat Int 1 2] :=
+  ⟨fun val!(x) => val!(fun i j => ((_root_.argmax x) i j : Int))⟩
 
 end Box
 

@@ -39,16 +39,31 @@ def affineLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t]
 def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
   fun i j => Max.max 0 (x i j)
 
-/-- Maximum element of a matrix, returned as a `Mat t 1 1`.
-    (Kept under the name `argmax` to match the Python IR; the Python layer
-    treats the output type as matching the input element type.) -/
-def argmax {t : Type} [Max t] [Inhabited t] {m n : Nat}
-    (x : Mat t m n) : Mat t 1 1 :=
+/-- 1-dimensional argmax: returns the column index of the maximum element
+    of a `Mat t 1 n`, packed as `Mat Nat 1 1`. -/
+def argmax_1d {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [Inhabited t]
+    {n : Nat} (x : Mat t 1 n) : Mat Nat 1 1 :=
   fun _ _ =>
-    (List.finRange m).foldl
-      (fun acc i =>
-        (List.finRange n).foldl (fun a j => Max.max a (x i j)) acc)
-      default
+    ((List.finRange n).foldl
+      (fun (best : Nat × t) j =>
+        let v := x 0 j
+        if best.2 ≤ v then (j.val, v) else best)
+      (0, default)).1
+
+/-- 2-dimensional argmax: returns `[i, j]`, the position of the maximum
+    element of a `Mat t m n`, packed as `Mat Nat 1 2`. -/
+def argmax {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [Inhabited t]
+    {m n : Nat} (x : Mat t m n) : Mat Nat 1 2 :=
+  let pos :=
+    ((List.finRange m).foldl
+      (fun (bestI : Nat × Nat × t) i =>
+        (List.finRange n).foldl
+          (fun (best : Nat × Nat × t) j =>
+            let v := x i j
+            if best.2.2 ≤ v then (i.val, j.val, v) else best)
+          bestI)
+      (0, 0, default))
+  fun _ k => if k = 0 then pos.1 else pos.2.1
 
 
 /-! Helper lemmas for simp -/
@@ -135,6 +150,16 @@ theorem Mat_1_1_eq (f : Mat t 1 1) : f = fun _ _ => f 0 0 := by
   have hj: j = ⟨ 0, by simp ⟩ := by exact Fin.fin_one_eq_zero j
   rw [hi, hj]
   rfl
+
+@[simp] theorem Mat_1_1_eq_iff {t : Type} (a b : Mat t 1 1) :
+    (a = b) ↔ (a 0 0 = b 0 0) := by
+  constructor
+  · intro h; rw [h]
+  · intro h
+    ext i j
+    have hi : i = ⟨0, by simp⟩ := Fin.fin_one_eq_zero i
+    have hj : j = ⟨0, by simp⟩ := Fin.fin_one_eq_zero j
+    rw [hi, hj]; exact h
 
 /- theorem ite_Mat_1_1 (p : Prop) [Decidable p] (a b : Mat t 1 1) : -/
 /-       (if p then a else b) = fun _ _ => if p then a 0 0 else b 0 0 := by -/

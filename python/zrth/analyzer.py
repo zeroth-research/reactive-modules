@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
-from zrth import Wire, DType, Term, IType, Float, Bool
+from zrth import Wire, DType, Term, IType, Float, Bool, Int
 
 
 # ---------------------------------------------------------------------------
@@ -1753,7 +1753,7 @@ class MethodVisitor(ast.NodeVisitor):
 
             if method == "argmax":
                 obj_wire = self._convert_expr(obj)
-                result = Wire(Float(1))
+                result = Wire(Int(1))
                 self.terms.append(Term(IType.Argmax(), [result], [obj_wire]))
                 return result
             elif method == "item":
