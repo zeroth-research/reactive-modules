@@ -55,6 +55,13 @@ RANKING: <Lean4 expression of type CtrlNative → ℕ>
 
 Use Lean4 syntax. Access state components with `.1`, `.2.1`, etc. \
 Use `∧`, `∨`, `¬` for logical connectives and `≤`, `<`, `=` for comparisons.
+
+IMPORTANT — Lean 4 lambda syntax: write `fun s => expr` (NOT the Lean 3 form \
+`λ s, expr` or `fun s, expr`). Do not use a comma after the binder.
+
+State components are matrices of type `Mat t 1 1 := Fin 1 → Fin 1 → t`, so a \
+scalar value is accessed as `s.1 0 0`, `s.2.1 0 0`, etc. The ranking function \
+must return `Nat`; use `.toNat` or explicit conversion if a component is Int/Real.
 """
 
 VERIFY_SYSTEM = """\
