@@ -81,7 +81,7 @@ def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateDa
     import cvc5
 
     from .smt_module import ModuleSMT
-    from .smt_prompt import CegarPromptEnv
+    from .smt_prompt import CegarPromptEnv, parse_predicate
     from .smt_to_lean import smt_to_lean, smt_to_lean_nat
 
     tm = cvc5.TermManager()
@@ -91,7 +91,7 @@ def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateDa
     def translate(smt_src: str | None, mode: str) -> str | None:
         if not isinstance(smt_src, str):
             return smt_src
-        term = env.parse_expr(smt_src)
+        term = parse_predicate(env, smt_src)
         if mode == "property" or mode == "invariant":
             return smt_to_lean(term, msmt.ctrl_next, param_name="s")
         if mode == "ranking":
