@@ -10,7 +10,7 @@ in [`Prop`] are:
 
 - [`Prop::Const`] — an inline matrix literal producing a boolean matrix of
   the shape declared by its write type.
-- [`Prop::Not`], [`Prop::Id`] — unary, shape-preserving.
+- [`Prop::Not`] — unary, shape-preserving.
 - [`Prop::And`], [`Prop::Or`], [`Prop::Xor`] — elementwise binary, both
   inputs and the output share the same shape.
 
@@ -47,7 +47,6 @@ pub enum Prop {
     Or,
     Xor,
     Not,
-    Id,
 }
 
 impl Theory for Prop {
@@ -81,7 +80,7 @@ impl Theory for Prop {
                     }
                 }
             }
-            Prop::Not | Prop::Id => {
+            Prop::Not => {
                 if read.len() != 1 {
                     return Err(format!(
                         "{:?}: must read a single value, got {}",
