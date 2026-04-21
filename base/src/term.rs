@@ -39,16 +39,16 @@ impl<T: Theory> Term<T> {
     }
 }
 
-impl<TH> Term<TH>
+impl<T> Term<T>
 where
-    TH: Theory,
-    TH::DType: Eq,
+    T: Theory,
+    T::DType: Eq,
 {
-    pub fn function<T, U, W, R>(itype: TH, write: W, read: R) -> Result<Self, &'static str>
+    pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, &'static str>
     where
-        T: Into<Wire<TH::DType>>,
-        U: Into<Wire<TH::DType>>,
-        W: IntoIterator<Item = T>,
+        D: Into<Wire<T::DType>>,
+        U: Into<Wire<T::DType>>,
+        W: IntoIterator<Item = D>,
         R: IntoIterator<Item = U>,
     {
         Ok(Self::new_unchecked(
@@ -58,10 +58,10 @@ where
         ))
     }
 
-    pub fn constant<T, W>(itype: TH, write: W) -> Result<Self, &'static str>
+    pub fn constant<D, W>(itype: T, write: W) -> Result<Self, &'static str>
     where
-        T: Into<Wire<TH::DType>>,
-        W: IntoIterator<Item = T>,
+        D: Into<Wire<T::DType>>,
+        W: IntoIterator<Item = D>,
     {
         Ok(Self::new_unchecked(
             itype,
