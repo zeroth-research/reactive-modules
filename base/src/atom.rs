@@ -2,34 +2,36 @@ use crate::term::{Block, Term};
 use crate::wire::{Interface, Wire};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use theory::Theory;
 
 #[cfg(debug_assertions)]
 use std::collections::HashSet;
 
 /// This data structure corresponds to the atom of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Atom<D, I> {
+pub struct Atom<T: Theory> {
     /// Corresponds to ctr variables.
-    ctrl: Interface<D>,
+    ctrl: Interface<T::DType>,
     /// Corresponds to wait variables.
-    wait: Interface<D>,
+    wait: Interface<T::DType>,
     /// Corresponds to read variables.
-    read: Interface<D>,
+    read: Interface<T::DType>,
     /// Corresponds to temporary, local wires.
-    temp: Interface<D>,
+    temp: Interface<T::DType>,
     /// Corresponds to the initial action.
-    init: Block<D, I>,
+    init: Block<T>,
     /// Corresponds to the update action.
-    update: Block<D, I>,
+    update: Block<T>,
     // flow: Vec<Term<I>>, // the default flow must be a constant so the derivative is 0
 }
-impl<D, I> Atom<D, I> {
+
+impl<T: Theory> Atom<T> {
     /// Returns a reference to the initial action.
-    pub fn init(&self) -> &Block<D, I> {
+    pub fn init(&self) -> &Block<T> {
         &self.init
     }
     /// Returns a reference to the update action.
-    pub fn update(&self) -> &Block<D, I> {
+    pub fn update(&self) -> &Block<T> {
         &self.update
     }
 
@@ -37,19 +39,19 @@ impl<D, I> Atom<D, I> {
     //     &self.flow
     // }
 
-    pub fn ctrl(&self) -> &Interface<D> {
+    pub fn ctrl(&self) -> &Interface<T::DType> {
         &self.ctrl
     }
 
-    pub fn wait(&self) -> &Interface<D> {
+    pub fn wait(&self) -> &Interface<T::DType> {
         &self.wait
     }
 
-    pub fn read(&self) -> &Interface<D> {
+    pub fn read(&self) -> &Interface<T::DType> {
         &self.read
     }
 
-    pub fn temp(&self) -> impl Iterator<Item = &Wire<D>> {
+    pub fn temp(&self) -> impl Iterator<Item = &Wire<T::DType>> {
         self.temp.wires()
     }
 
@@ -65,34 +67,37 @@ impl<D, I> Atom<D, I> {
     }
 }
 
-impl<D, I> Default for Atom<D, I> {
+impl<T: Theory> Default for Atom<T> {
     fn default() -> Self {
         Self::empty()
     }
 }
 
-impl<D: Eq, I> Atom<D, I> {
+impl<T: Theory> Atom<T>
+where
+    T::DType: Eq,
+{
     /// Returns true if this atoms awaits the other atom
-    pub fn awaits(&self, other: &Atom<D, I>) -> bool {
+    pub fn awaits(&self, other: &Atom<T>) -> bool {
         !self.wait.is_disjoint(&other.ctrl)
     }
 
     /// Creates an atom from its components. This method checks the inputs only using assertions
     /// in debug mode.
     fn new_unchecked(
-        ctrl: Interface<D>,
-        wait: Interface<D>,
-        read: Interface<D>,
-        temp: Interface<D>,
-        init: Block<D, I>,
-        update: Block<D, I>,
+        ctrl: Interface<T::DType>,
+        wait: Interface<T::DType>,
+        read: Interface<T::DType>,
+        temp: Interface<T::DType>,
+        init: Block<T>,
+        update: Block<T>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
             //================================================================================
             // Check declared wires
             //================================================================================
-            let mut decl: HashMap<usize, &D> = HashMap::new();
+            let mut decl: HashMap<usize, &T::DType> = HashMap::new();
             // declare read and await, don't allow repetition
             {
                 let read_wait_param = read.wires().chain(wait.wires());
@@ -186,7 +191,10 @@ impl<D: Eq, I> Atom<D, I> {
     }
 }
 
-impl<D: Eq + Clone, I> Atom<D, I> {
+impl<T: Theory> Atom<T>
+where
+    T::DType: Eq + Clone,
+{
     /// Constructs a **sequential atom**, representing behaviour that evolves over time.
     ///
     /// A sequential atom defines both an initialisation (`init`) and an update (`update`)
@@ -221,22 +229,22 @@ impl<D: Eq + Clone, I> Atom<D, I> {
         update: U,
     ) -> Result<Self, &'static str>
     where
-        L: IntoIterator<Item = &'a Wire<D>>,
-        N: IntoIterator<Item = &'a Wire<D>>,
-        V: IntoIterator<Item = Term<D, I>>,
-        U: IntoIterator<Item = Term<D, I>>,
-        D: 'a,
+        L: IntoIterator<Item = &'a Wire<T::DType>>,
+        N: IntoIterator<Item = &'a Wire<T::DType>>,
+        V: IntoIterator<Item = Term<T>>,
+        U: IntoIterator<Item = Term<T>>,
+        T::DType: 'a,
     {
-        let latched: HashMap<usize, &D> = latched.into_iter().map(Into::into).collect();
-        let next: HashMap<usize, &D> = next.into_iter().map(Into::into).collect();
+        let latched: HashMap<usize, &T::DType> = latched.into_iter().map(Into::into).collect();
+        let next: HashMap<usize, &T::DType> = next.into_iter().map(Into::into).collect();
 
         let init = Block::try_from_iter(init)?;
         let update = Block::try_from_iter(update)?;
 
-        let mut ctrl: BTreeMap<usize, Wire<D>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<D>> = BTreeMap::new();
-        let mut read: BTreeMap<usize, Wire<D>> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
+        let mut read: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
 
         for rd in init.read().iter().map(|[w]| w) {
             // init can only read from await wires
@@ -321,7 +329,11 @@ impl<D: Eq + Clone, I> Atom<D, I> {
     }
 }
 
-impl<D: Eq + Clone, I: Clone> Atom<D, I> {
+impl<T: Theory> Atom<T>
+where
+    T: Clone,
+    T::DType: Eq + Clone,
+{
     /// Constructs a **purely combinatorial atom**, representing purely reactive behaviour
     /// without temporal state.
     ///
@@ -351,17 +363,17 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
     /// - [`Module::combinatorial`], for combinatorial modules.
     pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, &'static str>
     where
-        V: IntoIterator<Item = Term<D, I>>,
-        N: IntoIterator<Item = &'a Wire<D>>,
-        D: 'a,
+        V: IntoIterator<Item = Term<T>>,
+        N: IntoIterator<Item = &'a Wire<T::DType>>,
+        T::DType: 'a,
     {
-        let next: HashMap<usize, &D> = next.into_iter().map(Into::into).collect();
+        let next: HashMap<usize, &T::DType> = next.into_iter().map(Into::into).collect();
         let assign = Block::try_from_iter(assign)?;
 
-        let mut ctrl: BTreeMap<usize, Wire<D>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<D>> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, Wire<D>> = BTreeMap::new();
-        let mut param: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
+        let mut param: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
 
         for rd in assign.read().iter().map(|[w]| w) {
             //  can only read from await wires
@@ -399,7 +411,11 @@ impl<D: Eq + Clone, I: Clone> Atom<D, I> {
     }
 }
 
-impl<D: fmt::Display, I: fmt::Display> Atom<D, I> {
+impl<T: Theory> Atom<T>
+where
+    T: fmt::Display,
+    T::DType: fmt::Display,
+{
     pub(crate) fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
         const RESET: &str = "\x1b[0m";
@@ -440,7 +456,11 @@ impl<D: fmt::Display, I: fmt::Display> Atom<D, I> {
     }
 }
 
-impl<D: fmt::Display, I: fmt::Display> fmt::Display for Atom<D, I> {
+impl<T: Theory> fmt::Display for Atom<T>
+where
+    T: fmt::Display,
+    T::DType: fmt::Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, "")
     }
