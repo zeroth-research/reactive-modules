@@ -116,29 +116,26 @@ impl fmt::Display for DTypes {
 
 #[cfg(test)]
 mod tests {
-    use base::{Term, Interface};
     use super::*;
+    use base::{Interface, Term};
 
     #[test]
     fn test_terms_1() {
-        let _ : base::Term<DTypes, ITypes> =
+        let _: base::Term<DTypes, ITypes> =
             Term::new_unchecked(mat::Add().into(), Interface::empty(), Interface::empty());
-        let _ : base::Term<DTypes, ITypes> =
+        let _: base::Term<DTypes, ITypes> =
             Term::new_unchecked(Add().into(), Interface::empty(), Interface::empty());
 
-        let _ : base::Term<DTypes, ITypes> =
+        let _: base::Term<DTypes, ITypes> =
             Term::new_unchecked(Id().into(), Interface::empty(), Interface::empty());
 
-        let c : MatConst<&str, 2, 2> = MatConst("I'm string representing matrix constant");
-        let _ : base::Term<DTypes, ITypes> =
+        let c: MatConst<&str, 2, 2> = MatConst("I'm string representing matrix constant");
+        let _: base::Term<DTypes, ITypes> =
             Term::new_unchecked(c.into(), Interface::empty(), Interface::empty());
 
-
-        let c : MatConst<Vec<Vec<i64>>, 2, 2> = MatConst(vec![vec![1, 2], vec![3, 4]]);
-        let _ : base::Term<DTypes, ITypes> =
+        let c: MatConst<Vec<Vec<i64>>, 2, 2> = MatConst(vec![vec![1, 2], vec![3, 4]]);
+        let _: base::Term<DTypes, ITypes> =
             Term::new_unchecked(c.into(), Interface::empty(), Interface::empty());
-
-
-
     }
 }
+
