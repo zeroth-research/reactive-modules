@@ -82,7 +82,7 @@ def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateDa
 
     from .smt_module import ModuleSMT
     from .smt_prompt import CegarPromptEnv
-    from .smt_to_lean import smt_to_lean
+    from .smt_to_lean import smt_to_lean, smt_to_lean_nat
 
     tm = cvc5.TermManager()
     msmt = ModuleSMT(tm=tm, module=module)
@@ -92,9 +92,11 @@ def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateDa
         if not isinstance(smt_src, str):
             return smt_src
         term = env.parse_expr(smt_src)
-        if mode == "property":
+        if mode == "property" or mode == "invariant":
             return smt_to_lean(term, msmt.ctrl_next, param_name="s")
-        # preconditions: bind e0/el0 to e.2/e.1 of the Extl tuple
+        if mode == "ranking":
+            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s")
+        # preconditions
         return smt_to_lean(
             term,
             state_wires=[],
@@ -109,6 +111,8 @@ def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateDa
         prp=translate(cert_data.prp, "property"),
         init_pre=translate(cert_data.init_pre, "pre"),
         update_pre=translate(cert_data.update_pre, "pre"),
+        inv=translate(cert_data.inv, "invariant"),
+        ranking=translate(cert_data.ranking, "ranking"),
     )
 
 
@@ -194,6 +198,26 @@ def main():
         ),
     )
     parser.add_argument(
+        "--invariant",
+        default=None,
+        help=(
+            "Invariant as an SMT-LIB 2 Bool expression over state vars "
+            "`s0..sN-1`. When combined with --infer, only a ranking "
+            "function is inferred (the invariant is fixed). "
+            "Example: '(= s0 s5)'."
+        ),
+    )
+    parser.add_argument(
+        "--ranking",
+        default=None,
+        help=(
+            "Ranking as an SMT-LIB 2 Int expression over state vars "
+            "`s0..sN-1`. When combined with --infer, only an invariant "
+            "is inferred. Must satisfy `ranking ≥ 0` under the invariant. "
+            "Example: '(ite s5 (ite s4 1 2) 0)'."
+        ),
+    )
+    parser.add_argument(
         "--infer",
         nargs="?",
         const="ai-cegar",
@@ -223,11 +247,15 @@ def main():
         parser.error("--infer requires --property")
 
     cert_data: CertificateData | None = None
-    if args.property or args.pre:
+    if args.property or args.pre or args.invariant or args.ranking:
         cert_data = CertificateData(prp=args.property)
         if args.pre:
             cert_data.init_pre = args.pre
             cert_data.update_pre = args.pre
+        if args.invariant:
+            cert_data.inv = args.invariant
+        if args.ranking:
+            cert_data.ranking = args.ranking
 
     module = load_module_from_file(args.module_file, module_def=args.module_def)
     print(module)
