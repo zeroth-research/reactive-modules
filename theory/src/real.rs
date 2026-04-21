@@ -60,7 +60,7 @@ impl Theory for Real {
     fn _check(&self, read: &[Self::DType], write: &[Self::DType]) -> Result<(), String> {
         match self {
             Real::Const(cm) => {
-                if read.len() > 0 {
+                if !read.is_empty() {
                     return Err("Const: cannot read values".into());
                 }
                 if write.len() != 1 {
