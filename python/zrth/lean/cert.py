@@ -82,6 +82,8 @@ def generate_certificate_lean(
         body = _cert_body(init_pre_terms, e_bindings)
         lines.append(f"def init_pre (e : {extl_native}) : Prop :=")
         lines.append(body)
+    elif isinstance(cert_data.init_pre, str):
+        lines.append(f"def init_pre : {extl_native} → Prop := {cert_data.init_pre}")
     else:
         lines.append(f"def init_pre (e : {extl_native}) : Prop := True")
     lines.append("")
@@ -91,6 +93,10 @@ def generate_certificate_lean(
         body = _cert_body(update_pre_terms, e_bindings)
         lines.append(f"def update_pre (e : {extl_native}) : Prop :=")
         lines.append(body)
+    elif isinstance(cert_data.update_pre, str):
+        lines.append(
+            f"def update_pre : {extl_native} → Prop := {cert_data.update_pre}"
+        )
     else:
         lines.append(f"def update_pre (e : {extl_native}) : Prop := True")
     lines.append("")
@@ -100,6 +106,8 @@ def generate_certificate_lean(
         body = _cert_body(inv_terms, s_bindings)
         lines.append(f"def inv (s : {ctrl_native}) : Prop :=")
         lines.append(body)
+    elif isinstance(cert_data.inv, str):
+        lines.append(f"def inv : {ctrl_native} → Prop := {cert_data.inv}")
     else:
         lines.append(f"def inv (s : {ctrl_native}) : Prop := True")
     lines.append("")
@@ -109,12 +117,14 @@ def generate_certificate_lean(
         body = _cert_body(p_terms, s_bindings)
         lines.append(f"def P (s : {ctrl_native}) : Prop :=")
         lines.append(body)
+    elif isinstance(cert_data.prp, str):
+        lines.append(f"def P : {ctrl_native} → Prop := {cert_data.prp}")
     else:
         lines.append(f"def P (s : {ctrl_native}) : Prop := sorry")
     lines.append("")
 
     # DecidablePred P — must come after P and before ranking
-    if p_terms is not None:
+    if p_terms is not None or isinstance(cert_data.prp, str):
         lines.append(
             "instance : DecidablePred P := fun s => by unfold P; dsimp; infer_instance"
         )
@@ -127,6 +137,8 @@ def generate_certificate_lean(
         body = _cert_body(ranking_terms, s_bindings)
         lines.append(f"def ranking (s : {ctrl_native}) : Nat :=")
         lines.append(body)
+    elif isinstance(cert_data.ranking, str):
+        lines.append(f"def ranking : {ctrl_native} → Nat := {cert_data.ranking}")
     else:
         lines.append(f"def ranking (s : {ctrl_native}) : Nat := sorry")
     lines.append("")
@@ -217,7 +229,12 @@ elab_rules : tactic
         return
       catch _ => pure ()
       -- 4. bare smt
-      evalTactic (← `(tactic| smt))
+      try
+        evalTactic (← `(tactic| smt))
+        return
+      catch _ => pure ()
+      -- 5. last-resort fallback
+      evalTactic (← `(tactic| sorry))
 """)
 
     lines.append("""\
