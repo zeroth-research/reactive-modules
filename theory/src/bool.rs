@@ -1,12 +1,35 @@
 /*!
 # Booleans and operations on booleans.
 
-TODO: add description
+Defines the propositional theory [`Prop`]: boolean matrices and the
+standard logical operations over them.
+
+A [`PropDType`] value describes the *type* of a boolean term as a matrix
+shape `Bool(rows, cols)` — scalars are just `Bool(1, 1)`. The operations
+in [`Prop`] are:
+
+- [`Prop::Const`] — an inline matrix literal producing a boolean matrix of
+  the shape declared by its write type.
+- [`Prop::Not`], [`Prop::Id`] — unary, shape-preserving.
+- [`Prop::And`], [`Prop::Or`], [`Prop::Xor`] — elementwise binary, both
+  inputs and the output share the same shape.
+
+`Prop` implements [`Theory`], so [`Theory::check`] type-checks a term by
+validating the read/write argument shapes against the operation.
 
 ## Examples
 
 ```
-// TODO: add examples
+use theory::Theory;
+use theory::bool::{Prop, PropDType};
+
+let t = PropDType::Bool(1, 1);
+
+// `And` reads two scalars and writes one.
+assert!(Prop::And.check::<PropDType>(&[t, t], &[t]).is_ok());
+
+// `Not` is unary — two inputs is a type error.
+assert!(Prop::Not.check::<PropDType>(&[t, t], &[t]).is_err());
 ```
 */
 

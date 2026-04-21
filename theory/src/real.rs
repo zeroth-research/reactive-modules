@@ -1,12 +1,39 @@
 /*!
 # Real numbers
 
-TODO: add description
+Defines the theory [`Real`] of matrices of real numbers (represented as
+`f64`).
+
+A [`RealDType`] value describes the *type* of a term as a matrix shape
+`Real(rows, cols)`. The operations in [`Real`] are:
+
+- [`Real::Const`] — an inline real matrix literal whose shape must match
+  the declared write type.
+- [`Real::Id`] — unary, shape-preserving.
+- [`Real::Add`], [`Real::Mul`] — elementwise binary; both inputs and the output share
+  the same shape.
+- [`Real::MatMul`] — matrix multiplication: `(m,k) × (k,n) → (m,n)`.
+
+`Real` implements [`Theory`], so [`Theory::check`] type-checks a term by
+validating the read/write argument shapes against the operation.
 
 ## Examples
 
 ```
-// TODO: add examples
+use theory::Theory;
+use theory::real::{Real, RealDType};
+
+let a = RealDType::Real(2, 3);
+let b = RealDType::Real(3, 4);
+let c = RealDType::Real(2, 4);
+
+// Matrix multiply: (2x3) * (3x4) -> (2x4).
+assert!(Real::MatMul.check::<RealDType>(&[a, b], &[c]).is_ok());
+
+// Elementwise `Add` requires matching shapes.
+let m = RealDType::Real(2, 3);
+assert!(Real::Add.check::<RealDType>(&[m, m], &[m]).is_ok());
+assert!(Real::Add.check::<RealDType>(&[a, b], &[c]).is_err());
 ```
 */
 

@@ -1,12 +1,46 @@
 /*!
 # Linear integer arithmetic
 
-TODO: add description
+Defines the theory [`LIA`] of linear integer arithmetic over matrices,
+mixing integer and boolean matrices in a single signature.
+
+A [`LIADType`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
+`LIADType` converts to and from [`int::IntDType`] and [`bool::PropDType`]
+so that integer and propositional terms embed directly into `LIA`. The
+operations in [`LIA`] are:
+
+- [`LIA::Const`] — an integer matrix literal whose shape must match the
+  declared (integer) write type.
+- [`LIA::Bool`] — lifts any [`bool::Prop`] operation to act on the
+  boolean fragment of `LIADType`.
+- [`LIA::Cmp`] — pointwise integer comparisons
+  ([`CmpOp::Le`], [`CmpOp::Lt`], [`CmpOp::Ge`], [`CmpOp::Gt`],
+  [`CmpOp::Eq`], [`CmpOp::Ne`]) producing a scalar `Bool(1,1)`.
+- [`LIA::Ite`] — if-then-else: reads a boolean guard and two same-typed
+  branches.
+- [`LIA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
+  `B` constant integer matrices of compatible shapes.
+- [`LIA::ReLU`] — the shape-preserving rectified-linear map on integer
+  matrices.
+
+`LIA` implements [`Theory`]; [`Theory::check`] validates read/write
+shapes against the selected operation.
 
 ## Examples
 
 ```
-// TODO: add examples
+use theory::Theory;
+use theory::lia::{LIA, LIADType, CmpOp};
+
+// Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
+let i = LIADType::Int(1, 1);
+let b = LIADType::Bool(1, 1);
+assert!(LIA::Cmp(CmpOp::Lt).check::<LIADType>(&[i, i], &[b]).is_ok());
+
+// ReLU preserves shape and stays in the integer fragment.
+let m = LIADType::Int(3, 4);
+assert!(LIA::ReLU.check::<LIADType>(&[m], &[m]).is_ok());
+assert!(LIA::ReLU.check::<LIADType>(&[b], &[b]).is_err());
 ```
 */
 
