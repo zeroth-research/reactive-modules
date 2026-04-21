@@ -1,12 +1,38 @@
 /*!
 # Int numbers
 
-TODO: add description
+Defines the theory [`Int`] of matrices of signed integers (`i64`).
+
+A [`IntDType`] value describes the *type* of a term as a matrix shape
+`Int(rows, cols)`. The operations in [`Int`] are:
+
+- [`Int::Const`] — an inline integer matrix literal whose shape must
+  match the declared write type.
+- [`Int::Id`] — unary, shape-preserving.
+- [`Int::Add`], [`Int::Mul`] — elementwise binary; both inputs and the
+  output share the same shape.
+- [`Int::MatMul`] — matrix multiplication: `(m,k) × (k,n) → (m,n)`.
+
+`Int` implements [`Theory`], so [`Theory::check`] type-checks a term by
+validating the read/write argument shapes against the operation.
 
 ## Examples
 
 ```
-// TODO: add examples
+use theory::Theory;
+use theory::int::{Int, IntDType};
+
+let a = IntDType::Int(2, 3);
+let b = IntDType::Int(3, 4);
+let c = IntDType::Int(2, 4);
+
+// Matrix multiply: (2x3) * (3x4) -> (2x4).
+assert!(Int::MatMul.check::<IntDType>(&[a, b], &[c]).is_ok());
+
+// Elementwise `Add` requires matching shapes.
+let m = IntDType::Int(2, 3);
+assert!(Int::Add.check::<IntDType>(&[m, m], &[m]).is_ok());
+assert!(Int::Add.check::<IntDType>(&[a, b], &[c]).is_err());
 ```
 */
 

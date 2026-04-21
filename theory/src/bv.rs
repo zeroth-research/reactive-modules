@@ -1,12 +1,42 @@
 /*!
 # Bit-vectors of fixed length
 
-TODO: add description
+Defines the theory [`BV<N>`] of matrices of `N`-bit bit-vectors, where
+the width `N` is fixed at compile time via a const generic.
+
+A [`BVDType<N>`] value describes the *type* of a term as a matrix shape
+`BV(rows, cols)` whose elements are `N`-bit bit-vectors. The operations
+in [`BV`] are:
+
+- [`BV::Const`] — an inline bit-vector matrix literal whose shape must
+  match the declared write type.
+- [`BV::Id`], [`BV::Not`] — unary, shape-preserving.
+- [`BV::And`], [`BV::Or`], [`BV::Xor`], [`BV::Add`], [`BV::Mul`] —
+  elementwise binary; both inputs and the output share the same shape.
+- [`BV::MatMul`] — matrix multiplication: `(m,k) × (k,n) → (m,n)`, with
+  the inner dimensions required to agree.
+
+`BV<N>` implements [`Theory`], so [`Theory::check`] type-checks terms by
+validating read/write argument shapes against the operation.
 
 ## Examples
 
 ```
-// TODO: add examples
+use theory::Theory;
+use theory::bv::{BV, BVDType};
+
+// 8-bit bit-vectors.
+let a = BVDType::<8>::BV(2, 3);
+let b = BVDType::<8>::BV(3, 4);
+let c = BVDType::<8>::BV(2, 4);
+
+// Matrix multiply: (2x3) * (3x4) -> (2x4).
+assert!(BV::<8>::MatMul.check::<BVDType<8>>(&[a, b], &[c]).is_ok());
+
+// Elementwise `Add` requires matching shapes.
+let m = BVDType::<8>::BV(2, 3);
+assert!(BV::<8>::Add.check::<BVDType<8>>(&[m, m], &[m]).is_ok());
+assert!(BV::<8>::Add.check::<BVDType<8>>(&[a, b], &[c]).is_err());
 ```
 */
 
