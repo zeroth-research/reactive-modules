@@ -52,7 +52,6 @@ pub enum Real {
     Mul,
     MatMul,
     Neg,
-    Id,
 }
 
 impl Theory for Real {
@@ -86,7 +85,7 @@ impl Theory for Real {
                     }
                 }
             }
-            Real::Neg | Real::Id => {
+            Real::Neg => {
                 if read.len() != 1 {
                     return Err(format!(
                         "{:?}: must read a single value, got {}",

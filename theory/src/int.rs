@@ -49,8 +49,10 @@ pub enum Int {
     Const(Vec<Vec<i64>>),
     Add,
     Mul,
+    Sub,
+    Mod,
+    Neg,
     MatMul,
-    Id,
 }
 
 impl Theory for Int {
@@ -84,10 +86,10 @@ impl Theory for Int {
                     }
                 }
             }
-            Int::Id => {
+            Int::Neg => {
                 if read.len() != 1 {
                     return Err(format!(
-                        "{:?}: must read a single value, got {}",
+                        "{:?}: must read single value, got {}",
                         self,
                         read.len()
                     ));
@@ -101,13 +103,13 @@ impl Theory for Int {
                 }
                 if write[0] != read[0] {
                     return Err(format!(
-                        "{:?}: input and output type must be the same",
+                        "{:?}: input and output values must have the same type",
                         self
                     ));
                 }
                 Ok(())
             }
-            Int::Add | Int::Mul => {
+            Int::Add | Int::Mul | Int::Sub | Int::Mod => {
                 if read.len() != 2 {
                     return Err(format!(
                         "{:?}: must read two values, got {}",

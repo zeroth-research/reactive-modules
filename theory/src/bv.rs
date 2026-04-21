@@ -60,7 +60,6 @@ pub enum BV<const N: usize> {
     Or,
     Xor,
     Not,
-    Id,
 }
 
 impl<const N: usize> Theory for BV<N> {
@@ -94,7 +93,7 @@ impl<const N: usize> Theory for BV<N> {
                     }
                 }
             }
-            BV::Not | BV::Id => {
+            BV::Not => {
                 if read.len() != 1 {
                     return Err(format!(
                         "{:?}: must read a single value, got {}",
