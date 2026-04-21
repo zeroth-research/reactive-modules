@@ -126,7 +126,7 @@ impl Theory for LIA {
     fn _check(&self, read: &[Self::DType], write: &[Self::DType]) -> Result<(), String> {
         match self {
             LIA::Const(cm) => {
-                if read.len() > 0 {
+                if !read.is_empty() {
                     return Err("Const: cannot read values".into());
                 }
                 if write.len() != 1 {
@@ -150,7 +150,7 @@ impl Theory for LIA {
                         Ok(())
                     }
                     LIADType::Bool(_, _) => {
-                        return Err("Const must be integer matrix, not boolean".into());
+                        Err("Const must be integer matrix, not boolean".into())
                     }
                 }
             }
