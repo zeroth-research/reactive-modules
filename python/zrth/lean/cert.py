@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from zrth.lean.native import _product_type, _append_expr, _translate_terms
+from zrth.lean.native import _product_type, _translate_terms
 from zrth.lean.common import LeanContext, _bind_wires
 from ..expr import Expr
 
@@ -38,16 +38,26 @@ def generate_certificate_lean(
     ranking_terms = _as_terms(cert_data.ranking)
     p_terms = _as_terms(cert_data.prp)
 
+    extl_latched = ctx.extl_latched
     extl_next = ctx.extl_next
     ctrl_next = ctx.ctrl_next
-    ctrl_latched = ctx.ctrl_latched
 
-    extl_native = _product_type(extl_next)
+    # `ReactiveModule.Extl` is a single label per step. The generated
+    # `update` takes three curried args — `ctrl`, `extl_l`, `extl_n` — so
+    # the RM's `Extl` is a pair `(extl_latched_tuple, extl_next_tuple)`:
+    # `e.1` feeds `extl_l`, `e.2` feeds `extl_n`.
+    extl_latched_native = _product_type(extl_latched)
+    extl_next_native = _product_type(extl_next)
+    extl_native = f"({extl_latched_native}) × ({extl_next_native})"
     ctrl_native = _product_type(ctrl_next)
-    append = _append_expr("x", len(ctrl_latched), "e", len(extl_next))
 
     # Precomputed wire bindings for cert-local param names ("e" and "s").
-    e_bindings = _bind_wires([("e", extl_next)])
+    # Certificate predicates receive `e : Extl` (the pair above), so route
+    # latched wires through `e.1.*` and next wires through `e.2.*`.
+    e_bindings = {
+        **_bind_wires([("e.1", extl_latched)]),
+        **_bind_wires([("e.2", extl_next)]),
+    }
     s_bindings = _bind_wires([("s", ctrl_next)])
 
     def _cert_body(terms, bindings):
@@ -122,11 +132,14 @@ def generate_certificate_lean(
     lines.append("")
     lines.append("")
 
-    # ReactiveModule definition
+    # ReactiveModule definition.
+    # `init` takes only `extl_n`; unpack `e.2` for it. `update` takes
+    # `ctrl extl_l extl_n` — feed `x`, `e.1`, `e.2` respectively.
+    rm_noncomp = "noncomputable " if ctx.uses_real else ""
     lines.append(f"""\
-def RM : ReactiveModule ({extl_native}) ({ctrl_native}) := {{
-    init := init
-    update := fun x e => update {append}
+{rm_noncomp}def RM : ReactiveModule ({extl_native}) ({ctrl_native}) := {{
+    init := fun e => init e.2
+    update := fun x e => update x e.1 e.2
     init_pre := init_pre
     update_pre := update_pre
 }}
@@ -219,7 +232,7 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
 """)
 
     lines.append("section LTS\n")
-    lines.append("def lts := RM.toLTS'\n")
+    lines.append(f"{rm_noncomp}def lts := RM.toLTS'\n")
 
     lines.append("""\
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
@@ -228,7 +241,7 @@ theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
   · intro s hs
     unfold lts at hs
-    simp [ReactiveModule.toLTS', ReactiveModule.LTS_init, RM] at hs
+    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_init] at hs
     obtain ⟨l, hpre, hl⟩ := hs
     rw [← hl]
     exact init_inv l hpre
@@ -251,7 +264,10 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     rw [← heq]
     zeroth_hammer
 
-def buchi := rule_buchi
+""")
+
+    lines.append(f"""\
+{rm_noncomp}def buchi := rule_buchi
   lts
   P
   inv

@@ -1,7 +1,7 @@
 import Cslib.Foundations.Semantics.LTS.Basic
 --import Cslib.Automata.NA.Basic
 import Core.LTL
-import Core.Basic
+import Core.Box
 import Mathlib.Algebra.Order.BigOperators.Group.Finset
 
 /-  ----------------------------------------------------------------
@@ -48,11 +48,11 @@ def ωTrace (lts : LTS' State Label)
   lts.init (ss.get 0) ∧ lts.ωTr ss μs
 
 /- is state reachable? -/
-def reachable [DecidableEq State] (lts : LTS' State Label) (s : State) : Prop :=
+def reachable (lts : LTS' State Label) (s : State) : Prop :=
   ∃ ss μs, lts.ωTrace ss μs ∧ ∃ n: Nat, ss.get n = s
 
 /- set of reachable states -/
-def reachableSet [DecidableEq State] (lts : LTS' State Label) : StateSet State :=
+def reachableSet (lts : LTS' State Label) : StateSet State :=
   fun s => lts.reachable s
 
 /- a set of state is inductive (closed under transition relation) -/
@@ -60,7 +60,7 @@ def StateSet_isInductive (lts : LTS' State Label) (S : StateSet State) : Prop :=
   ∀ s s' : State, s ∈ S ∧ (∃ l, lts.Tr s l s') → s' ∈ S
 
 /- a set of states is invariant, i.e., a superset of reachable states -/
-def StateSet_isInvariant [DecidableEq State] (lts : LTS' State Label)
+def StateSet_isInvariant (lts : LTS' State Label)
     (S : StateSet State) : Prop :=
   lts.reachableSet ⊆ S
 
@@ -70,7 +70,7 @@ def StateSet_isInductiveInitial (lts : LTS' State Label)
   (∀ s, lts.init s → s ∈ S) ∧ lts.StateSet_isInductive S
 
 /- every inductive initial state is invariant -/
-theorem StateSet_ind_init_is_inv [DecidableEq State]
+theorem StateSet_ind_init_is_inv
     (lts : LTS' State Label) :
     ∀ S, lts.StateSet_isInductiveInitial S →
       lts.StateSet_isInvariant S := by
@@ -81,7 +81,7 @@ theorem StateSet_ind_init_is_inv [DecidableEq State]
   | succ n ih => exact hind _ _ ⟨ih, ⟨μs.get n, htr n⟩⟩
 
 /- every state on an arbitrary trace is contained in arbitrary invariant -/
-lemma trace_states_in_invariant [DecidableEq State]
+lemma trace_states_in_invariant
     (lts : LTS' State Label)
     (S : StateSet State) (hinv : lts.StateSet_isInvariant S)
     (htr : lts.ωTrace ss μs) :
@@ -102,7 +102,7 @@ open LTLFormula
 /-- Proof rule saying that if a set of states S is invariant,
     then `Globally S` holds on every trace
     (S is state of sets which is the same as atomic proposition) -/
-theorem rule_globally {State: Type u} {Label : Type v} [DecidableEq State]
+theorem rule_globally {State: Type u} {Label : Type v}
     (lts : LTS' State Label)
     (S : StateSet State)
     (hinv : lts.StateSet_isInvariant S) :
@@ -133,7 +133,7 @@ theorem rule_globally {State: Type u} {Label : Type v} [DecidableEq State]
     or even compute exactly. Obtaining a superset might be much
     easier.
 -/
-theorem rule_buchi {State: Type u} {Label : Type v} [DecidableEq State]
+theorem rule_buchi {State: Type u} {Label : Type v}
     (lts : LTS' State Label)             -- the LTS
     (B : State → Prop) [DecidablePred B]      -- proposition `B`
     (I : StateSet State)                      -- invariant `I`
@@ -179,7 +179,7 @@ theorem rule_buchi {State: Type u} {Label : Type v} [DecidableEq State]
 
 
 /-- a weaker version of rule_buchi -/
-theorem rule_buchi' {State: Type u} {Label : Type v} [DecidableEq State]
+theorem rule_buchi' {State: Type u} {Label : Type v}
     (lts : LTS' State Label)                  -- the LTS
     (B : State → Prop) [DecidablePred B]      -- proposition `B`
     (I : StateSet State)                      -- invariant `I`
@@ -224,7 +224,7 @@ theorem rule_buchi' {State: Type u} {Label : Type v} [DecidableEq State]
       exact hbx
 
 theorem rule_buchi_mat_nat
-    {State: Type u} {Label : Type v} [DecidableEq State]
+    {State: Type u} {Label : Type v}
     ----------
     (lts : LTS' State Label)             -- the LTS
     (B : State → Prop) [DecidablePred B]      -- proposition `B`
@@ -250,7 +250,7 @@ theorem rule_buchi_mat_nat
 
 
 theorem rule_buchi_mat_int
-    {State: Type u} {Label : Type v} [DecidableEq State]
+    {State: Type u} {Label : Type v}
     ----------
     (lts : LTS' State Label)                  -- the LTS
     (B : State → Prop) [DecidablePred B]      -- proposition `B`

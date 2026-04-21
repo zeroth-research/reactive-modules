@@ -159,16 +159,21 @@ def _circ_compute_swapping(
                 out_ty.append(dtype_to_lean_type(layer[i]))
                 i += 1
             else:
+                # Forward composition order: this Box receives the sorted
+                # (new_layer) arrangement and produces the original `layer`
+                # arrangement to feed into the next stage. So `Box.swap A B`
+                # takes [A, B] → [B, A] where [A, B] are new_layer's types at
+                # positions (i, i+1) and [B, A] are `layer`'s types there.
                 changed = True
                 boxes.append(
-                    f"@Box.swap {dtype_to_lean_type(layer[i])} {dtype_to_lean_type(layer[i + 1])}"
+                    f"@Box.swap {dtype_to_lean_type(layer[i + 1])} {dtype_to_lean_type(layer[i])}"
                 )
                 new_layer.append(layer[i + 1])
                 new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_type(layer[i]))
                 in_ty.append(dtype_to_lean_type(layer[i + 1]))
-                out_ty.append(dtype_to_lean_type(layer[i + 1]))
+                in_ty.append(dtype_to_lean_type(layer[i]))
                 out_ty.append(dtype_to_lean_type(layer[i]))
+                out_ty.append(dtype_to_lean_type(layer[i + 1]))
                 # `swap` consumes two wires
                 i += 2
 

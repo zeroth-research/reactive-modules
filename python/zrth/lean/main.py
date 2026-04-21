@@ -60,31 +60,17 @@ returns a :class:`zrth.Module`::
 """
 
 import argparse
-import ast
 import linecache
 from pathlib import Path
 
 from .cert import CertificateData
 from .project import create_project, load_module_from_file
 
-from zrth import Wire, Bool, Int
+from zrth import Wire, Bool
 from zrth.analyzer import convert_method
 
 
-def _state_var_names(source: str) -> list[str]:
-    """Extract state variable names from the update function's parameters.
-
-    Strips the 'old_' prefix convention (e.g. old_x -> x).
-    """
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == "update":
-            params = [arg.arg for arg in node.args.args if arg.arg != "self"]
-            return [p[len("old_") :] if p.startswith("old_") else p for p in params]
-    raise ValueError("No 'update' function found in source")
-
-
-def _make_callable(fn_name: str, params: list[str], expr: str):
+def _compile_expr(fn_name: str, params: list[str], expr: str):
     """Compile an expression string into a callable.
 
     Registers the generated source in linecache so that inspect.getsource
@@ -100,25 +86,16 @@ def _make_callable(fn_name: str, params: list[str], expr: str):
     return namespace[fn_name]
 
 
-def _exprs_to_terms(cert_data: CertificateData, module, source: str) -> CertificateData:
-    """Convert inv/ranking expression strings in cert_data to lists of Terms."""
+def _property_to_terms(prp: str, module) -> list:
+    """Compile a property expression into Terms.
 
-    var_names = _state_var_names(source)
-    # cert_body evaluates inv/ranking/prp against ctrl_next (the [1] wire of each
-    # ctrl pair).  convert_method reads from wires[name][0], so we point both
-    # slots at the next-state wire so the generated terms read from ctrl_next.
+    ``x1``, ``x2``, … refer positionally to the next-state wires of
+    ``module.ctrl`` — the values produced by ``init`` / ``update``.
+    """
+    var_names = [f"x{i + 1}" for i in range(len(module.ctrl))]
     wires = {name: (pair[1], pair[1]) for name, pair in zip(var_names, module.ctrl)}
-
-    if isinstance(cert_data.prp, str):
-        cert_data.prp = convert_method(cert_data.prp, wires, [Wire(Bool(1))])
-
-    if isinstance(cert_data.inv, str):
-        cert_data.inv = convert_method(cert_data.inv, wires, [Wire(Bool(1))])
-
-    if isinstance(cert_data.ranking, str):
-        cert_data.ranking = convert_method(cert_data.ranking, wires, [Wire(Int(1))])
-
-    return cert_data
+    fn = _compile_expr("property", var_names, prp)
+    return convert_method(fn, wires, [Wire(Bool(1))])
 
 
 _EPILOG = """\
@@ -212,9 +189,16 @@ def main():
     if args.property:
         cert_data = CertificateData(prp=args.property)
 
-    source: str | None = None
     module = load_module_from_file(args.module_file, module_def=args.module_def)
     print(module)
+
+    # Compile the property expression against state variables ``x1..xN`` (mapped
+    # positionally to module.ctrl) so the certificate's P is concrete rather
+    # than ``sorry``.  Keep cert_data.prp as the original string — magic_ai and
+    # the Data.lean comment both expect it that way.
+    project_cert_data = cert_data
+    if cert_data is not None and isinstance(cert_data.prp, str):
+        project_cert_data = CertificateData(prp=_property_to_terms(cert_data.prp, module))
 
     print(".. Generating lean code")
     project_dir = create_project(
@@ -222,7 +206,7 @@ def main():
         module=module,
         project_name=args.project_name,
         executable=args.executable,
-        cert_data=cert_data,
+        cert_data=project_cert_data,
     )
 
     # FIXME: this is brittle, we rely on hard-coded staff in `create_project`

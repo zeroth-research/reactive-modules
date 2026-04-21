@@ -38,17 +38,22 @@ class ModuleToLean4:
         """Emit named @[simp] definitions for each layer and a composed definition."""
         lines: list[str] = []
         layer_names: list[str] = []
+        # `Box.eq` / `Box.neq` on Real-valued wires drag in `Real.decidableEq`,
+        # which is classical. Mark all layers (and the composed def) as
+        # `noncomputable` when any Real wires are present so Lean's IR checker
+        # doesn't try to emit executable code.
+        noncomp = "noncomputable " if self.ctx.uses_real else ""
 
         for i, layer in enumerate(circ_layers):
             name = f"{block_name}_l{i}"
             in_tys = ", ".join(layer.in_tys)
             out_tys = ", ".join(layer.out_tys)
-            lines.append(f"@[simp] def {name} : Box [{in_tys}] [{out_tys}] :=")
+            lines.append(f"@[simp] {noncomp}def {name} : Box [{in_tys}] [{out_tys}] :=")
             lines.append(f"  {layer.body}")
             lines.append("")
             layer_names.append(name)
 
-        lines.append(f"@[simp] def {block_name} : Box {dom} {cod} :=")
+        lines.append(f"@[simp] {noncomp}def {block_name} : Box {dom} {cod} :=")
         lines.append(f"  {' ≫ '.join(layer_names)}")
         lines.append("")
 
@@ -191,7 +196,6 @@ class ModuleToLean4:
         proof.append(f"  simp [{', '.join(final_simp)}]")
         proof.append("  try exact List.ofFn_inj.mp rfl")
         proof.append("  try grind")
-        proof.append("  try simp only [Mat_1_1_eq]")
         proof.append("  try simp")
         proof.append("  try grind")
         proof.append(f"  try simp [{', '.join(final_simp)}]")
