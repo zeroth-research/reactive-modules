@@ -82,8 +82,19 @@ _LEAN_OP: dict[str, Callable] = {
     "ReLU": lambda a: f"ReLu {a[0]}",
     "TensorGet": lambda a: f"({a[0]} 0 0)",
     "ToUnsigned": lambda a: f"(fun _ _ => Int.toNat ({a[0]} 0 0))",
-    "Argmax": lambda a: f"argmax {a[0]}",
 }
+
+
+def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
+    """Emit `argmax_1d` for 1-d input and `argmax` for generic 2-d input.
+    Wrap output as `Mat Int 1 _` to match the Python IR's Int output type."""
+    if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
+        return f"(fun i j => ((argmax_1d {arg_expr}) i j : Int))"
+    if len(input_shape) == 2:
+        return f"(fun i j => ((argmax {arg_expr}) i j : Int))"
+    raise ValueError(
+        f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
+    )
 
 
 def _translate_terms(
@@ -111,6 +122,9 @@ def _translate_terms(
 
         if name in ("Tensor", "ConstBool", "ConstInt"):
             expr = _constant_expr(name, term, term.write[0], constants)
+        elif name == "Argmax":
+            arg_expr = wire_expr[term.read[0].id]
+            expr = _argmax_expr(arg_expr, term.read[0].dtype.shape)
         else:
             if name not in _LEAN_OP:
                 raise ValueError(f"No Lean expression mapping for: {name}")
