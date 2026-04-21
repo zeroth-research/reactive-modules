@@ -4,7 +4,7 @@ use pyo3::exceptions::{PyException, PyIndexError};
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
-    base: base::Term<DType, IType>,
+    base: base::Term<IType>,
 }
 
 #[pymethods]
