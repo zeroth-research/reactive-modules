@@ -253,6 +253,44 @@ def main : IO Unit := do
     return "\n".join(lines)
 
 
+def write_certificate_lean(
+    project_dir: Path,
+    project_name: str,
+    module: Module,
+    cert_data: CertificateData | None,
+) -> Path:
+    """Write/overwrite the Certificate.lean file using `cert_data`.
+
+    Builds a fresh `LeanContext` so term-typed cert fields are registered
+    with the constants table consistently with codegen.
+    """
+    module_name = project_name
+    cert_terms: list = []
+    if cert_data is not None:
+        for field in (
+            cert_data.prp,
+            cert_data.inv,
+            cert_data.init_pre,
+            cert_data.update_pre,
+            cert_data.ranking,
+        ):
+            if isinstance(field, list):
+                cert_terms.extend(field)
+    ctx = LeanContext(module, cert_terms=cert_terms)
+
+    cert_dir = project_dir / "Certificate"
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    cert_file = cert_dir / "Certificate.lean"
+    cert_file.write_text(
+        generate_certificate_lean(project_name, module_name, ctx, cert_data=cert_data)
+    )
+    print(f"Wrote {cert_file}")
+
+    cert_wrapper = project_dir / "Certificate.lean"
+    cert_wrapper.write_text("import Certificate.Certificate\n")
+    return cert_file
+
+
 def create_project(
     output_dir: Path,
     module: Module,
@@ -384,23 +422,8 @@ import {project_name}.{module_name}
     # ----------------------------------------------------------
     # Generate Certificate.lean
     # ----------------------------------------------------------
-    cert_dir = project_dir / "Certificate"
-    cert_dir.mkdir(parents=True, exist_ok=True)
-    cert_file = cert_dir / "Certificate.lean"
-    cert_file.write_text(
-        generate_certificate_lean(
-            project_name,
-            module_name,
-            ctx,
-            cert_data=cert_data,
-        )
-    )
-    print(f"Wrote {cert_file}")
-
-    # Write Certificate import wrapper
-    cert_wrapper = project_dir / "Certificate.lean"
-    cert_wrapper.write_text("import Certificate.Certificate\n")
-    print(f"Wrote {cert_wrapper}")
+    write_certificate_lean(project_dir, project_name, module, cert_data)
+    print(f"Wrote {project_dir / 'Certificate.lean'}")
 
     # ----------------------------------------------------------
     # Generate Main.lean for executable

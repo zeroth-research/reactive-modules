@@ -56,8 +56,9 @@ def _append_expr(var1: str, count1: int, var2: str, count2: int) -> str:
 
 
 # Map operations to Lean expression builder (takes list of arg strings).
-# Operands and results are all `Mat _ 1 1` (scalar) — element-wise ops extract
-# position `0 0` and re-wrap as a constant matrix.
+# Operands and results are all `Mat _ 1 1` (scalar)
+# FIXME: element-wise ops extract position `0 0`, but
+# it should be defined elem-wise on the whole matrix to match Rust
 _LEAN_OP: dict[str, Callable] = {
     "Not": lambda a: f"(fun _ _ => !({a[0]} 0 0))",
     "And": lambda a: f"(fun _ _ => ({a[0]} 0 0 && {a[1]} 0 0))",
