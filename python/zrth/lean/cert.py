@@ -94,9 +94,7 @@ def generate_certificate_lean(
         lines.append(f"def update_pre (e : {extl_native}) : Prop :=")
         lines.append(body)
     elif isinstance(cert_data.update_pre, str):
-        lines.append(
-            f"def update_pre : {extl_native} → Prop := {cert_data.update_pre}"
-        )
+        lines.append(f"def update_pre : {extl_native} → Prop := {cert_data.update_pre}")
     else:
         lines.append(f"def update_pre (e : {extl_native}) : Prop := True")
     lines.append("")
@@ -126,7 +124,7 @@ def generate_certificate_lean(
     # DecidablePred P — must come after P and before ranking
     if p_terms is not None or isinstance(cert_data.prp, str):
         lines.append(
-            "instance : DecidablePred P := fun s => by unfold P; dsimp; infer_instance"
+            "instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance"
         )
     else:
         lines.append("instance : DecidablePred P := sorry")
@@ -162,7 +160,14 @@ def generate_certificate_lean(
     # All definitions that need unfolding for proof automation
     # Note: ReactiveModule fields are handled by dsimp/simp, not unfold (universe polymorphic)
     unfold_defs = [
-        "RM", "init", "update", "inv", "init_pre", "update_pre", "P", "ranking",
+        "RM",
+        "init",
+        "update",
+        "inv",
+        "init_pre",
+        "update_pre",
+        "P",
+        "ranking",
     ]
     unfold_defs.extend(const_names)
 

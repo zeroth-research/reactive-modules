@@ -61,7 +61,7 @@ IMPORTANT — Lean 4 lambda syntax: write `fun s => expr` (NOT the Lean 3 form \
 
 State components are matrices of type `Mat t 1 1 := Fin 1 → Fin 1 → t`, so a \
 scalar value is accessed as `s.1 0 0`, `s.2.1 0 0`, etc. The ranking function \
-must return `Nat`; use `.toNat` or explicit conversion if a component is Int/Real.
+*MUST* return `Nat`.
 """
 
 VERIFY_SYSTEM = """\
