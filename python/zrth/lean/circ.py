@@ -82,8 +82,18 @@ _LEAN_OP_BOX: dict[str, str] = {
     "Id": "Box.id",
     "Linear": "Box.nnLinear",
     "ReLU": "Box.relu",
-    "Argmax": "Box.argmax",
 }
+
+
+def _argmax_box(input_shape: list[int]) -> str:
+    """Pick the Box variant of argmax based on input shape."""
+    if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
+        return "Box.argmax_1d"
+    if len(input_shape) == 2:
+        return "Box.argmax"
+    raise ValueError(
+        f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
+    )
 
 
 def _circ_translate_body(
@@ -325,7 +335,10 @@ def _translate_terms_circ(
                     boxes.append(f"@Box.const {dtype_to_lean_type(w)} {expr}")
                     out_ty.append(dtype_to_lean_type(w))
                 else:
-                    boxes.append(_LEAN_OP_BOX[name])
+                    if name == "Argmax":
+                        boxes.append(_argmax_box(term.read[0].dtype.shape))
+                    else:
+                        boxes.append(_LEAN_OP_BOX[name])
                     in_ty.extend([dtype_to_lean_type(u) for u in term.read])
                     out_ty.extend([dtype_to_lean_type(u) for u in term.write])
         assert boxes

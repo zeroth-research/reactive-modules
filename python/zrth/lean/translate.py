@@ -160,6 +160,8 @@ class ModuleToLean4:
         "Box.max",
         "Box.nnLinear",
         "Box.relu",
+        "Box.argmax_1d",
+        "Box.argmax",
         "ite_pair",
     ]
 
