@@ -9,7 +9,7 @@ from .environments import (
     ArrayEnv,
 )
 from .qnetworks import SimpleQNet, GridWorldQNet
-from zrth.gym import Wrapper
+from zrth.gym import Env
 from zrth.torch import Module
 
 
@@ -33,7 +33,7 @@ def test_simpleqnet_conversion():
 
 def simpleenv():
     env = SimpleEnv()
-    wrapped = Wrapper(env)
+    wrapped = Env(env)
 
     print("\nSimpleEnv reactive module:")
     print(wrapped)
@@ -66,7 +66,7 @@ def test_gridworldqnet_conversion():
 
 def gridworldenv():
     env = GridWorldEnv()
-    wrapped = Wrapper(env)
+    wrapped = Env(env)
 
     print("\nGridWorldEnv reactive module:")
     print(wrapped)
@@ -80,7 +80,7 @@ def test_gridworldenv_conversion():
 
 def complexdecisionenv():
     env = ComplexDecisionEnv()
-    wrapped = Wrapper(env)
+    wrapped = Env(env)
 
     print("\nComplexDecisionEnv reactive module:")
     print(wrapped)
@@ -94,7 +94,7 @@ def test_complexdecisionenv_conversion():
 
 def earlyreturnenv():
     env = EarlyReturnEnv()
-    wrapped = Wrapper(env)
+    wrapped = Env(env)
 
     print("\nEarlyReturnEnv reactive module:")
     print(wrapped)
@@ -108,7 +108,7 @@ def test_earlyreturnenv_conversion():
 
 def comparisonchainenv():
     env = ComparisonChainEnv()
-    wrapped = Wrapper(env)
+    wrapped = Env(env)
 
     print("\nComparisonChainEnv reactive module:")
     print(wrapped)
@@ -122,7 +122,7 @@ def test_comparisonchainenv_conversion():
 
 def twobitcounterenv():
     env = TwoBitCounterEnv()
-    wrapped = Wrapper(env)
+    wrapped = Env(env)
 
     print("\nTwoBitCounterEnv reactive module:")
     print(wrapped)
@@ -136,7 +136,7 @@ def test_twobitcounterenv_conversion():
 
 def heartode():
     env = HeartODE(60.0, 5.0, 1.0, 0.1)
-    wrapped = Wrapper(env)
+    wrapped = Env(env)
 
     print("\nHeartODE reactive module:")
     print(wrapped)
@@ -150,7 +150,7 @@ def test_heartode_conversion():
 
 def test_arrayenv_conversion():
     env = ArrayEnv()
-    wrapped = Wrapper(env)
+    wrapped = Env(env)
     module_str = str(wrapped)
     if "Float(3, 3)" not in module_str:
         raise AssertionError(module_str)  # grid
@@ -165,7 +165,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60 + "\n")
     env = simpleenv()
     print("\n" + "=" * 60 + "\n")
-    composed = Wrapper(env, qnet)
+    composed = Env(env, qnet)
     print(composed)
 
     print("\n" + "=" * 60 + "\n")
@@ -173,7 +173,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60 + "\n")
     gridenv = gridworldenv()
     print("\n" + "=" * 60 + "\n")
-    composed2 = Wrapper(gridenv, qnet3)
+    composed2 = Env(gridenv, qnet3)
     print(composed2)
 
     print("\n" + "=" * 60 + "\n")

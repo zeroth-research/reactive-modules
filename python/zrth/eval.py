@@ -11,7 +11,7 @@ def eval_itype(itype, read):
 
 
 # ============================================================================
-# Interpreter helpers (shared by zrth.gym.Wrapper, zrth.gym.Env)
+# Interpreter helpers (used by zrth.gym.Env)
 # ============================================================================
 
 def _execute_block(state, atoms, get_block):

@@ -72,7 +72,7 @@ def show(module, names=None, poll=0.5, open_browser=True):
     """Start a live visualizer for the given module.
 
     Args:
-        module: A zrth Module (or Wrapper/Env/torch.Module instance).
+        module: A zrth Module (or Env/torch.Module instance).
         names: Optional dict mapping wire IDs (int) to display names (str).
                If None, circles show no labels (topology only).
         poll: Interval in seconds between state pushes.
