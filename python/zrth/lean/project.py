@@ -420,12 +420,6 @@ import {project_name}.{module_name}
     print(f"++ Generated {mod_file} ++")
 
     # ----------------------------------------------------------
-    # Generate Certificate.lean
-    # ----------------------------------------------------------
-    write_certificate_lean(project_dir, project_name, module, cert_data)
-    print(f"Wrote {project_dir / 'Certificate.lean'}")
-
-    # ----------------------------------------------------------
     # Generate Main.lean for executable
     # ----------------------------------------------------------
     if executable:

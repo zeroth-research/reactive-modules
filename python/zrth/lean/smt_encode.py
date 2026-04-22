@@ -210,6 +210,10 @@ def _argmax_1d(
     return best_idx
 
 
+def _unop_scalar(tm, kind):
+    return lambda a: tm.mkTerm(kind, a)
+
+
 def _binop_scalar(tm, kind):
     return lambda a, b: tm.mkTerm(kind, a, b)
 
@@ -250,7 +254,7 @@ def translate_terms(
         if name == "Id":
             wt[write.id] = args[0]
         elif name == "Not":
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, Kind.NOT), args[0])  # unary via *mats
+            wt[write.id] = _elementwise(tm, out_shape, _unop_scalar(tm, Kind.NOT), args[0])
         elif name == "And":
             wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, Kind.AND), *args)
         elif name == "Or":
