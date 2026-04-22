@@ -3,7 +3,7 @@
 
 Defines the theory [`Int`] of matrices of signed integers (`i64`).
 
-A [`IntDType`] value describes the *type* of a term as a matrix shape
+A [`DType`] value describes the *type* of a term as a matrix shape
 `Int(rows, cols)`. The operations in [`Int`] are:
 
 - [`Int::Const`] — an inline integer matrix literal whose shape must
@@ -20,27 +20,35 @@ validating the read/write argument shapes against the operation.
 
 ```
 use theory::Theory;
-use theory::int::{Int, IntDType};
+use theory::int::{Int, DType};
 
-let a = IntDType::Int(2, 3);
-let b = IntDType::Int(3, 4);
-let c = IntDType::Int(2, 4);
+let a = DType::Int(2, 3);
+let b = DType::Int(3, 4);
+let c = DType::Int(2, 4);
 
 // Matrix multiply: (2x3) * (3x4) -> (2x4).
-assert!(Int::MatMul.check::<IntDType>(&[a, b], &[c]).is_ok());
+assert!(Int::MatMul.check::<DType>(&[a, b], &[c]).is_ok());
 
 // Elementwise `Add` requires matching shapes.
-let m = IntDType::Int(2, 3);
-assert!(Int::Add.check::<IntDType>(&[m, m], &[m]).is_ok());
-assert!(Int::Add.check::<IntDType>(&[a, b], &[c]).is_err());
+let m = DType::Int(2, 3);
+assert!(Int::Add.check::<DType>(&[m, m], &[m]).is_ok());
+assert!(Int::Add.check::<DType>(&[a, b], &[c]).is_err());
 ```
 */
 
 use crate::*;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum IntDType {
+pub enum DType {
     Int(usize, usize),
+}
+
+impl DType {
+    fn shape(&self) -> (usize, usize) {
+        match self {
+            DType::Int(i, j) => (*i, *j),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -55,79 +63,83 @@ pub enum Int {
     MatMul,
 }
 
-impl Theory for Int {
-    type DType = IntDType;
+pub(crate) fn check_init_dims(cm: &Vec<Vec<i64>>, i: usize, j: usize) -> Result<(), String> {
+    if cm.len() != i {
+        return Err(format!(
+            "Const: Initializer has a wrong number of rows (has {}, expected {})",
+            cm.len(),
+            i
+        ));
+    }
+    if cm.iter().any(|row| row.len() != j) {
+        return Err(format!(
+            "Const: some column of initializer has wrong dimension, expected {}",
+            j
+        ));
+    }
+    Ok(())
+}
 
-    fn _check(&self, read: &[Self::DType], write: &[Self::DType]) -> Result<(), String> {
+impl Theory for Int {
+    type DType = DType;
+
+    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    where
+        D: TryInto<&'a DType>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+    {
+        let mut read = read.into_iter();
+        let mut write = write.into_iter();
         match self {
             Int::Const(cm) => {
-                if !read.is_empty() {
+                if read.next().is_some() {
                     return Err("Const: cannot read values".into());
                 }
-                if write.len() != 1 {
-                    return Err("Const: must return a single value".into());
+
+                let DType::Int(i, j) = write_nxt(&mut write, 0)?;
+
+                check_init_dims(cm, *i, *j)?;
+
+                if write.next().is_some() {
+                    return Err("Const: returns more than one value".into());
                 }
-                match write[0] {
-                    IntDType::Int(i, j) => {
-                        if cm.len() != i {
-                            return Err(format!(
-                                "Const: Initializer has a wrong number of rows (has {}, expected {})",
-                                cm.len(),
-                                i
-                            ));
-                        }
-                        if cm.iter().any(|row| row.len() != j) {
-                            return Err(format!(
-                                "Const: some column of initializer has wrong dimension, expected {}",
-                                j
-                            ));
-                        }
-                        Ok(())
-                    }
-                }
+                Ok(())
             }
+
             Int::Neg => {
-                if read.len() != 1 {
+                let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
+                if r != w {
                     return Err(format!(
-                        "{:?}: must read single value, got {}",
-                        self,
-                        read.len()
+                        "{:?}: input and output type must be the same",
+                        self
                     ));
                 }
-                if write.len() != 1 {
-                    return Err(format!(
-                        "{:?}: must write a single value, got {}",
-                        self,
-                        write.len()
-                    ));
+                if read.next().is_some() {
+                    return Err(format!("{:?}: must read a single value (reads more)", self));
                 }
-                if write[0] != read[0] {
+                if write.next().is_some() {
                     return Err(format!(
-                        "{:?}: input and output values must have the same type",
+                        "{:?}: must write a single value (writes more)",
                         self
                     ));
                 }
                 Ok(())
             }
+
             Int::Add | Int::Mul | Int::Sub | Int::Mod => {
-                if read.len() != 2 {
-                    return Err(format!(
-                        "{:?}: must read two values, got {}",
-                        self,
-                        read.len()
-                    ));
-                }
-                if write.len() != 1 {
-                    return Err(format!(
-                        "{:?}: must write a single value, got {}",
-                        self,
-                        write.len()
-                    ));
-                }
-                if read[0] != read[1] {
+                let w1 = write_nxt(&mut write, 0)?;
+                let (r1, r2, None) = (
+                    read_nxt(&mut read, 0)?,
+                    read_nxt(&mut read, 1)?,
+                    read.next(),
+                ) else {
+                    return Err(format!("{:?}: must read exactly two values", self));
+                };
+                if r1 != r2 {
                     return Err(format!("{:?}: input values must have the same type", self));
                 }
-                if write[0] != read[1] {
+                if w1 != r1 {
                     return Err(format!(
                         "{:?}: input and output values must have the same type",
                         self
@@ -135,43 +147,41 @@ impl Theory for Int {
                 }
                 Ok(())
             }
-            Int::MatMul => {
-                if read.len() != 2 {
-                    return Err(format!(
-                        "{:?}: must read two values, got {}",
-                        self,
-                        read.len()
-                    ));
-                }
-                if write.len() != 1 {
-                    return Err(format!(
-                        "{:?}: must write a single value, got {}",
-                        self,
-                        write.len()
-                    ));
-                }
-                match (&read[0], &read[1], &write[0]) {
-                    (IntDType::Int(d1, d2), IntDType::Int(d3, d4), IntDType::Int(d5, d6)) => {
-                        if d2 != d3 {
-                            return Err(format!(
-                                "{:?}: mismatch in inner dimensions of input matrices: {} != {}",
-                                self, d2, d3
-                            ));
-                        }
-                        if d1 != d5 {
-                            return Err(format!(
-                                "{:?}: mismatch in first input and output dimensions: {} != {}",
-                                self, d1, d5
-                            ));
-                        }
 
-                        if d4 != d6 {
-                            return Err(format!(
-                                "{:?}: mismatch in second input and output dimensions: {} != {}",
-                                self, d4, d6
-                            ));
-                        }
-                    }
+            Int::MatMul => {
+                let (r1, r2, None) = (
+                    read_nxt(&mut read, 0)?,
+                    read_nxt(&mut read, 1)?,
+                    read.next(),
+                ) else {
+                    return Err(format!("{:?}: must read exactly two values", self));
+                };
+                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err(format!("{:?}: must write exactly one value", self));
+                };
+
+                let (d1, d2) = r1.shape();
+                let (d3, d4) = r2.shape();
+                let (d5, d6) = w1.shape();
+
+                if d2 != d3 {
+                    return Err(format!(
+                        "{:?}: mismatch in inner dimensions of input matrices: {} != {}",
+                        self, d2, d3
+                    ));
+                }
+                if d1 != d5 {
+                    return Err(format!(
+                        "{:?}: mismatch in first input and output dimensions: {} != {}",
+                        self, d1, d5
+                    ));
+                }
+
+                if d4 != d6 {
+                    return Err(format!(
+                        "{:?}: mismatch in second input and output dimensions: {} != {}",
+                        self, d4, d6
+                    ));
                 }
                 Ok(())
             }

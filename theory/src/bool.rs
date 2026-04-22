@@ -4,7 +4,7 @@
 Defines the propositional theory [`Prop`]: boolean matrices and the
 standard logical operations over them.
 
-A [`PropDType`] value describes the *type* of a boolean term as a matrix
+A [`DType`] value describes the *type* of a boolean term as a matrix
 shape `Bool(rows, cols)` — scalars are just `Bool(1, 1)`. The operations
 in [`Prop`] are:
 
@@ -21,23 +21,28 @@ validating the read/write argument shapes against the operation.
 
 ```
 use theory::Theory;
-use theory::bool::{Prop, PropDType};
+use theory::bool::{Prop, DType};
 
-let t = PropDType::Bool(1, 1);
+let t = Type::Bool(1, 1);
 
 // `And` reads two scalars and writes one.
-assert!(Prop::And.check::<PropDType>(&[t, t], &[t]).is_ok());
+assert!(Prop::And.check::<DType>(&[t, t], &[t]).is_ok());
 
 // `Not` is unary — two inputs is a type error.
-assert!(Prop::Not.check::<PropDType>(&[t, t], &[t]).is_err());
+assert!(Prop::Not.check::<DType>(&[t, t], &[t]).is_err());
 ```
 */
 
 use crate::*;
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum PropDType {
-    Bool(usize, usize),
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Bool(pub usize, pub usize);
+
+// TODO: impl DType
+impl Bool {
+    pub fn shape(&self) -> (usize, usize) {
+        (self.0, self.1)
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -50,64 +55,52 @@ pub enum Prop {
 }
 
 impl Theory for Prop {
-    type DType = PropDType;
+    type DType = Bool;
 
-    fn type_check<'a, R, W>(&self, read: R, write: W) -> Result<(), String>
+    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = &'a PropDType>,
-        W: IntoIterator<Item = &'a PropDType>,
+        D: TryInto<&'a Bool>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
     {
         let mut read = read.into_iter();
         let mut write = write.into_iter();
         match self {
             Prop::Const(cm) => {
-                if !(read.next() == None) {
+                if read.next().is_some() {
                     return Err("Const: cannot read values".into());
                 }
-                if let Some(dtype) = write.next() {
-                    match dtype {
-                        PropDType::Bool(i, j) => {
-                            if cm.len() != *i {
-                                return Err(format!(
-                                    "Const: Initializer has a wrong number of rows (has {}, expected {})",
-                                    cm.len(),
-                                    *i
-                                ));
-                            }
-                            if cm.iter().any(|row| row.len() != *j) {
-                                return Err(format!(
-                                    "Const: some column of initializer has wrong dimension, expected {}",
-                                    *j
-                                ));
-                            }
-                            if write.next() == None {
-                                Ok(())
-                            } else {
-                                Err("Const: returns > 1 value".into())
-                            }
-                        }
-                    }
-                } else {
-                    return Err("Const: must return a single value, returns none".into());
+                let Bool(i, j) = write_nxt(&mut write, 0)?;
+                if cm.len() != *i {
+                    return Err(format!(
+                        "Const: Initializer has a wrong number of rows (has {}, expected {})",
+                        cm.len(),
+                        *i
+                    ));
                 }
+                if cm.iter().any(|row| row.len() != *j) {
+                    return Err(format!(
+                        "Const: some column of initializer has wrong dimension, expected {}",
+                        *j
+                    ));
+                }
+                if write.next().is_some() {
+                    return Err("Const: returns > 1 value".into());
+                }
+                Ok(())
             }
             Prop::Not => {
-                if let (Some(r), Some(w)) = (read.next(), write.next()) {
-                    if *r != *w {
-                        return Err(format!(
-                            "{:?}: input and output type must be the same",
-                            self
-                        ));
-                    }
-                } else {
-                    return Err(format!("{:?}: must read and write a single value", self));
+                let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
+                if *r != *w {
+                    return Err(format!(
+                        "{:?}: input and output type must be the same",
+                        self
+                    ));
                 }
-
-                if read.next() != None {
+                if read.next().is_some() {
                     return Err(format!("{:?}: must read a single value (reads more)", self));
                 }
-
-                if write.next() != None {
+                if write.next().is_some() {
                     return Err(format!(
                         "{:?}: must write a single value (writes more)",
                         self
@@ -116,23 +109,22 @@ impl Theory for Prop {
                 Ok(())
             }
             Prop::And | Prop::Or | Prop::Xor => {
-                let wn = write.next();
-                if wn.is_none() {
-                    return Err(format!("{:?}: must write a single value, got none", self));
+                let w1 = write_nxt(&mut write, 0)?;
+                let (r1, r2, None) = (
+                    read_nxt(&mut read, 0)?,
+                    read_nxt(&mut read, 1)?,
+                    read.next(),
+                ) else {
+                    return Err(format!("{:?}: must read exactly two values", self));
+                };
+                if r1 != r2 {
+                    return Err(format!("{:?}: input values must have the same type", self));
                 }
-                let w1 = wn.unwrap();
-                if let (Some(r1), Some(r2), None) = (read.next(), read.next(), read.next()) {
-                    if *r1 != *r2 {
-                        return Err(format!("{:?}: input values must have the same type", self));
-                    }
-                    if *w1 != *r1 {
-                        return Err(format!(
-                            "{:?}: input and output values must have the same type",
-                            self
-                        ));
-                    }
-                } else {
-                    return Err(format!("{:?}: must read exactly two values", self,));
+                if w1 != r1 {
+                    return Err(format!(
+                        "{:?}: input and output values must have the same type",
+                        self
+                    ));
                 }
                 Ok(())
             }
