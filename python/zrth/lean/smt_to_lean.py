@@ -95,7 +95,7 @@ def smt_to_lean_nat(
     bindings = [("s", param_name, state_wires)] + (extra or [])
     var_accessor, var_wire = build_var_map(bindings)
     body = _walk(term, var_accessor, var_wire)
-    return f"fun {param_name} => let r := ({body}); if r < 0 then 0 else r"
+    return f"fun {param_name} => (({body} : Int)).toNat"
 
 
 # ---------------------------------------------------------------------

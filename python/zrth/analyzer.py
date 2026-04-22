@@ -2030,7 +2030,7 @@ class MethodVisitor(ast.NodeVisitor):
             dtype = Bool(1)
         elif isinstance(value, (int, float)):
             if target_dtype is None:
-                target_dtype = Float()
+                target_dtype = Int() if isinstance(value, int) else Float()
             tensor_data = torch.tensor([value], dtype=_torch_dtype(target_dtype))
             dtype = target_dtype.reshape([1])
         else:

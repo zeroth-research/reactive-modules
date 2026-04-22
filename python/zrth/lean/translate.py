@@ -163,6 +163,8 @@ class ModuleToLean4:
         "Box.argmax_1d",
         "Box.argmax",
         "ite_pair",
+        "Mat_1_1_lt_iff",
+        "Mat_1_1_le_iff",
     ]
 
     def _simp_circ_macro(self) -> str:
@@ -198,10 +200,12 @@ class ModuleToLean4:
         proof.append(f"  simp [{', '.join(final_simp)}]")
         proof.append("  try exact List.ofFn_inj.mp rfl")
         proof.append("  try grind")
+        proof.append("  try omega")
         proof.append("  try simp")
         proof.append("  try grind")
         proof.append(f"  try simp [{', '.join(final_simp)}]")
         proof.append("  try exact List.ofFn_inj.mp rfl")
+        proof.append("  try omega")
         return "\n".join(proof)
 
     def to_lean_equiv_theorems(self) -> str:

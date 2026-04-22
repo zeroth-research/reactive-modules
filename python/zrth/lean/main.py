@@ -298,16 +298,11 @@ def main():
             )
         cert_data = magic.infer(cert_data)
 
-        # Merge inferred inv/ranking into the project cert data and rewrite
-        # Certificate.lean so the final file has concrete definitions
-        # instead of the initial `True` / `sorry` placeholders.
+        # Merge inferred inv/ranking into project_cert_data.
         if project_cert_data is None:
             project_cert_data = CertificateData()
         project_cert_data.inv = cert_data.inv
         project_cert_data.ranking = cert_data.ranking
-        write_certificate_lean(
-            project_dir, args.project_name, module, project_cert_data
-        )
 
         data_file = project_dir / f"{args.project_name}Data.lean"
         data_lines = [
@@ -325,6 +320,9 @@ def main():
                 data_lines.append("")
         data_file.write_text("\n".join(data_lines) + "\n")
         print(f"Wrote {data_file}")
+
+    # Write certificate once — after inference if it ran, with placeholders otherwise.
+    write_certificate_lean(project_dir, args.project_name, module, project_cert_data)
 
     print(f"\nProject ready at: {project_dir}")
 
