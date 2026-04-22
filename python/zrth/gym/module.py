@@ -7,7 +7,7 @@ from ..analyzer import (
     convert_method, classify_attrs, infer_dtype, wire_pair, resolve_wire,
     AbstractValue,
 )
-from ..eval import eval_itype, execute_init, execute_update, read_wire, getattr_wire
+from ..eval import eval_itype, read_wire, getattr_wire
 
 
 # ============================================================================
@@ -66,27 +66,6 @@ def _space_to_abstract(name, space):
         return AbstractValue.call_result(f"spaces.MultiBinary({space.n})")
     else:
         raise ValueError(f"Cannot convert space '{name}' of type {type(space).__name__}")
-
-
-def _setup_wire_pairs(module):
-    """Extract wire pair references from obs. Returns a dict of pairs."""
-    n_obs = len(module.obs)
-    pairs = {}
-    if n_obs >= 5:
-        pairs['action'] = module.obs[0]
-        pairs['observation'] = module.obs[1]
-        pairs['reward'] = module.obs[2]
-        pairs['terminated'] = module.obs[3]
-        pairs['truncated'] = module.obs[4]
-    elif n_obs >= 2:
-        pairs['action'] = module.obs[0]
-        pairs['observation'] = module.obs[1]
-        pairs['reward'] = None
-        pairs['terminated'] = None
-        pairs['truncated'] = None
-    else:
-        raise ValueError(f"Module needs at least 2 observable wire pairs, got {n_obs}")
-    return pairs
 
 
 # ============================================================================
@@ -169,22 +148,23 @@ def _extract_env_module(env_instance, **kwargs):
 
 
 # ============================================================================
-# zrth.gym.Wrapper
+# zrth.gym.Env — unified wrapper for gym.Env and pure symbolic Modules
 # ============================================================================
 
-class Wrapper(Module, gym.Wrapper):
-    """A gym.Wrapper backed by a symbolic Module.
+class Env(Module, gym.Wrapper):
+    """A gym environment backed by a symbolic Module.
 
-    Runs both the real gym.Env and the symbolic interpreter in lockstep.
-    Gym methods (render, close, etc.) delegate to the original env.
-    Symbolic state is available for inspection and validation.
+    Accepts gym.Env instances (with real env delegation) and/or pure Modules
+    (fully symbolic). At most one gym.Env is allowed.
 
     Usage:
-        from zrth.gym import Wrapper
+        from zrth.gym import Env
 
-        Wrapper(gym_env)                        → extract Module, wrap env
-        Wrapper(gym_env, module1, module2)      → extract + compose with other modules
-        Wrapper(wrapped_env, module1)           → unwrap + compose
+        Env(gym_env)                        → extract Module, wrap env
+        Env(gym_env, module1, module2)      → extract + compose
+        Env(wrapped_env, module1)           → unwrap + compose
+        Env(module)                         → pure symbolic
+        Env(module1, module2)               → compose + pure symbolic
     """
 
     def __new__(cls, *args, **kwargs):
@@ -195,18 +175,22 @@ class Wrapper(Module, gym.Wrapper):
         for a in args:
             if isinstance(a, Module):
                 modules.append(a)
-                if isinstance(a, Wrapper):
-                    env = a.unwrapped
+                # If it's already an Env with a backing env, unwrap
+                if isinstance(a, Env) and a._backing_env is not None:
                     if backing_env is not None:
-                        raise TypeError("Wrapper requires exactly 1 gym.Env, got multiple")
-                    backing_env = env
+                        raise TypeError("Env accepts at most 1 gym.Env, got multiple")
+                    backing_env = a.unwrapped
             elif isinstance(a, gym.Env):
                 raw_envs.append(a)
             else:
                 raise TypeError(f"Expected gym.Env or Module, got {type(a)}")
 
         if len(raw_envs) > 1 or (len(raw_envs) == 1 and backing_env is not None):
-            raise TypeError("Wrapper requires exactly 1 gym.Env, got multiple")
+            raise TypeError("Env accepts at most 1 gym.Env, got multiple")
+
+        # Extract Module from raw gym.Env if present
+        wire_names = {}
+        env_ctrl_ids = set()
 
         if len(raw_envs) == 1:
             gym_env = raw_envs[0]
@@ -217,29 +201,32 @@ class Wrapper(Module, gym.Wrapper):
             modules = [env_module] + modules
             backing_env = gym_env
         else:
-            wire_names = {}
-            env_ctrl_ids = set()
+            # Inherit wire_names and env atom ctrl IDs from source Env
             for a in args:
-                if isinstance(a, Wrapper):
+                if isinstance(a, Env):
                     wire_names.update(a._wire_names)
                     if a._env_atom_idx is not None:
                         env_ctrl_ids = {w for w in a.atoms[a._env_atom_idx].ctrl}
 
-        if backing_env is None:
-            raise TypeError("Wrapper requires exactly 1 gym.Env, got 0")
+        if not modules:
+            raise TypeError("Env requires at least 1 argument")
 
+        # Compose all modules
         if len(modules) == 1:
             instance = Module.__new__(cls, modules[0])
         else:
             instance = Module.__new__(cls, *modules)
+
         instance._wire_names = wire_names
         instance._backing_env = backing_env
 
+        # Find env atom index in composed module (may be reordered by topo sort)
         instance._env_atom_idx = None
-        for idx, atom in enumerate(instance.atoms):
-            if {w for w in atom.ctrl} == env_ctrl_ids:
-                instance._env_atom_idx = idx
-                break
+        if env_ctrl_ids:
+            for idx, atom in enumerate(instance.atoms):
+                if {w for w in atom.ctrl} == env_ctrl_ids:
+                    instance._env_atom_idx = idx
+                    break
 
         return instance
 
@@ -248,7 +235,18 @@ class Wrapper(Module, gym.Wrapper):
         gym.Wrapper.__init__(self, backing_env)
         self._state = {}
         self._initialized = False
-        self._pairs = _setup_wire_pairs(self)
+
+        # Extract wire pairs from obs
+        n_obs = len(self.obs)
+        self._pairs = {}
+        if n_obs >= 5:
+            self._pairs = {'action': self.obs[0], 'observation': self.obs[1],
+                           'reward': self.obs[2], 'terminated': self.obs[3], 'truncated': self.obs[4]}
+        elif n_obs >= 2:
+            self._pairs = {'action': self.obs[0], 'observation': self.obs[1],
+                           'reward': None, 'terminated': None, 'truncated': None}
+        else:
+            raise ValueError(f"Module needs at least 2 observable wire pairs, got {n_obs}")
 
     def __getattr__(self, name):
         return getattr_wire(self, name)
@@ -259,6 +257,18 @@ class Wrapper(Module, gym.Wrapper):
         if name not in wire_names:
             raise KeyError(f"no private wire named '{name}'")
         return wire_names[name]
+
+    def get(self, wire):
+        """Retrieve the current value of a wire."""
+        if wire not in self._state:
+            raise RuntimeError(f"wire {wire} not in state")
+        return self._state[wire].clone()
+
+    def state_dict(self):
+        """Return a copy of the current state."""
+        return dict(self._state)
+
+    # ── Execution ─────────────────────────────────────────────
 
     def _sync_private_state_from_env(self):
         """Read private state from the real env and write to symbolic next wires."""
@@ -275,16 +285,36 @@ class Wrapper(Module, gym.Wrapper):
                 elif isinstance(value, torch.Tensor):
                     self._state[nxt] = value.clone()
 
+    def _prepare_action(self, action):
+        """Convert action to tensor, one-hot encode for Discrete spaces."""
+        action_tensor = torch.as_tensor(action, dtype=torch.float32)
+        if action_tensor.dim() == 0:
+            action_tensor = action_tensor.unsqueeze(0)
+        if self._backing_env and isinstance(
+            getattr(self._backing_env, 'action_space', None), gym.spaces.Discrete
+        ):
+            if action_tensor.numel() == 1:
+                idx = int(action_tensor.item())
+                one_hot = torch.zeros(self._backing_env.action_space.n)
+                one_hot[idx] = 1.0
+                action_tensor = one_hot
+        return action_tensor
+
     def reset(self, *, seed=None, options=None):
         self._state = {}
         p = self._pairs
-        env_atom_idx = object.__getattribute__(self, '_env_atom_idx')
+        env_atom_idx = self._env_atom_idx
 
-        gym_result = self.env.reset(seed=seed, options=options)
-        reset_obs = gym_result[0] if isinstance(gym_result, tuple) else gym_result
+        # Reset real env if present
+        reset_obs = None
+        if self._backing_env:
+            gym_result = self._backing_env.reset(seed=seed, options=options)
+            reset_obs = gym_result[0] if isinstance(gym_result, tuple) else gym_result
 
+        # Execute init block for each atom
         for atom_idx, atom in enumerate(self.atoms):
             if env_atom_idx is not None and atom_idx == env_atom_idx:
+                # Env atom: write real env state to symbolic wires
                 obs_tensor = torch.as_tensor(reset_obs, dtype=torch.float32)
                 if obs_tensor.dim() == 0:
                     obs_tensor = obs_tensor.unsqueeze(0)
@@ -297,15 +327,18 @@ class Wrapper(Module, gym.Wrapper):
                     self._state[p['truncated'][1]] = torch.tensor([0.0])
                 self._sync_private_state_from_env()
             else:
+                # Symbolic atom
                 for term in atom.init:
                     read = [self._state[w] for w in term.read]
                     results = eval_itype(term.itype, read)
                     for w, val in zip(term.write, results):
                         self._state[w] = val
 
+        # Latch
         for ltc, nxt in self.ctrl:
             if nxt in self._state:
                 self._state[ltc] = self._state[nxt].clone()
+
         self._initialized = True
         return read_wire(self._state, p['observation'][0]).numpy(), {}
 
@@ -313,22 +346,16 @@ class Wrapper(Module, gym.Wrapper):
         if not self._initialized:
             raise RuntimeError("call reset() before step()")
         p = self._pairs
-        env_atom_idx = object.__getattribute__(self, '_env_atom_idx')
+        env_atom_idx = self._env_atom_idx
 
-        action_tensor = torch.as_tensor(action, dtype=torch.float32)
-        if action_tensor.dim() == 0:
-            action_tensor = action_tensor.unsqueeze(0)
-        if isinstance(getattr(self.env, 'action_space', None), gym.spaces.Discrete):
-            if action_tensor.numel() == 1:
-                idx = int(action_tensor.item())
-                one_hot = torch.zeros(self.env.action_space.n)
-                one_hot[idx] = 1.0
-                action_tensor = one_hot
-        self._state[p['action'][0]] = action_tensor
+        # Write action to symbolic state
+        self._state[p['action'][0]] = self._prepare_action(action)
 
+        # Execute update block for each atom
         for atom_idx, atom in enumerate(self.atoms):
             if env_atom_idx is not None and atom_idx == env_atom_idx:
-                gym_result = self.env.step(self._state[p['action'][0]])
+                # Env atom: run real env
+                gym_result = self._backing_env.step(self._state[p['action'][0]])
                 obs, reward, terminated, truncated = gym_result[0], gym_result[1], gym_result[2], gym_result[3]
                 obs_tensor = torch.as_tensor(obs, dtype=torch.float32)
                 if obs_tensor.dim() == 0:
@@ -342,81 +369,14 @@ class Wrapper(Module, gym.Wrapper):
                     self._state[p['truncated'][1]] = torch.tensor([1.0 if truncated else 0.0])
                 self._sync_private_state_from_env()
             else:
+                # Symbolic atom
                 for term in atom.update:
                     read = [self._state[w] for w in term.read]
                     results = eval_itype(term.itype, read)
                     for w, val in zip(term.write, results):
                         self._state[w] = val
 
-        for ltc, nxt in self.ctrl:
-            if nxt in self._state:
-                self._state[ltc] = self._state[nxt].clone()
-        obs = read_wire(self._state, p['observation'][0])
-        reward = read_wire(self._state, p['reward'][0]).item() if p['reward'] else 0.0
-        terminated = bool(read_wire(self._state, p['terminated'][0]).item()) if p['terminated'] else False
-        truncated = bool(read_wire(self._state, p['truncated'][0]).item()) if p['truncated'] else False
-        return obs.numpy(), reward, terminated, truncated, {}
-
-
-# ============================================================================
-# zrth.gym.Env
-# ============================================================================
-
-class Env(Module, gym.Env):
-    """A gym.Env that runs a symbolic Module via the term interpreter.
-
-    For pure Modules (no backing gym.Env). Use Wrapper() for gym.Env instances.
-
-    Usage:
-        from zrth.gym import Env
-
-        Env(module)                → run a single module
-        Env(module1, module2)      → compose and run
-    """
-
-    def __new__(cls, *modules):
-        for m in modules:
-            if isinstance(m, gym.Env) and not isinstance(m, Module):
-                raise TypeError("Use Wrapper() for gym.Env instances, Env is for pure Modules")
-            if not isinstance(m, Module):
-                raise TypeError(f"Expected Module, got {type(m)}")
-
-        if len(modules) == 1:
-            instance = Module.__new__(cls, modules[0])
-        else:
-            instance = Module.__new__(cls, *modules)
-        instance._wire_names = {}
-        return instance
-
-    def __init__(self, *modules):
-        gym.Env.__init__(self)
-        self._state = {}
-        self._initialized = False
-        self._pairs = _setup_wire_pairs(self)
-
-    def __getattr__(self, name):
-        return getattr_wire(self, name)
-
-    def reset(self, *, seed=None, options=None):
-        gym.Env.reset(self, seed=seed, options=options)
-        self._state = {}
-
-        execute_init(self._state, self.atoms)
-        for ltc, nxt in self.ctrl:
-            if nxt in self._state:
-                self._state[ltc] = self._state[nxt].clone()
-        self._initialized = True
-        return read_wire(self._state, self._pairs['observation'][0]).numpy(), {}
-
-    def step(self, action):
-        if not self._initialized:
-            raise RuntimeError("call reset() before step()")
-        p = self._pairs
-        action_tensor = torch.as_tensor(action, dtype=torch.float32)
-        if action_tensor.dim() == 0:
-            action_tensor = action_tensor.unsqueeze(0)
-        self._state[p['action'][0]] = action_tensor
-        execute_update(self._state, self.atoms)
+        # Latch
         for ltc, nxt in self.ctrl:
             if nxt in self._state:
                 self._state[ltc] = self._state[nxt].clone()
@@ -425,15 +385,4 @@ class Env(Module, gym.Env):
         reward = read_wire(self._state, p['reward'][0]).item() if p['reward'] else 0.0
         terminated = bool(read_wire(self._state, p['terminated'][0]).item()) if p['terminated'] else False
         truncated = bool(read_wire(self._state, p['truncated'][0]).item()) if p['truncated'] else False
-
         return obs.numpy(), reward, terminated, truncated, {}
-
-    def get(self, wire):
-        """Retrieve the current value of a wire."""
-        if wire not in self._state:
-            raise RuntimeError(f"wire {wire} not in state")
-        return self._state[wire].clone()
-
-    def state_dict(self):
-        """Return a copy of the current state."""
-        return dict(self._state)

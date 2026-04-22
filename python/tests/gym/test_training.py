@@ -4,7 +4,7 @@ from .environments import SimpleEnv
 from .qnetworks import SimpleQNet
 from .agent import DQNAgent
 from .train import train
-from zrth.gym import Wrapper
+from zrth.gym import Env
 from zrth.torch import Module
 from zrth import Wire, DType
 from zrth.eval import eval_itype
@@ -54,7 +54,7 @@ def test_training_with_shared_wires():
     plain_env = SimpleEnv()
     plain_nn = SimpleQNet(state_size=1, action_size=plain_env.action_space.n, hidden_size=2)
 
-    wrapped_env = Wrapper(plain_env, action=action)
+    wrapped_env = Env(plain_env, action=action)
     wrapped_nn = Module(plain_nn, extl=input_wire)
 
     print(f'Env action wires: {wrapped_env.obs[0]}')
