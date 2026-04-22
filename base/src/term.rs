@@ -39,23 +39,38 @@ impl<T: Theory> Term<T> {
     }
 }
 
+/// Print error as debugging message and
+/// return a fixed error message.
+/// This is a temporary work-around until we return
+/// more informative errors in `Result`s.
+fn dbg_error(e: String) -> &'static str {
+    dbg!(e);
+    "type-checking failed"
+}
+
 impl<T> Term<T>
 where
     T: Theory,
-    T::DType: Eq,
+    T::DType: Eq + Clone,
 {
-    pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, &'static str>
+    pub fn function<'a, D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, &'static str>
     where
         D: Into<Wire<T::DType>>,
         U: Into<Wire<T::DType>>,
         W: IntoIterator<Item = D>,
         R: IntoIterator<Item = U>,
     {
-        Ok(Self::new_unchecked(
-            itype,
-            Interface::unique(write)?,
-            Interface::sequence(read)?,
-        ))
+        let term =
+            Self::new_unchecked(itype, Interface::unique(write)?, Interface::sequence(read)?);
+
+        // type-check the term. We do it only after contruction of the term, because type-checking
+        // would consume the values of `write` and `read` otherwise
+        let r = term.read.as_slice().into_iter().map(|w| w.dtype());
+        let w = term.write.as_slice().iter().map(|w| w.dtype());
+        match term.itype.type_check(r, w) {
+            Ok(_) => Ok(term),
+            Err(e) => Err(dbg_error(e)),
+        }
     }
 
     pub fn constant<D, W>(itype: T, write: W) -> Result<Self, &'static str>
