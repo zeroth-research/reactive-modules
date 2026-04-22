@@ -52,80 +52,87 @@ pub enum Prop {
 impl Theory for Prop {
     type DType = PropDType;
 
-    fn _check(&self, read: &[Self::DType], write: &[Self::DType]) -> Result<(), String> {
+    fn type_check<'a, R, W>(&self, read: R, write: W) -> Result<(), String>
+    where
+        R: IntoIterator<Item = &'a PropDType>,
+        W: IntoIterator<Item = &'a PropDType>,
+    {
+        let mut read = read.into_iter();
+        let mut write = write.into_iter();
         match self {
             Prop::Const(cm) => {
-                if !read.is_empty() {
+                if !(read.next() == None) {
                     return Err("Const: cannot read values".into());
                 }
-                if write.len() != 1 {
-                    return Err("Const: must return a single value".into());
-                }
-                match &write[0] {
-                    PropDType::Bool(i, j) => {
-                        if cm.len() != *i {
-                            return Err(format!(
-                                "Const: Initializer has a wrong number of rows (has {}, expected {})",
-                                cm.len(),
-                                *i
-                            ));
+                if let Some(dtype) = write.next() {
+                    match dtype {
+                        PropDType::Bool(i, j) => {
+                            if cm.len() != *i {
+                                return Err(format!(
+                                    "Const: Initializer has a wrong number of rows (has {}, expected {})",
+                                    cm.len(),
+                                    *i
+                                ));
+                            }
+                            if cm.iter().any(|row| row.len() != *j) {
+                                return Err(format!(
+                                    "Const: some column of initializer has wrong dimension, expected {}",
+                                    *j
+                                ));
+                            }
+                            if write.next() == None {
+                                Ok(())
+                            } else {
+                                Err("Const: returns > 1 value".into())
+                            }
                         }
-                        if cm.iter().any(|row| row.len() != *j) {
-                            return Err(format!(
-                                "Const: some column of initializer has wrong dimension, expected {}",
-                                *j
-                            ));
-                        }
-                        Ok(())
                     }
+                } else {
+                    return Err("Const: must return a single value, returns none".into());
                 }
             }
             Prop::Not => {
-                if read.len() != 1 {
-                    return Err(format!(
-                        "{:?}: must read a single value, got {}",
-                        self,
-                        read.len()
-                    ));
+                if let (Some(r), Some(w)) = (read.next(), write.next()) {
+                    if *r != *w {
+                        return Err(format!(
+                            "{:?}: input and output type must be the same",
+                            self
+                        ));
+                    }
+                } else {
+                    return Err(format!("{:?}: must read and write a single value", self));
                 }
-                if write.len() != 1 {
-                    return Err(format!(
-                        "{:?}: must write a single value, got {}",
-                        self,
-                        write.len()
-                    ));
+
+                if read.next() != None {
+                    return Err(format!("{:?}: must read a single value (reads more)", self));
                 }
-                if write[0] != read[0] {
+
+                if write.next() != None {
                     return Err(format!(
-                        "{:?}: input and output type must be the same",
+                        "{:?}: must write a single value (writes more)",
                         self
                     ));
                 }
                 Ok(())
             }
             Prop::And | Prop::Or | Prop::Xor => {
-                if read.len() != 2 {
-                    return Err(format!(
-                        "{:?}: must read two values, got {}",
-                        self,
-                        read.len()
-                    ));
+                let wn = write.next();
+                if wn.is_none() {
+                    return Err(format!("{:?}: must write a single value, got none", self));
                 }
-                if write.len() != 1 {
-                    return Err(format!(
-                        "{:?}: must write a single value, got {}",
-                        self,
-                        write.len()
-                    ));
-                }
-                if read[0] != read[1] {
-                    return Err(format!("{:?}: input values must have the same type", self));
-                }
-                if write[0] != read[1] {
-                    return Err(format!(
-                        "{:?}: input and output values must have the same type",
-                        self
-                    ));
+                let w1 = wn.unwrap();
+                if let (Some(r1), Some(r2), None) = (read.next(), read.next(), read.next()) {
+                    if *r1 != *r2 {
+                        return Err(format!("{:?}: input values must have the same type", self));
+                    }
+                    if *w1 != *r1 {
+                        return Err(format!(
+                            "{:?}: input and output values must have the same type",
+                            self
+                        ));
+                    }
+                } else {
+                    return Err(format!("{:?}: must read exactly two values", self,));
                 }
                 Ok(())
             }
