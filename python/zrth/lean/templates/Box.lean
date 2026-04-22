@@ -145,11 +145,11 @@ infixr:75 " ⊗ " => par
 @[simp] def le {t: Type} [LE t] [DecidableRel (· ≤ ·: t → t → Prop)]: Box [t, t] [Mat Bool 1 1] :=
   ⟨fun val!(a, b) => val!(fun _ _ => decide (a ≤ b))⟩
 
-@[simp] def gt {t: Type} [LE t] [DecidableRel (· ≤ ·: t → t → Prop)]: Box [t, t] [Mat Bool 1 1] :=
-  ⟨fun val!(a, b) => val!(fun _ _ => decide (¬(b ≤ a)))⟩
+@[simp] def gt {t: Type} [LT t] [DecidableRel (· < · : t → t → Prop)]: Box [t, t] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => decide (b < a))⟩
 
-@[simp] def ge {t: Type} [LT t] [DecidableRel (· < · : t → t → Prop)] : Box [t, t] [Mat Bool 1 1] :=
-  ⟨fun val!(a, b) => val!(fun _ _ => decide (¬(b < a)))⟩
+@[simp] def ge {t: Type} [LE t] [DecidableRel (· ≤ · : t → t → Prop)] : Box [t, t] [Mat Bool 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => decide (b ≤ a))⟩
 
 @[simp] def lt {t: Type} [LT t] [DecidableRel (· < · : t → t → Prop)] : Box [t, t] [Mat Bool 1 1] :=
   ⟨fun val!(a, b) => val!(fun _ _ => decide (a < b))⟩

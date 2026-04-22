@@ -171,6 +171,12 @@ theorem Mat_1_1_eq (f : Mat t 1 1) : f = fun _ _ => f 0 0 := by
   instance [LE t] : LE (Mat t 1 1) where
     le a b := a 0 0 ≤ b 0 0
 
+@[simp] theorem Mat_1_1_lt_iff {t : Type} [LT t] (a b : Mat t 1 1) :
+    a < b ↔ a 0 0 < b 0 0 := Iff.rfl
+
+@[simp] theorem Mat_1_1_le_iff {t : Type} [LE t] (a b : Mat t 1 1) :
+    a ≤ b ↔ a 0 0 ≤ b 0 0 := Iff.rfl
+
   instance [LT t] [DecidableRel (· < · : t → t → Prop)] :
       DecidableRel (· < · : Mat t 1 1 → Mat t 1 1 → Prop) :=
     fun a b => inferInstanceAs (Decidable (a 0 0 < b 0 0))
