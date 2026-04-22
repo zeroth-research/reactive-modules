@@ -7,52 +7,38 @@ pub mod real;
 pub trait Theory {
     type DType;
 
-    fn type_check<'a, R, W>(&self, read: R, write: W) -> Result<(), String>
+    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = &'a Self::DType>,
-        W: IntoIterator<Item = &'a Self::DType>,
+        D: TryInto<&'a Self::DType>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
         Self::DType: 'a;
 }
 
-// // Operations common to every theory
-// #[derive(Clone, Copy, PartialEq, Debug)]
-// pub enum FlowOp<T: PartialEq + std::fmt::Debug> {
-//     Id,
-//     _Phantom(std::marker::PhantomData<T>),
-// }
-//
-// impl<T> Theory for FlowOp<T>
-// where
-//     T: PartialEq + std::fmt::Debug,
-// {
-//     type DType = T;
-//
-//     fn _check(&self, read: &[T], write: &[T]) -> Result<(), String> {
-//         match self {
-//             FlowOp::Id => {
-//                 if read.len() != 1 {
-//                     return Err(format!(
-//                         "{:?}: must read one value, got {}",
-//                         self,
-//                         read.len()
-//                     ));
-//                 }
-//                 if write.len() != 1 {
-//                     return Err(format!(
-//                         "{:?}: must write a single value, got {}",
-//                         self,
-//                         write.len()
-//                     ));
-//                 }
-//                 if read[0] != write[0] {
-//                     return Err(format!(
-//                         "{:?}: input and output must have the same type",
-//                         self
-//                     ));
-//                 }
-//                 Ok(())
-//             }
-//             FlowOp::_Phantom(_) => unimplemented!(),
-//         }
-//     }
-// }
+// Helpers for type-checking procedures
+
+fn read_nxt<'a, R, D, T>(read: &mut R, i: usize) -> Result<&'a T, String>
+where
+    R: Iterator<Item = D>,
+    D: TryInto<&'a T>,
+{
+    if let Some(d) = read.next() {
+        d.try_into()
+            .map_err(|_| format!("Read arg {i} not compatible with Theory"))
+    } else {
+        Err(format!("Read arg {i} expected, but got none"))
+    }
+}
+
+fn write_nxt<'a, R, D, T>(write: &mut R, i: usize) -> Result<&'a T, String>
+where
+    R: Iterator<Item = D>,
+    D: TryInto<&'a T>,
+{
+    if let Some(d) = write.next() {
+        d.try_into()
+            .map_err(|_| format!("Write arg {i} not compatible with Theory"))
+    } else {
+        Err(format!("Write arg {i} expected, but got none"))
+    }
+}
