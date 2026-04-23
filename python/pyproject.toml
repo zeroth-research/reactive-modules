@@ -67,5 +67,8 @@ tutorials = [
 [tool.pytest.ini_options]
 testpaths = ["tests", "../docs/examples"]
 addopts = "--import-mode=importlib"
+markers = [
+    "slow: marks tests that require lake + mathlib (deselect with '-m \"not slow\"')",
+]
 
 
