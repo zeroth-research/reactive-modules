@@ -184,3 +184,15 @@ theorem Mat_1_1_eq (f : Mat t 1 1) : f = fun _ _ => f 0 0 := by
   instance [LE t] [DecidableRel (· ≤ · : t → t → Prop)] :
       DecidableRel (· ≤ · : Mat t 1 1 → Mat t 1 1 → Prop) :=
     fun a b => inferInstanceAs (Decidable (a 0 0 ≤ b 0 0))
+
+/-! ### Scalar collapse lemmas for zeroth_hammer -/
+
+/-- Collapse `(fun _ _ => v) i j` to `v`. Fires after `ite_fun_apply` peels
+    ite through Mat 1 1 constructors. -/
+theorem fun_const_1_1_apply {t : Type} (v : t) (i : Fin 1) (j : Fin 1) :
+    (fun (_ : Fin 1) (_ : Fin 1) => v) i j = v := rfl
+
+/-- Reduce `a ≠ b` for `Mat t 1 1` to pointwise inequality. -/
+theorem Mat_1_1_ne_iff {t : Type} (a b : Mat t 1 1) :
+    (a ≠ b) ↔ (a 0 0 ≠ b 0 0) := by
+  simp [Mat_1_1_eq_iff]
