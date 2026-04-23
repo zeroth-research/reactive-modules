@@ -7,16 +7,20 @@ from ..expr import Expr
 _ZEROTH_HAMMER = """\
 syntax "zeroth_hammer" : tactic
 
+/-- Zeroth hammer: cascading automated prover for reactive module goals.
+    Phase 0: simp + omega (fast, closes init_inv/step_inv)
+    Phase 1: simp + case-split + omega (branching goals)
+    Phase 2: full reduction + scalar collapse + case-split + omega (hrank)
+    Phase 3: smt fallback (cvc5)
+    Phase 4: sorry (explicit give-up) -/
 elab_rules : tactic
   | `(tactic| zeroth_hammer) => do
-      -- Pre-step: clear ReactiveModule wrappers if present
-      try evalTactic (← `(tactic| unfold RM at *)) catch _ => pure ()
-      -- 1. simp with all defs + matrix lemmas on goal, then omega
+      -- Phase 0: simp_mat + omega (closes init_inv, step_inv)
       try
         evalTactic (← `(tactic| simp_mat; omega))
         return
       catch _ => pure ()
-      -- 2. case-split cascade — handles branching on ite
+      -- Phase 1: simp_mat + case-split cascade
       try
         evalTactic (← `(tactic|
           simp_mat
@@ -28,34 +32,45 @@ elab_rules : tactic
             | (split <;> split <;> split <;> simp_all <;> omega)))
         return
       catch _ => pure ()
-      -- 3. smt fallback (cvc5) after full reduction
+      -- Phase 2: full pipeline for ranking proofs
+      -- Unfold defs in hypotheses → reduce matrices in goal →
+      -- collapse Mat 1 1 to scalar → case-split all ite → omega
+      try evalTactic (← `(tactic| simp_defs)) catch _ => pure ()
+      if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
+      -- Check for contradictory hypotheses (e.g., ¬True from vacuous hrank)
+      try evalTactic (← `(tactic| contradiction)); return catch _ => pure ()
+      -- Try decide/native_decide after full reduction (works for finite Bool state)
+      try evalTactic (← `(tactic| decide)); return catch _ => pure ()
+      try evalTactic (← `(tactic| native_decide)); return catch _ => pure ()
+      -- Reduce matrices and case-split
+      try evalTactic (← `(tactic| simp_mat)) catch _ => pure ()
+      try evalTactic (← `(tactic| mat_collapse)) catch _ => pure ()
+      if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
       try
-        evalTactic (← `(tactic| simp_mat; smt))
+        evalTactic (← `(tactic|
+          split_ifs at *
+          <;> first | omega | simp_all | (simp_all; omega)))
         return
       catch _ => pure ()
-      -- 4. bare smt
+      -- Phase 3: smt after full reduction
       try
         evalTactic (← `(tactic| smt))
         return
       catch _ => pure ()
-      -- 5. last-resort fallback
+      -- Phase 4: sorry (explicit give-up)
       evalTactic (← `(tactic| sorry))
 """
 
 _LTS_THEOREMS = """\
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
-  unfold LTS'.StateSet_isInductiveInitial
-  unfold LTS'.StateSet_isInductive
   constructor
   · intro s hs
-    unfold lts at hs
-    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_init] at hs
+    unfold lts at hs; simp only [RM, ReactiveModule.toLTS', ReactiveModule.LTS_init] at hs
     obtain ⟨l, hpre, hl⟩ := hs
     rw [← hl]
     exact init_inv l hpre
   · intro s s' ⟨hs, l, hstep⟩
-    unfold lts at hstep
-    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at hstep
+    unfold lts at hstep; simp only [RM, ReactiveModule.toLTS', ReactiveModule.LTS_update] at hstep
     rw [← hstep.2]
     exact step_inv s l ⟨hstep.1, hs⟩
 
@@ -66,8 +81,7 @@ theorem hinv : lts.StateSet_isInvariant inv := by
 theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
     intro s s' ⟨hi, hP, htr⟩
-    unfold lts at htr
-    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at htr
+    unfold lts at htr; simp only [RM, ReactiveModule.toLTS', ReactiveModule.LTS_update] at htr
     obtain ⟨l, hpre, heq⟩ := htr
     rw [← heq]
     zeroth_hammer
@@ -249,7 +263,7 @@ def generate_certificate_lean(
     simp_mat += ", Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
     simp_mat += ", Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
 
-    all_defs = "init, update, inv, init_pre, update_pre, P, ranking"
+    all_defs = "RM, init, update, inv, init_pre, update_pre, P, ranking"
     if const_list:
         all_defs += f", {const_list}"
 
@@ -269,9 +283,22 @@ macro "unfold_mod" : tactic =>
     first | (unfold RM at *; dsimp at *) | skip
     unfold_all; unfold_all; unfold_all))
 
--- Phase 2: reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
+-- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
 macro "simp_mat" : tactic =>
   `(tactic| simp [{all_defs}, {simp_mat}])
+
+-- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
+-- Gives omega/decide access to invariant and property conditions in hypotheses
+macro "simp_defs" : tactic =>
+  `(tactic| (simp only [{all_defs}] at *; try dsimp at *))
+
+-- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
+-- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
+macro "mat_collapse" : tactic =>
+  `(tactic| simp only [Mat_1_1_lt_iff, Mat_1_1_le_iff, Mat_1_1_eq_iff, Mat_1_1_ne_iff,
+                        ite_fun_apply,
+                        decide_eq_true_eq, Bool.or_eq_true, Bool.and_eq_true,
+                        Bool.not_eq_true'] at *)
 """)
 
     lines.append(_ZEROTH_HAMMER)
