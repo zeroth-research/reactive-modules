@@ -106,6 +106,7 @@ _EVAL = {
     type(IType.TensorMax()): lambda it, r: [r[0].max()],
     type(IType.TensorGet()): lambda it, r: [r[0].view(-1)[int(r[1].item())]],
     type(IType.TensorSet()): lambda it, r: _tensor_set(r[0], r[1], r[2]),
+    type(IType.Stack()): lambda it, r: [torch.cat([x.flatten() for x in r])],
     # Constants
     type(IType.ConstBool(False)): lambda it, r: [torch.tensor([it._0], dtype=torch.bool)],
     type(IType.ConstInt(0)): lambda it, r: [torch.tensor([it._0], dtype=torch.long)],

@@ -151,6 +151,8 @@ pub enum IType {
     TensorSum(),
     TensorMean(),
     TensorMax(),
+    // Concatenate N scalar/tensor inputs into a single tensor
+    Stack(),
 
     // Word-level operations
     BitSelect(u32, u32),
@@ -206,6 +208,7 @@ impl fmt::Display for IType {
             IType::TensorSum() => write!(f, "TensorSum"),
             IType::TensorMean() => write!(f, "TensorMean"),
             IType::TensorMax() => write!(f, "TensorMax"),
+            IType::Stack() => write!(f, "Stack"),
             IType::BitSelect(h, l) => write!(f, "BitSelect[{}:{}]", h, l),
             IType::Extend(n) => write!(f, "Extend({})", n),
             IType::ToBool() => write!(f, "ToBool"),
