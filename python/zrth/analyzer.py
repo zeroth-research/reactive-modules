@@ -2024,10 +2024,20 @@ class MethodVisitor(ast.NodeVisitor):
         return const_wire
 
     def _convert_list_literal(self, node, target_dtype=None):
-        """Convert a list/tuple literal to a constant Tensor wire."""
-        data = self._eval_literal(node)
-        tensor_data = torch.tensor(data, dtype=_torch_dtype(target_dtype))
-        return self._make_tensor_wire(tensor_data, target_dtype)
+        """Convert a list/tuple literal. Constant lists become Tensor; dynamic lists use Stack."""
+        try:
+            data = self._eval_literal(node)
+            tensor_data = torch.tensor(data, dtype=_torch_dtype(target_dtype))
+            return self._make_tensor_wire(tensor_data, target_dtype)
+        except ValueError:
+            # Elements are not all literals — convert each as an expression and Stack
+            element_wires = [self._convert_expr(elt) for elt in node.elts]
+            # Compute output dtype: Float with total size = sum of element sizes
+            total_size = sum(w.dtype.shape[0] if hasattr(w.dtype, 'shape') else 1 for w in element_wires)
+            out_dtype = DType.Float([total_size])
+            output_wire = Wire(out_dtype)
+            self.terms.append(Term(IType.Stack(), [output_wire], element_wires))
+            return output_wire
 
     def _convert_attribute(self, attr):
         """Convert self.attr: returns locally-assigned wire if available, else the input wire."""
