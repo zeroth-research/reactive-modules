@@ -42,12 +42,16 @@ def _value_to_const_term(value, wire):
 
 def _instance_to_init_attrs(instance):
     """Reconstruct init_attrs dict from a live instance's __dict__."""
+    import numpy as np
     attrs = {}
     for name, value in instance.__dict__.items():
         if isinstance(value, (int, float, bool)):
             attrs[name] = AbstractValue.const(value)
         elif isinstance(value, torch.Tensor):
             attrs[name] = AbstractValue.const(value)
+        elif isinstance(value, np.ndarray):
+            # Represent as np.array(<list>) CallResult so infer_dtype can extract shape
+            attrs[name] = AbstractValue.call_result(f"np.array({list(value.tolist())})")
         elif isinstance(value, gym.spaces.Space):
             attrs[name] = _space_to_abstract(name, value)
     return attrs

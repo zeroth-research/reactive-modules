@@ -1124,6 +1124,15 @@ def infer_dtype(name, abstract_value):
             )
         return dtype_fn(shape or [1])
 
+    # np.array([...]) CallResult: infer Float(N) from list length
+    if abstract_value.call_repr is not None and abstract_value.call_repr.startswith("np.array("):
+        try:
+            node = ast.parse(abstract_value.call_repr, mode='eval').body
+            if isinstance(node, ast.Call) and node.args and isinstance(node.args[0], (ast.List, ast.Tuple)):
+                return DType.Float([len(node.args[0].elts)])
+        except (SyntaxError, ValueError):
+            pass
+
     if abstract_value.type_ is None:
         raise ValueError(f"Cannot infer DType for '{name}': analyzer returned {abstract_value}")
     dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(abstract_value.type_)
@@ -1591,47 +1600,28 @@ class MethodVisitor(ast.NodeVisitor):
 
             if len(self.scopes) == 0:
                 output_wire = self.wire_pairs[wire_name][1]
-                term = Term(IType.Id(), [output_wire], [result_wire])
-                self.terms.append(term)
+                if wire_name in self.written_wires:
+                    # Re-assignment: remove the previous Id term for this output wire
+                    for i in range(len(self.terms) - 1, -1, -1):
+                        t = self.terms[i]
+                        if len(t.write) == 1 and t.write[0] == output_wire:
+                            del self.terms[i]
+                            break
+                self.terms.append(Term(IType.Id(), [output_wire], [result_wire]))
                 self.written_wires.add(wire_name)
 
     def visit_AugAssign(self, node):
-        """Handle augmented assignment (+=, -=, *=, /=)."""
-        if (
-            isinstance(node.target, ast.Attribute)
-            and node.target.attr in self.wire_pairs
-        ):
-            wire_name = node.target.attr
-
-            if wire_name in self.temp_vars:
-                left_wire = self.temp_vars[wire_name]
-            else:
-                left_wire = self.wire_pairs[wire_name][0]
-
-            target_dtype = self.wire_pairs[wire_name][1].dtype
-            right_wire = self._convert_expr(node.value, target_dtype=target_dtype)
-
-            op_type = type(node.op)
-            if op_type not in self.BINARY_OPS:
-                raise ValueError(
-                    f"Unsupported augmented assignment operator: {op_type.__name__}"
-                )
-
-            result_wire = Wire(left_wire.dtype)
-            itype_cls = self.BINARY_OPS[op_type]
-            self.terms.append(Term(itype_cls(), [result_wire], [left_wire, right_wire]))
-
-            self.temp_vars[wire_name] = result_wire
-
-            if len(self.scopes) == 0:
-                output_wire = self.wire_pairs[wire_name][1]
-                term = Term(IType.Id(), [output_wire], [result_wire])
-                self.terms.append(term)
-                self.written_wires.add(wire_name)
-        else:
-            raise ValueError(
-                "Augmented assignment only supported for self.attribute wires"
-            )
+        """Handle augmented assignment (+=, -=, *=, /=). Desugar to regular assignment."""
+        # Build an equivalent BinOp node and a regular Assign node
+        binop = ast.BinOp(left=ast.copy_location(
+            ast.Name(id=node.target.id, ctx=ast.Load()) if isinstance(node.target, ast.Name)
+            else ast.Attribute(value=node.target.value, attr=node.target.attr, ctx=ast.Load()),
+            node.target,
+        ), op=node.op, right=node.value)
+        ast.copy_location(binop, node)
+        assign = ast.Assign(targets=[node.target], value=binop)
+        ast.copy_location(assign, node)
+        self.visit_Assign(assign)
 
     def visit_Expr(self, node):
         """Silently skip bare expression statements (e.g. super().reset(seed=seed))"""
@@ -1681,6 +1671,8 @@ class MethodVisitor(ast.NodeVisitor):
             return self._convert_ifexp(expr, target_dtype=target_dtype)
         elif isinstance(expr, ast.Attribute):
             return self._convert_attribute(expr)
+        elif isinstance(expr, ast.Subscript):
+            return self._convert_subscript(expr, target_dtype=target_dtype)
         elif isinstance(expr, ast.Name):
             return self._convert_name(expr)
         elif isinstance(expr, ast.Constant):
@@ -1729,6 +1721,10 @@ class MethodVisitor(ast.NodeVisitor):
                         result = Wire(input_wire.dtype)
                         self.terms.append(Term(itype, [result], [input_wire]))
                         return result
+                    elif method == "pow":
+                        if len(call.args) != 2 or not isinstance(call.args[1], ast.Constant) or not isinstance(call.args[1].value, int) or call.args[1].value < 0:
+                            raise ValueError("math.pow only supports literal non-negative int exponents")
+                        return self._expand_pow(call.args[0], call.args[1].value, target_dtype)
                     else:
                         raise ValueError(f"Unsupported math function: math.{method}")
                 elif name == "self":
@@ -1749,6 +1745,11 @@ class MethodVisitor(ast.NodeVisitor):
 
             if func_name in ("min", "max"):
                 return self._convert_minmax(call.args, func_name)
+            elif func_name == "bool":
+                # bool(x) -> identity; if x is already bool-typed, no-op; otherwise ToBool
+                if len(call.args) != 1:
+                    raise ValueError("bool() requires 1 argument")
+                return self._convert_expr(call.args[0], target_dtype=target_dtype)
             else:
                 raise ValueError(f"Unsupported function: {func_name}")
         else:
@@ -1779,7 +1780,26 @@ class MethodVisitor(ast.NodeVisitor):
         return const_wire
 
     def _convert_numpy_creation(self, func_name, args, target_dtype=None):
-        """Convert np.zeros/ones/array to a constant Tensor wire."""
+        """Convert np.zeros/ones/array/clip."""
+        # np.clip(x, low, high) -> min(max(x, low), high)
+        if func_name == "clip":
+            if len(args) != 3:
+                raise ValueError("np.clip() requires 3 arguments (x, low, high)")
+            x_wire = self._convert_expr(args[0], target_dtype=target_dtype)
+            low_wire = self._convert_expr(args[1], target_dtype=x_wire.dtype)
+            high_wire = self._convert_expr(args[2], target_dtype=x_wire.dtype)
+            # max(x, low)
+            cmp1 = Wire(Bool())
+            self.terms.append(Term(IType.Gt(), [cmp1], [x_wire, low_wire]))
+            lo = Wire(x_wire.dtype)
+            self.terms.append(Term(IType.Ite(), [lo], [cmp1, x_wire, low_wire]))
+            # min(lo, high)
+            cmp2 = Wire(Bool())
+            self.terms.append(Term(IType.Lt(), [cmp2], [lo, high_wire]))
+            result = Wire(x_wire.dtype)
+            self.terms.append(Term(IType.Ite(), [result], [cmp2, lo, high_wire]))
+            return result
+
         if len(args) != 1:
             raise ValueError(f"np.{func_name}() requires 1 argument, got {len(args)}")
 
@@ -1848,6 +1868,12 @@ class MethodVisitor(ast.NodeVisitor):
         - With target_dtype: both operands inherit it (e.g., self.x = 2 + 3 -> both Int)
         - Without: right operand inherits from left (e.g., self.x + 3 -> 3 matches x's dtype)
         """
+        # Pow with a literal non-negative int exponent: expand to repeated multiplication
+        if isinstance(binop.op, ast.Pow):
+            if isinstance(binop.right, ast.Constant) and isinstance(binop.right.value, int) and binop.right.value >= 0:
+                return self._expand_pow(binop.left, binop.right.value, target_dtype)
+            raise ValueError("Pow (**) only supports literal non-negative int exponents")
+
         if target_dtype:
             left_wire = self._convert_expr(binop.left, target_dtype=target_dtype)
             right_wire = self._convert_expr(binop.right, target_dtype=target_dtype)
@@ -1864,6 +1890,19 @@ class MethodVisitor(ast.NodeVisitor):
         result = Wire(result_dtype)
         itype_cls = self.BINARY_OPS[op_type]
         self.terms.append(Term(itype_cls(), [result], [left_wire, right_wire]))
+        return result
+
+    def _expand_pow(self, base_expr, n, target_dtype=None):
+        """Expand base_expr ** n into n-1 multiplications. n=0 returns constant 1."""
+        if n == 0:
+            one = torch.tensor([1.0], dtype=_torch_dtype(target_dtype))
+            return self._make_tensor_wire(one, target_dtype)
+        base_wire = self._convert_expr(base_expr, target_dtype=target_dtype)
+        result = base_wire
+        for _ in range(n - 1):
+            new_result = Wire(result.dtype)
+            self.terms.append(Term(IType.Mul(), [new_result], [result, base_wire]))
+            result = new_result
         return result
 
     def _convert_unaryop(self, unaryop, target_dtype=None):
@@ -2038,6 +2077,18 @@ class MethodVisitor(ast.NodeVisitor):
             output_wire = Wire(out_dtype)
             self.terms.append(Term(IType.Stack(), [output_wire], element_wires))
             return output_wire
+
+    def _convert_subscript(self, expr, target_dtype=None):
+        """Convert x[i] where i is a literal int. Emits TensorGet."""
+        if not (isinstance(expr.slice, ast.Constant) and isinstance(expr.slice.value, int)):
+            raise ValueError("Subscript index must be a literal int")
+        index = expr.slice.value
+        base_wire = self._convert_expr(expr.value)
+        idx_wire = Wire(DType.Int([1]))
+        self.terms.append(Term(IType.ConstInt(index), [idx_wire], []))
+        result = Wire(Float(1))
+        self.terms.append(Term(IType.TensorGet(), [result], [base_wire, idx_wire]))
+        return result
 
     def _convert_attribute(self, attr):
         """Convert self.attr: returns locally-assigned wire if available, else the input wire."""
