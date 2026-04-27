@@ -55,6 +55,10 @@ where
         let term =
             Self::new_unchecked(itype, Interface::unique(write)?, Interface::sequence(read)?);
 
+        if term.read().ids().any(|i| term.write.ids().any(|j| i == j)) {
+            return Err("Term reads and writes the same wire".into());
+        }
+
         // type-check the term. We do it only after contruction of the term, because type-checking
         // would consume the values of `write` and `read` otherwise
         let r = term.read.as_slice().iter().map(|w| w.dtype());
@@ -70,11 +74,20 @@ where
         D: Into<Wire<T::DType>>,
         W: IntoIterator<Item = D>,
     {
-        Ok(Self::new_unchecked(
-            itype,
-            Interface::unique(write)?,
-            Interface::empty(),
-        ))
+        let term = Self::new_unchecked(itype, Interface::unique(write)?, Interface::empty());
+
+        if term.read().ids().any(|i| term.write.ids().any(|j| i == j)) {
+            return Err("Term reads and writes the same wire".into());
+        }
+
+        // type-check the term. We do it only after contruction of the term, because type-checking
+        // would consume the values of `write` and `read` otherwise
+        let r = term.read.as_slice().iter().map(|w| w.dtype());
+        let w = term.write.as_slice().iter().map(|w| w.dtype());
+        match term.itype.type_check(r, w) {
+            Ok(_) => Ok(term),
+            Err(e) => Err(e),
+        }
     }
 }
 
