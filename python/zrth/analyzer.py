@@ -20,6 +20,27 @@ from typing import Any, Dict, List, Set, Tuple, Union, Callable
 from zrth import Wire, DType, Term, IType, Float, Bool
 
 
+@dataclass(frozen=True)
+class _StaticValue:
+    """Compile-time primitive value (str, None, etc.) used for static evaluation of
+    comparisons and if-conditions involving non-wire Python attributes."""
+    value: Any
+
+
+def _eval_static_compare(a, op, b):
+    """Evaluate a Python-level comparison on two primitive values at analysis time."""
+    match op:
+        case ast.Eq():    return a == b
+        case ast.NotEq(): return a != b
+        case ast.Lt():    return a < b
+        case ast.LtE():   return a <= b
+        case ast.Gt():    return a > b
+        case ast.GtE():   return a >= b
+        case ast.Is():    return a is b
+        case ast.IsNot(): return a is not b
+        case _:           raise ValueError(f"Unsupported static compare op: {type(op).__name__}")
+
+
 # ---------------------------------------------------------------------------
 # Abstract Values
 # ---------------------------------------------------------------------------
@@ -331,10 +352,6 @@ class AbstractInterpreter:
         # Bind parameters
         assert self.func_def is not None
         args = self.func_def.args
-        if args.vararg or args.kwarg or args.kw_defaults:
-            raise UnsupportedFeatureError(
-                "*args, **kwargs, kw_defaults not yet supported"
-            )
         if args.posonlyargs:
             raise UnsupportedFeatureError("positional-only args not yet supported")
 
@@ -350,13 +367,18 @@ class AbstractInterpreter:
             else:
                 annot = param.annotation
                 value = AbstractValue.top()
-                if annot is not None:
-                    if not isinstance(annot, ast.Name):
-                        raise NotImplementedError("Unsupported type annotation")
+                # Best-effort typing from simple annotations; skip anything complex.
+                if isinstance(annot, ast.Name):
                     ty = ANNOT_SUPPORTED_TYPES.get(annot.id)
                     if ty is not None:
                         value = AbstractValue.typed(ty)
                 initial.env[name] = value
+
+        # *args / **kwargs -> bind as TOP, don't raise
+        if args.vararg is not None:
+            initial.env[args.vararg.arg] = AbstractValue.top()
+        if args.kwarg is not None:
+            initial.env[args.kwarg.arg] = AbstractValue.top()
 
         return self._interpret_block(self.func_def.body, initial)
 
@@ -1226,8 +1248,9 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
             merged = join_states(AbstractInterpreter(method).analyze())
         except (UnsupportedFeatureError, NotImplementedError, OSError):
             continue
-        read_attrs    = {r.name[5:] for r in merged.reads  if r.name.startswith("self.")}
-        written_attrs = {w.name[5:] for w in merged.writes if w.name.startswith("self.")}
+        # Strip to the top-level attribute: self.foo.bar -> "foo".
+        read_attrs    = {r.name[5:].split(".", 1)[0] for r in merged.reads  if r.name.startswith("self.")}
+        written_attrs = {w.name[5:].split(".", 1)[0] for w in merged.writes if w.name.startswith("self.")}
         # self.foo reads where foo is a known method -> calls, not data reads
         calls = read_attrs & set(methods.keys())
         read_attrs -= calls
@@ -1478,6 +1501,7 @@ class MethodVisitor(ast.NodeVisitor):
         layers: dict[str, int] | None = None,
         params: dict[str, Wire] | None = None,
         live_layers: dict | None = None,
+        static_attrs: dict[str, Any] | None = None,
     ):
         self.wire_pairs = wire_pairs
         self.result_wires = result_wires
@@ -1485,6 +1509,7 @@ class MethodVisitor(ast.NodeVisitor):
         self.layers = layers or {}
         self.params = params or {}
         self.live_layers = live_layers or {}
+        self.static_attrs = static_attrs or {}
         self.terms = []
         self.temp_vars = {}
         self.scopes = []
@@ -1502,6 +1527,13 @@ class MethodVisitor(ast.NodeVisitor):
     def visit_If(self, node):
         """Handle if/else with SSA: evaluate both branches, merge with Ite."""
         cond_wire = self._convert_expr(node.test)
+
+        # If cond is a compile-time constant, take just the chosen branch
+        if isinstance(cond_wire, _StaticValue):
+            body = node.body if cond_wire.value else node.orelse
+            for stmt in body:
+                self.visit(stmt)
+            return
 
         parent_scope = dict(self.temp_vars)
 
@@ -1591,6 +1623,23 @@ class MethodVisitor(ast.NodeVisitor):
             var_name = target.id
             result_wire = self._convert_expr(node.value)
             self.temp_vars[var_name] = result_wire
+
+        elif isinstance(target, ast.Tuple):
+            # Tuple unpacking: x, y = <expr>. Supported only when RHS is a tuple
+            # literal OR an untraced call (each target gets its own placeholder).
+            if isinstance(node.value, ast.Tuple) and len(node.value.elts) == len(target.elts):
+                for tgt_elt, val_elt in zip(target.elts, node.value.elts):
+                    if not isinstance(tgt_elt, ast.Name):
+                        raise ValueError("Tuple unpacking targets must be plain names")
+                    self.temp_vars[tgt_elt.id] = self._convert_expr(val_elt)
+            elif isinstance(node.value, ast.Call):
+                label = ast.unparse(node.value)
+                for tgt_elt in target.elts:
+                    if not isinstance(tgt_elt, ast.Name):
+                        raise ValueError("Tuple unpacking targets must be plain names")
+                    self.temp_vars[tgt_elt.id] = self._untraced_call(label)
+            else:
+                raise ValueError("Tuple unpacking supports tuple literals or untraced calls")
 
         elif isinstance(target, ast.Attribute) and target.attr in self.wire_pairs:
             wire_name = target.attr
@@ -1738,7 +1787,7 @@ class MethodVisitor(ast.NodeVisitor):
             elif method == "item":
                 return self._convert_expr(obj)
             else:
-                raise ValueError(f"Unsupported method: {method}")
+                return self._untraced_call(ast.unparse(call), target_dtype)
 
         elif isinstance(call.func, ast.Name):
             func_name = call.func.id
@@ -1746,14 +1795,31 @@ class MethodVisitor(ast.NodeVisitor):
             if func_name in ("min", "max"):
                 return self._convert_minmax(call.args, func_name)
             elif func_name == "bool":
-                # bool(x) -> identity; if x is already bool-typed, no-op; otherwise ToBool
                 if len(call.args) != 1:
                     raise ValueError("bool() requires 1 argument")
                 return self._convert_expr(call.args[0], target_dtype=target_dtype)
             else:
-                raise ValueError(f"Unsupported function: {func_name}")
+                return self._untraced_call(ast.unparse(call), target_dtype)
         else:
-            raise ValueError(f"Unsupported call type: {type(call.func).__name__}")
+            return self._untraced_call(ast.unparse(call), target_dtype)
+
+    def _untraced_call(self, label, target_dtype=None):
+        """Emit an Uninterpreted placeholder for calls we can't trace symbolically.
+
+        The wire is produced symbolically but never evaluated at runtime in the
+        gym.Env case — the real env overwrites the state via delegation.
+        """
+        # Compact label for display: drop arguments, strip leading "self."
+        # e.g. "self.np_random.uniform(low=low, high=high)" -> "np_random.uniform(...)"
+        head = label.split("(", 1)[0].lstrip()
+        if head.startswith("self."):
+            head = head[len("self."):]
+        label = f"{head}(...)" if "(" in label else head
+
+        dtype = target_dtype if target_dtype is not None else Float(1)
+        result = Wire(dtype)
+        self.terms.append(Term(IType.Uninterpreted(label), [result], []))
+        return result
 
     def _convert_minmax(self, args, func_name):
         """Convert min/max to conditional: min(a,b) -> Ite(Lt(a,b), a, b)"""
@@ -1810,7 +1876,10 @@ class MethodVisitor(ast.NodeVisitor):
         elif func_name == "ones":
             tensor_data = torch.ones(*self._eval_shape(args[0]), dtype=tdtype)
         elif func_name == "array":
-            return self._convert_list_literal(args[0], target_dtype)
+            if isinstance(args[0], (ast.List, ast.Tuple)):
+                return self._convert_list_literal(args[0], target_dtype)
+            # np.array(existing_wire) -> pass through
+            return self._convert_expr(args[0], target_dtype=target_dtype)
         else:
             raise ValueError(f"Unsupported NumPy function: np.{func_name}()")
 
@@ -1995,7 +2064,15 @@ class MethodVisitor(ast.NodeVisitor):
 
         for op, comparator in zip(compare.ops, compare.comparators):
             left_wire = self._convert_expr(left)
-            right_wire = self._convert_expr(comparator, target_dtype=left_wire.dtype)
+            right_wire = self._convert_expr(
+                comparator,
+                target_dtype=left_wire.dtype if isinstance(left_wire, Wire) else None,
+            )
+
+            # Static evaluation when both sides are compile-time values (str, None, etc.)
+            if isinstance(left_wire, _StaticValue) and isinstance(right_wire, _StaticValue):
+                result_bool = _eval_static_compare(left_wire.value, op, right_wire.value)
+                return _StaticValue(result_bool)
 
             op_type = type(op)
             if op_type not in self.COMPARE_OPS:
@@ -2055,6 +2132,8 @@ class MethodVisitor(ast.NodeVisitor):
                 target_dtype = Float()
             tensor_data = torch.tensor([value], dtype=_torch_dtype(target_dtype))
             dtype = target_dtype.reshape([1])
+        elif value is None or isinstance(value, str):
+            return _StaticValue(value)
         else:
             raise ValueError(f"Unsupported constant type: {type(value)}")
 
@@ -2104,6 +2183,9 @@ class MethodVisitor(ast.NodeVisitor):
             if wire_name in self.params:
                 return self.params[wire_name]
 
+            if wire_name in self.static_attrs:
+                return _StaticValue(self.static_attrs[wire_name])
+
             raise ValueError(f"Unknown wire: {wire_name}")
         else:
             raise ValueError(f"Unsupported attribute access: {ast.unparse(attr)}")
@@ -2143,6 +2225,7 @@ def convert_method(
     layers: dict[str, int] | None = None,
     params: dict[str, Wire] | None = None,
     live_layers: dict | None = None,
+    static_attrs: dict[str, Any] | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 
@@ -2167,7 +2250,7 @@ def convert_method(
     func_def.body = _normalize_early_returns(func_def.body)
 
     param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
-    visitor = MethodVisitor(wires, result, cls=cls, layers=layers, params=params, live_layers=live_layers)
+    visitor = MethodVisitor(wires, result, cls=cls, layers=layers, params=params, live_layers=live_layers, static_attrs=static_attrs)
     visitor.temp_vars.update(
         {name: wires[name][0] for name in param_names if name in wires}
     )

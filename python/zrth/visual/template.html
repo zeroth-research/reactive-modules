@@ -30,7 +30,9 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
 .term-box { stroke-width: 1; rx: 4; cursor: pointer; }
 .term-box.init { fill: #1f2d3d; stroke: #58a6ff; }
 .term-box.update { fill: #1f3d2a; stroke: #3fb950; }
+.term-box.extern { stroke-dasharray: 4 3; }
 .term-box:hover { stroke-width: 2; }
+.term-label.extern { font-style: italic; opacity: 0.85; }
 .term-label { fill: #c9d1d9; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; pointer-events: none; }
 .toggle { fill: #8b949e; font-size: 10px; cursor: pointer; }
 .toggle:hover { fill: #e6edf3; }
@@ -121,8 +123,10 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     const l=t.label, dt=t.dtype, sd=dt?dt.replace(/\(.*\)/,''):'';
     if(l.startsWith('Tensor('))return`Tensor(${sd})`;
     if(l.startsWith('Const:'))return`Const(${sd})`;
-    return l;
+    if(l.endsWith('(...)'))return'external';
+    return l.length>13?l.slice(0,12)+'…':l;
   }
+  function isExtern(t){return t&&t.label&&t.label.endsWith('(...)');}
 
   function classify(mod){
     const shared=new Set();
@@ -219,7 +223,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     }
 
     // Terms
-    for(const[k,p]of Object.entries(pos)){if(p.isCircle)continue;const g=el('g');g.appendChild(el('rect',{class:`term-box ${p.phase.includes('init')?'init':'update'}`,x:p.x,y:p.y,width:p.w,height:p.h}));const t=td[k];g.appendChild(el('text',{class:'term-label',x:p.x+p.w/2,y:p.y+p.h/2+4,'text-anchor':'middle',textContent:shortLabel(t)}));if(t){const aid=k.match(/^a(\d+)_/);g.addEventListener('click',e=>{e.stopPropagation();setFocus('term',aid?+aid[1]:null,k);});}svg.appendChild(g);grp[`t_${k}`]=g;}
+    for(const[k,p]of Object.entries(pos)){if(p.isCircle)continue;const g=el('g');const t=td[k];const ec=isExtern(t)?' extern':'';g.appendChild(el('rect',{class:`term-box ${p.phase.includes('init')?'init':'update'}${ec}`,x:p.x,y:p.y,width:p.w,height:p.h}));g.appendChild(el('text',{class:`term-label${ec}`,x:p.x+p.w/2,y:p.y+p.h/2+4,'text-anchor':'middle',textContent:shortLabel(t)}));if(t){const aid=k.match(/^a(\d+)_/);g.addEventListener('click',e=>{e.stopPropagation();setFocus('term',aid?+aid[1]:null,k);});}svg.appendChild(g);grp[`t_${k}`]=g;}
 
     // Circles
     const names=wn();
@@ -366,6 +370,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     let valHtml='';
     if(t.label.startsWith('Tensor('))valHtml=`<div class="section"><div class="section-title">Value</div><p style="font-family:monospace;font-size:11px;word-break:break-all;">${t.label}</p></div>`;
     else if(t.label.startsWith('Const:'))valHtml=`<div class="section"><div class="section-title">Value</div><p style="font-family:monospace;font-size:11px;">${t.label.replace('Const: ','')}</p></div>`;
+    else if(isExtern(t))valHtml=`<div class="section"><div class="section-title">Source</div><p style="font-family:monospace;font-size:11px;word-break:break-all;">${t.label.slice(0,-5)}</p><p style="color:#8b949e;font-size:11px;margin-top:6px;">Untraced call — produced by the real env at runtime; the symbolic interpreter sees it as opaque.</p></div>`;
     else if(t.label==='Linear'&&t.reads.length===3){
       let weightLabel='?',biasLabel='?';
       for(const a of MOD.atoms)for(const ts of[a.init,a.update])for(const tt of ts){if(tt.writes.includes(t.reads[1]))weightLabel=tt.label;if(tt.writes.includes(t.reads[2]))biasLabel=tt.label;}
