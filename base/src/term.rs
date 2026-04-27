@@ -45,7 +45,7 @@ where
     T: Theory,
     T::DType: Eq + Clone,
 {
-    pub fn function<'a, D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, Error>
+    pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, Error>
     where
         D: Into<Wire<T::DType>>,
         U: Into<Wire<T::DType>>,
