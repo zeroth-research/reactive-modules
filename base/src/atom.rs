@@ -1,3 +1,4 @@
+use crate::Error;
 use crate::term::{Block, Term};
 use crate::wire::{Interface, Wire};
 use std::collections::{BTreeMap, HashMap};
@@ -227,7 +228,7 @@ where
         next: N,
         init: V,
         update: U,
-    ) -> Result<Self, &'static str>
+    ) -> Result<Self, Error>
     where
         L: IntoIterator<Item = &'a Wire<T::DType>>,
         N: IntoIterator<Item = &'a Wire<T::DType>>,
@@ -253,15 +254,18 @@ where
                 wait.insert(rd.id(), rd.clone());
                 continue;
             } else if next_dtype.is_some() {
-                return Err("dtype mismatch");
+                return Err(format!(
+                    "Next wire of wire {} in init has a different dtype",
+                    rd.id()
+                ));
             }
 
             if latched.contains_key(&rd.id()) {
-                return Err("Init reads latched wire");
+                return Err(format!("Init reads latched wire {}", rd.id()));
             }
 
             // dangling read wires are invalid
-            return Err("Invalid read wire");
+            return Err(format!("Wire {} in init is dangling read", rd.id()));
         }
 
         for rd in update.read().iter().map(|[w]| w) {
@@ -272,7 +276,7 @@ where
                 read.insert(rd.id(), rd.clone());
                 continue;
             } else if latched_dtype.is_some() {
-                return Err("dtype mismatch");
+                return Err(format!("Wire {} in update has wrong dtype", rd.id()));
             }
 
             let next_dtype = next.get(&rd.id());
@@ -280,11 +284,14 @@ where
                 wait.insert(rd.id(), rd.clone());
                 continue;
             } else if next_dtype.is_some() {
-                return Err("dtype mismatch");
+                return Err(format!(
+                    "Next wire of wire {} in update has a different dtype",
+                    rd.id()
+                ));
             }
 
             // dangling read wires are parameters
-            return Err("Invalid read wire");
+            return Err(format!("Wire {} in update is dangling read", rd.id()));
         }
 
         for wt in [init.write(), update.write()]
@@ -299,11 +306,11 @@ where
                 ctrl.insert(wt.id(), wt.clone());
                 continue;
             } else if next_dtype.is_some() {
-                return Err("dtype mismatch");
+                return Err(format!("Controleld wire {} has a wrong dtype", wt.id()));
             }
 
             if latched.contains_key(&wt.id()) {
-                return Err("write on latched");
+                return Err(format!("Writing a latched wire {}", wt.id()));
             } else {
                 temp.insert(wt.id(), wt.clone());
             }
@@ -311,10 +318,10 @@ where
 
         for (&ctr, _) in ctrl.iter() {
             if !init.write().ids().any(|wrt| wrt == ctr) {
-                return Err("unassigned control wire after init");
+                return Err(format!("Controlled wire {} is not written in init", ctr));
             }
             if !update.write().ids().any(|wrt| wrt == ctr) {
-                return Err("unassigned control wire after update");
+                return Err(format!("Controlled wire {} is not written in update", ctr));
             }
         }
 
@@ -361,7 +368,7 @@ where
     /// # See Also
     /// - [`Atom::sequential`], for constructing sequential atoms.
     /// - [`Module::combinatorial`], for combinatorial modules.
-    pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, &'static str>
+    pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, Error>
     where
         V: IntoIterator<Item = Term<T>>,
         N: IntoIterator<Item = &'a Wire<T::DType>>,
@@ -381,7 +388,10 @@ where
             if expected_dtype.is_some_and(|&d| d == rd.dtype()) {
                 wait.insert(rd.id(), rd.clone());
             } else if expected_dtype.is_some() {
-                return Err("dtype mismatch");
+                return Err(format!(
+                    "Read wire {} from `assign` has a different dtype than its next version",
+                    rd.id()
+                ));
             } else {
                 param.insert(rd.id(), rd.clone());
             }
@@ -394,7 +404,10 @@ where
             if expected_dtype.is_some_and(|&d| d == wt.dtype()) {
                 ctrl.insert(wt.id(), wt.clone());
             } else if expected_dtype.is_some() {
-                return Err("dtype mismatch");
+                return Err(format!(
+                    "Write wire {} from `assign` has a different dtype than its next version",
+                    wt.id()
+                ));
             } else {
                 temp.insert(wt.id(), wt.clone());
             }
