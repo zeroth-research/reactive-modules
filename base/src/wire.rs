@@ -5,6 +5,8 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::Error;
+
 #[derive(Debug, Clone)]
 pub struct Wire<D> {
     id: usize,
@@ -227,21 +229,23 @@ impl<D: Eq, T: Into<Wire<D>>> From<T> for Interface<D> {
 
 // returns the wire at position (0,0) and throws away the rest
 impl<D: Eq> TryFrom<Interface<D>> for Wire<D> {
-    type Error = ();
+    type Error = Error;
 
     fn try_from(x: Interface<D>) -> Result<Self, Self::Error> {
         let mut it = x.wires.into_iter().flatten();
-        it.next().ok_or(())
+        it.next()
+            .ok_or("There is no wire at position (0, 0)".into())
     }
 }
 
 // returns the wire at position (0,0) and throws away the rest
 impl<D: Eq> TryFrom<Interface<D>> for (usize, D) {
-    type Error = ();
+    type Error = Error;
 
     fn try_from(x: Interface<D>) -> Result<Self, Self::Error> {
         let mut it = x.wires.into_iter().flatten().map(Into::into);
-        it.next().ok_or(())
+        it.next()
+            .ok_or("There is no wire at position (0, 0)".into())
     }
 }
 
@@ -264,17 +268,21 @@ impl<D: Eq, const N: usize> Interface<D, N> {
 
     pub fn try_from_iter<T: Into<[Wire<D>; N]>, I: IntoIterator<Item = T>>(
         iter: I,
-    ) -> Result<Self, &'static str> {
+    ) -> Result<Self, Error> {
         let interface = Self::collect(iter);
 
         let mut w_to_dtype: HashMap<usize, &D> = HashMap::new();
         for wires in interface.iter() {
             for (id, dtype) in wires.map(Into::into) {
                 if dtype != wires[0].dtype() {
-                    return Err("dtype mismatch");
+                    return Err(format!(
+                        "Wire {} has wrong dtype, should match dtype of wire {}",
+                        id,
+                        wires[0].id()
+                    ));
                 }
                 if w_to_dtype.insert(id, dtype).is_some_and(|o| o != dtype) {
-                    return Err("dtype mismatch");
+                    return Err(format!("Wire {} seen twice with different dtypes", id));
                 }
             }
         }
@@ -304,21 +312,17 @@ impl<D: Eq, const N: usize> Interface<D, N> {
 }
 
 impl<D: Eq> Interface<D> {
-    pub fn sequence<T: Into<Wire<D>>, I: IntoIterator<Item = T>>(
-        iter: I,
-    ) -> Result<Self, &'static str> {
+    pub fn sequence<T: Into<Wire<D>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, Error> {
         Self::try_from_iter(iter.into_iter().map(|w| [w.into()]))
     }
 
-    pub fn unique<T: Into<Wire<D>>, I: IntoIterator<Item = T>>(
-        iter: I,
-    ) -> Result<Self, &'static str> {
+    pub fn unique<T: Into<Wire<D>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, String> {
         let interface = Self::collect(iter.into_iter().map(|w| [w.into()]));
 
         let mut ids: HashSet<usize> = HashSet::new();
         for id in interface.wires().map(Wire::id) {
             if !ids.insert(id) {
-                return Err("duplicate id");
+                return Err(format!("duplicate id {}", id));
             }
         }
 

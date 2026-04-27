@@ -1,3 +1,4 @@
+use crate::Error;
 use crate::wire::{Interface, Wire};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
@@ -39,21 +40,12 @@ impl<T: Theory> Term<T> {
     }
 }
 
-/// Print error as debugging message and
-/// return a fixed error message.
-/// This is a temporary work-around until we return
-/// more informative errors in `Result`s.
-fn dbg_error(e: String) -> &'static str {
-    dbg!(e);
-    "type-checking failed"
-}
-
 impl<T> Term<T>
 where
     T: Theory,
     T::DType: Eq + Clone,
 {
-    pub fn function<'a, D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, &'static str>
+    pub fn function<'a, D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, Error>
     where
         D: Into<Wire<T::DType>>,
         U: Into<Wire<T::DType>>,
@@ -69,11 +61,11 @@ where
         let w = term.write.as_slice().iter().map(|w| w.dtype());
         match term.itype.type_check(r, w) {
             Ok(_) => Ok(term),
-            Err(e) => Err(dbg_error(e)),
+            Err(e) => Err(e),
         }
     }
 
-    pub fn constant<D, W>(itype: T, write: W) -> Result<Self, &'static str>
+    pub fn constant<D, W>(itype: T, write: W) -> Result<Self, Error>
     where
         D: Into<Wire<T::DType>>,
         W: IntoIterator<Item = D>,
@@ -191,9 +183,7 @@ impl<T: Theory> Block<T>
 where
     T::DType: Eq + Clone,
 {
-    pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<T>>>(
-        iter: V,
-    ) -> Result<Self, &'static str> {
+    pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<T>>>(iter: V) -> Result<Self, Error> {
         let mut read_set: HashSet<usize> = HashSet::new();
         let mut write_to_dtype: HashMap<usize, &T::DType> = HashMap::new();
 
@@ -210,17 +200,23 @@ where
                     read_set.insert(rd.id());
                     read.push(rd.clone());
                 } else if expected_dtype.is_some_and(|&d| d != rd.dtype()) {
-                    return Err("dtype mismatch");
+                    return Err(format!(
+                        "Wire {} seen multiple times with different dtype",
+                        rd.id()
+                    ));
                 }
             }
 
             for wt in term.write().wires() {
                 if read_set.contains(&wt.id()) {
-                    return Err("read before write");
+                    return Err(format!(
+                        "Wire {} is read by a term preceding the term that writes into this wire",
+                        wt.id()
+                    ));
                 }
                 write.push(wt.clone());
                 if write_to_dtype.insert(wt.id(), wt.dtype()).is_some() {
-                    return Err("write after write");
+                    return Err(format!("Wire {} is written more than once", wt.id()));
                 }
             }
             write.extend(term.write().wires().cloned());
