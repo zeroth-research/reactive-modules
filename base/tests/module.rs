@@ -28,7 +28,7 @@ fn mk_op(name: &'static str) -> Ops {
 }
 
 #[allow(clippy::vec_init_then_push)]
-fn example_counter() -> Result<Module<Ops>, &'static str> {
+fn example_counter() -> Result<Module<Ops>, base::Error> {
     let x0 = Wire::new("real");
     let y0 = Wire::new("real");
     let z0 = Wire::new("real");
@@ -98,7 +98,7 @@ fn example_counter() -> Result<Module<Ops>, &'static str> {
 }
 
 #[allow(clippy::vec_init_then_push)]
-fn example_peterson1() -> Result<Module<Ops>, &'static str> {
+fn example_peterson1() -> Result<Module<Ops>, base::Error> {
     let stype = "{outCS, reqCS, inCS}";
     let pc1: [Wire<&str>; 2] = [Wire::new(stype), Wire::new(stype)];
     let x1: [Wire<&str>; 2] = [Wire::new("bool"), Wire::new("bool")].map(Into::into);
@@ -209,7 +209,7 @@ fn example_tiny1(
     external: [Wire<&'static str>; 2],
     interface: [Wire<&'static str>; 2],
     wait: bool,
-) -> Result<Module<Ops>, &'static str> {
+) -> Result<Module<Ops>, base::Error> {
     let private = [Wire::new("Tny"), Wire::new("Tny")];
     let temp = Wire::new("Tny");
 
@@ -317,13 +317,14 @@ fn module_write_all_ctrl() {
     ]);
 
     let m = Module::sequential_observable(obs.clone(), vec![], update.clone());
-    assert!(m.is_err_and(|msg| { msg == "unassigned control wire after init" }));
+    assert!(m.is_err_and(|msg| {
+        msg.contains("Controlled wire") && msg.contains("is not written in init")
+    }));
 
     let init: Vec<Term<Ops>> = [term!(mk_op("ID"), [xn0.clone()], [xn.clone()]).unwrap()].to_vec();
     let m = Module::sequential_observable(obs.clone(), init, update.clone());
     assert!(m.is_err_and(|msg| {
-        dbg!(&msg);
-        msg == "unassigned control wire after init"
+        msg.contains("Controlled wire") && msg.contains("is not written in init")
     }));
 
     let init: Vec<Term<Ops>> = [
@@ -334,8 +335,7 @@ fn module_write_all_ctrl() {
 
     let m = Module::sequential_observable(obs.clone(), init.clone(), update);
     assert!(m.is_err_and(|msg| {
-        dbg!(&msg);
-        msg == "unassigned control wire after update"
+        msg.contains("Controlled wire") && msg.contains("is not written in update")
     }));
 
     let update: Vec<Term<Ops>> = [

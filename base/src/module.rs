@@ -1,7 +1,7 @@
 use crate::atom::Atom;
 use crate::term::Term;
-use crate::topological_order;
 use crate::wire::{Interface, Wire};
+use crate::{Error, topological_order};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
@@ -282,7 +282,7 @@ where
     /// - [`partially_observable`], for modules with private state.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn observable<D, O, A>(obs: O, atoms: A) -> Result<Self, &'static str>
+    pub fn observable<D, O, A>(obs: O, atoms: A) -> Result<Self, Error>
     where
         D: Into<[Wire<T::DType>; 2]>,
         O: IntoIterator<Item = D>,
@@ -314,11 +314,7 @@ where
     /// - [`observable`], for constructing modules where all wires are visible.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn partially_observable<R, U, O, P, A>(
-        obs: O,
-        prvt: P,
-        atoms: A,
-    ) -> Result<Self, &'static str>
+    pub fn partially_observable<R, U, O, P, A>(obs: O, prvt: P, atoms: A) -> Result<Self, Error>
     where
         R: Into<[Wire<T::DType>; 2]>,
         U: Into<[Wire<T::DType>; 2]>,
@@ -335,10 +331,10 @@ where
         for [ltc, nxt] in obs.iter().chain(prvt.iter()) {
             debug_assert_eq!(ltc.dtype(), nxt.dtype());
             if !ltc_set.insert(ltc.id()) {
-                return Err("duplicate latched wire");
+                return Err(format!("Latched wire {} is duplicated", ltc.id()));
             }
             if nxt_to_ltc.insert(nxt.id(), ltc.id()).is_some() {
-                return Err("duplicate next wire");
+                return Err(format!("Next wire {} is duplicated", ltc.id()));
             }
         }
 
@@ -347,41 +343,47 @@ where
         let mut temp: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
         let atoms_iter = atoms.into_iter();
         let mut past_atoms: Vec<Atom<T>> = Vec::with_capacity(atoms_iter.size_hint().0);
-        for atom in atoms_iter {
+        for (n, atom) in atoms_iter.enumerate() {
             for ltc in atom.read().wires().map(Wire::id) {
                 if !ltc_set.contains(&ltc) {
-                    return Err("invalid read wire or dtype mismatch");
+                    return Err(format!("Invalid read wire {} in atom {}", ltc, n));
                 }
             }
             for nxt in atom.wait().wires().map(Wire::id) {
                 let expected_dtype = nxt_to_ltc.get(&nxt);
                 if expected_dtype.is_none_or(|i| !ltc_set.contains(i)) {
-                    return Err("invalid await wire or dtype mismatch");
+                    return Err(format!("invalid await wire {} in atom {}", nxt, n));
                 }
             }
             for nxt in atom.ctrl().wires().map(Wire::id) {
                 let expected_dtype = nxt_to_ltc.get(&nxt);
                 if expected_dtype.is_none_or(|i| !ltc_set.contains(i)) {
-                    return Err("invalid control wire or dtype mismatch");
+                    return Err(format!("invalid control wire {} in atom {}", nxt, n));
                 }
                 if !ctrl_nxt.insert(nxt) {
-                    return Err("shared or duplicate atom control wire");
+                    return Err(format!(
+                        "shared or duplicated control wire {} in atom {}",
+                        nxt, n
+                    ));
                 }
             }
 
             for lc in atom.temp() {
                 debug_assert!(!ctrl_nxt.contains(&lc.id()));
                 if ltc_set.contains(&lc.id()) || nxt_to_ltc.contains_key(&lc.id()) {
-                    return Err("temp wires coupled with module wires");
+                    return Err(format!("temp wire {} is also a module wire", lc.id()));
                 }
                 if temp.insert(lc.id(), lc.clone()).is_some() {
-                    return Err("temp wires coupled with other atom");
+                    return Err(format!("temp wire {} coupled with other atom", lc.id()));
                 }
             }
 
             for past_atom in &past_atoms {
                 if past_atom.awaits(&atom) {
-                    return Err("inconsistent awaiting order");
+                    return Err(format!(
+                        "Atom {} is awaited by some previous atom, inconsistent awaiting order",
+                        n
+                    ));
                 }
             }
             past_atoms.push(atom);
@@ -390,7 +392,7 @@ where
         // Check that private wires are controlled
         for nxt in prvt.next().iter().map(Wire::id) {
             if !ctrl_nxt.contains(&nxt) {
-                return Err("private wire not controlled");
+                return Err(format!("private wire {} is not controlled", nxt));
             }
         }
 
@@ -441,11 +443,7 @@ where
     /// # See Also
     /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn sequential_observable<R, O, V, U>(
-        obs: O,
-        init: V,
-        update: U,
-    ) -> Result<Self, &'static str>
+    pub fn sequential_observable<R, O, V, U>(obs: O, init: V, update: U) -> Result<Self, Error>
     where
         R: Into<[Wire<T::DType>; 2]>,
         O: IntoIterator<Item = R>,
@@ -460,7 +458,7 @@ where
         prvt: P,
         init: V,
         update: U,
-    ) -> Result<Self, &'static str>
+    ) -> Result<Self, Error>
     where
         TO: Into<[Wire<T::DType>; 2]>,
         TP: Into<[Wire<T::DType>; 2]>,
@@ -497,9 +495,9 @@ where
     /// # Returns
     ///
     /// - `Ok(Module<D, I>)` containing the composed module.
-    /// - `Err(&'static str)` describing the reason composition failed.
+    /// - `Err(Error)` describing the reason composition failed.
     ///
-    pub fn parallel<M>(modules: M) -> Result<Self, &'static str>
+    pub fn parallel<M>(modules: M) -> Result<Self, Error>
     where
         M: IntoIterator<Item = Self>,
     {
@@ -530,10 +528,18 @@ where
             for [ltc, nxt] in module.obs {
                 debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 if latched.contains(&nxt.id()) || next.contains(&ltc.id()) {
-                    return Err("invalid coupling (direction)");
+                    return Err(format!(
+                        "invalid coupling (direction): either {} is latched or {} is next",
+                        nxt.id(),
+                        ltc.id()
+                    ));
                 }
                 if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
-                    return Err("invalid coupling (restricted)");
+                    return Err(format!(
+                        "invalid coupling for wire pair ({}, {}) (restricted)",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
                 // stack observables that are not already present (avoid duplication)
                 if latched.insert(ltc.id()) {
@@ -548,10 +554,18 @@ where
             for [ltc, nxt] in module.prvt {
                 debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 if !latched.insert(ltc.id()) || !next.insert(nxt.id()) {
-                    return Err("invalid coupling (private)");
+                    return Err(format!(
+                        "invalid coupling for wire pair ({}, {}) (private)",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
                 if latched.contains(&nxt.id()) || next.contains(&ltc.id()) {
-                    return Err("invalid coupling (direction)");
+                    return Err(format!(
+                        "invalid coupling for wire pair ({}, {}) (direction)",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
                 debug_assert!(!restricted.contains(&ltc.id()) && !restricted.contains(&nxt.id()));
                 restricted.insert(ltc.id());
@@ -564,10 +578,13 @@ where
             temp_stack.reserve(module.temp.len());
             for [tmp] in module.temp {
                 if latched.contains(&tmp.id()) || next.contains(&tmp.id()) {
-                    return Err("invalid coupling (temp)");
+                    return Err(format!("Temp wire {} is latched or next", tmp.id()));
                 }
                 if !restricted.insert(tmp.id()) {
-                    return Err("invalid coupling (temp)");
+                    return Err(format!(
+                        "invalid coupling of temp wire {} (is in restricted)",
+                        tmp.id()
+                    ));
                 }
 
                 temp_stack.push([tmp]);
@@ -580,16 +597,24 @@ where
             for [ltc, nxt] in module.extl {
                 debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
-                    return Err("invalid coupling (restricted)");
+                    return Err(format!(
+                        "Wire pair ({}, {}) is restricted",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
 
                 // check whether the wire is coupled (controlled by other atom), or
                 // consider it as external otherwise
                 if let Some(coupled) = intf.get(&ltc.id()) {
                     if coupled.id() != nxt.id() {
-                        return Err("wire id mismatch");
+                        return Err(format!(
+                            "wire id mismatch, expected that wire {} will be the same as {}",
+                            coupled.id(),
+                            nxt.id()
+                        ));
                     } else if coupled.dtype() != nxt.dtype() {
-                        return Err("wire dtype mismatch");
+                        return Err(format!("Wire {} has a wrong dtype", coupled.id()));
                     }
                 } else {
                     extl.insert(ltc.id(), nxt.clone());
@@ -601,21 +626,33 @@ where
             for [ltc, nxt] in module.intf {
                 debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
-                    return Err("invalid coupling (restricted)");
+                    return Err(format!(
+                        "Wire pair ({}, {}) is restricted",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
 
                 // check whether the wire is coupled (external of other atom), and
                 // consider it as interface wire then
                 if let Some(coupled) = extl.remove(&ltc.id()) {
                     if coupled.id() != nxt.id() {
-                        return Err("next wire mismatch");
+                        return Err(format!(
+                            "wire id mismatch, expected that wire {} will be the same as {}",
+                            coupled.id(),
+                            nxt.id()
+                        ));
                     } else if coupled.dtype() != nxt.dtype() {
-                        return Err("dtype mismatch");
+                        return Err(format!("Wire {} has a wrong dtype", coupled.id()));
                     }
                 }
 
                 if intf.insert(ltc.id(), nxt.clone()).is_some() {
-                    return Err("invalid coupling (shared control)");
+                    return Err(format!(
+                        "invalid coupling for wire pair ({}, {}), shared control",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
 
                 intf_stack.push([ltc, nxt]);
@@ -698,7 +735,7 @@ where
     /// # See Also
     /// - [`Module::sequential_observable`], for constructing stateful, sequential modules.
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
-    pub fn combinatorial<R, O, V>(obs: O, assign: V) -> Result<Self, &'static str>
+    pub fn combinatorial<R, O, V>(obs: O, assign: V) -> Result<Self, Error>
     where
         R: Into<[Wire<T::DType>; 2]>,
         O: IntoIterator<Item = R>,
