@@ -77,8 +77,15 @@ def _space_to_abstract(name, space):
 # ============================================================================
 
 def _extract_env_module(env_instance, **kwargs):
-    """Analyze a gym.Env instance and extract a symbolic Module."""
-    env_cls = type(env_instance)
+    """Analyze a gym.Env instance and extract a symbolic Module.
+
+    If env_instance is wrapped (e.g. TimeLimit from gym.make), the raw inner
+    env is analyzed symbolically, but the wrapped instance remains the
+    backing env for runtime delegation — so TimeLimit/OrderEnforcing etc.
+    still apply during step/reset.
+    """
+    raw = env_instance.unwrapped
+    env_cls = type(raw)
 
     user_wires = {
         "action":      kwargs.pop("action",      None),
@@ -95,7 +102,11 @@ def _extract_env_module(env_instance, **kwargs):
     action_dtype = _space_to_dtype(env_instance.action_space, is_action=True)
     observation_dtype = _space_to_dtype(env_instance.observation_space, is_action=False)
 
-    init_attrs = _instance_to_init_attrs(env_instance)
+    # Reset so runtime-created attrs (e.g. self.state) are populated.
+    # Reset the outermost wrapper so wrapper state is also initialized.
+    env_instance.reset()
+
+    init_attrs = _instance_to_init_attrs(raw)
 
     prvt, params, attr_vals = classify_attrs(
         env_cls, ['reset', 'step'], init_attrs=init_attrs, base_cls=gym.Env
@@ -103,15 +114,32 @@ def _extract_env_module(env_instance, **kwargs):
 
     prvt_wires = {name: wire_pair(infer_dtype(name, attr_vals.get(name))) for name in prvt}
 
-    # Bake parameters as constant terms (written to temp wires, no param interface needed)
+    # Bake parameters as constant terms (written to temp wires, no param interface needed).
+    # Primitives that can't be wire-typed (str, None) become static_attrs for compile-time use.
     const_wires = {}
     const_terms = []
+    static_attrs = {}
     for name in params:
-        value = getattr(env_instance, name)
-        dtype = infer_dtype(name, AbstractValue.const(value))
+        value = getattr(raw, name)
+        if value is None or isinstance(value, str):
+            static_attrs[name] = value
+            continue
+        try:
+            dtype = infer_dtype(name, AbstractValue.const(value))
+        except ValueError:
+            static_attrs[name] = value
+            continue
         wire = Wire(dtype)
         const_wires[name] = [wire, wire]  # fake pair so analyzer resolves self.name
         const_terms.append(_value_to_const_term(value, wire))
+
+    # Also expose any other primitive instance attributes as static values.
+    # Useful when classify_attrs couldn't trace them (e.g. inside untraceable branches).
+    for name, value in raw.__dict__.items():
+        if name in static_attrs or name in const_wires or name in prvt_wires:
+            continue
+        if value is None or isinstance(value, (str, bool, int, float)):
+            static_attrs[name] = value
 
     action      = resolve_wire("action",      action_dtype,      user_wires["action"])
     observation = resolve_wire("observation", observation_dtype, user_wires["observation"])
@@ -125,8 +153,8 @@ def _extract_env_module(env_instance, **kwargs):
     reset_result = [observation[1]]
     step_result  = [observation[1], reward[1], terminated[1], truncated[1]]
 
-    reset_terms = convert_method(env_cls.reset, wires, reset_result, cls=env_cls)
-    step_terms  = convert_method(env_cls.step,  wires, step_result,  cls=env_cls)
+    reset_terms = convert_method(env_cls.reset, wires, reset_result, cls=env_cls, static_attrs=static_attrs)
+    step_terms  = convert_method(env_cls.step,  wires, step_result,  cls=env_cls, static_attrs=static_attrs)
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [
@@ -137,8 +165,8 @@ def _extract_env_module(env_instance, **kwargs):
 
     # Prepend constant terms so wires have values before they're read
     reset_terms = const_terms + reset_terms
-    step_terms  = [_value_to_const_term(getattr(env_instance, n), const_wires[n][0])
-                   for n in params] + step_terms
+    step_terms  = [_value_to_const_term(getattr(raw, n), const_wires[n][0])
+                   for n in const_wires] + step_terms
 
     obs = [action, observation, reward, terminated, truncated]
 
