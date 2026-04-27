@@ -20,39 +20,44 @@ validating the read/write argument shapes against the operation.
 
 ```
 use theory::Theory;
-use theory::int::{Int, DType};
+use theory::int::{Int, ArithInt};
 
-let a = DType::Int(2, 3);
-let b = DType::Int(3, 4);
-let c = DType::Int(2, 4);
+let a = Int(2, 3);
+let b = Int(3, 4);
+let c = Int(2, 4);
 
 // Matrix multiply: (2x3) * (3x4) -> (2x4).
-assert!(Int::MatMul.check::<DType>(&[a, b], &[c]).is_ok());
+assert!(ArithInt::MatMul.check::<DType>(&[a, b], &[c]).is_ok());
 
 // Elementwise `Add` requires matching shapes.
-let m = DType::Int(2, 3);
-assert!(Int::Add.check::<DType>(&[m, m], &[m]).is_ok());
-assert!(Int::Add.check::<DType>(&[a, b], &[c]).is_err());
+let m = Int(2, 3);
+assert!(ArithInt::Add.check::<DType>(&[m, m], &[m]).is_ok());
+assert!(ArithInt::Add.check::<DType>(&[a, b], &[c]).is_err());
 ```
 */
 
 use crate::*;
+use std::fmt;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum DType {
-    Int(usize, usize),
-}
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Int(pub usize, pub usize);
 
-impl DType {
-    fn shape(&self) -> (usize, usize) {
+impl Int {
+    pub fn shape(&self) -> (usize, usize) {
         match self {
-            DType::Int(i, j) => (*i, *j),
+            Int(i, j) => (*i, *j),
         }
     }
 }
 
+impl fmt::Display for Int {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Int({}, {})", self.0, self.1)
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
-pub enum Int {
+pub enum ArithInt {
     // TODO: use bigint?
     Const(Vec<Vec<i64>>),
     Add,
@@ -80,24 +85,24 @@ pub(crate) fn check_init_dims(cm: &Vec<Vec<i64>>, i: usize, j: usize) -> Result<
     Ok(())
 }
 
-impl Theory for Int {
-    type DType = DType;
+impl Theory for ArithInt {
+    type DType = Int;
 
     fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a DType>,
+        D: TryInto<&'a Int>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
         let mut read = read.into_iter();
         let mut write = write.into_iter();
         match self {
-            Int::Const(cm) => {
+            ArithInt::Const(cm) => {
                 if read.next().is_some() {
                     return Err("Const: cannot read values".into());
                 }
 
-                let DType::Int(i, j) = write_nxt(&mut write, 0)?;
+                let Int(i, j) = write_nxt(&mut write, 0)?;
 
                 check_init_dims(cm, *i, *j)?;
 
@@ -107,7 +112,7 @@ impl Theory for Int {
                 Ok(())
             }
 
-            Int::Neg => {
+            ArithInt::Neg => {
                 let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
                 if r != w {
                     return Err(format!(
@@ -127,7 +132,7 @@ impl Theory for Int {
                 Ok(())
             }
 
-            Int::Add | Int::Mul | Int::Sub | Int::Mod => {
+            ArithInt::Add | ArithInt::Mul | ArithInt::Sub | ArithInt::Mod => {
                 let w1 = write_nxt(&mut write, 0)?;
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
@@ -148,7 +153,7 @@ impl Theory for Int {
                 Ok(())
             }
 
-            Int::MatMul => {
+            ArithInt::MatMul => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
                     read_nxt(&mut read, 1)?,
