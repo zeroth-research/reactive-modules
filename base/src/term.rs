@@ -57,7 +57,7 @@ where
 
         // type-check the term. We do it only after contruction of the term, because type-checking
         // would consume the values of `write` and `read` otherwise
-        let r = term.read.as_slice().into_iter().map(|w| w.dtype());
+        let r = term.read.as_slice().iter().map(|w| w.dtype());
         let w = term.write.as_slice().iter().map(|w| w.dtype());
         match term.itype.type_check(r, w) {
             Ok(_) => Ok(term),
