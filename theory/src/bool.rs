@@ -35,7 +35,7 @@ assert!(Prop::Not.check::<DType>(&[t, t], &[t]).is_err());
 
 use crate::*;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Bool(pub usize, pub usize);
 
 // TODO: impl DType

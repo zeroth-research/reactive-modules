@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
 mod atom;
+mod lia;
 mod module;
 mod pytensor;
 mod term;
@@ -22,6 +23,10 @@ fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Wire>()?;
     m.add_class::<Term>()?;
     m.add_class::<Module>()?;
+    m.add_class::<lia::LiaDType>()?;
+    m.add_class::<lia::LiaIType>()?;
+    m.add_class::<lia::LIATerm>()?;
+    m.add_class::<lia::LiaWire>()?;
 
     Ok(())
 }
@@ -62,7 +67,7 @@ fn try_wire2_iter_cloned(
 
 fn try_term_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Term<DType, IType>>> {
+) -> PyResult<impl Iterator<Item = base::Term<IType>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);

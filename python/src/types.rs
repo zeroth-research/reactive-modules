@@ -2,20 +2,30 @@ use crate::pytensor::PyTensor;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::fmt;
+use theory::{self, bool, lia};
 
 // ============================================================================
 // DType enum (wire data types)
 // ============================================================================
 
+//#[pyclass(frozen, eq, str)]
+#[pyclass(frozen, eq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PyBool(bool::Bool);
+
+impl PyBool {
+    fn shape(&self) -> (usize, usize) {
+        self.0.shape()
+    }
+}
+
 #[pyclass(frozen, eq, str)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DType {
-    // at this moment, we keep the DType flat and encode the type
-    // of elements in the names
-    Bool(Vec<usize>),
-    Int(Vec<usize>),
-    Float(Vec<usize>),
-    Real(Vec<usize>),
+    Bool(PyBool),
+    Int(usize, usize),
+    Float(usize, usize),
+    Real(usize, usize),
     UWord(u32),
     SWord(u32),
 }
@@ -24,28 +34,28 @@ pub enum DType {
 impl DType {
     /// Get the data dimensions of this data type
     #[getter]
-    fn shape(&self) -> Vec<usize> {
+    fn shape(&self) -> (usize, usize) {
         match &self {
-            DType::Float(shape) => shape.clone(),
-            DType::Int(shape) => shape.clone(),
-            DType::Bool(shape) => shape.clone(),
-            DType::Real(shape) => shape.clone(),
-            DType::UWord(_) | DType::SWord(_) => vec![1],
+            DType::Float(i, j) => (*i, *j),
+            DType::Int(i, j) => (*i, *j),
+            DType::Bool(b) => b.shape(),
+            DType::Real(i, j) => (*i, *j),
+            DType::UWord(_) | DType::SWord(_) => (1, 1),
         }
     }
 
-    /// Create the same (Tensor) dtype but with a different shape
-    fn reshape(&self, shape: Vec<usize>) -> PyResult<Self> {
-        match self {
-            DType::Bool(_) => Ok(DType::Bool(shape)),
-            DType::Int(_) => Ok(DType::Int(shape)),
-            DType::Float(_) => Ok(DType::Float(shape)),
-            DType::Real(_) => Ok(DType::Real(shape)),
-            DType::UWord(_) | DType::SWord(_) => {
-                Err(PyValueError::new_err("cannot reshape word-level types"))
-            }
-        }
-    }
+    // Create the same (Tensor) dtype but with a different shape
+    //fn reshape(&self, shape: Vec<usize>) -> PyResult<Self> {
+    //    match self {
+    //        DType::Bool(_) => Ok(DType::Bool(shape)),
+    //        DType::Int(_) => Ok(DType::Int(shape)),
+    //        DType::Float(_) => Ok(DType::Float(shape)),
+    //        DType::Real(_) => Ok(DType::Real(shape)),
+    //        DType::UWord(_) | DType::SWord(_) => {
+    //            Err(PyValueError::new_err("cannot reshape word-level types"))
+    //        }
+    //    }
+    //}
 }
 
 fn fmt_comma_separated(f: &mut fmt::Formatter<'_>, items: &Vec<usize>) -> fmt::Result {
@@ -61,32 +71,33 @@ fn fmt_comma_separated(f: &mut fmt::Formatter<'_>, items: &Vec<usize>) -> fmt::R
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DType::Float(shape) => {
+            DType::Float(i, j) => {
                 write!(f, "Float(")?;
-                fmt_comma_separated(f, shape)?;
+                fmt_comma_separated(f, &vec![*i, *j])?;
                 write!(f, ")")?;
             }
-            DType::Int(shape) => {
+            DType::Int(i, j) => {
                 write!(f, "Int(")?;
-                fmt_comma_separated(f, shape)?;
+                fmt_comma_separated(f, &vec![*i, *j])?;
                 write!(f, ")")?;
             }
-            DType::Bool(shape) => {
-                write!(f, "Bool(")?;
-                fmt_comma_separated(f, shape)?;
-                write!(f, ")")?;
-            }
-            DType::Real(shape) => {
-                write!(f, "Real(")?;
-                fmt_comma_separated(f, shape)?;
-                write!(f, ")")?;
-            }
-            DType::UWord(n) => {
-                write!(f, "UWord<{}>", n)?;
-            }
-            DType::SWord(n) => {
-                write!(f, "SWord<{}>", n)?;
-            }
+            //DType::Bool(shape) => {
+            //    write!(f, "Bool(")?;
+            //    fmt_comma_separated(f, shape)?;
+            //    write!(f, ")")?;
+            //}
+            //DType::Real(shape) => {
+            //    write!(f, "Real(")?;
+            //    fmt_comma_separated(f, shape)?;
+            //    write!(f, ")")?;
+            //}
+            //DType::UWord(n) => {
+            //    write!(f, "UWord<{}>", n)?;
+            //}
+            //DType::SWord(n) => {
+            //    write!(f, "SWord<{}>", n)?;
+            //}
+            _ => unimplemented!(),
         };
         Ok(())
     }
@@ -96,38 +107,18 @@ impl fmt::Display for DType {
 // IType enum (flat structure for PyO3 compatibility)
 // ============================================================================
 
+#[pyclass(frozen)]
+//#[pyclass(str, frozen)]
+#[derive(Debug, Clone)]
+pub struct LiaIType(theory::lia::LIA);
+
 #[pyclass(str, frozen)]
 #[derive(Debug, Clone)]
 pub enum IType {
     // Arithmetic operations
-    Add(),
-    Sub(),
-    Mul(),
+    Lia(LiaIType),
     Div(),
-    Mod(),
-    Neg(),
     Abs(),
-    MatMul(), // consider differentiation between matmul operators, or parameterisation.
-    // To be designed with compliance with lower level platform in mind
-
-    // Comparison operations
-    Eq(),
-    Neq(),
-    Lt(),
-    Le(),
-    Gt(),
-    Ge(),
-
-    // Logical operations
-    And(),
-    Or(),
-    Not(),
-    Xor(),
-    Xnor(),
-    Implies(),
-
-    // Control flow
-    Ite(),
 
     // Transcendental functions
     Sin(),
@@ -170,32 +161,42 @@ pub enum IType {
     Uninterpreted(String),
 }
 
+impl TryFrom<DType> for theory::lia::DType {
+    type Error = ();
+
+    fn try_from(dt: DType) -> Result<lia::DType, ()> {
+        match dt {
+            DType::Bool(pybool) => Ok(lia::DType::Bool(pybool.0)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl theory::Theory for IType {
+    type DType = DType;
+
+    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    where
+        D: TryInto<&'a Self::DType>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+        Self::DType: 'a,
+    {
+        match self {
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl fmt::Display for IType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IType::Add() => write!(f, "Add"),
-            IType::Sub() => write!(f, "Sub"),
-            IType::Mul() => write!(f, "Mul"),
+            // TODO: add formatter to lia..
+            IType::Lia(lia) => write!(f, "{:?}", lia),
             IType::Div() => write!(f, "Div"),
-            IType::Mod() => write!(f, "Mod"),
-            IType::Neg() => write!(f, "Neg"),
             IType::Abs() => write!(f, "Abs"),
-            IType::MatMul() => write!(f, "MatMul"),
             IType::Sin() => write!(f, "Sin"),
             IType::Cos() => write!(f, "Cos"),
-            IType::Eq() => write!(f, "Eq"),
-            IType::Neq() => write!(f, "Neq"),
-            IType::Lt() => write!(f, "Lt"),
-            IType::Le() => write!(f, "Le"),
-            IType::Gt() => write!(f, "Gt"),
-            IType::Ge() => write!(f, "Ge"),
-            IType::And() => write!(f, "And"),
-            IType::Or() => write!(f, "Or"),
-            IType::Not() => write!(f, "Not"),
-            IType::Xor() => write!(f, "Xor"),
-            IType::Xnor() => write!(f, "Xnor"),
-            IType::Implies() => write!(f, "Implies"),
-            IType::Ite() => write!(f, "Ite"),
             IType::Id() => write!(f, "Id"),
             IType::Argmax() => write!(f, "Argmax"),
             IType::ReLU() => write!(f, "ReLU"),
