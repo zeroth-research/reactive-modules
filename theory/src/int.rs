@@ -68,7 +68,7 @@ pub enum ArithInt {
     MatMul,
 }
 
-pub(crate) fn check_init_dims(cm: &Vec<Vec<i64>>, i: usize, j: usize) -> Result<(), String> {
+pub(crate) fn check_init_dims(cm: &[Vec<i64>], i: usize, j: usize) -> Result<(), String> {
     if cm.len() != i {
         return Err(format!(
             "Const: Initializer has a wrong number of rows (has {}, expected {})",
