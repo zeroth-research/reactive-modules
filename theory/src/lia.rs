@@ -221,7 +221,7 @@ impl Theory for LIA {
     }
 }
 
-fn check_const<'a, R, W, D>(cm: &Vec<Vec<i64>>, read: R, write: W) -> Result<(), String>
+fn check_const<'a, R, W, D>(cm: &[Vec<i64>], read: R, write: W) -> Result<(), String>
 where
     D: TryInto<&'a Type>,
     R: IntoIterator<Item = D>,

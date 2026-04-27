@@ -85,7 +85,7 @@ pub enum BV {
     // TODO: add cast from to BVU/BVS
 }
 
-fn check_init_dims(cm: &Vec<Vec<usize>>, bw: usize, i: usize, j: usize) -> Result<(), String> {
+fn check_init_dims(cm: &[Vec<usize>], bw: usize, i: usize, j: usize) -> Result<(), String> {
     if bw > 64 {
         return Err("Support at most 64-bit atm.".into());
     }
