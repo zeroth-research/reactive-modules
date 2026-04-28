@@ -29,8 +29,9 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     lia.add_class::<lia::Wire>()?;
     lia.add_class::<lia::Term>()?;
     lia.add_class::<lia::Atom>()?;
-    lia.add_class::<lia::Int>()?;
-    lia.add_class::<lia::Bool>()?;
+    lia.add_class::<lia::Module>()?;
+    lia.add_function(wrap_pyfunction!(lia::Int, &lia)?);
+    lia.add_function(wrap_pyfunction!(lia::Bool, &lia)?);
 
     // allow to use `zrth.lia` in imports
     m.add_submodule(&lia)?;

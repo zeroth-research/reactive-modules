@@ -7,7 +7,7 @@ use theory::lia;
 
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
-pub(crate) struct Module {
+pub struct Module {
     pub(crate) base: base::Module<lia::LIA>,
 }
 

@@ -3,7 +3,7 @@ use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use std::fmt;
 use theory::lia::{CmpOp, FlowOp, LinearOp};
-use theory::{self, bool, lia};
+use theory::{self, bool, lia, int};
 
 mod atom;
 mod module;
@@ -12,24 +12,26 @@ mod term;
 //pub use atom::Atom;
 use crate::IType;
 pub use atom::Atom;
+pub use module::Module;
 pub use term::Term;
 
 // ============================================================================
-// DType enum (wire data types)
+// Types (wire data types)
 // ============================================================================
 
-//#[pyclass(frozen, eq, str)]
-#[pyclass(frozen, eq, subclass)]
+#[pyclass(frozen, eq, str)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Type(lia::Type);
 
-#[pyclass(frozen, eq, extends = Type)]
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Int;
+#[pyfunction]
+pub fn Int(i: usize, j: usize) -> Type {
+    Type(lia::Type::Int(int::Int(i, j)))
+}
 
-#[pyclass(frozen, eq, extends = Type)]
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Bool;
+#[pyfunction]
+pub fn Bool(i: usize, j: usize) -> Type {
+    Type(lia::Type::Bool(bool::Bool(i, j)))
+}
 
 #[pymethods]
 impl Type {
@@ -37,6 +39,16 @@ impl Type {
     #[getter]
     fn shape(&self) -> (usize, usize) {
         self.0.shape()
+    }
+
+    #[getter]
+    fn is_bool(&self) -> bool {
+        self.0.is_bool()
+    }
+
+    #[getter]
+    fn is_int(&self) -> bool {
+        self.0.is_int()
     }
 
     // Create the same (Tensor) dtype but with a different shape
@@ -53,25 +65,9 @@ impl Type {
     //}
 }
 
-#[pymethods]
-impl Int {
-    #[new]
-    fn new(i: usize, j: usize) -> (Self, Type) {
-        (Self, Type(lia::Type::Int(theory::int::Int(i, j))))
-    }
-}
-
-#[pymethods]
-impl Bool {
-    #[new]
-    fn new(i: usize, j: usize) -> (Self, Type) {
-        (Self, Type(lia::Type::Bool(theory::bool::Bool(i, j))))
-    }
-}
-
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        unimplemented!()
+        self.0.fmt(f)
     }
 }
 
@@ -103,8 +99,9 @@ impl Wire {
 
     #[getter]
     fn dtype(&self) -> Type {
-        unimplemented!()
+        Type(*self.base.dtype()) 
     }
+
 
     fn __repr__(&self) -> String {
         format!("{:?}", self.base)
