@@ -91,8 +91,7 @@ impl Term {
     }
 
     fn __str__(&self) -> String {
-        todo!()
-        //self.base.to_string()
+        self.base.to_string()
     }
 
     fn __repr__(&self) -> String {
