@@ -32,7 +32,11 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     lia.add_class::<lia::Int>()?;
     lia.add_class::<lia::Bool>()?;
 
+    // allow to use `zrth.lia` in imports
     m.add_submodule(&lia)?;
+    py.import("sys")?
+        .getattr("modules")?
+        .set_item("zrth.lia", &lia)?;
     Ok(())
 }
 
