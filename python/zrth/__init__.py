@@ -1,10 +1,10 @@
-# from .zrth import (
+from .zrth import (
 #     Wire,
 #     DType,
-#     IType,
+    IType,
 #     Term,
 #     Module,
-# )
+)
 #
 #
 # #####################################################################
@@ -39,12 +39,12 @@
 # # from . import torch as torch
 #
 #
-# __all__ = [
+__all__ = [
 #     "Wire",
 #     "DType",
-#     "IType",
+    "IType",
 #     "Term",
 #     "Module",
 #     "Wrapper",
 #     "Env",
-# ]
+]
