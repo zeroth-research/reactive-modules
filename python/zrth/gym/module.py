@@ -283,6 +283,16 @@ class Env(Module, gym.Wrapper):
         else:
             raise ValueError(f"Module needs at least 2 observable wire pairs, got {n_obs}")
 
+        # If a composed atom drives the action wire (e.g. a controller in a
+        # closed loop), step()'s `action` argument is ignored — the controller's
+        # latched output is what the env atom sees.
+        action_next = self._pairs['action'][1]
+        self._action_driven = any(
+            action_next in {w for w in atom.ctrl}
+            for idx, atom in enumerate(self.atoms)
+            if idx != self._env_atom_idx
+        )
+
     def __getattr__(self, name):
         return getattr_wire(self, name)
 
@@ -383,14 +393,16 @@ class Env(Module, gym.Wrapper):
         p = self._pairs
         env_atom_idx = self._env_atom_idx
 
-        # Write action to symbolic state
-        self._state[p['action'][0]] = self._prepare_action(action)
+        # Write action to symbolic state, unless an upstream atom drives it
+        # (closed-loop with a composed controller — its latched output is used).
+        if not self._action_driven:
+            self._state[p['action'][0]] = self._prepare_action(action)
 
         # Execute update block for each atom
         for atom_idx, atom in enumerate(self.atoms):
             if env_atom_idx is not None and atom_idx == env_atom_idx:
                 # Env atom: run real env
-                gym_result = self._backing_env.step(self._state[p['action'][0]])
+                gym_result = self._backing_env.step(self._state[p['action'][0]].detach())
                 obs, reward, terminated, truncated = gym_result[0], gym_result[1], gym_result[2], gym_result[3]
                 obs_tensor = torch.as_tensor(obs, dtype=torch.float32)
                 if obs_tensor.dim() == 0:
