@@ -5,12 +5,15 @@ use pyo3::prelude::*;
 use std::fmt;
 use theory::{self, bool, lia};
 
-use pyo3::PyClass;
-use pyo3::types::PyAny;
-
 #[pyclass(frozen)]
 pub struct Term {
     base: base::Term<lia::LIA>,
+}
+
+impl super::ReadWriteIntf for Term {
+    fn interface(&self, is_read: bool) -> &base::Interface<lia::Type> {
+        if is_read { self.base.read() } else { self.base.write() }
+    }
 }
 
 fn try_wire_iter_cloned(
@@ -77,12 +80,12 @@ impl Term {
 
     #[getter]
     fn write(slf: PyRef<'_, Self>) -> PyResult<TermInterface> {
-        Self::interface(slf, TermInterfaceType::Write)
+        Self::interface(slf, false)
     }
 
     #[getter]
     fn read(slf: PyRef<'_, Self>) -> PyResult<TermInterface> {
-        Self::interface(slf, TermInterfaceType::Read)
+        Self::interface(slf, true)
     }
 
     #[getter]
@@ -104,12 +107,10 @@ impl Term {
         &self.base
     }
 
-    fn interface(slf: PyRef<'_, Self>, titype: TermInterfaceType) -> PyResult<TermInterface> {
+    fn interface(slf: PyRef<'_, Self>, is_read: bool) -> PyResult<TermInterface> {
         let py = slf.py();
-        Ok(TermInterface {
-            term: slf.into_pyobject(py)?.unbind().into(),
-            interface: titype,
-        })
+        let owner = slf.into_pyobject(py)?.unbind();
+        Ok(TermInterface(super::ReadWriteInterface { owner, is_read }))
     }
 }
 
@@ -125,31 +126,13 @@ impl From<Type> for lia::Type {
     }
 }
 
-#[derive(Clone)]
-pub(crate) enum TermInterfaceType {
-    Read,
-    Write,
-}
 #[pyclass(sequence)]
-struct TermInterface {
-    term: Py<Term>,
-    interface: TermInterfaceType,
-}
-
-impl TermInterface {
-    fn base(&self) -> &base::Interface<lia::Type> {
-        let base = &self.term.get().base;
-        match self.interface {
-            TermInterfaceType::Read => base.read(),
-            TermInterfaceType::Write => base.write(),
-        }
-    }
-}
+struct TermInterface(super::ReadWriteInterface<Term>);
 
 #[pymethods]
 impl TermInterface {
     fn __str__(&self) -> String {
-        self.base().to_string()
+        self.0.str()
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
@@ -158,7 +141,7 @@ impl TermInterface {
             Err(_) => return false,
         };
 
-        let mut this = self.base().wires();
+        let mut this = self.0.base().wires();
         let mut other = other.into_iter();
         loop {
             match (this.next(), other.next()) {
@@ -174,12 +157,10 @@ impl TermInterface {
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        let item = self.base().wire(0, index);
-        item.and_then(|w| Some(w.clone().into()))
-            .ok_or(PyIndexError::new_err("index out of bounds"))
+        self.0.get_item(index)
     }
 
     fn __len__(&self) -> usize {
-        self.base().len()
+        self.0.len()
     }
 }

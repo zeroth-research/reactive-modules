@@ -382,30 +382,33 @@ impl ModuleAtomBlock {
     }
 }
 
+impl super::HasTermAt for ModuleAtomBlock {
+    fn term_at(&self, idx: usize) -> Option<&base::Term<lia::LIA>> {
+        self.base().get(idx)
+    }
+}
+
+impl super::ReadWriteIntf for ModuleAtomBlock {
+    fn interface(&self, is_read: bool) -> &base::Interface<lia::Type> {
+        if is_read { self.base().read() } else { self.base().write() }
+    }
+}
+
 #[pymethods]
 impl ModuleAtomBlock {
     fn read(slf: Bound<'_, Self>) -> ModuleAtomInterface {
-        ModuleAtomInterface {
-            block: slf.unbind(),
-            is_read: true,
-        }
+        ModuleAtomInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: true })
     }
 
     fn write(slf: Bound<'_, Self>) -> ModuleAtomInterface {
-        ModuleAtomInterface {
-            block: slf.unbind(),
-            is_read: false,
-        }
+        ModuleAtomInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: false })
     }
 
     fn __getitem__(slf: Bound<'_, Self>, index: usize) -> PyResult<ModuleTerm> {
         if slf.get().base().get(index).is_none() {
             return Err(PyIndexError::new_err("index out of bounds"));
         }
-        Ok(ModuleTerm {
-            block: slf.unbind(),
-            idx: index,
-        })
+        Ok(ModuleTerm(super::TermAt { owner: slf.unbind(), idx: index }))
     }
 
     fn __len__(&self) -> usize {
@@ -419,107 +422,63 @@ impl ModuleAtomBlock {
 
 // Accessor for the read/write interface of an atom block
 #[pyclass(frozen, sequence)]
-struct ModuleAtomInterface {
-    block: Py<ModuleAtomBlock>,
-    is_read: bool,
-}
-
-impl ModuleAtomInterface {
-    fn base(&self) -> &base::Interface<lia::Type> {
-        let block = self.block.get().base();
-        if self.is_read {
-            block.read()
-        } else {
-            block.write()
-        }
-    }
-}
+struct ModuleAtomInterface(super::ReadWriteInterface<ModuleAtomBlock>);
 
 #[pymethods]
 impl ModuleAtomInterface {
     fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        self.base()
-            .wire(0, index)
-            .map(|w| w.clone().into())
-            .ok_or_else(|| PyIndexError::new_err("index out of bounds"))
+        self.0.get_item(index)
     }
 
     fn __len__(&self) -> usize {
-        self.base().len()
+        self.0.len()
     }
 
     fn __str__(&self) -> String {
-        self.base().to_string()
+        self.0.str()
     }
 }
 
 // Accessor for a term in an atom block
 #[pyclass(frozen)]
-struct ModuleTerm {
-    block: Py<ModuleAtomBlock>,
-    // term index within the block
-    idx: usize,
-}
+struct ModuleTerm(super::TermAt<ModuleAtomBlock>);
 
-impl ModuleTerm {
-    fn base(&self) -> &base::Term<lia::LIA> {
-        self.block.get().base().get(self.idx).unwrap()
+impl super::ReadWriteIntf for ModuleTerm {
+    fn interface(&self, is_read: bool) -> &base::Interface<lia::Type> {
+        self.0.interface(is_read)
     }
 }
 
 #[pymethods]
 impl ModuleTerm {
     fn read(slf: Bound<'_, Self>) -> ModuleTermInterface {
-        ModuleTermInterface {
-            term: slf.unbind(),
-            is_read: true,
-        }
+        ModuleTermInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: true })
     }
 
     fn write(slf: Bound<'_, Self>) -> ModuleTermInterface {
-        ModuleTermInterface {
-            term: slf.unbind(),
-            is_read: false,
-        }
+        ModuleTermInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: false })
     }
 
     fn __repr__(&self) -> String {
-        format!("{:?}", self.base())
+        self.0.repr()
     }
 }
 
 // Accessor for the read/write wires of a term
 #[pyclass(frozen, sequence)]
-struct ModuleTermInterface {
-    term: Py<ModuleTerm>,
-    is_read: bool,
-}
-
-impl ModuleTermInterface {
-    fn base(&self) -> &base::Interface<lia::Type> {
-        let term = self.term.get().base();
-        if self.is_read {
-            term.read()
-        } else {
-            term.write()
-        }
-    }
-}
+struct ModuleTermInterface(super::ReadWriteInterface<ModuleTerm>);
 
 #[pymethods]
 impl ModuleTermInterface {
     fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        self.base()
-            .wire(0, index)
-            .map(|w| w.clone().into())
-            .ok_or_else(|| PyIndexError::new_err("index out of bounds"))
+        self.0.get_item(index)
     }
 
     fn __len__(&self) -> usize {
-        self.base().len()
+        self.0.len()
     }
 
     fn __str__(&self) -> String {
-        self.base().to_string()
+        self.0.str()
     }
 }

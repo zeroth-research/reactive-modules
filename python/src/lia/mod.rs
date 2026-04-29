@@ -1,4 +1,5 @@
 //use crate::pytensor::PyTensor;
+use pyo3::PyClass;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use std::fmt;
@@ -22,16 +23,6 @@ pub use term::Term;
 #[pyclass(frozen, eq, str)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Type(lia::Type);
-
-#[pyfunction]
-pub fn Int(i: usize, j: usize) -> Type {
-    Type(lia::Type::Int(int::Int(i, j)))
-}
-
-#[pyfunction]
-pub fn Bool(i: usize, j: usize) -> Type {
-    Type(lia::Type::Bool(bool::Bool(i, j)))
-}
 
 #[pymethods]
 impl Type {
@@ -71,7 +62,21 @@ impl fmt::Display for Type {
     }
 }
 
-/// Wire
+/// Helper function to create Type(Int)
+#[pyfunction]
+pub fn Int(i: usize, j: usize) -> Type {
+    Type(lia::Type::Int(int::Int(i, j)))
+}
+
+/// Helper function to create Type(Bool)
+#[pyfunction]
+pub fn Bool(i: usize, j: usize) -> Type {
+    Type(lia::Type::Bool(bool::Bool(i, j)))
+}
+
+// ============================================================================
+// Wire
+// ============================================================================
 #[pyclass(frozen, eq, hash)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub(crate) struct Wire {
@@ -117,6 +122,79 @@ impl From<base::Wire<lia::Type>> for Wire {
 impl From<Wire> for base::Wire<lia::Type> {
     fn from(w: Wire) -> Self {
         w.base().clone()
+    }
+}
+
+/// Shared read/write interface access for pyo3 owners (`Py<T>`).
+/// Implemented by terms, atoms, and module atoms — all of which
+/// expose a zero-copy interface without requiring a separate owned copy.
+trait ReadWriteIntf {
+    fn interface(&self, is_read: bool) -> &base::Interface<lia::Type>;
+}
+
+struct ReadWriteInterface<T: ReadWriteIntf> {
+    owner: Py<T>,
+    is_read: bool,
+}
+
+impl<T> ReadWriteInterface<T>
+where
+    T: ReadWriteIntf + PyClass<Frozen = pyo3::pyclass::boolean_struct::True> + Sync,
+{
+    fn base(&self) -> &base::Interface<lia::Type> {
+        self.owner.get().interface(self.is_read)
+    }
+
+    fn get_item(&self, index: usize) -> PyResult<Wire> {
+        self.base()
+            .wire(0, index)
+            .map(|w| w.clone().into())
+            .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err(format!("index {index} out of bounds")))
+    }
+
+    fn len(&self) -> usize {
+        self.base().len()
+    }
+
+    fn str(&self) -> String {
+        self.base().to_string()
+    }
+}
+
+/// Zero-copy term access by index within a block owner.
+trait HasTermAt {
+    fn term_at(&self, idx: usize) -> Option<&base::Term<lia::LIA>>;
+}
+
+struct TermAt<T: HasTermAt> {
+    owner: Py<T>,
+    idx: usize,
+}
+
+impl<T> TermAt<T>
+where
+    T: HasTermAt + PyClass<Frozen = pyo3::pyclass::boolean_struct::True> + Sync,
+{
+    fn base(&self) -> &base::Term<lia::LIA> {
+        self.owner.get().term_at(self.idx).unwrap()
+    }
+
+    fn itype(&self) -> IType {
+        self.base().itype().clone().into()
+    }
+
+    fn repr(&self) -> String {
+        format!("{:?}", self.base())
+    }
+}
+
+impl<T> ReadWriteIntf for TermAt<T>
+where
+    T: HasTermAt + PyClass<Frozen = pyo3::pyclass::boolean_struct::True> + Sync,
+{
+    fn interface(&self, is_read: bool) -> &base::Interface<lia::Type> {
+        let term = self.base();
+        if is_read { term.read() } else { term.write() }
     }
 }
 

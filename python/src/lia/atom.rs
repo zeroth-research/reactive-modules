@@ -2,8 +2,7 @@ use std::fmt;
 use theory::{self, bool, lia};
 
 use super::Wire;
-use super::term::Term;
-use crate::try_iter_borrow;
+use crate::{IType, try_iter_borrow};
 use pyo3::exceptions::PyIndexError;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
@@ -152,39 +151,37 @@ impl AtomBlock {
     }
 }
 
-enum TermInterfaceType {
-    Read,
-    Write,
+impl super::HasTermAt for AtomBlock {
+    fn term_at(&self, idx: usize) -> Option<&base::Term<lia::LIA>> {
+        self.base().get(idx)
+    }
+}
+
+impl super::ReadWriteIntf for AtomBlock {
+    fn interface(&self, is_read: bool) -> &base::Interface<lia::Type> {
+        if is_read { self.base().read() } else { self.base().write() }
+    }
 }
 
 #[pymethods]
 impl AtomBlock {
-    // requires display in base - do you need that now?
-    // fn __str__(&self) -> String {
-    //     self.base().to_string()
-    // }
-
     fn __repr__(&self) -> String {
         format!("{:?}", self.base())
     }
 
     fn read(slf: Bound<'_, Self>) -> AtomBlockInterface {
-        AtomBlockInterface {
-            block: slf.unbind(),
-            interface: TermInterfaceType::Read,
-        }
+        AtomBlockInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: true })
     }
 
     fn write(slf: Bound<'_, Self>) -> AtomBlockInterface {
-        AtomBlockInterface {
-            block: slf.unbind(),
-            interface: TermInterfaceType::Write,
-        }
+        AtomBlockInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: false })
     }
 
-    fn __getitem__(&self, index: usize) -> PyResult<Term> {
-        let result = self.base().get(index).map(Clone::clone).map(Into::into);
-        result.ok_or(PyIndexError::new_err("index out of bounds"))
+    fn __getitem__(slf: Bound<'_, Self>, index: usize) -> PyResult<TermRef> {
+        if slf.get().base().get(index).is_none() {
+            return Err(PyIndexError::new_err("index out of bounds"));
+        }
+        Ok(TermRef(super::TermAt { owner: slf.unbind(), idx: index }))
     }
 
     fn __len__(&self) -> usize {
@@ -193,25 +190,12 @@ impl AtomBlock {
 }
 
 #[pyclass(sequence)]
-struct AtomBlockInterface {
-    block: Py<AtomBlock>,
-    interface: TermInterfaceType,
-}
-
-impl AtomBlockInterface {
-    fn base(&self) -> &base::Interface<lia::Type> {
-        let term = self.block.get().base();
-        match self.interface {
-            TermInterfaceType::Read => term.read(),
-            TermInterfaceType::Write => term.write(),
-        }
-    }
-}
+struct AtomBlockInterface(super::ReadWriteInterface<AtomBlock>);
 
 #[pymethods]
 impl AtomBlockInterface {
     fn __str__(&self) -> String {
-        self.base().to_string()
+        self.0.str()
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
@@ -220,7 +204,7 @@ impl AtomBlockInterface {
             Err(_) => return false,
         };
 
-        let mut this = self.base().wires();
+        let mut this = self.0.base().wires();
         let mut other = other.into_iter();
         loop {
             match (this.next(), other.next()) {
@@ -236,12 +220,60 @@ impl AtomBlockInterface {
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        let item = self.base().wire(0, index);
-        item.and_then(|w| Some(w.clone().into()))
-            .ok_or(PyIndexError::new_err("index out of bounds"))
+        self.0.get_item(index)
     }
 
     fn __len__(&self) -> usize {
-        self.base().len()
+        self.0.len()
+    }
+}
+
+/// Zero-copy accessor for a term in an atom
+#[pyclass(frozen)]
+pub struct TermRef(super::TermAt<AtomBlock>);
+
+impl super::ReadWriteIntf for TermRef {
+    fn interface(&self, is_read: bool) -> &base::Interface<lia::Type> {
+        self.0.interface(is_read)
+    }
+}
+
+#[pyclass(sequence)]
+struct TermRefInterface(super::ReadWriteInterface<TermRef>);
+
+#[pymethods]
+impl TermRef {
+    #[getter]
+    fn read(slf: Bound<'_, Self>) -> TermRefInterface {
+        TermRefInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: true })
+    }
+
+    #[getter]
+    fn write(slf: Bound<'_, Self>) -> TermRefInterface {
+        TermRefInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: false })
+    }
+
+    #[getter]
+    fn itype(&self) -> IType {
+        self.0.itype()
+    }
+
+    fn __repr__(&self) -> String {
+        self.0.repr()
+    }
+}
+
+#[pymethods]
+impl TermRefInterface {
+    fn __getitem__(&self, index: usize) -> PyResult<Wire> {
+        self.0.get_item(index)
+    }
+
+    fn __len__(&self) -> usize {
+        self.0.len()
+    }
+
+    fn __str__(&self) -> String {
+        self.0.str()
     }
 }

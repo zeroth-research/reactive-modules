@@ -4,25 +4,18 @@ use pyo3::types::PyAny;
 
 //mod atom;
 mod lia;
-//mod module;
 mod pytensor;
-// mod term;
-mod types;
-// mod wire;
+mod itype;
 
 // use crate::atom::Atom;
 // use crate::module::Module;
 // use crate::term::Term;
-use crate::types::IType;
+use crate::itype::IType;
 // use crate::wire::Wire;
 
 #[pymodule]
 fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<IType>()?;
-    //m.add_class::<DType>()?;
-    //m.add_class::<Wire>()?;
-    //m.add_class::<Term>()?;
-    //m.add_class::<Module>()?;
 
     let lia = PyModule::new(py, "lia")?;
     lia.add_class::<lia::Type>()?;
