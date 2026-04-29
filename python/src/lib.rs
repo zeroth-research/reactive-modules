@@ -2,16 +2,11 @@ use pyo3::PyClass;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
-//mod atom;
+mod itype;
 mod lia;
 mod pytensor;
-mod itype;
 
-// use crate::atom::Atom;
-// use crate::module::Module;
-// use crate::term::Term;
 use crate::itype::IType;
-// use crate::wire::Wire;
 
 #[pymodule]
 fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -23,8 +18,8 @@ fn zrth(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     lia.add_class::<lia::Term>()?;
     lia.add_class::<lia::Atom>()?;
     lia.add_class::<lia::Module>()?;
-    lia.add_function(wrap_pyfunction!(lia::Int, &lia)?);
-    lia.add_function(wrap_pyfunction!(lia::Bool, &lia)?);
+    lia.add_function(wrap_pyfunction!(lia::Int, &lia)?)?;
+    lia.add_function(wrap_pyfunction!(lia::Bool, &lia)?)?;
 
     // allow to use `zrth.lia` in imports
     m.add_submodule(&lia)?;

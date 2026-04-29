@@ -31,16 +31,6 @@ fn try_term_iter_cloned(
     Ok(seq)
 }
 
-fn try_wire_iter_cloned(
-    seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Wire<lia::Type>>> {
-    // TODO: make base take result iterator to avoid unwrap
-    let seq = try_iter_borrow::<Wire>(seq)?;
-    let seq = seq.into_iter().map(Result::unwrap);
-    let seq = seq.map(|r| r.base().clone());
-    Ok(seq)
-}
-
 #[pymethods]
 impl Module {
     #[new]
@@ -390,25 +380,38 @@ impl super::HasTermAt for ModuleAtomBlock {
 
 impl super::ReadWriteIntf for ModuleAtomBlock {
     fn interface(&self, is_read: bool) -> &base::Interface<lia::Type> {
-        if is_read { self.base().read() } else { self.base().write() }
+        if is_read {
+            self.base().read()
+        } else {
+            self.base().write()
+        }
     }
 }
 
 #[pymethods]
 impl ModuleAtomBlock {
     fn read(slf: Bound<'_, Self>) -> ModuleAtomInterface {
-        ModuleAtomInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: true })
+        ModuleAtomInterface(super::ReadWriteInterface {
+            owner: slf.unbind(),
+            is_read: true,
+        })
     }
 
     fn write(slf: Bound<'_, Self>) -> ModuleAtomInterface {
-        ModuleAtomInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: false })
+        ModuleAtomInterface(super::ReadWriteInterface {
+            owner: slf.unbind(),
+            is_read: false,
+        })
     }
 
     fn __getitem__(slf: Bound<'_, Self>, index: usize) -> PyResult<ModuleTerm> {
         if slf.get().base().get(index).is_none() {
             return Err(PyIndexError::new_err("index out of bounds"));
         }
-        Ok(ModuleTerm(super::TermAt { owner: slf.unbind(), idx: index }))
+        Ok(ModuleTerm(super::TermAt {
+            owner: slf.unbind(),
+            idx: index,
+        }))
     }
 
     fn __len__(&self) -> usize {
@@ -452,11 +455,17 @@ impl super::ReadWriteIntf for ModuleTerm {
 #[pymethods]
 impl ModuleTerm {
     fn read(slf: Bound<'_, Self>) -> ModuleTermInterface {
-        ModuleTermInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: true })
+        ModuleTermInterface(super::ReadWriteInterface {
+            owner: slf.unbind(),
+            is_read: true,
+        })
     }
 
     fn write(slf: Bound<'_, Self>) -> ModuleTermInterface {
-        ModuleTermInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: false })
+        ModuleTermInterface(super::ReadWriteInterface {
+            owner: slf.unbind(),
+            is_read: false,
+        })
     }
 
     fn __repr__(&self) -> String {

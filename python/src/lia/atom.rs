@@ -1,10 +1,8 @@
-use std::fmt;
 use theory::{self, bool, lia};
 
 use super::Wire;
 use crate::{IType, try_iter_borrow};
 use pyo3::exceptions::PyIndexError;
-use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 
 #[pyclass(frozen)]
@@ -98,9 +96,10 @@ impl AtomInterface {
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        let item = self.base().wire(0, index);
-        item.and_then(|w| Some(w.clone().into()))
-            .ok_or(PyIndexError::new_err("index out of bounds"))
+        self.base()
+            .wire(0, index)
+            .map(|w| w.clone().into())
+            .ok_or_else(|| PyIndexError::new_err(format!("index {index} out of bounds")))
     }
 
     fn __len__(&self) -> usize {
@@ -159,7 +158,11 @@ impl super::HasTermAt for AtomBlock {
 
 impl super::ReadWriteIntf for AtomBlock {
     fn interface(&self, is_read: bool) -> &base::Interface<lia::Type> {
-        if is_read { self.base().read() } else { self.base().write() }
+        if is_read {
+            self.base().read()
+        } else {
+            self.base().write()
+        }
     }
 }
 
@@ -170,18 +173,27 @@ impl AtomBlock {
     }
 
     fn read(slf: Bound<'_, Self>) -> AtomBlockInterface {
-        AtomBlockInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: true })
+        AtomBlockInterface(super::ReadWriteInterface {
+            owner: slf.unbind(),
+            is_read: true,
+        })
     }
 
     fn write(slf: Bound<'_, Self>) -> AtomBlockInterface {
-        AtomBlockInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: false })
+        AtomBlockInterface(super::ReadWriteInterface {
+            owner: slf.unbind(),
+            is_read: false,
+        })
     }
 
     fn __getitem__(slf: Bound<'_, Self>, index: usize) -> PyResult<TermRef> {
         if slf.get().base().get(index).is_none() {
             return Err(PyIndexError::new_err("index out of bounds"));
         }
-        Ok(TermRef(super::TermAt { owner: slf.unbind(), idx: index }))
+        Ok(TermRef(super::TermAt {
+            owner: slf.unbind(),
+            idx: index,
+        }))
     }
 
     fn __len__(&self) -> usize {
@@ -245,12 +257,18 @@ struct TermRefInterface(super::ReadWriteInterface<TermRef>);
 impl TermRef {
     #[getter]
     fn read(slf: Bound<'_, Self>) -> TermRefInterface {
-        TermRefInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: true })
+        TermRefInterface(super::ReadWriteInterface {
+            owner: slf.unbind(),
+            is_read: true,
+        })
     }
 
     #[getter]
     fn write(slf: Bound<'_, Self>) -> TermRefInterface {
-        TermRefInterface(super::ReadWriteInterface { owner: slf.unbind(), is_read: false })
+        TermRefInterface(super::ReadWriteInterface {
+            owner: slf.unbind(),
+            is_read: false,
+        })
     }
 
     #[getter]
@@ -277,3 +295,4 @@ impl TermRefInterface {
         self.0.str()
     }
 }
+

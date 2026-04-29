@@ -1,16 +1,15 @@
-//use crate::pytensor::PyTensor;
+#![allow(non_snake_case)]
+
 use pyo3::PyClass;
-use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use std::fmt;
 use theory::lia::{CmpOp, FlowOp, LinearOp};
-use theory::{self, bool, lia, int};
+use theory::{self, bool, int, lia};
 
 mod atom;
 mod module;
 mod term;
 
-//pub use atom::Atom;
 use crate::IType;
 pub use atom::Atom;
 pub use module::Module;
@@ -62,13 +61,11 @@ impl fmt::Display for Type {
     }
 }
 
-/// Helper function to create Type(Int)
 #[pyfunction]
 pub fn Int(i: usize, j: usize) -> Type {
     Type(lia::Type::Int(int::Int(i, j)))
 }
 
-/// Helper function to create Type(Bool)
 #[pyfunction]
 pub fn Bool(i: usize, j: usize) -> Type {
     Type(lia::Type::Bool(bool::Bool(i, j)))
@@ -104,9 +101,8 @@ impl Wire {
 
     #[getter]
     fn dtype(&self) -> Type {
-        Type(*self.base.dtype()) 
+        Type(*self.base.dtype())
     }
-
 
     fn __repr__(&self) -> String {
         format!("{:?}", self.base)
@@ -149,7 +145,9 @@ where
         self.base()
             .wire(0, index)
             .map(|w| w.clone().into())
-            .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err(format!("index {index} out of bounds")))
+            .ok_or_else(|| {
+                pyo3::exceptions::PyIndexError::new_err(format!("index {index} out of bounds"))
+            })
     }
 
     fn len(&self) -> usize {

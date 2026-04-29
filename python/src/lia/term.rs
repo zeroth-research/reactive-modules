@@ -1,8 +1,7 @@
 use super::{Type, Wire};
 use crate::{IType, try_iter_borrow};
-use pyo3::exceptions::{PyException, PyIndexError, PyValueError};
+use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
-use std::fmt;
 use theory::{self, bool, lia};
 
 #[pyclass(frozen)]
@@ -12,7 +11,11 @@ pub struct Term {
 
 impl super::ReadWriteIntf for Term {
     fn interface(&self, is_read: bool) -> &base::Interface<lia::Type> {
-        if is_read { self.base.read() } else { self.base.write() }
+        if is_read {
+            self.base.read()
+        } else {
+            self.base.write()
+        }
     }
 }
 
@@ -23,7 +26,7 @@ where
     for<'py> Wire: pyo3::FromPyObject<'py>,
     base::Wire<lia::Type>: From<Wire>,
 {
-    seq.iter()?
+    seq.try_iter()?
         .map(|item| item?.extract::<Wire>().map(Into::into))
         .collect::<PyResult<Vec<_>>>()
         .map(Vec::into_iter)
