@@ -1587,15 +1587,18 @@ class MethodVisitor(ast.NodeVisitor):
                 )
                 self.temp_vars[var] = merged_wire
 
-                # If this is a state wire and we're at top level, write the merged value to output
-                if (
-                    var in self.wire_pairs
-                    and len(self.scopes) == 0
-                    and var not in self.written_wires
-                ):
+                # If this is a state wire and we're at top level, write the merged value
+                # to the output wire — replacing any earlier Id term, since this if-branch
+                # supersedes whatever was assigned before it.
+                if var in self.wire_pairs and len(self.scopes) == 0:
                     output_wire = self.wire_pairs[var][1]
-                    term = Term(IType.Id(), [output_wire], [merged_wire])
-                    self.terms.append(term)
+                    if var in self.written_wires:
+                        for i in range(len(self.terms) - 1, -1, -1):
+                            t = self.terms[i]
+                            if len(t.write) == 1 and t.write[0] == output_wire:
+                                del self.terms[i]
+                                break
+                    self.terms.append(Term(IType.Id(), [output_wire], [merged_wire]))
                     self.written_wires.add(var)
             elif if_wire is not None:
                 self.temp_vars[var] = if_wire

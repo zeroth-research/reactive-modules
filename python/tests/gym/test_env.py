@@ -4,8 +4,10 @@ the new pure-symbolic runtime branch, composition, and the small public surface
 
 import pytest
 import torch
+import gymnasium as gym
+from gymnasium import spaces
 
-from .environments import SimpleEnv, GridWorldEnv
+from .environments import SimpleEnv
 from .qnetworks import SimpleQNet
 from zrth.gym import Env
 from zrth.torch import Module
@@ -52,12 +54,12 @@ def test_env_unwraps_existing_env():
 
 def test_env_rejects_multiple_gym_envs():
     with pytest.raises(TypeError, match="at most 1"):
-        Env(SimpleEnv(), GridWorldEnv())
+        Env(SimpleEnv(), SimpleEnv())
 
 
 def test_env_rejects_wrapped_plus_raw():
     with pytest.raises(TypeError, match="at most 1"):
-        Env(Env(SimpleEnv()), GridWorldEnv())
+        Env(Env(SimpleEnv()), SimpleEnv())
 
 
 def test_env_rejects_invalid_arg():
@@ -90,10 +92,10 @@ def test_step_matches_backing_env():
 
 
 def test_discrete_action_one_hot():
-    e = Env(GridWorldEnv())
+    e = Env(SimpleEnv())
     e.reset(seed=42)
-    e.step(2)
-    assert torch.allclose(e._state[e._pairs['action'][0]], torch.tensor([0., 0., 1., 0.]))
+    e.step(1)
+    assert torch.allclose(e._state[e._pairs['action'][0]], torch.tensor([0., 1.]))
 
 
 def test_get_prvt_and_getattr():
@@ -165,3 +167,48 @@ def test_symbolic_step_matches_real():
         real.step(one_hot_right)
         sim.step(one_hot_right)
         assert real.state == sim.state
+
+
+# ── _action_driven (closed-loop runtime) ──────────────────────────
+
+class _BoxEnv(gym.Env):
+    """Box obs (matches Linear input) + Discrete(2) action — for closed-loop tests."""
+    def __init__(self):
+        super().__init__()
+        self.action_space = spaces.Discrete(2)
+        self.observation_space = spaces.Box(low=-1e6, high=1e6, shape=(1,))
+        self.x = 0.0
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed); self.x = 0.0
+        return self.x, 0.0, False, False
+    def step(self, action):
+        idx = action.argmax().item()
+        self.x = self.x + (1.0 if idx == 1 else -1.0)
+        return self.x, 0.0, False, False
+
+
+def _make_closed_loop():
+    obs = (Wire(DType.Float([1])), Wire(DType.Float([1])))
+    act = (Wire(DType.Float([2])), Wire(DType.Float([2])))
+    backed = Env(_BoxEnv(), observation=obs, action=act)
+    qnet = Module(SimpleQNet(1, 2, 2), extl=obs, intf=act)
+    return Env(backed, qnet)
+
+
+def test_action_driven_true_with_controller():
+    assert _make_closed_loop()._action_driven is True
+
+
+def test_action_driven_false_solo():
+    assert Env(SimpleEnv())._action_driven is False
+
+
+def test_step_ignores_action_when_driven():
+    """Different junk actions should produce identical trajectories — the composed
+    controller drives, the user-passed action argument is ignored."""
+    a = _make_closed_loop(); a.reset(seed=42)
+    b = _make_closed_loop(); b.reset(seed=42)
+    for _ in range(3):
+        a.step(torch.tensor([99.0, -99.0]))
+        b.step(torch.tensor([-99.0, 99.0]))
+        assert a.x == b.x
