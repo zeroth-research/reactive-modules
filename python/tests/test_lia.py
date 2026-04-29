@@ -38,6 +38,7 @@ def test_wire_eq():
     assert w == w
     assert w != w2
 
+
 def test_wire_dtype():
     w = Wire(Bool(1, 1))
     w2 = Wire(Bool(1, 1))
@@ -116,6 +117,7 @@ def test_term_interface_len_and_index():
     assert len(t.write) == 1
     assert t.write[0] == out
 
+
 def test_term_interface():
     x = Wire(Bool(1, 1))
     y = Wire(Bool(1, 1))
@@ -123,12 +125,15 @@ def test_term_interface():
     t = Term(it.Or(), [out], [x, y])
     for n, w in enumerate(t.read):
         print(w)
-        if n == 0: assert w == x
-        if n == 1: assert w == y
+        if n == 0:
+            assert w == x
+        if n == 1:
+            assert w == y
         assert n <= 1
     for n, w in enumerate(t.write):
         print(w)
-        if n == 0: assert w == out
+        if n == 0:
+            assert w == out
         assert n <= 0
 
 
@@ -141,6 +146,7 @@ def test_term_id():
 
 
 # Module and Atom tests
+
 
 def _make_sequential_module():
     x = (Wire(Bool(1, 1)), Wire(Bool(1, 1)))
@@ -213,5 +219,3 @@ def test_atom_update_term_wires():
     atom = m.atoms[0]
     for term in atom.update():
         assert len(term.write()) > 0
-
-
