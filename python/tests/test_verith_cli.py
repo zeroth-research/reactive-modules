@@ -29,6 +29,11 @@ def _ollama_available() -> bool:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
+    try:
+        import openai
+    except ImportError:
+        return False
+
 
 # ── Basic invocation ────────────────────────────────────────────────────────
 
@@ -39,14 +44,18 @@ def test_verith_no_property():
         r = _verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "CounterBasic")
         assert r.returncode == 0, r.stderr
         assert (Path(tmpdir) / "CounterBasic").exists()
-        cert = (Path(tmpdir) / "CounterBasic" / "Certificate" / "Certificate.lean").read_text()
+        cert = (
+            Path(tmpdir) / "CounterBasic" / "Certificate" / "Certificate.lean"
+        ).read_text()
         assert "sorry" in cert
 
 
 def test_verith_with_property():
     """--property without --infer writes prp as sorry (string not compiled to Terms)."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(str(COUNTER_MODULE), "-P", "x == 0", "-o", tmpdir, "-p", "CounterProp")
+        r = _verith(
+            str(COUNTER_MODULE), "-P", "s0 == 0", "-o", tmpdir, "-p", "CounterProp"
+        )
         assert r.returncode == 0, r.stderr
         assert (Path(tmpdir) / "CounterProp").exists()
 
@@ -70,10 +79,13 @@ def test_verith_infer_claude():
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
             str(COUNTER_MODULE),
-            "-P", "x == 0",
+            "-P",
+            "s0 == 0",
             "--infer",
-            "-o", tmpdir,
-            "-p", "CounterInferClaude",
+            "-o",
+            tmpdir,
+            "-p",
+            "CounterInferClaude",
         )
         assert r.returncode == 0, r.stderr
         cert = (
@@ -85,18 +97,25 @@ def test_verith_infer_claude():
         assert "sorry" not in cert.split("hrank")[1]  # hrank proof may still have sorry
 
 
-@pytest.mark.skipif(not _ollama_available(), reason="Ollama not available")
+@pytest.mark.skipif(
+    not _ollama_available(), reason="Ollama or openai package not available"
+)
 def test_verith_infer_ollama():
     """--infer with local Ollama LLM produces a certificate with inv, P, and ranking."""
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
             str(COUNTER_MODULE),
-            "-P", "x == 0",
+            "-P",
+            "s0 == 0",
             "--infer",
-            "--model", "qwen3-coder",
-            "--base-url", "http://localhost:11434/v1",
-            "-o", tmpdir,
-            "-p", "CounterInferOllama",
+            "--model",
+            "qwen3-coder",
+            "--base-url",
+            "http://localhost:11434/v1",
+            "-o",
+            tmpdir,
+            "-p",
+            "CounterInferOllama",
         )
         assert r.returncode == 0, r.stderr
         cert = (
