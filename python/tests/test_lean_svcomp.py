@@ -26,6 +26,7 @@ OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
 # Helpers
 # ──────────────────────────────────────────────────────────────
 
+
 def _gen(name, module, prp, inv, ranking, pre=None):
     """Generate a Lean project with certificate and return the project dir."""
     cert = CertificateData(prp=prp, inv=inv, ranking=ranking)
@@ -49,40 +50,41 @@ def _lake_build(project_dir):
     r = subprocess.run(
         ["lake", "update"],
         cwd=project_dir,
-        capture_output=True, text=True, timeout=600,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     assert r.returncode == 0, f"lake update failed: {r.stderr[-300:]}"
 
     r = subprocess.run(
         ["lake", "build", "Certificate"],
         cwd=project_dir,
-        capture_output=True, text=True, timeout=600,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     sorry_lines = [
-        l for l in r.stdout.split("\n")
-        if "sorry" in l and "Certificate/" in l
+        l for l in r.stdout.split("\n") if "sorry" in l and "Certificate/" in l
     ]
-    error_lines = [
-        l for l in r.stdout.split("\n")
-        if l.startswith("error:")
-    ]
-    assert r.returncode == 0, (
-        f"lake build failed:\n" + "\n".join(error_lines[:5])
-    )
-    assert len(sorry_lines) == 0, (
-        f"Certificate has sorry:\n" + "\n".join(sorry_lines)
-    )
+    error_lines = [l for l in r.stdout.split("\n") if l.startswith("error:")]
+    assert r.returncode == 0, r"lake build failed:\n" + "\n".join(error_lines[:5])
+    assert len(sorry_lines) == 0, "Certificate has sorry:\n" + "\n".join(sorry_lines)
 
 
 # ──────────────────────────────────────────────────────────────
 # Test modules
 # ──────────────────────────────────────────────────────────────
 
+
 def _make_countdown():
     """x starts at 100, decrements to 0, resets."""
-    def init(): return 100
+
+    def init():
+        return 100
+
     def update(old_x):
-        if old_x == 0: return 100
+        if old_x == 0:
+            return 100
         return old_x - 1
 
     s = (Wire(dt.Int([1])), Wire(dt.Int([1])))
@@ -95,9 +97,13 @@ def _make_countdown():
 
 def _make_twovars():
     """x increments toward y, resets when equal."""
-    def init(): return 0, 10
+
+    def init():
+        return 0, 10
+
     def update(old_x, old_y):
-        if old_x < old_y: return old_x + 1, old_y
+        if old_x < old_y:
+            return old_x + 1, old_y
         return 0, 10
 
     x = (Wire(dt.Int([1])), Wire(dt.Int([1])))
@@ -111,11 +117,17 @@ def _make_twovars():
 
 def _make_collatz_bounded():
     """x starts at 7, steps down by 3 or 1, resets at 1."""
-    def init(): return 7
+
+    def init():
+        return 7
+
     def update(old_x):
-        if old_x == 1: return 7
-        if old_x > 4: return old_x - 3
-        if old_x > 1: return old_x - 1
+        if old_x == 1:
+            return 7
+        if old_x > 4:
+            return old_x - 3
+        if old_x > 1:
+            return old_x - 1
         return old_x
 
     s = (Wire(dt.Int([1])), Wire(dt.Int([1])))
@@ -128,10 +140,15 @@ def _make_collatz_bounded():
 
 def _make_nested():
     """Nested i/j counters: j counts to 3, then i increments, both reset at (3,3)."""
-    def init(): return 0, 0
+
+    def init():
+        return 0, 0
+
     def update(old_i, old_j):
-        if old_j < 3: return old_i, old_j + 1
-        if old_i < 3: return old_i + 1, 0
+        if old_j < 3:
+            return old_i, old_j + 1
+        if old_i < 3:
+            return old_i + 1, 0
         return 0, 0
 
     i = (Wire(dt.Int([1])), Wire(dt.Int([1])))
@@ -145,10 +162,15 @@ def _make_nested():
 
 def _make_gcd():
     """Euclidean GCD: a and b subtract until equal, then reset."""
-    def init(): return 12, 8
+
+    def init():
+        return 12, 8
+
     def update(old_a, old_b):
-        if old_a > old_b: return old_a - old_b, old_b
-        if old_b > old_a: return old_a, old_b - old_a
+        if old_a > old_b:
+            return old_a - old_b, old_b
+        if old_b > old_a:
+            return old_a, old_b - old_a
         return 12, 8
 
     a = (Wire(dt.Int([1])), Wire(dt.Int([1])))
@@ -164,48 +186,64 @@ def _make_gcd():
 # Generation tests (fast — just check project is created)
 # ──────────────────────────────────────────────────────────────
 
+
 def test_countdown_generates():
     m = _make_countdown()
-    p = _gen("SvcompCountdown", m,
-             prp="(= s0 0)",
-             inv="(and (>= s0 0) (<= s0 100))",
-             ranking="(ite (= s0 0) 0 s0)")
+    p = _gen(
+        "SvcompCountdown",
+        m,
+        prp="(= s0 0)",
+        inv="(and (>= s0 0) (<= s0 100))",
+        ranking="(ite (= s0 0) 0 s0)",
+    )
     assert (p / "Certificate" / "Certificate.lean").exists()
 
 
 def test_twovars_generates():
     m = _make_twovars()
-    p = _gen("SvcompTwovars", m,
-             prp="(= s0 s1)",
-             inv="(and (>= s0 0) (<= s0 s1) (= s1 10))",
-             ranking="(ite (= s0 s1) 0 (- s1 s0))")
+    p = _gen(
+        "SvcompTwovars",
+        m,
+        prp="(= s0 s1)",
+        inv="(and (>= s0 0) (<= s0 s1) (= s1 10))",
+        ranking="(ite (= s0 s1) 0 (- s1 s0))",
+    )
     assert (p / "Certificate" / "Certificate.lean").exists()
 
 
 def test_collatz_bounded_generates():
     m = _make_collatz_bounded()
-    p = _gen("SvcompCollatz", m,
-             prp="(= s0 1)",
-             inv="(and (>= s0 1) (<= s0 8))",
-             ranking="(ite (= s0 1) 0 (- s0 1))")
+    p = _gen(
+        "SvcompCollatz",
+        m,
+        prp="(= s0 1)",
+        inv="(and (>= s0 1) (<= s0 8))",
+        ranking="(ite (= s0 1) 0 (- s0 1))",
+    )
     assert (p / "Certificate" / "Certificate.lean").exists()
 
 
 def test_nested_generates():
     m = _make_nested()
-    p = _gen("SvcompNested", m,
-             prp="(and (= s0 0) (= s1 0))",
-             inv="(and (>= s0 0) (<= s0 3) (>= s1 0) (<= s1 3))",
-             ranking="(ite (and (= s0 0) (= s1 0)) 0 (+ (* (- 3 s0) 4) (- 3 s1)))")
+    p = _gen(
+        "SvcompNested",
+        m,
+        prp="(and (= s0 0) (= s1 0))",
+        inv="(and (>= s0 0) (<= s0 3) (>= s1 0) (<= s1 3))",
+        ranking="(ite (and (= s0 0) (= s1 0)) 0 (+ (* (- 3 s0) 4) (- 3 s1)))",
+    )
     assert (p / "Certificate" / "Certificate.lean").exists()
 
 
 def test_gcd_generates():
     m = _make_gcd()
-    p = _gen("SvcompGcd", m,
-             prp="(= s0 s1)",
-             inv="(and (>= s0 1) (>= s1 1))",
-             ranking="(ite (= s0 s1) 0 (+ (- s0 1) (- s1 1)))")
+    p = _gen(
+        "SvcompGcd",
+        m,
+        prp="(= s0 s1)",
+        inv="(and (>= s0 1) (>= s1 1))",
+        ranking="(ite (= s0 s1) 0 (+ (- s0 1) (- s1 1)))",
+    )
     assert (p / "Certificate" / "Certificate.lean").exists()
 
 
@@ -213,31 +251,41 @@ def test_gcd_generates():
 # Proof verification tests (slow — require lake + mathlib)
 # ──────────────────────────────────────────────────────────────
 
+
 @pytest.mark.slow
 def test_countdown_proofs():
     m = _make_countdown()
-    p = _gen("SvcompCountdown", m,
-             prp="(= s0 0)",
-             inv="(and (>= s0 0) (<= s0 100))",
-             ranking="(ite (= s0 0) 0 s0)")
+    p = _gen(
+        "SvcompCountdown",
+        m,
+        prp="(= s0 0)",
+        inv="(and (>= s0 0) (<= s0 100))",
+        ranking="(ite (= s0 0) 0 s0)",
+    )
     _lake_build(p)
 
 
 @pytest.mark.slow
 def test_twovars_proofs():
     m = _make_twovars()
-    p = _gen("SvcompTwovars", m,
-             prp="(= s0 s1)",
-             inv="(and (>= s0 0) (<= s0 s1) (= s1 10))",
-             ranking="(ite (= s0 s1) 0 (- s1 s0))")
+    p = _gen(
+        "SvcompTwovars",
+        m,
+        prp="(= s0 s1)",
+        inv="(and (>= s0 0) (<= s0 s1) (= s1 10))",
+        ranking="(ite (= s0 s1) 0 (- s1 s0))",
+    )
     _lake_build(p)
 
 
 @pytest.mark.slow
 def test_collatz_bounded_proofs():
     m = _make_collatz_bounded()
-    p = _gen("SvcompCollatz", m,
-             prp="(= s0 1)",
-             inv="(and (>= s0 1) (<= s0 8))",
-             ranking="(ite (= s0 1) 0 (- s0 1))")
+    p = _gen(
+        "SvcompCollatz",
+        m,
+        prp="(= s0 1)",
+        inv="(and (>= s0 1) (<= s0 8))",
+        ranking="(ite (= s0 1) 0 (- s0 1))",
+    )
     _lake_build(p)
