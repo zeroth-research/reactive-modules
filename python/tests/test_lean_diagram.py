@@ -77,7 +77,7 @@ def test_twobitcounter_has_inlined_scalars():
 
     # Scalar Bool constants are inlined as Mat-typed literals, not top-level defs
     assert "def c0" not in lean
-    assert "let x0 := (fun _ _ => false)" in lean
+    assert "let x0 : (Mat Bool 1 1) := (fun _ _ => false)" in lean
 
 
 def test_twobitcounter_update_has_let_bindings():
@@ -229,7 +229,7 @@ def test_certificate_bool_has_rm():
 def test_certificate_bool_rm_uses_plain_functions():
     cert = _cert_for(_make_twobitcounter)
     # Should use init directly, not init.fn
-    assert "init := init" in cert
+    assert "init := fun e => init e.2" in cert
     assert ".fn" not in cert
 
 
