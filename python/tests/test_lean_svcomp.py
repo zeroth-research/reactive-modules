@@ -9,7 +9,6 @@ To verify proofs actually close (slow, requires lake + mathlib):
 """
 
 import subprocess
-import shutil
 import pytest
 from os.path import dirname
 from pathlib import Path
@@ -17,7 +16,7 @@ from pathlib import Path
 from zrth import Wire, Module, DType as dt
 from zrth.analyzer import convert_method
 from zrth.lean.project import create_project, write_certificate_lean
-from zrth.lean.cert import CertificateData
+from zrth.lean.cert import CertificateData, smt_predicates_to_lean
 
 OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
 
@@ -33,15 +32,13 @@ def _gen(name, module, prp, inv, ranking, pre=None):
     if pre is not None:
         cert.init_pre = pre
         cert.update_pre = pre
-    out = OUTPUT_DIR / name
-    if out.exists():
-        shutil.rmtree(out, ignore_errors=True)
+    lean_cert = smt_predicates_to_lean(cert, module)
     project_dir = create_project(
         output_dir=OUTPUT_DIR,
         module=module,
         project_name=name,
     )
-    write_certificate_lean(project_dir, name, module, cert)
+    write_certificate_lean(project_dir, name, module, lean_cert)
     return project_dir
 
 

@@ -262,7 +262,9 @@ def write_certificate_lean(
     """Write/overwrite the Certificate.lean file using `cert_data`.
 
     Builds a fresh `LeanContext` so term-typed cert fields are registered
-    with the constants table consistently with codegen.
+    with the constants table consistently with codegen.  String fields are
+    expected to be Lean expressions; call `smt_predicates_to_lean` first if
+    they are SMT-LIB.
     """
     module_name = project_name
     cert_terms: list = []
