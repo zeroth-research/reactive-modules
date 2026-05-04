@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type, _translate_terms
 from zrth.lean.common import LeanContext, _bind_wires
 from ..expr import Expr
+
+if TYPE_CHECKING:
+    from zrth import Module
 
 _ZEROTH_HAMMER = """\
 syntax "zeroth_hammer" : tactic
@@ -334,3 +340,51 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
     lines.append("end LTS\n")
 
     return "\n".join(lines)
+
+
+def smt_predicates_to_lean(cert_data: CertificateData, module: "Module") -> CertificateData:
+    """Translate SMT-LIB string fields in *cert_data* to Lean expression strings.
+
+    None and compiled term-list fields pass through unchanged.
+    """
+    fields = (cert_data.prp, cert_data.inv, cert_data.init_pre, cert_data.update_pre, cert_data.ranking)
+    if not any(isinstance(f, str) for f in fields):
+        return cert_data
+
+    # Lazy imports keep cvc5 off the critical path when this function is unused.
+    import cvc5
+
+    from .smt_module import ModuleSMT
+    from .smt_prompt import CegarPromptEnv, parse_predicate
+    from .smt_to_lean import smt_to_lean, smt_to_lean_nat
+
+    tm = cvc5.TermManager()
+    msmt = ModuleSMT(tm=tm, module=module)
+    env = CegarPromptEnv(msmt)
+
+    def translate(smt_src: str | None, mode: str) -> str | None:
+        if not isinstance(smt_src, str):
+            return smt_src
+        term = parse_predicate(env, smt_src)
+        if mode in ("property", "invariant"):
+            return smt_to_lean(term, msmt.ctrl_next, param_name="s")
+        if mode == "ranking":
+            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s")
+        # preconditions
+        return smt_to_lean(
+            term,
+            state_wires=[],
+            param_name="e",
+            extra=[
+                ("e", "e.2", msmt.extl_next),
+                ("el", "e.1", msmt.extl_latched),
+            ],
+        )
+
+    return CertificateData(
+        prp=translate(cert_data.prp, "property"),
+        init_pre=translate(cert_data.init_pre, "pre"),
+        update_pre=translate(cert_data.update_pre, "pre"),
+        inv=translate(cert_data.inv, "invariant"),
+        ranking=translate(cert_data.ranking, "ranking"),
+    )

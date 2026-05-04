@@ -62,58 +62,9 @@ returns a :class:`zrth.Module`::
 import argparse
 from pathlib import Path
 
-from .cert import CertificateData
+from .cert import CertificateData, smt_predicates_to_lean
 from .project import create_project, load_module_from_file, write_certificate_lean
 
-
-def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateData:
-    """Parse SMT-LIB strings on `cert_data` (prp / init_pre / update_pre) and
-    translate them to Lean expression strings over the appropriate parameter.
-
-    SMT variable naming:
-      * Property (`prp`): references `s0..sN-1` — the ctrl-next components.
-      * Preconditions (`init_pre`, `update_pre`): reference `e0..eM-1`
-        (extl-next inputs) and `el0..elM-1` (extl-latched inputs). The
-        Lean parameter is a pair `e : Extl_latched × Extl_next`, so SMT
-        `eK` → Lean `e.2.<acc_k> [0 0]`, `elK` → `e.1.<acc_k> [0 0]`.
-    """
-    # Local imports keep cvc5 off the critical path when inference is unused.
-    import cvc5
-
-    from .smt_module import ModuleSMT
-    from .smt_prompt import CegarPromptEnv, parse_predicate
-    from .smt_to_lean import smt_to_lean, smt_to_lean_nat
-
-    tm = cvc5.TermManager()
-    msmt = ModuleSMT(tm=tm, module=module)
-    env = CegarPromptEnv(msmt)
-
-    def translate(smt_src: str | None, mode: str) -> str | None:
-        if not isinstance(smt_src, str):
-            return smt_src
-        term = parse_predicate(env, smt_src)
-        if mode == "property" or mode == "invariant":
-            return smt_to_lean(term, msmt.ctrl_next, param_name="s")
-        if mode == "ranking":
-            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s")
-        # preconditions
-        return smt_to_lean(
-            term,
-            state_wires=[],
-            param_name="e",
-            extra=[
-                ("e", "e.2", msmt.extl_next),
-                ("el", "e.1", msmt.extl_latched),
-            ],
-        )
-
-    return CertificateData(
-        prp=translate(cert_data.prp, "property"),
-        init_pre=translate(cert_data.init_pre, "pre"),
-        update_pre=translate(cert_data.update_pre, "pre"),
-        inv=translate(cert_data.inv, "invariant"),
-        ranking=translate(cert_data.ranking, "ranking"),
-    )
 
 
 _EPILOG = """\
@@ -265,7 +216,7 @@ def main():
     # its own cvc5 context.
     project_cert_data = cert_data
     if cert_data is not None:
-        project_cert_data = _smt_predicates_to_lean(cert_data, module)
+        project_cert_data = smt_predicates_to_lean(cert_data, module)
 
     print(".. Generating lean code")
     project_dir = create_project(
