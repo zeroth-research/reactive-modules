@@ -52,11 +52,11 @@ def _make_counter():
     """Simple counter: init x=0, update x'=x+1."""
     x = (Wire(dt.Int([1])), Wire(dt.Int([1])))
 
-    init = [Term(it.Tensor(torch.tensor([0], dtype=torch.int64)), [x[1]])]
+    init = [Term(it.from_tensor(torch.tensor([0], dtype=torch.int64)), [x[1]])]
     one = Wire(dt.Int([1]))
     update = [
-        Term(it.Tensor(torch.tensor([1], dtype=torch.int64)), [one]),
-        Term(it.Add(), [x[1]], [x[0], one]),
+        Term(it.from_tensor(torch.tensor([1], dtype=torch.int64)), [one]),
+        Term(it.Int.Add, [x[1]], [x[0], one]),
     ]
     m = Module.sequential(init, update, [x])
     return m, x
@@ -97,14 +97,14 @@ def test_boolean_logic():
     c = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
 
     init = [
-        Term(it.Tensor(torch.tensor([True])), [a[1]]),
-        Term(it.Tensor(torch.tensor([False])), [b[1]]),
-        Term(it.Not(), [c[1]], [a[1]]),
+        Term(it.from_tensor(torch.tensor([True])), [a[1]]),
+        Term(it.from_tensor(torch.tensor([False])), [b[1]]),
+        Term(it.Bool.Not, [c[1]], [a[1]]),
     ]
     update = [
-        Term(it.And(), [a[1]], [a[0], b[0]]),
-        Term(it.Or(), [b[1]], [a[0], b[0]]),
-        Term(it.Not(), [c[1]], [c[0]]),
+        Term(it.Bool.And, [a[1]], [a[0], b[0]]),
+        Term(it.Bool.Or, [b[1]], [a[0], b[0]]),
+        Term(it.Bool.Not, [c[1]], [c[0]]),
     ]
     m = Module.sequential(init, update, [a, b, c])
     state, history = _run_module(m, 2)
@@ -133,8 +133,8 @@ def test_ite():
     x = (Wire(dt.Int([1])), Wire(dt.Int([1])))
 
     init = [
-        Term(it.Tensor(torch.tensor([True])), [cond[1]]),
-        Term(it.Tensor(torch.tensor([0], dtype=torch.int64)), [x[1]]),
+        Term(it.from_tensor(torch.tensor([True])), [cond[1]]),
+        Term(it.from_tensor(torch.tensor([0], dtype=torch.int64)), [x[1]]),
     ]
 
     one = Wire(dt.Int([1]))
@@ -143,12 +143,12 @@ def test_ite():
     tmp2 = Wire(dt.Int([1]))
 
     update = [
-        Term(it.Not(), [cond[1]], [cond[0]]),
-        Term(it.Tensor(torch.tensor([1], dtype=torch.int64)), [one]),
-        Term(it.Tensor(torch.tensor([2], dtype=torch.int64)), [two]),
-        Term(it.Add(), [tmp1], [x[0], one]),
-        Term(it.Add(), [tmp2], [x[0], two]),
-        Term(it.Ite(), [x[1]], [cond[0], tmp1, tmp2]),
+        Term(it.Bool.Not, [cond[1]], [cond[0]]),
+        Term(it.from_tensor(torch.tensor([1], dtype=torch.int64)), [one]),
+        Term(it.from_tensor(torch.tensor([2], dtype=torch.int64)), [two]),
+        Term(it.Int.Add, [tmp1], [x[0], one]),
+        Term(it.Int.Add, [tmp2], [x[0], two]),
+        Term(it.Ite, [x[1]], [cond[0], tmp1, tmp2]),
     ]
     m = Module.sequential(init, update, [cond, x])
     state, history = _run_module(m, 2)
@@ -173,15 +173,15 @@ def test_tensor_ops():
     data = (Wire(dt.Float([4])), Wire(dt.Float([4])))
 
     init = [
-        Term(it.Tensor(torch.tensor([-1.0, 2.0, 3.0, -4.0])), [data[1]]),
+        Term(it.from_tensor(torch.tensor([-1.0, 2.0, 3.0, -4.0])), [data[1]]),
     ]
     update = [
-        Term(it.ReLU(), [data[1]], [data[0]]),
+        Term(it.NN.ReLU, [data[1]], [data[0]]),
     ]
     m = Module.sequential(init, update, [data])
     state, history = _run_module(m, 2)
 
-    expected = torch.tensor([-1.0, 2.0, 3.0, -4.0])
+    expected = torch.tensor([[-1.0, 2.0, 3.0, -4.0]])
     assert torch.equal(_get(history[0], data[0]), expected)
 
     # Step 1: relu([-1,2,3,-4]) = [0,2,3,0]
@@ -200,14 +200,14 @@ def test_tensor_reductions():
     argmax_wire = Wire(dt.Int([1]))
 
     init = [
-        Term(it.Tensor(torch.tensor([-1.0, 2.0, 3.0, -4.0])), [data[1]]),
-        Term(it.TensorSum(), [sum_wire], [data[1]]),
-        Term(it.TensorMean(), [mean_wire], [data[1]]),
-        Term(it.TensorMax(), [max_wire], [data[1]]),
-        Term(it.Argmax(), [argmax_wire], [data[1]]),
+        Term(it.from_tensor(torch.tensor([-1.0, 2.0, 3.0, -4.0])), [data[1]]),
+        Term(it.Tensor.Sum, [sum_wire], [data[1]]),
+        Term(it.Tensor.Mean, [mean_wire], [data[1]]),
+        Term(it.Tensor.Max, [max_wire], [data[1]]),
+        Term(it.Tensor.Argmax, [argmax_wire], [data[1]]),
     ]
     update = [
-        Term(it.Id(), [data[1]], [data[0]]),
+        Term(it.Id, [data[1]], [data[0]]),
     ]
     m = Module.sequential(init, update, [data])
     state, _ = _run_module(m, 0)
@@ -229,21 +229,21 @@ def test_comparisons():
     lt_wire = Wire(dt.Bool([1]))
 
     init = [
-        Term(it.Tensor(torch.tensor([3], dtype=torch.int64)), [a[1]]),
-        Term(it.Tensor(torch.tensor([5], dtype=torch.int64)), [b[1]]),
-        Term(it.Eq(), [eq_wire], [a[1], b[1]]),
-        Term(it.Lt(), [lt_wire], [a[1], b[1]]),
+        Term(it.from_tensor(torch.tensor([3], dtype=torch.int64)), [a[1]]),
+        Term(it.from_tensor(torch.tensor([5], dtype=torch.int64)), [b[1]]),
+        Term(it.Cmp.Eq, [eq_wire], [a[1], b[1]]),
+        Term(it.Cmp.Lt, [lt_wire], [a[1], b[1]]),
     ]
 
     one = Wire(dt.Int([1]))
     eq_wire2 = Wire(dt.Bool([1]))
     lt_wire2 = Wire(dt.Bool([1]))
     update = [
-        Term(it.Tensor(torch.tensor([1], dtype=torch.int64)), [one]),
-        Term(it.Add(), [a[1]], [a[0], one]),
-        Term(it.Id(), [b[1]], [b[0]]),
-        Term(it.Eq(), [eq_wire2], [a[0], b[0]]),
-        Term(it.Lt(), [lt_wire2], [a[0], b[0]]),
+        Term(it.from_tensor(torch.tensor([1], dtype=torch.int64)), [one]),
+        Term(it.Int.Add, [a[1]], [a[0], one]),
+        Term(it.Id, [b[1]], [b[0]]),
+        Term(it.Cmp.Eq, [eq_wire2], [a[0], b[0]]),
+        Term(it.Cmp.Lt, [lt_wire2], [a[0], b[0]]),
     ]
     m = Module.sequential(init, update, [a, b])
     state, history = _run_module(m, 3)
@@ -276,10 +276,10 @@ def test_env_inputs():
     env = (Wire(dt.Int([1])), Wire(dt.Int([1])))
 
     init = [
-        Term(it.Tensor(torch.tensor([0], dtype=torch.int64)), [x[1]]),
+        Term(it.from_tensor(torch.tensor([0], dtype=torch.int64)), [x[1]]),
     ]
     update = [
-        Term(it.Add(), [x[1]], [x[0], env[1]]),
+        Term(it.Int.Add, [x[1]], [x[0], env[1]]),
     ]
     m = Module.sequential(init, update, obs=[x, env])
 
@@ -302,8 +302,8 @@ def _make_twobitcounter():
     enable = (Wire(dt.Bool([1])), Wire(dt.Bool([1])))
 
     init = [
-        Term(it.Tensor(torch.tensor([False])), [b0[1]]),
-        Term(it.Tensor(torch.tensor([False])), [b1[1]]),
+        Term(it.from_tensor(torch.tensor([False])), [b0[1]]),
+        Term(it.from_tensor(torch.tensor([False])), [b1[1]]),
     ]
 
     not_b0 = Wire(dt.Bool([1]))
@@ -311,11 +311,11 @@ def _make_twobitcounter():
     b0_and_enable = Wire(dt.Bool([1]))
 
     update = [
-        Term(it.Not(), [not_b0], [b0[0]]),
-        Term(it.Ite(), [b0[1]], [enable[1], not_b0, b0[0]]),
-        Term(it.And(), [b0_and_enable], [b0[0], enable[1]]),
-        Term(it.Not(), [not_b1], [b1[0]]),
-        Term(it.Ite(), [b1[1]], [b0_and_enable, not_b1, b1[0]]),
+        Term(it.Bool.Not, [not_b0], [b0[0]]),
+        Term(it.Ite, [b0[1]], [enable[1], not_b0, b0[0]]),
+        Term(it.Bool.And, [b0_and_enable], [b0[0], enable[1]]),
+        Term(it.Bool.Not, [not_b1], [b1[0]]),
+        Term(it.Ite, [b1[1]], [b0_and_enable, not_b1, b1[0]]),
     ]
 
     m = Module.sequential(init, update, obs=[b0, b1, enable])

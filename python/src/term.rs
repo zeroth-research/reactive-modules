@@ -1,6 +1,7 @@
+use crate::itype::IType;
 use crate::wire::Wire;
 use crate::*;
-use pyo3::exceptions::{PyException, PyIndexError};
+use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
@@ -10,21 +11,23 @@ pub(crate) struct Term {
 #[pymethods]
 impl Term {
     #[staticmethod]
-    fn function(itype: IType, write: &Bound<'_, PyAny>, read: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let write = try_wire_iter_cloned(write)?;
+    fn function(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>, read: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let write: Vec<_> = try_wire_iter_cloned(write)?.collect();
+        let resolved = extract_itype(itype, &write)?;
         let read = try_wire_iter_cloned(read)?;
 
-        match base::Term::function(itype.into(), write, read) {
+        match base::Term::function(resolved, write.into_iter(), read) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
 
     #[staticmethod]
-    fn constant(itype: IType, write: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let write = try_wire_iter_cloned(write)?;
+    fn constant(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let write: Vec<_> = try_wire_iter_cloned(write)?.collect();
+        let resolved = extract_itype(itype, &write)?;
 
-        match base::Term::constant(itype.into(), write) {
+        match base::Term::constant(resolved, write.into_iter()) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -33,7 +36,7 @@ impl Term {
     #[new]
     #[pyo3(signature = (itype, write, read = None))]
     fn new(
-        itype: IType,
+        itype: &Bound<'_, PyAny>,
         write: &Bound<'_, PyAny>,
         read: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
@@ -85,6 +88,16 @@ impl From<base::Term<theory::python::IType>> for Term {
     fn from(base: base::Term<theory::python::IType>) -> Self {
         Self { base }
     }
+}
+
+fn extract_itype(
+    itype: &Bound<'_, PyAny>,
+    _write: &[base::Wire<theory::python::Type>],
+) -> PyResult<theory::python::IType> {
+    itype
+        .extract::<IType>()
+        .map(|ops| ops.into())
+        .map_err(|_| PyTypeError::new_err("itype must be an IType instance"))
 }
 
 #[derive(Clone)]

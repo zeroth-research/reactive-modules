@@ -1,6 +1,6 @@
 use crate::term::{Term, TermInterfaceType};
 use crate::wire::Wire;
-use crate::{DType, IType, try_iter_borrow};
+use crate::try_iter_borrow;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 

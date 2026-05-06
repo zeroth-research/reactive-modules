@@ -52,7 +52,11 @@ impl Int {
 
 impl fmt::Display for Int {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Int({}, {})", self.0, self.1)
+        if self.0 == 1 {
+            write!(f, "Int({})", self.1)
+        } else {
+            write!(f, "Int({}, {})", self.0, self.1)
+        }
     }
 }
 

@@ -14,19 +14,19 @@ from .zrth import (
 
 # Add type aliases to the DType object
 def Bool(*shape):
-    return DType.Bool([*shape])
+    return DType.Bool([*shape] if shape else [1])
 
 
 def Int(*shape):
-    return DType.Int([*shape])
+    return DType.Int([*shape] if shape else [1])
 
 
 def Real(*shape):
-    return DType.Real([*shape])
+    return DType.Real([*shape] if shape else [1])
 
 
 def Float(*args):
-    return DType.Float([*args])
+    return DType.Float([*args] if args else [1])
 
 
 from .gym import Wrapper, Env

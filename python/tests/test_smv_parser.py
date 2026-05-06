@@ -42,12 +42,11 @@ def test_counter_init_terms():
     init_terms = atom.init
     assert len(init_terms) > 0
 
-    # At least one init term should be ConstInt(0) for x
-    const_zero_found = False
-    for t in init_terms:
-        if str(t.itype) == "Const: 0":
-            const_zero_found = True
-            break
+    # At least one init term should be a Const with value 0 for x
+    const_zero_found = any(
+        t.itype.is_const and t.itype.const_data == [[0]]
+        for t in init_terms
+    )
     assert const_zero_found, "Expected a ConstInt(0) init term for x"
 
 
@@ -132,7 +131,7 @@ def test_enum_type():
     assert "state" in name_map
     # state should have TensorInt dtype (enum mapped to int)
     latched, _ = name_map["state"]
-    assert isinstance(latched.dtype, DType.Int)
+    assert latched.dtype.is_int()
 
 
 def test_frozen_var():

@@ -63,7 +63,7 @@ def test_dtype_comparison():
     b = expr.Real("b", shape=[2])
     c = expr.Bool("c", shape=[2])
     assert type(a.dtype) == type(b.dtype)
-    assert type(b.dtype) != type(c.dtype)
+    assert b.dtype != c.dtype  # Real vs Bool are different dtype values
 
 
 def test_matmul():

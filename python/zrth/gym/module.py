@@ -33,9 +33,9 @@ def _value_to_const_term(value, wire):
     elif isinstance(value, int):
         return Term(IType.ConstInt(value), [wire], [])
     elif isinstance(value, float):
-        return Term(IType.Tensor(torch.tensor([value], dtype=torch.float32)), [wire], [])
+        return Term(IType.from_tensor(torch.tensor([value], dtype=torch.float32)), [wire], [])
     elif isinstance(value, torch.Tensor):
-        return Term(IType.Tensor(value.clone()), [wire], [])
+        return Term(IType.from_tensor(value.clone()), [wire], [])
     else:
         raise ValueError(f"Cannot create constant term for {type(value).__name__}: {value}")
 
@@ -147,7 +147,7 @@ def _extract_env_module(env_instance, **kwargs):
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [
-        Term(IType.Tensor(torch.tensor([0.0])), [reward[1]], []),
+        Term(IType.from_tensor(torch.tensor([0.0])), [reward[1]], []),
         Term(IType.ConstBool(False), [terminated[1]], []),
         Term(IType.ConstBool(False), [truncated[1]], []),
     ]

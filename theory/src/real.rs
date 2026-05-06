@@ -52,7 +52,11 @@ impl Real {
 
 impl fmt::Display for Real {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Real({}, {})", self.0, self.1)
+        if self.0 == 1 {
+            write!(f, "Real({})", self.1)
+        } else {
+            write!(f, "Real({}, {})", self.0, self.1)
+        }
     }
 }
 

@@ -7,14 +7,44 @@ import torch
 type ToExpr = Expr | int | bool | float | torch.Tensor
 
 
-class Expr:
-    def __init__(self, itype: IType, dtype: DType, *args):
-        assert all(isinstance(arg, Expr) for arg in args)
-        self._term = Term(itype, [Wire(dtype)], [a.wire for a in args])
+def _arith_itype(dtype, name: str):
+    """Return IType.Int/Float/Real/BV.<name> based on dtype."""
+    if dtype.is_int():
+        return getattr(IType.Int, name)
+    elif dtype.is_float():
+        return getattr(IType.Float, name)
+    elif dtype.is_real():
+        return getattr(IType.Real, name)
+    elif dtype.is_bv():
+        return getattr(IType.BV, name)
+    raise ValueError(f"unsupported dtype for arith op '{name}': {dtype}")
 
+
+class _Uninterpreted:
+    """Python-only itype for symbolic/free variables (no Rust Term backing)."""
+    def __init__(self, name: str):
+        self.name = name
+
+    def __call__(self):
+        return self
+
+    def __repr__(self):
+        return f"Uninterpreted({self.name!r})"
+
+
+class Expr:
+    def __init__(self, itype, dtype: DType, *args):
+        assert all(isinstance(arg, Expr) for arg in args)
         self._itype = itype
 
-        self._wire = self._term.write[0]
+        if isinstance(itype, _Uninterpreted):
+            # Free/symbolic variable — no Term, just a bare wire
+            self._term = None
+            self._wire = Wire(dtype)
+        else:
+            self._term = Term(itype, [Wire(dtype)], [a.wire for a in args])
+            self._wire = self._term.write[0]
+
         self._dtype = self._wire.dtype
         self._shape = self._dtype.shape
 
@@ -159,17 +189,14 @@ def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
         if rtype != arg.dtype:
             raise Exception("dtype mismatch")
 
-    match wtype:
-        case DType.Bool(_):
-            return BExpr(itype, wtype, first, *others)
-        case DType.Real(_):
-            return AExpr(itype, wtype, first, *others)
-        case DType.Int(_):
-            return AExpr(itype, wtype, first, *others)
-        case DType.UWord(_) | DType.SWord(_):
-            return WExpr(itype, wtype, first, *others)
-        case _:
-            raise NotImplementedError
+    if wtype.is_bool():
+        return BExpr(itype, wtype, first, *others)
+    elif wtype.is_real() or wtype.is_int() or wtype.is_float():
+        return AExpr(itype, wtype, first, *others)
+    elif wtype.is_bv():
+        return WExpr(itype, wtype, first, *others)
+    else:
+        raise NotImplementedError(f"unsupported dtype: {wtype}")
 
 
 # ========================================
@@ -178,7 +205,7 @@ def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
 
 
 def _elementwise_bool_op(itype, first: BExpr, *others):
-    if not isinstance(first.dtype, DType.Bool):
+    if not first.dtype.is_bool():
         raise ValueError(f"invalid dtype, expected Bool(...), got: `{first.dtype}`")
 
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
@@ -186,20 +213,20 @@ def _elementwise_bool_op(itype, first: BExpr, *others):
 
 # Logical or (we have to avoid clash with Python keyword 'or')
 def disj(first: BExpr, *others) -> BExpr:
-    return _elementwise_bool_op(IType.Or(), first, *others)
+    return _elementwise_bool_op(IType.Bool.Or, first, *others)
 
 
 # Logical and
 def conj(first: BExpr, *others) -> BExpr:
-    return _elementwise_bool_op(IType.And(), first, *others)
+    return _elementwise_bool_op(IType.Bool.And, first, *others)
 
 
 # Logical not
 def neg(e: BExpr) -> BExpr:
-    if not isinstance(e.dtype, DType.Bool):
+    if not e.dtype.is_bool():
         raise ValueError(f"invalid dtype, expected Bool(...), got: `{e.dtype}`")
 
-    return BExpr(IType.Not(), e.dtype, e)
+    return BExpr(IType.Bool.Not, e.dtype, e)
 
 
 # ========================================
@@ -208,26 +235,26 @@ def neg(e: BExpr) -> BExpr:
 
 
 def _elementwise_arith_op(itype, first: Expr, *others):
-    if not isinstance(first.dtype, (DType.Real, DType.Int)):
+    if not (first.dtype.is_real() or first.dtype.is_int() or first.dtype.is_float()):
         raise Exception("invalid dtype")
 
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
 
 
 def add(first: AExpr, *others) -> AExpr:
-    return _elementwise_arith_op(IType.Add(), first, *others)
+    return _elementwise_arith_op(_arith_itype(first.dtype, 'Add'), first, *others)
 
 
 def mul(first: AExpr, *others) -> AExpr:
-    return _elementwise_arith_op(IType.Mul(), first, *others)
+    return _elementwise_arith_op(_arith_itype(first.dtype, 'Mul'), first, *others)
 
 
 def div(num: AExpr, den: AExpr) -> AExpr:
-    return _elementwise_arith_op(IType.Div(), num, den)
+    return _elementwise_arith_op(_arith_itype(num.dtype, 'Div'), num, den)
 
 
 def sub(min: AExpr, sub: AExpr) -> AExpr:
-    return _elementwise_arith_op(IType.Sub(), min, sub)
+    return _elementwise_arith_op(_arith_itype(min.dtype, 'Sub'), min, sub)
 
 
 # ========================================
@@ -236,36 +263,36 @@ def sub(min: AExpr, sub: AExpr) -> AExpr:
 
 
 def _elementwise_predicate(itype, lhs: AExpr, rhs: AExpr):
-    if not isinstance(lhs.dtype, (DType.Real, DType.Int)):
+    if not (lhs.dtype.is_real() or lhs.dtype.is_int() or lhs.dtype.is_float()):
         raise Exception("invalid dtype")
-    if not isinstance(rhs.dtype, (DType.Real, DType.Int)):
+    if not (rhs.dtype.is_real() or rhs.dtype.is_int() or rhs.dtype.is_float()):
         raise Exception("invalid dtype")
 
     return _elementwise_op(itype, DType.Bool(lhs.shape), lhs.dtype, lhs, rhs)
 
 
 def lt(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Lt(), lhs, rhs)
+    return _elementwise_predicate(IType.Cmp.Lt, lhs, rhs)
 
 
 def gt(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Gt(), lhs, rhs)
+    return _elementwise_predicate(IType.Cmp.Gt, lhs, rhs)
 
 
 def ge(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Ge(), lhs, rhs)
+    return _elementwise_predicate(IType.Cmp.Ge, lhs, rhs)
 
 
 def le(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Le(), lhs, rhs)
+    return _elementwise_predicate(IType.Cmp.Le, lhs, rhs)
 
 
 def eq(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Eq(), lhs, rhs)
+    return _elementwise_predicate(IType.Cmp.Eq, lhs, rhs)
 
 
 def neq(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Neq(), lhs, rhs)
+    return _elementwise_predicate(IType.Cmp.Ne, lhs, rhs)
 
 
 # ========================================
@@ -274,14 +301,14 @@ def neq(lhs: AExpr, rhs: AExpr) -> BExpr:
 
 
 def ite(cond: BExpr, iftrue: Expr, iffalse: Expr):
-    if not cond.shape == [1]:
+    if not (cond.shape == [1] or cond.shape == [1, 1]):
         raise Exception("invalid Boolean condition")
     if iftrue.dtype != iffalse.dtype:
         raise Exception("dtype mismatch")
 
     assert isinstance(iftrue, (BExpr, AExpr))
     assert type(iftrue) is type(iffalse)
-    return type(iftrue)(IType.Ite(), iftrue.dtype, cond, iftrue, iffalse)
+    return type(iftrue)(IType.Ite, iftrue.dtype, cond, iftrue, iffalse)
 
 
 # ========================================
@@ -290,89 +317,89 @@ def ite(cond: BExpr, iftrue: Expr, iffalse: Expr):
 
 
 def _word_arith_op(itype, first: WExpr, *others):
-    if not isinstance(first.dtype, (DType.UWord, DType.SWord)):
+    if not first.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
 
 
 def _word_predicate(itype, lhs: WExpr, rhs: WExpr):
-    if not isinstance(lhs.dtype, (DType.UWord, DType.SWord)):
+    if not lhs.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
     return _elementwise_op(itype, DType.Bool([1]), lhs.dtype, lhs, rhs)
 
 
 def w_add(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Add(), first, *others)
+    return _word_arith_op(IType.BV.Add, first, *others)
 
 
 def w_sub(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Sub(), first, *others)
+    return _word_arith_op(_arith_itype(first.dtype, 'Sub'), first, *others)
 
 
 def w_mul(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Mul(), first, *others)
+    return _word_arith_op(IType.BV.Mul, first, *others)
 
 
 def w_div(num: WExpr, den: WExpr) -> WExpr:
-    return _word_arith_op(IType.Div(), num, den)
+    return _word_arith_op(_arith_itype(num.dtype, 'Div'), num, den)
 
 
 def w_mod(num: WExpr, den: WExpr) -> WExpr:
-    return _word_arith_op(IType.Mod(), num, den)
+    return _word_arith_op(_arith_itype(num.dtype, 'Mod'), num, den)
 
 
 def w_neg(e: WExpr) -> WExpr:
-    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
+    if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
-    return WExpr(IType.Neg(), e.dtype, e)
+    return WExpr(_arith_itype(e.dtype, 'Neg'), e.dtype, e)
 
 
 def w_abs(e: WExpr) -> WExpr:
-    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
+    if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
-    return WExpr(IType.Abs(), e.dtype, e)
+    return WExpr(_arith_itype(e.dtype, 'Abs'), e.dtype, e)
 
 
 def w_and(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.And(), first, *others)
+    return _word_arith_op(IType.BV.And, first, *others)
 
 
 def w_or(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Or(), first, *others)
+    return _word_arith_op(IType.BV.Or, first, *others)
 
 
 def w_xor(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Xor(), first, *others)
+    return _word_arith_op(IType.BV.Xor, first, *others)
 
 
 def w_not(e: WExpr) -> WExpr:
-    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
+    if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
-    return WExpr(IType.Not(), e.dtype, e)
+    return WExpr(IType.BV.Not, e.dtype, e)
 
 
 def w_lt(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Lt(), lhs, rhs)
+    return _word_predicate(IType.Cmp.Lt, lhs, rhs)
 
 
 def w_gt(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Gt(), lhs, rhs)
+    return _word_predicate(IType.Cmp.Gt, lhs, rhs)
 
 
 def w_le(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Le(), lhs, rhs)
+    return _word_predicate(IType.Cmp.Le, lhs, rhs)
 
 
 def w_ge(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Ge(), lhs, rhs)
+    return _word_predicate(IType.Cmp.Ge, lhs, rhs)
 
 
 def w_eq(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Eq(), lhs, rhs)
+    return _word_predicate(IType.Cmp.Eq, lhs, rhs)
 
 
 def w_neq(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Neq(), lhs, rhs)
+    return _word_predicate(IType.Cmp.Ne, lhs, rhs)
 
 
 # ========================================
@@ -381,36 +408,32 @@ def w_neq(lhs: WExpr, rhs: WExpr) -> BExpr:
 
 
 def argmax(arg: Expr):
-    if len(arg.shape) > 1:
+    if arg.shape[0] > 1:
         raise NotImplementedError(
             "argmax not supported on matrices or higher-dimensional tensors"
         )
-    return AExpr(IType.Argmax(), DType.Int([1]), arg)
+    return AExpr(IType.Tensor.Argmax, DType.Int([1]), arg)
 
 
 def matmul(lhs: Expr, rhs: Expr):
     assert type(lhs) is type(rhs)
 
-    if len(lhs.shape) == 2 and len(rhs.shape) == 1:
-        # matrix @ vector
-        if lhs.shape[-1] != rhs.shape[0]:
+    # shape is always [rows, cols]; a vector has rows==1
+    lhs_rows, lhs_cols = lhs.shape
+    rhs_rows, rhs_cols = rhs.shape
+
+    if rhs_rows == 1:
+        # matrix @ row-vector: [m, k] @ [1, k] -> [m, 1]
+        if lhs_cols != rhs_cols:
             raise RuntimeError("size mismatch")
-
-        wtype = type(lhs.dtype)(lhs.shape[:-1])
-
-        # TODO: differentiate itype to eliminate ambiguity, or parameterise it
-        return type(lhs)(IType.MatMul(), wtype, lhs, rhs)
-
-    elif len(lhs.shape) == len(rhs.shape) == 2:
-        # matrix @ matrix
-        if lhs.shape[-1] != rhs.shape[0]:
+        wtype = lhs.dtype.reshape([lhs_rows, 1])
+        return type(lhs)(_arith_itype(lhs.dtype, 'MatMul'), wtype, lhs, rhs)
+    else:
+        # matrix @ matrix: [m, k] @ [k, n] -> [m, n]
+        if lhs_cols != rhs_rows:
             raise RuntimeError("size mismatch")
-
-        wtype = type(lhs.dtype)([lhs.shape[0], rhs.shape[1]])
-
-        return type(lhs)(IType.MatMul(), wtype, lhs, rhs)
-
-    raise RuntimeError(f"Unsupported matrix multiplication {lhs.shape} x {rhs.shape}")
+        wtype = lhs.dtype.reshape([lhs_rows, rhs_cols])
+        return type(lhs)(_arith_itype(lhs.dtype, 'MatMul'), wtype, lhs, rhs)
 
     # TODO: allow broadcasting
 
@@ -425,16 +448,16 @@ def Bool(x: bool | str | torch.Tensor, shape=None) -> BExpr:
         assert shape is None
         dtype = DType.Bool([1])
         t = torch.Tensor([x])
-        return BExpr(itype=IType.Tensor(t), dtype=dtype)
+        return BExpr(itype=IType.from_tensor(t), dtype=dtype)
     elif isinstance(x, torch.Tensor):
         assert shape is None or shape == x.shape
         assert x.dtype == torch.bool
         dtype = DType.Bool(x.shape)
-        return BExpr(itype=IType.Tensor(x), dtype=dtype)
+        return BExpr(itype=IType.from_tensor(x), dtype=dtype)
     elif isinstance(x, str):
         # register symbol into context
         dtype = DType.Bool(shape if shape is not None else [1])
-        return BExpr(itype=IType.Uninterpreted(x), dtype=dtype)
+        return BExpr(itype=_Uninterpreted(x), dtype=dtype)
 
     raise ValueError("Invalid argument to `Bool`")
 
@@ -444,14 +467,14 @@ def Real(x: float | str | torch.Tensor, shape=None) -> AExpr:
         assert shape is None
         dtype = DType.Real([1])
         t = torch.Tensor([x])
-        return AExpr(itype=IType.Tensor(t), dtype=dtype)
+        return AExpr(itype=IType.from_tensor(t), dtype=dtype)
     elif isinstance(x, torch.Tensor):
         assert shape is None or shape == x.shape
         dtype = DType.Real(x.shape)
-        return AExpr(itype=IType.Tensor(x), dtype=dtype)
+        return AExpr(itype=IType.from_tensor(x), dtype=dtype)
     elif isinstance(x, str):
         # register symbol into context
         dtype = DType.Real(shape if shape is not None else [1])
-        return AExpr(itype=IType.Uninterpreted(x), dtype=dtype)
+        return AExpr(itype=_Uninterpreted(x), dtype=dtype)
 
     raise ValueError("Invalid argument to `Real`")

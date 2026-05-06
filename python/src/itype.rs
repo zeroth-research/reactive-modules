@@ -1,25 +1,29 @@
 #![allow(non_snake_case)]
 
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use theory::bool::BoolOp;
 use theory::float::ArithFloat;
 use theory::int::ArithInt;
 use theory::python::{CmpOp, FlowOp, NNOp, TensorOp};
+use theory::python::IType as TheoryIType;
 use theory::real::ArithReal;
 
-// IType wrapper
+// ============================================================================
+// IType — hierarchical concrete op wrapper
+// ============================================================================
 
-#[pyclass(frozen)]
+#[pyclass(frozen, name = "IType")]
 #[derive(Debug, Clone)]
-pub struct IType(pub(crate) theory::python::IType);
+pub struct IType(pub(crate) TheoryIType);
 
-impl From<theory::python::IType> for IType {
-    fn from(t: theory::python::IType) -> Self {
+impl From<TheoryIType> for IType {
+    fn from(t: TheoryIType) -> Self {
         IType(t)
     }
 }
 
-impl From<IType> for theory::python::IType {
+impl From<IType> for TheoryIType {
     fn from(t: IType) -> Self {
         t.0
     }
@@ -27,10 +31,9 @@ impl From<IType> for theory::python::IType {
 
 #[pymethods]
 impl IType {
+    // Namespace class-attributes
     #[classattr]
     fn Bool(py: Python<'_>) -> Py<PyAny> {
-        // bind the `BoolIType` to `IType` as attribute,
-        // so that we can get it as `IType.Bool` in Python
         py.get_type::<BoolIType>().into_any().unbind()
     }
     #[classattr]
@@ -61,27 +64,160 @@ impl IType {
     fn Flow(py: Python<'_>) -> Py<PyAny> {
         py.get_type::<FlowIType>().into_any().unbind()
     }
+    #[classattr]
+    fn BV(py: Python<'_>) -> Py<PyAny> {
+        py.get_type::<BVIType>().into_any().unbind()
+    }
 
+    // Top-level singleton ops
     #[classattr]
     fn Id() -> Self {
-        IType(theory::python::IType::Id)
+        IType(TheoryIType::Id)
     }
     #[classattr]
     fn Ite() -> Self {
-        IType(theory::python::IType::Ite)
+        IType(TheoryIType::Ite)
     }
     #[classattr]
     fn BVToBool() -> Self {
-        IType(theory::python::IType::BVToBool)
+        IType(TheoryIType::BVToBool)
     }
     #[classattr]
     fn BVToWord1() -> Self {
-        IType(theory::python::IType::BVToWord1)
+        IType(TheoryIType::BVToWord1)
+    }
+    #[classattr]
+    fn ToUnsigned() -> Self {
+        IType(TheoryIType::ToUnsigned)
+    }
+    #[classattr]
+    fn ToSigned() -> Self {
+        IType(TheoryIType::ToSigned)
     }
 
+    // Static constructor helpers
     #[staticmethod]
     fn Uninterpreted(name: String) -> Self {
-        IType(theory::python::IType::Uninterpreted(name))
+        IType(TheoryIType::Uninterpreted(name))
+    }
+
+    /// Inline integer scalar constant: `IType.ConstInt(v)` → `IType.Int.Const([[v]])`
+    #[staticmethod]
+    fn ConstInt(v: i64) -> Self {
+        IType(TheoryIType::Int(ArithInt::Const(vec![vec![v]])))
+    }
+
+    /// Inline bool scalar constant: `IType.ConstBool(v)` → `IType.Bool.Const([[v]])`
+    #[staticmethod]
+    fn ConstBool(v: bool) -> Self {
+        IType(TheoryIType::Bool(BoolOp::Const(vec![vec![v]])))
+    }
+
+    /// Extract bits [high..low] from a bitvector.
+    #[staticmethod]
+    fn BitSelect(high: usize, low: usize) -> Self {
+        IType(TheoryIType::BitSelect(high, low))
+    }
+
+    /// Extend a bitvector to the given width.
+    #[staticmethod]
+    fn Extend(width: usize) -> Self {
+        IType(TheoryIType::Extend(width))
+    }
+
+    /// Convert a torch.Tensor to the appropriate `IType.<Type>.Const(data)`.
+    /// 1-D tensors are treated as row vectors (unsqueezed to 1×n).
+    #[staticmethod]
+    fn from_tensor(t: crate::pytensor::PyTensor) -> PyResult<Self> {
+        use tch::Kind;
+
+        let t: tch::Tensor = if t.dim() == 1 {
+            t.tensor.unsqueeze(0)
+        } else {
+            t.tensor.shallow_clone()
+        };
+
+        let sz = t.size();
+        let (rows, cols) = (sz[0] as usize, sz[1] as usize);
+
+        match t.kind() {
+            Kind::Float | Kind::Double | Kind::BFloat16 | Kind::Half => {
+                let data: Vec<Vec<f64>> = (0..rows)
+                    .map(|i| {
+                        (0..cols)
+                            .map(|j| t.double_value(&[i as i64, j as i64]))
+                            .collect()
+                    })
+                    .collect();
+                Ok(IType(TheoryIType::Float(ArithFloat::Const(data))))
+            }
+            Kind::Int | Kind::Int8 | Kind::Int16 | Kind::Int64 | Kind::Uint8 => {
+                let data: Vec<Vec<i64>> = (0..rows)
+                    .map(|i| {
+                        (0..cols)
+                            .map(|j| t.int64_value(&[i as i64, j as i64]))
+                            .collect()
+                    })
+                    .collect();
+                Ok(IType(TheoryIType::Int(ArithInt::Const(data))))
+            }
+            Kind::Bool => {
+                let t_int = t.to_kind(Kind::Int64);
+                let data: Vec<Vec<bool>> = (0..rows)
+                    .map(|i| {
+                        (0..cols)
+                            .map(|j| t_int.int64_value(&[i as i64, j as i64]) != 0)
+                            .collect()
+                    })
+                    .collect();
+                Ok(IType(TheoryIType::Bool(BoolOp::Const(data))))
+            }
+            kind => Err(PyValueError::new_err(format!(
+                "IType.from_tensor: unsupported kind {kind:?}"
+            ))),
+        }
+    }
+
+    fn __eq__(&self, other: &IType)-> bool {
+        self.0 == other.0
+    }
+
+    fn __hash__(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h = DefaultHasher::new();
+        format!("{:?}", self.0).hash(&mut h);
+        h.finish()
+    }
+
+    #[getter]
+    fn is_const(&self) -> bool {
+        matches!(
+            &self.0,
+            TheoryIType::Float(ArithFloat::Const(_))
+                | TheoryIType::Int(ArithInt::Const(_))
+                | TheoryIType::Bool(BoolOp::Const(_))
+                | TheoryIType::Real(ArithReal::Const(_))
+        )
+    }
+
+    #[getter]
+    fn const_data<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        match &self.0 {
+            TheoryIType::Float(ArithFloat::Const(data)) => {
+                Ok(data.clone().into_pyobject(py)?.into_any())
+            }
+            TheoryIType::Int(ArithInt::Const(data)) => {
+                Ok(data.clone().into_pyobject(py)?.into_any())
+            }
+            TheoryIType::Bool(BoolOp::Const(data)) => {
+                Ok(data.clone().into_pyobject(py)?.into_any())
+            }
+            TheoryIType::Real(ArithReal::Const(data)) => {
+                Ok(data.clone().into_pyobject(py)?.into_any())
+            }
+            _ => Err(PyValueError::new_err("not a Const op")),
+        }
     }
 
     fn __repr__(&self) -> String {
@@ -100,27 +236,21 @@ pub struct BoolIType;
 
 #[pymethods]
 impl BoolIType {
-    // NOTE: previously we used `Add()` in Python but now it is `Add`.
-    // To change to the old behavior, change `classattr` to `staticmethod`
     #[classattr]
-    fn And() -> IType {
-        IType(theory::python::IType::Bool(BoolOp::And))
-    }
+    fn And() -> IType { IType(TheoryIType::Bool(BoolOp::And)) }
     #[classattr]
-    fn Or() -> IType {
-        IType(theory::python::IType::Bool(BoolOp::Or))
-    }
+    fn Or() -> IType { IType(TheoryIType::Bool(BoolOp::Or)) }
     #[classattr]
-    fn Xor() -> IType {
-        IType(theory::python::IType::Bool(BoolOp::Xor))
-    }
+    fn Xor() -> IType { IType(TheoryIType::Bool(BoolOp::Xor)) }
     #[classattr]
-    fn Not() -> IType {
-        IType(theory::python::IType::Bool(BoolOp::Not))
-    }
+    fn Not() -> IType { IType(TheoryIType::Bool(BoolOp::Not)) }
+    #[classattr]
+    fn Xnor() -> IType { IType(TheoryIType::Bool(BoolOp::Xnor)) }
+    #[classattr]
+    fn Implies() -> IType { IType(TheoryIType::Bool(BoolOp::Implies)) }
     #[staticmethod]
     fn Const(data: Vec<Vec<bool>>) -> IType {
-        IType(theory::python::IType::Bool(BoolOp::Const(data)))
+        IType(TheoryIType::Bool(BoolOp::Const(data)))
     }
 }
 
@@ -132,40 +262,24 @@ pub struct IntIType;
 #[pymethods]
 impl IntIType {
     #[classattr]
-    fn Add() -> IType {
-        IType(theory::python::IType::Int(ArithInt::Add))
-    }
+    fn Add() -> IType { IType(TheoryIType::Int(ArithInt::Add)) }
     #[classattr]
-    fn Sub() -> IType {
-        IType(theory::python::IType::Int(ArithInt::Sub))
-    }
+    fn Sub() -> IType { IType(TheoryIType::Int(ArithInt::Sub)) }
     #[classattr]
-    fn Mul() -> IType {
-        IType(theory::python::IType::Int(ArithInt::Mul))
-    }
+    fn Mul() -> IType { IType(TheoryIType::Int(ArithInt::Mul)) }
     #[classattr]
-    fn Div() -> IType {
-        IType(theory::python::IType::Int(ArithInt::Div))
-    }
+    fn Div() -> IType { IType(TheoryIType::Int(ArithInt::Div)) }
     #[classattr]
-    fn Mod() -> IType {
-        IType(theory::python::IType::Int(ArithInt::Mod))
-    }
+    fn Mod() -> IType { IType(TheoryIType::Int(ArithInt::Mod)) }
     #[classattr]
-    fn Neg() -> IType {
-        IType(theory::python::IType::Int(ArithInt::Neg))
-    }
+    fn Neg() -> IType { IType(TheoryIType::Int(ArithInt::Neg)) }
     #[classattr]
-    fn Abs() -> IType {
-        IType(theory::python::IType::Int(ArithInt::Abs))
-    }
+    fn Abs() -> IType { IType(TheoryIType::Int(ArithInt::Abs)) }
     #[classattr]
-    fn MatMul() -> IType {
-        IType(theory::python::IType::Int(ArithInt::MatMul))
-    }
+    fn MatMul() -> IType { IType(TheoryIType::Int(ArithInt::MatMul)) }
     #[staticmethod]
     fn Const(data: Vec<Vec<i64>>) -> IType {
-        IType(theory::python::IType::Int(ArithInt::Const(data)))
+        IType(TheoryIType::Int(ArithInt::Const(data)))
     }
 }
 
@@ -177,40 +291,24 @@ pub struct FloatIType;
 #[pymethods]
 impl FloatIType {
     #[classattr]
-    fn Add() -> IType {
-        IType(theory::python::IType::Float(ArithFloat::Add))
-    }
+    fn Add() -> IType { IType(TheoryIType::Float(ArithFloat::Add)) }
     #[classattr]
-    fn Sub() -> IType {
-        IType(theory::python::IType::Float(ArithFloat::Sub))
-    }
+    fn Sub() -> IType { IType(TheoryIType::Float(ArithFloat::Sub)) }
     #[classattr]
-    fn Mul() -> IType {
-        IType(theory::python::IType::Float(ArithFloat::Mul))
-    }
+    fn Mul() -> IType { IType(TheoryIType::Float(ArithFloat::Mul)) }
     #[classattr]
-    fn Div() -> IType {
-        IType(theory::python::IType::Float(ArithFloat::Div))
-    }
+    fn Div() -> IType { IType(TheoryIType::Float(ArithFloat::Div)) }
     #[classattr]
-    fn Mod() -> IType {
-        IType(theory::python::IType::Float(ArithFloat::Mod))
-    }
+    fn Mod() -> IType { IType(TheoryIType::Float(ArithFloat::Mod)) }
     #[classattr]
-    fn Neg() -> IType {
-        IType(theory::python::IType::Float(ArithFloat::Neg))
-    }
+    fn Neg() -> IType { IType(TheoryIType::Float(ArithFloat::Neg)) }
     #[classattr]
-    fn Abs() -> IType {
-        IType(theory::python::IType::Float(ArithFloat::Abs))
-    }
+    fn Abs() -> IType { IType(TheoryIType::Float(ArithFloat::Abs)) }
     #[classattr]
-    fn MatMul() -> IType {
-        IType(theory::python::IType::Float(ArithFloat::MatMul))
-    }
+    fn MatMul() -> IType { IType(TheoryIType::Float(ArithFloat::MatMul)) }
     #[staticmethod]
     fn Const(data: Vec<Vec<f64>>) -> IType {
-        IType(theory::python::IType::Float(ArithFloat::Const(data)))
+        IType(TheoryIType::Float(ArithFloat::Const(data)))
     }
 }
 
@@ -222,48 +320,28 @@ pub struct RealIType;
 #[pymethods]
 impl RealIType {
     #[classattr]
-    fn Add() -> IType {
-        IType(theory::python::IType::Real(ArithReal::Add))
-    }
+    fn Add() -> IType { IType(TheoryIType::Real(ArithReal::Add)) }
     #[classattr]
-    fn Sub() -> IType {
-        IType(theory::python::IType::Real(ArithReal::Sub))
-    }
+    fn Sub() -> IType { IType(TheoryIType::Real(ArithReal::Sub)) }
     #[classattr]
-    fn Mul() -> IType {
-        IType(theory::python::IType::Real(ArithReal::Mul))
-    }
+    fn Mul() -> IType { IType(TheoryIType::Real(ArithReal::Mul)) }
     #[classattr]
-    fn Div() -> IType {
-        IType(theory::python::IType::Real(ArithReal::Div))
-    }
+    fn Div() -> IType { IType(TheoryIType::Real(ArithReal::Div)) }
     #[classattr]
-    fn Mod() -> IType {
-        IType(theory::python::IType::Real(ArithReal::Mod))
-    }
+    fn Mod() -> IType { IType(TheoryIType::Real(ArithReal::Mod)) }
     #[classattr]
-    fn Neg() -> IType {
-        IType(theory::python::IType::Real(ArithReal::Neg))
-    }
+    fn Neg() -> IType { IType(TheoryIType::Real(ArithReal::Neg)) }
     #[classattr]
-    fn Abs() -> IType {
-        IType(theory::python::IType::Real(ArithReal::Abs))
-    }
+    fn Abs() -> IType { IType(TheoryIType::Real(ArithReal::Abs)) }
     #[classattr]
-    fn MatMul() -> IType {
-        IType(theory::python::IType::Real(ArithReal::MatMul))
-    }
+    fn MatMul() -> IType { IType(TheoryIType::Real(ArithReal::MatMul)) }
     #[classattr]
-    fn Sin() -> IType {
-        IType(theory::python::IType::Real(ArithReal::Sin))
-    }
+    fn Sin() -> IType { IType(TheoryIType::Real(ArithReal::Sin)) }
     #[classattr]
-    fn Cos() -> IType {
-        IType(theory::python::IType::Real(ArithReal::Cos))
-    }
+    fn Cos() -> IType { IType(TheoryIType::Real(ArithReal::Cos)) }
     #[staticmethod]
     fn Const(data: Vec<Vec<f64>>) -> IType {
-        IType(theory::python::IType::Real(ArithReal::Const(data)))
+        IType(TheoryIType::Real(ArithReal::Const(data)))
     }
 }
 
@@ -275,29 +353,17 @@ pub struct CmpIType;
 #[pymethods]
 impl CmpIType {
     #[classattr]
-    fn Le() -> IType {
-        IType(theory::python::IType::Cmp(CmpOp::Le))
-    }
+    fn Le() -> IType { IType(TheoryIType::Cmp(CmpOp::Le)) }
     #[classattr]
-    fn Lt() -> IType {
-        IType(theory::python::IType::Cmp(CmpOp::Lt))
-    }
+    fn Lt() -> IType { IType(TheoryIType::Cmp(CmpOp::Lt)) }
     #[classattr]
-    fn Ge() -> IType {
-        IType(theory::python::IType::Cmp(CmpOp::Ge))
-    }
+    fn Ge() -> IType { IType(TheoryIType::Cmp(CmpOp::Ge)) }
     #[classattr]
-    fn Gt() -> IType {
-        IType(theory::python::IType::Cmp(CmpOp::Gt))
-    }
+    fn Gt() -> IType { IType(TheoryIType::Cmp(CmpOp::Gt)) }
     #[classattr]
-    fn Eq() -> IType {
-        IType(theory::python::IType::Cmp(CmpOp::Eq))
-    }
+    fn Eq() -> IType { IType(TheoryIType::Cmp(CmpOp::Eq)) }
     #[classattr]
-    fn Ne() -> IType {
-        IType(theory::python::IType::Cmp(CmpOp::Ne))
-    }
+    fn Ne() -> IType { IType(TheoryIType::Cmp(CmpOp::Ne)) }
 }
 
 // IType.NN namespace
@@ -308,17 +374,11 @@ pub struct NNIType;
 #[pymethods]
 impl NNIType {
     #[classattr]
-    fn ReLU() -> IType {
-        IType(theory::python::IType::NN(NNOp::ReLU))
-    }
+    fn ReLU() -> IType { IType(TheoryIType::NN(NNOp::ReLU)) }
     #[classattr]
-    fn Tanh() -> IType {
-        IType(theory::python::IType::NN(NNOp::Tanh))
-    }
+    fn Tanh() -> IType { IType(TheoryIType::NN(NNOp::Tanh)) }
     #[classattr]
-    fn Linear() -> IType {
-        IType(theory::python::IType::NN(NNOp::Linear))
-    }
+    fn Linear() -> IType { IType(TheoryIType::NN(NNOp::Linear)) }
 }
 
 // IType.Tensor namespace
@@ -329,29 +389,17 @@ pub struct TensorIType;
 #[pymethods]
 impl TensorIType {
     #[classattr]
-    fn Get() -> IType {
-        IType(theory::python::IType::Tensor(TensorOp::Get))
-    }
+    fn Get() -> IType { IType(TheoryIType::Tensor(TensorOp::Get)) }
     #[classattr]
-    fn Set() -> IType {
-        IType(theory::python::IType::Tensor(TensorOp::Set))
-    }
+    fn Set() -> IType { IType(TheoryIType::Tensor(TensorOp::Set)) }
     #[classattr]
-    fn Sum() -> IType {
-        IType(theory::python::IType::Tensor(TensorOp::Sum))
-    }
+    fn Sum() -> IType { IType(TheoryIType::Tensor(TensorOp::Sum)) }
     #[classattr]
-    fn Mean() -> IType {
-        IType(theory::python::IType::Tensor(TensorOp::Mean))
-    }
+    fn Mean() -> IType { IType(TheoryIType::Tensor(TensorOp::Mean)) }
     #[classattr]
-    fn Max() -> IType {
-        IType(theory::python::IType::Tensor(TensorOp::Max))
-    }
+    fn Max() -> IType { IType(TheoryIType::Tensor(TensorOp::Max)) }
     #[classattr]
-    fn Argmax() -> IType {
-        IType(theory::python::IType::Tensor(TensorOp::Argmax))
-    }
+    fn Argmax() -> IType { IType(TheoryIType::Tensor(TensorOp::Argmax)) }
 }
 
 // IType.Flow namespace
@@ -362,11 +410,34 @@ pub struct FlowIType;
 #[pymethods]
 impl FlowIType {
     #[classattr]
-    fn Ite() -> IType {
-        IType(theory::python::IType::Flow(FlowOp::Ite))
-    }
+    fn Ite() -> IType { IType(TheoryIType::Flow(FlowOp::Ite)) }
     #[classattr]
-    fn Id() -> IType {
-        IType(theory::python::IType::Flow(FlowOp::Id))
+    fn Id() -> IType { IType(TheoryIType::Flow(FlowOp::Id)) }
+}
+
+// IType.BV namespace
+
+#[pyclass]
+pub struct BVIType;
+
+#[pymethods]
+impl BVIType {
+    #[classattr]
+    fn Add() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Add)) }
+    #[classattr]
+    fn Mul() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Mul)) }
+    #[classattr]
+    fn MatMul() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::MatMul)) }
+    #[classattr]
+    fn And() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::And)) }
+    #[classattr]
+    fn Or() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Or)) }
+    #[classattr]
+    fn Xor() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Xor)) }
+    #[classattr]
+    fn Not() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Not)) }
+    #[staticmethod]
+    fn Const(data: Vec<Vec<usize>>) -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Const(data)))
     }
 }

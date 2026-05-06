@@ -11,9 +11,7 @@ mod types;
 mod wire;
 
 use crate::atom::Atom;
-use crate::itype::{
-    BoolIType, CmpIType, FloatIType, FlowIType, IType, IntIType, NNIType, RealIType, TensorIType,
-};
+use crate::itype::{BVIType, BoolIType, CmpIType, FlowIType, FloatIType, IntIType, IType, NNIType, RealIType, TensorIType};
 use crate::module::Module;
 use crate::term::Term;
 use crate::types::DType;
@@ -22,14 +20,16 @@ use crate::wire::Wire;
 #[pymodule]
 fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<IType>()?;
-    //m.add_class::<BoolIType>()?;
-    //m.add_class::<IntIType>()?;
-    //m.add_class::<FloatIType>()?;
-    //m.add_class::<RealIType>()?;
-    //m.add_class::<CmpIType>()?;
-    //m.add_class::<NNIType>()?;
-    //m.add_class::<TensorIType>()?;
-    //m.add_class::<FlowIType>()?;
+    // namespace helper classes — must be registered so Python can inspect them
+    m.add_class::<BoolIType>()?;
+    m.add_class::<IntIType>()?;
+    m.add_class::<FloatIType>()?;
+    m.add_class::<RealIType>()?;
+    m.add_class::<CmpIType>()?;
+    m.add_class::<NNIType>()?;
+    m.add_class::<TensorIType>()?;
+    m.add_class::<FlowIType>()?;
+    m.add_class::<BVIType>()?;
     m.add_class::<DType>()?;
     m.add_class::<Wire>()?;
     m.add_class::<Term>()?;

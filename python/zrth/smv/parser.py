@@ -11,6 +11,19 @@ from lark import Lark, Transformer, Tree, Token
 
 from ..zrth import Wire, DType, IType, Term, Module
 
+
+def _arith_itype(dtype, name: str):
+    """Return IType.Int/Float/Real/BV.<name> based on dtype."""
+    if dtype.is_int():
+        return getattr(IType.Int, name)
+    elif dtype.is_float():
+        return getattr(IType.Float, name)
+    elif dtype.is_real():
+        return getattr(IType.Real, name)
+    elif dtype.is_bv():
+        return getattr(IType.BV, name)
+    raise ValueError(f"unsupported dtype for arith op '{name}': {dtype}")
+
 # ---------------------------------------------------------------------------
 # 1. Lark parser init
 # ---------------------------------------------------------------------------
@@ -250,23 +263,27 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> DType:
 # 6. Lowerer
 # ---------------------------------------------------------------------------
 
-# Table-driven binary operator dispatch
+# Table-driven binary operator dispatch.
+# Fixed-dtype ops store Ops directly; arith ops store lambda(dtype) -> Ops.
 _BINOPS: dict[str, dict[str, object]] = {
-    "iff":        {"<->": IType.Xnor, "xnor": IType.Xnor},
-    "or_expr":    {"|": IType.Or, "or": IType.Or, "xor": IType.Xor},
-    "and_expr":   {"&": IType.And, "and": IType.And},
-    "cmp_expr":   {"=": IType.Eq, "!=": IType.Neq, "<": IType.Lt,
-                   "<=": IType.Le, ">": IType.Gt, ">=": IType.Ge},
-    "arith_expr": {"+": IType.Add, "-": IType.Sub},
-    "mod_expr":   {"mod": IType.Mod},
-    "term_expr":  {"*": IType.Mul, "/": IType.Div},
+    "iff":        {"<->": IType.Bool.Xnor, "xnor": IType.Bool.Xnor},
+    "or_expr":    {"|": IType.Bool.Or, "or": IType.Bool.Or, "xor": IType.Bool.Xor},
+    "and_expr":   {"&": IType.Bool.And, "and": IType.Bool.And},
+    "cmp_expr":   {"=": IType.Cmp.Eq, "!=": IType.Cmp.Ne, "<": IType.Cmp.Lt,
+                   "<=": IType.Cmp.Le, ">": IType.Cmp.Gt, ">=": IType.Cmp.Ge},
+    "arith_expr": {"+": lambda d: _arith_itype(d, 'Add'), "-": lambda d: _arith_itype(d, 'Sub')},
+    "mod_expr":   {"mod": lambda d: _arith_itype(d, 'Mod')},
+    "term_expr":  {"*": lambda d: _arith_itype(d, 'Mul'), "/": lambda d: _arith_itype(d, 'Div')},
 }
 
 _OP_TOKENS = {"NOT_OP"}
 
 _NARY_OPS = {
-    "ternary": IType.Ite, "implies_expr": IType.Implies,
-    "not_expr": IType.Not, "neg": IType.Neg, "abs_call": IType.Abs,
+    "ternary": IType.Ite,
+    "implies_expr": IType.Bool.Implies,
+    "not_expr": IType.Bool.Not,
+    "neg": lambda d: _arith_itype(d, 'Neg'),
+    "abs_call": lambda d: _arith_itype(d, 'Abs'),
 }
 
 _METHODS = {
@@ -275,7 +292,7 @@ _METHODS = {
     "paren_expr": "_lower_paren",
 }
 
-_BUILTIN_MAP = {"bool": IType.ToBool, "word1": IType.ToWord1, "unsigned": IType.ToUnsigned, "signed": IType.ToSigned}
+_BUILTIN_MAP = {"bool": IType.BVToBool, "word1": IType.BVToWord1, "unsigned": IType.ToUnsigned, "signed": IType.ToSigned}
 
 
 class _Lowerer:
@@ -315,7 +332,7 @@ class _Lowerer:
 
         # Table-driven n-ary ops (unary / implies / ternary)
         if name in _NARY_OPS:
-            return self._lower_nary(tree, _NARY_OPS[name](), target)
+            return self._lower_nary(tree, _NARY_OPS[name], target)
 
         # Table-driven method dispatch
         if name in _METHODS:
@@ -342,7 +359,8 @@ class _Lowerer:
         while i < len(children):
             op_tok = str(children[i])
             rhs = self.lower(children[i + 1])
-            itype = op_map[op_tok]()
+            itype_entry = op_map[op_tok]
+            itype = itype_entry(left.dtype) if callable(itype_entry) else itype_entry
             out = target if i + 2 >= len(children) else None
             w = self._fresh(out)
             self.terms.append(Term(itype, [w], [left, rhs]))
@@ -352,8 +370,9 @@ class _Lowerer:
 
     # --- n-ary (unary / implies / ternary) ----------------------------------
 
-    def _lower_nary(self, tree: Tree, itype, target: Wire | None) -> Wire:
+    def _lower_nary(self, tree: Tree, itype_or_fn, target: Wire | None) -> Wire:
         inputs = [self.lower(c) for c in tree.children if not (isinstance(c, Token) and c.type in _OP_TOKENS)]
+        itype = itype_or_fn(inputs[0].dtype) if callable(itype_or_fn) else itype_or_fn
         w = self._fresh(target)
         self.terms.append(Term(itype, [w], inputs))
         return self._enforce(w, target)
@@ -366,7 +385,7 @@ class _Lowerer:
         arg_w = self.lower(exprs[0])
 
         if fn_name in _BUILTIN_MAP:
-            itype = _BUILTIN_MAP[fn_name]()
+            itype = _BUILTIN_MAP[fn_name]
         elif fn_name == "extend":
             width = int(str(_peel(exprs[1])))
             itype = IType.Extend(width)
@@ -393,7 +412,7 @@ class _Lowerer:
         then_w = self.lower(val_tree)
         else_w = self._lower_case_rec(branches, idx + 1, None)
         w = self._fresh(target)
-        self.terms.append(Term(IType.Ite(), [w], [cond, then_w, else_w]))
+        self.terms.append(Term(IType.Ite, [w], [cond, then_w, else_w]))
         return self._enforce(w, target)
 
     # --- next(expr) ---------------------------------------------------------
@@ -465,7 +484,7 @@ class _Lowerer:
 
     def _enforce(self, wire: Wire, target: Wire | None) -> Wire:
         if target is not None and target != wire:
-            self.terms.append(Term(IType.Id(), [target], [wire]))
+            self.terms.append(Term(IType.Id, [target], [wire]))
             return target
         return wire
 
@@ -508,7 +527,7 @@ def _build_module(
         if init_expr is not None:
             init_low.lower(init_expr, next_w)
         else:
-            default = IType.ConstBool(False) if isinstance(dtype, DType.Bool) else IType.ConstInt(0)
+            default = IType.ConstBool(False) if dtype.is_bool() else IType.ConstInt(0)
             init_low.terms.append(Term(default, [next_w]))
 
         # --- UPDATE ---
@@ -516,7 +535,7 @@ def _build_module(
         if next_expr is not None:
             update_low.lower(next_expr, next_w)
         else:
-            update_low.terms.append(Term(IType.Id(), [next_w], [latched]))
+            update_low.terms.append(Term(IType.Id, [next_w], [latched]))
 
     # Build obs_pairs: all variables (state + ivar)
     obs_pairs = [list(name_map[n]) for n, _ in all_decls]

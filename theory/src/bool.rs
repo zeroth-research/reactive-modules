@@ -47,7 +47,11 @@ impl Bool {
 
 impl fmt::Display for Bool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Bool({}, {})", self.0, self.1)
+        if self.0 == 1 {
+            write!(f, "Bool({})", self.1)
+        } else {
+            write!(f, "Bool({}, {})", self.0, self.1)
+        }
     }
 }
 
@@ -58,6 +62,8 @@ pub enum BoolOp {
     Or,
     Xor,
     Not,
+    Xnor,
+    Implies,
 }
 
 impl fmt::Display for BoolOp {
@@ -67,6 +73,8 @@ impl fmt::Display for BoolOp {
             BoolOp::Or => write!(f, "Or"),
             BoolOp::Xor => write!(f, "Xor"),
             BoolOp::Not => write!(f, "Not"),
+            BoolOp::Xnor => write!(f, "Xnor"),
+            BoolOp::Implies => write!(f, "Implies"),
             BoolOp::Const(cm) => fmt_matrix(cm, f),
         }
     }
@@ -126,7 +134,7 @@ impl Theory for BoolOp {
                 }
                 Ok(())
             }
-            BoolOp::And | BoolOp::Or | BoolOp::Xor => {
+            BoolOp::And | BoolOp::Or | BoolOp::Xor | BoolOp::Xnor | BoolOp::Implies => {
                 let w1 = write_nxt(&mut write, 0)?;
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,

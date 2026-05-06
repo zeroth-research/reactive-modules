@@ -18,6 +18,7 @@ from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
 from zrth import Wire, DType, Term, IType, Float, Bool
+from zrth.expr import _arith_itype
 
 
 # ---------------------------------------------------------------------------
@@ -437,13 +438,18 @@ class AbstractInterpreter:
 
         else:
             _UNSUPPORTED_STMTS = {
-                ast.For: "Loops", ast.While: "Loops", ast.AsyncFor: "Loops",
+                ast.For: "Loops",
+                ast.While: "Loops",
+                ast.AsyncFor: "Loops",
                 ast.FunctionDef: "Nested function definitions",
                 ast.AsyncFunctionDef: "Nested function definitions",
                 ast.ClassDef: "Class definitions",
-                ast.Import: "Import statements", ast.ImportFrom: "Import statements",
-                ast.Try: "Try/except", ast.With: "With statements",
-                ast.Global: "Global statements", ast.Nonlocal: "Nonlocal statements",
+                ast.Import: "Import statements",
+                ast.ImportFrom: "Import statements",
+                ast.Try: "Try/except",
+                ast.With: "With statements",
+                ast.Global: "Global statements",
+                ast.Nonlocal: "Nonlocal statements",
             }
             msg = _UNSUPPORTED_STMTS.get(type(stmt))
             if msg:
@@ -1063,7 +1069,6 @@ _GYM_SPACE_TO_DTYPE = {
 }
 
 
-
 def wire_pair(dtype):
     """Create a [latched, next] wire pair for the given dtype."""
     return [Wire(dtype), Wire(dtype)]
@@ -1077,7 +1082,11 @@ def resolve_wire(name, dtype, user_val=None):
     """
     if user_val is None:
         return wire_pair(dtype)
-    is_pair = isinstance(user_val, (list, tuple)) and len(user_val) == 2 and all(isinstance(w, Wire) for w in user_val)
+    is_pair = (
+        isinstance(user_val, (list, tuple))
+        and len(user_val) == 2
+        and all(isinstance(w, Wire) for w in user_val)
+    )
     if is_pair:
         for w in user_val:
             if w.dtype != dtype:
@@ -1085,9 +1094,15 @@ def resolve_wire(name, dtype, user_val=None):
                     f"DType mismatch for '{name}': expected {dtype}, got {w.dtype}"
                 )
         return list(user_val)
-    if isinstance(user_val, (list, tuple)) and len(user_val) > 0 and all(
-        isinstance(item, (list, tuple)) and len(item) == 2 and all(isinstance(w, Wire) for w in item)
-        for item in user_val
+    if (
+        isinstance(user_val, (list, tuple))
+        and len(user_val) > 0
+        and all(
+            isinstance(item, (list, tuple))
+            and len(item) == 2
+            and all(isinstance(w, Wire) for w in item)
+            for item in user_val
+        )
     ):
         raise NotImplementedError("Tuple of wire pairs not yet supported")
     raise ValueError(
@@ -1095,10 +1110,9 @@ def resolve_wire(name, dtype, user_val=None):
     )
 
 
-
 def _infer_shape_and_elem_type(value):
     """Recursively derive tensor shape and element type from a Python value."""
-    if isinstance(value, bool):      # before int -- bool subclasses int
+    if isinstance(value, bool):  # before int -- bool subclasses int
         return [], bool
     if isinstance(value, (int, float)):
         return [], type(value)
@@ -1125,7 +1139,9 @@ def infer_dtype(name, abstract_value):
         return dtype_fn(shape or [1])
 
     if abstract_value.type_ is None:
-        raise ValueError(f"Cannot infer DType for '{name}': analyzer returned {abstract_value}")
+        raise ValueError(
+            f"Cannot infer DType for '{name}': analyzer returned {abstract_value}"
+        )
     dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(abstract_value.type_)
     if dtype_fn is None:
         raise ValueError(
@@ -1140,7 +1156,7 @@ def _parse_call_repr(call_repr):
     E.g. "spaces.Discrete(2)" -> ("Discrete", [2], {})
          "spaces.Box(low=0, high=10, shape=(1,))" -> ("Box", [], {"low": 0, "high": 10, "shape": (1,)})
     """
-    node = ast.parse(call_repr, mode='eval').body
+    node = ast.parse(call_repr, mode="eval").body
     if not isinstance(node, ast.Call):
         raise ValueError(f"Expected a call expression, got: {call_repr}")
     func = node.func
@@ -1175,7 +1191,6 @@ def _gym_space_to_dtype(space_name, pos_args, kw_args, is_action):
         return dtype_fn(list(shape))
     else:  # MultiBinary
         return dtype_fn([pos_args[0]])
-
 
 
 def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
@@ -1217,12 +1232,19 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
             merged = join_states(AbstractInterpreter(method).analyze())
         except (UnsupportedFeatureError, NotImplementedError, OSError):
             continue
-        read_attrs    = {r.name[5:] for r in merged.reads  if r.name.startswith("self.")}
-        written_attrs = {w.name[5:] for w in merged.writes if w.name.startswith("self.")}
+        read_attrs = {r.name[5:] for r in merged.reads if r.name.startswith("self.")}
+        written_attrs = {
+            w.name[5:] for w in merged.writes if w.name.startswith("self.")
+        }
         # self.foo reads where foo is a known method -> calls, not data reads
         calls = read_attrs & set(methods.keys())
         read_attrs -= calls
-        summaries[name] = (read_attrs, written_attrs, calls, merged.attrs.get("self", {}))
+        summaries[name] = (
+            read_attrs,
+            written_attrs,
+            calls,
+            merged.attrs.get("self", {}),
+        )
 
     # BFS from roots, following intra-class calls
     visited, queue = set(), list(roots)
@@ -1236,25 +1258,26 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
     read_self, written_self, attr_vals = set(), set(), {}
     for name in visited:
         ra, wa, _, av = summaries[name]
-        read_self    |= ra
+        read_self |= ra
         written_self |= wa
         for attr, val in av.items():
             existing = attr_vals.get(attr)
             if existing is None or (val.is_const() and not existing.is_const()):
                 attr_vals[attr] = val
 
-    prvt_names  = written_self & read_self
+    prvt_names = written_self & read_self
     param_names = read_self - written_self
     write_only_names = written_self - read_self
 
     # Order by declaration in __init__ for deterministic iteration,
     # with any names not in __init__ appended in sorted order
     decl_order = list(init_attrs.keys()) if init_attrs else []
+
     def ordered(names):
         return [n for n in decl_order if n in names] + sorted(names - set(decl_order))
 
-    prvt       = ordered(prvt_names)
-    params     = ordered(param_names)
+    prvt = ordered(prvt_names)
+    params = ordered(param_names)
     write_only = ordered(write_only_names)
 
     # Use init_attrs as a fallback for attrs with missing or non-const values
@@ -1272,7 +1295,6 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
         )
 
     return prvt, params, attr_vals
-
 
 
 # ---------------------------------------------------------------------------
@@ -1376,7 +1398,9 @@ def _normalize_early_returns(stmts: list) -> list:
 # ============================================================================
 
 
-def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term], layer=None):
+def _translate_linear(
+    input_wire: Wire, out_features: int, terms: list[Term], layer=None
+):
     """Translate a linear layer to a single IType.Linear term.
 
     Creates: output = input @ weight + bias
@@ -1402,11 +1426,11 @@ def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term], la
     output_wire = Wire(Float(out_features))
 
     if layer is not None:
-        terms.append(Term(IType.Tensor(layer.weight), [weight_wire], []))
-        terms.append(Term(IType.Tensor(layer.bias), [bias_wire], []))
+        terms.append(Term(IType.from_tensor(layer.weight), [weight_wire], []))
+        terms.append(Term(IType.from_tensor(layer.bias), [bias_wire], []))
 
     terms.append(
-        Term(IType.Linear(), [output_wire], [input_wire, weight_wire, bias_wire])
+        Term(IType.NN.Linear, [output_wire], [input_wire, weight_wire, bias_wire])
     )
 
     return output_wire, weight_wire, bias_wire
@@ -1415,7 +1439,7 @@ def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term], la
 def _translate_tanh(input_wire: Wire, terms: list[Term]) -> Wire:
     """Translate Tanh activation to reactive operations."""
     output_wire = Wire(input_wire.dtype)
-    tanh_term = Term(IType.Tanh(), [output_wire], [input_wire])
+    tanh_term = Term(IType.NN.Tanh, [output_wire], [input_wire])
     terms.append(tanh_term)
     return output_wire
 
@@ -1433,7 +1457,7 @@ def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
         Output Wire
     """
     output_wire = Wire(input_wire.dtype)
-    relu_term = Term(IType.ReLU(), [output_wire], [input_wire])
+    relu_term = Term(IType.NN.ReLU, [output_wire], [input_wire])
     terms.append(relu_term)
 
     return output_wire
@@ -1446,19 +1470,19 @@ class MethodVisitor(ast.NodeVisitor):
     """
 
     BINARY_OPS = {
-        ast.Add: IType.Add,
-        ast.Sub: IType.Sub,
-        ast.Mult: IType.Mul,
-        ast.Div: IType.Div,
+        ast.Add: lambda d: _arith_itype(d, 'Add'),
+        ast.Sub: lambda d: _arith_itype(d, 'Sub'),
+        ast.Mult: lambda d: _arith_itype(d, 'Mul'),
+        ast.Div: lambda d: _arith_itype(d, 'Div'),
     }
 
     COMPARE_OPS = {
-        ast.Eq: IType.Eq,
-        ast.NotEq: IType.Neq,
-        ast.Lt: IType.Lt,
-        ast.LtE: IType.Le,
-        ast.Gt: IType.Gt,
-        ast.GtE: IType.Ge,
+        ast.Eq: IType.Cmp.Eq,
+        ast.NotEq: IType.Cmp.Ne,
+        ast.Lt: IType.Cmp.Lt,
+        ast.LtE: IType.Cmp.Le,
+        ast.Gt: IType.Cmp.Gt,
+        ast.GtE: IType.Cmp.Ge,
     }
 
     def __init__(
@@ -1542,7 +1566,7 @@ class MethodVisitor(ast.NodeVisitor):
             if if_wire != else_wire and if_wire is not None and else_wire is not None:
                 merged_wire = Wire(if_wire.dtype)
                 self.terms.append(
-                    Term(IType.Ite(), [merged_wire], [cond_wire, if_wire, else_wire])
+                    Term(IType.Ite, [merged_wire], [cond_wire, if_wire, else_wire])
                 )
                 self.temp_vars[var] = merged_wire
 
@@ -1553,7 +1577,7 @@ class MethodVisitor(ast.NodeVisitor):
                     and var not in self.written_wires
                 ):
                     output_wire = self.wire_pairs[var][1]
-                    term = Term(IType.Id(), [output_wire], [merged_wire])
+                    term = Term(IType.Id, [output_wire], [merged_wire])
                     self.terms.append(term)
                     self.written_wires.add(var)
             elif if_wire is not None:
@@ -1567,7 +1591,7 @@ class MethodVisitor(ast.NodeVisitor):
                     and var not in self.written_wires
                 ):
                     output_wire = self.wire_pairs[var][1]
-                    term = Term(IType.Id(), [output_wire], [if_wire])
+                    term = Term(IType.Id, [output_wire], [if_wire])
                     self.terms.append(term)
                     self.written_wires.add(var)
 
@@ -1591,7 +1615,7 @@ class MethodVisitor(ast.NodeVisitor):
 
             if len(self.scopes) == 0:
                 output_wire = self.wire_pairs[wire_name][1]
-                term = Term(IType.Id(), [output_wire], [result_wire])
+                term = Term(IType.Id, [output_wire], [result_wire])
                 self.terms.append(term)
                 self.written_wires.add(wire_name)
 
@@ -1618,14 +1642,14 @@ class MethodVisitor(ast.NodeVisitor):
                 )
 
             result_wire = Wire(left_wire.dtype)
-            itype_cls = self.BINARY_OPS[op_type]
-            self.terms.append(Term(itype_cls(), [result_wire], [left_wire, right_wire]))
+            itype_fn = self.BINARY_OPS[op_type]
+            self.terms.append(Term(itype_fn(left_wire.dtype), [result_wire], [left_wire, right_wire]))
 
             self.temp_vars[wire_name] = result_wire
 
             if len(self.scopes) == 0:
                 output_wire = self.wire_pairs[wire_name][1]
-                term = Term(IType.Id(), [output_wire], [result_wire])
+                term = Term(IType.Id, [output_wire], [result_wire])
                 self.terms.append(term)
                 self.written_wires.add(wire_name)
         else:
@@ -1715,8 +1739,10 @@ class MethodVisitor(ast.NodeVisitor):
                         )
                         return _translate_tanh(input_wire, self.terms)
                     elif method in ("sin", "cos"):
-                        input_wire = self._convert_expr(call.args[0], target_dtype=target_dtype)
-                        itype = IType.Sin() if method == "sin" else IType.Cos()
+                        input_wire = self._convert_expr(
+                            call.args[0], target_dtype=target_dtype
+                        )
+                        itype = IType.Real.Sin if method == "sin" else IType.Real.Cos
                         result = Wire(input_wire.dtype)
                         self.terms.append(Term(itype, [result], [input_wire]))
                         return result
@@ -1724,8 +1750,10 @@ class MethodVisitor(ast.NodeVisitor):
                         raise ValueError(f"Unsupported torch function: torch.{method}")
                 elif name == "math":
                     if method in ("sin", "cos"):
-                        input_wire = self._convert_expr(call.args[0], target_dtype=target_dtype)
-                        itype = IType.Sin() if method == "sin" else IType.Cos()
+                        input_wire = self._convert_expr(
+                            call.args[0], target_dtype=target_dtype
+                        )
+                        itype = IType.Real.Sin if method == "sin" else IType.Real.Cos
                         result = Wire(input_wire.dtype)
                         self.terms.append(Term(itype, [result], [input_wire]))
                         return result
@@ -1737,7 +1765,7 @@ class MethodVisitor(ast.NodeVisitor):
             if method == "argmax":
                 obj_wire = self._convert_expr(obj)
                 result = Wire(Float(1))
-                self.terms.append(Term(IType.Argmax(), [result], [obj_wire]))
+                self.terms.append(Term(IType.Tensor.Argmax, [result], [obj_wire]))
                 return result
             elif method == "item":
                 return self._convert_expr(obj)
@@ -1762,12 +1790,12 @@ class MethodVisitor(ast.NodeVisitor):
         a_wire = self._convert_expr(args[0])
         b_wire = self._convert_expr(args[1])
 
-        cmp_type = IType.Lt() if func_name == "min" else IType.Gt()
+        cmp_type = IType.Cmp.Lt if func_name == "min" else IType.Cmp.Gt
         cmp_wire = Wire(Bool())
         self.terms.append(Term(cmp_type, [cmp_wire], [a_wire, b_wire]))
 
         result = Wire(a_wire.dtype)
-        self.terms.append(Term(IType.Ite(), [result], [cmp_wire, a_wire, b_wire]))
+        self.terms.append(Term(IType.Ite, [result], [cmp_wire, a_wire, b_wire]))
         return result
 
     def _make_tensor_wire(self, tensor_data, target_dtype=None):
@@ -1775,7 +1803,7 @@ class MethodVisitor(ast.NodeVisitor):
         shape = list(tensor_data.size())
         dtype = target_dtype.reshape(shape) if target_dtype else Float(shape)
         const_wire = Wire(dtype)
-        self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
+        self.terms.append(Term(IType.from_tensor(tensor_data), [const_wire]))
         return const_wire
 
     def _convert_numpy_creation(self, func_name, args, target_dtype=None):
@@ -1862,8 +1890,8 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
 
         result = Wire(result_dtype)
-        itype_cls = self.BINARY_OPS[op_type]
-        self.terms.append(Term(itype_cls(), [result], [left_wire, right_wire]))
+        itype_fn = self.BINARY_OPS[op_type]
+        self.terms.append(Term(itype_fn(left_wire.dtype), [result], [left_wire, right_wire]))
         return result
 
     def _convert_unaryop(self, unaryop, target_dtype=None):
@@ -1881,7 +1909,7 @@ class MethodVisitor(ast.NodeVisitor):
             true_wire = self._convert_constant(ast.Constant(True))
             result = Wire(Bool())
             self.terms.append(
-                Term(IType.Ite(), [result], [operand_wire, false_wire, true_wire])
+                Term(IType.Ite, [result], [operand_wire, false_wire, true_wire])
             )
             return result
         elif op_type == ast.USub:
@@ -1901,7 +1929,7 @@ class MethodVisitor(ast.NodeVisitor):
                 )
                 result_dtype = operand_wire.dtype
             result = Wire(result_dtype)
-            self.terms.append(Term(IType.Sub(), [result], [zero_wire, operand_wire]))
+            self.terms.append(Term(_arith_itype(result_dtype, 'Sub'), [result], [zero_wire, operand_wire]))
             return result
         elif op_type == ast.UAdd:
             return self._convert_expr(unaryop.operand, target_dtype=target_dtype)
@@ -1935,12 +1963,12 @@ class MethodVisitor(ast.NodeVisitor):
             if is_and:
                 # a and b -> Ite(a, b, False)
                 self.terms.append(
-                    Term(IType.Ite(), [merged], [wire, result, false_wire])
+                    Term(IType.Ite, [merged], [wire, result, false_wire])
                 )
             else:
                 # a or b -> Ite(a, True, b)
                 self.terms.append(
-                    Term(IType.Ite(), [merged], [wire, true_wire, result])
+                    Term(IType.Ite, [merged], [wire, true_wire, result])
                 )
             result = merged
         return result
@@ -1963,8 +1991,8 @@ class MethodVisitor(ast.NodeVisitor):
                 raise ValueError(f"Unsupported comparison operator: {op_type.__name__}")
 
             cmp_wire = Wire(Bool())
-            itype_cls = self.COMPARE_OPS[op_type]
-            self.terms.append(Term(itype_cls(), [cmp_wire], [left_wire, right_wire]))
+            itype_cmp = self.COMPARE_OPS[op_type]
+            self.terms.append(Term(itype_cmp, [cmp_wire], [left_wire, right_wire]))
             comparison_wires.append(cmp_wire)
             left = comparator
 
@@ -1974,7 +2002,7 @@ class MethodVisitor(ast.NodeVisitor):
             false_wire = self._convert_constant(ast.Constant(False))
             merged = Wire(Bool())
             self.terms.append(
-                Term(IType.Ite(), [merged], [result, comp_wire, false_wire])
+                Term(IType.Ite, [merged], [result, comp_wire, false_wire])
             )
             result = merged
 
@@ -1992,7 +2020,7 @@ class MethodVisitor(ast.NodeVisitor):
         result_dtype = target_dtype if target_dtype else true_wire.dtype
         result = Wire(result_dtype)
         self.terms.append(
-            Term(IType.Ite(), [result], [cond_wire, true_wire, false_wire])
+            Term(IType.Ite, [result], [cond_wire, true_wire, false_wire])
         )
         return result
 
@@ -2020,7 +2048,7 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unsupported constant type: {type(value)}")
 
         const_wire = Wire(dtype)
-        self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
+        self.terms.append(Term(IType.from_tensor(tensor_data), [const_wire]))
         return const_wire
 
     def _convert_list_literal(self, node, target_dtype=None):
@@ -2053,7 +2081,9 @@ class MethodVisitor(ast.NodeVisitor):
             input_wire = self._convert_expr(args[0])
             out_features = self.layers[method_name]
             layer = self.live_layers.get(method_name)
-            output_wire, _, _ = _translate_linear(input_wire, out_features, self.terms, layer=layer)
+            output_wire, _, _ = _translate_linear(
+                input_wire, out_features, self.terms, layer=layer
+            )
             return output_wire
 
         if self.cls is None or not hasattr(self.cls, method_name):
@@ -2106,7 +2136,9 @@ def convert_method(
     func_def.body = _normalize_early_returns(func_def.body)
 
     param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
-    visitor = MethodVisitor(wires, result, cls=cls, layers=layers, params=params, live_layers=live_layers)
+    visitor = MethodVisitor(
+        wires, result, cls=cls, layers=layers, params=params, live_layers=live_layers
+    )
     visitor.temp_vars.update(
         {name: wires[name][0] for name in param_names if name in wires}
     )
@@ -2118,6 +2150,6 @@ def convert_method(
         src = visitor.temp_vars.get(f"_ret_{i}")
         if src is None:
             raise ValueError(f"Method has no return value for result {i}")
-        visitor.terms.append(Term(IType.Id(), [result_wire], [src]))
+        visitor.terms.append(Term(IType.Id, [result_wire], [src]))
 
     return visitor.terms

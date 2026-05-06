@@ -20,7 +20,10 @@ impl fmt::Display for Type {
             Type::Int(t) => t.fmt(f),
             Type::Float(t) => t.fmt(f),
             Type::Real(t) => t.fmt(f),
-            Type::BV32(_t) => unimplemented!(),
+            Type::BV32(t) => match t {
+                crate::bv::BV::U(bw, r, c) => write!(f, "UWord({bw}, {r}, {c})"),
+                crate::bv::BV::S(bw, r, c) => write!(f, "SWord({bw}, {r}, {c})"),
+            },
         }
     }
 }
@@ -53,6 +56,29 @@ pub enum CmpOp {
     Gt,
     Eq,
     Ne,
+}
+
+impl fmt::Display for NNOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NNOp::ReLU => write!(f, "ReLU"),
+            NNOp::Tanh => write!(f, "Tanh"),
+            NNOp::Linear => write!(f, "Linear"),
+        }
+    }
+}
+
+impl fmt::Display for TensorOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TensorOp::Get => write!(f, "Get"),
+            TensorOp::Set => write!(f, "Set"),
+            TensorOp::Sum => write!(f, "Sum"),
+            TensorOp::Mean => write!(f, "Mean"),
+            TensorOp::Max => write!(f, "Max"),
+            TensorOp::Argmax => write!(f, "Argmax"),
+        }
+    }
 }
 
 impl fmt::Display for CmpOp {
@@ -104,9 +130,20 @@ pub enum IType {
     // Tensor operations
     Tensor(TensorOp),
 
+    // Bit-vector operations
+    BV(bv::BVTheory),
+
     // Casting
     BVToBool,
     BVToWord1,
+    ToUnsigned,
+    ToSigned,
+
+    // Bit-vector bit selection: extract bits [high..low] from a BV
+    BitSelect(usize, usize),
+
+    // Bit-vector zero/sign extension
+    Extend(usize),
 
     // Symbol referring to uninterpreted constants or functions,
     // whose signature is known in the context, i.e., the current theory
@@ -122,12 +159,17 @@ impl fmt::Display for IType {
             IType::Real(x) => x.fmt(f),
             IType::Cmp(x) => x.fmt(f),
             IType::Flow(x) => x.fmt(f),
-            IType::NN(_x) => todo!(),
-            IType::Tensor(_x) => todo!(),
+            IType::NN(x) => x.fmt(f),
+            IType::Tensor(x) => x.fmt(f),
             IType::Ite => write!(f, "Ite"),
             IType::Id => write!(f, "Id"),
+            IType::BV(t) => write!(f, "BV({t:?})"),
             IType::BVToBool => write!(f, "BVToBool"),
             IType::BVToWord1 => write!(f, "BVToWord1"),
+            IType::ToUnsigned => write!(f, "ToUnsigned"),
+            IType::ToSigned => write!(f, "ToSigned"),
+            IType::BitSelect(h, l) => write!(f, "BitSelect({h}, {l})"),
+            IType::Extend(w) => write!(f, "Extend({w})"),
             IType::Uninterpreted(t) => write!(f, "{t}"),
         }
     }

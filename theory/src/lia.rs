@@ -205,6 +205,8 @@ impl fmt::Display for LIA {
                 bool::BoolOp::Or => write!(f, "Or"),
                 bool::BoolOp::Xor => write!(f, "Xor"),
                 bool::BoolOp::Not => write!(f, "Not"),
+                bool::BoolOp::Xnor => write!(f, "Xnor"),
+                bool::BoolOp::Implies => write!(f, "Implies"),
             },
             LIA::Cmp(op) => match op {
                 CmpOp::Le => write!(f, "Le"),

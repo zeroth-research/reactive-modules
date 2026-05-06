@@ -52,7 +52,11 @@ impl Float {
 
 impl fmt::Display for Float {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Float({}, {})", self.0, self.1)
+        if self.0 == 1 {
+            write!(f, "Float({})", self.1)
+        } else {
+            write!(f, "Float({}, {})", self.0, self.1)
+        }
     }
 }
 
