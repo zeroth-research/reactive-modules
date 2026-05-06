@@ -1,6 +1,6 @@
-"""Tests for the merged Env class — covers the constructor's expanded shape,
-the new pure-symbolic runtime branch, composition, and the small public surface
-(get, state_dict, get_prvt, attribute access) added in the Wrapper→Env merge."""
+"""Tests for the Env class: constructor shape, runtime delegation vs.
+interpretation, composition, error paths, and the small public surface
+(`get`, `state_dict`, `get_prvt`, attribute access)."""
 
 import pytest
 import torch
