@@ -1,7 +1,11 @@
+use std::fmt;
+
 pub mod bool;
 pub mod bv;
+pub mod float;
 pub mod int;
 pub mod lia;
+pub mod python;
 pub mod real;
 
 pub trait Theory {
@@ -44,4 +48,22 @@ where
     } else {
         Err(format!("Write arg {i} expected, but got none"))
     }
+}
+
+fn fmt_matrix<T: fmt::Display>(cm: &[Vec<T>], f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "[")?;
+    for (i, row) in cm.iter().enumerate() {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "[")?;
+        for (j, v) in row.iter().enumerate() {
+            if j > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{v}")?;
+        }
+        write!(f, "]")?;
+    }
+    write!(f, "]")
 }

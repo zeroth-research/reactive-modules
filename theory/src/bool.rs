@@ -1,35 +1,35 @@
 /*!
 # Booleans and operations on booleans.
 
-Defines the propositional theory [`Prop`]: boolean matrices and the
+Defines the propositional theory [`BoolOp`]: boolean matrices and the
 standard logical operations over them.
 
 A [`DType`] value describes the *type* of a boolean term as a matrix
 shape `Bool(rows, cols)` — scalars are just `Bool(1, 1)`. The operations
-in [`Prop`] are:
+in [`BoolOp`] are:
 
-- [`Prop::Const`] — an inline matrix literal producing a boolean matrix of
+- [`BoolOp::Const`] — an inline matrix literal producing a boolean matrix of
   the shape declared by its write type.
-- [`Prop::Not`] — unary, shape-preserving.
-- [`Prop::And`], [`Prop::Or`], [`Prop::Xor`] — elementwise binary, both
+- [`BoolOp::Not`] — unary, shape-preserving.
+- [`BoolOp::And`], [`BoolOp::Or`], [`BoolOp::Xor`] — elementwise binary, both
   inputs and the output share the same shape.
 
-`Prop` implements [`Theory`], so [`Theory::check`] type-checks a term by
+`BoolOp` implements [`Theory`], so [`Theory::check`] type-checks a term by
 validating the read/write argument shapes against the operation.
 
 ## Examples
 
 ```
 use theory::Theory;
-use theory::bool::{Prop, DType};
+use theory::bool::{BoolOp, DType};
 
 let t = Type::Bool(1, 1);
 
 // `And` reads two scalars and writes one.
-assert!(Prop::And.check::<DType>(&[t, t], &[t]).is_ok());
+assert!(BoolOp::And.check::<DType>(&[t, t], &[t]).is_ok());
 
 // `Not` is unary — two inputs is a type error.
-assert!(Prop::Not.check::<DType>(&[t, t], &[t]).is_err());
+assert!(BoolOp::Not.check::<DType>(&[t, t], &[t]).is_err());
 ```
 */
 
@@ -39,7 +39,6 @@ use std::fmt;
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Bool(pub usize, pub usize);
 
-// TODO: impl DType
 impl Bool {
     pub fn shape(&self) -> (usize, usize) {
         (self.0, self.1)
@@ -53,7 +52,7 @@ impl fmt::Display for Bool {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum Prop {
+pub enum BoolOp {
     Const(Vec<Vec<bool>>),
     And,
     Or,
@@ -61,7 +60,19 @@ pub enum Prop {
     Not,
 }
 
-impl Theory for Prop {
+impl fmt::Display for BoolOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self {
+            BoolOp::And => write!(f, "And"),
+            BoolOp::Or => write!(f, "Or"),
+            BoolOp::Xor => write!(f, "Xor"),
+            BoolOp::Not => write!(f, "Not"),
+            BoolOp::Const(cm) => fmt_matrix(cm, f),
+        }
+    }
+}
+
+impl Theory for BoolOp {
     type DType = Bool;
 
     fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
@@ -73,7 +84,7 @@ impl Theory for Prop {
         let mut read = read.into_iter();
         let mut write = write.into_iter();
         match self {
-            Prop::Const(cm) => {
+            BoolOp::Const(cm) => {
                 if read.next().is_some() {
                     return Err("Const: cannot read values".into());
                 }
@@ -96,7 +107,7 @@ impl Theory for Prop {
                 }
                 Ok(())
             }
-            Prop::Not => {
+            BoolOp::Not => {
                 let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
                 if *r != *w {
                     return Err(format!(
@@ -115,7 +126,7 @@ impl Theory for Prop {
                 }
                 Ok(())
             }
-            Prop::And | Prop::Or | Prop::Xor => {
+            BoolOp::And | BoolOp::Or | BoolOp::Xor => {
                 let w1 = write_nxt(&mut write, 0)?;
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,

@@ -5,13 +5,13 @@ Defines the theory [`LIA`] of linear integer arithmetic over matrices,
 mixing integer and boolean matrices in a single signature.
 
 A [`Type`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
-`Type` converts to and from [`int::IntType`] and [`bool::PropType`]
+`Type` converts to and from [`int::IntType`] and [`bool::BoolOpType`]
 so that integer and propositional terms embed directly into `LIA`. The
 operations in [`LIA`] are:
 
 - [`LIA::Const`] — an integer matrix literal whose shape must match the
   declared (integer) write type.
-- [`LIA::Bool`] — lifts any [`bool::Prop`] operation to act on the
+- [`LIA::Bool`] — lifts any [`bool::BoolOp`] operation to act on the
   boolean fragment of `Type`.
 - [`LIA::Cmp`] — pointwise integer comparisons
   ([`CmpOp::Le`], [`CmpOp::Lt`], [`CmpOp::Ge`], [`CmpOp::Gt`],
@@ -189,7 +189,7 @@ pub enum FlowOp {
 #[derive(Clone, PartialEq, Debug)]
 pub enum LIA {
     Const(Vec<Vec<i64>>),
-    Bool(bool::Prop),
+    Bool(bool::BoolOp),
     Linear(LinearOp),
     Cmp(CmpOp),
     Flow(FlowOp),
@@ -200,11 +200,11 @@ impl fmt::Display for LIA {
         match self {
             LIA::Const(cm) => fmt_matrix(cm, f),
             LIA::Bool(op) => match op {
-                bool::Prop::Const(cm) => fmt_matrix(cm, f),
-                bool::Prop::And => write!(f, "And"),
-                bool::Prop::Or => write!(f, "Or"),
-                bool::Prop::Xor => write!(f, "Xor"),
-                bool::Prop::Not => write!(f, "Not"),
+                bool::BoolOp::Const(cm) => fmt_matrix(cm, f),
+                bool::BoolOp::And => write!(f, "And"),
+                bool::BoolOp::Or => write!(f, "Or"),
+                bool::BoolOp::Xor => write!(f, "Xor"),
+                bool::BoolOp::Not => write!(f, "Not"),
             },
             LIA::Cmp(op) => match op {
                 CmpOp::Le => write!(f, "Le"),
@@ -228,24 +228,6 @@ impl fmt::Display for LIA {
             },
         }
     }
-}
-
-fn fmt_matrix<T: fmt::Display>(cm: &[Vec<T>], f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "[")?;
-    for (i, row) in cm.iter().enumerate() {
-        if i > 0 {
-            write!(f, ", ")?;
-        }
-        write!(f, "[")?;
-        for (j, v) in row.iter().enumerate() {
-            if j > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{v}")?;
-        }
-        write!(f, "]")?;
-    }
-    write!(f, "]")
 }
 
 impl Theory for LIA {
@@ -293,7 +275,7 @@ where
     Ok(())
 }
 
-fn check_bool<'a, R, W, D>(op: &bool::Prop, read: R, write: W) -> Result<(), String>
+fn check_bool<'a, R, W, D>(op: &bool::BoolOp, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<&'a Type>,
     R: IntoIterator<Item = D>,

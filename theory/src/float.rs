@@ -1,38 +1,38 @@
 /*!
-# Int numbers
+# Float numbers
 
-Defines the theory [`Int`] of matrices of signed integers (`i64`).
+Defines the theory [`Float`] of matrices of signed integers (`i64`).
 
 A [`DType`] value describes the *type* of a term as a matrix shape
-`Int(rows, cols)`. The operations in [`Int`] are:
+`Float(rows, cols)`. The operations in [`Float`] are:
 
-- [`Int::Const`] — an inline integer matrix literal whose shape must
+- [`Float::Const`] — an inline integer matrix literal whose shape must
   match the declared write type.
-- [`Int::Id`] — unary, shape-preserving.
-- [`Int::Add`], [`Int::Mul`] — elementwise binary; both inputs and the
+- [`Float::Id`] — unary, shape-preserving.
+- [`Float::Add`], [`Float::Mul`] — elementwise binary; both inputs and the
   output share the same shape.
-- [`Int::MatMul`] — matrix multiplication: `(m,k) × (k,n) → (m,n)`.
+- [`Float::MatMul`] — matrix multiplication: `(m,k) × (k,n) → (m,n)`.
 
-`Int` implements [`Theory`], so [`Theory::check`] type-checks a term by
+`Float` implements [`Theory`], so [`Theory::check`] type-checks a term by
 validating the read/write argument shapes against the operation.
 
 ## Examples
 
 ```
 use theory::Theory;
-use theory::int::{Int, ArithInt};
+use theory::int::{Float, ArithFloat};
 
-let a = Int(2, 3);
-let b = Int(3, 4);
-let c = Int(2, 4);
+let a = Float(2, 3);
+let b = Float(3, 4);
+let c = Float(2, 4);
 
 // Matrix multiply: (2x3) * (3x4) -> (2x4).
-assert!(ArithInt::MatMul.check::<DType>(&[a, b], &[c]).is_ok());
+assert!(ArithFloat::MatMul.check::<DType>(&[a, b], &[c]).is_ok());
 
 // Elementwise `Add` requires matching shapes.
-let m = Int(2, 3);
-assert!(ArithInt::Add.check::<DType>(&[m, m], &[m]).is_ok());
-assert!(ArithInt::Add.check::<DType>(&[a, b], &[c]).is_err());
+let m = Float(2, 3);
+assert!(ArithFloat::Add.check::<DType>(&[m, m], &[m]).is_ok());
+assert!(ArithFloat::Add.check::<DType>(&[a, b], &[c]).is_err());
 ```
 */
 
@@ -40,26 +40,25 @@ use crate::*;
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-pub struct Int(pub usize, pub usize);
+pub struct Float(pub usize, pub usize);
 
-impl Int {
+impl Float {
     pub fn shape(&self) -> (usize, usize) {
         match self {
-            Int(i, j) => (*i, *j),
+            Float(i, j) => (*i, *j),
         }
     }
 }
 
-impl fmt::Display for Int {
+impl fmt::Display for Float {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Int({}, {})", self.0, self.1)
+        write!(f, "Float({}, {})", self.0, self.1)
     }
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum ArithInt {
-    // TODO: use bigint?
-    Const(Vec<Vec<i64>>),
+pub enum ArithFloat {
+    Const(Vec<Vec<f64>>),
     Add,
     Mul,
     Sub,
@@ -70,23 +69,23 @@ pub enum ArithInt {
     Abs,
 }
 
-impl fmt::Display for ArithInt {
+impl fmt::Display for ArithFloat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            ArithInt::Add => write!(f, "Add"),
-            ArithInt::Mul => write!(f, "Mul"),
-            ArithInt::Sub => write!(f, "Sub"),
-            ArithInt::Div => write!(f, "Div"),
-            ArithInt::Mod => write!(f, "Mod"),
-            ArithInt::Neg => write!(f, "Neg"),
-            ArithInt::Abs => write!(f, "Abs"),
-            ArithInt::MatMul => write!(f, "MatMul"),
-            ArithInt::Const(cm) => fmt_matrix(cm, f),
+            ArithFloat::Add => write!(f, "Add"),
+            ArithFloat::Mul => write!(f, "Mul"),
+            ArithFloat::Sub => write!(f, "Sub"),
+            ArithFloat::Div => write!(f, "Div"),
+            ArithFloat::Mod => write!(f, "Mod"),
+            ArithFloat::Neg => write!(f, "Neg"),
+            ArithFloat::Abs => write!(f, "Abs"),
+            ArithFloat::MatMul => write!(f, "MatMul"),
+            ArithFloat::Const(cm) => fmt_matrix(cm, f),
         }
     }
 }
 
-pub(crate) fn check_init_dims(cm: &[Vec<i64>], i: usize, j: usize) -> Result<(), String> {
+pub(crate) fn check_init_dims(cm: &[Vec<f64>], i: usize, j: usize) -> Result<(), String> {
     if cm.len() != i {
         return Err(format!(
             "Const: Initializer has a wrong number of rows (has {}, expected {})",
@@ -103,24 +102,24 @@ pub(crate) fn check_init_dims(cm: &[Vec<i64>], i: usize, j: usize) -> Result<(),
     Ok(())
 }
 
-impl Theory for ArithInt {
-    type DType = Int;
+impl Theory for ArithFloat {
+    type DType = Float;
 
     fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a Int>,
+        D: TryInto<&'a Float>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
         let mut read = read.into_iter();
         let mut write = write.into_iter();
         match self {
-            ArithInt::Const(cm) => {
+            ArithFloat::Const(cm) => {
                 if read.next().is_some() {
                     return Err("Const: cannot read values".into());
                 }
 
-                let Int(i, j) = write_nxt(&mut write, 0)?;
+                let Float(i, j) = write_nxt(&mut write, 0)?;
 
                 check_init_dims(cm, *i, *j)?;
 
@@ -130,7 +129,7 @@ impl Theory for ArithInt {
                 Ok(())
             }
 
-            ArithInt::Neg | ArithInt::Abs => {
+            ArithFloat::Neg | ArithFloat::Abs => {
                 let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
                 if r != w {
                     return Err(format!(
@@ -150,7 +149,11 @@ impl Theory for ArithInt {
                 Ok(())
             }
 
-            ArithInt::Add | ArithInt::Mul | ArithInt::Sub | ArithInt::Mod | ArithInt::Div => {
+            ArithFloat::Add
+            | ArithFloat::Mul
+            | ArithFloat::Sub
+            | ArithFloat::Mod
+            | ArithFloat::Div => {
                 let w1 = write_nxt(&mut write, 0)?;
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
@@ -171,7 +174,7 @@ impl Theory for ArithInt {
                 Ok(())
             }
 
-            ArithInt::MatMul => {
+            ArithFloat::MatMul => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
                     read_nxt(&mut read, 1)?,

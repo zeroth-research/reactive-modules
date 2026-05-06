@@ -1,12 +1,8 @@
 /*!
 # Bit-vectors of fixed length
 
-Defines the theory [`BV<N>`] of matrices of `N`-bit bit-vectors, where
-the width `N` is fixed at compile time via a const generic.
-
-A [`BVDType<N>`] value describes the *type* of a term as a matrix shape
-`BV(rows, cols)` whose elements are `N`-bit bit-vectors. The operations
-in [`BV`] are:
+Defines the theory [`BVTheory`] of matrices over bit-vectors.
+The operations in [`BVTheory`] are:
 
 - [`BV::Const`] — an inline bit-vector matrix literal whose shape must
   match the declared write type.
@@ -16,63 +12,61 @@ in [`BV`] are:
 - [`BV::MatMul`] — matrix multiplication: `(m,k) × (k,n) → (m,n)`, with
   the inner dimensions required to agree.
 
-`BV<N>` implements [`Theory`], so [`Theory::check`] type-checks terms by
-validating read/write argument shapes against the operation.
-
 ## Examples
 
 ```
 use theory::Theory;
-use theory::bv::{BV, BVDType};
+use theory::bv::{BV, BVTheory};
 
-// 8-bit bit-vectors.
-let a = DType::BVU(8, 2, 3);
-let b = DType::BVU(8, 3, 4);
-let c = DType::BVU(8, 2, 4);
+// 8-bit unsigned bit-vector matrices.
+let a = BV::U(8, 2, 3);
+let b = BV::U(8, 3, 4);
+let c = BV::U(8, 2, 4);
 
 // Matrix multiply: (2x3) * (3x4) -> (2x4).
-assert!(BV::MatMul.type_check::<DType>(&[a, b], &[c]).is_ok());
+assert!(BV::MatMul.type_check::<BV>(&[a, b], &[c]).is_ok());
 
 // Elementwise `Add` requires matching shapes.
-let m = DType::BV(8, 2, 3);
-assert!(BV::Add.check::<DType>(&[m, m], &[m]).is_ok());
-assert!(BV::Add.check::<DType>(&[a, b], &[c]).is_err());
+let m = BV::U(8, 2, 3);
+assert!(BV::Add.check::<BV>(&[m, m], &[m]).is_ok());
+assert!(BV::Add.check::<BV>(&[a, b], &[c]).is_err());
 ```
 */
 
 use crate::*;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum DType {
+// TODO: factor out Mat<T>(usize, usize)? But then we need PhantomData...
+
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub enum BV {
     // matrix of unsigned bitvectors determnined by (bitvector-length, # rows, # cols)
-    BVU(usize, usize, usize),
+    U(usize, usize, usize),
     // matrix of signed bitvectors determnined by (bitvector-length, # rows, # cols)
-    BVS(usize, usize, usize),
+    S(usize, usize, usize),
 }
 
-impl DType {
+impl BV {
     pub fn is_signed(&self) -> bool {
-        matches!(self, DType::BVS(_, _, _))
+        matches!(self, BV::S(_, _, _))
     }
 
     pub fn shape(&self) -> (usize, usize) {
         match self {
-            DType::BVU(_, i, j) => (*i, *j),
-            DType::BVS(_, i, j) => (*i, *j),
+            BV::U(_, i, j) => (*i, *j),
+            BV::S(_, i, j) => (*i, *j),
         }
     }
 
     pub fn bw(&self) -> usize {
         match self {
-            DType::BVU(bw, _, _) => *bw,
-            DType::BVS(bw, _, _) => *bw,
+            BV::U(bw, _, _) => *bw,
+            BV::S(bw, _, _) => *bw,
         }
     }
 }
 
-/// TODO: write "formal" semantics
 #[derive(Clone, PartialEq, Debug)]
-pub enum BV {
+pub enum BVTheory {
     // TODO: use bitarray, this works only for `N <= 64`
     Const(Vec<Vec<usize>>),
     Add,
@@ -82,7 +76,11 @@ pub enum BV {
     Or,
     Xor,
     Not,
-    // TODO: add cast from to BVU/BVS
+    // TODO: add cast from to U/S
+    Select(u32, u32),
+    Extend(u32),
+    ToUnsigned(),
+    ToSigned(),
 }
 
 fn check_init_dims(cm: &[Vec<usize>], bw: usize, i: usize, j: usize) -> Result<(), String> {
@@ -105,12 +103,12 @@ fn check_init_dims(cm: &[Vec<usize>], bw: usize, i: usize, j: usize) -> Result<(
     Ok(())
 }
 
-impl Theory for BV {
-    type DType = DType;
+impl Theory for BVTheory {
+    type DType = BV;
 
     fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a DType>,
+        D: TryInto<&'a BV>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
@@ -118,14 +116,14 @@ impl Theory for BV {
         let mut write = write.into_iter();
 
         match self {
-            BV::Const(cm) => {
+            BVTheory::Const(cm) => {
                 if read.next().is_some() {
                     return Err("Const: cannot read values".into());
                 }
                 let dtype = write_nxt(&mut write, 0)?;
                 match dtype {
-                    DType::BVU(bw, i, j) => check_init_dims(cm, *bw, *i, *j)?,
-                    DType::BVS(bw, i, j) => check_init_dims(cm, *bw, *i, *j)?,
+                    BV::U(bw, i, j) => check_init_dims(cm, *bw, *i, *j)?,
+                    BV::S(bw, i, j) => check_init_dims(cm, *bw, *i, *j)?,
                 }
                 if write.next().is_some() {
                     return Err("Const: returns more than one value".into());
@@ -133,7 +131,7 @@ impl Theory for BV {
                 Ok(())
             }
 
-            BV::Not => {
+            BVTheory::Not => {
                 let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
                 if r != w {
                     return Err(format!(
@@ -152,7 +150,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::And | BV::Or | BV::Xor | BV::Add | BV::Mul => {
+            BVTheory::And | BVTheory::Or | BVTheory::Xor | BVTheory::Add | BVTheory::Mul => {
                 let w1 = write_nxt(&mut write, 0)?;
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
@@ -173,7 +171,7 @@ impl Theory for BV {
                 Ok(())
             }
 
-            BV::MatMul => {
+            BVTheory::MatMul => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
                     read_nxt(&mut read, 1)?,
@@ -228,6 +226,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
+            op => unimplemented!("Unimplemented operation {:?}", op),
         }
     }
 }
