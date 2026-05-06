@@ -1,4 +1,4 @@
-"""Analyzer extensions — Python patterns the analyzer must translate to terms.
+"""Tests for the Python patterns the analyzer translates into terms.
 
 Each feature gets a small gym.Env that exercises it. Tests run the extracted
 module either through the IR interpreter (`interpret=True`) when all terms
