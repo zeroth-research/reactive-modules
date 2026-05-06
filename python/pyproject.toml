@@ -23,6 +23,7 @@ dependencies = [
     "textual>=8.0.0",
     "torch==2.9.0",
     "websockets>=15.0",
+    "z3-solver>=4.12",
 ]
 
 # [project.optional-dependencies]
@@ -52,7 +53,6 @@ tutorials = [
     "matplotlib>=3.8",
     "notebook>=7.0",
     "pygame>=2.5",
-    "z3-solver>=4.12",
 ]
 
 [tool.pytest.ini_options]
