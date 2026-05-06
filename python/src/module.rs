@@ -5,7 +5,7 @@ use pyo3::types::{PyDict, PyTuple};
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
-    pub(crate) base: base::Module<DType, IType>,
+    pub(crate) base: base::Module<IType>,
 }
 
 #[pymethods]
@@ -191,8 +191,8 @@ impl Module {
     }
 }
 
-impl From<base::Module<DType, IType>> for Module {
-    fn from(base: base::Module<DType, IType>) -> Self {
+impl From<base::Module<IType>> for Module {
+    fn from(base: base::Module<IType>) -> Self {
         Self { base }
     }
 }

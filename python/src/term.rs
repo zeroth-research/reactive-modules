@@ -68,7 +68,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &base::Term<DType, IType> {
+    pub(crate) fn base(&self) -> &base::Term<IType> {
         &self.base
     }
 
@@ -81,8 +81,8 @@ impl Term {
     }
 }
 
-impl From<base::Term<DType, IType>> for Term {
-    fn from(base: base::Term<DType, IType>) -> Self {
+impl From<base::Term<IType>> for Term {
+    fn from(base: base::Term<IType>) -> Self {
         Self { base }
     }
 }

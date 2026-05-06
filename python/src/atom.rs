@@ -6,11 +6,11 @@ use pyo3::prelude::*;
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: base::Atom<DType, IType>,
+    base: base::Atom<IType>,
 }
 
-impl From<base::Atom<DType, IType>> for Atom {
-    fn from(base: base::Atom<DType, IType>) -> Self {
+impl From<base::Atom<IType>> for Atom {
+    fn from(base: base::Atom<IType>) -> Self {
         Self { base }
     }
 }
@@ -139,7 +139,7 @@ pub(crate) struct AtomBlock {
 }
 
 impl AtomBlock {
-    fn base(&self) -> &base::Block<DType, IType> {
+    fn base(&self) -> &base::Block<IType> {
         let atom = &self.atom.get().base;
         match self.block {
             BlockType::Init => atom.init(),
