@@ -2,6 +2,7 @@ use crate::pytensor::PyTensor;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::fmt;
+use theory::Theory;
 
 // ============================================================================
 // DType enum (wire data types)
@@ -236,5 +237,20 @@ impl fmt::Display for IType {
             IType::ConstInt(v) => write!(f, "Const: {}", v),
             IType::Uninterpreted(t) => write!(f, "{t}"),
         }
+    }
+}
+
+impl Theory for IType {
+    type DType = DType;
+
+    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    where
+        D: TryInto<&'a Self::DType>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+        Self::DType: 'a,
+    {
+        // FIXME
+        Ok(())
     }
 }

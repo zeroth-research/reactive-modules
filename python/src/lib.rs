@@ -62,7 +62,7 @@ fn try_wire2_iter_cloned(
 
 fn try_term_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Term<DType, IType>>> {
+) -> PyResult<impl Iterator<Item = base::Term<IType>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
