@@ -34,6 +34,7 @@ assert!(Prop::Not.check::<DType>(&[t, t], &[t]).is_err());
 */
 
 use crate::*;
+use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Bool(pub usize, pub usize);
@@ -42,6 +43,12 @@ pub struct Bool(pub usize, pub usize);
 impl Bool {
     pub fn shape(&self) -> (usize, usize) {
         (self.0, self.1)
+    }
+}
+
+impl fmt::Display for Bool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Bool({}, {})", self.0, self.1)
     }
 }
 

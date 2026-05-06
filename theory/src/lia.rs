@@ -4,15 +4,15 @@
 Defines the theory [`LIA`] of linear integer arithmetic over matrices,
 mixing integer and boolean matrices in a single signature.
 
-A [`DType`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
-`DType` converts to and from [`int::IntDType`] and [`bool::PropDType`]
+A [`Type`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
+`Type` converts to and from [`int::IntType`] and [`bool::PropType`]
 so that integer and propositional terms embed directly into `LIA`. The
 operations in [`LIA`] are:
 
 - [`LIA::Const`] — an integer matrix literal whose shape must match the
   declared (integer) write type.
 - [`LIA::Bool`] — lifts any [`bool::Prop`] operation to act on the
-  boolean fragment of `DType`.
+  boolean fragment of `Type`.
 - [`LIA::Cmp`] — pointwise integer comparisons
   ([`CmpOp::Le`], [`CmpOp::Lt`], [`CmpOp::Ge`], [`CmpOp::Gt`],
   [`CmpOp::Eq`], [`CmpOp::Ne`]) producing a scalar `Bool(1,1)`.
@@ -30,87 +30,109 @@ shapes against the selected operation.
 
 ```
 use theory::Theory;
-use theory::lia::{LIA, DType, CmpOp, LinearOp};
+use theory::lia::{LIA, Type, CmpOp, LinearOp};
 
 // Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
-let i = DType::Int(1, 1);
-let b = DType::Bool(1, 1);
-assert!(LIA::Cmp(CmpOp::Lt).check::<DType>(&[i, i], &[b]).is_ok());
+let i = Type::Int(1, 1);
+let b = Type::Bool(1, 1);
+assert!(LIA::Cmp(CmpOp::Lt).check::<Type>(&[i, i], &[b]).is_ok());
 
 // ReLU preserves shape and stays in the integer fragment.
-let m = DType::Int(3, 4);
-assert!(LIA::Linear(LinearOp::ReLU).check::<DType>(&[m], &[m]).is_ok());
-assert!(LIA::Linear(LinearOp::ReLU).check::<DType>(&[b], &[b]).is_err());
+let m = Type::Int(3, 4);
+assert!(LIA::Linear(LinearOp::ReLU).check::<Type>(&[m], &[m]).is_ok());
+assert!(LIA::Linear(LinearOp::ReLU).check::<Type>(&[b], &[b]).is_err());
 ```
 */
+
+use std::fmt;
 
 use crate::*;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-pub enum DType {
-    Int(usize, usize),
+pub enum Type {
+    Int(int::Int),
     Bool(bool::Bool),
 }
 
-impl DType {
+impl Type {
     pub fn is_bool(&self) -> bool {
-        matches!(self, DType::Bool(_))
+        matches!(self, Type::Bool(_))
     }
 
     pub fn is_int(&self) -> bool {
-        matches!(self, DType::Int(_, _))
+        matches!(self, Type::Int(_))
     }
 
     pub fn shape(&self) -> (usize, usize) {
         match self {
-            DType::Bool(b) => b.shape(),
-            DType::Int(i, j) => (*i, *j),
+            Type::Bool(b) => b.shape(),
+            Type::Int(i) => i.shape(),
         }
     }
 }
 
-// -- From DType to its subtypes --
-impl From<int::DType> for DType {
-    fn from(t: int::DType) -> Self {
-        let int::DType::Int(i, j) = t;
-        DType::Int(i, j)
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Int(t) => fmt::Display::fmt(t, f),
+            Type::Bool(t) => fmt::Display::fmt(t, f),
+        }
     }
 }
 
-impl From<bool::Bool> for DType {
+// -- From subtypes to Type --
+impl From<int::Int> for Type {
+    fn from(t: int::Int) -> Self {
+        Type::Int(t)
+    }
+}
+
+impl From<bool::Bool> for Type {
     fn from(b: bool::Bool) -> Self {
-        DType::Bool(b)
+        Type::Bool(b)
     }
 }
 
-// -- From subtypes to DType --
-impl TryFrom<DType> for int::DType {
+// -- From Type to its subtypes --
+impl TryFrom<Type> for int::Int {
     type Error = ();
-    fn try_from(lia_t: DType) -> Result<int::DType, Self::Error> {
+    fn try_from(lia_t: Type) -> Result<int::Int, Self::Error> {
         match lia_t {
-            DType::Int(i, j) => Ok(int::DType::Int(i, j)),
+            Type::Int(i) => Ok(i),
             _ => Err(()),
         }
     }
 }
 
-impl TryFrom<DType> for bool::Bool {
+impl TryFrom<Type> for bool::Bool {
     type Error = ();
 
-    fn try_from(lia_t: DType) -> Result<bool::Bool, Self::Error> {
+    fn try_from(lia_t: Type) -> Result<bool::Bool, Self::Error> {
         match lia_t {
-            DType::Bool(b) => Ok(b),
+            Type::Bool(b) => Ok(b),
             _ => Err(()),
         }
     }
 }
 
-impl<'a> TryFrom<&'a DType> for &'a bool::Bool {
+// -- From Type to its subtypes, references --
+impl<'a> TryFrom<&'a Type> for &'a bool::Bool {
     type Error = ();
 
-    fn try_from(lia_t: &'a DType) -> Result<&'a bool::Bool, Self::Error> {
+    fn try_from(lia_t: &'a Type) -> Result<&'a bool::Bool, Self::Error> {
         match lia_t {
-            DType::Bool(b) => Ok(b),
+            Type::Bool(b) => Ok(b),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a Type> for &'a int::Int {
+    type Error = ();
+
+    fn try_from(lia_t: &'a Type) -> Result<&'a int::Int, Self::Error> {
+        match lia_t {
+            Type::Int(i) => Ok(i),
             _ => Err(()),
         }
     }
@@ -122,6 +144,14 @@ impl<'a, E> TryFrom<Result<&'a bool::Bool, E>> for &'a bool::Bool {
     type Error = E;
 
     fn try_from(lia_t: Result<&'a bool::Bool, E>) -> Result<&'a bool::Bool, Self::Error> {
+        lia_t
+    }
+}
+
+impl<'a, E> TryFrom<Result<&'a int::Int, E>> for &'a int::Int {
+    type Error = E;
+
+    fn try_from(lia_t: Result<&'a int::Int, E>) -> Result<&'a int::Int, Self::Error> {
         lia_t
     }
 }
@@ -140,10 +170,14 @@ pub enum CmpOp {
 pub enum LinearOp {
     // A*x + B where `A` and `B` are constants
     Linear(Vec<Vec<i64>>, Vec<Vec<i64>>),
+    Add,
+    // TODO: where to put this one?
     ReLU,
+    // TODO: move these to MatOp
     Argmax,
     Min,
     Max,
+    //Neg
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -161,15 +195,21 @@ pub enum LIA {
     Flow(FlowOp),
 }
 
+impl fmt::Display for LIA {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<Display LIA>")
+    }
+}
+
 impl Theory for LIA {
-    type DType = DType;
+    type DType = Type;
 
     fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a DType>,
+        D: TryInto<&'a Type>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
-        DType: 'a,
+        Type: 'a,
     {
         match self {
             LIA::Const(cm) => check_const(cm, read, write),
@@ -183,10 +223,10 @@ impl Theory for LIA {
 
 fn check_const<'a, R, W, D>(cm: &Vec<Vec<i64>>, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a DType>,
+    D: TryInto<&'a Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    DType: 'a,
+    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -195,8 +235,8 @@ where
     }
     let dtype = write_nxt(&mut write, 0)?;
     match dtype {
-        DType::Int(i, j) => int::check_init_dims(cm, *i, *j)?,
-        DType::Bool(_) => {
+        Type::Int(int::Int(i, j)) => int::check_init_dims(cm, *i, *j)?,
+        Type::Bool(_) => {
             return Err("Const must be integer matrix, not boolean".into());
         }
     }
@@ -208,21 +248,21 @@ where
 
 fn check_bool<'a, R, W, D>(op: &bool::Prop, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a DType>,
+    D: TryInto<&'a Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    DType: 'a,
+    Type: 'a,
 {
     let r = read.into_iter().map(|d: D| {
         d.try_into()
             .map_err(|_| ())
-            .and_then(|d: &DType| d.try_into())
+            .and_then(|d: &Type| d.try_into())
             .map_err(|_| "Type was supposed to be Bool")
     });
     let w = write.into_iter().map(|d: D| {
         d.try_into()
             .map_err(|_| ())
-            .and_then(|d: &DType| d.try_into())
+            .and_then(|d: &Type| d.try_into())
             .map_err(|_| "Type was supposed to be Bool")
     });
     op.type_check(r, w)
@@ -230,10 +270,10 @@ where
 
 fn check_cmp<'a, R, W, D>(op: &CmpOp, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a DType>,
+    D: TryInto<&'a Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    DType: 'a,
+    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -242,7 +282,7 @@ where
             if *read_nxt(&mut read, 0)? != *read_nxt(&mut read, 1)? {
                 return Err(format!("{:?}: input values must have the same type", op));
             }
-            let DType::Bool(bool::Bool(1, 1)) = write_nxt(&mut write, 0)? else {
+            let Type::Bool(bool::Bool(1, 1)) = write_nxt(&mut write, 0)? else {
                 return Err(format!(
                     "{:?}: input and output values must have the same type",
                     op
@@ -255,15 +295,44 @@ where
 
 fn check_linear<'a, R, W, D>(op: &LinearOp, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a DType>,
+    D: TryInto<&'a Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    DType: 'a,
+    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
         LinearOp::Linear(a, b) => check_linear_affine(op, a, b, &mut read, &mut write),
+        LinearOp::Add => {
+            let (r1, r2, None) = (
+                read_nxt(&mut read, 0)?,
+                read_nxt(&mut read, 1)?,
+                read.next(),
+            ) else {
+                return Err(format!("{:?}: must read exactly two values", op));
+            };
+            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                return Err(format!("{:?}: must write exactly one value", op));
+            };
+
+            if *r1 != *r2 {
+                return Err(format!("{:?}: inputs must have the same type", op));
+            }
+            if *r1 != *w1 {
+                return Err(format!(
+                    "{:?}: input and output must have the same type",
+                    op
+                ));
+            }
+            if !matches!(w1, Type::Int(_)) {
+                return Err(format!(
+                    "{:?}: input and output values must be int matrices",
+                    op
+                ));
+            }
+            Ok(())
+        }
         LinearOp::ReLU => {
             let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
@@ -277,7 +346,7 @@ where
                     op
                 ));
             }
-            if !matches!(w1, DType::Int(_, _)) {
+            if !matches!(w1, Type::Int(_)) {
                 return Err(format!(
                     "{:?}: input and output values must be int matrices",
                     op
@@ -293,7 +362,7 @@ where
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             match w1 {
-                DType::Int(i, j) => {
+                Type::Int(int::Int(i, j)) => {
                     // FIXME: we should fix which dimension is 1..
                     if *i == 1 || *j == 1 {
                         return Ok(());
@@ -317,8 +386,8 @@ fn check_linear_affine<'a, D>(
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
 where
-    D: TryInto<&'a DType>,
-    DType: 'a,
+    D: TryInto<&'a Type>,
+    Type: 'a,
 {
     let (r1, None) = (read_nxt(read, 0)?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
@@ -358,7 +427,7 @@ where
     }
 
     match (r1, w1) {
-        (DType::Int(d1, d2), DType::Int(d3, d4)) => {
+        (Type::Int(int::Int(d1, d2)), Type::Int(int::Int(d3, d4))) => {
             if *d2 != a_rows {
                 return Err(format!(
                     "{:?}: mismatch in inner dimensions of `A` and `x`: A has {}x{}, x has {}x{}",
@@ -387,10 +456,10 @@ where
 
 fn check_flow<'a, R, W, D>(op: &FlowOp, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a DType>,
+    D: TryInto<&'a Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    DType: 'a,
+    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -434,7 +503,7 @@ where
                     op
                 ));
             }
-            if *r1 != DType::Bool(bool::Bool(1, 1)) {
+            if *r1 != Type::Bool(bool::Bool(1, 1)) {
                 return Err(format!(
                     "{:?}: input and output values must have the same type",
                     op
