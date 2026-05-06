@@ -197,8 +197,55 @@ pub enum LIA {
 
 impl fmt::Display for LIA {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<Display LIA>")
+        match self {
+            LIA::Const(cm) => fmt_matrix(cm, f),
+            LIA::Bool(op) => match op {
+                bool::Prop::Const(cm) => fmt_matrix(cm, f),
+                bool::Prop::And => write!(f, "And"),
+                bool::Prop::Or => write!(f, "Or"),
+                bool::Prop::Xor => write!(f, "Xor"),
+                bool::Prop::Not => write!(f, "Not"),
+            },
+            LIA::Cmp(op) => match op {
+                CmpOp::Le => write!(f, "Le"),
+                CmpOp::Lt => write!(f, "Lt"),
+                CmpOp::Ge => write!(f, "Ge"),
+                CmpOp::Gt => write!(f, "Gt"),
+                CmpOp::Eq => write!(f, "Eq"),
+                CmpOp::Ne => write!(f, "Ne"),
+            },
+            LIA::Linear(op) => match op {
+                LinearOp::Linear(_, _) => write!(f, "Linear"),
+                LinearOp::Add => write!(f, "Add"),
+                LinearOp::ReLU => write!(f, "ReLU"),
+                LinearOp::Argmax => write!(f, "Argmax"),
+                LinearOp::Min => write!(f, "Min"),
+                LinearOp::Max => write!(f, "Max"),
+            },
+            LIA::Flow(op) => match op {
+                FlowOp::Id => write!(f, "Id"),
+                FlowOp::Ite => write!(f, "Ite"),
+            },
+        }
     }
+}
+
+fn fmt_matrix<T: fmt::Display>(cm: &[Vec<T>], f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "[")?;
+    for (i, row) in cm.iter().enumerate() {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "[")?;
+        for (j, v) in row.iter().enumerate() {
+            if j > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{v}")?;
+        }
+        write!(f, "]")?;
+    }
+    write!(f, "]")
 }
 
 impl Theory for LIA {
