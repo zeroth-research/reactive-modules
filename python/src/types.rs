@@ -1,10 +1,8 @@
 #![allow(non_snake_case)]
 
-use crate::pytensor::PyTensor;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::fmt;
-use theory::Theory;
 
 fn parse_dims(dims: &Bound<'_, pyo3::types::PyTuple>) -> PyResult<(usize, usize)> {
     match dims.len() {
@@ -95,23 +93,3 @@ impl From<DType> for theory::python::Type {
     }
 }
 
-// ============================================================================
-// IType
-// ============================================================================
-
-// FIXME #[pyclass(str, frozen)]
-#[pyclass(frozen)]
-#[derive(Debug, Clone)]
-pub struct IType(theory::python::IType);
-
-impl From<theory::python::IType> for IType {
-    fn from(t: theory::python::IType) -> IType {
-        IType(t)
-    }
-}
-
-impl From<IType> for theory::python::IType {
-    fn from(t: IType) -> theory::python::IType {
-        t.0
-    }
-}
