@@ -53,12 +53,12 @@ def test_env_unwraps_existing_env():
 # ── Errors ────────────────────────────────────────────────────────
 
 def test_env_rejects_multiple_gym_envs():
-    with pytest.raises(TypeError, match="at most 1"):
+    with pytest.raises(ValueError, match="at most 1"):
         Env(SimpleEnv(), SimpleEnv())
 
 
 def test_env_rejects_wrapped_plus_raw():
-    with pytest.raises(TypeError, match="at most 1"):
+    with pytest.raises(ValueError, match="at most 1"):
         Env(Env(SimpleEnv()), SimpleEnv())
 
 

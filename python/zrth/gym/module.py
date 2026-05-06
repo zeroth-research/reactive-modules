@@ -212,7 +212,7 @@ class Env(Module, gym.Wrapper):
                 # If it's already an Env with a backing env, unwrap
                 if isinstance(a, Env) and a._backing_env is not None:
                     if backing_env is not None:
-                        raise TypeError("Env accepts at most 1 gym.Env, got multiple")
+                        raise ValueError("Env accepts at most 1 gym.Env, got multiple")
                     backing_env = a.unwrapped
             elif isinstance(a, gym.Env):
                 raw_envs.append(a)
@@ -220,7 +220,7 @@ class Env(Module, gym.Wrapper):
                 raise TypeError(f"Expected gym.Env or Module, got {type(a)}")
 
         if len(raw_envs) > 1 or (len(raw_envs) == 1 and backing_env is not None):
-            raise TypeError("Env accepts at most 1 gym.Env, got multiple")
+            raise ValueError("Env accepts at most 1 gym.Env, got multiple")
 
         # Extract Module from raw gym.Env if present
         wire_names = {}
