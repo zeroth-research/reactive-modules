@@ -51,18 +51,18 @@ pub enum DType {
 }
 
 impl DType {
-    fn is_signed(&self) -> bool {
+    pub fn is_signed(&self) -> bool {
         matches!(self, DType::BVS(_, _, _))
     }
 
-    fn shape(&self) -> (usize, usize) {
+    pub fn shape(&self) -> (usize, usize) {
         match self {
             DType::BVU(_, i, j) => (*i, *j),
             DType::BVS(_, i, j) => (*i, *j),
         }
     }
 
-    fn bw(&self) -> usize {
+    pub fn bw(&self) -> usize {
         match self {
             DType::BVU(bw, _, _) => *bw,
             DType::BVS(bw, _, _) => *bw,
