@@ -4,7 +4,7 @@ use pyo3::exceptions::{PyException, PyIndexError};
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
-    base: base::Term<IType>,
+    base: base::Term<theory::python::IType>,
 }
 
 #[pymethods]
@@ -14,7 +14,7 @@ impl Term {
         let write = try_wire_iter_cloned(write)?;
         let read = try_wire_iter_cloned(read)?;
 
-        match base::Term::function(itype, write, read) {
+        match base::Term::function(itype.into(), write, read) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -24,7 +24,7 @@ impl Term {
     fn constant(itype: IType, write: &Bound<'_, PyAny>) -> PyResult<Self> {
         let write = try_wire_iter_cloned(write)?;
 
-        match base::Term::constant(itype, write) {
+        match base::Term::constant(itype.into(), write) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -55,7 +55,7 @@ impl Term {
 
     #[getter]
     fn itype(&self) -> IType {
-        self.base.itype().clone()
+        self.base.itype().clone().into()
     }
 
     fn __str__(&self) -> String {
@@ -68,7 +68,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &base::Term<IType> {
+    pub(crate) fn base(&self) -> &base::Term<theory::python::IType> {
         &self.base
     }
 
@@ -81,8 +81,8 @@ impl Term {
     }
 }
 
-impl From<base::Term<IType>> for Term {
-    fn from(base: base::Term<IType>) -> Self {
+impl From<base::Term<theory::python::IType>> for Term {
+    fn from(base: base::Term<theory::python::IType>) -> Self {
         Self { base }
     }
 }
@@ -99,7 +99,7 @@ struct TermInterface {
 }
 
 impl TermInterface {
-    fn base(&self) -> &base::Interface<DType> {
+    fn base(&self) -> &base::Interface<theory::python::Type> {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),

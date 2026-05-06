@@ -52,7 +52,7 @@ where
 
 fn try_wire2_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = [base::Wire<DType>; 2]>> {
+) -> PyResult<impl Iterator<Item = [base::Wire<theory::python::Type>; 2]>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_array2_iter_borrow::<Wire>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
@@ -62,7 +62,7 @@ fn try_wire2_iter_cloned(
 
 fn try_term_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Term<IType>>> {
+) -> PyResult<impl Iterator<Item = base::Term<theory::python::IType>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
@@ -72,7 +72,7 @@ fn try_term_iter_cloned(
 
 fn try_wire_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Wire<DType>>> {
+) -> PyResult<impl Iterator<Item = base::Wire<theory::python::Type>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Wire>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);

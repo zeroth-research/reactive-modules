@@ -5,7 +5,7 @@ use pyo3::types::{PyDict, PyTuple};
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
-    pub(crate) base: base::Module<IType>,
+    pub(crate) base: base::Module<theory::python::IType>,
 }
 
 #[pymethods]
@@ -191,9 +191,15 @@ impl Module {
     }
 }
 
-impl From<base::Module<IType>> for Module {
-    fn from(base: base::Module<IType>) -> Self {
+impl From<base::Module<theory::python::IType>> for Module {
+    fn from(base: base::Module<theory::python::IType>) -> Self {
         Self { base }
+    }
+}
+
+impl From<Module> for base::Module<theory::python::IType> {
+    fn from(pymod: Module) -> Self {
+        pymod.base
     }
 }
 
@@ -223,7 +229,7 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &base::Interface<DType, 2> {
+    fn base(&self) -> &base::Interface<theory::python::Type, 2> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),

@@ -6,11 +6,11 @@ use pyo3::prelude::*;
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: base::Atom<IType>,
+    base: base::Atom<theory::python::IType>,
 }
 
-impl From<base::Atom<IType>> for Atom {
-    fn from(base: base::Atom<IType>) -> Self {
+impl From<base::Atom<theory::python::IType>> for Atom {
+    fn from(base: base::Atom<theory::python::IType>) -> Self {
         Self { base }
     }
 }
@@ -79,7 +79,7 @@ struct AtomInterface {
 }
 
 impl AtomInterface {
-    fn base(&self) -> &base::Interface<DType> {
+    fn base(&self) -> &base::Interface<theory::python::Type> {
         let atom = &self.atom.get().base;
         match self.interface {
             AtomInterfaceType::Read => atom.read(),
@@ -139,7 +139,7 @@ pub(crate) struct AtomBlock {
 }
 
 impl AtomBlock {
-    fn base(&self) -> &base::Block<IType> {
+    fn base(&self) -> &base::Block<theory::python::IType> {
         let atom = &self.atom.get().base;
         match self.block {
             BlockType::Init => atom.init(),
@@ -190,7 +190,7 @@ struct AtomBlockInterface {
 }
 
 impl AtomBlockInterface {
-    fn base(&self) -> &base::Interface<DType> {
+    fn base(&self) -> &base::Interface<theory::python::Type> {
         let term = self.block.get().base();
         match self.interface {
             TermInterfaceType::Read => term.read(),

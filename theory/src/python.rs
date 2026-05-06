@@ -13,6 +13,18 @@ pub enum Type {
     BV32(bv::BV),
 }
 
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Bool(t) => t.fmt(f),
+            Type::Int(t) => t.fmt(f),
+            Type::Float(t) => t.fmt(f),
+            Type::Real(t) => t.fmt(f),
+            Type::BV32(_t) => unimplemented!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum NNOp {
     ReLU,
@@ -132,6 +144,7 @@ impl Theory for IType {
         Self::DType: 'a,
     {
         // FIXME
+        // TODO: don't forget to check that BV are 32-bit
         Ok(())
     }
 }
