@@ -45,11 +45,13 @@ module-name = "zrth.zrth"
 [dependency-groups]
 dev = [
     "cvc5>=1.3.2",
+    "pytest>=9.0.2",
+]
+tutorials = [
     "ipykernel>=6.0",
     "matplotlib>=3.8",
     "notebook>=7.0",
     "pygame>=2.5",
-    "pytest>=9.0.2",
     "z3-solver>=4.12",
 ]
 
