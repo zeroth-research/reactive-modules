@@ -197,11 +197,12 @@ class Env(Module, gym.Wrapper):
         Env(wrapped_env, module1)           → unwrap + compose
         Env(module)                         → pure symbolic
         Env(module1, module2)               → compose + pure symbolic
-        Env(..., symbolic=True)             → force pure-symbolic execution (no real-env delegation)
+        Env(..., interpret=True)            → run every atom through the IR interpreter
+                                              (no real-env delegation)
     """
 
     def __new__(cls, *args, **kwargs):
-        symbolic = kwargs.pop('symbolic', False)
+        interpret = kwargs.pop('interpret', False)
         raw_envs = []
         modules = []
         backing_env = None
@@ -252,11 +253,11 @@ class Env(Module, gym.Wrapper):
             instance = Module.__new__(cls, *modules)
 
         instance._wire_names = wire_names
-        instance._backing_env = None if symbolic else backing_env
+        instance._backing_env = None if interpret else backing_env
 
         # Find env atom index in composed module (may be reordered by topo sort)
         instance._env_atom_idx = None
-        if env_ctrl_ids and not symbolic:
+        if env_ctrl_ids and not interpret:
             for idx, atom in enumerate(instance.atoms):
                 if {w for w in atom.ctrl} == env_ctrl_ids:
                     instance._env_atom_idx = idx
