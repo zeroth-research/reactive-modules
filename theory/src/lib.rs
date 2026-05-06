@@ -5,6 +5,9 @@ pub mod lia;
 pub mod real;
 
 pub trait Theory {
+    // TODO: in torch, from where we took this name (I think), dtype refers to
+    // the type of the element in the tensor (*d*ata type). Maybe we should
+    // consider renaming this to "Types" or something, to avoid confusion.
     type DType;
 
     fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
