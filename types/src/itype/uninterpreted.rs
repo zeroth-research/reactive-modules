@@ -5,7 +5,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Uninterpreted(pub String);
 
-impl theory::Operation for Uninterpreted {}
+//impl theory::Operation for Uninterpreted {}
 
 impl fmt::Display for Uninterpreted {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

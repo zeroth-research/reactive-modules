@@ -46,7 +46,7 @@ assert!(LIA::Linear(LinearOp::ReLU).check::<DType>(&[b], &[b]).is_err());
 
 use crate::*;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum DType {
     Int(usize, usize),
     Bool(bool::Bool),
@@ -116,7 +116,8 @@ impl<'a> TryFrom<&'a DType> for &'a bool::Bool {
     }
 }
 
-// XXX: this seems a bit hacky..
+// XXX: this seems a bit hacky.. but that's just an "identity" that we need
+// for calling type checking on sub-types
 impl<'a, E> TryFrom<Result<&'a bool::Bool, E>> for &'a bool::Bool {
     type Error = E;
 
@@ -168,247 +169,278 @@ impl Theory for LIA {
         D: TryInto<&'a DType>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
+        DType: 'a,
     {
         match self {
-            LIA::Const(cm) => {
-                let mut read = read.into_iter();
-                let mut write = write.into_iter();
-                if read.next().is_some() {
-                    return Err("Const: cannot read values".into());
-                }
-                let dtype = write_nxt(&mut write, 0)?;
-                match dtype {
-                    DType::Int(i, j) => int::check_init_dims(cm, *i, *j)?,
-                    DType::Bool(_) => {
-                        return Err("Const must be integer matrix, not boolean".into());
-                    }
-                }
-                if write.next().is_some() {
-                    return Err("Const: returns more than one value".into());
-                }
-                Ok(())
+            LIA::Const(cm) => check_const(cm, read, write),
+            LIA::Bool(op) => check_bool(op, read, write),
+            LIA::Cmp(op) => check_cmp(op, read, write),
+            LIA::Linear(op) => check_linear(op, read, write),
+            LIA::Flow(op) => check_flow(op, read, write),
+        }
+    }
+}
+
+fn check_const<'a, R, W, D>(cm: &Vec<Vec<i64>>, read: R, write: W) -> Result<(), String>
+where
+    D: TryInto<&'a DType>,
+    R: IntoIterator<Item = D>,
+    W: IntoIterator<Item = D>,
+    DType: 'a,
+{
+    let mut read = read.into_iter();
+    let mut write = write.into_iter();
+    if read.next().is_some() {
+        return Err("Const: cannot read values".into());
+    }
+    let dtype = write_nxt(&mut write, 0)?;
+    match dtype {
+        DType::Int(i, j) => int::check_init_dims(cm, *i, *j)?,
+        DType::Bool(_) => {
+            return Err("Const must be integer matrix, not boolean".into());
+        }
+    }
+    if write.next().is_some() {
+        return Err("Const: returns more than one value".into());
+    }
+    Ok(())
+}
+
+fn check_bool<'a, R, W, D>(op: &bool::Prop, read: R, write: W) -> Result<(), String>
+where
+    D: TryInto<&'a DType>,
+    R: IntoIterator<Item = D>,
+    W: IntoIterator<Item = D>,
+    DType: 'a,
+{
+    let r = read.into_iter().map(|d: D| {
+        d.try_into()
+            .map_err(|_| ())
+            .and_then(|d: &DType| d.try_into())
+            .map_err(|_| "Type was supposed to be Bool")
+    });
+    let w = write.into_iter().map(|d: D| {
+        d.try_into()
+            .map_err(|_| ())
+            .and_then(|d: &DType| d.try_into())
+            .map_err(|_| "Type was supposed to be Bool")
+    });
+    op.type_check(r, w)
+}
+
+fn check_cmp<'a, R, W, D>(op: &CmpOp, read: R, write: W) -> Result<(), String>
+where
+    D: TryInto<&'a DType>,
+    R: IntoIterator<Item = D>,
+    W: IntoIterator<Item = D>,
+    DType: 'a,
+{
+    let mut read = read.into_iter();
+    let mut write = write.into_iter();
+    match op {
+        CmpOp::Le | CmpOp::Lt | CmpOp::Eq | CmpOp::Ne | CmpOp::Ge | CmpOp::Gt => {
+            if *read_nxt(&mut read, 0)? != *read_nxt(&mut read, 1)? {
+                return Err(format!("{:?}: input values must have the same type", op));
             }
+            let DType::Bool(bool::Bool(1, 1)) = write_nxt(&mut write, 0)? else {
+                return Err(format!(
+                    "{:?}: input and output values must have the same type",
+                    op
+                ));
+            };
+            Ok(())
+        }
+    }
+}
 
-            LIA::Bool(op) => {
-                let r = read.into_iter().map(|d: D| {
-                    d.try_into()
-                        .map_err(|_| ())
-                        .and_then(|d: &DType| d.try_into())
-                        .map_err(|_| "Type was supposed to be Bool")
-                });
-
-                let w = write.into_iter().map(|d: D| {
-                    d.try_into()
-                        .map_err(|_| ())
-                        .and_then(|d: &DType| d.try_into())
-                        .map_err(|_| "Type was supposed to be Bool")
-                });
-
-                op.type_check(r, w)
+fn check_linear<'a, R, W, D>(op: &LinearOp, read: R, write: W) -> Result<(), String>
+where
+    D: TryInto<&'a DType>,
+    R: IntoIterator<Item = D>,
+    W: IntoIterator<Item = D>,
+    DType: 'a,
+{
+    let mut read = read.into_iter();
+    let mut write = write.into_iter();
+    match op {
+        LinearOp::Linear(a, b) => check_linear_affine(op, a, b, &mut read, &mut write),
+        LinearOp::ReLU => {
+            let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                return Err(format!("{:?}: must read exactly one value", op));
+            };
+            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                return Err(format!("{:?}: must write exactly one value", op));
+            };
+            if *r1 != *w1 {
+                return Err(format!(
+                    "{:?}: input and output must have the same type",
+                    op
+                ));
             }
-            LIA::Cmp(op) => {
-                let mut read = read.into_iter();
-                let mut write = write.into_iter();
-                match op {
-                    CmpOp::Le | CmpOp::Lt | CmpOp::Eq | CmpOp::Ne | CmpOp::Ge | CmpOp::Gt => {
-                        if *read_nxt(&mut read, 0)? != *read_nxt(&mut read, 1)? {
-                            return Err(format!(
-                                "{:?}: input values must have the same type",
-                                self
-                            ));
-                        }
-                        let DType::Bool(bool::Bool(1, 1)) = write_nxt(&mut write, 0)? else {
-                            return Err(format!(
-                                "{:?}: input and output values must have the same type",
-                                self
-                            ));
-                        };
-
-                        Ok(())
+            if !matches!(w1, DType::Int(_, _)) {
+                return Err(format!(
+                    "{:?}: input and output values must be int matrices",
+                    op
+                ));
+            }
+            Ok(())
+        }
+        LinearOp::Argmax | LinearOp::Min | LinearOp::Max => {
+            let (_r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                return Err(format!("{:?}: must read exactly one value", op));
+            };
+            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                return Err(format!("{:?}: must write exactly one value", op));
+            };
+            match w1 {
+                DType::Int(i, j) => {
+                    // FIXME: we should fix which dimension is 1..
+                    if *i == 1 || *j == 1 {
+                        return Ok(());
                     }
+                    Err(format!(
+                        "{:?}: output must be a vector, got matrix {}x{}",
+                        op, i, j
+                    ))
                 }
+                _ => Err(format!("{:?}: output must be integer matrix", op)),
             }
-            LIA::Linear(op) => {
-                let mut read = read.into_iter();
-                let mut write = write.into_iter();
-                match op {
-                    LinearOp::Linear(a, b) => {
-                        let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-                            return Err(format!("{:?}: must read exactly one value", self));
-                        };
-                        let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                            return Err(format!("{:?}: must write exactly one value", self));
-                        };
+        }
+    }
+}
 
-                        // check A and B constants
-                        let a_rows = a.len();
-                        if a_rows == 0 {
-                            return Err(format!("{:?}: `A` is empty", self));
-                        }
-                        let a_cols = a[0].len();
-                        if a.iter().any(|row| row.len() != a_cols) {
-                            return Err(format!(
-                                "{:?}: `A` has invalid dimensions, rows have different lengths",
-                                self
-                            ));
-                        }
+fn check_linear_affine<'a, D>(
+    op: &LinearOp,
+    a: &[Vec<i64>],
+    b: &[Vec<i64>],
+    read: &mut impl Iterator<Item = D>,
+    write: &mut impl Iterator<Item = D>,
+) -> Result<(), String>
+where
+    D: TryInto<&'a DType>,
+    DType: 'a,
+{
+    let (r1, None) = (read_nxt(read, 0)?, read.next()) else {
+        return Err(format!("{:?}: must read exactly one value", op));
+    };
+    let (w1, None) = (write_nxt(write, 0)?, write.next()) else {
+        return Err(format!("{:?}: must write exactly one value", op));
+    };
 
-                        let b_rows = b.len();
-                        let mut b_cols: usize = 0;
-                        if b_rows != 0 {
-                            b_cols = b[0].len();
-                            if b.iter().any(|row| row.len() != b_cols) {
-                                return Err(format!(
-                                    "{:?}: `A` has invalid dimensions, rows have different lengths",
-                                    self
-                                ));
-                            }
+    let a_rows = a.len();
+    if a_rows == 0 {
+        return Err(format!("{:?}: `A` is empty", op));
+    }
+    let a_cols = a[0].len();
+    if a.iter().any(|row| row.len() != a_cols) {
+        return Err(format!(
+            "{:?}: `A` has invalid dimensions, rows have different lengths",
+            op
+        ));
+    }
 
-                            if b_rows != 1 && b_cols != 1 {
-                                return Err(format!(
-                                    "{:?}: `B` has to be a vector, got matrix {}x{}",
-                                    self, b_rows, b_cols
-                                ));
-                            }
-                        }
+    let b_rows = b.len();
+    let mut b_cols: usize = 0;
+    if b_rows != 0 {
+        b_cols = b[0].len();
+        if b.iter().any(|row| row.len() != b_cols) {
+            return Err(format!(
+                "{:?}: `B` has invalid dimensions, rows have different lengths",
+                op
+            ));
+        }
+        if b_rows != 1 && b_cols != 1 {
+            return Err(format!(
+                "{:?}: `B` has to be a vector, got matrix {}x{}",
+                op, b_rows, b_cols
+            ));
+        }
+    }
 
-                        match (r1, w1) {
-                            (DType::Int(d1, d2), DType::Int(d3, d4)) => {
-                                if *d2 != a_rows {
-                                    return Err(format!(
-                                        "{:?}: mismatch in inner dimensions of `A` and `x`: A has {}x{}, x has {}x{}",
-                                        self, d1, d2, a_rows, a_rows
-                                    ));
-                                }
-                                // `A*x` is a a_rows x d2 matrix, `B` has to have these dimensions (if non-empty)
-                                if b_rows > 0 && (a_rows != b_rows || *d2 != b_cols) {
-                                    return Err(format!(
-                                        "{:?}: A*x has dimension {}x{} while B has {}x{}",
-                                        self, a_rows, d2, b_rows, b_cols
-                                    ));
-                                }
-                                if a_rows != *d3 || *d2 != *d4 {
-                                    return Err(format!(
-                                        "{:?}: bad output matrix dimensions, expected {}x{} but got {}x{}",
-                                        self, a_rows, d2, d3, d4
-                                    ));
-                                }
-                            }
-                            // TODO: should we allow also boolean matrices?
-                            _ => {
-                                return Err(format!(
-                                    "{:?}: input and output must be int matrices",
-                                    self
-                                ));
-                            }
-                        }
-                        Ok(())
-                    }
-                    LinearOp::ReLU => {
-                        let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-                            return Err(format!("{:?}: must read exactly one value", self));
-                        };
-                        let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                            return Err(format!("{:?}: must write exactly one value", self));
-                        };
-
-                        if *r1 != *w1 {
-                            return Err(format!(
-                                "{:?}: input and output must have the same type",
-                                self
-                            ));
-                        }
-
-                        if !matches!(w1, DType::Int(_, _)) {
-                            return Err(format!(
-                                "{:?}: input and output values must be int matrices",
-                                self
-                            ));
-                        }
-                        Ok(())
-                    }
-
-                    LinearOp::Argmax | LinearOp::Min | LinearOp::Max => {
-                        let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-                            return Err(format!("{:?}: must read exactly one value", self));
-                        };
-                        let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                            return Err(format!("{:?}: must write exactly one value", self));
-                        };
-
-                        match w1 {
-                            DType::Int(i, j) => {
-                                // FIXME: we should fix which dimension is 1..
-                                if *i == 1 || *j == 1 {
-                                    return Ok(());
-                                }
-                                Err(format!(
-                                    "{:?}: output must be a vector, got matrix {}x{}",
-                                    self, i, j
-                                ))
-                            }
-                            _ => Err(format!("{:?}: output must be integer matrix", self)),
-                        }
-                    }
-                }
+    match (r1, w1) {
+        (DType::Int(d1, d2), DType::Int(d3, d4)) => {
+            if *d2 != a_rows {
+                return Err(format!(
+                    "{:?}: mismatch in inner dimensions of `A` and `x`: A has {}x{}, x has {}x{}",
+                    op, d1, d2, a_rows, a_rows
+                ));
             }
-            LIA::Flow(op) => {
-                let mut read = read.into_iter();
-                let mut write = write.into_iter();
-                match op {
-                    FlowOp::Id => {
-                        let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-                            return Err(format!("{:?}: must read exactly one value", self));
-                        };
-                        let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                            return Err(format!("{:?}: must write exactly one value", self));
-                        };
-
-                        if *r1 != *w1 {
-                            return Err(format!(
-                                "{:?}: input and output must have the same type",
-                                self
-                            ));
-                        }
-                    }
-                    FlowOp::Ite => {
-                        let (r1, r2, r3, None) = (
-                            read_nxt(&mut read, 0)?,
-                            read_nxt(&mut read, 1)?,
-                            read_nxt(&mut read, 2)?,
-                            read.next(),
-                        ) else {
-                            return Err(format!("{:?}: must read exactly three values", self));
-                        };
-                        let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                            return Err(format!("{:?}: must write exactly one value", self));
-                        };
-
-                        if *r2 != *r3 {
-                            return Err(format!(
-                                "{:?}: 2nd and 3rd inputs must have the same type",
-                                self
-                            ));
-                        }
-
-                        if *w1 != *r2 {
-                            return Err(format!(
-                                "{:?}: inputs and outputmust have the same type",
-                                self
-                            ));
-                        }
-
-                        if *r1 != DType::Bool(bool::Bool(1, 1)) {
-                            return Err(format!(
-                                "{:?}: input and output values must have the same type",
-                                self
-                            ));
-                        }
-                    }
-                }
-
-                Ok(())
+            // `A*x` is a a_rows x d2 matrix, `B` has to have these dimensions (if non-empty)
+            if b_rows > 0 && (a_rows != b_rows || *d2 != b_cols) {
+                return Err(format!(
+                    "{:?}: A*x has dimension {}x{} while B has {}x{}",
+                    op, a_rows, d2, b_rows, b_cols
+                ));
             }
+            if a_rows != *d3 || *d2 != *d4 {
+                return Err(format!(
+                    "{:?}: bad output matrix dimensions, expected {}x{} but got {}x{}",
+                    op, a_rows, d2, d3, d4
+                ));
+            }
+            Ok(())
+        }
+        // TODO: should we allow also boolean matrices?
+        _ => Err(format!("{:?}: input and output must be int matrices", op)),
+    }
+}
+
+fn check_flow<'a, R, W, D>(op: &FlowOp, read: R, write: W) -> Result<(), String>
+where
+    D: TryInto<&'a DType>,
+    R: IntoIterator<Item = D>,
+    W: IntoIterator<Item = D>,
+    DType: 'a,
+{
+    let mut read = read.into_iter();
+    let mut write = write.into_iter();
+    match op {
+        FlowOp::Id => {
+            let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                return Err(format!("{:?}: must read exactly one value", op));
+            };
+            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                return Err(format!("{:?}: must write exactly one value", op));
+            };
+            if *r1 != *w1 {
+                return Err(format!(
+                    "{:?}: input and output must have the same type",
+                    op
+                ));
+            }
+            Ok(())
+        }
+        FlowOp::Ite => {
+            let (r1, r2, r3, None) = (
+                read_nxt(&mut read, 0)?,
+                read_nxt(&mut read, 1)?,
+                read_nxt(&mut read, 2)?,
+                read.next(),
+            ) else {
+                return Err(format!("{:?}: must read exactly three values", op));
+            };
+            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                return Err(format!("{:?}: must write exactly one value", op));
+            };
+            if *r2 != *r3 {
+                return Err(format!(
+                    "{:?}: 2nd and 3rd inputs must have the same type",
+                    op
+                ));
+            }
+            if *w1 != *r2 {
+                return Err(format!(
+                    "{:?}: inputs and output must have the same type",
+                    op
+                ));
+            }
+            if *r1 != DType::Bool(bool::Bool(1, 1)) {
+                return Err(format!(
+                    "{:?}: input and output values must have the same type",
+                    op
+                ));
+            }
+            Ok(())
         }
     }
 }
