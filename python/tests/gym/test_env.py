@@ -139,27 +139,27 @@ def test_state_dict_is_a_copy():
     assert 'fake' not in e._state
 
 
-# ── symbolic=True flag ────────────────────────────────────────────
+# ── interpret=True flag ───────────────────────────────────────────
 
-def test_symbolic_flag_strips_backing():
-    e = Env(SimpleEnv(), symbolic=True)
+def test_interpret_flag_strips_backing():
+    e = Env(SimpleEnv(), interpret=True)
     assert e._backing_env is None
     assert e._env_atom_idx is None
 
 
-def test_symbolic_reset_runs_atoms():
-    """symbolic=True executes the env atom's symbolic init terms instead of
-    delegating; SimpleEnv's init sets state=0."""
-    e = Env(SimpleEnv(), symbolic=True)
+def test_interpret_reset_runs_atoms():
+    """interpret=True walks the env atom's init terms through the IR interpreter
+    instead of delegating; SimpleEnv's init sets state=0."""
+    e = Env(SimpleEnv(), interpret=True)
     e.reset()
     assert e.state == 0
 
 
-def test_symbolic_step_matches_real():
-    """Cross-check: a delegated Env and a symbolic-mode Env over the same gym.Env
+def test_interpret_step_matches_real():
+    """Cross-check: a delegated Env and an interpreted Env over the same gym.Env
     should agree step-by-step when fed identical actions."""
     real = Env(SimpleEnv())
-    sim = Env(SimpleEnv(), symbolic=True)
+    sim = Env(SimpleEnv(), interpret=True)
     real.reset(seed=42)
     sim.reset()
     one_hot_right = torch.tensor([0., 1.])

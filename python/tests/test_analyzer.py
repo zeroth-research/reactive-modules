@@ -1,8 +1,8 @@
 """Analyzer extensions — Python patterns the analyzer must translate to terms.
 
 Each feature gets a small gym.Env that exercises it. Tests run the extracted
-module either symbolically (`symbolic=True`) when all terms are interpretable,
-or via real-env delegation when they aren't (untraced calls)."""
+module either through the IR interpreter (`interpret=True`) when all terms
+are interpretable, or via real-env delegation when they aren't (untraced calls)."""
 
 import numpy as np
 import torch
@@ -41,7 +41,7 @@ class _AugAssign(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_augmented_assignment():
-    e = Env(_AugAssign(), symbolic=True); e.reset(); e.step(0)
+    e = Env(_AugAssign(), interpret=True); e.reset(); e.step(0)
     assert e.x == 3.0   # (0 + 1.5) * 2
 
 
@@ -58,7 +58,7 @@ class _IfNoElse(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_if_without_else():
-    e = Env(_IfNoElse(), symbolic=True); e.reset()
+    e = Env(_IfNoElse(), interpret=True); e.reset()
     for _ in range(3):
         e.step(0)
     assert e.x == 0.0   # 1, 2, 3 → (3 > 2.5) resets to 0
@@ -79,7 +79,7 @@ class _IfElse(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_if_else():
-    e = Env(_IfElse(), symbolic=True); e.reset()
+    e = Env(_IfElse(), interpret=True); e.reset()
     e.step(0); assert e.x == 100.0   # 1 > 5 False → else
     e.step(0); assert e.x == 0.0     # 101 > 5 True → if
     e.step(0); assert e.x == 100.0   # 1 > 5 False → else
@@ -102,7 +102,7 @@ class _IfElif(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_if_elif_else():
-    e = Env(_IfElif(), symbolic=True); e.reset()
+    e = Env(_IfElif(), interpret=True); e.reset()
     e.step(0); assert e.x == 0.5    # 0+1=1 → if-branch
     e.step(0); assert e.x == 1.5    # 0.5+1=1.5 → elif-branch
     e.step(0); assert e.x == 2.5    # 1.5+1=2.5 → else-branch
@@ -122,7 +122,7 @@ class _NestedIf(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_nested_if():
-    e = Env(_NestedIf(), symbolic=True); e.reset()
+    e = Env(_NestedIf(), interpret=True); e.reset()
     e.step(0); assert e.x == 1.0   # 1>1.5 False → unchanged
     e.step(0); assert e.x == 2.0   # 2>1.5 True, 2>2.5 False → unchanged
     e.step(0); assert e.x == 0.0   # 3>1.5 True, 3>2.5 True → reset
@@ -142,7 +142,7 @@ class _BoolChainTernary(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_bool_chained_ternary():
-    e = Env(_BoolChainTernary(), symbolic=True); e.reset()
+    e = Env(_BoolChainTernary(), interpret=True); e.reset()
     for _ in range(4):
         e.step(0)
     assert e.x == 4.0     # 0 < 4 < 10 and not(4==5) → 4
@@ -164,7 +164,7 @@ class _InlineMethod(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_inline_method():
-    e = Env(_InlineMethod(), symbolic=True); e.reset()
+    e = Env(_InlineMethod(), interpret=True); e.reset()
     e.step(0); assert e.x == 1.5
     e.step(0); assert e.x == 3.0
 
@@ -180,7 +180,7 @@ class _Power(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_power_operator():
-    e = Env(_Power(), symbolic=True); e.reset(); e.step(0)
+    e = Env(_Power(), interpret=True); e.reset(); e.step(0)
     assert e.x == 8.0
 
 
@@ -195,7 +195,7 @@ class _NpClip(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_np_clip():
-    e = Env(_NpClip(), symbolic=True); e.reset(); e.step(0)
+    e = Env(_NpClip(), interpret=True); e.reset(); e.step(0)
     assert e.x == 3.0
 
 
@@ -212,7 +212,7 @@ class _BoolCast(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_bool_cast():
-    e = Env(_BoolCast(), symbolic=True); e.reset()
+    e = Env(_BoolCast(), interpret=True); e.reset()
     e.step(0); assert e.x == 1.0
     e.step(0); assert e.x == 100.0   # bool(2 > 1.5) → True branch
 
@@ -251,7 +251,7 @@ class _ListLiteral(_MinEnv):
         return np.array(self.state), 0.0, False, False
 
 def test_list_literal_and_subscript():
-    e = Env(_ListLiteral(), symbolic=True); e.reset()
+    e = Env(_ListLiteral(), interpret=True); e.reset()
     e.step(0)
     assert torch.allclose(e.state, torch.tensor([2.0, 1.0]))
 
@@ -273,7 +273,7 @@ class _StaticAttrs(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_static_attrs():
-    e = Env(_StaticAttrs(), symbolic=True); e.reset(); e.step(0)
+    e = Env(_StaticAttrs(), interpret=True); e.reset(); e.step(0)
     assert e.x == 2.0   # both static comparisons resolve True at compile time
 
 
@@ -311,7 +311,7 @@ class _Reassign(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_reassignment():
-    e = Env(_Reassign(), symbolic=True); e.reset(); e.step(0)
+    e = Env(_Reassign(), interpret=True); e.reset(); e.step(0)
     assert e.x == 7.0
 
 
@@ -327,5 +327,5 @@ class _ComplexSig(_MinEnv):
 
 def test_complex_signature_and_varargs():
     """Abstract interpreter must accept *args/**kwargs and skip complex annotations."""
-    e = Env(_ComplexSig(), symbolic=True); e.reset(); e.step(0)
+    e = Env(_ComplexSig(), interpret=True); e.reset(); e.step(0)
     assert e.x == 1.0
