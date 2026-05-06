@@ -51,7 +51,7 @@ impl fmt::Display for Bool {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq)]
 pub enum BoolOp {
     Const(Vec<Vec<bool>>),
     And,

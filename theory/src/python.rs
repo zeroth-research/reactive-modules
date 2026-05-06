@@ -45,7 +45,7 @@ pub enum TensorOp {
     Argmax,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum CmpOp {
     Le,
     Lt,
@@ -68,7 +68,7 @@ impl fmt::Display for CmpOp {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq)]
 pub enum FlowOp {
     Ite,
     Id, // this could probably be in the top-level enum directly..
@@ -83,7 +83,7 @@ impl fmt::Display for FlowOp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IType {
     // Arithmetic operations
     Bool(bool::BoolOp),

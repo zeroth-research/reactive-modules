@@ -56,7 +56,7 @@ impl fmt::Display for Int {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq)]
 pub enum ArithInt {
     // TODO: use bigint?
     Const(Vec<Vec<i64>>),
