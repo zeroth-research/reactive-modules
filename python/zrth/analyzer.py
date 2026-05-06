@@ -1248,7 +1248,13 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
             merged = join_states(AbstractInterpreter(method).analyze())
         except (UnsupportedFeatureError, NotImplementedError, OSError):
             continue
-        # Strip to the top-level attribute: self.foo.bar -> "foo".
+        # Classify by the top-level self.* attribute. Nested access counts as a
+        # read/write of the outermost attribute since that's the unit we allocate
+        # wires for. Examples:
+        #     self.foo            -> "foo"
+        #     self.foo.bar        -> "foo"
+        #     self.np_random.uniform(...)  -> "np_random"
+        #     self.foo2.foo.bar   -> "foo2"
         read_attrs    = {r.name[5:].split(".", 1)[0] for r in merged.reads  if r.name.startswith("self.")}
         written_attrs = {w.name[5:].split(".", 1)[0] for w in merged.writes if w.name.startswith("self.")}
         # self.foo reads where foo is a known method -> calls, not data reads
