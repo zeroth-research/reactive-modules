@@ -13,10 +13,10 @@ Tutorials 2 and 3 build on concepts from Tutorial 1, do them in order.
 From the project root:
 
 ```
-uv sync --dev
+uv sync --group tutorials
 ```
 
-This installs `zrth` (built via maturin) and dev dependencies (`ipykernel`, `z3-solver`, etc.). Requires Python 3.12–3.13 and a Rust toolchain.
+This installs `zrth` (built via maturin) plus the tutorial dependencies (`ipykernel`, `notebook`, `matplotlib`, `pygame`, `z3-solver`). Requires Python 3.12–3.13 and a Rust toolchain.
 
 ## Running
 
