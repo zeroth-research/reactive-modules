@@ -6,9 +6,25 @@ Jupyter notebooks that walk through `zrth` step by step:
 2. **pendulum.ipynb**: module composition with shared wires, training a controller, closed-loop verification
 3. **mountaincar.ipynb**: wrapping an unmodified gymnasium environment (`MountainCarContinuous-v0`) and matching its behavior exactly
 
-Tutorials 2 and 3 build on concepts from Tutorial 1, do them in order.
+Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
 ## Setup
+
+Run
+
+```
+just build-tutorials
+```
+
+Or simply
+
+```
+just tutorials
+```
+
+which will do the necessary setup and run jupyter notebook automatically.
+
+### Manual
 
 From the project root:
 
@@ -26,13 +42,15 @@ Install the [Jupyter extension](https://marketplace.visualstudio.com/items?itemN
 
 ### uv
 
+From the root directory, run:
+
 ```
 uv run jupyter notebook tutorials/
 ```
 
 ### Jupyter directly
 
-Activate the venv first:
+In the root directory, activate the venv first and then run Jupyter:
 
 ```
 source .venv/bin/activate
