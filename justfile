@@ -32,6 +32,11 @@ build-all:
     {{ CARGO }} build --all-targets --all-features {{ profile_flag }}
     @just build-python
 
+# Build code and prepare for running tutorials
+build-tutorials:
+    @just build-all
+    uv sync --group tutorials
+
 # Run tests
 test:
     {{ CARGO }} test {{ features_flag }}
@@ -85,3 +90,7 @@ build-python:
 run-python *args:
     @just build-python
     cd python && uv run {{ args }}
+
+tutorials:
+    @just build-tutorials
+    uv run jupyter notebook tutorials/
