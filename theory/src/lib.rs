@@ -50,7 +50,7 @@ impl FlowOp {
     pub fn type_check<'a, T, D, R, W>(&self, read: R, write: W) -> Result<(), String>
     where
         T: MatrixType + fmt::Debug + 'a,
-        &'a T: TryInto<&'a bool::Bool, Error = ()>,
+        &'a T: TryInto<&'a bool::Bool>,
         D: TryInto<&'a T>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
@@ -114,7 +114,7 @@ impl CmpOp {
     pub fn type_check<'a, T, D, R, W>(&self, read: R, write: W) -> Result<(), String>
     where
         T: MatrixType + fmt::Debug + 'a,
-        &'a T: TryInto<&'a bool::Bool, Error = ()>,
+        &'a T: TryInto<&'a bool::Bool>,
         D: TryInto<&'a T>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
@@ -153,12 +153,17 @@ impl CmpOp {
     }
 }
 
+/// Theory is a set of operations over some data types (more precisely,
+/// matrices over some data types)
 pub trait Theory {
     // TODO: in torch, from where we took this name (I think), dtype refers to
     // the type of the element in the tensor (*d*ata type). Maybe we should
     // consider renaming this to "Types" or something, to avoid confusion.
     type DType;
 
+    /// Type-check if `self` can form a valid operation when reading values
+    /// of type `read` and writing values of type `write` (where `read` and `write`
+    /// are sequences of types, the order *does* matter).
     fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
         D: TryInto<&'a Self::DType>,
