@@ -1,56 +1,53 @@
 # Tutorials
 
-Jupyter notebooks that walk through `zrth` step by step:
+Jupyter notebooks walking through `zrth` step by step:
 
-1. **counter.ipynb**: wrapping environments and neural networks, training a ranking function, formal verification with Z3
-2. **pendulum.ipynb**: module composition with shared wires, training a controller, closed-loop verification
-3. **mountaincar.ipynb**: wrapping an unmodified gymnasium environment (`MountainCarContinuous-v0`) and matching its behavior exactly
+1. **counter.ipynb** — wrapping environments and neural networks, training a ranking function, formal verification with Z3
+2. **pendulum.ipynb** — module composition with shared wires, training a controller, closed-loop verification
+3. **mountaincar.ipynb** — wrapping an unmodified Gymnasium environment (`MountainCarContinuous-v0`) and matching its behavior exactly
 
-Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
+Each tutorial builds on the previous one — work through them in order.
+This README assumes the project was built using `uv`. For building instructions, see the top-level README.
 
-## Setup
+## Quick start
 
-Run
+### Open tutorials in web browser
 
-```
-just build-tutorials
-```
-
-Or simply
+Set up and launch Jupyter, openning tutorials in the browser:
 
 ```
 just tutorials
 ```
 
-which will do the necessary setup and run jupyter notebook automatically.
+### Open tutorials in VS Code
 
-### Manual
+Setup the tutorials:
 
-From the project root:
+```
+just build-tutorials
+```
+
+Then install the [Jupyter extension](https://marketplace.visualstudio.com/items?itemName=ms-toolsai.jupyter) VS Code extension
+(if not done yet), open a notebook, and select the `.venv` kernel
+from the root directory.
+
+## Manual setup and running
+
+Install dependencies from the project root:
 
 ```
 uv sync --group tutorials
 ```
 
-This installs `zrth` (built via maturin) plus the tutorial dependencies (`ipykernel`, `notebook`, `matplotlib`, `pygame`, `z3-solver`). Requires Python 3.12–3.13 and a Rust toolchain.
+This installs `zrth` and all tutorial dependencies (`ipykernel`, `notebook`, `matplotlib`, `pygame`, `z3-solver`).
 
-## Running
-
-### VS Code
-
-Install the [Jupyter extension](https://marketplace.visualstudio.com/items?itemName=ms-toolsai.jupyter), open a notebook, and select the `.venv` kernel.
-
-### uv
-
-From the root directory, run:
+Then launch Jupyter via uv:
 
 ```
 uv run jupyter notebook tutorials/
 ```
 
-### Jupyter directly
-
-In the root directory, activate the venv first and then run Jupyter:
+Or activate the venv first and run directly:
 
 ```
 source .venv/bin/activate
