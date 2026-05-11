@@ -94,28 +94,8 @@ impl DType {
     /// [rows, cols] shape of this dtype; errors for BV
     #[getter]
     fn shape(&self) -> PyResult<Vec<usize>> {
-        match &self.0 {
-            theory::python::Type::Bool(t) => {
-                let (r, c) = t.shape();
-                Ok(vec![r, c])
-            }
-            theory::python::Type::Int(t) => {
-                let (r, c) = t.shape();
-                Ok(vec![r, c])
-            }
-            theory::python::Type::Float(t) => {
-                let (r, c) = t.shape();
-                Ok(vec![r, c])
-            }
-            theory::python::Type::Real(t) => {
-                let (r, c) = t.shape();
-                Ok(vec![r, c])
-            }
-            theory::python::Type::BV32(t) => {
-                let (r, c) = t.shape();
-                Ok(vec![r, c])
-            }
-        }
+        let (r, c) = self.0.shape();
+        Ok(vec![r, c])
     }
 
     /// Same dtype variant but with a new shape

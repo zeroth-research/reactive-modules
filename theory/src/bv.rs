@@ -34,6 +34,7 @@ assert!(BV::Add.check::<BV>(&[a, b], &[c]).is_err());
 */
 
 use crate::*;
+use std::fmt;
 
 // TODO: factor out Mat<T>(usize, usize)? But then we need PhantomData...
 
@@ -54,6 +55,34 @@ impl BV {
         match self {
             BV::U(bw, _, _) => *bw,
             BV::S(bw, _, _) => *bw,
+        }
+    }
+}
+
+impl fmt::Display for BV {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BV::U(bw, r, c) => write!(f, "UWord({bw}, {r}, {c})"),
+            BV::S(bw, r, c) => write!(f, "SWord({bw}, {r}, {c})"),
+        }
+    }
+}
+
+impl fmt::Display for BVTheory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BVTheory::Const(_) => write!(f, "Const"),
+            BVTheory::Add => write!(f, "Add"),
+            BVTheory::Mul => write!(f, "Mul"),
+            BVTheory::MatMul => write!(f, "MatMul"),
+            BVTheory::And => write!(f, "And"),
+            BVTheory::Or => write!(f, "Or"),
+            BVTheory::Xor => write!(f, "Xor"),
+            BVTheory::Not => write!(f, "Not"),
+            BVTheory::Select(h, l) => write!(f, "Select({h}, {l})"),
+            BVTheory::Extend(w) => write!(f, "Extend({w})"),
+            BVTheory::ToUnsigned() => write!(f, "ToUnsigned"),
+            BVTheory::ToSigned() => write!(f, "ToSigned"),
         }
     }
 }
@@ -228,7 +257,88 @@ impl Theory for BVTheory {
                 }
                 Ok(())
             }
-            op => unimplemented!("Unimplemented operation {:?}", op),
+            BVTheory::ToUnsigned() => {
+                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err("ToUnsigned: must read exactly one value".into());
+                };
+                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err("ToUnsigned: must write exactly one value".into());
+                };
+                let expected = BV::U(r.bw(), r.shape().0, r.shape().1);
+                if *w != expected {
+                    return Err(format!(
+                        "ToUnsigned: output must be {:?}, got {:?}",
+                        expected, w
+                    ));
+                }
+                Ok(())
+            }
+            BVTheory::ToSigned() => {
+                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err("ToSigned: must read exactly one value".into());
+                };
+                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err("ToSigned: must write exactly one value".into());
+                };
+                let expected = BV::S(r.bw(), r.shape().0, r.shape().1);
+                if *w != expected {
+                    return Err(format!(
+                        "ToSigned: output must be {:?}, got {:?}",
+                        expected, w
+                    ));
+                }
+                Ok(())
+            }
+            BVTheory::Select(high, low) => {
+                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err("Select: must read exactly one value".into());
+                };
+                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err("Select: must write exactly one value".into());
+                };
+                let (high, low) = (*high as usize, *low as usize);
+                if high < low {
+                    return Err(format!("Select: high ({}) < low ({})", high, low));
+                }
+                if high >= r.bw() {
+                    return Err(format!(
+                        "Select: high ({}) >= input bitwidth ({})",
+                        high,
+                        r.bw()
+                    ));
+                }
+                let (rows, cols) = r.shape();
+                let expected = BV::U(high - low + 1, rows, cols);
+                if *w != expected {
+                    return Err(format!(
+                        "Select: output must be {:?}, got {:?}",
+                        expected, w
+                    ));
+                }
+                Ok(())
+            }
+            BVTheory::Extend(width) => {
+                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err("Extend: must read exactly one value".into());
+                };
+                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err("Extend: must write exactly one value".into());
+                };
+                let width = *width as usize;
+                let (rows, cols) = r.shape();
+                let out_bw = r.bw() + width;
+                let expected = match r {
+                    BV::U(_, _, _) => BV::U(out_bw, rows, cols),
+                    BV::S(_, _, _) => BV::S(out_bw, rows, cols),
+                };
+                if *w != expected {
+                    return Err(format!(
+                        "Extend: output must be {:?}, got {:?}",
+                        expected, w
+                    ));
+                }
+                Ok(())
+            }
         }
     }
 }

@@ -5,6 +5,8 @@ use pyo3::prelude::*;
 use theory::bool::BoolOp;
 use theory::float::ArithFloat;
 use theory::int::ArithInt;
+use theory::bv::BVTheory;
+use theory::python::CastOp;
 use theory::python::IType as TheoryIType;
 use theory::python::{NNOp, TensorOp};
 use theory::real::ArithReal;
@@ -81,19 +83,19 @@ impl IType {
     }
     #[classattr]
     fn BVToBool() -> Self {
-        IType(TheoryIType::BVToBool)
+        IType(TheoryIType::Cast(CastOp::BVToBool))
     }
     #[classattr]
     fn BVToWord1() -> Self {
-        IType(TheoryIType::BVToWord1)
+        IType(TheoryIType::Cast(CastOp::BVToWord1))
     }
     #[classattr]
     fn ToUnsigned() -> Self {
-        IType(TheoryIType::ToUnsigned)
+        IType(TheoryIType::BV(BVTheory::ToUnsigned()))
     }
     #[classattr]
     fn ToSigned() -> Self {
-        IType(TheoryIType::ToSigned)
+        IType(TheoryIType::BV(BVTheory::ToSigned()))
     }
 
     // Static constructor helpers
@@ -117,13 +119,13 @@ impl IType {
     /// Extract bits [high..low] from a bitvector.
     #[staticmethod]
     fn BitSelect(high: usize, low: usize) -> Self {
-        IType(TheoryIType::BitSelect(high, low))
+        IType(TheoryIType::BV(BVTheory::Select(high as u32, low as u32)))
     }
 
     /// Extend a bitvector to the given width.
     #[staticmethod]
     fn Extend(width: usize) -> Self {
-        IType(TheoryIType::Extend(width))
+        IType(TheoryIType::BV(BVTheory::Extend(width as u32)))
     }
 
     /// Convert a torch.Tensor to the appropriate `IType.<Type>.Const(data)`.

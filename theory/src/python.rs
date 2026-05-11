@@ -82,6 +82,36 @@ impl fmt::Display for TensorOp {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum CastOp {
+    BVToBool,
+    BVToWord1,
+}
+
+impl fmt::Display for CastOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CastOp::BVToBool => write!(f, "ReLU"),
+            CastOp::BVToWord1 => write!(f, "Tanh"),
+        }
+    }
+}
+
+impl CastOp {
+    pub fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    where
+        D: TryInto<&'a Type>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+        Type: 'a,
+    {
+        match self {
+            CastOp::BVToBool => check_bv_to_bool(read, write),
+            CastOp::BVToWord1 => check_bv_to_word1(read, write),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum IType {
     // Arithmetic operations
@@ -89,29 +119,19 @@ pub enum IType {
     Int(int::ArithInt),
     Float(float::ArithFloat),
     Real(real::ArithReal),
+    BV(bv::BVTheory),
+
     Cmp(CmpOp),
     Flow(FlowOp),
 
-    // activation functions
+    // neural-network layers and functions
     NN(NNOp),
 
     // Tensor operations
     Tensor(TensorOp),
 
-    // Bit-vector operations
-    BV(bv::BVTheory),
-
     // Casting
-    BVToBool,
-    BVToWord1,
-    ToUnsigned,
-    ToSigned,
-
-    // Bit-vector bit selection: extract bits [high..low] from a BV
-    BitSelect(usize, usize),
-
-    // Bit-vector zero/sign extension
-    Extend(usize),
+    Cast(CastOp),
 
     // Symbol referring to uninterpreted constants or functions,
     // whose signature is known in the context, i.e., the current theory
@@ -129,21 +149,17 @@ impl fmt::Display for IType {
             IType::Flow(x) => x.fmt(f),
             IType::NN(x) => x.fmt(f),
             IType::Tensor(x) => x.fmt(f),
-            IType::BV(t) => write!(f, "BV({t:?})"),
-            IType::BVToBool => write!(f, "BVToBool"),
-            IType::BVToWord1 => write!(f, "BVToWord1"),
-            IType::ToUnsigned => write!(f, "ToUnsigned"),
-            IType::ToSigned => write!(f, "ToSigned"),
-            IType::BitSelect(h, l) => write!(f, "BitSelect({h}, {l})"),
-            IType::Extend(w) => write!(f, "Extend({w})"),
+            IType::BV(t) => t.fmt(f),
+            IType::Cast(c) => c.fmt(f),
             IType::Uninterpreted(t) => write!(f, "{t}"),
         }
     }
 }
 
-// ============================================================================
-// TryFrom conversions: &'a Type -> &'a SubType  (needed for sub-theory delegation)
-// ============================================================================
+// ---------------------------------------------------
+// TryFrom conversions: &'a Type -> &'a SubType
+// (needed for sub-theory delegation)
+// ---------------------------------------------------
 
 impl<'a> TryFrom<&'a Type> for &'a bool::Bool {
     type Error = ();
@@ -195,9 +211,6 @@ impl<'a> TryFrom<&'a Type> for &'a bv::BV {
     }
 }
 
-// "Unwrap" impls: make Result<&'a SubType, E> usable as D in sub-theory type_check calls.
-// Bool and Int are already covered by identical impls in lia.rs.
-
 impl<'a, E> TryFrom<Result<&'a float::Float, E>> for &'a float::Float {
     type Error = E;
     fn try_from(v: Result<&'a float::Float, E>) -> Result<Self, E> {
@@ -219,6 +232,7 @@ impl<'a, E> TryFrom<Result<&'a bv::BV, E>> for &'a bv::BV {
     }
 }
 
+/// coerce iterator over Type into iterator over sub-type
 fn iter_try_into_subtype<'a, D, S, I>(
     iter: I,
     msg: &'static str,
@@ -237,9 +251,9 @@ where
     })
 }
 
-// ============================================================================
+// ---------------------------------------------------
 // Theory impl
-// ============================================================================
+// ---------------------------------------------------
 
 impl Theory for IType {
     type DType = Type;
@@ -272,16 +286,11 @@ impl Theory for IType {
                 iter_try_into_subtype(read, "expected BV type"),
                 iter_try_into_subtype(write, "expected BV type"),
             ),
+            IType::Cast(op) => op.type_check(read, write),
             IType::Cmp(op) => op.type_check(read, write),
             IType::Flow(op) => op.type_check(read, write),
             IType::NN(op) => check_nn(op, read, write),
             IType::Tensor(op) => check_tensor(op, read, write),
-            IType::BVToBool => check_bv_to_bool(read, write),
-            IType::BVToWord1 => check_bv_to_word1(read, write),
-            IType::ToUnsigned => check_to_unsigned(read, write),
-            IType::ToSigned => check_to_signed(read, write),
-            IType::BitSelect(high, low) => check_bit_select(*high, *low, read, write),
-            IType::Extend(width) => check_extend(*width, read, write),
             IType::Uninterpreted(_) => Ok(()),
         }
     }
@@ -532,137 +541,6 @@ where
     if *w0 != expected {
         return Err(format!(
             "BVToWord1: output must be {:?}, got {:?}",
-            expected, w0
-        ));
-    }
-    Ok(())
-}
-
-fn check_to_unsigned<'a, R, W, D>(read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let (r0, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-        return Err("ToUnsigned: must read exactly one value".into());
-    };
-    let (w0, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-        return Err("ToUnsigned: must write exactly one value".into());
-    };
-    let Type::BV32(bv) = r0 else {
-        return Err(format!("ToUnsigned: input must be BV, got {:?}", r0));
-    };
-    let (bw, rows, cols) = (bv.bw(), bv.shape().0, bv.shape().1);
-    let expected = Type::BV32(bv::BV::U(bw, rows, cols));
-    if *w0 != expected {
-        return Err(format!(
-            "ToUnsigned: output must be {:?}, got {:?}",
-            expected, w0
-        ));
-    }
-    Ok(())
-}
-
-fn check_to_signed<'a, R, W, D>(read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let (r0, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-        return Err("ToSigned: must read exactly one value".into());
-    };
-    let (w0, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-        return Err("ToSigned: must write exactly one value".into());
-    };
-    let Type::BV32(bv) = r0 else {
-        return Err(format!("ToSigned: input must be BV, got {:?}", r0));
-    };
-    let (bw, rows, cols) = (bv.bw(), bv.shape().0, bv.shape().1);
-    let expected = Type::BV32(bv::BV::S(bw, rows, cols));
-    if *w0 != expected {
-        return Err(format!(
-            "ToSigned: output must be {:?}, got {:?}",
-            expected, w0
-        ));
-    }
-    Ok(())
-}
-
-fn check_bit_select<'a, R, W, D>(high: usize, low: usize, read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let (r0, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-        return Err("BitSelect: must read exactly one value".into());
-    };
-    let (w0, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-        return Err("BitSelect: must write exactly one value".into());
-    };
-    let Type::BV32(bv) = r0 else {
-        return Err(format!("BitSelect: input must be BV, got {:?}", r0));
-    };
-    if high < low {
-        return Err(format!("BitSelect: high ({}) < low ({})", high, low));
-    }
-    if high >= bv.bw() {
-        return Err(format!(
-            "BitSelect: high ({}) >= input bitwidth ({})",
-            high,
-            bv.bw()
-        ));
-    }
-    let out_bw = high - low + 1;
-    let (rows, cols) = bv.shape();
-    let expected = Type::BV32(bv::BV::U(out_bw, rows, cols));
-    if *w0 != expected {
-        return Err(format!(
-            "BitSelect: output must be {:?}, got {:?}",
-            expected, w0
-        ));
-    }
-    Ok(())
-}
-
-fn check_extend<'a, R, W, D>(width: usize, read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let (r0, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-        return Err("Extend: must read exactly one value".into());
-    };
-    let (w0, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-        return Err("Extend: must write exactly one value".into());
-    };
-    let Type::BV32(bv) = r0 else {
-        return Err(format!("Extend: input must be BV, got {:?}", r0));
-    };
-    let (rows, cols) = bv.shape();
-    let out_bw = bv.bw() + width;
-    let expected = match bv {
-        bv::BV::U(_, _, _) => Type::BV32(bv::BV::U(out_bw, rows, cols)),
-        bv::BV::S(_, _, _) => Type::BV32(bv::BV::S(out_bw, rows, cols)),
-    };
-    if *w0 != expected {
-        return Err(format!(
-            "Extend: output must be {:?}, got {:?}",
             expected, w0
         ));
     }
