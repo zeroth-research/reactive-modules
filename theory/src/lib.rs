@@ -31,6 +31,81 @@ impl fmt::Display for CmpOp {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FlowOp {
+    Id,
+    Ite,
+}
+
+impl fmt::Display for FlowOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FlowOp::Id => write!(f, "Id"),
+            FlowOp::Ite => write!(f, "Ite"),
+        }
+    }
+}
+
+impl FlowOp {
+    pub fn type_check<'a, T, D, R, W>(&self, read: R, write: W) -> Result<(), String>
+    where
+        T: MatrixType + fmt::Debug + 'a,
+        &'a T: TryInto<&'a bool::Bool, Error = ()>,
+        D: TryInto<&'a T>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+    {
+        let mut read = read.into_iter();
+        let mut write = write.into_iter();
+        match self {
+            FlowOp::Id => {
+                let (r0, None) = (read_nxt::<_, _, T>(&mut read, 0)?, read.next()) else {
+                    return Err("Id: must read exactly one value".into());
+                };
+                let (w0, None) = (write_nxt::<_, _, T>(&mut write, 0)?, write.next()) else {
+                    return Err("Id: must write exactly one value".into());
+                };
+                if r0 != w0 {
+                    return Err(format!(
+                        "Id: input and output must have the same type, got {r0:?} and {w0:?}"
+                    ));
+                }
+                Ok(())
+            }
+            FlowOp::Ite => {
+                let (r0, r1, r2, None) = (
+                    read_nxt::<_, _, T>(&mut read, 0)?,
+                    read_nxt::<_, _, T>(&mut read, 1)?,
+                    read_nxt::<_, _, T>(&mut read, 2)?,
+                    read.next(),
+                ) else {
+                    return Err("Ite: must read exactly three values".into());
+                };
+                let (w0, None) = (write_nxt::<_, _, T>(&mut write, 0)?, write.next()) else {
+                    return Err("Ite: must write exactly one value".into());
+                };
+                let r0_bool: &bool::Bool = r0
+                    .try_into()
+                    .map_err(|_| format!("Ite: condition must be Bool(1, 1), got {r0:?}"))?;
+                if r0_bool.shape() != (1, 1) {
+                    return Err(format!("Ite: condition must be Bool(1, 1), got {r0:?}"));
+                }
+                if r1 != r2 {
+                    return Err(format!(
+                        "Ite: both branches must have the same type, got {r1:?} and {r2:?}"
+                    ));
+                }
+                if w0 != r1 {
+                    return Err(format!(
+                        "Ite: output type {w0:?} must match branch type {r1:?}"
+                    ));
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 pub trait MatrixType: PartialEq {
     fn shape(&self) -> (usize, usize);
 }

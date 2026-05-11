@@ -1,4 +1,4 @@
-use crate::{CmpOp, Theory, read_nxt, write_nxt};
+use crate::{CmpOp, FlowOp, Theory, read_nxt, write_nxt};
 use crate::{bool, bv, float, int, real};
 use std::fmt;
 
@@ -81,21 +81,6 @@ impl fmt::Display for TensorOp {
     }
 }
 
-#[derive(Clone, PartialEq, Debug, Eq)]
-pub enum FlowOp {
-    Ite,
-    Id, // this could probably be in the top-level enum directly..
-}
-
-impl fmt::Display for FlowOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FlowOp::Ite => write!(f, "Ite"),
-            FlowOp::Id => write!(f, "Id"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum IType {
     // Arithmetic operations
@@ -108,11 +93,6 @@ pub enum IType {
 
     // activation functions
     NN(NNOp),
-
-    // Control flow
-    Ite,
-    // Special operations
-    Id,
 
     // Tensor operations
     Tensor(TensorOp),
@@ -148,8 +128,6 @@ impl fmt::Display for IType {
             IType::Flow(x) => x.fmt(f),
             IType::NN(x) => x.fmt(f),
             IType::Tensor(x) => x.fmt(f),
-            IType::Ite => write!(f, "Ite"),
-            IType::Id => write!(f, "Id"),
             IType::BV(t) => write!(f, "BV({t:?})"),
             IType::BVToBool => write!(f, "BVToBool"),
             IType::BVToWord1 => write!(f, "BVToWord1"),
@@ -294,9 +272,7 @@ impl Theory for IType {
                 iter_try_into_subtype(write, "expected BV type"),
             ),
             IType::Cmp(op) => op.type_check(read, write),
-            IType::Flow(op) => check_flow_op(op, read, write),
-            IType::Id => check_id(read, write),
-            IType::Ite => check_ite(read, write),
+            IType::Flow(op) => op.type_check(read, write),
             IType::NN(op) => check_nn(op, read, write),
             IType::Tensor(op) => check_tensor(op, read, write),
             IType::BVToBool => check_bv_to_bool(read, write),
@@ -313,81 +289,6 @@ impl Theory for IType {
 // ============================================================================
 // Type-check helpers
 // ============================================================================
-
-fn check_id<'a, R, W, D>(read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let (r0, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-        return Err("Id: must read exactly one value".into());
-    };
-    let (w0, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-        return Err("Id: must write exactly one value".into());
-    };
-    if r0 != w0 {
-        return Err(format!(
-            "Id: input and output must have the same type, got {:?} and {:?}",
-            r0, w0
-        ));
-    }
-    Ok(())
-}
-
-fn check_ite<'a, R, W, D>(read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let (r0, r1, r2, None) = (
-        read_nxt(&mut read, 0)?,
-        read_nxt(&mut read, 1)?,
-        read_nxt(&mut read, 2)?,
-        read.next(),
-    ) else {
-        return Err("Ite: must read exactly three values".into());
-    };
-    let (w0, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-        return Err("Ite: must write exactly one value".into());
-    };
-    if *r0 != Type::Bool(bool::Bool(1, 1)) {
-        return Err(format!("Ite: condition must be Bool(1, 1), got {:?}", r0));
-    }
-    if r1 != r2 {
-        return Err(format!(
-            "Ite: both branches must have the same type, got {:?} and {:?}",
-            r1, r2
-        ));
-    }
-    if w0 != r1 {
-        return Err(format!(
-            "Ite: output type {:?} must match branch type {:?}",
-            w0, r1
-        ));
-    }
-    Ok(())
-}
-
-fn check_flow_op<'a, R, W, D>(op: &FlowOp, read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    match op {
-        FlowOp::Id => check_id(read, write),
-        FlowOp::Ite => check_ite(read, write),
-    }
-}
 
 fn check_nn<'a, R, W, D>(op: &NNOp, read: R, write: W) -> Result<(), String>
 where

@@ -172,11 +172,7 @@ pub enum LinearOp {
     //Neg
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub enum FlowOp {
-    Ite,
-    Id, // this could probably be in the top-level enum directly..
-}
+pub use crate::FlowOp;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum LIA {
@@ -239,7 +235,7 @@ impl Theory for LIA {
             LIA::Bool(op) => check_bool(op, read, write),
             LIA::Cmp(op) => op.type_check(read, write),
             LIA::Linear(op) => check_linear(op, read, write),
-            LIA::Flow(op) => check_flow(op, read, write),
+            LIA::Flow(op) => op.type_check(read, write),
         }
     }
 }
@@ -452,62 +448,3 @@ where
     }
 }
 
-fn check_flow<'a, R, W, D>(op: &FlowOp, read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    match op {
-        FlowOp::Id => {
-            let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-                return Err(format!("{:?}: must read exactly one value", op));
-            };
-            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                return Err(format!("{:?}: must write exactly one value", op));
-            };
-            if *r1 != *w1 {
-                return Err(format!(
-                    "{:?}: input and output must have the same type",
-                    op
-                ));
-            }
-            Ok(())
-        }
-        FlowOp::Ite => {
-            let (r1, r2, r3, None) = (
-                read_nxt(&mut read, 0)?,
-                read_nxt(&mut read, 1)?,
-                read_nxt(&mut read, 2)?,
-                read.next(),
-            ) else {
-                return Err(format!("{:?}: must read exactly three values", op));
-            };
-            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                return Err(format!("{:?}: must write exactly one value", op));
-            };
-            if *r2 != *r3 {
-                return Err(format!(
-                    "{:?}: 2nd and 3rd inputs must have the same type",
-                    op
-                ));
-            }
-            if *w1 != *r2 {
-                return Err(format!(
-                    "{:?}: inputs and output must have the same type",
-                    op
-                ));
-            }
-            if *r1 != Type::Bool(bool::Bool(1, 1)) {
-                return Err(format!(
-                    "{:?}: input and output values must have the same type",
-                    op
-                ));
-            }
-            Ok(())
-        }
-    }
-}
