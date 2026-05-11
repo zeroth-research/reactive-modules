@@ -1,11 +1,9 @@
-use crate::{Theory, read_nxt, write_nxt, CmpOp};
+use crate::{CmpOp, Theory, read_nxt, write_nxt};
 use crate::{bool, bv, float, int, real};
 use std::fmt;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Type {
-    // at this moment, we keep the DType flat and encode the type
-    // of elements in the names
     Bool(bool::Bool),
     Int(int::Int),
     Float(float::Float),
