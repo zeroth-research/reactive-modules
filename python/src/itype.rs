@@ -5,7 +5,8 @@ use pyo3::prelude::*;
 use theory::bool::BoolOp;
 use theory::float::ArithFloat;
 use theory::int::ArithInt;
-use theory::python::{CmpOp, FlowOp, NNOp, TensorOp};
+use theory::{CmpOp};
+use theory::python::{FlowOp, NNOp, TensorOp};
 use theory::python::IType as TheoryIType;
 use theory::real::ArithReal;
 

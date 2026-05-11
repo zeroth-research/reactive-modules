@@ -1,4 +1,4 @@
-use crate::{Theory, read_nxt, write_nxt};
+use crate::{Theory, read_nxt, write_nxt, CmpOp};
 use crate::{bool, bv, float, int, real};
 use std::fmt;
 
@@ -14,7 +14,7 @@ pub enum Type {
 }
 
 impl Type {
-    fn shape(&self) -> (usize, usize) {
+    pub fn shape(&self) -> (usize, usize) {
         match self {
             Type::Bool(b) => b.shape(),
             Type::Int(i) => i.shape(),
@@ -60,16 +60,6 @@ pub enum TensorOp {
     Argmax,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
-pub enum CmpOp {
-    Le,
-    Lt,
-    Ge,
-    Gt,
-    Eq,
-    Ne,
-}
-
 impl fmt::Display for NNOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -89,19 +79,6 @@ impl fmt::Display for TensorOp {
             TensorOp::Mean => write!(f, "Mean"),
             TensorOp::Max => write!(f, "Max"),
             TensorOp::Argmax => write!(f, "Argmax"),
-        }
-    }
-}
-
-impl fmt::Display for CmpOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CmpOp::Eq => write!(f, "Eq"),
-            CmpOp::Ne => write!(f, "Neq"),
-            CmpOp::Lt => write!(f, "Lt"),
-            CmpOp::Le => write!(f, "Le"),
-            CmpOp::Gt => write!(f, "Gt"),
-            CmpOp::Ge => write!(f, "Ge"),
         }
     }
 }
@@ -318,7 +295,7 @@ impl Theory for IType {
                 iter_try_into_subtype(read, "expected BV type"),
                 iter_try_into_subtype(write, "expected BV type"),
             ),
-            IType::Cmp(op) => check_cmp(op, read, write),
+            IType::Cmp(op) => op.type_check(read, write),
             IType::Flow(op) => check_flow_op(op, read, write),
             IType::Id => check_id(read, write),
             IType::Ite => check_ite(read, write),
@@ -396,45 +373,6 @@ where
         return Err(format!(
             "Ite: output type {:?} must match branch type {:?}",
             w0, r1
-        ));
-    }
-    Ok(())
-}
-
-fn check_cmp<'a, R, W, D>(op: &CmpOp, read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let (r0, r1, None) = (
-        read_nxt(&mut read, 0)?,
-        read_nxt(&mut read, 1)?,
-        read.next(),
-    ) else {
-        return Err(format!("{:?}: must read exactly two values", op));
-    };
-    let (w0, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-        return Err(format!("{:?}: must write exactly one value", op));
-    };
-    if r0 != r1 {
-        return Err(format!(
-            "{:?}: inputs must have the same type, got {:?} and {:?}",
-            op, r0, r1
-        ));
-    }
-    if matches!(r0, Type::Bool(_)) {
-        return Err(format!("{:?}: inputs cannot be Bool", op));
-    }
-    let (rows, cols) = r0.shape();
-    let expected = Type::Bool(bool::Bool(rows, cols));
-    if *w0 != expected {
-        return Err(format!(
-            "{:?}: output must be {:?}, got {:?}",
-            op, expected, w0
         ));
     }
     Ok(())

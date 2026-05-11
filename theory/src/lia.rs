@@ -156,15 +156,7 @@ impl<'a, E> TryFrom<Result<&'a int::Int, E>> for &'a int::Int {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum CmpOp {
-    Le,
-    Lt,
-    Ge,
-    Gt,
-    Eq,
-    Ne,
-}
+pub use crate::CmpOp;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum LinearOp {
@@ -245,7 +237,7 @@ impl Theory for LIA {
         match self {
             LIA::Const(cm) => check_const(cm, read, write),
             LIA::Bool(op) => check_bool(op, read, write),
-            LIA::Cmp(op) => check_cmp(op, read, write),
+            LIA::Cmp(op) => op.type_check(read, write),
             LIA::Linear(op) => check_linear(op, read, write),
             LIA::Flow(op) => check_flow(op, read, write),
         }
@@ -297,31 +289,6 @@ where
             .map_err(|_| "Type was supposed to be Bool")
     });
     op.type_check(r, w)
-}
-
-fn check_cmp<'a, R, W, D>(op: &CmpOp, read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<&'a Type>,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-    Type: 'a,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    match op {
-        CmpOp::Le | CmpOp::Lt | CmpOp::Eq | CmpOp::Ne | CmpOp::Ge | CmpOp::Gt => {
-            if *read_nxt(&mut read, 0)? != *read_nxt(&mut read, 1)? {
-                return Err(format!("{:?}: input values must have the same type", op));
-            }
-            let Type::Bool(bool::Bool(1, 1)) = write_nxt(&mut write, 0)? else {
-                return Err(format!(
-                    "{:?}: input and output values must have the same type",
-                    op
-                ));
-            };
-            Ok(())
-        }
-    }
 }
 
 fn check_linear<'a, R, W, D>(op: &LinearOp, read: R, write: W) -> Result<(), String>
