@@ -42,11 +42,9 @@ use std::fmt;
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Int(pub usize, pub usize);
 
-impl Int {
-    pub fn shape(&self) -> (usize, usize) {
-        match self {
-            Int(i, j) => (*i, *j),
-        }
+impl MatrixType for Int {
+    fn shape(&self) -> (usize, usize) {
+        (self.0, self.1)
     }
 }
 

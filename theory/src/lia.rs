@@ -62,8 +62,10 @@ impl Type {
     pub fn is_int(&self) -> bool {
         matches!(self, Type::Int(_))
     }
+}
 
-    pub fn shape(&self) -> (usize, usize) {
+impl MatrixType for Type {
+    fn shape(&self) -> (usize, usize) {
         match self {
             Type::Bool(b) => b.shape(),
             Type::Int(i) => i.shape(),
@@ -447,4 +449,3 @@ where
         _ => Err(format!("{:?}: input and output must be int matrices", op)),
     }
 }
-

@@ -179,7 +179,7 @@ impl IType {
         }
     }
 
-    fn __eq__(&self, other: &IType)-> bool {
+    fn __eq__(&self, other: &IType) -> bool {
         self.0 == other.0
     }
 
@@ -238,17 +238,29 @@ pub struct BoolIType;
 #[pymethods]
 impl BoolIType {
     #[classattr]
-    fn And() -> IType { IType(TheoryIType::Bool(BoolOp::And)) }
+    fn And() -> IType {
+        IType(TheoryIType::Bool(BoolOp::And))
+    }
     #[classattr]
-    fn Or() -> IType { IType(TheoryIType::Bool(BoolOp::Or)) }
+    fn Or() -> IType {
+        IType(TheoryIType::Bool(BoolOp::Or))
+    }
     #[classattr]
-    fn Xor() -> IType { IType(TheoryIType::Bool(BoolOp::Xor)) }
+    fn Xor() -> IType {
+        IType(TheoryIType::Bool(BoolOp::Xor))
+    }
     #[classattr]
-    fn Not() -> IType { IType(TheoryIType::Bool(BoolOp::Not)) }
+    fn Not() -> IType {
+        IType(TheoryIType::Bool(BoolOp::Not))
+    }
     #[classattr]
-    fn Xnor() -> IType { IType(TheoryIType::Bool(BoolOp::Xnor)) }
+    fn Xnor() -> IType {
+        IType(TheoryIType::Bool(BoolOp::Xnor))
+    }
     #[classattr]
-    fn Implies() -> IType { IType(TheoryIType::Bool(BoolOp::Implies)) }
+    fn Implies() -> IType {
+        IType(TheoryIType::Bool(BoolOp::Implies))
+    }
     #[staticmethod]
     fn Const(data: Vec<Vec<bool>>) -> IType {
         IType(TheoryIType::Bool(BoolOp::Const(data)))
@@ -263,21 +275,37 @@ pub struct IntIType;
 #[pymethods]
 impl IntIType {
     #[classattr]
-    fn Add() -> IType { IType(TheoryIType::Int(ArithInt::Add)) }
+    fn Add() -> IType {
+        IType(TheoryIType::Int(ArithInt::Add))
+    }
     #[classattr]
-    fn Sub() -> IType { IType(TheoryIType::Int(ArithInt::Sub)) }
+    fn Sub() -> IType {
+        IType(TheoryIType::Int(ArithInt::Sub))
+    }
     #[classattr]
-    fn Mul() -> IType { IType(TheoryIType::Int(ArithInt::Mul)) }
+    fn Mul() -> IType {
+        IType(TheoryIType::Int(ArithInt::Mul))
+    }
     #[classattr]
-    fn Div() -> IType { IType(TheoryIType::Int(ArithInt::Div)) }
+    fn Div() -> IType {
+        IType(TheoryIType::Int(ArithInt::Div))
+    }
     #[classattr]
-    fn Mod() -> IType { IType(TheoryIType::Int(ArithInt::Mod)) }
+    fn Mod() -> IType {
+        IType(TheoryIType::Int(ArithInt::Mod))
+    }
     #[classattr]
-    fn Neg() -> IType { IType(TheoryIType::Int(ArithInt::Neg)) }
+    fn Neg() -> IType {
+        IType(TheoryIType::Int(ArithInt::Neg))
+    }
     #[classattr]
-    fn Abs() -> IType { IType(TheoryIType::Int(ArithInt::Abs)) }
+    fn Abs() -> IType {
+        IType(TheoryIType::Int(ArithInt::Abs))
+    }
     #[classattr]
-    fn MatMul() -> IType { IType(TheoryIType::Int(ArithInt::MatMul)) }
+    fn MatMul() -> IType {
+        IType(TheoryIType::Int(ArithInt::MatMul))
+    }
     #[staticmethod]
     fn Const(data: Vec<Vec<i64>>) -> IType {
         IType(TheoryIType::Int(ArithInt::Const(data)))
@@ -292,21 +320,37 @@ pub struct FloatIType;
 #[pymethods]
 impl FloatIType {
     #[classattr]
-    fn Add() -> IType { IType(TheoryIType::Float(ArithFloat::Add)) }
+    fn Add() -> IType {
+        IType(TheoryIType::Float(ArithFloat::Add))
+    }
     #[classattr]
-    fn Sub() -> IType { IType(TheoryIType::Float(ArithFloat::Sub)) }
+    fn Sub() -> IType {
+        IType(TheoryIType::Float(ArithFloat::Sub))
+    }
     #[classattr]
-    fn Mul() -> IType { IType(TheoryIType::Float(ArithFloat::Mul)) }
+    fn Mul() -> IType {
+        IType(TheoryIType::Float(ArithFloat::Mul))
+    }
     #[classattr]
-    fn Div() -> IType { IType(TheoryIType::Float(ArithFloat::Div)) }
+    fn Div() -> IType {
+        IType(TheoryIType::Float(ArithFloat::Div))
+    }
     #[classattr]
-    fn Mod() -> IType { IType(TheoryIType::Float(ArithFloat::Mod)) }
+    fn Mod() -> IType {
+        IType(TheoryIType::Float(ArithFloat::Mod))
+    }
     #[classattr]
-    fn Neg() -> IType { IType(TheoryIType::Float(ArithFloat::Neg)) }
+    fn Neg() -> IType {
+        IType(TheoryIType::Float(ArithFloat::Neg))
+    }
     #[classattr]
-    fn Abs() -> IType { IType(TheoryIType::Float(ArithFloat::Abs)) }
+    fn Abs() -> IType {
+        IType(TheoryIType::Float(ArithFloat::Abs))
+    }
     #[classattr]
-    fn MatMul() -> IType { IType(TheoryIType::Float(ArithFloat::MatMul)) }
+    fn MatMul() -> IType {
+        IType(TheoryIType::Float(ArithFloat::MatMul))
+    }
     #[staticmethod]
     fn Const(data: Vec<Vec<f64>>) -> IType {
         IType(TheoryIType::Float(ArithFloat::Const(data)))
@@ -321,25 +365,45 @@ pub struct RealIType;
 #[pymethods]
 impl RealIType {
     #[classattr]
-    fn Add() -> IType { IType(TheoryIType::Real(ArithReal::Add)) }
+    fn Add() -> IType {
+        IType(TheoryIType::Real(ArithReal::Add))
+    }
     #[classattr]
-    fn Sub() -> IType { IType(TheoryIType::Real(ArithReal::Sub)) }
+    fn Sub() -> IType {
+        IType(TheoryIType::Real(ArithReal::Sub))
+    }
     #[classattr]
-    fn Mul() -> IType { IType(TheoryIType::Real(ArithReal::Mul)) }
+    fn Mul() -> IType {
+        IType(TheoryIType::Real(ArithReal::Mul))
+    }
     #[classattr]
-    fn Div() -> IType { IType(TheoryIType::Real(ArithReal::Div)) }
+    fn Div() -> IType {
+        IType(TheoryIType::Real(ArithReal::Div))
+    }
     #[classattr]
-    fn Mod() -> IType { IType(TheoryIType::Real(ArithReal::Mod)) }
+    fn Mod() -> IType {
+        IType(TheoryIType::Real(ArithReal::Mod))
+    }
     #[classattr]
-    fn Neg() -> IType { IType(TheoryIType::Real(ArithReal::Neg)) }
+    fn Neg() -> IType {
+        IType(TheoryIType::Real(ArithReal::Neg))
+    }
     #[classattr]
-    fn Abs() -> IType { IType(TheoryIType::Real(ArithReal::Abs)) }
+    fn Abs() -> IType {
+        IType(TheoryIType::Real(ArithReal::Abs))
+    }
     #[classattr]
-    fn MatMul() -> IType { IType(TheoryIType::Real(ArithReal::MatMul)) }
+    fn MatMul() -> IType {
+        IType(TheoryIType::Real(ArithReal::MatMul))
+    }
     #[classattr]
-    fn Sin() -> IType { IType(TheoryIType::Real(ArithReal::Sin)) }
+    fn Sin() -> IType {
+        IType(TheoryIType::Real(ArithReal::Sin))
+    }
     #[classattr]
-    fn Cos() -> IType { IType(TheoryIType::Real(ArithReal::Cos)) }
+    fn Cos() -> IType {
+        IType(TheoryIType::Real(ArithReal::Cos))
+    }
     #[staticmethod]
     fn Const(data: Vec<Vec<f64>>) -> IType {
         IType(TheoryIType::Real(ArithReal::Const(data)))
@@ -354,17 +418,29 @@ pub struct CmpIType;
 #[pymethods]
 impl CmpIType {
     #[classattr]
-    fn Le() -> IType { IType(TheoryIType::Cmp(CmpOp::Le)) }
+    fn Le() -> IType {
+        IType(TheoryIType::Cmp(CmpOp::Le))
+    }
     #[classattr]
-    fn Lt() -> IType { IType(TheoryIType::Cmp(CmpOp::Lt)) }
+    fn Lt() -> IType {
+        IType(TheoryIType::Cmp(CmpOp::Lt))
+    }
     #[classattr]
-    fn Ge() -> IType { IType(TheoryIType::Cmp(CmpOp::Ge)) }
+    fn Ge() -> IType {
+        IType(TheoryIType::Cmp(CmpOp::Ge))
+    }
     #[classattr]
-    fn Gt() -> IType { IType(TheoryIType::Cmp(CmpOp::Gt)) }
+    fn Gt() -> IType {
+        IType(TheoryIType::Cmp(CmpOp::Gt))
+    }
     #[classattr]
-    fn Eq() -> IType { IType(TheoryIType::Cmp(CmpOp::Eq)) }
+    fn Eq() -> IType {
+        IType(TheoryIType::Cmp(CmpOp::Eq))
+    }
     #[classattr]
-    fn Ne() -> IType { IType(TheoryIType::Cmp(CmpOp::Ne)) }
+    fn Ne() -> IType {
+        IType(TheoryIType::Cmp(CmpOp::Ne))
+    }
 }
 
 // IType.NN namespace
@@ -375,11 +451,17 @@ pub struct NNIType;
 #[pymethods]
 impl NNIType {
     #[classattr]
-    fn ReLU() -> IType { IType(TheoryIType::NN(NNOp::ReLU)) }
+    fn ReLU() -> IType {
+        IType(TheoryIType::NN(NNOp::ReLU))
+    }
     #[classattr]
-    fn Tanh() -> IType { IType(TheoryIType::NN(NNOp::Tanh)) }
+    fn Tanh() -> IType {
+        IType(TheoryIType::NN(NNOp::Tanh))
+    }
     #[classattr]
-    fn Linear() -> IType { IType(TheoryIType::NN(NNOp::Linear)) }
+    fn Linear() -> IType {
+        IType(TheoryIType::NN(NNOp::Linear))
+    }
 }
 
 // IType.Tensor namespace
@@ -390,17 +472,29 @@ pub struct TensorIType;
 #[pymethods]
 impl TensorIType {
     #[classattr]
-    fn Get() -> IType { IType(TheoryIType::Tensor(TensorOp::Get)) }
+    fn Get() -> IType {
+        IType(TheoryIType::Tensor(TensorOp::Get))
+    }
     #[classattr]
-    fn Set() -> IType { IType(TheoryIType::Tensor(TensorOp::Set)) }
+    fn Set() -> IType {
+        IType(TheoryIType::Tensor(TensorOp::Set))
+    }
     #[classattr]
-    fn Sum() -> IType { IType(TheoryIType::Tensor(TensorOp::Sum)) }
+    fn Sum() -> IType {
+        IType(TheoryIType::Tensor(TensorOp::Sum))
+    }
     #[classattr]
-    fn Mean() -> IType { IType(TheoryIType::Tensor(TensorOp::Mean)) }
+    fn Mean() -> IType {
+        IType(TheoryIType::Tensor(TensorOp::Mean))
+    }
     #[classattr]
-    fn Max() -> IType { IType(TheoryIType::Tensor(TensorOp::Max)) }
+    fn Max() -> IType {
+        IType(TheoryIType::Tensor(TensorOp::Max))
+    }
     #[classattr]
-    fn Argmax() -> IType { IType(TheoryIType::Tensor(TensorOp::Argmax)) }
+    fn Argmax() -> IType {
+        IType(TheoryIType::Tensor(TensorOp::Argmax))
+    }
 }
 
 // IType.Flow namespace
@@ -411,9 +505,13 @@ pub struct FlowIType;
 #[pymethods]
 impl FlowIType {
     #[classattr]
-    fn Ite() -> IType { IType(TheoryIType::Flow(FlowOp::Ite)) }
+    fn Ite() -> IType {
+        IType(TheoryIType::Flow(FlowOp::Ite))
+    }
     #[classattr]
-    fn Id() -> IType { IType(TheoryIType::Flow(FlowOp::Id)) }
+    fn Id() -> IType {
+        IType(TheoryIType::Flow(FlowOp::Id))
+    }
 }
 
 // IType.BV namespace
@@ -424,19 +522,33 @@ pub struct BVIType;
 #[pymethods]
 impl BVIType {
     #[classattr]
-    fn Add() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Add)) }
+    fn Add() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Add))
+    }
     #[classattr]
-    fn Mul() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Mul)) }
+    fn Mul() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Mul))
+    }
     #[classattr]
-    fn MatMul() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::MatMul)) }
+    fn MatMul() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::MatMul))
+    }
     #[classattr]
-    fn And() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::And)) }
+    fn And() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::And))
+    }
     #[classattr]
-    fn Or() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Or)) }
+    fn Or() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Or))
+    }
     #[classattr]
-    fn Xor() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Xor)) }
+    fn Xor() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Xor))
+    }
     #[classattr]
-    fn Not() -> IType { IType(TheoryIType::BV(theory::bv::BVTheory::Not)) }
+    fn Not() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Not))
+    }
     #[staticmethod]
     fn Const(data: Vec<Vec<usize>>) -> IType {
         IType(TheoryIType::BV(theory::bv::BVTheory::Const(data)))

@@ -153,42 +153,6 @@ impl CmpOp {
     }
 }
 
-impl MatrixType for bool::Bool {
-    fn shape(&self) -> (usize, usize) {
-        (self.0, self.1)
-    }
-}
-impl MatrixType for int::Int {
-    fn shape(&self) -> (usize, usize) {
-        (self.0, self.1)
-    }
-}
-impl MatrixType for float::Float {
-    fn shape(&self) -> (usize, usize) {
-        (self.0, self.1)
-    }
-}
-impl MatrixType for real::Real {
-    fn shape(&self) -> (usize, usize) {
-        (self.0, self.1)
-    }
-}
-impl MatrixType for bv::BV {
-    fn shape(&self) -> (usize, usize) {
-        self.shape()
-    }
-}
-impl MatrixType for lia::Type {
-    fn shape(&self) -> (usize, usize) {
-        self.shape()
-    }
-}
-impl MatrixType for python::Type {
-    fn shape(&self) -> (usize, usize) {
-        self.shape()
-    }
-}
-
 pub trait Theory {
     // TODO: in torch, from where we took this name (I think), dtype refers to
     // the type of the element in the tensor (*d*ata type). Maybe we should

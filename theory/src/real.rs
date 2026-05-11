@@ -50,6 +50,12 @@ impl Real {
     }
 }
 
+impl MatrixType for Real {
+    fn shape(&self) -> (usize, usize) {
+        (self.0, self.1)
+    }
+}
+
 impl fmt::Display for Real {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.0 == 1 {

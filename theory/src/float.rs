@@ -50,6 +50,12 @@ impl Float {
     }
 }
 
+impl MatrixType for Float {
+    fn shape(&self) -> (usize, usize) {
+        (self.0, self.1)
+    }
+}
+
 impl fmt::Display for Float {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.0 == 1 {

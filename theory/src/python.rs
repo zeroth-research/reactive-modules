@@ -1,7 +1,8 @@
-use crate::{CmpOp, FlowOp, Theory, read_nxt, write_nxt};
+use crate::{CmpOp, FlowOp, MatrixType, Theory, read_nxt, write_nxt};
 use crate::{bool, bv, float, int, real};
 use std::fmt;
 
+/// The type of matrices used in Theory
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Type {
     Bool(bool::Bool),
@@ -11,8 +12,8 @@ pub enum Type {
     BV32(bv::BV),
 }
 
-impl Type {
-    pub fn shape(&self) -> (usize, usize) {
+impl MatrixType for Type {
+    fn shape(&self) -> (usize, usize) {
         match self {
             Type::Bool(b) => b.shape(),
             Type::Int(i) => i.shape(),

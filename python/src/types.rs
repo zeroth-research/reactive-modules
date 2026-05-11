@@ -3,6 +3,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::fmt;
+use theory::MatrixType;
 
 fn parse_dims(dims: &Bound<'_, pyo3::types::PyTuple>) -> PyResult<(usize, usize)> {
     match dims.len() {
@@ -78,12 +79,16 @@ impl DType {
 
     #[staticmethod]
     fn UWord(bw: usize) -> PyResult<Self> {
-        Ok(DType(theory::python::Type::BV32(theory::bv::BV::U(bw, 1, 1))))
+        Ok(DType(theory::python::Type::BV32(theory::bv::BV::U(
+            bw, 1, 1,
+        ))))
     }
 
     #[staticmethod]
     fn SWord(bw: usize) -> PyResult<Self> {
-        Ok(DType(theory::python::Type::BV32(theory::bv::BV::S(bw, 1, 1))))
+        Ok(DType(theory::python::Type::BV32(theory::bv::BV::S(
+            bw, 1, 1,
+        ))))
     }
 
     /// [rows, cols] shape of this dtype; errors for BV
@@ -118,24 +123,30 @@ impl DType {
         let (rows, cols) = match shape.len() {
             1 => (1, shape[0]),
             2 => (shape[0], shape[1]),
-            n => return Err(PyValueError::new_err(format!(
-                "reshape: expected 1 or 2 dimensions, got {n}"
-            ))),
+            n => {
+                return Err(PyValueError::new_err(format!(
+                    "reshape: expected 1 or 2 dimensions, got {n}"
+                )));
+            }
         };
         let inner = match &self.0 {
-            theory::python::Type::Bool(_) =>
-                theory::python::Type::Bool(theory::bool::Bool(rows, cols)),
-            theory::python::Type::Int(_) =>
-                theory::python::Type::Int(theory::int::Int(rows, cols)),
-            theory::python::Type::Float(_) =>
-                theory::python::Type::Float(theory::float::Float(rows, cols)),
-            theory::python::Type::Real(_) =>
-                theory::python::Type::Real(theory::real::Real(rows, cols)),
+            theory::python::Type::Bool(_) => {
+                theory::python::Type::Bool(theory::bool::Bool(rows, cols))
+            }
+            theory::python::Type::Int(_) => theory::python::Type::Int(theory::int::Int(rows, cols)),
+            theory::python::Type::Float(_) => {
+                theory::python::Type::Float(theory::float::Float(rows, cols))
+            }
+            theory::python::Type::Real(_) => {
+                theory::python::Type::Real(theory::real::Real(rows, cols))
+            }
             theory::python::Type::BV32(t) => match t {
-                theory::bv::BV::U(bw, _, _) =>
-                    theory::python::Type::BV32(theory::bv::BV::U(*bw, rows, cols)),
-                theory::bv::BV::S(bw, _, _) =>
-                    theory::python::Type::BV32(theory::bv::BV::S(*bw, rows, cols)),
+                theory::bv::BV::U(bw, _, _) => {
+                    theory::python::Type::BV32(theory::bv::BV::U(*bw, rows, cols))
+                }
+                theory::bv::BV::S(bw, _, _) => {
+                    theory::python::Type::BV32(theory::bv::BV::S(*bw, rows, cols))
+                }
             },
         };
         Ok(DType(inner))

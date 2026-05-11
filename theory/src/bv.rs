@@ -50,17 +50,19 @@ impl BV {
         matches!(self, BV::S(_, _, _))
     }
 
-    pub fn shape(&self) -> (usize, usize) {
-        match self {
-            BV::U(_, i, j) => (*i, *j),
-            BV::S(_, i, j) => (*i, *j),
-        }
-    }
-
     pub fn bw(&self) -> usize {
         match self {
             BV::U(bw, _, _) => *bw,
             BV::S(bw, _, _) => *bw,
+        }
+    }
+}
+
+impl MatrixType for BV {
+    fn shape(&self) -> (usize, usize) {
+        match self {
+            BV::U(_, i, j) => (*i, *j),
+            BV::S(_, i, j) => (*i, *j),
         }
     }
 }
