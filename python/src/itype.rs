@@ -5,10 +5,10 @@ use pyo3::prelude::*;
 use theory::bool::BoolOp;
 use theory::float::ArithFloat;
 use theory::int::ArithInt;
-use theory::{CmpOp};
-use theory::python::{FlowOp, NNOp, TensorOp};
 use theory::python::IType as TheoryIType;
+use theory::python::{NNOp, TensorOp};
 use theory::real::ArithReal;
+use theory::{CmpOp, FlowOp};
 
 // ============================================================================
 // IType — hierarchical concrete op wrapper
@@ -73,11 +73,11 @@ impl IType {
     // Top-level singleton ops
     #[classattr]
     fn Id() -> Self {
-        IType(TheoryIType::Id)
+        IType(TheoryIType::Flow(FlowOp::Id))
     }
     #[classattr]
     fn Ite() -> Self {
-        IType(TheoryIType::Ite)
+        IType(TheoryIType::Flow(FlowOp::Ite))
     }
     #[classattr]
     fn BVToBool() -> Self {
