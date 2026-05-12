@@ -69,6 +69,7 @@ pub enum ArithInt {
     Mod,
     Neg,
     MatMul,
+    Transpose,
     Abs,
 }
 
@@ -83,6 +84,7 @@ impl fmt::Display for ArithInt {
             ArithInt::Neg => write!(f, "Neg"),
             ArithInt::Abs => write!(f, "Abs"),
             ArithInt::MatMul => write!(f, "MatMul"),
+            ArithInt::Transpose => write!(f, "Transpose"),
             ArithInt::Const(cm) => fmt_matrix(cm, f),
         }
     }
@@ -206,6 +208,23 @@ impl Theory for ArithInt {
                     return Err(format!(
                         "{:?}: mismatch in second input and output dimensions: {} != {}",
                         self, d4, d6
+                    ));
+                }
+                Ok(())
+            }
+
+            ArithInt::Transpose => {
+                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err("Transpose: must read exactly one value".into());
+                };
+                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err("Transpose: must write exactly one value".into());
+                };
+                let (rm, rn) = r.shape();
+                let (wm, wn) = w.shape();
+                if wm != rn || wn != rm {
+                    return Err(format!(
+                        "Transpose: output shape ({wm}, {wn}) must be ({rn}, {rm})"
                     ));
                 }
                 Ok(())

@@ -308,6 +308,10 @@ impl IntIType {
     fn MatMul() -> IType {
         IType(TheoryIType::Int(ArithInt::MatMul))
     }
+    #[classattr]
+    fn Transpose() -> IType {
+        IType(TheoryIType::Int(ArithInt::Transpose))
+    }
     #[staticmethod]
     fn Const(data: Vec<Vec<i64>>) -> IType {
         IType(TheoryIType::Int(ArithInt::Const(data)))
@@ -353,6 +357,10 @@ impl FloatIType {
     fn MatMul() -> IType {
         IType(TheoryIType::Float(ArithFloat::MatMul))
     }
+    #[classattr]
+    fn Transpose() -> IType {
+        IType(TheoryIType::Float(ArithFloat::Transpose))
+    }
     #[staticmethod]
     fn Const(data: Vec<Vec<f64>>) -> IType {
         IType(TheoryIType::Float(ArithFloat::Const(data)))
@@ -397,6 +405,10 @@ impl RealIType {
     #[classattr]
     fn MatMul() -> IType {
         IType(TheoryIType::Real(ArithReal::MatMul))
+    }
+    #[classattr]
+    fn Transpose() -> IType {
+        IType(TheoryIType::Real(ArithReal::Transpose))
     }
     #[classattr]
     fn Sin() -> IType {
@@ -528,12 +540,28 @@ impl BVIType {
         IType(TheoryIType::BV(theory::bv::BVTheory::Add))
     }
     #[classattr]
+    fn Sub() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Sub))
+    }
+    #[classattr]
     fn Mul() -> IType {
         IType(TheoryIType::BV(theory::bv::BVTheory::Mul))
     }
     #[classattr]
+    fn Div() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Div))
+    }
+    #[classattr]
+    fn Mod() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Mod))
+    }
+    #[classattr]
     fn MatMul() -> IType {
         IType(TheoryIType::BV(theory::bv::BVTheory::MatMul))
+    }
+    #[classattr]
+    fn Transpose() -> IType {
+        IType(TheoryIType::BV(theory::bv::BVTheory::Transpose))
     }
     #[classattr]
     fn And() -> IType {

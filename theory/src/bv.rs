@@ -73,8 +73,12 @@ impl fmt::Display for BVTheory {
         match self {
             BVTheory::Const(_) => write!(f, "Const"),
             BVTheory::Add => write!(f, "Add"),
+            BVTheory::Sub => write!(f, "Sub"),
             BVTheory::Mul => write!(f, "Mul"),
+            BVTheory::Div => write!(f, "Div"),
+            BVTheory::Mod => write!(f, "Mod"),
             BVTheory::MatMul => write!(f, "MatMul"),
+            BVTheory::Transpose => write!(f, "Transpose"),
             BVTheory::And => write!(f, "And"),
             BVTheory::Or => write!(f, "Or"),
             BVTheory::Xor => write!(f, "Xor"),
@@ -101,8 +105,12 @@ pub enum BVTheory {
     // TODO: use bitarray, this works only for `N <= 64`
     Const(Vec<Vec<usize>>),
     Add,
+    Sub,
     Mul,
+    Div,
+    Mod,
     MatMul,
+    Transpose,
     And,
     Or,
     Xor,
@@ -181,7 +189,14 @@ impl Theory for BVTheory {
                 }
                 Ok(())
             }
-            BVTheory::And | BVTheory::Or | BVTheory::Xor | BVTheory::Add | BVTheory::Mul => {
+            BVTheory::And
+            | BVTheory::Or
+            | BVTheory::Xor
+            | BVTheory::Add
+            | BVTheory::Sub
+            | BVTheory::Mul
+            | BVTheory::Div
+            | BVTheory::Mod => {
                 let w1 = write_nxt(&mut write, 0)?;
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
@@ -253,6 +268,22 @@ impl Theory for BVTheory {
                     return Err(format!(
                         "{:?}: mismatch in second input and output dimensions: {} != {}",
                         self, d4, d6
+                    ));
+                }
+                Ok(())
+            }
+            BVTheory::Transpose => {
+                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err("Transpose: must read exactly one value".into());
+                };
+                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err("Transpose: must write exactly one value".into());
+                };
+                let (rm, rn) = r.shape();
+                let (wm, wn) = w.shape();
+                if wm != rn || wn != rm {
+                    return Err(format!(
+                        "Transpose: output shape ({wm}, {wn}) must be ({rn}, {rm})"
                     ));
                 }
                 Ok(())

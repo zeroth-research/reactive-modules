@@ -533,10 +533,11 @@ where
     let (w0, None) = (write_nxt(&mut write, 0)?, write.next()) else {
         return Err("BVToWord1: must write exactly one value".into());
     };
-    let Type::BV32(bv) = r0 else {
-        return Err(format!("BVToWord1: input must be BV, got {:?}", r0));
+    let (rows, cols) = match r0 {
+        Type::BV32(bv) => bv.shape(),
+        Type::Bool(b) => b.shape(),
+        _ => return Err(format!("BVToWord1: input must be BV or Bool, got {:?}", r0)),
     };
-    let (rows, cols) = bv.shape();
     let expected = Type::BV32(bv::BV::U(1, rows, cols));
     if *w0 != expected {
         return Err(format!(
