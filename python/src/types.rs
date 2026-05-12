@@ -151,6 +151,21 @@ impl DType {
     fn is_bv(&self) -> bool {
         matches!(self.0, theory::python::Type::BV32(_))
     }
+
+    fn bv_bw(&self) -> PyResult<usize> {
+        match &self.0 {
+            theory::python::Type::BV32(bv) => Ok(bv.bw()),
+            _ => Err(pyo3::exceptions::PyTypeError::new_err("not a BV type")),
+        }
+    }
+
+    fn bv_signed(&self) -> PyResult<bool> {
+        match &self.0 {
+            theory::python::Type::BV32(theory::bv::BV::S(_, _, _)) => Ok(true),
+            theory::python::Type::BV32(theory::bv::BV::U(_, _, _)) => Ok(false),
+            _ => Err(pyo3::exceptions::PyTypeError::new_err("not a BV type")),
+        }
+    }
 }
 
 impl fmt::Display for DType {

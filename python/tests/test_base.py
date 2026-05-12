@@ -1,4 +1,5 @@
 from zrth import Wire, Term, Module, DType as dt, IType, Int, Float, Bool
+import torch
 from torch import Tensor
 
 
@@ -18,16 +19,16 @@ def test_term_new():
     # test `function` ctor
     _ = Term.function(IType.Int.Add, [xn], [x, y])
     _ = Term.function(IType.from_tensor(Tensor([3, 4, 5])), [w4], [])
-    _ = Term.function(IType.from_tensor(Tensor([3, 4, 6])), [w5], [])
+    _ = Term.function(IType.from_tensor(torch.tensor([3, 4, 6])), [w5], [])
 
     # test `new` ctor
-    Term(IType.Cmp.Lt, [Wire(Bool())], [w4, w5])
-    Term(IType.from_tensor(Tensor([3, 2, 1])), [Wire(Int(3))])
+    Term(IType.Cmp.Lt, [Wire(Bool(3))], [w4, Wire(Float(3))])
+    Term(IType.from_tensor(torch.tensor([3, 2, 1])), [Wire(Int(3))])
 
 
 def test_module_sequential():
     x = (Wire(Bool()), Wire(Bool()))
-    init = [Term(IType.from_tensor(Tensor([True])), [x[1]])]
+    init = [Term(IType.from_tensor(torch.tensor([True])), [x[1]])]
     update = [Term(IType.Id, [x[1]], [x[0]])]
     _ = Module.sequential(init, update, [x])
 
@@ -35,7 +36,7 @@ def test_module_sequential():
 def test_module_combinatorial():
     x = (Wire(Bool()), Wire(Bool()))
 
-    assign = [Term(IType.from_tensor(Tensor([False])), [x[1]])]
+    assign = [Term(IType.from_tensor(torch.tensor([False])), [x[1]])]
     _ = Module.combinatorial(assign, [x])
 
 
@@ -46,13 +47,13 @@ def test_module_parallel():
     w = (Wire(Bool()), Wire(Bool()))
     v = (Wire(Bool()), Wire(Bool()))
 
-    init = [Term(IType.from_tensor(Tensor([False])), [x[1]])]
+    init = [Term(IType.from_tensor(torch.tensor([False])), [x[1]])]
     update = [Term(IType.Bool.And, [x[1]], [x[0], y[1]])]
     p = Module.sequential(init, update, obs=[x, y])
 
     init = [
-        Term(IType.from_tensor(Tensor([False])), [v[1]]),
-        Term(IType.from_tensor(Tensor([False])), [y[1]]),
+        Term(IType.from_tensor(torch.tensor([False])), [v[1]]),
+        Term(IType.from_tensor(torch.tensor([False])), [y[1]]),
     ]
     update = [Term(IType.Bool.And, [v[1]], [v[0], x[0]]), Term(IType.Id, [y[1]], [x[0]])]
     q = Module.sequential(init, update, obs=[x, y], prvt=[v])
@@ -81,8 +82,8 @@ def test_interface():
     x = Wire(Bool())
     y = Wire(Bool())
     xn = Wire(Bool())
-    f = Term(IType.Id, [xn], [x, y])
-    f2 = Term(IType.Id, [xn], [x, y])
+    f = Term(IType.Bool.And, [xn], [x, y])
+    f2 = Term(IType.Bool.And, [xn], [x, y])
 
     w = f.write
     r = f.read

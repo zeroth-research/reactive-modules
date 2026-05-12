@@ -177,6 +177,17 @@ class WExpr(Expr):
         return w_neq(self, other)
 
 
+def _make_expr(itype: IType, wtype: DType, *args):
+    if wtype.is_bool():
+        return BExpr(itype, wtype, *args)
+    elif wtype.is_real() or wtype.is_int() or wtype.is_float():
+        return AExpr(itype, wtype, *args)
+    elif wtype.is_bv():
+        return WExpr(itype, wtype, *args)
+    else:
+        raise NotImplementedError(f"unsupported dtype: {wtype}")
+
+
 def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
     if not isinstance(first, Expr):
         raise Exception("type coercion unsupported")
@@ -189,14 +200,11 @@ def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
         if rtype != arg.dtype:
             raise Exception("dtype mismatch")
 
-    if wtype.is_bool():
-        return BExpr(itype, wtype, first, *others)
-    elif wtype.is_real() or wtype.is_int() or wtype.is_float():
-        return AExpr(itype, wtype, first, *others)
-    elif wtype.is_bv():
-        return WExpr(itype, wtype, first, *others)
-    else:
-        raise NotImplementedError(f"unsupported dtype: {wtype}")
+    # Fold left: chain binary applications for variadic calls
+    acc = first
+    for arg in others:
+        acc = _make_expr(itype, wtype, acc, arg)
+    return acc
 
 
 # ========================================
@@ -423,19 +431,18 @@ def matmul(lhs: Expr, rhs: Expr):
     rhs_rows, rhs_cols = rhs.shape
 
     if rhs_rows == 1:
-        # matrix @ row-vector: [m, k] @ [1, k] -> [m, 1]
+        # row-vector [1, k] — transpose to [k, 1] so standard matmul applies
         if lhs_cols != rhs_cols:
             raise RuntimeError("size mismatch")
-        wtype = lhs.dtype.reshape([lhs_rows, 1])
-        return type(lhs)(_arith_itype(lhs.dtype, 'MatMul'), wtype, lhs, rhs)
-    else:
-        # matrix @ matrix: [m, k] @ [k, n] -> [m, n]
-        if lhs_cols != rhs_rows:
-            raise RuntimeError("size mismatch")
-        wtype = lhs.dtype.reshape([lhs_rows, rhs_cols])
-        return type(lhs)(_arith_itype(lhs.dtype, 'MatMul'), wtype, lhs, rhs)
+        col_dtype = rhs.dtype.reshape([rhs_cols, 1])
+        rhs = type(rhs)(_arith_itype(rhs.dtype, 'Transpose'), col_dtype, rhs)
+        rhs_rows, rhs_cols = rhs.shape
 
-    # TODO: allow broadcasting
+    # matrix @ matrix: [m, k] @ [k, n] -> [m, n]
+    if lhs_cols != rhs_rows:
+        raise RuntimeError("size mismatch")
+    wtype = lhs.dtype.reshape([lhs_rows, rhs_cols])
+    return type(lhs)(_arith_itype(lhs.dtype, 'MatMul'), wtype, lhs, rhs)
 
 
 # ========================================
@@ -447,7 +454,7 @@ def Bool(x: bool | str | torch.Tensor, shape=None) -> BExpr:
     if isinstance(x, bool):
         assert shape is None
         dtype = DType.Bool([1])
-        t = torch.Tensor([x])
+        t = torch.tensor([x])
         return BExpr(itype=IType.from_tensor(t), dtype=dtype)
     elif isinstance(x, torch.Tensor):
         assert shape is None or shape == x.shape
@@ -462,16 +469,25 @@ def Bool(x: bool | str | torch.Tensor, shape=None) -> BExpr:
     raise ValueError("Invalid argument to `Bool`")
 
 
+def _tensor_to_real_const(t: torch.Tensor) -> "IType":
+    """Build IType.Real.Const from a float tensor."""
+    if t.dim() == 1:
+        t = t.unsqueeze(0)
+    rows, cols = t.shape[0], t.shape[1]
+    data = [[float(t[i, j]) for j in range(cols)] for i in range(rows)]
+    return IType.Real.Const(data)
+
+
 def Real(x: float | str | torch.Tensor, shape=None) -> AExpr:
     if isinstance(x, float):
         assert shape is None
         dtype = DType.Real([1])
-        t = torch.Tensor([x])
-        return AExpr(itype=IType.from_tensor(t), dtype=dtype)
+        return AExpr(itype=IType.Real.Const([[x]]), dtype=dtype)
     elif isinstance(x, torch.Tensor):
-        assert shape is None or shape == x.shape
-        dtype = DType.Real(x.shape)
-        return AExpr(itype=IType.from_tensor(x), dtype=dtype)
+        assert shape is None or list(x.shape) == list(shape) if shape is not None else True
+        t_float = x.to(torch.float64)
+        dtype = DType.Real(list(x.shape) if x.dim() > 0 else [1])
+        return AExpr(itype=_tensor_to_real_const(t_float), dtype=dtype)
     elif isinstance(x, str):
         # register symbol into context
         dtype = DType.Real(shape if shape is not None else [1])
