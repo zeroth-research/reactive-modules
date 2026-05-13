@@ -72,13 +72,7 @@ impl fmt::Display for BVTheory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BVTheory::Const(_) => write!(f, "Const"),
-            BVTheory::Add => write!(f, "Add"),
-            BVTheory::Sub => write!(f, "Sub"),
-            BVTheory::Mul => write!(f, "Mul"),
-            BVTheory::Div => write!(f, "Div"),
-            BVTheory::Mod => write!(f, "Mod"),
-            BVTheory::MatMul => write!(f, "MatMul"),
-            BVTheory::Transpose => write!(f, "Transpose"),
+            BVTheory::Arith(op) => op.fmt(f),
             BVTheory::And => write!(f, "And"),
             BVTheory::Or => write!(f, "Or"),
             BVTheory::Xor => write!(f, "Xor"),
@@ -104,13 +98,7 @@ impl MatrixType for BV {
 pub enum BVTheory {
     // TODO: use bitarray, this works only for `N <= 64`
     Const(Vec<Vec<usize>>),
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    MatMul,
-    Transpose,
+    Arith(Arith),
     And,
     Or,
     Xor,
@@ -189,14 +177,7 @@ impl Theory for BVTheory {
                 }
                 Ok(())
             }
-            BVTheory::And
-            | BVTheory::Or
-            | BVTheory::Xor
-            | BVTheory::Add
-            | BVTheory::Sub
-            | BVTheory::Mul
-            | BVTheory::Div
-            | BVTheory::Mod => {
+            BVTheory::And | BVTheory::Or | BVTheory::Xor => {
                 let w1 = write_nxt(&mut write, 0)?;
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
@@ -217,77 +198,7 @@ impl Theory for BVTheory {
                 Ok(())
             }
 
-            BVTheory::MatMul => {
-                let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
-                    read.next(),
-                ) else {
-                    return Err(format!("{:?}: must read exactly two values", self));
-                };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                    return Err(format!("{:?}: must write exactly one value", self));
-                };
-
-                if r1.bw() != r2.bw() {
-                    return Err(format!(
-                        "{:?}: 1st and 2nd inputs have different bitwidth: {} != {}",
-                        self,
-                        r1.bw(),
-                        r2.bw()
-                    ));
-                }
-
-                if r1.bw() != w1.bw() {
-                    return Err(format!(
-                        "{:?}: inputs and output have different bitwidth: {} != {}",
-                        self,
-                        r1.bw(),
-                        w1.bw()
-                    ));
-                }
-
-                let (d1, d2) = r1.shape();
-                let (d3, d4) = r2.shape();
-                let (d5, d6) = w1.shape();
-
-                if d2 != d3 {
-                    return Err(format!(
-                        "{:?}: mismatch in inner dimensions of input matrices: {} != {}",
-                        self, d2, d3
-                    ));
-                }
-                if d1 != d5 {
-                    return Err(format!(
-                        "{:?}: mismatch in first input and output dimensions: {} != {}",
-                        self, d1, d5
-                    ));
-                }
-
-                if d4 != d6 {
-                    return Err(format!(
-                        "{:?}: mismatch in second input and output dimensions: {} != {}",
-                        self, d4, d6
-                    ));
-                }
-                Ok(())
-            }
-            BVTheory::Transpose => {
-                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-                    return Err("Transpose: must read exactly one value".into());
-                };
-                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                    return Err("Transpose: must write exactly one value".into());
-                };
-                let (rm, rn) = r.shape();
-                let (wm, wn) = w.shape();
-                if wm != rn || wn != rm {
-                    return Err(format!(
-                        "Transpose: output shape ({wm}, {wn}) must be ({rn}, {rm})"
-                    ));
-                }
-                Ok(())
-            }
+            BVTheory::Arith(op) => op.type_check(read, write),
             BVTheory::ToUnsigned() => {
                 let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
                     return Err("ToUnsigned: must read exactly one value".into());

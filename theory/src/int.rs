@@ -62,30 +62,14 @@ impl fmt::Display for Int {
 pub enum ArithInt {
     // TODO: use bigint?
     Const(Vec<Vec<i64>>),
-    Add,
-    Mul,
-    Sub,
-    Div,
-    Mod,
-    Neg,
-    MatMul,
-    Transpose,
-    Abs,
+    Op(Arith),
 }
 
 impl fmt::Display for ArithInt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            ArithInt::Add => write!(f, "Add"),
-            ArithInt::Mul => write!(f, "Mul"),
-            ArithInt::Sub => write!(f, "Sub"),
-            ArithInt::Div => write!(f, "Div"),
-            ArithInt::Mod => write!(f, "Mod"),
-            ArithInt::Neg => write!(f, "Neg"),
-            ArithInt::Abs => write!(f, "Abs"),
-            ArithInt::MatMul => write!(f, "MatMul"),
-            ArithInt::Transpose => write!(f, "Transpose"),
             ArithInt::Const(cm) => fmt_matrix(cm, f),
+            ArithInt::Op(op) => op.fmt(f),
         }
     }
 }
@@ -133,102 +117,7 @@ impl Theory for ArithInt {
                 }
                 Ok(())
             }
-
-            ArithInt::Neg | ArithInt::Abs => {
-                let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
-                if r != w {
-                    return Err(format!(
-                        "{:?}: input and output type must be the same",
-                        self
-                    ));
-                }
-                if read.next().is_some() {
-                    return Err(format!("{:?}: must read a single value (reads more)", self));
-                }
-                if write.next().is_some() {
-                    return Err(format!(
-                        "{:?}: must write a single value (writes more)",
-                        self
-                    ));
-                }
-                Ok(())
-            }
-
-            ArithInt::Add | ArithInt::Mul | ArithInt::Sub | ArithInt::Mod | ArithInt::Div => {
-                let w1 = write_nxt(&mut write, 0)?;
-                let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
-                    read.next(),
-                ) else {
-                    return Err(format!("{:?}: must read exactly two values", self));
-                };
-                if r1 != r2 {
-                    return Err(format!("{:?}: input values must have the same type", self));
-                }
-                if w1 != r1 {
-                    return Err(format!(
-                        "{:?}: input and output values must have the same type",
-                        self
-                    ));
-                }
-                Ok(())
-            }
-
-            ArithInt::MatMul => {
-                let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
-                    read.next(),
-                ) else {
-                    return Err(format!("{:?}: must read exactly two values", self));
-                };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                    return Err(format!("{:?}: must write exactly one value", self));
-                };
-
-                let (d1, d2) = r1.shape();
-                let (d3, d4) = r2.shape();
-                let (d5, d6) = w1.shape();
-
-                if d2 != d3 {
-                    return Err(format!(
-                        "{:?}: mismatch in inner dimensions of input matrices: {} != {}",
-                        self, d2, d3
-                    ));
-                }
-                if d1 != d5 {
-                    return Err(format!(
-                        "{:?}: mismatch in first input and output dimensions: {} != {}",
-                        self, d1, d5
-                    ));
-                }
-
-                if d4 != d6 {
-                    return Err(format!(
-                        "{:?}: mismatch in second input and output dimensions: {} != {}",
-                        self, d4, d6
-                    ));
-                }
-                Ok(())
-            }
-
-            ArithInt::Transpose => {
-                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-                    return Err("Transpose: must read exactly one value".into());
-                };
-                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                    return Err("Transpose: must write exactly one value".into());
-                };
-                let (rm, rn) = r.shape();
-                let (wm, wn) = w.shape();
-                if wm != rn || wn != rm {
-                    return Err(format!(
-                        "Transpose: output shape ({wm}, {wn}) must be ({rn}, {rm})"
-                    ));
-                }
-                Ok(())
-            }
+            ArithInt::Op(op) => op.type_check(read, write),
         }
     }
 }

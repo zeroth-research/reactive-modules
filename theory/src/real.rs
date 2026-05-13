@@ -69,15 +69,7 @@ impl fmt::Display for Real {
 #[derive(Clone, PartialEq, Debug)]
 pub enum ArithReal {
     Const(Vec<Vec<f64>>),
-    Add,
-    Mul,
-    Sub,
-    Div,
-    Mod,
-    Neg,
-    MatMul,
-    Transpose,
-    Abs,
+    Arith(Arith),
     // transcendental functions
     Sin,
     Cos,
@@ -86,15 +78,7 @@ pub enum ArithReal {
 impl fmt::Display for ArithReal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            ArithReal::Add => write!(f, "Add"),
-            ArithReal::Mul => write!(f, "Mul"),
-            ArithReal::Sub => write!(f, "Sub"),
-            ArithReal::Div => write!(f, "Div"),
-            ArithReal::Mod => write!(f, "Mod"),
-            ArithReal::Neg => write!(f, "Neg"),
-            ArithReal::Abs => write!(f, "Abs"),
-            ArithReal::MatMul => write!(f, "MatMul"),
-            ArithReal::Transpose => write!(f, "Transpose"),
+            ArithReal::Arith(op) => op.fmt(f),
             ArithReal::Sin => write!(f, "Sin"),
             ArithReal::Cos => write!(f, "Cos"),
             ArithReal::Const(cm) => fmt_matrix(cm, f),
@@ -146,7 +130,7 @@ impl Theory for ArithReal {
                 Ok(())
             }
 
-            ArithReal::Neg | ArithReal::Abs | ArithReal::Sin | ArithReal::Cos => {
+            ArithReal::Sin | ArithReal::Cos => {
                 let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
                 if r != w {
                     return Err(format!(
@@ -166,81 +150,7 @@ impl Theory for ArithReal {
                 Ok(())
             }
 
-            ArithReal::Add | ArithReal::Mul | ArithReal::Sub | ArithReal::Mod | ArithReal::Div => {
-                let w1 = write_nxt(&mut write, 0)?;
-                let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
-                    read.next(),
-                ) else {
-                    return Err(format!("{:?}: must read exactly two values", self));
-                };
-                if r1 != r2 {
-                    return Err(format!("{:?}: input values must have the same type", self));
-                }
-                if w1 != r1 {
-                    return Err(format!(
-                        "{:?}: input and output values must have the same type",
-                        self
-                    ));
-                }
-                Ok(())
-            }
-
-            ArithReal::MatMul => {
-                let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
-                    read.next(),
-                ) else {
-                    return Err(format!("{:?}: must read exactly two values", self));
-                };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                    return Err(format!("{:?}: must write exactly one value", self));
-                };
-
-                let (d1, d2) = r1.shape();
-                let (d3, d4) = r2.shape();
-                let (d5, d6) = w1.shape();
-
-                if d2 != d3 {
-                    return Err(format!(
-                        "{:?}: mismatch in inner dimensions of input matrices: {} != {}",
-                        self, d2, d3
-                    ));
-                }
-                if d1 != d5 {
-                    return Err(format!(
-                        "{:?}: mismatch in first input and output dimensions: {} != {}",
-                        self, d1, d5
-                    ));
-                }
-
-                if d4 != d6 {
-                    return Err(format!(
-                        "{:?}: mismatch in second input and output dimensions: {} != {}",
-                        self, d4, d6
-                    ));
-                }
-                Ok(())
-            }
-
-            ArithReal::Transpose => {
-                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
-                    return Err("Transpose: must read exactly one value".into());
-                };
-                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
-                    return Err("Transpose: must write exactly one value".into());
-                };
-                let (rm, rn) = r.shape();
-                let (wm, wn) = w.shape();
-                if wm != rn || wn != rm {
-                    return Err(format!(
-                        "Transpose: output shape ({wm}, {wn}) must be ({rn}, {rm})"
-                    ));
-                }
-                Ok(())
-            }
+            ArithReal::Arith(op) => op.type_check(read, write),
         }
     }
 }

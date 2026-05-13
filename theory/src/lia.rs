@@ -198,14 +198,7 @@ impl fmt::Display for LIA {
                 bool::BoolOp::Xnor => write!(f, "Xnor"),
                 bool::BoolOp::Implies => write!(f, "Implies"),
             },
-            LIA::Cmp(op) => match op {
-                CmpOp::Le => write!(f, "Le"),
-                CmpOp::Lt => write!(f, "Lt"),
-                CmpOp::Ge => write!(f, "Ge"),
-                CmpOp::Gt => write!(f, "Gt"),
-                CmpOp::Eq => write!(f, "Eq"),
-                CmpOp::Ne => write!(f, "Ne"),
-            },
+            LIA::Cmp(op) => op.fmt(f),
             LIA::Linear(op) => match op {
                 LinearOp::Linear(_, _) => write!(f, "Linear"),
                 LinearOp::Add => write!(f, "Add"),

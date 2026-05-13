@@ -8,6 +8,45 @@ pub mod lia;
 pub mod python;
 pub mod real;
 
+/// Theory is a set of operations over some data types (more precisely,
+/// matrices over some data types)
+pub trait Theory {
+    // TODO: in torch, from where we took this name (I think), dtype refers to
+    // the type of the element in the tensor (*d*ata type). Maybe we should
+    // consider renaming this to "Types" or something, to avoid confusion.
+    type DType;
+
+    /// Type-check if `self` can form a valid operation when reading values
+    /// of type `read` and writing values of type `write` (where `read` and `write`
+    /// are sequences of types, the order *does* matter).
+    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    where
+        D: TryInto<&'a Self::DType>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+        Self::DType: 'a;
+}
+
+pub trait MatrixType: PartialEq {
+    fn shape(&self) -> (usize, usize);
+}
+
+// ------------------------------------------------------------
+//  Common operations
+// ------------------------------------------------------------
+#[derive(Clone, PartialEq, Debug, Eq)]
+pub enum Arith {
+    Add,
+    Mul,
+    Sub,
+    Div,
+    Mod,
+    Neg,
+    MatMul,
+    Abs,
+    Transpose,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CmpOp {
     Le,
@@ -16,6 +55,12 @@ pub enum CmpOp {
     Gt,
     Eq,
     Ne,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FlowOp {
+    Id,
+    Ite,
 }
 
 impl fmt::Display for CmpOp {
@@ -31,10 +76,20 @@ impl fmt::Display for CmpOp {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum FlowOp {
-    Id,
-    Ite,
+impl fmt::Display for Arith {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Arith::Add => write!(f, "Add"),
+            Arith::Mul => write!(f, "Mul"),
+            Arith::Sub => write!(f, "Sub"),
+            Arith::Div => write!(f, "Div"),
+            Arith::Mod => write!(f, "Mod"),
+            Arith::Neg => write!(f, "Neg"),
+            Arith::Abs => write!(f, "Abs"),
+            Arith::MatMul => write!(f, "MatMul"),
+            Arith::Transpose => write!(f, "Transpose"),
+        }
+    }
 }
 
 impl fmt::Display for FlowOp {
@@ -106,10 +161,6 @@ impl FlowOp {
     }
 }
 
-pub trait MatrixType: PartialEq {
-    fn shape(&self) -> (usize, usize);
-}
-
 impl CmpOp {
     pub fn type_check<'a, T, D, R, W>(&self, read: R, write: W) -> Result<(), String>
     where
@@ -153,23 +204,113 @@ impl CmpOp {
     }
 }
 
-/// Theory is a set of operations over some data types (more precisely,
-/// matrices over some data types)
-pub trait Theory {
-    // TODO: in torch, from where we took this name (I think), dtype refers to
-    // the type of the element in the tensor (*d*ata type). Maybe we should
-    // consider renaming this to "Types" or something, to avoid confusion.
-    type DType;
-
-    /// Type-check if `self` can form a valid operation when reading values
-    /// of type `read` and writing values of type `write` (where `read` and `write`
-    /// are sequences of types, the order *does* matter).
-    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+impl Arith {
+    pub fn type_check<'a, T, D, R, W>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a Self::DType>,
+        T: MatrixType + fmt::Debug + 'a,
+        D: TryInto<&'a T>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
-        Self::DType: 'a;
+    {
+        let mut read = read.into_iter();
+        let mut write = write.into_iter();
+        match self {
+            Arith::Neg | Arith::Abs => {
+                let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
+                if r != w {
+                    return Err(format!(
+                        "{:?}: input and output type must be the same",
+                        self
+                    ));
+                }
+                if read.next().is_some() {
+                    return Err(format!("{:?}: must read a single value (reads more)", self));
+                }
+                if write.next().is_some() {
+                    return Err(format!(
+                        "{:?}: must write a single value (writes more)",
+                        self
+                    ));
+                }
+                Ok(())
+            }
+
+            Arith::Add | Arith::Mul | Arith::Sub | Arith::Mod | Arith::Div => {
+                let w1 = write_nxt(&mut write, 0)?;
+                let (r1, r2, None) = (
+                    read_nxt(&mut read, 0)?,
+                    read_nxt(&mut read, 1)?,
+                    read.next(),
+                ) else {
+                    return Err(format!("{:?}: must read exactly two values", self));
+                };
+                if r1 != r2 {
+                    return Err(format!("{:?}: input values must have the same type", self));
+                }
+                if w1 != r1 {
+                    return Err(format!(
+                        "{:?}: input and output values must have the same type",
+                        self
+                    ));
+                }
+                Ok(())
+            }
+
+            Arith::MatMul => {
+                let (r1, r2, None) = (
+                    read_nxt(&mut read, 0)?,
+                    read_nxt(&mut read, 1)?,
+                    read.next(),
+                ) else {
+                    return Err(format!("{:?}: must read exactly two values", self));
+                };
+                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err(format!("{:?}: must write exactly one value", self));
+                };
+
+                let (d1, d2) = r1.shape();
+                let (d3, d4) = r2.shape();
+                let (d5, d6) = w1.shape();
+
+                if d2 != d3 {
+                    return Err(format!(
+                        "{:?}: mismatch in inner dimensions of input matrices: {} != {}",
+                        self, d2, d3
+                    ));
+                }
+                if d1 != d5 {
+                    return Err(format!(
+                        "{:?}: mismatch in first input and output dimensions: {} != {}",
+                        self, d1, d5
+                    ));
+                }
+                if d4 != d6 {
+                    return Err(format!(
+                        "{:?}: mismatch in second input and output dimensions: {} != {}",
+                        self, d4, d6
+                    ));
+                }
+                Ok(())
+            }
+
+            Arith::Transpose => {
+                let (r, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err("Transpose: must read exactly one value".into());
+                };
+                let (w, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err("Transpose: must write exactly one value".into());
+                };
+                let (rm, rn) = r.shape();
+                let (wm, wn) = w.shape();
+                if wm != rn || wn != rm {
+                    return Err(format!(
+                        "Transpose: output shape ({wm}, {wn}) must be ({rn}, {rm})"
+                    ));
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 // Helpers for type-checking procedures
