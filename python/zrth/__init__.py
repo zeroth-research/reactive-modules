@@ -1,5 +1,4 @@
 from .zrth import (
-    Arith,
     Wire,
     DType,
     IType,

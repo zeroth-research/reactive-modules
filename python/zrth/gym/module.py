@@ -297,11 +297,7 @@ class Wrapper(Module, gym.Wrapper):
                     self._state[p['truncated'][1]] = torch.tensor([0.0])
                 self._sync_private_state_from_env()
             else:
-                for term in atom.init:
-                    read = [self._state[w] for w in term.read]
-                    results = eval_itype(term.itype, read)
-                    for w, val in zip(term.write, results):
-                        self._state[w] = val
+                execute_init(self._state, [atom])
 
         for ltc, nxt in self.ctrl:
             if nxt in self._state:
@@ -329,7 +325,7 @@ class Wrapper(Module, gym.Wrapper):
         for atom_idx, atom in enumerate(self.atoms):
             if env_atom_idx is not None and atom_idx == env_atom_idx:
                 gym_result = self.env.step(self._state[p['action'][0]])
-                obs, reward, terminated, truncated = gym_result[0], gym_result[1], gym_result[2], gym_result[3]
+                obs, reward, terminated, truncated, *_ = gym_result
                 obs_tensor = torch.as_tensor(obs, dtype=torch.float32)
                 if obs_tensor.dim() == 0:
                     obs_tensor = obs_tensor.unsqueeze(0)
@@ -342,11 +338,7 @@ class Wrapper(Module, gym.Wrapper):
                     self._state[p['truncated'][1]] = torch.tensor([1.0 if truncated else 0.0])
                 self._sync_private_state_from_env()
             else:
-                for term in atom.update:
-                    read = [self._state[w] for w in term.read]
-                    results = eval_itype(term.itype, read)
-                    for w, val in zip(term.write, results):
-                        self._state[w] = val
+                execute_update(self._state, [atom])
 
         for ltc, nxt in self.ctrl:
             if nxt in self._state:

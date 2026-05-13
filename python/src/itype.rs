@@ -96,6 +96,10 @@ impl IType {
     fn BV(py: Python<'_>) -> Py<PyAny> {
         py.get_type::<BVIType>().into_any().unbind()
     }
+    #[classattr]
+    fn Arith(py: Python<'_>) -> Py<PyAny> {
+        py.get_type::<ArithOp>().into_any().unbind()
+    }
 
     // Top-level singleton ops
     #[classattr]

@@ -9,12 +9,11 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..zrth import Arith, Wire, DType, IType, Term, Module
+from ..zrth import Wire, DType, IType, Term, Module
+
+Arith = IType.Arith
 
 
-def _arith_itype(dtype, op):
-    """Return the appropriate theory IType for an Arith op and a dtype."""
-    return IType.mk(op, dtype)
 
 # ---------------------------------------------------------------------------
 # 1. Lark parser init
@@ -263,9 +262,9 @@ _BINOPS: dict[str, dict[str, object]] = {
     "and_expr":   {"&": IType.Bool.And, "and": IType.Bool.And},
     "cmp_expr":   {"=": IType.Cmp.Eq, "!=": IType.Cmp.Ne, "<": IType.Cmp.Lt,
                    "<=": IType.Cmp.Le, ">": IType.Cmp.Gt, ">=": IType.Cmp.Ge},
-    "arith_expr": {"+": lambda d: _arith_itype(d, Arith.Add), "-": lambda d: _arith_itype(d, Arith.Sub)},
-    "mod_expr":   {"mod": lambda d: _arith_itype(d, Arith.Mod)},
-    "term_expr":  {"*": lambda d: _arith_itype(d, Arith.Mul), "/": lambda d: _arith_itype(d, Arith.Div)},
+    "arith_expr": {"+": lambda d: IType.mk(Arith.Add, d), "-": lambda d: IType.mk(Arith.Sub, d)},
+    "mod_expr":   {"mod": lambda d: IType.mk(Arith.Mod, d)},
+    "term_expr":  {"*": lambda d: IType.mk(Arith.Mul, d), "/": lambda d: IType.mk(Arith.Div, d)},
 }
 
 _OP_TOKENS = {"NOT_OP"}
@@ -274,8 +273,8 @@ _NARY_OPS = {
     "ternary": IType.Ite,
     "implies_expr": IType.Bool.Implies,
     "not_expr": IType.Bool.Not,
-    "neg": lambda d: _arith_itype(d, Arith.Neg),
-    "abs_call": lambda d: _arith_itype(d, Arith.Abs),
+    "neg": lambda d: IType.mk(Arith.Neg, d),
+    "abs_call": lambda d: IType.mk(Arith.Abs, d),
 }
 
 _METHODS = {

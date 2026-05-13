@@ -17,7 +17,9 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
-from zrth import Arith, Wire, DType, Term, IType, Float, Bool
+from zrth import Wire, DType, Term, IType, Float, Bool
+
+Arith = IType.Arith
 
 
 # ---------------------------------------------------------------------------
@@ -1313,24 +1315,13 @@ def _torch_dtype(target_dtype):
 
 
 def _normalize_early_returns(stmts: list) -> list:
-    """Convert early-return patterns to single-exit form.
+    """Convert early-return patterns to single-exit form so visit_If can SSA-merge them via Ite.
 
-    Transforms:
-        if cond:
-            ...
-            return val      <- replaced with _ret_i = val assignments
-        rest...
-        return final
-    Into:
-        if cond:
-            ...
-            _ret_0 = val0
-            _ret_1 = val1
-        else:
-            rest...
-            return final    <- visit_Return stores _ret_i in temp_vars
-
-    Both branches then set _ret_i, so visit_If SSA-merges them via Ite.
+    MethodVisitor needs both branches of every if to assign the same variables so it can
+    produce an Ite term at the join point.  An early return breaks that invariant — the
+    "then" branch exits while the "else" (rest of function) continues.  We rewrite the
+    early return into temporary assignments (_ret_i = val) so both branches uniformly
+    assign _ret_i, then visit_If merges them with Ite as usual.
     Applied recursively so multiple consecutive early returns are all folded in.
     """
     result = []
@@ -1434,31 +1425,18 @@ def _translate_linear(
     return output_wire, weight_wire, bias_wire
 
 
-def _translate_tanh(input_wire: Wire, terms: list[Term]) -> Wire:
-    """Translate Tanh activation to reactive operations."""
+def _translate_activation(itype, input_wire: Wire, terms: list[Term]) -> Wire:
     output_wire = Wire(input_wire.dtype)
-    tanh_term = Term(IType.NN.Tanh, [output_wire], [input_wire])
-    terms.append(tanh_term)
+    terms.append(Term(itype, [output_wire], [input_wire]))
     return output_wire
+
+
+def _translate_tanh(input_wire: Wire, terms: list[Term]) -> Wire:
+    return _translate_activation(IType.NN.Tanh, input_wire, terms)
 
 
 def _translate_relu(input_wire: Wire, terms: list[Term]) -> Wire:
-    """Translate ReLU activation to reactive operations
-
-    Implements: max(0, x)
-
-    Args:
-        input_wire: Input Wire
-        terms: List to append Terms to
-
-    Returns:
-        Output Wire
-    """
-    output_wire = Wire(input_wire.dtype)
-    relu_term = Term(IType.NN.ReLU, [output_wire], [input_wire])
-    terms.append(relu_term)
-
-    return output_wire
+    return _translate_activation(IType.NN.ReLU, input_wire, terms)
 
 
 class MethodVisitor(ast.NodeVisitor):
@@ -1502,6 +1480,12 @@ class MethodVisitor(ast.NodeVisitor):
         self.temp_vars = {}
         self.scopes = []
         self.written_wires = set()
+
+    def _emit_output_wire(self, wire_name: str, src_wire):
+        """Write src_wire to the next side of a wire pair and mark it written."""
+        output_wire = self.wire_pairs[wire_name][1]
+        self.terms.append(Term(IType.Id, [output_wire], [src_wire]))
+        self.written_wires.add(wire_name)
 
     @contextmanager
     def _scope(self, scope_name):
@@ -1568,30 +1552,18 @@ class MethodVisitor(ast.NodeVisitor):
                 )
                 self.temp_vars[var] = merged_wire
 
-                # If this is a state wire and we're at top level, write the merged value to output
-                if (
-                    var in self.wire_pairs
-                    and len(self.scopes) == 0
-                    and var not in self.written_wires
-                ):
-                    output_wire = self.wire_pairs[var][1]
-                    term = Term(IType.Id, [output_wire], [merged_wire])
-                    self.terms.append(term)
-                    self.written_wires.add(var)
+                if var in self.wire_pairs and len(self.scopes) == 0 and var not in self.written_wires:
+                    self._emit_output_wire(var, merged_wire)
             elif if_wire is not None:
                 self.temp_vars[var] = if_wire
 
-                # Write only if top-level, not yet written, and newly assigned in this branch
                 if (
                     var in self.wire_pairs
                     and len(self.scopes) == 0
                     and var not in parent_scope
                     and var not in self.written_wires
                 ):
-                    output_wire = self.wire_pairs[var][1]
-                    term = Term(IType.Id, [output_wire], [if_wire])
-                    self.terms.append(term)
-                    self.written_wires.add(var)
+                    self._emit_output_wire(var, if_wire)
 
     def visit_Assign(self, node):
         """Handle variable assignment"""
@@ -1612,10 +1584,7 @@ class MethodVisitor(ast.NodeVisitor):
             self.temp_vars[wire_name] = result_wire
 
             if len(self.scopes) == 0:
-                output_wire = self.wire_pairs[wire_name][1]
-                term = Term(IType.Id, [output_wire], [result_wire])
-                self.terms.append(term)
-                self.written_wires.add(wire_name)
+                self._emit_output_wire(wire_name, result_wire)
 
     def visit_AugAssign(self, node):
         """Handle augmented assignment (+=, -=, *=, /=)."""
@@ -1646,10 +1615,7 @@ class MethodVisitor(ast.NodeVisitor):
             self.temp_vars[wire_name] = result_wire
 
             if len(self.scopes) == 0:
-                output_wire = self.wire_pairs[wire_name][1]
-                term = Term(IType.Id, [output_wire], [result_wire])
-                self.terms.append(term)
-                self.written_wires.add(wire_name)
+                self._emit_output_wire(wire_name, result_wire)
         else:
             raise ValueError(
                 "Augmented assignment only supported for self.attribute wires"
@@ -1952,11 +1918,10 @@ class MethodVisitor(ast.NodeVisitor):
             )
 
         # Build nested Ite from right to left
+        false_wire = self._convert_constant(ast.Constant(False))
+        true_wire = self._convert_constant(ast.Constant(True))
         result = wires[-1]
         for wire in reversed(wires[:-1]):
-            false_wire = self._convert_constant(ast.Constant(False))
-            true_wire = self._convert_constant(ast.Constant(True))
-
             merged = Wire(Bool())
             if is_and:
                 # a and b -> Ite(a, b, False)
