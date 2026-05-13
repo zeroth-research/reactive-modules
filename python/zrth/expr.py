@@ -1,23 +1,15 @@
 from typing import Any, override
 
-from .zrth import DType, IType, Term, Wire
+from .zrth import Arith, DType, IType, Term, Wire
 import torch
 
 # types that we can convert to [Expr]
 type ToExpr = Expr | int | bool | float | torch.Tensor
 
 
-def _arith_itype(dtype, name: str):
-    """Return IType.Int/Float/Real/BV.<name> based on dtype."""
-    if dtype.is_int():
-        return getattr(IType.Int, name)
-    elif dtype.is_float():
-        return getattr(IType.Float, name)
-    elif dtype.is_real():
-        return getattr(IType.Real, name)
-    elif dtype.is_bv():
-        return getattr(IType.BV, name)
-    raise ValueError(f"unsupported dtype for arith op '{name}': {dtype}")
+def _arith_itype(dtype, op):
+    """Return the appropriate theory IType for an Arith op and a dtype."""
+    return IType.mk(op, dtype)
 
 
 class _Uninterpreted:
@@ -250,19 +242,19 @@ def _elementwise_arith_op(itype, first: Expr, *others):
 
 
 def add(first: AExpr, *others) -> AExpr:
-    return _elementwise_arith_op(_arith_itype(first.dtype, 'Add'), first, *others)
+    return _elementwise_arith_op(_arith_itype(first.dtype, Arith.Add), first, *others)
 
 
 def mul(first: AExpr, *others) -> AExpr:
-    return _elementwise_arith_op(_arith_itype(first.dtype, 'Mul'), first, *others)
+    return _elementwise_arith_op(_arith_itype(first.dtype, Arith.Mul), first, *others)
 
 
 def div(num: AExpr, den: AExpr) -> AExpr:
-    return _elementwise_arith_op(_arith_itype(num.dtype, 'Div'), num, den)
+    return _elementwise_arith_op(_arith_itype(num.dtype, Arith.Div), num, den)
 
 
 def sub(min: AExpr, sub: AExpr) -> AExpr:
-    return _elementwise_arith_op(_arith_itype(min.dtype, 'Sub'), min, sub)
+    return _elementwise_arith_op(_arith_itype(min.dtype, Arith.Sub), min, sub)
 
 
 # ========================================
@@ -341,7 +333,7 @@ def w_add(first: WExpr, *others) -> WExpr:
 
 
 def w_sub(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(_arith_itype(first.dtype, 'Sub'), first, *others)
+    return _word_arith_op(_arith_itype(first.dtype, Arith.Sub), first, *others)
 
 
 def w_mul(first: WExpr, *others) -> WExpr:
@@ -349,23 +341,23 @@ def w_mul(first: WExpr, *others) -> WExpr:
 
 
 def w_div(num: WExpr, den: WExpr) -> WExpr:
-    return _word_arith_op(_arith_itype(num.dtype, 'Div'), num, den)
+    return _word_arith_op(_arith_itype(num.dtype, Arith.Div), num, den)
 
 
 def w_mod(num: WExpr, den: WExpr) -> WExpr:
-    return _word_arith_op(_arith_itype(num.dtype, 'Mod'), num, den)
+    return _word_arith_op(_arith_itype(num.dtype, Arith.Mod), num, den)
 
 
 def w_neg(e: WExpr) -> WExpr:
     if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
-    return WExpr(_arith_itype(e.dtype, 'Neg'), e.dtype, e)
+    return WExpr(_arith_itype(e.dtype, Arith.Neg), e.dtype, e)
 
 
 def w_abs(e: WExpr) -> WExpr:
     if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
-    return WExpr(_arith_itype(e.dtype, 'Abs'), e.dtype, e)
+    return WExpr(_arith_itype(e.dtype, Arith.Abs), e.dtype, e)
 
 
 def w_and(first: WExpr, *others) -> WExpr:
@@ -435,14 +427,14 @@ def matmul(lhs: Expr, rhs: Expr):
         if lhs_cols != rhs_cols:
             raise RuntimeError("size mismatch")
         col_dtype = rhs.dtype.reshape([rhs_cols, 1])
-        rhs = type(rhs)(_arith_itype(rhs.dtype, 'Transpose'), col_dtype, rhs)
+        rhs = type(rhs)(_arith_itype(rhs.dtype, Arith.Transpose), col_dtype, rhs)
         rhs_rows, rhs_cols = rhs.shape
 
     # matrix @ matrix: [m, k] @ [k, n] -> [m, n]
     if lhs_cols != rhs_rows:
         raise RuntimeError("size mismatch")
     wtype = lhs.dtype.reshape([lhs_rows, rhs_cols])
-    return type(lhs)(_arith_itype(lhs.dtype, 'MatMul'), wtype, lhs, rhs)
+    return type(lhs)(_arith_itype(lhs.dtype, Arith.MatMul), wtype, lhs, rhs)
 
 
 # ========================================

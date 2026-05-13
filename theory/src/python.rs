@@ -1,4 +1,4 @@
-use crate::{CmpOp, FlowOp, MatrixType, Theory, read_nxt, write_nxt};
+use crate::{Arith, CmpOp, FlowOp, MatrixType, Theory, read_nxt, write_nxt};
 use crate::{bool, bv, float, int, real};
 use std::fmt;
 
@@ -136,6 +136,20 @@ pub enum IType {
     // Symbol referring to uninterpreted constants or functions,
     // whose signature is known in the context, i.e., the current theory
     Uninterpreted(String),
+}
+
+impl IType {
+    /// Create the appropriate theory op for the given `Arith` operation and dtype.
+    /// Returns `Err` if `dtype` is `Bool`, which has no `Arith` operations.
+    pub fn mk(op: Arith, dtype: &Type) -> Result<Self, String> {
+        match dtype {
+            Type::Int(_) => Ok(IType::Int(op.into())),
+            Type::Float(_) => Ok(IType::Float(op.into())),
+            Type::Real(_) => Ok(IType::Real(op.into())),
+            Type::BV32(_) => Ok(IType::BV(op.into())),
+            Type::Bool(_) => Err(format!("Bool does not support Arith::{op:?}")),
+        }
+    }
 }
 
 impl fmt::Display for IType {

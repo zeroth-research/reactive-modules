@@ -9,20 +9,12 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..zrth import Wire, DType, IType, Term, Module
+from ..zrth import Arith, Wire, DType, IType, Term, Module
 
 
-def _arith_itype(dtype, name: str):
-    """Return IType.Int/Float/Real/BV.<name> based on dtype."""
-    if dtype.is_int():
-        return getattr(IType.Int, name)
-    elif dtype.is_float():
-        return getattr(IType.Float, name)
-    elif dtype.is_real():
-        return getattr(IType.Real, name)
-    elif dtype.is_bv():
-        return getattr(IType.BV, name)
-    raise ValueError(f"unsupported dtype for arith op '{name}': {dtype}")
+def _arith_itype(dtype, op):
+    """Return the appropriate theory IType for an Arith op and a dtype."""
+    return IType.mk(op, dtype)
 
 # ---------------------------------------------------------------------------
 # 1. Lark parser init
@@ -271,9 +263,9 @@ _BINOPS: dict[str, dict[str, object]] = {
     "and_expr":   {"&": IType.Bool.And, "and": IType.Bool.And},
     "cmp_expr":   {"=": IType.Cmp.Eq, "!=": IType.Cmp.Ne, "<": IType.Cmp.Lt,
                    "<=": IType.Cmp.Le, ">": IType.Cmp.Gt, ">=": IType.Cmp.Ge},
-    "arith_expr": {"+": lambda d: _arith_itype(d, 'Add'), "-": lambda d: _arith_itype(d, 'Sub')},
-    "mod_expr":   {"mod": lambda d: _arith_itype(d, 'Mod')},
-    "term_expr":  {"*": lambda d: _arith_itype(d, 'Mul'), "/": lambda d: _arith_itype(d, 'Div')},
+    "arith_expr": {"+": lambda d: _arith_itype(d, Arith.Add), "-": lambda d: _arith_itype(d, Arith.Sub)},
+    "mod_expr":   {"mod": lambda d: _arith_itype(d, Arith.Mod)},
+    "term_expr":  {"*": lambda d: _arith_itype(d, Arith.Mul), "/": lambda d: _arith_itype(d, Arith.Div)},
 }
 
 _OP_TOKENS = {"NOT_OP"}
@@ -282,8 +274,8 @@ _NARY_OPS = {
     "ternary": IType.Ite,
     "implies_expr": IType.Bool.Implies,
     "not_expr": IType.Bool.Not,
-    "neg": lambda d: _arith_itype(d, 'Neg'),
-    "abs_call": lambda d: _arith_itype(d, 'Abs'),
+    "neg": lambda d: _arith_itype(d, Arith.Neg),
+    "abs_call": lambda d: _arith_itype(d, Arith.Abs),
 }
 
 _METHODS = {

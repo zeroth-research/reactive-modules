@@ -17,8 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
-from zrth import Wire, DType, Term, IType, Float, Bool
-from zrth.expr import _arith_itype
+from zrth import Arith, Wire, DType, Term, IType, Float, Bool
 
 
 # ---------------------------------------------------------------------------
@@ -1469,10 +1468,10 @@ class MethodVisitor(ast.NodeVisitor):
     """
 
     BINARY_OPS = {
-        ast.Add: lambda d: _arith_itype(d, 'Add'),
-        ast.Sub: lambda d: _arith_itype(d, 'Sub'),
-        ast.Mult: lambda d: _arith_itype(d, 'Mul'),
-        ast.Div: lambda d: _arith_itype(d, 'Div'),
+        ast.Add: lambda d: IType.mk(Arith.Add, d),
+        ast.Sub: lambda d: IType.mk(Arith.Sub, d),
+        ast.Mult: lambda d: IType.mk(Arith.Mul, d),
+        ast.Div: lambda d: IType.mk(Arith.Div, d),
     }
 
     COMPARE_OPS = {
@@ -1928,7 +1927,7 @@ class MethodVisitor(ast.NodeVisitor):
                 )
                 result_dtype = operand_wire.dtype
             result = Wire(result_dtype)
-            self.terms.append(Term(_arith_itype(result_dtype, 'Sub'), [result], [zero_wire, operand_wire]))
+            self.terms.append(Term(IType.mk(Arith.Sub, result_dtype), [result], [zero_wire, operand_wire]))
             return result
         elif op_type == ast.UAdd:
             return self._convert_expr(unaryop.operand, target_dtype=target_dtype)

@@ -34,7 +34,7 @@ pub trait MatrixType: PartialEq {
 // ------------------------------------------------------------
 //  Common operations
 // ------------------------------------------------------------
-#[derive(Clone, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Arith {
     Add,
     Mul,

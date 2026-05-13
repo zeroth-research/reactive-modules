@@ -11,6 +11,31 @@ use theory::python::IType as TheoryIType;
 use theory::python::{NNOp, TensorOp};
 use theory::real::ArithReal;
 use theory::{Arith, CmpOp, FlowOp};
+use crate::types::DType;
+
+// ============================================================================
+// Arith — arithmetic operation selector, usable as `IType.mk(Arith.Add, dtype)`
+// ============================================================================
+
+#[pyclass(name = "Arith")]
+pub struct ArithOp;
+
+#[pymethods]
+impl ArithOp {
+    #[classattr] fn Add()       -> ArithOpVal { ArithOpVal(Arith::Add) }
+    #[classattr] fn Sub()       -> ArithOpVal { ArithOpVal(Arith::Sub) }
+    #[classattr] fn Mul()       -> ArithOpVal { ArithOpVal(Arith::Mul) }
+    #[classattr] fn Div()       -> ArithOpVal { ArithOpVal(Arith::Div) }
+    #[classattr] fn Mod()       -> ArithOpVal { ArithOpVal(Arith::Mod) }
+    #[classattr] fn Neg()       -> ArithOpVal { ArithOpVal(Arith::Neg) }
+    #[classattr] fn Abs()       -> ArithOpVal { ArithOpVal(Arith::Abs) }
+    #[classattr] fn MatMul()    -> ArithOpVal { ArithOpVal(Arith::MatMul) }
+    #[classattr] fn Transpose() -> ArithOpVal { ArithOpVal(Arith::Transpose) }
+}
+
+#[pyclass(frozen, name = "ArithVal")]
+#[derive(Clone)]
+pub struct ArithOpVal(pub(crate) Arith);
 
 // ============================================================================
 // IType — hierarchical concrete op wrapper
@@ -96,6 +121,15 @@ impl IType {
     #[classattr]
     fn ToSigned() -> Self {
         IType(TheoryIType::BV(BVTheory::ToSigned()))
+    }
+
+    /// Create the appropriate theory op for a given `Arith` op and `DType`.
+    /// E.g. `IType.mk(Arith.Add, DType.Float(3, 4))` → `IType.Float.Add`
+    #[staticmethod]
+    fn mk(op: &ArithOpVal, dtype: &DType) -> PyResult<Self> {
+        TheoryIType::mk(op.0, &dtype.0)
+            .map(IType)
+            .map_err(PyValueError::new_err)
     }
 
     // Static constructor helpers

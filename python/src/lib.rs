@@ -11,7 +11,7 @@ mod types;
 mod wire;
 
 use crate::atom::Atom;
-use crate::itype::{BVIType, BoolIType, CmpIType, FlowIType, FloatIType, IntIType, IType, NNIType, RealIType, TensorIType};
+use crate::itype::{ArithOp, ArithOpVal, BVIType, BoolIType, CmpIType, FlowIType, FloatIType, IntIType, IType, NNIType, RealIType, TensorIType};
 use crate::module::Module;
 use crate::term::Term;
 use crate::types::DType;
@@ -30,6 +30,8 @@ fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<TensorIType>()?;
     m.add_class::<FlowIType>()?;
     m.add_class::<BVIType>()?;
+    m.add_class::<ArithOp>()?;
+    m.add_class::<ArithOpVal>()?;
     m.add_class::<DType>()?;
     m.add_class::<Wire>()?;
     m.add_class::<Term>()?;
