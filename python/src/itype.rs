@@ -277,23 +277,23 @@ pub struct IntIType;
 #[pymethods]
 impl IntIType {
     #[classattr]
-    fn Add() -> IType { IType(TheoryIType::Int(ArithInt::Op(Arith::Add))) }
+    fn Add() -> IType { IType(TheoryIType::Int(Arith::Add.into())) }
     #[classattr]
-    fn Sub() -> IType { IType(TheoryIType::Int(ArithInt::Op(Arith::Sub))) }
+    fn Sub() -> IType { IType(TheoryIType::Int(Arith::Sub.into())) }
     #[classattr]
-    fn Mul() -> IType { IType(TheoryIType::Int(ArithInt::Op(Arith::Mul))) }
+    fn Mul() -> IType { IType(TheoryIType::Int(Arith::Mul.into())) }
     #[classattr]
-    fn Div() -> IType { IType(TheoryIType::Int(ArithInt::Op(Arith::Div))) }
+    fn Div() -> IType { IType(TheoryIType::Int(Arith::Div.into())) }
     #[classattr]
-    fn Mod() -> IType { IType(TheoryIType::Int(ArithInt::Op(Arith::Mod))) }
+    fn Mod() -> IType { IType(TheoryIType::Int(Arith::Mod.into())) }
     #[classattr]
-    fn Neg() -> IType { IType(TheoryIType::Int(ArithInt::Op(Arith::Neg))) }
+    fn Neg() -> IType { IType(TheoryIType::Int(Arith::Neg.into())) }
     #[classattr]
-    fn Abs() -> IType { IType(TheoryIType::Int(ArithInt::Op(Arith::Abs))) }
+    fn Abs() -> IType { IType(TheoryIType::Int(Arith::Abs.into())) }
     #[classattr]
-    fn MatMul() -> IType { IType(TheoryIType::Int(ArithInt::Op(Arith::MatMul))) }
+    fn MatMul() -> IType { IType(TheoryIType::Int(Arith::MatMul.into())) }
     #[classattr]
-    fn Transpose() -> IType { IType(TheoryIType::Int(ArithInt::Op(Arith::Transpose))) }
+    fn Transpose() -> IType { IType(TheoryIType::Int(Arith::Transpose.into())) }
     #[staticmethod]
     fn Const(data: Vec<Vec<i64>>) -> IType {
         IType(TheoryIType::Int(ArithInt::Const(data)))
@@ -308,23 +308,23 @@ pub struct FloatIType;
 #[pymethods]
 impl FloatIType {
     #[classattr]
-    fn Add() -> IType { IType(TheoryIType::Float(ArithFloat::Op(Arith::Add))) }
+    fn Add() -> IType { IType(TheoryIType::Float(Arith::Add.into())) }
     #[classattr]
-    fn Sub() -> IType { IType(TheoryIType::Float(ArithFloat::Op(Arith::Sub))) }
+    fn Sub() -> IType { IType(TheoryIType::Float(Arith::Sub.into())) }
     #[classattr]
-    fn Mul() -> IType { IType(TheoryIType::Float(ArithFloat::Op(Arith::Mul))) }
+    fn Mul() -> IType { IType(TheoryIType::Float(Arith::Mul.into())) }
     #[classattr]
-    fn Div() -> IType { IType(TheoryIType::Float(ArithFloat::Op(Arith::Div))) }
+    fn Div() -> IType { IType(TheoryIType::Float(Arith::Div.into())) }
     #[classattr]
-    fn Mod() -> IType { IType(TheoryIType::Float(ArithFloat::Op(Arith::Mod))) }
+    fn Mod() -> IType { IType(TheoryIType::Float(Arith::Mod.into())) }
     #[classattr]
-    fn Neg() -> IType { IType(TheoryIType::Float(ArithFloat::Op(Arith::Neg))) }
+    fn Neg() -> IType { IType(TheoryIType::Float(Arith::Neg.into())) }
     #[classattr]
-    fn Abs() -> IType { IType(TheoryIType::Float(ArithFloat::Op(Arith::Abs))) }
+    fn Abs() -> IType { IType(TheoryIType::Float(Arith::Abs.into())) }
     #[classattr]
-    fn MatMul() -> IType { IType(TheoryIType::Float(ArithFloat::Op(Arith::MatMul))) }
+    fn MatMul() -> IType { IType(TheoryIType::Float(Arith::MatMul.into())) }
     #[classattr]
-    fn Transpose() -> IType { IType(TheoryIType::Float(ArithFloat::Op(Arith::Transpose))) }
+    fn Transpose() -> IType { IType(TheoryIType::Float(Arith::Transpose.into())) }
     #[staticmethod]
     fn Const(data: Vec<Vec<f64>>) -> IType {
         IType(TheoryIType::Float(ArithFloat::Const(data)))
@@ -339,23 +339,23 @@ pub struct RealIType;
 #[pymethods]
 impl RealIType {
     #[classattr]
-    fn Add() -> IType { IType(TheoryIType::Real(ArithReal::Arith(Arith::Add))) }
+    fn Add() -> IType { IType(TheoryIType::Real(Arith::Add.into())) }
     #[classattr]
-    fn Sub() -> IType { IType(TheoryIType::Real(ArithReal::Arith(Arith::Sub))) }
+    fn Sub() -> IType { IType(TheoryIType::Real(Arith::Sub.into())) }
     #[classattr]
-    fn Mul() -> IType { IType(TheoryIType::Real(ArithReal::Arith(Arith::Mul))) }
+    fn Mul() -> IType { IType(TheoryIType::Real(Arith::Mul.into())) }
     #[classattr]
-    fn Div() -> IType { IType(TheoryIType::Real(ArithReal::Arith(Arith::Div))) }
+    fn Div() -> IType { IType(TheoryIType::Real(Arith::Div.into())) }
     #[classattr]
-    fn Mod() -> IType { IType(TheoryIType::Real(ArithReal::Arith(Arith::Mod))) }
+    fn Mod() -> IType { IType(TheoryIType::Real(Arith::Mod.into())) }
     #[classattr]
-    fn Neg() -> IType { IType(TheoryIType::Real(ArithReal::Arith(Arith::Neg))) }
+    fn Neg() -> IType { IType(TheoryIType::Real(Arith::Neg.into())) }
     #[classattr]
-    fn Abs() -> IType { IType(TheoryIType::Real(ArithReal::Arith(Arith::Abs))) }
+    fn Abs() -> IType { IType(TheoryIType::Real(Arith::Abs.into())) }
     #[classattr]
-    fn MatMul() -> IType { IType(TheoryIType::Real(ArithReal::Arith(Arith::MatMul))) }
+    fn MatMul() -> IType { IType(TheoryIType::Real(Arith::MatMul.into())) }
     #[classattr]
-    fn Transpose() -> IType { IType(TheoryIType::Real(ArithReal::Arith(Arith::Transpose))) }
+    fn Transpose() -> IType { IType(TheoryIType::Real(Arith::Transpose.into())) }
     #[classattr]
     fn Sin() -> IType { IType(TheoryIType::Real(ArithReal::Sin)) }
     #[classattr]
@@ -478,19 +478,19 @@ pub struct BVIType;
 #[pymethods]
 impl BVIType {
     #[classattr]
-    fn Add() -> IType { IType(TheoryIType::BV(BVTheory::Arith(Arith::Add))) }
+    fn Add() -> IType { IType(TheoryIType::BV(Arith::Add.into())) }
     #[classattr]
-    fn Sub() -> IType { IType(TheoryIType::BV(BVTheory::Arith(Arith::Sub))) }
+    fn Sub() -> IType { IType(TheoryIType::BV(Arith::Sub.into())) }
     #[classattr]
-    fn Mul() -> IType { IType(TheoryIType::BV(BVTheory::Arith(Arith::Mul))) }
+    fn Mul() -> IType { IType(TheoryIType::BV(Arith::Mul.into())) }
     #[classattr]
-    fn Div() -> IType { IType(TheoryIType::BV(BVTheory::Arith(Arith::Div))) }
+    fn Div() -> IType { IType(TheoryIType::BV(Arith::Div.into())) }
     #[classattr]
-    fn Mod() -> IType { IType(TheoryIType::BV(BVTheory::Arith(Arith::Mod))) }
+    fn Mod() -> IType { IType(TheoryIType::BV(Arith::Mod.into())) }
     #[classattr]
-    fn MatMul() -> IType { IType(TheoryIType::BV(BVTheory::Arith(Arith::MatMul))) }
+    fn MatMul() -> IType { IType(TheoryIType::BV(Arith::MatMul.into())) }
     #[classattr]
-    fn Transpose() -> IType { IType(TheoryIType::BV(BVTheory::Arith(Arith::Transpose))) }
+    fn Transpose() -> IType { IType(TheoryIType::BV(Arith::Transpose.into())) }
     #[classattr]
     fn And() -> IType { IType(TheoryIType::BV(BVTheory::And)) }
     #[classattr]

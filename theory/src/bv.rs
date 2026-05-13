@@ -130,6 +130,12 @@ fn check_init_dims(cm: &[Vec<usize>], bw: usize, i: usize, j: usize) -> Result<(
     Ok(())
 }
 
+impl From<Arith> for BVTheory {
+    fn from(a: Arith) -> Self {
+        BVTheory::Arith(a)
+    }
+}
+
 impl Theory for BVTheory {
     type DType = BV;
 

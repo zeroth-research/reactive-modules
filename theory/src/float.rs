@@ -98,6 +98,12 @@ pub(crate) fn check_init_dims(cm: &[Vec<f64>], i: usize, j: usize) -> Result<(),
     Ok(())
 }
 
+impl From<Arith> for ArithFloat {
+    fn from(a: Arith) -> Self {
+        ArithFloat::Op(a)
+    }
+}
+
 impl Theory for ArithFloat {
     type DType = Float;
 

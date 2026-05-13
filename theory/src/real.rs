@@ -103,6 +103,12 @@ pub(crate) fn check_init_dims(cm: &[Vec<f64>], i: usize, j: usize) -> Result<(),
     Ok(())
 }
 
+impl From<Arith> for ArithReal {
+    fn from(a: Arith) -> Self {
+        ArithReal::Arith(a)
+    }
+}
+
 impl Theory for ArithReal {
     type DType = Real;
 

@@ -91,6 +91,12 @@ pub(crate) fn check_init_dims(cm: &[Vec<i64>], i: usize, j: usize) -> Result<(),
     Ok(())
 }
 
+impl From<Arith> for ArithInt {
+    fn from(a: Arith) -> Self {
+        ArithInt::Op(a)
+    }
+}
+
 impl Theory for ArithInt {
     type DType = Int;
 
