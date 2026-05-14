@@ -1,6 +1,7 @@
 use crate::pytensor::PyTensor;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use std::collections::HashMap;
 use std::fmt;
 use theory::Theory;
 
@@ -268,6 +269,101 @@ impl TryFrom<&DType> for theory::lia::Type {
             _ => Err(()),
         }
     }
+}
+
+fn remap_term(
+    term: &base::Term<IType>,
+    map: &HashMap<usize, base::Wire<theory::lia::Type>>,
+) -> Result<base::Term<theory::lia::LIA>, ()> {
+    let new_itype = theory::lia::LIA::try_from(term.itype())?;
+    let new_write_wires: Vec<base::Wire<theory::lia::Type>> = term
+        .write()
+        .wires()
+        .map(|w| map.get(&w.id()).cloned().ok_or(()))
+        .collect::<Result<_, ()>>()?;
+    let new_read_wires: Vec<base::Wire<theory::lia::Type>> = term
+        .read()
+        .wires()
+        .map(|w| map.get(&w.id()).cloned().ok_or(()))
+        .collect::<Result<_, ()>>()?;
+    let new_write = base::Interface::unique(new_write_wires).map_err(|_| ())?;
+    let new_read = base::Interface::sequence(new_read_wires).map_err(|_| ())?;
+    Ok(base::Term::new_unchecked(new_itype, new_write, new_read))
+}
+
+fn remap_atom(
+    atom: &base::Atom<IType>,
+    map: &HashMap<usize, base::Wire<theory::lia::Type>>,
+) -> Result<base::Atom<theory::lia::LIA>, ()> {
+    let new_latched: Vec<base::Wire<theory::lia::Type>> = atom
+        .read()
+        .wires()
+        .map(|w| map.get(&w.id()).cloned().ok_or(()))
+        .collect::<Result<_, ()>>()?;
+    let new_next: Vec<base::Wire<theory::lia::Type>> = atom
+        .ctrl()
+        .wires()
+        .chain(atom.wait().wires())
+        .map(|w| map.get(&w.id()).cloned().ok_or(()))
+        .collect::<Result<_, ()>>()?;
+    let new_init: Vec<base::Term<theory::lia::LIA>> = atom
+        .init()
+        .iter()
+        .map(|t| remap_term(t, map))
+        .collect::<Result<_, _>>()?;
+    let new_update: Vec<base::Term<theory::lia::LIA>> = atom
+        .update()
+        .iter()
+        .map(|t| remap_term(t, map))
+        .collect::<Result<_, _>>()?;
+    base::Atom::sequential(new_latched.iter(), new_next.iter(), new_init, new_update)
+        .map_err(|_| ())
+}
+
+pub fn downcast_module_to_lia(
+    module: &base::Module<IType>,
+) -> Result<base::Module<theory::lia::LIA>, ()> {
+    let mut map: HashMap<usize, base::Wire<theory::lia::Type>> = HashMap::new();
+    for wire in module
+        .extl()
+        .wires()
+        .chain(module.intf().wires())
+        .chain(module.prvt().wires())
+        .chain(module.temp())
+    {
+        let new_dtype = theory::lia::Type::try_from(wire.dtype())?;
+        map.insert(wire.id(), base::Wire::new(new_dtype));
+    }
+
+    let obs: Vec<[base::Wire<theory::lia::Type>; 2]> = module
+        .obs()
+        .iter()
+        .map(|[ltc, nxt]| -> Result<_, ()> {
+            Ok([
+                map.get(&ltc.id()).cloned().ok_or(())?,
+                map.get(&nxt.id()).cloned().ok_or(())?,
+            ])
+        })
+        .collect::<Result<_, ()>>()?;
+
+    let prvt: Vec<[base::Wire<theory::lia::Type>; 2]> = module
+        .prvt()
+        .iter()
+        .map(|[ltc, nxt]| -> Result<_, ()> {
+            Ok([
+                map.get(&ltc.id()).cloned().ok_or(())?,
+                map.get(&nxt.id()).cloned().ok_or(())?,
+            ])
+        })
+        .collect::<Result<_, ()>>()?;
+
+    let atoms: Vec<base::Atom<theory::lia::LIA>> = module
+        .atoms()
+        .iter()
+        .map(|a| remap_atom(a, &map))
+        .collect::<Result<_, _>>()?;
+
+    base::Module::partially_observable(obs, prvt, atoms).map_err(|_| ())
 }
 
 impl TryFrom<&IType> for theory::lia::LIA {
