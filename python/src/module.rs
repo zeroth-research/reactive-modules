@@ -174,6 +174,20 @@ impl Module {
         Ok(ModuleAtoms { module })
     }
 
+    fn try_to(&self, theory: &str) -> PyResult<()> {
+        match theory {
+            "lia" | "LIA" => {
+                let lia_module = crate::types::downcast_module_to_lia(&self.base)
+                    .map_err(|_| PyException::new_err("module cannot be converted to LIA"))?;
+                println!("{lia_module}");
+                Ok(())
+            }
+            _ => Err(PyException::new_err(format!(
+                "unknown theory '{theory}'; supported: 'lia'"
+            ))),
+        }
+    }
+
     fn closed(&self) -> bool {
         self.base.is_closed()
     }

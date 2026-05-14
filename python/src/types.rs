@@ -268,59 +268,68 @@ impl TryFrom<&DType> for theory::lia::Type {
     }
 }
 
-fn remap_term(
+fn remap_term<U, E>(
     term: &base::Term<IType>,
-    map: &HashMap<usize, base::Wire<theory::lia::Type>>,
-) -> Result<base::Term<theory::lia::LIA>, ()> {
-    let new_itype = theory::lia::LIA::try_from(term.itype())?;
-    let new_write_wires: Vec<base::Wire<theory::lia::Type>> = term
-        .write()
-        .wires()
-        .map(|w| map.get(&w.id()).cloned().ok_or(()))
-        .collect::<Result<_, ()>>()?;
-    let new_read_wires: Vec<base::Wire<theory::lia::Type>> = term
-        .read()
-        .wires()
-        .map(|w| map.get(&w.id()).cloned().ok_or(()))
-        .collect::<Result<_, ()>>()?;
-    let new_write = base::Interface::unique(new_write_wires).map_err(|_| ())?;
-    let new_read = base::Interface::sequence(new_read_wires).map_err(|_| ())?;
+    f_itype: &impl Fn(&IType) -> Result<U, E>,
+    map: &HashMap<usize, base::Wire<U::DType>>,
+) -> Result<base::Term<U>, E>
+where
+    U: theory::Theory,
+    U::DType: Eq + Clone,
+{
+    let new_itype = f_itype(term.itype())?;
+    let new_write: Vec<base::Wire<U::DType>> =
+        term.write().wires().map(|w| map[&w.id()].clone()).collect();
+    let new_read: Vec<base::Wire<U::DType>> =
+        term.read().wires().map(|w| map[&w.id()].clone()).collect();
+    let new_write = base::Interface::unique(new_write).expect("remapped write is unique");
+    let new_read = base::Interface::sequence(new_read).expect("remapped read is well-typed");
     Ok(base::Term::new_unchecked(new_itype, new_write, new_read))
 }
 
-fn remap_atom(
+fn remap_atom<U, E>(
     atom: &base::Atom<IType>,
-    map: &HashMap<usize, base::Wire<theory::lia::Type>>,
-) -> Result<base::Atom<theory::lia::LIA>, ()> {
-    let new_latched: Vec<base::Wire<theory::lia::Type>> = atom
-        .read()
-        .wires()
-        .map(|w| map.get(&w.id()).cloned().ok_or(()))
-        .collect::<Result<_, ()>>()?;
-    let new_next: Vec<base::Wire<theory::lia::Type>> = atom
+    f_itype: &impl Fn(&IType) -> Result<U, E>,
+    map: &HashMap<usize, base::Wire<U::DType>>,
+) -> Result<base::Atom<U>, E>
+where
+    U: theory::Theory,
+    U::DType: Eq + Clone,
+{
+    let new_latched: Vec<base::Wire<U::DType>> =
+        atom.read().wires().map(|w| map[&w.id()].clone()).collect();
+    let new_next: Vec<base::Wire<U::DType>> = atom
         .ctrl()
         .wires()
         .chain(atom.wait().wires())
-        .map(|w| map.get(&w.id()).cloned().ok_or(()))
-        .collect::<Result<_, ()>>()?;
-    let new_init: Vec<base::Term<theory::lia::LIA>> = atom
+        .map(|w| map[&w.id()].clone())
+        .collect();
+    let new_init: Vec<base::Term<U>> = atom
         .init()
         .iter()
-        .map(|t| remap_term(t, map))
+        .map(|t| remap_term(t, f_itype, map))
         .collect::<Result<_, _>>()?;
-    let new_update: Vec<base::Term<theory::lia::LIA>> = atom
+    let new_update: Vec<base::Term<U>> = atom
         .update()
         .iter()
-        .map(|t| remap_term(t, map))
+        .map(|t| remap_term(t, f_itype, map))
         .collect::<Result<_, _>>()?;
-    base::Atom::sequential(new_latched.iter(), new_next.iter(), new_init, new_update)
-        .map_err(|_| ())
+    let new_atom =
+        base::Atom::sequential(new_latched.iter(), new_next.iter(), new_init, new_update)
+            .expect("atom reconstruction invariants hold for a valid source module");
+    Ok(new_atom)
 }
 
-pub fn downcast_module_to_lia(
+pub fn downcast_module<U, E>(
     module: &base::Module<IType>,
-) -> Result<base::Module<theory::lia::LIA>, ()> {
-    let mut map: HashMap<usize, base::Wire<theory::lia::Type>> = HashMap::new();
+    f_dtype: impl Fn(&DType) -> Result<U::DType, E>,
+    f_itype: impl Fn(&IType) -> Result<U, E>,
+) -> Result<base::Module<U>, E>
+where
+    U: theory::Theory,
+    U::DType: Eq + Clone + std::fmt::Debug,
+{
+    let mut map: HashMap<usize, base::Wire<U::DType>> = HashMap::new();
     for wire in module
         .extl()
         .wires()
@@ -328,39 +337,93 @@ pub fn downcast_module_to_lia(
         .chain(module.prvt().wires())
         .chain(module.temp())
     {
-        let new_dtype = theory::lia::Type::try_from(wire.dtype())?;
+        let new_dtype = f_dtype(wire.dtype())?;
         map.insert(wire.id(), base::Wire::new(new_dtype));
     }
 
-    let obs: Vec<[base::Wire<theory::lia::Type>; 2]> = module
+    let obs: Vec<[base::Wire<U::DType>; 2]> = module
         .obs()
         .iter()
-        .map(|[ltc, nxt]| -> Result<_, ()> {
-            Ok([
-                map.get(&ltc.id()).cloned().ok_or(())?,
-                map.get(&nxt.id()).cloned().ok_or(())?,
-            ])
-        })
-        .collect::<Result<_, ()>>()?;
+        .map(|[ltc, nxt]| [map[&ltc.id()].clone(), map[&nxt.id()].clone()])
+        .collect();
 
-    let prvt: Vec<[base::Wire<theory::lia::Type>; 2]> = module
+    let prvt: Vec<[base::Wire<U::DType>; 2]> = module
         .prvt()
         .iter()
-        .map(|[ltc, nxt]| -> Result<_, ()> {
-            Ok([
-                map.get(&ltc.id()).cloned().ok_or(())?,
-                map.get(&nxt.id()).cloned().ok_or(())?,
-            ])
-        })
-        .collect::<Result<_, ()>>()?;
+        .map(|[ltc, nxt]| [map[&ltc.id()].clone(), map[&nxt.id()].clone()])
+        .collect();
 
-    let atoms: Vec<base::Atom<theory::lia::LIA>> = module
+    let atoms: Vec<base::Atom<U>> = module
         .atoms()
         .iter()
-        .map(|a| remap_atom(a, &map))
+        .map(|a| remap_atom(a, &f_itype, &map))
         .collect::<Result<_, _>>()?;
 
-    base::Module::partially_observable(obs, prvt, atoms).map_err(|_| ())
+    let new_module = base::Module::partially_observable(obs, prvt, atoms)
+        .expect("module reconstruction invariants hold for a valid source module");
+    Ok(new_module)
+}
+
+pub fn downcast_module_to_lia(
+    module: &base::Module<IType>,
+) -> Result<base::Module<theory::lia::LIA>, ()> {
+    downcast_module(
+        module,
+        |dtype| theory::lia::Type::try_from(dtype),
+        |itype| theory::lia::LIA::try_from(itype),
+    )
+}
+
+pub fn downcast_module_to_rla(
+    module: &base::Module<IType>,
+) -> Result<base::Module<theory::rla::RLA>, ()> {
+    downcast_module(
+        module,
+        |dtype| theory::rla::Type::try_from(dtype),
+        |itype| theory::rla::RLA::try_from(itype),
+    )
+}
+
+impl TryFrom<&DType> for theory::rla::Type {
+    type Error = ();
+
+    fn try_from(d: &DType) -> Result<Self, ()> {
+        match d {
+            DType::Int(shape) if shape.len() == 2 => Ok(theory::rla::Type::Int(shape[0], shape[1])),
+            DType::Bool(shape) if shape.len() == 2 => {
+                Ok(theory::rla::Type::Bool(shape[0], shape[1]))
+            }
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<&IType> for theory::rla::RLA {
+    type Error = ();
+
+    fn try_from(op: &IType) -> Result<Self, ()> {
+        use theory::rla::RLA;
+        Ok(match op {
+            IType::Add() => RLA::Add,
+            IType::Eq() => RLA::Eq,
+            IType::Neq() => RLA::Ne,
+            IType::Lt() => RLA::Lt,
+            IType::Le() => RLA::Le,
+            IType::Gt() => RLA::Gt,
+            IType::Ge() => RLA::Ge,
+            IType::And() => RLA::And,
+            IType::Or() => RLA::Or,
+            IType::Not() => RLA::Not,
+            IType::Xor() => RLA::Xor,
+            IType::Ite() => RLA::Ite,
+            IType::Id() => RLA::Id,
+            IType::Argmax() => RLA::Argmax,
+            IType::ReLU() => RLA::ReLU,
+            IType::ConstInt(v) => RLA::ConstInt(vec![vec![*v]]),
+            IType::ConstBool(b) => RLA::ConstBool(vec![vec![*b]]),
+            _ => return Err(()),
+        })
+    }
 }
 
 impl TryFrom<&IType> for theory::lia::LIA {
