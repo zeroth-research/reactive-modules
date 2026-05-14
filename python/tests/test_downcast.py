@@ -93,6 +93,63 @@ def test_try_to_lia_combinatorial(capfd):
 # Conversion fails: unknown theory
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# RLA: conversion succeeds
+# ---------------------------------------------------------------------------
+
+def test_try_to_rla_lowercase(capfd):
+    m = _simple_bool_module()
+    m.try_to("rla")
+    out = capfd.readouterr().out
+    assert "module" in out
+
+
+def test_try_to_rla_uppercase(capfd):
+    m = _simple_bool_module()
+    m.try_to("RLA")
+    capfd.readouterr()
+
+
+def test_try_to_rla_int_wire(capfd):
+    m = _simple_int_module()
+    m.try_to("rla")
+    capfd.readouterr()
+
+
+def test_try_to_rla_logic_ops(capfd):
+    m = _logic_module()
+    m.try_to("rla")
+    capfd.readouterr()
+
+
+# ---------------------------------------------------------------------------
+# RLA: conversion fails: incompatible dtype or instruction
+# ---------------------------------------------------------------------------
+
+def test_try_to_rla_1d_dtype_fails():
+    from zrth import Bool
+    x = (Wire(Bool(3)), Wire(Bool(3)))
+    init = [Term(it.ConstBool(True), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("rla")
+
+
+def test_try_to_rla_sub_fails():
+    x = _int_wire()
+    y = _int_wire()
+    init = [Term(it.ConstInt(1), [x[1]]), Term(it.ConstInt(2), [y[1]])]
+    update = [Term(it.Sub(), [x[1]], [x[0], y[0]]), Term(it.Id(), [y[1]], [y[0]])]
+    m = Module.sequential(init, update, obs=[x, y])
+    with pytest.raises(Exception):
+        m.try_to("rla")
+
+
+# ---------------------------------------------------------------------------
+# Unknown theory
+# ---------------------------------------------------------------------------
+
 def test_try_to_unknown_theory():
     m = _simple_bool_module()
     with pytest.raises(Exception, match="unknown theory"):
