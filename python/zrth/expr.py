@@ -147,6 +147,18 @@ class WExpr(Expr):
         return w_neq(self, other)
 
 
+def _make_expr(itype: IType, wtype: DType, *args):
+    match wtype:
+        case DType.Bool(_):
+            return BExpr(itype, wtype, *args)
+        case DType.Real(_) | DType.Int(_) | DType.Float(_):
+            return AExpr(itype, wtype, *args)
+        case DType.UWord(_) | DType.SWord(_):
+            return WExpr(itype, wtype, *args)
+        case _:
+            raise NotImplementedError(f"unsupported dtype: {wtype}")
+
+
 def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
     if not isinstance(first, Expr):
         raise Exception("type coercion unsupported")
@@ -159,17 +171,11 @@ def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
         if rtype != arg.dtype:
             raise Exception("dtype mismatch")
 
-    match wtype:
-        case DType.Bool(_):
-            return BExpr(itype, wtype, first, *others)
-        case DType.Real(_):
-            return AExpr(itype, wtype, first, *others)
-        case DType.Int(_):
-            return AExpr(itype, wtype, first, *others)
-        case DType.UWord(_) | DType.SWord(_):
-            return WExpr(itype, wtype, first, *others)
-        case _:
-            raise NotImplementedError
+    # Fold left so binary ops get exactly two reads each
+    acc = first
+    for arg in others:
+        acc = _make_expr(itype, wtype, acc, arg)
+    return acc
 
 
 # ========================================
@@ -424,8 +430,7 @@ def Bool(x: bool | str | torch.Tensor, shape=None) -> BExpr:
     if isinstance(x, bool):
         assert shape is None
         dtype = DType.Bool([1])
-        t = torch.Tensor([x])
-        return BExpr(itype=IType.Tensor(t), dtype=dtype)
+        return BExpr(itype=IType.Tensor(torch.tensor([x])), dtype=dtype)
     elif isinstance(x, torch.Tensor):
         assert shape is None or shape == x.shape
         assert x.dtype == torch.bool

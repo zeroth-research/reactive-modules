@@ -50,7 +50,7 @@ def test_predicate():
 def test_ite():
     a = expr.Real(tensor([2.1, 3.1]))
     b = expr.Real("b", shape=(2,))
-    c = expr.Real("c")
+    c = expr.Bool("c")
 
     d = expr.ite(c, a, b)
 
