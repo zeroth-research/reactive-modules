@@ -14,7 +14,7 @@ from .zrth import (
 
 # Add type aliases to the DType object
 def Bool(*shape):
-    return DType.Bool([*shape])
+    return DType.Bool([*shape] if shape else [1])
 
 
 def Int(*shape):

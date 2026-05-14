@@ -21,7 +21,7 @@ def test_term_new():
     _ = Term.function(it.Tensor(Tensor([3, 4, 6])), [w5], [])
 
     # test `new` ctor
-    Term(it.Lt(), [Wire(Bool())], [w4, w5])
+    Term(it.Lt(), [Wire(Bool(3))], [w4, Wire(Float(3))])
     Term(it.Tensor(Tensor([3, 2, 1])), [Wire(Int(3))])
 
 
