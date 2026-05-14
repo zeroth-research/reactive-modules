@@ -1,8 +1,5 @@
-pub mod bool;
 pub mod bv;
-pub mod int;
 pub mod lia;
-pub mod real;
 
 pub trait Theory {
     // TODO: in torch, from where we took this name (I think), dtype refers to
