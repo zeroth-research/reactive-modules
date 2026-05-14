@@ -1284,10 +1284,9 @@ def _torch_dtype(target_dtype):
     """Map a DType to the corresponding torch dtype. Defaults to float32."""
     if target_dtype is None:
         return torch.float32
-    name = type(target_dtype).__name__  # e.g. "DType_Int", "DType_Bool", "DType_Float"
-    if name.endswith("_Int"):
+    if target_dtype.is_int():
         return torch.long
-    if name.endswith("_Bool"):
+    if target_dtype.is_bool():
         return torch.bool
     return torch.float32
 
@@ -1397,7 +1396,7 @@ def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term], la
     """
     in_features = input_wire.dtype.shape[-1]
 
-    weight_wire = Wire(Float(in_features, out_features))
+    weight_wire = Wire(Float(out_features, in_features))
     bias_wire = Wire(Float(out_features))
     output_wire = Wire(Float(out_features))
 
@@ -1736,7 +1735,7 @@ class MethodVisitor(ast.NodeVisitor):
 
             if method == "argmax":
                 obj_wire = self._convert_expr(obj)
-                result = Wire(Float(1))
+                result = Wire(DType.Int([1]))
                 self.terms.append(Term(IType.Argmax(), [result], [obj_wire]))
                 return result
             elif method == "item":
@@ -2009,11 +2008,11 @@ class MethodVisitor(ast.NodeVisitor):
         value = constant.value
 
         if isinstance(value, bool):
-            tensor_data = torch.tensor([value])
+            tensor_data = torch.tensor([value], dtype=torch.bool)
             dtype = Bool(1)
         elif isinstance(value, (int, float)):
             if target_dtype is None:
-                target_dtype = Float()
+                target_dtype = DType.Int([1]) if isinstance(value, int) else Float()
             tensor_data = torch.tensor([value], dtype=_torch_dtype(target_dtype))
             dtype = target_dtype.reshape([1])
         else:

@@ -81,8 +81,8 @@ def test_interface():
     x = Wire(Bool())
     y = Wire(Bool())
     xn = Wire(Bool())
-    f = Term(it.Id(), [xn], [x, y])
-    f2 = Term(it.Id(), [xn], [x, y])
+    f = Term(it.And(), [xn], [x, y])
+    f2 = Term(it.And(), [xn], [x, y])
 
     w = f.write
     r = f.read

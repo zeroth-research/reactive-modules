@@ -1,4 +1,5 @@
 import pytest
+import torch
 from zrth import Wire, Term, Module, IType as it
 from zrth import Bool, Int, Float
 
@@ -91,7 +92,7 @@ def test_try_to_lia_print(capsys):
 
 def test_try_to_lia_1d_dtype_fails():
     x = (Wire(Bool(3)), Wire(Bool(3)))
-    init = [Term(it.ConstBool(True), [x[1]])]
+    init = [Term(it.Tensor(torch.tensor([True, True, True])), [x[1]])]
     update = [Term(it.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):
@@ -100,7 +101,7 @@ def test_try_to_lia_1d_dtype_fails():
 
 def test_try_to_lia_float_dtype_fails():
     x = (Wire(Float(1, 1)), Wire(Float(1, 1)))
-    init = [Term(it.ConstBool(True), [x[1]])]
+    init = [Term(it.Tensor(torch.tensor([[0.0]])), [x[1]])]
     update = [Term(it.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):
@@ -153,7 +154,7 @@ def test_try_to_rla_print(capsys):
 
 def test_try_to_rla_1d_dtype_fails():
     x = (Wire(Bool(3)), Wire(Bool(3)))
-    init = [Term(it.ConstBool(True), [x[1]])]
+    init = [Term(it.Tensor(torch.tensor([True, True, True])), [x[1]])]
     update = [Term(it.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):

@@ -465,8 +465,8 @@ impl Theory for IType {
                 no_more_rd!();
                 let w0 = wr!(0);
                 no_more_wr!();
-                if matches!(r0, Bool(_) | UWord(_) | SWord(_)) {
-                    return Err(format!("{op}: inputs must be numeric (Int/Float/Real)"));
+                if matches!(r0, Bool(_)) {
+                    return Err(format!("{op}: inputs must be numeric (Int/Float/Real/UWord/SWord)"));
                 }
                 if r0 != r1 {
                     return Err(format!(
@@ -485,8 +485,8 @@ impl Theory for IType {
                 no_more_rd!();
                 let w = wr!(0);
                 no_more_wr!();
-                if matches!(r, Bool(_) | UWord(_) | SWord(_)) {
-                    return Err(format!("{op}: input must be numeric (Int/Float/Real)"));
+                if matches!(r, Bool(_)) {
+                    return Err(format!("{op}: input must be numeric (Int/Float/Real/UWord/SWord)"));
                 }
                 if r != w {
                     return Err(format!(
@@ -805,8 +805,8 @@ impl Theory for IType {
             IType::ConstInt(_) => {
                 no_more_rd!();
                 let w0 = wr!(0); no_more_wr!();
-                if !matches!(w0, Int(s) if is_scalar_shape(s)) {
-                    return Err(format!("{op}: output must be Int scalar, got {w0}"));
+                if !matches!(w0, Int(s) if is_scalar_shape(s)) && !matches!(w0, UWord(_) | SWord(_)) {
+                    return Err(format!("{op}: output must be Int scalar, UWord, or SWord, got {w0}"));
                 }
                 Ok(())
             }

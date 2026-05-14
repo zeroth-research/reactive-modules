@@ -278,6 +278,28 @@ _METHODS = {
 _BUILTIN_MAP = {"bool": IType.ToBool, "word1": IType.ToWord1, "unsigned": IType.ToUnsigned, "signed": IType.ToSigned}
 
 
+def _const_out_dtype(itype):
+    """Return the output DType for a scalar const IType, or None to defer to target."""
+    if type(itype) is type(IType.ConstBool(False)):
+        return DType.Bool([1])
+    if type(itype) is type(IType.ConstInt(0)):
+        return DType.Int([1])
+    return None
+
+
+def _builtin_out_dtype(fn_name: str, in_dtype):
+    """Return the output DType for a BV cast/conversion builtin."""
+    if fn_name == "bool":
+        return DType.Bool([1])
+    if fn_name == "word1":
+        return DType.UWord(1)
+    if fn_name == "unsigned":
+        return DType.UWord(in_dtype.bv_bw())
+    if fn_name == "signed":
+        return DType.SWord(in_dtype.bv_bw())
+    return None
+
+
 class _Lowerer:
     """Recursive expression-to-Term lowerer."""
 
@@ -311,7 +333,8 @@ class _Lowerer:
 
         # Table-driven binary ops
         if name in _BINOPS:
-            return self._lower_binop(tree, _BINOPS[name], target)
+            out_dtype_fn = (lambda d: DType.Bool(d.shape)) if name == "cmp_expr" else (lambda d: d)
+            return self._lower_binop(tree, _BINOPS[name], target, out_dtype_fn=out_dtype_fn)
 
         # Table-driven n-ary ops (unary / implies / ternary)
         if name in _NARY_OPS:
@@ -335,7 +358,7 @@ class _Lowerer:
 
     # --- binary ops ---------------------------------------------------------
 
-    def _lower_binop(self, tree: Tree, op_map: dict, target: Wire | None) -> Wire:
+    def _lower_binop(self, tree: Tree, op_map: dict, target: Wire | None, *, out_dtype_fn=None) -> Wire:
         children = tree.children
         left = self.lower(children[0])
         i = 1
@@ -344,7 +367,8 @@ class _Lowerer:
             rhs = self.lower(children[i + 1])
             itype = op_map[op_tok]()
             out = target if i + 2 >= len(children) else None
-            w = self._fresh(out)
+            out_dtype = out_dtype_fn(left.dtype) if (out_dtype_fn and out is None) else None
+            w = self._fresh(out, out_dtype)
             self.terms.append(Term(itype, [w], [left, rhs]))
             left = w
             i += 2
@@ -354,7 +378,9 @@ class _Lowerer:
 
     def _lower_nary(self, tree: Tree, itype, target: Wire | None) -> Wire:
         inputs = [self.lower(c) for c in tree.children if not (isinstance(c, Token) and c.type in _OP_TOKENS)]
-        w = self._fresh(target)
+        # Ite: output matches then-branch (inputs[1]); others match first input
+        out_dtype = inputs[1].dtype if (type(itype) is type(IType.Ite()) and len(inputs) >= 2) else inputs[0].dtype
+        w = self._fresh(target, out_dtype)
         self.terms.append(Term(itype, [w], inputs))
         return self._enforce(w, target)
 
@@ -367,13 +393,18 @@ class _Lowerer:
 
         if fn_name in _BUILTIN_MAP:
             itype = _BUILTIN_MAP[fn_name]()
+            out_dtype = _builtin_out_dtype(fn_name, arg_w.dtype)
         elif fn_name == "extend":
-            width = int(str(_peel(exprs[1])))
-            itype = IType.Extend(width)
+            extra = int(str(_peel(exprs[1])))
+            in_bw = arg_w.dtype.bv_bw()
+            in_signed = arg_w.dtype.bv_signed()
+            out_bw = in_bw + extra
+            itype = IType.Extend(out_bw)
+            out_dtype = DType.SWord(out_bw) if in_signed else DType.UWord(out_bw)
         else:
             raise ValueError(f"unknown builtin: {fn_name}")
 
-        w = self._fresh(target)
+        w = self._fresh(target, out_dtype)
         self.terms.append(Term(itype, [w], [arg_w]))
         return self._enforce(w, target)
 
@@ -392,7 +423,7 @@ class _Lowerer:
         cond = self.lower(cond_tree)
         then_w = self.lower(val_tree)
         else_w = self._lower_case_rec(branches, idx + 1, None)
-        w = self._fresh(target)
+        w = self._fresh(target, then_w.dtype)
         self.terms.append(Term(IType.Ite(), [w], [cond, then_w, else_w]))
         return self._enforce(w, target)
 
@@ -453,13 +484,14 @@ class _Lowerer:
 
     # --- helpers ------------------------------------------------------------
 
-    def _fresh(self, target: Wire | None) -> Wire:
+    def _fresh(self, target: Wire | None, dtype=None) -> Wire:
         if target is not None:
             return target
-        return Wire(DType.Int([1]))
+        return Wire(dtype if dtype is not None else DType.Int([1]))
 
     def _emit_const(self, itype, target: Wire | None) -> Wire:
-        w = self._fresh(target)
+        out_dtype = _const_out_dtype(itype)
+        w = self._fresh(target, out_dtype)
         self.terms.append(Term(itype, [w]))
         return self._enforce(w, target)
 
@@ -473,7 +505,8 @@ class _Lowerer:
         if len(tree.children) > idx and isinstance(tree.children[idx], Tree) and tree.children[idx].data == "bit_select":
             bs = tree.children[idx]
             high, low = int(str(bs.children[0])), int(str(bs.children[1]))
-            w = self._fresh(target)
+            out_dtype = DType.UWord(high - low + 1)
+            w = self._fresh(target, out_dtype)
             self.terms.append(Term(IType.BitSelect(high, low), [w], [base_w]))
             return self._enforce(w, target)
         return self._enforce(base_w, target)
@@ -508,7 +541,12 @@ def _build_module(
         if init_expr is not None:
             init_low.lower(init_expr, next_w)
         else:
-            default = IType.ConstBool(False) if isinstance(dtype, DType.Bool) else IType.ConstInt(0)
+            if isinstance(dtype, DType.Bool):
+                default = IType.ConstBool(False)
+            elif isinstance(dtype, (DType.UWord, DType.SWord)):
+                default = IType.ConstInt(0)
+            else:
+                default = IType.ConstInt(0)
             init_low.terms.append(Term(default, [next_w]))
 
         # --- UPDATE ---

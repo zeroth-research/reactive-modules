@@ -8,7 +8,7 @@ Int = DType.Int
 
 
 def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result: list[Wire]):
-    t = Term(IType.Id(), list(write.values()) + list(result), list(read.values()))
+    t = Term(IType.Uninterpreted("method"), list(write.values()) + list(result), list(read.values()))
     return [t]
 
 
