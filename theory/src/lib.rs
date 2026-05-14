@@ -1,5 +1,6 @@
 pub mod bv;
 pub mod lia;
+pub mod rla;
 
 pub trait Theory {
     // TODO: in torch, from where we took this name (I think), dtype refers to

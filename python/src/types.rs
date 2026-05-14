@@ -254,3 +254,43 @@ impl Theory for IType {
         Ok(())
     }
 }
+
+impl TryFrom<&DType> for theory::lia::Type {
+    type Error = ();
+
+    fn try_from(d: &DType) -> Result<Self, ()> {
+        match d {
+            DType::Int(shape) if shape.len() == 2 => Ok(theory::lia::Type::Int(shape[0], shape[1])),
+            DType::Bool(shape) if shape.len() == 2 => Ok(theory::lia::Type::Bool(shape[0], shape[1])),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<&IType> for theory::lia::LIA {
+    type Error = ();
+
+    fn try_from(op: &IType) -> Result<Self, ()> {
+        use theory::lia::LIA;
+        Ok(match op {
+            IType::Add() => LIA::Add,
+            IType::Eq() => LIA::Eq,
+            IType::Neq() => LIA::Ne,
+            IType::Lt() => LIA::Lt,
+            IType::Le() => LIA::Le,
+            IType::Gt() => LIA::Gt,
+            IType::Ge() => LIA::Ge,
+            IType::And() => LIA::And,
+            IType::Or() => LIA::Or,
+            IType::Not() => LIA::Not,
+            IType::Xor() => LIA::Xor,
+            IType::Ite() => LIA::Ite,
+            IType::Id() => LIA::Id,
+            IType::Argmax() => LIA::Argmax,
+            IType::ReLU() => LIA::ReLU,
+            IType::ConstInt(v) => LIA::ConstInt(vec![vec![*v]]),
+            IType::ConstBool(b) => LIA::ConstBool(vec![vec![*b]]),
+            _ => return Err(()),
+        })
+    }
+}
