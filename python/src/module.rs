@@ -1,6 +1,7 @@
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
+use pyo3::{Py, PyObject, Python};
 
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
@@ -174,19 +175,17 @@ impl Module {
         Ok(ModuleAtoms { module })
     }
 
-    fn try_to(&self, theory: &str) -> PyResult<()> {
+    fn try_to(&self, py: Python<'_>, theory: &str) -> PyResult<PyObject> {
         match theory {
             "lia" | "LIA" => {
                 let m = crate::types::downcast_module_to_lia(&self.base)
                     .map_err(|_| PyException::new_err("module cannot be converted to LIA"))?;
-                println!("{m}");
-                Ok(())
+                Ok(Py::new(py, LIAModule { base: m })?.into_any())
             }
             "rla" | "RLA" => {
                 let m = crate::types::downcast_module_to_rla(&self.base)
                     .map_err(|_| PyException::new_err("module cannot be converted to RLA"))?;
-                println!("{m}");
-                Ok(())
+                Ok(Py::new(py, RLAModule { base: m })?.into_any())
             }
             _ => Err(PyException::new_err(format!(
                 "unknown theory '{theory}'; supported: 'lia', 'rla'"
@@ -309,5 +308,37 @@ impl ModuleAtoms {
     fn __len__(&self) -> usize {
         let module = &self.module.get().base;
         module.atoms().len()
+    }
+}
+
+#[pyclass(frozen)]
+pub(crate) struct LIAModule {
+    pub(crate) base: base::Module<theory::lia::LIA>,
+}
+
+#[pymethods]
+impl LIAModule {
+    fn __str__(&self) -> String {
+        self.base.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.base)
+    }
+}
+
+#[pyclass(frozen)]
+pub(crate) struct RLAModule {
+    pub(crate) base: base::Module<theory::rla::RLA>,
+}
+
+#[pymethods]
+impl RLAModule {
+    fn __str__(&self) -> String {
+        self.base.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.base)
     }
 }
