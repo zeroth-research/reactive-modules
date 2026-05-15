@@ -269,7 +269,7 @@ class Wrapper(Module, gym.Wrapper):
             value = getattr(self.env, name, None)
             if value is not None:
                 if isinstance(value, bool):
-                    self._state[nxt] = torch.tensor([1.0 if value else 0.0])
+                    self._state[nxt] = torch.tensor([value])
                 elif isinstance(value, (int, float)):
                     self._state[nxt] = torch.tensor([float(value)])
                 elif isinstance(value, torch.Tensor):
