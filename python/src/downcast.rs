@@ -1,24 +1,26 @@
 use crate::types::{DType, IType};
 use std::collections::HashMap;
 
+/// cast DType to LIA Type
 impl TryFrom<&DType> for theory::lia::Type {
-    type Error = ();
+    type Error = String;
 
-    fn try_from(d: &DType) -> Result<Self, ()> {
+    fn try_from(d: &DType) -> Result<Self, Self::Error> {
         match d {
             DType::Int(shape) if shape.len() == 2 => Ok(theory::lia::Type::Int(shape[0], shape[1])),
             DType::Bool(shape) if shape.len() == 2 => {
                 Ok(theory::lia::Type::Bool(shape[0], shape[1]))
             }
-            _ => Err(()),
+            t => Err(format!("{} cannot be converted to lia::Type", t)),
         }
     }
 }
 
+/// cast DType to RLA Type
 impl TryFrom<&DType> for theory::rla::Type {
-    type Error = ();
+    type Error = String;
 
-    fn try_from(d: &DType) -> Result<Self, ()> {
+    fn try_from(d: &DType) -> Result<Self, Self::Error> {
         match d {
             DType::Real(shape) if shape.len() == 2 => {
                 Ok(theory::rla::Type::Real(shape[0], shape[1]))
@@ -26,15 +28,16 @@ impl TryFrom<&DType> for theory::rla::Type {
             DType::Bool(shape) if shape.len() == 2 => {
                 Ok(theory::rla::Type::Bool(shape[0], shape[1]))
             }
-            _ => Err(()),
+            t => Err(format!("{} cannot be converted to rla::Type", t)),
         }
     }
 }
 
+/// cast IType to LIA operations
 impl TryFrom<&IType> for theory::lia::LIA {
-    type Error = ();
+    type Error = String;
 
-    fn try_from(op: &IType) -> Result<Self, ()> {
+    fn try_from(op: &IType) -> Result<Self, Self::Error> {
         use theory::lia::LIA;
         Ok(match op {
             IType::Add() => LIA::Add,
@@ -54,15 +57,16 @@ impl TryFrom<&IType> for theory::lia::LIA {
             IType::ReLU() => LIA::ReLU,
             IType::ConstInt(v) => LIA::ConstInt(vec![vec![*v]]),
             IType::ConstBool(b) => LIA::ConstBool(vec![vec![*b]]),
-            _ => return Err(()),
+            t => return Err(format!("Cannot convert {} to LIA operation", t)),
         })
     }
 }
 
+/// cast IType to RLA operations
 impl TryFrom<&IType> for theory::rla::RLA {
-    type Error = ();
+    type Error = String;
 
-    fn try_from(op: &IType) -> Result<Self, ()> {
+    fn try_from(op: &IType) -> Result<Self, Self::Error> {
         use theory::rla::RLA;
         Ok(match op {
             IType::Add() => RLA::Add,
@@ -82,38 +86,42 @@ impl TryFrom<&IType> for theory::rla::RLA {
             IType::ReLU() => RLA::ReLU,
             IType::ConstInt(v) => RLA::ConstReal(vec![vec![*v as f64]]),
             IType::ConstBool(b) => RLA::ConstBool(vec![vec![*b]]),
-            _ => return Err(()),
+            t => return Err(format!("Cannot convert {} to RLA operation", t)),
         })
     }
 }
 
-fn remap_term<U, E>(
+/// Translate `term` to theory `U` using TryInto<IType>.
+/// Param `map` keeps mapping of IDs from old wires to new wires (new terms will have new wires
+/// with different dtypes, so we have to map those).
+fn remap_term<U>(
     term: &base::Term<IType>,
-    f_itype: &impl Fn(&IType) -> Result<U, E>,
     map: &HashMap<usize, base::Wire<U::DType>>,
-) -> Result<base::Term<U>, E>
+) -> Result<base::Term<U>, String>
 where
     U: theory::Theory,
     U::DType: Eq + Clone,
+    for<'a> &'a IType: TryInto<U, Error = String>,
 {
-    let new_itype = f_itype(term.itype())?;
+    let new_itype = term.itype().try_into()?;
     let new_write: Vec<base::Wire<U::DType>> =
         term.write().wires().map(|w| map[&w.id()].clone()).collect();
     let new_read: Vec<base::Wire<U::DType>> =
         term.read().wires().map(|w| map[&w.id()].clone()).collect();
-    let new_write = base::Interface::unique(new_write).expect("remapped write is unique");
-    let new_read = base::Interface::sequence(new_read).expect("remapped read is well-typed");
+    let new_write = base::Interface::unique(new_write)?;
+    let new_read = base::Interface::sequence(new_read)?;
     Ok(base::Term::new_unchecked(new_itype, new_write, new_read))
 }
 
-fn remap_atom<U, E>(
+/// Translate `atom` to theory `U` using `TryInto` for operations and `map` for rewiring.
+fn remap_atom<U>(
     atom: &base::Atom<IType>,
-    f_itype: &impl Fn(&IType) -> Result<U, E>,
     map: &HashMap<usize, base::Wire<U::DType>>,
-) -> Result<base::Atom<U>, E>
+) -> Result<base::Atom<U>, String>
 where
     U: theory::Theory,
     U::DType: Eq + Clone,
+    for<'a> &'a IType: TryInto<U, Error = String>,
 {
     let new_latched: Vec<base::Wire<U::DType>> =
         atom.read().wires().map(|w| map[&w.id()].clone()).collect();
@@ -126,27 +134,27 @@ where
     let new_init: Vec<base::Term<U>> = atom
         .init()
         .iter()
-        .map(|t| remap_term(t, f_itype, map))
+        .map(|t| remap_term(t, map))
         .collect::<Result<_, _>>()?;
     let new_update: Vec<base::Term<U>> = atom
         .update()
         .iter()
-        .map(|t| remap_term(t, f_itype, map))
+        .map(|t| remap_term(t, map))
         .collect::<Result<_, _>>()?;
-    let new_atom =
-        base::Atom::sequential(new_latched.iter(), new_next.iter(), new_init, new_update)
-            .expect("atom reconstruction invariants hold for a valid source module");
-    Ok(new_atom)
+    Ok(base::Atom::sequential(
+        new_latched.iter(),
+        new_next.iter(),
+        new_init,
+        new_update,
+    )?)
 }
 
-pub fn downcast_module<U, E>(
-    module: &base::Module<IType>,
-    f_dtype: impl Fn(&DType) -> Result<U::DType, E>,
-    f_itype: impl Fn(&IType) -> Result<U, E>,
-) -> Result<base::Module<U>, E>
+pub fn downcast_module<U>(module: &base::Module<IType>) -> Result<base::Module<U>, String>
 where
     U: theory::Theory,
     U::DType: Eq + Clone + std::fmt::Debug,
+    for<'a> &'a DType: TryInto<U::DType, Error = String>,
+    for<'a> &'a IType: TryInto<U, Error = String>,
 {
     let mut map: HashMap<usize, base::Wire<U::DType>> = HashMap::new();
     for wire in module
@@ -156,7 +164,7 @@ where
         .chain(module.prvt().wires())
         .chain(module.temp())
     {
-        let new_dtype = f_dtype(wire.dtype())?;
+        let new_dtype = wire.dtype().try_into()?;
         map.insert(wire.id(), base::Wire::new(new_dtype));
     }
 
@@ -175,30 +183,20 @@ where
     let atoms: Vec<base::Atom<U>> = module
         .atoms()
         .iter()
-        .map(|a| remap_atom(a, &f_itype, &map))
+        .map(|a| remap_atom(a, &map))
         .collect::<Result<_, _>>()?;
 
-    let new_module = base::Module::partially_observable(obs, prvt, atoms)
-        .expect("module reconstruction invariants hold for a valid source module");
-    Ok(new_module)
+    Ok(base::Module::partially_observable(obs, prvt, atoms)?)
 }
 
 pub fn downcast_module_to_lia(
     module: &base::Module<IType>,
-) -> Result<base::Module<theory::lia::LIA>, ()> {
-    downcast_module(
-        module,
-        |dtype| theory::lia::Type::try_from(dtype),
-        |itype| theory::lia::LIA::try_from(itype),
-    )
+) -> Result<base::Module<theory::lia::LIA>, String> {
+    downcast_module(module)
 }
 
 pub fn downcast_module_to_rla(
     module: &base::Module<IType>,
-) -> Result<base::Module<theory::rla::RLA>, ()> {
-    downcast_module(
-        module,
-        |dtype| theory::rla::Type::try_from(dtype),
-        |itype| theory::rla::RLA::try_from(itype),
-    )
+) -> Result<base::Module<theory::rla::RLA>, String> {
+    downcast_module(module)
 }
