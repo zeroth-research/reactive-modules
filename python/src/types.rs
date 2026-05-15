@@ -81,6 +81,24 @@ impl DType {
     }
 }
 
+fn shape2(shape: &[usize]) -> Result<(usize, usize), ()> {
+    match shape {
+        [n] => Ok((1, *n)),
+        [m, n] => Ok((*m, *n)),
+        _ => Err(()),
+    }
+}
+
+fn is_scalar_shape(s: &[usize]) -> bool {
+    matches!(shape2(s), Ok((1, 1)))
+}
+
+impl DType {
+    pub fn is_scalar(&self) -> bool {
+        matches!(shape2(self.shape().as_slice()), Ok((1, 1)))
+    }
+}
+
 fn fmt_comma_separated(f: &mut fmt::Formatter<'_>, items: &Vec<usize>) -> fmt::Result {
     for (i, item) in items.iter().enumerate() {
         if i > 0 {
@@ -292,18 +310,6 @@ where
     }
 }
 
-fn shape2(shape: &[usize]) -> (usize, usize) {
-    match shape {
-        [n] => (1, *n),
-        [m, n] => (*m, *n),
-        _ => (0, 0),
-    }
-}
-
-fn is_scalar_shape(shape: &[usize]) -> bool {
-    shape2(shape) == (1, 1)
-}
-
 fn same_base_kind(a: &DType, b: &DType) -> bool {
     matches!(
         (a, b),
@@ -342,15 +348,11 @@ impl Theory for IType {
                 tc_next(&mut wr, op, $i)?
             };
         }
-        macro_rules! no_more_rd {
+        macro_rules! no_more_args {
             () => {
                 if rd.next().is_some() {
                     return Err(format!("{op}: too many read args"));
                 }
-            };
-        }
-        macro_rules! no_more_wr {
-            () => {
                 if wr.next().is_some() {
                     return Err(format!("{op}: too many write args"));
                 }
@@ -361,21 +363,17 @@ impl Theory for IType {
             // -- identity / control flow ------------------------------------------
             IType::Id() => {
                 let r = rd!(0);
-                no_more_rd!();
                 let w = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if r != w {
                     return Err(format!("{op}: read type {r} != write type {w}"));
                 }
                 Ok(())
             }
             IType::Ite() => {
-                let r0 = rd!(0);
-                let r1 = rd!(1);
-                let r2 = rd!(2);
-                no_more_rd!();
+                let (r0, r1, r2) = (rd!(0), rd!(1), rd!(2));
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 let Bool(cond_shape) = r0 else {
                     return Err(format!("{op}: condition must be Bool, got {r0}"));
                 };
@@ -397,11 +395,9 @@ impl Theory for IType {
 
             // -- comparison -------------------------------------------------------
             IType::Eq() | IType::Neq() | IType::Lt() | IType::Le() | IType::Gt() | IType::Ge() => {
-                let r0 = rd!(0);
-                let r1 = rd!(1);
-                no_more_rd!();
+                let (r0, r1) = (rd!(0), rd!(1));
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if r0 != r1 {
                     return Err(format!(
                         "{op}: inputs must have the same type, got {r0} and {r1}"
@@ -413,11 +409,8 @@ impl Theory for IType {
                 let Bool(w_shape) = w0 else {
                     return Err(format!("{op}: output must be Bool, got {w0}"));
                 };
-                let r_shape = match r0 {
-                    Int(s) | Float(s) | Real(s) | Bool(s) => s.as_slice(),
-                    UWord(_) | SWord(_) => &[1usize][..],
-                };
-                if w_shape.as_slice() != r_shape {
+                let r_shape = r0.shape();
+                if w_shape.as_slice() != r_shape.as_slice() {
                     return Err(format!(
                         "{op}: output Bool shape {w_shape:?} != input shape {r_shape:?}"
                     ));
@@ -427,11 +420,9 @@ impl Theory for IType {
 
             // -- logical ----------------------------------------------------------
             IType::And() | IType::Or() | IType::Xor() | IType::Xnor() | IType::Implies() => {
-                let r0 = rd!(0);
-                let r1 = rd!(1);
-                no_more_rd!();
+                let (r0, r1) = (rd!(0), rd!(1));
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 let (Bool(_), Bool(_), Bool(_)) = (r0, r1, w0) else {
                     return Err(format!("{op}: all operands must be Bool"));
                 };
@@ -447,9 +438,8 @@ impl Theory for IType {
             }
             IType::Not() => {
                 let r = rd!(0);
-                no_more_rd!();
                 let w = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 let (Bool(_), Bool(_)) = (r, w) else {
                     return Err(format!("{op}: operands must be Bool"));
                 };
@@ -463,13 +453,13 @@ impl Theory for IType {
 
             // -- arithmetic (binary) ---------------------------------------------
             IType::Add() | IType::Sub() | IType::Mul() | IType::Div() | IType::Mod() => {
-                let r0 = rd!(0);
-                let r1 = rd!(1);
-                no_more_rd!();
+                let (r0, r1) = (rd!(0), rd!(1));
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if matches!(r0, Bool(_)) {
-                    return Err(format!("{op}: inputs must be numeric (Int/Float/Real/UWord/SWord)"));
+                    return Err(format!(
+                        "{op}: inputs must be numeric (Int/Float/Real/UWord/SWord)"
+                    ));
                 }
                 if r0 != r1 {
                     return Err(format!(
@@ -485,11 +475,12 @@ impl Theory for IType {
             // -- arithmetic (unary) ----------------------------------------------
             IType::Neg() | IType::Abs() => {
                 let r = rd!(0);
-                no_more_rd!();
                 let w = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if matches!(r, Bool(_)) {
-                    return Err(format!("{op}: input must be numeric (Int/Float/Real/UWord/SWord)"));
+                    return Err(format!(
+                        "{op}: input must be numeric (Int/Float/Real/UWord/SWord)"
+                    ));
                 }
                 if r != w {
                     return Err(format!(
@@ -501,11 +492,9 @@ impl Theory for IType {
 
             // -- matrix multiply -------------------------------------------------
             IType::MatMul() => {
-                let r0 = rd!(0);
-                let r1 = rd!(1);
-                no_more_rd!();
+                let (r0, r1) = (rd!(0), rd!(1));
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if !same_base_kind(r0, r1) || !same_base_kind(r0, w0) {
                     return Err(format!("{op}: all operands must have the same base type"));
                 }
@@ -515,18 +504,18 @@ impl Theory for IType {
                 let r0_shape = r0.shape();
                 let r1_shape = r1.shape();
                 let w0_shape = w0.shape();
-                let (m, k) = shape2(&r0_shape);
+                let (m, k) = shape2(&r0_shape).map_err(|_| format!("{op}: lhs must be 1-D or 2-D"))?;
                 // 1-D rhs treated as column vector (k, 1), matching PyTorch A @ v semantics
                 let (k2, n) = if r1_shape.len() == 1 {
                     (r1_shape[0], 1)
                 } else {
-                    shape2(&r1_shape)
+                    shape2(&r1_shape).map_err(|_| format!("{op}: rhs must be 1-D or 2-D"))?
                 };
                 // 1-D output treated as column (m, 1), result squeezed to [m]
                 let (om, on) = if w0_shape.len() == 1 {
                     (w0_shape[0], 1)
                 } else {
-                    shape2(&w0_shape)
+                    shape2(&w0_shape).map_err(|_| format!("{op}: output must be 1-D or 2-D"))?
                 };
                 if k != k2 {
                     return Err(format!("{op}: inner dimensions mismatch: {k} != {k2}"));
@@ -540,9 +529,8 @@ impl Theory for IType {
             // -- transcendental --------------------------------------------------
             IType::Sin() | IType::Cos() => {
                 let r = rd!(0);
-                no_more_rd!();
                 let w = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if !matches!(r, Real(_)) {
                     return Err(format!("{op}: input must be Real, got {r}"));
                 }
@@ -557,9 +545,8 @@ impl Theory for IType {
             // -- NN --------------------------------------------------------------
             IType::ReLU() | IType::Tanh() => {
                 let r = rd!(0);
-                no_more_rd!();
                 let w = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if !matches!(r, Float(_) | Real(_)) {
                     return Err(format!("{op}: input must be Float or Real, got {r}"));
                 }
@@ -571,20 +558,17 @@ impl Theory for IType {
                 Ok(())
             }
             IType::Linear() => {
-                let r0 = rd!(0); // input  Float(batch, in_f)
-                let r1 = rd!(1); // weight Float(out_f, in_f)
-                let r2 = rd!(2); // bias   Float(_, out_f)
-                no_more_rd!();
+                let (r0, r1, r2) = (rd!(0), rd!(1), rd!(2)); // input, weight, bias
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 let (Float(inp_s), Float(wgt_s), Float(bias_s), Float(out_s)) = (r0, r1, r2, w0)
                 else {
                     return Err(format!("{op}: all operands must be Float"));
                 };
-                let (batch, in_f) = shape2(inp_s);
-                let (out_f, wgt_in) = shape2(wgt_s);
-                let (_, bias_cols) = shape2(bias_s);
-                let (out_batch, out_cols) = shape2(out_s);
+                let (batch, in_f) = shape2(inp_s).map_err(|_| format!("{op}: input must be 1-D or 2-D"))?;
+                let (out_f, wgt_in) = shape2(wgt_s).map_err(|_| format!("{op}: weight must be 1-D or 2-D"))?;
+                let (_, bias_cols) = shape2(bias_s).map_err(|_| format!("{op}: bias must be 1-D or 2-D"))?;
+                let (out_batch, out_cols) = shape2(out_s).map_err(|_| format!("{op}: output must be 1-D or 2-D"))?;
                 if in_f != wgt_in {
                     return Err(format!(
                         "{op}: input features {in_f} != weight cols {wgt_in}"
@@ -606,9 +590,8 @@ impl Theory for IType {
             // -- tensor ops ------------------------------------------------------
             IType::Argmax() => {
                 let _r = rd!(0);
-                no_more_rd!();
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if !matches!(w0, Int(s) if is_scalar_shape(s)) {
                     return Err(format!("{op}: output must be Int scalar, got {w0}"));
                 }
@@ -616,13 +599,10 @@ impl Theory for IType {
             }
             IType::TensorSum() | IType::TensorMean() | IType::TensorMax() => {
                 let r0 = rd!(0);
-                no_more_rd!();
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 let ok = match (r0, w0) {
-                    (Float(_), Float(s)) | (Int(_), Int(s)) | (Real(_), Real(s)) => {
-                        is_scalar_shape(s)
-                    }
+                    (Float(_), Float(s)) | (Int(_), Int(s)) | (Real(_), Real(s)) => is_scalar_shape(s),
                     _ => false,
                 };
                 if !ok {
@@ -633,18 +613,14 @@ impl Theory for IType {
                 Ok(())
             }
             IType::TensorGet() => {
-                let r0 = rd!(0); // tensor
-                let r1 = rd!(1); // index
-                no_more_rd!();
+                let (r0, r1) = (rd!(0), rd!(1)); // tensor, index
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if !matches!(r1, Int(s) if is_scalar_shape(s)) {
                     return Err(format!("{op}: index must be Int scalar, got {r1}"));
                 }
                 let ok = match (r0, w0) {
-                    (Float(_), Float(s)) | (Int(_), Int(s)) | (Real(_), Real(s)) => {
-                        is_scalar_shape(s)
-                    }
+                    (Float(_), Float(s)) | (Int(_), Int(s)) | (Real(_), Real(s)) => is_scalar_shape(s),
                     _ => false,
                 };
                 if !ok {
@@ -655,19 +631,14 @@ impl Theory for IType {
                 Ok(())
             }
             IType::TensorSet() => {
-                let r0 = rd!(0); // tensor
-                let r1 = rd!(1); // index
-                let r2 = rd!(2); // value
-                no_more_rd!();
+                let (r0, r1, r2) = (rd!(0), rd!(1), rd!(2)); // tensor, index, value
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if !matches!(r1, Int(s) if is_scalar_shape(s)) {
                     return Err(format!("{op}: index must be Int scalar, got {r1}"));
                 }
                 let r2_ok = match (r0, r2) {
-                    (Float(_), Float(s)) | (Int(_), Int(s)) | (Real(_), Real(s)) => {
-                        is_scalar_shape(s)
-                    }
+                    (Float(_), Float(s)) | (Int(_), Int(s)) | (Real(_), Real(s)) => is_scalar_shape(s),
                     _ => false,
                 };
                 if !r2_ok {
@@ -686,9 +657,8 @@ impl Theory for IType {
             // -- BV / casting ----------------------------------------------------
             IType::BitSelect(h, l) => {
                 let r0 = rd!(0);
-                no_more_rd!();
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if !matches!(r0, UWord(_) | SWord(_)) {
                     return Err(format!("{op}: input must be UWord or SWord, got {r0}"));
                 }
@@ -700,9 +670,8 @@ impl Theory for IType {
             }
             IType::Extend(w) => {
                 let r0 = rd!(0);
-                no_more_rd!();
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 let expected = match r0 {
                     UWord(bw) => {
                         if bw > w {
@@ -725,9 +694,8 @@ impl Theory for IType {
             }
             IType::ToBool() => {
                 let r0 = rd!(0);
-                no_more_rd!();
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if !matches!(r0, UWord(_) | SWord(_)) {
                     return Err(format!("{op}: input must be UWord or SWord, got {r0}"));
                 }
@@ -738,9 +706,8 @@ impl Theory for IType {
             }
             IType::ToWord1() => {
                 let r0 = rd!(0);
-                no_more_rd!();
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 if !matches!(r0, Bool(_) | UWord(_) | SWord(_)) {
                     return Err(format!(
                         "{op}: input must be Bool, UWord, or SWord, got {r0}"
@@ -753,9 +720,8 @@ impl Theory for IType {
             }
             IType::ToUnsigned() => {
                 let r0 = rd!(0);
-                no_more_rd!();
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 let SWord(bw) = r0 else {
                     return Err(format!("{op}: input must be SWord, got {r0}"));
                 };
@@ -766,9 +732,8 @@ impl Theory for IType {
             }
             IType::ToSigned() => {
                 let r0 = rd!(0);
-                no_more_rd!();
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 let UWord(bw) = r0 else {
                     return Err(format!("{op}: input must be UWord, got {r0}"));
                 };
@@ -780,9 +745,8 @@ impl Theory for IType {
 
             // -- constants -------------------------------------------------------
             IType::Tensor(t) => {
-                no_more_rd!();
                 let w0 = wr!(0);
-                no_more_wr!();
+                no_more_args!();
                 let sz = t.tensor.size();
                 let expected_shape: Vec<usize> = sz.iter().map(|&x| x as usize).collect();
                 match w0 {
@@ -798,18 +762,20 @@ impl Theory for IType {
                 Ok(())
             }
             IType::ConstBool(_) => {
-                no_more_rd!();
-                let w0 = wr!(0); no_more_wr!();
+                let w0 = wr!(0);
+                no_more_args!();
                 if !matches!(w0, Bool(s) if is_scalar_shape(s)) {
                     return Err(format!("{op}: output must be Bool scalar, got {w0}"));
                 }
                 Ok(())
             }
             IType::ConstInt(_) => {
-                no_more_rd!();
-                let w0 = wr!(0); no_more_wr!();
+                let w0 = wr!(0);
+                no_more_args!();
                 if !matches!(w0, Int(s) if is_scalar_shape(s)) && !matches!(w0, UWord(_) | SWord(_)) {
-                    return Err(format!("{op}: output must be Int scalar, UWord, or SWord, got {w0}"));
+                    return Err(format!(
+                        "{op}: output must be Int scalar, UWord, or SWord, got {w0}"
+                    ));
                 }
                 Ok(())
             }
