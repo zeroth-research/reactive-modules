@@ -178,12 +178,12 @@ impl Module {
     fn try_to(&self, py: Python<'_>, theory: &str) -> PyResult<PyObject> {
         match theory {
             "lia" | "LIA" => {
-                let m = crate::types::downcast_module_to_lia(&self.base)
+                let m = crate::downcast::downcast_module_to_lia(&self.base)
                     .map_err(|_| PyException::new_err("module cannot be converted to LIA"))?;
                 Ok(Py::new(py, LIAModule { base: m })?.into_any())
             }
             "rla" | "RLA" => {
-                let m = crate::types::downcast_module_to_rla(&self.base)
+                let m = crate::downcast::downcast_module_to_rla(&self.base)
                     .map_err(|_| PyException::new_err("module cannot be converted to RLA"))?;
                 Ok(Py::new(py, RLAModule { base: m })?.into_any())
             }
