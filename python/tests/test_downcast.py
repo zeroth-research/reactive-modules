@@ -188,7 +188,7 @@ def test_try_to_rla_sub_fails():
 
 def test_try_to_unknown_theory():
     with pytest.raises(Exception, match="unknown theory"):
-        _simple_bool_module().try_to("bv")
+        _simple_bool_module().try_to("xyz")
 
 
 def test_try_to_empty_string():
@@ -750,3 +750,210 @@ def test_try_to_lia_argmax_fails():
 def test_try_to_rla_argmax_fails():
     with pytest.raises(Exception):
         _argmax_module().try_to("rla")
+
+
+# ---------------------------------------------------------------------------
+# BV helpers
+# ---------------------------------------------------------------------------
+
+
+def _uword_wire(bw=8):
+    return (Wire(DType.UWord(bw)), Wire(DType.UWord(bw)))
+
+
+def _sword_wire(bw=8):
+    return (Wire(DType.SWord(bw)), Wire(DType.SWord(bw)))
+
+
+def _simple_uword_module(bw=8):
+    x = _uword_wire(bw)
+    init = [Term(it.ConstInt(0), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    return Module.sequential(init, update, [x])
+
+
+def _simple_sword_module(bw=8):
+    x = _sword_wire(bw)
+    init = [Term(it.ConstInt(0), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    return Module.sequential(init, update, [x])
+
+
+def _bv_counter_module(bw=8):
+    """UWord counter: x += 1 each step."""
+    x = _uword_wire(bw)
+    y = _uword_wire(bw)
+    init = [Term(it.ConstInt(0), [x[1]]), Term(it.ConstInt(1), [y[1]])]
+    update = [
+        Term(it.Add(), [x[1]], [x[0], y[0]]),
+        Term(it.Id(), [y[1]], [y[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, y])
+
+
+def _bv_ite_module():
+    """Combinatorial: result = cond ? x : y, with Bool(1,1) condition."""
+    cond = (Wire(Bool(1, 1)), Wire(Bool(1, 1)))
+    x = _uword_wire()
+    y = _uword_wire()
+    result = _uword_wire()
+    assign = [Term(it.Ite(), [result[1]], [cond[1], x[1], y[1]])]
+    return Module.combinatorial(assign, obs=[cond, x, y, result])
+
+
+def _bv_mul_module(bw=8):
+    """UWord(8) scalar multiply."""
+    x = _uword_wire(bw)
+    y = _uword_wire(bw)
+    init = [Term(it.ConstInt(2), [x[1]]), Term(it.ConstInt(3), [y[1]])]
+    product = Wire(DType.UWord(bw))
+    update = [
+        Term(it.Mul(), [product], [x[0], y[0]]),
+        Term(it.Id(), [x[1]], [product]),
+        Term(it.Id(), [y[1]], [y[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, y])
+
+
+# ---------------------------------------------------------------------------
+# BV: conversion succeeds
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_bv_lowercase():
+    result = _simple_uword_module().try_to("bv")
+    assert "module" in str(result)
+
+
+def test_try_to_bv_uppercase():
+    result = _simple_uword_module().try_to("BV")
+    assert "module" in str(result)
+
+
+def test_try_to_bv_uword():
+    result = _simple_uword_module().try_to("bv")
+    assert "module" in str(result)
+
+
+def test_try_to_bv_sword():
+    result = _simple_sword_module().try_to("bv")
+    assert "module" in str(result)
+
+
+def test_try_to_bv_counter():
+    result = _bv_counter_module().try_to("bv")
+    assert "module" in str(result)
+
+
+def test_try_to_bv_ite():
+    result = _bv_ite_module().try_to("bv")
+    assert "module" in str(result)
+
+
+def test_try_to_bv_mul():
+    result = _bv_mul_module().try_to("bv")
+    assert "module" in str(result)
+
+
+def test_try_to_bv_print(capsys):
+    result = _simple_uword_module().try_to("bv")
+    print(result)
+    assert "module" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# BV: conversion fails — incompatible dtype
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_bv_int_dtype_fails():
+    """Int(1,1) dtype is not supported by BV downcast."""
+    with pytest.raises(Exception):
+        _simple_int_module().try_to("bv")
+
+
+def test_try_to_bv_real_dtype_fails():
+    with pytest.raises(Exception):
+        _simple_real_module().try_to("bv")
+
+
+def test_try_to_bv_float_dtype_fails():
+    x = _float_wire()
+    init = [Term(it.Tensor(torch.tensor([[0.0]])), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("bv")
+
+
+def test_try_to_bv_bool_1d_dtype_fails():
+    """Bool with 1D shape cannot be cast to BV type (requires 2D)."""
+    x = (Wire(Bool(3)), Wire(Bool(3)))
+    init = [Term(it.Tensor(torch.tensor([True, True, True])), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("bv")
+
+
+# ---------------------------------------------------------------------------
+# BV: conversion fails — incompatible itype
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_bv_const_bool_fails():
+    """ConstBool has no BV mapping."""
+    x = _bool_wire()
+    init = [Term(it.ConstBool(True), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("bv")
+
+
+def test_try_to_bv_tensor_fails():
+    x = _uword_wire()
+    # Use a Bool wire for Tensor init since UWord doesn't accept Tensor
+    b = _bool_wire()
+    init = [Term(it.Tensor(torch.tensor([[True]])), [b[1]]),
+            Term(it.ConstInt(0), [x[1]])]
+    update = [Term(it.Id(), [b[1]], [b[0]]), Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [b, x])
+    with pytest.raises(Exception):
+        m.try_to("bv")
+
+
+def test_try_to_bv_sub_fails():
+    """Sub has no BV mapping."""
+    x = _uword_wire()
+    y = _uword_wire()
+    init = [Term(it.ConstInt(5), [x[1]]), Term(it.ConstInt(2), [y[1]])]
+    update = [Term(it.Sub(), [x[1]], [x[0], y[0]]), Term(it.Id(), [y[1]], [y[0]])]
+    m = Module.sequential(init, update, obs=[x, y])
+    with pytest.raises(Exception):
+        m.try_to("bv")
+
+
+# ---------------------------------------------------------------------------
+# BV: ConstInt overflow check
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_bv_const_int_overflow_fails():
+    """ConstInt(256) does not fit in 8 bits — BV::check rejects it."""
+    x = _uword_wire(8)
+    init = [Term(it.ConstInt(256), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("bv")
+
+
+def test_try_to_bv_const_int_max_fits():
+    """ConstInt(255) fits exactly in 8 bits."""
+    x = _uword_wire(8)
+    init = [Term(it.ConstInt(255), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    result = m.try_to("bv")
+    assert "module" in str(result)

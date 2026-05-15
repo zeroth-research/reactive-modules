@@ -33,6 +33,51 @@ impl TryFrom<&DType> for theory::rla::Type {
     }
 }
 
+/// cast DType to BV Type
+impl TryFrom<&DType> for theory::bv::Type {
+    type Error = String;
+
+    fn try_from(d: &DType) -> Result<Self, Self::Error> {
+        match d {
+            DType::UWord(bw) => Ok(theory::bv::Type::U(*bw as usize, 1, 1)),
+            DType::SWord(bw) => Ok(theory::bv::Type::S(*bw as usize, 1, 1)),
+            DType::Bool(shape) if shape.len() == 2 => {
+                Ok(theory::bv::Type::U(1, shape[0], shape[1]))
+            }
+            t => Err(format!("{} cannot be converted to bv::Type", t)),
+        }
+    }
+}
+
+/// cast IType to BV operations
+impl TryFrom<&IType> for theory::bv::BV {
+    type Error = String;
+
+    fn try_from(op: &IType) -> Result<Self, Self::Error> {
+        use theory::bv::BV;
+        Ok(match op {
+            IType::Add() => BV::Add,
+            IType::Mul() => BV::Mul,
+            IType::MatMul() => BV::MatMul,
+            IType::And() => BV::And,
+            IType::Or() => BV::Or,
+            IType::Xor() => BV::Xor,
+            IType::Not() => BV::Not,
+            IType::Le() => BV::Le,
+            IType::Lt() => BV::Lt,
+            IType::Ge() => BV::Ge,
+            IType::Gt() => BV::Gt,
+            IType::Eq() => BV::Eq,
+            IType::Neq() => BV::Ne,
+            IType::Ite() => BV::Ite,
+            IType::Id() => BV::Id,
+            // TODO: we have to have ConstS and ConstU for constants of different type.
+            IType::ConstInt(v) => BV::Const(vec![vec![*v as usize]]),
+            t => return Err(format!("Cannot convert {} to BV operation", t)),
+        })
+    }
+}
+
 /// cast IType to LIA operations
 impl TryFrom<&IType> for theory::lia::LIA {
     type Error = String;
@@ -188,6 +233,12 @@ where
         .collect::<Result<_, _>>()?;
 
     Ok(base::Module::partially_observable(obs, prvt, atoms)?)
+}
+
+pub fn downcast_module_to_bv(
+    module: &base::Module<IType>,
+) -> Result<base::Module<theory::bv::BV>, String> {
+    downcast_module(module)
 }
 
 pub fn downcast_module_to_lia(
