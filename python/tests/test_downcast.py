@@ -1,7 +1,7 @@
 import pytest
 import torch
-from zrth import Wire, Term, Module, IType as it
-from zrth import Bool, Int, Float
+from zrth import Wire, Term, Module, IType as it, DType
+from zrth import Bool, Int, Float, Real
 
 
 # ---------------------------------------------------------------------------
@@ -183,3 +183,521 @@ def test_try_to_unknown_theory():
 def test_try_to_empty_string():
     with pytest.raises(Exception):
         _simple_bool_module().try_to("")
+
+
+# ---------------------------------------------------------------------------
+# Helpers: tensor-shaped wires
+# ---------------------------------------------------------------------------
+
+
+def _float_vector_wire(n=3):
+    return (Wire(Float(n)), Wire(Float(n)))
+
+
+def _int_matrix_wire(m=2, n=2):
+    return (Wire(Int(m, n)), Wire(Int(m, n)))
+
+
+# ---------------------------------------------------------------------------
+# Tensor-based modules
+# ---------------------------------------------------------------------------
+
+
+def _matrix_counter_module():
+    """Float vector accumulates a fixed increment each step.
+
+    Uses Add (valid op) + Tensor itype for init (not in LIA/RLA TryFrom).
+    Dtype is also Float, rejected by LIA/RLA.
+    """
+    x = _float_vector_wire(3)
+    y = _float_vector_wire(3)
+    init = [
+        Term(it.Tensor(torch.zeros(3)), [x[1]]),
+        Term(it.Tensor(torch.ones(3)), [y[1]]),
+    ]
+    update = [
+        Term(it.Add(), [x[1]], [x[0], y[0]]),
+        Term(it.Id(), [y[1]], [y[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, y])
+
+
+def _int_matrix_add_module():
+    """Int(2,2) matrix accumulates a fixed Int(2,2) increment each step.
+
+    dtype Int with 2D shape is LIA/RLA-compatible, but Tensor init itype is not.
+    """
+    x = _int_matrix_wire()
+    y = _int_matrix_wire()
+    init = [
+        Term(it.Tensor(torch.zeros(2, 2, dtype=torch.long)), [x[1]]),
+        Term(it.Tensor(torch.ones(2, 2, dtype=torch.long)), [y[1]]),
+    ]
+    update = [
+        Term(it.Add(), [x[1]], [x[0], y[0]]),
+        Term(it.Id(), [y[1]], [y[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, y])
+
+
+def _matmul_module():
+    """Float vector state transformed by a fixed matrix each step."""
+    x = _float_vector_wire(2)
+    w = (Wire(Float(2, 2)), Wire(Float(2, 2)))
+    init = [
+        Term(it.Tensor(torch.tensor([1.0, 0.0])), [x[1]]),
+        Term(it.Tensor(torch.eye(2)), [w[1]]),
+    ]
+    update = [
+        Term(it.MatMul(), [x[1]], [w[0], x[0]]),
+        Term(it.Id(), [w[1]], [w[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, w])
+
+
+def _tensor_sum_module():
+    """Float vector state, scalar reduction each step."""
+    x = _float_vector_wire(4)
+    s = (Wire(Float(1)), Wire(Float(1)))
+    init = [
+        Term(it.Tensor(torch.tensor([1.0, 2.0, 3.0, 4.0])), [x[1]]),
+        Term(it.Tensor(torch.zeros(1)), [s[1]]),
+    ]
+    update = [
+        Term(it.Id(), [x[1]], [x[0]]),
+        Term(it.TensorSum(), [s[1]], [x[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, s])
+
+
+def _argmax_module():
+    """Float vector state, argmax result tracked as Int scalar."""
+    x = _float_vector_wire(4)
+    idx = (Wire(DType.Int([1])), Wire(DType.Int([1])))
+    init = [
+        Term(it.Tensor(torch.tensor([1.0, 3.0, 0.5, 2.0])), [x[1]]),
+        Term(it.ConstInt(1), [idx[1]]),
+    ]
+    update = [
+        Term(it.Id(), [x[1]], [x[0]]),
+        Term(it.Argmax(), [idx[1]], [x[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, idx])
+
+
+def _int_counter_module():
+    """Int(1,1) scalar counter using Add + ConstInt — fully LIA/RLA-compatible.
+
+    x starts at 0, y is a constant 1; each step x += y.
+    """
+    x = _int_wire()
+    y = _int_wire()
+    init = [Term(it.ConstInt(0), [x[1]]), Term(it.ConstInt(1), [y[1]])]
+    update = [
+        Term(it.Add(), [x[1]], [x[0], y[0]]),
+        Term(it.Id(), [y[1]], [y[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, y])
+
+
+# ---------------------------------------------------------------------------
+# Helpers for complex modules (bool/int)
+# ---------------------------------------------------------------------------
+
+
+def _real_wire():
+    return (Wire(Real(1, 1)), Wire(Real(1, 1)))
+
+
+def _float_wire():
+    return (Wire(Float(1, 1)), Wire(Float(1, 1)))
+
+
+def _counter_module():
+    """x toggles, y tracks x's previous value, z = x AND y."""
+    x = _bool_wire()
+    y = _bool_wire()
+    z = _bool_wire()
+    init = [
+        Term(it.ConstBool(False), [x[1]]),
+        Term(it.ConstBool(False), [y[1]]),
+        Term(it.ConstBool(False), [z[1]]),
+    ]
+    update = [
+        Term(it.Not(), [x[1]], [x[0]]),
+        Term(it.Id(), [y[1]], [x[0]]),
+        Term(it.And(), [z[1]], [x[0], y[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, y, z])
+
+
+def _ite_module():
+    """x := (flag ? y : x), flag toggles."""
+    x = _int_wire()
+    y = _int_wire()
+    flag = _bool_wire()
+    init = [
+        Term(it.ConstInt(0), [x[1]]),
+        Term(it.ConstInt(5), [y[1]]),
+        Term(it.ConstBool(True), [flag[1]]),
+    ]
+    update = [
+        Term(it.Ite(), [x[1]], [flag[0], y[0], x[0]]),
+        Term(it.Id(), [y[1]], [y[0]]),
+        Term(it.Not(), [flag[1]], [flag[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, y, flag])
+
+
+def _parallel_bool_int_module():
+    """Two independent sequential modules composed in parallel."""
+    x = _bool_wire()
+    init_x = [Term(it.ConstBool(False), [x[1]])]
+    update_x = [Term(it.Not(), [x[1]], [x[0]])]
+    m1 = Module.sequential(init_x, update_x, obs=[x])
+
+    y = _int_wire()
+    init_y = [Term(it.ConstInt(0), [y[1]])]
+    update_y = [Term(it.Id(), [y[1]], [y[0]])]
+    m2 = Module.sequential(init_y, update_y, obs=[y])
+
+    return Module.parallel(m1, m2)
+
+
+def _xor_chain_module():
+    """Three bool wires: z = x xor y, then z latched."""
+    x = _bool_wire()
+    y = _bool_wire()
+    z = _bool_wire()
+    init = [
+        Term(it.ConstBool(False), [x[1]]),
+        Term(it.ConstBool(True), [y[1]]),
+        Term(it.ConstBool(False), [z[1]]),
+    ]
+    xor_out = Wire(Bool(1, 1))
+    update = [
+        Term(it.Xor(), [xor_out], [x[0], y[0]]),
+        Term(it.Id(), [x[1]], [x[0]]),
+        Term(it.Id(), [y[1]], [y[0]]),
+        Term(it.Id(), [z[1]], [xor_out]),
+    ]
+    return Module.sequential(init, update, obs=[x, y, z])
+
+
+# ---------------------------------------------------------------------------
+# LIA: complex modules succeed
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_lia_counter():
+    result = _counter_module().try_to("lia")
+    assert "module" in str(result)
+
+
+def test_try_to_lia_ite():
+    result = _ite_module().try_to("lia")
+    assert "module" in str(result)
+
+
+def test_try_to_lia_parallel():
+    result = _parallel_bool_int_module().try_to("lia")
+    assert "module" in str(result)
+
+
+def test_try_to_lia_xor_chain():
+    result = _xor_chain_module().try_to("lia")
+    assert "module" in str(result)
+
+
+# ---------------------------------------------------------------------------
+# RLA: complex modules succeed
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_rla_counter():
+    result = _counter_module().try_to("rla")
+    assert "module" in str(result)
+
+
+def test_try_to_rla_ite():
+    result = _ite_module().try_to("rla")
+    assert "module" in str(result)
+
+
+def test_try_to_rla_parallel():
+    result = _parallel_bool_int_module().try_to("rla")
+    assert "module" in str(result)
+
+
+def test_try_to_rla_xor_chain():
+    result = _xor_chain_module().try_to("rla")
+    assert "module" in str(result)
+
+
+# ---------------------------------------------------------------------------
+# LIA: dtype failures — Float, Real, UWord, SWord not supported
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_lia_real_dtype_fails():
+    x = _real_wire()
+    init = [Term(it.Tensor(torch.tensor([[0.0]])), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("lia")
+
+
+def test_try_to_lia_float_dtype_fails():
+    x = _float_wire()
+    init = [Term(it.Tensor(torch.tensor([[0.0]])), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("lia")
+
+
+def test_try_to_lia_uword_dtype_fails():
+    x = (Wire(DType.UWord(8)), Wire(DType.UWord(8)))
+    init = [Term(it.ConstInt(0), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("lia")
+
+
+def test_try_to_lia_sword_dtype_fails():
+    x = (Wire(DType.SWord(8)), Wire(DType.SWord(8)))
+    init = [Term(it.ConstInt(0), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("lia")
+
+
+# ---------------------------------------------------------------------------
+# LIA: instruction failures — Mul, Sub, Tensor, MatMul not supported
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_lia_mul_fails():
+    x = _int_wire()
+    y = _int_wire()
+    init = [Term(it.ConstInt(1), [x[1]]), Term(it.ConstInt(2), [y[1]])]
+    product = Wire(Int(1, 1))
+    update = [
+        Term(it.Mul(), [product], [x[0], y[0]]),
+        Term(it.Id(), [x[1]], [product]),
+        Term(it.Id(), [y[1]], [y[0]]),
+    ]
+    m = Module.sequential(init, update, obs=[x, y])
+    with pytest.raises(Exception):
+        m.try_to("lia")
+
+
+def test_try_to_lia_tensor_itype_fails():
+    x = _int_wire()
+    init = [Term(it.Tensor(torch.tensor([[42]])), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("lia")
+
+
+# ---------------------------------------------------------------------------
+# RLA: dtype failures — Float, Real, UWord, SWord not supported
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_rla_real_dtype_fails():
+    x = _real_wire()
+    init = [Term(it.Tensor(torch.tensor([[0.0]])), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("rla")
+
+
+def test_try_to_rla_float_dtype_fails():
+    x = _float_wire()
+    init = [Term(it.Tensor(torch.tensor([[0.0]])), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("rla")
+
+
+def test_try_to_rla_uword_dtype_fails():
+    x = (Wire(DType.UWord(8)), Wire(DType.UWord(8)))
+    init = [Term(it.ConstInt(0), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("rla")
+
+
+def test_try_to_rla_sword_dtype_fails():
+    x = (Wire(DType.SWord(8)), Wire(DType.SWord(8)))
+    init = [Term(it.ConstInt(0), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("rla")
+
+
+# ---------------------------------------------------------------------------
+# RLA: instruction failures — Mul, Tensor, MatMul not supported
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_rla_mul_fails():
+    x = _int_wire()
+    y = _int_wire()
+    init = [Term(it.ConstInt(1), [x[1]]), Term(it.ConstInt(2), [y[1]])]
+    product = Wire(Int(1, 1))
+    update = [
+        Term(it.Mul(), [product], [x[0], y[0]]),
+        Term(it.Id(), [x[1]], [product]),
+        Term(it.Id(), [y[1]], [y[0]]),
+    ]
+    m = Module.sequential(init, update, obs=[x, y])
+    with pytest.raises(Exception):
+        m.try_to("rla")
+
+
+def test_try_to_rla_tensor_itype_fails():
+    x = _int_wire()
+    init = [Term(it.Tensor(torch.tensor([[42]])), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    m = Module.sequential(init, update, [x])
+    with pytest.raises(Exception):
+        m.try_to("rla")
+
+
+# ---------------------------------------------------------------------------
+# Tensor-based: module construction
+# ---------------------------------------------------------------------------
+
+
+def test_matrix_counter_builds():
+    m = _matrix_counter_module()
+    assert m is not None
+
+
+def test_int_matrix_add_module_builds():
+    m = _int_matrix_add_module()
+    assert m is not None
+
+
+def test_matmul_module_builds():
+    m = _matmul_module()
+    assert m is not None
+
+
+def test_tensor_sum_module_builds():
+    m = _tensor_sum_module()
+    assert m is not None
+
+
+def test_argmax_module_builds():
+    m = _argmax_module()
+    assert m is not None
+
+
+def test_int_counter_module_builds():
+    m = _int_counter_module()
+    assert m is not None
+
+
+# ---------------------------------------------------------------------------
+# Tensor-based: int counter (Add + ConstInt) is LIA/RLA-compatible
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_lia_int_counter():
+    """Int(1,1) counter using Add + ConstInt succeeds: only valid dtypes and ops."""
+    result = _int_counter_module().try_to("lia")
+    assert "module" in str(result)
+
+
+def test_try_to_rla_int_counter():
+    result = _int_counter_module().try_to("rla")
+    assert "module" in str(result)
+
+
+# ---------------------------------------------------------------------------
+# Tensor-based: matrix counter (float vector, Tensor init) fails LIA/RLA
+# Float dtype and Tensor itype are both rejected
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_lia_matrix_counter_fails():
+    with pytest.raises(Exception):
+        _matrix_counter_module().try_to("lia")
+
+
+def test_try_to_rla_matrix_counter_fails():
+    with pytest.raises(Exception):
+        _matrix_counter_module().try_to("rla")
+
+
+# ---------------------------------------------------------------------------
+# Tensor-based: Int(2,2) matrix with Add — dtype is valid, Tensor init is not
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_lia_int_matrix_add_fails():
+    """Int(2,2) dtype is LIA-compatible but Tensor init itype is not."""
+    with pytest.raises(Exception):
+        _int_matrix_add_module().try_to("lia")
+
+
+def test_try_to_rla_int_matrix_add_fails():
+    with pytest.raises(Exception):
+        _int_matrix_add_module().try_to("rla")
+
+
+# ---------------------------------------------------------------------------
+# Tensor-based: MatMul not in LIA/RLA
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_lia_matmul_fails():
+    with pytest.raises(Exception):
+        _matmul_module().try_to("lia")
+
+
+def test_try_to_rla_matmul_fails():
+    with pytest.raises(Exception):
+        _matmul_module().try_to("rla")
+
+
+# ---------------------------------------------------------------------------
+# Tensor-based: TensorSum not in LIA/RLA
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_lia_tensor_sum_fails():
+    with pytest.raises(Exception):
+        _tensor_sum_module().try_to("lia")
+
+
+def test_try_to_rla_tensor_sum_fails():
+    with pytest.raises(Exception):
+        _tensor_sum_module().try_to("rla")
+
+
+# ---------------------------------------------------------------------------
+# Tensor-based: Argmax itype is in LIA/RLA but output is Int([1]) (1D) —
+# dtype conversion requires shape.len() == 2
+# ---------------------------------------------------------------------------
+
+
+def test_try_to_lia_argmax_fails():
+    with pytest.raises(Exception):
+        _argmax_module().try_to("lia")
+
+
+def test_try_to_rla_argmax_fails():
+    with pytest.raises(Exception):
+        _argmax_module().try_to("rla")
