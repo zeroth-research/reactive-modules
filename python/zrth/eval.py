@@ -50,7 +50,6 @@ def getattr_wire(self, name):
             val = state[wire]
             return val.item() if val.numel() == 1 else val.detach().clone()
     raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
-    return fn(itype, read)
 
 
 def _tensor_set(tensor, index, value):

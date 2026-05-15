@@ -541,12 +541,7 @@ def _build_module(
         if init_expr is not None:
             init_low.lower(init_expr, next_w)
         else:
-            if isinstance(dtype, DType.Bool):
-                default = IType.ConstBool(False)
-            elif isinstance(dtype, (DType.UWord, DType.SWord)):
-                default = IType.ConstInt(0)
-            else:
-                default = IType.ConstInt(0)
+            default = IType.ConstBool(False) if isinstance(dtype, DType.Bool) else IType.ConstInt(0)
             init_low.terms.append(Term(default, [next_w]))
 
         # --- UPDATE ---

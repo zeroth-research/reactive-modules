@@ -116,6 +116,9 @@ class WExpr(Expr):
     def __neg__(self) -> "WExpr":
         return w_neg(self)
 
+    def __abs__(self) -> "WExpr":
+        return w_abs(self)
+
     def __and__(self, other: "WExpr") -> "WExpr":
         return w_and(self, other)
 
@@ -214,7 +217,7 @@ def neg(e: BExpr) -> BExpr:
 
 
 def _elementwise_arith_op(itype, first: Expr, *others):
-    if not isinstance(first.dtype, (DType.Real, DType.Int)):
+    if not isinstance(first.dtype, (DType.Real, DType.Int, DType.Float)):
         raise Exception("invalid dtype")
 
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
@@ -437,7 +440,7 @@ def Bool(x: bool | str | torch.Tensor, shape=None) -> BExpr:
         dtype = DType.Bool(x.shape)
         return BExpr(itype=IType.Tensor(x), dtype=dtype)
     elif isinstance(x, str):
-        # register symbol into context
+
         dtype = DType.Bool(shape if shape is not None else [1])
         return BExpr(itype=IType.Uninterpreted(x), dtype=dtype)
 
@@ -455,7 +458,7 @@ def Real(x: float | str | torch.Tensor, shape=None) -> AExpr:
         dtype = DType.Real(x.shape)
         return AExpr(itype=IType.Tensor(x), dtype=dtype)
     elif isinstance(x, str):
-        # register symbol into context
+
         dtype = DType.Real(shape if shape is not None else [1])
         return AExpr(itype=IType.Uninterpreted(x), dtype=dtype)
 
