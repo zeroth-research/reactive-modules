@@ -179,16 +179,21 @@ impl Module {
         match theory {
             "lia" | "LIA" => {
                 let m = crate::downcast::downcast_module_to_lia(&self.base)
-                    .map_err(|_| PyException::new_err("module cannot be converted to LIA"))?;
+                    .map_err(|e| PyException::new_err(e))?;
                 Ok(Py::new(py, LIAModule { base: m })?.into_any())
             }
             "rla" | "RLA" => {
                 let m = crate::downcast::downcast_module_to_rla(&self.base)
-                    .map_err(|_| PyException::new_err("module cannot be converted to RLA"))?;
+                    .map_err(|e| PyException::new_err(e))?;
                 Ok(Py::new(py, RLAModule { base: m })?.into_any())
             }
+            "bv" | "BV" => {
+                let m = crate::downcast::downcast_module_to_bv(&self.base)
+                    .map_err(|e| PyException::new_err(e))?;
+                Ok(Py::new(py, BVModule { base: m })?.into_any())
+            }
             _ => Err(PyException::new_err(format!(
-                "unknown theory '{theory}'; supported: 'lia', 'rla'"
+                "unknown theory '{theory}'; supported: 'lia', 'rla', 'bv'"
             ))),
         }
     }
@@ -334,6 +339,22 @@ pub(crate) struct RLAModule {
 
 #[pymethods]
 impl RLAModule {
+    fn __str__(&self) -> String {
+        self.base.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.base)
+    }
+}
+
+#[pyclass(frozen)]
+pub(crate) struct BVModule {
+    pub(crate) base: base::Module<theory::bv::BV>,
+}
+
+#[pymethods]
+impl BVModule {
     fn __str__(&self) -> String {
         self.base.to_string()
     }
