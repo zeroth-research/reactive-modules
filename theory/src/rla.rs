@@ -27,17 +27,17 @@ shapes against the selected operation.
 
 ```
 use theory::Theory;
-use theory::lia::{RLA, Type};
+use theory::rla::{RLA, Type};
 
-// Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
+// Pointwise less-than on scalars: Real(1,1), Real(1,1) -> Bool(1,1).
 let i = Type::Real(1, 1);
 let b = Type::Bool(1, 1);
-assert!(RLA::Lt.check::<Type>(&[i, i], &[b]).is_ok());
+assert!(RLA::Lt.check(&[i, i], &[b]).is_ok());
 
-// ReLU preserves shape and stays in the integer fragment.
+// ReLU preserves shape and stays in the real fragment.
 let m = Type::Real(3, 4);
-assert!(RLA::ReLU.check::<Type>(&[m], &[m]).is_ok());
-assert!(RLA::ReLU.check::<Type>(&[b], &[b]).is_err());
+assert!(RLA::ReLU.check(&[m], &[m]).is_ok());
+assert!(RLA::ReLU.check(&[b], &[b]).is_err());
 ```
 */
 
@@ -155,7 +155,7 @@ fn fmt_matrix<T: fmt::Display>(cm: &[Vec<T>], f: &mut fmt::Formatter<'_>) -> fmt
 impl Theory for RLA {
     type DType = Type;
 
-    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
         D: TryInto<&'a Type>,
         R: IntoIterator<Item = D>,

@@ -12,7 +12,7 @@ struct Ops(&'static str);
 impl Theory for Ops {
     type DType = &'static str;
 
-    fn type_check<'a, R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
+    fn check<'a, R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
     where
         D: TryInto<&'a Self::DType>,
         R: IntoIterator<Item = D>,
