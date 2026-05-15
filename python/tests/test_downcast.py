@@ -30,6 +30,17 @@ def _simple_int_module():
     return Module.sequential(init, update, [x])
 
 
+def _real_wire():
+    return (Wire(Real(1, 1)), Wire(Real(1, 1)))
+
+
+def _simple_real_module():
+    x = _real_wire()
+    init = [Term(it.ConstInt(0), [x[1]])]
+    update = [Term(it.Id(), [x[1]], [x[0]])]
+    return Module.sequential(init, update, [x])
+
+
 def _logic_module():
     x = _bool_wire()
     y = _bool_wire()
@@ -133,7 +144,7 @@ def test_try_to_rla_uppercase():
 
 
 def test_try_to_rla_int_wire():
-    result = _simple_int_module().try_to("rla")
+    result = _simple_real_module().try_to("rla")
     assert "module" in str(result)
 
 
@@ -286,12 +297,21 @@ def _argmax_module():
 
 
 def _int_counter_module():
-    """Int(1,1) scalar counter using Add + ConstInt — fully LIA/RLA-compatible.
-
-    x starts at 0, y is a constant 1; each step x += y.
-    """
+    """Int(1,1) scalar counter using Add + ConstInt — fully LIA-compatible."""
     x = _int_wire()
     y = _int_wire()
+    init = [Term(it.ConstInt(0), [x[1]]), Term(it.ConstInt(1), [y[1]])]
+    update = [
+        Term(it.Add(), [x[1]], [x[0], y[0]]),
+        Term(it.Id(), [y[1]], [y[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, y])
+
+
+def _real_counter_module():
+    """Real(1,1) scalar counter using Add + ConstInt — fully RLA-compatible."""
+    x = _real_wire()
+    y = _real_wire()
     init = [Term(it.ConstInt(0), [x[1]]), Term(it.ConstInt(1), [y[1]])]
     update = [
         Term(it.Add(), [x[1]], [x[0], y[0]]),
@@ -303,10 +323,6 @@ def _int_counter_module():
 # ---------------------------------------------------------------------------
 # Helpers for complex modules (bool/int)
 # ---------------------------------------------------------------------------
-
-
-def _real_wire():
-    return (Wire(Real(1, 1)), Wire(Real(1, 1)))
 
 
 def _float_wire():
@@ -349,6 +365,24 @@ def _ite_module():
     return Module.sequential(init, update, obs=[x, y, flag])
 
 
+def _ite_real_module():
+    """x := (flag ? y : x), flag toggles — Real variant for RLA."""
+    x = _real_wire()
+    y = _real_wire()
+    flag = _bool_wire()
+    init = [
+        Term(it.ConstInt(0), [x[1]]),
+        Term(it.ConstInt(5), [y[1]]),
+        Term(it.ConstBool(True), [flag[1]]),
+    ]
+    update = [
+        Term(it.Ite(), [x[1]], [flag[0], y[0], x[0]]),
+        Term(it.Id(), [y[1]], [y[0]]),
+        Term(it.Not(), [flag[1]], [flag[0]]),
+    ]
+    return Module.sequential(init, update, obs=[x, y, flag])
+
+
 def _parallel_bool_int_module():
     """Two independent sequential modules composed in parallel."""
     x = _bool_wire()
@@ -357,6 +391,21 @@ def _parallel_bool_int_module():
     m1 = Module.sequential(init_x, update_x, obs=[x])
 
     y = _int_wire()
+    init_y = [Term(it.ConstInt(0), [y[1]])]
+    update_y = [Term(it.Id(), [y[1]], [y[0]])]
+    m2 = Module.sequential(init_y, update_y, obs=[y])
+
+    return Module.parallel(m1, m2)
+
+
+def _parallel_bool_real_module():
+    """Bool + Real parallel modules — Real variant for RLA."""
+    x = _bool_wire()
+    init_x = [Term(it.ConstBool(False), [x[1]])]
+    update_x = [Term(it.Not(), [x[1]], [x[0]])]
+    m1 = Module.sequential(init_x, update_x, obs=[x])
+
+    y = _real_wire()
     init_y = [Term(it.ConstInt(0), [y[1]])]
     update_y = [Term(it.Id(), [y[1]], [y[0]])]
     m2 = Module.sequential(init_y, update_y, obs=[y])
@@ -420,12 +469,12 @@ def test_try_to_rla_counter():
 
 
 def test_try_to_rla_ite():
-    result = _ite_module().try_to("rla")
+    result = _ite_real_module().try_to("rla")
     assert "module" in str(result)
 
 
 def test_try_to_rla_parallel():
-    result = _parallel_bool_int_module().try_to("rla")
+    result = _parallel_bool_real_module().try_to("rla")
     assert "module" in str(result)
 
 
@@ -621,7 +670,7 @@ def test_try_to_lia_int_counter():
 
 
 def test_try_to_rla_int_counter():
-    result = _int_counter_module().try_to("rla")
+    result = _real_counter_module().try_to("rla")
     assert "module" in str(result)
 
 

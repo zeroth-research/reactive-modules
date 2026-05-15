@@ -772,9 +772,11 @@ impl Theory for IType {
             IType::ConstInt(_) => {
                 let w0 = wr!(0);
                 no_more_args!();
-                if !matches!(w0, Int(s) if is_scalar_shape(s)) && !matches!(w0, UWord(_) | SWord(_)) {
+                if !matches!(w0, Int(s) | Real(s) if is_scalar_shape(s))
+                    && !matches!(w0, UWord(_) | SWord(_))
+                {
                     return Err(format!(
-                        "{op}: output must be Int scalar, UWord, or SWord, got {w0}"
+                        "{op}: output must be Int/Real scalar, UWord, or SWord, got {w0}"
                     ));
                 }
                 Ok(())
@@ -921,7 +923,7 @@ impl TryFrom<&DType> for theory::rla::Type {
 
     fn try_from(d: &DType) -> Result<Self, ()> {
         match d {
-            DType::Int(shape) if shape.len() == 2 => Ok(theory::rla::Type::Int(shape[0], shape[1])),
+            DType::Real(shape) if shape.len() == 2 => Ok(theory::rla::Type::Real(shape[0], shape[1])),
             DType::Bool(shape) if shape.len() == 2 => {
                 Ok(theory::rla::Type::Bool(shape[0], shape[1]))
             }
@@ -951,7 +953,7 @@ impl TryFrom<&IType> for theory::rla::RLA {
             IType::Id() => RLA::Id,
             IType::Argmax() => RLA::Argmax,
             IType::ReLU() => RLA::ReLU,
-            IType::ConstInt(v) => RLA::ConstInt(vec![vec![*v]]),
+            IType::ConstInt(v) => RLA::ConstReal(vec![vec![*v as f64]]),
             IType::ConstBool(b) => RLA::ConstBool(vec![vec![*b]]),
             _ => return Err(()),
         })
