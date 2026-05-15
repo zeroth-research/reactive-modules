@@ -32,12 +32,12 @@ use theory::lia::{LIA, Type};
 // Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
 let i = Type::Int(1, 1);
 let b = Type::Bool(1, 1);
-assert!(LIA::Lt.check::<Type>(&[i, i], &[b]).is_ok());
+assert!(LIA::Lt.check(&[i, i], &[b]).is_ok());
 
 // ReLU preserves shape and stays in the integer fragment.
 let m = Type::Int(3, 4);
-assert!(LIA::ReLU.check::<Type>(&[m], &[m]).is_ok());
-assert!(LIA::ReLU.check::<Type>(&[b], &[b]).is_err());
+assert!(LIA::ReLU.check(&[m], &[m]).is_ok());
+assert!(LIA::ReLU.check(&[b], &[b]).is_err());
 ```
 */
 
@@ -155,7 +155,7 @@ fn fmt_matrix<T: fmt::Display>(cm: &[Vec<T>], f: &mut fmt::Formatter<'_>) -> fmt
 impl Theory for LIA {
     type DType = Type;
 
-    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
         D: TryInto<&'a Type>,
         R: IntoIterator<Item = D>,

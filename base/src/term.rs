@@ -63,7 +63,7 @@ where
         // would consume the values of `write` and `read` otherwise
         let r = term.read.as_slice().iter().map(|w| w.dtype());
         let w = term.write.as_slice().iter().map(|w| w.dtype());
-        match term.itype.type_check(r, w) {
+        match term.itype.check(r, w) {
             Ok(_) => Ok(term),
             Err(e) => Err(e),
         }
@@ -84,7 +84,7 @@ where
         // would consume the values of `write` and `read` otherwise
         let r = term.read.as_slice().iter().map(|w| w.dtype());
         let w = term.write.as_slice().iter().map(|w| w.dtype());
-        match term.itype.type_check(r, w) {
+        match term.itype.check(r, w) {
             Ok(_) => Ok(term),
             Err(e) => Err(e),
         }

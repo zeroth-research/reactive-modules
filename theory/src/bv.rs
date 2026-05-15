@@ -23,7 +23,7 @@ validating read/write argument shapes against the operation.
 
 ```
 use theory::Theory;
-use theory::bv::{BV, BVDType};
+use theory::bv::{BV, DType};
 
 // 8-bit bit-vectors.
 let a = DType::BVU(8, 2, 3);
@@ -31,12 +31,12 @@ let b = DType::BVU(8, 3, 4);
 let c = DType::BVU(8, 2, 4);
 
 // Matrix multiply: (2x3) * (3x4) -> (2x4).
-assert!(BV::MatMul.type_check::<DType>(&[a, b], &[c]).is_ok());
+assert!(BV::MatMul.check(&[a, b], &[c]).is_ok());
 
 // Elementwise `Add` requires matching shapes.
-let m = DType::BV(8, 2, 3);
-assert!(BV::Add.check::<DType>(&[m, m], &[m]).is_ok());
-assert!(BV::Add.check::<DType>(&[a, b], &[c]).is_err());
+let m = DType::BVU(8, 2, 3);
+assert!(BV::Add.check(&[m, m], &[m]).is_ok());
+assert!(BV::Add.check(&[a, b], &[c]).is_err());
 ```
 */
 
@@ -108,7 +108,7 @@ fn check_init_dims(cm: &[Vec<usize>], bw: usize, i: usize, j: usize) -> Result<(
 impl Theory for BV {
     type DType = DType;
 
-    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
         D: TryInto<&'a DType>,
         R: IntoIterator<Item = D>,

@@ -295,7 +295,7 @@ impl fmt::Display for IType {
 impl Theory for IType {
     type DType = DType;
 
-    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
         D: TryInto<&'a Self::DType>,
         R: IntoIterator<Item = D>,
@@ -305,4 +305,3 @@ impl Theory for IType {
         crate::typechecking::type_check(self, read, write)
     }
 }
-

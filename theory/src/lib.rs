@@ -8,7 +8,7 @@ pub trait Theory {
     // consider renaming this to "Types" or something, to avoid confusion.
     type DType;
 
-    fn type_check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
         D: TryInto<&'a Self::DType>,
         R: IntoIterator<Item = D>,
