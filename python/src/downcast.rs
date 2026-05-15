@@ -108,9 +108,7 @@ where
         term.write().wires().map(|w| map[&w.id()].clone()).collect();
     let new_read: Vec<base::Wire<U::DType>> =
         term.read().wires().map(|w| map[&w.id()].clone()).collect();
-    let new_write = base::Interface::unique(new_write)?;
-    let new_read = base::Interface::sequence(new_read)?;
-    Ok(base::Term::new_unchecked(new_itype, new_write, new_read))
+    base::Term::function(new_itype, new_write, new_read)
 }
 
 /// Translate `atom` to theory `U` using `TryInto` for operations and `map` for rewiring.
@@ -156,6 +154,9 @@ where
     for<'a> &'a DType: TryInto<U::DType, Error = String>,
     for<'a> &'a IType: TryInto<U, Error = String>,
 {
+    // re-map wires from old DType to new DType
+    // XXX: we could do this lazily to save some work if downcasting fails,
+    // but let's start with simple solution, we can optimize later
     let mut map: HashMap<usize, base::Wire<U::DType>> = HashMap::new();
     for wire in module
         .extl()
