@@ -6,6 +6,7 @@ mod atom;
 mod module;
 mod pytensor;
 mod term;
+mod typechecking;
 mod types;
 mod wire;
 
