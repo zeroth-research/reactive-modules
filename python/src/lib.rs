@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
 mod atom;
+mod downcast;
 mod module;
 mod pytensor;
 mod term;
