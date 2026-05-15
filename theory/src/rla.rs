@@ -9,7 +9,7 @@ A [`Type`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
 so that integer and propositional terms embed directly into `RLA`. The
 operations in [`RLA`] are:
 
-- [`RLA::Const`] — an integer matrix literal whose shape must match the
+- [`RLA::Const`] — an real matrix literal whose shape must match the
   declared (integer) write type.
 - [`RLA::BoolConst`], [`RLA::And`], [`RLA::Or`], [`RLA::Xor`], [`RLA::Not`]
   — boolean operations on the boolean fragment of `Type`.
@@ -30,12 +30,12 @@ use theory::Theory;
 use theory::lia::{RLA, Type};
 
 // Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
-let i = Type::Int(1, 1);
+let i = Type::Real(1, 1);
 let b = Type::Bool(1, 1);
 assert!(RLA::Lt.check::<Type>(&[i, i], &[b]).is_ok());
 
 // ReLU preserves shape and stays in the integer fragment.
-let m = Type::Int(3, 4);
+let m = Type::Real(3, 4);
 assert!(RLA::ReLU.check::<Type>(&[m], &[m]).is_ok());
 assert!(RLA::ReLU.check::<Type>(&[b], &[b]).is_err());
 ```
@@ -47,7 +47,7 @@ use crate::*;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum Type {
-    Int(usize, usize),
+    Real(usize, usize),
     Bool(usize, usize),
 }
 
@@ -56,13 +56,13 @@ impl Type {
         matches!(self, Type::Bool(..))
     }
 
-    pub fn is_int(&self) -> bool {
-        matches!(self, Type::Int(..))
+    pub fn is_real(&self) -> bool {
+        matches!(self, Type::Real(..))
     }
 
     pub fn shape(&self) -> (usize, usize) {
         match self {
-            Type::Bool(i, j) | Type::Int(i, j) => (*i, *j),
+            Type::Bool(i, j) | Type::Real(i, j) => (*i, *j),
         }
     }
 }
@@ -70,7 +70,7 @@ impl Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Int(i, j) => write!(f, "Int({i}, {j})"),
+            Type::Real(i, j) => write!(f, "Real({i}, {j})"),
             Type::Bool(i, j) => write!(f, "Bool({i}, {j})"),
         }
     }
@@ -79,7 +79,7 @@ impl fmt::Display for Type {
 #[derive(Clone, PartialEq, Debug)]
 pub enum RLA {
     // constants
-    ConstInt(Vec<Vec<i64>>),
+    ConstReal(Vec<Vec<f64>>),
     ConstBool(Vec<Vec<bool>>),
     // boolean operations
     And,
@@ -95,7 +95,7 @@ pub enum RLA {
     Ne,
     // linear / matrix operations
     // A*x + B where `A` and `B` are constants
-    Linear(Vec<Vec<i64>>, Vec<Vec<i64>>),
+    Linear(Vec<Vec<f64>>, Vec<Vec<f64>>),
     Add,
     // XXX: should these be in RLA?
     ReLU,
@@ -110,7 +110,7 @@ pub enum RLA {
 impl fmt::Display for RLA {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RLA::ConstInt(cm) => fmt_matrix(cm, f),
+            RLA::ConstReal(cm) => fmt_matrix(cm, f),
             RLA::ConstBool(cm) => fmt_matrix(cm, f),
             RLA::And => write!(f, "And"),
             RLA::Or => write!(f, "Or"),
@@ -163,7 +163,7 @@ impl Theory for RLA {
         Type: 'a,
     {
         match self {
-            RLA::ConstInt(cm) => check_const(cm, read, write),
+            RLA::ConstReal(cm) => check_const(cm, read, write),
             RLA::ConstBool(_) | RLA::And | RLA::Or | RLA::Xor | RLA::Not => {
                 check_bool(self, read, write)
             }
@@ -183,7 +183,7 @@ impl Theory for RLA {
     }
 }
 
-fn check_const<'a, R, W, D>(cm: &[Vec<i64>], read: R, write: W) -> Result<(), String>
+fn check_const<'a, R, W, D>(cm: &[Vec<f64>], read: R, write: W) -> Result<(), String>
 where
     D: TryInto<&'a Type>,
     R: IntoIterator<Item = D>,
@@ -197,23 +197,23 @@ where
     }
     let dtype = write_nxt(&mut write, 0)?;
     match dtype {
-        Type::Int(i, j) => {
+        Type::Real(i, j) => {
             if cm.len() != *i {
                 return Err(format!(
-                    "ConstInt: initializer has wrong number of rows (has {}, expected {})",
+                    "ConstReal: initializer has wrong number of rows (has {}, expected {})",
                     cm.len(),
                     i
                 ));
             }
             if cm.iter().any(|row| row.len() != *j) {
                 return Err(format!(
-                    "ConstInt: some row has wrong length, expected {}",
+                    "ConstReal: some row has wrong length, expected {}",
                     j
                 ));
             }
         }
         Type::Bool(..) => {
-            return Err("Const must be integer matrix, not boolean".into());
+            return Err("Const must be real matrix, not boolean".into());
         }
     }
     if write.next().is_some() {
@@ -352,9 +352,9 @@ where
                     op
                 ));
             }
-            if !matches!(w1, Type::Int(..)) {
+            if !matches!(w1, Type::Real(..)) {
                 return Err(format!(
-                    "{:?}: input and output values must be int matrices",
+                    "{:?}: input and output values must be real matrices",
                     op
                 ));
             }
@@ -373,9 +373,9 @@ where
                     op
                 ));
             }
-            if !matches!(w1, Type::Int(..)) {
+            if !matches!(w1, Type::Real(..)) {
                 return Err(format!(
-                    "{:?}: input and output values must be int matrices",
+                    "{:?}: input and output values must be real matrices",
                     op
                 ));
             }
@@ -389,7 +389,7 @@ where
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             match w1 {
-                Type::Int(i, j) => {
+                Type::Real(i, j) => {
                     // FIXME: we should fix which dimension is 1..
                     if *i == 1 || *j == 1 {
                         return Ok(());
@@ -399,7 +399,7 @@ where
                         op, i, j
                     ))
                 }
-                _ => Err(format!("{:?}: output must be integer matrix", op)),
+                _ => Err(format!("{:?}: output must be real matrix", op)),
             }
         }
         _ => unreachable!(),
@@ -408,8 +408,8 @@ where
 
 fn check_linear_affine<'a, D>(
     op: &RLA,
-    a: &[Vec<i64>],
-    b: &[Vec<i64>],
+    a: &[Vec<f64>],
+    b: &[Vec<f64>],
     read: &mut impl Iterator<Item = D>,
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
@@ -455,7 +455,7 @@ where
     }
 
     match (r1, w1) {
-        (Type::Int(d1, d2), Type::Int(d3, d4)) => {
+        (Type::Real(d1, d2), Type::Real(d3, d4)) => {
             if *d2 != a_rows {
                 return Err(format!(
                     "{:?}: mismatch in inner dimensions of `A` and `x`: A has {}x{}, x has {}x{}",
@@ -478,7 +478,7 @@ where
             Ok(())
         }
         // TODO: should we allow also boolean matrices?
-        _ => Err(format!("{:?}: input and output must be int matrices", op)),
+        _ => Err(format!("{:?}: input and output must be real matrices", op)),
     }
 }
 
