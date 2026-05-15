@@ -4,7 +4,7 @@
 Defines the theory [`BV<N>`] of matrices of `N`-bit bit-vectors, where
 the width `N` is fixed at compile time via a const generic.
 
-A [`BVDType<N>`] value describes the *type* of a term as a matrix shape
+A [`BVType<N>`] value describes the *type* of a term as a matrix shape
 `BV(rows, cols)` whose elements are `N`-bit bit-vectors. The operations
 in [`BV`] are:
 
@@ -23,18 +23,18 @@ validating read/write argument shapes against the operation.
 
 ```
 use theory::Theory;
-use theory::bv::{BV, DType};
+use theory::bv::{BV, Type};
 
 // 8-bit bit-vectors.
-let a = DType::BVU(8, 2, 3);
-let b = DType::BVU(8, 3, 4);
-let c = DType::BVU(8, 2, 4);
+let a = Type::U(8, 2, 3);
+let b = Type::U(8, 3, 4);
+let c = Type::U(8, 2, 4);
 
 // Matrix multiply: (2x3) * (3x4) -> (2x4).
 assert!(BV::MatMul.check(&[a, b], &[c]).is_ok());
 
 // Elementwise `Add` requires matching shapes.
-let m = DType::BVU(8, 2, 3);
+let m = Type::U(8, 2, 3);
 assert!(BV::Add.check(&[m, m], &[m]).is_ok());
 assert!(BV::Add.check(&[a, b], &[c]).is_err());
 ```
@@ -42,30 +42,41 @@ assert!(BV::Add.check(&[a, b], &[c]).is_err());
 
 use crate::*;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum DType {
+use std::fmt;
+
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub enum Type {
     // matrix of unsigned bitvectors determnined by (bitvector-length, # rows, # cols)
-    BVU(usize, usize, usize),
+    U(usize, usize, usize),
     // matrix of signed bitvectors determnined by (bitvector-length, # rows, # cols)
-    BVS(usize, usize, usize),
+    S(usize, usize, usize),
 }
 
-impl DType {
+impl Type {
     pub fn is_signed(&self) -> bool {
-        matches!(self, DType::BVS(_, _, _))
+        matches!(self, Type::S(_, _, _))
     }
 
     pub fn shape(&self) -> (usize, usize) {
         match self {
-            DType::BVU(_, i, j) => (*i, *j),
-            DType::BVS(_, i, j) => (*i, *j),
+            Type::U(_, i, j) => (*i, *j),
+            Type::S(_, i, j) => (*i, *j),
         }
     }
 
     pub fn bw(&self) -> usize {
         match self {
-            DType::BVU(bw, _, _) => *bw,
-            DType::BVS(bw, _, _) => *bw,
+            Type::U(bw, _, _) => *bw,
+            Type::S(bw, _, _) => *bw,
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::U(bw, i, j) => write!(f, "uBV<{bw}>({i}, {j})"),
+            Type::S(bw, i, j) => write!(f, "sBV<{bw}>({i}, {j})"),
         }
     }
 }
@@ -77,12 +88,46 @@ pub enum BV {
     Const(Vec<Vec<usize>>),
     Add,
     Mul,
+    UDiv,
+    SDiv,
     MatMul,
     And,
     Or,
     Xor,
     Not,
-    // TODO: add cast from to BVU/BVS
+    Le,
+    Lt,
+    Ge,
+    Gt,
+    Eq,
+    Ne,
+    Ite,
+    Id,
+}
+
+impl fmt::Display for BV {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BV::Const(cm) => fmt_matrix(cm, f),
+            BV::And => write!(f, "And"),
+            BV::Or => write!(f, "Or"),
+            BV::Xor => write!(f, "Xor"),
+            BV::Not => write!(f, "Not"),
+            BV::Le => write!(f, "Le"),
+            BV::Lt => write!(f, "Lt"),
+            BV::Ge => write!(f, "Ge"),
+            BV::Gt => write!(f, "Gt"),
+            BV::Eq => write!(f, "Eq"),
+            BV::Ne => write!(f, "Ne"),
+            BV::Add => write!(f, "Add"),
+            BV::Mul => write!(f, "Mul"),
+            BV::UDiv => write!(f, "UDiv"),
+            BV::SDiv => write!(f, "SDiv"),
+            BV::MatMul => write!(f, "MatMul"),
+            BV::Ite => write!(f, "Ite"),
+            BV::Id => write!(f, "Id"),
+        }
+    }
 }
 
 fn check_init_dims(cm: &[Vec<usize>], bw: usize, i: usize, j: usize) -> Result<(), String> {
@@ -102,15 +147,27 @@ fn check_init_dims(cm: &[Vec<usize>], bw: usize, i: usize, j: usize) -> Result<(
             j
         ));
     }
+    if bw < 64 {
+        let max = 1usize << bw;
+        for (r, row) in cm.iter().enumerate() {
+            for (c, &v) in row.iter().enumerate() {
+                if v >= max {
+                    return Err(format!(
+                        "Const: value {v} at [{r},{c}] does not fit in {bw} bits"
+                    ));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
 impl Theory for BV {
-    type DType = DType;
+    type DType = Type;
 
     fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a DType>,
+        D: TryInto<&'a Type>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
@@ -124,8 +181,8 @@ impl Theory for BV {
                 }
                 let dtype = write_nxt(&mut write, 0)?;
                 match dtype {
-                    DType::BVU(bw, i, j) => check_init_dims(cm, *bw, *i, *j)?,
-                    DType::BVS(bw, i, j) => check_init_dims(cm, *bw, *i, *j)?,
+                    Type::U(bw, i, j) => check_init_dims(cm, *bw, *i, *j)?,
+                    Type::S(bw, i, j) => check_init_dims(cm, *bw, *i, *j)?,
                 }
                 if write.next().is_some() {
                     return Err("Const: returns more than one value".into());
@@ -133,7 +190,7 @@ impl Theory for BV {
                 Ok(())
             }
 
-            BV::Not => {
+            BV::Not | BV::Id => {
                 let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
                 if r != w {
                     return Err(format!(
@@ -152,6 +209,76 @@ impl Theory for BV {
                 }
                 Ok(())
             }
+            BV::Le | BV::Lt | BV::Ge | BV::Gt | BV::Eq | BV::Ne => {
+                let (r1, r2, None) = (
+                    read_nxt(&mut read, 0)?,
+                    read_nxt(&mut read, 1)?,
+                    read.next(),
+                ) else {
+                    return Err(format!("{self}: must read exactly two values"));
+                };
+                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err(format!("{self}: must write exactly one value"));
+                };
+                if r1 != r2 {
+                    return Err(format!("{self}: inputs must have the same type"));
+                }
+                let (rows, cols) = r1.shape();
+                if *w1 != Type::U(1, rows, cols) {
+                    return Err(format!(
+                        "{self}: output must be U(1, {rows}, {cols}), got {w1}"
+                    ));
+                }
+                Ok(())
+            }
+            BV::UDiv => {
+                let (r1, r2, None) = (
+                    read_nxt(&mut read, 0)?,
+                    read_nxt(&mut read, 1)?,
+                    read.next(),
+                ) else {
+                    return Err(format!("{self}: must read exactly two values"));
+                };
+                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err(format!("{self}: must write exactly one value"));
+                };
+                if !matches!(r1, Type::U(..)) {
+                    return Err(format!("{self}: inputs must be unsigned, got {r1}"));
+                }
+                if r1 != r2 {
+                    return Err(format!("{self}: input values must have the same type"));
+                }
+                if w1 != r1 {
+                    return Err(format!(
+                        "{self}: input and output values must have the same type"
+                    ));
+                }
+                Ok(())
+            }
+            BV::SDiv => {
+                let (r1, r2, None) = (
+                    read_nxt(&mut read, 0)?,
+                    read_nxt(&mut read, 1)?,
+                    read.next(),
+                ) else {
+                    return Err(format!("{self}: must read exactly two values"));
+                };
+                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err(format!("{self}: must write exactly one value"));
+                };
+                if !matches!(r1, Type::S(..)) {
+                    return Err(format!("{self}: inputs must be signed, got {r1}"));
+                }
+                if r1 != r2 {
+                    return Err(format!("{self}: input values must have the same type"));
+                }
+                if w1 != r1 {
+                    return Err(format!(
+                        "{self}: input and output values must have the same type"
+                    ));
+                }
+                Ok(())
+            }
             BV::And | BV::Or | BV::Xor | BV::Add | BV::Mul => {
                 let w1 = write_nxt(&mut write, 0)?;
                 let (r1, r2, None) = (
@@ -165,6 +292,34 @@ impl Theory for BV {
                     return Err(format!("{:?}: input values must have the same type", self));
                 }
                 if w1 != r1 {
+                    return Err(format!(
+                        "{:?}: input and output values must have the same type",
+                        self
+                    ));
+                }
+                Ok(())
+            }
+
+            BV::Ite => {
+                let w1 = write_nxt(&mut write, 0)?;
+                let (r1, r2, r3, None) = (
+                    read_nxt(&mut read, 0)?,
+                    read_nxt(&mut read, 1)?,
+                    read_nxt(&mut read, 2)?,
+                    read.next(),
+                ) else {
+                    return Err(format!("{:?}: must read exactly two values", self));
+                };
+                if r1.bw() != 1 {
+                    return Err(format!(
+                        "{:?}: first argument must have one bit exactly",
+                        self
+                    ));
+                }
+                if r2 != r3 {
+                    return Err(format!("{:?}: arms must have the same type", self));
+                }
+                if w1 != r2 {
                     return Err(format!(
                         "{:?}: input and output values must have the same type",
                         self
