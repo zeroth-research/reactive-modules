@@ -21,10 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install latest nightly
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: nightly
-          override: true
           components: rustfmt
       - name: Install just
         uses: extractions/setup-just@v2
@@ -35,14 +33,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       - name: Install latest nightly
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: nightly
-          override: true
           components: clippy
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/pyproject.toml
       - name: Install just
         uses: extractions/setup-just@v2
       - name: Sync python env (installs torch for torch-sys)
@@ -54,8 +54,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/pyproject.toml
       - name: Install just
         uses: extractions/setup-just@v2
       - name: Sync python env (installs torch for torch-sys)
@@ -65,14 +69,21 @@ jobs:
       - name: Run Rust tests (incl. doctests)
         run: just test-rust
 
+
   python-tests:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/pyproject.toml
       - name: Install just
         uses: extractions/setup-just@v2
       - name: Run Python tests (builds the extension via maturin)
         run: just test-python
+
