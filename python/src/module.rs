@@ -183,7 +183,7 @@ impl Module {
                 Ok(Py::new(py, LIAModule { base: m })?.into_any())
             }
             "rla" | "RLA" => {
-                let m = crate::downcast::downcast_module_to_rla(&self.base)
+                let m = crate::downcast::downcast_module_to_lra(&self.base)
                     .map_err(|e| PyException::new_err(e))?;
                 Ok(Py::new(py, RLAModule { base: m })?.into_any())
             }
@@ -334,7 +334,7 @@ impl LIAModule {
 
 #[pyclass(frozen)]
 pub(crate) struct RLAModule {
-    pub(crate) base: base::Module<theory::rla::RLA>,
+    pub(crate) base: base::Module<theory::lra::LRA>,
 }
 
 #[pymethods]

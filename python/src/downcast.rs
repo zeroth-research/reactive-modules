@@ -16,17 +16,17 @@ impl TryFrom<&DType> for theory::lia::Type {
     }
 }
 
-/// cast DType to RLA Type
-impl TryFrom<&DType> for theory::rla::Type {
+/// cast DType to LRA Type
+impl TryFrom<&DType> for theory::lra::Type {
     type Error = String;
 
     fn try_from(d: &DType) -> Result<Self, Self::Error> {
         match d {
             DType::Real(shape) if shape.len() == 2 => {
-                Ok(theory::rla::Type::Real(shape[0], shape[1]))
+                Ok(theory::lra::Type::Real(shape[0], shape[1]))
             }
             DType::Bool(shape) if shape.len() == 2 => {
-                Ok(theory::rla::Type::Bool(shape[0], shape[1]))
+                Ok(theory::lra::Type::Bool(shape[0], shape[1]))
             }
             t => Err(format!("{} cannot be converted to rla::Type", t)),
         }
@@ -39,10 +39,10 @@ impl TryFrom<&DType> for theory::bv::Type {
 
     fn try_from(d: &DType) -> Result<Self, Self::Error> {
         match d {
-            DType::UWord(bw) => Ok(theory::bv::Type::U(*bw as usize, 1, 1)),
-            DType::SWord(bw) => Ok(theory::bv::Type::S(*bw as usize, 1, 1)),
+            DType::UWord(bw) => Ok(theory::bv::Type::UWord(*bw as usize, 1, 1)),
+            DType::SWord(bw) => Ok(theory::bv::Type::SWord(*bw as usize, 1, 1)),
             DType::Bool(shape) if shape.len() == 2 => {
-                Ok(theory::bv::Type::U(1, shape[0], shape[1]))
+                Ok(theory::bv::Type::UWord(1, shape[0], shape[1]))
             }
             t => Err(format!("{} cannot be converted to bv::Type", t)),
         }
@@ -108,29 +108,29 @@ impl TryFrom<&IType> for theory::lia::LIA {
 }
 
 /// cast IType to RLA operations
-impl TryFrom<&IType> for theory::rla::RLA {
+impl TryFrom<&IType> for theory::lra::LRA {
     type Error = String;
 
     fn try_from(op: &IType) -> Result<Self, Self::Error> {
-        use theory::rla::RLA;
+        use theory::lra::LRA;
         Ok(match op {
-            IType::Add() => RLA::Add,
-            IType::Eq() => RLA::Eq,
-            IType::Neq() => RLA::Ne,
-            IType::Lt() => RLA::Lt,
-            IType::Le() => RLA::Le,
-            IType::Gt() => RLA::Gt,
-            IType::Ge() => RLA::Ge,
-            IType::And() => RLA::And,
-            IType::Or() => RLA::Or,
-            IType::Not() => RLA::Not,
-            IType::Xor() => RLA::Xor,
-            IType::Ite() => RLA::Ite,
-            IType::Id() => RLA::Id,
-            IType::Argmax() => RLA::Argmax,
-            IType::ReLU() => RLA::ReLU,
-            IType::ConstInt(v) => RLA::ConstReal(vec![vec![*v as f64]]),
-            IType::ConstBool(b) => RLA::ConstBool(vec![vec![*b]]),
+            IType::Add() => LRA::Add,
+            IType::Eq() => LRA::Eq,
+            IType::Neq() => LRA::Ne,
+            IType::Lt() => LRA::Lt,
+            IType::Le() => LRA::Le,
+            IType::Gt() => LRA::Gt,
+            IType::Ge() => LRA::Ge,
+            IType::And() => LRA::And,
+            IType::Or() => LRA::Or,
+            IType::Not() => LRA::Not,
+            IType::Xor() => LRA::Xor,
+            IType::Ite() => LRA::Ite,
+            IType::Id() => LRA::Id,
+            IType::Argmax() => LRA::Argmax,
+            IType::ReLU() => LRA::ReLU,
+            IType::ConstInt(v) => LRA::ConstReal(vec![vec![*v as f64]]),
+            IType::ConstBool(b) => LRA::ConstBool(vec![vec![*b]]),
             t => return Err(format!("Cannot convert {} to RLA operation", t)),
         })
     }
@@ -247,8 +247,8 @@ pub fn downcast_module_to_lia(
     downcast_module(module)
 }
 
-pub fn downcast_module_to_rla(
+pub fn downcast_module_to_lra(
     module: &base::Module<IType>,
-) -> Result<base::Module<theory::rla::RLA>, String> {
+) -> Result<base::Module<theory::lra::LRA>, String> {
     downcast_module(module)
 }

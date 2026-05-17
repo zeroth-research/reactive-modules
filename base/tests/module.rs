@@ -12,12 +12,11 @@ struct Ops(&'static str);
 impl Theory for Ops {
     type DType = &'static str;
 
-    fn check<'a, R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
+    fn check<R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        D: TryInto<&'a Self::DType>,
+        D: TryInto<Self::DType>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
-        Self::DType: 'a,
     {
         Ok(())
     }

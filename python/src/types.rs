@@ -3,7 +3,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::fmt;
 use theory::Theory;
-
 // ============================================================================
 // DType enum (wire data types)
 // ============================================================================
@@ -295,12 +294,11 @@ impl fmt::Display for IType {
 impl Theory for IType {
     type DType = DType;
 
-    fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a Self::DType>,
+        D: TryInto<Self::DType>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
-        Self::DType: 'a,
     {
         crate::typechecking::type_check(self, read, write)
     }

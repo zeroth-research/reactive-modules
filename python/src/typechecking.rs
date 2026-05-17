@@ -2,10 +2,10 @@ use crate::types::{DType, IType};
 use DType::*;
 
 /// get next arguments from an iterator with arguments (a helper fun)
-fn next_arg<'a, I, D>(iter: &mut I, op: &str, i: usize) -> Result<&'a DType, String>
+fn next_arg<I, D>(iter: &mut I, op: &str, i: usize) -> Result<DType, String>
 where
     I: Iterator<Item = D>,
-    D: TryInto<&'a DType>,
+    D: TryInto<DType>,
 {
     if let Some(d) = iter.next() {
         d.try_into()
@@ -28,10 +28,9 @@ fn shape2(shape: &[usize]) -> Result<(usize, usize), ()> {
 /// Type-check IType, this function will be called from the `impl Theory for IType`
 pub(crate) fn type_check<'a, R, W, D>(itype: &IType, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a DType>,
+    D: TryInto<DType>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    DType: 'a,
 {
     let mut rd = read.into_iter();
     let mut wr = write.into_iter();
@@ -192,7 +191,7 @@ where
             let (r0, r1) = (rd!(0), rd!(1));
             let w0 = wr!(0);
             no_more_args!();
-            if !r0.is_same_kind(r1) || !r0.is_same_kind(w0) {
+            if !r0.is_same_kind(&r1) || !r0.is_same_kind(&w0) {
                 return Err(format!("{op}: all operands must have the same base type"));
             }
             if r0.is_bool() || r0.is_bv() {
@@ -301,7 +300,7 @@ where
             let r0 = rd!(0);
             let w0 = wr!(0);
             no_more_args!();
-            if !r0.is_same_kind(w0) || r0.is_bool() || r0.is_bv() || !w0.is_scalar() {
+            if !r0.is_same_kind(&w0) || r0.is_bool() || r0.is_bv() || !w0.is_scalar() {
                 return Err(format!(
                     "{op}: output must be scalar of same base type as input, got {w0}"
                 ));
@@ -315,7 +314,7 @@ where
             if !r1.is_int() || !r1.is_scalar() {
                 return Err(format!("{op}: index must be Int scalar, got {r1}"));
             }
-            if !r0.is_same_kind(w0) || r0.is_bool() || r0.is_bv() || !w0.is_scalar() {
+            if !r0.is_same_kind(&w0) || r0.is_bool() || r0.is_bv() || !w0.is_scalar() {
                 return Err(format!(
                     "{op}: output must be scalar of same base type as tensor input, got {w0}"
                 ));
@@ -329,7 +328,7 @@ where
             if !r1.is_int() || !r1.is_scalar() {
                 return Err(format!("{op}: index must be Int scalar, got {r1}"));
             }
-            if !r0.is_same_kind(r2) || r0.is_bool() || r0.is_bv() || !r2.is_scalar() {
+            if !r0.is_same_kind(&r2) || r0.is_bool() || r0.is_bv() || !r2.is_scalar() {
                 return Err(format!(
                     "{op}: value must be scalar of same base type as tensor, got {r2}"
                 ));
@@ -351,7 +350,7 @@ where
                 return Err(format!("{op}: input must be UWord or SWord, got {r0}"));
             }
             let out_bw = h - l + 1;
-            if *w0 != UWord(out_bw) {
+            if w0 != UWord(out_bw) {
                 return Err(format!("{op}: output must be UWord({out_bw}), got {w0}"));
             }
             Ok(())
@@ -362,20 +361,20 @@ where
             no_more_args!();
             let expected = match r0 {
                 UWord(bw) => {
-                    if bw > w {
+                    if bw > *w {
                         return Err(format!("{op}: input width {bw} > target {w}"));
                     }
                     UWord(*w)
                 }
                 SWord(bw) => {
-                    if bw > w {
+                    if bw > *w {
                         return Err(format!("{op}: input width {bw} > target {w}"));
                     }
                     SWord(*w)
                 }
                 _ => return Err(format!("{op}: input must be UWord or SWord, got {r0}")),
             };
-            if *w0 != expected {
+            if w0 != expected {
                 return Err(format!("{op}: output must be {expected}, got {w0}"));
             }
             Ok(())
@@ -401,7 +400,7 @@ where
                     "{op}: input must be Bool, UWord, or SWord, got {r0}"
                 ));
             }
-            if *w0 != UWord(1) {
+            if w0 != UWord(1) {
                 return Err(format!("{op}: output must be UWord(1), got {w0}"));
             }
             Ok(())
@@ -413,7 +412,7 @@ where
             let SWord(bw) = r0 else {
                 return Err(format!("{op}: input must be SWord, got {r0}"));
             };
-            if *w0 != UWord(*bw) {
+            if w0 != UWord(bw) {
                 return Err(format!("{op}: output must be UWord({bw}), got {w0}"));
             }
             Ok(())
@@ -425,7 +424,7 @@ where
             let UWord(bw) = r0 else {
                 return Err(format!("{op}: input must be UWord, got {r0}"));
             };
-            if *w0 != SWord(*bw) {
+            if w0 != SWord(bw) {
                 return Err(format!("{op}: output must be SWord({bw}), got {w0}"));
             }
             Ok(())
@@ -439,7 +438,7 @@ where
             let expected_shape: Vec<usize> = sz.iter().map(|&x| x as usize).collect();
             match w0 {
                 Float(s) | Int(s) | Real(s) | Bool(s) => {
-                    if *s != expected_shape {
+                    if s != expected_shape {
                         return Err(format!(
                             "{op}: write shape {s:?} doesn't match tensor shape {expected_shape:?}"
                         ));

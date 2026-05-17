@@ -1,8 +1,9 @@
 use std::fmt;
 
+mod any;
 pub mod bv;
 pub mod lia;
-pub mod rla;
+pub mod lra;
 
 pub trait Theory {
     // TODO: in torch, from where we took this name (I think), dtype refers to
@@ -10,20 +11,19 @@ pub trait Theory {
     // consider renaming this to "Types" or something, to avoid confusion.
     type DType;
 
-    fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a Self::DType>,
+        D: TryInto<Self::DType>,
         R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
-        Self::DType: 'a;
+        W: IntoIterator<Item = D>;
 }
 
 // Helpers for type-checking procedures
 
-fn read_nxt<'a, R, D, T>(read: &mut R, i: usize) -> Result<&'a T, String>
+fn read_nxt<R, D, T>(read: &mut R, i: usize) -> Result<T, String>
 where
     R: Iterator<Item = D>,
-    D: TryInto<&'a T>,
+    D: TryInto<T>,
 {
     if let Some(d) = read.next() {
         d.try_into()
@@ -33,10 +33,10 @@ where
     }
 }
 
-fn write_nxt<'a, R, D, T>(write: &mut R, i: usize) -> Result<&'a T, String>
+fn write_nxt<R, D, T>(write: &mut R, i: usize) -> Result<T, String>
 where
     R: Iterator<Item = D>,
-    D: TryInto<&'a T>,
+    D: TryInto<T>,
 {
     if let Some(d) = write.next() {
         d.try_into()

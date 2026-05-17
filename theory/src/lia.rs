@@ -32,12 +32,12 @@ use theory::lia::{LIA, Type};
 // Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
 let i = Type::Int(1, 1);
 let b = Type::Bool(1, 1);
-assert!(LIA::Lt.check(&[i, i], &[b]).is_ok());
+assert!(LIA::Lt.check([i, i], [b]).is_ok());
 
 // ReLU preserves shape and stays in the integer fragment.
 let m = Type::Int(3, 4);
-assert!(LIA::ReLU.check(&[m], &[m]).is_ok());
-assert!(LIA::ReLU.check(&[b], &[b]).is_err());
+assert!(LIA::ReLU.check([m], [m]).is_ok());
+assert!(LIA::ReLU.check([b], [b]).is_err());
 ```
 */
 
@@ -137,12 +137,11 @@ impl fmt::Display for LIA {
 impl Theory for LIA {
     type DType = Type;
 
-    fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a Type>,
+        D: TryInto<Type>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
-        Type: 'a,
     {
         match self {
             LIA::ConstInt(cm) => check_const(cm, read, write),
@@ -165,12 +164,11 @@ impl Theory for LIA {
     }
 }
 
-fn check_const<'a, R, W, D>(cm: &[Vec<i64>], read: R, write: W) -> Result<(), String>
+fn check_const<R, W, D>(cm: &[Vec<i64>], read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -180,14 +178,14 @@ where
     let dtype = write_nxt(&mut write, 0)?;
     match dtype {
         Type::Int(i, j) => {
-            if cm.len() != *i {
+            if cm.len() != i {
                 return Err(format!(
                     "ConstInt: initializer has wrong number of rows (has {}, expected {})",
                     cm.len(),
                     i
                 ));
             }
-            if cm.iter().any(|row| row.len() != *j) {
+            if cm.iter().any(|row| row.len() != j) {
                 return Err(format!(
                     "ConstInt: some row has wrong length, expected {}",
                     j
@@ -204,12 +202,11 @@ where
     Ok(())
 }
 
-fn check_bool<'a, R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
+fn check_bool<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -221,14 +218,14 @@ where
             let Type::Bool(i, j) = write_nxt(&mut write, 0)? else {
                 return Err("ConstBool: write type must be Bool".into());
             };
-            if cm.len() != *i {
+            if cm.len() != i {
                 return Err(format!(
                     "ConstBool: initializer has wrong number of rows (has {}, expected {})",
                     cm.len(),
                     i
                 ));
             }
-            if cm.iter().any(|row| row.len() != *j) {
+            if cm.iter().any(|row| row.len() != j) {
                 return Err(format!(
                     "ConstBool: some row has wrong length, expected {}",
                     j
@@ -282,16 +279,15 @@ where
     }
 }
 
-fn check_cmp<'a, R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
+fn check_cmp<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    if *read_nxt(&mut read, 0)? != *read_nxt(&mut read, 1)? {
+    if read_nxt(&mut read, 0)? != read_nxt(&mut read, 1)? {
         return Err(format!("{:?}: input values must have the same type", op));
     }
     let Type::Bool(1, 1) = write_nxt(&mut write, 0)? else {
@@ -303,12 +299,11 @@ where
     Ok(())
 }
 
-fn check_mat_ops<'a, R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
+fn check_mat_ops<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -325,10 +320,10 @@ where
                 return Err(format!("{:?}: must write exactly one value", op));
             };
 
-            if *r1 != *r2 {
+            if r1 != r2 {
                 return Err(format!("{:?}: inputs must have the same type", op));
             }
-            if *r1 != *w1 {
+            if r1 != w1 {
                 return Err(format!(
                     "{:?}: input and output must have the same type",
                     op
@@ -349,7 +344,7 @@ where
             let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
-            if *r1 != *w1 {
+            if r1 != w1 {
                 return Err(format!(
                     "{:?}: input and output must have the same type",
                     op
@@ -373,7 +368,7 @@ where
             match w1 {
                 Type::Int(i, j) => {
                     // FIXME: we should fix which dimension is 1..
-                    if *i == 1 || *j == 1 {
+                    if i == 1 || j == 1 {
                         return Ok(());
                     }
                     Err(format!(
@@ -388,7 +383,7 @@ where
     }
 }
 
-fn check_linear_affine<'a, D>(
+fn check_linear_affine<D>(
     op: &LIA,
     a: &[Vec<i64>],
     b: &[Vec<i64>],
@@ -396,8 +391,7 @@ fn check_linear_affine<'a, D>(
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
-    Type: 'a,
+    D: TryInto<Type>,
 {
     let (r1, None) = (read_nxt(read, 0)?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
@@ -438,20 +432,20 @@ where
 
     match (r1, w1) {
         (Type::Int(d1, d2), Type::Int(d3, d4)) => {
-            if *d2 != a_rows {
+            if d2 != a_rows {
                 return Err(format!(
                     "{:?}: mismatch in inner dimensions of `A` and `x`: A has {}x{}, x has {}x{}",
                     op, d1, d2, a_rows, a_rows
                 ));
             }
             // `A*x` is a a_rows x d2 matrix, `B` has to have these dimensions (if non-empty)
-            if b_rows > 0 && (a_rows != b_rows || *d2 != b_cols) {
+            if b_rows > 0 && (a_rows != b_rows || d2 != b_cols) {
                 return Err(format!(
                     "{:?}: A*x has dimension {}x{} while B has {}x{}",
                     op, a_rows, d2, b_rows, b_cols
                 ));
             }
-            if a_rows != *d3 || *d2 != *d4 {
+            if a_rows != d3 || d2 != d4 {
                 return Err(format!(
                     "{:?}: bad output matrix dimensions, expected {}x{} but got {}x{}",
                     op, a_rows, d2, d3, d4
@@ -464,12 +458,11 @@ where
     }
 }
 
-fn check_flow<'a, R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
+fn check_flow<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -481,7 +474,7 @@ where
             let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
-            if *r1 != *w1 {
+            if r1 != w1 {
                 return Err(format!(
                     "{:?}: input and output must have the same type",
                     op
@@ -501,19 +494,19 @@ where
             let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
-            if *r2 != *r3 {
+            if r2 != r3 {
                 return Err(format!(
                     "{:?}: 2nd and 3rd inputs must have the same type",
                     op
                 ));
             }
-            if *w1 != *r2 {
+            if w1 != r2 {
                 return Err(format!(
                     "{:?}: inputs and output must have the same type",
                     op
                 ));
             }
-            if *r1 != Type::Bool(1, 1) {
+            if r1 != Type::Bool(1, 1) {
                 return Err(format!(
                     "{:?}: input and output values must have the same type",
                     op

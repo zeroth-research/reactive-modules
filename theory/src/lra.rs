@@ -1,24 +1,24 @@
 /*!
 # Linear integer arithmetic
 
-Defines the theory [`RLA`] of linear integer arithmetic over matrices,
+Defines the theory [`LRA`] of linear integer arithmetic over matrices,
 mixing integer and boolean matrices in a single signature.
 
 A [`Type`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
 `Type` converts to and from [`int::IntType`] and [`bool::PropType`]
 so that integer and propositional terms embed directly into `RLA`. The
-operations in [`RLA`] are:
+operations in [`LRA`] are:
 
-- [`RLA::Const`] — an real matrix literal whose shape must match the
+- [`LRA::Const`] — an real matrix literal whose shape must match the
   declared (integer) write type.
-- [`RLA::BoolConst`], [`RLA::And`], [`RLA::Or`], [`RLA::Xor`], [`RLA::Not`]
+- [`LRA::BoolConst`], [`LRA::And`], [`LRA::Or`], [`LRA::Xor`], [`LRA::Not`]
   — boolean operations on the boolean fragment of `Type`.
-- [`RLA::Le`], [`RLA::Lt`], [`RLA::Ge`], [`RLA::Gt`], [`RLA::Eq`], [`RLA::Ne`]
+- [`LRA::Le`], [`LRA::Lt`], [`LRA::Ge`], [`LRA::Gt`], [`LRA::Eq`], [`LRA::Ne`]
   — pointwise integer comparisons producing a scalar `Bool(1,1)`.
-- [`RLA::Ite`] — if-then-else: reads a boolean guard and two same-typed branches.
-- [`RLA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
+- [`LRA::Ite`] — if-then-else: reads a boolean guard and two same-typed branches.
+- [`LRA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
   `B` constant integer matrices of compatible shapes.
-- [`RLA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
+- [`LRA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
 
 `RLA` implements [`Theory`]; [`Theory::check`] validates read/write
 shapes against the selected operation.
@@ -27,17 +27,17 @@ shapes against the selected operation.
 
 ```
 use theory::Theory;
-use theory::rla::{RLA, Type};
+use theory::lra::{LRA, Type};
 
 // Pointwise less-than on scalars: Real(1,1), Real(1,1) -> Bool(1,1).
 let i = Type::Real(1, 1);
 let b = Type::Bool(1, 1);
-assert!(RLA::Lt.check(&[i, i], &[b]).is_ok());
+assert!(LRA::Lt.check([i, i], [b]).is_ok());
 
 // ReLU preserves shape and stays in the real fragment.
 let m = Type::Real(3, 4);
-assert!(RLA::ReLU.check(&[m], &[m]).is_ok());
-assert!(RLA::ReLU.check(&[b], &[b]).is_err());
+assert!(LRA::ReLU.check([m], [m]).is_ok());
+assert!(LRA::ReLU.check([b], [b]).is_err());
 ```
 */
 
@@ -77,7 +77,7 @@ impl fmt::Display for Type {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum RLA {
+pub enum LRA {
     // constants
     ConstReal(Vec<Vec<f64>>),
     ConstBool(Vec<Vec<bool>>),
@@ -107,70 +107,68 @@ pub enum RLA {
     Id,
 }
 
-impl fmt::Display for RLA {
+impl fmt::Display for LRA {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RLA::ConstReal(cm) => fmt_matrix(cm, f),
-            RLA::ConstBool(cm) => fmt_matrix(cm, f),
-            RLA::And => write!(f, "And"),
-            RLA::Or => write!(f, "Or"),
-            RLA::Xor => write!(f, "Xor"),
-            RLA::Not => write!(f, "Not"),
-            RLA::Le => write!(f, "Le"),
-            RLA::Lt => write!(f, "Lt"),
-            RLA::Ge => write!(f, "Ge"),
-            RLA::Gt => write!(f, "Gt"),
-            RLA::Eq => write!(f, "Eq"),
-            RLA::Ne => write!(f, "Ne"),
-            RLA::Linear(..) => write!(f, "Linear"),
-            RLA::Add => write!(f, "Add"),
-            RLA::ReLU => write!(f, "ReLU"),
-            RLA::Argmax => write!(f, "Argmax"),
-            RLA::Min => write!(f, "Min"),
-            RLA::Max => write!(f, "Max"),
-            RLA::Ite => write!(f, "Ite"),
-            RLA::Id => write!(f, "Id"),
+            LRA::ConstReal(cm) => fmt_matrix(cm, f),
+            LRA::ConstBool(cm) => fmt_matrix(cm, f),
+            LRA::And => write!(f, "And"),
+            LRA::Or => write!(f, "Or"),
+            LRA::Xor => write!(f, "Xor"),
+            LRA::Not => write!(f, "Not"),
+            LRA::Le => write!(f, "Le"),
+            LRA::Lt => write!(f, "Lt"),
+            LRA::Ge => write!(f, "Ge"),
+            LRA::Gt => write!(f, "Gt"),
+            LRA::Eq => write!(f, "Eq"),
+            LRA::Ne => write!(f, "Ne"),
+            LRA::Linear(..) => write!(f, "Linear"),
+            LRA::Add => write!(f, "Add"),
+            LRA::ReLU => write!(f, "ReLU"),
+            LRA::Argmax => write!(f, "Argmax"),
+            LRA::Min => write!(f, "Min"),
+            LRA::Max => write!(f, "Max"),
+            LRA::Ite => write!(f, "Ite"),
+            LRA::Id => write!(f, "Id"),
         }
     }
 }
 
-impl Theory for RLA {
+impl Theory for LRA {
     type DType = Type;
 
-    fn check<'a, R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<&'a Type>,
+        D: TryInto<Self::DType>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
-        Type: 'a,
     {
         match self {
-            RLA::ConstReal(cm) => check_const(cm, read, write),
-            RLA::ConstBool(_) | RLA::And | RLA::Or | RLA::Xor | RLA::Not => {
+            LRA::ConstReal(cm) => check_const(cm, read, write),
+            LRA::ConstBool(_) | LRA::And | LRA::Or | LRA::Xor | LRA::Not => {
                 check_bool(self, read, write)
             }
-            RLA::Le | RLA::Lt | RLA::Ge | RLA::Gt | RLA::Eq | RLA::Ne => {
+            LRA::Le | LRA::Lt | LRA::Ge | LRA::Gt | LRA::Eq | LRA::Ne => {
                 check_cmp(self, read, write)
             }
-            RLA::Linear(a, b) => {
+            LRA::Linear(a, b) => {
                 let mut read = read.into_iter();
                 let mut write = write.into_iter();
                 check_linear_affine(self, a, b, &mut read, &mut write)
             }
-            RLA::Add | RLA::ReLU | RLA::Argmax | RLA::Min | RLA::Max => {
+            LRA::Add | LRA::ReLU | LRA::Argmax | LRA::Min | LRA::Max => {
                 check_mat_ops(self, read, write)
             }
-            RLA::Ite | RLA::Id => check_flow(self, read, write),
+            LRA::Ite | LRA::Id => check_flow(self, read, write),
         }
     }
 }
 
-fn check_const<'a, R, W, D>(cm: &[Vec<f64>], read: R, write: W) -> Result<(), String>
+fn check_const<R, W, D>(cm: &[Vec<f64>], read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -180,14 +178,14 @@ where
     let dtype = write_nxt(&mut write, 0)?;
     match dtype {
         Type::Real(i, j) => {
-            if cm.len() != *i {
+            if cm.len() != i {
                 return Err(format!(
                     "ConstReal: initializer has wrong number of rows (has {}, expected {})",
                     cm.len(),
                     i
                 ));
             }
-            if cm.iter().any(|row| row.len() != *j) {
+            if cm.iter().any(|row| row.len() != j) {
                 return Err(format!(
                     "ConstReal: some row has wrong length, expected {}",
                     j
@@ -204,31 +202,30 @@ where
     Ok(())
 }
 
-fn check_bool<'a, R, W, D>(op: &RLA, read: R, write: W) -> Result<(), String>
+fn check_bool<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        RLA::ConstBool(cm) => {
+        LRA::ConstBool(cm) => {
             if read.next().is_some() {
                 return Err("ConstBool: cannot read values".into());
             }
             let Type::Bool(i, j) = write_nxt(&mut write, 0)? else {
                 return Err("ConstBool: write type must be Bool".into());
             };
-            if cm.len() != *i {
+            if cm.len() != i {
                 return Err(format!(
                     "ConstBool: initializer has wrong number of rows (has {}, expected {})",
                     cm.len(),
                     i
                 ));
             }
-            if cm.iter().any(|row| row.len() != *j) {
+            if cm.iter().any(|row| row.len() != j) {
                 return Err(format!(
                     "ConstBool: some row has wrong length, expected {}",
                     j
@@ -239,7 +236,7 @@ where
             }
             Ok(())
         }
-        RLA::Not => {
+        LRA::Not => {
             let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
             if !matches!(r, Type::Bool(..)) {
                 return Err(format!("{:?}: input must be Bool", op));
@@ -255,7 +252,7 @@ where
             }
             Ok(())
         }
-        RLA::And | RLA::Or | RLA::Xor => {
+        LRA::And | LRA::Or | LRA::Xor => {
             let w1 = write_nxt(&mut write, 0)?;
             let (r1, r2, None) = (
                 read_nxt(&mut read, 0)?,
@@ -282,16 +279,15 @@ where
     }
 }
 
-fn check_cmp<'a, R, W, D>(op: &RLA, read: R, write: W) -> Result<(), String>
+fn check_cmp<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    if *read_nxt(&mut read, 0)? != *read_nxt(&mut read, 1)? {
+    if read_nxt(&mut read, 0)? != read_nxt(&mut read, 1)? {
         return Err(format!("{:?}: input values must have the same type", op));
     }
     let Type::Bool(1, 1) = write_nxt(&mut write, 0)? else {
@@ -303,17 +299,16 @@ where
     Ok(())
 }
 
-fn check_mat_ops<'a, R, W, D>(op: &RLA, read: R, write: W) -> Result<(), String>
+fn check_mat_ops<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        RLA::Add => {
+        LRA::Add => {
             let (r1, r2, None) = (
                 read_nxt(&mut read, 0)?,
                 read_nxt(&mut read, 1)?,
@@ -325,10 +320,10 @@ where
                 return Err(format!("{:?}: must write exactly one value", op));
             };
 
-            if *r1 != *r2 {
+            if r1 != r2 {
                 return Err(format!("{:?}: inputs must have the same type", op));
             }
-            if *r1 != *w1 {
+            if r1 != w1 {
                 return Err(format!(
                     "{:?}: input and output must have the same type",
                     op
@@ -342,14 +337,14 @@ where
             }
             Ok(())
         }
-        RLA::ReLU => {
+        LRA::ReLU => {
             let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
             let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
-            if *r1 != *w1 {
+            if r1 != w1 {
                 return Err(format!(
                     "{:?}: input and output must have the same type",
                     op
@@ -363,7 +358,7 @@ where
             }
             Ok(())
         }
-        RLA::Argmax | RLA::Min | RLA::Max => {
+        LRA::Argmax | LRA::Min | LRA::Max => {
             let (_r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
@@ -373,7 +368,7 @@ where
             match w1 {
                 Type::Real(i, j) => {
                     // FIXME: we should fix which dimension is 1..
-                    if *i == 1 || *j == 1 {
+                    if i == 1 || j == 1 {
                         return Ok(());
                     }
                     Err(format!(
@@ -388,16 +383,15 @@ where
     }
 }
 
-fn check_linear_affine<'a, D>(
-    op: &RLA,
+fn check_linear_affine<D>(
+    op: &LRA,
     a: &[Vec<f64>],
     b: &[Vec<f64>],
     read: &mut impl Iterator<Item = D>,
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
-    Type: 'a,
+    D: TryInto<Type>,
 {
     let (r1, None) = (read_nxt(read, 0)?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
@@ -438,20 +432,20 @@ where
 
     match (r1, w1) {
         (Type::Real(d1, d2), Type::Real(d3, d4)) => {
-            if *d2 != a_rows {
+            if d2 != a_rows {
                 return Err(format!(
                     "{:?}: mismatch in inner dimensions of `A` and `x`: A has {}x{}, x has {}x{}",
                     op, d1, d2, a_rows, a_rows
                 ));
             }
             // `A*x` is a a_rows x d2 matrix, `B` has to have these dimensions (if non-empty)
-            if b_rows > 0 && (a_rows != b_rows || *d2 != b_cols) {
+            if b_rows > 0 && (a_rows != b_rows || d2 != b_cols) {
                 return Err(format!(
                     "{:?}: A*x has dimension {}x{} while B has {}x{}",
                     op, a_rows, d2, b_rows, b_cols
                 ));
             }
-            if a_rows != *d3 || *d2 != *d4 {
+            if a_rows != d3 || d2 != d4 {
                 return Err(format!(
                     "{:?}: bad output matrix dimensions, expected {}x{} but got {}x{}",
                     op, a_rows, d2, d3, d4
@@ -464,24 +458,23 @@ where
     }
 }
 
-fn check_flow<'a, R, W, D>(op: &RLA, read: R, write: W) -> Result<(), String>
+fn check_flow<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<&'a Type>,
+    D: TryInto<Type>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
-    Type: 'a,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        RLA::Id => {
+        LRA::Id => {
             let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
             let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
-            if *r1 != *w1 {
+            if r1 != w1 {
                 return Err(format!(
                     "{:?}: input and output must have the same type",
                     op
@@ -489,7 +482,7 @@ where
             }
             Ok(())
         }
-        RLA::Ite => {
+        LRA::Ite => {
             let (r1, r2, r3, None) = (
                 read_nxt(&mut read, 0)?,
                 read_nxt(&mut read, 1)?,
@@ -501,19 +494,19 @@ where
             let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
-            if *r2 != *r3 {
+            if r2 != r3 {
                 return Err(format!(
                     "{:?}: 2nd and 3rd inputs must have the same type",
                     op
                 ));
             }
-            if *w1 != *r2 {
+            if w1 != r2 {
                 return Err(format!(
                     "{:?}: inputs and output must have the same type",
                     op
                 ));
             }
-            if *r1 != Type::Bool(1, 1) {
+            if r1 != Type::Bool(1, 1) {
                 return Err(format!(
                     "{:?}: input and output values must have the same type",
                     op
