@@ -30,12 +30,12 @@ use theory::Theory;
 use theory::lia::{LIA, Type};
 
 // Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
-let i = Type::Int(1, 1);
-let b = Type::Bool(1, 1);
+let i = Type::Int([1, 1]);
+let b = Type::Bool([1, 1]);
 assert!(LIA::Lt.check([i, i], [b]).is_ok());
 
 // ReLU preserves shape and stays in the integer fragment.
-let m = Type::Int(3, 4);
+let m = Type::Int([3, 4]);
 assert!(LIA::ReLU.check([m], [m]).is_ok());
 assert!(LIA::ReLU.check([b], [b]).is_err());
 ```
@@ -47,8 +47,8 @@ use crate::*;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum Type {
-    Int(usize, usize),
-    Bool(usize, usize),
+    Int([usize; 2]),
+    Bool([usize; 2]),
 }
 
 impl Type {
@@ -60,9 +60,9 @@ impl Type {
         matches!(self, Type::Int(..))
     }
 
-    pub fn shape(&self) -> (usize, usize) {
+    pub fn shape(&self) -> &[usize; 2] {
         match self {
-            Type::Bool(i, j) | Type::Int(i, j) => (*i, *j),
+            Type::Bool(shape) | Type::Int(shape) => shape,
         }
     }
 }
@@ -70,8 +70,8 @@ impl Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Int(i, j) => write!(f, "Int({i}, {j})"),
-            Type::Bool(i, j) => write!(f, "Bool({i}, {j})"),
+            Type::Int([i, j]) => write!(f, "Int({i}, {j})"),
+            Type::Bool([i, j]) => write!(f, "Bool({i}, {j})"),
         }
     }
 }
@@ -177,7 +177,7 @@ where
     }
     let dtype = write_nxt(&mut write, 0)?;
     match dtype {
-        Type::Int(i, j) => {
+        Type::Int([i, j]) => {
             if cm.len() != i {
                 return Err(format!(
                     "ConstInt: initializer has wrong number of rows (has {}, expected {})",
@@ -215,7 +215,7 @@ where
             if read.next().is_some() {
                 return Err("ConstBool: cannot read values".into());
             }
-            let Type::Bool(i, j) = write_nxt(&mut write, 0)? else {
+            let Type::Bool([i, j]) = write_nxt(&mut write, 0)? else {
                 return Err("ConstBool: write type must be Bool".into());
             };
             if cm.len() != i {
@@ -290,7 +290,7 @@ where
     if read_nxt(&mut read, 0)? != read_nxt(&mut read, 1)? {
         return Err(format!("{:?}: input values must have the same type", op));
     }
-    let Type::Bool(1, 1) = write_nxt(&mut write, 0)? else {
+    let Type::Bool([1, 1]) = write_nxt(&mut write, 0)? else {
         return Err(format!(
             "{:?}: input and output values must have the same type",
             op
@@ -366,7 +366,7 @@ where
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             match w1 {
-                Type::Int(i, j) => {
+                Type::Int([i, j]) => {
                     // FIXME: we should fix which dimension is 1..
                     if i == 1 || j == 1 {
                         return Ok(());
@@ -431,7 +431,7 @@ where
     }
 
     match (r1, w1) {
-        (Type::Int(d1, d2), Type::Int(d3, d4)) => {
+        (Type::Int([d1, d2]), Type::Int([d3, d4])) => {
             if d2 != a_rows {
                 return Err(format!(
                     "{:?}: mismatch in inner dimensions of `A` and `x`: A has {}x{}, x has {}x{}",
@@ -506,7 +506,7 @@ where
                     op
                 ));
             }
-            if r1 != Type::Bool(1, 1) {
+            if r1 != Type::Bool([1, 1]) {
                 return Err(format!(
                     "{:?}: input and output values must have the same type",
                     op

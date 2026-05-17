@@ -26,15 +26,15 @@ use theory::Theory;
 use theory::bv::{BV, Type};
 
  // 8-bit bit-vectors.
- let a = Type::UWord(8, 2, 3);
- let b = Type::UWord(8, 3, 4);
- let c = Type::UWord(8, 2, 4);
+ let a = Type::UWord(8, [2, 3]);
+ let b = Type::UWord(8, [3, 4]);
+ let c = Type::UWord(8, [2, 4]);
 
  // Matrix multiply: (2x3) * (3x4) -> (2x4).
  assert!(BV::MatMul.check([a, b], [c]).is_ok());
 
  // Elementwise `Add` requires matching shapes.
- let m = Type::UWord(8, 2, 3);
+ let m = Type::UWord(8, [2, 3]);
  assert!(BV::Add.check([m, m], [m]).is_ok());
  assert!(BV::Add.check([a, b], [c]).is_err());
  ```
@@ -46,28 +46,28 @@ use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum Type {
-    // matrix of unsigned bitvectors determnined by (bitvector-length, # rows, # cols)
-    UWord(usize, usize, usize),
-    // matrix of signed bitvectors determnined by (bitvector-length, # rows, # cols)
-    SWord(usize, usize, usize),
+    // matrix of unsigned bitvectors determined by (bitvector-length, # rows, # cols)
+    UWord(usize, [usize; 2]),
+    // matrix of signed bitvectors determined by (bitvector-length, # rows, # cols)
+    SWord(usize, [usize; 2]),
 }
 
 impl Type {
     pub fn is_signed(&self) -> bool {
-        matches!(self, Type::SWord(_, _, _))
+        matches!(self, Type::SWord(_, _))
     }
 
-    pub fn shape(&self) -> (usize, usize) {
+    pub fn shape(&self) -> &[usize; 2] {
         match self {
-            Type::UWord(_, i, j) => (*i, *j),
-            Type::SWord(_, i, j) => (*i, *j),
+            Type::UWord(_, shape) => shape,
+            Type::SWord(_, shape) => shape,
         }
     }
 
     pub fn bw(&self) -> usize {
         match self {
-            Type::UWord(bw, _, _) => *bw,
-            Type::SWord(bw, _, _) => *bw,
+            Type::UWord(bw, _) => *bw,
+            Type::SWord(bw, _) => *bw,
         }
     }
 }
@@ -75,8 +75,8 @@ impl Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::UWord(bw, i, j) => write!(f, "uBV<{bw}>({i}, {j})"),
-            Type::SWord(bw, i, j) => write!(f, "sBV<{bw}>({i}, {j})"),
+            Type::UWord(bw, [i, j]) => write!(f, "uBV<{bw}>({i}, {j})"),
+            Type::SWord(bw, [i, j]) => write!(f, "sBV<{bw}>({i}, {j})"),
         }
     }
 }
@@ -181,8 +181,8 @@ impl Theory for BV {
                 }
                 let dtype = write_nxt(&mut write, 0)?;
                 match dtype {
-                    Type::UWord(bw, i, j) => check_init_dims(cm, bw, i, j)?,
-                    Type::SWord(bw, i, j) => check_init_dims(cm, bw, i, j)?,
+                    Type::UWord(bw, [i, j]) => check_init_dims(cm, bw, i, j)?,
+                    Type::SWord(bw, [i, j]) => check_init_dims(cm, bw, i, j)?,
                 }
                 if write.next().is_some() {
                     return Err("Const: returns more than one value".into());
@@ -223,8 +223,8 @@ impl Theory for BV {
                 if r1 != r2 {
                     return Err(format!("{self}: inputs must have the same type"));
                 }
-                let (rows, cols) = r1.shape();
-                if w1 != Type::UWord(1, rows, cols) {
+                let [rows, cols] = r1.shape();
+                if w1 != Type::UWord(1, [*rows, *cols]) {
                     return Err(format!(
                         "{self}: output must be U(1, {rows}, {cols}), got {w1}"
                     ));
@@ -358,9 +358,9 @@ impl Theory for BV {
                     ));
                 }
 
-                let (d1, d2) = r1.shape();
-                let (d3, d4) = r2.shape();
-                let (d5, d6) = w1.shape();
+                let [d1, d2] = r1.shape();
+                let [d3, d4] = r2.shape();
+                let [d5, d6] = w1.shape();
 
                 if d2 != d3 {
                     return Err(format!(

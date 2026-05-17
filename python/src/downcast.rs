@@ -7,10 +7,18 @@ impl TryFrom<&DType> for theory::lia::Type {
 
     fn try_from(d: &DType) -> Result<Self, Self::Error> {
         match d {
-            DType::Int(shape) if shape.len() == 2 => Ok(theory::lia::Type::Int(shape[0], shape[1])),
-            DType::Bool(shape) if shape.len() == 2 => {
-                Ok(theory::lia::Type::Bool(shape[0], shape[1]))
-            }
+            DType::Int(shape) if shape.len() == 2 => Ok(theory::lia::Type::Int(
+                shape
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| "invalid shape".to_string())?,
+            )),
+            DType::Bool(shape) if shape.len() == 2 => Ok(theory::lia::Type::Bool(
+                shape
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| "invalid shape".to_string())?,
+            )),
             t => Err(format!("{} cannot be converted to lia::Type", t)),
         }
     }
@@ -22,12 +30,18 @@ impl TryFrom<&DType> for theory::lra::Type {
 
     fn try_from(d: &DType) -> Result<Self, Self::Error> {
         match d {
-            DType::Real(shape) if shape.len() == 2 => {
-                Ok(theory::lra::Type::Real(shape[0], shape[1]))
-            }
-            DType::Bool(shape) if shape.len() == 2 => {
-                Ok(theory::lra::Type::Bool(shape[0], shape[1]))
-            }
+            DType::Real(shape) if shape.len() == 2 => Ok(theory::lra::Type::Real(
+                shape
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| "invalid shape".to_string())?,
+            )),
+            DType::Bool(shape) if shape.len() == 2 => Ok(theory::lra::Type::Bool(
+                shape
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| "invalid shape".to_string())?,
+            )),
             t => Err(format!("{} cannot be converted to rla::Type", t)),
         }
     }
@@ -39,11 +53,15 @@ impl TryFrom<&DType> for theory::bv::Type {
 
     fn try_from(d: &DType) -> Result<Self, Self::Error> {
         match d {
-            DType::UWord(bw) => Ok(theory::bv::Type::UWord(*bw as usize, 1, 1)),
-            DType::SWord(bw) => Ok(theory::bv::Type::SWord(*bw as usize, 1, 1)),
-            DType::Bool(shape) if shape.len() == 2 => {
-                Ok(theory::bv::Type::UWord(1, shape[0], shape[1]))
-            }
+            DType::UWord(bw) => Ok(theory::bv::Type::UWord(*bw as usize, [1, 1])),
+            DType::SWord(bw) => Ok(theory::bv::Type::SWord(*bw as usize, [1, 1])),
+            DType::Bool(shape) if shape.len() == 2 => Ok(theory::bv::Type::UWord(
+                1,
+                shape
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| "invalid shape".to_string())?,
+            )),
             t => Err(format!("{} cannot be converted to bv::Type", t)),
         }
     }

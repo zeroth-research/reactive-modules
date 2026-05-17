@@ -14,8 +14,8 @@ enum Type {
 impl From<bv::Type> for Type {
     fn from(value: bv::Type) -> Self {
         match value {
-            bv::Type::UWord(bw, rows, cols) => Type::UWord(bw, [rows, cols]),
-            bv::Type::SWord(bw, rows, cols) => Type::SWord(bw, [rows, cols]),
+            bv::Type::UWord(bw, shape) => Type::UWord(bw, shape),
+            bv::Type::SWord(bw, shape) => Type::SWord(bw, shape),
         }
     }
 }
@@ -23,8 +23,8 @@ impl From<bv::Type> for Type {
 impl From<lia::Type> for Type {
     fn from(value: lia::Type) -> Self {
         match value {
-            lia::Type::Int(rows, cols) => Type::Int([rows, cols]),
-            lia::Type::Bool(rows, cols) => Type::Bool([rows, cols]),
+            lia::Type::Int(shape) => Type::Int(shape),
+            lia::Type::Bool(shape) => Type::Bool(shape),
         }
     }
 }
@@ -32,8 +32,8 @@ impl From<lia::Type> for Type {
 impl From<lra::Type> for Type {
     fn from(value: lra::Type) -> Self {
         match value {
-            lra::Type::Bool(rows, cols) => Type::Bool([rows, cols]),
-            lra::Type::Real(rows, cols) => Type::Real([rows, cols]),
+            lra::Type::Bool(shape) => Type::Bool(shape),
+            lra::Type::Real(shape) => Type::Real(shape),
         }
     }
 }
@@ -43,8 +43,8 @@ impl TryFrom<Type> for bv::Type {
 
     fn try_from(value: Type) -> Result<Self, Self::Error> {
         match value {
-            Type::SWord(bits, [rows, cols]) => Ok(bv::Type::SWord(bits, rows, cols)),
-            Type::UWord(bits, [rows, cols]) => Ok(bv::Type::UWord(bits, rows, cols)),
+            Type::SWord(bw, shape) => Ok(bv::Type::SWord(bw, shape)),
+            Type::UWord(bw, shape) => Ok(bv::Type::UWord(bw, shape)),
             _ => Err("invalid cast".to_string()),
         }
     }
@@ -55,8 +55,8 @@ impl TryFrom<Type> for lia::Type {
 
     fn try_from(value: Type) -> Result<Self, Self::Error> {
         match value {
-            Type::Bool([rows, cols]) => Ok(lia::Type::Bool(rows, cols)),
-            Type::Int([rows, cols]) => Ok(lia::Type::Int(rows, cols)),
+            Type::Bool(shape) => Ok(lia::Type::Bool(shape)),
+            Type::Int(shape) => Ok(lia::Type::Int(shape)),
             _ => Err("invalid cast".to_string()),
         }
     }
@@ -67,8 +67,8 @@ impl TryFrom<Type> for lra::Type {
 
     fn try_from(value: Type) -> Result<Self, Self::Error> {
         match value {
-            Type::Bool([rows, cols]) => Ok(lra::Type::Bool(rows, cols)),
-            Type::Real([rows, cols]) => Ok(lra::Type::Real(rows, cols)),
+            Type::Bool(shape) => Ok(lra::Type::Bool(shape)),
+            Type::Real(shape) => Ok(lra::Type::Real(shape)),
             _ => Err("invalid cast".to_string()),
         }
     }
