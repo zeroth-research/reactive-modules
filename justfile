@@ -91,6 +91,7 @@ run-python *args:
     @just build-python
     cd python && uv run {{ args }}
 
+# Build and start tutorials in Jupyter (web broswer)
 tutorials:
     @just build-tutorials
     uv run jupyter notebook tutorials/
