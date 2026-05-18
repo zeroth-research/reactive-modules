@@ -41,8 +41,9 @@ build-tutorials:
 test:
     {{ CARGO }} test {{ features_flag }}
 
-test-python:
-    @just run-python pytest
+# Run python tests
+test-python *args:
+    @just run-python pytest {{ args }}
 
 test-all:
     {{ CARGO }} test --all-features {{ profile_flag }}
