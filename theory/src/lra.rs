@@ -517,3 +517,207 @@ where
         _ => unreachable!(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn real(r: usize, c: usize) -> Type {
+        Type::Real([r, c])
+    }
+
+    fn bool_t(r: usize, c: usize) -> Type {
+        Type::Bool([r, c])
+    }
+
+    #[test]
+    fn type_kind_and_shape() {
+        assert!(real(2, 3).is_real() && !real(2, 3).is_bool());
+        assert_eq!(real(2, 3).shape(), &[2, 3]);
+        assert!(bool_t(1, 1).is_bool() && !bool_t(1, 1).is_real());
+    }
+
+    #[test]
+    fn const_real_ok() {
+        let cm = vec![vec![0.0f64, 1.0], vec![2.0, 3.0]];
+        assert!(LRA::ConstReal(cm).check([] as [Type; 0], [real(2, 2)]).is_ok());
+    }
+
+    #[test]
+    fn const_real_bool_write_fails() {
+        assert!(LRA::ConstReal(vec![vec![0.0]]).check([] as [Type; 0], [bool_t(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn const_real_wrong_rows_fails() {
+        assert!(LRA::ConstReal(vec![vec![0.0]]).check([] as [Type; 0], [real(2, 1)]).is_err());
+    }
+
+    #[test]
+    fn const_real_with_read_fails() {
+        let t = real(1, 1);
+        assert!(LRA::ConstReal(vec![vec![0.0]]).check([t], [t]).is_err());
+    }
+
+    #[test]
+    fn const_bool_ok() {
+        let cm = vec![vec![true, false], vec![false, true]];
+        assert!(LRA::ConstBool(cm).check([] as [Type; 0], [bool_t(2, 2)]).is_ok());
+    }
+
+    #[test]
+    fn const_bool_real_write_fails() {
+        assert!(LRA::ConstBool(vec![vec![true]]).check([] as [Type; 0], [real(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn not_ok() {
+        let b = bool_t(2, 3);
+        assert!(LRA::Not.check([b], [b]).is_ok());
+    }
+
+    #[test]
+    fn not_real_input_fails() {
+        let t = real(1, 1);
+        assert!(LRA::Not.check([t], [t]).is_err());
+    }
+
+    #[test]
+    fn and_ok() {
+        let b = bool_t(2, 2);
+        assert!(LRA::And.check([b, b], [b]).is_ok());
+    }
+
+    #[test]
+    fn or_ok() {
+        let b = bool_t(1, 1);
+        assert!(LRA::Or.check([b, b], [b]).is_ok());
+    }
+
+    #[test]
+    fn xor_ok() {
+        let b = bool_t(3, 1);
+        assert!(LRA::Xor.check([b, b], [b]).is_ok());
+    }
+
+    #[test]
+    fn and_real_output_fails() {
+        let b = bool_t(1, 1);
+        assert!(LRA::And.check([b, b], [real(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn and_type_mismatch_fails() {
+        assert!(LRA::And.check([bool_t(1, 1), bool_t(1, 2)], [bool_t(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn lt_ok() {
+        assert!(LRA::Lt.check([real(1, 1), real(1, 1)], [bool_t(1, 1)]).is_ok());
+    }
+
+    #[test]
+    fn le_ok() {
+        assert!(LRA::Le.check([real(2, 3), real(2, 3)], [bool_t(1, 1)]).is_ok());
+    }
+
+    #[test]
+    fn eq_ok() {
+        assert!(LRA::Eq.check([real(1, 1), real(1, 1)], [bool_t(1, 1)]).is_ok());
+    }
+
+    #[test]
+    fn cmp_non_bool_output_fails() {
+        let t = real(1, 1);
+        assert!(LRA::Lt.check([t, t], [t]).is_err());
+    }
+
+    #[test]
+    fn cmp_input_mismatch_fails() {
+        assert!(LRA::Eq.check([real(1, 1), real(1, 2)], [bool_t(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn add_ok() {
+        let t = real(3, 4);
+        assert!(LRA::Add.check([t, t], [t]).is_ok());
+    }
+
+    #[test]
+    fn add_shape_mismatch_fails() {
+        assert!(LRA::Add.check([real(1, 2), real(2, 1)], [real(1, 2)]).is_err());
+    }
+
+    #[test]
+    fn add_bool_fails() {
+        let b = bool_t(1, 1);
+        assert!(LRA::Add.check([b, b], [b]).is_err());
+    }
+
+    #[test]
+    fn relu_ok() {
+        let t = real(3, 4);
+        assert!(LRA::ReLU.check([t], [t]).is_ok());
+    }
+
+    #[test]
+    fn relu_bool_fails() {
+        let b = bool_t(1, 1);
+        assert!(LRA::ReLU.check([b], [b]).is_err());
+    }
+
+    #[test]
+    fn argmax_ok() {
+        assert!(LRA::Argmax.check([real(3, 4)], [real(1, 4)]).is_ok());
+    }
+
+    #[test]
+    fn argmax_matrix_output_fails() {
+        assert!(LRA::Argmax.check([real(3, 4)], [real(3, 4)]).is_err());
+    }
+
+    #[test]
+    fn min_ok() {
+        assert!(LRA::Min.check([real(4, 1)], [real(1, 1)]).is_ok());
+    }
+
+    #[test]
+    fn linear_ok() {
+        let a = vec![vec![1.0f64, 0.0], vec![0.0, 1.0]];
+        assert!(LRA::Linear(a, vec![]).check([real(1, 2)], [real(2, 2)]).is_ok());
+    }
+
+    #[test]
+    fn linear_dim_mismatch_fails() {
+        let a = vec![vec![1.0f64, 0.0], vec![0.0, 1.0]];
+        assert!(LRA::Linear(a, vec![]).check([real(1, 3)], [real(2, 3)]).is_err());
+    }
+
+    #[test]
+    fn ite_ok() {
+        let t = real(3, 4);
+        assert!(LRA::Ite.check([bool_t(1, 1), t, t], [t]).is_ok());
+    }
+
+    #[test]
+    fn ite_non_bool_guard_fails() {
+        let t = real(1, 1);
+        assert!(LRA::Ite.check([t, t, t], [t]).is_err());
+    }
+
+    #[test]
+    fn ite_arm_mismatch_fails() {
+        assert!(LRA::Ite.check([bool_t(1, 1), real(1, 1), real(1, 2)], [real(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn id_ok() {
+        let t = real(4, 4);
+        assert!(LRA::Id.check([t], [t]).is_ok());
+    }
+
+    #[test]
+    fn id_type_mismatch_fails() {
+        assert!(LRA::Id.check([real(1, 1)], [real(2, 2)]).is_err());
+    }
+}
