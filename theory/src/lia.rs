@@ -517,3 +517,207 @@ where
         _ => unreachable!(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn int(r: usize, c: usize) -> Type {
+        Type::Int([r, c])
+    }
+
+    fn bool_t(r: usize, c: usize) -> Type {
+        Type::Bool([r, c])
+    }
+
+    #[test]
+    fn type_kind_and_shape() {
+        assert!(int(2, 3).is_int() && !int(2, 3).is_bool());
+        assert_eq!(int(2, 3).shape(), &[2, 3]);
+        assert!(bool_t(1, 1).is_bool() && !bool_t(1, 1).is_int());
+    }
+
+    #[test]
+    fn const_int_ok() {
+        let cm = vec![vec![0i64, 1], vec![2, 3]];
+        assert!(LIA::ConstInt(cm).check([] as [Type; 0], [int(2, 2)]).is_ok());
+    }
+
+    #[test]
+    fn const_int_bool_write_fails() {
+        assert!(LIA::ConstInt(vec![vec![0]]).check([] as [Type; 0], [bool_t(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn const_int_wrong_rows_fails() {
+        assert!(LIA::ConstInt(vec![vec![0]]).check([] as [Type; 0], [int(2, 1)]).is_err());
+    }
+
+    #[test]
+    fn const_int_with_read_fails() {
+        let t = int(1, 1);
+        assert!(LIA::ConstInt(vec![vec![0]]).check([t], [t]).is_err());
+    }
+
+    #[test]
+    fn const_bool_ok() {
+        let cm = vec![vec![true, false], vec![false, true]];
+        assert!(LIA::ConstBool(cm).check([] as [Type; 0], [bool_t(2, 2)]).is_ok());
+    }
+
+    #[test]
+    fn const_bool_int_write_fails() {
+        assert!(LIA::ConstBool(vec![vec![true]]).check([] as [Type; 0], [int(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn not_ok() {
+        let b = bool_t(2, 3);
+        assert!(LIA::Not.check([b], [b]).is_ok());
+    }
+
+    #[test]
+    fn not_int_input_fails() {
+        let t = int(1, 1);
+        assert!(LIA::Not.check([t], [t]).is_err());
+    }
+
+    #[test]
+    fn and_ok() {
+        let b = bool_t(2, 2);
+        assert!(LIA::And.check([b, b], [b]).is_ok());
+    }
+
+    #[test]
+    fn or_ok() {
+        let b = bool_t(1, 1);
+        assert!(LIA::Or.check([b, b], [b]).is_ok());
+    }
+
+    #[test]
+    fn xor_ok() {
+        let b = bool_t(3, 1);
+        assert!(LIA::Xor.check([b, b], [b]).is_ok());
+    }
+
+    #[test]
+    fn and_int_output_fails() {
+        let b = bool_t(1, 1);
+        assert!(LIA::And.check([b, b], [int(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn and_type_mismatch_fails() {
+        assert!(LIA::And.check([bool_t(1, 1), bool_t(1, 2)], [bool_t(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn lt_ok() {
+        assert!(LIA::Lt.check([int(1, 1), int(1, 1)], [bool_t(1, 1)]).is_ok());
+    }
+
+    #[test]
+    fn le_ok() {
+        assert!(LIA::Le.check([int(2, 3), int(2, 3)], [bool_t(1, 1)]).is_ok());
+    }
+
+    #[test]
+    fn eq_ok() {
+        assert!(LIA::Eq.check([int(1, 1), int(1, 1)], [bool_t(1, 1)]).is_ok());
+    }
+
+    #[test]
+    fn cmp_non_bool_output_fails() {
+        let t = int(1, 1);
+        assert!(LIA::Lt.check([t, t], [t]).is_err());
+    }
+
+    #[test]
+    fn cmp_input_mismatch_fails() {
+        assert!(LIA::Eq.check([int(1, 1), int(1, 2)], [bool_t(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn add_ok() {
+        let t = int(3, 4);
+        assert!(LIA::Add.check([t, t], [t]).is_ok());
+    }
+
+    #[test]
+    fn add_shape_mismatch_fails() {
+        assert!(LIA::Add.check([int(1, 2), int(2, 1)], [int(1, 2)]).is_err());
+    }
+
+    #[test]
+    fn add_bool_fails() {
+        let b = bool_t(1, 1);
+        assert!(LIA::Add.check([b, b], [b]).is_err());
+    }
+
+    #[test]
+    fn relu_ok() {
+        let t = int(3, 4);
+        assert!(LIA::ReLU.check([t], [t]).is_ok());
+    }
+
+    #[test]
+    fn relu_bool_fails() {
+        let b = bool_t(1, 1);
+        assert!(LIA::ReLU.check([b], [b]).is_err());
+    }
+
+    #[test]
+    fn argmax_ok() {
+        assert!(LIA::Argmax.check([int(3, 4)], [int(1, 4)]).is_ok());
+    }
+
+    #[test]
+    fn argmax_matrix_output_fails() {
+        assert!(LIA::Argmax.check([int(3, 4)], [int(3, 4)]).is_err());
+    }
+
+    #[test]
+    fn min_ok() {
+        assert!(LIA::Min.check([int(4, 1)], [int(1, 1)]).is_ok());
+    }
+
+    #[test]
+    fn linear_ok() {
+        let a = vec![vec![1i64, 0], vec![0, 1]];
+        assert!(LIA::Linear(a, vec![]).check([int(1, 2)], [int(2, 2)]).is_ok());
+    }
+
+    #[test]
+    fn linear_dim_mismatch_fails() {
+        let a = vec![vec![1i64, 0], vec![0, 1]];
+        assert!(LIA::Linear(a, vec![]).check([int(1, 3)], [int(2, 3)]).is_err());
+    }
+
+    #[test]
+    fn ite_ok() {
+        let t = int(3, 4);
+        assert!(LIA::Ite.check([bool_t(1, 1), t, t], [t]).is_ok());
+    }
+
+    #[test]
+    fn ite_non_bool_guard_fails() {
+        let t = int(1, 1);
+        assert!(LIA::Ite.check([t, t, t], [t]).is_err());
+    }
+
+    #[test]
+    fn ite_arm_mismatch_fails() {
+        assert!(LIA::Ite.check([bool_t(1, 1), int(1, 1), int(1, 2)], [int(1, 1)]).is_err());
+    }
+
+    #[test]
+    fn id_ok() {
+        let t = int(4, 4);
+        assert!(LIA::Id.check([t], [t]).is_ok());
+    }
+
+    #[test]
+    fn id_type_mismatch_fails() {
+        assert!(LIA::Id.check([int(1, 1)], [int(2, 2)]).is_err());
+    }
+}
