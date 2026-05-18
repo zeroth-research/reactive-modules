@@ -67,27 +67,27 @@ elab_rules : tactic
       evalTactic (← `(tactic| sorry))
 """
 
-_LTS_THEOREMS = """\
+_TS_THEOREMS = """\
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
   · intro s hs
-    unfold lts at hs; simp only [RM, ReactiveModule.toLTS', ReactiveModule.LTS_init] at hs
+    unfold lts at hs; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs
     obtain ⟨l, hpre, hl⟩ := hs
     rw [← hl]
     exact init_inv l hpre
   · intro s s' ⟨hs, l, hstep⟩
-    unfold lts at hstep; simp only [RM, ReactiveModule.toLTS', ReactiveModule.LTS_update] at hstep
+    unfold lts at hstep; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
     rw [← hstep.2]
     exact step_inv s l ⟨hstep.1, hs⟩
 
 theorem hinv : lts.StateSet_isInvariant inv := by
-  apply LTS'.StateSet_ind_init_is_inv lts
+  apply TS.StateSet_ind_init_is_inv lts
   exact hinv'
 
 theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
     intro s s' ⟨hi, hP, htr⟩
-    unfold lts at htr; simp only [RM, ReactiveModule.toLTS', ReactiveModule.LTS_update] at htr
+    unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
     obtain ⟨l, hpre, heq⟩ := htr
     rw [← heq]
     zeroth_hammer
@@ -320,11 +320,10 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    zeroth_hammer
 """)
 
+    lines.append("section TS\n")
+    lines.append(f"{rm_noncomp}def lts := RM.toTS\n")
 
-    lines.append("section LTS\n")
-    lines.append(f"{rm_noncomp}def lts := RM.toLTS'\n")
-
-    lines.append(_LTS_THEOREMS)
+    lines.append(_TS_THEOREMS)
 
     lines.append(f"""\
 {rm_noncomp}def buchi := rule_buchi
@@ -337,17 +336,25 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
 
 """)
 
-    lines.append("end LTS\n")
+    lines.append("end TS\n")
 
     return "\n".join(lines)
 
 
-def smt_predicates_to_lean(cert_data: CertificateData, module: "Module") -> CertificateData:
+def smt_predicates_to_lean(
+    cert_data: CertificateData, module: "Module"
+) -> CertificateData:
     """Translate SMT-LIB string fields in *cert_data* to Lean expression strings.
 
     None and compiled term-list fields pass through unchanged.
     """
-    fields = (cert_data.prp, cert_data.inv, cert_data.init_pre, cert_data.update_pre, cert_data.ranking)
+    fields = (
+        cert_data.prp,
+        cert_data.inv,
+        cert_data.init_pre,
+        cert_data.update_pre,
+        cert_data.ranking,
+    )
     if not any(isinstance(f, str) for f in fields):
         return cert_data
 

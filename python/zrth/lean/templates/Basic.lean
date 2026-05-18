@@ -1,5 +1,5 @@
-import Cslib.Foundations.Semantics.LTS.Basic
---import Cslib.Automata.NA.Basic
+-- import Cslib.Foundations.Semantics.LTS.Basic
+import Cslib.Computability.Automata.NA.Basic
 import Core.LTL
 import Core.Box
 import Mathlib.Algebra.Order.BigOperators.Group.Finset
@@ -29,49 +29,62 @@ instance {State: Type u} : HasSubset (StateSet State) where
 
 
 /-  ----------------------------------------------------------------
- LTS with initial states and reachability
+ Transition system (TS)
  ----------------------------------------------------------------- -/
 
 
+/-- Definition of transition system (TS).
+ -- We use Cslib non-deterministic automata. -/
+structure TS (State: Type u) (Label: Type v) extends Cslib.Automata.NA State Label
 
-/-- LTS with initial states -/
-structure LTS' (State: Type u) (Label: Type v) extends Cslib.LTS State Label where
-  init: State → Prop
 
-namespace LTS'
+/- Trace is a wrapper around two omega sequences: sequence of states
+ -- and sequence of labels
+structure Trace (ts: TS State Label) where
+  states: Cslib.ωSequence State
+  labels: Cslib.ωSequence Label
+
+  is_ts_trace: ts.ωTr states labels
+-/
+
+namespace TS
+
+-- Cslib's NA uses "start" for initial states, while it is common to call the
+-- states "initial" when talking about TSs'. Add this abbreviation.
+abbrev init (ts: TS State Label) := ts.start
 
 --variable {State : Type u} {Label : Type v}
 
-/- initial infinite trace of an LTS' -/
-def ωTrace (lts : LTS' State Label)
+/- initial infinite trace of an TS -/
+def ωTrace (ts : TS State Label)
     (ss : Cslib.ωSequence State) (μs : Cslib.ωSequence Label) : Prop :=
-  lts.init (ss.get 0) ∧ lts.ωTr ss μs
+  ts.start (ss.get 0) ∧ ts.ωTr ss μs
 
 /- is state reachable? -/
-def reachable (lts : LTS' State Label) (s : State) : Prop :=
+def reachable (lts : TS State Label) (s : State) : Prop :=
   ∃ ss μs, lts.ωTrace ss μs ∧ ∃ n: Nat, ss.get n = s
 
 /- set of reachable states -/
-def reachableSet (lts : LTS' State Label) : StateSet State :=
+def reachableSet (lts : TS State Label) : StateSet State :=
   fun s => lts.reachable s
 
 /- a set of state is inductive (closed under transition relation) -/
-def StateSet_isInductive (lts : LTS' State Label) (S : StateSet State) : Prop :=
+def StateSet_isInductive (lts : TS State Label) (S : StateSet State) : Prop :=
   ∀ s s' : State, s ∈ S ∧ (∃ l, lts.Tr s l s') → s' ∈ S
 
 /- a set of states is invariant, i.e., a superset of reachable states -/
-def StateSet_isInvariant (lts : LTS' State Label)
+def StateSet_isInvariant (lts : TS State Label)
     (S : StateSet State) : Prop :=
   lts.reachableSet ⊆ S
 
 /- a set of states is inductive and contains initial states -/
-def StateSet_isInductiveInitial (lts : LTS' State Label)
+def StateSet_isInductiveInitial (lts : TS State Label)
     (S : StateSet State) : Prop :=
   (∀ s, lts.init s → s ∈ S) ∧ lts.StateSet_isInductive S
 
 /- every inductive initial state is invariant -/
 theorem StateSet_ind_init_is_inv
-    (lts : LTS' State Label) :
+    (lts : TS State Label) :
     ∀ S, lts.StateSet_isInductiveInitial S →
       lts.StateSet_isInvariant S := by
   intro S ⟨hinit, hind⟩ s hs
@@ -82,7 +95,7 @@ theorem StateSet_ind_init_is_inv
 
 /- every state on an arbitrary trace is contained in arbitrary invariant -/
 lemma trace_states_in_invariant
-    (lts : LTS' State Label)
+    (lts : TS State Label)
     (S : StateSet State) (hinv : lts.StateSet_isInvariant S)
     (htr : lts.ωTrace ss μs) :
     ∀ x: Nat, S (ss.get x) := by
@@ -90,7 +103,7 @@ lemma trace_states_in_invariant
   apply hinv
   exact ⟨ss, μs, htr, x, rfl⟩
 
-end LTS'
+end TS
 
 /-  ----------------------------------------------------------------
  Proof rules
@@ -103,7 +116,7 @@ open LTLFormula
     then `Globally S` holds on every trace
     (S is state of sets which is the same as atomic proposition) -/
 theorem rule_globally {State: Type u} {Label : Type v}
-    (lts : LTS' State Label)
+    (lts : TS State Label)
     (S : StateSet State)
     (hinv : lts.StateSet_isInvariant S) :
     ∀ ss μs, lts.ωTrace ss μs → ss ⊧ G (AP S) := by
@@ -134,7 +147,7 @@ theorem rule_globally {State: Type u} {Label : Type v}
     easier.
 -/
 theorem rule_buchi {State: Type u} {Label : Type v}
-    (lts : LTS' State Label)             -- the LTS
+    (lts : TS State Label)                    -- the TS
     (B : State → Prop) [DecidablePred B]      -- proposition `B`
     (I : StateSet State)                      -- invariant `I`
     (hinv : lts.StateSet_isInvariant I)
@@ -180,7 +193,7 @@ theorem rule_buchi {State: Type u} {Label : Type v}
 
 /-- a weaker version of rule_buchi -/
 theorem rule_buchi' {State: Type u} {Label : Type v}
-    (lts : LTS' State Label)                  -- the LTS
+    (lts : TS State Label)                    -- the TS
     (B : State → Prop) [DecidablePred B]      -- proposition `B`
     (I : StateSet State)                      -- invariant `I`
     (hinv : lts.StateSet_isInvariant I)
@@ -226,7 +239,7 @@ theorem rule_buchi' {State: Type u} {Label : Type v}
 theorem rule_buchi_mat_nat
     {State: Type u} {Label : Type v}
     ----------
-    (lts : LTS' State Label)             -- the LTS
+    (lts : TS State Label)                    -- the TS
     (B : State → Prop) [DecidablePred B]      -- proposition `B`
     (I : StateSet State)                      -- invariant `I`
     (hinv : lts.StateSet_isInvariant I)
@@ -252,7 +265,7 @@ theorem rule_buchi_mat_nat
 theorem rule_buchi_mat_int
     {State: Type u} {Label : Type v}
     ----------
-    (lts : LTS' State Label)                  -- the LTS
+    (lts : TS State Label)                    -- the TS
     (B : State → Prop) [DecidablePred B]      -- proposition `B`
     (I : StateSet State)                      -- invariant `I`
     (hinv : lts.StateSet_isInvariant I)
@@ -279,7 +292,7 @@ theorem rule_buchi_mat_int
 
 
 /- theorem rule_LTL {State: Type u} {Label : Type v} -- [DecidableEq State] -/
-/-     (lts : LTS' State Label)                  -- the LTS -/
+/-     (lts : TS State Label)                  -- the TS -/
 /-     (A_neg: Cslib.Automata.NA.Buchi)          -- buchi automaton representing negation of property -/
 /-     --(I : StateSet State)                      -- invariant `I` -/
 /-     -- (hinv : lts.StateSet_isInvariant I) -/
@@ -341,46 +354,46 @@ theorem traces'_impl_traces (module: ReactiveModule Extl State):
     exact ⟨inps (i + 1), (hi (i + 1)).1, rfl⟩
 
 
-def LTS_init (M: ReactiveModule Extl State)
+def TS_init (M: ReactiveModule Extl State)
   := fun x => ∃ l, M.init_pre l ∧ M.init l = x
 
-def LTS_update (M: ReactiveModule Extl State)
+def TS_update (M: ReactiveModule Extl State)
   := fun x l x' => M.update_pre l ∧ M.update x l = x'
 
-def toLTS' (module: ReactiveModule Extl State): LTS' State Extl :=
+def toTS (module: ReactiveModule Extl State): TS State Extl :=
   {
-    Tr   := module.LTS_update
-    init := module.LTS_init
+    Tr   := module.TS_update
+    start := module.TS_init
   }
 
-/-- The LTS for a reactive module defines exactly the traces of the
+/-- The TS for a reactive module defines exactly the traces of the
     reactive module -/
-theorem LTS_traces (M: ReactiveModule Extl State):
-  ∀ ss μs, M.toLTS'.ωTrace ss μs → M.traces ss := by
+theorem TS_traces (M: ReactiveModule Extl State):
+  ∀ ss μs, M.toTS.ωTrace ss μs → M.traces ss := by
   intro ss μs h
   unfold traces
-  simp_all [toLTS', LTS'.ωTrace, Cslib.LTS.ωTr]
+  simp_all [toTS, TS.ωTrace, Cslib.LTS.ωTr]
   constructor
   case left =>
     have hi := h.left
-    simp [LTS_init] at hi
+    simp [TS_init] at hi
     have : ss 0 = ss.get 0 := by rfl
     simp [this, Eq.comm]
     exact hi
   case right =>
     intro i
     have hi := h.right i
-    simp [LTS_update] at hi
+    simp [TS_update] at hi
     refine ⟨ (μs i), ?_⟩
     rw [Eq.comm]
     exact hi
 
-theorem traces_to_LTS (M: ReactiveModule Extl State):
-  ∀ ss, M.traces ss → (∃ μs, M.toLTS'.ωTrace ss μs) := by
+theorem traces_to_TS (M: ReactiveModule Extl State):
+  ∀ ss, M.traces ss → (∃ μs, M.toTS.ωTrace ss μs) := by
   intro ss
   simp [traces]
   have : ss 0 = ss.get 0 := rfl
-  simp_all [toLTS', Cslib.LTS.ωTr, LTS_init, LTS_update, LTS'.ωTrace]
+  simp_all [toTS, Cslib.LTS.ωTr, TS_init, TS_update, TS.ωTrace]
   intro x hx hs hi
   constructor
   . refine ⟨ x, ?_⟩
