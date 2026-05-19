@@ -14,19 +14,25 @@ _ZEROTH_HAMMER = """\
 syntax "zeroth_hammer" : tactic
 
 /-- Zeroth hammer: cascading automated prover for reactive module goals.
-    Phase 0: simp + omega (fast, closes init_inv/step_inv)
-    Phase 1: simp + case-split + omega (branching goals)
-    Phase 2: full reduction + scalar collapse + case-split + omega (hrank)
-    Phase 3: smt fallback (cvc5)
-    Phase 4: sorry (explicit give-up) -/
+    Phase 0: simp alone (closes trivially-True invariants)
+    Phase 1: simp + omega (fast, closes init_inv/step_inv)
+    Phase 2: simp + case-split + omega (branching goals)
+    Phase 3: full reduction + scalar collapse + case-split + omega (hrank)
+    Phase 4: smt fallback (cvc5)
+    Phase 5: sorry (explicit give-up) -/
 elab_rules : tactic
   | `(tactic| zeroth_hammer) => do
-      -- Phase 0: simp_mat + omega (closes init_inv, step_inv)
+      -- Phase 0: simp_mat alone (closes trivial True goals without needing omega)
       try
-        evalTactic (← `(tactic| simp_mat; omega))
+        evalTactic (← `(tactic| simp_mat))
         return
       catch _ => pure ()
-      -- Phase 1: simp_mat + case-split cascade
+      -- Phase 1: simp_mat + omega (closes init_inv, step_inv)
+      try
+        evalTactic (← `(tactic| simp_mat <;> omega))
+        return
+      catch _ => pure ()
+      -- Phase 2: simp_mat + case-split cascade
       try
         evalTactic (← `(tactic|
           simp_mat
@@ -38,7 +44,7 @@ elab_rules : tactic
             | (split <;> split <;> split <;> simp_all <;> omega)))
         return
       catch _ => pure ()
-      -- Phase 2: full pipeline for ranking proofs
+      -- Phase 3: full pipeline for ranking proofs
       -- Unfold defs in hypotheses → reduce matrices in goal →
       -- collapse Mat 1 1 to scalar → case-split all ite → omega
       try evalTactic (← `(tactic| simp_defs)) catch _ => pure ()
@@ -58,12 +64,12 @@ elab_rules : tactic
           <;> first | omega | simp_all | (simp_all; omega)))
         return
       catch _ => pure ()
-      -- Phase 3: smt after full reduction
+      -- Phase 4: smt after full reduction
       try
         evalTactic (← `(tactic| smt))
         return
       catch _ => pure ()
-      -- Phase 4: sorry (explicit give-up)
+      -- Phase 5: sorry (explicit give-up)
       evalTactic (← `(tactic| sorry))
 """
 
