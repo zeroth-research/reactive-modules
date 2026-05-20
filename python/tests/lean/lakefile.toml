@@ -1,0 +1,20 @@
+ name = "ZerothHammerTests"
+ version = "0.1.0"
+ defaultTargets = ["ZerothHammerTests"]
+
+ [[lean_lib]]
+ name = "Core"
+
+ [[lean_lib]]
+ name = "ZerothHammerTests"
+ roots = ["ZerothHammerTests"]
+
+ [[require]]
+ name = "cslib"
+ scope = "leanprover"
+ rev = "v4.28.0"
+
+ [[require]]
+ name = "smt"
+ git = "https://github.com/ufmg-smite/lean-smt.git"
+ rev = "f58d19d5d0803fcccb5ccb1b4473774dd2ae9f9a"
