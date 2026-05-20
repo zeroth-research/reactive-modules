@@ -91,6 +91,31 @@ e.g., `uv run pytest tests/test_base.py::test_term_new`.
 Alternatively, you can use `just pytest [file::test]` from anywhere in the project
 to run all or any concrete test.
 
+### Slow tests (Lean proof verification)
+
+Some Python tests verify Lean 4 certificates by running `lake build`, which
+requires a working `lake` installation and a local Mathlib cache. These tests
+are marked `@pytest.mark.slow` and are **skipped by default**.
+
+```sh
+just pytest                  # fast: skips all lake-build tests
+just pytest -m slow          # slow: runs lake-build tests (requires lake + Mathlib)
+just pytest -m "not slow"    # explicit fast-only run
+```
+
+Tests that carry the `slow` mark:
+
+| File | Test | What it verifies |
+|------|------|-----------------|
+| `tests/lean/test_lean_hammer.py` | `test_zeroth_hammer_proofs` | `ZerothHammerTests.lean` compiles — every `zeroth_hammer` phase example type-checks |
+| `tests/test_lean_svcomp.py` | `test_countdown_proofs` | Countdown certificate compiles |
+| `tests/test_lean_svcomp.py` | `test_twovars_proofs` | Two-variable certificate compiles |
+| `tests/test_lean_svcomp.py` | `test_collatz_bounded_proofs` | Collatz-bounded certificate compiles |
+
+The first `lake build` invocation downloads Mathlib (~1 GB) and can take
+10–30 minutes. Subsequent runs use the on-disk cache and typically finish in
+under a minute per test.
+
 ## Advanced building
 
 ### Building all target with all features
