@@ -5,7 +5,7 @@ copy template library files, and generate a diagram Lean file.
 
 from zrth.lean.common import LeanContext, dtype_to_lean_type
 
-from zrth.lean.cert import generate_certificate_lean, CertificateData
+from zrth.lean.cert import generate_certificate_lean, generate_zeroth_hammer_lean, CertificateData
 
 import shutil
 import textwrap
@@ -56,6 +56,9 @@ def generate_lakefile(project_name: str, executable: bool = False) -> str:
 
         [[lean_lib]]
         name = "LeanAI"
+
+        [[lean_lib]]
+        name = "ZerothHammer"
 
         [[lean_lib]]
         name = "Certificate"
@@ -284,7 +287,10 @@ def write_certificate_lean(
     cert_dir.mkdir(parents=True, exist_ok=True)
     cert_file = cert_dir / "Certificate.lean"
     cert_file.write_text(
-        generate_certificate_lean(project_name, module_name, ctx, cert_data=cert_data)
+        generate_certificate_lean(
+            project_name, module_name, ctx, cert_data=cert_data,
+            hammer_import="ZerothHammer",
+        )
     )
     print(f"Wrote {cert_file}")
 
@@ -334,6 +340,11 @@ def create_project(
     root_module = src_dir.parent / f"{project_name}.lean"
     root_module.write_text(generate_root(project_name, [module_name]))
     print(f"Wrote root module {root_module}")
+
+    # Write ZerothHammer.lean — standalone tactic, imported by Certificate
+    hammer_file = project_dir / "ZerothHammer.lean"
+    hammer_file.write_text(generate_zeroth_hammer_lean())
+    print(f"Wrote {hammer_file}")
 
     # Copy template files to Core/ package
     # TODO: put these templates into `Core/` subfolder in `templates`
