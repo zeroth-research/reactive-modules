@@ -1,7 +1,13 @@
 import Lean
+import Mathlib.Tactic
 import Smt
 
 open Lean Elab Tactic
+
+-- Default stub macros; certificate files redefine these for their specific module.
+macro "simp_mat"     : tactic => `(tactic| simp)
+macro "simp_defs"    : tactic => `(tactic| simp only [])
+macro "mat_collapse" : tactic => `(tactic| simp only [])
 
 syntax "zeroth_hammer" : tactic
 
@@ -18,10 +24,10 @@ syntax "zeroth_hammer" : tactic
 elab_rules : tactic
   | `(tactic| zeroth_hammer) => do
       -- Phase 0: simp_mat alone (closes trivial True goals without needing omega)
-      try
-        evalTactic (← `(tactic| simp_mat))
-        return
-      catch _ => pure ()
+      -- Note: simp never throws when it makes partial progress, so we must
+      -- check goals explicitly rather than relying on try/return/catch.
+      try evalTactic (← `(tactic| simp_mat)) catch _ => pure ()
+      if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
       -- Phase 1: fast arithmetic passes
       -- 1a: omega alone (goal already in linear arithmetic fragment after intros)
       try evalTactic (← `(tactic| omega)); return catch _ => pure ()

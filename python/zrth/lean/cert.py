@@ -26,10 +26,10 @@ syntax "zeroth_hammer" : tactic
 elab_rules : tactic
   | `(tactic| zeroth_hammer) => do
       -- Phase 0: simp_mat alone (closes trivial True goals without needing omega)
-      try
-        evalTactic (← `(tactic| simp_mat))
-        return
-      catch _ => pure ()
+      -- Note: simp never throws when it makes partial progress, so we must
+      -- check goals explicitly rather than relying on try/return/catch.
+      try evalTactic (← `(tactic| simp_mat)) catch _ => pure ()
+      if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
       -- Phase 1: fast arithmetic passes
       -- 1a: omega alone (goal already in linear arithmetic fragment after intros)
       try evalTactic (← `(tactic| omega)); return catch _ => pure ()
@@ -134,9 +134,15 @@ def generate_zeroth_hammer_lean() -> str:
     """
     return "\n".join([
         "import Lean",
+        "import Mathlib.Tactic",
         "import Smt",
         "",
         "open Lean Elab Tactic",
+        "",
+        "-- Default stub macros; certificate files redefine these for their specific module.",
+        'macro "simp_mat"     : tactic => `(tactic| simp)',
+        'macro "simp_defs"    : tactic => `(tactic| simp only [])',
+        'macro "mat_collapse" : tactic => `(tactic| simp only [])',
         "",
         _ZEROTH_HAMMER,
     ])
@@ -165,7 +171,9 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
     obtain ⟨l, hpre, heq⟩ := htr
     rw [← heq]
-    zeroth_hammer
+    simp_defs
+    simp_mat
+    split_ifs <;> first | omega | (norm_cast; omega)
 
 """
 
@@ -411,11 +419,13 @@ macro "mat_collapse" : tactic =>
 
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
-   zeroth_hammer
+   simp_mat
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
-   zeroth_hammer
+   simp_defs
+   simp_mat
+   split_ifs <;> omega
 """)
 
     lines.append("section TS\n")
