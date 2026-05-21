@@ -62,13 +62,15 @@ macro "mat_collapse" : tactic =>
 
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
-   simp_mat
+   try simp_mat
+   try simp_defs
+   try split_ifs <;> omega
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
-   simp_defs
-   simp_mat
-   split_ifs <;> omega
+   try simp_defs
+   try simp_mat
+   try split_ifs <;> omega
 
 section TS
 

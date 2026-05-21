@@ -19,10 +19,10 @@ import ZerothHammer
   let x2 : (Mat Int 1 1) := (ctrl.1 + x1)
   let x3 : (Mat Int 1 1) := (fun _ _ => (0 : Int))
   let x4 : (Mat Int 1 1) := (fun _ _ => (10 : Int))
-  let x5 : (Mat Int 1 1) := (if x0 0 0 then ctrl.2 else x4)
-  let x6 : (Mat Int 1 1) := (if x0 0 0 then x2 else x3)
-  let x7 : (Mat Int 1 1) := x6
-  let x8 : (Mat Int 1 1) := x5
+  let x5 : (Mat Int 1 1) := (if x0 0 0 then x2 else x3)
+  let x6 : (Mat Int 1 1) := (if x0 0 0 then ctrl.2 else x4)
+  let x7 : (Mat Int 1 1) := x5
+  let x8 : (Mat Int 1 1) := x6
   (x7, x8)
 
 
@@ -66,13 +66,15 @@ macro "mat_collapse" : tactic =>
 
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
-   simp_mat
+   try simp_mat
+   try simp_defs
+   try split_ifs <;> omega
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
-   simp_defs
-   simp_mat
-   split_ifs <;> omega
+   try simp_defs
+   try simp_mat
+   try split_ifs <;> omega
 
 section TS
 
