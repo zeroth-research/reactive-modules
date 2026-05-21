@@ -125,6 +125,23 @@ elab_rules : tactic
       evalTactic (← `(tactic| sorry))
 """
 
+def generate_zeroth_hammer_lean() -> str:
+    """Generate a standalone ZerothHammer.lean with only the zeroth_hammer tactic.
+
+    The tactic references ``simp_mat``, ``simp_defs``, and ``mat_collapse`` by
+    name.  Importers must define those macros for their specific module before
+    invoking ``zeroth_hammer``.
+    """
+    return "\n".join([
+        "import Lean",
+        "import Smt",
+        "",
+        "open Lean Elab Tactic",
+        "",
+        _ZEROTH_HAMMER,
+    ])
+
+
 _TS_THEOREMS = """\
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
@@ -171,8 +188,22 @@ def generate_certificate_lean(
     module_name: str,
     ctx: LeanContext,
     cert_data: CertificateData | None = None,
+    *,
+    hammer_import: str | None = None,
+    module_inline: str | None = None,
 ) -> str:
-    """Generate Certificate.lean with compiled or placeholder definitions."""
+    """Generate Certificate.lean with compiled or placeholder definitions.
+
+    Args:
+        hammer_import: When set (e.g. ``"ZerothHammer"``), add
+            ``import <hammer_import>`` and omit the inlined ``zeroth_hammer``
+            definition.  The tactic must therefore be provided by that import.
+        module_inline: When set, inline this Lean source (the ``init`` /
+            ``update`` functions) instead of emitting
+            ``import {project_name}.{module_name}``.  Should be the output of
+            ``ModuleToLean4.to_lean_functional()`` — without its own import
+            header.
+    """
     if cert_data is None:
         cert_data = CertificateData()
 
@@ -220,10 +251,18 @@ def generate_certificate_lean(
     lines.append("import Smt")
     lines.append("import Mathlib.Algebra.BigOperators.Fin")
     lines.append("import Core.Basic")
-    lines.append(f"import {project_name}.{module_name}")
+    if module_inline is not None:
+        lines.append("import Core.Box")
+    else:
+        lines.append(f"import {project_name}.{module_name}")
+    if hammer_import is not None:
+        lines.append(f"import {hammer_import}")
     lines.append("")
     lines.append("open Lean Elab Tactic Smt")
     lines.append("")
+    if module_inline is not None:
+        lines.append(module_inline)
+        lines.append("")
 
     # init_pre
     if init_pre_terms is not None:
@@ -365,7 +404,8 @@ macro "mat_collapse" : tactic =>
                         Bool.not_eq_true'] at *)
 """)
 
-    lines.append(_ZEROTH_HAMMER)
+    if hammer_import is None:
+        lines.append(_ZEROTH_HAMMER)
 
     lines.append("""\
 

@@ -1,9 +1,21 @@
  name = "ZerothHammerTests"
  version = "0.1.0"
- defaultTargets = ["ZerothHammerTests"]
+ defaultTargets = ["ZerothHammerTests", "ZerothHammer", "Certs", "ManualTests"]
 
  [[lean_lib]]
  name = "Core"
+
+ # Generated: standalone zeroth_hammer tactic (no module-specific macros)
+ [[lean_lib]]
+ name = "ZerothHammer"
+
+ # Generated: self-contained certificate proofs (one per module, inline init/update)
+ [[lean_lib]]
+ name = "Certs"
+
+ # Manually written: test zeroth_hammer on standalone goal shapes
+ [[lean_lib]]
+ name = "ManualTests"
 
  [[lean_lib]]
  name = "ZerothHammerTests"

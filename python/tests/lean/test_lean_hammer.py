@@ -1,14 +1,17 @@
 """
-Lean compilation test for ZerothHammerTests.lean.
+Lean compilation tests for the tests/lean/ lake project.
 
-The conftest.py in this directory syncs Core/ from the templates automatically
-before this test runs, so the Lean project always sees the latest Core files.
+Fast tests (default):
+    just pytest tests/lean/            # checks generated files exist
 
-Run fast (generation only):
-    just pytest tests/lean/
+Slow tests (require lake + Mathlib cache):
+    just pytest tests/lean/ -m slow    # runs lake build
 
-Run slow (includes `lake build`, requires lake + Mathlib cache):
-    just pytest tests/lean/ -m slow
+Targets verified by the slow tests:
+  ZerothHammerTests  — individual tactic examples (manually written)
+  ZerothHammer       — standalone zeroth_hammer tactic (generated)
+  Certs              — self-contained module certificates (generated)
+  ManualTests        — zeroth_hammer on standalone goal shapes (manually written)
 """
 import subprocess
 from pathlib import Path
@@ -18,33 +21,99 @@ import pytest
 _LEAN_DIR = Path(__file__).parent
 
 
+# ──────────────────────────────────────────────────────────────
+# Fast tests — just verify file presence after fixture generation
+# ──────────────────────────────────────────────────────────────
+
+
 def test_core_files_present(sync_core_templates):
-    """Core files were copied from templates — verify they exist."""
+    """Core/ template files were copied successfully."""
     from zrth.lean.project import CORE_FILES
 
     for name in CORE_FILES:
         assert (_LEAN_DIR / "Core" / name).exists(), f"Core/{name} missing after sync"
 
 
-@pytest.mark.slow
-def test_zeroth_hammer_proofs(sync_core_templates):
-    """
-    Compile ZerothHammerTests.lean with `lake build`.
+def test_generated_files_present(generate_lean_files):
+    """ZerothHammer.lean and Certs/*.lean exist after generation fixture runs."""
+    assert (_LEAN_DIR / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
+    for name in ("Countdown", "TwoVars", "Collatz"):
+        path = _LEAN_DIR / "Certs" / f"{name}.lean"
+        assert path.exists(), f"Certs/{name}.lean not generated"
 
-    Verifies that every `example` in ZerothHammerTests.lean type-checks,
-    confirming that each new zeroth_hammer phase handles its target goal shape.
-    """
-    r = subprocess.run(
-        ["lake", "build", "ZerothHammerTests"],
+
+# ──────────────────────────────────────────────────────────────
+# Slow tests — full lake build
+# ──────────────────────────────────────────────────────────────
+
+
+def _lake_build(*targets: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["lake", "build", *targets],
         cwd=_LEAN_DIR,
         capture_output=True,
         text=True,
         timeout=600,
     )
+
+
+@pytest.mark.slow
+def test_zeroth_hammer_proofs(generate_lean_files):
+    """ZerothHammerTests.lean compiles — every example in the file type-checks."""
+    r = _lake_build("ZerothHammerTests")
     assert r.returncode == 0, (
-        f"lake build failed.\nstdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
+        f"lake build ZerothHammerTests failed.\n"
+        f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
     )
-    # Fail if any proof fell through to sorry
     assert "sorry" not in r.stdout and "warning: declaration uses 'sorry'" not in r.stderr, (
-        "Build succeeded but some proof used sorry — a phase may be incomplete."
+        "Build succeeded but some proof used sorry."
     )
+
+
+@pytest.mark.slow
+def test_manual_tests_build(generate_lean_files):
+    """ManualTests/Basic.lean compiles — zeroth_hammer closes each standalone example."""
+    r = _lake_build("ManualTests")
+    assert r.returncode == 0, (
+        f"lake build ManualTests failed.\n"
+        f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
+    )
+    assert "sorry" not in r.stdout and "warning: declaration uses 'sorry'" not in r.stderr, (
+        "Build succeeded but some proof used sorry."
+    )
+
+
+@pytest.mark.slow
+def test_cert_countdown_build(generate_lean_files):
+    """Certs/Countdown.lean: zeroth_hammer closes all proof obligations."""
+    r = _lake_build("Certs.Countdown")
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert r.returncode == 0, (
+        f"lake build Certs.Countdown failed.\n"
+        f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
+    )
+    assert not sorry_lines, "Countdown certificate has sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
+def test_cert_twovars_build(generate_lean_files):
+    """Certs/TwoVars.lean: zeroth_hammer closes all proof obligations."""
+    r = _lake_build("Certs.TwoVars")
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert r.returncode == 0, (
+        f"lake build Certs.TwoVars failed.\n"
+        f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
+    )
+    assert not sorry_lines, "TwoVars certificate has sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
+def test_cert_collatz_build(generate_lean_files):
+    """Certs/Collatz.lean: zeroth_hammer closes all proof obligations."""
+    r = _lake_build("Certs.Collatz")
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert r.returncode == 0, (
+        f"lake build Certs.Collatz failed.\n"
+        f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
+    )
+    assert not sorry_lines, "Collatz certificate has sorry:\n" + "\n".join(sorry_lines)
