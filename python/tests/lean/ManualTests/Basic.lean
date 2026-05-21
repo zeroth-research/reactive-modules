@@ -1,3 +1,6 @@
+import ZerothHammer
+import Core.Mat
+
 /-!
 # ManualTests.Basic
 
@@ -12,8 +15,6 @@ Run via pytest:
     just pytest tests/lean/           # fast: only checks generated files exist
     just pytest tests/lean/ -m slow   # slow: runs lake build
 -/
-import ZerothHammer
-import Core.Mat
 
 open Lean Elab Tactic
 

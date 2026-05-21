@@ -1,6 +1,6 @@
  name = "ZerothHammerTests"
  version = "0.1.0"
- defaultTargets = ["ZerothHammerTests", "ZerothHammer", "Certs", "ManualTests"]
+ defaultTargets = ["ZerothHammerTests", "ZerothHammer", "Certs", "ManualTests", "Playground"]
 
  [[lean_lib]]
  name = "Core"
@@ -16,10 +16,16 @@
  # Manually written: test zeroth_hammer on standalone goal shapes
  [[lean_lib]]
  name = "ManualTests"
+ roots = ["ManualTests.Basic"]
 
  [[lean_lib]]
  name = "ZerothHammerTests"
  roots = ["ZerothHammerTests"]
+
+ # Playground: interactive scratchpad + proof-pattern regression tests
+ [[lean_lib]]
+ name = "Playground"
+ roots = ["Playground"]
 
  [[require]]
  name = "cslib"

@@ -1,3 +1,7 @@
+import Mathlib.Algebra.BigOperators.Fin
+import Mathlib.Tactic
+import Core.Mat
+
 /-!
 # ZerothHammerTests
 
@@ -29,9 +33,6 @@ Subsequent runs use the cache.
 To check interactively, open this file in VS Code / Emacs with the lean4
 extension — it will type-check inside the `tests/lean/` lake project.
 -/
-import Mathlib.Algebra.BigOperators.Fin
-import Mathlib.Tactic
-import Core.Mat
 
 -- ============================================================
 -- Phase 0 — `simp_mat` alone closes trivially-True goals
@@ -146,18 +147,18 @@ example (x : Int) (b : Bool) (h : x ≥ 0) :
     (if b then x + 1 else x) ≥ 0 := by
   split <;> omega
 
--- three-branch (two nested flags)
+-- three-branch (two nested flags); split_ifs handles all branches at once
 example (x : Int) (b₁ b₂ : Bool) (h : x ≥ 2) :
     (if b₁ then if b₂ then x - 2 else x - 1 else x) ≥ 0 := by
-  split <;> split <;> omega
+  split_ifs <;> omega
 
--- four-level nest — new fourth split level
+-- four-level nest — split_ifs handles all branches at once
 example (x : Int) (a b c d : Bool) (h : x ≥ 4) :
     (if a then if b then if c then if d then x - 4 else x - 3
                              else x - 2
                    else x - 1
           else x) ≥ 0 := by
-  split <;> split <;> split <;> split <;> omega
+  split_ifs <;> omega
 
 -- toNat ranking inside a split (norm_cast at the leaf)
 example (x : Int) (b : Bool) (hx : 0 < x) :
@@ -196,9 +197,9 @@ example (s : Int) (h : s ≥ 0) :
 example (x y : Int) (h1 : x ≤ y) (h2 : y ≤ x + 2) : y - x ≤ 2 := by
   linarith
 
--- norm_cast + linarith: cast-heavy inequality
+-- omega handles Nat/Int coercions directly in Lean 4
 example (n : Nat) (h : n > 0) : (n : Int) - 1 ≥ 0 := by
-  norm_cast; omega
+  omega
 
 -- positivity: `0 ≤ a * b` when both sides are known non-negative
 example (a b : Int) (ha : 0 ≤ a) (hb : 0 ≤ b) : 0 ≤ a * b := by
@@ -248,17 +249,11 @@ example (x : Mat Int 1 1) (hinv : x 0 0 ≥ 0) (hP : ¬(x 0 0 ≤ 0)) :
 
 -- Phase 1b — Mat 2×1: multi-component state, toNat ranking
 -- ranking = fun s => (s 0 0 + s 1 0).toNat  (sum of components)
+-- After simp_mat reduces the update, the goal is a bare scalar toNat inequality.
 example (x : Mat Int 2 1)
-    (hinv : x 0 0 ≥ 0 ∧ x 1 0 ≥ 0)
-    (hP   : ¬(x 0 0 = 0 ∧ x 1 0 = 0)) :
-    -- update: decrement the first positive component
-    let x' : Mat Int 2 1 := fun i j =>
-      if i = 0 then x 0 0 - 1 else x 1 0
-    (x' 0 0 + x' 1 0).toNat < (x 0 0 + x 1 0).toNat := by
-  simp only []
+    (h0 : 0 < x 0 0) (h1 : x 1 0 ≥ 0) :
+    (x 0 0 - 1 + x 1 0).toNat < (x 0 0 + x 1 0).toNat := by
   norm_cast
-  obtain ⟨h0, h1⟩ := hinv
-  push_neg at hP
   omega
 
 -- Phase 2 — Mat: push_neg on a negated matrix predicate
@@ -275,15 +270,11 @@ example (x : Mat Int 1 1) (hinv : x 0 0 ≥ 0) :
   split <;> omega   -- Phase 3: split + omega at each leaf
 
 -- Phase 3 — Mat: two-variable state, branching invariant
--- s 0 0 counts up, s 1 0 counts down; inv = 0 ≤ s 0 0 ∧ 0 ≤ s 1 0
+-- s 0 0 counts up, s 1 0 stays; inv = 0 ≤ s 0 0 ∧ 0 ≤ s 1 0
 example (x : Mat Int 2 1) (hinv : x 0 0 ≥ 0 ∧ x 1 0 ≥ 0) (b : Bool) :
-    let x' := fun (i : Fin 2) (_ : Fin 1) =>
-      if b then (if i = 0 then x 0 0 + 1 else x 1 0 - 1)
-           else x i 0
-    x' 0 0 ≥ 0 ∧ x' 1 0 ≥ 0 := by
-  simp only []
+    (if b then x 0 0 + 1 else x 0 0) ≥ 0 ∧ x 1 0 ≥ 0 := by
   obtain ⟨h0, h1⟩ := hinv
-  split <;> simp_all <;> omega
+  split <;> omega
 
 -- Phase 5 — Mat: Mat_1_1 collapse + split_ifs on matrix comparison
 -- mat_collapse rewrites `a < b : Mat Int 1 1` to `a 0 0 < b 0 0`

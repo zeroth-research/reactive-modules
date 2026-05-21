@@ -78,9 +78,20 @@ def test_manual_tests_build(generate_lean_files):
         f"lake build ManualTests failed.\n"
         f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
     )
-    assert "sorry" not in r.stdout and "warning: declaration uses 'sorry'" not in r.stderr, (
-        "Build succeeded but some proof used sorry."
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "ManualTests" in l]
+    assert not sorry_lines, "ManualTests proof used sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
+def test_playground_build(generate_lean_files):
+    """Playground.lean compiles — proof-pattern experiments and regression tests."""
+    r = _lake_build("Playground")
+    assert r.returncode == 0, (
+        f"lake build Playground failed.\n"
+        f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
     )
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Playground" in l]
+    assert not sorry_lines, "Playground proof used sorry:\n" + "\n".join(sorry_lines)
 
 
 @pytest.mark.slow

@@ -5,7 +5,11 @@ copy template library files, and generate a diagram Lean file.
 
 from zrth.lean.common import LeanContext, dtype_to_lean_type
 
-from zrth.lean.cert import generate_certificate_lean, generate_zeroth_hammer_lean, CertificateData
+from zrth.lean.cert import (
+    generate_certificate_lean,
+    generate_zeroth_hammer_lean,
+    CertificateData,
+)
 
 import shutil
 import textwrap
@@ -49,7 +53,7 @@ def generate_lakefile(project_name: str, executable: bool = False) -> str:
 
         name = "{project_name}"
         version = "0.1.0"
-        defaultTargets = ["{project_name}"]
+        defaultTargets = ["{project_name}", "Certificate"]
 
         [[lean_lib]]
         name = "Core"
@@ -288,7 +292,10 @@ def write_certificate_lean(
     cert_file = cert_dir / "Certificate.lean"
     cert_file.write_text(
         generate_certificate_lean(
-            project_name, module_name, ctx, cert_data=cert_data,
+            project_name,
+            module_name,
+            ctx,
+            cert_data=cert_data,
             hammer_import="ZerothHammer",
         )
     )
