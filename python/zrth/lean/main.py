@@ -62,8 +62,13 @@ returns a :class:`zrth.Module`::
 import argparse
 from pathlib import Path
 
-from .cert import CertificateData, smt_predicates_to_lean
-from .project import create_project, load_module_from_file, write_certificate_lean
+from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
+from .project import (
+    create_project,
+    generate_standalone_cert_lean,
+    load_module_from_file,
+    write_certificate_lean,
+)
 
 
 
@@ -95,7 +100,11 @@ def main():
     )
     parser.add_argument(
         "module_file",
-        help="Path to a Python file defining the module (must contain a callable that returns a Module).",
+        nargs="?",
+        help=(
+            "Path to a Python file defining the module (must contain a callable that "
+            "returns a Module). Optional when --hammer-file is used alone."
+        ),
     )
     parser.add_argument(
         "-o",
@@ -191,8 +200,41 @@ def main():
         default=None,
         help="OpenAI-compatible base URL for local LLMs, e.g. http://localhost:11434/v1 for Ollama.",
     )
+    parser.add_argument(
+        "--cert-file",
+        default=None,
+        help=(
+            "Write a standalone, self-contained certificate .lean file to this path "
+            "instead of creating a full project.  The file inlines init/update and "
+            "imports zeroth_hammer from --hammer-import (default: ZerothHammer)."
+        ),
+    )
+    parser.add_argument(
+        "--hammer-import",
+        default="ZerothHammer",
+        help=(
+            "Lean module name to import zeroth_hammer from when using --cert-file "
+            "(default: ZerothHammer)."
+        ),
+    )
+    parser.add_argument(
+        "--hammer-file",
+        default=None,
+        help="Write a standalone ZerothHammer.lean to this path.",
+    )
 
     args = parser.parse_args()
+
+    # --hammer-file: generate ZerothHammer.lean and exit (no module needed)
+    if args.hammer_file:
+        out = Path(args.hammer_file)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(generate_zeroth_hammer_lean())
+        print(f"Wrote {out}")
+        return
+
+    if not args.module_file:
+        parser.error("module_file is required (unless --hammer-file is used alone)")
 
     if args.infer and not args.property:
         parser.error("--infer requires --property")
@@ -217,6 +259,20 @@ def main():
     project_cert_data = cert_data
     if cert_data is not None:
         project_cert_data = smt_predicates_to_lean(cert_data, module)
+
+    # --cert-file: generate a standalone, self-contained certificate file and exit
+    if args.cert_file:
+        out = Path(args.cert_file)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        lean_src = generate_standalone_cert_lean(
+            out.stem,
+            module,
+            project_cert_data,
+            hammer_import=args.hammer_import,
+        )
+        out.write_text(lean_src)
+        print(f"Wrote standalone certificate: {out}")
+        return
 
     print(".. Generating lean code")
     project_dir = create_project(

@@ -434,6 +434,47 @@ import {project_name}.{module_name}
     return project_dir
 
 
+def generate_standalone_cert_lean(
+    name: str,
+    module: Module,
+    cert_data: CertificateData | None = None,
+    *,
+    hammer_import: str = "ZerothHammer",
+) -> str:
+    """Generate a self-contained certificate Lean file with init/update inlined.
+
+    Unlike :func:`write_certificate_lean`, no ``import <name>.<name>`` is
+    emitted.  Instead the functional module code (init, update) is inlined
+    directly and ``zeroth_hammer`` is imported from *hammer_import*.
+
+    Suitable for placing a single .lean file inside an existing lake project
+    such as ``tests/lean/Certs/``.
+    """
+    cert_terms: list = []
+    if cert_data is not None:
+        for field in (
+            cert_data.prp,
+            cert_data.inv,
+            cert_data.init_pre,
+            cert_data.update_pre,
+            cert_data.ranking,
+        ):
+            if isinstance(field, list):
+                cert_terms.extend(field)
+
+    ctx = LeanContext(module, cert_terms=cert_terms)
+    m2l = ModuleToLean4(ctx)
+    module_code = m2l.to_lean_functional()
+    return generate_certificate_lean(
+        name,
+        name,
+        ctx,
+        cert_data=cert_data,
+        hammer_import=hammer_import,
+        module_inline=module_code,
+    )
+
+
 def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
     """
     Load modules from an external Python file.
