@@ -1,10 +1,8 @@
-import Smt
 import Mathlib.Algebra.BigOperators.Fin
 import Core.Basic
 import Core.Box
 import ZerothHammer
 
-open Lean Elab Tactic Smt
 
 
 
@@ -51,21 +49,6 @@ def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
     init_pre := init_pre
     update_pre := update_pre
 }
-
--- Unfold all module and certificate definitions
-elab "unfold_all" : tactic => do
-  for f in [``RM, ``init, ``update, ``inv, ``init_pre, ``update_pre, ``P, ``ranking] do
-    try
-      evalTactic (← `(tactic| unfold $(mkIdent f)))
-    catch _ =>
-      continue
-
--- Simplify matrix expressions to bare Int arithmetic
--- Phase 1: unfold RM projections and all definitions (no matrix reduction)
-macro "unfold_mod" : tactic =>
-  `(tactic| (
-    first | (unfold RM at *; dsimp at *) | skip
-    unfold_all; unfold_all; unfold_all))
 
 -- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
 macro "simp_mat" : tactic =>
