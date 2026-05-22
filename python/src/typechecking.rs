@@ -373,7 +373,7 @@ where
             }
             Ok(())
         }
-        IType::ToBool() => {
+        IType::BVToBool() => {
             let r0 = rd!(0);
             let w0 = wr!(0);
             no_more_args!();
@@ -385,12 +385,12 @@ where
             }
             Ok(())
         }
-        IType::ToWord1() => {
+        IType::BoolToBV() => {
             let r0 = rd!(0);
             let w0 = wr!(0);
             no_more_args!();
-            if !r0.is_bool() && !r0.is_bv() {
-                return Err(format!("{op}: input must be Bool or BV, got {r0}"));
+            if !r0.is_bool() {
+                return Err(format!("{op}: input must be Bool, got {r0}"));
             }
             if w0 != BV(1) {
                 return Err(format!("{op}: output must be BV(1), got {w0}"));
