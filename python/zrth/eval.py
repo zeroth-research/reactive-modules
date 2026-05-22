@@ -115,8 +115,8 @@ _EVAL = {
         ((r[0] >> it._1) & ((1 << (it._0 - it._1 + 1)) - 1))
     ],
     type(IType.Extend(0)): lambda it, r: [r[0] & ((1 << it._0) - 1)],
-    type(IType.ToBool()): lambda it, r: [r[0].bool()],
-    type(IType.ToWord1()): lambda it, r: [r[0].long() & 1],
+    type(IType.BVToBool()): lambda it, r: [r[0].bool()],
+    type(IType.BoolToBV()): lambda it, r: [r[0].long() & 1],
     # Uninterpreted
     type(IType.Uninterpreted("")): lambda it, r: _uninterpreted(it),
 }

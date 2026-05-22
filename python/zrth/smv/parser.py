@@ -307,8 +307,8 @@ _METHODS = {
 }
 
 _BUILTIN_MAP = {
-    "bool": IType.ToBool,
-    "word1": IType.ToWord1,
+    "bool": IType.BVToBool,
+    "word1": IType.BoolToBV,
     "unsigned": IType.Id,
     "signed": IType.Id,
 }

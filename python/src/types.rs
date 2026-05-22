@@ -190,8 +190,8 @@ pub enum IType {
     // Word-level operations
     BitSelect(u32, u32),
     Extend(u32),
-    ToBool(),
-    ToWord1(),
+    BVToBool(),
+    BoolToBV(),
 
     // Constants
     Tensor(PyTensor),
@@ -241,8 +241,8 @@ impl fmt::Display for IType {
             IType::TensorMax() => write!(f, "TensorMax"),
             IType::BitSelect(h, l) => write!(f, "BitSelect[{}:{}]", h, l),
             IType::Extend(n) => write!(f, "Extend({})", n),
-            IType::ToBool() => write!(f, "ToBool"),
-            IType::ToWord1() => write!(f, "ToWord1"),
+            IType::BVToBool() => write!(f, "BVToBool"),
+            IType::BoolToBV() => write!(f, "BoolToBV"),
             IType::Tensor(t) => {
                 let flat = t.tensor.view([-1]);
 
