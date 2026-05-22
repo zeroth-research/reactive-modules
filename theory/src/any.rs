@@ -7,15 +7,13 @@ enum Type {
     Bool([usize; 2]),
     Real([usize; 2]),
     Int([usize; 2]),
-    SWord(usize, [usize; 2]),
-    UWord(usize, [usize; 2]),
+    BV(usize, [usize; 2]),
 }
 
 impl From<bv::Type> for Type {
     fn from(value: bv::Type) -> Self {
         match value {
-            bv::Type::UWord(bw, shape) => Type::UWord(bw, shape),
-            bv::Type::SWord(bw, shape) => Type::SWord(bw, shape),
+            bv::Type::BV(bw, shape) => Type::BV(bw, shape),
         }
     }
 }
@@ -43,8 +41,7 @@ impl TryFrom<Type> for bv::Type {
 
     fn try_from(value: Type) -> Result<Self, Self::Error> {
         match value {
-            Type::SWord(bw, shape) => Ok(bv::Type::SWord(bw, shape)),
-            Type::UWord(bw, shape) => Ok(bv::Type::UWord(bw, shape)),
+            Type::BV(bw, shape) => Ok(bv::Type::BV(bw, shape)),
             _ => Err("invalid cast".to_string()),
         }
     }

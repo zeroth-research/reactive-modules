@@ -53,9 +53,8 @@ impl TryFrom<&DType> for theory::bv::Type {
 
     fn try_from(d: &DType) -> Result<Self, Self::Error> {
         match d {
-            DType::UWord(bw) => Ok(theory::bv::Type::UWord(*bw as usize, [1, 1])),
-            DType::SWord(bw) => Ok(theory::bv::Type::SWord(*bw as usize, [1, 1])),
-            DType::Bool(shape) if shape.len() == 2 => Ok(theory::bv::Type::UWord(
+            DType::BV(bw) => Ok(theory::bv::Type::BV(*bw as usize, [1, 1])),
+            DType::Bool(shape) if shape.len() == 2 => Ok(theory::bv::Type::BV(
                 1,
                 shape
                     .as_slice()
