@@ -404,42 +404,42 @@ mod tests {
     fn const_ok() {
         let t = bv(8, 2, 2);
         let cm = vec![vec![0usize, 1], vec![2, 3]];
-        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_ok());
+        assert!(BV::Const(cm).check(vec![], [t]).is_ok());
     }
 
     #[test]
     fn const_value_overflow_fails() {
         let t = bv(8, 1, 1);
         let cm = vec![vec![256usize]];
-        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_err());
+        assert!(BV::Const(cm).check(vec![], [t]).is_err());
     }
 
     #[test]
     fn const_value_max_fits() {
         let t = bv(8, 1, 1);
         let cm = vec![vec![255usize]];
-        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_ok());
+        assert!(BV::Const(cm).check(vec![], [t]).is_ok());
     }
 
     #[test]
     fn const_wrong_row_count_fails() {
         let t = bv(8, 2, 2);
         let cm = vec![vec![0usize, 1]];
-        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_err());
+        assert!(BV::Const(cm).check(vec![], [t]).is_err());
     }
 
     #[test]
     fn const_wrong_col_count_fails() {
         let t = bv(8, 1, 2);
         let cm = vec![vec![0usize]];
-        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_err());
+        assert!(BV::Const(cm).check(vec![], [t]).is_err());
     }
 
     #[test]
     fn const_with_read_fails() {
         let t = bv(8, 1, 1);
         let cm = vec![vec![0usize]];
-        assert!(BV::Const(cm).check([t.clone()], [t.clone()]).is_err());
+        assert!(BV::Const(cm).check([t], [t]).is_err());
     }
 
     // --- Not / Id ---
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn not_ok() {
         let t = bv(8, 2, 3);
-        assert!(BV::Not.check([t.clone()], [t.clone()]).is_ok());
+        assert!(BV::Not.check([t], [t]).is_ok());
     }
 
     #[test]
@@ -458,7 +458,7 @@ mod tests {
     #[test]
     fn id_ok() {
         let t = bv(32, 4, 4);
-        assert!(BV::Id.check([t.clone()], [t.clone()]).is_ok());
+        assert!(BV::Id.check([t], [t]).is_ok());
     }
 
     // --- Binary elementwise (Add, Mul, And, Or, Xor) ---
@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn add_ok() {
         let t = bv(8, 3, 3);
-        assert!(BV::Add.check([t.clone(), t.clone()], [t.clone()]).is_ok());
+        assert!(BV::Add.check([t, t], [t]).is_ok());
     }
 
     #[test]
@@ -481,25 +481,25 @@ mod tests {
     #[test]
     fn mul_ok() {
         let t = bv(16, 1, 1);
-        assert!(BV::Mul.check([t.clone(), t.clone()], [t.clone()]).is_ok());
+        assert!(BV::Mul.check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn and_ok() {
         let t = bv(1, 2, 2);
-        assert!(BV::And.check([t.clone(), t.clone()], [t.clone()]).is_ok());
+        assert!(BV::And.check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn or_ok() {
         let t = bv(1, 2, 2);
-        assert!(BV::Or.check([t.clone(), t.clone()], [t.clone()]).is_ok());
+        assert!(BV::Or.check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn xor_ok() {
         let t = bv(4, 1, 1);
-        assert!(BV::Xor.check([t.clone(), t.clone()], [t.clone()]).is_ok());
+        assert!(BV::Xor.check([t, t], [t]).is_ok());
     }
 
     // --- Comparisons ---
@@ -508,35 +508,35 @@ mod tests {
     fn lt_ok() {
         let t = bv(8, 2, 3);
         let out = bv(1, 2, 3);
-        assert!(BV::Lt.check([t.clone(), t.clone()], [out.clone()]).is_ok());
+        assert!(BV::Lt.check([t, t], [out]).is_ok());
     }
 
     #[test]
     fn le_ok() {
         let t = bv(8, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::Le.check([t.clone(), t.clone()], [out.clone()]).is_ok());
+        assert!(BV::Le.check([t, t], [out]).is_ok());
     }
 
     #[test]
     fn eq_ok() {
         let t = bv(32, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::Eq.check([t.clone(), t.clone()], [out.clone()]).is_ok());
+        assert!(BV::Eq.check([t, t], [out]).is_ok());
     }
 
     #[test]
     fn ne_ok() {
         let t = bv(8, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::Ne.check([t.clone(), t.clone()], [out.clone()]).is_ok());
+        assert!(BV::Ne.check([t, t], [out]).is_ok());
     }
 
     #[test]
     fn cmp_wrong_output_type_fails() {
         let t = bv(8, 2, 3);
         // output must be U(1, rows, cols), not U(8, ...)
-        assert!(BV::Lt.check([t.clone(), t.clone()], [t.clone()]).is_err());
+        assert!(BV::Lt.check([t, t], [t]).is_err());
     }
 
     #[test]
@@ -544,7 +544,7 @@ mod tests {
         let out = bv(1, 1, 1);
         assert!(
             BV::Eq
-                .check([bv(8, 1, 1), bv(16, 1, 1)], [out.clone()])
+                .check([bv(8, 1, 1), bv(16, 1, 1)], [out])
                 .is_err()
         );
     }
@@ -554,13 +554,13 @@ mod tests {
     #[test]
     fn udiv_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::UDiv.check([t.clone(), t.clone()], [t.clone()]).is_ok());
+        assert!(BV::UDiv.check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn sdiv_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::SDiv.check([t.clone(), t.clone()], [t.clone()]).is_ok());
+        assert!(BV::SDiv.check([t, t], [t]).is_ok());
     }
 
     // --- MatMul ---
@@ -572,7 +572,7 @@ mod tests {
         let c = bv(8, 2, 4);
         assert!(
             BV::MatMul
-                .check([a.clone(), b.clone()], [c.clone()])
+                .check([a, b], [c])
                 .is_ok()
         );
     }
@@ -584,7 +584,7 @@ mod tests {
         let c = bv(8, 2, 4);
         assert!(
             BV::MatMul
-                .check([a.clone(), b.clone()], [c.clone()])
+                .check([a, b], [c])
                 .is_err()
         );
     }
@@ -596,7 +596,7 @@ mod tests {
         let c = bv(8, 2, 4);
         assert!(
             BV::MatMul
-                .check([a.clone(), b.clone()], [c.clone()])
+                .check([a, b], [c])
                 .is_err()
         );
     }
@@ -609,7 +609,7 @@ mod tests {
         let t = bv(8, 1, 1);
         assert!(
             BV::Ite
-                .check([cond.clone(), t.clone(), t.clone()], [t.clone()])
+                .check([cond, t, t], [t])
                 .is_ok()
         );
     }
@@ -620,7 +620,7 @@ mod tests {
         let t = bv(8, 1, 1);
         assert!(
             BV::Ite
-                .check([cond.clone(), t.clone(), t.clone()], [t.clone()])
+                .check([cond, t, t], [t])
                 .is_err()
         );
     }
@@ -630,7 +630,7 @@ mod tests {
         let cond = bv(1, 1, 1);
         assert!(
             BV::Ite
-                .check([cond.clone(), bv(8, 1, 1), bv(16, 1, 1)], [bv(8, 1, 1)])
+                .check([cond, bv(8, 1, 1), bv(16, 1, 1)], [bv(8, 1, 1)])
                 .is_err()
         );
     }
