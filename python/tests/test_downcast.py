@@ -484,7 +484,7 @@ def test_try_to_rla_xor_chain():
 
 
 # ---------------------------------------------------------------------------
-# LIA: dtype failures — Float, Real, UWord, SWord not supported
+# LIA: dtype failures — Float, Real, BV not supported
 # ---------------------------------------------------------------------------
 
 
@@ -506,17 +506,8 @@ def test_try_to_lia_float_dtype_fails():
         m.try_to("lia")
 
 
-def test_try_to_lia_uword_dtype_fails():
-    x = (Wire(DType.UWord(8)), Wire(DType.UWord(8)))
-    init = [Term(it.ConstInt(0), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
-    m = Module.sequential(init, update, [x])
-    with pytest.raises(Exception):
-        m.try_to("lia")
-
-
-def test_try_to_lia_sword_dtype_fails():
-    x = (Wire(DType.SWord(8)), Wire(DType.SWord(8)))
+def test_try_to_lia_bv_dtype_fails():
+    x = (Wire(DType.BV(8)), Wire(DType.BV(8)))
     init = [Term(it.ConstInt(0), [x[1]])]
     update = [Term(it.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
@@ -554,7 +545,7 @@ def test_try_to_lia_tensor_itype_fails():
 
 
 # ---------------------------------------------------------------------------
-# RLA: dtype failures — Float, Real, UWord, SWord not supported
+# RLA: dtype failures — Float, Real, BV not supported
 # ---------------------------------------------------------------------------
 
 
@@ -576,17 +567,8 @@ def test_try_to_rla_float_dtype_fails():
         m.try_to("rla")
 
 
-def test_try_to_rla_uword_dtype_fails():
-    x = (Wire(DType.UWord(8)), Wire(DType.UWord(8)))
-    init = [Term(it.ConstInt(0), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
-    m = Module.sequential(init, update, [x])
-    with pytest.raises(Exception):
-        m.try_to("rla")
-
-
-def test_try_to_rla_sword_dtype_fails():
-    x = (Wire(DType.SWord(8)), Wire(DType.SWord(8)))
+def test_try_to_rla_bv_dtype_fails():
+    x = (Wire(DType.BV(8)), Wire(DType.BV(8)))
     init = [Term(it.ConstInt(0), [x[1]])]
     update = [Term(it.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
@@ -757,32 +739,21 @@ def test_try_to_rla_argmax_fails():
 # ---------------------------------------------------------------------------
 
 
-def _uword_wire(bw=8):
-    return (Wire(DType.UWord(bw)), Wire(DType.UWord(bw)))
+def _bv_wire(bw=8):
+    return (Wire(DType.BV(bw)), Wire(DType.BV(bw)))
 
 
-def _sword_wire(bw=8):
-    return (Wire(DType.SWord(bw)), Wire(DType.SWord(bw)))
-
-
-def _simple_uword_module(bw=8):
-    x = _uword_wire(bw)
-    init = [Term(it.ConstInt(0), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
-    return Module.sequential(init, update, [x])
-
-
-def _simple_sword_module(bw=8):
-    x = _sword_wire(bw)
+def _simple_bv_module(bw=8):
+    x = _bv_wire(bw)
     init = [Term(it.ConstInt(0), [x[1]])]
     update = [Term(it.Id(), [x[1]], [x[0]])]
     return Module.sequential(init, update, [x])
 
 
 def _bv_counter_module(bw=8):
-    """UWord counter: x += 1 each step."""
-    x = _uword_wire(bw)
-    y = _uword_wire(bw)
+    """BV counter: x += 1 each step."""
+    x = _bv_wire(bw)
+    y = _bv_wire(bw)
     init = [Term(it.ConstInt(0), [x[1]]), Term(it.ConstInt(1), [y[1]])]
     update = [
         Term(it.Add(), [x[1]], [x[0], y[0]]),
@@ -794,19 +765,19 @@ def _bv_counter_module(bw=8):
 def _bv_ite_module():
     """Combinatorial: result = cond ? x : y, with Bool(1,1) condition."""
     cond = (Wire(Bool(1, 1)), Wire(Bool(1, 1)))
-    x = _uword_wire()
-    y = _uword_wire()
-    result = _uword_wire()
+    x = _bv_wire()
+    y = _bv_wire()
+    result = _bv_wire()
     assign = [Term(it.Ite(), [result[1]], [cond[1], x[1], y[1]])]
     return Module.combinatorial(assign, obs=[cond, x, y, result])
 
 
 def _bv_mul_module(bw=8):
-    """UWord(8) scalar multiply."""
-    x = _uword_wire(bw)
-    y = _uword_wire(bw)
+    """BV(8) scalar multiply."""
+    x = _bv_wire(bw)
+    y = _bv_wire(bw)
     init = [Term(it.ConstInt(2), [x[1]]), Term(it.ConstInt(3), [y[1]])]
-    product = Wire(DType.UWord(bw))
+    product = Wire(DType.BV(bw))
     update = [
         Term(it.Mul(), [product], [x[0], y[0]]),
         Term(it.Id(), [x[1]], [product]),
@@ -821,22 +792,17 @@ def _bv_mul_module(bw=8):
 
 
 def test_try_to_bv_lowercase():
-    result = _simple_uword_module().try_to("bv")
+    result = _simple_bv_module().try_to("bv")
     assert "module" in str(result)
 
 
 def test_try_to_bv_uppercase():
-    result = _simple_uword_module().try_to("BV")
+    result = _simple_bv_module().try_to("BV")
     assert "module" in str(result)
 
 
-def test_try_to_bv_uword():
-    result = _simple_uword_module().try_to("bv")
-    assert "module" in str(result)
-
-
-def test_try_to_bv_sword():
-    result = _simple_sword_module().try_to("bv")
+def test_try_to_bv_bv():
+    result = _simple_bv_module().try_to("bv")
     assert "module" in str(result)
 
 
@@ -856,7 +822,7 @@ def test_try_to_bv_mul():
 
 
 def test_try_to_bv_print(capsys):
-    result = _simple_uword_module().try_to("bv")
+    result = _simple_bv_module().try_to("bv")
     print(result)
     assert "module" in capsys.readouterr().out
 
@@ -912,8 +878,8 @@ def test_try_to_bv_const_bool_fails():
 
 
 def test_try_to_bv_tensor_fails():
-    x = _uword_wire()
-    # Use a Bool wire for Tensor init since UWord doesn't accept Tensor
+    x = _bv_wire()
+    # Use a Bool wire for Tensor init since BV doesn't accept Tensor
     b = _bool_wire()
     init = [Term(it.Tensor(torch.tensor([[True]])), [b[1]]),
             Term(it.ConstInt(0), [x[1]])]
@@ -925,8 +891,8 @@ def test_try_to_bv_tensor_fails():
 
 def test_try_to_bv_sub_fails():
     """Sub has no BV mapping."""
-    x = _uword_wire()
-    y = _uword_wire()
+    x = _bv_wire()
+    y = _bv_wire()
     init = [Term(it.ConstInt(5), [x[1]]), Term(it.ConstInt(2), [y[1]])]
     update = [Term(it.Sub(), [x[1]], [x[0], y[0]]), Term(it.Id(), [y[1]], [y[0]])]
     m = Module.sequential(init, update, obs=[x, y])
@@ -941,7 +907,7 @@ def test_try_to_bv_sub_fails():
 
 def test_try_to_bv_const_int_overflow_fails():
     """ConstInt(256) does not fit in 8 bits — BV::check rejects it."""
-    x = _uword_wire(8)
+    x = _bv_wire(8)
     init = [Term(it.ConstInt(256), [x[1]])]
     update = [Term(it.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
@@ -951,7 +917,7 @@ def test_try_to_bv_const_int_overflow_fails():
 
 def test_try_to_bv_const_int_max_fits():
     """ConstInt(255) fits exactly in 8 bits."""
-    x = _uword_wire(8)
+    x = _bv_wire(8)
     init = [Term(it.ConstInt(255), [x[1]])]
     update = [Term(it.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
