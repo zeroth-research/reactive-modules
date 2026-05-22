@@ -347,11 +347,11 @@ where
             let w0 = wr!(0);
             no_more_args!();
             if !r0.is_bv() {
-                return Err(format!("{op}: input must be UWord or SWord, got {r0}"));
+                return Err(format!("{op}: input must be BV, got {r0}"));
             }
             let out_bw = h - l + 1;
-            if w0 != UWord(out_bw) {
-                return Err(format!("{op}: output must be UWord({out_bw}), got {w0}"));
+            if w0 != BV(out_bw) {
+                return Err(format!("{op}: output must be BV({out_bw}), got {w0}"));
             }
             Ok(())
         }
@@ -360,19 +360,13 @@ where
             let w0 = wr!(0);
             no_more_args!();
             let expected = match r0 {
-                UWord(bw) => {
+                BV(bw) => {
                     if bw > *w {
                         return Err(format!("{op}: input width {bw} > target {w}"));
                     }
-                    UWord(*w)
+                    BV(*w)
                 }
-                SWord(bw) => {
-                    if bw > *w {
-                        return Err(format!("{op}: input width {bw} > target {w}"));
-                    }
-                    SWord(*w)
-                }
-                _ => return Err(format!("{op}: input must be UWord or SWord, got {r0}")),
+                _ => return Err(format!("{op}: input must be BV, got {r0}")),
             };
             if w0 != expected {
                 return Err(format!("{op}: output must be {expected}, got {w0}"));
@@ -384,7 +378,7 @@ where
             let w0 = wr!(0);
             no_more_args!();
             if !r0.is_bv() {
-                return Err(format!("{op}: input must be UWord or SWord, got {r0}"));
+                return Err(format!("{op}: input must be BV, got {r0}"));
             }
             if !w0.is_bool() || !w0.is_scalar() {
                 return Err(format!("{op}: output must be Bool scalar, got {w0}"));
@@ -396,36 +390,36 @@ where
             let w0 = wr!(0);
             no_more_args!();
             if !r0.is_bool() && !r0.is_bv() {
-                return Err(format!(
-                    "{op}: input must be Bool, UWord, or SWord, got {r0}"
-                ));
+                return Err(format!("{op}: input must be Bool or BV, got {r0}"));
             }
-            if w0 != UWord(1) {
-                return Err(format!("{op}: output must be UWord(1), got {w0}"));
+            if w0 != BV(1) {
+                return Err(format!("{op}: output must be BV(1), got {w0}"));
             }
             Ok(())
         }
+        // FIXME: remove this
         IType::ToUnsigned() => {
             let r0 = rd!(0);
             let w0 = wr!(0);
             no_more_args!();
-            let SWord(bw) = r0 else {
-                return Err(format!("{op}: input must be SWord, got {r0}"));
+            let BV(bw) = r0 else {
+                return Err(format!("{op}: input must be BV, got {r0}"));
             };
-            if w0 != UWord(bw) {
-                return Err(format!("{op}: output must be UWord({bw}), got {w0}"));
+            if w0 != BV(bw) {
+                return Err(format!("{op}: output must be BV({bw}), got {w0}"));
             }
             Ok(())
         }
+        // FIXME: remove this
         IType::ToSigned() => {
             let r0 = rd!(0);
             let w0 = wr!(0);
             no_more_args!();
-            let UWord(bw) = r0 else {
-                return Err(format!("{op}: input must be UWord, got {r0}"));
+            let BV(bw) = r0 else {
+                return Err(format!("{op}: input must be BV, got {r0}"));
             };
-            if w0 != SWord(bw) {
-                return Err(format!("{op}: output must be SWord({bw}), got {w0}"));
+            if w0 != BV(bw) {
+                return Err(format!("{op}: output must be BV({bw}), got {w0}"));
             }
             Ok(())
         }
@@ -462,7 +456,7 @@ where
             if !(w0.is_int() && w0.is_scalar()) && !(w0.is_real() && w0.is_scalar()) && !w0.is_bv()
             {
                 return Err(format!(
-                    "{op}: output must be Int/Real scalar, UWord, or SWord, got {w0}"
+                    "{op}: output must be Int/Real scalar or BV, got {w0}"
                 ));
             }
             Ok(())

@@ -16,8 +16,8 @@ pub enum DType {
     Int(Vec<usize>),
     Float(Vec<usize>),
     Real(Vec<usize>),
-    UWord(u32),
-    SWord(u32),
+    // FIXME: turn this into a matrix too
+    BV(u32),
 }
 
 #[pymethods]
@@ -30,7 +30,7 @@ impl DType {
             DType::Int(shape) => shape.clone(),
             DType::Bool(shape) => shape.clone(),
             DType::Real(shape) => shape.clone(),
-            DType::UWord(_) | DType::SWord(_) => vec![1],
+            DType::BV(_) => vec![1],
         }
     }
 
@@ -41,9 +41,7 @@ impl DType {
             DType::Int(_) => Ok(DType::Int(shape)),
             DType::Float(_) => Ok(DType::Float(shape)),
             DType::Real(_) => Ok(DType::Real(shape)),
-            DType::UWord(_) | DType::SWord(_) => {
-                Err(PyValueError::new_err("cannot reshape word-level types"))
-            }
+            DType::BV(_) => Err(PyValueError::new_err("cannot reshape word-level types")),
         }
     }
 
@@ -60,20 +58,12 @@ impl DType {
         matches!(self, DType::Real(_))
     }
     pub fn is_bv(&self) -> bool {
-        matches!(self, DType::UWord(_) | DType::SWord(_))
+        matches!(self, DType::BV(_))
     }
 
-    pub fn bv_bw(&self) -> PyResult<u32> {
+    pub fn bv_bitwidth(&self) -> PyResult<u32> {
         match self {
-            DType::UWord(bw) | DType::SWord(bw) => Ok(*bw),
-            _ => Err(pyo3::exceptions::PyTypeError::new_err("not a BV type")),
-        }
-    }
-
-    pub fn bv_signed(&self) -> PyResult<bool> {
-        match self {
-            DType::SWord(_) => Ok(true),
-            DType::UWord(_) => Ok(false),
+            DType::BV(bw) => Ok(*bw),
             _ => Err(pyo3::exceptions::PyTypeError::new_err("not a BV type")),
         }
     }
@@ -90,8 +80,7 @@ impl DType {
             | (DType::Int(_), DType::Int(_))
             | (DType::Float(_), DType::Float(_))
             | (DType::Real(_), DType::Real(_))
-            | (DType::UWord(_), DType::UWord(_))
-            | (DType::SWord(_), DType::SWord(_)) => true,
+            | (DType::BV(_), DType::BV(_)) => true,
             _ => false,
         }
     }
@@ -130,11 +119,8 @@ impl fmt::Display for DType {
                 fmt_comma_separated(f, shape)?;
                 write!(f, ")")?;
             }
-            DType::UWord(n) => {
-                write!(f, "UWord<{}>", n)?;
-            }
-            DType::SWord(n) => {
-                write!(f, "SWord<{}>", n)?;
+            DType::BV(n) => {
+                write!(f, "BV<{}>", n)?;
             }
         };
         Ok(())
