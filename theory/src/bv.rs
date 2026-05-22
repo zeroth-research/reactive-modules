@@ -392,11 +392,11 @@ mod tests {
     use super::*;
 
     fn u(bw: usize, r: usize, c: usize) -> Type {
-        Type::U(bw, r, c)
+        Type::UWord(bw, [r, c])
     }
 
     fn s(bw: usize, r: usize, c: usize) -> Type {
-        Type::S(bw, r, c)
+        Type::SWord(bw, [r, c])
     }
 
     // --- Type helpers ---
@@ -404,12 +404,12 @@ mod tests {
     #[test]
     fn type_shape_and_bw() {
         let t = u(8, 2, 3);
-        assert_eq!(t.shape(), (2, 3));
+        assert_eq!(t.shape(), &[2, 3]);
         assert_eq!(t.bw(), 8);
         assert!(!t.is_signed());
 
         let t = s(16, 1, 4);
-        assert_eq!(t.shape(), (1, 4));
+        assert_eq!(t.shape(), &[1, 4]);
         assert_eq!(t.bw(), 16);
         assert!(t.is_signed());
     }
@@ -420,42 +420,42 @@ mod tests {
     fn const_ok() {
         let t = u(8, 2, 2);
         let cm = vec![vec![0usize, 1], vec![2, 3]];
-        assert!(BV::Const(cm).check(&[] as &[Type], &[t]).is_ok());
+        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_ok());
     }
 
     #[test]
     fn const_value_overflow_fails() {
         let t = u(8, 1, 1);
         let cm = vec![vec![256usize]];
-        assert!(BV::Const(cm).check(&[] as &[Type], &[t]).is_err());
+        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_err());
     }
 
     #[test]
     fn const_value_max_fits() {
         let t = u(8, 1, 1);
         let cm = vec![vec![255usize]];
-        assert!(BV::Const(cm).check(&[] as &[Type], &[t]).is_ok());
+        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_ok());
     }
 
     #[test]
     fn const_wrong_row_count_fails() {
         let t = u(8, 2, 2);
         let cm = vec![vec![0usize, 1]];
-        assert!(BV::Const(cm).check(&[] as &[Type], &[t]).is_err());
+        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_err());
     }
 
     #[test]
     fn const_wrong_col_count_fails() {
         let t = u(8, 1, 2);
         let cm = vec![vec![0usize]];
-        assert!(BV::Const(cm).check(&[] as &[Type], &[t]).is_err());
+        assert!(BV::Const(cm).check(vec![], [t.clone()]).is_err());
     }
 
     #[test]
     fn const_with_read_fails() {
         let t = u(8, 1, 1);
         let cm = vec![vec![0usize]];
-        assert!(BV::Const(cm).check(&[t], &[t]).is_err());
+        assert!(BV::Const(cm).check([t.clone()], [t.clone()]).is_err());
     }
 
     // --- Not / Id ---
@@ -463,18 +463,18 @@ mod tests {
     #[test]
     fn not_ok() {
         let t = u(8, 2, 3);
-        assert!(BV::Not.check(&[t], &[t]).is_ok());
+        assert!(BV::Not.check([t.clone()], [t.clone()]).is_ok());
     }
 
     #[test]
     fn not_type_mismatch_fails() {
-        assert!(BV::Not.check(&[u(8, 1, 1)], &[u(8, 2, 2)]).is_err());
+        assert!(BV::Not.check([u(8, 1, 1)], [u(8, 2, 2)]).is_err());
     }
 
     #[test]
     fn id_ok() {
         let t = s(32, 4, 4);
-        assert!(BV::Id.check(&[t], &[t]).is_ok());
+        assert!(BV::Id.check([t.clone()], [t.clone()]).is_ok());
     }
 
     // --- Binary elementwise (Add, Mul, And, Or, Xor) ---
@@ -482,36 +482,36 @@ mod tests {
     #[test]
     fn add_ok() {
         let t = u(8, 3, 3);
-        assert!(BV::Add.check(&[t, t], &[t]).is_ok());
+        assert!(BV::Add.check([t.clone(), t.clone()], [t.clone()]).is_ok());
     }
 
     #[test]
     fn add_shape_mismatch_fails() {
-        assert!(BV::Add.check(&[u(8, 1, 2), u(8, 2, 1)], &[u(8, 1, 2)]).is_err());
+        assert!(BV::Add.check([u(8, 1, 2), u(8, 2, 1)], [u(8, 1, 2)]).is_err());
     }
 
     #[test]
     fn mul_ok() {
         let t = u(16, 1, 1);
-        assert!(BV::Mul.check(&[t, t], &[t]).is_ok());
+        assert!(BV::Mul.check([t.clone(), t.clone()], [t.clone()]).is_ok());
     }
 
     #[test]
     fn and_ok() {
         let t = u(1, 2, 2);
-        assert!(BV::And.check(&[t, t], &[t]).is_ok());
+        assert!(BV::And.check([t.clone(), t.clone()], [t.clone()]).is_ok());
     }
 
     #[test]
     fn or_ok() {
         let t = u(1, 2, 2);
-        assert!(BV::Or.check(&[t, t], &[t]).is_ok());
+        assert!(BV::Or.check([t.clone(), t.clone()], [t.clone()]).is_ok());
     }
 
     #[test]
     fn xor_ok() {
         let t = u(4, 1, 1);
-        assert!(BV::Xor.check(&[t, t], &[t]).is_ok());
+        assert!(BV::Xor.check([t.clone(), t.clone()], [t.clone()]).is_ok());
     }
 
     // --- Comparisons ---
@@ -520,41 +520,41 @@ mod tests {
     fn lt_ok() {
         let t = u(8, 2, 3);
         let out = u(1, 2, 3);
-        assert!(BV::Lt.check(&[t, t], &[out]).is_ok());
+        assert!(BV::Lt.check([t.clone(), t.clone()], [out.clone()]).is_ok());
     }
 
     #[test]
     fn le_ok() {
         let t = u(8, 1, 1);
         let out = u(1, 1, 1);
-        assert!(BV::Le.check(&[t, t], &[out]).is_ok());
+        assert!(BV::Le.check([t.clone(), t.clone()], [out.clone()]).is_ok());
     }
 
     #[test]
     fn eq_ok() {
         let t = s(32, 1, 1);
         let out = u(1, 1, 1);
-        assert!(BV::Eq.check(&[t, t], &[out]).is_ok());
+        assert!(BV::Eq.check([t.clone(), t.clone()], [out.clone()]).is_ok());
     }
 
     #[test]
     fn ne_ok() {
         let t = u(8, 1, 1);
         let out = u(1, 1, 1);
-        assert!(BV::Ne.check(&[t, t], &[out]).is_ok());
+        assert!(BV::Ne.check([t.clone(), t.clone()], [out.clone()]).is_ok());
     }
 
     #[test]
     fn cmp_wrong_output_type_fails() {
         let t = u(8, 2, 3);
         // output must be U(1, rows, cols), not U(8, ...)
-        assert!(BV::Lt.check(&[t, t], &[t]).is_err());
+        assert!(BV::Lt.check([t.clone(), t.clone()], [t.clone()]).is_err());
     }
 
     #[test]
     fn cmp_input_mismatch_fails() {
         let out = u(1, 1, 1);
-        assert!(BV::Eq.check(&[u(8, 1, 1), u(16, 1, 1)], &[out]).is_err());
+        assert!(BV::Eq.check([u(8, 1, 1), u(16, 1, 1)], [out.clone()]).is_err());
     }
 
     // --- UDiv / SDiv ---
@@ -562,25 +562,25 @@ mod tests {
     #[test]
     fn udiv_ok() {
         let t = u(8, 1, 1);
-        assert!(BV::UDiv.check(&[t, t], &[t]).is_ok());
+        assert!(BV::UDiv.check([t.clone(), t.clone()], [t.clone()]).is_ok());
     }
 
     #[test]
     fn udiv_signed_input_fails() {
         let t = s(8, 1, 1);
-        assert!(BV::UDiv.check(&[t, t], &[t]).is_err());
+        assert!(BV::UDiv.check([t.clone(), t.clone()], [t.clone()]).is_err());
     }
 
     #[test]
     fn sdiv_ok() {
         let t = s(8, 1, 1);
-        assert!(BV::SDiv.check(&[t, t], &[t]).is_ok());
+        assert!(BV::SDiv.check([t.clone(), t.clone()], [t.clone()]).is_ok());
     }
 
     #[test]
     fn sdiv_unsigned_input_fails() {
         let t = u(8, 1, 1);
-        assert!(BV::SDiv.check(&[t, t], &[t]).is_err());
+        assert!(BV::SDiv.check([t.clone(), t.clone()], [t.clone()]).is_err());
     }
 
     // --- MatMul ---
@@ -590,7 +590,7 @@ mod tests {
         let a = u(8, 2, 3);
         let b = u(8, 3, 4);
         let c = u(8, 2, 4);
-        assert!(BV::MatMul.check(&[a, b], &[c]).is_ok());
+        assert!(BV::MatMul.check([a.clone(), b.clone()], [c.clone()]).is_ok());
     }
 
     #[test]
@@ -598,7 +598,7 @@ mod tests {
         let a = u(8, 2, 3);
         let b = u(8, 4, 4);
         let c = u(8, 2, 4);
-        assert!(BV::MatMul.check(&[a, b], &[c]).is_err());
+        assert!(BV::MatMul.check([a.clone(), b.clone()], [c.clone()]).is_err());
     }
 
     #[test]
@@ -606,7 +606,7 @@ mod tests {
         let a = u(8, 2, 3);
         let b = u(16, 3, 4);
         let c = u(8, 2, 4);
-        assert!(BV::MatMul.check(&[a, b], &[c]).is_err());
+        assert!(BV::MatMul.check([a.clone(), b.clone()], [c.clone()]).is_err());
     }
 
     // --- Ite ---
@@ -615,19 +615,19 @@ mod tests {
     fn ite_ok() {
         let cond = u(1, 1, 1);
         let t = u(8, 1, 1);
-        assert!(BV::Ite.check(&[cond, t, t], &[t]).is_ok());
+        assert!(BV::Ite.check([cond.clone(), t.clone(), t.clone()], [t.clone()]).is_ok());
     }
 
     #[test]
     fn ite_bad_condition_bw_fails() {
         let cond = u(8, 1, 1);
         let t = u(8, 1, 1);
-        assert!(BV::Ite.check(&[cond, t, t], &[t]).is_err());
+        assert!(BV::Ite.check([cond.clone(), t.clone(), t.clone()], [t.clone()]).is_err());
     }
 
     #[test]
     fn ite_arm_mismatch_fails() {
         let cond = u(1, 1, 1);
-        assert!(BV::Ite.check(&[cond, u(8, 1, 1), u(16, 1, 1)], &[u(8, 1, 1)]).is_err());
+        assert!(BV::Ite.check([cond.clone(), u(8, 1, 1), u(16, 1, 1)], [u(8, 1, 1)]).is_err());
     }
 }
