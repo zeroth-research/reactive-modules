@@ -397,32 +397,6 @@ where
             }
             Ok(())
         }
-        // FIXME: remove this
-        IType::ToUnsigned() => {
-            let r0 = rd!(0);
-            let w0 = wr!(0);
-            no_more_args!();
-            let BV(bw) = r0 else {
-                return Err(format!("{op}: input must be BV, got {r0}"));
-            };
-            if w0 != BV(bw) {
-                return Err(format!("{op}: output must be BV({bw}), got {w0}"));
-            }
-            Ok(())
-        }
-        // FIXME: remove this
-        IType::ToSigned() => {
-            let r0 = rd!(0);
-            let w0 = wr!(0);
-            no_more_args!();
-            let BV(bw) = r0 else {
-                return Err(format!("{op}: input must be BV, got {r0}"));
-            };
-            if w0 != BV(bw) {
-                return Err(format!("{op}: output must be BV({bw}), got {w0}"));
-            }
-            Ok(())
-        }
 
         // -- Constants
         IType::Tensor(t) => {
