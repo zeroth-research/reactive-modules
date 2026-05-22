@@ -14,6 +14,7 @@ def eval_itype(itype, read):
 # Interpreter helpers (shared by zrth.gym.Wrapper, zrth.gym.Env)
 # ============================================================================
 
+
 def _execute_block(state, atoms, get_block):
     """Evaluate a block from each atom."""
     for atom in atoms:
@@ -34,7 +35,6 @@ def execute_update(state, atoms):
     _execute_block(state, atoms, lambda a: a.update)
 
 
-
 def read_wire(state, wire):
     """Read a wire value from state."""
     return state[wire].detach().clone()
@@ -42,9 +42,9 @@ def read_wire(state, wire):
 
 def getattr_wire(self, name):
     """__getattr__ helper for named wire access."""
-    wire_names = object.__getattribute__(self, '_wire_names')
+    wire_names = object.__getattribute__(self, "_wire_names")
     if name in wire_names:
-        state = object.__getattribute__(self, '_state')
+        state = object.__getattribute__(self, "_state")
         wire = wire_names[name][0]  # read from latched wire
         if wire in state:
             val = state[wire]
@@ -106,15 +106,17 @@ _EVAL = {
     type(IType.TensorGet()): lambda it, r: [r[0].view(-1)[int(r[1].item())]],
     type(IType.TensorSet()): lambda it, r: _tensor_set(r[0], r[1], r[2]),
     # Constants
-    type(IType.ConstBool(False)): lambda it, r: [torch.tensor([it._0], dtype=torch.bool)],
+    type(IType.ConstBool(False)): lambda it, r: [
+        torch.tensor([it._0], dtype=torch.bool)
+    ],
     type(IType.ConstInt(0)): lambda it, r: [torch.tensor([it._0], dtype=torch.long)],
     # Word-level operations
-    type(IType.BitSelect(0, 0)): lambda it, r: [((r[0] >> it._1) & ((1 << (it._0 - it._1 + 1)) - 1))],
+    type(IType.BitSelect(0, 0)): lambda it, r: [
+        ((r[0] >> it._1) & ((1 << (it._0 - it._1 + 1)) - 1))
+    ],
     type(IType.Extend(0)): lambda it, r: [r[0] & ((1 << it._0) - 1)],
     type(IType.ToBool()): lambda it, r: [r[0].bool()],
     type(IType.ToWord1()): lambda it, r: [r[0].long() & 1],
-    type(IType.ToUnsigned()): lambda it, r: [r[0].abs()],
-    type(IType.ToSigned()): lambda it, r: [r[0]],
     # Uninterpreted
     type(IType.Uninterpreted("")): lambda it, r: _uninterpreted(it),
 }

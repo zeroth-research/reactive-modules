@@ -192,8 +192,6 @@ pub enum IType {
     Extend(u32),
     ToBool(),
     ToWord1(),
-    ToUnsigned(),
-    ToSigned(),
 
     // Constants
     Tensor(PyTensor),
@@ -245,8 +243,6 @@ impl fmt::Display for IType {
             IType::Extend(n) => write!(f, "Extend({})", n),
             IType::ToBool() => write!(f, "ToBool"),
             IType::ToWord1() => write!(f, "ToWord1"),
-            IType::ToUnsigned() => write!(f, "ToUnsigned"),
-            IType::ToSigned() => write!(f, "ToSigned"),
             IType::Tensor(t) => {
                 let flat = t.tensor.view([-1]);
 

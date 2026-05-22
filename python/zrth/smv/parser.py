@@ -15,6 +15,7 @@ from ..zrth import Wire, DType, IType, Term, Module
 # 1. Lark parser init
 # ---------------------------------------------------------------------------
 
+
 @lru_cache(maxsize=1)
 def _get_parser():
     grammar = (Path(__file__).parent / "grammar.lark").read_text()
@@ -24,6 +25,7 @@ def _get_parser():
 # ---------------------------------------------------------------------------
 # 2. Entry point
 # ---------------------------------------------------------------------------
+
 
 def parse_smv(
     text: str,
@@ -45,6 +47,7 @@ def parse_smv(
 # 3. Pass 1 — collect declarations
 # ---------------------------------------------------------------------------
 
+
 @dataclass(slots=True)
 class _Decls:
     var_decls: list[tuple[str, DType]] = field(default_factory=list)
@@ -63,7 +66,11 @@ def _typed_children(section: Tree, data: str):
     return (c for c in section.children if isinstance(c, Tree) and c.data == data)
 
 
-_ASSIGN_TARGETS = {"init_ref": "init_assigns", "next_ref": "next_assigns", "bare_assign": "init_assigns"}
+_ASSIGN_TARGETS = {
+    "init_ref": "init_assigns",
+    "next_ref": "next_assigns",
+    "bare_assign": "init_assigns",
+}
 
 
 def _var_collector(attr):
@@ -72,6 +79,7 @@ def _var_collector(attr):
         for child in children:
             if isinstance(child, tuple):
                 target.append(child)
+
     return method
 
 
@@ -106,7 +114,11 @@ class _DeclCollector(Transformer):
     def assign_stmt(self, children):
         target_node, expr = children[0], children[1]
         if isinstance(target_node, Tree) and target_node.data in _ASSIGN_TARGETS:
-            return (_ASSIGN_TARGETS[target_node.data], str(target_node.children[0]), expr)
+            return (
+                _ASSIGN_TARGETS[target_node.data],
+                str(target_node.children[0]),
+                expr,
+            )
         return ("init_assigns", str(target_node), expr)
 
     def assign_section(self, children):
@@ -137,7 +149,10 @@ def _collect_declarations(tree: Tree) -> _Decls:
 # 4. Constraint-to-assignment promotion
 # ---------------------------------------------------------------------------
 
-def _promote_loop(exprs, var_names, target: dict[str, Tree], *, expect_next=False) -> list[Tree]:
+
+def _promote_loop(
+    exprs, var_names, target: dict[str, Tree], *, expect_next=False
+) -> list[Tree]:
     remaining = []
     for expr in exprs:
         result = _try_extract_assign(expr, var_names, expect_next=expect_next)
@@ -152,7 +167,9 @@ def _promote_constraints(d: _Decls) -> None:
     var_names = {n for n, _ in d.var_decls} | {n for n, _ in d.frozen_decls}
 
     # TRANS: next(var) = expr -> next_assigns
-    d.trans_exprs = _promote_loop(d.trans_exprs, var_names, d.next_assigns, expect_next=True)
+    d.trans_exprs = _promote_loop(
+        d.trans_exprs, var_names, d.next_assigns, expect_next=True
+    )
 
     # INIT: var = expr -> init_assigns
     d.init_exprs = _promote_loop(d.init_exprs, var_names, d.init_assigns)
@@ -217,7 +234,11 @@ def _try_extract_assign(
 # 5. Type resolution
 # ---------------------------------------------------------------------------
 
-_SIMPLE_TYPES = {"type_bool": DType.Bool, "type_int": DType.Int, "range_type": DType.Int}
+_SIMPLE_TYPES = {
+    "type_bool": DType.Bool,
+    "type_int": DType.Int,
+    "range_type": DType.Int,
+}
 
 
 def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> DType:
@@ -228,9 +249,8 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> DType:
             case "type_spec":
                 return _resolve_type(tree.children[0], enum_values)
             case "word_type":
-                sign = str(tree.children[0])
                 width = int(str(tree.children[1]))
-                return DType.SWord(width) if sign == "signed" else DType.UWord(width)
+                return DType.BV(width)
             case "enum_type":
                 for code, ev in enumerate(_typed_children(tree, "enum_value")):
                     name = _extract_name(ev.children[0])
@@ -252,30 +272,46 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> DType:
 
 # Table-driven binary operator dispatch
 _BINOPS: dict[str, dict[str, object]] = {
-    "iff":        {"<->": IType.Xnor, "xnor": IType.Xnor},
-    "or_expr":    {"|": IType.Or, "or": IType.Or, "xor": IType.Xor},
-    "and_expr":   {"&": IType.And, "and": IType.And},
-    "cmp_expr":   {"=": IType.Eq, "!=": IType.Neq, "<": IType.Lt,
-                   "<=": IType.Le, ">": IType.Gt, ">=": IType.Ge},
+    "iff": {"<->": IType.Xnor, "xnor": IType.Xnor},
+    "or_expr": {"|": IType.Or, "or": IType.Or, "xor": IType.Xor},
+    "and_expr": {"&": IType.And, "and": IType.And},
+    "cmp_expr": {
+        "=": IType.Eq,
+        "!=": IType.Neq,
+        "<": IType.Lt,
+        "<=": IType.Le,
+        ">": IType.Gt,
+        ">=": IType.Ge,
+    },
     "arith_expr": {"+": IType.Add, "-": IType.Sub},
-    "mod_expr":   {"mod": IType.Mod},
-    "term_expr":  {"*": IType.Mul, "/": IType.Div},
+    "mod_expr": {"mod": IType.Mod},
+    "term_expr": {"*": IType.Mul, "/": IType.Div},
 }
 
 _OP_TOKENS = {"NOT_OP"}
 
 _NARY_OPS = {
-    "ternary": IType.Ite, "implies_expr": IType.Implies,
-    "not_expr": IType.Not, "neg": IType.Neg, "abs_call": IType.Abs,
+    "ternary": IType.Ite,
+    "implies_expr": IType.Implies,
+    "not_expr": IType.Not,
+    "neg": IType.Neg,
+    "abs_call": IType.Abs,
 }
 
 _METHODS = {
-    "builtin_call": "_lower_builtin", "case_expr": "_lower_case",
-    "next_expr": "_lower_next", "word_lit": "_lower_word_lit",
+    "builtin_call": "_lower_builtin",
+    "case_expr": "_lower_case",
+    "next_expr": "_lower_next",
+    "word_lit": "_lower_word_lit",
     "paren_expr": "_lower_paren",
 }
 
-_BUILTIN_MAP = {"bool": IType.ToBool, "word1": IType.ToWord1, "unsigned": IType.ToUnsigned, "signed": IType.ToSigned}
+_BUILTIN_MAP = {
+    "bool": IType.ToBool,
+    "word1": IType.ToWord1,
+    "unsigned": IType.Id,
+    "signed": IType.Id,
+}
 
 
 def _const_out_dtype(itype):
@@ -292,11 +328,9 @@ def _builtin_out_dtype(fn_name: str, in_dtype):
     if fn_name == "bool":
         return DType.Bool([1])
     if fn_name == "word1":
-        return DType.UWord(1)
-    if fn_name == "unsigned":
-        return DType.UWord(in_dtype.bv_bw())
-    if fn_name == "signed":
-        return DType.SWord(in_dtype.bv_bw())
+        return DType.BV(1)
+    if fn_name in ("unsigned", "signed"):
+        return DType.BV(in_dtype.bv_bitwidth())
     return None
 
 
@@ -333,8 +367,12 @@ class _Lowerer:
 
         # Table-driven binary ops
         if name in _BINOPS:
-            out_dtype_fn = (lambda d: DType.Bool(d.shape)) if name == "cmp_expr" else (lambda d: d)
-            return self._lower_binop(tree, _BINOPS[name], target, out_dtype_fn=out_dtype_fn)
+            out_dtype_fn = (
+                (lambda d: DType.Bool(d.shape)) if name == "cmp_expr" else (lambda d: d)
+            )
+            return self._lower_binop(
+                tree, _BINOPS[name], target, out_dtype_fn=out_dtype_fn
+            )
 
         # Table-driven n-ary ops (unary / implies / ternary)
         if name in _NARY_OPS:
@@ -358,7 +396,9 @@ class _Lowerer:
 
     # --- binary ops ---------------------------------------------------------
 
-    def _lower_binop(self, tree: Tree, op_map: dict, target: Wire | None, *, out_dtype_fn=None) -> Wire:
+    def _lower_binop(
+        self, tree: Tree, op_map: dict, target: Wire | None, *, out_dtype_fn=None
+    ) -> Wire:
         children = tree.children
         left = self.lower(children[0])
         i = 1
@@ -367,7 +407,9 @@ class _Lowerer:
             rhs = self.lower(children[i + 1])
             itype = op_map[op_tok]()
             out = target if i + 2 >= len(children) else None
-            out_dtype = out_dtype_fn(left.dtype) if (out_dtype_fn and out is None) else None
+            out_dtype = (
+                out_dtype_fn(left.dtype) if (out_dtype_fn and out is None) else None
+            )
             w = self._fresh(out, out_dtype)
             self.terms.append(Term(itype, [w], [left, rhs]))
             left = w
@@ -377,9 +419,17 @@ class _Lowerer:
     # --- n-ary (unary / implies / ternary) ----------------------------------
 
     def _lower_nary(self, tree: Tree, itype, target: Wire | None) -> Wire:
-        inputs = [self.lower(c) for c in tree.children if not (isinstance(c, Token) and c.type in _OP_TOKENS)]
+        inputs = [
+            self.lower(c)
+            for c in tree.children
+            if not (isinstance(c, Token) and c.type in _OP_TOKENS)
+        ]
         # Ite: output matches then-branch (inputs[1]); others match first input
-        out_dtype = inputs[1].dtype if (type(itype) is type(IType.Ite()) and len(inputs) >= 2) else inputs[0].dtype
+        out_dtype = (
+            inputs[1].dtype
+            if (type(itype) is type(IType.Ite()) and len(inputs) >= 2)
+            else inputs[0].dtype
+        )
         w = self._fresh(target, out_dtype)
         self.terms.append(Term(itype, [w], inputs))
         return self._enforce(w, target)
@@ -388,7 +438,11 @@ class _Lowerer:
 
     def _lower_builtin(self, tree: Tree, target: Wire | None) -> Wire:
         fn_name = str(tree.children[0])
-        exprs = [c for c in tree.children[1:] if not (isinstance(c, Token) and c.type == "BUILTIN")]
+        exprs = [
+            c
+            for c in tree.children[1:]
+            if not (isinstance(c, Token) and c.type == "BUILTIN")
+        ]
         arg_w = self.lower(exprs[0])
 
         if fn_name in _BUILTIN_MAP:
@@ -396,11 +450,10 @@ class _Lowerer:
             out_dtype = _builtin_out_dtype(fn_name, arg_w.dtype)
         elif fn_name == "extend":
             extra = int(str(_peel(exprs[1])))
-            in_bw = arg_w.dtype.bv_bw()
-            in_signed = arg_w.dtype.bv_signed()
+            in_bw = arg_w.dtype.bv_bitwidth()
             out_bw = in_bw + extra
             itype = IType.Extend(out_bw)
-            out_dtype = DType.SWord(out_bw) if in_signed else DType.UWord(out_bw)
+            out_dtype = DType.BV(out_bw)
         else:
             raise ValueError(f"unknown builtin: {fn_name}")
 
@@ -411,7 +464,9 @@ class _Lowerer:
     # --- case..esac ---------------------------------------------------------
 
     def _lower_case(self, tree: Tree, target: Wire | None) -> Wire:
-        branches = [c for c in tree.children if isinstance(c, Tree) and c.data == "case_branch"]
+        branches = [
+            c for c in tree.children if isinstance(c, Tree) and c.data == "case_branch"
+        ]
         return self._lower_case_rec(branches, 0, target)
 
     def _lower_case_rec(self, branches, idx, target):
@@ -446,9 +501,11 @@ class _Lowerer:
         rest = lit_tok[3:]  # skip "0ud" or "0sd"
         upos = rest.index("_")
         width = int(rest[:upos])
-        value = int(rest[upos + 1:])
+        value = int(rest[upos + 1 :])
 
-        dtype = DType.SWord(width) if signed else DType.UWord(width)
+        if signed and value < 0:
+            value = value + (1 << width)
+        dtype = DType.BV(width)
         w = Wire(dtype)
         self.terms.append(Term(IType.ConstInt(value), [w]))
         return self._maybe_bit_select(tree, w, 1, target)
@@ -456,7 +513,9 @@ class _Lowerer:
     # --- paren_expr ---------------------------------------------------------
 
     def _lower_paren(self, tree: Tree, target: Wire | None) -> Wire:
-        inner = self.lower(tree.children[0], target if len(tree.children) == 1 else None)
+        inner = self.lower(
+            tree.children[0], target if len(tree.children) == 1 else None
+        )
         return self._maybe_bit_select(tree, inner, 1, target)
 
     # --- name (ident / define / enum) ---------------------------------------
@@ -501,11 +560,17 @@ class _Lowerer:
             return target
         return wire
 
-    def _maybe_bit_select(self, tree: Tree, base_w: Wire, idx: int, target: Wire | None) -> Wire:
-        if len(tree.children) > idx and isinstance(tree.children[idx], Tree) and tree.children[idx].data == "bit_select":
+    def _maybe_bit_select(
+        self, tree: Tree, base_w: Wire, idx: int, target: Wire | None
+    ) -> Wire:
+        if (
+            len(tree.children) > idx
+            and isinstance(tree.children[idx], Tree)
+            and tree.children[idx].data == "bit_select"
+        ):
             bs = tree.children[idx]
             high, low = int(str(bs.children[0])), int(str(bs.children[1]))
-            out_dtype = DType.UWord(high - low + 1)
+            out_dtype = DType.BV(high - low + 1)
             w = self._fresh(target, out_dtype)
             self.terms.append(Term(IType.BitSelect(high, low), [w], [base_w]))
             return self._enforce(w, target)
@@ -515,6 +580,7 @@ class _Lowerer:
 # ---------------------------------------------------------------------------
 # 7. Pass 2 — build Module
 # ---------------------------------------------------------------------------
+
 
 def _build_module(
     d: _Decls,
@@ -528,7 +594,9 @@ def _build_module(
     # Create wire pairs
     name_map: dict[str, tuple[Wire, Wire]] = {}
     for name, dtype in all_decls:
-        name_map[name] = overrides[name] if name in overrides else (Wire(dtype), Wire(dtype))
+        name_map[name] = (
+            overrides[name] if name in overrides else (Wire(dtype), Wire(dtype))
+        )
 
     init_low = _Lowerer(name_map, d.define_map, d.enum_values, is_init=True)
     update_low = _Lowerer(name_map, d.define_map, d.enum_values, is_init=False)
@@ -541,7 +609,11 @@ def _build_module(
         if init_expr is not None:
             init_low.lower(init_expr, next_w)
         else:
-            default = IType.ConstBool(False) if isinstance(dtype, DType.Bool) else IType.ConstInt(0)
+            default = (
+                IType.ConstBool(False)
+                if isinstance(dtype, DType.Bool)
+                else IType.ConstInt(0)
+            )
             init_low.terms.append(Term(default, [next_w]))
 
         # --- UPDATE ---
