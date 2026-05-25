@@ -89,7 +89,7 @@ impl TryFrom<&IType> for theory::bv::BV {
             IType::Ite() => BV::Ite,
             IType::Id() => BV::Id,
             // TODO: we have to have ConstS and ConstU for constants of different type.
-            IType::ConstInt(v) => BV::Const(vec![vec![*v as usize]]),
+            IType::ConstInt(v) => BV::Const(tch::Tensor::from_slice2(&[[*v as i64]]).into()),
             t => return Err(format!("Cannot convert {} to BV operation", t)),
         })
     }
@@ -117,8 +117,8 @@ impl TryFrom<&IType> for theory::lia::LIA {
             IType::Id() => LIA::Id,
             IType::Argmax() => LIA::Argmax,
             IType::ReLU() => LIA::ReLU,
-            IType::ConstInt(v) => LIA::ConstInt(vec![vec![*v]]),
-            IType::ConstBool(b) => LIA::ConstBool(vec![vec![*b]]),
+            IType::ConstInt(v) => LIA::ConstInt(tch::Tensor::from_slice2(&[[*v]]).into()),
+            IType::ConstBool(b) => LIA::ConstBool(tch::Tensor::from_slice2(&[[*b]]).into()),
             t => return Err(format!("Cannot convert {} to LIA operation", t)),
         })
     }
@@ -146,8 +146,8 @@ impl TryFrom<&IType> for theory::lra::LRA {
             IType::Id() => LRA::Id,
             IType::Argmax() => LRA::Argmax,
             IType::ReLU() => LRA::ReLU,
-            IType::ConstInt(v) => LRA::ConstReal(vec![vec![*v as f64]]),
-            IType::ConstBool(b) => LRA::ConstBool(vec![vec![*b]]),
+            IType::ConstInt(v) => LRA::ConstReal(tch::Tensor::from_slice2(&[[*v as f64]]).into()),
+            IType::ConstBool(b) => LRA::ConstBool(tch::Tensor::from_slice2(&[[*b]]).into()),
             t => return Err(format!("Cannot convert {} to RLA operation", t)),
         })
     }

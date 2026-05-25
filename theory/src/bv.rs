@@ -73,10 +73,10 @@ impl fmt::Display for Type {
 }
 
 /// TODO: write "formal" semantics
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 pub enum BV {
     // TODO: use bitarray, this works only for `N <= 64`
-    Const(Vec<Vec<usize>>),
+    Const(crate::Tensor),
     Add,
     Mul,
     UDiv,
@@ -99,7 +99,7 @@ pub enum BV {
 impl fmt::Display for BV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BV::Const(cm) => fmt_matrix(cm, f),
+            BV::Const(cm) => write!(f, "{}", cm),
             BV::And => write!(f, "And"),
             BV::Or => write!(f, "Or"),
             BV::Xor => write!(f, "Xor"),
@@ -121,33 +121,37 @@ impl fmt::Display for BV {
     }
 }
 
-fn check_init_dims(cm: &[Vec<usize>], bw: usize, i: usize, j: usize) -> Result<(), String> {
+fn check_init_dims(cm: &tch::Tensor, bw: usize, i: usize, j: usize) -> Result<(), String> {
     if bw > 64 {
         return Err("Support at most 64-bit atm.".into());
     }
-    if cm.len() != i {
+    let size = cm.size();
+    if size.len() != 2 {
         return Err(format!(
-            "Const: Initializer has a wrong number of rows (has {}, expected {})",
-            cm.len(),
-            i
+            "Const: initializer must be a 2D tensor, got {}D",
+            size.len()
         ));
     }
-    if cm.iter().any(|row| row.len() != j) {
+    if size[0] as usize != i {
+        return Err(format!(
+            "Const: Initializer has a wrong number of rows (has {}, expected {})",
+            size[0], i
+        ));
+    }
+    if size[1] as usize != j {
         return Err(format!(
             "Const: some column of initializer has wrong dimension, expected {}",
             j
         ));
     }
     if bw < 64 {
-        let max = 1usize << bw;
-        for (r, row) in cm.iter().enumerate() {
-            for (c, &v) in row.iter().enumerate() {
-                if v >= max {
-                    return Err(format!(
-                        "Const: value {v} at [{r},{c}] does not fit in {bw} bits"
-                    ));
-                }
-            }
+        let max = (1i64 << bw) - 1;
+        let min_val = cm.min().int64_value(&[]);
+        let max_val = cm.max().int64_value(&[]);
+        if min_val < 0 || max_val > max {
+            return Err(format!(
+                "Const: tensor values do not fit in {bw} bits"
+            ));
         }
     }
     Ok(())
@@ -403,42 +407,42 @@ mod tests {
     #[test]
     fn const_ok() {
         let t = bv(8, 2, 2);
-        let cm = vec![vec![0usize, 1], vec![2, 3]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_ok());
     }
 
     #[test]
     fn const_value_overflow_fails() {
         let t = bv(8, 1, 1);
-        let cm = vec![vec![256usize]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[256i64]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_err());
     }
 
     #[test]
     fn const_value_max_fits() {
         let t = bv(8, 1, 1);
-        let cm = vec![vec![255usize]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[255i64]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_ok());
     }
 
     #[test]
     fn const_wrong_row_count_fails() {
         let t = bv(8, 2, 2);
-        let cm = vec![vec![0usize, 1]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64, 1]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_err());
     }
 
     #[test]
     fn const_wrong_col_count_fails() {
         let t = bv(8, 1, 2);
-        let cm = vec![vec![0usize]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_err());
     }
 
     #[test]
     fn const_with_read_fails() {
         let t = bv(8, 1, 1);
-        let cm = vec![vec![0usize]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64]]).into();
         assert!(BV::Const(cm).check([t], [t]).is_err());
     }
 

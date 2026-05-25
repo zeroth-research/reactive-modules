@@ -76,11 +76,11 @@ impl fmt::Display for Type {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 pub enum LRA {
     // constants
-    ConstReal(Vec<Vec<f64>>),
-    ConstBool(Vec<Vec<bool>>),
+    ConstReal(crate::Tensor),
+    ConstBool(crate::Tensor),
     // boolean operations
     And,
     Or,
@@ -95,7 +95,7 @@ pub enum LRA {
     Ne,
     // linear / matrix operations
     // A*x + B where `A` and `B` are constants
-    Linear(Vec<Vec<f64>>, Vec<Vec<f64>>),
+    Linear(crate::Tensor, crate::Tensor),
     Add,
     // XXX: should these be in RLA?
     ReLU,
@@ -110,8 +110,8 @@ pub enum LRA {
 impl fmt::Display for LRA {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LRA::ConstReal(cm) => fmt_matrix(cm, f),
-            LRA::ConstBool(cm) => fmt_matrix(cm, f),
+            LRA::ConstReal(cm) => write!(f, "{}", cm),
+            LRA::ConstBool(cm) => write!(f, "{}", cm),
             LRA::And => write!(f, "And"),
             LRA::Or => write!(f, "Or"),
             LRA::Xor => write!(f, "Xor"),
@@ -164,7 +164,7 @@ impl Theory for LRA {
     }
 }
 
-fn check_const<R, W, D>(cm: &[Vec<f64>], read: R, write: W) -> Result<(), String>
+fn check_const<R, W, D>(cm: &tch::Tensor, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Type>,
     R: IntoIterator<Item = D>,
@@ -178,14 +178,20 @@ where
     let dtype = write_nxt(&mut write, 0)?;
     match dtype {
         Type::Real([i, j]) => {
-            if cm.len() != i {
+            let size = cm.size();
+            if size.len() != 2 {
                 return Err(format!(
-                    "ConstReal: initializer has wrong number of rows (has {}, expected {})",
-                    cm.len(),
-                    i
+                    "ConstReal: initializer must be a 2D tensor, got {}D",
+                    size.len()
                 ));
             }
-            if cm.iter().any(|row| row.len() != j) {
+            if size[0] as usize != i {
+                return Err(format!(
+                    "ConstReal: initializer has wrong number of rows (has {}, expected {})",
+                    size[0], i
+                ));
+            }
+            if size[1] as usize != j {
                 return Err(format!(
                     "ConstReal: some row has wrong length, expected {}",
                     j
@@ -218,14 +224,20 @@ where
             let Type::Bool([i, j]) = write_nxt(&mut write, 0)? else {
                 return Err("ConstBool: write type must be Bool".into());
             };
-            if cm.len() != i {
+            let size = cm.size();
+            if size.len() != 2 {
                 return Err(format!(
-                    "ConstBool: initializer has wrong number of rows (has {}, expected {})",
-                    cm.len(),
-                    i
+                    "ConstBool: initializer must be a 2D tensor, got {}D",
+                    size.len()
                 ));
             }
-            if cm.iter().any(|row| row.len() != j) {
+            if size[0] as usize != i {
+                return Err(format!(
+                    "ConstBool: initializer has wrong number of rows (has {}, expected {})",
+                    size[0], i
+                ));
+            }
+            if size[1] as usize != j {
                 return Err(format!(
                     "ConstBool: some row has wrong length, expected {}",
                     j
@@ -385,8 +397,8 @@ where
 
 fn check_linear_affine<D>(
     op: &LRA,
-    a: &[Vec<f64>],
-    b: &[Vec<f64>],
+    a: &tch::Tensor,
+    b: &tch::Tensor,
     read: &mut impl Iterator<Item = D>,
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
@@ -400,35 +412,32 @@ where
         return Err(format!("{:?}: must write exactly one value", op));
     };
 
-    let a_rows = a.len();
+    let a_size = a.size();
+    if a_size.len() != 2 {
+        return Err(format!("{:?}: `A` must be a 2D tensor", op));
+    }
+    let a_rows = a_size[0] as usize;
     if a_rows == 0 {
         return Err(format!("{:?}: `A` is empty", op));
     }
-    let a_cols = a[0].len();
-    if a.iter().any(|row| row.len() != a_cols) {
-        return Err(format!(
-            "{:?}: `A` has invalid dimensions, rows have different lengths",
-            op
-        ));
-    }
 
-    let b_rows = b.len();
-    let mut b_cols: usize = 0;
-    if b_rows != 0 {
-        b_cols = b[0].len();
-        if b.iter().any(|row| row.len() != b_cols) {
-            return Err(format!(
-                "{:?}: `B` has invalid dimensions, rows have different lengths",
-                op
-            ));
+    let b_size = b.size();
+    let (b_rows, b_cols) = if b.numel() == 0 {
+        (0usize, 0usize)
+    } else {
+        if b_size.len() != 2 {
+            return Err(format!("{:?}: `B` must be a 2D tensor", op));
         }
-        if b_rows != 1 && b_cols != 1 {
+        let br = b_size[0] as usize;
+        let bc = b_size[1] as usize;
+        if br != 1 && bc != 1 {
             return Err(format!(
                 "{:?}: `B` has to be a vector, got matrix {}x{}",
-                op, b_rows, b_cols
+                op, br, bc
             ));
         }
-    }
+        (br, bc)
+    };
 
     match (r1, w1) {
         (Type::Real([d1, d2]), Type::Real([d3, d4])) => {
@@ -539,35 +548,35 @@ mod tests {
 
     #[test]
     fn const_real_ok() {
-        let cm = vec![vec![0.0f64, 1.0], vec![2.0, 3.0]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
         assert!(LRA::ConstReal(cm).check([] as [Type; 0], [real(2, 2)]).is_ok());
     }
 
     #[test]
     fn const_real_bool_write_fails() {
-        assert!(LRA::ConstReal(vec![vec![0.0]]).check([] as [Type; 0], [bool_t(1, 1)]).is_err());
+        assert!(LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into()).check([] as [Type; 0], [bool_t(1, 1)]).is_err());
     }
 
     #[test]
     fn const_real_wrong_rows_fails() {
-        assert!(LRA::ConstReal(vec![vec![0.0]]).check([] as [Type; 0], [real(2, 1)]).is_err());
+        assert!(LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into()).check([] as [Type; 0], [real(2, 1)]).is_err());
     }
 
     #[test]
     fn const_real_with_read_fails() {
         let t = real(1, 1);
-        assert!(LRA::ConstReal(vec![vec![0.0]]).check([t], [t]).is_err());
+        assert!(LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into()).check([t], [t]).is_err());
     }
 
     #[test]
     fn const_bool_ok() {
-        let cm = vec![vec![true, false], vec![false, true]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(LRA::ConstBool(cm).check([] as [Type; 0], [bool_t(2, 2)]).is_ok());
     }
 
     #[test]
     fn const_bool_real_write_fails() {
-        assert!(LRA::ConstBool(vec![vec![true]]).check([] as [Type; 0], [real(1, 1)]).is_err());
+        assert!(LRA::ConstBool(tch::Tensor::from_slice2(&[[true]]).into()).check([] as [Type; 0], [real(1, 1)]).is_err());
     }
 
     #[test]
@@ -683,14 +692,16 @@ mod tests {
 
     #[test]
     fn linear_ok() {
-        let a = vec![vec![1.0f64, 0.0], vec![0.0, 1.0]];
-        assert!(LRA::Linear(a, vec![]).check([real(1, 2)], [real(2, 2)]).is_ok());
+        let a: crate::Tensor = tch::Tensor::from_slice2(&[[1.0f64, 0.0], [0.0, 1.0]]).into();
+        let b: crate::Tensor = tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
+        assert!(LRA::Linear(a, b).check([real(1, 2)], [real(2, 2)]).is_ok());
     }
 
     #[test]
     fn linear_dim_mismatch_fails() {
-        let a = vec![vec![1.0f64, 0.0], vec![0.0, 1.0]];
-        assert!(LRA::Linear(a, vec![]).check([real(1, 3)], [real(2, 3)]).is_err());
+        let a: crate::Tensor = tch::Tensor::from_slice2(&[[1.0f64, 0.0], [0.0, 1.0]]).into();
+        let b: crate::Tensor = tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
+        assert!(LRA::Linear(a, b).check([real(1, 3)], [real(2, 3)]).is_err());
     }
 
     #[test]
