@@ -76,11 +76,11 @@ impl fmt::Display for Type {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 pub enum LIA {
     // constants
-    ConstInt(Vec<Vec<i64>>),
-    ConstBool(Vec<Vec<bool>>),
+    ConstInt(crate::Tensor),
+    ConstBool(crate::Tensor),
     // boolean operations
     And,
     Or,
@@ -95,7 +95,7 @@ pub enum LIA {
     Ne,
     // linear / matrix operations
     // A*x + B where `A` and `B` are constants
-    Linear(Vec<Vec<i64>>, Vec<Vec<i64>>),
+    Linear(crate::Tensor, crate::Tensor),
     Add,
     // XXX: should these be in LIA?
     ReLU,
@@ -110,8 +110,8 @@ pub enum LIA {
 impl fmt::Display for LIA {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LIA::ConstInt(cm) => fmt_matrix(cm, f),
-            LIA::ConstBool(cm) => fmt_matrix(cm, f),
+            LIA::ConstInt(cm) => write!(f, "{}", cm),
+            LIA::ConstBool(cm) => write!(f, "{}", cm),
             LIA::And => write!(f, "And"),
             LIA::Or => write!(f, "Or"),
             LIA::Xor => write!(f, "Xor"),
@@ -164,7 +164,7 @@ impl Theory for LIA {
     }
 }
 
-fn check_const<R, W, D>(cm: &[Vec<i64>], read: R, write: W) -> Result<(), String>
+fn check_const<R, W, D>(cm: &tch::Tensor, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Type>,
     R: IntoIterator<Item = D>,
@@ -178,14 +178,20 @@ where
     let dtype = write_nxt(&mut write, 0)?;
     match dtype {
         Type::Int([i, j]) => {
-            if cm.len() != i {
+            let size = cm.size();
+            if size.len() != 2 {
                 return Err(format!(
-                    "ConstInt: initializer has wrong number of rows (has {}, expected {})",
-                    cm.len(),
-                    i
+                    "ConstInt: initializer must be a 2D tensor, got {}D",
+                    size.len()
                 ));
             }
-            if cm.iter().any(|row| row.len() != j) {
+            if size[0] as usize != i {
+                return Err(format!(
+                    "ConstInt: initializer has wrong number of rows (has {}, expected {})",
+                    size[0], i
+                ));
+            }
+            if size[1] as usize != j {
                 return Err(format!(
                     "ConstInt: some row has wrong length, expected {}",
                     j
@@ -218,14 +224,20 @@ where
             let Type::Bool([i, j]) = write_nxt(&mut write, 0)? else {
                 return Err("ConstBool: write type must be Bool".into());
             };
-            if cm.len() != i {
+            let size = cm.size();
+            if size.len() != 2 {
                 return Err(format!(
-                    "ConstBool: initializer has wrong number of rows (has {}, expected {})",
-                    cm.len(),
-                    i
+                    "ConstBool: initializer must be a 2D tensor, got {}D",
+                    size.len()
                 ));
             }
-            if cm.iter().any(|row| row.len() != j) {
+            if size[0] as usize != i {
+                return Err(format!(
+                    "ConstBool: initializer has wrong number of rows (has {}, expected {})",
+                    size[0], i
+                ));
+            }
+            if size[1] as usize != j {
                 return Err(format!(
                     "ConstBool: some row has wrong length, expected {}",
                     j
@@ -385,8 +397,8 @@ where
 
 fn check_linear_affine<D>(
     op: &LIA,
-    a: &[Vec<i64>],
-    b: &[Vec<i64>],
+    a: &tch::Tensor,
+    b: &tch::Tensor,
     read: &mut impl Iterator<Item = D>,
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
@@ -400,35 +412,32 @@ where
         return Err(format!("{:?}: must write exactly one value", op));
     };
 
-    let a_rows = a.len();
+    let a_size = a.size();
+    if a_size.len() != 2 {
+        return Err(format!("{:?}: `A` must be a 2D tensor", op));
+    }
+    let a_rows = a_size[0] as usize;
     if a_rows == 0 {
         return Err(format!("{:?}: `A` is empty", op));
     }
-    let a_cols = a[0].len();
-    if a.iter().any(|row| row.len() != a_cols) {
-        return Err(format!(
-            "{:?}: `A` has invalid dimensions, rows have different lengths",
-            op
-        ));
-    }
 
-    let b_rows = b.len();
-    let mut b_cols: usize = 0;
-    if b_rows != 0 {
-        b_cols = b[0].len();
-        if b.iter().any(|row| row.len() != b_cols) {
-            return Err(format!(
-                "{:?}: `B` has invalid dimensions, rows have different lengths",
-                op
-            ));
+    let b_size = b.size();
+    let (b_rows, b_cols) = if b.numel() == 0 {
+        (0usize, 0usize)
+    } else {
+        if b_size.len() != 2 {
+            return Err(format!("{:?}: `B` must be a 2D tensor", op));
         }
-        if b_rows != 1 && b_cols != 1 {
+        let br = b_size[0] as usize;
+        let bc = b_size[1] as usize;
+        if br != 1 && bc != 1 {
             return Err(format!(
                 "{:?}: `B` has to be a vector, got matrix {}x{}",
-                op, b_rows, b_cols
+                op, br, bc
             ));
         }
-    }
+        (br, bc)
+    };
 
     match (r1, w1) {
         (Type::Int([d1, d2]), Type::Int([d3, d4])) => {
@@ -539,35 +548,35 @@ mod tests {
 
     #[test]
     fn const_int_ok() {
-        let cm = vec![vec![0i64, 1], vec![2, 3]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
         assert!(LIA::ConstInt(cm).check([] as [Type; 0], [int(2, 2)]).is_ok());
     }
 
     #[test]
     fn const_int_bool_write_fails() {
-        assert!(LIA::ConstInt(vec![vec![0]]).check([] as [Type; 0], [bool_t(1, 1)]).is_err());
+        assert!(LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into()).check([] as [Type; 0], [bool_t(1, 1)]).is_err());
     }
 
     #[test]
     fn const_int_wrong_rows_fails() {
-        assert!(LIA::ConstInt(vec![vec![0]]).check([] as [Type; 0], [int(2, 1)]).is_err());
+        assert!(LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into()).check([] as [Type; 0], [int(2, 1)]).is_err());
     }
 
     #[test]
     fn const_int_with_read_fails() {
         let t = int(1, 1);
-        assert!(LIA::ConstInt(vec![vec![0]]).check([t], [t]).is_err());
+        assert!(LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into()).check([t], [t]).is_err());
     }
 
     #[test]
     fn const_bool_ok() {
-        let cm = vec![vec![true, false], vec![false, true]];
+        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(LIA::ConstBool(cm).check([] as [Type; 0], [bool_t(2, 2)]).is_ok());
     }
 
     #[test]
     fn const_bool_int_write_fails() {
-        assert!(LIA::ConstBool(vec![vec![true]]).check([] as [Type; 0], [int(1, 1)]).is_err());
+        assert!(LIA::ConstBool(tch::Tensor::from_slice2(&[[true]]).into()).check([] as [Type; 0], [int(1, 1)]).is_err());
     }
 
     #[test]
@@ -683,14 +692,16 @@ mod tests {
 
     #[test]
     fn linear_ok() {
-        let a = vec![vec![1i64, 0], vec![0, 1]];
-        assert!(LIA::Linear(a, vec![]).check([int(1, 2)], [int(2, 2)]).is_ok());
+        let a: crate::Tensor = tch::Tensor::from_slice2(&[[1i64, 0], [0, 1]]).into();
+        let b: crate::Tensor = tch::Tensor::zeros(&[0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
+        assert!(LIA::Linear(a, b).check([int(1, 2)], [int(2, 2)]).is_ok());
     }
 
     #[test]
     fn linear_dim_mismatch_fails() {
-        let a = vec![vec![1i64, 0], vec![0, 1]];
-        assert!(LIA::Linear(a, vec![]).check([int(1, 3)], [int(2, 3)]).is_err());
+        let a: crate::Tensor = tch::Tensor::from_slice2(&[[1i64, 0], [0, 1]]).into();
+        let b: crate::Tensor = tch::Tensor::zeros(&[0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
+        assert!(LIA::Linear(a, b).check([int(1, 3)], [int(2, 3)]).is_err());
     }
 
     #[test]

@@ -756,6 +756,9 @@ dependencies = [
 [[package]]
 name = "theory"
 version = "0.1.0"
+dependencies = [
+ "tch",
+]
 
 [[package]]
 name = "thiserror"
