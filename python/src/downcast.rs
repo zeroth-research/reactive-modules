@@ -6,20 +6,10 @@ impl TryFrom<&DType> for theory::lia::Type {
     type Error = String;
 
     fn try_from(d: &DType) -> Result<Self, Self::Error> {
-        match d {
-            DType::Int(shape) if shape.len() == 2 => Ok(theory::lia::Type::Int(
-                shape
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| "invalid shape".to_string())?,
-            )),
-            DType::Bool(shape) if shape.len() == 2 => Ok(theory::lia::Type::Bool(
-                shape
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| "invalid shape".to_string())?,
-            )),
-            t => Err(format!("{} cannot be converted to lia::Type", t)),
+        match &d.0 {
+            theory::any::Type::Int(shape) => Ok(theory::lia::Type::Int(*shape)),
+            theory::any::Type::Bool(shape) => Ok(theory::lia::Type::Bool(*shape)),
+            _ => Err(format!("{} cannot be converted to lia::Type", d)),
         }
     }
 }
@@ -29,20 +19,10 @@ impl TryFrom<&DType> for theory::lra::Type {
     type Error = String;
 
     fn try_from(d: &DType) -> Result<Self, Self::Error> {
-        match d {
-            DType::Real(shape) if shape.len() == 2 => Ok(theory::lra::Type::Real(
-                shape
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| "invalid shape".to_string())?,
-            )),
-            DType::Bool(shape) if shape.len() == 2 => Ok(theory::lra::Type::Bool(
-                shape
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| "invalid shape".to_string())?,
-            )),
-            t => Err(format!("{} cannot be converted to rla::Type", t)),
+        match &d.0 {
+            theory::any::Type::Real(shape) => Ok(theory::lra::Type::Real(*shape)),
+            theory::any::Type::Bool(shape) => Ok(theory::lra::Type::Bool(*shape)),
+            _ => Err(format!("{} cannot be converted to lra::Type", d)),
         }
     }
 }
@@ -52,16 +32,10 @@ impl TryFrom<&DType> for theory::bv::Type {
     type Error = String;
 
     fn try_from(d: &DType) -> Result<Self, Self::Error> {
-        match d {
-            DType::BV(bw) => Ok(theory::bv::Type::BV(*bw as usize, [1, 1])),
-            DType::Bool(shape) if shape.len() == 2 => Ok(theory::bv::Type::BV(
-                1,
-                shape
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| "invalid shape".to_string())?,
-            )),
-            t => Err(format!("{} cannot be converted to bv::Type", t)),
+        match &d.0 {
+            theory::any::Type::BV(bw, shape) => Ok(theory::bv::Type::BV(*bw, *shape)),
+            theory::any::Type::Bool(shape) => Ok(theory::bv::Type::BV(1, *shape)),
+            _ => Err(format!("{} cannot be converted to bv::Type", d)),
         }
     }
 }
@@ -71,27 +45,10 @@ impl TryFrom<&IType> for theory::bv::BV {
     type Error = String;
 
     fn try_from(op: &IType) -> Result<Self, Self::Error> {
-        use theory::bv::BV;
-        Ok(match op {
-            IType::Add() => BV::Add,
-            IType::Mul() => BV::Mul,
-            IType::MatMul() => BV::MatMul,
-            IType::And() => BV::And,
-            IType::Or() => BV::Or,
-            IType::Xor() => BV::Xor,
-            IType::Not() => BV::Not,
-            IType::Le() => BV::Le,
-            IType::Lt() => BV::Lt,
-            IType::Ge() => BV::Ge,
-            IType::Gt() => BV::Gt,
-            IType::Eq() => BV::Eq,
-            IType::Neq() => BV::Ne,
-            IType::Ite() => BV::Ite,
-            IType::Id() => BV::Id,
-            // TODO: we have to have ConstS and ConstU for constants of different type.
-            IType::ConstInt(v) => BV::Const(tch::Tensor::from_slice2(&[[*v as i64]]).into()),
-            t => return Err(format!("Cannot convert {} to BV operation", t)),
-        })
+        match &op.0 {
+            theory::any::Any::BV(bv) => Ok(bv.clone()),
+            _ => Err(format!("Cannot convert {} to BV operation", op)),
+        }
     }
 }
 
@@ -100,56 +57,22 @@ impl TryFrom<&IType> for theory::lia::LIA {
     type Error = String;
 
     fn try_from(op: &IType) -> Result<Self, Self::Error> {
-        use theory::lia::LIA;
-        Ok(match op {
-            IType::Add() => LIA::Add,
-            IType::Eq() => LIA::Eq,
-            IType::Neq() => LIA::Ne,
-            IType::Lt() => LIA::Lt,
-            IType::Le() => LIA::Le,
-            IType::Gt() => LIA::Gt,
-            IType::Ge() => LIA::Ge,
-            IType::And() => LIA::And,
-            IType::Or() => LIA::Or,
-            IType::Not() => LIA::Not,
-            IType::Xor() => LIA::Xor,
-            IType::Ite() => LIA::Ite,
-            IType::Id() => LIA::Id,
-            IType::Argmax() => LIA::Argmax,
-            IType::ReLU() => LIA::ReLU,
-            IType::ConstInt(v) => LIA::ConstInt(tch::Tensor::from_slice2(&[[*v]]).into()),
-            IType::ConstBool(b) => LIA::ConstBool(tch::Tensor::from_slice2(&[[*b]]).into()),
-            t => return Err(format!("Cannot convert {} to LIA operation", t)),
-        })
+        match &op.0 {
+            theory::any::Any::LIA(lia) => Ok(lia.clone()),
+            _ => Err(format!("Cannot convert {} to LIA operation", op)),
+        }
     }
 }
 
-/// cast IType to RLA operations
+/// cast IType to LRA operations
 impl TryFrom<&IType> for theory::lra::LRA {
     type Error = String;
 
     fn try_from(op: &IType) -> Result<Self, Self::Error> {
-        use theory::lra::LRA;
-        Ok(match op {
-            IType::Add() => LRA::Add,
-            IType::Eq() => LRA::Eq,
-            IType::Neq() => LRA::Ne,
-            IType::Lt() => LRA::Lt,
-            IType::Le() => LRA::Le,
-            IType::Gt() => LRA::Gt,
-            IType::Ge() => LRA::Ge,
-            IType::And() => LRA::And,
-            IType::Or() => LRA::Or,
-            IType::Not() => LRA::Not,
-            IType::Xor() => LRA::Xor,
-            IType::Ite() => LRA::Ite,
-            IType::Id() => LRA::Id,
-            IType::Argmax() => LRA::Argmax,
-            IType::ReLU() => LRA::ReLU,
-            IType::ConstInt(v) => LRA::ConstReal(tch::Tensor::from_slice2(&[[*v as f64]]).into()),
-            IType::ConstBool(b) => LRA::ConstBool(tch::Tensor::from_slice2(&[[*b]]).into()),
-            t => return Err(format!("Cannot convert {} to RLA operation", t)),
-        })
+        match &op.0 {
+            theory::any::Any::LRA(lra) => Ok(lra.clone()),
+            _ => Err(format!("Cannot convert {} to LRA operation", op)),
+        }
     }
 }
 
@@ -217,8 +140,6 @@ where
     for<'a> &'a IType: TryInto<U, Error = String>,
 {
     // re-map wires from old DType to new DType
-    // XXX: we could do this lazily to save some work if downcasting fails,
-    // but let's start with simple solution, we can optimize later
     let mut map: HashMap<usize, base::Wire<U::DType>> = HashMap::new();
     for wire in module
         .extl()
