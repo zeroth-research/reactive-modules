@@ -105,6 +105,7 @@ pub enum LIA {
     // control flow
     Ite,
     Id,
+    Uninterpreted(String),
 }
 
 impl fmt::Display for LIA {
@@ -130,6 +131,7 @@ impl fmt::Display for LIA {
             LIA::Max => write!(f, "Max"),
             LIA::Ite => write!(f, "Ite"),
             LIA::Id => write!(f, "Id"),
+            LIA::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
         }
     }
 }
@@ -160,6 +162,40 @@ impl Theory for LIA {
                 check_mat_ops(self, read, write)
             }
             LIA::Ite | LIA::Id => check_flow(self, read, write),
+
+            LIA::Uninterpreted(_) => {
+                let mut read = read.into_iter();
+                let mut write = write.into_iter();
+                // uninterpreted has either one read or one write
+                if read.next().is_some() {
+                    if read.next().is_some() {
+                        return Err(format!("{:?}: expected exactly one read, got more", self));
+                    }
+                    if write.next().is_some() {
+                        return Err(format!(
+                            "{:?}: expected exactly one read, got also write",
+                            self
+                        ));
+                    }
+                    return Ok(());
+                }
+                if write.next().is_some() {
+                    if write.next().is_some() {
+                        return Err(format!("{:?}: expected exactly one write, got more", self));
+                    }
+                    if read.next().is_some() {
+                        return Err(format!(
+                            "{:?}: expected exactly one write, got also read",
+                            self
+                        ));
+                    }
+                    return Ok(());
+                }
+                return Err(format!(
+                    "{:?}: expected exactly one write or one read, got none",
+                    self
+                ));
+            }
         }
     }
 }
@@ -549,34 +585,58 @@ mod tests {
     #[test]
     fn const_int_ok() {
         let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
-        assert!(LIA::ConstInt(cm).check([] as [Type; 0], [int(2, 2)]).is_ok());
+        assert!(
+            LIA::ConstInt(cm)
+                .check([] as [Type; 0], [int(2, 2)])
+                .is_ok()
+        );
     }
 
     #[test]
     fn const_int_bool_write_fails() {
-        assert!(LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into()).check([] as [Type; 0], [bool_t(1, 1)]).is_err());
+        assert!(
+            LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into())
+                .check([] as [Type; 0], [bool_t(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
     fn const_int_wrong_rows_fails() {
-        assert!(LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into()).check([] as [Type; 0], [int(2, 1)]).is_err());
+        assert!(
+            LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into())
+                .check([] as [Type; 0], [int(2, 1)])
+                .is_err()
+        );
     }
 
     #[test]
     fn const_int_with_read_fails() {
         let t = int(1, 1);
-        assert!(LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into()).check([t], [t]).is_err());
+        assert!(
+            LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into())
+                .check([t], [t])
+                .is_err()
+        );
     }
 
     #[test]
     fn const_bool_ok() {
         let cm: crate::Tensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
-        assert!(LIA::ConstBool(cm).check([] as [Type; 0], [bool_t(2, 2)]).is_ok());
+        assert!(
+            LIA::ConstBool(cm)
+                .check([] as [Type; 0], [bool_t(2, 2)])
+                .is_ok()
+        );
     }
 
     #[test]
     fn const_bool_int_write_fails() {
-        assert!(LIA::ConstBool(tch::Tensor::from_slice2(&[[true]]).into()).check([] as [Type; 0], [int(1, 1)]).is_err());
+        assert!(
+            LIA::ConstBool(tch::Tensor::from_slice2(&[[true]]).into())
+                .check([] as [Type; 0], [int(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
@@ -617,22 +677,38 @@ mod tests {
 
     #[test]
     fn and_type_mismatch_fails() {
-        assert!(LIA::And.check([bool_t(1, 1), bool_t(1, 2)], [bool_t(1, 1)]).is_err());
+        assert!(
+            LIA::And
+                .check([bool_t(1, 1), bool_t(1, 2)], [bool_t(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
     fn lt_ok() {
-        assert!(LIA::Lt.check([int(1, 1), int(1, 1)], [bool_t(1, 1)]).is_ok());
+        assert!(
+            LIA::Lt
+                .check([int(1, 1), int(1, 1)], [bool_t(1, 1)])
+                .is_ok()
+        );
     }
 
     #[test]
     fn le_ok() {
-        assert!(LIA::Le.check([int(2, 3), int(2, 3)], [bool_t(1, 1)]).is_ok());
+        assert!(
+            LIA::Le
+                .check([int(2, 3), int(2, 3)], [bool_t(1, 1)])
+                .is_ok()
+        );
     }
 
     #[test]
     fn eq_ok() {
-        assert!(LIA::Eq.check([int(1, 1), int(1, 1)], [bool_t(1, 1)]).is_ok());
+        assert!(
+            LIA::Eq
+                .check([int(1, 1), int(1, 1)], [bool_t(1, 1)])
+                .is_ok()
+        );
     }
 
     #[test]
@@ -643,7 +719,11 @@ mod tests {
 
     #[test]
     fn cmp_input_mismatch_fails() {
-        assert!(LIA::Eq.check([int(1, 1), int(1, 2)], [bool_t(1, 1)]).is_err());
+        assert!(
+            LIA::Eq
+                .check([int(1, 1), int(1, 2)], [bool_t(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
@@ -693,14 +773,16 @@ mod tests {
     #[test]
     fn linear_ok() {
         let a: crate::Tensor = tch::Tensor::from_slice2(&[[1i64, 0], [0, 1]]).into();
-        let b: crate::Tensor = tch::Tensor::zeros(&[0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
+        let b: crate::Tensor =
+            tch::Tensor::zeros(&[0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(LIA::Linear(a, b).check([int(1, 2)], [int(2, 2)]).is_ok());
     }
 
     #[test]
     fn linear_dim_mismatch_fails() {
         let a: crate::Tensor = tch::Tensor::from_slice2(&[[1i64, 0], [0, 1]]).into();
-        let b: crate::Tensor = tch::Tensor::zeros(&[0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
+        let b: crate::Tensor =
+            tch::Tensor::zeros(&[0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(LIA::Linear(a, b).check([int(1, 3)], [int(2, 3)]).is_err());
     }
 
@@ -718,7 +800,11 @@ mod tests {
 
     #[test]
     fn ite_arm_mismatch_fails() {
-        assert!(LIA::Ite.check([bool_t(1, 1), int(1, 1), int(1, 2)], [int(1, 1)]).is_err());
+        assert!(
+            LIA::Ite
+                .check([bool_t(1, 1), int(1, 1), int(1, 2)], [int(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
