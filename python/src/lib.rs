@@ -4,6 +4,7 @@ use pyo3::types::PyAny;
 
 mod atom;
 mod downcast;
+mod itype;
 mod module;
 mod pytensor;
 mod term;
