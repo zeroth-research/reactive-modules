@@ -94,6 +94,7 @@ pub enum BV {
     Ne,
     Ite,
     Id,
+    Uninterpreted(String),
 }
 
 impl fmt::Display for BV {
@@ -117,6 +118,7 @@ impl fmt::Display for BV {
             BV::MatMul => write!(f, "MatMul"),
             BV::Ite => write!(f, "Ite"),
             BV::Id => write!(f, "Id"),
+            BV::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
         }
     }
 }
@@ -149,9 +151,7 @@ fn check_init_dims(cm: &tch::Tensor, bw: usize, i: usize, j: usize) -> Result<()
         let min_val = cm.min().int64_value(&[]);
         let max_val = cm.max().int64_value(&[]);
         if min_val < 0 || max_val > max {
-            return Err(format!(
-                "Const: tensor values do not fit in {bw} bits"
-            ));
+            return Err(format!("Const: tensor values do not fit in {bw} bits"));
         }
     }
     Ok(())
@@ -377,6 +377,37 @@ impl Theory for BV {
                 }
                 Ok(())
             }
+            BV::Uninterpreted(_) => {
+                // uninterpreted has either one read or one write
+                if read.next().is_some() {
+                    if read.next().is_some() {
+                        return Err(format!("{:?}: expected exactly one read, got more", self));
+                    }
+                    if write.next().is_some() {
+                        return Err(format!(
+                            "{:?}: expected exactly one read, got also write",
+                            self
+                        ));
+                    }
+                    return Ok(());
+                }
+                if write.next().is_some() {
+                    if write.next().is_some() {
+                        return Err(format!("{:?}: expected exactly one write, got more", self));
+                    }
+                    if read.next().is_some() {
+                        return Err(format!(
+                            "{:?}: expected exactly one write, got also read",
+                            self
+                        ));
+                    }
+                    return Ok(());
+                }
+                return Err(format!(
+                    "{:?}: expected exactly one write or one read, got none",
+                    self
+                ));
+            }
         }
     }
 }
@@ -546,11 +577,7 @@ mod tests {
     #[test]
     fn cmp_input_mismatch_fails() {
         let out = bv(1, 1, 1);
-        assert!(
-            BV::Eq
-                .check([bv(8, 1, 1), bv(16, 1, 1)], [out])
-                .is_err()
-        );
+        assert!(BV::Eq.check([bv(8, 1, 1), bv(16, 1, 1)], [out]).is_err());
     }
 
     // --- UDiv / SDiv ---
@@ -574,11 +601,7 @@ mod tests {
         let a = bv(8, 2, 3);
         let b = bv(8, 3, 4);
         let c = bv(8, 2, 4);
-        assert!(
-            BV::MatMul
-                .check([a, b], [c])
-                .is_ok()
-        );
+        assert!(BV::MatMul.check([a, b], [c]).is_ok());
     }
 
     #[test]
@@ -586,11 +609,7 @@ mod tests {
         let a = bv(8, 2, 3);
         let b = bv(8, 4, 4);
         let c = bv(8, 2, 4);
-        assert!(
-            BV::MatMul
-                .check([a, b], [c])
-                .is_err()
-        );
+        assert!(BV::MatMul.check([a, b], [c]).is_err());
     }
 
     #[test]
@@ -598,11 +617,7 @@ mod tests {
         let a = bv(8, 2, 3);
         let b = bv(16, 3, 4);
         let c = bv(8, 2, 4);
-        assert!(
-            BV::MatMul
-                .check([a, b], [c])
-                .is_err()
-        );
+        assert!(BV::MatMul.check([a, b], [c]).is_err());
     }
 
     // --- Ite ---
@@ -611,22 +626,14 @@ mod tests {
     fn ite_ok() {
         let cond = bv(1, 1, 1);
         let t = bv(8, 1, 1);
-        assert!(
-            BV::Ite
-                .check([cond, t, t], [t])
-                .is_ok()
-        );
+        assert!(BV::Ite.check([cond, t, t], [t]).is_ok());
     }
 
     #[test]
     fn ite_bad_condition_bw_fails() {
         let cond = bv(8, 1, 1);
         let t = bv(8, 1, 1);
-        assert!(
-            BV::Ite
-                .check([cond, t, t], [t])
-                .is_err()
-        );
+        assert!(BV::Ite.check([cond, t, t], [t]).is_err());
     }
 
     #[test]

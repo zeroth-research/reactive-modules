@@ -105,6 +105,7 @@ pub enum LRA {
     // control flow
     Ite,
     Id,
+    Uninterpreted(String),
 }
 
 impl fmt::Display for LRA {
@@ -130,6 +131,7 @@ impl fmt::Display for LRA {
             LRA::Max => write!(f, "Max"),
             LRA::Ite => write!(f, "Ite"),
             LRA::Id => write!(f, "Id"),
+            LRA::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
         }
     }
 }
@@ -160,6 +162,39 @@ impl Theory for LRA {
                 check_mat_ops(self, read, write)
             }
             LRA::Ite | LRA::Id => check_flow(self, read, write),
+            LRA::Uninterpreted(_) => {
+                let mut read = read.into_iter();
+                let mut write = write.into_iter();
+                // uninterpreted has either one read or one write
+                if read.next().is_some() {
+                    if read.next().is_some() {
+                        return Err(format!("{:?}: expected exactly one read, got more", self));
+                    }
+                    if write.next().is_some() {
+                        return Err(format!(
+                            "{:?}: expected exactly one read, got also write",
+                            self
+                        ));
+                    }
+                    return Ok(());
+                }
+                if write.next().is_some() {
+                    if write.next().is_some() {
+                        return Err(format!("{:?}: expected exactly one write, got more", self));
+                    }
+                    if read.next().is_some() {
+                        return Err(format!(
+                            "{:?}: expected exactly one write, got also read",
+                            self
+                        ));
+                    }
+                    return Ok(());
+                }
+                return Err(format!(
+                    "{:?}: expected exactly one write or one read, got none",
+                    self
+                ));
+            }
         }
     }
 }
@@ -549,34 +584,58 @@ mod tests {
     #[test]
     fn const_real_ok() {
         let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
-        assert!(LRA::ConstReal(cm).check([] as [Type; 0], [real(2, 2)]).is_ok());
+        assert!(
+            LRA::ConstReal(cm)
+                .check([] as [Type; 0], [real(2, 2)])
+                .is_ok()
+        );
     }
 
     #[test]
     fn const_real_bool_write_fails() {
-        assert!(LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into()).check([] as [Type; 0], [bool_t(1, 1)]).is_err());
+        assert!(
+            LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+                .check([] as [Type; 0], [bool_t(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
     fn const_real_wrong_rows_fails() {
-        assert!(LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into()).check([] as [Type; 0], [real(2, 1)]).is_err());
+        assert!(
+            LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+                .check([] as [Type; 0], [real(2, 1)])
+                .is_err()
+        );
     }
 
     #[test]
     fn const_real_with_read_fails() {
         let t = real(1, 1);
-        assert!(LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into()).check([t], [t]).is_err());
+        assert!(
+            LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+                .check([t], [t])
+                .is_err()
+        );
     }
 
     #[test]
     fn const_bool_ok() {
         let cm: crate::Tensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
-        assert!(LRA::ConstBool(cm).check([] as [Type; 0], [bool_t(2, 2)]).is_ok());
+        assert!(
+            LRA::ConstBool(cm)
+                .check([] as [Type; 0], [bool_t(2, 2)])
+                .is_ok()
+        );
     }
 
     #[test]
     fn const_bool_real_write_fails() {
-        assert!(LRA::ConstBool(tch::Tensor::from_slice2(&[[true]]).into()).check([] as [Type; 0], [real(1, 1)]).is_err());
+        assert!(
+            LRA::ConstBool(tch::Tensor::from_slice2(&[[true]]).into())
+                .check([] as [Type; 0], [real(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
@@ -617,22 +676,38 @@ mod tests {
 
     #[test]
     fn and_type_mismatch_fails() {
-        assert!(LRA::And.check([bool_t(1, 1), bool_t(1, 2)], [bool_t(1, 1)]).is_err());
+        assert!(
+            LRA::And
+                .check([bool_t(1, 1), bool_t(1, 2)], [bool_t(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
     fn lt_ok() {
-        assert!(LRA::Lt.check([real(1, 1), real(1, 1)], [bool_t(1, 1)]).is_ok());
+        assert!(
+            LRA::Lt
+                .check([real(1, 1), real(1, 1)], [bool_t(1, 1)])
+                .is_ok()
+        );
     }
 
     #[test]
     fn le_ok() {
-        assert!(LRA::Le.check([real(2, 3), real(2, 3)], [bool_t(1, 1)]).is_ok());
+        assert!(
+            LRA::Le
+                .check([real(2, 3), real(2, 3)], [bool_t(1, 1)])
+                .is_ok()
+        );
     }
 
     #[test]
     fn eq_ok() {
-        assert!(LRA::Eq.check([real(1, 1), real(1, 1)], [bool_t(1, 1)]).is_ok());
+        assert!(
+            LRA::Eq
+                .check([real(1, 1), real(1, 1)], [bool_t(1, 1)])
+                .is_ok()
+        );
     }
 
     #[test]
@@ -643,7 +718,11 @@ mod tests {
 
     #[test]
     fn cmp_input_mismatch_fails() {
-        assert!(LRA::Eq.check([real(1, 1), real(1, 2)], [bool_t(1, 1)]).is_err());
+        assert!(
+            LRA::Eq
+                .check([real(1, 1), real(1, 2)], [bool_t(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
@@ -654,7 +733,11 @@ mod tests {
 
     #[test]
     fn add_shape_mismatch_fails() {
-        assert!(LRA::Add.check([real(1, 2), real(2, 1)], [real(1, 2)]).is_err());
+        assert!(
+            LRA::Add
+                .check([real(1, 2), real(2, 1)], [real(1, 2)])
+                .is_err()
+        );
     }
 
     #[test]
@@ -693,14 +776,16 @@ mod tests {
     #[test]
     fn linear_ok() {
         let a: crate::Tensor = tch::Tensor::from_slice2(&[[1.0f64, 0.0], [0.0, 1.0]]).into();
-        let b: crate::Tensor = tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
+        let b: crate::Tensor =
+            tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
         assert!(LRA::Linear(a, b).check([real(1, 2)], [real(2, 2)]).is_ok());
     }
 
     #[test]
     fn linear_dim_mismatch_fails() {
         let a: crate::Tensor = tch::Tensor::from_slice2(&[[1.0f64, 0.0], [0.0, 1.0]]).into();
-        let b: crate::Tensor = tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
+        let b: crate::Tensor =
+            tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
         assert!(LRA::Linear(a, b).check([real(1, 3)], [real(2, 3)]).is_err());
     }
 
@@ -718,7 +803,11 @@ mod tests {
 
     #[test]
     fn ite_arm_mismatch_fails() {
-        assert!(LRA::Ite.check([bool_t(1, 1), real(1, 1), real(1, 2)], [real(1, 1)]).is_err());
+        assert!(
+            LRA::Ite
+                .check([bool_t(1, 1), real(1, 1), real(1, 2)], [real(1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
