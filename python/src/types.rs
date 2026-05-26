@@ -3,7 +3,10 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::fmt;
+use std::sync::Once;
 use theory::Theory;
+
+static FLOAT_WARNING: Once = Once::new();
 
 fn parse_dims(dims: &Bound<'_, pyo3::types::PyTuple>) -> PyResult<[usize; 2]> {
     match dims.len() {
@@ -57,6 +60,15 @@ impl DType {
     #[staticmethod]
     #[pyo3(signature = (*dims))]
     pub fn Real(dims: &Bound<'_, pyo3::types::PyTuple>) -> PyResult<Self> {
+        Ok(DType(theory::any::Type::Real(parse_dims(dims)?)))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*dims))]
+    pub fn Float(dims: &Bound<'_, pyo3::types::PyTuple>) -> PyResult<Self> {
+        FLOAT_WARNING.call_once(|| {
+            eprintln!("warning: DType.Float is treated as DType.Real");
+        });
         Ok(DType(theory::any::Type::Real(parse_dims(dims)?)))
     }
 
