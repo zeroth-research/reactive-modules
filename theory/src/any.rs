@@ -2,12 +2,25 @@ use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
 use crate::{Theory, bv, lia, lra};
+use std::fmt;
 
-enum Type {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type {
     Bool([usize; 2]),
     Real([usize; 2]),
     Int([usize; 2]),
     BV(usize, [usize; 2]),
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Bool(s) => write!(f, "Bool({}, {})", s[0], s[1]),
+            Type::Real(s) => write!(f, "Real({}, {})", s[0], s[1]),
+            Type::Int(s) => write!(f, "Int({}, {})", s[0], s[1]),
+            Type::BV(bw, s) => write!(f, "BV<{}>({}, {})", bw, s[0], s[1]),
+        }
+    }
 }
 
 impl From<bv::Type> for Type {
@@ -71,12 +84,22 @@ impl TryFrom<Type> for lra::Type {
     }
 }
 
-#[allow(dead_code)]
 #[allow(clippy::upper_case_acronyms)]
-enum Any {
+#[derive(Debug, Clone)]
+pub enum Any {
     LRA(LRA),
     LIA(LIA),
     BV(BV),
+}
+
+impl fmt::Display for Any {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Any::LRA(op) => write!(f, "{}", op),
+            Any::LIA(op) => write!(f, "{}", op),
+            Any::BV(op) => write!(f, "{}", op),
+        }
+    }
 }
 
 struct TryFrom2<A>
@@ -87,7 +110,6 @@ where
 }
 
 impl<A: TryInto<Type>> TryFrom2<A> {
-    #[allow(dead_code)]
     fn new(a: A) -> Self {
         Self { a }
     }

@@ -1,69 +1,64 @@
-use crate::pytensor::PyTensor;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::fmt;
 use theory::Theory;
+
 // ============================================================================
 // DType enum (wire data types)
 // ============================================================================
 
 #[pyclass(frozen, eq, str)]
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum DType {
-    // at this moment, we keep the DType flat and encode the type
-    // of elements in the names
-    Bool(Vec<usize>),
-    Int(Vec<usize>),
-    Float(Vec<usize>),
-    Real(Vec<usize>),
-    // FIXME: turn this into a matrix too
-    BV(u32),
-}
+pub struct DType(pub(crate) theory::any::Type);
 
 #[pymethods]
 impl DType {
     /// Get the data dimensions of this data type
     #[getter]
     pub(crate) fn shape(&self) -> Vec<usize> {
-        match &self {
-            DType::Float(shape) => shape.clone(),
-            DType::Int(shape) => shape.clone(),
-            DType::Bool(shape) => shape.clone(),
-            DType::Real(shape) => shape.clone(),
-            DType::BV(_) => vec![1],
+        match &self.0 {
+            theory::any::Type::Bool(s)
+            | theory::any::Type::Real(s)
+            | theory::any::Type::Int(s) => s.to_vec(),
+            theory::any::Type::BV(_, s) => s.to_vec(),
         }
     }
 
     /// Create the same (Tensor) dtype but with a different shape
     fn reshape(&self, shape: Vec<usize>) -> PyResult<Self> {
-        match self {
-            DType::Bool(_) => Ok(DType::Bool(shape)),
-            DType::Int(_) => Ok(DType::Int(shape)),
-            DType::Float(_) => Ok(DType::Float(shape)),
-            DType::Real(_) => Ok(DType::Real(shape)),
-            DType::BV(_) => Err(PyValueError::new_err("cannot reshape word-level types")),
+        let arr: [usize; 2] = shape
+            .as_slice()
+            .try_into()
+            .map_err(|_| PyValueError::new_err("shape must have exactly 2 elements"))?;
+        match &self.0 {
+            theory::any::Type::Bool(_) => Ok(DType(theory::any::Type::Bool(arr))),
+            theory::any::Type::Int(_) => Ok(DType(theory::any::Type::Int(arr))),
+            theory::any::Type::Real(_) => Ok(DType(theory::any::Type::Real(arr))),
+            theory::any::Type::BV(_, _) => {
+                Err(PyValueError::new_err("cannot reshape word-level types"))
+            }
         }
     }
 
     pub fn is_bool(&self) -> bool {
-        matches!(self, DType::Bool(_))
+        matches!(self.0, theory::any::Type::Bool(_))
     }
     pub fn is_int(&self) -> bool {
-        matches!(self, DType::Int(_))
+        matches!(self.0, theory::any::Type::Int(_))
     }
     pub fn is_float(&self) -> bool {
-        matches!(self, DType::Float(_))
+        false
     }
     pub fn is_real(&self) -> bool {
-        matches!(self, DType::Real(_))
+        matches!(self.0, theory::any::Type::Real(_))
     }
     pub fn is_bv(&self) -> bool {
-        matches!(self, DType::BV(_))
+        matches!(self.0, theory::any::Type::BV(_, _))
     }
 
     pub fn bv_bitwidth(&self) -> PyResult<u32> {
-        match self {
-            DType::BV(bw) => Ok(*bw),
+        match &self.0 {
+            theory::any::Type::BV(bw, _) => Ok(*bw as u32),
             _ => Err(pyo3::exceptions::PyTypeError::new_err("not a BV type")),
         }
     }
@@ -75,198 +70,30 @@ impl DType {
     }
 
     pub fn is_same_kind(&self, b: &Self) -> bool {
-        match (self, b) {
-            (DType::Bool(_), DType::Bool(_))
-            | (DType::Int(_), DType::Int(_))
-            | (DType::Float(_), DType::Float(_))
-            | (DType::Real(_), DType::Real(_))
-            | (DType::BV(_), DType::BV(_)) => true,
-            _ => false,
-        }
+        use theory::any::Type::*;
+        matches!(
+            (&self.0, &b.0),
+            (Bool(_), Bool(_)) | (Real(_), Real(_)) | (Int(_), Int(_)) | (BV(_, _), BV(_, _))
+        )
     }
-}
-
-fn fmt_comma_separated(f: &mut fmt::Formatter<'_>, items: &Vec<usize>) -> fmt::Result {
-    for (i, item) in items.iter().enumerate() {
-        if i > 0 {
-            write!(f, ", ")?;
-        }
-        write!(f, "{item}")?;
-    }
-    Ok(())
 }
 
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DType::Float(shape) => {
-                write!(f, "Float(")?;
-                fmt_comma_separated(f, shape)?;
-                write!(f, ")")?;
-            }
-            DType::Int(shape) => {
-                write!(f, "Int(")?;
-                fmt_comma_separated(f, shape)?;
-                write!(f, ")")?;
-            }
-            DType::Bool(shape) => {
-                write!(f, "Bool(")?;
-                fmt_comma_separated(f, shape)?;
-                write!(f, ")")?;
-            }
-            DType::Real(shape) => {
-                write!(f, "Real(")?;
-                fmt_comma_separated(f, shape)?;
-                write!(f, ")")?;
-            }
-            DType::BV(n) => {
-                write!(f, "BV<{}>", n)?;
-            }
-        };
-        Ok(())
+        write!(f, "{}", self.0)
     }
 }
 
 // ============================================================================
-// IType enum (flat structure for PyO3 compatibility)
+// IType (instruction / operation types)
 // ============================================================================
-
 #[pyclass(str, frozen)]
 #[derive(Debug, Clone)]
-pub enum IType {
-    // Arithmetic operations
-    Add(),
-    Sub(),
-    Mul(),
-    Div(),
-    Mod(),
-    Neg(),
-    Abs(),
-    MatMul(), // consider differentiation between matmul operators, or parameterisation.
-    // To be designed with compliance with lower level platform in mind
-
-    // Comparison operations
-    Eq(),
-    Neq(),
-    Lt(),
-    Le(),
-    Gt(),
-    Ge(),
-
-    // Logical operations
-    And(),
-    Or(),
-    Not(),
-    Xor(),
-    Xnor(),
-    Implies(),
-
-    // Control flow
-    Ite(),
-
-    // Transcendental functions
-    Sin(),
-    Cos(),
-
-    // Special operations
-    Id(),
-    // index of maximal value in the flattened tensor
-    Argmax(),
-    // ReLU activation: max(0, x)
-    ReLU(),
-    // Tanh activation
-    Tanh(),
-    // Linear layer: output = input @ weight + bias
-    // Reads: [input, weight, bias], Writes: [output]
-    Linear(),
-
-    // Tensor operations
-    TensorGet(),
-    TensorSet(),
-    TensorSum(),
-    TensorMean(),
-    TensorMax(),
-
-    // Word-level operations
-    BitSelect(u32, u32),
-    Extend(u32),
-    BVToBool(),
-    BoolToBV(),
-
-    // Constants
-    Tensor(PyTensor),
-    ConstBool(bool),
-    ConstInt(i64),
-
-    // Symbol referring to uninterpreted constants or functions,
-    // whose signature is known in the context, i.e., the current theory
-    Uninterpreted(String),
-}
+pub struct IType(pub(crate) theory::any::Any);
 
 impl fmt::Display for IType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IType::Add() => write!(f, "Add"),
-            IType::Sub() => write!(f, "Sub"),
-            IType::Mul() => write!(f, "Mul"),
-            IType::Div() => write!(f, "Div"),
-            IType::Mod() => write!(f, "Mod"),
-            IType::Neg() => write!(f, "Neg"),
-            IType::Abs() => write!(f, "Abs"),
-            IType::MatMul() => write!(f, "MatMul"),
-            IType::Sin() => write!(f, "Sin"),
-            IType::Cos() => write!(f, "Cos"),
-            IType::Eq() => write!(f, "Eq"),
-            IType::Neq() => write!(f, "Neq"),
-            IType::Lt() => write!(f, "Lt"),
-            IType::Le() => write!(f, "Le"),
-            IType::Gt() => write!(f, "Gt"),
-            IType::Ge() => write!(f, "Ge"),
-            IType::And() => write!(f, "And"),
-            IType::Or() => write!(f, "Or"),
-            IType::Not() => write!(f, "Not"),
-            IType::Xor() => write!(f, "Xor"),
-            IType::Xnor() => write!(f, "Xnor"),
-            IType::Implies() => write!(f, "Implies"),
-            IType::Ite() => write!(f, "Ite"),
-            IType::Id() => write!(f, "Id"),
-            IType::Argmax() => write!(f, "Argmax"),
-            IType::ReLU() => write!(f, "ReLU"),
-            IType::Tanh() => write!(f, "Tanh"),
-            IType::Linear() => write!(f, "Linear"),
-            IType::TensorGet() => write!(f, "TensorGet"),
-            IType::TensorSet() => write!(f, "TensorSet"),
-            IType::TensorSum() => write!(f, "TensorSum"),
-            IType::TensorMean() => write!(f, "TensorMean"),
-            IType::TensorMax() => write!(f, "TensorMax"),
-            IType::BitSelect(h, l) => write!(f, "BitSelect[{}:{}]", h, l),
-            IType::Extend(n) => write!(f, "Extend({})", n),
-            IType::BVToBool() => write!(f, "BVToBool"),
-            IType::BoolToBV() => write!(f, "BoolToBV"),
-            IType::Tensor(t) => {
-                let flat = t.tensor.view([-1]);
-
-                if let Ok(vals) = Vec::<f64>::try_from(&flat) {
-                    let _ = write!(f, "Tensor([");
-                    for (n, v) in vals.iter().take(5).enumerate() {
-                        if n == 0 {
-                            let _ = write!(f, "{}", v);
-                        } else {
-                            let _ = write!(f, " {}", v);
-                        }
-                    }
-                    if flat.numel() > 3 {
-                        let _ = write!(f, " ...");
-                    }
-                    write!(f, "])")
-                } else {
-                    write!(f, "Tensor({})", flat)
-                }
-            }
-            IType::ConstBool(v) => write!(f, "Const: {}", v),
-            IType::ConstInt(v) => write!(f, "Const: {}", v),
-            IType::Uninterpreted(t) => write!(f, "{t}"),
-        }
+        write!(f, "{}", self.0)
     }
 }
 
@@ -279,6 +106,15 @@ impl Theory for IType {
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
-        crate::typechecking::type_check(self, read, write)
+        fn to_type<D: TryInto<DType>>(d: D) -> Result<theory::any::Type, String> {
+            d.try_into()
+                .map(|dt: DType| dt.0)
+                .map_err(|_| "type conversion failed".to_string())
+        }
+        let read_vec: Vec<theory::any::Type> =
+            read.into_iter().map(to_type::<D>).collect::<Result<_, _>>()?;
+        let write_vec: Vec<theory::any::Type> =
+            write.into_iter().map(to_type::<D>).collect::<Result<_, _>>()?;
+        self.0.check(read_vec, write_vec)
     }
 }
