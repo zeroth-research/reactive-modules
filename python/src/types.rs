@@ -3,6 +3,33 @@ use pyo3::prelude::*;
 use std::fmt;
 use theory::Theory;
 
+fn parse_dims(dims: &Bound<'_, pyo3::types::PyTuple>) -> PyResult<[usize; 2]> {
+    match dims.len() {
+        1 => {
+            let first = dims.get_item(0)?;
+            if let Ok(list) = first.extract::<Vec<usize>>() {
+                return match list.len() {
+                    0 => Ok([1, 1]),
+                    1 => Ok([1, list[0]]),
+                    2 => Ok([list[0], list[1]]),
+                    n => Err(PyValueError::new_err(format!(
+                        "expected 0–2 dimensions, got {n}"
+                    ))),
+                };
+            }
+            Ok([1, first.extract::<usize>()?])
+        }
+        2 => Ok([
+            dims.get_item(0)?.extract::<usize>()?,
+            dims.get_item(1)?.extract::<usize>()?,
+        ]),
+        0 => Ok([1, 1]),
+        n => Err(PyValueError::new_err(format!(
+            "expected 0–2 dimensions, got {n}"
+        ))),
+    }
+}
+
 // ============================================================================
 // DType enum (wire data types)
 // ============================================================================
@@ -13,6 +40,29 @@ pub struct DType(pub(crate) theory::any::Type);
 
 #[pymethods]
 impl DType {
+    #[staticmethod]
+    #[pyo3(signature = (*dims))]
+    pub fn Bool(dims: &Bound<'_, pyo3::types::PyTuple>) -> PyResult<Self> {
+        Ok(DType(theory::any::Type::Bool(parse_dims(dims)?)))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*dims))]
+    pub fn Int(dims: &Bound<'_, pyo3::types::PyTuple>) -> PyResult<Self> {
+        Ok(DType(theory::any::Type::Int(parse_dims(dims)?)))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*dims))]
+    pub fn Real(dims: &Bound<'_, pyo3::types::PyTuple>) -> PyResult<Self> {
+        Ok(DType(theory::any::Type::Real(parse_dims(dims)?)))
+    }
+
+    #[staticmethod]
+    pub fn BV(bw: usize) -> Self {
+        DType(theory::any::Type::BV(bw, [1, 1]))
+    }
+
     /// Get the data dimensions of this data type
     #[getter]
     pub(crate) fn shape(&self) -> Vec<usize> {
