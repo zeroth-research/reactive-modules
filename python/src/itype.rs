@@ -214,6 +214,10 @@ impl BVIType {
     fn Ite() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Ite)) }
     #[classattr]
     fn Id() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Id)) }
+    /// SMV `bool(word)`: BV<n> → BV<1> via `x != 0`.
+    /// (SMV's dual `word1(bool)` is just `Id` on a BV<1>, so no separate op.)
+    #[classattr]
+    fn BVToBool() -> IType { IType(theory::any::Any::BV(theory::bv::BV::BVToBool)) }
 
     #[staticmethod]
     fn Const(value: &Bound<'_, PyAny>) -> PyResult<IType> {
@@ -408,6 +412,7 @@ fn op_name_of(a: &theory::any::Any) -> &'static str {
             BV::Ne => "Ne",
             BV::Ite => "Ite",
             BV::Id => "Id",
+            BV::BVToBool => "BVToBool",
             BV::BitSelect { .. } => "BitSelect",
             BV::Extend { .. } => "Extend",
             BV::Uninterpreted(_) => "Uninterpreted",

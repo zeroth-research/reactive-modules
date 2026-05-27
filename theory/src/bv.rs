@@ -98,6 +98,12 @@ pub enum BV {
     Ne,
     Ite,
     Id,
+    /// `BVToBool`: SMV's `bool(word)` — reduces a BV<n> to BV<1> via
+    /// "non-zero" (`x != 0`). Shape-preserving; input width is arbitrary.
+    ///
+    /// Note: SMV's dual `word1(bool)` is just `Id` on a BV<1>, so no
+    /// `BoolToBV` variant is needed.
+    BVToBool,
     /// `BitSelect { high, low }`: extract bits `[high..=low]` (inclusive) from
     /// a single input. Output bit-width is `high - low + 1`; shape preserved.
     BitSelect { high: usize, low: usize },
@@ -132,6 +138,7 @@ impl fmt::Display for BV {
             BV::MatMul => write!(f, "MatMul"),
             BV::Ite => write!(f, "Ite"),
             BV::Id => write!(f, "Id"),
+            BV::BVToBool => write!(f, "BVToBool"),
             BV::BitSelect { high, low } => write!(f, "BitSelect[{high}:{low}]"),
             BV::Extend { extra } => write!(f, "Extend(+{extra})"),
             BV::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
@@ -389,6 +396,21 @@ impl Theory for BV {
                     return Err(format!(
                         "{:?}: mismatch in second input and output dimensions: {} != {}",
                         self, d4, d6
+                    ));
+                }
+                Ok(())
+            }
+            BV::BVToBool => {
+                let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err(format!("{self}: must read exactly one value"));
+                };
+                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err(format!("{self}: must write exactly one value"));
+                };
+                let [rows, cols] = r1.shape();
+                if w1 != Type::BV(1, [*rows, *cols]) {
+                    return Err(format!(
+                        "{self}: output must be BV<1>({rows}, {cols}), got {w1}"
                     ));
                 }
                 Ok(())
@@ -722,6 +744,46 @@ mod tests {
     fn smod_ok() {
         let t = bv(8, 1, 1);
         assert!(BV::SMod.check([t, t], [t]).is_ok());
+    }
+
+    // --- BVToBool / BoolToBV (SMV bool(...) / word1(...)) ---
+
+    #[test]
+    fn bv_to_bool_ok() {
+        // BV<8>(2,3) -> BV<1>(2,3)
+        assert!(
+            BV::BVToBool
+                .check([bv(8, 2, 3)], [bv(1, 2, 3)])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn bv_to_bool_identity_width_ok() {
+        // BV<1> -> BV<1> is also fine (idempotent on already-bool input).
+        assert!(
+            BV::BVToBool
+                .check([bv(1, 1, 1)], [bv(1, 1, 1)])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn bv_to_bool_wrong_out_width_fails() {
+        assert!(
+            BV::BVToBool
+                .check([bv(8, 1, 1)], [bv(8, 1, 1)])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn bv_to_bool_shape_mismatch_fails() {
+        assert!(
+            BV::BVToBool
+                .check([bv(8, 2, 3)], [bv(1, 1, 1)])
+                .is_err()
+        );
     }
 
     // --- BitSelect / Extend ---
