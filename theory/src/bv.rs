@@ -78,9 +78,13 @@ pub enum BV {
     // TODO: use bitarray, this works only for `N <= 64`
     Const(crate::Tensor),
     Add,
+    Sub,
+    Neg,
     Mul,
     UDiv,
     SDiv,
+    UMod,
+    SMod,
     MatMul,
     And,
     Or,
@@ -94,6 +98,12 @@ pub enum BV {
     Ne,
     Ite,
     Id,
+    /// `BitSelect { high, low }`: extract bits `[high..=low]` (inclusive) from
+    /// a single input. Output bit-width is `high - low + 1`; shape preserved.
+    BitSelect { high: usize, low: usize },
+    /// `Extend { extra }`: zero-extend by `extra` bits. Output bit-width is
+    /// `input_bw + extra`; shape preserved.
+    Extend { extra: usize },
     Uninterpreted(String),
 }
 
@@ -112,12 +122,18 @@ impl fmt::Display for BV {
             BV::Eq => write!(f, "Eq"),
             BV::Ne => write!(f, "Ne"),
             BV::Add => write!(f, "Add"),
+            BV::Sub => write!(f, "Sub"),
+            BV::Neg => write!(f, "Neg"),
             BV::Mul => write!(f, "Mul"),
             BV::UDiv => write!(f, "UDiv"),
             BV::SDiv => write!(f, "SDiv"),
+            BV::UMod => write!(f, "UMod"),
+            BV::SMod => write!(f, "SMod"),
             BV::MatMul => write!(f, "MatMul"),
             BV::Ite => write!(f, "Ite"),
             BV::Id => write!(f, "Id"),
+            BV::BitSelect { high, low } => write!(f, "BitSelect[{high}:{low}]"),
+            BV::Extend { extra } => write!(f, "Extend(+{extra})"),
             BV::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
         }
     }
@@ -184,7 +200,7 @@ impl Theory for BV {
                 Ok(())
             }
 
-            BV::Not | BV::Id => {
+            BV::Not | BV::Id | BV::Neg => {
                 let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
                 if r != w {
                     return Err(format!(
@@ -225,7 +241,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::UDiv => {
+            BV::UDiv | BV::UMod => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
                     read_nxt(&mut read, 1)?,
@@ -249,7 +265,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::SDiv => {
+            BV::SDiv | BV::SMod => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
                     read_nxt(&mut read, 1)?,
@@ -273,7 +289,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::And | BV::Or | BV::Xor | BV::Add | BV::Mul => {
+            BV::And | BV::Or | BV::Xor | BV::Add | BV::Sub | BV::Mul => {
                 let w1 = write_nxt(&mut write, 0)?;
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0)?,
@@ -373,6 +389,47 @@ impl Theory for BV {
                     return Err(format!(
                         "{:?}: mismatch in second input and output dimensions: {} != {}",
                         self, d4, d6
+                    ));
+                }
+                Ok(())
+            }
+            BV::BitSelect { high, low } => {
+                let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err(format!("{self}: must read exactly one value"));
+                };
+                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err(format!("{self}: must write exactly one value"));
+                };
+                if high < low {
+                    return Err(format!("{self}: high ({high}) must be >= low ({low})"));
+                }
+                if *high >= r1.bw() {
+                    return Err(format!(
+                        "{self}: high ({high}) is out of range for input width {}",
+                        r1.bw()
+                    ));
+                }
+                let out_bw = high - low + 1;
+                let [rows, cols] = r1.shape();
+                if w1 != Type::BV(out_bw, [*rows, *cols]) {
+                    return Err(format!(
+                        "{self}: output must be BV<{out_bw}>({rows}, {cols}), got {w1}"
+                    ));
+                }
+                Ok(())
+            }
+            BV::Extend { extra } => {
+                let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                    return Err(format!("{self}: must read exactly one value"));
+                };
+                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                    return Err(format!("{self}: must write exactly one value"));
+                };
+                let out_bw = r1.bw() + extra;
+                let [rows, cols] = r1.shape();
+                if w1 != Type::BV(out_bw, [*rows, *cols]) {
+                    return Err(format!(
+                        "{self}: output must be BV<{out_bw}>({rows}, {cols}), got {w1}"
                     ));
                 }
                 Ok(())
@@ -634,6 +691,94 @@ mod tests {
         let cond = bv(8, 1, 1);
         let t = bv(8, 1, 1);
         assert!(BV::Ite.check([cond, t, t], [t]).is_err());
+    }
+
+    // --- Sub / Neg / UMod / SMod ---
+
+    #[test]
+    fn sub_ok() {
+        let t = bv(8, 2, 3);
+        assert!(BV::Sub.check([t, t], [t]).is_ok());
+    }
+
+    #[test]
+    fn neg_ok() {
+        let t = bv(8, 2, 3);
+        assert!(BV::Neg.check([t], [t]).is_ok());
+    }
+
+    #[test]
+    fn neg_type_mismatch_fails() {
+        assert!(BV::Neg.check([bv(8, 1, 1)], [bv(8, 2, 2)]).is_err());
+    }
+
+    #[test]
+    fn umod_ok() {
+        let t = bv(8, 1, 1);
+        assert!(BV::UMod.check([t, t], [t]).is_ok());
+    }
+
+    #[test]
+    fn smod_ok() {
+        let t = bv(8, 1, 1);
+        assert!(BV::SMod.check([t, t], [t]).is_ok());
+    }
+
+    // --- BitSelect / Extend ---
+
+    #[test]
+    fn bit_select_ok() {
+        // BV<16>[11:4] -> BV<8>
+        assert!(
+            BV::BitSelect { high: 11, low: 4 }
+                .check([bv(16, 1, 1)], [bv(8, 1, 1)])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn bit_select_single_bit_ok() {
+        assert!(
+            BV::BitSelect { high: 3, low: 3 }
+                .check([bv(8, 2, 2)], [bv(1, 2, 2)])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn bit_select_out_of_range_fails() {
+        assert!(
+            BV::BitSelect { high: 8, low: 0 }
+                .check([bv(8, 1, 1)], [bv(9, 1, 1)])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn bit_select_wrong_out_width_fails() {
+        assert!(
+            BV::BitSelect { high: 7, low: 0 }
+                .check([bv(16, 1, 1)], [bv(7, 1, 1)])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn extend_ok() {
+        assert!(
+            BV::Extend { extra: 8 }
+                .check([bv(8, 1, 1)], [bv(16, 1, 1)])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn extend_wrong_out_width_fails() {
+        assert!(
+            BV::Extend { extra: 4 }
+                .check([bv(8, 1, 1)], [bv(16, 1, 1)])
+                .is_err()
+        );
     }
 
     #[test]
