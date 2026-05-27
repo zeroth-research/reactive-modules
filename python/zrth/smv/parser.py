@@ -310,10 +310,10 @@ _METHODS = {
 }
 
 _BUILTIN_MAP = {
-    "bool": lambda: IType.BVToBool,
-    "word1": lambda: IType.BoolToBV,
-    "unsigned": lambda: IType.Id,
-    "signed": lambda: IType.Id,
+    "bool": lambda: IType.BV.BVToBool,
+    "word1": lambda: IType.BV.Id,
+    "unsigned": lambda: IType.BV.Id,
+    "signed": lambda: IType.BV.Id,
 }
 
 
