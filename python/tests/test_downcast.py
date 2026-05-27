@@ -1,7 +1,12 @@
 import pytest
 import torch
-from zrth import Wire, Term, Module, IType as it, DType
+from zrth import Wire, Term, Module, IType as it, DType, set_theory
 from zrth import Bool, Int, Float, Real
+
+
+@pytest.fixture(autouse=True)
+def _theory():
+    set_theory(it.LIA)
 
 
 # ---------------------------------------------------------------------------

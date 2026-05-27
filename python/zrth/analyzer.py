@@ -1444,20 +1444,23 @@ class MethodVisitor(ast.NodeVisitor):
     Intermediate values are stored as Wire objects in temp_vars.
     """
 
+    # IType ops below are resolved lazily through `IType.<name>`, which depends
+    # on the current theory set by `set_theory(...)` — that's why each entry is
+    # a callable instead of a precomputed IType.
     BINARY_OPS = {
-        ast.Add: IType.Add,
-        ast.Sub: IType.Sub,
-        ast.Mult: IType.Mul,
-        ast.Div: IType.Div,
+        ast.Add: lambda: IType.Add,
+        ast.Sub: lambda: IType.Sub,
+        ast.Mult: lambda: IType.Mul,
+        ast.Div: lambda: IType.Div,
     }
 
     COMPARE_OPS = {
-        ast.Eq: IType.Eq,
-        ast.NotEq: IType.Neq,
-        ast.Lt: IType.Lt,
-        ast.LtE: IType.Le,
-        ast.Gt: IType.Gt,
-        ast.GtE: IType.Ge,
+        ast.Eq: lambda: IType.Eq,
+        ast.NotEq: lambda: IType.Neq,
+        ast.Lt: lambda: IType.Lt,
+        ast.LtE: lambda: IType.Le,
+        ast.Gt: lambda: IType.Gt,
+        ast.GtE: lambda: IType.Ge,
     }
 
     def __init__(

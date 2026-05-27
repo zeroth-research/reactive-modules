@@ -8,9 +8,16 @@ from .environments import (
     HeartODE,
     ArrayEnv,
 )
+import pytest
 from .qnetworks import SimpleQNet, GridWorldQNet
 from zrth.gym import Wrapper
 from zrth.torch import Module
+from zrth import IType, set_theory
+
+
+@pytest.fixture(autouse=True)
+def _theory():
+    set_theory(IType.LIA)
 
 
 def simpleqnet():

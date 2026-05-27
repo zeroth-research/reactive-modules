@@ -3,9 +3,15 @@
 Tests IType operations (Add, And, Or, Not, Ite, ReLU, etc.) and
 multi-step execution of hand-built modules.
 """
+import pytest
 import torch
-from zrth import Wire, Term, Module, DType as dt, IType as it
+from zrth import Wire, Term, Module, DType as dt, IType as it, set_theory
 from zrth.eval import eval_itype, execute_init, execute_update
+
+
+@pytest.fixture(autouse=True)
+def _theory():
+    set_theory(it.LIA)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

@@ -3,7 +3,12 @@
 from pathlib import Path
 import pytest
 
-from zrth import Wire, DType, IType, Module, parse_smv
+from zrth import Wire, DType, IType, Module, parse_smv, set_theory
+
+
+@pytest.fixture(autouse=True)
+def _theory():
+    set_theory(IType.LIA)
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 
@@ -132,7 +137,7 @@ def test_enum_type():
     assert "state" in name_map
     # state should have TensorInt dtype (enum mapped to int)
     latched, _ = name_map["state"]
-    assert isinstance(latched.dtype, DType.Int)
+    assert latched.dtype.is_int()
 
 
 def test_frozen_var():

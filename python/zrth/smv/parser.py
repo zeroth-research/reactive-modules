@@ -9,7 +9,8 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..zrth import Wire, DType, IType, Term, Module
+from ..zrth import Wire, DType, Term, Module
+from .. import IType
 
 # ---------------------------------------------------------------------------
 # 1. Lark parser init
@@ -270,32 +271,34 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> DType:
 # 6. Lowerer
 # ---------------------------------------------------------------------------
 
-# Table-driven binary operator dispatch
+# Table-driven binary operator dispatch. Values are zero-arg callables so the
+# `IType.<op>` lookup is deferred until the parser actually fires (the current
+# theory must be set via `set_theory(...)` before that).
 _BINOPS: dict[str, dict[str, object]] = {
-    "iff": {"<->": IType.Xnor, "xnor": IType.Xnor},
-    "or_expr": {"|": IType.Or, "or": IType.Or, "xor": IType.Xor},
-    "and_expr": {"&": IType.And, "and": IType.And},
+    "iff": {"<->": lambda: IType.Xnor, "xnor": lambda: IType.Xnor},
+    "or_expr": {"|": lambda: IType.Or, "or": lambda: IType.Or, "xor": lambda: IType.Xor},
+    "and_expr": {"&": lambda: IType.And, "and": lambda: IType.And},
     "cmp_expr": {
-        "=": IType.Eq,
-        "!=": IType.Neq,
-        "<": IType.Lt,
-        "<=": IType.Le,
-        ">": IType.Gt,
-        ">=": IType.Ge,
+        "=": lambda: IType.Eq,
+        "!=": lambda: IType.Neq,
+        "<": lambda: IType.Lt,
+        "<=": lambda: IType.Le,
+        ">": lambda: IType.Gt,
+        ">=": lambda: IType.Ge,
     },
-    "arith_expr": {"+": IType.Add, "-": IType.Sub},
-    "mod_expr": {"mod": IType.Mod},
-    "term_expr": {"*": IType.Mul, "/": IType.Div},
+    "arith_expr": {"+": lambda: IType.Add, "-": lambda: IType.Sub},
+    "mod_expr": {"mod": lambda: IType.Mod},
+    "term_expr": {"*": lambda: IType.Mul, "/": lambda: IType.Div},
 }
 
 _OP_TOKENS = {"NOT_OP"}
 
 _NARY_OPS = {
-    "ternary": IType.Ite,
-    "implies_expr": IType.Implies,
-    "not_expr": IType.Not,
-    "neg": IType.Neg,
-    "abs_call": IType.Abs,
+    "ternary": lambda: IType.Ite,
+    "implies_expr": lambda: IType.Implies,
+    "not_expr": lambda: IType.Not,
+    "neg": lambda: IType.Neg,
+    "abs_call": lambda: IType.Abs,
 }
 
 _METHODS = {
@@ -307,18 +310,18 @@ _METHODS = {
 }
 
 _BUILTIN_MAP = {
-    "bool": IType.BVToBool,
-    "word1": IType.BoolToBV,
-    "unsigned": IType.Id,
-    "signed": IType.Id,
+    "bool": lambda: IType.BVToBool,
+    "word1": lambda: IType.BoolToBV,
+    "unsigned": lambda: IType.Id,
+    "signed": lambda: IType.Id,
 }
 
 
 def _const_out_dtype(itype):
     """Return the output DType for a scalar const IType, or None to defer to target."""
-    if type(itype) is type(IType.ConstBool(False)):
+    if itype.op_name == "ConstBool":
         return DType.Bool([1])
-    if type(itype) is type(IType.ConstInt(0)):
+    if itype.op_name == "ConstInt":
         return DType.Int([1])
     return None
 
@@ -427,7 +430,7 @@ class _Lowerer:
         # Ite: output matches then-branch (inputs[1]); others match first input
         out_dtype = (
             inputs[1].dtype
-            if (type(itype) is type(IType.Ite()) and len(inputs) >= 2)
+            if (itype.op_name == "Ite" and len(inputs) >= 2)
             else inputs[0].dtype
         )
         w = self._fresh(target, out_dtype)
@@ -611,7 +614,7 @@ def _build_module(
         else:
             default = (
                 IType.ConstBool(False)
-                if isinstance(dtype, DType.Bool)
+                if dtype.is_bool()
                 else IType.ConstInt(0)
             )
             init_low.terms.append(Term(default, [next_w]))
