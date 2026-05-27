@@ -155,6 +155,48 @@ def implies(out: Wire, a: Wire, b: Wire) -> list[Term]:
     ]
 
 
+# --- BV-only: two's-complement-derived ops -----------------------------------
+
+
+def bv_neg(out: Wire, x: Wire) -> list[Term]:
+    """out = -x via two's complement ≡ Add(Not(x), 1).
+
+    Bit-width of the result is inferred from `out.dtype`. The intermediate
+    constant 1 carries the same width via BV's type inference.
+    """
+    notx = Wire(x.dtype)
+    one = Wire(out.dtype)
+    return [
+        Term(_IType.BV.Const(1), [one]),
+        Term(_IType.BV.Not, [notx], [x]),
+        Term(_IType.BV.Add, [out], [notx, one]),
+    ]
+
+
+def bv_sub(out: Wire, a: Wire, b: Wire) -> list[Term]:
+    """out = a - b ≡ Add(a, bv_neg(b))."""
+    negb = Wire(b.dtype)
+    terms = bv_neg(negb, b)
+    terms.append(Term(_IType.BV.Add, [out], [a, negb]))
+    return terms
+
+
+def bv_mod(out: Wire, a: Wire, b: Wire, *, signed: bool = False) -> list[Term]:
+    """out = a mod b ≡ Sub(a, Mul(Div(a, b), b)).
+
+    `signed=False` uses `UDiv`; `signed=True` uses `SDiv`.
+    """
+    div = Wire(out.dtype)
+    prod = Wire(out.dtype)
+    div_op = _IType.BV.SDiv if signed else _IType.BV.UDiv
+    terms = [
+        Term(div_op, [div], [a, b]),
+        Term(_IType.BV.Mul, [prod], [div, b]),
+    ]
+    terms.extend(bv_sub(out, a, prod))
+    return terms
+
+
 from .gym import Wrapper, Env
 from .smv import parse_smv
 from .smt import z3
@@ -176,4 +218,7 @@ __all__ = [
     "get_theory",
     "xnor",
     "implies",
+    "bv_neg",
+    "bv_sub",
+    "bv_mod",
 ]
