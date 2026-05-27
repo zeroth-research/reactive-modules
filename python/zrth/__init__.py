@@ -127,7 +127,35 @@ def Float(*args):
     return DType.Float([*args])
 
 
-from .gym import Env
+#####################################################################
+# Derived-operation helpers
+#
+# These helpers lower a missing op to a sequence of primitive terms,
+# using the IType facade (so they pick up the current theory). Each
+# helper takes a caller-allocated output Wire plus input Wires and
+# returns a list[Term] whose last write is the output.
+#####################################################################
+
+
+def xnor(out: Wire, a: Wire, b: Wire) -> list[Term]:
+    """out = Xnor(a, b) ≡ Not(Xor(a, b))."""
+    tmp = Wire(out.dtype)
+    return [
+        Term(IType.Xor, [tmp], [a, b]),
+        Term(IType.Not, [out], [tmp]),
+    ]
+
+
+def implies(out: Wire, a: Wire, b: Wire) -> list[Term]:
+    """out = Implies(a, b) ≡ Or(Not(a), b)."""
+    nota = Wire(a.dtype)
+    return [
+        Term(IType.Not, [nota], [a]),
+        Term(IType.Or, [out], [nota, b]),
+    ]
+
+
+from .gym import Wrapper, Env
 from .smv import parse_smv
 from .smt import z3
 
@@ -146,4 +174,6 @@ __all__ = [
     "Env",
     "set_theory",
     "get_theory",
+    "xnor",
+    "implies",
 ]
