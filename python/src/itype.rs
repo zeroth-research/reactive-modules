@@ -195,11 +195,19 @@ impl BVIType {
     #[classattr]
     fn Add() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Add)) }
     #[classattr]
+    fn Sub() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Sub)) }
+    #[classattr]
+    fn Neg() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Neg)) }
+    #[classattr]
     fn Mul() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Mul)) }
     #[classattr]
     fn UDiv() -> IType { IType(theory::any::Any::BV(theory::bv::BV::UDiv)) }
     #[classattr]
     fn SDiv() -> IType { IType(theory::any::Any::BV(theory::bv::BV::SDiv)) }
+    #[classattr]
+    fn UMod() -> IType { IType(theory::any::Any::BV(theory::bv::BV::UMod)) }
+    #[classattr]
+    fn SMod() -> IType { IType(theory::any::Any::BV(theory::bv::BV::SMod)) }
     #[classattr]
     fn MatMul() -> IType { IType(theory::any::Any::BV(theory::bv::BV::MatMul)) }
     #[classattr]
@@ -211,6 +219,18 @@ impl BVIType {
     fn Const(value: &Bound<'_, PyAny>) -> PyResult<IType> {
         let t = coerce_to_tensor(value)?;
         Ok(IType(theory::any::Any::BV(theory::bv::BV::Const(theory::Tensor(t)))))
+    }
+
+    /// `BitSelect(high, low)`: select bits `[high..=low]` from a BV input.
+    #[staticmethod]
+    fn BitSelect(high: usize, low: usize) -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::BitSelect { high, low }))
+    }
+
+    /// `Extend(extra)`: zero-extend a BV input by `extra` bits.
+    #[staticmethod]
+    fn Extend(extra: usize) -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Extend { extra }))
     }
 
     #[staticmethod]
@@ -368,9 +388,13 @@ fn op_name_of(a: &theory::any::Any) -> &'static str {
         Any::BV(op) => match op {
             BV::Const(_) => "Const",
             BV::Add => "Add",
+            BV::Sub => "Sub",
+            BV::Neg => "Neg",
             BV::Mul => "Mul",
             BV::UDiv => "UDiv",
             BV::SDiv => "SDiv",
+            BV::UMod => "UMod",
+            BV::SMod => "SMod",
             BV::MatMul => "MatMul",
             BV::And => "And",
             BV::Or => "Or",
@@ -384,6 +408,8 @@ fn op_name_of(a: &theory::any::Any) -> &'static str {
             BV::Ne => "Ne",
             BV::Ite => "Ite",
             BV::Id => "Id",
+            BV::BitSelect { .. } => "BitSelect",
+            BV::Extend { .. } => "Extend",
             BV::Uninterpreted(_) => "Uninterpreted",
         },
     }
