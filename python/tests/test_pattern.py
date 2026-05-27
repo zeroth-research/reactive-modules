@@ -1,6 +1,12 @@
+import pytest
 import gymnasium as gym
-from zrth import Module, Wire, Term, DType, IType
+from zrth import Module, Wire, Term, DType, IType, set_theory
 from gymnasium import spaces
+
+
+@pytest.fixture(autouse=True)
+def _theory():
+    set_theory(IType.LIA)
 
 Real = DType.Real
 Bool = DType.Bool

@@ -1,5 +1,13 @@
+import pytest
 from torch import IntTensor, tensor
 import zrth.expr as expr
+from zrth import IType, set_theory
+
+
+@pytest.fixture(autouse=True)
+def _theory():
+    # Tests below build Real/Bool expressions — LRA covers both fragments.
+    set_theory(IType.LRA)
 
 
 def test_terminal():

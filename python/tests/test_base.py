@@ -1,5 +1,11 @@
-from zrth import Wire, Term, Module, DType as dt, IType as it, Int, Float, Bool
+import pytest
+from zrth import Wire, Term, Module, DType as dt, IType as it, Int, Float, Bool, set_theory
 from torch import Tensor
+
+
+@pytest.fixture(autouse=True)
+def _theory():
+    set_theory(it.LIA)
 
 
 def test_wire_new():

@@ -1,15 +1,11 @@
-"""Tests for the Python patterns the analyzer translates into terms.
+import pytest
+from zrth.analyzer import AbstractInterpreter, AbstractValue, format_results
+from zrth import IType, set_theory
 
-Each feature gets a small gym.Env that exercises it. Tests run the extracted
-module either through the IR interpreter (`interpret=True`) when all terms
-are interpretable, or via real-env delegation when they aren't (untraced calls)."""
 
-import numpy as np
-import torch
-import gymnasium as gym
-from gymnasium import spaces
-
-from zrth.gym import Env
+@pytest.fixture(autouse=True)
+def _theory():
+    set_theory(IType.LIA)
 
 
 # ── boilerplate ───────────────────────────────────────────────────

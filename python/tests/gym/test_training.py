@@ -6,8 +6,14 @@ from .agent import DQNAgent
 from .train import train
 from zrth.gym import Env
 from zrth.torch import Module
-from zrth import Wire, DType
+import pytest
+from zrth import Wire, DType, IType, set_theory
 from zrth.eval import eval_itype
+
+
+@pytest.fixture(autouse=True)
+def _theory():
+    set_theory(IType.LIA)
 
 
 def test_training():

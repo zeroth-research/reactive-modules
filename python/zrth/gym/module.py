@@ -2,7 +2,8 @@ import torch
 import inspect
 import gymnasium as gym
 
-from ..zrth import Module, Wire, DType, IType, Term
+from ..zrth import Module, Wire, DType, Term
+from .. import IType
 from ..analyzer import (
     convert_method, classify_attrs, infer_dtype, wire_pair, resolve_wire,
     AbstractValue,

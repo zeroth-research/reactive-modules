@@ -1,6 +1,7 @@
 from typing import Any, override
 
-from .zrth import DType, IType, Term, Wire
+from .zrth import DType, Term, Wire
+from . import IType
 import torch
 
 # types that we can convert to [Expr]
@@ -150,16 +151,14 @@ class WExpr(Expr):
         return w_neq(self, other)
 
 
-def _make_expr(itype: IType, wtype: DType, *args):
-    match wtype:
-        case DType.Bool(_):
-            return BExpr(itype, wtype, *args)
-        case DType.Real(_) | DType.Int(_) | DType.Float(_):
-            return AExpr(itype, wtype, *args)
-        case DType.UWord(_) | DType.SWord(_):
-            return WExpr(itype, wtype, *args)
-        case _:
-            raise NotImplementedError(f"unsupported dtype: {wtype}")
+def _make_expr(itype, wtype: DType, *args):
+    if wtype.is_bool():
+        return BExpr(itype, wtype, *args)
+    if wtype.is_real() or wtype.is_int():
+        return AExpr(itype, wtype, *args)
+    if wtype.is_bv():
+        return WExpr(itype, wtype, *args)
+    raise NotImplementedError(f"unsupported dtype: {wtype}")
 
 
 def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
@@ -187,7 +186,7 @@ def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
 
 
 def _elementwise_bool_op(itype, first: BExpr, *others):
-    if not isinstance(first.dtype, DType.Bool):
+    if not first.dtype.is_bool():
         raise ValueError(f"invalid dtype, expected Bool(...), got: `{first.dtype}`")
 
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
@@ -205,7 +204,7 @@ def conj(first: BExpr, *others) -> BExpr:
 
 # Logical not
 def neg(e: BExpr) -> BExpr:
-    if not isinstance(e.dtype, DType.Bool):
+    if not e.dtype.is_bool():
         raise ValueError(f"invalid dtype, expected Bool(...), got: `{e.dtype}`")
 
     return BExpr(IType.Not(), e.dtype, e)
@@ -217,7 +216,7 @@ def neg(e: BExpr) -> BExpr:
 
 
 def _elementwise_arith_op(itype, first: Expr, *others):
-    if not isinstance(first.dtype, (DType.Real, DType.Int, DType.Float)):
+    if not (first.dtype.is_real() or first.dtype.is_int()):
         raise Exception("invalid dtype")
 
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
@@ -245,9 +244,9 @@ def sub(min: AExpr, sub: AExpr) -> AExpr:
 
 
 def _elementwise_predicate(itype, lhs: AExpr, rhs: AExpr):
-    if not isinstance(lhs.dtype, (DType.Real, DType.Int)):
+    if not (lhs.dtype.is_real() or lhs.dtype.is_int()):
         raise Exception("invalid dtype")
-    if not isinstance(rhs.dtype, (DType.Real, DType.Int)):
+    if not (rhs.dtype.is_real() or rhs.dtype.is_int()):
         raise Exception("invalid dtype")
 
     return _elementwise_op(itype, DType.Bool(lhs.shape), lhs.dtype, lhs, rhs)
@@ -299,13 +298,13 @@ def ite(cond: BExpr, iftrue: Expr, iffalse: Expr):
 
 
 def _word_arith_op(itype, first: WExpr, *others):
-    if not isinstance(first.dtype, (DType.UWord, DType.SWord)):
+    if not first.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
     return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
 
 
 def _word_predicate(itype, lhs: WExpr, rhs: WExpr):
-    if not isinstance(lhs.dtype, (DType.UWord, DType.SWord)):
+    if not lhs.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
     return _elementwise_op(itype, DType.Bool([1]), lhs.dtype, lhs, rhs)
 
@@ -331,13 +330,13 @@ def w_mod(num: WExpr, den: WExpr) -> WExpr:
 
 
 def w_neg(e: WExpr) -> WExpr:
-    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
+    if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
     return WExpr(IType.Neg(), e.dtype, e)
 
 
 def w_abs(e: WExpr) -> WExpr:
-    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
+    if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
     return WExpr(IType.Abs(), e.dtype, e)
 
@@ -355,7 +354,7 @@ def w_xor(first: WExpr, *others) -> WExpr:
 
 
 def w_not(e: WExpr) -> WExpr:
-    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
+    if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
     return WExpr(IType.Not(), e.dtype, e)
 
