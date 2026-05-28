@@ -17,7 +17,10 @@ from zrth import IType, set_theory
 
 @pytest.fixture(autouse=True)
 def _theory():
-    set_theory(IType.LIA)
+    # Gym envs / nets mix integer state with float weights and rewards;
+    # LRA covers Real + Bool + comparisons, which fits the union better
+    # than LIA. (A truly mixed-theory analyzer is future work.)
+    set_theory(IType.LRA)
 
 
 def simpleqnet():
