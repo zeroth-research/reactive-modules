@@ -13,7 +13,7 @@ from zrth.eval import eval_itype
 
 @pytest.fixture(autouse=True)
 def _theory():
-    set_theory(IType.LIA)
+    set_theory(IType.LRA)
 
 
 def test_training():

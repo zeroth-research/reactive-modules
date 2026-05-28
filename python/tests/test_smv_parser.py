@@ -47,13 +47,12 @@ def test_counter_init_terms():
     init_terms = atom.init
     assert len(init_terms) > 0
 
-    # At least one init term should be ConstInt(0) for x
-    const_zero_found = False
-    for t in init_terms:
-        if str(t.itype) == "Const: 0":
-            const_zero_found = True
-            break
-    assert const_zero_found, "Expected a ConstInt(0) init term for x"
+    # At least one init term should be a zero-valued BV constant for x.
+    const_zero_found = any(
+        t.itype.op_name == "Const" and int(t.itype.const_data.item()) == 0
+        for t in init_terms
+    )
+    assert const_zero_found, "Expected a BV.Const(0) init term for x"
 
 
 def test_test_itypes():
