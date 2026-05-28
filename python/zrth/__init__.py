@@ -40,15 +40,13 @@ def get_theory():
     return _current_theory
 
 
-def _require_theory(name):
+def _require_theory(op_name: str):
     if _current_theory is None:
         raise RuntimeError(
-            f"IType.{name}: no theory is set — call `set_theory(IType.LIA"
+            f"IType.{op_name}: no theory is set — call `set_theory(IType.LIA"
             f" | IType.LRA | IType.BV)` first"
         )
-
-
-_ALIASES = {"Neq": "Ne"}
+    return _current_theory
 
 
 def _resolve_tensor(t):
@@ -59,16 +57,18 @@ def _resolve_tensor(t):
     `ConstReal` for LRA, `Const` for BV.
     """
     import torch
-    _require_theory("Tensor")
+
+    theory = _require_theory("Tensor")
     if t.dtype == torch.bool:
-        if _current_theory is _IType.BV:
+        if theory is _IType.BV:
+            # if theory is BV, we treat bools as BV<1>
             return _IType.BV.Const(t)
         return _current_theory.ConstBool(t)
-    if _current_theory is _IType.LIA:
+    if theory is _IType.LIA:
         return _IType.LIA.ConstInt(t)
-    if _current_theory is _IType.LRA:
+    if theory is _IType.LRA:
         return _IType.LRA.ConstReal(t)
-    if _current_theory is _IType.BV:
+    if theory is _IType.BV:
         return _IType.BV.Const(t)
     raise RuntimeError(f"unsupported current theory: {_current_theory!r}")
 
@@ -81,7 +81,6 @@ class _ITypeMeta(type):
     def __getattr__(cls, name):
         if name == "Tensor":
             return _resolve_tensor
-        name = _ALIASES.get(name, name)
         _require_theory(name)
         try:
             return getattr(_current_theory, name)
@@ -101,6 +100,7 @@ class IType(metaclass=_ITypeMeta):
     - `isinstance(x, IType)` returns True for any instance produced by the
       underlying Rust class (i.e. by any of the namespace-qualified spellings).
     """
+
     LIA = _IType.LIA
     LRA = _IType.LRA
     BV = _IType.BV
