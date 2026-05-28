@@ -70,8 +70,10 @@ def test_dtype_comparison():
     a = expr.Real("a")
     b = expr.Real("b", shape=[2])
     c = expr.Bool("c", shape=[2])
-    assert type(a.dtype) == type(b.dtype)
-    assert type(b.dtype) != type(c.dtype)
+    # DType is a single Python class — distinguish via the predicates.
+    assert a.dtype.is_real() and b.dtype.is_real()
+    assert c.dtype.is_bool()
+    assert not b.dtype.is_bool()
 
 
 def test_matmul():

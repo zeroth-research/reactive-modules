@@ -82,7 +82,8 @@ def test_wire_overrides():
     text = (FIXTURES / "counter.smv").read_text()
 
     # Create override wires for 'x'
-    dtype = DType.Int([1])
+    # The SMV parser is BV-only; overrides must match.
+    dtype = DType.BV(32)
     ov_l = Wire(dtype)
     ov_n = Wire(dtype)
 
@@ -137,7 +138,8 @@ def test_enum_type():
     assert "state" in name_map
     # state should have TensorInt dtype (enum mapped to int)
     latched, _ = name_map["state"]
-    assert latched.dtype.is_int()
+    # SMV parser maps `integer` / enum types to BV<32>.
+    assert latched.dtype.is_bv()
 
 
 def test_frozen_var():

@@ -282,13 +282,9 @@ def neq(lhs: AExpr, rhs: AExpr) -> BExpr:
 
 
 def ite(cond: BExpr, iftrue: Expr, iffalse: Expr):
-    if not cond.shape == [1]:
-        raise Exception("invalid Boolean condition")
-    if iftrue.dtype != iffalse.dtype:
-        raise Exception("dtype mismatch")
-
     assert isinstance(iftrue, (BExpr, AExpr))
     assert type(iftrue) is type(iffalse)
+    # Cond shape / dtype compatibility is validated by the theory's `check()`.
     return type(iftrue)(IType.Ite(), iftrue.dtype, cond, iftrue, iffalse)
 
 
@@ -389,38 +385,17 @@ def w_neq(lhs: WExpr, rhs: WExpr) -> BExpr:
 
 
 def argmax(arg: Expr):
-    if len(arg.shape) > 1:
-        raise NotImplementedError(
-            "argmax not supported on matrices or higher-dimensional tensors"
-        )
-    return AExpr(IType.Argmax(), DType.Int([1]), arg)
+    # LIA::Argmax wants Int output, LRA::Argmax wants Real — keep the
+    # input dtype family and let theory `check()` validate the shape.
+    return type(arg)(IType.Argmax(), arg.dtype.reshape([1, 1]), arg)
 
 
 def matmul(lhs: Expr, rhs: Expr):
     assert type(lhs) is type(rhs)
-
-    if len(lhs.shape) == 2 and len(rhs.shape) == 1:
-        # matrix @ vector
-        if lhs.shape[-1] != rhs.shape[0]:
-            raise RuntimeError("size mismatch")
-
-        wtype = type(lhs.dtype)(lhs.shape[:-1])
-
-        # TODO: differentiate itype to eliminate ambiguity, or parameterise it
-        return type(lhs)(IType.MatMul(), wtype, lhs, rhs)
-
-    elif len(lhs.shape) == len(rhs.shape) == 2:
-        # matrix @ matrix
-        if lhs.shape[-1] != rhs.shape[0]:
-            raise RuntimeError("size mismatch")
-
-        wtype = type(lhs.dtype)([lhs.shape[0], rhs.shape[1]])
-
-        return type(lhs)(IType.MatMul(), wtype, lhs, rhs)
-
-    raise RuntimeError(f"Unsupported matrix multiplication {lhs.shape} x {rhs.shape}")
-
-    # TODO: allow broadcasting
+    # All Expr shapes are 2-D (rows, cols). Theory `check()` validates inner-
+    # dim agreement; here we just pick the output shape (m, n).
+    wtype = lhs.dtype.reshape([lhs.shape[0], rhs.shape[1]])
+    return type(lhs)(IType.MatMul(), wtype, lhs, rhs)
 
 
 # ========================================

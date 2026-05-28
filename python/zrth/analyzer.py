@@ -1775,7 +1775,13 @@ class MethodVisitor(ast.NodeVisitor):
     def _make_tensor_wire(self, tensor_data, target_dtype=None):
         """Create a constant Wire from tensor_data and append the Tensor term."""
         shape = list(tensor_data.size())
-        dtype = target_dtype.reshape(shape) if target_dtype else Float(shape)
+        # DType shapes are always 2-D (rows, cols). Normalize lower-rank
+        # tensors the same way `coerce_to_tensor` does in Rust.
+        if len(shape) == 0:
+            shape = [1, 1]
+        elif len(shape) == 1:
+            shape = [1, shape[0]]
+        dtype = target_dtype.reshape(shape) if target_dtype else Float(*shape)
         const_wire = Wire(dtype)
         self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
         return const_wire
@@ -2017,7 +2023,7 @@ class MethodVisitor(ast.NodeVisitor):
             if target_dtype is None:
                 target_dtype = DType.Int([1]) if isinstance(value, int) else Float()
             tensor_data = torch.tensor([value], dtype=_torch_dtype(target_dtype))
-            dtype = target_dtype.reshape([1])
+            dtype = target_dtype.reshape([1, 1])
         else:
             raise ValueError(f"Unsupported constant type: {type(value)}")
 
