@@ -14,8 +14,15 @@ Int = DType.Int
 
 
 def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result: list[Wire]):
-    t = Term(IType.Uninterpreted("method"), list(write.values()) + list(result), list(read.values()))
-    return [t]
+    # `Uninterpreted` is single-read-or-single-write; emit one Term per wire
+    # so the multi-arity "method" is modeled as a bag of independent
+    # uninterpreted reads / writes.
+    terms = []
+    for r in read.values():
+        terms.append(Term(IType.Uninterpreted("method"), [], [r]))
+    for w in list(write.values()) + list(result):
+        terms.append(Term(IType.Uninterpreted("method"), [w]))
+    return terms
 
 
 class SimpleEnv(gym.Env, Module):

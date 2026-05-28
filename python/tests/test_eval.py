@@ -175,11 +175,11 @@ def test_ite():
 # ── tensor ops ───────────────────────────────────────────────────────────────
 
 def test_tensor_ops():
-    """ReLU on Float vector state."""
-    data = (Wire(dt.Float([4])), Wire(dt.Float([4])))
+    """ReLU on an Int vector state."""
+    data = (Wire(dt.Int([4])), Wire(dt.Int([4])))
 
     init = [
-        Term(it.Tensor(torch.tensor([-1.0, 2.0, 3.0, -4.0])), [data[1]]),
+        Term(it.Tensor(torch.tensor([-1, 2, 3, -4], dtype=torch.int64)), [data[1]]),
     ]
     update = [
         Term(it.ReLU(), [data[1]], [data[0]]),
@@ -187,7 +187,8 @@ def test_tensor_ops():
     m = Module.sequential(init, update, [data])
     state, history = _run_module(m, 2)
 
-    expected = torch.tensor([-1.0, 2.0, 3.0, -4.0])
+    # Wire data is stored as 2-D `(1, N)`; reshape to match.
+    expected = torch.tensor([[-1, 2, 3, -4]], dtype=torch.int64)
     assert torch.equal(_get(history[0], data[0]), expected)
 
     # Step 1: relu([-1,2,3,-4]) = [0,2,3,0]

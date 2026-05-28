@@ -334,15 +334,22 @@ where
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    if read_nxt(&mut read, 0)? != read_nxt(&mut read, 1)? {
+    let r1 = read_nxt(&mut read, 0)?;
+    let r2 = read_nxt(&mut read, 1)?;
+    if r1 != r2 {
         return Err(format!("{:?}: input values must have the same type", op));
     }
-    let Type::Bool([1, 1]) = write_nxt(&mut write, 0)? else {
-        return Err(format!(
-            "{:?}: input and output values must have the same type",
-            op
-        ));
+    let shape = match r1 {
+        Type::Real(s) => s,
+        _ => return Err(format!("{:?}: inputs must be Real matrices, got {r1}", op)),
     };
+    let w1 = write_nxt(&mut write, 0)?;
+    if w1 != Type::Bool(shape) {
+        return Err(format!(
+            "{:?}: output must be Bool({:?}), got {w1}",
+            op, shape
+        ));
+    }
     Ok(())
 }
 
