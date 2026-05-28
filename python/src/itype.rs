@@ -49,50 +49,88 @@ pub struct LIAIType;
 #[pymethods]
 impl LIAIType {
     #[classattr]
-    fn And() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::And)) }
+    fn And() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::And))
+    }
     #[classattr]
-    fn Or() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Or)) }
+    fn Or() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Or))
+    }
     #[classattr]
-    fn Not() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Not)) }
+    fn Not() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Not))
+    }
     #[classattr]
-    fn Xor() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Xor)) }
+    fn Xor() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Xor))
+    }
     #[classattr]
-    fn Le() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Le)) }
+    fn Le() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Le))
+    }
     #[classattr]
-    fn Lt() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Lt)) }
+    fn Lt() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Lt))
+    }
     #[classattr]
-    fn Ge() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Ge)) }
+    fn Ge() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Ge))
+    }
     #[classattr]
-    fn Gt() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Gt)) }
+    fn Gt() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Gt))
+    }
     #[classattr]
-    fn Eq() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Eq)) }
+    fn Eq() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Eq))
+    }
     #[classattr]
-    fn Ne() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Ne)) }
+    fn Ne() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Ne))
+    }
     #[classattr]
-    fn Add() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Add)) }
+    fn Add() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Add))
+    }
     #[classattr]
-    fn ReLU() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::ReLU)) }
+    fn ReLU() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::ReLU))
+    }
     #[classattr]
-    fn Argmax() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Argmax)) }
+    fn Argmax() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Argmax))
+    }
     #[classattr]
-    fn Min() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Min)) }
+    fn Min() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Min))
+    }
     #[classattr]
-    fn Max() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Max)) }
+    fn Max() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Max))
+    }
     #[classattr]
-    fn Ite() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Ite)) }
+    fn Ite() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Ite))
+    }
     #[classattr]
-    fn Id() -> IType { IType(theory::any::Any::LIA(theory::lia::LIA::Id)) }
+    fn Id() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Id))
+    }
 
     #[staticmethod]
     fn ConstBool(value: &Bound<'_, PyAny>) -> PyResult<IType> {
         let t = coerce_to_tensor(value)?;
-        Ok(IType(theory::any::Any::LIA(theory::lia::LIA::ConstBool(theory::Tensor(t)))))
+        Ok(IType(theory::any::Any::LIA(theory::lia::LIA::ConstBool(
+            theory::Tensor(t),
+        ))))
     }
 
     #[staticmethod]
     fn ConstInt(value: &Bound<'_, PyAny>) -> PyResult<IType> {
         let t = coerce_to_tensor(value)?;
-        Ok(IType(theory::any::Any::LIA(theory::lia::LIA::ConstInt(theory::Tensor(t)))))
+        Ok(IType(theory::any::Any::LIA(theory::lia::LIA::ConstInt(
+            theory::Tensor(t),
+        ))))
     }
 
     #[staticmethod]
@@ -111,50 +149,88 @@ pub struct LRAIType;
 #[pymethods]
 impl LRAIType {
     #[classattr]
-    fn And() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::And)) }
+    fn And() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::And))
+    }
     #[classattr]
-    fn Or() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Or)) }
+    fn Or() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Or))
+    }
     #[classattr]
-    fn Not() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Not)) }
+    fn Not() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Not))
+    }
     #[classattr]
-    fn Xor() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Xor)) }
+    fn Xor() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Xor))
+    }
     #[classattr]
-    fn Le() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Le)) }
+    fn Le() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Le))
+    }
     #[classattr]
-    fn Lt() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Lt)) }
+    fn Lt() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Lt))
+    }
     #[classattr]
-    fn Ge() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Ge)) }
+    fn Ge() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Ge))
+    }
     #[classattr]
-    fn Gt() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Gt)) }
+    fn Gt() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Gt))
+    }
     #[classattr]
-    fn Eq() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Eq)) }
+    fn Eq() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Eq))
+    }
     #[classattr]
-    fn Ne() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Ne)) }
+    fn Ne() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Ne))
+    }
     #[classattr]
-    fn Add() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Add)) }
+    fn Add() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Add))
+    }
     #[classattr]
-    fn ReLU() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::ReLU)) }
+    fn ReLU() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::ReLU))
+    }
     #[classattr]
-    fn Argmax() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Argmax)) }
+    fn Argmax() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Argmax))
+    }
     #[classattr]
-    fn Min() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Min)) }
+    fn Min() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Min))
+    }
     #[classattr]
-    fn Max() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Max)) }
+    fn Max() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Max))
+    }
     #[classattr]
-    fn Ite() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Ite)) }
+    fn Ite() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Ite))
+    }
     #[classattr]
-    fn Id() -> IType { IType(theory::any::Any::LRA(theory::lra::LRA::Id)) }
+    fn Id() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Id))
+    }
 
     #[staticmethod]
     fn ConstBool(value: &Bound<'_, PyAny>) -> PyResult<IType> {
         let t = coerce_to_tensor(value)?;
-        Ok(IType(theory::any::Any::LRA(theory::lra::LRA::ConstBool(theory::Tensor(t)))))
+        Ok(IType(theory::any::Any::LRA(theory::lra::LRA::ConstBool(
+            theory::Tensor(t),
+        ))))
     }
 
     #[staticmethod]
     fn ConstReal(value: &Bound<'_, PyAny>) -> PyResult<IType> {
         let t = coerce_to_tensor(value)?;
-        Ok(IType(theory::any::Any::LRA(theory::lra::LRA::ConstReal(theory::Tensor(t)))))
+        Ok(IType(theory::any::Any::LRA(theory::lra::LRA::ConstReal(
+            theory::Tensor(t),
+        ))))
     }
 
     #[staticmethod]
@@ -173,62 +249,115 @@ pub struct BVIType;
 #[pymethods]
 impl BVIType {
     #[classattr]
-    fn And() -> IType { IType(theory::any::Any::BV(theory::bv::BV::And)) }
+    fn And() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::And))
+    }
     #[classattr]
-    fn Or() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Or)) }
+    fn Or() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Or))
+    }
     #[classattr]
-    fn Not() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Not)) }
+    fn Not() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Not))
+    }
     #[classattr]
-    fn Xor() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Xor)) }
+    fn Xor() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Xor))
+    }
     #[classattr]
-    fn Le() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Le)) }
+    fn Le() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Le))
+    }
     #[classattr]
-    fn Lt() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Lt)) }
+    fn Lt() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Lt))
+    }
     #[classattr]
-    fn Ge() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Ge)) }
+    fn Ge() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Ge))
+    }
     #[classattr]
-    fn Gt() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Gt)) }
+    fn Gt() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Gt))
+    }
     #[classattr]
-    fn Eq() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Eq)) }
+    fn Eq() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Eq))
+    }
     #[classattr]
-    fn Ne() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Ne)) }
+    fn Ne() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Ne))
+    }
     #[classattr]
-    fn Add() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Add)) }
+    fn Add() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Add))
+    }
     #[classattr]
-    fn Sub() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Sub)) }
+    fn Sub() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Sub))
+    }
     #[classattr]
-    fn Neg() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Neg)) }
+    fn Neg() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Neg))
+    }
     #[classattr]
-    fn Mul() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Mul)) }
+    fn Abs() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Abs))
+    }
     #[classattr]
-    fn UDiv() -> IType { IType(theory::any::Any::BV(theory::bv::BV::UDiv)) }
+    fn Mul() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Mul))
+    }
     #[classattr]
-    fn SDiv() -> IType { IType(theory::any::Any::BV(theory::bv::BV::SDiv)) }
+    fn UDiv() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::UDiv))
+    }
     #[classattr]
-    fn UMod() -> IType { IType(theory::any::Any::BV(theory::bv::BV::UMod)) }
+    fn SDiv() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::SDiv))
+    }
     #[classattr]
-    fn SMod() -> IType { IType(theory::any::Any::BV(theory::bv::BV::SMod)) }
+    fn UMod() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::UMod))
+    }
     #[classattr]
-    fn MatMul() -> IType { IType(theory::any::Any::BV(theory::bv::BV::MatMul)) }
+    fn SMod() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::SMod))
+    }
     #[classattr]
-    fn Ite() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Ite)) }
+    fn MatMul() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::MatMul))
+    }
     #[classattr]
-    fn Id() -> IType { IType(theory::any::Any::BV(theory::bv::BV::Id)) }
+    fn Ite() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Ite))
+    }
+    #[classattr]
+    fn Id() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::Id))
+    }
     /// SMV `bool(word)`: BV<n> → BV<1> via `x != 0`.
     /// (SMV's dual `word1(bool)` is just `Id` on a BV<1>, so no separate op.)
     #[classattr]
-    fn BVToBool() -> IType { IType(theory::any::Any::BV(theory::bv::BV::BVToBool)) }
+    fn BVToBool() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::BVToBool))
+    }
 
     #[staticmethod]
     fn Const(value: &Bound<'_, PyAny>) -> PyResult<IType> {
         let t = coerce_to_tensor(value)?;
-        Ok(IType(theory::any::Any::BV(theory::bv::BV::Const(theory::Tensor(t)))))
+        Ok(IType(theory::any::Any::BV(theory::bv::BV::Const(
+            theory::Tensor(t),
+        ))))
     }
 
     /// `BitSelect(high, low)`: select bits `[high..=low]` from a BV input.
     #[staticmethod]
     fn BitSelect(high: usize, low: usize) -> IType {
-        IType(theory::any::Any::BV(theory::bv::BV::BitSelect { high, low }))
+        IType(theory::any::Any::BV(theory::bv::BV::BitSelect {
+            high,
+            low,
+        }))
     }
 
     /// `Extend(extra)`: zero-extend a BV input by `extra` bits.
@@ -318,7 +447,9 @@ impl IType {
             Any::BV(BV::Const(t)) => &t.0,
             _ => return Err(pyo3::exceptions::PyValueError::new_err("not a Const op")),
         };
-        Ok(PyTensor { tensor: t.shallow_clone() })
+        Ok(PyTensor {
+            tensor: t.shallow_clone(),
+        })
     }
 
     /// For `Uninterpreted(name)` ops, the symbol name. Errors otherwise.
@@ -332,7 +463,9 @@ impl IType {
             Any::LIA(LIA::Uninterpreted(s))
             | Any::LRA(LRA::Uninterpreted(s))
             | Any::BV(BV::Uninterpreted(s)) => Ok(s.clone()),
-            _ => Err(pyo3::exceptions::PyValueError::new_err("not an Uninterpreted op")),
+            _ => Err(pyo3::exceptions::PyValueError::new_err(
+                "not an Uninterpreted op",
+            )),
         }
     }
 }
@@ -394,6 +527,7 @@ fn op_name_of(a: &theory::any::Any) -> &'static str {
             BV::Add => "Add",
             BV::Sub => "Sub",
             BV::Neg => "Neg",
+            BV::Abs => "Abs",
             BV::Mul => "Mul",
             BV::UDiv => "UDiv",
             BV::SDiv => "SDiv",

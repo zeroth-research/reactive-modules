@@ -79,12 +79,13 @@ pub enum BV {
     Const(crate::Tensor),
     Add,
     Sub,
-    Neg,
     Mul,
     UDiv,
     SDiv,
     UMod,
     SMod,
+    Neg,
+    Abs,
     MatMul,
     And,
     Or,
@@ -98,18 +99,19 @@ pub enum BV {
     Ne,
     Ite,
     Id,
-    /// `BVToBool`: SMV's `bool(word)` — reduces a BV<n> to BV<1> via
-    /// "non-zero" (`x != 0`). Shape-preserving; input width is arbitrary.
-    ///
-    /// Note: SMV's dual `word1(bool)` is just `Id` on a BV<1>, so no
-    /// `BoolToBV` variant is needed.
+    /// BV<n> to BV<1> via "non-zero" (`x != 0`). Corresponds to SMV ToBool,
+    /// FIXME: to be removed and replaced by `Ne x 0`
     BVToBool,
-    /// `BitSelect { high, low }`: extract bits `[high..=low]` (inclusive) from
-    /// a single input. Output bit-width is `high - low + 1`; shape preserved.
-    BitSelect { high: usize, low: usize },
-    /// `Extend { extra }`: zero-extend by `extra` bits. Output bit-width is
-    /// `input_bw + extra`; shape preserved.
-    Extend { extra: usize },
+    /// extract bits `[high..=low]` (inclusive)
+    /// TODO: rename to `extract`, matching MathSAT
+    BitSelect {
+        high: usize,
+        low: usize,
+    },
+    /// zero-extend by `extra` bits
+    Extend {
+        extra: usize,
+    },
     Uninterpreted(String),
 }
 
@@ -130,6 +132,7 @@ impl fmt::Display for BV {
             BV::Add => write!(f, "Add"),
             BV::Sub => write!(f, "Sub"),
             BV::Neg => write!(f, "Neg"),
+            BV::Abs => write!(f, "Abs"),
             BV::Mul => write!(f, "Mul"),
             BV::UDiv => write!(f, "UDiv"),
             BV::SDiv => write!(f, "SDiv"),
@@ -207,7 +210,9 @@ impl Theory for BV {
                 Ok(())
             }
 
-            BV::Not | BV::Id | BV::Neg => {
+            // TODO: for `Abs`, what if input is the signed min of BV<N>? It's absolute value
+            // does not fit into BV<N>
+            BV::Not | BV::Id | BV::Neg | BV::Abs => {
                 let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
                 if r != w {
                     return Err(format!(
@@ -751,39 +756,23 @@ mod tests {
     #[test]
     fn bv_to_bool_ok() {
         // BV<8>(2,3) -> BV<1>(2,3)
-        assert!(
-            BV::BVToBool
-                .check([bv(8, 2, 3)], [bv(1, 2, 3)])
-                .is_ok()
-        );
+        assert!(BV::BVToBool.check([bv(8, 2, 3)], [bv(1, 2, 3)]).is_ok());
     }
 
     #[test]
     fn bv_to_bool_identity_width_ok() {
         // BV<1> -> BV<1> is also fine (idempotent on already-bool input).
-        assert!(
-            BV::BVToBool
-                .check([bv(1, 1, 1)], [bv(1, 1, 1)])
-                .is_ok()
-        );
+        assert!(BV::BVToBool.check([bv(1, 1, 1)], [bv(1, 1, 1)]).is_ok());
     }
 
     #[test]
     fn bv_to_bool_wrong_out_width_fails() {
-        assert!(
-            BV::BVToBool
-                .check([bv(8, 1, 1)], [bv(8, 1, 1)])
-                .is_err()
-        );
+        assert!(BV::BVToBool.check([bv(8, 1, 1)], [bv(8, 1, 1)]).is_err());
     }
 
     #[test]
     fn bv_to_bool_shape_mismatch_fails() {
-        assert!(
-            BV::BVToBool
-                .check([bv(8, 2, 3)], [bv(1, 1, 1)])
-                .is_err()
-        );
+        assert!(BV::BVToBool.check([bv(8, 2, 3)], [bv(1, 1, 1)]).is_err());
     }
 
     // --- BitSelect / Extend ---
