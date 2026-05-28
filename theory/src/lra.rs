@@ -97,6 +97,7 @@ pub enum LRA {
     // A*x + B where `A` and `B` are constants
     Linear(crate::Tensor, crate::Tensor),
     Add,
+    Sub,
     // XXX: should these be in RLA?
     ReLU,
     Argmax,
@@ -125,6 +126,7 @@ impl fmt::Display for LRA {
             LRA::Ne => write!(f, "Ne"),
             LRA::Linear(..) => write!(f, "Linear"),
             LRA::Add => write!(f, "Add"),
+            LRA::Sub => write!(f, "Sub"),
             LRA::ReLU => write!(f, "ReLU"),
             LRA::Argmax => write!(f, "Argmax"),
             LRA::Min => write!(f, "Min"),
@@ -158,7 +160,7 @@ impl Theory for LRA {
                 let mut write = write.into_iter();
                 check_linear_affine(self, a, b, &mut read, &mut write)
             }
-            LRA::Add | LRA::ReLU | LRA::Argmax | LRA::Min | LRA::Max => {
+            LRA::Add | LRA::Sub | LRA::ReLU | LRA::Argmax | LRA::Min | LRA::Max => {
                 check_mat_ops(self, read, write)
             }
             LRA::Ite | LRA::Id => check_flow(self, read, write),
@@ -362,7 +364,7 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LRA::Add => {
+        LRA::Add | LRA::Sub => {
             let (r1, r2, None) = (
                 read_nxt(&mut read, 0)?,
                 read_nxt(&mut read, 1)?,
