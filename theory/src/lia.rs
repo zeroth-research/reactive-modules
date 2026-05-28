@@ -97,6 +97,7 @@ pub enum LIA {
     // A*x + B where `A` and `B` are constants
     Linear(crate::Tensor, crate::Tensor),
     Add,
+    Sub,
     // XXX: should these be in LIA?
     ReLU,
     Argmax,
@@ -125,6 +126,7 @@ impl fmt::Display for LIA {
             LIA::Ne => write!(f, "Ne"),
             LIA::Linear(..) => write!(f, "Linear"),
             LIA::Add => write!(f, "Add"),
+            LIA::Sub => write!(f, "Sub"),
             LIA::ReLU => write!(f, "ReLU"),
             LIA::Argmax => write!(f, "Argmax"),
             LIA::Min => write!(f, "Min"),
@@ -158,7 +160,7 @@ impl Theory for LIA {
                 let mut write = write.into_iter();
                 check_linear_affine(self, a, b, &mut read, &mut write)
             }
-            LIA::Add | LIA::ReLU | LIA::Argmax | LIA::Min | LIA::Max => {
+            LIA::Add | LIA::Sub | LIA::ReLU | LIA::Argmax | LIA::Min | LIA::Max => {
                 check_mat_ops(self, read, write)
             }
             LIA::Ite | LIA::Id => check_flow(self, read, write),
@@ -363,7 +365,7 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LIA::Add => {
+        LIA::Add | LIA::Sub => {
             let (r1, r2, None) = (
                 read_nxt(&mut read, 0)?,
                 read_nxt(&mut read, 1)?,

@@ -93,6 +93,10 @@ impl LIAIType {
         IType(theory::any::Any::LIA(theory::lia::LIA::Add))
     }
     #[classattr]
+    fn Sub() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Sub))
+    }
+    #[classattr]
     fn ReLU() -> IType {
         IType(theory::any::Any::LIA(theory::lia::LIA::ReLU))
     }
@@ -191,6 +195,10 @@ impl LRAIType {
     #[classattr]
     fn Add() -> IType {
         IType(theory::any::Any::LRA(theory::lra::LRA::Add))
+    }
+    #[classattr]
+    fn Sub() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Sub))
     }
     #[classattr]
     fn ReLU() -> IType {
@@ -491,6 +499,7 @@ fn op_name_of(a: &theory::any::Any) -> &'static str {
             LIA::Ne => "Ne",
             LIA::Linear(_, _) => "Linear",
             LIA::Add => "Add",
+            LIA::Sub => "Sub",
             LIA::ReLU => "ReLU",
             LIA::Argmax => "Argmax",
             LIA::Min => "Min",
@@ -514,6 +523,7 @@ fn op_name_of(a: &theory::any::Any) -> &'static str {
             LRA::Ne => "Ne",
             LRA::Linear(_, _) => "Linear",
             LRA::Add => "Add",
+            LRA::Sub => "Sub",
             LRA::ReLU => "ReLU",
             LRA::Argmax => "Argmax",
             LRA::Min => "Min",
