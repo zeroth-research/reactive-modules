@@ -138,8 +138,23 @@ impl LIAIType {
     }
 
     #[staticmethod]
+    fn Linear(a: &Bound<'_, PyAny>, b: &Bound<'_, PyAny>) -> PyResult<IType> {
+        let a = coerce_to_tensor(a)?;
+        let b = coerce_to_tensor(b)?;
+        Ok(IType(theory::any::Any::LIA(theory::lia::LIA::Linear(
+            theory::Tensor(a),
+            theory::Tensor(b),
+        ))))
+    }
+
+    #[staticmethod]
     fn Uninterpreted(name: String) -> IType {
         IType(theory::any::Any::LIA(theory::lia::LIA::Uninterpreted(name)))
+    }
+
+    #[classattr]
+    fn name() -> &'static str {
+        "BV"
     }
 }
 
@@ -242,8 +257,23 @@ impl LRAIType {
     }
 
     #[staticmethod]
+    fn Linear(a: &Bound<'_, PyAny>, b: &Bound<'_, PyAny>) -> PyResult<IType> {
+        let a = coerce_to_tensor(a)?;
+        let b = coerce_to_tensor(b)?;
+        Ok(IType(theory::any::Any::LRA(theory::lra::LRA::Linear(
+            theory::Tensor(a),
+            theory::Tensor(b),
+        ))))
+    }
+
+    #[staticmethod]
     fn Uninterpreted(name: String) -> IType {
         IType(theory::any::Any::LRA(theory::lra::LRA::Uninterpreted(name)))
+    }
+
+    #[classattr]
+    fn name() -> &'static str {
+        "LRA"
     }
 }
 
@@ -377,6 +407,11 @@ impl BVIType {
     #[staticmethod]
     fn Uninterpreted(name: String) -> IType {
         IType(theory::any::Any::BV(theory::bv::BV::Uninterpreted(name)))
+    }
+
+    #[classattr]
+    fn name() -> &'static str {
+        "BV"
     }
 }
 

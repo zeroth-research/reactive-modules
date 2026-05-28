@@ -1,7 +1,7 @@
 from typing import Any, override
 
 from .zrth import DType, Term, Wire
-from . import IType
+from . import IType, get_theory
 import torch
 
 # types that we can convert to [Expr]
@@ -392,9 +392,39 @@ def argmax(arg: Expr):
 
 def matmul(lhs: Expr, rhs: Expr):
     assert type(lhs) is type(rhs)
-    # All Expr shapes are 2-D (rows, cols). Theory `check()` validates inner-
-    # dim agreement; here we just pick the output shape (m, n).
+    # output shape
     wtype = lhs.dtype.reshape([lhs.shape[0], rhs.shape[1]])
+    theory = get_theory()
+    # we have only Linear in LIA and LRA, check if lhs or rhs are a constant
+    if theory.name == "LIA":
+        data = None
+        if isinstance(lhs, torch.Tensor):
+            data = lhs
+        if lhs.itype.op_name == "ConstInt":
+            data = lhs.itype.const_data
+        if data is not None:
+            zero = torch.zeros(*wtype.shape)
+            assert isinstance(data, torch.Tensor), type(data)
+            assert isinstance(zero, torch.Tensor), type(zero)
+            return type(lhs)(IType.LIA.Linear(data, zero), wtype, lhs, rhs)
+        raise RuntimeError(
+            f"{theory.name} does not support generic MatMul, use Linear instead"
+        )
+
+    if theory.name == "LRA":
+        data = None
+        if isinstance(lhs, torch.Tensor):
+            data = lhs
+        if lhs.itype.op_name == "ConstReal":
+            data = lhs.itype.const_data
+        if data is not None:
+            zero = torch.zeros(*wtype.shape)
+            assert isinstance(data, torch.Tensor), type(data)
+            assert isinstance(zero, torch.Tensor), type(zero)
+            return type(lhs)(IType.LRA.Linear(data, zero), wtype, rhs)
+        raise RuntimeError(
+            f"{theory.name} does not support generic MatMul, use Linear instead"
+        )
     return type(lhs)(IType.MatMul(), wtype, lhs, rhs)
 
 
@@ -414,7 +444,6 @@ def Bool(x: bool | str | torch.Tensor, shape=None) -> BExpr:
         dtype = DType.Bool(x.shape)
         return BExpr(itype=IType.Tensor(x), dtype=dtype)
     elif isinstance(x, str):
-
         dtype = DType.Bool(shape if shape is not None else [1])
         return BExpr(itype=IType.Uninterpreted(x), dtype=dtype)
 
@@ -432,7 +461,6 @@ def Real(x: float | str | torch.Tensor, shape=None) -> AExpr:
         dtype = DType.Real(x.shape)
         return AExpr(itype=IType.Tensor(x), dtype=dtype)
     elif isinstance(x, str):
-
         dtype = DType.Real(shape if shape is not None else [1])
         return AExpr(itype=IType.Uninterpreted(x), dtype=dtype)
 

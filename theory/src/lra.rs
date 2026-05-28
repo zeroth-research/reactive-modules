@@ -474,12 +474,12 @@ where
         }
         let br = b_size[0] as usize;
         let bc = b_size[1] as usize;
-        if br != 1 && bc != 1 {
-            return Err(format!(
-                "{:?}: `B` has to be a vector, got matrix {}x{}",
-                op, br, bc
-            ));
-        }
+        //if br != 1 && bc != 1 {
+        //    return Err(format!(
+        //        "{:?}: `B` has to be a vector, got matrix {}x{}",
+        //        op, br, bc
+        //    ));
+        //}
         (br, bc)
     };
 
