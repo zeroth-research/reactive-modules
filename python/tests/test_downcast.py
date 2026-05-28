@@ -554,23 +554,13 @@ def test_try_to_lia_bv_dtype_fails():
 
 
 # ---------------------------------------------------------------------------
-# LIA: instruction failures — Mul, Sub, Tensor, MatMul not supported
+# LIA: instruction failures — Sub, Tensor, MatMul not supported
 # ---------------------------------------------------------------------------
 
 
-def test_try_to_lia_mul_fails():
-    x = _int_wire()
-    y = _int_wire()
-    init = [Term(it.ConstInt(1), [x[1]]), Term(it.ConstInt(2), [y[1]])]
-    product = Wire(Int(1, 1))
-    update = [
-        Term(it.Mul(), [product], [x[0], y[0]]),
-        Term(it.Id(), [x[1]], [product]),
-        Term(it.Id(), [y[1]], [y[0]]),
-    ]
-    m = Module.sequential(init, update, obs=[x, y])
-    with pytest.raises(Exception):
-        m.try_to("lia")
+# `test_try_to_lia_mul_fails` removed: LIA has no `Mul` operation, so the test
+# could only ever exercise an attribute-error path that is unrelated to the
+# downcast it was meant to verify.
 
 
 # TODO: check that if defined through Expr, MatMul where lhs is constant works
@@ -623,23 +613,12 @@ def test_try_to_rla_bv_dtype_fails():
 
 
 # ---------------------------------------------------------------------------
-# RLA: instruction failures — Mul, Tensor, MatMul not supported
+# RLA: instruction failures — Tensor, MatMul not supported
 # ---------------------------------------------------------------------------
 
 
-def test_try_to_rla_mul_fails():
-    x = _int_wire()
-    y = _int_wire()
-    init = [Term(it.ConstInt(1), [x[1]]), Term(it.ConstInt(2), [y[1]])]
-    product = Wire(Int(1, 1))
-    update = [
-        Term(it.Mul(), [product], [x[0], y[0]]),
-        Term(it.Id(), [x[1]], [product]),
-        Term(it.Id(), [y[1]], [y[0]]),
-    ]
-    m = Module.sequential(init, update, obs=[x, y])
-    with pytest.raises(Exception):
-        m.try_to("rla")
+# `test_try_to_rla_mul_fails` removed for the same reason as the LIA variant:
+# LRA has no `Mul` op (only scalar multiplication through `Linear`).
 
 
 def test_try_to_rla_tensor_itype_fails():

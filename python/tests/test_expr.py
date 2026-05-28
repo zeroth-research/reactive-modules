@@ -36,13 +36,14 @@ def test_bitarray():
 
 
 def test_arith():
+    # LRA has Add / Sub / Linear (and Min/Max/ReLU/Argmax) but no general
+    # `Mul` or `Div`, so the test only exercises the supported subset.
     a = expr.Real(2.1)
     b = expr.Real("a")
     c = a + b
-    d = a / c
-    e = expr.mul(a, b, c, d)
+    d = c - a
 
-    print("\nd = ", e, "\n")
+    print("\nd = ", d, "\n")
 
 
 def test_predicate():
