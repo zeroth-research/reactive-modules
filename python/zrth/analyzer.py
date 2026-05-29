@@ -1678,17 +1678,40 @@ class MethodVisitor(ast.NodeVisitor):
                 self.written_wires.add(wire_name)
 
     def visit_AugAssign(self, node):
-        """Handle augmented assignment (+=, -=, *=, /=). Desugar to regular assignment."""
-        # Build an equivalent BinOp node and a regular Assign node
-        binop = ast.BinOp(left=ast.copy_location(
-            ast.Name(id=node.target.id, ctx=ast.Load()) if isinstance(node.target, ast.Name)
-            else ast.Attribute(value=node.target.value, attr=node.target.attr, ctx=ast.Load()),
-            node.target,
-        ), op=node.op, right=node.value)
-        ast.copy_location(binop, node)
-        assign = ast.Assign(targets=[node.target], value=binop)
-        ast.copy_location(assign, node)
-        self.visit_Assign(assign)
+        """Handle augmented assignment (+=, -=, *=, /=)."""
+        if (
+            isinstance(node.target, ast.Attribute)
+            and node.target.attr in self.wire_pairs
+        ):
+            wire_name = node.target.attr
+
+            if wire_name in self.temp_vars:
+                left_wire = self.temp_vars[wire_name]
+            else:
+                left_wire = self.wire_pairs[wire_name][0]
+
+            target_dtype = self.wire_pairs[wire_name][1].dtype
+            right_wire = self._convert_expr(node.value, target_dtype=target_dtype)
+
+            op_type = type(node.op)
+            if op_type not in self.BINARY_OPS and op_type is not ast.Mult:
+                raise ValueError(
+                    f"Unsupported augmented assignment operator: {op_type.__name__}"
+                )
+
+            result_wire = self._apply_binop(op_type, left_wire.dtype, left_wire, right_wire)
+
+            self.temp_vars[wire_name] = result_wire
+
+            if len(self.scopes) == 0:
+                output_wire = self.wire_pairs[wire_name][1]
+                term = Term(IType.Id(), [output_wire], [result_wire])
+                self.terms.append(term)
+                self.written_wires.add(wire_name)
+        else:
+            raise ValueError(
+                "Augmented assignment only supported for self.attribute wires"
+            )
 
     def visit_Expr(self, node):
         """Silently skip bare expression statements (e.g. super().reset(seed=seed))"""
@@ -1799,7 +1822,7 @@ class MethodVisitor(ast.NodeVisitor):
 
             if method == "argmax":
                 obj_wire = self._convert_expr(obj)
-                result = Wire(DType.Int([1]))
+                result = Wire(obj_wire.dtype.reshape([1, 1]))
                 self.terms.append(Term(IType.Argmax(), [result], [obj_wire]))
                 return result
             elif method == "item":
@@ -1980,6 +2003,53 @@ class MethodVisitor(ast.NodeVisitor):
         if op_type not in self.BINARY_OPS:
             raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
 
+        result = self._apply_binop(op_type, result_dtype, left_wire, right_wire)
+        return result
+
+    def _try_mul_as_linear(self, left_wire, right_wire):
+        """Implement x*c or c*x as Linear when one operand is a known scalar constant.
+
+        Only valid for scalar ([1,1]) var wires under theories that have Linear.
+        Returns the result Wire on success, or None if not applicable.
+        """
+        try:
+            Linear = IType.Linear
+        except AttributeError:
+            return None
+
+        for const_wire, var_wire in [
+            (right_wire, left_wire),
+            (left_wire, right_wire),
+        ]:
+            const_term = self._const_wire_terms.get(id(const_wire))
+            if const_term is None:
+                continue
+            scalar_tensor = const_term.itype.const_data
+            if scalar_tensor.numel() != 1:
+                continue
+            shape = var_wire.dtype.shape
+            if len(shape) < 2 or shape[-1] != 1:
+                continue
+            import torch
+
+            scalar = scalar_tensor.item()
+            A = torch.tensor([[scalar]], dtype=torch.float32)
+            b = torch.zeros(1, 1, dtype=torch.float32)
+            result_wire = Wire(var_wire.dtype)
+            self.terms.append(Term(Linear(A, b), [result_wire], [var_wire]))
+            return result_wire
+        return None
+
+    def _apply_binop(self, op_type, result_dtype, left_wire, right_wire):
+        """Create a Term for a binary operation, using Linear for Mul under LRA/LIA."""
+        if op_type is ast.Mult:
+            result = self._try_mul_as_linear(left_wire, right_wire)
+            if result is not None:
+                return result
+
+        if op_type not in self.BINARY_OPS:
+            raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
+
         result = Wire(result_dtype)
         itype_cls = self.BINARY_OPS[op_type]
         self.terms.append(Term(itype_cls(), [result], [left_wire, right_wire]))
@@ -2149,11 +2219,13 @@ class MethodVisitor(ast.NodeVisitor):
         value = constant.value
 
         if isinstance(value, bool):
-            tensor_data = torch.tensor([value], dtype=torch.bool)
-            dtype = Bool(1)
+            # ConstBool embeds a [[v]] tensor and needs a 2D Bool wire.
+            const_wire = Wire(Bool(1, 1))
+            self.terms.append(Term(IType.ConstBool(value), [const_wire]))
+            return const_wire
         elif isinstance(value, (int, float)):
             if target_dtype is None:
-                target_dtype = DType.Int([1]) if isinstance(value, int) else Float()
+                target_dtype = Float()
             tensor_data = torch.tensor([value], dtype=_torch_dtype(target_dtype))
             dtype = target_dtype.reshape([1, 1])
         else:
