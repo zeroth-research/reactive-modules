@@ -31,10 +31,10 @@ def _value_to_const_term(value, wire):
     """Create a constant Term that writes a Python value to a wire."""
     if isinstance(value, bool):
         return Term(IType.ConstBool(value), [wire], [])
-    elif isinstance(value, int):
-        return Term(IType.ConstInt(value), [wire], [])
-    elif isinstance(value, float):
-        return Term(IType.Tensor(torch.tensor([value], dtype=torch.float32)), [wire], [])
+    elif isinstance(value, (int, float)):
+        # IType.Tensor dispatches to ConstInt/ConstReal/Const based on current theory.
+        tensor = torch.tensor([float(value)], dtype=torch.float32)
+        return Term(IType.Tensor(tensor), [wire], [])
     elif isinstance(value, torch.Tensor):
         return Term(IType.Tensor(value.clone()), [wire], [])
     else:
@@ -127,6 +127,9 @@ def _extract_env_module(env_instance, **kwargs):
     for name in params:
         value = getattr(env_instance, name)
         dtype = infer_dtype(name, AbstractValue.const(value))
+        # Real-valued theories (LRA) have no Int type; promote scalar ints to Float.
+        if dtype.is_int():
+            dtype = DType.Float(list(dtype.shape))
         wire = Wire(dtype)
         const_wires[name] = [wire, wire]  # fake pair so analyzer resolves self.name
         const_terms.append(_value_to_const_term(value, wire))
