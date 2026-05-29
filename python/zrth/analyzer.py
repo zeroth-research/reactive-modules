@@ -1486,6 +1486,9 @@ class MethodVisitor(ast.NodeVisitor):
         self.temp_vars = {}
         self.scopes = []
         self.written_wires = set()
+        # Maps wire id → the Term that produced it, for wires created from literal constants.
+        # Used to implement Mul as Linear under LRA/LIA.
+        self._const_wire_terms: dict[int, Term] = {}
 
     @contextmanager
     def _scope(self, scope_name):
@@ -2032,7 +2035,9 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unsupported constant type: {type(value)}")
 
         const_wire = Wire(dtype)
-        self.terms.append(Term(IType.Tensor(tensor_data), [const_wire]))
+        term = Term(IType.Tensor(tensor_data), [const_wire])
+        self.terms.append(term)
+        self._const_wire_terms[id(const_wire)] = term
         return const_wire
 
     def _convert_list_literal(self, node, target_dtype=None):
