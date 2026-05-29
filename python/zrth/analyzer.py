@@ -1433,19 +1433,23 @@ def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term], la
         (output_wire, weight_wire, bias_wire)
     """
     in_features = input_wire.dtype.shape[-1]
-
-    weight_wire = Wire(Float(out_features, in_features))
-    bias_wire = Wire(Float(out_features))
     output_wire = Wire(Float(out_features))
 
     if layer is not None:
-        terms.append(Term(IType.Tensor(layer.weight), [weight_wire], []))
-        terms.append(Term(IType.Tensor(layer.bias), [bias_wire], []))
+        # Weight/bias constants are embedded in the IType; only input_wire is read.
+        terms.append(Term(
+            IType.Linear(layer.weight, layer.bias),
+            [output_wire],
+            [input_wire],
+        ))
+        return output_wire, None, None
 
+    # No live layer: emit dangling weight/bias wires for the caller to connect.
+    weight_wire = Wire(Float(out_features, in_features))
+    bias_wire = Wire(Float(out_features))
     terms.append(
         Term(IType.Linear(), [output_wire], [input_wire, weight_wire, bias_wire])
     )
-
     return output_wire, weight_wire, bias_wire
 
 
