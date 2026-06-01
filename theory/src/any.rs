@@ -115,6 +115,12 @@ impl<A: TryInto<Type>> TryFrom2<A> {
     }
 }
 
+impl<A: TryInto<Type> + fmt::Display> fmt::Display for TryFrom2<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.a, f)
+    }
+}
+
 impl<A: TryInto<Type>> TryFrom<TryFrom2<A>> for lra::Type {
     type Error = String;
 
@@ -150,7 +156,7 @@ impl Theory for Any {
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Type>,
+        D: TryInto<Type> + fmt::Display,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
