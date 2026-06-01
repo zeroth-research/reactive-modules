@@ -403,10 +403,9 @@ def matmul(lhs: Expr, rhs: Expr):
         if lhs.itype.op_name == "ConstInt":
             data = lhs.itype.const_data
         if data is not None:
-            zero = torch.zeros(*wtype.shape)
+            no_bias = torch.empty(0, 0)
             assert isinstance(data, torch.Tensor), type(data)
-            assert isinstance(zero, torch.Tensor), type(zero)
-            return type(lhs)(IType.LIA.Linear(data, zero), wtype, lhs, rhs)
+            return type(lhs)(IType.LIA.Linear(data, no_bias), wtype, rhs)
         raise RuntimeError(
             f"{theory.name} does not support generic MatMul, use Linear instead"
         )
@@ -418,10 +417,9 @@ def matmul(lhs: Expr, rhs: Expr):
         if lhs.itype.op_name == "ConstReal":
             data = lhs.itype.const_data
         if data is not None:
-            zero = torch.zeros(*wtype.shape)
+            no_bias = torch.empty(0, 0)
             assert isinstance(data, torch.Tensor), type(data)
-            assert isinstance(zero, torch.Tensor), type(zero)
-            return type(lhs)(IType.LRA.Linear(data, zero), wtype, rhs)
+            return type(lhs)(IType.LRA.Linear(data, no_bias), wtype, rhs)
         raise RuntimeError(
             f"{theory.name} does not support generic MatMul, use Linear instead"
         )
