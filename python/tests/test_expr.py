@@ -83,7 +83,7 @@ def test_matmul():
     c = a @ b
     print("\nc =", c)
 
-    d = expr.Real("d", shape=(2,))
+    d = expr.Real("d", shape=(2, 1))  # column-major: 2 features, 1 batch item
     e = a @ d
     print("e =", e)
 

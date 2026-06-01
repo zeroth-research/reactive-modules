@@ -121,6 +121,11 @@ impl LIAIType {
         IType(theory::any::Any::LIA(theory::lia::LIA::Id))
     }
 
+    #[classattr]
+    fn Transpose() -> IType {
+        IType(theory::any::Any::LIA(theory::lia::LIA::Transpose))
+    }
+
     #[staticmethod]
     fn ConstBool(value: &Bound<'_, PyAny>) -> PyResult<IType> {
         let t = coerce_to_tensor(value)?;
@@ -154,7 +159,7 @@ impl LIAIType {
 
     #[classattr]
     fn name() -> &'static str {
-        "BV"
+        "LIA"
     }
 }
 
@@ -238,6 +243,11 @@ impl LRAIType {
     #[classattr]
     fn Id() -> IType {
         IType(theory::any::Any::LRA(theory::lra::LRA::Id))
+    }
+
+    #[classattr]
+    fn Transpose() -> IType {
+        IType(theory::any::Any::LRA(theory::lra::LRA::Transpose))
     }
 
     #[staticmethod]
@@ -539,6 +549,7 @@ fn op_name_of(a: &theory::any::Any) -> &'static str {
             LIA::Argmax => "Argmax",
             LIA::Min => "Min",
             LIA::Max => "Max",
+            LIA::Transpose => "Transpose",
             LIA::Ite => "Ite",
             LIA::Id => "Id",
             LIA::Uninterpreted(_) => "Uninterpreted",
@@ -563,6 +574,7 @@ fn op_name_of(a: &theory::any::Any) -> &'static str {
             LRA::Argmax => "Argmax",
             LRA::Min => "Min",
             LRA::Max => "Max",
+            LRA::Transpose => "Transpose",
             LRA::Ite => "Ite",
             LRA::Id => "Id",
             LRA::Uninterpreted(_) => "Uninterpreted",

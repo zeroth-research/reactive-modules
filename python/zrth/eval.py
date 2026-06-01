@@ -91,6 +91,8 @@ _EVAL = {
     "ConstInt": lambda it, r: [it.const_data.clone()],
     "ConstReal": lambda it, r: [it.const_data.clone()],
     "Const": lambda it, r: [it.const_data.clone()],
+    # Matrix
+    "Transpose": lambda it, r: [r[0].transpose(0, 1)],
     # Uninterpreted
     "Uninterpreted": _uninterpreted,
 }

@@ -103,6 +103,8 @@ pub enum LRA {
     Argmax,
     Min,
     Max,
+    // matrix operations
+    Transpose,
     // control flow
     Ite,
     Id,
@@ -131,6 +133,7 @@ impl fmt::Display for LRA {
             LRA::Argmax => write!(f, "Argmax"),
             LRA::Min => write!(f, "Min"),
             LRA::Max => write!(f, "Max"),
+            LRA::Transpose => write!(f, "Transpose"),
             LRA::Ite => write!(f, "Ite"),
             LRA::Id => write!(f, "Id"),
             LRA::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
@@ -163,6 +166,7 @@ impl Theory for LRA {
             LRA::Add | LRA::Sub | LRA::ReLU | LRA::Argmax | LRA::Min | LRA::Max => {
                 check_mat_ops(self, read, write)
             }
+            LRA::Transpose => check_transpose(self, read, write),
             LRA::Ite | LRA::Id => check_flow(self, read, write),
             LRA::Uninterpreted(_) => {
                 let mut read = read.into_iter();
@@ -456,11 +460,13 @@ where
         return Err(format!("{:?}: must write exactly one value", op));
     };
 
+    // Convention: Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1], Y=[out,batch].
     let a_size = a.size();
     if a_size.len() != 2 {
         return Err(format!("{:?}: `A` must be a 2D tensor", op));
     }
-    let a_rows = a_size[0] as usize;
+    let a_rows = a_size[0] as usize; // out_features
+    let a_cols = a_size[1] as usize; // in_features
     if a_rows == 0 {
         return Err(format!("{:?}: `A` is empty", op));
     }
@@ -472,32 +478,26 @@ where
         if b_size.len() != 2 {
             return Err(format!("{:?}: `B` must be a 2D tensor", op));
         }
-        let br = b_size[0] as usize;
-        let bc = b_size[1] as usize;
-        //if br != 1 && bc != 1 {
-        //    return Err(format!(
-        //        "{:?}: `B` has to be a vector, got matrix {}x{}",
-        //        op, br, bc
-        //    ));
-        //}
-        (br, bc)
+        (b_size[0] as usize, b_size[1] as usize)
     };
 
     match (r1, w1) {
         (Type::Real([d1, d2]), Type::Real([d3, d4])) => {
-            if d2 != a_rows {
+            // X has shape [d1=in, d2=batch]; A has shape [a_rows=out, a_cols=in].
+            if d1 != a_cols {
                 return Err(format!(
-                    "{:?}: mismatch in inner dimensions of `A` and `x`: A has {}x{}, x has {}x{}",
-                    op, d1, d2, a_rows, a_rows
+                    "{:?}: dimension mismatch: X has {}x{} but A has {}x{} (need X.rows == A.cols)",
+                    op, d1, d2, a_rows, a_cols
                 ));
             }
-            // `A*x` is a a_rows x d2 matrix, `B` has to have these dimensions (if non-empty)
-            if b_rows > 0 && (a_rows != b_rows || d2 != b_cols) {
+            // B must be a column vector [out, 1] matching the output rows.
+            if b_rows > 0 && (b_rows != a_rows || b_cols != 1) {
                 return Err(format!(
-                    "{:?}: A*x has dimension {}x{} while B has {}x{}",
-                    op, a_rows, d2, b_rows, b_cols
+                    "{:?}: B must be a column vector [{}x1], got {}x{}",
+                    op, a_rows, b_rows, b_cols
                 ));
             }
+            // Output Y = A·X has shape [a_rows=out, d2=batch].
             if a_rows != d3 || d2 != d4 {
                 return Err(format!(
                     "{:?}: bad output matrix dimensions, expected {}x{} but got {}x{}",
@@ -506,7 +506,34 @@ where
             }
             Ok(())
         }
-        // TODO: should we allow also boolean matrices?
+        _ => Err(format!("{:?}: input and output must be real matrices", op)),
+    }
+}
+
+fn check_transpose<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
+where
+    D: TryInto<Type>,
+    R: IntoIterator<Item = D>,
+    W: IntoIterator<Item = D>,
+{
+    let mut read = read.into_iter();
+    let mut write = write.into_iter();
+    let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+        return Err(format!("{:?}: must read exactly one value", op));
+    };
+    let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+        return Err(format!("{:?}: must write exactly one value", op));
+    };
+    match (r1, w1) {
+        (Type::Real([d1, d2]), Type::Real([e1, e2])) => {
+            if d2 != e1 || d1 != e2 {
+                return Err(format!(
+                    "{:?}: transpose of {}x{} must produce {}x{}, got {}x{}",
+                    op, d1, d2, d2, d1, e1, e2
+                ));
+            }
+            Ok(())
+        }
         _ => Err(format!("{:?}: input and output must be real matrices", op)),
     }
 }
@@ -784,18 +811,43 @@ mod tests {
 
     #[test]
     fn linear_ok() {
-        let a: crate::Tensor = tch::Tensor::from_slice2(&[[1.0f64, 0.0], [0.0, 1.0]]).into();
+        // A=[2,3] maps 3 features to 2; X=[3,4] is 3 features × 4 batch items.
+        // Convention: Y = A·X  →  Y=[2,4].
+        let a: crate::Tensor =
+            tch::Tensor::zeros(&[2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
         let b: crate::Tensor =
             tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
-        assert!(LRA::Linear(a, b).check([real(1, 2)], [real(2, 2)]).is_ok());
+        assert!(LRA::Linear(a, b).check([real(3, 4)], [real(2, 4)]).is_ok());
+    }
+
+    #[test]
+    fn linear_with_bias_ok() {
+        // A=[2,3], b=[2,1] column bias, X=[3,1] single sample → Y=[2,1].
+        let a: crate::Tensor =
+            tch::Tensor::zeros(&[2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
+        let b: crate::Tensor =
+            tch::Tensor::zeros(&[2, 1], (tch::Kind::Double, tch::Device::Cpu)).into();
+        assert!(LRA::Linear(a, b).check([real(3, 1)], [real(2, 1)]).is_ok());
     }
 
     #[test]
     fn linear_dim_mismatch_fails() {
-        let a: crate::Tensor = tch::Tensor::from_slice2(&[[1.0f64, 0.0], [0.0, 1.0]]).into();
+        // A=[2,3] but X has 4 rows — inner dimension mismatch.
+        let a: crate::Tensor =
+            tch::Tensor::zeros(&[2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
         let b: crate::Tensor =
             tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
-        assert!(LRA::Linear(a, b).check([real(1, 3)], [real(2, 3)]).is_err());
+        assert!(LRA::Linear(a, b).check([real(4, 1)], [real(2, 1)]).is_err());
+    }
+
+    #[test]
+    fn transpose_ok() {
+        assert!(LRA::Transpose.check([real(3, 4)], [real(4, 3)]).is_ok());
+    }
+
+    #[test]
+    fn transpose_wrong_shape_fails() {
+        assert!(LRA::Transpose.check([real(3, 4)], [real(3, 4)]).is_err());
     }
 
     #[test]

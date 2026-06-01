@@ -1414,17 +1414,17 @@ def _normalize_early_returns(stmts: list) -> list:
 
 
 def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term], layer=None):
-    """Translate a linear layer to a single IType.Linear term.
+    """Translate a linear layer using the column-major convention Y = A·X + B.
 
-    Creates: output = input @ weight + bias
+    The theory uses column-major layout: X=[in, batch], A=[out, in], B=[out, 1].
+    PyTorch uses row-major: x=[batch, in].  This helper inserts Transpose ops
+    on both sides so the module's wires stay in row-major form.
 
-    If *layer* is a live ``nn.Linear`` instance, Tensor terms with references
-    to the actual weight/bias tensors are prepended so that training updates
-    flow through automatically.  Otherwise the weight/bias wires are dangling
-    (external parameters to be connected later).
+    If *layer* is a live ``nn.Linear`` instance its weight/bias are embedded in
+    the IType.  Otherwise dangling weight/bias wires are emitted.
 
     Args:
-        input_wire: Input Wire
+        input_wire: Input Wire with dtype Real([1, in_features]) (row-major)
         out_features: Number of output features
         terms: List to append Terms to
         layer: Optional live nn.Linear instance for tensor references
@@ -1433,20 +1433,29 @@ def _translate_linear(input_wire: Wire, out_features: int, terms: list[Term], la
         (output_wire, weight_wire, bias_wire)
     """
     in_features = input_wire.dtype.shape[-1]
-    output_wire = Wire(Float(out_features))
+    output_wire = Wire(Float(out_features))  # Real([1, out_features])
 
     if layer is not None:
-        # Weight/bias constants are embedded in the IType; only input_wire is read.
+        # Transpose input from row-major [1, in] to column-major [in, 1].
+        input_col_wire = Wire(input_wire.dtype.reshape([in_features, 1]))
+        terms.append(Term(IType.Transpose(), [input_col_wire], [input_wire]))
+
+        # Y = A·X + B  where A=weight=[out,in], B=[out,1], X=[in,1], Y=[out,1].
+        linear_out_wire = Wire(Float(out_features, 1))  # Real([out_features, 1])
+        bias = layer.bias.unsqueeze(1) if layer.bias is not None else torch.zeros(out_features, 0)
         terms.append(Term(
-            IType.Linear(layer.weight, layer.bias),
-            [output_wire],
-            [input_wire],
+            IType.Linear(layer.weight, bias),
+            [linear_out_wire],
+            [input_col_wire],
         ))
+
+        # Transpose output from column-major [out, 1] to row-major [1, out].
+        terms.append(Term(IType.Transpose(), [output_wire], [linear_out_wire]))
         return output_wire, None, None
 
     # No live layer: emit dangling weight/bias wires for the caller to connect.
     weight_wire = Wire(Float(out_features, in_features))
-    bias_wire = Wire(Float(out_features))
+    bias_wire = Wire(Float(out_features, 1))
     terms.append(
         Term(IType.Linear(), [output_wire], [input_wire, weight_wire, bias_wire])
     )
