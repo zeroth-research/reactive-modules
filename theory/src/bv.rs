@@ -185,6 +185,7 @@ fn check_init_dims(cm: &tch::Tensor, bw: usize, i: usize, j: usize) -> Result<()
 
 impl Theory for BV {
     type DType = Type;
+    const NAME: &'static str = "BV";
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
@@ -200,7 +201,7 @@ impl Theory for BV {
                 if read.next().is_some() {
                     return Err("Const: cannot read values".into());
                 }
-                let dtype = write_nxt(&mut write, 0)?;
+                let dtype = write_nxt(&mut write, 0, "BV")?;
                 match dtype {
                     Type::BV(bw, [i, j]) => check_init_dims(cm, bw, i, j)?,
                 }
@@ -213,7 +214,7 @@ impl Theory for BV {
             // TODO: for `Abs`, what if input is the signed min of BV<N>? It's absolute value
             // does not fit into BV<N>
             BV::Not | BV::Id | BV::Neg | BV::Abs => {
-                let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
+                let (r, w) = (read_nxt(&mut read, 0, "BV")?, write_nxt(&mut write, 0, "BV")?);
                 if r != w {
                     return Err(format!(
                         "{:?}: input and output type must be the same",
@@ -233,13 +234,13 @@ impl Theory for BV {
             }
             BV::Le | BV::Lt | BV::Ge | BV::Gt | BV::Eq | BV::Ne => {
                 let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
+                    read_nxt(&mut read, 0, "BV")?,
+                    read_nxt(&mut read, 1, "BV")?,
                     read.next(),
                 ) else {
                     return Err(format!("{self}: must read exactly two values"));
                 };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                let (w1, None) = (write_nxt(&mut write, 0, "BV")?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 if r1 != r2 {
@@ -255,13 +256,13 @@ impl Theory for BV {
             }
             BV::UDiv | BV::UMod => {
                 let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
+                    read_nxt(&mut read, 0, "BV")?,
+                    read_nxt(&mut read, 1, "BV")?,
                     read.next(),
                 ) else {
                     return Err(format!("{self}: must read exactly two values"));
                 };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                let (w1, None) = (write_nxt(&mut write, 0, "BV")?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 if !matches!(r1, Type::BV(..)) {
@@ -279,13 +280,13 @@ impl Theory for BV {
             }
             BV::SDiv | BV::SMod => {
                 let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
+                    read_nxt(&mut read, 0, "BV")?,
+                    read_nxt(&mut read, 1, "BV")?,
                     read.next(),
                 ) else {
                     return Err(format!("{self}: must read exactly two values"));
                 };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                let (w1, None) = (write_nxt(&mut write, 0, "BV")?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 if !matches!(r1, Type::BV(..)) {
@@ -302,10 +303,10 @@ impl Theory for BV {
                 Ok(())
             }
             BV::And | BV::Or | BV::Xor | BV::Add | BV::Sub | BV::Mul => {
-                let w1 = write_nxt(&mut write, 0)?;
+                let w1 = write_nxt(&mut write, 0, "BV")?;
                 let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
+                    read_nxt(&mut read, 0, "BV")?,
+                    read_nxt(&mut read, 1, "BV")?,
                     read.next(),
                 ) else {
                     return Err(format!("{:?}: must read exactly two values", self));
@@ -323,11 +324,11 @@ impl Theory for BV {
             }
 
             BV::Ite => {
-                let w1 = write_nxt(&mut write, 0)?;
+                let w1 = write_nxt(&mut write, 0, "BV")?;
                 let (r1, r2, r3, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
-                    read_nxt(&mut read, 2)?,
+                    read_nxt(&mut read, 0, "BV")?,
+                    read_nxt(&mut read, 1, "BV")?,
+                    read_nxt(&mut read, 2, "BV")?,
                     read.next(),
                 ) else {
                     return Err(format!("{:?}: must read exactly two values", self));
@@ -352,13 +353,13 @@ impl Theory for BV {
 
             BV::MatMul => {
                 let (r1, r2, None) = (
-                    read_nxt(&mut read, 0)?,
-                    read_nxt(&mut read, 1)?,
+                    read_nxt(&mut read, 0, "BV")?,
+                    read_nxt(&mut read, 1, "BV")?,
                     read.next(),
                 ) else {
                     return Err(format!("{:?}: must read exactly two values", self));
                 };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                let (w1, None) = (write_nxt(&mut write, 0, "BV")?, write.next()) else {
                     return Err(format!("{:?}: must write exactly one value", self));
                 };
 
@@ -406,10 +407,10 @@ impl Theory for BV {
                 Ok(())
             }
             BV::BVToBool => {
-                let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                let (r1, None) = (read_nxt(&mut read, 0, "BV")?, read.next()) else {
                     return Err(format!("{self}: must read exactly one value"));
                 };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                let (w1, None) = (write_nxt(&mut write, 0, "BV")?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 let [rows, cols] = r1.shape();
@@ -421,10 +422,10 @@ impl Theory for BV {
                 Ok(())
             }
             BV::BitSelect { high, low } => {
-                let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                let (r1, None) = (read_nxt(&mut read, 0, "BV")?, read.next()) else {
                     return Err(format!("{self}: must read exactly one value"));
                 };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                let (w1, None) = (write_nxt(&mut write, 0, "BV")?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 if high < low {
@@ -446,10 +447,10 @@ impl Theory for BV {
                 Ok(())
             }
             BV::Extend { extra } => {
-                let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+                let (r1, None) = (read_nxt(&mut read, 0, "BV")?, read.next()) else {
                     return Err(format!("{self}: must read exactly one value"));
                 };
-                let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+                let (w1, None) = (write_nxt(&mut write, 0, "BV")?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 let out_bw = r1.bw() + extra;

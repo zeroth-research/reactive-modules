@@ -44,6 +44,8 @@ pub trait Theory {
     // consider renaming this to "Types" or something, to avoid confusion.
     type DType;
 
+    const NAME: &'static str;
+
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
         D: TryInto<Self::DType> + fmt::Display,
@@ -53,7 +55,7 @@ pub trait Theory {
 
 // Helpers for type-checking procedures
 
-fn read_nxt<R, D, T>(read: &mut R, i: usize) -> Result<T, String>
+fn read_nxt<R, D, T>(read: &mut R, i: usize, theory: &'static str) -> Result<T, String>
 where
     R: Iterator<Item = D>,
     D: TryInto<T> + fmt::Display,
@@ -61,13 +63,13 @@ where
     if let Some(d) = read.next() {
         let repr = format!("{d}");
         d.try_into()
-            .map_err(|_| format!("Read arg {i} (`{repr}`) not compatible with Theory"))
+            .map_err(|_| format!("Read arg {i} (`{repr}`) not compatible with {theory}"))
     } else {
         Err(format!("Read arg {i} expected, but got none"))
     }
 }
 
-fn write_nxt<R, D, T>(write: &mut R, i: usize) -> Result<T, String>
+fn write_nxt<R, D, T>(write: &mut R, i: usize, theory: &'static str) -> Result<T, String>
 where
     R: Iterator<Item = D>,
     D: TryInto<T> + fmt::Display,
@@ -75,7 +77,7 @@ where
     if let Some(d) = write.next() {
         let repr = format!("{d}");
         d.try_into()
-            .map_err(|_| format!("Write arg {i} (`{repr}`) not compatible with Theory"))
+            .map_err(|_| format!("Write arg {i} (`{repr}`) not compatible with {theory}"))
     } else {
         Err(format!("Write arg {i} expected, but got none"))
     }

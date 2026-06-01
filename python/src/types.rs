@@ -163,6 +163,7 @@ impl fmt::Display for IType {
 
 impl Theory for IType {
     type DType = DType;
+    const NAME: &'static str = "Python-Any";
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where

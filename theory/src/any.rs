@@ -153,6 +153,7 @@ impl<A: TryInto<Type>> TryFrom<TryFrom2<A>> for bv::Type {
 
 impl Theory for Any {
     type DType = Type;
+    const NAME: &'static str = "Any";
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where

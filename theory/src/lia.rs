@@ -143,6 +143,7 @@ impl fmt::Display for LIA {
 
 impl Theory for LIA {
     type DType = Type;
+    const NAME: &'static str = "LIA";
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
@@ -217,7 +218,7 @@ where
     if read.next().is_some() {
         return Err("Const: cannot read values".into());
     }
-    let dtype = write_nxt(&mut write, 0)?;
+    let dtype = write_nxt(&mut write, 0, "LIA")?;
     match dtype {
         Type::Int([i, j]) => {
             let size = cm.size();
@@ -263,7 +264,7 @@ where
             if read.next().is_some() {
                 return Err("ConstBool: cannot read values".into());
             }
-            let Type::Bool([i, j]) = write_nxt(&mut write, 0)? else {
+            let Type::Bool([i, j]) = write_nxt(&mut write, 0, "LIA")? else {
                 return Err("ConstBool: write type must be Bool".into());
             };
             let size = cm.size();
@@ -291,7 +292,7 @@ where
             Ok(())
         }
         LIA::Not => {
-            let (r, w) = (read_nxt(&mut read, 0)?, write_nxt(&mut write, 0)?);
+            let (r, w) = (read_nxt(&mut read, 0, "LIA")?, write_nxt(&mut write, 0, "LIA")?);
             if !matches!(r, Type::Bool(..)) {
                 return Err(format!("{:?}: input must be Bool", op));
             }
@@ -307,10 +308,10 @@ where
             Ok(())
         }
         LIA::And | LIA::Or | LIA::Xor => {
-            let w1 = write_nxt(&mut write, 0)?;
+            let w1 = write_nxt(&mut write, 0, "LIA")?;
             let (r1, r2, None) = (
-                read_nxt(&mut read, 0)?,
-                read_nxt(&mut read, 1)?,
+                read_nxt(&mut read, 0, "LIA")?,
+                read_nxt(&mut read, 1, "LIA")?,
                 read.next(),
             ) else {
                 return Err(format!("{:?}: must read exactly two values", op));
@@ -341,8 +342,8 @@ where
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    let r1 = read_nxt(&mut read, 0)?;
-    let r2 = read_nxt(&mut read, 1)?;
+    let r1 = read_nxt(&mut read, 0, "LIA")?;
+    let r2 = read_nxt(&mut read, 1, "LIA")?;
     if r1 != r2 {
         return Err(format!("{:?}: input values must have the same type", op));
     }
@@ -350,7 +351,7 @@ where
         Type::Int(s) => s,
         _ => return Err(format!("{:?}: inputs must be Int matrices, got {r1}", op)),
     };
-    let w1 = write_nxt(&mut write, 0)?;
+    let w1 = write_nxt(&mut write, 0, "LIA")?;
     if w1 != Type::Bool(shape) {
         return Err(format!(
             "{:?}: output must be Bool({:?}), got {w1}",
@@ -371,13 +372,13 @@ where
     match op {
         LIA::Add | LIA::Sub => {
             let (r1, r2, None) = (
-                read_nxt(&mut read, 0)?,
-                read_nxt(&mut read, 1)?,
+                read_nxt(&mut read, 0, "LIA")?,
+                read_nxt(&mut read, 1, "LIA")?,
                 read.next(),
             ) else {
                 return Err(format!("{:?}: must read exactly two values", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+            let (w1, None) = (write_nxt(&mut write, 0, "LIA")?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
 
@@ -399,10 +400,10 @@ where
             Ok(())
         }
         LIA::ReLU => {
-            let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+            let (r1, None) = (read_nxt(&mut read, 0, "LIA")?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+            let (w1, None) = (write_nxt(&mut write, 0, "LIA")?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             if r1 != w1 {
@@ -420,10 +421,10 @@ where
             Ok(())
         }
         LIA::Argmax | LIA::Min | LIA::Max => {
-            let (_r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+            let (_r1, None) = (read_nxt(&mut read, 0, "LIA")?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+            let (w1, None) = (write_nxt(&mut write, 0, "LIA")?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             match w1 {
@@ -454,10 +455,10 @@ fn check_linear_affine<D>(
 where
     D: TryInto<Type> + fmt::Display,
 {
-    let (r1, None) = (read_nxt(read, 0)?, read.next()) else {
+    let (r1, None) = (read_nxt(read, 0, "LIA")?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
     };
-    let (w1, None) = (write_nxt(write, 0)?, write.next()) else {
+    let (w1, None) = (write_nxt(write, 0, "LIA")?, write.next()) else {
         return Err(format!("{:?}: must write exactly one value", op));
     };
 
@@ -519,10 +520,10 @@ where
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+    let (r1, None) = (read_nxt(&mut read, 0, "LIA")?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
     };
-    let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+    let (w1, None) = (write_nxt(&mut write, 0, "LIA")?, write.next()) else {
         return Err(format!("{:?}: must write exactly one value", op));
     };
     match (r1, w1) {
@@ -549,10 +550,10 @@ where
     let mut write = write.into_iter();
     match op {
         LIA::Id => {
-            let (r1, None) = (read_nxt(&mut read, 0)?, read.next()) else {
+            let (r1, None) = (read_nxt(&mut read, 0, "LIA")?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+            let (w1, None) = (write_nxt(&mut write, 0, "LIA")?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             if r1 != w1 {
@@ -565,14 +566,14 @@ where
         }
         LIA::Ite => {
             let (r1, r2, r3, None) = (
-                read_nxt(&mut read, 0)?,
-                read_nxt(&mut read, 1)?,
-                read_nxt(&mut read, 2)?,
+                read_nxt(&mut read, 0, "LIA")?,
+                read_nxt(&mut read, 1, "LIA")?,
+                read_nxt(&mut read, 2, "LIA")?,
                 read.next(),
             ) else {
                 return Err(format!("{:?}: must read exactly three values", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0)?, write.next()) else {
+            let (w1, None) = (write_nxt(&mut write, 0, "LIA")?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             if r2 != r3 {
