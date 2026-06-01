@@ -188,7 +188,7 @@ impl Theory for BV {
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Type>,
+        D: TryInto<Type> + fmt::Display,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {

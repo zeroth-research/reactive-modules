@@ -166,11 +166,11 @@ impl Theory for IType {
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Self::DType>,
+        D: TryInto<Self::DType> + fmt::Display,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
-        fn to_type<D: TryInto<DType>>(d: D) -> Result<theory::any::Type, String> {
+        fn to_type<D: TryInto<DType> + fmt::Display>(d: D) -> Result<theory::any::Type, String> {
             d.try_into()
                 .map(|dt: DType| dt.0)
                 .map_err(|_| "type conversion failed".to_string())

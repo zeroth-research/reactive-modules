@@ -43,7 +43,7 @@ impl<T: Theory> Term<T> {
 impl<T> Term<T>
 where
     T: Theory,
-    T::DType: Eq + Clone,
+    T::DType: Eq + Clone + fmt::Display,
 {
     pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, Error>
     where

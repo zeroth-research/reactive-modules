@@ -46,7 +46,7 @@ pub trait Theory {
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Self::DType>,
+        D: TryInto<Self::DType> + fmt::Display,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>;
 }
@@ -56,11 +56,12 @@ pub trait Theory {
 fn read_nxt<R, D, T>(read: &mut R, i: usize) -> Result<T, String>
 where
     R: Iterator<Item = D>,
-    D: TryInto<T>,
+    D: TryInto<T> + fmt::Display,
 {
     if let Some(d) = read.next() {
+        let repr = format!("{d}");
         d.try_into()
-            .map_err(|_| format!("Read arg {i} not compatible with Theory"))
+            .map_err(|_| format!("Read arg {i} (`{repr}`) not compatible with Theory"))
     } else {
         Err(format!("Read arg {i} expected, but got none"))
     }
@@ -69,11 +70,12 @@ where
 fn write_nxt<R, D, T>(write: &mut R, i: usize) -> Result<T, String>
 where
     R: Iterator<Item = D>,
-    D: TryInto<T>,
+    D: TryInto<T> + fmt::Display,
 {
     if let Some(d) = write.next() {
+        let repr = format!("{d}");
         d.try_into()
-            .map_err(|_| format!("Write arg {i} not compatible with Theory"))
+            .map_err(|_| format!("Write arg {i} (`{repr}`) not compatible with Theory"))
     } else {
         Err(format!("Write arg {i} expected, but got none"))
     }

@@ -85,7 +85,7 @@ fn remap_term<U>(
 ) -> Result<base::Term<U>, String>
 where
     U: theory::Theory,
-    U::DType: Eq + Clone,
+    U::DType: Eq + Clone + std::fmt::Display,
     for<'a> &'a IType: TryInto<U, Error = String>,
 {
     let new_itype = term.itype().try_into()?;
@@ -103,7 +103,7 @@ fn remap_atom<U>(
 ) -> Result<base::Atom<U>, String>
 where
     U: theory::Theory,
-    U::DType: Eq + Clone,
+    U::DType: Eq + Clone + std::fmt::Display,
     for<'a> &'a IType: TryInto<U, Error = String>,
 {
     let new_latched: Vec<base::Wire<U::DType>> =
@@ -135,7 +135,7 @@ where
 pub fn downcast_module<U>(module: &base::Module<IType>) -> Result<base::Module<U>, String>
 where
     U: theory::Theory,
-    U::DType: Eq + Clone + std::fmt::Debug,
+    U::DType: Eq + Clone + std::fmt::Debug + std::fmt::Display,
     for<'a> &'a DType: TryInto<U::DType, Error = String>,
     for<'a> &'a IType: TryInto<U, Error = String>,
 {
