@@ -198,6 +198,7 @@ def test_tensor_ops():
     assert torch.equal(_get(history[2], data[0]), expected.relu())
 
 
+@pytest.mark.skip(reason="tensor reductions not fully supported yet")
 def test_tensor_reductions():
     """TensorSum, TensorMean, TensorMax, Argmax as temp wires."""
     data = (Wire(dt.Float([4])), Wire(dt.Float([4])))

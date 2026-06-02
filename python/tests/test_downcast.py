@@ -168,7 +168,6 @@ def test_try_to_rla_uppercase():
     assert "module" in str(result)
 
 
-@_unsupported
 def test_try_to_rla_int_wire():
     result = _simple_real_module().try_to("rla")
     assert "module" in str(result)
@@ -192,7 +191,6 @@ def test_try_to_rla_print(capsys):
 # ---------------------------------------------------------------------------
 
 
-@_unsupported
 def test_try_to_rla_1d_dtype_fails():
     x = (Wire(Bool(3)), Wire(Bool(3)))
     init = [Term(it.Tensor(torch.tensor([True, True, True])), [x[1]])]
@@ -248,36 +246,32 @@ def _int_matrix_wire(m=2, n=2):
 def _matrix_counter_module():
     """Float vector accumulates a fixed increment each step.
 
-    Uses Add (valid op) + Tensor itype for init (not in LIA/RLA TryFrom).
-    Dtype is also Float, rejected by LIA/RLA.
+    Float dtype is rejected by LIA/RLA downcast.
     """
     x = _float_vector_wire(3)
     y = _float_vector_wire(3)
     init = [
-        Term(it.Tensor(torch.zeros(3)), [x[1]]),
-        Term(it.Tensor(torch.ones(3)), [y[1]]),
+        Term(it.LRA.ConstReal(torch.zeros(1, 3)), [x[1]]),
+        Term(it.LRA.ConstReal(torch.ones(1, 3)), [y[1]]),
     ]
     update = [
-        Term(it.Add(), [x[1]], [x[0], y[0]]),
-        Term(it.Id(), [y[1]], [y[0]]),
+        Term(it.LRA.Add(), [x[1]], [x[0], y[0]]),
+        Term(it.LRA.Id(), [y[1]], [y[0]]),
     ]
     return Module.sequential(init, update, obs=[x, y])
 
 
 def _int_matrix_add_module():
-    """Int(2,2) matrix accumulates a fixed Int(2,2) increment each step.
-
-    dtype Int with 2D shape is LIA/RLA-compatible, but Tensor init itype is not.
-    """
+    """Int(2,2) matrix accumulates a fixed Int(2,2) increment each step."""
     x = _int_matrix_wire()
     y = _int_matrix_wire()
     init = [
-        Term(it.Tensor(torch.zeros(2, 2, dtype=torch.long)), [x[1]]),
-        Term(it.Tensor(torch.ones(2, 2, dtype=torch.long)), [y[1]]),
+        Term(it.LIA.ConstInt(torch.zeros(2, 2, dtype=torch.long)), [x[1]]),
+        Term(it.LIA.ConstInt(torch.ones(2, 2, dtype=torch.long)), [y[1]]),
     ]
     update = [
-        Term(it.Add(), [x[1]], [x[0], y[0]]),
-        Term(it.Id(), [y[1]], [y[0]]),
+        Term(it.LIA.Add(), [x[1]], [x[0], y[0]]),
+        Term(it.LIA.Id(), [y[1]], [y[0]]),
     ]
     return Module.sequential(init, update, obs=[x, y])
 
@@ -340,13 +334,16 @@ def _int_counter_module():
 
 
 def _real_counter_module():
-    """Real(1,1) scalar counter using Add + ConstInt — fully RLA-compatible."""
+    """Real(1,1) scalar counter — fully RLA-compatible."""
     x = _real_wire()
     y = _real_wire()
-    init = [Term(it.ConstInt(0), [x[1]]), Term(it.ConstInt(1), [y[1]])]
+    init = [
+        Term(it.LRA.ConstReal(torch.tensor([[0.0]])), [x[1]]),
+        Term(it.LRA.ConstReal(torch.tensor([[1.0]])), [y[1]]),
+    ]
     update = [
-        Term(it.Add(), [x[1]], [x[0], y[0]]),
-        Term(it.Id(), [y[1]], [y[0]]),
+        Term(it.LRA.Add(), [x[1]], [x[0], y[0]]),
+        Term(it.LRA.Id(), [y[1]], [y[0]]),
     ]
     return Module.sequential(init, update, obs=[x, y])
 
@@ -635,7 +632,6 @@ def test_try_to_rla_tensor_itype_fails():
 # ---------------------------------------------------------------------------
 
 
-@_unsupported
 def test_matrix_counter_builds():
     m = _matrix_counter_module()
     assert m is not None
@@ -680,15 +676,14 @@ def test_try_to_lia_int_counter():
     assert "module" in str(result)
 
 
-@_unsupported
 def test_try_to_rla_int_counter():
     result = _real_counter_module().try_to("rla")
     assert "module" in str(result)
 
 
 # ---------------------------------------------------------------------------
-# Tensor-based: matrix counter (float vector, Tensor init) fails LIA/RLA
-# Float dtype and Tensor itype are both rejected
+# Tensor-based: matrix counter (float vector, LRA ops)
+# Float/LRA is rejected by LIA but compatible with RLA
 # ---------------------------------------------------------------------------
 
 
@@ -697,9 +692,9 @@ def test_try_to_lia_matrix_counter_fails():
         _matrix_counter_module().try_to("lia")
 
 
-def test_try_to_rla_matrix_counter_fails():
-    with pytest.raises(Exception):
-        _matrix_counter_module().try_to("rla")
+def test_try_to_rla_matrix_counter():
+    result = _matrix_counter_module().try_to("rla")
+    assert "module" in str(result)
 
 
 # ---------------------------------------------------------------------------
@@ -707,11 +702,10 @@ def test_try_to_rla_matrix_counter_fails():
 # ---------------------------------------------------------------------------
 
 
-@_unsupported
-def test_try_to_lia_int_matrix_add_fails():
-    """Int(2,2) dtype is LIA-compatible but Tensor init itype is not."""
-    with pytest.raises(Exception):
-        _int_matrix_add_module().try_to("lia")
+def test_try_to_lia_int_matrix_add():
+    """Int(2,2) module with LIA ops can be downcast to LIA."""
+    result = _int_matrix_add_module().try_to("lia")
+    assert "module" in str(result)
 
 
 def test_try_to_rla_int_matrix_add_fails():
@@ -941,23 +935,21 @@ def test_try_to_bv_sub_fails():
 # ---------------------------------------------------------------------------
 
 
-@_unsupported
 def test_try_to_bv_const_int_overflow_fails():
-    """ConstInt(256) does not fit in 8 bits — BV::check rejects it."""
+    """ConstInt(256) does not fit in 8 bits — BV rejects it."""
     x = _bv_wire(8)
-    init = [Term(it.ConstInt(256), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
-    m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):
+        init = [Term(it.BV.Const(256), [x[1]])]
+        update = [Term(it.BV.Id, [x[1]], [x[0]])]
+        m = Module.sequential(init, update, [x])
         m.try_to("bv")
 
 
-@_unsupported
 def test_try_to_bv_const_int_max_fits():
     """ConstInt(255) fits exactly in 8 bits."""
     x = _bv_wire(8)
-    init = [Term(it.ConstInt(255), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
+    init = [Term(it.BV.Const(255), [x[1]])]
+    update = [Term(it.BV.Id, [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     result = m.try_to("bv")
     assert "module" in str(result)
