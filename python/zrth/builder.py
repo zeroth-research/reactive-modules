@@ -56,6 +56,12 @@ class TermBuilder:
         # Output has same dtype family as input, reshaped to [1, 1]
         return Term(self._ns.Argmax(), [Wire(w.dtype.reshape([1, 1]))], [w])
 
+    def python_type_to_dtype(self, python_type: type, shape: list):
+        raise NotImplementedError
+
+    def space_to_dtype(self, space, is_action: bool):
+        raise NotImplementedError
+
     def uninterpreted(self, name: str, dtype) -> Term:
         return Term(self._ns.Uninterpreted(name), [Wire(dtype)])
 
@@ -168,6 +174,22 @@ class LRATermBuilder(TermBuilder):
             return Term(_IType.LRA.Linear(A, b_bias), [Wire(var_wire.dtype)], [var_wire])
         return None
 
+    def python_type_to_dtype(self, python_type: type, shape: list):
+        if python_type == bool:
+            return DType.Bool(shape)
+        return DType.Float(shape)  # int and float both map to Real in LRA
+
+    def space_to_dtype(self, space, is_action: bool):
+        import gymnasium as gym
+        if isinstance(space, gym.spaces.Discrete):
+            return DType.Float([space.n]) if is_action else DType.Float([1])
+        elif isinstance(space, gym.spaces.Box):
+            return DType.Float(list(space.shape))
+        elif isinstance(space, gym.spaces.MultiBinary):
+            return DType.Bool([space.n])
+        else:
+            raise ValueError(f"Unsupported gym space type: {type(space).__name__}")
+
     def const(self, tensor, output_wire=None) -> Term:
         if tensor.dtype == torch.bool:
             w = output_wire or Wire(Bool(1, 1))
@@ -229,6 +251,22 @@ class LIATermBuilder(TermBuilder):
             b_bias = torch.zeros(1, 1, dtype=torch.int64)
             return Term(_IType.LIA.Linear(A, b_bias), [Wire(var_wire.dtype)], [var_wire])
         return None
+
+    def python_type_to_dtype(self, python_type: type, shape: list):
+        if python_type == bool:
+            return DType.Bool(shape)
+        return DType.Int(shape)  # int and float both map to Int in LIA
+
+    def space_to_dtype(self, space, is_action: bool):
+        import gymnasium as gym
+        if isinstance(space, gym.spaces.Discrete):
+            return DType.Float([space.n]) if is_action else DType.Int([1])
+        elif isinstance(space, gym.spaces.Box):
+            return DType.Int(list(space.shape))
+        elif isinstance(space, gym.spaces.MultiBinary):
+            return DType.Bool([space.n])
+        else:
+            raise ValueError(f"Unsupported gym space type: {type(space).__name__}")
 
     def const(self, tensor, output_wire=None) -> Term:
         if tensor.dtype == torch.bool:

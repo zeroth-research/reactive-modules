@@ -1051,20 +1051,6 @@ def format_results(states: List[AbstractState]) -> str:
 # Module helpers (used by Env / NN wrapping logic)
 # ---------------------------------------------------------------------------
 
-_PYTHON_TYPE_TO_DTYPE = {
-    bool: DType.Bool,
-    float: DType.Float,
-    int: DType.Int,
-}
-
-_GYM_SPACE_TO_DTYPE = {
-    "Discrete": DType.Int,
-    "Box": DType.Float,
-    "MultiBinary": DType.Bool,
-}
-
-
-
 def wire_pair(dtype):
     """Create a [latched, next] wire pair for the given dtype."""
     return [Wire(dtype), Wire(dtype)]
@@ -1111,72 +1097,18 @@ def _infer_shape_and_elem_type(value):
     raise ValueError(f"Unsupported element type: {type(value).__name__}")
 
 
-def infer_dtype(name, abstract_value):
-    """Infer a DType from an AbstractValue."""
+def infer_dtype(name, abstract_value, builder):
+    """Infer a DType from an AbstractValue using the builder's theory."""
     if abstract_value is None:
         raise ValueError(f"Cannot infer DType for '{name}': analyzer returned None")
 
     if abstract_value.is_const():
         shape, elem_type = _infer_shape_and_elem_type(abstract_value.value)
-        dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(elem_type)
-        if dtype_fn is None:
-            raise ValueError(
-                f"Cannot infer DType for '{name}': unsupported element type '{elem_type.__name__}'"
-            )
-        return dtype_fn(shape or [1])
+        return builder.python_type_to_dtype(elem_type, shape or [1])
 
     if abstract_value.type_ is None:
         raise ValueError(f"Cannot infer DType for '{name}': analyzer returned {abstract_value}")
-    dtype_fn = _PYTHON_TYPE_TO_DTYPE.get(abstract_value.type_)
-    if dtype_fn is None:
-        raise ValueError(
-            f"Cannot infer DType for '{name}': unsupported Python type '{abstract_value.type_.__name__}'"
-        )
-    return dtype_fn([1])
-
-
-def _parse_call_repr(call_repr):
-    """Parse an AbstractValue call_repr string into (func_name, pos_args, kw_args).
-
-    E.g. "spaces.Discrete(2)" -> ("Discrete", [2], {})
-         "spaces.Box(low=0, high=10, shape=(1,))" -> ("Box", [], {"low": 0, "high": 10, "shape": (1,)})
-    """
-    node = ast.parse(call_repr, mode='eval').body
-    if not isinstance(node, ast.Call):
-        raise ValueError(f"Expected a call expression, got: {call_repr}")
-    func = node.func
-    if isinstance(func, ast.Attribute):
-        name = func.attr
-    elif isinstance(func, ast.Name):
-        name = func.id
-    else:
-        raise ValueError(f"Cannot extract function name from: {call_repr}")
-    pos_args = [ast.literal_eval(a) for a in node.args]
-    kw_args = {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}
-    return name, pos_args, kw_args
-
-
-def _gym_space_to_dtype(space_name, pos_args, kw_args, is_action):
-    """Convert a parsed gym space into a DType.
-
-    For action (is_action=True): always Float, shape = number of actions.
-    For observation (is_action=False): element type from _GYM_SPACE_TO_DTYPE.
-    """
-    dtype_fn = _GYM_SPACE_TO_DTYPE.get(space_name)
-    if dtype_fn is None:
-        raise ValueError(f"Unsupported gym space type: {space_name}")
-
-    if space_name == "Discrete":
-        n = pos_args[0]
-        return DType.Float([n]) if is_action else dtype_fn([1])
-    elif space_name == "Box":
-        shape = kw_args.get("shape") or (pos_args[2] if len(pos_args) > 2 else None)
-        if shape is None:
-            raise ValueError("Box space requires a 'shape' argument")
-        return dtype_fn(list(shape))
-    else:  # MultiBinary
-        return dtype_fn([pos_args[0]])
-
+    return builder.python_type_to_dtype(abstract_value.type_, [1])
 
 
 def classify_attrs(cls, roots, init_attrs=None, base_cls=None):

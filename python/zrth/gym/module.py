@@ -15,17 +15,6 @@ from ..eval import eval_itype, execute_init, execute_update, read_wire, getattr_
 # Gym-specific helpers
 # ============================================================================
 
-def _space_to_dtype(space, is_action=False):
-    """Convert a gym.spaces.Space object directly to a DType."""
-    if isinstance(space, gym.spaces.Discrete):
-        return DType.Float([space.n]) if is_action else DType.Int([1])
-    elif isinstance(space, gym.spaces.Box):
-        return DType.Float(list(space.shape))
-    elif isinstance(space, gym.spaces.MultiBinary):
-        return DType.Bool([space.n])
-    else:
-        raise ValueError(f"Unsupported gym space type: {type(space).__name__}")
-
 
 def _value_to_const_term(value, wire, builder):
     """Create a constant Term that writes a Python value to a wire."""
@@ -109,8 +98,10 @@ def _extract_env_module(env_instance, **kwargs):
         p for p in inspect.signature(env_cls.step).parameters if p != "self"
     )
 
-    action_dtype = _space_to_dtype(env_instance.action_space, is_action=True)
-    observation_dtype = _space_to_dtype(env_instance.observation_space, is_action=False)
+    _builder = LRATermBuilder()
+
+    action_dtype = _builder.space_to_dtype(env_instance.action_space, is_action=True)
+    observation_dtype = _builder.space_to_dtype(env_instance.observation_space, is_action=False)
 
     init_attrs = _instance_to_init_attrs(env_instance)
 
@@ -118,19 +109,14 @@ def _extract_env_module(env_instance, **kwargs):
         env_cls, ['reset', 'step'], init_attrs=init_attrs, base_cls=gym.Env
     )
 
-    _builder = LRATermBuilder()
-
-    prvt_wires = {name: wire_pair(infer_dtype(name, attr_vals.get(name))) for name in prvt}
+    prvt_wires = {name: wire_pair(infer_dtype(name, attr_vals.get(name), _builder)) for name in prvt}
 
     # Bake parameters as constant terms (written to temp wires, no param interface needed)
     const_wires = {}
     const_terms = []
     for name in params:
         value = getattr(env_instance, name)
-        dtype = infer_dtype(name, AbstractValue.const(value))
-        # Real-valued theories (LRA) have no Int type; promote scalar ints to Float.
-        if dtype.is_int():
-            dtype = DType.Float(list(dtype.shape))
+        dtype = infer_dtype(name, AbstractValue.const(value), _builder)
         wire = Wire(dtype)
         const_wires[name] = [wire, wire]  # fake pair so analyzer resolves self.name
         const_terms.append(_value_to_const_term(value, wire, _builder))
