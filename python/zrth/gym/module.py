@@ -4,6 +4,7 @@ import gymnasium as gym
 
 from ..zrth import Module, Wire, DType, Term
 from .. import IType
+from ..builder import LRATermBuilder
 from ..analyzer import (
     convert_method, classify_attrs, infer_dtype, wire_pair, resolve_wire,
     AbstractValue,
@@ -30,13 +31,12 @@ def _space_to_dtype(space, is_action=False):
 def _value_to_const_term(value, wire):
     """Create a constant Term that writes a Python value to a wire."""
     if isinstance(value, bool):
-        return Term(IType.ConstBool(value), [wire], [])
+        return Term(IType.LRA.ConstBool(value), [wire], [])
     elif isinstance(value, (int, float)):
-        # IType.Tensor dispatches to ConstInt/ConstReal/Const based on current theory.
         tensor = torch.tensor([float(value)], dtype=torch.float32)
-        return Term(IType.Tensor(tensor), [wire], [])
+        return Term(IType.LRA.ConstReal(tensor), [wire], [])
     elif isinstance(value, torch.Tensor):
-        return Term(IType.Tensor(value.clone()), [wire], [])
+        return Term(IType.LRA.ConstReal(value.clone()), [wire], [])
     else:
         raise ValueError(f"Cannot create constant term for {type(value).__name__}: {value}")
 
@@ -150,14 +150,15 @@ def _extract_env_module(env_instance, **kwargs):
     reset_result = [observation[1]]
     step_result  = [observation[1], reward[1], terminated[1], truncated[1]]
 
-    reset_terms = convert_method(env_cls.reset, wires, reset_result, cls=env_cls, static_attrs=static_attrs)
-    step_terms  = convert_method(env_cls.step,  wires, step_result,  cls=env_cls, static_attrs=static_attrs)
+    _builder = LRATermBuilder()
+    reset_terms = convert_method(env_cls.reset, wires, reset_result, cls=env_cls, builder=_builder)
+    step_terms  = convert_method(env_cls.step,  wires, step_result,  cls=env_cls, builder=_builder)
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [
-        Term(IType.Tensor(torch.tensor([0.0])), [reward[1]], []),
-        Term(IType.ConstBool(False), [terminated[1]], []),
-        Term(IType.ConstBool(False), [truncated[1]], []),
+        Term(IType.LRA.ConstReal(torch.tensor([0.0])), [reward[1]], []),
+        Term(IType.LRA.ConstBool(False), [terminated[1]], []),
+        Term(IType.LRA.ConstBool(False), [truncated[1]], []),
     ]
 
     # Prepend constant terms so wires have values before they're read
