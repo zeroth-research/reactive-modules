@@ -3,7 +3,6 @@ import inspect
 import gymnasium as gym
 
 from ..zrth import Module, Wire, DType, Term
-from .. import IType
 from ..builder import LRATermBuilder
 from ..analyzer import (
     convert_method, classify_attrs, infer_dtype, wire_pair, resolve_wire,
@@ -28,15 +27,15 @@ def _space_to_dtype(space, is_action=False):
         raise ValueError(f"Unsupported gym space type: {type(space).__name__}")
 
 
-def _value_to_const_term(value, wire):
+def _value_to_const_term(value, wire, builder):
     """Create a constant Term that writes a Python value to a wire."""
     if isinstance(value, bool):
-        return Term(IType.LRA.ConstBool(value), [wire], [])
+        return builder.const_bool(value, output_wire=wire)
     elif isinstance(value, (int, float)):
         tensor = torch.tensor([float(value)], dtype=torch.float32)
-        return Term(IType.LRA.ConstReal(tensor), [wire], [])
+        return builder.const(tensor, output_wire=wire)
     elif isinstance(value, torch.Tensor):
-        return Term(IType.LRA.ConstReal(value.clone()), [wire], [])
+        return builder.const(value.clone(), output_wire=wire)
     else:
         raise ValueError(f"Cannot create constant term for {type(value).__name__}: {value}")
 
@@ -119,6 +118,8 @@ def _extract_env_module(env_instance, **kwargs):
         env_cls, ['reset', 'step'], init_attrs=init_attrs, base_cls=gym.Env
     )
 
+    _builder = LRATermBuilder()
+
     prvt_wires = {name: wire_pair(infer_dtype(name, attr_vals.get(name))) for name in prvt}
 
     # Bake parameters as constant terms (written to temp wires, no param interface needed)
@@ -132,7 +133,7 @@ def _extract_env_module(env_instance, **kwargs):
             dtype = DType.Float(list(dtype.shape))
         wire = Wire(dtype)
         const_wires[name] = [wire, wire]  # fake pair so analyzer resolves self.name
-        const_terms.append(_value_to_const_term(value, wire))
+        const_terms.append(_value_to_const_term(value, wire, _builder))
 
     action      = resolve_wire("action",      action_dtype,      user_wires["action"])
     observation = resolve_wire("observation", observation_dtype, user_wires["observation"])
@@ -146,20 +147,19 @@ def _extract_env_module(env_instance, **kwargs):
     reset_result = [observation[1]]
     step_result  = [observation[1], reward[1], terminated[1], truncated[1]]
 
-    _builder = LRATermBuilder()
     reset_terms = convert_method(env_cls.reset, wires, reset_result, cls=env_cls, builder=_builder)
     step_terms  = convert_method(env_cls.step,  wires, step_result,  cls=env_cls, builder=_builder)
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [
-        Term(IType.LRA.ConstReal(torch.tensor([0.0])), [reward[1]], []),
-        Term(IType.LRA.ConstBool(False), [terminated[1]], []),
-        Term(IType.LRA.ConstBool(False), [truncated[1]], []),
+        _value_to_const_term(0.0, reward[1], _builder),
+        _value_to_const_term(False, terminated[1], _builder),
+        _value_to_const_term(False, truncated[1], _builder),
     ]
 
     # Prepend constant terms so wires have values before they're read
     reset_terms = const_terms + reset_terms
-    step_terms  = [_value_to_const_term(getattr(env_instance, n), const_wires[n][0])
+    step_terms  = [_value_to_const_term(getattr(env_instance, n), const_wires[n][0], _builder)
                    for n in params] + step_terms
 
     obs = [action, observation, reward, terminated, truncated]
