@@ -12,15 +12,7 @@ import pytest
 from .qnetworks import SimpleQNet, GridWorldQNet
 from zrth.gym import Wrapper
 from zrth.torch import Module
-from zrth import IType, set_theory
-
-
-@pytest.fixture(autouse=True)
-def _theory():
-    # Gym envs / nets mix integer state with float weights and rewards;
-    # LRA covers Real + Bool + comparisons, which fits the union better
-    # than LIA. (A truly mixed-theory analyzer is future work.)
-    set_theory(IType.LRA)
+from zrth import IType
 
 
 def simpleqnet():

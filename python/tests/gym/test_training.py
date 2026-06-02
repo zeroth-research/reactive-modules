@@ -7,13 +7,8 @@ from .train import train
 from zrth.gym import Wrapper
 from zrth.torch import Module
 import pytest
-from zrth import Wire, DType, IType, set_theory
+from zrth import Wire, DType, IType
 from zrth.eval import eval_itype
-
-
-@pytest.fixture(autouse=True)
-def _theory():
-    set_theory(IType.LRA)
 
 
 def test_training():
