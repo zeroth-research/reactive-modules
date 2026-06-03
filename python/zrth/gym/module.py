@@ -3,7 +3,7 @@ import inspect
 import gymnasium as gym
 
 from ..zrth import Module, Wire, DType, Term
-from ..builder import LRATermBuilder
+from ..builder import builder_for
 from ..analyzer import (
     convert_method, classify_attrs, infer_dtype, wire_pair, resolve_wire,
     AbstractValue,
@@ -18,15 +18,9 @@ from ..eval import eval_itype, read_wire, getattr_wire
 
 def _value_to_const_term(value, wire, builder):
     """Create a constant Term that writes a Python value to a wire."""
-    if isinstance(value, bool):
-        return builder.const_bool(value, output_wire=wire)
-    elif isinstance(value, (int, float)):
-        tensor = torch.tensor([float(value)], dtype=torch.float32)
-        return builder.const(tensor, output_wire=wire)
-    elif isinstance(value, torch.Tensor):
+    if isinstance(value, torch.Tensor):
         return builder.const(value.clone(), output_wire=wire)
-    else:
-        raise ValueError(f"Cannot create constant term for {type(value).__name__}: {value}")
+    return builder.const_for_value(value, output_wire=wire)
 
 
 def _instance_to_init_attrs(instance):
@@ -65,16 +59,9 @@ def _space_to_abstract(name, space):
 # Env extraction
 # ============================================================================
 
-def _extract_env_module(env_instance, **kwargs):
-    """Analyze a gym.Env instance and extract a symbolic Module.
-
-    If env_instance is wrapped (e.g. TimeLimit from gym.make), the raw inner
-    env is analyzed symbolically, but the wrapped instance remains the
-    backing env for runtime delegation — so TimeLimit/OrderEnforcing etc.
-    still apply during step/reset.
-    """
-    raw = env_instance.unwrapped
-    env_cls = type(raw)
+def _extract_env_module(env_instance, theory=None, **kwargs):
+    """Analyze a gym.Env instance and extract a symbolic Module."""
+    env_cls = type(env_instance)
 
     user_wires = {
         "action":      kwargs.pop("action",      None),
@@ -88,7 +75,7 @@ def _extract_env_module(env_instance, **kwargs):
         p for p in inspect.signature(env_cls.step).parameters if p != "self"
     )
 
-    _builder = LRATermBuilder()
+    _builder = builder_for(theory)
 
     action_dtype = _builder.space_to_dtype(env_instance.action_space, is_action=True)
     observation_dtype = _builder.space_to_dtype(env_instance.observation_space, is_action=False)
@@ -137,8 +124,8 @@ def _extract_env_module(env_instance, **kwargs):
     reset_result = [observation[1]]
     step_result  = [observation[1], reward[1], terminated[1], truncated[1]]
 
-    reset_terms = convert_method(env_cls.reset, wires, reset_result, cls=env_cls, builder=_builder)
-    step_terms  = convert_method(env_cls.step,  wires, step_result,  cls=env_cls, builder=_builder)
+    reset_terms = convert_method(env_cls.reset, wires, reset_result, cls=env_cls, theory=theory)
+    step_terms  = convert_method(env_cls.step,  wires, step_result,  cls=env_cls, theory=theory)
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [

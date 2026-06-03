@@ -2112,6 +2112,7 @@ def convert_method(
     params: dict[str, Wire] | None = None,
     live_layers: dict | None = None,
     builder: TermBuilder | None = None,
+    theory=None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 
@@ -2123,11 +2124,17 @@ def convert_method(
         cls: Class owning the method, needed only for inlining self.helper() calls
         params: Read-only parameter wires (single wires, not pairs) for self.* constants
         live_layers: Optional dict of {layer_name: nn.Linear} for live tensor references
-        builder: Optional TermBuilder instance; defaults to LRATermBuilder()
+        builder: Optional TermBuilder instance; if provided takes precedence over theory
+        theory: IType.LRA (default), IType.LIA, or IType.BV — selects the term builder
+                (ignored if builder is provided)
 
     Returns:
         List of Terms representing the method as a reactive diagram
     """
+    from .builder import builder_for
+    if builder is None:
+        builder = builder_for(theory)
+
     source = textwrap.dedent(inspect.getsource(method))
     func_def = ast.parse(source).body[0]
     if not isinstance(func_def, ast.FunctionDef):

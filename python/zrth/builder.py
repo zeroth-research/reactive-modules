@@ -59,11 +59,19 @@ class TermBuilder:
     def python_type_to_dtype(self, python_type: type, shape: list):
         raise NotImplementedError
 
+    def const_for_value(self, value, output_wire=None) -> 'Term':
+        """Create a constant Term for a Python scalar value."""
+        raise NotImplementedError
+
     def space_to_dtype(self, space, is_action: bool):
         raise NotImplementedError
 
     def uninterpreted(self, name: str, dtype) -> Term:
         return Term(self._ns.Uninterpreted(name), [Wire(dtype)])
+
+    def _numeric_wire(self, shape: list) -> Wire:
+        """Wire of this theory's numeric type with the given shape."""
+        raise NotImplementedError
 
     def linear(self, x, weight, bias) -> list:
         """Emit [Transpose-in, Linear, Transpose-out]. Last write[0] is the output wire."""
@@ -75,10 +83,10 @@ class TermBuilder:
         input_col_wire = Wire(x_wire.dtype.reshape([in_features, 1]))
         t_in = Term(self._ns.Transpose(), [input_col_wire], [x_wire])
 
-        linear_out_wire = Wire(Float(out_features, 1))
+        linear_out_wire = self._numeric_wire([out_features, 1])
         t_lin = Term(self._ns.Linear(weight, bias), [linear_out_wire], [input_col_wire])
 
-        out_wire = Wire(Float(out_features))
+        out_wire = self._numeric_wire([out_features])
         t_out = Term(self._ns.Transpose(), [out_wire], [linear_out_wire])
 
         return [t_in, t_lin, t_out]
@@ -87,9 +95,9 @@ class TermBuilder:
         """Linear with unknown (symbolic) weights. Returns (term, weight_wire, bias_wire)."""
         x_wire = _wire(x)
         in_features = x_wire.dtype.shape[-1]
-        weight_wire = Wire(Float(out_features, in_features))
-        bias_wire = Wire(Float(out_features, 1))
-        out_wire = Wire(Float(out_features))
+        weight_wire = self._numeric_wire([out_features, in_features])
+        bias_wire = self._numeric_wire([out_features, 1])
+        out_wire = self._numeric_wire([out_features])
         term = Term(self._ns.Linear(), [out_wire], [x_wire, weight_wire, bias_wire])
         return term, weight_wire, bias_wire
 
@@ -125,6 +133,9 @@ class TermBuilder:
 
 class LRATermBuilder(TermBuilder):
     _ns = _IType.LRA
+
+    def _numeric_wire(self, shape: list) -> Wire:
+        return Wire(DType.Float(shape))
 
     def add(self, a, b) -> Term:
         return Term(_IType.LRA.Add(), [Wire(_dtype(a))], [_wire(a), _wire(b)])
@@ -174,6 +185,13 @@ class LRATermBuilder(TermBuilder):
             return Term(_IType.LRA.Linear(A, b_bias), [Wire(var_wire.dtype)], [var_wire])
         return None
 
+    def const_for_value(self, value, output_wire=None) -> Term:
+        if isinstance(value, bool):
+            return self.const_bool(value, output_wire=output_wire)
+        # LRA uses real arithmetic — convert everything to float32
+        tensor = torch.tensor([float(value)], dtype=torch.float32)
+        return self.const(tensor, output_wire=output_wire)
+
     def python_type_to_dtype(self, python_type: type, shape: list):
         if python_type == bool:
             return DType.Bool(shape)
@@ -203,6 +221,9 @@ class LRATermBuilder(TermBuilder):
 
 class LIATermBuilder(TermBuilder):
     _ns = _IType.LIA
+
+    def _numeric_wire(self, shape: list) -> Wire:
+        return Wire(DType.Int(shape))
 
     def add(self, a, b) -> Term:
         return Term(_IType.LIA.Add(), [Wire(_dtype(a))], [_wire(a), _wire(b)])
@@ -252,6 +273,16 @@ class LIATermBuilder(TermBuilder):
             return Term(_IType.LIA.Linear(A, b_bias), [Wire(var_wire.dtype)], [var_wire])
         return None
 
+    def const_for_value(self, value, output_wire=None) -> Term:
+        if isinstance(value, bool):
+            return self.const_bool(value, output_wire=output_wire)
+        if isinstance(value, int):
+            tensor = torch.tensor([value], dtype=torch.int64)
+        else:
+            # float in LIA context: convert to int64
+            tensor = torch.tensor([int(value)], dtype=torch.int64)
+        return self.const(tensor, output_wire=output_wire)
+
     def python_type_to_dtype(self, python_type: type, shape: list):
         if python_type == bool:
             return DType.Bool(shape)
@@ -281,6 +312,27 @@ class LIATermBuilder(TermBuilder):
 
 class BVTermBuilder(TermBuilder):
     _ns = _IType.BV
+
+    def _numeric_wire(self, shape: list) -> Wire:
+        return Wire(DType.BV(32).reshape(shape))
+
+    def python_type_to_dtype(self, python_type: type, shape: list):
+        if python_type == bool:
+            return DType.Bool(shape)
+        return DType.BV(32).reshape(shape)
+
+    def space_to_dtype(self, space, is_action: bool):
+        import gymnasium as gym
+        import math
+        if isinstance(space, gym.spaces.Discrete):
+            bits = max(1, int(math.ceil(math.log2(space.n + 1))))
+            return DType.BV(bits).reshape([1]) if not is_action else DType.BV(bits).reshape([1])
+        elif isinstance(space, gym.spaces.Box):
+            return DType.BV(32).reshape(list(space.shape))
+        elif isinstance(space, gym.spaces.MultiBinary):
+            return DType.Bool([space.n])
+        else:
+            raise ValueError(f"Unsupported gym space type: {type(space).__name__}")
 
     def add(self, a, b) -> Term:
         return Term(_IType.BV.Add(), [Wire(_dtype(a))], [_wire(a), _wire(b)])
@@ -324,9 +376,30 @@ class BVTermBuilder(TermBuilder):
         new_bw = a_w.dtype.bv_bitwidth() + extra
         out = Wire(DType.BV(new_bw))
         return Term(_IType.BV.Extend(extra), [out], [a_w])
+    def const_for_value(self, value, output_wire=None) -> Term:
+        if isinstance(value, bool):
+            tensor = torch.tensor([value], dtype=torch.bool)
+        else:
+            tensor = torch.tensor([int(value)], dtype=torch.int64)
+        return self.const(tensor, output_wire=output_wire)
+
     def const(self, tensor, output_wire=None) -> Term:
         if tensor.dtype == torch.bool:
             w = output_wire or Wire(DType.BV(1))
             return Term(_IType.BV.Const(tensor), [w])
         out = output_wire or Wire(DType.BV(32))
         return Term(_IType.BV.Const(tensor), [out])
+
+
+def builder_for(theory=None) -> 'TermBuilder':
+    """Create the appropriate TermBuilder for the given theory.
+
+    theory: IType.LRA, IType.LIA, IType.BV, or None (defaults to LRA)
+    """
+    if theory is None or theory is _IType.LRA:
+        return LRATermBuilder()
+    if theory is _IType.LIA:
+        return LIATermBuilder()
+    if theory is _IType.BV:
+        return BVTermBuilder()
+    raise ValueError(f"Unknown theory: {theory!r}. Use IType.LRA, IType.LIA, or IType.BV.")
