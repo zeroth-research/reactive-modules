@@ -34,6 +34,52 @@ def _to_bool(vals):
     return [v if z3.is_bool(v) else v != z3.RealVal(0) for v in vals]
 
 
+def _z3_linear(itype, read):
+    """Translate a Linear term to Z3 expressions."""
+    if len(read) == 3:
+        x, weight, bias = read
+        # Element-wise: result[i] = sum_j(weight[i,j] * x[j]) + bias[i]
+        # For simplicity treat as a single flat list
+        result = [a + b for a, b in zip(
+            [sum(w * xi for w, xi in zip(row, _to_arith(x))) for row in weight],
+            _to_arith(bias)
+        )]
+        return [result]
+    else:
+        x = read[0]
+        weight = getattr(itype, 'weight', None)
+        bias = getattr(itype, 'bias', None)
+        if weight is None:
+            import torch
+            cd = itype.const_data
+            if isinstance(cd, (tuple, list)):
+                weight_tensor, bias_tensor = cd[0], cd[1]
+            else:
+                weight_tensor = cd
+                bias_tensor = None
+            weight = _tensor_to_z3(weight_tensor)
+            bias = _tensor_to_z3(bias_tensor) if bias_tensor is not None else [z3.RealVal(0)]
+        else:
+            import torch
+            weight = _tensor_to_z3(weight) if hasattr(weight, 'detach') else weight
+            bias = _tensor_to_z3(bias) if bias is not None and hasattr(bias, 'detach') else (bias or [z3.RealVal(0)])
+        # Best-effort: treat x and weight as flat lists
+        x_arith = _to_arith(x)
+        w_arith = _to_arith(weight) if isinstance(weight, list) else weight
+        b_arith = _to_arith(bias) if isinstance(bias, list) else bias
+        # output length = len(bias)
+        n_out = len(b_arith)
+        n_in = len(x_arith)
+        if n_out > 0 and n_in > 0:
+            result = [
+                sum(w_arith[i * n_in + j] * x_arith[j] for j in range(n_in)) + b_arith[i]
+                for i in range(n_out)
+            ]
+        else:
+            result = b_arith
+        return [result]
+
+
 def _z3_ite(itype, read):
     cond = read[0]
     then_branch = read[1]
@@ -66,7 +112,9 @@ _Z3_EVAL = {
     "Const": lambda it, r: [_tensor_to_z3(it.const_data)],
     # Arithmetic (element-wise)
     "Add": lambda it, r: [[a + b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
+    "Sub": lambda it, r: [[a - b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
     "Mul": lambda it, r: [[a * b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
+    "Linear": lambda it, r: _z3_linear(it, r),
     # Comparisons (element-wise, produce Bool)
     "Eq": lambda it, r: [[a == b for a, b in zip(r[0], r[1])]],
     "Ne": lambda it, r: [[a != b for a, b in zip(r[0], r[1])]],

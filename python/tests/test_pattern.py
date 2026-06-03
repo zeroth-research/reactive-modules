@@ -1,12 +1,7 @@
 import pytest
 import gymnasium as gym
-from zrth import Module, Wire, Term, DType, IType, set_theory
+from zrth import Module, Wire, Term, DType, IType
 from gymnasium import spaces
-
-
-@pytest.fixture(autouse=True)
-def _theory():
-    set_theory(IType.LIA)
 
 Real = DType.Real
 Bool = DType.Bool
@@ -19,9 +14,9 @@ def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result
     # uninterpreted reads / writes.
     terms = []
     for r in read.values():
-        terms.append(Term(IType.Uninterpreted("method"), [], [r]))
+        terms.append(Term(IType.LIA.Uninterpreted("method"), [], [r]))
     for w in list(write.values()) + list(result):
-        terms.append(Term(IType.Uninterpreted("method"), [w]))
+        terms.append(Term(IType.LIA.Uninterpreted("method"), [w]))
     return terms
 
 

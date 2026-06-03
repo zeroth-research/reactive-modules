@@ -3,12 +3,7 @@
 from pathlib import Path
 import pytest
 
-from zrth import Wire, DType, IType, Module, parse_smv, set_theory
-
-
-@pytest.fixture(autouse=True)
-def _theory():
-    set_theory(IType.LIA)
+from zrth import Wire, DType, IType, Module, parse_smv
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 

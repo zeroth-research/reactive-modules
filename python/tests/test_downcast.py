@@ -1,12 +1,7 @@
 import pytest
 import torch
-from zrth import Wire, Term, Module, IType as it, DType, set_theory
+from zrth import Wire, Term, Module, IType as it, DType
 from zrth import Bool, Int, Float, Real
-
-
-@pytest.fixture(autouse=True)
-def _theory():
-    set_theory(it.LIA)
 
 
 # Skip marker for tests that built modules under the old loose-theory regime.
@@ -34,15 +29,15 @@ def _int_wire():
 
 def _simple_bool_module():
     x = _bool_wire()
-    init = [Term(it.ConstBool(True), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
+    init = [Term(it.LIA.ConstBool(True), [x[1]])]
+    update = [Term(it.LIA.Id(), [x[1]], [x[0]])]
     return Module.sequential(init, update, [x])
 
 
 def _simple_int_module():
     x = _int_wire()
-    init = [Term(it.ConstInt(0), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
+    init = [Term(it.LIA.ConstInt(0), [x[1]])]
+    update = [Term(it.LIA.Id(), [x[1]], [x[0]])]
     return Module.sequential(init, update, [x])
 
 
@@ -62,12 +57,12 @@ def _logic_module():
     x = _bool_wire()
     y = _bool_wire()
     init = [
-        Term(it.ConstBool(False), [x[1]]),
-        Term(it.ConstBool(True), [y[1]]),
+        Term(it.LIA.ConstBool(False), [x[1]]),
+        Term(it.LIA.ConstBool(True), [y[1]]),
     ]
     update = [
-        Term(it.And(), [x[1]], [x[0], y[0]]),
-        Term(it.Id(), [y[1]], [y[0]]),
+        Term(it.LIA.And(), [x[1]], [x[0], y[0]]),
+        Term(it.LIA.Id(), [y[1]], [y[0]]),
     ]
     return Module.sequential(init, update, obs=[x, y])
 
@@ -103,7 +98,7 @@ def test_try_to_lia_combinatorial():
     x = _bool_wire()
     y = _bool_wire()
     z = _bool_wire()
-    assign = [Term(it.Or(), [z[1]], [x[1], y[1]])]
+    assign = [Term(it.LIA.Or(), [z[1]], [x[1], y[1]])]
     m = Module.combinatorial(assign, obs=[z, x, y])
     result = m.try_to("lia")
     assert "module" in str(result)
@@ -193,8 +188,8 @@ def test_try_to_rla_print(capsys):
 
 def test_try_to_rla_1d_dtype_fails():
     x = (Wire(Bool(3)), Wire(Bool(3)))
-    init = [Term(it.Tensor(torch.tensor([True, True, True])), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
+    init = [Term(it.LIA.ConstBool(torch.tensor([True, True, True])), [x[1]])]
+    update = [Term(it.LIA.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):
         m.try_to("rla")
@@ -203,8 +198,8 @@ def test_try_to_rla_1d_dtype_fails():
 def test_try_to_rla_sub_fails():
     x = _int_wire()
     y = _int_wire()
-    init = [Term(it.ConstInt(1), [x[1]]), Term(it.ConstInt(2), [y[1]])]
-    update = [Term(it.Sub(), [x[1]], [x[0], y[0]]), Term(it.Id(), [y[1]], [y[0]])]
+    init = [Term(it.LIA.ConstInt(1), [x[1]]), Term(it.LIA.ConstInt(2), [y[1]])]
+    update = [Term(it.LIA.Sub(), [x[1]], [x[0], y[0]]), Term(it.LIA.Id(), [y[1]], [y[0]])]
     m = Module.sequential(init, update, obs=[x, y])
     with pytest.raises(Exception):
         m.try_to("rla")
@@ -281,27 +276,31 @@ def _matmul_module():
     x = _float_vector_wire(2)
     w = (Wire(Float(2, 2)), Wire(Float(2, 2)))
     init = [
-        Term(it.Tensor(torch.tensor([1.0, 0.0])), [x[1]]),
-        Term(it.Tensor(torch.eye(2)), [w[1]]),
+        Term(it.LRA.ConstReal(torch.tensor([[1.0, 0.0]])), [x[1]]),
+        Term(it.LRA.ConstReal(torch.eye(2)), [w[1]]),
     ]
     update = [
-        Term(it.MatMul(), [x[1]], [w[0], x[0]]),
-        Term(it.Id(), [w[1]], [w[0]]),
+        Term(it.BV.MatMul(), [x[1]], [w[0], x[0]]),
+        Term(it.LRA.Id(), [w[1]], [w[0]]),
     ]
     return Module.sequential(init, update, obs=[x, w])
 
 
 def _tensor_sum_module():
-    """Float vector state, scalar reduction each step."""
+    """Float vector state, scalar reduction each step.
+
+    Uses Float dtype (rejected by LIA) and BV.Const op (rejected by LRA), so both
+    try_to("lia") and try_to("rla") are expected to raise.
+    """
     x = _float_vector_wire(4)
-    s = (Wire(Float(1)), Wire(Float(1)))
+    s = (Wire(Float(1, 1)), Wire(Float(1, 1)))
     init = [
-        Term(it.Tensor(torch.tensor([1.0, 2.0, 3.0, 4.0])), [x[1]]),
-        Term(it.Tensor(torch.zeros(1)), [s[1]]),
+        Term(it.LRA.ConstReal(torch.tensor([[1.0, 2.0, 3.0, 4.0]])), [x[1]]),
+        Term(it.BV.Const(torch.zeros(1, 1)), [s[1]]),  # unsupported in LRA
     ]
     update = [
-        Term(it.Id(), [x[1]], [x[0]]),
-        Term(it.TensorSum(), [s[1]], [x[0]]),
+        Term(it.LRA.Id(), [x[1]], [x[0]]),
+        Term(it.BV.Const(torch.zeros(1, 1)), [s[1]]),  # unsupported in LRA
     ]
     return Module.sequential(init, update, obs=[x, s])
 
@@ -311,12 +310,12 @@ def _argmax_module():
     x = _float_vector_wire(4)
     idx = (Wire(DType.Int([1])), Wire(DType.Int([1])))
     init = [
-        Term(it.Tensor(torch.tensor([1.0, 3.0, 0.5, 2.0])), [x[1]]),
-        Term(it.ConstInt(1), [idx[1]]),
+        Term(it.LRA.ConstReal(torch.tensor([[1.0, 3.0, 0.5, 2.0]])), [x[1]]),
+        Term(it.LIA.ConstInt(1), [idx[1]]),
     ]
     update = [
-        Term(it.Id(), [x[1]], [x[0]]),
-        Term(it.Argmax(), [idx[1]], [x[0]]),
+        Term(it.LRA.Id(), [x[1]], [x[0]]),
+        Term(it.LIA.Argmax(), [idx[1]], [x[0]]),
     ]
     return Module.sequential(init, update, obs=[x, idx])
 
@@ -325,10 +324,10 @@ def _int_counter_module():
     """Int(1,1) scalar counter using Add + ConstInt — fully LIA-compatible."""
     x = _int_wire()
     y = _int_wire()
-    init = [Term(it.ConstInt(0), [x[1]]), Term(it.ConstInt(1), [y[1]])]
+    init = [Term(it.LIA.ConstInt(0), [x[1]]), Term(it.LIA.ConstInt(1), [y[1]])]
     update = [
-        Term(it.Add(), [x[1]], [x[0], y[0]]),
-        Term(it.Id(), [y[1]], [y[0]]),
+        Term(it.LIA.Add(), [x[1]], [x[0], y[0]]),
+        Term(it.LIA.Id(), [y[1]], [y[0]]),
     ]
     return Module.sequential(init, update, obs=[x, y])
 
@@ -363,14 +362,14 @@ def _counter_module():
     y = _bool_wire()
     z = _bool_wire()
     init = [
-        Term(it.ConstBool(False), [x[1]]),
-        Term(it.ConstBool(False), [y[1]]),
-        Term(it.ConstBool(False), [z[1]]),
+        Term(it.LIA.ConstBool(False), [x[1]]),
+        Term(it.LIA.ConstBool(False), [y[1]]),
+        Term(it.LIA.ConstBool(False), [z[1]]),
     ]
     update = [
-        Term(it.Not(), [x[1]], [x[0]]),
-        Term(it.Id(), [y[1]], [x[0]]),
-        Term(it.And(), [z[1]], [x[0], y[0]]),
+        Term(it.LIA.Not(), [x[1]], [x[0]]),
+        Term(it.LIA.Id(), [y[1]], [x[0]]),
+        Term(it.LIA.And(), [z[1]], [x[0], y[0]]),
     ]
     return Module.sequential(init, update, obs=[x, y, z])
 
@@ -381,14 +380,14 @@ def _ite_module():
     y = _int_wire()
     flag = _bool_wire()
     init = [
-        Term(it.ConstInt(0), [x[1]]),
-        Term(it.ConstInt(5), [y[1]]),
-        Term(it.ConstBool(True), [flag[1]]),
+        Term(it.LIA.ConstInt(0), [x[1]]),
+        Term(it.LIA.ConstInt(5), [y[1]]),
+        Term(it.LIA.ConstBool(True), [flag[1]]),
     ]
     update = [
-        Term(it.Ite(), [x[1]], [flag[0], y[0], x[0]]),
-        Term(it.Id(), [y[1]], [y[0]]),
-        Term(it.Not(), [flag[1]], [flag[0]]),
+        Term(it.LIA.Ite(), [x[1]], [flag[0], y[0], x[0]]),
+        Term(it.LIA.Id(), [y[1]], [y[0]]),
+        Term(it.LIA.Not(), [flag[1]], [flag[0]]),
     ]
     return Module.sequential(init, update, obs=[x, y, flag])
 
@@ -399,14 +398,14 @@ def _ite_real_module():
     y = _real_wire()
     flag = _bool_wire()
     init = [
-        Term(it.ConstInt(0), [x[1]]),
-        Term(it.ConstInt(5), [y[1]]),
-        Term(it.ConstBool(True), [flag[1]]),
+        Term(it.LRA.ConstReal(torch.tensor([[0.0]])), [x[1]]),
+        Term(it.LRA.ConstReal(torch.tensor([[5.0]])), [y[1]]),
+        Term(it.LIA.ConstBool(True), [flag[1]]),
     ]
     update = [
-        Term(it.Ite(), [x[1]], [flag[0], y[0], x[0]]),
-        Term(it.Id(), [y[1]], [y[0]]),
-        Term(it.Not(), [flag[1]], [flag[0]]),
+        Term(it.LRA.Ite(), [x[1]], [flag[0], y[0], x[0]]),
+        Term(it.LRA.Id(), [y[1]], [y[0]]),
+        Term(it.LIA.Not(), [flag[1]], [flag[0]]),
     ]
     return Module.sequential(init, update, obs=[x, y, flag])
 
@@ -414,13 +413,13 @@ def _ite_real_module():
 def _parallel_bool_int_module():
     """Two independent sequential modules composed in parallel."""
     x = _bool_wire()
-    init_x = [Term(it.ConstBool(False), [x[1]])]
-    update_x = [Term(it.Not(), [x[1]], [x[0]])]
+    init_x = [Term(it.LIA.ConstBool(False), [x[1]])]
+    update_x = [Term(it.LIA.Not(), [x[1]], [x[0]])]
     m1 = Module.sequential(init_x, update_x, obs=[x])
 
     y = _int_wire()
-    init_y = [Term(it.ConstInt(0), [y[1]])]
-    update_y = [Term(it.Id(), [y[1]], [y[0]])]
+    init_y = [Term(it.LIA.ConstInt(0), [y[1]])]
+    update_y = [Term(it.LIA.Id(), [y[1]], [y[0]])]
     m2 = Module.sequential(init_y, update_y, obs=[y])
 
     return Module.parallel(m1, m2)
@@ -429,13 +428,13 @@ def _parallel_bool_int_module():
 def _parallel_bool_real_module():
     """Bool + Real parallel modules — Real variant for RLA."""
     x = _bool_wire()
-    init_x = [Term(it.ConstBool(False), [x[1]])]
-    update_x = [Term(it.Not(), [x[1]], [x[0]])]
+    init_x = [Term(it.LIA.ConstBool(False), [x[1]])]
+    update_x = [Term(it.LIA.Not(), [x[1]], [x[0]])]
     m1 = Module.sequential(init_x, update_x, obs=[x])
 
     y = _real_wire()
-    init_y = [Term(it.ConstInt(0), [y[1]])]
-    update_y = [Term(it.Id(), [y[1]], [y[0]])]
+    init_y = [Term(it.LRA.ConstReal(torch.tensor([[0.0]])), [y[1]])]
+    update_y = [Term(it.LRA.Id(), [y[1]], [y[0]])]
     m2 = Module.sequential(init_y, update_y, obs=[y])
 
     return Module.parallel(m1, m2)
@@ -447,16 +446,16 @@ def _xor_chain_module():
     y = _bool_wire()
     z = _bool_wire()
     init = [
-        Term(it.ConstBool(False), [x[1]]),
-        Term(it.ConstBool(True), [y[1]]),
-        Term(it.ConstBool(False), [z[1]]),
+        Term(it.LIA.ConstBool(False), [x[1]]),
+        Term(it.LIA.ConstBool(True), [y[1]]),
+        Term(it.LIA.ConstBool(False), [z[1]]),
     ]
     xor_out = Wire(Bool(1, 1))
     update = [
-        Term(it.Xor(), [xor_out], [x[0], y[0]]),
-        Term(it.Id(), [x[1]], [x[0]]),
-        Term(it.Id(), [y[1]], [y[0]]),
-        Term(it.Id(), [z[1]], [xor_out]),
+        Term(it.LIA.Xor(), [xor_out], [x[0], y[0]]),
+        Term(it.LIA.Id(), [x[1]], [x[0]]),
+        Term(it.LIA.Id(), [y[1]], [y[0]]),
+        Term(it.LIA.Id(), [z[1]], [xor_out]),
     ]
     return Module.sequential(init, update, obs=[x, y, z])
 
@@ -543,8 +542,8 @@ def test_try_to_lia_real_dtype_fails():
 @_unsupported
 def test_try_to_lia_bv_dtype_fails():
     x = (Wire(DType.BV(8)), Wire(DType.BV(8)))
-    init = [Term(it.ConstInt(0), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
+    init = [Term(it.LIA.ConstInt(0), [x[1]])]
+    update = [Term(it.LIA.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):
         m.try_to("lia")
@@ -602,8 +601,8 @@ def test_try_to_rla_float_dtype_fails():
 @_unsupported
 def test_try_to_rla_bv_dtype_fails():
     x = (Wire(DType.BV(8)), Wire(DType.BV(8)))
-    init = [Term(it.ConstInt(0), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
+    init = [Term(it.LIA.ConstInt(0), [x[1]])]
+    update = [Term(it.LIA.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):
         m.try_to("rla")
@@ -620,8 +619,8 @@ def test_try_to_rla_bv_dtype_fails():
 
 def test_try_to_rla_tensor_itype_fails():
     x = _int_wire()
-    init = [Term(it.Tensor(torch.tensor([[42]])), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
+    init = [Term(it.LIA.ConstInt(torch.tensor([[42]])), [x[1]])]
+    update = [Term(it.LIA.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):
         m.try_to("rla")
@@ -881,8 +880,8 @@ def test_try_to_bv_float_dtype_fails():
 def test_try_to_bv_bool_1d_dtype_fails():
     """Bool with 1D shape cannot be cast to BV type (requires 2D)."""
     x = (Wire(Bool(3)), Wire(Bool(3)))
-    init = [Term(it.Tensor(torch.tensor([True, True, True])), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
+    init = [Term(it.LIA.ConstBool(torch.tensor([True, True, True])), [x[1]])]
+    update = [Term(it.LIA.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):
         m.try_to("bv")
@@ -896,8 +895,8 @@ def test_try_to_bv_bool_1d_dtype_fails():
 def test_try_to_bv_const_bool_fails():
     """ConstBool has no BV mapping."""
     x = _bool_wire()
-    init = [Term(it.ConstBool(True), [x[1]])]
-    update = [Term(it.Id(), [x[1]], [x[0]])]
+    init = [Term(it.LIA.ConstBool(True), [x[1]])]
+    update = [Term(it.LIA.Id(), [x[1]], [x[0]])]
     m = Module.sequential(init, update, [x])
     with pytest.raises(Exception):
         m.try_to("bv")

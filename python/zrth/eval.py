@@ -1,6 +1,34 @@
 import torch
 
 
+def _eval_linear(itype, read):
+    """Evaluate a Linear term.
+
+    Linear can be called with:
+      - 1 read wire: weight/bias embedded in itype (as itype.weight / itype.bias)
+      - 3 read wires: x=read[0], weight=read[1], bias=read[2]
+    """
+    if len(read) == 3:
+        x, weight, bias = read
+        return [weight @ x + bias]
+    else:
+        x = read[0]
+        # Try itype.weight / itype.bias first; fall back to itype.const_data
+        weight = getattr(itype, 'weight', None)
+        bias = getattr(itype, 'bias', None)
+        if weight is None:
+            # const_data may be a tuple (weight, bias) or a single tensor
+            cd = itype.const_data
+            if isinstance(cd, (tuple, list)):
+                weight, bias = cd[0], cd[1]
+            else:
+                weight = cd
+                bias = None
+        if bias is None:
+            bias = torch.zeros(weight.shape[0], 1, dtype=weight.dtype)
+        return [weight @ x + bias]
+
+
 def eval_itype(itype, read):
     """Evaluate a single instruction type with the given input tensors."""
     fn = _EVAL.get(itype.op_name)
@@ -65,10 +93,14 @@ _EVAL = {
     "Ite": lambda it, r: [torch.where(r[0], r[1], r[2])],
     # Arithmetic (only Add exists in LIA/LRA; BV adds Mul/UDiv/SDiv/MatMul)
     "Add": lambda it, r: [r[0] + r[1]],
+    "Sub": lambda it, r: [r[0] - r[1]],
+    "Neg": lambda it, r: [-r[0]],
+    "Abs": lambda it, r: [r[0].abs()],
     "Mul": lambda it, r: [r[0] * r[1]],
     "UDiv": lambda it, r: [r[0].div(r[1], rounding_mode="floor")],
     "SDiv": lambda it, r: [r[0].div(r[1], rounding_mode="trunc")],
     "MatMul": lambda it, r: [r[0] @ r[1]],
+    "Linear": lambda it, r: _eval_linear(it, r),
     # Comparisons
     "Eq": lambda it, r: [r[0].eq(r[1])],
     "Ne": lambda it, r: [r[0].ne(r[1])],
@@ -83,6 +115,9 @@ _EVAL = {
     "Xor": lambda it, r: [r[0].logical_xor(r[1])],
     # Neural-ish / aggregate
     "ReLU": lambda it, r: [r[0].relu()],
+    "Tanh": lambda it, r: [r[0].tanh()],
+    "Sin": lambda it, r: [r[0].sin()],
+    "Cos": lambda it, r: [r[0].cos()],
     "Argmax": lambda it, r: [r[0].argmax()],
     "Min": lambda it, r: [torch.minimum(r[0], r[1])],
     "Max": lambda it, r: [torch.maximum(r[0], r[1])],
