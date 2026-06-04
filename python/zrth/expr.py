@@ -1,8 +1,6 @@
-from typing import Any, override
+from typing import override
 
-from .zrth import DType, Term, Wire
-from . import IType
-from .zrth import IType as _IType
+from .zrth import DType, IType, Term, Wire
 import torch
 
 # types that we can convert to [Expr]
@@ -20,7 +18,7 @@ class Expr:
         self._dtype = self._wire.dtype
         self._shape = self._dtype.shape
 
-        self._args = [*args]
+        self._args = list(args)
 
     @property
     def dtype(self):
@@ -162,21 +160,21 @@ def _make_expr(itype, wtype: DType, *args):
     raise NotImplementedError(f"unsupported dtype: {wtype}")
 
 
-def _ns(expr: 'Expr'):
+def _ns(expr: "Expr"):
     """Return the IType namespace (LIA/LRA/BV) matching the expression's dtype."""
     d = expr.dtype
     if d.is_int():
-        return _IType.LIA
+        return IType.LIA
     if d.is_real() or d.is_float():
-        return _IType.LRA
+        return IType.LRA
     if d.is_bool():
-        return _IType.LIA  # Bool ops exist in all theories; default to LIA
+        return IType.LIA  # Bool ops exist in all theories; default to LIA
     if d.is_bv():
-        return _IType.BV
-    return _IType.LRA  # fallback
+        return IType.BV
+    return IType.LRA  # fallback
 
 
-def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
+def _elementwise_op(itype, wtype: DType, rtype: DType, first, *others):
     if not isinstance(first, Expr):
         raise Exception("type coercion unsupported")
     shape = first.shape
@@ -297,9 +295,12 @@ def neq(lhs: AExpr, rhs: AExpr) -> BExpr:
 
 
 def ite(cond: BExpr, iftrue: Expr, iffalse: Expr):
-    assert isinstance(iftrue, (BExpr, AExpr))
-    assert type(iftrue) is type(iffalse)
-    # Cond shape / dtype compatibility is validated by the theory's `check()`.
+    if not isinstance(iftrue, (BExpr, AExpr)):
+        raise ValueError(f"ite: expected AExpr or BExpr, got {type(iftrue).__name__}")
+    if type(iftrue) is not type(iffalse):
+        raise ValueError(
+            f"ite: branch types must match, got {type(iftrue).__name__} and {type(iffalse).__name__}"
+        )
     return type(iftrue)(_ns(iftrue).Ite(), iftrue.dtype, cond, iftrue, iffalse)
 
 
@@ -321,77 +322,77 @@ def _word_predicate(itype, lhs: WExpr, rhs: WExpr):
 
 
 def w_add(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(_IType.BV.Add(), first, *others)
+    return _word_arith_op(IType.BV.Add(), first, *others)
 
 
 def w_sub(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(_IType.BV.Sub(), first, *others)
+    return _word_arith_op(IType.BV.Sub(), first, *others)
 
 
 def w_mul(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(_IType.BV.Mul(), first, *others)
+    return _word_arith_op(IType.BV.Mul(), first, *others)
 
 
 def w_div(num: WExpr, den: WExpr) -> WExpr:
-    return _word_arith_op(_IType.BV.UDiv(), num, den)
+    return _word_arith_op(IType.BV.UDiv(), num, den)
 
 
 def w_mod(num: WExpr, den: WExpr) -> WExpr:
-    return _word_arith_op(_IType.BV.UDiv(), num, den)  # TODO: mod via UDiv
+    return _word_arith_op(IType.BV.UDiv(), num, den)  # TODO: mod via UDiv
 
 
 def w_neg(e: WExpr) -> WExpr:
     if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
-    return WExpr(_IType.BV.Neg(), e.dtype, e)
+    return WExpr(IType.BV.Neg(), e.dtype, e)
 
 
 def w_abs(e: WExpr) -> WExpr:
     if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
-    return WExpr(_IType.BV.Abs(), e.dtype, e)
+    return WExpr(IType.BV.Abs(), e.dtype, e)
 
 
 def w_and(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(_IType.BV.And(), first, *others)
+    return _word_arith_op(IType.BV.And(), first, *others)
 
 
 def w_or(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(_IType.BV.Or(), first, *others)
+    return _word_arith_op(IType.BV.Or(), first, *others)
 
 
 def w_xor(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(_IType.BV.Xor(), first, *others)
+    return _word_arith_op(IType.BV.Xor(), first, *others)
 
 
 def w_not(e: WExpr) -> WExpr:
     if not e.dtype.is_bv():
         raise Exception("invalid dtype for word-level op")
-    return WExpr(_IType.BV.Not(), e.dtype, e)
+    return WExpr(IType.BV.Not(), e.dtype, e)
 
 
 def w_lt(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(_IType.BV.Lt(), lhs, rhs)
+    return _word_predicate(IType.BV.Lt(), lhs, rhs)
 
 
 def w_gt(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(_IType.BV.Gt(), lhs, rhs)
+    return _word_predicate(IType.BV.Gt(), lhs, rhs)
 
 
 def w_le(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(_IType.BV.Le(), lhs, rhs)
+    return _word_predicate(IType.BV.Le(), lhs, rhs)
 
 
 def w_ge(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(_IType.BV.Ge(), lhs, rhs)
+    return _word_predicate(IType.BV.Ge(), lhs, rhs)
 
 
 def w_eq(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(_IType.BV.Eq(), lhs, rhs)
+    return _word_predicate(IType.BV.Eq(), lhs, rhs)
 
 
 def w_neq(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(_IType.BV.Ne(), lhs, rhs)
+    return _word_predicate(IType.BV.Ne(), lhs, rhs)
 
 
 # ========================================
@@ -418,7 +419,7 @@ def matmul(lhs: Expr, rhs: Expr):
         if data is not None:
             no_bias = torch.empty(0, 0)
             assert isinstance(data, torch.Tensor), type(data)
-            return type(lhs)(_IType.LIA.Linear(data, no_bias), wtype, rhs)
+            return type(lhs)(IType.LIA.Linear(data, no_bias), wtype, rhs)
         raise RuntimeError("LIA does not support generic MatMul, use Linear instead")
     if lhs.dtype.is_real() or lhs.dtype.is_float():
         # LRA: only Linear supported
@@ -428,10 +429,10 @@ def matmul(lhs: Expr, rhs: Expr):
         if data is not None:
             no_bias = torch.empty(0, 0)
             assert isinstance(data, torch.Tensor), type(data)
-            return type(lhs)(_IType.LRA.Linear(data, no_bias), wtype, rhs)
+            return type(lhs)(IType.LRA.Linear(data, no_bias), wtype, rhs)
         raise RuntimeError("LRA does not support generic MatMul, use Linear instead")
     # BV: generic MatMul
-    return type(lhs)(_IType.BV.MatMul(), wtype, lhs, rhs)
+    return type(lhs)(IType.BV.MatMul(), wtype, lhs, rhs)
 
 
 # ========================================
@@ -443,15 +444,15 @@ def Bool(x: bool | str | torch.Tensor, shape=None) -> BExpr:
     if isinstance(x, bool):
         assert shape is None
         dtype = DType.Bool([1])
-        return BExpr(itype=_IType.LIA.ConstBool(torch.tensor([x])), dtype=dtype)
+        return BExpr(itype=IType.LIA.ConstBool(torch.tensor([x])), dtype=dtype)
     elif isinstance(x, torch.Tensor):
         assert shape is None or shape == x.shape
         assert x.dtype == torch.bool
         dtype = DType.Bool(list(x.shape))
-        return BExpr(itype=_IType.LIA.ConstBool(x), dtype=dtype)
+        return BExpr(itype=IType.LIA.ConstBool(x), dtype=dtype)
     elif isinstance(x, str):
         dtype = DType.Bool(shape if shape is not None else [1])
-        return BExpr(itype=_IType.LIA.Uninterpreted(x), dtype=dtype)
+        return BExpr(itype=IType.LIA.Uninterpreted(x), dtype=dtype)
 
     raise ValueError("Invalid argument to `Bool`")
 
@@ -461,13 +462,13 @@ def Real(x: float | str | torch.Tensor, shape=None) -> AExpr:
         assert shape is None
         dtype = DType.Real([1])
         t = torch.tensor([x], dtype=torch.float32)
-        return AExpr(itype=_IType.LRA.ConstReal(t), dtype=dtype)
+        return AExpr(itype=IType.LRA.ConstReal(t), dtype=dtype)
     elif isinstance(x, torch.Tensor):
         assert shape is None or shape == x.shape
         dtype = DType.Real(list(x.shape) if x.shape else [1])
-        return AExpr(itype=_IType.LRA.ConstReal(x), dtype=dtype)
+        return AExpr(itype=IType.LRA.ConstReal(x), dtype=dtype)
     elif isinstance(x, str):
         dtype = DType.Real(shape if shape is not None else [1])
-        return AExpr(itype=_IType.LRA.Uninterpreted(x), dtype=dtype)
+        return AExpr(itype=IType.LRA.Uninterpreted(x), dtype=dtype)
 
     raise ValueError("Invalid argument to `Real`")
