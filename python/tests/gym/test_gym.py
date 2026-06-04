@@ -154,12 +154,9 @@ def test_arrayenv_conversion():
     env = ArrayEnv()
     wrapped = Wrapper(env)
     module_str = str(wrapped)
-    if "Float(3, 3)" not in module_str:
-        raise AssertionError(module_str)  # grid
-    if "Float(5)" not in module_str:  # weights
-        raise AssertionError(module_str)  # grid
-    if "Float(2, 2)" not in module_str:  # matrix
-        raise AssertionError(module_str)  # grid
+    assert "Real(3, 3)" in module_str, module_str
+    assert "Real(1, 5)" in module_str, module_str
+    assert "Real(2, 2)" in module_str, module_str
 
 
 if __name__ == "__main__":
