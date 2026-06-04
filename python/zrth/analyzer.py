@@ -460,13 +460,18 @@ class AbstractInterpreter:
 
         else:
             _UNSUPPORTED_STMTS = {
-                ast.For: "Loops", ast.While: "Loops", ast.AsyncFor: "Loops",
+                ast.For: "Loops",
+                ast.While: "Loops",
+                ast.AsyncFor: "Loops",
                 ast.FunctionDef: "Nested function definitions",
                 ast.AsyncFunctionDef: "Nested function definitions",
                 ast.ClassDef: "Class definitions",
-                ast.Import: "Import statements", ast.ImportFrom: "Import statements",
-                ast.Try: "Try/except", ast.With: "With statements",
-                ast.Global: "Global statements", ast.Nonlocal: "Nonlocal statements",
+                ast.Import: "Import statements",
+                ast.ImportFrom: "Import statements",
+                ast.Try: "Try/except",
+                ast.With: "With statements",
+                ast.Global: "Global statements",
+                ast.Nonlocal: "Nonlocal statements",
             }
             msg = _UNSUPPORTED_STMTS.get(type(stmt))
             if msg:
@@ -1073,6 +1078,7 @@ def format_results(states: List[AbstractState]) -> str:
 # Module helpers (used by Env / NN wrapping logic)
 # ---------------------------------------------------------------------------
 
+
 def wire_pair(dtype):
     """Create a [latched, next] wire pair for the given dtype."""
     return [Wire(dtype), Wire(dtype)]
@@ -1086,7 +1092,11 @@ def resolve_wire(name, dtype, user_val=None):
     """
     if user_val is None:
         return wire_pair(dtype)
-    is_pair = isinstance(user_val, (list, tuple)) and len(user_val) == 2 and all(isinstance(w, Wire) for w in user_val)
+    is_pair = (
+        isinstance(user_val, (list, tuple))
+        and len(user_val) == 2
+        and all(isinstance(w, Wire) for w in user_val)
+    )
     if is_pair:
         for w in user_val:
             if w.dtype != dtype:
@@ -1094,20 +1104,14 @@ def resolve_wire(name, dtype, user_val=None):
                     f"DType mismatch for '{name}': expected {dtype}, got {w.dtype}"
                 )
         return list(user_val)
-    if isinstance(user_val, (list, tuple)) and len(user_val) > 0 and all(
-        isinstance(item, (list, tuple)) and len(item) == 2 and all(isinstance(w, Wire) for w in item)
-        for item in user_val
-    ):
-        raise NotImplementedError("Tuple of wire pairs not yet supported")
     raise ValueError(
-        f"Invalid wire format for '{name}': expected [Wire, Wire] or tuple of wire pairs"
+        f"Invalid wire format for '{name}': expected [Wire, Wire], got {type(user_val).__name__}"
     )
-
 
 
 def _infer_shape_and_elem_type(value):
     """Recursively derive tensor shape and element type from a Python value."""
-    if isinstance(value, bool):      # before int -- bool subclasses int
+    if isinstance(value, bool):  # before int -- bool subclasses int
         return [], bool
     if isinstance(value, (int, float)):
         return [], type(value)
@@ -1138,7 +1142,9 @@ def infer_dtype(name, abstract_value, builder):
             pass
 
     if abstract_value.type_ is None:
-        raise ValueError(f"Cannot infer DType for '{name}': analyzer returned {abstract_value}")
+        raise ValueError(
+            f"Cannot infer DType for '{name}': analyzer returned {abstract_value}"
+        )
     return builder.python_type_to_dtype(abstract_value.type_, [1])
 
 
@@ -1181,19 +1187,19 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
             merged = join_states(AbstractInterpreter(method).analyze())
         except (UnsupportedFeatureError, NotImplementedError, OSError):
             continue
-        # Classify by the top-level self.* attribute. Nested access counts as a
-        # read/write of the outermost attribute since that's the unit we allocate
-        # wires for. Examples:
-        #     self.foo            -> "foo"
-        #     self.foo.bar        -> "foo"
-        #     self.np_random.uniform(...)  -> "np_random"
-        #     self.foo2.foo.bar   -> "foo2"
-        read_attrs    = {r.name[5:].split(".", 1)[0] for r in merged.reads  if r.name.startswith("self.")}
-        written_attrs = {w.name[5:].split(".", 1)[0] for w in merged.writes if w.name.startswith("self.")}
+        read_attrs = {r.name[5:] for r in merged.reads if r.name.startswith("self.")}
+        written_attrs = {
+            w.name[5:] for w in merged.writes if w.name.startswith("self.")
+        }
         # self.foo reads where foo is a known method -> calls, not data reads
         calls = read_attrs & set(methods.keys())
         read_attrs -= calls
-        summaries[name] = (read_attrs, written_attrs, calls, merged.attrs.get("self", {}))
+        summaries[name] = (
+            read_attrs,
+            written_attrs,
+            calls,
+            merged.attrs.get("self", {}),
+        )
 
     # BFS from roots, following intra-class calls
     visited, queue = set(), list(roots)
@@ -1207,25 +1213,26 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
     read_self, written_self, attr_vals = set(), set(), {}
     for name in visited:
         ra, wa, _, av = summaries[name]
-        read_self    |= ra
+        read_self |= ra
         written_self |= wa
         for attr, val in av.items():
             existing = attr_vals.get(attr)
             if existing is None or (val.is_const() and not existing.is_const()):
                 attr_vals[attr] = val
 
-    prvt_names  = written_self & read_self
+    prvt_names = written_self & read_self
     param_names = read_self - written_self
     write_only_names = written_self - read_self
 
     # Order by declaration in __init__ for deterministic iteration,
     # with any names not in __init__ appended in sorted order
     decl_order = list(init_attrs.keys()) if init_attrs else []
+
     def ordered(names):
         return [n for n in decl_order if n in names] + sorted(names - set(decl_order))
 
-    prvt       = ordered(prvt_names)
-    params     = ordered(param_names)
+    prvt = ordered(prvt_names)
+    params = ordered(param_names)
     write_only = ordered(write_only_names)
 
     # Use init_attrs as a fallback for attrs with missing or non-const values
@@ -1243,7 +1250,6 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
         )
 
     return prvt, params, attr_vals
-
 
 
 # ---------------------------------------------------------------------------
@@ -1341,7 +1347,6 @@ def _normalize_early_returns(stmts: list) -> list:
     return result
 
 
-
 class MethodVisitor(ast.NodeVisitor):
     """AST visitor to convert Python methods to reactive Terms
 
@@ -1422,15 +1427,13 @@ class MethodVisitor(ast.NodeVisitor):
         # after the return -- only wire_pairs and _ret_* should escape.
         if any(k.startswith("_ret_") for k in if_scope_after):
             if_scope_after = {
-                k: v
-                for k, v in if_scope_after.items()
-                if k in self.wire_pairs or k.startswith("_ret_")
+                k: v for k, v in if_scope_after.items() if self._should_escape_scope(k)
             }
         if any(k.startswith("_ret_") for k in else_scope_after):
             else_scope_after = {
                 k: v
                 for k, v in else_scope_after.items()
-                if k in self.wire_pairs or k.startswith("_ret_")
+                if self._should_escape_scope(k)
             }
 
         all_vars = set(if_scope_after.keys()) | set(else_scope_after.keys())
@@ -1636,16 +1639,28 @@ class MethodVisitor(ast.NodeVisitor):
                         self.terms.append(term)
                         return term
                     elif method in ("sin", "cos"):
-                        input_val = self._convert_expr(call.args[0], target_dtype=target_dtype)
-                        term = self.builder.sin(input_val) if method == "sin" else self.builder.cos(input_val)
+                        input_val = self._convert_expr(
+                            call.args[0], target_dtype=target_dtype
+                        )
+                        term = (
+                            self.builder.sin(input_val)
+                            if method == "sin"
+                            else self.builder.cos(input_val)
+                        )
                         self.terms.append(term)
                         return term
                     else:
                         raise ValueError(f"Unsupported torch function: torch.{method}")
                 elif name == "math":
                     if method in ("sin", "cos"):
-                        input_val = self._convert_expr(call.args[0], target_dtype=target_dtype)
-                        term = self.builder.sin(input_val) if method == "sin" else self.builder.cos(input_val)
+                        input_val = self._convert_expr(
+                            call.args[0], target_dtype=target_dtype
+                        )
+                        term = (
+                            self.builder.sin(input_val)
+                            if method == "sin"
+                            else self.builder.cos(input_val)
+                        )
                         self.terms.append(term)
                         return term
                     else:
@@ -1703,7 +1718,11 @@ class MethodVisitor(ast.NodeVisitor):
         a_val = self._convert_expr(args[0])
         b_val = self._convert_expr(args[1])
 
-        cmp_term = self.builder.lt(a_val, b_val) if func_name == "min" else self.builder.gt(a_val, b_val)
+        cmp_term = (
+            self.builder.lt(a_val, b_val)
+            if func_name == "min"
+            else self.builder.gt(a_val, b_val)
+        )
         self.terms.append(cmp_term)
         ite_term = self.builder.ite(cmp_term, a_val, b_val)
         self.terms.append(ite_term)
@@ -1806,6 +1825,18 @@ class MethodVisitor(ast.NodeVisitor):
                 f"np.array() data must be literal, got {type(data_node).__name__}"
             )
 
+    def _build_binop_term(self, op_type, left_val, right_val) -> Term:
+        if op_type is ast.Add:
+            return self.builder.add(left_val, right_val)
+        elif op_type is ast.Sub:
+            return self.builder.sub(left_val, right_val)
+        elif op_type is ast.Mult:
+            return self.builder.mul(left_val, right_val)
+        elif op_type is ast.Div:
+            raise ValueError("Division is not supported")
+        else:
+            raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
+
     def _convert_binop(self, binop, target_dtype=None):
         """Convert binary operation
 
@@ -1825,48 +1856,22 @@ class MethodVisitor(ast.NodeVisitor):
         else:
             left_val = self._convert_expr(binop.left)
             right_val = self._convert_expr(binop.right, target_dtype=self._d(left_val))
-
-        op_type = type(binop.op)
-        if op_type is ast.Add:
-            term = self.builder.add(left_val, right_val)
-        elif op_type is ast.Sub:
-            term = self.builder.sub(left_val, right_val)
-        elif op_type is ast.Mult:
-            term = self.builder.mul(left_val, right_val)
-        elif op_type is ast.Div:
-            raise ValueError("Division is not supported")
-        else:
-            raise ValueError(f"Unsupported binary operator: {type(binop.op).__name__}")
+        term = self._build_binop_term(type(binop.op), left_val, right_val)
         self.terms.append(term)
         return term
 
     def _apply_binop_aug(self, op_type, left_val, right_val):
-        """Create a Term for an augmented assignment binary operation."""
-        if op_type is ast.Add:
-            term = self.builder.add(left_val, right_val)
-        elif op_type is ast.Sub:
-            term = self.builder.sub(left_val, right_val)
-        elif op_type is ast.Mult:
-            term = self.builder.mul(left_val, right_val)
-        elif op_type is ast.Div:
-            raise ValueError("Division is not supported")
-        else:
-            raise ValueError(f"Unsupported augmented assignment operator: {op_type.__name__}")
+        term = self._build_binop_term(op_type, left_val, right_val)
         self.terms.append(term)
         return term
 
-    def _expand_pow(self, base_expr, n, target_dtype=None):
-        """Expand base_expr ** n into n-1 multiplications. n=0 returns constant 1."""
-        if n == 0:
-            one = torch.tensor([1.0], dtype=_torch_dtype(target_dtype))
-            return self._make_tensor_wire(one, target_dtype)
-        base_wire = self._convert_expr(base_expr, target_dtype=target_dtype)
-        result = base_wire
-        for _ in range(n - 1):
-            new_result = Wire(result.dtype)
-            self.terms.append(Term(IType.Mul(), [new_result], [result, base_wire]))
-            result = new_result
-        return result
+    def _emit_const_bool(self, value: bool) -> Term:
+        t = self.builder.const_bool(value)
+        self.terms.append(t)
+        return t
+
+    def _should_escape_scope(self, k: str) -> bool:
+        return k in self.wire_pairs or k.startswith("_ret_")
 
     def _convert_unaryop(self, unaryop, target_dtype=None):
         """Convert unary operation (not, -, +)
@@ -1879,10 +1884,8 @@ class MethodVisitor(ast.NodeVisitor):
         if op_type == ast.Not:
             # not x -> Ite(x, False, True) - always Bool
             operand_val = self._convert_expr(unaryop.operand)
-            false_term = self.builder.const_bool(False)
-            true_term = self.builder.const_bool(True)
-            self.terms.append(false_term)
-            self.terms.append(true_term)
+            false_term = self._emit_const_bool(False)
+            true_term = self._emit_const_bool(True)
             ite_term = self.builder.ite(operand_val, false_term, true_term)
             self.terms.append(ite_term)
             return ite_term
@@ -1892,10 +1895,14 @@ class MethodVisitor(ast.NodeVisitor):
                 operand_val = self._convert_expr(
                     unaryop.operand, target_dtype=target_dtype
                 )
-                zero_term = self.builder.const(torch.tensor([0], dtype=_torch_dtype(target_dtype)))
+                zero_term = self.builder.const(
+                    torch.tensor([0], dtype=_torch_dtype(target_dtype))
+                )
             else:
                 operand_val = self._convert_expr(unaryop.operand)
-                zero_term = self.builder.const(torch.tensor([0], dtype=_torch_dtype(self._d(operand_val))))
+                zero_term = self.builder.const(
+                    torch.tensor([0], dtype=_torch_dtype(self._d(operand_val)))
+                )
             self.terms.append(zero_term)
             sub_term = self.builder.sub(zero_term, operand_val)
             self.terms.append(sub_term)
@@ -1925,10 +1932,8 @@ class MethodVisitor(ast.NodeVisitor):
         # Build nested Ite from right to left
         result = vals[-1]
         for val in reversed(vals[:-1]):
-            false_term = self.builder.const_bool(False)
-            true_term = self.builder.const_bool(True)
-            self.terms.append(false_term)
-            self.terms.append(true_term)
+            false_term = self._emit_const_bool(False)
+            true_term = self._emit_const_bool(True)
 
             if is_and:
                 # a and b -> Ite(a, b, False)
@@ -2076,7 +2081,11 @@ class MethodVisitor(ast.NodeVisitor):
             out_features = self.layers[method_name]
             layer = self.live_layers.get(method_name)
             if layer is not None:
-                bias = layer.bias.unsqueeze(1) if layer.bias is not None else torch.zeros(out_features, 0)
+                bias = (
+                    layer.bias.unsqueeze(1)
+                    if layer.bias is not None
+                    else torch.zeros(out_features, 0)
+                )
                 ts = self.builder.linear(input_val, layer.weight, bias)
                 self.terms.extend(ts)
                 return ts[-1]  # last term's write[0] is the output
@@ -2132,6 +2141,7 @@ def convert_method(
         List of Terms representing the method as a reactive diagram
     """
     from .builder import builder_for
+
     if builder is None:
         builder = builder_for(theory)
 
@@ -2144,7 +2154,15 @@ def convert_method(
     func_def.body = _normalize_early_returns(func_def.body)
 
     param_names = [arg.arg for arg in func_def.args.args if arg.arg != "self"]
-    visitor = MethodVisitor(wires, result, cls=cls, layers=layers, params=params, live_layers=live_layers, builder=builder)
+    visitor = MethodVisitor(
+        wires,
+        result,
+        cls=cls,
+        layers=layers,
+        params=params,
+        live_layers=live_layers,
+        builder=builder,
+    )
     visitor.temp_vars.update(
         {name: wires[name][0] for name in param_names if name in wires}
     )
