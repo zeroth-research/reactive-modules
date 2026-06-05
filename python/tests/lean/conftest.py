@@ -145,7 +145,7 @@ def generate_lean_files(sync_core_templates) -> None:
     hammer_file = _LEAN_DIR / "ZerothHammer.lean"
     hammer_file.write_text(generate_zeroth_hammer_lean())
 
-    # Certs/ — one self-contained certificate per module
+    # Certs/ — one self-contained certificate per module + scalar encoding file
     _CERTS_DIR.mkdir(exist_ok=True)
     for name, make_module, cert_data in _CERT_SPECS:
         module = make_module()

@@ -272,6 +272,9 @@ def main():
         )
         out.write_text(lean_src)
         print(f"Wrote standalone certificate: {out}")
+        scalar_out = out.with_stem(out.stem + "Scalar")
+        scalar_out.write_text(generate_scalar_lean(module, hammer_import=args.hammer_import))
+        print(f"Wrote scalar encoding: {scalar_out}")
         return
 
     print(".. Generating lean code")

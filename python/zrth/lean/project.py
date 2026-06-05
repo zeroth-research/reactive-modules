@@ -431,6 +431,18 @@ import {project_name}.{module_name}
     assert mod_file.exists()
     print(f"++ Generated {mod_file} ++")
 
+    scalar_file = src_dir / f"{module_name}Scalar.lean"
+    print(f"Generating `{scalar_file.absolute()}`")
+    scalar_file.write_text(f"""\
+/- Scalar encoding for reactive module `{module_name}` -/
+import Core.Basic
+import {project_name}.{module_name}
+
+{m2l.to_lean_scalar()}
+""")
+    assert scalar_file.exists()
+    print(f"++ Generated {scalar_file} ++")
+
     # -- empty file for data --
     mod_file = src_dir / f"{module_name}Data.lean"
     print(f"Generating `{mod_file.absolute()}`")
@@ -491,6 +503,7 @@ def generate_standalone_cert_lean(
         hammer_import=hammer_import,
         module_inline=module_code,
     )
+
 
 
 def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
