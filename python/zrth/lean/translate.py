@@ -5,6 +5,7 @@ from zrth.lean.native import (
     _translate_terms_scalar,
     _build_tuple,
     _reachable_terms,
+    _argmax_scalar_name,
 )
 from zrth.lean.circ import (
     CircLayer,
@@ -19,8 +20,57 @@ from zrth.lean.common import (
     _is_scalar_wire,
     _bind_wires,
     dtype_to_lean_type,
+    _flat_size,
+    _flat_indices,
+    _flat_element_type,
+    _mat_from_scalars,
+    itype_name,
 )
 from zrth import Module, Wire
+
+
+def _scalar_bindings_with_recon(
+    params: "list[tuple[str, list]]",
+) -> "tuple[list[str], dict[int, str], dict[int, list[str]]]":
+    """Build wire bindings and flat scalar slot tracking for scalar encoding.
+
+    For each wire:
+    - Scalar (flat_size == 1): binding is the bare accessor (e.g. ``"ctrl.1"``).
+    - Non-scalar (flat_size > 1): binding is a fresh let-var reconstructing the
+      ``Mat T m n`` (for operations that need the full matrix); flat_slots also
+      records the individual scalar accessor strings for argmax and similar.
+
+    Returns ``(let_lines, bindings, flat_slots)`` where:
+    - ``let_lines`` should be prepended to the function body (Mat reconstructions)
+    - ``bindings`` maps wire_id → matrix var or scalar accessor
+    - ``flat_slots`` maps wire_id → list of flat scalar accessor strings
+    """
+    let_lines: list[str] = []
+    bindings: dict[int, str] = {}
+    flat_slots: dict[int, list[str]] = {}
+    let_counter = [0]
+
+    for name, wires in params:
+        flat_sizes = [_flat_size(w) for w in wires]
+        total = sum(flat_sizes)
+        flat_accrs = [f"{name}{_accessor(k, total)}" for k in range(total)]
+
+        offset = 0
+        for w, fsize in zip(wires, flat_sizes):
+            slots = flat_accrs[offset : offset + fsize]
+            flat_slots[w.id] = slots
+            if fsize == 1:
+                bindings[w.id] = slots[0]
+            else:
+                mat_ty = dtype_to_lean_type(w)
+                mat_expr = _mat_from_scalars(slots, list(w.dtype.shape), _flat_element_type(w))
+                var_name = f"_m{let_counter[0]}"
+                let_counter[0] += 1
+                let_lines.append(f"  let {var_name} : {mat_ty} := {mat_expr}")
+                bindings[w.id] = var_name
+            offset += fsize
+
+    return let_lines, bindings, flat_slots
 
 
 class ModuleToLean4:
@@ -297,29 +347,64 @@ class ModuleToLean4:
 
     @staticmethod
     def _unpack_body(param: str, wires: "list[Wire]") -> str:
-        """Body of ``unpack_<param>``: extract 0 0 from each scalar wire."""
+        """Body of ``unpack_<param>``: extract all flat elements from the wire."""
         n = len(wires)
         parts = []
         for i, w in enumerate(wires):
-            if not _is_scalar_wire(w):
-                raise ValueError(f"Cannot scalarize non-scalar wire: {w.dtype}")
-            parts.append(f"{param}{_accessor(i, n)} 0 0")
+            base = f"{param}{_accessor(i, n)}"
+            for row, col in _flat_indices(w):
+                parts.append(f"{base} {row} {col}")
         return _build_tuple(parts)
 
     @staticmethod
     def _pack_body(var: str, wires: "list[Wire]") -> str:
-        """Body of ``pack``: wrap each scalar back into a ``Mat T 1 1``."""
-        n = len(wires)
+        """Body of ``pack``: reconstruct each wire's Mat from flat scalar slots."""
+        total = sum(_flat_size(w) for w in wires)
+        flat_accrs = [f"{var}{_accessor(k, total)}" for k in range(total)]
         parts = []
-        for i, w in enumerate(wires):
-            acc = f"{var}{_accessor(i, n)}"
-            parts.append(f"fun _ _ => {acc}" if _is_scalar_wire(w) else acc)
+        offset = 0
+        for w in wires:
+            n = _flat_size(w)
+            slots = flat_accrs[offset : offset + n]
+            parts.append(_mat_from_scalars(slots, list(w.dtype.shape), _flat_element_type(w)))
+            offset += n
         return _build_tuple(parts)
+
+    @staticmethod
+    def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
+        """Return (elem_ty, n) pairs for each distinct Argmax input shape in terms."""
+        seen: set[tuple[str, int]] = set()
+        result: list[tuple[str, int]] = []
+        for term in terms:
+            if itype_name(term.itype) != "Argmax":
+                continue
+            in_wire = term.read[0]
+            n = _flat_size(in_wire)
+            ety = _flat_element_type(in_wire)
+            key = (ety, n)
+            if key not in seen:
+                seen.add(key)
+                result.append(key)
+        return result
+
+    @staticmethod
+    def _argmax_scalar_axiom_lines(elem_ty: str, n: int) -> list[str]:
+        """Emit the axiom declaration and simp eq-axiom for a scalar argmax variant."""
+        ax_name = _argmax_scalar_name(n)
+        params = " ".join(f"(s{i} : {elem_ty})" for i in range(n))
+        eq_params = " ".join(f"(v 0 {i})" for i in range(n))
+        return [
+            f"axiom {ax_name} {params} : Int",
+            f"@[simp] axiom {ax_name}_eq (v : Mat {elem_ty} 1 {n}) :",
+            f"  {ax_name} {eq_params} = (↑(argmax_1d v 0 0) : Int)",
+            "",
+        ]
 
     def atom_to_lean_scalar(self) -> str:
         """Generate the scalar encoding inside ``namespace Scalar``.
 
         Emits, in order:
+        0. Scalar argmax axioms (one per distinct Argmax input shape used).
         1. ``unpack_<param>`` for each non-Unit input group (mat → scalars).
         2. ``pack`` that wraps scalar outputs back into matrices.
         3. ``init`` / ``update`` with fully scalar signatures.
@@ -329,6 +414,11 @@ class ModuleToLean4:
         noncomp = "noncomputable " if ctx.uses_real else ""
         cod = _product_type_scalar(ctx.ctrl_next)
 
+        all_terms = list(atom.init) + list(atom.update)
+        argmax_variants = self._collect_argmax_variants(all_terms)
+        # Store for use in the equivalence proof simp set.
+        self._argmax_scalar_variants: list[tuple[str, int]] = argmax_variants
+
         # Groups that have actual wires (non-Unit parameters).
         input_groups = [
             ("ctrl", ctx.ctrl_latched),
@@ -336,7 +426,11 @@ class ModuleToLean4:
             ("extl_n", ctx.extl_next),
         ]
 
-        lines = ["namespace Scalar", ""]
+        lines: list[str] = []
+        for ety, n in argmax_variants:
+            lines.extend(self._argmax_scalar_axiom_lines(ety, n))
+
+        lines += ["namespace Scalar", ""]
 
         # 1. Unpack functions
         for param, wires in input_groups:
@@ -358,40 +452,51 @@ class ModuleToLean4:
         lines.append(f"  {pack_body}")
         lines.append("")
 
-        # 3. Scalar init / update — inputs are already scalars so use _bind_wires
+        # 3. Scalar init / update — flat scalar inputs, Mat reconstruction via let-lines
         def _scalar_dom(param: str, wires: "list[Wire]") -> str:
             ty = _product_type_scalar(wires) if wires else "Unit"
             return f"({param}: {ty})"
 
+        def _prepend_recon(recon_lets: "list[str]", body: str) -> str:
+            if recon_lets:
+                return "\n".join(recon_lets) + "\n" + body
+            return body
+
+        init_recon, init_bindings, init_flat = _scalar_bindings_with_recon(
+            [("extl_n", ctx.extl_next)]
+        )
         init_body = _translate_terms_scalar(
             atom.init,
-            _bind_wires([("extl_n", ctx.extl_next)]),
+            init_bindings,
             ctx.ctrl_next,
             ctx.constants,
+            flat_slots=init_flat,
         )
         if init_body:
             lines.append(
                 f"@[simp] {noncomp}def init {_scalar_dom('extl_n', ctx.extl_next)} : {cod} :="
             )
-            lines.append(init_body)
+            lines.append(_prepend_recon(init_recon, init_body))
             lines.append("")
 
+        update_recon, update_bindings_scalar, update_flat = _scalar_bindings_with_recon(
+            [
+                ("ctrl", ctx.ctrl_latched),
+                ("extl_l", ctx.extl_latched),
+                ("extl_n", ctx.extl_next),
+            ]
+        )
         update_body = _translate_terms_scalar(
             atom.update,
-            _bind_wires(
-                [
-                    ("ctrl", ctx.ctrl_latched),
-                    ("extl_l", ctx.extl_latched),
-                    ("extl_n", ctx.extl_next),
-                ]
-            ),
+            update_bindings_scalar,
             ctx.ctrl_next,
             ctx.constants,
+            flat_slots=update_flat,
         )
         if update_body:
             upd_dom = " ".join(_scalar_dom(p, w) for p, w in input_groups)
             lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
-            lines.append(update_body)
+            lines.append(_prepend_recon(update_recon, update_body))
             lines.append("")
 
         lines.append("end Scalar")
@@ -408,6 +513,11 @@ class ModuleToLean4:
         def _call_arg(param: str, wires: "list[Wire]") -> str:
             return f"(Scalar.unpack_{param} {param})" if wires else param
 
+        argmax_eq_lemmas = [
+            f"{_argmax_scalar_name(n)}_eq"
+            for _, n in getattr(self, "_argmax_scalar_variants", [])
+        ]
+
         def _proof(
             binders: list[str],
             func_name: str,
@@ -417,7 +527,12 @@ class ModuleToLean4:
             vars_ = [_var(b) for b in binders]
             scalar_call = f"Scalar.{func_name} {' '.join(scalar_args)}"
             rhs = f"Scalar.pack ({scalar_call})"
-            simp_names = ["Scalar.pack", f"Scalar.{func_name}", func_name] + simp_extras
+            simp_names = (
+                ["Scalar.pack", f"Scalar.{func_name}", func_name]
+                + simp_extras
+                + argmax_eq_lemmas
+                + ["Fin.cons_zero", "Fin.cons_succ"]
+            )
             return [
                 f"theorem {func_name}_scalar_eq : ∀ {' '.join(binders)},",
                 f"    {func_name} {' '.join(vars_)} = {rhs} := by",
@@ -426,6 +541,7 @@ class ModuleToLean4:
                 f"  try rfl",
                 f"  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
                 f"  try (funext i j; simp [Fin.fin_one_eq_zero])",
+                f"  try simp [Fin.fin_one_eq_zero]",
             ]
 
         input_groups = [
@@ -507,14 +623,16 @@ class ModuleToLean4:
         # Init input (just extl_n, matches Scalar.init signature)
         extl_n_binder = f"(extl_n : {_ty(ctx.extl_next)})"
 
-        update_bindings = _bind_wires(
+        update_recon, update_bindings, update_flat = _scalar_bindings_with_recon(
             [
                 ("ctrl", ctx.ctrl_latched),
                 ("extl_l", ctx.extl_latched),
                 ("extl_n", ctx.extl_next),
             ]
         )
-        init_bindings = _bind_wires([("extl_n", ctx.extl_next)])
+        init_recon, init_bindings, init_flat = _scalar_bindings_with_recon(
+            [("extl_n", ctx.extl_next)]
+        )
 
         def _proj_theorem(
             func_name: str,
@@ -529,12 +647,18 @@ class ModuleToLean4:
                 f"theorem {func_name}_eq : ∀ {all_binders},",
                 f"    {func_name} {all_args} = {scalar_proj} := by",
                 f"  intro {intro_vars}",
-                f"  simp only [{scalar_func}, {func_name}]",
+                f"  simp only [{scalar_func}, {func_name}, Fin.cons_zero, Fin.cons_succ]",
                 f"  try rfl",
                 f"  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
+                f"  try simp [Fin.fin_one_eq_zero]",
                 f"  try omega",
                 "",
             ]
+
+        def _prepend_recon(recon_lets: "list[str]", body: str) -> str:
+            if recon_lets:
+                return "\n".join(recon_lets) + "\n" + body
+            return body
 
         lines = ["namespace Rel", ""]
 
@@ -550,11 +674,12 @@ class ModuleToLean4:
                     update_bindings,
                     [w],
                     ctx.constants,
+                    flat_slots=update_flat,
                 )
                 lines.append(
                     f"@[simp] {noncomp}def effect_{i} {update_binders} : {ty} :="
                 )
-                lines.append(body)
+                lines.append(_prepend_recon(update_recon, body))
                 lines.append("")
 
             # Equality theorems vs Scalar.update
@@ -597,9 +722,10 @@ class ModuleToLean4:
                     init_bindings,
                     [w],
                     ctx.constants,
+                    flat_slots=init_flat,
                 )
                 lines.append(f"@[simp] {noncomp}def init_{i} {extl_n_binder} : {ty} :=")
-                lines.append(body)
+                lines.append(_prepend_recon(init_recon, body))
                 lines.append("")
 
             # Equality theorems vs Scalar.init
@@ -761,10 +887,10 @@ class ModuleToLean4:
         return self.atom_to_lean_rel()
 
     def _can_scalarize(self) -> bool:
-        """True when every wire in the module has a scalar (1×1) type."""
+        """True when every wire has a shape that can be flattened to scalars (≤ 2-D)."""
         ctx = self.ctx
         all_wires = ctx.ctrl_latched + ctx.ctrl_next + ctx.extl_latched + ctx.extl_next
-        return all(_is_scalar_wire(w) for w in all_wires)
+        return all(len(w.dtype.shape) <= 2 for w in all_wires)
 
     def to_lean(
         self, circuit: bool = True, scalar: bool = True, rel: bool = True
