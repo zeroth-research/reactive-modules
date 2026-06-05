@@ -211,8 +211,10 @@ def _translate_terms_scalar(
 ) -> str:
     """Compile terms into a Lean body using scalar types for 1×1 wires.
 
-    `input_bindings` should come from `_bind_wires_scalar` — scalar input
-    wires are already pre-extracted as bare scalars (e.g. ``"ctrl.1 0 0"``).
+    `input_bindings` maps wire IDs to Lean accessor expressions.  Pass
+    bindings from ``_bind_wires`` — the Scalar.init/update signatures use
+    bare scalar types (``Int``/``Bool``), so accessors like ``"ctrl.1"``
+    already refer to bare scalars in that context.
 
     Falls back to `_LEAN_OP` (matrix form) for any non-scalar output wire or
     operations not in `_SCALAR_OP`.  Returns ``"sorry /- no terms -/"`` when
