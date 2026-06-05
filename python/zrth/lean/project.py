@@ -95,12 +95,16 @@ def generate_lakefile(project_name: str, executable: bool = False) -> str:
     return base
 
 
-def generate_root(project_name: str, modules_names: list[str]) -> str:
+def generate_root(
+    project_name: str, modules_names: list[str], scalar: bool = True
+) -> str:
     """
     Root module file (src/<ProjectName>.lean) that imports everything.
 
     `diagram_names` are names of files with wiring diagrams (reactive modules)
-                    that need to be imported in the root module
+                    that need to be imported in the root module.
+    `scalar` controls whether the Scalar and Rel encodings are imported
+             (should be False for modules with non-scalar / matrix wires).
     """
     lines = [
         # f"import {project_name}.Diagram",
@@ -108,6 +112,9 @@ def generate_root(project_name: str, modules_names: list[str]) -> str:
     for dname in modules_names:
         lines.append(f"import {project_name}.{dname}")
         lines.append(f"import {project_name}.{dname}Circ")
+        if scalar:
+            lines.append(f"import {project_name}.{dname}Scalar")
+            lines.append(f"import {project_name}.{dname}Rel")
     return "\n".join(lines) + "\n"
 
 
@@ -343,10 +350,8 @@ def create_project(
     toolchain.write_text(LEAN_TOOLCHAIN + "\n")
     print(f"Wrote {toolchain}")
 
-    # Write root module
+    # Write root module (placeholder; rewritten below after m2l is available)
     root_module = src_dir.parent / f"{project_name}.lean"
-    root_module.write_text(generate_root(project_name, [module_name]))
-    print(f"Wrote root module {root_module}")
 
     # Write ZerothHammer.lean — standalone tactic, imported by Certificate
     hammer_file = project_dir / "ZerothHammer.lean"
@@ -406,6 +411,9 @@ def create_project(
     ctx = LeanContext(module, cert_terms=cert_terms)
     m2l = ModuleToLean4(ctx)
 
+    root_module.write_text(generate_root(project_name, [module_name], scalar=m2l._can_scalarize()))
+    print(f"Wrote root module {root_module}")
+
     mod_file = src_dir / f"{module_name}.lean"
     print(f"Generating `{mod_file.absolute()}`")
 
@@ -442,6 +450,18 @@ import {project_name}.{module_name}
 """)
     assert scalar_file.exists()
     print(f"++ Generated {scalar_file} ++")
+
+    rel_file = src_dir / f"{module_name}Rel.lean"
+    print(f"Generating `{rel_file.absolute()}`")
+    rel_file.write_text(f"""\
+/- Relational encoding for reactive module `{module_name}` -/
+import Core.Basic
+import {project_name}.{module_name}Scalar
+
+{m2l.to_lean_rel()}
+""")
+    assert rel_file.exists()
+    print(f"++ Generated {rel_file} ++")
 
     # -- empty file for data --
     mod_file = src_dir / f"{module_name}Data.lean"

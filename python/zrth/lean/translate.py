@@ -4,6 +4,7 @@ from zrth.lean.native import (
     _translate_terms,
     _translate_terms_scalar,
     _build_tuple,
+    _reachable_terms,
 )
 from zrth.lean.circ import (
     CircLayer,
@@ -12,7 +13,13 @@ from zrth.lean.circ import (
     _native_to_vt,
     _natives_to_vt,
 )
-from zrth.lean.common import LeanContext, _accessor, _is_scalar_wire, _bind_wires
+from zrth.lean.common import (
+    LeanContext,
+    _accessor,
+    _is_scalar_wire,
+    _bind_wires,
+    dtype_to_lean_type,
+)
 from zrth import Module, Wire
 
 
@@ -102,9 +109,7 @@ class ModuleToLean4:
             lines.extend(layer_lines)
 
         if update_layers:
-            upd_dom = _ty_list(
-                ctx.ctrl_latched + ctx.extl_latched + ctx.extl_next
-            )
+            upd_dom = _ty_list(ctx.ctrl_latched + ctx.extl_latched + ctx.extl_next)
             upd_cod = _ty_list(update_outputs)
             layer_lines, self._update_layer_names = self._emit_named_layers(
                 "update",
@@ -276,7 +281,9 @@ class ModuleToLean4:
 
     def to_lean_functional(self) -> str:
         """Generate the functional init/update definitions (plus constants)."""
-        return "{}\n\n{}".format(self._constants_block(), self.atom_to_lean_functional())
+        return "{}\n\n{}".format(
+            self._constants_block(), self.atom_to_lean_functional()
+        )
 
     def to_lean_circ(self) -> str:
         return "{}\n\n{}".format(
@@ -324,7 +331,7 @@ class ModuleToLean4:
 
         # Groups that have actual wires (non-Unit parameters).
         input_groups = [
-            ("ctrl",   ctx.ctrl_latched),
+            ("ctrl", ctx.ctrl_latched),
             ("extl_l", ctx.extl_latched),
             ("extl_n", ctx.extl_next),
         ]
@@ -335,10 +342,12 @@ class ModuleToLean4:
         for param, wires in input_groups:
             if not wires:
                 continue
-            mat_ty    = _product_type(wires)
+            mat_ty = _product_type(wires)
             scalar_ty = _product_type_scalar(wires)
-            body      = self._unpack_body(param, wires)
-            lines.append(f"@[simp] {noncomp}def unpack_{param} ({param} : {mat_ty}) : {scalar_ty} :=")
+            body = self._unpack_body(param, wires)
+            lines.append(
+                f"@[simp] {noncomp}def unpack_{param} ({param} : {mat_ty}) : {scalar_ty} :="
+            )
             lines.append(f"  {body}")
             lines.append("")
 
@@ -361,17 +370,21 @@ class ModuleToLean4:
             ctx.constants,
         )
         if init_body:
-            lines.append(f"@[simp] {noncomp}def init {_scalar_dom('extl_n', ctx.extl_next)} : {cod} :=")
+            lines.append(
+                f"@[simp] {noncomp}def init {_scalar_dom('extl_n', ctx.extl_next)} : {cod} :="
+            )
             lines.append(init_body)
             lines.append("")
 
         update_body = _translate_terms_scalar(
             atom.update,
-            _bind_wires([
-                ("ctrl",   ctx.ctrl_latched),
-                ("extl_l", ctx.extl_latched),
-                ("extl_n", ctx.extl_next),
-            ]),
+            _bind_wires(
+                [
+                    ("ctrl", ctx.ctrl_latched),
+                    ("extl_l", ctx.extl_latched),
+                    ("extl_n", ctx.extl_next),
+                ]
+            ),
             ctx.ctrl_next,
             ctx.constants,
         )
@@ -416,46 +429,364 @@ class ModuleToLean4:
             ]
 
         input_groups = [
-            ("ctrl",   ctx.ctrl_latched),
+            ("ctrl", ctx.ctrl_latched),
             ("extl_l", ctx.extl_latched),
             ("extl_n", ctx.extl_next),
         ]
 
         if list(ctx.atom.init):
             init_binder = f"(extl_n : {_product_type(ctx.extl_next)})"
-            extl_n_arg  = _call_arg("extl_n", ctx.extl_next)
-            extras      = [f"Scalar.unpack_extl_n"] if ctx.extl_next else []
+            extl_n_arg = _call_arg("extl_n", ctx.extl_next)
+            extras = [f"Scalar.unpack_extl_n"] if ctx.extl_next else []
             lines.extend(_proof([init_binder], "init", [extl_n_arg], extras))
             lines.append("")
 
         if list(ctx.atom.update):
-            binders     = [f"({p} : {_product_type(w) if w else 'Unit'})" for p, w in input_groups]
+            binders = [
+                f"({p} : {_product_type(w) if w else 'Unit'})" for p, w in input_groups
+            ]
             scalar_args = [_call_arg(p, w) for p, w in input_groups]
-            extras      = [f"Scalar.unpack_{p}" for p, w in input_groups if w]
+            extras = [f"Scalar.unpack_{p}" for p, w in input_groups if w]
             lines.extend(_proof(binders, "update", scalar_args, extras))
             lines.append("")
 
         return "\n".join(lines)
 
     def to_lean_scalar(self) -> str:
+        if not self._can_scalarize():
+            return (
+                "-- scalar encoding not available: module has non-scalar (matrix) wires"
+            )
         return "{}\n\n{}".format(
             self.atom_to_lean_scalar(),
             self.to_lean_scalar_equiv(),
         )
 
-    def to_lean(self, circuit: bool = True, scalar: bool = True) -> str:
+    # ------------------------------------------------------------------
+    # Relational encoding helpers
+    # ------------------------------------------------------------------
+
+    def atom_to_lean_rel(self) -> str:
+        """Generate the relational encoding inside ``namespace Rel``.
+
+        Emits, in order:
+        1. ``effect_i`` — one function per ctrl_next wire, independently compiled
+           from the update term list targeting only that wire.
+        2. ``effect_i_eq`` — theorem: ``effect_i ctrl extl_l extl_n =
+           (Scalar.update ctrl extl_l extl_n).i``.
+        3. ``R_i`` — per-variable transition relation
+           (``new.i = effect_i old ...``).
+        4. ``TransRel`` — conjunction of all ``R_i``.
+        5. ``init_i`` / ``init_i_eq`` / ``Init_i`` / ``InitCond`` — same
+           structure for the init block (only when init terms exist).
+        """
+        ctx = self.ctx
+        noncomp = "noncomputable " if ctx.uses_real else ""
+
+        n_ctrl = len(ctx.ctrl_next)
+        state_ty = _product_type_scalar(ctx.ctrl_next)
+
+        def _ty(wires):
+            return _product_type_scalar(wires) if wires else "Unit"
+
+        # All update input groups (matches Scalar.update signature)
+        update_groups = [
+            ("ctrl", ctx.ctrl_latched),
+            ("extl_l", ctx.extl_latched),
+            ("extl_n", ctx.extl_next),
+        ]
+        update_binders = " ".join(f"({p} : {_ty(w)})" for p, w in update_groups)
+        update_args = " ".join(p for p, _ in update_groups)
+        update_intro = " ".join(p for p, _ in update_groups)
+
+        # Extl-only groups for R_i / TransRel (old/new replace ctrl)
+        extl_groups = [("extl_l", ctx.extl_latched), ("extl_n", ctx.extl_next)]
+        extl_binders = " ".join(f"({p} : {_ty(w)})" for p, w in extl_groups)
+        extl_args = " ".join(p for p, _ in extl_groups)
+
+        # Init input (just extl_n, matches Scalar.init signature)
+        extl_n_binder = f"(extl_n : {_ty(ctx.extl_next)})"
+
+        update_bindings = _bind_wires(
+            [
+                ("ctrl", ctx.ctrl_latched),
+                ("extl_l", ctx.extl_latched),
+                ("extl_n", ctx.extl_next),
+            ]
+        )
+        init_bindings = _bind_wires([("extl_n", ctx.extl_next)])
+
+        def _proj_theorem(
+            func_name: str,
+            scalar_func: str,
+            all_binders: str,
+            all_args: str,
+            intro_vars: str,
+            acc: str,
+        ) -> list[str]:
+            scalar_proj = f"({scalar_func} {all_args}){acc}"
+            return [
+                f"theorem {func_name}_eq : ∀ {all_binders},",
+                f"    {func_name} {all_args} = {scalar_proj} := by",
+                f"  intro {intro_vars}",
+                f"  simp only [{scalar_func}, {func_name}]",
+                f"  try rfl",
+                f"  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
+                f"  try omega",
+                "",
+            ]
+
+        lines = ["namespace Rel", ""]
+
+        has_update = bool(list(ctx.atom.update))
+        has_init = bool(list(ctx.atom.init))
+
+        if has_update:
+            # Per-variable effect functions (independently compiled, dead-code pruned)
+            for i, w in enumerate(ctx.ctrl_next):
+                ty = dtype_to_lean_type(w, simple_types=True)
+                body = _translate_terms_scalar(
+                    _reachable_terms(ctx.atom.update, [w]),
+                    update_bindings,
+                    [w],
+                    ctx.constants,
+                )
+                lines.append(
+                    f"@[simp] {noncomp}def effect_{i} {update_binders} : {ty} :="
+                )
+                lines.append(body)
+                lines.append("")
+
+            # Equality theorems vs Scalar.update
+            for i in range(n_ctrl):
+                acc = _accessor(i, n_ctrl)
+                lines.extend(
+                    _proj_theorem(
+                        f"effect_{i}",
+                        "Scalar.update",
+                        update_binders,
+                        update_args,
+                        update_intro,
+                        acc,
+                    )
+                )
+
+            # Per-variable transition relations
+            for i in range(n_ctrl):
+                acc = _accessor(i, n_ctrl)
+                lines.append(
+                    f"def R_{i} (old new : {state_ty}) {extl_binders} : Prop :="
+                )
+                lines.append(f"  new{acc} = effect_{i} old {extl_args}")
+                lines.append("")
+
+            # Full transition relation
+            r_calls = [f"R_{i} old new {extl_args}" for i in range(n_ctrl)]
+            lines.append(
+                f"def TransRel (old new : {state_ty}) {extl_binders} : Prop :="
+            )
+            lines.append(f"  " + " ∧\n  ".join(r_calls))
+            lines.append("")
+
+        if has_init:
+            # Per-variable init value functions (independently compiled, dead-code pruned)
+            for i, w in enumerate(ctx.ctrl_next):
+                ty = dtype_to_lean_type(w, simple_types=True)
+                body = _translate_terms_scalar(
+                    _reachable_terms(ctx.atom.init, [w]),
+                    init_bindings,
+                    [w],
+                    ctx.constants,
+                )
+                lines.append(f"@[simp] {noncomp}def init_{i} {extl_n_binder} : {ty} :=")
+                lines.append(body)
+                lines.append("")
+
+            # Equality theorems vs Scalar.init
+            for i in range(n_ctrl):
+                acc = _accessor(i, n_ctrl)
+                lines.extend(
+                    _proj_theorem(
+                        f"init_{i}",
+                        "Scalar.init",
+                        extl_n_binder,
+                        "extl_n",
+                        "extl_n",
+                        acc,
+                    )
+                )
+
+            # Per-variable init conditions
+            for i in range(n_ctrl):
+                acc = _accessor(i, n_ctrl)
+                lines.append(f"def Init_{i} (s : {state_ty}) {extl_n_binder} : Prop :=")
+                lines.append(f"  s{acc} = init_{i} extl_n")
+                lines.append("")
+
+            # Full init condition
+            init_calls = [f"Init_{i} s extl_n" for i in range(n_ctrl)]
+            lines.append(f"def InitCond (s : {state_ty}) {extl_n_binder} : Prop :=")
+            lines.append(f"  " + " ∧\n  ".join(init_calls))
+            lines.append("")
+
+            # InitCond ↔ s = Scalar.init extl_n
+            init_simp = (
+                ["InitCond"]
+                + [f"Init_{i}" for i in range(n_ctrl)]
+                + [f"init_{i}_eq" for i in range(n_ctrl)]
+                + ["Prod.ext_iff"]
+            )
+            lines.append(
+                f"theorem InitCond_scalar_eq : ∀ (s : {state_ty}) {extl_n_binder},"
+            )
+            lines.append("    InitCond s extl_n ↔ s = Scalar.init extl_n := by")
+            lines.append("  intro s extl_n")
+            lines.append(f"  simp only [{', '.join(init_simp)}]")
+            lines.append("  try tauto")
+            lines.append("")
+
+            # InitCond ↔ ctrl' = init extl_n  (functional / Mat domain)
+            mat_ctrl_ty = _product_type(ctx.ctrl_next)
+
+            def _unpack(param, wires):
+                return f"(Scalar.unpack_{param} {param})" if wires else param
+
+            unpack_pack_simp = (
+                ["Scalar.pack", "Scalar.unpack_ctrl"]
+                + (["Scalar.unpack_extl_n"] if ctx.extl_next else [])
+            )
+            unpack_pack_simp_str = ", ".join(unpack_pack_simp)
+
+            new_unpack    = f"(Scalar.unpack_ctrl ctrl')" if ctx.ctrl_next else "ctrl'"
+            extl_n_unpack = _unpack("extl_n", ctx.extl_next)
+            init_cond_call = f"InitCond {new_unpack} {extl_n_unpack}"
+            mat_extl_n_ty = _product_type(ctx.extl_next) if ctx.extl_next else "Unit"
+            init_mat_binders = f"(ctrl' : {mat_ctrl_ty}) (extl_n : {mat_extl_n_ty})"
+
+            lines.append(
+                f"theorem InitCond_func_eq : ∀ {init_mat_binders},"
+            )
+            lines.append(f"    {init_cond_call} ↔ ctrl' = init extl_n := by")
+            lines.append("  intro ctrl' extl_n")
+            lines.append("  rw [InitCond_scalar_eq, init_scalar_eq]")
+            lines.append("  constructor")
+            lines.append("  · intro h")
+            lines.append(f"    have hpack : ctrl' = Scalar.pack (Scalar.unpack_ctrl ctrl') := by")
+            lines.append(f"      simp only [Scalar.pack, Scalar.unpack_ctrl]")
+            lines.append("      try rfl")
+            lines.append("      try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])")
+            lines.append("      try (funext i j; simp [Fin.fin_one_eq_zero])")
+            lines.append("    rw [h] at hpack; exact hpack")
+            lines.append("  · intro h")
+            lines.append(f"    simp [Scalar.pack, Scalar.unpack_ctrl, h]")
+            lines.append("")
+
+        if has_update:
+            # TransRel ↔ new = Scalar.update old extl_l extl_n
+            # Use `old` in place of `ctrl` when calling Scalar.update.
+            scalar_update_args = " ".join(
+                "old" if p == "ctrl" else p for p, _ in update_groups
+            )
+            trans_simp = (
+                ["TransRel"]
+                + [f"R_{i}" for i in range(n_ctrl)]
+                + [f"effect_{i}_eq" for i in range(n_ctrl)]
+                + ["Prod.ext_iff"]
+            )
+            trans_intro = f"old new {extl_args}"
+            lines.append(
+                f"theorem TransRel_scalar_eq : ∀ (old new : {state_ty}) {extl_binders},"
+            )
+            lines.append(
+                f"    TransRel old new {extl_args} ↔ new = Scalar.update {scalar_update_args} := by"
+            )
+            lines.append(f"  intro {trans_intro}")
+            lines.append(f"  simp only [{', '.join(trans_simp)}]")
+            lines.append("  try tauto")
+            lines.append("")
+
+            # TransRel ↔ ctrl' = update ctrl extl_l extl_n  (functional / Mat domain)
+            mat_ctrl_ty = _product_type(ctx.ctrl_latched)
+
+            def _mat_extl_ty(wires):
+                return _product_type(wires) if wires else "Unit"
+
+            def _unpack(param, wires):
+                return f"(Scalar.unpack_{param} {param})" if wires else param
+
+            func_extl_binders = " ".join(
+                f"({p} : {_mat_extl_ty(w)})" for p, w in extl_groups
+            )
+            func_extl_args = " ".join(p for p, _ in extl_groups)
+            func_extl_intro = " ".join(p for p, _ in extl_groups)
+
+            old_unpack = f"(Scalar.unpack_ctrl ctrl)" if ctx.ctrl_latched else "ctrl"
+            new_unpack = f"(Scalar.unpack_ctrl ctrl')" if ctx.ctrl_next else "ctrl'"
+            extl_unpacks = " ".join(_unpack(p, w) for p, w in extl_groups)
+            trans_func_call = f"TransRel {old_unpack} {new_unpack} {extl_unpacks}"
+
+            unpack_pack_simp = (
+                ["Scalar.pack", "Scalar.unpack_ctrl"]
+                + (["Scalar.unpack_extl_l"] if ctx.extl_latched else [])
+                + (["Scalar.unpack_extl_n"] if ctx.extl_next else [])
+            )
+            unpack_pack_simp_str = ", ".join(unpack_pack_simp)
+
+            lines.append(
+                f"theorem TransRel_func_eq : ∀ (ctrl ctrl' : {mat_ctrl_ty}) {func_extl_binders},"
+            )
+            lines.append(
+                f"    {trans_func_call} ↔ ctrl' = update ctrl {func_extl_args} := by"
+            )
+            lines.append(f"  intro ctrl ctrl' {func_extl_intro}")
+            lines.append("  rw [TransRel_scalar_eq, update_scalar_eq]")
+            lines.append("  constructor")
+            lines.append("  · intro h")
+            lines.append(f"    have hpack : ctrl' = Scalar.pack (Scalar.unpack_ctrl ctrl') := by")
+            lines.append(f"      simp only [Scalar.pack, Scalar.unpack_ctrl]")
+            lines.append("      try rfl")
+            lines.append("      try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])")
+            lines.append("      try (funext i j; simp [Fin.fin_one_eq_zero])")
+            lines.append("    rw [h] at hpack; exact hpack")
+            lines.append("  · intro h")
+            lines.append(f"    simp [Scalar.pack, Scalar.unpack_ctrl, h]")
+            lines.append("")
+
+        lines.append("end Rel")
+        return "\n".join(lines)
+
+    def to_lean_rel(self) -> str:
+        if not self._can_scalarize():
+            return "-- relational encoding not available: module has non-scalar (matrix) wires"
+        return self.atom_to_lean_rel()
+
+    def _can_scalarize(self) -> bool:
+        """True when every wire in the module has a scalar (1×1) type."""
+        ctx = self.ctx
+        all_wires = ctx.ctrl_latched + ctx.ctrl_next + ctx.extl_latched + ctx.extl_next
+        return all(_is_scalar_wire(w) for w in all_wires)
+
+    def to_lean(
+        self, circuit: bool = True, scalar: bool = True, rel: bool = True
+    ) -> str:
         """Return all enabled encodings joined by blank lines.
 
         ``circuit=True`` appends the circuit (Box algebra) encoding and its
         equivalence theorems.  ``scalar=True`` appends the scalar namespace
         (``Scalar.init``/``update``, ``unpack_*``, ``pack``) and the
-        composition theorems.  Both default to True; pass ``False`` to omit.
+        composition theorems.  ``rel=True`` appends the relational namespace
+        (``Rel.effect_i``, ``Rel.R_i``, ``Rel.TransRel``, ``Rel.InitCond``).
+        All default to True; pass ``False`` to omit.  The scalar and
+        relational encodings are silently skipped when the module has
+        non-scalar (matrix) wires.
         """
         parts = [self.to_lean_functional()]
         if circuit:
             parts.append(self.to_lean_circ())
         if scalar:
             parts.append(self.to_lean_scalar())
+        if rel:
+            parts.append(self.to_lean_rel())
         return "\n\n".join(parts)
 
     def atom_to_lean_functional(self) -> str:
