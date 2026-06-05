@@ -18,6 +18,9 @@ from zrth.lean.common import (
     _tensor_to_lean_scalar,
     _bind_wires_scalar,
     _tensor_to_lean_inline,
+    _flat_element_type,
+    _flat_size,
+    _flat_indices,
 )
 
 from typing import Callable
@@ -191,12 +194,19 @@ def _translate_terms(
 
 
 def _product_type_scalar(wires: list[Wire]) -> str:
-    """Build a product type using bare scalar types (Bool/Int/Real, no Mat)."""
+    """Build a flat scalar product type, expanding multi-element wires.
+
+    Each wire contributes ``_flat_size(w)`` copies of its base type.
+    E.g. [Int(1), Float(2)] → ``"Int × Real × Real"``.
+    """
     if not wires:
         return "Unit"
-    if len(wires) == 1:
-        return dtype_to_lean_type(wires[0], simple_types=True)
-    parts = [dtype_to_lean_type(w, simple_types=True) for w in wires]
+    parts: list[str] = []
+    for w in wires:
+        ty = _flat_element_type(w)
+        parts.extend([ty] * _flat_size(w))
+    if len(parts) == 1:
+        return parts[0]
     return " × ".join(parts)
 
 
@@ -218,24 +228,26 @@ def _constant_expr_scalar(
     return _tensor_to_lean_inline(term.itype._0, w)
 
 
+def _argmax_scalar_name(n: int) -> str:
+    """Name of the scalar axiom for 1-d argmax over n elements."""
+    return f"argmax1d_scalar_{n}"
+
+
 def _translate_terms_scalar(
     terms,
     input_bindings: dict[int, str],
     block_outputs: list[Wire],
     constants: ConstantRegistry,
+    flat_slots: "dict[int, list[str]] | None" = None,
 ) -> str:
     """Compile terms into a Lean body using scalar types for 1×1 wires.
 
-    `input_bindings` maps wire IDs to Lean accessor expressions.  Pass
-    bindings from ``_bind_wires`` — the Scalar.init/update signatures use
-    bare scalar types (``Int``/``Bool``), so accessors like ``"ctrl.1"``
-    already refer to bare scalars in that context.
+    ``flat_slots`` maps wire IDs to their flat scalar accessor strings.  When
+    provided, ``Argmax`` on a wire whose slots are known emits a call to the
+    scalar axiom ``argmax1d_scalar_n`` instead of reconstructing a matrix.
 
-    Falls back to `_LEAN_OP` (matrix form) for any non-scalar output wire or
-    operations not in `_SCALAR_OP`.  When the term list is empty (passthrough:
-    every output wire is already in ``input_bindings``) returns the plain
-    output expression; returns ``"sorry /- no terms -/"`` only if an output
-    wire is missing from both terms and bindings.
+    Falls back to `_LEAN_OP` (matrix form) for non-scalar output wires or
+    operations not in `_SCALAR_OP`.
     """
     term_list = list(terms)
     if not term_list:
@@ -245,6 +257,7 @@ def _translate_terms_scalar(
         return "sorry /- no terms -/"
 
     wire_expr: dict[int, str] = dict(input_bindings)
+    flat_slots = dict(flat_slots or {})
     let_lines: list[str] = []
 
     for var_counter, term in enumerate(term_list):
@@ -255,7 +268,14 @@ def _translate_terms_scalar(
         if name in ("Tensor", "ConstBool", "ConstInt"):
             expr = _constant_expr_scalar(name, term, write_wire, constants)
         elif name == "Argmax":
-            expr = _argmax_expr(wire_expr[term.read[0].id], term.read[0].dtype.shape)
+            in_wire = term.read[0]
+            slots = flat_slots.get(in_wire.id)
+            if slots is not None:
+                axiom_name = _argmax_scalar_name(len(slots))
+                expr = f"({axiom_name} {' '.join(slots)})"
+            else:
+                mat_expr = _argmax_expr(wire_expr[in_wire.id], in_wire.dtype.shape)
+                expr = f"({mat_expr} 0 0)" if _is_scalar_wire(write_wire) else mat_expr
         elif _is_scalar_wire(write_wire) and name in _SCALAR_OP:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = _SCALAR_OP[name](input_exprs)
@@ -266,6 +286,14 @@ def _translate_terms_scalar(
             expr = _LEAN_OP[name](input_exprs)
 
         wire_expr[write_wire.id] = var
+        # Track flat scalar slots for the written wire so downstream Argmax
+        # terms can reference individual elements without matrix reconstruction.
+        if _is_scalar_wire(write_wire):
+            flat_slots[write_wire.id] = [var]
+        else:
+            flat_slots[write_wire.id] = [
+                f"{var} {r} {c}" for r, c in _flat_indices(write_wire)
+            ]
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
