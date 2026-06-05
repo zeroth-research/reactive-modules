@@ -185,7 +185,7 @@ def _get_dtype_item(dtype: DType, item) -> str:
     if isinstance(dtype, DType.Int):
         return str(int(item))
     if isinstance(dtype, DType.Float):
-        return str(float(item))
+        return _float_literal(float(item))
     raise NotImplementedError(f"Unhnadled type: {dtype}")
 
 
@@ -249,6 +249,13 @@ def _is_scalar_wire(wire: Wire) -> bool:
     return shape == [] or shape == [1]
 
 
+def _float_literal(v: float) -> str:
+    """Lean Real literal for a float value."""
+    if v == int(v):
+        return f"({int(v)} : Real)"
+    return f"({v} : Real)"
+
+
 def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
     """Return an inline `Mat _ 1 1` literal for a scalar tensor."""
     if isinstance(wire.dtype, DType.Bool):
@@ -256,6 +263,8 @@ def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
         return f"(fun _ _ => {val})"
     if isinstance(wire.dtype, DType.Int):
         return f"(fun _ _ => ({int(tensor.item())} : Int))"
+    if isinstance(wire.dtype, DType.Float):
+        return f"(fun _ _ => {_float_literal(float(tensor.item()))})"
     raise ValueError(f"Cannot inline tensor with dtype={wire.dtype}")
 
 
@@ -265,6 +274,8 @@ def _tensor_to_lean_scalar(tensor, wire: Wire) -> str:
         return "true" if bool(tensor.item()) else "false"
     if isinstance(wire.dtype, DType.Int):
         return f"({int(tensor.item())} : Int)"
+    if isinstance(wire.dtype, DType.Float):
+        return _float_literal(float(tensor.item()))
     raise ValueError(f"Cannot inline scalar for dtype={wire.dtype}")
 
 
@@ -277,3 +288,78 @@ def _bind_wires_scalar(params: list[tuple[str, list[Wire]]]) -> dict[int, str]:
             base = f"{name}{_accessor(i, n)}"
             out[w.id] = f"{base} 0 0" if _is_scalar_wire(w) else base
     return out
+
+
+# ---------------------------------------------------------------------------
+# Flat-scalar helpers — support multi-element (Mat T 1 n) wires in the
+# scalar / relational encoding by expanding each wire into n scalars.
+# ---------------------------------------------------------------------------
+
+def _flat_element_type(wire: Wire) -> str:
+    """Base Lean scalar type for one element of the wire (no Mat wrapper)."""
+    dt = wire.dtype
+    if isinstance(dt, DType.Bool):
+        return "Bool"
+    if isinstance(dt, DType.Int):
+        return "Int"
+    if isinstance(dt, DType.Float):
+        return "Real"
+    raise ValueError(f"Unsupported DType for scalar element: {dt}")
+
+
+def _flat_indices(wire: Wire) -> list[tuple[int, int]]:
+    """Row-major (row, col) indices for all elements of the wire.
+
+    shape [] or [1] → [(0, 0)]
+    shape [n]       → [(0, 0), (0, 1), ..., (0, n-1)]
+    shape [m, n]    → [(i, j) for i in range(m) for j in range(n)]
+    """
+    shape = wire.dtype.shape
+    if not shape or shape == [1]:
+        return [(0, 0)]
+    if len(shape) == 1:
+        return [(0, j) for j in range(shape[0])]
+    if len(shape) == 2:
+        return [(i, j) for i in range(shape[0]) for j in range(shape[1])]
+    raise ValueError(f"Shape {shape} not supported for scalar encoding")
+
+
+def _flat_size(wire: Wire) -> int:
+    """Total number of scalar elements in the wire."""
+    return len(_flat_indices(wire))
+
+
+def _vec_from_scalars(scalars: list[str], elem_ty: str) -> str:
+    """Build a ``Fin n → T`` expression using a typed ``Fin.cons`` chain.
+
+    Annotates the whole chain with ``: Fin n → T`` so Lean knows the
+    application type before elaborating the ``j`` argument — without this,
+    the application site has type ``?m j`` which Lean can't unify with ``T``.
+    """
+    n = len(scalars)
+    result = f"(Fin.elim0 : Fin 0 → {elem_ty})"
+    for s in reversed(scalars):
+        result = f"(Fin.cons {s} {result})"
+    return f"({result} : Fin {n} → {elem_ty})"
+
+
+def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
+    """Build a Lean ``Mat T m n`` expression from flat scalar slot strings.
+
+    shape [] or [1]: ``(fun _ _ => slots[0])``
+    shape [n]:       ``(fun _ j => Fin.cons s0 (Fin.cons s1 ...) j)``
+    shape [m, n]:    ``(fun i j => Fin.cons row0 (Fin.cons row1 ...) i j)``
+    """
+    if not shape or shape == [1]:
+        assert len(slots) == 1
+        return f"(fun _ _ => {slots[0]})"
+    if len(shape) == 1:
+        n = shape[0]
+        assert len(slots) == n, f"expected {n} slots, got {len(slots)}"
+        return f"(fun _ j => {_vec_from_scalars(slots, elem_ty)} j)"
+    if len(shape) == 2:
+        r, c = shape
+        assert len(slots) == r * c
+        row_exprs = [_vec_from_scalars(slots[ri * c : (ri + 1) * c], elem_ty) for ri in range(r)]
+        return f"(fun i j => {_vec_from_scalars(row_exprs, f'Fin {c} → {elem_ty}')} i j)"
+    raise ValueError(f"Shape {shape} not supported for _mat_from_scalars")
