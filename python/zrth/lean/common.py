@@ -243,6 +243,12 @@ def _is_scalar_tensor(wire: Wire) -> bool:
     return False
 
 
+def _is_scalar_wire(wire: Wire) -> bool:
+    """True if the wire is a scalar (shape [] or [1], any scalar dtype)."""
+    shape = wire.dtype.shape
+    return shape == [] or shape == [1]
+
+
 def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
     """Return an inline `Mat _ 1 1` literal for a scalar tensor."""
     if isinstance(wire.dtype, DType.Bool):
@@ -251,3 +257,23 @@ def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
     if isinstance(wire.dtype, DType.Int):
         return f"(fun _ _ => ({int(tensor.item())} : Int))"
     raise ValueError(f"Cannot inline tensor with dtype={wire.dtype}")
+
+
+def _tensor_to_lean_scalar(tensor, wire: Wire) -> str:
+    """Return a bare scalar literal (no Mat wrapper) for a scalar tensor."""
+    if isinstance(wire.dtype, DType.Bool):
+        return "true" if bool(tensor.item()) else "false"
+    if isinstance(wire.dtype, DType.Int):
+        return f"({int(tensor.item())} : Int)"
+    raise ValueError(f"Cannot inline scalar for dtype={wire.dtype}")
+
+
+def _bind_wires_scalar(params: list[tuple[str, list[Wire]]]) -> dict[int, str]:
+    """Like _bind_wires but appends ' 0 0' for scalar (Mat 1 1) input wires."""
+    out: dict[int, str] = {}
+    for name, wires in params:
+        n = len(wires)
+        for i, w in enumerate(wires):
+            base = f"{name}{_accessor(i, n)}"
+            out[w.id] = f"{base} 0 0" if _is_scalar_wire(w) else base
+    return out
