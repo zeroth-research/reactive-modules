@@ -127,6 +127,21 @@ def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
     )
 
 
+def _reachable_terms(terms, output_wires: "list[Wire]") -> list:
+    """Return the terms backward-reachable from output_wires, in original order.
+
+    Traverses the term list in reverse: a term is kept if any wire it writes
+    is needed; its read wires are then added to the needed set.
+    """
+    needed = {w.id for w in output_wires}
+    selected = []
+    for term in reversed(list(terms)):
+        if {w.id for w in term.write} & needed:
+            needed |= {w.id for w in term.read}
+            selected.append(term)
+    return list(reversed(selected))
+
+
 def _translate_terms(
     terms,
     input_bindings: dict[int, str],
@@ -217,11 +232,16 @@ def _translate_terms_scalar(
     already refer to bare scalars in that context.
 
     Falls back to `_LEAN_OP` (matrix form) for any non-scalar output wire or
-    operations not in `_SCALAR_OP`.  Returns ``"sorry /- no terms -/"`` when
-    the term list is empty.
+    operations not in `_SCALAR_OP`.  When the term list is empty (passthrough:
+    every output wire is already in ``input_bindings``) returns the plain
+    output expression; returns ``"sorry /- no terms -/"`` only if an output
+    wire is missing from both terms and bindings.
     """
     term_list = list(terms)
     if not term_list:
+        out_exprs = [input_bindings.get(w.id) for w in block_outputs]
+        if all(e is not None for e in out_exprs):
+            return f"  {_build_tuple(out_exprs)}"
         return "sorry /- no terms -/"
 
     wire_expr: dict[int, str] = dict(input_bindings)
