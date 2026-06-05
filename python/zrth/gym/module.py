@@ -1,8 +1,9 @@
+import math
 import torch
 import inspect
 import gymnasium as gym
 
-from ..zrth import Module, Wire, DType, Term
+from ..zrth import Module, Wire, DType, Term, IType
 from ..builder import builder_for
 from ..analyzer import (
     convert_method,
@@ -18,6 +19,27 @@ from ..eval import eval_itype, read_wire, getattr_wire
 # ============================================================================
 # Gym-specific helpers
 # ============================================================================
+
+
+def space_to_dtype(space, theory, is_action: bool) -> DType:
+    """Convert a gym.spaces.Space to a DType for the given theory."""
+    if isinstance(space, gym.spaces.Discrete):
+        n = space.n
+        if theory is IType.BV:
+            bits = max(1, int(math.ceil(math.log2(n + 1))))
+            return DType.BV(bits).reshape([1])
+        if is_action:
+            return DType.Float([n])
+        return DType.Int([1]) if theory is IType.LIA else DType.Float([1])
+    elif isinstance(space, gym.spaces.Box):
+        shape = list(space.shape)
+        if theory is IType.BV:
+            return DType.BV(32).reshape(shape)
+        return DType.Int(shape) if theory is IType.LIA else DType.Float(shape)
+    elif isinstance(space, gym.spaces.MultiBinary):
+        return DType.Bool([space.n])
+    else:
+        raise ValueError(f"Unsupported gym space type: {type(space).__name__}")
 
 
 def _value_to_const_term(value, wire, builder):
@@ -123,10 +145,8 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
 
     _builder = builder_for(theory)
 
-    action_dtype = _builder.space_to_dtype(env_instance.action_space, is_action=True)
-    observation_dtype = _builder.space_to_dtype(
-        env_instance.observation_space, is_action=False
-    )
+    action_dtype = space_to_dtype(env_instance.action_space, theory, is_action=True)
+    observation_dtype = space_to_dtype(env_instance.observation_space, theory, is_action=False)
 
     # Reset so runtime-created attrs (e.g. self.state) are populated.
     # Reset the outermost wrapper so wrapper state is also initialized.
