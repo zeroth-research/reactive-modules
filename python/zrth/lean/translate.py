@@ -388,15 +388,34 @@ class ModuleToLean4:
         return result
 
     @staticmethod
-    def _argmax_scalar_axiom_lines(elem_ty: str, n: int) -> list[str]:
-        """Emit the axiom declaration and simp eq-axiom for a scalar argmax variant."""
-        ax_name = _argmax_scalar_name(n)
+    def _argmax_scalar_def_lines(elem_ty: str, n: int) -> list[str]:
+        """Emit a scalar def and simp theorem for argmax over n elements.
+
+        The def mirrors the ``foldl`` in ``argmax_1d`` step by step so the
+        equality theorem closes by ``simp`` + ``rfl`` (definitional equality
+        after unfolding ``List.finRange`` and ``List.foldl``).
+        """
+        name = _argmax_scalar_name(n)
+        noncomp = "noncomputable " if elem_ty == "Real" else ""
         params = " ".join(f"(s{i} : {elem_ty})" for i in range(n))
+        # Default value mirrors Inhabited.default for each type.
+        default_map = {"Real": "(0 : Real)", "Int": "(0 : Int)", "Bool": "false"}
+        default = default_map.get(elem_ty, f"(Inhabited.default : {elem_ty})")
+        body = [f"  let b0 : Nat × {elem_ty} := (0, {default})"]
+        for i in range(n):
+            body.append(
+                f"  let b{i+1} : Nat × {elem_ty} := if b{i}.2 ≤ s{i} then ({i}, s{i}) else b{i}"
+            )
+        body.append(f"  (b{n}.1 : Int)")
         eq_params = " ".join(f"(v 0 {i})" for i in range(n))
         return [
-            f"axiom {ax_name} {params} : Int",
-            f"@[simp] axiom {ax_name}_eq (v : Mat {elem_ty} 1 {n}) :",
-            f"  {ax_name} {eq_params} = (↑(argmax_1d v 0 0) : Int)",
+            f"{noncomp}def {name} {params} : Int :=",
+            *body,
+            "",
+            f"@[simp] theorem {name}_eq (v : Mat {elem_ty} 1 {n}) :",
+            f"    {name} {eq_params} = (↑(argmax_1d v 0 0) : Int) := by",
+            f"  simp only [{name}, argmax_1d, List.finRange, List.foldl]",
+            f"  rfl",
             "",
         ]
 
@@ -428,7 +447,7 @@ class ModuleToLean4:
 
         lines: list[str] = []
         for ety, n in argmax_variants:
-            lines.extend(self._argmax_scalar_axiom_lines(ety, n))
+            lines.extend(self._argmax_scalar_def_lines(ety, n))
 
         lines += ["namespace Scalar", ""]
 
@@ -798,10 +817,7 @@ class ModuleToLean4:
             lines.append("  constructor")
             lines.append("  · intro h")
             lines.append(f"    have hpack : ctrl' = Scalar.pack (Scalar.unpack_ctrl ctrl') := by")
-            lines.append(f"      simp only [Scalar.pack, Scalar.unpack_ctrl]")
-            lines.append("      try rfl")
-            lines.append("      try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])")
-            lines.append("      try (funext i j; simp [Fin.fin_one_eq_zero])")
+            lines.append(f"      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]")
             lines.append("    rw [h] at hpack; exact hpack")
             lines.append("  · intro h")
             lines.append(f"    simp [Scalar.pack, Scalar.unpack_ctrl, h]")
@@ -869,10 +885,7 @@ class ModuleToLean4:
             lines.append("  constructor")
             lines.append("  · intro h")
             lines.append(f"    have hpack : ctrl' = Scalar.pack (Scalar.unpack_ctrl ctrl') := by")
-            lines.append(f"      simp only [Scalar.pack, Scalar.unpack_ctrl]")
-            lines.append("      try rfl")
-            lines.append("      try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])")
-            lines.append("      try (funext i j; simp [Fin.fin_one_eq_zero])")
+            lines.append(f"      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]")
             lines.append("    rw [h] at hpack; exact hpack")
             lines.append("  · intro h")
             lines.append(f"    simp [Scalar.pack, Scalar.unpack_ctrl, h]")
