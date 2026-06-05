@@ -50,7 +50,16 @@ class TermBuilder:
 
     def not_(self, a) -> Term:
         assert self._ns
-        return Term(self._ns.Not(), [Wire(Bool(1, 1))], [_wire(a)])
+        return Term(self._ns.Not(), [Wire(Bool(*_dtype(a).shape))], [_wire(a)])
+
+    def and_(self, a, b) -> Term:
+        return self._binary_op(self._ns.And, Bool(*_dtype(a).shape), a, b)
+
+    def or_(self, a, b) -> Term:
+        return self._binary_op(self._ns.Or, Bool(*_dtype(a).shape), a, b)
+
+    def xor_(self, a, b) -> Term:
+        return self._binary_op(self._ns.Xor, Bool(*_dtype(a).shape), a, b)
 
     def const_bool(self, value: bool, output_wire=None) -> Term:
         assert self._ns
@@ -191,6 +200,12 @@ class TermBuilder:
     def const(self, tensor, output_wire=None) -> Term:
         raise NotImplementedError
 
+    def div(self, a, b) -> Term:
+        raise ValueError(f"{type(self).__name__} does not support div")
+
+    def matmul(self, a, b) -> Term:
+        raise NotImplementedError
+
     def sin(self, a) -> Term:
         raise NotImplementedError
 
@@ -225,22 +240,22 @@ class LRATermBuilder(TermBuilder):
         return self._binary_op(_IType.LRA.Sub, _dtype(a), a, b)
 
     def lt(self, a, b) -> Term:
-        return self._binary_op(_IType.LRA.Lt, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LRA.Lt, Bool(*_dtype(a).shape), a, b)
 
     def le(self, a, b) -> Term:
-        return self._binary_op(_IType.LRA.Le, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LRA.Le, Bool(*_dtype(a).shape), a, b)
 
     def gt(self, a, b) -> Term:
-        return self._binary_op(_IType.LRA.Gt, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LRA.Gt, Bool(*_dtype(a).shape), a, b)
 
     def ge(self, a, b) -> Term:
-        return self._binary_op(_IType.LRA.Ge, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LRA.Ge, Bool(*_dtype(a).shape), a, b)
 
     def eq(self, a, b) -> Term:
-        return self._binary_op(_IType.LRA.Eq, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LRA.Eq, Bool(*_dtype(a).shape), a, b)
 
     def ne(self, a, b) -> Term:
-        return self._binary_op(_IType.LRA.Ne, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LRA.Ne, Bool(*_dtype(a).shape), a, b)
 
     def sin(self, a) -> Term:
         return self._unary_op(_IType.LRA.Sin, a)
@@ -257,6 +272,17 @@ class LRATermBuilder(TermBuilder):
             return result
         raise ValueError("LRA does not support mul with non-constant operands")
 
+    def div(self, a, b) -> Term:
+        return self._binary_op(_IType.LRA.Div, _dtype(a), a, b)
+
+    def matmul(self, a, b) -> Term:
+        a_wire, b_wire = _wire(a), _wire(b)
+        out_shape = [a_wire.dtype.shape[0], b_wire.dtype.shape[1]]
+        if isinstance(a, Term) and a.itype.op_name == "ConstReal":
+            no_bias = torch.empty(0, 0)
+            return Term(_IType.LRA.Linear(a.itype.const_data, no_bias), [Wire(DType.Float(out_shape))], [b_wire])
+        raise RuntimeError("LRA matmul requires a constant left operand; use builder.linear() instead")
+
     def const_for_value(self, value, output_wire=None) -> Term:
         if isinstance(value, bool):
             return self.const_bool(value, output_wire=output_wire)
@@ -266,7 +292,8 @@ class LRATermBuilder(TermBuilder):
 
     def const(self, tensor, output_wire=None) -> Term:
         if tensor.dtype == torch.bool:
-            w = output_wire or Wire(Bool(1, 1))
+            shape = _normalize_shape(list(tensor.size()))
+            w = output_wire or Wire(Bool(*shape))
             return Term(_IType.LRA.ConstBool(tensor), [w])
         shape = _normalize_shape(list(tensor.size()))
         w = output_wire or Wire(Float(*shape))
@@ -297,22 +324,22 @@ class LIATermBuilder(TermBuilder):
         return self._binary_op(_IType.LIA.Sub, _dtype(a), a, b)
 
     def lt(self, a, b) -> Term:
-        return self._binary_op(_IType.LIA.Lt, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LIA.Lt, Bool(*_dtype(a).shape), a, b)
 
     def le(self, a, b) -> Term:
-        return self._binary_op(_IType.LIA.Le, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LIA.Le, Bool(*_dtype(a).shape), a, b)
 
     def gt(self, a, b) -> Term:
-        return self._binary_op(_IType.LIA.Gt, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LIA.Gt, Bool(*_dtype(a).shape), a, b)
 
     def ge(self, a, b) -> Term:
-        return self._binary_op(_IType.LIA.Ge, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LIA.Ge, Bool(*_dtype(a).shape), a, b)
 
     def eq(self, a, b) -> Term:
-        return self._binary_op(_IType.LIA.Eq, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LIA.Eq, Bool(*_dtype(a).shape), a, b)
 
     def ne(self, a, b) -> Term:
-        return self._binary_op(_IType.LIA.Ne, Bool(1, 1), a, b)
+        return self._binary_op(_IType.LIA.Ne, Bool(*_dtype(a).shape), a, b)
 
     def sin(self, a) -> Term:
         raise ValueError("LIA does not support sin")
@@ -329,6 +356,14 @@ class LIATermBuilder(TermBuilder):
             return result
         raise ValueError("LIA does not support mul with non-constant operands")
 
+    def matmul(self, a, b) -> Term:
+        a_wire, b_wire = _wire(a), _wire(b)
+        out_shape = [a_wire.dtype.shape[0], b_wire.dtype.shape[1]]
+        if isinstance(a, Term) and a.itype.op_name == "ConstInt":
+            no_bias = torch.empty(0, 0)
+            return Term(_IType.LIA.Linear(a.itype.const_data, no_bias), [Wire(DType.Int(out_shape))], [b_wire])
+        raise RuntimeError("LIA matmul requires a constant left operand; use builder.linear() instead")
+
     def const_for_value(self, value, output_wire=None) -> Term:
         if isinstance(value, bool):
             return self.const_bool(value, output_wire=output_wire)
@@ -337,7 +372,8 @@ class LIATermBuilder(TermBuilder):
 
     def const(self, tensor, output_wire=None) -> Term:
         if tensor.dtype == torch.bool:
-            w = output_wire or Wire(Bool(1, 1))
+            shape = _normalize_shape(list(tensor.size()))
+            w = output_wire or Wire(Bool(*shape))
             return Term(_IType.LIA.ConstBool(tensor), [w])
         shape = _normalize_shape(list(tensor.size()))
         w = output_wire or Wire(Int(*shape))
@@ -375,22 +411,22 @@ class BVTermBuilder(TermBuilder):
         return self._binary_op(_IType.BV.Mul, _dtype(a), a, b)
 
     def lt(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Lt, Bool(1, 1), a, b)
+        return self._binary_op(_IType.BV.Lt, Bool(*_dtype(a).shape), a, b)
 
     def le(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Le, Bool(1, 1), a, b)
+        return self._binary_op(_IType.BV.Le, Bool(*_dtype(a).shape), a, b)
 
     def gt(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Gt, Bool(1, 1), a, b)
+        return self._binary_op(_IType.BV.Gt, Bool(*_dtype(a).shape), a, b)
 
     def ge(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Ge, Bool(1, 1), a, b)
+        return self._binary_op(_IType.BV.Ge, Bool(*_dtype(a).shape), a, b)
 
     def eq(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Eq, Bool(1, 1), a, b)
+        return self._binary_op(_IType.BV.Eq, Bool(*_dtype(a).shape), a, b)
 
     def ne(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Ne, Bool(1, 1), a, b)
+        return self._binary_op(_IType.BV.Ne, Bool(*_dtype(a).shape), a, b)
 
     def sin(self, a) -> Term:
         raise ValueError("BV does not support sin")
