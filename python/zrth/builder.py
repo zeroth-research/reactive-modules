@@ -88,28 +88,6 @@ class TermBuilder:
     def const_for_value(self, value, output_wire=None) -> "Term":
         raise NotImplementedError
 
-    def _dtype_for_discrete(self, n: int, is_action: bool):
-        raise NotImplementedError
-
-    def _dtype_for_box(self, shape: list):
-        raise NotImplementedError
-
-    def _dtype_for_multibinary(self, n: int):
-        return DType.Bool([n])
-
-    # FIXME: move outside builder
-    def space_to_dtype(self, space, is_action: bool):
-        import gymnasium as gym
-
-        if isinstance(space, gym.spaces.Discrete):
-            return self._dtype_for_discrete(space.n, is_action)
-        elif isinstance(space, gym.spaces.Box):
-            return self._dtype_for_box(list(space.shape))
-        elif isinstance(space, gym.spaces.MultiBinary):
-            return self._dtype_for_multibinary(space.n)
-        else:
-            raise ValueError(f"Unsupported gym space type: {type(space).__name__}")
-
     def _try_mul_as_linear(self, a, b, const_op_name: str, scalar_dtype):
         assert self._ns
         for const_t, var_t in [(a, b), (b, a)]:
@@ -222,12 +200,6 @@ class LRATermBuilder(TermBuilder):
     def _numeric_wire(self, shape: list) -> Wire:
         return Wire(DType.Float(shape))
 
-    def _dtype_for_discrete(self, n, is_action):
-        return DType.Float([n]) if is_action else DType.Float([1])
-
-    def _dtype_for_box(self, shape):
-        return DType.Float(shape)
-
     def python_type_to_dtype(self, python_type: type, shape: list):
         if python_type is bool:
             return DType.Bool(shape)
@@ -306,12 +278,6 @@ class LIATermBuilder(TermBuilder):
     def _numeric_wire(self, shape: list) -> Wire:
         return Wire(DType.Int(shape))
 
-    def _dtype_for_discrete(self, n, is_action):
-        return DType.Float([n]) if is_action else DType.Int([1])
-
-    def _dtype_for_box(self, shape):
-        return DType.Int(shape)
-
     def python_type_to_dtype(self, python_type: type, shape: list):
         if python_type is bool:
             return DType.Bool(shape)
@@ -385,15 +351,6 @@ class BVTermBuilder(TermBuilder):
 
     def _numeric_wire(self, shape: list) -> Wire:
         return Wire(DType.BV(32).reshape(shape))
-
-    def _dtype_for_discrete(self, n, is_action):
-        import math
-
-        bits = max(1, int(math.ceil(math.log2(n + 1))))
-        return DType.BV(bits).reshape([1])
-
-    def _dtype_for_box(self, shape):
-        return DType.BV(32).reshape(shape)
 
     def python_type_to_dtype(self, python_type: type, shape: list):
         if python_type is bool:
