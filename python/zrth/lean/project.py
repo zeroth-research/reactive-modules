@@ -7,6 +7,7 @@ from zrth.lean.common import LeanContext, dtype_to_lean_type
 
 from zrth.lean.cert import (
     generate_certificate_lean,
+    generate_data_lean,
     generate_zeroth_hammer_lean,
     CertificateData,
 )
@@ -268,33 +269,59 @@ def main : IO Unit := do
     return "\n".join(lines)
 
 
-def write_certificate_lean(
+def write_data_lean(
     project_dir: Path,
     project_name: str,
     module: Module,
     cert_data: CertificateData | None,
+    ctx: LeanContext | None = None,
 ) -> Path:
-    """Write/overwrite the Certificate.lean file using `cert_data`.
+    """Write/overwrite XXXData.lean with init_pre, update_pre, inv, P, ranking.
 
-    Builds a fresh `LeanContext` so term-typed cert fields are registered
-    with the constants table consistently with codegen.  String fields are
-    expected to be Lean expressions; call `smt_predicates_to_lean` first if
-    they are SMT-LIB.
+    Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
+    from ``create_project`` which already has one).
     """
     module_name = project_name
-    cert_terms: list = []
-    if cert_data is not None:
-        for field in (
-            cert_data.prp,
-            cert_data.inv,
-            cert_data.init_pre,
-            cert_data.update_pre,
-            cert_data.ranking,
-        ):
-            if isinstance(field, list):
-                cert_terms.extend(field)
-    ctx = LeanContext(module, cert_terms=cert_terms)
+    if ctx is None:
+        cert_terms: list = []
+        if cert_data is not None:
+            for field in (
+                cert_data.prp,
+                cert_data.inv,
+                cert_data.init_pre,
+                cert_data.update_pre,
+                cert_data.ranking,
+            ):
+                if isinstance(field, list):
+                    cert_terms.extend(field)
+        ctx = LeanContext(module, cert_terms=cert_terms)
 
+    src_dir = project_dir / project_name
+    data_file = src_dir / f"{module_name}Data.lean"
+    data_file.write_text(generate_data_lean(project_name, module_name, ctx, cert_data))
+    print(f"Wrote {data_file}")
+    return data_file
+
+
+def write_certificate_lean(
+    project_dir: Path,
+    project_name: str,
+    module: Module,
+    cert_data: CertificateData | None = None,
+    ctx: LeanContext | None = None,
+) -> Path:
+    """Write/overwrite Certificate.lean (stable proof structure, imports XXXData).
+
+    Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
+    from ``create_project`` which already has one).
+    ``cert_data`` is accepted for compatibility but not used — the data lives in
+    XXXData.lean.  Call ``write_data_lean`` to update the data.
+    """
+    module_name = project_name
+    if ctx is None:
+        ctx = LeanContext(module)
+
+    data_import = f"{project_name}.{module_name}Data"
     cert_dir = project_dir / "Certificate"
     cert_dir.mkdir(parents=True, exist_ok=True)
     cert_file = cert_dir / "Certificate.lean"
@@ -303,8 +330,8 @@ def write_certificate_lean(
             project_name,
             module_name,
             ctx,
-            cert_data=cert_data,
             hammer_import="ZerothHammer",
+            data_import=data_import,
         )
     )
     print(f"Wrote {cert_file}")
@@ -476,13 +503,8 @@ import {project_name}.{module_name}Scalar
     assert rel_file.exists()
     print(f"++ Generated {rel_file} ++")
 
-    # -- empty file for data --
-    mod_file = src_dir / f"{module_name}Data.lean"
-    print(f"Generating `{mod_file.absolute()}`")
-
-    mod_file.write_text("")
-    assert mod_file.exists()
-    print(f"++ Generated {mod_file} ++")
+    # -- certificate data (init_pre, inv, P, ranking — placeholders if no cert_data) --
+    write_data_lean(project_dir, project_name, module, cert_data, ctx=ctx)
 
     # ----------------------------------------------------------
     # Generate Main.lean for executable
@@ -491,6 +513,11 @@ import {project_name}.{module_name}Scalar
         main_lean = project_dir / "Main.lean"
         main_lean.write_text(generate_main_lean(project_name, module, module_name))
         print(f"Wrote {main_lean}")
+
+    # ----------------------------------------------------------
+    # Always write Certificate.lean (stable proof structure, imports XXXData)
+    # ----------------------------------------------------------
+    write_certificate_lean(project_dir, project_name, module, ctx=ctx)
 
     print()
     print(f"DONE: Project created at: {project_dir}")
