@@ -602,7 +602,7 @@ class ModuleToLean4:
     # ------------------------------------------------------------------
 
     def atom_to_lean_rel(self) -> str:
-        """Generate the relational encoding inside ``namespace Rel``.
+        """Generate the relational encoding inside ``namespace ScalarRel``.
 
         Emits, in order:
         1. ``effect_i`` — one function per ctrl_next wire, independently compiled
@@ -679,7 +679,7 @@ class ModuleToLean4:
                 return "\n".join(recon_lets) + "\n" + body
             return body
 
-        lines = ["namespace Rel", ""]
+        lines = ["namespace ScalarRel", ""]
 
         has_update = bool(list(ctx.atom.update))
         has_init = bool(list(ctx.atom.init))
@@ -891,7 +891,7 @@ class ModuleToLean4:
             lines.append(f"    simp [Scalar.pack, Scalar.unpack_ctrl, h]")
             lines.append("")
 
-        lines.append("end Rel")
+        lines.append("end ScalarRel")
         return "\n".join(lines)
 
     def to_lean_rel(self) -> str:
@@ -914,7 +914,7 @@ class ModuleToLean4:
         equivalence theorems.  ``scalar=True`` appends the scalar namespace
         (``Scalar.init``/``update``, ``unpack_*``, ``pack``) and the
         composition theorems.  ``rel=True`` appends the relational namespace
-        (``Rel.effect_i``, ``Rel.R_i``, ``Rel.TransRel``, ``Rel.InitCond``).
+        (``ScalarRel.effect_i``, ``ScalarRel.R_i``, ``ScalarRel.TransRel``, ``ScalarRel.InitCond``).
         All default to True; pass ``False`` to omit.  The scalar and
         relational encodings are silently skipped when the module has
         non-scalar (matrix) wires.
