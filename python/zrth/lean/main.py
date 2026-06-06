@@ -68,6 +68,7 @@ from .project import (
     generate_standalone_cert_lean,
     load_module_from_file,
     write_certificate_lean,
+    write_data_lean,
 )
 from .translate import ModuleToLean4
 
@@ -357,8 +358,9 @@ import {out.stem}Scalar
         data_file.write_text("\n".join(data_lines) + "\n")
         print(f"Wrote {data_file}")
 
-    # Write certificate once — after inference if it ran, with placeholders otherwise.
-    write_certificate_lean(project_dir, args.project_name, module, project_cert_data)
+    # After inference, rewrite only XXXData.lean (Certificate.lean is stable).
+    if args.infer:
+        write_data_lean(project_dir, args.project_name, module, project_cert_data)
 
     print(f"\nProject ready at: {project_dir}")
 

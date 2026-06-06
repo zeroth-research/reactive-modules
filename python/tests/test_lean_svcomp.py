@@ -15,7 +15,7 @@ from pathlib import Path
 
 from zrth import Wire, Module, DType as dt
 from zrth.analyzer import convert_method
-from zrth.lean.project import create_project, write_certificate_lean
+from zrth.lean.project import create_project, write_data_lean
 from zrth.lean.cert import CertificateData, smt_predicates_to_lean
 
 OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
@@ -38,7 +38,7 @@ def _gen(name, module, prp, inv, ranking, pre=None):
         module=module,
         project_name=name,
     )
-    write_certificate_lean(project_dir, name, module, lean_cert)
+    write_data_lean(project_dir, name, module, lean_cert)
     return project_dir
 
 

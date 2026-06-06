@@ -187,39 +187,21 @@ class CertificateData:
 
     prp: str | Expr | None = None
     inv: Expr | str | None = None
+
     init_pre: Expr | str | None = None
     update_pre: Expr | str | None = None
     ranking: Expr | str | None = None
 
 
-# TODO: move the parts that do not change into a .lean file.
-# Or use a templating engine, e.g. `Jinja2`.
-def generate_certificate_lean(
-    project_name: str,
-    module_name: str,
+def _cert_def_lines(
     ctx: LeanContext,
-    cert_data: CertificateData | None = None,
-    *,
-    hammer_import: str | None = None,
-    module_inline: str | None = None,
-) -> str:
-    """Generate Certificate.lean with compiled or placeholder definitions.
+    cert_data: CertificateData,
+) -> list[str]:
+    """Emit the five certificate definition lines (init_pre, update_pre, inv, P, ranking).
 
-    Args:
-        hammer_import: When set (e.g. ``"ZerothHammer"``), add
-            ``import <hammer_import>`` and omit the inlined ``zeroth_hammer``
-            definition.  The tactic must therefore be provided by that import.
-        module_inline: When set, inline this Lean source (the ``init`` /
-            ``update`` functions) instead of emitting
-            ``import {project_name}.{module_name}``.  Should be the output of
-            ``ModuleToLean4.to_lean_functional()`` — without its own import
-            header.
+    Shared by ``generate_data_lean`` and the inline path of ``generate_certificate_lean``.
     """
-    if cert_data is None:
-        cert_data = CertificateData()
-
     def _as_terms(v):
-        """Return v if it is a list of Terms, else None (strings are not yet compiled)."""
         return v if isinstance(v, list) else None
 
     inv_terms = _as_terms(cert_data.inv)
@@ -232,18 +214,11 @@ def generate_certificate_lean(
     extl_next = ctx.extl_next
     ctrl_next = ctx.ctrl_next
 
-    # `ReactiveModule.Extl` is a single label per step. The generated
-    # `update` takes three curried args — `ctrl`, `extl_l`, `extl_n` — so
-    # the RM's `Extl` is a pair `(extl_latched_tuple, extl_next_tuple)`:
-    # `e.1` feeds `extl_l`, `e.2` feeds `extl_n`.
     extl_latched_native = _product_type(extl_latched)
     extl_next_native = _product_type(extl_next)
     extl_native = f"({extl_latched_native}) × ({extl_next_native})"
     ctrl_native = _product_type(ctrl_next)
 
-    # Precomputed wire bindings for cert-local param names ("e" and "s").
-    # Certificate predicates receive `e : Extl` (the pair above), so route
-    # latched wires through `e.1.*` and next wires through `e.2.*`.
     e_bindings = {
         **_bind_wires([("e.1", extl_latched)]),
         **_bind_wires([("e.2", extl_next)]),
@@ -251,31 +226,10 @@ def generate_certificate_lean(
     s_bindings = _bind_wires([("s", ctrl_next)])
 
     def _cert_body(terms, bindings):
-        """Compile a certificate term list into a Lean function body."""
         output = [terms[-1].write[0]]
         return _translate_terms(terms, bindings, output, ctx.constants)
 
-    const_names = ctx.constants.names()
-
     lines: list[str] = []
-
-    lines.append("import Mathlib.Algebra.BigOperators.Fin")
-    lines.append("import Core.Basic")
-    if module_inline is not None:
-        lines.append("import Core.Box")
-    else:
-        lines.append(f"import {project_name}.{module_name}")
-    if hammer_import is not None:
-        lines.append(f"import {hammer_import}")
-    else:
-        # Smt is needed for the inlined zeroth_hammer's `smt` tactic (Phase 7).
-        # When hammer_import is set it arrives transitively, so we skip it here.
-        lines.append("import Smt")
-    lines.append("")
-    lines.append("")
-    if module_inline is not None:
-        lines.append(module_inline)
-        lines.append("")
 
     # init_pre
     if init_pre_terms is not None:
@@ -321,7 +275,7 @@ def generate_certificate_lean(
         lines.append(f"def P (s : {ctrl_native}) : Prop := sorry")
     lines.append("")
 
-    # DecidablePred P — must come after P and before ranking
+    # DecidablePred P
     if p_terms is not None or isinstance(cert_data.prp, str):
         lines.append(
             "instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance"
@@ -340,11 +294,101 @@ def generate_certificate_lean(
     else:
         lines.append(f"def ranking (s : {ctrl_native}) : Nat := sorry")
     lines.append("")
+
+    return lines
+
+
+def generate_data_lean(
+    project_name: str,
+    module_name: str,
+    ctx: LeanContext,
+    cert_data: CertificateData | None = None,
+) -> str:
+    """Generate XXXData.lean content: init_pre, update_pre, inv, P, ranking.
+
+    Imports only ``Core.Basic`` — no dependency on the module's init/update.
+    ``Certificate.lean`` imports this file so that only the data file needs to
+    be regenerated when the certificate data changes (e.g. after --infer).
+    """
+    if cert_data is None:
+        cert_data = CertificateData()
+    lines: list[str] = [
+        "import Core.Basic",
+        "",
+        *_cert_def_lines(ctx, cert_data),
+    ]
+    return "\n".join(lines)
+
+
+def generate_certificate_lean(
+    project_name: str,
+    module_name: str,
+    ctx: LeanContext,
+    cert_data: CertificateData | None = None,
+    *,
+    hammer_import: str | None = None,
+    module_inline: str | None = None,
+    data_import: str | None = None,
+) -> str:
+    """Generate Certificate.lean.
+
+    Args:
+        hammer_import: When set (e.g. ``"ZerothHammer"``), add
+            ``import <hammer_import>`` and omit the inlined ``zeroth_hammer``
+            definition.
+        module_inline: When set, inline this Lean source (the ``init`` /
+            ``update`` functions) instead of emitting
+            ``import {project_name}.{module_name}``.
+        data_import: When set (e.g. ``"Rea.ReaData"``), import that module
+            for ``init_pre``, ``inv``, ``P``, ``ranking`` instead of emitting
+            them inline.  Use this for project mode so only ``XXXData.lean``
+            needs regeneration when cert_data changes.
+    """
+    if cert_data is None:
+        cert_data = CertificateData()
+
+    extl_latched = ctx.extl_latched
+    extl_next = ctx.extl_next
+    ctrl_next = ctx.ctrl_next
+
+    extl_latched_native = _product_type(extl_latched)
+    extl_next_native = _product_type(extl_next)
+    extl_native = f"({extl_latched_native}) × ({extl_next_native})"
+    ctrl_native = _product_type(ctrl_next)
+
+    const_names = ctx.constants.names()
+
+    lines: list[str] = []
+
+    lines.append("import Mathlib.Algebra.BigOperators.Fin")
+    lines.append("import Core.Basic")
+    if module_inline is not None:
+        lines.append("import Core.Box")
+    elif data_import is not None:
+        lines.append(f"import {project_name}.{module_name}")
+        lines.append(f"import {data_import}")
+    else:
+        lines.append(f"import {project_name}.{module_name}")
+    if hammer_import is not None:
+        lines.append(f"import {hammer_import}")
+    else:
+        lines.append("import Smt")
     lines.append("")
+    lines.append("")
+    if module_inline is not None:
+        lines.append(module_inline)
+        lines.append("")
+
+    if data_import is None:
+        # Inline definitions (standalone or legacy path)
+        lines.extend(_cert_def_lines(ctx, cert_data))
+        lines.append("")
+        has_ranking = cert_data.ranking is not None
+    else:
+        # Definitions live in data_import; always include ranking in simp set
+        has_ranking = True
 
     # ReactiveModule definition.
-    # `init` takes only `extl_n`; unpack `e.2` for it. `update` takes
-    # `ctrl extl_l extl_n` — feed `x`, `e.1`, `e.2` respectively.
     rm_noncomp = "noncomputable " if ctx.uses_real else ""
     lines.append(f"""\
 {rm_noncomp}def RM : ReactiveModule ({extl_native}) ({ctrl_native}) := {{
@@ -357,10 +401,6 @@ def generate_certificate_lean(
 
     const_list = ", ".join(const_names) if const_names else ""
 
-    has_ranking = cert_data.ranking is not None
-
-    # Definitions emitted as `sorry` (i.e. ranking when not provided) are
-    # excluded: simp cannot reduce sorry, and including it pollutes lemma lists.
     simp_mat = "MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
     simp_mat += ", mul_Mat_apply, add_Mat_apply"
     simp_mat += ", Bool.or_eq_true, decide_eq_true_eq"
