@@ -283,7 +283,7 @@ import {out.stem}
 {m2l.to_lean_scalar()}
 """)
         print(f"Wrote scalar encoding: {scalar_out}")
-        rel_out = out.with_stem(out.stem + "Rel")
+        rel_out = out.with_stem(out.stem + "ScalarRel")
         rel_out.write_text(f"""\
 /- Relational encoding for reactive module `{out.stem}` -/
 import Core.Basic

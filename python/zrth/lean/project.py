@@ -114,7 +114,7 @@ def generate_root(
         lines.append(f"import {project_name}.{dname}Circ")
         if scalar:
             lines.append(f"import {project_name}.{dname}Scalar")
-            lines.append(f"import {project_name}.{dname}Rel")
+            lines.append(f"import {project_name}.{dname}ScalarRel")
     return "\n".join(lines) + "\n"
 
 
@@ -451,7 +451,7 @@ import {project_name}.{module_name}
     assert scalar_file.exists()
     print(f"++ Generated {scalar_file} ++")
 
-    rel_file = src_dir / f"{module_name}Rel.lean"
+    rel_file = src_dir / f"{module_name}ScalarRel.lean"
     print(f"Generating `{rel_file.absolute()}`")
     rel_file.write_text(f"""\
 /- Relational encoding for reactive module `{module_name}` -/
