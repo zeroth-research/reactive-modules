@@ -112,6 +112,7 @@ def generate_root(
     for dname in modules_names:
         lines.append(f"import {project_name}.{dname}")
         lines.append(f"import {project_name}.{dname}Circ")
+        lines.append(f"import {project_name}.{dname}Rel")
         if scalar:
             lines.append(f"import {project_name}.{dname}Scalar")
             lines.append(f"import {project_name}.{dname}ScalarRel")
@@ -438,6 +439,18 @@ import {project_name}.{module_name}
 """)
     assert mod_file.exists()
     print(f"++ Generated {mod_file} ++")
+
+    mat_rel_file = src_dir / f"{module_name}Rel.lean"
+    print(f"Generating `{mat_rel_file.absolute()}`")
+    mat_rel_file.write_text(f"""\
+/- Relational encoding (matrix domain) for reactive module `{module_name}` -/
+import Core.Basic
+import {project_name}.{module_name}
+
+{m2l.to_lean_mat_rel()}
+""")
+    assert mat_rel_file.exists()
+    print(f"++ Generated {mat_rel_file} ++")
 
     scalar_file = src_dir / f"{module_name}Scalar.lean"
     print(f"Generating `{scalar_file.absolute()}`")

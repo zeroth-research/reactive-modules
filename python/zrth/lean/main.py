@@ -274,6 +274,15 @@ def main():
         out.write_text(lean_src)
         print(f"Wrote standalone certificate: {out}")
         m2l = ModuleToLean4(module)
+        mat_rel_out = out.with_stem(out.stem + "Rel")
+        mat_rel_out.write_text(f"""\
+/- Relational encoding (matrix domain) for reactive module `{out.stem}` -/
+import Core.Basic
+import {out.stem}
+
+{m2l.to_lean_mat_rel()}
+""")
+        print(f"Wrote matrix-domain relational encoding: {mat_rel_out}")
         scalar_out = out.with_stem(out.stem + "Scalar")
         scalar_out.write_text(f"""\
 /- Scalar encoding for reactive module `{out.stem}` -/
