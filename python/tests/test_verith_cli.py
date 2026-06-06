@@ -44,10 +44,10 @@ def test_verith_no_property():
         r = _verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "CounterBasic")
         assert r.returncode == 0, r.stderr
         assert (Path(tmpdir) / "CounterBasic").exists()
-        cert = (
-            Path(tmpdir) / "CounterBasic" / "Certificate" / "Certificate.lean"
+        data = (
+            Path(tmpdir) / "CounterBasic" / "CounterBasic" / "CounterBasicData.lean"
         ).read_text()
-        assert "sorry" in cert
+        assert "sorry" in data
 
 
 def test_verith_with_property():
