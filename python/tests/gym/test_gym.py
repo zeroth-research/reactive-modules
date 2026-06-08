@@ -91,7 +91,13 @@ def complexdecisionenv():
 
 
 def test_complexdecisionenv_conversion():
-    _ = complexdecisionenv()
+    # ComplexDecisionEnv computes `reward = self.score * self.multiplier`
+    # (state * state), which is genuinely non-linear and so not expressible in
+    # the default LRA theory. Conversion must reject it with a clear error.
+    from zrth import NonLinearError
+
+    with pytest.raises(NonLinearError):
+        complexdecisionenv()
 
 
 def earlyreturnenv():

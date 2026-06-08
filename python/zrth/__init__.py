@@ -108,7 +108,14 @@ def bv_mod(out: Wire, a: Wire, b: Wire, *, signed: bool = False) -> list[Term]:
 from .gym import Wrapper, Env
 from .smv import parse_smv
 from .smt import z3
-from .builder import LRATermBuilder, LIATermBuilder, BVTermBuilder, builder_for
+from .builder import (
+    LRATermBuilder,
+    LIATermBuilder,
+    BVTermBuilder,
+    builder_for,
+    TheoryError,
+    NonLinearError,
+)
 
 # Submodule access: from zrth.gym import Env, Wrapper
 #                   from zrth.torch import Module
@@ -133,4 +140,6 @@ __all__ = [
     "LRATermBuilder",
     "LIATermBuilder",
     "BVTermBuilder",
+    "TheoryError",
+    "NonLinearError",
 ]

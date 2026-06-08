@@ -23,6 +23,19 @@ def _normalize_shape(shape: list) -> list:
     return shape
 
 
+class TheoryError(Exception):
+    """An operation cannot be expressed in the selected theory."""
+
+
+class NonLinearError(TheoryError):
+    """A non-linear operation (e.g. variable * variable) was requested in a
+    linear theory (LIA/LRA), which only support multiplication by a constant."""
+
+    def __init__(self, theory: str, detail: str = "multiplication of two non-constant operands"):
+        self.theory = theory
+        super().__init__(f"{theory} does not support {detail}")
+
+
 class TermBuilder:
     """Abstract base. Subclasses set _ns = IType.LIA / IType.LRA / IType.BV."""
 
@@ -242,7 +255,7 @@ class LRATermBuilder(TermBuilder):
         result = self._try_mul_as_linear(a, b, "ConstReal", torch.float32)
         if result is not None:
             return result
-        raise ValueError("LRA does not support mul with non-constant operands")
+        raise NonLinearError("LRA")
 
     def div(self, a, b) -> Term:
         return self._binary_op(_IType.LRA.Div, _dtype(a), a, b)
@@ -320,7 +333,7 @@ class LIATermBuilder(TermBuilder):
         result = self._try_mul_as_linear(a, b, "ConstInt", torch.int64)
         if result is not None:
             return result
-        raise ValueError("LIA does not support mul with non-constant operands")
+        raise NonLinearError("LIA")
 
     def matmul(self, a, b) -> Term:
         a_wire, b_wire = _wire(a), _wire(b)
