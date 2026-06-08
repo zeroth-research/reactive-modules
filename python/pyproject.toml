@@ -14,6 +14,7 @@ readme = "README.md"
 
 dependencies = [
     "gymnasium>=1.2.3",
+    "jinja2>=3.1",
     "lark>=1.1",
     "maturin==1.9",
     # for toy and smt crates

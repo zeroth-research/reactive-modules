@@ -5,7 +5,6 @@ import ZerothHammer
 
 
 
-
 @[simp] def init (extl_n: Unit) : (Mat Int 1 1) :=
   let x0 : (Mat Int 1 1) := (fun _ _ => (100 : Int))
   let x1 : (Mat Int 1 1) := x0
@@ -101,7 +100,6 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     simp_defs
     simp_mat
     split_ifs <;> first | omega | (norm_cast; omega)
-
 
 def buchi := rule_buchi
   lts

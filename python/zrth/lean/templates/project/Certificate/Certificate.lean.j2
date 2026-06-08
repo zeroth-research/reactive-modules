@@ -1,48 +1,22 @@
 import Mathlib.Algebra.BigOperators.Fin
 import Core.Basic
+{% if module_inline %}
 import Core.Box
+{% else %}
+import System.System
+import System.Data
+{% endif %}
 import ZerothHammer
 
+{% if module_inline %}
+{{ module_inline }}
 
+{% endif %}
+{% if inline_defs %}
+{{ inline_defs }}
 
-@[simp] def init (extl_n: Unit) : (Mat Int 1 1) :=
-  let x0 : (Mat Int 1 1) := (fun _ _ => (7 : Int))
-  let x1 : (Mat Int 1 1) := x0
-  x1
-
-@[simp] def update (ctrl: (Mat Int 1 1)) (extl_l: Unit) (extl_n: Unit) : (Mat Int 1 1) :=
-  let x0 : (Mat Int 1 1) := (fun _ _ => (1 : Int))
-  let x1 : (Mat Bool 1 1) := (fun _ _ => decide (ctrl 0 0 = x0 0 0))
-  let x2 : (Mat Int 1 1) := (fun _ _ => (7 : Int))
-  let x3 : (Mat Int 1 1) := (fun _ _ => (4 : Int))
-  let x4 : (Mat Bool 1 1) := (fun _ _ => decide (x3 0 0 < ctrl 0 0))
-  let x5 : (Mat Int 1 1) := (fun _ _ => (3 : Int))
-  let x6 : (Mat Int 1 1) := (ctrl - x5)
-  let x7 : (Mat Int 1 1) := (fun _ _ => (1 : Int))
-  let x8 : (Mat Bool 1 1) := (fun _ _ => decide (x7 0 0 < ctrl 0 0))
-  let x9 : (Mat Int 1 1) := (fun _ _ => (1 : Int))
-  let x10 : (Mat Int 1 1) := (ctrl - x9)
-  let x11 : (Mat Int 1 1) := (if x8 0 0 then x10 else ctrl)
-  let x12 : (Mat Int 1 1) := (if x4 0 0 then x6 else x11)
-  let x13 : (Mat Int 1 1) := (if x1 0 0 then x2 else x12)
-  let x14 : (Mat Int 1 1) := x13
-  x14
-
-
-def init_pre (e : (Unit) × (Unit)) : Prop := True
-
-def update_pre (e : (Unit) × (Unit)) : Prop := True
-
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 1) ∧ ((s 0 0) ≤ 8))
-
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 1)
-
-instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
-
-def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = 1) then 0 else ((s 0 0) - 1)) : Int)).toNat
-
-
-def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
+{% endif %}
+{{ noncomp }}def RM : ReactiveModule ({{ extl_type }}) ({{ ctrl_type }}) := {
     init := fun e => init e.2
     update := fun x e => update x e.1 e.2
     init_pre := init_pre
@@ -51,12 +25,12 @@ def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
 
 -- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
 macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three])
+  `(tactic| simp [{{ all_defs }}, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three])
 
 -- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
 -- Gives omega/decide access to invariant and property conditions in hypotheses
 macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp at *))
+  `(tactic| (simp only [{{ all_defs }}] at *; try dsimp at *))
 
 -- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
 -- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
@@ -81,7 +55,7 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
 
 section TS
 
-def lts := RM.toTS
+{{ noncomp }}def lts := RM.toTS
 
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
@@ -109,7 +83,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     simp_mat
     split_ifs <;> first | omega | (norm_cast; omega)
 
-def buchi := rule_buchi
+{{ noncomp }}def buchi := rule_buchi
   lts
   P
   inv
