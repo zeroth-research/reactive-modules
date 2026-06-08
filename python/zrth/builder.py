@@ -367,17 +367,20 @@ class BVTermBuilder(TermBuilder):
     def mul(self, a, b) -> Term:
         return self._binary_op(_IType.BV.Mul, _dtype(a), a, b)
 
+    # TODO: BV comparisons are signed/unsigned per-op in the theory, but DType.BV
+    # carries no signedness yet, so we default to the *unsigned* variants. Once
+    # signedness is represented Python-side, pick U*/S* accordingly.
     def lt(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Lt, Bool(*_dtype(a).shape), a, b)
+        return self._binary_op(_IType.BV.ULt, Bool(*_dtype(a).shape), a, b)
 
     def le(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Le, Bool(*_dtype(a).shape), a, b)
+        return self._binary_op(_IType.BV.ULe, Bool(*_dtype(a).shape), a, b)
 
     def gt(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Gt, Bool(*_dtype(a).shape), a, b)
+        return self._binary_op(_IType.BV.UGt, Bool(*_dtype(a).shape), a, b)
 
     def ge(self, a, b) -> Term:
-        return self._binary_op(_IType.BV.Ge, Bool(*_dtype(a).shape), a, b)
+        return self._binary_op(_IType.BV.UGe, Bool(*_dtype(a).shape), a, b)
 
     def eq(self, a, b) -> Term:
         return self._binary_op(_IType.BV.Eq, Bool(*_dtype(a).shape), a, b)
