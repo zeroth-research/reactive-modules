@@ -1,42 +1,12 @@
 use std::fmt;
-use std::ops::Deref;
 
 pub mod any;
 pub mod bv;
 pub mod lia;
 pub mod lra;
+pub mod tensor;
 
-/// Wrapper around [`tch::Tensor`] that implements [`Clone`] via [`tch::Tensor::shallow_clone`].
-#[derive(Debug)]
-pub struct Tensor(pub tch::Tensor);
-
-impl Clone for Tensor {
-    fn clone(&self) -> Self {
-        Tensor(self.0.shallow_clone())
-    }
-}
-
-impl Deref for Tensor {
-    type Target = tch::Tensor;
-    fn deref(&self) -> &tch::Tensor {
-        &self.0
-    }
-}
-
-impl From<tch::Tensor> for Tensor {
-    fn from(t: tch::Tensor) -> Self {
-        Tensor(t)
-    }
-}
-
-impl fmt::Display for Tensor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-// tch::Tensor's C++ API is safe for concurrent reads; consistent with PyTensor in python crate.
-unsafe impl Sync for Tensor {}
+pub use tensor::Tensor;
 
 pub trait Theory {
     // TODO: in torch, from where we took this name (I think), dtype refers to

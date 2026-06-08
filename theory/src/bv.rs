@@ -186,7 +186,7 @@ impl fmt::Display for BV {
     }
 }
 
-fn check_init_dims(cm: &tch::Tensor, bw: usize, i: usize, j: usize) -> Result<(), String> {
+fn check_init_dims(cm: &crate::Tensor, bw: usize, i: usize, j: usize) -> Result<(), String> {
     if bw > 64 {
         return Err("Support at most 64-bit atm.".into());
     }
@@ -546,7 +546,7 @@ impl Theory for BV {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "torch"))]
 mod tests {
     use super::*;
 

@@ -206,7 +206,7 @@ impl Theory for LRA {
     }
 }
 
-fn check_const<R, W, D>(cm: &tch::Tensor, read: R, write: W) -> Result<(), String>
+fn check_const<R, W, D>(cm: &crate::Tensor, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Type> + fmt::Display,
     R: IntoIterator<Item = D>,
@@ -449,8 +449,8 @@ where
 
 fn check_linear_affine<D>(
     op: &LRA,
-    a: &tch::Tensor,
-    b: &tch::Tensor,
+    a: &crate::Tensor,
+    b: &crate::Tensor,
     read: &mut impl Iterator<Item = D>,
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
@@ -602,7 +602,7 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "torch"))]
 mod tests {
     use super::*;
 
