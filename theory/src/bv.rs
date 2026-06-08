@@ -91,10 +91,14 @@ pub enum BV {
     Or,
     Xor,
     Not,
-    Le,
-    Lt,
-    Ge,
-    Gt,
+    ULe,
+    ULt,
+    UGe,
+    UGt,
+    SLe,
+    SLt,
+    SGe,
+    SGt,
     Eq,
     Ne,
     Ite,
@@ -123,10 +127,14 @@ impl fmt::Display for BV {
             BV::Or => write!(f, "Or"),
             BV::Xor => write!(f, "Xor"),
             BV::Not => write!(f, "Not"),
-            BV::Le => write!(f, "Le"),
-            BV::Lt => write!(f, "Lt"),
-            BV::Ge => write!(f, "Ge"),
-            BV::Gt => write!(f, "Gt"),
+            BV::SLe => write!(f, "SLe"),
+            BV::SLt => write!(f, "SLt"),
+            BV::SGe => write!(f, "SGe"),
+            BV::SGt => write!(f, "SGt"),
+            BV::ULe => write!(f, "ULe"),
+            BV::ULt => write!(f, "ULt"),
+            BV::UGe => write!(f, "UGe"),
+            BV::UGt => write!(f, "UGt"),
             BV::Eq => write!(f, "Eq"),
             BV::Ne => write!(f, "Ne"),
             BV::Add => write!(f, "Add"),
@@ -214,7 +222,10 @@ impl Theory for BV {
             // TODO: for `Abs`, what if input is the signed min of BV<N>? It's absolute value
             // does not fit into BV<N>
             BV::Not | BV::Id | BV::Neg | BV::Abs => {
-                let (r, w) = (read_nxt(&mut read, 0, "BV")?, write_nxt(&mut write, 0, "BV")?);
+                let (r, w) = (
+                    read_nxt(&mut read, 0, "BV")?,
+                    write_nxt(&mut write, 0, "BV")?,
+                );
                 if r != w {
                     return Err(format!(
                         "{:?}: input and output type must be the same",
@@ -232,7 +243,16 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::Le | BV::Lt | BV::Ge | BV::Gt | BV::Eq | BV::Ne => {
+            BV::SLe
+            | BV::SLt
+            | BV::SGe
+            | BV::SGt
+            | BV::ULe
+            | BV::ULt
+            | BV::UGe
+            | BV::UGt
+            | BV::Eq
+            | BV::Ne => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0, "BV")?,
                     read_nxt(&mut read, 1, "BV")?,
@@ -249,7 +269,7 @@ impl Theory for BV {
                 let [rows, cols] = r1.shape();
                 if w1 != Type::BV(1, [*rows, *cols]) {
                     return Err(format!(
-                        "{self}: output must be U(1, {rows}, {cols}), got {w1}"
+                        "{self}: output must be BV<1>({rows}, {cols}), got {w1}"
                     ));
                 }
                 Ok(())
@@ -628,14 +648,16 @@ mod tests {
     fn lt_ok() {
         let t = bv(8, 2, 3);
         let out = bv(1, 2, 3);
-        assert!(BV::Lt.check([t, t], [out]).is_ok());
+        assert!(BV::ULt.check([t, t], [out]).is_ok());
+        assert!(BV::SLt.check([t, t], [out]).is_ok());
     }
 
     #[test]
     fn le_ok() {
         let t = bv(8, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::Le.check([t, t], [out]).is_ok());
+        assert!(BV::ULe.check([t, t], [out]).is_ok());
+        assert!(BV::SLe.check([t, t], [out]).is_ok());
     }
 
     #[test]
@@ -656,7 +678,8 @@ mod tests {
     fn cmp_wrong_output_type_fails() {
         let t = bv(8, 2, 3);
         // output must be U(1, rows, cols), not U(8, ...)
-        assert!(BV::Lt.check([t, t], [t]).is_err());
+        assert!(BV::ULt.check([t, t], [t]).is_err());
+        assert!(BV::SLt.check([t, t], [t]).is_err());
     }
 
     #[test]

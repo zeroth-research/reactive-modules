@@ -292,7 +292,10 @@ where
             Ok(())
         }
         LIA::Not => {
-            let (r, w) = (read_nxt(&mut read, 0, "LIA")?, write_nxt(&mut write, 0, "LIA")?);
+            let (r, w) = (
+                read_nxt(&mut read, 0, "LIA")?,
+                write_nxt(&mut write, 0, "LIA")?,
+            );
             if !matches!(r, Type::Bool(..)) {
                 return Err(format!("{:?}: input must be Bool", op));
             }
