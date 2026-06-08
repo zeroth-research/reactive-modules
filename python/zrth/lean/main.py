@@ -208,15 +208,7 @@ def main():
         help=(
             "Write a standalone, self-contained certificate .lean file to this path "
             "instead of creating a full project.  The file inlines init/update and "
-            "imports zeroth_hammer from --hammer-import (default: ZerothHammer)."
-        ),
-    )
-    parser.add_argument(
-        "--hammer-import",
-        default="ZerothHammer",
-        help=(
-            "Lean module name to import zeroth_hammer from when using --cert-file "
-            "(default: ZerothHammer)."
+            "imports zeroth_hammer from ZerothHammer."
         ),
     )
     parser.add_argument(
@@ -266,12 +258,7 @@ def main():
     if args.cert_file:
         out = Path(args.cert_file)
         out.parent.mkdir(parents=True, exist_ok=True)
-        lean_src = generate_standalone_cert_lean(
-            out.stem,
-            module,
-            project_cert_data,
-            hammer_import=args.hammer_import,
-        )
+        lean_src = generate_standalone_cert_lean(module, project_cert_data)
         out.write_text(lean_src)
         print(f"Wrote standalone certificate: {out}")
         m2l = ModuleToLean4(module)
@@ -313,8 +300,7 @@ import {out.stem}Scalar
         cert_data=project_cert_data,
     )
 
-    # FIXME: this is brittle, we rely on hard-coded staff in `create_project`
-    lean_code = project_dir / f"{args.project_name}.lean"
+    lean_code = project_dir / "System" / "System.lean"
 
     print(".. Doing TA2Magic")
     if args.infer:
@@ -341,24 +327,7 @@ import {out.stem}Scalar
         project_cert_data.inv = cert_data.inv
         project_cert_data.ranking = cert_data.ranking
 
-        data_file = project_dir / f"{args.project_name}Data.lean"
-        data_lines = [
-            f"/- Inferred certificate data for `{args.project_name}` -/",
-            f"import {args.project_name}.{args.project_name}",
-            "",
-        ]
-        if isinstance(cert_data.prp, str):
-            data_lines.append(f"-- Property: {cert_data.prp}")
-            data_lines.append("")
-        for field in ("inv", "init_pre", "update_pre", "ranking"):
-            value = getattr(cert_data, field)
-            if isinstance(value, str):
-                data_lines.append(f"def {field} := {value}")
-                data_lines.append("")
-        data_file.write_text("\n".join(data_lines) + "\n")
-        print(f"Wrote {data_file}")
-
-    # After inference, rewrite only XXXData.lean (Certificate.lean is stable).
+    # After inference, rewrite only System/Data.lean (Certificate.lean is stable).
     if args.infer:
         write_data_lean(project_dir, args.project_name, module, project_cert_data)
 

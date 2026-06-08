@@ -1,0 +1,62 @@
+/- Scalar encoding for reactive module -/
+import Core.Basic
+import System
+
+{% for ax in argmax_variants %}
+{{ ax.noncomp }}def {{ ax.name }} {{ ax.params }} : Int :=
+  let b0 : Nat × {{ ax.elem_ty }} := (0, {{ ax.default }})
+{% for i in range(ax.n) %}
+  let b{{ i + 1 }} : Nat × {{ ax.elem_ty }} := if b{{ i }}.2 ≤ s{{ i }} then ({{ i }}, s{{ i }}) else b{{ i }}
+{% endfor %}
+  (b{{ ax.n }}.1 : Int)
+
+@[simp] theorem {{ ax.name }}_eq (v : Mat {{ ax.elem_ty }} 1 {{ ax.n }}) :
+    {{ ax.name }} {{ ax.eq_params }} = (↑(argmax_1d v 0 0) : Int) := by
+  simp only [{{ ax.name }}, argmax_1d, List.finRange, List.foldl]
+  rfl
+
+{% endfor %}
+namespace Scalar
+
+{% for u in unpack_defs %}
+@[simp] {{ noncomp }}def unpack_{{ u.param }} ({{ u.param }} : {{ u.mat_ty }}) : {{ u.scalar_ty }} :=
+  {{ u.body }}
+
+{% endfor %}
+@[simp] {{ noncomp }}def pack (r : {{ scalar_ctrl_ty }}) : {{ mat_ctrl_ty }} :=
+  {{ pack_body }}
+
+{% if has_init %}
+@[simp] {{ noncomp }}def init (extl_n : {{ init_extl_n_ty }}) : {{ scalar_ctrl_ty }} :=
+{{ init_body }}
+
+{% endif %}
+{% if has_update %}
+@[simp] {{ noncomp }}def update {{ update_params }} : {{ scalar_ctrl_ty }} :=
+{{ update_body }}
+
+{% endif %}
+end Scalar
+
+{% if has_init %}
+theorem init_scalar_eq : ∀ {{ init_eq_binder }},
+    init {{ init_eq_var }} = Scalar.pack (Scalar.init {{ init_eq_scalar_arg }}) := by
+  intro {{ init_eq_var }}
+  simp only [{{ init_eq_simp }}]
+  try rfl
+  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])
+  try (funext i j; simp [Fin.fin_one_eq_zero])
+  try simp [Fin.fin_one_eq_zero]
+
+{% endif %}
+{% if has_update %}
+theorem update_scalar_eq : ∀ {{ update_eq_binders }},
+    update {{ update_eq_vars }} = Scalar.pack (Scalar.update {{ update_eq_scalar_args }}) := by
+  intro {{ update_eq_vars }}
+  simp only [{{ update_eq_simp }}]
+  try rfl
+  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])
+  try (funext i j; simp [Fin.fin_one_eq_zero])
+  try simp [Fin.fin_one_eq_zero]
+
+{% endif %}

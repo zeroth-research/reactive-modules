@@ -1,0 +1,104 @@
+/- Scalar-relational encoding for reactive module -/
+import Core.Basic
+import System
+import System.Scalar
+
+namespace ScalarRel
+
+{% if has_update %}
+-- Per-variable effect functions (one per ctrl_next wire, dead-code pruned)
+{% for eff in effects %}
+@[simp] {{ noncomp }}def effect_{{ loop.index0 }} {{ update_binders }} : {{ eff.ty }} :=
+{{ eff.body }}
+
+theorem effect_{{ loop.index0 }}_eq : ∀ {{ update_binders }},
+    effect_{{ loop.index0 }} {{ update_args }} = (Scalar.update {{ update_args }}){{ eff.acc }} := by
+  intro {{ update_intro }}
+  simp only [Scalar.update, effect_{{ loop.index0 }}, Fin.cons_zero, Fin.cons_succ]
+  try rfl
+  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])
+  try simp [Fin.fin_one_eq_zero]
+  try omega
+
+{% endfor %}
+-- Per-variable transition relations
+{% for eff in effects %}
+def R_{{ loop.index0 }} (old new : {{ state_ty }}) {{ extl_binders }} : Prop :=
+  new{{ eff.acc }} = effect_{{ loop.index0 }} old {{ extl_args }}
+
+{% endfor %}
+-- Full transition relation
+def TransRel (old new : {{ state_ty }}) {{ extl_binders }} : Prop :=
+  {% for i in range(n_ctrl) %}R_{{ i }} old new {{ extl_args }}{% if not loop.last %} ∧
+  {% endif %}{% endfor %}
+
+{% endif %}
+{% if has_init %}
+-- Per-variable init functions
+{% for ini in inits %}
+@[simp] {{ noncomp }}def init_{{ loop.index0 }} {{ extl_n_binder }} : {{ ini.ty }} :=
+{{ ini.body }}
+
+theorem init_{{ loop.index0 }}_eq : ∀ {{ extl_n_binder }},
+    init_{{ loop.index0 }} extl_n = (Scalar.init extl_n){{ ini.acc }} := by
+  intro extl_n
+  simp only [Scalar.init, init_{{ loop.index0 }}, Fin.cons_zero, Fin.cons_succ]
+  try rfl
+  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])
+  try simp [Fin.fin_one_eq_zero]
+  try omega
+
+{% endfor %}
+-- Per-variable init conditions
+{% for ini in inits %}
+def Init_{{ loop.index0 }} (s : {{ state_ty }}) {{ extl_n_binder }} : Prop :=
+  s{{ ini.acc }} = init_{{ loop.index0 }} extl_n
+
+{% endfor %}
+-- Full init condition
+def InitCond (s : {{ state_ty }}) {{ extl_n_binder }} : Prop :=
+  {% for i in range(n_ctrl) %}Init_{{ i }} s extl_n{% if not loop.last %} ∧
+  {% endif %}{% endfor %}
+
+theorem InitCond_scalar_eq : ∀ (s : {{ state_ty }}) {{ extl_n_binder }},
+    InitCond s extl_n ↔ s = Scalar.init extl_n := by
+  intro s extl_n
+  simp only [InitCond, {% for i in range(n_ctrl) %}Init_{{ i }}, {% endfor %}{% for i in range(n_ctrl) %}init_{{ i }}_eq, {% endfor %}Prod.ext_iff]
+  try tauto
+
+theorem InitCond_func_eq : ∀ {{ init_mat_binders }},
+    {{ init_cond_call }} ↔ ctrl' = init extl_n := by
+  intro ctrl' extl_n
+  rw [InitCond_scalar_eq, init_scalar_eq]
+  constructor
+  · intro h
+    have hpack : ctrl' = Scalar.pack (Scalar.unpack_ctrl ctrl') := by
+      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]
+      try (funext i j; simp [Fin.fin_one_eq_zero])
+    rw [h] at hpack; exact hpack
+  · intro h
+    simp [Scalar.pack, Scalar.unpack_ctrl, h]
+
+{% endif %}
+{% if has_update %}
+theorem TransRel_scalar_eq : ∀ (old new : {{ state_ty }}) {{ extl_binders }},
+    TransRel old new {{ extl_args }} ↔ new = Scalar.update {{ scalar_update_args }} := by
+  intro old new {{ extl_args }}
+  simp only [TransRel, {% for i in range(n_ctrl) %}R_{{ i }}, {% endfor %}{% for i in range(n_ctrl) %}effect_{{ i }}_eq, {% endfor %}Prod.ext_iff]
+  try tauto
+
+theorem TransRel_func_eq : ∀ (ctrl ctrl' : {{ mat_ctrl_ty }}) {{ func_extl_binders }},
+    {{ trans_func_call }} ↔ ctrl' = update ctrl {{ func_extl_args }} := by
+  intro ctrl ctrl' {{ func_extl_intro }}
+  rw [TransRel_scalar_eq, update_scalar_eq]
+  constructor
+  · intro h
+    have hpack : ctrl' = Scalar.pack (Scalar.unpack_ctrl ctrl') := by
+      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]
+      try (funext i j; simp [Fin.fin_one_eq_zero])
+    rw [h] at hpack; exact hpack
+  · intro h
+    simp [Scalar.pack, Scalar.unpack_ctrl, h]
+
+{% endif %}
+end ScalarRel

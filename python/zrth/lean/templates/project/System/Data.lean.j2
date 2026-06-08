@@ -1,0 +1,52 @@
+import Core.Basic
+
+{% if init_pre_body %}
+def init_pre (e : {{ extl_type }}) : Prop :=
+{{ init_pre_body }}
+{% elif init_pre_expr %}
+def init_pre : {{ extl_type }} → Prop := {{ init_pre_expr }}
+{% else %}
+def init_pre (e : {{ extl_type }}) : Prop := True
+{% endif %}
+
+{% if update_pre_body %}
+def update_pre (e : {{ extl_type }}) : Prop :=
+{{ update_pre_body }}
+{% elif update_pre_expr %}
+def update_pre : {{ extl_type }} → Prop := {{ update_pre_expr }}
+{% else %}
+def update_pre (e : {{ extl_type }}) : Prop := True
+{% endif %}
+
+{% if inv_body %}
+def inv (s : {{ ctrl_type }}) : Prop :=
+{{ inv_body }}
+{% elif inv_expr %}
+def inv : {{ ctrl_type }} → Prop := {{ inv_expr }}
+{% else %}
+def inv (s : {{ ctrl_type }}) : Prop := True
+{% endif %}
+
+{% if p_body %}
+def P (s : {{ ctrl_type }}) : Prop :=
+{{ p_body }}
+
+instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
+{% elif p_expr %}
+def P : {{ ctrl_type }} → Prop := {{ p_expr }}
+
+instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
+{% else %}
+def P (s : {{ ctrl_type }}) : Prop := sorry
+
+instance : DecidablePred P := sorry
+{% endif %}
+
+{% if ranking_body %}
+def ranking (s : {{ ctrl_type }}) : Nat :=
+{{ ranking_body }}
+{% elif ranking_expr %}
+def ranking : {{ ctrl_type }} → Nat := {{ ranking_expr }}
+{% else %}
+def ranking (s : {{ ctrl_type }}) : Nat := sorry
+{% endif %}
