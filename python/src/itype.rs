@@ -313,21 +313,38 @@ impl BVIType {
         IType(theory::any::Any::BV(theory::bv::BV::Xor))
     }
     #[classattr]
-    fn Le() -> IType {
-        IType(theory::any::Any::BV(theory::bv::BV::Le))
+    fn ULe() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::ULe))
     }
     #[classattr]
-    fn Lt() -> IType {
-        IType(theory::any::Any::BV(theory::bv::BV::Lt))
+    fn ULt() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::ULt))
     }
     #[classattr]
-    fn Ge() -> IType {
-        IType(theory::any::Any::BV(theory::bv::BV::Ge))
+    fn UGe() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::UGe))
     }
     #[classattr]
-    fn Gt() -> IType {
-        IType(theory::any::Any::BV(theory::bv::BV::Gt))
+    fn UGt() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::UGt))
     }
+    #[classattr]
+    fn SLe() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::SLe))
+    }
+    #[classattr]
+    fn SLt() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::SLt))
+    }
+    #[classattr]
+    fn SGe() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::SGe))
+    }
+    #[classattr]
+    fn SGt() -> IType {
+        IType(theory::any::Any::BV(theory::bv::BV::SGt))
+    }
+
     #[classattr]
     fn Eq() -> IType {
         IType(theory::any::Any::BV(theory::bv::BV::Eq))
@@ -595,10 +612,14 @@ fn op_name_of(a: &theory::any::Any) -> &'static str {
             BV::Or => "Or",
             BV::Xor => "Xor",
             BV::Not => "Not",
-            BV::Le => "Le",
-            BV::Lt => "Lt",
-            BV::Ge => "Ge",
-            BV::Gt => "Gt",
+            BV::SLe => "SLe",
+            BV::SLt => "SLt",
+            BV::SGe => "SGe",
+            BV::SGt => "SGt",
+            BV::ULe => "ULe",
+            BV::ULt => "ULt",
+            BV::UGe => "UGe",
+            BV::UGt => "UGt",
             BV::Eq => "Eq",
             BV::Ne => "Ne",
             BV::Ite => "Ite",
