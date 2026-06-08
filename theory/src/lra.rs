@@ -736,8 +736,20 @@ mod tests {
     fn le_ok() {
         assert!(
             LRA::Le
-                .check([real(2, 3), real(2, 3)], [bool_t(1, 1)])
+                .check([real(2, 3), real(2, 3)], [bool_t(2, 3)])
                 .is_ok()
+        );
+
+        assert!(
+            LRA::Le
+                .check([real(3, 3), real(2, 3)], [bool_t(2, 3)])
+                .is_err()
+        );
+
+        assert!(
+            LRA::Le
+                .check([real(2, 3), real(2, 3)], [bool_t(3, 3)])
+                .is_err()
         );
     }
 
@@ -745,7 +757,7 @@ mod tests {
     fn eq_ok() {
         assert!(
             LRA::Eq
-                .check([real(1, 1), real(1, 1)], [bool_t(1, 1)])
+                .check([real(2, 2), real(2, 2)], [bool_t(2, 2)])
                 .is_ok()
         );
     }

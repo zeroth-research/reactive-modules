@@ -40,7 +40,10 @@ test-python:
     @just run-python pytest
 
 test-all:
-    {{ CARGO }} test --all-features {{ profile_flag }}
+    # do not test `base` with `torch` feature from `theory`, because that would
+    # make base link to libtorch and that is not set up (nor desirable).
+    {{ CARGO }} test -p base {{ profile_flag }}
+    uv run {{ CARGO }} test -p theory --all-features {{ profile_flag }}
     @just test-python
 
 # Run all or a concrete python test

@@ -735,19 +735,26 @@ mod tests {
 
     #[test]
     fn le_ok() {
-        assert!(
-            LIA::Le
-                .check([int(2, 3), int(2, 3)], [bool_t(1, 1)])
-                .is_ok()
-        );
+        let res = LIA::Le.check([int(2, 3), int(2, 3)], [bool_t(2, 3)]);
+        assert!(res.is_ok(), "result: {:?}", res);
     }
 
     #[test]
     fn eq_ok() {
         assert!(
             LIA::Eq
-                .check([int(1, 1), int(1, 1)], [bool_t(1, 1)])
+                .check([int(3, 2), int(3, 2)], [bool_t(3, 2)])
                 .is_ok()
+        );
+        assert!(
+            LIA::Eq
+                .check([int(3, 3), int(3, 2)], [bool_t(3, 2)])
+                .is_err()
+        );
+        assert!(
+            LIA::Eq
+                .check([int(3, 2), int(3, 2)], [bool_t(3, 3)])
+                .is_err()
         );
     }
 
