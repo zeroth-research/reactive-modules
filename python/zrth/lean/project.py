@@ -11,9 +11,9 @@ from zrth.lean.cert import (
     generate_zeroth_hammer_lean,
     CertificateData,
 )
+from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 
 import shutil
-import textwrap
 from pathlib import Path
 
 from zrth import Module, Wire, Wrapper
@@ -38,8 +38,8 @@ CSLIB_REV = MATHLIB_REV
 # Lean toolchain version — should match Mathlib's requirement
 LEAN_TOOLCHAIN = f"leanprover/lean4:{MATHLIB_REV}"
 
-# Template files to copy into Core package
-TEMPLATE_DIR = Path(__file__).parent / "templates"
+# Static template files (copied as-is into the project)
+TEMPLATE_DIR = STATIC_DIR
 CORE_FILES = ["Basic.lean", "Box.lean", "LTL.lean", "Mat.lean"]
 LEAN_AI_FILES = ["LeanAI.lean", "LeanAI"]
 
@@ -50,74 +50,17 @@ LEAN_AI_FILES = ["LeanAI.lean", "LeanAI"]
 
 
 def generate_lakefile(project_name: str, executable: bool = False) -> str:
-    base = textwrap.dedent(f"""\
-
-        name = "{project_name}"
-        version = "0.1.0"
-        defaultTargets = ["{project_name}", "Certificate"]
-
-        [[lean_lib]]
-        name = "Core"
-
-        [[lean_lib]]
-        name = "LeanAI"
-
-        [[lean_lib]]
-        name = "ZerothHammer"
-
-        [[lean_lib]]
-        name = "Certificate"
-
-        [[lean_lib]]
-        name = "{project_name}"
-
-        [[require]]
-        name = "cslib"
-        scope = "leanprover"
-        rev = "{CSLIB_REV}"
-
-        [[require]]
-        name = "smt"
-        git = "https://github.com/ufmg-smite/lean-smt.git"
-        rev = "f58d19d5d0803fcccb5ccb1b4473774dd2ae9f9a"
-
-       #[[require]]
-       #name = "mylib"
-       #git = "{PROOFS_URL}"
-       #rev = "main"
-    """)
-    if executable:
-        base += textwrap.dedent("""\
-
-            [[lean_exe]]
-            name = "main"
-            root = "Main"
-        """)
-    return base
+    return render(
+        "project/lakefile.toml.j2",
+        project_name=project_name,
+        executable=executable,
+        cslib_rev=CSLIB_REV,
+    )
 
 
-def generate_root(
-    project_name: str, modules_names: list[str], scalar: bool = True
-) -> str:
-    """
-    Root module file (src/<ProjectName>.lean) that imports everything.
-
-    `diagram_names` are names of files with wiring diagrams (reactive modules)
-                    that need to be imported in the root module.
-    `scalar` controls whether the Scalar and Rel encodings are imported
-             (should be False for modules with non-scalar / matrix wires).
-    """
-    lines = [
-        # f"import {project_name}.Diagram",
-    ]
-    for dname in modules_names:
-        lines.append(f"import {project_name}.{dname}")
-        lines.append(f"import {project_name}.{dname}Circ")
-        lines.append(f"import {project_name}.{dname}Rel")
-        if scalar:
-            lines.append(f"import {project_name}.{dname}Scalar")
-            lines.append(f"import {project_name}.{dname}ScalarRel")
-    return "\n".join(lines) + "\n"
+def generate_root(scalar: bool = True) -> str:
+    """Root module file that imports System.* encodings."""
+    return render("project/Root.lean.j2", scalar=scalar)
 
 
 def _token_count(wire: Wire) -> int:
@@ -296,9 +239,9 @@ def write_data_lean(
                     cert_terms.extend(field)
         ctx = LeanContext(module, cert_terms=cert_terms)
 
-    src_dir = project_dir / project_name
-    data_file = src_dir / f"{module_name}Data.lean"
-    data_file.write_text(generate_data_lean(project_name, module_name, ctx, cert_data))
+    src_dir = project_dir / "System"
+    data_file = src_dir / "Data.lean"
+    data_file.write_text(generate_data_lean(ctx, cert_data))
     print(f"Wrote {data_file}")
     return data_file
 
@@ -321,23 +264,11 @@ def write_certificate_lean(
     if ctx is None:
         ctx = LeanContext(module)
 
-    data_import = f"{project_name}.{module_name}Data"
     cert_dir = project_dir / "Certificate"
     cert_dir.mkdir(parents=True, exist_ok=True)
     cert_file = cert_dir / "Certificate.lean"
-    cert_file.write_text(
-        generate_certificate_lean(
-            project_name,
-            module_name,
-            ctx,
-            hammer_import="ZerothHammer",
-            data_import=data_import,
-        )
-    )
+    cert_file.write_text(generate_certificate_lean(ctx))
     print(f"Wrote {cert_file}")
-
-    cert_wrapper = project_dir / "Certificate.lean"
-    cert_wrapper.write_text("import Certificate.Certificate\n")
     return cert_file
 
 
@@ -361,51 +292,42 @@ def create_project(
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
     """
     project_dir = output_dir / project_name
-    src_dir = project_dir / project_name
+    src_dir = project_dir / "System"
     module_name = project_name
 
     # Create directory structure
     src_dir.mkdir(parents=True, exist_ok=True)
     print(f"Created project directory: `{project_dir}`")
 
-    # Create lakefile.lean
+    # Render and write project-level files from templates
     lakefile = project_dir / "lakefile.toml"
     lakefile.write_text(generate_lakefile(project_name, executable=executable))
     print(f"Wrote {lakefile}")
 
-    # Write lean-toolchain
     toolchain = project_dir / "lean-toolchain"
-    toolchain.write_text(LEAN_TOOLCHAIN + "\n")
+    toolchain.write_text(render("project/lean-toolchain.j2", lean_toolchain=LEAN_TOOLCHAIN))
     print(f"Wrote {toolchain}")
 
-    # Write root module (placeholder; rewritten below after m2l is available)
-    root_module = src_dir.parent / f"{project_name}.lean"
-
-    # Write ZerothHammer.lean — standalone tactic, imported by Certificate
     hammer_file = project_dir / "ZerothHammer.lean"
     hammer_file.write_text(generate_zeroth_hammer_lean())
     print(f"Wrote {hammer_file}")
 
-    # Copy template files to Core/ package
-    # TODO: put these templates into `Core/` subfolder in `templates`
+    (project_dir / "Certificate.lean").write_text(
+        render("project/Certificate.lean.j2")
+    )
+
+    # Copy static files (Core/, LeanAI/)
     core_dir = project_dir / "Core"
     core_dir.mkdir(parents=True, exist_ok=True)
     for tmpl_name in CORE_FILES:
-        src_path = template_dir / tmpl_name
+        src_path = template_dir / "Core" / tmpl_name
         dst_path = core_dir / tmpl_name
         if src_path.exists():
-            if src_path.is_dir():
-                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
-                print(f"Copied template directory {tmpl_name} -> Core/")
-            else:
-                shutil.copy2(src_path, dst_path)
-                print(f"Copied template file {tmpl_name} -> Core/")
+            shutil.copy2(src_path, dst_path)
+            print(f"Copied {tmpl_name} -> Core/")
         else:
-            raise RuntimeError(
-                f"WARNING: Template file/dir `{tmpl_name}` not found at {src_path}"
-            )
+            raise RuntimeError(f"Template file `{tmpl_name}` not found at {src_path}")
 
-    # Copy template files to Core/ package
     for tmpl_name in LEAN_AI_FILES:
         src_path = template_dir / tmpl_name
         dst_path = project_dir / tmpl_name
@@ -417,9 +339,7 @@ def create_project(
                 shutil.copy2(src_path, dst_path)
                 print(f"Copied template file {tmpl_name} -> /")
         else:
-            raise RuntimeError(
-                f"WARNING: Template file/dir `{tmpl_name}` not found at {src_path}"
-            )
+            raise RuntimeError(f"Template file/dir `{tmpl_name}` not found at {src_path}")
 
     # ----------------------------------------------------------
     # Generate reactive module (init and update)
@@ -439,14 +359,14 @@ def create_project(
     ctx = LeanContext(module, cert_terms=cert_terms)
     m2l = ModuleToLean4(ctx)
 
-    root_module.write_text(generate_root(project_name, [module_name], scalar=m2l._can_scalarize()))
-    print(f"Wrote root module {root_module}")
+    root_lean = project_dir / "Root.lean"
+    root_lean.write_text(generate_root(scalar=m2l._can_scalarize()))
+    print(f"Wrote root module {root_lean}")
 
-    mod_file = src_dir / f"{module_name}.lean"
+    mod_file = src_dir / "System.lean"
     print(f"Generating `{mod_file.absolute()}`")
-
     mod_file.write_text(f"""\
-/- Code generated for reactive module `{module_name}` -/
+/- Functional encoding of reactive module `{module_name}` -/
 import Core.Box
 
 {m2l.to_lean_functional()}
@@ -454,54 +374,53 @@ import Core.Box
     assert mod_file.exists()
     print(f"++ Generated {mod_file} ++")
 
-    mod_file = src_dir / f"{module_name}Circ.lean"
+    mod_file = src_dir / "Circ.lean"
     print(f"Generating `{mod_file.absolute()}`")
-
     mod_file.write_text(f"""\
-/- Code generated for reactive module `{module_name}` as circuit -/
+/- Circuit encoding of reactive module `{module_name}` -/
 import Core.Box
-import {project_name}.{module_name}
+import System.System
 
 {m2l.to_lean_circ()}
 """)
     assert mod_file.exists()
     print(f"++ Generated {mod_file} ++")
 
-    mat_rel_file = src_dir / f"{module_name}Rel.lean"
+    mat_rel_file = src_dir / "Rel.lean"
     print(f"Generating `{mat_rel_file.absolute()}`")
     mat_rel_file.write_text(f"""\
-/- Relational encoding (matrix domain) for reactive module `{module_name}` -/
+/- Matrix-domain relational encoding of reactive module `{module_name}` -/
 import Core.Basic
-import {project_name}.{module_name}
+import System.System
 
 {m2l.to_lean_mat_rel()}
 """)
     assert mat_rel_file.exists()
     print(f"++ Generated {mat_rel_file} ++")
 
-    scalar_file = src_dir / f"{module_name}Scalar.lean"
+    scalar_file = src_dir / "Scalar.lean"
     print(f"Generating `{scalar_file.absolute()}`")
     scalar_file.write_text(f"""\
-/- Scalar encoding for reactive module `{module_name}` -/
+/- Scalar encoding of reactive module `{module_name}` -/
 import Core.Basic
-import {project_name}.{module_name}
+import System.System
 
 {m2l.to_lean_scalar()}
 """)
     assert scalar_file.exists()
     print(f"++ Generated {scalar_file} ++")
 
-    rel_file = src_dir / f"{module_name}ScalarRel.lean"
-    print(f"Generating `{rel_file.absolute()}`")
-    rel_file.write_text(f"""\
-/- Relational encoding for reactive module `{module_name}` -/
+    scalar_rel_file = src_dir / "ScalarRel.lean"
+    print(f"Generating `{scalar_rel_file.absolute()}`")
+    scalar_rel_file.write_text(f"""\
+/- Scalar-relational encoding of reactive module `{module_name}` -/
 import Core.Basic
-import {project_name}.{module_name}Scalar
+import System.Scalar
 
 {m2l.to_lean_rel()}
 """)
-    assert rel_file.exists()
-    print(f"++ Generated {rel_file} ++")
+    assert scalar_rel_file.exists()
+    print(f"++ Generated {scalar_rel_file} ++")
 
     # -- certificate data (init_pre, inv, P, ranking — placeholders if no cert_data) --
     write_data_lean(project_dir, project_name, module, cert_data, ctx=ctx)
@@ -525,17 +444,14 @@ import {project_name}.{module_name}Scalar
 
 
 def generate_standalone_cert_lean(
-    name: str,
     module: Module,
     cert_data: CertificateData | None = None,
-    *,
-    hammer_import: str = "ZerothHammer",
 ) -> str:
     """Generate a self-contained certificate Lean file with init/update inlined.
 
-    Unlike :func:`write_certificate_lean`, no ``import <name>.<name>`` is
-    emitted.  Instead the functional module code (init, update) is inlined
-    directly and ``zeroth_hammer`` is imported from *hammer_import*.
+    Unlike :func:`write_certificate_lean`, the functional module code
+    (init, update) is inlined directly rather than imported.  ZerothHammer
+    is always imported from the project-level ``ZerothHammer.lean``.
 
     Suitable for placing a single .lean file inside an existing lake project
     such as ``tests/lean/Certs/``.
@@ -555,14 +471,7 @@ def generate_standalone_cert_lean(
     ctx = LeanContext(module, cert_terms=cert_terms)
     m2l = ModuleToLean4(ctx)
     module_code = m2l.to_lean_functional()
-    return generate_certificate_lean(
-        name,
-        name,
-        ctx,
-        cert_data=cert_data,
-        hammer_import=hammer_import,
-        module_inline=module_code,
-    )
+    return generate_certificate_lean(ctx, cert_data=cert_data, module_inline=module_code)
 
 
 

@@ -130,7 +130,7 @@ def sync_core_templates() -> None:
     """Copy the current template files into Core/ before the test session."""
     _CORE_DIR.mkdir(exist_ok=True)
     for name in CORE_FILES:
-        src = TEMPLATE_DIR / name
+        src = TEMPLATE_DIR / "Core" / name
         dst = _CORE_DIR / name
         if src.is_dir():
             shutil.copytree(src, dst, dirs_exist_ok=True)
@@ -150,10 +150,5 @@ def generate_lean_files(sync_core_templates) -> None:
     for name, make_module, cert_data in _CERT_SPECS:
         module = make_module()
         lean_cert = smt_predicates_to_lean(cert_data, module)
-        content = generate_standalone_cert_lean(
-            name,
-            module,
-            lean_cert,
-            hammer_import="ZerothHammer",
-        )
+        content = generate_standalone_cert_lean(module, lean_cert)
         (_CERTS_DIR / f"{name}.lean").write_text(content)
