@@ -1,16 +1,16 @@
 use crate::term::{Term, TermInterfaceType};
+use crate::try_iter_borrow;
 use crate::wire::Wire;
-use crate::{DType, IType, try_iter_borrow};
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: base::Atom<IType>,
+    base: base::Atom<theory::any::Any>,
 }
 
-impl From<base::Atom<IType>> for Atom {
-    fn from(base: base::Atom<IType>) -> Self {
+impl From<base::Atom<theory::any::Any>> for Atom {
+    fn from(base: base::Atom<theory::any::Any>) -> Self {
         Self { base }
     }
 }
@@ -79,7 +79,7 @@ struct AtomInterface {
 }
 
 impl AtomInterface {
-    fn base(&self) -> &base::Interface<DType> {
+    fn base(&self) -> &base::Interface<theory::any::Type> {
         let atom = &self.atom.get().base;
         match self.interface {
             AtomInterfaceType::Read => atom.read(),
@@ -139,7 +139,7 @@ pub(crate) struct AtomBlock {
 }
 
 impl AtomBlock {
-    fn base(&self) -> &base::Block<IType> {
+    fn base(&self) -> &base::Block<theory::any::Any> {
         let atom = &self.atom.get().base;
         match self.block {
             BlockType::Init => atom.init(),
@@ -190,7 +190,7 @@ struct AtomBlockInterface {
 }
 
 impl AtomBlockInterface {
-    fn base(&self) -> &base::Interface<DType> {
+    fn base(&self) -> &base::Interface<theory::any::Type> {
         let term = self.block.get().base();
         match self.interface {
             TermInterfaceType::Read => term.read(),

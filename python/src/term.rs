@@ -4,13 +4,17 @@ use pyo3::exceptions::{PyException, PyIndexError};
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
-    base: base::Term<IType>,
+    base: base::Term<theory::any::Any>,
 }
 
 #[pymethods]
 impl Term {
     #[staticmethod]
-    fn function(itype: IType, write: &Bound<'_, PyAny>, read: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn function(
+        itype: theory::any::Any,
+        write: &Bound<'_, PyAny>,
+        read: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
         let write = try_wire_iter_cloned(write)?;
         let read = try_wire_iter_cloned(read)?;
 
@@ -21,7 +25,7 @@ impl Term {
     }
 
     #[staticmethod]
-    fn constant(itype: IType, write: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn constant(itype: theory::any::Any, write: &Bound<'_, PyAny>) -> PyResult<Self> {
         let write = try_wire_iter_cloned(write)?;
 
         match base::Term::constant(itype, write) {
@@ -33,7 +37,7 @@ impl Term {
     #[new]
     #[pyo3(signature = (itype, write, read = None))]
     fn new(
-        itype: IType,
+        itype: theory::any::Any,
         write: &Bound<'_, PyAny>,
         read: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
@@ -54,7 +58,7 @@ impl Term {
     }
 
     #[getter]
-    fn itype(&self) -> IType {
+    fn itype(&self) -> theory::any::Any {
         self.base.itype().clone()
     }
 
@@ -68,7 +72,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &base::Term<IType> {
+    pub(crate) fn base(&self) -> &base::Term<theory::any::Any> {
         &self.base
     }
 
@@ -81,8 +85,8 @@ impl Term {
     }
 }
 
-impl From<base::Term<IType>> for Term {
-    fn from(base: base::Term<IType>) -> Self {
+impl From<base::Term<theory::any::Any>> for Term {
+    fn from(base: base::Term<theory::any::Any>) -> Self {
         Self { base }
     }
 }
@@ -99,7 +103,7 @@ struct TermInterface {
 }
 
 impl TermInterface {
-    fn base(&self) -> &base::Interface<DType> {
+    fn base(&self) -> &base::Interface<theory::any::Type> {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),

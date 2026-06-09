@@ -41,10 +41,12 @@ use theory::bv::{BV, Type};
 */
 
 use crate::*;
+use pyo3::prelude::*;
 
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[pyclass(frozen)]
 pub enum Type {
     // matrix of bitvectors determined by (bitvector-length, [# rows, # cols])
     BV(usize, [usize; 2]),
@@ -74,71 +76,72 @@ impl fmt::Display for Type {
 
 /// Theory of bitvector matrices. Operations on bitvectors follow the SMT-LIB2 semantics.
 #[derive(Clone, Debug)]
+#[pyclass(frozen)]
 pub enum BV {
     /// Create constant BV matrix from a given 2-D tensor
-    Const(crate::Tensor),
+    Const(crate::PyTensor),
     /// Element-wise addition of two BV matrices (arithmetic modulo `2^bitwidth`)
-    Add,
+    Add(),
     /// Element-wise subtraction of two BV matrices (arithmetic modulo `2^bitwidth`)
-    Sub,
+    Sub(),
     /// Element-wise multiplication of two BV matrices (arithmetic modulo `2^bitwidth`)
-    Mul,
+    Mul(),
     /// Element-wise **unsigned** division of two BV matrices (arithmetic modulo `2^bitwidth`)
-    UDiv,
+    UDiv(),
     /// Element-wise **signed** division of two BV matrices . Arithmetic modulo `2^bitwidth`.
     /// Edge cases follow SMT-LIB2 specification (e.g., `-128 / -1 = -128` on 8 bits and
     /// `x / 0 = 2^(bitwidth - 1)`)
-    SDiv,
+    SDiv(),
     /// Element-wise **unsigned** modulo of two BV matrices
-    UMod,
+    UMod(),
     /// Element-wise **signed** modulo of two BV matrices
-    SMod,
+    SMod(),
     /// Element-wise negation of two BV matrices (arithmetic modulo `2^bitwidth`).
     /// Edge case follows the SMT-LIB2 specification (e.g., `neg(-128) = -128` on 8 bits)
-    Neg,
+    Neg(),
     /// XXX: remove from here and move the modelling to Python.
     /// XXX What to do on `Abs(BV<n>_MIN)`? Should the result be `BV<n>_MAX`?
     /// (so that `Abs` always returns positive value?)
     /// Element-wise absolute value. Modeled as `Abs(x) = Ite(x < 0, Neg(x), x)`
-    Abs,
+    Abs(),
     /// Two bitvector matrices multiplication. Modeled through multiplication and sums
     /// as usual.
-    MatMul,
+    MatMul(),
     /// Element-wise bit-wise "and"
-    And,
+    And(),
     /// Element-wise bit-wise "or"
-    Or,
+    Or(),
     /// Element-wise bit-wise "xor"
-    Xor,
+    Xor(),
     /// Element-wise bit-wise "not" (bit inversion)
-    Not,
+    Not(),
     /// Element-wise **unsigned** less-or-equal comparison (result is a matrix of BV<1> values)
-    ULe,
+    ULe(),
     /// Element-wise **unsigned** less-than comparison (result is a matrix of BV<1> values)
-    ULt,
+    ULt(),
     /// Element-wise **unsigned** greater-or-equal comparison (result is a matrix of BV<1> values)
-    UGe,
+    UGe(),
     /// Element-wise **unsigned** greater-than comparison (result is a matrix of BV<1> values)
-    UGt,
+    UGt(),
     /// Element-wise **signed** less-or-equal comparison (result is a matrix of BV<1> values)
-    SLe,
+    SLe(),
     /// Element-wise **signed** less-than comparison (result is a matrix of BV<1> values)
-    SLt,
+    SLt(),
     /// Element-wise **signed** greater-or-equal comparison (result is a matrix of BV<1> values)
-    SGe,
+    SGe(),
     /// Element-wise **signed** greater-than comparison (result is a matrix of BV<1> values)
-    SGt,
+    SGt(),
     /// Element-wise equality comparison (result is a matrix of BV<1> values)
-    Eq,
+    Eq(),
     /// Element-wise non-equality comparison (result is a matrix of BV<1> values)
-    Ne,
+    Ne(),
     /// If-then-else construct, condition is `BV<1>`
-    Ite,
+    Ite(),
     /// Identity on bitvector matrices
-    Id,
+    Id(),
     /// Element-wise BV<n> to BV<1> via "non-zero comparison" (`x != 0`). Corresponds to SMV ToBool,
     /// FIXME: to be removed and replaced by `Ne x 0`
-    BVToBool,
+    BVToBool(),
     /// Element-wise extract bits `[high..=low]` (inclusive)
     /// TODO: rename to `extract`, matching MathSAT
     BitSelect { high: usize, low: usize },
@@ -152,33 +155,33 @@ impl fmt::Display for BV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BV::Const(cm) => write!(f, "{}", cm),
-            BV::And => write!(f, "And"),
-            BV::Or => write!(f, "Or"),
-            BV::Xor => write!(f, "Xor"),
-            BV::Not => write!(f, "Not"),
-            BV::SLe => write!(f, "SLe"),
-            BV::SLt => write!(f, "SLt"),
-            BV::SGe => write!(f, "SGe"),
-            BV::SGt => write!(f, "SGt"),
-            BV::ULe => write!(f, "ULe"),
-            BV::ULt => write!(f, "ULt"),
-            BV::UGe => write!(f, "UGe"),
-            BV::UGt => write!(f, "UGt"),
-            BV::Eq => write!(f, "Eq"),
-            BV::Ne => write!(f, "Ne"),
-            BV::Add => write!(f, "Add"),
-            BV::Sub => write!(f, "Sub"),
-            BV::Neg => write!(f, "Neg"),
-            BV::Abs => write!(f, "Abs"),
-            BV::Mul => write!(f, "Mul"),
-            BV::UDiv => write!(f, "UDiv"),
-            BV::SDiv => write!(f, "SDiv"),
-            BV::UMod => write!(f, "UMod"),
-            BV::SMod => write!(f, "SMod"),
-            BV::MatMul => write!(f, "MatMul"),
-            BV::Ite => write!(f, "Ite"),
-            BV::Id => write!(f, "Id"),
-            BV::BVToBool => write!(f, "BVToBool"),
+            BV::And() => write!(f, "And"),
+            BV::Or() => write!(f, "Or"),
+            BV::Xor() => write!(f, "Xor"),
+            BV::Not() => write!(f, "Not"),
+            BV::SLe() => write!(f, "SLe"),
+            BV::SLt() => write!(f, "SLt"),
+            BV::SGe() => write!(f, "SGe"),
+            BV::SGt() => write!(f, "SGt"),
+            BV::ULe() => write!(f, "ULe"),
+            BV::ULt() => write!(f, "ULt"),
+            BV::UGe() => write!(f, "UGe"),
+            BV::UGt() => write!(f, "UGt"),
+            BV::Eq() => write!(f, "Eq"),
+            BV::Ne() => write!(f, "Ne"),
+            BV::Add() => write!(f, "Add"),
+            BV::Sub() => write!(f, "Sub"),
+            BV::Neg() => write!(f, "Neg"),
+            BV::Abs() => write!(f, "Abs"),
+            BV::Mul() => write!(f, "Mul"),
+            BV::UDiv() => write!(f, "UDiv"),
+            BV::SDiv() => write!(f, "SDiv"),
+            BV::UMod() => write!(f, "UMod"),
+            BV::SMod() => write!(f, "SMod"),
+            BV::MatMul() => write!(f, "MatMul"),
+            BV::Ite() => write!(f, "Ite"),
+            BV::Id() => write!(f, "Id"),
+            BV::BVToBool() => write!(f, "BVToBool"),
             BV::BitSelect { high, low } => write!(f, "BitSelect[{high}:{low}]"),
             BV::Extend { extra } => write!(f, "Extend(+{extra})"),
             BV::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
@@ -186,7 +189,7 @@ impl fmt::Display for BV {
     }
 }
 
-fn check_init_dims(cm: &crate::Tensor, bw: usize, i: usize, j: usize) -> Result<(), String> {
+fn check_init_dims(cm: &crate::PyTensor, bw: usize, i: usize, j: usize) -> Result<(), String> {
     if bw > 64 {
         return Err("Support at most 64-bit atm.".into());
     }
@@ -250,7 +253,7 @@ impl Theory for BV {
 
             // TODO: for `Abs`, what if input is the signed min of BV<N>? It's absolute value
             // does not fit into BV<N>
-            BV::Not | BV::Id | BV::Neg | BV::Abs => {
+            BV::Not() | BV::Id() | BV::Neg() | BV::Abs() => {
                 let (r, w) = (
                     read_nxt(&mut read, 0, "BV")?,
                     write_nxt(&mut write, 0, "BV")?,
@@ -272,16 +275,16 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::SLe
-            | BV::SLt
-            | BV::SGe
-            | BV::SGt
-            | BV::ULe
-            | BV::ULt
-            | BV::UGe
-            | BV::UGt
-            | BV::Eq
-            | BV::Ne => {
+            BV::SLe()
+            | BV::SLt()
+            | BV::SGe()
+            | BV::SGt()
+            | BV::ULe()
+            | BV::ULt()
+            | BV::UGe()
+            | BV::UGt()
+            | BV::Eq()
+            | BV::Ne() => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0, "BV")?,
                     read_nxt(&mut read, 1, "BV")?,
@@ -303,7 +306,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::UDiv | BV::UMod => {
+            BV::UDiv() | BV::UMod() => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0, "BV")?,
                     read_nxt(&mut read, 1, "BV")?,
@@ -327,7 +330,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::SDiv | BV::SMod => {
+            BV::SDiv() | BV::SMod() => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0, "BV")?,
                     read_nxt(&mut read, 1, "BV")?,
@@ -351,7 +354,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::And | BV::Or | BV::Xor | BV::Add | BV::Sub | BV::Mul => {
+            BV::And() | BV::Or() | BV::Xor() | BV::Add() | BV::Sub() | BV::Mul() => {
                 let w1 = write_nxt(&mut write, 0, "BV")?;
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0, "BV")?,
@@ -372,7 +375,7 @@ impl Theory for BV {
                 Ok(())
             }
 
-            BV::Ite => {
+            BV::Ite() => {
                 let w1 = write_nxt(&mut write, 0, "BV")?;
                 let (r1, r2, r3, None) = (
                     read_nxt(&mut read, 0, "BV")?,
@@ -400,7 +403,7 @@ impl Theory for BV {
                 Ok(())
             }
 
-            BV::MatMul => {
+            BV::MatMul() => {
                 let (r1, r2, None) = (
                     read_nxt(&mut read, 0, "BV")?,
                     read_nxt(&mut read, 1, "BV")?,
@@ -455,7 +458,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
-            BV::BVToBool => {
+            BV::BVToBool() => {
                 let (r1, None) = (read_nxt(&mut read, 0, "BV")?, read.next()) else {
                     return Err(format!("{self}: must read exactly one value"));
                 };
@@ -572,42 +575,42 @@ mod tests {
     #[test]
     fn const_ok() {
         let t = bv(8, 2, 2);
-        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_ok());
     }
 
     #[test]
     fn const_value_overflow_fails() {
         let t = bv(8, 1, 1);
-        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[256i64]]).into();
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[256i64]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_err());
     }
 
     #[test]
     fn const_value_max_fits() {
         let t = bv(8, 1, 1);
-        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[255i64]]).into();
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[255i64]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_ok());
     }
 
     #[test]
     fn const_wrong_row_count_fails() {
         let t = bv(8, 2, 2);
-        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64, 1]]).into();
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_err());
     }
 
     #[test]
     fn const_wrong_col_count_fails() {
         let t = bv(8, 1, 2);
-        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64]]).into();
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64]]).into();
         assert!(BV::Const(cm).check(vec![], [t]).is_err());
     }
 
     #[test]
     fn const_with_read_fails() {
         let t = bv(8, 1, 1);
-        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0i64]]).into();
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64]]).into();
         assert!(BV::Const(cm).check([t], [t]).is_err());
     }
 
@@ -616,18 +619,18 @@ mod tests {
     #[test]
     fn not_ok() {
         let t = bv(8, 2, 3);
-        assert!(BV::Not.check([t], [t]).is_ok());
+        assert!(BV::Not().check([t], [t]).is_ok());
     }
 
     #[test]
     fn not_type_mismatch_fails() {
-        assert!(BV::Not.check([bv(8, 1, 1)], [bv(8, 2, 2)]).is_err());
+        assert!(BV::Not().check([bv(8, 1, 1)], [bv(8, 2, 2)]).is_err());
     }
 
     #[test]
     fn id_ok() {
         let t = bv(32, 4, 4);
-        assert!(BV::Id.check([t], [t]).is_ok());
+        assert!(BV::Id().check([t], [t]).is_ok());
     }
 
     // --- Binary elementwise (Add, Mul, And, Or, Xor) ---
@@ -635,13 +638,13 @@ mod tests {
     #[test]
     fn add_ok() {
         let t = bv(8, 3, 3);
-        assert!(BV::Add.check([t, t], [t]).is_ok());
+        assert!(BV::Add().check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn add_shape_mismatch_fails() {
         assert!(
-            BV::Add
+            BV::Add()
                 .check([bv(8, 1, 2), bv(8, 2, 1)], [bv(8, 1, 2)])
                 .is_err()
         );
@@ -650,25 +653,25 @@ mod tests {
     #[test]
     fn mul_ok() {
         let t = bv(16, 1, 1);
-        assert!(BV::Mul.check([t, t], [t]).is_ok());
+        assert!(BV::Mul().check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn and_ok() {
         let t = bv(1, 2, 2);
-        assert!(BV::And.check([t, t], [t]).is_ok());
+        assert!(BV::And().check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn or_ok() {
         let t = bv(1, 2, 2);
-        assert!(BV::Or.check([t, t], [t]).is_ok());
+        assert!(BV::Or().check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn xor_ok() {
         let t = bv(4, 1, 1);
-        assert!(BV::Xor.check([t, t], [t]).is_ok());
+        assert!(BV::Xor().check([t, t], [t]).is_ok());
     }
 
     // --- Comparisons ---
@@ -677,44 +680,44 @@ mod tests {
     fn lt_ok() {
         let t = bv(8, 2, 3);
         let out = bv(1, 2, 3);
-        assert!(BV::ULt.check([t, t], [out]).is_ok());
-        assert!(BV::SLt.check([t, t], [out]).is_ok());
+        assert!(BV::ULt().check([t, t], [out]).is_ok());
+        assert!(BV::SLt().check([t, t], [out]).is_ok());
     }
 
     #[test]
     fn le_ok() {
         let t = bv(8, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::ULe.check([t, t], [out]).is_ok());
-        assert!(BV::SLe.check([t, t], [out]).is_ok());
+        assert!(BV::ULe().check([t, t], [out]).is_ok());
+        assert!(BV::SLe().check([t, t], [out]).is_ok());
     }
 
     #[test]
     fn eq_ok() {
         let t = bv(32, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::Eq.check([t, t], [out]).is_ok());
+        assert!(BV::Eq().check([t, t], [out]).is_ok());
     }
 
     #[test]
     fn ne_ok() {
         let t = bv(8, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::Ne.check([t, t], [out]).is_ok());
+        assert!(BV::Ne().check([t, t], [out]).is_ok());
     }
 
     #[test]
     fn cmp_wrong_output_type_fails() {
         let t = bv(8, 2, 3);
         // output must be U(1, rows, cols), not U(8, ...)
-        assert!(BV::ULt.check([t, t], [t]).is_err());
-        assert!(BV::SLt.check([t, t], [t]).is_err());
+        assert!(BV::ULt().check([t, t], [t]).is_err());
+        assert!(BV::SLt().check([t, t], [t]).is_err());
     }
 
     #[test]
     fn cmp_input_mismatch_fails() {
         let out = bv(1, 1, 1);
-        assert!(BV::Eq.check([bv(8, 1, 1), bv(16, 1, 1)], [out]).is_err());
+        assert!(BV::Eq().check([bv(8, 1, 1), bv(16, 1, 1)], [out]).is_err());
     }
 
     // --- UDiv / SDiv ---
@@ -722,13 +725,13 @@ mod tests {
     #[test]
     fn udiv_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::UDiv.check([t, t], [t]).is_ok());
+        assert!(BV::UDiv().check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn sdiv_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::SDiv.check([t, t], [t]).is_ok());
+        assert!(BV::SDiv().check([t, t], [t]).is_ok());
     }
 
     // --- MatMul ---
@@ -738,7 +741,7 @@ mod tests {
         let a = bv(8, 2, 3);
         let b = bv(8, 3, 4);
         let c = bv(8, 2, 4);
-        assert!(BV::MatMul.check([a, b], [c]).is_ok());
+        assert!(BV::MatMul().check([a, b], [c]).is_ok());
     }
 
     #[test]
@@ -746,7 +749,7 @@ mod tests {
         let a = bv(8, 2, 3);
         let b = bv(8, 4, 4);
         let c = bv(8, 2, 4);
-        assert!(BV::MatMul.check([a, b], [c]).is_err());
+        assert!(BV::MatMul().check([a, b], [c]).is_err());
     }
 
     #[test]
@@ -754,7 +757,7 @@ mod tests {
         let a = bv(8, 2, 3);
         let b = bv(16, 3, 4);
         let c = bv(8, 2, 4);
-        assert!(BV::MatMul.check([a, b], [c]).is_err());
+        assert!(BV::MatMul().check([a, b], [c]).is_err());
     }
 
     // --- Ite ---
@@ -763,14 +766,14 @@ mod tests {
     fn ite_ok() {
         let cond = bv(1, 1, 1);
         let t = bv(8, 1, 1);
-        assert!(BV::Ite.check([cond, t, t], [t]).is_ok());
+        assert!(BV::Ite().check([cond, t, t], [t]).is_ok());
     }
 
     #[test]
     fn ite_bad_condition_bw_fails() {
         let cond = bv(8, 1, 1);
         let t = bv(8, 1, 1);
-        assert!(BV::Ite.check([cond, t, t], [t]).is_err());
+        assert!(BV::Ite().check([cond, t, t], [t]).is_err());
     }
 
     // --- Sub / Neg / UMod / SMod ---
@@ -778,30 +781,30 @@ mod tests {
     #[test]
     fn sub_ok() {
         let t = bv(8, 2, 3);
-        assert!(BV::Sub.check([t, t], [t]).is_ok());
+        assert!(BV::Sub().check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn neg_ok() {
         let t = bv(8, 2, 3);
-        assert!(BV::Neg.check([t], [t]).is_ok());
+        assert!(BV::Neg().check([t], [t]).is_ok());
     }
 
     #[test]
     fn neg_type_mismatch_fails() {
-        assert!(BV::Neg.check([bv(8, 1, 1)], [bv(8, 2, 2)]).is_err());
+        assert!(BV::Neg().check([bv(8, 1, 1)], [bv(8, 2, 2)]).is_err());
     }
 
     #[test]
     fn umod_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::UMod.check([t, t], [t]).is_ok());
+        assert!(BV::UMod().check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn smod_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::SMod.check([t, t], [t]).is_ok());
+        assert!(BV::SMod().check([t, t], [t]).is_ok());
     }
 
     // --- BVToBool / BoolToBV (SMV bool(...) / word1(...)) ---
@@ -809,23 +812,23 @@ mod tests {
     #[test]
     fn bv_to_bool_ok() {
         // BV<8>(2,3) -> BV<1>(2,3)
-        assert!(BV::BVToBool.check([bv(8, 2, 3)], [bv(1, 2, 3)]).is_ok());
+        assert!(BV::BVToBool().check([bv(8, 2, 3)], [bv(1, 2, 3)]).is_ok());
     }
 
     #[test]
     fn bv_to_bool_identity_width_ok() {
         // BV<1> -> BV<1> is also fine (idempotent on already-bool input).
-        assert!(BV::BVToBool.check([bv(1, 1, 1)], [bv(1, 1, 1)]).is_ok());
+        assert!(BV::BVToBool().check([bv(1, 1, 1)], [bv(1, 1, 1)]).is_ok());
     }
 
     #[test]
     fn bv_to_bool_wrong_out_width_fails() {
-        assert!(BV::BVToBool.check([bv(8, 1, 1)], [bv(8, 1, 1)]).is_err());
+        assert!(BV::BVToBool().check([bv(8, 1, 1)], [bv(8, 1, 1)]).is_err());
     }
 
     #[test]
     fn bv_to_bool_shape_mismatch_fails() {
-        assert!(BV::BVToBool.check([bv(8, 2, 3)], [bv(1, 1, 1)]).is_err());
+        assert!(BV::BVToBool().check([bv(8, 2, 3)], [bv(1, 1, 1)]).is_err());
     }
 
     // --- BitSelect / Extend ---
@@ -889,7 +892,7 @@ mod tests {
     fn ite_arm_mismatch_fails() {
         let cond = bv(1, 1, 1);
         assert!(
-            BV::Ite
+            BV::Ite()
                 .check([cond, bv(8, 1, 1), bv(16, 1, 1)], [bv(8, 1, 1)])
                 .is_err()
         );
