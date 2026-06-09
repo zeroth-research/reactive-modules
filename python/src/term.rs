@@ -11,10 +11,11 @@ pub(crate) struct Term {
 impl Term {
     #[staticmethod]
     fn function(
-        itype: theory::any::Any,
+        itype: &Bound<'_, PyAny>,
         write: &Bound<'_, PyAny>,
         read: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
+        let itype = itype.extract()?;
         let write = try_wire_iter_cloned(write)?;
         let read = try_wire_iter_cloned(read)?;
 
@@ -25,7 +26,8 @@ impl Term {
     }
 
     #[staticmethod]
-    fn constant(itype: theory::any::Any, write: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn constant(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let itype = itype.extract()?;
         let write = try_wire_iter_cloned(write)?;
 
         match base::Term::constant(itype, write) {
@@ -37,7 +39,7 @@ impl Term {
     #[new]
     #[pyo3(signature = (itype, write, read = None))]
     fn new(
-        itype: theory::any::Any,
+        itype: &Bound<'_, PyAny>,
         write: &Bound<'_, PyAny>,
         read: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
