@@ -22,6 +22,7 @@ use crate::wire::Wire;
 fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // m.add_class::<IType>()?;
     // m.add_class::<DType>()?;
+    m.add_class::<theory::bv::BV>()?;
     m.add_class::<Wire>()?;
     m.add_class::<Term>()?;
     m.add_class::<Module>()?;

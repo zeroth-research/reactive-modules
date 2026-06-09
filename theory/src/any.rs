@@ -2,7 +2,8 @@ use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
 use crate::{Theory, bv, lia, lra};
-use pyo3::pyclass;
+use pyo3::prelude::*;
+use pyo3::{Bound, FromPyObject, PyAny, PyResult, pyclass};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,7 +89,6 @@ impl TryFrom<Type> for lra::Type {
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
-#[pyclass(frozen)]
 pub enum Any {
     LRA(LRA),
     LIA(LIA),
@@ -170,6 +170,37 @@ impl Theory for Any {
             Any::LRA(itype) => itype.check(read, write),
             Any::LIA(itype) => itype.check(read, write),
             Any::BV(itype) => itype.check(read, write),
+        }
+    }
+}
+
+impl<'py> FromPyObject<'py> for Any {
+    fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(a) = obj.extract::<LRA>() {
+            return Ok(Any::LRA(a));
+        }
+        if let Ok(a) = obj.extract::<LIA>() {
+            return Ok(Any::LIA(a));
+        }
+        if let Ok(a) = obj.extract::<BV>() {
+            return Ok(Any::BV(a));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(
+            "expected one of LRA, LIA, or BV",
+        ))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Any {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match self {
+            Any::LRA(a) => a.into_pyobject(py).map(Bound::into_any),
+            Any::LIA(a) => a.into_pyobject(py).map(Bound::into_any),
+            Any::BV(a) => a.into_pyobject(py).map(Bound::into_any),
         }
     }
 }
