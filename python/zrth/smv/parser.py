@@ -49,11 +49,18 @@ def parse_smv(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class _SMVType:
+    """SMV variable type: BV DType paired with its signedness."""
+    dtype: DType
+    signed: bool
+
+
 @dataclass(slots=True)
 class _Decls:
-    var_decls: list[tuple[str, DType]] = field(default_factory=list)
-    ivar_decls: list[tuple[str, DType]] = field(default_factory=list)
-    frozen_decls: list[tuple[str, DType]] = field(default_factory=list)
+    var_decls: list[tuple[str, _SMVType]] = field(default_factory=list)
+    ivar_decls: list[tuple[str, _SMVType]] = field(default_factory=list)
+    frozen_decls: list[tuple[str, _SMVType]] = field(default_factory=list)
     define_map: dict[str, Tree] = field(default_factory=dict)
     init_assigns: dict[str, Tree] = field(default_factory=dict)
     next_assigns: dict[str, Tree] = field(default_factory=dict)
@@ -242,30 +249,31 @@ def _try_extract_assign(
 _DEFAULT_INT_BW = 32
 
 
-def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> DType:
+def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> _SMVType:
     if isinstance(tree, Tree):
         match tree.data:
             case "type_bool":
-                return DType.BV(1)
+                return _SMVType(DType.BV(1), signed=False)
             case "type_int" | "range_type":
-                return DType.BV(_DEFAULT_INT_BW)
+                return _SMVType(DType.BV(_DEFAULT_INT_BW), signed=True)
             case "type_spec":
                 return _resolve_type(tree.children[0], enum_values)
             case "word_type":
+                sign_tok = str(tree.children[0])
                 width = int(str(tree.children[1]))
-                return DType.BV(width)
+                return _SMVType(DType.BV(width), signed=(sign_tok == "signed"))
             case "enum_type":
                 for code, ev in enumerate(_typed_children(tree, "enum_value")):
                     name = _extract_name(ev.children[0])
                     if name is not None:
                         enum_values.setdefault(name, code)
-                return DType.BV(_DEFAULT_INT_BW)
+                return _SMVType(DType.BV(_DEFAULT_INT_BW), signed=False)
     # Token fallback
     text = str(tree).strip()
     if text == "boolean":
-        return DType.BV(1)
+        return _SMVType(DType.BV(1), signed=False)
     if text == "integer":
-        return DType.BV(_DEFAULT_INT_BW)
+        return _SMVType(DType.BV(_DEFAULT_INT_BW), signed=True)
     raise ValueError(f"unsupported type: {tree}")
 
 
@@ -280,18 +288,14 @@ _BINOPS: dict[str, dict[str, str]] = {
     "iff": {"<->": "Xnor", "xnor": "Xnor"},
     "or_expr": {"|": "Or", "or": "Or", "xor": "Xor"},
     "and_expr": {"&": "And", "and": "And"},
-    "cmp_expr": {
-        "=": "Eq",
-        "!=": "Ne",
-        "<": "Lt",
-        "<=": "Le",
-        ">": "Gt",
-        ">=": "Ge",
-    },
     "arith_expr": {"+": "Add", "-": "Sub"},
     "mod_expr": {"mod": "UMod"},
     "term_expr": {"*": "Mul", "/": "UDiv"},
 }
+
+# Comparison ops split by sign; handled in _lower_cmp / _cmp_itype.
+_CMP_FIXED: dict[str, str] = {"=": "Eq", "!=": "Ne"}
+_CMP_ORDERED: dict[str, str] = {"<": "Lt", "<=": "Le", ">": "Gt", ">=": "Ge"}
 
 _OP_TOKENS = {"NOT_OP"}
 
@@ -311,6 +315,7 @@ def _bv_op(name: str):
 _METHODS = {
     "builtin_call": "_lower_builtin",
     "case_expr": "_lower_case",
+    "cmp_expr": "_lower_cmp",
     "next_expr": "_lower_next",
     "word_lit": "_lower_word_lit",
     "paren_expr": "_lower_paren",
@@ -350,14 +355,17 @@ class _Lowerer:
         name_map: dict[str, tuple[Wire, Wire]],
         defines: dict[str, Tree],
         enum_values: dict[str, int],
+        var_types: dict[str, _SMVType],
         is_init: bool = False,
     ):
         self.name_map = name_map
         self.defines = defines
         self.enum_values = enum_values
+        self.var_types = var_types
         self.is_init = is_init
         self.terms: list[Term] = []
         self._expanding: set[str] = set()
+        self._wire_types: dict[int, _SMVType] = {}
 
     # --- public entry -------------------------------------------------------
 
@@ -375,11 +383,8 @@ class _Lowerer:
 
         # Table-driven binary ops
         if name in _BINOPS:
-            out_dtype_fn = (
-                (lambda d: DType.BV(1)) if name == "cmp_expr" else (lambda d: d)
-            )
             return self._lower_binop(
-                tree, _BINOPS[name], target, out_dtype_fn=out_dtype_fn
+                tree, _BINOPS[name], target, out_dtype_fn=lambda d: d
             )
 
         # Table-driven n-ary ops (unary / implies / ternary)
@@ -425,6 +430,30 @@ class _Lowerer:
                 out_dtype_fn(left.dtype) if (out_dtype_fn and out is None) else None
             )
             w = self._fresh(out, out_dtype)
+            self.terms.append(Term(itype, [w], [left, rhs]))
+            self._propagate_type(w, left, rhs)
+            left = w
+            i += 2
+        return self._enforce(left, target)
+
+    # --- comparison ops (sign-aware) ----------------------------------------
+
+    def _cmp_itype(self, op_tok: str, left: Wire):
+        if op_tok in _CMP_FIXED:
+            return _bv_op(_CMP_FIXED[op_tok])
+        prefix = "S" if self._is_signed(left) else "U"
+        return _bv_op(prefix + _CMP_ORDERED[op_tok])
+
+    def _lower_cmp(self, tree: Tree, target: Wire | None) -> Wire:
+        children = tree.children
+        left = self.lower(children[0])
+        i = 1
+        while i < len(children):
+            op_tok = str(children[i])
+            rhs = self.lower(children[i + 1])
+            itype = self._cmp_itype(op_tok, left)
+            out = target if i + 2 >= len(children) else None
+            w = self._fresh(out, DType.BV(1))
             self.terms.append(Term(itype, [w], [left, rhs]))
             left = w
             i += 2
@@ -474,6 +503,8 @@ class _Lowerer:
 
         w = self._fresh(target, out_dtype)
         self.terms.append(Term(itype, [w], [arg_w]))
+        if fn_name in ("signed", "unsigned"):
+            self._wire_types[id(w)] = _SMVType(w.dtype, signed=(fn_name == "signed"))
         return self._enforce(w, target)
 
     # --- case..esac ---------------------------------------------------------
@@ -522,6 +553,7 @@ class _Lowerer:
             value = value + (1 << width)
         dtype = DType.BV(width)
         w = Wire(dtype)
+        self._wire_types[id(w)] = _SMVType(dtype, signed=signed)
         # Word literals produce a BV constant, not an LIA ConstInt.
         self.terms.append(Term(IType.BV.Const(value), [w]))
         return self._maybe_bit_select(tree, w, 1, target)
@@ -552,12 +584,27 @@ class _Lowerer:
         if name in self.name_map:
             latched, next_w = self.name_map[name]
             w = next_w if self.is_init else latched
+            if name in self.var_types:
+                self._wire_types[id(w)] = self.var_types[name]
             return self._enforce(w, target)
         # Unknown name — emit zero with warning
         warnings.warn(f"undeclared variable '{name}', defaulting to 0")
         return self._emit_const(IType.BV.Const(0), target)
 
     # --- helpers ------------------------------------------------------------
+
+    def _smv_type(self, wire: Wire) -> _SMVType | None:
+        return self._wire_types.get(id(wire))
+
+    def _is_signed(self, wire: Wire) -> bool:
+        t = self._smv_type(wire)
+        return t.signed if t is not None else False
+
+    def _propagate_type(self, result: Wire, *inputs: Wire) -> None:
+        """Set result's _SMVType to signed if any input is signed."""
+        signed = any(self._is_signed(w) for w in inputs)
+        if signed or any(self._smv_type(w) is not None for w in inputs):
+            self._wire_types[id(result)] = _SMVType(result.dtype, signed=signed)
 
     def _fresh(self, target: Wire | None, dtype=None) -> Wire:
         if target is not None:
@@ -573,6 +620,9 @@ class _Lowerer:
     def _enforce(self, wire: Wire, target: Wire | None) -> Wire:
         if target is not None and target != wire:
             self.terms.append(Term(IType.BV.Id, [target], [wire]))
+            t = self._smv_type(wire)
+            if t is not None:
+                self._wire_types[id(target)] = t
             return target
         return wire
 
@@ -607,17 +657,21 @@ def _build_module(
 
     # Combine: state vars first, then ivars
     all_decls = all_var_decls + list(d.ivar_decls)
-    # Create wire pairs
+    # Create wire pairs and type map
     name_map: dict[str, tuple[Wire, Wire]] = {}
-    for name, dtype in all_decls:
+    var_types: dict[str, _SMVType] = {}
+    for name, smv_type in all_decls:
+        var_types[name] = smv_type
         name_map[name] = (
-            overrides[name] if name in overrides else (Wire(dtype), Wire(dtype))
+            overrides[name]
+            if name in overrides
+            else (Wire(smv_type.dtype), Wire(smv_type.dtype))
         )
 
-    init_low = _Lowerer(name_map, d.define_map, d.enum_values, is_init=True)
-    update_low = _Lowerer(name_map, d.define_map, d.enum_values, is_init=False)
+    init_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types, is_init=True)
+    update_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types, is_init=False)
 
-    for name, dtype in all_var_decls:
+    for name, smv_type in all_var_decls:
         latched, next_w = name_map[name]
 
         # --- INIT ---
