@@ -6,7 +6,7 @@ pub mod lia;
 pub mod lra;
 pub mod tensor;
 
-pub use tensor::Tensor;
+pub use tensor::PyTensor;
 
 pub trait Theory {
     // TODO: in torch, from where we took this name (I think), dtype refers to

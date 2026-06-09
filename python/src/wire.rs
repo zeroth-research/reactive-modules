@@ -1,17 +1,16 @@
-use crate::DType;
 use pyo3::prelude::*;
 use std::fmt;
 
 #[pyclass(frozen, eq, hash, str)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub(crate) struct Wire {
-    base: base::Wire<DType>,
+    base: base::Wire<theory::any::Type>,
 }
 
 #[pymethods]
 impl Wire {
     #[new]
-    pub(crate) fn new(dtype: DType) -> Self {
+    pub(crate) fn new(dtype: theory::any::Type) -> Self {
         let base = base::Wire::new(dtype);
         Self { base }
     }
@@ -22,7 +21,7 @@ impl Wire {
     }
 
     #[getter]
-    fn dtype(&self) -> DType {
+    fn dtype(&self) -> theory::any::Type {
         self.base.dtype().clone()
     }
 
@@ -32,13 +31,13 @@ impl Wire {
 }
 
 impl Wire {
-    pub(crate) fn base(&self) -> &base::Wire<DType> {
+    pub(crate) fn base(&self) -> &base::Wire<theory::any::Type> {
         &self.base
     }
 }
 
-impl From<base::Wire<DType>> for Wire {
-    fn from(base: base::Wire<DType>) -> Self {
+impl From<base::Wire<theory::any::Type>> for Wire {
+    fn from(base: base::Wire<theory::any::Type>) -> Self {
         Self { base }
     }
 }

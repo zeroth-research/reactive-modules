@@ -1,12 +1,12 @@
 use crate::*;
+use pyo3::Py;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
-use pyo3::{Py, PyObject, Python};
 
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
-    pub(crate) base: base::Module<IType>,
+    pub(crate) base: base::Module<theory::any::Any>,
 }
 
 #[pymethods]
@@ -175,28 +175,28 @@ impl Module {
         Ok(ModuleAtoms { module })
     }
 
-    fn try_to(&self, py: Python<'_>, theory: &str) -> PyResult<PyObject> {
-        match theory {
-            "lia" | "LIA" => {
-                let m = crate::downcast::downcast_module_to_lia(&self.base)
-                    .map_err(|e| PyException::new_err(e))?;
-                Ok(Py::new(py, LIAModule { base: m })?.into_any())
-            }
-            "rla" | "RLA" => {
-                let m = crate::downcast::downcast_module_to_lra(&self.base)
-                    .map_err(|e| PyException::new_err(e))?;
-                Ok(Py::new(py, RLAModule { base: m })?.into_any())
-            }
-            "bv" | "BV" => {
-                let m = crate::downcast::downcast_module_to_bv(&self.base)
-                    .map_err(|e| PyException::new_err(e))?;
-                Ok(Py::new(py, BVModule { base: m })?.into_any())
-            }
-            _ => Err(PyException::new_err(format!(
-                "unknown theory '{theory}'; supported: 'lia', 'rla', 'bv'"
-            ))),
-        }
-    }
+    // fn try_to(&self, py: Python<'_>, theory: &str) -> PyResult<PyObject> {
+    //     match theory {
+    //         "lia" | "LIA" => {
+    //             let m = crate::downcast::downcast_module_to_lia(&self.base)
+    //                 .map_err(|e| PyException::new_err(e))?;
+    //             Ok(Py::new(py, LIAModule { base: m })?.into_any())
+    //         }
+    //         "rla" | "RLA" => {
+    //             let m = crate::downcast::downcast_module_to_lra(&self.base)
+    //                 .map_err(|e| PyException::new_err(e))?;
+    //             Ok(Py::new(py, RLAModule { base: m })?.into_any())
+    //         }
+    //         "bv" | "BV" => {
+    //             let m = crate::downcast::downcast_module_to_bv(&self.base)
+    //                 .map_err(|e| PyException::new_err(e))?;
+    //             Ok(Py::new(py, BVModule { base: m })?.into_any())
+    //         }
+    //         _ => Err(PyException::new_err(format!(
+    //             "unknown theory '{theory}'; supported: 'lia', 'rla', 'bv'"
+    //         ))),
+    //     }
+    // }
 
     fn closed(&self) -> bool {
         self.base.is_closed()
@@ -215,8 +215,8 @@ impl Module {
     }
 }
 
-impl From<base::Module<IType>> for Module {
-    fn from(base: base::Module<IType>) -> Self {
+impl From<base::Module<theory::any::Any>> for Module {
+    fn from(base: base::Module<theory::any::Any>) -> Self {
         Self { base }
     }
 }
@@ -247,7 +247,7 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &base::Interface<DType, 2> {
+    fn base(&self) -> &base::Interface<theory::any::Type, 2> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),

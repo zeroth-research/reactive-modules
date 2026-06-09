@@ -41,11 +41,12 @@ assert!(LRA::ReLU.check([b], [b]).is_err());
 ```
 */
 
+use crate::*;
+use pyo3::pyclass;
 use std::fmt;
 
-use crate::*;
-
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[pyclass(frozen)]
 pub enum Type {
     Real([usize; 2]),
     Bool([usize; 2]),
@@ -77,37 +78,38 @@ impl fmt::Display for Type {
 }
 
 #[derive(Clone, Debug)]
+#[pyclass(frozen)]
 pub enum LRA {
     // constants
-    ConstReal(crate::Tensor),
-    ConstBool(crate::Tensor),
+    ConstReal(crate::PyTensor),
+    ConstBool(crate::PyTensor),
     // boolean operations
-    And,
-    Or,
-    Xor,
-    Not,
+    And(),
+    Or(),
+    Xor(),
+    Not(),
     // integer comparisons
-    Le,
-    Lt,
-    Ge,
-    Gt,
-    Eq,
-    Ne,
+    Le(),
+    Lt(),
+    Ge(),
+    Gt(),
+    Eq(),
+    Ne(),
     // linear / matrix operations
     // A*x + B where `A` and `B` are constants
-    Linear(crate::Tensor, crate::Tensor),
-    Add,
-    Sub,
+    Linear(crate::PyTensor, crate::PyTensor),
+    Add(),
+    Sub(),
     // XXX: should these be in RLA?
-    ReLU,
-    Argmax,
-    Min,
-    Max,
+    ReLU(),
+    Argmax(),
+    Min(),
+    Max(),
     // matrix operations
-    Transpose,
+    Transpose(),
     // control flow
-    Ite,
-    Id,
+    Ite(),
+    Id(),
     Uninterpreted(String),
 }
 
@@ -116,26 +118,26 @@ impl fmt::Display for LRA {
         match self {
             LRA::ConstReal(cm) => write!(f, "{}", cm),
             LRA::ConstBool(cm) => write!(f, "{}", cm),
-            LRA::And => write!(f, "And"),
-            LRA::Or => write!(f, "Or"),
-            LRA::Xor => write!(f, "Xor"),
-            LRA::Not => write!(f, "Not"),
-            LRA::Le => write!(f, "Le"),
-            LRA::Lt => write!(f, "Lt"),
-            LRA::Ge => write!(f, "Ge"),
-            LRA::Gt => write!(f, "Gt"),
-            LRA::Eq => write!(f, "Eq"),
-            LRA::Ne => write!(f, "Ne"),
+            LRA::And() => write!(f, "And"),
+            LRA::Or() => write!(f, "Or"),
+            LRA::Xor() => write!(f, "Xor"),
+            LRA::Not() => write!(f, "Not"),
+            LRA::Le() => write!(f, "Le"),
+            LRA::Lt() => write!(f, "Lt"),
+            LRA::Ge() => write!(f, "Ge"),
+            LRA::Gt() => write!(f, "Gt"),
+            LRA::Eq() => write!(f, "Eq"),
+            LRA::Ne() => write!(f, "Ne"),
             LRA::Linear(..) => write!(f, "Linear"),
-            LRA::Add => write!(f, "Add"),
-            LRA::Sub => write!(f, "Sub"),
-            LRA::ReLU => write!(f, "ReLU"),
-            LRA::Argmax => write!(f, "Argmax"),
-            LRA::Min => write!(f, "Min"),
-            LRA::Max => write!(f, "Max"),
-            LRA::Transpose => write!(f, "Transpose"),
-            LRA::Ite => write!(f, "Ite"),
-            LRA::Id => write!(f, "Id"),
+            LRA::Add() => write!(f, "Add"),
+            LRA::Sub() => write!(f, "Sub"),
+            LRA::ReLU() => write!(f, "ReLU"),
+            LRA::Argmax() => write!(f, "Argmax"),
+            LRA::Min() => write!(f, "Min"),
+            LRA::Max() => write!(f, "Max"),
+            LRA::Transpose() => write!(f, "Transpose"),
+            LRA::Ite() => write!(f, "Ite"),
+            LRA::Id() => write!(f, "Id"),
             LRA::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
         }
     }
@@ -153,10 +155,10 @@ impl Theory for LRA {
     {
         match self {
             LRA::ConstReal(cm) => check_const(cm, read, write),
-            LRA::ConstBool(_) | LRA::And | LRA::Or | LRA::Xor | LRA::Not => {
+            LRA::ConstBool(_) | LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => {
                 check_bool(self, read, write)
             }
-            LRA::Le | LRA::Lt | LRA::Ge | LRA::Gt | LRA::Eq | LRA::Ne => {
+            LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
                 check_cmp(self, read, write)
             }
             LRA::Linear(a, b) => {
@@ -164,11 +166,11 @@ impl Theory for LRA {
                 let mut write = write.into_iter();
                 check_linear_affine(self, a, b, &mut read, &mut write)
             }
-            LRA::Add | LRA::Sub | LRA::ReLU | LRA::Argmax | LRA::Min | LRA::Max => {
+            LRA::Add() | LRA::Sub() | LRA::ReLU() | LRA::Argmax() | LRA::Min() | LRA::Max() => {
                 check_mat_ops(self, read, write)
             }
-            LRA::Transpose => check_transpose(self, read, write),
-            LRA::Ite | LRA::Id => check_flow(self, read, write),
+            LRA::Transpose() => check_transpose(self, read, write),
+            LRA::Ite() | LRA::Id() => check_flow(self, read, write),
             LRA::Uninterpreted(_) => {
                 let mut read = read.into_iter();
                 let mut write = write.into_iter();
@@ -206,7 +208,7 @@ impl Theory for LRA {
     }
 }
 
-fn check_const<R, W, D>(cm: &crate::Tensor, read: R, write: W) -> Result<(), String>
+fn check_const<R, W, D>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Type> + fmt::Display,
     R: IntoIterator<Item = D>,
@@ -290,7 +292,7 @@ where
             }
             Ok(())
         }
-        LRA::Not => {
+        LRA::Not() => {
             let (r, w) = (
                 read_nxt(&mut read, 0, "LRA")?,
                 write_nxt(&mut write, 0, "LRA")?,
@@ -309,7 +311,7 @@ where
             }
             Ok(())
         }
-        LRA::And | LRA::Or | LRA::Xor => {
+        LRA::And() | LRA::Or() | LRA::Xor() => {
             let w1 = write_nxt(&mut write, 0, "LRA")?;
             let (r1, r2, None) = (
                 read_nxt(&mut read, 0, "LRA")?,
@@ -372,7 +374,7 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LRA::Add | LRA::Sub => {
+        LRA::Add() | LRA::Sub() => {
             let (r1, r2, None) = (
                 read_nxt(&mut read, 0, "LRA")?,
                 read_nxt(&mut read, 1, "LRA")?,
@@ -401,7 +403,7 @@ where
             }
             Ok(())
         }
-        LRA::ReLU => {
+        LRA::ReLU() => {
             let (r1, None) = (read_nxt(&mut read, 0, "LRA")?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
@@ -422,7 +424,7 @@ where
             }
             Ok(())
         }
-        LRA::Argmax | LRA::Min | LRA::Max => {
+        LRA::Argmax() | LRA::Min() | LRA::Max() => {
             let (_r1, None) = (read_nxt(&mut read, 0, "LRA")?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
@@ -449,8 +451,8 @@ where
 
 fn check_linear_affine<D>(
     op: &LRA,
-    a: &crate::Tensor,
-    b: &crate::Tensor,
+    a: &crate::PyTensor,
+    b: &crate::PyTensor,
     read: &mut impl Iterator<Item = D>,
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
@@ -551,7 +553,7 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LRA::Id => {
+        LRA::Id() => {
             let (r1, None) = (read_nxt(&mut read, 0, "LRA")?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
@@ -566,7 +568,7 @@ where
             }
             Ok(())
         }
-        LRA::Ite => {
+        LRA::Ite() => {
             let (r1, r2, r3, None) = (
                 read_nxt(&mut read, 0, "LRA")?,
                 read_nxt(&mut read, 1, "LRA")?,
@@ -623,7 +625,7 @@ mod tests {
 
     #[test]
     fn const_real_ok() {
-        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
         assert!(
             LRA::ConstReal(cm)
                 .check([] as [Type; 0], [real(2, 2)])
@@ -661,7 +663,7 @@ mod tests {
 
     #[test]
     fn const_bool_ok() {
-        let cm: crate::Tensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
             LRA::ConstBool(cm)
                 .check([] as [Type; 0], [bool_t(2, 2)])
@@ -681,43 +683,43 @@ mod tests {
     #[test]
     fn not_ok() {
         let b = bool_t(2, 3);
-        assert!(LRA::Not.check([b], [b]).is_ok());
+        assert!(LRA::Not().check([b], [b]).is_ok());
     }
 
     #[test]
     fn not_real_input_fails() {
         let t = real(1, 1);
-        assert!(LRA::Not.check([t], [t]).is_err());
+        assert!(LRA::Not().check([t], [t]).is_err());
     }
 
     #[test]
     fn and_ok() {
         let b = bool_t(2, 2);
-        assert!(LRA::And.check([b, b], [b]).is_ok());
+        assert!(LRA::And().check([b, b], [b]).is_ok());
     }
 
     #[test]
     fn or_ok() {
         let b = bool_t(1, 1);
-        assert!(LRA::Or.check([b, b], [b]).is_ok());
+        assert!(LRA::Or().check([b, b], [b]).is_ok());
     }
 
     #[test]
     fn xor_ok() {
         let b = bool_t(3, 1);
-        assert!(LRA::Xor.check([b, b], [b]).is_ok());
+        assert!(LRA::Xor().check([b, b], [b]).is_ok());
     }
 
     #[test]
     fn and_real_output_fails() {
         let b = bool_t(1, 1);
-        assert!(LRA::And.check([b, b], [real(1, 1)]).is_err());
+        assert!(LRA::And().check([b, b], [real(1, 1)]).is_err());
     }
 
     #[test]
     fn and_type_mismatch_fails() {
         assert!(
-            LRA::And
+            LRA::And()
                 .check([bool_t(1, 1), bool_t(1, 2)], [bool_t(1, 1)])
                 .is_err()
         );
@@ -726,7 +728,7 @@ mod tests {
     #[test]
     fn lt_ok() {
         assert!(
-            LRA::Lt
+            LRA::Lt()
                 .check([real(1, 1), real(1, 1)], [bool_t(1, 1)])
                 .is_ok()
         );
@@ -735,19 +737,19 @@ mod tests {
     #[test]
     fn le_ok() {
         assert!(
-            LRA::Le
+            LRA::Le()
                 .check([real(2, 3), real(2, 3)], [bool_t(2, 3)])
                 .is_ok()
         );
 
         assert!(
-            LRA::Le
+            LRA::Le()
                 .check([real(3, 3), real(2, 3)], [bool_t(2, 3)])
                 .is_err()
         );
 
         assert!(
-            LRA::Le
+            LRA::Le()
                 .check([real(2, 3), real(2, 3)], [bool_t(3, 3)])
                 .is_err()
         );
@@ -756,7 +758,7 @@ mod tests {
     #[test]
     fn eq_ok() {
         assert!(
-            LRA::Eq
+            LRA::Eq()
                 .check([real(2, 2), real(2, 2)], [bool_t(2, 2)])
                 .is_ok()
         );
@@ -765,13 +767,13 @@ mod tests {
     #[test]
     fn cmp_non_bool_output_fails() {
         let t = real(1, 1);
-        assert!(LRA::Lt.check([t, t], [t]).is_err());
+        assert!(LRA::Lt().check([t, t], [t]).is_err());
     }
 
     #[test]
     fn cmp_input_mismatch_fails() {
         assert!(
-            LRA::Eq
+            LRA::Eq()
                 .check([real(1, 1), real(1, 2)], [bool_t(1, 1)])
                 .is_err()
         );
@@ -780,13 +782,13 @@ mod tests {
     #[test]
     fn add_ok() {
         let t = real(3, 4);
-        assert!(LRA::Add.check([t, t], [t]).is_ok());
+        assert!(LRA::Add().check([t, t], [t]).is_ok());
     }
 
     #[test]
     fn add_shape_mismatch_fails() {
         assert!(
-            LRA::Add
+            LRA::Add()
                 .check([real(1, 2), real(2, 1)], [real(1, 2)])
                 .is_err()
         );
@@ -795,43 +797,43 @@ mod tests {
     #[test]
     fn add_bool_fails() {
         let b = bool_t(1, 1);
-        assert!(LRA::Add.check([b, b], [b]).is_err());
+        assert!(LRA::Add().check([b, b], [b]).is_err());
     }
 
     #[test]
     fn relu_ok() {
         let t = real(3, 4);
-        assert!(LRA::ReLU.check([t], [t]).is_ok());
+        assert!(LRA::ReLU().check([t], [t]).is_ok());
     }
 
     #[test]
     fn relu_bool_fails() {
         let b = bool_t(1, 1);
-        assert!(LRA::ReLU.check([b], [b]).is_err());
+        assert!(LRA::ReLU().check([b], [b]).is_err());
     }
 
     #[test]
     fn argmax_ok() {
-        assert!(LRA::Argmax.check([real(3, 4)], [real(1, 4)]).is_ok());
+        assert!(LRA::Argmax().check([real(3, 4)], [real(1, 4)]).is_ok());
     }
 
     #[test]
     fn argmax_matrix_output_fails() {
-        assert!(LRA::Argmax.check([real(3, 4)], [real(3, 4)]).is_err());
+        assert!(LRA::Argmax().check([real(3, 4)], [real(3, 4)]).is_err());
     }
 
     #[test]
     fn min_ok() {
-        assert!(LRA::Min.check([real(4, 1)], [real(1, 1)]).is_ok());
+        assert!(LRA::Min().check([real(4, 1)], [real(1, 1)]).is_ok());
     }
 
     #[test]
     fn linear_ok() {
         // A=[2,3] maps 3 features to 2; X=[3,4] is 3 features × 4 batch items.
         // Convention: Y = A·X  →  Y=[2,4].
-        let a: crate::Tensor =
+        let a: crate::PyTensor =
             tch::Tensor::zeros(&[2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
-        let b: crate::Tensor =
+        let b: crate::PyTensor =
             tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
         assert!(LRA::Linear(a, b).check([real(3, 4)], [real(2, 4)]).is_ok());
     }
@@ -839,9 +841,9 @@ mod tests {
     #[test]
     fn linear_with_bias_ok() {
         // A=[2,3], b=[2,1] column bias, X=[3,1] single sample → Y=[2,1].
-        let a: crate::Tensor =
+        let a: crate::PyTensor =
             tch::Tensor::zeros(&[2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
-        let b: crate::Tensor =
+        let b: crate::PyTensor =
             tch::Tensor::zeros(&[2, 1], (tch::Kind::Double, tch::Device::Cpu)).into();
         assert!(LRA::Linear(a, b).check([real(3, 1)], [real(2, 1)]).is_ok());
     }
@@ -849,39 +851,39 @@ mod tests {
     #[test]
     fn linear_dim_mismatch_fails() {
         // A=[2,3] but X has 4 rows — inner dimension mismatch.
-        let a: crate::Tensor =
+        let a: crate::PyTensor =
             tch::Tensor::zeros(&[2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
-        let b: crate::Tensor =
+        let b: crate::PyTensor =
             tch::Tensor::zeros(&[0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
         assert!(LRA::Linear(a, b).check([real(4, 1)], [real(2, 1)]).is_err());
     }
 
     #[test]
     fn transpose_ok() {
-        assert!(LRA::Transpose.check([real(3, 4)], [real(4, 3)]).is_ok());
+        assert!(LRA::Transpose().check([real(3, 4)], [real(4, 3)]).is_ok());
     }
 
     #[test]
     fn transpose_wrong_shape_fails() {
-        assert!(LRA::Transpose.check([real(3, 4)], [real(3, 4)]).is_err());
+        assert!(LRA::Transpose().check([real(3, 4)], [real(3, 4)]).is_err());
     }
 
     #[test]
     fn ite_ok() {
         let t = real(3, 4);
-        assert!(LRA::Ite.check([bool_t(1, 1), t, t], [t]).is_ok());
+        assert!(LRA::Ite().check([bool_t(1, 1), t, t], [t]).is_ok());
     }
 
     #[test]
     fn ite_non_bool_guard_fails() {
         let t = real(1, 1);
-        assert!(LRA::Ite.check([t, t, t], [t]).is_err());
+        assert!(LRA::Ite().check([t, t, t], [t]).is_err());
     }
 
     #[test]
     fn ite_arm_mismatch_fails() {
         assert!(
-            LRA::Ite
+            LRA::Ite()
                 .check([bool_t(1, 1), real(1, 1), real(1, 2)], [real(1, 1)])
                 .is_err()
         );
@@ -890,11 +892,11 @@ mod tests {
     #[test]
     fn id_ok() {
         let t = real(4, 4);
-        assert!(LRA::Id.check([t], [t]).is_ok());
+        assert!(LRA::Id().check([t], [t]).is_ok());
     }
 
     #[test]
     fn id_type_mismatch_fails() {
-        assert!(LRA::Id.check([real(1, 1)], [real(2, 2)]).is_err());
+        assert!(LRA::Id().check([real(1, 1)], [real(2, 2)]).is_err());
     }
 }

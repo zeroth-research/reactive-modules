@@ -2,9 +2,11 @@ use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
 use crate::{Theory, bv, lia, lra};
+use pyo3::pyclass;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[pyclass(frozen)]
 pub enum Type {
     Bool([usize; 2]),
     Real([usize; 2]),
@@ -86,6 +88,7 @@ impl TryFrom<Type> for lra::Type {
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
+#[pyclass(frozen)]
 pub enum Any {
     LRA(LRA),
     LIA(LIA),
