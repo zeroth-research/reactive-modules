@@ -10,12 +10,12 @@ use theory::Theory;
 struct Ops(&'static str);
 
 impl Theory for Ops {
-    type DType = &'static str;
+    type Sort = &'static str;
     const NAME: &'static str = "Ops";
 
     fn check<R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        D: TryInto<Self::DType>,
+        D: TryInto<Self::Sort>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {

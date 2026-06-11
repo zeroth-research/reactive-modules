@@ -12,13 +12,13 @@ use std::collections::HashSet;
 #[derive(Debug, Clone)]
 pub struct Atom<T: Theory> {
     /// Corresponds to ctr variables.
-    ctrl: Interface<T::DType>,
+    ctrl: Interface<T::Sort>,
     /// Corresponds to wait variables.
-    wait: Interface<T::DType>,
+    wait: Interface<T::Sort>,
     /// Corresponds to read variables.
-    read: Interface<T::DType>,
+    read: Interface<T::Sort>,
     /// Corresponds to temporary, local wires.
-    temp: Interface<T::DType>,
+    temp: Interface<T::Sort>,
     /// Corresponds to the initial action.
     init: Block<T>,
     /// Corresponds to the update action.
@@ -40,19 +40,19 @@ impl<T: Theory> Atom<T> {
     //     &self.flow
     // }
 
-    pub fn ctrl(&self) -> &Interface<T::DType> {
+    pub fn ctrl(&self) -> &Interface<T::Sort> {
         &self.ctrl
     }
 
-    pub fn wait(&self) -> &Interface<T::DType> {
+    pub fn wait(&self) -> &Interface<T::Sort> {
         &self.wait
     }
 
-    pub fn read(&self) -> &Interface<T::DType> {
+    pub fn read(&self) -> &Interface<T::Sort> {
         &self.read
     }
 
-    pub fn temp(&self) -> impl Iterator<Item = &Wire<T::DType>> {
+    pub fn temp(&self) -> impl Iterator<Item = &Wire<T::Sort>> {
         self.temp.wires()
     }
 
@@ -76,7 +76,7 @@ impl<T: Theory> Default for Atom<T> {
 
 impl<T: Theory> Atom<T>
 where
-    T::DType: Eq,
+    T::Sort: Eq,
 {
     /// Returns true if this atoms awaits the other atom
     pub fn awaits(&self, other: &Atom<T>) -> bool {
@@ -86,10 +86,10 @@ where
     /// Creates an atom from its components. This method checks the inputs only using assertions
     /// in debug mode.
     fn new_unchecked(
-        ctrl: Interface<T::DType>,
-        wait: Interface<T::DType>,
-        read: Interface<T::DType>,
-        temp: Interface<T::DType>,
+        ctrl: Interface<T::Sort>,
+        wait: Interface<T::Sort>,
+        read: Interface<T::Sort>,
+        temp: Interface<T::Sort>,
         init: Block<T>,
         update: Block<T>,
     ) -> Self {
@@ -98,7 +98,7 @@ where
             //================================================================================
             // Check declared wires
             //================================================================================
-            let mut decl: HashMap<usize, &T::DType> = HashMap::new();
+            let mut decl: HashMap<usize, &T::Sort> = HashMap::new();
             // declare read and await, don't allow repetition
             {
                 let read_wait_param = read.wires().chain(wait.wires());
@@ -194,7 +194,7 @@ where
 
 impl<T: Theory> Atom<T>
 where
-    T::DType: Eq + Clone,
+    T::Sort: Eq + Clone,
 {
     /// Constructs a **sequential atom**, representing behaviour that evolves over time.
     ///
@@ -230,22 +230,22 @@ where
         update: U,
     ) -> Result<Self, Error>
     where
-        L: IntoIterator<Item = &'a Wire<T::DType>>,
-        N: IntoIterator<Item = &'a Wire<T::DType>>,
+        L: IntoIterator<Item = &'a Wire<T::Sort>>,
+        N: IntoIterator<Item = &'a Wire<T::Sort>>,
         V: IntoIterator<Item = Term<T>>,
         U: IntoIterator<Item = Term<T>>,
-        T::DType: 'a,
+        T::Sort: 'a,
     {
-        let latched: HashMap<usize, &T::DType> = latched.into_iter().map(Into::into).collect();
-        let next: HashMap<usize, &T::DType> = next.into_iter().map(Into::into).collect();
+        let latched: HashMap<usize, &T::Sort> = latched.into_iter().map(Into::into).collect();
+        let next: HashMap<usize, &T::Sort> = next.into_iter().map(Into::into).collect();
 
         let init = Block::try_from_iter(init)?;
         let update = Block::try_from_iter(update)?;
 
-        let mut ctrl: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
-        let mut read: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut read: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
 
         for rd in init.read().iter().map(|[w]| w) {
             // init can only read from await wires
@@ -339,7 +339,7 @@ where
 impl<T: Theory> Atom<T>
 where
     T: Clone,
-    T::DType: Eq + Clone,
+    T::Sort: Eq + Clone,
 {
     /// Constructs a **purely combinatorial atom**, representing purely reactive behaviour
     /// without temporal state.
@@ -371,16 +371,16 @@ where
     pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, Error>
     where
         V: IntoIterator<Item = Term<T>>,
-        N: IntoIterator<Item = &'a Wire<T::DType>>,
-        T::DType: 'a,
+        N: IntoIterator<Item = &'a Wire<T::Sort>>,
+        T::Sort: 'a,
     {
-        let next: HashMap<usize, &T::DType> = next.into_iter().map(Into::into).collect();
+        let next: HashMap<usize, &T::Sort> = next.into_iter().map(Into::into).collect();
         let assign = Block::try_from_iter(assign)?;
 
-        let mut ctrl: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
-        let mut param: BTreeMap<usize, Wire<T::DType>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut param: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
 
         for rd in assign.read().iter().map(|[w]| w) {
             //  can only read from await wires
@@ -427,7 +427,7 @@ where
 impl<T: Theory> Atom<T>
 where
     T: fmt::Display,
-    T::DType: fmt::Display,
+    T::Sort: fmt::Display,
 {
     pub(crate) fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
@@ -472,7 +472,7 @@ where
 impl<T: Theory> fmt::Display for Atom<T>
 where
     T: fmt::Display,
-    T::DType: fmt::Display,
+    T::Sort: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, "")

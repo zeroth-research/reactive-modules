@@ -17,13 +17,13 @@ pub struct Term<T: Theory> {
     /// The instruction to be executed by this node.
     itype: T,
     /// The outputs of this term.
-    write: Interface<T::DType>,
+    write: Interface<T::Sort>,
     /// The inputs to this term.
-    read: Interface<T::DType>,
+    read: Interface<T::Sort>,
 }
 
 impl<T: Theory> Term<T> {
-    pub fn new_unchecked(itype: T, write: Interface<T::DType>, read: Interface<T::DType>) -> Self {
+    pub fn new_unchecked(itype: T, write: Interface<T::Sort>, read: Interface<T::Sort>) -> Self {
         Self { itype, write, read }
     }
 
@@ -31,11 +31,11 @@ impl<T: Theory> Term<T> {
         &self.itype
     }
 
-    pub fn write(&self) -> &Interface<T::DType> {
+    pub fn write(&self) -> &Interface<T::Sort> {
         &self.write
     }
 
-    pub fn read(&self) -> &Interface<T::DType> {
+    pub fn read(&self) -> &Interface<T::Sort> {
         &self.read
     }
 }
@@ -43,12 +43,12 @@ impl<T: Theory> Term<T> {
 impl<T> Term<T>
 where
     T: Theory,
-    T::DType: Eq + Clone + fmt::Display,
+    T::Sort: Eq + Clone + fmt::Display,
 {
     pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, Error>
     where
-        D: Into<Wire<T::DType>>,
-        U: Into<Wire<T::DType>>,
+        D: Into<Wire<T::Sort>>,
+        U: Into<Wire<T::Sort>>,
         W: IntoIterator<Item = D>,
         R: IntoIterator<Item = U>,
     {
@@ -71,7 +71,7 @@ where
 
     pub fn constant<D, W>(itype: T, write: W) -> Result<Self, Error>
     where
-        D: Into<Wire<T::DType>>,
+        D: Into<Wire<T::Sort>>,
         W: IntoIterator<Item = D>,
     {
         let term = Self::new_unchecked(itype, Interface::unique(write)?, Interface::empty());
@@ -105,7 +105,7 @@ macro_rules! term {
 impl<TH: Theory> fmt::Display for Term<TH>
 where
     TH: fmt::Display,
-    TH::DType: fmt::Display,
+    TH::Sort: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
@@ -135,8 +135,8 @@ where
 #[derive(Debug, Clone)]
 pub struct Block<T: Theory> {
     terms: Vec<Term<T>>,
-    read: Interface<T::DType>,
-    write: Interface<T::DType>,
+    read: Interface<T::Sort>,
+    write: Interface<T::Sort>,
 }
 
 impl<T: Theory> Block<T> {
@@ -149,7 +149,7 @@ impl<T: Theory> Block<T> {
     /// The read interface lists all wires that must be provided externally
     /// for the block to operate, and are not written internally by the block.
     /// These wires are inputs required by the block as a whole.
-    pub fn read(&self) -> &Interface<T::DType> {
+    pub fn read(&self) -> &Interface<T::Sort> {
         &self.read
     }
 
@@ -157,7 +157,7 @@ impl<T: Theory> Block<T> {
     ///
     /// The write interface lists all wires that the block writes. These wires represent
     /// the outputs of the block as a whole; they can all be read outside the block.
-    pub fn write(&self) -> &Interface<T::DType> {
+    pub fn write(&self) -> &Interface<T::Sort> {
         &self.write
     }
 
@@ -194,14 +194,14 @@ impl<'a, T: Theory> IntoIterator for &'a Block<T> {
 
 impl<T: Theory> Block<T>
 where
-    T::DType: Eq + Clone,
+    T::Sort: Eq + Clone,
 {
     pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<T>>>(iter: V) -> Result<Self, Error> {
         let mut read_set: HashSet<usize> = HashSet::new();
-        let mut write_to_dtype: HashMap<usize, &T::DType> = HashMap::new();
+        let mut write_to_dtype: HashMap<usize, &T::Sort> = HashMap::new();
 
-        let mut read: Vec<Wire<T::DType>> = Vec::new();
-        let mut write: Vec<Wire<T::DType>> = Vec::new();
+        let mut read: Vec<Wire<T::Sort>> = Vec::new();
+        let mut write: Vec<Wire<T::Sort>> = Vec::new();
 
         let terms: Vec<Term<T>> = Vec::from_iter(iter);
 
