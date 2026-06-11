@@ -6,11 +6,11 @@ use pyo3::prelude::*;
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: base::Atom<crate::any::Any>,
+    base: base::Atom<crate::theory::Any>,
 }
 
-impl From<base::Atom<crate::any::Any>> for Atom {
-    fn from(base: base::Atom<crate::any::Any>) -> Self {
+impl From<base::Atom<crate::theory::Any>> for Atom {
+    fn from(base: base::Atom<crate::theory::Any>) -> Self {
         Self { base }
     }
 }
@@ -79,7 +79,7 @@ struct AtomInterface {
 }
 
 impl AtomInterface {
-    fn base(&self) -> &base::Interface<crate::any::Sort> {
+    fn base(&self) -> &base::Interface<crate::theory::Sort> {
         let atom = &self.atom.get().base;
         match self.interface {
             AtomInterfaceType::Read => atom.read(),
@@ -139,7 +139,7 @@ pub(crate) struct AtomBlock {
 }
 
 impl AtomBlock {
-    fn base(&self) -> &base::Block<crate::any::Any> {
+    fn base(&self) -> &base::Block<crate::theory::Any> {
         let atom = &self.atom.get().base;
         match self.block {
             BlockType::Init => atom.init(),
@@ -190,7 +190,7 @@ struct AtomBlockInterface {
 }
 
 impl AtomBlockInterface {
-    fn base(&self) -> &base::Interface<crate::any::Sort> {
+    fn base(&self) -> &base::Interface<crate::theory::Sort> {
         let term = self.block.get().base();
         match self.interface {
             TermInterfaceType::Read => term.read(),
