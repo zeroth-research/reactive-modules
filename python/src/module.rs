@@ -6,7 +6,7 @@ use pyo3::types::{PyDict, PyTuple};
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
-    pub(crate) base: base::Module<crate::any::Any>,
+    pub(crate) base: base::Module<crate::theory::Any>,
 }
 
 #[pymethods]
@@ -215,8 +215,8 @@ impl Module {
     }
 }
 
-impl From<base::Module<crate::any::Any>> for Module {
-    fn from(base: base::Module<crate::any::Any>) -> Self {
+impl From<base::Module<crate::theory::Any>> for Module {
+    fn from(base: base::Module<crate::theory::Any>) -> Self {
         Self { base }
     }
 }
@@ -247,7 +247,7 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &base::Interface<crate::any::Sort, 2> {
+    fn base(&self) -> &base::Interface<crate::theory::Sort, 2> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),
@@ -313,53 +313,5 @@ impl ModuleAtoms {
     fn __len__(&self) -> usize {
         let module = &self.module.get().base;
         module.atoms().len()
-    }
-}
-
-#[pyclass(frozen)]
-pub(crate) struct LIAModule {
-    pub(crate) base: base::Module<theory::lia::LIA>,
-}
-
-#[pymethods]
-impl LIAModule {
-    fn __str__(&self) -> String {
-        self.base.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{:?}", self.base)
-    }
-}
-
-#[pyclass(frozen)]
-pub(crate) struct RLAModule {
-    pub(crate) base: base::Module<theory::lra::LRA>,
-}
-
-#[pymethods]
-impl RLAModule {
-    fn __str__(&self) -> String {
-        self.base.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{:?}", self.base)
-    }
-}
-
-#[pyclass(frozen)]
-pub(crate) struct BVModule {
-    pub(crate) base: base::Module<theory::bv::BV>,
-}
-
-#[pymethods]
-impl BVModule {
-    fn __str__(&self) -> String {
-        self.base.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{:?}", self.base)
     }
 }

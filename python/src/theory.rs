@@ -4,7 +4,7 @@ use std::fmt;
 use theory::bv::BV;
 use theory::lia::LIA;
 use theory::lra::LRA;
-use theory::{Theory, bv, lia, lra};
+use theory::{bv, lia, lra};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[pyclass(frozen)]
@@ -154,7 +154,7 @@ impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for bv::Type {
     }
 }
 
-impl Theory for Any {
+impl theory::Theory for Any {
     type DType = Sort;
     const NAME: &'static str = "Any";
 
