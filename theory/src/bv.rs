@@ -46,7 +46,6 @@ use pyo3::prelude::*;
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyclass(frozen)]
 pub enum Type {
     // matrix of bitvectors determined by (bitvector-length, [# rows, # cols])
     BV(usize, [usize; 2]),

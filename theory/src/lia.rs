@@ -46,7 +46,6 @@ use pyo3::pyclass;
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyclass(frozen)]
 pub enum Type {
     Int([usize; 2]),
     Bool([usize; 2]),
