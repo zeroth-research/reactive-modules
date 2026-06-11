@@ -22,22 +22,22 @@ validating read/write argument shapes against the operation.
 ## Examples
 
 ```
-use theory::Theory;
-use theory::bv::{BV, Type};
-
- // 8-bit bit-vectors.
- let a = Type::BV(8, [2, 3]);
- let b = Type::BV(8, [3, 4]);
- let c = Type::BV(8, [2, 4]);
-
- // Matrix multiply: (2x3) * (3x4) -> (2x4).
- assert!(BV::MatMul.check([a, b], [c]).is_ok());
-
- // Elementwise `Add` requires matching shapes.
- let m = Type::BV(8, [2, 3]);
- assert!(BV::Add.check([m, m], [m]).is_ok());
- assert!(BV::Add.check([a, b], [c]).is_err());
- ```
+* use theory::Theory;
+* use theory::bv::{BV, Sort};
+*
+*  // 8-bit bit-vectors.
+*  let a = Type::BV(8, [2, 3]);
+*  let b = Type::BV(8, [3, 4]);
+*  let c = Type::BV(8, [2, 4]);
+*
+*  // Matrix multiply: (2x3) * (3x4) -> (2x4).
+*  assert!(BV::MatMul.check([a, b], [c]).is_ok());
+*
+*  // Elementwise `Add` requires matching shapes.
+*  let m = Type::BV(8, [2, 3]);
+*  assert!(BV::Add.check([m, m], [m]).is_ok());
+*  assert!(BV::Add.check([a, b], [c]).is_err());
+*  ```
 */
 
 use crate::*;
@@ -46,29 +46,29 @@ use pyo3::prelude::*;
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-pub enum Type {
+pub enum Sort {
     // matrix of bitvectors determined by (bitvector-length, [# rows, # cols])
     BV(usize, [usize; 2]),
 }
 
-impl Type {
+impl Sort {
     pub fn shape(&self) -> &[usize; 2] {
         match self {
-            Type::BV(_, shape) => shape,
+            Sort::BV(_, shape) => shape,
         }
     }
 
     pub fn bw(&self) -> usize {
         match self {
-            Type::BV(bw, _) => *bw,
+            Sort::BV(bw, _) => *bw,
         }
     }
 }
 
-impl fmt::Display for Type {
+impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::BV(bw, [i, j]) => write!(f, "BV<{bw}>({i}, {j})"),
+            Sort::BV(bw, [i, j]) => write!(f, "BV<{bw}>({i}, {j})"),
         }
     }
 }
@@ -223,12 +223,12 @@ fn check_init_dims(cm: &crate::PyTensor, bw: usize, i: usize, j: usize) -> Resul
 }
 
 impl Theory for BV {
-    type DType = Type;
+    type Sort = Sort;
     const NAME: &'static str = "BV";
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Type> + fmt::Display,
+        D: TryInto<Sort> + fmt::Display,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
@@ -242,7 +242,7 @@ impl Theory for BV {
                 }
                 let dtype = write_nxt(&mut write, 0, "BV")?;
                 match dtype {
-                    Type::BV(bw, [i, j]) => check_init_dims(cm, bw, i, j)?,
+                    Sort::BV(bw, [i, j]) => check_init_dims(cm, bw, i, j)?,
                 }
                 if write.next().is_some() {
                     return Err("Const: returns more than one value".into());
@@ -298,7 +298,7 @@ impl Theory for BV {
                     return Err(format!("{self}: inputs must have the same type"));
                 }
                 let [rows, cols] = r1.shape();
-                if w1 != Type::BV(1, [*rows, *cols]) {
+                if w1 != Sort::BV(1, [*rows, *cols]) {
                     return Err(format!(
                         "{self}: output must be BV<1>({rows}, {cols}), got {w1}"
                     ));
@@ -316,7 +316,7 @@ impl Theory for BV {
                 let (w1, None) = (write_nxt(&mut write, 0, "BV")?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
-                if !matches!(r1, Type::BV(..)) {
+                if !matches!(r1, Sort::BV(..)) {
                     return Err(format!("{self}: inputs must be unsigned, got {r1}"));
                 }
                 if r1 != r2 {
@@ -340,7 +340,7 @@ impl Theory for BV {
                 let (w1, None) = (write_nxt(&mut write, 0, "BV")?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
-                if !matches!(r1, Type::BV(..)) {
+                if !matches!(r1, Sort::BV(..)) {
                     return Err(format!("{self}: inputs must be signed, got {r1}"));
                 }
                 if r1 != r2 {
@@ -465,7 +465,7 @@ impl Theory for BV {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 let [rows, cols] = r1.shape();
-                if w1 != Type::BV(1, [*rows, *cols]) {
+                if w1 != Sort::BV(1, [*rows, *cols]) {
                     return Err(format!(
                         "{self}: output must be BV<1>({rows}, {cols}), got {w1}"
                     ));
@@ -490,7 +490,7 @@ impl Theory for BV {
                 }
                 let out_bw = high - low + 1;
                 let [rows, cols] = r1.shape();
-                if w1 != Type::BV(out_bw, [*rows, *cols]) {
+                if w1 != Sort::BV(out_bw, [*rows, *cols]) {
                     return Err(format!(
                         "{self}: output must be BV<{out_bw}>({rows}, {cols}), got {w1}"
                     ));
@@ -506,7 +506,7 @@ impl Theory for BV {
                 };
                 let out_bw = r1.bw() + extra;
                 let [rows, cols] = r1.shape();
-                if w1 != Type::BV(out_bw, [*rows, *cols]) {
+                if w1 != Sort::BV(out_bw, [*rows, *cols]) {
                     return Err(format!(
                         "{self}: output must be BV<{out_bw}>({rows}, {cols}), got {w1}"
                     ));
@@ -552,8 +552,8 @@ impl Theory for BV {
 mod tests {
     use super::*;
 
-    fn bv(bw: usize, r: usize, c: usize) -> Type {
-        Type::BV(bw, [r, c])
+    fn bv(bw: usize, r: usize, c: usize) -> Sort {
+        Sort::BV(bw, [r, c])
     }
 
     // --- Type helpers ---

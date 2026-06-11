@@ -11,13 +11,13 @@ pub trait Theory {
     // TODO: in torch, from where we took this name (I think), dtype refers to
     // the type of the element in the tensor (*d*ata type). Maybe we should
     // consider renaming this to "Types" or something, to avoid confusion.
-    type DType;
+    type Sort;
 
     const NAME: &'static str;
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Self::DType> + fmt::Display,
+        D: TryInto<Self::Sort> + fmt::Display,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>;
 }

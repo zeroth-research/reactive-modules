@@ -26,62 +26,62 @@ impl fmt::Display for Sort {
     }
 }
 
-impl From<bv::Type> for Sort {
-    fn from(value: bv::Type) -> Self {
+impl From<bv::Sort> for Sort {
+    fn from(value: bv::Sort) -> Self {
         match value {
-            bv::Type::BV(bw, shape) => Sort::BV(bw, shape),
+            bv::Sort::BV(bw, shape) => Sort::BV(bw, shape),
         }
     }
 }
 
-impl From<lia::Type> for Sort {
-    fn from(value: lia::Type) -> Self {
+impl From<lia::Sort> for Sort {
+    fn from(value: lia::Sort) -> Self {
         match value {
-            lia::Type::Int(shape) => Sort::Int(shape),
-            lia::Type::Bool(shape) => Sort::Bool(shape),
+            lia::Sort::Int(shape) => Sort::Int(shape),
+            lia::Sort::Bool(shape) => Sort::Bool(shape),
         }
     }
 }
 
-impl From<lra::Type> for Sort {
-    fn from(value: lra::Type) -> Self {
+impl From<lra::Sort> for Sort {
+    fn from(value: lra::Sort) -> Self {
         match value {
-            lra::Type::Bool(shape) => Sort::Bool(shape),
-            lra::Type::Real(shape) => Sort::Real(shape),
+            lra::Sort::Bool(shape) => Sort::Bool(shape),
+            lra::Sort::Real(shape) => Sort::Real(shape),
         }
     }
 }
 
-impl TryFrom<Sort> for bv::Type {
+impl TryFrom<Sort> for bv::Sort {
     type Error = String;
 
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
-            Sort::BV(bw, shape) => Ok(bv::Type::BV(bw, shape)),
+            Sort::BV(bw, shape) => Ok(bv::Sort::BV(bw, shape)),
             _ => Err("invalid cast".to_string()),
         }
     }
 }
 
-impl TryFrom<Sort> for lia::Type {
+impl TryFrom<Sort> for lia::Sort {
     type Error = String;
 
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
-            Sort::Bool(shape) => Ok(lia::Type::Bool(shape)),
-            Sort::Int(shape) => Ok(lia::Type::Int(shape)),
+            Sort::Bool(shape) => Ok(lia::Sort::Bool(shape)),
+            Sort::Int(shape) => Ok(lia::Sort::Int(shape)),
             _ => Err("invalid cast".to_string()),
         }
     }
 }
 
-impl TryFrom<Sort> for lra::Type {
+impl TryFrom<Sort> for lra::Sort {
     type Error = String;
 
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
-            Sort::Bool(shape) => Ok(lra::Type::Bool(shape)),
-            Sort::Real(shape) => Ok(lra::Type::Real(shape)),
+            Sort::Bool(shape) => Ok(lra::Sort::Bool(shape)),
+            Sort::Real(shape) => Ok(lra::Sort::Real(shape)),
             _ => Err("invalid cast".to_string()),
         }
     }
@@ -124,38 +124,38 @@ impl<A: TryInto<Sort> + fmt::Display> fmt::Display for TryFrom2<A> {
     }
 }
 
-impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for lra::Type {
+impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for lra::Sort {
     type Error = String;
 
     fn try_from(value: TryFrom2<A>) -> Result<Self, Self::Error> {
         let b: Sort = value.a.try_into().map_err(|_| "invalid cast")?;
-        let c: lra::Type = b.try_into().map_err(|e: String| e.to_string())?;
+        let c: lra::Sort = b.try_into().map_err(|e: String| e.to_string())?;
         Ok(c)
     }
 }
 
-impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for lia::Type {
+impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for lia::Sort {
     type Error = String;
 
     fn try_from(value: TryFrom2<A>) -> Result<Self, Self::Error> {
         let b: Sort = value.a.try_into().map_err(|_| "invalid cast")?;
-        let c: lia::Type = b.try_into().map_err(|e: String| e.to_string())?;
+        let c: lia::Sort = b.try_into().map_err(|e: String| e.to_string())?;
         Ok(c)
     }
 }
 
-impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for bv::Type {
+impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for bv::Sort {
     type Error = String;
 
     fn try_from(value: TryFrom2<A>) -> Result<Self, Self::Error> {
         let b: Sort = value.a.try_into().map_err(|_| "invalid cast")?;
-        let c: bv::Type = b.try_into().map_err(|e: String| e.to_string())?;
+        let c: bv::Sort = b.try_into().map_err(|e: String| e.to_string())?;
         Ok(c)
     }
 }
 
 impl theory::Theory for Any {
-    type DType = Sort;
+    type Sort = Sort;
     const NAME: &'static str = "Any";
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>

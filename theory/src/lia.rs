@@ -4,7 +4,7 @@
 Defines the theory [`LIA`] of linear integer arithmetic over matrices,
 mixing integer and boolean matrices in a single signature.
 
-A [`Type`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
+A [`Sort`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
 `Type` converts to and from [`int::IntType`] and [`bool::PropType`]
 so that integer and propositional terms embed directly into `LIA`. The
 operations in [`LIA`] are:
@@ -26,19 +26,19 @@ shapes against the selected operation.
 ## Examples
 
 ```
-use theory::Theory;
-use theory::lia::{LIA, Type};
-
-// Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
-let i = Type::Int([1, 1]);
-let b = Type::Bool([1, 1]);
-assert!(LIA::Lt.check([i, i], [b]).is_ok());
-
-// ReLU preserves shape and stays in the integer fragment.
-let m = Type::Int([3, 4]);
-assert!(LIA::ReLU.check([m], [m]).is_ok());
-assert!(LIA::ReLU.check([b], [b]).is_err());
-```
+* use theory::Theory;
+* use theory::lia::{LIA, Sort};
+*
+* // Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
+* let i = Type::Int([1, 1]);
+* let b = Type::Bool([1, 1]);
+* assert!(LIA::Lt.check([i, i], [b]).is_ok());
+*
+* // ReLU preserves shape and stays in the integer fragment.
+* let m = Type::Int([3, 4]);
+* assert!(LIA::ReLU.check([m], [m]).is_ok());
+* assert!(LIA::ReLU.check([b], [b]).is_err());
+* ```
 */
 
 use crate::*;
@@ -46,32 +46,32 @@ use pyo3::pyclass;
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-pub enum Type {
+pub enum Sort {
     Int([usize; 2]),
     Bool([usize; 2]),
 }
 
-impl Type {
+impl Sort {
     pub fn is_bool(&self) -> bool {
-        matches!(self, Type::Bool(..))
+        matches!(self, Sort::Bool(..))
     }
 
     pub fn is_int(&self) -> bool {
-        matches!(self, Type::Int(..))
+        matches!(self, Sort::Int(..))
     }
 
     pub fn shape(&self) -> &[usize; 2] {
         match self {
-            Type::Bool(shape) | Type::Int(shape) => shape,
+            Sort::Bool(shape) | Sort::Int(shape) => shape,
         }
     }
 }
 
-impl fmt::Display for Type {
+impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Int([i, j]) => write!(f, "Int({i}, {j})"),
-            Type::Bool([i, j]) => write!(f, "Bool({i}, {j})"),
+            Sort::Int([i, j]) => write!(f, "Int({i}, {j})"),
+            Sort::Bool([i, j]) => write!(f, "Bool({i}, {j})"),
         }
     }
 }
@@ -143,12 +143,12 @@ impl fmt::Display for LIA {
 }
 
 impl Theory for LIA {
-    type DType = Type;
+    type Sort = Sort;
     const NAME: &'static str = "LIA";
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Type> + fmt::Display,
+        D: TryInto<Sort> + fmt::Display,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
@@ -210,7 +210,7 @@ impl Theory for LIA {
 
 fn check_const<R, W, D>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Type> + fmt::Display,
+    D: TryInto<Sort> + fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -221,7 +221,7 @@ where
     }
     let dtype = write_nxt(&mut write, 0, "LIA")?;
     match dtype {
-        Type::Int([i, j]) => {
+        Sort::Int([i, j]) => {
             let size = cm.size();
             if size.len() != 2 {
                 return Err(format!(
@@ -242,7 +242,7 @@ where
                 ));
             }
         }
-        Type::Bool(..) => {
+        Sort::Bool(..) => {
             return Err("Const must be integer matrix, not boolean".into());
         }
     }
@@ -254,7 +254,7 @@ where
 
 fn check_bool<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Type> + fmt::Display,
+    D: TryInto<Sort> + fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -265,7 +265,7 @@ where
             if read.next().is_some() {
                 return Err("ConstBool: cannot read values".into());
             }
-            let Type::Bool([i, j]) = write_nxt(&mut write, 0, "LIA")? else {
+            let Sort::Bool([i, j]) = write_nxt(&mut write, 0, "LIA")? else {
                 return Err("ConstBool: write type must be Bool".into());
             };
             let size = cm.size();
@@ -297,7 +297,7 @@ where
                 read_nxt(&mut read, 0, "LIA")?,
                 write_nxt(&mut write, 0, "LIA")?,
             );
-            if !matches!(r, Type::Bool(..)) {
+            if !matches!(r, Sort::Bool(..)) {
                 return Err(format!("{:?}: input must be Bool", op));
             }
             if r != w {
@@ -320,7 +320,7 @@ where
             ) else {
                 return Err(format!("{:?}: must read exactly two values", op));
             };
-            if !matches!(w1, Type::Bool(..)) {
+            if !matches!(w1, Sort::Bool(..)) {
                 return Err(format!("{:?}: output must be Bool", op));
             }
             if r1 != r2 {
@@ -340,7 +340,7 @@ where
 
 fn check_cmp<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Type> + fmt::Display,
+    D: TryInto<Sort> + fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -352,11 +352,11 @@ where
         return Err(format!("{:?}: input values must have the same type", op));
     }
     let shape = match r1 {
-        Type::Int(s) => s,
+        Sort::Int(s) => s,
         _ => return Err(format!("{:?}: inputs must be Int matrices, got {r1}", op)),
     };
     let w1 = write_nxt(&mut write, 0, "LIA")?;
-    if w1 != Type::Bool(shape) {
+    if w1 != Sort::Bool(shape) {
         return Err(format!(
             "{:?}: output must be Bool({:?}), got {w1}",
             op, shape
@@ -367,7 +367,7 @@ where
 
 fn check_mat_ops<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Type> + fmt::Display,
+    D: TryInto<Sort> + fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -395,7 +395,7 @@ where
                     op
                 ));
             }
-            if !matches!(w1, Type::Int(..)) {
+            if !matches!(w1, Sort::Int(..)) {
                 return Err(format!(
                     "{:?}: input and output values must be int matrices",
                     op
@@ -416,7 +416,7 @@ where
                     op
                 ));
             }
-            if !matches!(w1, Type::Int(..)) {
+            if !matches!(w1, Sort::Int(..)) {
                 return Err(format!(
                     "{:?}: input and output values must be int matrices",
                     op
@@ -432,7 +432,7 @@ where
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             match w1 {
-                Type::Int([i, j]) => {
+                Sort::Int([i, j]) => {
                     // FIXME: we should fix which dimension is 1..
                     if i == 1 || j == 1 {
                         return Ok(());
@@ -457,7 +457,7 @@ fn check_linear_affine<D>(
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
 where
-    D: TryInto<Type> + fmt::Display,
+    D: TryInto<Sort> + fmt::Display,
 {
     let (r1, None) = (read_nxt(read, 0, "LIA")?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
@@ -488,7 +488,7 @@ where
     };
 
     match (r1, w1) {
-        (Type::Int([d1, d2]), Type::Int([d3, d4])) => {
+        (Sort::Int([d1, d2]), Sort::Int([d3, d4])) => {
             // X has shape [d1=in, d2=batch]; A has shape [a_rows=out, a_cols=in].
             if d1 != a_cols {
                 return Err(format!(
@@ -518,7 +518,7 @@ where
 
 fn check_transpose<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Type> + fmt::Display,
+    D: TryInto<Sort> + fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -531,7 +531,7 @@ where
         return Err(format!("{:?}: must write exactly one value", op));
     };
     match (r1, w1) {
-        (Type::Int([d1, d2]), Type::Int([e1, e2])) => {
+        (Sort::Int([d1, d2]), Sort::Int([e1, e2])) => {
             if d2 != e1 || d1 != e2 {
                 return Err(format!(
                     "{:?}: transpose of {}x{} must produce {}x{}, got {}x{}",
@@ -546,7 +546,7 @@ where
 
 fn check_flow<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Type> + fmt::Display,
+    D: TryInto<Sort> + fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -592,7 +592,7 @@ where
                     op
                 ));
             }
-            if r1 != Type::Bool([1, 1]) {
+            if r1 != Sort::Bool([1, 1]) {
                 return Err(format!(
                     "{:?}: input and output values must have the same type",
                     op
@@ -608,12 +608,12 @@ where
 mod tests {
     use super::*;
 
-    fn int(r: usize, c: usize) -> Type {
-        Type::Int([r, c])
+    fn int(r: usize, c: usize) -> Sort {
+        Sort::Int([r, c])
     }
 
-    fn bool_t(r: usize, c: usize) -> Type {
-        Type::Bool([r, c])
+    fn bool_t(r: usize, c: usize) -> Sort {
+        Sort::Bool([r, c])
     }
 
     #[test]
@@ -628,7 +628,7 @@ mod tests {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
         assert!(
             LIA::ConstInt(cm)
-                .check([] as [Type; 0], [int(2, 2)])
+                .check([] as [Sort; 0], [int(2, 2)])
                 .is_ok()
         );
     }
@@ -637,7 +637,7 @@ mod tests {
     fn const_int_bool_write_fails() {
         assert!(
             LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into())
-                .check([] as [Type; 0], [bool_t(1, 1)])
+                .check([] as [Sort; 0], [bool_t(1, 1)])
                 .is_err()
         );
     }
@@ -646,7 +646,7 @@ mod tests {
     fn const_int_wrong_rows_fails() {
         assert!(
             LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into())
-                .check([] as [Type; 0], [int(2, 1)])
+                .check([] as [Sort; 0], [int(2, 1)])
                 .is_err()
         );
     }
@@ -666,7 +666,7 @@ mod tests {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
             LIA::ConstBool(cm)
-                .check([] as [Type; 0], [bool_t(2, 2)])
+                .check([] as [Sort; 0], [bool_t(2, 2)])
                 .is_ok()
         );
     }
@@ -675,7 +675,7 @@ mod tests {
     fn const_bool_int_write_fails() {
         assert!(
             LIA::ConstBool(tch::Tensor::from_slice2(&[[true]]).into())
-                .check([] as [Type; 0], [int(1, 1)])
+                .check([] as [Sort; 0], [int(1, 1)])
                 .is_err()
         );
     }
