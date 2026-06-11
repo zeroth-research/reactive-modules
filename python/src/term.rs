@@ -4,7 +4,7 @@ use pyo3::exceptions::{PyException, PyIndexError};
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
-    base: base::Term<theory::any::Any>,
+    base: base::Term<crate::any::Any>,
 }
 
 #[pymethods]
@@ -60,7 +60,7 @@ impl Term {
     }
 
     #[getter]
-    fn itype(&self) -> theory::any::Any {
+    fn itype(&self) -> crate::any::Any {
         self.base.itype().clone()
     }
 
@@ -74,7 +74,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &base::Term<theory::any::Any> {
+    pub(crate) fn base(&self) -> &base::Term<crate::any::Any> {
         &self.base
     }
 
@@ -87,8 +87,8 @@ impl Term {
     }
 }
 
-impl From<base::Term<theory::any::Any>> for Term {
-    fn from(base: base::Term<theory::any::Any>) -> Self {
+impl From<base::Term<crate::any::Any>> for Term {
+    fn from(base: base::Term<crate::any::Any>) -> Self {
         Self { base }
     }
 }
@@ -105,7 +105,7 @@ struct TermInterface {
 }
 
 impl TermInterface {
-    fn base(&self) -> &base::Interface<theory::any::Type> {
+    fn base(&self) -> &base::Interface<crate::any::Sort> {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),

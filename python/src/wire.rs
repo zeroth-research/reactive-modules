@@ -4,13 +4,13 @@ use std::fmt;
 #[pyclass(frozen, eq, hash, str)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub(crate) struct Wire {
-    base: base::Wire<theory::any::Type>,
+    base: base::Wire<crate::any::Sort>,
 }
 
 #[pymethods]
 impl Wire {
     #[new]
-    pub(crate) fn new(dtype: theory::any::Type) -> Self {
+    pub(crate) fn new(dtype: crate::any::Sort) -> Self {
         let base = base::Wire::new(dtype);
         Self { base }
     }
@@ -21,7 +21,7 @@ impl Wire {
     }
 
     #[getter]
-    fn dtype(&self) -> theory::any::Type {
+    fn dtype(&self) -> crate::any::Sort {
         self.base.dtype().clone()
     }
 
@@ -31,13 +31,13 @@ impl Wire {
 }
 
 impl Wire {
-    pub(crate) fn base(&self) -> &base::Wire<theory::any::Type> {
+    pub(crate) fn base(&self) -> &base::Wire<crate::any::Sort> {
         &self.base
     }
 }
 
-impl From<base::Wire<theory::any::Type>> for Wire {
-    fn from(base: base::Wire<theory::any::Type>) -> Self {
+impl From<base::Wire<crate::any::Sort>> for Wire {
+    fn from(base: base::Wire<crate::any::Sort>) -> Self {
         Self { base }
     }
 }
