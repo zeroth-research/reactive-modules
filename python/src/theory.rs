@@ -12,7 +12,7 @@ pub enum Sort {
     Bool([usize; 2]),
     Real([usize; 2]),
     Int([usize; 2]),
-    BV(usize, [usize; 2]),
+    BitVec(usize, [usize; 2]),
 }
 
 impl fmt::Display for Sort {
@@ -21,7 +21,7 @@ impl fmt::Display for Sort {
             Sort::Bool(s) => write!(f, "Bool({}, {})", s[0], s[1]),
             Sort::Real(s) => write!(f, "Real({}, {})", s[0], s[1]),
             Sort::Int(s) => write!(f, "Int({}, {})", s[0], s[1]),
-            Sort::BV(bw, s) => write!(f, "BV<{}>({}, {})", bw, s[0], s[1]),
+            Sort::BitVec(bw, s) => write!(f, "BV<{}>({}, {})", bw, s[0], s[1]),
         }
     }
 }
@@ -29,7 +29,7 @@ impl fmt::Display for Sort {
 impl From<bv::Sort> for Sort {
     fn from(value: bv::Sort) -> Self {
         match value {
-            bv::Sort::BV(bw, shape) => Sort::BV(bw, shape),
+            bv::Sort::BV(bw, shape) => Sort::BitVec(bw, shape),
         }
     }
 }
@@ -57,7 +57,7 @@ impl TryFrom<Sort> for bv::Sort {
 
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
-            Sort::BV(bw, shape) => Ok(bv::Sort::BV(bw, shape)),
+            Sort::BitVec(bw, shape) => Ok(bv::Sort::BV(bw, shape)),
             _ => Err("invalid cast".to_string()),
         }
     }

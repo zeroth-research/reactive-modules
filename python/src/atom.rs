@@ -1,4 +1,5 @@
 use crate::term::{Term, TermInterfaceType};
+use crate::theory::Any;
 use crate::try_iter_borrow;
 use crate::wire::Wire;
 use pyo3::exceptions::PyIndexError;
@@ -6,11 +7,11 @@ use pyo3::prelude::*;
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: base::Atom<crate::theory::Any>,
+    base: base::Atom<Any>,
 }
 
-impl From<base::Atom<crate::theory::Any>> for Atom {
-    fn from(base: base::Atom<crate::theory::Any>) -> Self {
+impl From<base::Atom<Any>> for Atom {
+    fn from(base: base::Atom<Any>) -> Self {
         Self { base }
     }
 }
@@ -139,7 +140,7 @@ pub(crate) struct AtomBlock {
 }
 
 impl AtomBlock {
-    fn base(&self) -> &base::Block<crate::theory::Any> {
+    fn base(&self) -> &base::Block<Any> {
         let atom = &self.atom.get().base;
         match self.block {
             BlockType::Init => atom.init(),

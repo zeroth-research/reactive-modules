@@ -1,10 +1,11 @@
+use crate::theory::Any;
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
-    base: base::Term<crate::theory::Any>,
+    base: base::Term<Any>,
 }
 
 #[pymethods]
@@ -60,7 +61,7 @@ impl Term {
     }
 
     #[getter]
-    fn itype(&self) -> crate::theory::Any {
+    fn itype(&self) -> Any {
         self.base.itype().clone()
     }
 
@@ -74,7 +75,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &base::Term<crate::theory::Any> {
+    pub(crate) fn base(&self) -> &base::Term<Any> {
         &self.base
     }
 
@@ -87,8 +88,8 @@ impl Term {
     }
 }
 
-impl From<base::Term<crate::theory::Any>> for Term {
-    fn from(base: base::Term<crate::theory::Any>) -> Self {
+impl From<base::Term<Any>> for Term {
+    fn from(base: base::Term<Any>) -> Self {
         Self { base }
     }
 }
@@ -105,7 +106,7 @@ struct TermInterface {
 }
 
 impl TermInterface {
-    fn base(&self) -> &base::Interface<crate::theory::Sort> {
+    fn base(&self) -> &base::Interface<Sort> {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),
