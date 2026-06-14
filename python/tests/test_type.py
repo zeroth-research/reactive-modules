@@ -1,8 +1,22 @@
+import torch
+import zrth
+
 from zrth import BV, Term, Wire
 
-a = BV.Add()
-b = LIA.Add()
+a = BV.Const(torch.tensor([1.0]))
 
-print(a)
+match a:
+    case BV.Const(_):
+        print('hello')
+    case _:
+        print('meh')
 
-t = Term(a, [], [])
+match type(a):
+    case BV.Const:
+        print('hello')
+    case _:
+        print('meh')
+
+t = zrth.Real([1, 1])
+
+print(isinstance(t, zrth.Sort))

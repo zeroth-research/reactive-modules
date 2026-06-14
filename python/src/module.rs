@@ -1,3 +1,4 @@
+use crate::theory::Any;
 use crate::*;
 use pyo3::Py;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
@@ -6,7 +7,7 @@ use pyo3::types::{PyDict, PyTuple};
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
-    pub(crate) base: base::Module<crate::theory::Any>,
+    pub(crate) base: base::Module<Any>,
 }
 
 #[pymethods]
@@ -215,8 +216,8 @@ impl Module {
     }
 }
 
-impl From<base::Module<crate::theory::Any>> for Module {
-    fn from(base: base::Module<crate::theory::Any>) -> Self {
+impl From<base::Module<Any>> for Module {
+    fn from(base: base::Module<Any>) -> Self {
         Self { base }
     }
 }
@@ -247,7 +248,7 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &base::Interface<crate::theory::Sort, 2> {
+    fn base(&self) -> &base::Interface<Sort, 2> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),

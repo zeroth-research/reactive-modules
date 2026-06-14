@@ -1,9 +1,11 @@
-from .zrth import (
-    Wire,
-    BV,
-    Term,
-    Module,
-)
+from sympy.sets.fancysets import Reals
+
+from .zrth import *
+
+# makes sorts available on the base namespace
+for _name in dir(Sort):
+    if not _name.startswith('_'):
+        globals()[_name] = getattr(Sort, _name)
 
 # #####################################################################
 # # IType — direct alias to the Rust IType
