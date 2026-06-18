@@ -4,6 +4,7 @@ Each feature gets a small gym.Env that exercises it. Tests run the extracted
 module either through the IR interpreter (`interpret=True`) when all terms
 are interpretable, or via real-env delegation when they aren't (untraced calls)."""
 
+import pytest
 import numpy as np
 import torch
 import gymnasium as gym
@@ -179,6 +180,11 @@ class _Power(_MinEnv):
         self.x = self.x ** 3
         return self.x, 0.0, False, False
 
+@pytest.mark.xfail(
+    raises=NotImplementedError,
+    reason="power operator (**) is non-linear in LIA/LRA; deferred per theory migration",
+    strict=True,
+)
 def test_power_operator():
     e = Env(_Power(), interpret=True); e.reset(); e.step(0)
     assert e.x == 8.0
@@ -232,8 +238,15 @@ class _Untraced(_MinEnv):
         return self.x, 0.0, False, False
 
 def test_untraced_call():
+    from zrth import LRA
+
     e = Env(_Untraced())   # real env runs the function via delegation
-    labels = [str(t.itype) for atom in e.atoms for t in list(atom.update)]
+    labels = []
+    for atom in e.atoms:
+        for t in list(atom.update):
+            match t.itype:
+                case LRA.Uninterpreted(name):
+                    labels.append(name)
     assert any('(...)' in lbl for lbl in labels), "expected an Uninterpreted term"
     e.reset(); e.step(0)
     assert e.x == 2.0
@@ -250,6 +263,11 @@ class _ListLiteral(_MinEnv):
         self.state = [self.state[1], self.state[0]]   # swap via index access
         return np.array(self.state), 0.0, False, False
 
+@pytest.mark.xfail(
+    raises=NotImplementedError,
+    reason="dynamic list literal (Stack) + subscript (TensorGet) ops deferred per theory migration",
+    strict=True,
+)
 def test_list_literal_and_subscript():
     e = Env(_ListLiteral(), interpret=True); e.reset()
     e.step(0)
