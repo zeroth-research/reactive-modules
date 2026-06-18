@@ -539,10 +539,10 @@ impl Theory for BV {
                     }
                     return Ok(());
                 }
-                return Err(format!(
+                Err(format!(
                     "{:?}: expected exactly one write or one read, got none",
                     self
-                ));
+                ))
             }
         }
     }

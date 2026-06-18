@@ -18,7 +18,9 @@ fn main() {
                 println!("cargo:rustc-link-arg=-Wl,-rpath,{torch_lib}");
             }
             _ => {
-                println!("cargo:warning=theory build.rs: could not find torch lib via python3; libtorch may not load at runtime");
+                println!(
+                    "cargo:warning=theory build.rs: could not find torch lib via python3; libtorch may not load at runtime"
+                );
             }
         }
 
