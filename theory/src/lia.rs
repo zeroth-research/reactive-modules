@@ -199,10 +199,10 @@ impl Theory for LIA {
                     }
                     return Ok(());
                 }
-                return Err(format!(
+                Err(format!(
                     "{:?}: expected exactly one write or one read, got none",
                     self
-                ));
+                ))
             }
         }
     }
@@ -827,9 +827,9 @@ mod tests {
         // A=[2,3] maps 3 features to 2; X=[3,4] is 3 features × 4 batch items.
         // Convention: Y = A·X  →  Y=[2,4].
         let a: crate::PyTensor =
-            tch::Tensor::zeros(&[2, 3], (tch::Kind::Int64, tch::Device::Cpu)).into();
+            tch::Tensor::zeros([2, 3], (tch::Kind::Int64, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
-            tch::Tensor::zeros(&[0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
+            tch::Tensor::zeros([0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(LIA::Linear(a, b).check([int(3, 4)], [int(2, 4)]).is_ok());
     }
 
@@ -837,9 +837,9 @@ mod tests {
     fn linear_with_bias_ok() {
         // A=[2,3], b=[2,1] column bias, X=[3,1] single sample → Y=[2,1].
         let a: crate::PyTensor =
-            tch::Tensor::zeros(&[2, 3], (tch::Kind::Int64, tch::Device::Cpu)).into();
+            tch::Tensor::zeros([2, 3], (tch::Kind::Int64, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
-            tch::Tensor::zeros(&[2, 1], (tch::Kind::Int64, tch::Device::Cpu)).into();
+            tch::Tensor::zeros([2, 1], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(LIA::Linear(a, b).check([int(3, 1)], [int(2, 1)]).is_ok());
     }
 
@@ -847,9 +847,9 @@ mod tests {
     fn linear_dim_mismatch_fails() {
         // A=[2,3] but X has 4 rows — inner dimension mismatch.
         let a: crate::PyTensor =
-            tch::Tensor::zeros(&[2, 3], (tch::Kind::Int64, tch::Device::Cpu)).into();
+            tch::Tensor::zeros([2, 3], (tch::Kind::Int64, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
-            tch::Tensor::zeros(&[0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
+            tch::Tensor::zeros([0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(LIA::Linear(a, b).check([int(4, 1)], [int(2, 1)]).is_err());
     }
 
