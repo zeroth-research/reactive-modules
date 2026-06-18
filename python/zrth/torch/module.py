@@ -1,7 +1,7 @@
 import inspect
 import torch.nn as nn
 
-from ..zrth import Module as _BaseModule, DType
+from ..zrth import Module as _BaseModule, Sort
 from ..analyzer import convert_method, resolve_wire
 
 
@@ -35,8 +35,8 @@ def _extract_nn_module(nn_instance, theory=None, **kwargs):
     obs_size  = layer_list[0][0]
     qval_size = layer_list[-1][1]
 
-    extl = resolve_wire("extl", DType.Float([obs_size]),  user_extl)
-    intf = resolve_wire("intf", DType.Float([qval_size]), user_intf)
+    extl = resolve_wire("extl", Sort.Real([1, obs_size]),  user_extl)
+    intf = resolve_wire("intf", Sort.Real([1, qval_size]), user_intf)
 
     # Combinatorial: input wire is index 1 (next), swap the pair
     wires  = {obs_param: [extl[1], extl[0]]}
@@ -67,7 +67,7 @@ class Module(_BaseModule, nn.Module):
         wrapped.atoms          # symbolic module structure
 
     Training the original nn.Module automatically updates the symbolic module
-    because IType.Tensor holds a reference to the live weight tensors.
+    because the Linear op holds a reference to the live weight tensors.
     """
 
     def __new__(cls, nn_module, theory=None, **kwargs):
