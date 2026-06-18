@@ -1,11 +1,13 @@
+use crate::theory::Any;
 use crate::*;
+use pyo3::Py;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
 
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
-    pub(crate) base: base::Module<DType, IType>,
+    pub(crate) base: base::Module<Any>,
 }
 
 #[pymethods]
@@ -174,6 +176,29 @@ impl Module {
         Ok(ModuleAtoms { module })
     }
 
+    // fn try_to(&self, py: Python<'_>, theory: &str) -> PyResult<PyObject> {
+    //     match theory {
+    //         "lia" | "LIA" => {
+    //             let m = crate::downcast::downcast_module_to_lia(&self.base)
+    //                 .map_err(|e| PyException::new_err(e))?;
+    //             Ok(Py::new(py, LIAModule { base: m })?.into_any())
+    //         }
+    //         "rla" | "RLA" => {
+    //             let m = crate::downcast::downcast_module_to_lra(&self.base)
+    //                 .map_err(|e| PyException::new_err(e))?;
+    //             Ok(Py::new(py, RLAModule { base: m })?.into_any())
+    //         }
+    //         "bv" | "BV" => {
+    //             let m = crate::downcast::downcast_module_to_bv(&self.base)
+    //                 .map_err(|e| PyException::new_err(e))?;
+    //             Ok(Py::new(py, BVModule { base: m })?.into_any())
+    //         }
+    //         _ => Err(PyException::new_err(format!(
+    //             "unknown theory '{theory}'; supported: 'lia', 'rla', 'bv'"
+    //         ))),
+    //     }
+    // }
+
     fn closed(&self) -> bool {
         self.base.is_closed()
     }
@@ -191,8 +216,8 @@ impl Module {
     }
 }
 
-impl From<base::Module<DType, IType>> for Module {
-    fn from(base: base::Module<DType, IType>) -> Self {
+impl From<base::Module<Any>> for Module {
+    fn from(base: base::Module<Any>) -> Self {
         Self { base }
     }
 }
@@ -223,7 +248,7 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &base::Interface<DType, 2> {
+    fn base(&self) -> &base::Interface<Sort, 2> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),
