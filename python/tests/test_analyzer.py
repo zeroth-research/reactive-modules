@@ -11,6 +11,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from zrth.gym import Env
+from zrth import NonLinearError, TheoryError
 
 
 # ── boilerplate ───────────────────────────────────────────────────
@@ -181,8 +182,8 @@ class _Power(_MinEnv):
         return self.x, 0.0, False, False
 
 @pytest.mark.xfail(
-    raises=NotImplementedError,
-    reason="power operator (**) is non-linear in LIA/LRA; deferred per theory migration",
+    raises=NonLinearError,
+    reason="power operator (**) is non-linear in LIA/LRA; needs a non-linear theory",
     strict=True,
 )
 def test_power_operator():
@@ -264,8 +265,8 @@ class _ListLiteral(_MinEnv):
         return np.array(self.state), 0.0, False, False
 
 @pytest.mark.xfail(
-    raises=NotImplementedError,
-    reason="dynamic list literal (Stack) + subscript (TensorGet) ops deferred per theory migration",
+    raises=TheoryError,
+    reason="dynamic list literal (Stack) + subscript (TensorGet) need a theory that provides them",
     strict=True,
 )
 def test_list_literal_and_subscript():

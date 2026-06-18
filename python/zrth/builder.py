@@ -253,14 +253,38 @@ class TermBuilder:
     def matmul(self, a, b) -> Term:
         raise NotImplementedError
 
+    # --- deferred ops (no current theory provides them) ----------------------
+    # These stay routed through the builder so the analyzer (and the tutorials)
+    # remain theory-agnostic. When a suitable theory is added, only the relevant
+    # TermBuilder subclass (and the theory crate) override these -- no analyzer
+    # or notebook changes are needed.
+
+    def _theory(self) -> str:
+        return self._ns.__name__ if self._ns is not None else "the selected theory"
+
     def sin(self, a) -> Term:
-        raise NotImplementedError
+        raise NonLinearError(self._theory(), "sin (non-linear; needs a non-linear theory)")
 
     def cos(self, a) -> Term:
-        raise NotImplementedError
+        raise NonLinearError(self._theory(), "cos (non-linear; needs a non-linear theory)")
 
     def tanh(self, a) -> Term:
-        raise NotImplementedError
+        raise NonLinearError(self._theory(), "tanh (non-linear; needs a non-linear theory)")
+
+    def pow(self, base, exponent) -> Term:
+        raise NonLinearError(self._theory(), "** / pow (non-linear; needs a non-linear theory)")
+
+    def stack(self, elements) -> Term:
+        raise TheoryError(
+            f"{self._theory()} has no Stack op "
+            "(list-valued state needs a theory that provides Stack)"
+        )
+
+    def tensor_get(self, base, index) -> Term:
+        raise TheoryError(
+            f"{self._theory()} has no TensorGet op "
+            "(indexing needs a theory that provides TensorGet)"
+        )
 
 
 class LRATermBuilder(TermBuilder):
@@ -299,15 +323,7 @@ class LRATermBuilder(TermBuilder):
         return self._binary_op(LRA.Ne, _bool_sort(_dtype(a)), a, b)
 
     # LRA is linear real arithmetic: no transcendentals / generic division.
-    def sin(self, a) -> Term:
-        raise ValueError("LRA does not support sin")
-
-    def cos(self, a) -> Term:
-        raise ValueError("LRA does not support cos")
-
-    def tanh(self, a) -> Term:
-        raise ValueError("LRA does not support tanh")
-
+    # (sin/cos/tanh/pow/stack/tensor_get inherit the base's deferred-op errors.)
     def mul(self, a, b) -> Term:
         result = self._try_mul_as_linear(a, b, LRA.ConstReal, torch.float32)
         if result is not None:
@@ -379,15 +395,6 @@ class LIATermBuilder(TermBuilder):
 
     def ne(self, a, b) -> Term:
         return self._binary_op(LIA.Ne, _bool_sort(_dtype(a)), a, b)
-
-    def sin(self, a) -> Term:
-        raise ValueError("LIA does not support sin")
-
-    def cos(self, a) -> Term:
-        raise ValueError("LIA does not support cos")
-
-    def tanh(self, a) -> Term:
-        raise ValueError("LIA does not support tanh")
 
     def mul(self, a, b) -> Term:
         result = self._try_mul_as_linear(a, b, LIA.ConstInt, torch.int64)
@@ -482,15 +489,6 @@ class BVTermBuilder(TermBuilder):
 
     def ne(self, a, b) -> Term:
         return self._binary_op(BV.Ne, self._bv1(a), a, b)
-
-    def sin(self, a) -> Term:
-        raise ValueError("BV does not support sin")
-
-    def cos(self, a) -> Term:
-        raise ValueError("BV does not support cos")
-
-    def tanh(self, a) -> Term:
-        raise ValueError("BV does not support tanh")
 
     def neg(self, a) -> Term:
         return self._unary_op(BV.Neg, a)
