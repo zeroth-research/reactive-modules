@@ -1,7 +1,7 @@
 from typing import override
 
-from .zrth import DType, IType, Term, Wire
-from .builder import TermBuilder, builder_for
+from .zrth import Sort, Term
+from .builder import TermBuilder, builder_for, _normalize_shape
 import torch
 
 # types that we can convert to [Expr]
@@ -21,7 +21,7 @@ class Expr:
         return self._builder
 
     @property
-    def dtype(self) -> DType:
+    def dtype(self) -> Sort:
         return self._dtype
 
     @property
@@ -157,20 +157,23 @@ class WExpr(Expr):
 
 def _expr_from_term(term: Term, builder: TermBuilder, *args: Expr) -> Expr:
     """Create the right Expr subclass from an already-constructed Term."""
-    dtype = term.write[0].dtype
-    if dtype.is_bool():
-        cls = BExpr
-    elif dtype.is_real() or dtype.is_int():
-        cls = AExpr
-    else:
-        cls = WExpr
+    sort = term.write[0].dtype
+    match sort:
+        case Sort.Bool(s):
+            cls, shape = BExpr, list(s)
+        case Sort.Int(s) | Sort.Real(s):
+            cls, shape = AExpr, list(s)
+        case Sort.BitVec(_, s):
+            cls, shape = WExpr, list(s)
+        case _:
+            raise TypeError(f"unknown sort: {sort}")
     e = cls.__new__(cls)
     e._term = term
     e._builder = builder
     e._itype = term.itype
     e._wire = term.write[0]
-    e._dtype = dtype
-    e._shape = dtype.shape
+    e._dtype = sort
+    e._shape = shape
     e._args = list(args)
     return e
 
@@ -411,7 +414,7 @@ def Bool(x: bool | str | torch.Tensor, theory, shape=None) -> BExpr:
     elif isinstance(x, torch.Tensor):
         return _expr_from_term(b.const(x), b)
     elif isinstance(x, str):
-        return _expr_from_term(b.uninterpreted(x, DType.Bool(shape or [1])), b)
+        return _expr_from_term(b.uninterpreted(x, Sort.Bool(_normalize_shape(shape or [1]))), b)
     raise ValueError(f"Invalid argument to Bool: {type(x).__name__}")
 
 
@@ -422,5 +425,5 @@ def Real(x: float | str | torch.Tensor, theory, shape=None) -> AExpr:
     elif isinstance(x, torch.Tensor):
         return _expr_from_term(b.const(x), b)
     elif isinstance(x, str):
-        return _expr_from_term(b.uninterpreted(x, DType.Float(shape or [1])), b)
+        return _expr_from_term(b.uninterpreted(x, Sort.Real(_normalize_shape(shape or [1]))), b)
     raise ValueError(f"Invalid argument to Real: {type(x).__name__}")

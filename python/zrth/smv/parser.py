@@ -3,14 +3,27 @@
 from __future__ import annotations
 
 import warnings
+import torch
 from collections import Counter
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..zrth import Wire, DType, Term, Module
-from .. import IType
+from ..zrth import Wire, Sort, Term, Module, BV
+
+
+def _bw(sort) -> int:
+    """Bit-width of a BitVec Sort (Sorts expose no methods; match instead)."""
+    match sort:
+        case Sort.BitVec(bw, _):
+            return bw
+    raise TypeError(f"not a BitVec sort: {sort}")
+
+
+def _bv_const(value) -> "BV.Const":
+    """A scalar BV constant op from an int value (2-D initializer)."""
+    return BV.Const(torch.tensor([[int(value)]], dtype=torch.int64))
 
 # ---------------------------------------------------------------------------
 # 1. Lark parser init
@@ -51,8 +64,8 @@ def parse_smv(
 
 @dataclass(frozen=True)
 class _SMVType:
-    """SMV variable type: BV DType paired with its signedness."""
-    dtype: DType
+    """SMV variable type: BV Sort paired with its signedness."""
+    dtype: Sort
     signed: bool
 
 
@@ -253,27 +266,27 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> _SMVType:
     if isinstance(tree, Tree):
         match tree.data:
             case "type_bool":
-                return _SMVType(DType.BV(1), signed=False)
+                return _SMVType(Sort.BitVec(1, [1, 1]), signed=False)
             case "type_int" | "range_type":
-                return _SMVType(DType.BV(_DEFAULT_INT_BW), signed=True)
+                return _SMVType(Sort.BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
             case "type_spec":
                 return _resolve_type(tree.children[0], enum_values)
             case "word_type":
                 sign_tok = str(tree.children[0])
                 width = int(str(tree.children[1]))
-                return _SMVType(DType.BV(width), signed=(sign_tok == "signed"))
+                return _SMVType(Sort.BitVec(width, [1, 1]), signed=(sign_tok == "signed"))
             case "enum_type":
                 for code, ev in enumerate(_typed_children(tree, "enum_value")):
                     name = _extract_name(ev.children[0])
                     if name is not None:
                         enum_values.setdefault(name, code)
-                return _SMVType(DType.BV(_DEFAULT_INT_BW), signed=False)
+                return _SMVType(Sort.BitVec(_DEFAULT_INT_BW, [1, 1]), signed=False)
     # Token fallback
     text = str(tree).strip()
     if text == "boolean":
-        return _SMVType(DType.BV(1), signed=False)
+        return _SMVType(Sort.BitVec(1, [1, 1]), signed=False)
     if text == "integer":
-        return _SMVType(DType.BV(_DEFAULT_INT_BW), signed=True)
+        return _SMVType(Sort.BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
     raise ValueError(f"unsupported type: {tree}")
 
 
@@ -309,8 +322,13 @@ _NARY_OPS = {
 
 
 def _bv_op(name: str):
-    """Look up `IType.BV.<name>` (raises AttributeError if missing)."""
-    return getattr(IType.BV, name)
+    """Construct `BV.<name>()` (raises AttributeError if the op is missing).
+
+    Note: Xnor / Implies are referenced by the grammar maps but are NOT BV ops;
+    those SMV constructs aren't exercised by the fixtures. If needed later, compose
+    them (Not(Xor) / Or(Not, b)) here.
+    """
+    return getattr(BV, name)()
 
 _METHODS = {
     "builtin_call": "_lower_builtin",
@@ -322,28 +340,25 @@ _METHODS = {
 }
 
 _BUILTIN_MAP = {
-    "bool": lambda: IType.BV.BVToBool,
-    "word1": lambda: IType.BV.Id,
-    "unsigned": lambda: IType.BV.Id,
-    "signed": lambda: IType.BV.Id,
+    "bool": lambda: BV.BVToBool(),
+    "word1": lambda: BV.Id(),
+    "unsigned": lambda: BV.Id(),
+    "signed": lambda: BV.Id(),
 }
 
 
 def _const_out_dtype(itype):
-    """Return the output DType for a scalar const IType, or None to defer to target."""
-    # BV-only parser: every Const is BV. A boolean-valued constant is BV<1>;
-    # otherwise the constant defaults to the integer width.
-    if itype.op_name != "Const":
-        return None
+    """Output Sort for a scalar const op, or None to defer to the target wire."""
+    # BV-only parser: const width defers to the target/default width.
     return None
 
 
 def _builtin_out_dtype(fn_name: str, in_dtype):
     """Return the output DType for a BV cast/conversion builtin."""
     if fn_name in ("bool", "word1"):
-        return DType.BV(1)
+        return Sort.BitVec(1, [1, 1])
     if fn_name in ("unsigned", "signed"):
-        return DType.BV(in_dtype.bv_bitwidth())
+        return Sort.BitVec(_bw(in_dtype), [1, 1])
     return None
 
 
@@ -376,7 +391,7 @@ class _Lowerer:
             if tree.type == "IDENT":
                 return self._lower_name(str(tree), target)
             if tree.type == "NUMBER":
-                return self._emit_const(IType.BV.Const(int(str(tree))), target)
+                return self._emit_const(_bv_const(int(str(tree))), target)
             raise ValueError(f"unexpected token type: {tree.type}")
 
         name = tree.data
@@ -398,13 +413,13 @@ class _Lowerer:
         if name == "var_ref":
             return self._lower_name(str(tree.children[0]), target)
         if name == "int_lit":
-            return self._emit_const(IType.BV.Const(int(str(tree.children[0]))), target)
+            return self._emit_const(_bv_const(int(str(tree.children[0]))), target)
         if name in ("true_lit", "false_lit"):
             # Boolean literals live in BV<1>; the parser's `_DEFAULT_INT_BW`
             # fallback would otherwise widen them to BV<32>.
-            w = self._fresh(target, DType.BV(1))
+            w = self._fresh(target, Sort.BitVec(1, [1, 1]))
             self.terms.append(
-                Term(IType.BV.Const(1 if name == "true_lit" else 0), [w])
+                Term(_bv_const(1 if name == "true_lit" else 0), [w])
             )
             return self._enforce(w, target)
 
@@ -453,7 +468,7 @@ class _Lowerer:
             rhs = self.lower(children[i + 1])
             itype = self._cmp_itype(op_tok, left)
             out = target if i + 2 >= len(children) else None
-            w = self._fresh(out, DType.BV(1))
+            w = self._fresh(out, Sort.BitVec(1, [1, 1]))
             self.terms.append(Term(itype, [w], [left, rhs]))
             left = w
             i += 2
@@ -494,10 +509,10 @@ class _Lowerer:
             out_dtype = _builtin_out_dtype(fn_name, arg_w.dtype)
         elif fn_name == "extend":
             extra = int(str(_peel(exprs[1])))
-            in_bw = arg_w.dtype.bv_bitwidth()
+            in_bw = _bw(arg_w.dtype)
             out_bw = in_bw + extra
-            itype = IType.BV.Extend(extra)
-            out_dtype = DType.BV(out_bw)
+            itype = BV.Extend(extra=extra)
+            out_dtype = Sort.BitVec(out_bw, [1, 1])
         else:
             raise ValueError(f"unknown builtin: {fn_name}")
 
@@ -517,7 +532,7 @@ class _Lowerer:
 
     def _lower_case_rec(self, branches, idx, target):
         if idx >= len(branches):
-            return self._emit_const(IType.BV.Const(0), target)
+            return self._emit_const(_bv_const(0), target)
         cond_tree, val_tree = branches[idx].children
         if idx == len(branches) - 1:
             return self.lower(val_tree, target)
@@ -525,7 +540,7 @@ class _Lowerer:
         then_w = self.lower(val_tree)
         else_w = self._lower_case_rec(branches, idx + 1, None)
         w = self._fresh(target, then_w.dtype)
-        self.terms.append(Term(IType.BV.Ite, [w], [cond, then_w, else_w]))
+        self.terms.append(Term(BV.Ite(), [w], [cond, then_w, else_w]))
         return self._enforce(w, target)
 
     # --- next(expr) ---------------------------------------------------------
@@ -551,11 +566,11 @@ class _Lowerer:
 
         if signed and value < 0:
             value = value + (1 << width)
-        dtype = DType.BV(width)
+        dtype = Sort.BitVec(width, [1, 1])
         w = Wire(dtype)
         self._wire_types[id(w)] = _SMVType(dtype, signed=signed)
         # Word literals produce a BV constant, not an LIA ConstInt.
-        self.terms.append(Term(IType.BV.Const(value), [w]))
+        self.terms.append(Term(_bv_const(value), [w]))
         return self._maybe_bit_select(tree, w, 1, target)
 
     # --- paren_expr ---------------------------------------------------------
@@ -579,7 +594,7 @@ class _Lowerer:
             return result
         # Check enum
         if name in self.enum_values:
-            return self._emit_const(IType.BV.Const(self.enum_values[name]), target)
+            return self._emit_const(_bv_const(self.enum_values[name]), target)
         # Wire lookup
         if name in self.name_map:
             latched, next_w = self.name_map[name]
@@ -589,7 +604,7 @@ class _Lowerer:
             return self._enforce(w, target)
         # Unknown name — emit zero with warning
         warnings.warn(f"undeclared variable '{name}', defaulting to 0")
-        return self._emit_const(IType.BV.Const(0), target)
+        return self._emit_const(_bv_const(0), target)
 
     # --- helpers ------------------------------------------------------------
 
@@ -609,7 +624,7 @@ class _Lowerer:
     def _fresh(self, target: Wire | None, dtype=None) -> Wire:
         if target is not None:
             return target
-        return Wire(dtype if dtype is not None else DType.BV(_DEFAULT_INT_BW))
+        return Wire(dtype if dtype is not None else Sort.BitVec(_DEFAULT_INT_BW, [1, 1]))
 
     def _emit_const(self, itype, target: Wire | None) -> Wire:
         out_dtype = _const_out_dtype(itype)
@@ -619,7 +634,7 @@ class _Lowerer:
 
     def _enforce(self, wire: Wire, target: Wire | None) -> Wire:
         if target is not None and target != wire:
-            self.terms.append(Term(IType.BV.Id, [target], [wire]))
+            self.terms.append(Term(BV.Id(), [target], [wire]))
             t = self._smv_type(wire)
             if t is not None:
                 self._wire_types[id(target)] = t
@@ -636,9 +651,9 @@ class _Lowerer:
         ):
             bs = tree.children[idx]
             high, low = int(str(bs.children[0])), int(str(bs.children[1]))
-            out_dtype = DType.BV(high - low + 1)
+            out_dtype = Sort.BitVec(high - low + 1, [1, 1])
             w = self._fresh(target, out_dtype)
-            self.terms.append(Term(IType.BV.BitSelect(high, low), [w], [base_w]))
+            self.terms.append(Term(BV.BitSelect(high=high, low=low), [w], [base_w]))
             return self._enforce(w, target)
         return self._enforce(base_w, target)
 
@@ -679,14 +694,14 @@ def _build_module(
         if init_expr is not None:
             init_low.lower(init_expr, next_w)
         else:
-            init_low.terms.append(Term(IType.BV.Const(0), [next_w]))
+            init_low.terms.append(Term(_bv_const(0), [next_w]))
 
         # --- UPDATE ---
         next_expr = d.next_assigns.get(name)
         if next_expr is not None:
             update_low.lower(next_expr, next_w)
         else:
-            update_low.terms.append(Term(IType.BV.Id, [next_w], [latched]))
+            update_low.terms.append(Term(BV.Id(), [next_w], [latched]))
 
     # Build obs_pairs: all variables (state + ivar)
     obs_pairs = [list(name_map[n]) for n, _ in all_decls]
