@@ -53,12 +53,6 @@ def test_counter_init_terms():
     assert const_zero_found, "Expected a BV.Const(0) init term for x"
 
 
-@pytest.mark.xfail(
-    reason="fixture mixes BV widths in `i > j & a` (BV<1> & BV<32>); the current "
-    "theory crate's And rejects unequal-width operands. Parser is verbatim from "
-    "theory-migration; fixing needs a Rust/parser change which is out of scope.",
-    strict=True,
-)
 def test_test_itypes():
     """Parse test_itypes.smv — 6 variables (3 VAR + 3 IVAR)."""
     text = (FIXTURES / "test_itypes.smv").read_text()
