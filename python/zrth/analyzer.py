@@ -1850,11 +1850,9 @@ class MethodVisitor(ast.NodeVisitor):
         elif op_type is ast.Div:
             raise ValueError("Division is not supported")
         elif op_type is ast.Pow:
-            # Non-linear: deferred. builder.mul would raise NonLinearError for
-            # variable**n in LIA/LRA; surface a clean NotImplementedError instead.
-            raise NotImplementedError(
-                "power operator (**) is deferred: non-linear in LIA/LRA"
-            )
+            # Non-linear: routed through the builder so it works once a non-linear
+            # theory provides it. In LIA/LRA the builder raises NonLinearError.
+            return self.builder.pow(left_val, right_val)
         else:
             raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
 
@@ -2050,22 +2048,29 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unsupported constant type: {type(value)}")
 
     def _convert_list_literal(self, node, target_dtype=None):
-        """Convert a list/tuple literal to a constant Tensor wire.
+        """Convert a list/tuple literal to a wire.
 
         Constant literals fold to a Tensor. Dynamic lists (elements that are
-        wires/subscripts) would need a Stack op, which is deferred."""
+        wires/subscripts) are routed through builder.stack so they work once a
+        theory provides Stack."""
         try:
             data = self._eval_literal(node)
         except ValueError:
-            raise NotImplementedError(
-                "dynamic list literal (Stack op) is deferred"
-            )
+            if isinstance(node, (ast.List, ast.Tuple)):
+                element_wires = [self._convert_expr(e) for e in node.elts]
+                return self.builder.stack(element_wires)
+            # np.array(<expr>) on a non-literal (e.g. np.array(self.state)): the arg
+            # already denotes the array value, so this is identity.
+            return self._convert_expr(node)
         tensor_data = torch.tensor(data, dtype=_torch_dtype(target_dtype))
         return self._make_tensor_wire(tensor_data, target_dtype)
 
     def _convert_subscript(self, expr, target_dtype=None):
-        """x[i] would need a TensorGet op, which is deferred."""
-        raise NotImplementedError("subscript (TensorGet op) is deferred")
+        """x[i] -> TensorGet, routed through the builder so it works once a
+        theory provides TensorGet."""
+        base_val = self._convert_expr(expr.value)
+        index_val = self._convert_expr(expr.slice)
+        return self.builder.tensor_get(base_val, index_val)
 
     def _convert_attribute(self, attr):
         """Convert self.attr: returns locally-assigned wire if available, else the input wire."""
