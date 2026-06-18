@@ -17,29 +17,50 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
-from zrth import Wire, DType, Term, IType, Float, Bool
-from .builder import TermBuilder, LRATermBuilder, LIATermBuilder, BVTermBuilder
+from zrth import Wire, Term, Sort
+from .builder import (
+    TermBuilder,
+    LRATermBuilder,
+    LIATermBuilder,
+    BVTermBuilder,
+    _normalize_shape,
+)
+
+
+# ---------------------------------------------------------------------------
+# Compile-time static values (str/None attributes used in comparisons)
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class _StaticValue:
     """Compile-time primitive value (str, None, etc.) used for static evaluation of
     comparisons and if-conditions involving non-wire Python attributes."""
+
     value: Any
 
 
 def _eval_static_compare(a, op, b):
     """Evaluate a Python-level comparison on two primitive values at analysis time."""
     match op:
-        case ast.Eq():    return a == b
-        case ast.NotEq(): return a != b
-        case ast.Lt():    return a < b
-        case ast.LtE():   return a <= b
-        case ast.Gt():    return a > b
-        case ast.GtE():   return a >= b
-        case ast.Is():    return a is b
-        case ast.IsNot(): return a is not b
-        case _:           raise ValueError(f"Unsupported static compare op: {type(op).__name__}")
+        case ast.Eq():
+            return a == b
+        case ast.NotEq():
+            return a != b
+        case ast.Lt():
+            return a < b
+        case ast.LtE():
+            return a <= b
+        case ast.Gt():
+            return a > b
+        case ast.GtE():
+            return a >= b
+        case ast.Is():
+            return a is b
+        case ast.IsNot():
+            return a is not b
+        case _:
+            raise ValueError(f"Unsupported static compare op: {type(op).__name__}")
 
 
 # ---------------------------------------------------------------------------
@@ -353,6 +374,10 @@ class AbstractInterpreter:
         # Bind parameters
         assert self.func_def is not None
         args = self.func_def.args
+        if args.vararg or args.kwarg or args.kw_defaults:
+            raise UnsupportedFeatureError(
+                "*args, **kwargs, kw_defaults not yet supported"
+            )
         if args.posonlyargs:
             raise UnsupportedFeatureError("positional-only args not yet supported")
 
@@ -368,18 +393,13 @@ class AbstractInterpreter:
             else:
                 annot = param.annotation
                 value = AbstractValue.top()
-                # Best-effort typing from simple annotations; skip anything complex.
-                if isinstance(annot, ast.Name):
+                if annot is not None:
+                    if not isinstance(annot, ast.Name):
+                        raise NotImplementedError("Unsupported type annotation")
                     ty = ANNOT_SUPPORTED_TYPES.get(annot.id)
                     if ty is not None:
                         value = AbstractValue.typed(ty)
                 initial.env[name] = value
-
-        # *args / **kwargs -> bind as TOP, don't raise
-        if args.vararg is not None:
-            initial.env[args.vararg.arg] = AbstractValue.top()
-        if args.kwarg is not None:
-            initial.env[args.kwarg.arg] = AbstractValue.top()
 
         return self._interpret_block(self.func_def.body, initial)
 
@@ -1130,22 +1150,13 @@ def infer_dtype(name, abstract_value, builder):
 
     if abstract_value.is_const():
         shape, elem_type = _infer_shape_and_elem_type(abstract_value.value)
-        return builder.python_type_to_dtype(elem_type, shape or [1])
-
-    # np.array([...]) CallResult: infer Float(N) from list length
-    if abstract_value.call_repr is not None and abstract_value.call_repr.startswith("np.array("):
-        try:
-            node = ast.parse(abstract_value.call_repr, mode='eval').body
-            if isinstance(node, ast.Call) and node.args and isinstance(node.args[0], (ast.List, ast.Tuple)):
-                return DType.Float([len(node.args[0].elts)])
-        except (SyntaxError, ValueError):
-            pass
+        return builder.python_type_to_dtype(elem_type, _normalize_shape(shape or [1]))
 
     if abstract_value.type_ is None:
         raise ValueError(
-            f"Cannot infer DType for '{name}': analyzer returned {abstract_value}"
+            f"Cannot infer Sort for '{name}': analyzer returned {abstract_value}"
         )
-    return builder.python_type_to_dtype(abstract_value.type_, [1])
+    return builder.python_type_to_dtype(abstract_value.type_, _normalize_shape([1]))
 
 
 def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
@@ -1258,14 +1269,14 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
 
 
 def _torch_dtype(target_dtype):
-    """Map a DType to the corresponding torch dtype. Defaults to float32."""
-    if target_dtype is None:
-        return torch.float32
-    if target_dtype.is_int():
-        return torch.long
-    if target_dtype.is_bool():
-        return torch.bool
-    return torch.float32
+    """Map a Sort to the corresponding torch dtype. Defaults to float32."""
+    match target_dtype:
+        case Sort.Int(_) | Sort.BitVec(_, _):
+            return torch.long
+        case Sort.Bool(_):
+            return torch.bool
+        case _:
+            return torch.float32
 
 
 def _normalize_early_returns(stmts: list) -> list:
@@ -1362,6 +1373,7 @@ class MethodVisitor(ast.NodeVisitor):
         params: dict[str, Wire] | None = None,
         live_layers: dict | None = None,
         builder: TermBuilder | None = None,
+        static_attrs: dict[str, Any] | None = None,
     ):
         self.wire_pairs = wire_pairs
         self.result_wires = result_wires
@@ -1456,11 +1468,17 @@ class MethodVisitor(ast.NodeVisitor):
                 self.terms.append(ite_term)
                 self.temp_vars[var] = ite_term
 
-                # If this is a state wire and we're at top level, write the merged value
-                # to the output wire — replacing any earlier Id term, since this if-branch
-                # supersedes whatever was assigned before it.
+                # If this is a state wire and we're at top level, write the merged
+                # value to the output wire — replacing any earlier Id term, since
+                # this if-branch supersedes whatever was assigned before it.
                 if var in self.wire_pairs and len(self.scopes) == 0:
                     output_wire = self.wire_pairs[var][1]
+                    if var in self.written_wires:
+                        for i in range(len(self.terms) - 1, -1, -1):
+                            t = self.terms[i]
+                            if len(t.write) == 1 and t.write[0] == output_wire:
+                                del self.terms[i]
+                                break
                     term = self.builder.id_(ite_term, output_wire=output_wire)
                     self.terms.append(term)
                     self.written_wires.add(var)
@@ -1494,7 +1512,9 @@ class MethodVisitor(ast.NodeVisitor):
         elif isinstance(target, ast.Tuple):
             # Tuple unpacking: x, y = <expr>. Supported only when RHS is a tuple
             # literal OR an untraced call (each target gets its own placeholder).
-            if isinstance(node.value, ast.Tuple) and len(node.value.elts) == len(target.elts):
+            if isinstance(node.value, ast.Tuple) and len(node.value.elts) == len(
+                target.elts
+            ):
                 for tgt_elt, val_elt in zip(target.elts, node.value.elts):
                     if not isinstance(tgt_elt, ast.Name):
                         raise ValueError("Tuple unpacking targets must be plain names")
@@ -1506,7 +1526,9 @@ class MethodVisitor(ast.NodeVisitor):
                         raise ValueError("Tuple unpacking targets must be plain names")
                     self.temp_vars[tgt_elt.id] = self._untraced_call(label)
             else:
-                raise ValueError("Tuple unpacking supports tuple literals or untraced calls")
+                raise ValueError(
+                    "Tuple unpacking supports tuple literals or untraced calls"
+                )
 
         elif isinstance(target, ast.Attribute) and target.attr in self.wire_pairs:
             wire_name = target.attr
@@ -1516,40 +1538,36 @@ class MethodVisitor(ast.NodeVisitor):
 
             if len(self.scopes) == 0:
                 output_wire = self.wire_pairs[wire_name][1]
+                if wire_name in self.written_wires:
+                    # Re-assignment: drop the previous Id term for this output wire
+                    for i in range(len(self.terms) - 1, -1, -1):
+                        t = self.terms[i]
+                        if len(t.write) == 1 and t.write[0] == output_wire:
+                            del self.terms[i]
+                            break
                 term = self.builder.id_(result_val, output_wire=output_wire)
                 self.terms.append(term)
                 self.written_wires.add(wire_name)
 
     def visit_AugAssign(self, node):
-        """Handle augmented assignment (+=, -=, *=, /=)."""
-        if (
-            isinstance(node.target, ast.Attribute)
-            and node.target.attr in self.wire_pairs
-        ):
-            wire_name = node.target.attr
-
-            if wire_name in self.temp_vars:
-                left_wire = self.temp_vars[wire_name]
-            else:
-                left_wire = self.wire_pairs[wire_name][0]
-
-            target_dtype = self.wire_pairs[wire_name][1].dtype
-            right_val = self._convert_expr(node.value, target_dtype=target_dtype)
-
-            op_type = type(node.op)
-            result_val = self._apply_binop_aug(op_type, left_wire, right_val)
-
-            self.temp_vars[wire_name] = result_val
-
-            if len(self.scopes) == 0:
-                output_wire = self.wire_pairs[wire_name][1]
-                term = self.builder.id_(result_val, output_wire=output_wire)
-                self.terms.append(term)
-                self.written_wires.add(wire_name)
+        """Handle augmented assignment (+=, -=, *=, /=). Desugar to regular assignment
+        so re-assignment deduping in visit_Assign applies uniformly."""
+        if isinstance(node.target, ast.Name):
+            load_target = ast.Name(id=node.target.id, ctx=ast.Load())
+        elif isinstance(node.target, ast.Attribute):
+            load_target = ast.Attribute(
+                value=node.target.value, attr=node.target.attr, ctx=ast.Load()
+            )
         else:
             raise ValueError(
-                "Augmented assignment only supported for self.attribute wires"
+                "Augmented assignment only supported for names or self.attribute wires"
             )
+        ast.copy_location(load_target, node.target)
+        binop = ast.BinOp(left=load_target, op=node.op, right=node.value)
+        ast.copy_location(binop, node)
+        assign = ast.Assign(targets=[node.target], value=binop)
+        ast.copy_location(assign, node)
+        self.visit_Assign(assign)
 
     def visit_Expr(self, node):
         """Silently skip bare expression statements (e.g. super().reset(seed=seed))"""
@@ -1599,14 +1617,14 @@ class MethodVisitor(ast.NodeVisitor):
             return self._convert_ifexp(expr, target_dtype=target_dtype)
         elif isinstance(expr, ast.Attribute):
             return self._convert_attribute(expr)
-        elif isinstance(expr, ast.Subscript):
-            return self._convert_subscript(expr, target_dtype=target_dtype)
         elif isinstance(expr, ast.Name):
             return self._convert_name(expr)
         elif isinstance(expr, ast.Constant):
             return self._convert_constant(expr, target_dtype)
         elif isinstance(expr, (ast.List, ast.Tuple)):
             return self._convert_list_literal(expr, target_dtype)
+        elif isinstance(expr, ast.Subscript):
+            return self._convert_subscript(expr, target_dtype)
         else:
             raise ValueError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -1705,10 +1723,10 @@ class MethodVisitor(ast.NodeVisitor):
             head = head[len("self."):]
         label = f"{head}(...)" if "(" in label else head
 
-        dtype = target_dtype if target_dtype is not None else Float(1)
-        result = Wire(dtype)
-        self.terms.append(Term(IType.Uninterpreted(label), [result], []))
-        return result
+        sort = target_dtype if target_dtype is not None else Sort.Real([1, 1])
+        term = self.builder.uninterpreted(label, sort)
+        self.terms.append(term)
+        return term
 
     def _convert_minmax(self, args, func_name):
         """Convert min/max to conditional: min(a,b) -> Ite(Lt(a,b), a, b)"""
@@ -1746,19 +1764,19 @@ class MethodVisitor(ast.NodeVisitor):
         if func_name == "clip":
             if len(args) != 3:
                 raise ValueError("np.clip() requires 3 arguments (x, low, high)")
-            x_wire = self._convert_expr(args[0], target_dtype=target_dtype)
-            low_wire = self._convert_expr(args[1], target_dtype=x_wire.dtype)
-            high_wire = self._convert_expr(args[2], target_dtype=x_wire.dtype)
+            x_val = self._convert_expr(args[0], target_dtype=target_dtype)
+            low_val = self._convert_expr(args[1], target_dtype=self._d(x_val))
+            high_val = self._convert_expr(args[2], target_dtype=self._d(x_val))
             # max(x, low)
-            cmp1 = Wire(Bool())
-            self.terms.append(Term(IType.Gt(), [cmp1], [x_wire, low_wire]))
-            lo = Wire(x_wire.dtype)
-            self.terms.append(Term(IType.Ite(), [lo], [cmp1, x_wire, low_wire]))
+            cmp1 = self.builder.gt(x_val, low_val)
+            self.terms.append(cmp1)
+            lo = self.builder.ite(cmp1, x_val, low_val)
+            self.terms.append(lo)
             # min(lo, high)
-            cmp2 = Wire(Bool())
-            self.terms.append(Term(IType.Lt(), [cmp2], [lo, high_wire]))
-            result = Wire(x_wire.dtype)
-            self.terms.append(Term(IType.Ite(), [result], [cmp2, lo, high_wire]))
+            cmp2 = self.builder.lt(lo, high_val)
+            self.terms.append(cmp2)
+            result = self.builder.ite(cmp2, lo, high_val)
+            self.terms.append(result)
             return result
 
         if len(args) != 1:
@@ -1771,10 +1789,7 @@ class MethodVisitor(ast.NodeVisitor):
         elif func_name == "ones":
             tensor_data = torch.ones(*self._eval_shape(args[0]), dtype=tdtype)
         elif func_name == "array":
-            if isinstance(args[0], (ast.List, ast.Tuple)):
-                return self._convert_list_literal(args[0], target_dtype)
-            # np.array(existing_wire) -> pass through
-            return self._convert_expr(args[0], target_dtype=target_dtype)
+            return self._convert_list_literal(args[0], target_dtype)
         else:
             raise ValueError(f"Unsupported NumPy function: np.{func_name}()")
 
@@ -1834,6 +1849,12 @@ class MethodVisitor(ast.NodeVisitor):
             return self.builder.mul(left_val, right_val)
         elif op_type is ast.Div:
             raise ValueError("Division is not supported")
+        elif op_type is ast.Pow:
+            # Non-linear: deferred. builder.mul would raise NonLinearError for
+            # variable**n in LIA/LRA; surface a clean NotImplementedError instead.
+            raise NotImplementedError(
+                "power operator (**) is deferred: non-linear in LIA/LRA"
+            )
         else:
             raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
 
@@ -1844,12 +1865,6 @@ class MethodVisitor(ast.NodeVisitor):
         - With target_dtype: both operands inherit it (e.g., self.x = 2 + 3 -> both Int)
         - Without: right operand inherits from left (e.g., self.x + 3 -> 3 matches x's dtype)
         """
-        # Pow with a literal non-negative int exponent: expand to repeated multiplication
-        if isinstance(binop.op, ast.Pow):
-            if isinstance(binop.right, ast.Constant) and isinstance(binop.right.value, int) and binop.right.value >= 0:
-                return self._expand_pow(binop.left, binop.right.value, target_dtype)
-            raise ValueError("Pow (**) only supports literal non-negative int exponents")
-
         if target_dtype:
             left_val = self._convert_expr(binop.left, target_dtype=target_dtype)
             right_val = self._convert_expr(binop.right, target_dtype=target_dtype)
@@ -1964,7 +1979,14 @@ class MethodVisitor(ast.NodeVisitor):
 
         for op, comparator in zip(compare.ops, compare.comparators):
             left_val = self._convert_expr(left)
-            right_val = self._convert_expr(comparator, target_dtype=self._d(left_val))
+            target = None if isinstance(left_val, _StaticValue) else self._d(left_val)
+            right_val = self._convert_expr(comparator, target_dtype=target)
+
+            # Static evaluation when both sides are compile-time values (str, None, etc.)
+            if isinstance(left_val, _StaticValue) and isinstance(
+                right_val, _StaticValue
+            ):
+                return _StaticValue(_eval_static_compare(left_val.value, op, right_val.value))
 
             op_type = type(op)
             if op_type not in COMPARE_OPS:
@@ -2017,41 +2039,33 @@ class MethodVisitor(ast.NodeVisitor):
             return term
         elif isinstance(value, (int, float)):
             if target_dtype is None:
-                target_dtype = Float()
+                target_dtype = Sort.Real([1, 1])
             tensor_data = torch.tensor([value], dtype=_torch_dtype(target_dtype))
             term = self.builder.const(tensor_data)
             self.terms.append(term)
             return term
+        elif value is None or isinstance(value, str):
+            return _StaticValue(value)
         else:
             raise ValueError(f"Unsupported constant type: {type(value)}")
 
     def _convert_list_literal(self, node, target_dtype=None):
-        """Convert a list/tuple literal. Constant lists become Tensor; dynamic lists use Stack."""
+        """Convert a list/tuple literal to a constant Tensor wire.
+
+        Constant literals fold to a Tensor. Dynamic lists (elements that are
+        wires/subscripts) would need a Stack op, which is deferred."""
         try:
             data = self._eval_literal(node)
-            tensor_data = torch.tensor(data, dtype=_torch_dtype(target_dtype))
-            return self._make_tensor_wire(tensor_data, target_dtype)
         except ValueError:
-            # Elements are not all literals — convert each as an expression and Stack
-            element_wires = [self._convert_expr(elt) for elt in node.elts]
-            # Compute output dtype: Float with total size = sum of element sizes
-            total_size = sum(w.dtype.shape[0] if hasattr(w.dtype, 'shape') else 1 for w in element_wires)
-            out_dtype = DType.Float([total_size])
-            output_wire = Wire(out_dtype)
-            self.terms.append(Term(IType.Stack(), [output_wire], element_wires))
-            return output_wire
+            raise NotImplementedError(
+                "dynamic list literal (Stack op) is deferred"
+            )
+        tensor_data = torch.tensor(data, dtype=_torch_dtype(target_dtype))
+        return self._make_tensor_wire(tensor_data, target_dtype)
 
     def _convert_subscript(self, expr, target_dtype=None):
-        """Convert x[i] where i is a literal int. Emits TensorGet."""
-        if not (isinstance(expr.slice, ast.Constant) and isinstance(expr.slice.value, int)):
-            raise ValueError("Subscript index must be a literal int")
-        index = expr.slice.value
-        base_wire = self._convert_expr(expr.value)
-        idx_wire = Wire(DType.Int([1]))
-        self.terms.append(Term(IType.ConstInt(index), [idx_wire], []))
-        result = Wire(Float(1))
-        self.terms.append(Term(IType.TensorGet(), [result], [base_wire, idx_wire]))
-        return result
+        """x[i] would need a TensorGet op, which is deferred."""
+        raise NotImplementedError("subscript (TensorGet op) is deferred")
 
     def _convert_attribute(self, attr):
         """Convert self.attr: returns locally-assigned wire if available, else the input wire."""
@@ -2122,6 +2136,7 @@ def convert_method(
     live_layers: dict | None = None,
     builder: TermBuilder | None = None,
     theory=None,
+    static_attrs: dict[str, Any] | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 
@@ -2162,6 +2177,7 @@ def convert_method(
         params=params,
         live_layers=live_layers,
         builder=builder,
+        static_attrs=static_attrs,
     )
     visitor.temp_vars.update(
         {name: wires[name][0] for name in param_names if name in wires}
