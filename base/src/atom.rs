@@ -316,7 +316,7 @@ where
             }
         }
 
-        for (&ctr, _) in ctrl.iter() {
+        for &ctr in ctrl.keys() {
             if !init.write().ids().any(|wrt| wrt == ctr) {
                 return Err(format!("Controlled wire {} is not written in init", ctr));
             }
