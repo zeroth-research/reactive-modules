@@ -1,49 +1,22 @@
-from .zrth import (
-    Wire,
-    DType,
-    IType,
-    Term,
-    Module,
+from .zrth import *
+
+# makes sorts available on the base namespace
+for _name in dir(Sort):
+    if not _name.startswith('_'):
+        globals()[_name] = getattr(Sort, _name)
+
+from .builder import (
+    builder_for,
+    LRATermBuilder,
+    LIATermBuilder,
+    BVTermBuilder,
+    TheoryError,
+    NonLinearError,
 )
-
-
-#####################################################################
-# IType and DType
-#####################################################################
-
-
-# Add type aliases to the DType object
-def Bool(*shape):
-    return DType.Bool([*shape])
-
-
-def Int(*shape):
-    return DType.Int([*shape])
-
-
-def Real(*shape):
-    return DType.Real([*shape])
-
-
-def Float(*args):
-    return DType.Float([*args])
-
-
 from .gym import Env
 from .smv import parse_smv
 from .smt import z3
 
-# Submodule access: from zrth.gym import Env
-#                   from zrth.torch import Module
+# Submodule access: from zrth.gym import Env ; from zrth.torch import Module
 from . import gym as gym
 from . import torch as torch
-
-
-__all__ = [
-    "Wire",
-    "DType",
-    "IType",
-    "Term",
-    "Module",
-    "Env",
-]
