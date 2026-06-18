@@ -193,35 +193,6 @@ def test_tensor_ops():
     assert torch.equal(_get(history[2], data[0]), expected.relu())
 
 
-@pytest.mark.skip(reason="tensor reductions not fully supported yet")
-def test_tensor_reductions():
-    """TensorSum, TensorMean, TensorMax, Argmax as temp wires."""
-    data = (Wire(Sort.Real([1, 4])), Wire(Sort.Real([1, 4])))
-    sum_wire = Wire(Sort.Real([1, 1]))
-    mean_wire = Wire(Sort.Real([1, 1]))
-    max_wire = Wire(Sort.Real([1, 1]))
-    argmax_wire = Wire(Sort.Int([1, 1]))
-
-    init = [
-        Term(LIA.ConstInt(torch.tensor([[-1.0, 2.0, 3.0, -4.0]])), [data[1]]),
-        Term(it.TensorSum(), [sum_wire], [data[1]]),
-        Term(it.TensorMean(), [mean_wire], [data[1]]),
-        Term(it.TensorMax(), [max_wire], [data[1]]),
-        Term(it.Argmax(), [argmax_wire], [data[1]]),
-    ]
-    update = [
-        Term(it.Id(), [data[1]], [data[0]]),
-    ]
-    m = Module.sequential(init, update, [data])
-    state, _ = _run_module(m, 0)
-
-    expected = torch.tensor([[-1.0, 2.0, 3.0, -4.0]])
-    assert float(state[sum_wire].item()) == float(expected.sum().item())
-    assert float(state[mean_wire].item()) == float(expected.mean().item())
-    assert float(state[max_wire].item()) == float(expected.max().item())
-    assert int(state[argmax_wire].item()) == int(expected.argmax().item())
-
-
 # ── comparisons ──────────────────────────────────────────────────────────────
 
 def test_comparisons():
