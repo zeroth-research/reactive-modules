@@ -112,6 +112,11 @@ def eval(itype, read):
         case LRA.Max() | LIA.Max():
             return [[z3.If(a >= b, a, b) for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]]
 
+        # matrix: wire values are flat expression lists, so for the vector shapes
+        # the Linear path transposes (1xn <-> nx1) this is identity on the flat form.
+        case LRA.Transpose() | LIA.Transpose():
+            return [r[0]]
+
         case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):
             raise RuntimeError(f"cannot translate uninterpreted '{name}' to Z3")
 
