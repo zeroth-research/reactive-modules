@@ -7,7 +7,7 @@ use theory::lra::LRA;
 use theory::{bv, lia, lra};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[pyclass(frozen)]
+#[pyclass(frozen, eq)]
 pub enum Sort {
     Bool([usize; 2]),
     Real([usize; 2]),

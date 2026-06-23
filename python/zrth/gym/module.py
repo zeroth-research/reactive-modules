@@ -106,9 +106,13 @@ def _space_to_abstract(name, space):
 def _extract_env_module(env_instance, theory=None, **kwargs):
     """Analyze a gym.Env instance and extract a symbolic Module.
 
-def _extract_env_module(env_instance, theory=None, **kwargs):
-    """Analyze a gym.Env instance and extract a symbolic Module."""
-    env_cls = type(env_instance)
+    If env_instance is wrapped (e.g. TimeLimit from gym.make), the raw inner
+    env is analyzed symbolically, but the wrapped instance remains the
+    backing env for runtime delegation — so TimeLimit/OrderEnforcing etc.
+    still apply during step/reset.
+    """
+    raw = env_instance.unwrapped
+    env_cls = type(raw)
 
     user_wires = {
         "action": kwargs.pop("action", None),
@@ -260,10 +264,8 @@ class Env(Module, gym.Wrapper):
                 # If it's already an Env with a backing env, unwrap
                 if isinstance(a, Env) and a._backing_env is not None:
                     if backing_env is not None:
-                        raise TypeError(
-                            "Wrapper requires exactly 1 gym.Env, got multiple"
-                        )
-                    backing_env = env
+                        raise ValueError("Env accepts at most 1 gym.Env, got multiple")
+                    backing_env = a.unwrapped
             elif isinstance(a, gym.Env):
                 raw_envs.append(a)
             else:
@@ -385,7 +387,7 @@ class Env(Module, gym.Wrapper):
             value = getattr(self.env, name, None)
             if value is not None:
                 if isinstance(value, bool):
-                    self._state[nxt] = torch.tensor([value])
+                    self._state[nxt] = torch.tensor([1.0 if value else 0.0])
                 elif isinstance(value, (int, float)):
                     self._state[nxt] = torch.tensor([float(value)])
                 elif isinstance(value, torch.Tensor):
@@ -421,7 +423,7 @@ class Env(Module, gym.Wrapper):
     def reset(self, *, seed=None, options=None):
         self._state = {}
         p = self._pairs
-        env_atom_idx = object.__getattribute__(self, "_env_atom_idx")
+        env_atom_idx = self._env_atom_idx
 
         # Reset real env if present
         reset_obs = None
@@ -455,7 +457,7 @@ class Env(Module, gym.Wrapper):
         if not self._initialized:
             raise RuntimeError("call reset() before step()")
         p = self._pairs
-        env_atom_idx = object.__getattribute__(self, "_env_atom_idx")
+        env_atom_idx = self._env_atom_idx
 
         # Write action to symbolic state, unless an upstream atom drives it
         # (closed-loop with a composed controller — its latched output is used).
