@@ -26,19 +26,19 @@ shapes against the selected operation.
 ## Examples
 
 ```
-* use theory::Theory;
-* use theory::lra::{LRA, Sort};
-*
-* // Pointwise less-than on scalars: Real(1,1), Real(1,1) -> Bool(1,1).
-* let i = Type::Real([1, 1]);
-* let b = Type::Bool([1, 1]);
-* assert!(LRA::Lt.check([i, i], [b]).is_ok());
-*
-* // ReLU preserves shape and stays in the real fragment.
-* let m = Type::Real([3, 4]);
-* assert!(LRA::ReLU.check([m], [m]).is_ok());
-* assert!(LRA::ReLU.check([b], [b]).is_err());
-* ```
+use theory::Theory;
+use theory::lra::{LRA, Sort};
+
+// Pointwise less-than on scalars: Real(1,1), Real(1,1) -> Bool(1,1).
+let i = Sort::Real([1, 1]);
+let b = Sort::Bool([1, 1]);
+assert!(LRA::Lt().check([i, i], [b]).is_ok());
+
+// ReLU preserves shape and stays in the real fragment.
+let m = Sort::Real([3, 4]);
+assert!(LRA::ReLU().check([m], [m]).is_ok());
+assert!(LRA::ReLU().check([b], [b]).is_err());
+```
 */
 
 use crate::*;

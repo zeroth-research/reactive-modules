@@ -26,19 +26,19 @@ shapes against the selected operation.
 ## Examples
 
 ```
-* use theory::Theory;
-* use theory::lia::{LIA, Sort};
-*
-* // Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
-* let i = Type::Int([1, 1]);
-* let b = Type::Bool([1, 1]);
-* assert!(LIA::Lt.check([i, i], [b]).is_ok());
-*
-* // ReLU preserves shape and stays in the integer fragment.
-* let m = Type::Int([3, 4]);
-* assert!(LIA::ReLU.check([m], [m]).is_ok());
-* assert!(LIA::ReLU.check([b], [b]).is_err());
-* ```
+use theory::Theory;
+use theory::lia::{LIA, Sort};
+
+// Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
+let i = Sort::Int([1, 1]);
+let b = Sort::Bool([1, 1]);
+assert!(LIA::Lt().check([i, i], [b]).is_ok());
+
+// ReLU preserves shape and stays in the integer fragment.
+let m = Sort::Int([3, 4]);
+assert!(LIA::ReLU().check([m], [m]).is_ok());
+assert!(LIA::ReLU().check([b], [b]).is_err());
+```
 */
 
 use crate::*;

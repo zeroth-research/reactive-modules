@@ -22,22 +22,22 @@ validating read/write argument shapes against the operation.
 ## Examples
 
 ```
-* use theory::Theory;
-* use theory::bv::{BV, Sort};
-*
-*  // 8-bit bit-vectors.
-*  let a = Type::BV(8, [2, 3]);
-*  let b = Type::BV(8, [3, 4]);
-*  let c = Type::BV(8, [2, 4]);
-*
-*  // Matrix multiply: (2x3) * (3x4) -> (2x4).
-*  assert!(BV::MatMul.check([a, b], [c]).is_ok());
-*
-*  // Elementwise `Add` requires matching shapes.
-*  let m = Type::BV(8, [2, 3]);
-*  assert!(BV::Add.check([m, m], [m]).is_ok());
-*  assert!(BV::Add.check([a, b], [c]).is_err());
-*  ```
+use theory::Theory;
+use theory::bv::{BV, Sort};
+
+// 8-bit bit-vectors.
+let a = Sort::BV(8, [2, 3]);
+let b = Sort::BV(8, [3, 4]);
+let c = Sort::BV(8, [2, 4]);
+
+// Matrix multiply: (2x3) * (3x4) -> (2x4).
+assert!(BV::MatMul().check([a, b], [c]).is_ok());
+
+// Elementwise Add requires matching shapes.
+let m = Sort::BV(8, [2, 3]);
+assert!(BV::Add().check([m, m], [m]).is_ok());
+assert!(BV::Add().check([a, b], [c]).is_err());
+```
 */
 
 use crate::*;
