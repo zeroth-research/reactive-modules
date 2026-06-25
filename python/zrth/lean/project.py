@@ -359,7 +359,7 @@ def create_project(
     ctx = LeanContext(module, cert_terms=cert_terms)
     m2l = ModuleToLean4(ctx)
 
-    root_lean = project_dir / "Root.lean"
+    root_lean = project_dir / "System.lean"
     root_lean.write_text(generate_root(scalar=m2l._can_scalarize()))
     print(f"Wrote root module {root_lean}")
 
