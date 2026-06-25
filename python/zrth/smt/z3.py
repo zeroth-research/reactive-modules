@@ -1,18 +1,17 @@
+"""Translate theory_pyo3 terms to Z3 expressions.
+
+Each wire value is a list of Z3 expressions (the flattened tensor). Dispatch is
+by `match` on the op; LIA/LRA share cases. BV -> Z3 (BitVec) is not implemented
+yet (BV ops fall through to a clear error).
+"""
+
 import z3
 import torch
-from ..zrth import IType, DType
-
-
-def eval(itype, read):
-    """Evaluate a single instruction type, producing Z3 expressions."""
-    fn = _Z3_EVAL.get(type(itype))
-    if fn is None:
-        raise RuntimeError(f"cannot translate instruction type '{type(itype).__name__}' to Z3")
-    return fn(itype, read)
+from ..zrth import LRA, LIA, BV
 
 
 def _tensor_to_z3(tensor):
-    """Convert a torch.Tensor to a list of Z3 constants."""
+    """Convert a torch.Tensor to a list of Z3 constants (sort chosen by dtype)."""
     flat = tensor.detach().flatten().tolist()
     if tensor.dtype == torch.bool:
         return [z3.BoolVal(bool(v)) for v in flat]
@@ -23,87 +22,102 @@ def _tensor_to_z3(tensor):
 
 
 def _to_arith(vals):
-    """Coerce a list of Z3 expressions to ArithRef (Bool -> If(b, 1, 0))."""
+    """Coerce Z3 expressions to arithmetic (Bool -> If(b, 1, 0))."""
     return [z3.If(v, z3.RealVal(1), z3.RealVal(0)) if z3.is_bool(v) else v for v in vals]
 
 
 def _to_bool(vals):
-    """Coerce a list of Z3 expressions to BoolRef (ArithRef -> val != 0)."""
+    """Coerce Z3 expressions to Bool (arith -> val != 0)."""
     return [v if z3.is_bool(v) else v != z3.RealVal(0) for v in vals]
 
 
-def _z3_ite(itype, read):
-    cond = read[0]
-    then_branch = read[1]
-    else_branch = read[2]
+def _z3_linear(weight, bias, read):
+    """A·x (+ b) for constant tensors `weight` [out, in] and `bias`."""
+    x = _to_arith(read[0])
+    w = _tensor_to_z3(weight)  # flattened row-major
+    n_out, n_in = int(weight.shape[0]), int(weight.shape[1])
+    has_bias = bias is not None and bias.numel() > 0
+    b = _to_arith(_tensor_to_z3(bias)) if has_bias else None
+    result = []
+    for i in range(n_out):
+        s = z3.Sum([w[i * n_in + j] * x[j] for j in range(n_in)]) if n_in else z3.RealVal(0)
+        if has_bias:
+            s = s + b[i]
+        result.append(s)
+    return [result]
 
-    # Condition must be boolean; if it's arithmetic, coerce
-    cond_vals = _to_bool(cond)
-    # Broadcast scalar condition
-    c = cond_vals[0]
 
-    # Align branch types
+def _z3_ite(read):
+    cond, then_branch, else_branch = read[0], read[1], read[2]
+    c = _to_bool(cond)[0]
     if any(z3.is_bool(v) for v in then_branch) or any(z3.is_bool(v) for v in else_branch):
-        # If either branch is bool, check if the other is too
-        then_all_bool = all(z3.is_bool(v) for v in then_branch)
-        else_all_bool = all(z3.is_bool(v) for v in else_branch)
-        if then_all_bool and else_all_bool:
+        if all(z3.is_bool(v) for v in then_branch) and all(z3.is_bool(v) for v in else_branch):
             return [z3.If(c, t, f) for t, f in zip(then_branch, else_branch)]
-        # Mixed: coerce everything to arithmetic
         then_branch = _to_arith(then_branch)
         else_branch = _to_arith(else_branch)
-
     return [z3.If(c, t, f) for t, f in zip(then_branch, else_branch)]
 
 
-def _z3_linear(itype, read):
-    """Linear: input @ weight.T + bias"""
-    input_vec = read[0]
-    weight_flat = read[1]
-    bias = read[2]
+def eval(itype, read):
+    """Translate a single op to Z3 expressions."""
+    r = read
+    match itype:
+        case LRA.Id() | LIA.Id():
+            return [r[0]]
 
-    in_features = len(input_vec)
-    out_features = len(bias)
+        case LRA.ConstReal(t) | LRA.ConstBool(t) | LIA.ConstInt(t) | LIA.ConstBool(t):
+            return [_tensor_to_z3(t)]
 
-    result = []
-    for o in range(out_features):
-        dot = z3.Sum([weight_flat[o * in_features + i] * input_vec[i]
-                      for i in range(in_features)])
-        result.append(dot + bias[o])
-    return result
+        # arithmetic
+        case LRA.Add() | LIA.Add():
+            return [[a + b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]]
+        case LRA.Sub() | LIA.Sub():
+            return [[a - b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]]
+        case LRA.Linear(weight, bias) | LIA.Linear(weight, bias):
+            return _z3_linear(weight, bias, r)
 
+        # comparisons (produce Bool)
+        case LRA.Eq() | LIA.Eq():
+            return [[a == b for a, b in zip(r[0], r[1])]]
+        case LRA.Ne() | LIA.Ne():
+            return [[a != b for a, b in zip(r[0], r[1])]]
+        case LRA.Lt() | LIA.Lt():
+            return [[a < b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]]
+        case LRA.Le() | LIA.Le():
+            return [[a <= b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]]
+        case LRA.Gt() | LIA.Gt():
+            return [[a > b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]]
+        case LRA.Ge() | LIA.Ge():
+            return [[a >= b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]]
 
-# ============================================================================
-# Dispatch table
-# ============================================================================
+        # logical
+        case LRA.And() | LIA.And():
+            return [[z3.And(a, b) for a, b in zip(_to_bool(r[0]), _to_bool(r[1]))]]
+        case LRA.Or() | LIA.Or():
+            return [[z3.Or(a, b) for a, b in zip(_to_bool(r[0]), _to_bool(r[1]))]]
+        case LRA.Not() | LIA.Not():
+            return [[z3.Not(a) for a in _to_bool(r[0])]]
+        case LRA.Xor() | LIA.Xor():
+            return [[z3.Xor(a, b) for a, b in zip(_to_bool(r[0]), _to_bool(r[1]))]]
 
-_Z3_EVAL = {
-    type(IType.Tensor(torch.zeros(1))): lambda it, r: [_tensor_to_z3(it._0)],
-    type(IType.Id()): lambda it, r: [r[0]],
-    # Arithmetic (element-wise)
-    type(IType.Add()): lambda it, r: [[a + b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
-    type(IType.Sub()): lambda it, r: [[a - b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
-    type(IType.Mul()): lambda it, r: [[a * b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
-    type(IType.Div()): lambda it, r: [[a / b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
-    type(IType.Neg()): lambda it, r: [[-a for a in _to_arith(r[0])]],
-    type(IType.Abs()): lambda it, r: [[z3.If(a >= 0, a, -a) for a in _to_arith(r[0])]],
-    # Comparisons (element-wise, produce Bool)
-    type(IType.Eq()): lambda it, r: [[a == b for a, b in zip(r[0], r[1])]],
-    type(IType.Neq()): lambda it, r: [[a != b for a, b in zip(r[0], r[1])]],
-    type(IType.Lt()): lambda it, r: [[a < b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
-    type(IType.Le()): lambda it, r: [[a <= b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
-    type(IType.Gt()): lambda it, r: [[a > b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
-    type(IType.Ge()): lambda it, r: [[a >= b for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]],
-    # Logical (element-wise)
-    type(IType.And()): lambda it, r: [[z3.And(a, b) for a, b in zip(_to_bool(r[0]), _to_bool(r[1]))]],
-    type(IType.Or()): lambda it, r: [[z3.Or(a, b) for a, b in zip(_to_bool(r[0]), _to_bool(r[1]))]],
-    type(IType.Not()): lambda it, r: [[z3.Not(a) for a in _to_bool(r[0])]],
-    # Control flow
-    type(IType.Ite()): lambda it, r: [_z3_ite(it, r)],
-    # Activation / neural
-    type(IType.ReLU()): lambda it, r: [[z3.If(x > 0, x, z3.RealVal(0)) for x in _to_arith(r[0])]],
-    type(IType.Linear()): lambda it, r: [_z3_linear(it, r)],
-    # Constants
-    type(IType.ConstBool(False)): lambda it, r: [[z3.BoolVal(it._0)]],
-    type(IType.ConstInt(0)): lambda it, r: [[z3.IntVal(it._0)]],
-}
+        # control flow
+        case LRA.Ite() | LIA.Ite():
+            return [_z3_ite(r)]
+
+        # neural-ish / aggregate
+        case LRA.ReLU() | LIA.ReLU():
+            return [[z3.If(x > 0, x, z3.RealVal(0)) for x in _to_arith(r[0])]]
+        case LRA.Min() | LIA.Min():
+            return [[z3.If(a <= b, a, b) for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]]
+        case LRA.Max() | LIA.Max():
+            return [[z3.If(a >= b, a, b) for a, b in zip(_to_arith(r[0]), _to_arith(r[1]))]]
+
+        # matrix: wire values are flat expression lists, so for the vector shapes
+        # the Linear path transposes (1xn <-> nx1) this is identity on the flat form.
+        case LRA.Transpose() | LIA.Transpose():
+            return [r[0]]
+
+        case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):
+            raise RuntimeError(f"cannot translate uninterpreted '{name}' to Z3")
+
+    raise RuntimeError(f"cannot translate op to Z3: {itype} (BV -> Z3 BitVec is TODO)")

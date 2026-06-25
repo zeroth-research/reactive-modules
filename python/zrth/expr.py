@@ -1,27 +1,27 @@
-from typing import Any, override
+from typing import override
 
-from .zrth import DType, IType, Term, Wire
+from .zrth import Sort, Term
+from .builder import TermBuilder, builder_for, _normalize_shape
 import torch
 
 # types that we can convert to [Expr]
 type ToExpr = Expr | int | bool | float | torch.Tensor
 
 
+# ---------------------------------------------------------------------------
+# Expr class hierarchy
+# ---------------------------------------------------------------------------
+
+
 class Expr:
-    def __init__(self, itype: IType, dtype: DType, *args):
-        assert all(isinstance(arg, Expr) for arg in args)
-        self._term = Term(itype, [Wire(dtype)], [a.wire for a in args])
-
-        self._itype = itype
-
-        self._wire = self._term.write[0]
-        self._dtype = self._wire.dtype
-        self._shape = self._dtype.shape
-
-        self._args = [*args]
+    """Base class for symbolic expressions. All instances are created via _expr_from_term."""
 
     @property
-    def dtype(self):
+    def builder(self) -> TermBuilder:
+        return self._builder
+
+    @property
+    def dtype(self) -> Sort:
         return self._dtype
 
     @property
@@ -116,6 +116,9 @@ class WExpr(Expr):
     def __neg__(self) -> "WExpr":
         return w_neg(self)
 
+    def __abs__(self) -> "WExpr":
+        return w_abs(self)
+
     def __and__(self, other: "WExpr") -> "WExpr":
         return w_and(self, other)
 
@@ -147,311 +150,280 @@ class WExpr(Expr):
         return w_neq(self, other)
 
 
-def _elementwise_op(itype: IType, wtype: DType, rtype: DType, first, *others):
-    if not isinstance(first, Expr):
-        raise Exception("type coercion unsupported")
-    shape = first.shape
-    for arg in others:
-        if not isinstance(arg, Expr):
-            raise Exception("type coercion unsupported")
-        if shape != arg.shape:
-            raise Exception("size mismatch")
-        if rtype != arg.dtype:
-            raise Exception("dtype mismatch")
+# ---------------------------------------------------------------------------
+# Core factory
+# ---------------------------------------------------------------------------
 
-    match wtype:
-        case DType.Bool(_):
-            return BExpr(itype, wtype, first, *others)
-        case DType.Real(_):
-            return AExpr(itype, wtype, first, *others)
-        case DType.Int(_):
-            return AExpr(itype, wtype, first, *others)
-        case DType.UWord(_) | DType.SWord(_):
-            return WExpr(itype, wtype, first, *others)
+
+def _expr_from_term(term: Term, builder: TermBuilder, *args: Expr) -> Expr:
+    """Create the right Expr subclass from an already-constructed Term."""
+    sort = term.write[0].dtype
+    match sort:
+        case Sort.Bool(s):
+            cls, shape = BExpr, list(s)
+        case Sort.Int(s) | Sort.Real(s):
+            cls, shape = AExpr, list(s)
+        case Sort.BitVec(_, s):
+            cls, shape = WExpr, list(s)
         case _:
-            raise NotImplementedError
+            raise TypeError(f"unknown sort: {sort}")
+    e = cls.__new__(cls)
+    e._term = term
+    e._builder = builder
+    e._itype = term.itype
+    e._wire = term.write[0]
+    e._dtype = sort
+    e._shape = shape
+    e._args = list(args)
+    return e
 
 
-# ========================================
-# Elementwise logical operators
-# ========================================
+# ---------------------------------------------------------------------------
+# Boolean operators
+# ---------------------------------------------------------------------------
 
 
-def _elementwise_bool_op(itype, first: BExpr, *others):
-    if not isinstance(first.dtype, DType.Bool):
-        raise ValueError(f"invalid dtype, expected Bool(...), got: `{first.dtype}`")
-
-    return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
-
-
-# Logical or (we have to avoid clash with Python keyword 'or')
-def disj(first: BExpr, *others) -> BExpr:
-    return _elementwise_bool_op(IType.Or(), first, *others)
-
-
-# Logical and
 def conj(first: BExpr, *others) -> BExpr:
-    return _elementwise_bool_op(IType.And(), first, *others)
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.and_(acc.wire, other.wire), b, acc, other)
+    return acc
 
 
-# Logical not
+def disj(first: BExpr, *others) -> BExpr:
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.or_(acc.wire, other.wire), b, acc, other)
+    return acc
+
+
 def neg(e: BExpr) -> BExpr:
-    if not isinstance(e.dtype, DType.Bool):
-        raise ValueError(f"invalid dtype, expected Bool(...), got: `{e.dtype}`")
-
-    return BExpr(IType.Not(), e.dtype, e)
+    return _expr_from_term(e._builder.not_(e.wire), e._builder, e)
 
 
-# ========================================
-# Elementwise arithmetics operators
-# ========================================
-
-
-def _elementwise_arith_op(itype, first: Expr, *others):
-    if not isinstance(first.dtype, (DType.Real, DType.Int)):
-        raise Exception("invalid dtype")
-
-    return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
+# ---------------------------------------------------------------------------
+# Arithmetic operators
+# ---------------------------------------------------------------------------
 
 
 def add(first: AExpr, *others) -> AExpr:
-    return _elementwise_arith_op(IType.Add(), first, *others)
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.add(acc.wire, other.wire), b, acc, other)
+    return acc
+
+
+def sub(lhs: AExpr, rhs: AExpr) -> AExpr:
+    b = lhs._builder
+    return _expr_from_term(b.sub(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def mul(first: AExpr, *others) -> AExpr:
-    return _elementwise_arith_op(IType.Mul(), first, *others)
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.mul(acc, other.wire), b, acc, other)
+    return acc
 
 
 def div(num: AExpr, den: AExpr) -> AExpr:
-    return _elementwise_arith_op(IType.Div(), num, den)
+    b = num._builder
+    return _expr_from_term(b.div(num.wire, den.wire), b, num, den)
 
 
-def sub(min: AExpr, sub: AExpr) -> AExpr:
-    return _elementwise_arith_op(IType.Sub(), min, sub)
-
-
-# ========================================
-# Elementwise predicates
-# ========================================
-
-
-def _elementwise_predicate(itype, lhs: AExpr, rhs: AExpr):
-    if not isinstance(lhs.dtype, (DType.Real, DType.Int)):
-        raise Exception("invalid dtype")
-    if not isinstance(rhs.dtype, (DType.Real, DType.Int)):
-        raise Exception("invalid dtype")
-
-    return _elementwise_op(itype, DType.Bool(lhs.shape), lhs.dtype, lhs, rhs)
+# ---------------------------------------------------------------------------
+# Predicates
+# ---------------------------------------------------------------------------
 
 
 def lt(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Lt(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.lt(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def gt(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Gt(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.gt(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def ge(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Ge(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.ge(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def le(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Le(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.le(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def eq(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Eq(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.eq(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def neq(lhs: AExpr, rhs: AExpr) -> BExpr:
-    return _elementwise_predicate(IType.Neq(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.ne(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
-# ========================================
-# Control Flow
-# ========================================
+# ---------------------------------------------------------------------------
+# Control flow
+# ---------------------------------------------------------------------------
 
 
-def ite(cond: BExpr, iftrue: Expr, iffalse: Expr):
-    if not cond.shape == [1]:
-        raise Exception("invalid Boolean condition")
-    if iftrue.dtype != iffalse.dtype:
-        raise Exception("dtype mismatch")
-
-    assert isinstance(iftrue, (BExpr, AExpr))
-    assert type(iftrue) is type(iffalse)
-    return type(iftrue)(IType.Ite(), iftrue.dtype, cond, iftrue, iffalse)
+def ite(cond: BExpr, iftrue: Expr, iffalse: Expr) -> Expr:
+    if not isinstance(iftrue, (BExpr, AExpr)):
+        raise ValueError(f"ite: expected AExpr or BExpr, got {type(iftrue).__name__}")
+    if type(iftrue) is not type(iffalse):
+        raise ValueError(f"ite: branch types must match, got {type(iftrue).__name__} and {type(iffalse).__name__}")
+    b = iftrue._builder
+    return _expr_from_term(b.ite(cond.wire, iftrue.wire, iffalse.wire), b, cond, iftrue, iffalse)
 
 
-# ========================================
-# Word-level operators
-# ========================================
+# ---------------------------------------------------------------------------
+# Tensor operations
+# ---------------------------------------------------------------------------
 
 
-def _word_arith_op(itype, first: WExpr, *others):
-    if not isinstance(first.dtype, (DType.UWord, DType.SWord)):
-        raise Exception("invalid dtype for word-level op")
-    return _elementwise_op(itype, first.dtype, first.dtype, first, *others)
+def argmax(arg: Expr) -> Expr:
+    return _expr_from_term(arg._builder.argmax(arg.wire), arg._builder, arg)
 
 
-def _word_predicate(itype, lhs: WExpr, rhs: WExpr):
-    if not isinstance(lhs.dtype, (DType.UWord, DType.SWord)):
-        raise Exception("invalid dtype for word-level op")
-    return _elementwise_op(itype, DType.Bool([1]), lhs.dtype, lhs, rhs)
+def matmul(lhs: Expr, rhs: Expr) -> Expr:
+    term = lhs._builder.matmul(lhs._term, rhs.wire)
+    return _expr_from_term(term, lhs._builder, lhs, rhs)
+
+
+# ---------------------------------------------------------------------------
+# Word-level (BV) operators
+# ---------------------------------------------------------------------------
 
 
 def w_add(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Add(), first, *others)
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.add(acc.wire, other.wire), b, acc, other)
+    return acc
 
 
 def w_sub(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Sub(), first, *others)
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.sub(acc.wire, other.wire), b, acc, other)
+    return acc
 
 
 def w_mul(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Mul(), first, *others)
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.mul(acc.wire, other.wire), b, acc, other)
+    return acc
 
 
 def w_div(num: WExpr, den: WExpr) -> WExpr:
-    return _word_arith_op(IType.Div(), num, den)
+    b = num._builder
+    return _expr_from_term(b.div(num.wire, den.wire), b, num, den)
 
 
 def w_mod(num: WExpr, den: WExpr) -> WExpr:
-    return _word_arith_op(IType.Mod(), num, den)
+    b = num._builder
+    return _expr_from_term(b.div(num.wire, den.wire), b, num, den)  # TODO: BV.Mod
 
 
 def w_neg(e: WExpr) -> WExpr:
-    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
-        raise Exception("invalid dtype for word-level op")
-    return WExpr(IType.Neg(), e.dtype, e)
+    return _expr_from_term(e._builder.neg(e.wire), e._builder, e)
 
 
 def w_abs(e: WExpr) -> WExpr:
-    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
-        raise Exception("invalid dtype for word-level op")
-    return WExpr(IType.Abs(), e.dtype, e)
+    return _expr_from_term(e._builder.abs_(e.wire), e._builder, e)
 
 
 def w_and(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.And(), first, *others)
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.and_(acc.wire, other.wire), b, acc, other)
+    return acc
 
 
 def w_or(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Or(), first, *others)
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.or_(acc.wire, other.wire), b, acc, other)
+    return acc
 
 
 def w_xor(first: WExpr, *others) -> WExpr:
-    return _word_arith_op(IType.Xor(), first, *others)
+    b = first._builder
+    acc = first
+    for other in others:
+        acc = _expr_from_term(b.xor_(acc.wire, other.wire), b, acc, other)
+    return acc
 
 
 def w_not(e: WExpr) -> WExpr:
-    if not isinstance(e.dtype, (DType.UWord, DType.SWord)):
-        raise Exception("invalid dtype for word-level op")
-    return WExpr(IType.Not(), e.dtype, e)
+    return _expr_from_term(e._builder.not_(e.wire), e._builder, e)
 
 
 def w_lt(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Lt(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.lt(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def w_gt(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Gt(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.gt(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def w_le(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Le(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.le(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def w_ge(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Ge(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.ge(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def w_eq(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Eq(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.eq(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
 def w_neq(lhs: WExpr, rhs: WExpr) -> BExpr:
-    return _word_predicate(IType.Neq(), lhs, rhs)
+    b = lhs._builder
+    return _expr_from_term(b.ne(lhs.wire, rhs.wire), b, lhs, rhs)
 
 
-# ========================================
-# Tensor operations
-# ========================================
+# ---------------------------------------------------------------------------
+# Terminals — theory is required
+# ---------------------------------------------------------------------------
 
 
-def argmax(arg: Expr):
-    if len(arg.shape) > 1:
-        raise NotImplementedError(
-            "argmax not supported on matrices or higher-dimensional tensors"
-        )
-    return AExpr(IType.Argmax(), DType.Int([1]), arg)
-
-
-def matmul(lhs: Expr, rhs: Expr):
-    assert type(lhs) is type(rhs)
-
-    if len(lhs.shape) == 2 and len(rhs.shape) == 1:
-        # matrix @ vector
-        if lhs.shape[-1] != rhs.shape[0]:
-            raise RuntimeError("size mismatch")
-
-        wtype = type(lhs.dtype)(lhs.shape[:-1])
-
-        # TODO: differentiate itype to eliminate ambiguity, or parameterise it
-        return type(lhs)(IType.MatMul(), wtype, lhs, rhs)
-
-    elif len(lhs.shape) == len(rhs.shape) == 2:
-        # matrix @ matrix
-        if lhs.shape[-1] != rhs.shape[0]:
-            raise RuntimeError("size mismatch")
-
-        wtype = type(lhs.dtype)([lhs.shape[0], rhs.shape[1]])
-
-        return type(lhs)(IType.MatMul(), wtype, lhs, rhs)
-
-    raise RuntimeError(f"Unsupported matrix multiplication {lhs.shape} x {rhs.shape}")
-
-    # TODO: allow broadcasting
-
-
-# ========================================
-# Terminals
-# ========================================
-
-
-def Bool(x: bool | str | torch.Tensor, shape=None) -> BExpr:
+def Bool(x: bool | str | torch.Tensor, theory, shape=None) -> BExpr:
+    b = builder_for(theory)
     if isinstance(x, bool):
-        assert shape is None
-        dtype = DType.Bool([1])
-        t = torch.Tensor([x])
-        return BExpr(itype=IType.Tensor(t), dtype=dtype)
+        return _expr_from_term(b.const_bool(x), b)
     elif isinstance(x, torch.Tensor):
-        assert shape is None or shape == x.shape
-        assert x.dtype == torch.bool
-        dtype = DType.Bool(x.shape)
-        return BExpr(itype=IType.Tensor(x), dtype=dtype)
+        return _expr_from_term(b.const(x), b)
     elif isinstance(x, str):
-        # register symbol into context
-        dtype = DType.Bool(shape if shape is not None else [1])
-        return BExpr(itype=IType.Uninterpreted(x), dtype=dtype)
-
-    raise ValueError("Invalid argument to `Bool`")
+        return _expr_from_term(b.uninterpreted(x, Sort.Bool(_normalize_shape(shape or [1]))), b)
+    raise ValueError(f"Invalid argument to Bool: {type(x).__name__}")
 
 
-def Real(x: float | str | torch.Tensor, shape=None) -> AExpr:
-    if isinstance(x, float):
-        assert shape is None
-        dtype = DType.Real([1])
-        t = torch.Tensor([x])
-        return AExpr(itype=IType.Tensor(t), dtype=dtype)
+def Real(x: float | str | torch.Tensor, theory, shape=None) -> AExpr:
+    b = builder_for(theory)
+    if isinstance(x, (int, float)) and not isinstance(x, bool):
+        return _expr_from_term(b.const_for_value(float(x)), b)
     elif isinstance(x, torch.Tensor):
-        assert shape is None or shape == x.shape
-        dtype = DType.Real(x.shape)
-        return AExpr(itype=IType.Tensor(x), dtype=dtype)
+        return _expr_from_term(b.const(x), b)
     elif isinstance(x, str):
-        # register symbol into context
-        dtype = DType.Real(shape if shape is not None else [1])
-        return AExpr(itype=IType.Uninterpreted(x), dtype=dtype)
-
-    raise ValueError("Invalid argument to `Real`")
+        return _expr_from_term(b.uninterpreted(x, Sort.Real(_normalize_shape(shape or [1]))), b)
+    raise ValueError(f"Invalid argument to Real: {type(x).__name__}")

@@ -13,6 +13,8 @@ pub use crate::term::Term;
 pub use crate::wire::Interface;
 pub use crate::wire::Wire;
 
+pub type Error = String;
+
 /// Computes a topological ordering of a directed graph using **Kahn’s algorithm**.
 ///
 /// The graph is given as adjacency lists: `graph[u]` contains all `v` such that

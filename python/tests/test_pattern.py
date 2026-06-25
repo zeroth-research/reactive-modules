@@ -1,26 +1,34 @@
+import pytest
 import gymnasium as gym
-from zrth import Module, Wire, Term, DType, IType
+from zrth import Module, Wire, Term, Sort, LIA
 from gymnasium import spaces
 
-Real = DType.Real
-Bool = DType.Bool
-Int = DType.Int
+Real = Sort.Real
+Bool = Sort.Bool
+Int = Sort.Int
 
 
 def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result: list[Wire]):
-    t = Term(IType.Id(), list(write.values()) + list(result), list(read.values()))
-    return [t]
+    # `Uninterpreted` is single-read-or-single-write; emit one Term per wire
+    # so the multi-arity "method" is modeled as a bag of independent
+    # uninterpreted reads / writes.
+    terms = []
+    for r in read.values():
+        terms.append(Term(LIA.Uninterpreted("method"), [], [r]))
+    for w in list(write.values()) + list(result):
+        terms.append(Term.constant(LIA.Uninterpreted("method"), [w]))
+    return terms
 
 
 class SimpleEnv(gym.Env, Module):
 
     def __new__(cls, *args, **kwargs):
-        q_values = [Wire(Real([1])), Wire(Real([1]))]
-        observation = [Wire(Real([1])), Wire(Real([1]))]
-        reward = [Wire(Real([1])), Wire(Real([1]))]
-        terminated = [Wire(Bool([1])), Wire(Bool([1]))]
-        truncated = [Wire(Bool([1])), Wire(Bool([1]))]
-        state = [Wire(Int([1])), Wire(Int([1]))]
+        q_values = [Wire(Real([1, 1])), Wire(Real([1, 1]))]
+        observation = [Wire(Real([1, 1])), Wire(Real([1, 1]))]
+        reward = [Wire(Real([1, 1])), Wire(Real([1, 1]))]
+        terminated = [Wire(Bool([1, 1])), Wire(Bool([1, 1]))]
+        truncated = [Wire(Bool([1, 1])), Wire(Bool([1, 1]))]
+        state = [Wire(Int([1, 1])), Wire(Int([1, 1]))]
 
         result = (observation[1], reward[1], terminated[1], truncated[1])
         reset = convert_method(cls.reset, read={}, write={"self.state": state[1]}, result=result)

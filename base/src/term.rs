@@ -1,6 +1,8 @@
+use crate::Error;
 use crate::wire::{Interface, Wire};
 use std::collections::{HashMap, HashSet};
-use std::fmt;
+use std::fmt::{self, Debug};
+use theory::Theory;
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -11,73 +13,100 @@ use std::fmt;
 /// and it references the input/output edges (read/write wires).
 /// [Interface]s are essentially single static assignments.
 #[derive(Debug, Clone)]
-pub struct Term<D, I> {
+pub struct Term<T: Theory> {
     /// The instruction to be executed by this node.
-    itype: I,
+    itype: T,
     /// The outputs of this term.
-    write: Interface<D>,
+    write: Interface<T::Sort>,
     /// The inputs to this term.
-    read: Interface<D>,
+    read: Interface<T::Sort>,
 }
 
-impl<D, I> Term<D, I> {
-    pub fn new_unchecked(itype: I, write: Interface<D>, read: Interface<D>) -> Self {
+impl<T: Theory> Term<T> {
+    pub fn new_unchecked(itype: T, write: Interface<T::Sort>, read: Interface<T::Sort>) -> Self {
         Self { itype, write, read }
     }
 
-    pub fn itype(&self) -> &I {
+    pub fn itype(&self) -> &T {
         &self.itype
     }
 
-    pub fn write(&self) -> &Interface<D> {
+    pub fn write(&self) -> &Interface<T::Sort> {
         &self.write
     }
 
-    pub fn read(&self) -> &Interface<D> {
+    pub fn read(&self) -> &Interface<T::Sort> {
         &self.read
     }
 }
 
-impl<D: Eq, I> Term<D, I> {
-    pub fn function<T, U, W, R>(itype: I, write: W, read: R) -> Result<Self, &'static str>
+impl<T> Term<T>
+where
+    T: Theory,
+    T::Sort: Eq + Clone + fmt::Display,
+{
+    pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, Error>
     where
-        T: Into<Wire<D>>,
-        U: Into<Wire<D>>,
-        W: IntoIterator<Item = T>,
+        D: Into<Wire<T::Sort>>,
+        U: Into<Wire<T::Sort>>,
+        W: IntoIterator<Item = D>,
         R: IntoIterator<Item = U>,
     {
-        Ok(Self::new_unchecked(
-            itype,
-            Interface::unique(write)?,
-            Interface::sequence(read)?,
-        ))
+        let term =
+            Self::new_unchecked(itype, Interface::unique(write)?, Interface::sequence(read)?);
+
+        if term.read().ids().any(|i| term.write.ids().any(|j| i == j)) {
+            return Err("Term reads and writes the same wire".into());
+        }
+
+        // type-check the term. We do it only after contruction of the term, because type-checking
+        // would consume the values of `write` and `read` otherwise
+        let r = term.read.as_slice().iter().map(|w| w.dtype().clone());
+        let w = term.write.as_slice().iter().map(|w| w.dtype().clone());
+        match term.itype.check(r, w) {
+            Ok(_) => Ok(term),
+            Err(e) => Err(e),
+        }
     }
 
-    pub fn constant<T, W>(itype: I, write: W) -> Result<Self, &'static str>
+    pub fn constant<D, W>(itype: T, write: W) -> Result<Self, Error>
     where
-        T: Into<Wire<D>>,
-        W: IntoIterator<Item = T>,
+        D: Into<Wire<T::Sort>>,
+        W: IntoIterator<Item = D>,
     {
-        Ok(Self::new_unchecked(
-            itype,
-            Interface::unique(write)?,
-            Interface::empty(),
-        ))
+        let term = Self::new_unchecked(itype, Interface::unique(write)?, Interface::empty());
+
+        if term.read().ids().any(|i| term.write.ids().any(|j| i == j)) {
+            return Err("Term reads and writes the same wire".into());
+        }
+
+        // type-check the term. We do it only after contruction of the term, because type-checking
+        // would consume the values of `write` and `read` otherwise
+        let r = term.read.as_slice().iter().map(|w| w.dtype().clone());
+        let w = term.write.as_slice().iter().map(|w| w.dtype().clone());
+        match term.itype.check(r, w) {
+            Ok(_) => Ok(term),
+            Err(e) => Err(e),
+        }
     }
 }
 
 #[macro_export]
 macro_rules! term {
-    ($itype:tt, $write:expr) => {
+    ($itype:expr, $write:expr) => {
         Term::constant($itype, $write)
     };
 
-    ($itype:tt, $write:expr, $read:expr) => {
+    ($itype:expr, $write:expr, $read:expr) => {
         Term::function($itype, $write, $read)
     };
 }
 
-impl<D: fmt::Display, I: fmt::Display> fmt::Display for Term<D, I> {
+impl<TH: Theory> fmt::Display for Term<TH>
+where
+    TH: fmt::Display,
+    TH::Sort: fmt::Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
         const RESET: &str = "\x1b[0m";
@@ -104,14 +133,14 @@ impl<D: fmt::Display, I: fmt::Display> fmt::Display for Term<D, I> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Block<D, I> {
-    terms: Vec<Term<D, I>>,
-    read: Interface<D>,
-    write: Interface<D>,
+pub struct Block<T: Theory> {
+    terms: Vec<Term<T>>,
+    read: Interface<T::Sort>,
+    write: Interface<T::Sort>,
 }
 
-impl<D, I> Block<D, I> {
-    pub fn iter(&self) -> impl Iterator<Item = &Term<D, I>> {
+impl<T: Theory> Block<T> {
+    pub fn iter(&self) -> impl Iterator<Item = &Term<T>> {
         self.terms.iter()
     }
 
@@ -120,7 +149,7 @@ impl<D, I> Block<D, I> {
     /// The read interface lists all wires that must be provided externally
     /// for the block to operate, and are not written internally by the block.
     /// These wires are inputs required by the block as a whole.
-    pub fn read(&self) -> &Interface<D> {
+    pub fn read(&self) -> &Interface<T::Sort> {
         &self.read
     }
 
@@ -128,12 +157,12 @@ impl<D, I> Block<D, I> {
     ///
     /// The write interface lists all wires that the block writes. These wires represent
     /// the outputs of the block as a whole; they can all be read outside the block.
-    pub fn write(&self) -> &Interface<D> {
+    pub fn write(&self) -> &Interface<T::Sort> {
         &self.write
     }
 
     /// Return a reference to the n-th term in the block
-    pub fn get(&self, n: usize) -> Option<&Term<D, I>> {
+    pub fn get(&self, n: usize) -> Option<&Term<T>> {
         self.terms.get(n)
     }
 
@@ -154,26 +183,27 @@ impl<D, I> Block<D, I> {
     }
 }
 
-impl<'a, D, I> IntoIterator for &'a Block<D, I> {
-    type Item = &'a Term<D, I>;
-    type IntoIter = std::slice::Iter<'a, Term<D, I>>;
+impl<'a, T: Theory> IntoIterator for &'a Block<T> {
+    type Item = &'a Term<T>;
+    type IntoIter = std::slice::Iter<'a, Term<T>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.terms.iter()
     }
 }
 
-impl<D: Eq + Clone, I> Block<D, I> {
-    pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<D, I>>>(
-        iter: V,
-    ) -> Result<Self, &'static str> {
+impl<T: Theory> Block<T>
+where
+    T::Sort: Eq + Clone,
+{
+    pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<T>>>(iter: V) -> Result<Self, Error> {
         let mut read_set: HashSet<usize> = HashSet::new();
-        let mut write_to_dtype: HashMap<usize, &D> = HashMap::new();
+        let mut write_to_dtype: HashMap<usize, &T::Sort> = HashMap::new();
 
-        let mut read: Vec<Wire<D>> = Vec::new();
-        let mut write: Vec<Wire<D>> = Vec::new();
+        let mut read: Vec<Wire<T::Sort>> = Vec::new();
+        let mut write: Vec<Wire<T::Sort>> = Vec::new();
 
-        let terms: Vec<Term<D, I>> = Vec::from_iter(iter);
+        let terms: Vec<Term<T>> = Vec::from_iter(iter);
 
         for term in terms.iter() {
             for rd in term.read().wires() {
@@ -183,17 +213,23 @@ impl<D: Eq + Clone, I> Block<D, I> {
                     read_set.insert(rd.id());
                     read.push(rd.clone());
                 } else if expected_dtype.is_some_and(|&d| d != rd.dtype()) {
-                    return Err("dtype mismatch");
+                    return Err(format!(
+                        "Wire {} seen multiple times with different dtype",
+                        rd.id()
+                    ));
                 }
             }
 
             for wt in term.write().wires() {
                 if read_set.contains(&wt.id()) {
-                    return Err("read before write");
+                    return Err(format!(
+                        "Wire {} is read by a term preceding the term that writes into this wire",
+                        wt.id()
+                    ));
                 }
                 write.push(wt.clone());
                 if write_to_dtype.insert(wt.id(), wt.dtype()).is_some() {
-                    return Err("write after write");
+                    return Err(format!("Wire {} is written more than once", wt.id()));
                 }
             }
             write.extend(term.write().wires().cloned());

@@ -7,7 +7,7 @@ IVAR
 VAR
     i : integer;
     j : integer;
-    a : integer;
+    a : boolean;
 
 ASSIGN
     init(i) := abs(i0);
