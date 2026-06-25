@@ -422,6 +422,19 @@ import System.Scalar
     assert scalar_rel_file.exists()
     print(f"++ Generated {scalar_rel_file} ++")
 
+    scalar_bool_rel_file = src_dir / "ScalarBoolRel.lean"
+    print(f"Generating `{scalar_bool_rel_file.absolute()}`")
+    scalar_bool_rel_file.write_text(f"""\
+/- Bool-valued scalar-relational encoding of reactive module `{module_name}` -/
+import Core.Basic
+import System.Scalar
+import System.ScalarRel
+
+{m2l.to_lean_bool_rel()}
+""")
+    assert scalar_bool_rel_file.exists()
+    print(f"++ Generated {scalar_bool_rel_file} ++")
+
     # -- certificate data (init_pre, inv, P, ranking — placeholders if no cert_data) --
     write_data_lean(project_dir, project_name, module, cert_data, ctx=ctx)
 
