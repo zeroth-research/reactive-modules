@@ -298,6 +298,7 @@ import {out.stem}Scalar
         project_name=args.project_name,
         executable=args.executable,
         cert_data=project_cert_data,
+        module_file=args.module_file,
     )
 
     lean_code = project_dir / "System" / "System.lean"
