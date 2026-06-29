@@ -279,6 +279,7 @@ def create_project(
     template_dir: Path = TEMPLATE_DIR,
     executable: bool = False,
     cert_data: CertificateData | None = None,
+    module_file: Path | str | None = None,
 ) -> Path:
     """
     Create a full Lean4 project.
@@ -290,14 +291,26 @@ def create_project(
         `template_dir`:    Optional path to directory containing template .lean files.
         `project_name`:    Optional name of the Lean package / library.
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
+        `module_file`:     Path to the Python source file used to create the module
+                           (written as a debug artifact alongside the project).
     """
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
+    dbg_dir = project_dir / "dbg"
     module_name = project_name
 
     # Create directory structure
     src_dir.mkdir(parents=True, exist_ok=True)
     print(f"Created project directory: `{project_dir}`")
+
+    # Debug artifacts: module representation and Python source
+    dbg_dir.mkdir(parents=True, exist_ok=True)
+    (dbg_dir / "system.txt").write_text(str(module))
+    print("Wrote system.txt")
+    if module_file is not None:
+        py_src = Path(module_file).read_text()
+        (dbg_dir / "system.py").write_text(py_src)
+        print("Wrote system.py")
 
     # Render and write project-level files from templates
     lakefile = project_dir / "lakefile.toml"
@@ -305,16 +318,16 @@ def create_project(
     print(f"Wrote {lakefile}")
 
     toolchain = project_dir / "lean-toolchain"
-    toolchain.write_text(render("project/lean-toolchain.j2", lean_toolchain=LEAN_TOOLCHAIN))
+    toolchain.write_text(
+        render("project/lean-toolchain.j2", lean_toolchain=LEAN_TOOLCHAIN)
+    )
     print(f"Wrote {toolchain}")
 
     hammer_file = project_dir / "ZerothHammer.lean"
     hammer_file.write_text(generate_zeroth_hammer_lean())
     print(f"Wrote {hammer_file}")
 
-    (project_dir / "Certificate.lean").write_text(
-        render("project/Certificate.lean.j2")
-    )
+    (project_dir / "Certificate.lean").write_text(render("project/Certificate.lean.j2"))
 
     # Copy static files (Core/, LeanAI/)
     core_dir = project_dir / "Core"
@@ -339,7 +352,9 @@ def create_project(
                 shutil.copy2(src_path, dst_path)
                 print(f"Copied template file {tmpl_name} -> /")
         else:
-            raise RuntimeError(f"Template file/dir `{tmpl_name}` not found at {src_path}")
+            raise RuntimeError(
+                f"Template file/dir `{tmpl_name}` not found at {src_path}"
+            )
 
     # ----------------------------------------------------------
     # Generate reactive module (init and update)
@@ -484,8 +499,9 @@ def generate_standalone_cert_lean(
     ctx = LeanContext(module, cert_terms=cert_terms)
     m2l = ModuleToLean4(ctx)
     module_code = m2l.to_lean_functional()
-    return generate_certificate_lean(ctx, cert_data=cert_data, module_inline=module_code)
-
+    return generate_certificate_lean(
+        ctx, cert_data=cert_data, module_inline=module_code
+    )
 
 
 def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
