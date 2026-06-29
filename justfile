@@ -12,7 +12,12 @@ default:
 
 PROFILE := ""
 FEATURES := ""
-CARGO := "cargo"
+# Run cargo through `uv` so the build/test env uses the project's Python
+# and PyTorch — `theory` transitively links libtorch (via pyo3-tch/torch-sys),
+# and `.cargo/config.toml` sets LIBTORCH_USE_PYTORCH=1, so cargo must see the
+# venv's torch. If neccessary, override with `just CARGO=cargo ...` to use
+# a bare toolchain.
+CARGO := "uv run cargo"
 
 # Convert FEATURES into a flag only if set
 
