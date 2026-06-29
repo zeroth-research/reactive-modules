@@ -1,22 +1,16 @@
-use crate::theory::Any;
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
-    base: base::Term<Any>,
+    base: base::Term<DType, IType>,
 }
 
 #[pymethods]
 impl Term {
     #[staticmethod]
-    fn function(
-        itype: &Bound<'_, PyAny>,
-        write: &Bound<'_, PyAny>,
-        read: &Bound<'_, PyAny>,
-    ) -> PyResult<Self> {
-        let itype = itype.extract()?;
+    fn function(itype: IType, write: &Bound<'_, PyAny>, read: &Bound<'_, PyAny>) -> PyResult<Self> {
         let write = try_wire_iter_cloned(write)?;
         let read = try_wire_iter_cloned(read)?;
 
@@ -27,8 +21,7 @@ impl Term {
     }
 
     #[staticmethod]
-    fn constant(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let itype = itype.extract()?;
+    fn constant(itype: IType, write: &Bound<'_, PyAny>) -> PyResult<Self> {
         let write = try_wire_iter_cloned(write)?;
 
         match base::Term::constant(itype, write) {
@@ -40,7 +33,7 @@ impl Term {
     #[new]
     #[pyo3(signature = (itype, write, read = None))]
     fn new(
-        itype: &Bound<'_, PyAny>,
+        itype: IType,
         write: &Bound<'_, PyAny>,
         read: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
@@ -61,7 +54,7 @@ impl Term {
     }
 
     #[getter]
-    fn itype(&self) -> Any {
+    fn itype(&self) -> IType {
         self.base.itype().clone()
     }
 
@@ -75,7 +68,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &base::Term<Any> {
+    pub(crate) fn base(&self) -> &base::Term<DType, IType> {
         &self.base
     }
 
@@ -88,8 +81,8 @@ impl Term {
     }
 }
 
-impl From<base::Term<Any>> for Term {
-    fn from(base: base::Term<Any>) -> Self {
+impl From<base::Term<DType, IType>> for Term {
+    fn from(base: base::Term<DType, IType>) -> Self {
         Self { base }
     }
 }
@@ -106,7 +99,7 @@ struct TermInterface {
 }
 
 impl TermInterface {
-    fn base(&self) -> &base::Interface<Sort> {
+    fn base(&self) -> &base::Interface<DType> {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),

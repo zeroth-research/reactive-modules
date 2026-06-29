@@ -1,11 +1,11 @@
 import inspect
 import torch.nn as nn
 
-from ..zrth import Module as _BaseModule, Sort
+from ..zrth import Module as _BaseModule, DType
 from ..analyzer import convert_method, resolve_wire
 
 
-def _extract_nn_module(nn_instance, theory=None, **kwargs):
+def _extract_nn_module(nn_instance, **kwargs):
     """Analyze an nn.Module instance and extract a symbolic Module.
 
     Uses live tensor references for weight/bias so that training updates
@@ -35,8 +35,8 @@ def _extract_nn_module(nn_instance, theory=None, **kwargs):
     obs_size  = layer_list[0][0]
     qval_size = layer_list[-1][1]
 
-    extl = resolve_wire("extl", Sort.Real([1, obs_size]),  user_extl)
-    intf = resolve_wire("intf", Sort.Real([1, qval_size]), user_intf)
+    extl = resolve_wire("extl", DType.Float([obs_size]),  user_extl)
+    intf = resolve_wire("intf", DType.Float([qval_size]), user_intf)
 
     # Combinatorial: input wire is index 1 (next), swap the pair
     wires  = {obs_param: [extl[1], extl[0]]}
@@ -46,7 +46,6 @@ def _extract_nn_module(nn_instance, theory=None, **kwargs):
     forward = convert_method(
         nn_cls.forward, wires, result, cls=nn_cls,
         layers=layer_out_features, live_layers=live_layers,
-        theory=theory,
     )
 
     obs = [extl, intf]
@@ -67,16 +66,16 @@ class Module(_BaseModule, nn.Module):
         wrapped.atoms          # symbolic module structure
 
     Training the original nn.Module automatically updates the symbolic module
-    because the Linear op holds a reference to the live weight tensors.
+    because IType.Tensor holds a reference to the live weight tensors.
     """
 
-    def __new__(cls, nn_module, theory=None, **kwargs):
+    def __new__(cls, nn_module, **kwargs):
         if not isinstance(nn_module, nn.Module):
             raise TypeError(f"Expected nn.Module, got {type(nn_module)}")
-        parts = _extract_nn_module(nn_module, theory=theory, **kwargs)
+        parts = _extract_nn_module(nn_module, **kwargs)
         return _BaseModule.__new__(cls, **parts)
 
-    def __init__(self, nn_module, theory=None, **kwargs):
+    def __init__(self, nn_module, **kwargs):
         nn.Module.__init__(self)
         self.inner = nn_module
 

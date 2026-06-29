@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from zrth import Wire, Sort, Module, parse_smv, BV
+from zrth import Wire, DType, IType, Module, parse_smv
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 
@@ -42,15 +42,13 @@ def test_counter_init_terms():
     init_terms = atom.init
     assert len(init_terms) > 0
 
-    # At least one init term should be a zero-valued BV constant for x.
-    def _is_const_zero(itype):
-        match itype:
-            case BV.Const(data):
-                return int(data.item()) == 0
-        return False
-
-    const_zero_found = any(_is_const_zero(t.itype) for t in init_terms)
-    assert const_zero_found, "Expected a BV.Const(0) init term for x"
+    # At least one init term should be ConstInt(0) for x
+    const_zero_found = False
+    for t in init_terms:
+        if str(t.itype) == "Const: 0":
+            const_zero_found = True
+            break
+    assert const_zero_found, "Expected a ConstInt(0) init term for x"
 
 
 def test_test_itypes():
@@ -79,8 +77,7 @@ def test_wire_overrides():
     text = (FIXTURES / "counter.smv").read_text()
 
     # Create override wires for 'x'
-    # The SMV parser is BV-only; overrides must match.
-    dtype = Sort.BitVec(32, [1, 1])
+    dtype = DType.Int([1])
     ov_l = Wire(dtype)
     ov_n = Wire(dtype)
 
@@ -135,8 +132,7 @@ def test_enum_type():
     assert "state" in name_map
     # state should have TensorInt dtype (enum mapped to int)
     latched, _ = name_map["state"]
-    # SMV parser maps `integer` / enum types to BV<32>.
-    assert isinstance(latched.dtype, Sort.BitVec)
+    assert isinstance(latched.dtype, DType.Int)
 
 
 def test_frozen_var():

@@ -1,17 +1,17 @@
-use crate::theory::Sort;
+use crate::DType;
 use pyo3::prelude::*;
 use std::fmt;
 
 #[pyclass(frozen, eq, hash, str)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub(crate) struct Wire {
-    base: base::Wire<Sort>,
+    base: base::Wire<DType>,
 }
 
 #[pymethods]
 impl Wire {
     #[new]
-    pub(crate) fn new(dtype: Sort) -> Self {
+    pub(crate) fn new(dtype: DType) -> Self {
         let base = base::Wire::new(dtype);
         Self { base }
     }
@@ -22,7 +22,7 @@ impl Wire {
     }
 
     #[getter]
-    fn dtype(&self) -> Sort {
+    fn dtype(&self) -> DType {
         self.base.dtype().clone()
     }
 
@@ -32,13 +32,13 @@ impl Wire {
 }
 
 impl Wire {
-    pub(crate) fn base(&self) -> &base::Wire<Sort> {
+    pub(crate) fn base(&self) -> &base::Wire<DType> {
         &self.base
     }
 }
 
-impl From<base::Wire<Sort>> for Wire {
-    fn from(base: base::Wire<Sort>) -> Self {
+impl From<base::Wire<DType>> for Wire {
+    fn from(base: base::Wire<DType>) -> Self {
         Self { base }
     }
 }

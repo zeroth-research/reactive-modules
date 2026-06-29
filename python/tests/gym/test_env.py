@@ -11,7 +11,7 @@ from .environments import SimpleEnv
 from .qnetworks import SimpleQNet
 from zrth.gym import Env
 from zrth.torch import Module
-from zrth import Wire, Sort
+from zrth import Wire, DType
 
 
 # ── Constructor / shape ───────────────────────────────────────────
@@ -128,7 +128,7 @@ def test_get_wire():
     val = e.get(e._pairs['observation'][0])
     assert isinstance(val, torch.Tensor)
     with pytest.raises(RuntimeError, match="not in state"):
-        e.get(Wire(Sort.Real([1, 1])))
+        e.get(Wire(DType.Float([1])))
 
 
 def test_state_dict_is_a_copy():
@@ -188,8 +188,8 @@ class _BoxEnv(gym.Env):
 
 
 def _make_closed_loop():
-    obs = (Wire(Sort.Real([1, 1])), Wire(Sort.Real([1, 1])))
-    act = (Wire(Sort.Real([1, 2])), Wire(Sort.Real([1, 2])))
+    obs = (Wire(DType.Float([1])), Wire(DType.Float([1])))
+    act = (Wire(DType.Float([2])), Wire(DType.Float([2])))
     backed = Env(_BoxEnv(), observation=obs, action=act)
     qnet = Module(SimpleQNet(1, 2, 2), extl=obs, intf=act)
     return Env(backed, qnet)

@@ -1,38 +1,35 @@
-use crate::Error;
 use crate::term::{Block, Term};
 use crate::wire::{Interface, Wire};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use theory::Theory;
 
 #[cfg(debug_assertions)]
 use std::collections::HashSet;
 
 /// This data structure corresponds to the atom of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Atom<T: Theory> {
+pub struct Atom<D, I> {
     /// Corresponds to ctr variables.
-    ctrl: Interface<T::Sort>,
+    ctrl: Interface<D>,
     /// Corresponds to wait variables.
-    wait: Interface<T::Sort>,
+    wait: Interface<D>,
     /// Corresponds to read variables.
-    read: Interface<T::Sort>,
+    read: Interface<D>,
     /// Corresponds to temporary, local wires.
-    temp: Interface<T::Sort>,
+    temp: Interface<D>,
     /// Corresponds to the initial action.
-    init: Block<T>,
+    init: Block<D, I>,
     /// Corresponds to the update action.
-    update: Block<T>,
+    update: Block<D, I>,
     // flow: Vec<Term<I>>, // the default flow must be a constant so the derivative is 0
 }
-
-impl<T: Theory> Atom<T> {
+impl<D, I> Atom<D, I> {
     /// Returns a reference to the initial action.
-    pub fn init(&self) -> &Block<T> {
+    pub fn init(&self) -> &Block<D, I> {
         &self.init
     }
     /// Returns a reference to the update action.
-    pub fn update(&self) -> &Block<T> {
+    pub fn update(&self) -> &Block<D, I> {
         &self.update
     }
 
@@ -40,19 +37,19 @@ impl<T: Theory> Atom<T> {
     //     &self.flow
     // }
 
-    pub fn ctrl(&self) -> &Interface<T::Sort> {
+    pub fn ctrl(&self) -> &Interface<D> {
         &self.ctrl
     }
 
-    pub fn wait(&self) -> &Interface<T::Sort> {
+    pub fn wait(&self) -> &Interface<D> {
         &self.wait
     }
 
-    pub fn read(&self) -> &Interface<T::Sort> {
+    pub fn read(&self) -> &Interface<D> {
         &self.read
     }
 
-    pub fn temp(&self) -> impl Iterator<Item = &Wire<T::Sort>> {
+    pub fn temp(&self) -> impl Iterator<Item = &Wire<D>> {
         self.temp.wires()
     }
 
@@ -68,37 +65,34 @@ impl<T: Theory> Atom<T> {
     }
 }
 
-impl<T: Theory> Default for Atom<T> {
+impl<D, I> Default for Atom<D, I> {
     fn default() -> Self {
         Self::empty()
     }
 }
 
-impl<T: Theory> Atom<T>
-where
-    T::Sort: Eq,
-{
+impl<D: Eq, I> Atom<D, I> {
     /// Returns true if this atoms awaits the other atom
-    pub fn awaits(&self, other: &Atom<T>) -> bool {
+    pub fn awaits(&self, other: &Atom<D, I>) -> bool {
         !self.wait.is_disjoint(&other.ctrl)
     }
 
     /// Creates an atom from its components. This method checks the inputs only using assertions
     /// in debug mode.
     fn new_unchecked(
-        ctrl: Interface<T::Sort>,
-        wait: Interface<T::Sort>,
-        read: Interface<T::Sort>,
-        temp: Interface<T::Sort>,
-        init: Block<T>,
-        update: Block<T>,
+        ctrl: Interface<D>,
+        wait: Interface<D>,
+        read: Interface<D>,
+        temp: Interface<D>,
+        init: Block<D, I>,
+        update: Block<D, I>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
             //================================================================================
             // Check declared wires
             //================================================================================
-            let mut decl: HashMap<usize, &T::Sort> = HashMap::new();
+            let mut decl: HashMap<usize, &D> = HashMap::new();
             // declare read and await, don't allow repetition
             {
                 let read_wait_param = read.wires().chain(wait.wires());
@@ -192,10 +186,7 @@ where
     }
 }
 
-impl<T: Theory> Atom<T>
-where
-    T::Sort: Eq + Clone,
-{
+impl<D: Eq + Clone, I> Atom<D, I> {
     /// Constructs a **sequential atom**, representing behaviour that evolves over time.
     ///
     /// A sequential atom defines both an initialisation (`init`) and an update (`update`)
@@ -228,24 +219,24 @@ where
         next: N,
         init: V,
         update: U,
-    ) -> Result<Self, Error>
+    ) -> Result<Self, &'static str>
     where
-        L: IntoIterator<Item = &'a Wire<T::Sort>>,
-        N: IntoIterator<Item = &'a Wire<T::Sort>>,
-        V: IntoIterator<Item = Term<T>>,
-        U: IntoIterator<Item = Term<T>>,
-        T::Sort: 'a,
+        L: IntoIterator<Item = &'a Wire<D>>,
+        N: IntoIterator<Item = &'a Wire<D>>,
+        V: IntoIterator<Item = Term<D, I>>,
+        U: IntoIterator<Item = Term<D, I>>,
+        D: 'a,
     {
-        let latched: HashMap<usize, &T::Sort> = latched.into_iter().map(Into::into).collect();
-        let next: HashMap<usize, &T::Sort> = next.into_iter().map(Into::into).collect();
+        let latched: HashMap<usize, &D> = latched.into_iter().map(Into::into).collect();
+        let next: HashMap<usize, &D> = next.into_iter().map(Into::into).collect();
 
         let init = Block::try_from_iter(init)?;
         let update = Block::try_from_iter(update)?;
 
-        let mut ctrl: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut read: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut read: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<D>> = BTreeMap::new();
 
         for rd in init.read().iter().map(|[w]| w) {
             // init can only read from await wires
@@ -254,18 +245,15 @@ where
                 wait.insert(rd.id(), rd.clone());
                 continue;
             } else if next_dtype.is_some() {
-                return Err(format!(
-                    "Next wire of wire {} in init has a different dtype",
-                    rd.id()
-                ));
+                return Err("dtype mismatch");
             }
 
             if latched.contains_key(&rd.id()) {
-                return Err(format!("Init reads latched wire {}", rd.id()));
+                return Err("Init reads latched wire");
             }
 
             // dangling read wires are invalid
-            return Err(format!("Wire {} in init is dangling read", rd.id()));
+            return Err("Invalid read wire");
         }
 
         for rd in update.read().iter().map(|[w]| w) {
@@ -276,7 +264,7 @@ where
                 read.insert(rd.id(), rd.clone());
                 continue;
             } else if latched_dtype.is_some() {
-                return Err(format!("Wire {} in update has wrong dtype", rd.id()));
+                return Err("dtype mismatch");
             }
 
             let next_dtype = next.get(&rd.id());
@@ -284,14 +272,11 @@ where
                 wait.insert(rd.id(), rd.clone());
                 continue;
             } else if next_dtype.is_some() {
-                return Err(format!(
-                    "Next wire of wire {} in update has a different dtype",
-                    rd.id()
-                ));
+                return Err("dtype mismatch");
             }
 
             // dangling read wires are parameters
-            return Err(format!("Wire {} in update is dangling read", rd.id()));
+            return Err("Invalid read wire");
         }
 
         for wt in [init.write(), update.write()]
@@ -306,11 +291,11 @@ where
                 ctrl.insert(wt.id(), wt.clone());
                 continue;
             } else if next_dtype.is_some() {
-                return Err(format!("Controleld wire {} has a wrong dtype", wt.id()));
+                return Err("dtype mismatch");
             }
 
             if latched.contains_key(&wt.id()) {
-                return Err(format!("Writing a latched wire {}", wt.id()));
+                return Err("write on latched");
             } else {
                 temp.insert(wt.id(), wt.clone());
             }
@@ -318,10 +303,10 @@ where
 
         for &ctr in ctrl.keys() {
             if !init.write().ids().any(|wrt| wrt == ctr) {
-                return Err(format!("Controlled wire {} is not written in init", ctr));
+                return Err("unassigned control wire after init");
             }
             if !update.write().ids().any(|wrt| wrt == ctr) {
-                return Err(format!("Controlled wire {} is not written in update", ctr));
+                return Err("unassigned control wire after update");
             }
         }
 
@@ -336,11 +321,7 @@ where
     }
 }
 
-impl<T: Theory> Atom<T>
-where
-    T: Clone,
-    T::Sort: Eq + Clone,
-{
+impl<D: Eq + Clone, I: Clone> Atom<D, I> {
     /// Constructs a **purely combinatorial atom**, representing purely reactive behaviour
     /// without temporal state.
     ///
@@ -368,19 +349,19 @@ where
     /// # See Also
     /// - [`Atom::sequential`], for constructing sequential atoms.
     /// - [`Module::combinatorial`], for combinatorial modules.
-    pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, Error>
+    pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, &'static str>
     where
-        V: IntoIterator<Item = Term<T>>,
-        N: IntoIterator<Item = &'a Wire<T::Sort>>,
-        T::Sort: 'a,
+        V: IntoIterator<Item = Term<D, I>>,
+        N: IntoIterator<Item = &'a Wire<D>>,
+        D: 'a,
     {
-        let next: HashMap<usize, &T::Sort> = next.into_iter().map(Into::into).collect();
+        let next: HashMap<usize, &D> = next.into_iter().map(Into::into).collect();
         let assign = Block::try_from_iter(assign)?;
 
-        let mut ctrl: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut param: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut param: BTreeMap<usize, Wire<D>> = BTreeMap::new();
 
         for rd in assign.read().iter().map(|[w]| w) {
             //  can only read from await wires
@@ -388,10 +369,7 @@ where
             if expected_dtype.is_some_and(|&d| d == rd.dtype()) {
                 wait.insert(rd.id(), rd.clone());
             } else if expected_dtype.is_some() {
-                return Err(format!(
-                    "Read wire {} from `assign` has a different dtype than its next version",
-                    rd.id()
-                ));
+                return Err("dtype mismatch");
             } else {
                 param.insert(rd.id(), rd.clone());
             }
@@ -404,10 +382,7 @@ where
             if expected_dtype.is_some_and(|&d| d == wt.dtype()) {
                 ctrl.insert(wt.id(), wt.clone());
             } else if expected_dtype.is_some() {
-                return Err(format!(
-                    "Write wire {} from `assign` has a different dtype than its next version",
-                    wt.id()
-                ));
+                return Err("dtype mismatch");
             } else {
                 temp.insert(wt.id(), wt.clone());
             }
@@ -424,11 +399,7 @@ where
     }
 }
 
-impl<T: Theory> Atom<T>
-where
-    T: fmt::Display,
-    T::Sort: fmt::Display,
-{
+impl<D: fmt::Display, I: fmt::Display> Atom<D, I> {
     pub(crate) fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
         const RESET: &str = "\x1b[0m";
@@ -469,11 +440,7 @@ where
     }
 }
 
-impl<T: Theory> fmt::Display for Atom<T>
-where
-    T: fmt::Display,
-    T::Sort: fmt::Display,
-{
+impl<D: fmt::Display, I: fmt::Display> fmt::Display for Atom<D, I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, "")
     }

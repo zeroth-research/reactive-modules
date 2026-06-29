@@ -1,33 +1,27 @@
-use crate::theory::Sort;
-use ::theory::bv::BV;
-use ::theory::lia::LIA;
-use ::theory::lra::LRA;
 use pyo3::PyClass;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
 mod atom;
 mod module;
+mod pytensor;
 mod term;
-mod theory;
+mod types;
 mod wire;
 
 use crate::atom::Atom;
 use crate::module::Module;
 use crate::term::Term;
+use crate::types::{DType, IType};
 use crate::wire::Wire;
 
 #[pymodule]
 fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Sort>()?;
+    m.add_class::<IType>()?;
+    m.add_class::<DType>()?;
     m.add_class::<Wire>()?;
-    m.add_class::<Atom>()?;
     m.add_class::<Term>()?;
     m.add_class::<Module>()?;
-
-    m.add_class::<LRA>()?;
-    m.add_class::<LIA>()?;
-    m.add_class::<BV>()?;
 
     Ok(())
 }
@@ -58,7 +52,7 @@ where
 
 fn try_wire2_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = [base::Wire<theory::Sort>; 2]>> {
+) -> PyResult<impl Iterator<Item = [base::Wire<DType>; 2]>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_array2_iter_borrow::<Wire>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
@@ -68,7 +62,7 @@ fn try_wire2_iter_cloned(
 
 fn try_term_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Term<theory::Any>>> {
+) -> PyResult<impl Iterator<Item = base::Term<DType, IType>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
@@ -78,7 +72,7 @@ fn try_term_iter_cloned(
 
 fn try_wire_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Wire<theory::Sort>>> {
+) -> PyResult<impl Iterator<Item = base::Wire<DType>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Wire>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);

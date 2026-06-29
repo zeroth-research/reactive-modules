@@ -1,4 +1,4 @@
 [workspace]
-members = ["base", "python", "theory"]
-default-members = ["base", "theory"]
+members = ["base", "python"]
+default-members = ["base"]
 resolver = "3"
