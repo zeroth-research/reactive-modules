@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 base = { path = "../base" }
+theory = { path = "../theory", features = ["torch"] }
 pyo3 = { version = "0.24" }
 tch = { features = ["python-extension"], version = "0.22" }
 pyo3-tch = { version = "0.22" }

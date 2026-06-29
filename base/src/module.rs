@@ -1,14 +1,15 @@
 use crate::atom::Atom;
 use crate::term::Term;
-use crate::topological_order;
 use crate::wire::{Interface, Wire};
+use crate::{Error, topological_order};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
+use theory::Theory;
 
 /// This data structure corresponds to the module of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Module<D, I> {
+pub struct Module<T: Theory> {
     /// Correspond to the wires of the module divided by visibility
     /// ```text
     ///     *====================*
@@ -22,41 +23,41 @@ pub struct Module<D, I> {
     ///  Wires are organised in pairs of identical twins where
     ///  - 0: latched wires
     ///  - 1: next wires
-    extl: Interface<D, 2>,
-    intf: Interface<D, 2>,
-    prvt: Interface<D, 2>,
-    obs: Interface<D, 2>,
-    ctrl: Interface<D, 2>,
-    temp: Interface<D>,
+    extl: Interface<T::Sort, 2>,
+    intf: Interface<T::Sort, 2>,
+    prvt: Interface<T::Sort, 2>,
+    obs: Interface<T::Sort, 2>,
+    ctrl: Interface<T::Sort, 2>,
+    temp: Interface<T::Sort>,
 
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
     /// as defined in the reactive modules paper.
-    atoms: Vec<Atom<D, I>>,
+    atoms: Vec<Atom<T>>,
 }
 
-impl<D, I> Module<D, I> {
-    pub fn atoms(&self) -> &[Atom<D, I>] {
+impl<T: Theory> Module<T> {
+    pub fn atoms(&self) -> &[Atom<T>] {
         &self.atoms
     }
 
-    pub fn extl(&self) -> &Interface<D, 2> {
+    pub fn extl(&self) -> &Interface<T::Sort, 2> {
         &self.extl
     }
 
-    pub fn intf(&self) -> &Interface<D, 2> {
+    pub fn intf(&self) -> &Interface<T::Sort, 2> {
         &self.intf
     }
 
-    pub fn prvt(&self) -> &Interface<D, 2> {
+    pub fn prvt(&self) -> &Interface<T::Sort, 2> {
         &self.prvt
     }
 
-    pub fn ctrl(&self) -> &Interface<D, 2> {
+    pub fn ctrl(&self) -> &Interface<T::Sort, 2> {
         &self.ctrl
     }
 
-    pub fn obs(&self) -> &Interface<D, 2> {
+    pub fn obs(&self) -> &Interface<T::Sort, 2> {
         &self.obs
     }
 
@@ -68,7 +69,7 @@ impl<D, I> Module<D, I> {
         !self.extl.is_empty()
     }
 
-    pub fn temp(&self) -> impl Iterator<Item = &Wire<D>> {
+    pub fn temp(&self) -> impl Iterator<Item = &Wire<T::Sort>> {
         self.temp.wires()
     }
 
@@ -85,7 +86,10 @@ impl<D, I> Module<D, I> {
     }
 }
 
-impl<D: Clone + Eq + Debug, I> Module<D, I> {
+impl<T: Theory> Module<T>
+where
+    T::Sort: Clone + Eq + Debug,
+{
     /// Constructs a module **without performing any consistency or visibility checks**.
     ///
     /// This constructor provides **full control** to the caller and performs no inference
@@ -132,20 +136,20 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     ///   [`Module::combinatorial`] for safe, automated module construction
     #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
-        extl: Interface<D, 2>,
-        intf: Interface<D, 2>,
-        prvt: Interface<D, 2>,
-        obs: Interface<D, 2>,
-        ctrl: Interface<D, 2>,
-        temp: Interface<D>,
-        atoms: Vec<Atom<D, I>>,
+        extl: Interface<T::Sort, 2>,
+        intf: Interface<T::Sort, 2>,
+        prvt: Interface<T::Sort, 2>,
+        obs: Interface<T::Sort, 2>,
+        ctrl: Interface<T::Sort, 2>,
+        temp: Interface<T::Sort>,
+        atoms: Vec<Atom<T>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
             debug_assert_eq!(obs.len(), extl.len() + intf.len());
             debug_assert_eq!(ctrl.len(), intf.len() + prvt.len());
 
-            let mut ltc_to_dtype: HashMap<usize, &D> = HashMap::new();
+            let mut ltc_to_dtype: HashMap<usize, &T::Sort> = HashMap::new();
             let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
 
             let mut extl_ltc: HashSet<usize> = HashSet::new();
@@ -231,7 +235,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             }
 
             // check that temporaries are decoupled from module wires and other atoms
-            let mut module_temp: HashMap<usize, &D> = HashMap::new();
+            let mut module_temp: HashMap<usize, &T::Sort> = HashMap::new();
             for lc in atoms.iter().flat_map(Atom::temp) {
                 debug_assert!(!ltc_to_dtype.contains_key(&lc.id()));
                 debug_assert!(!nxt_to_ltc.contains_key(&lc.id()));
@@ -278,13 +282,13 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// - [`partially_observable`], for modules with private state.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn observable<T, O, A>(obs: O, atoms: A) -> Result<Self, &'static str>
+    pub fn observable<D, O, A>(obs: O, atoms: A) -> Result<Self, Error>
     where
-        T: Into<[Wire<D>; 2]>,
-        O: IntoIterator<Item = T>,
-        A: IntoIterator<Item = Atom<D, I>> + Sized,
+        D: Into<[Wire<T::Sort>; 2]>,
+        O: IntoIterator<Item = D>,
+        A: IntoIterator<Item = Atom<T>> + Sized,
     {
-        Self::partially_observable(obs, std::iter::empty::<T>(), atoms)
+        Self::partially_observable(obs, std::iter::empty::<D>(), atoms)
     }
 
     /// Constructs a **partially observable module** from a sequence of atoms.
@@ -310,17 +314,13 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// - [`observable`], for constructing modules where all wires are visible.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn partially_observable<T, U, O, P, A>(
-        obs: O,
-        prvt: P,
-        atoms: A,
-    ) -> Result<Self, &'static str>
+    pub fn partially_observable<R, U, O, P, A>(obs: O, prvt: P, atoms: A) -> Result<Self, Error>
     where
-        T: Into<[Wire<D>; 2]>,
-        U: Into<[Wire<D>; 2]>,
-        O: IntoIterator<Item = T>,
+        R: Into<[Wire<T::Sort>; 2]>,
+        U: Into<[Wire<T::Sort>; 2]>,
+        O: IntoIterator<Item = R>,
         P: IntoIterator<Item = U>,
-        A: IntoIterator<Item = Atom<D, I>> + Sized,
+        A: IntoIterator<Item = Atom<T>> + Sized,
     {
         let mut ltc_set: HashSet<usize> = HashSet::new();
         let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
@@ -331,53 +331,59 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         for [ltc, nxt] in obs.iter().chain(prvt.iter()) {
             debug_assert_eq!(ltc.dtype(), nxt.dtype());
             if !ltc_set.insert(ltc.id()) {
-                return Err("duplicate latched wire");
+                return Err(format!("Latched wire {} is duplicated", ltc.id()));
             }
             if nxt_to_ltc.insert(nxt.id(), ltc.id()).is_some() {
-                return Err("duplicate next wire");
+                return Err(format!("Next wire {} is duplicated", ltc.id()));
             }
         }
 
         // Check atoms consistency and infer control wires
         let mut ctrl_nxt: HashSet<usize> = HashSet::new();
-        let mut temp: BTreeMap<usize, Wire<D>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
         let atoms_iter = atoms.into_iter();
-        let mut past_atoms: Vec<Atom<D, I>> = Vec::with_capacity(atoms_iter.size_hint().0);
-        for atom in atoms_iter {
+        let mut past_atoms: Vec<Atom<T>> = Vec::with_capacity(atoms_iter.size_hint().0);
+        for (n, atom) in atoms_iter.enumerate() {
             for ltc in atom.read().wires().map(Wire::id) {
                 if !ltc_set.contains(&ltc) {
-                    return Err("invalid read wire or dtype mismatch");
+                    return Err(format!("Invalid read wire {} in atom {}", ltc, n));
                 }
             }
             for nxt in atom.wait().wires().map(Wire::id) {
                 let expected_dtype = nxt_to_ltc.get(&nxt);
                 if expected_dtype.is_none_or(|i| !ltc_set.contains(i)) {
-                    return Err("invalid await wire or dtype mismatch");
+                    return Err(format!("invalid await wire {} in atom {}", nxt, n));
                 }
             }
             for nxt in atom.ctrl().wires().map(Wire::id) {
                 let expected_dtype = nxt_to_ltc.get(&nxt);
                 if expected_dtype.is_none_or(|i| !ltc_set.contains(i)) {
-                    return Err("invalid control wire or dtype mismatch");
+                    return Err(format!("invalid control wire {} in atom {}", nxt, n));
                 }
                 if !ctrl_nxt.insert(nxt) {
-                    return Err("shared or duplicate atom control wire");
+                    return Err(format!(
+                        "shared or duplicated control wire {} in atom {}",
+                        nxt, n
+                    ));
                 }
             }
 
             for lc in atom.temp() {
                 debug_assert!(!ctrl_nxt.contains(&lc.id()));
                 if ltc_set.contains(&lc.id()) || nxt_to_ltc.contains_key(&lc.id()) {
-                    return Err("temp wires coupled with module wires");
+                    return Err(format!("temp wire {} is also a module wire", lc.id()));
                 }
                 if temp.insert(lc.id(), lc.clone()).is_some() {
-                    return Err("temp wires coupled with other atom");
+                    return Err(format!("temp wire {} coupled with other atom", lc.id()));
                 }
             }
 
             for past_atom in &past_atoms {
                 if past_atom.awaits(&atom) {
-                    return Err("inconsistent awaiting order");
+                    return Err(format!(
+                        "Atom {} is awaited by some previous atom, inconsistent awaiting order",
+                        n
+                    ));
                 }
             }
             past_atoms.push(atom);
@@ -386,14 +392,14 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         // Check that private wires are controlled
         for nxt in prvt.next().iter().map(Wire::id) {
             if !ctrl_nxt.contains(&nxt) {
-                return Err("private wire not controlled");
+                return Err(format!("private wire {} is not controlled", nxt));
             }
         }
 
         // Build intf and extl wires based on inferred control set
-        let mut intf: Vec<[Wire<D>; 2]> = Vec::with_capacity(ctrl_nxt.len() - prvt.len());
-        let mut extl: Vec<[Wire<D>; 2]> = Vec::with_capacity(obs.len() - intf.len());
-        let mut ctrl: Vec<[Wire<D>; 2]> = Vec::with_capacity(ctrl_nxt.len());
+        let mut intf: Vec<[Wire<T::Sort>; 2]> = Vec::with_capacity(ctrl_nxt.len() - prvt.len());
+        let mut extl: Vec<[Wire<T::Sort>; 2]> = Vec::with_capacity(obs.len() - intf.len());
+        let mut ctrl: Vec<[Wire<T::Sort>; 2]> = Vec::with_capacity(ctrl_nxt.len());
 
         for [ltc, nxt] in obs.iter() {
             if ctrl_nxt.contains(&nxt.id()) {
@@ -437,18 +443,14 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// # See Also
     /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn sequential_observable<T, O, V, U>(
-        obs: O,
-        init: V,
-        update: U,
-    ) -> Result<Self, &'static str>
+    pub fn sequential_observable<R, O, V, U>(obs: O, init: V, update: U) -> Result<Self, Error>
     where
-        T: Into<[Wire<D>; 2]>,
-        O: IntoIterator<Item = T>,
-        V: IntoIterator<Item = Term<D, I>>,
-        U: IntoIterator<Item = Term<D, I>>,
+        R: Into<[Wire<T::Sort>; 2]>,
+        O: IntoIterator<Item = R>,
+        V: IntoIterator<Item = Term<T>>,
+        U: IntoIterator<Item = Term<T>>,
     {
-        Self::sequential(obs, std::iter::empty::<T>(), init, update)
+        Self::sequential(obs, std::iter::empty::<R>(), init, update)
     }
 
     pub fn sequential<TO, TP, O, P, V, U>(
@@ -456,14 +458,14 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         prvt: P,
         init: V,
         update: U,
-    ) -> Result<Self, &'static str>
+    ) -> Result<Self, Error>
     where
-        TO: Into<[Wire<D>; 2]>,
-        TP: Into<[Wire<D>; 2]>,
+        TO: Into<[Wire<T::Sort>; 2]>,
+        TP: Into<[Wire<T::Sort>; 2]>,
         O: IntoIterator<Item = TO>,
         P: IntoIterator<Item = TP>,
-        V: IntoIterator<Item = Term<D, I>>,
-        U: IntoIterator<Item = Term<D, I>>,
+        V: IntoIterator<Item = Term<T>>,
+        U: IntoIterator<Item = Term<T>>,
     {
         let obs = Interface::try_from_iter(obs)?;
         let prvt = Interface::try_from_iter(prvt)?;
@@ -493,9 +495,9 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     /// # Returns
     ///
     /// - `Ok(Module<D, I>)` containing the composed module.
-    /// - `Err(&'static str)` describing the reason composition failed.
+    /// - `Err(Error)` describing the reason composition failed.
     ///
-    pub fn parallel<M>(modules: M) -> Result<Self, &'static str>
+    pub fn parallel<M>(modules: M) -> Result<Self, Error>
     where
         M: IntoIterator<Item = Self>,
     {
@@ -503,16 +505,16 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let mut next: HashSet<usize> = HashSet::new();
         let mut restricted: HashSet<usize> = HashSet::new();
 
-        let mut extl: HashMap<usize, Wire<D>> = HashMap::new();
-        let mut intf: HashMap<usize, Wire<D>> = HashMap::new();
+        let mut extl: HashMap<usize, Wire<T::Sort>> = HashMap::new();
+        let mut intf: HashMap<usize, Wire<T::Sort>> = HashMap::new();
 
-        let mut extl_stack: Vec<[Wire<D>; 2]> = Vec::new();
-        let mut intf_stack: Vec<[Wire<D>; 2]> = Vec::new();
-        let mut prvt_stack: Vec<[Wire<D>; 2]> = Vec::new();
-        let mut obs_stack: Vec<[Wire<D>; 2]> = Vec::new();
-        let mut ctrl_stack: Vec<[Wire<D>; 2]> = Vec::new();
-        let mut temp_stack: Vec<[Wire<D>; 1]> = Vec::new();
-        let mut atoms_stack: Vec<Atom<D, I>> = Vec::new();
+        let mut extl_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
+        let mut intf_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
+        let mut prvt_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
+        let mut obs_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
+        let mut ctrl_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
+        let mut temp_stack: Vec<[Wire<T::Sort>; 1]> = Vec::new();
+        let mut atoms_stack: Vec<Atom<T>> = Vec::new();
 
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
 
@@ -526,10 +528,18 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             for [ltc, nxt] in module.obs {
                 debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 if latched.contains(&nxt.id()) || next.contains(&ltc.id()) {
-                    return Err("invalid coupling (direction)");
+                    return Err(format!(
+                        "invalid coupling (direction): either {} is latched or {} is next",
+                        nxt.id(),
+                        ltc.id()
+                    ));
                 }
                 if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
-                    return Err("invalid coupling (restricted)");
+                    return Err(format!(
+                        "invalid coupling for wire pair ({}, {}) (restricted)",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
                 // stack observables that are not already present (avoid duplication)
                 if latched.insert(ltc.id()) {
@@ -544,10 +554,18 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             for [ltc, nxt] in module.prvt {
                 debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 if !latched.insert(ltc.id()) || !next.insert(nxt.id()) {
-                    return Err("invalid coupling (private)");
+                    return Err(format!(
+                        "invalid coupling for wire pair ({}, {}) (private)",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
                 if latched.contains(&nxt.id()) || next.contains(&ltc.id()) {
-                    return Err("invalid coupling (direction)");
+                    return Err(format!(
+                        "invalid coupling for wire pair ({}, {}) (direction)",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
                 debug_assert!(!restricted.contains(&ltc.id()) && !restricted.contains(&nxt.id()));
                 restricted.insert(ltc.id());
@@ -560,10 +578,13 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             temp_stack.reserve(module.temp.len());
             for [tmp] in module.temp {
                 if latched.contains(&tmp.id()) || next.contains(&tmp.id()) {
-                    return Err("invalid coupling (temp)");
+                    return Err(format!("Temp wire {} is latched or next", tmp.id()));
                 }
                 if !restricted.insert(tmp.id()) {
-                    return Err("invalid coupling (temp)");
+                    return Err(format!(
+                        "invalid coupling of temp wire {} (is in restricted)",
+                        tmp.id()
+                    ));
                 }
 
                 temp_stack.push([tmp]);
@@ -576,16 +597,24 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             for [ltc, nxt] in module.extl {
                 debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
-                    return Err("invalid coupling (restricted)");
+                    return Err(format!(
+                        "Wire pair ({}, {}) is restricted",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
 
                 // check whether the wire is coupled (controlled by other atom), or
                 // consider it as external otherwise
                 if let Some(coupled) = intf.get(&ltc.id()) {
                     if coupled.id() != nxt.id() {
-                        return Err("wire id mismatch");
+                        return Err(format!(
+                            "wire id mismatch, expected that wire {} will be the same as {}",
+                            coupled.id(),
+                            nxt.id()
+                        ));
                     } else if coupled.dtype() != nxt.dtype() {
-                        return Err("wire dtype mismatch");
+                        return Err(format!("Wire {} has a wrong dtype", coupled.id()));
                     }
                 } else {
                     extl.insert(ltc.id(), nxt.clone());
@@ -597,21 +626,33 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
             for [ltc, nxt] in module.intf {
                 debug_assert_eq!(ltc.dtype(), nxt.dtype());
                 if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
-                    return Err("invalid coupling (restricted)");
+                    return Err(format!(
+                        "Wire pair ({}, {}) is restricted",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
 
                 // check whether the wire is coupled (external of other atom), and
                 // consider it as interface wire then
                 if let Some(coupled) = extl.remove(&ltc.id()) {
                     if coupled.id() != nxt.id() {
-                        return Err("next wire mismatch");
+                        return Err(format!(
+                            "wire id mismatch, expected that wire {} will be the same as {}",
+                            coupled.id(),
+                            nxt.id()
+                        ));
                     } else if coupled.dtype() != nxt.dtype() {
-                        return Err("dtype mismatch");
+                        return Err(format!("Wire {} has a wrong dtype", coupled.id()));
                     }
                 }
 
                 if intf.insert(ltc.id(), nxt.clone()).is_some() {
-                    return Err("invalid coupling (shared control)");
+                    return Err(format!(
+                        "invalid coupling for wire pair ({}, {}), shared control",
+                        ltc.id(),
+                        nxt.id()
+                    ));
                 }
 
                 intf_stack.push([ltc, nxt]);
@@ -645,7 +686,7 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
         let await_order = topological_order(&await_graph).ok_or("invalid await dependency")?;
         debug_assert_eq!(await_order.len(), await_graph.len());
 
-        let mut atoms: Vec<Atom<D, I>> = Vec::with_capacity(await_graph.len());
+        let mut atoms: Vec<Atom<T>> = Vec::with_capacity(await_graph.len());
         for idx in await_order {
             atoms.push(std::mem::take(&mut atoms_stack[idx]));
         }
@@ -671,7 +712,11 @@ impl<D: Clone + Eq + Debug, I> Module<D, I> {
     }
 }
 
-impl<D: Eq + Clone + Debug, I: Clone> Module<D, I> {
+impl<T: Theory> Module<T>
+where
+    T: Clone,
+    T::Sort: Eq + Clone + Debug,
+{
     /// Constructs a **purely combinatorial module** from an assignment sequence of terms.
     ///
     /// A combinatorial module represents a **stateless, time-independent** relationship
@@ -690,11 +735,11 @@ impl<D: Eq + Clone + Debug, I: Clone> Module<D, I> {
     /// # See Also
     /// - [`Module::sequential_observable`], for constructing stateful, sequential modules.
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
-    pub fn combinatorial<T, O, V>(obs: O, assign: V) -> Result<Self, &'static str>
+    pub fn combinatorial<R, O, V>(obs: O, assign: V) -> Result<Self, Error>
     where
-        T: Into<[Wire<D>; 2]>,
-        O: IntoIterator<Item = T>,
-        V: IntoIterator<Item = Term<D, I>>,
+        R: Into<[Wire<T::Sort>; 2]>,
+        O: IntoIterator<Item = R>,
+        V: IntoIterator<Item = Term<T>>,
     {
         let obs = Interface::from_iter(obs);
         let atom = Atom::combinatorial(obs.next(), assign)?;
@@ -702,7 +747,11 @@ impl<D: Eq + Clone + Debug, I: Clone> Module<D, I> {
     }
 }
 
-impl<D: fmt::Display, I: fmt::Display> Module<D, I> {
+impl<T: Theory> Module<T>
+where
+    T: fmt::Display,
+    T::Sort: fmt::Display,
+{
     fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
         const RESET: &str = "\x1b[0m";
@@ -735,7 +784,11 @@ impl<D: fmt::Display, I: fmt::Display> Module<D, I> {
     }
 }
 
-impl<D: fmt::Display, I: fmt::Display> fmt::Display for Module<D, I> {
+impl<T: Theory> fmt::Display for Module<T>
+where
+    T: fmt::Display,
+    T::Sort: fmt::Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, "")
     }
