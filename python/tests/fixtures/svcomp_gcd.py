@@ -9,7 +9,7 @@ Python semantics:
 Invariant: a >= 1 and b >= 1
 Ranking: a + b - 2 (when a != b; decreases because we subtract the smaller)
 """
-from zrth import Wire, Module, DType as dt
+from zrth import Wire, Module, Sort as dt, LIA
 from zrth.analyzer import convert_method
 
 
@@ -27,10 +27,10 @@ def update(old_a, old_b):
 
 
 def module() -> Module:
-    a = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    b = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    init_terms = convert_method(init, {}, [a[1], b[1]])
+    a = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    b = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    init_terms = convert_method(init, {}, [a[1], b[1]], theory=LIA)
     update_terms = convert_method(
-        update, {"old_a": a, "old_b": b}, [a[1], b[1]]
+        update, {"old_a": a, "old_b": b}, [a[1], b[1]], theory=LIA
     )
     return Module.sequential(init_terms, update_terms, obs=[a, b])

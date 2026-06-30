@@ -1,6 +1,7 @@
 """Shared helpers used by multiple translate sub-modules."""
 
 from zrth.lean.common import (
+    dtype_shape,
     _accessor,
     _flat_size,
     _flat_element_type,
@@ -43,7 +44,7 @@ def _scalar_bindings_with_recon(
                 bindings[w.id] = slots[0]
             else:
                 mat_ty = dtype_to_lean_type(w)
-                mat_expr = _mat_from_scalars(slots, list(w.dtype.shape), _flat_element_type(w))
+                mat_expr = _mat_from_scalars(slots, list(dtype_shape(w.dtype)), _flat_element_type(w))
                 var_name = f"_m{let_counter[0]}"
                 let_counter[0] += 1
                 let_lines.append(f"  let {var_name} : {mat_ty} := {mat_expr}")

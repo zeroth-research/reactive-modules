@@ -1,4 +1,21 @@
-from zrth import Term, Wire, DType, Module
+from zrth import Term, Wire, Sort, Module
+
+
+def dtype_shape(dt) -> list:
+    """Shape of a Sort, across all element types.
+
+    Bool/Int/Real carry the shape in field ``_0``; BitVec carries the bit-width
+    in ``_0`` and the shape in ``_1``. main always uses 2-D shapes (a scalar is
+    ``[1, 1]``).
+    """
+    if isinstance(dt, Sort.BitVec):
+        return list(dt._1)
+    return list(dt._0)
+
+
+def _is_scalar_shape(shape: list) -> bool:
+    """True if the shape denotes a single element ([], [1], [1, 1], ...)."""
+    return all(d == 1 for d in shape)
 
 
 def _accessor(pos: int, total: int) -> str:
@@ -17,37 +34,49 @@ def _accessor(pos: int, total: int) -> str:
 
 
 def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
-    """Map a Wire's DType to a native Lean type (Bool, Int, Fin m → Fin n → Int)."""
+    """Map a Wire's Sort to a native Lean type (Bool, Int, Fin m → Fin n → Int)."""
 
     dt = wire.dtype
-    shape = dt.shape
+    shape = dtype_shape(dt)
 
-    if isinstance(dt, DType.Bool):
+    if isinstance(dt, Sort.Bool):
         ty = "Bool"
-    elif isinstance(dt, DType.Int):
+    elif isinstance(dt, Sort.Int):
         ty = "Int"
-    elif isinstance(dt, DType.Float):
+    elif isinstance(dt, Sort.Real):
         # TODO: Float is *NOT* Real, but we stick to that for proofs atm
         ty = "Real"
     else:
-        raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
+        raise ValueError(f"Unsupported Sort for Lean conversion: {dt}")
 
-    if shape == [1] or shape == []:
+    if _is_scalar_shape(shape):
         return ty if simple_types else f"(Mat {ty} 1 1)"
     if len(shape) == 1:
         return f"(Mat {ty} 1 {shape[0]})"
     if len(shape) == 2:
         return f"(Mat {ty} {shape[0]} {shape[1]})"
-    raise ValueError(f"Unsupported DType shape: {shape}")
+    raise ValueError(f"Unsupported Sort shape: {shape}")
 
 
 def itype_name(itype) -> str:
-    """Get the variant name of an IType, e.g. IType.Add() -> 'Add'."""
+    """Get the variant name of an op, e.g. LIA.Add() -> 'Add'."""
     name = type(itype).__name__
-    # PyO3 exports variants as IType_Add, IType_Tensor, etc.
-    if name.startswith("IType_"):
-        return name[6:]
+    # PyO3 exports theory ops as LIA_Add, LRA_ConstReal, BV_MatMul, etc.
+    for prefix in ("LIA_", "LRA_", "BV_"):
+        if name.startswith(prefix):
+            return name[len(prefix):]
     return name
+
+
+# Constant op variants across theories (LIA.ConstInt/ConstBool,
+# LRA.ConstReal/ConstBool, BV.Const). The element type is encoded in the
+# variant name; scalar-vs-matrix is decided by the wire's shape.
+_CONST_VARIANTS = frozenset({"ConstInt", "ConstReal", "ConstBool", "Const"})
+
+
+def is_constant_name(name: str) -> bool:
+    """True if the variant name denotes a constant in any theory."""
+    return name in _CONST_VARIANTS
 
 
 # ======================================================================
@@ -69,7 +98,7 @@ class ConstantRegistry:
 
         Idempotent: calling again for the same output wire is a no-op.
         """
-        if itype_name(term.itype) != "Tensor":
+        if not is_constant_name(itype_name(term.itype)):
             return
         out_wire = term.write[0]
         if _is_scalar_tensor(out_wire) or out_wire.id in self._by_id:
@@ -92,22 +121,19 @@ class ConstantRegistry:
 def _constant_expr(
     const_name: str, term: Term, w: Wire, constants: "ConstantRegistry"
 ) -> str:
-    if const_name == "Tensor":
-        name = constants.lookup(w.id)
-        if name is not None:
-            return name
-        return _tensor_to_lean_inline(term.itype._0, w)
-    if const_name == "ConstBool":
-        val = "true" if bool(term.itype._0) else "false"
-        return f"(fun _ _ => {val})"
-    return f"(fun _ _ => ({int(term.itype._0)} : Int))"
+    # Matrix constants are interned as top-level defs; scalars are inlined as
+    # a 1x1 matrix literal driven by the wire's element type (Bool/Int/Real).
+    name = constants.lookup(w.id)
+    if name is not None:
+        return name
+    return _tensor_to_lean_inline(term.itype._0, w)
 
 
 def _any_float_wire(*wire_lists: list[Wire]) -> bool:
     """True if any wire across the given lists has a Float dtype."""
     for wires in wire_lists:
         for w in wires:
-            if isinstance(w.dtype, DType.Float):
+            if isinstance(w.dtype, Sort.Real):
                 return True
     return False
 
@@ -179,12 +205,12 @@ class LeanContext:
         )
 
 
-def _get_dtype_item(dtype: DType, item) -> str:
-    if isinstance(dtype, DType.Bool):
+def _get_dtype_item(dtype: Sort, item) -> str:
+    if isinstance(dtype, Sort.Bool):
         return "true" if bool(item) else "false"
-    if isinstance(dtype, DType.Int):
+    if isinstance(dtype, Sort.Int):
         return str(int(item))
-    if isinstance(dtype, DType.Float):
+    if isinstance(dtype, Sort.Real):
         return _float_literal(float(item))
     raise NotImplementedError(f"Unhnadled type: {dtype}")
 
@@ -199,9 +225,9 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
           | 0, 0 => 0 | 0, 1 => 1
           ...
     """
-    shape = wire.dtype.shape
+    shape = dtype_shape(wire.dtype)
 
-    if shape == [1] or shape == []:
+    if _is_scalar_shape(shape):
         val = _get_dtype_item(wire.dtype, tensor.item())
         ty = dtype_to_lean_type(wire)
         assert "Mat" in ty and " 1 1" in ty, ty
@@ -235,18 +261,16 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
 def _is_scalar_tensor(wire: Wire) -> bool:
     """True if the wire carries a scalar Bool or Int (not a matrix)."""
     dt = wire.dtype
-    if isinstance(dt, DType.Bool):
+    if isinstance(dt, Sort.Bool):
         return True
-    if isinstance(dt, DType.Int):
-        shape = dt.shape
-        return shape == [] or shape == [1]
+    if isinstance(dt, Sort.Int):
+        return _is_scalar_shape(dtype_shape(dt))
     return False
 
 
 def _is_scalar_wire(wire: Wire) -> bool:
-    """True if the wire is a scalar (shape [] or [1], any scalar dtype)."""
-    shape = wire.dtype.shape
-    return shape == [] or shape == [1]
+    """True if the wire is a scalar (single element, any scalar dtype)."""
+    return _is_scalar_shape(dtype_shape(wire.dtype))
 
 
 def _float_literal(v: float) -> str:
@@ -258,23 +282,23 @@ def _float_literal(v: float) -> str:
 
 def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
     """Return an inline `Mat _ 1 1` literal for a scalar tensor."""
-    if isinstance(wire.dtype, DType.Bool):
+    if isinstance(wire.dtype, Sort.Bool):
         val = "true" if bool(tensor.item()) else "false"
         return f"(fun _ _ => {val})"
-    if isinstance(wire.dtype, DType.Int):
+    if isinstance(wire.dtype, Sort.Int):
         return f"(fun _ _ => ({int(tensor.item())} : Int))"
-    if isinstance(wire.dtype, DType.Float):
+    if isinstance(wire.dtype, Sort.Real):
         return f"(fun _ _ => {_float_literal(float(tensor.item()))})"
     raise ValueError(f"Cannot inline tensor with dtype={wire.dtype}")
 
 
 def _tensor_to_lean_scalar(tensor, wire: Wire) -> str:
     """Return a bare scalar literal (no Mat wrapper) for a scalar tensor."""
-    if isinstance(wire.dtype, DType.Bool):
+    if isinstance(wire.dtype, Sort.Bool):
         return "true" if bool(tensor.item()) else "false"
-    if isinstance(wire.dtype, DType.Int):
+    if isinstance(wire.dtype, Sort.Int):
         return f"({int(tensor.item())} : Int)"
-    if isinstance(wire.dtype, DType.Float):
+    if isinstance(wire.dtype, Sort.Real):
         return _float_literal(float(tensor.item()))
     raise ValueError(f"Cannot inline scalar for dtype={wire.dtype}")
 
@@ -298,13 +322,13 @@ def _bind_wires_scalar(params: list[tuple[str, list[Wire]]]) -> dict[int, str]:
 def _flat_element_type(wire: Wire) -> str:
     """Base Lean scalar type for one element of the wire (no Mat wrapper)."""
     dt = wire.dtype
-    if isinstance(dt, DType.Bool):
+    if isinstance(dt, Sort.Bool):
         return "Bool"
-    if isinstance(dt, DType.Int):
+    if isinstance(dt, Sort.Int):
         return "Int"
-    if isinstance(dt, DType.Float):
+    if isinstance(dt, Sort.Real):
         return "Real"
-    raise ValueError(f"Unsupported DType for scalar element: {dt}")
+    raise ValueError(f"Unsupported Sort for scalar element: {dt}")
 
 
 def _flat_indices(wire: Wire) -> list[tuple[int, int]]:
@@ -314,8 +338,8 @@ def _flat_indices(wire: Wire) -> list[tuple[int, int]]:
     shape [n]       → [(0, 0), (0, 1), ..., (0, n-1)]
     shape [m, n]    → [(i, j) for i in range(m) for j in range(n)]
     """
-    shape = wire.dtype.shape
-    if not shape or shape == [1]:
+    shape = dtype_shape(wire.dtype)
+    if _is_scalar_shape(shape):
         return [(0, 0)]
     if len(shape) == 1:
         return [(0, j) for j in range(shape[0])]
@@ -350,7 +374,7 @@ def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
     shape [n]:       ``(fun _ j => Fin.cons s0 (Fin.cons s1 ...) j)``
     shape [m, n]:    ``(fun i j => Fin.cons row0 (Fin.cons row1 ...) i j)``
     """
-    if not shape or shape == [1]:
+    if _is_scalar_shape(shape):
         assert len(slots) == 1
         return f"(fun _ _ => {slots[0]})"
     if len(shape) == 1:

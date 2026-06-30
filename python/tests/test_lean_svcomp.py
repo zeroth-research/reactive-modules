@@ -13,7 +13,7 @@ import pytest
 from os.path import dirname
 from pathlib import Path
 
-from zrth import Wire, Module, DType as dt
+from zrth import Wire, Module, Sort as dt, LIA
 from zrth.analyzer import convert_method
 from zrth.lean.project import create_project, write_data_lean
 from zrth.lean.cert import CertificateData, smt_predicates_to_lean
@@ -84,10 +84,10 @@ def _make_countdown():
             return 100
         return old_x - 1
 
-    s = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    s = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
     return Module.sequential(
-        convert_method(init, {}, [s[1]]),
-        convert_method(update, {"old_x": s}, [s[1]]),
+        convert_method(init, {}, [s[1]], theory=LIA),
+        convert_method(update, {"old_x": s}, [s[1]], theory=LIA),
         obs=[s],
     )
 
@@ -103,11 +103,11 @@ def _make_twovars():
             return old_x + 1, old_y
         return 0, 10
 
-    x = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    y = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    x = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    y = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
     return Module.sequential(
-        convert_method(init, {}, [x[1], y[1]]),
-        convert_method(update, {"old_x": x, "old_y": y}, [x[1], y[1]]),
+        convert_method(init, {}, [x[1], y[1]], theory=LIA),
+        convert_method(update, {"old_x": x, "old_y": y}, [x[1], y[1]], theory=LIA),
         obs=[x, y],
     )
 
@@ -127,10 +127,10 @@ def _make_collatz_bounded():
             return old_x - 1
         return old_x
 
-    s = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    s = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
     return Module.sequential(
-        convert_method(init, {}, [s[1]]),
-        convert_method(update, {"old_x": s}, [s[1]]),
+        convert_method(init, {}, [s[1]], theory=LIA),
+        convert_method(update, {"old_x": s}, [s[1]], theory=LIA),
         obs=[s],
     )
 
@@ -148,11 +148,11 @@ def _make_nested():
             return old_i + 1, 0
         return 0, 0
 
-    i = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    j = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    i = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    j = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
     return Module.sequential(
-        convert_method(init, {}, [i[1], j[1]]),
-        convert_method(update, {"old_i": i, "old_j": j}, [i[1], j[1]]),
+        convert_method(init, {}, [i[1], j[1]], theory=LIA),
+        convert_method(update, {"old_i": i, "old_j": j}, [i[1], j[1]], theory=LIA),
         obs=[i, j],
     )
 
@@ -170,11 +170,11 @@ def _make_gcd():
             return old_a, old_b - old_a
         return 12, 8
 
-    a = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    b = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    a = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    b = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
     return Module.sequential(
-        convert_method(init, {}, [a[1], b[1]]),
-        convert_method(update, {"old_a": a, "old_b": b}, [a[1], b[1]]),
+        convert_method(init, {}, [a[1], b[1]], theory=LIA),
+        convert_method(update, {"old_a": a, "old_b": b}, [a[1], b[1]], theory=LIA),
         obs=[a, b],
     )
 

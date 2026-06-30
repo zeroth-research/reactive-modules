@@ -45,7 +45,7 @@ def test_verith_no_property():
         assert r.returncode == 0, r.stderr
         assert (Path(tmpdir) / "CounterBasic").exists()
         data = (
-            Path(tmpdir) / "CounterBasic" / "CounterBasic" / "CounterBasicData.lean"
+            Path(tmpdir) / "CounterBasic" / "System" / "Data.lean"
         ).read_text()
         assert "sorry" in data
 

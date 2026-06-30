@@ -8,6 +8,7 @@ from zrth.lean.native import (
     _argmax_scalar_name,
 )
 from zrth.lean.common import (
+    dtype_shape,
     LeanContext,
     _accessor,
     _flat_size,
@@ -45,7 +46,7 @@ def _pack_body(var: str, wires: "list[Wire]") -> str:
     for w in wires:
         n = _flat_size(w)
         slots = flat_accrs[offset : offset + n]
-        parts.append(_mat_from_scalars(slots, list(w.dtype.shape), _flat_element_type(w)))
+        parts.append(_mat_from_scalars(slots, list(dtype_shape(w.dtype)), _flat_element_type(w)))
         offset += n
     return _build_tuple(parts)
 

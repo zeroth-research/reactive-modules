@@ -3,7 +3,7 @@
 Public API: ``ModuleToLean4`` — identical to the old ``translate.py``.
 """
 
-from zrth.lean.common import LeanContext
+from zrth.lean.common import LeanContext, dtype_shape
 from zrth import Module
 
 from zrth.lean.translate._shared import _scalar_bindings_with_recon, _prepend_recon
@@ -44,7 +44,7 @@ class ModuleToLean4:
         """True when every wire has a shape that can be flattened to scalars (≤ 2-D)."""
         ctx = self.ctx
         all_wires = ctx.ctrl_latched + ctx.ctrl_next + ctx.extl_latched + ctx.extl_next
-        return all(len(w.dtype.shape) <= 2 for w in all_wires)
+        return all(len(dtype_shape(w.dtype)) <= 2 for w in all_wires)
 
     # ------------------------------------------------------------------
     # Functional encoding

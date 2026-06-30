@@ -40,7 +40,7 @@ The file must expose a callable named ``module`` (override with ``-d``) that
 returns a :class:`zrth.Module`::
 
     # mymodule.py
-    from zrth import Wire, Module, DType as dt
+    from zrth import Wire, Module, Sort as dt
     from zrth.analyzer import convert_method
 
     def init():

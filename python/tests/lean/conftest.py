@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from zrth import DType as dt
-from zrth import Module, Wire
+from zrth import Sort as dt
+from zrth import Module, Wire, LIA
 from zrth.analyzer import convert_method
 from zrth.lean.cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
@@ -42,10 +42,10 @@ def _make_countdown() -> Module:
             return 100
         return old_x - 1
 
-    s = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    s = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
     return Module.sequential(
-        convert_method(init, {}, [s[1]]),
-        convert_method(update, {"old_x": s}, [s[1]]),
+        convert_method(init, {}, [s[1]], theory=LIA),
+        convert_method(update, {"old_x": s}, [s[1]], theory=LIA),
         obs=[s],
     )
 
@@ -59,11 +59,11 @@ def _make_twovars() -> Module:
             return old_x + 1, old_y
         return 0, 10
 
-    x = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    y = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    x = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    y = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
     return Module.sequential(
-        convert_method(init, {}, [x[1], y[1]]),
-        convert_method(update, {"old_x": x, "old_y": y}, [x[1], y[1]]),
+        convert_method(init, {}, [x[1], y[1]], theory=LIA),
+        convert_method(update, {"old_x": x, "old_y": y}, [x[1], y[1]], theory=LIA),
         obs=[x, y],
     )
 
@@ -81,10 +81,10 @@ def _make_collatz() -> Module:
             return old_x - 1
         return old_x
 
-    s = (Wire(dt.Int([1])), Wire(dt.Int([1])))
+    s = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
     return Module.sequential(
-        convert_method(init, {}, [s[1]]),
-        convert_method(update, {"old_x": s}, [s[1]]),
+        convert_method(init, {}, [s[1]], theory=LIA),
+        convert_method(update, {"old_x": s}, [s[1]], theory=LIA),
         obs=[s],
     )
 

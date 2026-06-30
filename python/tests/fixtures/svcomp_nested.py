@@ -9,7 +9,7 @@ Python semantics:
 Invariant: 0 <= i <= 3 and 0 <= j <= 3
 Ranking: (3 - i) * 4 + (3 - j) (when not at (0,0))
 """
-from zrth import Wire, Module, DType as dt
+from zrth import Wire, Module, Sort as dt, LIA
 from zrth.analyzer import convert_method
 
 
@@ -28,10 +28,10 @@ def update(old_i, old_j):
 
 
 def module() -> Module:
-    i = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    j = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    init_terms = convert_method(init, {}, [i[1], j[1]])
+    i = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    j = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    init_terms = convert_method(init, {}, [i[1], j[1]], theory=LIA)
     update_terms = convert_method(
-        update, {"old_i": i, "old_j": j}, [i[1], j[1]]
+        update, {"old_i": i, "old_j": j}, [i[1], j[1]], theory=LIA
     )
     return Module.sequential(init_terms, update_terms, obs=[i, j])
