@@ -1,6 +1,6 @@
 """SMT encoding utilities for the CEGAR magic driver.
 
-Maps Python IR types (`DType`) to cvc5 sorts, and provides element access
+Maps Python IR types (`Sort`) to cvc5 sorts, and provides element access
 helpers for matrix-shaped state components.
 
 Matrix representation
@@ -19,8 +19,8 @@ from typing import Callable
 import cvc5
 from cvc5 import Kind
 
-from zrth import Wire, DType, Term
-from .common import itype_name
+from zrth import Wire, Sort, Term
+from .common import itype_name, dtype_shape
 
 
 @dataclass(frozen=True)
@@ -47,25 +47,25 @@ def wire_shape(wire: Wire) -> MatShape:
     Matrices (`shape == [m, n]`) → (m, n).
     Anything else raises.
     """
-    shape = wire.dtype.shape
+    shape = dtype_shape(wire.dtype)
     if shape in ([], [1]):
         return MatShape(1, 1)
     if len(shape) == 1:
         return MatShape(1, shape[0])
     if len(shape) == 2:
         return MatShape(shape[0], shape[1])
-    raise ValueError(f"Unsupported DType shape for SMT encoding: {shape}")
+    raise ValueError(f"Unsupported Sort shape for SMT encoding: {shape}")
 
 
-def elem_sort(tm: cvc5.TermManager, dt: DType) -> cvc5.Sort:
-    """cvc5 sort for the element type of a DType (ignoring shape)."""
-    if isinstance(dt, DType.Bool):
+def elem_sort(tm: cvc5.TermManager, dt: Sort) -> cvc5.Sort:
+    """cvc5 sort for the element type of a Sort (ignoring shape)."""
+    if isinstance(dt, Sort.Bool):
         return tm.getBooleanSort()
-    if isinstance(dt, DType.Int):
+    if isinstance(dt, Sort.Int):
         return tm.getIntegerSort()
-    if isinstance(dt, DType.Float):
+    if isinstance(dt, Sort.Real):
         return tm.getRealSort()
-    raise ValueError(f"Unsupported DType for SMT encoding: {dt}")
+    raise ValueError(f"Unsupported Sort for SMT encoding: {dt}")
 
 
 def wire_sort(tm: cvc5.TermManager, wire: Wire) -> cvc5.Sort:
@@ -105,9 +105,7 @@ def mat_pack(
 ) -> cvc5.Term:
     """Build a matrix cvc5 term from row-major element list."""
     if len(elems) != shape.total:
-        raise ValueError(
-            f"expected {shape.total} elements, got {len(elems)}"
-        )
+        raise ValueError(f"expected {shape.total} elements, got {len(elems)}")
     if shape.is_scalar:
         return elems[0]
     return tm.mkTuple(elems)
@@ -118,15 +116,15 @@ def mat_pack(
 # -----------------------------------------------------------------
 
 
-def _scalar_const(tm: cvc5.TermManager, dt: DType, raw) -> cvc5.Term:
-    """cvc5 literal for a scalar Python value of the given DType."""
-    if isinstance(dt, DType.Bool):
+def _scalar_const(tm: cvc5.TermManager, dt: Sort, raw) -> cvc5.Term:
+    """cvc5 literal for a scalar Python value of the given Sort."""
+    if isinstance(dt, Sort.Bool):
         return tm.mkBoolean(bool(raw))
-    if isinstance(dt, DType.Int):
+    if isinstance(dt, Sort.Int):
         return tm.mkInteger(int(raw))
-    if isinstance(dt, DType.Float):
+    if isinstance(dt, Sort.Real):
         return tm.mkReal(float(raw))
-    raise ValueError(f"Unsupported scalar DType: {dt}")
+    raise ValueError(f"Unsupported scalar Sort: {dt}")
 
 
 def _tensor_const(tm: cvc5.TermManager, wire: Wire, tensor) -> cvc5.Term:
@@ -185,9 +183,7 @@ def _matmul(
                 )
                 for k in range(a_shape.n)
             ]
-            elems.append(
-                prods[0] if len(prods) == 1 else tm.mkTerm(Kind.ADD, *prods)
-            )
+            elems.append(prods[0] if len(prods) == 1 else tm.mkTerm(Kind.ADD, *prods))
     return mat_pack(tm, out_shape, elems)
 
 
@@ -240,11 +236,11 @@ def translate_terms(
             wt[write.id] = _tensor_const(tm, write, term.itype._0)
             continue
         if name == "ConstBool":
-            v = _scalar_const(tm, DType.Bool([1]), term.itype._0)
+            v = _scalar_const(tm, Sort.Bool([1, 1]), term.itype._0)
             wt[write.id] = mat_pack(tm, out_shape, [v] * out_shape.total)
             continue
         if name == "ConstInt":
-            v = _scalar_const(tm, DType.Int([1]), term.itype._0)
+            v = _scalar_const(tm, Sort.Int([1, 1]), term.itype._0)
             wt[write.id] = mat_pack(tm, out_shape, [v] * out_shape.total)
             continue
 
@@ -254,21 +250,33 @@ def translate_terms(
         if name == "Id":
             wt[write.id] = args[0]
         elif name == "Not":
-            wt[write.id] = _elementwise(tm, out_shape, _unop_scalar(tm, Kind.NOT), args[0])
+            wt[write.id] = _elementwise(
+                tm, out_shape, _unop_scalar(tm, Kind.NOT), args[0]
+            )
         elif name == "And":
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, Kind.AND), *args)
+            wt[write.id] = _elementwise(
+                tm, out_shape, _binop_scalar(tm, Kind.AND), *args
+            )
         elif name == "Or":
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, Kind.OR), *args)
+            wt[write.id] = _elementwise(
+                tm, out_shape, _binop_scalar(tm, Kind.OR), *args
+            )
         elif name == "Ite":
             # cond is Mat Bool 1 1; extract its scalar and ITE on full matrices
             cond = mat_select(tm, args[0], in_shapes[0], 0, 0)
             wt[write.id] = tm.mkTerm(Kind.ITE, cond, args[1], args[2])
         elif name == "Add":
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, Kind.ADD), *args)
+            wt[write.id] = _elementwise(
+                tm, out_shape, _binop_scalar(tm, Kind.ADD), *args
+            )
         elif name == "Sub":
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, Kind.SUB), *args)
+            wt[write.id] = _elementwise(
+                tm, out_shape, _binop_scalar(tm, Kind.SUB), *args
+            )
         elif name == "Mul":
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, Kind.MULT), *args)
+            wt[write.id] = _elementwise(
+                tm, out_shape, _binop_scalar(tm, Kind.MULT), *args
+            )
         elif name == "Neg":
             wt[write.id] = _elementwise(
                 tm, out_shape, lambda a: tm.mkTerm(Kind.NEG, a), args[0]
@@ -276,9 +284,7 @@ def translate_terms(
         elif name == "Mod":
             a = mat_select(tm, args[0], in_shapes[0], 0, 0)
             b = mat_select(tm, args[1], in_shapes[1], 0, 0)
-            wt[write.id] = mat_pack(
-                tm, out_shape, [tm.mkTerm(Kind.INTS_MODULUS, a, b)]
-            )
+            wt[write.id] = mat_pack(tm, out_shape, [tm.mkTerm(Kind.INTS_MODULUS, a, b)])
         elif name in ("Lt", "Le", "Gt", "Ge", "Eq", "Neq"):
             kind = {
                 "Lt": Kind.LT,

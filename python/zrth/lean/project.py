@@ -3,7 +3,7 @@ Build a Lean4 project with Mathlib, Cslib, and a custom git dependency,
 copy template library files, and generate a diagram Lean file.
 """
 
-from zrth.lean.common import LeanContext, dtype_to_lean_type
+from zrth.lean.common import LeanContext, dtype_to_lean_type, dtype_shape
 
 from zrth.lean.cert import (
     generate_certificate_lean,
@@ -16,7 +16,7 @@ from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 import shutil
 from pathlib import Path
 
-from zrth import Module, Wire, Wrapper
+from zrth import Module, Wire, Env
 from .native import (
     _product_type,
     _append_expr,
@@ -68,7 +68,7 @@ def _token_count(wire: Wire) -> int:
     to read to get a single input value (which can be e.g., a matrix).
     This function computes this.
     """
-    shape = wire.dtype.shape
+    shape = dtype_shape(wire.dtype)
     if shape == []:
         return 1
     if len(shape) == 1:
@@ -136,7 +136,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         else:
             # .mat m n
             dt = w.dtype
-            shape = dt.shape
+            shape = dtype_shape(dt)
             m = shape[0]
             n = shape[1] if len(shape) == 2 else 1
             # Parse m*n tokens into a matrix
@@ -176,7 +176,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
             show_parts.append(f"toString {var}")
         else:
             dt = w.dtype
-            shape = dt.shape
+            shape = dtype_shape(dt)
             m = shape[0]
             n = shape[1] if len(shape) == 2 else 1
             show_parts.append(f"showMat {m} {n} {var}")
@@ -541,4 +541,6 @@ def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
     result = module_def()
     if isinstance(result, Module):
         return result
-    return Wrapper(result)
+    # main merged the old `Wrapper` into `Env`; wrap non-Module results (e.g.
+    # a gym environment) into a reactive Module via `Env`.
+    return Env(result)

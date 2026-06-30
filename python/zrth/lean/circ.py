@@ -9,11 +9,13 @@ IType operation to its Lean equivalent.
 
 from __future__ import annotations
 from zrth.lean.common import (
+    dtype_shape,
     ConstantRegistry,
     _accessor,
     _constant_expr,
     dtype_to_lean_type,
     itype_name,
+    is_constant_name,
 )
 
 from dataclasses import dataclass
@@ -127,7 +129,7 @@ def _circ_translate_body(
             term = wire_to_term[w]
             name = itype_name(term.itype)
             # constant terms have no inputs, the do not propagate into the upper layers
-            if name in ("Tensor", "ConstBool", "ConstInt"):
+            if is_constant_name(name):
                 continue
 
             new_layer.extend(term.read)
@@ -329,14 +331,14 @@ def _translate_terms_circ(
                 term = wire_to_term[w]
                 name = itype_name(term.itype)
 
-                if name in ("Tensor", "ConstBool", "ConstInt"):
+                if is_constant_name(name):
                     expr = _constant_expr(name, term, w, constants)
 
                     boxes.append(f"@Box.const {dtype_to_lean_type(w)} {expr}")
                     out_ty.append(dtype_to_lean_type(w))
                 else:
                     if name == "Argmax":
-                        boxes.append(_argmax_box(term.read[0].dtype.shape))
+                        boxes.append(_argmax_box(dtype_shape(term.read[0].dtype)))
                     else:
                         boxes.append(_LEAN_OP_BOX[name])
                     in_ty.extend([dtype_to_lean_type(u) for u in term.read])

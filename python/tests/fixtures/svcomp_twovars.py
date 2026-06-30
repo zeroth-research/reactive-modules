@@ -8,7 +8,7 @@ Python semantics:
 Invariant: 0 <= x <= y and y == 10
 Ranking: y - x (when x != y)
 """
-from zrth import Wire, Module, DType as dt
+from zrth import Wire, Module, Sort as dt, LIA
 from zrth.analyzer import convert_method
 
 
@@ -23,10 +23,10 @@ def update(old_x, old_y):
 
 
 def module() -> Module:
-    x = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    y = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    init_terms = convert_method(init, {}, [x[1], y[1]])
+    x = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    y = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    init_terms = convert_method(init, {}, [x[1], y[1]], theory=LIA)
     update_terms = convert_method(
-        update, {"old_x": x, "old_y": y}, [x[1], y[1]]
+        update, {"old_x": x, "old_y": y}, [x[1], y[1]], theory=LIA
     )
     return Module.sequential(init_terms, update_terms, obs=[x, y])
