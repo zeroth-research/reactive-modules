@@ -45,13 +45,13 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
    try simp_mat
    try simp_defs
-   try split_ifs <;> omega
+   all_goals ((try split_ifs) <;> first | omega | (norm_cast; omega))
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
    try simp_defs
    try simp_mat
-   try split_ifs <;> omega
+   all_goals ((try split_ifs) <;> first | omega | (norm_cast; omega))
 
 section TS
 
@@ -81,7 +81,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     rw [← heq]
     simp_defs
     simp_mat
-    split_ifs <;> first | omega | (norm_cast; omega)
+    all_goals ((try split_ifs) <;> first | omega | (norm_cast; omega))
 
 {{ noncomp }}def buchi := rule_buchi
   lts
