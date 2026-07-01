@@ -379,12 +379,15 @@ def _sort_elem_ty(sort: Sort) -> str:
 
 
 def tensor_to_mat_expr(tensor, elem_sort: Sort, shape: list[int]) -> str:
-    """Inline, exhaustive-safe `Mat` literal for a baked-in constant tensor.
+    """Inline `Mat` literal for a baked-in constant tensor, as a `match` on the
+    `Fin` indices.
 
-    Unlike the `match i, j`-based `_tensor_to_lean_def`, this builds the matrix
-    with `Fin.cons` chains (via `_mat_from_scalars`), so Lean never needs to
-    prove pattern exhaustiveness. `elem_sort` selects element formatting
-    (Int/Real/Bool); `shape` is the tensor's `[m, n]` (or `[n]` / scalar).
+    A `match i, j with | r, c => v` is opaque to `split_ifs`, so an unreduced
+    constant matrix (e.g. a large one whose surrounding `Fin.sum_univ_n` did not
+    fire) degrades to an unsolved goal rather than a combinatorial `split_ifs`
+    blow-up. Concrete indices still reduce by matcher iota under `simp`.
+    `elem_sort` selects element formatting (Int/Real/Bool); `shape` is the
+    tensor's `[m, n]` (or `[n]` / scalar).
     """
     if _is_scalar_shape(shape):
         m, n = 1, 1
@@ -392,9 +395,14 @@ def tensor_to_mat_expr(tensor, elem_sort: Sort, shape: list[int]) -> str:
         m, n = 1, shape[0]
     else:
         m, n = shape[0], shape[1]
+    ty = _sort_elem_ty(elem_sort)
     data = tensor.reshape(m, n)
-    slots = [_get_dtype_item(elem_sort, data[i, j].item()) for i in range(m) for j in range(n)]
-    return _mat_from_scalars(slots, [m, n], _sort_elem_ty(elem_sort))
+    arms = " ".join(
+        f"| {i}, {j} => {_get_dtype_item(elem_sort, data[i, j].item())}"
+        for i in range(m)
+        for j in range(n)
+    )
+    return f"(fun (i : Fin {m}) (j : Fin {n}) => ((match i, j with {arms}) : {ty}))"
 
 
 def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
