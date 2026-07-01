@@ -17,8 +17,19 @@ from dataclasses import dataclass
 import cvc5
 from cvc5 import Kind
 
+from .common import dtype_shape
 from .smt_encode import wire_sort
 from .smt_module import ModuleSMT
+
+
+def _wire_rc(wire) -> tuple[int, int]:
+    """(rows, cols) of a wire's matrix shape (main shapes are always 2-D)."""
+    shape = dtype_shape(wire.dtype)
+    if len(shape) == 1:
+        return 1, shape[0]
+    if len(shape) == 2:
+        return shape[0], shape[1]
+    return 1, 1
 
 
 # ---------------------------------------------------------------------
@@ -95,6 +106,52 @@ class _E:
         return _E(self._tm, self._tm.mkTerm(Kind.APPLY_SELECTOR, sel, self._t))
 
 
+class _Row:
+    """Intermediate for 2-D indexing: `v[i]` → `_Row`, then `v[i][j]` → element."""
+
+    __slots__ = ("_var", "_i")
+
+    def __init__(self, var: "_MatVar", i: int):
+        self._var, self._i = var, i
+
+    def __getitem__(self, j: int) -> "_E":
+        return self._var._element(self._i, j)
+
+
+class _MatVar(_E):
+    """A state/input variable that knows its matrix shape, so predicates can
+    address elements as ``v[i][j]`` (or ``v[i, j]``) into the row-major flat
+    tuple. ``v`` alone is still the whole matrix term; a scalar (1×1) var
+    accepts only ``v[0][0]``.
+    """
+
+    __slots__ = ("_rows", "_cols")
+
+    def __init__(self, tm: cvc5.TermManager, t: cvc5.Term, rows: int, cols: int):
+        super().__init__(tm, t)
+        self._rows, self._cols = rows, cols
+
+    def _element(self, i: int, j: int) -> "_E":
+        if not (0 <= i < self._rows and 0 <= j < self._cols):
+            raise IndexError(
+                f"index ({i}, {j}) out of bounds for {self._rows}×{self._cols} matrix"
+            )
+        idx = i * self._cols + j
+        sort = self._t.getSort()
+        if not sort.isTuple():
+            # scalar (1×1) var — the term itself is the single element
+            return _E(self._tm, self._t)
+        ctor = sort.getDatatype()[0]
+        sel = ctor[idx].getTerm()
+        return _E(self._tm, self._tm.mkTerm(Kind.APPLY_SELECTOR, sel, self._t))
+
+    def __getitem__(self, key):
+        if isinstance(key, tuple):
+            i, j = key
+            return self._element(i, j)
+        return _Row(self, key)
+
+
 def _pyeval_namespace(env: "CegarPromptEnv") -> dict:
     """Build the namespace exposed to Python-expression predicates."""
     tm = env.tm
@@ -128,12 +185,18 @@ def _pyeval_namespace(env: "CegarPromptEnv") -> dict:
         "False": _E(tm, tm.mkBoolean(False)),
         "ToInt": lambda a: _mk(Kind.TO_INTEGER, a),
     }
-    for i, v in enumerate(env.state_vars):
-        ns[f"s{i}"] = _E(tm, v)
-    for i, v in enumerate(env.extl_next_vars):
-        ns[f"e{i}"] = _E(tm, v)
-    for i, v in enumerate(env.extl_latched_vars):
-        ns[f"el{i}"] = _E(tm, v)
+    def _bind(prefix: str, vars_: list, wires: list) -> None:
+        for i, v in enumerate(vars_):
+            r, c = _wire_rc(wires[i])
+            ns[f"{prefix}{i}"] = _MatVar(tm, v, r, c)
+        # Convenience alias without the index when there is a single component,
+        # so a lone state wire can be written `s[i][j]` instead of `s0[i][j]`.
+        if len(vars_) == 1:
+            ns[prefix] = ns[f"{prefix}0"]
+
+    _bind("s", env.state_vars, env.msmt.ctrl_next)
+    _bind("e", env.extl_next_vars, env.msmt.extl_next)
+    _bind("el", env.extl_latched_vars, env.msmt.extl_latched)
     return ns
 
 
