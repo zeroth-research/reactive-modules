@@ -141,6 +141,20 @@ theorem affineLinear_is_left_mul :
   fin_cases i <;> fin_cases j <;>
     simp [affineLinear, MatMul, MatZero, acA, acx, Fin.sum_univ_two] <;> decide
 
+-- Baked constant matrices are emitted as `match`-based literals (see
+-- tensor_to_mat_expr): opaque to split_ifs, and still reducing under simp. This
+-- guards that the match form both computes correctly and reduces.
+def mmA : Mat Int 2 2 := fun i j =>
+  match i, j with
+  | 0, 0 => 1 | 0, 1 => 2
+  | 1, 0 => 0 | 1, 1 => 1
+
+theorem affineLinear_match_reduces :
+    affineLinear mmA acx MatZero = (fun i _ => if i = 0 then (13 : Int) else 5) := by
+  funext i j
+  fin_cases i <;> fin_cases j <;>
+    simp [affineLinear, MatMul, MatZero, mmA, acx, Fin.sum_univ_two] <;> decide
+
 -- Verbatim codegen output for the LIA.Linear matrix module (native affineLinear
 -- + Circ Box.linear paths, with the Fin.cons literal form from tensor_to_mat_expr).
 -- This is a compilation regression guard: if the generated literal rendering or
@@ -149,17 +163,17 @@ namespace GenLinearCompileCheck
 open Box
 
 @[simp] def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 3 1) := (affineLinear (fun i j => ((Fin.cons ((Fin.cons 0 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.cons ((Fin.cons 1 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 1 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.elim0 : Fin 0 → Fin 2 → Int)))) : Fin 3 → Fin 2 → Int) i j) extl_n (fun i j => ((Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.elim0 : Fin 0 → Fin 1 → Int)))) : Fin 3 → Fin 1 → Int) i j))
+  let x0 : (Mat Int 3 1) := (affineLinear (fun (i : Fin 3) (j : Fin 2) => ((match i, j with | 0, 0 => 0 | 0, 1 => 0 | 1, 0 => 1 | 1, 1 => 0 | 2, 0 => 0 | 2, 1 => 1) : Int)) extl_n (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 0 | 1, 0 => 0 | 2, 0 => 0) : Int)))
   x0
 
 @[simp] def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 3 1) := (affineLinear (fun i j => ((Fin.cons ((Fin.cons 1 (Fin.cons 0 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 1 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 0 (Fin.cons 1 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.elim0 : Fin 0 → Fin 3 → Int)))) : Fin 3 → Fin 3 → Int) i j) ctrl (fun i j => ((Fin.cons ((Fin.cons 1 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.elim0 : Fin 0 → Fin 1 → Int)))) : Fin 3 → Fin 1 → Int) i j))
+  let x0 : (Mat Int 3 1) := (affineLinear (fun (i : Fin 3) (j : Fin 3) => ((match i, j with | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 0 | 1, 0 => 0 | 1, 1 => 1 | 1, 2 => 0 | 2, 0 => 0 | 2, 1 => 0 | 2, 2 => 1) : Int)) ctrl (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 1 | 1, 0 => 0 | 2, 0 => 0) : Int)))
   x0
 
 @[simp] def init_l1 : Box [(Mat Int 2 1)] [(Mat Int 3 1)] :=
-  (Box.linear (fun i j => ((Fin.cons ((Fin.cons 0 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.cons ((Fin.cons 1 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 1 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.elim0 : Fin 0 → Fin 2 → Int)))) : Fin 3 → Fin 2 → Int) i j) (fun i j => ((Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.elim0 : Fin 0 → Fin 1 → Int)))) : Fin 3 → Fin 1 → Int) i j))
+  (Box.linear (fun (i : Fin 3) (j : Fin 2) => ((match i, j with | 0, 0 => 0 | 0, 1 => 0 | 1, 0 => 1 | 1, 1 => 0 | 2, 0 => 0 | 2, 1 => 1) : Int)) (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 0 | 1, 0 => 0 | 2, 0 => 0) : Int)))
 
 @[simp] def update_l2 : Box [(Mat Int 3 1)] [(Mat Int 3 1)] :=
-  (Box.linear (fun i j => ((Fin.cons ((Fin.cons 1 (Fin.cons 0 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 1 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 0 (Fin.cons 1 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.elim0 : Fin 0 → Fin 3 → Int)))) : Fin 3 → Fin 3 → Int) i j) (fun i j => ((Fin.cons ((Fin.cons 1 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.elim0 : Fin 0 → Fin 1 → Int)))) : Fin 3 → Fin 1 → Int) i j))
+  (Box.linear (fun (i : Fin 3) (j : Fin 3) => ((match i, j with | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 0 | 1, 0 => 0 | 1, 1 => 1 | 1, 2 => 0 | 2, 0 => 0 | 2, 1 => 0 | 2, 2 => 1) : Int)) (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 1 | 1, 0 => 0 | 2, 0 => 0) : Int)))
 
 end GenLinearCompileCheck
