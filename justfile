@@ -49,9 +49,25 @@ test:
 test-python:
     @just run-python pytest
 
+# Run the whole test suite
 test-all:
-    {{ CARGO }} test --all-features {{ profile_flag }}
+    # Test code with all features *except* `theory/torch` which needs some linking tricks
+    # and is confined into `just test-torch`
+    {{ CARGO }} test --features theory/pyo3 {{ profile_flag }}
+    @just test-theory-torch
     @just test-python
+
+# Run the Rust tests with `theory/torch` feature
+test-theory-torch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Code using torch in `theory` transitively links `pyo3-tch` which links `torch-sys`,
+    # so at runtime the code needs libtorch and the Python interpreter's symbols.
+    # `uv run` does not set up the the dynamic-linker path, so we must do it ourselves
+    # to compile and run these tests.
+    export DYLD_FALLBACK_LIBRARY_PATH="$(uv run python -c 'import torch, os; print(os.path.join(os.path.dirname(torch.__file__), "lib"))')"
+    export DYLD_INSERT_LIBRARIES="$(uv run python -c 'import sysconfig, os; print(os.path.join(sysconfig.get_config_var("LIBDIR"), sysconfig.get_config_var("LDLIBRARY")))')"
+    {{ CARGO }} test -p theory --features torch {{ profile_flag }}
 
 # Run all or a concrete python test
 pytest *args:
