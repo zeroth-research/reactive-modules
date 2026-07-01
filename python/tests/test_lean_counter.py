@@ -14,13 +14,6 @@ from pathlib import Path
 
 from .test_lean_diagram import _make_matrix_module
 
-# These tests build integer *matrix* circuits: MatMul (BV-only in main), plus
-# TensorGet/ToUnsigned which have no equivalent in main's theory model yet.
-# Skipped pending a BV re-encoding. Bodies are left intact for that work.
-pytestmark = pytest.mark.skip(
-    reason="integer MatMul/TensorGet/ToUnsigned not in main's LIA/LRA; needs BV re-encoding"
-)
-
 
 # def _make_P(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
 #     w_out = Wire(Bool(1))
@@ -302,6 +295,12 @@ def _make_ranking(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
     ]
 
 
+@pytest.mark.skip(
+    reason="vector-state (Mat 3×1) certificate: main's SMT-string cert model "
+    "exposes only scalar state vars (s0,s1,..) per scalar wire, so x/y/z of a "
+    "single 3×1 state wire aren't individually addressable. Needs scalar-state "
+    "restructuring or matrix-aware predicates."
+)
 def test_counter_generates_lean():
     m = _make_counter()
 
