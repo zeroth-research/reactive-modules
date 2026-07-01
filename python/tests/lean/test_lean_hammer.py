@@ -95,6 +95,19 @@ def test_playground_build(generate_lean_files):
 
 
 @pytest.mark.slow
+def test_cert_counter_build(generate_lean_files):
+    """Certs/Counter.lean: a 3×1 vector-state module with LIA.Linear transitions
+    and tuple-select (s[i][j]) predicates — zeroth_hammer closes all obligations."""
+    r = _lake_build("Certs.Counter")
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert r.returncode == 0, (
+        f"lake build Certs.Counter failed.\n"
+        f"stdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    assert not sorry_lines, "Counter certificate has sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
 def test_cert_countdown_build(generate_lean_files):
     """Certs/Countdown.lean: zeroth_hammer closes all proof obligations."""
     r = _lake_build("Certs.Countdown")

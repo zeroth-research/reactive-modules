@@ -16,9 +16,10 @@ import shutil
 from pathlib import Path
 
 import pytest
+import torch
 
 from zrth import Sort as dt
-from zrth import Module, Wire, LIA
+from zrth import Module, Wire, Term, LIA, Int, Bool
 from zrth.analyzer import convert_method
 from zrth.lean.cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
@@ -89,7 +90,54 @@ def _make_collatz() -> Module:
     )
 
 
+def _make_counter() -> Module:
+    """3×1 vector-state counter with LIA.Linear transitions (matrix cert).
+
+    state = (x, y, z); init = (0, y0, z0); update increments x while x < y or
+    x < z, else resets x to 0. Exercises the Linear affine map plus tuple-select
+    (`s[i][j]`) predicates end-to-end through zeroth_hammer.
+    """
+    state = (Wire(Int([3, 1])), Wire(Int([3, 1])))
+    extl = (Wire(Int([2, 1])), Wire(Int([2, 1])))
+    zero31 = torch.zeros((3, 1), dtype=torch.int64)
+    zero11 = torch.zeros((1, 1), dtype=torch.int64)
+
+    A = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
+    init = [Term(LIA.Linear(A, zero31), [state[1]], [extl[1]])]
+
+    x, y, z = Wire(Int([1, 1])), Wire(Int([1, 1])), Wire(Int([1, 1]))
+    x_lt_y, x_lt_z, cond = Wire(Bool([1, 1])), Wire(Bool([1, 1])), Wire(Bool([1, 1]))
+    result_true, result_false = Wire(Int([3, 1])), Wire(Int([3, 1]))
+    row_x = torch.tensor([[1, 0, 0]], dtype=torch.int64)
+    row_y = torch.tensor([[0, 1, 0]], dtype=torch.int64)
+    row_z = torch.tensor([[0, 0, 1]], dtype=torch.int64)
+    e1 = torch.tensor([[1], [0], [0]], dtype=torch.int64)
+    diag_yz = torch.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=torch.int64)
+    update = [
+        Term(LIA.Linear(row_x, zero11), [x], [state[0]]),
+        Term(LIA.Linear(row_y, zero11), [y], [state[0]]),
+        Term(LIA.Linear(row_z, zero11), [z], [state[0]]),
+        Term(LIA.Lt(), [x_lt_y], [x, y]),
+        Term(LIA.Lt(), [x_lt_z], [x, z]),
+        Term(LIA.Or(), [cond], [x_lt_y, x_lt_z]),
+        Term(LIA.Linear(torch.eye(3, dtype=torch.int64), e1), [result_true], [state[0]]),
+        Term(LIA.Linear(diag_yz, zero31), [result_false], [state[0]]),
+        Term(LIA.Ite(), [state[1]], [cond, result_true, result_false]),
+    ]
+    return Module.sequential(init, update, obs=[state, extl])
+
+
 _CERT_SPECS = [
+    (
+        "Counter",
+        _make_counter,
+        CertificateData(
+            prp="s[0][0] == 0",
+            inv="And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
+            init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
+            ranking="Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], s[2][0]) - s[0][0]) + 1)",
+        ),
+    ),
     (
         "Countdown",
         _make_countdown,
