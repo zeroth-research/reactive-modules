@@ -28,12 +28,12 @@ def MatZero [OfNat t 0]: Mat t m n := fun _ _ => (0 : t)
 def MatTranspose (A : Mat t m n) : Mat t n m := fun i j => A j i
 
 
-/-- Affine layer: `nnLinear x A b = x * A + b` (NOTE: `A` is not transposed
-    as in `torch.nn.Linear`!)
--/
+/-- Affine map (math convention): `affineLinear A x b = A * x + b`, i.e. the
+    matrix `A` acts on the column vector(s) `x` from the left. This matches the
+    theory's `LIA.Linear`/`LRA.Linear` semantics `Y = A·X + B`. -/
 def affineLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t]
-    (x : Mat t m k) (A : Mat t k n) (b : Mat t m n) : Mat t m n :=
-  MatMul x A + b
+    (A : Mat t m k) (x : Mat t k n) (b : Mat t m n) : Mat t m n :=
+  MatMul A x + b
 
 /-- Element-wise ReLU: `relu x i j = max 0 (x i j)` -/
 def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
@@ -68,11 +68,11 @@ def argmax {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [In
 
 /-! Helper lemmas for simp -/
 @[simp] theorem affineLinear_apply [HMul t t t] [AddCommMonoid t] [HAdd t t t]
-    (x : Mat t m k) (A : Mat t k n) (b : Mat t m n) (i : Fin m) (j : Fin n) :
-    affineLinear x A b i j = Finset.sum Finset.univ (fun l => x i l * A l j) + b i j := by
+    (A : Mat t m k) (x : Mat t k n) (b : Mat t m n) (i : Fin m) (j : Fin n) :
+    affineLinear A x b i j = Finset.sum Finset.univ (fun l => A i l * x l j) + b i j := by
   simp [affineLinear]
   unfold MatMul
-  exact (congrArg (((fun i j => ∑ l, x i l * A l j) + b) i) ∘ fun a => a) rfl
+  exact (congrArg (((fun i j => ∑ l, A i l * x l j) + b) i) ∘ fun a => a) rfl
 
 
 @[simp] theorem relu_apply [Max t] [OfNat t 0]

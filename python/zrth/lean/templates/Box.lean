@@ -188,7 +188,7 @@ infixr:75 " ⊗ " => par
 
 @[simp] def nnLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t] {m k n : Nat}
     : Box [Mat t m k, Mat t k n, Mat t m n] [Mat t m n] :=
-  ⟨fun val!(x, A, b) => val!(affineLinear x A b)⟩
+  ⟨fun val!(A, x, b) => val!(affineLinear A x b)⟩
 
 @[simp] def relu [Max t] [OfNat t 0] {m n : Nat}
     : Box [Mat t m n] [Mat t m n] :=
