@@ -14,6 +14,7 @@ from zrth.lean.common import (
     _accessor,
     _constant_expr,
     dtype_to_lean_type,
+    tensor_to_mat_expr,
     itype_name,
     is_constant_name,
 )
@@ -82,9 +83,26 @@ _LEAN_OP_BOX: dict[str, str] = {
     "MatMul": "Box.mul",
     "MatAdd": "Box.add",
     "Id": "Box.id",
-    "Linear": "Box.nnLinear",
+    # Linear is handled specially (A, b are baked into the op) — see `_linear_box`.
     "ReLU": "Box.relu",
 }
+
+
+def _linear_box(term: Term) -> str:
+    """Box for a baked-constant LIA/LRA `Linear` op: `Box.linear A b` (x ↦ A·x + b).
+
+    A (shape `[out, in]`) and b (`[out, batch]`, or empty for no bias) are baked
+    into the op; the box takes the single read wire as `x`.
+    """
+    out_wire = term.write[0]
+    A = term.itype._0
+    B = term.itype._1
+    a_lit = tensor_to_mat_expr(A, out_wire.dtype, list(A.shape))
+    if B.numel() == 0:
+        b_lit = f"(MatZero : {dtype_to_lean_type(out_wire)})"
+    else:
+        b_lit = tensor_to_mat_expr(B, out_wire.dtype, list(B.shape))
+    return f"(Box.linear {a_lit} {b_lit})"
 
 
 def _argmax_box(input_shape: list[int]) -> str:
@@ -339,6 +357,8 @@ def _translate_terms_circ(
                 else:
                     if name == "Argmax":
                         boxes.append(_argmax_box(dtype_shape(term.read[0].dtype)))
+                    elif name == "Linear":
+                        boxes.append(_linear_box(term))
                     else:
                         boxes.append(_LEAN_OP_BOX[name])
                     in_ty.extend([dtype_to_lean_type(u) for u in term.read])
