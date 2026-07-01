@@ -41,7 +41,8 @@ assert!(BV::Add().check([a, b], [c]).is_err());
 */
 
 use crate::*;
-use pyo3::prelude::*;
+#[cfg(feature = "pyo3")]
+use pyo3::pyclass;
 
 use std::fmt;
 
@@ -75,7 +76,7 @@ impl fmt::Display for Sort {
 
 /// Theory of bitvector matrices. Operations on bitvectors follow the SMT-LIB2 semantics.
 #[derive(Clone, Debug)]
-#[pyclass(frozen)]
+#[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum BV {
     /// Create constant BV matrix from a given 2-D tensor
     Const(crate::PyTensor),
