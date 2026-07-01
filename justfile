@@ -44,9 +44,12 @@ build: rs-build-all py-build
 # Run the whole test suite (Rust + Python + notebooks)
 test: rs-test py-test nb-test
 
+# `cargo clean` needs no torch, and running it under `uv run` would trigger a
+# sync that can fail — cleaning the repo works fine outside the virtual env.
+
 # Clean the current build (the shared cargo target directory)
 clean:
-    {{ CARGO }} clean
+    cargo clean
 
 # Full rebuild from scratch
 rebuild: clean build
