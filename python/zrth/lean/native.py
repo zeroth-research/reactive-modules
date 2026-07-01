@@ -296,6 +296,8 @@ def _translate_terms_scalar(
             else:
                 mat_expr = _argmax_expr(wire_expr[in_wire.id], dtype_shape(in_wire.dtype))
                 expr = f"({mat_expr} 0 0)" if _is_scalar_wire(write_wire) else mat_expr
+        elif name == "Linear":
+            expr = _linear_expr(term, wire_expr)
         elif _is_scalar_wire(write_wire) and name in _SCALAR_OP:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = _SCALAR_OP[name](input_exprs)

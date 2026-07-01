@@ -297,8 +297,9 @@ def test_certificate_has_buchi():
             break
 
 
-def test_certificate_matrix_uses_affine_linear():
+def test_certificate_matrix_simp_reduces_matmul():
     cert = _cert_for(_make_matrix_module)
-    # A and B are baked into the Linear op, so the certificate uses affineLinear
-    # (with inline literals) rather than interned matrix constants (c0, c1, ...).
-    assert "affineLinear" in cert
+    # A/B are baked into the Linear op (no interned c0/c1 constants). affineLinear
+    # unfolds to MatMul + b, so the proof simp set must carry MatMul_apply to
+    # reduce the matrix obligations.
+    assert "MatMul_apply" in cert
