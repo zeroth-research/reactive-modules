@@ -2,7 +2,7 @@
 
 import torch
 import pytest
-from zrth import Wire, Term, Module, Sort as dt, LIA, BV, Bool, Int
+from zrth import Wire, Term, Module, Sort as dt, LIA, Bool, Int
 from zrth.lean.project import (
     create_project,
 )
@@ -40,35 +40,43 @@ def _make_twobitcounter():
 
 
 def _make_P(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
+    # P: b0' is false. main's LIA.Eq is Int-only, and Bool equality-with-false
+    # is just negation, so encode `false = b0'` as ¬b0'.
     w_out = Wire(Bool([1, 1]))
-    t_false = Wire(Bool([1, 1]))
-    t1 = Term(LIA.ConstBool(torch.tensor([[False]])), write=[t_false])
-    # need to use ctrl'
-    t2 = Term(LIA.Eq(), read=[t_false, ctrl[0][1]], write=[w_out])
-    return [t1, t2]
+    t = Term(LIA.Not(), read=[ctrl[0][1]], write=[w_out])
+    return [t]
 
 
 def _make_ranking(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
+    # ranking = bit1 * 2 + bit0 - 3, fully in LIA. The bits are Bool, so each is
+    # cast to Int with Ite(bit, 1, 0); multiply-by-2 is linear (bit1 + bit1).
     terms = []
     w_out = Wire(Int([1, 1]))
-    c2 = Wire(Int([1, 1]))
+    one = Wire(Int([1, 1]))
+    zero = Wire(Int([1, 1]))
     c3 = Wire(Int([1, 1]))
+    terms.append(Term(LIA.ConstInt(torch.tensor([[1]])), write=[one]))
+    terms.append(Term(LIA.ConstInt(torch.tensor([[0]])), write=[zero]))
     terms.append(Term(LIA.ConstInt(torch.tensor([[3]])), write=[c3]))
-    terms.append(Term(LIA.ConstInt(torch.tensor([[2]])), write=[c2]))
+
+    bit1 = Wire(Int([1, 1]))
+    bit0 = Wire(Int([1, 1]))
+    terms.append(Term(LIA.Ite(), read=[ctrl[1][1], one, zero], write=[bit1]))
+    terms.append(Term(LIA.Ite(), read=[ctrl[0][1], one, zero], write=[bit0]))
 
     tmp1 = Wire(Int([1, 1]))
     tmp2 = Wire(Int([1, 1]))
     terms.append(
         Term(
-            BV.Mul(),
-            read=[ctrl[1][1], c2],
+            LIA.Add(),
+            read=[bit1, bit1],
             write=[tmp1],
         )
     )
     terms.append(
         Term(
             LIA.Add(),
-            read=[tmp1, ctrl[0][1]],
+            read=[tmp1, bit0],
             write=[tmp2],
         )
     )
@@ -82,7 +90,6 @@ def _make_ranking(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
     return terms
 
 
-@pytest.mark.skip(reason="ranking uses Mul, only in BV theory in main; needs BV re-encoding")
 def test_twobitcounter_generates_lean():
     m = _make_twobitcounter()
 
