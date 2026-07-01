@@ -140,3 +140,26 @@ theorem affineLinear_is_left_mul :
   funext i j
   fin_cases i <;> fin_cases j <;>
     simp [affineLinear, MatMul, MatZero, acA, acx, Fin.sum_univ_two] <;> decide
+
+-- Verbatim codegen output for the LIA.Linear matrix module (native affineLinear
+-- + Circ Box.linear paths, with the Fin.cons literal form from tensor_to_mat_expr).
+-- This is a compilation regression guard: if the generated literal rendering or
+-- the Box.linear combinator stops type-checking, this file fails to build.
+namespace GenLinearCompileCheck
+open Box
+
+@[simp] def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
+  let x0 : (Mat Int 3 1) := (affineLinear (fun i j => ((Fin.cons ((Fin.cons 0 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.cons ((Fin.cons 1 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 1 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.elim0 : Fin 0 → Fin 2 → Int)))) : Fin 3 → Fin 2 → Int) i j) extl_n (fun i j => ((Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.elim0 : Fin 0 → Fin 1 → Int)))) : Fin 3 → Fin 1 → Int) i j))
+  x0
+
+@[simp] def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
+  let x0 : (Mat Int 3 1) := (affineLinear (fun i j => ((Fin.cons ((Fin.cons 1 (Fin.cons 0 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 1 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 0 (Fin.cons 1 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.elim0 : Fin 0 → Fin 3 → Int)))) : Fin 3 → Fin 3 → Int) i j) ctrl (fun i j => ((Fin.cons ((Fin.cons 1 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.elim0 : Fin 0 → Fin 1 → Int)))) : Fin 3 → Fin 1 → Int) i j))
+  x0
+
+@[simp] def init_l1 : Box [(Mat Int 2 1)] [(Mat Int 3 1)] :=
+  (Box.linear (fun i j => ((Fin.cons ((Fin.cons 0 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.cons ((Fin.cons 1 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 1 (Fin.elim0 : Fin 0 → Int))) : Fin 2 → Int) (Fin.elim0 : Fin 0 → Fin 2 → Int)))) : Fin 3 → Fin 2 → Int) i j) (fun i j => ((Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.elim0 : Fin 0 → Fin 1 → Int)))) : Fin 3 → Fin 1 → Int) i j))
+
+@[simp] def update_l2 : Box [(Mat Int 3 1)] [(Mat Int 3 1)] :=
+  (Box.linear (fun i j => ((Fin.cons ((Fin.cons 1 (Fin.cons 0 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 1 (Fin.cons 0 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.cons ((Fin.cons 0 (Fin.cons 0 (Fin.cons 1 (Fin.elim0 : Fin 0 → Int)))) : Fin 3 → Int) (Fin.elim0 : Fin 0 → Fin 3 → Int)))) : Fin 3 → Fin 3 → Int) i j) (fun i j => ((Fin.cons ((Fin.cons 1 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.cons ((Fin.cons 0 (Fin.elim0 : Fin 0 → Int)) : Fin 1 → Int) (Fin.elim0 : Fin 0 → Fin 1 → Int)))) : Fin 3 → Fin 1 → Int) i j))
+
+end GenLinearCompileCheck

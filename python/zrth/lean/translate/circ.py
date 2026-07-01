@@ -49,6 +49,7 @@ _LAYER_SIMP = [
     "Box.min",
     "Box.max",
     "Box.nnLinear",
+    "Box.linear",
     "Box.relu",
     "Box.argmax_1d",
     "Box.argmax",

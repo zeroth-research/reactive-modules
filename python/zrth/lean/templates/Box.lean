@@ -190,6 +190,12 @@ infixr:75 " ⊗ " => par
     : Box [Mat t m k, Mat t k n, Mat t m n] [Mat t m n] :=
   ⟨fun val!(A, x, b) => val!(affineLinear A x b)⟩
 
+/-- Affine map with the weight `A` and bias `b` baked in (matching the theory's
+    `LIA.Linear(A, B)`): a single-input box `x ↦ A · x + b`. -/
+@[simp] def linear [HMul t t t] [AddCommMonoid t] [HAdd t t t] {m k n : Nat}
+    (A : Mat t m k) (b : Mat t m n) : Box [Mat t k n] [Mat t m n] :=
+  ⟨fun val!(x) => val!(affineLinear A x b)⟩
+
 @[simp] def relu [Max t] [OfNat t 0] {m n : Nat}
     : Box [Mat t m n] [Mat t m n] :=
   ⟨fun val!(x) => val!(ReLu x)⟩
