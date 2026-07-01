@@ -4,9 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+pyo3 = { version = "0.24", optional = true }
 tch = { version = "0.22", optional = true }
-pyo3 = { version = "0.24" }
-pyo3-tch = { version = "0.22" }
+pyo3-tch = { version = "0.22", optional = true }
 
 [features]
-torch = ["dep:tch"]
+# `pyo3` the op enums into Python objects.
+# `torch` additionally adds the tch/pyo3-tch backing for `PyTensor` (which links
+# libtorch) and requires `pyo3`. Kept separate so future features can turn on
+# the Python bindings without pulling in torch.
+pyo3 = ["dep:pyo3"]
+torch = ["pyo3", "dep:tch", "dep:pyo3-tch"]
