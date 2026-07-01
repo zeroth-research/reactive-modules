@@ -77,7 +77,7 @@ pytest *args:
 
 # Clean the current build
 clean:
-    {{ CARGO }} clean
+    cargo clean
 
 # Run clippy on the workspace on all targets and with all features (warnings are errors)
 clippy:
