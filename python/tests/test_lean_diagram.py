@@ -2,17 +2,11 @@
 
 import pytest
 import torch
-from zrth import Wire, Term, Module, Sort as dt, LIA, BV
+from zrth import Wire, Term, Module, Sort as dt, LIA
 from zrth.lean import ModuleToLean4
 from zrth.lean.common import LeanContext, itype_name
 from zrth.lean.cert import generate_certificate_lean
 from zrth.lean.project import generate_main_lean
-
-# main's theory model has no integer MatMul (it lives only in the BV theory),
-# so the matrix-circuit tests below are skipped pending a BV re-encoding.
-_NEEDS_BV = pytest.mark.skip(
-    reason="integer MatMul moved to the BV theory in main; needs BV re-encoding"
-)
 
 
 def test_itype_name_strips_prefix():
@@ -46,24 +40,25 @@ def _make_twobitcounter():
 
 
 def _make_matrix_module():
-    """Matrix module similar to Counter."""
+    """Matrix module using LIA.Linear (affine map Y = A·X + B).
+
+    Both transitions are constant-matrix maps, so they are linear and expressed
+    with `LIA.Linear` (A and B baked into the op) rather than a (BV-only) MatMul:
+      init:   x' = A · u          with A = [[0,0],[1,0],[0,1]]  (no bias)
+      update: x' = B · x + e1     with B = I₃, e1 = [1,0,0]ᵀ
+    """
     x = (Wire(dt.Int([3, 1])), Wire(dt.Int([3, 1])))
     u = (Wire(dt.Int([2, 1])), Wire(dt.Int([2, 1])))
 
-    A_wire = Wire(dt.Int([3, 2]))
+    A = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
     init = [
-        Term(LIA.ConstInt(torch.tensor([[0, 0], [1, 0], [0, 1]])), [A_wire]),
-        Term(BV.MatMul(), [x[1]], [A_wire, u[1]]),
+        Term(LIA.Linear(A, torch.zeros((3, 1), dtype=torch.int64)), [x[1]], [u[1]]),
     ]
 
-    B_wire = Wire(dt.Int([3, 3]))
-    e1_wire = Wire(dt.Int([3, 1]))
-    Bx_wire = Wire(dt.Int([3, 1]))
+    B = torch.eye(3, dtype=torch.int64)
+    e1 = torch.tensor([[1], [0], [0]], dtype=torch.int64)
     update = [
-        Term(LIA.ConstInt(torch.eye(3, dtype=torch.int64)), [B_wire]),
-        Term(BV.MatMul(), [Bx_wire], [B_wire, x[0]]),
-        Term(LIA.ConstInt(torch.tensor([[1], [0], [0]])), [e1_wire]),
-        Term(LIA.Add(), [x[1]], [Bx_wire, e1_wire]),
+        Term(LIA.Linear(B, e1), [x[1]], [x[0]]),
     ]
     return Module.sequential(init, update, obs=[x, u])
 
@@ -135,7 +130,6 @@ def test_twobitcounter_output_tuple():
 # ── Matrix module ────────────────────────────────────────────────────
 
 
-@_NEEDS_BV
 def test_matrix_module_generates_lean():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
@@ -144,26 +138,25 @@ def test_matrix_module_generates_lean():
     assert "def update" in lean
 
 
-@_NEEDS_BV
-def test_matrix_module_has_matrix_constants():
+def test_matrix_module_has_matrix_types():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "Mat Int 3 2" in lean
-    assert "Mat Int 3 3" in lean
+    # The state (3×1) and external input (2×1) matrix types appear in the
+    # signatures / let-bindings. A and B are baked into the Linear op and
+    # rendered as inline literals, so their types are not annotated here.
     assert "Mat Int 3 1" in lean
+    assert "Mat Int 2 1" in lean
 
 
-@_NEEDS_BV
-def test_matrix_module_uses_matmul_and_add():
+def test_matrix_module_uses_affine_linear():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "MatMul" in lean
-    assert "(x1 + x2)" in lean
+    # LIA.Linear compiles to the `affineLinear A x b` affine map.
+    assert "affineLinear" in lean
 
 
-@_NEEDS_BV
 def test_matrix_init_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
@@ -171,7 +164,6 @@ def test_matrix_init_signature():
     assert "def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1)" in lean
 
 
-@_NEEDS_BV
 def test_matrix_update_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
@@ -195,7 +187,6 @@ def test_main_lean_bool_module():
     assert "def main" in src
 
 
-@_NEEDS_BV
 def test_main_lean_matrix_module():
     m = _make_matrix_module()
     src = generate_main_lean("Rea", m, "ReactiveModule")
@@ -216,7 +207,6 @@ def test_main_lean_bool_signatures():
     assert "(Mat Bool 1 1) × (Mat Bool 1 1)" in src
 
 
-@_NEEDS_BV
 def test_main_lean_matrix_signatures():
     m = _make_matrix_module()
     src = generate_main_lean("Rea", m, "ReactiveModule")
@@ -276,7 +266,6 @@ def test_data_lean_has_sorry_when_no_property():
     assert "sorry" in data
 
 
-@_NEEDS_BV
 def test_certificate_matrix_has_rm():
     cert = _cert_for(_make_matrix_module)
     assert "def RM : ReactiveModule" in cert
@@ -308,7 +297,8 @@ def test_certificate_has_buchi():
             break
 
 
-@_NEEDS_BV
-def test_certificate_matrix_has_constants_in_simp():
+def test_certificate_matrix_uses_affine_linear():
     cert = _cert_for(_make_matrix_module)
-    assert "c0" in cert
+    # A and B are baked into the Linear op, so the certificate uses affineLinear
+    # (with inline literals) rather than interned matrix constants (c0, c1, ...).
+    assert "affineLinear" in cert

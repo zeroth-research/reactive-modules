@@ -314,11 +314,39 @@ def translate_terms(
         elif name == "MatMul":
             wt[write.id] = _matmul(tm, args[0], args[1], in_shapes[0], in_shapes[1])
         elif name == "Linear":
-            # affineLinear x A b = x*A + b, elementwise add
-            mul = _matmul(tm, args[0], args[1], in_shapes[0], in_shapes[1])
-            wt[write.id] = _elementwise(
-                tm, out_shape, _binop_scalar(tm, Kind.ADD), mul, args[2]
+            # Convention Y = A·X + B: A ([out,in]) and B ([out,1] or empty) are
+            # baked into the op; args[0] is the single read wire X ([in,batch]).
+            A_tensor = term.itype._0
+            B_tensor = term.itype._1
+            a_rows, a_cols = int(A_tensor.shape[0]), int(A_tensor.shape[1])
+            A_shape = MatShape(a_rows, a_cols)
+            A_data = A_tensor.reshape(a_rows, a_cols)
+            A_term = mat_pack(
+                tm,
+                A_shape,
+                [
+                    _scalar_const(tm, write.dtype, A_data[i, j].item())
+                    for i in range(a_rows)
+                    for j in range(a_cols)
+                ],
             )
+            ax = _matmul(tm, A_term, args[0], A_shape, in_shapes[0])
+            if B_tensor.numel() == 0:
+                wt[write.id] = ax
+            else:
+                B_data = B_tensor.reshape(int(B_tensor.shape[0]), int(B_tensor.shape[1]))
+                B_term = mat_pack(
+                    tm,
+                    out_shape,
+                    [
+                        _scalar_const(tm, write.dtype, B_data[i, 0].item())
+                        for i in range(out_shape.m)
+                        for _ in range(out_shape.n)
+                    ],
+                )
+                wt[write.id] = _elementwise(
+                    tm, out_shape, _binop_scalar(tm, Kind.ADD), ax, B_term
+                )
         elif name == "ReLU":
             zero = _scalar_const(tm, write.dtype, 0)
             wt[write.id] = _elementwise(

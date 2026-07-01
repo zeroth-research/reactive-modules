@@ -16,6 +16,7 @@ from zrth.lean.common import (
     is_constant_name,
     _accessor,
     dtype_to_lean_type,
+    tensor_to_mat_expr,
     _is_scalar_wire,
     _tensor_to_lean_scalar,
     _bind_wires_scalar,
@@ -88,7 +89,8 @@ _LEAN_OP: dict[str, Callable] = {
     "Max": lambda a: f"(fun i j => Max.max ({a[0]} i j) ({a[1]} i j))",
     "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
     "Id": lambda a: a[0],
-    "Linear": lambda a: f"affineLinear {a[0]} {a[1]} {a[2]}",
+    # Linear is handled specially (its A, B are baked into the op, not read
+    # wires) — see `_linear_expr`.
     "ReLU": lambda a: f"ReLu {a[0]}",
     "TensorGet": lambda a: f"({a[0]} 0 0)",
     "ToUnsigned": lambda a: f"(fun _ _ => Int.toNat ({a[0]} 0 0))",
@@ -130,6 +132,24 @@ def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
     raise ValueError(
         f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
     )
+
+
+def _linear_expr(term, wire_expr: dict[int, str]) -> str:
+    """Emit `affineLinear A x b` for a baked-constant LIA/LRA `Linear` op.
+
+    Convention `Y = A·X + B`: `A` (shape `[out, in]`) and `B` (`[out, batch]`,
+    or empty for no bias) are baked into the op; the single read wire is `X`.
+    """
+    out_wire = term.write[0]
+    x_expr = wire_expr[term.read[0].id]
+    A = term.itype._0
+    B = term.itype._1
+    a_lit = tensor_to_mat_expr(A, out_wire.dtype, list(A.shape))
+    if B.numel() == 0:
+        b_lit = f"(MatZero : {dtype_to_lean_type(out_wire)})"
+    else:
+        b_lit = tensor_to_mat_expr(B, out_wire.dtype, list(B.shape))
+    return f"(affineLinear {a_lit} {x_expr} {b_lit})"
 
 
 def _reachable_terms(terms, output_wires: "list[Wire]") -> list:
@@ -175,6 +195,8 @@ def _translate_terms(
         elif name == "Argmax":
             arg_expr = wire_expr[term.read[0].id]
             expr = _argmax_expr(arg_expr, dtype_shape(term.read[0].dtype))
+        elif name == "Linear":
+            expr = _linear_expr(term, wire_expr)
         else:
             if name not in _LEAN_OP:
                 raise ValueError(f"No Lean expression mapping for: {name}")

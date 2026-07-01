@@ -367,6 +367,36 @@ def _vec_from_scalars(scalars: list[str], elem_ty: str) -> str:
     return f"({result} : Fin {n} → {elem_ty})"
 
 
+def _sort_elem_ty(sort: Sort) -> str:
+    """Lean scalar element type ("Bool"/"Int"/"Real") for a Sort, ignoring shape."""
+    if isinstance(sort, Sort.Bool):
+        return "Bool"
+    if isinstance(sort, Sort.Int):
+        return "Int"
+    if isinstance(sort, Sort.Real):
+        return "Real"
+    raise ValueError(f"Unsupported Sort for element type: {sort}")
+
+
+def tensor_to_mat_expr(tensor, elem_sort: Sort, shape: list[int]) -> str:
+    """Inline, exhaustive-safe `Mat` literal for a baked-in constant tensor.
+
+    Unlike the `match i, j`-based `_tensor_to_lean_def`, this builds the matrix
+    with `Fin.cons` chains (via `_mat_from_scalars`), so Lean never needs to
+    prove pattern exhaustiveness. `elem_sort` selects element formatting
+    (Int/Real/Bool); `shape` is the tensor's `[m, n]` (or `[n]` / scalar).
+    """
+    if _is_scalar_shape(shape):
+        m, n = 1, 1
+    elif len(shape) == 1:
+        m, n = 1, shape[0]
+    else:
+        m, n = shape[0], shape[1]
+    data = tensor.reshape(m, n)
+    slots = [_get_dtype_item(elem_sort, data[i, j].item()) for i in range(m) for j in range(n)]
+    return _mat_from_scalars(slots, [m, n], _sort_elem_ty(elem_sort))
+
+
 def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
     """Build a Lean ``Mat T m n`` expression from flat scalar slot strings.
 
