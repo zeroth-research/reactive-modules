@@ -42,6 +42,7 @@ assert!(LRA::ReLU().check([b], [b]).is_err());
 */
 
 use crate::*;
+#[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 use std::fmt;
 
@@ -77,7 +78,7 @@ impl fmt::Display for Sort {
 }
 
 #[derive(Clone, Debug)]
-#[pyclass(frozen)]
+#[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LRA {
     // constants
     ConstReal(crate::PyTensor),
