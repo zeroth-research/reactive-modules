@@ -1,0 +1,95 @@
+import Mathlib.Algebra.BigOperators.Fin
+import Core.Basic
+{% if module_inline %}
+import Core.Box
+{% else %}
+import System.System
+import System.Data
+{% endif %}
+import ZerothHammer
+
+{% if module_inline %}
+{{ module_inline }}
+
+{% endif %}
+{% if inline_defs %}
+{{ inline_defs }}
+
+{% endif %}
+{{ noncomp }}def RM : ReactiveModule ({{ extl_type }}) ({{ ctrl_type }}) := {
+    init := fun e => init e.2
+    update := fun x e => update x e.1 e.2
+    init_pre := init_pre
+    update_pre := update_pre
+}
+
+-- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
+macro "simp_mat" : tactic =>
+  `(tactic| simp [{{ all_defs }}, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three])
+
+-- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
+-- Gives omega/decide access to invariant and property conditions in hypotheses
+macro "simp_defs" : tactic =>
+  `(tactic| (simp only [{{ all_defs }}] at *; try dsimp at *))
+
+-- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
+-- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
+macro "mat_collapse" : tactic =>
+  `(tactic| simp only [Mat_1_1_lt_iff, Mat_1_1_le_iff, Mat_1_1_eq_iff, Mat_1_1_ne_iff,
+                        ite_fun_apply,
+                        decide_eq_true_eq, Bool.or_eq_true, Bool.and_eq_true,
+                        Bool.not_eq_true'] at *)
+
+
+theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+   intro s hpre
+   try simp_mat
+   try simp_defs
+   all_goals ((try split_ifs) <;> first | omega | (norm_cast; omega))
+
+theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+   intro s e ⟨hpre, hinv⟩
+   try simp_defs
+   try simp_mat
+   all_goals ((try split_ifs) <;> first | omega | (norm_cast; omega))
+
+section TS
+
+{{ noncomp }}def lts := RM.toTS
+
+theorem hinv' : lts.StateSet_isInductiveInitial inv := by
+  constructor
+  · intro s hs
+    unfold lts at hs; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs
+    obtain ⟨l, hpre, hl⟩ := hs
+    rw [← hl]
+    exact init_inv l hpre
+  · intro s s' ⟨hs, l, hstep⟩
+    unfold lts at hstep; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
+    rw [← hstep.2]
+    exact step_inv s l ⟨hstep.1, hs⟩
+
+theorem hinv : lts.StateSet_isInvariant inv := by
+  apply TS.StateSet_ind_init_is_inv lts
+  exact hinv'
+
+theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+    ranking s' < ranking s := by
+    intro s s' ⟨hi, hP, htr⟩
+    unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
+    obtain ⟨l, hpre, heq⟩ := htr
+    rw [← heq]
+    simp_defs
+    simp_mat
+    all_goals ((try split_ifs) <;> first | omega | (norm_cast; omega))
+
+{{ noncomp }}def buchi := rule_buchi
+  lts
+  P
+  inv
+  hinv
+  ranking
+  hrank
+
+
+end TS

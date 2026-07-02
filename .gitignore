@@ -5,10 +5,13 @@ target
 # Added by Marco
 *.txt
 # *.smv
-*.lean
 *.smt
 *.smt2
 *.so
 *.lock
 __pycache__/
 .ipynb_checkpoints/
+tutorials/generated/Counter/.lake/
+tutorials/.ipynb_checkpoints/
+python/tests/LeanTests
+python/tests/lean/Core
