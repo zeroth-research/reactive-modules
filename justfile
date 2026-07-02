@@ -52,7 +52,7 @@ test-python:
 # Run the whole test suite
 test-all:
     # Test code with all features *except* `theory/torch` which needs some linking tricks
-    # and is confined into `just test-torch`
+    # and is tested in next steps
     {{ CARGO }} test --features theory/pyo3 {{ profile_flag }}
     @just test-theory-torch
     @just test-python
@@ -61,12 +61,16 @@ test-all:
 test-theory-torch:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Code using torch in `theory` transitively links `pyo3-tch` which links `torch-sys`,
-    # so at runtime the code needs libtorch and the Python interpreter's symbols.
-    # `uv run` does not set up the the dynamic-linker path, so we must do it ourselves
-    # to compile and run these tests.
-    export DYLD_FALLBACK_LIBRARY_PATH="$(uv run python -c 'import torch, os; print(os.path.join(os.path.dirname(torch.__file__), "lib"))')"
-    export DYLD_INSERT_LIBRARIES="$(uv run python -c 'import sysconfig, os; print(os.path.join(sysconfig.get_config_var("LIBDIR"), sysconfig.get_config_var("LDLIBRARY")))')"
+    # Code that uses torch in `theory` transitively links `pyo3-tch` which links `torch-sys`,
+    # so at runtime the code needs libtorch (and, on macOS, the Python interpreter's symbols).
+    # `uv run` does not set up the dynamic-linker path, so we must do it ourselves.
+    TORCH_LIB="$(uv run python -c 'import torch, os; print(os.path.join(os.path.dirname(torch.__file__), "lib"))')"
+    if [ "$(uname)" = "Darwin" ]; then
+        export DYLD_FALLBACK_LIBRARY_PATH="$TORCH_LIB"
+        export DYLD_INSERT_LIBRARIES="$(uv run python -c 'import sysconfig, os; base = sysconfig.get_config_var("PYTHONFRAMEWORKPREFIX") or sysconfig.get_config_var("LIBDIR"); print(os.path.join(base, sysconfig.get_config_var("LDLIBRARY")))')"
+    else
+        export LD_LIBRARY_PATH="$TORCH_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    fi
     {{ CARGO }} test -p theory --features torch {{ profile_flag }}
 
 # Run all or a concrete python test
