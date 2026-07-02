@@ -42,14 +42,19 @@ build-tutorials:
 test:
     {{ CARGO }} test {{ features_flag }}
 
-# Run python tests
+# Run the Python tests, excluding the Lean tests that need `lake` (marked `slow`)
 test-python:
-    @just run-python pytest
+    @just run-python pytest -m \"not slow\"
 
-# Run the whole test suite (Rust + Python)
+# Run the Lean tests that build proofs via `lake` (marked `slow`; require lake + mathlib)
+test-lean:
+    @just run-python pytest -m slow
+
+# Run the whole test suite (Rust + Python + Lean)
 test-all:
     @just test-rust
     @just test-python
+    @just test-lean
 
 # Run the Rust test suite (all features)
 # #

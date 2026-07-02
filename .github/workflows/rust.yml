@@ -74,5 +74,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
       - name: Install just
         uses: extractions/setup-just@v2
+      # `test-python` excludes the `slow`-marked Lean tests that build proofs
+      # via `lake` (see `just test-lean`); CI intentionally does not run those.
       - name: Run Python tests (builds the extension via maturin)
         run: just test-python
