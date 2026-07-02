@@ -41,8 +41,14 @@ features_flag := if FEATURES == "" { "" } else { "--features " + FEATURES }
 # Build everything: the Rust workspace (all targets and features) and the Python crate
 build: rs-build-all py-build
 
-# Run the whole test suite (Rust + Python + notebooks)
+# Run the test suite that needs no `lake` (Rust + Python + notebooks)
 test: rs-test py-test nb-test
+
+# Run everything, including the Lean tests that build proofs via `lake`
+test-all: test test-lean
+
+# Run the Lean tests that build proofs via `lake` (marked `slow`; require lake + mathlib)
+test-lean *args: (py-run "pytest" "-m" "slow" args)
 
 # `cargo clean` needs no torch, and running it under `uv run` would trigger a
 # sync that can fail — cleaning the repo works fine outside the virtual env.
@@ -118,8 +124,9 @@ py-rebuild: clean rs-build-all py-build
     @echo "Now you can go into the \`python\` directory and use \`uv run <script.py>\`"\
           "(or \`uv run python\` to get Python interpreter with \`zrth\` available)"
 
-# Run all or a concrete python test (rebuilding the Python crate first)
-py-test *args: (py-run "pytest" args)
+# Run all or a concrete python test (rebuilding the Python crate first),
+# excluding the Lean tests that need `lake` (marked `slow`; see `just test-lean`)
+py-test *args: (py-run "pytest" "-m" "'not slow'" args)
 
 # Run a command inside the `python` crate (with rebuilding the Python crate). The command given is executed from *within* the `python` crate, i.e., with paths relative to the root of the crate.
 py-run *args: py-build
