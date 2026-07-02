@@ -24,10 +24,6 @@ CARGO := "uv run cargo"
 profile_flag := if PROFILE == "" { "" } else { "--profile {{PROFILE}}" }
 features_flag := if FEATURES == "" { "" } else { "--features {{FEATURES}}" }
 
-# -------------------------------------------------
-# Core Cargo Commands
-# -------------------------------------------------
-
 # Build the project in the default mode (use PROFILE and FEATURES variables to adjust)
 build:
     {{ CARGO }} build {{ profile_flag }} {{ features_flag }}
@@ -46,24 +42,23 @@ build-tutorials:
 test:
     {{ CARGO }} test {{ features_flag }}
 
+# Run python tests
 test-python:
     @just run-python pytest
 
-# Run the whole test suite
+# Run the whole test suite (Rust + Python)
 test-all:
-    # Test code with all features *except* `theory/torch` which needs some linking tricks
-    # and is tested in next steps
-    {{ CARGO }} test --features theory/pyo3 {{ profile_flag }}
-    @just test-theory-torch
+    @just test-rust
     @just test-python
 
-# Run the Rust tests with `theory/torch` feature
-test-theory-torch:
+# Run the Rust test suite (all features)
+# #
+# Every Rust test binary transitively links libtorch (via `theory` -> `pyo3-tch` ->
+# `torch-sys`), so they all need libtorch; and on macOS the Python interpreter's symbols at runtime.
+# `uv run` does not set up the dynamic-linker path, so we do it here, per-OS;
+test-rust:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Code that uses torch in `theory` transitively links `pyo3-tch` which links `torch-sys`,
-    # so at runtime the code needs libtorch (and, on macOS, the Python interpreter's symbols).
-    # `uv run` does not set up the dynamic-linker path, so we must do it ourselves.
     TORCH_LIB="$(uv run python -c 'import torch, os; print(os.path.join(os.path.dirname(torch.__file__), "lib"))')"
     if [ "$(uname)" = "Darwin" ]; then
         export DYLD_FALLBACK_LIBRARY_PATH="$TORCH_LIB"
@@ -71,6 +66,9 @@ test-theory-torch:
     else
         export LD_LIBRARY_PATH="$TORCH_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     fi
+    # Split by feature set: the `torch` feature is exclusive to `theory`, the rest of
+    # the workspace is exercised with `theory/pyo3`.
+    {{ CARGO }} test --features theory/pyo3 {{ profile_flag }}
     {{ CARGO }} test -p theory --features torch {{ profile_flag }}
 
 # Run all or a concrete python test
@@ -81,9 +79,17 @@ pytest *args:
 clean:
     {{ CARGO }} clean
 
-# Run clippy on the workspace on all targets and with all features
+# Run clippy on the workspace on all targets and with all features (warnings are errors)
 clippy:
-    {{ CARGO }} clippy --all-targets --all-features
+    {{ CARGO }} clippy --all-targets --all-features -- -D warnings
+
+# Format the Rust sources in place. `cargo fmt` needs no torch, so skip the uv wrapper.
+fmt:
+    cargo fmt --all
+
+# Check formatting without modifying files (used by CI)
+fmt-check:
+    cargo fmt --all -- --check
 
 # Full rebuild from scratch
 rebuild:
