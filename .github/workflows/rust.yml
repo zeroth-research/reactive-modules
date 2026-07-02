@@ -10,8 +10,10 @@ env:
   CARGO_TERM_COLOR: always
 
 # The theory crate depends on tch/torch-sys, which locates libtorch via the
-# installed python `torch` package (LIBTORCH_USE_PYTORCH), so the Rust jobs
-# install it with uv and run cargo inside that venv.
+# installed python `torch` package (LIBTORCH_USE_PYTORCH=1 in .cargo/config.toml).
+# All build/test/lint commands go through the `just` recipes: they run cargo inside
+# the uv env (so torch is on the build path) and set the per-OS dynamic-linker vars
+# needed to run the torch-linked test binaries.
 jobs:
   rustfmt:
     runs-on: ubuntu-latest
@@ -24,7 +26,9 @@ jobs:
           toolchain: nightly
           override: true
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      - name: Install just
+        uses: extractions/setup-just@v2
+      - run: just fmt-check
 
   clippy:
     runs-on: ubuntu-latest
@@ -39,34 +43,27 @@ jobs:
           components: clippy
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+      - name: Install just
+        uses: extractions/setup-just@v2
       - name: Sync python env (installs torch for torch-sys)
-        working-directory: python
         run: uv sync
-      - name: Clippy
-        working-directory: python
-        run: uv run --no-sync -- cargo +nightly clippy --manifest-path ../Cargo.toml --all-targets --all-features -- -D warnings
-  
-  build:
+      - run: just clippy
+
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v4
-      - name: Sync python env (installs torch for torch-sys) + expose libtorch
-        working-directory: python
-        run: |
-          uv sync
-          echo "LD_LIBRARY_PATH=$(uv run --no-sync python -c 'import torch, os; print(os.path.join(os.path.dirname(torch.__file__), "lib"))')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-      - name: Build
-        working-directory: python
-        run: uv run --no-sync -- cargo build --manifest-path ../Cargo.toml --all-targets --all-features --verbose
-      - name: Run tests
-        working-directory: python
-        run: uv run --no-sync -- cargo test --manifest-path ../Cargo.toml --all-targets --all-features --verbose
-      - name: Run doctests
-        working-directory: python
-        run: uv run --no-sync -- cargo test --manifest-path ../Cargo.toml --all-features --doc --verbose
+      - name: Install just
+        uses: extractions/setup-just@v2
+      - name: Sync python env (installs torch for torch-sys)
+        run: uv sync
+      - name: Build (all targets, all features)
+        run: just build-all
+      - name: Run Rust tests (incl. doctests)
+        run: just test-rust
 
   python-tests:
     runs-on: ubuntu-latest
@@ -75,11 +72,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v4
-      - name: Install dependencies and build Python extension
-        working-directory: python
-        run: |
-          uv sync
-          uv run maturin develop
-      - name: Run Python tests
-        working-directory: python
-        run: uv run pytest
+      - name: Install just
+        uses: extractions/setup-just@v2
+      - name: Run Python tests (builds the extension via maturin)
+        run: just test-python
