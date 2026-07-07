@@ -144,3 +144,19 @@ def test_missing_init_raises():
     # init is required — every ctrl variable needs an initial value
     with pytest.raises(TypeError):
         NoInit(theory=LIA, ctrl=(wire_pair(INT),))
+
+
+def test_subexpression_shared_across_returns():
+    # a guard reused in several returned values must be emitted once, not once per
+    # value (else its wire is "written more than once")
+    class Shared(dslModule):
+        def init(self):
+            return 0, 0
+
+        def update(self, ctrl):
+            x, y = ctrl
+            loop = x < y
+            return ite(loop, x + 1, x), ite(loop, y, y - 1)
+
+    m = Shared(theory=LIA, ctrl=(wire_pair(INT), wire_pair(INT)))
+    assert m.closed()
