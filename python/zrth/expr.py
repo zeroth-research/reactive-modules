@@ -1,429 +1,322 @@
+"""Expression: eager, theory-baked symbolic expressions for the DSL.
+
+An ``Expr`` is a thin, *eager* wrapper: composing one (operators, ``ite``, ``nxt``)
+immediately builds the underlying ``Term``. Each node caches
+
+- ``wire``   — its output wire,
+- ``term``   — the term that produced ``wire`` (``None`` for a bare leaf wire),
+- ``args``   — its child exprs (so a module can walk the tree),
+- ``pair``   — for a *variable* leaf, the ``(latched, next)`` wire pair.
+
+A variable reads as its **latched** value; ``nxt(v)`` gives an expr over its **next**
+wire. **Each operation builds its own Term in place** — the op choice, output sort, and
+any per-theory switch live directly in the operator (``__add__``, ``__lt__``, ``ite``, …).
+There is no dispatch layer and no ``builder``.
+
+``collect_terms`` walks a tree and returns every term it created, dependencies first —
+that's what ``dslModule`` uses to populate a base Module.
+
+Equality: ``==`` / ``!=`` are Python object identity here; use ``eq()`` / ``ne()`` for
+the comparison predicates. Ordering (``< <= > >=``) and ``+ - * @ & | ~`` are overloaded.
+"""
+
 from typing import override
 
-from .zrth import Sort, Term
-from .builder import TermBuilder, builder_for, _normalize_shape
 import torch
 
-# types that we can convert to [Expr]
-type ToExpr = Expr | int | bool | float | torch.Tensor
+from .zrth import Sort, Term, Wire, LRA, LIA, BV
+from .builder import NonLinearError
+
+
+# --- sort plumbing (Sorts and ops expose no accessors, by theory_pyo3 design) ---
+
+
+def _shape(sort: Sort) -> list:
+    match sort:
+        case Sort.Bool(s) | Sort.Int(s) | Sort.Real(s):
+            return list(s)
+        case Sort.BitVec(_, s):
+            return list(s)
+    raise TypeError(f"sort has no shape: {sort}")
+
+
+def _with_shape(sort: Sort, shape: list) -> Sort:
+    match sort:
+        case Sort.Bool(_):
+            return Sort.Bool(shape)
+        case Sort.Int(_):
+            return Sort.Int(shape)
+        case Sort.Real(_):
+            return Sort.Real(shape)
+        case Sort.BitVec(bw, _):
+            return Sort.BitVec(bw, shape)
+    raise TypeError(f"unknown sort: {sort}")
+
+
+def _bv_width(sort: Sort) -> int:
+    match sort:
+        case Sort.BitVec(bw, _):
+            return bw
+    raise TypeError(f"not a BitVec sort: {sort}")
+
+
+def _normalize_shape(shape: list) -> list:
+    if len(shape) == 0:
+        return [1, 1]
+    if len(shape) == 1:
+        return [1, shape[0]]
+    return shape
+
+
+def _const_tensor(op):
+    match op:
+        case LRA.ConstReal(t) | LRA.ConstBool(t) | LIA.ConstInt(t) | LIA.ConstBool(t) | BV.Const(t):
+            return t
+    return None
 
 
 # ---------------------------------------------------------------------------
-# Expr class hierarchy
+# Expr
 # ---------------------------------------------------------------------------
 
 
 class Expr:
-    """Base class for symbolic expressions. All instances are created via _expr_from_term."""
+    def __init__(self, wire, theory, term=None, args=(), pair=None, name=None):
+        self._wire = wire
+        self._theory = theory
+        self._term = term
+        self._args = tuple(args)
+        self._pair = pair
+        self._name = name
 
+    # --- accessors ---
     @property
-    def builder(self) -> TermBuilder:
-        return self._builder
-
-    @property
-    def dtype(self) -> Sort:
-        return self._dtype
-
-    @property
-    def wire(self):
+    def wire(self) -> Wire:
         return self._wire
 
     @property
-    def shape(self):
-        return self._shape
+    def dtype(self) -> Sort:
+        return self._wire.dtype
 
     @property
-    def args(self):
+    def shape(self) -> list:
+        return _shape(self._wire.dtype)
+
+    @property
+    def term(self) -> Term | None:
+        return self._term
+
+    @property
+    def args(self) -> tuple["Expr", ...]:
         return self._args
 
     @property
-    def itype(self):
-        return self._itype
+    def theory(self):
+        return self._theory
+
+    def _coerce(self, o) -> "Expr":
+        return as_expr(o, self._theory)
+
+    def _result(self, term: Term, *operands: "Expr") -> "Expr":
+        """Wrap a freshly-built Term as an Expr node, recording the child operands."""
+        return Expr(term.write[0], self._theory, term=term, args=(self, *operands))
+
+    # --- arithmetic ---
+    def __add__(self, o):
+        o = self._coerce(o)
+        return self._result(Term(self._theory.Add(), [Wire(self.dtype)], [self._wire, o._wire]), o)
+
+    def __radd__(self, o):
+        return self._coerce(o).__add__(self)
+
+    def __sub__(self, o):
+        o = self._coerce(o)
+        return self._result(Term(self._theory.Sub(), [Wire(self.dtype)], [self._wire, o._wire]), o)
+
+    def __rsub__(self, o):
+        return self._coerce(o).__sub__(self)
+
+    def __mul__(self, o):
+        o = self._coerce(o)
+        if self._theory is BV:
+            return self._result(Term(BV.Mul(), [Wire(self.dtype)], [self._wire, o._wire]), o)
+        # LIA/LRA are linear: `const * var` folds to a Linear op; `var * var` cannot.
+        const_cls = LRA.ConstReal if self._theory is LRA else LIA.ConstInt
+        linear = LRA.Linear if self._theory is LRA else LIA.Linear
+        scalar_dtype = torch.float32 if self._theory is LRA else torch.int64
+        for c, v in ((self, o), (o, self)):
+            if c._term is None or not isinstance(c._term.itype, const_cls):
+                continue
+            data = _const_tensor(c._term.itype)
+            if data is None or data.numel() != 1 or len(v.shape) < 2 or v.shape[-1] != 1:
+                continue
+            A = torch.tensor([[data.item()]], dtype=scalar_dtype)
+            bias = torch.zeros(1, 1, dtype=scalar_dtype)
+            return self._result(Term(linear(A, bias), [Wire(v.dtype)], [v._wire]), o)
+        raise NonLinearError(self._theory.__name__)
+
+    def __rmul__(self, o):
+        return self._coerce(o).__mul__(self)
+
+    def __matmul__(self, o):
+        o = self._coerce(o)
+        out_shape = [self.shape[0], o.shape[1]]
+        if self._theory is BV:
+            out = Wire(Sort.BitVec(_bv_width(self.dtype), out_shape))
+            return self._result(Term(BV.MatMul(), [out], [self._wire, o._wire]), o)
+        # LIA/LRA: only a constant left operand is expressible (as a Linear).
+        const_cls = LRA.ConstReal if self._theory is LRA else LIA.ConstInt
+        if self._term is not None and isinstance(self._term.itype, const_cls):
+            linear = LRA.Linear if self._theory is LRA else LIA.Linear
+            out_sort = Sort.Real(out_shape) if self._theory is LRA else Sort.Int(out_shape)
+            term = Term(linear(_const_tensor(self._term.itype), torch.empty(0, 0)), [Wire(out_sort)], [o._wire])
+            return self._result(term, o)
+        raise RuntimeError(f"{self._theory.__name__} matmul requires a constant left operand; use a Linear instead")
+
+    # --- comparisons (== / != stay identity; use eq() / ne()) ---
+    # TODO: BV comparisons are always unsigned (U*). `Sort.BitVec` carries no signedness,
+    # so the signed ops (SLt/SLe/…) are unreachable here; add a signed path if BV gains it.
+    def __lt__(self, o):
+        o = self._coerce(o)
+        op = BV.ULt() if self._theory is BV else self._theory.Lt()
+        out = Sort.BitVec(1, self.shape) if self._theory is BV else Sort.Bool(self.shape)
+        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]), o)
+
+    def __le__(self, o):
+        o = self._coerce(o)
+        op = BV.ULe() if self._theory is BV else self._theory.Le()
+        out = Sort.BitVec(1, self.shape) if self._theory is BV else Sort.Bool(self.shape)
+        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]), o)
+
+    def __gt__(self, o):
+        o = self._coerce(o)
+        op = BV.UGt() if self._theory is BV else self._theory.Gt()
+        out = Sort.BitVec(1, self.shape) if self._theory is BV else Sort.Bool(self.shape)
+        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]), o)
+
+    def __ge__(self, o):
+        o = self._coerce(o)
+        op = BV.UGe() if self._theory is BV else self._theory.Ge()
+        out = Sort.BitVec(1, self.shape) if self._theory is BV else Sort.Bool(self.shape)
+        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]), o)
+
+    # --- logical / bitwise (BV preserves the operand width; LIA/LRA yield Bool) ---
+    def __and__(self, o):
+        o = self._coerce(o)
+        out = self.dtype if self._theory is BV else Sort.Bool(self.shape)
+        return self._result(Term(self._theory.And(), [Wire(out)], [self._wire, o._wire]), o)
+
+    def __or__(self, o):
+        o = self._coerce(o)
+        out = self.dtype if self._theory is BV else Sort.Bool(self.shape)
+        return self._result(Term(self._theory.Or(), [Wire(out)], [self._wire, o._wire]), o)
+
+    def __xor__(self, o):
+        o = self._coerce(o)
+        out = self.dtype if self._theory is BV else Sort.Bool(self.shape)
+        return self._result(Term(self._theory.Xor(), [Wire(out)], [self._wire, o._wire]), o)
+
+    def __invert__(self):
+        out = self.dtype if self._theory is BV else Sort.Bool(self.shape)
+        return self._result(Term(self._theory.Not(), [Wire(out)], [self._wire]))
 
     @override
-    def __str__(self) -> str:
-        return (
-            f"{self._itype}({', '.join(map(str, self._args))})"
-            if self._args
-            else f"{self._itype}"
-        )
-
-
-class BExpr(Expr):
-    def __and__(self, rhs: "BExpr") -> "BExpr":
-        return conj(self, rhs)
-
-    def __or__(self, rhs: "BExpr") -> "BExpr":
-        return disj(self, rhs)
-
-    def __invert__(self) -> "BExpr":
-        return neg(self)
-
-
-class AExpr(Expr):
-    def __add__(self, other: "AExpr") -> "AExpr":
-        return add(self, other)
-
-    def __mul__(self, other: "AExpr") -> "AExpr":
-        return mul(self, other)
-
-    def __sub__(self, other: "AExpr") -> "AExpr":
-        return sub(self, other)
-
-    def __truediv__(self, other: "AExpr") -> "AExpr":
-        return div(self, other)
-
-    def __lt__(self, other: "AExpr") -> BExpr:
-        return lt(self, other)
-
-    def __gt__(self, other: "AExpr") -> BExpr:
-        return gt(self, other)
-
-    def __le__(self, other: "AExpr") -> BExpr:
-        return le(self, other)
-
-    def __ge__(self, other: "AExpr") -> BExpr:
-        return ge(self, other)
-
-    def __eq__(self, other: "AExpr") -> BExpr:
-        return eq(self, other)
-
-    def __ne__(self, other: "AExpr") -> BExpr:
-        return neq(self, other)
-
-    def __matmul__(self, other):
-        return matmul(self, other)
-
-
-class WExpr(Expr):
-    """Expression class for word-level (bitvector) types."""
-
-    def __add__(self, other: "WExpr") -> "WExpr":
-        return w_add(self, other)
-
-    def __sub__(self, other: "WExpr") -> "WExpr":
-        return w_sub(self, other)
-
-    def __mul__(self, other: "WExpr") -> "WExpr":
-        return w_mul(self, other)
-
-    def __truediv__(self, other: "WExpr") -> "WExpr":
-        return w_div(self, other)
-
-    def __mod__(self, other: "WExpr") -> "WExpr":
-        return w_mod(self, other)
-
-    def __neg__(self) -> "WExpr":
-        return w_neg(self)
-
-    def __abs__(self) -> "WExpr":
-        return w_abs(self)
-
-    def __and__(self, other: "WExpr") -> "WExpr":
-        return w_and(self, other)
-
-    def __or__(self, other: "WExpr") -> "WExpr":
-        return w_or(self, other)
-
-    def __xor__(self, other: "WExpr") -> "WExpr":
-        return w_xor(self, other)
-
-    def __invert__(self) -> "WExpr":
-        return w_not(self)
-
-    def __lt__(self, other: "WExpr") -> BExpr:
-        return w_lt(self, other)
-
-    def __gt__(self, other: "WExpr") -> BExpr:
-        return w_gt(self, other)
-
-    def __le__(self, other: "WExpr") -> BExpr:
-        return w_le(self, other)
-
-    def __ge__(self, other: "WExpr") -> BExpr:
-        return w_ge(self, other)
-
-    def __eq__(self, other: "WExpr") -> BExpr:
-        return w_eq(self, other)
-
-    def __ne__(self, other: "WExpr") -> BExpr:
-        return w_neq(self, other)
+    def __repr__(self) -> str:
+        if self._term is None:
+            return f"Var({self._name!r})" if self._name else f"Wire#{self._wire.id}"
+        head = str(self._term.itype)
+        return f"{head}({', '.join(map(repr, self._args))})" if self._args else head
 
 
 # ---------------------------------------------------------------------------
-# Core factory
+# Leaves & non-operator ops
 # ---------------------------------------------------------------------------
 
 
-def _expr_from_term(term: Term, builder: TermBuilder, *args: Expr) -> Expr:
-    """Create the right Expr subclass from an already-constructed Term."""
-    sort = term.write[0].dtype
-    match sort:
-        case Sort.Bool(s):
-            cls, shape = BExpr, list(s)
-        case Sort.Int(s) | Sort.Real(s):
-            cls, shape = AExpr, list(s)
-        case Sort.BitVec(_, s):
-            cls, shape = WExpr, list(s)
-        case _:
-            raise TypeError(f"unknown sort: {sort}")
-    e = cls.__new__(cls)
-    e._term = term
-    e._builder = builder
-    e._itype = term.itype
-    e._wire = term.write[0]
-    e._dtype = sort
-    e._shape = shape
-    e._args = list(args)
-    return e
+def var(pair: tuple[Wire, Wire], theory, name: str | None = None) -> Expr:
+    """A state/interface variable leaf; reads as its *latched* wire. `nxt(v)` -> next."""
+    return Expr(pair[0], theory, term=None, args=(), pair=pair, name=name)
+
+
+def nxt(v: Expr) -> Expr:
+    """The `next` wire of a variable expr (as returned by `var`)."""
+    if v._pair is None:
+        raise ValueError("nxt() expects a variable (wire-pair) expression")
+    return Expr(v._pair[1], v._theory, term=None, args=())
+
+
+def const(value, theory) -> Expr:
+    """A constant leaf in `theory`, from a Python scalar/bool or a tensor."""
+    if isinstance(value, bool):
+        tensor = torch.tensor([[value]], dtype=torch.bool)
+    elif isinstance(value, torch.Tensor):
+        tensor = value
+    elif theory is LRA:
+        tensor = torch.tensor([float(value)], dtype=torch.float32)
+    else:
+        tensor = torch.tensor([int(value)], dtype=torch.int64)
+
+    shape = _normalize_shape(list(tensor.size()))
+    tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
+    is_bool = tensor.dtype == torch.bool
+    if theory is LRA:
+        op, sort = (LRA.ConstBool(tensor), Sort.Bool(shape)) if is_bool else (LRA.ConstReal(tensor), Sort.Real(shape))
+    elif theory is LIA:
+        op, sort = (LIA.ConstBool(tensor), Sort.Bool(shape)) if is_bool else (LIA.ConstInt(tensor), Sort.Int(shape))
+    else:
+        op, sort = BV.Const(tensor), (Sort.BitVec(1, shape) if is_bool else Sort.BitVec(32, shape))
+    w = Wire(sort)
+    return Expr(w, theory, term=Term.constant(op, [w]))
+
+
+def as_expr(value, theory) -> Expr:
+    """Coerce a bare Python value to a const expr; pass Exprs through unchanged."""
+    return value if isinstance(value, Expr) else const(value, theory)
+
+
+def ite(cond: Expr, iftrue, iffalse) -> Expr:
+    iftrue, iffalse = cond._coerce(iftrue), cond._coerce(iffalse)
+    term = Term(cond._theory.Ite(), [Wire(iftrue.dtype)], [cond._wire, iftrue._wire, iffalse._wire])
+    return cond._result(term, iftrue, iffalse)
+
+
+def eq(a: Expr, b) -> Expr:
+    b = a._coerce(b)
+    out = Sort.BitVec(1, a.shape) if a._theory is BV else Sort.Bool(a.shape)
+    return a._result(Term(a._theory.Eq(), [Wire(out)], [a._wire, b._wire]), b)
+
+
+def ne(a: Expr, b) -> Expr:
+    b = a._coerce(b)
+    out = Sort.BitVec(1, a.shape) if a._theory is BV else Sort.Bool(a.shape)
+    return a._result(Term(a._theory.Ne(), [Wire(out)], [a._wire, b._wire]), b)
+
+
+def relu(e: Expr) -> Expr:
+    return e._result(Term(e._theory.ReLU(), [Wire(e.dtype)], [e._wire]))
+
+
+def argmax(e: Expr) -> Expr:
+    return e._result(Term(e._theory.Argmax(), [Wire(_with_shape(e.dtype, [1, 1]))], [e._wire]))
 
 
 # ---------------------------------------------------------------------------
-# Boolean operators
+# Term collection (used by dslModule to populate the base Module)
 # ---------------------------------------------------------------------------
 
 
-def conj(first: BExpr, *others) -> BExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.and_(acc.wire, other.wire), b, acc, other)
-    return acc
-
-
-def disj(first: BExpr, *others) -> BExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.or_(acc.wire, other.wire), b, acc, other)
-    return acc
-
-
-def neg(e: BExpr) -> BExpr:
-    return _expr_from_term(e._builder.not_(e.wire), e._builder, e)
-
-
-# ---------------------------------------------------------------------------
-# Arithmetic operators
-# ---------------------------------------------------------------------------
-
-
-def add(first: AExpr, *others) -> AExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.add(acc.wire, other.wire), b, acc, other)
-    return acc
-
-
-def sub(lhs: AExpr, rhs: AExpr) -> AExpr:
-    b = lhs._builder
-    return _expr_from_term(b.sub(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def mul(first: AExpr, *others) -> AExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.mul(acc, other.wire), b, acc, other)
-    return acc
-
-
-def div(num: AExpr, den: AExpr) -> AExpr:
-    b = num._builder
-    return _expr_from_term(b.div(num.wire, den.wire), b, num, den)
-
-
-# ---------------------------------------------------------------------------
-# Predicates
-# ---------------------------------------------------------------------------
-
-
-def lt(lhs: AExpr, rhs: AExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.lt(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def gt(lhs: AExpr, rhs: AExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.gt(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def ge(lhs: AExpr, rhs: AExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.ge(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def le(lhs: AExpr, rhs: AExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.le(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def eq(lhs: AExpr, rhs: AExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.eq(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def neq(lhs: AExpr, rhs: AExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.ne(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-# ---------------------------------------------------------------------------
-# Control flow
-# ---------------------------------------------------------------------------
-
-
-def ite(cond: BExpr, iftrue: Expr, iffalse: Expr) -> Expr:
-    if not isinstance(iftrue, (BExpr, AExpr)):
-        raise ValueError(f"ite: expected AExpr or BExpr, got {type(iftrue).__name__}")
-    if type(iftrue) is not type(iffalse):
-        raise ValueError(f"ite: branch types must match, got {type(iftrue).__name__} and {type(iffalse).__name__}")
-    b = iftrue._builder
-    return _expr_from_term(b.ite(cond.wire, iftrue.wire, iffalse.wire), b, cond, iftrue, iffalse)
-
-
-# ---------------------------------------------------------------------------
-# Tensor operations
-# ---------------------------------------------------------------------------
-
-
-def argmax(arg: Expr) -> Expr:
-    return _expr_from_term(arg._builder.argmax(arg.wire), arg._builder, arg)
-
-
-def matmul(lhs: Expr, rhs: Expr) -> Expr:
-    term = lhs._builder.matmul(lhs._term, rhs.wire)
-    return _expr_from_term(term, lhs._builder, lhs, rhs)
-
-
-# ---------------------------------------------------------------------------
-# Word-level (BV) operators
-# ---------------------------------------------------------------------------
-
-
-def w_add(first: WExpr, *others) -> WExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.add(acc.wire, other.wire), b, acc, other)
-    return acc
-
-
-def w_sub(first: WExpr, *others) -> WExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.sub(acc.wire, other.wire), b, acc, other)
-    return acc
-
-
-def w_mul(first: WExpr, *others) -> WExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.mul(acc.wire, other.wire), b, acc, other)
-    return acc
-
-
-def w_div(num: WExpr, den: WExpr) -> WExpr:
-    b = num._builder
-    return _expr_from_term(b.div(num.wire, den.wire), b, num, den)
-
-
-def w_mod(num: WExpr, den: WExpr) -> WExpr:
-    b = num._builder
-    return _expr_from_term(b.div(num.wire, den.wire), b, num, den)  # TODO: BV.Mod
-
-
-def w_neg(e: WExpr) -> WExpr:
-    return _expr_from_term(e._builder.neg(e.wire), e._builder, e)
-
-
-def w_abs(e: WExpr) -> WExpr:
-    return _expr_from_term(e._builder.abs_(e.wire), e._builder, e)
-
-
-def w_and(first: WExpr, *others) -> WExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.and_(acc.wire, other.wire), b, acc, other)
-    return acc
-
-
-def w_or(first: WExpr, *others) -> WExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.or_(acc.wire, other.wire), b, acc, other)
-    return acc
-
-
-def w_xor(first: WExpr, *others) -> WExpr:
-    b = first._builder
-    acc = first
-    for other in others:
-        acc = _expr_from_term(b.xor_(acc.wire, other.wire), b, acc, other)
-    return acc
-
-
-def w_not(e: WExpr) -> WExpr:
-    return _expr_from_term(e._builder.not_(e.wire), e._builder, e)
-
-
-def w_lt(lhs: WExpr, rhs: WExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.lt(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def w_gt(lhs: WExpr, rhs: WExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.gt(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def w_le(lhs: WExpr, rhs: WExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.le(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def w_ge(lhs: WExpr, rhs: WExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.ge(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def w_eq(lhs: WExpr, rhs: WExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.eq(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-def w_neq(lhs: WExpr, rhs: WExpr) -> BExpr:
-    b = lhs._builder
-    return _expr_from_term(b.ne(lhs.wire, rhs.wire), b, lhs, rhs)
-
-
-# ---------------------------------------------------------------------------
-# Terminals — theory is required
-# ---------------------------------------------------------------------------
-
-
-def Bool(x: bool | str | torch.Tensor, theory, shape=None) -> BExpr:
-    b = builder_for(theory)
-    if isinstance(x, bool):
-        return _expr_from_term(b.const_bool(x), b)
-    elif isinstance(x, torch.Tensor):
-        return _expr_from_term(b.const(x), b)
-    elif isinstance(x, str):
-        return _expr_from_term(b.uninterpreted(x, Sort.Bool(_normalize_shape(shape or [1]))), b)
-    raise ValueError(f"Invalid argument to Bool: {type(x).__name__}")
-
-
-def Real(x: float | str | torch.Tensor, theory, shape=None) -> AExpr:
-    b = builder_for(theory)
-    if isinstance(x, (int, float)) and not isinstance(x, bool):
-        return _expr_from_term(b.const_for_value(float(x)), b)
-    elif isinstance(x, torch.Tensor):
-        return _expr_from_term(b.const(x), b)
-    elif isinstance(x, str):
-        return _expr_from_term(b.uninterpreted(x, Sort.Real(_normalize_shape(shape or [1]))), b)
-    raise ValueError(f"Invalid argument to Real: {type(x).__name__}")
+def collect_terms(*roots: Expr) -> list[Term]:
+    """Every term created under the given expr trees, dependencies first, de-duplicated."""
+    seen: set[int] = set()
+    out: list[Term] = []
+
+    def visit(e: Expr) -> None:
+        for child in e._args:
+            visit(child)
+        if e._term is not None and id(e._term) not in seen:
+            seen.add(id(e._term))
+            out.append(e._term)
+
+    for r in roots:
+        visit(r)
+    return out
