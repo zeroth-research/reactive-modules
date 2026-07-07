@@ -73,13 +73,13 @@ def _invoke(fn, ctrl_arg, extl_arg, is_init: bool):
 
 
 def _block_terms(theory, ctrl_vars: tuple, values: tuple) -> list:
-    """Terms for one block: each ctrl var's next value, plus an Id onto its next wire."""
+    """Terms for one block: every value's terms (deps first, and sub-expressions shared
+    across values emitted once), then an Id driving each ctrl var's next wire."""
     if len(values) != len(ctrl_vars):
         raise ValueError(f"expected {len(ctrl_vars)} return value(s), got {len(values)}")
-    terms: list = []
-    for var, value in zip(ctrl_vars, values):
-        e = as_expr(value, theory)
-        terms.extend(E.collect_terms(e))
+    exprs = [as_expr(v, theory) for v in values]
+    terms = E.collect_terms(*exprs)          # one shared pass -> a reused subterm appears once
+    for var, e in zip(ctrl_vars, exprs):
         terms.append(Term(theory.Id(), [nxt(var).wire], [e.wire]))
     return terms
 
