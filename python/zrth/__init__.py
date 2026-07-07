@@ -16,6 +16,7 @@ from .builder import (
 from .gym import Env
 from .smv import parse_smv
 from .smt import z3
+from .dsl import dslModule
 
 # Submodule access: from zrth.gym import Env ; from zrth.torch import Module
 from . import gym as gym
