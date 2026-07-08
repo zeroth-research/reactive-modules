@@ -33,6 +33,9 @@ AI inference requirements
   ``pip install zrth[ai]``.
 * **Local LLM (Ollama, vLLM, …)**: install ``pip install zrth[ai-local]``
   and provide ``--base-url`` pointing to an OpenAI-compatible endpoint.
+* **Hosted OpenAI-compatible provider (OpenRouter, …)**: as above, plus set
+  ``OPENROUTER_API_KEY`` (or ``OPENAI_API_KEY``), e.g.
+  ``--base-url https://openrouter.ai/api/v1 --model anthropic/claude-haiku-4.5``.
 
 Module file format
 ------------------
@@ -200,7 +203,12 @@ def main():
     parser.add_argument(
         "--base-url",
         default=None,
-        help="OpenAI-compatible base URL for local LLMs, e.g. http://localhost:11434/v1 for Ollama.",
+        help=(
+            "OpenAI-compatible base URL, e.g. http://localhost:11434/v1 for Ollama "
+            "or https://openrouter.ai/api/v1 for OpenRouter. Hosted providers read "
+            "the API key from OPENROUTER_API_KEY or OPENAI_API_KEY; local servers "
+            "need no key."
+        ),
     )
     parser.add_argument(
         "--cert-file",
