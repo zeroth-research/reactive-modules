@@ -180,7 +180,8 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
     observation = resolve_wire(
         "observation", observation_dtype, user_wires["observation"]
     )
-    reward = resolve_wire("reward", Sort.Real([1, 1]), user_wires["reward"])
+    reward_dtype = Sort.Int([1, 1]) if theory is LIA else Sort.Real([1, 1])
+    reward = resolve_wire("reward", reward_dtype, user_wires["reward"])
     terminated = resolve_wire("terminated", Sort.Bool([1, 1]), user_wires["terminated"])
     truncated = resolve_wire("truncated", Sort.Bool([1, 1]), user_wires["truncated"])
 
@@ -201,7 +202,7 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [
-        _value_to_const_term(0.0, reward[1], _builder),
+        _value_to_const_term(0 if theory is LIA else 0.0, reward[1], _builder),
         _value_to_const_term(False, terminated[1], _builder),
         _value_to_const_term(False, truncated[1], _builder),
     ]
@@ -392,6 +393,8 @@ class Env(Module, gym.Wrapper):
                     self._state[nxt] = torch.tensor([float(value)])
                 elif isinstance(value, torch.Tensor):
                     self._state[nxt] = value.clone()
+                elif isinstance(value, np.ndarray):
+                    self._state[nxt] = torch.as_tensor(value, dtype=torch.float32)
 
     def _prepare_action(self, action):
         """Convert action to tensor, one-hot encode for Discrete spaces."""

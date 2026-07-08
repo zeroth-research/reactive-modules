@@ -27,9 +27,10 @@ def _wrap(t, sort):
 
 def _linear(weight, bias, x):
     """A·x (+ b). An empty bias tensor means no bias (matmul-as-Linear)."""
+    weight = weight.to(x.dtype)  # baked Int weights vs float runtime tensors
     if bias is None or bias.numel() == 0:
         return weight @ x
-    return weight @ x + bias
+    return weight @ x + bias.to(x.dtype)
 
 
 def eval_itype(itype, read, out_sort=None):

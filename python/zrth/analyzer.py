@@ -1135,6 +1135,14 @@ def _infer_shape_and_elem_type(value):
         return [], bool
     if isinstance(value, (int, float)):
         return [], type(value)
+    if isinstance(value, torch.Tensor):
+        if value.dtype == torch.bool:
+            elem = bool
+        elif value.dtype.is_floating_point:
+            elem = float
+        else:
+            elem = int
+        return list(value.shape), elem
     if isinstance(value, (list, tuple)):
         if not value:
             raise ValueError("Cannot infer shape from empty collection")
@@ -1150,6 +1158,14 @@ def infer_dtype(name, abstract_value, builder):
 
     if abstract_value.is_const():
         shape, elem_type = _infer_shape_and_elem_type(abstract_value.value)
+        return builder.python_type_to_dtype(elem_type, _normalize_shape(shape or [1]))
+
+    # np.array(<literal>) CallResult (e.g. from _instance_to_init_attrs):
+    # recover shape and element type from the literal data.
+    repr_ = abstract_value.call_repr
+    if repr_ and (repr_.startswith("np.array(") or repr_.startswith("numpy.array(")):
+        data = ast.literal_eval(repr_[repr_.index("(") + 1 : repr_.rindex(")")])
+        shape, elem_type = _infer_shape_and_elem_type(data)
         return builder.python_type_to_dtype(elem_type, _normalize_shape(shape or [1]))
 
     if abstract_value.type_ is None:
@@ -1847,6 +1863,8 @@ class MethodVisitor(ast.NodeVisitor):
             return self.builder.sub(left_val, right_val)
         elif op_type is ast.Mult:
             return self.builder.mul(left_val, right_val)
+        elif op_type is ast.MatMult:
+            return self.builder.matmul(left_val, right_val)
         elif op_type is ast.Div:
             raise ValueError("Division is not supported")
         elif op_type is ast.Pow:
