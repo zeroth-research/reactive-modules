@@ -154,7 +154,7 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
 
         # Emit effect abbrevs.
         for i, ty, full_body, eargs in update_data:
-            lines.append(f"abbrev {noncomp}effect_{i} : {ty} :=")
+            lines.append(f"{noncomp}abbrev effect_{i} : {ty} :=")
             lines.append(full_body)
             lines.append("")
 
@@ -162,7 +162,7 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
         for i in range(n_ctrl):
             eargs = effect_arg_lists[i]
             eargs_str = (" " + " ".join(eargs)) if eargs else ""
-            lines.append(f"abbrev R_{i} : Bool :=")
+            lines.append(f"{noncomp}abbrev R_{i} : Bool :=")
             lines.append(f"  (newstate {i}) == effect_{i}{eargs_str}")
             lines.append("")
 
@@ -171,7 +171,7 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
             f"R_{i}" + ((" " + " ".join(r_arg_lists[i])) if r_arg_lists[i] else "")
             for i in range(n_ctrl)
         ]
-        lines.append("abbrev TransRel : Bool :=")
+        lines.append(f"{noncomp}abbrev TransRel : Bool :=")
         lines.append("  " + " &&\n  ".join(r_calls))
         lines.append("")
 
@@ -226,7 +226,7 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
 
         # Emit init abbrevs.
         for i, ty, full_body, iargs in init_data:
-            lines.append(f"abbrev {noncomp}init_{i} : {ty} :=")
+            lines.append(f"{noncomp}abbrev init_{i} : {ty} :=")
             lines.append(full_body)
             lines.append("")
 
@@ -234,7 +234,7 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
         for i in range(n_ctrl):
             iargs = init_arg_lists[i]
             iargs_str = (" " + " ".join(iargs)) if iargs else ""
-            lines.append(f"abbrev Init_{i} : Bool :=")
+            lines.append(f"{noncomp}abbrev Init_{i} : Bool :=")
             lines.append(f"  (s {i}) == init_{i}{iargs_str}")
             lines.append("")
 
@@ -243,7 +243,7 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
             f"Init_{i}" + ((" " + " ".join(init_cond_arg_lists[i])) if init_cond_arg_lists[i] else "")
             for i in range(n_ctrl)
         ]
-        lines.append("abbrev InitCond : Bool :=")
+        lines.append(f"{noncomp}abbrev InitCond : Bool :=")
         lines.append("  " + " &&\n  ".join(init_calls))
         lines.append("")
 
