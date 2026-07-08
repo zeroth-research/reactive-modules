@@ -8,6 +8,14 @@ Jupyter notebooks that walk through `zrth` step by step:
 
 Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
+## Termination examples
+
+Worked examples that model a C program as a `dslModule`, load a ranking function, and verify termination with Z3 (each in its own folder):
+
+- **cairo/**: `while (x != 0) x = x - 1` — disjunctive guard; terminates over the integers.
+- **decrement_1d/**: the simplest terminating loop, `while (x > 0) x = x - 1`.
+- **singapore-2/**: a two-variable loop; verification carries the loop invariant `x + y <= 0`.
+
 ## Setup
 
 Run
@@ -39,6 +47,14 @@ This installs `zrth` (built via maturin) plus the tutorial dependencies (`ipyker
 ### VS Code
 
 Install the [Jupyter extension](https://marketplace.visualstudio.com/items?itemName=ms-toolsai.jupyter), open a notebook, and select the `.venv` kernel.
+
+`zrth` is built in place under `python/` (not installed into site-packages), so if the editor flags `import zrth` as unresolved, create `.vscode/settings.json` with:
+
+```json
+{
+    "python.analysis.extraPaths": ["${workspaceFolder}/python"]
+}
+```
 
 ### uv
 
