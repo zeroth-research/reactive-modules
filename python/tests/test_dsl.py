@@ -8,11 +8,16 @@ plus check the ctrl/extl partition and the config surface.
 
 import pytest
 
-from zrth import LIA, Module, Sort, dslModule
-from zrth.dsl import nxt, ite, wire_pair
+from zrth import LIA, Module, Sort, Wire, dslModule
+from zrth.dsl import nxt, ite
 from zrth.eval import eval_itype
 
 INT = Sort.Int([1, 1])
+
+
+def _pair():
+    """A fresh (latched, next) wire pair (test helper)."""
+    return (Wire(INT), Wire(INT))
 
 
 # --- stepping helpers (same shape as test_eval) -----------------------------
@@ -61,13 +66,13 @@ class Counter(dslModule):
 
 
 def test_counter_is_a_closed_base_module():
-    m = Counter(theory=LIA, ctrl=(wire_pair(INT),))
+    m = Counter(theory=LIA, ctrl=(_pair(),))
     assert isinstance(m, Module)
     assert m.closed()
 
 
 def test_counter_counts():
-    x = wire_pair(INT)
+    x = _pair()
     m = Counter(theory=LIA, ctrl=(x,))
     (_x_lat, x_nxt) = x
     assert _trace(m, 5, x_nxt) == [0, 1, 2, 3, 4, 5]
@@ -86,7 +91,7 @@ class Bounded(dslModule):
 
 
 def test_multivar_ite_and_hold():
-    x, cap = wire_pair(INT), wire_pair(INT)
+    x, cap = _pair(), _pair()
     m = Bounded(theory=LIA, ctrl=(x, cap))
     assert m.closed()
     assert _trace(m, 5, x[1]) == [0, 1, 2, 3, 3, 3]
@@ -105,7 +110,7 @@ class Gate(dslModule):
 
 
 def test_extl_is_external_and_module_is_open():
-    x, y = wire_pair(INT), wire_pair(INT)  # x controlled, y external
+    x, y = _pair(), _pair()  # x controlled, y external
     m = Gate(theory=LIA, ctrl=(x,), extl=(y,))
     assert m.open()
     assert len(list(m.ctrl)) == 1
@@ -123,7 +128,7 @@ def test_builds_from_wire_pairs_passed_directly():
         def update(self, ctrl):
             return ctrl + 1
 
-    m = C(theory=LIA, ctrl=(wire_pair(INT),))
+    m = C(theory=LIA, ctrl=(_pair(),))
     assert m.closed()
 
 
@@ -143,7 +148,7 @@ def test_missing_init_raises():
 
     # init is required — every ctrl variable needs an initial value
     with pytest.raises(TypeError):
-        NoInit(theory=LIA, ctrl=(wire_pair(INT),))
+        NoInit(theory=LIA, ctrl=(_pair(),))
 
 
 def test_subexpression_shared_across_returns():
@@ -158,5 +163,5 @@ def test_subexpression_shared_across_returns():
             loop = x < y
             return ite(loop, x + 1, x), ite(loop, y, y - 1)
 
-    m = Shared(theory=LIA, ctrl=(wire_pair(INT), wire_pair(INT)))
+    m = Shared(theory=LIA, ctrl=(_pair(), _pair()))
     assert m.closed()
