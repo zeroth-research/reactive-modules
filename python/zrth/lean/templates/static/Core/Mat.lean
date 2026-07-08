@@ -90,8 +90,8 @@ def argmax {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [In
 @[simp] theorem MatMul_apply {m k n : Nat} (a : Fin m → Fin k → Int) (b : Fin k → Fin n → Int) (i : Fin m) (j : Fin n) :
     MatMul a b i j = Finset.sum Finset.univ (fun l => a i l * b l j) := rfl
 
-@[simp] theorem MatZero_apply {m n : Nat} (i : Fin m) (j : Fin n) :
-    MatZero i j = 0 := rfl
+@[simp] theorem MatZero_apply {t : Type} [OfNat t 0] {m n : Nat} (i : Fin m) (j : Fin n) :
+    (MatZero : Mat t m n) i j = 0 := rfl
 
 @[simp] theorem MatAdd_eq_add {m n : Nat} (a b : Fin m → Fin n → Int) :
     MatAdd a b = a + b := rfl
