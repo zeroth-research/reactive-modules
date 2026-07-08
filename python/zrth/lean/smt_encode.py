@@ -235,13 +235,20 @@ def translate_terms(
         if name == "Tensor":
             wt[write.id] = _tensor_const(tm, write, term.itype._0)
             continue
-        if name == "ConstBool":
-            v = _scalar_const(tm, Sort.Bool([1, 1]), term.itype._0)
-            wt[write.id] = mat_pack(tm, out_shape, [v] * out_shape.total)
-            continue
-        if name == "ConstInt":
-            v = _scalar_const(tm, Sort.Int([1, 1]), term.itype._0)
-            wt[write.id] = mat_pack(tm, out_shape, [v] * out_shape.total)
+        if name in ("ConstBool", "ConstInt", "ConstReal"):
+            payload = term.itype._0
+            numel = payload.numel() if hasattr(payload, "numel") else 1
+            if numel > 1:
+                # matrix constant: materialize per element (payload matches shape)
+                wt[write.id] = _tensor_const(tm, write, payload)
+            else:
+                elem = {
+                    "ConstBool": Sort.Bool([1, 1]),
+                    "ConstInt": Sort.Int([1, 1]),
+                    "ConstReal": Sort.Real([1, 1]),
+                }[name]
+                v = _scalar_const(tm, elem, payload)
+                wt[write.id] = mat_pack(tm, out_shape, [v] * out_shape.total)
             continue
 
         args = [wt[w.id] for w in term.read]
@@ -365,9 +372,11 @@ def translate_terms(
             cast = tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.GEQ, a, zero), a, zero)
             wt[write.id] = mat_pack(tm, out_shape, [cast])
         elif name == "Argmax":
-            wt[write.id] = mat_pack(
-                tm, out_shape, [_argmax_1d(tm, args[0], in_shapes[0])]
-            )
+            idx = _argmax_1d(tm, args[0], in_shapes[0])
+            # _argmax_1d builds an Int index; LRA modules carry it on a Real wire
+            if isinstance(write.dtype, Sort.Real):
+                idx = tm.mkTerm(Kind.TO_REAL, idx)
+            wt[write.id] = mat_pack(tm, out_shape, [idx])
         else:
             raise ValueError(f"SMT translator: unsupported IType {name}")
 
