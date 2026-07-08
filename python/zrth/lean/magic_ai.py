@@ -1,8 +1,11 @@
 """AI-based inference of invariants and ranking functions.
 
 For Claude API: pip install zrth[ai]
-For local LLMs (Ollama, vLLM, etc.): pip install zrth[ai-local]
+For local LLMs (Ollama, vLLM, etc.) and OpenAI-compatible providers
+(OpenRouter, ...): pip install zrth[ai-local]
 """
+
+import os
 
 from .cert import CertificateData
 from .magic import TA2Magic
@@ -113,7 +116,14 @@ def _make_client(base_url: str | None, model: str):
                 "openai package is required for local LLM support. "
                 "Install with: pip install zrth[ai-local]"
             )
-        client = openai.OpenAI(base_url=base_url, api_key="unused")
+        # Hosted OpenAI-compatible providers (e.g. OpenRouter) need a real
+        # key; local servers (Ollama, vLLM) accept any placeholder.
+        api_key = (
+            os.environ.get("OPENROUTER_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or "unused"
+        )
+        client = openai.OpenAI(base_url=base_url, api_key=api_key)
 
         def chat(system: str, user: str) -> str:
             resp = client.chat.completions.create(
