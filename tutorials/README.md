@@ -9,6 +9,10 @@ Jupyter notebooks that walk through `zrth` step by step:
 
 Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
+There is also a plain-markdown tutorial, [verith_gym.md](verith_gym.md), on
+generating a Lean 4 certificate for a gymnasium environment with the
+`uv run verith` CLI.
+
 ## Termination examples
 
 Worked examples that model a C program as a `sugar.Module`, load a ranking function, and verify termination with Z3 (each in its own folder):
