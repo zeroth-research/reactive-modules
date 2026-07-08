@@ -31,15 +31,15 @@ def inv (s : {{ ctrl_type }}) : Prop := True
 def P (s : {{ ctrl_type }}) : Prop :=
 {{ p_body }}
 
-instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
+{{ noncomp }}instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 {% elif p_expr %}
 def P : {{ ctrl_type }} → Prop := {{ p_expr }}
 
-instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
+{{ noncomp }}instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 {% else %}
 def P (s : {{ ctrl_type }}) : Prop := sorry
 
-instance : DecidablePred P := sorry
+{{ noncomp }}instance : DecidablePred P := sorry
 {% endif %}
 
 {% if ranking_body %}

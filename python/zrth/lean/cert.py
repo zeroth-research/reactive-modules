@@ -57,13 +57,15 @@ def _cert_def_lines(
     _prop_def("inv",        ctrl_native, "s", c["inv_body"],        c["inv_expr"],        "True")
     _prop_def("P",          ctrl_native, "s", c["p_body"],          c["p_expr"],          "sorry")
 
-    # DecidablePred P
+    # DecidablePred P (noncomputable for Real-typed state: Real.decidableLE
+    # and friends are classical, so the instance cannot be compiled)
+    noncomp = c["noncomp"]
     if c["p_body"] is not None or c["p_expr"] is not None:
         lines.append(
-            "instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance"
+            f"{noncomp}instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance"
         )
     else:
-        lines.append("instance : DecidablePred P := sorry")
+        lines.append(f"{noncomp}instance : DecidablePred P := sorry")
     lines.append("")
 
     # ranking (Nat, not Prop)
@@ -124,6 +126,7 @@ def _cert_def_context(ctx: LeanContext, cert_data: CertificateData) -> dict:
     return dict(
         extl_type=extl_native,
         ctrl_type=ctrl_native,
+        noncomp="noncomputable " if ctx.uses_real else "",
         init_pre_body=ip_body,
         init_pre_expr=ip_expr,
         update_pre_body=up_body,
