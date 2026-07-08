@@ -6,14 +6,15 @@ to return the next-state values as a tuple aligned with ``ctrl``. **Instantiatin
 subclass *is* a base Module** — ``init`` / ``update`` run and the sequential module is
 built in the constructor.
 
-    from zrth import LIA, Sort
-    from zrth.dsl import dslModule, wire_pair, nxt, ite
+    from zrth import LIA, Sort, Wire
+    from zrth.dsl import dslModule
 
     class Counter(dslModule):
         def init(self):            return 0
         def update(self, ctrl):    return ctrl + 1
 
-    x = wire_pair(Sort.Int([1, 1]))
+    INT = Sort.Int([1, 1])
+    x = (Wire(INT), Wire(INT))                 # a (latched, next) wire pair
     m = Counter(theory=LIA, ctrl=(x,))         # a base Module with theory LIA (closed)
 
 ``ctrl`` / ``extl`` are tuples of wire pairs (a single var is unwrapped, so you can write
@@ -38,17 +39,12 @@ constraints force this (both flagged for design review):
 
 import inspect
 
-from .zrth import Module, Wire, Term
+from .zrth import Module, Term
 from . import expr as E
 from .expr import nxt, ite, eq, ne, const, relu, argmax, as_expr, Expr  # re-exported for authoring
 
-# Public authoring surface: `from zrth.dsl import dslModule, wire_pair, nxt, ite, ...`
-__all__ = ["dslModule", "wire_pair", "nxt", "ite", "eq", "ne", "const", "relu", "argmax", "as_expr", "Expr"]
-
-
-def wire_pair(sort) -> tuple[Wire, Wire]:
-    """A fresh ``(latched, next)`` wire pair for a state / interface variable."""
-    return (Wire(sort), Wire(sort))
+# Public authoring surface: `from zrth.dsl import dslModule, nxt, ite, ...`
+__all__ = ["dslModule", "nxt", "ite", "eq", "ne", "const", "relu", "argmax", "as_expr", "Expr"]
 
 
 def _as_tuple(r) -> tuple:
