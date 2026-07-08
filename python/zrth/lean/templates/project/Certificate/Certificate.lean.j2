@@ -45,13 +45,13 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
    try simp_mat
    try simp_defs
-   all_goals ((try split_ifs) <;> first | omega | (norm_cast; omega))
+   all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto)
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
    try simp_defs
    try simp_mat
-   all_goals ((try split_ifs) <;> first | omega | (norm_cast; omega))
+   all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto)
 
 section TS
 
@@ -79,9 +79,9 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
     obtain ⟨l, hpre, heq⟩ := htr
     rw [← heq]
-    simp_defs
-    simp_mat
-    all_goals ((try split_ifs) <;> first | omega | (norm_cast; omega))
+    try simp_defs
+    try simp_mat
+    all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto)
 
 {{ noncomp }}def buchi := rule_buchi
   lts
