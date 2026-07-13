@@ -193,8 +193,8 @@ infixr:75 " ⊗ " => par
 /-- Affine map with weight `A` and bias `b` baked in as list literals (matching
     the theory's `LIA.Linear(A, B)`): a single-input box `x ↦ A · x + b`, using
     the reflected `matVecAffine` (see `Core.Mat`). -/
-@[simp] def linear [Mul t] [Add t] [Zero t] {n : Nat}
-    (m : Nat) (A : List (List t)) (b : List t) : Box [Mat t n 1] [Mat t m 1] :=
+@[simp] def linear [Mul t] [Add t] [Zero t] {n batch : Nat}
+    (m : Nat) (A : List (List t)) (b : List t) : Box [Mat t n batch] [Mat t m batch] :=
   ⟨fun val!(x) => val!(matVecAffine m A b x)⟩
 
 @[simp] def relu [Max t] [OfNat t 0] {m n : Nat}

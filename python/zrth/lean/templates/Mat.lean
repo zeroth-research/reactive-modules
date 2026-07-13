@@ -214,18 +214,19 @@ so the codegen's contraction is machine-checked rather than trusted. -/
   | [] => 0
   | p :: ps => p.1 * p.2 + dotL ps
 
-/-- Contract a dense `List (List t)` matrix and `List t` bias against a column
-    vector `x`: `Y i = Σ_l A[i][l] · x[l] + b[i]`. -/
+/-- Contract a dense `List (List t)` matrix and `List t` (column) bias against a
+    `Mat t n batch`: `Y i j = Σ_l A[i][l] · x[l][j] + b[i]` (bias broadcast over
+    the `batch` columns), matching the theory's `Y = A·X + B`. -/
 def matVecAffine [Mul t] [Add t] [Zero t] (m : Nat) (A : List (List t)) (b : List t)
-    {n : Nat} (x : Mat t n 1) : Mat t m 1 :=
-  fun i _ => dotL ((A.getD i.val []).zip (List.ofFn (fun l : Fin n => x l 0))) + b.getD i.val 0
+    {n batch : Nat} (x : Mat t n batch) : Mat t m batch :=
+  fun i j => dotL ((A.getD i.val []).zip (List.ofFn (fun l : Fin n => x l j))) + b.getD i.val 0
 
 /-- Dense matrix denoted by a `List (List t)` (out-of-range entries are `0`). -/
 def matrixOf [Zero t] (m n : Nat) (A : List (List t)) : Mat t m n :=
   fun i j => (A.getD i.val []).getD j.val 0
 
-/-- Column vector denoted by a `List t`. -/
-def colOf [Zero t] (m : Nat) (b : List t) : Mat t m 1 :=
+/-- Column bias `List t` broadcast to a `Mat t m batch` (every column is `b`). -/
+def colOf [Zero t] (m batch : Nat) (b : List t) : Mat t m batch :=
   fun i _ => b.getD i.val 0
 
 /-- Core bridge: the list fold equals the `Finset.sum` contraction. -/
@@ -243,13 +244,12 @@ theorem dotL_zip_ofFn [Mul t] [AddCommMonoid t] {n : Nat}
       simp
 
 /-- Generic correspondence: the reflected form equals `affineLinear` of the
-    matrix/bias the literals denote, given each row has the expected length. -/
-theorem matVecAffine_eq [Mul t] [AddCommMonoid t] (m n : Nat)
-    (A : List (List t)) (b : List t) (x : Mat t n 1)
+    matrix/bias the literals denote, given each row has the expected length.
+    Holds for any batch width. -/
+theorem matVecAffine_eq [Mul t] [AddCommMonoid t] (m n batch : Nat)
+    (A : List (List t)) (b : List t) (x : Mat t n batch)
     (hwf : ∀ i : Fin m, (A.getD i.val []).length = n) :
-    matVecAffine m A b x = affineLinear (matrixOf m n A) x (colOf m b) := by
+    matVecAffine m A b x = affineLinear (matrixOf m n A) x (colOf m batch b) := by
   funext i j
-  fin_cases j
   simp only [matVecAffine, affineLinear_apply, matrixOf, colOf]
-  rw [dotL_zip_ofFn (A.getD i.val []) (fun l => x l 0) (hwf i)]
-  rfl
+  rw [dotL_zip_ofFn (A.getD i.val []) (fun l => x l j) (hwf i)]
