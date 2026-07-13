@@ -250,6 +250,9 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
                 val = _get_dtype_item(wire.dtype, data[i, j].item())
                 row_entries.append(f"| {i}, {j} => {val}")
             lines.append("  " + " ".join(row_entries))
+        # Catch-all: enumerated arms already cover all indices, but Lean can't
+        # verify `0..k-1` exhausts `Fin k` for large k (see tensor_to_mat_expr).
+        lines.append(f"  | _, _ => {_get_dtype_item(wire.dtype, 0)}")
 
         return "\n".join(lines) + "\n"
 
@@ -402,6 +405,10 @@ def tensor_to_mat_expr(tensor, elem_sort: Sort, shape: list[int]) -> str:
         for i in range(m)
         for j in range(n)
     )
+    # Catch-all: the enumerated arms already cover every index, but Lean's match
+    # compiler can't verify that `0..k-1` exhausts `Fin k` for large k, so a
+    # default is required for big matrices (and harmless for small ones).
+    arms += f" | _, _ => {_get_dtype_item(elem_sort, 0)}"
     return f"(fun (i : Fin {m}) (j : Fin {n}) => ((match i, j with {arms}) : {ty}))"
 
 
