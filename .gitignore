@@ -10,5 +10,7 @@ target
 *.smt2
 *.so
 *.lock
+!Cargo.lock
+!uv.lock
 __pycache__/
 .ipynb_checkpoints/
