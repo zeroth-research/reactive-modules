@@ -370,6 +370,33 @@ def _vec_from_scalars(scalars: list[str], elem_ty: str) -> str:
     return f"({result} : Fin {n} → {elem_ty})"
 
 
+def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
+    """List-literal operands for a baked-constant `Linear` op (`Y = A·X + B`).
+
+    Returns ``(out_rows, A_literal, b_literal, elem_ty)`` where ``A_literal`` is a
+    ``List (List t)`` and ``b_literal`` a ``List t`` (empty bias → zeros), both
+    type-ascribed. Shared by the native (`matVecAffine`) and circuit (`Box.linear`)
+    emitters so the reflected form is generated in one place.
+    """
+    out_wire = term.write[0]
+    A = term.itype._0
+    B = term.itype._1
+    out_m = dtype_shape(out_wire.dtype)[0]
+    in_dim = int(A.shape[1])
+    ty = _sort_elem_ty(out_wire.dtype)
+    rows = [
+        "[" + ", ".join(_get_dtype_item(out_wire.dtype, A[i][l].item()) for l in range(in_dim)) + "]"
+        for i in range(out_m)
+    ]
+    a_lit = f"([{', '.join(rows)}] : List (List {ty}))"
+    if B.numel() == 0:
+        bias = [_get_dtype_item(out_wire.dtype, 0) for _ in range(out_m)]
+    else:
+        bias = [_get_dtype_item(out_wire.dtype, B[i][0].item()) for i in range(out_m)]
+    b_lit = f"([{', '.join(bias)}] : List {ty})"
+    return out_m, a_lit, b_lit, ty
+
+
 def _sort_elem_ty(sort: Sort) -> str:
     """Lean scalar element type ("Bool"/"Int"/"Real") for a Sort, ignoring shape."""
     if isinstance(sort, Sort.Bool):
@@ -379,37 +406,6 @@ def _sort_elem_ty(sort: Sort) -> str:
     if isinstance(sort, Sort.Real):
         return "Real"
     raise ValueError(f"Unsupported Sort for element type: {sort}")
-
-
-def tensor_to_mat_expr(tensor, elem_sort: Sort, shape: list[int]) -> str:
-    """Inline `Mat` literal for a baked-in constant tensor, as a `match` on the
-    `Fin` indices.
-
-    A `match i, j with | r, c => v` is opaque to `split_ifs`, so an unreduced
-    constant matrix (e.g. a large one whose surrounding `Fin.sum_univ_n` did not
-    fire) degrades to an unsolved goal rather than a combinatorial `split_ifs`
-    blow-up. Concrete indices still reduce by matcher iota under `simp`.
-    `elem_sort` selects element formatting (Int/Real/Bool); `shape` is the
-    tensor's `[m, n]` (or `[n]` / scalar).
-    """
-    if _is_scalar_shape(shape):
-        m, n = 1, 1
-    elif len(shape) == 1:
-        m, n = 1, shape[0]
-    else:
-        m, n = shape[0], shape[1]
-    ty = _sort_elem_ty(elem_sort)
-    data = tensor.reshape(m, n)
-    arms = " ".join(
-        f"| {i}, {j} => {_get_dtype_item(elem_sort, data[i, j].item())}"
-        for i in range(m)
-        for j in range(n)
-    )
-    # Catch-all: the enumerated arms already cover every index, but Lean's match
-    # compiler can't verify that `0..k-1` exhausts `Fin k` for large k, so a
-    # default is required for big matrices (and harmless for small ones).
-    arms += f" | _, _ => {_get_dtype_item(elem_sort, 0)}"
-    return f"(fun (i : Fin {m}) (j : Fin {n}) => ((match i, j with {arms}) : {ty}))"
 
 
 def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
