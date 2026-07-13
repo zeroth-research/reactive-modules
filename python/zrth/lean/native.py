@@ -17,6 +17,8 @@ from zrth.lean.common import (
     _accessor,
     dtype_to_lean_type,
     tensor_to_mat_expr,
+    _sort_elem_ty,
+    _get_dtype_item,
     _is_scalar_wire,
     _tensor_to_lean_scalar,
     _bind_wires_scalar,
@@ -135,21 +137,53 @@ def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
 
 
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:
-    """Emit `affineLinear A x b` for a baked-constant LIA/LRA `Linear` op.
+    """Emit a baked-constant LIA/LRA `Linear` op, `Y = A·X + B`.
 
-    Convention `Y = A·X + B`: `A` (shape `[out, in]`) and `B` (`[out, batch]`,
-    or empty for no bias) are baked into the op; the single read wire is `X`.
+    `A` (shape `[out, in]`) and `B` (`[out, 1]`, or empty) are constants baked
+    into the op; the single read wire supplies `X` (`[in, batch]`).
+
+    We **pre-contract** the product at codegen time: because `A` and `B` are
+    known, each output element is emitted as an explicit linear combination of
+    the (non-zero) inputs — `Y i j = Σ_{A[i][l]≠0} A[i][l]·(X l j) + B[i]` —
+    rather than an `affineLinear`/`MatMul` the prover must expand. This keeps the
+    generated term O(nnz) (no dense `A` literal, no symbolic `∑`), so it scales
+    to large matrices: certificate proofs see a plain linear expression that
+    `omega` closes directly.
     """
     out_wire = term.write[0]
     x_expr = wire_expr[term.read[0].id]
     A = term.itype._0
     B = term.itype._1
-    a_lit = tensor_to_mat_expr(A, out_wire.dtype, list(A.shape))
-    if B.numel() == 0:
-        b_lit = f"(MatZero : {dtype_to_lean_type(out_wire)})"
-    else:
-        b_lit = tensor_to_mat_expr(B, out_wire.dtype, list(B.shape))
-    return f"(affineLinear {a_lit} {x_expr} {b_lit})"
+    out_m, out_n = dtype_shape(out_wire.dtype)[:2] if len(dtype_shape(out_wire.dtype)) == 2 else (dtype_shape(out_wire.dtype)[0], 1)
+    in_dim = int(A.shape[1])
+    ty = _sort_elem_ty(out_wire.dtype)
+    has_bias = B.numel() != 0
+
+    def _element(i: int, j: int) -> str:
+        terms: list[str] = []
+        for l in range(in_dim):
+            a = A[i][l].item()
+            if a == 0:
+                continue
+            xe = f"({x_expr} {l} {j})"
+            if a == 1:
+                terms.append(xe)
+            elif a == -1:
+                terms.append(f"(-{xe})")
+            else:
+                terms.append(f"(({_get_dtype_item(out_wire.dtype, a)}) * {xe})")
+        if has_bias:
+            b = B[i][0].item()
+            if b != 0:
+                terms.append(_get_dtype_item(out_wire.dtype, b))
+        return " + ".join(terms) if terms else "0"
+
+    arms = " ".join(
+        f"| {i}, {j} => {_element(i, j)}" for i in range(out_m) for j in range(out_n)
+    )
+    # Catch-all for exhaustiveness on large `Fin` (see tensor_to_mat_expr).
+    arms += f" | _, _ => {_get_dtype_item(out_wire.dtype, 0)}"
+    return f"(fun (i : Fin {out_m}) (j : Fin {out_n}) => ((match i, j with {arms}) : {ty}))"
 
 
 def _reachable_terms(terms, output_wires: "list[Wire]") -> list:
