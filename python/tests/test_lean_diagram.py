@@ -149,12 +149,17 @@ def test_matrix_module_has_matrix_types():
     assert "Mat Int 2 1" in lean
 
 
-def test_matrix_module_uses_affine_linear():
+def test_matrix_module_precontracts_linear():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    # LIA.Linear compiles to the `affineLinear A x b` affine map.
-    assert "affineLinear" in lean
+    # LIA.Linear is pre-contracted at codegen time: each output element is an
+    # explicit linear combination of the (non-zero) inputs, not an affineLinear/
+    # MatMul the prover must expand. init: x' = A·u with A = [[0,0],[1,0],[0,1]],
+    # so row 1 = u[0] and row 2 = u[1].
+    assert "affineLinear" not in lean
+    assert "(extl_n 0 0)" in lean
+    assert "(extl_n 1 0)" in lean
 
 
 def test_matrix_init_signature():
