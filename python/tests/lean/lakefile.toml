@@ -27,6 +27,10 @@
  name = "Playground"
  roots = ["Playground"]
 
+ [[lean_lib]]
+ name = "ReflectionProto"
+ roots = ["ReflectionProto"]
+
  [[require]]
  name = "cslib"
  scope = "leanprover"
