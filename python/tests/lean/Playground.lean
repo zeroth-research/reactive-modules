@@ -141,9 +141,9 @@ theorem affineLinear_is_left_mul :
   fin_cases i <;> fin_cases j <;>
     simp [affineLinear, MatMul, MatZero, acA, acx, Fin.sum_univ_two] <;> decide
 
--- Baked constant matrices are emitted as `match`-based literals (see
--- tensor_to_mat_expr): opaque to split_ifs, and still reducing under simp. This
--- guards that the match form both computes correctly and reduces.
+-- Constant matrices (ConstInt) are emitted as `match`-based literals: opaque to
+-- split_ifs, and still reducing under simp. This guards that the match form both
+-- computes correctly and reduces.
 def mmA : Mat Int 2 2 := fun i j =>
   match i, j with
   | 0, 0 => 1 | 0, 1 => 2
@@ -197,3 +197,15 @@ open Box
   (Box.linear 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int))
 
 end GenLinearCompileCheck
+
+
+-- matVecAffine handles full matrices (batch > 1): it contracts each column, and
+-- the generic correspondence holds for any batch width (here 2).
+example (x : Mat Int 2 2) :
+    matVecAffine 2 [[1, 0], [0, 3]] [5, 0] x 0 1 = x 0 1 + 5 := by
+  simp [matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero]
+
+example (x : Mat Int 2 2) :
+    matVecAffine 2 [[1, 0], [0, 3]] [5, 0] x
+      = affineLinear (matrixOf 2 2 [[1, 0], [0, 3]]) x (colOf 2 2 [5, 0]) :=
+  matVecAffine_eq 2 2 2 _ _ x (by decide)

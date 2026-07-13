@@ -17,8 +17,6 @@ from zrth.lean.common import (
     _accessor,
     dtype_to_lean_type,
     linear_list_literals,
-    _sort_elem_ty,
-    _get_dtype_item,
     _is_scalar_wire,
     _tensor_to_lean_scalar,
     _bind_wires_scalar,
@@ -141,62 +139,16 @@ def _linear_expr(term, wire_expr: dict[int, str]) -> str:
     form `matVecAffine m A b X`.
 
     `A` (shape `[out, in]`) and `B` (`[out, 1]`, or empty) are constants baked
-    into the op; the single read wire supplies `X` (`[in, 1]`). They are emitted
-    as plain `List (List t)` / `List t` literals: cheap to elaborate (no dense
+    into the op; the read wire supplies `X` (`[in, batch]`). They are emitted as
+    plain `List (List t)` / `List t` literals: cheap to elaborate (no dense
     `match`), and `matVecAffine` reduces to a linear expression under `simp`
     (no symbolic `∑`). `Core.Mat.matVecAffine_eq` proves this equals
-    `affineLinear (matrixOf A) X (colOf b)`, so the contraction is machine-checked
-    rather than trusted. Column output only (batch = 1, which is all `Linear`
-    uses); a `batch > 1` op falls back to the inlined pre-contraction.
+    `affineLinear (matrixOf A) X (colOf b)` for any batch width, so the
+    contraction is machine-checked rather than trusted.
     """
-    out_wire = term.write[0]
     x_expr = wire_expr[term.read[0].id]
-    shape = dtype_shape(out_wire.dtype)
-    out_n = shape[1] if len(shape) == 2 else 1
-    if out_n != 1:
-        return _linear_expr_precontract(term, wire_expr)
     out_m, a_lit, b_lit, _ = linear_list_literals(term)
     return f"(matVecAffine {out_m} {a_lit} {b_lit} {x_expr})"
-
-
-def _linear_expr_precontract(term, wire_expr: dict[int, str]) -> str:
-    """Fallback (batch > 1): inline the contraction as an explicit per-element
-    linear combination `Y i j = Σ_{A[i][l]≠0} A[i][l]·(X l j) + B[i]`."""
-    out_wire = term.write[0]
-    x_expr = wire_expr[term.read[0].id]
-    A = term.itype._0
-    B = term.itype._1
-    shape = dtype_shape(out_wire.dtype)
-    out_m = shape[0]
-    out_n = shape[1] if len(shape) == 2 else 1
-    in_dim = int(A.shape[1])
-    ty = _sort_elem_ty(out_wire.dtype)
-    has_bias = B.numel() != 0
-
-    def _element(i: int, j: int) -> str:
-        terms: list[str] = []
-        for l in range(in_dim):
-            a = A[i][l].item()
-            if a == 0:
-                continue
-            xe = f"({x_expr} {l} {j})"
-            if a == 1:
-                terms.append(xe)
-            elif a == -1:
-                terms.append(f"(-{xe})")
-            else:
-                terms.append(f"(({_get_dtype_item(out_wire.dtype, a)}) * {xe})")
-        if has_bias:
-            b = B[i][0].item()
-            if b != 0:
-                terms.append(_get_dtype_item(out_wire.dtype, b))
-        return " + ".join(terms) if terms else "0"
-
-    arms = " ".join(
-        f"| {i}, {j} => {_element(i, j)}" for i in range(out_m) for j in range(out_n)
-    )
-    arms += f" | _, _ => {_get_dtype_item(out_wire.dtype, 0)}"
-    return f"(fun (i : Fin {out_m}) (j : Fin {out_n}) => ((match i, j with {arms}) : {ty}))"
 
 
 def _reachable_terms(terms, output_wires: "list[Wire]") -> list:
