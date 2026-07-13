@@ -42,7 +42,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
-          cache-dependency-glob: python/pyproject.toml
+          cache-dependency-glob: uv.lock
       - name: Install just
         uses: extractions/setup-just@v2
       - name: Sync python env (installs torch for torch-sys)
@@ -59,7 +59,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
-          cache-dependency-glob: python/pyproject.toml
+          cache-dependency-glob: uv.lock
       - name: Install just
         uses: extractions/setup-just@v2
       - name: Sync python env (installs torch for torch-sys)
@@ -81,7 +81,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
-          cache-dependency-glob: python/pyproject.toml
+          cache-dependency-glob: uv.lock
       - name: Install just
         uses: extractions/setup-just@v2
       - name: Run Python tests (builds the extension via maturin)
