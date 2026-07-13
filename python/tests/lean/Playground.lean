@@ -155,6 +155,27 @@ theorem affineLinear_match_reduces :
   fin_cases i <;> fin_cases j <;>
     simp [affineLinear, MatMul, MatZero, mmA, acx, Fin.sum_univ_two] <;> decide
 
+-- Correspondence check: the pre-contracted output equals `affineLinear A x b`.
+-- A = [[1,0,2],[0,3,0]] (2×3), b = [5,0]ᵀ. Pre-contraction drops the zero
+-- entries, so row 0 = x0 + 2·x2 + 5 and row 1 = 3·x1.
+def ceqA : Mat Int 2 3 := fun i j =>
+  match i, j with
+  | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 2
+  | 1, 0 => 0 | 1, 1 => 3 | 1, 2 => 0
+  | _, _ => 0
+def ceqb : Mat Int 2 1 := fun i _ => match i with | 0 => 5 | _ => 0
+
+theorem precontract_eq_affineLinear (x : Mat Int 3 1) :
+    (fun (i : Fin 2) (j : Fin 1) =>
+      ((match i, j with
+        | 0, 0 => (x 0 0) + ((2) * (x 2 0)) + 5
+        | 1, 0 => (3) * (x 1 0)
+        | _, _ => 0) : Int))
+      = affineLinear ceqA x ceqb := by
+  funext i j
+  fin_cases i <;> fin_cases j <;>
+    simp [affineLinear, MatMul, ceqA, ceqb, Fin.sum_univ_succ, Fin.sum_univ_zero] <;> ring
+
 -- Verbatim codegen output for the LIA.Linear matrix module. Native code
 -- pre-contracts the constant matrix (each output element is an explicit linear
 -- combination of the inputs); the Circ/Box path still uses Box.linear. This is a
