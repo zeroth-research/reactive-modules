@@ -16,7 +16,7 @@ from zrth.lean.common import (
     is_constant_name,
     _accessor,
     dtype_to_lean_type,
-    tensor_to_mat_expr,
+    linear_list_literals,
     _sort_elem_ty,
     _get_dtype_item,
     _is_scalar_wire,
@@ -137,24 +137,38 @@ def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
 
 
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:
-    """Emit a baked-constant LIA/LRA `Linear` op, `Y = A·X + B`.
+    """Emit a baked-constant LIA/LRA `Linear` op, `Y = A·X + B`, in the reflected
+    form `matVecAffine m A b X`.
 
     `A` (shape `[out, in]`) and `B` (`[out, 1]`, or empty) are constants baked
-    into the op; the single read wire supplies `X` (`[in, batch]`).
-
-    We **pre-contract** the product at codegen time: because `A` and `B` are
-    known, each output element is emitted as an explicit linear combination of
-    the (non-zero) inputs — `Y i j = Σ_{A[i][l]≠0} A[i][l]·(X l j) + B[i]` —
-    rather than an `affineLinear`/`MatMul` the prover must expand. This keeps the
-    generated term O(nnz) (no dense `A` literal, no symbolic `∑`), so it scales
-    to large matrices: certificate proofs see a plain linear expression that
-    `omega` closes directly.
+    into the op; the single read wire supplies `X` (`[in, 1]`). They are emitted
+    as plain `List (List t)` / `List t` literals: cheap to elaborate (no dense
+    `match`), and `matVecAffine` reduces to a linear expression under `simp`
+    (no symbolic `∑`). `Core.Mat.matVecAffine_eq` proves this equals
+    `affineLinear (matrixOf A) X (colOf b)`, so the contraction is machine-checked
+    rather than trusted. Column output only (batch = 1, which is all `Linear`
+    uses); a `batch > 1` op falls back to the inlined pre-contraction.
     """
+    out_wire = term.write[0]
+    x_expr = wire_expr[term.read[0].id]
+    shape = dtype_shape(out_wire.dtype)
+    out_n = shape[1] if len(shape) == 2 else 1
+    if out_n != 1:
+        return _linear_expr_precontract(term, wire_expr)
+    out_m, a_lit, b_lit, _ = linear_list_literals(term)
+    return f"(matVecAffine {out_m} {a_lit} {b_lit} {x_expr})"
+
+
+def _linear_expr_precontract(term, wire_expr: dict[int, str]) -> str:
+    """Fallback (batch > 1): inline the contraction as an explicit per-element
+    linear combination `Y i j = Σ_{A[i][l]≠0} A[i][l]·(X l j) + B[i]`."""
     out_wire = term.write[0]
     x_expr = wire_expr[term.read[0].id]
     A = term.itype._0
     B = term.itype._1
-    out_m, out_n = dtype_shape(out_wire.dtype)[:2] if len(dtype_shape(out_wire.dtype)) == 2 else (dtype_shape(out_wire.dtype)[0], 1)
+    shape = dtype_shape(out_wire.dtype)
+    out_m = shape[0]
+    out_n = shape[1] if len(shape) == 2 else 1
     in_dim = int(A.shape[1])
     ty = _sort_elem_ty(out_wire.dtype)
     has_bias = B.numel() != 0
@@ -181,7 +195,6 @@ def _linear_expr(term, wire_expr: dict[int, str]) -> str:
     arms = " ".join(
         f"| {i}, {j} => {_element(i, j)}" for i in range(out_m) for j in range(out_n)
     )
-    # Catch-all for exhaustiveness on large `Fin` (see tensor_to_mat_expr).
     arms += f" | _, _ => {_get_dtype_item(out_wire.dtype, 0)}"
     return f"(fun (i : Fin {out_m}) (j : Fin {out_n}) => ((match i, j with {arms}) : {ty}))"
 
