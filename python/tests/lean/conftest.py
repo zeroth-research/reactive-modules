@@ -127,52 +127,65 @@ def _make_counter() -> Module:
     return Module.sequential(init, update, obs=[state, extl])
 
 
-def _make_bigcounter() -> Module:
-    """Countdown embedded in a 6-vector state (only s[0] is live; s[1..5] carried).
+def _make_countdown_vec(n: int) -> Module:
+    """Countdown embedded in an n-vector state (only s[0] is live; s[1..n-1] carried).
 
-    Every transition is a 6-wide MatMul contraction (row·s, I₆·s, diag·s), so this
-    stresses the sum-expansion tactics (Fin.sum_univ_succ) well past the small
-    Fin.sum_univ_{one,two,three} forms.
+    Every transition is an n-wide MatMul contraction (row·s, Iₙ·s, diag·s). Because
+    the codegen pre-contracts constant Linear ops (each output element becomes an
+    explicit O(nnz) linear combination), the generated defs and proofs stay small
+    and `omega`-friendly regardless of n — this is the scaling regression test.
     """
-    s = (Wire(Int([6, 1])), Wire(Int([6, 1])))
+    s = (Wire(Int([n, 1])), Wire(Int([n, 1])))
     z11 = torch.zeros((1, 1), dtype=torch.int64)
 
-    # init: s = (100, 0, 0, 0, 0, 0)
-    init_vec = torch.tensor([[100], [0], [0], [0], [0], [0]], dtype=torch.int64)
+    init_vec = torch.zeros((n, 1), dtype=torch.int64)
+    init_vec[0][0] = 100
     init = [Term(LIA.ConstInt(init_vec), [s[1]])]
 
     x = Wire(Int([1, 1]))
     zc = Wire(Int([1, 1]))
     cond = Wire(Bool([1, 1]))
-    reset = Wire(Int([6, 1]))
-    dec = Wire(Int([6, 1]))
+    reset = Wire(Int([n, 1]))
+    dec = Wire(Int([n, 1]))
 
-    row0 = torch.tensor([[1, 0, 0, 0, 0, 0]], dtype=torch.int64)  # 1×6: extract s[0]
-    diag_keep = torch.diag(torch.tensor([0, 1, 1, 1, 1, 1], dtype=torch.int64))  # zero s[0]
-    b100 = torch.tensor([[100], [0], [0], [0], [0], [0]], dtype=torch.int64)
-    I6 = torch.eye(6, dtype=torch.int64)
-    bneg = torch.tensor([[-1], [0], [0], [0], [0], [0]], dtype=torch.int64)
+    row0 = torch.zeros((1, n), dtype=torch.int64)
+    row0[0][0] = 1  # 1×n: extract s[0]
+    diag_keep = torch.eye(n, dtype=torch.int64)
+    diag_keep[0][0] = 0  # zero s[0], keep the rest
+    b100 = torch.zeros((n, 1), dtype=torch.int64)
+    b100[0][0] = 100
+    In = torch.eye(n, dtype=torch.int64)
+    bneg = torch.zeros((n, 1), dtype=torch.int64)
+    bneg[0][0] = -1
 
     update = [
-        Term(LIA.Linear(row0, z11), [x], [s[0]]),          # x = s[0]
+        Term(LIA.Linear(row0, z11), [x], [s[0]]),            # x = s[0]
         Term(LIA.ConstInt(torch.tensor([[0]])), [zc]),
-        Term(LIA.Eq(), [cond], [x, zc]),                   # cond = (x == 0)
+        Term(LIA.Eq(), [cond], [x, zc]),                     # cond = (x == 0)
         Term(LIA.Linear(diag_keep, b100), [reset], [s[0]]),  # reset: s[0] := 100
-        Term(LIA.Linear(I6, bneg), [dec], [s[0]]),           # dec:   s[0] := s[0] - 1
+        Term(LIA.Linear(In, bneg), [dec], [s[0]]),           # dec:   s[0] := s[0] - 1
         Term(LIA.Ite(), [s[1]], [cond, reset, dec]),
     ]
     return Module.sequential(init, update, obs=[s])
 
 
+_COUNTDOWN_CERT = CertificateData(
+    prp="s[0][0] == 0",
+    inv="And(s[0][0] >= 0, s[0][0] <= 100)",
+    ranking="Ite(s[0][0] == 0, 0, s[0][0])",
+)
+
+
 _CERT_SPECS = [
     (
         "BigCounter",
-        _make_bigcounter,
-        CertificateData(
-            prp="s[0][0] == 0",
-            inv="And(s[0][0] >= 0, s[0][0] <= 100)",
-            ranking="Ite(s[0][0] == 0, 0, s[0][0])",
-        ),
+        lambda: _make_countdown_vec(6),
+        _COUNTDOWN_CERT,
+    ),
+    (
+        "HugeCounter",
+        lambda: _make_countdown_vec(32),
+        _COUNTDOWN_CERT,
     ),
     (
         "Counter",

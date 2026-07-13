@@ -95,6 +95,20 @@ def test_playground_build(generate_lean_files):
 
 
 @pytest.mark.slow
+def test_cert_hugecounter_build(generate_lean_files):
+    """Certs/HugeCounter.lean: a 32-wide state whose transitions are 32-wide
+    contractions. Pre-contraction keeps this tractable where a dense matrix
+    literal + symbolic sum-expansion blows the heartbeat budget."""
+    r = _lake_build("Certs.HugeCounter")
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert r.returncode == 0, (
+        f"lake build Certs.HugeCounter failed.\n"
+        f"stdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    assert not sorry_lines, "HugeCounter certificate has sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
 def test_cert_bigcounter_build(generate_lean_files):
     """Certs/BigCounter.lean: a 6-vector state whose every transition is a 6-wide
     MatMul contraction — exercises Fin.sum_univ_succ expansion at scale."""
