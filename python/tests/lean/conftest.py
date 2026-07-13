@@ -127,7 +127,53 @@ def _make_counter() -> Module:
     return Module.sequential(init, update, obs=[state, extl])
 
 
+def _make_bigcounter() -> Module:
+    """Countdown embedded in a 6-vector state (only s[0] is live; s[1..5] carried).
+
+    Every transition is a 6-wide MatMul contraction (row·s, I₆·s, diag·s), so this
+    stresses the sum-expansion tactics (Fin.sum_univ_succ) well past the small
+    Fin.sum_univ_{one,two,three} forms.
+    """
+    s = (Wire(Int([6, 1])), Wire(Int([6, 1])))
+    z11 = torch.zeros((1, 1), dtype=torch.int64)
+
+    # init: s = (100, 0, 0, 0, 0, 0)
+    init_vec = torch.tensor([[100], [0], [0], [0], [0], [0]], dtype=torch.int64)
+    init = [Term(LIA.ConstInt(init_vec), [s[1]])]
+
+    x = Wire(Int([1, 1]))
+    zc = Wire(Int([1, 1]))
+    cond = Wire(Bool([1, 1]))
+    reset = Wire(Int([6, 1]))
+    dec = Wire(Int([6, 1]))
+
+    row0 = torch.tensor([[1, 0, 0, 0, 0, 0]], dtype=torch.int64)  # 1×6: extract s[0]
+    diag_keep = torch.diag(torch.tensor([0, 1, 1, 1, 1, 1], dtype=torch.int64))  # zero s[0]
+    b100 = torch.tensor([[100], [0], [0], [0], [0], [0]], dtype=torch.int64)
+    I6 = torch.eye(6, dtype=torch.int64)
+    bneg = torch.tensor([[-1], [0], [0], [0], [0], [0]], dtype=torch.int64)
+
+    update = [
+        Term(LIA.Linear(row0, z11), [x], [s[0]]),          # x = s[0]
+        Term(LIA.ConstInt(torch.tensor([[0]])), [zc]),
+        Term(LIA.Eq(), [cond], [x, zc]),                   # cond = (x == 0)
+        Term(LIA.Linear(diag_keep, b100), [reset], [s[0]]),  # reset: s[0] := 100
+        Term(LIA.Linear(I6, bneg), [dec], [s[0]]),           # dec:   s[0] := s[0] - 1
+        Term(LIA.Ite(), [s[1]], [cond, reset, dec]),
+    ]
+    return Module.sequential(init, update, obs=[s])
+
+
 _CERT_SPECS = [
+    (
+        "BigCounter",
+        _make_bigcounter,
+        CertificateData(
+            prp="s[0][0] == 0",
+            inv="And(s[0][0] >= 0, s[0][0] <= 100)",
+            ranking="Ite(s[0][0] == 0, 0, s[0][0])",
+        ),
+    ),
     (
         "Counter",
         _make_counter,
