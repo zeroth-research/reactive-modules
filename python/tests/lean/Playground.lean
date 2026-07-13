@@ -176,25 +176,24 @@ theorem precontract_eq_affineLinear (x : Mat Int 3 1) :
   fin_cases i <;> fin_cases j <;>
     simp [affineLinear, MatMul, ceqA, ceqb, Fin.sum_univ_succ, Fin.sum_univ_zero] <;> ring
 
--- Verbatim codegen output for the LIA.Linear matrix module. Native code
--- pre-contracts the constant matrix (each output element is an explicit linear
--- combination of the inputs); the Circ/Box path still uses Box.linear. This is a
--- compilation regression guard for both emitted forms (incl. the match catch-all).
+-- Verbatim codegen output for the LIA.Linear matrix module: the reflected form
+-- over list literals — matVecAffine on the native path, Box.linear on the Circ
+-- path. Compilation regression guard for both emitted forms.
 namespace GenLinearCompileCheck
 open Box
 
 @[simp] def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 3 1) := (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 0 | 1, 0 => (extl_n 0 0) | 2, 0 => (extl_n 1 0) | _, _ => 0) : Int))
+  let x0 : (Mat Int 3 1) := (matVecAffine 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int) extl_n)
   x0
 
 @[simp] def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 3 1) := (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => (ctrl 0 0) + 1 | 1, 0 => (ctrl 1 0) | 2, 0 => (ctrl 2 0) | _, _ => 0) : Int))
+  let x0 : (Mat Int 3 1) := (matVecAffine 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int) ctrl)
   x0
 
 @[simp] def init_l1 : Box [(Mat Int 2 1)] [(Mat Int 3 1)] :=
-  (Box.linear (fun (i : Fin 3) (j : Fin 2) => ((match i, j with | 0, 0 => 0 | 0, 1 => 0 | 1, 0 => 1 | 1, 1 => 0 | 2, 0 => 0 | 2, 1 => 1 | _, _ => 0) : Int)) (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 0 | 1, 0 => 0 | 2, 0 => 0 | _, _ => 0) : Int)))
+  (Box.linear 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int))
 
 @[simp] def update_l2 : Box [(Mat Int 3 1)] [(Mat Int 3 1)] :=
-  (Box.linear (fun (i : Fin 3) (j : Fin 3) => ((match i, j with | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 0 | 1, 0 => 0 | 1, 1 => 1 | 1, 2 => 0 | 2, 0 => 0 | 2, 1 => 0 | 2, 2 => 1 | _, _ => 0) : Int)) (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 1 | 1, 0 => 0 | 2, 0 => 0 | _, _ => 0) : Int)))
+  (Box.linear 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int))
 
 end GenLinearCompileCheck

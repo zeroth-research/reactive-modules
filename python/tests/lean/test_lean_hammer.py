@@ -95,19 +95,6 @@ def test_playground_build(generate_lean_files):
 
 
 @pytest.mark.slow
-def test_reflection_prototype_build(sync_core_templates):
-    """ReflectionProto.lean: prototype of the reflection approach to verifying
-    pre-contraction — a computable `matVecAffine` over a dense list literal, a
-    generic `matVecAffine_eq` lemma proving it equals `affineLinear (matrixOf A)`,
-    and a cheap per-instance instantiation. Design artifact; must compile."""
-    r = _lake_build("ReflectionProto")
-    assert r.returncode == 0, (
-        f"lake build ReflectionProto failed.\n"
-        f"stdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
-    )
-
-
-@pytest.mark.slow
 def test_cert_hugecounter_build(generate_lean_files):
     """Certs/HugeCounter.lean: a 32-wide state whose transitions are 32-wide
     contractions. Pre-contraction keeps this tractable where a dense matrix
