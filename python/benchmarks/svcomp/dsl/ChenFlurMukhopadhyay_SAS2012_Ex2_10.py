@@ -1,0 +1,53 @@
+"""ChenFlurMukhopadhyay-SAS2012-Ex2.10 — conjunctive guard, linear.
+
+    int x, y;
+    x = __VERIFIER_nondet_int();
+    y = __VERIFIER_nondet_int();
+    while (x > 0 && y < 0) {
+        x = x + y;
+        y = y - 1;
+    }
+"""
+
+from __future__ import annotations
+
+from zrth import LIA
+from zrth.dsl import dslModule, nxt, ite
+
+from .._bench import Bench, pair
+
+
+class Program(dslModule):
+    def init(self, extl):
+        x0, y0 = extl
+        return nxt(x0), nxt(y0)                  # x, y both nondet
+
+    def update(self, ctrl):
+        x, y = ctrl
+        guard = (x > 0) & (y < 0)
+        wx, wy = x, y
+        wx = wx + wy       # x = x + y   (old y)
+        wy = wy - 1        # y = y - 1
+        return ite(guard, wx, x), ite(guard, wy, y)
+
+
+def _build():
+    x, y = pair(), pair()
+    x0, y0 = pair(), pair()
+    prog = Program(theory=LIA, ctrl=(x, y), extl=(x0, y0))
+    return prog, {"x": x, "y": y}, {"x0": x0, "y0": y0}
+
+
+def _domain(s):
+    import z3
+    return z3.And(s["x"] > 0, s["y"] < 0)
+
+
+BENCH = Bench(
+    name="ChenFlurMukhopadhyay-SAS2012-Ex2.10",
+    source="ChenFlurMukhopadhyay-SAS2012-Ex2.10.c",
+    state=("x", "y"),
+    inputs=("x0", "y0"),
+    build=_build,
+    domain=_domain,
+)
