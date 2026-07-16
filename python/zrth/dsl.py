@@ -40,8 +40,7 @@ constraints force this (both flagged for design review):
 import inspect
 
 from .zrth import Module, Term
-from . import expr as E
-from .expr import expr, cast, nxt, ite, eq, ne, relu, argmax, Expr  # re-exported for authoring
+from .expr import expr, cast, nxt, ite, eq, ne, relu, argmax, collecting, Expr  # re-exported for authoring
 
 # Public authoring surface: `from zrth.dsl import dslModule, expr, nxt, ite, cast, ...`
 __all__ = ["dslModule", "expr", "cast", "nxt", "ite", "eq", "ne", "relu", "argmax", "Expr"]
@@ -68,16 +67,17 @@ def _invoke(fn, ctrl_arg, extl_arg, is_init: bool):
     return _as_tuple(fn(None, *args))
 
 
-def _block_terms(theory, ctrl_vars: tuple, values: tuple) -> list:
-    """Terms for one block: every value's terms (deps first, and sub-expressions shared
-    across values emitted once), then an Id driving each ctrl var's next wire."""
-    if len(values) != len(ctrl_vars):
-        raise ValueError(f"expected {len(ctrl_vars)} return value(s), got {len(values)}")
-    exprs = [v if isinstance(v, Expr) else expr(v, theory=theory, sort=var.dtype)
-             for var, v in zip(ctrl_vars, values)]
-    terms = E.collect_terms(*exprs)          # one shared pass -> a reused subterm appears once
-    for var, e in zip(ctrl_vars, exprs):
-        terms.append(Term(theory.Id(), [nxt(var).wire], [e.wire]))
+def _build_block(theory, ctrl_vars, fn, ctrl_arg, extl_arg, is_init) -> list:
+    """Run one block (init/update) inside a collector: every Term built while the user
+    method runs is captured in dependency order (a shared sub-expression once); then an
+    Id drives each ctrl var's next wire from its returned value."""
+    with collecting() as terms:
+        values = _invoke(fn, ctrl_arg, extl_arg, is_init)
+        if len(values) != len(ctrl_vars):
+            raise ValueError(f"expected {len(ctrl_vars)} return value(s), got {len(values)}")
+        for var, v in zip(ctrl_vars, values):
+            e = v if isinstance(v, Expr) else expr(v, theory=theory, sort=var.dtype)
+            terms.append(Term(theory.Id(), [nxt(var).wire], [e.wire]))
     return terms
 
 
@@ -104,8 +104,8 @@ class dslModule(Module):
         ctrl_arg = ctrl_vars[0] if len(ctrl_vars) == 1 else ctrl_vars
         extl_arg = extl_vars[0] if len(extl_vars) == 1 else extl_vars
 
-        init_terms = _block_terms(theory, ctrl_vars, _invoke(init_fn, ctrl_arg, extl_arg, True))
-        update_terms = _block_terms(theory, ctrl_vars, _invoke(update_fn, ctrl_arg, extl_arg, False))
+        init_terms = _build_block(theory, ctrl_vars, init_fn, ctrl_arg, extl_arg, True)
+        update_terms = _build_block(theory, ctrl_vars, update_fn, ctrl_arg, extl_arg, False)
 
         obs = [list(p) for p in (ctrl_pairs + extl_pairs)]
         self = super().__new__(cls, init=init_terms, update=update_terms, obs=obs)
