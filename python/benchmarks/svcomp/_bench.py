@@ -5,7 +5,7 @@ This module provides the common ``INT`` sort, a small wire-pair helper, the
 ``Bench`` record, and a ``discover`` helper that imports every sibling
 encoding module and collects their ``BENCH`` objects.
 
-See ``CONVENTIONS.md`` for the encoding rules.
+See ``_template.py`` for the encoding conventions (copy it to add a benchmark).
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import importlib
 import pkgutil
 from dataclasses import dataclass
 from typing import Callable
+import torch 
 
 from zrth import Sort, Wire
 
@@ -34,7 +35,8 @@ class Bench:
     """One encoded SV-COMP benchmark.
 
     - ``name``   : the benchmark's canonical name (matches the .c stem).
-    - ``source`` : path to the original C file (ground truth for faithfulness).
+    - ``source`` : filename of the original C file in this package's ``c/``
+                   directory (ground truth for the faithfulness checker).
     - ``state``  : ctrl variable names, in C declaration order.
     - ``inputs`` : extl (nondeterministic input) names.
     - ``build``  : ``() -> (module, ctrl_by_name, extl_by_name)`` — builds the

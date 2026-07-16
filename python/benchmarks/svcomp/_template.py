@@ -5,7 +5,17 @@ Steps:
   2. Paste the C loop into the docstring for reference.
   3. Fill in ``state`` / ``inputs``, the ``init`` / ``update`` blocks, the
      ``_build`` wiring, and ``_domain``.
-  4. Read CONVENTIONS.md — especially the *working-copy* body rule.
+
+Key rules:
+  - state var -> ctrl wire pair (C declaration order); nondet -> extl input
+    (list ``inputs`` in the order the C reads nondet); constant init -> the
+    literal; guard computed once, wrapped as ``ite(guard, new, old)`` per var.
+  - `==`/`!=` are not overloaded: use ``eq(a, b)`` / ``ne(a, b)``. Boolean
+    ``& | ~``; `*` only with a scalar constant.
+  - WORKING-COPY body rule (below): unpack ctrl to originals, copy to working
+    vars, transcribe the C body line-for-line reassigning the copies (each RHS
+    reads the current copies == C sequential semantics), then return
+    ``ite(guard, <copy>, <original>)`` per state var.
 
 The worked example below encodes:
 
@@ -47,7 +57,7 @@ class Program(dslModule):
         # loop condition — computed once; also mirrored in `_domain` below.
         guard = (i <= 100) & (j <= k)
 
-        # --- body, line-for-line, on WORKING COPIES (see CONVENTIONS.md) ---
+        # --- body, line-for-line, on WORKING COPIES (see "Key rules" above) ---
         wk, wi, wj = k, i, j
         tmp = wi          # tmp = i        (old i)
         wi  = wj          # i   = j
@@ -73,7 +83,7 @@ def _domain(s):
 
 BENCH = Bench(
     name="TEMPLATE-do-not-run",
-    source="benchmarks/nuTerm/sv_comp/<file>.c",
+    source="<file>.c",   # filename in this package's c/ directory
     state=("k", "i", "j"),
     inputs=("k0", "i0", "j0"),
     build=_build,
