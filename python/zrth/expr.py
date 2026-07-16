@@ -1,14 +1,21 @@
 """Expression: eager, theory-baked symbolic expressions for the DSL.
 
-An ``Expr`` is a thin, *eager* wrapper: composing one immediately builds the underlying
-``Term``. Exprs are split into subclasses by *operation family* (the sort determines the
-class):
+An ``Expr`` is a thin, *eager* wrapper over a wire: composing one immediately builds the
+underlying ``Term`` and **records it in the active collector** (see ``collecting``). Exprs
+are split by *operation family* (the sort picks the class):
 
     AExpr  — Arithmetic   Int / Real     +  -  *  @   and comparisons (-> BExpr)
     BExpr  — Boolean       Bool           &  |  ~  ^
     WExpr  — Word (BV)     BitVec         AExpr + bitwise + signed/unsigned + width
 
-Build/leaf construction and coercion go through one function, ``expr()``:
+An ``Expr`` itself is a pure handle — it stores its wire, its theory, the ``next`` wire (for
+a variable), and, for a constant, its tensor ``value`` (needed by the ``mul``/``matmul``
+folds). It does **not** hold the term: terms are gathered as they are built. To collect the
+terms of a block, build the exprs inside a ``with collecting() as terms:`` context; ``terms``
+ends up holding every term in dependency order (and a shared sub-expression appears once,
+because a term is emitted exactly when it is created).
+
+Construction and coercion go through ``expr()``:
 
     expr((latched, next), theory=LRA)          # a state variable (nxt(v) gives its next)
     expr(Wire(...), theory=LRA)                # a bare wire
@@ -16,13 +23,9 @@ Build/leaf construction and coercion go through one function, ``expr()``:
     expr(3, theory=LRA, sort=Sort.Real)        # a numeric constant (sort is REQUIRED)
     expr(5, theory=BV, sort=Sort.BitVec(32, [1, 1]), signed=True)
 
-``expr()`` is **not idempotent** — passing an existing ``Expr`` is an error. Operators
-coerce a *raw* operand through it (using the sibling's sort), but never convert between
-sorts: mixing sorts raises, and an explicit conversion is ``cast()``.
-
-Each operator builds its own ``Term`` in place (no dispatch layer, no ``builder``).
-``collect_terms`` walks a tree and returns every term it created, dependencies first —
-that's what ``dslModule`` uses to populate a base Module.
+``expr()`` is **not idempotent** — passing an existing ``Expr`` is an error. Operators coerce
+a *raw* operand through it (using the sibling's sort) but never convert between sorts: mixing
+sorts raises, and an explicit conversion is ``cast()``.
 
 Equality: ``==`` / ``!=`` are Python object identity; use ``eq()`` / ``ne()`` for the
 comparison predicates.
@@ -87,28 +90,51 @@ def _normalize_shape(shape: list) -> list:
     return shape
 
 
-def _const_tensor(op):
-    match op:
-        case LRA.ConstReal(t) | LRA.ConstBool(t) | LIA.ConstInt(t) | LIA.ConstBool(t) | BV.Const(t):
-            return t
-    return None
-
-
 def _is_wire_pair(v) -> bool:
     return isinstance(v, (tuple, list)) and len(v) == 2 and all(isinstance(w, Wire) for w in v)
+
+
+# ---------------------------------------------------------------------------
+# Term collector: every Term is recorded, in creation (dependency) order, into
+# the innermost active `collecting()` context. dslModule opens one per block.
+# ---------------------------------------------------------------------------
+
+_open_collectors: list[list[Term]] = []
+
+
+class collecting:
+    """Context manager: records every Term built inside it, in dependency order.
+
+        with collecting() as terms:
+            e = x + 1          # terms == [<Const 1>, <Add>]
+    """
+
+    def __enter__(self) -> list[Term]:
+        _open_collectors.append([])
+        return _open_collectors[-1]
+
+    def __exit__(self, *exc):
+        _open_collectors.pop()
+
+
+def _emit(term: Term) -> Term:
+    if not _open_collectors:
+        raise RuntimeError("build Exprs inside a `with collecting():` block")
+    _open_collectors[-1].append(term)
+    return term
 
 
 # --- result-sort -> subclass (the ONE place mapping sort to class) ----------
 
 
-def _wrap(wire, theory, *, term=None, args=(), next=None, signed=False) -> "Expr":
+def _wrap(wire, theory, *, next=None, value=None, signed=False) -> "Expr":
     match wire.dtype:
         case Sort.Bool(_):
-            return BExpr(wire, theory, term=term, args=args, next=next)
+            return BExpr(wire, theory, next=next, value=value)
         case Sort.Int(_) | Sort.Real(_):
-            return AExpr(wire, theory, term=term, args=args, next=next)
+            return AExpr(wire, theory, next=next, value=value)
         case Sort.BitVec(_, _):
-            return WExpr(wire, theory, term=term, args=args, next=next, signed=signed)
+            return WExpr(wire, theory, next=next, value=value, signed=signed)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
 
 
@@ -120,12 +146,11 @@ def _wrap(wire, theory, *, term=None, args=(), next=None, signed=False) -> "Expr
 class Expr:
     """Shared plumbing; instances are always one of AExpr / BExpr / WExpr (via ``expr()``)."""
 
-    def __init__(self, wire, theory, *, term=None, args=(), next=None):
+    def __init__(self, wire, theory, *, next=None, value=None):
         self._wire = wire
         self._theory = theory
-        self._term = term          # Term that produced _wire (None for a leaf)
-        self._args = tuple(args)   # child exprs (for collect_terms' tree walk)
         self._next = next          # next wire, for a variable leaf (nxt(v))
+        self._value = value        # tensor, for a constant leaf (mul/matmul folds)
 
     # --- accessors ---
     @property
@@ -141,14 +166,6 @@ class Expr:
         return _shape(self._wire.dtype)
 
     @property
-    def term(self) -> Term | None:
-        return self._term
-
-    @property
-    def args(self) -> tuple["Expr", ...]:
-        return self._args
-
-    @property
     def theory(self):
         return self._theory
 
@@ -162,24 +179,22 @@ class Expr:
             raise TypeError(f"cannot combine {self.dtype} and {o.dtype} implicitly; use cast()")
         return o
 
-    def _result(self, term: Term, *operands: "Expr") -> "Expr":
-        return _wrap(term.write[0], self._theory, term=term, args=(self, *operands),
-                     signed=getattr(self, "_signed", False))
+    # --- build helpers (emit the term, wrap the result by its sort) ---
+    def _result(self, term: Term) -> "Expr":
+        _emit(term)
+        return _wrap(term.write[0], self._theory, signed=getattr(self, "_signed", False))
 
     def _binop(self, op, out: Sort, o) -> "Expr":
         """Coerce `o` to my sort, then build a binary Term with `op` and output sort `out`."""
         o = self._coerce_same(o)
-        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]), o)
+        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
 
     def _unop(self, op, out: Sort | None = None) -> "Expr":
         return self._result(Term(op, [Wire(out if out is not None else self.dtype)], [self._wire]))
 
     @override
     def __repr__(self) -> str:
-        if self._term is None:
-            return f"Wire#{self._wire.id}"
-        head = str(self._term.itype)
-        return f"{head}({', '.join(map(repr, self._args))})" if self._args else head
+        return f"{type(self).__name__}(#{self._wire.id}, {self._wire.dtype})"
 
 
 # ---------------------------------------------------------------------------
@@ -195,13 +210,13 @@ class AExpr(Expr):
 
     def __mul__(self, o):                      # const*var folds to Linear (LRA/LIA are linear)
         o = self._coerce_same(o)
-        return self._result(_mul_as_linear(self._theory, self, o), o)
+        return self._result(_mul_as_linear(self._theory, self, o))
 
     def __rmul__(self, o):  return self._coerce(o).__mul__(self)
 
     def __matmul__(self, o):                   # a constant left operand folds to Linear
         o = self._coerce_same(o)
-        return self._result(_matmul(self._theory, self, o), o)
+        return self._result(_matmul(self._theory, self, o))
 
     # comparisons -> Bool -> BExpr
     def __lt__(self, o):  return self._binop(self._theory.Lt(), Sort.Bool(self.shape), o)
@@ -212,16 +227,14 @@ class AExpr(Expr):
 
 def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
     """LIA/LRA are linear: `const * var` folds to a Linear op; `var * var` cannot."""
-    const_cls = LRA.ConstReal if theory is LRA else LIA.ConstInt
     linear = LRA.Linear if theory is LRA else LIA.Linear
     scalar_dtype = torch.float32 if theory is LRA else torch.int64
     for c, v in ((a, b), (b, a)):
-        if c._term is None or not isinstance(c._term.itype, const_cls):
+        if c._value is None or c._value.numel() != 1:      # not a scalar constant
             continue
-        data = _const_tensor(c._term.itype)
-        if data is None or data.numel() != 1 or len(v.shape) < 2 or v.shape[-1] != 1:
+        if len(v.shape) < 2 or v.shape[-1] != 1:
             continue
-        A = torch.tensor([[data.item()]], dtype=scalar_dtype)
+        A = torch.tensor([[c._value.item()]], dtype=scalar_dtype)
         bias = torch.zeros(1, 1, dtype=scalar_dtype)
         return Term(linear(A, bias), [Wire(v.dtype)], [v._wire])
     raise NonLinearError(theory.__name__)
@@ -229,11 +242,10 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
 
 def _matmul(theory, a: Expr, b: Expr) -> Term:
     out_shape = [a.shape[0], b.shape[1]]
-    const_cls = LRA.ConstReal if theory is LRA else LIA.ConstInt
-    if a._term is not None and isinstance(a._term.itype, const_cls):
+    if a._value is not None:                                # constant left operand
         linear = LRA.Linear if theory is LRA else LIA.Linear
         out_sort = Sort.Real(out_shape) if theory is LRA else Sort.Int(out_shape)
-        return Term(linear(_const_tensor(a._term.itype), torch.empty(0, 0)), [Wire(out_sort)], [b._wire])
+        return Term(linear(a._value, torch.empty(0, 0)), [Wire(out_sort)], [b._wire])
     raise RuntimeError(f"{theory.__name__} matmul requires a constant left operand; use a Linear instead")
 
 
@@ -255,8 +267,8 @@ class BExpr(Expr):
 
 
 class WExpr(AExpr):
-    def __init__(self, wire, theory, *, term=None, args=(), next=None, signed=False):
-        super().__init__(wire, theory, term=term, args=args, next=next)
+    def __init__(self, wire, theory, *, next=None, value=None, signed=False):
+        super().__init__(wire, theory, next=next, value=value)
         self._signed = signed
 
     @property
@@ -274,7 +286,7 @@ class WExpr(AExpr):
     def __matmul__(self, o):
         o = self._coerce_same(o)
         out = Wire(Sort.BitVec(_bv_width(self.dtype), [self.shape[0], o.shape[1]]))
-        return self._result(Term(BV.MatMul(), [out], [self._wire, o._wire]), o)
+        return self._result(Term(BV.MatMul(), [out], [self._wire, o._wire]))
 
     # comparisons pick signed/unsigned; result is BitVec(1)
     def __lt__(self, o):  return self._binop(BV.SLt() if self._signed else BV.ULt(), self._bv1(), o)
@@ -338,7 +350,8 @@ def _const(value, theory, sort, signed) -> Expr:
     shape = _normalize_shape(list(tensor.size()))
     tensor = tensor.reshape(shape)             # theory const ops require a 2-D initializer
     w = Wire(_resolve_sort(family, shape))
-    return _wrap(w, theory, term=Term.constant(_const_op(theory, tensor), [w]), signed=signed)
+    _emit(Term.constant(_const_op(theory, tensor), [w]))
+    return _wrap(w, theory, value=tensor, signed=signed)
 
 
 def _const_op(theory, tensor):
@@ -382,8 +395,8 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
     if _family(a.dtype) != _family(b.dtype):
         raise TypeError(f"ite branches have different sorts {a.dtype}, {b.dtype}; use cast()")
     term = Term(cond._theory.Ite(), [Wire(a.dtype)], [cond._wire, a._wire, b._wire])
-    return _wrap(term.write[0], cond._theory, term=term, args=(cond, a, b),
-                 signed=getattr(a, "_signed", False))
+    _emit(term)
+    return _wrap(term.write[0], cond._theory, signed=getattr(a, "_signed", False))
 
 
 def _cmp_out(a: Expr) -> Sort:
@@ -392,39 +405,17 @@ def _cmp_out(a: Expr) -> Sort:
 
 def eq(a: Expr, b) -> Expr:
     b = a._coerce_same(b)
-    return a._result(Term(a._theory.Eq(), [Wire(_cmp_out(a))], [a._wire, b._wire]), b)
+    return a._result(Term(a._theory.Eq(), [Wire(_cmp_out(a))], [a._wire, b._wire]))
 
 
 def ne(a: Expr, b) -> Expr:
     b = a._coerce_same(b)
-    return a._result(Term(a._theory.Ne(), [Wire(_cmp_out(a))], [a._wire, b._wire]), b)
+    return a._result(Term(a._theory.Ne(), [Wire(_cmp_out(a))], [a._wire, b._wire]))
 
 
 def relu(e: Expr) -> Expr:
-    return e._result(Term(e._theory.ReLU(), [Wire(e.dtype)], [e._wire]))
+    return e._unop(e._theory.ReLU())
 
 
 def argmax(e: Expr) -> Expr:
-    return e._result(Term(e._theory.Argmax(), [Wire(_with_shape(e.dtype, [1, 1]))], [e._wire]))
-
-
-# ---------------------------------------------------------------------------
-# Term collection (used by dslModule to populate the base Module)
-# ---------------------------------------------------------------------------
-
-
-def collect_terms(*roots: Expr) -> list[Term]:
-    """Every term created under the given expr trees, dependencies first, de-duplicated."""
-    seen: set[int] = set()
-    out: list[Term] = []
-
-    def visit(e: Expr) -> None:
-        for child in e._args:
-            visit(child)
-        if e._term is not None and id(e._term) not in seen:
-            seen.add(id(e._term))
-            out.append(e._term)
-
-    for r in roots:
-        visit(r)
-    return out
+    return e._unop(e._theory.Argmax(), out=_with_shape(e.dtype, [1, 1]))
