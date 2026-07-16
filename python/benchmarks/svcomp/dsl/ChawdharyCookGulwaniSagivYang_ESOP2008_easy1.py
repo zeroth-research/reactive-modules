@@ -1,17 +1,15 @@
-"""AliasDarteFeautrierGonnord-SAS2010-easy1 — if/else body, constant init, a
-parameter variable.
+"""ChawdharyCookGulwaniSagivYang-ESOP2008-easy1 — if/else body, nondet param z.
 
-    int x = 0, y = 100, z = __VERIFIER_nondet_int();
+    int x = 0, y = 100;
+    int z = __VERIFIER_nondet_int();
     while (x < 40) {
         if (z == 0) { x = x + 1; }
         else        { x = x + 2; }
     }
 
 Notes:
-  - `x` is the only variable written in the loop.
-  - `y` is a constant (init 100, never written) and `z` is a nondet
-    *parameter* (init nondet, read in the branch, never written). Per
-    both are still `ctrl` vars, held unchanged.
+  - `y` is a constant (init 100, never written) and `z` is a nondet parameter
+    (read in the branch, never written) — both held unchanged as ctrl vars.
   - `z == 0` uses `eq()` (`==` is not overloaded).
 """
 
@@ -20,12 +18,12 @@ from __future__ import annotations
 from zrth import LIA
 from zrth.dsl import dslModule, nxt, ite, eq
 
-from ._bench import Bench, pair
+from .._bench import Bench, pair
 
 
 class Program(dslModule):
     def init(self, extl):
-        z0 = extl                               # single input, unwrapped
+        z0 = extl
         return 0, 100, nxt(z0)                  # x = 0, y = 100, z = nondet
 
     def update(self, ctrl):
@@ -47,8 +45,8 @@ def _domain(s):
 
 
 BENCH = Bench(
-    name="AliasDarteFeautrierGonnord-SAS2010-easy1",
-    source="AliasDarteFeautrierGonnord-SAS2010-easy1.c",
+    name="ChawdharyCookGulwaniSagivYang-ESOP2008-easy1",
+    source="ChawdharyCookGulwaniSagivYang-ESOP2008-easy1.c",
     state=("x", "y", "z"),
     inputs=("z0",),
     build=_build,

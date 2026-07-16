@@ -1,11 +1,11 @@
-"""ChenFlurMukhopadhyay-SAS2012-Ex2.01 — archetype of the ChenFlur cluster.
+"""Masse-VMCAI2014-Ex6 — conditional decrement of the second variable.
 
     int x, y;
     x = __VERIFIER_nondet_int();
     y = __VERIFIER_nondet_int();
-    while (x > 0) {
+    while (x >= 0) {
         x = x + y;
-        y = y - 1;
+        if (y >= 0) { y = y - 1; }
     }
 """
 
@@ -14,20 +14,20 @@ from __future__ import annotations
 from zrth import LIA
 from zrth.dsl import dslModule, nxt, ite
 
-from ._bench import Bench, pair
+from .._bench import Bench, pair
 
 
 class Program(dslModule):
     def init(self, extl):
         x0, y0 = extl
-        return nxt(x0), nxt(y0)                 # x, y both nondet
+        return nxt(x0), nxt(y0)                  # x, y both nondet
 
     def update(self, ctrl):
         x, y = ctrl
-        guard = x > 0
+        guard = x >= 0
         wx, wy = x, y
-        wx = wx + wy       # x = x + y   (old y)
-        wy = wy - 1        # y = y - 1
+        wx = wx + wy                     # x = x + y   (old y)
+        wy = ite(wy >= 0, wy - 1, wy)    # if (y>=0) y = y - 1
         return ite(guard, wx, x), ite(guard, wy, y)
 
 
@@ -39,12 +39,12 @@ def _build():
 
 
 def _domain(s):
-    return s["x"] > 0
+    return s["x"] >= 0
 
 
 BENCH = Bench(
-    name="ChenFlurMukhopadhyay-SAS2012-Ex2.01",
-    source="ChenFlurMukhopadhyay-SAS2012-Ex2.01.c",
+    name="Masse-VMCAI2014-Ex6",
+    source="Masse-VMCAI2014-Ex6.c",
     state=("x", "y"),
     inputs=("x0", "y0"),
     build=_build,

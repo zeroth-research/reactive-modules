@@ -45,6 +45,12 @@ class Bench:
     - ``domain`` : ``(latched_symbols: dict[str, z3.ArithRef]) -> z3.BoolRef`` —
                    the loop condition as a Z3 predicate (the verification
                    domain). Mirrors the guard used inside ``update``.
+    - ``precondition`` : optional ``(inputs: dict[str, int]) -> bool`` over the
+                   nondet inputs (keyed by ``inputs`` names). When the C guards
+                   the loop with an outer ``if (P) { ... }`` that also
+                   initialises loop variables, the checker only compares inputs
+                   satisfying ``P`` (outside ``P`` the C leaves those variables
+                   uninitialised, so there is nothing well-defined to compare).
     """
 
     name: str
@@ -53,6 +59,7 @@ class Bench:
     inputs: tuple[str, ...]
     build: Callable[[], BuildResult]
     domain: Callable[[dict], object]
+    precondition: Callable[[dict], bool] | None = None
 
 
 def discover() -> list[Bench]:
@@ -61,11 +68,11 @@ def discover() -> list[Bench]:
     Skips private modules (leading underscore), so ``_bench`` / ``_template``
     are not collected.
     """
-    pkg_name = __name__.rsplit(".", 1)[0]          # this file's package
+    pkg_name = __name__.rsplit(".", 1)[0] + ".dsl"   # the encodings live in <svcomp>.dsl
     pkg = importlib.import_module(pkg_name)
     out: list[Bench] = []
     for info in pkgutil.iter_modules(pkg.__path__):
-        if info.name.startswith("_"):
+        if info.name.startswith("_"):                # skip _template, etc.
             continue
         mod = importlib.import_module(f"{pkg_name}.{info.name}")
         bench = getattr(mod, "BENCH", None)

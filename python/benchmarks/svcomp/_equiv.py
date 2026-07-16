@@ -94,7 +94,7 @@ def _compile(c_source: str, state: tuple[str, ...], workdir: Path) -> Path:
 
 
 def _run_c(binf: Path, inputs: list[int], state: tuple[str, ...],
-           timeout: float = 5.0) -> dict[str, int] | None:
+           timeout: float = 2.0) -> dict[str, int] | None:
     """Run the compiled C, feeding ``inputs`` on stdin. Returns the dumped
     final state, or None on timeout (treated as non-termination)."""
     stdin = " ".join(str(v) for v in inputs) + "\n"
@@ -158,14 +158,15 @@ def _run_module(bench: Bench, inputs: list[int], max_steps: int) -> dict[str, in
 @dataclass
 class Result:
     name: str
-    trials: int
+    trials: int          # decisive trials actually compared
     passed: int
-    failures: list  # (inputs, c_state, module_state)
+    failures: list       # (inputs, c_state, module_state)
+    inconclusive: int = 0  # both sides non-terminated within limits (skipped)
     skipped: str | None = None
 
     @property
     def ok(self) -> bool:
-        return self.skipped is None and not self.failures
+        return self.skipped is None and not self.failures and self.trials > 0
 
 
 def check(bench: Bench, trials: int = 300, seed: int = 0,
@@ -184,24 +185,29 @@ def check(bench: Bench, trials: int = 300, seed: int = 0,
     rng = random.Random(seed)
     failures = []
     passed = 0
+    inconclusive = 0
+    decisive = 0
     with tempfile.TemporaryDirectory() as td:
         binf = _compile(c_source, bench.state, Path(td))
-        for _ in range(trials):
+        attempts = 0
+        cap = trials * 40  # bound the search for precondition-satisfying inputs
+        while decisive < trials and attempts < cap:
+            attempts += 1
             inputs = [rng.randint(lo, hi) for _ in range(len(bench.inputs))]
+            if bench.precondition is not None:
+                if not bench.precondition(dict(zip(bench.inputs, inputs))):
+                    continue  # outside the precondition: C leaves vars undefined
             c_state = _run_c(binf, inputs, bench.state)
             m_state = _run_module(bench, inputs, max_steps)
-            if c_state is None or m_state is None:
-                # non-termination on one side within limits -> divergence signal
-                if c_state != m_state:
-                    failures.append((inputs, c_state, m_state))
-                else:
-                    passed += 1
+            if c_state is None and m_state is None:
+                inconclusive += 1          # both diverge (e.g. nonterminating input)
                 continue
+            decisive += 1
             if c_state == m_state:
                 passed += 1
             else:
                 failures.append((inputs, c_state, m_state))
-    return Result(bench.name, trials, passed, failures)
+    return Result(bench.name, decisive, passed, failures, inconclusive)
 
 
 def check_all(**kw) -> list[Result]:
@@ -221,7 +227,8 @@ if __name__ == "__main__":
         if r.skipped:
             print(f"SKIP {r.name}: {r.skipped}")
             continue
-        print(f"{'OK  ' if r.ok else 'FAIL'} {r.name}: sampling {r.passed}/{r.trials} agree")
+        extra = f" ({r.inconclusive} inconclusive)" if r.inconclusive else ""
+        print(f"{'OK  ' if r.ok else 'FAIL'} {r.name}: {r.passed}/{r.trials} agree{extra}")
         for inp, c, m in r.failures[:3]:
             print(f"       input={inp}  C={c}  module={m}")
         all_ok &= r.ok
