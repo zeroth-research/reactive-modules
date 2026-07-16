@@ -44,7 +44,7 @@ def _domain(s):
 
 BENCH = Bench(
     name="ChenFlurMukhopadhyay-SAS2012-Ex2.01",
-    source="benchmarks/nuTerm/sv_comp/ChenFlurMukhopadhyay-SAS2012-Ex2.01.c",
+    source="ChenFlurMukhopadhyay-SAS2012-Ex2.01.c",
     state=("x", "y"),
     inputs=("x0", "y0"),
     build=_build,

@@ -11,7 +11,7 @@ Notes:
   - `x` is the only variable written in the loop.
   - `y` is a constant (init 100, never written) and `z` is a nondet
     *parameter* (init nondet, read in the branch, never written). Per
-    CONVENTIONS.md both are still `ctrl` vars, held unchanged.
+    both are still `ctrl` vars, held unchanged.
   - `z == 0` uses `eq()` (`==` is not overloaded).
 """
 
@@ -48,7 +48,7 @@ def _domain(s):
 
 BENCH = Bench(
     name="AliasDarteFeautrierGonnord-SAS2010-easy1",
-    source="benchmarks/nuTerm/sv_comp/AliasDarteFeautrierGonnord-SAS2010-easy1.c",
+    source="AliasDarteFeautrierGonnord-SAS2010-easy1.c",
     state=("x", "y", "z"),
     inputs=("z0",),
     build=_build,
