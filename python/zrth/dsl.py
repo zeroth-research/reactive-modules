@@ -41,10 +41,10 @@ import inspect
 
 from .zrth import Module, Term
 from . import expr as E
-from .expr import nxt, ite, eq, ne, const, relu, argmax, as_expr, Expr  # re-exported for authoring
+from .expr import expr, cast, nxt, ite, eq, ne, relu, argmax, Expr  # re-exported for authoring
 
-# Public authoring surface: `from zrth.dsl import dslModule, nxt, ite, ...`
-__all__ = ["dslModule", "nxt", "ite", "eq", "ne", "const", "relu", "argmax", "as_expr", "Expr"]
+# Public authoring surface: `from zrth.dsl import dslModule, expr, nxt, ite, cast, ...`
+__all__ = ["dslModule", "expr", "cast", "nxt", "ite", "eq", "ne", "relu", "argmax", "Expr"]
 
 
 def _as_tuple(r) -> tuple:
@@ -73,7 +73,8 @@ def _block_terms(theory, ctrl_vars: tuple, values: tuple) -> list:
     across values emitted once), then an Id driving each ctrl var's next wire."""
     if len(values) != len(ctrl_vars):
         raise ValueError(f"expected {len(ctrl_vars)} return value(s), got {len(values)}")
-    exprs = [as_expr(v, theory) for v in values]
+    exprs = [v if isinstance(v, Expr) else expr(v, theory=theory, sort=var.dtype)
+             for var, v in zip(ctrl_vars, values)]
     terms = E.collect_terms(*exprs)          # one shared pass -> a reused subterm appears once
     for var, e in zip(ctrl_vars, exprs):
         terms.append(Term(theory.Id(), [nxt(var).wire], [e.wire]))
@@ -89,8 +90,8 @@ class dslModule(Module):
 
         ctrl_pairs = [tuple(p) for p in ctrl]
         extl_pairs = [tuple(p) for p in extl] if extl else []
-        ctrl_vars = tuple(E.var(p, theory) for p in ctrl_pairs)
-        extl_vars = tuple(E.var(p, theory) for p in extl_pairs)
+        ctrl_vars = tuple(expr(p, theory=theory) for p in ctrl_pairs)
+        extl_vars = tuple(expr(p, theory=theory) for p in extl_pairs)
 
         init_fn = getattr(cls, "init", None)
         update_fn = getattr(cls, "update", None)
