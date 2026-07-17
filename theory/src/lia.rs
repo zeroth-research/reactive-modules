@@ -226,14 +226,19 @@ where
         }
         Sort::Bool([i, j]) => {
             if !cm.is_bool() {
-                return Err("Const: write wire is Bool but initializer is not a boolean tensor".into());
+                return Err(
+                    "Const: write wire is Bool but initializer is not a boolean tensor".into(),
+                );
             }
             [i, j]
         }
     };
     let size = cm.size();
     if size.len() != 2 {
-        return Err(format!("Const: initializer must be a 2D tensor, got {}D", size.len()));
+        return Err(format!(
+            "Const: initializer must be a 2D tensor, got {}D",
+            size.len()
+        ));
     }
     if size[0] as usize != i {
         return Err(format!(
@@ -593,11 +598,7 @@ mod tests {
     #[test]
     fn const_int_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
-        assert!(
-            LIA::Const(cm)
-                .check([] as [Sort; 0], [int(2, 2)])
-                .is_ok()
-        );
+        assert!(LIA::Const(cm).check([] as [Sort; 0], [int(2, 2)]).is_ok());
     }
 
     #[test]
