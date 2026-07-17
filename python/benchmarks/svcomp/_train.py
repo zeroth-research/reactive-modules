@@ -21,7 +21,7 @@ from torch import nn
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
 from ._equiv import _run_block
-from ._verify_ranking import verify
+from ._verify_ranking import build_obligation, smt_oneshot
 
 
 # ---------------------------------------------------------------------------
@@ -150,17 +150,16 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
                   initial_variance: float = 100.0, n_epochs: int = 1000,
                   lr: float = 0.05, outer: int = 20,
                   scales: tuple[float, ...] = (0.5, 1.0),
-                  verify_fn=verify) -> TrainResult:
+                  verifier=smt_oneshot) -> TrainResult:
     """nt-matched: PAS trajectory rollouts, AdamW hinge loss, outer
     round-and-rebuild. Defaults mirror nt's learn_nrf_cfa.
 
-    ``verify_fn(bench, layers, delta) -> bool`` is the pluggable termination
-    verifier the round-and-rebuild loop accepts a candidate with (like nt's
-    ``verifier_method``). Default is the smt_oneshot check in ``_verify_ranking``;
-    a Farkas or invariant-augmented verifier can be swapped in without touching
-    the trainer. The obligation is over the program's transition and V(s)/V(s');
-    the Phase-2 composed-system verifier (program ⊕ V as one module, V(s)/V(s')
-    read as its observables) computes the same obligation and plugs in here."""
+    ``verifier`` is any ``Obligation -> VerifyResult`` (like nt's
+    ``verifier_method``): the round-and-rebuild loop builds the obligation for
+    each candidate (via ``build_obligation``, the composition seam) and accepts
+    the first V it verifies. Default is ``smt_oneshot``; a Farkas or
+    invariant-augmented verifier — or the Phase-2 composed-system verifier
+    (program ⊕ V as one module) — swaps in without touching the trainer."""
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
     sigma = float(np.sqrt(initial_variance))
@@ -185,7 +184,7 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
         for scale in scales:
             layers = model.to_layers(scale)
             last_layers = layers
-            if verify_fn(bench, layers, delta):
+            if verifier(build_obligation(bench, layers, delta)).verified:
                 return TrainResult(bench.name, True, S.shape[0], final_loss, layers)
     return TrainResult(bench.name, False, S.shape[0], final_loss, last_layers,
                        reason="trained but not verified")
