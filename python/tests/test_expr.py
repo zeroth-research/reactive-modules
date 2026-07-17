@@ -150,7 +150,7 @@ def test_collecting_records_deps_first():
     with collecting() as terms:
         ite(x < y, x + 1, y)
     itypes = [type(t.itype).__name__ for t in terms]
-    assert itypes == ["LIA_Lt", "LIA_ConstInt", "LIA_Add", "LIA_Ite"]
+    assert itypes == ["LIA_Lt", "LIA_Const", "LIA_Add", "LIA_Ite"]
 
 
 def test_shared_subexpression_recorded_once():
