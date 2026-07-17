@@ -72,6 +72,53 @@ def test_env_rejects_no_args():
         Env()
 
 
+# ── attrs override (private-state sorts/wires) ────────────────────
+
+def test_attrs_dict_sort_builds():
+    # Overriding with the sort inference would pick anyway still builds cleanly.
+    e = Env(SimpleEnv(), attrs={"state": Sort.Real([1, 1])})
+    assert e.get_prvt("state")[0].dtype == Sort.Real([1, 1])
+
+
+def test_attrs_single_sort_applies_to_all():
+    e = Env(SimpleEnv(), attrs=Sort.Real([1, 1]))
+    assert e.get_prvt("state")[0].dtype == Sort.Real([1, 1])
+
+
+def test_attrs_wire_pair_used_verbatim():
+    pair = (Wire(Sort.Real([1, 1])), Wire(Sort.Real([1, 1])))
+    e = Env(SimpleEnv(), attrs={"state": pair})
+    got = e.get_prvt("state")
+    assert got[0] is pair[0] and got[1] is pair[1]
+
+
+def test_attrs_unlisted_attr_still_inferred():
+    # No attrs for 'state' -> same result as no attrs at all.
+    e = Env(SimpleEnv(), attrs={})
+    assert e.get_prvt("state")[0].dtype == Sort.Real([1, 1])
+
+
+def test_attrs_rejects_unknown_name():
+    with pytest.raises(ValueError, match="not private-state"):
+        Env(SimpleEnv(), attrs={"not_an_attr": Sort.Real([1, 1])})
+
+
+def test_attrs_rejects_pair_dtype_mismatch():
+    bad = (Wire(Sort.Real([1, 1])), Wire(Sort.Int([1, 1])))
+    with pytest.raises(ValueError, match="dtype mismatch"):
+        Env(SimpleEnv(), attrs={"state": bad})
+
+
+def test_attrs_rejects_bad_spec_type():
+    with pytest.raises(TypeError, match="must be a Sort"):
+        Env(SimpleEnv(), attrs={"state": 42})
+
+
+def test_attrs_without_gym_env_rejected():
+    with pytest.raises(TypeError, match="only applies when extracting"):
+        Env(Module(SimpleQNet(1, 2, 2)), attrs=Sort.Real([1, 1]))
+
+
 # ── Runtime ───────────────────────────────────────────────────────
 
 def test_pure_symbolic_reset_needs_inputs():
