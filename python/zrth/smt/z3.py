@@ -65,7 +65,7 @@ def eval(itype, read):
         case LRA.Id() | LIA.Id():
             return [r[0]]
 
-        case LRA.ConstReal(t) | LRA.ConstBool(t) | LIA.ConstInt(t) | LIA.ConstBool(t):
+        case LRA.Const(t) | LIA.Const(t):
             return [_tensor_to_z3(t)]
 
         # arithmetic

@@ -9,9 +9,9 @@ A [`Sort`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
 so that integer and propositional terms embed directly into `LIA`. The
 operations in [`LIA`] are:
 
-- [`LIA::Const`] — an integer matrix literal whose shape must match the
-  declared (integer) write type.
-- [`LIA::BoolConst`], [`LIA::And`], [`LIA::Or`], [`LIA::Xor`], [`LIA::Not`]
+- [`LIA::Const`] — a matrix literal whose sort (integer or boolean) is taken
+  from the write wire; the tensor's element kind must match that sort.
+- [`LIA::And`], [`LIA::Or`], [`LIA::Xor`], [`LIA::Not`]
   — boolean operations on the boolean fragment of `Type`.
 - [`LIA::Le`], [`LIA::Lt`], [`LIA::Ge`], [`LIA::Gt`], [`LIA::Eq`], [`LIA::Ne`]
   — pointwise integer comparisons producing a scalar `Bool(1,1)`.
@@ -80,9 +80,8 @@ impl fmt::Display for Sort {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LIA {
-    // constants
-    ConstInt(crate::PyTensor),
-    ConstBool(crate::PyTensor),
+    // constant matrix literal; its sort (Int or Bool) is taken from the write wire
+    Const(crate::PyTensor),
     // boolean operations
     And(),
     Or(),
@@ -116,8 +115,7 @@ pub enum LIA {
 impl fmt::Display for LIA {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LIA::ConstInt(cm) => write!(f, "{}", cm),
-            LIA::ConstBool(cm) => write!(f, "{}", cm),
+            LIA::Const(cm) => write!(f, "{}", cm),
             LIA::And() => write!(f, "And"),
             LIA::Or() => write!(f, "Or"),
             LIA::Xor() => write!(f, "Xor"),
@@ -154,10 +152,8 @@ impl Theory for LIA {
         W: IntoIterator<Item = D>,
     {
         match self {
-            LIA::ConstInt(cm) => check_const(cm, read, write),
-            LIA::ConstBool(_) | LIA::And() | LIA::Or() | LIA::Xor() | LIA::Not() => {
-                check_bool(self, read, write)
-            }
+            LIA::Const(cm) => check_const(cm, read, write),
+            LIA::And() | LIA::Or() | LIA::Xor() | LIA::Not() => check_bool(self, read, write),
             LIA::Le() | LIA::Lt() | LIA::Ge() | LIA::Gt() | LIA::Eq() | LIA::Ne() => {
                 check_cmp(self, read, write)
             }
@@ -220,32 +216,33 @@ where
     if read.next().is_some() {
         return Err("Const: cannot read values".into());
     }
-    let dtype = write_nxt(&mut write, 0, "LIA")?;
-    match dtype {
+    // the sort comes from the write wire; validate the tensor's kind matches it
+    let [i, j] = match write_nxt(&mut write, 0, "LIA")? {
         Sort::Int([i, j]) => {
-            let size = cm.size();
-            if size.len() != 2 {
-                return Err(format!(
-                    "ConstInt: initializer must be a 2D tensor, got {}D",
-                    size.len()
-                ));
+            if cm.is_bool() {
+                return Err("Const: write wire is Int but initializer is a boolean tensor".into());
             }
-            if size[0] as usize != i {
-                return Err(format!(
-                    "ConstInt: initializer has wrong number of rows (has {}, expected {})",
-                    size[0], i
-                ));
-            }
-            if size[1] as usize != j {
-                return Err(format!(
-                    "ConstInt: some row has wrong length, expected {}",
-                    j
-                ));
-            }
+            [i, j]
         }
-        Sort::Bool(..) => {
-            return Err("Const must be integer matrix, not boolean".into());
+        Sort::Bool([i, j]) => {
+            if !cm.is_bool() {
+                return Err("Const: write wire is Bool but initializer is not a boolean tensor".into());
+            }
+            [i, j]
         }
+    };
+    let size = cm.size();
+    if size.len() != 2 {
+        return Err(format!("Const: initializer must be a 2D tensor, got {}D", size.len()));
+    }
+    if size[0] as usize != i {
+        return Err(format!(
+            "Const: initializer has wrong number of rows (has {}, expected {})",
+            size[0], i
+        ));
+    }
+    if size[1] as usize != j {
+        return Err(format!("Const: some row has wrong length, expected {}", j));
     }
     if write.next().is_some() {
         return Err("Const: returns more than one value".into());
@@ -262,37 +259,6 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LIA::ConstBool(cm) => {
-            if read.next().is_some() {
-                return Err("ConstBool: cannot read values".into());
-            }
-            let Sort::Bool([i, j]) = write_nxt(&mut write, 0, "LIA")? else {
-                return Err("ConstBool: write type must be Bool".into());
-            };
-            let size = cm.size();
-            if size.len() != 2 {
-                return Err(format!(
-                    "ConstBool: initializer must be a 2D tensor, got {}D",
-                    size.len()
-                ));
-            }
-            if size[0] as usize != i {
-                return Err(format!(
-                    "ConstBool: initializer has wrong number of rows (has {}, expected {})",
-                    size[0], i
-                ));
-            }
-            if size[1] as usize != j {
-                return Err(format!(
-                    "ConstBool: some row has wrong length, expected {}",
-                    j
-                ));
-            }
-            if write.next().is_some() {
-                return Err("ConstBool: returns more than one value".into());
-            }
-            Ok(())
-        }
         LIA::Not() => {
             let (r, w) = (
                 read_nxt(&mut read, 0, "LIA")?,
@@ -628,7 +594,7 @@ mod tests {
     fn const_int_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
         assert!(
-            LIA::ConstInt(cm)
+            LIA::Const(cm)
                 .check([] as [Sort; 0], [int(2, 2)])
                 .is_ok()
         );
@@ -637,7 +603,7 @@ mod tests {
     #[test]
     fn const_int_bool_write_fails() {
         assert!(
-            LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into())
+            LIA::Const(tch::Tensor::from_slice2(&[[0i64]]).into())
                 .check([] as [Sort; 0], [bool_t(1, 1)])
                 .is_err()
         );
@@ -646,7 +612,7 @@ mod tests {
     #[test]
     fn const_int_wrong_rows_fails() {
         assert!(
-            LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into())
+            LIA::Const(tch::Tensor::from_slice2(&[[0i64]]).into())
                 .check([] as [Sort; 0], [int(2, 1)])
                 .is_err()
         );
@@ -656,7 +622,7 @@ mod tests {
     fn const_int_with_read_fails() {
         let t = int(1, 1);
         assert!(
-            LIA::ConstInt(tch::Tensor::from_slice2(&[[0i64]]).into())
+            LIA::Const(tch::Tensor::from_slice2(&[[0i64]]).into())
                 .check([t], [t])
                 .is_err()
         );
@@ -666,7 +632,7 @@ mod tests {
     fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
-            LIA::ConstBool(cm)
+            LIA::Const(cm)
                 .check([] as [Sort; 0], [bool_t(2, 2)])
                 .is_ok()
         );
@@ -675,7 +641,7 @@ mod tests {
     #[test]
     fn const_bool_int_write_fails() {
         assert!(
-            LIA::ConstBool(tch::Tensor::from_slice2(&[[true]]).into())
+            LIA::Const(tch::Tensor::from_slice2(&[[true]]).into())
                 .check([] as [Sort; 0], [int(1, 1)])
                 .is_err()
         );

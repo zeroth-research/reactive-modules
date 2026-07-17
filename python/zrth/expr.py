@@ -350,17 +350,10 @@ def _const(value, theory, sort, signed) -> Expr:
     shape = _normalize_shape(list(tensor.size()))
     tensor = tensor.reshape(shape)             # theory const ops require a 2-D initializer
     w = Wire(_resolve_sort(family, shape))
-    _emit(Term.constant(_const_op(theory, tensor), [w]))
+    # one Const per theory; its sort (and thus the tensor's expected element kind) is
+    # taken from the write wire `w`.
+    _emit(Term.constant(theory.Const(tensor), [w]))
     return _wrap(w, theory, value=tensor, signed=signed)
-
-
-def _const_op(theory, tensor):
-    # NOTE (single-Const track): this collapses to `theory.Const(tensor)` (sort from the
-    # write wire); today it is redundantly split by sort.
-    is_bool = tensor.dtype == torch.bool
-    if theory is LRA:  return LRA.ConstBool(tensor) if is_bool else LRA.ConstReal(tensor)
-    if theory is LIA:  return LIA.ConstBool(tensor) if is_bool else LIA.ConstInt(tensor)
-    return BV.Const(tensor)
 
 
 def cast(e: Expr, sort) -> Expr:
