@@ -7,10 +7,9 @@ domain, where s' = T(s) is the module's transition.
 The composed system
 ===================
 The obligation is read off the *composed* system. :func:`build_obligation`
-builds `program ⊕ V(s) ⊕ V(s')` as one ``Module.parallel``. V(s) and V(s') are
-both sequential atoms (the DSL only builds sequential ones): V(s)'s ``update``
-reads the latched state, V(s')'s ``update`` awaits the program's next state.
-V(s), V(s') and s' = T(s) are all wires of that single module.
+builds `program ⊕ V(s) ⊕ V(s')` as one ``Module.parallel``. V(s) is a sequential
+atom over the latched state; V(s') is a combinatorial atom awaiting the program's
+next state. V(s), V(s') and s' = T(s) are all wires of that single module.
 
 Interface
 =========
@@ -88,23 +87,31 @@ def _V_term(xs, layers):
     return out
 
 
+def _xs(extl):
+    return list(extl) if isinstance(extl, tuple) else [extl]
+
+
 def _v_module(state_pairs, layers, *, read_next: bool):
     """A one-output module computing V over the program's state wires.
 
-    ``read_next=False`` -> V(s): reads the *latched* state (a sequential atom).
-    ``read_next=True``  -> V(s'): awaits the program's *next* state. ``init`` may
-    read only awaited wires (no latch exists at tick 0), so it awaits either way;
-    only ``update`` distinguishes latched (s) from next (s')."""
-    class _V(dslModule):
-        def init(self, extl):
-            xs = list(extl) if isinstance(extl, tuple) else [extl]
-            return _V_term([nxt(x) for x in xs], layers)
-
-        def update(self, ctrl, extl):
-            xs = list(extl) if isinstance(extl, tuple) else [extl]
-            return _V_term([nxt(x) for x in xs] if read_next else xs, layers)
-
+    ``read_next=False`` -> V(s): reads the *latched* state, so it is a **sequential**
+    atom (init awaits the next state, since a sequential atom's init may not read a
+    latched wire; update reads the latched state).
+    ``read_next=True``  -> V(s'): only ever awaits the program's *next* state, so it
+    is a **combinatorial** atom (a single ``assign`` block, no init)."""
     out = (Wire(INT), Wire(INT))
+    if read_next:
+        class _V(dslModule):
+            def assign(self, extl):
+                return _V_term([nxt(x) for x in _xs(extl)], layers)
+    else:
+        class _V(dslModule):
+            def init(self, extl):
+                return _V_term([nxt(x) for x in _xs(extl)], layers)
+
+            def update(self, ctrl, extl):
+                return _V_term(_xs(extl), layers)
+
     return _V(theory=LIA, ctrl=(out,), extl=tuple(state_pairs)), out
 
 
