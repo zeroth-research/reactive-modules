@@ -1,12 +1,14 @@
 """Tests for `dslModule` — the subclass-a-Module DSL front-end.
 
 A `dslModule` subclass *is* a base Module: pass `theory` and the `ctrl`(/`extl`) wire
-pairs and override `init`/`update`, and the sequential module is built in the constructor.
-These tests build small modules and step them through `zrth.eval` (mirroring test_eval),
-plus check the ctrl/extl partition and the config surface.
+pairs and override `init`/`update` (sequential) or `assign` (combinatorial), and the
+module is built in the constructor. These tests build small modules and step them
+through `zrth.eval` (mirroring test_eval), plus check the ctrl/extl partition and the
+config surface.
 """
 
 import pytest
+import torch
 
 from zrth import LIA, Module, Sort, Wire, dslModule
 from zrth.dsl import nxt, ite
@@ -149,6 +151,45 @@ def test_missing_init_raises():
     # init is required — every ctrl variable needs an initial value
     with pytest.raises(TypeError):
         NoInit(theory=LIA, ctrl=(_pair(),))
+
+
+# --- combinatorial modules (`assign`, no init/update) -----------------------
+
+
+class Double(dslModule):
+    def assign(self, extl):
+        return nxt(extl) * 2  # combinatorial: output = 2 * (awaited input)
+
+
+def test_combinatorial_builds_without_init():
+    x, y = _pair(), _pair()  # x external (awaited), y controlled
+    m = Double(theory=LIA, ctrl=(y,), extl=(x,))
+    assert isinstance(m, Module)
+    assert m.open()  # has an external input
+    assert len(list(m.ctrl)) == 1 and len(list(m.extl)) == 1
+
+
+def test_combinatorial_reads_awaited_input():
+    x, y = _pair(), _pair()
+    m = Double(theory=LIA, ctrl=(y,), extl=(x,))
+    # a combinatorial atom stores its `assign` block as both init and update;
+    # seed the awaited next of x and run the block, expect y_next = 2 * x.
+    state = {x[1]: torch.tensor([[5]], dtype=torch.int64)}
+    _run_block(m, state, lambda a: a.update)
+    assert state[y[1]].item() == 10
+
+
+def test_assign_with_sequential_blocks_raises():
+    class Both(dslModule):
+        def assign(self, extl):
+            return nxt(extl)
+
+        def update(self, ctrl):
+            return ctrl
+
+    # `assign` (combinatorial) and `init`/`update` (sequential) are mutually exclusive
+    with pytest.raises(TypeError):
+        Both(theory=LIA, ctrl=(_pair(),), extl=(_pair(),))
 
 
 def test_subexpression_shared_across_returns():
