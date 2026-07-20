@@ -1,11 +1,8 @@
-"""Phase 1: learn a neural ranking function for a program module, verify it.
+"""learn a neural ranking function for a program module, verify it.
 
 Trains a small ReLU net V (Linear -> ReLU -> sum) outside the reactive-module
 framework (plain torch + Adam), then verifies the candidate with Z3 (V >= 0 and
-V(s) - V(s') >= delta on the loop domain). The net's architecture and training
-loop are ported from neural-termination (pure torch, IR-agnostic); the *data*
-comes from rolling out the reactive module, and the verification reads the
-program's transition off the module via the Z3 backend.
+V(s) - V(s') >= delta on the loop domain).
 """
 
 from __future__ import annotations
@@ -21,6 +18,7 @@ from torch import nn
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
 from ._equiv import _run_block
+from ._invariants import infer_invariants
 from ._verify_ranking import build_obligation, smt_oneshot
 
 
@@ -150,7 +148,7 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
                   initial_variance: float = 100.0, n_epochs: int = 1000,
                   lr: float = 0.05, outer: int = 20,
                   scales: tuple[float, ...] = (0.5, 1.0),
-                  verifier=smt_oneshot) -> TrainResult:
+                  verifier=smt_oneshot, use_invariants: bool = True) -> TrainResult:
     """nt-matched: PAS trajectory rollouts, AdamW hinge loss, outer
     round-and-rebuild. Defaults mirror nt's learn_nrf_cfa.
 
@@ -170,6 +168,9 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
     Xsp = torch.from_numpy(Sp)
     dim = len(bench.state)
 
+    # Houdini invariants (V-independent): inferred once, reused for every candidate.
+    invariants = infer_invariants(bench) if use_invariants else []
+
     final_loss = float("inf")
     last_layers = None
     for _o in range(outer):
@@ -184,7 +185,7 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
         for scale in scales:
             layers = model.to_layers(scale)
             last_layers = layers
-            if verifier(build_obligation(bench, layers, delta)).verified:
+            if verifier(build_obligation(bench, layers, delta, invariants)).verified:
                 return TrainResult(bench.name, True, S.shape[0], final_loss, layers)
     return TrainResult(bench.name, False, S.shape[0], final_loss, last_layers,
                        reason="trained but not verified")
