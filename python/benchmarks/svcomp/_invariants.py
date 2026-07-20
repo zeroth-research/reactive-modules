@@ -67,6 +67,45 @@ def _candidates(bench: Bench) -> list[Candidate]:
     return cands
 
 
+def _as_int_const(expr):
+    """The integer value of ``expr`` if it simplifies to a constant, else None."""
+    e = z3.simplify(expr)
+    if z3.is_int_value(e):
+        return int(e.as_long())
+    if z3.is_rational_value(e):
+        f = e.as_fraction()
+        return int(f.numerator) if f.denominator == 1 else None
+    return None
+
+
+def _const_candidates(bench: Bench, vals: dict) -> list[Candidate]:
+    """Candidates from a state's constant coordinates (nuTerm's ``_seed_candidates``,
+    applied to a cut-point segment's post-state). ``vals`` is a symbolic state
+    (the body post-state ``T(s)`` or the init state ``s0``): ``v==c`` / ``v>=c`` /
+    ``v<=c`` when ``vals[v]`` is constant, and ``vi-vj==d`` / ``vi+vj==s`` when a
+    pair combination is constant."""
+    cands: list[Candidate] = []
+    for v in bench.state:
+        c = _as_int_const(vals[v])
+        if c is not None:
+            cands += [
+                (f"{v}=={c}", (lambda st, v=v, c=c: st[v] == c)),
+                (f"{v}>={c}", (lambda st, v=v, c=c: st[v] >= c)),
+                (f"{v}<={c}", (lambda st, v=v, c=c: st[v] <= c)),
+            ]
+    vs = list(bench.state)
+    for i in range(len(vs)):
+        for j in range(i + 1, len(vs)):
+            a, b = vs[i], vs[j]
+            d = _as_int_const(vals[a] - vals[b])
+            if d is not None:
+                cands.append((f"{a}-{b}=={d}", (lambda st, a=a, b=b, d=d: st[a] - st[b] == d)))
+            t = _as_int_const(vals[a] + vals[b])
+            if t is not None:
+                cands.append((f"{a}+{b}=={t}", (lambda st, a=a, b=b, t=t: st[a] + st[b] == t)))
+    return cands
+
+
 def infer_invariants(bench: Bench, timeout_ms: int = 2000) -> list[Candidate]:
     """Inductive loop invariants for ``bench`` (initiation + consecution)."""
     try:
@@ -75,7 +114,16 @@ def infer_invariants(bench: Bench, timeout_ms: int = 2000) -> list[Candidate]:
     except Exception:
         return []                              # no invariants -> plain domain
     dom = bench.domain(s)
-    cands = _candidates(bench)
+    # static sign/pairwise candidates + constants derived from the body post-state
+    # (T(s)) and the init state (s0) — the cut-point segments nuTerm seeds from.
+    seen: set[str] = set()
+    cands: list[Candidate] = []
+    for lbl, f in (_candidates(bench)
+                   + _const_candidates(bench, sp)
+                   + _const_candidates(bench, s0)):
+        if lbl not in seen:
+            seen.add(lbl)
+            cands.append((lbl, f))
 
     def unsat(goal, *assumps) -> bool:
         sol = z3.Solver(); sol.set("timeout", timeout_ms)
