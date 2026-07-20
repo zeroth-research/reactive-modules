@@ -31,6 +31,7 @@ import z3
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench, INT  # noqa: F401
+from ._invariants import invariant_domain
 from zrth import LIA, Module, Wire
 from zrth import z3 as zz3
 from zrth.dsl import const, dslModule, nxt, relu
@@ -119,7 +120,7 @@ def _v_module(state_pairs, layers, *, read_next: bool):
 # Building the obligation (the composition seam)
 # ---------------------------------------------------------------------------
 
-def build_obligation(bench: Bench, layers, delta: float) -> Obligation:
+def build_obligation(bench: Bench, layers, delta: float, invariants=None) -> Obligation:
     """Compose program ⊕ V(s) ⊕ V(s') into ONE reactive module, then read the
     ranking obligation off it.
 
@@ -127,7 +128,11 @@ def build_obligation(bench: Bench, layers, delta: float) -> Obligation:
     the successor V(s') are three atoms of a single ``Module.parallel`` system;
     await-ordering places V(s') after the program's transition. We symbolically
     execute one ``update`` (latched state = fresh Z3 ints) and read s' = T(s),
-    V(s) and V(s') straight off the composed system's wires."""
+    V(s) and V(s') straight off the composed system's wires.
+
+    ``invariants`` (from :func:`._invariants.infer_invariants`) are inductive
+    loop facts conjoined with the guard to shrink the verification domain to the
+    reachable loop states."""
     prog, ctrl, _extl = bench.build()
     state_pairs = [ctrl[n] for n in bench.state]
     vs_mod, vs = _v_module(state_pairs, layers, read_next=False)
@@ -140,7 +145,11 @@ def build_obligation(bench: Bench, layers, delta: float) -> Obligation:
             z.update(zip(term.write, zz3.eval(term.itype, [z[w] for w in term.read])))
     s_syms = [z[ctrl[n][0]][0] for n in bench.state]
     sp_syms = [z[ctrl[n][1]][0] for n in bench.state]
-    dom = bench.domain({n: z[ctrl[n][0]][0] for n in bench.state})
+    s_map = {n: z[ctrl[n][0]][0] for n in bench.state}
+    dom = bench.domain(s_map)
+    inv = invariant_domain(invariants, s_map)
+    if inv is not None:
+        dom = z3.And(dom, inv)
     return Obligation(bench.state, s_syms, sp_syms, z[vs[1]][0], z[vsp[1]][0],
                       dom, float(delta))
 
