@@ -56,16 +56,10 @@ def _build():
             {"i0": i0, "j0": j0, "M0": M0, "N0": N0})
 
 
-def _domain(s):
-    import z3
-    return z3.Or(s["i"] < s["M"], s["j"] < s["N"])
-
-
 BENCH = Bench(
     name="NoriSharma-FSE2013-Fig7",
     source="NoriSharma-FSE2013-Fig7.c",
     state=("a", "b", "c", "i", "j", "M", "N"),
     inputs=("i0", "j0", "M0", "N0"),
     build=_build,
-    domain=_domain,
 )

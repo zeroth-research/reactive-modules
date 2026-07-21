@@ -39,15 +39,10 @@ def _build():
     return prog, {"x": x, "y": y}, {}
 
 
-def _domain(s):
-    return s["y"] >= 0
-
-
 BENCH = Bench(
     name="GopanReps-CAV2006-Fig1a",
     source="GopanReps-CAV2006-Fig1a.c",
     state=("x", "y"),
     inputs=(),
     build=_build,
-    domain=_domain,
 )

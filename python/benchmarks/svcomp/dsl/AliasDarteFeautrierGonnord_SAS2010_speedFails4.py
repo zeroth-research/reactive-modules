@@ -44,15 +44,10 @@ def _build():
     )
 
 
-def _domain(s):
-    return s["x"] <= s["n"]
-
-
 BENCH = Bench(
     name="AliasDarteFeautrierGonnord-SAS2010-speedFails4",
     source="AliasDarteFeautrierGonnord-SAS2010-speedFails4.c",
     state=("i", "x", "n", "b", "t"),
     inputs=("i0", "x0", "n0", "b0"),
     build=_build,
-    domain=_domain,
 )

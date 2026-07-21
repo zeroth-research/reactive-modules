@@ -31,6 +31,7 @@ import z3
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench, INT  # noqa: F401
+from ._domain import guard_from_transition
 from ._invariants import invariant_domain
 from zrth import LIA, Module, Wire
 from zrth import z3 as zz3
@@ -146,7 +147,8 @@ def build_obligation(bench: Bench, layers, delta: float, invariants=None) -> Obl
     s_syms = [z[ctrl[n][0]][0] for n in bench.state]
     sp_syms = [z[ctrl[n][1]][0] for n in bench.state]
     s_map = {n: z[ctrl[n][0]][0] for n in bench.state}
-    dom = bench.domain(s_map)
+    sp_map = {n: z[ctrl[n][1]][0] for n in bench.state}
+    dom = guard_from_transition(s_map, sp_map, bench.state)
     inv = invariant_domain(invariants, s_map)
     if inv is not None:
         dom = z3.And(dom, inv)

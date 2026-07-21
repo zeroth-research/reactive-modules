@@ -64,15 +64,10 @@ def _build():
             {"x0": x0, "y0": y0, "z0": z0})
 
 
-def _domain(s):
-    return s["x"] >= s["y"]
-
-
 BENCH = Bench(
     name="NoriSharma-FSE2013-Fig8",
     source="NoriSharma-FSE2013-Fig8.c",
     state=("c", "u", "v", "w", "x", "y", "z"),
     inputs=("x0", "y0", "z0"),
     build=_build,
-    domain=_domain,
 )

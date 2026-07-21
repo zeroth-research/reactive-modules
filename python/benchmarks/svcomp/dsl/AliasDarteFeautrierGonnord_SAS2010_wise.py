@@ -41,18 +41,11 @@ def _build():
     return prog, {"x": x, "y": y}, {"x0": x0, "y0": y0}
 
 
-def _domain(s):
-    import z3
-    return z3.And(z3.Or(s["x"] - s["y"] > 2, s["y"] - s["x"] > 2),
-                  s["x"] >= 0, s["y"] >= 0)
-
-
 BENCH = Bench(
     name="AliasDarteFeautrierGonnord-SAS2010-wise",
     source="AliasDarteFeautrierGonnord-SAS2010-wise.c",
     state=("x", "y"),
     inputs=("x0", "y0"),
     build=_build,
-    domain=_domain,
-    precondition=lambda i: i["x0"] >= 0 and i["y0"] >= 0,
+    precondition=lambda s: [s["x"] >= 0, s["y"] >= 0],
 )

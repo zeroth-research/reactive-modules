@@ -45,15 +45,10 @@ def _build():
             {"x0": x0, "y0": y0, "z0": z0, "i0": i0})
 
 
-def _domain(s):
-    return s["x"] < s["y"]
-
-
 BENCH = Bench(
     name="GulavaniGulwani-CAV2008-Fig1a",
     source="GulavaniGulwani-CAV2008-Fig1a.c",
     state=("x", "y", "z", "i"),
     inputs=("x0", "y0", "z0", "i0"),
     build=_build,
-    domain=_domain,
 )

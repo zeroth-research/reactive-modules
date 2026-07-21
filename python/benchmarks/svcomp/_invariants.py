@@ -14,6 +14,7 @@ from __future__ import annotations
 import z3
 
 from ._bench import Bench
+from ._domain import guard_from_transition
 from zrth import z3 as zz3
 
 # A candidate is (label, state_map -> z3.BoolRef); state_map is {var_name: expr}.
@@ -113,14 +114,22 @@ def infer_invariants(bench: Bench, timeout_ms: int = 2000) -> list[Candidate]:
         s0 = _init_state(bench)
     except Exception:
         return []                              # no invariants -> plain domain
-    dom = bench.domain(s)
+    dom = guard_from_transition(s, sp, bench.state)
+
+    # The outer if-gate precondition: assumed at loop entry (initiation) and its
+    # conjuncts seeded as candidates (so precondition facts survive as invariants).
+    pre = bench.precondition or (lambda st: [])
+    pre_init = list(pre(s0))                    # entry-gate assumptions at s0
+    pre_cands = [(f"pre[{i}]", (lambda st, i=i: pre(st)[i])) for i in range(len(pre(s)))]
+
     # static sign/pairwise candidates + constants derived from the body post-state
     # (T(s)) and the init state (s0) — the cut-point segments nuTerm seeds from.
     seen: set[str] = set()
     cands: list[Candidate] = []
     for lbl, f in (_candidates(bench)
                    + _const_candidates(bench, sp)
-                   + _const_candidates(bench, s0)):
+                   + _const_candidates(bench, s0)
+                   + pre_cands):
         if lbl not in seen:
             seen.add(lbl)
             cands.append((lbl, f))
@@ -132,8 +141,8 @@ def infer_invariants(bench: Bench, timeout_ms: int = 2000) -> list[Candidate]:
         sol.add(goal)
         return sol.check() == z3.unsat         # unknown/sat -> not proven -> drop
 
-    # initiation: candidate holds at the initial state (for all inputs)
-    kept = [(lbl, f) for (lbl, f) in cands if unsat(z3.Not(f(s0)))]
+    # initiation: candidate holds at the initial state, under the precondition
+    kept = [(lbl, f) for (lbl, f) in cands if unsat(z3.Not(f(s0)), *pre_init)]
 
     # consecution: Houdini fixpoint — (guard & kept(s)) implies candidate(T(s))
     changed = True

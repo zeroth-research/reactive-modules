@@ -53,16 +53,10 @@ def _build():
     )
 
 
-def _domain(s):
-    import z3
-    return z3.And(s["x"] + s["y"] >= 0, s["x"] <= s["n"])
-
-
 BENCH = Bench(
     name="ChenFlurMukhopadhyay-SAS2012-Ex4.01",
     source="ChenFlurMukhopadhyay-SAS2012-Ex4.01.c",
     state=("x", "y", "z", "n"),
     inputs=("x0", "y0", "z0", "n0"),
     build=_build,
-    domain=_domain,
 )

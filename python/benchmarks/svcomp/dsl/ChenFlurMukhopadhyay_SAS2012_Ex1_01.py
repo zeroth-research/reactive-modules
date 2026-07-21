@@ -34,15 +34,10 @@ def _build():
     return prog, {"x": x}, {"x0": x0}
 
 
-def _domain(s):
-    return s["x"] > 0
-
-
 BENCH = Bench(
     name="ChenFlurMukhopadhyay-SAS2012-Ex1.01",
     source="ChenFlurMukhopadhyay-SAS2012-Ex1.01.c",
     state=("x",),
     inputs=("x0",),
     build=_build,
-    domain=_domain,
 )

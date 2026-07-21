@@ -39,15 +39,10 @@ def _build():
     return prog, {"x": x, "i": i, "n": n}, {"x0": x0, "i0": i0, "n0": n0}
 
 
-def _domain(s):
-    return s["x"] < s["n"]
-
-
 BENCH = Bench(
     name="GulavaniGulwani-CAV2008-Fig1c",
     source="GulavaniGulwani-CAV2008-Fig1c.c",
     state=("x", "i", "n"),
     inputs=("x0", "i0", "n0"),
     build=_build,
-    domain=_domain,
 )

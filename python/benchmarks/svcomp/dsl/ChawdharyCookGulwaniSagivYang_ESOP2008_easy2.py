@@ -39,15 +39,10 @@ def _build():
     return prog, {"x": x, "y": y, "z": z}, {"z0": z0}
 
 
-def _domain(s):
-    return s["z"] > 0
-
-
 BENCH = Bench(
     name="ChawdharyCookGulwaniSagivYang-ESOP2008-easy2",
     source="ChawdharyCookGulwaniSagivYang-ESOP2008-easy2.c",
     state=("x", "y", "z"),
     inputs=("z0",),
     build=_build,
-    domain=_domain,
 )
