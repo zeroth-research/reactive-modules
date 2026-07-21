@@ -151,6 +151,17 @@ def _run_module(bench: Bench, inputs: list[int], max_steps: int) -> dict[str, in
     return None
 
 
+def _init_state_ints(bench: Bench, inputs: list[int]) -> dict[str, int]:
+    """The module's initial state (as ints) for the given nondet inputs — used
+    to evaluate the (state-level) precondition."""
+    prog, ctrl, extl = bench.build()
+    state: dict = {}
+    for name, val in zip(bench.inputs, inputs):
+        state[extl[name][1]] = torch.tensor([[val]], dtype=torch.int64)
+    _run_block(prog.atoms, state, lambda a: a.init)
+    return {n: int(state[ctrl[n][1]].reshape(-1)[0]) for n in bench.state}
+
+
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
@@ -195,7 +206,7 @@ def check(bench: Bench, trials: int = 300, seed: int = 0,
             attempts += 1
             inputs = [rng.randint(lo, hi) for _ in range(len(bench.inputs))]
             if bench.precondition is not None:
-                if not bench.precondition(dict(zip(bench.inputs, inputs))):
+                if not all(bench.precondition(_init_state_ints(bench, inputs))):
                     continue  # outside the precondition: C leaves vars undefined
             c_state = _run_c(binf, inputs, bench.state)
             m_state = _run_module(bench, inputs, max_steps)

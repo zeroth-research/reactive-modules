@@ -40,16 +40,11 @@ def _build():
     return prog, {"x": x, "y": y}, {"x0": x0, "y0": y0}
 
 
-def _domain(s):
-    return s["x"] >= 0
-
-
 BENCH = Bench(
     name="HeizmannHoenickeLeikePodelski-ATVA2013-Fig8",
     source="HeizmannHoenickeLeikePodelski-ATVA2013-Fig8.c",
     state=("x", "y"),
     inputs=("x0", "y0"),
     build=_build,
-    domain=_domain,
-    precondition=lambda i: 2 * i["y0"] >= 1,
+    precondition=lambda s: [2 * s["y"] >= 1],
 )

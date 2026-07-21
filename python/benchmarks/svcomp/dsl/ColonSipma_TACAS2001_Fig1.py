@@ -45,16 +45,10 @@ def _build():
     return prog, {"k": k, "i": i, "j": j}, {"k0": k0, "i0": i0, "j0": j0}
 
 
-def _domain(s):
-    import z3
-    return z3.And(s["i"] <= 100, s["j"] <= s["k"])
-
-
 BENCH = Bench(
     name="ColonSipma-TACAS2001-Fig1",
     source="ColonSipma-TACAS2001-Fig1.c",
     state=("k", "i", "j"),
     inputs=("k0", "i0", "j0"),
     build=_build,
-    domain=_domain,
 )

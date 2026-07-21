@@ -37,15 +37,10 @@ def _build():
     return prog, {"q": q, "y": y}, {"q0": q0, "y0": y0}
 
 
-def _domain(s):
-    return s["q"] > 0
-
-
 BENCH = Bench(
     name="LeikeHeizmann-TACAS2014-Ex1",
     source="LeikeHeizmann-TACAS2014-Ex1.c",
     state=("q", "y"),
     inputs=("q0", "y0"),
     build=_build,
-    domain=_domain,
 )

@@ -17,6 +17,7 @@ from torch import nn
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
+from ._domain import domain as loop_domain
 from ._equiv import _run_block
 from ._invariants import infer_invariants
 from ._verify_ranking import build_obligation, smt_oneshot
@@ -64,8 +65,8 @@ def _t(v: int) -> torch.Tensor:
     return torch.tensor([[int(v)]], dtype=torch.int64)
 
 
-def _in_domain(bench: Bench, state: dict[str, int]) -> bool:
-    d = z3.simplify(bench.domain({n: z3.IntVal(state[n]) for n in bench.state}))
+def _in_domain(dom, state: dict[str, int], state_names) -> bool:
+    d = z3.simplify(dom({n: z3.IntVal(state[n]) for n in state_names}))
     if z3.is_true(d):
         return True
     if z3.is_false(d):
@@ -109,17 +110,20 @@ def rollout(bench: Bench, n_traj: int, max_len: int, sigma: float,
     """nt-style trajectory rollouts: PAS-sample the inputs, init, execute the
     module up to `max_len`, collecting consecutive in-domain (s, T(s)) pairs."""
     prog, ctrl, extl = bench.build()
+    dom = loop_domain(bench)                      # loop guard, derived from update
     n_in = len(bench.inputs)
     S, Sp = [], []
     n_trials = n_traj if n_in > 0 else 1          # deterministic program -> 1 trajectory
     for _ in range(n_trials):
         pas = _pas_sample(n_in, sigma, rng)
         inputs = {bench.inputs[k]: int(pas[k]) for k in range(n_in)}
-        if bench.precondition is not None and not bench.precondition(inputs):
-            continue
         s = _init_state(prog, ctrl, extl, bench, inputs)
+        # precondition is over the state; skip inputs whose initial state
+        # does not enter the loop (outside P the C leaves vars uninitialised)
+        if bench.precondition is not None and not all(bench.precondition(s)):
+            continue
         for _ in range(max_len):
-            if not _in_domain(bench, s):
+            if not _in_domain(dom, s, bench.state):
                 break
             sp = _step(prog, ctrl, s)
             S.append([s[n] for n in bench.state])

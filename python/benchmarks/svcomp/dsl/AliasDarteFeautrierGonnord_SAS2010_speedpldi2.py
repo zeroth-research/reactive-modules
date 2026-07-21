@@ -47,17 +47,11 @@ def _build():
     )
 
 
-def _domain(s):
-    import z3
-    return z3.And(s["v1"] > 0, s["n"] >= 0, s["m"] > 0)
-
-
 BENCH = Bench(
     name="AliasDarteFeautrierGonnord-SAS2010-speedpldi2",
     source="AliasDarteFeautrierGonnord-SAS2010-speedpldi2.c",
     state=("m", "n", "v1", "v2"),
     inputs=("n0", "m0"),
     build=_build,
-    domain=_domain,
-    precondition=lambda i: i["n0"] >= 0 and i["m0"] > 0,
+    precondition=lambda s: [s["n"] >= 0, s["m"] > 0],
 )

@@ -3,8 +3,9 @@
 Steps:
   1. Copy to ``<Author><Venue><Year>_<Fig/Ex>.py``.
   2. Paste the C loop into the docstring for reference.
-  3. Fill in ``state`` / ``inputs``, the ``init`` / ``update`` blocks, the
-     ``_build`` wiring, and ``_domain``.
+  3. Fill in ``state`` / ``inputs``, the ``init`` / ``update`` blocks, and the
+     ``_build`` wiring. The loop guard (verification domain) is derived from the
+     ``update`` (``ite(guard, body, self)``) — do not declare it separately.
 
 Key rules:
   - state var -> ctrl wire pair (C declaration order); nondet -> extl input
@@ -54,7 +55,8 @@ class Program(dslModule):
         # `ctrl` gives the LATCHED (pre-state) values, in declaration order.
         k, i, j = ctrl
 
-        # loop condition — computed once; also mirrored in `_domain` below.
+        # loop condition — the verification domain is derived from this guard
+        # (via the ite below), so it need not be declared anywhere else.
         guard = (i <= 100) & (j <= k)
 
         # --- body, line-for-line, on WORKING COPIES (see "Key rules" above) ---
@@ -75,17 +77,10 @@ def _build():
     return prog, {"k": k, "i": i, "j": j}, {"k0": k0, "i0": i0, "j0": j0}
 
 
-def _domain(s):
-    # Loop condition as a Z3 predicate over the LATCHED symbols (mirrors `guard`).
-    import z3
-    return z3.And(s["i"] <= 100, s["j"] <= s["k"])
-
-
 BENCH = Bench(
     name="TEMPLATE-do-not-run",
     source="<file>.c",   # filename in this package's c/ directory
     state=("k", "i", "j"),
     inputs=("k0", "i0", "j0"),
     build=_build,
-    domain=_domain,
 )

@@ -41,16 +41,11 @@ def _build():
     return prog, {"x": x, "M": M}, {"x0": x0, "M0": M0}
 
 
-def _domain(s):
-    return s["x"] != s["M"]
-
-
 BENCH = Bench(
     name="CookSeeZuleger-TACAS2013-Fig8b",
     source="CookSeeZuleger-TACAS2013-Fig8b.c",
     state=("x", "M"),
     inputs=("x0", "M0"),
     build=_build,
-    domain=_domain,
-    precondition=lambda i: i["M0"] > 0,
+    precondition=lambda s: [s["M"] > 0],
 )

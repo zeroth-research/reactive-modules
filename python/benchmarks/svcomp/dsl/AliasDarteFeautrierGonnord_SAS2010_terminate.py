@@ -45,16 +45,10 @@ def _build():
     return prog, {"i": i, "j": j, "k": k}, {"i0": i0, "j0": j0, "k0": k0}
 
 
-def _domain(s):
-    import z3
-    return z3.And(s["i"] <= 100, s["j"] <= s["k"])
-
-
 BENCH = Bench(
     name="AliasDarteFeautrierGonnord-SAS2010-terminate",
     source="AliasDarteFeautrierGonnord-SAS2010-terminate.c",
     state=("i", "j", "k"),
     inputs=("i0", "j0", "k0"),
     build=_build,
-    domain=_domain,
 )

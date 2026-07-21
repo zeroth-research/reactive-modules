@@ -38,15 +38,10 @@ def _build():
     return prog, {"x": x, "y": y}, {"x0": x0}
 
 
-def _domain(s):
-    return s["x"] > 0
-
-
 BENCH = Bench(
     name="BrockschmidtCookFuhs-CAV2013-Introduction",
     source="BrockschmidtCookFuhs-CAV2013-Introduction.c",
     state=("x", "y"),
     inputs=("x0",),
     build=_build,
-    domain=_domain,
 )

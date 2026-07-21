@@ -41,15 +41,10 @@ def _build():
     return prog, {"a": a, "b": b}, {"a0": a0, "b0": b0}
 
 
-def _domain(s):
-    return s["a"] >= 0
-
-
 BENCH = Bench(
     name="Masse-VMCAI2014-Fig1a",
     source="Masse-VMCAI2014-Fig1a.c",
     state=("a", "b"),
     inputs=("a0", "b0"),
     build=_build,
-    domain=_domain,
 )

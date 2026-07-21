@@ -35,15 +35,10 @@ def _build():
     return prog, {"i": i, "n": n}, {"n0": n0}
 
 
-def _domain(s):
-    return s["i"] > 1
-
-
 BENCH = Bench(
     name="AliasDarteFeautrierGonnord-SAS2010-ndecr",
     source="AliasDarteFeautrierGonnord-SAS2010-ndecr.c",
     state=("i", "n"),
     inputs=("n0",),
     build=_build,
-    domain=_domain,
 )

@@ -44,16 +44,10 @@ def _build():
     return prog, {"p": p, "q": q}, {"q0": q0, "p0": p0}
 
 
-def _domain(s):
-    import z3
-    return z3.And(s["q"] > 0, s["p"] > 0, s["p"] != s["q"])
-
-
 BENCH = Bench(
     name="LeikeHeizmann-TACAS2014-Ex9",
     source="LeikeHeizmann-TACAS2014-Ex9.c",
     state=("p", "q"),
     inputs=("q0", "p0"),
     build=_build,
-    domain=_domain,
 )

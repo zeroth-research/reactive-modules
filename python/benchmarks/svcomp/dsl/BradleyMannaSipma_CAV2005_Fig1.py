@@ -41,17 +41,11 @@ def _build():
     return prog, {"y1": y1, "y2": y2}, {"y1_0": y1_0, "y2_0": y2_0}
 
 
-def _domain(s):
-    import z3
-    return z3.And(s["y1"] != s["y2"], s["y1"] > 0, s["y2"] > 0)
-
-
 BENCH = Bench(
     name="BradleyMannaSipma-CAV2005-Fig1",
     source="BradleyMannaSipma-CAV2005-Fig1.c",
     state=("y1", "y2"),
     inputs=("y1_0", "y2_0"),
     build=_build,
-    domain=_domain,
-    precondition=lambda i: i["y1_0"] > 0 and i["y2_0"] > 0,
+    precondition=lambda s: [s["y1"] > 0, s["y2"] > 0],
 )

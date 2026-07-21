@@ -38,15 +38,10 @@ def _build():
     return prog, {"x": x, "y": y}, {"x0": x0, "y0": y0}
 
 
-def _domain(s):
-    return s["x"] > 0
-
-
 BENCH = Bench(
     name="ChenFlurMukhopadhyay-SAS2012-Ex2.18",
     source="ChenFlurMukhopadhyay-SAS2012-Ex2.18.c",
     state=("x", "y"),
     inputs=("x0", "y0"),
     build=_build,
-    domain=_domain,
 )

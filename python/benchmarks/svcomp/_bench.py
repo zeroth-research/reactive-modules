@@ -42,15 +42,21 @@ class Bench:
     - ``build``  : ``() -> (module, ctrl_by_name, extl_by_name)`` — builds the
                    module with fresh wires and returns name->pair maps so a
                    runner can seed Z3 symbols on the latched wires.
-    - ``domain`` : ``(latched_symbols: dict[str, z3.ArithRef]) -> z3.BoolRef`` —
-                   the loop condition as a Z3 predicate (the verification
-                   domain). Mirrors the guard used inside ``update``.
-    - ``precondition`` : optional ``(inputs: dict[str, int]) -> bool`` over the
-                   nondet inputs (keyed by ``inputs`` names). When the C guards
-                   the loop with an outer ``if (P) { ... }`` that also
-                   initialises loop variables, the checker only compares inputs
-                   satisfying ``P`` (outside ``P`` the C leaves those variables
-                   uninitialised, so there is nothing well-defined to compare).
+                   The loop guard (verification domain) is *not* declared here —
+                   it is derived from the ``update`` block (``ite(guard, body,
+                   self)``) by :mod:`._domain`, so the update is its single
+                   source of truth.
+    - ``precondition`` : optional ``(state: dict[str, T]) -> list`` giving the
+                   conjuncts of the outer ``if (P)`` entry gate over the **state
+                   variables**. It is the entry-gate counterpart of the loop
+                   guard. Written with plain comparison ops so it is
+                   *dual-mode*: evaluated on ints it yields Python bools (used by
+                   the equivalence checker and the trainer to keep only inputs
+                   whose initial state enters the loop — outside ``P`` the C
+                   leaves loop variables uninitialised); evaluated on Z3 terms it
+                   yields ``BoolRef``s (asserted at loop entry, and seeded as
+                   candidates, by invariant inference so precondition-derived
+                   facts survive as loop invariants).
     """
 
     name: str
@@ -58,8 +64,7 @@ class Bench:
     state: tuple[str, ...]
     inputs: tuple[str, ...]
     build: Callable[[], BuildResult]
-    domain: Callable[[dict], object]
-    precondition: Callable[[dict], bool] | None = None
+    precondition: Callable[[dict], list] | None = None
 
 
 def discover() -> list[Bench]:

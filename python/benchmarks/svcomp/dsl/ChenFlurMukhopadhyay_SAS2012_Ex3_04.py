@@ -39,16 +39,10 @@ def _build():
     return prog, {"x": x, "y": y, "z": z}, {"x0": x0, "y0": y0, "z0": z0}
 
 
-def _domain(s):
-    import z3
-    return z3.And(s["x"] + s["y"] >= 0, s["x"] <= s["z"])
-
-
 BENCH = Bench(
     name="ChenFlurMukhopadhyay-SAS2012-Ex3.04",
     source="ChenFlurMukhopadhyay-SAS2012-Ex3.04.c",
     state=("x", "y", "z"),
     inputs=("x0", "y0", "z0"),
     build=_build,
-    domain=_domain,
 )

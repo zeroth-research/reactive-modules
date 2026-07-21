@@ -35,15 +35,10 @@ def _build():
     return prog, {"x": x, "y": y}, {"x0": x0}
 
 
-def _domain(s):
-    return s["x"] >= s["y"]
-
-
 BENCH = Bench(
     name="HeizmannHoenickeLeikePodelski-ATVA2013-Fig4",
     source="HeizmannHoenickeLeikePodelski-ATVA2013-Fig4.c",
     state=("x", "y"),
     inputs=("x0",),
     build=_build,
-    domain=_domain,
 )

@@ -35,15 +35,10 @@ def _build():
     return prog, {"x": x}, {"x0": x0}
 
 
-def _domain(s):
-    return s["x"] != 0
-
-
 BENCH = Bench(
     name="CookSeeZuleger-TACAS2013-Fig8a",
     source="CookSeeZuleger-TACAS2013-Fig8a.c",
     state=("x",),
     inputs=("x0",),
     build=_build,
-    domain=_domain,
 )

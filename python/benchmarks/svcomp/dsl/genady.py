@@ -40,15 +40,10 @@ def _build():
     return prog, {"i": i, "j": j}, {}
 
 
-def _domain(s):
-    return (s["i"] - s["j"]) >= 1
-
-
 BENCH = Bench(
     name="genady",
     source="genady.c",
     state=("i", "j"),
     inputs=(),
     build=_build,
-    domain=_domain,
 )
