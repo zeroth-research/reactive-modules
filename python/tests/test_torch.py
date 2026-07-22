@@ -69,3 +69,37 @@ def test_float_weights_under_lia_raise():
 def test_int_weights_under_lra_raise():
     with pytest.raises(TypeError, match="floating-point"):
         Module(_to_int_weights(Net()), theory=LRA)
+
+
+# --- combinatorial (V(s')) vs sequential (V(s)) ------------------------------
+
+
+def _read_ids(m):
+    return {w.id for w in m.atoms[0].read}
+
+
+def _wait_ids(m):
+    return {w.id for w in m.atoms[0].wait}
+
+
+def test_default_is_combinatorial_reads_next_only():
+    # V(s'): memoryless — does not read the latched input, only awaits the next one.
+    m = Module(Net())
+    latched, nxt = list(m.extl)[0]
+    assert latched.id not in _read_ids(m)
+    assert nxt.id in _wait_ids(m)
+
+
+def test_sequential_reads_latched_input():
+    # V(s): sequential atom reads the latched input (and still awaits next for init).
+    m = Module(Net(), sequential=True)
+    latched, nxt = list(m.extl)[0]
+    assert latched.id in _read_ids(m)
+    assert nxt.id in _wait_ids(m)
+
+
+def test_sequential_with_lia_builds():
+    m = Module(_to_int_weights(Net()), theory=LIA, sequential=True)
+    latched, _ = list(m.extl)[0]
+    assert isinstance(latched.dtype, Sort.Int)
+    assert latched.id in _read_ids(m)
