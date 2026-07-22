@@ -89,13 +89,33 @@ def _int(e) -> int:
 
 def affine_coeffs(expr, syms):
     """(alpha, beta) with ``expr == sum(alpha_k * syms_k) + beta`` — by 0/1
-    substitution. Raises if ``expr`` is not integer-affine over ``syms``."""
+    substitution. Raises ``ValueError`` if ``expr`` is not integer-affine over
+    ``syms``.
+
+    The 0/1 sampling alone is *not* a soundness check: a non-affine term (e.g.
+    an ``ite`` from an in-loop branch, ``ite(x>0, x-1, x+1)``) evaluates to a
+    constant at each integer sample, so sampling silently returns a bogus linear
+    fit. Trusting it would certify the decrease of the wrong (linearised)
+    transition. So we verify the fit: the reconstructed form must equal ``expr``
+    on all inputs (z3-valid). Only a genuinely affine ``expr`` passes; anything else is rejected here rather than certified
+    downstream."""
     zeros = [(s, z3.IntVal(0)) for s in syms]
     beta = _int(z3.substitute(expr, *zeros))
     alpha = []
     for sk in syms:
         subs = [(s, z3.IntVal(1 if s.eq(sk) else 0)) for s in syms]
         alpha.append(_int(z3.substitute(expr, *subs)) - beta)
+
+    recon = z3.IntVal(beta)
+    for a, s in zip(alpha, syms):
+        if a:
+            recon = recon + a * s
+    diff = z3.simplify(expr - recon)
+    if not (z3.is_int_value(diff) and diff.as_long() == 0):
+        solver = z3.Solver()
+        solver.add(expr != recon)
+        if solver.check() != z3.unsat:      # not provably equal to its linear fit
+            raise ValueError(f"expression is not affine over the given symbols: {expr}")
     return alpha, beta
 
 
@@ -221,13 +241,21 @@ def find_infeasibility_certificate(A, b):
 @dataclass(frozen=True)
 class CellCert:
     """A per-cell decrease certificate: the integer system and its Farkas
-    multipliers, plus the activation patterns (for the Lean emitter)."""
+    multipliers, the activation patterns, and V's collapsed affine form at each
+    end of the step (all consumed by the Lean emitter).
+
+    ``pre_affine``/``post_affine`` are ``(coeffs, const)`` over the state columns:
+    on this cell ``V(s) = pre_affine`` and ``V(s') = post_affine`` (affine, since
+    the pattern is fixed and the transition is affine). The emitter renders them
+    as the right-hand sides of the two V-collapse lemmas."""
     A: tuple
     b: tuple
     y: tuple
     labels: tuple
     pattern_s: tuple
     pattern_sp: tuple
+    pre_affine: tuple = ((), 0)
+    post_affine: tuple = ((), 0)
 
 
 @dataclass
@@ -289,8 +317,11 @@ def certify_decrease(layers, s_syms, sp_syms, guard, invariants, delta,
         if y is None:
             return FarkasResult(False, certs, np.array(s_val, dtype=np.float64),
                                 "FAILED(uncertifiable)")
+        pre_c, pre_k = affine_coeffs(cell_s.affine, s_syms)
+        post_c, post_k = affine_coeffs(cell_sp.affine, s_syms)
         certs.append(CellCert(tuple(map(tuple, A)), tuple(b), tuple(y),
-                              tuple(labels), cell_s.pattern, cell_sp.pattern))
+                              tuple(labels), cell_s.pattern, cell_sp.pattern,
+                              (tuple(pre_c), pre_k), (tuple(post_c), post_k)))
 
         # block this joint cell so the next witness lies in a different region
         solver.add(z3.Not(z3.And(*(cell_s.constraints + cell_sp.constraints))))
