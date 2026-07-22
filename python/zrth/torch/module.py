@@ -2,7 +2,54 @@ import inspect
 import torch.nn as nn
 
 from ..zrth import Module as _BaseModule, Sort
+from ..builder import builder_for
 from ..analyzer import convert_method, resolve_wire
+
+
+def _numeric_sort(theory, n):
+    """The theory's numeric vector sort of width `n` (LRA/None -> Real, LIA -> Int,
+    BV -> BitVec32), derived the same way gym and dsl derive their interface sorts."""
+    return builder_for(theory)._numeric_wire([1, n]).dtype
+
+
+def _is_float_sort(sort) -> bool:
+    match sort:
+        case Sort.Real(_):
+            return True
+    return False
+
+
+def _validate_theory_supports_nn(theory):
+    """A neural module needs the matrix ops a `Linear`+`ReLU` net compiles to. LRA and
+    LIA provide them; BV does not (no Transpose/Linear), so reject it with a clear error
+    rather than a deep AttributeError from the builder."""
+    ns = builder_for(theory)._ns
+    missing = [op for op in ("Transpose", "Linear", "ReLU") if not hasattr(ns, op)]
+    if missing:
+        tname = getattr(theory, "__name__", "LRA")
+        raise NotImplementedError(
+            f"theory {tname} does not support neural modules (missing ops: "
+            f"{', '.join(missing)}); use LRA or LIA"
+        )
+
+
+def _validate_weight_dtypes(live_layers, theory):
+    """Weights are used as-is (no coercion), so their dtype must match the theory:
+    floating-point for Real (LRA), integer for Int/BitVec (LIA/BV). Raise otherwise."""
+    want_float = _is_float_sort(_numeric_sort(theory, 1))
+    kind = "floating-point" if want_float else "integer"
+    tname = getattr(theory, "__name__", "LRA")
+    for name, layer in live_layers.items():
+        for attr in ("weight", "bias"):
+            t = getattr(layer, attr, None)
+            if t is None:
+                continue
+            if t.is_floating_point() != want_float:
+                raise TypeError(
+                    f"theory {tname} expects {kind} weights, but layer "
+                    f"'{name or '<root>'}'.{attr} has dtype {t.dtype}; "
+                    f"quantise/cast the network to match the theory"
+                )
 
 
 def _extract_nn_module(nn_instance, theory=None, **kwargs):
@@ -35,8 +82,11 @@ def _extract_nn_module(nn_instance, theory=None, **kwargs):
     obs_size  = layer_list[0][0]
     qval_size = layer_list[-1][1]
 
-    extl = resolve_wire("extl", Sort.Real([1, obs_size]),  user_extl)
-    intf = resolve_wire("intf", Sort.Real([1, qval_size]), user_intf)
+    _validate_theory_supports_nn(theory)
+    _validate_weight_dtypes(live_layers, theory)
+
+    extl = resolve_wire("extl", _numeric_sort(theory, obs_size),  user_extl)
+    intf = resolve_wire("intf", _numeric_sort(theory, qval_size), user_intf)
 
     # Combinatorial: input wire is index 1 (next), swap the pair
     wires  = {obs_param: [extl[1], extl[0]]}
