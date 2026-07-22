@@ -11,13 +11,25 @@ from ._bench import Bench
 from zrth import z3 as zz3
 
 
+def guard_ite(sp_k, s_k):
+    """If ``sp_k`` has the DSL loop shape ``ite(guard, body, self)`` (its
+    else-branch is the variable ``s_k`` itself), return that ``ite`` node; else
+    ``None``. The one place the guard shape is recognised — used both to derive
+    the domain (the guard is ``ite.arg(0)``) and, by the Farkas verifier, to take
+    the on-guard body (``ite.arg(1)``)."""
+    if (z3.is_app(sp_k) and sp_k.decl().kind() == z3.Z3_OP_ITE
+            and sp_k.arg(2).eq(s_k)):
+        return sp_k
+    return None
+
+
 def guard_from_transition(s: dict, sp: dict, state) -> z3.BoolRef:
     """The loop guard from one symbolic step: for the first variable whose next
-    value is ``If(g, body, self)`` (else-branch == the variable), return ``g``."""
+    value is ``ite(guard, body, self)``, return ``guard``."""
     for n in state:
-        e = sp[n]
-        if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE and e.arg(2).eq(s[n]):
-            return e.arg(0)
+        ite = guard_ite(sp[n], s[n])
+        if ite is not None:
+            return ite.arg(0)
     raise ValueError("could not extract loop guard from the update "
                      "(expected update = ite(guard, body, self))")
 

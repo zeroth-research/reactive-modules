@@ -32,7 +32,7 @@ import z3
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench, INT  # noqa: F401
 from ._domain import guard_from_transition
-from ._invariants import invariant_domain
+from ._farkas import certify_decrease
 from zrth import LIA, Module, Wire
 from zrth import z3 as zz3
 from zrth.dsl import const, dslModule, nxt, relu
@@ -47,15 +47,23 @@ class Obligation:
     """The ranking obligation over the (composed) system, as Z3 terms.
 
     ``s_syms``/``sp_syms``: pre- and next-state (the transition). ``V_s``/``V_sp``:
-    V evaluated on each. ``domain``: the loop condition over ``s_syms``. A verifier
-    consumes only this — it need not know how the system was built."""
+    V evaluated on each. ``guard``: the bare loop guard over ``s_syms``.
+    ``invariants``: the inferred invariant predicates over ``s_syms``, kept
+    separate from the guard for certificate provenance. The verification domain
+    is ``guard`` ∧ ⋀``invariants`` (see :func:`verification_domain`).
+
+    ``layers`` (the integer NRF) is only needed by the Farkas/cell verifier,
+    which decomposes the network into activation-pattern cells; an SMT verifier
+    uses ``V_s``/``V_sp`` directly."""
     state: tuple[str, ...]
     s_syms: list
     sp_syms: list
     V_s: object
     V_sp: object
-    domain: object
     delta: float
+    guard: object
+    invariants: tuple = ()
+    layers: object = None
 
 
 @dataclass
@@ -148,17 +156,20 @@ def build_obligation(bench: Bench, layers, delta: float, invariants=None) -> Obl
     sp_syms = [z[ctrl[n][1]][0] for n in bench.state]
     s_map = {n: z[ctrl[n][0]][0] for n in bench.state}
     sp_map = {n: z[ctrl[n][1]][0] for n in bench.state}
-    dom = guard_from_transition(s_map, sp_map, bench.state)
-    inv = invariant_domain(invariants, s_map)
-    if inv is not None:
-        dom = z3.And(dom, inv)
+    guard = guard_from_transition(s_map, sp_map, bench.state)
+    inv_preds = tuple(f(s_map) for _, f in (invariants or []))
     return Obligation(bench.state, s_syms, sp_syms, z[vs[1]][0], z[vsp[1]][0],
-                      dom, float(delta))
+                      float(delta), guard, invariants=inv_preds, layers=layers)
 
 
 # ---------------------------------------------------------------------------
 # Verifiers  (Obligation -> VerifyResult)
 # ---------------------------------------------------------------------------
+
+def verification_domain(ob: Obligation):
+    """The states the obligation must hold on: guard ∧ invariants."""
+    return z3.And(ob.guard, *ob.invariants) if ob.invariants else ob.guard
+
 
 def _model_cex(ob: Obligation, solver: z3.Solver) -> np.ndarray:
     m = solver.model()
@@ -168,13 +179,14 @@ def _model_cex(ob: Obligation, solver: z3.Solver) -> np.ndarray:
 
 def smt_oneshot(ob: Obligation) -> VerifyResult:
     """One-shot Z3 check: V >= 0 and V(s) - V(s') >= delta on the domain."""
-    s1 = z3.Solver(); s1.add(ob.domain); s1.add(ob.V_s < 0)
+    dom = verification_domain(ob)
+    s1 = z3.Solver(); s1.add(dom); s1.add(ob.V_s < 0)
     r1 = s1.check()
     if r1 == z3.sat:
         return VerifyResult(False, _model_cex(ob, s1), status="FAILED(V<0)")
     if r1 == z3.unknown:
         return VerifyResult(False, None, status="UNKNOWN(V>=0)")
-    s2 = z3.Solver(); s2.add(ob.domain)
+    s2 = z3.Solver(); s2.add(dom)
     s2.add(ob.V_s - ob.V_sp < z3.RealVal(ob.delta))
     r2 = s2.check()
     if r2 == z3.sat:
@@ -182,6 +194,21 @@ def smt_oneshot(ob: Obligation) -> VerifyResult:
     if r2 == z3.unknown:
         return VerifyResult(False, None, status="UNKNOWN(decrease)")
     return VerifyResult(True, status="VERIFIED")
+
+
+def farkas_cell(ob: Obligation) -> VerifyResult:
+    """Cell/CEGAR Farkas verifier: certifies ``V(s) - V(s') >= delta`` per ReLU
+    cell with an exact Farkas certificate (for Lean export). ``V >= 0`` must hold
+    structurally (non-negative output layer). Sound but incomplete — cells with a
+    non-affine transition or a nonlinear/disjunctive guard atom cannot be
+    certified (returns FAILED)."""
+    W_last, b_last = ob.layers[-1]
+    if not (np.all(np.asarray(W_last) >= 0) and np.all(np.asarray(b_last) >= 0)):
+        return VerifyResult(False, status="FAILED(V>=0 not structural)")
+    r = certify_decrease(ob.layers, ob.s_syms, ob.sp_syms, ob.guard,
+                         ob.invariants, ob.delta)
+    return VerifyResult(r.verified, r.counterexample,
+                        certificate=r.certificates, status=r.status)
 
 
 # ---------------------------------------------------------------------------
