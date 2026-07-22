@@ -52,11 +52,18 @@ def _validate_weight_dtypes(live_layers, theory):
                 )
 
 
-def _extract_nn_module(nn_instance, theory=None, **kwargs):
+def _extract_nn_module(nn_instance, theory=None, sequential=False, **kwargs):
     """Analyze an nn.Module instance and extract a symbolic Module.
 
     Uses live tensor references for weight/bias so that training updates
     flow through to the symbolic module automatically.
+
+    ``sequential`` selects the kind of module built from ``forward``:
+      * ``False`` (default) — a **combinatorial** module: ``forward`` reads the
+        awaited *next* input, so it computes the output in the same step, e.g. V(s').
+      * ``True`` — a **sequential** module over the latched input, e.g. V(s):
+        ``update`` reads the *latched* input; ``init`` reads the awaited *next* input
+        (a sequential init may not read a latched wire). Both write the next output.
     """
     nn_cls = type(nn_instance)
 
@@ -88,19 +95,24 @@ def _extract_nn_module(nn_instance, theory=None, **kwargs):
     extl = resolve_wire("extl", _numeric_sort(theory, obs_size),  user_extl)
     intf = resolve_wire("intf", _numeric_sort(theory, qval_size), user_intf)
 
-    # Combinatorial: input wire is index 1 (next), swap the pair
-    wires  = {obs_param: [extl[1], extl[0]]}
-    result = [intf[1]]
-
     layer_out_features = {name: out for name, (_, out) in layers.items()}
-    forward = convert_method(
-        nn_cls.forward, wires, result, cls=nn_cls,
-        layers=layer_out_features, live_layers=live_layers,
-        theory=theory,
-    )
+
+    def _forward_terms(read_next: bool):
+        # `forward` reads its input as the variable's *latched* slot (index 0). Put the
+        # next wire there (read_next=True) to read s'; put the latched wire there
+        # (read_next=False) to read s. The output is always the next intf wire.
+        in_wire, other = (extl[1], extl[0]) if read_next else (extl[0], extl[1])
+        return convert_method(
+            nn_cls.forward, {obs_param: [in_wire, other]}, [intf[1]], cls=nn_cls,
+            layers=layer_out_features, live_layers=live_layers, theory=theory,
+        )
 
     obs = [extl, intf]
-    return dict(assign=forward, obs=obs)
+    if sequential:
+        # V(s): init awaits the next input; update reads the latched input.
+        return dict(init=_forward_terms(True), update=_forward_terms(False), obs=obs)
+    # V(s'): memoryless, reads the awaited next input.
+    return dict(assign=_forward_terms(True), obs=obs)
 
 
 class Module(_BaseModule, nn.Module):
@@ -111,22 +123,29 @@ class Module(_BaseModule, nn.Module):
     Usage:
         from zrth.torch import Module
 
-        wrapped = Module(nn_module_instance)
+        wrapped = Module(nn_module_instance)                 # combinatorial, V(s')
+        wrapped = Module(nn_module_instance, theory=LIA)      # integer (e.g. quantised) net
+        wrapped = Module(nn_module_instance, sequential=True) # sequential, V(s)
         wrapped.parameters()   # returns original nn.Module parameters
         wrapped(x)             # runs forward pass via original nn.Module
         wrapped.atoms          # symbolic module structure
+
+    ``theory`` selects the term theory / interface sorts (LRA -> Real, LIA -> Int;
+    BV is unsupported for neural modules). ``sequential`` selects whether ``forward``
+    becomes a combinatorial atom over the next input (``False``, default) or a
+    sequential atom over the latched input (``True``).
 
     Training the original nn.Module automatically updates the symbolic module
     because the Linear op holds a reference to the live weight tensors.
     """
 
-    def __new__(cls, nn_module, theory=None, **kwargs):
+    def __new__(cls, nn_module, theory=None, sequential=False, **kwargs):
         if not isinstance(nn_module, nn.Module):
             raise TypeError(f"Expected nn.Module, got {type(nn_module)}")
-        parts = _extract_nn_module(nn_module, theory=theory, **kwargs)
+        parts = _extract_nn_module(nn_module, theory=theory, sequential=sequential, **kwargs)
         return _BaseModule.__new__(cls, **parts)
 
-    def __init__(self, nn_module, theory=None, **kwargs):
+    def __init__(self, nn_module, theory=None, sequential=False, **kwargs):
         nn.Module.__init__(self)
         self.inner = nn_module
 
