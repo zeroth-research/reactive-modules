@@ -69,13 +69,7 @@ def _bool_sort(sort: Sort) -> Sort:
 def _const_tensor(op):
     """The constant tensor carried by a const op, or None (ops expose no getters)."""
     match op:
-        case (
-            LRA.ConstReal(t)
-            | LRA.ConstBool(t)
-            | LIA.ConstInt(t)
-            | LIA.ConstBool(t)
-            | BV.Const(t)
-        ):
+        case LRA.Const(t) | LIA.Const(t) | BV.Const(t):
             return t
     return None
 
@@ -133,7 +127,7 @@ class TermBuilder:
 
     def const_bool(self, value: bool, output_wire=None) -> Term:
         # Route through the theory's const() so each theory represents bools its
-        # own way (LIA/LRA ConstBool; BV Const as BitVec<1>).
+        # own way (LIA/LRA Const on a Bool wire; BV Const as BitVec<1>).
         return self.const(
             torch.tensor([[bool(value)]], dtype=torch.bool), output_wire=output_wire
         )
@@ -168,7 +162,7 @@ class TermBuilder:
             if not isinstance(const_t.itype, const_cls):
                 continue
             data = _const_tensor(const_t.itype)
-            if data is None or data.numel() != 1:
+            if data is None or data.numel() != 1 or data.dtype == torch.bool:
                 continue
             var_wire = _wire(var_t)
             s = _shape(var_wire.dtype)
@@ -325,7 +319,7 @@ class LRATermBuilder(TermBuilder):
     # LRA is linear real arithmetic: no transcendentals / generic division.
     # (sin/cos/tanh/pow/stack/tensor_get inherit the base's deferred-op errors.)
     def mul(self, a, b) -> Term:
-        result = self._try_mul_as_linear(a, b, LRA.ConstReal, torch.float32)
+        result = self._try_mul_as_linear(a, b, LRA.Const, torch.float32)
         if result is not None:
             return result
         raise NonLinearError("LRA")
@@ -333,7 +327,7 @@ class LRATermBuilder(TermBuilder):
     def matmul(self, a, b) -> Term:
         a_wire, b_wire = _wire(a), _wire(b)
         out_shape = [_shape(a_wire.dtype)[0], _shape(b_wire.dtype)[1]]
-        if isinstance(a, Term) and isinstance(a.itype, LRA.ConstReal):
+        if isinstance(a, Term) and isinstance(a.itype, LRA.Const):
             no_bias = torch.empty(0, 0)
             return Term(
                 LRA.Linear(_const_tensor(a.itype), no_bias),
@@ -356,9 +350,9 @@ class LRATermBuilder(TermBuilder):
         tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
         if tensor.dtype == torch.bool:
             w = output_wire or Wire(Sort.Bool(shape))
-            return Term.constant(LRA.ConstBool(tensor), [w])
+            return Term.constant(LRA.Const(tensor), [w])
         w = output_wire or Wire(Sort.Real(shape))
-        return Term.constant(LRA.ConstReal(tensor), [w])
+        return Term.constant(LRA.Const(tensor), [w])
 
 
 class LIATermBuilder(TermBuilder):
@@ -397,7 +391,7 @@ class LIATermBuilder(TermBuilder):
         return self._binary_op(LIA.Ne, _bool_sort(_dtype(a)), a, b)
 
     def mul(self, a, b) -> Term:
-        result = self._try_mul_as_linear(a, b, LIA.ConstInt, torch.int64)
+        result = self._try_mul_as_linear(a, b, LIA.Const, torch.int64)
         if result is not None:
             return result
         raise NonLinearError("LIA")
@@ -405,7 +399,7 @@ class LIATermBuilder(TermBuilder):
     def matmul(self, a, b) -> Term:
         a_wire, b_wire = _wire(a), _wire(b)
         out_shape = [_shape(a_wire.dtype)[0], _shape(b_wire.dtype)[1]]
-        if isinstance(a, Term) and isinstance(a.itype, LIA.ConstInt):
+        if isinstance(a, Term) and isinstance(a.itype, LIA.Const):
             no_bias = torch.empty(0, 0)
             return Term(
                 LIA.Linear(_const_tensor(a.itype), no_bias),
@@ -427,9 +421,9 @@ class LIATermBuilder(TermBuilder):
         tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
         if tensor.dtype == torch.bool:
             w = output_wire or Wire(Sort.Bool(shape))
-            return Term.constant(LIA.ConstBool(tensor), [w])
+            return Term.constant(LIA.Const(tensor), [w])
         w = output_wire or Wire(Sort.Int(shape))
-        return Term.constant(LIA.ConstInt(tensor), [w])
+        return Term.constant(LIA.Const(tensor), [w])
 
 
 class BVTermBuilder(TermBuilder):

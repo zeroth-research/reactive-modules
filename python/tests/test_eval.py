@@ -53,10 +53,10 @@ def _make_counter():
     """Simple counter: init x=0, update x'=x+1."""
     x = (Wire(Sort.Int([1, 1])), Wire(Sort.Int([1, 1])))
 
-    init = [Term(LIA.ConstInt(torch.tensor([[0]], dtype=torch.int64)), [x[1]])]
+    init = [Term(LIA.Const(torch.tensor([[0]], dtype=torch.int64)), [x[1]])]
     one = Wire(Sort.Int([1, 1]))
     update = [
-        Term(LIA.ConstInt(torch.tensor([[1]], dtype=torch.int64)), [one]),
+        Term(LIA.Const(torch.tensor([[1]], dtype=torch.int64)), [one]),
         Term(LIA.Add(), [x[1]], [x[0], one]),
     ]
     m = Module.sequential(init, update, [x])
@@ -98,8 +98,8 @@ def test_boolean_logic():
     c = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
 
     init = [
-        Term(LIA.ConstBool(torch.tensor([[True]])), [a[1]]),
-        Term(LIA.ConstBool(torch.tensor([[False]])), [b[1]]),
+        Term(LIA.Const(torch.tensor([[True]])), [a[1]]),
+        Term(LIA.Const(torch.tensor([[False]])), [b[1]]),
         Term(LIA.Not(), [c[1]], [a[1]]),
     ]
     update = [
@@ -134,8 +134,8 @@ def test_ite():
     x = (Wire(Sort.Int([1, 1])), Wire(Sort.Int([1, 1])))
 
     init = [
-        Term(LIA.ConstBool(torch.tensor([[True]])), [cond[1]]),
-        Term(LIA.ConstInt(torch.tensor([[0]], dtype=torch.int64)), [x[1]]),
+        Term(LIA.Const(torch.tensor([[True]])), [cond[1]]),
+        Term(LIA.Const(torch.tensor([[0]], dtype=torch.int64)), [x[1]]),
     ]
 
     one = Wire(Sort.Int([1, 1]))
@@ -145,8 +145,8 @@ def test_ite():
 
     update = [
         Term(LIA.Not(), [cond[1]], [cond[0]]),
-        Term(LIA.ConstInt(torch.tensor([[1]], dtype=torch.int64)), [one]),
-        Term(LIA.ConstInt(torch.tensor([[2]], dtype=torch.int64)), [two]),
+        Term(LIA.Const(torch.tensor([[1]], dtype=torch.int64)), [one]),
+        Term(LIA.Const(torch.tensor([[2]], dtype=torch.int64)), [two]),
         Term(LIA.Add(), [tmp1], [x[0], one]),
         Term(LIA.Add(), [tmp2], [x[0], two]),
         Term(LIA.Ite(), [x[1]], [cond[0], tmp1, tmp2]),
@@ -174,7 +174,7 @@ def test_tensor_ops():
     data = (Wire(Sort.Int([1, 4])), Wire(Sort.Int([1, 4])))
 
     init = [
-        Term(LIA.ConstInt(torch.tensor([[-1, 2, 3, -4]], dtype=torch.int64)), [data[1]]),
+        Term(LIA.Const(torch.tensor([[-1, 2, 3, -4]], dtype=torch.int64)), [data[1]]),
     ]
     update = [
         Term(LIA.ReLU(), [data[1]], [data[0]]),
@@ -203,8 +203,8 @@ def test_comparisons():
     lt_wire = Wire(Sort.Bool([1, 1]))
 
     init = [
-        Term(LIA.ConstInt(torch.tensor([[3]], dtype=torch.int64)), [a[1]]),
-        Term(LIA.ConstInt(torch.tensor([[5]], dtype=torch.int64)), [b[1]]),
+        Term(LIA.Const(torch.tensor([[3]], dtype=torch.int64)), [a[1]]),
+        Term(LIA.Const(torch.tensor([[5]], dtype=torch.int64)), [b[1]]),
         Term(LIA.Eq(), [eq_wire], [a[1], b[1]]),
         Term(LIA.Lt(), [lt_wire], [a[1], b[1]]),
     ]
@@ -213,7 +213,7 @@ def test_comparisons():
     eq_wire2 = Wire(Sort.Bool([1, 1]))
     lt_wire2 = Wire(Sort.Bool([1, 1]))
     update = [
-        Term(LIA.ConstInt(torch.tensor([[1]], dtype=torch.int64)), [one]),
+        Term(LIA.Const(torch.tensor([[1]], dtype=torch.int64)), [one]),
         Term(LIA.Add(), [a[1]], [a[0], one]),
         Term(LIA.Id(), [b[1]], [b[0]]),
         Term(LIA.Eq(), [eq_wire2], [a[0], b[0]]),
@@ -250,7 +250,7 @@ def test_env_inputs():
     env = (Wire(Sort.Int([1, 1])), Wire(Sort.Int([1, 1])))
 
     init = [
-        Term(LIA.ConstInt(torch.tensor([[0]], dtype=torch.int64)), [x[1]]),
+        Term(LIA.Const(torch.tensor([[0]], dtype=torch.int64)), [x[1]]),
     ]
     update = [
         Term(LIA.Add(), [x[1]], [x[0], env[1]]),
@@ -276,8 +276,8 @@ def _make_twobitcounter():
     enable = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
 
     init = [
-        Term(LIA.ConstBool(torch.tensor([[False]])), [b0[1]]),
-        Term(LIA.ConstBool(torch.tensor([[False]])), [b1[1]]),
+        Term(LIA.Const(torch.tensor([[False]])), [b0[1]]),
+        Term(LIA.Const(torch.tensor([[False]])), [b1[1]]),
     ]
 
     not_b0 = Wire(Sort.Bool([1, 1]))

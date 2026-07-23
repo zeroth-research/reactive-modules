@@ -43,6 +43,58 @@ def space_to_dtype(space, theory, is_action: bool) -> Sort:
         raise ValueError(f"Unsupported gym space type: {type(space).__name__}")
 
 
+def _normalize_attrs(attrs, prvt_names):
+    """Resolve the user-supplied `attrs` into a {name: Sort | (latched, next) pair}
+    override map for private-state wires.
+
+    `attrs` may be:
+      - None                          -> no overrides (everything inferred)
+      - a single Sort                 -> apply that sort to every private attr
+      - a dict {name: Sort | pair}    -> per-attr override; other attrs stay inferred
+
+    Names not among the private-state attributes raise (typo guard). Unlisted attrs
+    fall back to inference at the call site.
+    """
+    if attrs is None:
+        return {}
+    if isinstance(attrs, Sort):
+        return {name: attrs for name in prvt_names}
+    if isinstance(attrs, dict):
+        unknown = set(attrs) - set(prvt_names)
+        if unknown:
+            raise ValueError(
+                f"attrs names {sorted(unknown)} are not private-state attributes; "
+                f"known: {sorted(prvt_names)}"
+            )
+        return dict(attrs)
+    raise TypeError(
+        f"attrs must be a Sort or a dict of them, got {type(attrs).__name__}"
+    )
+
+
+def _resolve_attr_wire(name, spec):
+    """Turn an `attrs` override (a Sort, or a (latched, next) wire pair) into a
+    validated [latched, next] wire pair."""
+    if isinstance(spec, Sort):
+        return wire_pair(spec)
+    is_pair = (
+        isinstance(spec, (list, tuple))
+        and len(spec) == 2
+        and all(isinstance(w, Wire) for w in spec)
+    )
+    if is_pair:
+        if spec[0].dtype != spec[1].dtype:
+            raise ValueError(
+                f"attrs['{name}']: latched/next dtype mismatch "
+                f"({spec[0].dtype} vs {spec[1].dtype})"
+            )
+        return list(spec)
+    raise TypeError(
+        f"attrs['{name}'] must be a Sort or a (latched, next) wire pair, "
+        f"got {type(spec).__name__}"
+    )
+
+
 def _value_to_const_term(value, wire, builder):
     """Create a constant Term that writes a Python value to a wire."""
     if isinstance(value, torch.Tensor):
@@ -121,6 +173,7 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
         "terminated": kwargs.pop("terminated", None),
         "truncated": kwargs.pop("truncated", None),
     }
+    attrs = kwargs.pop("attrs", None)
 
     action_param = next(
         p for p in inspect.signature(env_cls.step).parameters if p != "self"
@@ -143,8 +196,14 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
         env_cls, ["reset", "step"], init_attrs=init_attrs, base_cls=gym.Env
     )
 
+    # Private-state wires: an explicit `attrs` override wins; otherwise infer.
+    attr_overrides = _normalize_attrs(attrs, prvt)
     prvt_wires = {
-        name: wire_pair(infer_dtype(name, attr_vals.get(name), _builder))
+        name: (
+            _resolve_attr_wire(name, attr_overrides[name])
+            if name in attr_overrides
+            else wire_pair(infer_dtype(name, attr_vals.get(name), _builder))
+        )
         for name in prvt
     }
 
@@ -249,6 +308,9 @@ class Env(Module, gym.Wrapper):
         Env(..., interpret=True)            → run every atom through the IR interpreter
                                               (no real-env delegation)
         Env(..., theory=LIA|BV|LRA)         → select the term theory (default LRA)
+        Env(gym_env, attrs=...)             → override inferred private-state sorts/wires:
+                                              a Sort for all, or {name: Sort | (latched, next)}
+                                              per attr (unlisted attrs stay inferred)
     """
 
     def __new__(cls, *args, **kwargs):
@@ -273,6 +335,9 @@ class Env(Module, gym.Wrapper):
 
         if len(raw_envs) > 1 or (len(raw_envs) == 1 and backing_env is not None):
             raise ValueError("Env accepts at most 1 gym.Env, got multiple")
+
+        if "attrs" in kwargs and len(raw_envs) != 1:
+            raise TypeError("attrs= only applies when extracting from a gym.Env")
 
         # Extract Module from raw gym.Env if present
         wire_names = {}

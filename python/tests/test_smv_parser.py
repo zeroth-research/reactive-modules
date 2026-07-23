@@ -33,7 +33,7 @@ def test_counter_basic():
 
 
 def test_counter_init_terms():
-    """counter.smv: init(x) := 0 should produce a ConstInt(0) term."""
+    """counter.smv: init(x) := 0 should produce a Const(0) term."""
     text = (FIXTURES / "counter.smv").read_text()
     module, name_map = parse_smv(text)
 

@@ -17,6 +17,7 @@ from .gym import Env
 from .smv import parse_smv
 from .smt import z3
 
-# Submodule access: from zrth.gym import Env ; from zrth.torch import Module
+# Submodule access: from zrth.sugar import Module ; from zrth.gym import Env
+from . import sugar as sugar
 from . import gym as gym
 from . import torch as torch
