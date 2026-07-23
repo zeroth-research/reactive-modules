@@ -1,15 +1,15 @@
-"""dslModule: a reactive Module you write by subclassing (à la ``torch.nn.Module``).
+"""``zrth.build``: author a reactive Module by subclassing (à la ``torch.nn.Module``).
 
-Subclass ``dslModule``, pass a ``theory`` and the ``ctrl`` (and optional ``extl``)
+Subclass ``build.Module``, pass a ``theory`` and the ``ctrl`` (and optional ``extl``)
 variables — each a ``(latched, next)`` **wire pair** — and override ``init`` / ``update``
 to return the next-state values as a tuple aligned with ``ctrl``. **Instantiating the
 subclass *is* a base Module** — ``init`` / ``update`` run and the sequential module is
 built in the constructor.
 
     from zrth import LIA, Sort, Wire
-    from zrth.dsl import dslModule
+    from zrth.build import Module
 
-    class Counter(dslModule):
+    class Counter(Module):
         def init(self):            return 0
         def update(self, ctrl):    return ctrl + 1
 
@@ -24,26 +24,26 @@ built in the constructor.
 are external inputs: they are declared but their next value is *not* driven here (the base
 Module classifies undriven wires as ``extl``, so a module with ``extl`` is open).
 
-Only **sequential** modules are built here; the base ``Module`` also has ``combinatorial`` /
-``parallel``, which the DSL does not expose yet (combinatorial logic may instead come from the
-torch front-end).
+Only **sequential** modules are built here; the base Module also has ``combinatorial`` /
+``parallel``, which this front-end does not expose yet (combinatorial logic may instead
+come from the torch front-end).
 
 Config comes from **constructor kwargs** (``theory=``, ``ctrl=``, ``extl=``). Two base-class
 constraints force this (both flagged for design review):
   * it cannot flow through ``super().__init__`` — the base Module is a frozen pyo3 class
-    whose constructor runs at ``__new__`` (before any ``__init__``), so ``dslModule`` builds
-    there; and
-  * config *class attributes* named ``ctrl``/``extl`` would shadow ``Module``'s own
+    whose constructor runs at ``__new__`` (before any ``__init__``), so this builds there;
+    and
+  * config *class attributes* named ``ctrl``/``extl`` would shadow the base Module's own
     ``ctrl``/``extl`` getters, so those names can't be reused declaratively.
 """
 
 import inspect
 
-from .zrth import Module, Term
+from .zrth import Module as _BaseModule, Term
 from .expr import expr, cast, nxt, ite, eq, ne, relu, argmax, collecting, Expr  # re-exported for authoring
 
-# Public authoring surface: `from zrth.dsl import dslModule, expr, nxt, ite, cast, ...`
-__all__ = ["dslModule", "expr", "cast", "nxt", "ite", "eq", "ne", "relu", "argmax", "Expr"]
+# Public authoring surface: `from zrth.build import Module, expr, nxt, ite, cast, ...`
+__all__ = ["Module", "expr", "cast", "nxt", "ite", "eq", "ne", "relu", "argmax", "Expr"]
 
 
 def _as_tuple(r) -> tuple:
@@ -81,7 +81,7 @@ def _build_block(theory, ctrl_vars, fn, ctrl_arg, extl_arg, is_init) -> list:
     return terms
 
 
-class dslModule(Module):
+class Module(_BaseModule):
     def __new__(cls, *, theory=None, ctrl=None, extl=None, name=None):
         if theory is None or ctrl is None:
             raise TypeError(

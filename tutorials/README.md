@@ -10,7 +10,7 @@ Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
 ## Termination examples
 
-Worked examples that model a C program as a `dslModule`, load a ranking function, and verify termination with Z3 (each in its own folder):
+Worked examples that model a C program as a `build.Module`, load a ranking function, and verify termination with Z3 (each in its own folder):
 
 - **cairo/**: `while (x != 0) x = x - 1` — disjunctive guard; terminates over the integers.
 - **decrement_1d/**: the simplest terminating loop, `while (x > 0) x = x - 1`.
