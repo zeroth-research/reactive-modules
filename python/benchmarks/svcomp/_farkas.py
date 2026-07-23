@@ -261,9 +261,22 @@ class CellCert:
 @dataclass
 class FarkasResult:
     verified: bool
-    certificates: list           # list[CellCert]
+    certificates: list           # list[PathCert]
     counterexample: object = None
     status: str = ""
+
+
+@dataclass(frozen=True)
+class PathCert:
+    """One affine path of the loop body: its path condition ``guard`` (the loop
+    guard strengthened by the branch literals taken along the path), its affine
+    next-state ``body`` (z3 exprs over the pre-state symbols), and the per-cell
+    decrease certificates on it. The paths partition the loop guard, so the union
+    of their ``Step`` relations is the loop's transition — hence termination of
+    the union (every path strictly drops ``V``) is termination of the program."""
+    guard: object
+    body: tuple
+    cells: tuple
 
 
 def _on_guard_body(sp_syms, s_syms):
@@ -276,23 +289,70 @@ def _on_guard_body(sp_syms, s_syms):
     return body
 
 
-def certify_decrease(layers, s_syms, sp_syms, guard, invariants, delta,
-                     max_iters: int = 1000) -> FarkasResult:
-    """CEGAR: repeatedly find an uncovered in-domain state, certify the decrease
-    on its cell via Farkas, and block that cell — until the domain is exhausted
-    (VERIFIED) or a cell yields a real counterexample / cannot be certified."""
-    body = _on_guard_body(sp_syms, s_syms)
+# ---------------------------------------------------------------------------
+# Path splitting: expand in-loop branches into affine paths
+# ---------------------------------------------------------------------------
+
+def _find_ite_cond(e):
+    """The condition of some ``ite`` node in ``e`` (depth-first), or ``None``."""
+    if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE:
+        return e.arg(0)
+    for c in e.children():
+        r = _find_ite_cond(c)
+        if r is not None:
+            return r
+    return None
+
+
+def _select(e, cond, truth: bool):
+    """``e`` with ``cond`` pinned to ``truth`` — every ``ite(cond, ..)`` collapses
+    to its taken branch (substitute the condition, then simplify)."""
+    return z3.simplify(z3.substitute(e, (cond, z3.BoolVal(truth))))
+
+
+def enumerate_paths(body, guard):
+    """Expand the (possibly branching) next-state ``body`` into affine paths.
+
+    An in-loop branch appears as a nested ``ite`` in ``body``. Splitting on each
+    ``ite`` condition both ways yields, at the leaves, a next-state with no
+    ``ite`` left — a single affine map — under the path condition ``guard ∧
+    branch-literals``. Returns ``[(path_guard, affine_body), ...]``; the paths
+    partition the guard, so their union is exactly the loop's transition."""
+    cond = None
+    for e in body:
+        cond = _find_ite_cond(e)
+        if cond is not None:
+            break
+    if cond is None:
+        return [(guard, body)]
+    then_body = [_select(e, cond, True) for e in body]
+    else_body = [_select(e, cond, False) for e in body]
+    return (enumerate_paths(then_body, z3.And(guard, cond))
+            + enumerate_paths(else_body, z3.And(guard, z3.Not(cond))))
+
+
+def _feasible(pred) -> bool:
+    s = z3.Solver()
+    s.add(pred)
+    return s.check() == z3.sat
+
+
+def _certify_path(layers, s_syms, body, guard, invariants, delta, max_iters):
+    """CEGAR over one affine path: certify the decrease on every cell of
+    ``guard ∧ invariants`` under next-state ``body``. Repeatedly find an
+    uncovered in-domain state, certify its cell via Farkas, and block it — until
+    the path's domain is exhausted. Returns ``(ok, cells, counterexample, status)``."""
     dom = z3.And(guard, *invariants) if invariants else guard
     solver = z3.Solver()
     solver.add(dom)
-    certs: list[CellCert] = []
+    cells: list[CellCert] = []
 
     for _ in range(max_iters):
         r = solver.check()
         if r == z3.unsat:
-            return FarkasResult(True, certs, status="VERIFIED")
+            return True, cells, None, "VERIFIED"
         if r == z3.unknown:
-            return FarkasResult(False, certs, status="UNKNOWN")
+            return False, cells, None, "UNKNOWN"
 
         m = solver.model()
         s_val = [m.eval(x, model_completion=True).as_long() for x in s_syms]
@@ -304,26 +364,46 @@ def certify_decrease(layers, s_syms, sp_syms, guard, invariants, delta,
         d_concrete = m.eval(cell_s.affine - cell_sp.affine,
                             model_completion=True).as_long()
         if d_concrete < delta:
-            return FarkasResult(False, certs, np.array(s_val, dtype=np.float64),
-                                "FAILED(decrease)")
+            return False, cells, np.array(s_val, dtype=np.float64), "FAILED(decrease)"
 
         try:
             A, b, labels = build_integer_system(cell_s, cell_sp, guard,
                                                 list(invariants), s_syms, delta)
-        except ValueError:        # non-affine transition (in-loop branching, v1)
-            return FarkasResult(False, certs, np.array(s_val, dtype=np.float64),
-                                "FAILED(non-affine)")
+        except ValueError:        # non-affine even after splitting (nondet, etc.)
+            return False, cells, np.array(s_val, dtype=np.float64), "FAILED(non-affine)"
         y = find_infeasibility_certificate(A, b)
         if y is None:
-            return FarkasResult(False, certs, np.array(s_val, dtype=np.float64),
-                                "FAILED(uncertifiable)")
+            return False, cells, np.array(s_val, dtype=np.float64), "FAILED(uncertifiable)"
         pre_c, pre_k = affine_coeffs(cell_s.affine, s_syms)
         post_c, post_k = affine_coeffs(cell_sp.affine, s_syms)
-        certs.append(CellCert(tuple(map(tuple, A)), tuple(b), tuple(y),
+        cells.append(CellCert(tuple(map(tuple, A)), tuple(b), tuple(y),
                               tuple(labels), cell_s.pattern, cell_sp.pattern,
                               (tuple(pre_c), pre_k), (tuple(post_c), post_k)))
 
         # block this joint cell so the next witness lies in a different region
         solver.add(z3.Not(z3.And(*(cell_s.constraints + cell_sp.constraints))))
 
-    return FarkasResult(False, certs, status="FAILED(max_iters)")
+    return False, cells, None, "FAILED(max_iters)"
+
+
+def certify_decrease(layers, s_syms, sp_syms, guard, invariants, delta,
+                     max_iters: int = 1000) -> FarkasResult:
+    """Certify the loop's decrease by splitting its body into affine paths
+    (:func:`enumerate_paths`) and certifying each with the cell/CEGAR engine
+    (:func:`_certify_path`). Every feasible path must strictly drop ``V``; the
+    result carries one :class:`PathCert` per path (a non-branching loop is a
+    single path, so this subsumes the scalar single-path case)."""
+    body = _on_guard_body(sp_syms, s_syms)
+    paths: list[PathCert] = []
+    for pguard, pbody in enumerate_paths(body, guard):
+        dom = z3.And(pguard, *invariants) if invariants else pguard
+        if not _feasible(dom):
+            continue                       # dead path (guard unsat) — never taken
+        ok, cells, cex, status = _certify_path(
+            layers, s_syms, pbody, pguard, invariants, delta, max_iters)
+        if not ok:
+            return FarkasResult(False, [], cex, status)
+        paths.append(PathCert(pguard, tuple(pbody), tuple(cells)))
+    if not paths:
+        return FarkasResult(False, [], None, "FAILED(no feasible path)")
+    return FarkasResult(True, paths, None, "VERIFIED")

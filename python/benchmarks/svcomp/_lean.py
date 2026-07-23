@@ -16,12 +16,10 @@ proving the program terminates, against the vendored ``lean/`` substrate
     them, ``lex_step`` (``V`` strictly drops on every guarded step);
   * ``program_terminates`` — no infinite run — via ``no_infinite_run_lex``.
 
-Scope (v1): scalar single loop, single affine path, single hidden layer. Unlike
-nuTerm's relational SSA encoding (packed ``(pre ‖ post)`` state, ``pre_slice`` /
-``post_slice`` projections), our reactive-module transition is *functional*
-(``s' = body(s)``), so the proof is over the pre-state columns with
-``post_state`` an affine map. Invariants are emitted as trusted hypotheses (their
-initiation/consecution is checked Python-side, not re-proven here).
+Scope: scalar (single-component) ranking function, single loop with a single
+hidden layer; in-loop branching is handled by *path-splitting* — the body's
+nested ``ite``s are expanded into affine paths (:func:`._farkas.enumerate_paths`),
+one namespace each, and ``Step`` is the union of the per-path relations.
 
 The emitter is pure formatting: every number comes verbatim from the captured
 certificate or the network weights.
@@ -33,18 +31,12 @@ from pathlib import Path
 import numpy as np
 import z3
 
-from ._farkas import CellCert, _flatten_and, _on_guard_body, affine_coeffs
-
-
-class UnsupportedProgram(Exception):
-    """The program is outside the emitter's v1 scope (scalar single loop, single
-    affine path) — e.g. an in-loop branch makes the transition non-affine. We
-    refuse to emit rather than silently linearise it into an unsound proof."""
+from ._farkas import CellCert, _flatten_and, affine_coeffs
 
 
 def _contains_ite(e) -> bool:
-    """True if a z3 term still has an ``ite`` — for a next-state expression that
-    means in-loop branching (the guard ``ite`` has already been peeled off)."""
+    """True if a z3 term still has an ``ite`` — a path body must have none (all
+    in-loop branches are split out by ``enumerate_paths`` before emission)."""
     if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE:
         return True
     return any(_contains_ite(c) for c in e.children())
@@ -406,16 +398,16 @@ def _emit_collapse(idx: int, side: str, input_term: str, extra_unfold: list[str]
     )
 
 
-def _emit_path(path: str, certs, layers, guard, invariants, s_syms, sp_syms) -> str:
+def _emit_path(path: str, pcert, layers, invariants, s_syms) -> str:
     n = len(s_syms)
-    trans_lean = _render_conjuncts(guard, s_syms)
+    certs = pcert.cells
+    trans_lean = _render_conjuncts(pcert.guard, s_syms)
     inv_lean = _render_conjuncts(z3.And(*invariants) if invariants else z3.BoolVal(True),
                                  s_syms)
     has_inv = inv_lean not in ("", "True")
-    body = _on_guard_body(sp_syms, s_syms)
-    if any(_contains_ite(e) for e in body):
-        raise UnsupportedProgram(
-            "in-loop branching: the next-state is not a single affine map")
+    body = list(pcert.body)
+    assert not any(_contains_ite(e) for e in body), \
+        "path body must be affine (enumerate_paths should have split every ite)"
     body_affines = [affine_coeffs(e, s_syms) for e in body]
 
     parts = []
@@ -464,11 +456,22 @@ def _emit_path(path: str, certs, layers, guard, invariants, s_syms, sp_syms) -> 
 # Composition: program_terminates via no_infinite_run_lex
 # ---------------------------------------------------------------------------
 
-def _emit_composition(path: str, n: int) -> str:
+def _emit_composition(path_names, n: int) -> str:
+    """``Step`` is the union of the per-path relations, and ``program_terminates``
+    applies ``no_infinite_run_lex`` to it: any step is one of the paths, and that
+    path's ``lex_step`` shows ``V`` strictly drops. A single path degenerates to
+    ``Step := path.Step`` with one case."""
+    step = " ∨ ".join(f"{p}.Step a b" for p in path_names)
+    rintro_pat = " | ".join("h" for _ in path_names)
+    bullets = "\n".join(
+        f"    · simp only [lexDec, V0]\n"
+        f"      have hx := {p}.lex_step a b h\n"
+        f"      exact Or.inl (hx)"
+        for p in path_names)
     return (
         f"def V0 : Vector {n} Int → Int := fun s => V s fzero\n\n"
-        f"/-- The program's step relation: one iteration of the loop. -/\n"
-        f"def Step (a b : Vector {n} Int) : Prop := {path}.Step a b\n\n"
+        f"/-- The program's step relation: one iteration of the loop (any path). -/\n"
+        f"def Step (a b : Vector {n} Int) : Prop := {step}\n\n"
         f"/-- The program terminates: no infinite sequence of loop iterations. -/\n"
         f"theorem program_terminates :\n"
         f"    ¬ ∃ f : Nat → Vector {n} Int, ∀ n, Step (f n) (f (n + 1)) := by\n"
@@ -477,10 +480,8 @@ def _emit_composition(path: str, n: int) -> str:
         f"    simp only [List.mem_cons, List.not_mem_nil, or_false] at hW\n"
         f"    rcases hW with rfl\n"
         f"    · exact V_nonneg s fzero\n"
-        f"  · rintro a b (h)\n"
-        f"    · simp only [lexDec, V0]\n"
-        f"      have hx := {path}.lex_step a b h\n"
-        f"      exact Or.inl (hx)"
+        f"  · rintro a b ({rintro_pat})\n"
+        f"{bullets}"
     )
 
 
@@ -494,30 +495,33 @@ _HEADER = (
 _FOOTER = "\nend Matrix\n"
 
 
-def emit_program(name: str, ob, certs) -> str:
-    """The whole ``program.lean`` proving ``name`` terminates, from the Farkas
-    ``certs`` captured on the obligation ``ob`` (scalar single loop, single path)."""
-    if not certs:
-        raise ValueError(f"{name}: no certified cells to emit")
+def emit_program(name: str, ob, paths) -> str:
+    """The whole ``program.lean`` proving ``name`` terminates, from the per-path
+    Farkas certificates (:class:`._farkas.PathCert`) captured on ``ob``. Emits the
+    network, one namespace per affine path (``loop0_path{i}``), and the
+    composition whose ``Step`` is the union of the paths."""
+    if not paths:
+        raise ValueError(f"{name}: no certified paths to emit")
     n = len(ob.s_syms)
-    path = "loop0_path0"
+    path_names = [f"loop0_path{i}" for i in range(len(paths))]
     cols = ", ".join(f"s {j} = {nm}" for j, nm in enumerate(ob.state))
+    npaths = f" ({len(paths)} paths)" if len(paths) > 1 else ""
     parts = [
-        f"/- ──── program: {name} — terminates via a ranking function.\n"
+        f"/- ──── program: {name} — terminates via a ranking function{npaths}.\n"
         f"   Columns: {cols}. ──── -/",
         _emit_network(ob.layers),
         _emit_nonneg(ob.layers),
-        _emit_path(path, certs, ob.layers, ob.guard, ob.invariants,
-                   ob.s_syms, ob.sp_syms),
-        _emit_composition(path, n),
     ]
+    for pname, pcert in zip(path_names, paths):
+        parts.append(_emit_path(pname, pcert, ob.layers, ob.invariants, ob.s_syms))
+    parts.append(_emit_composition(path_names, n))
     return _HEADER + "\n\n".join(parts) + _FOOTER
 
 
-def write_program_proof(name: str, ob, certs, out_dir: Path) -> Path:
+def write_program_proof(name: str, ob, paths, out_dir: Path) -> Path:
     """Write ``<out_dir>/<name>/program.lean`` and return its path."""
     target = Path(out_dir) / name
     target.mkdir(parents=True, exist_ok=True)
     out = target / "program.lean"
-    out.write_text(emit_program(name, ob, certs))
+    out.write_text(emit_program(name, ob, paths))
     return out
