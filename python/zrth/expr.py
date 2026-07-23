@@ -96,7 +96,7 @@ def _is_wire_pair(v) -> bool:
 
 # ---------------------------------------------------------------------------
 # Term collector: every Term is recorded, in creation (dependency) order, into
-# the innermost active `collecting()` context. build.Module opens one per block.
+# the innermost active `collecting()` context. sugar.Module opens one per block.
 # ---------------------------------------------------------------------------
 
 _open_collectors: list[list[Term]] = []

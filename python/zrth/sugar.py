@@ -1,13 +1,13 @@
-"""``zrth.build``: author a reactive Module by subclassing (à la ``torch.nn.Module``).
+"""``zrth.sugar``: author a reactive Module by subclassing (à la ``torch.nn.Module``).
 
-Subclass ``build.Module``, pass a ``theory`` and the ``ctrl`` (and optional ``extl``)
+Subclass ``sugar.Module``, pass a ``theory`` and the ``ctrl`` (and optional ``extl``)
 variables — each a ``(latched, next)`` **wire pair** — and override ``init`` / ``update``
 to return the next-state values as a tuple aligned with ``ctrl``. **Instantiating the
 subclass *is* a base Module** — ``init`` / ``update`` run and the sequential module is
 built in the constructor.
 
     from zrth import LIA, Sort, Wire
-    from zrth.build import Module
+    from zrth.sugar import Module
 
     class Counter(Module):
         def init(self):            return 0
@@ -42,7 +42,7 @@ import inspect
 from .zrth import Module as _BaseModule, Term
 from .expr import expr, cast, nxt, ite, eq, ne, relu, argmax, collecting, Expr  # re-exported for authoring
 
-# Public authoring surface: `from zrth.build import Module, expr, nxt, ite, cast, ...`
+# Public authoring surface: `from zrth.sugar import Module, expr, nxt, ite, cast, ...`
 __all__ = ["Module", "expr", "cast", "nxt", "ite", "eq", "ne", "relu", "argmax", "Expr"]
 
 
