@@ -54,7 +54,11 @@ class Obligation:
 
     ``layers`` (the integer NRF) is only needed by the Farkas/cell verifier,
     which decomposes the network into activation-pattern cells; an SMT verifier
-    uses ``V_s``/``V_sp`` directly."""
+    uses ``V_s``/``V_sp`` directly.
+
+    ``init``: the loop-entry predicate over ``s_syms`` (the init block's state
+    relations conjoined with the precondition), the premise of the emitted
+    ``initiation`` lemma. ``None`` when the init block cannot be evaluated."""
     state: tuple[str, ...]
     s_syms: list
     sp_syms: list
@@ -64,6 +68,7 @@ class Obligation:
     guard: object
     invariants: tuple = ()
     layers: object = None
+    init: object = None
 
 
 @dataclass
@@ -158,8 +163,44 @@ def build_obligation(bench: Bench, layers, delta: float, invariants=None) -> Obl
     sp_map = {n: z[ctrl[n][1]][0] for n in bench.state}
     guard = guard_from_transition(s_map, sp_map, bench.state)
     inv_preds = tuple(f(s_map) for _, f in (invariants or []))
+    init = _init_predicate(bench, s_map)
     return Obligation(bench.state, s_syms, sp_syms, z[vs[1]][0], z[vsp[1]][0],
-                      float(delta), guard, invariants=inv_preds, layers=layers)
+                      float(delta), guard, invariants=inv_preds, layers=layers,
+                      init=init)
+
+
+def _init_predicate(bench: Bench, s_map: dict):
+    """The loop-entry predicate over the pre-state symbols ``s_map``.
+
+    Runs the ``init`` block symbolically with each nondet input as a fresh symbol,
+    then conjoins ``v == <v's init value>`` per state variable, plus the
+    precondition. Inputs are substituted away first (see below), so the result is
+    a relation between state variables, e.g. ``i == n - 1``."""
+    try:
+        prog, ctrl, extl = bench.build()
+        st = {extl[name][1]: [z3.Int(f"_in_{name}")] for name in bench.inputs}
+        for atom in prog.atoms:
+            for t in atom.init:
+                st.update(zip(t.write, zz3.eval(t.itype, [st[w] for w in t.read])))
+        init_vals = {n: st[ctrl[n][1]][0] for n in bench.state}
+    except Exception:
+        return None
+    # A variable initialised to a bare input (``v := input``) holds that input at
+    # entry, so the input symbol can be replaced by v's state symbol.
+    sub = []
+    for name in bench.inputs:
+        insym = z3.Int(f"_in_{name}")
+        for v in bench.state:
+            if z3.eq(z3.simplify(init_vals[v]), insym):
+                sub.append((insym, s_map[v]))
+                break
+    conj = []
+    for n in bench.state:
+        e = z3.substitute(init_vals[n], *sub) if sub else init_vals[n]
+        conj.append(s_map[n] == e)
+    pre = bench.precondition or (lambda st: [])
+    conj += list(pre(s_map))
+    return z3.And(*conj) if conj else z3.BoolVal(True)
 
 
 # ---------------------------------------------------------------------------
