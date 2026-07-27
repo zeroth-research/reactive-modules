@@ -119,6 +119,30 @@ def test_attrs_without_gym_env_rejected():
         Env(Module(SimpleQNet(1, 2, 2)), attrs=Sort.Real([1, 1]))
 
 
+# ── attrs infer=False (fully explicit private state) ──────────────
+
+def test_infer_false_requires_every_attr():
+    # No attrs at all -> every private-state sort is undeclared -> error.
+    with pytest.raises(ValueError, match="missing"):
+        Env(SimpleEnv(), infer=False)
+
+
+def test_infer_false_with_complete_dict_builds():
+    e = Env(SimpleEnv(), attrs={"state": Sort.Real([1, 1])}, infer=False)
+    assert e.get_prvt("state")[0].dtype == Sort.Real([1, 1])
+
+
+def test_infer_false_with_single_sort_builds():
+    # a single Sort covers every private attr, so it satisfies infer=False.
+    e = Env(SimpleEnv(), attrs=Sort.Real([1, 1]), infer=False)
+    assert e.get_prvt("state")[0].dtype == Sort.Real([1, 1])
+
+
+def test_infer_false_without_gym_env_rejected():
+    with pytest.raises(TypeError, match="only applies when extracting"):
+        Env(Module(SimpleQNet(1, 2, 2)), infer=False)
+
+
 # ── Runtime ───────────────────────────────────────────────────────
 
 def test_pure_symbolic_reset_needs_inputs():

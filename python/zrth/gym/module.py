@@ -174,6 +174,7 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
         "truncated": kwargs.pop("truncated", None),
     }
     attrs = kwargs.pop("attrs", None)
+    infer = kwargs.pop("infer", True)
 
     action_param = next(
         p for p in inspect.signature(env_cls.step).parameters if p != "self"
@@ -196,8 +197,16 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
         env_cls, ["reset", "step"], init_attrs=init_attrs, base_cls=gym.Env
     )
 
-    # Private-state wires: an explicit `attrs` override wins; otherwise infer.
+    # Private-state wires: an explicit `attrs` entry wins. With infer=False the
+    # analyzer guesses nothing, so attrs must declare every private-state sort.
     attr_overrides = _normalize_attrs(attrs, prvt)
+    if not infer:
+        missing = [n for n in prvt if n not in attr_overrides]
+        if missing:
+            raise ValueError(
+                f"infer=False: attrs must declare every private-state sort; "
+                f"missing {sorted(missing)}"
+            )
     prvt_wires = {
         name: (
             _resolve_attr_wire(name, attr_overrides[name])
@@ -311,6 +320,8 @@ class Env(Module, gym.Wrapper):
         Env(gym_env, attrs=...)             → override inferred private-state sorts/wires:
                                               a Sort for all, or {name: Sort | (latched, next)}
                                               per attr (unlisted attrs stay inferred)
+        Env(gym_env, attrs=..., infer=False)→ fully explicit: attrs must declare every
+                                              private-state sort; nothing is inferred
     """
 
     def __new__(cls, *args, **kwargs):
@@ -336,8 +347,11 @@ class Env(Module, gym.Wrapper):
         if len(raw_envs) > 1 or (len(raw_envs) == 1 and backing_env is not None):
             raise ValueError("Env accepts at most 1 gym.Env, got multiple")
 
-        if "attrs" in kwargs and len(raw_envs) != 1:
-            raise TypeError("attrs= only applies when extracting from a gym.Env")
+        extract_only = [k for k in ("attrs", "infer") if k in kwargs]
+        if extract_only and len(raw_envs) != 1:
+            raise TypeError(
+                f"{', '.join(extract_only)}= only applies when extracting from a gym.Env"
+            )
 
         # Extract Module from raw gym.Env if present
         wire_names = {}
