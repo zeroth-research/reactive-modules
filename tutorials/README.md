@@ -5,6 +5,7 @@ Jupyter notebooks that walk through `zrth` step by step:
 1. **counter.ipynb**: wrapping environments and neural networks, training a ranking function, formal verification with Z3
 2. **pendulum.ipynb**: module composition with shared wires, training a controller, closed-loop verification
 3. **mountaincar.ipynb**: wrapping an unmodified gymnasium environment (`MountainCarContinuous-v0`) and matching its behavior exactly
+4. **gym_and_sugar.ipynb**: one ranking function verified identically against a gym environment and an equivalent `sugar.Module` — the two front-ends produce the same transition
 
 Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
