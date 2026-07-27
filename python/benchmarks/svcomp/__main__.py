@@ -56,8 +56,10 @@ def _run_lean(benches) -> int:
     tally: Counter[str] = Counter()
     for b in benches:
         try:
+            # the trainer verified the candidate it accepted; emit that evidence
             r = learn_ranking(b, verifier=farkas_cell)
-            res = (lc.certify(b, r.layers) if r.verified
+            res = (lc.certify(b.name, r.obligation, r.verification.certificate)
+                   if r.verified
                    else lc.CheckResult(b.name, "UNVERIFIED", detail=r.reason or ""))
         except Exception as e:                       # one benchmark must not end the run
             res = lc.CheckResult(b.name, "ERROR", detail=f"{type(e).__name__}: {e}")
