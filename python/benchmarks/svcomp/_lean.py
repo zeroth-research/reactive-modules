@@ -9,17 +9,19 @@ proving the program terminates, against the vendored ``lean/`` substrate
   * per cell: the Farkas system ``A``/``b``/``y``, the three side-condition
     goals, the ``farkas_sound`` infeasibility, and the scalar ``decrease``
     entailment (via the substrate's ``decrease_bridge`` tactic);
-  * ``trans``/``invariants`` (the loop guard, and the trusted Houdini
-    invariants), the per-cell sign regions, and ``covered`` (the cells tile the
-    guard — the CEGAR coverage guarantee, discharged by ``omega``);
+  * ``trans``/``invariants`` (the loop guard, and the Houdini invariants), the
+    per-cell sign regions, and ``covered`` (the cells tile the guard — the CEGAR
+    coverage guarantee, discharged by ``omega``);
   * the V-collapse lemmas (``V`` equals its affine piece on each cell) and, from
     them, ``lex_step`` (``V`` strictly drops on every guarded step);
-  * ``program_terminates`` — no infinite run — via ``no_infinite_run_lex``.
+  * ``initiation`` and per-path ``consecution``, proving the invariants inductive;
+  * ``program_terminates`` — from any loop-entry (``Init``) state there is no
+    infinite run of guarded steps — via ``no_infinite_run_lex``.
 
 Scope: scalar (single-component) ranking function, single loop with a single
-hidden layer; in-loop branching is handled by *path-splitting* — the body's
-nested ``ite``s are expanded into affine paths (:func:`._farkas.enumerate_paths`),
-one namespace each, and ``Step`` is the union of the per-path relations.
+hidden layer. In-loop branching is handled by *path-splitting*: the body's nested
+``ite``s are expanded into affine paths (:func:`._farkas.enumerate_paths`), one
+namespace each, and ``Step`` is the union of the per-path relations.
 
 The emitter is pure formatting: every number comes verbatim from the captured
 certificate or the network weights.
@@ -289,22 +291,19 @@ def _emit_signs_def(idx: int, cert: CellCert, n: int) -> str:
             f"  {_signs_conj(cert)}")
 
 
-def _emit_decrease(idx: int, cert: CellCert, n: int, has_inv: bool) -> str:
+def _emit_decrease(idx: int, cert: CellCert, n: int) -> str:
     """``cellK_signs s → trans s → invariants s → decrease`` via the substrate's
     one-line ``decrease_bridge`` (it rebuilds the row system and feeds
     ``cellK_infeasible``, closed by ``omega``). The full cell signs are always
     taken as a hypothesis so every support row is available."""
-    hyps = "(hg : trans s)"
-    if has_inv:
-        hyps += " (hinv : invariants s)"
-    hyps += f" (hs : cell{idx}_signs s)"
+    hyps = (f"(hg : trans s) (hinv : invariants s) (hs : cell{idx}_signs s)")
     goal = _decrease_goal(cert)
     if _trivial(cert):
         # unconditional: goal is ``(c+1) ≤ 0`` with c < 0 — omega, no certificate.
         return (f"theorem cell{idx}_decrease (s : Vector {n} Int)\n"
                 f"    {hyps} :\n    {goal} := by omega")
-    unfold = ", ".join(["trans"] + (["invariants"] if has_inv else [])
-                       + [f"cell{idx}_signs", f"cell{idx}_A", f"cell{idx}_b"])
+    unfold = ", ".join(["trans", "invariants",
+                        f"cell{idx}_signs", f"cell{idx}_A", f"cell{idx}_b"])
     return (
         f"theorem cell{idx}_decrease (s : Vector {n} Int)\n"
         f"    {hyps} :\n"
@@ -313,27 +312,23 @@ def _emit_decrease(idx: int, cert: CellCert, n: int, has_inv: bool) -> str:
     )
 
 
-def _emit_covered(certs, n: int, has_inv: bool) -> str:
-    """Every guarded state lies in a certified cell that decreases. The two
-    ingredients are kept strictly separate, matching the certificate architecture:
+def _emit_covered(certs, n: int) -> str:
+    """Every guarded state lies in a certified cell that decreases, from two
+    separate ingredients:
 
-      * **coverage** — the cells' sign regions tile the guard
-        (``guard ∧ inv → ⋁ᵢ cellᵢ_signs``): a purely combinatorial linear fact,
-        discharged by ``omega``. This is the *only* thing ``omega`` proves here.
-      * **decrease** — that ``V`` drops on the covering cell is discharged by that
-        cell's ``cellᵢ_decrease``, which is backed by the Farkas certificate
-        (``cellᵢ_infeasible``); ``omega`` never re-derives it.
+      * **coverage** — ``omega`` proves the cells' sign regions tile the guard
+        (``guard ∧ inv → ⋁ᵢ cellᵢ_signs``), a linear fact over the sign rows;
+      * **decrease** — the covering cell's ``cellᵢ_decrease`` supplies the drop,
+        backed by its Farkas certificate ``cellᵢ_infeasible``.
 
-    So the emitted proof genuinely rests on the per-cell certificates: delete them
-    and coverage no longer closes."""
-    hyps = "(hg : trans s)" + (" (hinv : invariants s)" if has_inv else "")
-    dec_args = "s hg hinv" if has_inv else "s hg"
+    Deleting a certificate therefore breaks this proof."""
+    hyps = "(hg : trans s) (hinv : invariants s)"
+    dec_args = "s hg hinv"
     disj = "\n      ∨ ".join(
         f"(cell{i}_signs s ∧ {_decrease_goal(c)})" for i, c in enumerate(certs))
     tiling = "\n      ∨ ".join(f"cell{i}_signs s" for i in range(len(certs)))
     unfold = ", ".join(
-        ["trans"] + (["invariants"] if has_inv else [])
-        + [f"cell{i}_signs" for i in range(len(certs))])
+        ["trans", "invariants"] + [f"cell{i}_signs" for i in range(len(certs))])
     tiling_block = (
         f"  have tiling : {tiling} := by\n"
         f"    simp only [{unfold}] at *\n"
@@ -398,13 +393,21 @@ def _emit_collapse(idx: int, side: str, input_term: str, extra_unfold: list[str]
     )
 
 
-def _emit_path(path: str, pcert, layers, invariants, s_syms) -> str:
+def _inv_proof(trivial_inv: bool, unfold: str) -> str:
+    """Tactic closing an invariant lemma (``initiation`` / ``consecution``):
+    ``trivial`` for the ``True`` invariant, else ``omega`` on the linear
+    entailment left by unfolding ``unfold``."""
+    if trivial_inv:
+        return "  trivial"
+    return f"  simp only [{unfold}] at *\n  omega"
+
+
+def _emit_path(path: str, pcert, s_syms, trivial_inv: bool) -> str:
+    """One affine path: its Farkas cells, ``trans``, ``covered``, ``post_state``,
+    the V-collapse lemmas, ``Step``/``lex_step``, and ``RawStep``/``consecution``."""
     n = len(s_syms)
     certs = pcert.cells
     trans_lean = _render_conjuncts(pcert.guard, s_syms)
-    inv_lean = _render_conjuncts(z3.And(*invariants) if invariants else z3.BoolVal(True),
-                                 s_syms)
-    has_inv = inv_lean not in ("", "True")
     body = list(pcert.body)
     assert not any(_contains_ite(e) for e in body), \
         "path body must be affine (enumerate_paths should have split every ite)"
@@ -414,13 +417,11 @@ def _emit_path(path: str, pcert, layers, invariants, s_syms) -> str:
     for idx, cert in enumerate(certs):
         parts.append(_emit_cell(idx, cert))
     parts.append(f"def trans (s : Vector {n} Int) : Prop :=\n  {trans_lean}")
-    if has_inv:
-        parts.append(f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}")
     for idx, cert in enumerate(certs):
         parts.append(_emit_signs_def(idx, cert, n))
     for idx, cert in enumerate(certs):
-        parts.append(_emit_decrease(idx, cert, n, has_inv))
-    parts.append(_emit_covered(certs, n, has_inv))
+        parts.append(_emit_decrease(idx, cert, n))
+    parts.append(_emit_covered(certs, n))
     parts.append(_emit_post_state(body_affines, n))
     for idx, cert in enumerate(certs):
         parts.append(_bool_vec(f"cell{idx}_pat_pre", cert.pattern_s))
@@ -431,24 +432,31 @@ def _emit_path(path: str, pcert, layers, invariants, s_syms) -> str:
 
     # The transition is functional (b = post_state a on the guard), so Step needs
     # no SSA witness: the pre-state *is* a.
-    inv_conj = " ∧ invariants a" if has_inv else ""
-    obtain = "⟨hg, hinv, hpost⟩" if has_inv else "⟨hg, hpost⟩"
-    cov_args = "a hg hinv" if has_inv else "a hg"
     branches = " | ".join("⟨hs, hd⟩" for _ in certs)
     bullets = "\n".join(
         f"  · rw [cell{idx}_pre_c0 a hs, cell{idx}_post_c0 a hs]; omega"
         for idx in range(len(certs)))
     parts.append(
         f"def Step (a b : Vector {n} Int) : Prop :=\n"
-        f"  trans a{inv_conj} ∧ post_state a = b")
+        f"  trans a ∧ invariants a ∧ post_state a = b")
     parts.append(
         f"/-- lex step of this path (strict component 0). -/\n"
         f"theorem lex_step (a b : Vector {n} Int) (h : Step a b) :\n"
         f"    V b fzero < V a fzero := by\n"
-        f"  obtain {obtain} := h\n"
+        f"  obtain ⟨hg, hinv, hpost⟩ := h\n"
         f"  subst hpost\n"
-        f"  rcases covered {cov_args} with {branches}\n"
+        f"  rcases covered a hg hinv with {branches}\n"
         f"{bullets}")
+    parts.append(
+        f"/-- One iteration of this path: the guard and the body. -/\n"
+        f"def RawStep (a b : Vector {n} Int) : Prop :=\n"
+        f"  trans a ∧ post_state a = b")
+    parts.append(
+        f"/-- Consecution: the body preserves the invariant on this path. -/\n"
+        f"theorem consecution (s : Vector {n} Int)\n"
+        f"    (hg : trans s) (hinv : invariants s) :\n"
+        f"    invariants (post_state s) := by\n"
+        f"{_inv_proof(trivial_inv, 'trans, invariants, post_state')}")
     return f"namespace {path}\n\n" + "\n\n".join(parts) + f"\n\nend {path}"
 
 
@@ -456,32 +464,87 @@ def _emit_path(path: str, pcert, layers, invariants, s_syms) -> str:
 # Composition: program_terminates via no_infinite_run_lex
 # ---------------------------------------------------------------------------
 
-def _emit_composition(path_names, n: int) -> str:
-    """``Step`` is the union of the per-path relations, and ``program_terminates``
-    applies ``no_infinite_run_lex`` to it: any step is one of the paths, and that
-    path's ``lex_step`` shows ``V`` strictly drops. A single path degenerates to
-    ``Step := path.Step`` with one case."""
+def _v0_and_step(path_names, n: int) -> str:
+    """The ranking projection ``V0`` and the whole-program step relation ``Step``
+    (the union of the per-path relations)."""
     step = " ∨ ".join(f"{p}.Step a b" for p in path_names)
-    rintro_pat = " | ".join("h" for _ in path_names)
+    return (f"def V0 : Vector {n} Int → Int := fun s => V s fzero\n\n"
+            f"/-- The program's step relation: one iteration of the loop (any path). -/\n"
+            f"def Step (a b : Vector {n} Int) : Prop := {step}")
+
+
+def _no_inf_run_body(path_names) -> str:
+    """Tactic body proving ``¬ ∃ f, ∀ _, Step ..``: ``no_infinite_run_lex`` needs
+    V ≥ 0 (``V_nonneg``) and a strict drop on every step, which each path's
+    ``lex_step`` supplies after the union is case-split."""
+    pat = " | ".join("h" for _ in path_names)
     bullets = "\n".join(
         f"    · simp only [lexDec, V0]\n"
         f"      have hx := {p}.lex_step a b h\n"
-        f"      exact Or.inl (hx)"
-        for p in path_names)
+        f"      exact Or.inl (hx)" for p in path_names)
     return (
-        f"def V0 : Vector {n} Int → Int := fun s => V s fzero\n\n"
-        f"/-- The program's step relation: one iteration of the loop (any path). -/\n"
-        f"def Step (a b : Vector {n} Int) : Prop := {step}\n\n"
-        f"/-- The program terminates: no infinite sequence of loop iterations. -/\n"
-        f"theorem program_terminates :\n"
-        f"    ¬ ∃ f : Nat → Vector {n} Int, ∀ n, Step (f n) (f (n + 1)) := by\n"
         f"  apply no_infinite_run_lex [V0] Step\n"
         f"  · intro W hW s\n"
         f"    simp only [List.mem_cons, List.not_mem_nil, or_false] at hW\n"
         f"    rcases hW with rfl\n"
         f"    · exact V_nonneg s fzero\n"
-        f"  · rintro a b ({rintro_pat})\n"
-        f"{bullets}"
+        f"  · rintro a b ({pat})\n"
+        f"{bullets}")
+
+
+def _emit_composition(path_names, n: int, init_lean: str, trivial_inv: bool) -> str:
+    """The whole-program theorem: from any ``Init`` state there is no infinite run
+    of ``RawStep`` (the guard and body, no invariant). The proof derives
+    ``invariants (f i)`` along the run by induction — ``initiation`` at the entry
+    state, the taken path's ``consecution`` at each step — which upgrades every
+    ``RawStep`` to a ``Step`` and contradicts :func:`no_inf_step`."""
+    rawstep = " ∨ ".join(f"{p}.RawStep a b" for p in path_names)
+
+    if len(path_names) == 1:
+        p = path_names[0]
+        cons_case = (f"      obtain ⟨hg, hp⟩ := hstep k\n"
+                     f"      rw [← hp]\n"
+                     f"      exact {p}.consecution (f k) hg ih")
+        step_run = (f"  obtain ⟨hg, hp⟩ := hstep i\n"
+                    f"  exact ⟨hg, hInv i, hp⟩")
+    else:
+        rc = " | ".join("h" for _ in path_names)
+        cons_case = (f"      rcases hstep k with {rc}\n" + "\n".join(
+            f"      · obtain ⟨hg, hp⟩ := h\n"
+            f"        rw [← hp]\n"
+            f"        exact {p}.consecution (f k) hg ih" for p in path_names))
+        step_bul = []
+        for i, p in enumerate(path_names):
+            inj = "Or.inr (" * i + ("Or.inl " if i < len(path_names) - 1 else "")
+            step_bul.append(f"  · obtain ⟨hg, hp⟩ := h\n"
+                            f"    exact {inj}⟨hg, hInv i, hp⟩{')' * i}")
+        step_run = f"  rcases hstep i with {rc}\n" + "\n".join(step_bul)
+
+    return (
+        f"{_v0_and_step(path_names, n)}\n\n"
+        f"def Init (s : Vector {n} Int) : Prop :=\n  {init_lean}\n\n"
+        f"/-- Initiation: the loop is entered in an invariant-satisfying state. -/\n"
+        f"theorem initiation (s : Vector {n} Int) (h : Init s) : invariants s := by\n"
+        f"{_inv_proof(trivial_inv, 'Init, invariants')}\n\n"
+        f"/-- One iteration of the loop on any path: the guard and the body. -/\n"
+        f"def RawStep (a b : Vector {n} Int) : Prop := {rawstep}\n\n"
+        f"theorem no_inf_step :\n"
+        f"    ¬ ∃ f : Nat → Vector {n} Int, ∀ m, Step (f m) (f (m + 1)) := by\n"
+        f"{_no_inf_run_body(path_names)}\n\n"
+        f"/-- The program terminates: from any loop-entry state there is no\n"
+        f"    infinite run of guarded steps. -/\n"
+        f"theorem program_terminates (s0 : Vector {n} Int) (hinit : Init s0) :\n"
+        f"    ¬ ∃ f : Nat → Vector {n} Int, f 0 = s0 ∧ ∀ i, RawStep (f i) (f (i + 1)) := by\n"
+        f"  rintro ⟨f, hf0, hstep⟩\n"
+        f"  have hInv : ∀ i, invariants (f i) := by\n"
+        f"    intro i\n"
+        f"    induction i with\n"
+        f"    | zero => rw [hf0]; exact initiation s0 hinit\n"
+        f"    | succ k ih =>\n"
+        f"{cons_case}\n"
+        f"  apply no_inf_step\n"
+        f"  refine ⟨f, fun i => ?_⟩\n"
+        f"{step_run}"
     )
 
 
@@ -498,23 +561,31 @@ _FOOTER = "\nend Matrix\n"
 def emit_program(name: str, ob, paths) -> str:
     """The whole ``program.lean`` proving ``name`` terminates, from the per-path
     Farkas certificates (:class:`._farkas.PathCert`) captured on ``ob``. Emits the
-    network, one namespace per affine path (``loop0_path{i}``), and the
-    composition whose ``Step`` is the union of the paths."""
+    network, the invariant, one namespace per affine path (``loop0_path{i}``), and
+    the composition that discharges the invariant and concludes termination."""
     if not paths:
         raise ValueError(f"{name}: no certified paths to emit")
     n = len(ob.s_syms)
     path_names = [f"loop0_path{i}" for i in range(len(paths))]
     cols = ", ".join(f"s {j} = {nm}" for j, nm in enumerate(ob.state))
     npaths = f" ({len(paths)} paths)" if len(paths) > 1 else ""
+    # Shared top-level invariant, proved inductive below by `initiation` and the
+    # per-path `consecution`; `True` when none were inferred.
+    inv_lean = (_render_conjuncts(z3.And(*ob.invariants), ob.s_syms)
+                if ob.invariants else "True")
+    trivial_inv = inv_lean == "True"
+    init_lean = ("True" if ob.init is None
+                 else _render_conjuncts(ob.init, ob.s_syms))
     parts = [
         f"/- ──── program: {name} — terminates via a ranking function{npaths}.\n"
         f"   Columns: {cols}. ──── -/",
         _emit_network(ob.layers),
         _emit_nonneg(ob.layers),
+        f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}",
     ]
     for pname, pcert in zip(path_names, paths):
-        parts.append(_emit_path(pname, pcert, ob.layers, ob.invariants, ob.s_syms))
-    parts.append(_emit_composition(path_names, n))
+        parts.append(_emit_path(pname, pcert, ob.s_syms, trivial_inv))
+    parts.append(_emit_composition(path_names, n, init_lean, trivial_inv))
     return _HEADER + "\n\n".join(parts) + _FOOTER
 
 
