@@ -139,12 +139,21 @@ def rollout(bench: Bench, n_traj: int, max_len: int, sigma: float,
 
 @dataclass
 class TrainResult:
+    """The outcome of one ``learn_ranking`` run.
+
+    ``obligation`` and ``verification`` are what the accepted candidate was
+    checked against and the verifier's verdict on it, so a caller that needs the
+    evidence — the Farkas certificates the Lean emitter consumes — reads it here
+    rather than verifying the same layers a second time. Both are ``None`` when
+    no candidate verified."""
     name: str
     verified: bool
     n_pairs: int
     final_loss: float
     layers: object = None
     reason: str | None = None
+    obligation: object = None
+    verification: object = None
 
 
 def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: int = 0,
@@ -189,8 +198,11 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
         for scale in scales:
             layers = model.to_layers(scale)
             last_layers = layers
-            if verifier(build_obligation(bench, layers, delta, invariants)).verified:
-                return TrainResult(bench.name, True, S.shape[0], final_loss, layers)
+            ob = build_obligation(bench, layers, delta, invariants)
+            res = verifier(ob)
+            if res.verified:
+                return TrainResult(bench.name, True, S.shape[0], final_loss, layers,
+                                   obligation=ob, verification=res)
     return TrainResult(bench.name, False, S.shape[0], final_loss, last_layers,
                        reason="trained but not verified")
 

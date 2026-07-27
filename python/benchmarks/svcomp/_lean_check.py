@@ -1,9 +1,9 @@
 """Kernel-check emitted proofs with the Lean toolchain.
 
-``certify(bench, layers)`` runs the Farkas verifier, emits ``program.lean`` under
-``lean/proofs/<name>/`` and compiles it against the vendored substrate, returning
-one :class:`CheckResult`. The outcome separates the ways a proof can fail to
-compile, because they call for different work:
+``certify`` emits ``program.lean`` under ``lean/proofs/<name>/`` from a
+verification's Farkas certificates and compiles it against the vendored
+substrate, returning one :class:`CheckResult`. The outcome separates the ways a
+proof can fail to compile, because they call for different work:
 
   ``CHECKED``    the proof compiled: the program's termination is kernel-verified
   ``HEARTBEAT``  the elaborator hit its heartbeat budget (coverage ``omega`` cost)
@@ -20,10 +20,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._bench import Bench
-from ._invariants import infer_invariants
 from ._lean import write_program_proof
-from ._verify_ranking import build_obligation, farkas_cell
 
 LEAN_DIR = Path(__file__).resolve().parent / "lean"
 
@@ -85,17 +82,11 @@ def _first_error(out: str) -> str:
     return out.strip().splitlines()[0] if out.strip() else ""
 
 
-def certify(bench: Bench, layers, delta: float = 1.0,
-            timeout: float = 300.0) -> CheckResult:
-    """Verify ``layers`` for ``bench`` with Farkas, emit the proof, and check it."""
-    ob = build_obligation(bench, layers, delta, infer_invariants(bench))
-    res = farkas_cell(ob)
-    if not res.verified:
-        return CheckResult(bench.name, "UNVERIFIED", detail=res.status,
-                           n_invariants=len(ob.invariants))
-    paths = res.certificate
-    counts = dict(n_paths=len(paths), n_cells=sum(len(p.cells) for p in paths),
-                  n_invariants=len(ob.invariants))
-    out = write_program_proof(bench.name, ob, paths, LEAN_DIR / "proofs")
+def certify(name: str, obligation, paths, timeout: float = 300.0) -> CheckResult:
+    """Emit the proof for ``paths`` (the per-path Farkas certificates a
+    ``farkas_cell`` run produced on ``obligation``) and compile it."""
+    out = write_program_proof(name, obligation, paths, LEAN_DIR / "proofs")
     outcome, detail = check_file(out, timeout)
-    return CheckResult(bench.name, outcome, detail=detail, **counts)
+    return CheckResult(name, outcome, n_paths=len(paths),
+                       n_cells=sum(len(p.cells) for p in paths),
+                       n_invariants=len(obligation.invariants), detail=detail)
