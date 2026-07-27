@@ -1,10 +1,9 @@
 import math
 import torch
 import inspect
-import numpy as np
 import gymnasium as gym
 
-from ..zrth import Module, Wire, Sort, LRA, LIA, BV
+from ..zrth import Module, Wire, Sort, LIA, BV
 from ..builder import builder_for, _normalize_shape, _shape
 from ..analyzer import (
     convert_method,
@@ -117,39 +116,6 @@ def _to_wire_shape(t: torch.Tensor, wire) -> torch.Tensor:
     return _ensure_1d(t)
 
 
-def _instance_to_init_attrs(instance):
-    """Reconstruct init_attrs dict from a live instance's __dict__."""
-    attrs = {}
-    for name, value in instance.__dict__.items():
-        if isinstance(value, (int, float, bool)):
-            attrs[name] = AbstractValue.const(value)
-        elif isinstance(value, torch.Tensor):
-            attrs[name] = AbstractValue.const(value)
-        elif isinstance(value, np.ndarray):
-            # Represent as np.array(<list>) CallResult so infer_dtype can extract shape
-            attrs[name] = AbstractValue.call_result(f"np.array({list(value.tolist())})")
-        elif isinstance(value, gym.spaces.Space):
-            attrs[name] = _space_to_abstract(name, value)
-    return attrs
-
-
-def _space_to_abstract(name, space):
-    """Convert a gym.spaces.Space to an AbstractValue with call_repr."""
-    if isinstance(space, gym.spaces.Discrete):
-        return AbstractValue.call_result(f"spaces.Discrete({space.n})")
-    elif isinstance(space, gym.spaces.Box):
-        shape = tuple(space.shape)
-        return AbstractValue.call_result(
-            f"spaces.Box(low={space.low.flat[0]}, high={space.high.flat[0]}, shape={shape})"
-        )
-    elif isinstance(space, gym.spaces.MultiBinary):
-        return AbstractValue.call_result(f"spaces.MultiBinary({space.n})")
-    else:
-        raise ValueError(
-            f"Cannot convert space '{name}' of type {type(space).__name__}"
-        )
-
-
 # ============================================================================
 # Env extraction
 # ============================================================================
@@ -174,7 +140,6 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
         "truncated": kwargs.pop("truncated", None),
     }
     attrs = kwargs.pop("attrs", None)
-    infer = kwargs.pop("infer", True)
 
     action_param = next(
         p for p in inspect.signature(env_cls.step).parameters if p != "self"
@@ -187,34 +152,19 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
         env_instance.observation_space, theory, is_action=False
     )
 
-    # Reset so runtime-created attrs (e.g. self.state) are populated.
-    # Reset the outermost wrapper so wrapper state is also initialized.
+    # Reset so runtime-created attrs (e.g. self.state) are populated, then
+    # classify which self.* are private state vs read-only parameters (AST-based).
     env_instance.reset()
+    prvt, params, _ = classify_attrs(env_cls, ["reset", "step"], base_cls=gym.Env)
 
-    init_attrs = _instance_to_init_attrs(raw)
-
-    prvt, params, attr_vals = classify_attrs(
-        env_cls, ["reset", "step"], init_attrs=init_attrs, base_cls=gym.Env
-    )
-
-    # Private-state wires: an explicit `attrs` entry wins. With infer=False the
-    # analyzer guesses nothing, so attrs must declare every private-state sort.
+    # Private-state sorts are always explicit: `attrs` must declare every one.
     attr_overrides = _normalize_attrs(attrs, prvt)
-    if not infer:
-        missing = [n for n in prvt if n not in attr_overrides]
-        if missing:
-            raise ValueError(
-                f"infer=False: attrs must declare every private-state sort; "
-                f"missing {sorted(missing)}"
-            )
-    prvt_wires = {
-        name: (
-            _resolve_attr_wire(name, attr_overrides[name])
-            if name in attr_overrides
-            else wire_pair(infer_dtype(name, attr_vals.get(name), _builder))
+    missing = [n for n in prvt if n not in attr_overrides]
+    if missing:
+        raise ValueError(
+            f"private-state sorts must be declared via attrs=; missing {sorted(missing)}"
         )
-        for name in prvt
-    }
+    prvt_wires = {name: _resolve_attr_wire(name, attr_overrides[name]) for name in prvt}
 
     # Bake parameters as constant terms (written to temp wires, no param interface
     # needed). Primitives that can't be wire-typed (str, None) become static_attrs
@@ -317,11 +267,10 @@ class Env(Module, gym.Wrapper):
         Env(..., interpret=True)            → run every atom through the IR interpreter
                                               (no real-env delegation)
         Env(..., theory=LIA|BV|LRA)         → select the term theory (default LRA)
-        Env(gym_env, attrs=...)             → override inferred private-state sorts/wires:
+        Env(gym_env, attrs=...)             → declare the private-state sorts/wires
+                                              (required when the env has private state):
                                               a Sort for all, or {name: Sort | (latched, next)}
-                                              per attr (unlisted attrs stay inferred)
-        Env(gym_env, attrs=..., infer=False)→ fully explicit: attrs must declare every
-                                              private-state sort; nothing is inferred
+                                              per attr
     """
 
     def __new__(cls, *args, **kwargs):
@@ -347,11 +296,8 @@ class Env(Module, gym.Wrapper):
         if len(raw_envs) > 1 or (len(raw_envs) == 1 and backing_env is not None):
             raise ValueError("Env accepts at most 1 gym.Env, got multiple")
 
-        extract_only = [k for k in ("attrs", "infer") if k in kwargs]
-        if extract_only and len(raw_envs) != 1:
-            raise TypeError(
-                f"{', '.join(extract_only)}= only applies when extracting from a gym.Env"
-            )
+        if "attrs" in kwargs and len(raw_envs) != 1:
+            raise TypeError("attrs= only applies when extracting from a gym.Env")
 
         # Extract Module from raw gym.Env if present
         wire_names = {}
