@@ -62,7 +62,7 @@ def test_training_with_shared_wires():
     plain_env = SimpleEnv()
     plain_nn = SimpleQNet(state_size=1, action_size=plain_env.action_space.n, hidden_size=2)
 
-    wrapped_env = Env(plain_env, action=action)
+    wrapped_env = Env(plain_env, action=action, attrs=Sort.Real([1, 1]))
     wrapped_nn = Module(plain_nn, extl=input_wire)
 
     print(f'Env action wires: {wrapped_env.obs[0]}')
