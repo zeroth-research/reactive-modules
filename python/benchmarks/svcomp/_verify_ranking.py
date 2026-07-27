@@ -250,18 +250,3 @@ def farkas_cell(ob: Obligation) -> VerifyResult:
                          ob.invariants, ob.delta)
     return VerifyResult(r.verified, r.counterexample,
                         certificate=r.certificates, status=r.status)
-
-
-# ---------------------------------------------------------------------------
-# Convenience wrappers (standalone use)
-# ---------------------------------------------------------------------------
-
-def verify(bench: Bench, layers, delta: float, verifier: Verifier = smt_oneshot) -> bool:
-    """True iff `verifier` discharges the ranking obligation for V=layers."""
-    return verifier(build_obligation(bench, layers, delta)).verified
-
-
-def counterexample(bench: Bench, layers, delta: float,
-                   verifier: Verifier = smt_oneshot) -> np.ndarray | None:
-    """A domain state where V fails (for CEGAR), or None if it verifies."""
-    return verifier(build_obligation(bench, layers, delta)).counterexample

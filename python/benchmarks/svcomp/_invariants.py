@@ -157,10 +157,3 @@ def infer_invariants(bench: Bench, timeout_ms: int = 2000) -> list[Candidate]:
                 changed = True
         kept = survivors
     return kept
-
-
-def invariant_domain(invariants: list[Candidate], state_map: dict):
-    """Conjoin the inferred invariants, evaluated on ``state_map``, or None."""
-    if not invariants:
-        return None
-    return z3.And(*[f(state_map) for _, f in invariants])
