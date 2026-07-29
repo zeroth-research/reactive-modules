@@ -273,10 +273,17 @@ class PathCert:
     next-state ``body`` (z3 exprs over the pre-state symbols), and the per-cell
     decrease certificates on it. The paths partition the loop guard, so the union
     of their ``Step`` relations is the loop's transition — hence termination of
-    the union (every path strictly drops ``V``) is termination of the program."""
+    the union (every path strictly drops ``V``) is termination of the program.
+
+    ``units`` holds each hidden unit's pre-activation as ``(coeffs, const)`` over
+    the pre-state columns: the first half evaluated at ``s``, the second at the
+    successor, matching the bit order of a cell's ``pattern_s + pattern_sp``. A
+    cell is the region where those expressions take the signs its pattern names,
+    which is what lets the emitter case-split on them."""
     guard: object
     body: tuple
     cells: tuple
+    units: tuple = ()
 
 
 def _on_guard_body(sp_syms, s_syms):
@@ -403,7 +410,10 @@ def certify_decrease(layers, s_syms, sp_syms, guard, invariants, delta,
             layers, s_syms, pbody, pguard, invariants, delta, max_iters)
         if not ok:
             return FarkasResult(False, [], cex, status)
-        paths.append(PathCert(pguard, tuple(pbody), tuple(cells)))
+        units = tuple(affine_coeffs(e, s_syms)
+                      for e in (_pre_activations(layers, s_syms)
+                                + _pre_activations(layers, pbody)))
+        paths.append(PathCert(pguard, tuple(pbody), tuple(cells), units))
     if not paths:
         return FarkasResult(False, [], None, "FAILED(no feasible path)")
     return FarkasResult(True, paths, None, "VERIFIED")

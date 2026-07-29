@@ -95,6 +95,15 @@ def _affine_str(coeffs, const: int) -> str:
     return expr
 
 
+def _affine_z3(coeffs, const: int, syms):
+    """``Σ cⱼ·symsⱼ + const`` as a z3 term, the counterpart of :func:`_affine_str`."""
+    e = z3.IntVal(int(const))
+    for c, sym in zip(coeffs, syms):
+        if c:
+            e = e + int(c) * sym
+    return e
+
+
 _CMP = {z3.Z3_OP_GE: "≥", z3.Z3_OP_LE: "≤", z3.Z3_OP_GT: ">",
         z3.Z3_OP_LT: "<", z3.Z3_OP_EQ: "="}
 
@@ -312,7 +321,68 @@ def _emit_decrease(idx: int, cert: CellCert, n: int) -> str:
     )
 
 
-def _emit_covered(certs, n: int) -> str:
+def _tiling_tree(pcert, invariants, s_syms):
+    """A decision tree over the hidden units' sign literals whose leaves each name
+    one certified cell.
+
+    Splitting on ``0 ≤ unitⱼ`` in turn narrows which cells a branch can still be
+    in, and a branch is finished as soon as the literals taken so far *entail* some
+    cell's sign rows — checked here, so the ``omega`` the leaf emits is known to
+    succeed. Entailment is the test rather than a match against the cell's
+    activation pattern: the cells are closed (``pre ≥ 0`` and ``pre ≤ 0`` both hold
+    at ``pre = 0``) so they overlap on their boundaries, and a state on one is
+    covered by a cell whose pattern names the opposite sign.
+
+    z3 also prunes: a branch no guarded state satisfies becomes ``dead``, which
+    keeps the tree the size of the certificate set instead of ``2^units``.
+
+    Returns ``("split", lean_literal, yes, no)``, ``("cell", index)`` or
+    ``("dead",)``; raises :class:`_Drop` if a live branch runs out of literals
+    without entailing any cell, which means the cells do not tile the guard."""
+    # Both signs of each unit are offered as literals. A cell is closed on either
+    # side, so a state where a pre-activation is exactly zero lies in cells of both
+    # polarities, and pinning only ``0 ≤ e`` leaves the covering cell's ``e ≤ 0``
+    # unproved; offering both lets such a branch settle the unit to zero.
+    lits = []
+    for coeffs, const in pcert.units:
+        lean, e = _affine_str(coeffs, const), _affine_z3(coeffs, const, s_syms)
+        lits.append((f"0 ≤ {lean}", e >= 0))
+        lits.append((f"{lean} ≤ 0", e <= 0))
+    domain = [pcert.guard, *invariants]
+    signs = [z3.And(*[_affine_z3(a, 0, s_syms) <= int(b)
+                      for a, b in _sign_rows(c)]) for c in pcert.cells]
+
+    def unsat(*claims) -> bool:
+        solver = z3.Solver()
+        solver.add(*claims)
+        return solver.check() == z3.unsat
+
+    def build(i: int, taken: list, live: list[int]):
+        if unsat(*domain, *taken):
+            return ("dead",)
+        live = [k for k in live if not unsat(*domain, *taken, signs[k])]
+        for k in live:                       # entailed => the leaf's omega closes
+            if unsat(*domain, *taken, z3.Not(signs[k])):
+                return ("cell", k)
+        while i < len(lits):                 # skip literals the branch already fixes
+            _, z3_lit = lits[i]
+            if unsat(*domain, *taken, z3_lit) or unsat(*domain, *taken, z3.Not(z3_lit)):
+                i += 1
+                continue
+            break
+        if i == len(lits):
+            raise _Drop("cells do not tile the guard")
+        lean_lit, z3_lit = lits[i]
+        yes = build(i + 1, taken + [z3_lit], live)
+        no = build(i + 1, taken + [z3.Not(z3_lit)], live)
+        if yes == ("dead",) and no == ("dead",):
+            return ("dead",)
+        return ("split", lean_lit, yes, no)
+
+    return build(0, [], list(range(len(pcert.cells))))
+
+
+def _emit_covered(certs, n: int, tree) -> str:
     """Every guarded state lies in a certified cell that decreases, from two
     separate ingredients:
 
@@ -326,35 +396,60 @@ def _emit_covered(certs, n: int) -> str:
     dec_args = "s hg hinv"
     disj = "\n      ∨ ".join(
         f"(cell{i}_signs s ∧ {_decrease_goal(c)})" for i, c in enumerate(certs))
-    tiling = "\n      ∨ ".join(f"cell{i}_signs s" for i in range(len(certs)))
-    unfold = ", ".join(
-        ["trans", "invariants"] + [f"cell{i}_signs" for i in range(len(certs))])
-    tiling_block = (
-        f"  have tiling : {tiling} := by\n"
-        f"    simp only [{unfold}] at *\n"
-        f"    omega")
     ncerts = len(certs)
     if ncerts == 1:
-        # single cell: tiling *is* cell0_signs s; no case split needed.
-        body = (f"{tiling_block}\n"
-                f"  exact ⟨tiling, cell0_decrease {dec_args} tiling⟩")
+        unfold = ", ".join(["trans", "invariants", "cell0_signs"])
+        body = (f"  have h : cell0_signs s := by\n"
+                f"    simp only [{unfold}] at *\n"
+                f"    omega\n"
+                f"  exact ⟨h, cell0_decrease {dec_args} h⟩")
     else:
-        bullets = []
-        for i in range(ncerts):
-            inj = "Or.inr (" * i + ("Or.inl " if i < ncerts - 1 else "")
-            close = ")" * i
-            bullets.append(
-                f"  · exact {inj}⟨h, cell{i}_decrease {dec_args} h⟩{close}")
-        cases = " | ".join("h" for _ in range(ncerts))
-        body = (f"{tiling_block}\n"
-                f"  rcases tiling with {cases}\n"
-                + "\n".join(bullets))
+        body = _emit_tiling_tree(certs, tree, dec_args)
     return (
         f"theorem covered (s : Vector {n} Int)\n"
         f"    {hyps} :\n"
         f"    {disj} := by\n"
         f"{body}"
     )
+
+
+def _disjunct(i: int, total: int) -> tuple[str, str]:
+    """``Or`` injections wrapping the ``i``-th of ``total`` disjuncts."""
+    return "Or.inr (" * i + ("Or.inl " if i < total - 1 else ""), ")" * i
+
+
+def _emit_tiling_tree(certs, tree, dec_args: str, depth: int = 1) -> str:
+    """The coverage case split, as a decision tree over the hidden units' sign
+    literals rather than one ``omega`` over the whole disjunction.
+
+    ``omega`` decides a conjunctive goal in time linear in its facts, but the flat
+    tiling goal ``⋁ᵢ cellᵢ_signs`` negates into a clause per cell, and the case
+    split across those clauses grows exponentially in the number of cells — 12
+    cells already exhaust the elaborator's budget. Splitting on the sign literals
+    instead reaches, at each leaf, an assignment that names one cell, so every
+    ``omega`` sees a conjunction: the accumulated literals entailing that cell's
+    sign rows. The tree is built with the guard in hand, so a branch no state can
+    satisfy is closed rather than explored (see :func:`_tiling_tree`)."""
+    pad = "  " * depth
+    kind = tree[0]
+    if kind == "cell":
+        i = tree[1]
+        inj, close = _disjunct(i, len(certs))
+        unfold = ", ".join(["trans", "invariants", f"cell{i}_signs"])
+        return (f"{pad}refine {inj}⟨?_, ?_⟩{close}\n"
+                f"{pad}· simp only [{unfold}] at *\n"
+                f"{pad}  omega\n"
+                f"{pad}· exact cell{i}_decrease {dec_args} (by\n"
+                f"{pad}    simp only [{unfold}] at *\n"
+                f"{pad}    omega)")
+    if kind == "dead":
+        return (f"{pad}exfalso\n"
+                f"{pad}simp only [trans, invariants] at *\n"
+                f"{pad}omega")
+    _, lit, yes, no = tree
+    return (f"{pad}by_cases hs{depth} : {lit}\n"
+            f"{pad}· {_emit_tiling_tree(certs, yes, dec_args, depth + 1).lstrip()}\n"
+            f"{pad}· {_emit_tiling_tree(certs, no, dec_args, depth + 1).lstrip()}")
 
 
 def _emit_post_state(body_affines, n: int) -> str:
@@ -402,11 +497,12 @@ def _inv_proof(trivial_inv: bool, unfold: str) -> str:
     return f"  simp only [{unfold}] at *\n  omega"
 
 
-def _emit_path(path: str, pcert, s_syms, trivial_inv: bool) -> str:
+def _emit_path(path: str, pcert, s_syms, trivial_inv: bool, invariants) -> str:
     """One affine path: its Farkas cells, ``trans``, ``covered``, ``post_state``,
     the V-collapse lemmas, ``Step``/``lex_step``, and ``RawStep``/``consecution``."""
     n = len(s_syms)
     certs = pcert.cells
+    tree = _tiling_tree(pcert, invariants, s_syms) if len(certs) > 1 else None
     trans_lean = _render_conjuncts(pcert.guard, s_syms)
     body = list(pcert.body)
     assert not any(_contains_ite(e) for e in body), \
@@ -421,7 +517,7 @@ def _emit_path(path: str, pcert, s_syms, trivial_inv: bool) -> str:
         parts.append(_emit_signs_def(idx, cert, n))
     for idx, cert in enumerate(certs):
         parts.append(_emit_decrease(idx, cert, n))
-    parts.append(_emit_covered(certs, n))
+    parts.append(_emit_covered(certs, n, tree))
     parts.append(_emit_post_state(body_affines, n))
     for idx, cert in enumerate(certs):
         parts.append(_bool_vec(f"cell{idx}_pat_pre", cert.pattern_s))
@@ -584,7 +680,8 @@ def emit_program(name: str, ob, paths) -> str:
         f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}",
     ]
     for pname, pcert in zip(path_names, paths):
-        parts.append(_emit_path(pname, pcert, ob.s_syms, trivial_inv))
+        parts.append(_emit_path(pname, pcert, ob.s_syms, trivial_inv,
+                                ob.invariants))
     parts.append(_emit_composition(path_names, n, init_lean, trivial_inv))
     return _HEADER + "\n\n".join(parts) + _FOOTER
 
