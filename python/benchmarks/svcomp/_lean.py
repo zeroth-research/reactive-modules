@@ -274,10 +274,6 @@ def _emit_nonneg(layers) -> str:
 # Per-path proof (single affine path): predicates, decrease, coverage, collapse
 # ---------------------------------------------------------------------------
 
-def _signs_conj(cert: CellCert) -> str:
-    rows = [f"({_affine_str(a, 0)} ≤ {int(b)})" for a, b in _sign_rows(cert)]
-    return " ∧ ".join(rows) if rows else "True"
-
 
 def _decrease_goal(cert: CellCert) -> str:
     """``(b_nd + 1) ≤ Σ aⱼ·sⱼ`` — the negation of the ``neg_decrease`` row
@@ -295,9 +291,16 @@ def _emit_cell(idx: int, cert: CellCert) -> str:
     return manifest + "\n\n" + _emit_system(f"cell{idx}", A, b, y, labels)
 
 
-def _emit_signs_def(idx: int, cert: CellCert, n: int) -> str:
+def _emit_signs_def(idx: int, cert: CellCert, n: int, units) -> str:
+    """The cell's region, one condition per hidden unit: ``0 ≤ e`` where its
+    pattern says active, ``e ≤ 0`` where inactive. Same inequalities as the
+    certificate's sign rows, written in the form :func:`_tiling_tree` splits on so
+    a coverage leaf's hypotheses match the conjuncts it has to produce."""
+    pattern = tuple(cert.pattern_s) + tuple(cert.pattern_sp)
+    conj = [f"(0 ≤ {_affine_str(c, k)})" if active else f"({_affine_str(c, k)} ≤ 0)"
+            for (c, k), active in zip(units, pattern)]
     return (f"def cell{idx}_signs (s : Vector {n} Int) : Prop :=\n"
-            f"  {_signs_conj(cert)}")
+            f"  {' ∧ '.join(conj) if conj else 'True'}")
 
 
 def _emit_decrease(idx: int, cert: CellCert, n: int) -> str:
@@ -435,13 +438,10 @@ def _emit_tiling_tree(certs, tree, dec_args: str, depth: int = 1) -> str:
     if kind == "cell":
         i = tree[1]
         inj, close = _disjunct(i, len(certs))
-        unfold = ", ".join(["trans", "invariants", f"cell{i}_signs"])
-        return (f"{pad}refine {inj}⟨?_, ?_⟩{close}\n"
-                f"{pad}· simp only [{unfold}] at *\n"
+        return (f"{pad}have hc : cell{i}_signs s := by\n"
+                f"{pad}  simp only [trans, invariants, cell{i}_signs] at *\n"
                 f"{pad}  omega\n"
-                f"{pad}· exact cell{i}_decrease {dec_args} (by\n"
-                f"{pad}    simp only [{unfold}] at *\n"
-                f"{pad}    omega)")
+                f"{pad}exact {inj}⟨hc, cell{i}_decrease {dec_args} hc⟩{close}")
     if kind == "dead":
         return (f"{pad}exfalso\n"
                 f"{pad}simp only [trans, invariants] at *\n"
@@ -466,24 +466,51 @@ def _bool_vec(name: str, p) -> str:
     return _vec_def(name, p, lambda x: "true" if x else "false", typ="Bool")
 
 
+def _emit_activations(name: str, units, input_term: str, extra_unfold: list[str],
+                      n: int) -> str:
+    """The hidden layer's pre-activations at ``input_term``, as an explicit vector
+    plus the lemma identifying it with ``affine nrf_W0 nrf_b0 <input>``.
+
+    Unfolding that matrix product is the single most expensive step in a proof, and
+    it is the same work for every cell of a path. Doing it once here leaves each
+    cell's mask side-goal to be read off an explicit affine form."""
+    arms = "\n".join(f"  | {_fin(j)} => {_affine_str(c, k)}"
+                     for j, (c, k) in enumerate(units))
+    cases = "\n".join(
+        f"  | {_fin(j)} => simp only [{', '.join([_SIMP, name] + extra_unfold)}] <;> omega"
+        for j in range(len(units)))
+    return (
+        f"def {name} (s : Vector {n} Int) : Vector {len(units)} Int := fun\n{arms}\n\n"
+        f"theorem {name}_eq (s : Vector {n} Int) :\n"
+        f"    affine nrf_W0 nrf_b0 ({input_term}) = {name} s := by\n"
+        f"  funext i\n"
+        f"  match i with\n{cases}"
+    )
+
+
 def _emit_collapse(idx: int, side: str, input_term: str, extra_unfold: list[str],
-                   affine, n: int) -> str:
+                   affine, n: int, acts: str) -> str:
     """``V (<input>) fzero = <affine piece>`` on the cell: rewrite the ReLU layer
-    by the cell's mask (``reluᵥ_eq_mask``, its side goal closed from the signs),
-    unfold, and ``omega``."""
+    by the cell's mask (``reluᵥ_eq_mask``, its side goal read off ``acts``), unfold
+    the output layer, and ``omega``."""
     coeffs, const = affine
     pat = f"cell{idx}_pat_{side}"
-    simp_tail = ", ".join([_SIMP, pat] + extra_unfold)
+    small = ", ".join([acts, pat, "forall_fin_succ", "forall_fin_zero",
+                       "↓reduceIte", "and_true", "true_and", "implies_true",
+                       "Bool.true_eq_false", "Bool.false_eq_true", "false_implies",
+                       "forall_const", "imp_self"])
+    simp_tail = ", ".join([_SIMP, pat, acts] + extra_unfold)
     return (
         f"theorem cell{idx}_{side}_c0 (s : Vector {n} Int)\n"
         f"    (hs : cell{idx}_signs s) : V ({input_term}) fzero = {_affine_str(coeffs, const)} := by\n"
         f"  simp only [cell{idx}_signs] at hs\n"
         f"  have hmask : reluᵥ (affine nrf_W0 nrf_b0 ({input_term}))\n"
         f"             = mask {pat} (affine nrf_W0 nrf_b0 ({input_term})) := by\n"
+        f"    rw [{acts}_eq]\n"
         f"    apply reluᵥ_eq_mask\n"
-        f"    simp only [{simp_tail}] <;> omega\n"
+        f"    simp only [{small}] <;> omega\n"
         f"  simp only [V]\n"
-        f"  rw [hmask]\n"
+        f"  rw [hmask, {acts}_eq]\n"
         f"  simp only [{simp_tail}] <;> omega"
     )
 
@@ -514,17 +541,22 @@ def _emit_path(path: str, pcert, s_syms, trivial_inv: bool, invariants) -> str:
         parts.append(_emit_cell(idx, cert))
     parts.append(f"def trans (s : Vector {n} Int) : Prop :=\n  {trans_lean}")
     for idx, cert in enumerate(certs):
-        parts.append(_emit_signs_def(idx, cert, n))
+        parts.append(_emit_signs_def(idx, cert, n, pcert.units))
     for idx, cert in enumerate(certs):
         parts.append(_emit_decrease(idx, cert, n))
     parts.append(_emit_covered(certs, n, tree))
     parts.append(_emit_post_state(body_affines, n))
+    m = len(pcert.units) // 2
+    parts.append(_emit_activations("pre_act", pcert.units[:m], "s", [], n))
+    parts.append(_emit_activations("post_act", pcert.units[m:], "post_state s",
+                                   ["post_state"], n))
     for idx, cert in enumerate(certs):
         parts.append(_bool_vec(f"cell{idx}_pat_pre", cert.pattern_s))
         parts.append(_bool_vec(f"cell{idx}_pat_post", cert.pattern_sp))
-        parts.append(_emit_collapse(idx, "pre", "s", [], cert.pre_affine, n))
+        parts.append(_emit_collapse(idx, "pre", "s", [], cert.pre_affine, n,
+                                    "pre_act"))
         parts.append(_emit_collapse(idx, "post", "post_state s", ["post_state"],
-                                    cert.post_affine, n))
+                                    cert.post_affine, n, "post_act"))
 
     # The transition is functional (b = post_state a on the guard), so Step needs
     # no SSA witness: the pre-state *is* a.
