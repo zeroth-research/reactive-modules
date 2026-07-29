@@ -21,11 +21,7 @@ proving the program terminates, against the vendored ``lean/`` substrate
 Scope: scalar (single-component) ranking function, single loop with a single
 hidden layer. In-loop branching is handled by *path-splitting*: the body's nested
 ``ite``s are expanded into affine paths (:func:`._farkas.enumerate_paths`), one
-namespace each, and ``Step`` is the union of the per-path relations.
-
-The emitter is pure formatting: every number comes verbatim from the captured
-certificate or the network weights.
-"""
+namespace each, and ``Step`` is the union of the per-path relations."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -291,19 +287,34 @@ def _emit_cell(idx: int, cert: CellCert) -> str:
     return manifest + "\n\n" + _emit_system(f"cell{idx}", A, b, y, labels)
 
 
-def _emit_signs_def(idx: int, cert: CellCert, n: int, units) -> str:
-    """The cell's region, one condition per hidden unit: ``0 ≤ e`` where its
-    pattern says active, ``e ≤ 0`` where inactive. Same inequalities as the
-    certificate's sign rows, written in the form :func:`_tiling_tree` splits on so
-    a coverage leaf's hypotheses match the conjuncts it has to produce."""
-    pattern = tuple(cert.pattern_s) + tuple(cert.pattern_sp)
+def _patterns(certs):
+    """Index the distinct pre- and post-activation patterns of a path's cells, and
+    map each cell to its pair of indices.
+
+    ``V``'s affine piece on a cell is fixed by which ReLUs the pattern leaves
+    active, so cells sharing a pattern share a collapse lemma. Naming the lemmas
+    by pattern rather than by cell emits each one once."""
+    pre, post, of_cell = {}, {}, []
+    for c in certs:
+        p, q = tuple(c.pattern_s), tuple(c.pattern_sp)
+        pre.setdefault(p, (len(pre), c.pre_affine))
+        post.setdefault(q, (len(post), c.post_affine))
+        of_cell.append((pre[p][0], post[q][0]))
+    return pre, post, of_cell
+
+
+def _emit_signs_def(name: str, pattern, units, n: int) -> str:
+    """A pattern's region, one condition per hidden unit: ``0 ≤ e`` where the
+    pattern says active, ``e ≤ 0`` where inactive. Written in the form
+    :func:`_tiling_tree` splits on, so a coverage leaf's hypotheses match the
+    conjuncts it has to produce."""
     conj = [f"(0 ≤ {_affine_str(c, k)})" if active else f"({_affine_str(c, k)} ≤ 0)"
             for (c, k), active in zip(units, pattern)]
-    return (f"def cell{idx}_signs (s : Vector {n} Int) : Prop :=\n"
+    return (f"def {name} (s : Vector {n} Int) : Prop :=\n"
             f"  {' ∧ '.join(conj) if conj else 'True'}")
 
 
-def _emit_decrease(idx: int, cert: CellCert, n: int) -> str:
+def _emit_decrease(idx: int, cert: CellCert, n: int, pats: tuple) -> str:
     """``cellK_signs s → trans s → invariants s → decrease`` via the substrate's
     one-line ``decrease_bridge`` (it rebuilds the row system and feeds
     ``cellK_infeasible``, closed by ``omega``). The full cell signs are always
@@ -314,8 +325,10 @@ def _emit_decrease(idx: int, cert: CellCert, n: int) -> str:
         # unconditional: goal is ``(c+1) ≤ 0`` with c < 0 — omega, no certificate.
         return (f"theorem cell{idx}_decrease (s : Vector {n} Int)\n"
                 f"    {hyps} :\n    {goal} := by omega")
-    unfold = ", ".join(["trans", "invariants",
-                        f"cell{idx}_signs", f"cell{idx}_A", f"cell{idx}_b"])
+    i, j = pats
+    unfold = ", ".join(["trans", "invariants", f"cell{idx}_signs",
+                        f"pre_signs_{i}", f"post_signs_{j}",
+                        f"cell{idx}_A", f"cell{idx}_b"])
     return (
         f"theorem cell{idx}_decrease (s : Vector {n} Int)\n"
         f"    {hyps} :\n"
@@ -385,7 +398,7 @@ def _tiling_tree(pcert, invariants, s_syms):
     return build(0, [], list(range(len(pcert.cells))))
 
 
-def _emit_covered(certs, n: int, tree) -> str:
+def _emit_covered(certs, n: int, tree, pat_of_cell) -> str:
     """Every guarded state lies in a certified cell that decreases, from two
     separate ingredients:
 
@@ -401,13 +414,15 @@ def _emit_covered(certs, n: int, tree) -> str:
         f"(cell{i}_signs s ∧ {_decrease_goal(c)})" for i, c in enumerate(certs))
     ncerts = len(certs)
     if ncerts == 1:
-        unfold = ", ".join(["trans", "invariants", "cell0_signs"])
+        unfold = ", ".join(["trans", "invariants", "cell0_signs"]
+                           + [f"{sd}_signs_{k}" for sd, k in
+                              zip(("pre", "post"), pat_of_cell[0])])
         body = (f"  have h : cell0_signs s := by\n"
                 f"    simp only [{unfold}] at *\n"
                 f"    omega\n"
                 f"  exact ⟨h, cell0_decrease {dec_args} h⟩")
     else:
-        body = _emit_tiling_tree(certs, tree, dec_args)
+        body = _emit_tiling_tree(certs, tree, dec_args, pat_of_cell)
     return (
         f"theorem covered (s : Vector {n} Int)\n"
         f"    {hyps} :\n"
@@ -421,7 +436,7 @@ def _disjunct(i: int, total: int) -> tuple[str, str]:
     return "Or.inr (" * i + ("Or.inl " if i < total - 1 else ""), ")" * i
 
 
-def _emit_tiling_tree(certs, tree, dec_args: str, depth: int = 1) -> str:
+def _emit_tiling_tree(certs, tree, dec_args: str, pat_of_cell, depth: int = 1) -> str:
     """The coverage case split, as a decision tree over the hidden units' sign
     literals rather than one ``omega`` over the whole disjunction.
 
@@ -438,8 +453,10 @@ def _emit_tiling_tree(certs, tree, dec_args: str, depth: int = 1) -> str:
     if kind == "cell":
         i = tree[1]
         inj, close = _disjunct(i, len(certs))
+        halves = ", ".join(f"{sd}_signs_{k}" for sd, k in
+                           zip(("pre", "post"), pat_of_cell[i]))
         return (f"{pad}have hc : cell{i}_signs s := by\n"
-                f"{pad}  simp only [trans, invariants, cell{i}_signs] at *\n"
+                f"{pad}  simp only [trans, invariants, cell{i}_signs, {halves}] at *\n"
                 f"{pad}  omega\n"
                 f"{pad}exact {inj}⟨hc, cell{i}_decrease {dec_args} hc⟩{close}")
     if kind == "dead":
@@ -448,8 +465,8 @@ def _emit_tiling_tree(certs, tree, dec_args: str, depth: int = 1) -> str:
                 f"{pad}omega")
     _, lit, yes, no = tree
     return (f"{pad}by_cases hs{depth} : {lit}\n"
-            f"{pad}· {_emit_tiling_tree(certs, yes, dec_args, depth + 1).lstrip()}\n"
-            f"{pad}· {_emit_tiling_tree(certs, no, dec_args, depth + 1).lstrip()}")
+            f"{pad}· {_emit_tiling_tree(certs, yes, dec_args, pat_of_cell, depth + 1).lstrip()}\n"
+            f"{pad}· {_emit_tiling_tree(certs, no, dec_args, pat_of_cell, depth + 1).lstrip()}")
 
 
 def _emit_post_state(body_affines, n: int) -> str:
@@ -488,22 +505,22 @@ def _emit_activations(name: str, units, input_term: str, extra_unfold: list[str]
     )
 
 
-def _emit_collapse(idx: int, side: str, input_term: str, extra_unfold: list[str],
+def _emit_collapse(side: str, k: int, input_term: str, extra_unfold: list[str],
                    affine, n: int, acts: str) -> str:
-    """``V (<input>) fzero = <affine piece>`` on the cell: rewrite the ReLU layer
-    by the cell's mask (``reluᵥ_eq_mask``, its side goal read off ``acts``), unfold
-    the output layer, and ``omega``."""
+    """``V (<input>) fzero = <affine piece>`` wherever the pattern holds: rewrite
+    the ReLU layer by the pattern's mask (``reluᵥ_eq_mask``, its side goal read off
+    ``acts``), unfold the output layer, and ``omega``."""
     coeffs, const = affine
-    pat = f"cell{idx}_pat_{side}"
+    pat, signs = f"{side}_pat_{k}", f"{side}_signs_{k}"
     small = ", ".join([acts, pat, "forall_fin_succ", "forall_fin_zero",
                        "↓reduceIte", "and_true", "true_and", "implies_true",
                        "Bool.true_eq_false", "Bool.false_eq_true", "false_implies",
                        "forall_const", "imp_self"])
     simp_tail = ", ".join([_SIMP, pat, acts] + extra_unfold)
     return (
-        f"theorem cell{idx}_{side}_c0 (s : Vector {n} Int)\n"
-        f"    (hs : cell{idx}_signs s) : V ({input_term}) fzero = {_affine_str(coeffs, const)} := by\n"
-        f"  simp only [cell{idx}_signs] at hs\n"
+        f"theorem {side}_c0_{k} (s : Vector {n} Int)\n"
+        f"    (hs : {signs} s) : V ({input_term}) fzero = {_affine_str(coeffs, const)} := by\n"
+        f"  simp only [{signs}] at hs\n"
         f"  have hmask : reluᵥ (affine nrf_W0 nrf_b0 ({input_term}))\n"
         f"             = mask {pat} (affine nrf_W0 nrf_b0 ({input_term})) := by\n"
         f"    rw [{acts}_eq]\n"
@@ -540,30 +557,36 @@ def _emit_path(path: str, pcert, s_syms, trivial_inv: bool, invariants) -> str:
     for idx, cert in enumerate(certs):
         parts.append(_emit_cell(idx, cert))
     parts.append(f"def trans (s : Vector {n} Int) : Prop :=\n  {trans_lean}")
-    for idx, cert in enumerate(certs):
-        parts.append(_emit_signs_def(idx, cert, n, pcert.units))
-    for idx, cert in enumerate(certs):
-        parts.append(_emit_decrease(idx, cert, n))
-    parts.append(_emit_covered(certs, n, tree))
-    parts.append(_emit_post_state(body_affines, n))
     m = len(pcert.units) // 2
+    pre_pats, post_pats, pat_of_cell = _patterns(certs)
+    for pattern, (k, _) in pre_pats.items():
+        parts.append(_emit_signs_def(f"pre_signs_{k}", pattern, pcert.units[:m], n))
+    for pattern, (k, _) in post_pats.items():
+        parts.append(_emit_signs_def(f"post_signs_{k}", pattern, pcert.units[m:], n))
+    for idx, (i, j) in enumerate(pat_of_cell):
+        parts.append(f"def cell{idx}_signs (s : Vector {n} Int) : Prop :=\n"
+                     f"  pre_signs_{i} s ∧ post_signs_{j} s")
+    for idx, cert in enumerate(certs):
+        parts.append(_emit_decrease(idx, cert, n, pat_of_cell[idx]))
+    parts.append(_emit_covered(certs, n, tree, pat_of_cell))
+    parts.append(_emit_post_state(body_affines, n))
     parts.append(_emit_activations("pre_act", pcert.units[:m], "s", [], n))
     parts.append(_emit_activations("post_act", pcert.units[m:], "post_state s",
                                    ["post_state"], n))
-    for idx, cert in enumerate(certs):
-        parts.append(_bool_vec(f"cell{idx}_pat_pre", cert.pattern_s))
-        parts.append(_bool_vec(f"cell{idx}_pat_post", cert.pattern_sp))
-        parts.append(_emit_collapse(idx, "pre", "s", [], cert.pre_affine, n,
-                                    "pre_act"))
-        parts.append(_emit_collapse(idx, "post", "post_state s", ["post_state"],
-                                    cert.post_affine, n, "post_act"))
+    for pattern, (k, affine) in pre_pats.items():
+        parts.append(_bool_vec(f"pre_pat_{k}", pattern))
+        parts.append(_emit_collapse("pre", k, "s", [], affine, n, "pre_act"))
+    for pattern, (k, affine) in post_pats.items():
+        parts.append(_bool_vec(f"post_pat_{k}", pattern))
+        parts.append(_emit_collapse("post", k, "post_state s", ["post_state"],
+                                    affine, n, "post_act"))
 
     # The transition is functional (b = post_state a on the guard), so Step needs
     # no SSA witness: the pre-state *is* a.
     branches = " | ".join("⟨hs, hd⟩" for _ in certs)
     bullets = "\n".join(
-        f"  · rw [cell{idx}_pre_c0 a hs, cell{idx}_post_c0 a hs]; omega"
-        for idx in range(len(certs)))
+        f"  · rw [pre_c0_{i} a hs.1, post_c0_{j} a hs.2]; omega"
+        for i, j in pat_of_cell)
     parts.append(
         f"def Step (a b : Vector {n} Int) : Prop :=\n"
         f"  trans a ∧ invariants a ∧ post_state a = b")
