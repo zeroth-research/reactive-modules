@@ -353,14 +353,24 @@ def _certify_path(layers, s_syms, body, guard, invariants, delta, max_iters):
     solver = z3.Solver()
     solver.add(dom)
     cells: list[CellCert] = []
+    interior = [e != 0 for e in (_pre_activations(layers, s_syms)
+                                 + _pre_activations(layers, body))]
 
     for _ in range(max_iters):
-        r = solver.check()
-        if r == z3.unsat:
-            return True, cells, None, "VERIFIED"
-        if r == z3.unknown:
-            return False, cells, None, "UNKNOWN"
-
+        # Prefer a witness off every activation boundary. A cell is closed on both
+        # sides, so an interior state's cell covers the boundaries around it as
+        # well, and blocking it clears those slices too; a boundary witness yields
+        # a cell covering little more than the boundary itself, leaving the
+        # interior for another iteration and another set of lemmas.
+        if solver.check(*interior) != z3.sat:
+            # Finding no interior state does not mean the region is empty — what
+            # is left may be entirely boundary. Ask again without the preference
+            # before concluding the path is covered.
+            r = solver.check()
+            if r == z3.unsat:
+                return True, cells, None, "VERIFIED"
+            if r == z3.unknown:
+                return False, cells, None, "UNKNOWN"
         m = solver.model()
         s_val = [m.eval(x, model_completion=True).as_long() for x in s_syms]
         sp_val = [m.eval(e, model_completion=True).as_long() for e in body]

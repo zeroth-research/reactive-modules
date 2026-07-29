@@ -91,7 +91,18 @@ def test_emit_multi_path_unions_the_step():
     assert "namespace loop0_path0" in src and "namespace loop0_path1" in src
     assert "loop0_path0.Step a b ∨ loop0_path1.Step a b" in src
     assert "rintro a b (h | h)" in src
-    # its cells carry real certificates, applied through farkas_sound
+
+
+def test_non_trivial_cell_uses_its_certificate():
+    """A cell whose decrease needs the guard carries a Farkas system, and the
+    emitted proof reaches it through farkas_sound and decrease_bridge."""
+    layers = [(np.array([[2]]), np.array([-1])), (np.array([[1]]), np.array([0]))]
+    x = z3.Int("x")
+    s, sp = [x], [z3.If(x > 0, x - 1, x)]
+    res = certify_decrease(layers, s, sp, x > 0, (), 1.0)
+    assert res.verified, res.status
+    ob = Obligation(("x",), s, sp, None, None, 1.0, x > 0, layers=layers)
+    src = emit_program("nontrivial", ob, res.certificates)
     assert "farkas_sound" in src and "decrease_bridge" in src
 
 
