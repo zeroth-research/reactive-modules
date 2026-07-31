@@ -10,17 +10,25 @@ These pin the properties the emitted proofs rest on:
     guards partition the original guard.
   * a certificate returned by ``certify_decrease`` satisfies the three Farkas
     conditions on its own system.
+  * the cells of a certified path partition the guard, and every mask
+    under-approximates ``V`` — the two facts the asymmetric bound rests on.
 """
+import itertools
+
 import numpy as np
 import pytest
 import z3
 
 from benchmarks.svcomp._farkas import (
+    _pre_activations,
     affine_coeffs,
     atom_rows,
     certify_decrease,
     enumerate_paths,
     find_infeasibility_certificate,
+    masked_value,
+    output_weights,
+    strict_signs,
 )
 
 x, y = z3.Ints("x y")
@@ -100,6 +108,69 @@ def test_find_infeasibility_certificate_on_infeasible_system():
 
 def test_find_infeasibility_certificate_none_when_feasible():
     assert find_infeasibility_certificate([[1]], [5]) is None
+
+
+def test_cells_partition_the_domain():
+    """A cell is pinned by the successor signs alone, strict on one side and
+    non-strict on the other, so the cells cover the guard and no state lies in two
+    of them. Coverage in the emitted proof rests on this."""
+    layers = [(np.array([[1], [1]]), np.array([0, -3])),
+              (np.array([[1, 1]]), np.array([0]))]
+    res = certify_decrease(layers, [x], [z3.If(x > 0, x - 1, x)], x > 0, (), 1.0)
+    assert res.verified, res.status
+    for path in res.certificates:
+        regions = []
+        for c in path.cells:
+            lits = list(strict_signs(_pre_activations(layers, list(path.body)),
+                                     c.pattern_sp))
+            if c.pattern_s is not None:
+                lits += list(strict_signs(_pre_activations(layers, [x]),
+                                          c.pattern_s))
+            regions.append(z3.And(*lits))
+        covered = z3.Solver()
+        covered.add(path.guard, z3.Not(z3.Or(*regions)))
+        assert covered.check() == z3.unsat, "cells leave part of the guard uncovered"
+        for i in range(len(regions)):
+            for j in range(i + 1, len(regions)):
+                overlap = z3.Solver()
+                overlap.add(path.guard, regions[i], regions[j])
+                assert overlap.check() == z3.unsat, f"cells {i} and {j} overlap"
+
+
+def test_mask_never_exceeds_V():
+    """Every mask under-approximates ``V``, with no condition on the state. That
+    is what lets a cell leave the pre-state activations unconstrained, so it holds
+    for masks that match no reachable pattern too."""
+    layers = [(np.array([[1], [2]]), np.array([0, -3])),
+              (np.array([[1, 2]]), np.array([4]))]
+    pres = _pre_activations(layers, [x])
+    weights = output_weights(layers)
+    coeffs, bias = weights
+    exact = z3.Sum([c * z3.If(p > 0, p, z3.IntVal(0))
+                    for c, p in zip(coeffs, pres)]) + bias
+    for mask in itertools.product((True, False), repeat=len(pres)):
+        solver = z3.Solver()
+        solver.add(masked_value(pres, weights, mask) > exact)
+        assert solver.check() == z3.unsat, f"mask {mask} exceeds V"
+
+
+def test_certifies_mixed_output_weights_and_bias():
+    """The trained nets only ever have uniform output weights and no output bias.
+    The mask bound weights each unit by its own coefficient and carries the bias,
+    so a mixed layer has to certify as well."""
+    layers = [(np.array([[1], [1]]), np.array([0, -3])),
+              (np.array([[1, 2]]), np.array([5]))]
+    res = certify_decrease(layers, [x], [z3.If(x > 0, x - 1, x)], x > 0, (), 1.0)
+    assert res.verified, res.status
+
+
+def test_margin_the_rank_cannot_meet_is_rejected():
+    """``relu(x)`` drops by 1 at ``x = 1``, so a margin of 2 is a real
+    counterexample and must be reported, not certified."""
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    res = certify_decrease(layers, [x], [z3.If(x > 0, x - 2, x)], x > 0, (), 2.0)
+    assert not res.verified
+    assert res.status == "FAILED(decrease)"
 
 
 def test_certify_decrease_certificates_are_valid():

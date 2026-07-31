@@ -12,8 +12,10 @@ proving the program terminates, against the vendored ``lean/`` substrate
   * ``trans``/``invariants`` (the loop guard, and the Houdini invariants), the
     per-cell sign regions, and ``covered`` (the cells tile the guard — the CEGAR
     coverage guarantee, discharged by ``omega``);
-  * the V-collapse lemmas (``V`` equals its affine piece on each cell) and, from
-    them, ``lex_step`` (``V`` strictly drops on every guarded step);
+  * the two V lemmas a step needs — ``pre_lb`` (a mask under-approximates ``V(s)``,
+    no hypothesis) and ``post_c0`` (``V(s')`` equals its affine piece on the cell's
+    successor pattern) — and, from them, ``lex_step`` (``V`` strictly drops on
+    every guarded step);
   * ``initiation`` and per-path ``consecution``, proving the invariants inductive;
   * ``program_terminates`` — from any loop-entry (``Init``) state there is no
     infinite run of guarded steps — via ``no_infinite_run_lex``.
@@ -166,10 +168,12 @@ def _support(cert: CellCert):
 
 
 def _sign_rows(cert: CellCert):
-    """The full cell's sign rows (both pre ``cell_s[..]`` and post ``cell_sp[..]``
-    activation constraints) — these pin the cell for coverage and the V-collapse."""
+    """The cell's activation sign rows — the successor's ``cell_sp[..]`` and, where
+    the cell was narrowed, the pre-state's ``cell_s[..]``. These pin the cell's
+    region for coverage. Gcd-tightened duplicates are left out: they cut the same
+    integer region, and coverage reasons over the region, not the rows."""
     return [(a, b) for a, b, lbl in zip(cert.A, cert.b, cert.labels)
-            if lbl.startswith("cell_s")]
+            if lbl.startswith("cell_s") and not lbl.endswith("/int")]
 
 
 def _neg_decrease(cert: CellCert):
@@ -279,8 +283,9 @@ def _decrease_goal(cert: CellCert) -> str:
 
 
 def _emit_cell(idx: int, cert: CellCert) -> str:
-    manifest = (f"-- cell {idx}: pattern_s={list(cert.pattern_s)} "
-                f"pattern_sp={list(cert.pattern_sp)}")
+    pre = "" if cert.pattern_s is None else f" pattern_s={list(cert.pattern_s)}"
+    manifest = (f"-- cell {idx}: pattern_sp={list(cert.pattern_sp)} "
+                f"mu={list(cert.mu)}{pre}")
     if _trivial(cert):
         return manifest + f"\n-- cell {idx}: unconditional decrease (no Farkas system)"
     A, b, y, labels = _support(cert)
@@ -288,47 +293,71 @@ def _emit_cell(idx: int, cert: CellCert) -> str:
 
 
 def _patterns(certs):
-    """Index the distinct pre- and post-activation patterns of a path's cells, and
-    map each cell to its pair of indices.
+    """Index a path's distinct masks and activation patterns, and map each cell to
+    the indices it uses.
 
-    ``V``'s affine piece on a cell is fixed by which ReLUs the pattern leaves
-    active, so cells sharing a pattern share a collapse lemma. Naming the lemmas
-    by pattern rather than by cell emits each one once."""
-    pre, post, of_cell = {}, {}, []
+    Cells sharing a mask share one ``pre_lb`` lemma, and cells sharing a successor
+    pattern share one ``post_c0``, so each is emitted once and named by its index.
+
+    Returns ``(mus, posts, pres, of_cell)``. ``mus`` and ``posts`` map a pattern to
+    ``(index, affine)`` — the affine form its lemma states; ``pres`` maps to an
+    index alone, a pre-state pattern yielding only a sign definition.
+    ``of_cell[k]`` is ``(mu_idx, post_idx, pre_idx | None)``."""
+    mus, posts, pres, of_cell = {}, {}, {}, []
     for c in certs:
-        p, q = tuple(c.pattern_s), tuple(c.pattern_sp)
-        pre.setdefault(p, (len(pre), c.pre_affine))
-        post.setdefault(q, (len(post), c.post_affine))
-        of_cell.append((pre[p][0], post[q][0]))
-    return pre, post, of_cell
+        mu, q = tuple(c.mu), tuple(c.pattern_sp)
+        mus.setdefault(mu, (len(mus), c.pre_affine))
+        posts.setdefault(q, (len(posts), c.post_affine))
+        p = None if c.pattern_s is None else tuple(c.pattern_s)
+        if p is not None:
+            pres.setdefault(p, len(pres))
+        of_cell.append((mus[mu][0], posts[q][0],
+                        None if p is None else pres[p]))
+    return mus, posts, pres, of_cell
 
 
 def _emit_signs_def(name: str, pattern, units, n: int) -> str:
-    """A pattern's region, one condition per hidden unit: ``0 ≤ e`` where the
-    pattern says active, ``e ≤ 0`` where inactive. Written in the form
-    :func:`_tiling_tree` splits on, so a coverage leaf's hypotheses match the
-    conjuncts it has to produce."""
-    conj = [f"(0 ≤ {_affine_str(c, k)})" if active else f"({_affine_str(c, k)} ≤ 0)"
-            for (c, k), active in zip(units, pattern)]
+    """A pattern's region, one condition per hidden unit it pins: ``0 < e`` where
+    the pattern says active, ``e ≤ 0`` where inactive, nothing where it leaves the
+    unit open (``None`` — a pre-state pattern only pins what the certificate
+    needed).
+
+    The two forms are complementary, so the regions partition the state space and
+    a state lies in exactly one. Written in the form :func:`_tiling_tree` splits
+    on, so a coverage leaf's hypotheses match the conjuncts it has to produce."""
+    conj = [f"(0 < {_affine_str(c, k)})" if active else f"({_affine_str(c, k)} ≤ 0)"
+            for (c, k), active in zip(units, pattern) if active is not None]
     return (f"def {name} (s : Vector {n} Int) : Prop :=\n"
             f"  {' ∧ '.join(conj) if conj else 'True'}")
+
+
+def _cell_sign_defs(pats: tuple) -> list[str]:
+    """The sign definitions ``cellK_signs`` is built from: the successor pattern
+    always, plus a pre-state pattern for a narrowed cell."""
+    _, post_i, pre_i = pats
+    names = [f"post_signs_{post_i}"]
+    if pre_i is not None:
+        names.append(f"pre_signs_{pre_i}")
+    return names
 
 
 def _emit_decrease(idx: int, cert: CellCert, n: int, pats: tuple) -> str:
     """``cellK_signs s → trans s → invariants s → decrease`` via the substrate's
     one-line ``decrease_bridge`` (it rebuilds the row system and feeds
     ``cellK_infeasible``, closed by ``omega``). The full cell signs are always
-    taken as a hypothesis so every support row is available."""
+    taken as a hypothesis so every support row is available.
+
+    The decrease is stated on the *bound* — ``pre_affine - post_affine >= delta``
+    — which the mask lemma and the collapse lemma turn into the drop in ``V``."""
     hyps = (f"(hg : trans s) (hinv : invariants s) (hs : cell{idx}_signs s)")
     goal = _decrease_goal(cert)
     if _trivial(cert):
         # unconditional: goal is ``(c+1) ≤ 0`` with c < 0 — omega, no certificate.
         return (f"theorem cell{idx}_decrease (s : Vector {n} Int)\n"
                 f"    {hyps} :\n    {goal} := by omega")
-    i, j = pats
-    unfold = ", ".join(["trans", "invariants", f"cell{idx}_signs",
-                        f"pre_signs_{i}", f"post_signs_{j}",
-                        f"cell{idx}_A", f"cell{idx}_b"])
+    unfold = ", ".join(["trans", "invariants", f"cell{idx}_signs"]
+                       + _cell_sign_defs(pats)
+                       + [f"cell{idx}_A", f"cell{idx}_b"])
     return (
         f"theorem cell{idx}_decrease (s : Vector {n} Int)\n"
         f"    {hyps} :\n"
@@ -341,13 +370,12 @@ def _tiling_tree(pcert, invariants, s_syms):
     """A decision tree over the hidden units' sign literals whose leaves each name
     one certified cell.
 
-    Splitting on ``0 ≤ unitⱼ`` in turn narrows which cells a branch can still be
+    Splitting on ``0 < unitⱼ`` in turn narrows which cells a branch can still be
     in, and a branch is finished as soon as the literals taken so far *entail* some
     cell's sign rows — checked here, so the ``omega`` the leaf emits is known to
-    succeed. Entailment is the test rather than a match against the cell's
-    activation pattern: the cells are closed (``pre ≥ 0`` and ``pre ≤ 0`` both hold
-    at ``pre = 0``) so they overlap on their boundaries, and a state on one is
-    covered by a cell whose pattern names the opposite sign.
+    succeed. Entailment rather than a pattern match is the leaf test because a
+    branch can settle a cell before every literal is taken, and because the guard
+    may imply signs no literal has fixed.
 
     z3 also prunes: a branch no guarded state satisfies becomes ``dead``, which
     keeps the tree the size of the certificate set instead of ``2^units``.
@@ -355,15 +383,13 @@ def _tiling_tree(pcert, invariants, s_syms):
     Returns ``("split", lean_literal, yes, no)``, ``("cell", index)`` or
     ``("dead",)``; raises :class:`_Drop` if a live branch runs out of literals
     without entailing any cell, which means the cells do not tile the guard."""
-    # Both signs of each unit are offered as literals. A cell is closed on either
-    # side, so a state where a pre-activation is exactly zero lies in cells of both
-    # polarities, and pinning only ``0 ≤ e`` leaves the covering cell's ``e ≤ 0``
-    # unproved; offering both lets such a branch settle the unit to zero.
+    # One literal per unit: ``0 < e`` and its negation ``e ≤ 0`` are exactly the two
+    # sides a pattern names, so a single split settles the unit. The successor units
+    # come first — they alone pin a cell unless it was narrowed.
     lits = []
-    for coeffs, const in pcert.units:
+    for coeffs, const in list(pcert.post_units) + list(pcert.pre_units):
         lean, e = _affine_str(coeffs, const), _affine_z3(coeffs, const, s_syms)
-        lits.append((f"0 ≤ {lean}", e >= 0))
-        lits.append((f"{lean} ≤ 0", e <= 0))
+        lits.append((f"0 < {lean}", e > 0))
     domain = [pcert.guard, *invariants]
     signs = [z3.And(*[_affine_z3(a, 0, s_syms) <= int(b)
                       for a, b in _sign_rows(c)]) for c in pcert.cells]
@@ -415,8 +441,7 @@ def _emit_covered(certs, n: int, tree, pat_of_cell) -> str:
     ncerts = len(certs)
     if ncerts == 1:
         unfold = ", ".join(["trans", "invariants", "cell0_signs"]
-                           + [f"{sd}_signs_{k}" for sd, k in
-                              zip(("pre", "post"), pat_of_cell[0])])
+                           + _cell_sign_defs(pat_of_cell[0]))
         body = (f"  have h : cell0_signs s := by\n"
                 f"    simp only [{unfold}] at *\n"
                 f"    omega\n"
@@ -453,8 +478,7 @@ def _emit_tiling_tree(certs, tree, dec_args: str, pat_of_cell, depth: int = 1) -
     if kind == "cell":
         i = tree[1]
         inj, close = _disjunct(i, len(certs))
-        halves = ", ".join(f"{sd}_signs_{k}" for sd, k in
-                           zip(("pre", "post"), pat_of_cell[i]))
+        halves = ", ".join(_cell_sign_defs(pat_of_cell[i]))
         return (f"{pad}have hc : cell{i}_signs s := by\n"
                 f"{pad}  simp only [trans, invariants, cell{i}_signs, {halves}] at *\n"
                 f"{pad}  omega\n"
@@ -505,24 +529,53 @@ def _emit_activations(name: str, units, input_term: str, extra_unfold: list[str]
     )
 
 
-def _emit_collapse(side: str, k: int, input_term: str, extra_unfold: list[str],
-                   affine, n: int, acts: str) -> str:
-    """``V (<input>) fzero = <affine piece>`` wherever the pattern holds: rewrite
-    the ReLU layer by the pattern's mask (``reluᵥ_eq_mask``, its side goal read off
-    ``acts``), unfold the output layer, and ``omega``."""
+def _emit_lower_bound(k: int, mu, affine, n: int) -> str:
+    """``<affine> ≤ V s fzero`` — the mask bound at the pre-state, with no
+    hypothesis at all.
+
+    ``affine_mask_le`` (:file:`lean/Subgrad.lean`) holds for every pattern, so
+    the mask needs no sign conditions: masking under-approximates the ReLU layer
+    either way round. Only the identification of the masked affine layer with the
+    emitted affine form is per-mask work."""
     coeffs, const = affine
-    pat, signs = f"{side}_pat_{k}", f"{side}_signs_{k}"
+    pat = f"mu_pat_{k}"
+    return "\n\n".join([
+        _bool_vec(pat, mu),
+        f"theorem pre_lb_{k} (s : Vector {n} Int) :\n"
+        f"    {_affine_str(coeffs, const)} ≤ V s fzero := by\n"
+        f"  have heq : affine nrf_W1 nrf_b1 (mask {pat} (affine nrf_W0 nrf_b0 s)) fzero\n"
+        f"           = {_affine_str(coeffs, const)} := by\n"
+        f"    rw [pre_act_eq]\n"
+        f"    simp only [{_SIMP}, {pat}, pre_act] <;> omega\n"
+        f"  have hle := affine_mask_le nrf_W1 nrf_b1 {pat} (affine nrf_W0 nrf_b0 s)\n"
+        f"      (by simp only [{_SIMP}]) fzero\n"
+        f"  rw [heq] at hle\n"
+        f"  simp only [V]\n"
+        f"  exact hle",
+    ])
+
+
+def _emit_collapse(k: int, affine, n: int) -> str:
+    """``V (post_state s) fzero = <affine piece>`` wherever the successor pattern
+    holds: rewrite the ReLU layer by the pattern's mask (``reluᵥ_eq_mask``, its side
+    goal read off ``post_act``), unfold the output layer, and ``omega``.
+
+    Only the successor needs this exact form; the pre-state is bounded instead (see
+    :func:`_emit_lower_bound`)."""
+    coeffs, const = affine
+    pat, signs, acts = f"post_pat_{k}", f"post_signs_{k}", "post_act"
+    inp = "post_state s"
     small = ", ".join([acts, pat, "forall_fin_succ", "forall_fin_zero",
                        "↓reduceIte", "and_true", "true_and", "implies_true",
                        "Bool.true_eq_false", "Bool.false_eq_true", "false_implies",
                        "forall_const", "imp_self"])
-    simp_tail = ", ".join([_SIMP, pat, acts] + extra_unfold)
+    simp_tail = ", ".join([_SIMP, pat, acts, "post_state"])
     return (
-        f"theorem {side}_c0_{k} (s : Vector {n} Int)\n"
-        f"    (hs : {signs} s) : V ({input_term}) fzero = {_affine_str(coeffs, const)} := by\n"
+        f"theorem post_c0_{k} (s : Vector {n} Int)\n"
+        f"    (hs : {signs} s) : V ({inp}) fzero = {_affine_str(coeffs, const)} := by\n"
         f"  simp only [{signs}] at hs\n"
-        f"  have hmask : reluᵥ (affine nrf_W0 nrf_b0 ({input_term}))\n"
-        f"             = mask {pat} (affine nrf_W0 nrf_b0 ({input_term})) := by\n"
+        f"  have hmask : reluᵥ (affine nrf_W0 nrf_b0 ({inp}))\n"
+        f"             = mask {pat} (affine nrf_W0 nrf_b0 ({inp})) := by\n"
         f"    rw [{acts}_eq]\n"
         f"    apply reluᵥ_eq_mask\n"
         f"    simp only [{small}] <;> omega\n"
@@ -543,7 +596,8 @@ def _inv_proof(trivial_inv: bool, unfold: str) -> str:
 
 def _emit_path(path: str, pcert, s_syms, trivial_inv: bool, invariants) -> str:
     """One affine path: its Farkas cells, ``trans``, ``covered``, ``post_state``,
-    the V-collapse lemmas, ``Step``/``lex_step``, and ``RawStep``/``consecution``."""
+    the pre-state mask bounds and successor collapse lemmas, ``Step``/``lex_step``,
+    and ``RawStep``/``consecution``."""
     n = len(s_syms)
     certs = pcert.cells
     tree = _tiling_tree(pcert, invariants, s_syms) if len(certs) > 1 else None
@@ -557,36 +611,35 @@ def _emit_path(path: str, pcert, s_syms, trivial_inv: bool, invariants) -> str:
     for idx, cert in enumerate(certs):
         parts.append(_emit_cell(idx, cert))
     parts.append(f"def trans (s : Vector {n} Int) : Prop :=\n  {trans_lean}")
-    m = len(pcert.units) // 2
-    pre_pats, post_pats, pat_of_cell = _patterns(certs)
-    for pattern, (k, _) in pre_pats.items():
-        parts.append(_emit_signs_def(f"pre_signs_{k}", pattern, pcert.units[:m], n))
+    mus, post_pats, pre_pats, pat_of_cell = _patterns(certs)
+    for pattern, k in pre_pats.items():
+        parts.append(_emit_signs_def(f"pre_signs_{k}", pattern, pcert.pre_units, n))
     for pattern, (k, _) in post_pats.items():
-        parts.append(_emit_signs_def(f"post_signs_{k}", pattern, pcert.units[m:], n))
-    for idx, (i, j) in enumerate(pat_of_cell):
+        parts.append(_emit_signs_def(f"post_signs_{k}", pattern, pcert.post_units, n))
+    for idx, pats in enumerate(pat_of_cell):
         parts.append(f"def cell{idx}_signs (s : Vector {n} Int) : Prop :=\n"
-                     f"  pre_signs_{i} s ∧ post_signs_{j} s")
+                     f"  {' ∧ '.join(f'{d} s' for d in _cell_sign_defs(pats))}")
     for idx, cert in enumerate(certs):
         parts.append(_emit_decrease(idx, cert, n, pat_of_cell[idx]))
     parts.append(_emit_covered(certs, n, tree, pat_of_cell))
     parts.append(_emit_post_state(body_affines, n))
-    parts.append(_emit_activations("pre_act", pcert.units[:m], "s", [], n))
-    parts.append(_emit_activations("post_act", pcert.units[m:], "post_state s",
+    parts.append(_emit_activations("pre_act", pcert.pre_units, "s", [], n))
+    parts.append(_emit_activations("post_act", pcert.post_units, "post_state s",
                                    ["post_state"], n))
-    for pattern, (k, affine) in pre_pats.items():
-        parts.append(_bool_vec(f"pre_pat_{k}", pattern))
-        parts.append(_emit_collapse("pre", k, "s", [], affine, n, "pre_act"))
+    for mu, (k, affine) in mus.items():
+        parts.append(_emit_lower_bound(k, mu, affine, n))
     for pattern, (k, affine) in post_pats.items():
         parts.append(_bool_vec(f"post_pat_{k}", pattern))
-        parts.append(_emit_collapse("post", k, "post_state s", ["post_state"],
-                                    affine, n, "post_act"))
+        parts.append(_emit_collapse(k, affine, n))
 
     # The transition is functional (b = post_state a on the guard), so Step needs
     # no SSA witness: the pre-state *is* a.
     branches = " | ".join("⟨hs, hd⟩" for _ in certs)
     bullets = "\n".join(
-        f"  · rw [pre_c0_{i} a hs.1, post_c0_{j} a hs.2]; omega"
-        for i, j in pat_of_cell)
+        f"  · have hlb := pre_lb_{mu_i} a\n"
+        f"    rw [post_c0_{post_i} a {'hs' if pre_i is None else 'hs.1'}]\n"
+        f"    omega"
+        for mu_i, post_i, pre_i in pat_of_cell)
     parts.append(
         f"def Step (a b : Vector {n} Int) : Prop :=\n"
         f"  trans a ∧ invariants a ∧ post_state a = b")
@@ -700,7 +753,7 @@ def _emit_composition(path_names, n: int, init_lean: str, trivial_inv: bool) -> 
 
 
 _HEADER = (
-    "import Coverage\nimport Net\nimport Termination\n"
+    "import Coverage\nimport Net\nimport Subgrad\nimport Termination\n"
     "set_option linter.unusedVariables false\n"
     "set_option linter.unusedSimpArgs false\n"
     "set_option maxHeartbeats 1000000\n"

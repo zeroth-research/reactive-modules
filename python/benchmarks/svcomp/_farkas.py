@@ -1,18 +1,33 @@
 """Farkas-certified ranking verification (cell / CEGAR).
 
 A ranking net ``V(s) = W2·relu(W1·s + b1) + b2`` is piecewise-affine: on a fixed
-ReLU **activation pattern** (a *cell*) it is an affine function of the state, and
-the cell is the polyhedron where each hidden pre-activation ``W1[j]·s + b1[j]``
-has the sign the pattern dictates. Over one cell the decrease obligation
-``V(s) - V(s') >= delta`` becomes a linear entailment, discharged by proving the
-system ``cell ∧ guard ∧ invariants ∧ ¬decrease`` infeasible via Farkas' lemma
-(over z3's exact LRA) — which yields an exact, checkable integer certificate
-(the Farkas multipliers ``y``: ``y >= 0``, ``Aᵀy = 0``, ``b·y < 0``). ``V >= 0``
-is *not* Farkas-certified: it holds structurally because the output layer is
-non-negative (a positive sum of ReLUs), which the caller asserts.
+ReLU **activation pattern** it is an affine function of the state, the polyhedron
+where each hidden pre-activation ``W1[j]·s + b1[j]`` has the sign the pattern
+dictates. The decrease obligation ``V(s) - V(s') >= delta`` needs the two ends of
+a step treated differently, because it needs a *lower* bound on ``V(s)`` and an
+*upper* bound on ``V(s')``:
+
+  * at the successor, ``V(s')`` must be exact, so the pattern there is pinned —
+    this is what a **cell** constrains, strictly (``> 0`` active, ``<= 0``
+    inactive), so the cells partition rather than overlap;
+  * at the pre-state, any mask under-approximates ``V(s)`` (each dropped unit
+    contributes ``relu >= 0``, each kept one ``relu(z) >= z``), so no constraint
+    is needed at all. The mask is a free parameter of the certificate: sound for
+    any choice, and exact where it matches the true pattern.
+
+So a cell fixes the successor signs alone, and one cell covers what the joint
+pre/post patterns would have split into many. Over a cell the obligation is a
+linear entailment, discharged by proving ``cell ∧ guard ∧ invariants ∧ ¬decrease``
+infeasible via Farkas' lemma (over z3's exact LRA) — an exact, checkable integer
+certificate (the multipliers ``y``: ``y >= 0``, ``Aᵀy = 0``, ``b·y < 0``).
+
+``V >= 0`` is *not* Farkas-certified: it holds structurally because the output
+layer is non-negative (a positive sum of ReLUs). The mask bound needs that same
+non-negativity — see :func:`output_weights`.
 """
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from fractions import Fraction
 from math import gcd, lcm
@@ -21,14 +36,6 @@ import numpy as np
 import z3
 
 from ._domain import guard_ite
-
-
-@dataclass(frozen=True)
-class Cell:
-    """One ReLU activation pattern (a linear region of the net)."""
-    affine: z3.ArithRef                 # V on this cell, affine in the inputs
-    constraints: tuple[z3.BoolRef, ...] # sign rows: pre>=0 (active) / pre<=0 (inactive)
-    pattern: tuple[bool, ...]           # activation of each hidden ReLU
 
 
 def _pre_activations(layers, inputs):
@@ -46,29 +53,84 @@ def _pre_activations(layers, inputs):
     return pres
 
 
-def symbolic_forward(layers, inputs, input_vals) -> Cell:
-    """The cell of ``V`` at the witness ``input_vals`` (concrete ints), symbolic
-    over ``inputs`` (z3 exprs). ``inputs``/``input_vals`` are the state fed to V
-    — the pre-state ``s`` or the successor ``s' = T(s)``."""
-    (W1, b1), (W2, b2) = layers
-    W1 = np.asarray(W1); b1 = np.asarray(b1)
+def output_weights(layers):
+    """The output layer's weights and bias, as ints: ``V = sum_j c_j relu(z_j) + k``.
+
+    The mask bound needs ``c_j >= 0``, which holds structurally because the output
+    layer is frozen non-negative. The assert fails fast on a net that breaks that;
+    the binding check is in Lean, where ``affine_mask_le``'s ``hW`` side goal is
+    ``0 <= W i j`` and would not close."""
+    _, (W2, b2) = layers
     W2 = np.asarray(W2); b2 = np.asarray(b2)
-    pres = _pre_activations(layers, inputs)
+    c = [int(W2[0][j]) for j in range(W2.shape[1])]
+    assert all(x >= 0 for x in c), f"output layer must be non-negative: {c}"
+    return c, int(b2[0])
 
-    vals = np.asarray(input_vals, dtype=object)
-    constraints, pattern, hidden = [], [], []
-    for j, pre in enumerate(pres):
-        active = int(W1[j] @ vals + b1[j]) >= 0     # sign at the witness
-        pattern.append(active)
-        constraints.append(pre >= 0 if active else pre <= 0)
-        hidden.append(pre if active else z3.IntVal(0))
 
-    out = z3.IntVal(int(b2[0]))
-    for j in range(W2.shape[1]):
-        c = int(W2[0][j])
-        if c:
-            out = out + c * hidden[j]
-    return Cell(out, tuple(constraints), tuple(pattern))
+def masked_value(pres, weights, pattern):
+    """``V`` with ``pattern`` deciding which hidden units contribute:
+    ``sum_j c_j * pres_j`` over the marked units, plus the output bias.
+
+    Where ``pattern`` is the true activation pattern at these pre-activations this
+    is ``V`` exactly; for any other pattern it is a lower bound, since each dropped
+    unit contributes ``relu >= 0`` and each kept one ``relu(z) >= z``."""
+    c, k = weights
+    out = z3.IntVal(k)
+    for cj, pre, on in zip(c, pres, pattern):
+        if cj and on:
+            out = out + cj * pre
+    return out
+
+
+def strict_signs(pres, pattern):
+    """The region ``pattern`` names, as complementary literals: ``0 < e`` where
+    active, ``e <= 0`` where not, nothing where the pattern leaves a unit open
+    (``None``). Complementary, so the regions partition."""
+    return tuple((p > 0) if a else (p <= 0)
+                 for p, a in zip(pres, pattern) if a is not None)
+
+
+def exact_value(pres, weights):
+    """``V`` with the ReLUs left in: ``sum_j c_j * relu(pres_j) + k``.
+
+    The strongest bound any mask can reach, since a mask matching the true signs
+    is exactly this. Used to reject a class no mask could certify without paying
+    for the search."""
+    c, k = weights
+    out = z3.IntVal(k)
+    for cj, pre in zip(c, pres):
+        if cj:
+            out = out + cj * z3.If(pre > 0, pre, z3.IntVal(0))
+    return out
+
+
+def _sign_status(region, exprs):
+    """Which of ``exprs`` keep one sign throughout ``region``.
+
+    Returns ``(fixed, free)``: ``fixed[j]`` is ``True`` where the expression stays
+    ``>= 0`` and ``False`` where it stays ``<= 0``; ``free`` lists the indices that
+    take both signs. A mask bit is settled for every fixed unit — keeping a
+    non-negative one only raises the bound, keeping a negative one only lowers it —
+    so only the free ones are ever a choice."""
+    fixed, free = {}, []
+    for j, e in enumerate(exprs):
+        if not _feasible(z3.And(region, e < 0)):
+            fixed[j] = True
+        elif not _feasible(z3.And(region, e > 0)):
+            fixed[j] = False
+        else:
+            free.append(j)
+    return fixed, free
+
+
+def _mask_candidates(fixed, free, hint, m):
+    """Masks worth trying, the witness's own first: the settled bits from
+    ``fixed``, the ``free`` ones enumerated."""
+    for combo in itertools.product(*[(hint[j], not hint[j]) for j in free]):
+        mask = [fixed.get(j, False) for j in range(m)]
+        for j, v in zip(free, combo):
+            mask[j] = v
+        yield tuple(mask)
 
 
 # ---------------------------------------------------------------------------
@@ -167,33 +229,52 @@ def atom_rows(atom, syms):
     return []
 
 
-def build_integer_system(cell_s, cell_sp, guard, invariants, syms, delta):
-    """Rows of ``cell_s ∧ cell_sp ∧ guard ∧ invariants ∧ ¬(V(s)-V(s') >= delta)``
-    as an integer system ``A·s <= b`` with per-row labels. Infeasibility of this
-    system certifies the decrease on the cell."""
+def build_integer_system(sp_signs, s_signs, guard, invariants, lower, post,
+                         syms, delta):
+    """Rows of ``signs ∧ guard ∧ invariants ∧ ¬(lower - post >= delta)`` as an
+    integer system ``A·s <= b`` with per-row labels. Infeasibility of this system
+    certifies the decrease on the cell.
+
+    ``lower`` under-approximates ``V(s)`` (the mask bound, valid with no
+    pre-state signs) and ``post`` is ``V(s')`` exactly on ``sp_signs``, so
+    ``lower - post <= V(s) - V(s')`` and the decrease follows. ``s_signs`` is
+    empty unless the cell needed pre-state literals to certify.
+
+    Each row is also emitted gcd-tightened (divided through by the gcd of its
+    coefficients, constant floored): valid over the integers but out of reach of the
+    rational LP, as ``2y <= 1`` gives ``y <= 0``. Lean proves every row by ``omega``,
+    which is integer-complete, so a tightened row needs no extra machinery."""
     rows, labels, seen = [], [], set()
 
-    def add(atom, label):
+    def add(A_row, b, label):
+        if all(c == 0 for c in A_row) and b >= 0:
+            return                            # always-true constant row (redundant)
+        key = (tuple(A_row), b)
+        if key in seen:
+            return                            # duplicate row
+        seen.add(key)
+        rows.append((list(A_row), b)); labels.append(label)
+
+    def add_atom(atom, label):
         for A_row, b in atom_rows(atom, syms):
-            if all(c == 0 for c in A_row) and b >= 0:
-                continue                      # always-true constant row (redundant)
-            key = (tuple(A_row), b)
-            if key in seen:
-                continue                      # duplicate row
-            seen.add(key)
-            rows.append((A_row, b)); labels.append(label)
+            add(A_row, b, label)
+            g = 0
+            for x in A_row:
+                g = gcd(g, abs(x))
+            if g > 1:
+                add([x // g for x in A_row], b // g, label + "/int")
 
-    for j, c in enumerate(cell_s.constraints):
-        add(c, f"cell_s[{j}]")
-    for j, c in enumerate(cell_sp.constraints):
-        add(c, f"cell_sp[{j}]")
+    for j, c in enumerate(sp_signs):
+        add_atom(c, f"cell_sp[{j}]")
+    for j, c in enumerate(s_signs):
+        add_atom(c, f"cell_s[{j}]")
     for i, g in enumerate(_flatten_and(guard)):
-        add(g, f"guard[{i}]")
+        add_atom(g, f"guard[{i}]")
     for i, inv in enumerate(invariants):
-        add(inv, f"inv[{i}]")
+        add_atom(inv, f"inv[{i}]")
 
-    # negated decrease: V(s) - V(s') <= delta - 1  (integer). Kept unconditionally.
-    alpha, beta = affine_coeffs(cell_s.affine - cell_sp.affine, syms)
+    # negated decrease: lower - post <= delta - 1  (integer). Kept unconditionally.
+    alpha, beta = affine_coeffs(z3.simplify(lower - post), syms)
     rows.append((list(alpha), int(delta) - 1 - beta))
     labels.append("neg_decrease")
 
@@ -241,21 +322,28 @@ def find_infeasibility_certificate(A, b):
 @dataclass(frozen=True)
 class CellCert:
     """A per-cell decrease certificate: the integer system and its Farkas
-    multipliers, the activation patterns, and V's collapsed affine form at each
-    end of the step (all consumed by the Lean emitter).
+    multipliers, the successor activation pattern that defines the cell, and V's
+    two affine forms (all consumed by the Lean emitter).
 
-    ``pre_affine``/``post_affine`` are ``(coeffs, const)`` over the state columns:
-    on this cell ``V(s) = pre_affine`` and ``V(s') = post_affine`` (affine, since
-    the pattern is fixed and the transition is affine). The emitter renders them
-    as the right-hand sides of the two V-collapse lemmas."""
+    ``pattern_sp`` is the successor pattern whose signs define the cell; ``mu`` the
+    mask the certificate chose for the bound on ``V(s)``.
+
+    ``pre_affine``/``post_affine`` are ``(coeffs, const)`` over the state columns,
+    with ``pre_affine <= V(s)`` and ``V(s') = post_affine`` on this cell — the
+    right-hand sides of the emitted mask-bound and collapse lemmas.
+
+    ``pattern_s`` is ``None`` unless the cell was narrowed by pre-state literals. It
+    is then *partial*: a sign per unit the narrowing pinned, ``None`` for the rest,
+    since splitting stops as soon as some mask certifies."""
     A: tuple
     b: tuple
     y: tuple
     labels: tuple
-    pattern_s: tuple
     pattern_sp: tuple
+    mu: tuple
     pre_affine: tuple = ((), 0)
     post_affine: tuple = ((), 0)
+    pattern_s: tuple | None = None
 
 
 @dataclass
@@ -277,13 +365,21 @@ class PathCert:
 
     ``units`` holds each hidden unit's pre-activation as ``(coeffs, const)`` over
     the pre-state columns: the first half evaluated at ``s``, the second at the
-    successor, matching the bit order of a cell's ``pattern_s + pattern_sp``. A
-    cell is the region where those expressions take the signs its pattern names,
+    successor. Read them through :attr:`pre_units` / :attr:`post_units`. A cell is
+    the region where the successor expressions take the signs its pattern names,
     which is what lets the emitter case-split on them."""
     guard: object
     body: tuple
     cells: tuple
     units: tuple = ()
+
+    @property
+    def pre_units(self) -> tuple:
+        return self.units[:len(self.units) // 2]
+
+    @property
+    def post_units(self) -> tuple:
+        return self.units[len(self.units) // 2:]
 
 
 def _on_guard_body(sp_syms, s_syms):
@@ -344,61 +440,158 @@ def _feasible(pred) -> bool:
     return s.check() == z3.sat
 
 
+@dataclass(frozen=True)
+class _Path:
+    """What every cell attempt on one path reads, built once by
+    :func:`_certify_path`: the state symbols, the path's guard and invariants and
+    their conjunction ``dom``, the decrease margin, the hidden pre-activations at
+    each end of a step, and the output-layer weights."""
+    s_syms: list
+    guard: object
+    invariants: tuple
+    dom: object
+    delta: float
+    z_s: tuple
+    z_sp: tuple
+    weights: tuple
+
+    @staticmethod
+    def of(layers, s_syms, body, guard, invariants, delta) -> "_Path":
+        invariants = tuple(invariants)
+        return _Path(s_syms=s_syms, guard=guard, invariants=invariants,
+                     dom=z3.And(guard, *invariants) if invariants else guard,
+                     delta=delta,
+                     z_s=tuple(_pre_activations(layers, s_syms)),
+                     z_sp=tuple(_pre_activations(layers, body)),
+                     weights=output_weights(layers))
+
+
+def _signs_at(model, exprs):
+    """The sign pattern ``model`` gives ``exprs``: ``True`` where positive."""
+    return tuple(model.eval(e, model_completion=True).as_long() > 0
+                 for e in exprs)
+
+
+def _try_cell(p: _Path, lam, mu, pat_s):
+    """Farkas-certify one cell: the successor pattern ``lam``, the mask ``mu`` for
+    the lower bound on ``V(s)``, and any pre-state literals ``pat_s`` narrowing it.
+    Returns a :class:`CellCert`, or ``None`` if the LP is feasible."""
+    s_signs = strict_signs(p.z_s, pat_s) if pat_s is not None else ()
+    lower = masked_value(p.z_s, p.weights, mu)
+    post = masked_value(p.z_sp, p.weights, lam)
+    A, b, labels = build_integer_system(strict_signs(p.z_sp, lam), s_signs,
+                                        p.guard, list(p.invariants),
+                                        lower, post, p.s_syms, p.delta)
+    y = find_infeasibility_certificate(A, b)
+    if y is None:
+        return None
+    pre_c, pre_k = affine_coeffs(z3.simplify(lower), p.s_syms)
+    post_c, post_k = affine_coeffs(z3.simplify(post), p.s_syms)
+    return CellCert(tuple(map(tuple, A)), tuple(b), tuple(y), tuple(labels),
+                    tuple(lam), tuple(mu), (tuple(pre_c), pre_k),
+                    (tuple(post_c), post_k),
+                    tuple(pat_s) if s_signs else None)
+
+
+def _certify_cell(p: _Path, lam, hint):
+    """Certify the successor-pattern class ``lam``, searching for a mask.
+
+    ``hint`` — the witness's own pre-state pattern, where the bound is exact — is
+    tried alone first, before the sign-status queries :func:`_narrow` needs; that
+    settles most cells in a single LP. Failing that the class is checked against
+    the *exact* decrease, which no mask can beat, so a failure there is a genuine
+    counterexample rather than a bound too weak to certify. Only then does
+    :func:`_narrow` search masks and, where it must, split.
+
+    Returns ``(cells, status)``: the cells on ``"ok"``, else ``None`` with status
+    ``"decrease"`` (the real V does not drop somewhere in the class) or
+    ``"uncertifiable"``."""
+    cert = _try_cell(p, lam, hint, None)
+    if cert is not None:
+        return [cert], "ok"
+
+    region = z3.And(p.dom, *strict_signs(p.z_sp, lam))
+    if _feasible(z3.And(region, exact_value(p.z_s, p.weights)
+                        - exact_value(p.z_sp, p.weights) < p.delta)):
+        return None, "decrease"
+
+    cells = _narrow(p, lam, hint, region, (None,) * len(lam))
+    return cells, "ok" if cells is not None else "uncertifiable"
+
+
+def _narrow(p: _Path, lam, hint, region, pinned):
+    """The cells certifying ``region`` — the class narrowed by whatever pre-state
+    literals ``pinned`` names — or ``None`` if some part of it stays uncertifiable.
+
+    Splitting is lazy: pin a single sign-indefinite unit, then retry the mask
+    search on each half. Pinning a unit makes it sign-definite there, so its mask
+    bit settles and its slack vanishes; often that is enough and the sibling units
+    stay open. With every unit pinned the mask matches the true pattern and the
+    bound is exact, so the recursion bottoms out at the joint activation cell."""
+    fixed, free = _sign_status(region, p.z_s)
+    for mu in _mask_candidates(fixed, free, hint, len(p.z_s)):
+        cert = _try_cell(p, lam, mu, pinned)
+        if cert is not None:
+            return [cert]
+    if not free:
+        return None                   # fully pinned and still no certificate
+
+    j = free[0]
+    cells = []
+    for truth in (True, False):
+        sub_pinned = list(pinned)
+        sub_pinned[j] = truth
+        sub = z3.And(region, (p.z_s[j] > 0) if truth else (p.z_s[j] <= 0))
+        if not _feasible(sub):
+            continue
+        got = _narrow(p, lam, hint, sub, tuple(sub_pinned))
+        if got is None:
+            return None
+        cells.extend(got)
+    return cells
+
+
 def _certify_path(layers, s_syms, body, guard, invariants, delta, max_iters):
     """CEGAR over one affine path: certify the decrease on every cell of
     ``guard ∧ invariants`` under next-state ``body``. Repeatedly find an
-    uncovered in-domain state, certify its cell via Farkas, and block it — until
-    the path's domain is exhausted. Returns ``(ok, cells, counterexample, status)``."""
-    dom = z3.And(guard, *invariants) if invariants else guard
+    uncovered in-domain state, certify the cell of successor signs it lies in, and
+    block that cell — until the path's domain is exhausted. Because the blocked
+    regions are complementary, exhausting the domain *is* the coverage guarantee.
+
+    Returns ``(ok, cells, counterexample, status)``."""
+    p = _Path.of(layers, s_syms, body, guard, invariants, delta)
     solver = z3.Solver()
-    solver.add(dom)
+    solver.add(p.dom)
     cells: list[CellCert] = []
-    interior = [e != 0 for e in (_pre_activations(layers, s_syms)
-                                 + _pre_activations(layers, body))]
 
     for _ in range(max_iters):
-        # Prefer a witness off every activation boundary. A cell is closed on both
-        # sides, so an interior state's cell covers the boundaries around it as
-        # well, and blocking it clears those slices too; a boundary witness yields
-        # a cell covering little more than the boundary itself, leaving the
-        # interior for another iteration and another set of lemmas.
-        if solver.check(*interior) != z3.sat:
-            # Finding no interior state does not mean the region is empty — what
-            # is left may be entirely boundary. Ask again without the preference
-            # before concluding the path is covered.
-            r = solver.check()
-            if r == z3.unsat:
-                return True, cells, None, "VERIFIED"
-            if r == z3.unknown:
-                return False, cells, None, "UNKNOWN"
-        m = solver.model()
-        s_val = [m.eval(x, model_completion=True).as_long() for x in s_syms]
-        sp_val = [m.eval(e, model_completion=True).as_long() for e in body]
-        cell_s = symbolic_forward(layers, s_syms, s_val)
-        cell_sp = symbolic_forward(layers, body, sp_val)
+        r = solver.check()
+        if r == z3.unsat:
+            return True, cells, None, "VERIFIED"
+        if r == z3.unknown:
+            return False, cells, None, "UNKNOWN"
+        model = solver.model()
+        s_val = [model.eval(x, model_completion=True).as_long() for x in s_syms]
+        lam, hint = _signs_at(model, p.z_sp), _signs_at(model, p.z_s)
 
         # genuine counterexample: the real V does not decrease at this state
-        d_concrete = m.eval(cell_s.affine - cell_sp.affine,
-                            model_completion=True).as_long()
-        if d_concrete < delta:
+        # (both masks match the true signs here, so both values are exact)
+        drop = (masked_value(p.z_s, p.weights, hint)
+                - masked_value(p.z_sp, p.weights, lam))
+        if model.eval(drop, model_completion=True).as_long() < delta:
             return False, cells, np.array(s_val, dtype=np.float64), "FAILED(decrease)"
 
         try:
-            A, b, labels = build_integer_system(cell_s, cell_sp, guard,
-                                                list(invariants), s_syms, delta)
+            new, status = _certify_cell(p, lam, hint)
         except ValueError:        # non-affine even after splitting (nondet, etc.)
             return False, cells, np.array(s_val, dtype=np.float64), "FAILED(non-affine)"
-        y = find_infeasibility_certificate(A, b)
-        if y is None:
-            return False, cells, np.array(s_val, dtype=np.float64), "FAILED(uncertifiable)"
-        pre_c, pre_k = affine_coeffs(cell_s.affine, s_syms)
-        post_c, post_k = affine_coeffs(cell_sp.affine, s_syms)
-        cells.append(CellCert(tuple(map(tuple, A)), tuple(b), tuple(y),
-                              tuple(labels), cell_s.pattern, cell_sp.pattern,
-                              (tuple(pre_c), pre_k), (tuple(post_c), post_k)))
+        if status != "ok":
+            return (False, cells, np.array(s_val, dtype=np.float64),
+                    f"FAILED({status})")
+        cells.extend(new)
 
-        # block this joint cell so the next witness lies in a different region
-        solver.add(z3.Not(z3.And(*(cell_s.constraints + cell_sp.constraints))))
+        # block the whole successor-sign class so the next witness lies elsewhere
+        solver.add(z3.Not(z3.And(*strict_signs(p.z_sp, lam))))
 
     return False, cells, None, "FAILED(max_iters)"
 
