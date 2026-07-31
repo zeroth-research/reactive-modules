@@ -4,6 +4,7 @@ The structural tests run everywhere. The end-to-end test compiles an emitted
 proof with ``lake`` and is skipped when no toolchain is present, so it protects
 the pipeline on a machine that has one without breaking one that does not.
 """
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -13,7 +14,7 @@ import pytest
 import z3
 
 from benchmarks.svcomp._farkas import certify_decrease
-from benchmarks.svcomp._lean import emit_program
+from benchmarks.svcomp._lean import _trivial, emit_program
 from benchmarks.svcomp._verify_ranking import Obligation
 
 LEAN_DIR = Path(__file__).resolve().parents[1] / "benchmarks" / "svcomp" / "lean"
@@ -48,11 +49,27 @@ def test_trivial_cell_needs_no_certificate():
     """A cell whose support is a constant infeasibility decreases unconditionally,
     so it is emitted with ``omega`` and carries no Farkas system."""
     ob, paths = _decrement_obligation()
-    (cell,) = paths[0].cells
+    trivial = [i for i, c in enumerate(paths[0].cells) if _trivial(c)]
+    assert trivial, "expected an unconditionally decreasing cell"
     src = emit_program("decrement", ob, paths)
     assert "unconditional decrease (no Farkas system)" in src
-    assert "cell0_A" not in src
-    assert "cell0_decrease" in src and "by omega" in src
+    assert "by omega" in src
+    for i in trivial:
+        assert f"cell{i}_A" not in src
+        assert f"cell{i}_decrease" in src
+
+
+def test_pre_bound_needs_no_hypothesis():
+    """The pre-state lemma is an inequality taking only the state — no sign
+    hypothesis — which is the asymmetry the scheme rests on, and a cell's signs
+    name the successor pattern alone."""
+    ob, paths = _decrement_obligation()
+    src = emit_program("decrement", ob, paths)
+    assert re.search(r"theorem pre_lb_\d+ \(s : Vector 1 Int\) :\n", src), \
+        "pre_lb should take the state and nothing else"
+    assert "pre_c0" not in src, "the pre-state collapse lemma should be gone"
+    assert re.search(r"def cell0_signs \(s : Vector 1 Int\) : Prop :=\n  post_signs_\d+ s\n",
+                     src), "an un-narrowed cell should constrain the successor only"
 
 
 def test_emit_without_invariants_uses_true():
