@@ -154,19 +154,33 @@ def test_mask_never_exceeds_V():
         assert solver.check() == z3.unsat, f"mask {mask} exceeds V"
 
 
-def test_certifies_mixed_output_weights_and_bias():
-    """The trained nets only ever have uniform output weights and no output bias.
-    The mask bound weights each unit by its own coefficient and carries the bias,
-    so a mixed layer has to certify as well."""
+def test_mixed_output_weights_and_bias_are_carried():
+    """The trained nets only ever have uniform output weights and no output bias,
+    so nothing else pins the per-unit scaling. Both affine forms are recomputed
+    here from the raw matrices: the floor over the units its mask keeps, the
+    ceiling over the successor pattern. Getting the ceiling wrong overstates the
+    drop, so it is checked too."""
     layers = [(np.array([[1], [1]]), np.array([0, -3])),
               (np.array([[1, 2]]), np.array([5]))]
+    (W1, b1), (W2, b2) = layers
     res = certify_decrease(layers, [x], [z3.If(x > 0, x - 1, x)], x > 0, (), 1.0)
     assert res.verified, res.status
+    for c in (c for p in res.certificates for c in p.cells):
+        # z_j(s) = W1[j]·x + b1[j];  z_j(s') is the same at x - 1
+        for pattern, affine, shift in ((c.mu, c.pre_affine, 0),
+                                       (c.pattern_sp, c.post_affine, -1)):
+            kept = [j for j, on in enumerate(pattern) if on]
+            coeff = sum(int(W2[0][j]) * int(W1[j][0]) for j in kept)
+            const = int(b2[0]) + sum(int(W2[0][j]) * (int(b1[j]) + shift)
+                                     for j in kept)
+            assert affine == ((coeff,), const), (pattern, affine, coeff, const)
 
 
 def test_margin_the_rank_cannot_meet_is_rejected():
     """``relu(x)`` drops by 1 at ``x = 1``, so a margin of 2 is a real
-    counterexample and must be reported, not certified."""
+    counterexample and has to be reported as one. Two checks can catch it — the
+    witness-level one in ``_certify_path`` and the region-wide prune in
+    ``_certify_cell`` — and the guarantee holds as long as either does."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     res = certify_decrease(layers, [x], [z3.If(x > 0, x - 2, x)], x > 0, (), 2.0)
     assert not res.verified
