@@ -167,13 +167,35 @@ def _support(cert: CellCert):
             [cert.y[i] for i in idx], [cert.labels[i] for i in idx])
 
 
-def _sign_rows(cert: CellCert):
-    """The cell's activation sign rows — the successor's ``cell_sp[..]`` and, where
-    the cell was narrowed, the pre-state's ``cell_s[..]``. These pin the cell's
-    region for coverage. Gcd-tightened duplicates are left out: they cut the same
-    integer region, and coverage reasons over the region, not the rows."""
-    return [(a, b) for a, b, lbl in zip(cert.A, cert.b, cert.labels)
-            if lbl.startswith("cell_s") and not lbl.endswith("/int")]
+def _pattern_literals(pattern, units):
+    """A pattern's region as literals ``(coeffs, const, active)``: ``active`` means
+    ``0 < e``, otherwise ``e ≤ 0``. Units the pattern leaves open (``None``)
+    contribute nothing.
+
+    This is the one place a region is derived. Both the Lean definition
+    (:func:`_lit_str`) and the z3 term the coverage tree reasons over
+    (:func:`_lit_z3`) render from it, so the two cannot drift apart."""
+    return [(c, k, a) for (c, k), a in zip(units, pattern) if a is not None]
+
+
+def _cell_literals(cert: CellCert, pre_units, post_units):
+    """The full region of one cell: its successor pattern, plus the pre-state
+    literals a narrowed cell pinned."""
+    lits = _pattern_literals(cert.pattern_sp, post_units)
+    if cert.pattern_s is not None:
+        lits += _pattern_literals(cert.pattern_s, pre_units)
+    return lits
+
+
+def _lit_str(lit) -> str:
+    c, k, active = lit
+    return f"(0 < {_affine_str(c, k)})" if active else f"({_affine_str(c, k)} ≤ 0)"
+
+
+def _lit_z3(lit, syms):
+    c, k, active = lit
+    e = _affine_z3(c, k, syms)
+    return (e > 0) if active else (e <= 0)
 
 
 def _neg_decrease(cert: CellCert):
@@ -325,8 +347,7 @@ def _emit_signs_def(name: str, pattern, units, n: int) -> str:
     The two forms are complementary, so the regions partition the state space and
     a state lies in exactly one. Written in the form :func:`_tiling_tree` splits
     on, so a coverage leaf's hypotheses match the conjuncts it has to produce."""
-    conj = [f"(0 < {_affine_str(c, k)})" if active else f"({_affine_str(c, k)} ≤ 0)"
-            for (c, k), active in zip(units, pattern) if active is not None]
+    conj = [_lit_str(l) for l in _pattern_literals(pattern, units)]
     return (f"def {name} (s : Vector {n} Int) : Prop :=\n"
             f"  {' ∧ '.join(conj) if conj else 'True'}")
 
@@ -391,8 +412,9 @@ def _tiling_tree(pcert, invariants, s_syms):
         lean, e = _affine_str(coeffs, const), _affine_z3(coeffs, const, s_syms)
         lits.append((f"0 < {lean}", e > 0))
     domain = [pcert.guard, *invariants]
-    signs = [z3.And(*[_affine_z3(a, 0, s_syms) <= int(b)
-                      for a, b in _sign_rows(c)]) for c in pcert.cells]
+    signs = [z3.And(*[_lit_z3(l, s_syms)
+                      for l in _cell_literals(c, pcert.pre_units, pcert.post_units)])
+             for c in pcert.cells]
 
     def unsat(*claims) -> bool:
         solver = z3.Solver()
