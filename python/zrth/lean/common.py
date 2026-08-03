@@ -46,6 +46,8 @@ def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
     elif isinstance(dt, Sort.Real):
         # TODO: Float is *NOT* Real, but we stick to that for proofs atm
         ty = "Real"
+    elif isinstance(dt, Sort.BitVec):
+        ty = f"(BitVec {dt._0})"
     else:
         raise ValueError(f"Unsupported Sort for Lean conversion: {dt}")
 
@@ -212,6 +214,8 @@ def _get_dtype_item(dtype: Sort, item) -> str:
         return str(int(item))
     if isinstance(dtype, Sort.Real):
         return _float_literal(float(item))
+    if isinstance(dtype, Sort.BitVec):
+        return f"(BitVec.ofNat {dtype._0} {int(item)})"
     raise NotImplementedError(f"Unhnadled type: {dtype}")
 
 
@@ -266,7 +270,7 @@ def _is_scalar_tensor(wire: Wire) -> bool:
     dt = wire.dtype
     if isinstance(dt, Sort.Bool):
         return True
-    if isinstance(dt, Sort.Int):
+    if isinstance(dt, (Sort.Int, Sort.BitVec)):
         return _is_scalar_shape(dtype_shape(dt))
     return False
 
@@ -292,6 +296,8 @@ def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
         return f"(fun _ _ => ({int(tensor.item())} : Int))"
     if isinstance(wire.dtype, Sort.Real):
         return f"(fun _ _ => {_float_literal(float(tensor.item()))})"
+    if isinstance(wire.dtype, Sort.BitVec):
+        return f"(fun _ _ => {_get_dtype_item(wire.dtype, tensor.item())})"
     raise ValueError(f"Cannot inline tensor with dtype={wire.dtype}")
 
 
@@ -303,6 +309,8 @@ def _tensor_to_lean_scalar(tensor, wire: Wire) -> str:
         return f"({int(tensor.item())} : Int)"
     if isinstance(wire.dtype, Sort.Real):
         return _float_literal(float(tensor.item()))
+    if isinstance(wire.dtype, Sort.BitVec):
+        return _get_dtype_item(wire.dtype, tensor.item())
     raise ValueError(f"Cannot inline scalar for dtype={wire.dtype}")
 
 
@@ -331,6 +339,8 @@ def _flat_element_type(wire: Wire) -> str:
         return "Int"
     if isinstance(dt, Sort.Real):
         return "Real"
+    if isinstance(dt, Sort.BitVec):
+        return f"(BitVec {dt._0})"
     raise ValueError(f"Unsupported Sort for scalar element: {dt}")
 
 
@@ -405,6 +415,8 @@ def _sort_elem_ty(sort: Sort) -> str:
         return "Int"
     if isinstance(sort, Sort.Real):
         return "Real"
+    if isinstance(sort, Sort.BitVec):
+        return f"(BitVec {sort._0})"
     raise ValueError(f"Unsupported Sort for element type: {sort}")
 
 
