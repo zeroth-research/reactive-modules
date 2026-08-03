@@ -115,6 +115,10 @@ def _walk(
         return f"({v} : Int)" if v < 0 else str(v)
     if k == Kind.CONST_RATIONAL:
         return str(t)
+    if k == Kind.CONST_BITVECTOR:
+        width = t.getSort().getBitVectorSize()
+        value = int(t.getBitVectorValue(10))
+        return f"(BitVec.ofNat {width} {value})"
     if k == Kind.CONSTANT:
         name = t.getSymbol()
         if name in var_accessor:

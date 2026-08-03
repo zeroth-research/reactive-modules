@@ -65,6 +65,8 @@ def elem_sort(tm: cvc5.TermManager, dt: Sort) -> cvc5.Sort:
         return tm.getIntegerSort()
     if isinstance(dt, Sort.Real):
         return tm.getRealSort()
+    if isinstance(dt, Sort.BitVec):
+        return tm.mkBitVectorSort(dt._0)
     raise ValueError(f"Unsupported Sort for SMT encoding: {dt}")
 
 
@@ -124,6 +126,8 @@ def _scalar_const(tm: cvc5.TermManager, dt: Sort, raw) -> cvc5.Term:
         return tm.mkInteger(int(raw))
     if isinstance(dt, Sort.Real):
         return tm.mkReal(float(raw))
+    if isinstance(dt, Sort.BitVec):
+        return tm.mkBitVector(dt._0, int(raw))
     raise ValueError(f"Unsupported scalar Sort: {dt}")
 
 
@@ -214,6 +218,15 @@ def _binop_scalar(tm, kind):
     return lambda a, b: tm.mkTerm(kind, a, b)
 
 
+def _bool_or_bv1(tm: cvc5.TermManager, pred: cvc5.Term, want_bv1: bool) -> cvc5.Term:
+    """cvc5 comparison Kinds (EQUAL, BITVECTOR_ULT, ...) always yield a native
+    Bool term. LIA/LRA comparisons want that Bool as-is, but BV comparisons are
+    typed to write a `BV<1>` wire — reify the predicate as a 0/1 bit."""
+    if not want_bv1:
+        return pred
+    return tm.mkTerm(Kind.ITE, pred, tm.mkBitVector(1, 1), tm.mkBitVector(1, 0))
+
+
 def translate_terms(
     tm: cvc5.TermManager,
     terms: list[Term],
@@ -235,18 +248,24 @@ def translate_terms(
         if name == "Tensor":
             wt[write.id] = _tensor_const(tm, write, term.itype._0)
             continue
-        if name in ("ConstBool", "ConstInt", "ConstReal"):
+        if name in ("ConstBool", "ConstInt", "ConstReal", "Const"):
             payload = term.itype._0
             numel = payload.numel() if hasattr(payload, "numel") else 1
             if numel > 1:
                 # matrix constant: materialize per element (payload matches shape)
                 wt[write.id] = _tensor_const(tm, write, payload)
             else:
-                elem = {
-                    "ConstBool": Sort.Bool([1, 1]),
-                    "ConstInt": Sort.Int([1, 1]),
-                    "ConstReal": Sort.Real([1, 1]),
-                }[name]
+                # BV.Const's element type isn't encoded in the name (unlike
+                # ConstBool/ConstInt/ConstReal) — read it off the write wire.
+                elem = (
+                    write.dtype
+                    if name == "Const"
+                    else {
+                        "ConstBool": Sort.Bool([1, 1]),
+                        "ConstInt": Sort.Int([1, 1]),
+                        "ConstReal": Sort.Real([1, 1]),
+                    }[name]
+                )
                 v = _scalar_const(tm, elem, payload)
                 wt[write.id] = mat_pack(tm, out_shape, [v] * out_shape.total)
             continue
@@ -254,56 +273,95 @@ def translate_terms(
         args = [wt[w.id] for w in term.read]
         in_shapes = [wire_shape(w) for w in term.read]
 
+        is_bv = isinstance(write.dtype, Sort.BitVec)
+
         if name == "Id":
             wt[write.id] = args[0]
         elif name == "Not":
-            wt[write.id] = _elementwise(
-                tm, out_shape, _unop_scalar(tm, Kind.NOT), args[0]
-            )
+            kind = Kind.BITVECTOR_NOT if is_bv else Kind.NOT
+            wt[write.id] = _elementwise(tm, out_shape, _unop_scalar(tm, kind), args[0])
         elif name == "And":
-            wt[write.id] = _elementwise(
-                tm, out_shape, _binop_scalar(tm, Kind.AND), *args
-            )
+            kind = Kind.BITVECTOR_AND if is_bv else Kind.AND
+            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
         elif name == "Or":
-            wt[write.id] = _elementwise(
-                tm, out_shape, _binop_scalar(tm, Kind.OR), *args
-            )
+            kind = Kind.BITVECTOR_OR if is_bv else Kind.OR
+            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
+        elif name == "Xor":
+            kind = Kind.BITVECTOR_XOR if is_bv else Kind.XOR
+            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
         elif name == "Ite":
-            # cond is Mat Bool 1 1; extract its scalar and ITE on full matrices
+            # cond is Mat Bool 1 1 (LIA/LRA) or Mat BV<1> 1 1 (BV); extract its
+            # scalar, coercing a BV<1> condition to a genuine Bool via `!= 0`.
             cond = mat_select(tm, args[0], in_shapes[0], 0, 0)
+            cond_dtype = term.read[0].dtype
+            if isinstance(cond_dtype, Sort.BitVec):
+                cond = tm.mkTerm(
+                    Kind.DISTINCT, cond, tm.mkBitVector(cond_dtype._0, 0)
+                )
             wt[write.id] = tm.mkTerm(Kind.ITE, cond, args[1], args[2])
         elif name == "Add":
-            wt[write.id] = _elementwise(
-                tm, out_shape, _binop_scalar(tm, Kind.ADD), *args
-            )
+            kind = Kind.BITVECTOR_ADD if is_bv else Kind.ADD
+            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
         elif name == "Sub":
-            wt[write.id] = _elementwise(
-                tm, out_shape, _binop_scalar(tm, Kind.SUB), *args
-            )
+            kind = Kind.BITVECTOR_SUB if is_bv else Kind.SUB
+            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
         elif name == "Mul":
-            wt[write.id] = _elementwise(
-                tm, out_shape, _binop_scalar(tm, Kind.MULT), *args
-            )
+            kind = Kind.BITVECTOR_MULT if is_bv else Kind.MULT
+            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
         elif name == "Neg":
+            kind = Kind.BITVECTOR_NEG if is_bv else Kind.NEG
             wt[write.id] = _elementwise(
-                tm, out_shape, lambda a: tm.mkTerm(Kind.NEG, a), args[0]
+                tm, out_shape, lambda a: tm.mkTerm(kind, a), args[0]
             )
+        elif name in ("UDiv", "SDiv", "UMod", "SMod"):
+            kind = {
+                "UDiv": Kind.BITVECTOR_UDIV,
+                "SDiv": Kind.BITVECTOR_SDIV,
+                "UMod": Kind.BITVECTOR_UREM,
+                "SMod": Kind.BITVECTOR_SMOD,
+            }[name]
+            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
+        elif name == "BVToBool":
+            # Despite the name, output is BV<1> (non-zero test), not Bool.
+            a = mat_select(tm, args[0], in_shapes[0], 0, 0)
+            bw = term.read[0].dtype._0
+            pred = tm.mkTerm(Kind.DISTINCT, a, tm.mkBitVector(bw, 0))
+            wt[write.id] = mat_pack(tm, out_shape, [_bool_or_bv1(tm, pred, True)])
         elif name == "Mod":
             a = mat_select(tm, args[0], in_shapes[0], 0, 0)
             b = mat_select(tm, args[1], in_shapes[1], 0, 0)
             wt[write.id] = mat_pack(tm, out_shape, [tm.mkTerm(Kind.INTS_MODULUS, a, b)])
-        elif name in ("Lt", "Le", "Gt", "Ge", "Eq", "Neq"):
+        elif name in ("Lt", "Le", "Gt", "Ge", "Eq", "Ne"):
             kind = {
                 "Lt": Kind.LT,
                 "Le": Kind.LEQ,
                 "Gt": Kind.GT,
                 "Ge": Kind.GEQ,
                 "Eq": Kind.EQUAL,
-                "Neq": Kind.DISTINCT,
+                "Ne": Kind.DISTINCT,
             }[name]
             a = mat_select(tm, args[0], in_shapes[0], 0, 0)
             b = mat_select(tm, args[1], in_shapes[1], 0, 0)
-            wt[write.id] = mat_pack(tm, out_shape, [tm.mkTerm(kind, a, b)])
+            # LIA/LRA Eq/Ne write Bool; BV.Eq/BV.Ne write BV<1> (bv.rs).
+            pred = tm.mkTerm(kind, a, b)
+            wt[write.id] = mat_pack(tm, out_shape, [_bool_or_bv1(tm, pred, is_bv)])
+        elif name in ("ULe", "ULt", "UGe", "UGt", "SLe", "SLt", "SGe", "SGt"):
+            kind = {
+                "ULe": Kind.BITVECTOR_ULE,
+                "ULt": Kind.BITVECTOR_ULT,
+                "UGe": Kind.BITVECTOR_UGE,
+                "UGt": Kind.BITVECTOR_UGT,
+                "SLe": Kind.BITVECTOR_SLE,
+                "SLt": Kind.BITVECTOR_SLT,
+                "SGe": Kind.BITVECTOR_SGE,
+                "SGt": Kind.BITVECTOR_SGT,
+            }[name]
+            a = mat_select(tm, args[0], in_shapes[0], 0, 0)
+            b = mat_select(tm, args[1], in_shapes[1], 0, 0)
+            # These are BV-only ops; output is BV<1>, not the native Bool cvc5
+            # gives back from BITVECTOR_U*/S* comparison Kinds.
+            pred = tm.mkTerm(kind, a, b)
+            wt[write.id] = mat_pack(tm, out_shape, [_bool_or_bv1(tm, pred, True)])
         elif name == "Min":
             wt[write.id] = _elementwise(
                 tm,
