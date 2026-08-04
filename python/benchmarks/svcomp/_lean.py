@@ -279,6 +279,23 @@ def _emit_network(layers) -> str:
     return "\n\n".join(blocks)
 
 
+def _emit_out_nonneg(layers) -> str:
+    """The output layer's non-negativity, proved once per program.
+
+    ``affine_mask_le`` and ``affine_nonneg`` both take these as side goals, and
+    neither depends on a cell or a mask — they are facts about ``nrf_W1``/``nrf_b1``
+    alone. Proving them inline made every ``pre_lb`` and ``V_nonneg`` re-run the
+    same full-set ``simp``."""
+    (W0, _), (W1, b1) = layers
+    n_in = len(_int_grid(W0)[0])
+    return "\n\n".join([
+        f"theorem nrf_W1_nonneg : ∀ i j, 0 ≤ nrf_W1 i j := by\n"
+        f"  simp only [{_SIMP}]",
+        f"theorem nrf_b1_nonneg : ∀ i, 0 ≤ nrf_b1 i := by\n"
+        f"  simp only [{_SIMP}]",
+    ])
+
+
 def _emit_nonneg(layers) -> str:
     (W0, _), (W1, b1) = layers
     n_in, n_out = _int_grid(W0)[0].__len__(), len(_int_vec(b1))
@@ -286,8 +303,7 @@ def _emit_nonneg(layers) -> str:
         f"theorem V_nonneg (s : Vector {n_in} Int) (j : Fin {n_out}) : 0 ≤ V s j := by\n"
         f"  simp only [V]\n"
         f"  exact affine_nonneg nrf_W1 nrf_b1 _\n"
-        f"    (by simp only [{_SIMP}])\n"
-        f"    (by simp only [{_SIMP}])\n"
+        f"    nrf_W1_nonneg nrf_b1_nonneg\n"
         f"    (fun k => reluᵥ_nonneg _ k) j"
     )
 
@@ -570,7 +586,7 @@ def _emit_lower_bound(k: int, mu, affine, n: int) -> str:
         f"    rw [pre_act_eq]\n"
         f"    simp only [{_SIMP}, {pat}, pre_act] <;> omega\n"
         f"  have hle := affine_mask_le nrf_W1 nrf_b1 {pat} (affine nrf_W0 nrf_b0 s)\n"
-        f"      (by simp only [{_SIMP}]) fzero\n"
+        f"      nrf_W1_nonneg fzero\n"
         f"  rw [heq] at hle\n"
         f"  simp only [V]\n"
         f"  exact hle",
@@ -806,6 +822,7 @@ def emit_program(name: str, ob, paths) -> str:
         f"/- ──── program: {name} — terminates via a ranking function{npaths}.\n"
         f"   Columns: {cols}. ──── -/",
         _emit_network(ob.layers),
+        _emit_out_nonneg(ob.layers),
         _emit_nonneg(ob.layers),
         f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}",
     ]
