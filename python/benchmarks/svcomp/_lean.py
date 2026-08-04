@@ -80,9 +80,9 @@ def _mat_def(name: str, A, render) -> str:
 # Affine expressions and rows (omega-friendly plain integers)
 # ---------------------------------------------------------------------------
 
-def _affine_str(coeffs, const: int) -> str:
-    """``Σ cⱼ·(s j) + const`` over the nonzero coefficients (``const`` if none)."""
-    terms = [f"({int(c)} * s {_fin(j)})" for j, c in enumerate(coeffs) if c]
+def _affine_str(coeffs, const: int, var: str = "s") -> str:
+    """``Σ cⱼ·(var j) + const`` over the nonzero coefficients (``const`` if none)."""
+    terms = [f"({int(c)} * {var} {_fin(j)})" for j, c in enumerate(coeffs) if c]
     if not terms:
         return f"{int(const)}"
     expr = terms[0]
@@ -279,15 +279,27 @@ def _emit_network(layers) -> str:
     return "\n\n".join(blocks)
 
 
-def _emit_out_nonneg(layers) -> str:
+def _emit_out_apply(layers) -> str:
+    """The output layer applied to an arbitrary vector, reduced once per program.
+
+    ``pre_lb``'s ``heq`` and ``post_c0``'s tail both reduce
+    ``affine nrf_W1 nrf_b1 (mask _ _) fzero``, and that matrix product expands the
+    same way every time — only the mask differs. Rewriting by this leaves each site
+    with the mask reduction alone."""
+    _, (W1, b1) = layers
+    c, k = _int_grid(W1)[0], _int_vec(b1)[0]
+    return (f"theorem out_apply (v : Vector {len(c)} Int) :\n"
+            f"    affine nrf_W1 nrf_b1 v fzero = {_affine_str(c, k, 'v')} := by\n"
+            f"  simp only [{_SIMP}] <;> omega")
+
+
+def _emit_out_nonneg() -> str:
     """The output layer's non-negativity, proved once per program.
 
     ``affine_mask_le`` and ``affine_nonneg`` both take these as side goals, and
     neither depends on a cell or a mask — they are facts about ``nrf_W1``/``nrf_b1``
     alone. Proving them inline made every ``pre_lb`` and ``V_nonneg`` re-run the
     same full-set ``simp``."""
-    (W0, _), (W1, b1) = layers
-    n_in = len(_int_grid(W0)[0])
     return "\n\n".join([
         f"theorem nrf_W1_nonneg : ∀ i j, 0 ≤ nrf_W1 i j := by\n"
         f"  simp only [{_SIMP}]",
@@ -583,8 +595,9 @@ def _emit_lower_bound(k: int, mu, affine, n: int) -> str:
         f"    {_affine_str(coeffs, const)} ≤ V s fzero := by\n"
         f"  have heq : affine nrf_W1 nrf_b1 (mask {pat} (affine nrf_W0 nrf_b0 s)) fzero\n"
         f"           = {_affine_str(coeffs, const)} := by\n"
-        f"    rw [pre_act_eq]\n"
-        f"    simp only [{_SIMP}, {pat}, pre_act] <;> omega\n"
+        f"    rw [pre_act_eq, out_apply]\n"
+        f"    simp only [mask, {pat}, Bool.true_eq_false, Bool.false_eq_true,\n"
+        f"               ↓reduceIte, pre_act] <;> omega\n"
         f"  have hle := affine_mask_le nrf_W1 nrf_b1 {pat} (affine nrf_W0 nrf_b0 s)\n"
         f"      nrf_W1_nonneg fzero\n"
         f"  rw [heq] at hle\n"
@@ -607,7 +620,6 @@ def _emit_collapse(k: int, affine, n: int) -> str:
                        "↓reduceIte", "and_true", "true_and", "implies_true",
                        "Bool.true_eq_false", "Bool.false_eq_true", "false_implies",
                        "forall_const", "imp_self"])
-    simp_tail = ", ".join([_SIMP, pat, acts, "post_state"])
     return (
         f"theorem post_c0_{k} (s : Vector {n} Int)\n"
         f"    (hs : {signs} s) : V ({inp}) fzero = {_affine_str(coeffs, const)} := by\n"
@@ -618,8 +630,9 @@ def _emit_collapse(k: int, affine, n: int) -> str:
         f"    apply reluᵥ_eq_mask\n"
         f"    simp only [{small}] <;> omega\n"
         f"  simp only [V]\n"
-        f"  rw [hmask, {acts}_eq]\n"
-        f"  simp only [{simp_tail}] <;> omega"
+        f"  rw [hmask, {acts}_eq, out_apply]\n"
+        f"  simp only [mask, {pat}, Bool.true_eq_false, Bool.false_eq_true,\n"
+        f"             ↓reduceIte, {acts}, post_state] <;> omega"
     )
 
 
@@ -822,7 +835,8 @@ def emit_program(name: str, ob, paths) -> str:
         f"/- ──── program: {name} — terminates via a ranking function{npaths}.\n"
         f"   Columns: {cols}. ──── -/",
         _emit_network(ob.layers),
-        _emit_out_nonneg(ob.layers),
+        _emit_out_apply(ob.layers),
+        _emit_out_nonneg(),
         _emit_nonneg(ob.layers),
         f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}",
     ]
