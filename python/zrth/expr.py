@@ -237,8 +237,12 @@ class AExpr(Expr):
 
 def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
     """LIA/LRA are linear: `const * var` folds to a Linear op; `var * var` cannot."""
-    linear = LRA.Linear if theory is LRA else LIA.Linear
-    scalar_dtype = torch.float32 if theory is LRA else torch.int64
+    if theory is LRA:
+        linear, scalar_dtype = LRA.Linear, torch.float32
+    elif theory is LIA:
+        linear, scalar_dtype = LIA.Linear, torch.int64
+    else:
+        raise TypeError(f"{theory.__name__} has no linear fold (expected LRA or LIA)")
     for c, v in ((a, b), (b, a)):
         if c._value is None or c._value.numel() != 1:      # not a scalar constant
             continue
@@ -253,8 +257,12 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
 def _matmul(theory, a: Expr, b: Expr) -> Term:
     out_shape = [a.shape[0], b.shape[1]]
     if a._value is not None:                                # constant left operand
-        linear = LRA.Linear if theory is LRA else LIA.Linear
-        out_sort = Sort.Real(out_shape) if theory is LRA else Sort.Int(out_shape)
+        if theory is LRA:
+            linear, out_sort = LRA.Linear, Sort.Real(out_shape)
+        elif theory is LIA:
+            linear, out_sort = LIA.Linear, Sort.Int(out_shape)
+        else:
+            raise TypeError(f"{theory.__name__} has no linear fold (expected LRA or LIA)")
         return Term(linear(a._value, torch.empty(0, 0)), [Wire(out_sort)], [b._wire])
     raise RuntimeError(f"{theory.__name__} matmul requires a constant left operand; use a Linear instead")
 
