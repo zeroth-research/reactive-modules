@@ -22,6 +22,7 @@ Construction and coercion go through ``expr()``:
     expr(True, theory=LRA)                     # a Bool constant
     expr(3, theory=LRA, sort=Sort.Real)        # a numeric constant (sort is REQUIRED)
     expr(5, theory=BV, sort=Sort.BitVec(32, [1, 1]), signed=True)
+    expr((latched, next), theory=LRA, tag="x")  # `tag` is a display label only, no meaning
 
 ``expr()`` is **not idempotent** — passing an existing ``Expr`` is an error. Operators coerce
 a *raw* operand through it (using the sibling's sort) but never convert between sorts: mixing
@@ -127,14 +128,14 @@ def _emit(term: Term) -> Term:
 # --- result-sort -> subclass (the ONE place mapping sort to class) ----------
 
 
-def _wrap(wire, theory, *, next=None, value=None, signed=False) -> "Expr":
+def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Expr":
     match wire.dtype:
         case Sort.Bool(_):
-            return BExpr(wire, theory, next=next, value=value)
+            return BExpr(wire, theory, next=next, value=value, tag=tag)
         case Sort.Int(_) | Sort.Real(_):
-            return AExpr(wire, theory, next=next, value=value)
+            return AExpr(wire, theory, next=next, value=value, tag=tag)
         case Sort.BitVec(_, _):
-            return WExpr(wire, theory, next=next, value=value, signed=signed)
+            return WExpr(wire, theory, next=next, value=value, signed=signed, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
 
 
@@ -146,11 +147,12 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False) -> "Expr":
 class Expr:
     """Shared plumbing; instances are always one of AExpr / BExpr / WExpr (via ``expr()``)."""
 
-    def __init__(self, wire, theory, *, next=None, value=None):
+    def __init__(self, wire, theory, *, next=None, value=None, tag=None):
         self._wire = wire
         self._theory = theory
         self._next = next          # next wire, for a variable leaf (nxt(v))
         self._value = value        # tensor, for a constant leaf (mul/matmul folds)
+        self._tag = tag            # optional human label; carries NO logical meaning
 
     # --- accessors ---
     @property
@@ -168,6 +170,11 @@ class Expr:
     @property
     def theory(self):
         return self._theory
+
+    @property
+    def tag(self):
+        """Optional label for display/debugging only — it has no logical meaning."""
+        return self._tag
 
     # --- coercion (raw literal -> Expr of my sort; never converts an Expr) ---
     def _coerce(self, o) -> "Expr":
@@ -194,7 +201,8 @@ class Expr:
 
     @override
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(#{self._wire.id}, {self._wire.dtype})"
+        label = f"{self._tag!r} " if self._tag is not None else ""
+        return f"{type(self).__name__}({label}#{self._wire.id}, {self._wire.dtype})"
 
 
 # ---------------------------------------------------------------------------
@@ -267,8 +275,8 @@ class BExpr(Expr):
 
 
 class WExpr(AExpr):
-    def __init__(self, wire, theory, *, next=None, value=None, signed=False):
-        super().__init__(wire, theory, next=next, value=value)
+    def __init__(self, wire, theory, *, next=None, value=None, signed=False, tag=None):
+        super().__init__(wire, theory, next=next, value=value, tag=tag)
         self._signed = signed
 
     @property
@@ -306,16 +314,16 @@ class WExpr(AExpr):
 # ---------------------------------------------------------------------------
 
 
-def expr(value, *, theory=None, sort=None, signed=False) -> Expr:
+def expr(value, *, theory=None, sort=None, signed=False, tag=None) -> Expr:
     if isinstance(value, Expr):
         raise TypeError("expr() builds from a raw value; got an Expr already")
     if theory is None:
         raise TypeError("expr() requires theory=")
     if _is_wire_pair(value):                   # (latched, next) -> state variable
-        return _wrap(value[0], theory, next=value[1], signed=signed)
+        return _wrap(value[0], theory, next=value[1], signed=signed, tag=tag)
     if isinstance(value, Wire):                # single wire -> bare expr (no nxt)
-        return _wrap(value, theory, signed=signed)
-    return _const(value, theory, sort, signed)
+        return _wrap(value, theory, signed=signed, tag=tag)
+    return _const(value, theory, sort, signed, tag)
 
 
 def _resolve_sort(sort, shape) -> Sort:
@@ -335,7 +343,7 @@ def _wants_float(sort) -> bool:
     return isinstance(sort, Sort.Real) or sort is Sort.Real
 
 
-def _const(value, theory, sort, signed) -> Expr:
+def _const(value, theory, sort, signed, tag=None) -> Expr:
     if isinstance(value, bool):                # Bool is unambiguous -> no sort= needed
         tensor, family = torch.tensor([[value]], dtype=torch.bool), Sort.Bool
     else:
@@ -353,7 +361,7 @@ def _const(value, theory, sort, signed) -> Expr:
     # one Const per theory; its sort (and thus the tensor's expected element kind) is
     # taken from the write wire `w`.
     _emit(Term.constant(theory.Const(tensor), [w]))
-    return _wrap(w, theory, value=tensor, signed=signed)
+    return _wrap(w, theory, value=tensor, signed=signed, tag=tag)
 
 
 def cast(e: Expr, sort) -> Expr:
