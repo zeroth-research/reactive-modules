@@ -425,8 +425,12 @@ def ne(a: Expr, b) -> Expr:
 
 
 def relu(e: Expr) -> Expr:
+    if not hasattr(e._theory, "ReLU"):
+        raise TypeError(f"{e._theory.__name__} has no ReLU op")
     return e._unop(e._theory.ReLU())
 
 
 def argmax(e: Expr) -> Expr:
+    if not hasattr(e._theory, "Argmax"):
+        raise TypeError(f"{e._theory.__name__} has no Argmax op")
     return e._unop(e._theory.Argmax(), out=_with_shape(e.dtype, [1, 1]))
