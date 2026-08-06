@@ -149,8 +149,8 @@ def test_collecting_records_deps_first():
     x, y = _var(INT), _var(INT)
     with collecting() as terms:
         ite(x < y, x + 1, y)
-    itypes = [type(t.itype).__name__ for t in terms]
-    assert itypes == ["LIA_Lt", "LIA_Const", "LIA_Add", "LIA_Ite"]
+    optypes = [type(t.itype) for t in terms]
+    assert optypes == [LIA.Lt, LIA.Const, LIA.Add, LIA.Ite]
 
 
 def test_shared_subexpression_recorded_once():
@@ -159,7 +159,7 @@ def test_shared_subexpression_recorded_once():
         g = x < y
         ite(g, x + 1, x)
         ite(g, y, y)
-    assert sum(type(t.itype).__name__ == "LIA_Lt" for t in terms) == 1
+    assert sum(isinstance(t.itype, LIA.Lt) for t in terms) == 1
 
 
 # --- evaluation end-to-end --------------------------------------------------
