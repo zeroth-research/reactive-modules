@@ -35,7 +35,7 @@ from ._domain import guard_from_transition
 from ._farkas import certify_decrease
 from zrth import LIA, Module, Wire
 from zrth import z3 as zz3
-from zrth.dsl import const, dslModule, nxt, relu
+from zrth.sugar import Module as dslModule, expr, nxt, relu
 
 
 # ---------------------------------------------------------------------------
@@ -92,11 +92,11 @@ def _V_term(xs, layers):
     (W1, b1), (W2, b2) = layers
     hid = []
     for j in range(W1.shape[0]):
-        pre = const(int(b1[j]), LIA)
+        pre = expr(int(b1[j]), theory=LIA, sort=INT)
         for k in range(len(xs)):
             pre = pre + xs[k] * int(W1[j][k])
         hid.append(relu(pre))
-    out = const(int(b2[0]), LIA)
+    out = expr(int(b2[0]), theory=LIA, sort=INT)
     for j in range(len(hid)):
         out = out + hid[j] * int(W2[0][j])
     return out

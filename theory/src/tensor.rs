@@ -49,6 +49,14 @@ mod torch {
         pub tensor: tch::Tensor,
     }
 
+    impl PyTensor {
+        /// Whether the underlying tensor has boolean element type (used to validate a
+        /// constant against its write wire's sort).
+        pub fn is_bool(&self) -> bool {
+            self.tensor.kind() == tch::Kind::Bool
+        }
+    }
+
     impl std::ops::Deref for PyTensor {
         type Target = tch::Tensor;
 
@@ -149,6 +157,10 @@ mod stub {
         }
 
         pub fn int64_value(&self, _index: &[i64]) -> i64 {
+            unreachable!("{MSG}")
+        }
+
+        pub fn is_bool(&self) -> bool {
             unreachable!("{MSG}")
         }
     }

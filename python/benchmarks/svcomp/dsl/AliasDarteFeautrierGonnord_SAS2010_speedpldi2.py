@@ -18,7 +18,7 @@ Precondition: n >= 0 && m > 0 (outer if also initialises v1, v2).
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.dsl import dslModule, nxt, ite
+from zrth.sugar import Module as dslModule, nxt, ite
 
 from .._bench import Bench, pair
 

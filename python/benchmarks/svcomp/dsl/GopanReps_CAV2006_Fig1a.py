@@ -15,7 +15,7 @@ No nondet inputs: both variables start from constants.
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.dsl import dslModule, ite
+from zrth.sugar import Module as dslModule, ite
 
 from .._bench import Bench, pair
 

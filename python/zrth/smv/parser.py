@@ -569,7 +569,7 @@ class _Lowerer:
         dtype = Sort.BitVec(width, [1, 1])
         w = Wire(dtype)
         self._wire_types[id(w)] = _SMVType(dtype, signed=signed)
-        # Word literals produce a BV constant, not an LIA ConstInt.
+        # Word literals produce a BV constant, not an LIA Const.
         self.terms.append(Term(_bv_const(value), [w]))
         return self._maybe_bit_select(tree, w, 1, target)
 

@@ -9,9 +9,9 @@ A [`Sort`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
 so that integer and propositional terms embed directly into `RLA`. The
 operations in [`LRA`] are:
 
-- [`LRA::Const`] — an real matrix literal whose shape must match the
-  declared (integer) write type.
-- [`LRA::BoolConst`], [`LRA::And`], [`LRA::Or`], [`LRA::Xor`], [`LRA::Not`]
+- [`LRA::Const`] — a matrix literal whose sort (real or boolean) is taken
+  from the write wire; the tensor's element kind must match that sort.
+- [`LRA::And`], [`LRA::Or`], [`LRA::Xor`], [`LRA::Not`]
   — boolean operations on the boolean fragment of `Type`.
 - [`LRA::Le`], [`LRA::Lt`], [`LRA::Ge`], [`LRA::Gt`], [`LRA::Eq`], [`LRA::Ne`]
   — pointwise integer comparisons producing a scalar `Bool(1,1)`.
@@ -80,9 +80,8 @@ impl fmt::Display for Sort {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LRA {
-    // constants
-    ConstReal(crate::PyTensor),
-    ConstBool(crate::PyTensor),
+    // constant matrix literal; its sort (Real or Bool) is taken from the write wire
+    Const(crate::PyTensor),
     // boolean operations
     And(),
     Or(),
@@ -116,8 +115,7 @@ pub enum LRA {
 impl fmt::Display for LRA {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LRA::ConstReal(cm) => write!(f, "{}", cm),
-            LRA::ConstBool(cm) => write!(f, "{}", cm),
+            LRA::Const(cm) => write!(f, "{}", cm),
             LRA::And() => write!(f, "And"),
             LRA::Or() => write!(f, "Or"),
             LRA::Xor() => write!(f, "Xor"),
@@ -154,10 +152,8 @@ impl Theory for LRA {
         W: IntoIterator<Item = D>,
     {
         match self {
-            LRA::ConstReal(cm) => check_const(cm, read, write),
-            LRA::ConstBool(_) | LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => {
-                check_bool(self, read, write)
-            }
+            LRA::Const(cm) => check_const(cm, read, write),
+            LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => check_bool(self, read, write),
             LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
                 check_cmp(self, read, write)
             }
@@ -219,32 +215,38 @@ where
     if read.next().is_some() {
         return Err("Const: cannot read values".into());
     }
-    let dtype = write_nxt(&mut write, 0, "LRA")?;
-    match dtype {
+    // the sort comes from the write wire; validate the tensor's kind matches it
+    let [i, j] = match write_nxt(&mut write, 0, "LRA")? {
         Sort::Real([i, j]) => {
-            let size = cm.size();
-            if size.len() != 2 {
-                return Err(format!(
-                    "ConstReal: initializer must be a 2D tensor, got {}D",
-                    size.len()
-                ));
+            if cm.is_bool() {
+                return Err("Const: write wire is Real but initializer is a boolean tensor".into());
             }
-            if size[0] as usize != i {
-                return Err(format!(
-                    "ConstReal: initializer has wrong number of rows (has {}, expected {})",
-                    size[0], i
-                ));
-            }
-            if size[1] as usize != j {
-                return Err(format!(
-                    "ConstReal: some row has wrong length, expected {}",
-                    j
-                ));
-            }
+            [i, j]
         }
-        Sort::Bool(..) => {
-            return Err("Const must be real matrix, not boolean".into());
+        Sort::Bool([i, j]) => {
+            if !cm.is_bool() {
+                return Err(
+                    "Const: write wire is Bool but initializer is not a boolean tensor".into(),
+                );
+            }
+            [i, j]
         }
+    };
+    let size = cm.size();
+    if size.len() != 2 {
+        return Err(format!(
+            "Const: initializer must be a 2D tensor, got {}D",
+            size.len()
+        ));
+    }
+    if size[0] as usize != i {
+        return Err(format!(
+            "Const: initializer has wrong number of rows (has {}, expected {})",
+            size[0], i
+        ));
+    }
+    if size[1] as usize != j {
+        return Err(format!("Const: some row has wrong length, expected {}", j));
     }
     if write.next().is_some() {
         return Err("Const: returns more than one value".into());
@@ -261,37 +263,6 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LRA::ConstBool(cm) => {
-            if read.next().is_some() {
-                return Err("ConstBool: cannot read values".into());
-            }
-            let Sort::Bool([i, j]) = write_nxt(&mut write, 0, "LRA")? else {
-                return Err("ConstBool: write type must be Bool".into());
-            };
-            let size = cm.size();
-            if size.len() != 2 {
-                return Err(format!(
-                    "ConstBool: initializer must be a 2D tensor, got {}D",
-                    size.len()
-                ));
-            }
-            if size[0] as usize != i {
-                return Err(format!(
-                    "ConstBool: initializer has wrong number of rows (has {}, expected {})",
-                    size[0], i
-                ));
-            }
-            if size[1] as usize != j {
-                return Err(format!(
-                    "ConstBool: some row has wrong length, expected {}",
-                    j
-                ));
-            }
-            if write.next().is_some() {
-                return Err("ConstBool: returns more than one value".into());
-            }
-            Ok(())
-        }
         LRA::Not() => {
             let (r, w) = (
                 read_nxt(&mut read, 0, "LRA")?,
@@ -626,17 +597,13 @@ mod tests {
     #[test]
     fn const_real_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
-        assert!(
-            LRA::ConstReal(cm)
-                .check([] as [Sort; 0], [real(2, 2)])
-                .is_ok()
-        );
+        assert!(LRA::Const(cm).check([] as [Sort; 0], [real(2, 2)]).is_ok());
     }
 
     #[test]
     fn const_real_bool_write_fails() {
         assert!(
-            LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+            LRA::Const(tch::Tensor::from_slice2(&[[0.0f64]]).into())
                 .check([] as [Sort; 0], [bool_t(1, 1)])
                 .is_err()
         );
@@ -645,7 +612,7 @@ mod tests {
     #[test]
     fn const_real_wrong_rows_fails() {
         assert!(
-            LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+            LRA::Const(tch::Tensor::from_slice2(&[[0.0f64]]).into())
                 .check([] as [Sort; 0], [real(2, 1)])
                 .is_err()
         );
@@ -655,7 +622,7 @@ mod tests {
     fn const_real_with_read_fails() {
         let t = real(1, 1);
         assert!(
-            LRA::ConstReal(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+            LRA::Const(tch::Tensor::from_slice2(&[[0.0f64]]).into())
                 .check([t], [t])
                 .is_err()
         );
@@ -665,7 +632,7 @@ mod tests {
     fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
-            LRA::ConstBool(cm)
+            LRA::Const(cm)
                 .check([] as [Sort; 0], [bool_t(2, 2)])
                 .is_ok()
         );
@@ -674,7 +641,7 @@ mod tests {
     #[test]
     fn const_bool_real_write_fails() {
         assert!(
-            LRA::ConstBool(tch::Tensor::from_slice2(&[[true]]).into())
+            LRA::Const(tch::Tensor::from_slice2(&[[true]]).into())
                 .check([] as [Sort; 0], [real(1, 1)])
                 .is_err()
         );

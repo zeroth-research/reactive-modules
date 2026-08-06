@@ -37,7 +37,7 @@ real encoding.
 from __future__ import annotations
 
 from zrth import LIA, Wire
-from zrth.dsl import dslModule, nxt, ite, eq, ne  # noqa: F401  (eq/ne used by many encodings)
+from zrth.sugar import Module as dslModule, nxt, ite, eq, ne  # noqa: F401  (eq/ne used by many encodings)
 
 from .._bench import Bench, INT, pair
 

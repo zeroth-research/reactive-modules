@@ -17,7 +17,7 @@ restricts the comparison to that domain.
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.dsl import dslModule, nxt, ite, eq
+from zrth.sugar import Module as dslModule, nxt, ite, eq
 
 from .._bench import Bench, pair
 

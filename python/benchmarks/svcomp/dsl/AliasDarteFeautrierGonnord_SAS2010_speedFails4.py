@@ -15,16 +15,18 @@
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.dsl import dslModule, nxt, ite
+from zrth.sugar import Module as dslModule, expr, nxt, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, INT, pair
 
 
 class Program(dslModule):
     def init(self, extl):
         i0, x0, n0, b0 = extl
-        # t = 1 if b>=1 else -1  (b set once before the loop)
-        return nxt(i0), nxt(x0), nxt(n0), nxt(b0), ite(nxt(b0) >= 1, 1, -1)
+        # t = 1 if b>=1 else -1  (b set once before the loop); `ite` needs one
+        # branch as an Expr to pin the theory and sort
+        one = expr(1, theory=LIA, sort=INT)
+        return nxt(i0), nxt(x0), nxt(n0), nxt(b0), ite(nxt(b0) >= 1, one, -1)
 
     def update(self, ctrl):
         i, x, n, b, t = ctrl

@@ -24,17 +24,17 @@ def test_term_new():
 
     # test `function` ctor
     _ = Term.function(LIA.Add(), [xn], [x, y])
-    _ = Term.function(LIA.ConstInt(torch.tensor([[3, 4, 5]])), [w4], [])
-    _ = Term.function(LIA.ConstInt(torch.tensor([[3, 4, 6]])), [w5], [])
+    _ = Term.function(LIA.Const(torch.tensor([[3, 4, 5]])), [w4], [])
+    _ = Term.function(LIA.Const(torch.tensor([[3, 4, 6]])), [w5], [])
 
     # comparisons are pointwise -> Bool of the operand shape
     Term(LIA.Lt(), [Wire(Sort.Bool([1, 3]))], [w4, Wire(Sort.Int([1, 3]))])
-    Term.constant(LIA.ConstInt(torch.tensor([[3, 2, 1]])), [Wire(Sort.Int([1, 3]))])
+    Term.constant(LIA.Const(torch.tensor([[3, 2, 1]])), [Wire(Sort.Int([1, 3]))])
 
 
 def test_module_sequential():
     x = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    init = [Term.constant(LIA.ConstBool(_bool_t(True)), [x[1]])]
+    init = [Term.constant(LIA.Const(_bool_t(True)), [x[1]])]
     update = [Term(LIA.Id(), [x[1]], [x[0]])]
     _ = Module.sequential(init, update, [x])
 
@@ -42,7 +42,7 @@ def test_module_sequential():
 def test_module_combinatorial():
     x = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
 
-    assign = [Term.constant(LIA.ConstBool(_bool_t(False)), [x[1]])]
+    assign = [Term.constant(LIA.Const(_bool_t(False)), [x[1]])]
     _ = Module.combinatorial(assign, [x])
 
 
@@ -53,13 +53,13 @@ def test_module_parallel():
     w = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
     v = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
 
-    init = [Term.constant(LIA.ConstBool(_bool_t(False)), [x[1]])]
+    init = [Term.constant(LIA.Const(_bool_t(False)), [x[1]])]
     update = [Term(LIA.And(), [x[1]], [x[0], y[1]])]
     p = Module.sequential(init, update, obs=[x, y])
 
     init = [
-        Term.constant(LIA.ConstBool(_bool_t(False)), [v[1]]),
-        Term.constant(LIA.ConstBool(_bool_t(False)), [y[1]]),
+        Term.constant(LIA.Const(_bool_t(False)), [v[1]]),
+        Term.constant(LIA.Const(_bool_t(False)), [y[1]]),
     ]
     update = [Term(LIA.And(), [v[1]], [v[0], x[0]]), Term(LIA.Id(), [y[1]], [x[0]])]
     q = Module.sequential(init, update, obs=[x, y], prvt=[v])

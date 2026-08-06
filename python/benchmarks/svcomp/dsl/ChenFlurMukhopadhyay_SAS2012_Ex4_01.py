@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.dsl import dslModule, nxt, ite
+from zrth.sugar import Module as dslModule, nxt, ite
 
 from .._bench import Bench, pair
 

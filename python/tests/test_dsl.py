@@ -1,6 +1,6 @@
-"""Tests for `dslModule` — the subclass-a-Module DSL front-end.
+"""Tests for `sugar.Module` — the subclass-a-Module DSL front-end.
 
-A `dslModule` subclass *is* a base Module: pass `theory` and the `ctrl`(/`extl`) wire
+A `sugar.Module` subclass *is* a base Module: pass `theory` and the `ctrl`(/`extl`) wire
 pairs and override `init`/`update` (sequential) or `assign` (combinatorial), and the
 module is built in the constructor. These tests build small modules and step them
 through `zrth.eval` (mirroring test_eval), plus check the ctrl/extl partition and the
@@ -10,8 +10,8 @@ config surface.
 import pytest
 import torch
 
-from zrth import LIA, Module, Sort, Wire, dslModule
-from zrth.dsl import nxt, ite
+from zrth import LIA, Module, Sort, Wire, sugar
+from zrth.sugar import nxt, ite
 from zrth.eval import eval_itype
 
 INT = Sort.Int([1, 1])
@@ -59,7 +59,7 @@ def _trace(m, steps, wire):
 # --- counter (closed, single var, no extl) ----------------------------------
 
 
-class Counter(dslModule):
+class Counter(sugar.Module):
     def init(self):
         return 0
 
@@ -83,7 +83,7 @@ def test_counter_counts():
 # --- multi-var with ite and an unchanged var --------------------------------
 
 
-class Bounded(dslModule):
+class Bounded(sugar.Module):
     def init(self):
         return 0, 3
 
@@ -103,7 +103,7 @@ def test_multivar_ite_and_hold():
 # --- extl variables become external inputs (open module) --------------------
 
 
-class Gate(dslModule):
+class Gate(sugar.Module):
     def init(self):
         return 0
 
@@ -123,7 +123,7 @@ def test_extl_is_external_and_module_is_open():
 
 
 def test_builds_from_wire_pairs_passed_directly():
-    class C(dslModule):
+    class C(sugar.Module):
         def init(self):
             return 0
 
@@ -135,7 +135,7 @@ def test_builds_from_wire_pairs_passed_directly():
 
 
 def test_missing_config_raises():
-    class Bad(dslModule):
+    class Bad(sugar.Module):
         def update(self, ctrl):
             return ctrl
 
@@ -144,7 +144,7 @@ def test_missing_config_raises():
 
 
 def test_missing_init_raises():
-    class NoInit(dslModule):
+    class NoInit(sugar.Module):
         def update(self, ctrl):
             return ctrl + 1
 
@@ -156,7 +156,7 @@ def test_missing_init_raises():
 # --- combinatorial modules (`assign`, no init/update) -----------------------
 
 
-class Double(dslModule):
+class Double(sugar.Module):
     def assign(self, extl):
         return nxt(extl) * 2  # combinatorial: output = 2 * (awaited input)
 
@@ -180,7 +180,7 @@ def test_combinatorial_reads_awaited_input():
 
 
 def test_assign_with_sequential_blocks_raises():
-    class Both(dslModule):
+    class Both(sugar.Module):
         def assign(self, extl):
             return nxt(extl)
 
@@ -195,7 +195,7 @@ def test_assign_with_sequential_blocks_raises():
 def test_subexpression_shared_across_returns():
     # a guard reused in several returned values must be emitted once, not once per
     # value (else its wire is "written more than once")
-    class Shared(dslModule):
+    class Shared(sugar.Module):
         def init(self):
             return 0, 0
 
