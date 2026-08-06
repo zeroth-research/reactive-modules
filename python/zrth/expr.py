@@ -166,6 +166,7 @@ class Expr:
 
     @property
     def shape(self) -> list:
+        """The ``[rows, cols]`` matrix shape of this expression's wire sort (always 2-D)."""
         return _shape(self._wire.dtype)
 
     @property
