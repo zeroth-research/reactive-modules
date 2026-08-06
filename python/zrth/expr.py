@@ -1,7 +1,8 @@
-"""Expression: eager, theory-baked symbolic expressions for the DSL.
+"""Expression: theory-baked symbolic expressions for the DSL.
 
-An ``Expr`` is a thin, *eager* wrapper over a wire: composing one immediately builds the
-underlying ``Term`` and **records it in the active collector** (see ``collecting``). Exprs
+An ``Expr`` is a thin wrapper over a wire that lets you build ``Term``s by writing expressions
+like ``x + 1`` or ``ite(x < y, x + 1, y)``: composing one immediately builds the underlying
+``Term`` and **records it in the active collector** (see ``collecting``). Exprs
 are split by *operation family* (the sort picks the class):
 
     AExpr  — Arithmetic   Int / Real     +  -  *  @   and comparisons (-> BExpr)
