@@ -192,3 +192,55 @@ def test_mul_of_two_variables_is_nonlinear():
     x, y = _var(INT), _var(INT)
     with pytest.raises(NonLinearError):
         _ = x * y
+
+
+# --- single entry point: const / var / pair / wire all go through expr() -----
+
+
+def test_single_entry_point_spec():
+    """The one `expr()` handles every leaf; there is no separate var/const/pair API,
+    and no string distinguishes a variable. (Spec from the `marco/dsl` review.)"""
+    BOOL = Sort.Bool([1, 1])
+
+    # a wire pair with no theory -> not enough information to pick a class
+    with pytest.raises(TypeError):
+        expr((Wire(BOOL), Wire(BOOL)))
+
+    # wire pair -> state variable; bool literal and bare wire -> all BExpr (Bool sort)
+    x = expr((Wire(BOOL), Wire(BOOL)), theory=LRA)
+    y = expr(True, theory=LRA)
+    w = expr(Wire(BOOL), theory=LRA)
+    assert isinstance(x, BExpr) and isinstance(y, BExpr) and isinstance(w, BExpr)
+
+    # boolean composition stays BExpr; a raw operand coerces through expr()
+    assert isinstance(x & y & w, BExpr)
+    assert isinstance(x & y & w & True, BExpr)
+
+    # a numeric literal needs an explicit sort; with one it is an AExpr
+    with pytest.raises(TypeError):
+        expr(0.3, theory=LRA)
+    b = expr(0.3, theory=LRA, sort=Sort.Real)
+    assert isinstance(b, AExpr)
+    assert isinstance(b + 1, AExpr)                       # raw operand coerces
+
+    # list / tensor constants; matmul with a raw tensor coerces the tensor
+    t = expr([0.1, 1.0], theory=LRA, sort=Sort.Real)
+    assert isinstance(t, AExpr)
+    u = t @ torch.tensor([[0.2], [0.5]])
+    assert isinstance(u, AExpr)
+
+    # not idempotent: passing an Expr back into expr() is an error
+    with pytest.raises(TypeError):
+        expr(u)
+
+
+def test_tag_is_a_label_with_no_logical_meaning():
+    # `tag` is optional, purely a display label; it does not affect the class or ops.
+    p = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
+    x = expr(p, theory=LRA, tag="x")
+    assert x.tag == "x"
+    assert isinstance(x, BExpr)
+    assert "x" in repr(x)
+    # untagged leaves and derived expressions simply have no tag
+    assert expr(True, theory=LRA).tag is None
+    assert (x & True).tag is None
