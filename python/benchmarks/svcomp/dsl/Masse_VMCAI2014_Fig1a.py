@@ -15,12 +15,12 @@ Note: `-b` is encoded as `-1 * b` (unary minus is not overloaded).
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module as dslModule, nxt, ite
+from zrth.sugar import Module, nxt, ite
 
 from .._bench import Bench, pair
 
 
-class Program(dslModule):
+class Program(Module):
     def init(self, extl):
         a0, b0 = extl
         return nxt(a0), nxt(b0)                  # a, b both nondet

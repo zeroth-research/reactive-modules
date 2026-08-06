@@ -37,12 +37,12 @@ real encoding.
 from __future__ import annotations
 
 from zrth import LIA, Wire
-from zrth.sugar import Module as dslModule, nxt, ite, eq, ne  # noqa: F401  (eq/ne used by many encodings)
+from zrth.sugar import Module, nxt, ite, eq, ne  # noqa: F401  (eq/ne used by many encodings)
 
 from .._bench import Bench, INT, pair
 
 
-class Program(dslModule):
+class Program(Module):
     # while (i <= 100 && j <= k) { tmp = i; i = j; j = tmp + 1; k = k - 1; }
     def init(self, extl):
         # `extl` is the tuple of nondet inputs, in the order passed to `extl=`.

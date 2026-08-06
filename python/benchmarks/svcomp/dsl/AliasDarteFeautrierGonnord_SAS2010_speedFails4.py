@@ -15,12 +15,12 @@
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module as dslModule, expr, nxt, ite
+from zrth.sugar import Module, expr, nxt, ite
 
 from .._bench import Bench, INT, pair
 
 
-class Program(dslModule):
+class Program(Module):
     def init(self, extl):
         i0, x0, n0, b0 = extl
         # t = 1 if b>=1 else -1  (b set once before the loop); `ite` needs one

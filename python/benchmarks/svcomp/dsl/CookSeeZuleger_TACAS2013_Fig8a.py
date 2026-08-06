@@ -11,12 +11,12 @@
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module as dslModule, nxt, ite, ne
+from zrth.sugar import Module, nxt, ite, ne
 
 from .._bench import Bench, pair
 
 
-class Program(dslModule):
+class Program(Module):
     def init(self, extl):
         x0 = extl                               # single input, unwrapped
         return nxt(x0)                          # x = nondet

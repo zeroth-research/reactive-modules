@@ -16,12 +16,12 @@ Notes:
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module as dslModule, nxt, ite, eq
+from zrth.sugar import Module, nxt, ite, eq
 
 from .._bench import Bench, pair
 
 
-class Program(dslModule):
+class Program(Module):
     def init(self, extl):
         z0 = extl
         return 0, 100, nxt(z0)                  # x = 0, y = 100, z = nondet

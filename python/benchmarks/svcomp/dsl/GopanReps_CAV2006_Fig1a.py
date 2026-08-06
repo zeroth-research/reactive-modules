@@ -15,12 +15,12 @@ No nondet inputs: both variables start from constants.
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module as dslModule, ite
+from zrth.sugar import Module, ite
 
 from .._bench import Bench, pair
 
 
-class Program(dslModule):
+class Program(Module):
     def init(self, extl):
         return 0, 0                             # x = 0, y = 0
 

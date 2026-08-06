@@ -16,12 +16,12 @@ Precondition: y1 > 0 && y2 > 0.
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module as dslModule, nxt, ite, ne
+from zrth.sugar import Module, nxt, ite, ne
 
 from .._bench import Bench, pair
 
 
-class Program(dslModule):
+class Program(Module):
     def init(self, extl):
         y1_0, y2_0 = extl
         return nxt(y1_0), nxt(y2_0)

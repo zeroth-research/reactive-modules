@@ -17,12 +17,12 @@ restricts the comparison to that domain.
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module as dslModule, nxt, ite, eq
+from zrth.sugar import Module, nxt, ite, eq
 
 from .._bench import Bench, pair
 
 
-class Program(dslModule):
+class Program(Module):
     def init(self, extl):
         x0, y0, z0 = extl
         return nxt(x0), nxt(y0), nxt(z0)        # x, y, z all nondet

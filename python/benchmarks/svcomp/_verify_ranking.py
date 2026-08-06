@@ -33,9 +33,9 @@ import z3
 from ._bench import Bench, INT  # noqa: F401
 from ._domain import guard_from_transition
 from ._farkas import certify_decrease
-from zrth import LIA, Module, Wire
+from zrth import LIA, Module, Wire, sugar
 from zrth import z3 as zz3
-from zrth.sugar import Module as dslModule, expr, nxt, relu
+from zrth.sugar import expr, nxt, relu
 
 
 # ---------------------------------------------------------------------------
@@ -116,11 +116,11 @@ def _v_module(state_pairs, layers, *, read_next: bool):
     is a **combinatorial** atom (a single ``assign`` block, no init)."""
     out = (Wire(INT), Wire(INT))
     if read_next:
-        class _V(dslModule):
+        class _V(sugar.Module):
             def assign(self, extl):
                 return _V_term([nxt(x) for x in _xs(extl)], layers)
     else:
-        class _V(dslModule):
+        class _V(sugar.Module):
             def init(self, extl):
                 return _V_term([nxt(x) for x in _xs(extl)], layers)
 

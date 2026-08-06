@@ -17,12 +17,12 @@
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module as dslModule, nxt, ite
+from zrth.sugar import Module, nxt, ite
 
 from .._bench import Bench, pair
 
 
-class Program(dslModule):
+class Program(Module):
     def init(self, extl):
         j0, N0 = extl                            # read order: j, N
         return nxt(N0), nxt(j0), nxt(N0)         # i = N, j = nondet, N = nondet

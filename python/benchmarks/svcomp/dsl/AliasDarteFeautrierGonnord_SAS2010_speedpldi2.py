@@ -18,12 +18,12 @@ Precondition: n >= 0 && m > 0 (outer if also initialises v1, v2).
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module as dslModule, nxt, ite
+from zrth.sugar import Module, nxt, ite
 
 from .._bench import Bench, pair
 
 
-class Program(dslModule):
+class Program(Module):
     def init(self, extl):
         n0, m0 = extl                            # read order: n, m
         return nxt(m0), nxt(n0), nxt(n0), 0      # m, n, v1 = n, v2 = 0
