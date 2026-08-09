@@ -78,11 +78,11 @@ impl Module {
             (Some(obs), None, None, None, Some(prvt)) => {
                 let obs = try_wire2_iter_cloned(obs)?;
                 let prvt = try_wire2_iter_cloned(prvt)?;
-                base::Module::sequential(obs, prvt, init, update)
+                base::Module::partially_observable_sequential(obs, prvt, init, update)
             }
             (Some(wires), None, None, None, None) => {
-                let wires = try_wire2_iter_cloned(wires)?;
-                base::Module::observable_sequential(wires, init, update)
+                let obs = try_wire2_iter_cloned(wires)?;
+                base::Module::sequential(obs, init, update)
             }
             (None, Some(_state), Some(_input), Some(_output), None) => {
                 todo!() //moore

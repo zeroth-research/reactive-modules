@@ -271,7 +271,7 @@ where
     ///
     /// # See Also
     /// - [`Atom::combinatorial`], for constructing combinatorial atoms.
-    /// - [`Module::sequential`], for creating sequential modules.
+    /// - [`Module::partially_observable_sequential`], for creating sequential modules.
     pub fn sequential<'a, W, V, U>(latched: W, next: W, init: V, update: U) -> Result<Self, String>
     where
         W: IntoIterator<Item = &'a Wire<S>>,
@@ -678,17 +678,17 @@ where
     /// # See Also
     /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn observable_sequential<O, P, Q, R>(obs: O, init: Q, update: R) -> Result<Self, String>
+    pub fn sequential<O, P, Q, R>(obs: O, init: Q, update: R) -> Result<Self, String>
     where
         P: Into<[Wire<S>; 2]>,
         O: IntoIterator<Item = P>,
         Q: IntoIterator<Item = Term<I>>,
         R: IntoIterator<Item = Term<J>>,
     {
-        Self::sequential(obs, std::iter::empty::<P>(), init, update)
+        Self::partially_observable_sequential(obs, std::iter::empty::<P>(), init, update)
     }
 
-    pub fn sequential<TO, TP, O, P, Q, R>(
+    pub fn partially_observable_sequential<TO, TP, O, P, Q, R>(
         obs: O,
         prvt: P,
         init: Q,
@@ -723,10 +723,10 @@ where
     }
 }
 
-impl<T, D, S> Module<T, T, D, S>
+impl<T, F, S> Module<T, T, F, S>
 where
     T: Combinatorial<Sort = S> + Sequential<Sort = S> + Clone,
-    D: Differential<Sort = S>,
+    F: Differential<Sort = S>,
     S: Eq + Clone + Debug + fmt::Display,
 {
     /// Constructs a **purely combinatorial module** from an assignment sequence of terms.
@@ -745,7 +745,7 @@ where
     /// or an error string if inference or consistency checks fail.
     ///
     /// # See Also
-    /// - [`Module::sequential`], for constructing stateful, sequential modules.
+    /// - [`Module::partially_observable_sequential`], for constructing stateful, sequential modules.
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
     pub fn combinatorial<R, O, V>(obs: O, assign: V) -> Result<Self, String>
     where
