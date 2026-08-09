@@ -1,10 +1,11 @@
 use pyo3::prelude::*;
+use pyo3::types::PyString;
 use pyo3::{Bound, FromPyObject, PyAny, PyResult, pyclass};
 use std::fmt;
 use theory::bv::BV;
 use theory::lia::LIA;
 use theory::lra::LRA;
-use theory::{bv, lia, lra};
+use theory::{Combinatorial, Differential, Sequential, bv, lia, lra};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[pyclass(frozen, eq)]
@@ -90,6 +91,9 @@ impl TryFrom<Sort> for lra::Sort {
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
 pub enum Any {
+    HAVOC,
+    SKIP,
+    ZERO,
     LRA(LRA),
     LIA(LIA),
     BV(BV),
@@ -98,6 +102,9 @@ pub enum Any {
 impl fmt::Display for Any {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Any::HAVOC => write!(f, "HAVOC"),
+            Any::SKIP => write!(f, "SKIP"),
+            Any::ZERO => write!(f, "ZERO"),
             Any::LRA(op) => write!(f, "{}", op),
             Any::LIA(op) => write!(f, "{}", op),
             Any::BV(op) => write!(f, "{}", op),
@@ -167,11 +174,26 @@ impl theory::Theory for Any {
         let read = read.into_iter().map(TryFrom2::new);
         let write = write.into_iter().map(TryFrom2::new);
         match &self {
+            Any::HAVOC => Ok(()),
+            Any::SKIP => Ok(()),
+            Any::ZERO => Ok(()),
             Any::LRA(itype) => itype.check(read, write),
             Any::LIA(itype) => itype.check(read, write),
             Any::BV(itype) => itype.check(read, write),
         }
     }
+}
+
+impl Combinatorial for Any {
+    const HAVOC: Self = Any::HAVOC;
+}
+
+impl Sequential for Any {
+    const SKIP: Self = Any::SKIP;
+}
+
+impl Differential for Any {
+    const ZERO: Self = Any::ZERO;
 }
 
 impl<'py> FromPyObject<'py> for Any {
@@ -198,6 +220,9 @@ impl<'py> IntoPyObject<'py> for Any {
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self {
+            Any::HAVOC => Ok(PyString::new(py, "HAVOC").into_any()),
+            Any::SKIP => Ok(PyString::new(py, "SKIP").into_any()),
+            Any::ZERO => Ok(PyString::new(py, "ZERO").into_any()),
             Any::LRA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::LIA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::BV(a) => a.into_pyobject(py).map(Bound::into_any),

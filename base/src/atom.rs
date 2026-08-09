@@ -1,58 +1,70 @@
-use crate::Error;
 use crate::term::{Block, Term};
 use crate::wire::{Interface, Wire};
+use crate::{Error, Module};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use theory::Theory;
+use theory::{Combinatorial, Differential, Sequential, Theory};
 
 #[cfg(debug_assertions)]
 use std::collections::HashSet;
+use std::fmt::Debug;
 
 /// This data structure corresponds to the atom of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Atom<T: Theory> {
-    /// Corresponds to ctr variables.
-    ctrl: Interface<T::Sort>,
-    /// Corresponds to wait variables.
-    wait: Interface<T::Sort>,
-    /// Corresponds to read variables.
-    read: Interface<T::Sort>,
+pub struct Atom<I, J, F, S = <I as Theory>::Sort>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+{
+    /// Corresponds to ctr wires.
+    ctrl: Interface<S>,
+    /// Corresponds to wait wires.
+    wait: Interface<S>,
+    /// Corresponds to read wires.
+    read: Interface<S>,
     /// Corresponds to temporary, local wires.
-    temp: Interface<T::Sort>,
-    /// Corresponds to the initial action.
-    init: Block<T>,
+    temp: Interface<S>,
+    /// Corresponds to the initial condition.
+    init: Block<I>,
     /// Corresponds to the update action.
-    update: Block<T>,
-    // flow: Vec<Term<I>>, // the default flow must be a constant so the derivative is 0
+    update: Block<J>,
+    /// Corresponds to the delay activity.
+    delay: Block<F>,
 }
 
-impl<T: Theory> Atom<T> {
+impl<I, J, F, S> Atom<I, J, F, S>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+{
     /// Returns a reference to the initial action.
-    pub fn init(&self) -> &Block<T> {
+    pub fn init(&self) -> &Block<I> {
         &self.init
     }
     /// Returns a reference to the update action.
-    pub fn update(&self) -> &Block<T> {
+    pub fn update(&self) -> &Block<J> {
         &self.update
     }
 
-    // fn flow(&self) -> &[Term<I>] {
-    //     &self.flow
-    // }
+    pub fn delay(&self) -> &Block<F> {
+        &self.delay
+    }
 
-    pub fn ctrl(&self) -> &Interface<T::Sort> {
+    pub fn ctrl(&self) -> &Interface<S> {
         &self.ctrl
     }
 
-    pub fn wait(&self) -> &Interface<T::Sort> {
+    pub fn wait(&self) -> &Interface<S> {
         &self.wait
     }
 
-    pub fn read(&self) -> &Interface<T::Sort> {
+    pub fn read(&self) -> &Interface<S> {
         &self.read
     }
 
-    pub fn temp(&self) -> impl Iterator<Item = &Wire<T::Sort>> {
+    pub fn temp(&self) -> impl Iterator<Item = &Wire<S>> {
         self.temp.wires()
     }
 
@@ -64,53 +76,67 @@ impl<T: Theory> Atom<T> {
             temp: Interface::empty(),
             init: Block::empty(),
             update: Block::empty(),
+            delay: Block::empty(),
         }
     }
 }
 
-impl<T: Theory> Default for Atom<T> {
+impl<I, J, F, S> Default for Atom<I, J, F, S>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+{
     fn default() -> Self {
         Self::empty()
     }
 }
 
-impl<T: Theory> Atom<T>
+impl<I, J, F, S> Atom<I, J, F, S>
 where
-    T::Sort: Eq,
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
 {
     /// Returns true if this atoms awaits the other atom
-    pub fn awaits(&self, other: &Atom<T>) -> bool {
+    pub fn awaits(&self, other: &Atom<I, J, F, S>) -> bool {
         !self.wait.is_disjoint(&other.ctrl)
     }
 
     /// Creates an atom from its components. This method checks the inputs only using assertions
     /// in debug mode.
     fn new_unchecked(
-        ctrl: Interface<T::Sort>,
-        wait: Interface<T::Sort>,
-        read: Interface<T::Sort>,
-        temp: Interface<T::Sort>,
-        init: Block<T>,
-        update: Block<T>,
+        ctrl: Interface<S>,
+        wait: Interface<S>,
+        read: Interface<S>,
+        temp: Interface<S>,
+        init: Block<I>,
+        update: Block<J>,
+        delay: Block<F>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
             //================================================================================
             // Check declared wires
             //================================================================================
-            let mut decl: HashMap<usize, &T::Sort> = HashMap::new();
+            let mut decl: HashMap<usize, &S> = HashMap::new();
             // declare read and await, don't allow repetition
             {
-                let read_wait_param = read.wires().chain(wait.wires());
-                for (w, dtype) in read_wait_param.map(Into::into) {
-                    debug_assert!(decl.insert(w, dtype).is_none(), "wire {w} doubly declared");
+                for wire in read.wires().chain(wait.wires()) {
+                    debug_assert!(
+                        decl.insert(wire.id(), wire.dtype()).is_none(),
+                        "wire {} doubly declared",
+                        wire.id()
+                    );
                 }
             }
             // check that read and wait are read only
             {
-                let init_update = init.iter().chain(update.iter());
-                for id in init_update.flat_map(|t| t.write().wires()).map(Wire::id) {
-                    debug_assert!(!decl.contains_key(&id), "wire {id} undeclared");
+                let init = init.iter().flat_map(|t| t.write().ids());
+                let update = update.iter().flat_map(|t| t.write().ids());
+                let delay = delay.iter().flat_map(|t| t.write().ids());
+                for id in init.chain(update).chain(delay) {
+                    debug_assert!(!decl.contains_key(&id), "invalid write on wire {id}");
                 }
             }
             // declare ctrl and temp, don't allow repetition
@@ -119,22 +145,20 @@ where
             }
             // check that read wires of terms have consistent dtype
             {
-                let init_update = init.iter().chain(update.iter());
-                for (w, dtype) in init_update.flat_map(|t| t.read().wires()).map(Into::into) {
-                    debug_assert!(
-                        decl.insert(w, dtype).is_some_and(|d| d == dtype),
-                        "wire {w} undeclared or dtype mismatch"
-                    );
+                let init = init.iter().flat_map(|t| t.read().ids());
+                let update = update.iter().flat_map(|t| t.read().ids());
+                let delay = delay.iter().flat_map(|t| t.write().ids());
+                for id in init.chain(update).chain(delay) {
+                    debug_assert!(decl.contains_key(&id), "wire {id} undeclared");
                 }
             }
             // check that write wires of terms have consistent dtype
             {
-                let init_update = init.iter().chain(update.iter());
-                for (w, dtype) in init_update.flat_map(|t| t.write().wires()).map(Into::into) {
-                    debug_assert!(
-                        decl.insert(w, dtype).is_some_and(|d| d == dtype),
-                        "wire {w} undeclared or dtype mismatch"
-                    );
+                let init = init.iter().flat_map(|t| t.write().ids());
+                let update = update.iter().flat_map(|t| t.write().ids());
+                let delay = delay.iter().flat_map(|t| t.write().ids());
+                for id in init.chain(update).chain(delay) {
+                    debug_assert!(decl.contains_key(&id), "wire {id} undeclared");
                 }
             }
 
@@ -179,6 +203,27 @@ where
             }
             // all control wires are written
             debug_assert!(ctrl.ids().all(|w| written.contains(&w)));
+
+            //================================================================================
+            // Check delay terms
+            //================================================================================
+            // the delay block can initially read from the read and await wires of the atom
+            let mut written = HashSet::<usize>::from_iter(read.ids().chain(wait.ids()));
+            for term in delay.iter() {
+                // all read wires were written before in the block
+                debug_assert!(
+                    term.read().ids().all(|rd| written.contains(&rd)),
+                    "read before write"
+                );
+                // no write wire was written before in the block
+                debug_assert!(
+                    term.write().ids().all(|rd| !written.contains(&rd)),
+                    "write after write"
+                );
+                written.extend(term.write().ids());
+            }
+            // all control wires are written
+            debug_assert!(ctrl.ids().all(|w| written.contains(&w)));
         }
 
         Self {
@@ -188,13 +233,17 @@ where
             temp,
             init,
             update,
+            delay,
         }
     }
 }
 
-impl<T: Theory> Atom<T>
+impl<I, J, F, S> Atom<I, J, F, S>
 where
-    T::Sort: Eq + Clone,
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+    S: Clone + Eq,
 {
     /// Constructs a **sequential atom**, representing behaviour that evolves over time.
     ///
@@ -223,29 +272,23 @@ where
     /// # See Also
     /// - [`Atom::combinatorial`], for constructing combinatorial atoms.
     /// - [`Module::sequential`], for creating sequential modules.
-    pub fn sequential<'a, L, N, V, U>(
-        latched: L,
-        next: N,
-        init: V,
-        update: U,
-    ) -> Result<Self, Error>
+    pub fn sequential<'a, W, V, U>(latched: W, next: W, init: V, update: U) -> Result<Self, Error>
     where
-        L: IntoIterator<Item = &'a Wire<T::Sort>>,
-        N: IntoIterator<Item = &'a Wire<T::Sort>>,
-        V: IntoIterator<Item = Term<T>>,
-        U: IntoIterator<Item = Term<T>>,
-        T::Sort: 'a,
+        W: IntoIterator<Item = &'a Wire<S>>,
+        V: IntoIterator<Item = Term<I>>,
+        U: IntoIterator<Item = Term<J>>,
+        S: 'a + fmt::Display,
     {
-        let latched: HashMap<usize, &T::Sort> = latched.into_iter().map(Into::into).collect();
-        let next: HashMap<usize, &T::Sort> = next.into_iter().map(Into::into).collect();
+        let latched: HashMap<usize, &S> = latched.into_iter().map(Into::into).collect();
+        let next: HashMap<usize, &S> = next.into_iter().map(Into::into).collect();
 
         let init = Block::try_from_iter(init)?;
         let update = Block::try_from_iter(update)?;
 
-        let mut ctrl: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut read: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut read: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
 
         for rd in init.read().iter().map(|[w]| w) {
             // init can only read from await wires
@@ -306,7 +349,7 @@ where
                 ctrl.insert(wt.id(), wt.clone());
                 continue;
             } else if next_dtype.is_some() {
-                return Err(format!("Controleld wire {} has a wrong dtype", wt.id()));
+                return Err(format!("Controlled wire {} has a wrong dtype", wt.id()));
             }
 
             if latched.contains_key(&wt.id()) {
@@ -325,6 +368,8 @@ where
             }
         }
 
+        let delay = Block::zero(ctrl.clone().into_values())?;
+
         Ok(Self::new_unchecked(
             Interface::from_wires_unchecked(ctrl.into_values()),
             Interface::from_wires_unchecked(wait.into_values()),
@@ -332,14 +377,16 @@ where
             Interface::from_wires_unchecked(temp.into_values()),
             init,
             update,
+            delay,
         ))
     }
 }
 
-impl<T: Theory> Atom<T>
+impl<T, D, S> Atom<T, T, D, S>
 where
-    T: Clone,
-    T::Sort: Eq + Clone,
+    T: Combinatorial<Sort = S> + Sequential<Sort = S> + Clone,
+    D: Differential<Sort = S> + Clone,
+    S: Eq + Clone + Debug,
 {
     /// Constructs a **purely combinatorial atom**, representing purely reactive behaviour
     /// without temporal state.
@@ -371,16 +418,15 @@ where
     pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, Error>
     where
         V: IntoIterator<Item = Term<T>>,
-        N: IntoIterator<Item = &'a Wire<T::Sort>>,
-        T::Sort: 'a,
+        N: IntoIterator<Item = &'a Wire<S>>,
+        S: 'a,
     {
-        let next: HashMap<usize, &T::Sort> = next.into_iter().map(Into::into).collect();
+        let next: HashMap<usize, &S> = next.into_iter().map(Into::into).collect();
         let assign = Block::try_from_iter(assign)?;
 
-        let mut ctrl: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
-        let mut param: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
 
         for rd in assign.read().iter().map(|[w]| w) {
             //  can only read from await wires
@@ -393,7 +439,7 @@ where
                     rd.id()
                 ));
             } else {
-                param.insert(rd.id(), rd.clone());
+                return Err(format!("Read wire {} in assign", rd.id()));
             }
         }
 
@@ -413,21 +459,27 @@ where
             }
         }
 
+        let update = assign.clone();
+        let delay = Block::zero(ctrl.clone().into_values())?;
+
         Ok(Self::new_unchecked(
             Interface::from_wires_unchecked(ctrl.into_values()),
             Interface::from_wires_unchecked(wait.into_values()),
             Interface::empty(),
             Interface::from_wires_unchecked(temp.into_values()),
-            assign.clone(),
             assign,
+            update,
+            delay,
         ))
     }
 }
 
-impl<T: Theory> Atom<T>
+impl<I, J, F, S> Atom<I, J, F, S>
 where
-    T: fmt::Display,
-    T::Sort: fmt::Display,
+    I: Combinatorial<Sort = S> + fmt::Display,
+    J: Sequential<Sort = S> + fmt::Display,
+    F: Differential<Sort = S> + fmt::Display,
+    S: fmt::Display,
 {
     pub(crate) fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
@@ -461,6 +513,10 @@ where
         for term in self.init.iter() {
             writeln!(f, "{pad}{INDENT}{term}")?;
         }
+        writeln!(f, "{pad}{BOLD}delay{RESET}")?;
+        for term in self.delay.iter() {
+            writeln!(f, "{pad}{INDENT}{term}")?;
+        }
         writeln!(f, "{pad}{BOLD}update{RESET}")?;
         for term in self.update.iter() {
             writeln!(f, "{pad}{INDENT}{term}")?;
@@ -469,12 +525,109 @@ where
     }
 }
 
-impl<T: Theory> fmt::Display for Atom<T>
+impl<I, J, F, S> fmt::Display for Atom<I, J, F, S>
 where
-    T: fmt::Display,
-    T::Sort: fmt::Display,
+    I: Combinatorial<Sort = S> + fmt::Display,
+    J: Sequential<Sort = S> + fmt::Display,
+    F: Differential<Sort = S> + fmt::Display,
+    S: fmt::Display + Debug + Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, "")
+    }
+}
+
+impl<I, J, F, S> Module<I, J, F, S>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+    S: Eq + Clone + Debug + fmt::Display,
+{
+    /// Constructs a **sequential module** from an initialisation and update sequences of terms.
+    ///
+    /// A sequential module represents **time-dependent behaviour**, with state evolving
+    /// across discrete steps. It is composed of a single [`Atom::sequential`] atom,
+    /// and is **fully observable by default**.
+    ///
+    /// # Parameters
+    /// - `obs`: The sequence of `[latched, next]`-wire pairs representing the module’s observables.
+    /// - `prvt`: The sequence of `[latched, next]`-wire pairs representing the module’s hidden state.
+    /// - `init`: The set of terms defining the module’s initial state.
+    /// - `update`: The set of terms defining the module’s state update at each time step.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed sequential module if successful,
+    /// or an error string if inference or consistency checks fail.
+    ///
+    /// # See Also
+    /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
+    /// - [`Atom::sequential`], for creating individual sequential atoms.
+    pub fn observable_sequential<O, P, Q, R>(obs: O, init: Q, update: R) -> Result<Self, Error>
+    where
+        P: Into<[Wire<S>; 2]>,
+        O: IntoIterator<Item = P>,
+        Q: IntoIterator<Item = Term<I>>,
+        R: IntoIterator<Item = Term<J>>,
+    {
+        Self::sequential(obs, std::iter::empty::<P>(), init, update)
+    }
+
+    pub fn sequential<TO, TP, O, P, Q, R>(
+        obs: O,
+        prvt: P,
+        init: Q,
+        update: R,
+    ) -> Result<Self, Error>
+    where
+        TO: Into<[Wire<S>; 2]>,
+        TP: Into<[Wire<S>; 2]>,
+        O: IntoIterator<Item = TO>,
+        P: IntoIterator<Item = TP>,
+        Q: IntoIterator<Item = Term<I>>,
+        R: IntoIterator<Item = Term<J>>,
+    {
+        let obs = Interface::try_from_iter(obs)?;
+        let prvt = Interface::try_from_iter(prvt)?;
+        let latched = obs.latched().iter().chain(prvt.latched().iter());
+        let next = obs.next().iter().chain(prvt.next().iter());
+        let atom = Atom::sequential(latched, next, init, update)?;
+        Self::partially_observable(obs, prvt, [atom])
+    }
+}
+
+impl<T, D, S> Module<T, T, D, S>
+where
+    T: Combinatorial<Sort = S> + Sequential<Sort = S> + Clone,
+    D: Differential<Sort = S> + Clone,
+    S: Eq + Clone + Debug + fmt::Display,
+{
+    /// Constructs a **purely combinatorial module** from an assignment sequence of terms.
+    ///
+    /// A combinatorial module represents a **stateless, time-independent** relationship
+    /// between observable wires. It is composed of a single [`Atom::combinatorial`] atom,
+    /// and is **fully observable by default**.
+    ///
+    /// # Parameters
+    /// - `obs`: The pair of observable wires `[latched, next]` representing the module’s interface.
+    /// - `assign`: The set of combinatorial assignment terms defining how the output is
+    ///   computed from the input.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed combinatorial module if successful,
+    /// or an error string if inference or consistency checks fail.
+    ///
+    /// # See Also
+    /// - [`Module::sequential`], for constructing stateful, sequential modules.
+    /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
+    pub fn combinatorial<R, O, V>(obs: O, assign: V) -> Result<Self, Error>
+    where
+        R: Into<[Wire<T::Sort>; 2]>,
+        O: IntoIterator<Item = R>,
+        V: IntoIterator<Item = Term<T>>,
+    {
+        let obs = Interface::from_iter(obs);
+        let atom = Atom::combinatorial(obs.next(), assign)?;
+        Self::observable(obs, [atom])
     }
 }
