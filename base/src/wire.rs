@@ -310,11 +310,15 @@ impl<D: Eq, const N: usize> Interface<D, N> {
 }
 
 impl<S: Eq> Interface<S> {
-    pub fn sequence<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, String> {
+    pub(crate) fn sequence<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(
+        iter: I,
+    ) -> Result<Self, String> {
         Self::try_from_iter(iter.into_iter().map(|w| [w.into()]))
     }
 
-    pub fn unique<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, String> {
+    pub(crate) fn unique<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(
+        iter: I,
+    ) -> Result<Self, String> {
         let interface = Self::collect(iter.into_iter().map(|w| [w.into()]));
 
         let mut ids: HashSet<usize> = HashSet::new();
@@ -327,7 +331,9 @@ impl<S: Eq> Interface<S> {
         Ok(interface)
     }
 
-    pub fn from_wires_unchecked<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(iter: I) -> Self {
+    pub(crate) fn from_wires_unchecked<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(
+        iter: I,
+    ) -> Self {
         Self::from_iter_unchecked(iter.into_iter().map(|w| [w.into()]))
     }
 }
