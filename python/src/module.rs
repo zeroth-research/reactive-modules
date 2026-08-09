@@ -7,7 +7,7 @@ use pyo3::types::{PyDict, PyTuple};
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
-    pub(crate) base: base::Module<Any>,
+    pub(crate) base: base::Module<Any, Any, Any>,
 }
 
 #[pymethods]
@@ -77,7 +77,7 @@ impl Module {
             }
             (Some(wires), None, None, None, None) => {
                 let wires = try_wire2_iter_cloned(wires)?;
-                base::Module::sequential_observable(wires, init, update)
+                base::Module::observable_sequential(wires, init, update)
             }
             (None, Some(_state), Some(_input), Some(_output), None) => {
                 todo!() //moore
@@ -216,8 +216,8 @@ impl Module {
     }
 }
 
-impl From<base::Module<Any>> for Module {
-    fn from(base: base::Module<Any>) -> Self {
+impl From<base::Module<Any, Any, Any>> for Module {
+    fn from(base: base::Module<Any, Any, Any>) -> Self {
         Self { base }
     }
 }

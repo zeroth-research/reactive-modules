@@ -8,10 +8,8 @@ pub mod tensor;
 pub use tensor::PyTensor;
 
 pub trait Theory {
-    // TODO: in torch, from where we took this name (I think), dtype refers to
-    // the type of the element in the tensor (*d*ata type). Maybe we should
-    // consider renaming this to "Types" or something, to avoid confusion.
-    type Sort;
+    type Sort: fmt::Display; // this global requirement is temporary, until we have error enums.
+    // eventually display should never be required by default, neither here not by check
 
     const NAME: &'static str;
 
@@ -20,6 +18,18 @@ pub trait Theory {
         D: TryInto<Self::Sort> + fmt::Display,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>;
+}
+
+pub trait Combinatorial: Theory {
+    const HAVOC: Self;
+}
+
+pub trait Sequential: Theory {
+    const SKIP: Self;
+}
+
+pub trait Differential: Theory {
+    const ZERO: Self;
 }
 
 // Helpers for type-checking procedures

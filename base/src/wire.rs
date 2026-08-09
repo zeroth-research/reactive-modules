@@ -8,23 +8,23 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::Error;
 
 #[derive(Debug, Clone)]
-pub struct Wire<D> {
+pub struct Wire<S> {
     id: usize,
-    dtype: D,
+    dtype: S,
 }
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
-impl<D> Wire<D> {
+impl<S> Wire<S> {
     pub fn id(&self) -> usize {
         self.id
     }
 
-    pub fn dtype(&self) -> &D {
+    pub fn dtype(&self) -> &S {
         &self.dtype
     }
 
-    pub fn new(dtype: D) -> Self {
+    pub fn new(dtype: S) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         if id == usize::MAX {
             panic!("wire id overflow");
@@ -33,28 +33,28 @@ impl<D> Wire<D> {
     }
 }
 
-impl<D> PartialEq for Wire<D> {
+impl<S> PartialEq for Wire<S> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl<D> Eq for Wire<D> {}
+impl<S> Eq for Wire<S> {}
 
-impl<D> Hash for Wire<D> {
+impl<S> Hash for Wire<S> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl<D> From<Wire<D>> for (usize, D) {
-    fn from(w: Wire<D>) -> Self {
+impl<S> From<Wire<S>> for (usize, S) {
+    fn from(w: Wire<S>) -> Self {
         (w.id, w.dtype)
     }
 }
 
-impl<'a, D> From<&'a Wire<D>> for (usize, &'a D) {
-    fn from(w: &'a Wire<D>) -> Self {
+impl<'a, S> From<&'a Wire<S>> for (usize, &'a S) {
+    fn from(w: &'a Wire<S>) -> Self {
         (w.id, &w.dtype)
     }
 }
@@ -72,58 +72,58 @@ impl<'a, D> From<&'a Wire<D>> for (usize, &'a D) {
 /// - `D`: the data type carried by each wire.
 /// - `N`: the arity of the interface (number of wires in each tuple).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Interface<D, const N: usize = 1> {
-    wires: [Vec<Wire<D>>; N],
+pub struct Interface<S, const N: usize = 1> {
+    wires: [Vec<Wire<S>>; N],
 }
 
-impl<D, const N: usize> Interface<D, N> {
-    pub fn empty() -> Interface<D, N> {
+impl<S, const N: usize> Interface<S, N> {
+    pub fn empty() -> Interface<S, N> {
         Self {
             wires: [(); N].map(|_| Vec::new()),
         }
     }
 }
 
-impl<D, const N: usize> Default for Interface<D, N> {
+impl<S, const N: usize> Default for Interface<S, N> {
     fn default() -> Self {
         Self::empty()
     }
 }
 
-impl<D> Interface<D, 1> {
-    pub fn as_slice(&self) -> &[Wire<D>] {
+impl<S> Interface<S, 1> {
+    pub fn as_slice(&self) -> &[Wire<S>] {
         self.wires[0].as_slice()
     }
 }
 
-impl<D> Interface<D, 2> {
-    pub fn latched(&self) -> &[Wire<D>] {
+impl<S> Interface<S, 2> {
+    pub fn latched(&self) -> &[Wire<S>] {
         self.wires[0].as_slice()
     }
 
-    pub fn next(&self) -> &[Wire<D>] {
+    pub fn next(&self) -> &[Wire<S>] {
         self.wires[1].as_slice()
     }
 }
 
-impl<D, const N: usize> Interface<D, N> {
-    pub fn wire(&self, time: usize, index: usize) -> Option<&Wire<D>> {
+impl<S, const N: usize> Interface<S, N> {
+    pub fn wire(&self, time: usize, index: usize) -> Option<&Wire<S>> {
         self.wires.get(time).and_then(|v| v.get(index))
     }
 
-    pub fn entry(&self, index: usize) -> Option<[&Wire<D>; N]> {
+    pub fn entry(&self, index: usize) -> Option<[&Wire<S>; N]> {
         (index < self.len()).then(|| from_fn(|i| &self.wires[i][index]))
     }
 }
 
-impl<D, const N: usize> Interface<D, N> {
-    pub fn iter(&self) -> impl Iterator<Item = [&Wire<D>; N]> {
+impl<S, const N: usize> Interface<S, N> {
+    pub fn iter(&self) -> impl Iterator<Item = [&Wire<S>; N]> {
         IterRef {
             iters: std::array::from_fn(|i| self.wires[i].iter()),
         }
     }
 
-    pub fn wires(&self) -> impl Iterator<Item = &Wire<D>> {
+    pub fn wires(&self) -> impl Iterator<Item = &Wire<S>> {
         self.wires.iter().flatten()
     }
 
@@ -132,10 +132,10 @@ impl<D, const N: usize> Interface<D, N> {
     }
 }
 
-impl<D, const N: usize> Interface<D, N> {
+impl<S, const N: usize> Interface<S, N> {
     /// Returns true if the wire indices of self are also indices of other, regardless of their type.
     /// This function runs in place, in O(self.len() * other.len()) time
-    pub fn is_subset<const M: usize>(&self, other: &Interface<D, M>) -> bool {
+    pub fn is_subset<const M: usize>(&self, other: &Interface<S, M>) -> bool {
         for a in self.ids() {
             if other.ids().all(|b| a != b) {
                 return false;
@@ -146,7 +146,7 @@ impl<D, const N: usize> Interface<D, N> {
 
     /// Returns true if the wire indices of self are disjoint from the indices of other, regardless of their type.
     /// This function runs in place, in O(self.len() * other.len()) time
-    pub fn is_disjoint(&self, other: &Interface<D>) -> bool {
+    pub fn is_disjoint(&self, other: &Interface<S>) -> bool {
         for a in self.ids() {
             if other.ids().any(|b| a == b) {
                 return false;
@@ -164,29 +164,29 @@ impl<D, const N: usize> Interface<D, N> {
     }
 }
 
-pub struct IterOwned<D, const N: usize> {
-    iters: [std::vec::IntoIter<Wire<D>>; N],
+pub struct IterOwned<S, const N: usize> {
+    iters: [std::vec::IntoIter<Wire<S>>; N],
 }
 
-impl<D, const N: usize> Iterator for IterOwned<D, N> {
-    type Item = [Wire<D>; N];
+impl<S, const N: usize> Iterator for IterOwned<S, N> {
+    type Item = [Wire<S>; N];
 
     fn next(&mut self) -> Option<Self::Item> {
-        let out: [Option<Wire<D>>; N] = from_fn(|i| self.iters[i].next());
+        let out: [Option<Wire<S>>; N] = from_fn(|i| self.iters[i].next());
         debug_assert!(out.iter().all(Option::is_some) || out.iter().all(Option::is_none));
         (N != 0 && out[0].is_some()).then(|| out.map(Option::unwrap))
     }
 }
 
-pub struct IterRef<'a, D, const N: usize> {
-    iters: [std::slice::Iter<'a, Wire<D>>; N],
+pub struct IterRef<'a, S, const N: usize> {
+    iters: [std::slice::Iter<'a, Wire<S>>; N],
 }
 
-impl<'a, D, const N: usize> Iterator for IterRef<'a, D, N> {
-    type Item = [&'a Wire<D>; N];
+impl<'a, S, const N: usize> Iterator for IterRef<'a, S, N> {
+    type Item = [&'a Wire<S>; N];
 
     fn next(&mut self) -> Option<Self::Item> {
-        let out: [Option<&Wire<D>>; N] = from_fn(|i| self.iters[i].next());
+        let out: [Option<&Wire<S>>; N] = from_fn(|i| self.iters[i].next());
         debug_assert!(out.iter().all(Option::is_some) || out.iter().all(Option::is_none));
         (N != 0 && out[0].is_some()).then(|| out.map(Option::unwrap))
     }
@@ -203,9 +203,9 @@ impl<D, const N: usize> IntoIterator for Interface<D, N> {
     }
 }
 
-impl<'a, D, const N: usize> IntoIterator for &'a Interface<D, N> {
-    type Item = [&'a Wire<D>; N];
-    type IntoIter = IterRef<'a, D, N>;
+impl<'a, S, const N: usize> IntoIterator for &'a Interface<S, N> {
+    type Item = [&'a Wire<S>; N];
+    type IntoIter = IterRef<'a, S, N>;
 
     fn into_iter(self) -> Self::IntoIter {
         IterRef {
@@ -215,23 +215,23 @@ impl<'a, D, const N: usize> IntoIterator for &'a Interface<D, N> {
 }
 
 /// from_iter is unchecked. Use at your own risk
-impl<D: Eq, T: Into<[Wire<D>; N]>, const N: usize> FromIterator<T> for Interface<D, N> {
+impl<S: Eq, T: Into<[Wire<S>; N]>, const N: usize> FromIterator<T> for Interface<S, N> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         Self::try_from_iter(iter).unwrap()
     }
 }
 
-impl<D: Eq, T: Into<Wire<D>>> From<T> for Interface<D> {
+impl<S: Eq, T: Into<Wire<S>>> From<T> for Interface<S> {
     fn from(t: T) -> Self {
         Self::from_wires_unchecked([t])
     }
 }
 
 // returns the wire at position (0,0) and throws away the rest
-impl<D: Eq> TryFrom<Interface<D>> for Wire<D> {
+impl<S: Eq> TryFrom<Interface<S>> for Wire<S> {
     type Error = Error;
 
-    fn try_from(x: Interface<D>) -> Result<Self, Self::Error> {
+    fn try_from(x: Interface<S>) -> Result<Self, Self::Error> {
         let mut it = x.wires.into_iter().flatten();
         it.next()
             .ok_or("There is no wire at position (0, 0)".into())
@@ -239,10 +239,10 @@ impl<D: Eq> TryFrom<Interface<D>> for Wire<D> {
 }
 
 // returns the wire at position (0,0) and throws away the rest
-impl<D: Eq> TryFrom<Interface<D>> for (usize, D) {
+impl<S: Eq> TryFrom<Interface<S>> for (usize, S) {
     type Error = Error;
 
-    fn try_from(x: Interface<D>) -> Result<Self, Self::Error> {
+    fn try_from(x: Interface<S>) -> Result<Self, Self::Error> {
         let mut it = x.wires.into_iter().flatten().map(Into::into);
         it.next()
             .ok_or("There is no wire at position (0, 0)".into())
@@ -311,12 +311,12 @@ impl<D: Eq, const N: usize> Interface<D, N> {
     }
 }
 
-impl<D: Eq> Interface<D> {
-    pub fn sequence<T: Into<Wire<D>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, Error> {
+impl<S: Eq> Interface<S> {
+    pub fn sequence<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, Error> {
         Self::try_from_iter(iter.into_iter().map(|w| [w.into()]))
     }
 
-    pub fn unique<T: Into<Wire<D>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, String> {
+    pub fn unique<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, String> {
         let interface = Self::collect(iter.into_iter().map(|w| [w.into()]));
 
         let mut ids: HashSet<usize> = HashSet::new();
@@ -329,12 +329,12 @@ impl<D: Eq> Interface<D> {
         Ok(interface)
     }
 
-    pub fn from_wires_unchecked<T: Into<Wire<D>>, I: IntoIterator<Item = T>>(iter: I) -> Self {
+    pub fn from_wires_unchecked<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(iter: I) -> Self {
         Self::from_iter_unchecked(iter.into_iter().map(|w| [w.into()]))
     }
 }
 
-impl<D: fmt::Display, const N: usize> fmt::Display for Interface<D, N> {
+impl<S: fmt::Display, const N: usize> fmt::Display for Interface<S, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
         for wires in self {
@@ -352,7 +352,7 @@ impl<D: fmt::Display, const N: usize> fmt::Display for Interface<D, N> {
     }
 }
 
-impl<D: fmt::Display> fmt::Display for Wire<D> {
+impl<S: fmt::Display> fmt::Display for Wire<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} : {}", self.id, self.dtype)?;
         Ok(())
