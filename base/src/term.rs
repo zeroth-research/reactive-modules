@@ -2,7 +2,7 @@ use crate::Error;
 use crate::wire::{Interface, Wire};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
-use theory::Theory;
+use theory::{Differential, Theory};
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -43,7 +43,7 @@ impl<T: Theory> Term<T> {
 impl<T> Term<T>
 where
     T: Theory,
-    T::Sort: Eq + Clone + fmt::Display,
+    T::Sort: Eq + Clone,
 {
     pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, Error>
     where
@@ -242,5 +242,15 @@ where
             read: Interface::from_wires_unchecked(read),
             write: Interface::from_wires_unchecked(write),
         })
+    }
+}
+
+impl<D: Differential> Block<D>
+where
+    D::Sort: Clone + Eq,
+{
+    pub(crate) fn zero<V: IntoIterator<Item = Wire<D::Sort>>>(write: V) -> Result<Self, Error> {
+        let delay = std::iter::once(Term::constant(D::ZERO, write)?);
+        Block::try_from_iter(delay)
     }
 }

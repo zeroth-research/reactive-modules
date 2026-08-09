@@ -7,11 +7,11 @@ use pyo3::prelude::*;
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: base::Atom<Any>,
+    base: base::Atom<Any, Any, Any>,
 }
 
-impl From<base::Atom<Any>> for Atom {
-    fn from(base: base::Atom<Any>) -> Self {
+impl From<base::Atom<Any, Any, Any>> for Atom {
+    fn from(base: base::Atom<Any, Any, Any>) -> Self {
         Self { base }
     }
 }
@@ -46,6 +46,14 @@ impl Atom {
         AtomBlock {
             atom: slf.unbind(),
             block: BlockType::Update,
+        }
+    }
+
+    #[getter]
+    fn delay(slf: Bound<'_, Self>) -> AtomBlock {
+        AtomBlock {
+            atom: slf.unbind(),
+            block: BlockType::Delay,
         }
     }
 
@@ -131,6 +139,7 @@ impl AtomInterface {
 enum BlockType {
     Init,
     Update,
+    Delay,
 }
 
 #[pyclass(sequence, frozen)]
@@ -145,6 +154,7 @@ impl AtomBlock {
         match self.block {
             BlockType::Init => atom.init(),
             BlockType::Update => atom.update(),
+            BlockType::Delay => atom.delay(),
         }
     }
 }

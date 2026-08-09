@@ -1,9 +1,8 @@
-use base::module::Module;
 use base::term;
 use base::term::Term;
 use base::wire::Interface;
 use base::wire::Wire;
-use theory::Theory;
+use theory::{Combinatorial, Differential, Sequential, Theory};
 
 #[derive(Clone, Debug)]
 #[allow(unused)]
@@ -13,22 +12,36 @@ impl Theory for Ops {
     type Sort = &'static str;
     const NAME: &'static str = "Ops";
 
-    fn check<R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
+    fn check<R, W, S>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        D: TryInto<Self::Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
+        S: TryInto<Self::Sort>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>,
     {
         Ok(())
     }
 }
+
+impl Combinatorial for Ops {
+    const HAVOC: Ops = Ops("HAVOC");
+}
+
+impl Sequential for Ops {
+    const SKIP: Self = Ops("SKIP");
+}
+
+impl Differential for Ops {
+    const ZERO: Self = Ops("ZERO");
+}
+
+type Module = base::Module<Ops, Ops, Ops>;
 
 fn mk_op(name: &'static str) -> Ops {
     Ops(name)
 }
 
 #[allow(clippy::vec_init_then_push)]
-fn example_counter() -> Result<Module<Ops>, base::Error> {
+fn example_counter() -> Result<Module, base::Error> {
     let x0 = Wire::new("real");
     let y0 = Wire::new("real");
     let z0 = Wire::new("real");
@@ -94,11 +107,11 @@ fn example_counter() -> Result<Module<Ops>, base::Error> {
 
     let obs = Interface::from_iter([[x0, x1], [y0, y1], [z0, z1], [y00, y01], [z00, z01]]);
 
-    Module::sequential_observable(obs, init, update)
+    Module::observable_sequential(obs, init, update)
 }
 
 #[allow(clippy::vec_init_then_push)]
-fn example_peterson1() -> Result<Module<Ops>, base::Error> {
+fn example_peterson1() -> Result<Module, base::Error> {
     let stype = "{outCS, reqCS, inCS}";
     let pc1: [Wire<&str>; 2] = [Wire::new(stype), Wire::new(stype)];
     let x1: [Wire<&str>; 2] = [Wire::new("bool"), Wire::new("bool")].map(Into::into);
@@ -202,14 +215,14 @@ fn example_peterson1() -> Result<Module<Ops>, base::Error> {
     );
 
     let obs = Interface::from_iter([pc1, x1, pc2, x2]);
-    Module::sequential_observable(obs, init, update)
+    Module::observable_sequential(obs, init, update)
 }
 
 fn example_tiny1(
     external: [Wire<&'static str>; 2],
     interface: [Wire<&'static str>; 2],
     wait: bool,
-) -> Result<Module<Ops>, base::Error> {
+) -> Result<Module, base::Error> {
     let private = [Wire::new("Tny"), Wire::new("Tny")];
     let temp = Wire::new("Tny");
 
@@ -316,13 +329,13 @@ fn module_write_all_ctrl() {
         [x0, xn0.clone()],
     ]);
 
-    let m = Module::sequential_observable(obs.clone(), vec![], update.clone());
+    let m = Module::observable_sequential(obs.clone(), vec![], update.clone());
     assert!(m.is_err_and(|msg| {
         msg.contains("Controlled wire") && msg.contains("is not written in init")
     }));
 
     let init: Vec<Term<Ops>> = [term!(mk_op("ID"), [xn0.clone()], [xn.clone()]).unwrap()].to_vec();
-    let m = Module::sequential_observable(obs.clone(), init, update.clone());
+    let m = Module::observable_sequential(obs.clone(), init, update.clone());
     assert!(m.is_err_and(|msg| {
         msg.contains("Controlled wire") && msg.contains("is not written in init")
     }));
@@ -333,7 +346,7 @@ fn module_write_all_ctrl() {
     ]
     .to_vec();
 
-    let m = Module::sequential_observable(obs.clone(), init.clone(), update);
+    let m = Module::observable_sequential(obs.clone(), init.clone(), update);
     assert!(m.is_err_and(|msg| {
         msg.contains("Controlled wire") && msg.contains("is not written in update")
     }));
@@ -344,7 +357,7 @@ fn module_write_all_ctrl() {
     ]
     .to_vec();
 
-    let m = Module::sequential_observable(obs.clone(), init, update);
+    let m = Module::observable_sequential(obs.clone(), init, update);
     assert!(m.is_ok());
 }
 
@@ -514,7 +527,7 @@ fn compose_seq_2() {
         [y0.clone(), y0n.clone()],
         [z0.clone(), z0n.clone()],
     ]);
-    let m1 = Module::sequential_observable(obs.clone(), init, update).unwrap();
+    let m1 = Module::observable_sequential(obs.clone(), init, update).unwrap();
 
     //
     // class Inv(smt.Module):
@@ -550,7 +563,7 @@ fn compose_seq_2() {
     Module::parallel([m1.clone(), m2]).unwrap();
 
     // try to use a `sequential_observable` ctor instead of combinatorial
-    let m2 = Module::sequential_observable(obs.clone(), assign.clone(), assign).unwrap();
+    let m2 = Module::observable_sequential(obs.clone(), assign.clone(), assign).unwrap();
     let _m = Module::parallel([m1, m2]).unwrap();
     println!("{:?}", _m);
 }

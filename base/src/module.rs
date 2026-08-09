@@ -1,15 +1,19 @@
 use crate::atom::Atom;
-use crate::term::Term;
 use crate::wire::{Interface, Wire};
 use crate::{Error, topological_order};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
-use theory::Theory;
+use theory::{Combinatorial, Differential, Sequential, Theory};
 
 /// This data structure corresponds to the module of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Module<T: Theory> {
+pub struct Module<I, J, F, S = <I as Theory>::Sort>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+{
     /// Correspond to the wires of the module divided by visibility
     /// ```text
     ///     *====================*
@@ -23,41 +27,47 @@ pub struct Module<T: Theory> {
     ///  Wires are organised in pairs of identical twins where
     ///  - 0: latched wires
     ///  - 1: next wires
-    extl: Interface<T::Sort, 2>,
-    intf: Interface<T::Sort, 2>,
-    prvt: Interface<T::Sort, 2>,
-    obs: Interface<T::Sort, 2>,
-    ctrl: Interface<T::Sort, 2>,
-    temp: Interface<T::Sort>,
+    extl: Interface<S, 2>,
+    intf: Interface<S, 2>,
+    prvt: Interface<S, 2>,
+    obs: Interface<S, 2>,
+    ctrl: Interface<S, 2>,
+    temp: Interface<S>,
 
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
     /// as defined in the reactive modules paper.
-    atoms: Vec<Atom<T>>,
+    atoms: Vec<Atom<I, J, F, S>>,
 }
 
-impl<T: Theory> Module<T> {
-    pub fn atoms(&self) -> &[Atom<T>] {
+impl<I, J, F, S> Module<I, J, F, S>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+    S: Clone,
+{
+    pub fn atoms(&self) -> &[Atom<I, J, F, S>] {
         &self.atoms
     }
 
-    pub fn extl(&self) -> &Interface<T::Sort, 2> {
+    pub fn extl(&self) -> &Interface<S, 2> {
         &self.extl
     }
 
-    pub fn intf(&self) -> &Interface<T::Sort, 2> {
+    pub fn intf(&self) -> &Interface<S, 2> {
         &self.intf
     }
 
-    pub fn prvt(&self) -> &Interface<T::Sort, 2> {
+    pub fn prvt(&self) -> &Interface<S, 2> {
         &self.prvt
     }
 
-    pub fn ctrl(&self) -> &Interface<T::Sort, 2> {
+    pub fn ctrl(&self) -> &Interface<S, 2> {
         &self.ctrl
     }
 
-    pub fn obs(&self) -> &Interface<T::Sort, 2> {
+    pub fn obs(&self) -> &Interface<S, 2> {
         &self.obs
     }
 
@@ -69,7 +79,7 @@ impl<T: Theory> Module<T> {
         !self.extl.is_empty()
     }
 
-    pub fn temp(&self) -> impl Iterator<Item = &Wire<T::Sort>> {
+    pub fn temp(&self) -> impl Iterator<Item = &Wire<S>> {
         self.temp.wires()
     }
 
@@ -86,9 +96,12 @@ impl<T: Theory> Module<T> {
     }
 }
 
-impl<T: Theory> Module<T>
+impl<I, J, F, S> Module<I, J, F, S>
 where
-    T::Sort: Clone + Eq + Debug,
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+    S: Clone + Eq + Debug,
 {
     /// Constructs a module **without performing any consistency or visibility checks**.
     ///
@@ -132,24 +145,24 @@ where
     ///
     /// # See Also
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    /// - [`Module::partially_observable`], [`Module::observable`], [`Module::sequential_observable`],
+    /// - [`Module::partially_observable`], [`Module::observable`], [`Module::sequential`],
     ///   [`Module::combinatorial`] for safe, automated module construction
     #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
-        extl: Interface<T::Sort, 2>,
-        intf: Interface<T::Sort, 2>,
-        prvt: Interface<T::Sort, 2>,
-        obs: Interface<T::Sort, 2>,
-        ctrl: Interface<T::Sort, 2>,
-        temp: Interface<T::Sort>,
-        atoms: Vec<Atom<T>>,
+        extl: Interface<S, 2>,
+        intf: Interface<S, 2>,
+        prvt: Interface<S, 2>,
+        obs: Interface<S, 2>,
+        ctrl: Interface<S, 2>,
+        temp: Interface<S>,
+        atoms: Vec<Atom<I, J, F, S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
             debug_assert_eq!(obs.len(), extl.len() + intf.len());
             debug_assert_eq!(ctrl.len(), intf.len() + prvt.len());
 
-            let mut ltc_to_dtype: HashMap<usize, &T::Sort> = HashMap::new();
+            let mut ltc_to_dtype: HashMap<usize, &S> = HashMap::new();
             let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
 
             let mut extl_ltc: HashSet<usize> = HashSet::new();
@@ -235,7 +248,7 @@ where
             }
 
             // check that temporaries are decoupled from module wires and other atoms
-            let mut module_temp: HashMap<usize, &T::Sort> = HashMap::new();
+            let mut module_temp: HashMap<usize, &S> = HashMap::new();
             for lc in atoms.iter().flat_map(Atom::temp) {
                 debug_assert!(!ltc_to_dtype.contains_key(&lc.id()));
                 debug_assert!(!nxt_to_ltc.contains_key(&lc.id()));
@@ -282,13 +295,13 @@ where
     /// - [`partially_observable`], for modules with private state.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn observable<D, O, A>(obs: O, atoms: A) -> Result<Self, Error>
+    pub fn observable<O, P, A>(obs: O, atoms: A) -> Result<Self, Error>
     where
-        D: Into<[Wire<T::Sort>; 2]>,
-        O: IntoIterator<Item = D>,
-        A: IntoIterator<Item = Atom<T>> + Sized,
+        P: Into<[Wire<S>; 2]>,
+        O: IntoIterator<Item = P>,
+        A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
     {
-        Self::partially_observable(obs, std::iter::empty::<D>(), atoms)
+        Self::partially_observable(obs, std::iter::empty::<P>(), atoms)
     }
 
     /// Constructs a **partially observable module** from a sequence of atoms.
@@ -314,13 +327,13 @@ where
     /// - [`observable`], for constructing modules where all wires are visible.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn partially_observable<R, U, O, P, A>(obs: O, prvt: P, atoms: A) -> Result<Self, Error>
+    pub fn partially_observable<O, P, Q, R, A>(obs: O, prvt: P, atoms: A) -> Result<Self, Error>
     where
-        R: Into<[Wire<T::Sort>; 2]>,
-        U: Into<[Wire<T::Sort>; 2]>,
-        O: IntoIterator<Item = R>,
-        P: IntoIterator<Item = U>,
-        A: IntoIterator<Item = Atom<T>> + Sized,
+        Q: Into<[Wire<S>; 2]>,
+        R: Into<[Wire<S>; 2]>,
+        O: IntoIterator<Item = Q>,
+        P: IntoIterator<Item = R>,
+        A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
     {
         let mut ltc_set: HashSet<usize> = HashSet::new();
         let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
@@ -340,9 +353,9 @@ where
 
         // Check atoms consistency and infer control wires
         let mut ctrl_nxt: HashSet<usize> = HashSet::new();
-        let mut temp: BTreeMap<usize, Wire<T::Sort>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
         let atoms_iter = atoms.into_iter();
-        let mut past_atoms: Vec<Atom<T>> = Vec::with_capacity(atoms_iter.size_hint().0);
+        let mut past_atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(atoms_iter.size_hint().0);
         for (n, atom) in atoms_iter.enumerate() {
             for ltc in atom.read().wires().map(Wire::id) {
                 if !ltc_set.contains(&ltc) {
@@ -397,9 +410,9 @@ where
         }
 
         // Build intf and extl wires based on inferred control set
-        let mut intf: Vec<[Wire<T::Sort>; 2]> = Vec::with_capacity(ctrl_nxt.len() - prvt.len());
-        let mut extl: Vec<[Wire<T::Sort>; 2]> = Vec::with_capacity(obs.len() - intf.len());
-        let mut ctrl: Vec<[Wire<T::Sort>; 2]> = Vec::with_capacity(ctrl_nxt.len());
+        let mut intf: Vec<[Wire<S>; 2]> = Vec::with_capacity(ctrl_nxt.len() - prvt.len());
+        let mut extl: Vec<[Wire<S>; 2]> = Vec::with_capacity(obs.len() - intf.len());
+        let mut ctrl: Vec<[Wire<S>; 2]> = Vec::with_capacity(ctrl_nxt.len());
 
         for [ltc, nxt] in obs.iter() {
             if ctrl_nxt.contains(&nxt.id()) {
@@ -422,57 +435,6 @@ where
         Ok(Self::new_unchecked(
             extl, intf, prvt, obs, ctrl, temp, past_atoms,
         ))
-    }
-
-    /// Constructs a **sequential module** from an initialisation and update sequences of terms.
-    ///
-    /// A sequential module represents **time-dependent behaviour**, with state evolving
-    /// across discrete steps. It is composed of a single [`Atom::sequential`] atom,
-    /// and is **fully observable by default**.
-    ///
-    /// # Parameters
-    /// - `obs`: The sequence of `[latched, next]`-wire pairs representing the module’s observables.
-    /// - `prvt`: The sequence of `[latched, next]`-wire pairs representing the module’s hidden state.
-    /// - `init`: The set of terms defining the module’s initial state.
-    /// - `update`: The set of terms defining the module’s state update at each time step.
-    ///
-    /// # Returns
-    /// A `Result` containing the constructed sequential module if successful,
-    /// or an error string if inference or consistency checks fail.
-    ///
-    /// # See Also
-    /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
-    /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn sequential_observable<R, O, V, U>(obs: O, init: V, update: U) -> Result<Self, Error>
-    where
-        R: Into<[Wire<T::Sort>; 2]>,
-        O: IntoIterator<Item = R>,
-        V: IntoIterator<Item = Term<T>>,
-        U: IntoIterator<Item = Term<T>>,
-    {
-        Self::sequential(obs, std::iter::empty::<R>(), init, update)
-    }
-
-    pub fn sequential<TO, TP, O, P, V, U>(
-        obs: O,
-        prvt: P,
-        init: V,
-        update: U,
-    ) -> Result<Self, Error>
-    where
-        TO: Into<[Wire<T::Sort>; 2]>,
-        TP: Into<[Wire<T::Sort>; 2]>,
-        O: IntoIterator<Item = TO>,
-        P: IntoIterator<Item = TP>,
-        V: IntoIterator<Item = Term<T>>,
-        U: IntoIterator<Item = Term<T>>,
-    {
-        let obs = Interface::try_from_iter(obs)?;
-        let prvt = Interface::try_from_iter(prvt)?;
-        let latched = obs.latched().iter().chain(prvt.latched().iter());
-        let next = obs.next().iter().chain(prvt.next().iter());
-        let atom = Atom::sequential(latched, next, init, update)?;
-        Self::partially_observable(obs, prvt, [atom])
     }
 
     /// Constructs the *parallel composition* of several `Module` instances.
@@ -505,16 +467,16 @@ where
         let mut next: HashSet<usize> = HashSet::new();
         let mut restricted: HashSet<usize> = HashSet::new();
 
-        let mut extl: HashMap<usize, Wire<T::Sort>> = HashMap::new();
-        let mut intf: HashMap<usize, Wire<T::Sort>> = HashMap::new();
+        let mut extl: HashMap<usize, Wire<S>> = HashMap::new();
+        let mut intf: HashMap<usize, Wire<S>> = HashMap::new();
 
-        let mut extl_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
-        let mut intf_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
-        let mut prvt_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
-        let mut obs_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
-        let mut ctrl_stack: Vec<[Wire<T::Sort>; 2]> = Vec::new();
-        let mut temp_stack: Vec<[Wire<T::Sort>; 1]> = Vec::new();
-        let mut atoms_stack: Vec<Atom<T>> = Vec::new();
+        let mut extl_stack: Vec<[Wire<S>; 2]> = Vec::new();
+        let mut intf_stack: Vec<[Wire<S>; 2]> = Vec::new();
+        let mut prvt_stack: Vec<[Wire<S>; 2]> = Vec::new();
+        let mut obs_stack: Vec<[Wire<S>; 2]> = Vec::new();
+        let mut ctrl_stack: Vec<[Wire<S>; 2]> = Vec::new();
+        let mut temp_stack: Vec<[Wire<S>; 1]> = Vec::new();
+        let mut atoms_stack: Vec<Atom<I, J, F, S>> = Vec::new();
 
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
 
@@ -686,7 +648,7 @@ where
         let await_order = topological_order(&await_graph).ok_or("invalid await dependency")?;
         debug_assert_eq!(await_order.len(), await_graph.len());
 
-        let mut atoms: Vec<Atom<T>> = Vec::with_capacity(await_graph.len());
+        let mut atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(await_graph.len());
         for idx in await_order {
             atoms.push(std::mem::take(&mut atoms_stack[idx]));
         }
@@ -712,45 +674,12 @@ where
     }
 }
 
-impl<T: Theory> Module<T>
+impl<I, J, D, S> Module<I, J, D, S>
 where
-    T: Clone,
-    T::Sort: Eq + Clone + Debug,
-{
-    /// Constructs a **purely combinatorial module** from an assignment sequence of terms.
-    ///
-    /// A combinatorial module represents a **stateless, time-independent** relationship
-    /// between observable wires. It is composed of a single [`Atom::combinatorial`] atom,
-    /// and is **fully observable by default**.
-    ///
-    /// # Parameters
-    /// - `obs`: The pair of observable wires `[latched, next]` representing the module’s interface.
-    /// - `assign`: The set of combinatorial assignment terms defining how the output is
-    ///   computed from the input.
-    ///
-    /// # Returns
-    /// A `Result` containing the constructed combinatorial module if successful,
-    /// or an error string if inference or consistency checks fail.
-    ///
-    /// # See Also
-    /// - [`Module::sequential_observable`], for constructing stateful, sequential modules.
-    /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
-    pub fn combinatorial<R, O, V>(obs: O, assign: V) -> Result<Self, Error>
-    where
-        R: Into<[Wire<T::Sort>; 2]>,
-        O: IntoIterator<Item = R>,
-        V: IntoIterator<Item = Term<T>>,
-    {
-        let obs = Interface::from_iter(obs);
-        let atom = Atom::combinatorial(obs.next(), assign)?;
-        Self::observable(obs, [atom])
-    }
-}
-
-impl<T: Theory> Module<T>
-where
-    T: fmt::Display,
-    T::Sort: fmt::Display,
+    I: Combinatorial<Sort = S> + fmt::Display,
+    J: Sequential<Sort = S> + fmt::Display,
+    D: Differential<Sort = S> + fmt::Display,
+    S: fmt::Display,
 {
     fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
@@ -784,10 +713,12 @@ where
     }
 }
 
-impl<T: Theory> fmt::Display for Module<T>
+impl<I, J, D, S> fmt::Display for Module<I, J, D, S>
 where
-    T: fmt::Display,
-    T::Sort: fmt::Display,
+    I: Combinatorial<Sort = S> + fmt::Display,
+    J: Sequential<Sort = S> + fmt::Display,
+    D: Differential<Sort = S> + fmt::Display,
+    S: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, "")
