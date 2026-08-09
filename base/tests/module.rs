@@ -2,6 +2,7 @@ use base::term;
 use base::term::Term;
 use base::wire::Interface;
 use base::wire::Wire;
+use std::fmt;
 use std::fmt::Display;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
@@ -108,7 +109,7 @@ fn example_counter() -> Result<Module, String> {
 
     let obs = Interface::from_iter([[x0, x1], [y0, y1], [z0, z1], [y00, y01], [z00, z01]]);
 
-    Module::observable_sequential(obs, init, update)
+    Module::sequential(obs, init, update)
 }
 
 #[allow(clippy::vec_init_then_push)]
@@ -216,7 +217,7 @@ fn example_peterson1() -> Result<Module, String> {
     );
 
     let obs = Interface::from_iter([pc1, x1, pc2, x2]);
-    Module::observable_sequential(obs, init, update)
+    Module::sequential(obs, init, update)
 }
 
 fn example_tiny1(
@@ -250,7 +251,7 @@ fn example_tiny1(
     let obs = Interface::from_iter([external, interface]);
     let prvt = Interface::from_iter([private]);
 
-    Module::sequential(obs, prvt, [init], [cons, update])
+    Module::partially_observable_sequential(obs, prvt, [init], [cons, update])
 }
 
 #[test]
@@ -330,13 +331,13 @@ fn module_write_all_ctrl() {
         [x0, xn0.clone()],
     ]);
 
-    let m = Module::observable_sequential(obs.clone(), vec![], update.clone());
+    let m = Module::sequential(obs.clone(), vec![], update.clone());
     assert!(m.is_err_and(|msg| {
         msg.contains("Controlled wire") && msg.contains("is not written in init")
     }));
 
     let init: Vec<Term<Ops>> = [term!(mk_op("ID"), [xn0.clone()], [xn.clone()]).unwrap()].to_vec();
-    let m = Module::observable_sequential(obs.clone(), init, update.clone());
+    let m = Module::sequential(obs.clone(), init, update.clone());
     assert!(m.is_err_and(|msg| {
         msg.contains("Controlled wire") && msg.contains("is not written in init")
     }));
@@ -347,7 +348,7 @@ fn module_write_all_ctrl() {
     ]
     .to_vec();
 
-    let m = Module::observable_sequential(obs.clone(), init.clone(), update);
+    let m = Module::sequential(obs.clone(), init.clone(), update);
     assert!(m.is_err_and(|msg| {
         msg.contains("Controlled wire") && msg.contains("is not written in update")
     }));
@@ -358,7 +359,7 @@ fn module_write_all_ctrl() {
     ]
     .to_vec();
 
-    let m = Module::observable_sequential(obs.clone(), init, update);
+    let m = Module::sequential(obs.clone(), init, update);
     assert!(m.is_ok());
 }
 
@@ -528,7 +529,7 @@ fn compose_seq_2() {
         [y0.clone(), y0n.clone()],
         [z0.clone(), z0n.clone()],
     ]);
-    let m1 = Module::observable_sequential(obs.clone(), init, update).unwrap();
+    let m1 = Module::sequential(obs.clone(), init, update).unwrap();
 
     //
     // class Inv(smt.Module):
@@ -564,7 +565,7 @@ fn compose_seq_2() {
     Module::parallel([m1.clone(), m2]).unwrap();
 
     // try to use a `sequential_observable` ctor instead of combinatorial
-    let m2 = Module::observable_sequential(obs.clone(), assign.clone(), assign).unwrap();
+    let m2 = Module::sequential(obs.clone(), assign.clone(), assign).unwrap();
     let _m = Module::parallel([m1, m2]).unwrap();
     println!("{:?}", _m);
 }
@@ -583,7 +584,7 @@ fn more_controlled_than_external() {
     )
     .unwrap();
 
-    let m = Module::sequential([x], [y, z], [init], [update]);
+    let m = Module::partially_observable_sequential([x], [y, z], [init], [update]);
     assert!(m.is_ok());
 }
 
@@ -607,7 +608,7 @@ fn module_with_invalid_read() {
     )
     .unwrap();
 
-    let m = Module::sequential([x], [y, z], [init], [update]);
+    let m = Module::partially_observable_sequential([x], [y, z], [init], [update]);
     println!("{:?}", m);
     assert!(m.is_err());
 }
@@ -655,6 +656,17 @@ impl Combinatorial for SeqOps {
     const HAVOC: Self = Self("HAVOC");
 }
 
+impl fmt::Display for DifOps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl fmt::Display for SeqOps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[test]
 #[allow(non_snake_case)]
 fn heterogeneous_composition() {
@@ -664,7 +676,7 @@ fn heterogeneous_composition() {
 
     let init = Term::constant(SeqOps::HAVOC, [x.1.clone()]).unwrap();
     let jump = Term::function(SeqOps::SKIP, [x.1.clone()], [x.0.clone()]).unwrap();
-    let P = base::Module::observable_sequential([x.clone()], [init], [jump]).unwrap();
+    let P = base::Module::sequential([x.clone()], [init], [jump]).unwrap();
 
     let init = Term::constant(SeqOps::HAVOC, [y.1.clone()]).unwrap();
     let flow = Term::constant(DifOps::ZERO, [y.1.clone()]).unwrap();
@@ -675,4 +687,6 @@ fn heterogeneous_composition() {
 
     let S = base::Module::parallel([P, Q, R]);
     assert!(S.is_ok());
+
+    print!("{}", S.unwrap());
 }
