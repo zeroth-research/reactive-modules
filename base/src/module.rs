@@ -145,7 +145,7 @@ where
     ///
     /// # See Also
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    /// - [`Module::partially_observable`], [`Module::observable`], [`Module::sequential`],
+    /// - [`Module::partially_observable`], [`Module::observable`], [`Module::partially_observable_sequential`],
     ///   [`Module::combinatorial`] for safe, automated module construction
     #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
