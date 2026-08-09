@@ -5,8 +5,6 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::Error;
-
 #[derive(Debug, Clone)]
 pub struct Wire<S> {
     id: usize,
@@ -229,7 +227,7 @@ impl<S: Eq, T: Into<Wire<S>>> From<T> for Interface<S> {
 
 // returns the wire at position (0,0) and throws away the rest
 impl<S: Eq> TryFrom<Interface<S>> for Wire<S> {
-    type Error = Error;
+    type Error = String;
 
     fn try_from(x: Interface<S>) -> Result<Self, Self::Error> {
         let mut it = x.wires.into_iter().flatten();
@@ -240,7 +238,7 @@ impl<S: Eq> TryFrom<Interface<S>> for Wire<S> {
 
 // returns the wire at position (0,0) and throws away the rest
 impl<S: Eq> TryFrom<Interface<S>> for (usize, S) {
-    type Error = Error;
+    type Error = String;
 
     fn try_from(x: Interface<S>) -> Result<Self, Self::Error> {
         let mut it = x.wires.into_iter().flatten().map(Into::into);
@@ -268,7 +266,7 @@ impl<D: Eq, const N: usize> Interface<D, N> {
 
     pub fn try_from_iter<T: Into<[Wire<D>; N]>, I: IntoIterator<Item = T>>(
         iter: I,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, String> {
         let interface = Self::collect(iter);
 
         let mut w_to_dtype: HashMap<usize, &D> = HashMap::new();
@@ -312,7 +310,7 @@ impl<D: Eq, const N: usize> Interface<D, N> {
 }
 
 impl<S: Eq> Interface<S> {
-    pub fn sequence<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, Error> {
+    pub fn sequence<T: Into<Wire<S>>, I: IntoIterator<Item = T>>(iter: I) -> Result<Self, String> {
         Self::try_from_iter(iter.into_iter().map(|w| [w.into()]))
     }
 

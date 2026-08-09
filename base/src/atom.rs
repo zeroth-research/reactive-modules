@@ -1,6 +1,6 @@
+use crate::Module;
 use crate::term::{Block, Term};
 use crate::wire::{Interface, Wire};
-use crate::{Error, Module};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
@@ -272,7 +272,7 @@ where
     /// # See Also
     /// - [`Atom::combinatorial`], for constructing combinatorial atoms.
     /// - [`Module::sequential`], for creating sequential modules.
-    pub fn sequential<'a, W, V, U>(latched: W, next: W, init: V, update: U) -> Result<Self, Error>
+    pub fn sequential<'a, W, V, U>(latched: W, next: W, init: V, update: U) -> Result<Self, String>
     where
         W: IntoIterator<Item = &'a Wire<S>>,
         V: IntoIterator<Item = Term<I>>,
@@ -380,12 +380,127 @@ where
             delay,
         ))
     }
+
+    pub fn differential<'a, O, P, Q, R>(wires: O, init: Q, delay: R) -> Result<Self, String>
+    where
+        P: Into<[&'a Wire<S>; 2]>,
+        O: IntoIterator<Item = P>,
+        Q: IntoIterator<Item = Term<I>>,
+        R: IntoIterator<Item = Term<F>>,
+        S: 'a,
+    {
+        let mut latched = HashSet::<Wire<S>>::new();
+        let mut derived = HashMap::<Wire<S>, Wire<S>>::new();
+
+        for [l, d] in wires.into_iter().map(Into::into) {
+            if l.dtype() != d.dtype() {
+                return Err("dtype mismatch".to_string());
+            }
+            if latched.contains(l) || derived.contains_key(l) {
+                return Err(format!("duplicate wire {}", l.id()));
+            }
+            if latched.contains(d) || derived.contains_key(d) {
+                return Err(format!("duplicate wire {}", d.id()));
+            }
+            latched.insert(l.clone());
+            derived.insert(d.clone(), l.clone());
+        }
+
+        let init = Block::try_from_iter(init)?;
+        let delay = Block::try_from_iter(delay)?;
+
+        let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut read: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+
+        for rd in init.read().iter().map(|[w]| w) {
+            // init can only read from await wires
+            if derived.contains_key(rd) {
+                wait.insert(rd.id(), rd.clone());
+                continue;
+            }
+
+            if latched.contains(rd) {
+                return Err(format!("Init reads latched wire {}", rd.id()));
+            }
+
+            // dangling read wires are invalid
+            return Err(format!("Wire {} in init is dangling read", rd.id()));
+        }
+
+        for rd in delay.read().iter().map(|[w]| w) {
+            // if the update reads from a next wire, then this is awaited
+            // otherwise, this must be read from outside the atom
+            if latched.contains(rd) {
+                read.insert(rd.id(), rd.clone());
+                continue;
+            }
+
+            if derived.contains_key(rd) {
+                wait.insert(rd.id(), rd.clone());
+                continue;
+            }
+
+            // dangling read wires are parameters
+            return Err(format!("Wire {} in update is dangling read", rd.id()));
+        }
+
+        for wt in [init.write(), delay.write()]
+            .into_iter()
+            .flatten()
+            .map(|[w]| w)
+        {
+            // if the init/update writes to a next wire, then this wire is controlled
+            // otherwise, this wire must be temporary
+            if derived.contains_key(wt) {
+                ctrl.insert(wt.id(), wt.clone());
+                continue;
+            }
+
+            if latched.contains(wt) {
+                return Err(format!("Controlling a latched wire {}", wt.id()));
+            } else {
+                temp.insert(wt.id(), wt.clone());
+            }
+        }
+
+        for &ctr in ctrl.keys() {
+            if !init.write().ids().any(|wrt| wrt == ctr) {
+                return Err(format!("Controlled wire {} is not written in init", ctr));
+            }
+            if !delay.write().ids().any(|wrt| wrt == ctr) {
+                return Err(format!(
+                    "Controlled wire {} is not controlled in delay",
+                    ctr
+                ));
+            }
+        }
+
+        let past: Vec<Wire<S>> = ctrl
+            .values()
+            .map(|w| derived.get(w).unwrap().clone())
+            .collect();
+        let update = Block::skip(ctrl.values().cloned(), past.iter().cloned())?;
+
+        read.extend(past.into_iter().map(|w| (w.id(), w)));
+
+        Ok(Self::new_unchecked(
+            Interface::from_wires_unchecked(ctrl.into_values()),
+            Interface::from_wires_unchecked(wait.into_values()),
+            Interface::from_wires_unchecked(read.into_values()),
+            Interface::from_wires_unchecked(temp.into_values()),
+            init,
+            update,
+            delay,
+        ))
+    }
 }
 
 impl<T, D, S> Atom<T, T, D, S>
 where
     T: Combinatorial<Sort = S> + Sequential<Sort = S> + Clone,
-    D: Differential<Sort = S> + Clone,
+    D: Differential<Sort = S>,
     S: Eq + Clone + Debug,
 {
     /// Constructs a **purely combinatorial atom**, representing purely reactive behaviour
@@ -415,7 +530,7 @@ where
     /// # See Also
     /// - [`Atom::sequential`], for constructing sequential atoms.
     /// - [`Module::combinatorial`], for combinatorial modules.
-    pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, Error>
+    pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, String>
     where
         V: IntoIterator<Item = Term<T>>,
         N: IntoIterator<Item = &'a Wire<S>>,
@@ -563,7 +678,7 @@ where
     /// # See Also
     /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn observable_sequential<O, P, Q, R>(obs: O, init: Q, update: R) -> Result<Self, Error>
+    pub fn observable_sequential<O, P, Q, R>(obs: O, init: Q, update: R) -> Result<Self, String>
     where
         P: Into<[Wire<S>; 2]>,
         O: IntoIterator<Item = P>,
@@ -578,7 +693,7 @@ where
         prvt: P,
         init: Q,
         update: R,
-    ) -> Result<Self, Error>
+    ) -> Result<Self, String>
     where
         TO: Into<[Wire<S>; 2]>,
         TP: Into<[Wire<S>; 2]>,
@@ -592,14 +707,26 @@ where
         let latched = obs.latched().iter().chain(prvt.latched().iter());
         let next = obs.next().iter().chain(prvt.next().iter());
         let atom = Atom::sequential(latched, next, init, update)?;
-        Self::partially_observable(obs, prvt, [atom])
+        Self::partially_observable(obs, prvt, std::iter::once(atom))
+    }
+
+    pub fn differential<O, P, Q, R>(obs: O, init: Q, delay: R) -> Result<Self, String>
+    where
+        P: Into<[Wire<S>; 2]>,
+        O: IntoIterator<Item = P>,
+        Q: IntoIterator<Item = Term<I>>,
+        R: IntoIterator<Item = Term<F>>,
+    {
+        let obs = obs.into_iter().map(Into::into).collect::<Vec<_>>();
+        let atom = Atom::differential(obs.iter().map(|[a, b]| [a, b]), init, delay)?;
+        Self::observable(obs, std::iter::once(atom))
     }
 }
 
 impl<T, D, S> Module<T, T, D, S>
 where
     T: Combinatorial<Sort = S> + Sequential<Sort = S> + Clone,
-    D: Differential<Sort = S> + Clone,
+    D: Differential<Sort = S>,
     S: Eq + Clone + Debug + fmt::Display,
 {
     /// Constructs a **purely combinatorial module** from an assignment sequence of terms.
@@ -620,7 +747,7 @@ where
     /// # See Also
     /// - [`Module::sequential`], for constructing stateful, sequential modules.
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
-    pub fn combinatorial<R, O, V>(obs: O, assign: V) -> Result<Self, Error>
+    pub fn combinatorial<R, O, V>(obs: O, assign: V) -> Result<Self, String>
     where
         R: Into<[Wire<T::Sort>; 2]>,
         O: IntoIterator<Item = R>,

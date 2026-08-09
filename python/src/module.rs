@@ -13,11 +13,12 @@ pub(crate) struct Module {
 #[pymethods]
 impl Module {
     #[new]
-    #[pyo3(signature = (*_args, init = None, update = None, assign = None, obs = None, ctrl = None, extl = None, intf = None, prvt = None, **_kwargs)
+    #[pyo3(signature = (*args, init = None, delay = None, update = None, assign = None, obs = None, ctrl = None, extl = None, intf = None, prvt = None, **_kwargs)
     )]
     fn new(
-        _args: &Bound<'_, PyTuple>,
+        args: &Bound<'_, PyTuple>,
         init: Option<&Bound<'_, PyAny>>,
+        delay: Option<&Bound<'_, PyAny>>,
         update: Option<&Bound<'_, PyAny>>,
         assign: Option<&Bound<'_, PyAny>>,
         obs: Option<&Bound<'_, PyAny>>,
@@ -27,8 +28,9 @@ impl Module {
         prvt: Option<&Bound<'_, PyAny>>,
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
-        if _args.len() > 0 {
+        if args.len() > 0 {
             if init.is_some()
+                || delay.is_some()
                 || update.is_some()
                 || assign.is_some()
                 || obs.is_some()
@@ -42,14 +44,17 @@ impl Module {
                     "positional Module arguments cannot be combined with keyword arguments",
                 ));
             }
-            return Self::parallel(_args);
+            return Self::parallel(args);
         }
 
-        match (init, update, assign) {
-            (Some(init), Some(update), None) => {
+        match (init, delay, update, assign) {
+            (Some(init), None, Some(update), None) => {
                 Self::sequential(init, update, obs, ctrl, extl, intf, prvt)
             }
-            (None, None, Some(assign)) => Self::combinatorial(assign, obs, extl, intf),
+            (None, None, None, Some(assign)) => Self::combinatorial(assign, obs, extl, intf),
+            (Some(init), Some(delay), None, None) => {
+                Self::differential(init, delay, obs, ctrl, extl, intf, prvt)
+            }
             _ => Err(PyTypeError::new_err("unsupported wires declaration")),
         }
     }
@@ -131,6 +136,34 @@ impl Module {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (init, flow, obs = None, *, ctrl = None, extl = None, intf = None, prvt = None))]
+    fn differential(
+        init: &Bound<'_, PyAny>,
+        flow: &Bound<'_, PyAny>,
+        obs: Option<&Bound<'_, PyAny>>,
+        ctrl: Option<&Bound<'_, PyAny>>,
+        extl: Option<&Bound<'_, PyAny>>,
+        intf: Option<&Bound<'_, PyAny>>,
+        prvt: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let init = try_term_iter_cloned(&init)?;
+        let flow = try_term_iter_cloned(&flow)?;
+
+        let module = match (obs, ctrl, extl, intf, prvt) {
+            (Some(obs), None, None, None, None) => {
+                let obs = try_wire2_iter_cloned(obs)?;
+                base::Module::differential(obs, init, flow)
+            }
+            _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
+        };
+
+        match module {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
     #[pyo3(signature = (*modules))]
     fn parallel(modules: &Bound<'_, PyTuple>) -> PyResult<Self> {
         let modules = try_iter_borrow::<Self>(modules)?;
@@ -175,29 +208,6 @@ impl Module {
         let module = slf.into_pyobject(py)?.unbind();
         Ok(ModuleAtoms { module })
     }
-
-    // fn try_to(&self, py: Python<'_>, theory: &str) -> PyResult<PyObject> {
-    //     match theory {
-    //         "lia" | "LIA" => {
-    //             let m = crate::downcast::downcast_module_to_lia(&self.base)
-    //                 .map_err(|e| PyException::new_err(e))?;
-    //             Ok(Py::new(py, LIAModule { base: m })?.into_any())
-    //         }
-    //         "rla" | "RLA" => {
-    //             let m = crate::downcast::downcast_module_to_lra(&self.base)
-    //                 .map_err(|e| PyException::new_err(e))?;
-    //             Ok(Py::new(py, RLAModule { base: m })?.into_any())
-    //         }
-    //         "bv" | "BV" => {
-    //             let m = crate::downcast::downcast_module_to_bv(&self.base)
-    //                 .map_err(|e| PyException::new_err(e))?;
-    //             Ok(Py::new(py, BVModule { base: m })?.into_any())
-    //         }
-    //         _ => Err(PyException::new_err(format!(
-    //             "unknown theory '{theory}'; supported: 'lia', 'rla', 'bv'"
-    //         ))),
-    //     }
-    // }
 
     fn closed(&self) -> bool {
         self.base.is_closed()

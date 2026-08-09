@@ -2,6 +2,7 @@ use base::term;
 use base::term::Term;
 use base::wire::Interface;
 use base::wire::Wire;
+use std::fmt::Display;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
 #[derive(Clone, Debug)]
@@ -23,7 +24,7 @@ impl Theory for Ops {
 }
 
 impl Combinatorial for Ops {
-    const HAVOC: Ops = Ops("HAVOC");
+    const HAVOC: Self = Ops("HAVOC");
 }
 
 impl Sequential for Ops {
@@ -41,7 +42,7 @@ fn mk_op(name: &'static str) -> Ops {
 }
 
 #[allow(clippy::vec_init_then_push)]
-fn example_counter() -> Result<Module, base::Error> {
+fn example_counter() -> Result<Module, String> {
     let x0 = Wire::new("real");
     let y0 = Wire::new("real");
     let z0 = Wire::new("real");
@@ -111,7 +112,7 @@ fn example_counter() -> Result<Module, base::Error> {
 }
 
 #[allow(clippy::vec_init_then_push)]
-fn example_peterson1() -> Result<Module, base::Error> {
+fn example_peterson1() -> Result<Module, String> {
     let stype = "{outCS, reqCS, inCS}";
     let pc1: [Wire<&str>; 2] = [Wire::new(stype), Wire::new(stype)];
     let x1: [Wire<&str>; 2] = [Wire::new("bool"), Wire::new("bool")].map(Into::into);
@@ -222,7 +223,7 @@ fn example_tiny1(
     external: [Wire<&'static str>; 2],
     interface: [Wire<&'static str>; 2],
     wait: bool,
-) -> Result<Module, base::Error> {
+) -> Result<Module, String> {
     let private = [Wire::new("Tny"), Wire::new("Tny")];
     let temp = Wire::new("Tny");
 
@@ -609,4 +610,69 @@ fn module_with_invalid_read() {
     let m = Module::sequential([x], [y, z], [init], [update]);
     println!("{:?}", m);
     assert!(m.is_err());
+}
+
+#[allow(unused)]
+#[derive(Clone)]
+struct SeqOps(&'static str);
+#[allow(unused)]
+struct DifOps(&'static str);
+
+impl Theory for SeqOps {
+    type Sort = &'static str;
+    const NAME: &'static str = "SeqOps";
+    fn check<R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
+    where
+        D: TryInto<Self::Sort> + Display,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+    {
+        Ok(())
+    }
+}
+
+impl Theory for DifOps {
+    type Sort = &'static str;
+    const NAME: &'static str = "DifOps";
+    fn check<R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
+    where
+        D: TryInto<Self::Sort> + Display,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+    {
+        Ok(())
+    }
+}
+
+impl Differential for DifOps {
+    const ZERO: Self = Self("ZERO");
+}
+impl Sequential for SeqOps {
+    const SKIP: Self = Self("SKIP");
+}
+
+impl Combinatorial for SeqOps {
+    const HAVOC: Self = Self("HAVOC");
+}
+
+#[test]
+#[allow(non_snake_case)]
+fn heterogeneous_composition() {
+    let x = (Wire::new("A"), Wire::new("A"));
+    let y = (Wire::new("B"), Wire::new("B"));
+    let z = (Wire::new("C"), Wire::new("C"));
+
+    let init = Term::constant(SeqOps::HAVOC, [x.1.clone()]).unwrap();
+    let jump = Term::function(SeqOps::SKIP, [x.1.clone()], [x.0.clone()]).unwrap();
+    let P = base::Module::observable_sequential([x.clone()], [init], [jump]).unwrap();
+
+    let init = Term::constant(SeqOps::HAVOC, [y.1.clone()]).unwrap();
+    let flow = Term::constant(DifOps::ZERO, [y.1.clone()]).unwrap();
+    let Q = base::Module::differential([y.clone()], [init], [flow]).unwrap();
+
+    let comb = Term::function(SeqOps("+"), [z.1.clone()], [x.1.clone(), y.1.clone()]).unwrap();
+    let R = base::Module::combinatorial([x, y, z], [comb]).unwrap();
+
+    let S = base::Module::parallel([P, Q, R]);
+    assert!(S.is_ok());
 }

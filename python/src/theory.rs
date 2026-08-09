@@ -112,6 +112,7 @@ impl fmt::Display for Any {
     }
 }
 
+#[derive(PartialEq, Eq)]
 struct TryFrom2<A>
 where
     A: TryInto<Sort>,
@@ -167,16 +168,24 @@ impl theory::Theory for Any {
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort> + fmt::Display,
+        D: TryInto<Sort> + fmt::Display + Eq,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
         let read = read.into_iter().map(TryFrom2::new);
         let write = write.into_iter().map(TryFrom2::new);
         match &self {
-            Any::HAVOC => Ok(()),
-            Any::SKIP => Ok(()),
-            Any::ZERO => Ok(()),
+            Any::HAVOC | Any::ZERO => read
+                .into_iter()
+                .next()
+                .is_none()
+                .then_some(())
+                .ok_or(format!("{} expects no read", self)),
+            Any::SKIP => read
+                .into_iter()
+                .eq(write)
+                .then_some(())
+                .ok_or("SKIP expects matching read and write".to_string()),
             Any::LRA(itype) => itype.check(read, write),
             Any::LIA(itype) => itype.check(read, write),
             Any::BV(itype) => itype.check(read, write),

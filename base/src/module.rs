@@ -1,6 +1,6 @@
 use crate::atom::Atom;
+use crate::topological_order;
 use crate::wire::{Interface, Wire};
-use crate::{Error, topological_order};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
@@ -295,7 +295,7 @@ where
     /// - [`partially_observable`], for modules with private state.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn observable<O, P, A>(obs: O, atoms: A) -> Result<Self, Error>
+    pub fn observable<O, P, A>(obs: O, atoms: A) -> Result<Self, String>
     where
         P: Into<[Wire<S>; 2]>,
         O: IntoIterator<Item = P>,
@@ -327,7 +327,7 @@ where
     /// - [`observable`], for constructing modules where all wires are visible.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`new_unchecked`], for manual module creation.
-    pub fn partially_observable<O, P, Q, R, A>(obs: O, prvt: P, atoms: A) -> Result<Self, Error>
+    pub fn partially_observable<O, P, Q, R, A>(obs: O, prvt: P, atoms: A) -> Result<Self, String>
     where
         Q: Into<[Wire<S>; 2]>,
         R: Into<[Wire<S>; 2]>,
@@ -459,7 +459,7 @@ where
     /// - `Ok(Module<D, I>)` containing the composed module.
     /// - `Err(Error)` describing the reason composition failed.
     ///
-    pub fn parallel<M>(modules: M) -> Result<Self, Error>
+    pub fn parallel<M>(modules: M) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
     {

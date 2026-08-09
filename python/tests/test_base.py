@@ -1,7 +1,6 @@
 import pytest
 import torch
-from zrth import Wire, Term, Module, Sort, LIA, Bool, Int
-from torch import Tensor
+from zrth import Wire, Term, Module, LIA, Bool, Int
 
 
 def _bool_t(v):
@@ -106,3 +105,23 @@ def test_interface():
 
     for i in range(len(w)):
         print("-->", w[i])
+
+
+def test_heterogeneous_composition():
+    x = (Wire(Int([1, 1])), Wire(Int([1, 1])))
+    y = (Wire(Int([1, 1])), Wire(Int([1, 1])))
+    z = (Wire(Int([1, 1])), Wire(Int([1, 1])))
+
+    zero = torch.tensor([[0]])
+    init = [Term(LIA.Const(zero), [x[1]])]
+    update = [Term(LIA.Id(), [x[1]], [x[0]])]
+    P = Module.sequential(init, update, [x])
+
+    init = [Term(LIA.Const(zero), [y[1]])]
+    flow = [Term(LIA.Const(zero), [y[1]])]
+    Q = Module.differential(init, flow, [y])
+
+    comb = [Term(LIA.Add(), [z[1]], [x[1], y[1]])]
+    R = Module.combinatorial(comb, [x, y, z])
+
+    S = Module.parallel(P, Q, R)
