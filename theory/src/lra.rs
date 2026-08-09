@@ -147,7 +147,7 @@ impl Theory for LRA {
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Self::Sort> + fmt::Display,
+        D: TryInto<Self::Sort> + fmt::Display + Eq,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {

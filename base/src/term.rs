@@ -1,8 +1,7 @@
-use crate::Error;
 use crate::wire::{Interface, Wire};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
-use theory::{Differential, Theory};
+use theory::{Differential, Sequential, Theory};
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -45,7 +44,7 @@ where
     T: Theory,
     T::Sort: Eq + Clone,
 {
-    pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, Error>
+    pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, String>
     where
         D: Into<Wire<T::Sort>>,
         U: Into<Wire<T::Sort>>,
@@ -69,7 +68,7 @@ where
         }
     }
 
-    pub fn constant<D, W>(itype: T, write: W) -> Result<Self, Error>
+    pub fn constant<D, W>(itype: T, write: W) -> Result<Self, String>
     where
         D: Into<Wire<T::Sort>>,
         W: IntoIterator<Item = D>,
@@ -196,7 +195,7 @@ impl<T: Theory> Block<T>
 where
     T::Sort: Eq + Clone,
 {
-    pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<T>>>(iter: V) -> Result<Self, Error> {
+    pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<T>>>(iter: V) -> Result<Self, String> {
         let mut read_set: HashSet<usize> = HashSet::new();
         let mut write_to_dtype: HashMap<usize, &T::Sort> = HashMap::new();
 
@@ -249,8 +248,24 @@ impl<D: Differential> Block<D>
 where
     D::Sort: Clone + Eq,
 {
-    pub(crate) fn zero<V: IntoIterator<Item = Wire<D::Sort>>>(write: V) -> Result<Self, Error> {
+    pub(crate) fn zero<W: IntoIterator<Item = Wire<D::Sort>>>(write: W) -> Result<Self, String> {
         let delay = std::iter::once(Term::constant(D::ZERO, write)?);
         Block::try_from_iter(delay)
+    }
+}
+
+impl<J: Sequential> Block<J>
+where
+    J::Sort: Clone + Eq,
+{
+    pub(crate) fn skip<
+        W: IntoIterator<Item = Wire<J::Sort>>,
+        R: IntoIterator<Item = Wire<J::Sort>>,
+    >(
+        write: W,
+        read: R,
+    ) -> Result<Self, String> {
+        let update = std::iter::once(Term::function(J::SKIP, write, read)?);
+        Block::try_from_iter(update)
     }
 }
