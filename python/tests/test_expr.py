@@ -142,6 +142,25 @@ def test_bv_signedness_picks_op():
     assert isinstance(terms[-1].itype, BV.ULt)
 
 
+def test_coercion_inherits_signedness_regardless_of_operand_order():
+    # a coerced literal takes the variable's signedness, so `5 + xs` and `xs + 5`
+    # both produce a *signed* comparison for a signed bit-vector `xs`.
+    xs = _var(BV32, theory=BV, signed=True)
+    with collecting() as terms:
+        (xs + 5) < 3
+    assert isinstance(terms[-1].itype, BV.SLt)
+    with collecting() as terms:
+        (5 + xs) < 3
+    assert isinstance(terms[-1].itype, BV.SLt)
+
+
+def test_mixing_signed_and_unsigned_bv_raises():
+    xs = _var(BV32, theory=BV, signed=True)
+    yu = _var(BV32, theory=BV, signed=False)
+    with pytest.raises(TypeError, match="signed and an unsigned"):
+        xs + yu
+
+
 # --- collector --------------------------------------------------------------
 
 

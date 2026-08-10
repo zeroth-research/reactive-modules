@@ -180,12 +180,17 @@ class Expr:
 
     # --- coercion (raw literal -> Expr of my sort; never converts an Expr) ---
     def _coerce(self, o) -> "Expr":
-        return o if isinstance(o, Expr) else expr(o, theory=self._theory, sort=self.dtype)
+        # a coerced literal inherits this expr's signedness (so `5 + xs` and `xs + 5`
+        # agree for a signed bit-vector `xs`); it is ignored for non bit-vector sorts.
+        return o if isinstance(o, Expr) else expr(
+            o, theory=self._theory, sort=self.dtype, signed=getattr(self, "_signed", False))
 
     def _coerce_same(self, o) -> "Expr":
         o = self._coerce(o)
         if _family(self.dtype) != _family(o.dtype):
             raise TypeError(f"cannot combine {self.dtype} and {o.dtype} implicitly; use cast()")
+        if getattr(self, "_signed", False) != getattr(o, "_signed", False):
+            raise TypeError("cannot combine a signed and an unsigned bit-vector; make both the same")
         return o
 
     # --- build helpers (emit the term, wrap the result by its sort) ---
