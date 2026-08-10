@@ -220,6 +220,17 @@ def test_mul_by_constant_folds_to_linear():
     assert _run(terms, {x.wire: _int(3)})[e.wire].item() == 6
 
 
+@pytest.mark.parametrize("n", [1, 2, 3])
+def test_scaling_a_column_vector_by_a_constant(n):
+    x = _var(Sort.Int([n, 1]))
+    with collecting() as terms:
+        e = x * 3
+    assert isinstance(terms[-1].itype, LIA.Linear)
+    vals = torch.arange(1, n + 1, dtype=torch.int64).reshape(n, 1)
+    got = _run(terms, {x.wire: vals})[e.wire]
+    assert got.flatten().tolist() == [3 * v for v in range(1, n + 1)]
+
+
 def test_mul_of_two_variables_is_nonlinear():
     x, y = _var(INT), _var(INT)
     with pytest.raises(NonLinearError):

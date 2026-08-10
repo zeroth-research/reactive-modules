@@ -258,8 +258,9 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
             continue
         if len(v.shape) < 2 or v.shape[-1] != 1:
             continue
-        A = torch.tensor([[c._value.item()]], dtype=scalar_dtype)
-        bias = torch.zeros(1, 1, dtype=scalar_dtype)
+        n = v.shape[0]
+        A = torch.eye(n, dtype=scalar_dtype) * c._value.item()
+        bias = torch.zeros(n, 1, dtype=scalar_dtype)
         return Term(linear(A, bias), [Wire(v.dtype)], [v._wire])
     raise NonLinearError(theory.__name__)
 
