@@ -11,10 +11,10 @@ from .environments import SimpleEnv
 from .qnetworks import SimpleQNet
 from zrth.gym import Env
 from zrth.torch import Module
-from zrth import Wire, Sort
+from zrth import Wire, Real, Int
 
 # SimpleEnv's only private state is `state`; its sort must be declared explicitly.
-STATE = Sort.Real([1, 1])
+STATE = Real([1, 1])
 
 
 # ── Constructor / shape ───────────────────────────────────────────
@@ -78,17 +78,17 @@ def test_env_rejects_no_args():
 # ── attrs override (private-state sorts/wires) ────────────────────
 
 def test_attrs_dict_sort_builds():
-    e = Env(SimpleEnv(), attrs={"state": Sort.Real([1, 1])})
-    assert e.get_prvt("state")[0].dtype == Sort.Real([1, 1])
+    e = Env(SimpleEnv(), attrs={"state": Real([1, 1])})
+    assert e.get_prvt("state")[0].dtype == Real([1, 1])
 
 
 def test_attrs_single_sort_applies_to_all():
-    e = Env(SimpleEnv(), attrs=Sort.Real([1, 1]))
-    assert e.get_prvt("state")[0].dtype == Sort.Real([1, 1])
+    e = Env(SimpleEnv(), attrs=Real([1, 1]))
+    assert e.get_prvt("state")[0].dtype == Real([1, 1])
 
 
 def test_attrs_wire_pair_used_verbatim():
-    pair = (Wire(Sort.Real([1, 1])), Wire(Sort.Real([1, 1])))
+    pair = (Wire(Real([1, 1])), Wire(Real([1, 1])))
     e = Env(SimpleEnv(), attrs={"state": pair})
     got = e.get_prvt("state")
     assert got[0] is pair[0] and got[1] is pair[1]
@@ -96,11 +96,11 @@ def test_attrs_wire_pair_used_verbatim():
 
 def test_attrs_rejects_unknown_name():
     with pytest.raises(ValueError, match="not private-state"):
-        Env(SimpleEnv(), attrs={"not_an_attr": Sort.Real([1, 1])})
+        Env(SimpleEnv(), attrs={"not_an_attr": Real([1, 1])})
 
 
 def test_attrs_rejects_pair_dtype_mismatch():
-    bad = (Wire(Sort.Real([1, 1])), Wire(Sort.Int([1, 1])))
+    bad = (Wire(Real([1, 1])), Wire(Int([1, 1])))
     with pytest.raises(ValueError, match="dtype mismatch"):
         Env(SimpleEnv(), attrs={"state": bad})
 
@@ -112,7 +112,7 @@ def test_attrs_rejects_bad_spec_type():
 
 def test_attrs_without_gym_env_rejected():
     with pytest.raises(TypeError, match="only applies when extracting"):
-        Env(Module(SimpleQNet(1, 2, 2)), attrs=Sort.Real([1, 1]))
+        Env(Module(SimpleQNet(1, 2, 2)), attrs=Real([1, 1]))
 
 
 def test_undeclared_private_state_raises():
@@ -137,7 +137,7 @@ def test_step_matches_backing_env():
     raw, wrapped = SimpleEnv(), Env(SimpleEnv(), attrs=STATE)
     raw.reset(seed=42)
     wrapped.reset(seed=42)
-    raw.step(torch.tensor([0., 1.]))   # one-hot "right", same as wrapped's _prepare_action(1)
+    raw.step(torch.tensor([0., 1.]))  # one-hot "right", same as wrapped's _prepare_action(1)
     wrapped.step(1)
     assert raw.state == wrapped.state
 
@@ -179,7 +179,7 @@ def test_get_wire():
     val = e.get(e._pairs['observation'][0])
     assert isinstance(val, torch.Tensor)
     with pytest.raises(RuntimeError, match="not in state"):
-        e.get(Wire(Sort.Real([1, 1])))
+        e.get(Wire(Real([1, 1])))
 
 
 def test_state_dict_is_a_copy():
@@ -224,14 +224,18 @@ def test_interpret_step_matches_real():
 
 class _BoxEnv(gym.Env):
     """Box obs (matches Linear input) + Discrete(2) action — for closed-loop tests."""
+
     def __init__(self):
         super().__init__()
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Box(low=-1e6, high=1e6, shape=(1,))
         self.x = 0.0
+
     def reset(self, seed=None, options=None):
-        super().reset(seed=seed); self.x = 0.0
+        super().reset(seed=seed);
+        self.x = 0.0
         return self.x, 0.0, False, False
+
     def step(self, action):
         idx = action.argmax().item()
         self.x = self.x + (1.0 if idx == 1 else -1.0)
@@ -239,9 +243,9 @@ class _BoxEnv(gym.Env):
 
 
 def _make_closed_loop():
-    obs = (Wire(Sort.Real([1, 1])), Wire(Sort.Real([1, 1])))
-    act = (Wire(Sort.Real([1, 2])), Wire(Sort.Real([1, 2])))
-    backed = Env(_BoxEnv(), observation=obs, action=act, attrs=Sort.Real([1, 1]))
+    obs = (Wire(Real([1, 1])), Wire(Real([1, 1])))
+    act = (Wire(Real([1, 2])), Wire(Real([1, 2])))
+    backed = Env(_BoxEnv(), observation=obs, action=act, attrs=Real([1, 1]))
     qnet = Module(SimpleQNet(1, 2, 2), extl=obs, intf=act)
     return Env(backed, qnet)
 
@@ -257,8 +261,10 @@ def test_action_driven_false_solo():
 def test_step_ignores_action_when_driven():
     """Different junk actions should produce identical trajectories — the composed
     controller drives, the user-passed action argument is ignored."""
-    a = _make_closed_loop(); a.reset(seed=42)
-    b = _make_closed_loop(); b.reset(seed=42)
+    a = _make_closed_loop();
+    a.reset(seed=42)
+    b = _make_closed_loop();
+    b.reset(seed=42)
     for _ in range(3):
         a.step(torch.tensor([99.0, -99.0]))
         b.step(torch.tensor([-99.0, 99.0]))

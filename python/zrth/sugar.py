@@ -13,7 +13,7 @@ built in the constructor.
         def init(self):            return 0
         def update(self, ctrl):    return ctrl + 1
 
-    INT = Sort.Int([1, 1])
+    INT = Int([1, 1])
     x = (Wire(INT), Wire(INT))                 # a (latched, next) wire pair
     m = Counter(theory=LIA, ctrl=(x,))         # a base Module with theory LIA (closed)
 

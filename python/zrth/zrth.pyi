@@ -13,31 +13,40 @@ are no accessor methods, by design).
 from torch import Tensor as TorchTensor
 from typing import Sequence, override
 
+
 # ---------------------------------------------------------------------------
 # Sorts
 # ---------------------------------------------------------------------------
 
 class Sort:
-    class Bool(Sort):
-        def __init__(self, shape: list[int]) -> None: ...
-
-    class Int(Sort):
-        def __init__(self, shape: list[int]) -> None: ...
-
-    class Real(Sort):
-        def __init__(self, shape: list[int]) -> None: ...
-
-    class BitVec(Sort):
-        def __init__(self, width: int, shape: list[int]) -> None: ...
-
     @override
     def __eq__(self, other: object) -> bool: ...
+
     @override
     def __hash__(self) -> int: ...
+
     @override
     def __str__(self) -> str: ...
+
     @override
     def __repr__(self) -> str: ...
+
+
+class Bool(Sort):
+    def __init__(self, shape: list[int]) -> None: ...
+
+
+class Int(Sort):
+    def __init__(self, shape: list[int]) -> None: ...
+
+
+class Real(Sort):
+    def __init__(self, shape: list[int]) -> None: ...
+
+
+class BitVec(Sort):
+    def __init__(self, width: int, shape: list[int]) -> None: ...
+
 
 # ---------------------------------------------------------------------------
 # Theory op enums (each variant is a subclass; construct e.g. `LRA.Add()`)
@@ -46,158 +55,233 @@ class Sort:
 class LRA:
     class Const(LRA):
         def __init__(self, tensor: TorchTensor) -> None: ...
+
     class And(LRA):
         def __init__(self) -> None: ...
+
     class Or(LRA):
         def __init__(self) -> None: ...
+
     class Xor(LRA):
         def __init__(self) -> None: ...
+
     class Not(LRA):
         def __init__(self) -> None: ...
+
     class Le(LRA):
         def __init__(self) -> None: ...
+
     class Lt(LRA):
         def __init__(self) -> None: ...
+
     class Ge(LRA):
         def __init__(self) -> None: ...
+
     class Gt(LRA):
         def __init__(self) -> None: ...
+
     class Eq(LRA):
         def __init__(self) -> None: ...
+
     class Ne(LRA):
         def __init__(self) -> None: ...
+
     class Linear(LRA):
         def __init__(self, a: TorchTensor, b: TorchTensor) -> None: ...
+
     class Add(LRA):
         def __init__(self) -> None: ...
+
     class Sub(LRA):
         def __init__(self) -> None: ...
+
     class ReLU(LRA):
         def __init__(self) -> None: ...
+
     class Argmax(LRA):
         def __init__(self) -> None: ...
+
     class Min(LRA):
         def __init__(self) -> None: ...
+
     class Max(LRA):
         def __init__(self) -> None: ...
+
     class Transpose(LRA):
         def __init__(self) -> None: ...
+
     class Ite(LRA):
         def __init__(self) -> None: ...
+
     class Id(LRA):
         def __init__(self) -> None: ...
+
     class Uninterpreted(LRA):
         def __init__(self, name: str) -> None: ...
+
 
 class LIA:
     class Const(LIA):
         def __init__(self, tensor: TorchTensor) -> None: ...
+
     class And(LIA):
         def __init__(self) -> None: ...
+
     class Or(LIA):
         def __init__(self) -> None: ...
+
     class Xor(LIA):
         def __init__(self) -> None: ...
+
     class Not(LIA):
         def __init__(self) -> None: ...
+
     class Le(LIA):
         def __init__(self) -> None: ...
+
     class Lt(LIA):
         def __init__(self) -> None: ...
+
     class Ge(LIA):
         def __init__(self) -> None: ...
+
     class Gt(LIA):
         def __init__(self) -> None: ...
+
     class Eq(LIA):
         def __init__(self) -> None: ...
+
     class Ne(LIA):
         def __init__(self) -> None: ...
+
     class Linear(LIA):
         def __init__(self, a: TorchTensor, b: TorchTensor) -> None: ...
+
     class Add(LIA):
         def __init__(self) -> None: ...
+
     class Sub(LIA):
         def __init__(self) -> None: ...
+
     class ReLU(LIA):
         def __init__(self) -> None: ...
+
     class Argmax(LIA):
         def __init__(self) -> None: ...
+
     class Min(LIA):
         def __init__(self) -> None: ...
+
     class Max(LIA):
         def __init__(self) -> None: ...
+
     class Transpose(LIA):
         def __init__(self) -> None: ...
+
     class Ite(LIA):
         def __init__(self) -> None: ...
+
     class Id(LIA):
         def __init__(self) -> None: ...
+
     class Uninterpreted(LIA):
         def __init__(self, name: str) -> None: ...
+
 
 class BV:
     class Const(BV):
         def __init__(self, tensor: TorchTensor) -> None: ...
+
     class Add(BV):
         def __init__(self) -> None: ...
+
     class Sub(BV):
         def __init__(self) -> None: ...
+
     class Mul(BV):
         def __init__(self) -> None: ...
+
     class UDiv(BV):
         def __init__(self) -> None: ...
+
     class SDiv(BV):
         def __init__(self) -> None: ...
+
     class UMod(BV):
         def __init__(self) -> None: ...
+
     class SMod(BV):
         def __init__(self) -> None: ...
+
     class Neg(BV):
         def __init__(self) -> None: ...
+
     class Abs(BV):
         def __init__(self) -> None: ...
+
     class MatMul(BV):
         def __init__(self) -> None: ...
+
     class And(BV):
         def __init__(self) -> None: ...
+
     class Or(BV):
         def __init__(self) -> None: ...
+
     class Xor(BV):
         def __init__(self) -> None: ...
+
     class Not(BV):
         def __init__(self) -> None: ...
+
     class ULe(BV):
         def __init__(self) -> None: ...
+
     class ULt(BV):
         def __init__(self) -> None: ...
+
     class UGe(BV):
         def __init__(self) -> None: ...
+
     class UGt(BV):
         def __init__(self) -> None: ...
+
     class SLe(BV):
         def __init__(self) -> None: ...
+
     class SLt(BV):
         def __init__(self) -> None: ...
+
     class SGe(BV):
         def __init__(self) -> None: ...
+
     class SGt(BV):
         def __init__(self) -> None: ...
+
     class Eq(BV):
         def __init__(self) -> None: ...
+
     class Ne(BV):
         def __init__(self) -> None: ...
+
     class Ite(BV):
         def __init__(self) -> None: ...
+
     class Id(BV):
         def __init__(self) -> None: ...
+
     class BVToBool(BV):
         def __init__(self) -> None: ...
+
     class BitSelect(BV):
         def __init__(self, *, high: int, low: int) -> None: ...
+
     class Extend(BV):
         def __init__(self, *, extra: int) -> None: ...
+
     class Uninterpreted(BV):
         def __init__(self, name: str) -> None: ...
+
 
 # ---------------------------------------------------------------------------
 # Wires / Terms / Atoms / Modules
@@ -205,101 +289,135 @@ class BV:
 
 class Wire:
     def __init__(self, dtype: Sort) -> None: ...
+
     @property
     def id(self) -> int: ...
+
     @property
     def dtype(self) -> Sort: ...
+
     @override
     def __eq__(self, other: object) -> bool: ...
+
     @override
     def __hash__(self) -> int: ...
+
     @override
     def __repr__(self) -> str: ...
+
 
 class Term:
     @staticmethod
     def function(itype: LRA | LIA | BV, write: list[Wire], read: list[Wire]) -> Term: ...
+
     @staticmethod
     def constant(itype: LRA | LIA | BV, write: list[Wire]) -> Term: ...
+
     def __init__(
-        self, itype: LRA | LIA | BV, write: list[Wire], read: list[Wire] | None = None
+            self, itype: LRA | LIA | BV, write: list[Wire], read: list[Wire] | None = None
     ) -> None: ...
+
     @property
     def write(self) -> Sequence[Wire]: ...
+
     @property
     def read(self) -> Sequence[Wire]: ...
+
     @property
     def itype(self) -> LRA | LIA | BV: ...
+
     @override
     def __str__(self) -> str: ...
+
     @override
     def __repr__(self) -> str: ...
+
 
 class Atom:
     @property
     def read(self) -> Sequence[Wire]: ...
+
     @property
     def ctrl(self) -> Sequence[Wire]: ...
+
     @property
     def wait(self) -> Sequence[Wire]: ...
+
     @property
     def init(self) -> Sequence[Term]: ...
+
     @property
     def update(self) -> Sequence[Term]: ...
+
     @override
     def __str__(self) -> str: ...
+
     @override
     def __repr__(self) -> str: ...
 
+
 class Module:
     def __init__(
-        self,
-        *args: Module,
-        init: None | list[Term] = None,
-        update: None | list[Term] = None,
-        assign: None | list[Term] = None,
-        obs: None | list[tuple[Wire, Wire]] = None,
-        ctrl: None | list[tuple[Wire, Wire]] = None,
-        extl: None | list[tuple[Wire, Wire]] = None,
-        intf: None | list[tuple[Wire, Wire]] = None,
-        prvt: None | list[tuple[Wire, Wire]] = None,
+            self,
+            *args: Module,
+            init: None | list[Term] = None,
+            update: None | list[Term] = None,
+            assign: None | list[Term] = None,
+            obs: None | list[tuple[Wire, Wire]] = None,
+            ctrl: None | list[tuple[Wire, Wire]] = None,
+            extl: None | list[tuple[Wire, Wire]] = None,
+            intf: None | list[tuple[Wire, Wire]] = None,
+            prvt: None | list[tuple[Wire, Wire]] = None,
     ) -> None: ...
+
     @staticmethod
     def sequential(
-        init: list[Term],
-        update: list[Term],
-        obs: None | list[tuple[Wire, Wire]] = None,
-        *,
-        ctrl: None | list[tuple[Wire, Wire]] = None,
-        extl: None | list[tuple[Wire, Wire]] = None,
-        intf: None | list[tuple[Wire, Wire]] = None,
-        prvt: None | list[tuple[Wire, Wire]] = None,
+            init: list[Term],
+            update: list[Term],
+            obs: None | list[tuple[Wire, Wire]] = None,
+            *,
+            ctrl: None | list[tuple[Wire, Wire]] = None,
+            extl: None | list[tuple[Wire, Wire]] = None,
+            intf: None | list[tuple[Wire, Wire]] = None,
+            prvt: None | list[tuple[Wire, Wire]] = None,
     ) -> Module: ...
+
     @staticmethod
     def combinatorial(
-        assign: list[Term],
-        obs: None | list[tuple[Wire, Wire]] = None,
-        *,
-        extl: None | list[tuple[Wire, Wire]] = None,
-        intf: None | list[tuple[Wire, Wire]] = None,
+            assign: list[Term],
+            obs: None | list[tuple[Wire, Wire]] = None,
+            *,
+            extl: None | list[tuple[Wire, Wire]] = None,
+            intf: None | list[tuple[Wire, Wire]] = None,
     ) -> Module: ...
+
     @staticmethod
     def parallel(*modules: Module) -> Module: ...
+
     @property
     def atoms(self) -> Sequence[Atom]: ...
+
     @property
     def extl(self) -> Sequence[tuple[Wire, Wire]]: ...
+
     @property
     def intf(self) -> Sequence[tuple[Wire, Wire]]: ...
+
     @property
     def prvt(self) -> Sequence[tuple[Wire, Wire]]: ...
+
     @property
     def obs(self) -> Sequence[tuple[Wire, Wire]]: ...
+
     @property
     def ctrl(self) -> Sequence[tuple[Wire, Wire]]: ...
+
     def closed(self) -> bool: ...
+
     def open(self) -> bool: ...
+
     @override
     def __str__(self) -> str: ...
+
     @override
     def __repr__(self) -> str: ...

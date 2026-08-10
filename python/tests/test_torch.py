@@ -5,7 +5,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from zrth import LRA, LIA, BV, Sort
+from zrth import LRA, LIA, BV, Real, Int, Bool
 from zrth.torch import Module
 
 
@@ -39,17 +39,17 @@ def _sorts(m):
 
 def test_default_theory_is_real():
     e, i = _sorts(Module(Net()))
-    assert isinstance(e, Sort.Real) and isinstance(i, Sort.Real)
+    assert isinstance(e, Real) and isinstance(i, Real)
 
 
 def test_lra_is_real():
     e, i = _sorts(Module(Net(), theory=LRA))
-    assert isinstance(e, Sort.Real) and isinstance(i, Sort.Real)
+    assert isinstance(e, Real) and isinstance(i, Real)
 
 
 def test_lia_is_int():
     e, i = _sorts(Module(_to_int_weights(Net()), theory=LIA))
-    assert isinstance(e, Sort.Int) and isinstance(i, Sort.Int)
+    assert isinstance(e, Int) and isinstance(i, Int)
 
 
 def test_bv_unsupported_for_nn():
@@ -101,5 +101,5 @@ def test_sequential_reads_latched_input():
 def test_sequential_with_lia_builds():
     m = Module(_to_int_weights(Net()), theory=LIA, sequential=True)
     latched, _ = list(m.extl)[0]
-    assert isinstance(latched.dtype, Sort.Int)
+    assert isinstance(latched.dtype, Int)
     assert latched.id in _read_ids(m)

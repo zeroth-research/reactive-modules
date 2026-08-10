@@ -8,11 +8,11 @@ plus check the ctrl/extl partition and the config surface.
 
 import pytest
 
-from zrth import LIA, Module, Sort, Wire, sugar
+from zrth import LIA, Module, Sort, Wire, sugar, Int
 from zrth.sugar import nxt, ite
 from zrth.eval import eval_itype
 
-INT = Sort.Int([1, 1])
+INT = Int([1, 1])
 
 
 def _pair():

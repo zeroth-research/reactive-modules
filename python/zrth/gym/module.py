@@ -3,7 +3,7 @@ import torch
 import inspect
 import gymnasium as gym
 
-from ..zrth import Module, Wire, Sort, LIA, BV
+from zrth import Module, Wire, Sort, LIA, BV, Bool, Real, Int, BitVec
 from ..builder import builder_for, _normalize_shape, _shape
 from ..analyzer import (
     convert_method,
@@ -27,17 +27,17 @@ def space_to_dtype(space, theory, is_action: bool) -> Sort:
         n = space.n
         if theory is BV:
             bits = max(1, int(math.ceil(math.log2(n + 1))))
-            return Sort.BitVec(bits, [1, 1])
+            return BitVec(bits, [1, 1])
         if is_action:
-            return Sort.Real([1, n])
-        return Sort.Int([1, 1]) if theory is LIA else Sort.Real([1, 1])
+            return Real([1, n])
+        return Int([1, 1]) if theory is LIA else Real([1, 1])
     elif isinstance(space, gym.spaces.Box):
         shape = _normalize_shape(list(space.shape))
         if theory is BV:
-            return Sort.BitVec(32, shape)
-        return Sort.Int(shape) if theory is LIA else Sort.Real(shape)
+            return BitVec(32, shape)
+        return Int(shape) if theory is LIA else Real(shape)
     elif isinstance(space, gym.spaces.MultiBinary):
-        return Sort.Bool([1, space.n])
+        return Bool([1, space.n])
     else:
         raise ValueError(f"Unsupported gym space type: {type(space).__name__}")
 
@@ -77,9 +77,9 @@ def _resolve_attr_wire(name, spec):
     if isinstance(spec, Sort):
         return wire_pair(spec)
     is_pair = (
-        isinstance(spec, (list, tuple))
-        and len(spec) == 2
-        and all(isinstance(w, Wire) for w in spec)
+            isinstance(spec, (list, tuple))
+            and len(spec) == 2
+            and all(isinstance(w, Wire) for w in spec)
     )
     if is_pair:
         if spec[0].dtype != spec[1].dtype:
@@ -198,9 +198,9 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
     observation = resolve_wire(
         "observation", observation_dtype, user_wires["observation"]
     )
-    reward = resolve_wire("reward", Sort.Real([1, 1]), user_wires["reward"])
-    terminated = resolve_wire("terminated", Sort.Bool([1, 1]), user_wires["terminated"])
-    truncated = resolve_wire("truncated", Sort.Bool([1, 1]), user_wires["truncated"])
+    reward = resolve_wire("reward", Real([1, 1]), user_wires["reward"])
+    terminated = resolve_wire("terminated", Bool([1, 1]), user_wires["terminated"])
+    truncated = resolve_wire("truncated", Bool([1, 1]), user_wires["truncated"])
 
     wires = {action_param: action, **prvt_wires, **const_wires}
 
@@ -227,9 +227,9 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
     # Prepend constant terms so wires have values before they're read
     reset_terms = const_terms + reset_terms
     step_terms = [
-        _value_to_const_term(getattr(raw, n), const_wires[n][0], _builder)
-        for n in const_wires
-    ] + step_terms
+                     _value_to_const_term(getattr(raw, n), const_wires[n][0], _builder)
+                     for n in const_wires
+                 ] + step_terms
 
     obs = [action, observation, reward, terminated, truncated]
 
@@ -422,7 +422,7 @@ class Env(Module, gym.Wrapper):
         """Convert action to tensor, one-hot encode for Discrete spaces."""
         action_tensor = _ensure_1d(torch.as_tensor(action, dtype=torch.float32))
         if self._backing_env and isinstance(
-            getattr(self._backing_env, "action_space", None), gym.spaces.Discrete
+                getattr(self._backing_env, "action_space", None), gym.spaces.Discrete
         ):
             if action_tensor.numel() == 1:
                 idx = int(action_tensor.item())

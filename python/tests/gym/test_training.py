@@ -6,7 +6,7 @@ from .agent import DQNAgent
 from .train import train
 from zrth.gym import Env
 from zrth.torch import Module
-from zrth import Wire, Sort, LRA
+from zrth import Wire, Real, LRA
 from zrth.eval import eval_itype
 
 
@@ -56,13 +56,13 @@ def test_training():
 
 def test_training_with_shared_wires():
     """Shared wires between Env and NN modules should work with wrapping."""
-    action = [Wire(Sort.Real([1, 2])), Wire(Sort.Real([1, 2]))]
-    input_wire = [Wire(Sort.Real([1, 1])), Wire(Sort.Real([1, 1]))]
+    action = [Wire(Real([1, 2])), Wire(Real([1, 2]))]
+    input_wire = [Wire(Real([1, 1])), Wire(Real([1, 1]))]
 
     plain_env = SimpleEnv()
     plain_nn = SimpleQNet(state_size=1, action_size=plain_env.action_space.n, hidden_size=2)
 
-    wrapped_env = Env(plain_env, action=action, attrs=Sort.Real([1, 1]))
+    wrapped_env = Env(plain_env, action=action, attrs=Real([1, 1]))
     wrapped_nn = Module(plain_nn, extl=input_wire)
 
     print(f'Env action wires: {wrapped_env.obs[0]}')

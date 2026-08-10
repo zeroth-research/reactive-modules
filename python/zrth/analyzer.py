@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
-from zrth import Wire, Term, Sort
+from zrth import Wire, Term, Bool, Real, Int, BitVec
 from .builder import (
     TermBuilder,
     LRATermBuilder,
@@ -118,9 +118,9 @@ class AbstractValue:
             return self
         # Both CONST with same type but different values -> TYPED
         if (
-            self.kind == ValueKind.CONST
-            and other.kind == ValueKind.CONST
-            and self.type_ == other.type_
+                self.kind == ValueKind.CONST
+                and other.kind == ValueKind.CONST
+                and self.type_ == other.type_
         ):
             assert self.type_ is not None
             return AbstractValue.typed(self.type_)
@@ -188,7 +188,7 @@ class AbstractState:
         return self.env.get(name, AbstractValue.top())
 
     def write_attr(
-        self, obj_name: str, attr: str, val: AbstractValue, node: ast.AST
+            self, obj_name: str, attr: str, val: AbstractValue, node: ast.AST
     ) -> None:
         self.attrs.setdefault(obj_name, {})[attr] = val
         full = f"{obj_name}.{attr}"
@@ -320,6 +320,7 @@ KNOWN_BUILTINS: Dict[str, type] = {
 
 ANNOT_SUPPORTED_TYPES = {"int": int, "float": float, "bool": bool}
 
+
 # ---------------------------------------------------------------------------
 # Abstract Interpreter
 # ---------------------------------------------------------------------------
@@ -338,9 +339,9 @@ class AbstractInterpreter:
     """
 
     def __init__(
-        self,
-        fun: str | Callable,
-        known_functions: Dict[str, ast.FunctionDef] | None = None,
+            self,
+            fun: str | Callable,
+            known_functions: Dict[str, ast.FunctionDef] | None = None,
     ):
         if isinstance(fun, str):
             func_source = fun
@@ -361,7 +362,7 @@ class AbstractInterpreter:
             raise ValueError("No function definition found in source")
 
     def analyze(
-        self, arg_values: Dict[str, AbstractValue] | None = None
+            self, arg_values: Dict[str, AbstractValue] | None = None
     ) -> List[AbstractState]:
         """
         Analyze the function. Returns a list of final states, one per
@@ -408,7 +409,7 @@ class AbstractInterpreter:
     # -------------------------------------------------------------------
 
     def _interpret_block(
-        self, stmts: List[ast.stmt], state: AbstractState
+            self, stmts: List[ast.stmt], state: AbstractState
     ) -> List[AbstractState]:
         """
         Interpret a block of statements. Returns list of states (one per path).
@@ -432,7 +433,7 @@ class AbstractInterpreter:
         return live_states
 
     def _interpret_stmt(
-        self, stmt: ast.stmt, state: AbstractState
+            self, stmt: ast.stmt, state: AbstractState
     ) -> List[AbstractState]:
         """Interpret one statement. Returns list of resulting states (path explosion)."""
 
@@ -505,7 +506,7 @@ class AbstractInterpreter:
     # -------------------------------------------------------------------
 
     def _interpret_assign(
-        self, stmt: ast.Assign, state: AbstractState
+            self, stmt: ast.Assign, state: AbstractState
     ) -> List[AbstractState]:
         val, s = self._eval_expr(stmt.value, state)
         for target in stmt.targets:
@@ -513,7 +514,7 @@ class AbstractInterpreter:
         return [s]
 
     def _interpret_aug_assign(
-        self, stmt: ast.AugAssign, state: AbstractState
+            self, stmt: ast.AugAssign, state: AbstractState
     ) -> List[AbstractState]:
         left_val, s = self._eval_expr(stmt.target, state)
         right_val, s = self._eval_expr(stmt.value, s)
@@ -522,7 +523,7 @@ class AbstractInterpreter:
         return [s]
 
     def _interpret_ann_assign(
-        self, stmt: ast.AnnAssign, state: AbstractState
+            self, stmt: ast.AnnAssign, state: AbstractState
     ) -> List[AbstractState]:
         if stmt.value is not None:
             val, s = self._eval_expr(stmt.value, state)
@@ -535,7 +536,7 @@ class AbstractInterpreter:
         return [s]
 
     def _interpret_return(
-        self, stmt: ast.Return, state: AbstractState
+            self, stmt: ast.Return, state: AbstractState
     ) -> List[AbstractState]:
         s = state.copy()
         if stmt.value is not None:
@@ -558,7 +559,7 @@ class AbstractInterpreter:
         return then_states + else_states
 
     def _interpret_raise(
-        self, stmt: ast.Raise, state: AbstractState
+            self, stmt: ast.Raise, state: AbstractState
     ) -> List[AbstractState]:
         s = state.copy()
         if stmt.exc is not None:
@@ -572,11 +573,11 @@ class AbstractInterpreter:
     # -------------------------------------------------------------------
 
     def _assign_target(
-        self,
-        target: ast.expr,
-        val: AbstractValue,
-        state: AbstractState,
-        source_node: ast.AST,
+            self,
+            target: ast.expr,
+            val: AbstractValue,
+            state: AbstractState,
+            source_node: ast.AST,
     ) -> AbstractState:
         s = state.copy()
         if isinstance(target, ast.Name):
@@ -638,7 +639,7 @@ class AbstractInterpreter:
     # -------------------------------------------------------------------
 
     def _eval_expr(
-        self, expr: ast.expr, state: AbstractState
+            self, expr: ast.expr, state: AbstractState
     ) -> Tuple[AbstractValue, AbstractState]:
         """
         Evaluate an expression. Returns (abstract value, updated state).
@@ -737,7 +738,7 @@ class AbstractInterpreter:
     # -------------------------------------------------------------------
 
     def _eval_binop_values(
-        self, op: ast.operator, left: AbstractValue, right: AbstractValue
+            self, op: ast.operator, left: AbstractValue, right: AbstractValue
     ) -> AbstractValue:
         """Try to compute binop on abstract values."""
         if left.is_const() and right.is_const():
@@ -767,7 +768,7 @@ class AbstractInterpreter:
             case ast.Mod():
                 return a % b
             case ast.Pow():
-                return a**b
+                return a ** b
             case ast.LShift():
                 return a << b
             case ast.RShift():
@@ -786,7 +787,7 @@ class AbstractInterpreter:
                 )
 
     def _binop_result_type(
-        self, op: ast.operator, lt: type | None, rt: type | None
+            self, op: ast.operator, lt: type | None, rt: type | None
     ) -> type | None:
         if lt is None or rt is None:
             return None
@@ -811,7 +812,7 @@ class AbstractInterpreter:
         return None
 
     def _eval_unaryop_value(
-        self, op: ast.unaryop, operand: AbstractValue
+            self, op: ast.unaryop, operand: AbstractValue
     ) -> AbstractValue:
         if operand.is_const():
             try:
@@ -836,7 +837,7 @@ class AbstractInterpreter:
         return AbstractValue.top()
 
     def _eval_boolop(
-        self, expr: ast.BoolOp, state: AbstractState
+            self, expr: ast.BoolOp, state: AbstractState
     ) -> Tuple[AbstractValue, AbstractState]:
         s = state
         result = AbstractValue.bottom()
@@ -847,7 +848,7 @@ class AbstractInterpreter:
         return result, s
 
     def _eval_compare(
-        self, expr: ast.Compare, state: AbstractState
+            self, expr: ast.Compare, state: AbstractState
     ) -> Tuple[AbstractValue, AbstractState]:
         s = state
         left, s = self._eval_expr(expr.left, s)
@@ -898,7 +899,7 @@ class AbstractInterpreter:
                 )
 
     def _eval_call(
-        self, expr: ast.Call, state: AbstractState
+            self, expr: ast.Call, state: AbstractState
     ) -> Tuple[AbstractValue, AbstractState]:
         s = state
 
@@ -926,9 +927,9 @@ class AbstractInterpreter:
             ret_type = KNOWN_BUILTINS[func_name]
             # Try actual computation for type constructors
             if (
-                func_name in ("int", "float", "str", "bool")
-                and len(arg_vals) <= 1
-                and all(a.is_const() for a in arg_vals)
+                    func_name in ("int", "float", "str", "bool")
+                    and len(arg_vals) <= 1
+                    and all(a.is_const() for a in arg_vals)
             ):
                 try:
                     builtin_fn = (
@@ -965,7 +966,7 @@ class AbstractInterpreter:
         return AbstractValue.top(), s
 
     def _eval_ifexp(
-        self, expr: ast.IfExp, state: AbstractState
+            self, expr: ast.IfExp, state: AbstractState
     ) -> Tuple[AbstractValue, AbstractState]:
         cond, s = self._eval_expr(expr.test, state)
 
@@ -978,7 +979,7 @@ class AbstractInterpreter:
         return result, merged
 
     def _eval_collection(
-        self, expr: Union[ast.List, ast.Tuple, ast.Set], state: AbstractState
+            self, expr: Union[ast.List, ast.Tuple, ast.Set], state: AbstractState
     ) -> Tuple[AbstractValue, AbstractState]:
         s = state
         elts = []
@@ -999,7 +1000,7 @@ class AbstractInterpreter:
         return AbstractValue.typed(py_type), s
 
     def _eval_dict(
-        self, expr: ast.Dict, state: AbstractState
+            self, expr: ast.Dict, state: AbstractState
     ) -> Tuple[AbstractValue, AbstractState]:
         s = state
         all_const = True
@@ -1022,7 +1023,7 @@ class AbstractInterpreter:
         return AbstractValue.typed(dict), s
 
     def _eval_subscript(
-        self, expr: ast.Subscript, state: AbstractState
+            self, expr: ast.Subscript, state: AbstractState
     ) -> Tuple[AbstractValue, AbstractState]:
         obj_val, s = self._eval_expr(expr.value, state)
         idx_val, s = self._eval_expr(expr.slice, s)
@@ -1113,9 +1114,9 @@ def resolve_wire(name, dtype, user_val=None):
     if user_val is None:
         return wire_pair(dtype)
     is_pair = (
-        isinstance(user_val, (list, tuple))
-        and len(user_val) == 2
-        and all(isinstance(w, Wire) for w in user_val)
+            isinstance(user_val, (list, tuple))
+            and len(user_val) == 2
+            and all(isinstance(w, Wire) for w in user_val)
     )
     if is_pair:
         for w in user_val:
@@ -1271,9 +1272,9 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
 def _torch_dtype(target_dtype):
     """Map a Sort to the corresponding torch dtype. Defaults to float32."""
     match target_dtype:
-        case Sort.Int(_) | Sort.BitVec(_, _):
+        case Int(_) | BitVec(_, _):
             return torch.long
-        case Sort.Bool(_):
+        case Bool(_):
             return torch.bool
         case _:
             return torch.float32
@@ -1307,10 +1308,10 @@ def _normalize_early_returns(stmts: list) -> list:
 
         # Detect: if without else whose body ends with a return
         if (
-            isinstance(stmt, ast.If)
-            and not stmt.orelse
-            and stmt.body
-            and isinstance(stmt.body[-1], ast.Return)
+                isinstance(stmt, ast.If)
+                and not stmt.orelse
+                and stmt.body
+                and isinstance(stmt.body[-1], ast.Return)
         ):
             ret = stmt.body[-1]
             values = (
@@ -1333,7 +1334,7 @@ def _normalize_early_returns(stmts: list) -> list:
                 for i, val in enumerate(values)
             ]
             body = _normalize_early_returns(stmt.body[:-1]) + ret_assigns
-            rest = _normalize_early_returns(stmts[idx + 1 :])
+            rest = _normalize_early_returns(stmts[idx + 1:])
             result.append(
                 ast.copy_location(
                     ast.If(test=stmt.test, body=body or [ast.Pass()], orelse=rest),
@@ -1365,15 +1366,15 @@ class MethodVisitor(ast.NodeVisitor):
     """
 
     def __init__(
-        self,
-        wire_pairs: dict[str, tuple[Wire, Wire]],
-        result_wires: list[Wire],
-        cls=None,
-        layers: dict[str, int] | None = None,
-        params: dict[str, Wire] | None = None,
-        live_layers: dict | None = None,
-        builder: TermBuilder | None = None,
-        static_attrs: dict[str, Any] | None = None,
+            self,
+            wire_pairs: dict[str, tuple[Wire, Wire]],
+            result_wires: list[Wire],
+            cls=None,
+            layers: dict[str, int] | None = None,
+            params: dict[str, Wire] | None = None,
+            live_layers: dict | None = None,
+            builder: TermBuilder | None = None,
+            static_attrs: dict[str, Any] | None = None,
     ):
         self.wire_pairs = wire_pairs
         self.result_wires = result_wires
@@ -1487,10 +1488,10 @@ class MethodVisitor(ast.NodeVisitor):
 
                 # Write only if top-level, not yet written, and newly assigned in this branch
                 if (
-                    var in self.wire_pairs
-                    and len(self.scopes) == 0
-                    and var not in parent_scope
-                    and var not in self.written_wires
+                        var in self.wire_pairs
+                        and len(self.scopes) == 0
+                        and var not in parent_scope
+                        and var not in self.written_wires
                 ):
                     output_wire = self.wire_pairs[var][1]
                     term = self.builder.id_(if_wire, output_wire=output_wire)
@@ -1513,7 +1514,7 @@ class MethodVisitor(ast.NodeVisitor):
             # Tuple unpacking: x, y = <expr>. Supported only when RHS is a tuple
             # literal OR an untraced call (each target gets its own placeholder).
             if isinstance(node.value, ast.Tuple) and len(node.value.elts) == len(
-                target.elts
+                    target.elts
             ):
                 for tgt_elt, val_elt in zip(target.elts, node.value.elts):
                     if not isinstance(tgt_elt, ast.Name):
@@ -1591,7 +1592,7 @@ class MethodVisitor(ast.NodeVisitor):
         value_nodes = value_nodes[: len(self.result_wires)]
 
         for i, (result_wire, value_node) in enumerate(
-            zip(self.result_wires, value_nodes)
+                zip(self.result_wires, value_nodes)
         ):
             src_wire = self._convert_expr(value_node, target_dtype=result_wire.dtype)
             self.temp_vars[f"_ret_{i}"] = src_wire
@@ -1723,7 +1724,7 @@ class MethodVisitor(ast.NodeVisitor):
             head = head[len("self."):]
         label = f"{head}(...)" if "(" in label else head
 
-        sort = target_dtype if target_dtype is not None else Sort.Real([1, 1])
+        sort = target_dtype if target_dtype is not None else Real([1, 1])
         term = self.builder.uninterpreted(label, sort)
         self.terms.append(term)
         return term
@@ -1982,7 +1983,7 @@ class MethodVisitor(ast.NodeVisitor):
 
             # Static evaluation when both sides are compile-time values (str, None, etc.)
             if isinstance(left_val, _StaticValue) and isinstance(
-                right_val, _StaticValue
+                    right_val, _StaticValue
             ):
                 return _StaticValue(_eval_static_compare(left_val.value, op, right_val.value))
 
@@ -2037,7 +2038,7 @@ class MethodVisitor(ast.NodeVisitor):
             return term
         elif isinstance(value, (int, float)):
             if target_dtype is None:
-                target_dtype = Sort.Real([1, 1])
+                target_dtype = Real([1, 1])
             tensor_data = torch.tensor([value], dtype=_torch_dtype(target_dtype))
             term = self.builder.const(tensor_data)
             self.terms.append(term)
@@ -2132,16 +2133,16 @@ class MethodVisitor(ast.NodeVisitor):
 
 
 def convert_method(
-    method,
-    wires: dict[str, tuple[Wire, Wire]],
-    result: list[Wire],
-    cls=None,
-    layers: dict[str, int] | None = None,
-    params: dict[str, Wire] | None = None,
-    live_layers: dict | None = None,
-    builder: TermBuilder | None = None,
-    theory=None,
-    static_attrs: dict[str, Any] | None = None,
+        method,
+        wires: dict[str, tuple[Wire, Wire]],
+        result: list[Wire],
+        cls=None,
+        layers: dict[str, int] | None = None,
+        params: dict[str, Wire] | None = None,
+        live_layers: dict | None = None,
+        builder: TermBuilder | None = None,
+        theory=None,
+        static_attrs: dict[str, Any] | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 

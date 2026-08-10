@@ -9,7 +9,7 @@ helpers below).
 """
 
 import torch
-from .zrth import Wire, Term, Sort, LRA, LIA, BV
+from zrth import Wire, Term, LRA, LIA, BV, Sort, Bool, Real, Int, BitVec
 
 
 def _wire(t) -> Wire:
@@ -35,35 +35,35 @@ def _normalize_shape(shape: list) -> list:
 
 def _shape(sort: Sort) -> list:
     match sort:
-        case Sort.Bool(s) | Sort.Int(s) | Sort.Real(s):
+        case Bool(s) | Int(s) | Real(s):
             return list(s)
-        case Sort.BitVec(_, s):
+        case BitVec(_, s):
             return list(s)
     raise TypeError(f"sort has no shape: {sort}")
 
 
 def _with_shape(sort: Sort, shape: list) -> Sort:
     match sort:
-        case Sort.Bool(_):
-            return Sort.Bool(shape)
-        case Sort.Int(_):
-            return Sort.Int(shape)
-        case Sort.Real(_):
-            return Sort.Real(shape)
-        case Sort.BitVec(bw, _):
-            return Sort.BitVec(bw, shape)
+        case Bool(_):
+            return Bool(shape)
+        case Int(_):
+            return Int(shape)
+        case Real(_):
+            return Real(shape)
+        case BitVec(bw, _):
+            return BitVec(bw, shape)
     raise TypeError(f"unknown sort: {sort}")
 
 
 def _bv_width(sort: Sort) -> int:
     match sort:
-        case Sort.BitVec(bw, _):
+        case BitVec(bw, _):
             return bw
     raise TypeError(f"not a BitVec sort: {sort}")
 
 
 def _bool_sort(sort: Sort) -> Sort:
-    return Sort.Bool(_shape(sort))
+    return Bool(_shape(sort))
 
 
 def _const_tensor(op):
@@ -285,12 +285,12 @@ class LRATermBuilder(TermBuilder):
     _ns = LRA
 
     def _numeric_wire(self, shape: list) -> Wire:
-        return Wire(Sort.Real(shape))
+        return Wire(Real(shape))
 
     def python_type_to_dtype(self, python_type: type, shape: list):
         if python_type is bool:
-            return Sort.Bool(shape)
-        return Sort.Real(shape)
+            return Bool(shape)
+        return Real(shape)
 
     def add(self, a, b) -> Term:
         return self._binary_op(LRA.Add, _dtype(a), a, b)
@@ -331,7 +331,7 @@ class LRATermBuilder(TermBuilder):
             no_bias = torch.empty(0, 0)
             return Term(
                 LRA.Linear(_const_tensor(a.itype), no_bias),
-                [Wire(Sort.Real(out_shape))],
+                [Wire(Real(out_shape))],
                 [b_wire],
             )
         raise RuntimeError(
@@ -349,9 +349,9 @@ class LRATermBuilder(TermBuilder):
         shape = _normalize_shape(list(tensor.size()))
         tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
         if tensor.dtype == torch.bool:
-            w = output_wire or Wire(Sort.Bool(shape))
+            w = output_wire or Wire(Bool(shape))
             return Term.constant(LRA.Const(tensor), [w])
-        w = output_wire or Wire(Sort.Real(shape))
+        w = output_wire or Wire(Real(shape))
         return Term.constant(LRA.Const(tensor), [w])
 
 
@@ -359,12 +359,12 @@ class LIATermBuilder(TermBuilder):
     _ns = LIA
 
     def _numeric_wire(self, shape: list) -> Wire:
-        return Wire(Sort.Int(shape))
+        return Wire(Int(shape))
 
     def python_type_to_dtype(self, python_type: type, shape: list):
         if python_type is bool:
-            return Sort.Bool(shape)
-        return Sort.Int(shape)
+            return Bool(shape)
+        return Int(shape)
 
     def add(self, a, b) -> Term:
         return self._binary_op(LIA.Add, _dtype(a), a, b)
@@ -403,7 +403,7 @@ class LIATermBuilder(TermBuilder):
             no_bias = torch.empty(0, 0)
             return Term(
                 LIA.Linear(_const_tensor(a.itype), no_bias),
-                [Wire(Sort.Int(out_shape))],
+                [Wire(Int(out_shape))],
                 [b_wire],
             )
         raise RuntimeError(
@@ -420,9 +420,9 @@ class LIATermBuilder(TermBuilder):
         shape = _normalize_shape(list(tensor.size()))
         tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
         if tensor.dtype == torch.bool:
-            w = output_wire or Wire(Sort.Bool(shape))
+            w = output_wire or Wire(Bool(shape))
             return Term.constant(LIA.Const(tensor), [w])
-        w = output_wire or Wire(Sort.Int(shape))
+        w = output_wire or Wire(Int(shape))
         return Term.constant(LIA.Const(tensor), [w])
 
 
@@ -431,12 +431,12 @@ class BVTermBuilder(TermBuilder):
 
     # FIXME: make 32 a parameter
     def _numeric_wire(self, shape: list) -> Wire:
-        return Wire(Sort.BitVec(32, shape))
+        return Wire(BitVec(32, shape))
 
     def python_type_to_dtype(self, python_type: type, shape: list):
         if python_type is bool:
-            return Sort.Bool(shape)
-        return Sort.BitVec(32, shape)
+            return Bool(shape)
+        return BitVec(32, shape)
 
     def add(self, a, b) -> Term:
         return self._binary_op(BV.Add, _dtype(a), a, b)
@@ -450,7 +450,7 @@ class BVTermBuilder(TermBuilder):
     # In the BV (SMT-LIB) model there is no Bool: bitwise ops preserve the
     # operand's BV width, and comparisons yield a 1-bit BV.
     def _bv1(self, a) -> Sort:
-        return Sort.BitVec(1, _shape(_dtype(a)))
+        return BitVec(1, _shape(_dtype(a)))
 
     def and_(self, a, b) -> Term:
         return self._binary_op(BV.And, _dtype(a), a, b)
@@ -493,18 +493,18 @@ class BVTermBuilder(TermBuilder):
     def matmul(self, a, b) -> Term:
         a_w, b_w = _wire(a), _wire(b)
         out_shape = [_shape(a_w.dtype)[0], _shape(b_w.dtype)[1]]
-        out = Wire(Sort.BitVec(_bv_width(a_w.dtype), out_shape))
+        out = Wire(BitVec(_bv_width(a_w.dtype), out_shape))
         return Term(BV.MatMul(), [out], [a_w, b_w])
 
     def bit_select(self, a, high: int, low: int) -> Term:
         bw = high - low + 1
-        out = Wire(Sort.BitVec(bw, [1, 1]))
+        out = Wire(BitVec(bw, [1, 1]))
         return Term(BV.BitSelect(high=high, low=low), [out], [_wire(a)])
 
     def extend(self, a, extra: int) -> Term:
         a_w = _wire(a)
         new_bw = _bv_width(a_w.dtype) + extra
-        out = Wire(Sort.BitVec(new_bw, [1, 1]))
+        out = Wire(BitVec(new_bw, [1, 1]))
         return Term(BV.Extend(extra=extra), [out], [a_w])
 
     def const_for_value(self, value, output_wire=None) -> Term:
@@ -518,9 +518,9 @@ class BVTermBuilder(TermBuilder):
         shape = _normalize_shape(list(tensor.size()))
         tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
         if tensor.dtype == torch.bool:
-            w = output_wire or Wire(Sort.BitVec(1, shape))
+            w = output_wire or Wire(BitVec(1, shape))
             return Term.constant(BV.Const(tensor), [w])
-        out = output_wire or Wire(Sort.BitVec(32, shape))
+        out = output_wire or Wire(BitVec(32, shape))
         return Term.constant(BV.Const(tensor), [out])
 
 
