@@ -99,6 +99,12 @@ def test_nxt_requires_a_variable():
         nxt(x + 1)
 
 
+def test_variable_wire_pair_must_share_a_sort():
+    # otherwise x.dtype != nxt(x).dtype; raise (not assert, so -O keeps the check)
+    with pytest.raises(TypeError, match="same sort"):
+        expr((Wire(INT), Wire(Sort.Bool([1, 1]))), theory=LIA)
+
+
 # --- result sorts -----------------------------------------------------------
 
 
