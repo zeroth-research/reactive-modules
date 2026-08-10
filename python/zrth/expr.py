@@ -149,6 +149,11 @@ class Expr:
     """Shared plumbing; instances are always one of AExpr / BExpr / WExpr (via ``expr()``)."""
 
     def __init__(self, wire, theory, *, next=None, value=None, tag=None):
+        if next is not None and next.dtype != wire.dtype:
+            raise TypeError(
+                f"a variable's (latched, next) wires must have the same sort, "
+                f"got {wire.dtype} and {next.dtype}"
+            )
         self._wire = wire
         self._theory = theory
         self._next = next          # next wire, for a variable leaf (nxt(v))
