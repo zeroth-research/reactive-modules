@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 import z3
 
+from benchmarks.svcomp import _farkas
 from benchmarks.svcomp._farkas import (
     _pre_activations,
     affine_coeffs,
@@ -28,6 +29,7 @@ from benchmarks.svcomp._farkas import (
     find_infeasibility_certificate,
     masked_value,
     output_weights,
+    split_guard,
     strict_signs,
 )
 
@@ -85,6 +87,52 @@ def test_enumerate_paths_splits_branch():
         assert s.check() == z3.unsat                 # each path refines the guard
     s = z3.Solver(); s.add(guard, z3.Not(z3.Or([g for g, _ in paths])))
     assert s.check() == z3.unsat                     # together they cover it
+
+
+def test_split_guard_covers_exactly_and_does_not_overlap():
+    """The emitted ``RawStep`` is the union of the paths, so the pieces must cover
+    the guard exactly — under-covering would state termination of a subset of the
+    program's steps — and stay disjoint, so no state is certified twice."""
+    x, m, i, j, n = z3.Ints("x m i j n")
+    for guard in (x != m, z3.Or(i < m, j < n), z3.And(x > 0, z3.Or(i < m, j < n))):
+        pieces = split_guard(guard)
+        assert len(pieces) > 1, f"{guard} should split"
+        union = z3.Solver()
+        union.add(z3.Xor(z3.Or(*pieces), guard))
+        assert union.check() == z3.unsat, f"{guard}: pieces are not exactly the guard"
+        for a in range(len(pieces)):
+            for b in range(a + 1, len(pieces)):
+                overlap = z3.Solver()
+                overlap.add(pieces[a], pieces[b])
+                assert overlap.check() == z3.unsat, f"{guard}: pieces {a},{b} overlap"
+
+
+def test_split_guard_leaves_a_convex_guard_alone():
+    """A conjunction of half-spaces already reaches the LP intact, so it is not
+    split — the path count (and the emitted proof) stays unchanged."""
+    x, m = z3.Ints("x m")
+    for guard in (x > 0, z3.And(x > 0, x < m)):
+        assert split_guard(guard) == [guard]
+
+
+def test_disjunctive_guard_is_certifiable_only_once_split(monkeypatch):
+    """``atom_rows`` drops a disjunction, so an un-split disjunctive guard reaches
+    the LP with no rows at all and its cells cannot be certified. Pinned against
+    the un-split domain, since that gap is the reason the split exists."""
+    i, m, k = z3.Ints("i m k")
+    # V = relu(m - i) + relu(k - i) over (i, m, k), for
+    # `while (i < m or i < k) { i = i + 1 }`
+    layers = [(np.array([[-1, 1, 0], [-1, 0, 1]]), np.array([0, 0])),
+              (np.array([[1, 1]]), np.array([0]))]
+    s = [i, m, k]
+    guard = z3.Or(i < m, i < k)
+    sp = [z3.If(guard, i + 1, i), m, k]
+
+    assert certify_decrease(layers, s, sp, guard, (), 1.0).verified
+
+    monkeypatch.setattr(_farkas, "split_guard", lambda g, max_pieces=16: [g])
+    unsplit = certify_decrease(layers, s, sp, guard, (), 1.0)
+    assert not unsplit.verified, "the un-split disjunctive guard should not certify"
 
 
 def test_enumerate_paths_keeps_affine_body_single():

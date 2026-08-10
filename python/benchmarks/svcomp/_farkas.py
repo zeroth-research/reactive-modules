@@ -190,6 +190,58 @@ def _flatten_and(pred):
     return [pred]
 
 
+def _convex_alternatives(atom):
+    """Disjoint alternatives replacing a non-convex ``atom``, or ``None`` if it is
+    left alone. A disjunction becomes its disjuncts, each excluding the earlier
+    ones; ``a != b`` becomes ``a < b`` and ``a > b``."""
+    if z3.is_or(atom):
+        alts, earlier = [], []
+        for d in atom.children():
+            alts.append(z3.And(*earlier, d) if earlier else d)
+            earlier.append(z3.simplify(z3.Not(d)))
+        return alts
+    eq = atom.arg(0) if z3.is_not(atom) and z3.is_eq(atom.arg(0)) else None
+    if eq is not None:
+        return [eq.arg(0) < eq.arg(1), eq.arg(0) > eq.arg(1)]
+    if z3.is_distinct(atom) and atom.num_args() == 2:
+        return [atom.arg(0) < atom.arg(1), atom.arg(0) > atom.arg(1)]
+    return None
+
+
+def split_guard(guard, max_pieces: int = 16):
+    """Split ``guard`` into disjoint conjunctions whose union is exactly ``guard``.
+
+    ``atom_rows`` keeps only linear half-spaces, so a disjunction or a ``!=`` in
+    the guard reaches the LP as no rows at all — the domain the certificate is
+    proved over is then weaker than the loop's own guard. Splitting recovers those
+    rows, the way :func:`enumerate_paths` splits an ``ite`` in the body.
+
+    Returns ``[guard]`` unchanged when it is already a conjunction of half-spaces,
+    and also when the split would exceed ``max_pieces`` (a weaker domain only
+    costs certificates, never soundness)."""
+    pieces = [guard]
+    for _ in range(max_pieces):
+        out, changed = [], False
+        for g in pieces:
+            conj = _flatten_and(g)
+            for i, c in enumerate(conj):
+                alts = _convex_alternatives(c)
+                if alts is None:
+                    continue
+                rest = conj[:i] + conj[i + 1:]
+                out += [z3.And(*rest, a) if rest else a for a in alts]
+                changed = True
+                break
+            else:
+                out.append(g)
+        if not changed:
+            return pieces
+        if len(out) > max_pieces:
+            return [guard]
+        pieces = out
+    return [guard]
+
+
 _CMP = {z3.Z3_OP_GE: ">=", z3.Z3_OP_LE: "<=", z3.Z3_OP_GT: ">",
         z3.Z3_OP_LT: "<", z3.Z3_OP_EQ: "=="}
 _FLIP = {">=": "<", "<=": ">", ">": "<=", "<": ">=", "==": None}
@@ -598,14 +650,16 @@ def _certify_path(layers, s_syms, body, guard, invariants, delta, max_iters):
 
 def certify_decrease(layers, s_syms, sp_syms, guard, invariants, delta,
                      max_iters: int = 1000) -> FarkasResult:
-    """Certify the loop's decrease by splitting its body into affine paths
-    (:func:`enumerate_paths`) and certifying each with the cell/CEGAR engine
+    """Certify the loop's decrease by splitting the guard into convex pieces
+    (:func:`split_guard`), each of those into affine paths
+    (:func:`enumerate_paths`), and certifying each with the cell/CEGAR engine
     (:func:`_certify_path`). Every feasible path must strictly drop ``V``; the
-    result carries one :class:`PathCert` per path (a non-branching loop is a
-    single path, so this subsumes the scalar single-path case)."""
+    result carries one :class:`PathCert` per path (a non-branching loop under a
+    conjunctive guard is a single path, so this subsumes the scalar case)."""
     body = _on_guard_body(sp_syms, s_syms)
     paths: list[PathCert] = []
-    for pguard, pbody in enumerate_paths(body, guard):
+    for pguard, pbody in [p for g in split_guard(guard)
+                          for p in enumerate_paths(body, g)]:
         dom = z3.And(pguard, *invariants) if invariants else pguard
         if not _feasible(dom):
             continue                       # dead path (guard unsat) — never taken
