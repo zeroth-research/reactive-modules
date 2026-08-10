@@ -82,7 +82,7 @@ def _build_block(theory, ctrl_vars, fn, ctrl_arg, extl_arg, is_init) -> list:
 
 
 class Module(_BaseModule):
-    def __new__(cls, *, theory=None, ctrl=None, extl=None, name=None):
+    def __new__(cls, *, theory=None, ctrl=None, extl=None):
         if theory is None or ctrl is None:
             raise TypeError(
                 f"{cls.__name__}: `theory` and `ctrl` are required constructor kwargs"
