@@ -76,6 +76,13 @@ def test_numeric_literal_needs_explicit_sort():
     assert isinstance(expr(True, theory=LRA), BExpr)   # bool is exempt
 
 
+def test_explicit_sort_wins_for_bool_value():
+    # bool is a subtype of int: an explicit sort must be honored, not overridden to Bool
+    x = expr(True, theory=LIA, sort=Sort.Int([1, 1]))
+    assert isinstance(x, AExpr) and isinstance(x.dtype, Sort.Int)
+    assert isinstance(expr(True, theory=LIA), BExpr)   # but no sort -> still Bool
+
+
 # --- variables & nxt --------------------------------------------------------
 
 
