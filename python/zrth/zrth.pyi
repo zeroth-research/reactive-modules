@@ -1,5 +1,9 @@
 """Type stubs for the `zrth.zrth` native extension (theory_pyo3).
 
+They support type checking (mypy) and editor hints only, with no runtime effect, and
+are maintained by hand: PyO3 does not generate stubs, so adding a theory or an op means
+updating this file too (see https://pyo3.rs/v0.29.0/python-typing-hints).
+
 The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec) plus the
 per-theory op enums `LRA` / `LIA` / `BV`. Ops and sorts are pyo3 complex enums:
 each variant is its own subclass, payloads are read via `match`/unpacking (there
