@@ -168,9 +168,9 @@ class TermBuilder:
             s = _shape(var_wire.dtype)
             if len(s) < 2 or s[-1] != 1:
                 continue
-            scalar = data.item()
-            A = torch.tensor([[scalar]], dtype=scalar_dtype)
-            b_bias = torch.zeros(1, 1, dtype=scalar_dtype)
+            n = s[0]
+            A = torch.eye(n, dtype=scalar_dtype) * data.item()
+            b_bias = torch.zeros(n, 1, dtype=scalar_dtype)
             return Term(self._ns.Linear(A, b_bias), [Wire(var_wire.dtype)], [var_wire])
         return None
 
