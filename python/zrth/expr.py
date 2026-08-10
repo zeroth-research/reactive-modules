@@ -359,16 +359,22 @@ def _wants_float(sort) -> bool:
 
 
 def _const(value, theory, sort, signed, tag=None) -> Expr:
-    if isinstance(value, bool):                # Bool is unambiguous -> no sort= needed
-        tensor, family = torch.tensor([[value]], dtype=torch.bool), Sort.Bool
-    else:
-        if sort is None:
+    # `sort` first: `bool` is a subtype of `int`, so an explicit sort must not be forced to Bool.
+    if sort is None:
+        if not isinstance(value, bool):
             raise TypeError(
                 "expr(): a numeric literal needs an explicit sort= "
                 "(e.g. sort=Sort.Real, or sort=Sort.BitVec(32, [1, 1]))"
             )
-        tensor = value if isinstance(value, torch.Tensor) else \
-            torch.tensor(value, dtype=torch.float32 if _wants_float(sort) else torch.int64)
+        tensor, family = torch.tensor([[value]], dtype=torch.bool), Sort.Bool
+    else:
+        if _wants_float(sort):
+            dtype = torch.float32
+        elif isinstance(sort, Sort.Bool) or sort is Sort.Bool:
+            dtype = torch.bool
+        else:
+            dtype = torch.int64
+        tensor = value if isinstance(value, torch.Tensor) else torch.tensor(value, dtype=dtype)
         family = sort
     shape = _normalize_shape(list(tensor.size()))
     tensor = tensor.reshape(shape)             # theory const ops require a 2-D initializer
