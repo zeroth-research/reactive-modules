@@ -1,11 +1,7 @@
 import pytest
 import gymnasium as gym
-from zrth import Module, Wire, Term, Sort, LIA
+from zrth import Module, Wire, Term, Sort, LIA, Bool, Real, Int, BitVec
 from gymnasium import spaces
-
-Real = Sort.Real
-Bool = Sort.Bool
-Int = Sort.Int
 
 
 def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result: list[Wire]):

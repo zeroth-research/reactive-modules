@@ -5,7 +5,7 @@ multi-step execution of hand-built modules.
 """
 import pytest
 import torch
-from zrth import Wire, Term, Module, Sort, LIA
+from zrth import Wire, Term, Module, LIA, Bool, Real, Int, BitVec
 from zrth.eval import eval_itype, execute_init, execute_update
 
 
@@ -51,10 +51,10 @@ def _get(state, wire):
 
 def _make_counter():
     """Simple counter: init x=0, update x'=x+1."""
-    x = (Wire(Sort.Int([1, 1])), Wire(Sort.Int([1, 1])))
+    x = (Wire(Int([1, 1])), Wire(Int([1, 1])))
 
     init = [Term(LIA.Const(torch.tensor([[0]], dtype=torch.int64)), [x[1]])]
-    one = Wire(Sort.Int([1, 1]))
+    one = Wire(Int([1, 1]))
     update = [
         Term(LIA.Const(torch.tensor([[1]], dtype=torch.int64)), [one]),
         Term(LIA.Add(), [x[1]], [x[0], one]),
@@ -93,9 +93,9 @@ def test_basic_eval_counter():
 
 def test_boolean_logic():
     """AND/OR/NOT: state wires computed from each other."""
-    a = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    b = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    c = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
+    a = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    b = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    c = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
 
     init = [
         Term(LIA.Const(torch.tensor([[True]])), [a[1]]),
@@ -130,18 +130,18 @@ def test_boolean_logic():
 
 def test_ite():
     """Ite branching: cond toggles, x depends on previous x."""
-    cond = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    x = (Wire(Sort.Int([1, 1])), Wire(Sort.Int([1, 1])))
+    cond = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    x = (Wire(Int([1, 1])), Wire(Int([1, 1])))
 
     init = [
         Term(LIA.Const(torch.tensor([[True]])), [cond[1]]),
         Term(LIA.Const(torch.tensor([[0]], dtype=torch.int64)), [x[1]]),
     ]
 
-    one = Wire(Sort.Int([1, 1]))
-    two = Wire(Sort.Int([1, 1]))
-    tmp1 = Wire(Sort.Int([1, 1]))
-    tmp2 = Wire(Sort.Int([1, 1]))
+    one = Wire(Int([1, 1]))
+    two = Wire(Int([1, 1]))
+    tmp1 = Wire(Int([1, 1]))
+    tmp2 = Wire(Int([1, 1]))
 
     update = [
         Term(LIA.Not(), [cond[1]], [cond[0]]),
@@ -171,7 +171,7 @@ def test_ite():
 
 def test_tensor_ops():
     """ReLU on an Int vector state."""
-    data = (Wire(Sort.Int([1, 4])), Wire(Sort.Int([1, 4])))
+    data = (Wire(Int([1, 4])), Wire(Int([1, 4])))
 
     init = [
         Term(LIA.Const(torch.tensor([[-1, 2, 3, -4]], dtype=torch.int64)), [data[1]]),
@@ -197,10 +197,10 @@ def test_tensor_ops():
 
 def test_comparisons():
     """Eq and Lt comparisons over multiple steps."""
-    a = (Wire(Sort.Int([1, 1])), Wire(Sort.Int([1, 1])))
-    b = (Wire(Sort.Int([1, 1])), Wire(Sort.Int([1, 1])))
-    eq_wire = Wire(Sort.Bool([1, 1]))
-    lt_wire = Wire(Sort.Bool([1, 1]))
+    a = (Wire(Int([1, 1])), Wire(Int([1, 1])))
+    b = (Wire(Int([1, 1])), Wire(Int([1, 1])))
+    eq_wire = Wire(Bool([1, 1]))
+    lt_wire = Wire(Bool([1, 1]))
 
     init = [
         Term(LIA.Const(torch.tensor([[3]], dtype=torch.int64)), [a[1]]),
@@ -209,9 +209,9 @@ def test_comparisons():
         Term(LIA.Lt(), [lt_wire], [a[1], b[1]]),
     ]
 
-    one = Wire(Sort.Int([1, 1]))
-    eq_wire2 = Wire(Sort.Bool([1, 1]))
-    lt_wire2 = Wire(Sort.Bool([1, 1]))
+    one = Wire(Int([1, 1]))
+    eq_wire2 = Wire(Bool([1, 1]))
+    lt_wire2 = Wire(Bool([1, 1]))
     update = [
         Term(LIA.Const(torch.tensor([[1]], dtype=torch.int64)), [one]),
         Term(LIA.Add(), [a[1]], [a[0], one]),
@@ -246,8 +246,8 @@ def test_comparisons():
 
 def test_env_inputs():
     """Module with external inputs: counter that adds env input each step."""
-    x = (Wire(Sort.Int([1, 1])), Wire(Sort.Int([1, 1])))
-    env = (Wire(Sort.Int([1, 1])), Wire(Sort.Int([1, 1])))
+    x = (Wire(Int([1, 1])), Wire(Int([1, 1])))
+    env = (Wire(Int([1, 1])), Wire(Int([1, 1])))
 
     init = [
         Term(LIA.Const(torch.tensor([[0]], dtype=torch.int64)), [x[1]]),
@@ -271,18 +271,18 @@ def test_env_inputs():
 # ── 2-bit counter circuit ───────────────────────────────────────────────────
 
 def _make_twobitcounter():
-    b0 = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    b1 = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    enable = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
+    b0 = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    b1 = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    enable = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
 
     init = [
         Term(LIA.Const(torch.tensor([[False]])), [b0[1]]),
         Term(LIA.Const(torch.tensor([[False]])), [b1[1]]),
     ]
 
-    not_b0 = Wire(Sort.Bool([1, 1]))
-    not_b1 = Wire(Sort.Bool([1, 1]))
-    b0_and_enable = Wire(Sort.Bool([1, 1]))
+    not_b0 = Wire(Bool([1, 1]))
+    not_b1 = Wire(Bool([1, 1]))
+    b0_and_enable = Wire(Bool([1, 1]))
 
     update = [
         Term(LIA.Not(), [not_b0], [b0[0]]),
@@ -315,9 +315,9 @@ def test_twobitcounter_count_sequence():
 
     expected = [
         (False, False),  # 0
-        (False, True),   # 1
-        (True, False),   # 2
-        (True, True),    # 3
+        (False, True),  # 1
+        (True, False),  # 2
+        (True, True),  # 3
         (False, False),  # 0 (wrap)
     ]
     for i, exp in enumerate(expected):
@@ -335,9 +335,9 @@ def test_twobitcounter_hold():
     state, history = _run_module(m, 5, env_inputs_fn=lambda s: inputs[s])
 
     assert _bits(history[2], b0, b1) == (True, False)  # state 2
-    assert _bits(history[3], b0, b1) == (True, False)   # hold
-    assert _bits(history[4], b0, b1) == (True, False)   # hold
-    assert _bits(history[5], b0, b1) == (True, False)   # hold
+    assert _bits(history[3], b0, b1) == (True, False)  # hold
+    assert _bits(history[4], b0, b1) == (True, False)  # hold
+    assert _bits(history[5], b0, b1) == (True, False)  # hold
 
 
 def test_twobitcounter_mixed():
@@ -349,10 +349,10 @@ def test_twobitcounter_mixed():
     inputs = [EN, HLD, EN, HLD, HLD, EN, EN]
     state, history = _run_module(m, 7, env_inputs_fn=lambda s: inputs[s])
 
-    assert _bits(history[1], b0, b1) == (False, True)   # 0->1
-    assert _bits(history[2], b0, b1) == (False, True)   # hold
-    assert _bits(history[3], b0, b1) == (True, False)    # 1->2
-    assert _bits(history[4], b0, b1) == (True, False)    # hold
-    assert _bits(history[5], b0, b1) == (True, False)    # hold
-    assert _bits(history[6], b0, b1) == (True, True)     # 2->3
-    assert _bits(history[7], b0, b1) == (False, False)   # 3->0
+    assert _bits(history[1], b0, b1) == (False, True)  # 0->1
+    assert _bits(history[2], b0, b1) == (False, True)  # hold
+    assert _bits(history[3], b0, b1) == (True, False)  # 1->2
+    assert _bits(history[4], b0, b1) == (True, False)  # hold
+    assert _bits(history[5], b0, b1) == (True, False)  # hold
+    assert _bits(history[6], b0, b1) == (True, True)  # 2->3
+    assert _bits(history[7], b0, b1) == (False, False)  # 3->0

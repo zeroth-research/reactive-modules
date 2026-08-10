@@ -1,7 +1,7 @@
 import inspect
 import torch.nn as nn
 
-from ..zrth import Module as _BaseModule, Sort
+from zrth import Module as _BaseModule, Real
 from ..builder import builder_for
 from ..analyzer import convert_method, resolve_wire
 
@@ -14,7 +14,7 @@ def _numeric_sort(theory, n):
 
 def _is_float_sort(sort) -> bool:
     match sort:
-        case Sort.Real(_):
+        case Real(_):
             return True
     return False
 
@@ -86,13 +86,13 @@ def _extract_nn_module(nn_instance, theory=None, sequential=False, **kwargs):
         raise ValueError("No nn.Linear layers found in the module")
 
     layer_list = list(layers.values())
-    obs_size  = layer_list[0][0]
+    obs_size = layer_list[0][0]
     qval_size = layer_list[-1][1]
 
     _validate_theory_supports_nn(theory)
     _validate_weight_dtypes(live_layers, theory)
 
-    extl = resolve_wire("extl", _numeric_sort(theory, obs_size),  user_extl)
+    extl = resolve_wire("extl", _numeric_sort(theory, obs_size), user_extl)
     intf = resolve_wire("intf", _numeric_sort(theory, qval_size), user_intf)
 
     layer_out_features = {name: out for name, (_, out) in layers.items()}

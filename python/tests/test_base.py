@@ -1,6 +1,6 @@
 import pytest
 import torch
-from zrth import Wire, Term, Module, Sort, LIA
+from zrth import Wire, Term, Module, Sort, LIA, Bool, Int
 from torch import Tensor
 
 
@@ -10,17 +10,17 @@ def _bool_t(v):
 
 
 def test_wire_new():
-    Wire(Sort.Bool([1, 1]))
-    Wire(Sort.Int([1, 1]))
-    Wire(Sort.Int([2, 3]))
+    Wire(Bool([1, 1]))
+    Wire(Int([1, 1]))
+    Wire(Int([2, 3]))
 
 
 def test_term_new():
-    x = Wire(Sort.Int([2, 3]))
-    y = Wire(Sort.Int([2, 3]))
-    xn = Wire(Sort.Int([2, 3]))
-    w4 = Wire(Sort.Int([1, 3]))
-    w5 = Wire(Sort.Int([1, 3]))
+    x = Wire(Int([2, 3]))
+    y = Wire(Int([2, 3]))
+    xn = Wire(Int([2, 3]))
+    w4 = Wire(Int([1, 3]))
+    w5 = Wire(Int([1, 3]))
 
     # test `function` ctor
     _ = Term.function(LIA.Add(), [xn], [x, y])
@@ -28,30 +28,30 @@ def test_term_new():
     _ = Term.function(LIA.Const(torch.tensor([[3, 4, 6]])), [w5], [])
 
     # comparisons are pointwise -> Bool of the operand shape
-    Term(LIA.Lt(), [Wire(Sort.Bool([1, 3]))], [w4, Wire(Sort.Int([1, 3]))])
-    Term.constant(LIA.Const(torch.tensor([[3, 2, 1]])), [Wire(Sort.Int([1, 3]))])
+    Term(LIA.Lt(), [Wire(Bool([1, 3]))], [w4, Wire(Int([1, 3]))])
+    Term.constant(LIA.Const(torch.tensor([[3, 2, 1]])), [Wire(Int([1, 3]))])
 
 
 def test_module_sequential():
-    x = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
+    x = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
     init = [Term.constant(LIA.Const(_bool_t(True)), [x[1]])]
     update = [Term(LIA.Id(), [x[1]], [x[0]])]
     _ = Module.sequential(init, update, [x])
 
 
 def test_module_combinatorial():
-    x = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
+    x = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
 
     assign = [Term.constant(LIA.Const(_bool_t(False)), [x[1]])]
     _ = Module.combinatorial(assign, [x])
 
 
 def test_module_parallel():
-    x = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    y = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    z = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    w = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
-    v = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
+    x = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    y = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    z = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    w = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    v = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
 
     init = [Term.constant(LIA.Const(_bool_t(False)), [x[1]])]
     update = [Term(LIA.And(), [x[1]], [x[0], y[1]])]
@@ -85,9 +85,9 @@ def test_module_parallel():
 
 
 def test_interface():
-    x = Wire(Sort.Bool([1, 1]))
-    y = Wire(Sort.Bool([1, 1]))
-    xn = Wire(Sort.Bool([1, 1]))
+    x = Wire(Bool([1, 1]))
+    y = Wire(Bool([1, 1]))
+    xn = Wire(Bool([1, 1]))
     f = Term(LIA.And(), [xn], [x, y])
     f2 = Term(LIA.And(), [xn], [x, y])
 

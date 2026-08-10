@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from zrth import Wire, Sort, Module, parse_smv, BV
+from zrth import Wire, Module, parse_smv, BV, BitVec
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 
@@ -80,7 +80,7 @@ def test_wire_overrides():
 
     # Create override wires for 'x'
     # The SMV parser is BV-only; overrides must match.
-    dtype = Sort.BitVec(32, [1, 1])
+    dtype = BitVec(32, [1, 1])
     ov_l = Wire(dtype)
     ov_n = Wire(dtype)
 
@@ -136,7 +136,7 @@ def test_enum_type():
     # state should have TensorInt dtype (enum mapped to int)
     latched, _ = name_map["state"]
     # SMV parser maps `integer` / enum types to BV<32>.
-    assert isinstance(latched.dtype, Sort.BitVec)
+    assert isinstance(latched.dtype, BitVec)
 
 
 def test_frozen_var():
