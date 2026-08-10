@@ -123,6 +123,24 @@ def test_theory_baked_real_and_bv():
     assert (xb < yb).dtype == Sort.BitVec(1, [1, 1])
 
 
+# --- Python protocols with no symbolic meaning are refused ------------------
+
+
+def test_equality_and_truth_testing_raise():
+    x, y = _var(INT), _var(INT)
+    with pytest.raises(TypeError, match="eq"):
+        x == y
+    with pytest.raises(TypeError, match="ne"):
+        x != y
+    for thunk in (lambda: bool(x),
+                  lambda: "t" if (x < y) else "f",
+                  lambda: x and y,
+                  lambda: x or y,
+                  lambda: not x):
+        with pytest.raises(TypeError, match="no truth value"):
+            thunk()
+
+
 # --- no implicit promotion; cast is explicit --------------------------------
 
 

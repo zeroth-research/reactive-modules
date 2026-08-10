@@ -29,8 +29,10 @@ Construction and coercion go through ``expr()``:
 a *raw* operand through it (using the sibling's sort) but never convert between sorts: mixing
 sorts raises, and an explicit conversion is ``cast()``.
 
-Equality: ``==`` / ``!=`` are Python object identity; use ``eq()`` / ``ne()`` for the
-comparison predicates.
+``==``, ``!=`` and truth-testing (``if e``, ``and``, ``or``, ``not``) **raise**: Python cannot
+give them a symbolic meaning, and silently yielding a Python bool would make a wrong branch
+look correct. Use ``eq()`` / ``ne()`` for the predicates, ``ite()`` instead of ``if``, and
+``&`` / ``|`` / ``~`` to combine.
 """
 
 from typing import override
@@ -197,6 +199,19 @@ class Expr:
         if getattr(self, "_signed", False) != getattr(o, "_signed", False):
             raise TypeError("cannot combine a signed and an unsigned bit-vector; make both the same")
         return o
+
+    # --- Python protocols with no symbolic meaning: refuse rather than mislead ---
+    def __bool__(self):
+        raise TypeError(
+            "an Expr has no truth value: use ite(cond, a, b) instead of `if`/`and`/`or`, "
+            "and & | ~ to combine predicates"
+        )
+
+    def __eq__(self, other):
+        raise TypeError("use eq(a, b) to compare Exprs (== does not build a predicate)")
+
+    def __ne__(self, other):
+        raise TypeError("use ne(a, b) to compare Exprs (!= does not build a predicate)")
 
     # --- build helpers (emit the term, wrap the result by its sort) ---
     def _result(self, term: Term) -> "Expr":
