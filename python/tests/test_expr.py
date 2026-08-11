@@ -123,22 +123,42 @@ def test_theory_baked_real_and_bv():
     assert (xb < yb).dtype == Sort.BitVec(1, [1, 1])
 
 
-# --- Python protocols with no symbolic meaning are refused ------------------
+# --- equality builds predicates; truth-testing is refused -------------------
 
 
-def test_equality_and_truth_testing_raise():
+def test_equality_operators_build_predicates():
     x, y = _var(INT), _var(INT)
-    with pytest.raises(TypeError, match="eq"):
-        x == y
-    with pytest.raises(TypeError, match="ne"):
-        x != y
+    with collecting() as terms:
+        e = x == y
+    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, LIA.Eq)
+    with collecting() as terms:
+        e = x != y
+    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, LIA.Ne)
+
+
+def test_equality_coerces_a_raw_operand():
+    x = _var(INT)
+    with collecting() as terms:
+        e = x == 3
+    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, LIA.Eq)
+
+
+def test_truth_testing_raises():
+    x, y = _var(INT), _var(INT)
     for thunk in (lambda: bool(x),
                   lambda: "t" if (x < y) else "f",
+                  lambda: "t" if (x == y) else "f",
                   lambda: x and y,
                   lambda: x or y,
                   lambda: not x):
         with pytest.raises(TypeError, match="no truth value"):
             thunk()
+
+
+def test_expr_is_not_hashable():
+    x = _var(INT)
+    with pytest.raises(TypeError, match="unhashable"):
+        {x: 1}
 
 
 # --- no implicit promotion; cast is explicit --------------------------------

@@ -29,10 +29,11 @@ Construction and coercion go through ``expr()``:
 a *raw* operand through it (using the sibling's sort) but never convert between sorts: mixing
 sorts raises, and an explicit conversion is ``cast()``.
 
-``==``, ``!=`` and truth-testing (``if e``, ``and``, ``or``, ``not``) **raise**: Python cannot
-give them a symbolic meaning, and silently yielding a Python bool would make a wrong branch
-look correct. Use ``eq()`` / ``ne()`` for the predicates, ``ite()`` instead of ``if``, and
-``&`` / ``|`` / ``~`` to combine.
+``==`` and ``!=`` build the equality predicates, exactly like ``eq()`` / ``ne()`` (as in z3 and
+gurobi). Truth-testing (``if e``, ``and``, ``or``, ``not``) **raises**: Python cannot give it a
+symbolic meaning, and silently yielding a bool would make a wrong branch look correct — use
+``ite()`` and ``&`` / ``|`` / ``~`` instead. An ``Expr`` generates terms rather than holding a
+value, so it is also not hashable (no use as a dict key or in a set).
 """
 
 from typing import override
@@ -200,18 +201,18 @@ class Expr:
             raise TypeError("cannot combine a signed and an unsigned bit-vector; make both the same")
         return o
 
-    # --- Python protocols with no symbolic meaning: refuse rather than mislead ---
+    # --- equality and truth-testing ---
+    def __eq__(self, other) -> "Expr":
+        return eq(self, other)
+
+    def __ne__(self, other) -> "Expr":
+        return ne(self, other)
+
     def __bool__(self):
         raise TypeError(
             "an Expr has no truth value: use ite(cond, a, b) instead of `if`/`and`/`or`, "
             "and & | ~ to combine predicates"
         )
-
-    def __eq__(self, other):
-        raise TypeError("use eq(a, b) to compare Exprs (== does not build a predicate)")
-
-    def __ne__(self, other):
-        raise TypeError("use ne(a, b) to compare Exprs (!= does not build a predicate)")
 
     # --- build helpers (emit the term, wrap the result by its sort) ---
     def _result(self, term: Term) -> "Expr":
