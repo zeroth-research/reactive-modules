@@ -10,13 +10,13 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..zrth import Wire, Sort, Term, Module, BV
+from zrth import Wire, Sort, Term, Module, BV, BitVec, Bool
 
 
 def _bw(sort) -> int:
     """Bit-width of a BitVec Sort (Sorts expose no methods; match instead)."""
     match sort:
-        case Sort.BitVec(bw, _):
+        case BitVec(bw, _):
             return bw
     raise TypeError(f"not a BitVec sort: {sort}")
 
@@ -24,6 +24,7 @@ def _bw(sort) -> int:
 def _bv_const(value) -> "BV.Const":
     """A scalar BV constant op from an int value (2-D initializer)."""
     return BV.Const(torch.tensor([[int(value)]], dtype=torch.int64))
+
 
 # ---------------------------------------------------------------------------
 # 1. Lark parser init
@@ -42,8 +43,8 @@ def _get_parser():
 
 
 def parse_smv(
-    text: str,
-    overrides: dict[str, tuple[Wire, Wire]] | None = None,
+        text: str,
+        overrides: dict[str, tuple[Wire, Wire]] | None = None,
 ) -> tuple[Module, dict[str, tuple[Wire, Wire]]]:
     """Parse an SMV source string and return ``(Module, name_map)``.
 
@@ -172,7 +173,7 @@ def _collect_declarations(tree: Tree) -> _Decls:
 
 
 def _promote_loop(
-    exprs, var_names, target: dict[str, Tree], *, expect_next=False
+        exprs, var_names, target: dict[str, Tree], *, expect_next=False
 ) -> list[Tree]:
     remaining = []
     for expr in exprs:
@@ -226,7 +227,7 @@ def _extract_name(node) -> str | None:
 
 
 def _try_extract_assign(
-    expr, var_names: set[str], *, expect_next: bool = False
+        expr, var_names: set[str], *, expect_next: bool = False
 ) -> tuple[str, Tree] | None:
     """Detect ``var = rhs`` (or ``next(var) = rhs`` when *expect_next*) in an expression tree."""
     node = _peel(expr)
@@ -266,27 +267,27 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> _SMVType:
     if isinstance(tree, Tree):
         match tree.data:
             case "type_bool":
-                return _SMVType(Sort.BitVec(1, [1, 1]), signed=False)
+                return _SMVType(BitVec(1, [1, 1]), signed=False)
             case "type_int" | "range_type":
-                return _SMVType(Sort.BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
+                return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
             case "type_spec":
                 return _resolve_type(tree.children[0], enum_values)
             case "word_type":
                 sign_tok = str(tree.children[0])
                 width = int(str(tree.children[1]))
-                return _SMVType(Sort.BitVec(width, [1, 1]), signed=(sign_tok == "signed"))
+                return _SMVType(BitVec(width, [1, 1]), signed=(sign_tok == "signed"))
             case "enum_type":
                 for code, ev in enumerate(_typed_children(tree, "enum_value")):
                     name = _extract_name(ev.children[0])
                     if name is not None:
                         enum_values.setdefault(name, code)
-                return _SMVType(Sort.BitVec(_DEFAULT_INT_BW, [1, 1]), signed=False)
+                return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=False)
     # Token fallback
     text = str(tree).strip()
     if text == "boolean":
-        return _SMVType(Sort.BitVec(1, [1, 1]), signed=False)
+        return _SMVType(BitVec(1, [1, 1]), signed=False)
     if text == "integer":
-        return _SMVType(Sort.BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
+        return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
     raise ValueError(f"unsupported type: {tree}")
 
 
@@ -330,6 +331,7 @@ def _bv_op(name: str):
     """
     return getattr(BV, name)()
 
+
 _METHODS = {
     "builtin_call": "_lower_builtin",
     "case_expr": "_lower_case",
@@ -356,9 +358,9 @@ def _const_out_dtype(itype):
 def _builtin_out_dtype(fn_name: str, in_dtype):
     """Return the output DType for a BV cast/conversion builtin."""
     if fn_name in ("bool", "word1"):
-        return Sort.BitVec(1, [1, 1])
+        return BitVec(1, [1, 1])
     if fn_name in ("unsigned", "signed"):
-        return Sort.BitVec(_bw(in_dtype), [1, 1])
+        return BitVec(_bw(in_dtype), [1, 1])
     return None
 
 
@@ -366,12 +368,12 @@ class _Lowerer:
     """Recursive expression-to-Term lowerer."""
 
     def __init__(
-        self,
-        name_map: dict[str, tuple[Wire, Wire]],
-        defines: dict[str, Tree],
-        enum_values: dict[str, int],
-        var_types: dict[str, _SMVType],
-        is_init: bool = False,
+            self,
+            name_map: dict[str, tuple[Wire, Wire]],
+            defines: dict[str, Tree],
+            enum_values: dict[str, int],
+            var_types: dict[str, _SMVType],
+            is_init: bool = False,
     ):
         self.name_map = name_map
         self.defines = defines
@@ -417,7 +419,7 @@ class _Lowerer:
         if name in ("true_lit", "false_lit"):
             # Boolean literals live in BV<1>; the parser's `_DEFAULT_INT_BW`
             # fallback would otherwise widen them to BV<32>.
-            w = self._fresh(target, Sort.BitVec(1, [1, 1]))
+            w = self._fresh(target, BitVec(1, [1, 1]))
             self.terms.append(
                 Term(_bv_const(1 if name == "true_lit" else 0), [w])
             )
@@ -431,7 +433,7 @@ class _Lowerer:
     # --- binary ops ---------------------------------------------------------
 
     def _lower_binop(
-        self, tree: Tree, op_map: dict, target: Wire | None, *, out_dtype_fn=None
+            self, tree: Tree, op_map: dict, target: Wire | None, *, out_dtype_fn=None
     ) -> Wire:
         children = tree.children
         left = self.lower(children[0])
@@ -468,7 +470,7 @@ class _Lowerer:
             rhs = self.lower(children[i + 1])
             itype = self._cmp_itype(op_tok, left)
             out = target if i + 2 >= len(children) else None
-            w = self._fresh(out, Sort.BitVec(1, [1, 1]))
+            w = self._fresh(out, BitVec(1, [1, 1]))
             self.terms.append(Term(itype, [w], [left, rhs]))
             left = w
             i += 2
@@ -512,7 +514,7 @@ class _Lowerer:
             in_bw = _bw(arg_w.dtype)
             out_bw = in_bw + extra
             itype = BV.Extend(extra=extra)
-            out_dtype = Sort.BitVec(out_bw, [1, 1])
+            out_dtype = BitVec(out_bw, [1, 1])
         else:
             raise ValueError(f"unknown builtin: {fn_name}")
 
@@ -562,11 +564,11 @@ class _Lowerer:
         rest = lit_tok[3:]  # skip "0ud" or "0sd"
         upos = rest.index("_")
         width = int(rest[:upos])
-        value = int(rest[upos + 1 :])
+        value = int(rest[upos + 1:])
 
         if signed and value < 0:
             value = value + (1 << width)
-        dtype = Sort.BitVec(width, [1, 1])
+        dtype = BitVec(width, [1, 1])
         w = Wire(dtype)
         self._wire_types[id(w)] = _SMVType(dtype, signed=signed)
         # Word literals produce a BV constant, not an LIA Const.
@@ -624,7 +626,7 @@ class _Lowerer:
     def _fresh(self, target: Wire | None, dtype=None) -> Wire:
         if target is not None:
             return target
-        return Wire(dtype if dtype is not None else Sort.BitVec(_DEFAULT_INT_BW, [1, 1]))
+        return Wire(dtype if dtype is not None else BitVec(_DEFAULT_INT_BW, [1, 1]))
 
     def _emit_const(self, itype, target: Wire | None) -> Wire:
         out_dtype = _const_out_dtype(itype)
@@ -642,16 +644,16 @@ class _Lowerer:
         return wire
 
     def _maybe_bit_select(
-        self, tree: Tree, base_w: Wire, idx: int, target: Wire | None
+            self, tree: Tree, base_w: Wire, idx: int, target: Wire | None
     ) -> Wire:
         if (
-            len(tree.children) > idx
-            and isinstance(tree.children[idx], Tree)
-            and tree.children[idx].data == "bit_select"
+                len(tree.children) > idx
+                and isinstance(tree.children[idx], Tree)
+                and tree.children[idx].data == "bit_select"
         ):
             bs = tree.children[idx]
             high, low = int(str(bs.children[0])), int(str(bs.children[1]))
-            out_dtype = Sort.BitVec(high - low + 1, [1, 1])
+            out_dtype = BitVec(high - low + 1, [1, 1])
             w = self._fresh(target, out_dtype)
             self.terms.append(Term(BV.BitSelect(high=high, low=low), [w], [base_w]))
             return self._enforce(w, target)
@@ -664,8 +666,8 @@ class _Lowerer:
 
 
 def _build_module(
-    d: _Decls,
-    overrides: dict[str, tuple[Wire, Wire]],
+        d: _Decls,
+        overrides: dict[str, tuple[Wire, Wire]],
 ) -> tuple[Module, dict[str, tuple[Wire, Wire]]]:
     # Prepend frozen vars before regular state vars
     all_var_decls = list(d.frozen_decls) + list(d.var_decls)

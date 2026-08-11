@@ -3,14 +3,14 @@
 import pytest
 import torch
 
-from zrth import LRA, LIA, Sort, Wire
+from zrth import LRA, LIA, Real, Int, Wire
 from zrth.builder import builder_for
 from zrth.eval import eval_itype
 
 
 @pytest.mark.parametrize("theory,sort,dtype", [
-    (LRA, Sort.Real, torch.float32),
-    (LIA, Sort.Int, torch.int64),
+    (LRA, Real, torch.float32),
+    (LIA, Int, torch.int64),
 ])
 @pytest.mark.parametrize("n", [1, 2, 3])
 def test_mul_scales_a_column_vector(theory, sort, dtype, n):

@@ -7,14 +7,14 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from zrth import LIA, LRA, BV, Sort, Wire
+from zrth import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec
 from zrth.builder import NonLinearError
 from zrth.eval import eval_itype
 from zrth.expr import expr, cast, nxt, ite, collecting, AExpr, BExpr, WExpr
 
-INT = Sort.Int([1, 1])
-REAL = Sort.Real([1, 1])
-BV32 = Sort.BitVec(32, [1, 1])
+INT = Int([1, 1])
+REAL = Real([1, 1])
+BV32 = BitVec(32, [1, 1])
 
 
 @pytest.fixture(autouse=True)
@@ -72,15 +72,15 @@ def test_expr_is_not_idempotent():
 def test_numeric_literal_needs_explicit_sort():
     with pytest.raises(TypeError):
         expr(3, theory=LRA)
-    assert isinstance(expr(3, theory=LRA, sort=Sort.Real), AExpr)
-    assert isinstance(expr(True, theory=LRA), BExpr)   # bool is exempt
+    assert isinstance(expr(3, theory=LRA, sort=Real), AExpr)
+    assert isinstance(expr(True, theory=LRA), BExpr)  # bool is exempt
 
 
 def test_explicit_sort_wins_for_bool_value():
     # bool is a subtype of int: an explicit sort must be honored, not overridden to Bool
-    x = expr(True, theory=LIA, sort=Sort.Int([1, 1]))
-    assert isinstance(x, AExpr) and isinstance(x.dtype, Sort.Int)
-    assert isinstance(expr(True, theory=LIA), BExpr)   # but no sort -> still Bool
+    x = expr(True, theory=LIA, sort=Int([1, 1]))
+    assert isinstance(x, AExpr) and isinstance(x.dtype, Int)
+    assert isinstance(expr(True, theory=LIA), BExpr)  # but no sort -> still Bool
 
 
 # --- variables & nxt --------------------------------------------------------
@@ -102,7 +102,7 @@ def test_nxt_requires_a_variable():
 def test_variable_wire_pair_must_share_a_sort():
     # otherwise x.dtype != nxt(x).dtype; raise (not assert, so -O keeps the check)
     with pytest.raises(TypeError, match="same sort"):
-        expr((Wire(INT), Wire(Sort.Bool([1, 1]))), theory=LIA)
+        expr((Wire(INT), Wire(Bool([1, 1]))), theory=LIA)
 
 
 # --- result sorts -----------------------------------------------------------
@@ -111,7 +111,7 @@ def test_variable_wire_pair_must_share_a_sort():
 def test_arith_and_compare_result_sorts():
     x, y = _var(INT), _var(INT)
     assert isinstance(x + y, AExpr) and (x + y).dtype == INT
-    assert isinstance(x < y, BExpr) and (x < y).dtype == Sort.Bool([1, 1])
+    assert isinstance(x < y, BExpr) and (x < y).dtype == Bool([1, 1])
     assert isinstance(x == y, BExpr)
 
 
@@ -120,7 +120,7 @@ def test_theory_baked_real_and_bv():
     assert (xr + 1.0).dtype == REAL
     xb, yb = _var(BV32, theory=BV), _var(BV32, theory=BV)
     assert (xb + 1).dtype == BV32
-    assert (xb < yb).dtype == Sort.BitVec(1, [1, 1])
+    assert (xb < yb).dtype == BitVec(1, [1, 1])
 
 
 # --- equality builds predicates; truth-testing is refused -------------------
@@ -166,16 +166,16 @@ def test_expr_is_not_hashable():
 
 def test_mixed_sorts_raise():
     with pytest.raises(TypeError):
-        _var(INT, theory=LIA) + expr(True, theory=LIA)      # Int + Bool
+        _var(INT, theory=LIA) + expr(True, theory=LIA)  # Int + Bool
     with pytest.raises(TypeError):
         ite(expr(True, theory=LIA), _var(INT), _var(REAL, theory=LRA))  # Int vs Real branches
 
 
 def test_cast_identity_and_unsupported():
     x = _var(INT)
-    assert cast(x, Sort.Int) is x
+    assert cast(x, Int) is x
     with pytest.raises(NotImplementedError):
-        cast(x, Sort.Real)
+        cast(x, Real)
 
 
 # --- signed / unsigned word ops ---------------------------------------------
@@ -260,7 +260,7 @@ def test_mul_by_constant_folds_to_linear():
 
 @pytest.mark.parametrize("n", [1, 2, 3])
 def test_scaling_a_column_vector_by_a_constant(n):
-    x = _var(Sort.Int([n, 1]))
+    x = _var(Int([n, 1]))
     with collecting() as terms:
         e = x * 3
     assert isinstance(terms[-1].itype, LIA.Linear)
@@ -281,7 +281,7 @@ def test_mul_of_two_variables_is_nonlinear():
 def test_single_entry_point_spec():
     """The one `expr()` handles every leaf; there is no separate var/const/pair API,
     and no string distinguishes a variable. (Spec from the `marco/dsl` review.)"""
-    BOOL = Sort.Bool([1, 1])
+    BOOL = Bool([1, 1])
 
     # a wire pair with no theory -> not enough information to pick a class
     with pytest.raises(TypeError):
@@ -300,12 +300,12 @@ def test_single_entry_point_spec():
     # a numeric literal needs an explicit sort; with one it is an AExpr
     with pytest.raises(TypeError):
         expr(0.3, theory=LRA)
-    b = expr(0.3, theory=LRA, sort=Sort.Real)
+    b = expr(0.3, theory=LRA, sort=Real)
     assert isinstance(b, AExpr)
-    assert isinstance(b + 1, AExpr)                       # raw operand coerces
+    assert isinstance(b + 1, AExpr)  # raw operand coerces
 
     # list / tensor constants; matmul with a raw tensor coerces the tensor
-    t = expr([0.1, 1.0], theory=LRA, sort=Sort.Real)
+    t = expr([0.1, 1.0], theory=LRA, sort=Real)
     assert isinstance(t, AExpr)
     u = t @ torch.tensor([[0.2], [0.5]])
     assert isinstance(u, AExpr)
@@ -317,7 +317,7 @@ def test_single_entry_point_spec():
 
 def test_tag_is_a_label_with_no_logical_meaning():
     # `tag` is optional, purely a display label; it does not affect the class or ops.
-    p = (Wire(Sort.Bool([1, 1])), Wire(Sort.Bool([1, 1])))
+    p = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
     x = expr(p, theory=LRA, tag="x")
     assert x.tag == "x"
     assert isinstance(x, BExpr)

@@ -21,27 +21,23 @@ Construction and coercion go through ``expr()``:
     expr((latched, next), theory=LRA)          # a state variable (nxt(v) gives its next)
     expr(Wire(...), theory=LRA)                # a bare wire
     expr(True, theory=LRA)                     # a Bool constant
-    expr(3, theory=LRA, sort=Sort.Real)        # a numeric constant (sort is REQUIRED)
-    expr(5, theory=BV, sort=Sort.BitVec(32, [1, 1]), signed=True)
+    expr(3, theory=LRA, sort=Real)        # a numeric constant (sort is REQUIRED)
+    expr(5, theory=BV, sort=BitVec(32, [1, 1]), signed=True)
     expr((latched, next), theory=LRA, tag="x")  # `tag` is a display label only, no meaning
 
 ``expr()`` is **not idempotent** — passing an existing ``Expr`` is an error. Operators coerce
 a *raw* operand through it (using the sibling's sort) but never convert between sorts: mixing
 sorts raises, and an explicit conversion is ``cast()``.
 
-``==`` and ``!=`` build the equality predicates (as in z3 and gurobi); put the ``Expr`` on the
-left, since a numpy array on the left broadcasts instead of deferring. Truth-testing
-(``if e``, ``and``, ``or``, ``not``) **raises**: Python cannot give it a
-symbolic meaning, and silently yielding a bool would make a wrong branch look correct — use
-``ite()`` and ``&`` / ``|`` / ``~`` instead. An ``Expr`` generates terms rather than holding a
-value, so it is also not hashable (no use as a dict key or in a set).
+Equality: ``==`` / ``!=`` are Python object identity; use ``eq()`` / ``ne()`` for the
+comparison predicates.
 """
 
 from typing import override
 
 import torch
 
-from .zrth import Sort, Term, Wire, LRA, LIA, BV
+from zrth import Term, Wire, LRA, LIA, BV, Sort, Bool, Int, Real, BitVec
 from .builder import NonLinearError
 
 
@@ -50,29 +46,29 @@ from .builder import NonLinearError
 
 def _shape(sort: Sort) -> list:
     match sort:
-        case Sort.Bool(s) | Sort.Int(s) | Sort.Real(s):
+        case Bool(s) | Int(s) | Real(s):
             return list(s)
-        case Sort.BitVec(_, s):
+        case BitVec(_, s):
             return list(s)
     raise TypeError(f"sort has no shape: {sort}")
 
 
 def _with_shape(sort: Sort, shape: list) -> Sort:
     match sort:
-        case Sort.Bool(_):
-            return Sort.Bool(shape)
-        case Sort.Int(_):
-            return Sort.Int(shape)
-        case Sort.Real(_):
-            return Sort.Real(shape)
-        case Sort.BitVec(bw, _):
-            return Sort.BitVec(bw, shape)
+        case Bool(_):
+            return Bool(shape)
+        case Int(_):
+            return Int(shape)
+        case Real(_):
+            return Real(shape)
+        case BitVec(bw, _):
+            return BitVec(bw, shape)
     raise TypeError(f"unknown sort: {sort}")
 
 
 def _bv_width(sort: Sort) -> int:
     match sort:
-        case Sort.BitVec(bw, _):
+        case BitVec(bw, _):
             return bw
     raise TypeError(f"not a BitVec sort: {sort}")
 
@@ -81,10 +77,14 @@ def _family(sort: Sort) -> str:
     """A key identifying a sort's family (ignoring shape); two exprs may combine only
     if their families match."""
     match sort:
-        case Sort.Bool(_):        return "Bool"
-        case Sort.Int(_):         return "Int"
-        case Sort.Real(_):        return "Real"
-        case Sort.BitVec(bw, _):  return f"BitVec{bw}"
+        case Bool(_):
+            return "Bool"
+        case Int(_):
+            return "Int"
+        case Real(_):
+            return "Real"
+        case BitVec(bw, _):
+            return f"BitVec{bw}"
     raise TypeError(f"unknown sort: {sort}")
 
 
@@ -135,11 +135,11 @@ def _emit(term: Term) -> Term:
 
 def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Expr":
     match wire.dtype:
-        case Sort.Bool(_):
+        case Bool(_):
             return BExpr(wire, theory, next=next, value=value, tag=tag)
-        case Sort.Int(_) | Sort.Real(_):
+        case Int(_) | Real(_):
             return AExpr(wire, theory, next=next, value=value, tag=tag)
-        case Sort.BitVec(_, _):
+        case BitVec(_, _):
             return WExpr(wire, theory, next=next, value=value, signed=signed, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
 
@@ -160,9 +160,9 @@ class Expr:
             )
         self._wire = wire
         self._theory = theory
-        self._next = next          # next wire, for a variable leaf (nxt(v))
-        self._value = value        # tensor, for a constant leaf (mul/matmul folds)
-        self._tag = tag            # optional human label; carries NO logical meaning
+        self._next = next  # next wire, for a variable leaf (nxt(v))
+        self._value = value  # tensor, for a constant leaf (mul/matmul folds)
+        self._tag = tag  # optional human label; carries NO logical meaning
 
     # --- accessors ---
     @property
@@ -241,25 +241,31 @@ class Expr:
 
 class AExpr(Expr):
     def __add__(self, o):   return self._binop(self._theory.Add(), self.dtype, o)
+
     def __sub__(self, o):   return self._binop(self._theory.Sub(), self.dtype, o)
+
     def __radd__(self, o):  return self._coerce(o).__add__(self)
+
     def __rsub__(self, o):  return self._coerce(o).__sub__(self)
 
-    def __mul__(self, o):                      # const*var folds to Linear (LRA/LIA are linear)
+    def __mul__(self, o):  # const*var folds to Linear (LRA/LIA are linear)
         o = self._coerce_same(o)
         return self._result(_mul_as_linear(self._theory, self, o))
 
     def __rmul__(self, o):  return self._coerce(o).__mul__(self)
 
-    def __matmul__(self, o):                   # a constant left operand folds to Linear
+    def __matmul__(self, o):  # a constant left operand folds to Linear
         o = self._coerce_same(o)
         return self._result(_matmul(self._theory, self, o))
 
     # comparisons -> Bool -> BExpr
-    def __lt__(self, o):  return self._binop(self._theory.Lt(), Sort.Bool(self.shape), o)
-    def __le__(self, o):  return self._binop(self._theory.Le(), Sort.Bool(self.shape), o)
-    def __gt__(self, o):  return self._binop(self._theory.Gt(), Sort.Bool(self.shape), o)
-    def __ge__(self, o):  return self._binop(self._theory.Ge(), Sort.Bool(self.shape), o)
+    def __lt__(self, o):  return self._binop(self._theory.Lt(), Bool(self.shape), o)
+
+    def __le__(self, o):  return self._binop(self._theory.Le(), Bool(self.shape), o)
+
+    def __gt__(self, o):  return self._binop(self._theory.Gt(), Bool(self.shape), o)
+
+    def __ge__(self, o):  return self._binop(self._theory.Ge(), Bool(self.shape), o)
 
 
 def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
@@ -271,7 +277,7 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
     else:
         raise TypeError(f"{theory.__name__} has no linear fold (expected LRA or LIA)")
     for c, v in ((a, b), (b, a)):
-        if c._value is None or c._value.numel() != 1:      # not a scalar constant
+        if c._value is None or c._value.numel() != 1:  # not a scalar constant
             continue
         if len(v.shape) < 2 or v.shape[-1] != 1:
             continue
@@ -284,11 +290,11 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
 
 def _matmul(theory, a: Expr, b: Expr) -> Term:
     out_shape = [a.shape[0], b.shape[1]]
-    if a._value is not None:                                # constant left operand
+    if a._value is not None:  # constant left operand
         if theory is LRA:
-            linear, out_sort = LRA.Linear, Sort.Real(out_shape)
+            linear, out_sort = LRA.Linear, Real(out_shape)
         elif theory is LIA:
-            linear, out_sort = LIA.Linear, Sort.Int(out_shape)
+            linear, out_sort = LIA.Linear, Int(out_shape)
         else:
             raise TypeError(f"{theory.__name__} has no linear fold (expected LRA or LIA)")
         return Term(linear(a._value, torch.empty(0, 0)), [Wire(out_sort)], [b._wire])
@@ -302,8 +308,11 @@ def _matmul(theory, a: Expr, b: Expr) -> Term:
 
 class BExpr(Expr):
     def __and__(self, o):  return self._binop(self._theory.And(), self.dtype, o)
+
     def __or__(self, o):   return self._binop(self._theory.Or(), self.dtype, o)
+
     def __xor__(self, o):  return self._binop(self._theory.Xor(), self.dtype, o)
+
     def __invert__(self):  return self._unop(self._theory.Not())
 
 
@@ -322,28 +331,36 @@ class WExpr(AExpr):
         return self._signed
 
     def _bv1(self) -> Sort:
-        return Sort.BitVec(1, self.shape)
+        return BitVec(1, self.shape)
 
     # arithmetic: inherits +,- from AExpr (BV.Add/Sub); mul is a real BV multiply (no fold)
     def __mul__(self, o):        return self._binop(BV.Mul(), self.dtype, o)
+
     def __floordiv__(self, o):   return self._binop(BV.SDiv() if self._signed else BV.UDiv(), self.dtype, o)
+
     def __mod__(self, o):        return self._binop(BV.SMod() if self._signed else BV.UMod(), self.dtype, o)
 
     def __matmul__(self, o):
         o = self._coerce_same(o)
-        out = Wire(Sort.BitVec(_bv_width(self.dtype), [self.shape[0], o.shape[1]]))
+        out = Wire(BitVec(_bv_width(self.dtype), [self.shape[0], o.shape[1]]))
         return self._result(Term(BV.MatMul(), [out], [self._wire, o._wire]))
 
     # comparisons pick signed/unsigned; result is BitVec(1)
     def __lt__(self, o):  return self._binop(BV.SLt() if self._signed else BV.ULt(), self._bv1(), o)
+
     def __le__(self, o):  return self._binop(BV.SLe() if self._signed else BV.ULe(), self._bv1(), o)
+
     def __gt__(self, o):  return self._binop(BV.SGt() if self._signed else BV.UGt(), self._bv1(), o)
+
     def __ge__(self, o):  return self._binop(BV.SGe() if self._signed else BV.UGe(), self._bv1(), o)
 
     # bitwise, width-preserving
     def __and__(self, o):  return self._binop(BV.And(), self.dtype, o)
+
     def __or__(self, o):   return self._binop(BV.Or(), self.dtype, o)
+
     def __xor__(self, o):  return self._binop(BV.Xor(), self.dtype, o)
+
     def __invert__(self):  return self._unop(BV.Not())
 
 
@@ -357,28 +374,28 @@ def expr(value, *, theory=None, sort=None, signed=False, tag=None) -> Expr:
         raise TypeError("expr() builds from a raw value; got an Expr already")
     if theory is None:
         raise TypeError("expr() requires theory=")
-    if _is_wire_pair(value):                   # (latched, next) -> state variable
+    if _is_wire_pair(value):  # (latched, next) -> state variable
         return _wrap(value[0], theory, next=value[1], signed=signed, tag=tag)
-    if isinstance(value, Wire):                # single wire -> bare expr (no nxt)
+    if isinstance(value, Wire):  # single wire -> bare expr (no nxt)
         return _wrap(value, theory, signed=signed, tag=tag)
     return _const(value, theory, sort, signed, tag)
 
 
 def _resolve_sort(sort, shape) -> Sort:
-    """`sort` may be a concrete Sort (e.g. from coercion) or a family (Sort.Real/Int/Bool)."""
+    """`sort` may be a concrete Sort (e.g. from coercion) or a family (Real/Int/Bool)."""
     if isinstance(sort, Sort):
         return _with_shape(sort, shape)
-    if sort is Sort.Bool:
-        return Sort.Bool(shape)
-    if sort is Sort.Int:
-        return Sort.Int(shape)
-    if sort is Sort.Real:
-        return Sort.Real(shape)
-    raise TypeError("a bit-vector literal needs a width: pass sort=Sort.BitVec(width, [...])")
+    if sort is Bool:
+        return Bool(shape)
+    if sort is Int:
+        return Int(shape)
+    if sort is Real:
+        return Real(shape)
+    raise TypeError("a bit-vector literal needs a width: pass sort=BitVec(width, [...])")
 
 
 def _wants_float(sort) -> bool:
-    return isinstance(sort, Sort.Real) or sort is Sort.Real
+    return isinstance(sort, Real) or sort is Real
 
 
 def _const(value, theory, sort, signed, tag=None) -> Expr:
@@ -387,20 +404,20 @@ def _const(value, theory, sort, signed, tag=None) -> Expr:
         if not isinstance(value, bool):
             raise TypeError(
                 "expr(): a numeric literal needs an explicit sort= "
-                "(e.g. sort=Sort.Real, or sort=Sort.BitVec(32, [1, 1]))"
+                "(e.g. sort=Real, or sort=BitVec(32, [1, 1]))"
             )
-        tensor, family = torch.tensor([[value]], dtype=torch.bool), Sort.Bool
+        tensor, family = torch.tensor([[value]], dtype=torch.bool), Bool
     else:
         if _wants_float(sort):
             dtype = torch.float32
-        elif isinstance(sort, Sort.Bool) or sort is Sort.Bool:
+        elif isinstance(sort, Bool) or sort is Bool:
             dtype = torch.bool
         else:
             dtype = torch.int64
         tensor = value if isinstance(value, torch.Tensor) else torch.tensor(value, dtype=dtype)
         family = sort
     shape = _normalize_shape(list(tensor.size()))
-    tensor = tensor.reshape(shape)             # theory const ops require a 2-D initializer
+    tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
     w = Wire(_resolve_sort(family, shape))
     # one Const per theory; its sort (and thus the tensor's expected element kind) is
     # taken from the write wire `w`.
@@ -445,7 +462,7 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
 
 
 def _cmp_out(a: Expr) -> Sort:
-    return Sort.BitVec(1, a.shape) if a._theory is BV else Sort.Bool(a.shape)
+    return BitVec(1, a.shape) if a._theory is BV else Bool(a.shape)
 
 
 def relu(e: Expr) -> Expr:
