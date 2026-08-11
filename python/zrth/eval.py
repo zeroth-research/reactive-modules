@@ -7,12 +7,12 @@ needs the output Sort for its width — threaded in as `out_sort`.
 """
 
 import torch
-from zrth import LRA, LIA, BV, Sort
+from zrth import LRA, LIA, BV, BitVec
 
 
 def _bv_width(sort):
     match sort:
-        case Sort.BitVec(bw, _):
+        case BitVec(bw, _):
             return bw
     return None
 
