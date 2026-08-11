@@ -5,7 +5,7 @@ multi-step execution of hand-built modules.
 """
 import pytest
 import torch
-from zrth import Wire, Term, Module, LIA, Bool, Real, Int, BitVec
+from zrth import Wire, Term, Module, LIA, BV, Bool, Real, Int, BitVec
 from zrth.eval import eval_itype, execute_init, execute_update
 
 
@@ -191,6 +191,21 @@ def test_tensor_ops():
 
     # Step 2: relu([0,2,3,0]) = [0,2,3,0] (fixed point)
     assert torch.equal(_get(history[2], data[0]), expected.relu())
+
+
+# ── bit-vectors ──────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("a,b,width,expected", [
+    (3, 4, 8, 7),        # ordinary add
+    (200, 100, 8, 44),   # wraps modulo 2^8
+])
+def test_bv_add_masks_to_width(a, b, width, expected):
+    """BV results are masked to the wire's bit-width, which needs the width read off
+    the output Sort."""
+    out = Wire(BitVec(width, [1, 1]))
+    term = Term(BV.Add(), [out], [Wire(BitVec(width, [1, 1])), Wire(BitVec(width, [1, 1]))])
+    got = eval_itype(term.itype, [torch.tensor([[a]]), torch.tensor([[b]])], out.dtype)
+    assert got[0].flatten().tolist() == [expected]
 
 
 # ── comparisons ──────────────────────────────────────────────────────────────
