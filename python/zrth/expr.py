@@ -41,7 +41,8 @@ from typing import override
 
 import torch
 
-from zrth import Term, Wire, LRA, LIA, BV, Sort, Bool, Int, Real, BitVec
+from .zrth import Term, Wire, LRA, LIA, BV
+from .sort import Sort, Bool, Int, Real, BitVec
 from .builder import NonLinearError
 
 

@@ -3,7 +3,8 @@ import torch
 import inspect
 import gymnasium as gym
 
-from zrth import Module, Wire, Sort, LIA, BV, Bool, Real, Int, BitVec
+from ..zrth import Module, Wire, Sort, LIA, BV
+from ..sort import Bool, Real, Int, BitVec
 from ..builder import builder_for, _normalize_shape, _shape
 from ..analyzer import (
     convert_method,

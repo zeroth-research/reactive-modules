@@ -9,7 +9,8 @@ helpers below).
 """
 
 import torch
-from zrth import Wire, Term, LRA, LIA, BV, Sort, Bool, Real, Int, BitVec
+from .zrth import Wire, Term, LRA, LIA, BV
+from .sort import Sort, Bool, Real, Int, BitVec
 
 
 def _wire(t) -> Wire:

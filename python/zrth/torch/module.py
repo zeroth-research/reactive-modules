@@ -1,7 +1,8 @@
 import inspect
 import torch.nn as nn
 
-from zrth import Module as _BaseModule, Real
+from ..zrth import Module as _BaseModule
+from ..sort import Real
 from ..builder import builder_for
 from ..analyzer import convert_method, resolve_wire
 
