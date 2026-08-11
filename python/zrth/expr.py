@@ -21,7 +21,7 @@ Construction and coercion go through ``expr()``:
     expr((latched, next), theory=LRA)          # a state variable (nxt(v) gives its next)
     expr(Wire(...), theory=LRA)                # a bare wire
     expr(True, theory=LRA)                     # a Bool constant
-    expr(3, theory=LRA, sort=Real)        # a numeric constant (sort is REQUIRED)
+    expr(3, theory=LRA, sort=Real)             # a numeric constant (sort is REQUIRED)
     expr(5, theory=BV, sort=BitVec(32, [1, 1]), signed=True)
     expr((latched, next), theory=LRA, tag="x")  # `tag` is a display label only, no meaning
 
@@ -29,8 +29,12 @@ Construction and coercion go through ``expr()``:
 a *raw* operand through it (using the sibling's sort) but never convert between sorts: mixing
 sorts raises, and an explicit conversion is ``cast()``.
 
-Equality: ``==`` / ``!=`` are Python object identity; use ``eq()`` / ``ne()`` for the
-comparison predicates.
+``==`` and ``!=`` build the equality predicates (as in z3 and gurobi); put the ``Expr`` on the
+left, since a numpy array on the left broadcasts instead of deferring. Truth-testing
+(``if e``, ``and``, ``or``, ``not``) **raises**: Python cannot give it a symbolic meaning, and
+silently yielding a bool would make a wrong branch look correct — use ``ite()`` and
+``&`` / ``|`` / ``~`` instead. An ``Expr`` generates terms rather than holding a value, so it
+is also not hashable (no use as a dict key or in a set).
 """
 
 from typing import override
