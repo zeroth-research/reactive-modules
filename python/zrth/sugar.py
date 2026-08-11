@@ -40,10 +40,10 @@ constraints force this (both flagged for design review):
 import inspect
 
 from .zrth import Module as _BaseModule, Term
-from .expr import expr, cast, nxt, ite, eq, ne, relu, argmax, collecting, Expr  # re-exported for authoring
+from .expr import expr, cast, nxt, ite, relu, argmax, collecting, Expr  # re-exported for authoring
 
 # Public authoring surface: `from zrth.sugar import Module, expr, nxt, ite, cast, ...`
-__all__ = ["Module", "expr", "cast", "nxt", "ite", "eq", "ne", "relu", "argmax", "Expr"]
+__all__ = ["Module", "expr", "cast", "nxt", "ite", "relu", "argmax", "Expr"]
 
 
 def _as_tuple(r) -> tuple:

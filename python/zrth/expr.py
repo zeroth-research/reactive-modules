@@ -29,8 +29,9 @@ Construction and coercion go through ``expr()``:
 a *raw* operand through it (using the sibling's sort) but never convert between sorts: mixing
 sorts raises, and an explicit conversion is ``cast()``.
 
-``==`` and ``!=`` build the equality predicates, exactly like ``eq()`` / ``ne()`` (as in z3 and
-gurobi). Truth-testing (``if e``, ``and``, ``or``, ``not``) **raises**: Python cannot give it a
+``==`` and ``!=`` build the equality predicates (as in z3 and gurobi); put the ``Expr`` on the
+left, since a numpy array on the left broadcasts instead of deferring. Truth-testing
+(``if e``, ``and``, ``or``, ``not``) **raises**: Python cannot give it a
 symbolic meaning, and silently yielding a bool would make a wrong branch look correct — use
 ``ite()`` and ``&`` / ``|`` / ``~`` instead. An ``Expr`` generates terms rather than holding a
 value, so it is also not hashable (no use as a dict key or in a set).
@@ -203,10 +204,10 @@ class Expr:
 
     # --- equality and truth-testing ---
     def __eq__(self, other) -> "Expr":
-        return eq(self, other)
+        return self._binop(self._theory.Eq(), _cmp_out(self), other)
 
     def __ne__(self, other) -> "Expr":
-        return ne(self, other)
+        return self._binop(self._theory.Ne(), _cmp_out(self), other)
 
     def __bool__(self):
         raise TypeError(
@@ -445,16 +446,6 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
 
 def _cmp_out(a: Expr) -> Sort:
     return Sort.BitVec(1, a.shape) if a._theory is BV else Sort.Bool(a.shape)
-
-
-def eq(a: Expr, b) -> Expr:
-    b = a._coerce_same(b)
-    return a._result(Term(a._theory.Eq(), [Wire(_cmp_out(a))], [a._wire, b._wire]))
-
-
-def ne(a: Expr, b) -> Expr:
-    b = a._coerce_same(b)
-    return a._result(Term(a._theory.Ne(), [Wire(_cmp_out(a))], [a._wire, b._wire]))
 
 
 def relu(e: Expr) -> Expr:
