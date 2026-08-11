@@ -7,7 +7,8 @@ needs the output Sort for its width — threaded in as `out_sort`.
 """
 
 import torch
-from zrth import LRA, LIA, BV, BitVec
+from .zrth import LRA, LIA, BV
+from .sort import BitVec
 
 
 def _bv_width(sort):
