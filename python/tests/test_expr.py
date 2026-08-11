@@ -10,7 +10,7 @@ import pytest
 from zrth import LIA, LRA, BV, Sort, Wire
 from zrth.builder import NonLinearError
 from zrth.eval import eval_itype
-from zrth.expr import expr, cast, nxt, ite, eq, collecting, AExpr, BExpr, WExpr
+from zrth.expr import expr, cast, nxt, ite, collecting, AExpr, BExpr, WExpr
 
 INT = Sort.Int([1, 1])
 REAL = Sort.Real([1, 1])
@@ -112,7 +112,7 @@ def test_arith_and_compare_result_sorts():
     x, y = _var(INT), _var(INT)
     assert isinstance(x + y, AExpr) and (x + y).dtype == INT
     assert isinstance(x < y, BExpr) and (x < y).dtype == Sort.Bool([1, 1])
-    assert isinstance(eq(x, y), BExpr)
+    assert isinstance(x == y, BExpr)
 
 
 def test_theory_baked_real_and_bv():
