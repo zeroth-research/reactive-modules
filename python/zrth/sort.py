@@ -1,8 +1,8 @@
 from .zrth import Sort as _Sort
-from abc import ABC
+from abc import ABC as _ABC
 
 
-class Sort(ABC):
+class Sort(_ABC):
     """Sort type. Variants are available as module-level names."""
 
 
