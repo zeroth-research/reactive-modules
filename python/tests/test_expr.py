@@ -76,6 +76,34 @@ def test_numeric_literal_needs_explicit_sort():
     assert isinstance(expr(True, theory=LRA), BExpr)  # bool is exempt
 
 
+def test_float_value_rejected_for_an_integral_sort():
+    # would be silently truncated, so `3.14 + x` on an Int x must fail rather than add 3
+    x = _var(INT)
+    for thunk in (lambda: expr(3.14, theory=LIA, sort=INT),
+                  lambda: expr(torch.tensor([[1.5]]), theory=LIA, sort=INT),
+                  lambda: expr([0.1, 1.0], theory=LIA, sort=Int([1, 2])),
+                  lambda: expr(3.14, theory=BV, sort=BV32),
+                  lambda: 3.14 + x,
+                  lambda: x + 3.14):
+        with pytest.raises(TypeError, match="truncated"):
+            thunk()
+
+
+def test_non_bool_value_rejected_for_a_bool_sort():
+    # 5 -> True collapses just as lossily as 3.14 -> 3
+    for value in (5, -1, 3.14):
+        with pytest.raises(TypeError, match="boolean"):
+            expr(value, theory=LIA, sort=Bool([1, 1]))
+
+
+def test_lossless_value_conversions_are_allowed():
+    assert expr(3, theory=LRA, sort=REAL)._value.dtype is torch.float32       # int -> Real
+    assert expr(True, theory=LIA, sort=INT)._value.dtype is torch.int64        # bool -> Int
+    assert expr(True, theory=LRA, sort=REAL)._value.dtype is torch.float32     # bool -> Real
+    # an int tensor on a Real wire is converted, not left as int
+    assert expr(torch.tensor([[2]]), theory=LRA, sort=REAL)._value.dtype is torch.float32
+
+
 def test_explicit_sort_wins_for_bool_value():
     # bool is a subtype of int: an explicit sort must be honored, not overridden to Bool
     x = expr(True, theory=LIA, sort=Int([1, 1]))
