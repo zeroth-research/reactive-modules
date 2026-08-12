@@ -42,7 +42,7 @@ from typing import override
 import torch
 
 from .zrth import Term, Wire, LRA, LIA, BV
-from .sort import Sort, Bool, Int, Real, BitVec
+from .sort import Sort, Bool, Int, Real, BitVec, tensor_for
 from .builder import NonLinearError
 
 
@@ -399,10 +399,6 @@ def _resolve_sort(sort, shape) -> Sort:
     raise TypeError("a bit-vector literal needs a width: pass sort=BitVec(width, [...])")
 
 
-def _wants_float(sort) -> bool:
-    return isinstance(sort, Real) or sort is Real
-
-
 def _const(value, theory, sort, signed, tag=None) -> Expr:
     # `sort` first: `bool` is a subtype of `int`, so an explicit sort must not be forced to Bool.
     if sort is None:
@@ -413,14 +409,7 @@ def _const(value, theory, sort, signed, tag=None) -> Expr:
             )
         tensor, family = torch.tensor([[value]], dtype=torch.bool), Bool
     else:
-        if _wants_float(sort):
-            dtype = torch.float32
-        elif isinstance(sort, Bool) or sort is Bool:
-            dtype = torch.bool
-        else:
-            dtype = torch.int64
-        tensor = value if isinstance(value, torch.Tensor) else torch.tensor(value, dtype=dtype)
-        family = sort
+        tensor, family = tensor_for(value, sort), sort
     shape = _normalize_shape(list(tensor.size()))
     tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
     w = Wire(_resolve_sort(family, shape))
