@@ -93,6 +93,34 @@ def test_emit_with_invariants_proves_them():
     assert "theorem program_terminates (s0 : Vector 1 Int) (hinit : Init s0)" in src
 
 
+def test_conditional_invariant_reaches_the_emitted_file():
+    """An implication must reach the emitted `invariants` as a disjunction: the
+    cells' Farkas rows rest on it, and `omega` closes them by case-splitting it."""
+    x = z3.Int("x")
+    inv = z3.Implies(x >= 1, x >= 0)
+    ob, paths = _decrement_obligation(invariants=(inv,), init=(x >= 1))
+    src = emit_program("conditional", ob, paths)
+    assert "def invariants (s : Vector 1 Int) : Prop :=\n  True" not in src, \
+        "the implication was dropped from `invariants`"
+    assert "∨" in src.split("def invariants")[1].split("\n\n")[0], \
+        "an implication should render as a disjunction omega can split"
+
+
+def test_branching_init_reaches_the_emitted_file():
+    """An `ite` in an entry value is not linear, so its conjunct must be case-split
+    into the emitted `Init` rather than dropped, or `initiation` has no premise."""
+    x = z3.Int("x")
+    # branches must differ, or z3 folds the ite away before it is ever rendered, and
+    # the condition must be over the state columns or the conjunct is not affine
+    ob, paths = _decrement_obligation(init=z3.And(x == z3.If(x >= 3, 5, 7), x >= 1))
+    src = emit_program("branchinit", ob, paths)
+    init_block = src.split("def Init")[1].split("\n\n")[0]
+    assert "ite" not in init_block and "If" not in init_block, \
+        f"ite left unexpanded in Init: {init_block}"
+    assert "∨" in init_block, \
+        f"the branch was dropped instead of case-split: {init_block}"
+
+
 def test_emit_multi_path_unions_the_step():
     """A branching body yields one namespace per path and a Step that is their
     union, dispatched in `program_terminates`."""

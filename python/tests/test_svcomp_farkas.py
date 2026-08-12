@@ -135,6 +135,48 @@ def test_disjunctive_guard_is_certifiable_only_once_split(monkeypatch):
     assert not unsplit.verified, "the un-split disjunctive guard should not certify"
 
 
+def _conditional_loop():
+    """`while (x <= n) { if (b >= 1) x = x + t; else x = x - t; }` with `t` set to
+    `1` / `-1` before the loop according to `b`. `x` climbs by one either way, so
+    `V = relu(n - x + 1)` ranks it once the conditional facts about `t` are usable."""
+    x, n, b, t = z3.Ints("x n b t")
+    layers = [(np.array([[-1, 1, 0, 0]]), np.array([1])),
+              (np.array([[1]]), np.array([0]))]
+    guard = x <= n
+    s = [x, n, b, t]
+    sp = [z3.If(guard, z3.If(b >= 1, x + t, x - t), x), n, b, t]
+    invariants = (z3.Or(b <= 0, t == 1), z3.Or(b >= 1, t == -1))
+    return layers, s, sp, guard, invariants
+
+
+def test_conditional_invariant_gives_rows_once_the_guard_picks_a_side():
+    """`atom_rows` drops a conditional invariant, so the entailed side is what the LP
+    gets instead — and it must genuinely follow from the domain."""
+    _, s, _, guard, invariants = _conditional_loop()
+    x, n, b, t = s
+    got = _farkas._entailed_atoms(z3.And(z3.And(guard, b >= 1), *invariants),
+                                 invariants, s)
+    solver = z3.Solver()
+    solver.add(z3.And(guard, b >= 1, *invariants), z3.Not(z3.And(*got)))
+    assert got, "the guard settles b, so t == 1 should be entailed"
+    assert solver.check() == z3.unsat, "entailed atoms must follow from the domain"
+    # and on the other side the opposite fact is the entailed one
+    other = _farkas._entailed_atoms(z3.And(z3.And(guard, b <= 0), *invariants),
+                                    invariants, s)
+    assert any("-1" in str(z3.simplify(a)) for a in other), other
+
+
+def test_conditional_invariant_is_what_certifies(monkeypatch):
+    """Pinned against the same run without the entailed rows, which is the state the
+    LP was in before."""
+    layers, s, sp, guard, invariants = _conditional_loop()
+    assert certify_decrease(layers, s, sp, guard, invariants, 1.0).verified
+
+    monkeypatch.setattr(_farkas, "_entailed_atoms", lambda *a, **k: ())
+    without = certify_decrease(layers, s, sp, guard, invariants, 1.0)
+    assert not without.verified, "without the entailed rows this should not certify"
+
+
 def test_enumerate_paths_keeps_affine_body_single():
     guard = x > 0
     paths = enumerate_paths([x - 1], guard)

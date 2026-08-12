@@ -12,6 +12,7 @@ inductive invariants. Initiation is checked against the ``init`` block for *all*
 from __future__ import annotations
 
 import z3
+from z3.z3util import get_vars
 
 from ._bench import Bench
 from ._domain import guard_from_transition
@@ -107,6 +108,54 @@ def _const_candidates(bench: Bench, vals: dict) -> list[Candidate]:
     return cands
 
 
+def _ite_conds(e) -> list:
+    """Every ``ite`` condition occurring in ``e``."""
+    out = []
+    if z3.is_app(e):
+        if e.decl().kind() == z3.Z3_OP_ITE:
+            out.append(e.arg(0))
+        for c in e.children():
+            out += _ite_conds(c)
+    return out
+
+
+def _cond_const_candidates(bench: Bench, s0: dict) -> list[Candidate]:
+    """``cond -> v == c``: what a state variable is on one branch of the init block.
+
+    :func:`_const_candidates` reads a coordinate only where it is already constant,
+    so ``t = ite(b >= 1, 1, -1)`` yields nothing. Pinning the condition each way
+    makes both branches constant. The condition is over the init block's nondet
+    inputs, so it is rewritten over the state variables latching them, and skipped
+    when it mentions anything else."""
+    latched = [(s0[v], v) for v in bench.state
+               if z3.is_const(s0[v]) and s0[v].decl().kind() == z3.Z3_OP_UNINTERPRETED]
+    if not latched:
+        return []
+    names = list(bench.state)
+
+    def over_state(pred):
+        """``pred`` over the state variables, or ``None`` if an input is left."""
+        out = z3.substitute(pred, *[(e, z3.Int(v)) for e, v in latched])
+        return None if {str(x) for x in get_vars(out)} - set(names) else out
+
+    cands: list[Candidate] = []
+    for v in bench.state:
+        for cond in _ite_conds(s0[v]):
+            for truth in (True, False):
+                pred = over_state(cond if truth else z3.Not(cond))
+                if pred is None:
+                    continue
+                k = _as_int_const(
+                    z3.simplify(z3.substitute(s0[v], (cond, z3.BoolVal(truth)))))
+                if k is None:
+                    continue
+                cands.append((f"({pred})->{v}=={k}", (
+                    lambda st, pred=pred, v=v, k=k: z3.Implies(
+                        z3.substitute(pred, *[(z3.Int(n), st[n]) for n in names]),
+                        st[v] == k))))
+    return cands
+
+
 def infer_invariants(bench: Bench, timeout_ms: int = 2000) -> list[Candidate]:
     """Inductive loop invariants for ``bench`` (initiation + consecution)."""
     try:
@@ -129,6 +178,7 @@ def infer_invariants(bench: Bench, timeout_ms: int = 2000) -> list[Candidate]:
     for lbl, f in (_candidates(bench)
                    + _const_candidates(bench, sp)
                    + _const_candidates(bench, s0)
+                   + _cond_const_candidates(bench, s0)
                    + pre_cands):
         if lbl not in seen:
             seen.add(lbl)

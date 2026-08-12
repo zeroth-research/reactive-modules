@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 import z3
 
-from ._farkas import CellCert, _flatten_and, affine_coeffs
+from ._farkas import CellCert, _find_ite_cond, _flatten_and, affine_coeffs
 
 
 def _contains_ite(e) -> bool:
@@ -124,6 +124,9 @@ def _z3_prop(a, syms) -> str:
         if z3.is_app(inner) and inner.decl().kind() == z3.Z3_OP_EQ:
             return f"({_cmp_prop(inner, syms, op='≠')})"
         return f"(¬ {_z3_prop(inner, syms)})"
+    if z3.is_app(a) and a.decl().kind() == z3.Z3_OP_IMPLIES:
+        return (f"({_z3_prop(z3.Not(a.arg(0)), syms)} ∨ "   # omega case-splits it
+                f"{_z3_prop(a.arg(1), syms)})")
     if z3.is_app(a) and a.decl().kind() in _CMP:
         return _cmp_prop(a, syms)
     if z3.is_app(a) and a.decl().kind() == z3.Z3_OP_DISTINCT:
@@ -142,11 +145,26 @@ def _cmp_prop(a, syms, op: str | None = None) -> str:
     return f"({_affine_str(coeffs, const)} {op} 0)"
 
 
+def _expand_ites(pred):
+    """``pred`` with every ``ite`` case-split away, leaving a Boolean combination of
+    linear atoms. An ``ite`` *term* is not linear, so a conjunct holding one (an
+    entry fact like ``t = ite(b >= 1, 1, -1)``) would be dropped instead."""
+    cond = _find_ite_cond(pred)
+    if cond is None:
+        return pred
+    arms = []
+    for truth in (True, False):
+        branch = z3.simplify(z3.substitute(pred, (cond, z3.BoolVal(truth))))
+        side = cond if truth else z3.Not(cond)
+        arms.append(z3.And(side, _expand_ites(branch)))
+    return z3.Or(*arms)
+
+
 def _render_conjuncts(pred, syms) -> str:
     """Flatten ``pred`` (a z3 ∧-tree) to conjuncts, render each, drop the ones
     that are not integer-linear. Empty → ``True``."""
     out = []
-    for c in _flatten_and(pred):
+    for c in _flatten_and(_expand_ites(pred)):
         try:
             out.append(_z3_prop(c, syms))
         except _Drop:
