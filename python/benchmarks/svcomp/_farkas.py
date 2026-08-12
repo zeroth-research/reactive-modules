@@ -492,15 +492,46 @@ def _feasible(pred) -> bool:
     return s.check() == z3.sat
 
 
+def _atoms(pred):
+    """Every comparison atom occurring in ``pred``."""
+    if z3.is_app(pred) and pred.decl().kind() in _CMP:
+        return [pred]
+    out = []
+    for c in pred.children():
+        out += _atoms(c)
+    return out
+
+
+def _entailed_atoms(dom, invariants, syms):
+    """Half-space consequences of ``dom``, taken from the invariants' own atoms.
+
+    A conditional invariant (``b <= 0 ∨ t = 1``) is not a half-space, so
+    ``atom_rows`` drops it. Where the path's guard settles one side, the other
+    follows from ``dom`` and its rows can be added: under ``b >= 1``, ``t = 1``."""
+    out = []
+    for inv in invariants:
+        if atom_rows(inv, syms):
+            continue                       # already a half-space: rows come directly
+        for atom in _atoms(inv):
+            for cand in (atom, z3.Not(atom)):
+                if atom_rows(cand, syms) and not _feasible(z3.And(dom, z3.Not(cand))):
+                    out.append(cand)
+    return tuple(out)
+
+
 @dataclass(frozen=True)
 class _Path:
     """What every cell attempt on one path reads, built once by
     :func:`_certify_path`: the state symbols, the path's guard and invariants and
     their conjunction ``dom``, the decrease margin, the hidden pre-activations at
-    each end of a step, and the output-layer weights."""
+    each end of a step, and the output-layer weights.
+
+    ``row_invariants`` is what the LP sees: the invariants plus their half-space
+    consequences (:func:`_entailed_atoms`)."""
     s_syms: list
     guard: object
     invariants: tuple
+    row_invariants: tuple
     dom: object
     delta: float
     z_s: tuple
@@ -510,9 +541,11 @@ class _Path:
     @staticmethod
     def of(layers, s_syms, body, guard, invariants, delta) -> "_Path":
         invariants = tuple(invariants)
+        dom = z3.And(guard, *invariants) if invariants else guard
         return _Path(s_syms=s_syms, guard=guard, invariants=invariants,
-                     dom=z3.And(guard, *invariants) if invariants else guard,
-                     delta=delta,
+                     row_invariants=invariants + _entailed_atoms(dom, invariants,
+                                                                 s_syms),
+                     dom=dom, delta=delta,
                      z_s=tuple(_pre_activations(layers, s_syms)),
                      z_sp=tuple(_pre_activations(layers, body)),
                      weights=output_weights(layers))
@@ -532,7 +565,7 @@ def _try_cell(p: _Path, lam, mu, pat_s):
     lower = masked_value(p.z_s, p.weights, mu)
     post = masked_value(p.z_sp, p.weights, lam)
     A, b, labels = build_integer_system(strict_signs(p.z_sp, lam), s_signs,
-                                        p.guard, list(p.invariants),
+                                        p.guard, list(p.row_invariants),
                                         lower, post, p.s_syms, p.delta)
     y = find_infeasibility_certificate(A, b)
     if y is None:
