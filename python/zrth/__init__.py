@@ -19,3 +19,4 @@ from . import sugar as sugar
 from . import gym as gym
 from . import torch as torch
 from .sort import *
+from .expr import expr
