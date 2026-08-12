@@ -6,7 +6,7 @@ to return the next-state values as a tuple aligned with ``ctrl``. **Instantiatin
 subclass *is* a base Module** — ``init`` / ``update`` run and the sequential module is
 built in the constructor.
 
-    from zrth import LIA, Sort, Wire
+    from zrth import LIA, Int, Wire
     from zrth.sugar import Module
 
     class Counter(Module):

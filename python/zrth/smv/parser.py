@@ -10,8 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..zrth import Wire, Sort, Term, Module, BV
-from ..sort import BitVec, Bool
+from ..zrth import Wire, Term, Module, BV
+from ..sort import Sort, BitVec, Bool
 
 
 def _bw(sort) -> int:
