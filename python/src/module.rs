@@ -1,8 +1,8 @@
-use crate::theory::Any;
 use crate::*;
 use pyo3::Py;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
+use theory::any::Any;
 
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]

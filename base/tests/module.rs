@@ -3,7 +3,6 @@ use base::term::Term;
 use base::wire::Interface;
 use base::wire::Wire;
 use std::fmt;
-use std::fmt::Display;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
 #[derive(Clone, Debug)]
@@ -624,7 +623,7 @@ impl Theory for SeqOps {
     const NAME: &'static str = "SeqOps";
     fn check<R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        D: TryInto<Self::Sort> + Display,
+        D: TryInto<Self::Sort>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
@@ -637,7 +636,7 @@ impl Theory for DifOps {
     const NAME: &'static str = "DifOps";
     fn check<R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        D: TryInto<Self::Sort> + Display,
+        D: TryInto<Self::Sort>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
