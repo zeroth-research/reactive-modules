@@ -1,14 +1,17 @@
+use crate::bv::BV;
+use crate::lia::LIA;
+use crate::lra::LRA;
+use crate::{Combinatorial, Differential, Sequential, bv, lia, lra};
+#[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
+#[cfg(feature = "pyo3")]
 use pyo3::types::PyString;
+#[cfg(feature = "pyo3")]
 use pyo3::{Bound, FromPyObject, PyAny, PyResult, pyclass};
 use std::fmt;
-use theory::bv::BV;
-use theory::lia::LIA;
-use theory::lra::LRA;
-use theory::{Combinatorial, Differential, Sequential, bv, lia, lra};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[pyclass(frozen, eq)]
+#[cfg_attr(feature = "pyo3", pyclass(frozen, eq))]
 pub enum Sort {
     Bool([usize; 2]),
     Real([usize; 2]),
@@ -50,6 +53,30 @@ impl From<lra::Sort> for Sort {
             lra::Sort::Bool(shape) => Sort::Bool(shape),
             lra::Sort::Real(shape) => Sort::Real(shape),
         }
+    }
+}
+
+impl<E> TryFrom<Result<Sort, E>> for bv::Sort {
+    type Error = String;
+    fn try_from(value: Result<Sort, E>) -> Result<Self, Self::Error> {
+        let sort = value.map_err(|_| "invalid cast")?;
+        sort.try_into()
+    }
+}
+
+impl<E> TryFrom<Result<Sort, E>> for lia::Sort {
+    type Error = String;
+    fn try_from(value: Result<Sort, E>) -> Result<Self, Self::Error> {
+        let sort = value.map_err(|_| "invalid cast")?;
+        sort.try_into()
+    }
+}
+
+impl<E> TryFrom<Result<Sort, E>> for lra::Sort {
+    type Error = String;
+    fn try_from(value: Result<Sort, E>) -> Result<Self, Self::Error> {
+        let sort = value.map_err(|_| "invalid cast")?;
+        sort.try_into()
     }
 }
 
@@ -112,80 +139,30 @@ impl fmt::Display for Any {
     }
 }
 
-#[derive(PartialEq, Eq)]
-struct TryFrom2<A>
-where
-    A: TryInto<Sort>,
-{
-    a: A,
-}
-
-impl<A: TryInto<Sort>> TryFrom2<A> {
-    fn new(a: A) -> Self {
-        Self { a }
-    }
-}
-
-impl<A: TryInto<Sort> + fmt::Display> fmt::Display for TryFrom2<A> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.a, f)
-    }
-}
-
-impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for lra::Sort {
-    type Error = String;
-
-    fn try_from(value: TryFrom2<A>) -> Result<Self, Self::Error> {
-        let b: Sort = value.a.try_into().map_err(|_| "invalid cast")?;
-        let c: lra::Sort = b.try_into().map_err(|e: String| e.to_string())?;
-        Ok(c)
-    }
-}
-
-impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for lia::Sort {
-    type Error = String;
-
-    fn try_from(value: TryFrom2<A>) -> Result<Self, Self::Error> {
-        let b: Sort = value.a.try_into().map_err(|_| "invalid cast")?;
-        let c: lia::Sort = b.try_into().map_err(|e: String| e.to_string())?;
-        Ok(c)
-    }
-}
-
-impl<A: TryInto<Sort>> TryFrom<TryFrom2<A>> for bv::Sort {
-    type Error = String;
-
-    fn try_from(value: TryFrom2<A>) -> Result<Self, Self::Error> {
-        let b: Sort = value.a.try_into().map_err(|_| "invalid cast")?;
-        let c: bv::Sort = b.try_into().map_err(|e: String| e.to_string())?;
-        Ok(c)
-    }
-}
-
-impl theory::Theory for Any {
+impl crate::Theory for Any {
     type Sort = Sort;
     const NAME: &'static str = "Any";
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort> + fmt::Display + Eq,
+        D: TryInto<Sort>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
-        let read = read.into_iter().map(TryFrom2::new);
-        let write = write.into_iter().map(TryFrom2::new);
+        let mut read = read.into_iter().map(TryInto::try_into);
+        let mut write = write.into_iter().map(TryInto::try_into);
         match &self {
-            Any::HAVOC | Any::ZERO => read
-                .into_iter()
-                .next()
-                .is_none()
-                .then_some(())
-                .ok_or(format!("{} expects no read", self)),
-            Any::SKIP => read
-                .into_iter()
-                .eq(write)
-                .then_some(())
-                .ok_or("SKIP expects matching read and write".to_string()),
+            Any::HAVOC | Any::ZERO => match read.next() {
+                None => Ok(()),
+                _ => Err(format!("{} expects no read", self)),
+            },
+            Any::SKIP => loop {
+                match (read.next(), write.next()) {
+                    (Some(Ok(a)), Some(Ok(b))) if a == b => continue,
+                    (None, None) => return Ok(()),
+                    _ => return Err("SKIP expects matching read and write".to_string()),
+                }
+            },
             Any::LRA(itype) => itype.check(read, write),
             Any::LIA(itype) => itype.check(read, write),
             Any::BV(itype) => itype.check(read, write),
@@ -205,6 +182,7 @@ impl Differential for Any {
     const ZERO: Self = Any::ZERO;
 }
 
+#[cfg(feature = "pyo3")]
 impl<'py> FromPyObject<'py> for Any {
     fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(a) = obj.extract::<LRA>() {
@@ -222,6 +200,7 @@ impl<'py> FromPyObject<'py> for Any {
     }
 }
 
+#[cfg(feature = "pyo3")]
 impl<'py> IntoPyObject<'py> for Any {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;

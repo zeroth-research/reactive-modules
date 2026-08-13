@@ -1,9 +1,9 @@
 use crate::term::{Term, TermInterfaceType};
-use crate::theory::Any;
 use crate::try_iter_borrow;
 use crate::wire::Wire;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
+use theory::any::Any;
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
@@ -88,7 +88,7 @@ struct AtomInterface {
 }
 
 impl AtomInterface {
-    fn base(&self) -> &base::Interface<crate::theory::Sort> {
+    fn base(&self) -> &base::Interface<theory::any::Sort> {
         let atom = &self.atom.get().base;
         match self.interface {
             AtomInterfaceType::Read => atom.read(),
@@ -201,7 +201,7 @@ struct AtomBlockInterface {
 }
 
 impl AtomBlockInterface {
-    fn base(&self) -> &base::Interface<crate::theory::Sort> {
+    fn base(&self) -> &base::Interface<theory::any::Sort> {
         let term = self.block.get().base();
         match self.interface {
             TermInterfaceType::Read => term.read(),

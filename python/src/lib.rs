@@ -1,15 +1,14 @@
-use crate::theory::Sort;
 use ::theory::bv::BV;
 use ::theory::lia::LIA;
 use ::theory::lra::LRA;
 use pyo3::PyClass;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
+use theory::any::Sort;
 
 mod atom;
 mod module;
 mod term;
-mod theory;
 mod wire;
 
 use crate::atom::Atom;
@@ -58,7 +57,7 @@ where
 
 fn try_wire2_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = [base::Wire<theory::Sort>; 2]>> {
+) -> PyResult<impl Iterator<Item = [base::Wire<theory::any::Sort>; 2]>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_array2_iter_borrow::<Wire>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
@@ -68,7 +67,7 @@ fn try_wire2_iter_cloned(
 
 fn try_term_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Term<theory::Any>>> {
+) -> PyResult<impl Iterator<Item = base::Term<theory::any::Any>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
@@ -78,7 +77,7 @@ fn try_term_iter_cloned(
 
 fn try_wire_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Wire<theory::Sort>>> {
+) -> PyResult<impl Iterator<Item = base::Wire<theory::any::Sort>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Wire>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);

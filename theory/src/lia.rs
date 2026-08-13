@@ -147,7 +147,7 @@ impl Theory for LIA {
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort> + fmt::Display,
+        D: TryInto<Sort>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
@@ -207,7 +207,7 @@ impl Theory for LIA {
 
 fn check_const<R, W, D>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort> + fmt::Display,
+    D: TryInto<Sort>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -257,7 +257,7 @@ where
 
 fn check_bool<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort> + fmt::Display,
+    D: TryInto<Sort>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -312,7 +312,7 @@ where
 
 fn check_cmp<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort> + fmt::Display,
+    D: TryInto<Sort>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -339,7 +339,7 @@ where
 
 fn check_mat_ops<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort> + fmt::Display,
+    D: TryInto<Sort>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -429,7 +429,7 @@ fn check_linear_affine<D>(
     write: &mut impl Iterator<Item = D>,
 ) -> Result<(), String>
 where
-    D: TryInto<Sort> + fmt::Display,
+    D: TryInto<Sort>,
 {
     let (r1, None) = (read_nxt(read, 0, "LIA")?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
@@ -490,7 +490,7 @@ where
 
 fn check_transpose<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort> + fmt::Display,
+    D: TryInto<Sort>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -518,7 +518,7 @@ where
 
 fn check_flow<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort> + fmt::Display,
+    D: TryInto<Sort>,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {

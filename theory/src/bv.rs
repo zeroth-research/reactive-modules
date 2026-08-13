@@ -45,6 +45,7 @@ use crate::*;
 use pyo3::pyclass;
 
 use std::fmt;
+use std::fmt::Debug;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum Sort {
@@ -229,7 +230,7 @@ impl Theory for BV {
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort> + fmt::Display,
+        D: TryInto<Sort>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {

@@ -1,7 +1,7 @@
-use crate::theory::Any;
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
+use theory::any::Any;
 
 #[pyclass(frozen)]
 pub(crate) struct Term {

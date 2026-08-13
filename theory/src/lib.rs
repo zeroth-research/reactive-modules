@@ -1,5 +1,4 @@
-use std::fmt;
-
+pub mod any;
 pub mod bv;
 pub mod lia;
 pub mod lra;
@@ -8,14 +7,14 @@ pub mod tensor;
 pub use tensor::PyTensor;
 
 pub trait Theory {
-    type Sort: fmt::Display; // this global requirement is temporary, until we have error enums.
+    type Sort; // this global requirement is temporary, until we have error enums.
     // eventually display should never be required by default, neither here not by check
 
     const NAME: &'static str;
 
     fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Self::Sort> + fmt::Display + Eq,
+        D: TryInto<Self::Sort>,
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>;
 }
@@ -37,12 +36,11 @@ pub trait Differential: Theory {
 fn read_nxt<R, D, T>(read: &mut R, i: usize, theory: &'static str) -> Result<T, String>
 where
     R: Iterator<Item = D>,
-    D: TryInto<T> + fmt::Display,
+    D: TryInto<T>,
 {
     if let Some(d) = read.next() {
-        let repr = format!("{d}");
         d.try_into()
-            .map_err(|_| format!("Read arg {i} (`{repr}`) not compatible with {theory}"))
+            .map_err(|_| format!("Read arg {i} not compatible with {theory}"))
     } else {
         Err(format!("Read arg {i} expected, but got none"))
     }
@@ -51,12 +49,11 @@ where
 fn write_nxt<R, D, T>(write: &mut R, i: usize, theory: &'static str) -> Result<T, String>
 where
     R: Iterator<Item = D>,
-    D: TryInto<T> + fmt::Display,
+    D: TryInto<T>,
 {
     if let Some(d) = write.next() {
-        let repr = format!("{d}");
         d.try_into()
-            .map_err(|_| format!("Write arg {i} (`{repr}`) not compatible with {theory}"))
+            .map_err(|_| format!("Write arg {i} not compatible with {theory}"))
     } else {
         Err(format!("Write arg {i} expected, but got none"))
     }
