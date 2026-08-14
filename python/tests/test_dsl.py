@@ -74,6 +74,7 @@ def test_counter_is_a_closed_base_module():
 def test_counter_counts():
     x = _pair()
     m = Counter(theory=LIA, ctrl=(x,))
+    print(m)
     (_x_lat, x_nxt) = x
     assert _trace(m, 5, x_nxt) == [0, 1, 2, 3, 4, 5]
 

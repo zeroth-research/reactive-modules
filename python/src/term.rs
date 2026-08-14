@@ -1,7 +1,7 @@
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
-use theory::any::Any;
+use theory::any::{Any, Sequential};
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
@@ -16,7 +16,7 @@ impl Term {
         write: &Bound<'_, PyAny>,
         read: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
-        let itype = itype.extract()?;
+        let itype: Any = itype.extract()?;
         let write = try_wire_iter_cloned(write)?;
         let read = try_wire_iter_cloned(read)?;
 
@@ -28,7 +28,7 @@ impl Term {
 
     #[staticmethod]
     fn constant(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let itype = itype.extract()?;
+        let itype: Any = itype.extract()?;
         let write = try_wire_iter_cloned(write)?;
 
         match base::Term::constant(itype, write) {
@@ -91,6 +91,12 @@ impl Term {
 impl From<base::Term<Any>> for Term {
     fn from(base: base::Term<Any>) -> Self {
         Self { base }
+    }
+}
+
+impl From<base::Term<Sequential>> for Term {
+    fn from(base: base::Term<Sequential>) -> Self {
+        Self { base: base.into() }
     }
 }
 

@@ -1,7 +1,8 @@
 use crate::wire::{Interface, Wire};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
-use theory::{Differential, Sequential, Theory};
+use std::vec;
+use theory::{Differential, Sequential, Theory, any};
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -87,6 +88,72 @@ where
             Ok(_) => Ok(term),
             Err(e) => Err(e),
         }
+    }
+}
+
+impl From<Term<any::Sequential>> for Term<any::Any> {
+    fn from(term: Term<any::Sequential>) -> Self {
+        Self {
+            itype: term.itype.into(),
+            write: term.write,
+            read: term.read,
+        }
+    }
+}
+
+impl From<Term<any::Combinatorial>> for Term<any::Any> {
+    fn from(term: Term<any::Combinatorial>) -> Self {
+        Self {
+            itype: term.itype.into(),
+            write: term.write,
+            read: term.read,
+        }
+    }
+}
+
+impl From<Term<any::Differential>> for Term<any::Any> {
+    fn from(term: Term<any::Differential>) -> Self {
+        Self {
+            itype: term.itype.into(),
+            write: term.write,
+            read: term.read,
+        }
+    }
+}
+
+impl TryFrom<Term<any::Any>> for Term<any::Sequential> {
+    type Error = String;
+    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
+        let itype = term.itype.try_into()?;
+        Ok(Self {
+            itype,
+            write: term.write,
+            read: term.read,
+        })
+    }
+}
+
+impl TryFrom<Term<any::Any>> for Term<any::Combinatorial> {
+    type Error = String;
+    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
+        let itype = term.itype.try_into()?;
+        Ok(Self {
+            itype,
+            write: term.write,
+            read: term.read,
+        })
+    }
+}
+
+impl TryFrom<Term<any::Any>> for Term<any::Differential> {
+    type Error = String;
+    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
+        let itype = term.itype.try_into()?;
+        Ok(Self {
+            itype,
+            write: term.write,
+            read: term.read,
+        })
     }
 }
 
@@ -191,18 +258,33 @@ impl<'a, T: Theory> IntoIterator for &'a Block<T> {
     }
 }
 
+impl<T: Theory> IntoIterator for Block<T> {
+    type Item = Term<T>;
+    type IntoIter = vec::IntoIter<Term<T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.terms.into_iter()
+    }
+}
+
 impl<T: Theory> Block<T>
 where
     T::Sort: Eq + Clone,
 {
-    pub(crate) fn try_from_iter<V: IntoIterator<Item = Term<T>>>(iter: V) -> Result<Self, String> {
+    pub(crate) fn try_from_iter<U, V: IntoIterator<Item = Term<U>>>(iter: V) -> Result<Self, String>
+    where
+        U: Theory<Sort = T::Sort> + Into<T>,
+    {
         let mut read_set: HashSet<usize> = HashSet::new();
         let mut write_to_dtype: HashMap<usize, &T::Sort> = HashMap::new();
 
         let mut read: Vec<Wire<T::Sort>> = Vec::new();
         let mut write: Vec<Wire<T::Sort>> = Vec::new();
 
-        let terms: Vec<Term<T>> = Vec::from_iter(iter);
+        let terms: Vec<Term<T>> = Vec::from_iter(
+            iter.into_iter()
+                .map(|t| Term::new_unchecked(t.itype.into(), t.write, t.read)),
+        );
 
         for term in terms.iter() {
             for rd in term.read().wires() {
@@ -267,5 +349,23 @@ where
     ) -> Result<Self, String> {
         let update = std::iter::once(Term::function(J::SKIP, write, read)?);
         Block::try_from_iter(update)
+    }
+}
+
+impl<T: Theory> fmt::Display for Block<T>
+where
+    T: fmt::Display,
+    T::Sort: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.terms
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 }

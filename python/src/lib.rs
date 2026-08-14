@@ -4,7 +4,9 @@ use ::theory::lra::LRA;
 use pyo3::PyClass;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
-use theory::any::Sort;
+use std::fmt::Debug;
+use theory::any::{Any, Sort};
+use theory::{Theory, any};
 
 mod atom;
 mod module;
@@ -65,13 +67,17 @@ fn try_wire2_iter_cloned(
     Ok(seq)
 }
 
-fn try_term_iter_cloned(
+fn try_term_iter_cloned<T: Theory, E: Debug>(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Term<theory::any::Any>>> {
+) -> PyResult<impl Iterator<Item = base::Term<T>>>
+where
+    base::Term<Any>: TryInto<base::Term<T>, Error = E>,
+{
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
-    let seq = seq.map(|r| r.base().clone());
+    let seq = seq.map(|r| r.base().clone().try_into());
+    let seq = seq.map(Result::unwrap);
     Ok(seq)
 }
 

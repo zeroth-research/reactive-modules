@@ -1,7 +1,10 @@
+use crate::Combinatorial as _;
+use crate::Differential as _;
+use crate::Sequential as _;
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
-use crate::{Combinatorial, Differential, Sequential, bv, lia, lra};
+use crate::{Theory, bv, lia, lra};
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 #[cfg(feature = "pyo3")]
@@ -170,18 +173,6 @@ impl crate::Theory for Any {
     }
 }
 
-impl Combinatorial for Any {
-    const HAVOC: Self = Any::HAVOC;
-}
-
-impl Sequential for Any {
-    const SKIP: Self = Any::SKIP;
-}
-
-impl Differential for Any {
-    const ZERO: Self = Any::ZERO;
-}
-
 #[cfg(feature = "pyo3")]
 impl<'py> FromPyObject<'py> for Any {
     fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
@@ -214,6 +205,330 @@ impl<'py> IntoPyObject<'py> for Any {
             Any::LRA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::LIA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::BV(a) => a.into_pyobject(py).map(Bound::into_any),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Sequential {
+    SKIP,
+    BV(BV),
+    LRA(LRA),
+    LIA(LIA),
+}
+
+fn check_skip<R, W, E>(read: R, write: W) -> Result<(), String>
+where
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
+{
+    let mut read = read.into_iter();
+    let mut write = write.into_iter();
+    loop {
+        match (read.next(), write.next()) {
+            (Some(Ok(a)), Some(Ok(b))) if a == b => continue,
+            (None, None) => return Ok(()),
+            _ => return Err("SKIP expects matching read and write".to_string()),
+        }
+    }
+}
+
+impl Theory for Sequential {
+    type Sort = Sort;
+    const NAME: &'static str = "Sequential";
+    fn check<R, W, S>(&self, read: R, write: W) -> Result<(), String>
+    where
+        S: TryInto<Sort>,
+        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = S>,
+    {
+        let read = read.into_iter().map(TryInto::try_into);
+        let write = write.into_iter().map(TryInto::try_into);
+        match &self {
+            Sequential::SKIP => check_skip(read, write),
+            Sequential::BV(itype) => itype.check(read, write),
+            Sequential::LRA(itype) => itype.check(read, write),
+            Sequential::LIA(itype) => itype.check(read, write),
+        }
+    }
+}
+
+impl crate::Sequential for Sequential {
+    const SKIP: Self = Sequential::SKIP;
+}
+
+impl fmt::Display for Sequential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Sequential::SKIP => write!(f, "SKIP"),
+            Sequential::BV(bv) => write!(f, "{}", bv),
+            Sequential::LRA(lra) => write!(f, "{}", lra),
+            Sequential::LIA(lia) => write!(f, "{}", lia),
+        }
+    }
+}
+
+impl TryFrom<Any> for Sequential {
+    type Error = String;
+    fn try_from(any: Any) -> Result<Self, Self::Error> {
+        match any {
+            Any::SKIP => Ok(Sequential::SKIP),
+            Any::BV(bv) => Ok(Sequential::BV(bv)),
+            Any::LIA(lia) => Ok(Sequential::LIA(lia)),
+            Any::LRA(lra) => Ok(Sequential::LRA(lra)),
+            _ => Err(format!("{} is not in a sequential theory", any)),
+        }
+    }
+}
+
+impl From<Sequential> for Any {
+    fn from(sequential: Sequential) -> Self {
+        match sequential {
+            Sequential::SKIP => Any::SKIP,
+            Sequential::BV(bv) => Any::BV(bv),
+            Sequential::LRA(lra) => Any::LRA(lra),
+            Sequential::LIA(lia) => Any::LIA(lia),
+        }
+    }
+}
+
+impl TryFrom<Sequential> for BV {
+    type Error = String;
+    fn try_from(value: Sequential) -> Result<Self, Self::Error> {
+        match value {
+            Sequential::SKIP => Ok(BV::SKIP),
+            Sequential::BV(bv) => Ok(bv),
+            _ => Err("invalid cast".to_string()),
+        }
+    }
+}
+
+impl TryFrom<Sequential> for LIA {
+    type Error = String;
+    fn try_from(value: Sequential) -> Result<Self, Self::Error> {
+        match value {
+            Sequential::SKIP => Ok(LIA::SKIP),
+            Sequential::LIA(lia) => Ok(lia),
+            _ => Err("invalid cast".to_string()),
+        }
+    }
+}
+
+impl TryFrom<Sequential> for LRA {
+    type Error = String;
+    fn try_from(value: Sequential) -> Result<Self, Self::Error> {
+        match value {
+            Sequential::SKIP => Ok(LRA::SKIP),
+            Sequential::LRA(lra) => Ok(lra),
+            _ => Err("invalid cast".to_string()),
+        }
+    }
+}
+
+// We interpret Combinatorial as Sequential + SKIP, but this is specific to this implementation.
+// This shall be generalised into a new Sequential + Combinatorial theory, if needed.
+#[derive(Debug, Clone)]
+pub enum Combinatorial {
+    HAVOC,
+    SKIP,
+    BV(BV),
+    LRA(LRA),
+    LIA(LIA),
+}
+
+fn check_havoc<R, E>(read: R) -> Result<(), String>
+where
+    R: IntoIterator<Item = Result<Sort, E>>,
+{
+    let mut read = read.into_iter();
+    match read.next() {
+        None => Ok(()),
+        _ => Err("HAVOC expects no read wires".to_string()),
+    }
+}
+
+impl Theory for Combinatorial {
+    type Sort = Sort;
+    const NAME: &'static str = "Combinatorial";
+    fn check<R, W, S>(&self, read: R, write: W) -> Result<(), String>
+    where
+        S: TryInto<Sort>,
+        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = S>,
+    {
+        let read = read.into_iter().map(TryInto::try_into);
+        let write = write.into_iter().map(TryInto::try_into);
+        match &self {
+            Combinatorial::HAVOC => check_havoc(read),
+            Combinatorial::SKIP => check_skip(read, write),
+            Combinatorial::BV(itype) => itype.check(read, write),
+            Combinatorial::LRA(itype) => itype.check(read, write),
+            Combinatorial::LIA(itype) => itype.check(read, write),
+        }
+    }
+}
+
+impl crate::Combinatorial for Combinatorial {
+    const HAVOC: Self = Combinatorial::HAVOC;
+}
+
+impl fmt::Display for Combinatorial {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Combinatorial::HAVOC => write!(f, "HAVOC"),
+            Combinatorial::SKIP => write!(f, "SKIP"),
+            Combinatorial::BV(bv) => write!(f, "{}", bv),
+            Combinatorial::LRA(lra) => write!(f, "{}", lra),
+            Combinatorial::LIA(lia) => write!(f, "{}", lia),
+        }
+    }
+}
+
+impl TryFrom<Any> for Combinatorial {
+    type Error = String;
+    fn try_from(any: Any) -> Result<Self, Self::Error> {
+        match any {
+            Any::HAVOC => Ok(Combinatorial::HAVOC),
+            Any::SKIP => Ok(Combinatorial::SKIP),
+            Any::BV(bv) => Ok(Combinatorial::BV(bv)),
+            Any::LIA(lia) => Ok(Combinatorial::LIA(lia)),
+            Any::LRA(lra) => Ok(Combinatorial::LRA(lra)),
+            _ => Err(format!("{} is not in a combinatorial theory", any)),
+        }
+    }
+}
+
+impl From<Combinatorial> for Any {
+    fn from(combinatorial: Combinatorial) -> Self {
+        match combinatorial {
+            Combinatorial::HAVOC => Any::HAVOC,
+            Combinatorial::SKIP => Any::SKIP,
+            Combinatorial::BV(bv) => Any::BV(bv),
+            Combinatorial::LRA(lra) => Any::LRA(lra),
+            Combinatorial::LIA(lia) => Any::LIA(lia),
+        }
+    }
+}
+
+impl From<Combinatorial> for Sequential {
+    fn from(combinatorial: Combinatorial) -> Self {
+        match combinatorial {
+            Combinatorial::HAVOC => panic!("Attempted to cast HAVOC to Sequential"),
+            Combinatorial::SKIP => Sequential::SKIP,
+            Combinatorial::BV(bv) => Sequential::BV(bv),
+            Combinatorial::LRA(lra) => Sequential::LRA(lra),
+            Combinatorial::LIA(lia) => Sequential::LIA(lia),
+        }
+    }
+}
+
+impl TryFrom<Combinatorial> for BV {
+    type Error = String;
+    fn try_from(value: Combinatorial) -> Result<Self, Self::Error> {
+        match value {
+            Combinatorial::HAVOC => Ok(BV::HAVOC),
+            Combinatorial::BV(bv) => Ok(bv),
+            _ => Err("invalid cast".to_string()),
+        }
+    }
+}
+
+// impl TryFrom<Combinatorial> for LIA {
+//     type Error = String;
+//     fn try_from(value: Combinatorial) -> Result<Self, Self::Error> {
+//         match value {
+//             Combinatorial::HAVOC => Ok(LIA::HAVOC),
+//             Combinatorial::LIA(lia) => Ok(lia),
+//             _ => Err("invalid cast".to_string()),
+//         }
+//     }
+// }
+//
+// impl TryFrom<Combinatorial> for LRA {
+//     type Error = String;
+//     fn try_from(value: Combinatorial) -> Result<Self, Self::Error> {
+//         match value {
+//             Combinatorial::HAVOC => Ok(LRA::HAVOC),
+//             Combinatorial::LRA(lra) => Ok(lra),
+//             _ => Err("invalid cast".to_string()),
+//         }
+//     }
+// }
+
+#[derive(Debug, Clone)]
+pub enum Differential {
+    ZERO,
+    LRA(LRA),
+}
+
+pub(crate) fn check_zero<R>(read: R) -> Result<(), String>
+where
+    R: IntoIterator,
+{
+    let mut read = read.into_iter();
+    match read.next() {
+        None => Ok(()),
+        _ => Err("ZERO expects no read wires".to_string()),
+    }
+}
+
+impl Theory for Differential {
+    type Sort = Sort;
+    const NAME: &'static str = "Differential";
+    fn check<R, W, S>(&self, read: R, write: W) -> Result<(), String>
+    where
+        S: TryInto<Sort>,
+        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = S>,
+    {
+        let read = read.into_iter().map(TryInto::try_into);
+        let write = write.into_iter().map(TryInto::try_into);
+        match &self {
+            Differential::ZERO => check_zero(read),
+            Differential::LRA(itype) => itype.check(read, write),
+        }
+    }
+}
+
+impl crate::Differential for Differential {
+    const ZERO: Self = Differential::ZERO;
+}
+
+impl fmt::Display for Differential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Differential::ZERO => write!(f, "ZERO"),
+            Differential::LRA(lra) => write!(f, "{}", lra),
+        }
+    }
+}
+
+impl TryFrom<Any> for Differential {
+    type Error = String;
+    fn try_from(any: Any) -> Result<Self, Self::Error> {
+        match any {
+            Any::ZERO => Ok(Differential::ZERO),
+            Any::LRA(lra) => Ok(Differential::LRA(lra)),
+            _ => Err(format!("{} is not in a differential theory", any)),
+        }
+    }
+}
+
+impl From<Differential> for Any {
+    fn from(differential: Differential) -> Self {
+        match differential {
+            Differential::ZERO => Any::ZERO,
+            Differential::LRA(lra) => Any::LRA(lra),
+        }
+    }
+}
+
+impl TryFrom<Differential> for LRA {
+    type Error = String;
+    fn try_from(value: Differential) -> Result<Self, Self::Error> {
+        match value {
+            Differential::ZERO => Ok(LRA::ZERO),
+            Differential::LRA(lra) => Ok(lra),
         }
     }
 }
