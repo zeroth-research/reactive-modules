@@ -1,7 +1,7 @@
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
-use theory::any::{Any, Sequential};
+use theory::any::Any;
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
@@ -91,12 +91,6 @@ impl Term {
 impl From<base::Term<Any>> for Term {
     fn from(base: base::Term<Any>) -> Self {
         Self { base }
-    }
-}
-
-impl From<base::Term<Sequential>> for Term {
-    fn from(base: base::Term<Sequential>) -> Self {
-        Self { base: base.into() }
     }
 }
 
