@@ -5,8 +5,8 @@ use pyo3::PyClass;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::fmt::Debug;
+use theory::Theory;
 use theory::any::{Any, Sort};
-use theory::{Theory, any};
 
 mod atom;
 mod module;

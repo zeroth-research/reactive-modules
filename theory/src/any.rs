@@ -211,10 +211,19 @@ impl<'py> IntoPyObject<'py> for Any {
 
 #[derive(Debug, Clone)]
 pub enum Sequential {
+    HAVOC,
     SKIP,
     BV(BV),
     LRA(LRA),
     LIA(LIA),
+}
+
+impl crate::Sequential for Sequential {
+    const SKIP: Self = Sequential::SKIP;
+}
+
+impl crate::Combinatorial for Sequential {
+    const HAVOC: Self = Sequential::HAVOC;
 }
 
 fn check_skip<R, W, E>(read: R, write: W) -> Result<(), String>
@@ -245,6 +254,7 @@ impl Theory for Sequential {
         let read = read.into_iter().map(TryInto::try_into);
         let write = write.into_iter().map(TryInto::try_into);
         match &self {
+            Sequential::HAVOC => check_havoc(read),
             Sequential::SKIP => check_skip(read, write),
             Sequential::BV(itype) => itype.check(read, write),
             Sequential::LRA(itype) => itype.check(read, write),
@@ -253,13 +263,10 @@ impl Theory for Sequential {
     }
 }
 
-impl crate::Sequential for Sequential {
-    const SKIP: Self = Sequential::SKIP;
-}
-
 impl fmt::Display for Sequential {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Sequential::HAVOC => write!(f, "HAVOC"),
             Sequential::SKIP => write!(f, "SKIP"),
             Sequential::BV(bv) => write!(f, "{}", bv),
             Sequential::LRA(lra) => write!(f, "{}", lra),
@@ -272,6 +279,7 @@ impl TryFrom<Any> for Sequential {
     type Error = String;
     fn try_from(any: Any) -> Result<Self, Self::Error> {
         match any {
+            Any::HAVOC => Ok(Sequential::HAVOC),
             Any::SKIP => Ok(Sequential::SKIP),
             Any::BV(bv) => Ok(Sequential::BV(bv)),
             Any::LIA(lia) => Ok(Sequential::LIA(lia)),
@@ -284,6 +292,7 @@ impl TryFrom<Any> for Sequential {
 impl From<Sequential> for Any {
     fn from(sequential: Sequential) -> Self {
         match sequential {
+            Sequential::HAVOC => Any::HAVOC,
             Sequential::SKIP => Any::SKIP,
             Sequential::BV(bv) => Any::BV(bv),
             Sequential::LRA(lra) => Any::LRA(lra),
@@ -325,15 +334,16 @@ impl TryFrom<Sequential> for LRA {
     }
 }
 
-// We interpret Combinatorial as Sequential + SKIP, but this is specific to this implementation.
-// This shall be generalised into a new Sequential + Combinatorial theory, if needed.
 #[derive(Debug, Clone)]
 pub enum Combinatorial {
     HAVOC,
-    SKIP,
     BV(BV),
     LRA(LRA),
     LIA(LIA),
+}
+
+impl crate::Combinatorial for Combinatorial {
+    const HAVOC: Self = Combinatorial::HAVOC;
 }
 
 fn check_havoc<R, E>(read: R) -> Result<(), String>
@@ -360,7 +370,6 @@ impl Theory for Combinatorial {
         let write = write.into_iter().map(TryInto::try_into);
         match &self {
             Combinatorial::HAVOC => check_havoc(read),
-            Combinatorial::SKIP => check_skip(read, write),
             Combinatorial::BV(itype) => itype.check(read, write),
             Combinatorial::LRA(itype) => itype.check(read, write),
             Combinatorial::LIA(itype) => itype.check(read, write),
@@ -368,15 +377,10 @@ impl Theory for Combinatorial {
     }
 }
 
-impl crate::Combinatorial for Combinatorial {
-    const HAVOC: Self = Combinatorial::HAVOC;
-}
-
 impl fmt::Display for Combinatorial {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Combinatorial::HAVOC => write!(f, "HAVOC"),
-            Combinatorial::SKIP => write!(f, "SKIP"),
             Combinatorial::BV(bv) => write!(f, "{}", bv),
             Combinatorial::LRA(lra) => write!(f, "{}", lra),
             Combinatorial::LIA(lia) => write!(f, "{}", lia),
@@ -389,7 +393,6 @@ impl TryFrom<Any> for Combinatorial {
     fn try_from(any: Any) -> Result<Self, Self::Error> {
         match any {
             Any::HAVOC => Ok(Combinatorial::HAVOC),
-            Any::SKIP => Ok(Combinatorial::SKIP),
             Any::BV(bv) => Ok(Combinatorial::BV(bv)),
             Any::LIA(lia) => Ok(Combinatorial::LIA(lia)),
             Any::LRA(lra) => Ok(Combinatorial::LRA(lra)),
@@ -402,7 +405,6 @@ impl From<Combinatorial> for Any {
     fn from(combinatorial: Combinatorial) -> Self {
         match combinatorial {
             Combinatorial::HAVOC => Any::HAVOC,
-            Combinatorial::SKIP => Any::SKIP,
             Combinatorial::BV(bv) => Any::BV(bv),
             Combinatorial::LRA(lra) => Any::LRA(lra),
             Combinatorial::LIA(lia) => Any::LIA(lia),
@@ -413,8 +415,7 @@ impl From<Combinatorial> for Any {
 impl From<Combinatorial> for Sequential {
     fn from(combinatorial: Combinatorial) -> Self {
         match combinatorial {
-            Combinatorial::HAVOC => panic!("Attempted to cast HAVOC to Sequential"),
-            Combinatorial::SKIP => Sequential::SKIP,
+            Combinatorial::HAVOC => Sequential::HAVOC,
             Combinatorial::BV(bv) => Sequential::BV(bv),
             Combinatorial::LRA(lra) => Sequential::LRA(lra),
             Combinatorial::LIA(lia) => Sequential::LIA(lia),
