@@ -91,69 +91,59 @@ where
     }
 }
 
+impl<T: Theory> Term<T> {
+    fn convert<U>(term: Term<U>) -> Self
+    where
+        U: Theory<Sort = T::Sort> + Into<T>,
+    {
+        Self::new_unchecked(term.itype.into(), term.write, term.read)
+    }
+
+    fn try_convert<U, E>(term: Term<U>) -> Result<Self, E>
+    where
+        U: Theory<Sort = T::Sort> + TryInto<T, Error = E>,
+    {
+        let itype = term.itype.try_into()?;
+        Ok(Self::new_unchecked(itype, term.write, term.read))
+    }
+}
+
 impl From<Term<any::Sequential>> for Term<any::Any> {
     fn from(term: Term<any::Sequential>) -> Self {
-        Self {
-            itype: term.itype.into(),
-            write: term.write,
-            read: term.read,
-        }
+        Self::convert(term)
     }
 }
 
 impl From<Term<any::Combinatorial>> for Term<any::Any> {
     fn from(term: Term<any::Combinatorial>) -> Self {
-        Self {
-            itype: term.itype.into(),
-            write: term.write,
-            read: term.read,
-        }
+        Self::convert(term)
     }
 }
 
 impl From<Term<any::Differential>> for Term<any::Any> {
     fn from(term: Term<any::Differential>) -> Self {
-        Self {
-            itype: term.itype.into(),
-            write: term.write,
-            read: term.read,
-        }
+        Self::convert(term)
     }
 }
 
 impl TryFrom<Term<any::Any>> for Term<any::Sequential> {
     type Error = String;
     fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        let itype = term.itype.try_into()?;
-        Ok(Self {
-            itype,
-            write: term.write,
-            read: term.read,
-        })
+        Self::try_convert(term)
     }
 }
 
 impl TryFrom<Term<any::Any>> for Term<any::Combinatorial> {
     type Error = String;
     fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        let itype = term.itype.try_into()?;
-        Ok(Self {
-            itype,
-            write: term.write,
-            read: term.read,
-        })
+        Self::try_convert(term)
     }
 }
 
 impl TryFrom<Term<any::Any>> for Term<any::Differential> {
     type Error = String;
     fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        let itype = term.itype.try_into()?;
-        Ok(Self {
-            itype,
-            write: term.write,
-            read: term.read,
-        })
+        Self::try_convert(term)
     }
 }
 

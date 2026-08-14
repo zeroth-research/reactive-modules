@@ -6,11 +6,7 @@ use crate::lia::LIA;
 use crate::lra::LRA;
 use crate::{Theory, bv, lia, lra};
 #[cfg(feature = "pyo3")]
-use pyo3::prelude::*;
-#[cfg(feature = "pyo3")]
-use pyo3::types::PyString;
-#[cfg(feature = "pyo3")]
-use pyo3::{Bound, FromPyObject, PyAny, PyResult, pyclass};
+use pyo3::{prelude::*, types::PyString};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,7 +138,7 @@ impl fmt::Display for Any {
     }
 }
 
-impl crate::Theory for Any {
+impl Theory for Any {
     type Sort = Sort;
     const NAME: &'static str = "Any";
 
@@ -152,20 +148,12 @@ impl crate::Theory for Any {
         R: IntoIterator<Item = D>,
         W: IntoIterator<Item = D>,
     {
-        let mut read = read.into_iter().map(TryInto::try_into);
-        let mut write = write.into_iter().map(TryInto::try_into);
+        let read = read.into_iter().map(TryInto::try_into);
+        let write = write.into_iter().map(TryInto::try_into);
         match &self {
-            Any::HAVOC | Any::ZERO => match read.next() {
-                None => Ok(()),
-                _ => Err(format!("{} expects no read", self)),
-            },
-            Any::SKIP => loop {
-                match (read.next(), write.next()) {
-                    (Some(Ok(a)), Some(Ok(b))) if a == b => continue,
-                    (None, None) => return Ok(()),
-                    _ => return Err("SKIP expects matching read and write".to_string()),
-                }
-            },
+            Any::HAVOC => check_havoc(read),
+            Any::SKIP => check_skip(read, write),
+            Any::ZERO => check_zero(read),
             Any::LRA(itype) => itype.check(read, write),
             Any::LIA(itype) => itype.check(read, write),
             Any::BV(itype) => itype.check(read, write),

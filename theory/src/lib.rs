@@ -7,8 +7,7 @@ pub mod tensor;
 pub use tensor::PyTensor;
 
 pub trait Theory {
-    type Sort; // this global requirement is temporary, until we have error enums.
-    // eventually display should never be required by default, neither here not by check
+    type Sort;
 
     const NAME: &'static str;
 
