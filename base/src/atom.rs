@@ -497,10 +497,11 @@ where
     }
 }
 
-impl<T, D, S> Atom<T, T, D, S>
+impl<I, J, F, S> Atom<I, J, F, S>
 where
-    T: Combinatorial<Sort = S> + Sequential<Sort = S> + Clone,
-    D: Differential<Sort = S>,
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
     S: Eq + Clone + Debug,
 {
     /// Constructs a **purely combinatorial atom**, representing purely reactive behaviour
@@ -530,14 +531,15 @@ where
     /// # See Also
     /// - [`Atom::sequential`], for constructing sequential atoms.
     /// - [`Module::combinatorial`], for combinatorial modules.
-    pub fn combinatorial<'a, N, V>(next: N, assign: V) -> Result<Self, String>
+    pub fn combinatorial<'a, T, N, V>(next: N, assign: V) -> Result<Self, String>
     where
+        T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
         V: IntoIterator<Item = Term<T>>,
         N: IntoIterator<Item = &'a Wire<S>>,
         S: 'a,
     {
         let next: HashMap<usize, &S> = next.into_iter().map(Into::into).collect();
-        let assign = Block::try_from_iter(assign)?;
+        let assign: Block<T> = Block::try_from_iter(assign)?;
 
         let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
         let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
@@ -574,7 +576,8 @@ where
             }
         }
 
-        let update = assign.clone();
+        let init: Block<I> = Block::try_from_iter(assign.iter().cloned())?;
+        let update: Block<J> = Block::try_from_iter(assign)?;
         let delay = Block::zero(ctrl.clone().into_values())?;
 
         Ok(Self::new_unchecked(
@@ -582,7 +585,7 @@ where
             Interface::from_wires_unchecked(wait.into_values()),
             Interface::empty(),
             Interface::from_wires_unchecked(temp.into_values()),
-            assign,
+            init,
             update,
             delay,
         ))
@@ -723,9 +726,10 @@ where
     }
 }
 
-impl<T, F, S> Module<T, T, F, S>
+impl<I, J, F, S> Module<I, J, F, S>
 where
-    T: Combinatorial<Sort = S> + Sequential<Sort = S> + Clone,
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
     S: Eq + Clone + Debug + fmt::Display,
 {
@@ -747,8 +751,9 @@ where
     /// # See Also
     /// - [`Module::partially_observable_sequential`], for constructing stateful, sequential modules.
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
-    pub fn combinatorial<R, O, V>(obs: O, assign: V) -> Result<Self, String>
+    pub fn combinatorial<T, R, O, V>(obs: O, assign: V) -> Result<Self, String>
     where
+        T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
         R: Into<[Wire<T::Sort>; 2]>,
         O: IntoIterator<Item = R>,
         V: IntoIterator<Item = Term<T>>,

@@ -392,6 +392,18 @@ class Module:
     ) -> Module: ...
 
     @staticmethod
+    def differential(
+            init: list[Term],
+            flow: list[Term],
+            obs: None | list[tuple[Wire, Wire]] = None,
+            *,
+            ctrl: None | list[tuple[Wire, Wire]] = None,
+            extl: None | list[tuple[Wire, Wire]] = None,
+            intf: None | list[tuple[Wire, Wire]] = None,
+            prvt: None | list[tuple[Wire, Wire]] = None,
+    ) -> Module: ...
+
+    @staticmethod
     def parallel(*modules: Module) -> Module: ...
 
     @property

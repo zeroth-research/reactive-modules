@@ -44,6 +44,7 @@ use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 
+use crate::bv::BV::{Havoc, Id};
 use std::fmt;
 use std::fmt::Debug;
 
@@ -145,11 +146,25 @@ pub enum BV {
     BVToBool(),
     /// Element-wise extract bits `[high..=low]` (inclusive)
     /// TODO: rename to `extract`, matching MathSAT
-    BitSelect { high: usize, low: usize },
+    BitSelect {
+        high: usize,
+        low: usize,
+    },
     /// Element-wise zero-extend by `extra` bits
-    Extend { extra: usize },
+    Extend {
+        extra: usize,
+    },
     /// Uninterpreted symbol
     Uninterpreted(String),
+    Havoc(),
+}
+
+impl Sequential for BV {
+    const SKIP: Self = Id();
+}
+
+impl Combinatorial for BV {
+    const HAVOC: Self = Havoc();
 }
 
 impl fmt::Display for BV {
@@ -186,6 +201,7 @@ impl fmt::Display for BV {
             BV::BitSelect { high, low } => write!(f, "BitSelect[{high}:{low}]"),
             BV::Extend { extra } => write!(f, "Extend(+{extra})"),
             BV::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
+            BV::Havoc() => write!(f, "Havoc"),
         }
     }
 }
@@ -545,6 +561,13 @@ impl Theory for BV {
                     "{:?}: expected exactly one write or one read, got none",
                     self
                 ))
+            }
+            BV::Havoc() => {
+                if read.next().is_some() {
+                    Err(format!("{:?}: expected no read, got some", self))
+                } else {
+                    Ok(())
+                }
             }
         }
     }
