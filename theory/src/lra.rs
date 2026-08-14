@@ -41,6 +41,8 @@ assert!(LRA::ReLU().check([b], [b]).is_err());
 ```
 */
 
+use crate::any::check_zero;
+use crate::lra::LRA::Zero;
 use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
@@ -110,6 +112,15 @@ pub enum LRA {
     Ite(),
     Id(),
     Uninterpreted(String),
+    Zero(),
+}
+
+impl Sequential for LRA {
+    const SKIP: Self = Self::Id();
+}
+
+impl Differential for LRA {
+    const ZERO: Self = Zero();
 }
 
 impl fmt::Display for LRA {
@@ -137,6 +148,7 @@ impl fmt::Display for LRA {
             LRA::Ite() => write!(f, "Ite"),
             LRA::Id() => write!(f, "Id"),
             LRA::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
+            LRA::Zero() => write!(f, "Zero"),
         }
     }
 }
@@ -153,6 +165,7 @@ impl Theory for LRA {
     {
         match self {
             LRA::Const(cm) => check_const(cm, read, write),
+            LRA::Zero() => check_zero(read),
             LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => check_bool(self, read, write),
             LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
                 check_cmp(self, read, write)

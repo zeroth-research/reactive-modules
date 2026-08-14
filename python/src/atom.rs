@@ -3,15 +3,15 @@ use crate::try_iter_borrow;
 use crate::wire::Wire;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
-use theory::any::Any;
+use theory::any::{Any, Combinatorial, Differential, Sequential};
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: base::Atom<Any, Any, Any>,
+    base: base::Atom<Combinatorial, Sequential, Differential>,
 }
 
-impl From<base::Atom<Any, Any, Any>> for Atom {
-    fn from(base: base::Atom<Any, Any, Any>) -> Self {
+impl From<base::Atom<Combinatorial, Sequential, Differential>> for Atom {
+    fn from(base: base::Atom<Combinatorial, Sequential, Differential>) -> Self {
         Self { base }
     }
 }
@@ -148,16 +148,16 @@ pub(crate) struct AtomBlock {
     block: BlockType,
 }
 
-impl AtomBlock {
-    fn base(&self) -> &base::Block<Any> {
-        let atom = &self.atom.get().base;
-        match self.block {
-            BlockType::Init => atom.init(),
-            BlockType::Update => atom.update(),
-            BlockType::Delay => atom.delay(),
-        }
-    }
-}
+// impl AtomBlock {
+//     fn base(&self) -> &base::Block<Sequential> {
+//         let atom = &self.atom.get().base;
+//         match self.block {
+//             BlockType::Init => atom.init(),
+//             BlockType::Update => atom.update(),
+//             BlockType::Delay => atom.delay(),
+//         }
+//     }
+// }
 
 #[pymethods]
 impl AtomBlock {
@@ -167,7 +167,12 @@ impl AtomBlock {
     // }
 
     fn __repr__(&self) -> String {
-        format!("{:?}", self.base())
+        let atom = &self.atom.get().base;
+        match self.block {
+            BlockType::Init => atom.init().to_string(),
+            BlockType::Update => atom.update().to_string(),
+            BlockType::Delay => atom.delay().to_string(),
+        }
     }
 
     fn read(slf: Bound<'_, Self>) -> AtomBlockInterface {
@@ -185,12 +190,23 @@ impl AtomBlock {
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Term> {
-        let result = self.base().get(index).map(Clone::clone).map(Into::into);
-        result.ok_or(PyIndexError::new_err("index out of bounds"))
+        let atom = &self.atom.get().base;
+        let item: Option<base::Term<Any>> = match self.block {
+            BlockType::Init => atom.init().get(index).cloned().map(Into::into),
+            BlockType::Update => atom.update().get(index).cloned().map(Into::into),
+            BlockType::Delay => atom.delay().get(index).cloned().map(Into::into),
+        };
+        item.map(Into::into)
+            .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
     fn __len__(&self) -> usize {
-        self.base().len()
+        let atom = &self.atom.get().base;
+        match self.block {
+            BlockType::Init => atom.init().len(),
+            BlockType::Update => atom.update().len(),
+            BlockType::Delay => atom.delay().len(),
+        }
     }
 }
 
@@ -202,10 +218,14 @@ struct AtomBlockInterface {
 
 impl AtomBlockInterface {
     fn base(&self) -> &base::Interface<theory::any::Sort> {
-        let term = self.block.get().base();
-        match self.interface {
-            TermInterfaceType::Read => term.read(),
-            TermInterfaceType::Write => term.write(),
+        let atom = &self.block.get().atom.get().base;
+        match (&self.block.get().block, &self.interface) {
+            (BlockType::Init, TermInterfaceType::Read) => atom.init().read(),
+            (BlockType::Init, TermInterfaceType::Write) => atom.init().write(),
+            (BlockType::Update, TermInterfaceType::Read) => atom.update().read(),
+            (BlockType::Update, TermInterfaceType::Write) => atom.update().write(),
+            (BlockType::Delay, TermInterfaceType::Read) => atom.delay().read(),
+            (BlockType::Delay, TermInterfaceType::Write) => atom.delay().write(),
         }
     }
 }

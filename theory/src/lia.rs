@@ -112,6 +112,10 @@ pub enum LIA {
     Uninterpreted(String),
 }
 
+impl Sequential for LIA {
+    const SKIP: Self = Self::Id();
+}
+
 impl fmt::Display for LIA {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

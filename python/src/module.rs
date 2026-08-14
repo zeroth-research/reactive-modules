@@ -2,12 +2,12 @@ use crate::*;
 use pyo3::Py;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
-use theory::any::Any;
+use theory::any::{Combinatorial, Differential, Sequential};
 
 #[pyclass(subclass, frozen)]
 #[derive(Debug)]
 pub(crate) struct Module {
-    pub(crate) base: base::Module<Any, Any, Any>,
+    pub(crate) base: base::Module<Combinatorial, Sequential, Differential>,
 }
 
 #[pymethods]
@@ -74,30 +74,31 @@ impl Module {
         let init = try_term_iter_cloned(&init)?;
         let update = try_term_iter_cloned(&update)?;
 
-        let module = match (obs, ctrl, extl, intf, prvt) {
-            (Some(obs), None, None, None, Some(prvt)) => {
-                let obs = try_wire2_iter_cloned(obs)?;
-                let prvt = try_wire2_iter_cloned(prvt)?;
-                base::Module::partially_observable_sequential(obs, prvt, init, update)
-            }
-            (Some(wires), None, None, None, None) => {
-                let obs = try_wire2_iter_cloned(wires)?;
-                base::Module::sequential(obs, init, update)
-            }
-            (None, Some(_state), Some(_input), Some(_output), None) => {
-                todo!() //moore
-            }
-            (None, None, Some(_extl), Some(_intf), Some(_prvt)) => {
-                todo!() //sequential declared
-            }
-            (Some(_obs), Some(_ctrl), Some(_extl), Some(_intf), Some(_prvt)) => {
-                todo!() //sequential fully declared
-            }
-            (None, None, None, Some(_intf), Some(_prvt)) => {
-                todo!() //sequential closed
-            }
-            _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
-        };
+        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
+            match (obs, ctrl, extl, intf, prvt) {
+                (Some(obs), None, None, None, Some(prvt)) => {
+                    let obs = try_wire2_iter_cloned(obs)?;
+                    let prvt = try_wire2_iter_cloned(prvt)?;
+                    base::Module::partially_observable_sequential(obs, prvt, init, update)
+                }
+                (Some(wires), None, None, None, None) => {
+                    let obs = try_wire2_iter_cloned(wires)?;
+                    base::Module::sequential(obs, init, update)
+                }
+                (None, Some(_state), Some(_input), Some(_output), None) => {
+                    todo!() //moore
+                }
+                (None, None, Some(_extl), Some(_intf), Some(_prvt)) => {
+                    todo!() //sequential declared
+                }
+                (Some(_obs), Some(_ctrl), Some(_extl), Some(_intf), Some(_prvt)) => {
+                    todo!() //sequential fully declared
+                }
+                (None, None, None, Some(_intf), Some(_prvt)) => {
+                    todo!() //sequential closed
+                }
+                _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
+            };
 
         match module {
             Ok(base) => Ok(base.into()),
@@ -113,21 +114,22 @@ impl Module {
         extl: Option<&Bound<'_, PyAny>>,
         intf: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let assign = try_term_iter_cloned(&assign)?;
+        let assign = try_term_iter_cloned::<Combinatorial, String>(&assign)?;
 
-        let module = match (obs, extl, intf) {
-            (Some(obs), None, None) => {
-                let obs = try_wire2_iter_cloned(obs)?;
-                base::Module::combinatorial(obs, assign)
-            }
-            (None, Some(_extl), Some(_intf)) => {
-                todo!() // combinatorial declared
-            }
-            (None, None, Some(_intf)) => {
-                todo!() // constant
-            }
-            _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
-        };
+        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
+            match (obs, extl, intf) {
+                (Some(obs), None, None) => {
+                    let obs = try_wire2_iter_cloned(obs)?;
+                    base::Module::combinatorial(obs, assign)
+                }
+                (None, Some(_extl), Some(_intf)) => {
+                    todo!() // combinatorial declared
+                }
+                (None, None, Some(_intf)) => {
+                    todo!() // constant
+                }
+                _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
+            };
 
         match module {
             Ok(base) => Ok(base.into()),
@@ -149,13 +151,14 @@ impl Module {
         let init = try_term_iter_cloned(&init)?;
         let flow = try_term_iter_cloned(&flow)?;
 
-        let module = match (obs, ctrl, extl, intf, prvt) {
-            (Some(obs), None, None, None, None) => {
-                let obs = try_wire2_iter_cloned(obs)?;
-                base::Module::differential(obs, init, flow)
-            }
-            _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
-        };
+        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
+            match (obs, ctrl, extl, intf, prvt) {
+                (Some(obs), None, None, None, None) => {
+                    let obs = try_wire2_iter_cloned(obs)?;
+                    base::Module::differential(obs, init, flow)
+                }
+                _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
+            };
 
         match module {
             Ok(base) => Ok(base.into()),
@@ -226,8 +229,8 @@ impl Module {
     }
 }
 
-impl From<base::Module<Any, Any, Any>> for Module {
-    fn from(base: base::Module<Any, Any, Any>) -> Self {
+impl From<base::Module<Combinatorial, Sequential, Differential>> for Module {
+    fn from(base: base::Module<Combinatorial, Sequential, Differential>) -> Self {
         Self { base }
     }
 }
