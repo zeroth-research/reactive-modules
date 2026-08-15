@@ -55,27 +55,24 @@ impl From<lra::Sort> for Sort {
     }
 }
 
-impl<E> TryFrom<Result<Sort, E>> for bv::Sort {
+impl<E: fmt::Display> TryFrom<Result<Sort, E>> for bv::Sort {
     type Error = String;
     fn try_from(value: Result<Sort, E>) -> Result<Self, Self::Error> {
-        let sort = value.map_err(|_| "invalid cast")?;
-        sort.try_into()
+        value.map_err(|e| e.to_string())?.try_into()
     }
 }
 
-impl<E> TryFrom<Result<Sort, E>> for lia::Sort {
+impl<E: fmt::Display> TryFrom<Result<Sort, E>> for lia::Sort {
     type Error = String;
     fn try_from(value: Result<Sort, E>) -> Result<Self, Self::Error> {
-        let sort = value.map_err(|_| "invalid cast")?;
-        sort.try_into()
+        value.map_err(|e| e.to_string())?.try_into()
     }
 }
 
-impl<E> TryFrom<Result<Sort, E>> for lra::Sort {
+impl<E: fmt::Display> TryFrom<Result<Sort, E>> for lra::Sort {
     type Error = String;
     fn try_from(value: Result<Sort, E>) -> Result<Self, Self::Error> {
-        let sort = value.map_err(|_| "invalid cast")?;
-        sort.try_into()
+        value.map_err(|e| e.to_string())?.try_into()
     }
 }
 
@@ -216,11 +213,11 @@ impl Theory for Any {
     type Sort = Sort;
     const NAME: &'static str = "Any";
 
-    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
+        S: TryInto<Sort, Error = E>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>,
     {
         let read = read.into_iter().map(TryInto::try_into);
         let write = write.into_iter().map(TryInto::try_into);
@@ -239,11 +236,11 @@ impl Theory for Sequential {
     type Sort = Sort;
     const NAME: &'static str = "Sequential";
 
-    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
+        S: TryInto<Sort, Error = E>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>,
     {
         let read = read.into_iter().map(TryInto::try_into);
         let write = write.into_iter().map(TryInto::try_into);
@@ -261,11 +258,11 @@ impl Theory for Combinatorial {
     type Sort = Sort;
     const NAME: &'static str = "Combinatorial";
 
-    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
+        S: TryInto<Sort, Error = E>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>,
     {
         let read = read.into_iter().map(TryInto::try_into);
         let write = write.into_iter().map(TryInto::try_into);
@@ -282,11 +279,11 @@ impl Theory for Differential {
     type Sort = Sort;
     const NAME: &'static str = "Differential";
 
-    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
+        S: TryInto<Sort, Error = E>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>,
     {
         let read = read.into_iter().map(TryInto::try_into);
         let write = write.into_iter().map(TryInto::try_into);

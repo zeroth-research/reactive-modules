@@ -13,9 +13,9 @@ impl Theory for Ops {
     type Sort = &'static str;
     const NAME: &'static str = "Ops";
 
-    fn check<R, W, S>(&self, _read: R, _write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        S: TryInto<Self::Sort>,
+        S: TryInto<Self::Sort, Error = E>,
         R: IntoIterator<Item = S>,
         W: IntoIterator<Item = S>,
     {
@@ -621,11 +621,11 @@ struct DifOps(&'static str);
 impl Theory for SeqOps {
     type Sort = &'static str;
     const NAME: &'static str = "SeqOps";
-    fn check<R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        D: TryInto<Self::Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
+        S: TryInto<Self::Sort, Error = E>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>,
     {
         Ok(())
     }
@@ -634,11 +634,11 @@ impl Theory for SeqOps {
 impl Theory for DifOps {
     type Sort = &'static str;
     const NAME: &'static str = "DifOps";
-    fn check<R, W, D>(&self, _read: R, _write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        D: TryInto<Self::Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
+        S: TryInto<Self::Sort, Error = E>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>,
     {
         Ok(())
     }

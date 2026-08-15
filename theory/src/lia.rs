@@ -127,11 +127,11 @@ impl Theory for LIA {
     type Sort = Sort;
     const NAME: &'static str = "LIA";
 
-    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
+        S: TryInto<Sort, Error = E>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>,
     {
         match self {
             LIA::Const(cm) => check_const(cm, read, write),
@@ -191,6 +191,7 @@ impl Theory for LIA {
 fn check_const<R, W, D>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Sort>,
+    D::Error: fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -241,6 +242,7 @@ where
 fn check_bool<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Sort>,
+    D::Error: fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -296,6 +298,7 @@ where
 fn check_cmp<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Sort>,
+    D::Error: fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -323,6 +326,7 @@ where
 fn check_mat_ops<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Sort>,
+    D::Error: fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -413,6 +417,7 @@ fn check_linear_affine<D>(
 ) -> Result<(), String>
 where
     D: TryInto<Sort>,
+    D::Error: fmt::Display,
 {
     let (r1, None) = (read_nxt(read, 0, "LIA")?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
@@ -474,6 +479,7 @@ where
 fn check_transpose<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Sort>,
+    D::Error: fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
@@ -502,6 +508,7 @@ where
 fn check_flow<R, W, D>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
     D: TryInto<Sort>,
+    D::Error: fmt::Display,
     R: IntoIterator<Item = D>,
     W: IntoIterator<Item = D>,
 {
