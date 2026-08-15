@@ -209,11 +209,11 @@ impl Theory for BV {
     type Sort = Sort;
     const NAME: &'static str = "BV";
 
-    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
+        S: TryInto<Sort, Error = E>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>,
     {
         let mut read = read.into_iter();
         let mut write = write.into_iter();

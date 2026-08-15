@@ -5,6 +5,7 @@ pub mod lra;
 pub mod tensor;
 
 use crate::any::Sort;
+use std::fmt;
 pub use tensor::PyTensor;
 
 pub trait Theory {
@@ -12,11 +13,11 @@ pub trait Theory {
 
     const NAME: &'static str;
 
-    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        D: TryInto<Self::Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>;
+        S: TryInto<Self::Sort, Error = E>,
+        R: IntoIterator<Item = S>,
+        W: IntoIterator<Item = S>;
 }
 
 pub trait Combinatorial: Theory {
@@ -97,10 +98,11 @@ fn read_nxt<R, D, T>(read: &mut R, i: usize, theory: &'static str) -> Result<T, 
 where
     R: Iterator<Item = D>,
     D: TryInto<T>,
+    D::Error: std::fmt::Display,
 {
     if let Some(d) = read.next() {
         d.try_into()
-            .map_err(|_| format!("Read arg {i} not compatible with {theory}"))
+            .map_err(|e| format!("Read arg {i} not compatible with {theory}: {e}"))
     } else {
         Err(format!("Read arg {i} expected, but got none"))
     }
@@ -110,10 +112,11 @@ fn write_nxt<R, D, T>(write: &mut R, i: usize, theory: &'static str) -> Result<T
 where
     R: Iterator<Item = D>,
     D: TryInto<T>,
+    D::Error: std::fmt::Display,
 {
     if let Some(d) = write.next() {
         d.try_into()
-            .map_err(|_| format!("Write arg {i} not compatible with {theory}"))
+            .map_err(|e| format!("Write arg {i} not compatible with {theory}: {e}"))
     } else {
         Err(format!("Write arg {i} expected, but got none"))
     }
