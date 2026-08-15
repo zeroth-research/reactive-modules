@@ -41,6 +41,7 @@ assert!(LIA::ReLU().check([b], [b]).is_err());
 ```
 */
 
+use crate::any::check_havoc;
 use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
@@ -110,10 +111,15 @@ pub enum LIA {
     Ite(),
     Id(),
     Uninterpreted(String),
+    Havoc(),
 }
 
 impl Sequential for LIA {
     const SKIP: Self = Self::Id();
+}
+
+impl Combinatorial for LIA {
+    const HAVOC: Self = Self::Havoc();
 }
 
 impl fmt::Display for LIA {
@@ -141,6 +147,7 @@ impl fmt::Display for LIA {
             LIA::Ite() => write!(f, "Ite"),
             LIA::Id() => write!(f, "Id"),
             LIA::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
+            LIA::Havoc() => write!(f, "Havoc"),
         }
     }
 }
@@ -171,6 +178,7 @@ impl Theory for LIA {
             }
             LIA::Transpose() => check_transpose(self, read, write),
             LIA::Ite() | LIA::Id() => check_flow(self, read, write),
+            LIA::Havoc() => check_havoc(read, write),
 
             LIA::Uninterpreted(_) => {
                 let mut read = read.into_iter();
