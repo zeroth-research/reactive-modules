@@ -41,8 +41,7 @@ assert!(LRA::ReLU().check([b], [b]).is_err());
 ```
 */
 
-use crate::any::check_zero;
-use crate::lra::LRA::Zero;
+use crate::any::{check_havoc, check_zero};
 use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
@@ -113,14 +112,19 @@ pub enum LRA {
     Id(),
     Uninterpreted(String),
     Zero(),
+    Havoc(),
 }
 
 impl Sequential for LRA {
-    const SKIP: Self = Self::Id();
+    const SKIP: Self = LRA::Id();
+}
+
+impl Combinatorial for LRA {
+    const HAVOC: Self = LRA::Havoc();
 }
 
 impl Differential for LRA {
-    const ZERO: Self = Zero();
+    const ZERO: Self = LRA::Zero();
 }
 
 impl fmt::Display for LRA {
@@ -149,6 +153,7 @@ impl fmt::Display for LRA {
             LRA::Id() => write!(f, "Id"),
             LRA::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
             LRA::Zero() => write!(f, "Zero"),
+            LRA::Havoc() => write!(f, "Havoc"),
         }
     }
 }
@@ -166,6 +171,7 @@ impl Theory for LRA {
         match self {
             LRA::Const(cm) => check_const(cm, read, write),
             LRA::Zero() => check_zero(read),
+            LRA::Havoc() => check_havoc(read),
             LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => check_bool(self, read, write),
             LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
                 check_cmp(self, read, write)
@@ -878,5 +884,28 @@ mod tests {
     #[test]
     fn id_type_mismatch_fails() {
         assert!(LRA::Id().check([real(1, 1)], [real(2, 2)]).is_err());
+    }
+
+    #[test]
+    fn id_arity_mismatch_fails() {
+        let t = real(1, 1);
+        assert!(LRA::Id().check([t, t], [t, t]).is_err());
+        assert!(LRA::Id().check([t, t], [t]).is_err());
+        assert!(LRA::Id().check([t], [t, t]).is_err());
+    }
+
+    #[test]
+    fn havoc_ok() {
+        assert!(
+            LRA::Havoc()
+                .check([] as [Sort; 0], [real(2, 1), bool_t(1, 1)])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn havoc_read_fails() {
+        let t = real(1, 1);
+        assert!(LRA::Havoc().check([t], [t]).is_err());
     }
 }

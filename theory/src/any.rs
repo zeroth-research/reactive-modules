@@ -334,14 +334,14 @@ impl crate::Combinatorial for Combinatorial {
     const HAVOC: Self = Combinatorial::HAVOC;
 }
 
-fn check_havoc<R, E>(read: R) -> Result<(), String>
+pub(crate) fn check_havoc<R>(read: R) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<Sort, E>>,
+    R: IntoIterator,
 {
     let mut read = read.into_iter();
     match read.next() {
         None => Ok(()),
-        _ => Err("HAVOC expects no read wires".to_string()),
+        _ => Err("HAVOC expected no read, got some".to_string()),
     }
 }
 

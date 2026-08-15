@@ -147,7 +147,7 @@ where
             {
                 let init = init.iter().flat_map(|t| t.read().ids());
                 let update = update.iter().flat_map(|t| t.read().ids());
-                let delay = delay.iter().flat_map(|t| t.write().ids());
+                let delay = delay.iter().flat_map(|t| t.read().ids());
                 for id in init.chain(update).chain(delay) {
                     debug_assert!(decl.contains_key(&id), "wire {id} undeclared");
                 }
