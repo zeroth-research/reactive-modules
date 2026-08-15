@@ -41,7 +41,6 @@ assert!(LRA::ReLU().check([b], [b]).is_err());
 ```
 */
 
-use crate::any::{check_havoc, check_zero};
 use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
@@ -78,10 +77,11 @@ impl fmt::Display for Sort {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, strum::Display)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LRA {
     // constant matrix literal; its sort (Real or Bool) is taken from the write wire
+    #[strum(to_string = "{0}")]
     Const(crate::PyTensor),
     // boolean operations
     And(),
@@ -110,6 +110,7 @@ pub enum LRA {
     // control flow
     Ite(),
     Id(),
+    #[strum(to_string = "Uninterpreted({0})")]
     Uninterpreted(String),
     Zero(),
     Havoc(),
@@ -125,37 +126,6 @@ impl Combinatorial for LRA {
 
 impl Differential for LRA {
     const ZERO: Self = LRA::Zero();
-}
-
-impl fmt::Display for LRA {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LRA::Const(cm) => write!(f, "{}", cm),
-            LRA::And() => write!(f, "And"),
-            LRA::Or() => write!(f, "Or"),
-            LRA::Xor() => write!(f, "Xor"),
-            LRA::Not() => write!(f, "Not"),
-            LRA::Le() => write!(f, "Le"),
-            LRA::Lt() => write!(f, "Lt"),
-            LRA::Ge() => write!(f, "Ge"),
-            LRA::Gt() => write!(f, "Gt"),
-            LRA::Eq() => write!(f, "Eq"),
-            LRA::Ne() => write!(f, "Ne"),
-            LRA::Linear(..) => write!(f, "Linear"),
-            LRA::Add() => write!(f, "Add"),
-            LRA::Sub() => write!(f, "Sub"),
-            LRA::ReLU() => write!(f, "ReLU"),
-            LRA::Argmax() => write!(f, "Argmax"),
-            LRA::Min() => write!(f, "Min"),
-            LRA::Max() => write!(f, "Max"),
-            LRA::Transpose() => write!(f, "Transpose"),
-            LRA::Ite() => write!(f, "Ite"),
-            LRA::Id() => write!(f, "Id"),
-            LRA::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
-            LRA::Zero() => write!(f, "Zero"),
-            LRA::Havoc() => write!(f, "Havoc"),
-        }
-    }
 }
 
 impl Theory for LRA {
@@ -896,11 +866,7 @@ mod tests {
 
     #[test]
     fn havoc_ok() {
-        assert!(
-            LRA::Havoc()
-                .check([] as [Sort; 0], [real(2, 1)])
-                .is_ok()
-        );
+        assert!(LRA::Havoc().check([] as [Sort; 0], [real(2, 1)]).is_ok());
     }
 
     #[test]
@@ -937,10 +903,6 @@ mod tests {
                 .check([] as [Sort; 0], [real(2, 1), real(1, 1)])
                 .is_err()
         );
-        assert!(
-            LRA::Zero()
-                .check([] as [Sort; 0], [] as [Sort; 0])
-                .is_err()
-        );
+        assert!(LRA::Zero().check([] as [Sort; 0], [] as [Sort; 0]).is_err());
     }
 }

@@ -44,7 +44,6 @@ use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 
-use crate::any::check_havoc;
 use crate::bv::BV::{Havoc, Id};
 use std::fmt;
 use std::fmt::Debug;
@@ -78,10 +77,11 @@ impl fmt::Display for Sort {
 }
 
 /// Theory of bitvector matrices. Operations on bitvectors follow the SMT-LIB2 semantics.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, strum::Display)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum BV {
     /// Create constant BV matrix from a given 2-D tensor
+    #[strum(to_string = "{0}")]
     Const(crate::PyTensor),
     /// Element-wise addition of two BV matrices (arithmetic modulo `2^bitwidth`)
     Add(),
@@ -147,15 +147,18 @@ pub enum BV {
     BVToBool(),
     /// Element-wise extract bits `[high..=low]` (inclusive)
     /// TODO: rename to `extract`, matching MathSAT
+    #[strum(to_string = "BitSelect[{high}:{low}]")]
     BitSelect {
         high: usize,
         low: usize,
     },
     /// Element-wise zero-extend by `extra` bits
+    #[strum(to_string = "Extend(+{extra})")]
     Extend {
         extra: usize,
     },
     /// Uninterpreted symbol
+    #[strum(to_string = "Uninterpreted({0})")]
     Uninterpreted(String),
     Havoc(),
 }
@@ -166,45 +169,6 @@ impl Sequential for BV {
 
 impl Combinatorial for BV {
     const HAVOC: Self = Havoc();
-}
-
-impl fmt::Display for BV {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BV::Const(cm) => write!(f, "{}", cm),
-            BV::And() => write!(f, "And"),
-            BV::Or() => write!(f, "Or"),
-            BV::Xor() => write!(f, "Xor"),
-            BV::Not() => write!(f, "Not"),
-            BV::SLe() => write!(f, "SLe"),
-            BV::SLt() => write!(f, "SLt"),
-            BV::SGe() => write!(f, "SGe"),
-            BV::SGt() => write!(f, "SGt"),
-            BV::ULe() => write!(f, "ULe"),
-            BV::ULt() => write!(f, "ULt"),
-            BV::UGe() => write!(f, "UGe"),
-            BV::UGt() => write!(f, "UGt"),
-            BV::Eq() => write!(f, "Eq"),
-            BV::Ne() => write!(f, "Ne"),
-            BV::Add() => write!(f, "Add"),
-            BV::Sub() => write!(f, "Sub"),
-            BV::Neg() => write!(f, "Neg"),
-            BV::Abs() => write!(f, "Abs"),
-            BV::Mul() => write!(f, "Mul"),
-            BV::UDiv() => write!(f, "UDiv"),
-            BV::SDiv() => write!(f, "SDiv"),
-            BV::UMod() => write!(f, "UMod"),
-            BV::SMod() => write!(f, "SMod"),
-            BV::MatMul() => write!(f, "MatMul"),
-            BV::Ite() => write!(f, "Ite"),
-            BV::Id() => write!(f, "Id"),
-            BV::BVToBool() => write!(f, "BVToBool"),
-            BV::BitSelect { high, low } => write!(f, "BitSelect[{high}:{low}]"),
-            BV::Extend { extra } => write!(f, "Extend(+{extra})"),
-            BV::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
-            BV::Havoc() => write!(f, "Havoc"),
-        }
-    }
 }
 
 fn check_init_dims(cm: &crate::PyTensor, bw: usize, i: usize, j: usize) -> Result<(), String> {
