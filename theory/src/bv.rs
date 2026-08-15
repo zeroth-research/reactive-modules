@@ -44,6 +44,7 @@ use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 
+use crate::any::check_havoc;
 use crate::bv::BV::{Havoc, Id};
 use std::fmt;
 use std::fmt::Debug;
@@ -562,13 +563,7 @@ impl Theory for BV {
                     self
                 ))
             }
-            BV::Havoc() => {
-                if read.next().is_some() {
-                    Err(format!("{:?}: expected no read, got some", self))
-                } else {
-                    Ok(())
-                }
-            }
+            BV::Havoc() => check_havoc(read, write),
         }
     }
 }
