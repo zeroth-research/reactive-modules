@@ -134,21 +134,21 @@ impl From<Term<any::Differential>> for Term<any::Any> {
 impl TryFrom<Term<any::Any>> for Term<any::Sequential> {
     type Error = String;
     fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        Self::try_convert(term)
+        Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 
 impl TryFrom<Term<any::Any>> for Term<any::Combinatorial> {
     type Error = String;
     fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        Self::try_convert(term)
+        Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 
 impl TryFrom<Term<any::Any>> for Term<any::Differential> {
     type Error = String;
     fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        Self::try_convert(term)
+        Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 
