@@ -689,3 +689,93 @@ fn heterogeneous_composition() {
 
     print!("{}", S.unwrap());
 }
+
+/// Builds an open differential module encoding the drifting clocks
+///
+/// ```text
+///     dx = 2 dt
+///     dy = 1 dt
+/// ```
+///
+/// where `t` is an *input*: the module does not control the pair `[t, dt]`,
+/// so it is inferred external and the module is open. The clocks `x` and `y`
+/// drift at rates 2 and 1 relative to `t`, expressed by delay terms that
+/// *await* the input's derivative `dt`: `dx = dt + dt` and `dy = Id(dt)`.
+/// Since the rates are relative to the input clock rather than constant in
+/// absolute time, these are drifting clocks and not a linear ODE.
+#[test]
+fn differential_drifting_clocks() {
+    use std::collections::HashSet;
+    use theory::lra::{LRA, Sort};
+
+    // Real scalars: 1x1 matrices.
+    let scalar = Sort::Real([1, 1]);
+    // The input clock and its derivative.
+    let t = Wire::new(scalar);
+    let dt = Wire::new(scalar);
+    // The drifting clocks and their derivatives.
+    let x = Wire::new(scalar);
+    let y = Wire::new(scalar);
+    let dx = Wire::new(scalar);
+    let dy = Wire::new(scalar);
+
+    // delay: the derivatives, both driven by the input's derivative `dt`.
+    let delay = [
+        // dx = 2 dt, synthesised tensor-free as dt + dt
+        Term::function(LRA::Add(), [dx.clone()], [dt.clone(), dt.clone()]).unwrap(),
+        // dy = 1 dt
+        Term::function(LRA::Id(), [dy.clone()], [dt.clone()]).unwrap(),
+    ];
+
+    // init: the initial derivatives are left unconstrained (Havoc). Every
+    // controlled wire must be written by the init block too.
+    let init = [
+        Term::constant(LRA::Havoc(), [dx.clone()]).unwrap(),
+        Term::constant(LRA::Havoc(), [dy.clone()]).unwrap(),
+    ];
+
+    // `[latched, derived]` pairs: the two clocks and the input. The atom
+    // writes only `dx` and `dy`, so `[t, dt]` is inferred external.
+    let obs = [
+        [x.clone(), dx.clone()],
+        [y.clone(), dy.clone()],
+        [t.clone(), dt.clone()],
+    ];
+
+    let module: base::Module<LRA, LRA, LRA> = base::Module::differential(obs, init, delay)
+        .expect("differential module should be well-formed");
+
+    // An open module: the input clock is external.
+    assert!(module.is_open());
+    let extl: HashSet<usize> = module.extl().latched().iter().map(Wire::id).collect();
+    assert_eq!(extl, HashSet::from([t.id()]));
+
+    // The clocks are controlled by the module, hence interface wires.
+    let intf: HashSet<usize> = module.intf().latched().iter().map(Wire::id).collect();
+    assert_eq!(intf, HashSet::from([x.id(), y.id()]));
+
+    // The differential constructor produces exactly one atom.
+    assert_eq!(module.atoms().len(), 1);
+    let atom = &module.atoms()[0];
+
+    // The atom controls the clock derivatives, reads the clocks themselves
+    // (for the implicit skip update), and awaits the input's derivative.
+    let ctrl: HashSet<usize> = atom.ctrl().ids().collect();
+    assert_eq!(ctrl, HashSet::from([dx.id(), dy.id()]));
+
+    let read: HashSet<usize> = atom.read().ids().collect();
+    assert_eq!(read, HashSet::from([x.id(), y.id()]));
+
+    let wait: HashSet<usize> = atom.wait().ids().collect();
+    assert_eq!(wait, HashSet::from([dt.id()]));
+
+    // Block sizes: 2 derivative terms, 2 init terms, and the update is the
+    // implicit `skip` synthesised by the constructor, one term per
+    // controlled wire.
+    assert_eq!(atom.delay().len(), 2);
+    assert_eq!(atom.init().len(), 2);
+    assert_eq!(atom.update().len(), 2);
+
+    // All three variables are observable.
+    assert_eq!(module.obs().len(), 3);
+}

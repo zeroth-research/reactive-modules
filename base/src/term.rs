@@ -320,8 +320,14 @@ impl<D: Differential> Block<D>
 where
     D::Sort: Clone + Eq,
 {
+    /// Builds a block of one `ZERO` term per write wire, so that theories can
+    /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
+    /// the compute graph.
     pub(crate) fn zero<W: IntoIterator<Item = Wire<D::Sort>>>(write: W) -> Result<Self, String> {
-        let delay = std::iter::once(Term::constant(D::ZERO, write)?);
+        let delay = write
+            .into_iter()
+            .map(|w| Term::constant(D::ZERO, [w]))
+            .collect::<Result<Vec<_>, _>>()?;
         Block::try_from_iter(delay)
     }
 }
@@ -330,6 +336,10 @@ impl<J: Sequential> Block<J>
 where
     J::Sort: Clone + Eq,
 {
+    /// Builds a block of one `SKIP` term per `(write, read)` wire pair, so
+    /// that theories can keep `SKIP` at a fixed arity and each pair is an
+    /// independent edge in the compute graph (no spurious dependency of one
+    /// write on all the other reads).
     pub(crate) fn skip<
         W: IntoIterator<Item = Wire<J::Sort>>,
         R: IntoIterator<Item = Wire<J::Sort>>,
@@ -337,7 +347,16 @@ where
         write: W,
         read: R,
     ) -> Result<Self, String> {
-        let update = std::iter::once(Term::function(J::SKIP, write, read)?);
+        let mut write = write.into_iter();
+        let mut read = read.into_iter();
+        let mut update = Vec::new();
+        loop {
+            match (write.next(), read.next()) {
+                (Some(w), Some(r)) => update.push(Term::function(J::SKIP, [w], [r])?),
+                (None, None) => break,
+                _ => return Err("skip requires as many write as read wires".to_string()),
+            }
+        }
         Block::try_from_iter(update)
     }
 }
