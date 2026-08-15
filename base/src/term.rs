@@ -92,6 +92,11 @@ where
 }
 
 impl<T: Theory> Term<T> {
+    /// Re-types a term along an infallible theory embedding (`U: Into<T>`).
+    ///
+    /// Only the instruction is converted; the wires are untouched, so a term
+    /// that was well-formed over `U` stays well-formed over `T` and no
+    /// re-validation is needed.
     fn convert<U>(term: Term<U>) -> Self
     where
         U: Theory<Sort = T::Sort> + Into<T>,
@@ -261,9 +266,18 @@ impl<T: Theory> Block<T>
 where
     T::Sort: Eq + Clone,
 {
-    pub(crate) fn try_from_iter<U, V: IntoIterator<Item = Term<U>>>(iter: V) -> Result<Self, String>
+    /// Builds a block from an iterator of *fallible* elements, mirroring the
+    /// standard library's `FromIterator<Result<A, E>> for Result<V, E>`: the
+    /// first `Err` element short-circuits and is returned as the block's
+    /// error. Elements over a convertible theory (`U: Into<T>`) are embedded
+    /// into `T`. Infallible sources wrap their terms with `.map(Ok)`.
+    ///
+    /// The error type is fixed to `String` — the crate's uniform error
+    /// model — so that `Ok` needs no annotation at infallible call sites.
+    pub(crate) fn try_from_iter<U, V>(iter: V) -> Result<Self, String>
     where
         U: Theory<Sort = T::Sort> + Into<T>,
+        V: IntoIterator<Item = Result<Term<U>, String>>,
     {
         let mut read_set: HashSet<usize> = HashSet::new();
         let mut write_to_dtype: HashMap<usize, &T::Sort> = HashMap::new();
@@ -271,10 +285,10 @@ where
         let mut read: Vec<Wire<T::Sort>> = Vec::new();
         let mut write: Vec<Wire<T::Sort>> = Vec::new();
 
-        let terms: Vec<Term<T>> = Vec::from_iter(
-            iter.into_iter()
-                .map(|t| Term::new_unchecked(t.itype.into(), t.write, t.read)),
-        );
+        let terms: Vec<Term<T>> = iter
+            .into_iter()
+            .map(|t| t.map(Term::convert))
+            .collect::<Result<_, _>>()?;
 
         for term in terms.iter() {
             for rd in term.read().wires() {
@@ -324,11 +338,7 @@ where
     /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
     /// the compute graph.
     pub(crate) fn zero<W: IntoIterator<Item = Wire<D::Sort>>>(write: W) -> Result<Self, String> {
-        let delay = write
-            .into_iter()
-            .map(|w| Term::constant(D::ZERO, [w]))
-            .collect::<Result<Vec<_>, _>>()?;
-        Block::try_from_iter(delay)
+        Block::try_from_iter(write.into_iter().map(|w| Term::constant(D::ZERO, [w])))
     }
 }
 
@@ -349,15 +359,13 @@ where
     ) -> Result<Self, String> {
         let mut write = write.into_iter();
         let mut read = read.into_iter();
-        let mut update = Vec::new();
-        loop {
+        Block::try_from_iter(std::iter::from_fn(move || {
             match (write.next(), read.next()) {
-                (Some(w), Some(r)) => update.push(Term::function(J::SKIP, [w], [r])?),
-                (None, None) => break,
-                _ => return Err("skip requires as many write as read wires".to_string()),
+                (Some(w), Some(r)) => Some(Term::function(J::SKIP, [w], [r])),
+                (None, None) => None,
+                _ => Some(Err("skip requires as many write as read wires".to_string())),
             }
-        }
-        Block::try_from_iter(update)
+        }))
     }
 }
 
