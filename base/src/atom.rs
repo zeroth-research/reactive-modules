@@ -282,8 +282,8 @@ where
         let latched: HashMap<usize, &S> = latched.into_iter().map(Into::into).collect();
         let next: HashMap<usize, &S> = next.into_iter().map(Into::into).collect();
 
-        let init = Block::try_from_iter(init)?;
-        let update = Block::try_from_iter(update)?;
+        let init = Block::try_from_iter(init.into_iter().map(Ok))?;
+        let update = Block::try_from_iter(update.into_iter().map(Ok))?;
 
         let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
         let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
@@ -406,8 +406,8 @@ where
             derived.insert(d.clone(), l.clone());
         }
 
-        let init = Block::try_from_iter(init)?;
-        let delay = Block::try_from_iter(delay)?;
+        let init = Block::try_from_iter(init.into_iter().map(Ok))?;
+        let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
 
         let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
         let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
@@ -539,7 +539,7 @@ where
         S: 'a,
     {
         let next: HashMap<usize, &S> = next.into_iter().map(Into::into).collect();
-        let assign: Block<T> = Block::try_from_iter(assign)?;
+        let assign: Block<T> = Block::try_from_iter(assign.into_iter().map(Ok))?;
 
         let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
         let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
@@ -576,8 +576,8 @@ where
             }
         }
 
-        let init: Block<I> = Block::try_from_iter(assign.iter().cloned())?;
-        let update: Block<J> = Block::try_from_iter(assign)?;
+        let init: Block<I> = Block::try_from_iter(assign.iter().cloned().map(Ok))?;
+        let update: Block<J> = Block::try_from_iter(assign.into_iter().map(Ok))?;
         let delay = Block::zero(ctrl.clone().into_values())?;
 
         Ok(Self::new_unchecked(
