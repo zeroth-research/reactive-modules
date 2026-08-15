@@ -41,7 +41,6 @@ assert!(LIA::ReLU().check([b], [b]).is_err());
 ```
 */
 
-use crate::any::check_havoc;
 use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
@@ -78,10 +77,11 @@ impl fmt::Display for Sort {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, strum::Display)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LIA {
     // constant matrix literal; its sort (Int or Bool) is taken from the write wire
+    #[strum(to_string = "{0}")]
     Const(crate::PyTensor),
     // boolean operations
     And(),
@@ -110,6 +110,7 @@ pub enum LIA {
     // control flow
     Ite(),
     Id(),
+    #[strum(to_string = "Uninterpreted({0})")]
     Uninterpreted(String),
     Havoc(),
 }
@@ -120,36 +121,6 @@ impl Sequential for LIA {
 
 impl Combinatorial for LIA {
     const HAVOC: Self = Self::Havoc();
-}
-
-impl fmt::Display for LIA {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LIA::Const(cm) => write!(f, "{}", cm),
-            LIA::And() => write!(f, "And"),
-            LIA::Or() => write!(f, "Or"),
-            LIA::Xor() => write!(f, "Xor"),
-            LIA::Not() => write!(f, "Not"),
-            LIA::Le() => write!(f, "Le"),
-            LIA::Lt() => write!(f, "Lt"),
-            LIA::Ge() => write!(f, "Ge"),
-            LIA::Gt() => write!(f, "Gt"),
-            LIA::Eq() => write!(f, "Eq"),
-            LIA::Ne() => write!(f, "Ne"),
-            LIA::Linear(..) => write!(f, "Linear"),
-            LIA::Add() => write!(f, "Add"),
-            LIA::Sub() => write!(f, "Sub"),
-            LIA::ReLU() => write!(f, "ReLU"),
-            LIA::Argmax() => write!(f, "Argmax"),
-            LIA::Min() => write!(f, "Min"),
-            LIA::Max() => write!(f, "Max"),
-            LIA::Transpose() => write!(f, "Transpose"),
-            LIA::Ite() => write!(f, "Ite"),
-            LIA::Id() => write!(f, "Id"),
-            LIA::Uninterpreted(name) => write!(f, "Uninterpreted({name})"),
-            LIA::Havoc() => write!(f, "Havoc"),
-        }
-    }
 }
 
 impl Theory for LIA {

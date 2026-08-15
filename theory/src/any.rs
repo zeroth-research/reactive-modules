@@ -1,13 +1,13 @@
-use crate::Combinatorial as _;
-use crate::Differential as _;
-use crate::Sequential as _;
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
 use crate::{Theory, bv, lia, lra};
+use crate::{check_havoc, check_skip, check_zero};
+use derive_more::From;
 #[cfg(feature = "pyo3")]
 use pyo3::{prelude::*, types::PyString};
 use std::fmt;
+use subenum::subenum;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen, eq))]
@@ -114,51 +114,50 @@ impl TryFrom<Sort> for lra::Sort {
     }
 }
 
+//============================================================
+// The cast lattice
+//============================================================
+//
+// Casts between theories follow the hierarchy
+//
+// ```text
+//     LRA -> Combinatorial, Sequential, Differential
+//     LIA -> Combinatorial, Sequential
+//     BV  -> Combinatorial, Sequential
+//     Combinatorial -> Sequential
+//     Sequential    -> Any
+//     Differential  -> Any
+// ```
+//
+// with `From` going up. Downward, only the casts from `Any` to the
+// catch-alls exist (they serve the Python boundary, which builds typed
+// blocks from `Any` terms); casting down to the base theories is unused and
+// intentionally not implemented.
+//
+// `subenum` defines the catch-alls as tagged subsets of `Any` -- generating
+// the sub-enums themselves, the casts between each subset and `Any`, and
+// (via the propagated derives) the `From` wraps of base-theory ops and the
+// `Display` impls.
+
+#[subenum(Combinatorial, Differential, Sequential)]
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From, strum::Display)]
 pub enum Any {
+    #[subenum(Combinatorial, Sequential)]
     HAVOC,
+    #[subenum(Sequential)]
     SKIP,
+    #[subenum(Differential)]
     ZERO,
+    #[subenum(Combinatorial, Differential, Sequential)]
+    #[strum(to_string = "{0}")]
     LRA(LRA),
+    #[subenum(Combinatorial, Sequential)]
+    #[strum(to_string = "{0}")]
     LIA(LIA),
+    #[subenum(Combinatorial, Sequential)]
+    #[strum(to_string = "{0}")]
     BV(BV),
-}
-
-impl fmt::Display for Any {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Any::HAVOC => write!(f, "HAVOC"),
-            Any::SKIP => write!(f, "SKIP"),
-            Any::ZERO => write!(f, "ZERO"),
-            Any::LRA(op) => write!(f, "{}", op),
-            Any::LIA(op) => write!(f, "{}", op),
-            Any::BV(op) => write!(f, "{}", op),
-        }
-    }
-}
-
-impl Theory for Any {
-    type Sort = Sort;
-    const NAME: &'static str = "Any";
-
-    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
-    where
-        D: TryInto<Sort>,
-        R: IntoIterator<Item = D>,
-        W: IntoIterator<Item = D>,
-    {
-        let read = read.into_iter().map(TryInto::try_into);
-        let write = write.into_iter().map(TryInto::try_into);
-        match &self {
-            Any::HAVOC => check_havoc(read, write),
-            Any::SKIP => check_skip(read, write),
-            Any::ZERO => check_zero(read, write),
-            Any::LRA(itype) => itype.check(read, write),
-            Any::LIA(itype) => itype.check(read, write),
-            Any::BV(itype) => itype.check(read, write),
-        }
-    }
 }
 
 #[cfg(feature = "pyo3")]
@@ -197,70 +196,6 @@ impl<'py> IntoPyObject<'py> for Any {
     }
 }
 
-impl From<BV> for Any {
-    fn from(bv: BV) -> Self {
-        Any::BV(bv)
-    }
-}
-
-impl From<LIA> for Any {
-    fn from(lia: LIA) -> Self {
-        Any::LIA(lia)
-    }
-}
-
-impl From<LRA> for Any {
-    fn from(lra: LRA) -> Self {
-        Any::LRA(lra)
-    }
-}
-
-impl TryFrom<Any> for BV {
-    type Error = String;
-    fn try_from(value: Any) -> Result<Self, Self::Error> {
-        match value {
-            Any::SKIP => Ok(BV::SKIP),
-            Any::HAVOC => Ok(BV::HAVOC),
-            Any::BV(bv) => Ok(bv),
-            _ => Err("invalid cast".to_string()),
-        }
-    }
-}
-
-impl TryFrom<Any> for LIA {
-    type Error = String;
-    fn try_from(value: Any) -> Result<Self, Self::Error> {
-        match value {
-            Any::SKIP => Ok(LIA::SKIP),
-            Any::HAVOC => Ok(LIA::HAVOC),
-            Any::LIA(lia) => Ok(lia),
-            _ => Err("invalid cast".to_string()),
-        }
-    }
-}
-
-impl TryFrom<Any> for LRA {
-    type Error = String;
-    fn try_from(value: Any) -> Result<Self, Self::Error> {
-        match value {
-            Any::SKIP => Ok(LRA::SKIP),
-            Any::HAVOC => Ok(LRA::HAVOC),
-            Any::ZERO => Ok(LRA::ZERO),
-            Any::LRA(lra) => Ok(lra),
-            _ => Err("invalid cast".to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Sequential {
-    HAVOC,
-    SKIP,
-    BV(BV),
-    LRA(LRA),
-    LIA(LIA),
-}
-
 impl crate::Sequential for Sequential {
     const SKIP: Self = Sequential::SKIP;
 }
@@ -269,388 +204,109 @@ impl crate::Combinatorial for Sequential {
     const HAVOC: Self = Sequential::HAVOC;
 }
 
-// SKIP is unary: it copies exactly one read wire to one write wire of the
-// same sort, matching the arity of the base theories' `Id`.
-fn check_skip<R, W, E>(read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator<Item = Result<Sort, E>>,
-    W: IntoIterator<Item = Result<Sort, E>>,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    match (read.next(), write.next()) {
-        (Some(Ok(r)), Some(Ok(w))) if r == w => {}
-        _ => {
-            return Err(
-                "SKIP expects exactly one read and one write of the same sort".to_string(),
-            );
-        }
-    }
-    if read.next().is_some() || write.next().is_some() {
-        return Err("SKIP expects exactly one read and one write".to_string());
-    }
-    Ok(())
-}
-
-impl Theory for Sequential {
-    type Sort = Sort;
-    const NAME: &'static str = "Sequential";
-    fn check<R, W, S>(&self, read: R, write: W) -> Result<(), String>
-    where
-        S: TryInto<Sort>,
-        W: IntoIterator<Item = S>,
-        R: IntoIterator<Item = S>,
-    {
-        let read = read.into_iter().map(TryInto::try_into);
-        let write = write.into_iter().map(TryInto::try_into);
-        match &self {
-            Sequential::HAVOC => check_havoc(read, write),
-            Sequential::SKIP => check_skip(read, write),
-            Sequential::BV(itype) => itype.check(read, write),
-            Sequential::LRA(itype) => itype.check(read, write),
-            Sequential::LIA(itype) => itype.check(read, write),
-        }
-    }
-}
-
-impl fmt::Display for Sequential {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Sequential::HAVOC => write!(f, "HAVOC"),
-            Sequential::SKIP => write!(f, "SKIP"),
-            Sequential::BV(bv) => write!(f, "{}", bv),
-            Sequential::LRA(lra) => write!(f, "{}", lra),
-            Sequential::LIA(lia) => write!(f, "{}", lia),
-        }
-    }
-}
-
-impl TryFrom<Any> for Sequential {
-    type Error = String;
-    fn try_from(any: Any) -> Result<Self, Self::Error> {
-        match any {
-            Any::HAVOC => Ok(Sequential::HAVOC),
-            Any::SKIP => Ok(Sequential::SKIP),
-            Any::BV(bv) => Ok(Sequential::BV(bv)),
-            Any::LIA(lia) => Ok(Sequential::LIA(lia)),
-            Any::LRA(lra) => Ok(Sequential::LRA(lra)),
-            _ => Err(format!("{} is not in a sequential theory", any)),
-        }
-    }
-}
-
-impl From<Sequential> for Any {
-    fn from(sequential: Sequential) -> Self {
-        match sequential {
-            Sequential::HAVOC => Any::HAVOC,
-            Sequential::SKIP => Any::SKIP,
-            Sequential::BV(bv) => Any::BV(bv),
-            Sequential::LRA(lra) => Any::LRA(lra),
-            Sequential::LIA(lia) => Any::LIA(lia),
-        }
-    }
-}
-
-impl From<BV> for Sequential {
-    fn from(bv: BV) -> Self {
-        Sequential::BV(bv)
-    }
-}
-
-impl From<LIA> for Sequential {
-    fn from(lia: LIA) -> Self {
-        Sequential::LIA(lia)
-    }
-}
-
-impl From<LRA> for Sequential {
-    fn from(lra: LRA) -> Self {
-        Sequential::LRA(lra)
-    }
-}
-
-impl TryFrom<Sequential> for BV {
-    type Error = String;
-    fn try_from(value: Sequential) -> Result<Self, Self::Error> {
-        match value {
-            Sequential::SKIP => Ok(BV::SKIP),
-            Sequential::BV(bv) => Ok(bv),
-            _ => Err("invalid cast".to_string()),
-        }
-    }
-}
-
-impl TryFrom<Sequential> for LIA {
-    type Error = String;
-    fn try_from(value: Sequential) -> Result<Self, Self::Error> {
-        match value {
-            Sequential::SKIP => Ok(LIA::SKIP),
-            Sequential::LIA(lia) => Ok(lia),
-            _ => Err("invalid cast".to_string()),
-        }
-    }
-}
-
-impl TryFrom<Sequential> for LRA {
-    type Error = String;
-    fn try_from(value: Sequential) -> Result<Self, Self::Error> {
-        match value {
-            Sequential::SKIP => Ok(LRA::SKIP),
-            Sequential::LRA(lra) => Ok(lra),
-            _ => Err("invalid cast".to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Combinatorial {
-    HAVOC,
-    BV(BV),
-    LRA(LRA),
-    LIA(LIA),
-}
-
 impl crate::Combinatorial for Combinatorial {
     const HAVOC: Self = Combinatorial::HAVOC;
-}
-
-// HAVOC is unary: it writes exactly one wire and reads none.
-pub(crate) fn check_havoc<R, W>(read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator,
-    W: IntoIterator,
-{
-    if read.into_iter().next().is_some() {
-        return Err("HAVOC expects no read wires".to_string());
-    }
-    let mut write = write.into_iter();
-    if write.next().is_none() {
-        return Err("HAVOC expects exactly one write wire, got none".to_string());
-    }
-    if write.next().is_some() {
-        return Err("HAVOC expects exactly one write wire, got more".to_string());
-    }
-    Ok(())
-}
-
-impl Theory for Combinatorial {
-    type Sort = Sort;
-    const NAME: &'static str = "Combinatorial";
-    fn check<R, W, S>(&self, read: R, write: W) -> Result<(), String>
-    where
-        S: TryInto<Sort>,
-        W: IntoIterator<Item = S>,
-        R: IntoIterator<Item = S>,
-    {
-        let read = read.into_iter().map(TryInto::try_into);
-        let write = write.into_iter().map(TryInto::try_into);
-        match &self {
-            Combinatorial::HAVOC => check_havoc(read, write),
-            Combinatorial::BV(itype) => itype.check(read, write),
-            Combinatorial::LRA(itype) => itype.check(read, write),
-            Combinatorial::LIA(itype) => itype.check(read, write),
-        }
-    }
-}
-
-impl fmt::Display for Combinatorial {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Combinatorial::HAVOC => write!(f, "HAVOC"),
-            Combinatorial::BV(bv) => write!(f, "{}", bv),
-            Combinatorial::LRA(lra) => write!(f, "{}", lra),
-            Combinatorial::LIA(lia) => write!(f, "{}", lia),
-        }
-    }
-}
-
-impl TryFrom<Any> for Combinatorial {
-    type Error = String;
-    fn try_from(any: Any) -> Result<Self, Self::Error> {
-        match any {
-            Any::HAVOC => Ok(Combinatorial::HAVOC),
-            Any::BV(bv) => Ok(Combinatorial::BV(bv)),
-            Any::LIA(lia) => Ok(Combinatorial::LIA(lia)),
-            Any::LRA(lra) => Ok(Combinatorial::LRA(lra)),
-            _ => Err(format!("{} is not in a combinatorial theory", any)),
-        }
-    }
-}
-
-impl From<Combinatorial> for Any {
-    fn from(combinatorial: Combinatorial) -> Self {
-        match combinatorial {
-            Combinatorial::HAVOC => Any::HAVOC,
-            Combinatorial::BV(bv) => Any::BV(bv),
-            Combinatorial::LRA(lra) => Any::LRA(lra),
-            Combinatorial::LIA(lia) => Any::LIA(lia),
-        }
-    }
-}
-
-impl From<Combinatorial> for Sequential {
-    fn from(combinatorial: Combinatorial) -> Self {
-        match combinatorial {
-            Combinatorial::HAVOC => Sequential::HAVOC,
-            Combinatorial::BV(bv) => Sequential::BV(bv),
-            Combinatorial::LRA(lra) => Sequential::LRA(lra),
-            Combinatorial::LIA(lia) => Sequential::LIA(lia),
-        }
-    }
-}
-
-impl TryFrom<Sequential> for Combinatorial {
-    type Error = String;
-    fn try_from(value: Sequential) -> Result<Self, Self::Error> {
-        match value {
-            Sequential::HAVOC => Ok(Combinatorial::HAVOC),
-            Sequential::BV(bv) => Ok(Combinatorial::BV(bv)),
-            Sequential::LRA(lra) => Ok(Combinatorial::LRA(lra)),
-            Sequential::LIA(lia) => Ok(Combinatorial::LIA(lia)),
-            Sequential::SKIP => Err("SKIP is not in a combinatorial theory".to_string()),
-        }
-    }
-}
-
-impl From<BV> for Combinatorial {
-    fn from(bv: BV) -> Self {
-        Combinatorial::BV(bv)
-    }
-}
-
-impl From<LIA> for Combinatorial {
-    fn from(lia: LIA) -> Self {
-        Combinatorial::LIA(lia)
-    }
-}
-
-impl From<LRA> for Combinatorial {
-    fn from(lra: LRA) -> Self {
-        Combinatorial::LRA(lra)
-    }
-}
-
-impl TryFrom<Combinatorial> for BV {
-    type Error = String;
-    fn try_from(value: Combinatorial) -> Result<Self, Self::Error> {
-        match value {
-            Combinatorial::HAVOC => Ok(BV::HAVOC),
-            Combinatorial::BV(bv) => Ok(bv),
-            _ => Err("invalid cast".to_string()),
-        }
-    }
-}
-
-impl TryFrom<Combinatorial> for LIA {
-    type Error = String;
-    fn try_from(value: Combinatorial) -> Result<Self, Self::Error> {
-        match value {
-            Combinatorial::HAVOC => Ok(LIA::HAVOC),
-            Combinatorial::LIA(lia) => Ok(lia),
-            _ => Err("invalid cast".to_string()),
-        }
-    }
-}
-
-impl TryFrom<Combinatorial> for LRA {
-    type Error = String;
-    fn try_from(value: Combinatorial) -> Result<Self, Self::Error> {
-        match value {
-            Combinatorial::HAVOC => Ok(LRA::HAVOC),
-            Combinatorial::LRA(lra) => Ok(lra),
-            _ => Err("invalid cast".to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Differential {
-    ZERO,
-    LRA(LRA),
-}
-
-// ZERO is unary: it writes exactly one wire and reads none.
-pub(crate) fn check_zero<R, W>(read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator,
-    W: IntoIterator,
-{
-    if read.into_iter().next().is_some() {
-        return Err("ZERO expects no read wires".to_string());
-    }
-    let mut write = write.into_iter();
-    if write.next().is_none() {
-        return Err("ZERO expects exactly one write wire, got none".to_string());
-    }
-    if write.next().is_some() {
-        return Err("ZERO expects exactly one write wire, got more".to_string());
-    }
-    Ok(())
-}
-
-impl Theory for Differential {
-    type Sort = Sort;
-    const NAME: &'static str = "Differential";
-    fn check<R, W, S>(&self, read: R, write: W) -> Result<(), String>
-    where
-        S: TryInto<Sort>,
-        W: IntoIterator<Item = S>,
-        R: IntoIterator<Item = S>,
-    {
-        let read = read.into_iter().map(TryInto::try_into);
-        let write = write.into_iter().map(TryInto::try_into);
-        match &self {
-            Differential::ZERO => check_zero(read, write),
-            Differential::LRA(itype) => itype.check(read, write),
-        }
-    }
 }
 
 impl crate::Differential for Differential {
     const ZERO: Self = Differential::ZERO;
 }
 
-impl fmt::Display for Differential {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Theory for Any {
+    type Sort = Sort;
+    const NAME: &'static str = "Any";
+
+    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    where
+        D: TryInto<Sort>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+    {
+        let read = read.into_iter().map(TryInto::try_into);
+        let write = write.into_iter().map(TryInto::try_into);
         match self {
-            Differential::ZERO => write!(f, "ZERO"),
-            Differential::LRA(lra) => write!(f, "{}", lra),
+            Any::HAVOC => check_havoc(read, write),
+            Any::SKIP => check_skip(read, write),
+            Any::ZERO => check_zero(read, write),
+            Any::LRA(itype) => itype.check(read, write),
+            Any::LIA(itype) => itype.check(read, write),
+            Any::BV(itype) => itype.check(read, write),
         }
     }
 }
 
-impl TryFrom<Any> for Differential {
-    type Error = String;
-    fn try_from(any: Any) -> Result<Self, Self::Error> {
-        match any {
-            Any::ZERO => Ok(Differential::ZERO),
-            Any::LRA(lra) => Ok(Differential::LRA(lra)),
-            _ => Err(format!("{} is not in a differential theory", any)),
+impl Theory for Sequential {
+    type Sort = Sort;
+    const NAME: &'static str = "Sequential";
+
+    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    where
+        D: TryInto<Sort>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+    {
+        let read = read.into_iter().map(TryInto::try_into);
+        let write = write.into_iter().map(TryInto::try_into);
+        match self {
+            Sequential::HAVOC => check_havoc(read, write),
+            Sequential::SKIP => check_skip(read, write),
+            Sequential::LRA(itype) => itype.check(read, write),
+            Sequential::LIA(itype) => itype.check(read, write),
+            Sequential::BV(itype) => itype.check(read, write),
         }
     }
 }
 
-impl From<Differential> for Any {
-    fn from(differential: Differential) -> Self {
-        match differential {
-            Differential::ZERO => Any::ZERO,
-            Differential::LRA(lra) => Any::LRA(lra),
+impl Theory for Combinatorial {
+    type Sort = Sort;
+    const NAME: &'static str = "Combinatorial";
+
+    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    where
+        D: TryInto<Sort>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+    {
+        let read = read.into_iter().map(TryInto::try_into);
+        let write = write.into_iter().map(TryInto::try_into);
+        match self {
+            Combinatorial::HAVOC => check_havoc(read, write),
+            Combinatorial::LRA(itype) => itype.check(read, write),
+            Combinatorial::LIA(itype) => itype.check(read, write),
+            Combinatorial::BV(itype) => itype.check(read, write),
         }
     }
 }
 
-impl From<LRA> for Differential {
-    fn from(lra: LRA) -> Self {
-        Differential::LRA(lra)
+impl Theory for Differential {
+    type Sort = Sort;
+    const NAME: &'static str = "Differential";
+
+    fn check<R, W, D>(&self, read: R, write: W) -> Result<(), String>
+    where
+        D: TryInto<Sort>,
+        R: IntoIterator<Item = D>,
+        W: IntoIterator<Item = D>,
+    {
+        let read = read.into_iter().map(TryInto::try_into);
+        let write = write.into_iter().map(TryInto::try_into);
+        match self {
+            Differential::ZERO => check_zero(read, write),
+            Differential::LRA(itype) => itype.check(read, write),
+        }
     }
 }
 
-impl TryFrom<Differential> for LRA {
-    type Error = String;
-    fn try_from(value: Differential) -> Result<Self, Self::Error> {
-        match value {
-            Differential::ZERO => Ok(LRA::ZERO),
-            Differential::LRA(lra) => Ok(lra),
+// The one cast `subenum` cannot express: the embedding between two
+// sub-enums. Its inverse is intentionally absent -- nothing needs to cast
+// down from `Sequential` to `Combinatorial`.
+impl From<Combinatorial> for Sequential {
+    fn from(op: Combinatorial) -> Self {
+        match op {
+            Combinatorial::HAVOC => Sequential::HAVOC,
+            Combinatorial::BV(bv) => Sequential::BV(bv),
+            Combinatorial::LRA(lra) => Sequential::LRA(lra),
+            Combinatorial::LIA(lia) => Sequential::LIA(lia),
         }
     }
 }
@@ -684,69 +340,24 @@ mod tests {
     // Casts down the hierarchy (TryInto) recover the op or reject it.
 
     #[test]
-    fn round_trip_through_sequential() {
-        let up: Sequential = LRA::Add().into();
-        assert!(matches!(up.try_into(), Ok(LRA::Add())));
-
-        let up: Sequential = LIA::Add().into();
-        assert!(matches!(up.try_into(), Ok(LIA::Add())));
-
-        let up: Sequential = BV::And().into();
-        assert!(matches!(up.try_into(), Ok(BV::And())));
-    }
-
-    #[test]
-    fn round_trip_through_combinatorial() {
-        let up: Combinatorial = LRA::Add().into();
-        assert!(matches!(up.try_into(), Ok(LRA::Add())));
-
-        let up: Combinatorial = LIA::Add().into();
-        assert!(matches!(up.try_into(), Ok(LIA::Add())));
-
-        let up: Combinatorial = BV::And().into();
-        assert!(matches!(up.try_into(), Ok(BV::And())));
-    }
-
-    #[test]
-    fn round_trip_through_differential() {
-        let up: Differential = LRA::Add().into();
-        assert!(matches!(up.try_into(), Ok(LRA::Add())));
-    }
-
-    #[test]
-    fn distinguished_elements_cast_down_to_base() {
-        // The catch-alls' SKIP/HAVOC/ZERO land on the base theories' elements.
-        assert!(matches!(Sequential::SKIP.try_into(), Ok(LRA::Id())));
-        assert!(matches!(Sequential::SKIP.try_into(), Ok(LIA::Id())));
-        assert!(matches!(Combinatorial::HAVOC.try_into(), Ok(LRA::Havoc())));
-        assert!(matches!(Combinatorial::HAVOC.try_into(), Ok(LIA::Havoc())));
-        assert!(matches!(Differential::ZERO.try_into(), Ok(LRA::Zero())));
-    }
-
-    #[test]
-    fn sequential_casts_down_to_combinatorial() {
-        let seq: Sequential = LRA::Add().into();
-        assert!(matches!(
-            seq.try_into(),
-            Ok(Combinatorial::LRA(LRA::Add()))
-        ));
-        assert!(matches!(
-            Sequential::HAVOC.try_into(),
-            Ok(Combinatorial::HAVOC)
-        ));
-        // SKIP is sequential-only.
-        assert!(Combinatorial::try_from(Sequential::SKIP).is_err());
-    }
-
-    #[test]
-    fn foreign_ops_fail_to_cast_down() {
-        // An LRA op does not cast down to LIA or BV, and vice versa.
-        let seq: Sequential = LRA::Add().into();
-        assert!(LIA::try_from(seq).is_err());
-        let seq: Sequential = LIA::Add().into();
-        assert!(BV::try_from(seq).is_err());
-        let comb: Combinatorial = BV::And().into();
-        assert!(LRA::try_from(comb).is_err());
+    fn display_is_stable() {
+        // Elements print their name, member ops delegate to the base theory.
+        assert_eq!(Any::HAVOC.to_string(), "HAVOC");
+        assert_eq!(Sequential::SKIP.to_string(), "SKIP");
+        assert_eq!(Differential::ZERO.to_string(), "ZERO");
+        assert_eq!(Any::LRA(LRA::Add()).to_string(), "Add");
+        assert_eq!(Sequential::LIA(LIA::ReLU()).to_string(), "ReLU");
+        assert_eq!(Combinatorial::BV(BV::MatMul()).to_string(), "MatMul");
+        // Base-theory special cases keep their formats.
+        assert_eq!(
+            LRA::Uninterpreted("f".to_string()).to_string(),
+            "Uninterpreted(f)"
+        );
+        assert_eq!(
+            BV::BitSelect { high: 7, low: 0 }.to_string(),
+            "BitSelect[7:0]"
+        );
+        assert_eq!(BV::Extend { extra: 8 }.to_string(), "Extend(+8)");
     }
 
     #[test]
@@ -758,40 +369,6 @@ mod tests {
         assert!(Sequential::try_from(Any::ZERO).is_err());
         assert!(Combinatorial::try_from(Any::SKIP).is_err());
         assert!(Differential::try_from(Any::SKIP).is_err());
-    }
-
-    #[test]
-    fn round_trip_through_any() {
-        // Transitive shortcuts: base theories cast straight up to Any and back.
-        let up: Any = LRA::Add().into();
-        assert!(matches!(up, Any::LRA(LRA::Add())));
-        assert!(matches!(Any::LRA(LRA::Add()).try_into(), Ok(LRA::Add())));
-
-        let up: Any = LIA::Add().into();
-        assert!(matches!(up, Any::LIA(LIA::Add())));
-        assert!(matches!(Any::LIA(LIA::Add()).try_into(), Ok(LIA::Add())));
-
-        let up: Any = BV::And().into();
-        assert!(matches!(up, Any::BV(BV::And())));
-        assert!(matches!(Any::BV(BV::And()).try_into(), Ok(BV::And())));
-    }
-
-    #[test]
-    fn any_distinguished_elements_cast_down_to_base() {
-        assert!(matches!(Any::SKIP.try_into(), Ok(LRA::Id())));
-        assert!(matches!(Any::SKIP.try_into(), Ok(LIA::Id())));
-        assert!(matches!(Any::SKIP.try_into(), Ok(BV::Id())));
-        assert!(matches!(Any::HAVOC.try_into(), Ok(LRA::Havoc())));
-        assert!(matches!(Any::HAVOC.try_into(), Ok(LIA::Havoc())));
-        assert!(matches!(Any::HAVOC.try_into(), Ok(BV::Havoc())));
-        // ZERO reaches only the differential base theory, LRA.
-        assert!(matches!(Any::ZERO.try_into(), Ok(LRA::Zero())));
-        assert!(LIA::try_from(Any::ZERO).is_err());
-        assert!(BV::try_from(Any::ZERO).is_err());
-        // Foreign ops reject.
-        assert!(LIA::try_from(Any::LRA(LRA::Add())).is_err());
-        assert!(BV::try_from(Any::LIA(LIA::Add())).is_err());
-        assert!(LRA::try_from(Any::BV(BV::And())).is_err());
     }
 
     // The distinguished elements are unary at every level of the hierarchy,
