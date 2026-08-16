@@ -1,7 +1,8 @@
 use crate::atom::Atom;
 use crate::topological_order;
-use crate::wire::{Interface, Wire};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use crate::variable::{Interface, Variable};
+use crate::wire::Wire;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
 use theory::{Combinatorial, Differential, Sequential, Theory};
@@ -27,17 +28,18 @@ where
     ///  Wires are organised in pairs of identical twins where
     ///  - 0: latched wires
     ///  - 1: next wires
-    extl: Interface<S, 2>,
-    intf: Interface<S, 2>,
-    prvt: Interface<S, 2>,
-    obs: Interface<S, 2>,
-    ctrl: Interface<S, 2>,
-    temp: Interface<S>,
+    extl: Interface<S>,
+    intf: Interface<S>,
+    prvt: Interface<S>,
+    obs: Interface<S>,
+    ctrl: Interface<S>,
 
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
     /// as defined in the reactive modules paper.
     atoms: Vec<Atom<I, J, F, S>>,
+
+    temp: Vec<Wire<S>>,
 }
 
 impl<I, J, F, S> Module<I, J, F, S>
@@ -51,23 +53,23 @@ where
         &self.atoms
     }
 
-    pub fn extl(&self) -> &Interface<S, 2> {
+    pub fn extl(&self) -> &Interface<S> {
         &self.extl
     }
 
-    pub fn intf(&self) -> &Interface<S, 2> {
+    pub fn intf(&self) -> &Interface<S> {
         &self.intf
     }
 
-    pub fn prvt(&self) -> &Interface<S, 2> {
+    pub fn prvt(&self) -> &Interface<S> {
         &self.prvt
     }
 
-    pub fn ctrl(&self) -> &Interface<S, 2> {
+    pub fn ctrl(&self) -> &Interface<S> {
         &self.ctrl
     }
 
-    pub fn obs(&self) -> &Interface<S, 2> {
+    pub fn obs(&self) -> &Interface<S> {
         &self.obs
     }
 
@@ -80,7 +82,7 @@ where
     }
 
     pub fn temp(&self) -> impl Iterator<Item = &Wire<S>> {
-        self.temp.wires()
+        self.temp.iter()
     }
 
     pub fn empty() -> Self {
@@ -90,7 +92,7 @@ where
             prvt: Interface::empty(),
             obs: Interface::empty(),
             ctrl: Interface::empty(),
-            temp: Interface::empty(),
+            temp: Vec::new(),
             atoms: Vec::new(),
         }
     }
@@ -101,7 +103,7 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Clone + Eq + Debug,
+    S: Eq + Debug,
 {
     /// Constructs a module **without performing any consistency or visibility checks**.
     ///
@@ -149,12 +151,12 @@ where
     ///   [`Module::combinatorial`] for safe, automated module construction
     #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
-        extl: Interface<S, 2>,
-        intf: Interface<S, 2>,
-        prvt: Interface<S, 2>,
-        obs: Interface<S, 2>,
-        ctrl: Interface<S, 2>,
-        temp: Interface<S>,
+        extl: Interface<S>,
+        intf: Interface<S>,
+        prvt: Interface<S>,
+        obs: Interface<S>,
+        ctrl: Interface<S>,
+        temp: Vec<Wire<S>>,
         atoms: Vec<Atom<I, J, F, S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
@@ -162,104 +164,58 @@ where
             debug_assert_eq!(obs.len(), extl.len() + intf.len());
             debug_assert_eq!(ctrl.len(), intf.len() + prvt.len());
 
-            let mut ltc_to_dtype: HashMap<usize, &S> = HashMap::new();
-            let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
+            let mut decl: HashSet<usize> = HashSet::new();
 
-            let mut extl_ltc: HashSet<usize> = HashSet::new();
-            for [ltc, nxt] in &extl {
-                debug_assert_eq!(ltc.dtype(), nxt.dtype());
-                // check that indices are unique, and store them
-                debug_assert!(ltc_to_dtype.insert(ltc.id(), ltc.dtype()).is_none());
-                debug_assert!(nxt_to_ltc.insert(nxt.id(), ltc.id()).is_none());
+            debug_assert!(extl.iter().all(|v| decl.insert(v.id())));
+            let extl: HashSet<usize> = extl.iter().map(|v| v.id()).collect();
 
-                extl_ltc.insert(ltc.id());
-            }
+            debug_assert!(intf.iter().all(|v| decl.insert(v.id())));
+            let intf: HashSet<usize> = intf.iter().map(|v| v.id()).collect();
 
-            let mut intf_ltc: HashSet<usize> = HashSet::new();
-            for [ltc, nxt] in &intf {
-                debug_assert_eq!(ltc.dtype(), nxt.dtype());
-                // check that indices are unique, and store them
-                debug_assert!(ltc_to_dtype.insert(ltc.id(), ltc.dtype()).is_none());
-                debug_assert!(nxt_to_ltc.insert(nxt.id(), ltc.id()).is_none());
+            debug_assert!(prvt.iter().all(|v| decl.insert(v.id())));
+            let prvt: HashSet<usize> = prvt.iter().map(|v| v.id()).collect();
 
-                intf_ltc.insert(ltc.id());
-            }
+            debug_assert!(obs.iter().all(|v| !decl.insert(v.id())));
+            debug_assert!(
+                obs.iter()
+                    .all(|v| extl.contains(&v.id()) || intf.contains(&v.id()))
+            );
 
-            let mut prvt_ltc: HashSet<usize> = HashSet::new();
-            for [ltc, nxt] in &prvt {
-                debug_assert_eq!(ltc.dtype(), nxt.dtype());
-                // check that indices are unique, and store them
-                debug_assert!(ltc_to_dtype.insert(ltc.id(), ltc.dtype()).is_none());
-                debug_assert!(nxt_to_ltc.insert(nxt.id(), ltc.id()).is_none());
+            debug_assert!(ctrl.iter().all(|v| !decl.insert(v.id())));
+            debug_assert!(
+                ctrl.iter()
+                    .all(|v| intf.contains(&v.id()) || prvt.contains(&v.id()))
+            );
 
-                prvt_ltc.insert(ltc.id());
-            }
-
-            let mut obs_ltc: HashSet<usize> = HashSet::new();
-            for [ltc, nxt] in &obs {
-                debug_assert_eq!(ltc.dtype(), nxt.dtype());
-                // check consistency with other wires
-                debug_assert_eq!(ltc_to_dtype.get(&ltc.id()), Some(&ltc.dtype()));
-                debug_assert_eq!(nxt_to_ltc.get(&nxt.id()), Some(&ltc.id()));
-                // check that indices are unique
-                debug_assert!(obs_ltc.insert(ltc.id()));
-
-                debug_assert!(extl_ltc.contains(&ltc.id()) || intf_ltc.contains(&ltc.id()));
-            }
-
-            let mut ctrl_ltc: HashSet<usize> = HashSet::new();
-            for [ltc, nxt] in &ctrl {
-                debug_assert_eq!(ltc.dtype(), nxt.dtype());
-                // check consistency with other wires
-                debug_assert_eq!(ltc_to_dtype.get(&ltc.id()), Some(&ltc.dtype()));
-                debug_assert_eq!(nxt_to_ltc.get(&nxt.id()), Some(&ltc.id()));
-                // check that indices are unique
-                debug_assert!(ctrl_ltc.insert(ltc.id()));
-
-                debug_assert!(intf_ltc.contains(&ltc.id()) || prvt_ltc.contains(&ltc.id()));
-            }
-
-            let nxt_to_dtype_get = |w| nxt_to_ltc.get(&w).and_then(|z| ltc_to_dtype.get(z));
-
+            let mut written: HashSet<usize> = HashSet::new();
+            written.extend(extl.iter());
             // check atoms consistency
-            let mut written: HashSet<usize> = HashSet::from_iter(extl.next().iter().map(Wire::id));
             for atom in atoms.iter() {
-                for (ltc, dtype) in atom.read().wires().map(Into::into) {
-                    // reads are latched, and dtype matches
-                    debug_assert_eq!(Some(&dtype), ltc_to_dtype.get(&ltc));
+                for var in atom.read().iter() {
+                    debug_assert!(decl.contains(&var.id()));
                 }
-                for (nxt, dtype) in atom.wait().wires().map(Into::into) {
-                    // awaits are next, and dtype matches
-                    debug_assert_eq!(Some(&dtype), nxt_to_dtype_get(nxt));
-                    // await order is consistent
-                    debug_assert!(written.contains(&nxt));
+                for var in atom.wait().iter() {
+                    debug_assert!(decl.contains(&var.id()));
+                    debug_assert!(written.contains(&var.id()));
                 }
-                for (nxt, dtype) in atom.ctrl().wires().map(Into::into) {
-                    // controls are next, and dtype matches
-                    debug_assert_eq!(Some(&dtype), nxt_to_dtype_get(nxt));
-                    // controls are disjoint
-                    debug_assert!(written.insert(nxt));
+                for var in atom.ctrl().iter() {
+                    debug_assert!(decl.contains(&var.id()));
+                    debug_assert!(written.insert(var.id()));
                 }
             }
 
-            // check that all module control wires are written/controlled by an atom
-            for nxt in ctrl.next().iter().map(Wire::id) {
-                debug_assert!(written.contains(&nxt));
+            // check that all module control vars are written/controlled by an atom
+            for var in ctrl.iter() {
+                debug_assert!(written.contains(&var.id()));
             }
 
             // check that temporaries are decoupled from module wires and other atoms
-            let mut module_temp: HashMap<usize, &S> = HashMap::new();
+            let mut module_temp: HashSet<usize> = HashSet::new();
             for lc in atoms.iter().flat_map(Atom::temp) {
-                debug_assert!(!ltc_to_dtype.contains_key(&lc.id()));
-                debug_assert!(!nxt_to_ltc.contains_key(&lc.id()));
-                debug_assert!(module_temp.insert(lc.id(), lc.dtype()).is_none());
+                debug_assert!(temp.contains(lc));
+                debug_assert!(module_temp.insert(lc.id()));
             }
             debug_assert_eq!(module_temp.len(), temp.len());
-            debug_assert!(temp.iter().all(|[wire]| {
-                module_temp
-                    .get(&wire.id())
-                    .is_some_and(|&dtype| dtype == wire.dtype())
-            }));
         }
 
         Module {
@@ -272,7 +228,15 @@ where
             atoms,
         }
     }
+}
 
+impl<I, J, F, S> Module<I, J, F, S>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+    S: Clone + Eq + Debug,
+{
     /// Constructs a **fully observable module** from a set of atoms.
     ///
     /// A fully observable module exposes all of its wires (`obs`) publicly, so that
@@ -297,7 +261,7 @@ where
     /// - [`new_unchecked`], for manual module creation.
     pub fn observable<O, P, A>(obs: O, atoms: A) -> Result<Self, String>
     where
-        P: Into<[Wire<S>; 2]>,
+        P: Into<Variable<S>>,
         O: IntoIterator<Item = P>,
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
     {
@@ -329,63 +293,56 @@ where
     /// - [`new_unchecked`], for manual module creation.
     pub fn partially_observable<O, P, Q, R, A>(obs: O, prvt: P, atoms: A) -> Result<Self, String>
     where
-        Q: Into<[Wire<S>; 2]>,
-        R: Into<[Wire<S>; 2]>,
+        Q: Into<Variable<S>>,
+        R: Into<Variable<S>>,
         O: IntoIterator<Item = Q>,
         P: IntoIterator<Item = R>,
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
     {
-        let mut ltc_set: HashSet<usize> = HashSet::new();
-        let mut nxt_to_ltc: HashMap<usize, usize> = HashMap::new();
-
-        let obs = Interface::try_from_iter(obs)?;
-        let prvt = Interface::try_from_iter(prvt)?;
-
-        for [ltc, nxt] in obs.iter().chain(prvt.iter()) {
-            debug_assert_eq!(ltc.dtype(), nxt.dtype());
-            if !ltc_set.insert(ltc.id()) {
-                return Err(format!("Latched wire {} is duplicated", ltc.id()));
+        let obs = Interface::from_iter_unchecked(obs);
+        let prvt = Interface::from_iter_unchecked(prvt);
+        let mut decl_wire: HashSet<usize> = HashSet::new();
+        for var in obs.iter().chain(prvt.iter()) {
+            if !decl_wire.insert(var.id()) {
+                return Err(format!("Variable {} is doubly declared", var.id()));
             }
-            if nxt_to_ltc.insert(nxt.id(), ltc.id()).is_some() {
-                return Err(format!("Next wire {} is duplicated", ltc.id()));
-            }
+            decl_wire.insert(var.nxt().id());
+            decl_wire.insert(var.der().id());
         }
 
-        // Check atoms consistency and infer control wires
-        let mut ctrl_nxt: HashSet<usize> = HashSet::new();
+        // Check atoms consistency and infer control variables
+        let mut ctrl_var: HashSet<usize> = HashSet::new();
         let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
         let atoms_iter = atoms.into_iter();
         let mut past_atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(atoms_iter.size_hint().0);
         for (n, atom) in atoms_iter.enumerate() {
-            for ltc in atom.read().wires().map(Wire::id) {
-                if !ltc_set.contains(&ltc) {
-                    return Err(format!("Invalid read wire {} in atom {}", ltc, n));
+            for id in atom.read().iter().map(|v| v.id()) {
+                if !decl_wire.contains(&id) {
+                    return Err(format!("Undeclared read var {} in atom {}", id, n));
                 }
             }
-            for nxt in atom.wait().wires().map(Wire::id) {
-                let expected_dtype = nxt_to_ltc.get(&nxt);
-                if expected_dtype.is_none_or(|i| !ltc_set.contains(i)) {
-                    return Err(format!("invalid await wire {} in atom {}", nxt, n));
+            for id in atom.wait().iter().map(|v| v.id()) {
+                if !decl_wire.contains(&id) {
+                    return Err(format!("Undeclared wait var {} in atom {}", id, n));
                 }
             }
-            for nxt in atom.ctrl().wires().map(Wire::id) {
-                let expected_dtype = nxt_to_ltc.get(&nxt);
-                if expected_dtype.is_none_or(|i| !ltc_set.contains(i)) {
-                    return Err(format!("invalid control wire {} in atom {}", nxt, n));
+            for id in atom.ctrl().iter().map(|v| v.id()) {
+                if !decl_wire.contains(&id) {
+                    return Err(format!("Undeclared ctrl var {} in atom {}", id, n));
                 }
-                if !ctrl_nxt.insert(nxt) {
+                if !ctrl_var.insert(id) {
                     return Err(format!(
-                        "shared or duplicated control wire {} in atom {}",
-                        nxt, n
+                        "shared or duplicated control var {} in atom {}",
+                        id, n
                     ));
                 }
             }
 
             for lc in atom.temp() {
-                debug_assert!(!ctrl_nxt.contains(&lc.id()));
-                if ltc_set.contains(&lc.id()) || nxt_to_ltc.contains_key(&lc.id()) {
+                if decl_wire.contains(&lc.id()) {
                     return Err(format!("temp wire {} is also a module wire", lc.id()));
                 }
+                debug_assert!(!ctrl_var.contains(&lc.id()));
                 if temp.insert(lc.id(), lc.clone()).is_some() {
                     return Err(format!("temp wire {} coupled with other atom", lc.id()));
                 }
@@ -403,34 +360,32 @@ where
         }
 
         // Check that private wires are controlled
-        for nxt in prvt.next().iter().map(Wire::id) {
-            if !ctrl_nxt.contains(&nxt) {
-                return Err(format!("private wire {} is not controlled", nxt));
+        for id in prvt.iter().map(|v| v.id()) {
+            if !ctrl_var.contains(&id) {
+                return Err(format!("private var {} is not controlled", id));
             }
         }
 
         // Build intf and extl wires based on inferred control set
-        let mut intf: Vec<[Wire<S>; 2]> = Vec::with_capacity(ctrl_nxt.len() - prvt.len());
-        let mut extl: Vec<[Wire<S>; 2]> = Vec::with_capacity(obs.len() - intf.len());
-        let mut ctrl: Vec<[Wire<S>; 2]> = Vec::with_capacity(ctrl_nxt.len());
+        let mut intf: Vec<Variable<S>> = Vec::with_capacity(ctrl_var.len() - prvt.len());
+        let mut extl: Vec<Variable<S>> = Vec::with_capacity(obs.len() - intf.len());
+        let mut ctrl: Vec<Variable<S>> = Vec::with_capacity(ctrl_var.len());
 
-        for [ltc, nxt] in obs.iter() {
-            if ctrl_nxt.contains(&nxt.id()) {
-                intf.push([ltc.clone(), nxt.clone()]);
-                ctrl.push([ltc.clone(), nxt.clone()]);
+        for var in obs.iter() {
+            if ctrl_var.contains(&var.id()) {
+                intf.push(var.clone());
+                ctrl.push(var.clone());
             } else {
-                extl.push([ltc.clone(), nxt.clone()]);
+                extl.push(var.clone());
             }
         }
 
-        for [ltc, nxt] in prvt.iter() {
-            ctrl.push([ltc.clone(), nxt.clone()]);
-        }
+        ctrl.extend(prvt.iter().cloned());
 
         let extl = Interface::from_iter_unchecked(extl);
         let ctrl = Interface::from_iter_unchecked(ctrl);
         let intf = Interface::from_iter_unchecked(intf);
-        let temp = Interface::from_wires_unchecked(temp.into_values());
+        let temp = temp.into_values().collect();
 
         Ok(Self::new_unchecked(
             extl, intf, prvt, obs, ctrl, temp, past_atoms,
@@ -463,19 +418,20 @@ where
     where
         M: IntoIterator<Item = Self>,
     {
-        let mut latched: HashSet<usize> = HashSet::new();
-        let mut next: HashSet<usize> = HashSet::new();
-        let mut restricted: HashSet<usize> = HashSet::new();
+        // let mut latched: HashSet<usize> = HashSet::new();
+        // let mut next: HashSet<usize> = HashSet::new();
+        let mut observable_wire: HashSet<usize> = HashSet::new();
+        let mut restricted_wire: HashSet<usize> = HashSet::new();
 
-        let mut extl: HashMap<usize, Wire<S>> = HashMap::new();
-        let mut intf: HashMap<usize, Wire<S>> = HashMap::new();
+        let mut extl: HashSet<usize> = HashSet::new();
+        let mut intf: HashSet<usize> = HashSet::new();
 
-        let mut extl_stack: Vec<[Wire<S>; 2]> = Vec::new();
-        let mut intf_stack: Vec<[Wire<S>; 2]> = Vec::new();
-        let mut prvt_stack: Vec<[Wire<S>; 2]> = Vec::new();
-        let mut obs_stack: Vec<[Wire<S>; 2]> = Vec::new();
-        let mut ctrl_stack: Vec<[Wire<S>; 2]> = Vec::new();
-        let mut temp_stack: Vec<[Wire<S>; 1]> = Vec::new();
+        let mut extl_stack: Vec<Variable<S>> = Vec::new();
+        let mut intf_stack: Vec<Variable<S>> = Vec::new();
+        let mut prvt_stack: Vec<Variable<S>> = Vec::new();
+        let mut obs_stack: Vec<Variable<S>> = Vec::new();
+        let mut ctrl_stack: Vec<Variable<S>> = Vec::new();
+        let mut temp_stack: Vec<Wire<S>> = Vec::new();
         let mut atoms_stack: Vec<Atom<I, J, F, S>> = Vec::new();
 
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
@@ -487,137 +443,99 @@ where
 
             // Check that observables are either uncoupled or coupled in right direction
             obs_stack.reserve(module.obs.len());
-            for [ltc, nxt] in module.obs {
-                debug_assert_eq!(ltc.dtype(), nxt.dtype());
-                if latched.contains(&nxt.id()) || next.contains(&ltc.id()) {
-                    return Err(format!(
-                        "invalid coupling (direction): either {} is latched or {} is next",
-                        nxt.id(),
-                        ltc.id()
-                    ));
+            for var in module.obs {
+                if restricted_wire.contains(&var.ltc().id()) {
+                    return Err(format!("wire {} is restricted, got observable", var.id()));
                 }
-                if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
-                    return Err(format!(
-                        "invalid coupling for wire pair ({}, {}) (restricted)",
-                        ltc.id(),
-                        nxt.id()
-                    ));
+                if restricted_wire.contains(&var.nxt().id()) {
+                    return Err(format!("wire {} is restricted, got observable", var.id()));
                 }
-                // stack observables that are not already present (avoid duplication)
-                if latched.insert(ltc.id()) {
-                    debug_assert!(!next.contains(&nxt.id()));
-                    next.insert(nxt.id());
-                    obs_stack.push([ltc, nxt]);
+                if restricted_wire.contains(&var.der().id()) {
+                    return Err(format!("wire {} is restricted, got observable", var.id()));
+                }
+
+                if observable_wire.insert(var.ltc().id()) {
+                    observable_wire.insert(var.nxt().id());
+                    observable_wire.insert(var.der().id());
+                    obs_stack.push(var);
                 }
             }
 
             // Check that privates are uncoupled and restrict them
             prvt_stack.reserve(module.prvt.len());
-            for [ltc, nxt] in module.prvt {
-                debug_assert_eq!(ltc.dtype(), nxt.dtype());
-                if !latched.insert(ltc.id()) || !next.insert(nxt.id()) {
+            for var in module.prvt {
+                if observable_wire.contains(&var.ltc().id()) {
+                    debug_assert!(observable_wire.contains(&var.nxt().id()));
+                    debug_assert!(observable_wire.contains(&var.der().id()));
                     return Err(format!(
-                        "invalid coupling for wire pair ({}, {}) (private)",
-                        ltc.id(),
-                        nxt.id()
+                        "var {} is private, but observable elsewhere",
+                        var.id()
                     ));
                 }
-                if latched.contains(&nxt.id()) || next.contains(&ltc.id()) {
-                    return Err(format!(
-                        "invalid coupling for wire pair ({}, {}) (direction)",
-                        ltc.id(),
-                        nxt.id()
-                    ));
-                }
-                debug_assert!(!restricted.contains(&ltc.id()) && !restricted.contains(&nxt.id()));
-                restricted.insert(ltc.id());
-                restricted.insert(nxt.id());
 
-                prvt_stack.push([ltc, nxt]);
+                debug_assert!(!restricted_wire.contains(&var.ltc().id()));
+                debug_assert!(!restricted_wire.contains(&var.nxt().id()));
+                debug_assert!(!restricted_wire.contains(&var.der().id()));
+                restricted_wire.insert(var.ltc().id());
+                restricted_wire.insert(var.nxt().id());
+                restricted_wire.insert(var.der().id());
+
+                prvt_stack.push(var);
             }
 
             // Check that temporaries are uncoupled and restrict them
             temp_stack.reserve(module.temp.len());
-            for [tmp] in module.temp {
-                if latched.contains(&tmp.id()) || next.contains(&tmp.id()) {
-                    return Err(format!("Temp wire {} is latched or next", tmp.id()));
+            for tmp in module.temp {
+                if observable_wire.contains(&tmp.id()) {
+                    return Err(format!("local wire {} is observable elsewhere", tmp.id()));
                 }
-                if !restricted.insert(tmp.id()) {
-                    return Err(format!(
-                        "invalid coupling of temp wire {} (is in restricted)",
-                        tmp.id()
-                    ));
+                if !restricted_wire.insert(tmp.id()) {
+                    return Err(format!("local wire {} is restricted elsewhere", tmp.id()));
                 }
 
-                temp_stack.push([tmp]);
+                temp_stack.push(tmp);
             }
 
             //============================================================
             // Couple external and interface variables
             //============================================================
             extl_stack.reserve(module.extl.len());
-            for [ltc, nxt] in module.extl {
-                debug_assert_eq!(ltc.dtype(), nxt.dtype());
-                if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
-                    return Err(format!(
-                        "Wire pair ({}, {}) is restricted",
-                        ltc.id(),
-                        nxt.id()
-                    ));
+            for var in module.extl {
+                if restricted_wire.contains(&var.ltc().id()) {
+                    return Err(format!("wire {} is restricted, got external", var.id()));
+                }
+                if restricted_wire.contains(&var.nxt().id()) {
+                    return Err(format!("wire {} is restricted, got external", var.id()));
+                }
+                if restricted_wire.contains(&var.der().id()) {
+                    return Err(format!("wire {} is restricted, got external", var.id()));
                 }
 
-                // check whether the wire is coupled (controlled by other atom), or
-                // consider it as external otherwise
-                if let Some(coupled) = intf.get(&ltc.id()) {
-                    if coupled.id() != nxt.id() {
-                        return Err(format!(
-                            "wire id mismatch, expected that wire {} will be the same as {}",
-                            coupled.id(),
-                            nxt.id()
-                        ));
-                    } else if coupled.dtype() != nxt.dtype() {
-                        return Err(format!("Wire {} has a wrong dtype", coupled.id()));
-                    }
-                } else {
-                    extl.insert(ltc.id(), nxt.clone());
-                    extl_stack.push([ltc, nxt]);
+                if !intf.contains(&var.id()) {
+                    extl.insert(var.id());
+                    extl_stack.push(var);
                 }
             }
 
             intf_stack.reserve(module.intf.len());
-            for [ltc, nxt] in module.intf {
-                debug_assert_eq!(ltc.dtype(), nxt.dtype());
-                if restricted.contains(&ltc.id()) || restricted.contains(&nxt.id()) {
-                    return Err(format!(
-                        "Wire pair ({}, {}) is restricted",
-                        ltc.id(),
-                        nxt.id()
-                    ));
+            for var in module.intf {
+                if restricted_wire.contains(&var.ltc().id()) {
+                    return Err(format!("wire {} is restricted, got external", var.id()));
+                }
+                if restricted_wire.contains(&var.nxt().id()) {
+                    return Err(format!("wire {} is restricted, got external", var.id()));
+                }
+                if restricted_wire.contains(&var.der().id()) {
+                    return Err(format!("wire {} is restricted, got external", var.id()));
                 }
 
-                // check whether the wire is coupled (external of other atom), and
-                // consider it as interface wire then
-                if let Some(coupled) = extl.remove(&ltc.id()) {
-                    if coupled.id() != nxt.id() {
-                        return Err(format!(
-                            "wire id mismatch, expected that wire {} will be the same as {}",
-                            coupled.id(),
-                            nxt.id()
-                        ));
-                    } else if coupled.dtype() != nxt.dtype() {
-                        return Err(format!("Wire {} has a wrong dtype", coupled.id()));
-                    }
+                extl.remove(&var.id());
+
+                if !intf.insert(var.id()) {
+                    return Err(format!("interface var {} is doubly controlled", var.id()));
                 }
 
-                if intf.insert(ltc.id(), nxt.clone()).is_some() {
-                    return Err(format!(
-                        "invalid coupling for wire pair ({}, {}), shared control",
-                        ltc.id(),
-                        nxt.id()
-                    ));
-                }
-
-                intf_stack.push([ltc, nxt]);
+                intf_stack.push(var);
             }
 
             ctrl_stack.extend(module.ctrl);
@@ -655,7 +573,7 @@ where
 
         let extl_stack = extl_stack
             .into_iter()
-            .filter(|wire| extl.contains_key(&wire[0].id()));
+            .filter(|var| extl.contains(&var.id()));
 
         //============================================================
         // Collect and construct
@@ -666,10 +584,9 @@ where
         let prvt = Interface::from_iter_unchecked(prvt_stack);
         let obs = Interface::from_iter_unchecked(obs_stack);
         let ctrl = Interface::from_iter_unchecked(ctrl_stack);
-        let temp = Interface::from_iter_unchecked(temp_stack);
 
         Ok(Module::new_unchecked(
-            extl, intf, prvt, obs, ctrl, temp, atoms,
+            extl, intf, prvt, obs, ctrl, temp_stack, atoms,
         ))
     }
 }
@@ -691,20 +608,20 @@ where
         if !self.extl.is_empty() {
             writeln!(f, "{pad}{INDENT}{BOLD}external{RESET}")?;
         }
-        for [(ltc, _), (nxt, dtype)] in self.extl.iter().map(|w| w.map(Into::into)) {
-            writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {dtype}")?;
+        for var in self.extl.iter() {
+            writeln!(f, "{pad}{INDENT2}{var}")?;
         }
         if !self.intf.is_empty() {
             writeln!(f, "{pad}{INDENT}{BOLD}interface{RESET}")?;
         }
-        for [(ltc, _), (nxt, dtype)] in self.intf.iter().map(|w| w.map(Into::into)) {
-            writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {dtype}")?;
+        for var in self.intf.iter() {
+            writeln!(f, "{pad}{INDENT2}{var}")?;
         }
         if !self.prvt.is_empty() {
             writeln!(f, "{pad}{INDENT}{BOLD}private{RESET}")?;
         }
-        for [(ltc, _), (nxt, dtype)] in self.prvt.iter().map(|w| w.map(Into::into)) {
-            writeln!(f, "{pad}{INDENT2}w{ltc}, w{nxt} : {dtype}")?;
+        for var in self.prvt.iter() {
+            writeln!(f, "{pad}{INDENT2}{var}")?;
         }
         for atom in &self.atoms {
             atom.fmt_indent(f, &format!("{pad}{INDENT}"))?;

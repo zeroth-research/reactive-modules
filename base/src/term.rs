@@ -1,8 +1,8 @@
-use crate::wire::{Interface, Wire};
+use crate::wire::Wire;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::vec;
-use theory::{Differential, Sequential, Theory, any};
+use theory::{Differential, Sequential, Theory};
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -17,13 +17,13 @@ pub struct Term<T: Theory> {
     /// The instruction to be executed by this node.
     itype: T,
     /// The outputs of this term.
-    write: Interface<T::Sort>,
+    write: Vec<Wire<T::Sort>>,
     /// The inputs to this term.
-    read: Interface<T::Sort>,
+    read: Vec<Wire<T::Sort>>,
 }
 
 impl<T: Theory> Term<T> {
-    pub fn new_unchecked(itype: T, write: Interface<T::Sort>, read: Interface<T::Sort>) -> Self {
+    pub fn new_unchecked(itype: T, write: Vec<Wire<T::Sort>>, read: Vec<Wire<T::Sort>>) -> Self {
         Self { itype, write, read }
     }
 
@@ -31,12 +31,12 @@ impl<T: Theory> Term<T> {
         &self.itype
     }
 
-    pub fn write(&self) -> &Interface<T::Sort> {
-        &self.write
+    pub fn write(&self) -> &[Wire<T::Sort>] {
+        self.write.as_slice()
     }
 
-    pub fn read(&self) -> &Interface<T::Sort> {
-        &self.read
+    pub fn read(&self) -> &[Wire<T::Sort>] {
+        self.read.as_slice()
     }
 }
 
@@ -52,21 +52,21 @@ where
         W: IntoIterator<Item = D>,
         R: IntoIterator<Item = U>,
     {
-        let term =
-            Self::new_unchecked(itype, Interface::unique(write)?, Interface::sequence(read)?);
+        let read: Vec<Wire<T::Sort>> = read.into_iter().map(Into::into).collect();
+        let write: Vec<Wire<T::Sort>> = write.into_iter().map(Into::into).collect();
 
-        if term.read().ids().any(|i| term.write.ids().any(|j| i == j)) {
+        if read.iter().any(|i| write.iter().any(|j| i == j)) {
             return Err("Term reads and writes the same wire".into());
         }
 
         // type-check the term. We do it only after contruction of the term, because type-checking
         // would consume the values of `write` and `read` otherwise
-        let r = term.read.as_slice().iter().map(|w| w.dtype().clone());
-        let w = term.write.as_slice().iter().map(|w| w.dtype().clone());
-        match term.itype.check(r, w) {
-            Ok(_) => Ok(term),
-            Err(e) => Err(e),
-        }
+        let ok = Result::<_, String>::Ok;
+        let r = read.iter().cloned().map(Into::into).map(ok);
+        let w = write.iter().cloned().map(Into::into).map(ok);
+        itype.check(r, w)?;
+
+        Ok(Self::new_unchecked(itype, write, read))
     }
 
     pub fn constant<D, W>(itype: T, write: W) -> Result<Self, String>
@@ -74,20 +74,15 @@ where
         D: Into<Wire<T::Sort>>,
         W: IntoIterator<Item = D>,
     {
-        let term = Self::new_unchecked(itype, Interface::unique(write)?, Interface::empty());
-
-        if term.read().ids().any(|i| term.write.ids().any(|j| i == j)) {
-            return Err("Term reads and writes the same wire".into());
-        }
+        let write: Vec<Wire<T::Sort>> = write.into_iter().map(Into::into).collect();
 
         // type-check the term. We do it only after contruction of the term, because type-checking
         // would consume the values of `write` and `read` otherwise
-        let r = term.read.as_slice().iter().map(|w| w.dtype().clone());
-        let w = term.write.as_slice().iter().map(|w| w.dtype().clone());
-        match term.itype.check(r, w) {
-            Ok(_) => Ok(term),
-            Err(e) => Err(e),
-        }
+        let ok = Result::<_, String>::Ok;
+        let w = write.iter().cloned().map(Into::into).map(ok);
+        itype.check(std::iter::empty(), w)?;
+
+        Ok(Self::new_unchecked(itype, write, Vec::new()))
     }
 }
 
@@ -102,53 +97,6 @@ impl<T: Theory> Term<T> {
         U: Theory<Sort = T::Sort> + Into<T>,
     {
         Self::new_unchecked(term.itype.into(), term.write, term.read)
-    }
-
-    fn try_convert<U, E>(term: Term<U>) -> Result<Self, E>
-    where
-        U: Theory<Sort = T::Sort> + TryInto<T, Error = E>,
-    {
-        let itype = term.itype.try_into()?;
-        Ok(Self::new_unchecked(itype, term.write, term.read))
-    }
-}
-
-impl From<Term<any::Sequential>> for Term<any::Any> {
-    fn from(term: Term<any::Sequential>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl From<Term<any::Combinatorial>> for Term<any::Any> {
-    fn from(term: Term<any::Combinatorial>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl From<Term<any::Differential>> for Term<any::Any> {
-    fn from(term: Term<any::Differential>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl TryFrom<Term<any::Any>> for Term<any::Sequential> {
-    type Error = String;
-    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
-    }
-}
-
-impl TryFrom<Term<any::Any>> for Term<any::Combinatorial> {
-    type Error = String;
-    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
-    }
-}
-
-impl TryFrom<Term<any::Any>> for Term<any::Differential> {
-    type Error = String;
-    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 
@@ -176,7 +124,7 @@ where
             f,
             "{}",
             self.write
-                .ids()
+                .iter()
                 .map(|a| format!("w{a}"))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -185,7 +133,7 @@ where
             f,
             "; {}",
             self.read
-                .ids()
+                .iter()
                 .map(|a| format!("w{a}"))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -196,8 +144,8 @@ where
 #[derive(Debug, Clone)]
 pub struct Block<T: Theory> {
     terms: Vec<Term<T>>,
-    read: Interface<T::Sort>,
-    write: Interface<T::Sort>,
+    read: Vec<Wire<T::Sort>>,
+    write: Vec<Wire<T::Sort>>,
 }
 
 impl<T: Theory> Block<T> {
@@ -210,16 +158,16 @@ impl<T: Theory> Block<T> {
     /// The read interface lists all wires that must be provided externally
     /// for the block to operate, and are not written internally by the block.
     /// These wires are inputs required by the block as a whole.
-    pub fn read(&self) -> &Interface<T::Sort> {
-        &self.read
+    pub fn read(&self) -> &[Wire<T::Sort>] {
+        self.read.as_slice()
     }
 
     /// Returns a reference to the *write interface* of the block.
     ///
     /// The write interface lists all wires that the block writes. These wires represent
     /// the outputs of the block as a whole; they can all be read outside the block.
-    pub fn write(&self) -> &Interface<T::Sort> {
-        &self.write
+    pub fn write(&self) -> &[Wire<T::Sort>] {
+        self.write.as_slice()
     }
 
     /// Return a reference to the n-th term in the block
@@ -238,8 +186,8 @@ impl<T: Theory> Block<T> {
     pub(crate) fn empty() -> Self {
         Self {
             terms: Vec::new(),
-            read: Interface::empty(),
-            write: Interface::empty(),
+            read: Vec::new(),
+            write: Vec::new(),
         }
     }
 }
@@ -291,7 +239,7 @@ where
             .collect::<Result<_, _>>()?;
 
         for term in terms.iter() {
-            for rd in term.read().wires() {
+            for rd in term.read().iter() {
                 let expected_dtype = write_to_dtype.get(&rd.id());
                 // if it hasn't been written before in the block, then it's read
                 if expected_dtype.is_none() {
@@ -305,7 +253,7 @@ where
                 }
             }
 
-            for wt in term.write().wires() {
+            for wt in term.write().iter() {
                 if read_set.contains(&wt.id()) {
                     return Err(format!(
                         "Wire {} is read by a term preceding the term that writes into this wire",
@@ -317,15 +265,14 @@ where
                     return Err(format!("Wire {} is written more than once", wt.id()));
                 }
             }
-            write.extend(term.write().wires().cloned());
         }
 
         debug_assert!(read_set.iter().all(|k| !write_to_dtype.contains_key(k)));
 
         Ok(Block {
             terms,
-            read: Interface::from_wires_unchecked(read),
-            write: Interface::from_wires_unchecked(write),
+            read: Vec::from_iter(read),
+            write: Vec::from_iter(write),
         })
     }
 }

@@ -9,7 +9,7 @@ use pyo3::{prelude::*, types::PyString};
 use std::fmt;
 use subenum::subenum;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen, eq))]
 pub enum Sort {
     Bool([usize; 2]),
@@ -52,27 +52,6 @@ impl From<lra::Sort> for Sort {
             lra::Sort::Bool(shape) => Sort::Bool(shape),
             lra::Sort::Real(shape) => Sort::Real(shape),
         }
-    }
-}
-
-impl<E: fmt::Display> TryFrom<Result<Sort, E>> for bv::Sort {
-    type Error = String;
-    fn try_from(value: Result<Sort, E>) -> Result<Self, Self::Error> {
-        value.map_err(|e| e.to_string())?.try_into()
-    }
-}
-
-impl<E: fmt::Display> TryFrom<Result<Sort, E>> for lia::Sort {
-    type Error = String;
-    fn try_from(value: Result<Sort, E>) -> Result<Self, Self::Error> {
-        value.map_err(|e| e.to_string())?.try_into()
-    }
-}
-
-impl<E: fmt::Display> TryFrom<Result<Sort, E>> for lra::Sort {
-    type Error = String;
-    fn try_from(value: Result<Sort, E>) -> Result<Self, Self::Error> {
-        value.map_err(|e| e.to_string())?.try_into()
     }
 }
 
@@ -213,43 +192,52 @@ impl Theory for Any {
     type Sort = Sort;
     const NAME: &'static str = "Any";
 
-    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        S: TryInto<Sort, Error = E>,
-        R: IntoIterator<Item = S>,
-        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = Result<(Sort, u8), E>>,
+        W: IntoIterator<Item = Result<(Sort, u8), E>>,
     {
-        let read = read.into_iter().map(TryInto::try_into);
-        let write = write.into_iter().map(TryInto::try_into);
+        // let read = read.into_iter().map(TryInto::try_into);
+        // let write = write.into_iter().map(TryInto::try_into);
         match self {
             Any::HAVOC => check_havoc(read, write),
             Any::SKIP => check_skip(read, write),
             Any::ZERO => check_zero(read, write),
-            Any::LRA(itype) => itype.check(read, write),
-            Any::LIA(itype) => itype.check(read, write),
-            Any::BV(itype) => itype.check(read, write),
+            Any::LRA(itype) => itype.check(try_into(read), try_into(write)),
+            Any::LIA(itype) => itype.check(try_into(read), try_into(write)),
+            Any::BV(itype) => itype.check(try_into(read), try_into(write)),
         }
     }
+}
+
+fn try_into<R, S, T, E: fmt::Display, F: fmt::Display>(
+    iter: R,
+) -> impl Iterator<Item = Result<(T, u8), String>>
+where
+    S: TryInto<T, Error = F>,
+    R: IntoIterator<Item = Result<(S, u8), E>>,
+{
+    iter.into_iter().map(|r| {
+        r.map_err(|e| e.to_string())
+            .and_then(|(s, d)| Ok((s.try_into().map_err(|f| f.to_string())?, d)))
+    })
 }
 
 impl Theory for Sequential {
     type Sort = Sort;
     const NAME: &'static str = "Sequential";
 
-    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        S: TryInto<Sort, Error = E>,
-        R: IntoIterator<Item = S>,
-        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = Result<(Sort, u8), E>>,
+        W: IntoIterator<Item = Result<(Sort, u8), E>>,
     {
-        let read = read.into_iter().map(TryInto::try_into);
-        let write = write.into_iter().map(TryInto::try_into);
         match self {
             Sequential::HAVOC => check_havoc(read, write),
             Sequential::SKIP => check_skip(read, write),
-            Sequential::LRA(itype) => itype.check(read, write),
-            Sequential::LIA(itype) => itype.check(read, write),
-            Sequential::BV(itype) => itype.check(read, write),
+            Sequential::LRA(itype) => itype.check(try_into(read), try_into(write)),
+            Sequential::LIA(itype) => itype.check(try_into(read), try_into(write)),
+            Sequential::BV(itype) => itype.check(try_into(read), try_into(write)),
         }
     }
 }
@@ -258,19 +246,18 @@ impl Theory for Combinatorial {
     type Sort = Sort;
     const NAME: &'static str = "Combinatorial";
 
-    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        S: TryInto<Sort, Error = E>,
-        R: IntoIterator<Item = S>,
-        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = Result<(Sort, u8), E>>,
+        W: IntoIterator<Item = Result<(Sort, u8), E>>,
     {
-        let read = read.into_iter().map(TryInto::try_into);
-        let write = write.into_iter().map(TryInto::try_into);
+        // let read = read.into_iter().map(TryInto::try_into);
+        // let write = write.into_iter().map(TryInto::try_into);
         match self {
             Combinatorial::HAVOC => check_havoc(read, write),
-            Combinatorial::LRA(itype) => itype.check(read, write),
-            Combinatorial::LIA(itype) => itype.check(read, write),
-            Combinatorial::BV(itype) => itype.check(read, write),
+            Combinatorial::LRA(itype) => itype.check(try_into(read), try_into(write)),
+            Combinatorial::LIA(itype) => itype.check(try_into(read), try_into(write)),
+            Combinatorial::BV(itype) => itype.check(try_into(read), try_into(write)),
         }
     }
 }
@@ -279,17 +266,16 @@ impl Theory for Differential {
     type Sort = Sort;
     const NAME: &'static str = "Differential";
 
-    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        S: TryInto<Sort, Error = E>,
-        R: IntoIterator<Item = S>,
-        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = Result<(Sort, u8), E>>,
+        W: IntoIterator<Item = Result<(Sort, u8), E>>,
     {
-        let read = read.into_iter().map(TryInto::try_into);
-        let write = write.into_iter().map(TryInto::try_into);
+        // let read = read.into_iter().map(TryInto::try_into);
+        // let write = write.into_iter().map(TryInto::try_into);
         match self {
             Differential::ZERO => check_zero(read, write),
-            Differential::LRA(itype) => itype.check(read, write),
+            Differential::LRA(itype) => itype.check(try_into(read), try_into(write)),
         }
     }
 }
@@ -311,6 +297,10 @@ impl From<Combinatorial> for Sequential {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn deg0(s: Sort) -> Result<(Sort, u8), String> {
+        Ok((s, 0))
+    }
 
     // Casts up the hierarchy (Into) wrap the op in the right variant.
 
@@ -376,16 +366,24 @@ mod tests {
         let t = || Sort::Real([1, 1]);
         let u = || Sort::Real([2, 1]);
         for skip in [
-            Any::SKIP.check([t()], [t()]),
-            Sequential::SKIP.check([t()], [t()]),
+            Any::SKIP.check([t()].map(deg0), [t()].map(deg0)),
+            Sequential::SKIP.check([t()].map(deg0), [t()].map(deg0)),
         ] {
             assert!(skip.is_ok());
         }
         // arity and sort mismatches
-        assert!(Any::SKIP.check([t(), u()], [t(), u()]).is_err());
-        assert!(Any::SKIP.check([t()], [u()]).is_err());
-        assert!(Any::SKIP.check([] as [Sort; 0], [] as [Sort; 0]).is_err());
-        assert!(Sequential::SKIP.check([t(), u()], [t(), u()]).is_err());
+        assert!(
+            Any::SKIP
+                .check([t(), u()].map(deg0), [t(), u()].map(deg0))
+                .is_err()
+        );
+        assert!(Any::SKIP.check([t()].map(deg0), [u()].map(deg0)).is_err());
+        assert!(Any::SKIP.check([].map(deg0), [].map(deg0)).is_err());
+        assert!(
+            Sequential::SKIP
+                .check([t(), u()].map(deg0), [t(), u()].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
@@ -393,19 +391,23 @@ mod tests {
         let t = || Sort::Real([1, 1]);
         let u = || Sort::Real([2, 1]);
         for havoc in [
-            Any::HAVOC.check([] as [Sort; 0], [t()]),
-            Sequential::HAVOC.check([] as [Sort; 0], [t()]),
-            Combinatorial::HAVOC.check([] as [Sort; 0], [t()]),
+            Any::HAVOC.check([].map(deg0), [t()].map(deg0)),
+            Sequential::HAVOC.check([].map(deg0), [t()].map(deg0)),
+            Combinatorial::HAVOC.check([].map(deg0), [t()].map(deg0)),
         ] {
             assert!(havoc.is_ok());
         }
         // no reads, exactly one write
-        assert!(Any::HAVOC.check([t()], [t()]).is_err());
-        assert!(Any::HAVOC.check([] as [Sort; 0], [t(), u()]).is_err());
-        assert!(Any::HAVOC.check([] as [Sort; 0], [] as [Sort; 0]).is_err());
+        assert!(Any::HAVOC.check([t()].map(deg0), [t()].map(deg0)).is_err());
+        assert!(
+            Any::HAVOC
+                .check([].map(deg0), [t(), u()].map(deg0))
+                .is_err()
+        );
+        assert!(Any::HAVOC.check([].map(deg0), [].map(deg0)).is_err());
         assert!(
             Combinatorial::HAVOC
-                .check([] as [Sort; 0], [t(), u()])
+                .check([].map(deg0), [t(), u()].map(deg0))
                 .is_err()
         );
     }
@@ -415,18 +417,18 @@ mod tests {
         let t = || Sort::Real([1, 1]);
         let u = || Sort::Real([2, 1]);
         for zero in [
-            Any::ZERO.check([] as [Sort; 0], [t()]),
-            Differential::ZERO.check([] as [Sort; 0], [t()]),
+            Any::ZERO.check([].map(deg0), [t()].map(deg0)),
+            Differential::ZERO.check([].map(deg0), [t()].map(deg0)),
         ] {
             assert!(zero.is_ok());
         }
         // no reads, exactly one write
-        assert!(Any::ZERO.check([t()], [t()]).is_err());
-        assert!(Any::ZERO.check([] as [Sort; 0], [t(), u()]).is_err());
-        assert!(Any::ZERO.check([] as [Sort; 0], [] as [Sort; 0]).is_err());
+        assert!(Any::ZERO.check([t()].map(deg0), [t()].map(deg0)).is_err());
+        assert!(Any::ZERO.check([].map(deg0), [t(), u()].map(deg0)).is_err());
+        assert!(Any::ZERO.check([].map(deg0), [].map(deg0)).is_err());
         assert!(
             Differential::ZERO
-                .check([] as [Sort; 0], [t(), u()])
+                .check([].map(deg0), [t(), u()].map(deg0))
                 .is_err()
         );
     }
