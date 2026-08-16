@@ -1,6 +1,6 @@
 use base::term;
 use base::term::Term;
-use base::wire::Interface;
+use base::variable::{Variable, X, d};
 use base::wire::Wire;
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
@@ -13,11 +13,10 @@ impl Theory for Ops {
     type Sort = &'static str;
     const NAME: &'static str = "Ops";
 
-    fn check<R, W, S, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
+    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        S: TryInto<Self::Sort, Error = E>,
-        R: IntoIterator<Item = S>,
-        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
+        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
     {
         Ok(())
     }
@@ -43,70 +42,45 @@ fn mk_op(name: &'static str) -> Ops {
 
 #[allow(clippy::vec_init_then_push)]
 fn example_counter() -> Result<Module, String> {
-    let x0 = Wire::new("real");
-    let y0 = Wire::new("real");
-    let z0 = Wire::new("real");
-    let y00 = Wire::new("real");
-    let z00 = Wire::new("real");
-    let x1 = Wire::new("real");
-    let y1 = Wire::new("real");
-    let z1 = Wire::new("real");
-    let y01 = Wire::new("real");
-    let z01 = Wire::new("real");
+    let x = Variable::new("real");
+    let y = Variable::new("real");
+    let z = Variable::new("real");
+    let y0 = Variable::new("real");
+    let z0 = Variable::new("real");
 
     let mut init: Vec<Term<Ops>> = Vec::new();
 
-    let tmp1 = Wire::new("real");
-    init.push(term!(mk_op("ZERO"), [tmp1.clone()])?);
+    let tmp1 = Wire::zero("real");
+    init.push(term!(mk_op("ZERO"), [tmp1])?);
 
-    let tmp2 = Wire::new("bool");
-    let tmp3 = Wire::new("bool");
-    init.push(term!(mk_op("ID"), [x1.clone()], [tmp1.clone()])?);
-    init.push(term!(mk_op("ABS"), [tmp2.clone()], [y01.clone()])?);
-    init.push(term!(mk_op("ID"), [y1.clone()], [tmp2.clone()])?);
-    init.push(term!(mk_op("ABS"), [tmp3.clone()], [z01.clone()])?);
-    init.push(term!(mk_op("ID"), [z1.clone()], [tmp3.clone()])?);
+    let tmp2 = Wire::zero("bool");
+    let tmp3 = Wire::zero("bool");
+    init.push(term!(mk_op("ID"), [X(x)], [tmp1])?);
+    init.push(term!(mk_op("ABS"), [tmp2], [X(y0)])?);
+    init.push(term!(mk_op("ID"), [X(y)], [tmp2])?);
+    init.push(term!(mk_op("ABS"), [tmp3], [X(z0)])?);
+    init.push(term!(mk_op("ID"), [X(z)], [tmp3])?);
 
     let mut update: Vec<Term<Ops>> = Vec::new();
 
-    let tmp4 = Wire::new("bool");
-    let tmp5 = Wire::new("bool");
-    let tmp6 = Wire::new("bool");
-    update.push(term!(mk_op("ZERO"), [tmp1.clone()])?);
-    update.push(term!(
-        mk_op("LEQ"),
-        [tmp4.clone()],
-        [x0.clone(), y0.clone()]
-    )?);
-    update.push(term!(
-        mk_op("LEQ"),
-        [tmp5.clone()],
-        [x0.clone(), z0.clone()]
-    )?);
-    update.push(term!(
-        mk_op("OR"),
-        [tmp6.clone()],
-        [tmp4.clone(), tmp5.clone()]
-    )?);
+    let tmp4 = Wire::zero("bool");
+    let tmp5 = Wire::zero("bool");
+    let tmp6 = Wire::zero("bool");
+    update.push(term!(mk_op("ZERO"), [tmp1])?);
+    update.push(term!(mk_op("LEQ"), [tmp4], [x, y])?);
+    update.push(term!(mk_op("LEQ"), [tmp5], [x, z])?);
+    update.push(term!(mk_op("OR"), [tmp6], [tmp4, tmp5])?);
 
-    let tmp7 = Wire::new("real");
-    let tmp8 = Wire::new("real");
-    update.push(term!(mk_op("ONE"), [tmp7.clone()])?);
-    update.push(term!(
-        mk_op("ADD"),
-        [tmp8.clone()],
-        [x0.clone(), tmp7.clone()]
-    )?);
+    let tmp7 = Wire::zero("real");
+    let tmp8 = Wire::zero("real");
+    update.push(term!(mk_op("ONE"), [tmp7])?);
+    update.push(term!(mk_op("ADD"), [tmp8], [*x, tmp7])?);
 
-    update.push(term!(
-        mk_op("ITE"),
-        [x1.clone()],
-        [tmp6.clone(), tmp8.clone(), tmp1.clone()]
-    )?);
-    update.push(term!(mk_op("ID"), [y1.clone()], [y0.clone()])?);
-    update.push(term!(mk_op("ID"), [z1.clone()], [z0.clone()])?);
+    update.push(term!(mk_op("ITE"), [X(x)], [tmp6, tmp8, tmp1])?);
+    update.push(term!(mk_op("ID"), [X(y)], [y0])?);
+    update.push(term!(mk_op("ID"), [X(z)], [z0])?);
 
-    let obs = Interface::from_iter([[x0, x1], [y0, y1], [z0, z1], [y00, y01], [z00, z01]]);
+    let obs = [x, y, z, y0, z0];
 
     Module::sequential(obs, init, update)
 }
@@ -114,145 +88,92 @@ fn example_counter() -> Result<Module, String> {
 #[allow(clippy::vec_init_then_push)]
 fn example_peterson1() -> Result<Module, String> {
     let stype = "{outCS, reqCS, inCS}";
-    let pc1: [Wire<&str>; 2] = [Wire::new(stype), Wire::new(stype)];
-    let x1: [Wire<&str>; 2] = [Wire::new("bool"), Wire::new("bool")].map(Into::into);
-    let pc2: [Wire<&str>; 2] = [Wire::new(stype), Wire::new(stype)].map(Into::into);
-    let x2: [Wire<&str>; 2] = [Wire::new("bool"), Wire::new("bool")].map(Into::into);
+    let pc1 = Variable::new(stype);
+    let x1 = Variable::new("bool");
+    let pc2 = Variable::new(stype);
+    let x2 = Variable::new("bool");
 
     let mut init: Vec<Term<Ops>> = Vec::new();
-    init.push(term!(mk_op("CONST(outCS)"), [pc1[1].clone()]).unwrap());
-    init.push(term!(mk_op("CONST(true)"), [x1[1].clone()]).unwrap());
+    init.push(term!(mk_op("CONST(outCS)"), [X(pc1)]).unwrap());
+    init.push(term!(mk_op("CONST(true)"), [X(x1)]).unwrap());
 
     let mut update: Vec<Term<Ops>> = Vec::new();
-    let out_cs = Wire::new(stype);
-    let cond1 = Wire::new("bool");
-    update.push(term!(mk_op("CONST(outCS)"), [out_cs.clone()]).unwrap());
-    update.push(
-        term!(
-            mk_op("EQ"),
-            [cond1.clone()],
-            [out_cs.clone(), pc1[0].clone()]
-        )
-        .unwrap(),
-    );
+    let out_cs = Wire::zero(stype);
+    let cond1 = Wire::zero("bool");
+    update.push(term!(mk_op("CONST(outCS)"), [out_cs]).unwrap());
+    update.push(term!(mk_op("EQ"), [cond1], [out_cs, *pc1]).unwrap());
 
-    let req_cs = Wire::new(stype);
-    let cond2 = Wire::new("bool");
-    update.push(term!(mk_op("CONST(reqCS)"), [req_cs.clone()]).unwrap());
-    let tmp11 = Wire::new("bool");
-    update.push(
-        term!(
-            mk_op("EQ"),
-            [tmp11.clone()],
-            [req_cs.clone(), pc1[0].clone()]
-        )
-        .unwrap(),
-    );
+    let req_cs = Wire::zero(stype);
+    let cond2 = Wire::zero("bool");
+    update.push(term!(mk_op("CONST(reqCS)"), [req_cs]).unwrap());
+    let tmp11 = Wire::zero("bool");
+    update.push(term!(mk_op("EQ"), [tmp11], [req_cs, *pc1]).unwrap());
 
-    let tmp12 = Wire::new("bool");
-    let tmp13 = Wire::new("bool");
-    let tmp14 = Wire::new("bool");
-    update.push(
-        term!(
-            mk_op("EQ"),
-            [tmp12.clone()],
-            [out_cs.clone(), pc2[0].clone()]
-        )
-        .unwrap(),
-    );
-    update.push(
-        term!(
-            mk_op("NEQ"),
-            [tmp13.clone()],
-            [x1[0].clone(), x2[0].clone()]
-        )
-        .unwrap(),
-    );
-    update.push(term!(mk_op("OR"), [tmp14.clone()], [tmp12.clone(), tmp13.clone()]).unwrap());
-    update.push(
-        term!(
-            mk_op("AND"),
-            [cond2.clone()],
-            [tmp14.clone(), tmp11.clone()]
-        )
-        .unwrap(),
-    );
+    let tmp12 = Wire::zero("bool");
+    let tmp13 = Wire::zero("bool");
+    let tmp14 = Wire::zero("bool");
+    update.push(term!(mk_op("EQ"), [tmp12], [out_cs, *pc2]).unwrap());
+    update.push(term!(mk_op("NEQ"), [tmp13], [x1, x2]).unwrap());
+    update.push(term!(mk_op("OR"), [tmp14], [tmp12, tmp13]).unwrap());
+    update.push(term!(mk_op("AND"), [cond2], [tmp14, tmp11]).unwrap());
 
-    let in_cs = Wire::new(stype);
-    let cond3 = Wire::new("bool");
-    update.push(term!(mk_op("CONST(inCS)"), [in_cs.clone()]).unwrap());
-    update.push(
-        term!(
-            mk_op("EQ"),
-            [cond3.clone()],
-            [in_cs.clone(), pc1[0].clone()]
-        )
-        .unwrap(),
-    );
+    let in_cs = Wire::zero(stype);
+    let cond3 = Wire::zero("bool");
+    update.push(term!(mk_op("CONST(inCS)"), [in_cs]).unwrap());
+    update.push(term!(mk_op("EQ"), [cond3], [in_cs, *pc1]).unwrap());
 
-    let const_true = Wire::new("bool");
-    update.push(term!(mk_op("CONST(true)"), [const_true.clone()]).unwrap());
+    let const_true = Wire::zero("bool");
+    update.push(term!(mk_op("CONST(true)"), [const_true]).unwrap());
 
     update.push(
         term!(
             mk_op("CASE"),
-            [pc1[1].clone(), x1[1].clone()],
+            [X(pc1), X(x1)],
             [
-                cond1,
-                req_cs,
-                x2[0].clone(),
-                cond2,
-                in_cs.clone(),
-                x1[0].clone(),
-                cond3,
-                out_cs.clone(),
-                x1[0].clone(),
-                const_true,
-                pc1[0].clone(),
-                x1[0].clone(),
+                cond1, req_cs, *x2, cond2, in_cs, *x1, cond3, out_cs, *x1, const_true, *pc1, *x1,
             ]
         )
         .unwrap(),
     );
 
-    let obs = Interface::from_iter([pc1, x1, pc2, x2]);
+    let obs = [pc1, x1, pc2, x2];
     Module::sequential(obs, init, update)
 }
 
 fn example_tiny1(
-    external: [Wire<&'static str>; 2],
-    interface: [Wire<&'static str>; 2],
+    external: Variable<&'static str>,
+    interface: Variable<&'static str>,
     wait: bool,
 ) -> Result<Module, String> {
-    let private = [Wire::new("Tny"), Wire::new("Tny")];
-    let temp = Wire::new("Tny");
+    let private = Variable::new("Tny");
+    let temp = Wire::zero("Tny");
 
-    let cons = Term::constant(mk_op("CONST"), [temp.clone()]).unwrap();
+    let cons = Term::constant(mk_op("CONST"), [temp]).unwrap();
 
     let update = if wait {
         Term::function(
             mk_op("AWAIT"),
-            [interface[1].clone(), private[1].clone()],
-            [external[1].clone(), private[0].clone(), temp],
+            [X(interface), X(private)],
+            [X(external), *private, temp],
         )
         .unwrap()
     } else {
         Term::function(
             mk_op("SEQ"),
-            [interface[1].clone(), private[1].clone()],
-            [external[0].clone(), private[0].clone(), temp],
+            [X(interface), X(private)],
+            [*external, *private, temp],
         )
         .unwrap()
     };
 
-    let init = Term::constant(mk_op("INIT"), [interface[1].clone(), private[1].clone()]).unwrap();
+    let init = Term::constant(mk_op("INIT"), [X(interface), X(private)]).unwrap();
 
-    let obs = Interface::from_iter([external, interface]);
-    let prvt = Interface::from_iter([private]);
+    let obs = [external, interface];
+    let prvt = [private];
 
     Module::partially_observable_sequential(obs, prvt, [init], [cons, update])
 }
-
+//
 #[test]
 fn can_instantiate_sequential_module() {
     let _module = example_counter().unwrap();
@@ -262,18 +183,16 @@ fn can_instantiate_sequential_module() {
 #[test]
 fn can_instantiate_partially_observable_module() {
     let m = example_counter().unwrap();
-    let wires = m.obs().clone();
-    let mut obs: Vec<[Wire<&'static str>; 2]> = Vec::new();
-    let mut prvt: Vec<[Wire<&'static str>; 2]> = Vec::new();
-    for [ltc, nxt] in wires {
-        if ltc.id() == 0 {
-            prvt.push([ltc, nxt]);
+    let vars = m.obs().clone();
+    let mut obs: Vec<Variable<&'static str>> = Vec::new();
+    let mut prvt: Vec<Variable<&'static str>> = Vec::new();
+    for var in vars {
+        if var.id() == 0 {
+            prvt.push(var);
         } else {
-            obs.push([ltc, nxt]);
+            obs.push(var);
         }
     }
-    let obs = Interface::from_iter(obs);
-    let prvt = Interface::from_iter(prvt);
 
     let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
     //print!("{}", m);
@@ -283,19 +202,19 @@ fn can_instantiate_partially_observable_module() {
 #[test]
 fn cannot_instantiate_external_unobservable_wire() {
     let m = example_counter().unwrap();
-    let wires = m.obs().clone();
-    let obswire = wires.wire(0, 3).unwrap().clone();
-    let mut obs: Vec<[Wire<&'static str>; 2]> = Vec::new();
-    let mut prvt: Vec<[Wire<&'static str>; 2]> = Vec::new();
-    for [ltc, nxt] in wires {
-        if ltc.id() == obswire.id() {
-            prvt.push([ltc, nxt]);
+    let vars = m.obs().clone();
+    // the fourth observable is an external variable: making it private must
+    // fail, privates have to be controlled
+    let target = vars.iter().nth(3).unwrap().id();
+    let mut obs: Vec<Variable<&'static str>> = Vec::new();
+    let mut prvt: Vec<Variable<&'static str>> = Vec::new();
+    for var in vars {
+        if var.id() == target {
+            prvt.push(var);
         } else {
-            obs.push([ltc, nxt]);
+            obs.push(var);
         }
     }
-    let obs = Interface::from_iter(obs);
-    let prvt = Interface::from_iter(prvt);
 
     let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
     print!("{:?}", m);
@@ -311,54 +230,40 @@ fn can_instantiate_example_peterson1() {
     assert_eq!(m.extl().len(), 2);
     assert_eq!(m.intf().len(), 2);
 }
-
+//
 #[test]
 fn module_write_all_ctrl() {
-    let x = Wire::new("real");
-    let xn = Wire::new("real");
-    let y = Wire::new("real");
-    let yn = Wire::new("real");
+    let x = Variable::new("real");
+    let y = Variable::new("real");
+    let x0 = Variable::new("real");
 
-    let x0 = Wire::new("real");
-    let xn0 = Wire::new("real");
+    let update: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [x]).unwrap()].to_vec();
 
-    let update: Vec<Term<Ops>> = [term!(mk_op("ID"), [xn.clone()], [x.clone()]).unwrap()].to_vec();
+    let obs = [x, y, x0];
 
-    let obs = Interface::from_iter([
-        [x.clone(), xn.clone()],
-        [y.clone(), yn.clone()],
-        [x0, xn0.clone()],
-    ]);
+    let m = Module::sequential(obs, vec![], update.clone());
+    assert!(m.is_err());
 
-    let m = Module::sequential(obs.clone(), vec![], update.clone());
-    assert!(m.is_err_and(|msg| {
-        msg.contains("Controlled wire") && msg.contains("is not written in init")
-    }));
-
-    let init: Vec<Term<Ops>> = [term!(mk_op("ID"), [xn0.clone()], [xn.clone()]).unwrap()].to_vec();
-    let m = Module::sequential(obs.clone(), init, update.clone());
-    assert!(m.is_err_and(|msg| {
-        msg.contains("Controlled wire") && msg.contains("is not written in init")
-    }));
+    let init: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x0)], [X(x)]).unwrap()].to_vec();
+    let m = Module::sequential(obs, init, update.clone());
+    assert!(m.is_err());
 
     let init: Vec<Term<Ops>> = [
-        term!(mk_op("ID"), [xn.clone()], [xn0.clone()]).unwrap(),
-        term!(mk_op("ID"), [yn.clone()], [xn0]).unwrap(),
+        term!(mk_op("ID"), [X(x)], [X(x0)]).unwrap(),
+        term!(mk_op("ID"), [X(y)], [X(x0)]).unwrap(),
     ]
     .to_vec();
 
-    let m = Module::sequential(obs.clone(), init.clone(), update);
-    assert!(m.is_err_and(|msg| {
-        msg.contains("Controlled wire") && msg.contains("is not written in update")
-    }));
+    let m = Module::sequential(obs, init.clone(), update);
+    assert!(m.is_err());
 
     let update: Vec<Term<Ops>> = [
-        term!(mk_op("ID"), [xn.clone()], [x.clone()]).unwrap(),
-        term!(mk_op("ID"), [yn], [y.clone()]).unwrap(),
+        term!(mk_op("ID"), [X(x)], [x]).unwrap(),
+        term!(mk_op("ID"), [X(y)], [y]).unwrap(),
     ]
     .to_vec();
 
-    let m = Module::sequential(obs.clone(), init, update);
+    let m = Module::sequential(obs, init, update);
     assert!(m.is_ok());
 }
 
@@ -372,24 +277,24 @@ fn can_compose_example_peterson1_with_empty_module() {
 
 #[test]
 fn can_instantiate_example_tiny1_0123() {
-    let x = [Wire::new("Tny"), Wire::new("Tny")];
-    let y = [Wire::new("Tny"), Wire::new("Tny")];
+    let x = Variable::new("Tny");
+    let y = Variable::new("Tny");
     let m = example_tiny1(x, y, true).unwrap();
     assert!(m.is_open());
 }
 
 #[test]
 fn can_instantiate_example_tiny1_2301() {
-    let x = [Wire::new("Tny"), Wire::new("Tny")];
-    let y = [Wire::new("Tny"), Wire::new("Tny")];
+    let x = Variable::new("Tny");
+    let y = Variable::new("Tny");
     let m = example_tiny1(y, x, true).unwrap();
     assert!(m.is_open());
 }
 #[test]
 fn can_compose_example_tiny1() {
-    let x = [Wire::new("Tny"), Wire::new("Tny")];
-    let y = [Wire::new("Tny"), Wire::new("Tny")];
-    let m1 = example_tiny1(x.clone(), y.clone(), false).unwrap();
+    let x = Variable::new("Tny");
+    let y = Variable::new("Tny");
+    let m1 = example_tiny1(x, y, false).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
     let m3 = Module::parallel([m1, m2]);
@@ -398,9 +303,9 @@ fn can_compose_example_tiny1() {
 
 #[test]
 fn cannot_compose_example_tiny1_with_cyclic_await() {
-    let x = [Wire::new("Tny"), Wire::new("Tny")];
-    let y = [Wire::new("Tny"), Wire::new("Tny")];
-    let m1 = example_tiny1(x.clone(), y.clone(), true).unwrap();
+    let x = Variable::new("Tny");
+    let y = Variable::new("Tny");
+    let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, true).unwrap();
 
     let m3 = Module::parallel([m1, m2]);
@@ -409,9 +314,9 @@ fn cannot_compose_example_tiny1_with_cyclic_await() {
 
 #[test]
 fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let x = [Wire::new("Tny"), Wire::new("Tny")];
-    let y = [Wire::new("Tny"), Wire::new("Tny")];
-    let m1 = example_tiny1(x.clone(), y.clone(), true).unwrap();
+    let x = Variable::new("Tny");
+    let y = Variable::new("Tny");
+    let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
     let m3 = Module::parallel([m1, m2]);
@@ -420,11 +325,11 @@ fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
 
 #[test]
 fn can_compose_three_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let x = [Wire::new("Tny"), Wire::new("Tny")];
-    let y = [Wire::new("Tny"), Wire::new("Tny")];
-    let z = [Wire::new("Tny"), Wire::new("Tny")];
-    let m1 = example_tiny1(x.clone(), y.clone(), true).unwrap();
-    let m2 = example_tiny1(y.clone(), x.clone(), false).unwrap();
+    let x = Variable::new("Tny");
+    let y = Variable::new("Tny");
+    let z = Variable::new("Tny");
+    let m1 = example_tiny1(x, y, true).unwrap();
+    let m2 = example_tiny1(y, x, false).unwrap();
     let m3 = example_tiny1(y, z, false).unwrap();
 
     let m4 = Module::parallel([m1, m2, m3]);
@@ -439,37 +344,32 @@ fn compose_seq() {
     //
     //  M1 and M2 are compatible (disjoint interface variables and acyclic waiting dependencies),
     //  and we test that they are composable
-    let x = Wire::new("real");
-    let xn = Wire::new("real");
-    let y = Wire::new("real");
-    let yn = Wire::new("real");
-    let z = Wire::new("real");
-    let zn = Wire::new("real");
+    let x = Variable::new("real");
+    let y = Variable::new("real");
+    let z = Variable::new("real");
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [xn.clone()], [yn.clone()]).unwrap()].to_vec();
-    let obs = Interface::from_iter([[x.clone(), xn.clone()], [y.clone(), yn.clone()]]);
-    let m1 = Module::combinatorial(obs.clone(), assign.clone()).unwrap();
+    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
+    let m1 = Module::combinatorial([x, y], assign).unwrap();
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [zn.clone()], [xn.clone()]).unwrap()].to_vec();
-    let obs = Interface::from_iter([[x.clone(), xn.clone()], [z.clone(), zn.clone()]]);
-    let m2 = Module::combinatorial(obs.clone(), assign.clone()).unwrap();
+    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
+    let m2 = Module::combinatorial([x, z], assign).unwrap();
 
     Module::parallel([m1, m2]).unwrap();
 }
 
 #[test]
 fn compose_seq_2() {
-    let (x, xn) = (Wire::new("real"), Wire::new("real"));
-    let (y, yn) = (Wire::new("real"), Wire::new("real"));
-    let (z, zn) = (Wire::new("real"), Wire::new("real"));
-    let (y0, y0n) = (Wire::new("real"), Wire::new("real"));
-    let (z0, z0n) = (Wire::new("real"), Wire::new("real"));
-    let (inv, invn) = (Wire::new("real"), Wire::new("real"));
+    let x = Variable::new("real");
+    let y = Variable::new("real");
+    let z = Variable::new("real");
+    let y0 = Variable::new("real");
+    let z0 = Variable::new("real");
+    let inv = Variable::new("real");
 
     // class Module(smt.Module):
     //     def init(self, extl) -> None:
     //         y0, z0 = extl
-    //         return Int(0), nxt(y0), nxt(z0)  # = x, y, z
+    //         return Int(0), X(y0), X(z0)  # = x, y, z
     //
     //     def update(self, ctrl, extl) -> None:
     //         x, y, z = ctrl
@@ -480,108 +380,72 @@ fn compose_seq_2() {
     //         return xn, y, z
     //
     let init: Vec<Term<Ops>> = [
-        term!(mk_op("Const(0)"), [xn.clone()]).unwrap(),
-        term!(mk_op("Id"), [yn.clone()], [y0n.clone()]).unwrap(),
-        term!(mk_op("Id"), [zn.clone()], [z0n.clone()]).unwrap(),
+        term!(mk_op("Const(0)"), [X(x)]).unwrap(),
+        term!(mk_op("Id"), [X(y)], [X(y0)]).unwrap(),
+        term!(mk_op("Id"), [X(z)], [X(z0)]).unwrap(),
     ]
     .to_vec();
 
     let tmps = [
-        Wire::new("real"),
-        Wire::new("real"),
-        Wire::new("real"),
-        Wire::new("real"),
-        Wire::new("real"),
-        Wire::new("real"),
+        Wire::zero("real"),
+        Wire::zero("real"),
+        Wire::zero("real"),
+        Wire::zero("real"),
+        Wire::zero("real"),
+        Wire::zero("real"),
     ];
     let update: Vec<Term<Ops>> = [
-        term!(mk_op("Lt"), [tmps[0].clone()], [x.clone(), y.clone()]).unwrap(),
-        term!(mk_op("Lt"), [tmps[1].clone()], [x.clone(), z.clone()]).unwrap(),
-        term!(
-            mk_op("Or"),
-            [tmps[2].clone()],
-            [tmps[0].clone(), tmps[1].clone()]
-        )
-        .unwrap(),
-        term!(mk_op("Const(0)"), [tmps[3].clone()]).unwrap(),
-        term!(mk_op("Const(1)"), [tmps[4].clone()]).unwrap(),
-        term!(
-            mk_op("Add"),
-            [tmps[5].clone()],
-            [x.clone(), tmps[4].clone()]
-        )
-        .unwrap(),
-        term!(
-            mk_op("Ite"),
-            [xn.clone()],
-            [tmps[2].clone(), tmps[5].clone(), tmps[3].clone()]
-        )
-        .unwrap(),
-        term!(mk_op("Id"), [yn.clone()], [y.clone()]).unwrap(),
-        term!(mk_op("Id"), [zn.clone()], [z.clone()]).unwrap(),
+        term!(mk_op("Lt"), [tmps[0]], [x, y]).unwrap(),
+        term!(mk_op("Lt"), [tmps[1]], [x, z]).unwrap(),
+        term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
+        term!(mk_op("Const(0)"), [tmps[3]]).unwrap(),
+        term!(mk_op("Const(1)"), [tmps[4]]).unwrap(),
+        term!(mk_op("Add"), [tmps[5]], [*x, tmps[4]]).unwrap(),
+        term!(mk_op("Ite"), [X(x)], [tmps[2], tmps[5], tmps[3]]).unwrap(),
+        term!(mk_op("Id"), [X(y)], [y]).unwrap(),
+        term!(mk_op("Id"), [X(z)], [z]).unwrap(),
     ]
     .to_vec();
-    let obs = Interface::from_iter([
-        [x.clone(), xn.clone()],
-        [y.clone(), yn.clone()],
-        [z.clone(), zn.clone()],
-        [y0.clone(), y0n.clone()],
-        [z0.clone(), z0n.clone()],
-    ]);
-    let m1 = Module::sequential(obs.clone(), init, update).unwrap();
+    let obs = [x, y, z, y0, z0];
+    let m1 = Module::sequential(obs, init, update).unwrap();
 
     //
     // class Inv(smt.Module):
     //     def init(self, extl) -> None:
     //         x, y, z = extl
-    //         return Or(nxt(x) <= nxt(y), nxt(x) <= nxt(z))
+    //         return Or(X(x) <= X(y), X(x) <= X(z))
     //
     //     def update(self, inv, extl) -> None:
     //         x, y, z = extl
-    //         return Or(nxt(x) <= nxt(y), nxt(x) <= nxt(z))
-    let tmps = [Wire::new("real"), Wire::new("real"), Wire::new("real")];
+    //         return Or(X(x) <= X(y), X(x) <= X(z))
+    let tmps = [Wire::zero("real"), Wire::zero("real"), Wire::zero("real")];
     let assign: Vec<Term<Ops>> = [
-        term!(mk_op("Le"), [tmps[0].clone()], [xn.clone(), yn.clone()]).unwrap(),
-        term!(mk_op("Le"), [tmps[1].clone()], [xn.clone(), zn.clone()]).unwrap(),
-        term!(
-            mk_op("Or"),
-            [tmps[2].clone()],
-            [tmps[0].clone(), tmps[1].clone()]
-        )
-        .unwrap(),
-        term!(mk_op("Id"), [invn.clone()], [tmps[2].clone()]).unwrap(),
+        term!(mk_op("Le"), [tmps[0]], [X(x), X(y)]).unwrap(),
+        term!(mk_op("Le"), [tmps[1]], [X(x), X(z)]).unwrap(),
+        term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
+        term!(mk_op("Id"), [X(inv)], [tmps[2]]).unwrap(),
     ]
     .to_vec();
 
-    let obs = Interface::from_iter([
-        [x.clone(), xn.clone()],
-        [y.clone(), yn.clone()],
-        [z.clone(), zn.clone()],
-        [inv.clone(), invn.clone()],
-    ]);
-    let m2 = Module::combinatorial(obs.clone(), assign.clone()).unwrap();
+    let obs = [x, y, z, inv];
+    let m2 = Module::combinatorial(obs, assign.clone()).unwrap();
 
     Module::parallel([m1.clone(), m2]).unwrap();
 
     // try to use a `sequential_observable` ctor instead of combinatorial
-    let m2 = Module::sequential(obs.clone(), assign.clone(), assign).unwrap();
+    let m2 = Module::sequential(obs, assign.clone(), assign).unwrap();
     let _m = Module::parallel([m1, m2]).unwrap();
     println!("{:?}", _m);
 }
 
 #[test]
 fn more_controlled_than_external() {
-    let x = [Wire::new("A"), Wire::new("A")];
-    let y = [Wire::new("B"), Wire::new("B")];
-    let z = [Wire::new("C"), Wire::new("C")];
+    let x = Variable::new("A");
+    let y = Variable::new("B");
+    let z = Variable::new("C");
 
-    let init = Term::constant(mk_op("A"), [y[1].clone(), z[1].clone()]).unwrap();
-    let update = Term::function(
-        mk_op("A"),
-        [y[1].clone(), z[1].clone()],
-        [y[0].clone(), z[0].clone()],
-    )
-    .unwrap();
+    let init = Term::constant(mk_op("A"), [X(y), X(z)]).unwrap();
+    let update = Term::function(mk_op("A"), [X(y), X(z)], [y, z]).unwrap();
 
     let m = Module::partially_observable_sequential([x], [y, z], [init], [update]);
     assert!(m.is_ok());
@@ -589,23 +453,13 @@ fn more_controlled_than_external() {
 
 #[test]
 fn module_with_invalid_read() {
-    let x = [Wire::new("A"), Wire::new("A")];
-    let y = [Wire::new("B"), Wire::new("B")];
-    let z = [Wire::new("C"), Wire::new("C")];
-    let p = Wire::new("P");
+    let x = Variable::new("A");
+    let y = Variable::new("B");
+    let z = Variable::new("C");
+    let p = Wire::zero("P");
 
-    let init = Term::function(
-        mk_op("i"),
-        [y[1].clone(), z[1].clone()],
-        [p.clone(), x[1].clone()],
-    )
-    .unwrap();
-    let update = Term::function(
-        mk_op("u"),
-        [y[1].clone(), z[1].clone()],
-        [p.clone(), x[1].clone(), y[0].clone(), z[0].clone()],
-    )
-    .unwrap();
+    let init = Term::function(mk_op("i"), [X(y), X(z)], [p, X(x)]).unwrap();
+    let update = Term::function(mk_op("u"), [X(y), X(z)], [p, X(x), *y, *z]).unwrap();
 
     let m = Module::partially_observable_sequential([x], [y, z], [init], [update]);
     println!("{:?}", m);
@@ -613,19 +467,19 @@ fn module_with_invalid_read() {
 }
 
 #[allow(unused)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct SeqOps(&'static str);
 #[allow(unused)]
+#[derive(Clone, Copy)]
 struct DifOps(&'static str);
 
 impl Theory for SeqOps {
     type Sort = &'static str;
     const NAME: &'static str = "SeqOps";
-    fn check<R, W, S, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
+    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        S: TryInto<Self::Sort, Error = E>,
-        R: IntoIterator<Item = S>,
-        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
+        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
     {
         Ok(())
     }
@@ -634,11 +488,10 @@ impl Theory for SeqOps {
 impl Theory for DifOps {
     type Sort = &'static str;
     const NAME: &'static str = "DifOps";
-    fn check<R, W, S, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
+    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        S: TryInto<Self::Sort, Error = E>,
-        R: IntoIterator<Item = S>,
-        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
+        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
     {
         Ok(())
     }
@@ -669,19 +522,19 @@ impl fmt::Display for SeqOps {
 #[test]
 #[allow(non_snake_case)]
 fn heterogeneous_composition() {
-    let x = (Wire::new("A"), Wire::new("A"));
-    let y = (Wire::new("B"), Wire::new("B"));
-    let z = (Wire::new("C"), Wire::new("C"));
+    let x = Variable::new("A");
+    let y = Variable::new("B");
+    let z = Variable::new("C");
 
-    let init = Term::constant(SeqOps::HAVOC, [x.1.clone()]).unwrap();
-    let jump = Term::function(SeqOps::SKIP, [x.1.clone()], [x.0.clone()]).unwrap();
-    let P = base::Module::sequential([x.clone()], [init], [jump]).unwrap();
+    let init = Term::constant(SeqOps::HAVOC, [X(x)]).unwrap();
+    let jump = Term::function(SeqOps::SKIP, [X(x)], [x]).unwrap();
+    let P = base::Module::sequential([x], [init], [jump]).unwrap();
 
-    let init = Term::constant(SeqOps::HAVOC, [y.1.clone()]).unwrap();
-    let flow = Term::constant(DifOps::ZERO, [y.1.clone()]).unwrap();
-    let Q = base::Module::differential([y.clone()], [init], [flow]).unwrap();
+    let init = Term::constant(SeqOps::HAVOC, [X(y)]).unwrap();
+    let flow = Term::constant(DifOps::ZERO, [d(y)]).unwrap();
+    let Q = base::Module::differential([y], [init], [flow]).unwrap();
 
-    let comb = Term::function(SeqOps("+"), [z.1.clone()], [x.1.clone(), y.1.clone()]).unwrap();
+    let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();
     let R = base::Module::combinatorial([x, y, z], [comb]).unwrap();
 
     let S = base::Module::parallel([P, Q, R]);
@@ -697,10 +550,10 @@ fn heterogeneous_composition() {
 ///     dy = 1 dt
 /// ```
 ///
-/// where `t` is an *input*: the module does not control the pair `[t, dt]`,
-/// so it is inferred external and the module is open. The clocks `x` and `y`
-/// drift at rates 2 and 1 relative to `t`, expressed by delay terms that
-/// *await* the input's derivative `dt`: `dx = dt + dt` and `dy = Id(dt)`.
+/// where `t` is an *input*: the module does not control it, so it is
+/// inferred external and the module is open. The clocks `x` and `y` drift at
+/// rates 2 and 1 relative to `t`, expressed by delay terms that *await* the
+/// input's derivative `d(t)`: `d(x) = d(t) + d(t)` and `d(y) = Id(d(t))`.
 /// Since the rates are relative to the input clock rather than constant in
 /// absolute time, these are drifting clocks and not a linear ODE.
 #[test]
@@ -710,72 +563,85 @@ fn differential_drifting_clocks() {
 
     // Real scalars: 1x1 matrices.
     let scalar = Sort::Real([1, 1]);
-    // The input clock and its derivative.
-    let t = Wire::new(scalar);
-    let dt = Wire::new(scalar);
-    // The drifting clocks and their derivatives.
-    let x = Wire::new(scalar);
-    let y = Wire::new(scalar);
-    let dx = Wire::new(scalar);
-    let dy = Wire::new(scalar);
+    // The input clock, and the two clocks drifting relative to it.
+    let t = Variable::new(scalar);
+    let x = Variable::new(scalar);
+    let y = Variable::new(scalar);
 
-    // delay: the derivatives, both driven by the input's derivative `dt`.
+    // delay: the derivatives, both driven by the input's derivative `d(t)`.
     let delay = [
         // dx = 2 dt, synthesised tensor-free as dt + dt
-        Term::function(LRA::Add(), [dx.clone()], [dt.clone(), dt.clone()]).unwrap(),
+        Term::function(LRA::Add(), [d(x)], [d(t), d(t)]).unwrap(),
         // dy = 1 dt
-        Term::function(LRA::Id(), [dy.clone()], [dt.clone()]).unwrap(),
+        Term::function(LRA::Id(), [d(y)], [d(t)]).unwrap(),
     ];
 
     // init: the initial derivatives are left unconstrained (Havoc). Every
     // controlled wire must be written by the init block too.
     let init = [
-        Term::constant(LRA::Havoc(), [dx.clone()]).unwrap(),
-        Term::constant(LRA::Havoc(), [dy.clone()]).unwrap(),
+        Term::constant(LRA::Havoc(), [X(x)]).unwrap(),
+        Term::constant(LRA::Havoc(), [X(y)]).unwrap(),
     ];
 
-    // `[latched, derived]` pairs: the two clocks and the input. The atom
-    // writes only `dx` and `dy`, so `[t, dt]` is inferred external.
-    let obs = [
-        [x.clone(), dx.clone()],
-        [y.clone(), dy.clone()],
-        [t.clone(), dt.clone()],
-    ];
+    // The atom writes only d(x) and d(y), so `t` is inferred external.
+    let obs = [x, y, t];
 
     let module: base::Module<LRA, LRA, LRA> = base::Module::differential(obs, init, delay)
         .expect("differential module should be well-formed");
 
     // An open module: the input clock is external.
     assert!(module.is_open());
-    let extl: HashSet<usize> = module.extl().latched().iter().map(Wire::id).collect();
+    let extl: HashSet<usize> = module.extl().iter().map(|v| v.id()).collect();
     assert_eq!(extl, HashSet::from([t.id()]));
 
-    // The clocks are controlled by the module, hence interface wires.
-    let intf: HashSet<usize> = module.intf().latched().iter().map(Wire::id).collect();
+    // The clocks are controlled by the module, hence interface variables.
+    let intf: HashSet<usize> = module.intf().iter().map(|v| v.id()).collect();
     assert_eq!(intf, HashSet::from([x.id(), y.id()]));
 
     // The differential constructor produces exactly one atom.
     assert_eq!(module.atoms().len(), 1);
     let atom = &module.atoms()[0];
 
-    // The atom controls the clock derivatives, reads the clocks themselves
-    // (for the implicit skip update), and awaits the input's derivative.
-    let ctrl: HashSet<usize> = atom.ctrl().ids().collect();
-    assert_eq!(ctrl, HashSet::from([dx.id(), dy.id()]));
+    // The atom controls the clocks and awaits the input.
+    let ctrl: HashSet<usize> = atom.ctrl().iter().map(|v| v.id()).collect();
+    assert_eq!(ctrl, HashSet::from([x.id(), y.id()]));
 
-    let read: HashSet<usize> = atom.read().ids().collect();
-    assert_eq!(read, HashSet::from([x.id(), y.id()]));
-
-    let wait: HashSet<usize> = atom.wait().ids().collect();
-    assert_eq!(wait, HashSet::from([dt.id()]));
+    let wait: HashSet<usize> = atom.wait().iter().map(|v| v.id()).collect();
+    assert_eq!(wait, HashSet::from([t.id()]));
 
     // Block sizes: 2 derivative terms, 2 init terms, and the update is the
     // implicit `skip` synthesised by the constructor, one term per
-    // controlled wire.
+    // controlled variable.
     assert_eq!(atom.delay().len(), 2);
     assert_eq!(atom.init().len(), 2);
     assert_eq!(atom.update().len(), 2);
 
     // All three variables are observable.
     assert_eq!(module.obs().len(), 3);
+}
+
+/// Proposes a differential module encoding
+///
+/// ```text
+///     dx = x
+/// ```
+///
+/// and expects it to be rejected: the delay term drives the derivative
+/// `d(x)` (degree 1) directly from the value wire `x` (degree 0), and
+/// ordinary operations require uniform degrees across their operands.
+#[test]
+fn differential_module_rejects_dx_equals_x() {
+    use theory::lra::{LRA, Sort};
+
+    let scalar = Sort::Real([1, 1]);
+    let x = Variable::new(scalar);
+
+    // dx = x: already ill-formed at the term level.
+    let delay = Term::function(LRA::Id(), [d(x)], [x]);
+
+    let module = delay.and_then(|delay| {
+        let init = [Term::constant(LRA::Havoc(), [X(x)]).unwrap()];
+        base::Module::<LRA, LRA, LRA>::differential([x], init, [delay])
+    });
+    assert!(module.is_err());
 }

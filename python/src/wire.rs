@@ -11,8 +11,9 @@ pub(crate) struct Wire {
 #[pymethods]
 impl Wire {
     #[new]
-    pub(crate) fn new(dtype: Sort) -> Self {
-        let base = base::Wire::new(dtype);
+    #[pyo3(signature = (dtype, degree = 0))]
+    pub(crate) fn new(dtype: Sort, degree: u8) -> Self {
+        let base = base::Wire::new(dtype, degree);
         Self { base }
     }
 

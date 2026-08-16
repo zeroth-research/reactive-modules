@@ -1,10 +1,11 @@
 use crate::Module;
 use crate::term::{Block, Term};
-use crate::wire::{Interface, Wire};
+use crate::wire::Wire;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
+use crate::variable::{Interface, Variable};
 #[cfg(debug_assertions)]
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -23,14 +24,15 @@ where
     wait: Interface<S>,
     /// Corresponds to read wires.
     read: Interface<S>,
-    /// Corresponds to temporary, local wires.
-    temp: Interface<S>,
     /// Corresponds to the initial condition.
     init: Block<I>,
     /// Corresponds to the update action.
     update: Block<J>,
     /// Corresponds to the delay activity.
     delay: Block<F>,
+
+    /// Corresponds to temporary, local wires.
+    temp: Vec<Wire<S>>,
 }
 
 impl<I, J, F, S> Atom<I, J, F, S>
@@ -65,7 +67,7 @@ where
     }
 
     pub fn temp(&self) -> impl Iterator<Item = &Wire<S>> {
-        self.temp.wires()
+        self.temp.iter()
     }
 
     pub fn empty() -> Self {
@@ -73,7 +75,7 @@ where
             ctrl: Interface::empty(),
             wait: Interface::empty(),
             read: Interface::empty(),
-            temp: Interface::empty(),
+            temp: Vec::new(),
             init: Block::empty(),
             update: Block::empty(),
             delay: Block::empty(),
@@ -109,7 +111,7 @@ where
         ctrl: Interface<S>,
         wait: Interface<S>,
         read: Interface<S>,
-        temp: Interface<S>,
+        temp: Vec<Wire<S>>,
         init: Block<I>,
         update: Block<J>,
         delay: Block<F>,
@@ -119,111 +121,72 @@ where
             //================================================================================
             // Check declared wires
             //================================================================================
-            let mut decl: HashMap<usize, &S> = HashMap::new();
-            // declare read and await, don't allow repetition
-            {
-                for wire in read.wires().chain(wait.wires()) {
-                    debug_assert!(
-                        decl.insert(wire.id(), wire.dtype()).is_none(),
-                        "wire {} doubly declared",
-                        wire.id()
-                    );
-                }
-            }
-            // check that read and wait are read only
-            {
-                let init = init.iter().flat_map(|t| t.write().ids());
-                let update = update.iter().flat_map(|t| t.write().ids());
-                let delay = delay.iter().flat_map(|t| t.write().ids());
-                for id in init.chain(update).chain(delay) {
-                    debug_assert!(!decl.contains_key(&id), "invalid write on wire {id}");
-                }
-            }
-            // declare ctrl and temp, don't allow repetition
-            for (w, dtype) in ctrl.wires().chain(temp.wires()).map(Into::into) {
-                debug_assert!(decl.insert(w, dtype).is_none(), "wire {w} doubly declared");
-            }
-            // check that read wires of terms have consistent dtype
-            {
-                let init = init.iter().flat_map(|t| t.read().ids());
-                let update = update.iter().flat_map(|t| t.read().ids());
-                let delay = delay.iter().flat_map(|t| t.read().ids());
-                for id in init.chain(update).chain(delay) {
-                    debug_assert!(decl.contains_key(&id), "wire {id} undeclared");
-                }
-            }
-            // check that write wires of terms have consistent dtype
-            {
-                let init = init.iter().flat_map(|t| t.write().ids());
-                let update = update.iter().flat_map(|t| t.write().ids());
-                let delay = delay.iter().flat_map(|t| t.write().ids());
-                for id in init.chain(update).chain(delay) {
-                    debug_assert!(decl.contains_key(&id), "wire {id} undeclared");
-                }
-            }
+            debug_assert!(ctrl.is_disjoint(&wait));
 
             //================================================================================
             // Check init terms
             //================================================================================
             // the init terms can initially read from the await wires of the atom
-            let mut written = HashSet::<usize>::from_iter(wait.ids());
+            let mut written: HashSet<&Wire<_>> = wait.iter().map(Variable::nxt).collect();
             for term in init.iter() {
                 // all read wires were written before in the block
                 debug_assert!(
-                    term.read().ids().all(|rd| written.contains(&rd)),
+                    term.read().iter().all(|rd| written.contains(rd)),
                     "read before write"
                 );
                 // no write wire was written before in the block
                 debug_assert!(
-                    term.write().ids().all(|rd| !written.contains(&rd)),
+                    term.write().iter().all(|rd| !written.contains(rd)),
                     "write after write"
                 );
-                written.extend(term.write().ids());
+                written.extend(term.write().iter());
             }
             // all control wires are written
-            debug_assert!(ctrl.ids().all(|w| written.contains(&w)));
+            debug_assert!(ctrl.iter().map(Variable::nxt).all(|w| written.contains(w)));
 
             //================================================================================
             // Check update terms
             //================================================================================
             // the update block can initially read from the read and await wires of the atom
-            let mut written = HashSet::<usize>::from_iter(read.ids().chain(wait.ids()));
+            let mut written: HashSet<&Wire<_>> = read.iter().map(Variable::ltc).collect();
+            written.extend(wait.iter().map(Variable::nxt));
             for term in update.iter() {
                 // all read wires were written before in the block
                 debug_assert!(
-                    term.read().ids().all(|rd| written.contains(&rd)),
+                    term.read().iter().all(|rd| written.contains(rd)),
                     "read before write"
                 );
                 // no write wire was written before in the block
                 debug_assert!(
-                    term.write().ids().all(|rd| !written.contains(&rd)),
+                    term.write().iter().all(|rd| !written.contains(rd)),
                     "write after write"
                 );
-                written.extend(term.write().ids());
+                written.extend(term.write().iter());
             }
             // all control wires are written
-            debug_assert!(ctrl.ids().all(|w| written.contains(&w)));
+            debug_assert!(ctrl.iter().map(Variable::nxt).all(|w| written.contains(w)));
 
             //================================================================================
             // Check delay terms
             //================================================================================
             // the delay block can initially read from the read and await wires of the atom
-            let mut written = HashSet::<usize>::from_iter(read.ids().chain(wait.ids()));
+            let mut written: HashSet<&Wire<_>> = read.iter().map(Variable::ltc).collect();
+            written.extend(wait.iter().map(Variable::der));
             for term in delay.iter() {
                 // all read wires were written before in the block
                 debug_assert!(
-                    term.read().ids().all(|rd| written.contains(&rd)),
+                    term.read().iter().all(|rd| written.contains(rd)),
                     "read before write"
                 );
                 // no write wire was written before in the block
                 debug_assert!(
-                    term.write().ids().all(|rd| !written.contains(&rd)),
+                    term.write().iter().all(|rd| !written.contains(rd)),
                     "write after write"
                 );
-                written.extend(term.write().ids());
+                written.extend(term.write().iter());
             }
             // all control wires are written
-            debug_assert!(ctrl.ids().all(|w| written.contains(&w)));
+            debug_assert!(ctrl.iter().map(Variable::der).all(|w| written.contains(w)));
         }
 
         Self {
@@ -243,7 +206,7 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Clone + Eq,
+    S: Clone + Debug + Eq,
 {
     /// Constructs a **sequential atom**, representing behaviour that evolves over time.
     ///
@@ -272,35 +235,34 @@ where
     /// # See Also
     /// - [`Atom::combinatorial`], for constructing combinatorial atoms.
     /// - [`Module::partially_observable_sequential`], for creating sequential modules.
-    pub fn sequential<'a, W, V, U>(latched: W, next: W, init: V, update: U) -> Result<Self, String>
+    pub fn sequential<'a, V, W, U>(vars: V, init: W, update: U) -> Result<Self, String>
     where
-        W: IntoIterator<Item = &'a Wire<S>>,
-        V: IntoIterator<Item = Term<I>>,
+        V: IntoIterator<Item = &'a Variable<S>>,
+        W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
         S: 'a + fmt::Display,
     {
-        let latched: HashMap<usize, &S> = latched.into_iter().map(Into::into).collect();
-        let next: HashMap<usize, &S> = next.into_iter().map(Into::into).collect();
+        let mut latched: HashMap<usize, &Variable<S>> = HashMap::new();
+        let mut awaited: HashMap<usize, &Variable<S>> = HashMap::new();
+
+        for var in vars.into_iter() {
+            latched.insert(var.id(), var);
+            awaited.insert(var.nxt().id(), var);
+        }
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
 
-        let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
-        let mut read: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Variable<S>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Variable<S>> = BTreeMap::new();
+        let mut read: BTreeMap<usize, Variable<S>> = BTreeMap::new();
         let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
 
-        for rd in init.read().iter().map(|[w]| w) {
-            // init can only read from await wires
-            let next_dtype = next.get(&rd.id());
-            if next_dtype.is_some_and(|&d| d == rd.dtype()) {
-                wait.insert(rd.id(), rd.clone());
+        for rd in init.read().iter() {
+            // init can only read from awaited wire
+            if let Some(&var) = awaited.get(&rd.id()) {
+                wait.insert(var.id(), var.clone());
                 continue;
-            } else if next_dtype.is_some() {
-                return Err(format!(
-                    "Next wire of wire {} in init has a different dtype",
-                    rd.id()
-                ));
             }
 
             if latched.contains_key(&rd.id()) {
@@ -311,26 +273,17 @@ where
             return Err(format!("Wire {} in init is dangling read", rd.id()));
         }
 
-        for rd in update.read().iter().map(|[w]| w) {
+        for rd in update.read().iter() {
             // if the update reads from a next wire, then this is awaited
             // otherwise, this must be read from outside the atom
-            let latched_dtype = latched.get(&rd.id());
-            if latched_dtype.is_some_and(|&d| d == rd.dtype()) {
-                read.insert(rd.id(), rd.clone());
+            if let Some(&var) = latched.get(&rd.id()) {
+                read.insert(var.id(), var.clone());
                 continue;
-            } else if latched_dtype.is_some() {
-                return Err(format!("Wire {} in update has wrong dtype", rd.id()));
             }
 
-            let next_dtype = next.get(&rd.id());
-            if next_dtype.is_some_and(|&d| d == rd.dtype()) {
-                wait.insert(rd.id(), rd.clone());
+            if let Some(&var) = awaited.get(&rd.id()) {
+                wait.insert(var.id(), var.clone());
                 continue;
-            } else if next_dtype.is_some() {
-                return Err(format!(
-                    "Next wire of wire {} in update has a different dtype",
-                    rd.id()
-                ));
             }
 
             // dangling read wires are parameters
@@ -338,18 +291,14 @@ where
         }
 
         for wt in [init.write(), update.write()]
-            .into_iter()
-            .flatten()
-            .map(|[w]| w)
+            .iter()
+            .flat_map(|wt| wt.iter())
         {
             // if the init/update writes to a next wire, then this wire is controlled
             // otherwise, this wire must be temporary
-            let next_dtype = next.get(&wt.id());
-            if next_dtype.is_some_and(|&d| d == wt.dtype()) {
-                ctrl.insert(wt.id(), wt.clone());
+            if let Some(&var) = awaited.get(&wt.id()) {
+                ctrl.insert(var.id(), var.clone());
                 continue;
-            } else if next_dtype.is_some() {
-                return Err(format!("Controlled wire {} has a wrong dtype", wt.id()));
             }
 
             if latched.contains_key(&wt.id()) {
@@ -359,69 +308,61 @@ where
             }
         }
 
-        for &ctr in ctrl.keys() {
-            if !init.write().ids().any(|wrt| wrt == ctr) {
-                return Err(format!("Controlled wire {} is not written in init", ctr));
+        for ctr in ctrl.values() {
+            if !init.write().iter().any(|wrt| wrt == ctr.nxt()) {
+                return Err(format!("Controlled var {} is not written in init", ctr));
             }
-            if !update.write().ids().any(|wrt| wrt == ctr) {
-                return Err(format!("Controlled wire {} is not written in update", ctr));
+            if !update.write().iter().any(|wrt| wrt == ctr.nxt()) {
+                return Err(format!("Controlled var {} is not written in update", ctr));
             }
         }
 
-        let delay = Block::zero(ctrl.clone().into_values())?;
+        let delay = Block::zero(ctrl.values().map(Variable::der).cloned())?;
 
         Ok(Self::new_unchecked(
-            Interface::from_wires_unchecked(ctrl.into_values()),
-            Interface::from_wires_unchecked(wait.into_values()),
-            Interface::from_wires_unchecked(read.into_values()),
-            Interface::from_wires_unchecked(temp.into_values()),
+            Interface::from_iter_unchecked(ctrl.into_values()),
+            Interface::from_iter_unchecked(wait.into_values()),
+            Interface::from_iter_unchecked(read.into_values()),
+            temp.into_values().collect(),
             init,
             update,
             delay,
         ))
     }
 
-    pub fn differential<'a, O, P, Q, R>(wires: O, init: Q, delay: R) -> Result<Self, String>
+    pub fn differential<'a, O, Q, R>(obs: O, init: Q, delay: R) -> Result<Self, String>
     where
-        P: Into<[&'a Wire<S>; 2]>,
-        O: IntoIterator<Item = P>,
+        O: IntoIterator<Item = &'a Variable<S>>,
         Q: IntoIterator<Item = Term<I>>,
         R: IntoIterator<Item = Term<F>>,
         S: 'a,
     {
-        let mut latched = HashSet::<Wire<S>>::new();
-        let mut derived = HashMap::<Wire<S>, Wire<S>>::new();
+        let mut latched: HashMap<usize, &Variable<S>> = HashMap::new();
+        let mut next: HashMap<usize, &Variable<S>> = HashMap::new();
+        let mut derived: HashMap<usize, &Variable<S>> = HashMap::new();
 
-        for [l, d] in wires.into_iter().map(Into::into) {
-            if l.dtype() != d.dtype() {
-                return Err("dtype mismatch".to_string());
-            }
-            if latched.contains(l) || derived.contains_key(l) {
-                return Err(format!("duplicate wire {}", l.id()));
-            }
-            if latched.contains(d) || derived.contains_key(d) {
-                return Err(format!("duplicate wire {}", d.id()));
-            }
-            latched.insert(l.clone());
-            derived.insert(d.clone(), l.clone());
+        for var in obs.into_iter() {
+            latched.insert(var.ltc().id(), var);
+            next.insert(var.nxt().id(), var);
+            derived.insert(var.der().id(), var);
         }
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
 
-        let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
-        let mut read: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut ctrl: BTreeMap<usize, Variable<S>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Variable<S>> = BTreeMap::new();
+        let mut read: BTreeMap<usize, Variable<S>> = BTreeMap::new();
         let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
 
-        for rd in init.read().iter().map(|[w]| w) {
-            // init can only read from await wires
-            if derived.contains_key(rd) {
-                wait.insert(rd.id(), rd.clone());
+        for rd in init.read().iter() {
+            // init can only read from awaited wire
+            if let Some(&var) = next.get(&rd.id()) {
+                wait.insert(var.id(), var.clone());
                 continue;
             }
 
-            if latched.contains(rd) {
+            if latched.contains_key(&rd.id()) {
                 return Err(format!("Init reads latched wire {}", rd.id()));
             }
 
@@ -429,16 +370,16 @@ where
             return Err(format!("Wire {} in init is dangling read", rd.id()));
         }
 
-        for rd in delay.read().iter().map(|[w]| w) {
+        for rd in delay.read().iter() {
             // if the update reads from a next wire, then this is awaited
             // otherwise, this must be read from outside the atom
-            if latched.contains(rd) {
-                read.insert(rd.id(), rd.clone());
+            if let Some(&var) = latched.get(&rd.id()) {
+                read.insert(var.id(), var.clone());
                 continue;
             }
 
-            if derived.contains_key(rd) {
-                wait.insert(rd.id(), rd.clone());
+            if let Some(&var) = derived.get(&rd.id()) {
+                wait.insert(var.id(), var.clone());
                 continue;
             }
 
@@ -446,50 +387,65 @@ where
             return Err(format!("Wire {} in update is dangling read", rd.id()));
         }
 
-        for wt in [init.write(), delay.write()]
-            .into_iter()
-            .flatten()
-            .map(|[w]| w)
-        {
+        for wt in init.write().iter() {
             // if the init/update writes to a next wire, then this wire is controlled
             // otherwise, this wire must be temporary
-            if derived.contains_key(wt) {
-                ctrl.insert(wt.id(), wt.clone());
+            if let Some(&var) = next.get(&wt.id()) {
+                ctrl.insert(var.id(), var.clone());
                 continue;
             }
 
-            if latched.contains(wt) {
-                return Err(format!("Controlling a latched wire {}", wt.id()));
+            if latched.contains_key(&wt.id()) {
+                return Err(format!("Writing a latched wire {}", wt.id()));
             } else {
                 temp.insert(wt.id(), wt.clone());
             }
         }
 
-        for &ctr in ctrl.keys() {
-            if !init.write().ids().any(|wrt| wrt == ctr) {
-                return Err(format!("Controlled wire {} is not written in init", ctr));
+        for wt in delay.write().iter() {
+            // if the init/update writes to a next wire, then this wire is controlled
+            // otherwise, this wire must be temporary
+            if let Some(&var) = derived.get(&wt.id()) {
+                ctrl.insert(var.id(), var.clone());
+                continue;
             }
-            if !delay.write().ids().any(|wrt| wrt == ctr) {
+
+            if latched.contains_key(&wt.id()) {
+                return Err(format!("Writing a latched wire {}", wt.id()));
+            } else {
+                temp.insert(wt.id(), wt.clone());
+            }
+        }
+
+        for ctr in ctrl.values() {
+            if !init.write().iter().any(|wrt| wrt == ctr.nxt()) {
                 return Err(format!(
-                    "Controlled wire {} is not controlled in delay",
-                    ctr
+                    "Controlled wire {} is not written in init",
+                    ctr.nxt().id()
+                ));
+            }
+            if !delay.write().iter().any(|wrt| wrt == ctr.der()) {
+                return Err(format!(
+                    "Controlled wire {} is not written in delay",
+                    ctr.der().id()
                 ));
             }
         }
 
-        let past: Vec<Wire<S>> = ctrl
-            .values()
-            .map(|w| derived.get(w).unwrap().clone())
-            .collect();
-        let update = Block::skip(ctrl.values().cloned(), past.iter().cloned())?;
+        let update = Block::skip(
+            ctrl.values().map(Variable::nxt).cloned(),
+            ctrl.values().map(Variable::ltc).cloned(),
+        )?;
 
-        read.extend(past.into_iter().map(|w| (w.id(), w)));
+        for (id, var) in ctrl.iter() {
+            read.entry(*id).or_insert_with(|| var.clone());
+        }
 
         Ok(Self::new_unchecked(
-            Interface::from_wires_unchecked(ctrl.into_values()),
-            Interface::from_wires_unchecked(wait.into_values()),
-            Interface::from_wires_unchecked(read.into_values()),
-            Interface::from_wires_unchecked(temp.into_values()),
+            Interface::from_iter_unchecked(ctrl.into_values()),
+            Interface::from_iter_unchecked(wait.into_values()),
+            Interface::from_iter_unchecked(read.into_values()),
+            temp.into_values().collect(),
             init,
             update,
             delay,
@@ -531,60 +487,75 @@ where
     /// # See Also
     /// - [`Atom::sequential`], for constructing sequential atoms.
     /// - [`Module::combinatorial`], for combinatorial modules.
-    pub fn combinatorial<'a, T, N, V>(next: N, assign: V) -> Result<Self, String>
+    pub fn combinatorial<'a, T, O, V>(obs: O, assign: V) -> Result<Self, String>
     where
         T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
+        O: IntoIterator<Item = &'a Variable<S>>,
         V: IntoIterator<Item = Term<T>>,
-        N: IntoIterator<Item = &'a Wire<S>>,
         S: 'a,
     {
-        let next: HashMap<usize, &S> = next.into_iter().map(Into::into).collect();
-        let assign: Block<T> = Block::try_from_iter(assign.into_iter().map(Ok))?;
+        let mut latched: HashMap<usize, &Variable<S>> = HashMap::new();
+        let mut next: HashMap<usize, &Variable<S>> = HashMap::new();
 
-        let mut ctrl: BTreeMap<usize, Wire<S>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Wire<S>> = BTreeMap::new();
-        let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
-
-        for rd in assign.read().iter().map(|[w]| w) {
-            //  can only read from await wires
-            let expected_dtype = next.get(&rd.id());
-            if expected_dtype.is_some_and(|&d| d == rd.dtype()) {
-                wait.insert(rd.id(), rd.clone());
-            } else if expected_dtype.is_some() {
-                return Err(format!(
-                    "Read wire {} from `assign` has a different dtype than its next version",
-                    rd.id()
-                ));
-            } else {
-                return Err(format!("Read wire {} in assign", rd.id()));
-            }
+        for var in obs.into_iter() {
+            latched.insert(var.ltc().id(), var);
+            next.insert(var.nxt().id(), var);
         }
 
-        for wt in assign.write().iter().map(|[w]| w) {
-            // if it writes to a next wire, then this wire is controlled
+        let assign: Block<T> = Block::try_from_iter(assign.into_iter().map(Ok))?;
+
+        let mut ctrl: BTreeMap<usize, Variable<S>> = BTreeMap::new();
+        let mut wait: BTreeMap<usize, Variable<S>> = BTreeMap::new();
+        let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+
+        for rd in assign.read().iter() {
+            // init can only read from awaited wire
+            if let Some(&var) = next.get(&rd.id()) {
+                wait.insert(var.id(), var.clone());
+                continue;
+            }
+
+            if latched.contains_key(&rd.id()) {
+                return Err(format!("Init reads latched wire {}", rd.id()));
+            }
+
+            // dangling read wires are invalid
+            return Err(format!("Wire {} in init is dangling read", rd.id()));
+        }
+
+        for wt in assign.write().iter() {
+            // if the init/update writes to a next wire, then this wire is controlled
             // otherwise, this wire must be temporary
-            let expected_dtype = next.get(&wt.id());
-            if expected_dtype.is_some_and(|&d| d == wt.dtype()) {
-                ctrl.insert(wt.id(), wt.clone());
-            } else if expected_dtype.is_some() {
-                return Err(format!(
-                    "Write wire {} from `assign` has a different dtype than its next version",
-                    wt.id()
-                ));
+            if let Some(&var) = next.get(&wt.id()) {
+                ctrl.insert(var.id(), var.clone());
+                continue;
+            }
+
+            if latched.contains_key(&wt.id()) {
+                return Err(format!("Writing a latched wire {}", wt.id()));
             } else {
                 temp.insert(wt.id(), wt.clone());
             }
         }
 
+        for ctr in ctrl.values() {
+            if !assign.write().iter().any(|wrt| wrt == ctr.nxt()) {
+                return Err(format!(
+                    "Controlled wire {} is not written in assign",
+                    ctr.nxt().id()
+                ));
+            }
+        }
+
         let init: Block<I> = Block::try_from_iter(assign.iter().cloned().map(Ok))?;
         let update: Block<J> = Block::try_from_iter(assign.into_iter().map(Ok))?;
-        let delay = Block::zero(ctrl.clone().into_values())?;
+        let delay = Block::zero(ctrl.values().map(Variable::der).cloned())?;
 
         Ok(Self::new_unchecked(
-            Interface::from_wires_unchecked(ctrl.into_values()),
-            Interface::from_wires_unchecked(wait.into_values()),
+            Interface::from_iter_unchecked(ctrl.into_values()),
+            Interface::from_iter_unchecked(wait.into_values()),
             Interface::empty(),
-            Interface::from_wires_unchecked(temp.into_values()),
+            temp.into_values().collect(),
             init,
             update,
             delay,
@@ -605,25 +576,25 @@ where
         const INDENT: &str = "  ";
 
         write!(f, "{pad}{BOLD}atom{RESET}")?;
-        for (i, wr) in self.ctrl.ids().enumerate() {
+        for (i, v) in self.ctrl.iter().enumerate() {
             if i == 0 {
-                write!(f, " {BOLD}controls{RESET} w{wr}")?;
+                write!(f, " {BOLD}controls{RESET} {v}")?;
             } else {
-                write!(f, ", w{wr}")?;
+                write!(f, ", w{v}")?;
             }
         }
-        for (i, wr) in self.read.ids().enumerate() {
+        for (i, v) in self.read.iter().enumerate() {
             if i == 0 {
-                write!(f, " {BOLD}reads{RESET} w{wr}")?;
+                write!(f, " {BOLD}reads{RESET} {v}")?;
             } else {
-                write!(f, ", w{wr}")?;
+                write!(f, ", w{v}")?;
             }
         }
-        for (i, wr) in self.wait.ids().enumerate() {
+        for (i, v) in self.wait.iter().enumerate() {
             if i == 0 {
-                write!(f, " {BOLD}awaits{RESET} w{wr}")?;
+                write!(f, " {BOLD}awaits{RESET} {v}")?;
             } else {
-                write!(f, ", w{wr}")?;
+                write!(f, ", w{v}")?;
             }
         }
         writeln!(f, "\n{pad}{BOLD}init{RESET}")?;
@@ -648,7 +619,7 @@ where
     I: Combinatorial<Sort = S> + fmt::Display,
     J: Sequential<Sort = S> + fmt::Display,
     F: Differential<Sort = S> + fmt::Display,
-    S: fmt::Display + Debug + Clone,
+    S: fmt::Display + Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, "")
@@ -681,14 +652,16 @@ where
     /// # See Also
     /// - [`Module::combinatorial`], for constructing stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn sequential<O, P, Q, R>(obs: O, init: Q, update: R) -> Result<Self, String>
+    pub fn sequential<O, TO, Q, R>(obs: O, init: Q, update: R) -> Result<Self, String>
     where
-        P: Into<[Wire<S>; 2]>,
-        O: IntoIterator<Item = P>,
+        TO: Into<Variable<S>>,
+        O: IntoIterator<Item = TO>,
         Q: IntoIterator<Item = Term<I>>,
         R: IntoIterator<Item = Term<J>>,
     {
-        Self::partially_observable_sequential(obs, std::iter::empty::<P>(), init, update)
+        let obs: Vec<_> = obs.into_iter().map(Into::into).collect();
+        let atom = Atom::sequential(obs.iter(), init, update)?;
+        Self::observable(obs, std::iter::once(atom))
     }
 
     pub fn partially_observable_sequential<TO, TP, O, P, Q, R>(
@@ -698,30 +671,29 @@ where
         update: R,
     ) -> Result<Self, String>
     where
-        TO: Into<[Wire<S>; 2]>,
-        TP: Into<[Wire<S>; 2]>,
+        TO: Into<Variable<S>>,
+        TP: Into<Variable<S>>,
         O: IntoIterator<Item = TO>,
         P: IntoIterator<Item = TP>,
         Q: IntoIterator<Item = Term<I>>,
         R: IntoIterator<Item = Term<J>>,
     {
-        let obs = Interface::try_from_iter(obs)?;
-        let prvt = Interface::try_from_iter(prvt)?;
-        let latched = obs.latched().iter().chain(prvt.latched().iter());
-        let next = obs.next().iter().chain(prvt.next().iter());
-        let atom = Atom::sequential(latched, next, init, update)?;
+        let obs: Vec<_> = obs.into_iter().map(Into::into).collect();
+        let prvt: Vec<_> = prvt.into_iter().map(Into::into).collect();
+        let vars = obs.iter().chain(prvt.iter());
+        let atom = Atom::sequential(vars, init, update)?;
         Self::partially_observable(obs, prvt, std::iter::once(atom))
     }
 
     pub fn differential<O, P, Q, R>(obs: O, init: Q, delay: R) -> Result<Self, String>
     where
-        P: Into<[Wire<S>; 2]>,
+        P: Into<Variable<S>>,
         O: IntoIterator<Item = P>,
         Q: IntoIterator<Item = Term<I>>,
         R: IntoIterator<Item = Term<F>>,
     {
         let obs = obs.into_iter().map(Into::into).collect::<Vec<_>>();
-        let atom = Atom::differential(obs.iter().map(|[a, b]| [a, b]), init, delay)?;
+        let atom = Atom::differential(obs.iter(), init, delay)?;
         Self::observable(obs, std::iter::once(atom))
     }
 }
@@ -731,7 +703,7 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Eq + Clone + Debug + fmt::Display,
+    S: Eq + Copy + Debug + fmt::Display,
 {
     /// Constructs a **purely combinatorial module** from an assignment sequence of terms.
     ///
@@ -754,12 +726,12 @@ where
     pub fn combinatorial<T, R, O, V>(obs: O, assign: V) -> Result<Self, String>
     where
         T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
-        R: Into<[Wire<T::Sort>; 2]>,
+        R: Into<Variable<S>>,
         O: IntoIterator<Item = R>,
         V: IntoIterator<Item = Term<T>>,
     {
-        let obs = Interface::from_iter(obs);
-        let atom = Atom::combinatorial(obs.next(), assign)?;
+        let obs = obs.into_iter().map(Into::into).collect::<Vec<_>>();
+        let atom = Atom::combinatorial(obs.iter(), assign)?;
         Self::observable(obs, [atom])
     }
 }

@@ -29,15 +29,18 @@ shapes against the selected operation.
 use theory::Theory;
 use theory::lra::{LRA, Sort};
 
+// Wires carry a sort and a degree; ordinary operands are degree 0.
+let deg0 = |s| Ok::<_, String>((s, 0u8));
+
 // Pointwise less-than on scalars: Real(1,1), Real(1,1) -> Bool(1,1).
 let i = Sort::Real([1, 1]);
 let b = Sort::Bool([1, 1]);
-assert!(LRA::Lt().check([i, i], [b]).is_ok());
+assert!(LRA::Lt().check([i, i].map(deg0), [b].map(deg0)).is_ok());
 
 // ReLU preserves shape and stays in the real fragment.
 let m = Sort::Real([3, 4]);
-assert!(LRA::ReLU().check([m], [m]).is_ok());
-assert!(LRA::ReLU().check([b], [b]).is_err());
+assert!(LRA::ReLU().check([m].map(deg0), [m].map(deg0)).is_ok());
+assert!(LRA::ReLU().check([b].map(deg0), [b].map(deg0)).is_err());
 ```
 */
 
@@ -132,11 +135,10 @@ impl Theory for LRA {
     type Sort = Sort;
     const NAME: &'static str = "LRA";
 
-    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        S: TryInto<Self::Sort, Error = E>,
-        R: IntoIterator<Item = S>,
-        W: IntoIterator<Item = S>,
+        R: IntoIterator<Item = Result<(Sort, u8), E>>,
+        W: IntoIterator<Item = Result<(Sort, u8), E>>,
     {
         match self {
             LRA::Const(cm) => check_const(cm, read, write),
@@ -193,12 +195,10 @@ impl Theory for LRA {
     }
 }
 
-fn check_const<R, W, D>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
+fn check_const<R, W, E: fmt::Display>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort>,
-    D::Error: fmt::Display,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
+    R: IntoIterator<Item = Result<(Sort, u8), E>>,
+    W: IntoIterator<Item = Result<(Sort, u8), E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -206,14 +206,17 @@ where
         return Err("Const: cannot read values".into());
     }
     // the sort comes from the write wire; validate the tensor's kind matches it
-    let [i, j] = match write_nxt(&mut write, 0, "LRA")? {
-        Sort::Real([i, j]) => {
+    let [i, j] = match next_with_degree(&mut write, 0)? {
+        (Sort::Real([i, j]), _) => {
             if cm.is_bool() {
                 return Err("Const: write wire is Real but initializer is a boolean tensor".into());
             }
             [i, j]
         }
-        Sort::Bool([i, j]) => {
+        (Sort::Bool([i, j]), degree) => {
+            if degree != 0 {
+                return Err("Cannot derive a bool. Use ZERO to apply a no change".to_string());
+            }
             if !cm.is_bool() {
                 return Err(
                     "Const: write wire is Bool but initializer is not a boolean tensor".into(),
@@ -244,20 +247,18 @@ where
     Ok(())
 }
 
-fn check_bool<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
+fn check_bool<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort>,
-    D::Error: fmt::Display,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
+    R: IntoIterator<Item = Result<(Sort, u8), E>>,
+    W: IntoIterator<Item = Result<(Sort, u8), E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
         LRA::Not() => {
             let (r, w) = (
-                read_nxt(&mut read, 0, "LRA")?,
-                write_nxt(&mut write, 0, "LRA")?,
+                next_expect_degree(&mut read, 0, 0)?,
+                next_expect_degree(&mut write, 0, 0)?,
             );
             if !matches!(r, Sort::Bool(..)) {
                 return Err(format!("{:?}: input must be Bool", op));
@@ -274,10 +275,10 @@ where
             Ok(())
         }
         LRA::And() | LRA::Or() | LRA::Xor() => {
-            let w1 = write_nxt(&mut write, 0, "LRA")?;
+            let w1 = next_expect_degree(&mut write, 0, 0)?;
             let (r1, r2, None) = (
-                read_nxt(&mut read, 0, "LRA")?,
-                read_nxt(&mut read, 1, "LRA")?,
+                next_expect_degree(&mut read, 0, 0)?,
+                next_expect_degree(&mut read, 1, 0)?,
                 read.next(),
             ) else {
                 return Err(format!("{:?}: must read exactly two values", op));
@@ -300,25 +301,28 @@ where
     }
 }
 
-fn check_cmp<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
+fn check_cmp<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort>,
-    D::Error: fmt::Display,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
+    R: IntoIterator<Item = Result<(Sort, u8), E>>,
+    W: IntoIterator<Item = Result<(Sort, u8), E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    let r1 = read_nxt(&mut read, 0, "LRA")?;
-    let r2 = read_nxt(&mut read, 1, "LRA")?;
+    let r1 = next_with_degree(&mut read, 0)?;
+    let r2 = next_with_degree(&mut read, 1)?;
     if r1 != r2 {
         return Err(format!("{:?}: input values must have the same type", op));
     }
     let shape = match r1 {
-        Sort::Real(s) => s,
-        _ => return Err(format!("{:?}: inputs must be Real matrices, got {r1}", op)),
+        (Sort::Real(s), _) => s,
+        _ => {
+            return Err(format!(
+                "{:?}: inputs must be Real matrices, got {}",
+                r1.0, op
+            ));
+        }
     };
-    let w1 = write_nxt(&mut write, 0, "LRA")?;
+    let w1 = next_expect_degree(&mut write, 0, 0)?;
     if w1 != Sort::Bool(shape) {
         return Err(format!(
             "{:?}: output must be Bool({:?}), got {w1}",
@@ -328,25 +332,23 @@ where
     Ok(())
 }
 
-fn check_mat_ops<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
+fn check_mat_ops<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort>,
-    D::Error: fmt::Display,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
+    R: IntoIterator<Item = Result<(Sort, u8), E>>,
+    W: IntoIterator<Item = Result<(Sort, u8), E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
         LRA::Add() | LRA::Sub() => {
             let (r1, r2, None) = (
-                read_nxt(&mut read, 0, "LRA")?,
-                read_nxt(&mut read, 1, "LRA")?,
+                next_with_degree(&mut read, 0)?,
+                next_with_degree(&mut read, 1)?,
                 read.next(),
             ) else {
                 return Err(format!("{:?}: must read exactly two values", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0, "LRA")?, write.next()) else {
+            let (w1, None) = (next_with_degree(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
 
@@ -359,7 +361,7 @@ where
                     op
                 ));
             }
-            if !matches!(w1, Sort::Real(..)) {
+            if !matches!(w1.0, Sort::Real(..)) {
                 return Err(format!(
                     "{:?}: input and output values must be real matrices",
                     op
@@ -368,10 +370,10 @@ where
             Ok(())
         }
         LRA::ReLU() => {
-            let (r1, None) = (read_nxt(&mut read, 0, "LRA")?, read.next()) else {
+            let (r1, None) = (next_with_degree(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0, "LRA")?, write.next()) else {
+            let (w1, None) = (next_with_degree(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             if r1 != w1 {
@@ -380,7 +382,7 @@ where
                     op
                 ));
             }
-            if !matches!(w1, Sort::Real(..)) {
+            if !matches!(w1.0, Sort::Real(..)) {
                 return Err(format!(
                     "{:?}: input and output values must be real matrices",
                     op
@@ -389,14 +391,15 @@ where
             Ok(())
         }
         LRA::Argmax() | LRA::Min() | LRA::Max() => {
-            let (_r1, None) = (read_nxt(&mut read, 0, "LRA")?, read.next()) else {
+            // TODO: check whether the conditions of the read are sound
+            let (_r1, None) = (next_with_degree(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0, "LRA")?, write.next()) else {
+            let (w1, None) = (next_with_degree(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             match w1 {
-                Sort::Real([i, j]) => {
+                (Sort::Real([i, j]), _) => {
                     // FIXME: we should fix which dimension is 1..
                     if i == 1 || j == 1 {
                         return Ok(());
@@ -413,21 +416,21 @@ where
     }
 }
 
-fn check_linear_affine<D>(
+fn check_linear_affine<R, W, E: fmt::Display>(
     op: &LRA,
     a: &crate::PyTensor,
     b: &crate::PyTensor,
-    read: &mut impl Iterator<Item = D>,
-    write: &mut impl Iterator<Item = D>,
+    read: &mut R,
+    write: &mut W,
 ) -> Result<(), String>
 where
-    D: TryInto<Sort>,
-    D::Error: fmt::Display,
+    R: Iterator<Item = Result<(Sort, u8), E>>,
+    W: Iterator<Item = Result<(Sort, u8), E>>,
 {
-    let (r1, None) = (read_nxt(read, 0, "LRA")?, read.next()) else {
+    let (r1, None) = (next_with_degree(read, 0)?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
     };
-    let (w1, None) = (write_nxt(write, 0, "LRA")?, write.next()) else {
+    let (w1, None) = (next_with_degree(write, 0)?, write.next()) else {
         return Err(format!("{:?}: must write exactly one value", op));
     };
 
@@ -453,7 +456,7 @@ where
     };
 
     match (r1, w1) {
-        (Sort::Real([d1, d2]), Sort::Real([d3, d4])) => {
+        ((Sort::Real([d1, d2]), deg0), (Sort::Real([d3, d4]), deg1)) => {
             // X has shape [d1=in, d2=batch]; A has shape [a_rows=out, a_cols=in].
             if d1 != a_cols {
                 return Err(format!(
@@ -475,34 +478,8 @@ where
                     op, a_rows, d2, d3, d4
                 ));
             }
-            Ok(())
-        }
-        _ => Err(format!("{:?}: input and output must be real matrices", op)),
-    }
-}
-
-fn check_transpose<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
-where
-    D: TryInto<Sort>,
-    D::Error: fmt::Display,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let (r1, None) = (read_nxt(&mut read, 0, "LRA")?, read.next()) else {
-        return Err(format!("{:?}: must read exactly one value", op));
-    };
-    let (w1, None) = (write_nxt(&mut write, 0, "LRA")?, write.next()) else {
-        return Err(format!("{:?}: must write exactly one value", op));
-    };
-    match (r1, w1) {
-        (Sort::Real([d1, d2]), Sort::Real([e1, e2])) => {
-            if d2 != e1 || d1 != e2 {
-                return Err(format!(
-                    "{:?}: transpose of {}x{} must produce {}x{}, got {}x{}",
-                    op, d1, d2, d2, d1, e1, e2
-                ));
+            if deg0 != deg1 {
+                return Err("Differential form degree mismatch".to_string());
             }
             Ok(())
         }
@@ -510,26 +487,54 @@ where
     }
 }
 
-fn check_flow<R, W, D>(op: &LRA, read: R, write: W) -> Result<(), String>
+fn check_transpose<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
 where
-    D: TryInto<Sort>,
-    D::Error: fmt::Display,
-    R: IntoIterator<Item = D>,
-    W: IntoIterator<Item = D>,
+    R: IntoIterator<Item = Result<(Sort, u8), E>>,
+    W: IntoIterator<Item = Result<(Sort, u8), E>>,
+{
+    let mut read = read.into_iter();
+    let mut write = write.into_iter();
+    let (r1, None) = (next_with_degree(&mut read, 0)?, read.next()) else {
+        return Err(format!("{:?}: must read exactly one value", op));
+    };
+    let (w1, None) = (next_with_degree(&mut write, 0)?, write.next()) else {
+        return Err(format!("{:?}: must write exactly one value", op));
+    };
+    match (r1, w1) {
+        ((Sort::Real([d1, d2]), deg0), (Sort::Real([e1, e2]), deg1)) => {
+            if d2 != e1 || d1 != e2 {
+                return Err(format!(
+                    "{:?}: transpose of {}x{} must produce {}x{}, got {}x{}",
+                    op, d1, d2, d2, d1, e1, e2
+                ));
+            }
+            if deg0 != deg1 {
+                return Err("Differential form degree mismatch".to_string());
+            }
+            Ok(())
+        }
+        _ => Err(format!("{:?}: input and output must be real matrices", op)),
+    }
+}
+
+fn check_flow<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
+where
+    R: IntoIterator<Item = Result<(Sort, u8), E>>,
+    W: IntoIterator<Item = Result<(Sort, u8), E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
         LRA::Id() => {
-            let (r1, None) = (read_nxt(&mut read, 0, "LRA")?, read.next()) else {
+            let (r1, None) = (next_with_degree(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0, "LRA")?, write.next()) else {
+            let (w1, None) = (next_with_degree(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             if r1 != w1 {
                 return Err(format!(
-                    "{:?}: input and output must have the same type",
+                    "{:?}: input and output must have the same type and degree",
                     op
                 ));
             }
@@ -537,14 +542,14 @@ where
         }
         LRA::Ite() => {
             let (r1, r2, r3, None) = (
-                read_nxt(&mut read, 0, "LRA")?,
-                read_nxt(&mut read, 1, "LRA")?,
-                read_nxt(&mut read, 2, "LRA")?,
+                next_expect_degree(&mut read, 0, 0)?,
+                next_with_degree(&mut read, 1)?,
+                next_with_degree(&mut read, 2)?,
                 read.next(),
             ) else {
                 return Err(format!("{:?}: must read exactly three values", op));
             };
-            let (w1, None) = (write_nxt(&mut write, 0, "LRA")?, write.next()) else {
+            let (w1, None) = (next_with_degree(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             if r2 != r3 {
@@ -583,6 +588,10 @@ mod tests {
         Sort::Bool([r, c])
     }
 
+    fn deg0(s: Sort) -> Result<(Sort, u8), String> {
+        Ok((s, 0))
+    }
+
     #[test]
     fn type_kind_and_shape() {
         assert!(real(2, 3).is_real() && !real(2, 3).is_bool());
@@ -593,14 +602,14 @@ mod tests {
     #[test]
     fn const_real_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
-        assert!(LRA::Const(cm).check([] as [Sort; 0], [real(2, 2)]).is_ok());
+        assert!(LRA::Const(cm).check([].map(deg0), [real(2, 2)].map(deg0)).is_ok());
     }
 
     #[test]
     fn const_real_bool_write_fails() {
         assert!(
             LRA::Const(tch::Tensor::from_slice2(&[[0.0f64]]).into())
-                .check([] as [Sort; 0], [bool_t(1, 1)])
+                .check([].map(deg0), [bool_t(1, 1)].map(deg0))
                 .is_err()
         );
     }
@@ -609,7 +618,7 @@ mod tests {
     fn const_real_wrong_rows_fails() {
         assert!(
             LRA::Const(tch::Tensor::from_slice2(&[[0.0f64]]).into())
-                .check([] as [Sort; 0], [real(2, 1)])
+                .check([].map(deg0), [real(2, 1)].map(deg0))
                 .is_err()
         );
     }
@@ -619,7 +628,7 @@ mod tests {
         let t = real(1, 1);
         assert!(
             LRA::Const(tch::Tensor::from_slice2(&[[0.0f64]]).into())
-                .check([t], [t])
+                .check([t].map(deg0), [t].map(deg0))
                 .is_err()
         );
     }
@@ -629,7 +638,7 @@ mod tests {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
             LRA::Const(cm)
-                .check([] as [Sort; 0], [bool_t(2, 2)])
+                .check([].map(deg0), [bool_t(2, 2)].map(deg0))
                 .is_ok()
         );
     }
@@ -638,7 +647,7 @@ mod tests {
     fn const_bool_real_write_fails() {
         assert!(
             LRA::Const(tch::Tensor::from_slice2(&[[true]]).into())
-                .check([] as [Sort; 0], [real(1, 1)])
+                .check([].map(deg0), [real(1, 1)].map(deg0))
                 .is_err()
         );
     }
@@ -646,44 +655,44 @@ mod tests {
     #[test]
     fn not_ok() {
         let b = bool_t(2, 3);
-        assert!(LRA::Not().check([b], [b]).is_ok());
+        assert!(LRA::Not().check([b].map(deg0), [b].map(deg0)).is_ok());
     }
 
     #[test]
     fn not_real_input_fails() {
         let t = real(1, 1);
-        assert!(LRA::Not().check([t], [t]).is_err());
+        assert!(LRA::Not().check([t].map(deg0), [t].map(deg0)).is_err());
     }
 
     #[test]
     fn and_ok() {
         let b = bool_t(2, 2);
-        assert!(LRA::And().check([b, b], [b]).is_ok());
+        assert!(LRA::And().check([b, b].map(deg0), [b].map(deg0)).is_ok());
     }
 
     #[test]
     fn or_ok() {
         let b = bool_t(1, 1);
-        assert!(LRA::Or().check([b, b], [b]).is_ok());
+        assert!(LRA::Or().check([b, b].map(deg0), [b].map(deg0)).is_ok());
     }
 
     #[test]
     fn xor_ok() {
         let b = bool_t(3, 1);
-        assert!(LRA::Xor().check([b, b], [b]).is_ok());
+        assert!(LRA::Xor().check([b, b].map(deg0), [b].map(deg0)).is_ok());
     }
 
     #[test]
     fn and_real_output_fails() {
         let b = bool_t(1, 1);
-        assert!(LRA::And().check([b, b], [real(1, 1)]).is_err());
+        assert!(LRA::And().check([b, b].map(deg0), [real(1, 1)].map(deg0)).is_err());
     }
 
     #[test]
     fn and_type_mismatch_fails() {
         assert!(
             LRA::And()
-                .check([bool_t(1, 1), bool_t(1, 2)], [bool_t(1, 1)])
+                .check([bool_t(1, 1), bool_t(1, 2)].map(deg0), [bool_t(1, 1)].map(deg0))
                 .is_err()
         );
     }
@@ -692,7 +701,7 @@ mod tests {
     fn lt_ok() {
         assert!(
             LRA::Lt()
-                .check([real(1, 1), real(1, 1)], [bool_t(1, 1)])
+                .check([real(1, 1), real(1, 1)].map(deg0), [bool_t(1, 1)].map(deg0))
                 .is_ok()
         );
     }
@@ -701,19 +710,19 @@ mod tests {
     fn le_ok() {
         assert!(
             LRA::Le()
-                .check([real(2, 3), real(2, 3)], [bool_t(2, 3)])
+                .check([real(2, 3), real(2, 3)].map(deg0), [bool_t(2, 3)].map(deg0))
                 .is_ok()
         );
 
         assert!(
             LRA::Le()
-                .check([real(3, 3), real(2, 3)], [bool_t(2, 3)])
+                .check([real(3, 3), real(2, 3)].map(deg0), [bool_t(2, 3)].map(deg0))
                 .is_err()
         );
 
         assert!(
             LRA::Le()
-                .check([real(2, 3), real(2, 3)], [bool_t(3, 3)])
+                .check([real(2, 3), real(2, 3)].map(deg0), [bool_t(3, 3)].map(deg0))
                 .is_err()
         );
     }
@@ -722,7 +731,7 @@ mod tests {
     fn eq_ok() {
         assert!(
             LRA::Eq()
-                .check([real(2, 2), real(2, 2)], [bool_t(2, 2)])
+                .check([real(2, 2), real(2, 2)].map(deg0), [bool_t(2, 2)].map(deg0))
                 .is_ok()
         );
     }
@@ -730,14 +739,14 @@ mod tests {
     #[test]
     fn cmp_non_bool_output_fails() {
         let t = real(1, 1);
-        assert!(LRA::Lt().check([t, t], [t]).is_err());
+        assert!(LRA::Lt().check([t, t].map(deg0), [t].map(deg0)).is_err());
     }
 
     #[test]
     fn cmp_input_mismatch_fails() {
         assert!(
             LRA::Eq()
-                .check([real(1, 1), real(1, 2)], [bool_t(1, 1)])
+                .check([real(1, 1), real(1, 2)].map(deg0), [bool_t(1, 1)].map(deg0))
                 .is_err()
         );
     }
@@ -745,14 +754,14 @@ mod tests {
     #[test]
     fn add_ok() {
         let t = real(3, 4);
-        assert!(LRA::Add().check([t, t], [t]).is_ok());
+        assert!(LRA::Add().check([t, t].map(deg0), [t].map(deg0)).is_ok());
     }
 
     #[test]
     fn add_shape_mismatch_fails() {
         assert!(
             LRA::Add()
-                .check([real(1, 2), real(2, 1)], [real(1, 2)])
+                .check([real(1, 2), real(2, 1)].map(deg0), [real(1, 2)].map(deg0))
                 .is_err()
         );
     }
@@ -760,34 +769,34 @@ mod tests {
     #[test]
     fn add_bool_fails() {
         let b = bool_t(1, 1);
-        assert!(LRA::Add().check([b, b], [b]).is_err());
+        assert!(LRA::Add().check([b, b].map(deg0), [b].map(deg0)).is_err());
     }
 
     #[test]
     fn relu_ok() {
         let t = real(3, 4);
-        assert!(LRA::ReLU().check([t], [t]).is_ok());
+        assert!(LRA::ReLU().check([t].map(deg0), [t].map(deg0)).is_ok());
     }
 
     #[test]
     fn relu_bool_fails() {
         let b = bool_t(1, 1);
-        assert!(LRA::ReLU().check([b], [b]).is_err());
+        assert!(LRA::ReLU().check([b].map(deg0), [b].map(deg0)).is_err());
     }
 
     #[test]
     fn argmax_ok() {
-        assert!(LRA::Argmax().check([real(3, 4)], [real(1, 4)]).is_ok());
+        assert!(LRA::Argmax().check([real(3, 4)].map(deg0), [real(1, 4)].map(deg0)).is_ok());
     }
 
     #[test]
     fn argmax_matrix_output_fails() {
-        assert!(LRA::Argmax().check([real(3, 4)], [real(3, 4)]).is_err());
+        assert!(LRA::Argmax().check([real(3, 4)].map(deg0), [real(3, 4)].map(deg0)).is_err());
     }
 
     #[test]
     fn min_ok() {
-        assert!(LRA::Min().check([real(4, 1)], [real(1, 1)]).is_ok());
+        assert!(LRA::Min().check([real(4, 1)].map(deg0), [real(1, 1)].map(deg0)).is_ok());
     }
 
     #[test]
@@ -798,7 +807,7 @@ mod tests {
             tch::Tensor::zeros([2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
             tch::Tensor::zeros([0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
-        assert!(LRA::Linear(a, b).check([real(3, 4)], [real(2, 4)]).is_ok());
+        assert!(LRA::Linear(a, b).check([real(3, 4)].map(deg0), [real(2, 4)].map(deg0)).is_ok());
     }
 
     #[test]
@@ -808,7 +817,7 @@ mod tests {
             tch::Tensor::zeros([2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
             tch::Tensor::zeros([2, 1], (tch::Kind::Double, tch::Device::Cpu)).into();
-        assert!(LRA::Linear(a, b).check([real(3, 1)], [real(2, 1)]).is_ok());
+        assert!(LRA::Linear(a, b).check([real(3, 1)].map(deg0), [real(2, 1)].map(deg0)).is_ok());
     }
 
     #[test]
@@ -818,36 +827,36 @@ mod tests {
             tch::Tensor::zeros([2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
             tch::Tensor::zeros([0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
-        assert!(LRA::Linear(a, b).check([real(4, 1)], [real(2, 1)]).is_err());
+        assert!(LRA::Linear(a, b).check([real(4, 1)].map(deg0), [real(2, 1)].map(deg0)).is_err());
     }
 
     #[test]
     fn transpose_ok() {
-        assert!(LRA::Transpose().check([real(3, 4)], [real(4, 3)]).is_ok());
+        assert!(LRA::Transpose().check([real(3, 4)].map(deg0), [real(4, 3)].map(deg0)).is_ok());
     }
 
     #[test]
     fn transpose_wrong_shape_fails() {
-        assert!(LRA::Transpose().check([real(3, 4)], [real(3, 4)]).is_err());
+        assert!(LRA::Transpose().check([real(3, 4)].map(deg0), [real(3, 4)].map(deg0)).is_err());
     }
 
     #[test]
     fn ite_ok() {
         let t = real(3, 4);
-        assert!(LRA::Ite().check([bool_t(1, 1), t, t], [t]).is_ok());
+        assert!(LRA::Ite().check([bool_t(1, 1), t, t].map(deg0), [t].map(deg0)).is_ok());
     }
 
     #[test]
     fn ite_non_bool_guard_fails() {
         let t = real(1, 1);
-        assert!(LRA::Ite().check([t, t, t], [t]).is_err());
+        assert!(LRA::Ite().check([t, t, t].map(deg0), [t].map(deg0)).is_err());
     }
 
     #[test]
     fn ite_arm_mismatch_fails() {
         assert!(
             LRA::Ite()
-                .check([bool_t(1, 1), real(1, 1), real(1, 2)], [real(1, 1)])
+                .check([bool_t(1, 1), real(1, 1), real(1, 2)].map(deg0), [real(1, 1)].map(deg0))
                 .is_err()
         );
     }
@@ -855,61 +864,61 @@ mod tests {
     #[test]
     fn id_ok() {
         let t = real(4, 4);
-        assert!(LRA::Id().check([t], [t]).is_ok());
+        assert!(LRA::Id().check([t].map(deg0), [t].map(deg0)).is_ok());
     }
 
     #[test]
     fn id_type_mismatch_fails() {
-        assert!(LRA::Id().check([real(1, 1)], [real(2, 2)]).is_err());
+        assert!(LRA::Id().check([real(1, 1)].map(deg0), [real(2, 2)].map(deg0)).is_err());
     }
 
     #[test]
     fn id_arity_mismatch_fails() {
         let t = real(1, 1);
-        assert!(LRA::Id().check([t, t], [t, t]).is_err());
-        assert!(LRA::Id().check([t, t], [t]).is_err());
-        assert!(LRA::Id().check([t], [t, t]).is_err());
+        assert!(LRA::Id().check([t, t].map(deg0), [t, t].map(deg0)).is_err());
+        assert!(LRA::Id().check([t, t].map(deg0), [t].map(deg0)).is_err());
+        assert!(LRA::Id().check([t].map(deg0), [t, t].map(deg0)).is_err());
     }
 
     #[test]
     fn havoc_ok() {
-        assert!(LRA::Havoc().check([] as [Sort; 0], [real(2, 1)]).is_ok());
+        assert!(LRA::Havoc().check([].map(deg0), [real(2, 1)].map(deg0)).is_ok());
     }
 
     #[test]
     fn havoc_read_fails() {
         let t = real(1, 1);
-        assert!(LRA::Havoc().check([t], [t]).is_err());
+        assert!(LRA::Havoc().check([t].map(deg0), [t].map(deg0)).is_err());
     }
 
     #[test]
     fn havoc_arity_mismatch_fails() {
         assert!(
             LRA::Havoc()
-                .check([] as [Sort; 0], [real(2, 1), bool_t(1, 1)])
+                .check([].map(deg0), [real(2, 1), bool_t(1, 1)].map(deg0))
                 .is_err()
         );
         assert!(
             LRA::Havoc()
-                .check([] as [Sort; 0], [] as [Sort; 0])
+                .check([].map(deg0), [].map(deg0))
                 .is_err()
         );
     }
 
     #[test]
     fn zero_ok() {
-        assert!(LRA::Zero().check([] as [Sort; 0], [real(2, 1)]).is_ok());
+        assert!(LRA::Zero().check([].map(deg0), [real(2, 1)].map(deg0)).is_ok());
     }
 
     #[test]
     fn zero_arity_mismatch_fails() {
         let t = real(1, 1);
-        assert!(LRA::Zero().check([t], [t]).is_err());
+        assert!(LRA::Zero().check([t].map(deg0), [t].map(deg0)).is_err());
         assert!(
             LRA::Zero()
-                .check([] as [Sort; 0], [real(2, 1), real(1, 1)])
+                .check([].map(deg0), [real(2, 1), real(1, 1)].map(deg0))
                 .is_err()
         );
-        assert!(LRA::Zero().check([] as [Sort; 0], [] as [Sort; 0]).is_err());
+        assert!(LRA::Zero().check([].map(deg0), [].map(deg0)).is_err());
     }
 }
