@@ -13,11 +13,10 @@ pub trait Theory {
 
     const NAME: &'static str;
 
-    fn check<R, W, S, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
+    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        S: TryInto<Self::Sort, Error = E>,
-        R: IntoIterator<Item = S>,
-        W: IntoIterator<Item = S>;
+        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
+        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>;
 }
 
 pub trait Combinatorial: Theory {
@@ -38,8 +37,8 @@ pub trait Differential: Theory {
 // same sort, matching the arity of the base theories' `Id`.
 fn check_skip<R, W, E>(read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<Sort, E>>,
-    W: IntoIterator<Item = Result<Sort, E>>,
+    R: IntoIterator<Item = Result<(Sort, u8), E>>,
+    W: IntoIterator<Item = Result<(Sort, u8), E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -94,30 +93,29 @@ where
     Ok(())
 }
 
-fn read_nxt<R, D, T>(read: &mut R, i: usize, theory: &'static str) -> Result<T, String>
+fn next_expect_degree<R, S, E: fmt::Display>(
+    iter: &mut R,
+    pos: usize,
+    degree: u8,
+) -> Result<S, String>
 where
-    R: Iterator<Item = D>,
-    D: TryInto<T>,
-    D::Error: std::fmt::Display,
+    R: Iterator<Item = Result<(S, u8), E>>,
 {
-    if let Some(d) = read.next() {
-        d.try_into()
-            .map_err(|e| format!("Read arg {i} not compatible with {theory}: {e}"))
+    let (s, d) = next_with_degree(iter, pos)?;
+    if d != degree {
+        Err(format!("Arg {pos} expected to be {degree}, got {d}"))
     } else {
-        Err(format!("Read arg {i} expected, but got none"))
+        Ok(s)
     }
 }
 
-fn write_nxt<R, D, T>(write: &mut R, i: usize, theory: &'static str) -> Result<T, String>
+fn next_with_degree<R, S, E: fmt::Display>(iter: &mut R, pos: usize) -> Result<(S, u8), String>
 where
-    R: Iterator<Item = D>,
-    D: TryInto<T>,
-    D::Error: std::fmt::Display,
+    R: Iterator<Item = Result<(S, u8), E>>,
 {
-    if let Some(d) = write.next() {
-        d.try_into()
-            .map_err(|e| format!("Write arg {i} not compatible with {theory}: {e}"))
+    if let Some(item) = iter.next() {
+        item.map_err(|e| e.to_string())
     } else {
-        Err(format!("Write arg {i} expected, but got none"))
+        Err(format!("Arg {pos} expected, but got none"))
     }
 }
