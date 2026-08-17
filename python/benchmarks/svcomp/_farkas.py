@@ -38,33 +38,51 @@ import z3
 from ._domain import guard_ite
 
 
-def _pre_activations(layers, inputs):
-    """Symbolic hidden pre-activations ``W1[j]·inputs + b1[j]`` (a z3 expr each)."""
-    (W1, b1), _ = layers
-    W1 = np.asarray(W1); b1 = np.asarray(b1)
+@dataclass(frozen=True)
+class Net:
+    """``V`` as the cell engine needs it, independent of how it was built.
+
+    ``units`` is each ReLU's pre-activation as ``(coeffs, const)`` over the state
+    columns; ``out`` is ``(coeffs, const)`` from the unit outputs to ``V``, so
+    ``V = sum_j out_c[j] * relu(unit_j) + out_k``. Both are read off the composed
+    module by :func:`.._verify_ranking.net_of`, so unit count and wiring are not
+    assumed — only that every pre-activation is affine in the state and ``V`` is
+    affine in the unit outputs."""
+    units: tuple
+    out: tuple
+
+    @staticmethod
+    def from_layers(layers) -> "Net":
+        """A one-hidden-layer ``[(W1,b1),(W2,b2)]`` as a :class:`Net`."""
+        (W1, b1), (W2, b2) = layers
+        W1, b1, W2, b2 = map(np.asarray, (W1, b1, W2, b2))
+        units = tuple((tuple(int(c) for c in W1[j]), int(b1[j]))
+                      for j in range(W1.shape[0]))
+        return Net(units, (tuple(int(c) for c in W2[0]), int(b2[0])))
+
+
+def _pre_activations(net: Net, inputs):
+    """Each unit's pre-activation as a z3 expr over ``inputs``."""
     pres = []
-    for j in range(W1.shape[0]):
-        e = z3.IntVal(int(b1[j]))
-        for k in range(W1.shape[1]):
-            c = int(W1[j][k])
+    for coeffs, const in net.units:
+        e = z3.IntVal(const)
+        for c, x in zip(coeffs, inputs):
             if c:
-                e = e + c * inputs[k]
+                e = e + c * x
         pres.append(e)
     return pres
 
 
-def output_weights(layers):
-    """The output layer's weights and bias, as ints: ``V = sum_j c_j relu(z_j) + k``.
+def output_weights(net: Net):
+    """``net.out``, checked non-negative: ``V = sum_j c_j relu(z_j) + k``.
 
     The mask bound needs ``c_j >= 0``, which holds structurally because the output
     layer is frozen non-negative. The assert fails fast on a net that breaks that;
     the binding check is in Lean, where ``affine_mask_le``'s ``hW`` side goal is
     ``0 <= W i j`` and would not close."""
-    _, (W2, b2) = layers
-    W2 = np.asarray(W2); b2 = np.asarray(b2)
-    c = [int(W2[0][j]) for j in range(W2.shape[1])]
+    c, k = net.out
     assert all(x >= 0 for x in c), f"output layer must be non-negative: {c}"
-    return c, int(b2[0])
+    return list(c), k
 
 
 def masked_value(pres, weights, pattern):
@@ -539,16 +557,16 @@ class _Path:
     weights: tuple
 
     @staticmethod
-    def of(layers, s_syms, body, guard, invariants, delta) -> "_Path":
+    def of(net, s_syms, body, guard, invariants, delta) -> "_Path":
         invariants = tuple(invariants)
         dom = z3.And(guard, *invariants) if invariants else guard
         return _Path(s_syms=s_syms, guard=guard, invariants=invariants,
                      row_invariants=invariants + _entailed_atoms(dom, invariants,
                                                                  s_syms),
                      dom=dom, delta=delta,
-                     z_s=tuple(_pre_activations(layers, s_syms)),
-                     z_sp=tuple(_pre_activations(layers, body)),
-                     weights=output_weights(layers))
+                     z_s=tuple(_pre_activations(net, s_syms)),
+                     z_sp=tuple(_pre_activations(net, body)),
+                     weights=output_weights(net))
 
 
 def _signs_at(model, exprs):
@@ -636,7 +654,7 @@ def _narrow(p: _Path, lam, hint, region, pinned):
     return cells
 
 
-def _certify_path(layers, s_syms, body, guard, invariants, delta, max_iters):
+def _certify_path(net, s_syms, body, guard, invariants, delta, max_iters):
     """CEGAR over one affine path: certify the decrease on every cell of
     ``guard ∧ invariants`` under next-state ``body``. Repeatedly find an
     uncovered in-domain state, certify the cell of successor signs it lies in, and
@@ -644,7 +662,7 @@ def _certify_path(layers, s_syms, body, guard, invariants, delta, max_iters):
     regions are complementary, exhausting the domain *is* the coverage guarantee.
 
     Returns ``(ok, cells, counterexample, status)``."""
-    p = _Path.of(layers, s_syms, body, guard, invariants, delta)
+    p = _Path.of(net, s_syms, body, guard, invariants, delta)
     solver = z3.Solver()
     solver.add(p.dom)
     cells: list[CellCert] = []
@@ -681,7 +699,7 @@ def _certify_path(layers, s_syms, body, guard, invariants, delta, max_iters):
     return False, cells, None, "FAILED(max_iters)"
 
 
-def certify_decrease(layers, s_syms, sp_syms, guard, invariants, delta,
+def certify_decrease(net, s_syms, sp_syms, guard, invariants, delta,
                      max_iters: int = 1000) -> FarkasResult:
     """Certify the loop's decrease by splitting the guard into convex pieces
     (:func:`split_guard`), each of those into affine paths
@@ -697,12 +715,12 @@ def certify_decrease(layers, s_syms, sp_syms, guard, invariants, delta,
         if not _feasible(dom):
             continue                       # dead path (guard unsat) — never taken
         ok, cells, cex, status = _certify_path(
-            layers, s_syms, pbody, pguard, invariants, delta, max_iters)
+            net, s_syms, pbody, pguard, invariants, delta, max_iters)
         if not ok:
             return FarkasResult(False, [], cex, status)
         units = tuple(affine_coeffs(e, s_syms)
-                      for e in (_pre_activations(layers, s_syms)
-                                + _pre_activations(layers, pbody)))
+                      for e in (_pre_activations(net, s_syms)
+                                + _pre_activations(net, pbody)))
         paths.append(PathCert(pguard, tuple(pbody), tuple(cells), units))
     if not paths:
         return FarkasResult(False, [], None, "FAILED(no feasible path)")
