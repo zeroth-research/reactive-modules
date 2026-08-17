@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import z3
 
-from benchmarks.svcomp._farkas import certify_decrease
+from benchmarks.svcomp._farkas import Net, certify_decrease
 from benchmarks.svcomp._lean import _trivial, emit_program
 from benchmarks.svcomp._verify_ranking import Obligation
 
@@ -26,7 +26,7 @@ def _decrement_obligation(invariants=(), init=None):
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     x = z3.Int("x")
     s, sp = [x], [z3.If(x > 0, x - 1, x)]
-    res = certify_decrease(layers, s, sp, x > 0, invariants, 1.0)
+    res = certify_decrease(Net.from_layers(layers), s, sp, x > 0, invariants, 1.0)
     assert res.verified, res.status
     ob = Obligation(("x",), s, sp, None, None, 1.0, x > 0,
                     invariants=invariants, layers=layers, init=init)
@@ -128,7 +128,7 @@ def test_emit_multi_path_unions_the_step():
               (np.array([[1, 1]]), np.array([0]))]
     x = z3.Int("x")
     s, sp = [x], [z3.If(x != 0, z3.If(x > 0, x - 1, x + 1), x)]
-    res = certify_decrease(layers, s, sp, x != 0, (), 1.0)
+    res = certify_decrease(Net.from_layers(layers), s, sp, x != 0, (), 1.0)
     assert res.verified, res.status
     assert len(res.certificates) == 2
     ob = Obligation(("x",), s, sp, None, None, 1.0, x != 0, layers=layers)
@@ -144,7 +144,7 @@ def test_non_trivial_cell_uses_its_certificate():
     layers = [(np.array([[2]]), np.array([-1])), (np.array([[1]]), np.array([0]))]
     x = z3.Int("x")
     s, sp = [x], [z3.If(x > 0, x - 1, x)]
-    res = certify_decrease(layers, s, sp, x > 0, (), 1.0)
+    res = certify_decrease(Net.from_layers(layers), s, sp, x > 0, (), 1.0)
     assert res.verified, res.status
     ob = Obligation(("x",), s, sp, None, None, 1.0, x > 0, layers=layers)
     src = emit_program("nontrivial", ob, res.certificates)

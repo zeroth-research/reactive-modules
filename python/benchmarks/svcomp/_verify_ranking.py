@@ -32,7 +32,7 @@ import z3
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench, INT  # noqa: F401
 from ._domain import guard_from_transition
-from ._farkas import certify_decrease
+from ._farkas import Net, affine_coeffs, certify_decrease
 from zrth import LIA, Module, Wire, sugar
 from zrth import z3 as zz3
 from zrth.sugar import expr, nxt, relu
@@ -68,6 +68,7 @@ class Obligation:
     guard: object
     invariants: tuple = ()
     layers: object = None
+    net: object = None
     init: object = None
 
 
@@ -104,6 +105,37 @@ def _V_term(xs, layers):
 
 def _xs(extl):
     return list(extl) if isinstance(extl, tuple) else [extl]
+
+
+def _affine(e, syms):
+    """``affine_coeffs`` with the coefficients as a tuple, for a hashable ``Net``."""
+    coeffs, const = affine_coeffs(e, syms)
+    return tuple(coeffs), const
+
+
+def net_of(system, ctrl, state, out_pair) -> Net:
+    """``V`` read off the composed module: each ReLU's affine pre-activation over
+    the state, and the affine map from the ReLU outputs to ``V``.
+
+    The atom driving ``out_pair`` is walked with every ReLU output replaced by a
+    fresh symbol, so ``V``'s wire comes out affine in those. Nothing about layer
+    count or wiring is assumed; a pre-activation that is not affine in the state
+    (a deeper net) raises out of ``affine_coeffs``."""
+    z = {ctrl[n][0]: [z3.Int(n)] for n in state}
+    s_syms = [z3.Int(n) for n in state]
+    for atom in system.atoms:
+        if out_pair[1] not in {w for t in atom.update for w in t.write}:
+            continue
+        units, opaque = [], []
+        for t in atom.update:
+            if type(t.itype).__name__ == "LIA_ReLU":
+                units.append(_affine(z[t.read[0]][0], s_syms))
+                opaque.append(z3.Int(f"_h{len(opaque)}"))
+                z.update(zip(t.write, [[opaque[-1]]]))
+            else:
+                z.update(zip(t.write, zz3.eval(t.itype, [z[w] for w in t.read])))
+        return Net(tuple(units), _affine(z[out_pair[1]][0], opaque))
+    raise ValueError("no atom drives the ranking output wire")
 
 
 def _v_module(state_pairs, layers, *, read_next: bool):
@@ -152,6 +184,7 @@ def build_obligation(bench: Bench, layers, delta: float, invariants=None) -> Obl
     vs_mod, vs = _v_module(state_pairs, layers, read_next=False)
     vsp_mod, vsp = _v_module(state_pairs, layers, read_next=True)
     system = Module.parallel(prog, vs_mod, vsp_mod)
+    net = net_of(system, ctrl, bench.state, vs)
 
     z = {ctrl[n][0]: [z3.Int(n)] for n in bench.state}
     for atom in system.atoms:
@@ -166,7 +199,7 @@ def build_obligation(bench: Bench, layers, delta: float, invariants=None) -> Obl
     init = _init_predicate(bench, s_map)
     return Obligation(bench.state, s_syms, sp_syms, z[vs[1]][0], z[vsp[1]][0],
                       float(delta), guard, invariants=inv_preds, layers=layers,
-                      init=init)
+                      net=net, init=init)
 
 
 def _init_predicate(bench: Bench, s_map: dict):
@@ -243,10 +276,11 @@ def farkas_cell(ob: Obligation) -> VerifyResult:
     structurally (non-negative output layer). Sound but incomplete — cells with a
     non-affine transition or a nonlinear/disjunctive guard atom cannot be
     certified (returns FAILED)."""
-    W_last, b_last = ob.layers[-1]
-    if not (np.all(np.asarray(W_last) >= 0) and np.all(np.asarray(b_last) >= 0)):
+    net = ob.net if ob.net is not None else Net.from_layers(ob.layers)
+    out_c, out_k = net.out
+    if not (all(c >= 0 for c in out_c) and out_k >= 0):
         return VerifyResult(False, status="FAILED(V>=0 not structural)")
-    r = certify_decrease(ob.layers, ob.s_syms, ob.sp_syms, ob.guard,
+    r = certify_decrease(net, ob.s_syms, ob.sp_syms, ob.guard,
                          ob.invariants, ob.delta)
     return VerifyResult(r.verified, r.counterexample,
                         certificate=r.certificates, status=r.status)

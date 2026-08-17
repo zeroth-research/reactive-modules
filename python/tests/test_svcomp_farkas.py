@@ -21,6 +21,7 @@ import z3
 
 from benchmarks.svcomp import _farkas
 from benchmarks.svcomp._farkas import (
+    Net,
     _pre_activations,
     affine_coeffs,
     atom_rows,
@@ -128,10 +129,10 @@ def test_disjunctive_guard_is_certifiable_only_once_split(monkeypatch):
     guard = z3.Or(i < m, i < k)
     sp = [z3.If(guard, i + 1, i), m, k]
 
-    assert certify_decrease(layers, s, sp, guard, (), 1.0).verified
+    assert certify_decrease(Net.from_layers(layers), s, sp, guard, (), 1.0).verified
 
     monkeypatch.setattr(_farkas, "split_guard", lambda g, max_pieces=16: [g])
-    unsplit = certify_decrease(layers, s, sp, guard, (), 1.0)
+    unsplit = certify_decrease(Net.from_layers(layers), s, sp, guard, (), 1.0)
     assert not unsplit.verified, "the un-split disjunctive guard should not certify"
 
 
@@ -170,10 +171,10 @@ def test_conditional_invariant_is_what_certifies(monkeypatch):
     """Pinned against the same run without the entailed rows, which is the state the
     LP was in before."""
     layers, s, sp, guard, invariants = _conditional_loop()
-    assert certify_decrease(layers, s, sp, guard, invariants, 1.0).verified
+    assert certify_decrease(Net.from_layers(layers), s, sp, guard, invariants, 1.0).verified
 
     monkeypatch.setattr(_farkas, "_entailed_atoms", lambda *a, **k: ())
-    without = certify_decrease(layers, s, sp, guard, invariants, 1.0)
+    without = certify_decrease(Net.from_layers(layers), s, sp, guard, invariants, 1.0)
     assert not without.verified, "without the entailed rows this should not certify"
 
 
@@ -206,15 +207,15 @@ def test_cells_partition_the_domain():
     of them. Coverage in the emitted proof rests on this."""
     layers = [(np.array([[1], [1]]), np.array([0, -3])),
               (np.array([[1, 1]]), np.array([0]))]
-    res = certify_decrease(layers, [x], [z3.If(x > 0, x - 1, x)], x > 0, (), 1.0)
+    res = certify_decrease(Net.from_layers(layers), [x], [z3.If(x > 0, x - 1, x)], x > 0, (), 1.0)
     assert res.verified, res.status
     for path in res.certificates:
         regions = []
         for c in path.cells:
-            lits = list(strict_signs(_pre_activations(layers, list(path.body)),
+            lits = list(strict_signs(_pre_activations(Net.from_layers(layers), list(path.body)),
                                      c.pattern_sp))
             if c.pattern_s is not None:
-                lits += list(strict_signs(_pre_activations(layers, [x]),
+                lits += list(strict_signs(_pre_activations(Net.from_layers(layers), [x]),
                                           c.pattern_s))
             regions.append(z3.And(*lits))
         covered = z3.Solver()
@@ -233,8 +234,8 @@ def test_mask_never_exceeds_V():
     for masks that match no reachable pattern too."""
     layers = [(np.array([[1], [2]]), np.array([0, -3])),
               (np.array([[1, 2]]), np.array([4]))]
-    pres = _pre_activations(layers, [x])
-    weights = output_weights(layers)
+    pres = _pre_activations(Net.from_layers(layers), [x])
+    weights = output_weights(Net.from_layers(layers))
     coeffs, bias = weights
     exact = z3.Sum([c * z3.If(p > 0, p, z3.IntVal(0))
                     for c, p in zip(coeffs, pres)]) + bias
@@ -253,7 +254,7 @@ def test_mixed_output_weights_and_bias_are_carried():
     layers = [(np.array([[1], [1]]), np.array([0, -3])),
               (np.array([[1, 2]]), np.array([5]))]
     (W1, b1), (W2, b2) = layers
-    res = certify_decrease(layers, [x], [z3.If(x > 0, x - 1, x)], x > 0, (), 1.0)
+    res = certify_decrease(Net.from_layers(layers), [x], [z3.If(x > 0, x - 1, x)], x > 0, (), 1.0)
     assert res.verified, res.status
     for c in (c for p in res.certificates for c in p.cells):
         # z_j(s) = W1[j]·x + b1[j];  z_j(s') is the same at x - 1
@@ -272,7 +273,7 @@ def test_margin_the_rank_cannot_meet_is_rejected():
     witness-level one in ``_certify_path`` and the region-wide prune in
     ``_certify_cell`` — and the guarantee holds as long as either does."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
-    res = certify_decrease(layers, [x], [z3.If(x > 0, x - 2, x)], x > 0, (), 2.0)
+    res = certify_decrease(Net.from_layers(layers), [x], [z3.If(x > 0, x - 2, x)], x > 0, (), 2.0)
     assert not res.verified
     assert res.status == "FAILED(decrease)"
 
@@ -284,7 +285,7 @@ def test_certify_decrease_certificates_are_valid():
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     s = [z3.Int("x")]
     sp = [z3.If(z3.Int("x") > 0, z3.Int("x") - 1, z3.Int("x"))]
-    res = certify_decrease(layers, s, sp, z3.Int("x") > 0, (), 1.0)
+    res = certify_decrease(Net.from_layers(layers), s, sp, z3.Int("x") > 0, (), 1.0)
     assert res.verified, res.status
     cells = [c for p in res.certificates for c in p.cells]
     assert cells
