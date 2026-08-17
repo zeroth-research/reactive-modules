@@ -35,6 +35,7 @@ impl Differential for Ops {
 }
 
 type Module = base::Module<Ops, Ops, Ops>;
+type Atom = base::Atom<Ops, Ops, Ops>;
 
 fn mk_op(name: &'static str) -> Ops {
     Ops(name)
@@ -168,10 +169,12 @@ fn example_tiny1(
 
     let init = Term::constant(mk_op("INIT"), [X(interface), X(private)]).unwrap();
 
+    let vars = [external, interface, private];
     let obs = [external, interface];
     let prvt = [private];
 
-    Module::partially_observable_sequential(obs, prvt, [init], [cons, update])
+    let atom = Atom::sequential(&vars, [init], [cons, update])?;
+    Module::partially_observable(obs, prvt, [atom])
 }
 //
 #[test]
@@ -447,12 +450,14 @@ fn more_controlled_than_external() {
     let init = Term::constant(mk_op("A"), [X(y), X(z)]).unwrap();
     let update = Term::function(mk_op("A"), [X(y), X(z)], [y, z]).unwrap();
 
-    let m = Module::partially_observable_sequential([x], [y, z], [init], [update]);
+    let a = Atom::sequential(&[x, y, z], [init], [update]);
+    assert!(a.is_ok());
+    let m = Module::partially_observable([x], [y, z], [a.unwrap()]);
     assert!(m.is_ok());
 }
 
 #[test]
-fn module_with_invalid_read() {
+fn atom_with_invalid_read() {
     let x = Variable::new("A");
     let y = Variable::new("B");
     let z = Variable::new("C");
@@ -461,9 +466,11 @@ fn module_with_invalid_read() {
     let init = Term::function(mk_op("i"), [X(y), X(z)], [p, X(x)]).unwrap();
     let update = Term::function(mk_op("u"), [X(y), X(z)], [p, X(x), *y, *z]).unwrap();
 
-    let m = Module::partially_observable_sequential([x], [y, z], [init], [update]);
-    println!("{:?}", m);
-    assert!(m.is_err());
+    let a = Atom::sequential(&[x, y, z], [init], [update]);
+    println!("{:?}", a);
+    assert!(a.is_err());
+    // let m = Module::partially_observable([x], [y, z], [a.unwrap()]);
+    // assert!(m.is_err());
 }
 
 #[allow(unused)]

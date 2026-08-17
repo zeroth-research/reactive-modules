@@ -2,7 +2,7 @@ use crate::wire::Wire;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::vec;
-use theory::{Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential, Theory};
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -277,15 +277,15 @@ where
     }
 }
 
-impl<D: Differential> Block<D>
+impl<F: Differential> Block<F>
 where
-    D::Sort: Clone + Eq,
+    F::Sort: Clone + Eq,
 {
     /// Builds a block of one `ZERO` term per write wire, so that theories can
     /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
     /// the compute graph.
-    pub(crate) fn zero<W: IntoIterator<Item = Wire<D::Sort>>>(write: W) -> Result<Self, String> {
-        Block::try_from_iter(write.into_iter().map(|w| Term::constant(D::ZERO, [w])))
+    pub(crate) fn zero<W: IntoIterator<Item = Wire<F::Sort>>>(write: W) -> Result<Self, String> {
+        Block::try_from_iter(write.into_iter().map(|w| Term::constant(F::ZERO, [w])))
     }
 }
 
@@ -313,6 +313,16 @@ where
                 _ => Some(Err("skip requires as many write as read wires".to_string())),
             }
         }))
+    }
+}
+
+impl<I: Combinatorial> Block<I>
+where
+    I::Sort: Clone + Eq,
+{
+    /// Builds a block of one `HAVOC` term per write wire
+    pub(crate) fn havoc<W: IntoIterator<Item = Wire<I::Sort>>>(write: W) -> Result<Self, String> {
+        Block::try_from_iter(write.into_iter().map(|w| Term::constant(I::HAVOC, [w])))
     }
 }
 
