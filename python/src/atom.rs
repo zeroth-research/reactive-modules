@@ -1,8 +1,8 @@
 use crate::term::{Term, TermInterfaceType};
-use crate::try_iter_borrow;
 use crate::var::Var;
 use crate::wire::Wire;
-use pyo3::exceptions::PyIndexError;
+use crate::{try_iter_borrow, try_term_iter_cloned, try_var_iter_cloned};
+use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::prelude::*;
 use theory::any::{Any, Combinatorial, Differential, Sequential};
 
@@ -19,6 +19,111 @@ impl From<base::Atom<Combinatorial, Sequential, Differential>> for Atom {
 
 #[pymethods]
 impl Atom {
+    #[new]
+    #[pyo3(signature = (vars, init = None, delay = None, update = None))]
+    fn new(
+        vars: &Bound<'_, PyAny>,
+        init: Option<&Bound<'_, PyAny>>,
+        delay: Option<&Bound<'_, PyAny>>,
+        update: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        match (init, delay, update) {
+            (Some(init), None, Some(update)) => Self::sequential(vars, init, update),
+            (Some(init), Some(delay), None) => Self::differential(vars, init, delay),
+            (Some(init), Some(delay), Some(update)) => Self::hybrid(vars, init, update, delay),
+            (None, None, Some(update)) => Self::uninitialized(vars, update),
+            (Some(init), None, None) => Self::constant(vars, init),
+            _ => Err(PyTypeError::new_err(
+                "invalid combination of blocks: expected `init`+`update` (sequential), \
+                 `init`+`delay` (differential), `init`+`update`+`delay` (hybrid), \
+                 `update` (uninitialized), or `init` (constant)",
+            )),
+        }
+    }
+
+    #[staticmethod]
+    fn sequential(
+        vars: &Bound<'_, PyAny>,
+        init: &Bound<'_, PyAny>,
+        update: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+        let init = try_term_iter_cloned(&init)?;
+        let update = try_term_iter_cloned(&update)?;
+
+        match base::Atom::sequential(vars.iter(), init, update) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    fn differential(
+        vars: &Bound<'_, PyAny>,
+        init: &Bound<'_, PyAny>,
+        delay: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+        let init = try_term_iter_cloned(&init)?;
+        let delay = try_term_iter_cloned(&delay)?;
+
+        match base::Atom::differential(vars.iter(), init, delay) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    fn hybrid(
+        vars: &Bound<'_, PyAny>,
+        init: &Bound<'_, PyAny>,
+        update: &Bound<'_, PyAny>,
+        delay: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+        let init = try_term_iter_cloned(&init)?;
+        let update = try_term_iter_cloned(&update)?;
+        let delay = try_term_iter_cloned(&delay)?;
+
+        match base::Atom::hybrid(vars.iter(), init, update, delay) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    fn uninitialized(vars: &Bound<'_, PyAny>, update: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+        let update = try_term_iter_cloned(&update)?;
+
+        match base::Atom::uninitialized(vars.iter(), update) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    fn constant(vars: &Bound<'_, PyAny>, init: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+        let init = try_term_iter_cloned(&init)?;
+
+        match base::Atom::constant(vars.iter(), init) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    fn combinatorial(vars: &Bound<'_, PyAny>, assign: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+        let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
+
+        match base::Atom::combinatorial(vars.iter(), assign) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
     #[getter]
     fn read(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
         Self::interface(slf, AtomInterfaceType::Read)
