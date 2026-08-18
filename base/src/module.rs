@@ -1,6 +1,6 @@
 use crate::atom::Atom;
 use crate::topological_order;
-use crate::variable::{Interface, Variable};
+use crate::var::{Interface, Var};
 use crate::wire::Wire;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
@@ -261,7 +261,7 @@ where
     /// - [`new_unchecked`], for manual module creation.
     pub fn observable<O, P, A>(obs: O, atoms: A) -> Result<Self, String>
     where
-        P: Into<Variable<S>>,
+        P: Into<Var<S>>,
         O: IntoIterator<Item = P>,
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
     {
@@ -293,8 +293,8 @@ where
     /// - [`new_unchecked`], for manual module creation.
     pub fn partially_observable<O, P, Q, R, A>(obs: O, prvt: P, atoms: A) -> Result<Self, String>
     where
-        Q: Into<Variable<S>>,
-        R: Into<Variable<S>>,
+        Q: Into<Var<S>>,
+        R: Into<Var<S>>,
         O: IntoIterator<Item = Q>,
         P: IntoIterator<Item = R>,
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
@@ -367,9 +367,9 @@ where
         }
 
         // Build intf and extl wires based on inferred control set
-        let mut intf: Vec<Variable<S>> = Vec::with_capacity(ctrl_var.len() - prvt.len());
-        let mut extl: Vec<Variable<S>> = Vec::with_capacity(obs.len() - intf.len());
-        let mut ctrl: Vec<Variable<S>> = Vec::with_capacity(ctrl_var.len());
+        let mut intf: Vec<Var<S>> = Vec::with_capacity(ctrl_var.len() - prvt.len());
+        let mut extl: Vec<Var<S>> = Vec::with_capacity(obs.len() - intf.len());
+        let mut ctrl: Vec<Var<S>> = Vec::with_capacity(ctrl_var.len());
 
         for var in obs.iter() {
             if ctrl_var.contains(&var.id()) {
@@ -426,11 +426,11 @@ where
         let mut extl: HashSet<usize> = HashSet::new();
         let mut intf: HashSet<usize> = HashSet::new();
 
-        let mut extl_stack: Vec<Variable<S>> = Vec::new();
-        let mut intf_stack: Vec<Variable<S>> = Vec::new();
-        let mut prvt_stack: Vec<Variable<S>> = Vec::new();
-        let mut obs_stack: Vec<Variable<S>> = Vec::new();
-        let mut ctrl_stack: Vec<Variable<S>> = Vec::new();
+        let mut extl_stack: Vec<Var<S>> = Vec::new();
+        let mut intf_stack: Vec<Var<S>> = Vec::new();
+        let mut prvt_stack: Vec<Var<S>> = Vec::new();
+        let mut obs_stack: Vec<Var<S>> = Vec::new();
+        let mut ctrl_stack: Vec<Var<S>> = Vec::new();
         let mut temp_stack: Vec<Wire<S>> = Vec::new();
         let mut atoms_stack: Vec<Atom<I, J, F, S>> = Vec::new();
 

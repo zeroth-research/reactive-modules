@@ -4,7 +4,7 @@
 
 use base::term;
 use base::term::Term;
-use base::variable::{Variable, X};
+use base::var::{Var, X};
 use base::wire::Wire;
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
@@ -47,11 +47,11 @@ pub fn mk_op(name: &'static str) -> Ops {
 
 #[allow(clippy::vec_init_then_push)]
 pub fn example_counter() -> Result<Module, String> {
-    let x = Variable::new("real");
-    let y = Variable::new("real");
-    let z = Variable::new("real");
-    let y0 = Variable::new("real");
-    let z0 = Variable::new("real");
+    let x = Var::new("real");
+    let y = Var::new("real");
+    let z = Var::new("real");
+    let y0 = Var::new("real");
+    let z0 = Var::new("real");
 
     let mut init: Vec<Term<Ops>> = Vec::new();
 
@@ -93,10 +93,10 @@ pub fn example_counter() -> Result<Module, String> {
 #[allow(clippy::vec_init_then_push)]
 pub fn example_peterson1() -> Result<Module, String> {
     let stype = "{outCS, reqCS, inCS}";
-    let pc1 = Variable::new(stype);
-    let x1 = Variable::new("bool");
-    let pc2 = Variable::new(stype);
-    let x2 = Variable::new("bool");
+    let pc1 = Var::new(stype);
+    let x1 = Var::new("bool");
+    let pc2 = Var::new(stype);
+    let x2 = Var::new("bool");
 
     let mut init: Vec<Term<Ops>> = Vec::new();
     init.push(term!(mk_op("CONST(outCS)"), [X(pc1)]).unwrap());
@@ -146,11 +146,11 @@ pub fn example_peterson1() -> Result<Module, String> {
 }
 
 pub fn example_tiny1(
-    external: Variable<&'static str>,
-    interface: Variable<&'static str>,
+    external: Var<&'static str>,
+    interface: Var<&'static str>,
     wait: bool,
 ) -> Result<Module, String> {
-    let private = Variable::new("Tny");
+    let private = Var::new("Tny");
     let temp = Wire::zero("Tny");
 
     let cons = Term::constant(mk_op("CONST"), [temp]).unwrap();
