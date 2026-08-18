@@ -6,14 +6,14 @@ use theory::any::Sort;
 #[pyclass(frozen, eq, hash, str)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Var {
-    base: base::Variable<Sort>,
+    base: base::Var<Sort>,
 }
 
 #[pymethods]
 impl Var {
     #[new]
     pub(crate) fn new(dtype: Sort) -> Self {
-        let base = base::Variable::new(dtype);
+        let base = base::Var::new(dtype);
         Self { base }
     }
 
@@ -33,13 +33,13 @@ impl Var {
 }
 
 impl Var {
-    pub(crate) fn base(&self) -> &base::Variable<Sort> {
+    pub(crate) fn base(&self) -> &base::Var<Sort> {
         &self.base
     }
 }
 
-impl From<base::Variable<Sort>> for Var {
-    fn from(base: base::Variable<Sort>) -> Self {
+impl From<base::Var<Sort>> for Var {
+    fn from(base: base::Var<Sort>) -> Self {
         Self { base }
     }
 }
@@ -54,11 +54,11 @@ impl fmt::Display for Var {
 #[pyfunction]
 #[pyo3(name = "X")]
 pub(crate) fn x(var: PyRef<'_, Var>) -> Wire {
-    base::variable::X(&var.base).into()
+    base::var::X(&var.base).into()
 }
 
 /// The derivative wire of the variable.
 #[pyfunction]
 pub(crate) fn d(var: PyRef<'_, Var>) -> Wire {
-    base::variable::d(&var.base).into()
+    base::var::d(&var.base).into()
 }

@@ -53,7 +53,7 @@ where
 
 fn try_var_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Variable<theory::any::Sort>>> {
+) -> PyResult<impl Iterator<Item = base::Var<theory::any::Sort>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Var>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);

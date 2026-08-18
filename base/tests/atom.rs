@@ -5,7 +5,7 @@ mod common;
 
 use base::term;
 use base::term::Term;
-use base::variable::{Variable, X, d};
+use base::var::{Var, X, d};
 use base::wire::Wire;
 use common::{Atom, Module, Ops, example_counter, example_peterson1, mk_op};
 
@@ -26,9 +26,9 @@ fn can_instantiate_example_peterson1() {
 
 #[test]
 fn module_write_all_ctrl() {
-    let x = Variable::new("real");
-    let y = Variable::new("real");
-    let x0 = Variable::new("real");
+    let x = Var::new("real");
+    let y = Var::new("real");
+    let x0 = Var::new("real");
 
     let update: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [x]).unwrap()].to_vec();
 
@@ -62,9 +62,9 @@ fn module_write_all_ctrl() {
 
 #[test]
 fn atom_with_invalid_read() {
-    let x = Variable::new("A");
-    let y = Variable::new("B");
-    let z = Variable::new("C");
+    let x = Var::new("A");
+    let y = Var::new("B");
+    let z = Var::new("C");
     let p = Wire::zero("P");
 
     let init = Term::function(mk_op("i"), [X(y), X(z)], [p, X(x)]).unwrap();
@@ -98,9 +98,9 @@ fn differential_drifting_clocks() {
     // Real scalars: 1x1 matrices.
     let scalar = Sort::Real([1, 1]);
     // The input clock, and the two clocks drifting relative to it.
-    let t = Variable::new(scalar);
-    let x = Variable::new(scalar);
-    let y = Variable::new(scalar);
+    let t = Var::new(scalar);
+    let x = Var::new(scalar);
+    let y = Var::new(scalar);
 
     // delay: the derivatives, both driven by the input's derivative `d(t)`.
     let delay = [
@@ -168,7 +168,7 @@ fn differential_module_rejects_dx_equals_x() {
     use theory::lra::{LRA, Sort};
 
     let scalar = Sort::Real([1, 1]);
-    let x = Variable::new(scalar);
+    let x = Var::new(scalar);
 
     // dx = x: already ill-formed at the term level.
     let delay = Term::function(LRA::Id(), [d(x)], [x]);
@@ -184,8 +184,8 @@ fn differential_module_rejects_dx_equals_x() {
 /// havoced and the delay is zero, both synthesised by the constructor.
 #[test]
 fn uninitialized_module_ok() {
-    let x = Variable::new("real");
-    let y = Variable::new("real");
+    let x = Var::new("real");
+    let y = Var::new("real");
 
     // x' = y: x is controlled, y is inferred external.
     let update = [Term::function(mk_op("ID"), [X(x)], [y]).unwrap()];
@@ -206,8 +206,8 @@ fn uninitialized_module_ok() {
 /// latched wire is rejected.
 #[test]
 fn uninitialized_module_rejects_latched_write() {
-    let x = Variable::new("real");
-    let y = Variable::new("real");
+    let x = Var::new("real");
+    let y = Var::new("real");
 
     // writes the latched wire `x` instead of the next wire `X(x)`
     let update = [Term::function(mk_op("ID"), [*x], [y]).unwrap()];
@@ -218,7 +218,7 @@ fn uninitialized_module_rejects_latched_write() {
 /// synthesised SKIP update and a synthesised ZERO delay.
 #[test]
 fn constant_module_ok() {
-    let x = Variable::new("real");
+    let x = Var::new("real");
 
     let init = [Term::constant(mk_op("CONST(0)"), [X(x)]).unwrap()];
     let m = Module::constant([x], init).unwrap();
@@ -238,7 +238,7 @@ fn constant_module_ok() {
 /// wire is rejected.
 #[test]
 fn constant_module_rejects_latched_write() {
-    let x = Variable::new("real");
+    let x = Var::new("real");
 
     // writes the latched wire `x` instead of the next wire `X(x)`
     let init = [Term::constant(mk_op("CONST(0)"), [*x]).unwrap()];
@@ -261,8 +261,8 @@ fn constant_module_rejects_latched_write() {
 /// location with zero drift, since it only changes at jumps.
 #[test]
 fn simple_timed_automaton() {
-    let x = Variable::new("real");
-    let loc = Variable::new("{off, on}");
+    let x = Var::new("real");
+    let loc = Var::new("{off, on}");
 
     // init: loc = off, x = 0
     let init = [
@@ -307,8 +307,8 @@ fn simple_timed_automaton() {
 /// automaton is rejected.
 #[test]
 fn hybrid_rejects_missing_flow() {
-    let x = Variable::new("real");
-    let loc = Variable::new("{off, on}");
+    let x = Var::new("real");
+    let loc = Var::new("{off, on}");
 
     let init = [
         Term::constant(mk_op("CONST(off)"), [X(loc)]).unwrap(),

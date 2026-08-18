@@ -7,13 +7,13 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Variable<S> {
+pub struct Var<S> {
     ltc: Wire<S>,
     nxt: Wire<S>,
     der: Wire<S>,
 }
 
-impl<S: Clone> Variable<S> {
+impl<S: Clone> Var<S> {
     pub fn new(dtype: S) -> Self {
         Self {
             ltc: Wire::zero(dtype.clone()),
@@ -23,7 +23,7 @@ impl<S: Clone> Variable<S> {
     }
 }
 
-impl<S> Variable<S> {
+impl<S> Var<S> {
     pub(crate) fn ltc(&self) -> &Wire<S> {
         &self.ltc
     }
@@ -40,16 +40,16 @@ impl<S> Variable<S> {
 /// Equality goes through the latched wire — the variable's bearing element,
 /// consistent with its [`Deref`] view: two variables are the same variable
 /// iff they share the same latched wire.
-impl<S> PartialEq for Variable<S> {
+impl<S> PartialEq for Var<S> {
     fn eq(&self, other: &Self) -> bool {
         self.ltc == other.ltc
     }
 }
 
-impl<S> Eq for Variable<S> {}
+impl<S> Eq for Var<S> {}
 
 /// Hashing matches equality: only the latched wire is hashed.
-impl<S> Hash for Variable<S> {
+impl<S> Hash for Var<S> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ltc.hash(state);
     }
@@ -58,8 +58,8 @@ impl<S> Hash for Variable<S> {
 /// A variable casts into its latched wire: `let a: Wire<_> = *x;`, and
 /// implicitly at any call boundary bounded on `Into<Wire<S>>` (e.g. the term
 /// constructors).
-impl<S> From<Variable<S>> for Wire<S> {
-    fn from(var: Variable<S>) -> Self {
+impl<S> From<Var<S>> for Wire<S> {
+    fn from(var: Var<S>) -> Self {
         var.ltc
     }
 }
@@ -70,7 +70,7 @@ impl<S> From<Variable<S>> for Wire<S> {
 ///
 /// `Deref` for a non-pointer type is deliberate here: the latched wire is the
 /// variable's primary view, the way `String` derefs to `str`.
-impl<S> Deref for Variable<S> {
+impl<S> Deref for Var<S> {
     type Target = Wire<S>;
 
     fn deref(&self) -> &Self::Target {
@@ -83,7 +83,7 @@ impl<S> Deref for Variable<S> {
 /// Bounded on `Borrow`, so it accepts the variable by value (`d(x)`, natural
 /// for `Copy` sorts) or by reference (`d(&x)`); either way only the wire is
 /// cloned and the variable stays usable.
-pub fn d<S: Clone>(var: impl Borrow<Variable<S>>) -> Wire<S> {
+pub fn d<S: Clone>(var: impl Borrow<Var<S>>) -> Wire<S> {
     var.borrow().der.clone()
 }
 
@@ -91,7 +91,7 @@ pub fn d<S: Clone>(var: impl Borrow<Variable<S>>) -> Wire<S> {
 /// (derivative) wire, `let w: &Wire<_> = d_ref(&x);`.
 ///
 /// Reference in, reference out — no clone
-pub fn d_ref<S>(var: &Variable<S>) -> &Wire<S> {
+pub fn d_ref<S>(var: &Var<S>) -> &Wire<S> {
     &var.der
 }
 
@@ -101,7 +101,7 @@ pub fn d_ref<S>(var: &Variable<S>) -> &Wire<S> {
 /// for `Copy` sorts) or by reference (`X(&x)`); either way only the wire is
 /// cloned and the variable stays usable.
 #[allow(non_snake_case)]
-pub fn X<S: Clone>(var: impl Borrow<Variable<S>>) -> Wire<S> {
+pub fn X<S: Clone>(var: impl Borrow<Var<S>>) -> Wire<S> {
     var.borrow().nxt.clone()
 }
 
@@ -110,11 +110,11 @@ pub fn X<S: Clone>(var: impl Borrow<Variable<S>>) -> Wire<S> {
 ///
 /// Reference in, reference out — no clone
 #[allow(non_snake_case)]
-pub fn X_ref<S>(var: &Variable<S>) -> &Wire<S> {
+pub fn X_ref<S>(var: &Var<S>) -> &Wire<S> {
     &var.nxt
 }
 
-impl<S: fmt::Display> fmt::Display for Variable<S> {
+impl<S: fmt::Display> fmt::Display for Var<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
@@ -129,7 +129,7 @@ impl<S: fmt::Display> fmt::Display for Variable<S> {
 
 #[derive(Debug, Clone)]
 pub struct Interface<S> {
-    vars: Vec<Variable<S>>,
+    vars: Vec<Var<S>>,
 }
 
 impl<S> Interface<S> {
@@ -156,11 +156,11 @@ impl<S> Interface<S> {
         self.vars.is_empty()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Variable<S>> {
+    pub fn iter(&self) -> impl Iterator<Item = &Var<S>> {
         self.vars.iter()
     }
 
-    pub fn try_from_iter<I: IntoIterator<Item = Variable<S>>>(iter: I) -> Result<Self, String> {
+    pub fn try_from_iter<I: IntoIterator<Item = Var<S>>>(iter: I) -> Result<Self, String> {
         let vars: Vec<_> = iter.into_iter().collect();
 
         // variables must have no repetition
@@ -176,9 +176,7 @@ impl<S> Interface<S> {
 }
 
 impl<S: Debug> Interface<S> {
-    pub(crate) fn from_iter_unchecked<T: Into<Variable<S>>, I: IntoIterator<Item = T>>(
-        iter: I,
-    ) -> Self {
+    pub(crate) fn from_iter_unchecked<T: Into<Var<S>>, I: IntoIterator<Item = T>>(iter: I) -> Self {
         let vars: Vec<_> = iter.into_iter().map(Into::into).collect();
 
         #[cfg(debug_assertions)]
@@ -195,8 +193,8 @@ impl<S: Debug> Interface<S> {
 }
 
 impl<S> IntoIterator for Interface<S> {
-    type Item = Variable<S>;
-    type IntoIter = std::vec::IntoIter<Variable<S>>;
+    type Item = Var<S>;
+    type IntoIter = std::vec::IntoIter<Var<S>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.vars.into_iter()
@@ -204,8 +202,8 @@ impl<S> IntoIterator for Interface<S> {
 }
 
 impl<'a, S> IntoIterator for &'a Interface<S> {
-    type Item = &'a Variable<S>;
-    type IntoIter = std::slice::Iter<'a, Variable<S>>;
+    type Item = &'a Var<S>;
+    type IntoIter = std::slice::Iter<'a, Var<S>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.vars.iter()
@@ -221,7 +219,7 @@ mod test {
     #[test]
     fn variable_casts_to_its_wires() {
         // variables are Copy: owned bindings, ampersand-free use everywhere
-        let x = Variable::new("type");
+        let x = Var::new("type");
 
         let a: Wire<_> = *x; // the latched wire
         let b: Wire<_> = d(x); //     its derivative
@@ -266,7 +264,7 @@ mod test {
         use crate::Term;
         use theory::lra::{LRA, Sort};
 
-        let x = Variable::new(Sort::Real([1, 1]));
+        let x = Var::new(Sort::Real([1, 1]));
 
         // a variable stands for its latched wire in a term position
         let t = Term::constant(LRA::Havoc(), [x]).unwrap();
@@ -280,7 +278,7 @@ mod test {
 
     #[test]
     fn variable_fail_into_term_constructors() {
-        let x = Variable::new(Sort::Real([1, 1]));
+        let x = Var::new(Sort::Real([1, 1]));
         // dx = x: the derivative is degree 1, ordinary operands must be degree 0
         assert!(Term::function(LRA::Id(), [d(x)], [x]).is_err());
     }
