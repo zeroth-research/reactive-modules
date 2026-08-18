@@ -31,6 +31,33 @@ def test_term_new():
     Term.constant(LIA.Const(torch.tensor([[3, 2, 1]])), [Wire(Int([1, 3]))])
 
 
+def test_var_derefs_to_wire():
+    v = Var(Real([2, 3]))
+
+    # attributes Var does not define fall through to the latched wire,
+    # mirroring Rust's Deref
+    assert v.degree == 0
+    assert v.dtype == Real([2, 3])
+    assert v.id == Wire(Real([1, 1])).id - 3  # ltc is first of the var's three wires
+
+    # unknown attributes still raise, from the wire's lookup
+    with pytest.raises(AttributeError):
+        _ = v.no_such_attribute
+
+    # a variable equals its latched wire (both directions), and they are
+    # interchangeable dictionary keys; the other views stay distinct
+    ltc = Term(LRA.Id(), [X(v)], [v]).read[0]
+    assert v == ltc and ltc == v
+    assert v is not ltc
+    assert hash(v) == hash(ltc)
+    assert {v: "found"}[ltc] == "found"
+    assert v != X(v) and v != d(v)
+
+    # ordering among variables is by creation
+    u = Var(Real([1, 1]))
+    assert v < u and sorted([u, v]) == [v, u]
+
+
 def test_module_sequential():
     x = Var(Bool([1, 1]))
     init = [Term.constant(LIA.Const(_bool_t(True)), [X(x)])]

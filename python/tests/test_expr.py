@@ -7,7 +7,7 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from zrth import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec
+from zrth import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, Var, X
 from zrth.builder import NonLinearError
 from zrth.eval import eval_itype
 from zrth.expr import expr, cast, nxt, ite, collecting, AExpr, BExpr, WExpr
@@ -28,12 +28,13 @@ def _collector():
 # --- helpers ----------------------------------------------------------------
 
 
-def _pair(sort):
-    return (Wire(sort), Wire(sort))
+def _var(sort):
+    # return (Wire(sort), Wire(sort))
+    return Var(sort)
 
 
-def _var(sort, theory=LIA, signed=False):
-    return expr(_pair(sort), theory=theory, signed=signed)
+def _varexpr(sort, theory=LIA, signed=False):
+    return expr(_var(sort), theory=theory, signed=signed)
 
 
 def _run(terms, state):
@@ -53,9 +54,9 @@ def _int(n):
 
 
 def test_factory_picks_subclass_from_sort():
-    assert isinstance(expr(_pair(INT), theory=LIA), AExpr)
+    assert isinstance(expr(_var(INT), theory=LIA), AExpr)
     assert isinstance(expr(True, theory=LRA), BExpr)
-    assert isinstance(expr(_pair(BV32), theory=BV), WExpr)
+    assert isinstance(expr(_var(BV32), theory=BV), WExpr)
 
 
 def test_expr_requires_theory():
@@ -78,7 +79,7 @@ def test_numeric_literal_needs_explicit_sort():
 
 def test_float_value_rejected_for_an_integral_sort():
     # would be silently truncated, so `3.14 + x` on an Int x must fail rather than add 3
-    x = _var(INT)
+    x = _varexpr(INT)
     for thunk in (lambda: expr(3.14, theory=LIA, sort=INT),
                   lambda: expr(torch.tensor([[1.5]]), theory=LIA, sort=INT),
                   lambda: expr([0.1, 1.0], theory=LIA, sort=Int([1, 2])),
@@ -97,9 +98,9 @@ def test_non_bool_value_rejected_for_a_bool_sort():
 
 
 def test_lossless_value_conversions_are_allowed():
-    assert expr(3, theory=LRA, sort=REAL)._value.dtype is torch.float32       # int -> Real
-    assert expr(True, theory=LIA, sort=INT)._value.dtype is torch.int64        # bool -> Int
-    assert expr(True, theory=LRA, sort=REAL)._value.dtype is torch.float32     # bool -> Real
+    assert expr(3, theory=LRA, sort=REAL)._value.dtype is torch.float32  # int -> Real
+    assert expr(True, theory=LIA, sort=INT)._value.dtype is torch.int64  # bool -> Int
+    assert expr(True, theory=LRA, sort=REAL)._value.dtype is torch.float32  # bool -> Real
     # an int tensor on a Real wire is converted, not left as int
     assert expr(torch.tensor([[2]]), theory=LRA, sort=REAL)._value.dtype is torch.float32
 
@@ -115,15 +116,15 @@ def test_explicit_sort_wins_for_bool_value():
 
 
 def test_variable_reads_latched_and_nxt():
-    pair = _pair(INT)
+    pair = _var(INT)
     x = expr(pair, theory=LIA)
-    assert x.wire is pair[0]
-    assert nxt(x).wire is pair[1]
+    assert x.wire is pair
+    assert nxt(x).wire == X(pair)
 
 
 def test_nxt_requires_a_variable():
-    x = _var(INT)
-    with pytest.raises(ValueError):
+    x = _varexpr(INT)
+    with pytest.raises(TypeError):
         nxt(x + 1)
 
 
@@ -137,16 +138,16 @@ def test_variable_wire_pair_must_share_a_sort():
 
 
 def test_arith_and_compare_result_sorts():
-    x, y = _var(INT), _var(INT)
+    x, y = _varexpr(INT), _varexpr(INT)
     assert isinstance(x + y, AExpr) and (x + y).dtype == INT
     assert isinstance(x < y, BExpr) and (x < y).dtype == Bool([1, 1])
     assert isinstance(x == y, BExpr)
 
 
 def test_theory_baked_real_and_bv():
-    xr = _var(REAL, theory=LRA)
+    xr = _varexpr(REAL, theory=LRA)
     assert (xr + 1.0).dtype == REAL
-    xb, yb = _var(BV32, theory=BV), _var(BV32, theory=BV)
+    xb, yb = _varexpr(BV32, theory=BV), _varexpr(BV32, theory=BV)
     assert (xb + 1).dtype == BV32
     assert (xb < yb).dtype == BitVec(1, [1, 1])
 
@@ -155,7 +156,7 @@ def test_theory_baked_real_and_bv():
 
 
 def test_equality_operators_build_predicates():
-    x, y = _var(INT), _var(INT)
+    x, y = _varexpr(INT), _varexpr(INT)
     with collecting() as terms:
         e = x == y
     assert isinstance(e, BExpr) and isinstance(terms[-1].itype, LIA.Eq)
@@ -165,14 +166,14 @@ def test_equality_operators_build_predicates():
 
 
 def test_equality_coerces_a_raw_operand():
-    x = _var(INT)
+    x = _varexpr(INT)
     with collecting() as terms:
         e = x == 3
     assert isinstance(e, BExpr) and isinstance(terms[-1].itype, LIA.Eq)
 
 
 def test_truth_testing_raises():
-    x, y = _var(INT), _var(INT)
+    x, y = _varexpr(INT), _varexpr(INT)
     for thunk in (lambda: bool(x),
                   lambda: "t" if (x < y) else "f",
                   lambda: "t" if (x == y) else "f",
@@ -184,7 +185,7 @@ def test_truth_testing_raises():
 
 
 def test_expr_is_not_hashable():
-    x = _var(INT)
+    x = _varexpr(INT)
     with pytest.raises(TypeError, match="unhashable"):
         {x: 1}
 
@@ -194,13 +195,13 @@ def test_expr_is_not_hashable():
 
 def test_mixed_sorts_raise():
     with pytest.raises(TypeError):
-        _var(INT, theory=LIA) + expr(True, theory=LIA)  # Int + Bool
+        _varexpr(INT, theory=LIA) + expr(True, theory=LIA)  # Int + Bool
     with pytest.raises(TypeError):
-        ite(expr(True, theory=LIA), _var(INT), _var(REAL, theory=LRA))  # Int vs Real branches
+        ite(expr(True, theory=LIA), _varexpr(INT), _varexpr(REAL, theory=LRA))  # Int vs Real branches
 
 
 def test_cast_identity_and_unsupported():
-    x = _var(INT)
+    x = _varexpr(INT)
     assert cast(x, Int) is x
     with pytest.raises(NotImplementedError):
         cast(x, Real)
@@ -210,12 +211,12 @@ def test_cast_identity_and_unsupported():
 
 
 def test_bv_signedness_picks_op():
-    xs, ys = _var(BV32, theory=BV, signed=True), _var(BV32, theory=BV, signed=True)
+    xs, ys = _varexpr(BV32, theory=BV, signed=True), _varexpr(BV32, theory=BV, signed=True)
     with collecting() as terms:
         xs < ys
     assert isinstance(terms[-1].itype, BV.SLt)
 
-    xu, yu = _var(BV32, theory=BV), _var(BV32, theory=BV)
+    xu, yu = _varexpr(BV32, theory=BV), _varexpr(BV32, theory=BV)
     with collecting() as terms:
         xu < yu
     assert isinstance(terms[-1].itype, BV.ULt)
@@ -224,7 +225,7 @@ def test_bv_signedness_picks_op():
 def test_coercion_inherits_signedness_regardless_of_operand_order():
     # a coerced literal takes the variable's signedness, so `5 + xs` and `xs + 5`
     # both produce a *signed* comparison for a signed bit-vector `xs`.
-    xs = _var(BV32, theory=BV, signed=True)
+    xs = _varexpr(BV32, theory=BV, signed=True)
     with collecting() as terms:
         (xs + 5) < 3
     assert isinstance(terms[-1].itype, BV.SLt)
@@ -234,8 +235,8 @@ def test_coercion_inherits_signedness_regardless_of_operand_order():
 
 
 def test_mixing_signed_and_unsigned_bv_raises():
-    xs = _var(BV32, theory=BV, signed=True)
-    yu = _var(BV32, theory=BV, signed=False)
+    xs = _varexpr(BV32, theory=BV, signed=True)
+    yu = _varexpr(BV32, theory=BV, signed=False)
     with pytest.raises(TypeError, match="signed and an unsigned"):
         xs + yu
 
@@ -244,7 +245,7 @@ def test_mixing_signed_and_unsigned_bv_raises():
 
 
 def test_collecting_records_deps_first():
-    x, y = _var(INT), _var(INT)
+    x, y = _varexpr(INT), _varexpr(INT)
     with collecting() as terms:
         ite(x < y, x + 1, y)
     optypes = [type(t.itype) for t in terms]
@@ -252,7 +253,7 @@ def test_collecting_records_deps_first():
 
 
 def test_shared_subexpression_recorded_once():
-    x, y = _var(INT), _var(INT)
+    x, y = _varexpr(INT), _varexpr(INT)
     with collecting() as terms:
         g = x < y
         ite(g, x + 1, x)
@@ -264,14 +265,14 @@ def test_shared_subexpression_recorded_once():
 
 
 def test_eval_arith():
-    x = _var(INT)
+    x = _varexpr(INT)
     with collecting() as terms:
         e = x + 1
     assert _run(terms, {x.wire: _int(5)})[e.wire].item() == 6
 
 
 def test_eval_ite_both_branches():
-    x, y = _var(INT), _var(INT)
+    x, y = _varexpr(INT), _varexpr(INT)
     with collecting() as terms:
         e = ite(x < y, x + 1, y)
     assert _run(terms, {x.wire: _int(1), y.wire: _int(5)})[e.wire].item() == 2
@@ -279,7 +280,7 @@ def test_eval_ite_both_branches():
 
 
 def test_mul_by_constant_folds_to_linear():
-    x = _var(INT)
+    x = _varexpr(INT)
     with collecting() as terms:
         e = x * 2
     assert isinstance(terms[-1].itype, LIA.Linear)
@@ -288,7 +289,7 @@ def test_mul_by_constant_folds_to_linear():
 
 @pytest.mark.parametrize("n", [1, 2, 3])
 def test_scaling_a_column_vector_by_a_constant(n):
-    x = _var(Int([n, 1]))
+    x = _varexpr(Int([n, 1]))
     with collecting() as terms:
         e = x * 3
     assert isinstance(terms[-1].itype, LIA.Linear)
@@ -298,7 +299,7 @@ def test_scaling_a_column_vector_by_a_constant(n):
 
 
 def test_mul_of_two_variables_is_nonlinear():
-    x, y = _var(INT), _var(INT)
+    x, y = _varexpr(INT), _varexpr(INT)
     with pytest.raises(NonLinearError):
         _ = x * y
 

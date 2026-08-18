@@ -9,14 +9,22 @@ helpers below).
 """
 
 import torch
-from .zrth import Wire, Term, LRA, LIA, BV
+from .zrth import Wire, Term, LRA, LIA, BV, Var
 from .sort import Sort, Bool, Real, Int, BitVec
 
 
 def _wire(t) -> Wire:
     if isinstance(t, Term):
         return t.write[0]
-    return t
+    elif isinstance(t, list):
+        return t[0]
+    elif isinstance(t, Var):
+        return t
+    elif isinstance(t, Wire):
+        return t
+    else:
+        print(t)
+        assert False
 
 
 def _dtype(t) -> Sort:

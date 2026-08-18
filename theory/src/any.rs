@@ -10,7 +10,7 @@ use std::fmt;
 use subenum::subenum;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "pyo3", pyclass(frozen, eq))]
+#[cfg_attr(feature = "pyo3", pyclass(frozen, eq, str))]
 pub enum Sort {
     Bool([usize; 2]),
     Real([usize; 2]),
@@ -21,10 +21,10 @@ pub enum Sort {
 impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Sort::Bool(s) => write!(f, "Bool({}, {})", s[0], s[1]),
-            Sort::Real(s) => write!(f, "Real({}, {})", s[0], s[1]),
-            Sort::Int(s) => write!(f, "Int({}, {})", s[0], s[1]),
-            Sort::BitVec(bw, s) => write!(f, "BV<{}>({}, {})", bw, s[0], s[1]),
+            Sort::Bool(s) => write!(f, "Bool[{}, {}]", s[0], s[1]),
+            Sort::Real(s) => write!(f, "Real[{}, {}]", s[0], s[1]),
+            Sort::Int(s) => write!(f, "Int[{}, {}]", s[0], s[1]),
+            Sort::BitVec(bw, s) => write!(f, "BV<{}>[{}, {}]", bw, s[0], s[1]),
         }
     }
 }

@@ -1,6 +1,6 @@
 import pytest
 import gymnasium as gym
-from zrth import Module, Wire, Term, Sort, LIA, Bool, Real, Int, BitVec
+from zrth import Module, Wire, Term, Sort, LIA, Bool, Real, Int, BitVec, Var, X
 from gymnasium import spaces
 
 
@@ -19,17 +19,17 @@ def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result
 class SimpleEnv(gym.Env, Module):
 
     def __new__(cls, *args, **kwargs):
-        q_values = [Wire(Real([1, 1])), Wire(Real([1, 1]))]
-        observation = [Wire(Real([1, 1])), Wire(Real([1, 1]))]
-        reward = [Wire(Real([1, 1])), Wire(Real([1, 1]))]
-        terminated = [Wire(Bool([1, 1])), Wire(Bool([1, 1]))]
-        truncated = [Wire(Bool([1, 1])), Wire(Bool([1, 1]))]
-        state = [Wire(Int([1, 1])), Wire(Int([1, 1]))]
+        q_values = Var(Real([1, 1]))
+        observation = Var(Real([1, 1]))
+        reward = Var(Real([1, 1]))
+        terminated = Var(Real([1, 1]))
+        truncated = Var(Real([1, 1]))
+        state = Var(Real([1, 1]))
 
-        result = (observation[1], reward[1], terminated[1], truncated[1])
-        reset = convert_method(cls.reset, read={}, write={"self.state": state[1]}, result=result)
-        step = convert_method(cls.step, read={"q_value": q_values[0], "self.state": state[0]},
-                              write={"self.state": state[1]}, result=result)
+        result = (X(observation), X(reward), X(terminated), X(truncated))
+        reset = convert_method(cls.reset, read={}, write={"self.state": X(state)}, result=result)
+        step = convert_method(cls.step, read={"q_value": q_values, "self.state": state},
+                              write={"self.state": X(state)}, result=result)
 
         obs = [q_values, observation, reward, terminated, truncated]
         prvt = [state]

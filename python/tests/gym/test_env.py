@@ -11,10 +11,11 @@ from .environments import SimpleEnv
 from .qnetworks import SimpleQNet
 from zrth.gym import Env
 from zrth.torch import Module
-from zrth import Wire, Real, Int
+from zrth import Wire, Real, Int, Var, X
 
 # SimpleEnv's only private state is `state`; its sort must be declared explicitly.
 STATE = Real([1, 1])
+real = Real([1, 1])
 
 
 # ── Constructor / shape ───────────────────────────────────────────
@@ -79,30 +80,24 @@ def test_env_rejects_no_args():
 
 def test_attrs_dict_sort_builds():
     e = Env(SimpleEnv(), attrs={"state": Real([1, 1])})
-    assert e.get_prvt("state")[0].dtype == Real([1, 1])
+    assert e.get_prvt("state").dtype == Real([1, 1])
 
 
 def test_attrs_single_sort_applies_to_all():
     e = Env(SimpleEnv(), attrs=Real([1, 1]))
-    assert e.get_prvt("state")[0].dtype == Real([1, 1])
+    assert e.get_prvt("state").dtype == Real([1, 1])
 
 
 def test_attrs_wire_pair_used_verbatim():
-    pair = (Wire(Real([1, 1])), Wire(Real([1, 1])))
+    pair = Var(real)
     e = Env(SimpleEnv(), attrs={"state": pair})
     got = e.get_prvt("state")
-    assert got[0] is pair[0] and got[1] is pair[1]
+    assert got == pair and X(got) == X(pair)
 
 
 def test_attrs_rejects_unknown_name():
     with pytest.raises(ValueError, match="not private-state"):
         Env(SimpleEnv(), attrs={"not_an_attr": Real([1, 1])})
-
-
-def test_attrs_rejects_pair_dtype_mismatch():
-    bad = (Wire(Real([1, 1])), Wire(Int([1, 1])))
-    with pytest.raises(ValueError, match="dtype mismatch"):
-        Env(SimpleEnv(), attrs={"state": bad})
 
 
 def test_attrs_rejects_bad_spec_type():
@@ -146,22 +141,21 @@ def test_discrete_action_one_hot():
     e = Env(SimpleEnv(), attrs=STATE)
     e.reset(seed=42)
     e.step(1)
-    assert torch.allclose(e._state[e._pairs['action'][0]], torch.tensor([0., 1.]))
+    assert torch.allclose(e._state[e._pairs['action']], torch.tensor([0., 1.]))
 
 
 def test_get_prvt_and_getattr():
     e = Env(SimpleEnv(), attrs=STATE)
     e.reset(seed=42)
     assert e.state == 0  # SimpleEnv.reset sets state=0; routed via getattr_wire
-    assert len(e.get_prvt('state')) == 2  # (latched, next)
 
 
 # ── Composition ───────────────────────────────────────────────────
 
 def test_env_atom_idx_identifies_env_atom():
     e = Env(SimpleEnv(), Module(SimpleQNet(1, 2, 2)), attrs=STATE)
-    obs_next = e._pairs['observation'][1]
-    assert obs_next in {w for w in e.atoms[e._env_atom_idx].ctrl}
+    obs_next = X(e._pairs['observation'])
+    assert obs_next in {X(w) for w in e.atoms[e._env_atom_idx].ctrl}
 
 
 def test_wire_names_inherited_through_unwrap():
@@ -176,10 +170,10 @@ def test_wire_names_inherited_through_unwrap():
 def test_get_wire():
     e = Env(SimpleEnv(), attrs=STATE)
     e.reset(seed=42)
-    val = e.get(e._pairs['observation'][0])
+    val = e.get(e._pairs['observation'])
     assert isinstance(val, torch.Tensor)
     with pytest.raises(RuntimeError, match="not in state"):
-        e.get(Wire(Real([1, 1])))
+        e.get(Wire(real))
 
 
 def test_state_dict_is_a_copy():
@@ -243,8 +237,8 @@ class _BoxEnv(gym.Env):
 
 
 def _make_closed_loop():
-    obs = (Wire(Real([1, 1])), Wire(Real([1, 1])))
-    act = (Wire(Real([1, 2])), Wire(Real([1, 2])))
+    obs = Var(Real([1, 1]))
+    act = Var(Real([1, 2]))
     backed = Env(_BoxEnv(), observation=obs, action=act, attrs=Real([1, 1]))
     qnet = Module(SimpleQNet(1, 2, 2), extl=obs, intf=act)
     return Env(backed, qnet)

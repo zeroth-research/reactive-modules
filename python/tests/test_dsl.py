@@ -8,7 +8,7 @@ plus check the ctrl/extl partition and the config surface.
 
 import pytest
 
-from zrth import LIA, Module, Sort, Wire, sugar, Int
+from zrth import LIA, Module, Sort, Wire, sugar, Int, Var, X
 from zrth.sugar import nxt, ite
 from zrth.eval import eval_itype
 
@@ -17,7 +17,7 @@ INT = Int([1, 1])
 
 def _pair():
     """A fresh (latched, next) wire pair (test helper)."""
-    return (Wire(INT), Wire(INT))
+    return Var(INT)
 
 
 # --- stepping helpers (same shape as test_eval) -----------------------------
@@ -37,7 +37,7 @@ def _init(m):
 
 
 def _latch(m, state):
-    return {ltc: state[nxt_w] for (ltc, nxt_w) in m.ctrl}
+    return {var: state[X(var)] for var in m.ctrl}
 
 
 def _update(m, state):
@@ -75,8 +75,8 @@ def test_counter_counts():
     x = _pair()
     m = Counter(theory=LIA, ctrl=(x,))
     print(m)
-    (_x_lat, x_nxt) = x
-    assert _trace(m, 5, x_nxt) == [0, 1, 2, 3, 4, 5]
+    # (_x_lat, x_nxt) = x
+    assert _trace(m, 5, X(x)) == [0, 1, 2, 3, 4, 5]
 
 
 # --- multi-var with ite and an unchanged var --------------------------------
@@ -95,8 +95,8 @@ def test_multivar_ite_and_hold():
     x, cap = _pair(), _pair()
     m = Bounded(theory=LIA, ctrl=(x, cap))
     assert m.closed()
-    assert _trace(m, 5, x[1]) == [0, 1, 2, 3, 3, 3]
-    assert _trace(m, 5, cap[1]) == [3, 3, 3, 3, 3, 3]
+    assert _trace(m, 5, X(x)) == [0, 1, 2, 3, 3, 3]
+    assert _trace(m, 5, X(cap)) == [3, 3, 3, 3, 3, 3]
 
 
 # --- extl variables become external inputs (open module) --------------------
