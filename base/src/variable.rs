@@ -1,4 +1,5 @@
 use crate::Wire;
+use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt;
 use std::fmt::Debug;
@@ -79,19 +80,38 @@ impl<S> Deref for Variable<S> {
 
 /// The variable's derived (derivative) wire: `let w: Wire<_> = d(x);`.
 ///
-/// By value and bounded on `Copy`: the call copies, never clones, and the
-/// variable stays usable.
-pub fn d<S: Copy>(var: Variable<S>) -> Wire<S> {
-    var.der
+/// Bounded on `Borrow`, so it accepts the variable by value (`d(x)`, natural
+/// for `Copy` sorts) or by reference (`d(&x)`); either way only the wire is
+/// cloned and the variable stays usable.
+pub fn d<S: Clone>(var: impl Borrow<Variable<S>>) -> Wire<S> {
+    var.borrow().der.clone()
+}
+
+/// The borrowing alternative to [`d`]: a reference to the variable's derived
+/// (derivative) wire, `let w: &Wire<_> = d_ref(&x);`.
+///
+/// Reference in, reference out — no clone
+pub fn d_ref<S>(var: &Variable<S>) -> &Wire<S> {
+    &var.der
 }
 
 /// The variable's next wire: `let w: Wire<_> = X(x);`.
 ///
-/// By value and bounded on `Copy`: the call copies, never clones, and the
-/// variable stays usable.
+/// Bounded on `Borrow`, so it accepts the variable by value (`X(x)`, natural
+/// for `Copy` sorts) or by reference (`X(&x)`); either way only the wire is
+/// cloned and the variable stays usable.
 #[allow(non_snake_case)]
-pub fn X<S: Copy>(var: Variable<S>) -> Wire<S> {
-    var.nxt
+pub fn X<S: Clone>(var: impl Borrow<Variable<S>>) -> Wire<S> {
+    var.borrow().nxt.clone()
+}
+
+/// The borrowing alternative to [`X`]: a reference to the variable's next
+/// wire, `let w: &Wire<_> = X_ref(&x);`.
+///
+/// Reference in, reference out — no clone
+#[allow(non_snake_case)]
+pub fn X_ref<S>(var: &Variable<S>) -> &Wire<S> {
+    &var.nxt
 }
 
 impl<S: fmt::Display> fmt::Display for Variable<S> {
@@ -226,6 +246,19 @@ mod test {
         assert_eq!(x.id(), a.id());
         let borrowed: &Wire<_> = &x;
         assert_eq!(*borrowed, a);
+
+        // X and d take any borrow of the variable: by reference as well
+        assert_eq!(d(&x), b);
+        assert_eq!(X(&x), c);
+
+        // the _ref alternatives borrow all the way through: reference in,
+        // reference out, no clone
+        let da: &Wire<_> = &x;
+        let db: &Wire<_> = d_ref(&x);
+        let cb: &Wire<_> = X_ref(&x);
+        assert_eq!(da, &a);
+        assert_eq!(db, &b);
+        assert_eq!(cb, &c);
     }
 
     #[test]
