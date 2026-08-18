@@ -364,32 +364,106 @@ where
         ))
     }
 
-    /// Constructs the *parallel composition* of several `Module` instances.
+    /// Constructs the **pure parallel composition** of several modules.
     ///
-    /// This function takes an iterator of modules and returns a new module that
-    /// represents all of them composed in parallel, coupling all shared observable
-    /// wires.
+    /// This function takes an iterator of modules and returns a new module
+    /// that represents all of them composed in parallel, coupling all shared
+    /// observable variables. It is the special case of the *hiding
+    /// composition* [`Module::hiding_composition`] that hides nothing: every observable
+    /// of the components stays observable in the composite.
     ///
     /// # Semantics
     ///
-    /// Observable wires with identical id across modules are *coupled* in the composed
-    /// module. Coupling means that these wires represent the same value in the resulting system.
+    /// Observable variables shared across modules are *coupled* in the
+    /// composed module: they represent the same value in the resulting
+    /// system.
     ///
     /// # Error Conditions
     ///
     /// - A module attempts to couple a *private* or *temporary* wire with another module
-    /// - A coupled wire is *controlled by more than one module*
+    /// - A coupled variable is *controlled by more than one module*
     /// - Await dependency is cyclic
     ///
     /// # Returns
     ///
-    /// - `Ok(Module<D, I>)` containing the composed module.
+    /// - `Ok(Module)` containing the composed module.
     /// - `Err(Error)` describing the reason composition failed.
     ///
-    pub fn parallel<M>(modules: M) -> Result<Self, String>
+    /// # See Also
+    /// - [`Module::hiding_composition`], the general form that also hides variables.
+    pub fn composition<'a, M>(modules: M) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
+        S: 'a,
     {
+        Self::hiding_composition(modules, std::iter::empty())
+    }
+
+    /// The **hiding operator**: hides the given variables of this module.
+    ///
+    /// Consumes the module and returns one with the same behaviour in which
+    /// the `hide` variables have left the observables and become private.
+    /// It is the hiding composition [`Module::hiding_composition`] of the
+    /// module alone, and composes with it: hiding after composing equals
+    /// hiding at composition.
+    ///
+    /// Only interface variables can be hidden: hiding an external variable
+    /// is rejected, since privates must be controlled.
+    ///
+    /// # Parameters
+    /// - `hide`: The variables to hide; hiding nothing returns the module unchanged.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Module)` containing the module with the variables hidden.
+    /// - `Err(Error)` describing the reason hiding failed.
+    ///
+    /// # See Also
+    /// - [`Module::hiding_composition`], hiding several modules at their composition.
+    pub fn hiding<'a, H>(self: Self, hide: H) -> Result<Self, String>
+    where
+        H: IntoIterator<Item = &'a Var<S>>,
+        S: 'a,
+    {
+        Self::hiding_composition(std::iter::once(self), hide)
+    }
+
+    /// Constructs the **hiding composition** of several modules: parallel
+    /// composition that simultaneously hides the given variables.
+    ///
+    /// The modules are composed as in [`Module::composition`], coupling all shared
+    /// observable variables; the `hide` variables are then removed from the
+    /// composite's observables and become private. The coupling still takes
+    /// place — hiding restricts the visibility of the *composite*, not the
+    /// communication between the components.
+    ///
+    /// Only variables controlled by one of the components can be hidden:
+    /// hiding an external variable is rejected, since privates must be
+    /// controlled.
+    ///
+    /// # Parameters
+    /// - `modules`: The modules to compose.
+    /// - `hide`: The variables to hide in the composite; hiding nothing is
+    ///   exactly [`Module::composition`].
+    ///
+    /// # Error Conditions
+    ///
+    /// All error conditions of [`Module::composition`], and additionally:
+    ///
+    /// - A hidden variable is external to the composition
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Module)` containing the composed module.
+    /// - `Err(Error)` describing the reason composition failed.
+    pub fn hiding_composition<'a, M, H>(modules: M, hide: H) -> Result<Self, String>
+    where
+        M: IntoIterator<Item = Self>,
+        H: IntoIterator<Item = &'a Var<S>>,
+        S: 'a,
+    {
+        let hide: HashSet<&Var<S>> = hide.into_iter().collect();
+
         let mut declared_wires: HashSet<Wire<S>> = HashSet::new();
         let mut restricted_wires: HashSet<usize> = HashSet::new();
 
@@ -397,7 +471,7 @@ where
         let mut intf_ids: HashSet<usize> = HashSet::new();
 
         let mut intf_stack: Vec<Var<S>> = Vec::new();
-        let mut prvt_stack: Vec<Var<S>> = Vec::new();
+        let mut prvt_stack: Vec<Var<S>> = Vec::with_capacity(hide.len());
         let mut obs_stack: Vec<Var<S>> = Vec::new();
         let mut ctrl_stack: Vec<Var<S>> = Vec::new();
         let mut local_stack: Vec<Wire<S>> = Vec::new();
@@ -422,13 +496,12 @@ where
                 if !declared_wires.contains(var.ltc()) {
                     debug_assert!(!declared_wires.contains(&var.nxt()));
                     debug_assert!(!declared_wires.contains(&var.der()));
-                    obs_stack.push(var);
+                    // hidden variables leave the observables; they join the
+                    // privates in the interface pass below
+                    if !hide.contains(&var) {
+                        obs_stack.push(var);
+                    }
                 }
-
-                // if declared_wires.insert(var.ltc().id()) {
-                //     declared_wires.insert(var.nxt().id());
-                //     declared_wires.insert(var.der().id());
-                // }
             }
 
             // Check that privates are uncoupled and restrict them
@@ -469,6 +542,8 @@ where
                     debug_assert!(!restricted_wires.contains(&wire.id()));
                 }
 
+                // external variables stay external only if they are not
+                // deemed controlled by modules visited before
                 if !intf_ids.contains(&var.id()) {
                     extl_set.insert(var);
                 }
@@ -480,13 +555,19 @@ where
                     debug_assert!(!restricted_wires.contains(&wire.id()));
                 }
 
+                // interface variables necessarily leave the set of variables
+                // deemed external by modules visited before
                 extl_set.remove(&var);
 
                 if !intf_ids.insert(var.id()) {
                     return Err(format!("interface var {} is doubly controlled", var.id()));
                 }
 
-                intf_stack.push(var);
+                if hide.contains(&var) {
+                    prvt_stack.push(var);
+                } else {
+                    intf_stack.push(var);
+                }
             }
 
             ctrl_stack.extend(module.ctrl);
@@ -512,6 +593,19 @@ where
         }
 
         //============================================================
+        // Check that no hidden variables are externals
+        //============================================================
+
+        for var in extl_set.iter() {
+            if hide.contains(&var) {
+                return Err(format!(
+                    "Cannot hide uncontrolled/external var {}",
+                    var.id()
+                ));
+            }
+        }
+
+        //============================================================
         // Reorder interfaces
         //============================================================
 
@@ -519,10 +613,10 @@ where
         intf_stack.sort_unstable();
         ctrl_stack.sort_unstable();
         obs_stack.sort_unstable();
-        ctrl_stack.sort_unstable();
+        prvt_stack.sort_unstable();
 
         //============================================================
-        // Reorder atoms and remove coupled wires from the externals
+        // Reorder atoms
         //============================================================
 
         let await_order = topological_order(&await_graph).ok_or("invalid await dependency")?;

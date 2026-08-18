@@ -166,9 +166,10 @@ def test_module_new_positional_is_parallel():
     with pytest.raises(TypeError, match="take atoms or modules"):
         Module(p1, init=init, obs=[x])
 
-    # module composition takes no prvt
-    with pytest.raises(TypeError, match="takes no `prvt`"):
-        Module(p1, p2, prvt=[p])
+    # module composition with hiding
+    m1 = Module(p1, p2, prvt=[p])
+    assert p in m1.prvt
+    assert m1.intf == [x, y]
 
 
 def test_module_new_positional_atoms():
@@ -217,11 +218,11 @@ def test_atom_constructors():
 
     # each staticmethod builds an atom controlling both variables
     for atom in (
-        Atom.sequential([x, p], init, update),
-        Atom.differential([x, p], init, delay),
-        Atom.hybrid([x, p], init, update, delay),
-        Atom.jump([x, p], update),
-        Atom.constant([x, p], init),
+            Atom.sequential([x, p], init, update),
+            Atom.differential([x, p], init, delay),
+            Atom.hybrid([x, p], init, update, delay),
+            Atom.jump([x, p], update),
+            Atom.constant([x, p], init),
     ):
         assert len(atom.ctrl) == 2
         assert atom.ctrl == [x, p]
@@ -241,19 +242,19 @@ def test_atom_new_dispatches_on_blocks():
     assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2
 
     # a synthesised block per controlled variable where a block is implicit
-    atom = Atom([x, p], init=init, update=update)   # sequential: delay is zero
+    atom = Atom([x, p], init=init, update=update)  # sequential: delay is zero
     assert len(atom.delay) == 2
-    atom = Atom([x, p], init=init, delay=delay)     # differential: update is skip
+    atom = Atom([x, p], init=init, delay=delay)  # differential: update is skip
     assert len(atom.update) == 2
-    atom = Atom([x, p], update=update)              # jump: init is havoc
+    atom = Atom([x, p], update=update)  # jump: init is havoc
     assert len(atom.init) == 2
     atom = Atom([x, p], update=update, delay=delay)  # uninitialized: init is havoc
     assert len(atom.init) == 2 and len(atom.delay) == 2
-    atom = Atom([x, p], init=init)                  # constant: update skip, delay zero
+    atom = Atom([x, p], init=init)  # constant: update skip, delay zero
     assert len(atom.update) == 2 and len(atom.delay) == 2
-    atom = Atom([x, p], delay=delay)                # flow: init havoc, update skip
+    atom = Atom([x, p], delay=delay)  # flow: init havoc, update skip
     assert len(atom.init) == 2 and len(atom.update) == 2
-    atom = Atom([x, p])                             # hold: everything synthesised
+    atom = Atom([x, p])  # hold: everything synthesised
     assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2
 
 

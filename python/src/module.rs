@@ -36,11 +36,9 @@ impl Module {
             // sequence of modules composes in parallel
             if args.get_item(0)?.downcast::<Atom>().is_ok() {
                 return Self::proc(args, prvt);
+            } else {
+                return Self::comp(args, prvt);
             }
-            if prvt.is_some() {
-                return Err(PyTypeError::new_err("module composition takes no `prvt`"));
-            }
-            return Self::comp(args);
         }
 
         let Some(obs) = obs else {
@@ -266,14 +264,22 @@ impl Module {
         }
     }
 
-    /// Composes a sequence of modules in parallel.
+    /// The parallel composition of a sequence of modules: all shared
+    /// observable variables are coupled and prvt are hidden when provided.
     #[staticmethod]
-    #[pyo3(signature = (*modules))]
-    fn comp(modules: &Bound<'_, PyTuple>) -> PyResult<Self> {
+    #[pyo3(signature = (*modules, prvt = None))]
+    fn comp(modules: &Bound<'_, PyTuple>, prvt: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let modules: Vec<_> = try_iter_borrow::<Self>(modules)?.collect::<PyResult<_>>()?;
         let modules = modules.iter().map(|r| r.base.clone());
 
-        match base::Module::parallel(modules) {
+        let module = if let Some(prvt) = prvt {
+            let prvt: Vec<_> = try_var_iter_cloned(prvt)?.collect();
+            base::Module::hiding_composition(modules, prvt.iter())
+        } else {
+            base::Module::composition(modules)
+        };
+
+        match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
