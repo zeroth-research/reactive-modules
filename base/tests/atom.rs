@@ -180,7 +180,7 @@ fn differential_module_rejects_dx_equals_x() {
     assert!(module.is_err());
 }
 
-/// An uninitialized module: only the update is given, the initial state is
+/// A jump module: only the update is given, the initial state is
 /// havoced and the delay is zero, both synthesised by the constructor.
 #[test]
 fn uninitialized_module_ok() {
@@ -189,7 +189,7 @@ fn uninitialized_module_ok() {
 
     // x' = y: x is controlled, y is inferred external.
     let update = [Term::function(mk_op("ID"), [X(x)], [y]).unwrap()];
-    let m = Module::uninitialized(update, &[x, y], []).unwrap();
+    let m = Module::jump(update, &[x, y], []).unwrap();
 
     assert!(m.is_open());
     assert_eq!(m.atoms().len(), 1);
@@ -202,7 +202,7 @@ fn uninitialized_module_ok() {
     assert_eq!(atom.delay().len(), 1);
 }
 
-/// The update of an uninitialized module must drive next wires; writing a
+/// The update of an jump module must drive next wires; writing a
 /// latched wire is rejected.
 #[test]
 fn uninitialized_module_rejects_latched_write() {
@@ -211,7 +211,7 @@ fn uninitialized_module_rejects_latched_write() {
 
     // writes the latched wire `x` instead of the next wire `X(x)`
     let update = [Term::function(mk_op("ID"), [*x], [y]).unwrap()];
-    assert!(Module::uninitialized(update, &[x, y], []).is_err());
+    assert!(Module::jump(update, &[x, y], []).is_err());
 }
 
 /// A constant module: only the init is given, the variable is held by a

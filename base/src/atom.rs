@@ -542,7 +542,7 @@ where
         Self::with_ctrl(wires, ctrl, init, update, delay)
     }
 
-    /// Constructs an **uninitialized atom**: sequential behaviour whose
+    /// Constructs a **jump atom**: sequential behaviour whose
     /// initial state is left unconstrained.
     ///
     /// Only the update is given; the controlled variables are inferred from
@@ -562,7 +562,7 @@ where
     /// # See Also
     /// - [`Atom::sequential`], when the initial state is constrained explicitly.
     /// - [`Atom::constant`], the dual: only the initial state, no update.
-    pub fn uninitialized<'a, V, U>(vars: V, update: U) -> Result<Self, String>
+    pub fn jump<'a, V, U>(vars: V, update: U) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
         U: IntoIterator<Item = Term<J>>,
@@ -577,6 +577,46 @@ where
 
         let init = Block::havoc(ctrl_nxt)?;
         let delay = Block::zero(ctrl_der)?;
+
+        Self::with_ctrl(wires, ctrl, init, update, delay)
+    }
+
+    /// Constructs an **uninitialized atom**: discrete and continuous
+    /// dynamics with an unconstrained initial state.
+    ///
+    /// The discrete update and the continuous delay are given; the
+    /// controlled variables are inferred from the next wires the update
+    /// writes, and the initialisation is synthesised as one `HAVOC` term per
+    /// controlled variable, so the initial values are arbitrary.
+    ///
+    /// # Parameters
+    /// - `vars`: The variables in scope for the atom.
+    /// - `update`: The terms defining the discrete state update at each time step.
+    /// - `delay`: The terms defining the continuous evolution of the derivatives.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed atom if successful,
+    /// or an error string if inference or consistency checks fail.
+    ///
+    /// # See Also
+    /// - [`Atom::hybrid`], when the initial state is constrained explicitly.
+    /// - [`Atom::jump`] and [`Atom::flow`], the purely discrete and purely
+    ///   continuous special cases.
+    pub fn uninitialized<'a, V, U, Z>(vars: V, update: U, delay: Z) -> Result<Self, String>
+    where
+        V: IntoIterator<Item = &'a Var<S>>,
+        U: IntoIterator<Item = Term<J>>,
+        Z: IntoIterator<Item = Term<F>>,
+        S: 'a,
+    {
+        let wires = WireMap::unpack(vars);
+
+        let update = Block::try_from_iter(update.into_iter().map(Ok))?;
+        let ctrl = Self::infer_ctrl(&wires.nxt, &update)?;
+        let ctrl_nxt = ctrl.values().map(Var::nxt).cloned();
+
+        let init = Block::havoc(ctrl_nxt)?;
+        let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
 
         Self::with_ctrl(wires, ctrl, init, update, delay)
     }
@@ -599,7 +639,7 @@ where
     /// or an error string if inference or consistency checks fail.
     ///
     /// # See Also
-    /// - [`Atom::uninitialized`], the dual: only an update, arbitrary initial state.
+    /// - [`Atom::jump`], the dual: only an update, arbitrary initial state.
     /// - [`Atom::sequential`], when the variables also evolve over time.
     pub fn constant<'a, V, W>(vars: V, init: W) -> Result<Self, String>
     where
@@ -617,6 +657,89 @@ where
 
         let update = Block::skip(ctrl_nxt, ctrl_ltc)?;
         let delay = Block::zero(ctrl_der)?;
+
+        Self::with_ctrl(wires, ctrl, init, update, delay)
+    }
+
+    /// Constructs a **hold atom**: variables that hold an arbitrary but
+    /// fixed value — an adversarial constant.
+    ///
+    /// The atom takes no blocks: it controls every variable in `vars`, with
+    /// all three blocks synthesised per variable — `HAVOC` init, `SKIP`
+    /// update, `ZERO` delay. Each value is chosen nondeterministically at
+    /// initialisation and never changes: this models free parameters, i.e.,
+    /// quantities a system depends on but does not compute.
+    ///
+    /// # Parameters
+    /// - `vars`: The variables of the atom, all of which it controls.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed hold atom if successful,
+    /// or an error string if consistency checks fail.
+    ///
+    /// # See Also
+    /// - [`Atom::constant`], when the held value is set explicitly at initialisation.
+    /// - [`Atom::jump`], when the variables also evolve over time.
+    /// - [`Module::hold`], for the module-level shorthand.
+    pub fn hold<'a, V>(vars: V) -> Result<Self, String>
+    where
+        V: IntoIterator<Item = &'a Var<S>>,
+        S: 'a,
+    {
+        let wires = WireMap::unpack(vars);
+
+        // every variable is controlled
+        let ctrl: BTreeMap<usize, Var<S>> = wires
+            .ltc
+            .values()
+            .map(|&var| (var.id(), var.clone()))
+            .collect();
+        let ctrl_ltc = ctrl.values().map(Var::ltc).cloned();
+        let ctrl_nxt = ctrl.values().map(Var::nxt).cloned();
+        let ctrl_der = ctrl.values().map(Var::der).cloned();
+
+        let init = Block::havoc(ctrl.values().map(Var::nxt).cloned())?;
+        let update = Block::skip(ctrl_nxt, ctrl_ltc)?;
+        let delay = Block::zero(ctrl_der)?;
+
+        Self::with_ctrl(wires, ctrl, init, update, delay)
+    }
+
+    /// Constructs a **flow atom**: purely continuous behaviour with an
+    /// unconstrained initial state.
+    ///
+    /// Only the continuous evolution (`delay`) is given; the controlled
+    /// variables are inferred from the derivative wires it writes. The
+    /// initialisation is synthesised as one `HAVOC` term per controlled
+    /// variable, so the initial values are arbitrary, and the update as
+    /// `SKIP`, so all change comes from the continuous dynamics.
+    ///
+    /// # Parameters
+    /// - `vars`: The variables in scope for the atom.
+    /// - `delay`: The terms defining the continuous evolution of the derivatives.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed flow atom if successful,
+    /// or an error string if inference or consistency checks fail.
+    ///
+    /// # See Also
+    /// - [`Atom::differential`], when the initial state is constrained explicitly.
+    /// - [`Atom::hybrid`], when discrete dynamics are involved as well.
+    pub fn flow<'a, V, Z>(vars: V, delay: Z) -> Result<Self, String>
+    where
+        V: IntoIterator<Item = &'a Var<S>>,
+        Z: IntoIterator<Item = Term<F>>,
+        S: 'a,
+    {
+        let wires = WireMap::unpack(vars);
+
+        let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
+        let ctrl = Self::infer_ctrl(&wires.der, &delay)?;
+        let ctrl_ltc = ctrl.values().map(Var::ltc).cloned();
+        let ctrl_nxt = ctrl.values().map(Var::nxt).cloned();
+
+        let init = Block::havoc(ctrl.values().map(Var::nxt).cloned())?;
+        let update = Block::skip(ctrl_nxt, ctrl_ltc)?;
 
         Self::with_ctrl(wires, ctrl, init, update, delay)
     }
@@ -849,12 +972,12 @@ where
         Self::partially_observable(std::iter::once(atom), prvt.into_iter())
     }
 
-    /// Constructs an **uninitialized module**: sequential behaviour whose
+    /// Constructs a **jump module**: sequential behaviour whose
     /// initial state is left unconstrained.
     ///
     /// Only the update is given; the initial values of the controlled
     /// variables are havoced. It is composed of a single
-    /// [`Atom::uninitialized`] atom over `obs` and `prvt`, with the `prvt`
+    /// [`Atom::jump`] atom over `obs` and `prvt`, with the `prvt`
     /// variables hidden; an empty `prvt` yields a **fully observable** module.
     ///
     /// # Parameters
@@ -869,7 +992,7 @@ where
     /// # See Also
     /// - [`Module::sequential`], when the initial state is constrained explicitly.
     /// - [`Module::constant`], the dual: only the initial state, no update.
-    pub fn uninitialized<'a, O, P, U>(update: U, obs: O, prvt: P) -> Result<Self, String>
+    pub fn jump<'a, O, P, U>(update: U, obs: O, prvt: P) -> Result<Self, String>
     where
         U: IntoIterator<Item = Term<J>>,
         O: IntoIterator<Item = &'a Var<S>>,
@@ -877,7 +1000,109 @@ where
         S: 'a,
     {
         let vars = obs.into_iter().chain(prvt.clone().into_iter());
-        let atom = Atom::uninitialized(vars, update)?;
+        let atom = Atom::jump(vars, update)?;
+        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
+    }
+
+    /// Constructs an **uninitialized module**: discrete and continuous
+    /// dynamics with an unconstrained initial state.
+    ///
+    /// The discrete update and the continuous delay are given; the initial
+    /// values of the controlled variables are havoced. It is composed of a
+    /// single [`Atom::uninitialized`] atom over `obs` and `prvt`, with the
+    /// `prvt` variables hidden; an empty `prvt` yields a **fully
+    /// observable** module.
+    ///
+    /// # Parameters
+    /// - `update`: The set of terms defining the discrete state update.
+    /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
+    /// - `obs`: The sequence of variables representing the module's observables.
+    /// - `prvt`: The sequence of variables hidden from the environment.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed module if successful,
+    /// or an error string if inference or consistency checks fail.
+    ///
+    /// # See Also
+    /// - [`Module::hybrid`], when the initial state is constrained explicitly.
+    /// - [`Module::jump`] and [`Module::flow`], the purely discrete and
+    ///   purely continuous special cases.
+    pub fn uninitialized<'a, O, P, U, Z>(
+        update: U,
+        delay: Z,
+        obs: O,
+        prvt: P,
+    ) -> Result<Self, String>
+    where
+        U: IntoIterator<Item = Term<J>>,
+        Z: IntoIterator<Item = Term<F>>,
+        O: IntoIterator<Item = &'a Var<S>>,
+        P: IntoIterator<Item = &'a Var<S>> + Clone,
+        S: 'a,
+    {
+        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let atom = Atom::uninitialized(vars, update, delay)?;
+        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
+    }
+
+    /// Constructs a **hold module**: variables that hold an arbitrary but
+    /// fixed value — symbolic constants.
+    ///
+    /// The module takes no blocks: each value is chosen nondeterministically
+    /// at initialisation and never changes, modelling free parameters of a
+    /// composition. It is composed of a single [`Atom::hold`] atom, and is
+    /// **fully observable**: hold modules take no private variables.
+    ///
+    /// # Parameters
+    /// - `obs`: The sequence of variables representing the module's observables.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed hold module if successful,
+    /// or an error string if consistency checks fail.
+    ///
+    /// # See Also
+    /// - [`Module::constant`], when the held value is set explicitly at initialisation.
+    /// - [`Module::jump`], when the variables also evolve over time.
+    /// - [`Atom::hold`], for creating individual hold atoms.
+    pub fn hold<'a, O>(obs: O) -> Result<Self, String>
+    where
+        O: IntoIterator<Item = &'a Var<S>>,
+        S: 'a,
+    {
+        let atom = Atom::hold(obs)?;
+        Self::observable(std::iter::once(atom))
+    }
+
+    /// Constructs a **flow module**: purely continuous behaviour with an
+    /// unconstrained initial state.
+    ///
+    /// Only the continuous evolution of the derivatives is given; the initial
+    /// values are havoced and the discrete update is an implicit skip. It is
+    /// composed of a single [`Atom::flow`] atom over `obs` and `prvt`, with
+    /// the `prvt` variables hidden; an empty `prvt` yields a **fully
+    /// observable** module.
+    ///
+    /// # Parameters
+    /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
+    /// - `obs`: The sequence of variables representing the module's observables.
+    /// - `prvt`: The sequence of variables hidden from the environment.
+    ///
+    /// # Returns
+    /// A `Result` containing the constructed flow module if successful,
+    /// or an error string if inference or consistency checks fail.
+    ///
+    /// # See Also
+    /// - [`Module::differential`], when the initial state is constrained explicitly.
+    /// - [`Atom::flow`], for creating individual flow atoms.
+    pub fn flow<'a, O, P, Z>(delay: Z, obs: O, prvt: P) -> Result<Self, String>
+    where
+        O: IntoIterator<Item = &'a Var<S>>,
+        P: IntoIterator<Item = &'a Var<S>> + Clone,
+        Z: IntoIterator<Item = Term<F>>,
+        S: 'a,
+    {
+        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let atom = Atom::flow(vars, delay)?;
         Self::partially_observable(std::iter::once(atom), prvt.into_iter())
     }
 
@@ -898,7 +1123,7 @@ where
     /// or an error string if inference or consistency checks fail.
     ///
     /// # See Also
-    /// - [`Module::uninitialized`], the dual: only an update, arbitrary initial state.
+    /// - [`Module::jump`], the dual: only an update, arbitrary initial state.
     /// - [`Atom::constant`], for creating individual constant atoms.
     pub fn constant<'a, O, W>(init: W, obs: O) -> Result<Self, String>
     where
