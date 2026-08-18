@@ -1,6 +1,6 @@
 import pytest
 import torch
-from zrth import Wire, Term, Module, LIA, Bool, Int, LRA, Real
+from zrth import Wire, Term, Module, LIA, Bool, Int, LRA, Real, Var, X, d
 
 
 def _bool_t(v):
@@ -32,38 +32,38 @@ def test_term_new():
 
 
 def test_module_sequential():
-    x = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
-    init = [Term.constant(LIA.Const(_bool_t(True)), [x[1]])]
-    update = [Term(LIA.Id(), [x[1]], [x[0]])]
+    x = Var(Bool([1, 1]))
+    init = [Term.constant(LIA.Const(_bool_t(True)), [X(x)])]
+    update = [Term(LIA.Id(), [X(x)], [x])]
     _ = Module.sequential(init, update, [x])
 
 
 def test_module_combinatorial():
-    x = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    x = Var(Bool([1, 1]))
 
-    assign = [Term.constant(LIA.Const(_bool_t(False)), [x[1]])]
+    assign = [Term.constant(LIA.Const(_bool_t(False)), [X(x)])]
     _ = Module.combinatorial(assign, [x])
 
 
 def test_module_parallel():
-    x = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
-    y = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
-    z = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
-    w = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
-    v = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    x = Var(Bool([1, 1]))
+    y = Var(Bool([1, 1]))
+    z = Var(Bool([1, 1]))
+    w = Var(Bool([1, 1]))
+    v = Var(Bool([1, 1]))
 
-    init = [Term.constant(LIA.Const(_bool_t(False)), [x[1]])]
-    update = [Term(LIA.And(), [x[1]], [x[0], y[1]])]
+    init = [Term.constant(LIA.Const(_bool_t(False)), [X(x)])]
+    update = [Term(LIA.And(), [X(x)], [x, X(y)])]
     p = Module.sequential(init, update, obs=[x, y])
 
     init = [
-        Term.constant(LIA.Const(_bool_t(False)), [v[1]]),
-        Term.constant(LIA.Const(_bool_t(False)), [y[1]]),
+        Term.constant(LIA.Const(_bool_t(False)), [X(v)]),
+        Term.constant(LIA.Const(_bool_t(False)), [X(y)]),
     ]
-    update = [Term(LIA.And(), [v[1]], [v[0], x[0]]), Term(LIA.Id(), [y[1]], [x[0]])]
+    update = [Term(LIA.And(), [X(v)], [v, x]), Term(LIA.Id(), [X(y)], [x])]
     q = Module.sequential(init, update, obs=[x, y], prvt=[v])
 
-    assign = [Term(LIA.Or(), [z[1]], [y[1], w[1]])]
+    assign = [Term(LIA.Or(), [X(z)], [X(y), X(w)])]
     r = Module.combinatorial(assign, obs=(z, y, w))
 
     m = Module.parallel(p, q, r)
@@ -71,8 +71,8 @@ def test_module_parallel():
     c = m.ctrl
     print(c)
 
-    for ltc, nxt in c:
-        print(f"({ltc}, {nxt})")
+    for var in c:
+        print(var)
 
     for atom in m.atoms:
         print(atom)
@@ -107,21 +107,100 @@ def test_interface():
         print("-->", w[i])
 
 
+def _stateful_blocks():
+    """Helper: two variables with init, update, and delay blocks over them."""
+    zero = torch.tensor([[0.0]])
+    x = Var(Real([1, 1]))
+    p = Var(Real([1, 1]))
+    init = [Term(LRA.Const(zero), [X(x)]), Term(LRA.Const(zero), [X(p)])]
+    update = [Term(LRA.Id(), [X(x)], [x]), Term(LRA.Id(), [X(p)], [p])]
+    delay = [Term(LRA.Const(zero), [d(x)]), Term(LRA.Const(zero), [d(p)])]
+    return x, p, init, update, delay
+
+
+def test_module_new_dispatches_on_blocks():
+    x, p, init, update, delay = _stateful_blocks()
+
+    # each block combination selects the corresponding constructor
+    sequential = Module(init=init, update=update, obs=[x, p])
+    differential = Module(init=init, delay=delay, obs=[x, p])
+    hybrid = Module(init=init, update=update, delay=delay, obs=[x, p])
+    uninitialized = Module(update=update, obs=[x, p])
+    constant = Module(init=init, obs=[x, p])
+
+    for m in (sequential, differential, hybrid, uninitialized, constant):
+        assert m.closed()
+        assert m.intf == [x, p]
+
+    # the hybrid keeps all three blocks as given, the others synthesise
+    atom = hybrid.atoms[0]
+    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2
+
+
+def test_module_new_partially_observable():
+    x, p, init, update, delay = _stateful_blocks()
+
+    for kwargs in (
+            dict(init=init, update=update),
+            dict(init=init, delay=delay),
+            dict(init=init, update=update, delay=delay),
+            dict(update=update),
+    ):
+        m = Module(**kwargs, obs=[x], prvt=[p])
+        assert m.intf == [x]
+        assert m.prvt == [p]
+
+
+def test_module_new_positional_is_parallel():
+    x, p, init, update, _ = _stateful_blocks()
+    y = Var(Real([1, 1]))
+
+    p1 = Module(init=init, update=update, obs=[x, p])
+    p2 = Module(init=[Term(LRA.Const(torch.tensor([[0.0]])), [X(y)])], obs=[y])
+
+    m = Module(p1, p2)
+    assert m.intf == [x, p, y]
+
+    # positional modules cannot be combined with keyword blocks
+    with pytest.raises(TypeError, match="parallel"):
+        Module(p1, init=init, obs=[x])
+
+
+def test_module_new_rejects_bad_declarations():
+    x, p, init, update, delay = _stateful_blocks()
+
+    # a module needs its observable variables
+    with pytest.raises(TypeError, match="obs"):
+        Module(init=init, update=update)
+
+    # constant modules are fully observable
+    with pytest.raises(TypeError, match="invalid combination"):
+        Module(init=init, obs=[x], prvt=[p])
+
+    # delay alone is not a supported block combination
+    with pytest.raises(TypeError, match="invalid combination"):
+        Module(delay=delay, obs=[x, p])
+
+    # no blocks at all
+    with pytest.raises(TypeError, match="invalid combination"):
+        Module(obs=[x, p])
+
+
 def test_heterogeneous_composition():
-    x = (Wire(Real([1, 1])), Wire(Real([1, 1])))
-    y = (Wire(Real([1, 1])), Wire(Real([1, 1])))
-    z = (Wire(Real([1, 1])), Wire(Real([1, 1])))
+    x = Var(Real([1, 1]))
+    y = Var(Real([1, 1]))
+    z = Var(Real([1, 1]))
 
     zero = torch.tensor([[0]])
-    init = [Term(LRA.Const(zero), [x[1]])]
-    update = [Term(LRA.Id(), [x[1]], [x[0]])]
+    init = [Term(LRA.Const(zero), [X(x)])]
+    update = [Term(LRA.Id(), [X(x)], [x])]
     P = Module.sequential(init, update, [x])
 
-    init = [Term(LRA.Const(zero), [y[1]])]
-    flow = [Term(LRA.Const(zero), [y[1]])]
+    init = [Term(LRA.Const(zero), [X(y)])]
+    flow = [Term(LRA.Const(zero), [d(y)])]
     Q = Module.differential(init, flow, [y])
 
-    comb = [Term(LRA.Add(), [z[1]], [x[1], y[1]])]
+    comb = [Term(LRA.Add(), [X(z)], [X(x), X(y)])]
     R = Module.combinatorial(comb, [x, y, z])
 
     S = Module.parallel(P, Q, R)

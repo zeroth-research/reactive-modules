@@ -106,7 +106,7 @@ struct TermInterface {
 }
 
 impl TermInterface {
-    fn base(&self) -> &base::Interface<Sort> {
+    fn base(&self) -> &[base::Wire<Sort>] {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),
@@ -118,7 +118,11 @@ impl TermInterface {
 #[pymethods]
 impl TermInterface {
     fn __str__(&self) -> String {
-        self.base().to_string()
+        self.base()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
@@ -127,7 +131,7 @@ impl TermInterface {
             Err(_) => return false,
         };
 
-        let mut this = self.base().wires();
+        let mut this = self.base().iter();
         let mut other = other.into_iter();
         loop {
             match (this.next(), other.next()) {
@@ -143,8 +147,9 @@ impl TermInterface {
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        let item = self.base().wire(0, index);
-        item.and_then(|w| Some(w.clone().into()))
+        self.base()
+            .get(index)
+            .map(|w| w.clone().into())
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 

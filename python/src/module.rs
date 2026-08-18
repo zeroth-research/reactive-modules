@@ -13,92 +13,72 @@ pub(crate) struct Module {
 #[pymethods]
 impl Module {
     #[new]
-    #[pyo3(signature = (*args, init = None, delay = None, update = None, assign = None, obs = None, ctrl = None, extl = None, intf = None, prvt = None, **_kwargs)
-    )]
+    #[pyo3(signature = (*args, init = None, delay = None, update = None, obs = None, prvt = None, **_kwargs))]
     fn new(
         args: &Bound<'_, PyTuple>,
         init: Option<&Bound<'_, PyAny>>,
         delay: Option<&Bound<'_, PyAny>>,
         update: Option<&Bound<'_, PyAny>>,
-        assign: Option<&Bound<'_, PyAny>>,
         obs: Option<&Bound<'_, PyAny>>,
-        ctrl: Option<&Bound<'_, PyAny>>,
-        extl: Option<&Bound<'_, PyAny>>,
-        intf: Option<&Bound<'_, PyAny>>,
         prvt: Option<&Bound<'_, PyAny>>,
+        // accepted but unused: subclasses extending Module pass their own
+        // keyword arguments through this constructor
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
         if args.len() > 0 {
             if init.is_some()
                 || delay.is_some()
                 || update.is_some()
-                || assign.is_some()
                 || obs.is_some()
-                || ctrl.is_some()
-                || extl.is_some()
-                || intf.is_some()
                 || prvt.is_some()
-                || _kwargs.is_some()
             {
                 return Err(PyTypeError::new_err(
-                    "positional Module arguments cannot be combined with keyword arguments",
+                    "positional arguments compose modules in parallel and cannot be combined \
+                     with keyword arguments",
                 ));
             }
             return Self::parallel(args);
         }
 
-        match (init, delay, update, assign) {
-            (Some(init), None, Some(update), None) => {
-                Self::sequential(init, update, obs, ctrl, extl, intf, prvt)
-            }
-            (None, None, None, Some(assign)) => Self::combinatorial(assign, obs, extl, intf),
-            (Some(init), Some(delay), None, None) => {
-                Self::differential(init, delay, obs, ctrl, extl, intf, prvt)
-            }
-            _ => Err(PyTypeError::new_err("unsupported wires declaration")),
+        let Some(obs) = obs else {
+            return Err(PyTypeError::new_err(
+                "missing `obs`: a module needs some observable variables",
+            ));
+        };
+
+        match (init, delay, update) {
+            (Some(init), None, Some(update)) => Self::sequential(init, update, obs, prvt),
+            (Some(init), Some(delay), None) => Self::differential(init, delay, obs, prvt),
+            (Some(init), Some(delay), Some(update)) => Self::hybrid(init, update, delay, obs, prvt),
+            (None, None, Some(update)) => Self::uninitialized(update, obs, prvt),
+            (Some(init), None, None) if prvt.is_none() => Self::constant(init, obs),
+            _ => Err(PyTypeError::new_err(
+                "invalid combination of blocks: expected `init`+`update` (sequential), \
+                 `init`+`delay` (differential), `init`+`update`+`delay` (hybrid), \
+                 `update` (uninitialized), or `init` (constant)",
+            )),
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (init, update, obs = None, *, ctrl = None, extl = None, intf = None, prvt = None)
-    )]
+    #[pyo3(signature = (init, update, obs, prvt = None))]
     fn sequential(
         init: &Bound<'_, PyAny>,
         update: &Bound<'_, PyAny>,
-        obs: Option<&Bound<'_, PyAny>>,
-        ctrl: Option<&Bound<'_, PyAny>>,
-        extl: Option<&Bound<'_, PyAny>>,
-        intf: Option<&Bound<'_, PyAny>>,
+        obs: &Bound<'_, PyAny>,
         prvt: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let init = try_term_iter_cloned(&init)?;
         let update = try_term_iter_cloned(&update)?;
+        let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
+        let prvt: Vec<_> = match prvt {
+            Some(prvt) => try_var_iter_cloned(prvt)?.collect(),
+            None => Vec::new(),
+        };
 
         let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
-            match (obs, ctrl, extl, intf, prvt) {
-                (Some(obs), None, None, None, Some(prvt)) => {
-                    let obs = try_wire2_iter_cloned(obs)?;
-                    let prvt = try_wire2_iter_cloned(prvt)?;
-                    base::Module::partially_observable_sequential(obs, prvt, init, update)
-                }
-                (Some(wires), None, None, None, None) => {
-                    let obs = try_wire2_iter_cloned(wires)?;
-                    base::Module::sequential(obs, init, update)
-                }
-                (None, Some(_state), Some(_input), Some(_output), None) => {
-                    todo!() //moore
-                }
-                (None, None, Some(_extl), Some(_intf), Some(_prvt)) => {
-                    todo!() //sequential declared
-                }
-                (Some(_obs), Some(_ctrl), Some(_extl), Some(_intf), Some(_prvt)) => {
-                    todo!() //sequential fully declared
-                }
-                (None, None, None, Some(_intf), Some(_prvt)) => {
-                    todo!() //sequential closed
-                }
-                _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
-            };
+            base::Atom::sequential(obs.iter().chain(prvt.iter()), init, update)
+                .and_then(|atom| base::Module::partially_observable(obs, prvt, [atom]));
 
         match module {
             Ok(base) => Ok(base.into()),
@@ -106,61 +86,103 @@ impl Module {
         }
     }
 
+    // combinatorial modules are fully observable
     #[staticmethod]
-    #[pyo3(signature = (assign, obs = None, *, extl = None, intf = None))]
-    fn combinatorial(
-        assign: &Bound<'_, PyAny>,
-        obs: Option<&Bound<'_, PyAny>>,
-        extl: Option<&Bound<'_, PyAny>>,
-        intf: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Self> {
-        let assign = try_term_iter_cloned::<Combinatorial, String>(&assign)?;
+    fn combinatorial(assign: &Bound<'_, PyAny>, obs: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
+        let obs = try_var_iter_cloned(obs)?;
 
-        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
-            match (obs, extl, intf) {
-                (Some(obs), None, None) => {
-                    let obs = try_wire2_iter_cloned(obs)?;
-                    base::Module::combinatorial(obs, assign)
-                }
-                (None, Some(_extl), Some(_intf)) => {
-                    todo!() // combinatorial declared
-                }
-                (None, None, Some(_intf)) => {
-                    todo!() // constant
-                }
-                _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
-            };
-
-        match module {
+        match base::Module::combinatorial(obs, assign) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (init, flow, obs = None, *, ctrl = None, extl = None, intf = None, prvt = None))]
+    #[pyo3(signature = (init, flow, obs, prvt = None))]
     fn differential(
         init: &Bound<'_, PyAny>,
         flow: &Bound<'_, PyAny>,
-        obs: Option<&Bound<'_, PyAny>>,
-        ctrl: Option<&Bound<'_, PyAny>>,
-        extl: Option<&Bound<'_, PyAny>>,
-        intf: Option<&Bound<'_, PyAny>>,
+        obs: &Bound<'_, PyAny>,
         prvt: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let init = try_term_iter_cloned(&init)?;
         let flow = try_term_iter_cloned(&flow)?;
+        let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
+        let prvt: Vec<_> = match prvt {
+            Some(prvt) => try_var_iter_cloned(prvt)?.collect(),
+            None => Vec::new(),
+        };
 
         let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
-            match (obs, ctrl, extl, intf, prvt) {
-                (Some(obs), None, None, None, None) => {
-                    let obs = try_wire2_iter_cloned(obs)?;
-                    base::Module::differential(obs, init, flow)
-                }
-                _ => return Err(PyTypeError::new_err("unsupported wires declaration")),
-            };
+            base::Atom::differential(obs.iter().chain(prvt.iter()), init, flow)
+                .and_then(|atom| base::Module::partially_observable(obs, prvt, [atom]));
 
         match module {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (init, update, delay, obs, prvt = None))]
+    fn hybrid(
+        init: &Bound<'_, PyAny>,
+        update: &Bound<'_, PyAny>,
+        delay: &Bound<'_, PyAny>,
+        obs: &Bound<'_, PyAny>,
+        prvt: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let init = try_term_iter_cloned(&init)?;
+        let update = try_term_iter_cloned(&update)?;
+        let delay = try_term_iter_cloned(&delay)?;
+        let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
+        let prvt: Vec<_> = match prvt {
+            Some(prvt) => try_var_iter_cloned(prvt)?.collect(),
+            None => Vec::new(),
+        };
+
+        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
+            base::Atom::hybrid(obs.iter().chain(prvt.iter()), init, update, delay)
+                .and_then(|atom| base::Module::partially_observable(obs, prvt, [atom]));
+
+        match module {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (update, obs, prvt = None))]
+    fn uninitialized(
+        update: &Bound<'_, PyAny>,
+        obs: &Bound<'_, PyAny>,
+        prvt: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let update = try_term_iter_cloned(&update)?;
+        let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
+        let prvt: Vec<_> = match prvt {
+            Some(prvt) => try_var_iter_cloned(prvt)?.collect(),
+            None => Vec::new(),
+        };
+
+        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
+            base::Atom::uninitialized(obs.iter().chain(prvt.iter()), update)
+                .and_then(|atom| base::Module::partially_observable(obs, prvt, [atom]));
+
+        match module {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    // constant modules are fully observable
+    #[staticmethod]
+    fn constant(init: &Bound<'_, PyAny>, obs: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let init = try_term_iter_cloned(&init)?;
+        let obs = try_var_iter_cloned(obs)?;
+
+        match base::Module::constant(obs, init) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -261,7 +283,7 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &base::Interface<Sort, 2> {
+    fn base(&self) -> &base::Interface<Sort> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),
@@ -275,12 +297,18 @@ impl ModuleInterface {
 #[pymethods]
 impl ModuleInterface {
     fn __str__(&self) -> String {
-        self.base().to_string()
+        self.base()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
-    fn __getitem__(&self, index: usize) -> PyResult<[Wire; 2]> {
-        let item = self.base().entry(index);
-        item.and_then(|i| Some(i.map(Clone::clone).map(Wire::from)))
+    fn __getitem__(&self, index: usize) -> PyResult<Var> {
+        self.base()
+            .iter()
+            .nth(index)
+            .map(|v| Var::from(*v))
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
@@ -289,7 +317,7 @@ impl ModuleInterface {
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
-        let other = match try_array2_iter_borrow::<Wire>(other) {
+        let other = match try_iter_borrow::<Var>(other) {
             Ok(other) => other,
             Err(_) => return false,
         };
@@ -299,7 +327,7 @@ impl ModuleInterface {
         loop {
             match (this.next(), other.next()) {
                 (Some(this), Some(Ok(other))) => {
-                    if this.iter().zip(other).any(|(&a, b)| a != b.base()) {
+                    if this != other.base() {
                         return false;
                     }
                 }
