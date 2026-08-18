@@ -36,7 +36,7 @@ impl<S> Var<S> {
         &self.der
     }
 
-    pub(crate) fn wires(&mut self) -> [&Wire<S>; 3] {
+    pub(crate) fn wires(&self) -> [&Wire<S>; 3] {
         [&self.ltc, &self.nxt, &self.der]
     }
 }

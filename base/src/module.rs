@@ -39,7 +39,10 @@ where
     /// as defined in the reactive modules paper.
     atoms: Vec<Atom<I, J, F, S>>,
 
-    temp: Vec<Wire<S>>,
+    /// cache of all wires local to blocks
+    local: Vec<Wire<S>>,
+    /// cache of all local and global wires
+    wires: Vec<Wire<S>>,
 }
 
 impl<I, J, F, S> Module<I, J, F, S>
@@ -80,8 +83,12 @@ where
         !self.extl.is_empty()
     }
 
-    pub fn temp(&self) -> impl Iterator<Item = &Wire<S>> {
-        self.temp.iter()
+    pub fn local(&self) -> &[Wire<S>] {
+        self.local.as_slice()
+    }
+
+    pub fn wires(&self) -> &[Wire<S>] {
+        self.local.as_slice()
     }
 
     pub fn empty() -> Self {
@@ -91,8 +98,9 @@ where
             prvt: Interface::empty(),
             obs: Interface::empty(),
             ctrl: Interface::empty(),
-            temp: Vec::new(),
             atoms: Vec::new(),
+            wires: Vec::new(),
+            local: Vec::new(),
         }
     }
 }
@@ -154,8 +162,9 @@ where
         prvt: Interface<S>,
         obs: Interface<S>,
         ctrl: Interface<S>,
-        temp: Vec<Wire<S>>,
         atoms: Vec<Atom<I, J, F, S>>,
+        wires: Vec<Wire<S>>,
+        local: Vec<Wire<S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -209,11 +218,13 @@ where
 
             // check that temporaries are decoupled from module wires and other atoms
             let mut module_temp: HashSet<usize> = HashSet::new();
-            for lc in atoms.iter().flat_map(Atom::temp) {
-                debug_assert!(temp.contains(lc));
+            for lc in atoms.iter().flat_map(Atom::local) {
+                debug_assert!(local.contains(lc));
                 debug_assert!(module_temp.insert(lc.id()));
             }
-            debug_assert_eq!(module_temp.len(), temp.len());
+            debug_assert_eq!(module_temp.len(), local.len());
+
+            //TODO check local and wires
         }
 
         Module {
@@ -222,8 +233,9 @@ where
             prvt,
             obs,
             ctrl,
-            temp,
             atoms,
+            wires,
+            local,
         }
     }
 }
@@ -306,7 +318,7 @@ where
                 }
             }
 
-            for lc in atom.temp() {
+            for lc in atom.local() {
                 if wires.contains(&lc) {
                     return Err(format!("local wire {} is also a module wire", lc.id()));
                 }
@@ -344,10 +356,11 @@ where
         let intf = Interface::from_iter_unchecked(intf);
         let prvt = Interface::from_iter_unchecked(prvt);
         let obs = Interface::from_iter_unchecked(obs);
-        let temp = local.into_iter().collect();
+        let wires = wires.into_iter().collect();
+        let local = local.into_iter().collect();
 
         Ok(Self::new_unchecked(
-            extl, intf, prvt, obs, ctrl, temp, past_atoms,
+            extl, intf, prvt, obs, ctrl, past_atoms, wires, local,
         ))
     }
 
@@ -377,8 +390,8 @@ where
     where
         M: IntoIterator<Item = Self>,
     {
-        let mut observable_wire: HashSet<usize> = HashSet::new();
-        let mut restricted_wire: HashSet<usize> = HashSet::new();
+        let mut declared_wires: HashSet<Wire<S>> = HashSet::new();
+        let mut restricted_wires: HashSet<usize> = HashSet::new();
 
         let mut extl_set: BTreeSet<Var<S>> = BTreeSet::new();
         let mut intf_ids: HashSet<usize> = HashSet::new();
@@ -387,7 +400,7 @@ where
         let mut prvt_stack: Vec<Var<S>> = Vec::new();
         let mut obs_stack: Vec<Var<S>> = Vec::new();
         let mut ctrl_stack: Vec<Var<S>> = Vec::new();
-        let mut temp_stack: Vec<Wire<S>> = Vec::new();
+        let mut local_stack: Vec<Wire<S>> = Vec::new();
         let mut atoms_stack: Vec<Atom<I, J, F, S>> = Vec::new();
 
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
@@ -400,70 +413,60 @@ where
             // Check that observables are either uncoupled or coupled in right direction
             obs_stack.reserve(module.obs.len());
             for var in module.obs {
-                if restricted_wire.contains(&var.ltc().id()) {
-                    return Err(format!("wire {} is restricted, got observable", var.id()));
-                }
-                if restricted_wire.contains(&var.nxt().id()) {
-                    return Err(format!("wire {} is restricted, got observable", var.id()));
-                }
-                if restricted_wire.contains(&var.der().id()) {
-                    return Err(format!("wire {} is restricted, got observable", var.id()));
+                for wire in var.wires() {
+                    if restricted_wires.contains(&wire.id()) {
+                        return Err(format!("coupling on restricted wire {}", wire.id()));
+                    }
                 }
 
-                if observable_wire.insert(var.ltc().id()) {
-                    observable_wire.insert(var.nxt().id());
-                    observable_wire.insert(var.der().id());
+                if !declared_wires.contains(var.ltc()) {
+                    debug_assert!(!declared_wires.contains(&var.nxt()));
+                    debug_assert!(!declared_wires.contains(&var.der()));
                     obs_stack.push(var);
                 }
+
+                // if declared_wires.insert(var.ltc().id()) {
+                //     declared_wires.insert(var.nxt().id());
+                //     declared_wires.insert(var.der().id());
+                // }
             }
 
             // Check that privates are uncoupled and restrict them
             prvt_stack.reserve(module.prvt.len());
             for var in module.prvt {
-                if observable_wire.contains(&var.ltc().id()) {
-                    debug_assert!(observable_wire.contains(&var.nxt().id()));
-                    debug_assert!(observable_wire.contains(&var.der().id()));
-                    return Err(format!(
-                        "var {} is private, but observable elsewhere",
-                        var.id()
-                    ));
+                if declared_wires.contains(&var.ltc()) {
+                    debug_assert!(declared_wires.contains(&var.nxt()));
+                    debug_assert!(declared_wires.contains(&var.der()));
+                    return Err(format!("private wire {} is declared elsewhere", var.id()));
                 }
+                debug_assert!(!declared_wires.contains(&var.nxt()));
+                debug_assert!(!declared_wires.contains(&var.der()));
 
-                debug_assert!(!restricted_wire.contains(&var.ltc().id()));
-                debug_assert!(!restricted_wire.contains(&var.nxt().id()));
-                debug_assert!(!restricted_wire.contains(&var.der().id()));
-                restricted_wire.insert(var.ltc().id());
-                restricted_wire.insert(var.nxt().id());
-                restricted_wire.insert(var.der().id());
+                for wire in var.wires() {
+                    debug_assert!(!restricted_wires.contains(&wire.id()));
+                    restricted_wires.insert(wire.id());
+                }
 
                 prvt_stack.push(var);
             }
 
             // Check that temporaries are uncoupled and restrict them
-            temp_stack.reserve(module.temp.len());
-            for tmp in module.temp {
-                if observable_wire.contains(&tmp.id()) {
-                    return Err(format!("local wire {} is observable elsewhere", tmp.id()));
+            local_stack.reserve(module.local.len());
+            for tmp in module.local {
+                if declared_wires.contains(&tmp) {
+                    return Err(format!("local wire {} is declared elsewhere", tmp.id()));
                 }
-                if !restricted_wire.insert(tmp.id()) {
-                    return Err(format!("local wire {} is restricted elsewhere", tmp.id()));
-                }
+                debug_assert!(!restricted_wires.contains(&tmp.id()));
 
-                temp_stack.push(tmp);
+                local_stack.push(tmp);
             }
 
             //============================================================
             // Couple external and interface variables
             //============================================================
             for var in module.extl {
-                if restricted_wire.contains(&var.ltc().id()) {
-                    return Err(format!("wire {} is restricted, got external", var.id()));
-                }
-                if restricted_wire.contains(&var.nxt().id()) {
-                    return Err(format!("wire {} is restricted, got external", var.id()));
-                }
-                if restricted_wire.contains(&var.der().id()) {
-                    return Err(format!("wire {} is restricted, got external", var.id()));
+                for wire in var.wires() {
+                    debug_assert!(!restricted_wires.contains(&wire.id()));
                 }
 
                 if !intf_ids.contains(&var.id()) {
@@ -473,14 +476,8 @@ where
 
             intf_stack.reserve(module.intf.len());
             for var in module.intf {
-                if restricted_wire.contains(&var.ltc().id()) {
-                    return Err(format!("wire {} is restricted, got external", var.id()));
-                }
-                if restricted_wire.contains(&var.nxt().id()) {
-                    return Err(format!("wire {} is restricted, got external", var.id()));
-                }
-                if restricted_wire.contains(&var.der().id()) {
-                    return Err(format!("wire {} is restricted, got external", var.id()));
+                for wire in var.wires() {
+                    debug_assert!(!restricted_wires.contains(&wire.id()));
                 }
 
                 extl_set.remove(&var);
@@ -493,6 +490,7 @@ where
             }
 
             ctrl_stack.extend(module.ctrl);
+            declared_wires.extend(module.wires);
 
             //============================================================
             // Populate await graph
@@ -544,9 +542,17 @@ where
         let prvt = Interface::from_iter_unchecked(prvt_stack);
         let obs = Interface::from_iter_unchecked(obs_stack);
         let ctrl = Interface::from_iter_unchecked(ctrl_stack);
+        let wires = declared_wires.into_iter().collect();
 
         Ok(Module::new_unchecked(
-            extl, intf, prvt, obs, ctrl, temp_stack, atoms,
+            extl,
+            intf,
+            prvt,
+            obs,
+            ctrl,
+            atoms,
+            wires,
+            local_stack,
         ))
     }
 }
