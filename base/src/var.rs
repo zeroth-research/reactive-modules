@@ -1,12 +1,12 @@
 use crate::Wire;
 use std::borrow::Borrow;
-use std::collections::HashSet;
+use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Var<S> {
     ltc: Wire<S>,
     nxt: Wire<S>,
@@ -52,6 +52,20 @@ impl<S> Eq for Var<S> {}
 impl<S> Hash for Var<S> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ltc.hash(state);
+    }
+}
+
+/// Variables are totally ordered by the id of their latched wire — the
+/// bearing element of equality — which globally orders them by creation.
+impl<S> Ord for Var<S> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.ltc.id().cmp(&other.ltc.id())
+    }
+}
+
+impl<S> PartialOrd for Var<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -127,6 +141,19 @@ impl<S: fmt::Display> fmt::Display for Var<S> {
     }
 }
 
+impl<S: Debug> Debug for Var<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "Var {{ ltc: {:?} nxt: {:?}, der: {:?} }}) : {:?}",
+            self.ltc.id(),
+            self.nxt.id(),
+            self.der.id(),
+            self.dtype()
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Interface<S> {
     vars: Vec<Var<S>>,
@@ -137,11 +164,11 @@ impl<S> Interface<S> {
         Self { vars: Vec::new() }
     }
 
-    /// Returns true if the wire indices of self are disjoint from the indices of other, regardless of their type.
-    /// This function runs in place, in O(self.len() * other.len()) time
+    /// Returns true if the variables of self are disjoint from the variables of other
+    /// This function runs in place, in O(self.len() * log(other.len())) time
     pub fn is_disjoint(&self, other: &Interface<S>) -> bool {
         for a in self.vars.iter() {
-            if other.vars.iter().any(|b| a == b) {
+            if other.vars.binary_search(a).is_ok() {
                 return false;
             }
         }
@@ -159,34 +186,17 @@ impl<S> Interface<S> {
     pub fn iter(&self) -> impl Iterator<Item = &Var<S>> {
         self.vars.iter()
     }
-
-    pub fn try_from_iter<I: IntoIterator<Item = Var<S>>>(iter: I) -> Result<Self, String> {
-        let vars: Vec<_> = iter.into_iter().collect();
-
-        // variables must have no repetition
-        let mut decl: HashSet<usize> = HashSet::new();
-        for var in vars.iter() {
-            if decl.insert(var.id()) {
-                return Err(format!("Duplicate variable {:?}", var.id()));
-            }
-        }
-
-        Ok(Self { vars })
-    }
 }
 
 impl<S: Debug> Interface<S> {
     pub(crate) fn from_iter_unchecked<T: Into<Var<S>>, I: IntoIterator<Item = T>>(iter: I) -> Self {
         let vars: Vec<_> = iter.into_iter().map(Into::into).collect();
-
-        #[cfg(debug_assertions)]
-        {
-            // variables must have no repetition
-            let mut decl: HashSet<usize> = HashSet::new();
-            for var in vars.iter() {
-                debug_assert!(decl.insert(var.id()), "duplicate var {:?}", var);
-            }
-        }
+        // variables must be unique and sorted
+        debug_assert!(
+            vars.is_sorted_by(|a, b| a < b),
+            "duplicate or unsorted {:?}",
+            vars
+        );
 
         Self { vars }
     }
@@ -215,6 +225,22 @@ mod test {
     use super::*;
     use crate::Term;
     use theory::lra::{LRA, Sort};
+
+    #[test]
+    fn variables_are_globally_ordered_by_creation() {
+        let x = Var::new("t");
+        let y = Var::new("t");
+        let z = Var::new("t");
+
+        // the latched wire's id increases with creation
+        assert!(x < y && y < z);
+        assert!(x <= x && x == x);
+
+        // sorting recovers the creation order
+        let mut vars = [z, x, y];
+        vars.sort();
+        assert_eq!(vars, [x, y, z]);
+    }
 
     #[test]
     fn variable_casts_to_its_wires() {
