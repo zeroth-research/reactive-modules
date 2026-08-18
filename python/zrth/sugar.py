@@ -88,8 +88,8 @@ class Module(_BaseModule):
                 f"{cls.__name__}: `theory` and `ctrl` are required constructor kwargs"
             )
 
-        ctrl_pairs = [tuple(p) for p in ctrl]
-        extl_pairs = [tuple(p) for p in extl] if extl else []
+        ctrl_pairs = [p for p in ctrl]
+        extl_pairs = [p for p in extl] if extl else []
         ctrl_vars = tuple(expr(p, theory=theory) for p in ctrl_pairs)
         extl_vars = tuple(expr(p, theory=theory) for p in extl_pairs)
 
@@ -107,7 +107,7 @@ class Module(_BaseModule):
         init_terms = _build_block(theory, ctrl_vars, init_fn, ctrl_arg, extl_arg, True)
         update_terms = _build_block(theory, ctrl_vars, update_fn, ctrl_arg, extl_arg, False)
 
-        obs = [list(p) for p in (ctrl_pairs + extl_pairs)]
+        obs = [p for p in (ctrl_pairs + extl_pairs)]
         self = super().__new__(cls, init=init_terms, update=update_terms, obs=obs)
         self._theory = theory
         self._ctrl_vars = ctrl_vars

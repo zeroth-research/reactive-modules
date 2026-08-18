@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from zrth import Wire, Module, parse_smv, BV, BitVec
+from zrth import Wire, Module, parse_smv, BV, BitVec, Var, X
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 
@@ -22,10 +22,10 @@ def test_counter_basic():
     # VAR names
     for v in ("x", "y", "z"):
         assert v in name_map
-        latched, nxt = name_map[v]
-        assert isinstance(latched, Wire)
-        assert isinstance(nxt, Wire)
-        assert latched != nxt
+        var = name_map[v]
+        assert isinstance(var, Var)
+        assert isinstance(X(var), Wire)
+        assert var != X(var)
 
     # IVAR names
     for v in ("y0", "z0"):
@@ -60,7 +60,7 @@ def test_test_itypes():
 
     assert isinstance(module, Module)
     assert len(name_map) == 6  # i, j, a, i0, j0, a0
-    assert len(module.obs) == 6
+    assert len(module.obs) == 5  # j0 is unused
 
 
 def test_hrm_word_level():
@@ -81,14 +81,13 @@ def test_wire_overrides():
     # Create override wires for 'x'
     # The SMV parser is BV-only; overrides must match.
     dtype = BitVec(32, [1, 1])
-    ov_l = Wire(dtype)
-    ov_n = Wire(dtype)
+    ov = Var(dtype)
 
-    module, name_map = parse_smv(text, overrides={"x": (ov_l, ov_n)})
+    module, name_map = parse_smv(text, overrides={"x": ov})
 
-    assert name_map["x"] == (ov_l, ov_n)
+    assert name_map["x"] == ov
     # Other variables should get fresh wires
-    assert name_map["y"][0] != ov_l
+    assert name_map["y"] != ov
 
 
 def test_parse_error():
@@ -134,9 +133,9 @@ def test_enum_type():
     assert isinstance(module, Module)
     assert "state" in name_map
     # state should have TensorInt dtype (enum mapped to int)
-    latched, _ = name_map["state"]
+    state = name_map["state"]
     # SMV parser maps `integer` / enum types to BV<32>.
-    assert isinstance(latched.dtype, BitVec)
+    assert isinstance(state.dtype, BitVec)
 
 
 def test_frozen_var():
