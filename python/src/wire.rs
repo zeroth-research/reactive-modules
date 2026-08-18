@@ -27,6 +27,11 @@ impl Wire {
         self.base.dtype().clone()
     }
 
+    #[getter]
+    fn degree(&self) -> u8 {
+        self.base.degree()
+    }
+
     fn __repr__(&self) -> String {
         format!("{:?}", self.base)
     }
