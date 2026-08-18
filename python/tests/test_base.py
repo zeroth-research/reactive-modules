@@ -125,10 +125,10 @@ def test_module_new_dispatches_on_blocks():
     sequential = Module(init=init, update=update, obs=[x, p])
     differential = Module(init=init, delay=delay, obs=[x, p])
     hybrid = Module(init=init, update=update, delay=delay, obs=[x, p])
-    uninitialized = Module(update=update, obs=[x, p])
+    jump = Module(update=update, obs=[x, p])
     constant = Module(init=init, obs=[x, p])
 
-    for m in (sequential, differential, hybrid, uninitialized, constant):
+    for m in (sequential, differential, hybrid, jump, constant):
         assert m.closed()
         assert m.intf == [x, p]
 
@@ -145,6 +145,7 @@ def test_module_new_partially_observable():
             dict(init=init, delay=delay),
             dict(init=init, update=update, delay=delay),
             dict(update=update),
+            dict(update=update, delay=delay),
     ):
         m = Module(**kwargs, obs=[x], prvt=[p])
         assert m.intf == [x]
@@ -173,17 +174,11 @@ def test_module_new_rejects_bad_declarations():
     with pytest.raises(TypeError, match="obs"):
         Module(init=init, update=update)
 
-    # constant modules are fully observable: `init` with `prvt` is invalid
-    with pytest.raises(TypeError, match="invalid combination"):
+    # constant and hold modules are fully observable: `prvt` is invalid
+    with pytest.raises(TypeError, match="constant modules .* fully observable"):
         Module(init=init, obs=[x], prvt=[p])
-
-    # delay alone is not a supported block combination
-    with pytest.raises(TypeError, match="invalid combination"):
-        Module(delay=delay, obs=[x, p])
-
-    # no blocks at all
-    with pytest.raises(TypeError, match="invalid combination"):
-        Module(obs=[x, p])
+    with pytest.raises(TypeError, match="hold modules .* fully observable"):
+        Module(obs=[x], prvt=[p])
 
 
 def test_atom_constructors():
@@ -194,7 +189,7 @@ def test_atom_constructors():
         Atom.sequential([x, p], init, update),
         Atom.differential([x, p], init, delay),
         Atom.hybrid([x, p], init, update, delay),
-        Atom.uninitialized([x, p], update),
+        Atom.jump([x, p], update),
         Atom.constant([x, p], init),
     ):
         assert len(atom.ctrl) == 2
@@ -219,14 +214,36 @@ def test_atom_new_dispatches_on_blocks():
     assert len(atom.delay) == 2
     atom = Atom([x, p], init=init, delay=delay)     # differential: update is skip
     assert len(atom.update) == 2
-    atom = Atom([x, p], update=update)              # uninitialized: init is havoc
+    atom = Atom([x, p], update=update)              # jump: init is havoc
     assert len(atom.init) == 2
+    atom = Atom([x, p], update=update, delay=delay)  # uninitialized: init is havoc
+    assert len(atom.init) == 2 and len(atom.delay) == 2
     atom = Atom([x, p], init=init)                  # constant: update skip, delay zero
     assert len(atom.update) == 2 and len(atom.delay) == 2
+    atom = Atom([x, p], delay=delay)                # flow: init havoc, update skip
+    assert len(atom.init) == 2 and len(atom.update) == 2
+    atom = Atom([x, p])                             # hold: everything synthesised
+    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2
 
-    # no blocks at all is not a valid atom
-    with pytest.raises(TypeError, match="invalid combination"):
-        Atom([x, p])
+
+def test_module_hold_and_flow():
+    x, p, init, update, delay = _stateful_blocks()
+
+    # hold: no blocks, every variable a symbolic constant; fully observable
+    m = Module(obs=[x, p])
+    assert m.closed() and m.intf == [x, p]
+    m = Module.hold([x, p])
+    assert m.intf == [x, p] and len(m.prvt) == 0
+    with pytest.raises(TypeError, match="fully observable"):
+        Module(obs=[x], prvt=[p])
+
+    # flow: only the continuous dynamics, initial state havoced
+    m = Module(delay=delay, obs=[x, p])
+    assert m.closed()
+    atom = m.atoms[0]
+    assert len(atom.init) == 2 and len(atom.delay) == 2
+    m = Module.flow(delay, [x], prvt=[p])
+    assert m.intf == [x] and m.prvt == [p]
 
 
 def test_atom_infers_awaited_variables():
