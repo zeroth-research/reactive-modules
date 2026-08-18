@@ -208,6 +208,10 @@ impl Atom {
 }
 
 impl Atom {
+    pub(crate) fn base(&self) -> &base::Atom<Combinatorial, Sequential, Differential> {
+        &self.base
+    }
+
     fn interface(slf: PyRef<'_, Self>, interface: AtomInterfaceType) -> PyResult<AtomInterface> {
         let py = slf.py();
         let atom = slf.into_pyobject(py)?.unbind();
