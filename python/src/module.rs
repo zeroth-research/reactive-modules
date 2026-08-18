@@ -50,12 +50,18 @@ impl Module {
             (Some(init), None, Some(update)) => Self::sequential(init, update, obs, prvt),
             (Some(init), Some(delay), None) => Self::differential(init, delay, obs, prvt),
             (Some(init), Some(delay), Some(update)) => Self::hybrid(init, update, delay, obs, prvt),
-            (None, None, Some(update)) => Self::uninitialized(update, obs, prvt),
+            (None, None, Some(update)) => Self::jump(update, obs, prvt),
+            (None, Some(delay), Some(update)) => Self::uninitialized(update, delay, obs, prvt),
             (Some(init), None, None) if prvt.is_none() => Self::constant(init, obs),
-            _ => Err(PyTypeError::new_err(
-                "invalid combination of blocks: expected `init`+`update` (sequential), \
-                 `init`+`delay` (differential), `init`+`update`+`delay` (hybrid), \
-                 `update` (uninitialized), or `init` (constant)",
+            (None, Some(delay), None) => Self::flow(delay, obs, prvt),
+            (None, None, None) if prvt.is_none() => Self::hold(obs),
+            // only constant (`init` alone) and hold (no blocks) reach here,
+            // both with `prvt` given
+            (Some(_), None, None) => Err(PyTypeError::new_err(
+                "constant modules (`init` alone) are fully observable and take no `prvt`",
+            )),
+            (None, None, None) => Err(PyTypeError::new_err(
+                "hold modules (no blocks) are fully observable and take no `prvt`",
             )),
         }
     }
@@ -147,7 +153,7 @@ impl Module {
 
     #[staticmethod]
     #[pyo3(signature = (update, obs, prvt = None))]
-    fn uninitialized(
+    fn jump(
         update: &Bound<'_, PyAny>,
         obs: &Bound<'_, PyAny>,
         prvt: Option<&Bound<'_, PyAny>>,
@@ -159,7 +165,64 @@ impl Module {
             None => Vec::new(),
         };
 
-        let module = base::Module::uninitialized(update, obs.iter(), prvt.iter());
+        let module = base::Module::jump(update, obs.iter(), prvt.iter());
+
+        match module {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (update, delay, obs, prvt = None))]
+    fn uninitialized(
+        update: &Bound<'_, PyAny>,
+        delay: &Bound<'_, PyAny>,
+        obs: &Bound<'_, PyAny>,
+        prvt: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let update = try_term_iter_cloned(&update)?;
+        let delay = try_term_iter_cloned(&delay)?;
+        let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
+        let prvt: Vec<_> = match prvt {
+            Some(prvt) => try_var_iter_cloned(prvt)?.collect(),
+            None => Vec::new(),
+        };
+
+        let module = base::Module::uninitialized(update, delay, obs.iter(), prvt.iter());
+
+        match module {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    // hold modules are fully observable
+    #[staticmethod]
+    fn hold(obs: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
+
+        match base::Module::hold(obs.iter()) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (delay, obs, prvt = None))]
+    fn flow(
+        delay: &Bound<'_, PyAny>,
+        obs: &Bound<'_, PyAny>,
+        prvt: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let delay = try_term_iter_cloned(&delay)?;
+        let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
+        let prvt: Vec<_> = match prvt {
+            Some(prvt) => try_var_iter_cloned(prvt)?.collect(),
+            None => Vec::new(),
+        };
+
+        let module = base::Module::flow(delay, obs.iter(), prvt.iter());
 
         match module {
             Ok(base) => Ok(base.into()),

@@ -2,7 +2,7 @@ use crate::term::{Term, TermInterfaceType};
 use crate::var::Var;
 use crate::wire::Wire;
 use crate::{try_iter_borrow, try_term_iter_cloned, try_var_iter_cloned};
-use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
+use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use theory::any::{Any, Combinatorial, Differential, Sequential};
 
@@ -31,13 +31,11 @@ impl Atom {
             (Some(init), None, Some(update)) => Self::sequential(vars, init, update),
             (Some(init), Some(delay), None) => Self::differential(vars, init, delay),
             (Some(init), Some(delay), Some(update)) => Self::hybrid(vars, init, update, delay),
-            (None, None, Some(update)) => Self::uninitialized(vars, update),
+            (None, None, Some(update)) => Self::jump(vars, update),
+            (None, Some(delay), Some(update)) => Self::uninitialized(vars, update, delay),
             (Some(init), None, None) => Self::constant(vars, init),
-            _ => Err(PyTypeError::new_err(
-                "invalid combination of blocks: expected `init`+`update` (sequential), \
-                 `init`+`delay` (differential), `init`+`update`+`delay` (hybrid), \
-                 `update` (uninitialized), or `init` (constant)",
-            )),
+            (None, Some(delay), None) => Self::flow(vars, delay),
+            (None, None, None) => Self::hold(vars),
         }
     }
 
@@ -92,11 +90,27 @@ impl Atom {
     }
 
     #[staticmethod]
-    fn uninitialized(vars: &Bound<'_, PyAny>, update: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn jump(vars: &Bound<'_, PyAny>, update: &Bound<'_, PyAny>) -> PyResult<Self> {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         let update = try_term_iter_cloned(&update)?;
 
-        match base::Atom::uninitialized(vars.iter(), update) {
+        match base::Atom::jump(vars.iter(), update) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    fn uninitialized(
+        vars: &Bound<'_, PyAny>,
+        update: &Bound<'_, PyAny>,
+        delay: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+        let update = try_term_iter_cloned(&update)?;
+        let delay = try_term_iter_cloned(&delay)?;
+
+        match base::Atom::uninitialized(vars.iter(), update, delay) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -108,6 +122,27 @@ impl Atom {
         let init = try_term_iter_cloned(&init)?;
 
         match base::Atom::constant(vars.iter(), init) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    fn hold(vars: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+
+        match base::Atom::hold(vars.iter()) {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    #[staticmethod]
+    fn flow(vars: &Bound<'_, PyAny>, delay: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+        let delay = try_term_iter_cloned(&delay)?;
+
+        match base::Atom::flow(vars.iter(), delay) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }

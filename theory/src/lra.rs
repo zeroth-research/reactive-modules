@@ -602,7 +602,11 @@ mod tests {
     #[test]
     fn const_real_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
-        assert!(LRA::Const(cm).check([].map(deg0), [real(2, 2)].map(deg0)).is_ok());
+        assert!(
+            LRA::Const(cm)
+                .check([].map(deg0), [real(2, 2)].map(deg0))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -685,14 +689,21 @@ mod tests {
     #[test]
     fn and_real_output_fails() {
         let b = bool_t(1, 1);
-        assert!(LRA::And().check([b, b].map(deg0), [real(1, 1)].map(deg0)).is_err());
+        assert!(
+            LRA::And()
+                .check([b, b].map(deg0), [real(1, 1)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
     fn and_type_mismatch_fails() {
         assert!(
             LRA::And()
-                .check([bool_t(1, 1), bool_t(1, 2)].map(deg0), [bool_t(1, 1)].map(deg0))
+                .check(
+                    [bool_t(1, 1), bool_t(1, 2)].map(deg0),
+                    [bool_t(1, 1)].map(deg0)
+                )
                 .is_err()
         );
     }
@@ -786,17 +797,29 @@ mod tests {
 
     #[test]
     fn argmax_ok() {
-        assert!(LRA::Argmax().check([real(3, 4)].map(deg0), [real(1, 4)].map(deg0)).is_ok());
+        assert!(
+            LRA::Argmax()
+                .check([real(3, 4)].map(deg0), [real(1, 4)].map(deg0))
+                .is_ok()
+        );
     }
 
     #[test]
     fn argmax_matrix_output_fails() {
-        assert!(LRA::Argmax().check([real(3, 4)].map(deg0), [real(3, 4)].map(deg0)).is_err());
+        assert!(
+            LRA::Argmax()
+                .check([real(3, 4)].map(deg0), [real(3, 4)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
     fn min_ok() {
-        assert!(LRA::Min().check([real(4, 1)].map(deg0), [real(1, 1)].map(deg0)).is_ok());
+        assert!(
+            LRA::Min()
+                .check([real(4, 1)].map(deg0), [real(1, 1)].map(deg0))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -807,7 +830,11 @@ mod tests {
             tch::Tensor::zeros([2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
             tch::Tensor::zeros([0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
-        assert!(LRA::Linear(a, b).check([real(3, 4)].map(deg0), [real(2, 4)].map(deg0)).is_ok());
+        assert!(
+            LRA::Linear(a, b)
+                .check([real(3, 4)].map(deg0), [real(2, 4)].map(deg0))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -817,7 +844,11 @@ mod tests {
             tch::Tensor::zeros([2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
             tch::Tensor::zeros([2, 1], (tch::Kind::Double, tch::Device::Cpu)).into();
-        assert!(LRA::Linear(a, b).check([real(3, 1)].map(deg0), [real(2, 1)].map(deg0)).is_ok());
+        assert!(
+            LRA::Linear(a, b)
+                .check([real(3, 1)].map(deg0), [real(2, 1)].map(deg0))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -827,36 +858,59 @@ mod tests {
             tch::Tensor::zeros([2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
             tch::Tensor::zeros([0, 0], (tch::Kind::Double, tch::Device::Cpu)).into();
-        assert!(LRA::Linear(a, b).check([real(4, 1)].map(deg0), [real(2, 1)].map(deg0)).is_err());
+        assert!(
+            LRA::Linear(a, b)
+                .check([real(4, 1)].map(deg0), [real(2, 1)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
     fn transpose_ok() {
-        assert!(LRA::Transpose().check([real(3, 4)].map(deg0), [real(4, 3)].map(deg0)).is_ok());
+        assert!(
+            LRA::Transpose()
+                .check([real(3, 4)].map(deg0), [real(4, 3)].map(deg0))
+                .is_ok()
+        );
     }
 
     #[test]
     fn transpose_wrong_shape_fails() {
-        assert!(LRA::Transpose().check([real(3, 4)].map(deg0), [real(3, 4)].map(deg0)).is_err());
+        assert!(
+            LRA::Transpose()
+                .check([real(3, 4)].map(deg0), [real(3, 4)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
     fn ite_ok() {
         let t = real(3, 4);
-        assert!(LRA::Ite().check([bool_t(1, 1), t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(
+            LRA::Ite()
+                .check([bool_t(1, 1), t, t].map(deg0), [t].map(deg0))
+                .is_ok()
+        );
     }
 
     #[test]
     fn ite_non_bool_guard_fails() {
         let t = real(1, 1);
-        assert!(LRA::Ite().check([t, t, t].map(deg0), [t].map(deg0)).is_err());
+        assert!(
+            LRA::Ite()
+                .check([t, t, t].map(deg0), [t].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
     fn ite_arm_mismatch_fails() {
         assert!(
             LRA::Ite()
-                .check([bool_t(1, 1), real(1, 1), real(1, 2)].map(deg0), [real(1, 1)].map(deg0))
+                .check(
+                    [bool_t(1, 1), real(1, 1), real(1, 2)].map(deg0),
+                    [real(1, 1)].map(deg0)
+                )
                 .is_err()
         );
     }
@@ -869,7 +923,11 @@ mod tests {
 
     #[test]
     fn id_type_mismatch_fails() {
-        assert!(LRA::Id().check([real(1, 1)].map(deg0), [real(2, 2)].map(deg0)).is_err());
+        assert!(
+            LRA::Id()
+                .check([real(1, 1)].map(deg0), [real(2, 2)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
@@ -882,7 +940,11 @@ mod tests {
 
     #[test]
     fn havoc_ok() {
-        assert!(LRA::Havoc().check([].map(deg0), [real(2, 1)].map(deg0)).is_ok());
+        assert!(
+            LRA::Havoc()
+                .check([].map(deg0), [real(2, 1)].map(deg0))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -898,16 +960,16 @@ mod tests {
                 .check([].map(deg0), [real(2, 1), bool_t(1, 1)].map(deg0))
                 .is_err()
         );
-        assert!(
-            LRA::Havoc()
-                .check([].map(deg0), [].map(deg0))
-                .is_err()
-        );
+        assert!(LRA::Havoc().check([].map(deg0), [].map(deg0)).is_err());
     }
 
     #[test]
     fn zero_ok() {
-        assert!(LRA::Zero().check([].map(deg0), [real(2, 1)].map(deg0)).is_ok());
+        assert!(
+            LRA::Zero()
+                .check([].map(deg0), [real(2, 1)].map(deg0))
+                .is_ok()
+        );
     }
 
     #[test]
