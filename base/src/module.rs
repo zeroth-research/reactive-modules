@@ -2,7 +2,7 @@ use crate::atom::Atom;
 use crate::topological_order;
 use crate::var::{Interface, Var};
 use crate::wire::Wire;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::fmt::Debug;
 use theory::{Combinatorial, Differential, Sequential, Theory};
@@ -299,8 +299,9 @@ where
         P: IntoIterator<Item = R>,
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
     {
-        let obs = Interface::from_iter_unchecked(obs);
-        let prvt = Interface::from_iter_unchecked(prvt);
+        let mut obs: Vec<_> = obs.into_iter().map(Into::into).collect();
+        let mut prvt: Vec<_> = prvt.into_iter().map(Into::into).collect();
+
         let mut decl_wire: HashSet<usize> = HashSet::new();
         for var in obs.iter().chain(prvt.iter()) {
             if !decl_wire.insert(var.id()) {
@@ -309,6 +310,11 @@ where
             decl_wire.insert(var.nxt().id());
             decl_wire.insert(var.der().id());
         }
+
+        obs.sort_unstable();
+        prvt.sort_unstable();
+        let obs = Interface::from_iter_unchecked(obs);
+        let prvt = Interface::from_iter_unchecked(prvt);
 
         // Check atoms consistency and infer control variables
         let mut ctrl_var: HashSet<usize> = HashSet::new();
@@ -418,15 +424,12 @@ where
     where
         M: IntoIterator<Item = Self>,
     {
-        // let mut latched: HashSet<usize> = HashSet::new();
-        // let mut next: HashSet<usize> = HashSet::new();
         let mut observable_wire: HashSet<usize> = HashSet::new();
         let mut restricted_wire: HashSet<usize> = HashSet::new();
 
-        let mut extl: HashSet<usize> = HashSet::new();
-        let mut intf: HashSet<usize> = HashSet::new();
+        let mut extl_set: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut intf_ids: HashSet<usize> = HashSet::new();
 
-        let mut extl_stack: Vec<Var<S>> = Vec::new();
         let mut intf_stack: Vec<Var<S>> = Vec::new();
         let mut prvt_stack: Vec<Var<S>> = Vec::new();
         let mut obs_stack: Vec<Var<S>> = Vec::new();
@@ -499,7 +502,6 @@ where
             //============================================================
             // Couple external and interface variables
             //============================================================
-            extl_stack.reserve(module.extl.len());
             for var in module.extl {
                 if restricted_wire.contains(&var.ltc().id()) {
                     return Err(format!("wire {} is restricted, got external", var.id()));
@@ -511,9 +513,8 @@ where
                     return Err(format!("wire {} is restricted, got external", var.id()));
                 }
 
-                if !intf.contains(&var.id()) {
-                    extl.insert(var.id());
-                    extl_stack.push(var);
+                if !intf_ids.contains(&var.id()) {
+                    extl_set.insert(var);
                 }
             }
 
@@ -529,9 +530,9 @@ where
                     return Err(format!("wire {} is restricted, got external", var.id()));
                 }
 
-                extl.remove(&var.id());
+                extl_set.remove(&var);
 
-                if !intf.insert(var.id()) {
+                if !intf_ids.insert(var.id()) {
                     return Err(format!("interface var {} is doubly controlled", var.id()));
                 }
 
@@ -560,6 +561,16 @@ where
         }
 
         //============================================================
+        // Reorder interfaces
+        //============================================================
+
+        // post-reordering for efficient memory reservation above
+        intf_stack.sort_unstable();
+        ctrl_stack.sort_unstable();
+        obs_stack.sort_unstable();
+        ctrl_stack.sort_unstable();
+
+        //============================================================
         // Reorder atoms and remove coupled wires from the externals
         //============================================================
 
@@ -571,15 +582,11 @@ where
             atoms.push(std::mem::take(&mut atoms_stack[idx]));
         }
 
-        let extl_stack = extl_stack
-            .into_iter()
-            .filter(|var| extl.contains(&var.id()));
-
         //============================================================
         // Collect and construct
         //============================================================
 
-        let extl = Interface::from_iter_unchecked(extl_stack);
+        let extl = Interface::from_iter_unchecked(extl_set);
         let intf = Interface::from_iter_unchecked(intf_stack);
         let prvt = Interface::from_iter_unchecked(prvt_stack);
         let obs = Interface::from_iter_unchecked(obs_stack);
