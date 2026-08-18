@@ -1,6 +1,6 @@
 import pytest
 import torch
-from zrth import Wire, Term, Module, LIA, Bool, Int, LRA, Real, Var, X, d
+from zrth import Wire, Term, Atom, Module, LIA, Bool, Int, LRA, Real, Var, X, d
 
 
 def _bool_t(v):
@@ -184,6 +184,86 @@ def test_module_new_rejects_bad_declarations():
     # no blocks at all
     with pytest.raises(TypeError, match="invalid combination"):
         Module(obs=[x, p])
+
+
+def test_atom_constructors():
+    x, p, init, update, delay = _stateful_blocks()
+
+    # each staticmethod builds an atom controlling both variables
+    for atom in (
+        Atom.sequential([x, p], init, update),
+        Atom.differential([x, p], init, delay),
+        Atom.hybrid([x, p], init, update, delay),
+        Atom.uninitialized([x, p], update),
+        Atom.constant([x, p], init),
+    ):
+        assert len(atom.ctrl) == 2
+        assert atom.ctrl == [x, p]
+        assert len(atom.wait) == 0
+
+    # combinatorial reuses the assignments for init and update
+    atom = Atom.combinatorial([x, p], init)
+    assert atom.ctrl == [x, p]
+    assert len(atom.init) == len(atom.update) == 2
+
+
+def test_atom_new_dispatches_on_blocks():
+    x, p, init, update, delay = _stateful_blocks()
+
+    # the hybrid keeps the three explicit blocks, the others synthesise
+    atom = Atom([x, p], init=init, update=update, delay=delay)
+    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2
+
+    # a synthesised block per controlled variable where a block is implicit
+    atom = Atom([x, p], init=init, update=update)   # sequential: delay is zero
+    assert len(atom.delay) == 2
+    atom = Atom([x, p], init=init, delay=delay)     # differential: update is skip
+    assert len(atom.update) == 2
+    atom = Atom([x, p], update=update)              # uninitialized: init is havoc
+    assert len(atom.init) == 2
+    atom = Atom([x, p], init=init)                  # constant: update skip, delay zero
+    assert len(atom.update) == 2 and len(atom.delay) == 2
+
+    # no blocks at all is not a valid atom
+    with pytest.raises(TypeError, match="invalid combination"):
+        Atom([x, p])
+
+
+def test_atom_infers_awaited_variables():
+    zero = torch.tensor([[0.0]])
+    x = Var(Real([1, 1]))
+    t = Var(Real([1, 1]))
+
+    # x' = X(t): the atom awaits t rather than controlling it
+    init = [Term(LRA.Const(zero), [X(x)])]
+    update = [Term(LRA.Id(), [X(x)], [X(t)])]
+    atom = Atom([x, t], init=init, update=update)
+
+    assert atom.ctrl == [x]
+    assert atom.wait == [t]
+
+
+def test_atom_rejects_ill_formed_blocks():
+    zero = torch.tensor([[0.0]])
+    x = Var(Real([1, 1]))
+
+    # the update writes the latched wire instead of the next wire
+    init = [Term(LRA.Const(zero), [X(x)])]
+    update = [Term(LRA.Id(), [x], [X(x)])]
+    with pytest.raises(Exception):
+        Atom.sequential([x], init, update)
+
+
+def test_atoms_compose_into_modules():
+    x, p, init, update, _ = _stateful_blocks()
+
+    # an explicitly built atom yields the same module as the shorthand
+    atom = Atom.sequential([x, p], init, update)
+    direct = Module(init=init, update=update, obs=[x], prvt=[p])
+
+    assert len(direct.atoms) == 1
+    assert direct.atoms[0].ctrl == atom.ctrl
+    assert direct.atoms[0].wait == atom.wait
 
 
 def test_heterogeneous_composition():
