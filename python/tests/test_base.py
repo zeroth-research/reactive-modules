@@ -173,7 +173,7 @@ def test_module_new_rejects_bad_declarations():
     with pytest.raises(TypeError, match="obs"):
         Module(init=init, update=update)
 
-    # constant modules are fully observable
+    # constant modules are fully observable: `init` with `prvt` is invalid
     with pytest.raises(TypeError, match="invalid combination"):
         Module(init=init, obs=[x], prvt=[p])
 
