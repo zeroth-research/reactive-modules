@@ -26,18 +26,21 @@ impl Module {
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
         if args.len() > 0 {
-            if init.is_some()
-                || delay.is_some()
-                || update.is_some()
-                || obs.is_some()
-                || prvt.is_some()
-            {
+            if init.is_some() || delay.is_some() || update.is_some() || obs.is_some() {
                 return Err(PyTypeError::new_err(
-                    "positional arguments compose modules in parallel and cannot be combined \
-                     with keyword arguments",
+                    "positional arguments take atoms or modules",
                 ));
             }
-            return Self::parallel(args);
+
+            // a sequence of atoms builds a single module (a process), a
+            // sequence of modules composes in parallel
+            if args.get_item(0)?.downcast::<Atom>().is_ok() {
+                return Self::proc(args, prvt);
+            }
+            if prvt.is_some() {
+                return Err(PyTypeError::new_err("module composition takes no `prvt`"));
+            }
+            return Self::comp(args);
         }
 
         let Some(obs) = obs else {
@@ -242,13 +245,33 @@ impl Module {
         }
     }
 
+    /// Builds a single module (a process) from a sequence of atoms, hiding
+    /// the `prvt` variables when given.
+    #[staticmethod]
+    #[pyo3(signature = (*atoms, prvt = None))]
+    fn proc(atoms: &Bound<'_, PyTuple>, prvt: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        let atoms: Vec<_> = try_iter_borrow::<Atom>(atoms)?.collect::<PyResult<_>>()?;
+        let atoms = atoms.iter().map(|a| a.base().clone());
+
+        let module = if let Some(prvt) = prvt {
+            let prvt: Vec<_> = try_var_iter_cloned(prvt)?.collect();
+            base::Module::partially_observable(atoms, prvt.iter())
+        } else {
+            base::Module::observable(atoms)
+        };
+
+        match module {
+            Ok(base) => Ok(base.into()),
+            Err(msg) => Err(PyException::new_err(msg)),
+        }
+    }
+
+    /// Composes a sequence of modules in parallel.
     #[staticmethod]
     #[pyo3(signature = (*modules))]
-    fn parallel(modules: &Bound<'_, PyTuple>) -> PyResult<Self> {
-        let modules = try_iter_borrow::<Self>(modules)?;
-        // TODO: make base take result iterator to avoid unwrap
-        let modules = modules.into_iter().map(Result::unwrap);
-        let modules = modules.map(|r| r.base.clone());
+    fn comp(modules: &Bound<'_, PyTuple>) -> PyResult<Self> {
+        let modules: Vec<_> = try_iter_borrow::<Self>(modules)?.collect::<PyResult<_>>()?;
+        let modules = modules.iter().map(|r| r.base.clone());
 
         match base::Module::parallel(modules) {
             Ok(base) => Ok(base.into()),
