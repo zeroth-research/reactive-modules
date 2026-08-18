@@ -58,7 +58,7 @@ fn can_compose_example_peterson1_with_empty_module() {
     let m1 = example_peterson1().unwrap();
     let m2 = Module::empty();
 
-    let _m3 = Module::parallel([m1, m2]).unwrap();
+    let _m3 = Module::composition([m1, m2]).unwrap();
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn can_compose_example_tiny1() {
     let m1 = example_tiny1(x, y, false).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
-    let m3 = Module::parallel([m1, m2]);
+    let m3 = Module::composition([m1, m2]);
     assert!(m3.is_ok());
 }
 
@@ -95,7 +95,7 @@ fn cannot_compose_example_tiny1_with_cyclic_await() {
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, true).unwrap();
 
-    let m3 = Module::parallel([m1, m2]);
+    let m3 = Module::composition([m1, m2]);
     assert!(m3.is_err());
 }
 
@@ -106,7 +106,7 @@ fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
-    let m3 = Module::parallel([m1, m2]);
+    let m3 = Module::composition([m1, m2]);
     assert!(m3.is_ok());
 }
 
@@ -119,7 +119,7 @@ fn can_compose_three_tiny1_without_cyclic_await_and_overlapping_prvt() {
     let m2 = example_tiny1(y, x, false).unwrap();
     let m3 = example_tiny1(y, z, false).unwrap();
 
-    let m4 = Module::parallel([m1, m2, m3]);
+    let m4 = Module::composition([m1, m2, m3]);
     assert!(m4.is_ok());
 }
 
@@ -141,7 +141,51 @@ fn compose_seq() {
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
     let m2 = Module::combinatorial(assign, &[x, z]).unwrap();
 
-    Module::parallel([m1, m2]).unwrap();
+    Module::composition([m1, m2]).unwrap();
+}
+
+/// Composes two coupled modules while hiding their shared variable.
+///
+/// ```text
+///     M1: x' = X(y)   (controls x, reads external y)
+///     M2: z' = X(x)   (controls z, reads x)
+/// ```
+///
+/// Hiding `x` at composition keeps the coupling between the components but
+/// makes `x` private in the composite: only `z` remains on the interface,
+/// with `y` still external. The pure composition `comp` is the special case
+/// hiding nothing, and hiding an *external* variable is rejected — privates
+/// must be controlled.
+#[test]
+fn compose_hiding() {
+    let x = Var::new("real");
+    let y = Var::new("real");
+    let z = Var::new("real");
+
+    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
+    let m1 = Module::combinatorial(assign, &[x, y]).unwrap();
+
+    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
+    let m2 = Module::combinatorial(assign, &[x, z]).unwrap();
+
+    // hiding the shared variable privatises it in the composite
+    let m = Module::hiding_composition([m1.clone(), m2.clone()], &[x]).unwrap();
+    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    assert_eq!(ids(m.prvt()), vec![x.id()]);
+    assert_eq!(ids(m.intf()), vec![z.id()]);
+    assert_eq!(ids(m.extl()), vec![y.id()]);
+    // the hidden variable leaves the observables but stays controlled
+    assert_eq!(ids(m.obs()), vec![y.id(), z.id()]);
+    assert_eq!(ids(m.ctrl()), vec![x.id(), z.id()]);
+
+    // the pure composition is the special case that hides nothing
+    let m = Module::composition([m1.clone(), m2.clone()]).unwrap();
+    assert_eq!(m.prvt().len(), 0);
+    assert_eq!(ids(m.intf()), vec![x.id(), z.id()]);
+    assert_eq!(ids(m.extl()), vec![y.id()]);
+
+    // an external variable cannot be hidden
+    assert!(Module::hiding_composition([m1, m2], &[y]).is_err());
 }
 
 #[test]
@@ -217,11 +261,11 @@ fn compose_seq_2() {
     let obs = &[x, y, z, inv];
     let m2 = Module::combinatorial(assign.clone(), obs).unwrap();
 
-    Module::parallel([m1.clone(), m2]).unwrap();
+    Module::composition([m1.clone(), m2]).unwrap();
 
     // try to use a `sequential_observable` ctor instead of combinatorial
     let m2 = Module::sequential(assign.clone(), assign, obs, []).unwrap();
-    let _m = Module::parallel([m1, m2]).unwrap();
+    let _m = Module::composition([m1, m2]).unwrap();
     println!("{:?}", _m);
 }
 
@@ -311,7 +355,7 @@ fn heterogeneous_composition() {
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();
     let R = base::Module::combinatorial([comb], &[x, y, z]).unwrap();
 
-    let S = base::Module::parallel([P, Q, R]);
+    let S = base::Module::composition([P, Q, R]);
     assert!(S.is_ok());
 
     print!("{}", S.unwrap());
