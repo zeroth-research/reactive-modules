@@ -54,11 +54,11 @@ impl fmt::Display for Var {
 #[pyfunction]
 #[pyo3(name = "X")]
 pub(crate) fn x(var: PyRef<'_, Var>) -> Wire {
-    base::variable::X(var.base).into()
+    base::variable::X(&var.base).into()
 }
 
 /// The derivative wire of the variable.
 #[pyfunction]
 pub(crate) fn d(var: PyRef<'_, Var>) -> Wire {
-    base::variable::d(var.base).into()
+    base::variable::d(&var.base).into()
 }
