@@ -3,8 +3,8 @@ use pyo3::prelude::*;
 use std::fmt;
 use theory::any::Sort;
 
-#[pyclass(frozen, eq, hash, str)]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[pyclass(frozen, eq, hash, str, ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub(crate) struct Var {
     base: base::Var<Sort>,
 }
