@@ -33,6 +33,7 @@ where
 
     /// Corresponds to temporary, local wires.
     temp: Vec<Wire<S>>,
+    wires: Vec<Wire<S>>,
 }
 
 impl<I, J, F, S> Atom<I, J, F, S>
@@ -75,16 +76,21 @@ where
         self.temp.iter()
     }
 
+    pub(crate) fn wires(&self) -> &[Wire<S>] {
+        self.wires.as_slice()
+    }
+
     /// Constructs an atom with no variables and empty blocks.
     pub fn empty() -> Self {
         Self {
             ctrl: Interface::empty(),
             wait: Interface::empty(),
             read: Interface::empty(),
-            temp: Vec::new(),
             init: Block::empty(),
             update: Block::empty(),
             delay: Block::empty(),
+            wires: Vec::new(),
+            temp: Vec::new(),
         }
     }
 }
@@ -121,6 +127,7 @@ where
         init: Block<I>,
         update: Block<J>,
         delay: Block<F>,
+        wires: Vec<Wire<S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -193,6 +200,8 @@ where
             }
             // all control wires are written
             debug_assert!(ctrl.iter().map(Var::der).all(|w| written.contains(w)));
+
+            //TODO check wires and local
         }
 
         Self {
@@ -203,6 +212,7 @@ where
             init,
             update,
             delay,
+            wires,
         }
     }
 }
@@ -230,6 +240,14 @@ impl<'a, S> WireMap<'a, S> {
 
         Self { ltc, nxt, der }
     }
+
+    fn keys(&self) -> impl Iterator<Item = &'a Wire<S>> {
+        self.ltc
+            .keys()
+            .chain(self.nxt.keys())
+            .chain(self.der.keys())
+            .cloned()
+    }
 }
 
 impl<I, J, F, S> Atom<I, J, F, S>
@@ -237,7 +255,7 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Clone + Debug + Eq,
+    S: Clone + Debug,
 {
     fn infer_ctrl<T>(
         pool: &HashMap<&Wire<S>, &Var<S>>,
@@ -376,6 +394,8 @@ where
             }
         }
 
+        let wires = wires.keys().cloned().collect();
+
         Ok(Self::new_unchecked(
             Interface::from_iter_unchecked(ctrl.into_values()),
             Interface::from_iter_unchecked(wait.into_values()),
@@ -384,6 +404,7 @@ where
             init,
             update,
             delay,
+            wires,
         ))
     }
 
@@ -417,7 +438,7 @@ where
         V: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
-        S: 'a + fmt::Display,
+        S: 'a,
     {
         let wires = WireMap::unpack(vars);
 
@@ -544,7 +565,7 @@ where
     where
         V: IntoIterator<Item = &'a Var<S>>,
         U: IntoIterator<Item = Term<J>>,
-        S: 'a + fmt::Display,
+        S: 'a,
     {
         let wires = WireMap::unpack(vars);
 
@@ -710,19 +731,21 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Eq + Clone + Debug + fmt::Display,
+    S: Eq + Clone + Debug,
 {
     /// Constructs a **sequential module**: behaviour that evolves over
     /// discrete time steps.
     ///
     /// A sequential module specifies an initialisation and a discrete state
     /// update; it has no continuous dynamics. It is composed of a single
-    /// [`Atom::sequential`] atom, and is **fully observable by default**.
+    /// [`Atom::sequential`] atom over `obs` and `prvt`, with the `prvt`
+    /// variables hidden; an empty `prvt` yields a **fully observable** module.
     ///
     /// # Parameters
-    /// - `obs`: The sequence of variables representing the module's observables.
     /// - `init`: The set of terms defining the module's initial state.
     /// - `update`: The set of terms defining the module's state update at each time step.
+    /// - `obs`: The sequence of variables representing the module's observables.
+    /// - `prvt`: The sequence of variables hidden from the environment.
     ///
     /// # Returns
     /// A `Result` containing the constructed sequential module if successful,
@@ -733,16 +756,17 @@ where
     ///   dynamics are involved.
     /// - [`Module::combinatorial`], for stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn sequential<O, V, W, U>(obs: O, init: W, update: U) -> Result<Self, String>
+    pub fn sequential<'a, O, P, W, U>(init: W, update: U, obs: O, prvt: P) -> Result<Self, String>
     where
-        V: Into<Var<S>>,
-        O: IntoIterator<Item = V>,
+        O: IntoIterator<Item = &'a Var<S>>,
+        P: IntoIterator<Item = &'a Var<S>> + Clone,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
+        S: 'a,
     {
-        let obs: Vec<_> = obs.into_iter().map(Into::into).collect();
-        let atom = Atom::sequential(obs.iter(), init, update)?;
-        Self::observable(obs, std::iter::once(atom))
+        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let atom = Atom::sequential(vars, init, update)?;
+        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
     }
 
     /// Constructs a **differential module**: behaviour that evolves
@@ -750,13 +774,15 @@ where
     ///
     /// A differential module specifies an initialisation and a continuous
     /// evolution of the derivatives; the discrete update is an implicit skip.
-    /// It is composed of a single [`Atom::differential`] atom, and is
-    /// **fully observable by default**.
+    /// It is composed of a single [`Atom::differential`] atom over `obs` and
+    /// `prvt`, with the `prvt` variables hidden; an empty `prvt` yields a
+    /// **fully observable** module.
     ///
     /// # Parameters
-    /// - `obs`: The sequence of variables representing the module's observables.
     /// - `init`: The set of terms defining the module's initial state.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
+    /// - `obs`: The sequence of variables representing the module's observables.
+    /// - `prvt`: The sequence of variables hidden from the environment.
     ///
     /// # Returns
     /// A `Result` containing the constructed differential module if successful,
@@ -766,16 +792,17 @@ where
     /// - [`Module::sequential`], the discrete dual: only an update, no continuous dynamics.
     /// - [`Module::hybrid`], when both discrete and continuous dynamics are explicit.
     /// - [`Atom::differential`], for creating individual differential atoms.
-    pub fn differential<O, V, W, Z>(obs: O, init: W, delay: Z) -> Result<Self, String>
+    pub fn differential<'a, O, P, W, Z>(init: W, delay: Z, obs: O, prvt: P) -> Result<Self, String>
     where
-        V: Into<Var<S>>,
-        O: IntoIterator<Item = V>,
+        O: IntoIterator<Item = &'a Var<S>>,
+        P: IntoIterator<Item = &'a Var<S>> + Clone,
         W: IntoIterator<Item = Term<I>>,
         Z: IntoIterator<Item = Term<F>>,
+        S: 'a,
     {
-        let obs = obs.into_iter().map(Into::into).collect::<Vec<_>>();
-        let atom = Atom::differential(obs.iter(), init, delay)?;
-        Self::observable(obs, std::iter::once(atom))
+        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let atom = Atom::differential(vars, init, delay)?;
+        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
     }
 
     /// Constructs a **hybrid module**, combining discrete updates with
@@ -783,13 +810,15 @@ where
     ///
     /// A hybrid module specifies all three blocks explicitly — initialisation,
     /// discrete update, and continuous delay. It is composed of a single
-    /// [`Atom::hybrid`] atom, and is **fully observable by default**.
+    /// [`Atom::hybrid`] atom over `obs` and `prvt`, with the `prvt` variables
+    /// hidden; an empty `prvt` yields a **fully observable** module.
     ///
     /// # Parameters
-    /// - `obs`: The sequence of variables representing the module's observables.
     /// - `init`: The set of terms defining the module's initial state.
     /// - `update`: The set of terms defining the discrete state update.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
+    /// - `obs`: The sequence of variables representing the module's observables.
+    /// - `prvt`: The sequence of variables hidden from the environment.
     ///
     /// # Returns
     /// A `Result` containing the constructed hybrid module if successful,
@@ -799,17 +828,24 @@ where
     /// - [`Module::sequential`] and [`Module::differential`], the purely
     ///   discrete and purely continuous special cases.
     /// - [`Atom::hybrid`], for creating individual hybrid atoms.
-    pub fn hybrid<O, V, W, U, Z>(obs: O, init: W, update: U, delay: Z) -> Result<Self, String>
+    pub fn hybrid<'a, O, P, W, U, Z>(
+        init: W,
+        update: U,
+        delay: Z,
+        obs: O,
+        prvt: P,
+    ) -> Result<Self, String>
     where
-        V: Into<Var<S>>,
-        O: IntoIterator<Item = V>,
+        O: IntoIterator<Item = &'a Var<S>>,
+        P: IntoIterator<Item = &'a Var<S>> + Clone,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
         Z: IntoIterator<Item = Term<F>>,
+        S: 'a,
     {
-        let obs = obs.into_iter().map(Into::into).collect::<Vec<_>>();
-        let atom = Atom::hybrid(obs.iter(), init, update, delay)?;
-        Self::observable(obs, std::iter::once(atom))
+        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let atom = Atom::hybrid(vars, init, update, delay)?;
+        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
     }
 
     /// Constructs an **uninitialized module**: sequential behaviour whose
@@ -817,11 +853,13 @@ where
     ///
     /// Only the update is given; the initial values of the controlled
     /// variables are havoced. It is composed of a single
-    /// [`Atom::uninitialized`] atom, and is **fully observable by default**.
+    /// [`Atom::uninitialized`] atom over `obs` and `prvt`, with the `prvt`
+    /// variables hidden; an empty `prvt` yields a **fully observable** module.
     ///
     /// # Parameters
-    /// - `obs`: The sequence of variables representing the module's observables.
     /// - `update`: The set of terms defining the module's state update at each time step.
+    /// - `obs`: The sequence of variables representing the module's observables.
+    /// - `prvt`: The sequence of variables hidden from the environment.
     ///
     /// # Returns
     /// A `Result` containing the constructed module if successful,
@@ -830,15 +868,16 @@ where
     /// # See Also
     /// - [`Module::sequential`], when the initial state is constrained explicitly.
     /// - [`Module::constant`], the dual: only the initial state, no update.
-    pub fn uninitialized<O, V, U>(obs: O, update: U) -> Result<Self, String>
+    pub fn uninitialized<'a, O, P, U>(update: U, obs: O, prvt: P) -> Result<Self, String>
     where
-        V: Into<Var<S>>,
-        O: IntoIterator<Item = V>,
         U: IntoIterator<Item = Term<J>>,
+        O: IntoIterator<Item = &'a Var<S>>,
+        P: IntoIterator<Item = &'a Var<S>> + Clone,
+        S: 'a,
     {
-        let obs = obs.into_iter().map(Into::into).collect::<Vec<_>>();
-        let atom = Atom::uninitialized(obs.iter(), update)?;
-        Self::observable(obs, std::iter::once(atom))
+        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let atom = Atom::uninitialized(vars, update)?;
+        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
     }
 
     /// Constructs a **constant module**: variables that are set once at
@@ -846,11 +885,12 @@ where
     ///
     /// Only the initialisation is given; the variables are held by an implicit
     /// skip update and have no continuous dynamics. It is composed of a single
-    /// [`Atom::constant`] atom, and is **fully observable by default**.
+    /// [`Atom::constant`] atom, and is **fully observable**: constant modules
+    /// take no private variables.
     ///
     /// # Parameters
-    /// - `obs`: The sequence of variables representing the module's observables.
     /// - `init`: The set of terms defining the (only) assignment of the variables.
+    /// - `obs`: The sequence of variables representing the module's observables.
     ///
     /// # Returns
     /// A `Result` containing the constructed module if successful,
@@ -859,15 +899,14 @@ where
     /// # See Also
     /// - [`Module::uninitialized`], the dual: only an update, arbitrary initial state.
     /// - [`Atom::constant`], for creating individual constant atoms.
-    pub fn constant<O, V, W>(obs: O, init: W) -> Result<Self, String>
+    pub fn constant<'a, O, W>(init: W, obs: O) -> Result<Self, String>
     where
-        V: Into<Var<S>>,
-        O: IntoIterator<Item = V>,
+        O: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<I>>,
+        S: 'a,
     {
-        let obs = obs.into_iter().map(Into::into).collect::<Vec<_>>();
-        let atom = Atom::constant(obs.iter(), init)?;
-        Self::observable(obs, std::iter::once(atom))
+        let atom = Atom::constant(obs, init)?;
+        Self::observable(std::iter::once(atom))
     }
 
     /// Constructs a **combinatorial module**: a stateless, time-independent
@@ -876,12 +915,12 @@ where
     /// A combinatorial module specifies a single block of assignments
     /// computing the outputs from the inputs within the same time step. It is
     /// composed of a single [`Atom::combinatorial`] atom, and is **fully
-    /// observable by default**.
+    /// observable**: combinatorial modules take no private variables.
     ///
     /// # Parameters
-    /// - `obs`: The sequence of variables representing the module's observables.
     /// - `assign`: The set of combinatorial assignment terms defining how the
     ///   output is computed from the input.
+    /// - `obs`: The sequence of variables representing the module's observables.
     ///
     /// # Returns
     /// A `Result` containing the constructed combinatorial module if successful,
@@ -890,15 +929,14 @@ where
     /// # See Also
     /// - [`Module::sequential`], the stateful dual with explicit time evolution.
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
-    pub fn combinatorial<T, V, O, W>(obs: O, assign: W) -> Result<Self, String>
+    pub fn combinatorial<'a, T, O, W>(assign: W, obs: O) -> Result<Self, String>
     where
         T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
-        V: Into<Var<S>>,
-        O: IntoIterator<Item = V>,
+        O: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<T>>,
+        S: 'a,
     {
-        let obs = obs.into_iter().map(Into::into).collect::<Vec<_>>();
-        let atom = Atom::combinatorial(obs.iter(), assign)?;
-        Self::observable(obs, [atom])
+        let atom = Atom::combinatorial(obs, assign)?;
+        Self::observable(std::iter::once(atom))
     }
 }
