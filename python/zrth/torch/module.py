@@ -1,7 +1,7 @@
 import inspect
 import torch.nn as nn
 
-from ..zrth import Module as _BaseModule
+from ..zrth import Module as _BaseModule, X
 from ..sort import Real
 from ..builder import builder_for
 from ..analyzer import convert_method, resolve_wire
@@ -102,18 +102,20 @@ def _extract_nn_module(nn_instance, theory=None, sequential=False, **kwargs):
         # `forward` reads its input as the variable's *latched* slot (index 0). Put the
         # next wire there (read_next=True) to read s'; put the latched wire there
         # (read_next=False) to read s. The output is always the next intf wire.
-        in_wire, other = (extl[1], extl[0]) if read_next else (extl[0], extl[1])
+        in_wire, other = (X(extl), extl) if read_next else (extl, X(extl))
         return convert_method(
-            nn_cls.forward, {obs_param: [in_wire, other]}, [intf[1]], cls=nn_cls,
+            nn_cls.forward, {obs_param: [in_wire, other]}, [X(intf)], cls=nn_cls,
             layers=layer_out_features, live_layers=live_layers, theory=theory,
         )
 
     obs = [extl, intf]
     if sequential:
         # V(s): init awaits the next input; update reads the latched input.
-        return dict(init=_forward_terms(True), update=_forward_terms(False), obs=obs)
-    # V(s'): memoryless, reads the awaited next input.
-    return dict(assign=_forward_terms(True), obs=obs)
+        return dict(update=_forward_terms(False), obs=obs)
+    else:
+        # V(s'): memoryless, reads the awaited next input.
+        initupdate = _forward_terms(True)
+        return dict(init=initupdate, update=initupdate, obs=obs)
 
 
 class Module(_BaseModule, nn.Module):

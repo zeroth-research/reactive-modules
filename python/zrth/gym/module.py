@@ -3,7 +3,7 @@ import torch
 import inspect
 import gymnasium as gym
 
-from ..zrth import Module, Wire, LIA, BV
+from ..zrth import Module, Wire, LIA, BV, X, Var
 from ..sort import Sort, Bool, Real, Int, BitVec
 from ..builder import builder_for, _normalize_shape, _shape
 from ..analyzer import (
@@ -77,18 +77,18 @@ def _resolve_attr_wire(name, spec):
     validated [latched, next] wire pair."""
     if isinstance(spec, Sort):
         return wire_pair(spec)
-    is_pair = (
-            isinstance(spec, (list, tuple))
-            and len(spec) == 2
-            and all(isinstance(w, Wire) for w in spec)
+    is_var = (
+        isinstance(spec, Var)
+        # and len(spec) == 2
+        # and all(isinstance(w, Wire) for w in spec)
     )
-    if is_pair:
-        if spec[0].dtype != spec[1].dtype:
+    if is_var:
+        if spec.dtype != X(spec).dtype:
             raise ValueError(
                 f"attrs['{name}']: latched/next dtype mismatch "
-                f"({spec[0].dtype} vs {spec[1].dtype})"
+                f"({spec.dtype} vs {X(spec).dtype})"
             )
-        return list(spec)
+        return spec
     raise TypeError(
         f"attrs['{name}'] must be a Sort or a (latched, next) wire pair, "
         f"got {type(spec).__name__}"
@@ -206,8 +206,8 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
     wires = {action_param: action, **prvt_wires, **const_wires}
 
     # gym reset returns (obs, info) → 1 result wire; step returns 4
-    reset_result = [observation[1]]
-    step_result = [observation[1], reward[1], terminated[1], truncated[1]]
+    reset_result = [X(observation)]
+    step_result = [X(observation), X(reward), X(terminated), X(truncated)]
 
     reset_terms = convert_method(
         env_cls.reset, wires, reset_result, cls=env_cls,
@@ -220,9 +220,9 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [
-        _value_to_const_term(0.0, reward[1], _builder),
-        _value_to_const_term(False, terminated[1], _builder),
-        _value_to_const_term(False, truncated[1], _builder),
+        _value_to_const_term(0.0, X(reward), _builder),
+        _value_to_const_term(False, X(terminated), _builder),
+        _value_to_const_term(False, X(truncated), _builder),
     ]
 
     # Prepend constant terms so wires have values before they're read
@@ -235,7 +235,12 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
     obs = [action, observation, reward, terminated, truncated]
 
     # Build name → (latched, next) wire mapping
-    wire_names = {name: (pair[0], pair[1]) for name, pair in prvt_wires.items()}
+    wire_names = {name: pair for name, pair in prvt_wires.items()}
+    wire_names["action"] = action
+    wire_names["observation"] = observation
+    wire_names["reward"] = reward
+    wire_names["terminated"] = terminated
+    wire_names["truncated"] = truncated
 
     return dict(
         init=reset_terms,
@@ -353,14 +358,15 @@ class Env(Module, gym.Wrapper):
         n_obs = len(self.obs)
         if n_obs >= 5:
             self._pairs = {
-                "action": self.obs[0],
-                "observation": self.obs[1],
-                "reward": self.obs[2],
-                "terminated": self.obs[3],
-                "truncated": self.obs[4],
+                "action": self._wire_names["action"],
+                "observation": self._wire_names["observation"],
+                "reward": self._wire_names["reward"],
+                "terminated": self._wire_names["terminated"],
+                "truncated": self._wire_names["truncated"],
             }
         elif n_obs >= 2:
             self._pairs = {
+                # TODO this positional/dimensional logic is dangerous
                 "action": self.obs[0],
                 "observation": self.obs[1],
                 "reward": None,
@@ -375,9 +381,9 @@ class Env(Module, gym.Wrapper):
         # If a composed atom drives the action wire (e.g. a controller in a
         # closed loop), step()'s `action` argument is ignored — the controller's
         # latched output is what the env atom sees.
-        action_next = self._pairs["action"][1]
+        action_next = X(self._pairs["action"])
         self._action_driven = any(
-            action_next in {w for w in atom.ctrl}
+            action_next in {X(w) for w in atom.ctrl}
             for idx, atom in enumerate(self.atoms)
             if idx != self._env_atom_idx
         )
@@ -407,17 +413,17 @@ class Env(Module, gym.Wrapper):
     def _sync_private_state_from_env(self):
         """Read private state from the real env and write to symbolic next wires."""
         wire_names = object.__getattribute__(self, "_wire_names")
-        for name, (_, nxt) in wire_names.items():
-            if nxt is None:
+        for name, var in wire_names.items():
+            if not isinstance(var, Var):
                 continue
             value = getattr(self.env, name, None)
             if value is not None:
                 if isinstance(value, bool):
-                    self._state[nxt] = torch.tensor([1.0 if value else 0.0])
+                    self._state[X(var)] = torch.tensor([1.0 if value else 0.0])
                 elif isinstance(value, (int, float)):
-                    self._state[nxt] = torch.tensor([float(value)])
+                    self._state[X(var)] = torch.tensor([float(value)])
                 elif isinstance(value, torch.Tensor):
-                    self._state[nxt] = value.clone()
+                    self._state[X(var)] = value.clone()
 
     def _prepare_action(self, action):
         """Convert action to tensor, one-hot encode for Discrete spaces."""
@@ -442,9 +448,9 @@ class Env(Module, gym.Wrapper):
                 self._state[w] = val
 
     def _latch(self):
-        for ltc, nxt in self.ctrl:
-            if nxt in self._state:
-                self._state[ltc] = self._state[nxt].clone()
+        for ctrl in self.ctrl:
+            if X(ctrl) in self._state:
+                self._state[ctrl] = self._state[X(ctrl)].clone()
 
     def reset(self, *, seed=None, options=None):
         self._state = {}
@@ -461,23 +467,23 @@ class Env(Module, gym.Wrapper):
         for atom_idx, atom in enumerate(self.atoms):
             if env_atom_idx is not None and atom_idx == env_atom_idx:
                 # Env atom: write real env state to symbolic wires
-                self._state[p["observation"][1]] = _to_wire_shape(
+                self._state[X(p["observation"])] = _to_wire_shape(
                     torch.as_tensor(reset_obs, dtype=torch.float32),
-                    p["observation"][1],
+                    X(p["observation"]),
                 )
                 if p["reward"]:
-                    self._state[p["reward"][1]] = torch.tensor([0.0])
+                    self._state[X(p["reward"])] = torch.tensor([0.0])
                 if p["terminated"]:
-                    self._state[p["terminated"][1]] = torch.tensor([0.0])
+                    self._state[X(p["terminated"])] = torch.tensor([0.0])
                 if p["truncated"]:
-                    self._state[p["truncated"][1]] = torch.tensor([0.0])
+                    self._state[X(p["truncated"])] = torch.tensor([0.0])
                 self._sync_private_state_from_env()
             else:
                 self._run_block(atom, lambda a: a.init)
 
         self._latch()
         self._initialized = True
-        return read_wire(self._state, p["observation"][0]).numpy(), {}
+        return read_wire(self._state, p["observation"]).numpy(), {}
 
     def step(self, action):
         if not self._initialized:
@@ -488,28 +494,28 @@ class Env(Module, gym.Wrapper):
         # Write action to symbolic state, unless an upstream atom drives it
         # (closed-loop with a composed controller — its latched output is used).
         if not self._action_driven:
-            self._state[p["action"][0]] = self._prepare_action(action)
+            self._state[p["action"]] = self._prepare_action(action)
 
         # Execute update block for each atom
         for atom_idx, atom in enumerate(self.atoms):
             if env_atom_idx is not None and atom_idx == env_atom_idx:
                 # Env atom: run real env
                 gym_result = self._backing_env.step(
-                    self._state[p["action"][0]].detach()
+                    self._state[p["action"]].detach()
                 )
                 obs, reward, terminated, truncated, *_ = gym_result
-                self._state[p["observation"][1]] = _to_wire_shape(
+                self._state[X(p["observation"])] = _to_wire_shape(
                     torch.as_tensor(obs, dtype=torch.float32),
-                    p["observation"][1],
+                    X(p["observation"]),
                 )
                 if p["reward"]:
-                    self._state[p["reward"][1]] = torch.tensor([float(reward)])
+                    self._state[X(p["reward"])] = torch.tensor([float(reward)])
                 if p["terminated"]:
-                    self._state[p["terminated"][1]] = torch.tensor(
+                    self._state[X(p["terminated"])] = torch.tensor(
                         [1.0 if terminated else 0.0]
                     )
                 if p["truncated"]:
-                    self._state[p["truncated"][1]] = torch.tensor(
+                    self._state[X(p["truncated"])] = torch.tensor(
                         [1.0 if truncated else 0.0]
                     )
                 self._sync_private_state_from_env()
@@ -517,15 +523,15 @@ class Env(Module, gym.Wrapper):
                 self._run_block(atom, lambda a: a.update)
 
         self._latch()
-        obs = read_wire(self._state, p["observation"][0])
-        reward = read_wire(self._state, p["reward"][0]).item() if p["reward"] else 0.0
+        obs = read_wire(self._state, p["observation"])
+        reward = read_wire(self._state, p["reward"]).item() if p["reward"] else 0.0
         terminated = (
-            bool(read_wire(self._state, p["terminated"][0]).item())
+            bool(read_wire(self._state, p["terminated"]).item())
             if p["terminated"]
             else False
         )
         truncated = (
-            bool(read_wire(self._state, p["truncated"][0]).item())
+            bool(read_wire(self._state, p["truncated"]).item())
             if p["truncated"]
             else False
         )

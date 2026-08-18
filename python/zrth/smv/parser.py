@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..zrth import Wire, Term, Module, BV
+from ..zrth import Wire, Term, Module, BV, Var, X
 from ..sort import Sort, BitVec, Bool
 
 
@@ -600,8 +600,8 @@ class _Lowerer:
             return self._emit_const(_bv_const(self.enum_values[name]), target)
         # Wire lookup
         if name in self.name_map:
-            latched, next_w = self.name_map[name]
-            w = next_w if self.is_init else latched
+            var = self.name_map[name]
+            w = X(var) if self.is_init else var
             if name in self.var_types:
                 self._wire_types[id(w)] = self.var_types[name]
             return self._enforce(w, target)
@@ -668,46 +668,46 @@ class _Lowerer:
 
 def _build_module(
         d: _Decls,
-        overrides: dict[str, tuple[Wire, Wire]],
-) -> tuple[Module, dict[str, tuple[Wire, Wire]]]:
+        overrides: dict[str, Var],
+) -> tuple[Module, dict[str, Var]]:
     # Prepend frozen vars before regular state vars
     all_var_decls = list(d.frozen_decls) + list(d.var_decls)
 
     # Combine: state vars first, then ivars
     all_decls = all_var_decls + list(d.ivar_decls)
     # Create wire pairs and type map
-    name_map: dict[str, tuple[Wire, Wire]] = {}
+    name_map: dict[str, Var] = {}
     var_types: dict[str, _SMVType] = {}
     for name, smv_type in all_decls:
         var_types[name] = smv_type
         name_map[name] = (
             overrides[name]
             if name in overrides
-            else (Wire(smv_type.dtype), Wire(smv_type.dtype))
+            else Var(smv_type.dtype)
         )
 
     init_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types, is_init=True)
     update_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types, is_init=False)
 
     for name, smv_type in all_var_decls:
-        latched, next_w = name_map[name]
+        var = name_map[name]
 
         # --- INIT ---
         init_expr = d.init_assigns.get(name)
         if init_expr is not None:
-            init_low.lower(init_expr, next_w)
+            init_low.lower(init_expr, X(var))
         else:
-            init_low.terms.append(Term(_bv_const(0), [next_w]))
+            init_low.terms.append(Term(_bv_const(0), [X(var)]))
 
         # --- UPDATE ---
         next_expr = d.next_assigns.get(name)
         if next_expr is not None:
-            update_low.lower(next_expr, next_w)
+            update_low.lower(next_expr, X(var))
         else:
-            update_low.terms.append(Term(BV.Id(), [next_w], [latched]))
+            update_low.terms.append(Term(BV.Id(), [X(var)], [var]))
 
     # Build obs_pairs: all variables (state + ivar)
-    obs_pairs = [list(name_map[n]) for n, _ in all_decls]
+    obs_pairs = [name_map[n] for n, _ in all_decls]
 
     module = Module.sequential(init_low.terms, update_low.terms, obs=obs_pairs)
     return module, name_map

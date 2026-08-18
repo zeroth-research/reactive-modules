@@ -41,7 +41,7 @@ from typing import override
 
 import torch
 
-from .zrth import Term, Wire, LRA, LIA, BV
+from .zrth import Term, Wire, LRA, LIA, BV, Var, X
 from .sort import Sort, Bool, Int, Real, BitVec, tensor_for
 from .builder import NonLinearError
 
@@ -157,7 +157,7 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
 class Expr:
     """Shared plumbing; instances are always one of AExpr / BExpr / WExpr (via ``expr()``)."""
 
-    def __init__(self, wire, theory, *, next=None, value=None, tag=None):
+    def __init__(self, wire, theory, *, next=None, value=None, tag=None, var=None):
         if next is not None and next.dtype != wire.dtype:
             raise TypeError(
                 f"a variable's (latched, next) wires must have the same sort, "
@@ -383,6 +383,8 @@ def expr(value, *, theory=None, sort=None, signed=False, tag=None) -> Expr:
         return _wrap(value[0], theory, next=value[1], signed=signed, tag=tag)
     if isinstance(value, Wire):  # single wire -> bare expr (no nxt)
         return _wrap(value, theory, signed=signed, tag=tag)
+    if isinstance(value, Var):
+        return _wrap(value, theory, signed=signed, tag=tag)
     return _const(value, theory, sort, signed, tag)
 
 
@@ -435,9 +437,9 @@ def cast(e: Expr, sort) -> Expr:
 
 def nxt(v: Expr) -> Expr:
     """The `next` wire of a variable expr (as built from a wire pair)."""
-    if v._next is None:
-        raise ValueError("nxt() expects a variable (built from a wire pair)")
-    return _wrap(v._next, v._theory, signed=getattr(v, "_signed", False))
+    # if v._next is None:
+    #     raise ValueError("nxt() expects a variable (built from a wire pair)")
+    return _wrap(X(v._wire), v._theory, signed=getattr(v, "_signed", False))
 
 
 def ite(cond: Expr, iftrue, iffalse) -> Expr:

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
-from .zrth import Wire, Term
+from .zrth import Wire, Term, Var, X
 from .sort import Bool, Real, Int, BitVec
 from .builder import (
     TermBuilder,
@@ -1103,7 +1103,8 @@ def format_results(states: List[AbstractState]) -> str:
 
 def wire_pair(dtype):
     """Create a [latched, next] wire pair for the given dtype."""
-    return [Wire(dtype), Wire(dtype)]
+    # return [Wire(dtype), Wire(dtype)]
+    return Var(dtype)
 
 
 def resolve_wire(name, dtype, user_val=None):
@@ -1114,18 +1115,17 @@ def resolve_wire(name, dtype, user_val=None):
     """
     if user_val is None:
         return wire_pair(dtype)
-    is_pair = (
-            isinstance(user_val, (list, tuple))
-            and len(user_val) == 2
-            and all(isinstance(w, Wire) for w in user_val)
+    is_var = (
+        isinstance(user_val, Var)
+        # and len(user_val) == 2
+        # and all(isinstance(w, Wire) for w in user_val)
     )
-    if is_pair:
-        for w in user_val:
-            if w.dtype != dtype:
-                raise ValueError(
-                    f"DType mismatch for '{name}': expected {dtype}, got {w.dtype}"
-                )
-        return list(user_val)
+    if is_var:
+        if user_val.dtype != dtype:
+            raise ValueError(
+                f"DType mismatch for '{name}': expected {dtype}, got {user_val.dtype}"
+            )
+        return user_val
     raise ValueError(
         f"Invalid wire format for '{name}': expected [Wire, Wire], got {type(user_val).__name__}"
     )
@@ -1457,13 +1457,13 @@ class MethodVisitor(ast.NodeVisitor):
             if if_wire is None:
                 if_wire = parent_scope.get(var)
             if if_wire is None and var in self.wire_pairs:
-                if_wire = self.wire_pairs[var][0]
+                if_wire = self.wire_pairs[var]
 
             else_wire = else_scope_after.get(var)
             if else_wire is None:
                 else_wire = parent_scope.get(var)
             if else_wire is None and var in self.wire_pairs:
-                else_wire = self.wire_pairs[var][0]
+                else_wire = self.wire_pairs[var]
 
             if if_wire != else_wire and if_wire is not None and else_wire is not None:
                 ite_term = self.builder.ite(cond_wire, if_wire, else_wire)
@@ -1474,7 +1474,7 @@ class MethodVisitor(ast.NodeVisitor):
                 # value to the output wire — replacing any earlier Id term, since
                 # this if-branch supersedes whatever was assigned before it.
                 if var in self.wire_pairs and len(self.scopes) == 0:
-                    output_wire = self.wire_pairs[var][1]
+                    output_wire = X(self.wire_pairs[var])
                     if var in self.written_wires:
                         for i in range(len(self.terms) - 1, -1, -1):
                             t = self.terms[i]
@@ -1494,7 +1494,7 @@ class MethodVisitor(ast.NodeVisitor):
                         and var not in parent_scope
                         and var not in self.written_wires
                 ):
-                    output_wire = self.wire_pairs[var][1]
+                    output_wire = X(self.wire_pairs[var])
                     term = self.builder.id_(if_wire, output_wire=output_wire)
                     self.terms.append(term)
                     self.written_wires.add(var)
@@ -1534,12 +1534,12 @@ class MethodVisitor(ast.NodeVisitor):
 
         elif isinstance(target, ast.Attribute) and target.attr in self.wire_pairs:
             wire_name = target.attr
-            target_dtype = self.wire_pairs[wire_name][1].dtype
+            target_dtype = X(self.wire_pairs[wire_name]).dtype
             result_val = self._convert_expr(node.value, target_dtype=target_dtype)
             self.temp_vars[wire_name] = result_val
 
             if len(self.scopes) == 0:
-                output_wire = self.wire_pairs[wire_name][1]
+                output_wire = X(self.wire_pairs[wire_name])
                 if wire_name in self.written_wires:
                     # Re-assignment: drop the previous Id term for this output wire
                     for i in range(len(self.terms) - 1, -1, -1):
@@ -2083,7 +2083,7 @@ class MethodVisitor(ast.NodeVisitor):
                 return self.temp_vars[wire_name]
 
             if wire_name in self.wire_pairs:
-                return self.wire_pairs[wire_name][0]
+                return self.wire_pairs[wire_name]
 
             if wire_name in self.params:
                 return self.params[wire_name]
@@ -2135,7 +2135,7 @@ class MethodVisitor(ast.NodeVisitor):
 
 def convert_method(
         method,
-        wires: dict[str, tuple[Wire, Wire]],
+        wires: dict[str, Var],
         result: list[Wire],
         cls=None,
         layers: dict[str, int] | None = None,
@@ -2187,7 +2187,7 @@ def convert_method(
         static_attrs=static_attrs,
     )
     visitor.temp_vars.update(
-        {name: wires[name][0] for name in param_names if name in wires}
+        {name: wires[name] for name in param_names if name in wires}
     )
 
     for stmt in func_def.body:

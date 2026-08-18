@@ -195,7 +195,7 @@ def getattr_wire(self, name):
     wire_names = object.__getattribute__(self, "_wire_names")
     if name in wire_names:
         state = object.__getattribute__(self, "_state")
-        wire = wire_names[name][0]  # read from latched wire
+        wire = wire_names[name]  # read from latched wire
         if wire in state:
             val = state[wire]
             return val.item() if val.numel() == 1 else val.detach().clone()

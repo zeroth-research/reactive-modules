@@ -6,7 +6,7 @@ from .agent import DQNAgent
 from .train import train
 from zrth.gym import Env
 from zrth.torch import Module
-from zrth import Wire, Real, LRA
+from zrth import Wire, Real, LRA, Var, X
 from zrth.eval import eval_itype
 
 
@@ -56,8 +56,8 @@ def test_training():
 
 def test_training_with_shared_wires():
     """Shared wires between Env and NN modules should work with wrapping."""
-    action = [Wire(Real([1, 2])), Wire(Real([1, 2]))]
-    input_wire = [Wire(Real([1, 1])), Wire(Real([1, 1]))]
+    action = Var(Real([1, 2]))
+    input_wire = Var(Real([1, 1]))
 
     plain_env = SimpleEnv()
     plain_nn = SimpleQNet(state_size=1, action_size=plain_env.action_space.n, hidden_size=2)
@@ -71,10 +71,10 @@ def test_training_with_shared_wires():
     print(f'NN output wires: {wrapped_nn.obs[1]}')
 
     # Verify shared wires match
-    assert wrapped_env.obs[0][0].id == action[0].id
-    assert wrapped_env.obs[0][1].id == action[1].id
-    assert wrapped_nn.obs[0][0].id == input_wire[0].id
-    assert wrapped_nn.obs[0][1].id == input_wire[1].id
+    assert wrapped_env.obs[0].id == action.id
+    assert X(wrapped_env.obs[0]).id == X(action).id
+    assert wrapped_nn.obs[0].id == input_wire.id
+    assert X(wrapped_nn.obs[0]).id == X(input_wire).id
 
 
 if __name__ == "__main__":

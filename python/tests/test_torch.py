@@ -5,7 +5,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from zrth import LRA, LIA, BV, Real, Int, Bool
+from zrth import LRA, LIA, BV, Real, Int, Bool, X
 from zrth.torch import Module
 
 
@@ -34,7 +34,7 @@ def _to_int_weights(net, dtype=torch.int64):
 
 
 def _sorts(m):
-    return list(m.extl)[0][0].dtype, list(m.intf)[0][0].dtype
+    return list(m.extl)[0].dtype, list(m.intf)[0].dtype
 
 
 def test_default_theory_is_real():
@@ -79,27 +79,27 @@ def _read_ids(m):
 
 
 def _wait_ids(m):
-    return {w.id for w in m.atoms[0].wait}
+    return {X(w).id for w in m.atoms[0].wait}
 
 
 def test_default_is_combinatorial_reads_next_only():
     # V(s'): memoryless — does not read the latched input, only awaits the next one.
     m = Module(Net())
-    latched, nxt = list(m.extl)[0]
-    assert latched.id not in _read_ids(m)
-    assert nxt.id in _wait_ids(m)
+    extl = list(m.extl)[0]
+    assert extl.id not in _read_ids(m)
+    assert X(extl).id in _wait_ids(m)
 
 
 def test_sequential_reads_latched_input():
     # V(s): sequential atom reads the latched input (and still awaits next for init).
     m = Module(Net(), sequential=True)
-    latched, nxt = list(m.extl)[0]
-    assert latched.id in _read_ids(m)
-    assert nxt.id in _wait_ids(m)
+    extl = list(m.extl)[0]
+    assert extl.id in _read_ids(m)
+    assert X(extl).id not in _wait_ids(m)
 
 
 def test_sequential_with_lia_builds():
     m = Module(_to_int_weights(Net()), theory=LIA, sequential=True)
-    latched, _ = list(m.extl)[0]
-    assert isinstance(latched.dtype, Int)
-    assert latched.id in _read_ids(m)
+    extl = list(m.extl)[0]
+    assert isinstance(extl.dtype, Int)
+    assert extl.id in _read_ids(m)

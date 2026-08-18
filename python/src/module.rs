@@ -59,8 +59,8 @@ impl Module {
             (Some(init), Some(delay), Some(update)) => Self::hybrid(init, update, delay, obs, prvt),
             (None, None, Some(update)) => Self::jump(update, obs, prvt),
             (None, Some(delay), Some(update)) => Self::uninitialized(update, delay, obs, prvt),
-            (Some(init), None, None) if prvt.is_none() => Self::constant(init, obs),
             (None, Some(delay), None) => Self::flow(delay, obs, prvt),
+            (Some(init), None, None) if prvt.is_none() => Self::constant(init, obs),
             (None, None, None) if prvt.is_none() => Self::hold(obs),
             // only constant (`init` alone) and hold (no blocks) reach here,
             // both with `prvt` given
