@@ -66,7 +66,7 @@ def test_module_parallel():
     assign = [Term(LIA.Or(), [X(z)], [X(y), X(w)])]
     r = Module.combinatorial(assign, obs=(z, y, w))
 
-    m = Module.parallel(p, q, r)
+    m = Module.comp(p, q, r)
 
     c = m.ctrl
     print(c)
@@ -162,9 +162,40 @@ def test_module_new_positional_is_parallel():
     m = Module(p1, p2)
     assert m.intf == [x, p, y]
 
-    # positional modules cannot be combined with keyword blocks
-    with pytest.raises(TypeError, match="parallel"):
+    # positional arguments cannot be combined with keyword blocks
+    with pytest.raises(TypeError, match="take atoms or modules"):
         Module(p1, init=init, obs=[x])
+
+    # module composition takes no prvt
+    with pytest.raises(TypeError, match="takes no `prvt`"):
+        Module(p1, p2, prvt=[p])
+
+
+def test_module_new_positional_atoms():
+    x, p, init, update, _ = _stateful_blocks()
+
+    # a sequence of atoms builds an observable module...
+    atom = Atom.sequential([x, p], init, update)
+    m = Module(atom)
+    assert m.closed() and m.intf == [x, p]
+
+    # ...and hides the `prvt` variables when given
+    m = Module(atom, prvt=[p])
+    assert m.intf == [x] and m.prvt == [p]
+
+    # the explicit `proc` staticmethod behaves the same
+    m = Module.proc(atom)
+    assert m.closed() and m.intf == [x, p]
+    m = Module.proc(atom, prvt=[p])
+    assert m.intf == [x] and m.prvt == [p]
+
+    # several atoms compose into one module
+    y = Var(Real([1, 1]))
+    zero = torch.tensor([[0.0]])
+    other = Atom.constant([y], [Term(LRA.Const(zero), [X(y)])])
+    m = Module(atom, other)
+    assert m.intf == [x, p, y]
+    assert len(m.atoms) == 2
 
 
 def test_module_new_rejects_bad_declarations():
@@ -300,4 +331,4 @@ def test_heterogeneous_composition():
     comb = [Term(LRA.Add(), [X(z)], [X(x), X(y)])]
     R = Module.combinatorial(comb, [x, y, z])
 
-    S = Module.parallel(P, Q, R)
+    S = Module.comp(P, Q, R)
