@@ -4,10 +4,8 @@ pub mod lia;
 pub mod lra;
 pub mod tensor;
 
-use crate::any::Sort;
 use std::fmt;
 pub use tensor::PyTensor;
-
 pub trait Theory {
     type Sort;
 
@@ -35,10 +33,11 @@ pub trait Differential: Theory {
 
 // SKIP is unary: it copies exactly one read wire to one write wire of the
 // same sort, matching the arity of the base theories' `Id`.
-fn check_skip<R, W, E>(read: R, write: W) -> Result<(), String>
+fn check_skip<R, W, S, E>(read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(Sort, u8), E>>,
-    W: IntoIterator<Item = Result<(Sort, u8), E>>,
+    R: IntoIterator<Item = Result<(S, u8), E>>,
+    W: IntoIterator<Item = Result<(S, u8), E>>,
+    S: Eq,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();

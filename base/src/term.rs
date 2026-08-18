@@ -2,7 +2,7 @@ use crate::wire::Wire;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::vec;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential, Theory, any};
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -23,7 +23,7 @@ pub struct Term<T: Theory> {
 }
 
 impl<T: Theory> Term<T> {
-    pub fn new_unchecked(itype: T, write: Vec<Wire<T::Sort>>, read: Vec<Wire<T::Sort>>) -> Self {
+    fn new_unchecked(itype: T, write: Vec<Wire<T::Sort>>, read: Vec<Wire<T::Sort>>) -> Self {
         Self { itype, write, read }
     }
 
@@ -97,6 +97,59 @@ impl<T: Theory> Term<T> {
         U: Theory<Sort = T::Sort> + Into<T>,
     {
         Self::new_unchecked(term.itype.into(), term.write, term.read)
+    }
+
+    /// Re-types a term along a fallible theory cast (`U: TryInto<T>`),
+    /// failing exactly when the instruction does not belong to `T`.
+    ///
+    /// Only the instruction is converted; the wires are untouched, so a term
+    /// that was well-formed over `U` stays well-formed over `T` and no
+    /// re-validation is needed.
+    fn try_convert<U, E>(term: Term<U>) -> Result<Self, E>
+    where
+        U: Theory<Sort = T::Sort> + TryInto<T, Error = E>,
+    {
+        let itype = term.itype.try_into()?;
+        Ok(Self::new_unchecked(itype, term.write, term.read))
+    }
+}
+
+impl From<Term<any::Combinatorial>> for Term<any::Any> {
+    fn from(term: Term<any::Combinatorial>) -> Self {
+        Self::convert(term)
+    }
+}
+
+impl From<Term<any::Sequential>> for Term<any::Any> {
+    fn from(term: Term<any::Sequential>) -> Self {
+        Self::convert(term)
+    }
+}
+
+impl From<Term<any::Differential>> for Term<any::Any> {
+    fn from(term: Term<any::Differential>) -> Self {
+        Self::convert(term)
+    }
+}
+
+impl TryFrom<Term<any::Any>> for Term<any::Combinatorial> {
+    type Error = String;
+    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
+        Self::try_convert(term).map_err(|e| e.to_string())
+    }
+}
+
+impl TryFrom<Term<any::Any>> for Term<any::Sequential> {
+    type Error = String;
+    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
+        Self::try_convert(term).map_err(|e| e.to_string())
+    }
+}
+
+impl TryFrom<Term<any::Any>> for Term<any::Differential> {
+    type Error = String;
+    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
+        Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::term::{Term, TermInterfaceType};
 use crate::try_iter_borrow;
+use crate::var::Var;
 use crate::wire::Wire;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
@@ -100,12 +101,18 @@ impl AtomInterface {
 #[pymethods]
 impl AtomInterface {
     fn __str__(&self) -> String {
-        self.base().to_string()
+        self.base()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
-    fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        let item = self.base().wire(0, index);
-        item.and_then(|w| Some(w.clone().into()))
+    fn __getitem__(&self, index: usize) -> PyResult<Var> {
+        self.base()
+            .iter()
+            .nth(index)
+            .map(|v| Var::from(*v))
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
@@ -114,12 +121,12 @@ impl AtomInterface {
     }
 
     fn __eq__<'py>(&self, other: &Bound<'py, PyAny>) -> bool {
-        let other = match try_iter_borrow::<Wire>(other) {
+        let other = match try_iter_borrow::<Var>(other) {
             Ok(other) => other,
             Err(_) => return false,
         };
 
-        let mut this = self.base().wires();
+        let mut this = self.base().iter();
         let mut other = other.into_iter();
         loop {
             match (this.next(), other.next()) {
@@ -217,7 +224,7 @@ struct AtomBlockInterface {
 }
 
 impl AtomBlockInterface {
-    fn base(&self) -> &base::Interface<theory::any::Sort> {
+    fn base(&self) -> &[base::Wire<theory::any::Sort>] {
         let atom = &self.block.get().atom.get().base;
         match (&self.block.get().block, &self.interface) {
             (BlockType::Init, TermInterfaceType::Read) => atom.init().read(),
@@ -233,7 +240,11 @@ impl AtomBlockInterface {
 #[pymethods]
 impl AtomBlockInterface {
     fn __str__(&self) -> String {
-        self.base().to_string()
+        self.base()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
@@ -242,7 +253,7 @@ impl AtomBlockInterface {
             Err(_) => return false,
         };
 
-        let mut this = self.base().wires();
+        let mut this = self.base().iter();
         let mut other = other.into_iter();
         loop {
             match (this.next(), other.next()) {
@@ -258,8 +269,9 @@ impl AtomBlockInterface {
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        let item = self.base().wire(0, index);
-        item.and_then(|w| Some(w.clone().into()))
+        self.base()
+            .get(index)
+            .map(|w| w.clone().into())
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
