@@ -35,6 +35,10 @@ impl<S> Var<S> {
     pub(crate) fn der(&self) -> &Wire<S> {
         &self.der
     }
+
+    pub(crate) fn wires(&mut self) -> [&Wire<S>; 3] {
+        [&self.ltc, &self.nxt, &self.der]
+    }
 }
 
 /// Equality goes through the latched wire — the variable's bearing element,
@@ -145,7 +149,7 @@ impl<S: Debug> Debug for Var<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "Var {{ ltc: {:?} nxt: {:?}, der: {:?} }}) : {:?}",
+            "Var {{ ltc: {:?} nxt: {:?}, der: {:?} }} : {:?}",
             self.ltc.id(),
             self.nxt.id(),
             self.der.id(),

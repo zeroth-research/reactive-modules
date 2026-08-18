@@ -25,7 +25,7 @@ fn can_instantiate_partially_observable_module() {
         }
     }
 
-    let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
+    let m = Module::partially_observable(m.atoms().iter().cloned(), &prvt);
     //print!("{}", m);
     assert!(m.is_ok());
 }
@@ -47,7 +47,7 @@ fn cannot_instantiate_external_unobservable_wire() {
         }
     }
 
-    let m = Module::partially_observable(obs, prvt, m.atoms().iter().cloned());
+    let m = Module::partially_observable(m.atoms().iter().cloned(), &prvt);
     print!("{:?}", m);
 
     assert!(m.is_err());
@@ -136,10 +136,10 @@ fn compose_seq() {
     let z = Var::new("real");
 
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
-    let m1 = Module::combinatorial([x, y], assign).unwrap();
+    let m1 = Module::combinatorial(assign, &[x, y]).unwrap();
 
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
-    let m2 = Module::combinatorial([x, z], assign).unwrap();
+    let m2 = Module::combinatorial(assign, &[x, z]).unwrap();
 
     Module::parallel([m1, m2]).unwrap();
 }
@@ -193,8 +193,8 @@ fn compose_seq_2() {
         term!(mk_op("Id"), [X(z)], [z]).unwrap(),
     ]
     .to_vec();
-    let obs = [x, y, z, y0, z0];
-    let m1 = Module::sequential(obs, init, update).unwrap();
+    let obs = &[x, y, z, y0, z0];
+    let m1 = Module::sequential(init, update, obs, []).unwrap();
 
     //
     // class Inv(smt.Module):
@@ -214,13 +214,13 @@ fn compose_seq_2() {
     ]
     .to_vec();
 
-    let obs = [x, y, z, inv];
-    let m2 = Module::combinatorial(obs, assign.clone()).unwrap();
+    let obs = &[x, y, z, inv];
+    let m2 = Module::combinatorial(assign.clone(), obs).unwrap();
 
     Module::parallel([m1.clone(), m2]).unwrap();
 
     // try to use a `sequential_observable` ctor instead of combinatorial
-    let m2 = Module::sequential(obs, assign.clone(), assign).unwrap();
+    let m2 = Module::sequential(assign.clone(), assign, obs, []).unwrap();
     let _m = Module::parallel([m1, m2]).unwrap();
     println!("{:?}", _m);
 }
@@ -236,7 +236,7 @@ fn more_controlled_than_external() {
 
     let a = Atom::sequential(&[x, y, z], [init], [update]);
     assert!(a.is_ok());
-    let m = Module::partially_observable([x], [y, z], [a.unwrap()]);
+    let m = Module::partially_observable([a.unwrap()], &[y, z]);
     assert!(m.is_ok());
 }
 
@@ -302,14 +302,14 @@ fn heterogeneous_composition() {
 
     let init = Term::constant(SeqOps::HAVOC, [X(x)]).unwrap();
     let jump = Term::function(SeqOps::SKIP, [X(x)], [x]).unwrap();
-    let P = base::Module::sequential([x], [init], [jump]).unwrap();
+    let P = base::Module::sequential([init], [jump], &[x], []).unwrap();
 
     let init = Term::constant(SeqOps::HAVOC, [X(y)]).unwrap();
     let flow = Term::constant(DifOps::ZERO, [d(y)]).unwrap();
-    let Q = base::Module::differential([y], [init], [flow]).unwrap();
+    let Q = base::Module::differential([init], [flow], &[y], []).unwrap();
 
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();
-    let R = base::Module::combinatorial([x, y, z], [comb]).unwrap();
+    let R = base::Module::combinatorial([comb], &[x, y, z]).unwrap();
 
     let S = base::Module::parallel([P, Q, R]);
     assert!(S.is_ok());

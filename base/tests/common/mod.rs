@@ -87,7 +87,7 @@ pub fn example_counter() -> Result<Module, String> {
 
     let obs = [x, y, z, y0, z0];
 
-    Module::sequential(obs, init, update)
+    Module::sequential(init, update, &obs, [])
 }
 
 #[allow(clippy::vec_init_then_push)]
@@ -142,7 +142,7 @@ pub fn example_peterson1() -> Result<Module, String> {
     );
 
     let obs = [pc1, x1, pc2, x2];
-    Module::sequential(obs, init, update)
+    Module::sequential(init, update, &obs, [])
 }
 
 pub fn example_tiny1(
@@ -174,9 +174,9 @@ pub fn example_tiny1(
     let init = Term::constant(mk_op("INIT"), [X(interface), X(private)]).unwrap();
 
     let vars = [external, interface, private];
-    let obs = [external, interface];
+    let _obs = [external, interface];
     let prvt = [private];
 
     let atom = Atom::sequential(&vars, [init], [cons, update])?;
-    Module::partially_observable(obs, prvt, [atom])
+    Module::partially_observable([atom], &prvt)
 }
