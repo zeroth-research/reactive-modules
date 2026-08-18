@@ -5,7 +5,7 @@ mod common;
 
 use base::term;
 use base::term::Term;
-use base::variable::{Variable, X, d};
+use base::var::{Var, X, d};
 use base::wire::Wire;
 use common::{Atom, Module, Ops, example_counter, example_peterson1, example_tiny1, mk_op};
 use std::fmt;
@@ -15,8 +15,8 @@ use theory::{Combinatorial, Differential, Sequential, Theory};
 fn can_instantiate_partially_observable_module() {
     let m = example_counter().unwrap();
     let vars = m.obs().clone();
-    let mut obs: Vec<Variable<&'static str>> = Vec::new();
-    let mut prvt: Vec<Variable<&'static str>> = Vec::new();
+    let mut obs: Vec<Var<&'static str>> = Vec::new();
+    let mut prvt: Vec<Var<&'static str>> = Vec::new();
     for var in vars {
         if var.id() == 0 {
             prvt.push(var);
@@ -37,8 +37,8 @@ fn cannot_instantiate_external_unobservable_wire() {
     // the fourth observable is an external variable: making it private must
     // fail, privates have to be controlled
     let target = vars.iter().nth(3).unwrap().id();
-    let mut obs: Vec<Variable<&'static str>> = Vec::new();
-    let mut prvt: Vec<Variable<&'static str>> = Vec::new();
+    let mut obs: Vec<Var<&'static str>> = Vec::new();
+    let mut prvt: Vec<Var<&'static str>> = Vec::new();
     for var in vars {
         if var.id() == target {
             prvt.push(var);
@@ -63,24 +63,24 @@ fn can_compose_example_peterson1_with_empty_module() {
 
 #[test]
 fn can_instantiate_example_tiny1_0123() {
-    let x = Variable::new("Tny");
-    let y = Variable::new("Tny");
+    let x = Var::new("Tny");
+    let y = Var::new("Tny");
     let m = example_tiny1(x, y, true).unwrap();
     assert!(m.is_open());
 }
 
 #[test]
 fn can_instantiate_example_tiny1_2301() {
-    let x = Variable::new("Tny");
-    let y = Variable::new("Tny");
+    let x = Var::new("Tny");
+    let y = Var::new("Tny");
     let m = example_tiny1(y, x, true).unwrap();
     assert!(m.is_open());
 }
 
 #[test]
 fn can_compose_example_tiny1() {
-    let x = Variable::new("Tny");
-    let y = Variable::new("Tny");
+    let x = Var::new("Tny");
+    let y = Var::new("Tny");
     let m1 = example_tiny1(x, y, false).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
@@ -90,8 +90,8 @@ fn can_compose_example_tiny1() {
 
 #[test]
 fn cannot_compose_example_tiny1_with_cyclic_await() {
-    let x = Variable::new("Tny");
-    let y = Variable::new("Tny");
+    let x = Var::new("Tny");
+    let y = Var::new("Tny");
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, true).unwrap();
 
@@ -101,8 +101,8 @@ fn cannot_compose_example_tiny1_with_cyclic_await() {
 
 #[test]
 fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let x = Variable::new("Tny");
-    let y = Variable::new("Tny");
+    let x = Var::new("Tny");
+    let y = Var::new("Tny");
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
@@ -112,9 +112,9 @@ fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
 
 #[test]
 fn can_compose_three_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let x = Variable::new("Tny");
-    let y = Variable::new("Tny");
-    let z = Variable::new("Tny");
+    let x = Var::new("Tny");
+    let y = Var::new("Tny");
+    let z = Var::new("Tny");
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
     let m3 = example_tiny1(y, z, false).unwrap();
@@ -131,9 +131,9 @@ fn compose_seq() {
     //
     //  M1 and M2 are compatible (disjoint interface variables and acyclic waiting dependencies),
     //  and we test that they are composable
-    let x = Variable::new("real");
-    let y = Variable::new("real");
-    let z = Variable::new("real");
+    let x = Var::new("real");
+    let y = Var::new("real");
+    let z = Var::new("real");
 
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
     let m1 = Module::combinatorial([x, y], assign).unwrap();
@@ -146,12 +146,12 @@ fn compose_seq() {
 
 #[test]
 fn compose_seq_2() {
-    let x = Variable::new("real");
-    let y = Variable::new("real");
-    let z = Variable::new("real");
-    let y0 = Variable::new("real");
-    let z0 = Variable::new("real");
-    let inv = Variable::new("real");
+    let x = Var::new("real");
+    let y = Var::new("real");
+    let z = Var::new("real");
+    let y0 = Var::new("real");
+    let z0 = Var::new("real");
+    let inv = Var::new("real");
 
     // class Module(smt.Module):
     //     def init(self, extl) -> None:
@@ -227,9 +227,9 @@ fn compose_seq_2() {
 
 #[test]
 fn more_controlled_than_external() {
-    let x = Variable::new("A");
-    let y = Variable::new("B");
-    let z = Variable::new("C");
+    let x = Var::new("A");
+    let y = Var::new("B");
+    let z = Var::new("C");
 
     let init = Term::constant(mk_op("A"), [X(y), X(z)]).unwrap();
     let update = Term::function(mk_op("A"), [X(y), X(z)], [y, z]).unwrap();
@@ -296,9 +296,9 @@ impl fmt::Display for SeqOps {
 #[test]
 #[allow(non_snake_case)]
 fn heterogeneous_composition() {
-    let x = Variable::new("A");
-    let y = Variable::new("B");
-    let z = Variable::new("C");
+    let x = Var::new("A");
+    let y = Var::new("B");
+    let z = Var::new("C");
 
     let init = Term::constant(SeqOps::HAVOC, [X(x)]).unwrap();
     let jump = Term::function(SeqOps::SKIP, [X(x)], [x]).unwrap();
