@@ -76,9 +76,7 @@ impl Module {
             None => Vec::new(),
         };
 
-        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
-            base::Atom::sequential(obs.iter().chain(prvt.iter()), init, update)
-                .and_then(|atom| base::Module::partially_observable(obs, prvt, [atom]));
+        let module = base::Module::sequential(init, update, obs.iter(), prvt.iter());
 
         match module {
             Ok(base) => Ok(base.into()),
@@ -90,34 +88,31 @@ impl Module {
     #[staticmethod]
     fn combinatorial(assign: &Bound<'_, PyAny>, obs: &Bound<'_, PyAny>) -> PyResult<Self> {
         let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
-        let obs = try_var_iter_cloned(obs)?;
+        let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
 
-        match base::Module::combinatorial(obs, assign) {
+        match base::Module::combinatorial(assign, obs.iter()) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (init, flow, obs, prvt = None))]
+    #[pyo3(signature = (init, delay, obs, prvt = None))]
     fn differential(
         init: &Bound<'_, PyAny>,
-        flow: &Bound<'_, PyAny>,
+        delay: &Bound<'_, PyAny>,
         obs: &Bound<'_, PyAny>,
         prvt: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let init = try_term_iter_cloned(&init)?;
-        let flow = try_term_iter_cloned(&flow)?;
+        let flow = try_term_iter_cloned(&delay)?;
         let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
         let prvt: Vec<_> = match prvt {
             Some(prvt) => try_var_iter_cloned(prvt)?.collect(),
             None => Vec::new(),
         };
 
-        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
-            base::Atom::differential(obs.iter().chain(prvt.iter()), init, flow)
-                .and_then(|atom| base::Module::partially_observable(obs, prvt, [atom]));
-
+        let module = base::Module::differential(init, flow, obs.iter(), prvt.iter());
         match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
@@ -142,9 +137,7 @@ impl Module {
             None => Vec::new(),
         };
 
-        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
-            base::Atom::hybrid(obs.iter().chain(prvt.iter()), init, update, delay)
-                .and_then(|atom| base::Module::partially_observable(obs, prvt, [atom]));
+        let module = base::Module::hybrid(init, update, delay, obs.iter(), prvt.iter());
 
         match module {
             Ok(base) => Ok(base.into()),
@@ -166,9 +159,7 @@ impl Module {
             None => Vec::new(),
         };
 
-        let module: Result<base::Module<Combinatorial, Sequential, Differential>, String> =
-            base::Atom::uninitialized(obs.iter().chain(prvt.iter()), update)
-                .and_then(|atom| base::Module::partially_observable(obs, prvt, [atom]));
+        let module = base::Module::uninitialized(update, obs.iter(), prvt.iter());
 
         match module {
             Ok(base) => Ok(base.into()),
@@ -180,9 +171,9 @@ impl Module {
     #[staticmethod]
     fn constant(init: &Bound<'_, PyAny>, obs: &Bound<'_, PyAny>) -> PyResult<Self> {
         let init = try_term_iter_cloned(&init)?;
-        let obs = try_var_iter_cloned(obs)?;
+        let obs: Vec<_> = try_var_iter_cloned(obs)?.collect();
 
-        match base::Module::constant(obs, init) {
+        match base::Module::constant(init, obs.iter()) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }

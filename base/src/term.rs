@@ -11,7 +11,7 @@ use theory::{Combinatorial, Differential, Sequential, Theory, any};
 ///
 /// A list of terms represents a compute graph. A term is a node in the graph,
 /// and it references the input/output edges (read/write wires).
-/// [Interface]s are essentially single static assignments.
+/// [`Interface`](crate::var::Interface)s are essentially single static assignments.
 #[derive(Debug, Clone)]
 pub struct Term<T: Theory> {
     /// The instruction to be executed by this node.
@@ -43,7 +43,7 @@ impl<T: Theory> Term<T> {
 impl<T> Term<T>
 where
     T: Theory,
-    T::Sort: Eq + Clone,
+    T::Sort: Clone,
 {
     pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, String>
     where
@@ -265,7 +265,7 @@ impl<T: Theory> IntoIterator for Block<T> {
 
 impl<T: Theory> Block<T>
 where
-    T::Sort: Eq + Clone,
+    T::Sort: Clone,
 {
     /// Builds a block from an iterator of *fallible* elements, mirroring the
     /// standard library's `FromIterator<Result<A, E>> for Result<V, E>`: the
@@ -298,11 +298,6 @@ where
                 if expected_dtype.is_none() {
                     read_set.insert(rd.id());
                     read.push(rd.clone());
-                } else if expected_dtype.is_some_and(|&d| d != rd.dtype()) {
-                    return Err(format!(
-                        "Wire {} seen multiple times with different dtype",
-                        rd.id()
-                    ));
                 }
             }
 
@@ -332,7 +327,7 @@ where
 
 impl<F: Differential> Block<F>
 where
-    F::Sort: Clone + Eq,
+    F::Sort: Clone,
 {
     /// Builds a block of one `ZERO` term per write wire, so that theories can
     /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
@@ -344,7 +339,7 @@ where
 
 impl<J: Sequential> Block<J>
 where
-    J::Sort: Clone + Eq,
+    J::Sort: Clone,
 {
     /// Builds a block of one `SKIP` term per `(write, read)` wire pair, so
     /// that theories can keep `SKIP` at a fixed arity and each pair is an
@@ -371,7 +366,7 @@ where
 
 impl<I: Combinatorial> Block<I>
 where
-    I::Sort: Clone + Eq,
+    I::Sort: Clone,
 {
     /// Builds a block of one `HAVOC` term per write wire
     pub(crate) fn havoc<W: IntoIterator<Item = Wire<I::Sort>>>(write: W) -> Result<Self, String> {

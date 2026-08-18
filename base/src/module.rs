@@ -2,7 +2,7 @@ use crate::atom::Atom;
 use crate::topological_order;
 use crate::var::{Interface, Var};
 use crate::wire::Wire;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::fmt::Debug;
 use theory::{Combinatorial, Differential, Sequential, Theory};
@@ -47,7 +47,6 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Clone,
 {
     pub fn atoms(&self) -> &[Atom<I, J, F, S>] {
         &self.atoms
@@ -103,7 +102,6 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Eq + Debug,
 {
     /// Constructs a module **without performing any consistency or visibility checks**.
     ///
@@ -235,163 +233,118 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Clone + Eq + Debug,
+    S: Clone + Debug,
 {
     /// Constructs a **fully observable module** from a set of atoms.
     ///
-    /// A fully observable module exposes all of its wires (`obs`) publicly, so that
-    /// no internal state remains hidden. This is useful when the entire behaviour
-    /// of the module should be visible through its interface.
-    ///
-    /// The module is composed of the provided atoms, and wire visibility is automatically
-    /// inferred from the atoms. Unlike partially observable modules, there are no private wires,
-    /// so the module’s interface is entirely transparent.
+    /// A fully observable module exposes all of its variables publicly, so
+    /// that no internal state remains hidden. The variables and their roles
+    /// (external or interface) are inferred entirely from the atoms: the
+    /// controlled variables become the interface, the remaining read or
+    /// awaited variables are external. Equivalent to
+    /// [`Module::partially_observable`] with nothing hidden.
     ///
     /// # Parameters
-    /// - `obs`: The pair of observable wires `[latched, next]` representing the module’s interface.
-    /// - `atoms`: An iterable collection of atoms defining the module’s internal behaviour.
+    /// - `atoms`: An iterable collection of atoms defining the module's behaviour.
     ///
     /// # Returns
     /// A `Result` containing the constructed fully observable module if successful,
     /// or an error string if inference or consistency checks fail.
     ///
     /// # See Also
-    /// - [`partially_observable`], for modules with private state.
+    /// - [`Module::partially_observable`], for modules with private state.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    /// - [`new_unchecked`], for manual module creation.
-    pub fn observable<O, P, A>(obs: O, atoms: A) -> Result<Self, String>
+    pub fn observable<A>(atoms: A) -> Result<Self, String>
     where
-        P: Into<Var<S>>,
-        O: IntoIterator<Item = P>,
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
     {
-        Self::partially_observable(obs, std::iter::empty::<P>(), atoms)
+        Self::partially_observable(atoms, std::iter::empty())
     }
 
-    /// Constructs a **partially observable module** from a sequence of atoms.
+    /// Constructs a **partially observable module** from a sequence of atoms,
+    /// hiding the given variables.
     ///
-    /// A partially observable module exposes only a subset of its wires (`obs`) while
-    /// keeping others private (`prvt`). This allows encapsulation of internal state
-    /// or logic that should not be visible externally.
-    ///
-    /// The module is composed of the provided atoms, and the visibility of each wire
-    /// is automatically inferred from the atoms. Unlike fully observable modules,
-    /// some internal wires remain hidden, giving the user control over the module’s interface.
+    /// The variables and their roles are inferred from the atoms — the
+    /// controlled variables form the interface, the remaining read or awaited
+    /// variables are external — and the `hidden` variables are then moved
+    /// from the interface into the private state. Only controlled variables
+    /// can be hidden: privates must be controlled by the module.
     ///
     /// # Parameters
-    /// - `obs`: The pair of observable wires `[latched, next]` representing the module’s interface.
-    /// - `prvt`: The pair of private wires that remain hidden from external access.
-    /// - `atoms`: An iterable collection of atoms defining the module’s internal behaviour.
+    /// - `atoms`: An iterable collection of atoms defining the module's behaviour.
+    /// - `hidden`: The variables to hide from the environment; hiding nothing
+    ///   yields a fully observable module.
     ///
     /// # Returns
     /// A `Result` containing the constructed partially observable module if successful,
     /// or an error string if inference or consistency checks fail.
     ///
     /// # See Also
-    /// - [`observable`], for constructing modules where all wires are visible.
+    /// - [`Module::observable`], the fully observable special case.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    /// - [`new_unchecked`], for manual module creation.
-    pub fn partially_observable<O, P, Q, R, A>(obs: O, prvt: P, atoms: A) -> Result<Self, String>
+    pub fn partially_observable<'a, A, H>(atoms: A, hidden: H) -> Result<Self, String>
     where
-        Q: Into<Var<S>>,
-        R: Into<Var<S>>,
-        O: IntoIterator<Item = Q>,
-        P: IntoIterator<Item = R>,
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
+        H: IntoIterator<Item = &'a Var<S>>,
+        S: 'a,
     {
-        let mut obs: Vec<_> = obs.into_iter().map(Into::into).collect();
-        let mut prvt: Vec<_> = prvt.into_iter().map(Into::into).collect();
+        let mut wires: HashSet<Wire<S>> = HashSet::new();
+        let mut local: HashSet<Wire<S>> = HashSet::new();
 
-        let mut decl_wire: HashSet<usize> = HashSet::new();
-        for var in obs.iter().chain(prvt.iter()) {
-            if !decl_wire.insert(var.id()) {
-                return Err(format!("Variable {} is doubly declared", var.id()));
-            }
-            decl_wire.insert(var.nxt().id());
-            decl_wire.insert(var.der().id());
-        }
+        let mut extl: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut intf: BTreeSet<Var<S>> = BTreeSet::new();
+        let atoms = atoms.into_iter();
+        let mut past_atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(atoms.size_hint().0);
+        for (n, atom) in atoms.enumerate() {
+            extl.extend(atom.read().iter().cloned());
+            extl.extend(atom.wait().iter().cloned());
 
-        obs.sort_unstable();
-        prvt.sort_unstable();
-        let obs = Interface::from_iter_unchecked(obs);
-        let prvt = Interface::from_iter_unchecked(prvt);
-
-        // Check atoms consistency and infer control variables
-        let mut ctrl_var: HashSet<usize> = HashSet::new();
-        let mut temp: BTreeMap<usize, Wire<S>> = BTreeMap::new();
-        let atoms_iter = atoms.into_iter();
-        let mut past_atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(atoms_iter.size_hint().0);
-        for (n, atom) in atoms_iter.enumerate() {
-            for id in atom.read().iter().map(|v| v.id()) {
-                if !decl_wire.contains(&id) {
-                    return Err(format!("Undeclared read var {} in atom {}", id, n));
-                }
-            }
-            for id in atom.wait().iter().map(|v| v.id()) {
-                if !decl_wire.contains(&id) {
-                    return Err(format!("Undeclared wait var {} in atom {}", id, n));
-                }
-            }
-            for id in atom.ctrl().iter().map(|v| v.id()) {
-                if !decl_wire.contains(&id) {
-                    return Err(format!("Undeclared ctrl var {} in atom {}", id, n));
-                }
-                if !ctrl_var.insert(id) {
-                    return Err(format!(
-                        "shared or duplicated control var {} in atom {}",
-                        id, n
-                    ));
+            for var in atom.ctrl().iter() {
+                extl.remove(var);
+                if !intf.insert(var.clone()) {
+                    return Err(format!("Doubly controlled {}", var.id()));
                 }
             }
 
             for lc in atom.temp() {
-                if decl_wire.contains(&lc.id()) {
-                    return Err(format!("temp wire {} is also a module wire", lc.id()));
+                if wires.contains(&lc) {
+                    return Err(format!("local wire {} is also a module wire", lc.id()));
                 }
-                debug_assert!(!ctrl_var.contains(&lc.id()));
-                if temp.insert(lc.id(), lc.clone()).is_some() {
-                    return Err(format!("temp wire {} coupled with other atom", lc.id()));
+                if !local.insert(lc.clone()) {
+                    return Err(format!("local wire {} coupled with other atom", lc.id()));
                 }
             }
 
-            for past_atom in &past_atoms {
+            wires.extend(atom.wires().iter().cloned());
+
+            for past_atom in past_atoms.iter() {
                 if past_atom.awaits(&atom) {
-                    return Err(format!(
-                        "Atom {} is awaited by some previous atom, inconsistent awaiting order",
-                        n
-                    ));
+                    return Err(format!("{}-th atom is in inconsistent awaiting order", n));
                 }
             }
             past_atoms.push(atom);
         }
 
-        // Check that private wires are controlled
-        for id in prvt.iter().map(|v| v.id()) {
-            if !ctrl_var.contains(&id) {
-                return Err(format!("private var {} is not controlled", id));
+        let ctrl = Interface::from_iter_unchecked(intf.iter().cloned());
+
+        let mut prvt: BTreeSet<Var<S>> = BTreeSet::new();
+        for var in hidden {
+            if let Some(var) = intf.take(var) {
+                prvt.insert(var);
+            }
+            if extl.contains(var) {
+                return Err(format!("Hiding external variable {}", var.id()));
             }
         }
 
-        // Build intf and extl wires based on inferred control set
-        let mut intf: Vec<Var<S>> = Vec::with_capacity(ctrl_var.len() - prvt.len());
-        let mut extl: Vec<Var<S>> = Vec::with_capacity(obs.len() - intf.len());
-        let mut ctrl: Vec<Var<S>> = Vec::with_capacity(ctrl_var.len());
-
-        for var in obs.iter() {
-            if ctrl_var.contains(&var.id()) {
-                intf.push(var.clone());
-                ctrl.push(var.clone());
-            } else {
-                extl.push(var.clone());
-            }
-        }
-
-        ctrl.extend(prvt.iter().cloned());
+        let mut obs: Vec<_> = extl.iter().chain(intf.iter()).cloned().collect();
+        obs.sort_unstable();
 
         let extl = Interface::from_iter_unchecked(extl);
-        let ctrl = Interface::from_iter_unchecked(ctrl);
         let intf = Interface::from_iter_unchecked(intf);
-        let temp = temp.into_values().collect();
+        let prvt = Interface::from_iter_unchecked(prvt);
+        let obs = Interface::from_iter_unchecked(obs);
+        let temp = local.into_iter().collect();
 
         Ok(Self::new_unchecked(
             extl, intf, prvt, obs, ctrl, temp, past_atoms,
