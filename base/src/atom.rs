@@ -31,8 +31,9 @@ where
     /// Corresponds to the delay activity.
     delay: Block<F>,
 
-    /// Corresponds to temporary, local wires.
-    temp: Vec<Wire<S>>,
+    /// cache of all wires local to blocks
+    local: Vec<Wire<S>>,
+    /// cache of all local and global wires
     wires: Vec<Wire<S>>,
 }
 
@@ -72,11 +73,11 @@ where
     }
 
     /// Returns an iterator over the temporary, local wires.
-    pub fn temp(&self) -> impl Iterator<Item = &Wire<S>> {
-        self.temp.iter()
+    pub fn local(&self) -> &[Wire<S>] {
+        self.local.as_slice()
     }
 
-    pub(crate) fn wires(&self) -> &[Wire<S>] {
+    pub fn wires(&self) -> &[Wire<S>] {
         self.wires.as_slice()
     }
 
@@ -90,7 +91,7 @@ where
             update: Block::empty(),
             delay: Block::empty(),
             wires: Vec::new(),
-            temp: Vec::new(),
+            local: Vec::new(),
         }
     }
 }
@@ -123,11 +124,11 @@ where
         ctrl: Interface<S>,
         wait: Interface<S>,
         read: Interface<S>,
-        temp: Vec<Wire<S>>,
         init: Block<I>,
         update: Block<J>,
         delay: Block<F>,
         wires: Vec<Wire<S>>,
+        local: Vec<Wire<S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -208,11 +209,11 @@ where
             ctrl,
             wait,
             read,
-            temp,
             init,
             update,
             delay,
             wires,
+            local,
         }
     }
 }
@@ -400,11 +401,11 @@ where
             Interface::from_iter_unchecked(ctrl.into_values()),
             Interface::from_iter_unchecked(wait.into_values()),
             Interface::from_iter_unchecked(read.into_values()),
-            local.into_values().collect(),
             init,
             update,
             delay,
             wires,
+            local.into_values().collect(),
         ))
     }
 
