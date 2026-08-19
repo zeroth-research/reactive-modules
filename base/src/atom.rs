@@ -1,7 +1,7 @@
 use crate::Module;
 use crate::term::{Block, Term};
 use crate::wire::Wire;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
@@ -259,20 +259,20 @@ where
     S: Clone + Debug,
 {
     fn infer_ctrl<T>(
-        pool: &HashMap<&Wire<S>, &Var<S>>,
         block: &Block<T>,
-    ) -> Result<BTreeMap<usize, Var<S>>, String>
+        pool: &HashMap<&Wire<S>, &Var<S>>,
+    ) -> Result<BTreeSet<Var<S>>, String>
     where
         T: Theory<Sort = S>,
     {
         // tree map on id is used to guarantee consistent order
-        let mut ctrl: BTreeMap<usize, Var<T::Sort>> = BTreeMap::new();
+        let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
 
         for wt in block.write().iter() {
             // if the block writes to a wire in the pool of next or derived,
             // then the respective variable is controlled
             if let Some(&var) = pool.get(&wt) {
-                ctrl.insert(var.id(), var.clone());
+                ctrl.insert(var.clone());
             }
         }
 
@@ -281,20 +281,19 @@ where
 
     fn with_ctrl(
         wires: WireMap<S>,
-        ctrl: BTreeMap<usize, Var<S>>,
+        ctrl: BTreeSet<Var<S>>,
         init: Block<I>,
         update: Block<J>,
         delay: Block<F>,
     ) -> Result<Self, String> {
-        // tree map on id is used to guarantee consistent order
-        let mut read: BTreeMap<usize, Var<S>> = BTreeMap::new();
-        let mut wait: BTreeMap<usize, Var<S>> = BTreeMap::new();
-        let mut local: BTreeMap<usize, Wire<S>> = BTreeMap::new();
+        let mut read: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut wait: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
 
         for rd in init.read().iter() {
             // init can only read from next wires
             if let Some(&var) = wires.nxt.get(&rd) {
-                wait.insert(var.id(), var.clone());
+                wait.insert(var.clone());
                 continue;
             }
 
@@ -302,49 +301,46 @@ where
                 return Err(format!("Init reads latched wire {}", rd.id()));
             }
 
-            // dangling read wires are invalid
             return Err(format!("Wire {} in init is dangling read", rd.id()));
         }
 
         for rd in update.read().iter() {
             // if the update reads from a next wire, then this is awaited
-            // otherwise, this must be read from outside the atom
+            // otherwise, it must be read from outside the atom (dangling)
             if let Some(&var) = wires.ltc.get(&rd) {
-                read.insert(var.id(), var.clone());
+                read.insert(var.clone());
                 continue;
             }
 
             if let Some(&var) = wires.nxt.get(&rd) {
-                wait.insert(var.id(), var.clone());
+                wait.insert(var.clone());
                 continue;
             }
 
-            // dangling read wires are parameters
             return Err(format!("Wire {} in update is dangling read", rd.id()));
         }
 
         for rd in delay.read().iter() {
             // if the delay reads from a derived wire, then this is awaited
-            // otherwise, this must be read from outside the atom
+            // otherwise, it must be read from outside the atom (dangling)
             if let Some(&var) = wires.ltc.get(&rd) {
-                read.insert(var.id(), var.clone());
+                read.insert(var.clone());
                 continue;
             }
 
             if let Some(&var) = wires.der.get(&rd) {
-                wait.insert(var.id(), var.clone());
+                wait.insert(var.clone());
                 continue;
             }
 
-            // dangling read wires are parameters
             return Err(format!("Wire {} in update is dangling read", rd.id()));
         }
 
         for wt in init.write().iter().chain(update.write().iter()) {
             // if the init/update writes to a next wire, then this wire must be controlled
-            // otherwise, this wire must be temporary
+            // otherwise, it must be local
             if let Some(&var) = wires.nxt.get(&wt) {
-                if !ctrl.contains_key(&var.id()) {
+                if !ctrl.contains(&var) {
                     return Err(format!("Inconsistent write to next wire {}", wt.id()));
                 }
                 continue;
@@ -353,15 +349,15 @@ where
             if wires.ltc.contains_key(&wt) {
                 return Err(format!("Writing latched wire {}", wt.id()));
             } else {
-                local.insert(wt.id(), wt.clone());
+                local.insert(wt.clone());
             }
         }
 
         for wt in delay.write().iter() {
-            // if the init/update writes to a next wire, then this wire is controlled
-            // otherwise, this wire must be temporary
+            // if the delay writes to a derived wire, then this wire is controlled
+            // otherwise, it must be local
             if let Some(&var) = wires.der.get(&wt) {
-                if !ctrl.contains_key(&var.id()) {
+                if !ctrl.contains(&var) {
                     return Err(format!("Inconsistent write to next wire {}", wt.id()));
                 }
                 continue;
@@ -370,11 +366,11 @@ where
             if wires.ltc.contains_key(&wt) {
                 return Err(format!("Writing a latched wire {}", wt.id()));
             } else {
-                local.insert(wt.id(), wt.clone());
+                local.insert(wt.clone());
             }
         }
 
-        for ctr in ctrl.values() {
+        for ctr in ctrl.iter() {
             if !init.write().iter().any(|wrt| wrt == ctr.nxt()) {
                 return Err(format!(
                     "Controlled wire {} is not written in init",
@@ -398,14 +394,14 @@ where
         let wires = wires.keys().cloned().collect();
 
         Ok(Self::new_unchecked(
-            Interface::from_iter_unchecked(ctrl.into_values()),
-            Interface::from_iter_unchecked(wait.into_values()),
-            Interface::from_iter_unchecked(read.into_values()),
+            Interface::from_exact_iter_unchecked(ctrl),
+            Interface::from_exact_iter_unchecked(wait),
+            Interface::from_exact_iter_unchecked(read),
             init,
             update,
             delay,
             wires,
-            local.into_values().collect(),
+            local.into_iter().collect(),
         ))
     }
 
@@ -444,8 +440,8 @@ where
         let wires = WireMap::unpack(vars);
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&wires.nxt, &init)?;
-        let ctrl_der = ctrl.values().map(Var::der).cloned();
+        let ctrl = Self::infer_ctrl(&init, &wires.nxt)?;
+        let ctrl_der = ctrl.iter().map(Var::der).cloned();
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
         let delay = Block::zero(ctrl_der)?;
@@ -487,9 +483,9 @@ where
         let wires = WireMap::unpack(vars);
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&wires.nxt, &init)?;
-        let ctrl_nxt = ctrl.values().map(Var::nxt).cloned();
-        let ctrl_ltc = ctrl.values().map(Var::ltc).cloned();
+        let ctrl = Self::infer_ctrl(&init, &wires.nxt)?;
+        let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
+        let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
 
         let update = Block::skip(ctrl_nxt, ctrl_ltc)?;
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
@@ -537,7 +533,7 @@ where
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
 
-        let ctrl = Self::infer_ctrl(&wires.nxt, &init)?;
+        let ctrl = Self::infer_ctrl(&init, &wires.nxt)?;
 
         Self::with_ctrl(wires, ctrl, init, update, delay)
     }
@@ -571,9 +567,9 @@ where
         let wires = WireMap::unpack(vars);
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&wires.nxt, &update)?;
-        let ctrl_nxt = ctrl.values().map(Var::nxt).cloned();
-        let ctrl_der = ctrl.values().map(Var::der).cloned();
+        let ctrl = Self::infer_ctrl(&update, &wires.nxt)?;
+        let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
+        let ctrl_der = ctrl.iter().map(Var::der).cloned();
 
         let init = Block::havoc(ctrl_nxt)?;
         let delay = Block::zero(ctrl_der)?;
@@ -612,8 +608,8 @@ where
         let wires = WireMap::unpack(vars);
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&wires.nxt, &update)?;
-        let ctrl_nxt = ctrl.values().map(Var::nxt).cloned();
+        let ctrl = Self::infer_ctrl(&update, &wires.nxt)?;
+        let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
 
         let init = Block::havoc(ctrl_nxt)?;
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
@@ -650,10 +646,10 @@ where
         let wires = WireMap::unpack(vars);
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&wires.nxt, &init)?;
-        let ctrl_ltc = ctrl.values().map(Var::ltc).cloned();
-        let ctrl_nxt = ctrl.values().map(Var::nxt).cloned();
-        let ctrl_der = ctrl.values().map(Var::der).cloned();
+        let ctrl = Self::infer_ctrl(&init, &wires.nxt)?;
+        let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
+        let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
+        let ctrl_der = ctrl.iter().map(Var::der).cloned();
 
         let update = Block::skip(ctrl_nxt, ctrl_ltc)?;
         let delay = Block::zero(ctrl_der)?;
@@ -689,16 +685,12 @@ where
         let wires = WireMap::unpack(vars);
 
         // every variable is controlled
-        let ctrl: BTreeMap<usize, Var<S>> = wires
-            .ltc
-            .values()
-            .map(|&var| (var.id(), var.clone()))
-            .collect();
-        let ctrl_ltc = ctrl.values().map(Var::ltc).cloned();
-        let ctrl_nxt = ctrl.values().map(Var::nxt).cloned();
-        let ctrl_der = ctrl.values().map(Var::der).cloned();
+        let ctrl: BTreeSet<Var<S>> = wires.ltc.values().cloned().cloned().collect();
+        let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
+        let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
+        let ctrl_der = ctrl.iter().map(Var::der).cloned();
 
-        let init = Block::havoc(ctrl.values().map(Var::nxt).cloned())?;
+        let init = Block::havoc(ctrl_nxt.clone())?;
         let update = Block::skip(ctrl_nxt, ctrl_ltc)?;
         let delay = Block::zero(ctrl_der)?;
 
@@ -734,11 +726,11 @@ where
         let wires = WireMap::unpack(vars);
 
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&wires.der, &delay)?;
-        let ctrl_ltc = ctrl.values().map(Var::ltc).cloned();
-        let ctrl_nxt = ctrl.values().map(Var::nxt).cloned();
+        let ctrl = Self::infer_ctrl(&delay, &wires.der)?;
+        let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
+        let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
 
-        let init = Block::havoc(ctrl.values().map(Var::nxt).cloned())?;
+        let init = Block::havoc(ctrl_nxt.clone())?;
         let update = Block::skip(ctrl_nxt, ctrl_ltc)?;
 
         Self::with_ctrl(wires, ctrl, init, update, delay)
@@ -777,11 +769,11 @@ where
         let wires = WireMap::unpack(vars);
 
         let assign: Block<T> = Block::try_from_iter(assign.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&wires.nxt, &assign)?;
+        let ctrl = Self::infer_ctrl(&assign, &wires.nxt)?;
 
         let init: Block<I> = Block::try_from_iter(assign.iter().cloned().map(Ok))?;
         let update: Block<J> = Block::try_from_iter(assign.into_iter().map(Ok))?;
-        let delay: Block<F> = Block::zero(ctrl.values().map(Var::der).cloned())?;
+        let delay: Block<F> = Block::zero(ctrl.iter().map(Var::der).cloned())?;
 
         Self::with_ctrl(wires, ctrl, init, update, delay)
     }

@@ -1,7 +1,7 @@
-use std::fmt;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{cmp, fmt};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Wire<S> {
@@ -66,5 +66,17 @@ impl<S: fmt::Display> fmt::Display for Wire<S> {
 impl<S: Clone> From<Wire<S>> for (S, u8) {
     fn from(wire: Wire<S>) -> Self {
         (wire.dtype, wire.degree)
+    }
+}
+
+impl<S> Ord for Wire<S> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+
+impl<S> PartialOrd for Wire<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }

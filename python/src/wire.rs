@@ -2,8 +2,8 @@ use pyo3::prelude::*;
 use std::fmt;
 use theory::any::Sort;
 
-#[pyclass(frozen, eq, hash, str)]
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[pyclass(frozen, eq, hash, str, ord)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub(crate) struct Wire {
     base: base::Wire<Sort>,
 }

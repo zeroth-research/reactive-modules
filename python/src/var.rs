@@ -1,6 +1,8 @@
 use crate::wire::Wire;
+use pyo3::BoundObject;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
+use pyo3::types::PyNotImplemented;
 use std::fmt;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use theory::any::Sort;
@@ -28,29 +30,25 @@ impl Var {
         wire.into_pyobject(py)?.getattr(name).map(Into::into)
     }
 
-    /// Comparison: variables are totally ordered among themselves, and
-    /// equality additionally holds against the latched wire, consistent
-    /// with the deref view — a variable *is* its latched wire.
-    fn __richcmp__(
+    /// Comparison through the latched wire, consistent with the deref view:
+    /// a variable compares as its latched wire, against variables and wires
+    /// alike, under the wires' total order.
+    fn __richcmp__<'py>(
         &self,
-        other: &Bound<'_, PyAny>,
+        other: &Bound<'py, PyAny>,
         op: CompareOp,
-        py: Python<'_>,
-    ) -> PyResult<PyObject> {
-        if let Ok(other) = other.extract::<PyRef<Var>>() {
-            let matches = op.matches(self.base.cmp(&other.base));
-            return Ok(matches.into_pyobject(py)?.to_owned().into_any().unbind());
-        }
-        if let Ok(wire) = other.extract::<PyRef<Wire>>() {
-            let eq = &base::Wire::from(self.base) == wire.base();
-            let matches = match op {
-                CompareOp::Eq => eq,
-                CompareOp::Ne => !eq,
-                _ => return Ok(py.NotImplemented()),
-            };
-            return Ok(matches.into_pyobject(py)?.to_owned().into_any().unbind());
-        }
-        Ok(py.NotImplemented())
+        py: Python<'py>,
+    ) -> PyResult<Borrowed<'py, 'py, PyAny>> {
+        let ordering = if let Ok(var) = other.extract::<PyRef<Var>>() {
+            self.base.cmp(&var.base)
+        } else if let Ok(wire) = other.extract::<PyRef<Wire>>() {
+            let ltc: &base::Wire<Sort> = &self.base;
+            ltc.cmp(wire.base())
+        } else {
+            return Ok(PyNotImplemented::get(py).into_any());
+        };
+
+        Ok(op.matches(ordering).into_pyobject(py)?.into_any())
     }
 
     /// Hashing matches equality: the latched wire is the bearing element,
