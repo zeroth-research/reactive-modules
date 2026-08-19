@@ -286,10 +286,8 @@ where
         let mut read: Vec<Wire<T::Sort>> = Vec::new();
         let mut write: Vec<Wire<T::Sort>> = Vec::new();
 
-        let terms: Vec<Term<T>> = iter
-            .into_iter()
-            .map(|t| t.map(Term::convert))
-            .collect::<Result<_, _>>()?;
+        let iter = iter.into_iter().map(|t| t.map(Term::convert));
+        let terms: Vec<Term<T>> = iter.collect::<Result<Vec<_>, _>>()?;
 
         for term in terms.iter() {
             for rd in term.read().iter() {
@@ -322,6 +320,17 @@ where
             read: Vec::from_iter(read),
             write: Vec::from_iter(write),
         })
+    }
+
+    pub(crate) fn convert<U>(block: Block<U>) -> Self
+    where
+        U: Theory<Sort = T::Sort> + Into<T>,
+    {
+        let terms = block.terms.into_iter().map(Term::convert).collect();
+        let read = block.read.into_iter().map(Into::into).collect();
+        let write = block.write.into_iter().map(Into::into).collect();
+
+        Block { terms, read, write }
     }
 }
 
