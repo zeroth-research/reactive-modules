@@ -1,35 +1,49 @@
 """``zrth.sugar``: author a reactive Module by subclassing (à la ``torch.nn.Module``).
 
 Subclass ``sugar.Module``, pass a ``theory`` and the ``ctrl`` (and optional ``extl``)
-variables — each a ``(latched, next)`` **wire pair** — and override ``init`` / ``update``
-to return the next-state values as a tuple aligned with ``ctrl``. **Instantiating the
-subclass *is* a base Module** — ``init`` / ``update`` run and the sequential module is
-built in the constructor.
+variables — ``zrth.Var`` objects — and override any of ``init`` / ``update`` / ``delay``.
+**Instantiating the subclass *is* a base Module** — the methods run symbolically and the
+module is built in the constructor:
 
-    from zrth import LIA, Int, Wire
+    from zrth import LIA, Int, Var
     from zrth.sugar import Module
 
     class Counter(Module):
-        def init(self):            return 0
-        def update(self, ctrl):    return ctrl + 1
+        def init(self):         return 0
+        def update(self, x):    return x + 1
 
-    INT = Int([1, 1])
-    x = (Wire(INT), Wire(INT))                 # a (latched, next) wire pair
-    m = Counter(theory=LIA, ctrl=(x,))         # a base Module with theory LIA (closed)
+    x = Var(Int([1, 1]))
+    m = Counter(theory=LIA, ctrl=(x,))      # a closed sequential base Module
 
-``ctrl`` / ``extl`` are tuples of wire pairs (a single var is unwrapped, so you can write
-``def update(self, ctrl): return ctrl + 1``); a var reads as its latched value and
-``nxt(v)`` gives its next wire. ``init`` / ``update`` return a tuple aligned with ``ctrl``
-— entry *i* is ``ctrl[i]``'s next value (return the var itself to keep it). ``extl`` vars
-are external inputs: they are declared but their next value is *not* driven here (the base
-Module classifies undriven wires as ``extl``, so a module with ``extl`` is open).
+The methods receive the variables **unpacked, as positional parameters**: ``init`` takes
+the ``extl`` variables, ``update`` and ``delay`` take ``ctrl`` followed by ``extl`` (all
+of them — arities are checked). A parameter reads as the variable's latched value;
+``X(v)`` is its next and ``d(v)`` its derivative expression. Each method returns a tuple
+aligned with ``ctrl`` (a single value for a single variable): entry *i* drives
+``ctrl[i]``'s next wire (``init`` / ``update``) or its derivative wire (``delay``).
 
-Only **sequential** modules are built here; the base Module also has ``combinatorial`` /
-``parallel``, which this front-end does not expose yet (combinatorial logic may instead
-come from the torch front-end).
+The **combination of overridden methods selects the module kind**, mirroring the base
+constructors: ``init``+``update`` is sequential, ``init``+``delay`` differential, all
+three hybrid, ``update`` alone jump, ``update``+``delay`` uninitialized, ``delay`` alone
+flow, ``init`` alone constant, and none hold. For example, an open hybrid clock:
 
-Config comes from **constructor kwargs** (``theory=``, ``ctrl=``, ``extl=``). Two base-class
-constraints force this (both flagged for design review):
+    class Clock(Module):
+        def init(self, t):        return 0
+        def update(self, x, t):   return ite(X(t) == 1, 0, x)   # discrete reset
+        def delay(self, x, t):    return 1 * d(t)               # continuous drift
+
+    x, t = Var(Real([1, 1])), Var(Real([1, 1]))
+    m = Clock(theory=LRA, ctrl=(x,), extl=(t,))
+
+``ctrl`` and ``extl`` must be **ordered tuples**: their order is meaningful — it
+determines how the variables bind to the positional parameters of ``init`` / ``update``
+/ ``delay`` and how the returned values align with ``ctrl``. ``prvt`` is only tested
+for membership, so it can be any collection — preferably a ``set``. ``extl`` variables
+are external inputs: declared but not driven here, so a module with ``extl`` is open;
+``prvt`` hides the given variables in the built module (partially observable).
+
+Config comes from **constructor kwargs** (``theory=``, ``ctrl=``, ``extl=``, ``prvt=``).
+Two base-class constraints force this (both flagged for design review):
   * it cannot flow through ``super().__init__`` — the base Module is a frozen pyo3 class
     whose constructor runs at ``__new__`` (before any ``__init__``), so this builds there;
     and
@@ -39,11 +53,11 @@ constraints force this (both flagged for design review):
 
 import inspect
 
-from .zrth import Module as _Module, Term as _Term, Var as _Var, X as _X, d as _d
+from .zrth import Module as _Module, Term as _Term, X as _X, d as _d
 
 from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X, d  # re-exported for authoring
 
-# Public authoring surface: `from zrth.sugar import Module, expr, nxt, ite, cast, ...`
+# Public authoring surface: `from zrth.sugar import Module, expr, X, d, ite, cast, ...`
 __all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d"]
 
 
@@ -121,17 +135,19 @@ def _build_delay_block(cls, ctrl, extl, theory) -> list:
 
 
 class Module(_Module):
-    def __new__(cls, ctrl=(), extl=(), theory=None):
-        if theory is None or ctrl is None:
+    def __new__(cls, ctrl=(), extl=(), prvt=frozenset(), theory=None):
+        if theory is None:
             raise TypeError(f"{cls.__name__}: `theory` is a required constructor arg")
 
         ctrl = tuple(v for v in ctrl)
-        extl = tuple(v for v in extl) if extl is not None else ()
+        extl = tuple(v for v in extl)
 
         init = _build_init_block(cls, ctrl, extl, theory)
         update = _build_update_block(cls, ctrl, extl, theory)
         delay = _build_delay_block(cls, ctrl, extl, theory)
 
-        self = super().__new__(cls, init=init, update=update, delay=delay, obs=ctrl + extl)
+        obs = (var for var in ctrl + extl if var not in prvt)
+
+        self = super().__new__(cls, init=init, update=update, delay=delay, obs=obs, prvt=prvt)
         self._theory = theory
         return self

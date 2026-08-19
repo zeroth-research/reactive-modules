@@ -292,6 +292,17 @@ impl AtomInterface {
             }
         }
     }
+
+    fn __contains__(&self, item: &Bound<'_, PyAny>) -> bool {
+        if let Ok(var) = item.extract::<PyRef<Var>>() {
+            return self.base().contains(var.base());
+        }
+        //also checking containment of any wire (latched, next, derived)
+        if let Ok(wire) = item.extract::<PyRef<Wire>>() {
+            return self.base().var(wire.base()).is_some();
+        }
+        false
+    }
 }
 
 #[derive(Clone)]
