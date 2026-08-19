@@ -8,11 +8,12 @@ plus check the ctrl/extl partition and the config surface.
 
 import pytest
 
-from zrth import LIA, Module, Sort, Wire, sugar, Int, Var, X
-from zrth.sugar import nxt, ite
+from zrth import LIA, Module, Sort, Wire, sugar, Int, Var, Real, LRA, X as _X, d as _d, NonLinearError
+from zrth.sugar import ite, d, X
 from zrth.eval import eval_itype
 
 INT = Int([1, 1])
+Real1 = Real([1, 1])
 
 
 def _pair():
@@ -37,7 +38,7 @@ def _init(m):
 
 
 def _latch(m, state):
-    return {var: state[X(var)] for var in m.ctrl}
+    return {var: state[_X(var)] for var in m.ctrl}
 
 
 def _update(m, state):
@@ -61,8 +62,8 @@ class Counter(sugar.Module):
     def init(self):
         return 0
 
-    def update(self, ctrl):
-        return ctrl + 1
+    def update(self, cnt):
+        return cnt + 1
 
 
 def test_counter_is_a_closed_base_module():
@@ -76,7 +77,7 @@ def test_counter_counts():
     m = Counter(theory=LIA, ctrl=(x,))
     print(m)
     # (_x_lat, x_nxt) = x
-    assert _trace(m, 5, X(x)) == [0, 1, 2, 3, 4, 5]
+    assert _trace(m, 5, _X(x)) == [0, 1, 2, 3, 4, 5]
 
 
 # --- multi-var with ite and an unchanged var --------------------------------
@@ -86,28 +87,27 @@ class Bounded(sugar.Module):
     def init(self):
         return 0, 3
 
-    def update(self, ctrl):
-        x, cap = ctrl
+    def update(self, x, cap):
         return ite(x < cap, x + 1, x), cap  # x climbs to cap, cap unchanged
 
 
 def test_multivar_ite_and_hold():
-    x, cap = _pair(), _pair()
+    cap, x = _pair(), _pair()
     m = Bounded(theory=LIA, ctrl=(x, cap))
     assert m.closed()
-    assert _trace(m, 5, X(x)) == [0, 1, 2, 3, 3, 3]
-    assert _trace(m, 5, X(cap)) == [3, 3, 3, 3, 3, 3]
+    assert _trace(m, 5, _X(x)) == [0, 1, 2, 3, 3, 3]
+    assert _trace(m, 5, _X(cap)) == [3, 3, 3, 3, 3, 3]
 
 
 # --- extl variables become external inputs (open module) --------------------
 
 
 class Gate(sugar.Module):
-    def init(self):
+    def init(self, _y):
         return 0
 
-    def update(self, ctrl, extl):
-        return ite(ctrl < extl, ctrl + 1, ctrl)
+    def update(self, x, y):
+        return ite(x < y, x + 1, y)
 
 
 def test_extl_is_external_and_module_is_open():
@@ -148,8 +148,11 @@ def test_missing_init_raises():
             return ctrl + 1
 
     # init is required — every ctrl variable needs an initial value
-    with pytest.raises(TypeError):
-        NoInit(theory=LIA, ctrl=(_pair(),))
+    # not true anymore - this is a jump module
+    # with pytest.raises(TypeError):
+
+    m = NoInit(theory=LIA, ctrl=(_pair(),))
+    assert m.closed()
 
 
 def test_subexpression_shared_across_returns():
@@ -159,10 +162,114 @@ def test_subexpression_shared_across_returns():
         def init(self):
             return 0, 0
 
-        def update(self, ctrl):
-            x, y = ctrl
+        def update(self, x, y):
             loop = x < y
             return ite(loop, x + 1, x), ite(loop, y, y - 1)
 
     m = Shared(theory=LIA, ctrl=(_pair(), _pair()))
     assert m.closed()
+
+
+def test_simple_clock():
+    class Simple(sugar.Module):
+        def init(self, t):
+            return 0
+
+        def update(self, x, t):
+            return ite(X(t) == 1, 0, x)
+
+        def delay(self, x, t):
+            return 1 * d(t)
+
+    x = Var(Real1)
+    t = Var(Real1)
+    m = Simple(ctrl=(x,), extl=(t,), theory=LRA)
+
+
+def test_differential_sugar_module():
+    """init + delay (no update) builds a differential module: the update is
+    the synthesised skip, and the delay drives the derivative wires."""
+
+    class Drift(sugar.Module):
+        def init(self, t):
+            return 0
+
+        def delay(self, x, t):
+            return d(t) + d(t)  # dx = 2 dt: a drifting clock
+
+    x = Var(Real1)
+    t = Var(Real1)
+    m = Drift(ctrl=(x,), extl=(t,), theory=LRA)
+
+    assert isinstance(m, Module)
+    assert m.open()  # t is inferred external
+    assert m.intf == [x]
+    assert m.extl == [t]
+
+    a = m.atoms[0]
+    # the delay drives d(x); the synthesised skip update drives X(x)
+    assert _d(x) in a.delay.write()
+    assert _X(x) in a.update.write()
+    assert len(a.update) == 1
+
+
+def test_hybrid_sugar_module():
+    """init + update + delay builds a hybrid module: all three blocks are
+    explicit, mixing a discrete reset with continuous drift."""
+
+    class Clock(sugar.Module):
+        def init(self, t):
+            return 0
+
+        def update(self, x, t):
+            return ite(X(t) == 1, 0, x)  # discrete reset when t' hits 1
+
+        def delay(self, x, t):
+            return 1 * d(t)  # continuous drift with t
+
+    x = Var(Real1)
+    t = Var(Real1)
+    m = Clock(ctrl=(x,), extl=(t,), theory=LRA)
+
+    assert isinstance(m, Module)
+    assert m.open()
+    assert m.intf == [x]
+    assert m.extl == [t]
+
+    a = m.atoms[0]
+    # every block is explicit and drives its wire of x
+    assert _X(x) in a.init.write()
+    assert _X(x) in a.update.write()
+    assert _d(x) in a.delay.write()
+    # the update reads the reset guard from the input's next value
+    assert _X(t) in a.update.read()
+
+
+def test_invalid_nonlinear():
+    class Simple(sugar.Module):
+        def init(self, t):
+            return 0
+
+        def update(self, x, t):
+            return ite(X(t) == 1, 0, x)
+
+        def delay(self, x, t):
+            return x * d(t)
+
+    x = Var(Real1)
+    t = Var(Real1)
+    with pytest.raises(NonLinearError):
+        Simple(ctrl=(x,), extl=(t,), theory=LRA)
+
+
+def test_useless_module():
+    class Useless(sugar.Module):
+        def init(self, i):
+            return ()
+
+        def update(self, i):
+            return ()
+
+    i = Var(Real1)
+    m = Useless(ctrl=(), extl=(i,), theory=LRA)
+    assert m.closed()  # unused externals and no control -> closed module

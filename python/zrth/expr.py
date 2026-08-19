@@ -41,7 +41,7 @@ from typing import override
 
 import torch
 
-from .zrth import Term, Wire, LRA, LIA, BV, Var, X
+from .zrth import Term, Wire, LRA, LIA, BV, Var, X as _X, d as _d
 from .sort import Sort, Bool, Int, Real, BitVec, tensor_for
 from .builder import NonLinearError
 
@@ -226,12 +226,16 @@ class Expr:
         return _wrap(term.write[0], self._theory, signed=getattr(self, "_signed", False))
 
     def _binop(self, op, out: Sort, o) -> "Expr":
-        """Coerce `o` to my sort, then build a binary Term with `op` and output sort `out`."""
+        """Coerce `o` to my sort, then build a binary Term with `op` and output sort `out`.
+
+        The result wire inherits this expression's degree, so operations over
+        derivative wires (e.g. `d(t) + d(t)`) stay in the derivative fragment."""
         o = self._coerce_same(o)
-        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
+        return self._result(Term(op, [Wire(out, self._wire.degree)], [self._wire, o._wire]))
 
     def _unop(self, op, out: Sort | None = None) -> "Expr":
-        return self._result(Term(op, [Wire(out if out is not None else self.dtype)], [self._wire]))
+        out = out if out is not None else self.dtype
+        return self._result(Term(op, [Wire(out, self._wire.degree)], [self._wire]))
 
     @override
     def __repr__(self) -> str:
@@ -289,7 +293,7 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
         n = v.shape[0]
         A = torch.eye(n, dtype=scalar_dtype) * c._value.item()
         bias = torch.zeros(n, 1, dtype=scalar_dtype)
-        return Term(linear(A, bias), [Wire(v.dtype)], [v._wire])
+        return Term(linear(A, bias), [Wire(v.dtype, degree=v._wire.degree)], [v._wire])
     raise NonLinearError(theory.__name__)
 
 
@@ -435,11 +439,21 @@ def cast(e: Expr, sort) -> Expr:
 # ---------------------------------------------------------------------------
 
 
-def nxt(v: Expr) -> Expr:
+def X(v: Expr) -> Expr:
     """The `next` wire of a variable expr (as built from a wire pair)."""
     # if v._next is None:
     #     raise ValueError("nxt() expects a variable (built from a wire pair)")
-    return _wrap(X(v._wire), v._theory, signed=getattr(v, "_signed", False))
+    if isinstance(v, Expr):
+        return _wrap(_X(v._wire), v._theory, signed=getattr(v, "_signed", False))
+    else:
+        raise ValueError("X expects a variable")
+
+
+def d(v: Expr) -> Expr:
+    """The `derived` wire of a variable expr (as built from a wire pair)."""
+    # if v._next is None:
+    #     raise ValueError("nxt() expects a variable (built from a wire pair)")
+    return _wrap(_d(v._wire), v._theory, signed=getattr(v, "_signed", False))
 
 
 def ite(cond: Expr, iftrue, iffalse) -> Expr:
