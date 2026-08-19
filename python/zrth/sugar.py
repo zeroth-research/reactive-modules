@@ -39,11 +39,12 @@ constraints force this (both flagged for design review):
 
 import inspect
 
-from .zrth import Module as _BaseModule, Term
-from .expr import expr, cast, nxt, ite, relu, argmax, collecting, Expr  # re-exported for authoring
+from .zrth import Module as _Module, Term as _Term, Var as _Var, X as _X, d as _d
+
+from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X, d  # re-exported for authoring
 
 # Public authoring surface: `from zrth.sugar import Module, expr, nxt, ite, cast, ...`
-__all__ = ["Module", "expr", "cast", "nxt", "ite", "relu", "argmax", "Expr"]
+__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d"]
 
 
 def _as_tuple(r) -> tuple:
@@ -56,60 +57,81 @@ def _as_tuple(r) -> tuple:
     return (r,)
 
 
-def _invoke(fn, ctrl_arg, extl_arg, is_init: bool):
-    """Call an init/update method, passing ctrl/extl per its arity (self is unused
-    at construction time, so it is passed as None)."""
-    nparams = len(inspect.signature(fn).parameters)  # includes `self`
-    if is_init:
-        args = (extl_arg,) if nparams >= 2 else ()
-    else:
-        args = (ctrl_arg, extl_arg) if nparams >= 3 else (ctrl_arg,)
-    return _as_tuple(fn(None, *args))
+def _build_init_block(cls, ctrl, extl, theory) -> list:
+    fn = getattr(cls, "init", None)
+    if fn is None:
+        return None
+    nparams = len(inspect.signature(fn).parameters)
 
+    # we assume all arguments are taken , otherwise it's too ambiguous
+    args = tuple(expr(v, theory=theory) for v in extl)
+    if nparams != len(args) + 1:
+        raise ValueError(f"init expects len(extl) == {len(args)} params, got {nparams - 1}")
 
-def _build_block(theory, ctrl_vars, fn, ctrl_arg, extl_arg, is_init) -> list:
-    """Run one block (init/update) inside a collector: every Term built while the user
-    method runs is captured in dependency order (a shared sub-expression once); then an
-    Id drives each ctrl var's next wire from its returned value."""
     with collecting() as terms:
-        values = _invoke(fn, ctrl_arg, extl_arg, is_init)
-        if len(values) != len(ctrl_vars):
-            raise ValueError(f"expected {len(ctrl_vars)} return value(s), got {len(values)}")
-        for var, v in zip(ctrl_vars, values):
-            e = v if isinstance(v, Expr) else expr(v, theory=theory, sort=var.dtype)
-            terms.append(Term(theory.Id(), [nxt(var).wire], [e.wire]))
-    return terms
+        vals = _as_tuple(fn(None, *args))
+        if len(vals) != len(ctrl):
+            raise ValueError(f"init expects {len(ctrl)} return values, got {len(vals)}")
+        for var, val in zip(ctrl, vals):
+            e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
+            terms.append(_Term(theory.Id(), [_X(var)], [e.wire]))
+        return terms
 
 
-class Module(_BaseModule):
-    def __new__(cls, *, theory=None, ctrl=None, extl=None):
+def _build_update_block(cls, ctrl, extl, theory) -> list:
+    fn = getattr(cls, "update", None)
+    if fn is None:
+        return None
+    nparams = len(inspect.signature(fn).parameters)
+
+    # we assume all arguments are taken, otherwise it's too ambiguous
+    args = tuple(expr(v, theory=theory) for v in ctrl + extl)
+    if nparams != len(args) + 1:
+        raise ValueError(f"update expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
+
+    with collecting() as terms:
+        vals = _as_tuple(fn(None, *args))
+        if len(vals) != len(ctrl):
+            raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
+        for var, val in zip(ctrl, vals):
+            e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
+            terms.append(_Term(theory.Id(), [_X(var)], [e.wire]))
+        return terms
+
+
+def _build_delay_block(cls, ctrl, extl, theory) -> list:
+    fn = getattr(cls, "delay", None)
+    if fn is None:
+        return None
+    nparams = len(inspect.signature(fn).parameters)
+
+    # we assume all arguments are taken, otherwise it's too ambiguous
+    args = tuple(expr(v, theory=theory) for v in ctrl + extl)
+    if nparams != len(args) + 1:
+        raise ValueError(f"delay expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
+
+    with collecting() as terms:
+        vals = _as_tuple(fn(None, *args))
+        if len(vals) != len(ctrl):
+            raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
+        for var, val in zip(ctrl, vals):
+            e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
+            terms.append(_Term(theory.Id(), [_d(var)], [e.wire]))
+        return terms
+
+
+class Module(_Module):
+    def __new__(cls, ctrl=(), extl=(), theory=None):
         if theory is None or ctrl is None:
-            raise TypeError(
-                f"{cls.__name__}: `theory` and `ctrl` are required constructor kwargs"
-            )
+            raise TypeError(f"{cls.__name__}: `theory` is a required constructor arg")
 
-        ctrl_pairs = [p for p in ctrl]
-        extl_pairs = [p for p in extl] if extl else []
-        ctrl_vars = tuple(expr(p, theory=theory) for p in ctrl_pairs)
-        extl_vars = tuple(expr(p, theory=theory) for p in extl_pairs)
+        ctrl = tuple(v for v in ctrl)
+        extl = tuple(v for v in extl) if extl is not None else ()
 
-        init_fn = getattr(cls, "init", None)
-        update_fn = getattr(cls, "update", None)
-        if init_fn is None:
-            raise TypeError(f"{cls.__name__} must define an `init` method (every ctrl variable needs an initial value)")
-        if update_fn is None:
-            raise TypeError(f"{cls.__name__} must define an `update` method")
+        init = _build_init_block(cls, ctrl, extl, theory)
+        update = _build_update_block(cls, ctrl, extl, theory)
+        delay = _build_delay_block(cls, ctrl, extl, theory)
 
-        # a single variable is unwrapped, so `x = ctrl` works as well as `x, y = ctrl`
-        ctrl_arg = ctrl_vars[0] if len(ctrl_vars) == 1 else ctrl_vars
-        extl_arg = extl_vars[0] if len(extl_vars) == 1 else extl_vars
-
-        init_terms = _build_block(theory, ctrl_vars, init_fn, ctrl_arg, extl_arg, True)
-        update_terms = _build_block(theory, ctrl_vars, update_fn, ctrl_arg, extl_arg, False)
-
-        obs = [p for p in (ctrl_pairs + extl_pairs)]
-        self = super().__new__(cls, init=init_terms, update=update_terms, obs=obs)
+        self = super().__new__(cls, init=init, update=update, delay=delay, obs=ctrl + extl)
         self._theory = theory
-        self._ctrl_vars = ctrl_vars
-        self._extl_vars = extl_vars
         return self

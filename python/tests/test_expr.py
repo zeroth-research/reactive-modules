@@ -7,10 +7,10 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from zrth import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, Var, X
+from zrth import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, Var, X as _X
 from zrth.builder import NonLinearError
 from zrth.eval import eval_itype
-from zrth.expr import expr, cast, nxt, ite, collecting, AExpr, BExpr, WExpr
+from zrth.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
 
 INT = Int([1, 1])
 REAL = Real([1, 1])
@@ -119,13 +119,13 @@ def test_variable_reads_latched_and_nxt():
     pair = _var(INT)
     x = expr(pair, theory=LIA)
     assert x.wire is pair
-    assert nxt(x).wire == X(pair)
+    assert X(x).wire == _X(pair)
 
 
 def test_nxt_requires_a_variable():
     x = _varexpr(INT)
     with pytest.raises(TypeError):
-        nxt(x + 1)
+        X(x + 1)
 
 
 def test_variable_wire_pair_must_share_a_sort():
