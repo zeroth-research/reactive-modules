@@ -771,8 +771,8 @@ where
         let assign: Block<T> = Block::try_from_iter(assign.into_iter().map(Ok))?;
         let ctrl = Self::infer_ctrl(&assign, &wires.nxt)?;
 
-        let init: Block<I> = Block::try_from_iter(assign.iter().cloned().map(Ok))?;
-        let update: Block<J> = Block::try_from_iter(assign.into_iter().map(Ok))?;
+        let init: Block<I> = Block::convert(assign.clone());
+        let update: Block<J> = Block::convert(assign);
         let delay: Block<F> = Block::zero(ctrl.iter().map(Var::der).cloned())?;
 
         Self::with_ctrl(wires, ctrl, init, update, delay)
@@ -882,7 +882,7 @@ where
     {
         let vars = obs.into_iter().chain(prvt.clone().into_iter());
         let atom = Atom::sequential(vars, init, update)?;
-        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
+        Self::partially_observable(std::iter::once(atom), prvt)
     }
 
     /// Constructs a **differential module**: behaviour that evolves
@@ -918,7 +918,7 @@ where
     {
         let vars = obs.into_iter().chain(prvt.clone().into_iter());
         let atom = Atom::differential(vars, init, delay)?;
-        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
+        Self::partially_observable(std::iter::once(atom), prvt)
     }
 
     /// Constructs a **hybrid module**, combining discrete updates with
@@ -961,7 +961,7 @@ where
     {
         let vars = obs.into_iter().chain(prvt.clone().into_iter());
         let atom = Atom::hybrid(vars, init, update, delay)?;
-        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
+        Self::partially_observable(std::iter::once(atom), prvt)
     }
 
     /// Constructs a **jump module**: sequential behaviour whose
@@ -993,7 +993,7 @@ where
     {
         let vars = obs.into_iter().chain(prvt.clone().into_iter());
         let atom = Atom::jump(vars, update)?;
-        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
+        Self::partially_observable(std::iter::once(atom), prvt)
     }
 
     /// Constructs an **uninitialized module**: discrete and continuous
@@ -1034,7 +1034,7 @@ where
     {
         let vars = obs.into_iter().chain(prvt.clone().into_iter());
         let atom = Atom::uninitialized(vars, update, delay)?;
-        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
+        Self::partially_observable(std::iter::once(atom), prvt)
     }
 
     /// Constructs a **hold module**: variables that hold an arbitrary but
@@ -1095,7 +1095,7 @@ where
     {
         let vars = obs.into_iter().chain(prvt.clone().into_iter());
         let atom = Atom::flow(vars, delay)?;
-        Self::partially_observable(std::iter::once(atom), prvt.into_iter())
+        Self::partially_observable(std::iter::once(atom), prvt)
     }
 
     /// Constructs a **constant module**: variables that are set once at
