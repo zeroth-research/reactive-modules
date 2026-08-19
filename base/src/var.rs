@@ -213,7 +213,7 @@ impl<S: Debug + Clone> Interface<S> {
     {
         let iter = iter.into_iter();
         let mut vars = Vec::with_capacity(iter.len());
-        vars.extend(iter.map(Into::into));
+        vars.extend(iter);
 
         let mut wires: Vec<(Wire<S>, Var<S>)> = Vec::with_capacity(3 * vars.len());
         wires.extend(vars.iter().map(|v: &Var<S>| (v.ltc.clone(), v.clone())));
@@ -272,6 +272,11 @@ mod test {
         assert_eq!(vars, [x, y, z]);
     }
 
+    fn borrow_copy_and_compare(x: &Var<&str>, nxt: Wire<&str>, der: Wire<&str>) {
+        assert_eq!(d(x), nxt);
+        assert_eq!(X(x), der);
+    }
+
     #[test]
     fn variable_casts_to_its_wires() {
         // variables are Copy: owned bindings, ampersand-free use everywhere
@@ -302,8 +307,7 @@ mod test {
         assert_eq!(*borrowed, a);
 
         // X and d take any borrow of the variable: by reference as well
-        assert_eq!(d(&x), b);
-        assert_eq!(X(&x), c);
+        borrow_copy_and_compare(&x, b, c);
 
         // the _ref alternatives borrow all the way through: reference in,
         // reference out, no clone

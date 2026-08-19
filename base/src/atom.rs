@@ -129,6 +129,7 @@ where
 
     /// Creates an atom from its components. This method checks the inputs only using assertions
     /// in debug mode.
+    #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
         ctrl: Interface<S>,
         wait: Interface<S>,
@@ -356,7 +357,7 @@ where
             // if the init/update writes to a next wire, then this wire must be controlled
             // otherwise, it must be local
             if let Some(&var) = wires.nxt.get(&wt) {
-                if !ctrl.contains(&var) {
+                if !ctrl.contains(var) {
                     return Err(format!("Inconsistent write to next wire {}", wt.id()));
                 }
                 continue;
@@ -373,7 +374,7 @@ where
             // if the delay writes to a derived wire, then this wire is controlled
             // otherwise, it must be local
             if let Some(&var) = wires.der.get(&wt) {
-                if !ctrl.contains(&var) {
+                if !ctrl.contains(var) {
                     return Err(format!("Inconsistent write to next wire {}", wt.id()));
                 }
                 continue;
@@ -823,9 +824,9 @@ where
     typed: bool,
 }
 
-const BOLD: &'static str = "\x1b[1m";
-const RESET: &'static str = "\x1b[0m";
-const INDENT: &'static str = "  ";
+const BOLD: &str = "\x1b[1m";
+const RESET: &str = "\x1b[0m";
+const INDENT: &str = "  ";
 
 impl<'a, I, J, F, S, N> Display<'a, I, J, F, S, N>
 where
@@ -1002,7 +1003,7 @@ where
         U: IntoIterator<Item = Term<J>>,
         S: 'a,
     {
-        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let vars = obs.into_iter().chain(prvt.clone());
         let atom = Atom::sequential(vars, init, update)?;
         Self::partially_observable(std::iter::once(atom), prvt)
     }
@@ -1038,7 +1039,7 @@ where
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
     {
-        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let vars = obs.into_iter().chain(prvt.clone());
         let atom = Atom::differential(vars, init, delay)?;
         Self::partially_observable(std::iter::once(atom), prvt)
     }
@@ -1081,7 +1082,7 @@ where
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
     {
-        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let vars = obs.into_iter().chain(prvt.clone());
         let atom = Atom::hybrid(vars, init, update, delay)?;
         Self::partially_observable(std::iter::once(atom), prvt)
     }
@@ -1113,7 +1114,7 @@ where
         P: IntoIterator<Item = &'a Var<S>> + Clone,
         S: 'a,
     {
-        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let vars = obs.into_iter().chain(prvt.clone());
         let atom = Atom::jump(vars, update)?;
         Self::partially_observable(std::iter::once(atom), prvt)
     }
@@ -1154,7 +1155,7 @@ where
         P: IntoIterator<Item = &'a Var<S>> + Clone,
         S: 'a,
     {
-        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let vars = obs.into_iter().chain(prvt.clone());
         let atom = Atom::uninitialized(vars, update, delay)?;
         Self::partially_observable(std::iter::once(atom), prvt)
     }
@@ -1215,7 +1216,7 @@ where
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
     {
-        let vars = obs.into_iter().chain(prvt.clone().into_iter());
+        let vars = obs.into_iter().chain(prvt.clone());
         let atom = Atom::flow(vars, delay)?;
         Self::partially_observable(std::iter::once(atom), prvt)
     }
