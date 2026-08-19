@@ -199,6 +199,10 @@ impl<S> Interface<S> {
         let res = self.wires.binary_search_by_key(&wire, |(w, _)| w);
         res.map(|idx| &self.wires[idx].1).ok()
     }
+
+    pub fn nth(&self, index: usize) -> Option<&Var<S>> {
+        self.vars.get(index)
+    }
 }
 
 impl<S: Debug + Clone> Interface<S> {

@@ -403,7 +403,6 @@ impl ModuleInterface {
 
     fn __getitem__(&self, index: usize) -> PyResult<Var> {
         self.base()
-            .iter()
             .nth(index)
             .map(|v| Var::from(*v))
             .ok_or(PyIndexError::new_err("index out of bounds"))
