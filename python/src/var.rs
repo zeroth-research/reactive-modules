@@ -71,6 +71,16 @@ impl Var {
     }
 }
 
+/// For keying purposes, a python `Var` is its base var: the borrowed view
+/// hashes and compares identically (the wrapper's `Hash`/`Eq`/`Ord` all
+/// delegate to the base), so maps keyed by `Var` can be probed with a
+/// `&base::Var<Sort>` directly.
+impl std::borrow::Borrow<base::Var<Sort>> for Var {
+    fn borrow(&self) -> &base::Var<Sort> {
+        &self.base
+    }
+}
+
 impl From<base::Var<Sort>> for Var {
     fn from(base: base::Var<Sort>) -> Self {
         Self { base }

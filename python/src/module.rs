@@ -2,10 +2,11 @@ use crate::*;
 use pyo3::Py;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
+use std::borrow::Cow;
+use std::collections::HashMap;
 use theory::any::{Combinatorial, Differential, Sequential};
 
 #[pyclass(subclass, frozen)]
-#[derive(Debug)]
 pub(crate) struct Module {
     pub(crate) base: base::Module<Combinatorial, Sequential, Differential>,
 }
@@ -331,8 +332,15 @@ impl Module {
         self.base.is_open()
     }
 
-    fn __str__(&self) -> String {
-        self.base.to_string()
+    /// Renders the module with variables named by `names`; variables
+    /// without an entry print as `#{id}`. Don't rely on the fallback - it may change anytime
+    fn show(&self, names: HashMap<Var, String>) -> String {
+        self.base
+            .with_varnames(|v| match names.get(v) {
+                Some(name) => Cow::Borrowed(name.as_str()),
+                None => Cow::Owned(format!("#{}", v.id())), //
+            })
+            .to_string()
     }
 
     fn __repr__(&self) -> String {

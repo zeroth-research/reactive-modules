@@ -3,7 +3,6 @@
 
 mod common;
 
-use base::term;
 use base::term::Term;
 use base::var::{Var, X, d};
 use base::wire::Wire;
@@ -13,7 +12,7 @@ use theory::{Combinatorial, Differential, Sequential, Theory};
 
 #[test]
 fn can_instantiate_partially_observable_module() {
-    let m = example_counter().unwrap();
+    let (m, _) = example_counter().unwrap();
     let vars = m.obs().clone();
     let mut obs: Vec<Var<&'static str>> = Vec::new();
     let mut prvt: Vec<Var<&'static str>> = Vec::new();
@@ -32,7 +31,7 @@ fn can_instantiate_partially_observable_module() {
 
 #[test]
 fn cannot_instantiate_external_unobservable_wire() {
-    let m = example_counter().unwrap();
+    let (m, _) = example_counter().unwrap();
     let vars = m.obs().clone();
     // the fourth observable is an external variable: making it private must
     // fail, privates have to be controlled
@@ -357,6 +356,4 @@ fn heterogeneous_composition() {
 
     let S = base::Module::composition([P, Q, R]);
     assert!(S.is_ok());
-
-    print!("{}", S.unwrap());
 }

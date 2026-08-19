@@ -1,8 +1,13 @@
 use crate::wire::Wire;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::vec;
 use theory::{Combinatorial, Differential, Sequential, Theory, any};
+
+//============================================================
+// Term
+//============================================================
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -39,6 +44,10 @@ impl<T: Theory> Term<T> {
         self.read.as_slice()
     }
 }
+
+//============================================================
+// Public constructors
+//============================================================
 
 impl<T> Term<T>
 where
@@ -85,6 +94,10 @@ where
         Ok(Self::new_unchecked(itype, write, Vec::new()))
     }
 }
+
+//============================================================
+// Cast operators
+//============================================================
 
 impl<T: Theory> Term<T> {
     /// Re-types a term along an infallible theory embedding (`U: Into<T>`).
@@ -153,46 +166,101 @@ impl TryFrom<Term<any::Any>> for Term<any::Differential> {
     }
 }
 
-#[macro_export]
-macro_rules! term {
-    ($itype:expr, $write:expr) => {
-        Term::constant($itype, $write)
-    };
+//============================================================
+// Display routines
+//============================================================
 
-    ($itype:expr, $write:expr, $read:expr) => {
-        Term::function($itype, $write, $read)
-    };
+pub struct Display<'a, T, N>
+where
+    T: Theory + 'a,
+    N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
+{
+    term: &'a Term<T>,
+    name: N,
 }
 
-impl<TH: Theory> fmt::Display for Term<TH>
+impl<'a, T: Theory + 'a, N> Display<'a, T, N>
 where
-    TH: fmt::Display,
-    TH::Sort: fmt::Display,
+    T: Theory + 'a,
+    N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        const BOLD: &str = "\x1b[1m";
-        const RESET: &str = "\x1b[0m";
-        write!(f, "{} ", self.itype,)?;
-        write!(
-            f,
-            "{}",
-            self.write
-                .iter()
-                .map(|a| format!("w{a}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )?;
-        write!(
-            f,
-            "; {}",
-            self.read
-                .iter()
-                .map(|a| format!("w{a}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
+    const BOLD: &'static str = "\x1b[1m";
+    const RESET: &'static str = "\x1b[0m";
+
+    fn fmt_tuple<I>(&self, f: &mut fmt::Formatter<'_>, iter: I) -> fmt::Result
+    where
+        I: Iterator<Item = &'a Wire<T::Sort>>,
+    {
+        write!(f, "(")?;
+        for (i, w) in iter.enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", (self.name)(w))?;
+        }
+        write!(f, ")")
+    }
+
+    fn fmt_intf<I>(&self, f: &mut fmt::Formatter<'_>, iter: I) -> fmt::Result
+    where
+        I: Iterator<Item = &'a Wire<T::Sort>> + ExactSizeIterator,
+    {
+        if iter.len() == 1 {
+            let mut iter = iter;
+            write!(f, "{}", (self.name)(iter.next().unwrap()))?;
+        } else {
+            self.fmt_tuple(f, iter)?;
+        }
+        Ok(())
     }
 }
+
+impl<'a, T, N> fmt::Display for Display<'a, T, N>
+where
+    T: Theory + 'a + fmt::Display,
+    N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let term = self.term;
+        self.fmt_intf(f, term.write.iter())?;
+        write!(f, " := {} ", term.itype)?;
+        if !term.read.is_empty() {
+            self.fmt_intf(f, term.read.iter())?;
+        }
+        Ok(())
+    }
+}
+
+impl<T> Term<T>
+where
+    T: Theory + fmt::Display,
+{
+    /// Displays the term with wires under the names the given function
+    /// assigns. Covariance lets `'a` shrink to a caller-local buffer: the
+    /// caller keeps ownership of the names and passes references on.
+    /// Displays the term with wires under the names the given function
+    /// assigns. The function may return anything that converts into a
+    /// `Cow<'a, str>` -- `&'a str`, `String`, or a `Cow` itself -- and the
+    /// conversion happens once, here.
+    pub fn with_wirenames<'a, N, R>(
+        &'a self,
+        name: N,
+    ) -> Display<'a, T, impl Fn(&Wire<T::Sort>) -> Cow<'a, str>>
+    where
+        N: Fn(&Wire<T::Sort>) -> R,
+        R: Into<Cow<'a, str>>,
+        T: 'a,
+    {
+        Display {
+            term: self,
+            name: move |w: &Wire<T::Sort>| name(w).into(),
+        }
+    }
+}
+
+//============================================================
+// Block
+//============================================================
 
 #[derive(Debug, Clone)]
 pub struct Block<T: Theory> {
@@ -380,23 +448,5 @@ where
     /// Builds a block of one `HAVOC` term per write wire
     pub(crate) fn havoc<W: IntoIterator<Item = Wire<I::Sort>>>(write: W) -> Result<Self, String> {
         Block::try_from_iter(write.into_iter().map(|w| Term::constant(I::HAVOC, [w])))
-    }
-}
-
-impl<T: Theory> fmt::Display for Block<T>
-where
-    T: fmt::Display,
-    T::Sort: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.terms
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
     }
 }

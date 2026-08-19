@@ -65,10 +65,6 @@ impl Term {
         self.base.itype().clone()
     }
 
-    fn __str__(&self) -> String {
-        self.base.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!("{:?}", self.base)
     }

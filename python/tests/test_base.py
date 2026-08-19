@@ -342,6 +342,28 @@ def test_atoms_compose_into_modules():
     assert direct.atoms[0].wait == atom.wait
 
 
+def test_show_named_rendering():
+    x, p, init, update, delay = _stateful_blocks()
+    m = Module(init=init, update=update, obs=[x, p])
+
+    # named variables render by name, in interfaces and wire positions
+    out = m.show({x: "x", p: "p"})
+    assert "x : Real[1, 1]" in out
+    assert "X(x)" in out and "X(p)" in out
+
+    # unnamed variables fall back to question mark
+    # this test is meant to fail when this convention changes, or errors are raised
+    # if any other part of the code relies on the fallback, it is bad
+    partial = m.show({x: "x"})
+    assert f"#" in partial
+
+    # the atom renders with the same naming
+    out = m.atoms[0].show({x: "x", p: "p"})
+    assert "controls" in out and "X(x)" in out
+
+    print(m.show({x: "x"}))
+
+
 def test_heterogeneous_composition():
     x = Var(Real([1, 1]))
     y = Var(Real([1, 1]))
