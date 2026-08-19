@@ -421,7 +421,7 @@ where
     /// is rejected, since privates must be controlled.
     ///
     /// # Parameters
-    /// - `hide`: The variables to hide; hiding nothing returns the module unchanged.
+    /// - `prvt`: The variables to hide; hiding nothing returns the module unchanged.
     ///
     /// # Returns
     ///
@@ -430,12 +430,12 @@ where
     ///
     /// # See Also
     /// - [`Module::hiding_composition`], hiding several modules at their composition.
-    pub fn hiding<'a, H>(self, hide: H) -> Result<Self, String>
+    pub fn hiding<'a, P>(self, prvt: P) -> Result<Self, String>
     where
-        H: IntoIterator<Item = &'a Var<S>>,
+        P: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
-        Self::hiding_composition(std::iter::once(self), hide)
+        Self::hiding_composition(std::iter::once(self), prvt)
     }
 
     /// Constructs the **hiding composition** of several modules: parallel
@@ -453,26 +453,26 @@ where
     ///
     /// # Parameters
     /// - `modules`: The modules to compose.
-    /// - `hide`: The variables to hide in the composite; hiding nothing is
+    /// - `prvt`: The variables to hide in the composite; hiding nothing is
     ///   exactly [`Module::composition`].
     ///
     /// # Error Conditions
     ///
     /// All error conditions of [`Module::composition`], and additionally:
     ///
-    /// - A hidden variable is external to the composition
+    /// - A prvt variable is external to the composition
     ///
     /// # Returns
     ///
     /// - `Ok(Module)` containing the composed module.
     /// - `Err(Error)` describing the reason composition failed.
-    pub fn hiding_composition<'a, M, H>(modules: M, hide: H) -> Result<Self, String>
+    pub fn hiding_composition<'a, M, P>(modules: M, prvt: P) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
-        H: IntoIterator<Item = &'a Var<S>>,
+        P: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
-        let hide: HashSet<&Var<S>> = hide.into_iter().collect();
+        let hide: HashSet<&Var<S>> = prvt.into_iter().collect();
 
         let mut declared_wires: HashSet<Wire<S>> = HashSet::new();
         let mut restricted_wires: HashSet<usize> = HashSet::new();

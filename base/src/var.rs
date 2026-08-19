@@ -195,13 +195,17 @@ impl<S> Interface<S> {
         self.vars.iter()
     }
 
-    pub(crate) fn var(&self, wire: &Wire<S>) -> Option<&Var<S>> {
+    pub fn var(&self, wire: &Wire<S>) -> Option<&Var<S>> {
         let res = self.wires.binary_search_by_key(&wire, |(w, _)| w);
         res.map(|idx| &self.wires[idx].1).ok()
     }
 
     pub fn nth(&self, index: usize) -> Option<&Var<S>> {
         self.vars.get(index)
+    }
+
+    pub fn contains(&self, var: &Var<S>) -> bool {
+        self.vars.binary_search(var).is_ok()
     }
 }
 

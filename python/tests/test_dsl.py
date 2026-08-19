@@ -273,3 +273,19 @@ def test_useless_module():
     i = Var(Real1)
     m = Useless(ctrl=(), extl=(i,), theory=LRA)
     assert m.closed()  # unused externals and no control -> closed module
+    assert len(m.extl) + len(m.intf) + len(m.prvt) == 0
+
+
+def test_private():
+    class DigitalDelay(sugar.Module):
+        def update(self, x, _o, i):
+            return (i, x)
+
+    i = Var(Real1)
+    o = Var(Real1)
+    x = Var(Real1)
+    m = DigitalDelay(ctrl=(x, o), extl=(i,), prvt=frozenset([x]), theory=LRA)
+
+    assert i in m.extl
+    assert o in m.intf
+    assert x in m.prvt
