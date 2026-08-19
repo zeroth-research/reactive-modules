@@ -1,6 +1,7 @@
 use crate::Module;
 use crate::term::{Block, Term};
 use crate::wire::Wire;
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
@@ -9,6 +10,10 @@ use crate::var::{Interface, Var};
 #[cfg(debug_assertions)]
 use std::collections::HashSet;
 use std::fmt::Debug;
+
+//============================================================
+// Atom
+//============================================================
 
 /// This data structure corresponds to the atom of reactive modules.
 #[derive(Debug, Clone)]
@@ -107,6 +112,10 @@ where
     }
 }
 
+//============================================================
+// Private routines
+//============================================================
+
 impl<I, J, F, S> Atom<I, J, F, S>
 where
     I: Combinatorial<Sort = S>,
@@ -202,7 +211,7 @@ where
             // all control wires are written
             debug_assert!(ctrl.iter().map(Var::der).all(|w| written.contains(w)));
 
-            //TODO check wires and local
+            //TODO check wires and local and sig
         }
 
         Self {
@@ -215,6 +224,13 @@ where
             wires,
             local,
         }
+    }
+
+    fn decl(&self, wire: &Wire<S>) -> Option<&Var<S>> {
+        self.read
+            .var(wire)
+            .or_else(|| self.ctrl.var(wire))
+            .or_else(|| self.wait.var(wire))
     }
 }
 
@@ -251,6 +267,27 @@ impl<'a, S> WireMap<'a, S> {
     }
 }
 
+fn infer_ctrl<T, S: Clone>(
+    block: &Block<T>,
+    pool: &HashMap<&Wire<S>, &Var<S>>,
+) -> Result<BTreeSet<Var<S>>, String>
+where
+    T: Theory<Sort = S>,
+{
+    // tree map on id is used to guarantee consistent order
+    let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
+
+    for wt in block.write().iter() {
+        // if the block writes to a wire in the pool of next or derived,
+        // then the respective variable is controlled
+        if let Some(&var) = pool.get(&wt) {
+            ctrl.insert(var.clone());
+        }
+    }
+
+    Ok(ctrl)
+}
+
 impl<I, J, F, S> Atom<I, J, F, S>
 where
     I: Combinatorial<Sort = S>,
@@ -258,27 +295,6 @@ where
     F: Differential<Sort = S>,
     S: Clone + Debug,
 {
-    fn infer_ctrl<T>(
-        block: &Block<T>,
-        pool: &HashMap<&Wire<S>, &Var<S>>,
-    ) -> Result<BTreeSet<Var<S>>, String>
-    where
-        T: Theory<Sort = S>,
-    {
-        // tree map on id is used to guarantee consistent order
-        let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
-
-        for wt in block.write().iter() {
-            // if the block writes to a wire in the pool of next or derived,
-            // then the respective variable is controlled
-            if let Some(&var) = pool.get(&wt) {
-                ctrl.insert(var.clone());
-            }
-        }
-
-        Ok(ctrl)
-    }
-
     fn with_ctrl(
         wires: WireMap<S>,
         ctrl: BTreeSet<Var<S>>,
@@ -404,7 +420,19 @@ where
             local.into_iter().collect(),
         ))
     }
+}
 
+//============================================================
+// Public constructors
+//============================================================
+
+impl<I, J, F, S> Atom<I, J, F, S>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+    S: Clone + Debug,
+{
     /// Constructs a **sequential atom**: behaviour that evolves over discrete
     /// time steps.
     ///
@@ -430,17 +458,17 @@ where
     /// - [`Atom::differential`], the continuous dual: only a delay, implicit skip update.
     /// - [`Atom::hybrid`], when both discrete and continuous dynamics are explicit.
     /// - [`Atom::combinatorial`], for time-independent, purely reactive behaviour.
-    pub fn sequential<'a, V, W, U>(vars: V, init: W, update: U) -> Result<Self, String>
+    pub fn sequential<'b, V, W, U>(vars: V, init: W, update: U) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Var<S>>,
+        V: IntoIterator<Item = &'b Var<S>>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
-        S: 'a,
+        S: 'b,
     {
         let wires = WireMap::unpack(vars);
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&init, &wires.nxt)?;
+        let ctrl = infer_ctrl(&init, &wires.nxt)?;
         let ctrl_der = ctrl.iter().map(Var::der).cloned();
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
@@ -473,17 +501,17 @@ where
     /// # See Also
     /// - [`Atom::sequential`], the discrete dual: only an update, zero delay.
     /// - [`Atom::hybrid`], when both discrete and continuous dynamics are explicit.
-    pub fn differential<'a, V, W, Z>(vars: V, init: W, delay: Z) -> Result<Self, String>
+    pub fn differential<'b, V, W, Z>(vars: V, init: W, delay: Z) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Var<S>>,
+        V: IntoIterator<Item = &'b Var<S>>,
         W: IntoIterator<Item = Term<I>>,
         Z: IntoIterator<Item = Term<F>>,
-        S: 'a,
+        S: 'b,
     {
         let wires = WireMap::unpack(vars);
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&init, &wires.nxt)?;
+        let ctrl = infer_ctrl(&init, &wires.nxt)?;
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
         let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
 
@@ -533,7 +561,7 @@ where
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
 
-        let ctrl = Self::infer_ctrl(&init, &wires.nxt)?;
+        let ctrl = infer_ctrl(&init, &wires.nxt)?;
 
         Self::with_ctrl(wires, ctrl, init, update, delay)
     }
@@ -567,7 +595,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&update, &wires.nxt)?;
+        let ctrl = infer_ctrl(&update, &wires.nxt)?;
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
         let ctrl_der = ctrl.iter().map(Var::der).cloned();
 
@@ -608,7 +636,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&update, &wires.nxt)?;
+        let ctrl = infer_ctrl(&update, &wires.nxt)?;
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
 
         let init = Block::havoc(ctrl_nxt)?;
@@ -646,7 +674,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&init, &wires.nxt)?;
+        let ctrl = infer_ctrl(&init, &wires.nxt)?;
         let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
         let ctrl_der = ctrl.iter().map(Var::der).cloned();
@@ -726,7 +754,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&delay, &wires.der)?;
+        let ctrl = infer_ctrl(&delay, &wires.der)?;
         let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
 
@@ -769,7 +797,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let assign: Block<T> = Block::try_from_iter(assign.into_iter().map(Ok))?;
-        let ctrl = Self::infer_ctrl(&assign, &wires.nxt)?;
+        let ctrl = infer_ctrl(&assign, &wires.nxt)?;
 
         let init: Block<I> = Block::convert(assign.clone());
         let update: Block<J> = Block::convert(assign);
@@ -779,68 +807,162 @@ where
     }
 }
 
-impl<I, J, F, S> Atom<I, J, F, S>
+//============================================================
+// Display routines
+//============================================================
+
+pub struct Display<'a, I, J, F, S, N>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
+{
+    atom: &'a Atom<I, J, F, S>,
+    name: N,
+    typed: bool,
+}
+
+const BOLD: &'static str = "\x1b[1m";
+const RESET: &'static str = "\x1b[0m";
+const INDENT: &'static str = "  ";
+
+impl<'a, I, J, F, S, N> Display<'a, I, J, F, S, N>
 where
     I: Combinatorial<Sort = S> + fmt::Display,
     J: Sequential<Sort = S> + fmt::Display,
     F: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
 {
-    pub(crate) fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
-        const BOLD: &str = "\x1b[1m";
-        const RESET: &str = "\x1b[0m";
-        const INDENT: &str = "  ";
+    fn fmt_vars<V: Iterator<Item = &'a Var<S>>>(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        iter: V,
+    ) -> fmt::Result {
+        for (i, var) in iter.enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            let name = (self.name)(var);
+            if self.typed {
+                write!(f, "{} : {}", name, var.dtype())?;
+            } else {
+                write!(f, "{}", name)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn fmt_wirename(&self, wire: &Wire<S>) -> Cow<'a, str> {
+        if let Some(var) = self.atom.decl(wire) {
+            if wire == var.ltc() {
+                // the plain name passes through as-is: borrowed stays borrowed
+                (self.name)(var)
+            } else if wire == var.nxt() {
+                Cow::Owned(format!("X({})", (self.name)(var)))
+            } else {
+                assert!(wire == var.der());
+                Cow::Owned(format!("d({})", (self.name)(var)))
+            }
+        } else {
+            Cow::Owned(format!("#{}", wire.id()))
+        }
+    }
+
+    fn fmt_terms<T: 'a + Theory<Sort = S> + fmt::Display, U: Iterator<Item = &'a Term<T>>>(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        iter: U,
+        pad: &str,
+    ) -> fmt::Result {
+        // the argument annotation makes the closure higher-ranked over the
+        // wire's lifetime, as `with_wirenames`'s `Fn` bound requires
+        let name = |w: &Wire<S>| self.fmt_wirename(w);
+
+        for term in iter {
+            let display = term.with_wirenames(name);
+            writeln!(f, "{pad}{INDENT}{}", display)?;
+        }
+        Ok(())
+    }
+
+    pub fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
+        let a = self.atom;
 
         write!(f, "{pad}{BOLD}atom{RESET}")?;
-        for (i, v) in self.ctrl.iter().enumerate() {
-            if i == 0 {
-                write!(f, " {BOLD}controls{RESET} {v}")?;
-            } else {
-                write!(f, ", w{v}")?;
-            }
-        }
-        for (i, v) in self.read.iter().enumerate() {
-            if i == 0 {
-                write!(f, " {BOLD}reads{RESET} {v}")?;
-            } else {
-                write!(f, ", w{v}")?;
-            }
-        }
-        for (i, v) in self.wait.iter().enumerate() {
-            if i == 0 {
-                write!(f, " {BOLD}awaits{RESET} {v}")?;
-            } else {
-                write!(f, ", w{v}")?;
-            }
-        }
-        writeln!(f, "\n{pad}{BOLD}init{RESET}")?;
+        write!(f, " {BOLD}controls{RESET} ")?;
+        self.fmt_vars(f, a.ctrl.iter())?;
+        write!(f, " {BOLD}reads{RESET} ")?;
+        self.fmt_vars(f, a.read.iter())?;
+        write!(f, " {BOLD}awaits{RESET} ")?;
+        self.fmt_vars(f, a.wait.iter())?;
 
-        for term in self.init.iter() {
-            writeln!(f, "{pad}{INDENT}{term}")?;
-        }
+        writeln!(f, "\n{pad}{BOLD}init{RESET}")?;
+        self.fmt_terms(f, a.init.iter(), pad)?;
         writeln!(f, "{pad}{BOLD}delay{RESET}")?;
-        for term in self.delay.iter() {
-            writeln!(f, "{pad}{INDENT}{term}")?;
-        }
+        self.fmt_terms(f, a.delay.iter(), pad)?;
         writeln!(f, "{pad}{BOLD}update{RESET}")?;
-        for term in self.update.iter() {
-            writeln!(f, "{pad}{INDENT}{term}")?;
-        }
+        self.fmt_terms(f, a.update.iter(), pad)?;
+
         Ok(())
     }
 }
 
-impl<I, J, F, S> fmt::Display for Atom<I, J, F, S>
+impl<'a, I, J, F, S, N> fmt::Display for Display<'a, I, J, F, S, N>
 where
     I: Combinatorial<Sort = S> + fmt::Display,
     J: Sequential<Sort = S> + fmt::Display,
     F: Differential<Sort = S> + fmt::Display,
-    S: fmt::Display + Debug,
+    S: fmt::Display,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.fmt_indent(f, "")
     }
 }
+
+impl<I, J, D, S> Atom<I, J, D, S>
+where
+    I: Combinatorial<Sort = S> + fmt::Display,
+    J: Sequential<Sort = S> + fmt::Display,
+    D: Differential<Sort = S> + fmt::Display,
+    S: fmt::Display,
+{
+    pub fn with_varnames<'a, N, R>(
+        &'a self,
+        name: N,
+    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    where
+        N: Fn(&Var<S>) -> R,
+        R: Into<Cow<'a, str>>,
+    {
+        Display {
+            atom: self,
+            name: move |v: &Var<S>| name(v).into(),
+            typed: true,
+        }
+    }
+
+    pub fn with_varnames_untyped<'a, N, R>(
+        &'a self,
+        name: N,
+    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    where
+        N: Fn(&Var<S>) -> R,
+        R: Into<Cow<'a, str>>,
+    {
+        Display {
+            atom: self,
+            name: move |v: &Var<S>| name(v).into(),
+            typed: false,
+        }
+    }
+}
+
+//============================================================
+// Atomic modules
+//============================================================
 
 impl<I, J, F, S> Module<I, J, F, S>
 where

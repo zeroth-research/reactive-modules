@@ -2,10 +2,15 @@ use crate::atom::Atom;
 use crate::topological_order;
 use crate::var::{Interface, Var};
 use crate::wire::Wire;
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::fmt::Debug;
 use theory::{Combinatorial, Differential, Sequential, Theory};
+
+//============================================================
+// Module
+//============================================================
 
 /// This data structure corresponds to the module of reactive modules.
 #[derive(Debug, Clone)]
@@ -101,6 +106,10 @@ where
         }
     }
 }
+
+//============================================================
+// Private routines
+//============================================================
 
 impl<I, J, F, S> Module<I, J, F, S>
 where
@@ -236,6 +245,10 @@ where
         }
     }
 }
+
+//============================================================
+// Public constructors
+//============================================================
 
 impl<I, J, F, S> Module<I, J, F, S>
 where
@@ -648,12 +661,27 @@ where
     }
 }
 
-impl<I, J, D, S> Module<I, J, D, S>
+//============================================================
+// Display routines
+//============================================================
+
+pub struct Display<'a, I, J, F, S, N>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+{
+    module: &'a Module<I, J, F, S>,
+    name: N,
+}
+
+impl<'a, I, J, F, S, N> Display<'a, I, J, F, S, N>
 where
     I: Combinatorial<Sort = S> + fmt::Display,
     J: Sequential<Sort = S> + fmt::Display,
-    D: Differential<Sort = S> + fmt::Display,
+    F: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
 {
     fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
@@ -661,40 +689,72 @@ where
         const INDENT: &str = "  ";
         const INDENT2: &str = "    ";
 
+        let m = self.module;
+        let name = &self.name;
         writeln!(f, "{pad}{BOLD}module{RESET}")?;
-        if !self.extl.is_empty() {
+        if !m.extl.is_empty() {
             writeln!(f, "{pad}{INDENT}{BOLD}external{RESET}")?;
         }
-        for var in self.extl.iter() {
-            writeln!(f, "{pad}{INDENT2}{var}")?;
+        for var in m.extl.iter() {
+            writeln!(f, "{pad}{INDENT2}{} : {}", name(var), var.dtype())?;
         }
-        if !self.intf.is_empty() {
+        if !m.intf.is_empty() {
             writeln!(f, "{pad}{INDENT}{BOLD}interface{RESET}")?;
         }
-        for var in self.intf.iter() {
-            writeln!(f, "{pad}{INDENT2}{var}")?;
+        for var in m.intf.iter() {
+            writeln!(f, "{pad}{INDENT2}{} : {}", name(var), var.dtype())?;
         }
-        if !self.prvt.is_empty() {
+        if !m.prvt.is_empty() {
             writeln!(f, "{pad}{INDENT}{BOLD}private{RESET}")?;
         }
-        for var in self.prvt.iter() {
-            writeln!(f, "{pad}{INDENT2}{var}")?;
+        for var in m.prvt.iter() {
+            writeln!(f, "{pad}{INDENT2}{} : {}", name(var), var.dtype())?;
         }
-        for atom in &self.atoms {
-            atom.fmt_indent(f, &format!("{pad}{INDENT}"))?;
+        for atom in &m.atoms {
+            atom.with_varnames_untyped(name)
+                .fmt_indent(f, &format!("{pad}{INDENT}"))?;
         }
         Ok(())
     }
 }
 
-impl<I, J, D, S> fmt::Display for Module<I, J, D, S>
+impl<'a, I, J, F, S, N> fmt::Display for Display<'a, I, J, F, S, N>
+where
+    I: Combinatorial<Sort = S> + fmt::Display,
+    J: Sequential<Sort = S> + fmt::Display,
+    F: Differential<Sort = S> + fmt::Display,
+    S: fmt::Display,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_indent(f, "")
+    }
+}
+
+impl<I, J, D, S> Module<I, J, D, S>
 where
     I: Combinatorial<Sort = S> + fmt::Display,
     J: Sequential<Sort = S> + fmt::Display,
     D: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.fmt_indent(f, "")
+    /// Displays the module with variables under the names the given
+    /// function assigns; it is consulted for every module variable.
+    /// Displays the module with variables under the names the given
+    /// function assigns; it is consulted for every module variable and may
+    /// return anything that converts into a `Cow<'a, str>` -- `&'a str`,
+    /// `String`, or a `Cow` itself.
+    pub fn with_varnames<'a, N, R>(
+        &'a self,
+        name: N,
+    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    where
+        N: Fn(&Var<S>) -> R,
+        R: Into<Cow<'a, str>>,
+    {
+        Display {
+            module: self,
+            name: move |v: &Var<S>| name(v).into(),
+        }
     }
 }

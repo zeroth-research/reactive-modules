@@ -3,16 +3,20 @@
 
 mod common;
 
-use base::term;
 use base::term::Term;
 use base::var::{Var, X, d};
 use base::wire::Wire;
 use common::{Atom, Module, Ops, example_counter, example_peterson1, mk_op};
 
 #[test]
-fn can_instantiate_sequential_module() {
-    let _module = example_counter().unwrap();
-    //print!("{}", _module);
+fn can_instantiate_and_print_sequential_module() {
+    let (module, names) = example_counter().unwrap();
+    // the naming function makes totality explicit: unnamed variables fall
+    // back to their id instead of panicking
+    print!("{}", module.with_varnames(|v| names[v].as_str()));
+
+    let atom = &module.atoms()[0];
+    print!("{}", atom.with_varnames(|v| names[v].as_str()));
 }
 
 #[test]

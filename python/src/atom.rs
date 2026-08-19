@@ -4,6 +4,8 @@ use crate::wire::Wire;
 use crate::{try_iter_borrow, try_term_iter_cloned, try_var_iter_cloned};
 use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
+use std::borrow::Cow;
+use std::collections::HashMap;
 use theory::any::{Any, Combinatorial, Differential, Sequential};
 
 #[pyclass(frozen)]
@@ -198,8 +200,15 @@ impl Atom {
         }
     }
 
-    fn __str__(&self) -> String {
-        self.base.to_string()
+    /// Renders the atom with variables named by `names`; variables
+    /// without an entry print as `#{id}`. Don't rely on the fallback - it may change anytime
+    fn show(&self, names: HashMap<Var, String>) -> String {
+        self.base
+            .with_varnames(|v| match names.get(v) {
+                Some(name) => Cow::Borrowed(name.as_str()),
+                None => Cow::Owned(format!("#{}", v.id())),
+            })
+            .to_string()
     }
 
     fn __repr__(&self) -> String {
@@ -320,9 +329,9 @@ impl AtomBlock {
     fn __repr__(&self) -> String {
         let atom = &self.atom.get().base;
         match self.block {
-            BlockType::Init => atom.init().to_string(),
-            BlockType::Update => atom.update().to_string(),
-            BlockType::Delay => atom.delay().to_string(),
+            BlockType::Init => format!("{:?}", atom.init()),
+            BlockType::Update => format!("{:?}", atom.update()),
+            BlockType::Delay => format!("{:?}", atom.delay()),
         }
     }
 

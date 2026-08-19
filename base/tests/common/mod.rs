@@ -2,11 +2,12 @@
 //! uninterpreted `Ops` theory and the example modules built over it.
 #![allow(dead_code)]
 
-use base::term;
 use base::term::Term;
 use base::var::{Var, X};
 use base::wire::Wire;
+use std::collections::HashMap;
 use std::fmt;
+use std::fmt::{Display, Formatter};
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
 #[derive(Clone, Debug)]
@@ -38,6 +39,12 @@ impl Differential for Ops {
     const ZERO: Self = Ops("ZERO");
 }
 
+impl Display for Ops {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub type Module = base::Module<Ops, Ops, Ops>;
 pub type Atom = base::Atom<Ops, Ops, Ops>;
 
@@ -45,8 +52,19 @@ pub fn mk_op(name: &'static str) -> Ops {
     Ops(name)
 }
 
+#[macro_export]
+macro_rules! term {
+    ($itype:expr, $write:expr) => {
+        Term::constant($itype, $write)
+    };
+
+    ($itype:expr, $write:expr, $read:expr) => {
+        Term::function($itype, $write, $read)
+    };
+}
+
 #[allow(clippy::vec_init_then_push)]
-pub fn example_counter() -> Result<Module, String> {
+pub fn example_counter() -> Result<(Module, HashMap<Var<&'static str>, String>), String> {
     let x = Var::new("real");
     let y = Var::new("real");
     let z = Var::new("real");
@@ -87,7 +105,14 @@ pub fn example_counter() -> Result<Module, String> {
 
     let obs = [x, y, z, y0, z0];
 
-    Module::sequential(init, update, &obs, [])
+    let module = Module::sequential(init, update, &obs, [])?;
+    // every module variable needs a name: the display indexes them all
+    let varnames = [(x, "x"), (y, "y"), (z, "z"), (y0, "y0"), (z0, "z0")]
+        .into_iter()
+        .map(|(var, name)| (var, name.to_string()))
+        .collect();
+
+    Ok((module, varnames))
 }
 
 #[allow(clippy::vec_init_then_push)]

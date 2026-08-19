@@ -161,11 +161,15 @@ impl<S: Debug> Debug for Var<S> {
 #[derive(Debug, Clone)]
 pub struct Interface<S> {
     vars: Vec<Var<S>>,
+    wires: Vec<(Wire<S>, Var<S>)>,
 }
 
 impl<S> Interface<S> {
     pub fn empty() -> Self {
-        Self { vars: Vec::new() }
+        Self {
+            vars: Vec::new(),
+            wires: Vec::new(),
+        }
     }
 
     /// Returns true if the variables of self are disjoint from the variables of other
@@ -190,9 +194,14 @@ impl<S> Interface<S> {
     pub fn iter(&self) -> impl Iterator<Item = &Var<S>> {
         self.vars.iter()
     }
+
+    pub(crate) fn var(&self, wire: &Wire<S>) -> Option<&Var<S>> {
+        let res = self.wires.binary_search_by_key(&wire, |(w, _)| w);
+        res.map(|idx| &self.wires[idx].1).ok()
+    }
 }
 
-impl<S: Debug> Interface<S> {
+impl<S: Debug + Clone> Interface<S> {
     pub(crate) fn from_exact_iter_unchecked<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = Var<S>>,
@@ -202,6 +211,12 @@ impl<S: Debug> Interface<S> {
         let mut vars = Vec::with_capacity(iter.len());
         vars.extend(iter.map(Into::into));
 
+        let mut wires: Vec<(Wire<S>, Var<S>)> = Vec::with_capacity(3 * vars.len());
+        wires.extend(vars.iter().map(|v: &Var<S>| (v.ltc.clone(), v.clone())));
+        wires.extend(vars.iter().map(|v: &Var<S>| (v.nxt.clone(), v.clone())));
+        wires.extend(vars.iter().map(|v: &Var<S>| (v.der.clone(), v.clone())));
+        wires.sort_unstable();
+
         // variables must be unique and sorted
         debug_assert!(
             vars.is_sorted_by(|a, b| a < b),
@@ -209,7 +224,7 @@ impl<S: Debug> Interface<S> {
             vars
         );
 
-        Self { vars }
+        Self { vars, wires }
     }
 }
 
