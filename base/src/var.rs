@@ -59,11 +59,11 @@ impl<S> Hash for Var<S> {
     }
 }
 
-/// Variables are totally ordered by the id of their latched wire — the
+/// Variables are totally ordered by their latched wire — the
 /// bearing element of equality — which globally orders them by creation.
 impl<S> Ord for Var<S> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.ltc.id().cmp(&other.ltc.id())
+        self.ltc.cmp(&other.ltc)
     }
 }
 
@@ -193,8 +193,15 @@ impl<S> Interface<S> {
 }
 
 impl<S: Debug> Interface<S> {
-    pub(crate) fn from_iter_unchecked<T: Into<Var<S>>, I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let vars: Vec<_> = iter.into_iter().map(Into::into).collect();
+    pub(crate) fn from_exact_iter_unchecked<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = Var<S>>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let iter = iter.into_iter();
+        let mut vars = Vec::with_capacity(iter.len());
+        vars.extend(iter.map(Into::into));
+
         // variables must be unique and sorted
         debug_assert!(
             vars.is_sorted_by(|a, b| a < b),

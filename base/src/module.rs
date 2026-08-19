@@ -25,9 +25,6 @@ where
     ///     | extl |    ctrl     |
     ///     *====================*
     /// ```
-    ///  Wires are organised in pairs of identical twins where
-    ///  - 0: latched wires
-    ///  - 1: next wires
     extl: Interface<S>,
     intf: Interface<S>,
     prvt: Interface<S>,
@@ -36,7 +33,7 @@ where
 
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
-    /// as defined in the reactive modules paper.
+    /// according to their await relation.
     atoms: Vec<Atom<I, J, F, S>>,
 
     /// cache of all wires local to blocks
@@ -337,7 +334,7 @@ where
             past_atoms.push(atom);
         }
 
-        let ctrl = Interface::from_iter_unchecked(intf.iter().cloned());
+        let ctrl = Interface::from_exact_iter_unchecked(intf.iter().cloned());
 
         let mut prvt: BTreeSet<Var<S>> = BTreeSet::new();
         for var in hidden {
@@ -352,10 +349,10 @@ where
         let mut obs: Vec<_> = extl.iter().chain(intf.iter()).cloned().collect();
         obs.sort_unstable();
 
-        let extl = Interface::from_iter_unchecked(extl);
-        let intf = Interface::from_iter_unchecked(intf);
-        let prvt = Interface::from_iter_unchecked(prvt);
-        let obs = Interface::from_iter_unchecked(obs);
+        let extl = Interface::from_exact_iter_unchecked(extl);
+        let intf = Interface::from_exact_iter_unchecked(intf);
+        let prvt = Interface::from_exact_iter_unchecked(prvt);
+        let obs = Interface::from_exact_iter_unchecked(obs);
         let wires = wires.into_iter().collect();
         let local = local.into_iter().collect();
 
@@ -631,11 +628,11 @@ where
         // Collect and construct
         //============================================================
 
-        let extl = Interface::from_iter_unchecked(extl_set);
-        let intf = Interface::from_iter_unchecked(intf_stack);
-        let prvt = Interface::from_iter_unchecked(prvt_stack);
-        let obs = Interface::from_iter_unchecked(obs_stack);
-        let ctrl = Interface::from_iter_unchecked(ctrl_stack);
+        let extl = Interface::from_exact_iter_unchecked(extl_set);
+        let intf = Interface::from_exact_iter_unchecked(intf_stack);
+        let prvt = Interface::from_exact_iter_unchecked(prvt_stack);
+        let obs = Interface::from_exact_iter_unchecked(obs_stack);
+        let ctrl = Interface::from_exact_iter_unchecked(ctrl_stack);
         let wires = declared_wires.into_iter().collect();
 
         Ok(Module::new_unchecked(
