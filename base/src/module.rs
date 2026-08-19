@@ -329,7 +329,7 @@ where
             }
 
             for lc in atom.local() {
-                if wires.contains(&lc) {
+                if wires.contains(lc) {
                     return Err(format!("local wire {} is also a module wire", lc.id()));
                 }
                 if !local.insert(lc.clone()) {
@@ -430,7 +430,7 @@ where
     ///
     /// # See Also
     /// - [`Module::hiding_composition`], hiding several modules at their composition.
-    pub fn hiding<'a, H>(self: Self, hide: H) -> Result<Self, String>
+    pub fn hiding<'a, H>(self, hide: H) -> Result<Self, String>
     where
         H: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
@@ -504,8 +504,8 @@ where
                 }
 
                 if !declared_wires.contains(var.ltc()) {
-                    debug_assert!(!declared_wires.contains(&var.nxt()));
-                    debug_assert!(!declared_wires.contains(&var.der()));
+                    debug_assert!(!declared_wires.contains(var.nxt()));
+                    debug_assert!(!declared_wires.contains(var.der()));
                     // hidden variables leave the observables; they join the
                     // privates in the interface pass below
                     if !hide.contains(&var) {
@@ -517,13 +517,13 @@ where
             // Check that privates are uncoupled and restrict them
             prvt_stack.reserve(module.prvt.len());
             for var in module.prvt {
-                if declared_wires.contains(&var.ltc()) {
-                    debug_assert!(declared_wires.contains(&var.nxt()));
-                    debug_assert!(declared_wires.contains(&var.der()));
+                if declared_wires.contains(var.ltc()) {
+                    debug_assert!(declared_wires.contains(var.nxt()));
+                    debug_assert!(declared_wires.contains(var.der()));
                     return Err(format!("private wire {} is declared elsewhere", var.id()));
                 }
-                debug_assert!(!declared_wires.contains(&var.nxt()));
-                debug_assert!(!declared_wires.contains(&var.der()));
+                debug_assert!(!declared_wires.contains(var.nxt()));
+                debug_assert!(!declared_wires.contains(var.der()));
 
                 for wire in var.wires() {
                     debug_assert!(!restricted_wires.contains(&wire.id()));

@@ -395,8 +395,8 @@ where
         U: Theory<Sort = T::Sort> + Into<T>,
     {
         let terms = block.terms.into_iter().map(Term::convert).collect();
-        let read = block.read.into_iter().map(Into::into).collect();
-        let write = block.write.into_iter().map(Into::into).collect();
+        let read = block.read.into_iter().collect();
+        let write = block.write.into_iter().collect();
 
         Block { terms, read, write }
     }
