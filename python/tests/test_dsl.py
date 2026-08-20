@@ -284,7 +284,7 @@ def test_private():
     i = Var(Real1)
     o = Var(Real1)
     x = Var(Real1)
-    m = DigitalDelay(ctrl=(x, o), extl=(i,), prvt=frozenset([x]), theory=LRA)
+    m = DigitalDelay(ctrl=(x, o), extl=(i,), hide=frozenset([x]), theory=LRA)
 
     assert i in m.extl
     assert o in m.intf

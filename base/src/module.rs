@@ -301,7 +301,7 @@ where
     ///
     /// The variables and their roles are inferred from the atoms — the
     /// controlled variables form the interface, the remaining read or awaited
-    /// variables are external — and the `hidden` variables are then moved
+    /// variables are external — and the `hide` variables are then moved
     /// from the interface into the private state. Only controlled variables
     /// can be hidden: privates must be controlled by the module.
     ///
@@ -317,10 +317,10 @@ where
     /// # See Also
     /// - [`Module::observable`], the fully observable special case.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    pub fn partially_observable<'a, A, P>(atoms: A, prvt: P) -> Result<Self, String>
+    pub fn partially_observable<'a, A, H>(atoms: A, hide: H) -> Result<Self, String>
     where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
-        P: IntoIterator<Item = &'a Var<S>>,
+        H: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
         let mut wires: BTreeSet<Wire<S>> = BTreeSet::new();
@@ -363,7 +363,7 @@ where
         let ctrl = Interface::from_exact_iter_unchecked(intf.iter().cloned());
 
         let mut module_prvt: BTreeSet<Var<S>> = BTreeSet::new();
-        for var in prvt {
+        for var in hide {
             if let Some(var) = intf.take(var) {
                 module_prvt.insert(var);
             }
@@ -434,7 +434,7 @@ where
     /// is rejected, since privates must be controlled.
     ///
     /// # Parameters
-    /// - `prvt`: The variables to hide; hiding nothing returns the module unchanged.
+    /// - `hide`: The variables to hide; hiding nothing returns the module unchanged.
     ///
     /// # Returns
     ///
@@ -443,12 +443,12 @@ where
     ///
     /// # See Also
     /// - [`Module::hiding_composition`], hiding several modules at their composition.
-    pub fn hiding<'a, P>(self, prvt: P) -> Result<Self, String>
+    pub fn hiding<'a, H>(self, hide: H) -> Result<Self, String>
     where
-        P: IntoIterator<Item = &'a Var<S>>,
+        H: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
-        Self::hiding_composition(std::iter::once(self), prvt)
+        Self::hiding_composition(std::iter::once(self), hide)
     }
 
     /// Constructs the **hiding composition** of several modules: parallel
@@ -466,7 +466,7 @@ where
     ///
     /// # Parameters
     /// - `modules`: The modules to compose.
-    /// - `prvt`: The variables to hide in the composite; hiding nothing is
+    /// - `hide`: The variables to hide in the composite; hiding nothing is
     ///   exactly [`Module::composition`].
     ///
     /// # Error Conditions
@@ -479,13 +479,13 @@ where
     ///
     /// - `Ok(Module)` containing the composed module.
     /// - `Err(Error)` describing the reason composition failed.
-    pub fn hiding_composition<'a, M, P>(modules: M, prvt: P) -> Result<Self, String>
+    pub fn hiding_composition<'a, M, H>(modules: M, hide: H) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
-        P: IntoIterator<Item = &'a Var<S>>,
+        H: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
-        let prvt: HashSet<&Var<S>> = prvt.into_iter().collect();
+        let hide: HashSet<&Var<S>> = hide.into_iter().collect();
 
         let mut declared_wires: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut restricted_wires: HashSet<usize> = HashSet::new();
@@ -494,7 +494,7 @@ where
         let mut intf_prior_hiding: HashSet<usize> = HashSet::new();
 
         let mut intf_stack: Vec<Var<S>> = Vec::new();
-        let mut prvt_stack: Vec<Var<S>> = Vec::with_capacity(prvt.len());
+        let mut prvt_stack: Vec<Var<S>> = Vec::with_capacity(hide.len());
         let mut obs_stack: Vec<Var<S>> = Vec::new();
         let mut ctrl_stack: Vec<Var<S>> = Vec::new();
         let mut local_stack: Vec<Wire<S>> = Vec::new();
@@ -521,7 +521,7 @@ where
                     debug_assert!(!declared_wires.contains(var.der()));
                     // hidden variables leave the observables; they join the
                     // privates in the interface pass below
-                    if !prvt.contains(&var) {
+                    if !hide.contains(&var) {
                         obs_stack.push(var);
                     }
                 } else {
@@ -590,7 +590,7 @@ where
                     return Err(format!("interface var {} is doubly controlled", var.id()));
                 }
 
-                if prvt.contains(&var) {
+                if hide.contains(&var) {
                     prvt_stack.push(var);
                 } else {
                     intf_stack.push(var);
@@ -624,7 +624,7 @@ where
         //============================================================
 
         for var in extl_set.iter() {
-            if prvt.contains(&var) {
+            if hide.contains(&var) {
                 return Err(format!(
                     "Cannot hide uncontrolled/external var {}",
                     var.id()

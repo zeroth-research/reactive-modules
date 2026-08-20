@@ -135,10 +135,10 @@ fn compose_seq() {
     let z = Var::new("real");
 
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
-    let m1 = Module::combinatorial(assign, &[x, y]).unwrap();
+    let m1 = Module::combinatorial(&[x, y], assign).unwrap();
 
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
-    let m2 = Module::combinatorial(assign, &[x, z]).unwrap();
+    let m2 = Module::combinatorial(&[x, z], assign).unwrap();
 
     Module::composition([m1, m2]).unwrap();
 }
@@ -162,10 +162,10 @@ fn compose_hiding() {
     let z = Var::new("real");
 
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
-    let m1 = Module::combinatorial(assign, &[x, y]).unwrap();
+    let m1 = Module::combinatorial(&[x, y], assign).unwrap();
 
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
-    let m2 = Module::combinatorial(assign, &[x, z]).unwrap();
+    let m2 = Module::combinatorial(&[x, z], assign).unwrap();
 
     // hiding the shared variable privatises it in the composite
     let m = Module::hiding_composition([m1.clone(), m2.clone()], &[x]).unwrap();
@@ -271,7 +271,7 @@ fn compose_seq_2() {
     ]
     .to_vec();
     let obs = &[x, y, z, y0, z0];
-    let m1 = Module::sequential(init, update, obs, []).unwrap();
+    let m1 = Module::sequential(obs, init, update, []).unwrap();
 
     //
     // class Inv(smt.Module):
@@ -292,12 +292,12 @@ fn compose_seq_2() {
     .to_vec();
 
     let obs = &[x, y, z, inv];
-    let m2 = Module::combinatorial(assign.clone(), obs).unwrap();
+    let m2 = Module::combinatorial(obs, assign.clone()).unwrap();
 
     Module::composition([m1.clone(), m2]).unwrap();
 
     // try to use a `sequential_observable` ctor instead of combinatorial
-    let m2 = Module::sequential(assign.clone(), assign, obs, []).unwrap();
+    let m2 = Module::sequential(obs, assign.clone(), assign, []).unwrap();
     let _m = Module::composition([m1, m2]).unwrap();
     println!("{:?}", _m);
 }
@@ -379,14 +379,14 @@ fn heterogeneous_composition() {
 
     let init = Term::constant(SeqOps::HAVOC, [X(x)]).unwrap();
     let jump = Term::function(SeqOps::SKIP, [X(x)], [x]).unwrap();
-    let P = base::Module::sequential([init], [jump], &[x], []).unwrap();
+    let P = base::Module::sequential(&[x], [init], [jump], []).unwrap();
 
     let init = Term::constant(SeqOps::HAVOC, [X(y)]).unwrap();
     let flow = Term::constant(DifOps::ZERO, [d(y)]).unwrap();
-    let Q = base::Module::differential([init], [flow], &[y], []).unwrap();
+    let Q = base::Module::differential(&[y], [init], [flow], []).unwrap();
 
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();
-    let R = base::Module::combinatorial([comb], &[x, y, z]).unwrap();
+    let R = base::Module::combinatorial(&[x, y, z], [comb]).unwrap();
 
     let S = base::Module::composition([P, Q, R]);
     assert!(S.is_ok());

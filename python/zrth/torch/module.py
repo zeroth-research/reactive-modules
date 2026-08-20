@@ -111,11 +111,11 @@ def _extract_nn_module(nn_instance, theory=None, sequential=False, **kwargs):
     obs = [extl, intf]
     if sequential:
         # V(s): init awaits the next input; update reads the latched input.
-        return dict(update=_forward_terms(False), obs=obs)
+        return dict(update=_forward_terms(False), vars=obs)
     else:
         # V(s'): memoryless, reads the awaited next input.
         initupdate = _forward_terms(True)
-        return dict(init=initupdate, update=initupdate, obs=obs)
+        return dict(init=initupdate, update=initupdate, vars=obs)
 
 
 class Module(_BaseModule, nn.Module):
