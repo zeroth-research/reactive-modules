@@ -408,8 +408,6 @@ where
             }
         }
 
-        let wires = wires.keys().cloned().collect();
-
         Ok(Self::new_unchecked(
             Interface::from_exact_iter_unchecked(ctrl),
             Interface::from_exact_iter_unchecked(wait),
@@ -417,7 +415,7 @@ where
             init,
             update,
             delay,
-            wires,
+            wires.keys().cloned().collect(),
             local.into_iter().collect(),
         ))
     }
@@ -824,10 +822,6 @@ where
     typed: bool,
 }
 
-const BOLD: &str = "\x1b[1m";
-const RESET: &str = "\x1b[0m";
-const INDENT: &str = "  ";
-
 impl<'a, I, J, F, S, N> Display<'a, I, J, F, S, N>
 where
     I: Combinatorial<Sort = S> + fmt::Display,
@@ -883,12 +877,16 @@ where
 
         for term in iter {
             let display = term.with_wirenames(name);
-            writeln!(f, "{pad}{INDENT}{}", display)?;
+            writeln!(f, "{pad}{}", display)?;
         }
         Ok(())
     }
 
     pub fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
+        const BOLD: &str = "\x1b[1m";
+        const RESET: &str = "\x1b[0m";
+        const INDENT: &str = "  ";
+
         let a = self.atom;
 
         write!(f, "{pad}{BOLD}atom{RESET}")?;
@@ -899,12 +897,13 @@ where
         write!(f, " {BOLD}awaits{RESET} ")?;
         self.fmt_vars(f, a.wait.iter())?;
 
+        let tpad = format!("{pad}{INDENT}");
         writeln!(f, "\n{pad}{BOLD}init{RESET}")?;
-        self.fmt_terms(f, a.init.iter(), pad)?;
+        self.fmt_terms(f, a.init.iter(), tpad.as_str())?;
         writeln!(f, "{pad}{BOLD}delay{RESET}")?;
-        self.fmt_terms(f, a.delay.iter(), pad)?;
+        self.fmt_terms(f, a.delay.iter(), tpad.as_str())?;
         writeln!(f, "{pad}{BOLD}update{RESET}")?;
-        self.fmt_terms(f, a.update.iter(), pad)?;
+        self.fmt_terms(f, a.update.iter(), tpad.as_str())?;
 
         Ok(())
     }
