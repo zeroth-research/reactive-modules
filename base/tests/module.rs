@@ -78,8 +78,8 @@ fn can_instantiate_example_tiny1_2301() {
 
 #[test]
 fn can_compose_example_tiny1() {
-    let x = Var::new("Tny");
-    let y = Var::new("Tny");
+    let x = Var::new("x");
+    let y = Var::new("y");
     let m1 = example_tiny1(x, y, false).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
@@ -185,6 +185,40 @@ fn compose_hiding() {
 
     // an external variable cannot be hidden
     assert!(Module::hiding_composition([m1, m2], &[y]).is_err());
+}
+
+/// Local (temporary) wires are strictly per-atom scratch space: two atoms
+/// writing the same temporary must be rejected, both when they are placed
+/// in one module and when two atomic modules are composed.
+#[test]
+fn cannot_share_local_wires() {
+    let x = Var::new("real");
+    let y = Var::new("real");
+    // the shared temporary: both atoms compute through it
+    let tmp = Wire::zero("real");
+
+    let init = [term!(mk_op("CONST"), [X(x)]).unwrap()];
+    let update = [
+        term!(mk_op("CONST"), [tmp]).unwrap(),
+        term!(mk_op("ID"), [X(x)], [tmp]).unwrap(),
+    ];
+    let a1 = Atom::sequential(&[x], init, update).unwrap();
+
+    let init = [term!(mk_op("CONST"), [X(y)]).unwrap()];
+    let update = [
+        term!(mk_op("CONST"), [tmp]).unwrap(),
+        term!(mk_op("ID"), [X(y)], [tmp]).unwrap(),
+    ];
+    let a2 = Atom::sequential(&[y], init, update).unwrap();
+
+    // (1) construction of one module from both atoms
+    let m = Module::observable([a1.clone(), a2.clone()]);
+    assert!(m.is_err());
+
+    // (2) composition of the two atomic modules
+    let m1 = Module::observable([a1]).unwrap();
+    let m2 = Module::observable([a2]).unwrap();
+    assert!(Module::composition([m1, m2]).is_err());
 }
 
 #[test]
