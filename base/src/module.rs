@@ -294,7 +294,7 @@ where
     ///
     /// # Parameters
     /// - `atoms`: An iterable collection of atoms defining the module's behaviour.
-    /// - `hidden`: The variables to hide from the environment; hiding nothing
+    /// - `prvt`: The variables to hide from the environment; hiding nothing
     ///   yields a fully observable module.
     ///
     /// # Returns
@@ -304,10 +304,10 @@ where
     /// # See Also
     /// - [`Module::observable`], the fully observable special case.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    pub fn partially_observable<'a, A, H>(atoms: A, hidden: H) -> Result<Self, String>
+    pub fn partially_observable<'a, A, P>(atoms: A, prvt: P) -> Result<Self, String>
     where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
-        H: IntoIterator<Item = &'a Var<S>>,
+        P: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
         let mut wires: HashSet<Wire<S>> = HashSet::new();
@@ -349,10 +349,10 @@ where
 
         let ctrl = Interface::from_exact_iter_unchecked(intf.iter().cloned());
 
-        let mut prvt: BTreeSet<Var<S>> = BTreeSet::new();
-        for var in hidden {
+        let mut module_prvt: BTreeSet<Var<S>> = BTreeSet::new();
+        for var in prvt {
             if let Some(var) = intf.take(var) {
-                prvt.insert(var);
+                module_prvt.insert(var);
             }
             if extl.contains(var) {
                 return Err(format!("Hiding external variable {}", var.id()));
@@ -364,7 +364,7 @@ where
 
         let extl = Interface::from_exact_iter_unchecked(extl);
         let intf = Interface::from_exact_iter_unchecked(intf);
-        let prvt = Interface::from_exact_iter_unchecked(prvt);
+        let prvt = Interface::from_exact_iter_unchecked(module_prvt);
         let obs = Interface::from_exact_iter_unchecked(obs);
         let wires = wires.into_iter().collect();
         let local = local.into_iter().collect();
@@ -472,7 +472,7 @@ where
         P: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
-        let hide: HashSet<&Var<S>> = prvt.into_iter().collect();
+        let prvt: HashSet<&Var<S>> = prvt.into_iter().collect();
 
         let mut declared_wires: HashSet<Wire<S>> = HashSet::new();
         let mut restricted_wires: HashSet<usize> = HashSet::new();
@@ -481,7 +481,7 @@ where
         let mut intf_ids: HashSet<usize> = HashSet::new();
 
         let mut intf_stack: Vec<Var<S>> = Vec::new();
-        let mut prvt_stack: Vec<Var<S>> = Vec::with_capacity(hide.len());
+        let mut prvt_stack: Vec<Var<S>> = Vec::with_capacity(prvt.len());
         let mut obs_stack: Vec<Var<S>> = Vec::new();
         let mut ctrl_stack: Vec<Var<S>> = Vec::new();
         let mut local_stack: Vec<Wire<S>> = Vec::new();
@@ -508,7 +508,7 @@ where
                     debug_assert!(!declared_wires.contains(var.der()));
                     // hidden variables leave the observables; they join the
                     // privates in the interface pass below
-                    if !hide.contains(&var) {
+                    if !prvt.contains(&var) {
                         obs_stack.push(var);
                     }
                 }
@@ -573,7 +573,7 @@ where
                     return Err(format!("interface var {} is doubly controlled", var.id()));
                 }
 
-                if hide.contains(&var) {
+                if prvt.contains(&var) {
                     prvt_stack.push(var);
                 } else {
                     intf_stack.push(var);
@@ -607,7 +607,7 @@ where
         //============================================================
 
         for var in extl_set.iter() {
-            if hide.contains(&var) {
+            if prvt.contains(&var) {
                 return Err(format!(
                     "Cannot hide uncontrolled/external var {}",
                     var.id()
