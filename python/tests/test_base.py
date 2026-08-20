@@ -62,14 +62,14 @@ def test_module_sequential():
     x = Var(Bool([1, 1]))
     init = [Term.constant(LIA.Const(_bool_t(True)), [X(x)])]
     update = [Term(LIA.Id(), [X(x)], [x])]
-    _ = Module.sequential(init, update, [x])
+    _ = Module.sequential([x], init, update)
 
 
 def test_module_combinatorial():
     x = Var(Bool([1, 1]))
 
     assign = [Term.constant(LIA.Const(_bool_t(False)), [X(x)])]
-    _ = Module.combinatorial(assign, [x])
+    _ = Module.combinatorial([x], assign)
 
 
 def test_module_parallel():
@@ -81,17 +81,17 @@ def test_module_parallel():
 
     init = [Term.constant(LIA.Const(_bool_t(False)), [X(x)])]
     update = [Term(LIA.And(), [X(x)], [x, X(y)])]
-    p = Module.sequential(init, update, obs=[x, y])
+    p = Module.sequential([x, y], init, update)
 
     init = [
         Term.constant(LIA.Const(_bool_t(False)), [X(v)]),
         Term.constant(LIA.Const(_bool_t(False)), [X(y)]),
     ]
     update = [Term(LIA.And(), [X(v)], [v, x]), Term(LIA.Id(), [X(y)], [x])]
-    q = Module.sequential(init, update, obs=[x, y], prvt=[v])
+    q = Module.sequential([x, y, v], init, update, hide=[v])
 
     assign = [Term(LIA.Or(), [X(z)], [X(y), X(w)])]
-    r = Module.combinatorial(assign, obs=(z, y, w))
+    r = Module.combinatorial((z, y, w), assign)
 
     m = Module.comp(p, q, r)
 
@@ -149,11 +149,11 @@ def test_module_new_dispatches_on_blocks():
     x, p, init, update, delay = _stateful_blocks()
 
     # each block combination selects the corresponding constructor
-    sequential = Module(init=init, update=update, obs=[x, p])
-    differential = Module(init=init, delay=delay, obs=[x, p])
-    hybrid = Module(init=init, update=update, delay=delay, obs=[x, p])
-    jump = Module(update=update, obs=[x, p])
-    constant = Module(init=init, obs=[x, p])
+    sequential = Module(init=init, update=update, vars=[x, p])
+    differential = Module(init=init, delay=delay, vars=[x, p])
+    hybrid = Module(init=init, update=update, delay=delay, vars=[x, p])
+    jump = Module(update=update, vars=[x, p])
+    constant = Module(init=init, vars=[x, p])
 
     for m in (sequential, differential, hybrid, jump, constant):
         assert m.closed()
@@ -174,7 +174,7 @@ def test_module_new_partially_observable():
             dict(update=update),
             dict(update=update, delay=delay),
     ):
-        m = Module(**kwargs, obs=[x], prvt=[p])
+        m = Module(**kwargs, vars=[x, p], hide=[p])
         assert m.intf == [x]
         assert m.prvt == [p]
 
@@ -183,18 +183,18 @@ def test_module_new_positional_is_parallel():
     x, p, init, update, _ = _stateful_blocks()
     y = Var(Real([1, 1]))
 
-    p1 = Module(init=init, update=update, obs=[x, p])
-    p2 = Module(init=[Term(LRA.Const(torch.tensor([[0.0]])), [X(y)])], obs=[y])
+    p1 = Module(init=init, update=update, vars=[x, p])
+    p2 = Module(init=[Term(LRA.Const(torch.tensor([[0.0]])), [X(y)])], vars=[y])
 
     m = Module(p1, p2)
     assert m.intf == [x, p, y]
 
     # positional arguments cannot be combined with keyword blocks
     with pytest.raises(TypeError, match="take atoms or modules"):
-        Module(p1, init=init, obs=[x])
+        Module(p1, init=init, vars=[x])
 
     # module composition with hiding
-    m1 = Module(p1, p2, prvt=[p])
+    m1 = Module(p1, p2, hide=[p])
     assert p in m1.prvt
     assert m1.intf == [x, y]
 
@@ -208,13 +208,13 @@ def test_module_new_positional_atoms():
     assert m.closed() and m.intf == [x, p]
 
     # ...and hides the `prvt` variables when given
-    m = Module(atom, prvt=[p])
+    m = Module(atom, hide=[p])
     assert m.intf == [x] and m.prvt == [p]
 
     # the explicit `proc` staticmethod behaves the same
     m = Module.proc(atom)
     assert m.closed() and m.intf == [x, p]
-    m = Module.proc(atom, prvt=[p])
+    m = Module.proc(atom, hide=[p])
     assert m.intf == [x] and m.prvt == [p]
 
     # several atoms compose into one module
@@ -230,14 +230,14 @@ def test_module_new_rejects_bad_declarations():
     x, p, init, update, delay = _stateful_blocks()
 
     # a module needs its observable variables
-    with pytest.raises(TypeError, match="obs"):
+    with pytest.raises(TypeError, match="vars"):
         Module(init=init, update=update)
 
     # constant and hold modules are fully observable: `prvt` is invalid
     with pytest.raises(TypeError, match="constant modules .* fully observable"):
-        Module(init=init, obs=[x], prvt=[p])
+        Module(init=init, vars=[x], hide=[p])
     with pytest.raises(TypeError, match="hold modules .* fully observable"):
-        Module(obs=[x], prvt=[p])
+        Module(vars=[x], hide=[p])
 
 
 def test_atom_constructors():
@@ -289,19 +289,19 @@ def test_module_hold_and_flow():
     x, p, init, update, delay = _stateful_blocks()
 
     # hold: no blocks, every variable a symbolic constant; fully observable
-    m = Module(obs=[x, p])
+    m = Module(vars=[x, p])
     assert m.closed() and m.intf == [x, p]
     m = Module.hold([x, p])
     assert m.intf == [x, p] and len(m.prvt) == 0
     with pytest.raises(TypeError, match="fully observable"):
-        Module(obs=[x], prvt=[p])
+        Module(vars=[x], hide=[p])
 
     # flow: only the continuous dynamics, initial state havoced
-    m = Module(delay=delay, obs=[x, p])
+    m = Module(delay=delay, vars=[x, p])
     assert m.closed()
     atom = m.atoms[0]
     assert len(atom.init) == 2 and len(atom.delay) == 2
-    m = Module.flow(delay, [x], prvt=[p])
+    m = Module.flow([x, p], delay, hide=[p])
     assert m.intf == [x] and m.prvt == [p]
 
 
@@ -335,7 +335,7 @@ def test_atoms_compose_into_modules():
 
     # an explicitly built atom yields the same module as the shorthand
     atom = Atom.sequential([x, p], init, update)
-    direct = Module(init=init, update=update, obs=[x], prvt=[p])
+    direct = Module(init=init, update=update, vars=[x, p], hide=[p])
 
     assert len(direct.atoms) == 1
     assert direct.atoms[0].ctrl == atom.ctrl
@@ -344,7 +344,7 @@ def test_atoms_compose_into_modules():
 
 def test_show_named_rendering():
     x, p, init, update, delay = _stateful_blocks()
-    m = Module(init=init, update=update, obs=[x, p])
+    m = Module(init=init, update=update, vars=[x, p])
 
     # named variables render by name, in interfaces and wire positions
     out = m.show({x: "x", p: "p"})
@@ -372,13 +372,13 @@ def test_heterogeneous_composition():
     zero = torch.tensor([[0]])
     init = [Term(LRA.Const(zero), [X(x)])]
     update = [Term(LRA.Id(), [X(x)], [x])]
-    P = Module.sequential(init, update, [x])
+    P = Module.sequential([x], init, update)
 
     init = [Term(LRA.Const(zero), [X(y)])]
     flow = [Term(LRA.Const(zero), [d(y)])]
-    Q = Module.differential(init, flow, [y])
+    Q = Module.differential([y], init, flow)
 
     comb = [Term(LRA.Add(), [X(z)], [X(x), X(y)])]
-    R = Module.combinatorial(comb, [x, y, z])
+    R = Module.combinatorial([x, y, z], comb)
 
     S = Module.comp(P, Q, R)

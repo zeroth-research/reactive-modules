@@ -33,7 +33,7 @@ class SimpleEnv(gym.Env, Module):
 
         obs = [q_values, observation, reward, terminated, truncated]
         prvt = [state]
-        return super().__new__(cls, init=reset, update=step, obs=obs, prvt=prvt)
+        return super().__new__(cls, init=reset, update=step, vars=obs + prvt, hide=prvt)
 
     def __init__(self):
         """Initialize simple chain environment"""

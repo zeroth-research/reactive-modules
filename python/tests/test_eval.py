@@ -59,7 +59,7 @@ def _make_counter():
         Term(LIA.Const(torch.tensor([[1]], dtype=torch.int64)), [one]),
         Term(LIA.Add(), [X(x)], [x, one]),
     ]
-    m = Module.sequential(init, update, [x])
+    m = Module.sequential([x], init, update)
     return m, x
 
 
@@ -107,7 +107,7 @@ def test_boolean_logic():
         Term(LIA.Or(), [X(b)], [a, b]),
         Term(LIA.Not(), [X(c)], [c]),
     ]
-    m = Module.sequential(init, update, [a, b, c])
+    m = Module.sequential([a, b, c], init, update)
     state, history = _run_module(m, 2)
 
     # After init: a=True, b=False, c=not(True)=False
@@ -151,7 +151,7 @@ def test_ite():
         Term(LIA.Add(), [tmp2], [x, two]),
         Term(LIA.Ite(), [X(x)], [cond, tmp1, tmp2]),
     ]
-    m = Module.sequential(init, update, [cond, x])
+    m = Module.sequential([cond, x], init, update)
     state, history = _run_module(m, 2)
 
     # After init: cond=True, x=0
@@ -179,7 +179,7 @@ def test_tensor_ops():
     update = [
         Term(LIA.ReLU(), [X(data)], [data]),
     ]
-    m = Module.sequential(init, update, [data])
+    m = Module.sequential([data], init, update)
     state, history = _run_module(m, 2)
 
     # Wire data is stored as 2-D `(1, N)`; reshape to match.
@@ -234,7 +234,7 @@ def test_comparisons():
         Term(LIA.Eq(), [eq_wire2], [a, b]),
         Term(LIA.Lt(), [lt_wire2], [a, b]),
     ]
-    m = Module.sequential(init, update, [a, b])
+    m = Module.sequential([a, b], init, update)
     state, history = _run_module(m, 3)
 
     # After init: a=3, b=5, eq(3,5)=F, lt(3,5)=T
@@ -270,7 +270,7 @@ def test_env_inputs():
     update = [
         Term(LIA.Add(), [X(x)], [x, X(env)]),
     ]
-    m = Module.sequential(init, update, obs=[x, env])
+    m = Module.sequential([x, env], init, update)
 
     inputs_seq = [
         {X(env): torch.tensor([[5]], dtype=torch.int64)},
@@ -307,7 +307,7 @@ def _make_twobitcounter():
         Term(LIA.Ite(), [X(b1)], [b0_and_enable, not_b1, b1]),
     ]
 
-    m = Module.sequential(init, update, obs=[b0, b1, enable])
+    m = Module.sequential([b0, b1, enable], init, update)
     return m, b0, b1, enable
 
 

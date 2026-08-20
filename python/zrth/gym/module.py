@@ -245,8 +245,8 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
     return dict(
         init=reset_terms,
         update=step_terms,
-        obs=obs,
-        prvt=list(prvt_wires.values()),
+        vars=obs + list(prvt_wires.values()),
+        hide=list(prvt_wires.values()),
         _wire_names=wire_names,
     )
 

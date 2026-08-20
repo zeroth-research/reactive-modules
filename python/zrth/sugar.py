@@ -37,12 +37,12 @@ flow, ``init`` alone constant, and none hold. For example, an open hybrid clock:
 
 ``ctrl`` and ``extl`` must be **ordered tuples**: their order is meaningful — it
 determines how the variables bind to the positional parameters of ``init`` / ``update``
-/ ``delay`` and how the returned values align with ``ctrl``. ``prvt`` is only tested
+/ ``delay`` and how the returned values align with ``ctrl``. ``hide`` is only tested
 for membership, so it can be any collection — preferably a ``set``. ``extl`` variables
 are external inputs: declared but not driven here, so a module with ``extl`` is open;
 ``prvt`` hides the given variables in the built module (partially observable).
 
-Config comes from **constructor kwargs** (``theory=``, ``ctrl=``, ``extl=``, ``prvt=``).
+Config comes from **constructor kwargs** (``theory=``, ``ctrl=``, ``extl=``, ``hide=``).
 Two base-class constraints force this (both flagged for design review):
   * it cannot flow through ``super().__init__`` — the base Module is a frozen pyo3 class
     whose constructor runs at ``__new__`` (before any ``__init__``), so this builds there;
@@ -135,7 +135,7 @@ def _build_delay_block(cls, ctrl, extl, theory) -> list:
 
 
 class Module(_Module):
-    def __new__(cls, ctrl=(), extl=(), prvt=frozenset(), theory=None):
+    def __new__(cls, ctrl=(), extl=(), hide=frozenset(), theory=None):
         if theory is None:
             raise TypeError(f"{cls.__name__}: `theory` is a required constructor arg")
 
@@ -146,8 +146,8 @@ class Module(_Module):
         update = _build_update_block(cls, ctrl, extl, theory)
         delay = _build_delay_block(cls, ctrl, extl, theory)
 
-        obs = (var for var in ctrl + extl if var not in prvt)
-
-        self = super().__new__(cls, init=init, update=update, delay=delay, obs=obs, prvt=prvt)
+        self = super().__new__(
+            cls, init=init, update=update, delay=delay, vars=ctrl + extl, hide=hide
+        )
         self._theory = theory
         return self

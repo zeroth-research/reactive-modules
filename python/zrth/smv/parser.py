@@ -709,5 +709,5 @@ def _build_module(
     # Build obs_pairs: all variables (state + ivar)
     obs_pairs = [name_map[n] for n, _ in all_decls]
 
-    module = Module.sequential(init_low.terms, update_low.terms, obs=obs_pairs)
+    module = Module.sequential(obs_pairs, init_low.terms, update_low.terms)
     return module, name_map
