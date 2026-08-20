@@ -180,28 +180,40 @@ where
             let mut decl: HashSet<usize> = HashSet::new();
 
             debug_assert!(extl.iter().all(|v| decl.insert(v.id())));
-            let extl: HashSet<usize> = extl.iter().map(|v| v.id()).collect();
+            let extl_id: HashSet<usize> = extl.iter().map(|v| v.id()).collect();
 
             debug_assert!(intf.iter().all(|v| decl.insert(v.id())));
-            let intf: HashSet<usize> = intf.iter().map(|v| v.id()).collect();
+            let intf_id: HashSet<usize> = intf.iter().map(|v| v.id()).collect();
 
             debug_assert!(prvt.iter().all(|v| decl.insert(v.id())));
-            let prvt: HashSet<usize> = prvt.iter().map(|v| v.id()).collect();
+            let prvt_id: HashSet<usize> = prvt.iter().map(|v| v.id()).collect();
 
             debug_assert!(obs.iter().all(|v| !decl.insert(v.id())));
             debug_assert!(
                 obs.iter()
-                    .all(|v| extl.contains(&v.id()) || intf.contains(&v.id()))
+                    .all(|v| extl_id.contains(&v.id()) || intf_id.contains(&v.id()))
             );
 
             debug_assert!(ctrl.iter().all(|v| !decl.insert(v.id())));
             debug_assert!(
                 ctrl.iter()
-                    .all(|v| intf.contains(&v.id()) || prvt.contains(&v.id()))
+                    .all(|v| intf_id.contains(&v.id()) || prvt_id.contains(&v.id()))
             );
 
+            debug_assert!(wires.is_sorted());
+            debug_assert!(local.is_sorted());
+            debug_assert!(wires.windows(2).all(|w| w[0] < w[1]));
+            debug_assert!(local.windows(2).all(|w| w[0] < w[1]));
+
+            debug_assert!(ctrl.iter().all(|v| wires.binary_search(v.ltc()).is_ok()));
+            debug_assert!(ctrl.iter().all(|v| wires.binary_search(v.nxt()).is_ok()));
+            debug_assert!(ctrl.iter().all(|v| wires.binary_search(v.der()).is_ok()));
+            debug_assert!(extl.iter().all(|v| wires.binary_search(v.ltc()).is_ok()));
+            debug_assert!(extl.iter().all(|v| wires.binary_search(v.nxt()).is_ok()));
+            debug_assert!(extl.iter().all(|v| wires.binary_search(v.der()).is_ok()));
+
             let mut written: HashSet<usize> = HashSet::new();
-            written.extend(extl.iter());
+            written.extend(extl_id.iter());
             // check atoms consistency
             for atom in atoms.iter() {
                 for var in atom.read().iter() {
@@ -215,6 +227,9 @@ where
                     debug_assert!(decl.contains(&var.id()));
                     debug_assert!(written.insert(var.id()));
                 }
+
+                debug_assert!(atom.wires().iter().all(|w| wires.binary_search(w).is_ok()));
+                debug_assert!(atom.local().iter().all(|w| local.binary_search(w).is_ok()));
             }
 
             // check that all module control vars are written/controlled by an atom
@@ -225,12 +240,10 @@ where
             // check that temporaries are decoupled from module wires and other atoms
             let mut module_temp: HashSet<usize> = HashSet::new();
             for lc in atoms.iter().flat_map(Atom::local) {
-                debug_assert!(local.contains(lc));
+                debug_assert!(local.binary_search(lc).is_ok());
                 debug_assert!(module_temp.insert(lc.id()));
             }
             debug_assert_eq!(module_temp.len(), local.len());
-
-            //TODO check local and wires
         }
 
         Module {
@@ -310,8 +323,8 @@ where
         P: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
-        let mut wires: HashSet<Wire<S>> = HashSet::new();
-        let mut local: HashSet<Wire<S>> = HashSet::new();
+        let mut wires: BTreeSet<Wire<S>> = BTreeSet::new();
+        let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
 
         let mut extl: BTreeSet<Var<S>> = BTreeSet::new();
         let mut intf: BTreeSet<Var<S>> = BTreeSet::new();
@@ -474,11 +487,11 @@ where
     {
         let prvt: HashSet<&Var<S>> = prvt.into_iter().collect();
 
-        let mut declared_wires: HashSet<Wire<S>> = HashSet::new();
+        let mut declared_wires: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut restricted_wires: HashSet<usize> = HashSet::new();
 
         let mut extl_set: BTreeSet<Var<S>> = BTreeSet::new();
-        let mut intf_ids: HashSet<usize> = HashSet::new();
+        let mut intf_prior_hiding: HashSet<usize> = HashSet::new();
 
         let mut intf_stack: Vec<Var<S>> = Vec::new();
         let mut prvt_stack: Vec<Var<S>> = Vec::with_capacity(prvt.len());
@@ -511,6 +524,9 @@ where
                     if !prvt.contains(&var) {
                         obs_stack.push(var);
                     }
+                } else {
+                    debug_assert!(declared_wires.contains(var.nxt()));
+                    debug_assert!(declared_wires.contains(var.der()));
                 }
             }
 
@@ -540,6 +556,7 @@ where
                     return Err(format!("local wire {} is declared elsewhere", tmp.id()));
                 }
                 debug_assert!(!restricted_wires.contains(&tmp.id()));
+                restricted_wires.insert(tmp.id());
 
                 local_stack.push(tmp);
             }
@@ -554,7 +571,7 @@ where
 
                 // external variables stay external only if they are not
                 // deemed controlled by modules visited before
-                if !intf_ids.contains(&var.id()) {
+                if !intf_prior_hiding.contains(&var.id()) {
                     extl_set.insert(var);
                 }
             }
@@ -569,7 +586,7 @@ where
                 // deemed external by modules visited before
                 extl_set.remove(&var);
 
-                if !intf_ids.insert(var.id()) {
+                if !intf_prior_hiding.insert(var.id()) {
                     return Err(format!("interface var {} is doubly controlled", var.id()));
                 }
 
@@ -624,6 +641,7 @@ where
         ctrl_stack.sort_unstable();
         obs_stack.sort_unstable();
         prvt_stack.sort_unstable();
+        local_stack.sort_unstable();
 
         //============================================================
         // Reorder atoms
