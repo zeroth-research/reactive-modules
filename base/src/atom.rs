@@ -1048,12 +1048,12 @@ where
     ///   dynamics are involved.
     /// - [`Module::combinatorial`], for stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn sequential<'a, V, H, W, U>(vars: V, init: W, update: U, hide: H) -> Result<Self, String>
+    pub fn sequential<'a, V, W, U, H>(vars: V, init: W, update: U, hide: H) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        H: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
+        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::sequential(vars, init, update)?;
@@ -1083,12 +1083,12 @@ where
     /// - [`Module::sequential`], the discrete dual: only an update, no continuous dynamics.
     /// - [`Module::hybrid`], when both discrete and continuous dynamics are explicit.
     /// - [`Atom::differential`], for creating individual differential atoms.
-    pub fn differential<'a, V, H, W, Z>(vars: V, init: W, delay: Z, hide: H) -> Result<Self, String>
+    pub fn differential<'a, V, W, Z, H>(vars: V, init: W, delay: Z, hide: H) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        H: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<I>>,
         Z: IntoIterator<Item = Term<F>>,
+        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::differential(vars, init, delay)?;
@@ -1118,7 +1118,7 @@ where
     /// - [`Module::sequential`] and [`Module::differential`], the purely
     ///   discrete and purely continuous special cases.
     /// - [`Atom::hybrid`], for creating individual hybrid atoms.
-    pub fn hybrid<'a, V, H, W, U, Z>(
+    pub fn hybrid<'a, V, W, U, Z, H>(
         vars: V,
         init: W,
         update: U,
@@ -1127,10 +1127,10 @@ where
     ) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        H: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
         Z: IntoIterator<Item = Term<F>>,
+        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::hybrid(vars, init, update, delay)?;
@@ -1157,11 +1157,11 @@ where
     /// # See Also
     /// - [`Module::sequential`], when the initial state is constrained explicitly.
     /// - [`Module::constant`], the dual: only the initial state, no update.
-    pub fn jump<'a, V, H, U>(vars: V, update: U, hide: H) -> Result<Self, String>
+    pub fn jump<'a, V, U, H>(vars: V, update: U, hide: H) -> Result<Self, String>
     where
         U: IntoIterator<Item = Term<J>>,
         V: IntoIterator<Item = &'a Var<S>>,
-        H: IntoIterator<Item = &'a Var<S>>,
+        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::jump(vars, update)?;
@@ -1191,7 +1191,7 @@ where
     /// - [`Module::hybrid`], when the initial state is constrained explicitly.
     /// - [`Module::jump`] and [`Module::flow`], the purely discrete and
     ///   purely continuous special cases.
-    pub fn uninitialized<'a, V, H, U, Z>(
+    pub fn uninitialized<'a, V, U, Z, H>(
         vars: V,
         update: U,
         delay: Z,
@@ -1201,7 +1201,7 @@ where
         U: IntoIterator<Item = Term<J>>,
         Z: IntoIterator<Item = Term<F>>,
         V: IntoIterator<Item = &'a Var<S>>,
-        H: IntoIterator<Item = &'a Var<S>>,
+        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::uninitialized(vars, update, delay)?;
@@ -1257,10 +1257,10 @@ where
     /// # See Also
     /// - [`Module::differential`], when the initial state is constrained explicitly.
     /// - [`Atom::flow`], for creating individual flow atoms.
-    pub fn flow<'a, V, H, Z>(vars: V, delay: Z, hide: H) -> Result<Self, String>
+    pub fn flow<'a, V, Z, H>(vars: V, delay: Z, hide: H) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        H: IntoIterator<Item = &'a Var<S>>,
+        H: Fn(&Var<S>) -> bool,
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
     {

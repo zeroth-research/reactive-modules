@@ -87,13 +87,11 @@ impl Module {
         let init = try_term_iter_cloned(&init)?;
         let update = try_term_iter_cloned(&update)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide: Vec<_> = match hide {
-            Some(hide) => try_var_iter_cloned(hide)?.collect(),
-            None => Vec::new(),
-        };
+        let hide = Hide::try_from(hide)?;
 
-        let module = base::Module::sequential(vars.iter(), init, update, hide.iter());
+        let module = base::Module::sequential(vars.iter(), init, update, hide.as_fn());
 
+        hide.err()?;
         match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
@@ -123,12 +121,11 @@ impl Module {
         let init = try_term_iter_cloned(&init)?;
         let flow = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide: Vec<_> = match hide {
-            Some(hide) => try_var_iter_cloned(hide)?.collect(),
-            None => Vec::new(),
-        };
+        let hide = Hide::try_from(hide)?;
 
-        let module = base::Module::differential(vars.iter(), init, flow, hide.iter());
+        let module = base::Module::differential(vars.iter(), init, flow, hide.as_fn());
+
+        hide.err()?;
         match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
@@ -148,13 +145,11 @@ impl Module {
         let update = try_term_iter_cloned(&update)?;
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide: Vec<_> = match hide {
-            Some(hide) => try_var_iter_cloned(hide)?.collect(),
-            None => Vec::new(),
-        };
+        let hide = Hide::try_from(hide)?;
 
-        let module = base::Module::hybrid(vars.iter(), init, update, delay, hide.iter());
+        let module = base::Module::hybrid(vars.iter(), init, update, delay, hide.as_fn());
 
+        hide.err()?;
         match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
@@ -170,13 +165,11 @@ impl Module {
     ) -> PyResult<Self> {
         let update = try_term_iter_cloned(&update)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide: Vec<_> = match hide {
-            Some(hide) => try_var_iter_cloned(hide)?.collect(),
-            None => Vec::new(),
-        };
+        let hide = Hide::try_from(hide)?;
 
-        let module = base::Module::jump(vars.iter(), update, hide.iter());
+        let module = base::Module::jump(vars.iter(), update, hide.as_fn());
 
+        hide.err()?;
         match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
@@ -194,13 +187,11 @@ impl Module {
         let update = try_term_iter_cloned(&update)?;
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide: Vec<_> = match hide {
-            Some(hide) => try_var_iter_cloned(hide)?.collect(),
-            None => Vec::new(),
-        };
+        let hide = Hide::try_from(hide)?;
 
-        let module = base::Module::uninitialized(vars.iter(), update, delay, hide.iter());
+        let module = base::Module::uninitialized(vars.iter(), update, delay, hide.as_fn());
 
+        hide.err()?;
         match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
@@ -227,13 +218,11 @@ impl Module {
     ) -> PyResult<Self> {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide: Vec<_> = match hide {
-            Some(hide) => try_var_iter_cloned(hide)?.collect(),
-            None => Vec::new(),
-        };
+        let hide = Hide::try_from(hide)?;
 
-        let module = base::Module::flow(vars.iter(), delay, hide.iter());
+        let module = base::Module::flow(vars.iter(), delay, hide.as_fn());
 
+        hide.err()?;
         match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
@@ -259,14 +248,11 @@ impl Module {
     fn proc(atoms: &Bound<'_, PyTuple>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let atoms: Vec<_> = try_iter_borrow::<Atom>(atoms)?.collect::<PyResult<_>>()?;
         let atoms = atoms.iter().map(|a| a.base().clone());
+        let hide = Hide::try_from(hide)?;
 
-        let module = if let Some(hide) = hide {
-            let hide: Vec<_> = try_var_iter_cloned(hide)?.collect();
-            base::Module::partially_observable(atoms, hide.iter())
-        } else {
-            base::Module::observable(atoms)
-        };
+        let module = base::Module::partially_observable(atoms, hide.as_fn());
 
+        hide.err()?;
         match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
@@ -281,14 +267,11 @@ impl Module {
     fn comp(modules: &Bound<'_, PyTuple>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let modules: Vec<_> = try_iter_borrow::<Self>(modules)?.collect::<PyResult<_>>()?;
         let modules = modules.iter().map(|r| r.base.clone());
+        let hide = Hide::try_from(hide)?;
 
-        let module = if let Some(hide) = hide {
-            let hide: Vec<_> = try_var_iter_cloned(hide)?.collect();
-            base::Module::hiding_composition(modules, hide.iter())
-        } else {
-            base::Module::composition(modules)
-        };
+        let module = base::Module::hiding_composition(modules, hide.as_fn());
 
+        hide.err()?;
         match module {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),

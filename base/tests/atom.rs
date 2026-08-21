@@ -38,11 +38,11 @@ fn module_write_all_ctrl() {
 
     let obs = &[x, y, x0];
 
-    let m = Module::sequential(obs, vec![], update.clone(), []);
+    let m = Module::sequential(obs, vec![], update.clone(), |_| false);
     assert!(m.is_err());
 
     let init: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x0)], [X(x)]).unwrap()].to_vec();
-    let m = Module::sequential(obs, init, update.clone(), []);
+    let m = Module::sequential(obs, init, update.clone(), |_| false);
     assert!(m.is_err());
 
     let init: Vec<Term<Ops>> = [
@@ -51,7 +51,7 @@ fn module_write_all_ctrl() {
     ]
     .to_vec();
 
-    let m = Module::sequential(obs, init.clone(), update, []);
+    let m = Module::sequential(obs, init.clone(), update, |_| false);
     assert!(m.is_err());
 
     let update: Vec<Term<Ops>> = [
@@ -60,7 +60,7 @@ fn module_write_all_ctrl() {
     ]
     .to_vec();
 
-    let m = Module::sequential(obs, init, update, []);
+    let m = Module::sequential(obs, init, update, |_| false);
     assert!(m.is_ok());
 }
 
@@ -124,8 +124,9 @@ fn differential_drifting_clocks() {
     // The atom writes only d(x) and d(y), so `t` is inferred external.
     let obs = &[x, y, t];
 
-    let module: base::Module<LRA, LRA, LRA> = base::Module::differential(obs, init, delay, [])
-        .expect("differential module should be well-formed");
+    let module: base::Module<LRA, LRA, LRA> =
+        base::Module::differential(obs, init, delay, |_| false)
+            .expect("differential module should be well-formed");
 
     // An open module: the input clock is external.
     assert!(module.is_open());
@@ -179,7 +180,7 @@ fn differential_module_rejects_dx_equals_x() {
 
     let module = delay.and_then(|delay| {
         let init = [Term::constant(LRA::Havoc(), [X(x)]).unwrap()];
-        base::Module::<LRA, LRA, LRA>::differential(&[x], init, [delay], [])
+        base::Module::<LRA, LRA, LRA>::differential(&[x], init, [delay], |_| false)
     });
     assert!(module.is_err());
 }
@@ -193,7 +194,7 @@ fn uninitialized_module_ok() {
 
     // x' = y: x is controlled, y is inferred external.
     let update = [Term::function(mk_op("ID"), [X(x)], [y]).unwrap()];
-    let m = Module::jump(&[x, y], update, []).unwrap();
+    let m = Module::jump(&[x, y], update, |_| false).unwrap();
 
     assert!(m.is_open());
     assert_eq!(m.atoms().len(), 1);
@@ -215,7 +216,7 @@ fn uninitialized_module_rejects_latched_write() {
 
     // writes the latched wire `x` instead of the next wire `X(x)`
     let update = [Term::function(mk_op("ID"), [*x], [y]).unwrap()];
-    assert!(Module::jump(&[x, y], update, []).is_err());
+    assert!(Module::jump(&[x, y], update, |_| false).is_err());
 }
 
 /// A constant module: only the init is given, the variable is held by a
@@ -289,7 +290,7 @@ fn simple_timed_automaton() {
         Term::constant(mk_op("ZERO"), [d(loc)]).unwrap(),
     ];
 
-    let m = Module::hybrid(&[x, loc], init, update, delay, []).unwrap();
+    let m = Module::hybrid(&[x, loc], init, update, delay, |_| false).unwrap();
 
     // A closed module controlling both the clock and the location.
     assert!(m.is_closed());
@@ -329,6 +330,6 @@ fn hybrid_rejects_missing_flow() {
     // flow: dx = 1, but no dloc = 0
     let delay = [Term::constant(mk_op("ONE"), [d(x)]).unwrap()];
 
-    let m = Module::hybrid(&[x, loc], init, update, delay, []);
+    let m = Module::hybrid(&[x, loc], init, update, delay, |_| false);
     assert!(m.is_err());
 }
