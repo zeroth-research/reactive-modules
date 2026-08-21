@@ -1023,21 +1023,20 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Eq + Clone + Debug,
+    S: Clone + Debug,
 {
     /// Constructs a **sequential module**: behaviour that evolves over
     /// discrete time steps.
     ///
     /// A sequential module specifies an initialisation and a discrete state
     /// update; it has no continuous dynamics. It is composed of a single
-    /// [`Atom::sequential`] atom over `vars` and `hide`, with the `hide`
-    /// variables hidden; an empty `hide` yields a **fully observable** module.
+    /// [`Atom::sequential`] atom over `vars`, and is **fully
+    /// observable**: use [`Module::hiding`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
     /// - `init`: The set of terms defining the module's initial state.
     /// - `update`: The set of terms defining the module's state update at each time step.
-    /// - `hide`: The variables hidden from the environment, among `vars`.
     ///
     /// # Returns
     /// A `Result` containing the constructed sequential module if successful,
@@ -1048,16 +1047,15 @@ where
     ///   dynamics are involved.
     /// - [`Module::combinatorial`], for stateless, time-independent modules.
     /// - [`Atom::sequential`], for creating individual sequential atoms.
-    pub fn sequential<'a, V, W, U, H>(vars: V, init: W, update: U, hide: H) -> Result<Self, String>
+    pub fn sequential<'a, V, W, U>(vars: V, init: W, update: U) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
-        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::sequential(vars, init, update)?;
-        Self::partially_observable(std::iter::once(atom), hide)
+        Self::observable(std::iter::once(atom))
     }
 
     /// Constructs a **differential module**: behaviour that evolves
@@ -1065,15 +1063,13 @@ where
     ///
     /// A differential module specifies an initialisation and a continuous
     /// evolution of the derivatives; the discrete update is an implicit skip.
-    /// It is composed of a single [`Atom::differential`] atom over `vars` and
-    /// `hide`, with the `hide` variables hidden; an empty `hide` yields a
-    /// **fully observable** module.
+    /// It is composed of a single [`Atom::differential`] atom over `vars`, and is **fully
+    /// observable**: use [`Module::hiding`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
     /// - `init`: The set of terms defining the module's initial state.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
-    /// - `hide`: The variables hidden from the environment, among `vars`.
     ///
     /// # Returns
     /// A `Result` containing the constructed differential module if successful,
@@ -1083,16 +1079,15 @@ where
     /// - [`Module::sequential`], the discrete dual: only an update, no continuous dynamics.
     /// - [`Module::hybrid`], when both discrete and continuous dynamics are explicit.
     /// - [`Atom::differential`], for creating individual differential atoms.
-    pub fn differential<'a, V, W, Z, H>(vars: V, init: W, delay: Z, hide: H) -> Result<Self, String>
+    pub fn differential<'a, V, W, Z>(vars: V, init: W, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<I>>,
         Z: IntoIterator<Item = Term<F>>,
-        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::differential(vars, init, delay)?;
-        Self::partially_observable(std::iter::once(atom), hide)
+        Self::observable(std::iter::once(atom))
     }
 
     /// Constructs a **hybrid module**, combining discrete updates with
@@ -1100,15 +1095,14 @@ where
     ///
     /// A hybrid module specifies all three blocks explicitly — initialisation,
     /// discrete update, and continuous delay. It is composed of a single
-    /// [`Atom::hybrid`] atom over `vars` and `hide`, with the `hide` variables
-    /// hidden; an empty `hide` yields a **fully observable** module.
+    /// [`Atom::hybrid`] atom over `vars`, and is **fully
+    /// observable**: use [`Module::hiding`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
     /// - `init`: The set of terms defining the module's initial state.
     /// - `update`: The set of terms defining the discrete state update.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
-    /// - `hide`: The variables hidden from the environment, among `vars`.
     ///
     /// # Returns
     /// A `Result` containing the constructed hybrid module if successful,
@@ -1118,23 +1112,16 @@ where
     /// - [`Module::sequential`] and [`Module::differential`], the purely
     ///   discrete and purely continuous special cases.
     /// - [`Atom::hybrid`], for creating individual hybrid atoms.
-    pub fn hybrid<'a, V, W, U, Z, H>(
-        vars: V,
-        init: W,
-        update: U,
-        delay: Z,
-        hide: H,
-    ) -> Result<Self, String>
+    pub fn hybrid<'a, V, W, U, Z>(vars: V, init: W, update: U, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
         Z: IntoIterator<Item = Term<F>>,
-        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::hybrid(vars, init, update, delay)?;
-        Self::partially_observable(std::iter::once(atom), hide)
+        Self::observable(std::iter::once(atom))
     }
 
     /// Constructs a **jump module**: sequential behaviour whose
@@ -1142,13 +1129,12 @@ where
     ///
     /// Only the update is given; the initial values of the controlled
     /// variables are havoced. It is composed of a single
-    /// [`Atom::jump`] atom over `vars` and `hide`, with the `hide`
-    /// variables hidden; an empty `hide` yields a **fully observable** module.
+    /// [`Atom::jump`] atom over `vars`, and is **fully
+    /// observable**: use [`Module::hiding`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
     /// - `update`: The set of terms defining the module's state update at each time step.
-    /// - `hide`: The variables hidden from the environment, among `vars`.
     ///
     /// # Returns
     /// A `Result` containing the constructed module if successful,
@@ -1157,15 +1143,14 @@ where
     /// # See Also
     /// - [`Module::sequential`], when the initial state is constrained explicitly.
     /// - [`Module::constant`], the dual: only the initial state, no update.
-    pub fn jump<'a, V, U, H>(vars: V, update: U, hide: H) -> Result<Self, String>
+    pub fn jump<'a, V, U>(vars: V, update: U) -> Result<Self, String>
     where
         U: IntoIterator<Item = Term<J>>,
         V: IntoIterator<Item = &'a Var<S>>,
-        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::jump(vars, update)?;
-        Self::partially_observable(std::iter::once(atom), hide)
+        Self::observable(std::iter::once(atom))
     }
 
     /// Constructs an **uninitialized module**: discrete and continuous
@@ -1173,15 +1158,13 @@ where
     ///
     /// The discrete update and the continuous delay are given; the initial
     /// values of the controlled variables are havoced. It is composed of a
-    /// single [`Atom::uninitialized`] atom over `vars` and `hide`, with the
-    /// `hide` variables hidden; an empty `hide` yields a **fully
-    /// observable** module.
+    /// single [`Atom::uninitialized`] atom over `vars`, and is **fully
+    /// observable**: use [`Module::hiding`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
     /// - `update`: The set of terms defining the discrete state update.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
-    /// - `hide`: The variables hidden from the environment, among `vars`.
     ///
     /// # Returns
     /// A `Result` containing the constructed module if successful,
@@ -1191,21 +1174,15 @@ where
     /// - [`Module::hybrid`], when the initial state is constrained explicitly.
     /// - [`Module::jump`] and [`Module::flow`], the purely discrete and
     ///   purely continuous special cases.
-    pub fn uninitialized<'a, V, U, Z, H>(
-        vars: V,
-        update: U,
-        delay: Z,
-        hide: H,
-    ) -> Result<Self, String>
+    pub fn uninitialized<'a, V, U, Z>(vars: V, update: U, delay: Z) -> Result<Self, String>
     where
         U: IntoIterator<Item = Term<J>>,
         Z: IntoIterator<Item = Term<F>>,
         V: IntoIterator<Item = &'a Var<S>>,
-        H: Fn(&Var<S>) -> bool,
         S: 'a,
     {
         let atom = Atom::uninitialized(vars, update, delay)?;
-        Self::partially_observable(std::iter::once(atom), hide)
+        Self::observable(std::iter::once(atom))
     }
 
     /// Constructs a **hold module**: variables that hold an arbitrary but
@@ -1214,7 +1191,7 @@ where
     /// The module takes no blocks: each value is chosen nondeterministically
     /// at initialisation and never changes, modelling free parameters of a
     /// composition. It is composed of a single [`Atom::hold`] atom, and is
-    /// **fully observable**: hold modules take no private variables.
+    /// **fully observable**: use [`Module::hiding`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1241,14 +1218,12 @@ where
     ///
     /// Only the continuous evolution of the derivatives is given; the initial
     /// values are havoced and the discrete update is an implicit skip. It is
-    /// composed of a single [`Atom::flow`] atom over `vars` and `hide`, with
-    /// the `hide` variables hidden; an empty `hide` yields a **fully
-    /// observable** module.
+    /// composed of a single [`Atom::flow`] atom over `vars`, and is **fully
+    /// observable**: use [`Module::hiding`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
-    /// - `hide`: The variables hidden from the environment, among `vars`.
     ///
     /// # Returns
     /// A `Result` containing the constructed flow module if successful,
@@ -1257,15 +1232,14 @@ where
     /// # See Also
     /// - [`Module::differential`], when the initial state is constrained explicitly.
     /// - [`Atom::flow`], for creating individual flow atoms.
-    pub fn flow<'a, V, Z, H>(vars: V, delay: Z, hide: H) -> Result<Self, String>
+    pub fn flow<'a, V, Z>(vars: V, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        H: Fn(&Var<S>) -> bool,
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
     {
         let atom = Atom::flow(vars, delay)?;
-        Self::partially_observable(std::iter::once(atom), hide)
+        Self::observable(std::iter::once(atom))
     }
 
     /// Constructs a **constant module**: variables that are set once at
@@ -1273,8 +1247,8 @@ where
     ///
     /// Only the initialisation is given; the variables are held by an implicit
     /// skip update and have no continuous dynamics. It is composed of a single
-    /// [`Atom::constant`] atom, and is **fully observable**: constant modules
-    /// take no private variables.
+    /// [`Atom::constant`] atom, and is **fully observable**: use
+    /// [`Module::hiding`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1303,7 +1277,7 @@ where
     /// A combinatorial module specifies a single block of assignments
     /// computing the outputs from the inputs within the same time step. It is
     /// composed of a single [`Atom::combinatorial`] atom, and is **fully
-    /// observable**: combinatorial modules take no private variables.
+    /// observable**: use [`Module::hiding`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.

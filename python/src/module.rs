@@ -11,6 +11,18 @@ pub(crate) struct Module {
     pub(crate) base: base::Module<Combinatorial, Sequential, Differential>,
 }
 
+impl Module {
+    fn partially_observable<A>(atoms: A, hide: &Bound<'_, PyAny>) -> PyResult<Self>
+    where
+        A: IntoIterator<Item = base::Atom<Combinatorial, Sequential, Differential>>,
+    {
+        let hide = Hide::try_from(hide)?;
+        let module = base::Module::partially_observable(atoms, hide.as_fn());
+        hide.err()
+            .and_then(|()| module.map(Into::into).map_err(PyException::new_err))
+    }
+}
+
 #[pymethods]
 impl Module {
     #[new]
@@ -48,10 +60,25 @@ impl Module {
             ));
         };
 
+        Self::atomic(vars, init, delay, update, hide)
+    }
+
+    /// Builds an atomic module over `vars`, dispatching on the given blocks:
+    /// each combination of `init`, `delay`, and `update` selects the
+    /// corresponding constructor, hiding the `hide` variables when given.
+    #[staticmethod]
+    #[pyo3(signature = (vars, init = None, delay = None, update = None, *, hide = None))]
+    fn atomic(
+        vars: &Bound<'_, PyAny>,
+        init: Option<&Bound<'_, PyAny>>,
+        delay: Option<&Bound<'_, PyAny>>,
+        update: Option<&Bound<'_, PyAny>>,
+        hide: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
         match (init, delay, update) {
             (Some(init), None, Some(update)) => {
-                if init.is(update) & hide.is_none() {
-                    Self::combinatorial(vars, init)
+                if init.is(update) {
+                    Self::combinatorial(vars, init, hide)
                 } else {
                     Self::sequential(vars, init, update, hide)
                 }
@@ -63,16 +90,8 @@ impl Module {
             (None, None, Some(update)) => Self::jump(vars, update, hide),
             (None, Some(delay), Some(update)) => Self::uninitialized(vars, update, delay, hide),
             (None, Some(delay), None) => Self::flow(vars, delay, hide),
-            (Some(init), None, None) if hide.is_none() => Self::constant(vars, init),
-            (None, None, None) if hide.is_none() => Self::hold(vars),
-            // only constant (`init` alone) and hold (no blocks) reach here,
-            // both with `hide` given
-            (Some(_), None, None) => Err(PyTypeError::new_err(
-                "constant modules (`init` alone) are fully observable and take no `hide`",
-            )),
-            (None, None, None) => Err(PyTypeError::new_err(
-                "hold modules (no blocks) are fully observable and take no `hide`",
-            )),
+            (Some(init), None, None) => Self::constant(vars, init, hide),
+            (None, None, None) => Self::hold(vars, hide),
         }
     }
 
@@ -87,26 +106,33 @@ impl Module {
         let init = try_term_iter_cloned(&init)?;
         let update = try_term_iter_cloned(&update)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide = Hide::try_from(hide)?;
 
-        let module = base::Module::sequential(vars.iter(), init, update, hide.as_fn());
-
-        hide.err()?;
-        match module {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let atom =
+                base::Atom::sequential(vars.iter(), init, update).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide)
+        } else {
+            let module = base::Module::sequential(vars.iter(), init, update);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
-    // combinatorial modules are fully observable
     #[staticmethod]
-    fn combinatorial(vars: &Bound<'_, PyAny>, assign: &Bound<'_, PyAny>) -> PyResult<Self> {
+    #[pyo3(signature = (vars, assign, *, hide = None))]
+    fn combinatorial(
+        vars: &Bound<'_, PyAny>,
+        assign: &Bound<'_, PyAny>,
+        hide: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
         let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-
-        match base::Module::combinatorial(vars.iter(), assign) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let atom =
+                base::Atom::combinatorial(vars.iter(), assign).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide)
+        } else {
+            let module = base::Module::combinatorial(vars.iter(), assign);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
@@ -121,14 +147,13 @@ impl Module {
         let init = try_term_iter_cloned(&init)?;
         let flow = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide = Hide::try_from(hide)?;
-
-        let module = base::Module::differential(vars.iter(), init, flow, hide.as_fn());
-
-        hide.err()?;
-        match module {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let atom =
+                base::Atom::differential(vars.iter(), init, flow).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide)
+        } else {
+            let module = base::Module::differential(vars.iter(), init, flow);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
@@ -145,14 +170,13 @@ impl Module {
         let update = try_term_iter_cloned(&update)?;
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide = Hide::try_from(hide)?;
-
-        let module = base::Module::hybrid(vars.iter(), init, update, delay, hide.as_fn());
-
-        hide.err()?;
-        match module {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let atom = base::Atom::hybrid(vars.iter(), init, update, delay)
+                .map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide)
+        } else {
+            let module = base::Module::hybrid(vars.iter(), init, update, delay);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
@@ -165,14 +189,12 @@ impl Module {
     ) -> PyResult<Self> {
         let update = try_term_iter_cloned(&update)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide = Hide::try_from(hide)?;
-
-        let module = base::Module::jump(vars.iter(), update, hide.as_fn());
-
-        hide.err()?;
-        match module {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let atom = base::Atom::jump(vars.iter(), update).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide)
+        } else {
+            let module = base::Module::jump(vars.iter(), update);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
@@ -187,25 +209,26 @@ impl Module {
         let update = try_term_iter_cloned(&update)?;
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide = Hide::try_from(hide)?;
-
-        let module = base::Module::uninitialized(vars.iter(), update, delay, hide.as_fn());
-
-        hide.err()?;
-        match module {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let atom = base::Atom::uninitialized(vars.iter(), update, delay)
+                .map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide)
+        } else {
+            let module = base::Module::uninitialized(vars.iter(), update, delay);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
-    // hold modules are fully observable
     #[staticmethod]
-    fn hold(vars: &Bound<'_, PyAny>) -> PyResult<Self> {
+    #[pyo3(signature = (vars, *, hide = None))]
+    fn hold(vars: &Bound<'_, PyAny>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-
-        match base::Module::hold(vars.iter()) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let atom = base::Atom::hold(vars.iter()).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide)
+        } else {
+            let module = base::Module::hold(vars.iter());
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
@@ -218,26 +241,30 @@ impl Module {
     ) -> PyResult<Self> {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let hide = Hide::try_from(hide)?;
-
-        let module = base::Module::flow(vars.iter(), delay, hide.as_fn());
-
-        hide.err()?;
-        match module {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let atom = base::Atom::flow(vars.iter(), delay).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide)
+        } else {
+            let module = base::Module::flow(vars.iter(), delay);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
-    // constant modules are fully observable
     #[staticmethod]
-    fn constant(vars: &Bound<'_, PyAny>, init: &Bound<'_, PyAny>) -> PyResult<Self> {
+    #[pyo3(signature = (vars, init, *, hide = None))]
+    fn constant(
+        vars: &Bound<'_, PyAny>,
+        init: &Bound<'_, PyAny>,
+        hide: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
         let init = try_term_iter_cloned(&init)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-
-        match base::Module::constant(vars.iter(), init) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let atom = base::Atom::constant(vars.iter(), init).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide)
+        } else {
+            let module = base::Module::constant(vars.iter(), init);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
@@ -248,14 +275,11 @@ impl Module {
     fn proc(atoms: &Bound<'_, PyTuple>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let atoms: Vec<_> = try_iter_borrow::<Atom>(atoms)?.collect::<PyResult<_>>()?;
         let atoms = atoms.iter().map(|a| a.base().clone());
-        let hide = Hide::try_from(hide)?;
-
-        let module = base::Module::partially_observable(atoms, hide.as_fn());
-
-        hide.err()?;
-        match module {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            Self::partially_observable(atoms, hide)
+        } else {
+            let module = base::Module::observable(atoms);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
@@ -267,14 +291,14 @@ impl Module {
     fn comp(modules: &Bound<'_, PyTuple>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let modules: Vec<_> = try_iter_borrow::<Self>(modules)?.collect::<PyResult<_>>()?;
         let modules = modules.iter().map(|r| r.base.clone());
-        let hide = Hide::try_from(hide)?;
-
-        let module = base::Module::hiding_composition(modules, hide.as_fn());
-
-        hide.err()?;
-        match module {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+        if let Some(hide) = hide {
+            let hide = Hide::try_from(hide)?;
+            let module = base::Module::hiding_composition(modules, hide.as_fn());
+            hide.err()
+                .and_then(|()| module.map(Into::into).map_err(PyException::new_err))
+        } else {
+            let module = base::Module::composition(modules);
+            module.map(Into::into).map_err(PyException::new_err)
         }
     }
 
