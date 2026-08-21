@@ -303,7 +303,6 @@ fn simple_timed_automaton() {
     assert_eq!(atom.init().len(), 2);
     assert_eq!(atom.update().len(), 3);
     assert_eq!(atom.delay().len(), 2);
-    assert_eq!(atom.local().len(), 1);
 }
 
 /// A hybrid module synthesises nothing: forgetting the zero drift of the

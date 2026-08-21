@@ -85,12 +85,12 @@ where
         !self.extl.is_empty()
     }
 
-    pub fn local(&self) -> &[Wire<S>] {
+    pub(crate) fn local(&self) -> &[Wire<S>] {
         self.local.as_slice()
     }
 
-    pub fn wires(&self) -> &[Wire<S>] {
-        self.local.as_slice()
+    pub(crate) fn wires(&self) -> &[Wire<S>] {
+        self.wires.as_slice()
     }
 
     pub fn empty() -> Self {
@@ -116,6 +116,7 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
+    S: Debug,
 {
     /// Constructs a module **without performing any consistency or visibility checks**.
     ///
@@ -177,55 +178,34 @@ where
             debug_assert_eq!(obs.len(), extl.len() + intf.len());
             debug_assert_eq!(ctrl.len(), intf.len() + prvt.len());
 
-            let mut decl: HashSet<usize> = HashSet::new();
+            let mut module_vars: HashSet<&Var<S>> = HashSet::new();
 
-            debug_assert!(extl.iter().all(|v| decl.insert(v.id())));
-            let extl_id: HashSet<usize> = extl.iter().map(|v| v.id()).collect();
+            // extl & intf & prvt = empty
+            debug_assert!(extl.iter().all(|v| module_vars.insert(v)));
+            debug_assert!(intf.iter().all(|v| module_vars.insert(v)));
+            debug_assert!(prvt.iter().all(|v| module_vars.insert(v)));
 
-            debug_assert!(intf.iter().all(|v| decl.insert(v.id())));
-            let intf_id: HashSet<usize> = intf.iter().map(|v| v.id()).collect();
+            // obs U ctrl <= extl U intf U prvt
+            debug_assert!(obs.iter().all(|v| module_vars.contains(v)));
+            debug_assert!(ctrl.iter().all(|v| module_vars.contains(v)));
+            // obs <= extl U intf and ctrl <= intf U prvt
+            debug_assert!(obs.iter().all(|v| extl.contains(v) || intf.contains(v)));
+            debug_assert!(ctrl.iter().all(|v| intf.contains(v) || prvt.contains(v)));
 
-            debug_assert!(prvt.iter().all(|v| decl.insert(v.id())));
-            let prvt_id: HashSet<usize> = prvt.iter().map(|v| v.id()).collect();
-
-            debug_assert!(obs.iter().all(|v| !decl.insert(v.id())));
-            debug_assert!(
-                obs.iter()
-                    .all(|v| extl_id.contains(&v.id()) || intf_id.contains(&v.id()))
-            );
-
-            debug_assert!(ctrl.iter().all(|v| !decl.insert(v.id())));
-            debug_assert!(
-                ctrl.iter()
-                    .all(|v| intf_id.contains(&v.id()) || prvt_id.contains(&v.id()))
-            );
-
-            debug_assert!(wires.is_sorted());
-            debug_assert!(local.is_sorted());
-            debug_assert!(wires.windows(2).all(|w| w[0] < w[1]));
-            debug_assert!(local.windows(2).all(|w| w[0] < w[1]));
-
-            debug_assert!(ctrl.iter().all(|v| wires.binary_search(v.ltc()).is_ok()));
-            debug_assert!(ctrl.iter().all(|v| wires.binary_search(v.nxt()).is_ok()));
-            debug_assert!(ctrl.iter().all(|v| wires.binary_search(v.der()).is_ok()));
-            debug_assert!(extl.iter().all(|v| wires.binary_search(v.ltc()).is_ok()));
-            debug_assert!(extl.iter().all(|v| wires.binary_search(v.nxt()).is_ok()));
-            debug_assert!(extl.iter().all(|v| wires.binary_search(v.der()).is_ok()));
-
-            let mut written: HashSet<usize> = HashSet::new();
-            written.extend(extl_id.iter());
             // check atoms consistency
+            let mut written: HashSet<&Var<S>> = HashSet::new();
+            written.extend(extl.iter());
             for atom in atoms.iter() {
                 for var in atom.read().iter() {
-                    debug_assert!(decl.contains(&var.id()));
+                    debug_assert!(module_vars.contains(var));
                 }
                 for var in atom.wait().iter() {
-                    debug_assert!(decl.contains(&var.id()));
-                    debug_assert!(written.contains(&var.id()));
+                    debug_assert!(module_vars.contains(var));
+                    debug_assert!(written.contains(var));
                 }
                 for var in atom.ctrl().iter() {
-                    debug_assert!(decl.contains(&var.id()));
-                    debug_assert!(written.insert(var.id()));
+                    debug_assert!(module_vars.contains(var));
+                    debug_assert!(written.insert(var));
                 }
 
                 debug_assert!(atom.wires().iter().all(|w| wires.binary_search(w).is_ok()));
@@ -234,16 +214,39 @@ where
 
             // check that all module control vars are written/controlled by an atom
             for var in ctrl.iter() {
-                debug_assert!(written.contains(&var.id()));
+                debug_assert!(written.contains(var));
             }
 
-            // check that temporaries are decoupled from module wires and other atoms
-            let mut module_temp: HashSet<usize> = HashSet::new();
-            for lc in atoms.iter().flat_map(Atom::local) {
-                debug_assert!(local.binary_search(lc).is_ok());
-                debug_assert!(module_temp.insert(lc.id()));
-            }
-            debug_assert_eq!(module_temp.len(), local.len());
+            // check vars consistency
+            let mut atom_vars = HashSet::new();
+            atom_vars.extend(atoms.iter().flat_map(Atom::read));
+            atom_vars.extend(atoms.iter().flat_map(Atom::ctrl));
+            atom_vars.extend(atoms.iter().flat_map(Atom::wait));
+            debug_assert_eq!(atom_vars, module_vars);
+
+            // check wires consistency
+            debug_assert!(wires.is_sorted());
+            debug_assert!(local.is_sorted());
+            debug_assert!(wires.windows(2).all(|w| w[0] < w[1]));
+            debug_assert!(local.windows(2).all(|w| w[0] < w[1]));
+
+            let mut block_wires = HashSet::new();
+            block_wires.extend(atoms.iter().flat_map(Atom::init).flat_map(|b| b.read()));
+            block_wires.extend(atoms.iter().flat_map(Atom::init).flat_map(|b| b.write()));
+            block_wires.extend(atoms.iter().flat_map(Atom::delay).flat_map(|b| b.read()));
+            block_wires.extend(atoms.iter().flat_map(Atom::delay).flat_map(|b| b.write()));
+            block_wires.extend(atoms.iter().flat_map(Atom::update).flat_map(|b| b.read()));
+            block_wires.extend(atoms.iter().flat_map(Atom::update).flat_map(|b| b.write()));
+
+            let atom_wires: HashSet<_> = atom_vars.into_iter().flat_map(Var::wires).collect();
+            let local_wires: HashSet<_> = block_wires.difference(&atom_wires).cloned().collect();
+            let all_wires: HashSet<_> = local_wires.union(&atom_wires).cloned().collect();
+
+            // wires == all_wires and local == local_wires
+            debug_assert!(wires.iter().all(|w| all_wires.contains(w)));
+            debug_assert!(all_wires.iter().all(|w| wires.binary_search(w).is_ok()));
+            debug_assert!(local.iter().all(|w| local_wires.contains(w)));
+            debug_assert!(local_wires.iter().all(|w| local.binary_search(w).is_ok()));
         }
 
         Module {
