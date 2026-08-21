@@ -187,6 +187,45 @@ fn compose_hiding() {
     assert!(Module::hiding_composition([m1, m2], |v| v == y).is_err());
 }
 
+/// Chains an atomic constructor with the unary hiding operator: the
+/// constructors are fully observable, and `hiding` is the intentional step
+/// that makes variables private.
+///
+/// ```text
+///     M: x' = p, p' = e   (controls x and p, reads external e)
+/// ```
+#[test]
+fn constructor_then_hiding() {
+    let x = &Var::new("real");
+    let p = &Var::new("real");
+    let e = &Var::new("real");
+
+    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
+    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let m = Module::sequential([x, p, e], [init], [update]).unwrap();
+
+    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
+    assert_eq!(m.prvt().len(), 0);
+
+    // hiding privatises the controlled variable and keeps the rest
+    let m = m.clone().hiding(|v| v == p).unwrap();
+    assert_eq!(ids(m.prvt()), vec![p.id()]);
+    assert_eq!(ids(m.intf()), vec![x.id()]);
+    assert_eq!(ids(m.extl()), vec![e.id()]);
+
+    // hiding nothing is the identity on the interface
+    let m = m.hiding(|_| false).unwrap();
+    assert_eq!(ids(m.prvt()), vec![p.id()]);
+    assert_eq!(ids(m.intf()), vec![x.id()]);
+
+    // an external variable cannot be hidden
+    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
+    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let m = Module::sequential([x, p, e], [init], [update]).and_then(|m| m.hiding(|v| v == e));
+    assert!(m.is_err());
+}
+
 /// Local (temporary) wires are strictly per-atom scratch space: two atoms
 /// writing the same temporary must be rejected, both when they are placed
 /// in one module and when two atomic modules are composed.
@@ -271,7 +310,7 @@ fn compose_seq_2() {
     ]
     .to_vec();
     let obs = &[x, y, z, y0, z0];
-    let m1 = Module::sequential(obs, init, update, |_| false).unwrap();
+    let m1 = Module::sequential(obs, init, update).unwrap();
 
     //
     // class Inv(smt.Module):
@@ -297,7 +336,7 @@ fn compose_seq_2() {
     Module::composition([m1.clone(), m2]).unwrap();
 
     // try to use a `sequential_observable` ctor instead of combinatorial
-    let m2 = Module::sequential(obs, assign.clone(), assign, |_| false).unwrap();
+    let m2 = Module::sequential(obs, assign.clone(), assign).unwrap();
     let _m = Module::composition([m1, m2]).unwrap();
     println!("{:?}", _m);
 }
@@ -379,11 +418,11 @@ fn heterogeneous_composition() {
 
     let init = Term::constant(SeqOps::HAVOC, [X(x)]).unwrap();
     let jump = Term::function(SeqOps::SKIP, [X(x)], [x]).unwrap();
-    let P = base::Module::sequential(&[x], [init], [jump], |_| false).unwrap();
+    let P = base::Module::sequential(&[x], [init], [jump]).unwrap();
 
     let init = Term::constant(SeqOps::HAVOC, [X(y)]).unwrap();
     let flow = Term::constant(DifOps::ZERO, [d(y)]).unwrap();
-    let Q = base::Module::differential(&[y], [init], [flow], |_| false).unwrap();
+    let Q = base::Module::differential(&[y], [init], [flow]).unwrap();
 
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();
     let R = base::Module::combinatorial(&[x, y, z], [comb]).unwrap();

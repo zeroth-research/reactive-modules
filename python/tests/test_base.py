@@ -308,11 +308,11 @@ def test_module_new_rejects_bad_declarations():
     with pytest.raises(TypeError, match="vars"):
         Module(init=init, update=update)
 
-    # constant and hold modules are fully observable: `prvt` is invalid
-    with pytest.raises(TypeError, match="constant modules .* fully observable"):
-        Module(init=init, vars=[x], hide=[p])
-    with pytest.raises(TypeError, match="hold modules .* fully observable"):
-        Module(vars=[x], hide=[p])
+    # constant and hold modules can be partially observable too
+    m = Module(init=init, vars=[x, p], hide=[p])
+    assert m.intf == [x] and m.prvt == [p]
+    m = Module(vars=[x, p], hide=[p])
+    assert m.intf == [x] and m.prvt == [p]
 
 
 def test_atom_constructors():
@@ -363,13 +363,13 @@ def test_atom_new_dispatches_on_blocks():
 def test_module_hold_and_flow():
     x, p, init, update, delay = _stateful_blocks()
 
-    # hold: no blocks, every variable a symbolic constant; fully observable
+    # hold: no blocks, every variable a symbolic constant
     m = Module(vars=[x, p])
     assert m.closed() and m.intf == [x, p]
     m = Module.hold([x, p])
     assert m.intf == [x, p] and len(m.prvt) == 0
-    with pytest.raises(TypeError, match="fully observable"):
-        Module(vars=[x], hide=[p])
+    m = Module.hold([x, p], hide=[p])
+    assert m.intf == [x] and m.prvt == [p]
 
     # flow: only the continuous dynamics, initial state havoced
     m = Module(delay=delay, vars=[x, p])

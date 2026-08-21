@@ -2,6 +2,7 @@ use ::theory::bv::BV;
 use ::theory::lia::LIA;
 use ::theory::lra::LRA;
 use pyo3::PyClass;
+use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::collections::HashSet;
@@ -100,7 +101,6 @@ fn try_wire_iter_cloned(
 /// variables (e.g. a lambda), or any iterable of variables (preferably a
 /// set); `None` hides nothing.
 pub(crate) enum Hide<'py> {
-    None,
     Set(HashSet<base::Var<Sort>>),
     Call(
         &'py Bound<'py, PyAny>,
@@ -110,18 +110,21 @@ pub(crate) enum Hide<'py> {
 }
 
 impl<'py> Hide<'py> {
-    pub(crate) fn try_from(hide: Option<&'py Bound<'py, PyAny>>) -> PyResult<Self> {
-        match hide {
-            None => Ok(Hide::None),
-            Some(hide) if hide.is_callable() => Ok(Hide::Call(hide, Default::default())),
-            Some(hide) => Ok(Hide::Set(try_var_iter_cloned(hide)?.collect())),
+    pub(crate) fn try_from(hide: &'py Bound<'py, PyAny>) -> PyResult<Self> {
+        if hide.is_callable() {
+            Ok(Hide::Call(hide, Default::default()))
+        } else if let Ok(iter) = try_var_iter_cloned(hide) {
+            Ok(Hide::Set(iter.collect()))
+        } else {
+            Err(PyException::new_err(
+                "hide must be either callable or iterable",
+            ))
         }
     }
 
     /// The predicate handed to the base constructors.
     pub(crate) fn as_fn(&self) -> impl Fn(&base::Var<Sort>) -> bool + '_ {
         move |var| match self {
-            Hide::None => false,
             Hide::Set(set) => set.contains(var),
             Hide::Call(hide, err) => {
                 if err.borrow().is_some() {
@@ -144,7 +147,6 @@ impl<'py> Hide<'py> {
         match self {
             Hide::Call(_, err) => err.into_inner().map_or(Ok(()), Err),
             Hide::Set(_) => Ok(()),
-            Hide::None => Ok(()),
         }
     }
 }
