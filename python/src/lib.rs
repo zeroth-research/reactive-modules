@@ -4,6 +4,7 @@ use ::theory::lra::LRA;
 use pyo3::PyClass;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
+use std::collections::HashSet;
 use std::fmt::Debug;
 use theory::Theory;
 use theory::any::{Any, Sort};
@@ -93,4 +94,57 @@ fn try_wire_iter_cloned(
     });
     let seq = seq.map(Result::unwrap);
     Ok(seq)
+}
+
+/// The python-facing `hide` argument: either a callable predicate over
+/// variables (e.g. a lambda), or any iterable of variables (preferably a
+/// set); `None` hides nothing.
+pub(crate) enum Hide<'py> {
+    None,
+    Set(HashSet<base::Var<Sort>>),
+    Call(
+        &'py Bound<'py, PyAny>,
+        // errors raised by the callable, surfaced after the base call
+        std::cell::RefCell<Option<PyErr>>,
+    ),
+}
+
+impl<'py> Hide<'py> {
+    pub(crate) fn try_from(hide: Option<&'py Bound<'py, PyAny>>) -> PyResult<Self> {
+        match hide {
+            None => Ok(Hide::None),
+            Some(hide) if hide.is_callable() => Ok(Hide::Call(hide, Default::default())),
+            Some(hide) => Ok(Hide::Set(try_var_iter_cloned(hide)?.collect())),
+        }
+    }
+
+    /// The predicate handed to the base constructors.
+    pub(crate) fn as_fn(&self) -> impl Fn(&base::Var<Sort>) -> bool + '_ {
+        move |var| match self {
+            Hide::None => false,
+            Hide::Set(set) => set.contains(var),
+            Hide::Call(hide, err) => {
+                if err.borrow().is_some() {
+                    return false;
+                }
+                match hide.call1((Var::from(*var),)).and_then(|r| r.is_truthy()) {
+                    Ok(hidden) => hidden,
+                    Err(e) => {
+                        *err.borrow_mut() = Some(e);
+                        false
+                    }
+                }
+            }
+        }
+    }
+
+    /// Propagates any error the callable raised inside the predicate; must
+    /// be checked before trusting the base result.
+    pub(crate) fn err(self) -> PyResult<()> {
+        match self {
+            Hide::Call(_, err) => err.into_inner().map_or(Ok(()), Err),
+            Hide::Set(_) => Ok(()),
+            Hide::None => Ok(()),
+        }
+    }
 }

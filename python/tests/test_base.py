@@ -179,6 +179,46 @@ def test_module_new_partially_observable():
         assert m.prvt == [p]
 
 
+def test_module_hide_accepts_predicate_set_and_iterable():
+    x, p, init, update, _delay = _stateful_blocks()
+
+    # hide accepts a callable predicate over variables ...
+    m = Module.sequential([x, p], init, update, hide=lambda v: v == p)
+    assert m.intf == [x]
+    assert m.prvt == [p]
+
+    m = Module.sequential([x, p], init, update, hide={p})
+    assert m.intf == [x]
+    assert m.prvt == [p]
+
+    S = {p}
+    m = Module.sequential([x, p], init, update, hide=S.__contains__)
+    assert m.intf == [x]
+    assert m.prvt == [p]
+
+    m = Module.sequential([x, p], init, update, hide=[p])
+    assert m.intf == [x]
+    assert m.prvt == [p]
+
+    m = Module.sequential([x, p], init, update, hide=iter([p]))
+    assert m.intf == [x]
+    assert m.prvt == [p]
+
+    # hiding nothing yields a fully observable module
+    m = Module.sequential([x, p], init, update, hide=lambda v: False)
+    assert m.intf == [x, p] and m.prvt == []
+
+
+def test_module_hide_predicate_errors_propagate():
+    x, p, init, update, _delay = _stateful_blocks()
+
+    def broken(v):
+        raise ValueError("boom")
+
+    with pytest.raises(ValueError, match="boom"):
+        Module.sequential([x, p], init, update, hide=broken)
+
+
 def test_module_new_positional_is_parallel():
     x, p, init, update, _ = _stateful_blocks()
     y = Var(Real([1, 1]))
@@ -197,6 +237,41 @@ def test_module_new_positional_is_parallel():
     m1 = Module(p1, p2, hide=[p])
     assert p in m1.prvt
     assert m1.intf == [x, y]
+
+
+def test_compose_hiding_coupled_variables():
+    zero = torch.tensor([[0.0]])
+    x = Var(Real([1, 1]))
+    y = Var(Real([1, 1]))
+    z = Var(Real([1, 1]))
+    w = Var(Real([1, 1]))
+
+    # m1 controls x and y, reading the shared input w; m2 reads y and w and
+    # controls z: y couples the two, w is external on both sides
+    init = [Term(LRA.Const(zero), [X(x)]), Term(LRA.Const(zero), [X(y)])]
+    update = [Term(LRA.Id(), [X(x)], [w]), Term(LRA.Id(), [X(y)], [y])]
+    m1 = Module.sequential([x, y, w], init, update)
+
+    init = [Term(LRA.Const(zero), [X(z)])]
+    update = [Term(LRA.Add(), [X(z)], [y, w])]
+    m2 = Module.sequential([y, z, w], init, update)
+
+    assert y in m1.intf and y in m2.extl
+    assert w in m1.extl and w in m2.extl
+
+    # hide exactly the coupling variables: interface on one side, external
+    # on the other (in either direction) — not the shared external w
+    def coupled(v):
+        return (v in m1.intf and v in m2.extl) or (v in m1.extl and v in m2.intf)
+
+    m = Module.comp(m1, m2, hide=coupled)
+
+    assert m.prvt == [y]
+    assert m.intf == [x, z]
+    assert m.extl == [w]
+
+    # the coupling took place regardless: hiding only restricts visibility
+    assert y not in m.obs and y not in m.extl
 
 
 def test_module_new_positional_atoms():

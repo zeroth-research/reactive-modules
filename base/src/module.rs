@@ -293,7 +293,7 @@ where
     where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
     {
-        Self::partially_observable(atoms, std::iter::empty())
+        Self::partially_observable(atoms, |_| false)
     }
 
     /// Constructs a **partially observable module** from a sequence of atoms,
@@ -317,11 +317,10 @@ where
     /// # See Also
     /// - [`Module::observable`], the fully observable special case.
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    pub fn partially_observable<'a, A, H>(atoms: A, hide: H) -> Result<Self, String>
+    pub fn partially_observable<A, H>(atoms: A, hide: H) -> Result<Self, String>
     where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
-        H: IntoIterator<Item = &'a Var<S>>,
-        S: 'a,
+        H: Fn(&Var<S>) -> bool,
     {
         let mut wires: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
@@ -362,12 +361,9 @@ where
 
         let ctrl = Interface::from_exact_iter_unchecked(intf.iter().cloned());
 
-        let mut module_prvt: BTreeSet<Var<S>> = BTreeSet::new();
-        for var in hide {
-            if let Some(var) = intf.take(var) {
-                module_prvt.insert(var);
-            }
-            if extl.contains(var) {
+        let prvt = intf.extract_if(.., &hide).collect::<Vec<_>>();
+        for var in extl.iter() {
+            if hide(var) {
                 return Err(format!("Hiding external variable {}", var.id()));
             }
         }
@@ -377,7 +373,7 @@ where
 
         let extl = Interface::from_exact_iter_unchecked(extl);
         let intf = Interface::from_exact_iter_unchecked(intf);
-        let prvt = Interface::from_exact_iter_unchecked(module_prvt);
+        let prvt = Interface::from_exact_iter_unchecked(prvt);
         let obs = Interface::from_exact_iter_unchecked(obs);
         let wires = wires.into_iter().collect();
         let local = local.into_iter().collect();
@@ -414,12 +410,11 @@ where
     ///
     /// # See Also
     /// - [`Module::hiding_composition`], the general form that also hides variables.
-    pub fn composition<'a, M>(modules: M) -> Result<Self, String>
+    pub fn composition<M>(modules: M) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
-        S: 'a,
     {
-        Self::hiding_composition(modules, std::iter::empty())
+        Self::hiding_composition(modules, |_| false)
     }
 
     /// The **hiding operator**: hides the given variables of this module.
@@ -443,10 +438,9 @@ where
     ///
     /// # See Also
     /// - [`Module::hiding_composition`], hiding several modules at their composition.
-    pub fn hiding<'a, H>(self, hide: H) -> Result<Self, String>
+    pub fn hiding<H>(self, hide: H) -> Result<Self, String>
     where
-        H: IntoIterator<Item = &'a Var<S>>,
-        S: 'a,
+        H: Fn(&Var<S>) -> bool,
     {
         Self::hiding_composition(std::iter::once(self), hide)
     }
@@ -479,14 +473,11 @@ where
     ///
     /// - `Ok(Module)` containing the composed module.
     /// - `Err(Error)` describing the reason composition failed.
-    pub fn hiding_composition<'a, M, H>(modules: M, hide: H) -> Result<Self, String>
+    pub fn hiding_composition<M, H>(modules: M, hide: H) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
-        H: IntoIterator<Item = &'a Var<S>>,
-        S: 'a,
+        H: Fn(&Var<S>) -> bool,
     {
-        let hide: HashSet<&Var<S>> = hide.into_iter().collect();
-
         let mut declared_wires: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut restricted_wires: HashSet<usize> = HashSet::new();
 
@@ -494,7 +485,7 @@ where
         let mut intf_prior_hiding: HashSet<usize> = HashSet::new();
 
         let mut intf_stack: Vec<Var<S>> = Vec::new();
-        let mut prvt_stack: Vec<Var<S>> = Vec::with_capacity(hide.len());
+        let mut prvt_stack: Vec<Var<S>> = Vec::new();
         let mut obs_stack: Vec<Var<S>> = Vec::new();
         let mut ctrl_stack: Vec<Var<S>> = Vec::new();
         let mut local_stack: Vec<Wire<S>> = Vec::new();
@@ -516,13 +507,16 @@ where
                     }
                 }
 
+                // visit every observable no more than once, and skip otherwise
                 if !declared_wires.contains(var.ltc()) {
                     debug_assert!(!declared_wires.contains(var.nxt()));
                     debug_assert!(!declared_wires.contains(var.der()));
-                    // hidden variables leave the observables; they join the
-                    // privates in the interface pass below
-                    if !hide.contains(&var) {
+                    // hidden variables leave the observables and join the privates;
+                    // we check at the end whether this has affected uncoupled externals
+                    if !hide(&var) {
                         obs_stack.push(var);
+                    } else {
+                        prvt_stack.push(var);
                     }
                 } else {
                     debug_assert!(declared_wires.contains(var.nxt()));
@@ -533,6 +527,7 @@ where
             // Check that privates are uncoupled and restrict them
             prvt_stack.reserve(module.prvt.len());
             for var in module.prvt {
+                // visit every private no more than once, and raise otherwise
                 if declared_wires.contains(var.ltc()) {
                     debug_assert!(declared_wires.contains(var.nxt()));
                     debug_assert!(declared_wires.contains(var.der()));
@@ -552,6 +547,7 @@ where
             // Check that temporaries are uncoupled and restrict them
             local_stack.reserve(module.local.len());
             for tmp in module.local {
+                // visit every local no more than once, and raise otherwise
                 if declared_wires.contains(&tmp) {
                     return Err(format!("local wire {} is declared elsewhere", tmp.id()));
                 }
@@ -590,9 +586,7 @@ where
                     return Err(format!("interface var {} is doubly controlled", var.id()));
                 }
 
-                if hide.contains(&var) {
-                    prvt_stack.push(var);
-                } else {
+                if !prvt_stack.contains(&var) {
                     intf_stack.push(var);
                 }
             }
@@ -624,11 +618,8 @@ where
         //============================================================
 
         for var in extl_set.iter() {
-            if hide.contains(&var) {
-                return Err(format!(
-                    "Cannot hide uncontrolled/external var {}",
-                    var.id()
-                ));
+            if hide(var) {
+                return Err(format!("Cannot hide uncontrolled var {}", var.id()));
             }
         }
 

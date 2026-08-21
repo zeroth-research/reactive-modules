@@ -289,3 +289,43 @@ def test_private():
     assert i in m.extl
     assert o in m.intf
     assert x in m.prvt
+
+
+def test_compose_hiding_coupled_variables():
+    class Producer(sugar.Module):
+        def init(self, _w):
+            return (0, 0)
+
+        def update(self, x, y, w):
+            return (w, y + 1)
+
+    class Consumer(sugar.Module):
+        def init(self, _y, _w):
+            return 0
+
+        def update(self, _z, y, w):
+            return y + w
+
+    x, y, z, w = (Var(INT) for _ in range(4))
+
+    # m1 controls x and y, reading the shared input w; m2 reads y and w
+    # and controls z: y couples the two, w is external on both sides
+    m1 = Producer(theory=LIA, ctrl=(x, y), extl=(w,))
+    m2 = Consumer(theory=LIA, ctrl=(z,), extl=(y, w))
+
+    assert y in m1.intf and y in m2.extl
+    assert w in m1.extl and w in m2.extl
+
+    # hide exactly the coupling variables: interface on one side, external
+    # on the other (in either direction) — not the shared external w
+    def coupled(v):
+        return (v in m1.intf and v in m2.extl) or (v in m1.extl and v in m2.intf)
+
+    m = Module.comp(m1, m2, hide=coupled)
+
+    assert m.prvt == [y]
+    assert m.intf == [x, z]
+    assert m.extl == [w]
+
+    # the coupling took place regardless: hiding only restricts visibility
+    assert y not in m.obs and y not in m.extl

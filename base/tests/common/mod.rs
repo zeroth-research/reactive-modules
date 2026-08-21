@@ -105,7 +105,7 @@ pub fn example_counter() -> Result<(Module, HashMap<Var<&'static str>, String>),
 
     let obs = [x, y, z, y0, z0];
 
-    let module = Module::sequential(&obs, init, update, [])?;
+    let module = Module::sequential(&obs, init, update, |_| false)?;
     // every module variable needs a name: the display indexes them all
     let varnames = [(x, "x"), (y, "y"), (z, "z"), (y0, "y0"), (z0, "z0")]
         .into_iter()
@@ -167,7 +167,7 @@ pub fn example_peterson1() -> Result<Module, String> {
     );
 
     let obs = [pc1, x1, pc2, x2];
-    Module::sequential(&obs, init, update, [])
+    Module::sequential(&obs, init, update, |_| false)
 }
 
 pub fn example_tiny1(
@@ -203,5 +203,5 @@ pub fn example_tiny1(
     let prvt = [private];
 
     let atom = Atom::sequential(&vars, [init], [cons, update])?;
-    Module::partially_observable([atom], &prvt)
+    Module::partially_observable([atom], |v| prvt.contains(v))
 }
