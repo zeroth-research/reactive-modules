@@ -78,11 +78,11 @@ where
     }
 
     /// Returns an iterator over the temporary, local wires.
-    pub fn local(&self) -> &[Wire<S>] {
+    pub(crate) fn local(&self) -> &[Wire<S>] {
         self.local.as_slice()
     }
 
-    pub fn wires(&self) -> &[Wire<S>] {
+    pub(crate) fn wires(&self) -> &[Wire<S>] {
         self.wires.as_slice()
     }
 
