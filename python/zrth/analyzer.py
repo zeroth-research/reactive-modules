@@ -376,10 +376,8 @@ class AbstractInterpreter:
         # Bind parameters
         assert self.func_def is not None
         args = self.func_def.args
-        if args.vararg or args.kwarg or args.kw_defaults:
-            raise UnsupportedFeatureError(
-                "*args, **kwargs, kw_defaults not yet supported"
-            )
+        if args.vararg or args.kwarg:
+            raise UnsupportedFeatureError("*args, **kwargs not yet supported")
         if args.posonlyargs:
             raise UnsupportedFeatureError("positional-only args not yet supported")
 
@@ -395,9 +393,9 @@ class AbstractInterpreter:
             else:
                 annot = param.annotation
                 value = AbstractValue.top()
-                if annot is not None:
-                    if not isinstance(annot, ast.Name):
-                        raise NotImplementedError("Unsupported type annotation")
+                # only simple name annotations refine the type; anything more
+                # complex (Optional[...], np.ndarray, ...) stays top
+                if annot is not None and isinstance(annot, ast.Name):
                     ty = ANNOT_SUPPORTED_TYPES.get(annot.id)
                     if ty is not None:
                         value = AbstractValue.typed(ty)
@@ -1108,7 +1106,7 @@ def wire_pair(dtype):
 
 
 def resolve_wire(name, dtype, user_val=None):
-    """Return a validated [latched, next] wire pair for an observable signal.
+    """Return a validated Var for an observable signal.
 
     If user_val is None, creates a fresh pair from dtype.
     If user_val is a wire pair, validates its dtype and returns it.
@@ -1127,7 +1125,7 @@ def resolve_wire(name, dtype, user_val=None):
             )
         return user_val
     raise ValueError(
-        f"Invalid wire format for '{name}': expected [Wire, Wire], got {type(user_val).__name__}"
+        f"Invalid wire format for '{name}': expected Var, got {type(user_val).__name__}: {user_val}"
     )
 
 
@@ -1198,11 +1196,21 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
     for name, method in methods.items():
         try:
             merged = join_states(AbstractInterpreter(method).analyze())
-        except (UnsupportedFeatureError, NotImplementedError, OSError):
+        except (UnsupportedFeatureError, NotImplementedError, OSError, TypeError):
+            # TypeError: C-level callables (e.g. classmethod descriptors) have
+            # no retrievable source
             continue
-        read_attrs = {r.name[5:] for r in merged.reads if r.name.startswith("self.")}
+        # nested paths (self.np_random.uniform) are covered by their base
+        # attribute (np_random), which is tracked as its own read
+        read_attrs = {
+            r.name[5:]
+            for r in merged.reads
+            if r.name.startswith("self.") and "." not in r.name[5:]
+        }
         written_attrs = {
-            w.name[5:] for w in merged.writes if w.name.startswith("self.")
+            w.name[5:]
+            for w in merged.writes
+            if w.name.startswith("self.") and "." not in w.name[5:]
         }
         # self.foo reads where foo is a known method -> calls, not data reads
         calls = read_attrs & set(methods.keys())

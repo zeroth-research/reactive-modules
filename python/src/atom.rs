@@ -1,7 +1,7 @@
 use crate::term::{Term, TermInterfaceType};
 use crate::var::Var;
 use crate::wire::Wire;
-use crate::{try_iter_borrow, try_term_iter_cloned, try_var_iter_cloned};
+use crate::{try_iter_borrow, try_term_iter_cloned, try_var_iter_cloned, wires_untyped_to_repr};
 use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use std::borrow::Cow;
@@ -253,12 +253,8 @@ impl AtomInterface {
 }
 #[pymethods]
 impl AtomInterface {
-    fn __str__(&self) -> String {
-        self.base()
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
+    fn __repr__(&self) -> String {
+        wires_untyped_to_repr(self.base())
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Var> {
@@ -402,12 +398,8 @@ impl AtomBlockInterface {
 
 #[pymethods]
 impl AtomBlockInterface {
-    fn __str__(&self) -> String {
-        self.base()
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
+    fn __repr__(&self) -> String {
+        wires_untyped_to_repr(self.base())
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {

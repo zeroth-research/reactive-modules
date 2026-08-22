@@ -28,15 +28,21 @@ impl Theory for Ops {
 }
 
 impl Combinatorial for Ops {
-    const HAVOC: Self = Ops("HAVOC");
+    fn havoc(_range: &Self::Sort) -> Self {
+        Ops("HAVOC")
+    }
 }
 
 impl Sequential for Ops {
-    const SKIP: Self = Ops("SKIP");
+    fn skip(_range: &Self::Sort) -> Self {
+        Ops("SKIP")
+    }
 }
 
 impl Differential for Ops {
-    const ZERO: Self = Ops("ZERO");
+    fn zero(_range: &Self::Sort) -> Self {
+        Ops("ZERO")
+    }
 }
 
 impl Display for Ops {

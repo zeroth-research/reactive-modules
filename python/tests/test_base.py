@@ -23,12 +23,12 @@ def test_term_new():
 
     # test `function` ctor
     _ = Term.function(LIA.Add(), [xn], [x, y])
-    _ = Term.function(LIA.Const(torch.tensor([[3, 4, 5]])), [w4], [])
-    _ = Term.function(LIA.Const(torch.tensor([[3, 4, 6]])), [w5], [])
+    _ = Term.function(LIA.Int(torch.tensor([[3, 4, 5]])), [w4], [])
+    _ = Term.function(LIA.Int(torch.tensor([[3, 4, 6]])), [w5], [])
 
     # comparisons are pointwise -> Bool of the operand shape
     Term(LIA.Lt(), [Wire(Bool([1, 3]))], [w4, Wire(Int([1, 3]))])
-    Term.constant(LIA.Const(torch.tensor([[3, 2, 1]])), [Wire(Int([1, 3]))])
+    Term.constant(LIA.Int(torch.tensor([[3, 2, 1]])), [Wire(Int([1, 3]))])
 
 
 def test_var_derefs_to_wire():
@@ -60,7 +60,7 @@ def test_var_derefs_to_wire():
 
 def test_module_sequential():
     x = Var(Bool([1, 1]))
-    init = [Term.constant(LIA.Const(_bool_t(True)), [X(x)])]
+    init = [Term.constant(LIA.Bool(_bool_t(True)), [X(x)])]
     update = [Term(LIA.Id(), [X(x)], [x])]
     _ = Module.sequential([x], init, update)
 
@@ -68,7 +68,7 @@ def test_module_sequential():
 def test_module_combinatorial():
     x = Var(Bool([1, 1]))
 
-    assign = [Term.constant(LIA.Const(_bool_t(False)), [X(x)])]
+    assign = [Term.constant(LIA.Bool(_bool_t(False)), [X(x)])]
     _ = Module.combinatorial([x], assign)
 
 
@@ -79,13 +79,13 @@ def test_module_parallel():
     w = Var(Bool([1, 1]))
     v = Var(Bool([1, 1]))
 
-    init = [Term.constant(LIA.Const(_bool_t(False)), [X(x)])]
+    init = [Term.constant(LIA.Bool(_bool_t(False)), [X(x)])]
     update = [Term(LIA.And(), [X(x)], [x, X(y)])]
     p = Module.sequential([x, y], init, update)
 
     init = [
-        Term.constant(LIA.Const(_bool_t(False)), [X(v)]),
-        Term.constant(LIA.Const(_bool_t(False)), [X(y)]),
+        Term.constant(LIA.Bool(_bool_t(False)), [X(v)]),
+        Term.constant(LIA.Bool(_bool_t(False)), [X(y)]),
     ]
     update = [Term(LIA.And(), [X(v)], [v, x]), Term(LIA.Id(), [X(y)], [x])]
     q = Module.sequential([x, y, v], init, update, hide=[v])
@@ -139,9 +139,9 @@ def _stateful_blocks():
     zero = torch.tensor([[0.0]])
     x = Var(Real([1, 1]))
     p = Var(Real([1, 1]))
-    init = [Term(LRA.Const(zero), [X(x)]), Term(LRA.Const(zero), [X(p)])]
+    init = [Term(LRA.Real(zero), [X(x)]), Term(LRA.Real(zero), [X(p)])]
     update = [Term(LRA.Id(), [X(x)], [x]), Term(LRA.Id(), [X(p)], [p])]
-    delay = [Term(LRA.Const(zero), [d(x)]), Term(LRA.Const(zero), [d(p)])]
+    delay = [Term(LRA.Real(zero), [d(x)]), Term(LRA.Real(zero), [d(p)])]
     return x, p, init, update, delay
 
 
@@ -224,7 +224,7 @@ def test_module_new_positional_is_parallel():
     y = Var(Real([1, 1]))
 
     p1 = Module(init=init, update=update, vars=[x, p])
-    p2 = Module(init=[Term(LRA.Const(torch.tensor([[0.0]])), [X(y)])], vars=[y])
+    p2 = Module(init=[Term(LRA.Real(torch.tensor([[0.0]])), [X(y)])], vars=[y])
 
     m = Module(p1, p2)
     assert m.intf == [x, p, y]
@@ -248,11 +248,11 @@ def test_compose_hiding_coupled_variables():
 
     # m1 controls x and y, reading the shared input w; m2 reads y and w and
     # controls z: y couples the two, w is external on both sides
-    init = [Term(LRA.Const(zero), [X(x)]), Term(LRA.Const(zero), [X(y)])]
+    init = [Term(LRA.Real(zero), [X(x)]), Term(LRA.Real(zero), [X(y)])]
     update = [Term(LRA.Id(), [X(x)], [w]), Term(LRA.Id(), [X(y)], [y])]
     m1 = Module.sequential([x, y, w], init, update)
 
-    init = [Term(LRA.Const(zero), [X(z)])]
+    init = [Term(LRA.Real(zero), [X(z)])]
     update = [Term(LRA.Add(), [X(z)], [y, w])]
     m2 = Module.sequential([y, z, w], init, update)
 
@@ -295,7 +295,7 @@ def test_module_new_positional_atoms():
     # several atoms compose into one module
     y = Var(Real([1, 1]))
     zero = torch.tensor([[0.0]])
-    other = Atom.constant([y], [Term(LRA.Const(zero), [X(y)])])
+    other = Atom.constant([y], [Term(LRA.Real(zero), [X(y)])])
     m = Module(atom, other)
     assert m.intf == [x, p, y]
     assert len(m.atoms) == 2
@@ -386,7 +386,7 @@ def test_atom_infers_awaited_variables():
     t = Var(Real([1, 1]))
 
     # x' = X(t): the atom awaits t rather than controlling it
-    init = [Term(LRA.Const(zero), [X(x)])]
+    init = [Term(LRA.Real(zero), [X(x)])]
     update = [Term(LRA.Id(), [X(x)], [X(t)])]
     atom = Atom([x, t], init=init, update=update)
 
@@ -399,7 +399,7 @@ def test_atom_rejects_ill_formed_blocks():
     x = Var(Real([1, 1]))
 
     # the update writes the latched wire instead of the next wire
-    init = [Term(LRA.Const(zero), [X(x)])]
+    init = [Term(LRA.Real(zero), [X(x)])]
     update = [Term(LRA.Id(), [x], [X(x)])]
     with pytest.raises(Exception):
         Atom.sequential([x], init, update)
@@ -422,21 +422,22 @@ def test_show_named_rendering():
     m = Module(init=init, update=update, vars=[x, p])
 
     # named variables render by name, in interfaces and wire positions
-    out = m.show({x: "x", p: "p"})
-    assert "x : Real[1, 1]" in out
+    out = m.with_varnames({x: "x", p: "p"})
+    # scalar [1, 1] shapes are omitted from the sort rendering
+    assert "x" in out and "Real" in out
     assert "X(x)" in out and "X(p)" in out
 
     # unnamed variables fall back to question mark
     # this test is meant to fail when this convention changes, or errors are raised
     # if any other part of the code relies on the fallback, it is bad
-    partial = m.show({x: "x"})
+    partial = m.with_varnames({x: "x"})
     assert f"#" in partial
 
     # the atom renders with the same naming
     out = m.atoms[0].show({x: "x", p: "p"})
     assert "controls" in out and "X(x)" in out
 
-    print(m.show({x: "x"}))
+    print(m.with_varnames({x: "x"}))
 
 
 def test_heterogeneous_composition():
@@ -445,12 +446,12 @@ def test_heterogeneous_composition():
     z = Var(Real([1, 1]))
 
     zero = torch.tensor([[0]])
-    init = [Term(LRA.Const(zero), [X(x)])]
+    init = [Term(LRA.Real(zero), [X(x)])]
     update = [Term(LRA.Id(), [X(x)], [x])]
     P = Module.sequential([x], init, update)
 
-    init = [Term(LRA.Const(zero), [X(y)])]
-    flow = [Term(LRA.Const(zero), [d(y)])]
+    init = [Term(LRA.Real(zero), [X(y)])]
+    flow = [Term(LRA.Real(zero), [d(y)])]
     Q = Module.differential([y], init, flow)
 
     comb = [Term(LRA.Add(), [X(z)], [X(x), X(y)])]

@@ -240,12 +240,13 @@ def _make_closed_loop():
     obs = Var(Real([1, 1]))
     act = Var(Real([1, 2]))
     backed = Env(_BoxEnv(), observation=obs, action=act, attrs=Real([1, 1]))
-    qnet = Module(SimpleQNet(1, 2, 2), extl=obs, intf=act)
+    qnet = Module(SimpleQNet(1, 2, 2), extl=obs, ctrl=act)
     return Env(backed, qnet)
 
 
 def test_action_driven_true_with_controller():
-    assert _make_closed_loop()._action_driven is True
+    env = _make_closed_loop()
+    assert env._action_driven is True
 
 
 def test_action_driven_false_solo():

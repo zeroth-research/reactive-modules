@@ -184,7 +184,7 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
             static_attrs[name] = value
             continue
         wire = Wire(dtype)
-        const_wires[name] = [wire, wire]  # fake pair so analyzer resolves self.name
+        const_wires[name] = wire  # a read-only constant: a single wire
         const_terms.append(_value_to_const_term(value, wire, _builder))
 
     # Also expose any other primitive instance attributes as static values.
@@ -228,7 +228,7 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
     # Prepend constant terms so wires have values before they're read
     reset_terms = const_terms + reset_terms
     step_terms = [
-                     _value_to_const_term(getattr(raw, n), const_wires[n][0], _builder)
+                     _value_to_const_term(getattr(raw, n), const_wires[n], _builder)
                      for n in const_wires
                  ] + step_terms
 
@@ -499,9 +499,14 @@ class Env(Module, gym.Wrapper):
         # Execute update block for each atom
         for atom_idx, atom in enumerate(self.atoms):
             if env_atom_idx is not None and atom_idx == env_atom_idx:
-                # Env atom: run real env
+                # Env atom: run real env. A Box-actioned env expects its
+                # space's shape, not the [1, n] wire shape.
+                action_value = self._state[p["action"]].detach()
+                space = getattr(self._backing_env, "action_space", None)
+                if isinstance(space, gym.spaces.Box):
+                    action_value = action_value.numpy().reshape(space.shape)
                 gym_result = self._backing_env.step(
-                    self._state[p["action"]].detach()
+                    action_value
                 )
                 obs, reward, terminated, truncated, *_ = gym_result
                 self._state[X(p["observation"])] = _to_wire_shape(

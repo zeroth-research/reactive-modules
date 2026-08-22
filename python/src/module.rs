@@ -343,18 +343,30 @@ impl Module {
     }
 
     /// Renders the module with variables named by `names`; variables
-    /// without an entry print as `#{id}`. Don't rely on the fallback - it may change anytime
-    fn show(&self, names: HashMap<Var, String>) -> String {
+    /// without an entry print as an untyped wire.
+    fn with_varnames(&self, names: HashMap<Var, String>) -> String {
         self.base
             .with_varnames(|v| match names.get(v) {
                 Some(name) => Cow::Borrowed(name.as_str()),
-                None => Cow::Owned(format!("#{}", v.id())), //
+                None => Cow::Owned(format!("{}", v.untyped())), //
             })
             .to_string()
     }
 
     fn __repr__(&self) -> String {
         format!("{:?}", self.base)
+    }
+
+    fn __str__(&self) -> String {
+        self.base
+            .with_varnames(|v| Cow::Owned(format!("{}", v.untyped())))
+            .to_string()
+    }
+
+    fn __mul__(&self, other: PyRef<Module>) -> PyResult<Module> {
+        base::Module::composition([self.base.clone(), other.base.clone()])
+            .map(Into::into)
+            .map_err(PyException::new_err)
     }
 }
 
@@ -403,12 +415,8 @@ impl ModuleInterface {
 }
 #[pymethods]
 impl ModuleInterface {
-    fn __str__(&self) -> String {
-        self.base()
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
+    fn __repr__(&self) -> String {
+        wires_untyped_to_repr(self.base())
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Var> {

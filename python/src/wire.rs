@@ -1,8 +1,7 @@
 use pyo3::prelude::*;
-use std::fmt;
 use theory::any::Sort;
 
-#[pyclass(frozen, eq, hash, str, ord)]
+#[pyclass(frozen, eq, hash, ord)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub(crate) struct Wire {
     base: base::Wire<Sort>,
@@ -33,7 +32,7 @@ impl Wire {
     }
 
     fn __repr__(&self) -> String {
-        format!("{:?}", self.base)
+        format!("{:?}", self.base.typed())
     }
 }
 
@@ -46,11 +45,5 @@ impl Wire {
 impl From<base::Wire<Sort>> for Wire {
     fn from(base: base::Wire<Sort>) -> Self {
         Self { base }
-    }
-}
-
-impl fmt::Display for Wire {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.base.fmt(f)
     }
 }

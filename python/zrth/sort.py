@@ -15,7 +15,6 @@ for _name in dir(_Sort):
     if not _name.startswith('_'):
         globals()[_name] = getattr(_Sort, _name)
 
-
 # Exhaustive on purpose: a new sort must be added here, never given a default.
 _KINDS = (
     (_Sort.Bool, torch.bool, "boolean"),

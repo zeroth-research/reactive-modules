@@ -5,6 +5,7 @@ pub mod lra;
 pub mod tensor;
 
 use std::fmt;
+use std::fmt::Debug;
 pub use tensor::PyTensor;
 pub trait Theory {
     type Sort;
@@ -18,33 +19,43 @@ pub trait Theory {
 }
 
 pub trait Combinatorial: Theory {
-    const HAVOC: Self;
+    // Returns the unary type that chooses an element within the range
+    fn havoc(range: &Self::Sort) -> Self;
 }
 
 pub trait Sequential: Theory {
-    const SKIP: Self;
+    // Returns the unary type that copies a value within the range
+    fn skip(range: &Self::Sort) -> Self;
 }
 
 pub trait Differential: Theory {
-    const ZERO: Self;
+    // Returns the unary type that indicates zero derivative
+    fn zero(range: &Self::Sort) -> Self;
 }
 
 // Helpers for type-checking procedures
 
 // SKIP is unary: it copies exactly one read wire to one write wire of the
 // same sort, matching the arity of the base theories' `Id`.
-fn check_skip<R, W, S, E>(read: R, write: W) -> Result<(), String>
+// This is a helper routine; concrete theories are free to implement their own
+fn check_skip<R, W, S, E>(range: &S, read: R, write: W) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<(S, u8), E>>,
     W: IntoIterator<Item = Result<(S, u8), E>>,
-    S: Eq,
+    S: Eq + Debug,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match (read.next(), write.next()) {
-        (Some(Ok(r)), Some(Ok(w))) if r == w => {}
+        (Some(Ok((r, rd))), Some(Ok((w, wd)))) if r != w || &w != range || wd != rd => {
+            return Err(format!(
+                "SKIP expects exactly one read and one write of sort {:?} and equal degree",
+                range
+            ));
+        }
+        (Some(_), Some(_)) => {}
         _ => {
-            return Err("SKIP expects exactly one read and one write of the same sort".to_string());
+            return Err("SKIP expects exactly one read and one write".to_string());
         }
     }
     if read.next().is_some() || write.next().is_some() {
@@ -54,17 +65,25 @@ where
 }
 
 // HAVOC is unary: it writes exactly one wire and reads none.
-pub(crate) fn check_havoc<R, W>(read: R, write: W) -> Result<(), String>
+// This is a helper routine; concrete theories are free to implement their own
+pub(crate) fn check_havoc<S, R, W, E>(range: &S, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator,
-    W: IntoIterator,
+    R: IntoIterator<Item = Result<(S, u8), E>>,
+    W: IntoIterator<Item = Result<(S, u8), E>>,
+    S: Eq + Debug,
+    E: fmt::Display,
 {
     if read.into_iter().next().is_some() {
         return Err("HAVOC expects no read wires".to_string());
     }
     let mut write = write.into_iter();
-    if write.next().is_none() {
-        return Err("HAVOC expects exactly one write wire, got none".to_string());
+    match write.next() {
+        Some(Ok((sort, _))) if &sort != range => {
+            return Err(format!("HAVOC expects write of dtype {:?}", range));
+        }
+        Some(Err(e)) => return Err(e.to_string()),
+        None => return Err("HAVOC expects exactly one write wire, got none".to_string()),
+        _ => {}
     }
     if write.next().is_some() {
         return Err("HAVOC expects exactly one write wire, got more".to_string());
@@ -73,18 +92,25 @@ where
 }
 
 // ZERO is unary: it writes exactly one wire and reads none.
-
-pub(crate) fn check_zero<R, W>(read: R, write: W) -> Result<(), String>
+// This is a helper routine; concrete theories are free to implement their own
+pub(crate) fn check_zero<S, R, W, E>(range: &S, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator,
-    W: IntoIterator,
+    R: IntoIterator<Item = Result<(S, u8), E>>,
+    W: IntoIterator<Item = Result<(S, u8), E>>,
+    S: Eq + Debug,
+    E: fmt::Display,
 {
     if read.into_iter().next().is_some() {
         return Err("ZERO expects no read wires".to_string());
     }
     let mut write = write.into_iter();
-    if write.next().is_none() {
-        return Err("ZERO expects exactly one write wire, got none".to_string());
+    match write.next() {
+        Some(Ok((sort, _))) if &sort != range => {
+            return Err(format!("ZERO expects write of dtype {:?}", range));
+        }
+        Some(Err(e)) => return Err(e.to_string()),
+        None => return Err("ZERO expects exactly one write wire, got none".to_string()),
+        _ => {}
     }
     if write.next().is_some() {
         return Err("ZERO expects exactly one write wire, got more".to_string());

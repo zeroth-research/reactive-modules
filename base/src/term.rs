@@ -410,7 +410,8 @@ where
     /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
     /// the compute graph.
     pub(crate) fn zero<W: IntoIterator<Item = Wire<F::Sort>>>(write: W) -> Result<Self, String> {
-        Block::try_from_iter(write.into_iter().map(|w| Term::constant(F::ZERO, [w])))
+        let write = write.into_iter();
+        Block::try_from_iter(write.map(|w| Term::constant(F::zero(w.dtype()), [w])))
     }
 }
 
@@ -433,7 +434,7 @@ where
         let mut read = read.into_iter();
         Block::try_from_iter(std::iter::from_fn(move || {
             match (write.next(), read.next()) {
-                (Some(w), Some(r)) => Some(Term::function(J::SKIP, [w], [r])),
+                (Some(w), Some(r)) => Some(Term::function(J::skip(w.dtype()), [w], [r])),
                 (None, None) => None,
                 _ => Some(Err("skip requires as many write as read wires".to_string())),
             }
@@ -447,6 +448,7 @@ where
 {
     /// Builds a block of one `HAVOC` term per write wire
     pub(crate) fn havoc<W: IntoIterator<Item = Wire<I::Sort>>>(write: W) -> Result<Self, String> {
-        Block::try_from_iter(write.into_iter().map(|w| Term::constant(I::HAVOC, [w])))
+        let write = write.into_iter();
+        Block::try_from_iter(write.map(|w| Term::constant(I::havoc(w.dtype()), [w])))
     }
 }

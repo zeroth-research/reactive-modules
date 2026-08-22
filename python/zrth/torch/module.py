@@ -69,7 +69,7 @@ def _extract_nn_module(nn_instance, theory=None, sequential=False, **kwargs):
     nn_cls = type(nn_instance)
 
     user_extl = kwargs.pop("extl", None)
-    user_intf = kwargs.pop("intf", None)
+    user_ctrl = kwargs.pop("ctrl", None)
 
     obs_param = next(
         p for p in inspect.signature(nn_cls.forward).parameters if p != "self"
@@ -94,7 +94,7 @@ def _extract_nn_module(nn_instance, theory=None, sequential=False, **kwargs):
     _validate_weight_dtypes(live_layers, theory)
 
     extl = resolve_wire("extl", _numeric_sort(theory, obs_size), user_extl)
-    intf = resolve_wire("intf", _numeric_sort(theory, qval_size), user_intf)
+    ctrl = resolve_wire("ctrl", _numeric_sort(theory, qval_size), user_ctrl)
 
     layer_out_features = {name: out for name, (_, out) in layers.items()}
 
@@ -104,18 +104,17 @@ def _extract_nn_module(nn_instance, theory=None, sequential=False, **kwargs):
         # (read_next=False) to read s. The output is always the next intf wire.
         in_wire, other = (X(extl), extl) if read_next else (extl, X(extl))
         return convert_method(
-            nn_cls.forward, {obs_param: [in_wire, other]}, [X(intf)], cls=nn_cls,
+            nn_cls.forward, {obs_param: [in_wire, other]}, [X(ctrl)], cls=nn_cls,
             layers=layer_out_features, live_layers=live_layers, theory=theory,
         )
 
-    obs = [extl, intf]
     if sequential:
         # V(s): init awaits the next input; update reads the latched input.
-        return dict(update=_forward_terms(False), vars=obs)
+        return dict(update=_forward_terms(False), vars=[ctrl, extl])
     else:
         # V(s'): memoryless, reads the awaited next input.
         initupdate = _forward_terms(True)
-        return dict(init=initupdate, update=initupdate, vars=obs)
+        return dict(init=initupdate, update=initupdate, vars=[ctrl, extl])
 
 
 class Module(_BaseModule, nn.Module):
