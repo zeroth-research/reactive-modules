@@ -893,11 +893,10 @@ where
             if i > 0 {
                 write!(f, ", ")?;
             }
-            let name = (self.name)(var);
             if self.typed {
-                write!(f, "{} : {}", name, var.dtype())?;
+                write!(f, "{}", var.with_name((self.name)(var)))?;
             } else {
-                write!(f, "{}", name)?;
+                write!(f, "{}", (self.name)(var))?;
             }
         }
         Ok(())
@@ -915,7 +914,7 @@ where
                 Cow::Owned(format!("d({})", (self.name)(var)))
             }
         } else {
-            Cow::Owned(format!("#{}", wire.id()))
+            Cow::Owned(format!("{}", wire.untyped()))
         }
     }
 
@@ -942,15 +941,17 @@ where
         const INDENT: &str = "  ";
 
         let a = self.atom;
-
         write!(f, "{pad}{BOLD}atom{RESET}")?;
         write!(f, " {BOLD}controls{RESET} ")?;
         self.fmt_vars(f, a.ctrl.iter())?;
-        write!(f, " {BOLD}reads{RESET} ")?;
-        self.fmt_vars(f, a.read.iter())?;
-        write!(f, " {BOLD}awaits{RESET} ")?;
-        self.fmt_vars(f, a.wait.iter())?;
-
+        if !a.read.is_empty() {
+            write!(f, " {BOLD}reads{RESET} ")?;
+            self.fmt_vars(f, a.read.iter())?;
+        }
+        if !a.wait.is_empty() {
+            write!(f, " {BOLD}awaits{RESET} ")?;
+            self.fmt_vars(f, a.wait.iter())?;
+        }
         let tpad = format!("{pad}{INDENT}");
         writeln!(f, "\n{pad}{BOLD}init{RESET}")?;
         self.fmt_terms(f, a.init.iter(), tpad.as_str())?;

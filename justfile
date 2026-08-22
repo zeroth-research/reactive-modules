@@ -122,6 +122,16 @@ run-python *args:
     @just build-python
     cd python && uv run {{ args }}
 
-tutorials:
+show-tutorials:
     @just build-tutorials
     uv run jupyter notebook tutorials/
+
+# Re-execute the tutorial notebooks in place against the current python
+# crate, regenerating their outputs; fails on the first cell that errors.
+# mountaincar and pendulum are parked: they need non-linear ops (sin/cos/
+# tanh/pow) and Stack, which no current theory provides — the analyzer
+# raises on them by design.
+run-tutorials *notebooks="tutorials/counter.ipynb tutorials/gym_and_sugar.ipynb tutorials/decrement_1d/decrement_1d.ipynb tutorials/cairo/cairo.ipynb tutorials/singapore-2/Singapore-2.ipynb":
+    @just build-tutorials
+    uv run jupyter nbconvert --to notebook --execute --inplace \
+        --ExecutePreprocessor.timeout=600 {{ notebooks }}

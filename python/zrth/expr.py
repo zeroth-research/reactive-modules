@@ -192,12 +192,20 @@ class Expr:
         """Optional label for display/debugging only — it has no logical meaning."""
         return self._tag
 
+    def _bw(self):
+        match self.dtype:
+            case BitVec(bw, _):
+                return bw
+            case _:
+                return None
+
     # --- coercion (raw literal -> Expr of my sort; never converts an Expr) ---
     def _coerce(self, o) -> "Expr":
         # a coerced literal inherits this expr's signedness (so `5 + xs` and `xs + 5`
         # agree for a signed bit-vector `xs`); it is ignored for non bit-vector sorts.
+
         return o if isinstance(o, Expr) else expr(
-            o, theory=self._theory, sort=self.dtype, signed=getattr(self, "_signed", False))
+            o, theory=self._theory, sort=type(self.dtype), bw=self._bw(), signed=getattr(self, "_signed", False))
 
     def _coerce_same(self, o) -> "Expr":
         o = self._coerce(o)
@@ -378,22 +386,133 @@ class WExpr(AExpr):
 # ---------------------------------------------------------------------------
 
 
-def expr(value, *, theory=None, sort=None, signed=False, tag=None) -> Expr:
+def expr(value, *, theory=None, sort=None, signed=False, bw=None, tag=None) -> Expr:
     if isinstance(value, Expr):
         raise TypeError("expr() builds from a raw value; got an Expr already")
-    if theory is None:
+    elif theory is None:
         raise TypeError("expr() requires theory=")
-    if _is_wire_pair(value):  # (latched, next) -> state variable
-        return _wrap(value[0], theory, next=value[1], signed=signed, tag=tag)
+
     if isinstance(value, Wire):  # single wire -> bare expr (no nxt)
         return _wrap(value, theory, signed=signed, tag=tag)
-    if isinstance(value, Var):
+    elif isinstance(value, Var):
         return _wrap(value, theory, signed=signed, tag=tag)
-    return _const(value, theory, sort, signed, tag)
+    elif isinstance(value, bool) and sort is None:
+        return _const(value, theory, Bool, signed=signed, tag=tag)
+    else:
+        return _const(value, theory, sort, signed=signed, tag=tag, bw=bw)
 
+
+def _term_from_torch(value, sort, theory, bw=None) -> Term:
+    assert isinstance(value, torch.Tensor)
+    assert sort in (Bool, Real, Int, BitVec)
+
+    # make it 2D to make the theory crate happy
+    match len(value.shape):
+        case 0:
+            shape = [1, 1]
+            value = value.reshape(shape)
+        case 1:
+            shape = [1, value.shape[-1]]
+            value = value.reshape(shape)
+        case 2:
+            shape = list(value.shape)
+        case _:
+            raise TypeError(f"expr() requires shape at most 2d; got {value.shape}")
+
+    match value.dtype:
+        case torch.bool if sort == Bool:
+            return Term.constant(theory.Bool(value), [Wire(Bool(shape))]), value
+        case torch.float if sort == Real:
+            return Term.constant(theory.Real(value), [Wire(Real(shape))]), value
+        case torch.int | torch.long if sort == Int:
+            return Term.constant(theory.Int(value), [Wire(Int(shape))]), value
+        case torch.int | torch.long if sort == Real:
+            return Term.constant(theory.Real(value), [Wire(Real(shape))]), value
+        case torch.int | torch.long if sort == BitVec and bw is not None:
+            return Term.constant(theory.Const(value), [Wire(BitVec(bw, shape))]), value
+        case _:
+            raise TypeError(f"expr() unsupported literal type {type(value)} / {sort}")
+
+
+def _term_from_other(value, sort, theory, bw=None) -> Term:
+    # torch will figure out the errors, and the base
+    assert sort in (Bool, Real, Int, BitVec)
+
+    if sort == Bool:
+        dtype = torch.bool
+    elif sort == Real:
+        dtype = torch.float
+    elif sort == Int:
+        dtype = torch.int
+    elif sort == BitVec:
+        dtype = torch.int
+    else:
+        raise TypeError(f"expr() unsupported sort {sort}")
+
+    return _term_from_torch(torch.tensor(value, dtype=dtype), sort, theory, bw=bw)
+
+
+def _unpack_sort_user_argument(sort, *, bw=None):
+    assert sort is not None
+
+    if isinstance(sort, Sort):
+        match sort:
+            case Bool(shape):
+                return Bool, None, shape
+            case Real(shape):
+                return Real, None, shape
+            case Int(shape):
+                return Int, None, shape
+            case BitVec(bw, shape):
+                assert bw is None
+                return BitVec, bw, shape
+        raise TypeError(f"expr(): unsupported sort {sort}")
+
+    if sort in (Bool, Real, Int):
+        return sort, None, None
+    elif sort == BitVec and bw is not None:
+        return sort, bw, None
+
+    raise TypeError(f"expr(): unsupported sort {sort}")
+
+
+def _const(value, theory, sort, *, signed, bw=None, tag=None) -> Expr:
+    # a sort is either None, or a type/family, or a concrete sort instance
+    if sort is None:
+        raise TypeError("expr(): a numeric literal needs an explicit sort= ")
+    if theory is None:
+        raise TypeError("expr(): a numeric literal needs an explicit theory= ")
+
+    # unpack sort family and required shape if any
+    sort, bw, required_shape = _unpack_sort_user_argument(sort, bw=bw)
+
+    # build term
+    if isinstance(value, torch.Tensor):
+        term, value = _term_from_torch(value, sort, theory, bw=bw)
+    elif isinstance(value, int | float | bool | list):
+        term, value = _term_from_other(value, sort, theory, bw=bw)
+    else:
+        raise TypeError(f"expr() unsupported value type {type(value)}")
+
+    # check built shape corresponds with required one, if any
+    assert len(term.write) == 1
+    shape = _shape(term.write[0].dtype)
+    if required_shape is not None and shape != required_shape:
+        raise TypeError(f"expr(): value {value} with shape {shape} cannot be given shape {required_shape}")
+
+    # emit into collector
+    _emit(term)
+
+    return _wrap(term.write[0], theory, value=value, signed=signed, tag=tag)
+
+
+# ---------------------------------------------------------------------------
+# Cast ops
+# ---------------------------------------------------------------------------
 
 def _resolve_sort(sort, shape) -> Sort:
     """`sort` may be a concrete Sort (e.g. from coercion) or a family (Real/Int/Bool)."""
+
     if isinstance(sort, Sort):
         return _with_shape(sort, shape)
     if sort is Bool:
@@ -403,26 +522,6 @@ def _resolve_sort(sort, shape) -> Sort:
     if sort is Real:
         return Real(shape)
     raise TypeError("a bit-vector literal needs a width: pass sort=BitVec(width, [...])")
-
-
-def _const(value, theory, sort, signed, tag=None) -> Expr:
-    # `sort` first: `bool` is a subtype of `int`, so an explicit sort must not be forced to Bool.
-    if sort is None:
-        if not isinstance(value, bool):
-            raise TypeError(
-                "expr(): a numeric literal needs an explicit sort= "
-                "(e.g. sort=Real, or sort=BitVec(32, [1, 1]))"
-            )
-        tensor, family = torch.tensor([[value]], dtype=torch.bool), Bool
-    else:
-        tensor, family = tensor_for(value, sort), sort
-    shape = _normalize_shape(list(tensor.size()))
-    tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
-    w = Wire(_resolve_sort(family, shape))
-    # one Const per theory; its sort (and thus the tensor's expected element kind) is
-    # taken from the write wire `w`.
-    _emit(Term.constant(theory.Const(tensor), [w]))
-    return _wrap(w, theory, value=tensor, signed=signed, tag=tag)
 
 
 def cast(e: Expr, sort) -> Expr:
@@ -446,7 +545,7 @@ def X(v: Expr) -> Expr:
     if isinstance(v, Expr):
         return _wrap(_X(v._wire), v._theory, signed=getattr(v, "_signed", False))
     else:
-        raise ValueError("X expects a variable")
+        raise ValueError(f"expr.X expects an expression, got {v}")
 
 
 def d(v: Expr) -> Expr:

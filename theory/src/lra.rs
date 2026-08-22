@@ -9,7 +9,7 @@ A [`Sort`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
 so that integer and propositional terms embed directly into `RLA`. The
 operations in [`LRA`] are:
 
-- [`LRA::Const`] — a matrix literal whose sort (real or boolean) is taken
+- [`LRA::Real`] — a matrix literal whose sort (real or boolean) is taken
   from the write wire; the tensor's element kind must match that sort.
 - [`LRA::And`], [`LRA::Or`], [`LRA::Xor`], [`LRA::Not`]
   — boolean operations on the boolean fragment of `Type`.
@@ -85,7 +85,9 @@ impl fmt::Display for Sort {
 pub enum LRA {
     // constant matrix literal; its sort (Real or Bool) is taken from the write wire
     #[strum(to_string = "{0}")]
-    Const(crate::PyTensor),
+    Real(crate::PyTensor),
+    #[strum(to_string = "{0}")]
+    Bool(crate::PyTensor),
     // boolean operations
     And(),
     Or(),
@@ -100,6 +102,7 @@ pub enum LRA {
     Ne(),
     // linear / matrix operations
     // A*x + B where `A` and `B` are constants
+    #[strum(to_string = "Linear({0}, {1})")]
     Linear(crate::PyTensor, crate::PyTensor),
     Add(),
     Sub(),
@@ -115,20 +118,34 @@ pub enum LRA {
     Id(),
     #[strum(to_string = "Uninterpreted({0})")]
     Uninterpreted(String),
-    Zero(),
-    Havoc(),
+    BoolZerograd([usize; 2]), // unstable
+    RealZerograd([usize; 2]), // unstable
+    AnyBool([usize; 2]),
+    AnyReal([usize; 2]),
 }
 
 impl Sequential for LRA {
-    const SKIP: Self = LRA::Id();
+    fn skip(_range: &Self::Sort) -> Self {
+        LRA::Id()
+    }
 }
 
 impl Combinatorial for LRA {
-    const HAVOC: Self = LRA::Havoc();
+    fn havoc(range: &Self::Sort) -> Self {
+        match range {
+            Sort::Bool(shape) => LRA::AnyBool(*shape),
+            Sort::Real(shape) => LRA::AnyReal(*shape),
+        }
+    }
 }
 
 impl Differential for LRA {
-    const ZERO: Self = LRA::Zero();
+    fn zero(range: &Self::Sort) -> Self {
+        match range {
+            Sort::Bool(shape) => LRA::BoolZerograd(*shape),
+            Sort::Real(shape) => LRA::RealZerograd(*shape),
+        }
+    }
 }
 
 impl Theory for LRA {
@@ -141,9 +158,11 @@ impl Theory for LRA {
         W: IntoIterator<Item = Result<(Sort, u8), E>>,
     {
         match self {
-            LRA::Const(cm) => check_const(cm, read, write),
-            LRA::Zero() => check_zero(read, write),
-            LRA::Havoc() => check_havoc(read, write),
+            LRA::Real(cm) | LRA::Bool(cm) => check_const(cm, read, write),
+            LRA::BoolZerograd(shape) => check_zero(&Sort::Bool(*shape), read, write),
+            LRA::RealZerograd(shape) => check_zero(&Sort::Real(*shape), read, write),
+            LRA::AnyBool(shape) => check_havoc(&Sort::Bool(*shape), read, write),
+            LRA::AnyReal(shape) => check_havoc(&Sort::Real(*shape), read, write),
             LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => check_bool(self, read, write),
             LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
                 check_cmp(self, read, write)
@@ -318,7 +337,7 @@ where
         _ => {
             return Err(format!(
                 "{:?}: inputs must be Real matrices, got {}",
-                r1.0, op
+                op, r1.0
             ));
         }
     };
@@ -603,7 +622,7 @@ mod tests {
     fn const_real_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
         assert!(
-            LRA::Const(cm)
+            LRA::Real(cm)
                 .check([].map(deg0), [real(2, 2)].map(deg0))
                 .is_ok()
         );
@@ -612,7 +631,7 @@ mod tests {
     #[test]
     fn const_real_bool_write_fails() {
         assert!(
-            LRA::Const(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+            LRA::Real(tch::Tensor::from_slice2(&[[0.0f64]]).into())
                 .check([].map(deg0), [bool_t(1, 1)].map(deg0))
                 .is_err()
         );
@@ -621,7 +640,7 @@ mod tests {
     #[test]
     fn const_real_wrong_rows_fails() {
         assert!(
-            LRA::Const(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+            LRA::Real(tch::Tensor::from_slice2(&[[0.0f64]]).into())
                 .check([].map(deg0), [real(2, 1)].map(deg0))
                 .is_err()
         );
@@ -631,7 +650,7 @@ mod tests {
     fn const_real_with_read_fails() {
         let t = real(1, 1);
         assert!(
-            LRA::Const(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+            LRA::Real(tch::Tensor::from_slice2(&[[0.0f64]]).into())
                 .check([t].map(deg0), [t].map(deg0))
                 .is_err()
         );
@@ -641,7 +660,7 @@ mod tests {
     fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
-            LRA::Const(cm)
+            LRA::Real(cm)
                 .check([].map(deg0), [bool_t(2, 2)].map(deg0))
                 .is_ok()
         );
@@ -650,7 +669,7 @@ mod tests {
     #[test]
     fn const_bool_real_write_fails() {
         assert!(
-            LRA::Const(tch::Tensor::from_slice2(&[[true]]).into())
+            LRA::Real(tch::Tensor::from_slice2(&[[true]]).into())
                 .check([].map(deg0), [real(1, 1)].map(deg0))
                 .is_err()
         );
@@ -941,8 +960,13 @@ mod tests {
     #[test]
     fn havoc_ok() {
         assert!(
-            LRA::Havoc()
+            LRA::AnyReal([2, 1])
                 .check([].map(deg0), [real(2, 1)].map(deg0))
+                .is_ok()
+        );
+        assert!(
+            LRA::AnyBool([1, 1])
+                .check([].map(deg0), [bool_t(1, 1)].map(deg0))
                 .is_ok()
         );
     }
@@ -950,23 +974,37 @@ mod tests {
     #[test]
     fn havoc_read_fails() {
         let t = real(1, 1);
-        assert!(LRA::Havoc().check([t].map(deg0), [t].map(deg0)).is_err());
+        assert!(
+            LRA::AnyReal([1, 1])
+                .check([t].map(deg0), [t].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
     fn havoc_arity_mismatch_fails() {
         assert!(
-            LRA::Havoc()
+            LRA::AnyReal([2, 1])
                 .check([].map(deg0), [real(2, 1), bool_t(1, 1)].map(deg0))
                 .is_err()
         );
-        assert!(LRA::Havoc().check([].map(deg0), [].map(deg0)).is_err());
+        assert!(
+            LRA::AnyReal([1, 1])
+                .check([].map(deg0), [].map(deg0))
+                .is_err()
+        );
+        // the write sort must match the op's declared range
+        assert!(
+            LRA::AnyReal([2, 1])
+                .check([].map(deg0), [real(1, 1)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
     fn zero_ok() {
         assert!(
-            LRA::Zero()
+            LRA::RealZerograd([2, 1])
                 .check([].map(deg0), [real(2, 1)].map(deg0))
                 .is_ok()
         );
@@ -975,12 +1013,20 @@ mod tests {
     #[test]
     fn zero_arity_mismatch_fails() {
         let t = real(1, 1);
-        assert!(LRA::Zero().check([t].map(deg0), [t].map(deg0)).is_err());
         assert!(
-            LRA::Zero()
+            LRA::RealZerograd([1, 1])
+                .check([t].map(deg0), [t].map(deg0))
+                .is_err()
+        );
+        assert!(
+            LRA::RealZerograd([2, 1])
                 .check([].map(deg0), [real(2, 1), real(1, 1)].map(deg0))
                 .is_err()
         );
-        assert!(LRA::Zero().check([].map(deg0), [].map(deg0)).is_err());
+        assert!(
+            LRA::RealZerograd([1, 1])
+                .check([].map(deg0), [].map(deg0))
+                .is_err()
+        );
     }
 }

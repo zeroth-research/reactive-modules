@@ -77,8 +77,9 @@ fn atom_with_invalid_read() {
     let a = Atom::sequential(&[x, y, z], [init], [update]);
     println!("{:?}", a);
     assert!(a.is_err());
-    // let m = Module::partially_observable([x], [y, z], [a.unwrap()]);
-    // assert!(m.is_err());
+    // the failure carries over: an invalid atom cannot be promoted to a module
+    let m = a.and_then(|a| Module::partially_observable([a], |v| v == &y || v == &z));
+    assert!(m.is_err());
 }
 
 /// Builds an open differential module encoding the drifting clocks
@@ -117,8 +118,8 @@ fn differential_drifting_clocks() {
     // init: the initial derivatives are left unconstrained (Havoc). Every
     // controlled wire must be written by the init block too.
     let init = [
-        Term::constant(LRA::Havoc(), [X(x)]).unwrap(),
-        Term::constant(LRA::Havoc(), [X(y)]).unwrap(),
+        Term::constant(LRA::AnyReal([1, 1]), [X(x)]).unwrap(),
+        Term::constant(LRA::AnyReal([1, 1]), [X(y)]).unwrap(),
     ];
 
     // The atom writes only d(x) and d(y), so `t` is inferred external.
@@ -178,7 +179,7 @@ fn differential_module_rejects_dx_equals_x() {
     let delay = Term::function(LRA::Id(), [d(x)], [x]);
 
     let module = delay.and_then(|delay| {
-        let init = [Term::constant(LRA::Havoc(), [X(x)]).unwrap()];
+        let init = [Term::constant(LRA::AnyReal([1, 1]), [X(x)]).unwrap()];
         base::Module::<LRA, LRA, LRA>::differential(&[x], init, [delay])
     });
     assert!(module.is_err());

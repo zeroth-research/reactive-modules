@@ -1,5 +1,6 @@
 use crate::Wire;
-use std::borrow::Borrow;
+use crate::wire::PREFIX;
+use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::Debug;
@@ -82,6 +83,15 @@ impl<S> From<Var<S>> for Wire<S> {
     }
 }
 
+/// A variable borrows as its latched wire, consistently with `Eq`, `Ord`,
+/// and `Hash`, which all delegate to it: a `Var` stands for its latched wire
+/// wherever a `Borrow<Wire<S>>` is accepted (e.g. keyed lookups, printing).
+impl<S> Borrow<Wire<S>> for Var<S> {
+    fn borrow(&self) -> &Wire<S> {
+        self
+    }
+}
+
 /// A variable dereferences to its latched wire: `&x` coerces to `&Wire<S>`
 /// wherever one is expected, and `Wire`'s methods (`x.id()`, `x.dtype()`,
 /// `x.degree()`) apply to the variable directly.
@@ -132,16 +142,26 @@ pub fn X_ref<S>(var: &Var<S>) -> &Wire<S> {
     &var.nxt
 }
 
-impl<S: fmt::Display> fmt::Display for Var<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "v({},{},{}) : {}",
-            self.ltc.id(),
-            self.nxt.id(),
-            self.der.id(),
-            self.dtype()
-        )
+pub struct Display<'a, S> {
+    var: &'a Var<S>,
+    name: Cow<'a, str>,
+}
+
+impl<S: fmt::Display> fmt::Display for Display<'_, S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} : {}", self.name, self.var.dtype())
+    }
+}
+
+impl<S: Debug> Debug for Display<'_, S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} : {:?}", self.name, self.var.dtype())
+    }
+}
+
+impl<'a, S> Var<S> {
+    pub fn with_name(&'a self, name: Cow<'a, str>) -> Display<'a, S> {
+        Display { var: self, name }
     }
 }
 
@@ -149,7 +169,7 @@ impl<S: Debug> Debug for Var<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "Var {{ ltc: {:?} nxt: {:?}, der: {:?} }} : {:?}",
+            "Var {{ ltc: {PREFIX}{:?}, nxt: {PREFIX}{:?}, der: {PREFIX}{:?}, dtype: {:?} }} ",
             self.ltc.id(),
             self.nxt.id(),
             self.der.id(),
@@ -158,7 +178,7 @@ impl<S: Debug> Debug for Var<S> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Interface<S> {
     vars: Vec<Var<S>>,
     wires: Vec<(Wire<S>, Var<S>)>,
@@ -258,6 +278,12 @@ impl<'a, S> IntoIterator for &'a Interface<S> {
     }
 }
 
+impl<S: Debug> Debug for Interface<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Interface {{ vars: {:?} }}", self.vars)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -335,7 +361,7 @@ mod test {
         let x = Var::new(Sort::Real([1, 1]));
 
         // a variable stands for its latched wire in a term position
-        let t = Term::constant(LRA::Havoc(), [x]).unwrap();
+        let t = Term::constant(LRA::AnyReal([1, 1]), [x]).unwrap();
         assert_eq!(t.write().iter().next().map(Wire::id), Some(x.id()));
 
         // and its views pass as well: x' = x

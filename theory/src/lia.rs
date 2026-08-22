@@ -9,7 +9,7 @@ A [`Sort`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
 so that integer and propositional terms embed directly into `LIA`. The
 operations in [`LIA`] are:
 
-- [`LIA::Const`] — a matrix literal whose sort (integer or boolean) is taken
+- [`LIA::Int`] — a matrix literal whose sort (integer or boolean) is taken
   from the write wire; the tensor's element kind must match that sort.
 - [`LIA::And`], [`LIA::Or`], [`LIA::Xor`], [`LIA::Not`]
   — boolean operations on the boolean fragment of `Type`.
@@ -85,7 +85,9 @@ impl fmt::Display for Sort {
 pub enum LIA {
     // constant matrix literal; its sort (Int or Bool) is taken from the write wire
     #[strum(to_string = "{0}")]
-    Const(crate::PyTensor),
+    Int(crate::PyTensor),
+    #[strum(to_string = "{0}")]
+    Bool(crate::PyTensor),
     // boolean operations
     And(),
     Or(),
@@ -115,15 +117,23 @@ pub enum LIA {
     Id(),
     #[strum(to_string = "Uninterpreted({0})")]
     Uninterpreted(String),
-    Havoc(),
+    AnyInt([usize; 2]),
+    AnyBool([usize; 2]),
 }
 
 impl Sequential for LIA {
-    const SKIP: Self = Self::Id();
+    fn skip(_range: &Self::Sort) -> Self {
+        LIA::Id()
+    }
 }
 
 impl Combinatorial for LIA {
-    const HAVOC: Self = Self::Havoc();
+    fn havoc(range: &Sort) -> Self {
+        match range {
+            Sort::Int(shape) => LIA::AnyInt(*shape),
+            Sort::Bool(shape) => LIA::AnyBool(*shape),
+        }
+    }
 }
 
 impl Theory for LIA {
@@ -136,7 +146,7 @@ impl Theory for LIA {
         W: IntoIterator<Item = Result<(Sort, u8), E>>,
     {
         match self {
-            LIA::Const(cm) => check_const(cm, read, write),
+            LIA::Int(cm) | LIA::Bool(cm) => check_const(cm, read, write),
             LIA::And() | LIA::Or() | LIA::Xor() | LIA::Not() => check_bool(self, read, write),
             LIA::Le() | LIA::Lt() | LIA::Ge() | LIA::Gt() | LIA::Eq() | LIA::Ne() => {
                 check_cmp(self, read, write)
@@ -151,8 +161,8 @@ impl Theory for LIA {
             }
             LIA::Transpose() => check_transpose(self, read, write),
             LIA::Ite() | LIA::Id() => check_flow(self, read, write),
-            LIA::Havoc() => check_havoc(read, write),
-
+            LIA::AnyInt(shape) => check_havoc(&Sort::Int(*shape), read, write),
+            LIA::AnyBool(shape) => check_havoc(&Sort::Bool(*shape), read, write),
             LIA::Uninterpreted(_) => {
                 let mut read = read.into_iter();
                 let mut write = write.into_iter();
@@ -583,7 +593,7 @@ mod tests {
     fn const_int_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
         assert!(
-            LIA::Const(cm)
+            LIA::Int(cm)
                 .check([].map(deg0), [int(2, 2)].map(deg0))
                 .is_ok()
         );
@@ -592,7 +602,7 @@ mod tests {
     #[test]
     fn const_int_bool_write_fails() {
         assert!(
-            LIA::Const(tch::Tensor::from_slice2(&[[0i64]]).into())
+            LIA::Int(tch::Tensor::from_slice2(&[[0i64]]).into())
                 .check([].map(deg0), [bool_t(1, 1)].map(deg0))
                 .is_err()
         );
@@ -601,7 +611,7 @@ mod tests {
     #[test]
     fn const_int_wrong_rows_fails() {
         assert!(
-            LIA::Const(tch::Tensor::from_slice2(&[[0i64]]).into())
+            LIA::Int(tch::Tensor::from_slice2(&[[0i64]]).into())
                 .check([].map(deg0), [int(2, 1)].map(deg0))
                 .is_err()
         );
@@ -611,7 +621,7 @@ mod tests {
     fn const_int_with_read_fails() {
         let t = int(1, 1);
         assert!(
-            LIA::Const(tch::Tensor::from_slice2(&[[0i64]]).into())
+            LIA::Int(tch::Tensor::from_slice2(&[[0i64]]).into())
                 .check([t].map(deg0), [t].map(deg0))
                 .is_err()
         );
@@ -621,7 +631,7 @@ mod tests {
     fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
-            LIA::Const(cm)
+            LIA::Int(cm)
                 .check([].map(deg0), [bool_t(2, 2)].map(deg0))
                 .is_ok()
         );
@@ -630,7 +640,7 @@ mod tests {
     #[test]
     fn const_bool_int_write_fails() {
         assert!(
-            LIA::Const(tch::Tensor::from_slice2(&[[true]]).into())
+            LIA::Int(tch::Tensor::from_slice2(&[[true]]).into())
                 .check([].map(deg0), [int(1, 1)].map(deg0))
                 .is_err()
         );

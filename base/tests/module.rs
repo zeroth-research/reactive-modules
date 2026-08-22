@@ -388,14 +388,20 @@ impl Theory for DifOps {
 }
 
 impl Differential for DifOps {
-    const ZERO: Self = Self("ZERO");
+    fn zero(_range: &Self::Sort) -> Self {
+        Self("ZERO")
+    }
 }
 impl Sequential for SeqOps {
-    const SKIP: Self = Self("SKIP");
+    fn skip(_range: &Self::Sort) -> Self {
+        Self("SKIP")
+    }
 }
 
 impl Combinatorial for SeqOps {
-    const HAVOC: Self = Self("HAVOC");
+    fn havoc(_range: &Self::Sort) -> Self {
+        Self("HAVOC")
+    }
 }
 
 impl fmt::Display for DifOps {
@@ -416,12 +422,12 @@ fn heterogeneous_composition() {
     let y = Var::new("B");
     let z = Var::new("C");
 
-    let init = Term::constant(SeqOps::HAVOC, [X(x)]).unwrap();
-    let jump = Term::function(SeqOps::SKIP, [X(x)], [x]).unwrap();
+    let init = Term::constant(SeqOps::havoc(&"A"), [X(x)]).unwrap();
+    let jump = Term::function(SeqOps::skip(&"A"), [X(x)], [x]).unwrap();
     let P = base::Module::sequential(&[x], [init], [jump]).unwrap();
 
-    let init = Term::constant(SeqOps::HAVOC, [X(y)]).unwrap();
-    let flow = Term::constant(DifOps::ZERO, [d(y)]).unwrap();
+    let init = Term::constant(SeqOps::havoc(&"B"), [X(y)]).unwrap();
+    let flow = Term::constant(DifOps::zero(&"B"), [d(y)]).unwrap();
     let Q = base::Module::differential(&[y], [init], [flow]).unwrap();
 
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();

@@ -5,10 +5,12 @@ use pyo3::PyClass;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
+use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
+use std::fmt::Write;
 use theory::Theory;
-use theory::any::{Any, Sort};
+use theory::any::{Any, Combinatorial, Differential, Sequential, Sort};
 
 mod atom;
 mod module;
@@ -31,6 +33,9 @@ fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Term>()?;
     m.add_class::<Module>()?;
 
+    m.add_class::<Combinatorial>()?;
+    m.add_class::<Sequential>()?;
+    m.add_class::<Differential>()?;
     m.add_class::<LRA>()?;
     m.add_class::<LIA>()?;
     m.add_class::<BV>()?;
@@ -149,4 +154,23 @@ impl<'py> Hide<'py> {
             Hide::Set(_) => Ok(()),
         }
     }
+}
+
+/// Renders wires untyped and comma-separated. Accepts references to wires
+/// and to variables alike: a `Var` borrows as its latched `Wire`.
+pub(crate) fn wires_untyped_to_repr<'a, S, W, I>(wires: I) -> String
+where
+    S: Debug + 'a,
+    W: Borrow<base::Wire<S>> + 'a,
+    I: IntoIterator<Item = &'a W>,
+{
+    let mut s = String::from("[");
+    for (i, wire) in wires.into_iter().enumerate() {
+        if i > 0 {
+            s.push_str(", ");
+        }
+        write!(s, "{:?}", wire.borrow().typed()).unwrap(); // we know it's infallible
+    }
+    s.push_str("]");
+    s
 }

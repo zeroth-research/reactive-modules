@@ -55,7 +55,7 @@ def _int(n):
 
 def test_factory_picks_subclass_from_sort():
     assert isinstance(expr(_var(INT), theory=LIA), AExpr)
-    assert isinstance(expr(True, theory=LRA), BExpr)
+    assert isinstance(expr(True, sort=Bool, theory=LRA), BExpr)
     assert isinstance(expr(_var(BV32), theory=BV), WExpr)
 
 
@@ -77,32 +77,74 @@ def test_numeric_literal_needs_explicit_sort():
     assert isinstance(expr(True, theory=LRA), BExpr)  # bool is exempt
 
 
-def test_float_value_rejected_for_an_integral_sort():
-    # would be silently truncated, so `3.14 + x` on an Int x must fail rather than add 3
-    x = _varexpr(INT)
-    for thunk in (lambda: expr(3.14, theory=LIA, sort=INT),
-                  lambda: expr(torch.tensor([[1.5]]), theory=LIA, sort=INT),
-                  lambda: expr([0.1, 1.0], theory=LIA, sort=Int([1, 2])),
-                  lambda: expr(3.14, theory=BV, sort=BV32),
-                  lambda: 3.14 + x,
-                  lambda: x + 3.14):
-        with pytest.raises(TypeError, match="truncated"):
-            thunk()
+# expr is maximally permissive - anything that torch accepts we accept
+# def test_float_value_rejected_for_an_integral_sort():
+#     # would be silently truncated, so `3.14 + x` on an Int x must fail rather than add 3
+#     x = _varexpr(INT)
+#     with pytest.raises(TypeError, match="unsupported"):
+#         expr(3.14, theory=LIA, sort=INT)
+#
+#     with pytest.raises(TypeError, match="unsupported"):
+#         expr(3.14, theory=LIA, sort=INT)
+#
+#     with pytest.raises(TypeError, match="unsupported"):
+#         expr(torch.tensor([[1.5]]), theory=LIA, sort=INT)
+#
+#     with pytest.raises(TypeError, match="unsupported"):
+#         expr([0.1, 1.0], theory=LIA, sort=Int([1, 2]))
+#
+#     with pytest.raises(TypeError, match="unsupported"):
+#         expr(3.14, theory=BV, sort=BV32)
+#
+#     with pytest.raises(TypeError, match="unsupported"):
+#         3.14 + x
+#
+#     with pytest.raises(TypeError, match="unsupported"):
+#         x + 3.14
 
 
-def test_non_bool_value_rejected_for_a_bool_sort():
-    # 5 -> True collapses just as lossily as 3.14 -> 3
-    for value in (5, -1, 3.14):
-        with pytest.raises(TypeError, match="boolean"):
-            expr(value, theory=LIA, sort=Bool([1, 1]))
+# def test_non_bool_value_rejected_for_a_bool_sort():
+#     # 5 -> True collapses just as lossily as 3.14 -> 3
+#     for value in (5, -1, 3.14):
+#         with pytest.raises(TypeError, match="unsupported"):
+#             expr(value, theory=LIA, sort=Bool([1, 1]))
 
 
-def test_lossless_value_conversions_are_allowed():
-    assert expr(3, theory=LRA, sort=REAL)._value.dtype is torch.float32  # int -> Real
-    assert expr(True, theory=LIA, sort=INT)._value.dtype is torch.int64  # bool -> Int
-    assert expr(True, theory=LRA, sort=REAL)._value.dtype is torch.float32  # bool -> Real
-    # an int tensor on a Real wire is converted, not left as int
-    assert expr(torch.tensor([[2]]), theory=LRA, sort=REAL)._value.dtype is torch.float32
+def tensor_of_term(term):
+    match term.itype:
+        case LRA.Real(t):
+            return t
+        case LRA.Bool(t):
+            return t
+        case LIA.Bool(t):
+            return t
+        case LIA.Int(t):
+            return t
+        case _:
+            return None
+
+
+def test_lossless_value_conversions_are_not_happening():
+    with collecting() as terms:
+        expr(3, theory=LRA, sort=REAL)  # int -> Real
+        assert tensor_of_term(terms[0]).dtype == torch.float
+
+    with collecting() as terms:
+        expr(True, theory=LIA, sort=INT)  # bool -> Int
+        assert tensor_of_term(terms[0]).dtype == torch.int
+
+    with collecting() as terms:
+        expr(True, theory=LRA, sort=REAL)  # int -> Real
+        assert tensor_of_term(terms[0]).dtype == torch.float
+
+    with collecting() as terms:
+        expr(torch.tensor([[2]]), theory=LRA, sort=REAL)
+        assert tensor_of_term(terms[0]).dtype == torch.long
+
+    # assert expr(True, theory=LIA, sort=INT)._value.dtype is torch.int64  # bool -> Int
+    # assert expr(True, theory=LRA, sort=REAL)._value.dtype is torch.float32  # bool -> Real
+    # # an int tensor on a Real wire is converted, not left as int
+    # assert expr(torch.tensor([[2]]), theory=LRA, sort=REAL)._value.dtype is torch.float32
 
 
 def test_explicit_sort_wins_for_bool_value():
@@ -128,10 +170,11 @@ def test_nxt_requires_a_variable():
         X(x + 1)
 
 
-def test_variable_wire_pair_must_share_a_sort():
-    # otherwise x.dtype != nxt(x).dtype; raise (not assert, so -O keeps the check)
-    with pytest.raises(TypeError, match="same sort"):
-        expr((Wire(INT), Wire(Bool([1, 1]))), theory=LIA)
+# not valid anymore
+# def test_variable_wire_pair_must_share_a_sort():
+#     # otherwise x.dtype != nxt(x).dtype; raise (not assert, so -O keeps the check)
+#     with pytest.raises(TypeError, match="same sort"):
+#         expr(Var(INT), theory=LIA)
 
 
 # --- result sorts -----------------------------------------------------------
@@ -249,7 +292,7 @@ def test_collecting_records_deps_first():
     with collecting() as terms:
         ite(x < y, x + 1, y)
     optypes = [type(t.itype) for t in terms]
-    assert optypes == [LIA.Lt, LIA.Const, LIA.Add, LIA.Ite]
+    assert optypes == [LIA.Lt, LIA.Int, LIA.Add, LIA.Ite]
 
 
 def test_shared_subexpression_recorded_once():
@@ -317,7 +360,7 @@ def test_single_entry_point_spec():
         expr((Wire(BOOL), Wire(BOOL)))
 
     # wire pair -> state variable; bool literal and bare wire -> all BExpr (Bool sort)
-    x = expr((Wire(BOOL), Wire(BOOL)), theory=LRA)
+    x = expr(Var(BOOL), theory=LRA)
     y = expr(True, theory=LRA)
     w = expr(Wire(BOOL), theory=LRA)
     assert isinstance(x, BExpr) and isinstance(y, BExpr) and isinstance(w, BExpr)
@@ -346,7 +389,7 @@ def test_single_entry_point_spec():
 
 def test_tag_is_a_label_with_no_logical_meaning():
     # `tag` is optional, purely a display label; it does not affect the class or ops.
-    p = (Wire(Bool([1, 1])), Wire(Bool([1, 1])))
+    p = Var(Bool([1, 1]))
     x = expr(p, theory=LRA, tag="x")
     assert x.tag == "x"
     assert isinstance(x, BExpr)

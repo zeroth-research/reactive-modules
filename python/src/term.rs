@@ -113,12 +113,8 @@ impl TermInterface {
 
 #[pymethods]
 impl TermInterface {
-    fn __str__(&self) -> String {
-        self.base()
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
+    fn __repr__(&self) -> String {
+        wires_untyped_to_repr(self.base())
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {

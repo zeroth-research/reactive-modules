@@ -162,15 +162,19 @@ pub enum BV {
     /// Uninterpreted symbol
     #[strum(to_string = "Uninterpreted({0})")]
     Uninterpreted(String),
-    Havoc(),
+    Havoc(usize, [usize; 2]),
 }
 
 impl Sequential for BV {
-    const SKIP: Self = Id();
+    fn skip(_range: &Self::Sort) -> Self {
+        Id()
+    }
 }
 
 impl Combinatorial for BV {
-    const HAVOC: Self = Havoc();
+    fn havoc(range: &Self::Sort) -> Self {
+        Havoc(range.bw(), *range.shape())
+    }
 }
 
 fn check_init_dims(cm: &crate::PyTensor, bw: usize, i: usize, j: usize) -> Result<(), String> {
@@ -528,7 +532,7 @@ impl Theory for BV {
                     self
                 ))
             }
-            BV::Havoc() => check_havoc(read, write),
+            BV::Havoc(bw, shape) => check_havoc(&Sort::BV(*bw, *shape), read, write),
         }
     }
 }

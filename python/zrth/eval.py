@@ -47,7 +47,7 @@ def eval_itype(itype, read, out_sort=None):
             return [torch.where(r[0].bool(), r[1], r[2])]
 
         # --- constants (payload bound from the op) ---
-        case LRA.Const(t) | LIA.Const(t) | BV.Const(t):
+        case LRA.Bool(t) | LRA.Real(t) | LIA.Bool(t) | LIA.Int(t) | BV.Const(t):
             return [t.clone()]
 
         # --- arithmetic: LIA/LRA (exact, no wraparound) ---

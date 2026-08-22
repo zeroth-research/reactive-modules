@@ -108,15 +108,112 @@ mod torch {
         }
     }
 
+    /// Elements above which a tensor is no longer printed entirely.
+    const FMT_MAX_NUMEL: i64 = 16;
+    /// Elements kept on each side of the `...` when truncating a dimension.
+    const FMT_EDGE: i64 = 3;
+
+    fn fmt_scalar(f: &mut std::fmt::Formatter<'_>, t: &tch::Tensor) -> std::fmt::Result {
+        match t.kind() {
+            tch::Kind::Bool => write!(f, "{}", t.int64_value(&[]) != 0),
+            tch::Kind::Uint8
+            | tch::Kind::Int8
+            | tch::Kind::Int16
+            | tch::Kind::Int
+            | tch::Kind::Int64 => write!(f, "{}", t.int64_value(&[])),
+            _ => write!(f, "{}", t.double_value(&[])),
+        }
+    }
+
+    fn fmt_slice(
+        f: &mut std::fmt::Formatter<'_>,
+        t: &tch::Tensor,
+        dims: &[i64],
+        truncate: bool,
+    ) -> std::fmt::Result {
+        let Some((&n, rest)) = dims.split_first() else {
+            return fmt_scalar(f, t);
+        };
+
+        let item = |f: &mut std::fmt::Formatter<'_>, i: i64, first: bool| {
+            if !first {
+                write!(f, ", ")?;
+            }
+            fmt_slice(f, &t.get(i), rest, truncate)
+        };
+
+        write!(f, "[")?;
+        if truncate && n > 2 * FMT_EDGE {
+            for i in 0..FMT_EDGE {
+                item(f, i, i == 0)?;
+            }
+            write!(f, ", ...")?;
+            for i in (n - FMT_EDGE)..n {
+                item(f, i, false)?;
+            }
+        } else {
+            for i in 0..n {
+                item(f, i, i == 0)?;
+            }
+        }
+        write!(f, "]")
+    }
+
     impl Display for PyTensor {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-            write!(f, "{}", self.tensor)
+        /// Single-line rendering: the values are printed entirely when the
+        /// tensor is small, and abbreviated with `...` along each oversized
+        /// dimension when it is not.
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+            let truncate = self.tensor.numel() as i64 > FMT_MAX_NUMEL;
+            fmt_slice(f, &self.tensor, &self.tensor.size(), truncate)
         }
     }
 
     impl From<tch::Tensor> for PyTensor {
         fn from(tensor: tch::Tensor) -> Self {
             Self { tensor }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::PyTensor;
+        use pyo3_tch::tch;
+
+        #[test]
+        fn small_tensors_print_entirely_on_one_line() {
+            let t: PyTensor = tch::Tensor::from_slice(&[1.5f64, 2.0, 3.0])
+                .reshape([1, 3])
+                .into();
+            assert_eq!(format!("{t}"), "[[1.5, 2, 3]]");
+
+            let b: PyTensor = tch::Tensor::from_slice(&[true, false]).into();
+            assert_eq!(format!("{b}"), "[true, false]");
+
+            let s: PyTensor = tch::Tensor::from(4i64).into();
+            assert_eq!(format!("{s}"), "4");
+        }
+
+        #[test]
+        fn large_tensors_abbreviate_with_dots() {
+            let t: PyTensor = tch::Tensor::arange(24, (tch::Kind::Int64, tch::Device::Cpu))
+                .reshape([2, 12])
+                .into();
+            assert_eq!(
+                format!("{t}"),
+                "[[0, 1, 2, ..., 9, 10, 11], [12, 13, 14, ..., 21, 22, 23]]"
+            );
+
+            // an oversized outer dimension truncates as well
+            let v: PyTensor = tch::Tensor::arange(20, (tch::Kind::Int64, tch::Device::Cpu)).into();
+            assert_eq!(format!("{v}"), "[0, 1, 2, ..., 17, 18, 19]");
+        }
+
+        #[test]
+        fn output_never_spans_multiple_lines() {
+            let t: PyTensor =
+                tch::Tensor::rand([4, 4, 4], (tch::Kind::Float, tch::Device::Cpu)).into();
+            assert!(!format!("{t}").contains('\n'));
         }
     }
 }

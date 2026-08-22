@@ -11,6 +11,7 @@ pub struct Wire<S> {
 }
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+pub(crate) const PREFIX: &str = "#";
 
 impl<S> Wire<S> {
     pub fn id(&self) -> usize {
@@ -56,10 +57,44 @@ impl<S> Hash for Wire<S> {
     }
 }
 
-impl<S: fmt::Display> fmt::Display for Wire<S> {
+pub struct Display<'a, S> {
+    wire: &'a Wire<S>,
+    typed: bool,
+}
+
+impl<S: fmt::Display> fmt::Display for Display<'_, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} : {}", self.id, self.dtype)?;
+        write!(f, "{PREFIX}{}", self.wire.id)?;
+        if self.typed {
+            write!(f, " : {}", self.wire.dtype)?;
+        }
         Ok(())
+    }
+}
+
+impl<S: Debug> Debug for Display<'_, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{{PREFIX}{}", self.wire.id)?;
+        if self.typed {
+            write!(f, " : {:?}", self.wire.dtype)?;
+        }
+        write!(f, "}}")
+    }
+}
+
+impl<S> Wire<S> {
+    pub fn typed(&self) -> Display<'_, S> {
+        Display {
+            wire: self,
+            typed: true,
+        }
+    }
+
+    pub fn untyped(&self) -> Display<'_, S> {
+        Display {
+            wire: self,
+            typed: false,
+        }
     }
 }
 

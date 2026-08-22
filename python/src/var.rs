@@ -3,11 +3,10 @@ use pyo3::BoundObject;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::PyNotImplemented;
-use std::fmt;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use theory::any::Sort;
 
-#[pyclass(frozen, str)]
+#[pyclass(frozen)] // eq, hash, ord are implemented manually for compat with polymorphic __richcmp__
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub(crate) struct Var {
     base: base::Var<Sort>,
@@ -61,7 +60,7 @@ impl Var {
     }
 
     fn __repr__(&self) -> String {
-        format!("{:?}", self.base)
+        format!("{:?}", self.base.typed())
     }
 }
 
@@ -84,12 +83,6 @@ impl std::borrow::Borrow<base::Var<Sort>> for Var {
 impl From<base::Var<Sort>> for Var {
     fn from(base: base::Var<Sort>) -> Self {
         Self { base }
-    }
-}
-
-impl fmt::Display for Var {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.base.fmt(f)
     }
 }
 
