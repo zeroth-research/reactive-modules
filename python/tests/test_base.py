@@ -93,7 +93,7 @@ def test_module_parallel():
     assign = [Term(LIA.Or(), [X(z)], [X(y), X(w)])]
     r = Module.combinatorial((z, y, w), assign)
 
-    m = Module.comp(p, q, r)
+    m = Module.compose(p, q, r)
 
     c = m.ctrl
     print(c)
@@ -264,7 +264,7 @@ def test_compose_hiding_coupled_variables():
     def coupled(v):
         return (v in m1.intf and v in m2.extl) or (v in m1.extl and v in m2.intf)
 
-    m = Module.comp(m1, m2, hide=coupled)
+    m = Module.compose(m1, m2, hide=coupled)
 
     assert m.prvt == [y]
     assert m.intf == [x, z]
@@ -287,9 +287,9 @@ def test_module_new_positional_atoms():
     assert m.intf == [x] and m.prvt == [p]
 
     # the explicit `proc` staticmethod behaves the same
-    m = Module.proc(atom)
+    m = Module(atom)
     assert m.closed() and m.intf == [x, p]
-    m = Module.proc(atom, hide=[p])
+    m = Module(atom, hide=[p])
     assert m.intf == [x] and m.prvt == [p]
 
     # several atoms compose into one module
@@ -457,4 +457,4 @@ def test_heterogeneous_composition():
     comb = [Term(LRA.Add(), [X(z)], [X(x), X(y)])]
     R = Module.combinatorial([x, y, z], comb)
 
-    S = Module.comp(P, Q, R)
+    S = Module.compose(P, Q, R)

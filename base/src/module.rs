@@ -391,7 +391,7 @@ where
     /// This function takes an iterator of modules and returns a new module
     /// that represents all of them composed in parallel, coupling all shared
     /// observable variables. It is the special case of the *hiding
-    /// composition* [`Module::hiding_composition`] that hides nothing: every observable
+    /// composition* [`Module::compose_hiding`] that hides nothing: every observable
     /// of the components stays observable in the composite.
     ///
     /// # Semantics
@@ -412,19 +412,19 @@ where
     /// - `Err(Error)` describing the reason composition failed.
     ///
     /// # See Also
-    /// - [`Module::hiding_composition`], the general form that also hides variables.
-    pub fn composition<M>(modules: M) -> Result<Self, String>
+    /// - [`Module::compose_hiding`], the general form that also hides variables.
+    pub fn compose<M>(modules: M) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
     {
-        Self::hiding_composition(modules, |_| false)
+        Self::compose_hiding(modules, |_| false)
     }
 
     /// The **hiding operator**: hides the given variables of this module.
     ///
     /// Consumes the module and returns one with the same behaviour in which
     /// the `hide` variables have left the observables and become private.
-    /// It is the hiding composition [`Module::hiding_composition`] of the
+    /// It is the hiding composition [`Module::compose_hiding`] of the
     /// module alone, and composes with it: hiding after composing equals
     /// hiding at composition.
     ///
@@ -440,18 +440,18 @@ where
     /// - `Err(Error)` describing the reason hiding failed.
     ///
     /// # See Also
-    /// - [`Module::hiding_composition`], hiding several modules at their composition.
-    pub fn hiding<H>(self, hide: H) -> Result<Self, String>
+    /// - [`Module::compose_hiding`], hiding several modules at their composition.
+    pub fn hide<H>(self, hide: H) -> Result<Self, String>
     where
         H: Fn(&Var<S>) -> bool,
     {
-        Self::hiding_composition(std::iter::once(self), hide)
+        Self::compose_hiding(std::iter::once(self), hide)
     }
 
     /// Constructs the **hiding composition** of several modules: parallel
     /// composition that simultaneously hides the given variables.
     ///
-    /// The modules are composed as in [`Module::composition`], coupling all shared
+    /// The modules are composed as in [`Module::compose`], coupling all shared
     /// observable variables; the `hide` variables are then removed from the
     /// composite's observables and become private. The coupling still takes
     /// place — hiding restricts the visibility of the *composite*, not the
@@ -464,11 +464,11 @@ where
     /// # Parameters
     /// - `modules`: The modules to compose.
     /// - `hide`: The variables to hide in the composite; hiding nothing is
-    ///   exactly [`Module::composition`].
+    ///   exactly [`Module::compose`].
     ///
     /// # Error Conditions
     ///
-    /// All error conditions of [`Module::composition`], and additionally:
+    /// All error conditions of [`Module::compose`], and additionally:
     ///
     /// - A prvt variable is external to the composition
     ///
@@ -476,7 +476,7 @@ where
     ///
     /// - `Ok(Module)` containing the composed module.
     /// - `Err(Error)` describing the reason composition failed.
-    pub fn hiding_composition<M, H>(modules: M, hide: H) -> Result<Self, String>
+    pub fn compose_hiding<M, H>(modules: M, hide: H) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
         H: Fn(&Var<S>) -> bool,

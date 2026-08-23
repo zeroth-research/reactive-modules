@@ -321,7 +321,7 @@ def test_compose_hiding_coupled_variables():
     def coupled(v):
         return (v in m1.intf and v in m2.extl) or (v in m1.extl and v in m2.intf)
 
-    m = Module.comp(m1, m2, hide=coupled)
+    m = Module.compose(m1, m2, hide=coupled)
 
     assert m.prvt == [y]
     assert m.intf == [x, z]
