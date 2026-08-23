@@ -19,17 +19,17 @@ pub trait Theory {
 }
 
 pub trait Combinatorial: Theory {
-    // Returns the unary type that chooses an element within the range
+    // Returns the unary itype that chooses an element within the range
     fn havoc(range: &Self::Sort) -> Self;
 }
 
 pub trait Sequential: Theory {
-    // Returns the unary type that copies a value within the range
+    // Returns the unary itype that copies a value within the range
     fn skip(range: &Self::Sort) -> Self;
 }
 
 pub trait Differential: Theory {
-    // Returns the unary type that indicates zero derivative
+    // Returns the unary itype that indicates zero derivative
     fn zero(range: &Self::Sort) -> Self;
 }
 

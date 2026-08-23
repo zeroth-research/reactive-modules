@@ -17,9 +17,9 @@ pub struct Var<S> {
 impl<S: Clone> Var<S> {
     pub fn new(dtype: S) -> Self {
         Self {
-            ltc: Wire::zero(dtype.clone()),
-            nxt: Wire::zero(dtype.clone()),
-            der: Wire::one(dtype),
+            ltc: Wire::scalar(dtype.clone()),
+            nxt: Wire::scalar(dtype.clone()),
+            der: Wire::covector(dtype),
         }
     }
 }

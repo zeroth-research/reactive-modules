@@ -7,7 +7,7 @@ use std::{cmp, fmt};
 pub struct Wire<S> {
     id: usize,
     dtype: S,
-    degree: u8,
+    degree: u8, // indicates the differential form
 }
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -34,11 +34,11 @@ impl<S> Wire<S> {
         Self { id, dtype, degree }
     }
 
-    pub fn zero(dtype: S) -> Self {
+    pub fn scalar(dtype: S) -> Self {
         Self::new(dtype, 0)
     }
 
-    pub fn one(dtype: S) -> Self {
+    pub fn covector(dtype: S) -> Self {
         Self::new(dtype, 1)
     }
 }
