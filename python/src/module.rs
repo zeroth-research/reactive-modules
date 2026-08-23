@@ -21,6 +21,14 @@ impl Module {
         hide.err()
             .and_then(|()| module.map(Into::into).map_err(PyException::new_err))
     }
+
+    fn observable<A>(atoms: A) -> PyResult<Self>
+    where
+        A: IntoIterator<Item = base::Atom<Combinatorial, Sequential, Differential>>,
+    {
+        let module = base::Module::observable(atoms);
+        module.map(Into::into).map_err(PyException::new_err)
+    }
 }
 
 #[pymethods]
@@ -40,27 +48,31 @@ impl Module {
     ) -> PyResult<Self> {
         if args.len() > 0 {
             if init.is_some() || delay.is_some() || update.is_some() || vars.is_some() {
-                return Err(PyTypeError::new_err(
+                Err(PyTypeError::new_err(
                     "positional arguments take atoms or modules",
-                ));
-            }
-
-            // a sequence of atoms builds a single module (a process), a
-            // sequence of modules composes in parallel
-            if args.get_item(0)?.downcast::<Atom>().is_ok() {
-                return Self::proc(args, hide);
+                ))
+            } else if args.get_item(0)?.downcast::<Atom>().is_ok() {
+                // a sequence of atoms builds a single module
+                let atoms: Vec<_> = try_iter_borrow::<Atom>(args)?.collect::<PyResult<_>>()?;
+                let atoms = atoms.iter().map(|a| a.base().clone());
+                if let Some(hide) = hide {
+                    Self::partially_observable(atoms, hide)
+                } else {
+                    // sequence of modules composes in parallel
+                    Self::observable(atoms)
+                }
             } else {
-                return Self::comp(args, hide);
+                Self::compose(args, hide)
             }
+        } else if let Some(vars) = vars {
+            Self::atomic(vars, init, delay, update, hide)
+        } else if init.is_some() || delay.is_some() || update.is_some() {
+            Err(PyTypeError::new_err(
+                "missing `vars`? An atomic module needs some",
+            ))
+        } else {
+            Ok(base::Module::empty().into())
         }
-
-        let Some(vars) = vars else {
-            return Err(PyTypeError::new_err(
-                "missing `vars`: a module needs some variables",
-            ));
-        };
-
-        Self::atomic(vars, init, delay, update, hide)
     }
 
     /// Builds an atomic module over `vars`, dispatching on the given blocks:
@@ -268,36 +280,21 @@ impl Module {
         }
     }
 
-    /// Builds a single module (a process) from a sequence of atoms, hiding
-    /// the `hide` variables when given.
-    #[staticmethod]
-    #[pyo3(signature = (*atoms, hide = None))]
-    fn proc(atoms: &Bound<'_, PyTuple>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
-        let atoms: Vec<_> = try_iter_borrow::<Atom>(atoms)?.collect::<PyResult<_>>()?;
-        let atoms = atoms.iter().map(|a| a.base().clone());
-        if let Some(hide) = hide {
-            Self::partially_observable(atoms, hide)
-        } else {
-            let module = base::Module::observable(atoms);
-            module.map(Into::into).map_err(PyException::new_err)
-        }
-    }
-
     /// The parallel composition of a sequence of modules: all shared
     /// observable variables are coupled and the `hide` variables are hidden
     /// when provided.
     #[staticmethod]
     #[pyo3(signature = (*modules, hide = None))]
-    fn comp(modules: &Bound<'_, PyTuple>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+    fn compose(modules: &Bound<'_, PyTuple>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let modules: Vec<_> = try_iter_borrow::<Self>(modules)?.collect::<PyResult<_>>()?;
         let modules = modules.iter().map(|r| r.base.clone());
         if let Some(hide) = hide {
             let hide = Hide::try_from(hide)?;
-            let module = base::Module::hiding_composition(modules, hide.as_fn());
+            let module = base::Module::compose_hiding(modules, hide.as_fn());
             hide.err()
                 .and_then(|()| module.map(Into::into).map_err(PyException::new_err))
         } else {
-            let module = base::Module::composition(modules);
+            let module = base::Module::compose(modules);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -364,9 +361,15 @@ impl Module {
     }
 
     fn __mul__(&self, other: PyRef<Module>) -> PyResult<Module> {
-        base::Module::composition([self.base.clone(), other.base.clone()])
-            .map(Into::into)
-            .map_err(PyException::new_err)
+        let module = base::Module::compose([self.base.clone(), other.base.clone()]);
+        module.map(Into::into).map_err(PyException::new_err)
+    }
+
+    fn hide(&self, hide: &Bound<'_, PyAny>) -> PyResult<Module> {
+        let hide = Hide::try_from(hide)?;
+        let module = self.base.clone().hide(hide.as_fn());
+        hide.err()?;
+        module.map(Into::into).map_err(PyException::new_err)
     }
 }
 

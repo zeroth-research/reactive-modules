@@ -57,7 +57,7 @@ fn can_compose_example_peterson1_with_empty_module() {
     let m1 = example_peterson1().unwrap();
     let m2 = Module::empty();
 
-    let _m3 = Module::composition([m1, m2]).unwrap();
+    let _m3 = Module::compose([m1, m2]).unwrap();
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn can_compose_example_tiny1() {
     let m1 = example_tiny1(x, y, false).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
-    let m3 = Module::composition([m1, m2]);
+    let m3 = Module::compose([m1, m2]);
     assert!(m3.is_ok());
 }
 
@@ -94,7 +94,7 @@ fn cannot_compose_example_tiny1_with_cyclic_await() {
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, true).unwrap();
 
-    let m3 = Module::composition([m1, m2]);
+    let m3 = Module::compose([m1, m2]);
     assert!(m3.is_err());
 }
 
@@ -105,7 +105,7 @@ fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
-    let m3 = Module::composition([m1, m2]);
+    let m3 = Module::compose([m1, m2]);
     assert!(m3.is_ok());
 }
 
@@ -118,7 +118,7 @@ fn can_compose_three_tiny1_without_cyclic_await_and_overlapping_prvt() {
     let m2 = example_tiny1(y, x, false).unwrap();
     let m3 = example_tiny1(y, z, false).unwrap();
 
-    let m4 = Module::composition([m1, m2, m3]);
+    let m4 = Module::compose([m1, m2, m3]);
     assert!(m4.is_ok());
 }
 
@@ -140,7 +140,7 @@ fn compose_seq() {
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
     let m2 = Module::combinatorial(&[x, z], assign).unwrap();
 
-    Module::composition([m1, m2]).unwrap();
+    Module::compose([m1, m2]).unwrap();
 }
 
 /// Composes two coupled modules while hiding their shared variable.
@@ -168,7 +168,7 @@ fn compose_hiding() {
     let m2 = Module::combinatorial([x, z], assign).unwrap();
 
     // hiding the shared variable privatises it in the composite
-    let m = Module::hiding_composition([m1.clone(), m2.clone()], |v| v == x).unwrap();
+    let m = Module::compose_hiding([m1.clone(), m2.clone()], |v| v == x).unwrap();
     let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
     assert_eq!(ids(m.prvt()), vec![x.id()]);
     assert_eq!(ids(m.intf()), vec![z.id()]);
@@ -178,13 +178,13 @@ fn compose_hiding() {
     assert_eq!(ids(m.ctrl()), vec![x.id(), z.id()]);
 
     // the pure composition is the special case that hides nothing
-    let m = Module::composition([m1.clone(), m2.clone()]).unwrap();
+    let m = Module::compose([m1.clone(), m2.clone()]).unwrap();
     assert_eq!(m.prvt().len(), 0);
     assert_eq!(ids(m.intf()), vec![x.id(), z.id()]);
     assert_eq!(ids(m.extl()), vec![y.id()]);
 
     // an external variable cannot be hidden
-    assert!(Module::hiding_composition([m1, m2], |v| v == y).is_err());
+    assert!(Module::compose_hiding([m1, m2], |v| v == y).is_err());
 }
 
 /// Chains an atomic constructor with the unary hiding operator: the
@@ -209,20 +209,20 @@ fn constructor_then_hiding() {
     assert_eq!(m.prvt().len(), 0);
 
     // hiding privatises the controlled variable and keeps the rest
-    let m = m.clone().hiding(|v| v == p).unwrap();
+    let m = m.clone().hide(|v| v == p).unwrap();
     assert_eq!(ids(m.prvt()), vec![p.id()]);
     assert_eq!(ids(m.intf()), vec![x.id()]);
     assert_eq!(ids(m.extl()), vec![e.id()]);
 
     // hiding nothing is the identity on the interface
-    let m = m.hiding(|_| false).unwrap();
+    let m = m.hide(|_| false).unwrap();
     assert_eq!(ids(m.prvt()), vec![p.id()]);
     assert_eq!(ids(m.intf()), vec![x.id()]);
 
     // an external variable cannot be hidden
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
-    let m = Module::sequential([x, p, e], [init], [update]).and_then(|m| m.hiding(|v| v == e));
+    let m = Module::sequential([x, p, e], [init], [update]).and_then(|m| m.hide(|v| v == e));
     assert!(m.is_err());
 }
 
@@ -257,7 +257,7 @@ fn cannot_share_local_wires() {
     // (2) composition of the two atomic modules
     let m1 = Module::observable([a1]).unwrap();
     let m2 = Module::observable([a2]).unwrap();
-    assert!(Module::composition([m1, m2]).is_err());
+    assert!(Module::compose([m1, m2]).is_err());
 }
 
 #[test]
@@ -337,11 +337,11 @@ fn compose_seq_2() {
     let obs = &[x, y, z, inv];
     let m2 = Module::combinatorial(obs, assign.clone()).unwrap();
 
-    Module::composition([m1.clone(), m2]).unwrap();
+    Module::compose([m1.clone(), m2]).unwrap();
 
     // try to use a `sequential_observable` ctor instead of combinatorial
     let m2 = Module::sequential(obs, assign.clone(), assign).unwrap();
-    let _m = Module::composition([m1, m2]).unwrap();
+    let _m = Module::compose([m1, m2]).unwrap();
     println!("{:?}", _m);
 }
 
@@ -437,6 +437,6 @@ fn heterogeneous_composition() {
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();
     let R = base::Module::combinatorial(&[x, y, z], [comb]).unwrap();
 
-    let S = base::Module::composition([P, Q, R]);
+    let S = base::Module::compose([P, Q, R]);
     assert!(S.is_ok());
 }

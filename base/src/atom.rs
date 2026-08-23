@@ -1032,7 +1032,7 @@ where
     /// A sequential module specifies an initialisation and a discrete state
     /// update; it has no continuous dynamics. It is composed of a single
     /// [`Atom::sequential`] atom over `vars`, and is **fully
-    /// observable**: use [`Module::hiding`] to make variables private.
+    /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1065,7 +1065,7 @@ where
     /// A differential module specifies an initialisation and a continuous
     /// evolution of the derivatives; the discrete update is an implicit skip.
     /// It is composed of a single [`Atom::differential`] atom over `vars`, and is **fully
-    /// observable**: use [`Module::hiding`] to make variables private.
+    /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1097,7 +1097,7 @@ where
     /// A hybrid module specifies all three blocks explicitly — initialisation,
     /// discrete update, and continuous delay. It is composed of a single
     /// [`Atom::hybrid`] atom over `vars`, and is **fully
-    /// observable**: use [`Module::hiding`] to make variables private.
+    /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1131,7 +1131,7 @@ where
     /// Only the update is given; the initial values of the controlled
     /// variables are havoced. It is composed of a single
     /// [`Atom::jump`] atom over `vars`, and is **fully
-    /// observable**: use [`Module::hiding`] to make variables private.
+    /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1160,7 +1160,7 @@ where
     /// The discrete update and the continuous delay are given; the initial
     /// values of the controlled variables are havoced. It is composed of a
     /// single [`Atom::uninitialized`] atom over `vars`, and is **fully
-    /// observable**: use [`Module::hiding`] to make variables private.
+    /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1192,7 +1192,7 @@ where
     /// The module takes no blocks: each value is chosen nondeterministically
     /// at initialisation and never changes, modelling free parameters of a
     /// composition. It is composed of a single [`Atom::hold`] atom, and is
-    /// **fully observable**: use [`Module::hiding`] to make variables private.
+    /// **fully observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1220,7 +1220,7 @@ where
     /// Only the continuous evolution of the derivatives is given; the initial
     /// values are havoced and the discrete update is an implicit skip. It is
     /// composed of a single [`Atom::flow`] atom over `vars`, and is **fully
-    /// observable**: use [`Module::hiding`] to make variables private.
+    /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1249,7 +1249,7 @@ where
     /// Only the initialisation is given; the variables are held by an implicit
     /// skip update and have no continuous dynamics. It is composed of a single
     /// [`Atom::constant`] atom, and is **fully observable**: use
-    /// [`Module::hiding`] to make variables private.
+    /// [`Module::hide`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
@@ -1278,7 +1278,7 @@ where
     /// A combinatorial module specifies a single block of assignments
     /// computing the outputs from the inputs within the same time step. It is
     /// composed of a single [`Atom::combinatorial`] atom, and is **fully
-    /// observable**: use [`Module::hiding`] to make variables private.
+    /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
     /// - `vars`: The variables of the module.
