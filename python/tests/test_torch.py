@@ -82,24 +82,24 @@ def _wait_ids(m):
     return {X(w).id for w in m.atoms[0].wait}
 
 
-def test_default_is_combinatorial_reads_next_only():
-    # V(s'): memoryless — does not read the latched input, only awaits the next one.
+def test_default_is_sequential_reads_latched_input():
+    # V(s): the sequential atom reads the latched input.
     m = Module(Net())
-    extl = list(m.extl)[0]
-    assert extl.id not in _read_ids(m)
-    assert X(extl).id in _wait_ids(m)
-
-
-def test_sequential_reads_latched_input():
-    # V(s): sequential atom reads the latched input (and still awaits next for init).
-    m = Module(Net(), sequential=True)
     extl = list(m.extl)[0]
     assert extl.id in _read_ids(m)
     assert X(extl).id not in _wait_ids(m)
 
 
+def test_combinatorial_reads_next_only():
+    # V(s'): memoryless — does not read the latched input, only awaits the next one.
+    m = Module(Net(), combinatorial=True)
+    extl = list(m.extl)[0]
+    assert extl.id not in _read_ids(m)
+    assert X(extl).id in _wait_ids(m)
+
+
 def test_sequential_with_lia_builds():
-    m = Module(_to_int_weights(Net()), theory=LIA, sequential=True)
+    m = Module(_to_int_weights(Net()), theory=LIA)
     extl = list(m.extl)[0]
     assert isinstance(extl.dtype, Int)
     assert extl.id in _read_ids(m)

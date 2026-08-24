@@ -141,6 +141,8 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
         "truncated": kwargs.pop("truncated", None),
     }
     attrs = kwargs.pop("attrs", None)
+    if kwargs:
+        raise TypeError(f"unknown arguments: {sorted(kwargs)}")
 
     action_param = next(
         p for p in inspect.signature(env_cls.step).parameters if p != "self"

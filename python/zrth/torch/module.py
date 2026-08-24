@@ -53,23 +53,25 @@ def _validate_weight_dtypes(live_layers, theory):
                 )
 
 
-def _extract_nn_module(nn_instance, theory=None, sequential=False, **kwargs):
+def _extract_nn_module(nn_instance, theory=None, combinatorial=False, **kwargs):
     """Analyze an nn.Module instance and extract a symbolic Module.
 
     Uses live tensor references for weight/bias so that training updates
     flow through to the symbolic module automatically.
 
-    ``sequential`` selects the kind of module built from ``forward``:
-      * ``False`` (default) — a **combinatorial** module: ``forward`` reads the
-        awaited *next* input, so it computes the output in the same step, e.g. V(s').
-      * ``True`` — a **sequential** module over the latched input, e.g. V(s):
-        ``update`` reads the *latched* input; ``init`` reads the awaited *next* input
-        (a sequential init may not read a latched wire). Both write the next output.
+    ``combinatorial`` selects the kind of module built from ``forward``:
+      * ``False`` (default) — a **sequential** module over the latched input,
+        e.g. V(s): ``update`` reads the *latched* input and writes the next
+        output; the initial output is havoced.
+      * ``True`` — a **combinatorial** module: ``forward`` reads the awaited
+        *next* input, so it computes the output in the same step, e.g. V(s').
     """
     nn_cls = type(nn_instance)
 
     user_extl = kwargs.pop("extl", None)
     user_ctrl = kwargs.pop("ctrl", None)
+    if kwargs:
+        raise TypeError(f"unknown arguments: {sorted(kwargs)}")
 
     obs_param = next(
         p for p in inspect.signature(nn_cls.forward).parameters if p != "self"
@@ -108,13 +110,13 @@ def _extract_nn_module(nn_instance, theory=None, sequential=False, **kwargs):
             layers=layer_out_features, live_layers=live_layers, theory=theory,
         )
 
-    if sequential:
-        # V(s): init awaits the next input; update reads the latched input.
-        return dict(update=_forward_terms(False), vars=[ctrl, extl])
-    else:
+    if combinatorial:
         # V(s'): memoryless, reads the awaited next input.
-        initupdate = _forward_terms(True)
-        return dict(init=initupdate, update=initupdate, vars=[ctrl, extl])
+        assign = _forward_terms(True)
+        return dict(init=assign, update=assign, vars=[ctrl, extl])
+    else:
+        # V(s): init havocs; update reads the latched input.
+        return dict(update=_forward_terms(False), vars=[ctrl, extl])
 
 
 class Module(_BaseModule, nn.Module):
@@ -125,29 +127,31 @@ class Module(_BaseModule, nn.Module):
     Usage:
         from zrth.torch import Module
 
-        wrapped = Module(nn_module_instance)                 # combinatorial, V(s')
-        wrapped = Module(nn_module_instance, theory=LIA)      # integer (e.g. quantised) net
-        wrapped = Module(nn_module_instance, sequential=True) # sequential, V(s)
+        wrapped = Module(nn_module_instance)                    # sequential, V(s)
+        wrapped = Module(nn_module_instance, theory=LIA)         # integer (e.g. quantised) net
+        wrapped = Module(nn_module_instance, combinatorial=True) # combinatorial, V(s')
         wrapped.parameters()   # returns original nn.Module parameters
         wrapped(x)             # runs forward pass via original nn.Module
         wrapped.atoms          # symbolic module structure
 
     ``theory`` selects the term theory / interface sorts (LRA -> Real, LIA -> Int;
-    BV is unsupported for neural modules). ``sequential`` selects whether ``forward``
-    becomes a combinatorial atom over the next input (``False``, default) or a
-    sequential atom over the latched input (``True``).
+    BV is unsupported for neural modules). ``combinatorial`` selects whether
+    ``forward`` becomes a sequential atom over the latched input (``False``,
+    default) or a combinatorial atom over the next input (``True``).
 
     Training the original nn.Module automatically updates the symbolic module
     because the Linear op holds a reference to the live weight tensors.
     """
 
-    def __new__(cls, nn_module, theory=None, sequential=False, **kwargs):
+    def __new__(cls, nn_module, theory=None, combinatorial=False, **kwargs):
         if not isinstance(nn_module, nn.Module):
             raise TypeError(f"Expected nn.Module, got {type(nn_module)}")
-        parts = _extract_nn_module(nn_module, theory=theory, sequential=sequential, **kwargs)
+        parts = _extract_nn_module(
+            nn_module, theory=theory, combinatorial=combinatorial, **kwargs
+        )
         return _BaseModule.__new__(cls, **parts)
 
-    def __init__(self, nn_module, theory=None, sequential=False, **kwargs):
+    def __init__(self, nn_module, theory=None, combinatorial=False, **kwargs):
         nn.Module.__init__(self)
         self.inner = nn_module
 
