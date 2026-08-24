@@ -400,7 +400,7 @@ where
                 continue;
             }
 
-            return Err(format!("Wire {} in update is dangling read", rd.id()));
+            return Err(format!("delay reads dangling wire {:?}", rd));
         }
 
         for wt in init.write().iter().chain(update.write().iter()) {

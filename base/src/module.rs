@@ -328,32 +328,43 @@ where
         let mut wires: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
 
-        let mut extl: BTreeSet<Var<S>> = BTreeSet::new();
-        let mut intf: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
         let atoms = atoms.into_iter();
         let mut past_atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(atoms.size_hint().0);
-        for (n, atom) in atoms.enumerate() {
-            extl.extend(atom.read().iter().cloned());
-            extl.extend(atom.wait().iter().cloned());
 
+        for (n, atom) in atoms.enumerate() {
+            //============================================================
+            // Collect variables
+            //============================================================
+            obs.extend(atom.read().iter().cloned());
+            obs.extend(atom.wait().iter().cloned());
+            obs.extend(atom.ctrl().iter().cloned());
+
+            //============================================================
+            // Determine controlled
+            //============================================================
             for var in atom.ctrl().iter() {
-                extl.remove(var);
-                if !intf.insert(var.clone()) {
-                    return Err(format!("Doubly controlled {}", var.id()));
+                if !ctrl.insert(var.clone()) {
+                    return Err(format!("Variable {:?} is doubly controlled", var));
                 }
             }
 
+            //============================================================
+            // Check coupling
+            //============================================================
             for lc in atom.local() {
                 if wires.contains(lc) {
-                    return Err(format!("local wire {} is also a module wire", lc.id()));
+                    return Err(format!("Local wire {:?} is coupled", lc));
                 }
-                if !local.insert(lc.clone()) {
-                    return Err(format!("local wire {} coupled with other atom", lc.id()));
-                }
+                debug_assert!(!local.contains(lc));
+                local.insert(lc.clone());
             }
-
             wires.extend(atom.wires().iter().cloned());
 
+            //============================================================
+            // Check await order
+            //============================================================
             for past_atom in past_atoms.iter() {
                 if past_atom.awaits(&atom) {
                     return Err(format!("{}-th atom is in inconsistent awaiting order", n));
@@ -362,23 +373,24 @@ where
             past_atoms.push(atom);
         }
 
-        let ctrl = Interface::from_exact_iter_unchecked(intf.iter().cloned());
+        //============================================================
+        // Determine private, interface, and external
+        //============================================================
+        let prvt: Vec<Var<S>> = obs.extract_if(.., &hide).collect();
+        let intf = ctrl.iter().filter(|v| prvt.binary_search(v).is_err());
+        let extl = obs.difference(&ctrl);
 
-        // hide() is called exactly once on each variable (intf U extl)
-        let prvt = intf.extract_if(.., &hide).collect::<Vec<_>>();
-        for var in extl.iter() {
-            if hide(var) {
-                return Err(format!("Hiding external variable {}", var.id()));
+        for var in prvt.iter() {
+            if !ctrl.contains(var) {
+                return Err(format!("Hiding uncontrolled variable {:?}", var));
             }
         }
 
-        let mut obs: Vec<_> = extl.iter().chain(intf.iter()).cloned().collect();
-        obs.sort_unstable();
-
-        let extl = Interface::from_exact_iter_unchecked(extl);
-        let intf = Interface::from_exact_iter_unchecked(intf);
+        let extl = Interface::from_iter_unchecked(extl.cloned());
+        let intf = Interface::from_iter_unchecked(intf.cloned());
         let prvt = Interface::from_exact_iter_unchecked(prvt);
         let obs = Interface::from_exact_iter_unchecked(obs);
+        let ctrl = Interface::from_exact_iter_unchecked(ctrl);
         let wires = wires.into_iter().collect();
         let local = local.into_iter().collect();
 
@@ -507,7 +519,7 @@ where
             for var in module.obs {
                 for wire in var.wires() {
                     if restricted_wires.contains(&wire.id()) {
-                        return Err(format!("coupling on restricted wire {}", wire.id()));
+                        return Err(format!("Coupling restricted wire {:?}", wire));
                     }
                 }
 
@@ -536,7 +548,7 @@ where
                 if declared_wires.contains(var.ltc()) {
                     debug_assert!(declared_wires.contains(var.nxt()));
                     debug_assert!(declared_wires.contains(var.der()));
-                    return Err(format!("private wire {} is declared elsewhere", var.id()));
+                    return Err(format!("Private variable {:?} is doubly declared", var));
                 }
                 debug_assert!(!declared_wires.contains(var.nxt()));
                 debug_assert!(!declared_wires.contains(var.der()));
@@ -554,7 +566,7 @@ where
             for tmp in module.local {
                 // visit every local no more than once, and raise otherwise
                 if declared_wires.contains(&tmp) {
-                    return Err(format!("local wire {} is declared elsewhere", tmp.id()));
+                    return Err(format!("Local wire {} is coupled", tmp.id()));
                 }
                 debug_assert!(!restricted_wires.contains(&tmp.id()));
                 restricted_wires.insert(tmp.id());
@@ -588,7 +600,7 @@ where
                 extl_set.remove(&var);
 
                 if !intf_prior_hiding.insert(var.id()) {
-                    return Err(format!("interface var {} is doubly controlled", var.id()));
+                    return Err(format!("Interface var {:?} is doubly controlled", var));
                 }
 
                 if !prvt_stack.contains(&var) {
@@ -624,7 +636,7 @@ where
 
         for var in prvt_stack.iter() {
             if extl_set.contains(var) {
-                return Err(format!("Cannot hide uncontrolled var {}", var.id()));
+                return Err(format!("Hiding uncontrolled var {:?}", var));
             }
         }
 
@@ -643,7 +655,7 @@ where
         // Reorder atoms
         //============================================================
 
-        let await_order = topological_order(&await_graph).ok_or("invalid await dependency")?;
+        let await_order = topological_order(&await_graph).ok_or("Invalid await dependency")?;
         debug_assert_eq!(await_order.len(), await_graph.len());
 
         let mut atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(await_graph.len());
