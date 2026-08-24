@@ -58,10 +58,10 @@ impl Module {
                 if let Some(hide) = hide {
                     Self::partially_observable(atoms, hide)
                 } else {
-                    // sequence of modules composes in parallel
                     Self::observable(atoms)
                 }
             } else {
+                // sequence of modules composes in parallel
                 Self::compose(args, hide)
             }
         } else if let Some(vars) = vars {
@@ -157,14 +157,14 @@ impl Module {
         hide: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let init = try_term_iter_cloned(&init)?;
-        let flow = try_term_iter_cloned(&delay)?;
+        let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
             let atom =
-                base::Atom::differential(vars.iter(), init, flow).map_err(PyException::new_err)?;
+                base::Atom::differential(vars.iter(), init, delay).map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::differential(vars.iter(), init, flow);
+            let module = base::Module::differential(vars.iter(), init, delay);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }

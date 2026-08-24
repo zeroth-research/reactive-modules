@@ -28,20 +28,20 @@ def test_env_with_gym_env():
 
 
 def test_env_with_module_only():
-    e = Env(Module(SimpleQNet(1, 2, 2)))
+    e = Env(Module(SimpleQNet(1, 2, 2), combinatorial=True))
     assert e._backing_env is None
     assert e._env_atom_idx is None
 
 
 def test_env_composes_two_modules():
-    e = Env(Module(SimpleQNet(1, 2, 2)), Module(SimpleQNet(1, 2, 2)))
+    e = Env(Module(SimpleQNet(1, 2, 2), combinatorial=True), Module(SimpleQNet(1, 2, 2), combinatorial=True))
     assert e._backing_env is None
     assert len(e.atoms) == 2
 
 
 def test_env_extract_and_compose():
     plain = SimpleEnv()
-    e = Env(plain, Module(SimpleQNet(1, plain.action_space.n, 2)), attrs=STATE)
+    e = Env(plain, Module(SimpleQNet(1, plain.action_space.n, 2), combinatorial=True), attrs=STATE)
     assert e._backing_env is plain
     assert e._env_atom_idx is not None
     assert len(e.atoms) >= 2
@@ -50,7 +50,7 @@ def test_env_extract_and_compose():
 def test_env_unwraps_existing_env():
     plain = SimpleEnv()
     inner = Env(plain, attrs=STATE)
-    outer = Env(inner, Module(SimpleQNet(1, plain.action_space.n, 2)))
+    outer = Env(inner, Module(SimpleQNet(1, plain.action_space.n, 2), combinatorial=True))
     assert outer._backing_env is plain
 
 
@@ -107,7 +107,7 @@ def test_attrs_rejects_bad_spec_type():
 
 def test_attrs_without_gym_env_rejected():
     with pytest.raises(TypeError, match="only applies when extracting"):
-        Env(Module(SimpleQNet(1, 2, 2)), attrs=Real([1, 1]))
+        Env(Module(SimpleQNet(1, 2, 2), combinatorial=True), attrs=Real([1, 1]))
 
 
 def test_undeclared_private_state_raises():
@@ -123,7 +123,7 @@ def test_undeclared_private_state_raises():
 def test_pure_symbolic_reset_needs_inputs():
     """Pure-symbolic Env(Module) has no source for the module's input wires;
     reset surfaces this as a KeyError rather than silently producing garbage."""
-    e = Env(Module(SimpleQNet(1, 2, 2)))
+    e = Env(Module(SimpleQNet(1, 2, 2), combinatorial=True))
     with pytest.raises(KeyError):
         e.reset()
 
@@ -153,7 +153,7 @@ def test_get_prvt_and_getattr():
 # ── Composition ───────────────────────────────────────────────────
 
 def test_env_atom_idx_identifies_env_atom():
-    e = Env(SimpleEnv(), Module(SimpleQNet(1, 2, 2)), attrs=STATE)
+    e = Env(SimpleEnv(), Module(SimpleQNet(1, 2, 2), combinatorial=True), attrs=STATE)
     obs_next = X(e._pairs['observation'])
     assert obs_next in {X(w) for w in e.atoms[e._env_atom_idx].ctrl}
 
@@ -161,7 +161,7 @@ def test_env_atom_idx_identifies_env_atom():
 def test_wire_names_inherited_through_unwrap():
     plain = SimpleEnv()
     inner = Env(plain, attrs=STATE)
-    outer = Env(inner, Module(SimpleQNet(1, plain.action_space.n, 2)))
+    outer = Env(inner, Module(SimpleQNet(1, plain.action_space.n, 2), combinatorial=True))
     assert outer._wire_names == inner._wire_names
 
 
@@ -240,7 +240,7 @@ def _make_closed_loop():
     obs = Var(Real([1, 1]))
     act = Var(Real([1, 2]))
     backed = Env(_BoxEnv(), observation=obs, action=act, attrs=Real([1, 1]))
-    qnet = Module(SimpleQNet(1, 2, 2), extl=obs, ctrl=act)
+    qnet = Module(SimpleQNet(1, 2, 2), combinatorial=True, extl=obs, ctrl=act)
     return Env(backed, qnet)
 
 
