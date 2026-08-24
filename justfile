@@ -18,6 +18,7 @@ FEATURES := ""
 # venv's torch. If neccessary, override with `just CARGO=cargo ...` to use
 # a bare toolchain.
 CARGO := "uv run cargo"
+NBSTRIPOUT := "uvx nbstripout@0.9.1 --max-size 16k --drop-empty-cells"
 
 # Convert FEATURES into a flag only if set
 
@@ -135,3 +136,12 @@ run-tutorials *notebooks="tutorials/counter.ipynb tutorials/gym_and_sugar.ipynb 
     @just build-tutorials
     uv run jupyter nbconvert --to notebook --execute --inplace \
         --ExecutePreprocessor.timeout=600 {{ notebooks }}
+    @just strip-notebooks
+
+# Strip bulky generated notebook outputs; text outputs under 16k (verification results, module prints) survive
+strip-notebooks:
+    {{ NBSTRIPOUT }} $(git ls-files '*.ipynb')
+
+# Fail when a committed notebook carries outputs the stripper would remove (used by CI)
+strip-notebooks-check:
+    {{ NBSTRIPOUT }} --verify $(git ls-files '*.ipynb')
