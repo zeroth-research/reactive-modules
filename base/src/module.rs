@@ -364,6 +364,7 @@ where
 
         let ctrl = Interface::from_exact_iter_unchecked(intf.iter().cloned());
 
+        // hide() is called exactly once on each variable (intf U extl)
         let prvt = intf.extract_if(.., &hide).collect::<Vec<_>>();
         for var in extl.iter() {
             if hide(var) {
@@ -516,10 +517,11 @@ where
                     debug_assert!(!declared_wires.contains(var.der()));
                     // hidden variables leave the observables and join the privates;
                     // we check at the end whether this has affected uncoupled externals
-                    if !hide(&var) {
-                        obs_stack.push(var);
-                    } else {
+                    // hide() is called exactly once (no more no less) on each observable
+                    if hide(&var) {
                         prvt_stack.push(var);
+                    } else {
+                        obs_stack.push(var);
                     }
                 } else {
                     debug_assert!(declared_wires.contains(var.nxt()));
@@ -620,8 +622,8 @@ where
         // Check that no hidden variables are externals
         //============================================================
 
-        for var in extl_set.iter() {
-            if hide(var) {
+        for var in prvt_stack.iter() {
+            if extl_set.contains(var) {
                 return Err(format!("Cannot hide uncontrolled var {}", var.id()));
             }
         }
