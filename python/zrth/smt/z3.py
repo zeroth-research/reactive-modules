@@ -95,6 +95,11 @@ def eval(itype, read):
     if not isinstance(read, list) or not all(isinstance(r, _np.ndarray) for r in read) or \
             not all(isinstance(a, _z3.AstRef) for r in read for a in r.flat):
         raise RuntimeError(f"read={read} must be a list of numpy arrays of z3 expressions")
+    if not all(r.ndim == 2 for r in read):
+        raise RuntimeError(
+            f"read shapes {[r.shape for r in read]} must all be 2-dimensional to match "
+            "their [n,m] sorts; a 1-D operand broadcasts incorrectly in matrix ops"
+        )
 
     result = interpret(itype)(*read)
     return [result]
