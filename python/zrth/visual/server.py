@@ -15,6 +15,8 @@ from pathlib import Path
 import asyncio
 import websockets
 
+from ..zrth import Var, X
+
 
 _TEMPLATE_PATH = Path(__file__).parent / "template.html"
 
@@ -44,15 +46,17 @@ def _serialize_module(module):
     for atom_idx, atom in enumerate(module.atoms):
         atoms.append({
             "id": atom_idx,
-            "ctrl": [{"id": w.id, "dtype": str(w.dtype)} for w in atom.ctrl],
-            "wait": [{"id": w.id, "dtype": str(w.dtype)} for w in atom.wait],
-            "read": [{"id": w.id, "dtype": str(w.dtype)} for w in atom.read],
+            # ctrl and wait circles must carry the next-wire ids, the ones the
+            # init/update terms actually write and await; reads are latched
+            "ctrl": [{"id": X(v).id, "dtype": str(v.dtype)} for v in atom.ctrl],
+            "wait": [{"id": X(v).id, "dtype": str(v.dtype)} for v in atom.wait],
+            "read": [{"id": v.id, "dtype": str(v.dtype)} for v in atom.read],
             "init": _serialize_terms(atom.init, atom_idx, "init", counter),
             "update": _serialize_terms(atom.update, atom_idx, "update", counter),
         })
 
     def wire_pairs(iface):
-        return [{"ltc": ltc.id, "nxt": nxt.id, "dtype": str(ltc.dtype)} for ltc, nxt in iface]
+        return [{"ltc": v.id, "nxt": X(v).id, "dtype": str(v.dtype)} for v in iface]
 
     return {
         "atoms": atoms,
@@ -73,8 +77,9 @@ def show(module, names=None, poll=0.5, open_browser=True):
 
     Args:
         module: A zrth Module (or Env/torch.Module instance).
-        names: Optional dict mapping wire IDs (int) to display names (str).
-               If None, circles show no labels (topology only).
+        names: Optional dict mapping Vars, Wires, or wire ids to display
+               names (str); a Var names its latched wire and, primed, its
+               next wire. If None, circles show no labels (topology only).
         poll: Interval in seconds between state pushes.
         open_browser: Whether to open the browser automatically.
 
@@ -84,10 +89,9 @@ def show(module, names=None, poll=0.5, open_browser=True):
     wire_names = {}
     if names:
         for k, v in names.items():
-            if isinstance(k, (list, tuple)) and len(k) == 2:
-                # Wire pair: latched gets name, next gets name'
-                wire_names[k[0].id if hasattr(k[0], 'id') else int(k[0])] = str(v)
-                wire_names[k[1].id if hasattr(k[1], 'id') else int(k[1])] = str(v) + "'"
+            if isinstance(k, Var):
+                wire_names[k.id] = str(v)
+                wire_names[X(k).id] = str(v) + "'"
             else:
                 wire_names[k.id if hasattr(k, 'id') else int(k)] = str(v)
     http_port = _find_free_port()
