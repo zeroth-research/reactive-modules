@@ -234,6 +234,14 @@ impl<S> Interface<S> {
 }
 
 impl<S: Debug + Clone> Interface<S> {
+    pub(crate) fn from_iter_unchecked<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = Var<S>>,
+    {
+        let vars: Vec<Var<S>> = iter.into_iter().collect();
+        Self::from_exact_iter_unchecked(vars)
+    }
+
     pub(crate) fn from_exact_iter_unchecked<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = Var<S>>,

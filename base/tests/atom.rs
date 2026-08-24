@@ -332,3 +332,19 @@ fn hybrid_rejects_missing_flow() {
     let m = Module::hybrid(&[x, loc], init, update, delay);
     assert!(m.is_err());
 }
+
+#[test]
+fn coupled_atoms_can_construct_module() {
+    let x = Var::new("real");
+    let y = Var::new("real");
+    let z = Var::new("real");
+
+    let u1 = Term::function(mk_op("u1"), [X(y)], [x]).unwrap();
+    let a1 = Atom::jump(&[x, y], [u1]).unwrap();
+
+    let u2 = Term::function(mk_op("u2"), [X(z)], [y]).unwrap();
+    let a2 = Atom::jump(&[y, z], [u2]).unwrap();
+
+    let m = Module::observable([a1, a2]);
+    assert!(m.is_ok());
+}
