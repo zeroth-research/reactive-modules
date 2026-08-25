@@ -348,3 +348,45 @@ fn coupled_atoms_can_construct_module() {
     let m = Module::observable([a1, a2]);
     assert!(m.is_ok());
 }
+
+#[test]
+fn undeclared_vars() {
+    let x = Var::new("real");
+    let v = Var::new("real");
+
+    let init = [term!(mk_op("C0"), [X(x)]).unwrap()];
+    let update = [
+        term!(mk_op("C1"), [X(v)]).unwrap(),
+        term!(mk_op("ID"), [X(x)], [X(v)]).unwrap(),
+    ];
+    let a1 = Atom::sequential(&[x], init, update);
+    assert!(a1.is_err(), "a1 writes `v` without declaring it");
+}
+
+#[test]
+fn block_read_has_no_duplicates() {
+    let x = Var::new("real");
+    let y = Var::new("real");
+    let z = Var::new("real");
+
+    let init = [
+        term!(mk_op("C0"), [X(x)]).unwrap(),
+        term!(mk_op("C0"), [X(y)]).unwrap(),
+        term!(mk_op("C0"), [X(z)]).unwrap(),
+    ];
+    // both terms read x
+    let update = [
+        term!(mk_op("ID"), [X(y)], [x]).unwrap(),
+        term!(mk_op("ID"), [X(z)], [x]).unwrap(),
+        term!(mk_op("ID"), [X(x)], [x]).unwrap(),
+    ];
+
+    let a = Atom::sequential(&[x, y, z], init, update).unwrap();
+    let read = a.update().read();
+    let mut ids: Vec<usize> = read.iter().map(Wire::id).collect();
+    let before = ids.len();
+    ids.sort();
+    ids.dedup();
+
+    assert_eq!(before, ids.len(), "Block::read() must have no duplicates");
+}
