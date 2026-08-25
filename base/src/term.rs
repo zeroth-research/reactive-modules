@@ -1,6 +1,6 @@
 use crate::wire::Wire;
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::BTreeSet;
 use std::fmt::{self, Debug};
 use std::vec;
 use theory::{Combinatorial, Differential, Sequential, Theory, any};
@@ -333,7 +333,7 @@ impl<T: Theory> IntoIterator for Block<T> {
 
 impl<T: Theory> Block<T>
 where
-    T::Sort: Clone,
+    T::Sort: Clone + Debug,
 {
     /// Builds a block from an iterator of *fallible* elements, mirroring the
     /// standard library's `FromIterator<Result<A, E>> for Result<V, E>`: the
@@ -348,40 +348,28 @@ where
         U: Theory<Sort = T::Sort> + Into<T>,
         V: IntoIterator<Item = Result<Term<U>, String>>,
     {
-        let mut read_set: HashSet<usize> = HashSet::new();
-        let mut write_to_dtype: HashMap<usize, &T::Sort> = HashMap::new();
-
-        let mut read: Vec<Wire<T::Sort>> = Vec::new();
-        let mut write: Vec<Wire<T::Sort>> = Vec::new();
+        let mut read: BTreeSet<Wire<T::Sort>> = BTreeSet::new();
+        let mut write: BTreeSet<Wire<T::Sort>> = BTreeSet::new();
 
         let iter = iter.into_iter().map(|t| t.map(Term::convert));
         let terms: Vec<Term<T>> = iter.collect::<Result<Vec<_>, _>>()?;
 
         for term in terms.iter() {
             for rd in term.read().iter() {
-                let expected_dtype = write_to_dtype.get(&rd.id());
-                // if it hasn't been written before in the block, then it's read
-                if expected_dtype.is_none() {
-                    read_set.insert(rd.id());
-                    read.push(rd.clone());
+                if !write.contains(rd) {
+                    read.insert(rd.clone());
                 }
             }
 
             for wt in term.write().iter() {
-                if read_set.contains(&wt.id()) {
-                    return Err(format!(
-                        "Wire {} is read by a term preceding the term that writes into this wire",
-                        wt.id()
-                    ));
+                if read.contains(wt) {
+                    return Err(format!("Wire {:?} is read before being written", wt));
                 }
-                write.push(wt.clone());
-                if write_to_dtype.insert(wt.id(), wt.dtype()).is_some() {
-                    return Err(format!("Wire {} is written more than once", wt.id()));
+                if !write.insert(wt.clone()) {
+                    return Err(format!("Wire {:?} is written more than once", wt));
                 }
             }
         }
-
-        debug_assert!(read_set.iter().all(|k| !write_to_dtype.contains_key(k)));
 
         Ok(Block {
             terms,
@@ -394,17 +382,17 @@ where
     where
         U: Theory<Sort = T::Sort> + Into<T>,
     {
-        let terms = block.terms.into_iter().map(Term::convert).collect();
-        let read = block.read.into_iter().collect();
-        let write = block.write.into_iter().collect();
-
-        Block { terms, read, write }
+        Block {
+            terms: block.terms.into_iter().map(Term::convert).collect(),
+            read: block.read.clone(),
+            write: block.write.clone(),
+        }
     }
 }
 
 impl<F: Differential> Block<F>
 where
-    F::Sort: Clone,
+    F::Sort: Clone + Debug,
 {
     /// Builds a block of one `ZERO` term per write wire, so that theories can
     /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
@@ -417,7 +405,7 @@ where
 
 impl<J: Sequential> Block<J>
 where
-    J::Sort: Clone,
+    J::Sort: Clone + Debug,
 {
     /// Builds a block of one `SKIP` term per `(write, read)` wire pair, so
     /// that theories can keep `SKIP` at a fixed arity and each pair is an
@@ -444,7 +432,7 @@ where
 
 impl<I: Combinatorial> Block<I>
 where
-    I::Sort: Clone,
+    I::Sort: Clone + Debug,
 {
     /// Builds a block of one `HAVOC` term per write wire
     pub(crate) fn havoc<W: IntoIterator<Item = Wire<I::Sort>>>(write: W) -> Result<Self, String> {

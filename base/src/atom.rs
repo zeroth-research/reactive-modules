@@ -38,8 +38,8 @@ where
 
     /// cache of all wires local to blocks
     local: Vec<Wire<S>>,
-    /// cache of all local and global wires
-    wires: Vec<Wire<S>>,
+    /// cache of all wires used in blocks
+    used: Vec<Wire<S>>,
 }
 
 impl<I, J, F, S> Atom<I, J, F, S>
@@ -82,8 +82,8 @@ where
         self.local.as_slice()
     }
 
-    pub(crate) fn wires(&self) -> &[Wire<S>] {
-        self.wires.as_slice()
+    pub(crate) fn used(&self) -> &[Wire<S>] {
+        self.used.as_slice()
     }
 
     /// Constructs an atom with no variables and empty blocks.
@@ -95,7 +95,7 @@ where
             init: Block::empty(),
             update: Block::empty(),
             delay: Block::empty(),
-            wires: Vec::new(),
+            used: Vec::new(),
             local: Vec::new(),
         }
     }
@@ -137,7 +137,7 @@ where
         init: Block<I>,
         update: Block<J>,
         delay: Block<F>,
-        wires: Vec<Wire<S>>,
+        used: Vec<Wire<S>>,
         local: Vec<Wire<S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
@@ -146,117 +146,66 @@ where
             // Check declared wires
             //================================================================================
             debug_assert!(ctrl.is_disjoint(&wait));
-            let mut found: HashSet<&Wire<S>> = HashSet::new();
 
-            let var = |wire| {
-                ctrl.var(wire)
-                    .or_else(|| wait.var(wire))
-                    .or_else(|| read.var(wire))
-            };
+            //================================================================================
+            // Check init block
+            //================================================================================
+            // all read wires are wait X wires
+            let mut riter = init.read().iter();
+            debug_assert!(riter.all(|w| wait.var(w).is_some_and(|v| v.nxt() == w)));
+            // all write wires are ctrl X wires or local
+            let mut witer = init.write().iter().filter(|w| !local.contains(w));
+            debug_assert!(witer.all(|w| ctrl.var(w).is_some_and(|v| v.nxt() == w)));
+            // all control X wires are written
+            debug_assert!(ctrl.iter().map(Var::nxt).all(|w| init.write().contains(w)));
 
-            debug_assert!(wires.is_sorted());
+            //================================================================================
+            // Check update block
+            //================================================================================
+            // all read wires are either read latched wires or wait X wires
+            let mut riter = update.read().iter();
+            debug_assert!(riter.all(|w| read.var(w).is_some_and(|v| v.ltc() == w)
+                | wait.var(w).is_some_and(|v| v.nxt() == w)));
+            // all write wires are ctrl X wires or local
+            let mut witer = update.write().iter().filter(|w| !local.contains(w));
+            debug_assert!(witer.all(|w| ctrl.var(w).is_some_and(|v| v.nxt() == w)));
+            // all control X wires are written
+            let citer = ctrl.iter();
+            debug_assert!(citer.map(Var::nxt).all(|w| update.write().contains(w)));
+
+            //================================================================================
+            // Check delay block
+            //================================================================================
+            // all read wires are either read latched wires or wait d wires
+            let mut riter = delay.read().iter();
+            debug_assert!(riter.all(|w| read.var(w).is_some_and(|v| v.ltc() == w)
+                | wait.var(w).is_some_and(|v| v.der() == w)));
+            // all write wires are ctrl X wires or local
+            let mut witer = delay.write().iter().filter(|w| !local.contains(w));
+            debug_assert!(witer.all(|w| ctrl.var(w).is_some_and(|v| v.der() == w)));
+            // all control d wires are written
+            debug_assert!(ctrl.iter().map(Var::der).all(|w| delay.write().contains(w)));
+
+            //================================================================================
+            // Check wires and locals
+            //================================================================================
+            let mut found: HashSet<_> = HashSet::new();
+            found.extend(init.read().iter().chain(init.write().iter()));
+            found.extend(update.read().iter().chain(update.write().iter()));
+            found.extend(delay.read().iter().chain(delay.write().iter()));
+
+            // found == used
+            debug_assert!(used.is_sorted());
+            debug_assert!(used.windows(2).all(|w| w[0] < w[1]));
+            debug_assert!(found.iter().all(|w| used.binary_search(w).is_ok()));
+            debug_assert!(used.iter().all(|w| found.contains(w)));
+
+            // found \ (ctrl U read U wait) == local
+            found.retain(|w| read.var(w).is_none() & ctrl.var(w).is_none() & wait.var(w).is_none());
             debug_assert!(local.is_sorted());
-            debug_assert!(wires.windows(2).all(|w| w[0] < w[1]));
             debug_assert!(local.windows(2).all(|w| w[0] < w[1]));
-
-            //================================================================================
-            // Check init terms
-            //================================================================================
-            // the init terms can initially read from the await wires of the atom
-            let mut written: HashSet<&Wire<_>> = wait.iter().map(Var::nxt).collect();
-            for term in init.iter() {
-                // all read wires were written before in the block
-                debug_assert!(
-                    term.read().iter().all(|rd| written.contains(rd)),
-                    "read before write"
-                );
-                // no write wire was written before in the block
-                debug_assert!(
-                    term.write().iter().all(|rd| !written.contains(rd)),
-                    "write after write"
-                );
-                written.extend(term.write().iter());
-
-                for wire in term.read().iter().chain(term.write().iter()) {
-                    if let Some(var) = var(wire) {
-                        found.extend(var.wires());
-                        debug_assert!(local.binary_search(wire).is_err()) // ctrl U read U wait <= found \ local
-                    } else {
-                        found.insert(wire);
-                        debug_assert!(local.binary_search(wire).is_ok())
-                    }
-                }
-            }
-            // all control wires are written
-            debug_assert!(ctrl.iter().map(Var::nxt).all(|w| written.contains(w)));
-
-            //================================================================================
-            // Check update terms
-            //================================================================================
-            // the update block can initially read from the read and await wires of the atom
-            let mut written: HashSet<&Wire<_>> = read.iter().map(Var::ltc).collect();
-            written.extend(wait.iter().map(Var::ltc));
-            written.extend(wait.iter().map(Var::nxt));
-            for term in update.iter() {
-                // all read wires were written before in the block
-                debug_assert!(
-                    term.read().iter().all(|rd| written.contains(rd)),
-                    "read before write"
-                );
-                // no write wire was written before in the block
-                debug_assert!(
-                    term.write().iter().all(|rd| !written.contains(rd)),
-                    "write after write"
-                );
-                written.extend(term.write().iter());
-
-                for wire in term.read().iter().chain(term.write().iter()) {
-                    if let Some(var) = var(wire) {
-                        found.extend(var.wires());
-                        debug_assert!(local.binary_search(wire).is_err()) // ctrl U read U wait <= found \ local
-                    } else {
-                        found.insert(wire);
-                        debug_assert!(local.binary_search(wire).is_ok())
-                    }
-                }
-            }
-            // all control wires are written
-            debug_assert!(ctrl.iter().map(Var::nxt).all(|w| written.contains(w)));
-
-            //================================================================================
-            // Check delay terms
-            //================================================================================
-            // the delay block can initially read from the read and await wires of the atom
-            let mut written: HashSet<&Wire<_>> = read.iter().map(Var::ltc).collect();
-            written.extend(wait.iter().map(Var::der));
-            for term in delay.iter() {
-                // all read wires were written before in the block
-                debug_assert!(
-                    term.read().iter().all(|rd| written.contains(rd)),
-                    "read before write"
-                );
-                // no write wire was written before in the block
-                debug_assert!(
-                    term.write().iter().all(|rd| !written.contains(rd)),
-                    "write after write"
-                );
-                written.extend(term.write().iter());
-
-                for wire in term.read().iter().chain(term.write().iter()) {
-                    if let Some(var) = var(wire) {
-                        found.extend(var.wires());
-                        debug_assert!(local.binary_search(wire).is_err()) // ctrl U read U wait <= found \ local
-                    } else {
-                        found.insert(wire);
-                        debug_assert!(local.binary_search(wire).is_ok())
-                    }
-                }
-            }
-            // all control wires are written
-            debug_assert!(ctrl.iter().map(Var::der).all(|w| written.contains(w)));
-
-            debug_assert!(wires.iter().all(|w| found.contains(w))); // wires <= found
-            debug_assert!(found.iter().all(|w| wires.binary_search(w).is_ok())); // found <= wires
+            debug_assert!(found.iter().all(|w| local.binary_search(w).is_ok()));
+            debug_assert!(local.iter().all(|w| found.contains(w)));
         }
 
         Self {
@@ -266,7 +215,7 @@ where
             init,
             update,
             delay,
-            wires,
+            used,
             local,
         }
     }
@@ -349,14 +298,14 @@ where
     ) -> Result<Self, String> {
         let mut read: BTreeSet<Var<S>> = BTreeSet::new();
         let mut wait: BTreeSet<Var<S>> = BTreeSet::new();
-        let mut wires: BTreeSet<Wire<S>> = BTreeSet::new();
+        let mut used: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
 
         for rd in init.read().iter() {
+            used.insert(rd.clone());
             // init can only read from next wires
             if let Some(&var) = wmap.nxt.get(&rd) {
                 wait.insert(var.clone());
-                wires.extend(var.wires().into_iter().cloned());
                 continue;
             }
 
@@ -368,17 +317,16 @@ where
         }
 
         for rd in update.read().iter() {
+            used.insert(rd.clone());
             // if the update reads from a next wire, then this is awaited
             // otherwise, it must be read from outside the atom (dangling)
             if let Some(&var) = wmap.ltc.get(&rd) {
                 read.insert(var.clone());
-                wires.extend(var.wires().into_iter().cloned());
                 continue;
             }
 
             if let Some(&var) = wmap.nxt.get(&rd) {
                 wait.insert(var.clone());
-                wires.extend(var.wires().into_iter().cloned());
                 continue;
             }
 
@@ -386,17 +334,16 @@ where
         }
 
         for rd in delay.read().iter() {
+            used.insert(rd.clone());
             // if the delay reads from a derived wire, then this is awaited
             // otherwise, it must be read from outside the atom (dangling)
             if let Some(&var) = wmap.ltc.get(&rd) {
                 read.insert(var.clone());
-                wires.extend(var.wires().into_iter().cloned());
                 continue;
             }
 
             if let Some(&var) = wmap.der.get(&rd) {
                 wait.insert(var.clone());
-                wires.extend(var.wires().into_iter().cloned());
                 continue;
             }
 
@@ -404,60 +351,58 @@ where
         }
 
         for wt in init.write().iter().chain(update.write().iter()) {
+            used.insert(wt.clone());
             // if the init/update writes to a next wire, then this wire must be controlled
             // otherwise, it must be local
             if let Some(&var) = wmap.nxt.get(&wt) {
                 if !ctrl.contains(var) {
-                    return Err(format!("Inconsistent write to next wire {}", wt.id()));
+                    return Err(format!("Writing uncontrolled next wire {:?}", wt));
                 }
-                wires.extend(var.wires().into_iter().cloned());
                 continue;
             }
 
             if wmap.ltc.contains_key(&wt) {
-                return Err(format!("Writing latched wire {}", wt.id()));
+                return Err(format!("Writing latched wire {:?}", wt));
             } else {
                 local.insert(wt.clone());
-                wires.insert(wt.clone());
             }
         }
 
         for wt in delay.write().iter() {
+            used.insert(wt.clone());
             // if the delay writes to a derived wire, then this wire is controlled
             // otherwise, it must be local
             if let Some(&var) = wmap.der.get(&wt) {
                 if !ctrl.contains(var) {
-                    return Err(format!("Inconsistent write to next wire {}", wt.id()));
+                    return Err(format!("Write uncontrolled derived wire {:?}", wt));
                 }
-                wires.extend(var.wires().into_iter().cloned());
                 continue;
             }
 
             if wmap.ltc.contains_key(&wt) {
-                return Err(format!("Writing a latched wire {}", wt.id()));
+                return Err(format!("Writing latched wire {:?}", wt));
             } else {
                 local.insert(wt.clone());
-                wires.insert(wt.clone());
             }
         }
 
         for ctr in ctrl.iter() {
             if !init.write().iter().any(|wrt| wrt == ctr.nxt()) {
                 return Err(format!(
-                    "Controlled wire {} is not written in init",
-                    ctr.nxt().id()
+                    "Controlled wire {:?} is not written in init",
+                    ctr.nxt()
                 ));
             }
             if !update.write().iter().any(|wrt| wrt == ctr.nxt()) {
                 return Err(format!(
-                    "Controlled wire {} is not written in update",
-                    ctr.der().id()
+                    "Controlled wire {:?} is not written in update",
+                    ctr.nxt()
                 ));
             }
             if !delay.write().iter().any(|wrt| wrt == ctr.der()) {
                 return Err(format!(
-                    "Controlled wire {} is not written in delay",
-                    ctr.der().id()
+                    "Controlled wire {:?} is not written in delay",
+                    ctr.der()
                 ));
             }
         }
@@ -469,7 +414,7 @@ where
             init,
             update,
             delay,
-            wires.into_iter().collect(),
+            used.into_iter().collect(),
             local.into_iter().collect(),
         ))
     }

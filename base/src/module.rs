@@ -43,8 +43,8 @@ where
 
     /// cache of all wires local to blocks
     local: Vec<Wire<S>>,
-    /// cache of all local and global wires
-    wires: Vec<Wire<S>>,
+    /// cache of all wires used in blocks
+    used: Vec<Wire<S>>,
 }
 
 impl<I, J, F, S> Module<I, J, F, S>
@@ -89,8 +89,8 @@ where
         self.local.as_slice()
     }
 
-    pub(crate) fn wires(&self) -> &[Wire<S>] {
-        self.wires.as_slice()
+    pub(crate) fn used(&self) -> &[Wire<S>] {
+        self.used.as_slice()
     }
 
     pub fn empty() -> Self {
@@ -101,7 +101,7 @@ where
             obs: Interface::empty(),
             ctrl: Interface::empty(),
             atoms: Vec::new(),
-            wires: Vec::new(),
+            used: Vec::new(),
             local: Vec::new(),
         }
     }
@@ -170,7 +170,7 @@ where
         obs: Interface<S>,
         ctrl: Interface<S>,
         atoms: Vec<Atom<I, J, F, S>>,
-        wires: Vec<Wire<S>>,
+        used: Vec<Wire<S>>,
         local: Vec<Wire<S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
@@ -208,7 +208,7 @@ where
                     debug_assert!(written.insert(var));
                 }
 
-                debug_assert!(atom.wires().iter().all(|w| wires.binary_search(w).is_ok()));
+                debug_assert!(atom.used().iter().all(|w| used.binary_search(w).is_ok()));
                 debug_assert!(atom.local().iter().all(|w| local.binary_search(w).is_ok()));
             }
 
@@ -218,35 +218,41 @@ where
             }
 
             // check vars consistency
-            let mut atom_vars = HashSet::new();
-            atom_vars.extend(atoms.iter().flat_map(Atom::read));
-            atom_vars.extend(atoms.iter().flat_map(Atom::ctrl));
-            atom_vars.extend(atoms.iter().flat_map(Atom::wait));
-            debug_assert_eq!(atom_vars, module_vars);
+            let mut atom_decl_vars = HashSet::new();
+            atom_decl_vars.extend(atoms.iter().flat_map(Atom::read));
+            atom_decl_vars.extend(atoms.iter().flat_map(Atom::ctrl));
+            atom_decl_vars.extend(atoms.iter().flat_map(Atom::wait));
+            debug_assert_eq!(atom_decl_vars, module_vars);
 
             // check wires consistency
-            debug_assert!(wires.is_sorted());
+            debug_assert!(used.is_sorted());
             debug_assert!(local.is_sorted());
-            debug_assert!(wires.windows(2).all(|w| w[0] < w[1]));
+            debug_assert!(used.windows(2).all(|w| w[0] < w[1]));
             debug_assert!(local.windows(2).all(|w| w[0] < w[1]));
 
-            let mut block_wires = HashSet::new();
-            block_wires.extend(atoms.iter().flat_map(Atom::init).flat_map(|b| b.read()));
-            block_wires.extend(atoms.iter().flat_map(Atom::init).flat_map(|b| b.write()));
-            block_wires.extend(atoms.iter().flat_map(Atom::delay).flat_map(|b| b.read()));
-            block_wires.extend(atoms.iter().flat_map(Atom::delay).flat_map(|b| b.write()));
-            block_wires.extend(atoms.iter().flat_map(Atom::update).flat_map(|b| b.read()));
-            block_wires.extend(atoms.iter().flat_map(Atom::update).flat_map(|b| b.write()));
+            let mut atom_used_wires = HashSet::new();
+            atom_used_wires.extend(atoms.iter().flat_map(Atom::used));
 
-            let atom_wires: HashSet<_> = atom_vars.into_iter().flat_map(Var::wires).collect();
-            let local_wires: HashSet<_> = block_wires.difference(&atom_wires).cloned().collect();
-            let all_wires: HashSet<_> = local_wires.union(&atom_wires).cloned().collect();
+            let atom_decl_wires: HashSet<_> =
+                atom_decl_vars.into_iter().flat_map(Var::wires).collect();
+            let atom_local_wires: HashSet<_> = atom_used_wires
+                .difference(&atom_decl_wires)
+                .cloned()
+                .collect();
 
-            // wires == all_wires and local == local_wires
-            debug_assert!(wires.iter().all(|w| all_wires.contains(w)));
-            debug_assert!(all_wires.iter().all(|w| wires.binary_search(w).is_ok()));
-            debug_assert!(local.iter().all(|w| local_wires.contains(w)));
-            debug_assert!(local_wires.iter().all(|w| local.binary_search(w).is_ok()));
+            // used == atom_used_wires and local == atom_local_wires
+            debug_assert!(used.iter().all(|w| atom_used_wires.contains(w)));
+            debug_assert!(
+                atom_used_wires
+                    .iter()
+                    .all(|w| used.binary_search(w).is_ok())
+            );
+            debug_assert!(local.iter().all(|w| atom_local_wires.contains(w)));
+            debug_assert!(
+                atom_local_wires
+                    .iter()
+                    .all(|w| local.binary_search(w).is_ok())
+            );
         }
 
         Module {
@@ -256,7 +262,7 @@ where
             obs,
             ctrl,
             atoms,
-            wires,
+            used,
             local,
         }
     }
@@ -282,8 +288,15 @@ where
     /// awaited variables are external. Equivalent to
     /// [`Module::partially_observable`] with nothing hidden.
     ///
+    /// The atoms must be presented in a linear order consistent with their
+    /// **await relation**: an atom that awaits a variable (reads its next
+    /// value within the round) must come after the atom controlling it. The
+    /// given sequence is kept as the module's execution order — it is
+    /// checked, not sorted — and an inconsistent order is rejected.
+    ///
     /// # Parameters
-    /// - `atoms`: An iterable collection of atoms defining the module's behaviour.
+    /// - `atoms`: An iterable collection of atoms defining the module's
+    ///   behaviour, ordered consistently with their await relation.
     ///
     /// # Returns
     /// A `Result` containing the constructed fully observable module if successful,
@@ -308,9 +321,16 @@ where
     /// from the interface into the private state. Only controlled variables
     /// can be hidden: privates must be controlled by the module.
     ///
+    /// The atoms must be presented in a linear order consistent with their
+    /// **await relation**: an atom that awaits a variable (reads its next
+    /// value within the round) must come after the atom controlling it. The
+    /// given sequence is kept as the module's execution order — it is
+    /// checked, not sorted — and an inconsistent order is rejected.
+    ///
     /// # Parameters
-    /// - `atoms`: An iterable collection of atoms defining the module's behaviour.
-    /// - `prvt`: The variables to hide from the environment; hiding nothing
+    /// - `atoms`: An iterable collection of atoms defining the module's
+    ///   behaviour, ordered consistently with their await relation.
+    /// - `hide`: The variables to hide from the environment; hiding nothing
     ///   yields a fully observable module.
     ///
     /// # Returns
@@ -325,7 +345,7 @@ where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
         H: Fn(&Var<S>) -> bool,
     {
-        let mut wires: BTreeSet<Wire<S>> = BTreeSet::new();
+        let mut used: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
 
         let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
@@ -354,13 +374,13 @@ where
             // Check coupling
             //============================================================
             for lc in atom.local() {
-                if wires.contains(lc) {
+                if used.contains(lc) {
                     return Err(format!("Local wire {:?} is coupled", lc));
                 }
                 debug_assert!(!local.contains(lc));
                 local.insert(lc.clone());
             }
-            wires.extend(atom.wires().iter().cloned());
+            used.extend(atom.used().iter().cloned());
 
             //============================================================
             // Check await order
@@ -391,11 +411,11 @@ where
         let prvt = Interface::from_exact_iter_unchecked(prvt);
         let obs = Interface::from_exact_iter_unchecked(obs);
         let ctrl = Interface::from_exact_iter_unchecked(ctrl);
-        let wires = wires.into_iter().collect();
+        let used = used.into_iter().collect();
         let local = local.into_iter().collect();
 
         Ok(Self::new_unchecked(
-            extl, intf, prvt, obs, ctrl, past_atoms, wires, local,
+            extl, intf, prvt, obs, ctrl, past_atoms, used, local,
         ))
     }
 
@@ -494,7 +514,9 @@ where
         M: IntoIterator<Item = Self>,
         H: Fn(&Var<S>) -> bool,
     {
-        let mut declared_wires: BTreeSet<Wire<S>> = BTreeSet::new();
+        let mut declared_vars: BTreeSet<usize> = BTreeSet::new();
+
+        let mut used_wires: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut restricted_wires: HashSet<usize> = HashSet::new();
 
         let mut extl_set: BTreeSet<Var<S>> = BTreeSet::new();
@@ -524,9 +546,7 @@ where
                 }
 
                 // visit every observable no more than once, and skip otherwise
-                if !declared_wires.contains(var.ltc()) {
-                    debug_assert!(!declared_wires.contains(var.nxt()));
-                    debug_assert!(!declared_wires.contains(var.der()));
+                if declared_vars.insert(var.id()) {
                     // hidden variables leave the observables and join the privates;
                     // we check at the end whether this has affected uncoupled externals
                     // hide() is called exactly once (no more no less) on each observable
@@ -535,9 +555,6 @@ where
                     } else {
                         obs_stack.push(var);
                     }
-                } else {
-                    debug_assert!(declared_wires.contains(var.nxt()));
-                    debug_assert!(declared_wires.contains(var.der()));
                 }
             }
 
@@ -545,13 +562,9 @@ where
             prvt_stack.reserve(module.prvt.len());
             for var in module.prvt {
                 // visit every private no more than once, and raise otherwise
-                if declared_wires.contains(var.ltc()) {
-                    debug_assert!(declared_wires.contains(var.nxt()));
-                    debug_assert!(declared_wires.contains(var.der()));
+                if !declared_vars.insert(var.id()) {
                     return Err(format!("Private variable {:?} is doubly declared", var));
                 }
-                debug_assert!(!declared_wires.contains(var.nxt()));
-                debug_assert!(!declared_wires.contains(var.der()));
 
                 for wire in var.wires() {
                     debug_assert!(!restricted_wires.contains(&wire.id()));
@@ -565,7 +578,7 @@ where
             local_stack.reserve(module.local.len());
             for tmp in module.local {
                 // visit every local no more than once, and raise otherwise
-                if declared_wires.contains(&tmp) {
+                if used_wires.contains(&tmp) {
                     return Err(format!("Local wire {} is coupled", tmp.id()));
                 }
                 debug_assert!(!restricted_wires.contains(&tmp.id()));
@@ -609,7 +622,7 @@ where
             }
 
             ctrl_stack.extend(module.ctrl);
-            declared_wires.extend(module.wires);
+            used_wires.extend(module.used);
 
             //============================================================
             // Populate await graph
@@ -672,7 +685,7 @@ where
         let prvt = Interface::from_exact_iter_unchecked(prvt_stack);
         let obs = Interface::from_exact_iter_unchecked(obs_stack);
         let ctrl = Interface::from_exact_iter_unchecked(ctrl_stack);
-        let wires = declared_wires.into_iter().collect();
+        let used = used_wires.into_iter().collect();
 
         Ok(Module::new_unchecked(
             extl,
@@ -681,7 +694,7 @@ where
             obs,
             ctrl,
             atoms,
-            wires,
+            used,
             local_stack,
         ))
     }
