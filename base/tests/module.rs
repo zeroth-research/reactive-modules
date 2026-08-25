@@ -558,3 +558,58 @@ fn heterogeneous_composition() {
     let S = base::Module::compose([P, Q, R]);
     assert!(S.is_ok());
 }
+
+// nothing requires ctrl to be non-empty or declared
+// variables to be used, and every consistency check quantifies over ctrl.
+#[test]
+fn empty_blocks_are_rejected() {
+    let x = Var::new("real");
+    let y = Var::new("real");
+
+    let init: [Term<Ops>; 0] = [];
+    let update: [Term<Ops>; 0] = [];
+
+    let m = Module::sequential(&[x, y], init, update);
+    assert!(
+        m.is_err(),
+        "an atom that controls nothing while declaring vars should fail"
+    );
+}
+
+#[test]
+fn module_variables_must_be_used() {
+    let x = Var::new("real");
+    let unused = Var::new("real");
+
+    let init = [term!(mk_op("C0"), [X(x)]).unwrap()];
+    let update = [term!(mk_op("ID"), [X(x)], [x]).unwrap()];
+
+    let m = Module::sequential(&[x, unused], init, update);
+    assert!(
+        m.is_err(),
+        "`unused` is not used and should fail the construction"
+    );
+}
+
+#[test]
+fn undeclared_vars_2() {
+    let x = Var::new("real");
+    let v = Var::new("real");
+
+    let init = [term!(mk_op("C0"), [X(x)]).unwrap()];
+    let update = [
+        term!(mk_op("C1"), [X(v)]).unwrap(),
+        term!(mk_op("ID"), [X(x)], [X(v)]).unwrap(),
+    ];
+    // Problem 1: at this moment, this goes through even when `v` is not declared as a var used by that atom.
+    // `a1` writes to `v`
+    let a1 = Atom::sequential(&[x], init, update).unwrap();
+
+    // `a2` also writes to `v`
+    let init = [term!(mk_op("C0"), [X(v)]).unwrap()];
+    let update = [term!(mk_op("ID"), [X(v)], [v]).unwrap()];
+    let a2 = Atom::sequential(&[v], init, update).unwrap();
+
+    // no error up to now, assertion triggered inside module construction (but only in debug mode, release goes through)
+    assert!(Module::observable([a1, a2]).is_err());
+}
