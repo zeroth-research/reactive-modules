@@ -310,10 +310,12 @@ where
             }
 
             if wmap.ltc.contains_key(&rd) {
-                return Err(format!("Init reads latched wire {}", rd.id()));
+                return Err(format!("Init reads latched wire {:?}", rd));
+            } else if wmap.der.contains_key(&rd) {
+                return Err(format!("Init reads d wire {:?}", rd));
+            } else {
+                return Err(format!("Init reads dangling wire {:?}", rd));
             }
-
-            return Err(format!("Wire {} in init is dangling read", rd.id()));
         }
 
         for rd in update.read().iter() {
@@ -330,7 +332,11 @@ where
                 continue;
             }
 
-            return Err(format!("Wire {} in update is dangling read", rd.id()));
+            if wmap.der.contains_key(&rd) {
+                return Err(format!("Update reads d wire {:?}", rd));
+            } else {
+                return Err(format!("Update reads dangling wire {:?}", rd));
+            }
         }
 
         for rd in delay.read().iter() {
@@ -347,7 +353,11 @@ where
                 continue;
             }
 
-            return Err(format!("delay reads dangling wire {:?}", rd));
+            if wmap.nxt.contains_key(&rd) {
+                return Err(format!("Delay reads X wire {:?}", rd));
+            } else {
+                return Err(format!("Delay reads dangling wire {:?}", rd));
+            }
         }
 
         for wt in init.write().iter().chain(update.write().iter()) {
@@ -356,16 +366,18 @@ where
             // otherwise, it must be local
             if let Some(&var) = wmap.nxt.get(&wt) {
                 if !ctrl.contains(var) {
-                    return Err(format!("Writing uncontrolled next wire {:?}", wt));
+                    return Err(format!("Init/update writes uncontrolled X wire {:?}", wt));
                 }
                 continue;
             }
 
             if wmap.ltc.contains_key(&wt) {
-                return Err(format!("Writing latched wire {:?}", wt));
-            } else {
-                local.insert(wt.clone());
+                return Err(format!("Init/update writes latched wire {:?}", wt));
+            } else if wmap.der.contains_key(&wt) {
+                return Err(format!("Init/update writes d wire {:?}", wt));
             }
+
+            local.insert(wt.clone());
         }
 
         for wt in delay.write().iter() {
@@ -374,34 +386,36 @@ where
             // otherwise, it must be local
             if let Some(&var) = wmap.der.get(&wt) {
                 if !ctrl.contains(var) {
-                    return Err(format!("Write uncontrolled derived wire {:?}", wt));
+                    return Err(format!("Delay writes uncontrolled d wire {:?}", wt));
                 }
                 continue;
             }
 
             if wmap.ltc.contains_key(&wt) {
-                return Err(format!("Writing latched wire {:?}", wt));
-            } else {
-                local.insert(wt.clone());
+                return Err(format!("Delay writes latched wire {:?}", wt));
+            } else if wmap.nxt.contains_key(&wt) {
+                return Err(format!("Delay writes X wire {:?}", wt));
             }
+
+            local.insert(wt.clone());
         }
 
         for ctr in ctrl.iter() {
             if !init.write().iter().any(|wrt| wrt == ctr.nxt()) {
                 return Err(format!(
-                    "Controlled wire {:?} is not written in init",
+                    "Controlled X wire {:?} is not written in init",
                     ctr.nxt()
                 ));
             }
             if !update.write().iter().any(|wrt| wrt == ctr.nxt()) {
                 return Err(format!(
-                    "Controlled wire {:?} is not written in update",
+                    "Controlled X wire {:?} is not written in update",
                     ctr.nxt()
                 ));
             }
             if !delay.write().iter().any(|wrt| wrt == ctr.der()) {
                 return Err(format!(
-                    "Controlled wire {:?} is not written in delay",
+                    "Controlled d wire {:?} is not written in delay",
                     ctr.der()
                 ));
             }
