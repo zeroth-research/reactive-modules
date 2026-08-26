@@ -227,10 +227,6 @@ impl<S> Interface<S> {
     pub fn contains(&self, var: &Var<S>) -> bool {
         self.vars.binary_search(var).is_ok()
     }
-
-    pub(crate) fn wires(&self) -> impl Iterator<Item = &Wire<S>> {
-        self.wires.iter().map(|(w, _)| w)
-    }
 }
 
 impl<S: Debug + Clone> Interface<S> {

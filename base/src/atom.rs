@@ -251,14 +251,6 @@ impl<'a, S> WireMap<'a, S> {
 
         Self { ltc, nxt, der }
     }
-
-    fn keys(&self) -> impl Iterator<Item = &'a Wire<S>> {
-        self.ltc
-            .keys()
-            .chain(self.nxt.keys())
-            .chain(self.der.keys())
-            .cloned()
-    }
 }
 
 fn infer_ctrl<T, S: Clone>(

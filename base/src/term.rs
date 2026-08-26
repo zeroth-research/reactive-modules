@@ -184,9 +184,6 @@ where
     T: Theory + 'a,
     N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
 {
-    const BOLD: &'static str = "\x1b[1m";
-    const RESET: &'static str = "\x1b[0m";
-
     fn fmt_tuple<I>(&self, f: &mut fmt::Formatter<'_>, iter: I) -> fmt::Result
     where
         I: Iterator<Item = &'a Wire<T::Sort>>,
