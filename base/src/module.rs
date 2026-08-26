@@ -85,14 +85,6 @@ where
         !self.extl.is_empty()
     }
 
-    pub(crate) fn local(&self) -> &[Wire<S>] {
-        self.local.as_slice()
-    }
-
-    pub(crate) fn used(&self) -> &[Wire<S>] {
-        self.used.as_slice()
-    }
-
     pub fn empty() -> Self {
         Module {
             extl: Interface::empty(),
