@@ -84,12 +84,10 @@ clean:
 clippy:
     {{ CARGO }} clippy --all-targets --all-features -- -D warnings
 
-# Format the Rust sources in place. `cargo fmt` needs no torch, so skip the uv wrapper.
+# Check formatting without modifying files (used by CI).
+# `cargo fmt` needs no torch, so skip the uv wrapper; to format the sources
+# in place, run `cargo fmt --all` directly.
 fmt:
-    cargo fmt --all
-
-# Check formatting without modifying files (used by CI)
-fmt-check:
     cargo fmt --all -- --check
 
 # Full rebuild from scratch
