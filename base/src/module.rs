@@ -369,9 +369,14 @@ where
                 if used.contains(lc) {
                     return Err(format!("Local wire {:?} is coupled", lc));
                 }
-                debug_assert!(!local.contains(lc));
-                local.insert(lc.clone());
             }
+            for ud in atom.used() {
+                if local.contains(ud) {
+                    return Err(format!("Local wire {:?} is coupled", ud));
+                }
+            }
+
+            local.extend(atom.local().iter().cloned());
             used.extend(atom.used().iter().cloned());
 
             //============================================================
@@ -507,8 +512,9 @@ where
         H: Fn(&Var<S>) -> bool,
     {
         let mut used: BTreeSet<Wire<S>> = BTreeSet::new();
-        let mut restricted_wire_ids: HashSet<usize> = HashSet::new();
-        let mut local: Vec<Wire<S>> = Vec::new();
+        let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
+
+        let mut prvt_pre_hiding: HashSet<usize> = HashSet::new();
 
         let mut extl: BTreeSet<Var<S>> = BTreeSet::new();
         let mut intf: BTreeSet<Var<S>> = BTreeSet::new();
@@ -526,10 +532,8 @@ where
 
             // Check that observables are either uncoupled or coupled in right direction
             for var in module.obs {
-                for wire in var.wires() {
-                    if restricted_wire_ids.contains(&wire.id()) {
-                        return Err(format!("Coupling restricted wire {:?}", wire));
-                    }
+                if prvt_pre_hiding.contains(&var.id()) {
+                    return Err(format!("Coupling private variable {:?}", var));
                 }
 
                 // visit every observable no more than once, and skip otherwise
@@ -553,34 +557,33 @@ where
                 }
 
                 for wire in var.wires() {
-                    debug_assert!(!restricted_wire_ids.contains(&wire.id()));
-                    restricted_wire_ids.insert(wire.id());
+                    debug_assert!(!prvt_pre_hiding.contains(&wire.id()));
+                    prvt_pre_hiding.insert(wire.id());
                 }
 
                 prvt.insert(var);
             }
 
-            // Check that temporaries are uncoupled and restrict them
-            local.reserve(module.local.len());
-            for tmp in module.local {
-                // visit every local no more than once, and raise otherwise
-                if used.contains(&tmp) {
-                    return Err(format!("Local wire {} is coupled", tmp.id()));
+            // Check that locals are uncoupled and restrict them
+            for lc in module.local.iter() {
+                if used.contains(lc) {
+                    return Err(format!("Local wire {:?} is coupled", lc));
                 }
-                debug_assert!(!restricted_wire_ids.contains(&tmp.id()));
-                restricted_wire_ids.insert(tmp.id());
-
-                local.push(tmp);
             }
+
+            for ud in module.used.iter() {
+                if local.contains(ud) {
+                    return Err(format!("Local wire {:?} is coupled", ud));
+                }
+            }
+
+            local.extend(module.local);
+            used.extend(module.used);
 
             //============================================================
             // Couple external and interface variables
             //============================================================
             for var in module.extl {
-                for wire in var.wires() {
-                    debug_assert!(!restricted_wire_ids.contains(&wire.id()));
-                }
-
                 // external variables stay external only if they are not
                 // deemed controlled by modules visited before
                 if !ctrl.contains(&var) {
@@ -589,10 +592,6 @@ where
             }
 
             for var in module.intf {
-                for wire in var.wires() {
-                    debug_assert!(!restricted_wire_ids.contains(&wire.id()));
-                }
-
                 // interface variables necessarily leave the set of variables
                 // deemed external by modules visited before
                 extl.remove(&var);
@@ -607,7 +606,6 @@ where
             }
 
             ctrl.extend(module.ctrl);
-            used.extend(module.used);
 
             //============================================================
             // Populate await graph
@@ -660,7 +658,7 @@ where
         let obs = Interface::from_exact_iter_unchecked(obs);
         let ctrl = Interface::from_exact_iter_unchecked(ctrl);
         let used = used.into_iter().collect();
-        local.sort_unstable();
+        let local = local.into_iter().collect();
 
         Ok(Module::new_unchecked(
             extl, intf, prvt, obs, ctrl, atoms, used, local,
