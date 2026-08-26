@@ -253,10 +253,7 @@ impl<'a, S> WireMap<'a, S> {
     }
 }
 
-fn infer_ctrl<T, S: Clone>(
-    block: &Block<T>,
-    pool: &HashMap<&Wire<S>, &Var<S>>,
-) -> Result<BTreeSet<Var<S>>, String>
+fn infer_ctrl<T, S: Clone>(block: &Block<T>, pool: &HashMap<&Wire<S>, &Var<S>>) -> BTreeSet<Var<S>>
 where
     T: Theory<Sort = S>,
 {
@@ -271,7 +268,7 @@ where
         }
     }
 
-    Ok(ctrl)
+    ctrl
 }
 
 impl<I, J, F, S> Atom<I, J, F, S>
@@ -472,7 +469,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
-        let ctrl = infer_ctrl(&init, &wires.nxt)?;
+        let ctrl = infer_ctrl(&init, &wires.nxt);
         let ctrl_der = ctrl.iter().map(Var::der).cloned();
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
@@ -515,7 +512,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
-        let ctrl = infer_ctrl(&init, &wires.nxt)?;
+        let ctrl = infer_ctrl(&init, &wires.nxt);
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
         let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
 
@@ -565,7 +562,7 @@ where
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
 
-        let ctrl = infer_ctrl(&init, &wires.nxt)?;
+        let ctrl = infer_ctrl(&init, &wires.nxt);
 
         Self::with_ctrl(wires, ctrl, init, update, delay)
     }
@@ -599,7 +596,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
-        let ctrl = infer_ctrl(&update, &wires.nxt)?;
+        let ctrl = infer_ctrl(&update, &wires.nxt);
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
         let ctrl_der = ctrl.iter().map(Var::der).cloned();
 
@@ -640,7 +637,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
-        let ctrl = infer_ctrl(&update, &wires.nxt)?;
+        let ctrl = infer_ctrl(&update, &wires.nxt);
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
 
         let init = Block::havoc(ctrl_nxt)?;
@@ -678,7 +675,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
-        let ctrl = infer_ctrl(&init, &wires.nxt)?;
+        let ctrl = infer_ctrl(&init, &wires.nxt);
         let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
         let ctrl_der = ctrl.iter().map(Var::der).cloned();
@@ -758,7 +755,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
-        let ctrl = infer_ctrl(&delay, &wires.der)?;
+        let ctrl = infer_ctrl(&delay, &wires.der);
         let ctrl_ltc = ctrl.iter().map(Var::ltc).cloned();
         let ctrl_nxt = ctrl.iter().map(Var::nxt).cloned();
 
@@ -801,7 +798,7 @@ where
         let wires = WireMap::unpack(vars);
 
         let assign: Block<T> = Block::try_from_iter(assign.into_iter().map(Ok))?;
-        let ctrl = infer_ctrl(&assign, &wires.nxt)?;
+        let ctrl = infer_ctrl(&assign, &wires.nxt);
 
         let init: Block<I> = Block::convert(assign.clone());
         let update: Block<J> = Block::convert(assign);
