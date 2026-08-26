@@ -417,19 +417,19 @@ where
         }
 
         for ctr in ctrl.iter() {
-            if !init.write().iter().any(|wrt| wrt == ctr.nxt()) {
+            if init.write().binary_search(ctr.nxt()).is_err() {
                 return Err(format!(
                     "Controlled X wire {:?} is not written in init",
                     ctr.nxt()
                 ));
             }
-            if !update.write().iter().any(|wrt| wrt == ctr.nxt()) {
+            if update.write().binary_search(ctr.nxt()).is_err() {
                 return Err(format!(
                     "Controlled X wire {:?} is not written in update",
                     ctr.nxt()
                 ));
             }
-            if !delay.write().iter().any(|wrt| wrt == ctr.der()) {
+            if delay.write().binary_search(ctr.der()).is_err() {
                 return Err(format!(
                     "Controlled d wire {:?} is not written in delay",
                     ctr.der()
