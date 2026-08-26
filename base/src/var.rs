@@ -167,7 +167,7 @@ impl<'a, S> Var<S> {
 
 impl<S: Debug> Debug for Var<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
+        write!(
             f,
             "Var {{ ltc: {PREFIX}{:?}, nxt: {PREFIX}{:?}, der: {PREFIX}{:?}, dtype: {:?} }} ",
             self.ltc.id(),
