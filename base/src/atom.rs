@@ -127,8 +127,35 @@ where
         !self.wait.is_disjoint(&other.ctrl)
     }
 
-    /// Creates an atom from its components. This method checks the inputs only using assertions
-    /// in debug mode.
+    /// Constructs an atom **without performing any consistency checks**.
+    ///
+    /// This constructor provides **full control** to the caller and performs
+    /// no inference or validation. Unlike the public constructors, which
+    /// infer the interfaces and the wire caches from the blocks, it takes
+    /// every component as given. It should be used only when all necessary
+    /// checks and inference have already been handled externally.
+    ///
+    /// # Parameters
+    /// - `ctrl`: The controlled variables, whose next and derivative wires the blocks write.
+    /// - `wait`: The awaited variables, whose next or derivative wires the blocks read.
+    /// - `read`: The read variables, whose latched wires the blocks read.
+    /// - `init`, `update`, `delay`: The blocks of the atom.
+    /// - `used`: Sorted cache of all wires the blocks touch.
+    /// - `local`: Sorted cache of the wires local to the blocks (used but not
+    ///   belonging to any declared variable).
+    ///
+    /// # Returns
+    /// The constructed atom.
+    ///
+    /// # Correctness
+    /// This function performs **no validation or inference** (beyond
+    /// debug-only assertions). It is the caller’s responsibility to ensure
+    /// that the interfaces, blocks, and wire caches are well-formed and
+    /// consistent.
+    ///
+    /// # See Also
+    /// - [`Atom::sequential`], [`Atom::combinatorial`] and the other public
+    ///   constructors for checked, automated atom construction.
     #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
         ctrl: Interface<S>,

@@ -145,15 +145,15 @@ where
     /// # Returns
     /// The constructed module.
     ///
-    /// # Safety
-    /// This function performs **no validation or inference**. It is the caller’s
-    /// responsibility to ensure that all wires, atoms, and interfaces are well-formed
-    /// and consistent.
+    /// # Correctness
+    /// This function performs **no validation or inference** (beyond
+    /// debug-only assertions). It is the caller’s responsibility to ensure
+    /// that all wires, atoms, and interfaces are well-formed and consistent.
     ///
     /// # See Also
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
-    /// - [`Module::partially_observable`], [`Module::observable`], [`Module::partially_observable_sequential`],
-    ///   [`Module::combinatorial`] for safe, automated module construction
+    /// - [`Module::partially_observable`], [`Module::observable`] for checked,
+    ///   automated module construction
     #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
         extl: Interface<S>,
@@ -743,8 +743,6 @@ where
     D: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
 {
-    /// Displays the module with variables under the names the given
-    /// function assigns; it is consulted for every module variable.
     /// Displays the module with variables under the names the given
     /// function assigns; it is consulted for every module variable and may
     /// return anything that converts into a `Cow<'a, str>` -- `&'a str`,
