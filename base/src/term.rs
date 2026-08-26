@@ -381,8 +381,8 @@ where
     {
         Block {
             terms: block.terms.into_iter().map(Term::convert).collect(),
-            read: block.read.clone(),
-            write: block.write.clone(),
+            read: block.read,
+            write: block.write,
         }
     }
 }
