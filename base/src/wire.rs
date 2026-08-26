@@ -3,6 +3,20 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cmp, fmt};
 
+/// A typed signal carrying one value per round.
+///
+/// A wire is the unit of data flow: terms read and write wires, and blocks,
+/// atoms, and modules are wired together by sharing them. Two wires are the
+/// *same* wire exactly when they share their `id` — a process-unique number
+/// minted at creation — so equality, hashing, and ordering all go through it,
+/// and ordering doubles as creation order. The sort `S` types the value on
+/// the wire; it does not take part in identity.
+///
+/// The `degree` says which differential form the wire carries: a `0`-form
+/// is a value, a `1`-form is a derivative (the rate of change of a value
+/// with respect to time, as written by delay blocks). The degree is checked
+/// by the theories — an op reads and writes wires of the forms it expects —
+/// but, like the sort, it does not take part in identity.
 #[derive(Debug, Clone, Copy)]
 pub struct Wire<S> {
     id: usize,
@@ -14,30 +28,62 @@ static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 pub(crate) const PREFIX: &str = "#";
 
 impl<S> Wire<S> {
+    /// The wire's process-unique identity, assigned at creation; wires are
+    /// equal, hash alike, and order exactly by it.
     pub fn id(&self) -> usize {
         self.id
     }
 
+    /// The sort of the value the wire carries.
     pub fn dtype(&self) -> &S {
         &self.dtype
     }
 
+    /// The differential form of the wire: a `0`-form carries a value, a
+    /// `1`-form carries a derivative.
     pub fn degree(&self) -> u8 {
         self.degree
     }
 
+    /// Creates a fresh wire with a globally unique id.
+    ///
+    /// The id counter is not guarded against overflow: exhausting `usize` on
+    /// a 64-bit target would take centuries of continuous allocation. A wrap
+    /// would silently break the id-based equality, hashing, and ordering.
+    ///
+    /// # Parameters
+    /// - `dtype`: The sort of the value the wire carries.
+    /// - `degree`: The differential form of the wire: `0`-form for a value,
+    ///   `1`-form for a derivative.
+    ///
+    /// # Returns
+    /// The fresh wire.
+    ///
+    /// # See Also
+    /// - [`Wire::scalar`] and [`Wire::covector`], fixing the form by name.
     pub fn new(dtype: S, degree: u8) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        if id == usize::MAX {
-            panic!("wire id overflow");
-        }
         Self { id, dtype, degree }
     }
 
+    /// Creates a fresh `0`-form wire: it carries a value.
+    ///
+    /// # Parameters
+    /// - `dtype`: The sort of the value the wire carries.
+    ///
+    /// # Returns
+    /// The fresh wire.
     pub fn scalar(dtype: S) -> Self {
         Self::new(dtype, 0)
     }
 
+    /// Creates a fresh `1`-form wire: it carries a derivative.
+    ///
+    /// # Parameters
+    /// - `dtype`: The sort of the value whose derivative the wire carries.
+    ///
+    /// # Returns
+    /// The fresh wire.
     pub fn covector(dtype: S) -> Self {
         Self::new(dtype, 1)
     }
@@ -83,6 +129,11 @@ impl<S: Debug> Debug for Display<'_, S> {
 }
 
 impl<S> Wire<S> {
+    /// Displays the wire with its sort: `#id : sort`.
+    ///
+    /// # Returns
+    /// A borrowing adapter implementing [`fmt::Display`] (and [`Debug`],
+    /// braced).
     pub fn typed(&self) -> Display<'_, S> {
         Display {
             wire: self,
@@ -90,6 +141,11 @@ impl<S> Wire<S> {
         }
     }
 
+    /// Displays the wire by its id alone: `#id`.
+    ///
+    /// # Returns
+    /// A borrowing adapter implementing [`fmt::Display`] (and [`Debug`],
+    /// braced).
     pub fn untyped(&self) -> Display<'_, S> {
         Display {
             wire: self,
