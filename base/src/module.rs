@@ -553,7 +553,7 @@ where
             for var in module.prvt {
                 // visit every private no more than once, and raise otherwise
                 if obs.contains(&var) | prvt.contains(&var) {
-                    return Err(format!("Private variable {:?} is doubly declared", var));
+                    return Err(format!("Coupling private variable {:?}", var));
                 }
 
                 for wire in var.wires() {
@@ -597,7 +597,7 @@ where
                 extl.remove(&var);
 
                 if ctrl.contains(&var) {
-                    return Err(format!("Interface var {:?} is doubly controlled", var));
+                    return Err(format!("Variable {:?} is doubly controlled", var));
                 }
 
                 if !prvt.contains(&var) {
