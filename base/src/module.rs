@@ -506,21 +506,17 @@ where
         M: IntoIterator<Item = Self>,
         H: Fn(&Var<S>) -> bool,
     {
-        let mut declared_vars: BTreeSet<usize> = BTreeSet::new();
+        let mut used: BTreeSet<Wire<S>> = BTreeSet::new();
+        let mut restricted_wire_ids: HashSet<usize> = HashSet::new();
+        let mut local: Vec<Wire<S>> = Vec::new();
 
-        let mut used_wires: BTreeSet<Wire<S>> = BTreeSet::new();
-        let mut restricted_wires: HashSet<usize> = HashSet::new();
+        let mut extl: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut intf: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut prvt: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
 
-        let mut extl_set: BTreeSet<Var<S>> = BTreeSet::new();
-        let mut intf_prior_hiding: HashSet<usize> = HashSet::new();
-
-        let mut intf_stack: Vec<Var<S>> = Vec::new();
-        let mut prvt_stack: Vec<Var<S>> = Vec::new();
-        let mut obs_stack: Vec<Var<S>> = Vec::new();
-        let mut ctrl_stack: Vec<Var<S>> = Vec::new();
-        let mut local_stack: Vec<Wire<S>> = Vec::new();
-        let mut atoms_stack: Vec<Atom<I, J, F, S>> = Vec::new();
-
+        let mut atoms_pre_ordering: Vec<Atom<I, J, F, S>> = Vec::new();
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
 
         for module in modules {
@@ -529,54 +525,52 @@ where
             //============================================================
 
             // Check that observables are either uncoupled or coupled in right direction
-            obs_stack.reserve(module.obs.len());
             for var in module.obs {
                 for wire in var.wires() {
-                    if restricted_wires.contains(&wire.id()) {
+                    if restricted_wire_ids.contains(&wire.id()) {
                         return Err(format!("Coupling restricted wire {:?}", wire));
                     }
                 }
 
                 // visit every observable no more than once, and skip otherwise
-                if declared_vars.insert(var.id()) {
+                if !obs.contains(&var) & !prvt.contains(&var) {
                     // hidden variables leave the observables and join the privates;
                     // we check at the end whether this has affected uncoupled externals
                     // hide() is called exactly once (no more no less) on each observable
                     if hide(&var) {
-                        prvt_stack.push(var);
+                        prvt.insert(var);
                     } else {
-                        obs_stack.push(var);
+                        obs.insert(var);
                     }
                 }
             }
 
             // Check that privates are uncoupled and restrict them
-            prvt_stack.reserve(module.prvt.len());
             for var in module.prvt {
                 // visit every private no more than once, and raise otherwise
-                if !declared_vars.insert(var.id()) {
+                if obs.contains(&var) | prvt.contains(&var) {
                     return Err(format!("Private variable {:?} is doubly declared", var));
                 }
 
                 for wire in var.wires() {
-                    debug_assert!(!restricted_wires.contains(&wire.id()));
-                    restricted_wires.insert(wire.id());
+                    debug_assert!(!restricted_wire_ids.contains(&wire.id()));
+                    restricted_wire_ids.insert(wire.id());
                 }
 
-                prvt_stack.push(var);
+                prvt.insert(var);
             }
 
             // Check that temporaries are uncoupled and restrict them
-            local_stack.reserve(module.local.len());
+            local.reserve(module.local.len());
             for tmp in module.local {
                 // visit every local no more than once, and raise otherwise
-                if used_wires.contains(&tmp) {
+                if used.contains(&tmp) {
                     return Err(format!("Local wire {} is coupled", tmp.id()));
                 }
-                debug_assert!(!restricted_wires.contains(&tmp.id()));
-                restricted_wires.insert(tmp.id());
+                debug_assert!(!restricted_wire_ids.contains(&tmp.id()));
+                restricted_wire_ids.insert(tmp.id());
 
-                local_stack.push(tmp);
+                local.push(tmp);
             }
 
             //============================================================
@@ -584,45 +578,44 @@ where
             //============================================================
             for var in module.extl {
                 for wire in var.wires() {
-                    debug_assert!(!restricted_wires.contains(&wire.id()));
+                    debug_assert!(!restricted_wire_ids.contains(&wire.id()));
                 }
 
                 // external variables stay external only if they are not
                 // deemed controlled by modules visited before
-                if !intf_prior_hiding.contains(&var.id()) {
-                    extl_set.insert(var);
+                if !ctrl.contains(&var) {
+                    extl.insert(var);
                 }
             }
 
-            intf_stack.reserve(module.intf.len());
             for var in module.intf {
                 for wire in var.wires() {
-                    debug_assert!(!restricted_wires.contains(&wire.id()));
+                    debug_assert!(!restricted_wire_ids.contains(&wire.id()));
                 }
 
                 // interface variables necessarily leave the set of variables
                 // deemed external by modules visited before
-                extl_set.remove(&var);
+                extl.remove(&var);
 
-                if !intf_prior_hiding.insert(var.id()) {
+                if ctrl.contains(&var) {
                     return Err(format!("Interface var {:?} is doubly controlled", var));
                 }
 
-                if !prvt_stack.contains(&var) {
-                    intf_stack.push(var);
+                if !prvt.contains(&var) {
+                    intf.insert(var);
                 }
             }
 
-            ctrl_stack.extend(module.ctrl);
-            used_wires.extend(module.used);
+            ctrl.extend(module.ctrl);
+            used.extend(module.used);
 
             //============================================================
             // Populate await graph
             //============================================================
             for this_atom in module.atoms {
-                let this_idx = atoms_stack.len();
+                let this_idx = atoms_pre_ordering.len();
                 let mut this_adj = Vec::new();
-                for (other_idx, other_atom) in atoms_stack.iter().enumerate() {
+                for (other_idx, other_atom) in atoms_pre_ordering.iter().enumerate() {
                     if this_atom.awaits(other_atom) {
                         await_graph[other_idx].push(this_idx);
                     }
@@ -630,7 +623,7 @@ where
                         this_adj.push(other_idx);
                     }
                 }
-                atoms_stack.push(this_atom);
+                atoms_pre_ordering.push(this_atom);
                 await_graph.push(this_adj);
             }
         }
@@ -639,22 +632,11 @@ where
         // Check that no hidden variables are externals
         //============================================================
 
-        for var in prvt_stack.iter() {
-            if extl_set.contains(var) {
+        for var in prvt.iter() {
+            if extl.contains(var) {
                 return Err(format!("Hiding uncontrolled var {:?}", var));
             }
         }
-
-        //============================================================
-        // Reorder interfaces
-        //============================================================
-
-        // post-reordering for efficient memory reservation above
-        intf_stack.sort_unstable();
-        ctrl_stack.sort_unstable();
-        obs_stack.sort_unstable();
-        prvt_stack.sort_unstable();
-        local_stack.sort_unstable();
 
         //============================================================
         // Reorder atoms
@@ -665,29 +647,23 @@ where
 
         let mut atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(await_graph.len());
         for idx in await_order {
-            atoms.push(std::mem::take(&mut atoms_stack[idx]));
+            atoms.push(std::mem::take(&mut atoms_pre_ordering[idx]));
         }
 
         //============================================================
         // Collect and construct
         //============================================================
 
-        let extl = Interface::from_exact_iter_unchecked(extl_set);
-        let intf = Interface::from_exact_iter_unchecked(intf_stack);
-        let prvt = Interface::from_exact_iter_unchecked(prvt_stack);
-        let obs = Interface::from_exact_iter_unchecked(obs_stack);
-        let ctrl = Interface::from_exact_iter_unchecked(ctrl_stack);
-        let used = used_wires.into_iter().collect();
+        let extl = Interface::from_exact_iter_unchecked(extl);
+        let intf = Interface::from_exact_iter_unchecked(intf);
+        let prvt = Interface::from_exact_iter_unchecked(prvt);
+        let obs = Interface::from_exact_iter_unchecked(obs);
+        let ctrl = Interface::from_exact_iter_unchecked(ctrl);
+        let used = used.into_iter().collect();
+        local.sort_unstable();
 
         Ok(Module::new_unchecked(
-            extl,
-            intf,
-            prvt,
-            obs,
-            ctrl,
-            atoms,
-            used,
-            local_stack,
+            extl, intf, prvt, obs, ctrl, atoms, used, local,
         ))
     }
 }
