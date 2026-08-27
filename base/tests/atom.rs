@@ -360,7 +360,18 @@ fn undeclared_vars() {
         term!(mk_op("ID"), [X(x)], [X(v)]).unwrap(),
     ];
     let a1 = Atom::sequential(&[x], init, update);
-    assert!(a1.is_err(), "a1 writes `v` without declaring it");
+    assert!(a1.is_ok());
+
+    let y = Var::new("real");
+    let update = [
+        term!(mk_op("C1"), [X(v)]).unwrap(),
+        term!(mk_op("C1"), [X(y)], [X(v)]).unwrap(),
+    ];
+    let a2 = Atom::jump(&[y], update);
+    assert!(a2.is_ok());
+
+    let m = Module::observable([a1.unwrap(), a2.unwrap()]);
+    assert!(m.is_err());
 }
 
 #[test]
