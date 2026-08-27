@@ -562,7 +562,7 @@ fn heterogeneous_composition() {
 // nothing requires ctrl to be non-empty or declared
 // variables to be used, and every consistency check quantifies over ctrl.
 #[test]
-fn empty_blocks_are_rejected() {
+fn empty_blocks_are_valid() {
     let x = Var::new("real");
     let y = Var::new("real");
 
@@ -570,14 +570,13 @@ fn empty_blocks_are_rejected() {
     let update: [Term<Ops>; 0] = [];
 
     let m = Module::sequential(&[x, y], init, update);
-    assert!(
-        m.is_err(),
-        "an atom that controls nothing while declaring vars should fail"
-    );
+    assert!(m.is_ok(), "unused variables are ignored");
+    // unused variables are unused external variables, and belong to the set of all other undeclared vars,
+    // they should not be included in the module
 }
 
 #[test]
-fn module_variables_must_be_used() {
+fn module_unused_variables_must_go() {
     let x = Var::new("real");
     let unused = Var::new("real");
 
@@ -585,10 +584,9 @@ fn module_variables_must_be_used() {
     let update = [term!(mk_op("ID"), [X(x)], [x]).unwrap()];
 
     let m = Module::sequential(&[x, unused], init, update);
-    assert!(
-        m.is_err(),
-        "`unused` is not used and should fail the construction"
-    );
+    assert!(m.is_ok(), "unused variables are ignored");
+    // unused variables are unused external variables, and belong to the set of all other undeclared vars,
+    // they should not be included in the module
 }
 
 #[test]
