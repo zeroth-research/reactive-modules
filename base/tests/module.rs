@@ -447,6 +447,100 @@ impl fmt::Display for SeqOps {
     }
 }
 
+/// The visibility sets of a constructed module, compared against the exact
+/// expected variables:
+///
+/// ```text
+///     M: x' = p, p' = e   (controls x and p, reads external e)
+/// ```
+///
+/// The read-only `e` must land in `extl` and not in `intf`; the controlled
+/// `x` and `p` in `intf`; and the derived sets must be exactly
+/// `obs = extl U intf` and `ctrl = intf U prvt` (interfaces are ordered by
+/// variable creation). Exact comparison guards the inference against future
+/// regressions — a leaked, dropped, or misclassified variable fails here.
+#[test]
+fn constructor_interfaces_are_exact() {
+    let x = &Var::new("real");
+    let p = &Var::new("real");
+    let e = &Var::new("real");
+
+    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
+    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let m = Module::sequential([x, p, e], [init], [update]).unwrap();
+
+    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    assert_eq!(ids(m.extl()), vec![e.id()]);
+    assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
+    assert_eq!(ids(m.prvt()), Vec::<usize>::new());
+    assert_eq!(ids(m.obs()), vec![x.id(), p.id(), e.id()]);
+    assert_eq!(ids(m.ctrl()), vec![x.id(), p.id()]);
+}
+
+/// Hiding must move the hidden variable exactly: `p` leaves `intf` and `obs`
+/// and enters `prvt`, while staying in `ctrl`; every other set is untouched.
+#[test]
+fn hiding_interfaces_are_exact() {
+    let x = &Var::new("real");
+    let p = &Var::new("real");
+    let e = &Var::new("real");
+
+    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
+    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let m = Module::sequential([x, p, e], [init], [update])
+        .unwrap()
+        .hide(|v| v == p)
+        .unwrap();
+
+    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    assert_eq!(ids(m.extl()), vec![e.id()]);
+    assert_eq!(ids(m.intf()), vec![x.id()]);
+    assert_eq!(ids(m.prvt()), vec![p.id()]);
+    assert_eq!(ids(m.obs()), vec![x.id(), e.id()]);
+    assert_eq!(ids(m.ctrl()), vec![x.id(), p.id()]);
+}
+
+/// A variable presented twice in the scope iterable must not duplicate any
+/// interface entry: the module equals the one built from the plain scope.
+#[test]
+fn duplicate_scope_variable_is_collapsed() {
+    let x = &Var::new("real");
+    let p = &Var::new("real");
+    let e = &Var::new("real");
+
+    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
+    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let m = Module::sequential([x, p, e, x, e], [init], [update]).unwrap();
+
+    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    assert_eq!(ids(m.extl()), vec![e.id()]);
+    assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
+    assert_eq!(ids(m.prvt()), Vec::<usize>::new());
+    assert_eq!(ids(m.obs()), vec![x.id(), p.id(), e.id()]);
+    assert_eq!(ids(m.ctrl()), vec![x.id(), p.id()]);
+}
+
+/// A scope variable used by no term must not leak into any visibility set:
+/// the interfaces are inferred from the terms, not from the scope.
+#[test]
+fn unused_scope_variable_does_not_leak() {
+    let x = &Var::new("real");
+    let p = &Var::new("real");
+    let e = &Var::new("real");
+    let unused = &Var::new("real");
+
+    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
+    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let m = Module::sequential([x, p, e, unused], [init], [update]).unwrap();
+
+    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    assert_eq!(ids(m.extl()), vec![e.id()]);
+    assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
+    assert_eq!(ids(m.prvt()), Vec::<usize>::new());
+    assert_eq!(ids(m.obs()), vec![x.id(), p.id(), e.id()]);
+    assert_eq!(ids(m.ctrl()), vec![x.id(), p.id()]);
+}
+
 #[test]
 #[allow(non_snake_case)]
 fn heterogeneous_composition() {
