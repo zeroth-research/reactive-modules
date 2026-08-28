@@ -15,7 +15,7 @@ env:
 # the uv env (so torch is on the build path) and set the per-OS dynamic-linker vars
 # needed to run the torch-linked test binaries.
 jobs:
-  rustfmt:
+  rs-fmt:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +28,7 @@ jobs:
         uses: extractions/setup-just@v2
       - run: just rs-fmt
 
-  clippy:
+  rs-clippy:
     runs-on: ubuntu-latest
 
     steps:
@@ -49,7 +49,7 @@ jobs:
         run: uv sync
       - run: just rs-clippy
 
-  build-and-test:
+  rs-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -68,12 +68,12 @@ jobs:
       - name: Sync python env (installs torch for torch-sys)
         run: uv sync
       - name: Build (all targets, all features)
-        run: just build
+        run: just rs-build-all
       - name: Run Rust tests (incl. doctests)
         run: just rs-test
 
 
-  python-tests:
+  py-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -92,7 +92,7 @@ jobs:
       - name: Run Python tests (builds the extension via maturin)
         run: just py-test
 
-  notebooks:
+  nb-strip:
     runs-on: ubuntu-latest
 
     steps:
