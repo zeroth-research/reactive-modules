@@ -226,7 +226,10 @@ where
     }
     // the sort comes from the write wire; validate the tensor's kind matches it
     let [i, j] = match next_with_degree(&mut write, 0)? {
-        (Sort::Real([i, j]), _) => {
+        (Sort::Real([i, j]), degree) => {
+            if degree != 0 {
+                return Err("Cannot derive a real. Use ZERO to apply a no change".to_string());
+            }
             if cm.is_bool() {
                 return Err("Const: write wire is Real but initializer is a boolean tensor".into());
             }
@@ -625,6 +628,19 @@ mod tests {
             LRA::Real(cm)
                 .check([].map(deg0), [real(2, 2)].map(deg0))
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn const_real_covector_write_fails() {
+        // a real constant writes a value (0-form), never a derivative:
+        // a covector (1-form) write wire must be rejected
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64]]).into();
+        let deg1 = |s: Sort| Ok::<_, String>((s, 1));
+        assert!(
+            LRA::Real(cm)
+                .check([].map(deg0), [real(1, 1)].map(deg1))
+                .is_err()
         );
     }
 

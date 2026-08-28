@@ -141,7 +141,7 @@ def _stateful_blocks():
     p = Var(Real([1, 1]))
     init = [Term(LRA.Real(zero), [X(x)]), Term(LRA.Real(zero), [X(p)])]
     update = [Term(LRA.Id(), [X(x)], [x]), Term(LRA.Id(), [X(p)], [p])]
-    delay = [Term(LRA.Real(zero), [d(x)]), Term(LRA.Real(zero), [d(p)])]
+    delay = [Term(LRA.RealZerograd([1, 1]), [d(x)]), Term(LRA.RealZerograd([1, 1]), [d(p)])]
     return x, p, init, update, delay
 
 
@@ -451,7 +451,7 @@ def test_heterogeneous_composition():
     P = Module.sequential([x], init, update)
 
     init = [Term(LRA.Real(zero), [X(y)])]
-    flow = [Term(LRA.Real(zero), [d(y)])]
+    flow = [Term(LRA.RealZerograd([1, 1]), [d(y)])]
     Q = Module.differential([y], init, flow)
 
     comb = [Term(LRA.Add(), [X(z)], [X(x), X(y)])]
