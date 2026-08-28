@@ -11,5 +11,7 @@ target
 *.lock
 !Cargo.lock
 !uv.lock
+# the root uv.lock is canonical: the repo is a uv workspace with `python` a member
+python/uv.lock
 __pycache__/
 .ipynb_checkpoints/

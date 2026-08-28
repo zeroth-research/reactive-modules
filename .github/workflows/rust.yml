@@ -26,7 +26,7 @@ jobs:
           components: rustfmt
       - name: Install just
         uses: extractions/setup-just@v2
-      - run: just fmt
+      - run: just rs-fmt
 
   clippy:
     runs-on: ubuntu-latest
@@ -47,7 +47,7 @@ jobs:
         uses: extractions/setup-just@v2
       - name: Sync python env (installs torch for torch-sys)
         run: uv sync
-      - run: just clippy
+      - run: just rs-clippy
 
   build-and-test:
     runs-on: ubuntu-latest
@@ -68,9 +68,9 @@ jobs:
       - name: Sync python env (installs torch for torch-sys)
         run: uv sync
       - name: Build (all targets, all features)
-        run: just build-all
+        run: just build
       - name: Run Rust tests (incl. doctests)
-        run: just test-rust
+        run: just rs-test
 
 
   python-tests:
@@ -90,7 +90,7 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
       - name: Run Python tests (builds the extension via maturin)
-        run: just test-python
+        run: just py-test
 
   notebooks:
     runs-on: ubuntu-latest
@@ -102,5 +102,5 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
       - name: Check tutorials carry no bulky generated outputs
-        run: just strip-notebooks-check
+        run: just nb-strip
 

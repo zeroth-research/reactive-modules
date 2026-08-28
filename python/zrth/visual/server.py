@@ -6,6 +6,7 @@ Usage:
     show(module, poll=0.5) # custom poll interval in seconds
 """
 import json
+import os
 import socket
 import threading
 import webbrowser
@@ -81,7 +82,9 @@ def show(module, names=None, poll=0.5, open_browser=True):
                names (str); a Var names its latched wire and, primed, its
                next wire. If None, circles show no labels (topology only).
         poll: Interval in seconds between state pushes.
-        open_browser: Whether to open the browser automatically.
+        open_browser: Whether to open the browser automatically. Overridden
+               by the ZRTH_NO_BROWSER environment variable (for headless
+               runs, e.g. executing the notebooks as tests).
 
     Returns:
         A stop function that shuts down the server.
@@ -138,7 +141,7 @@ def show(module, names=None, poll=0.5, open_browser=True):
     threading.Thread(target=run_ws, daemon=True).start()
 
     url = f"http://127.0.0.1:{http_port}"
-    if open_browser:
+    if open_browser and not os.environ.get("ZRTH_NO_BROWSER"):
         webbrowser.open(url)
     print(f"Module viewer running at {url} (ws://127.0.0.1:{ws_port})")
 

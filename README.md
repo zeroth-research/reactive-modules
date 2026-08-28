@@ -54,13 +54,13 @@ The following command builds the project including the Python interface,
 sets up the virtual environment and installs all required Python packages:
 
 ```sh
-just rebuild-python
+just py-rebuild
 ```
 
 Any later build of the `python` crate can be done using
 
 ```sh
-just build-python
+just py-build
 ```
 
 ## Project structure
@@ -77,9 +77,9 @@ For details on each crate see its own README.
 
 ## Running tests
 
-After building the project, you can run tests of the Rust code using `just test`.
-Tests of the Python interface can be run by `just test-python`.
-You can run all test with the command `just test-all`.
+After building the project, you can run tests of the Rust code using `just rs-test`.
+Tests of the Python interface can be run by `just py-test`.
+You can run all tests with the command `just test`.
 
 ### Running individual tests
 
@@ -88,7 +88,7 @@ You can use `cargo test -- --exact module::test` to run a single test with fully
 
 To run a concrete Python test, go to the `python` crate and run `uv run pytest file.py::test-name`,
 e.g., `uv run pytest tests/test_base.py::test_term_new`.
-Alternatively, you can use `just pytest [file::test]` from anywhere in the project
+Alternatively, you can use `just py-test [file::test]` from anywhere in the project
 to run all or any concrete test.
 
 ## Advanced building
@@ -98,11 +98,11 @@ to run all or any concrete test.
 You can build all targets, including the Python interfaces, with all features using the command
 
 ```sh
-just build-all
+just build
 ```
 
-Note that for successfully running `build-all`, the environment for the python crate needs to be set up first
-(e.g., by running `just rebuild-python` before).
+Note that for successfully running `build`, the environment for the python crate needs to be set up first
+(e.g., by running `just py-rebuild` before).
 
 ### Building without `just` and `uv`
 
