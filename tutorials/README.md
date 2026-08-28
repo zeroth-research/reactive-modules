@@ -22,13 +22,13 @@ Worked examples that model a C program as a `sugar.Module`, load a ranking funct
 Run
 
 ```
-just build-tutorials
+just nb-build
 ```
 
 Or simply
 
 ```
-just tutorials
+just nb-run
 ```
 
 which will do the necessary setup and run jupyter notebook automatically.

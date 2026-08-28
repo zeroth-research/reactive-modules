@@ -2,20 +2,20 @@
 
 ## Setup
 
-Install [uv](https://github.com/astral-sh/uv) and run `just rebuild-python`
-(if this is the first time) or `just build-python` (any other time).
+Install [uv](https://github.com/astral-sh/uv) and run `just py-rebuild`
+(if this is the first time) or `just py-build` (any other time).
 
 ## Testing
 
 To run Python tests after the Python interface has been built,
-run `just test-python`.
+run `just py-test`.
 To run a concrete Python test, go to the `python` crate and run `uv run pytest file.py::test-name`,
 e.g., `uv run pytest tests/test_base.py::test_term_new`.
-Alternatively, you can use `just pytest [file::test]` from anywhere in the project
+Alternatively, you can use `just py-test [file::test]` from anywhere in the project
 to run all or any concrete test.
 
 If you need to see the output of the test, use the `-s` option with pytest commands,
-e.g., `just pytest tests/test_analyzer.py -s`.
+e.g., `just py-test tests/test_analyzer.py -s`.
 In case a test fails and you need to attach the debugger, use `--pdb` flag with pytest.
 
 ## Building without `just` and `uv`
