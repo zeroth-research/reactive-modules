@@ -1,7 +1,7 @@
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
-use crate::{Theory, bv, lia, lra};
+use crate::{Signature, bv, lia, lra};
 use crate::{check_havoc, check_skip, check_zero};
 use derive_more::From;
 #[cfg(feature = "pyo3")]
@@ -213,7 +213,7 @@ impl crate::Differential for Differential {
     }
 }
 
-impl Theory for Any {
+impl Signature for Any {
     type Sort = Sort;
     const NAME: &'static str = "Any";
 
@@ -248,7 +248,7 @@ where
     })
 }
 
-impl Theory for Sequential {
+impl Signature for Sequential {
     type Sort = Sort;
     const NAME: &'static str = "Sequential";
 
@@ -267,7 +267,7 @@ impl Theory for Sequential {
     }
 }
 
-impl Theory for Combinatorial {
+impl Signature for Combinatorial {
     type Sort = Sort;
     const NAME: &'static str = "Combinatorial";
 
@@ -287,7 +287,7 @@ impl Theory for Combinatorial {
     }
 }
 
-impl Theory for Differential {
+impl Signature for Differential {
     type Sort = Sort;
     const NAME: &'static str = "Differential";
 

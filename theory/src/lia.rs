@@ -20,13 +20,13 @@ operations in [`LIA`] are:
   `B` constant integer matrices of compatible shapes.
 - [`LIA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
 
-`LIA` implements [`Theory`]; [`Theory::check`] validates read/write
+`LIA` implements [`Signature`]; [`Signature::check`] validates read/write
 shapes against the selected operation.
 
 ## Examples
 
 ```
-use theory::Theory;
+use theory::Signature;
 use theory::lia::{LIA, Sort};
 
 // Wires carry a sort and a degree; ordinary operands are degree 0.
@@ -136,7 +136,7 @@ impl Combinatorial for LIA {
     }
 }
 
-impl Theory for LIA {
+impl Signature for LIA {
     type Sort = Sort;
     const NAME: &'static str = "LIA";
 

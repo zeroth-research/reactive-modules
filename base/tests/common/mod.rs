@@ -8,13 +8,13 @@ use base::wire::Wire;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential, Signature};
 
 #[derive(Clone, Debug)]
 #[allow(unused)]
 pub struct Ops(pub &'static str);
 
-impl Theory for Ops {
+impl Signature for Ops {
     type Sort = &'static str;
     const NAME: &'static str = "Ops";
 

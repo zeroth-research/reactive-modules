@@ -7,7 +7,7 @@ pub mod tensor;
 use std::fmt;
 use std::fmt::Debug;
 pub use tensor::PyTensor;
-pub trait Theory {
+pub trait Signature {
     type Sort;
 
     const NAME: &'static str;
@@ -18,17 +18,17 @@ pub trait Theory {
         W: IntoIterator<Item = Result<(Self::Sort, u8), E>>;
 }
 
-pub trait Combinatorial: Theory {
+pub trait Combinatorial: Signature {
     // Returns the unary itype that chooses an element within the range
     fn havoc(range: &Self::Sort) -> Self;
 }
 
-pub trait Sequential: Theory {
+pub trait Sequential: Signature {
     // Returns the unary itype that copies a value within the range
     fn skip(range: &Self::Sort) -> Self;
 }
 
-pub trait Differential: Theory {
+pub trait Differential: Signature {
     // Returns the unary itype that indicates zero derivative
     fn zero(range: &Self::Sort) -> Self;
 }

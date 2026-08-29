@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug};
 use std::vec;
-use theory::{Combinatorial, Differential, Sequential, Theory, any};
+use theory::{Combinatorial, Differential, Sequential, Signature, any};
 
 //============================================================
 // Term
@@ -18,7 +18,7 @@ use theory::{Combinatorial, Differential, Sequential, Theory, any};
 /// and it references the input/output edges (read/write wires).
 /// [`Interface`](crate::var::Interface)s are essentially single static assignments.
 #[derive(Debug, Clone)]
-pub struct Term<T: Theory> {
+pub struct Term<T: Signature> {
     /// The instruction to be executed by this node.
     itype: T,
     /// The outputs of this term.
@@ -27,7 +27,7 @@ pub struct Term<T: Theory> {
     read: Vec<Wire<T::Sort>>,
 }
 
-impl<T: Theory> Term<T> {
+impl<T: Signature> Term<T> {
     fn new_unchecked(itype: T, write: Vec<Wire<T::Sort>>, read: Vec<Wire<T::Sort>>) -> Self {
         Self { itype, write, read }
     }
@@ -51,7 +51,7 @@ impl<T: Theory> Term<T> {
 
 impl<T> Term<T>
 where
-    T: Theory,
+    T: Signature,
     T::Sort: Clone,
 {
     pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, String>
@@ -99,7 +99,7 @@ where
 // Cast operators
 //============================================================
 
-impl<T: Theory> Term<T> {
+impl<T: Signature> Term<T> {
     /// Re-types a term along an infallible theory embedding (`U: Into<T>`).
     ///
     /// Only the instruction is converted; the wires are untouched, so a term
@@ -107,7 +107,7 @@ impl<T: Theory> Term<T> {
     /// re-validation is needed.
     fn convert<U>(term: Term<U>) -> Self
     where
-        U: Theory<Sort = T::Sort> + Into<T>,
+        U: Signature<Sort = T::Sort> + Into<T>,
     {
         Self::new_unchecked(term.itype.into(), term.write, term.read)
     }
@@ -120,7 +120,7 @@ impl<T: Theory> Term<T> {
     /// re-validation is needed.
     fn try_convert<U, E>(term: Term<U>) -> Result<Self, E>
     where
-        U: Theory<Sort = T::Sort> + TryInto<T, Error = E>,
+        U: Signature<Sort = T::Sort> + TryInto<T, Error = E>,
     {
         let itype = term.itype.try_into()?;
         Ok(Self::new_unchecked(itype, term.write, term.read))
@@ -172,16 +172,16 @@ impl TryFrom<Term<any::Any>> for Term<any::Differential> {
 
 pub struct Display<'a, T, N>
 where
-    T: Theory + 'a,
+    T: Signature + 'a,
     N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
 {
     term: &'a Term<T>,
     name: N,
 }
 
-impl<'a, T: Theory + 'a, N> Display<'a, T, N>
+impl<'a, T: Signature + 'a, N> Display<'a, T, N>
 where
-    T: Theory + 'a,
+    T: Signature + 'a,
     N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
 {
     fn fmt_tuple<I>(&self, f: &mut fmt::Formatter<'_>, iter: I) -> fmt::Result
@@ -214,7 +214,7 @@ where
 
 impl<'a, T, N> fmt::Display for Display<'a, T, N>
 where
-    T: Theory + 'a + fmt::Display,
+    T: Signature + 'a + fmt::Display,
     N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -230,7 +230,7 @@ where
 
 impl<T> Term<T>
 where
-    T: Theory + fmt::Display,
+    T: Signature + fmt::Display,
 {
     /// Displays the term with wires under the names the given function
     /// assigns. Covariance lets `'a` shrink to a caller-local buffer: the
@@ -260,13 +260,13 @@ where
 //============================================================
 
 #[derive(Debug, Clone)]
-pub struct Block<T: Theory> {
+pub struct Block<T: Signature> {
     terms: Vec<Term<T>>,
     read: Vec<Wire<T::Sort>>,
     write: Vec<Wire<T::Sort>>,
 }
 
-impl<T: Theory> Block<T> {
+impl<T: Signature> Block<T> {
     pub fn iter(&self) -> impl Iterator<Item = &Term<T>> {
         self.terms.iter()
     }
@@ -310,7 +310,7 @@ impl<T: Theory> Block<T> {
     }
 }
 
-impl<'a, T: Theory> IntoIterator for &'a Block<T> {
+impl<'a, T: Signature> IntoIterator for &'a Block<T> {
     type Item = &'a Term<T>;
     type IntoIter = std::slice::Iter<'a, Term<T>>;
 
@@ -319,7 +319,7 @@ impl<'a, T: Theory> IntoIterator for &'a Block<T> {
     }
 }
 
-impl<T: Theory> IntoIterator for Block<T> {
+impl<T: Signature> IntoIterator for Block<T> {
     type Item = Term<T>;
     type IntoIter = vec::IntoIter<Term<T>>;
 
@@ -328,7 +328,7 @@ impl<T: Theory> IntoIterator for Block<T> {
     }
 }
 
-impl<T: Theory> Block<T>
+impl<T: Signature> Block<T>
 where
     T::Sort: Clone + Debug,
 {
@@ -342,7 +342,7 @@ where
     /// model — so that `Ok` needs no annotation at infallible call sites.
     pub(crate) fn try_from_iter<U, V>(iter: V) -> Result<Self, String>
     where
-        U: Theory<Sort = T::Sort> + Into<T>,
+        U: Signature<Sort = T::Sort> + Into<T>,
         V: IntoIterator<Item = Result<Term<U>, String>>,
     {
         let mut read: BTreeSet<Wire<T::Sort>> = BTreeSet::new();
@@ -377,7 +377,7 @@ where
 
     pub(crate) fn convert<U>(block: Block<U>) -> Self
     where
-        U: Theory<Sort = T::Sort> + Into<T>,
+        U: Signature<Sort = T::Sort> + Into<T>,
     {
         Block {
             terms: block.terms.into_iter().map(Term::convert).collect(),

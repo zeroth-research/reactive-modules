@@ -8,7 +8,7 @@ use base::var::{Var, X, d};
 use base::wire::Wire;
 use common::{Atom, Module, Ops, example_counter, example_peterson1, example_tiny1, mk_op};
 use std::fmt;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential, Signature};
 
 #[test]
 fn can_instantiate_partially_observable_module() {
@@ -395,7 +395,7 @@ struct SeqOps(&'static str);
 #[derive(Clone, Copy)]
 struct DifOps(&'static str);
 
-impl Theory for SeqOps {
+impl Signature for SeqOps {
     type Sort = &'static str;
     const NAME: &'static str = "SeqOps";
     fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
@@ -407,7 +407,7 @@ impl Theory for SeqOps {
     }
 }
 
-impl Theory for DifOps {
+impl Signature for DifOps {
     type Sort = &'static str;
     const NAME: &'static str = "DifOps";
     fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>

@@ -16,13 +16,13 @@ in [`BV`] are:
 - [`BV::MatMul`] — matrix multiplication: `(m,k) × (k,n) → (m,n)`, with
   the inner dimensions required to agree.
 
-`BV<N>` implements [`Theory`], so [`Theory::check`] type-checks terms by
+`BV<N>` implements [`Signature`], so [`Signature::check`] type-checks terms by
 validating read/write argument shapes against the operation.
 
 ## Examples
 
 ```
-use theory::Theory;
+use theory::Signature;
 use theory::bv::{BV, Sort};
 
 // 8-bit bit-vectors.
@@ -78,7 +78,7 @@ impl fmt::Display for Sort {
     }
 }
 
-/// Theory of bitvector matrices. Operations on bitvectors follow the SMT-LIB2 semantics.
+/// Signature of bitvector matrices. Operations on bitvectors follow the SMT-LIB2 semantics.
 #[derive(Clone, Debug, strum::Display)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum BV {
@@ -211,7 +211,7 @@ fn check_init_dims(cm: &crate::PyTensor, bw: usize, i: usize, j: usize) -> Resul
     Ok(())
 }
 
-impl Theory for BV {
+impl Signature for BV {
     type Sort = Sort;
     const NAME: &'static str = "BV";
 

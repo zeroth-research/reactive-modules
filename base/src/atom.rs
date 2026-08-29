@@ -4,7 +4,7 @@ use crate::wire::Wire;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential, Signature};
 
 use crate::var::{Interface, Var};
 #[cfg(debug_assertions)]
@@ -17,7 +17,7 @@ use std::fmt::Debug;
 
 /// This data structure corresponds to the atom of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Atom<I, J, F, S = <I as Theory>::Sort>
+pub struct Atom<I, J, F, S = <I as Signature>::Sort>
 where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
@@ -282,7 +282,7 @@ impl<'a, S> WireMap<'a, S> {
 
 fn infer_ctrl<T, S: Clone>(block: &Block<T>, pool: &HashMap<&Wire<S>, &Var<S>>) -> BTreeSet<Var<S>>
 where
-    T: Theory<Sort = S>,
+    T: Signature<Sort = S>,
 {
     // tree map on id is used to guarantee consistent order
     let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
@@ -817,7 +817,7 @@ where
     /// - [`Module::combinatorial`], for combinatorial modules.
     pub fn combinatorial<'a, T, V, W>(vars: V, assign: W) -> Result<Self, String>
     where
-        T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
+        T: Signature<Sort = S> + Into<I> + Into<J> + Clone,
         V: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<T>>,
         S: 'a,
@@ -893,7 +893,7 @@ where
         }
     }
 
-    fn fmt_terms<T: 'a + Theory<Sort = S> + fmt::Display, U: Iterator<Item = &'a Term<T>>>(
+    fn fmt_terms<T: 'a + Signature<Sort = S> + fmt::Display, U: Iterator<Item = &'a Term<T>>>(
         &self,
         f: &mut fmt::Formatter<'_>,
         iter: U,
@@ -1269,7 +1269,7 @@ where
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
     pub fn combinatorial<'a, T, V, W>(vars: V, assign: W) -> Result<Self, String>
     where
-        T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
+        T: Signature<Sort = S> + Into<I> + Into<J> + Clone,
         V: IntoIterator<Item = &'a Var<S>>,
         W: IntoIterator<Item = Term<T>>,
         S: 'a,

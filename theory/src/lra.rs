@@ -20,13 +20,13 @@ operations in [`LRA`] are:
   `B` constant integer matrices of compatible shapes.
 - [`LRA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
 
-`RLA` implements [`Theory`]; [`Theory::check`] validates read/write
+`RLA` implements [`Signature`]; [`Signature::check`] validates read/write
 shapes against the selected operation.
 
 ## Examples
 
 ```
-use theory::Theory;
+use theory::Signature;
 use theory::lra::{LRA, Sort};
 
 // Wires carry a sort and a degree; ordinary operands are degree 0.
@@ -148,7 +148,7 @@ impl Differential for LRA {
     }
 }
 
-impl Theory for LRA {
+impl Signature for LRA {
     type Sort = Sort;
     const NAME: &'static str = "LRA";
 
