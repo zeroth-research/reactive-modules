@@ -314,6 +314,49 @@ carry both distinctions, causality is enforced structurally (declared
 waits, await acyclicity, feedback only through the register realized by
 `bind`), never through the types of `flow`.
 
+### The temporal bi-bundle: X and d as two tangent structures
+
+`X` is a tangent too — the discrete one. *Change actions / difference
+categories* (Alvarez-Picallo–Ong; Alvarez-Picallo–Lemay) are the discrete
+counterpart of tangent categories: the bundle is `M × ΔM`, a morphism's
+derivative maps changes to changes. Reactive modules instantiate them with
+the **overwrite change action**: the change to a variable *is* its next
+value, so `ΔM = M` — which is exactly why "X is not a sort former": the
+sort-action of the difference structure is trivial, where the tangent's
+(`T`, rank + 1) is not. Both clauses are the sort-actions of two bundle
+structures, one trivial, one graded.
+
+Consequences, each a semantic reading of an existing construct:
+
+- **A `Var` denotes a point of a bi-bundle** with three coordinates: the
+  base `v`, the discrete fiber `X(v)` (sort `S`), the continuous fiber
+  `d(v)` (sort `T(S)`). Atom boundaries are monomials over these bundle
+  components.
+- **An atom is a point and two fields**: init picks a point; update is a
+  *difference field* (base ⊗ awaited Δ-fibers → own Δ-fibers); delay is a
+  *vector field* (base → own T-fibers) — with the section law `p ∘ X = id`
+  holding *by construction*, since each fiber wire is attached to its
+  variable. The stochastic reading (update = jump part, delay = drift
+  part, init = initial distribution) is this structure seen through a
+  jump-diffusion generator.
+- **Awaiting `w` is reading `w`'s Δ-fiber** — a coordinate another atom
+  writes in the same round. The await DAG is the causal well-foundedness
+  order on fiber writes, not a scheduling artifact: fibers are written
+  before read within a round, bases carry over from the previous one.
+- **`skip` and `zero` are the same map in two bundles** — the zero
+  sections (`X(v) = v` is zero change; `d(v) = 0` is zero rate) — and
+  `havoc` is an arbitrary point. The structural-generator trio was this
+  symmetry all along.
+
+Implementation target this licenses: `Sequential` and `Differential`
+unify into two instances of *one* parametric bundle-signature notion
+(source signature, target universe, sort map, zero section) — the
+Δ-instance with target = source and identity sort map, the T-instance
+with the tangent target. One recorded asymmetry: update reads *other*
+variables' Δ-fibers (awaits), while delay reads only bases — whether
+vector fields may read foreign T-fibers is the DAE question, now stated
+in bundle terms.
+
 ## Naming record
 
 Settled: **`Op`** replaces `Term` (and the interim `Box`); the composite
@@ -392,6 +435,9 @@ Recorded as leads, not claims:
   modules-as-ops and the hybrid (delay) dimension.
 - **Tangent categories** (Rosický, Cockett–Cruttwell): the sort-level `T`
   as tangent functor; discrete objects = trivial tangents.
+- **Change actions / difference categories** (Alvarez-Picallo–Ong,
+  Alvarez-Picallo–Lemay): the discrete tangent structure behind `X` — see
+  "The temporal bi-bundle"; overwrite change action `ΔM = M`.
 
 ## The stack
 
