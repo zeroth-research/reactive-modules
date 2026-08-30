@@ -174,6 +174,73 @@ survives as `T` on sorts; `X` survives as the register semantics inside
 `bind`. The python surface keeps `X(x)`/`d(x)` as sugar that sorts entries
 into the right list.
 
+### The sugar constructors, by example
+
+Each atom kind is "which bundle carries nontrivial dynamics"; the sugar
+constructor writes the trivial one for you — the zero section of the other
+bundle. Surface syntax, target vocabulary:
+
+**Sequential — a counter.** Dynamics in Δ; the flow is synthesized:
+
+```python
+x = Var(Real([1, 1]))
+counter = Module.sequential(
+    [x],
+    init   = [Op(LRA.Real(zeros(1, 1)), [X(x)])],       # x' = 0
+    update = [Op(LRA.Linear(I, one),    [X(x)], [x])],  # x' = x + 1
+)
+# synthesized flow: d(x) = 0 — the T zero section (zero_field::<Flow>)
+```
+
+**Differential — exponential decay.** Dynamics in T; the update is
+synthesized:
+
+```python
+x = Var(Real([1, 1]))
+decay = Module.differential(
+    [x],
+    init  = [Op(LRA.Real(x0),     [X(x)])],             # x' = x0
+    delay = [Op(LRA.Drift(-a, 0), [d(x)], [x, dt])],    # dx = -a·x·dt
+)
+# synthesized update: X(x) = x — the Δ zero section (zero_field::<Step>)
+```
+
+**Hybrid — the bouncing ball.** Both fields explicit: continuous fall,
+discrete reflection at the floor.
+
+```python
+p, v = Var(Real([1, 1])), Var(Real([1, 1]))
+ball = Module.hybrid(
+    [p, v],
+    init   = [Op(LRA.Real(p0), [X(p)]), Op(LRA.Real(zeros(1, 1)), [X(v)])],
+    update = [                       # the jump: reflect v at the floor
+        Op(LRA.Le(),  [hit], [p, zero]),           # hit  = p ≤ 0
+        Op(LRA.Ite(), [X(v)], [hit, minus_cv, v]), # v'   = hit ? -c·v : v
+        Op(LRA.Id(),  [X(p)], [p]),                # p'   = p
+    ],
+    delay  = [                       # the flow: free fall
+        Op(LRA.Drift(1, 0), [d(p)], [v, dt]),      # dp = v·dt
+        Op(LRA.Drift(0,-g), [d(v)], [v, dt]),      # dv = -g·dt
+    ],
+)
+```
+
+The examples use **`Drift(A, b)`** — the affine flow generator
+`d(y) = (A·x + b)·dt`, reading a base `x` (rank 0) *and the time form
+`dt`* (rank 1), writing a fiber (rank 1). Note what it is **not**: a
+degree violation. A rate is not a form — `dv = -g` would equate a 1-form
+with a 0-form — and rank checking is *form-degree conservation*: every
+generator conserves degree (products add it), which is exactly why the
+rank-preserving `Linear` rightly refuses to cross. `Drift` conserves
+degree too (0 + 1 = 1); the only primitive source of degree is the **time
+form `dt`** itself — the tautological differential of the clock, either a
+distinguished 1-form the module provides (minted by `bind`) or the
+derivative face of an explicit clock variable (`d(t) = dt`). The same
+graded product (0-form × 1-form → 1-form) is precisely the op
+forward-mode autodiff emits (`∇V(x) · dx`), so one addition serves both.
+LRA has none of this yet — today only `zero` writes 1-forms, so no
+nontrivial flow is expressible; listed under Open items.
+
 ## bind: elaboration
 
 The definition/elaboration split (as in HDLs): everything above is a
@@ -237,7 +304,7 @@ positions. Nothing else in the stack mints an identifier.
 /// On the sort type: sorts closed under the tangent former.
 pub trait Tangent: Sized {
     #[allow(non_snake_case)]
-    fn T(&self) -> Self;
+    fn T(self) -> Self;
 }
 ```
 
@@ -264,8 +331,8 @@ pub enum Sort {
 
 impl Tangent for Sort {
     #[allow(non_snake_case)]
-    fn T(&self) -> Self {
-        match *self {
+    fn T(self) -> Self {
+        match self {
             Sort::Real { shape, rank } => Sort::Real { shape, rank: rank + 1 },
             Sort::Bool(_) => Sort::Zero,
             Sort::Zero => Sort::Zero,
@@ -374,11 +441,11 @@ fields. Toy-scale but every load-bearing decision present.
 pub trait Bundle: Signature {
     type Source: Clone + Eq + Debug;
     /// how a base value appears from the fiber universe (reads)
-    fn embed(s: &Self::Source) -> Self::Sort;
+    fn embed(s: Self::Source) -> Self::Sort;
     /// the fiber over a base sort (writes)
-    fn fiber(s: &Self::Source) -> Self::Sort;
+    fn fiber(s: Self::Source) -> Self::Sort;
     /// the zero section: the field that leaves the variable unchanged
-    fn zero(range: &Self::Sort) -> Self;
+    fn zero(range: Self::Sort) -> Self;
 }
 
 // ---- instance 1: Δ — the overwrite change action (discrete) ----
@@ -386,9 +453,9 @@ pub trait Bundle: Signature {
 // the identity. This IS "X is not a sort former", as an impl.
 impl Bundle for Step {
     type Source = Val;                          // Sort = Val too
-    fn embed(s: &Val) -> Val { s.clone() }
-    fn fiber(s: &Val) -> Val { s.clone() }
-    fn zero(_: &Val) -> Self { Step::Skip }     // zero change: X(v) = v
+    fn embed(s: Val) -> Val { s }
+    fn fiber(s: Val) -> Val { s }
+    fn zero(_: Val) -> Self { Step::Skip }      // zero change: X(v) = v
 }
 
 // ---- instance 2: T — the tangent structure (continuous) ----
@@ -397,11 +464,11 @@ impl Bundle for Step {
 pub enum Tan { Val(Val), TReal([usize; 2]), Zero }
 impl Bundle for Flow {
     type Source = Val;                          // Sort = Tan
-    fn embed(s: &Val) -> Tan { Tan::Val(s.clone()) }
-    fn fiber(s: &Val) -> Tan {
-        match s { Val::Real(sh) => Tan::TReal(*sh), Val::Bool => Tan::Zero }
+    fn embed(s: Val) -> Tan { Tan::Val(s) }
+    fn fiber(s: Val) -> Tan {
+        match s { Val::Real(sh) => Tan::TReal(sh), Val::Bool => Tan::Zero }
     }
-    fn zero(_: &Tan) -> Self { Flow::ZeroGrad } // zero rate: d(v) = 0
+    fn zero(_: Tan) -> Self { Flow::ZeroGrad }  // zero rate: d(v) = 0
 }
 
 /// A field into bundle B: reads bases and already-written fibers, writes
@@ -571,6 +638,13 @@ Considered and rejected, with reasons:
   awaited derivatives (see "Await: reading the fiber") — acyclic T-fiber
   reads admit derived observers (the Lie derivative's client) under the
   same causality condition as awaits; algebraic loops stay out.
+- LRA lacks the time form `dt` and the degree-conserving flow generator
+  `Drift(A, b)` (`d(y) = (A·x + b)·dt`, reading a base and `dt`): only
+  `zero` writes 1-forms today, so no nontrivial flow is expressible —
+  prerequisite for every continuous example and, via the same graded
+  product (`∇V(x) · dx`), for the Lie-derivative observer. Decide where
+  `dt` lives: a distinguished per-module 1-form minted by `bind`, or the
+  derivative face of an explicit clock variable.
 - Lifting `havoc`/`skip`/`zero`/`assume` from generators to composite ops.
 - `Op` constructor ergonomics (it is the most-typed name in the API).
 - Store branding for `OpId` (cross-store misuse).
