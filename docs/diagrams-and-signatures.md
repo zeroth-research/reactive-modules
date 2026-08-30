@@ -151,16 +151,19 @@ order/visibility discipline. Bounded on `Signature` only.
   |----------|--------------------|----------------------------------------|
   | `init`   | next (sort `s`)    | next of awaited vars (sort `s`)        |
   | `update` | next (sort `s`)    | latched (`reads`) + awaited next (`waits`) |
-  | `delay`  | derivative (`s.T()`) | latched (sort `s`)                   |
+  | `delay`  | derivative (`s.T()`) | latched (`reads`) + awaited derivative (`waits`, sort `s.T()`) |
 
   There are no aspects and no per-entry tags: the face of every position is
   a function of (role, list). The update's latched/next distinction *is*
-  the read/wait split atoms have always declared. `T` is invoked in exactly
-  one place in the stack: delay writes. A var both read and awaited appears
-  in both lists. Whether a delay may read another variable's derivative
-  (`d(x) = f(d(w))`, DAE-style) is an open semantics question: if yes, it
-  is a fourth list on delay; if no, it is unrepresentable — the stronger
-  position.
+  the read/wait split atoms have always declared, and **delay has the same
+  split**: its wait list reads awaited *derivatives* (`d(w)` of variables
+  another atom flows), under the same acyclicity discipline as update's
+  awaits — this is what admits derived observers such as the Lie
+  derivative (`d(v) = ∇V(x) · f(x)` reads the plant's derivative fibers),
+  while cyclic derivative-awaits (genuinely implicit DAEs, algebraic
+  loops) stay rejected. `T` is invoked in exactly two positions: delay
+  writes and delay waits. A var both read and awaited appears in both
+  lists.
 - **`Module`** — atoms glued by a linear order consistent with their await
   relation, plus the visibility classes (extl/intf/prvt, obs/ctrl) and the
   hiding/composition algebra, semantically as today.
@@ -352,10 +355,180 @@ Implementation target this licenses: `Sequential` and `Differential`
 unify into two instances of *one* parametric bundle-signature notion
 (source signature, target universe, sort map, zero section) — the
 Δ-instance with target = source and identity sort map, the T-instance
-with the tangent target. One recorded asymmetry: update reads *other*
-variables' Δ-fibers (awaits), while delay reads only bases — whether
-vector fields may read foreign T-fibers is the DAE question, now stated
-in bundle terms.
+with the tangent target. The two instances are symmetric in their reads
+as well: update awaits foreign Δ-fibers, delay awaits foreign T-fibers
+(derived observers, e.g. the Lie derivative) — both under the same
+acyclicity condition, with cyclic fiber-awaits (algebraic loops, implicit
+DAEs) rejected in both bundles.
+
+### Implementation sketch: the bundle-unified atom
+
+The post-bind design, with the bi-bundle analogy as its organizing
+principle — one `Bundle` notion, two instances, atoms as a point and two
+fields. Toy-scale but every load-bearing decision present.
+
+```rust
+/// A bundle signature: the vocabulary for writing *fields* into a bundle
+/// over a source universe. ONE notion; the discrete and continuous
+/// temporal structures are its two instances.
+pub trait Bundle: Signature {
+    type Source: Clone + Eq + Debug;
+    /// how a base value appears from the fiber universe (reads)
+    fn embed(s: &Self::Source) -> Self::Sort;
+    /// the fiber over a base sort (writes)
+    fn fiber(s: &Self::Source) -> Self::Sort;
+    /// the zero section: the field that leaves the variable unchanged
+    fn zero(range: &Self::Sort) -> Self;
+}
+
+// ---- instance 1: Δ — the overwrite change action (discrete) ----
+// ΔM = M: the change IS the next value; target = source, both maps are
+// the identity. This IS "X is not a sort former", as an impl.
+impl Bundle for Step {
+    type Source = Val;                          // Sort = Val too
+    fn embed(s: &Val) -> Val { s.clone() }
+    fn fiber(s: &Val) -> Val { s.clone() }
+    fn zero(_: &Val) -> Self { Step::Skip }     // zero change: X(v) = v
+}
+
+// ---- instance 2: T — the tangent structure (continuous) ----
+// The fiber universe is genuinely different: T grades reals and
+// collapses constant sorts to the singleton.
+pub enum Tan { Val(Val), TReal([usize; 2]), Zero }
+impl Bundle for Flow {
+    type Source = Val;                          // Sort = Tan
+    fn embed(s: &Val) -> Tan { Tan::Val(s.clone()) }
+    fn fiber(s: &Val) -> Tan {
+        match s { Val::Real(sh) => Tan::TReal(*sh), Val::Bool => Tan::Zero }
+    }
+    fn zero(_: &Tan) -> Self { Flow::ZeroGrad } // zero rate: d(v) = 0
+}
+
+/// A field into bundle B: reads bases and already-written fibers, writes
+/// its own fibers. This ONE shape is init, update, and delay.
+pub struct Field<B: Bundle> {
+    op: B,
+    writes: Vec<VarId>,       // own fibers
+    reads_base: Vec<VarId>,   // latched values
+    reads_fiber: Vec<VarId>,  // the awaits: Δ-fibers (update), T-fibers (delay).
+}
+
+/// One checker for every role — faces are (bundle, list), nothing else.
+fn check_field<B: Bundle>(vars: &[Var], f: &Field<B>) -> Result<(), String> {
+    let reads = f.reads_base.map(B::embed ∘ sort)
+        .chain(f.reads_fiber.map(B::fiber ∘ sort));
+    let writes = f.writes.map(B::fiber ∘ sort);
+    f.op.check(&reads, &writes)
+}
+
+/// The zero-section synthesizer — today's Block::zero AND Block::skip,
+/// as one generic function. (The zero section reads its base exactly when
+/// the fiber universe contains it: skip reads v, zerograd reads nothing.)
+fn zero_field<B: Bundle>(vars: &[Var], ctrl: &[VarId]) -> Vec<Field<B>> { … }
+
+/// An atom: a point and two fields, one per bundle.
+pub struct Atom<D: Bundle<Source = Val>, C: Bundle<Source = Val>> {
+    init: Vec<Field<D>>,   // a point: fields with no base reads
+    step: Vec<Field<D>>,   // difference field  (Δ)
+    flow: Vec<Field<C>>,   // vector field      (T)
+}
+```
+
+The atom kinds become definitions, not constructors: a **sequential**
+atom has its dynamics in Δ and `zero_field::<Flow>` as its flow; a
+**differential** atom has its dynamics in T and `zero_field::<Step>` as
+its step; a **combinatorial** atom is `init == step` with zero flow; a
+**hybrid** atom is both fields nontrivial — no new machinery, which is
+the strongest evidence the analogy carries weight.
+
+What the unification buys, concretely:
+
+- `Sequential`/`Differential` collapse into `Bundle` at Δ and T; `skip`
+  and `zero` are the same associated function; `Block::skip` and
+  `Block::zero` (two synthesizers in today's `atom.rs`) become one
+  generic `zero_field`.
+- `check_field` is the entire static semantics; init is the degenerate
+  field with no base reads (a point); faces never exist as data.
+- Awaits are the Δ-instance's `reads_fiber`; the same slot in the
+  T-instance is the DAE question, demoted from structural exception to
+  per-instance policy. One causality checker serves both bundles:
+  topologically order fiber-writes before fiber-reads.
+- `bind` keeps one demand-driven wire table per bundle instance, same
+  fold as before.
+
+## Await: reading the fiber
+
+Awaiting is not a scheduling annotation — it is *which coordinate of the
+bi-bundle an atom reads*. Reading `x` reads the **base**: the value
+carried over from the previous round, always available, never
+order-constraining. Awaiting `x` reads the **Δ-fiber** `X(x)`: a
+coordinate that `x`'s controller writes *in the same round*, so the read
+is well-defined only after that write. The await relation is exactly the
+fiber-read dependency graph; the linear order atoms must respect is its
+topological order; a cyclic await is a causal cycle on fibers and is
+rejected. Nothing else about atom order matters — base reads commute.
+
+Examples, in the surface syntax (target vocabulary: `Op` — today's
+python surface still spells it `Term`):
+
+- **Registered vs. wire-like coupling** (Moore vs. Mealy). The sequential
+  atom reads the base — output lags input by a round, no ordering
+  constraint:
+
+  ```python
+  Op(LRA.Id(), [X(y)], [x])      # y' = x   (through the register)
+  ```
+
+  The combinatorial atom awaits — output follows input within the round,
+  and the atom must run after x's controller:
+
+  ```python
+  Op(LRA.Id(), [X(y)], [X(x)])   # y' = x'  (a wire, zero delay)
+  ```
+
+- **Causal cycles are fiber cycles.** Cross-coupled swap through the
+  registers is fine — two base reads, no ordering at all:
+
+  ```python
+  Op(LRA.Id(), [X(x)], [y]);  Op(LRA.Id(), [X(y)], [x])
+  ```
+
+  The same shape on fibers is a zero-delay loop and is rejected (see
+  `cannot_compose_example_tiny1_with_cyclic_await`):
+
+  ```python
+  Op(LRA.Id(), [X(x)], [X(y)]);  Op(LRA.Id(), [X(y)], [X(x)])
+  ```
+
+- **Init reads are fiber reads by necessity.** At time zero no base
+  exists — nothing was carried over — so an init block can only await:
+  initialization cascades (`X(y) = f(X(x0))`) are Δ-fiber chains, ordered
+  by the same acyclicity condition as updates.
+
+- **The continuous mirror, and its first client.** A delay net reading a
+  base is a vector field (`d(p) = v`: chained integrators — no ordering
+  constraint, integration decouples them). A delay net reading a foreign
+  **T-fiber** would be the continuous await:
+
+  ```python
+  Op(LRA.Linear(A, b), [d(y)], [d(x)])   # dy = A·dx : algebraic coupling
+  ```
+
+  This is delay's wait list — the design admits *acyclic* T-fiber reads,
+  with the **Lie-derivative observer** as the motivating client:
+  `d(v_V) = ∇V(x) · f(x)` reads the plant's `d(x)` wires, an awaited
+  derivative (observer depends on plant, never conversely). The same
+  causality condition as Δ-awaits applies; genuinely implicit DAEs
+  (cyclic derivative dependencies, algebraic loops) stay out.
+
+The symmetry, in one table:
+
+|                      | Δ (discrete)         | T (continuous)               |
+|----------------------|----------------------|------------------------------|
+| base read            | `x` — previous round | `x` — current state          |
+| fiber read           | `X(x)` — **await**   | `d(x)` — **await** (observer)|
+| ordering constraint  | await acyclicity     | same, if the gate opens      |
+| cycle                | zero-delay loop      | algebraic loop               |
 
 ## Naming record
 
@@ -394,8 +567,10 @@ Considered and rejected, with reasons:
 - `Module` as a `Signature` (modules as ops in larger diagrams — the
   wiring-operad picture): definable via the sorted boundary, but the
   forgetful map drops visibility and await metadata; a deliberate step.
-- Delay reading derivatives (DAE-style): fourth list on delay, or
-  unrepresentable — a semantics decision.
+- ~~Delay reading derivatives~~ settled: delay carries a wait list of
+  awaited derivatives (see "Await: reading the fiber") — acyclic T-fiber
+  reads admit derived observers (the Lie derivative's client) under the
+  same causality condition as awaits; algebraic loops stay out.
 - Lifting `havoc`/`skip`/`zero`/`assume` from generators to composite ops.
 - `Op` constructor ergonomics (it is the most-typed name in the API).
 - Store branding for `OpId` (cross-store misuse).
