@@ -22,7 +22,7 @@ impl Var {
 
     /// Attribute fallback to the latched wire, mirroring Rust's `Deref`:
     /// any attribute `Var` does not define itself is answered by the wire
-    /// (`id`, `dtype`, `degree`, ...).
+    /// (`id`, `dtype`, ...).
     fn __getattr__(slf: PyRef<'_, Self>, name: &str) -> PyResult<Py<PyAny>> {
         let py = slf.py();
         let wire: Wire = base::Wire::from(*slf.base()).into();

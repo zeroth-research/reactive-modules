@@ -1,7 +1,7 @@
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
-use crate::{Signature, bv, lia, lra};
+use crate::{Signature, Tangent, bv, lia, lra};
 use crate::{check_havoc, check_skip, check_zero};
 use derive_more::From;
 #[cfg(feature = "pyo3")]
@@ -9,13 +9,68 @@ use pyo3::prelude::*;
 use std::fmt;
 use subenum::subenum;
 
+// The enum is defined twice, gated on the `pyo3` feature: the variant-level
+// `#[pyo3(constructor = ...)]` attribute cannot be wrapped in `cfg_attr`
+// (rustc does not expand `cfg_attr` inside a proc macro's input, so
+// `pyclass` would never see it). Keep the two definitions in sync.
+#[cfg(feature = "pyo3")]
+#[pyclass(frozen, eq, str)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "pyo3", pyclass(frozen, eq, str))]
 pub enum Sort {
     Bool([usize; 2]),
-    Real([usize; 2]),
+    /// A real tensor; `rank` is the differential grade: 0 = value,
+    /// 1 = first derivative, ...
+    #[pyo3(constructor = (shape, rank = 0))]
+    Real {
+        shape: [usize; 2],
+        rank: u8,
+    },
     Int([usize; 2]),
     BitVec(usize, [usize; 2]),
+    /// The trivial tangent of the constant sorts (Bool, Int, BitVec): a
+    /// singleton, inhabited by exactly the zero value. Terminal, not empty.
+    Zero(),
+}
+
+#[cfg(not(feature = "pyo3"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sort {
+    Bool([usize; 2]),
+    /// A real tensor; `rank` is the differential grade: 0 = value,
+    /// 1 = first derivative, ...
+    Real {
+        shape: [usize; 2],
+        rank: u8,
+    },
+    Int([usize; 2]),
+    BitVec(usize, [usize; 2]),
+    /// The trivial tangent of the constant sorts (Bool, Int, BitVec): a
+    /// singleton, inhabited by exactly the zero value. Terminal, not empty.
+    Zero(),
+}
+
+impl Sort {
+    /// A real value sort (rank 0).
+    pub fn real(shape: [usize; 2]) -> Self {
+        Sort::Real { shape, rank: 0 }
+    }
+}
+
+/// The tangent former: reals grade up (`rank + 1`, same carrier); the
+/// constant sorts (Bool, Int, BitVec) collapse to the trivial tangent
+/// `Zero`, which is a fixed point.
+impl Tangent for Sort {
+    #[allow(non_snake_case)]
+    fn T(&self) -> Self {
+        match *self {
+            Sort::Real { shape, rank } => Sort::Real {
+                shape,
+                rank: rank + 1,
+            },
+            Sort::Bool(_) | Sort::Int(_) | Sort::BitVec(..) => Sort::Zero(),
+            Sort::Zero() => Sort::Zero(),
+        }
+    }
 }
 
 impl fmt::Display for Sort {
@@ -24,14 +79,20 @@ impl fmt::Display for Sort {
             Sort::Bool(shape) => {
                 write!(f, "Bool([{},{}])", shape[0], shape[1])
             }
-            Sort::Real(shape) => {
+            Sort::Real { shape, rank: 0 } => {
                 write!(f, "Real([{},{}])", shape[0], shape[1])
+            }
+            Sort::Real { shape, rank } => {
+                write!(f, "T{} Real([{},{}])", rank, shape[0], shape[1])
             }
             Sort::Int(shape) => {
                 write!(f, "Int([{},{}])", shape[0], shape[1])
             }
             Sort::BitVec(bw, shape) => {
                 write!(f, "Bv{}([{},{}])", bw, shape[0], shape[1])
+            }
+            Sort::Zero() => {
+                write!(f, "Zero")
             }
         }
     }
@@ -41,6 +102,7 @@ impl From<bv::Sort> for Sort {
     fn from(value: bv::Sort) -> Self {
         match value {
             bv::Sort::BV(bw, shape) => Sort::BitVec(bw, shape),
+            bv::Sort::Zero => Sort::Zero(),
         }
     }
 }
@@ -50,6 +112,7 @@ impl From<lia::Sort> for Sort {
         match value {
             lia::Sort::Int(shape) => Sort::Int(shape),
             lia::Sort::Bool(shape) => Sort::Bool(shape),
+            lia::Sort::Zero => Sort::Zero(),
         }
     }
 }
@@ -58,7 +121,8 @@ impl From<lra::Sort> for Sort {
     fn from(value: lra::Sort) -> Self {
         match value {
             lra::Sort::Bool(shape) => Sort::Bool(shape),
-            lra::Sort::Real(shape) => Sort::Real(shape),
+            lra::Sort::Real { shape, rank } => Sort::Real { shape, rank },
+            lra::Sort::Zero => Sort::Zero(),
         }
     }
 }
@@ -69,6 +133,7 @@ impl TryFrom<Sort> for bv::Sort {
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
             Sort::BitVec(bw, shape) => Ok(bv::Sort::BV(bw, shape)),
+            Sort::Zero() => Ok(bv::Sort::Zero),
             _ => Err("invalid cast".to_string()),
         }
     }
@@ -81,6 +146,7 @@ impl TryFrom<Sort> for lia::Sort {
         match value {
             Sort::Bool(shape) => Ok(lia::Sort::Bool(shape)),
             Sort::Int(shape) => Ok(lia::Sort::Int(shape)),
+            Sort::Zero() => Ok(lia::Sort::Zero),
             _ => Err("invalid cast".to_string()),
         }
     }
@@ -92,7 +158,8 @@ impl TryFrom<Sort> for lra::Sort {
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
             Sort::Bool(shape) => Ok(lra::Sort::Bool(shape)),
-            Sort::Real(shape) => Ok(lra::Sort::Real(shape)),
+            Sort::Real { shape, rank } => Ok(lra::Sort::Real { shape, rank }),
+            Sort::Zero() => Ok(lra::Sort::Zero),
             _ => Err("invalid cast".to_string()),
         }
     }
@@ -219,8 +286,8 @@ impl Signature for Any {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         // let read = read.into_iter().map(TryInto::try_into);
         // let write = write.into_iter().map(TryInto::try_into);
@@ -237,14 +304,14 @@ impl Signature for Any {
 
 fn try_into<R, S, T, E: fmt::Display, F: fmt::Display>(
     iter: R,
-) -> impl Iterator<Item = Result<(T, u8), String>>
+) -> impl Iterator<Item = Result<T, String>>
 where
     S: TryInto<T, Error = F>,
-    R: IntoIterator<Item = Result<(S, u8), E>>,
+    R: IntoIterator<Item = Result<S, E>>,
 {
     iter.into_iter().map(|r| {
         r.map_err(|e| e.to_string())
-            .and_then(|(s, d)| Ok((s.try_into().map_err(|f| f.to_string())?, d)))
+            .and_then(|s| s.try_into().map_err(|f| f.to_string()))
     })
 }
 
@@ -254,8 +321,8 @@ impl Signature for Sequential {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         match self {
             Sequential::HAVOC(range) => check_havoc(range, read, write),
@@ -273,8 +340,8 @@ impl Signature for Combinatorial {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         // let read = read.into_iter().map(TryInto::try_into);
         // let write = write.into_iter().map(TryInto::try_into);
@@ -293,8 +360,8 @@ impl Signature for Differential {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         // let read = read.into_iter().map(TryInto::try_into);
         // let write = write.into_iter().map(TryInto::try_into);
@@ -323,8 +390,8 @@ impl From<Combinatorial> for Sequential {
 mod tests {
     use super::*;
 
-    fn deg0(s: Sort) -> Result<(Sort, u8), String> {
-        Ok((s, 0))
+    fn ok(s: Sort) -> Result<Sort, String> {
+        Ok(s)
     }
 
     // Casts up the hierarchy (Into) wrap the op in the right variant.
@@ -344,7 +411,7 @@ mod tests {
     fn catch_alls_cast_up() {
         let comb: Sequential = Combinatorial::LRA(LRA::Add()).into();
         assert!(matches!(comb, Sequential::LRA(LRA::Add())));
-        let t = Sort::Real([1, 1]);
+        let t = Sort::real([1, 1]);
         assert!(matches!(
             Combinatorial::HAVOC(t).into(),
             Sequential::HAVOC(_)
@@ -358,7 +425,7 @@ mod tests {
     #[test]
     fn display_is_stable() {
         // Elements print their name, member ops delegate to the base theory.
-        let t = Sort::Real([1, 1]);
+        let t = Sort::real([1, 1]);
         assert_eq!(Any::HAVOC(t).to_string(), "HAVOC");
         assert_eq!(Sequential::SKIP(t).to_string(), "SKIP");
         assert_eq!(Differential::ZERO(t).to_string(), "ZERO");
@@ -379,7 +446,7 @@ mod tests {
 
     #[test]
     fn any_casts_down_or_rejects() {
-        let t = Sort::Real([1, 1]);
+        let t = Sort::real([1, 1]);
         assert!(matches!(Any::SKIP(t).try_into(), Ok(Sequential::SKIP(_))));
         assert!(matches!(
             Any::HAVOC(t).try_into(),
@@ -397,88 +464,76 @@ mod tests {
 
     #[test]
     fn skip_is_unary() {
-        let t = || Sort::Real([1, 1]);
-        let u = || Sort::Real([2, 1]);
+        let t = || Sort::real([1, 1]);
+        let u = || Sort::real([2, 1]);
         for skip in [
-            Any::SKIP(t()).check([t()].map(deg0), [t()].map(deg0)),
-            Sequential::SKIP(t()).check([t()].map(deg0), [t()].map(deg0)),
+            Any::SKIP(t()).check([t()].map(ok), [t()].map(ok)),
+            Sequential::SKIP(t()).check([t()].map(ok), [t()].map(ok)),
         ] {
             assert!(skip.is_ok());
         }
         // arity and sort mismatches
         assert!(
             Any::SKIP(t())
-                .check([t(), u()].map(deg0), [t(), u()].map(deg0))
+                .check([t(), u()].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
-        assert!(
-            Any::SKIP(t())
-                .check([t()].map(deg0), [u()].map(deg0))
-                .is_err()
-        );
-        assert!(Any::SKIP(t()).check([].map(deg0), [].map(deg0)).is_err());
+        assert!(Any::SKIP(t()).check([t()].map(ok), [u()].map(ok)).is_err());
+        assert!(Any::SKIP(t()).check([].map(ok), [].map(ok)).is_err());
         assert!(
             Sequential::SKIP(t())
-                .check([t(), u()].map(deg0), [t(), u()].map(deg0))
+                .check([t(), u()].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
     }
 
     #[test]
     fn havoc_is_unary() {
-        let t = || Sort::Real([1, 1]);
-        let u = || Sort::Real([2, 1]);
+        let t = || Sort::real([1, 1]);
+        let u = || Sort::real([2, 1]);
         for havoc in [
-            Any::HAVOC(t()).check([].map(deg0), [t()].map(deg0)),
-            Sequential::HAVOC(t()).check([].map(deg0), [t()].map(deg0)),
-            Combinatorial::HAVOC(t()).check([].map(deg0), [t()].map(deg0)),
+            Any::HAVOC(t()).check([].map(ok), [t()].map(ok)),
+            Sequential::HAVOC(t()).check([].map(ok), [t()].map(ok)),
+            Combinatorial::HAVOC(t()).check([].map(ok), [t()].map(ok)),
         ] {
             assert!(havoc.is_ok());
         }
         // no reads, exactly one write
+        assert!(Any::HAVOC(t()).check([t()].map(ok), [t()].map(ok)).is_err());
         assert!(
             Any::HAVOC(t())
-                .check([t()].map(deg0), [t()].map(deg0))
+                .check([].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
-        assert!(
-            Any::HAVOC(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
-        assert!(Any::HAVOC(t()).check([].map(deg0), [].map(deg0)).is_err());
+        assert!(Any::HAVOC(t()).check([].map(ok), [].map(ok)).is_err());
         assert!(
             Combinatorial::HAVOC(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
+                .check([].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
     }
 
     #[test]
     fn zero_is_unary() {
-        let t = || Sort::Real([1, 1]);
-        let u = || Sort::Real([2, 1]);
+        let t = || Sort::real([1, 1]);
+        let u = || Sort::real([2, 1]);
         for zero in [
-            Any::ZERO(t()).check([].map(deg0), [t()].map(deg0)),
-            Differential::ZERO(t()).check([].map(deg0), [t()].map(deg0)),
+            Any::ZERO(t()).check([].map(ok), [t()].map(ok)),
+            Differential::ZERO(t()).check([].map(ok), [t()].map(ok)),
         ] {
             assert!(zero.is_ok());
         }
         // no reads, exactly one write
+        assert!(Any::ZERO(t()).check([t()].map(ok), [t()].map(ok)).is_err());
         assert!(
             Any::ZERO(t())
-                .check([t()].map(deg0), [t()].map(deg0))
+                .check([].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
-        assert!(
-            Any::ZERO(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
-        assert!(Any::ZERO(t()).check([].map(deg0), [].map(deg0)).is_err());
+        assert!(Any::ZERO(t()).check([].map(ok), [].map(ok)).is_err());
         assert!(
             Differential::ZERO(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
+                .check([].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
     }

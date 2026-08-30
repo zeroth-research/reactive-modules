@@ -7,6 +7,37 @@ pub mod tensor;
 use std::fmt;
 use std::fmt::Debug;
 pub use tensor::PyTensor;
+
+/// Sorts closed under the tangent former: `T(s)` is the sort of rates of
+/// change of values of sort `s`.
+///
+/// This trait captures only the *object part* of a tangent structure — the
+/// action of `T` on sorts — which is all the reactive layer needs to mint
+/// derivative wires. The structure maps of a tangent category (the zero
+/// section, bundle addition, projection, lift, flip) are signature
+/// *generators* (`zero` is the zero section; addition is the base theory's
+/// `Add` at tangent sorts), and their axioms (Rosický; Cockett–Cruttwell)
+/// are equations between operations — they belong to the upcoming
+/// `Theory: Signature` subtrait, not here. Implementing `Tangent` does not
+/// certify tangent-category structure.
+///
+/// Discrete sorts have a *trivial* tangent, not a missing one: `T` maps
+/// them to an inhabited singleton sort (`Zero`), whose only writer is the
+/// `zero` generator.
+pub trait Tangent {
+    /// The tangent sort: `T` as in the tangent bundle `TM`.
+    #[allow(non_snake_case)]
+    fn T(&self) -> Self;
+}
+
+/// Identity tangent for opaque string sorts (test scaffolding: theories
+/// whose checks are vacuous do not distinguish values from rates).
+impl Tangent for &str {
+    fn T(&self) -> Self {
+        self
+    }
+}
+
 pub trait Signature {
     type Sort;
 
@@ -14,8 +45,8 @@ pub trait Signature {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>;
+        R: IntoIterator<Item = Result<Self::Sort, E>>,
+        W: IntoIterator<Item = Result<Self::Sort, E>>;
 }
 
 pub trait Combinatorial: Signature {
@@ -29,7 +60,8 @@ pub trait Sequential: Signature {
 }
 
 pub trait Differential: Signature {
-    // Returns the unary itype that indicates zero derivative
+    // Returns the unary itype that indicates zero rate of change; `range`
+    // is the *tangent* sort the generator writes (the derivative wire's sort)
     fn zero(range: &Self::Sort) -> Self;
 }
 
@@ -40,16 +72,16 @@ pub trait Differential: Signature {
 // This is a helper routine; concrete theories are free to implement their own
 fn check_skip<R, W, S, E>(range: &S, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(S, u8), E>>,
-    W: IntoIterator<Item = Result<(S, u8), E>>,
+    R: IntoIterator<Item = Result<S, E>>,
+    W: IntoIterator<Item = Result<S, E>>,
     S: Eq + Debug,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match (read.next(), write.next()) {
-        (Some(Ok((r, rd))), Some(Ok((w, wd)))) if r != w || &w != range || wd != rd => {
+        (Some(Ok(r)), Some(Ok(w))) if r != w || &w != range => {
             return Err(format!(
-                "SKIP expects exactly one read and one write of sort {:?} and equal degree",
+                "SKIP expects exactly one read and one write of sort {:?}",
                 range
             ));
         }
@@ -68,8 +100,8 @@ where
 // This is a helper routine; concrete theories are free to implement their own
 pub(crate) fn check_havoc<S, R, W, E>(range: &S, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(S, u8), E>>,
-    W: IntoIterator<Item = Result<(S, u8), E>>,
+    R: IntoIterator<Item = Result<S, E>>,
+    W: IntoIterator<Item = Result<S, E>>,
     S: Eq + Debug,
     E: fmt::Display,
 {
@@ -78,7 +110,7 @@ where
     }
     let mut write = write.into_iter();
     match write.next() {
-        Some(Ok((sort, _))) if &sort != range => {
+        Some(Ok(sort)) if &sort != range => {
             return Err(format!("HAVOC expects write of dtype {:?}", range));
         }
         Some(Err(e)) => return Err(e.to_string()),
@@ -91,12 +123,13 @@ where
     Ok(())
 }
 
-// ZERO is unary: it writes exactly one wire and reads none.
+// ZERO is unary: it writes exactly one wire and reads none. Its range is a
+// tangent sort — the derivative wire it silences.
 // This is a helper routine; concrete theories are free to implement their own
 pub(crate) fn check_zero<S, R, W, E>(range: &S, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(S, u8), E>>,
-    W: IntoIterator<Item = Result<(S, u8), E>>,
+    R: IntoIterator<Item = Result<S, E>>,
+    W: IntoIterator<Item = Result<S, E>>,
     S: Eq + Debug,
     E: fmt::Display,
 {
@@ -105,7 +138,7 @@ where
     }
     let mut write = write.into_iter();
     match write.next() {
-        Some(Ok((sort, _))) if &sort != range => {
+        Some(Ok(sort)) if &sort != range => {
             return Err(format!("ZERO expects write of dtype {:?}", range));
         }
         Some(Err(e)) => return Err(e.to_string()),
@@ -118,25 +151,9 @@ where
     Ok(())
 }
 
-fn next_expect_degree<R, S, E: fmt::Display>(
-    iter: &mut R,
-    pos: usize,
-    degree: u8,
-) -> Result<S, String>
+fn next_sort<R, S, E: fmt::Display>(iter: &mut R, pos: usize) -> Result<S, String>
 where
-    R: Iterator<Item = Result<(S, u8), E>>,
-{
-    let (s, d) = next_with_degree(iter, pos)?;
-    if d != degree {
-        Err(format!("Arg {pos} expected to be {degree}, got {d}"))
-    } else {
-        Ok(s)
-    }
-}
-
-fn next_with_degree<R, S, E: fmt::Display>(iter: &mut R, pos: usize) -> Result<(S, u8), String>
-where
-    R: Iterator<Item = Result<(S, u8), E>>,
+    R: Iterator<Item = Result<S, E>>,
 {
     if let Some(item) = iter.next() {
         item.map_err(|e| e.to_string())

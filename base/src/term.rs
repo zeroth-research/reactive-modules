@@ -71,8 +71,8 @@ where
         // type-check the term. We do it only after contruction of the term, because type-checking
         // would consume the values of `write` and `read` otherwise
         let ok = Result::<_, String>::Ok;
-        let r = read.iter().cloned().map(Into::into).map(ok);
-        let w = write.iter().cloned().map(Into::into).map(ok);
+        let r = read.iter().map(|w| ok(w.dtype().clone()));
+        let w = write.iter().map(|w| ok(w.dtype().clone()));
         itype.check(r, w)?;
 
         Ok(Self::new_unchecked(itype, write, read))
@@ -88,7 +88,7 @@ where
         // type-check the term. We do it only after contruction of the term, because type-checking
         // would consume the values of `write` and `read` otherwise
         let ok = Result::<_, String>::Ok;
-        let w = write.iter().cloned().map(Into::into).map(ok);
+        let w = write.iter().map(|w| ok(w.dtype().clone()));
         itype.check(std::iter::empty(), w)?;
 
         Ok(Self::new_unchecked(itype, write, Vec::new()))

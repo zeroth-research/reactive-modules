@@ -154,6 +154,17 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
 # ---------------------------------------------------------------------------
 
 
+def _inherit_rank(out: Sort, src: Sort) -> Sort:
+    """The result sort inherits the operand's differential rank (reals
+    only): operations over derivative wires stay in the derivative
+    fragment, values stay values."""
+    match out, src:
+        case Real(shape, _), Real(_, rank) if rank:
+            return Real(shape, rank)
+        case _:
+            return out
+
+
 class Expr:
     """Shared plumbing; instances are always one of AExpr / BExpr / WExpr (via ``expr()``)."""
 
@@ -236,14 +247,16 @@ class Expr:
     def _binop(self, op, out: Sort, o) -> "Expr":
         """Coerce `o` to my sort, then build a binary Term with `op` and output sort `out`.
 
-        The result wire inherits this expression's degree, so operations over
-        derivative wires (e.g. `d(t) + d(t)`) stay in the derivative fragment."""
+        The result sort inherits this expression's differential rank, so
+        operations over derivative wires (e.g. `d(t) + d(t)`) stay in the
+        derivative fragment."""
         o = self._coerce_same(o)
-        return self._result(Term(op, [Wire(out, self._wire.degree)], [self._wire, o._wire]))
+        out = _inherit_rank(out, self.dtype)
+        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
 
     def _unop(self, op, out: Sort | None = None) -> "Expr":
-        out = out if out is not None else self.dtype
-        return self._result(Term(op, [Wire(out, self._wire.degree)], [self._wire]))
+        out = _inherit_rank(out if out is not None else self.dtype, self.dtype)
+        return self._result(Term(op, [Wire(out)], [self._wire]))
 
     @override
     def __repr__(self) -> str:
@@ -301,7 +314,8 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
         n = v.shape[0]
         A = torch.eye(n, dtype=scalar_dtype) * c._value.item()
         bias = torch.zeros(n, 1, dtype=scalar_dtype)
-        return Term(linear(A, bias), [Wire(v.dtype, degree=v._wire.degree)], [v._wire])
+        # v.dtype carries the differential rank, so the output inherits it
+        return Term(linear(A, bias), [Wire(v.dtype)], [v._wire])
     raise NonLinearError(theory.__name__)
 
 

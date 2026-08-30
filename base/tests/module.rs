@@ -262,7 +262,7 @@ fn cannot_share_local_wires() {
     let x = Var::new("real");
     let y = Var::new("real");
     // the shared temporary: both atoms compute through it
-    let tmp = Wire::scalar("real");
+    let tmp = Wire::new("real");
 
     let init = [term!(mk_op("CONST"), [X(x)]).unwrap()];
     let update = [
@@ -318,12 +318,12 @@ fn compose_seq_2() {
     .to_vec();
 
     let tmps = [
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
     ];
     let update: Vec<Term<Ops>> = [
         term!(mk_op("Lt"), [tmps[0]], [x, y]).unwrap(),
@@ -349,11 +349,7 @@ fn compose_seq_2() {
     //     def update(self, inv, extl) -> None:
     //         x, y, z = extl
     //         return Or(X(x) <= X(y), X(x) <= X(z))
-    let tmps = [
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-    ];
+    let tmps = [Wire::new("real"), Wire::new("real"), Wire::new("real")];
     let assign: Vec<Term<Ops>> = [
         term!(mk_op("Le"), [tmps[0]], [X(x), X(y)]).unwrap(),
         term!(mk_op("Le"), [tmps[1]], [X(x), X(z)]).unwrap(),
@@ -400,8 +396,8 @@ impl Signature for SeqOps {
     const NAME: &'static str = "SeqOps";
     fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Self::Sort, E>>,
+        W: IntoIterator<Item = Result<Self::Sort, E>>,
     {
         Ok(())
     }
@@ -412,8 +408,8 @@ impl Signature for DifOps {
     const NAME: &'static str = "DifOps";
     fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Self::Sort, E>>,
+        W: IntoIterator<Item = Result<Self::Sort, E>>,
     {
         Ok(())
     }

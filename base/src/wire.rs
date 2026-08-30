@@ -12,16 +12,15 @@ use std::{cmp, fmt};
 /// and ordering doubles as creation order. The sort `S` types the value on
 /// the wire; it does not take part in identity.
 ///
-/// The `degree` says which differential form the wire carries: a `0`-form
-/// is a value, a `1`-form is a derivative (the rate of change of a value
-/// with respect to time, as written by delay blocks). The degree is checked
-/// by the theories — an op reads and writes wires of the forms it expects —
-/// but, like the sort, it does not take part in identity.
+/// A wire is *just* an identity with a sort: the differential form is the
+/// sort's responsibility. A derivative wire is one whose sort is in the
+/// image of the tangent former [`Tangent::T`](theory::Tangent::T) —
+/// [`Var::new`](crate::var::Var::new) mints it as `Wire::new(s.T())` — and
+/// the theories check plain sorts, with the grade riding inside them.
 #[derive(Debug, Clone, Copy)]
 pub struct Wire<S> {
     id: usize,
     dtype: S,
-    degree: u8, // indicates the differential form
 }
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -39,12 +38,6 @@ impl<S> Wire<S> {
         &self.dtype
     }
 
-    /// The differential form of the wire: a `0`-form carries a value, a
-    /// `1`-form carries a derivative.
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// Creates a fresh wire with a globally unique id.
     ///
     /// The id counter is not guarded against overflow: exhausting `usize` on
@@ -53,39 +46,12 @@ impl<S> Wire<S> {
     ///
     /// # Parameters
     /// - `dtype`: The sort of the value the wire carries.
-    /// - `degree`: The differential form of the wire: `0`-form for a value,
-    ///   `1`-form for a derivative.
     ///
     /// # Returns
     /// The fresh wire.
-    ///
-    /// # See Also
-    /// - [`Wire::scalar`] and [`Wire::covector`], fixing the form by name.
-    pub fn new(dtype: S, degree: u8) -> Self {
+    pub fn new(dtype: S) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        Self { id, dtype, degree }
-    }
-
-    /// Creates a fresh `0`-form wire: it carries a value.
-    ///
-    /// # Parameters
-    /// - `dtype`: The sort of the value the wire carries.
-    ///
-    /// # Returns
-    /// The fresh wire.
-    pub fn scalar(dtype: S) -> Self {
-        Self::new(dtype, 0)
-    }
-
-    /// Creates a fresh `1`-form wire: it carries a derivative.
-    ///
-    /// # Parameters
-    /// - `dtype`: The sort of the value whose derivative the wire carries.
-    ///
-    /// # Returns
-    /// The fresh wire.
-    pub fn covector(dtype: S) -> Self {
-        Self::new(dtype, 1)
+        Self { id, dtype }
     }
 }
 
@@ -151,12 +117,6 @@ impl<S> Wire<S> {
             wire: self,
             typed: false,
         }
-    }
-}
-
-impl<S: Clone> From<Wire<S>> for (S, u8) {
-    fn from(wire: Wire<S>) -> Self {
-        (wire.dtype, wire.degree)
     }
 }
 

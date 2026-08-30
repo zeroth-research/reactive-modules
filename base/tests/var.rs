@@ -37,17 +37,14 @@ fn variable_casts_to_its_wires() {
     assert_eq!(d(x), b);
     assert_eq!(X(x), c);
 
-    // three distinct wires; the latched and next are values (degree 0),
-    // the derivative is one degree up
+    // three distinct wires; the latched and next carry the value sort,
+    // the derivative carries its tangent (the identity for string sorts)
     assert_ne!(a, b);
     assert_ne!(a, c);
     assert_ne!(b, c);
-    assert_eq!(a.degree(), 0);
-    assert_eq!(b.degree(), 1);
 
     // the variable dereferences to its latched wire: `Wire`'s methods
     // apply to it directly, and `&x` coerces to `&Wire<_>`
-    assert_eq!(x.degree(), 0);
     assert_eq!(x.id(), a.id());
     let borrowed: &Wire<_> = &x;
     assert_eq!(*borrowed, a);
@@ -70,7 +67,7 @@ fn variables_pass_into_term_constructors() {
     use crate::Term;
     use theory::lra::{LRA, Sort};
 
-    let x = Var::new(Sort::Real([1, 1]));
+    let x = Var::new(Sort::real([1, 1]));
 
     // a variable stands for its latched wire in a term position
     let t = Term::constant(LRA::AnyReal([1, 1]), [x]).unwrap();
@@ -84,7 +81,8 @@ fn variables_pass_into_term_constructors() {
 
 #[test]
 fn variable_fail_into_term_constructors() {
-    let x = Var::new(Sort::Real([1, 1]));
-    // dx = x: the derivative is degree 1, ordinary operands must be degree 0
+    let x = Var::new(Sort::real([1, 1]));
+    // dx = x: the derivative wire carries the tangent sort (rank 1), and
+    // Id never crosses ranks
     assert!(Term::function(LRA::Id(), [d(x)], [x]).is_err());
 }

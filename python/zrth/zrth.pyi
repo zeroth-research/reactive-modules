@@ -49,11 +49,25 @@ class Int(Sort):
 
 
 class Real(Sort):
-    def __init__(self, shape: list[int]) -> None: ...
+    # `rank` is the differential grade: 0 = value, 1 = first derivative, ...
+    def __init__(self, shape: list[int], rank: int = 0) -> None: ...
+
+    @property
+    def shape(self) -> list[int]: ...
+
+    @property
+    def rank(self) -> int: ...
 
 
 class BitVec(Sort):
     def __init__(self, width: int, shape: list[int]) -> None: ...
+
+
+class Zero(Sort):
+    """The trivial tangent of the constant sorts (Bool, Int, BitVec): a
+    singleton, inhabited by exactly the zero value. Terminal, not empty."""
+
+    def __init__(self) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -130,8 +144,11 @@ class LRA:
     class Uninterpreted(LRA):
         def __init__(self, name: str) -> None: ...
 
-    class BoolZerograd(LRA):  # unstable
-        def __init__(self, shape: list[int]) -> None: ...
+    class Zero(LRA):
+        """The unique inhabitant of the `Zero` sort: the only generator
+        writing a `Zero` wire."""
+
+        def __init__(self) -> None: ...
 
     class RealZerograd(LRA):  # unstable
         def __init__(self, shape: list[int]) -> None: ...
@@ -320,16 +337,13 @@ class BV:
 # ---------------------------------------------------------------------------
 
 class Wire:
-    def __init__(self, dtype: Sort, degree: int = 0) -> None: ...
+    def __init__(self, dtype: Sort) -> None: ...
 
     @property
     def id(self) -> int: ...
 
     @property
     def dtype(self) -> Sort: ...
-
-    @property
-    def degree(self) -> int: ...
 
     @override
     def __eq__(self, other: object) -> bool: ...
@@ -352,8 +366,8 @@ class Wire:
 class Var:
     """A state variable: three wires (latched, next, derivative).
 
-    A variable stands for its latched wire — attribute lookups (`id`, `dtype`,
-    `degree`), equality, hashing, and ordering all go through it, so a `Var`
+    A variable stands for its latched wire — attribute lookups (`id`,
+    `dtype`), equality, hashing, and ordering all go through it, so a `Var`
     and its latched `Wire` are interchangeable e.g. as dictionary keys.
     """
 
@@ -364,9 +378,6 @@ class Var:
 
     @property
     def dtype(self) -> Sort: ...
-
-    @property
-    def degree(self) -> int: ...
 
     @override
     def __eq__(self, other: object) -> bool: ...

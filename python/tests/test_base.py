@@ -36,8 +36,9 @@ def test_var_derefs_to_wire():
 
     # attributes Var does not define fall through to the latched wire,
     # mirroring Rust's Deref
-    assert v.degree == 0
     assert v.dtype == Real([2, 3])
+    # the derivative wire carries the tangent sort (rank 1)
+    assert d(v).dtype == Real([2, 3], 1)
     assert v.id == Wire(Real([1, 1])).id - 3  # ltc is first of the var's three wires
 
     # unknown attributes still raise, from the wire's lookup
