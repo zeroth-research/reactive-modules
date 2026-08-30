@@ -1,4 +1,4 @@
-# Design: signatures, flow, and binding
+# Design: signatures, dataflow, and binding
 
 The base splits into four crates with a diamond dependency: two independent
 syntax crates over one interface, meeting in a semantics crate.
@@ -6,7 +6,7 @@ syntax crates over one interface, meeting in a semantics crate.
 ```
 theory      Signature, Sort, Tangent; LRA, LIA, BV
               ↑                    ↑
-flow        Op<G: Signature>     reactive   Var, Atom, Module
+dataflow    Op<G: Signature>     reactive   Var, Atom, Module
 (structural identity: OpId)      (nominal identity: Var)
               ↖                    ↗
                bind    bind : Module → Instance
@@ -16,10 +16,11 @@ flow        Op<G: Signature>     reactive   Var, Atom, Module
 ```
 
 - **`theory`** — the one interface (`Signature`) and its base implementations.
-- **`flow`** — computation syntax: `Op`, the free construction over any
-  signature. Positional, wire-free, lazy.
+- **`dataflow`** — computation syntax: `Op`, the free construction over
+  any signature. Positional, wire-free, lazy.
 - **`reactive`** — state syntax: `Var`, `Atom`, `Module`. Names, time roles,
-  await order, visibility. Depends only on `theory` — it never sees `flow`.
+  await order, visibility. Depends only on `theory` — it never sees
+  `dataflow`.
 - **`bind`** — the only crate that knows both worlds: elaborates a module
   into an `Instance`, minting wires. Everything semantic (evaluation, SMT,
   display, monitors) is a client of `bind`.
@@ -35,9 +36,9 @@ crate graph, not by documentation: the syntax crates cannot name a wire.
 set, the implementing type's values are the operation symbols
 (**generators**), `check(read, write)` is the arity discipline — relational,
 because generators are shape-polymorphic (no fixed arity). `LRA`, `LIA`,
-`BV` are signatures; so is `flow::Op<G>` (see below). Vocabulary
-stratifies: a *signature* declares **generators**; an **op** is what `flow`
-builds from them. `LRA`/`LIA`/`BV` are *generator enums*, not "op enums".
+`BV` are signatures; so is `dataflow::Op<G>` (see below). Vocabulary
+stratifies: a *signature* declares **generators**; an **op** is what
+`dataflow` builds from them. `LRA`/`LIA`/`BV` are *generator enums*, not "op enums".
 
 Accessors: a wire's `dtype` becomes **`sort()`**; an op's `itype` becomes
 **`sym()`** (the generator symbol). Not `gen()`: `gen` is a reserved
@@ -61,14 +62,14 @@ Structural generators remain the only obligations beyond `check`:
 implicit behaviour. They lift from generators to composite ops pointwise,
 but each lift is a written decision, not a freebie.
 
-## flow: the free construction
+## dataflow: the free construction
 
 **`Op<G: Signature>`** is the free rig category with finite biproducts over
 the signature `G`, in the sense of tape diagrams — one uniform term
 calculus covering dataflow (⊗) and control flow (⊕). Boundaries are
 positional: `Monomial<S> = Vec<S>` (a ⊗-word), `Polynomial<S> =
 Vec<Monomial<S>>` (a ⊕-word of monomials). There are no wires and no
-variables in `flow`; identity of data is positional.
+variables in `dataflow`; identity of data is positional.
 
 Term nodes (children by id — no `Box`, no recursive types):
 
@@ -147,22 +148,22 @@ order/visibility discipline. Bounded on `Signature` only.
 - **`Atom<I, J, F>`** (each `: Signature`) — three labelled bindings of
   signature elements to variable lists, one per temporal role:
 
-  | role     | writes             | reads                                  |
-  |----------|--------------------|----------------------------------------|
-  | `init`   | next (sort `s`)    | next of awaited vars (sort `s`)        |
-  | `update` | next (sort `s`)    | latched (`reads`) + awaited next (`waits`) |
-  | `delay`  | derivative (`s.T()`) | latched (`reads`) + awaited derivative (`waits`, sort `s.T()`) |
+  | role   | writes             | reads                                  |
+  |--------|--------------------|----------------------------------------|
+  | `init` | next (sort `s`)    | next of awaited vars (sort `s`)        |
+  | `next` | next (sort `s`)    | latched (`reads`) + awaited next (`waits`) |
+  | `flow` | derivative (`s.T()`) | latched (`reads`) + awaited derivative (`waits`, sort `s.T()`) |
 
   There are no aspects and no per-entry tags: the face of every position is
-  a function of (role, list). The update's latched/next distinction *is*
-  the read/wait split atoms have always declared, and **delay has the same
-  split**: its wait list reads awaited *derivatives* (`d(w)` of variables
-  another atom flows), under the same acyclicity discipline as update's
-  awaits — this is what admits derived observers such as the Lie
+  a function of (role, list). The `next` field's latched/next distinction
+  *is* the read/wait split atoms have always declared, and **`flow` has the
+  same split**: its wait list reads awaited *derivatives* (`d(w)` of
+  variables another atom flows), under the same acyclicity discipline as
+  `next`'s awaits — this is what admits derived observers such as the Lie
   derivative (`d(v) = ∇V(x) · f(x)` reads the plant's derivative fibers),
   while cyclic derivative-awaits (genuinely implicit DAEs, algebraic
-  loops) stay rejected. `T` is invoked in exactly two positions: delay
-  writes and delay waits. A var both read and awaited appears in both
+  loops) stay rejected. `T` is invoked in exactly two positions: flow
+  writes and flow waits. A var both read and awaited appears in both
   lists.
 - **`Module`** — atoms glued by a linear order consistent with their await
   relation, plus the visibility classes (extl/intf/prvt, obs/ctrl) and the
@@ -174,35 +175,62 @@ survives as `T` on sorts; `X` survives as the register semantics inside
 `bind`. The python surface keeps `X(x)`/`d(x)` as sugar that sorts entries
 into the right list.
 
-### The sugar constructors, by example
+### The constructors, by example
 
-Each atom kind is "which bundle carries nontrivial dynamics"; the sugar
-constructor writes the trivial one for you — the zero section of the other
-bundle. Surface syntax, target vocabulary:
+Each atom kind is "which bundle carries nontrivial dynamics"; the
+constructor writes the trivial field for you — the zero section of the
+other bundle. Two authoring layers exist: the **default constructors**
+(explicit op lists per field) and the **sugar** (`zrth.sugar`: subclass
+`Module` à la `torch.nn.Module`; the overridden methods run symbolically
+and *which methods are overridden selects the kind* — `init`+`next`
+sequential, `init`+`flow` differential, all three hybrid). Target
+vocabulary throughout: `Op` for today's `Term`, `next`/`flow` for today's
+`update`/`delay` kwargs and method names.
 
-**Sequential — a counter.** Dynamics in Δ; the flow is synthesized:
+**Sequential — a counter.** Dynamics in Δ; the flow is synthesized.
+
+Default constructors:
 
 ```python
 x = Var(Real([1, 1]))
 counter = Module.sequential(
     [x],
-    init   = [Op(LRA.Real(zeros(1, 1)), [X(x)])],       # x' = 0
-    update = [Op(LRA.Linear(I, one),    [X(x)], [x])],  # x' = x + 1
+    init = [Op(LRA.Real(zeros(1, 1)), [X(x)])],       # x' = 0
+    next = [Op(LRA.Linear(I, one),    [X(x)], [x])],  # x' = x + 1
 )
 # synthesized flow: d(x) = 0 — the T zero section (zero_field::<Flow>)
 ```
 
-**Differential — exponential decay.** Dynamics in T; the update is
-synthesized:
+Sugar — overriding `init` and `next` *is* declaring a sequential module:
 
 ```python
-x = Var(Real([1, 1]))
+class Counter(Module):
+    def init(self):        return 0
+    def next(self, x):     return x + 1
+
+counter = Counter(theory=LRA, ctrl=(x,))
+```
+
+**Differential — exponential decay.** Dynamics in T; the next is
+synthesized. The flow is a rate *times the time form*: in sugar, `d(t)`
+of an external clock.
+
+```python
+x, t = Var(Real([1, 1])), Var(Real([1, 1]))
 decay = Module.differential(
-    [x],
-    init  = [Op(LRA.Real(x0),     [X(x)])],             # x' = x0
-    delay = [Op(LRA.Drift(-a, 0), [d(x)], [x, dt])],    # dx = -a·x·dt
+    [x, t],
+    init = [Op(LRA.Real(x0),     [X(x)])],               # x' = x0
+    flow = [Op(LRA.Drift(-a, 0), [d(x)], [x, d(t)])],    # dx = -a·x·dt
 )
-# synthesized update: X(x) = x — the Δ zero section (zero_field::<Step>)
+# synthesized next: X(x) = x — the Δ zero section (zero_field::<Next>)
+```
+
+```python
+class Decay(Module):
+    def init(self, t):      return x0
+    def flow(self, x, t):   return -a * x * d(t)
+
+decay = Decay(theory=LRA, ctrl=(x,), extl=(t,))
 ```
 
 **Hybrid — the bouncing ball.** Both fields explicit: continuous fall,
@@ -211,18 +239,27 @@ discrete reflection at the floor.
 ```python
 p, v = Var(Real([1, 1])), Var(Real([1, 1]))
 ball = Module.hybrid(
-    [p, v],
-    init   = [Op(LRA.Real(p0), [X(p)]), Op(LRA.Real(zeros(1, 1)), [X(v)])],
-    update = [                       # the jump: reflect v at the floor
+    [p, v, t],
+    init = [Op(LRA.Real(p0), [X(p)]), Op(LRA.Real(zeros(1, 1)), [X(v)])],
+    next = [                         # the jump: reflect v at the floor
         Op(LRA.Le(),  [hit], [p, zero]),           # hit  = p ≤ 0
         Op(LRA.Ite(), [X(v)], [hit, minus_cv, v]), # v'   = hit ? -c·v : v
         Op(LRA.Id(),  [X(p)], [p]),                # p'   = p
     ],
-    delay  = [                       # the flow: free fall
-        Op(LRA.Drift(1, 0), [d(p)], [v, dt]),      # dp = v·dt
-        Op(LRA.Drift(0,-g), [d(v)], [v, dt]),      # dv = -g·dt
+    flow = [                         # the flow: free fall
+        Op(LRA.Drift(1, 0), [d(p)], [v, d(t)]),    # dp = v·dt
+        Op(LRA.Drift(0,-g), [d(v)], [v, d(t)]),    # dv = -g·dt
     ],
 )
+```
+
+```python
+class Ball(Module):
+    def init(self, t):          return p0, 0
+    def next(self, p, v, t):    return p, ite((p <= 0) & (v < 0), -c * v, v)
+    def flow(self, p, v, t):    return v * d(t), -g * d(t)
+
+ball = Ball(theory=LRA, ctrl=(p, v), extl=(t,))
 ```
 
 The examples use **`Drift(A, b)`** — the affine flow generator
@@ -235,11 +272,14 @@ rank-preserving `Linear` rightly refuses to cross. `Drift` conserves
 degree too (0 + 1 = 1); the only primitive source of degree is the **time
 form `dt`** itself — the tautological differential of the clock, either a
 distinguished 1-form the module provides (minted by `bind`) or the
-derivative face of an explicit clock variable (`d(t) = dt`). The same
-graded product (0-form × 1-form → 1-form) is precisely the op
-forward-mode autodiff emits (`∇V(x) · dx`), so one addition serves both.
-LRA has none of this yet — today only `zero` writes 1-forms, so no
-nontrivial flow is expressible; listed under Open items.
+derivative face of an explicit clock variable (`d(t) = dt`). The sugar
+already votes for the second option: its flow bodies multiply rates by
+`d(t)` of an external clock (`return -a * x * d(t)`), which is the clock
+variable's derivative face used as the time form. The same graded product
+(0-form × 1-form → 1-form) is precisely the op forward-mode autodiff
+emits (`∇V(x) · dx`), so one addition serves both. LRA has none of this
+yet — today only `zero` writes 1-forms, so no nontrivial flow is
+expressible; listed under Open items.
 
 ## bind: elaboration
 
@@ -265,7 +305,7 @@ bind : Module → Instance
   `local_coupling_is_order_independent` in `base/tests/module.rs`) becomes
   unrepresentable rather than checked.
 - Wire allocation is demand-driven per var: latched if read, next if
-  written or awaited, derivative if a delay writes it.
+  written or awaited, derivative if a flow writes it.
 - **`Binding<T>`** — partial assignment of wires into some world; every
   consumer is an instance:
 
@@ -288,7 +328,7 @@ Two primitives, doing opposite jobs:
 - **`Var`** (reactive) — gensym: *separates* what is equal-looking. Global,
   creation-ordered; equality is identity; creation order is the canonical
   interface order.
-- **`OpId`** (flow) — value number: *unifies* what is equal-being.
+- **`OpId`** (dataflow) — value number: *unifies* what is equal-being.
   Store-scoped, dense; equality is structural equality; creation order is
   topological order.
 
@@ -311,7 +351,7 @@ pub trait Tangent: Sized {
 The former lives on the *sort* because `reactive` needs it with no
 signature at hand (a module carries three signatures sharing one sort
 type). The old wire `degree` (`0`-form/`1`-form) is fully absorbed: faces
-are determined by role, and the delay-writes face has sort `s.T()` — so
+are determined by role, and the flow-writes face has sort `s.T()` — so
 "derivative of an integer wire" is unwritable rather than merely useless.
 
 A reference implementation over reals, booleans, and the trivial tangent:
@@ -322,7 +362,7 @@ pub enum Sort {
     /// A real tensor; `rank` is the differential grade: 0 = value,
     /// 1 = first derivative, ...
     Real { shape: [usize; 2], rank: u8 },
-    /// A boolean tensor: a constant sort — it cannot move during delay.
+    /// A boolean tensor: a constant sort — it cannot move during flow.
     Bool([usize; 2]),
     /// The trivial tangent: a singleton, inhabited by exactly the zero
     /// value. Terminal, not empty.
@@ -346,7 +386,7 @@ impl Tangent for Sort {
   them is the signature's job (no generator mentions rank ≥ 2), not the
   sort former's, which stays total.
 - `Bool → Zero` realizes the constant-sort story; with the closure law,
-  "booleans don't move during delay" is unrepresentable, not checked.
+  "booleans don't move during flow" is unrepresentable, not checked.
 - `Zero → Zero` makes the trivial tangent a fixed point: the tower
   stabilizes, no spurious iterated tangents.
 
@@ -358,7 +398,7 @@ zero tensor.
 ### Constant sorts and the Zero sort
 
 Discrete sorts (Bool, Int, BitVec) have a *trivial* tangent, not a missing
-one. `T` stays total, and "discrete values don't change during delay" is a
+one. `T` stays total, and "discrete values don't change during flow" is a
 closure property of the signature:
 
 > For a constant sort, `zero` is the only generator whose codomain mentions
@@ -382,7 +422,7 @@ as a type, composing with hybrid modules with no case analysis.
 **when** (same sort, next round). Neither is syntax any more: the roles
 carry both distinctions, causality is enforced structurally (declared
 waits, await acyclicity, feedback only through the register realized by
-`bind`), never through the types of `flow`.
+`bind`), never through the types of `dataflow`.
 
 ### The temporal bi-bundle: X and d as two tangent structures
 
@@ -402,11 +442,11 @@ Consequences, each a semantic reading of an existing construct:
   base `v`, the discrete fiber `X(v)` (sort `S`), the continuous fiber
   `d(v)` (sort `T(S)`). Atom boundaries are monomials over these bundle
   components.
-- **An atom is a point and two fields**: init picks a point; update is a
-  *difference field* (base ⊗ awaited Δ-fibers → own Δ-fibers); delay is a
+- **An atom is a point and two fields**: init picks a point; next is a
+  *difference field* (base ⊗ awaited Δ-fibers → own Δ-fibers); flow is a
   *vector field* (base → own T-fibers) — with the section law `p ∘ X = id`
   holding *by construction*, since each fiber wire is attached to its
-  variable. The stochastic reading (update = jump part, delay = drift
+  variable. The stochastic reading (next = jump part, flow = drift
   part, init = initial distribution) is this structure seen through a
   jump-diffusion generator.
 - **Awaiting `w` is reading `w`'s Δ-fiber** — a coordinate another atom
@@ -423,7 +463,7 @@ unify into two instances of *one* parametric bundle-signature notion
 (source signature, target universe, sort map, zero section) — the
 Δ-instance with target = source and identity sort map, the T-instance
 with the tangent target. The two instances are symmetric in their reads
-as well: update awaits foreign Δ-fibers, delay awaits foreign T-fibers
+as well: next awaits foreign Δ-fibers, flow awaits foreign T-fibers
 (derived observers, e.g. the Lie derivative) — both under the same
 acyclicity condition, with cyclic fiber-awaits (algebraic loops, implicit
 DAEs) rejected in both bundles.
@@ -451,11 +491,11 @@ pub trait Bundle: Signature {
 // ---- instance 1: Δ — the overwrite change action (discrete) ----
 // ΔM = M: the change IS the next value; target = source, both maps are
 // the identity. This IS "X is not a sort former", as an impl.
-impl Bundle for Step {
+impl Bundle for Next {
     type Source = Val;                          // Sort = Val too
     fn embed(s: Val) -> Val { s }
     fn fiber(s: Val) -> Val { s }
-    fn zero(_: Val) -> Self { Step::Skip }      // zero change: X(v) = v
+    fn zero(_: Val) -> Self { Next::Skip }      // zero change: X(v) = v
 }
 
 // ---- instance 2: T — the tangent structure (continuous) ----
@@ -472,12 +512,12 @@ impl Bundle for Flow {
 }
 
 /// A field into bundle B: reads bases and already-written fibers, writes
-/// its own fibers. This ONE shape is init, update, and delay.
+/// its own fibers. This ONE shape is init, next, and flow.
 pub struct Field<B: Bundle> {
     op: B,
     writes: Vec<VarId>,       // own fibers
     reads_base: Vec<VarId>,   // latched values
-    reads_fiber: Vec<VarId>,  // the awaits: Δ-fibers (update), T-fibers (delay).
+    reads_fiber: Vec<VarId>,  // the awaits: Δ-fibers (next), T-fibers (flow).
 }
 
 /// One checker for every role — faces are (bundle, list), nothing else.
@@ -496,15 +536,15 @@ fn zero_field<B: Bundle>(vars: &[Var], ctrl: &[VarId]) -> Vec<Field<B>> { … }
 /// An atom: a point and two fields, one per bundle.
 pub struct Atom<D: Bundle<Source = Val>, C: Bundle<Source = Val>> {
     init: Vec<Field<D>>,   // a point: fields with no base reads
-    step: Vec<Field<D>>,   // difference field  (Δ)
+    next: Vec<Field<D>>,   // difference field  (Δ)
     flow: Vec<Field<C>>,   // vector field      (T)
 }
 ```
 
 The atom kinds become definitions, not constructors: a **sequential**
 atom has its dynamics in Δ and `zero_field::<Flow>` as its flow; a
-**differential** atom has its dynamics in T and `zero_field::<Step>` as
-its step; a **combinatorial** atom is `init == step` with zero flow; a
+**differential** atom has its dynamics in T and `zero_field::<Next>` as
+its next; a **combinatorial** atom is `init == next` with zero flow; a
 **hybrid** atom is both fields nontrivial — no new machinery, which is
 the strongest evidence the analogy carries weight.
 
@@ -570,18 +610,18 @@ python surface still spells it `Term`):
 - **Init reads are fiber reads by necessity.** At time zero no base
   exists — nothing was carried over — so an init block can only await:
   initialization cascades (`X(y) = f(X(x0))`) are Δ-fiber chains, ordered
-  by the same acyclicity condition as updates.
+  by the same acyclicity condition as next fields.
 
-- **The continuous mirror, and its first client.** A delay net reading a
-  base is a vector field (`d(p) = v`: chained integrators — no ordering
-  constraint, integration decouples them). A delay net reading a foreign
+- **The continuous mirror, and its first client.** A flow net reading a
+  base is a vector field (`d(p) = v·dt`: chained integrators — no ordering
+  constraint, integration decouples them). A flow net reading a foreign
   **T-fiber** would be the continuous await:
 
   ```python
   Op(LRA.Linear(A, b), [d(y)], [d(x)])   # dy = A·dx : algebraic coupling
   ```
 
-  This is delay's wait list — the design admits *acyclic* T-fiber reads,
+  This is flow's wait list — the design admits *acyclic* T-fiber reads,
   with the **Lie-derivative observer** as the motivating client:
   `d(v_V) = ∇V(x) · f(x)` reads the plant's `d(x)` wires, an awaited
   derivative (observer depends on plant, never conversely). The same
@@ -601,11 +641,28 @@ The symmetry, in one table:
 
 Settled: **`Op`** replaces `Term` (and the interim `Box`); the composite
 structure needs no separate noun — a net/tape *is* a composed op, and
-`Op<G>: Signature` makes that a type-level fact. **`flow`** is the crate:
-data and control flow along wires; the hybrid-systems pun ("flow" also
-names continuous evolution, flow vs. jump) is accepted — the crate name
-lives in paths, the dynamics term in prose. **`Wire`** is reclaimed as the
-bind-level coordinate.
+`Op<G>: Signature` makes that a type-level fact. **`dataflow`** is the
+crate, and the name records a design theorem: the tape calculus *reduces
+control flow to dataflow* — the ⊕-tag is a value, injections write it,
+the distributor routes on it, `Ite` is derived — exactly as the classical
+dataflow architectures (Dennis) handled conditionals with switch/merge
+nodes inside the graph. The crate split instantiates Harel–Pnueli's
+transformational/reactive dichotomy: `dataflow` is the transformational
+half, `reactive` the temporal one. One recorded overload: in the
+synchronous-languages corner (Lustre, Lucid) "dataflow" names the
+temporal stream paradigm — closer to `reactive` than to this crate; the
+compound context (`dataflow::Op`, no clocks anywhere) disambiguates.
+**`Wire`** is reclaimed as the bind-level coordinate. The atom's fields
+are **`init` / `next` / `flow`**: `next` and `flow` name the fiber each
+field writes, in the codebase's own face vocabulary (`nxt`, `der`) —
+digital-native ("next-state logic") and hybrid-acceptable. Rejected:
+**`update`** (generic — kept only as prose), **`jump`** (canonical
+partner of flow in hybrid systems, but in digital/software land it means
+JMP/goto — a control-flow connotation aimed at exactly the audience this
+codebase serves — and connotes sporadic events where next fires every
+round), **`step`** (names the clock tick, not the map). The hybrid and
+stochastic readings stay in prose: `next` reads as *jump map* /
+*jump kernel*, `flow` as *flow map* / *drift*.
 
 Considered and rejected, with reasons:
 
@@ -615,17 +672,29 @@ Considered and rejected, with reasons:
 - **`Diagram`**: names the picture, not the structure — kept in prose for
   semantics ("ops are string diagrams / tapes / open hypergraphs").
 - **`Circuit`**: right for the discrete fragment, wrong connotation for a
-  delay net (a system of ODEs is not a circuit).
+  flow net (a system of ODEs is not a circuit).
 - **`Net`**: served as the working name (netlists + neural nets, both
   literal here); absorbed into `Op` when the composite and the atomic
   unified. Disambiguation to keep in prose: dataflow networks, not Petri
   nets.
-- **`Kernel`**: honest for the update role (Markov kernel) but
+- **`Kernel`**: honest for the next role (Markov kernel) but
   role-specific — an init is an initial distribution — and overloaded.
 - **`Gen`** (for the composite): the generator names a *role* (the thing
-  inducing evolution — the atom, in jump-diffusion terms: update = jump
-  part, delay = drift part, init = initial distribution), not the syntax;
+  inducing evolution — the atom, in jump-diffusion terms: next = jump
+  part, flow = drift part, init = initial distribution), not the syntax;
   and it collides with the signature-symbol vocabulary.
+
+Crate-name genealogy (each rejected for cause): **`net`/`netlist`** —
+`std::net`, Petri adjacency; **`flow`** — the accepted pun with
+continuous flow became untenable once "flow" named the continuous
+field of the bi-bundle; **`tape`**/**`rig`** — literature-exact but demand too
+much context; **`trans`** — transfer functions and transitions are
+dynamical notions, the temporal side of the duality; **`static`** — a
+Rust keyword (`r#static` at every path); **`functional`** — claims
+determinism havoc refutes, compounds with `reactive` into FRP, and
+collides with "Lyapunov functional"; **`repr`** — `#[repr(...)]`;
+**`comp`**/**`pure`**/**`statics`** — sound, outranked. Settled:
+**`dataflow`**.
 - **`Port`/`Aspect`** (variable faces): made redundant by roles — the face
   of every position is a function of (role, list).
 
@@ -634,7 +703,7 @@ Considered and rejected, with reasons:
 - `Module` as a `Signature` (modules as ops in larger diagrams — the
   wiring-operad picture): definable via the sorted boundary, but the
   forgetful map drops visibility and await metadata; a deliberate step.
-- ~~Delay reading derivatives~~ settled: delay carries a wait list of
+- ~~Flow reading derivatives~~ settled: flow carries a wait list of
   awaited derivatives (see "Await: reading the fiber") — acyclic T-fiber
   reads admit derived observers (the Lie derivative's client) under the
   same causality condition as awaits; algebraic loops stay out.
@@ -659,16 +728,16 @@ Recorded as leads, not claims:
   natural (HAVOC). The formal home for the circuit fragment.
 - **Tape diagrams** (Bonchi–Di Giorgio–Santamaria): string diagrams for rig
   categories with finite biproducts — ⊗ for dataflow, ⊕ for control flow,
-  sums-of-products normal form. The calculus `flow::Op` implements;
+  sums-of-products normal form. The calculus `dataflow::Op` implements;
   guarded commands are its normal form, `Ite` its distributor.
 - **Open hypergraphs** (Wilson–Zanasi; the `open-hypergraphs` crate):
   the free-SMC-arrow datastructure for the circuit fragment. Reuse plan: a
-  functor from `flow` (visualization, rewriting, optic-based autodiff) —
+  functor from `dataflow` (visualization, rewriting, optic-based autodiff) —
   not a replacement: their equations include special Frobenius (merging,
   illegal here) and their nodes are local indices.
 - **Markov categories** (Fritz): copy/discard without merging —
   structurally our discipline; morphisms are kernels. Stochastic vocabulary
-  maps onto atoms: update = (Markov) kernel, delay = infinitesimal
+  maps onto atoms: next = (Markov) kernel, flow = infinitesimal
   generator (jump diffusions unify both), init = initial distribution.
 - **RVSDG / MLIR regions** (compilers): folded control-flow nodes inside
   dataflow with explicit expansion passes — engineering precedent for
@@ -681,19 +750,25 @@ Recorded as leads, not claims:
   composition with coupling and a hiding operator matching ours.
 - **Operads of wiring diagrams / open dynamical systems** (Spivak;
   Vagner–Spivak–Lerman): composition-as-wiring; the natural home for
-  modules-as-ops and the hybrid (delay) dimension.
+  modules-as-ops and the hybrid (flow) dimension.
 - **Tangent categories** (Rosický, Cockett–Cruttwell): the sort-level `T`
   as tangent functor; discrete objects = trivial tangents.
 - **Change actions / difference categories** (Alvarez-Picallo–Ong,
   Alvarez-Picallo–Lemay): the discrete tangent structure behind `X` — see
   "The temporal bi-bundle"; overwrite change action `ΔM = M`.
+- **Transformational vs. reactive systems** (Harel–Pnueli): the crate
+  split is the field's founding dichotomy — `dataflow` computes, `reactive`
+  interacts over time.
+- **Dataflow architectures** (Dennis): conditionals as switch/merge token
+  routing inside the graph — control flow subsumed by dataflow, the
+  crate's name-giving idea.
 
 ## The stack
 
 ```
 theory     Signature, Sort, Tangent,   — generators, sorts, arity checking;
            LRA, LIA, BV                  Theory: Signature reserved for axioms
-flow       Op<G: Signature>            — free rig construction: dataflow ⊗,
+dataflow   Op<G: Signature>            — free rig construction: dataflow ⊗,
                                          control flow ⊕, lazy, arena/OpId
 reactive   Var, Atom, Module           — names, time roles, awaits, visibility
 bind       bind: Module → Instance     — wires, coupling, Binding<T>, SSA
