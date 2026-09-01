@@ -7,10 +7,10 @@ syntax crates over one interface, meeting in a semantics crate.
 theory      Signature, Sort, Tangent; LRA, LIA, BV
               ↑                    ↑
 dataflow    Op<G: Signature>     reactive   Var, Atom, Module
-(structural identity: OpId)      (nominal identity: Var)
+(nominal identity: Op)          (nominal identity: Var)
               ↖                    ↗
-               bind    bind : Module → Instance
-                       Wire, Binding<T>
+               bind    bind : Module → (its bound form); 
+               (nominal identify: Wire)
                           ↑
                python / smt / torch / interpreters
 ```
@@ -21,9 +21,9 @@ dataflow    Op<G: Signature>     reactive   Var, Atom, Module
 - **`reactive`** — state syntax: `Var`, `Atom`, `Module`. Names, time roles,
   await order, visibility. Depends only on `theory` — it never sees
   `dataflow`.
-- **`bind`** — the only crate that knows both worlds: elaborates a module
-  into an `Instance`, minting wires. Everything semantic (evaluation, SMT,
-  display, monitors) is a client of `bind`.
+- **`bind`** — the only crate that knows both worlds: elaborates a
+  module, minting wires. Everything semantic (evaluation, SMT, display,
+  monitors) is a client of `bind`.
 
 Seven public syntax names (`Signature`, `Tangent`, the generator enums;
 `Op`; `Var`, `Atom`, `Module`), two identities, one derived coordinate, one
@@ -57,8 +57,7 @@ vocabulary (`Real`, `Int`, `(_ BitVec n)`), so both audiences read it
 natively.
 
 Structural generators remain the only obligations beyond `check`:
-`Combinatorial::havoc`, `Sequential::skip`, `Differential::zero` (and
-`assume`, when partiality lands) exist because `reactive` synthesizes
+`Combinatorial::havoc`, `Sequential::skip`, `Differential::zero` exist because `reactive` synthesizes
 implicit behaviour. They lift from generators to composite ops pointwise,
 but each lift is a written decision, not a freebie.
 
@@ -149,7 +148,7 @@ order/visibility discipline. Bounded on `Signature` only.
   signature elements to variable lists, one per temporal role:
 
   | role   | writes             | reads                                  |
-  |--------|--------------------|----------------------------------------|
+        |--------|--------------------|----------------------------------------|
   | `init` | next (sort `s`)    | next of awaited vars (sort `s`)        |
   | `next` | next (sort `s`)    | latched (`reads`) + awaited next (`waits`) |
   | `flow` | derivative (`s.T()`) | latched (`reads`) + awaited derivative (`waits`, sort `s.T()`) |
@@ -195,8 +194,8 @@ Default constructors:
 x = Var(Real([1, 1]))
 counter = Module.sequential(
     [x],
-    init = [Op(LRA.Real(zeros(1, 1)), [X(x)])],       # x' = 0
-    next = [Op(LRA.Linear(I, one),    [X(x)], [x])],  # x' = x + 1
+    init=[Op(LRA.Real(zeros(1, 1)), [X(x)])],  # x' = 0
+    next=[Op(LRA.Linear(I, one), [X(x)], [x])],  # x' = x + 1
 )
 # synthesized flow: d(x) = 0 — the T zero section (zero_field::<Flow>)
 ```
@@ -206,7 +205,9 @@ Sugar — overriding `init` and `next` *is* declaring a sequential module:
 ```python
 class Counter(Module):
     def init(self):        return 0
+
     def next(self, x):     return x + 1
+
 
 counter = Counter(theory=LRA, ctrl=(x,))
 ```
@@ -219,8 +220,8 @@ of an external clock.
 x, t = Var(Real([1, 1])), Var(Real([1, 1]))
 decay = Module.differential(
     [x, t],
-    init = [Op(LRA.Real(x0),     [X(x)])],               # x' = x0
-    flow = [Op(LRA.Drift(-a, 0), [d(x)], [x, d(t)])],    # dx = -a·x·dt
+    init=[Op(LRA.Real(x0), [X(x)])],  # x' = x0
+    flow=[Op(LRA.Drift(-a, 0), [d(x)], [x, d(t)])],  # dx = -a·x·dt
 )
 # synthesized next: X(x) = x — the Δ zero section (zero_field::<Next>)
 ```
@@ -228,7 +229,9 @@ decay = Module.differential(
 ```python
 class Decay(Module):
     def init(self, t):      return x0
+
     def flow(self, x, t):   return -a * x * d(t)
+
 
 decay = Decay(theory=LRA, ctrl=(x,), extl=(t,))
 ```
@@ -240,15 +243,15 @@ discrete reflection at the floor.
 p, v = Var(Real([1, 1])), Var(Real([1, 1]))
 ball = Module.hybrid(
     [p, v, t],
-    init = [Op(LRA.Real(p0), [X(p)]), Op(LRA.Real(zeros(1, 1)), [X(v)])],
-    next = [                         # the jump: reflect v at the floor
-        Op(LRA.Le(),  [hit], [p, zero]),           # hit  = p ≤ 0
-        Op(LRA.Ite(), [X(v)], [hit, minus_cv, v]), # v'   = hit ? -c·v : v
-        Op(LRA.Id(),  [X(p)], [p]),                # p'   = p
+    init=[Op(LRA.Real(p0), [X(p)]), Op(LRA.Real(zeros(1, 1)), [X(v)])],
+    next=[  # the jump: reflect v at the floor
+        Op(LRA.Le(), [hit], [p, zero]),  # hit  = p ≤ 0
+        Op(LRA.Ite(), [X(v)], [hit, minus_cv, v]),  # v'   = hit ? -c·v : v
+        Op(LRA.Id(), [X(p)], [p]),  # p'   = p
     ],
-    flow = [                         # the flow: free fall
-        Op(LRA.Drift(1, 0), [d(p)], [v, d(t)]),    # dp = v·dt
-        Op(LRA.Drift(0,-g), [d(v)], [v, d(t)]),    # dv = -g·dt
+    flow=[  # the flow: free fall
+        Op(LRA.Drift(1, 0), [d(p)], [v, d(t)]),  # dp = v·dt
+        Op(LRA.Drift(0, -g), [d(v)], [v, d(t)]),  # dv = -g·dt
     ],
 )
 ```
@@ -256,8 +259,11 @@ ball = Module.hybrid(
 ```python
 class Ball(Module):
     def init(self, t):          return p0, 0
+
     def next(self, p, v, t):    return p, ite((p <= 0) & (v < 0), -c * v, v)
+
     def flow(self, p, v, t):    return v * d(t), -g * d(t)
+
 
 ball = Ball(theory=LRA, ctrl=(p, v), extl=(t,))
 ```
@@ -285,13 +291,11 @@ expressible; listed under Open items.
 
 The definition/elaboration split (as in HDLs): everything above is a
 *definition* — checkable, composable, freely shared. Wires are what the one
-crossing operation produces:
+crossing operation produces. What `bind` returns — the bound form of the
+module — is deliberately left unspecified here; the commitments are only
+that **`Wire` lives there** (and nowhere above), and the properties below.
 
-```
-bind : Module → Instance
-```
-
-- **`Wire`** — the derived coordinate, minted only here:
+- **`Wire`** — the derived coordinate, minted only by `bind`; e.g.
   `(occurrence, OpId, side, index)`. The occurrence path distinguishes the
   same hash-consed op used in two atoms (definition vs instance — the
   folded-netlist distinction), so hash-consing (share syntax maximally) and
@@ -306,20 +310,14 @@ bind : Module → Instance
   unrepresentable rather than checked.
 - Wire allocation is demand-driven per var: latched if read, next if
   written or awaited, derivative if a flow writes it.
-- **`Binding<T>`** — partial assignment of wires into some world; every
-  consumer is an instance:
-
-  | binding            | codomain `T`                    | totality        |
-  |--------------------|---------------------------------|-----------------|
-  | evaluation / SSA   | value, tensor, formula          | total           |
-  | naming / display   | names                           | sparse          |
-  | SMT witnesses      | solver constants                | per query       |
-  | tapping / monitors | `Var` (interface-extending)     | deliberate      |
-
-  A wire's identity is structural and unique; its *life* is one per
-  interpretation. Tapping — binding a `Var` at an internal wire — is the
-  inverse of hiding: it exposes an internal cut as an observable variable,
-  which is how observers/monitors over internal signals will work.
+- **Interpretations assign modules into some world** (no committed data
+  structure): evaluation assigns values, tensors, or formulas (totally);
+  display assigns names (sparsely); SMT witnesses assign solver constants
+  (per query); tapping assigns a `Var` (deliberately — it extends the
+  interface). A wire's identity is structural and unique; its *life* is
+  one per interpretation. Tapping an internal wire is the inverse of
+  hiding: it exposes an internal cut as an observable variable, which is
+  how observers/monitors over internal signals will work.
 
 ## Identity
 
@@ -506,7 +504,10 @@ impl Bundle for Flow {
     type Source = Val;                          // Sort = Tan
     fn embed(s: Val) -> Tan { Tan::Val(s) }
     fn fiber(s: Val) -> Tan {
-        match s { Val::Real(sh) => Tan::TReal(sh), Val::Bool => Tan::Zero }
+        match s {
+            Val::Real(sh) => Tan::TReal(sh),
+            Val::Bool => Tan::Zero
+        }
     }
     fn zero(_: Tan) -> Self { Flow::ZeroGrad }  // zero rate: d(v) = 0
 }
@@ -534,7 +535,7 @@ fn check_field<B: Bundle>(vars: &[Var], f: &Field<B>) -> Result<(), String> {
 fn zero_field<B: Bundle>(vars: &[Var], ctrl: &[VarId]) -> Vec<Field<B>> { … }
 
 /// An atom: a point and two fields, one per bundle.
-pub struct Atom<D: Bundle<Source = Val>, C: Bundle<Source = Val>> {
+pub struct Atom<D: Bundle<Source=Val>, C: Bundle<Source=Val>> {
     init: Vec<Field<D>>,   // a point: fields with no base reads
     next: Vec<Field<D>>,   // difference field  (Δ)
     flow: Vec<Field<C>>,   // vector field      (T)
@@ -630,12 +631,12 @@ python surface still spells it `Term`):
 
 The symmetry, in one table:
 
-|                      | Δ (discrete)         | T (continuous)               |
-|----------------------|----------------------|------------------------------|
-| base read            | `x` — previous round | `x` — current state          |
-| fiber read           | `X(x)` — **await**   | `d(x)` — **await** (observer)|
-| ordering constraint  | await acyclicity     | same, if the gate opens      |
-| cycle                | zero-delay loop      | algebraic loop               |
+|                     | Δ (discrete)         | T (continuous)                |
+|---------------------|----------------------|-------------------------------|
+| base read           | `x` — previous round | `x` — current state           |
+| fiber read          | `X(x)` — **await**   | `d(x)` — **await** (observer) |
+| ordering constraint | await acyclicity     | same, if the gate opens       |
+| cycle               | zero-delay loop      | algebraic loop                |
 
 ## Naming record
 
@@ -695,6 +696,7 @@ determinism havoc refutes, compounds with `reactive` into FRP, and
 collides with "Lyapunov functional"; **`repr`** — `#[repr(...)]`;
 **`comp`**/**`pure`**/**`statics`** — sound, outranked. Settled:
 **`dataflow`**.
+
 - **`Port`/`Aspect`** (variable faces): made redundant by roles — the face
   of every position is a function of (role, list).
 
@@ -769,9 +771,9 @@ Recorded as leads, not claims:
 theory     Signature, Sort, Tangent,   — generators, sorts, arity checking;
            LRA, LIA, BV                  Theory: Signature reserved for axioms
 dataflow   Op<G: Signature>            — free rig construction: dataflow ⊗,
-                                         control flow ⊕, lazy, arena/OpId
+                                         control flow ⊕, lazy, arena/Op ids
 reactive   Var, Atom, Module           — names, time roles, awaits, visibility
-bind       bind: Module → Instance     — wires, coupling, Binding<T>, SSA
+bind       bind: Module → (bound form)  — wires, coupling, interpretations
 python       bindings, sugar, gym, torch, smt — clients of bind
 ```
 
