@@ -30,7 +30,8 @@ from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
 from zrth.sugar import ite as dsl_ite
 from benchmarks.svcomp._farkas import (certify, check_kinds, check_supported,
-                                      decrease, read_system, rule_for)
+                                      decrease, lex_decrease, read_system,
+                                      rule_for)
 from benchmarks.svcomp._property import Fixpoint
 from benchmarks.svcomp._nodes import Node, Unsupported, node_view
 from benchmarks.svcomp._farkas import (
@@ -463,4 +464,55 @@ def test_certificates_are_valid():
             assert sum(c.y[i] * c.A[i][j] for i in range(len(c.A))) == 0
         assert sum(c.y[i] * c.b[i] for i in range(len(c.b))) < 0
 
+
+def _two_ranks(update):
+    """A two-variable program composed with two ranks, ``relu(i)`` and ``relu(j)``,
+    each read at both ends of a step. Returns the system, the property, and the
+    two ``(V(s), V(s'))`` wire pairs."""
+    prog = system_of(loop_bench(("i", "j"), update))
+    mods, ranks = [], []
+    for W in ([[1, 0]], [[0, 1]]):
+        layers = [(np.array(W), np.array([0])), (np.array([[1]]), np.array([0]))]
+        vs_mod, vs = _v_module(prog.pairs, layers, read_next=False)
+        vsp_mod, vsp = _v_module(prog.pairs, layers, read_next=True)
+        mods += [vs_mod, vsp_mod]; ranks.append((vs[1], vsp[1]))
+    system = read_system(Module.parallel(prog.module, *mods), prog.names)
+    assert len(system.pairs) == 2 and len(system.all_pairs) == 6
+    return system, Fixpoint(over=system.pairs), tuple(ranks)
+
+
+def test_lexicographic_rank_where_no_single_rank_works():
+    """``while (i > 0) { if (j > 0) j--; else { i--; j = 3; } }``: the inner step
+    keeps ``i`` and the outer resets ``j``, so neither rank drops on every step —
+    but ``(i, j)`` drops lexicographically."""
+    system, prop, (r0, r1) = _two_ranks(
+        lambda c: (dsl_ite(c[0] > 0, dsl_ite(c[1] > 0, c[0], c[0] - 1), c[0]),
+                   dsl_ite(c[0] > 0, dsl_ite(c[1] > 0, c[1] - 1, 3), c[1])))
+    assert certify(system, prop, decrease(*r0)).status == "FAILED(violated)"
+    assert certify(system, prop, decrease(*r1)).status == "FAILED(violated)"
+    res = certify(system, prop, lex_decrease((r0, r1)))
+    assert res.verified, res.status
+    # ¬lexDec has two disjuncts (the first rank does not drop and: it increases /
+    # the second does not drop); every region refutes both
+    for p in res.certificates:
+        assert {c.disjunct for c in p.cells} == {0, 1}, p.cells
+
+
+def test_lexicographic_rank_must_prove_earlier_ranks_do_not_increase():
+    """``while (i > 0) { if (j > 0) { i = i + j - 2; j--; } else { i--; j = 3; } }``.
+    Across an inner run ``i`` goes +1, 0, −1, so ``(i, j)`` is *not* a lexicographic
+    rank: at ``j = 3`` the first rank increases while the second drops. A region's
+    witness may lie at ``j = 1`` where lex holds, so an encoding that *assumed*
+    "earlier ranks do not increase" while proving the later one drops certified the
+    region vacuously and reported VERIFIED. Non-increase is part of the formula,
+    never an assumption."""
+    system, prop, (r0, r1) = _two_ranks(
+        lambda c: (dsl_ite(c[0] > 0, dsl_ite(c[1] > 0, c[0] + c[1] - 2, c[0] - 1), c[0]),
+                   dsl_ite(c[0] > 0, dsl_ite(c[1] > 0, c[1] - 1, 3), c[1])))
+    res = certify(system, prop, lex_decrease((r0, r1)))
+    assert not res.verified, "an invalid lexicographic rank was certified"
+    assert res.status == "FAILED(violated)", res.status
+
+
+# --- the rule as a formula: disjunction, disequality, wires in the property ---
 

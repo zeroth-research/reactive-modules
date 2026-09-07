@@ -7,7 +7,7 @@ hold on each step. The rule names wires (``W[wire]``) and columns (``S[name]``,
 ``S.next[name]``); it knows nothing of programs or ranks. Termination is the
 client :func:`decrease` — ``V(s) - V(s') >= delta`` over two wires computing the
 same function at each end of a step — plus the substrate's well-foundedness
-theorem.
+theorem, and several ranks are :func:`lex_decrease`.
 
 The procedure is sound and incomplete, and what it cannot handle it refuses by
 name: :data:`OPS` for the theory's operations, :func:`check_supported` for the
@@ -46,7 +46,6 @@ non-negativity — see :func:`output_weights`.
 """
 from __future__ import annotations
 
-import dataclasses
 import itertools
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -833,9 +832,24 @@ def decrease(v_s, v_sp, delta: float = 1.0) -> Step:
     ``v_sp`` are the next wires carrying the rank at the pre- and post-state — two
     readings of the same function, one of the latched state, one of the next.
     ``V >= 0`` is structural (a non-negative output layer) and checked before."""
-    d = int(delta)
-    return Step(ok=lambda W, S: W[v_s] - W[v_sp] >= d, proves=Fixpoint,
-                ranks=((v_s, v_sp),))
+    return lex_decrease(((v_s, v_sp),), delta)
+
+
+def lex_decrease(ranks, delta: float = 1.0) -> Step:
+    """Termination by several ranks, lexicographically: on every step some rank
+    drops by ``delta`` while every earlier one does not increase — the
+    substrate's ``lexDec``, which one rank instantiates as a plain drop."""
+    d, ranks = int(delta), tuple(tuple(r) for r in ranks)
+
+    def ok(W, S):
+        alts = []
+        for i, (v, vp) in enumerate(ranks):
+            held = [W[ranks[j][1]] <= W[ranks[j][0]] for j in range(i)]
+            drop = W[v] - W[vp] >= d
+            alts.append(z3.And(*held, drop) if held else drop)
+        return z3.Or(*alts) if len(alts) > 1 else alts[0]
+
+    return Step(ok=ok, proves=Fixpoint, ranks=ranks)
 
 
 def rule_for(prop, system, rule=None) -> Step:
@@ -845,7 +859,8 @@ def rule_for(prop, system, rule=None) -> Step:
     rather than invented."""
     if rule is None:
         if isinstance(prop, Fixpoint):
-            raise Unsupported("Fixpoint needs a rank: pass decrease(v_s, v_sp)")
+            raise Unsupported("Fixpoint needs a rank: pass decrease(v_s, v_sp) or "
+                              "lex_decrease(...)")
         raise Unsupported(f"no rule for property {type(prop).__name__!r}")
     if not isinstance(prop, rule.proves):
         raise Unsupported(f"the rule proves {rule.proves.__name__}, "
@@ -1284,6 +1299,22 @@ def _certify_path(system, p: _Path, max_iters):
     return False, cells, None, "FAILED(max_iters)"
 
 
+def _check_ranks(rule: Step, devices, readings) -> None:
+    """A rank is one network read at both ends of a step: its two wires are
+    devices behind the same network, the first reading nothing of the next state
+    and the second nothing of the latched — what lets the proof state the rank as
+    one ``V`` and apply it to the state at either end."""
+    by_id = {d.wire_id: d for d in devices}
+    for v_s, v_sp in rule.ranks:
+        a, b = by_id.get(v_s.id), by_id.get(v_sp.id)
+        if (a is None or b is None or a.net != b.net
+                or not readings[v_s.id].net.units
+                or any(k == "next" for k, _ in a.inputs)
+                or any(k == "latched" for k, _ in b.inputs)):
+            raise Unsupported(f"rank ({v_s.id}, {v_sp.id}) is not one network read at "
+                              f"the latched state and at the next state")
+
+
 def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasResult:
     """Certify ``prop`` of ``system`` on every step of the property's domain, by
     ``rule`` — one formula over the graph's wires.
@@ -1312,6 +1343,7 @@ def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasRes
         pinned = w.id in pin_ids
         devices.append(Device(w.id, nets.index(rd.net), rd.inputs, pinned, offset[pinned]))
         offset[pinned] += len(rd.net.units)
+    _check_ranks(rule, devices, readings)
     nets, devices = tuple(nets), tuple(devices)
 
     def result(verified, paths, cex, status, unused=()):

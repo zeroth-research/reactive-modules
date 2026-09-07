@@ -19,7 +19,7 @@ The file follows the rule's shape, whatever the property:
     ``refute_bridge``); the rule's formula ``ok`` and ``step_ok``, which puts the
     bounds, collapses and refutations together by ``omega``; and
     ``Step``/``RawStep``/``consecution``;
-  * the whole-program composition: ``no_infinite_run_lex`` over the rank, fed
+  * the whole-program composition: ``no_infinite_run_lex`` over the ranks, fed
     each path's ``lex_step``, with ``initiation`` and per-path ``consecution``
     carrying the invariant along any run.
 """
@@ -962,8 +962,9 @@ def emit_program(name: str, system, result) -> str:
     by_id = {d.wire_id: d for d in result.devices}
     rank_nets = [by_id[v_s.id].net for v_s, _ in rule.ranks]
 
-    parts = [f"/- ──── program: {name} — terminates via a ranking function"
-             f"{npaths}.\n   Columns: {cols}. ──── -/"]
+    what = ("terminates via a ranking function" if len(rank_nets) == 1 else
+            f"terminates via a lexicographic rank of {len(rank_nets)} networks")
+    parts = [f"/- ──── program: {name} — {what}{npaths}.\n   Columns: {cols}. ──── -/"]
     for j, net in enumerate(result.nets):
         if net.units:
             parts += [_emit_network(net, str(j)), _emit_out_apply(net, str(j)),
