@@ -11,11 +11,9 @@ These pin the properties the emitted proofs rest on:
     union rests on.
   * a certificate the verifier returns satisfies the three Farkas conditions on
     its own system.
-  * the cells of a certified path partition the guard, and every mask
-    under-approximates ``V`` — the two facts the asymmetric bound rests on.
+  * the regions of a certified path partition the guard, which is what the
+    emitted coverage proof rests on.
 """
-import itertools
-
 import numpy as np
 import pytest
 import z3
@@ -41,9 +39,8 @@ from benchmarks.svcomp._farkas import (
     atom_rows,
     expand_cases,
     find_infeasibility_certificate,
-    masked_value,
-    output_weights,
-    strict_signs,
+    mode_region,
+    piece_value,
 )
 
 x, y = z3.Ints("x y")
@@ -149,10 +146,10 @@ def test_expand_cases_leaves_a_convex_guard_and_affine_body_alone():
         assert expand_cases(guard, [x - 1]) == [(guard, [x - 1])]
 
 
-def test_disjunctive_guard_is_certifiable_only_once_split(monkeypatch):
+def test_a_disjunctive_guard_reaches_the_lp_only_once_split(monkeypatch):
     """``atom_rows`` drops a disjunction, so an un-split disjunctive guard reaches
-    the LP with no rows at all and its cells cannot be certified. Pinned against
-    the un-split domain, since that gap is the reason the split exists."""
+    the LP as no rows at all and is reported as an atom it cannot express. The
+    split is what turns it into rows, which is the reason the split exists."""
     i, m, k = z3.Ints("i m k")
     # V = relu(m - i) + relu(k - i) over (i, m, k), for
     # `while (i < m or i < k) { i = i + 1 }`
@@ -162,11 +159,14 @@ def test_disjunctive_guard_is_certifiable_only_once_split(monkeypatch):
                      lambda c: (dsl_ite((c[0] < c[1]) | (c[0] < c[2]), c[0] + 1, c[0]),
                                 c[1], c[2]),
                      layers)
-    assert farkas_cell(ob).verified
+    split = farkas_cell(ob)
+    assert split.verified and split.certificate.unused == (), split.certificate.unused
 
     monkeypatch.setattr(_farkas, "_convex_alternatives", lambda a: None)
-    assert not farkas_cell(ob).verified, \
-        "the un-split disjunctive guard should not certify"
+    unsplit = farkas_cell(ob)
+    assert unsplit.certificate.unused, \
+        "the un-split disjunction should be reported as unusable by the LP"
+    assert all("Or" in u for u in unsplit.certificate.unused), unsplit.certificate.unused
 
 
 def _conditional_loop():
@@ -399,23 +399,18 @@ def test_find_infeasibility_certificate_none_when_feasible():
 
 
 def test_cells_partition_the_domain():
-    """A cell is pinned by the successor signs alone, strict on one side and
-    non-strict on the other, so the cells cover the guard and no state lies in two
-    of them. Coverage in the emitted proof rests on this."""
+    """A region fixes every node's mode, strict on one side and non-strict on the
+    other, so the regions cover the guard and no state lies in two of them.
+    Coverage in the emitted proof rests on this."""
     layers = [(np.array([[1], [1]]), np.array([0, -3])),
               (np.array([[1, 1]]), np.array([0]))]
     ob = _decrement(layers)
     res = farkas_cell(ob)
     assert res.verified, res.status
     for path in res.certificate.certificates:
-        regions = []
-        for c in path.cells:
-            lits = list(strict_signs(_pre_activations(Net.from_layers(layers), list(path.body)),
-                                     c.pattern_sp))
-            if c.pattern_s is not None:
-                lits += list(strict_signs(_pre_activations(Net.from_layers(layers), [x]),
-                                          c.pattern_s))
-            regions.append(z3.And(*lits))
+        acts = [z3.IntVal(k) + c[0] * x for c, k in path.units]
+        regions = [z3.And(*mode_region((("relu", tuple(acts)),), c.pattern))
+                   for c in path.cells]
         covered = z3.Solver()
         covered.add(path.guard, z3.Not(z3.Or(*regions)))
         assert covered.check() == z3.unsat, "cells leave part of the guard uncovered"
@@ -426,44 +421,27 @@ def test_cells_partition_the_domain():
                 assert overlap.check() == z3.unsat, f"cells {i} and {j} overlap"
 
 
-def test_mask_never_exceeds_V():
-    """Every mask under-approximates ``V``, with no condition on the state. That
-    is what lets a cell leave the pre-state activations unconstrained, so it holds
-    for masks that match no reachable pattern too."""
-    layers = [(np.array([[1], [2]]), np.array([0, -3])),
-              (np.array([[1, 2]]), np.array([4]))]
-    pres = _pre_activations(Net.from_layers(layers), [x])
-    weights = output_weights(Net.from_layers(layers))
-    coeffs, bias = weights
-    exact = z3.Sum([c * z3.If(p > 0, p, z3.IntVal(0))
-                    for c, p in zip(coeffs, pres)]) + bias
-    for mask in itertools.product((True, False), repeat=len(pres)):
-        solver = z3.Solver()
-        solver.add(masked_value(pres, weights, mask) > exact)
-        assert solver.check() == z3.unsat, f"mask {mask} exceeds V"
-
-
 def test_mixed_output_weights_and_bias_are_carried():
     """The trained nets only ever have uniform output weights and no output bias,
-    so nothing else pins the per-unit scaling. Both affine forms are recomputed
-    here from the raw matrices: the floor over the units its mask keeps, the
-    ceiling over the successor pattern. Getting the ceiling wrong overstates the
-    drop, so it is checked too."""
+    so nothing else pins the per-unit scaling. Each device's affine piece is
+    recomputed here from the raw matrices, over the slice of the region's pattern
+    that device owns."""
     layers = [(np.array([[1], [1]]), np.array([0, -3])),
               (np.array([[1, 2]]), np.array([5]))]
     (W1, b1), (W2, b2) = layers
     res = farkas_cell(_decrement(layers))
     assert res.verified, res.status
+    devs = res.certificate.devices          # V(s) reads x, V(s') reads x - 1
+    shifts = {0: 0, 1: -1}
     for c in (c for p in res.certificate.certificates for c in p.cells):
-        # z_j(s) = W1[j]·x + b1[j];  z_j(s') is the same at x - 1; the devices are
-        # V(s) (bounded, the mask's floor) then V(s') (pinned, the pattern's piece)
-        for pattern, affine, shift in ((c.mu, c.affines[0], 0),
-                                       (c.pattern_sp, c.affines[1], -1)):
+        for d, dev in enumerate(devs):
+            m = len(W1)
+            pattern = c.pattern[dev.offset:dev.offset + m]
             kept = [j for j, on in enumerate(pattern) if on]
             coeff = sum(int(W2[0][j]) * int(W1[j][0]) for j in kept)
-            const = int(b2[0]) + sum(int(W2[0][j]) * (int(b1[j]) + shift)
+            const = int(b2[0]) + sum(int(W2[0][j]) * (int(b1[j]) + shifts[d])
                                      for j in kept)
-            assert affine == ((coeff,), const), (pattern, affine, coeff, const)
+            assert c.affines[d] == ((coeff,), const), (pattern, c.affines[d])
 
 
 def test_margin_the_rank_cannot_meet_is_rejected():
@@ -594,7 +572,7 @@ def test_a_property_may_name_a_computed_wire():
     prop = Always(lambda W, S: W[d] == S["n"] - S["i"])
     res = certify(system, prop, inductive((lambda W, S: S["i"] <= S["n"],)))
     assert res.verified, res.status
-    assert len(res.devices) == 1 and res.devices[0].pinned, res.devices
+    assert len(res.devices) == 1, res.devices
     assert res.pred is not None and len(res.inv) == 1
     assert any(len(p.cells) >= 2 for p in res.certificates), "the wire's two sides"
     alone = certify(system, prop)             # no state predicate to take as invariant
