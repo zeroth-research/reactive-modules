@@ -34,6 +34,7 @@ from math import gcd, lcm
 
 import numpy as np
 import z3
+from zrth import Sort
 
 from ._domain import guard_ite
 from ._nodes import ModeKind, Op, Unsupported, free_symbols, node_view
@@ -840,15 +841,26 @@ class System:
         return dict(zip(self.names, self.sp_syms))
 
 
+_SCALAR = Sort.Int([1, 1])
+
+
 def read_system(module, names=()) -> System:
     """``module`` walked once, as a :class:`System`.
 
     Every latched ctrl wire is seeded with a symbol, and awaited inputs with
     theirs; the columns are the latched wires some update term actually reads.
     ``names`` labels the columns — a tuple in column order, or a mapping from a
-    latched wire to its name."""
+    latched wire to its name.
+
+    Wires are scalar integers: a symbol per wire is what the rows, the regions
+    and the proof's ``Vector n Int`` state quantify over, so anything else is
+    refused here by name rather than read element by element."""
     all_pairs = tuple(tuple(pr) for pr in module.ctrl)
     inputs = tuple(tuple(pr) for pr in module.extl)
+    for w in (w for pr in all_pairs + inputs for w in pr):
+        if w.dtype != _SCALAR:
+            raise Unsupported(f"wire {w.id} has sort Int{w.dtype[0]}; only scalar "
+                              f"integer wires are supported")
     read = {w.id for a in module.atoms for w in a.read}
     pairs = tuple(pr for pr in all_pairs if pr[0].id in read)
     if isinstance(names, dict):
