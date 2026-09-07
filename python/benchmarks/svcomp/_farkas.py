@@ -7,7 +7,8 @@ hold on each step. The rule names wires (``W[wire]``) and columns (``S[name]``,
 ``S.next[name]``); it knows nothing of programs or ranks. Termination is the
 client :func:`decrease` — ``V(s) - V(s') >= delta`` over two wires computing the
 same function at each end of a step — plus the substrate's well-foundedness
-theorem, and several ranks are :func:`lex_decrease`.
+theorem; a safety property is :func:`inductive`; several ranks are
+:func:`lex_decrease`.
 
 The procedure is sound and incomplete, and what it cannot handle it refuses by
 name: :data:`OPS` for the theory's operations, :func:`check_supported` for the
@@ -46,6 +47,7 @@ non-negativity — see :func:`output_weights`.
 """
 from __future__ import annotations
 
+import dataclasses
 import itertools
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -56,7 +58,7 @@ import z3
 from zrth import Sort
 
 from ._nodes import ModeKind, Op, Unsupported, free_symbols, node_view
-from ._property import Fixpoint
+from ._property import Always, Fixpoint
 
 
 # ---------------------------------------------------------------------------
@@ -522,8 +524,9 @@ class Device:
 class FarkasResult:
     """What a ``certify`` run established, and what the proof of it needs: the
     per-path certificates, the rule with its formula ``ok`` resolved over the
-    columns and the wire symbols, and the named wires as devices over the
-    distinct networks they read through."""
+    columns and the wire symbols, the property's predicate and the rule's
+    invariants in the same form, and the named wires as devices over the distinct
+    networks they read through."""
     verified: bool
     certificates: list           # list[PathCert]
     counterexample: object = None
@@ -531,6 +534,8 @@ class FarkasResult:
     unused: tuple = ()           # domain atoms the LP could not express
     rule: object = None
     ok: object = None            # the rule's formula, z3 over columns and wires
+    pred: object = None          # an Always property's predicate, same form
+    inv: tuple = ()              # the rule's invariants, z3 over the columns
     devices: tuple = ()          # Device, in the order the rule named them
     nets: tuple = ()             # the distinct Net each device reads through
 
@@ -821,10 +826,13 @@ class Step:
     the formula's coefficients, not declared.
 
     ``ranks`` pairs ``(at s, at s')`` wires the emitter renders as one network
-    ``V``."""
+    ``V`` — the decrease rules; ``inv`` is an inductive rule's invariant and
+    ``whole`` its facts about the run as a whole."""
     ok: object
     proves: type
     ranks: tuple = ()
+    inv: tuple = ()
+    whole: object = None          # (system, prop) -> ((name, must-be-unsat), ...)
 
 
 def decrease(v_s, v_sp, delta: float = 1.0) -> Step:
@@ -852,19 +860,73 @@ def lex_decrease(ranks, delta: float = 1.0) -> Step:
     return Step(ok=ok, proves=Fixpoint, ranks=ranks)
 
 
-def rule_for(prop, system, rule=None) -> Step:
-    """``rule`` checked against ``prop`` on ``system``.
+_STATE_ONLY = ("an invariant is over the state; a wire belongs in the property or "
+               "the rule")
 
-    :class:`Fixpoint` has nothing to guess a rank from, so a rule is asked for
-    rather than invented."""
+
+def inductive(inv) -> Step:
+    """Safety by an inductive invariant ``inv``: predicates over the state — ``S``
+    alone — that the entry state satisfies and every step preserves, all of them
+    at the next state given all of them at the pre-state. What the invariant is
+    *for* the property says; see :func:`rule_for`."""
+    inv = tuple(inv)
+
+    def ok(W, S):
+        if not inv:
+            return z3.BoolVal(True)
+        return z3.Implies(z3.And(*[f(W, S) for f in inv]),
+                          z3.And(*[f(W.next, S.next) for f in inv]))
+
+    def whole(system, prop):
+        W = _WireMap(system, refuse=_STATE_ONLY)
+        S = _StateMap(system, W)
+        conj = z3.And(*[f(W, S) for f in inv]) if inv else z3.BoolVal(True)
+        return (("initiation", z3.And(entry_predicate(system), z3.Not(conj))),)
+
+    return Step(ok=ok, proves=Always, inv=inv, whole=whole)
+
+
+def _over_state(pred, system) -> bool:
+    """Whether ``pred`` names the state alone — no wire, no next value."""
+    W = _WireMap(system, refuse=_STATE_ONLY)
+    try:
+        pred(W, _StateMap(system, W))
+    except Unsupported:
+        return False
+    return True
+
+
+def rule_for(prop, system, rule=None) -> Step:
+    """The rule for ``prop`` on ``system``, or ``rule`` checked against it.
+
+    With no rule, :class:`Always` takes its predicate as its own invariant when
+    that is a state predicate (a predicate naming a wire has the empty invariant,
+    so it must hold outright); :class:`Fixpoint` has nothing to guess a rank from
+    and asks for one.
+
+    For :class:`Always` the step formula also carries the property's own demand:
+    wherever the invariant holds, the predicate does. That implication closes the
+    proof, and it goes through the same regions as the rest, since the predicate
+    may name a wire behind a network."""
     if rule is None:
-        if isinstance(prop, Fixpoint):
+        if isinstance(prop, Always):
+            rule = inductive((prop.pred,) if _over_state(prop.pred, system) else ())
+        elif isinstance(prop, Fixpoint):
             raise Unsupported("Fixpoint needs a rank: pass decrease(v_s, v_sp) or "
                               "lex_decrease(...)")
-        raise Unsupported(f"no rule for property {type(prop).__name__!r}")
+        else:
+            raise Unsupported(f"no rule for property {type(prop).__name__!r}")
     if not isinstance(prop, rule.proves):
         raise Unsupported(f"the rule proves {rule.proves.__name__}, "
                           f"not {type(prop).__name__}")
+    if isinstance(prop, Always):
+        step, inv, pred = rule.ok, rule.inv, prop.pred
+
+        def ok(W, S):
+            held = z3.And(*[f(W, S) for f in inv]) if inv else z3.BoolVal(True)
+            return z3.And(step(W, S), z3.Implies(held, pred(W, S)))
+
+        rule = dataclasses.replace(rule, ok=ok)
     return rule
 
 
@@ -916,13 +978,30 @@ class _StateMap:
         return _StateMap(self.system, self.W, ahead=True)
 
 
-def _resolve(rule: Step, system: System):
+def _resolve(rule: Step, prop, system: System):
     """The rule's formula as z3 over the columns' symbols and the wire symbols
     ``system.W`` — the form the engine cuts into rows and substitutes into — with
-    the wires it named, in order."""
+    the wires it named, in order; plus the property's predicate and the rule's
+    invariants in the same form, for the proof.
+
+    An :class:`Always` predicate speaks of a state, so it may name a wire whose
+    value is a function of the latched state and nothing of the next round."""
+    Wi = _WireMap(system, refuse=_STATE_ONLY)      # invariants first: the clearer refusal
+    inv = tuple(lift_ites(f(Wi, _StateMap(system, Wi))) for f in rule.inv)
     used = []
     W = _WireMap(system, used)
-    return lift_ites(rule.ok(W, _StateMap(system, W))), tuple(used)
+    ok = lift_ites(rule.ok(W, _StateMap(system, W)))
+    pred = None
+    if isinstance(prop, Always):
+        named = []
+        Wp = _WireMap(system, named)
+        pred = lift_ites(prop.pred(Wp, _StateMap(system, Wp)))
+        nexts = {pr[1].id for pr in system.pairs}
+        for w in named:
+            if w.id in nexts or any(k == "next" for k, _ in reading(system, w).inputs):
+                raise Unsupported(f"Always speaks of a state: its predicate names wire "
+                                  f"{w.id}, whose value depends on the next state")
+    return ok, tuple(used), pred, inv
 
 
 def _is_cmp(e) -> bool:
@@ -1321,12 +1400,13 @@ def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasRes
 
     Preconditions first (:func:`check_supported`); the rule's formula is resolved
     over the columns and the named wires, its negation cut into disjuncts of rows
-    and the wires classified by their coefficients; then the property's domain is expanded into cases (:func:`expand_cases`),
+    and the wires classified by their coefficients; the rule's whole-run facts
+    next; then the property's domain is expanded into cases (:func:`expand_cases`),
     each a convex region with an affine transition, and each certified by the
     region/CEGAR engine. Nothing here knows what a program or a rank is."""
     check_supported(system, prop, rule)
     rule = rule_for(prop, system, rule)
-    ok, wires = _resolve(rule, system)
+    ok, wires, pred, inv = _resolve(rule, prop, system)
     W_syms = [system.W[w.id] for w in wires]
     disjuncts = _dnf(z3.Not(ok))
     pin_ids = _polarity(disjuncts, wires, list(system.s_syms) + W_syms)
@@ -1348,10 +1428,22 @@ def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasRes
 
     def result(verified, paths, cex, status, unused=()):
         return FarkasResult(verified, paths, cex, status, tuple(sorted(unused)), rule,
-                            ok, devices, nets)
+                            ok, pred, inv, devices, nets)
 
     s_syms, sp_syms = system.s_syms, system.sp_syms
     invariants = system.invariants
+    if rule.whole is not None:
+        for name, bad in rule.whole(system, prop):
+            s = z3.Solver()
+            s.add(bad)
+            r = s.check()
+            if r != z3.unsat:
+                cex = None
+                if r == z3.sat:
+                    m = s.model()
+                    cex = np.array([m.eval(x, model_completion=True).as_long()
+                                    for x in s_syms], dtype=np.float64)
+                return result(False, [], cex, f"FAILED({name})")
     paths: list[PathCert] = []
     unused: set = set()
     dom = lift_ites(prop.domain(system))

@@ -15,11 +15,13 @@ import z3
 
 from tests._fixtures import loop_bench
 from benchmarks.svcomp._lean import _render_conjuncts, _trivial, emit_program
-from benchmarks.svcomp._farkas import certify, lex_decrease, read_system
+from benchmarks.svcomp import discover
+from benchmarks.svcomp._farkas import certify, inductive, lex_decrease, read_system
 from benchmarks.svcomp._property import Fixpoint
-from benchmarks.svcomp._verify_ranking import (_v_module, build_obligation,
-                                               farkas_cell, system_of)
+from benchmarks.svcomp._verify_ranking import _v_module, system_of
 from zrth import Module
+from benchmarks.svcomp._property import Always
+from benchmarks.svcomp._verify_ranking import build_obligation, farkas_cell
 from zrth.sugar import ite, ne
 
 LEAN_DIR = Path(__file__).resolve().parents[1] / "benchmarks" / "svcomp" / "lean"
@@ -168,6 +170,49 @@ def test_emitted_proof_kernel_checks(tmp_path):
         shutil.rmtree(out, ignore_errors=True)
 
 
+def _always_obligation(pred, inv=None):
+    """`while (x > 0) x = x - 1` from x = 0, with the safety property ``pred``
+    proved by the invariant ``inv`` (default: ``pred`` itself)."""
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
+    ob = build_obligation(bench, layers, 1.0, [])
+    prop = Always(pred)
+    rule = inductive((inv or pred,))
+    res = certify(ob.system, prop, rule)
+    assert res.verified, res.status
+    return ob.system, res
+
+
+def test_always_emits_its_own_theorem():
+    """A safety property emits no network and no ranking — the invariant is the
+    device — and concludes ``always_holds`` rather than ``program_terminates``."""
+    system, res = _always_obligation(lambda W, S: S["x"] >= 0)
+    src = emit_program("safe", system, res)
+    for decl in ("def pred", "def invariants", "theorem initiation",
+                 "theorem consecution", "def ok", "theorem step_ok",
+                 "theorem always_holds"):
+        assert decl in src, f"missing {decl!r}"
+    for absent in ("def V_", "nrf_", "lex_step", "program_terminates", "sorry"):
+        assert absent not in src, f"unexpected {absent!r} in a safety proof"
+    assert "(((1 * s 0)) ≥ 0)" in src or "≥ 0" in src.split("def pred")[1].split("\n\n")[0]
+
+
+@pytest.mark.skipif(shutil.which("lake") is None, reason="no Lean toolchain")
+def test_always_proof_kernel_checks(tmp_path):
+    """End-to-end for the second property: the emitted safety proof compiles."""
+    system, res = _always_obligation(lambda W, S: S["x"] >= 0)
+    out = LEAN_DIR / "proofs" / "_test_always"
+    out.mkdir(parents=True, exist_ok=True)
+    f = out / "program.lean"
+    f.write_text(emit_program("safe", system, res))
+    try:
+        r = subprocess.run(["lake", "env", "lean", str(f.relative_to(LEAN_DIR))],
+                           cwd=LEAN_DIR, capture_output=True, text=True, timeout=600)
+        assert r.returncode == 0 and not r.stdout.strip(), r.stdout + r.stderr
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
 def _lex_obligation():
     """The nested loop ``while (i > 0) { if (j > 0) j--; else { i--; j = 3; } }``
     with the ranks ``relu(i)``, ``relu(j)`` each composed in at both ends of a
@@ -215,3 +260,72 @@ def test_lex_proof_kernel_checks():
         assert r.returncode == 0 and not r.stdout.strip(), r.stdout + r.stderr
     finally:
         shutil.rmtree(out, ignore_errors=True)
+
+
+@pytest.mark.skipif(shutil.which("lake") is None, reason="no Lean toolchain")
+def test_always_on_a_real_benchmark_kernel_checks():
+    """A safety property of an SV-COMP program, end to end: ``ndecr`` enters with
+    ``i = n - 1`` and only ever decrements ``i``, so ``i <= n`` always holds. Its
+    own predicate is the inductive invariant; the proof compiles."""
+    bench = next(b for b in discover() if b.name.endswith("ndecr"))
+    system = system_of(bench)
+    prop = Always(lambda W, S: S["i"] <= S["n"])
+    res = certify(system, prop)                    # the procedure picks inductive((pred,))
+    assert res.verified, res.status
+    out = LEAN_DIR / "proofs" / "_test_always_ndecr"
+    out.mkdir(parents=True, exist_ok=True)
+    f = out / "program.lean"
+    f.write_text(emit_program("ndecr_safe", system, res))
+    try:
+        r = subprocess.run(["lake", "env", "lean", str(f.relative_to(LEAN_DIR))],
+                           cwd=LEAN_DIR, capture_output=True, text=True, timeout=600)
+        assert r.returncode == 0 and not r.stdout.strip(), r.stdout + r.stderr
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+def _compiles(name: str, src: str) -> None:
+    """Compile an emitted proof against the substrate and assert it kernel-checks."""
+    out = LEAN_DIR / "proofs" / f"_test_{name}"
+    out.mkdir(parents=True, exist_ok=True)
+    f = out / "program.lean"
+    f.write_text(src)
+    try:
+        r = subprocess.run(["lake", "env", "lean", str(f.relative_to(LEAN_DIR))],
+                           cwd=LEAN_DIR, capture_output=True, text=True, timeout=600)
+        assert r.returncode == 0 and not r.stdout.strip(), r.stdout + r.stderr
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+@pytest.mark.skipif(shutil.which("lake") is None, reason="no Lean toolchain")
+def test_disjunctive_invariant_proof_kernel_checks():
+    """A disjunctive invariant reaches Lean as it is: ``omega`` case-splits it in
+    ``consecution``, and ``step_ok`` closes from the per-disjunct refutations."""
+    system, res = _always_obligation(
+        lambda W, S: z3.Or(S["x"] >= 0, S["x"] <= -5))
+    src = emit_program("disj", system, res)
+    assert "∨" in src.split("def invariants")[1].split("\n\n")[0]
+    _compiles("disj", src)
+
+
+@pytest.mark.skipif(shutil.which("lake") is None, reason="no Lean toolchain")
+def test_property_over_a_computed_wire_kernel_checks():
+    """``while (i < n) i++`` beside ``d = relu(n - i)``, with the claim
+    ``d == n - i`` under the invariant ``i <= n``: the safety proof carries the
+    network, regions over ``d``'s pattern, and ``pred`` names ``V_0 s fzero``."""
+    prog = system_of(loop_bench(("i", "n"),
+                                lambda c: (ite(c[0] < c[1], c[0] + 1, c[0]), c[1]),
+                                init=lambda: (0, 5)))
+    layers = [(np.array([[-1, 1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    mod, out = _v_module(prog.pairs, layers, read_next=False)
+    system = read_system(Module.parallel(prog.module, mod), prog.names)
+    d = out[1]
+    prop = Always(lambda W, S: W[d] == S["n"] - S["i"])
+    rule = inductive((lambda W, S: S["i"] <= S["n"],))
+    res = certify(system, prop, rule)
+    assert res.verified, res.status
+    src = emit_program("wire", system, res)
+    assert "V_0 s fzero" in src.split("def pred")[1].split("\n\n")[0]
+    assert "theorem always_holds" in src
+    _compiles("wire", src)
