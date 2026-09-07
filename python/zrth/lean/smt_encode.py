@@ -19,7 +19,7 @@ from typing import Callable
 import cvc5
 from cvc5 import Kind
 
-from zrth import Wire, Sort, Term
+from zrth import Wire, Sort, BitVec, Bool, Int, Real, Term
 from .common import itype_name, dtype_shape
 
 
@@ -59,13 +59,13 @@ def wire_shape(wire: Wire) -> MatShape:
 
 def elem_sort(tm: cvc5.TermManager, dt: Sort) -> cvc5.Sort:
     """cvc5 sort for the element type of a Sort (ignoring shape)."""
-    if isinstance(dt, Sort.Bool):
+    if isinstance(dt, Bool):
         return tm.getBooleanSort()
-    if isinstance(dt, Sort.Int):
+    if isinstance(dt, Int):
         return tm.getIntegerSort()
-    if isinstance(dt, Sort.Real):
+    if isinstance(dt, Real):
         return tm.getRealSort()
-    if isinstance(dt, Sort.BitVec):
+    if isinstance(dt, BitVec):
         return tm.mkBitVectorSort(dt._0)
     raise ValueError(f"Unsupported Sort for SMT encoding: {dt}")
 
@@ -120,13 +120,13 @@ def mat_pack(
 
 def _scalar_const(tm: cvc5.TermManager, dt: Sort, raw) -> cvc5.Term:
     """cvc5 literal for a scalar Python value of the given Sort."""
-    if isinstance(dt, Sort.Bool):
+    if isinstance(dt, Bool):
         return tm.mkBoolean(bool(raw))
-    if isinstance(dt, Sort.Int):
+    if isinstance(dt, Int):
         return tm.mkInteger(int(raw))
-    if isinstance(dt, Sort.Real):
+    if isinstance(dt, Real):
         return tm.mkReal(float(raw))
-    if isinstance(dt, Sort.BitVec):
+    if isinstance(dt, BitVec):
         return tm.mkBitVector(dt._0, int(raw))
     raise ValueError(f"Unsupported scalar Sort: {dt}")
 
@@ -248,7 +248,7 @@ def translate_terms(
         if name == "Tensor":
             wt[write.id] = _tensor_const(tm, write, term.itype._0)
             continue
-        if name in ("ConstBool", "ConstInt", "ConstReal", "Const"):
+        if name in ("Bool", "Int", "Real", "Const"):
             payload = term.itype._0
             numel = payload.numel() if hasattr(payload, "numel") else 1
             if numel > 1:
@@ -256,14 +256,14 @@ def translate_terms(
                 wt[write.id] = _tensor_const(tm, write, payload)
             else:
                 # BV.Const's element type isn't encoded in the name (unlike
-                # ConstBool/ConstInt/ConstReal) — read it off the write wire.
+                # LIA.Bool/LIA.Int/LRA.Real) — read it off the write wire.
                 elem = (
                     write.dtype
                     if name == "Const"
                     else {
-                        "ConstBool": Sort.Bool([1, 1]),
-                        "ConstInt": Sort.Int([1, 1]),
-                        "ConstReal": Sort.Real([1, 1]),
+                        "Bool": Bool([1, 1]),
+                        "Int": Int([1, 1]),
+                        "Real": Real([1, 1]),
                     }[name]
                 )
                 v = _scalar_const(tm, elem, payload)
@@ -273,7 +273,7 @@ def translate_terms(
         args = [wt[w.id] for w in term.read]
         in_shapes = [wire_shape(w) for w in term.read]
 
-        is_bv = isinstance(write.dtype, Sort.BitVec)
+        is_bv = isinstance(write.dtype, BitVec)
 
         if name == "Id":
             wt[write.id] = args[0]
@@ -294,7 +294,7 @@ def translate_terms(
             # scalar, coercing a BV<1> condition to a genuine Bool via `!= 0`.
             cond = mat_select(tm, args[0], in_shapes[0], 0, 0)
             cond_dtype = term.read[0].dtype
-            if isinstance(cond_dtype, Sort.BitVec):
+            if isinstance(cond_dtype, BitVec):
                 cond = tm.mkTerm(
                     Kind.DISTINCT, cond, tm.mkBitVector(cond_dtype._0, 0)
                 )
@@ -432,7 +432,7 @@ def translate_terms(
         elif name == "Argmax":
             idx = _argmax_1d(tm, args[0], in_shapes[0])
             # _argmax_1d builds an Int index; LRA modules carry it on a Real wire
-            if isinstance(write.dtype, Sort.Real):
+            if isinstance(write.dtype, Real):
                 idx = tm.mkTerm(Kind.TO_REAL, idx)
             wt[write.id] = mat_pack(tm, out_shape, [idx])
         else:

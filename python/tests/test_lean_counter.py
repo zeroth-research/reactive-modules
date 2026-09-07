@@ -1,7 +1,7 @@
 """Tests for the Module-to-Lean4 functional converter."""
 
 import torch
-from zrth import Wire, Term, Module, LIA as it, Bool, Int
+from zrth import Wire, Term, Module, LIA as it, Bool, Int, Var, X
 from zrth.lean.project import (
     create_project,
 )
@@ -23,8 +23,8 @@ def _make_counter():
             if x < y or x < z: (x+1, y, z)   = I·s + (1,0,0)ᵀ
             else:              (0, y, z)      = [[0,0,0],[0,1,0],[0,0,1]] · s
     """
-    state = (Wire(Int([3, 1])), Wire(Int([3, 1])))
-    extl = (Wire(Int([2, 1])), Wire(Int([2, 1])))
+    state = Var(Int([3, 1]))
+    extl = Var(Int([2, 1]))
 
     zero31 = torch.zeros((3, 1), dtype=torch.int64)
     zero11 = torch.zeros((1, 1), dtype=torch.int64)
@@ -32,7 +32,7 @@ def _make_counter():
     # init: state' = A · extl,  A = [[0,0],[1,0],[0,1]]
     A = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
     init = [
-        Term(it.Linear(A, zero31), [state[1]], [extl[1]]),
+        Term(it.Linear(A, zero31), [X(state)], [X(extl)]),
     ]
 
     # update
@@ -53,21 +53,21 @@ def _make_counter():
     diag_yz = torch.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=torch.int64)
 
     update = [
-        Term(it.Linear(row_x, zero11), [x], [state[0]]),
-        Term(it.Linear(row_y, zero11), [y], [state[0]]),
-        Term(it.Linear(row_z, zero11), [z], [state[0]]),
+        Term(it.Linear(row_x, zero11), [x], [state]),
+        Term(it.Linear(row_y, zero11), [y], [state]),
+        Term(it.Linear(row_z, zero11), [z], [state]),
         # cond = x < y ∨ x < z
         Term(it.Lt(), [x_lt_y], [x, y]),
         Term(it.Lt(), [x_lt_z], [x, z]),
         Term(it.Or(), [cond], [x_lt_y, x_lt_z]),
         # true branch: state + (1,0,0)ᵀ  = I·state + e1
-        Term(it.Linear(torch.eye(3, dtype=torch.int64), e1), [result_true], [state[0]]),
+        Term(it.Linear(torch.eye(3, dtype=torch.int64), e1), [result_true], [state]),
         # false branch: zero out x  = diag(0,1,1)·state
-        Term(it.Linear(diag_yz, zero31), [result_false], [state[0]]),
-        Term(it.Ite(), [state[1]], [cond, result_true, result_false]),
+        Term(it.Linear(diag_yz, zero31), [result_false], [state]),
+        Term(it.Ite(), [X(state)], [cond, result_true, result_false]),
     ]
 
-    return Module.sequential(init, update, obs=[state, extl])
+    return Module.sequential([state, extl], init, update)
 
 
 def test_inf_counter_generates_lean():

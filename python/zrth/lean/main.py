@@ -43,7 +43,7 @@ The file must expose a callable named ``module`` (override with ``-d``) that
 returns a :class:`zrth.Module`::
 
     # mymodule.py
-    from zrth import Wire, Module, Sort as dt
+    from zrth import Module, Int, Var, X
     from zrth.analyzer import convert_method
 
     def init():
@@ -56,10 +56,10 @@ returns a :class:`zrth.Module`::
         return x
 
     def module() -> Module:
-        state = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-        init_terms   = convert_method(init,   {},               [state[1]])
-        update_terms = convert_method(update, {"old_x": state}, [state[1]])
-        return Module.sequential(init_terms, update_terms, obs=[state])
+        state = Var(Int([1, 1]))
+        init_terms   = convert_method(init,   {},               [X(state)])
+        update_terms = convert_method(update, {"old_x": state}, [X(state)])
+        return Module.sequential([state], init_terms, update_terms)
 """
 
 import argparse

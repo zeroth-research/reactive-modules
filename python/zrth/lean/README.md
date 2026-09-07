@@ -279,7 +279,7 @@ that certificate files override.
 
 ```python
 # mymodule.py
-from zrth import Wire, Module, DType as dt
+from zrth import Module, Int, Var, X
 from zrth.analyzer import convert_method
 
 def init():
@@ -292,10 +292,10 @@ def update(old_x):
     return x
 
 def module() -> Module:
-    state = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-    init_terms   = convert_method(init,   {},               [state[1]])
-    update_terms = convert_method(update, {"old_x": state}, [state[1]])
-    return Module.sequential(init_terms, update_terms, obs=[state])
+    state = Var(Int([1, 1]))
+    init_terms   = convert_method(init,   {},               [X(state)])
+    update_terms = convert_method(update, {"old_x": state}, [X(state)])
+    return Module.sequential([state], init_terms, update_terms)
 ```
 
 ### Common invocations
@@ -370,7 +370,7 @@ path/NameScalar.lean         # scalar encoding + equivalence theorems
 ### State variable naming in SMT-LIB predicates
 
 `ctrl` wires are named `s0`, `s1`, … in left-to-right order (matching the
-`obs=` list passed to `Module.sequential`).  For tuple/matrix wires, use
+`vars` list passed to `Module.sequential`).  For tuple/matrix wires, use
 SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 `e0..eM-1` (next) and `el0..elM-1` (latched).
 

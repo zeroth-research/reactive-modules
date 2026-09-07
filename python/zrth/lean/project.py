@@ -16,7 +16,7 @@ from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 import shutil
 from pathlib import Path
 
-from zrth import Module, Wire, Env
+from zrth import Module, Wire, Env, X
 from .native import (
     _product_type,
     _append_expr,
@@ -80,9 +80,9 @@ def _token_count(wire: Wire) -> int:
 
 def generate_main_lean(project_name: str, module: Module, module_name: str) -> str:
     """Generate Main.lean source that runs init/update in a stdin/stdout loop."""
-    extl_next = [pair[1] for pair in module.extl]
-    ctrl_next = [pair[1] for pair in module.ctrl]
-    ctrl_latched = [pair[0] for pair in module.ctrl]
+    extl_next = [X(v) for v in module.extl]
+    ctrl_next = [X(v) for v in module.ctrl]
+    ctrl_latched = list(module.ctrl)
 
     total_extl_tokens = sum(_token_count(w) for w in extl_next)
     total_ctrl_tokens = sum(_token_count(w) for w in ctrl_next)

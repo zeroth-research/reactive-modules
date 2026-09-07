@@ -2,7 +2,7 @@
 
 import pytest
 import torch
-from zrth import Wire, Term, Module, Sort as dt, LIA
+from zrth import Wire, Term, Module, Bool, Int, LIA, Var, X
 from zrth.lean import ModuleToLean4
 from zrth.lean.common import LeanContext, itype_name
 from zrth.lean.cert import generate_certificate_lean
@@ -11,32 +11,32 @@ from zrth.lean.project import generate_main_lean
 
 def test_itype_name_strips_prefix():
     assert itype_name(LIA.Add()) == "Add"
-    assert itype_name(LIA.ConstInt(torch.tensor([[0]]))) == "ConstInt"
+    assert itype_name(LIA.Int(torch.tensor([[0]]))) == "Int"
     assert itype_name(LIA.Ite()) == "Ite"
 
 
 def _make_twobitcounter():
     """Bool-only module: two-bit counter with enable."""
-    b0 = (Wire(dt.Bool([1, 1])), Wire(dt.Bool([1, 1])))
-    b1 = (Wire(dt.Bool([1, 1])), Wire(dt.Bool([1, 1])))
-    enable = (Wire(dt.Bool([1, 1])), Wire(dt.Bool([1, 1])))
+    b0 = Var(Bool([1, 1]))
+    b1 = Var(Bool([1, 1]))
+    enable = Var(Bool([1, 1]))
 
-    not_b0 = Wire(dt.Bool([1, 1]))
-    not_b1 = Wire(dt.Bool([1, 1]))
-    b0_and_enable = Wire(dt.Bool([1, 1]))
+    not_b0 = Wire(Bool([1, 1]))
+    not_b1 = Wire(Bool([1, 1]))
+    b0_and_enable = Wire(Bool([1, 1]))
 
     init = [
-        Term(LIA.ConstBool(torch.tensor([[False]])), [b0[1]]),
-        Term(LIA.ConstBool(torch.tensor([[False]])), [b1[1]]),
+        Term(LIA.Bool(torch.tensor([[False]])), [X(b0)]),
+        Term(LIA.Bool(torch.tensor([[False]])), [X(b1)]),
     ]
     update = [
-        Term(LIA.Not(), [not_b0], [b0[0]]),
-        Term(LIA.Ite(), [b0[1]], [enable[1], not_b0, b0[0]]),
-        Term(LIA.And(), [b0_and_enable], [b0[0], enable[1]]),
-        Term(LIA.Not(), [not_b1], [b1[0]]),
-        Term(LIA.Ite(), [b1[1]], [b0_and_enable, not_b1, b1[0]]),
+        Term(LIA.Not(), [not_b0], [b0]),
+        Term(LIA.Ite(), [X(b0)], [X(enable), not_b0, b0]),
+        Term(LIA.And(), [b0_and_enable], [b0, X(enable)]),
+        Term(LIA.Not(), [not_b1], [b1]),
+        Term(LIA.Ite(), [X(b1)], [b0_and_enable, not_b1, b1]),
     ]
-    return Module.sequential(init, update, obs=[b0, b1, enable])
+    return Module.sequential([b0, b1, enable], init, update)
 
 
 def _make_matrix_module():
@@ -47,20 +47,20 @@ def _make_matrix_module():
       init:   x' = A · u          with A = [[0,0],[1,0],[0,1]]  (no bias)
       update: x' = B · x + e1     with B = I₃, e1 = [1,0,0]ᵀ
     """
-    x = (Wire(dt.Int([3, 1])), Wire(dt.Int([3, 1])))
-    u = (Wire(dt.Int([2, 1])), Wire(dt.Int([2, 1])))
+    x = Var(Int([3, 1]))
+    u = Var(Int([2, 1]))
 
     A = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
     init = [
-        Term(LIA.Linear(A, torch.zeros((3, 1), dtype=torch.int64)), [x[1]], [u[1]]),
+        Term(LIA.Linear(A, torch.zeros((3, 1), dtype=torch.int64)), [X(x)], [X(u)]),
     ]
 
     B = torch.eye(3, dtype=torch.int64)
     e1 = torch.tensor([[1], [0], [0]], dtype=torch.int64)
     update = [
-        Term(LIA.Linear(B, e1), [x[1]], [x[0]]),
+        Term(LIA.Linear(B, e1), [X(x)], [x]),
     ]
-    return Module.sequential(init, update, obs=[x, u])
+    return Module.sequential([x, u], init, update)
 
 
 # ── Two-bit counter ──────────────────────────────────────────────────

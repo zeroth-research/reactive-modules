@@ -18,8 +18,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from zrth import Sort as dt
-from zrth import Module, Wire, Term, LIA, Int, Bool
+from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
 from zrth.analyzer import convert_method
 from zrth.lean.cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
@@ -43,11 +42,11 @@ def _make_countdown() -> Module:
             return 100
         return old_x - 1
 
-    s = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    s = Var(Int([1, 1]))
     return Module.sequential(
-        convert_method(init, {}, [s[1]], theory=LIA),
-        convert_method(update, {"old_x": s}, [s[1]], theory=LIA),
-        obs=[s],
+        [s],
+        convert_method(init, {}, [X(s)], theory=LIA),
+        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
     )
 
 
@@ -60,12 +59,12 @@ def _make_twovars() -> Module:
             return old_x + 1, old_y
         return 0, 10
 
-    x = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
-    y = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    x = Var(Int([1, 1]))
+    y = Var(Int([1, 1]))
     return Module.sequential(
-        convert_method(init, {}, [x[1], y[1]], theory=LIA),
-        convert_method(update, {"old_x": x, "old_y": y}, [x[1], y[1]], theory=LIA),
-        obs=[x, y],
+        [x, y],
+        convert_method(init, {}, [X(x), X(y)], theory=LIA),
+        convert_method(update, {"old_x": x, "old_y": y}, [X(x), X(y)], theory=LIA),
     )
 
 
@@ -82,11 +81,11 @@ def _make_collatz() -> Module:
             return old_x - 1
         return old_x
 
-    s = (Wire(dt.Int([1, 1])), Wire(dt.Int([1, 1])))
+    s = Var(Int([1, 1]))
     return Module.sequential(
-        convert_method(init, {}, [s[1]], theory=LIA),
-        convert_method(update, {"old_x": s}, [s[1]], theory=LIA),
-        obs=[s],
+        [s],
+        convert_method(init, {}, [X(s)], theory=LIA),
+        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
     )
 
 
@@ -97,13 +96,13 @@ def _make_counter() -> Module:
     x < z, else resets x to 0. Exercises the Linear affine map plus tuple-select
     (`s[i][j]`) predicates end-to-end through zeroth_hammer.
     """
-    state = (Wire(Int([3, 1])), Wire(Int([3, 1])))
-    extl = (Wire(Int([2, 1])), Wire(Int([2, 1])))
+    state = Var(Int([3, 1]))
+    extl = Var(Int([2, 1]))
     zero31 = torch.zeros((3, 1), dtype=torch.int64)
     zero11 = torch.zeros((1, 1), dtype=torch.int64)
 
     A = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
-    init = [Term(LIA.Linear(A, zero31), [state[1]], [extl[1]])]
+    init = [Term(LIA.Linear(A, zero31), [X(state)], [X(extl)])]
 
     x, y, z = Wire(Int([1, 1])), Wire(Int([1, 1])), Wire(Int([1, 1]))
     x_lt_y, x_lt_z, cond = Wire(Bool([1, 1])), Wire(Bool([1, 1])), Wire(Bool([1, 1]))
@@ -114,17 +113,17 @@ def _make_counter() -> Module:
     e1 = torch.tensor([[1], [0], [0]], dtype=torch.int64)
     diag_yz = torch.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=torch.int64)
     update = [
-        Term(LIA.Linear(row_x, zero11), [x], [state[0]]),
-        Term(LIA.Linear(row_y, zero11), [y], [state[0]]),
-        Term(LIA.Linear(row_z, zero11), [z], [state[0]]),
+        Term(LIA.Linear(row_x, zero11), [x], [state]),
+        Term(LIA.Linear(row_y, zero11), [y], [state]),
+        Term(LIA.Linear(row_z, zero11), [z], [state]),
         Term(LIA.Lt(), [x_lt_y], [x, y]),
         Term(LIA.Lt(), [x_lt_z], [x, z]),
         Term(LIA.Or(), [cond], [x_lt_y, x_lt_z]),
-        Term(LIA.Linear(torch.eye(3, dtype=torch.int64), e1), [result_true], [state[0]]),
-        Term(LIA.Linear(diag_yz, zero31), [result_false], [state[0]]),
-        Term(LIA.Ite(), [state[1]], [cond, result_true, result_false]),
+        Term(LIA.Linear(torch.eye(3, dtype=torch.int64), e1), [result_true], [state]),
+        Term(LIA.Linear(diag_yz, zero31), [result_false], [state]),
+        Term(LIA.Ite(), [X(state)], [cond, result_true, result_false]),
     ]
-    return Module.sequential(init, update, obs=[state, extl])
+    return Module.sequential([state, extl], init, update)
 
 
 def _make_countdown_vec(n: int) -> Module:
@@ -135,12 +134,12 @@ def _make_countdown_vec(n: int) -> Module:
     explicit O(nnz) linear combination), the generated defs and proofs stay small
     and `omega`-friendly regardless of n — this is the scaling regression test.
     """
-    s = (Wire(Int([n, 1])), Wire(Int([n, 1])))
+    s = Var(Int([n, 1]))
     z11 = torch.zeros((1, 1), dtype=torch.int64)
 
     init_vec = torch.zeros((n, 1), dtype=torch.int64)
     init_vec[0][0] = 100
-    init = [Term(LIA.ConstInt(init_vec), [s[1]])]
+    init = [Term(LIA.Int(init_vec), [X(s)])]
 
     x = Wire(Int([1, 1]))
     zc = Wire(Int([1, 1]))
@@ -159,14 +158,14 @@ def _make_countdown_vec(n: int) -> Module:
     bneg[0][0] = -1
 
     update = [
-        Term(LIA.Linear(row0, z11), [x], [s[0]]),            # x = s[0]
-        Term(LIA.ConstInt(torch.tensor([[0]])), [zc]),
-        Term(LIA.Eq(), [cond], [x, zc]),                     # cond = (x == 0)
-        Term(LIA.Linear(diag_keep, b100), [reset], [s[0]]),  # reset: s[0] := 100
-        Term(LIA.Linear(In, bneg), [dec], [s[0]]),           # dec:   s[0] := s[0] - 1
-        Term(LIA.Ite(), [s[1]], [cond, reset, dec]),
+        Term(LIA.Linear(row0, z11), [x], [s]),            # x = s[0]
+        Term(LIA.Int(torch.tensor([[0]])), [zc]),
+        Term(LIA.Eq(), [cond], [x, zc]),                  # cond = (x == 0)
+        Term(LIA.Linear(diag_keep, b100), [reset], [s]),  # reset: s[0] := 100
+        Term(LIA.Linear(In, bneg), [dec], [s]),           # dec:   s[0] := s[0] - 1
+        Term(LIA.Ite(), [X(s)], [cond, reset, dec]),
     ]
-    return Module.sequential(init, update, obs=[s])
+    return Module.sequential([s], init, update)
 
 
 _COUNTDOWN_CERT = CertificateData(

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import cvc5
 
-from zrth import Wire, Module
+from zrth import Wire, Var, Module, X
 from .smt_encode import translate_terms, wire_sort
 
 
@@ -40,10 +40,10 @@ class ModuleSMT:
         # exhaust them before we get here.
         self.init_terms: list = list(self.atom.init)
         self.update_terms: list = list(self.atom.update)
-        self.ctrl_latched: list[Wire] = [p[0] for p in self.module.ctrl]
-        self.ctrl_next: list[Wire] = [p[1] for p in self.module.ctrl]
-        self.extl_latched: list[Wire] = [p[0] for p in self.module.extl]
-        self.extl_next: list[Wire] = [p[1] for p in self.module.extl]
+        self.ctrl_latched: list[Var] = list(self.module.ctrl)
+        self.ctrl_next: list[Wire] = [X(v) for v in self.module.ctrl]
+        self.extl_latched: list[Var] = list(self.module.extl)
+        self.extl_next: list[Wire] = [X(v) for v in self.module.extl]
 
     # --- input construction ---------------------------------------------
 
