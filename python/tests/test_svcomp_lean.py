@@ -66,17 +66,17 @@ def test_trivial_cell_needs_no_certificate():
         assert f"cell{i}d0_refute" in src
 
 
-def test_pre_bound_needs_no_hypothesis():
-    """The pre-state lemma is an inequality taking only the state — no sign
-    hypothesis — which is the asymmetry the scheme rests on, and a cell's signs
-    name the successor pattern alone."""
+def test_every_device_collapses_on_its_region():
+    """A region fixes the mode of every node, so each named wire has an exact
+    collapse there and nothing is bounded: no relaxation lemma is emitted, and a
+    region's signs are one definition naming every node."""
     system, res = _decrement_obligation()
     src = emit_program("decrement", system, res)
-    assert re.search(r"theorem lb0_\d+ \(s : Vector 1 Int\) :\n", src), \
-        "the bound on V(s) should take the state and nothing else"
-    assert "c00_" not in src, "V(s) is bounded, so it has no collapse lemma"
-    assert re.search(r"def cell0_signs \(s : Vector 1 Int\) : Prop :=\n  pin_signs_\d+ s\n",
-                     src), "an un-narrowed region should constrain the pinned wire only"
+    assert "theorem c00_0" in src and "theorem c01_0" in src, \
+        "both ends of the step should collapse on the region"
+    assert "lb0_" not in src, "no relaxation bound should be emitted"
+    assert re.search(r"def cell0_signs \(s : Vector 1 Int\) : Prop :=\n  signs_\d+ s\n",
+                     src), "a region should be one sign definition"
 
 
 def test_emit_without_invariants_uses_true():

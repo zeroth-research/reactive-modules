@@ -9,11 +9,11 @@ The file follows the rule's shape, whatever the property:
     non-negativity ``V_j_nonneg``;
   * per affine path (in-loop branching is *path-split*: the body's nested
     ``ite``s are expanded into affine paths by :func:`._farkas.expand_cases`, one
-    namespace each): ``trans`` and ``post_state``; the regions — one per pinned
+    namespace each): ``trans`` and ``post_state``; the regions — one per mode
     pattern, partitioning the guard — and ``covered``, the CEGAR coverage
     guarantee, by ``omega`` over a sign-literal decision tree; per device its
-    pre-activations, then a mask lower bound where a bound suffices or an exact
-    collapse per region where it is pinned; per region and per disjunct of the
+    pre-activations and its exact collapse per region; per region and per
+    disjunct of the
     rule's negation the Farkas system ``A``/``b``/``y``, its ``farkas_sound``
     infeasibility and the ``refute`` lemma (via the substrate's
     ``refute_bridge``); the rule's formula ``ok`` and ``step_ok``, which puts the
@@ -214,15 +214,6 @@ def _pattern_literals(pattern, units):
     return [(c, k, a) for (c, k), a in zip(units, pattern) if a is not None]
 
 
-def _cell_literals(cert: CellCert, pinned_units, bounded_units):
-    """The full region of one cell: its pinned pattern, plus the bounded-group
-    literals a narrowed cell pinned."""
-    lits = _pattern_literals(cert.pattern_sp, pinned_units)
-    if cert.pattern_s is not None:
-        lits += _pattern_literals(cert.pattern_s, bounded_units)
-    return lits
-
-
 def _lit_str(lit) -> str:
     c, k, active = lit
     return f"(0 < {_affine_str(c, k)})" if active else f"({_affine_str(c, k)} ≤ 0)"
@@ -273,9 +264,7 @@ def _emit_system(prefix: str, A, b, y, labels) -> str:
 
 
 def _emit_cell(idx: str, cert: CellCert) -> str:
-    pre = "" if cert.pattern_s is None else f" pattern_s={list(cert.pattern_s)}"
-    manifest = (f"-- cell {idx}: pattern={list(cert.pattern_sp)} "
-                f"mu={list(cert.mu)}{pre}")
+    manifest = f"-- cell {idx}: pattern={list(cert.pattern)}"
     if _trivial(cert):
         return manifest + f"\n-- cell {idx}: constant infeasibility (no Farkas system)"
     A, b, y, labels = _support(cert)
@@ -353,8 +342,7 @@ def _emit_out_apply(net, tag: str) -> str:
 
 def _emit_out_nonneg(tag: str) -> str:
     """The output layer's non-negativity, proved once per network: the side goals
-    of ``affine_mask_le`` and ``affine_nonneg``, facts about ``nrf_W1``/``nrf_b1``
-    alone."""
+    of ``affine_nonneg``, facts about ``nrf_W1``/``nrf_b1`` alone."""
     d = _dev(tag)
     return "\n\n".join([
         f"theorem nrf{d}_W1_nonneg : ∀ i j, 0 ≤ nrf{d}_W1 i j := by\n"
@@ -382,13 +370,12 @@ def _emit_nonneg(net, tag: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _regions(certs):
-    """Group a path's certificates into regions — the cells sharing a pinned
-    pattern, mask and narrowing — each with its disjuncts in order. A certified
-    region carries one certificate per disjunct of the rule's negation."""
+    """Group a path's certificates into regions — the cells sharing a mode
+    pattern — each with its disjuncts in order. A certified region carries one
+    certificate per disjunct of the rule's negation."""
     regions, index = [], {}
     for c in certs:
-        key = (tuple(c.pattern_sp), tuple(c.mu),
-               None if c.pattern_s is None else tuple(c.pattern_s))
+        key = tuple(c.pattern)
         if key not in index:
             index[key] = len(regions)
             regions.append([])
@@ -399,18 +386,14 @@ def _regions(certs):
 
 
 def _sign_index(reps):
-    """Index a path's distinct pinned patterns and narrowing literal sets, and map
-    each region to the indices it uses: ``of_region[r]`` is ``(pin, bnd | None)``.
-    Regions sharing a pattern share one sign definition, emitted once."""
-    pins, bnds, of_region = {}, {}, []
+    """Index a path's distinct mode patterns, and map each region to the index it
+    uses. Regions sharing a pattern share one sign definition, emitted once."""
+    pins, of_region = {}, []
     for c in reps:
-        q = tuple(c.pattern_sp)
+        q = tuple(c.pattern)
         pins.setdefault(q, len(pins))
-        p = None if c.pattern_s is None else tuple(c.pattern_s)
-        if p is not None:
-            bnds.setdefault(p, len(bnds))
-        of_region.append((pins[q], None if p is None else bnds[p]))
-    return pins, bnds, of_region
+        of_region.append(pins[q])
+    return pins, of_region
 
 
 def _emit_signs_def(name: str, pattern, units, n: int) -> str:
@@ -426,14 +409,9 @@ def _emit_signs_def(name: str, pattern, units, n: int) -> str:
             f"  {' ∧ '.join(conj) if conj else 'True'}")
 
 
-def _cell_sign_defs(pats: tuple) -> list[str]:
-    """The sign definitions ``cellR_signs`` is built from: the pinned pattern
-    always, plus a bounded-group literal set for a narrowed region."""
-    pin_i, bnd_i = pats
-    names = [f"pin_signs_{pin_i}"]
-    if bnd_i is not None:
-        names.append(f"bnd_signs_{bnd_i}")
-    return names
+def _cell_sign_defs(pat_i: int) -> list[str]:
+    """The sign definition ``cellR_signs`` is built from."""
+    return [f"signs_{pat_i}"]
 
 
 def _tiling_tree(pcert, invariants, s_syms):
@@ -454,15 +432,14 @@ def _tiling_tree(pcert, invariants, s_syms):
     ``("dead",)``; raises :class:`_Drop` if a live branch runs out of literals
     without entailing any region, which means the regions do not tile the guard."""
     # One literal per unit: ``0 < e`` and its negation ``e ≤ 0`` are exactly the two
-    # sides a pattern names, so a single split settles the unit. The pinned units
-    # come first — they alone pin a region unless it was narrowed.
+    # sides a pattern names, so a single split settles the unit.
     lits = []
-    for coeffs, const in list(pcert.pinned_units) + list(pcert.bounded_units):
+    for coeffs, const in pcert.units:
         lean, e = _affine_str(coeffs, const), _affine_z3(coeffs, const, s_syms)
         lits.append((f"0 < {lean}", e > 0))
     domain = [pcert.guard, *invariants]
     signs = [z3.And(*[_lit_z3(l, s_syms)
-                      for l in _cell_literals(c, pcert.pinned_units, pcert.bounded_units)])
+                      for l in _pattern_literals(c.pattern, pcert.units)])
              for c in pcert.cells]
 
     def unsat(*claims) -> bool:
@@ -538,7 +515,7 @@ def _emit_covered(reps, n: int, tree, of_region, pcert) -> str:
     hyps = "(hg : trans s) (hinv : invariants s)"
     disj = "\n      ∨ ".join(f"cell{i}_signs s" for i in range(len(reps)))
     if len(reps) == 1:
-        if not _cell_literals(reps[0], pcert.pinned_units, pcert.bounded_units):
+        if not _pattern_literals(reps[0].pattern, pcert.units):
             body = "  exact trivial"           # nothing pinned: the one region is everything
         else:
             unfold = ", ".join(["trans", "invariants", "cell0_signs"]
@@ -553,7 +530,7 @@ def _emit_covered(reps, n: int, tree, of_region, pcert) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Devices on a path: activations, mask bounds, collapses
+# Devices on a path: activations and their collapse per region
 # ---------------------------------------------------------------------------
 
 def _emit_post_state(body_affines, n: int) -> str:
@@ -608,7 +585,7 @@ def _emit_activations(name: str, units, input_term: str, extra_unfold: list[str]
 
     Unfolding that matrix product is the single most expensive step in a proof, and
     it is the same work for every region of a path. Doing it once here leaves each
-    region's mask side-goal to be read off an explicit affine form."""
+    region's collapse side-goal to be read off an explicit affine form."""
     arms = "\n".join(f"  | {_fin(j)} => {_affine_str(c, k)}"
                      for j, (c, k) in enumerate(units))
     d = _dev(tag)
@@ -622,34 +599,6 @@ def _emit_activations(name: str, units, input_term: str, extra_unfold: list[str]
         f"  funext i\n"
         f"  match i with\n{cases}"
     )
-
-
-def _emit_lower_bound(k: int, m: int, mu, affine, n: int, dev, inp: str) -> str:
-    """``<affine> ≤ V (input) fzero`` — the mask bound on a bounded device, with
-    no hypothesis at all.
-
-    ``affine_mask_le`` (:file:`lean/Subgrad.lean`) holds for every pattern, so
-    the mask needs no sign conditions: masking under-approximates the ReLU layer
-    either way round. Only the identification of the masked affine layer with the
-    emitted affine form is per-mask work."""
-    coeffs, const = affine
-    d = _dev(str(dev.net))
-    pat, acts = f"mask{k}_{m}", f"act{k}"
-    return "\n\n".join([
-        _bool_vec(pat, mu),
-        f"theorem lb{k}_{m} (s : Vector {n} Int) :\n"
-        f"    {_affine_str(coeffs, const)} ≤ V{d} {_arg(inp)} fzero := by\n"
-        f"  have heq : affine nrf{d}_W1 nrf{d}_b1 (mask {pat} (affine nrf{d}_W0 nrf{d}_b0 {_arg(inp)})) fzero\n"
-        f"           = {_affine_str(coeffs, const)} := by\n"
-        f"    rw [{acts}_eq, out_apply{d}]\n"
-        f"    simp only [mask, {pat}, Bool.true_eq_false, Bool.false_eq_true,\n"
-        f"               ↓reduceIte, {acts}] <;> omega\n"
-        f"  have hle := affine_mask_le nrf{d}_W1 nrf{d}_b1 {pat} (affine nrf{d}_W0 nrf{d}_b0 {_arg(inp)})\n"
-        f"      nrf{d}_W1_nonneg fzero\n"
-        f"  rw [heq] at hle\n"
-        f"  simp only [V{d}]\n"
-        f"  exact hle",
-    ])
 
 
 def _emit_collapse(k: int, r: int, affine, n: int, dev, inp: str, signs: str,
@@ -730,7 +679,7 @@ def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
     assert not any(_contains_ite(e) for e in body), \
         "path body must be affine (expand_cases should have split every ite)"
     body_affines = [affine_coeffs(e, s_syms) for e in body]
-    pins, bnds, of_region = _sign_index(reps)
+    pins, of_region = _sign_index(reps)
 
     parts = []
     for r, cs in enumerate(regions):
@@ -740,9 +689,7 @@ def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
                  f"  {_render_conjuncts(pcert.guard, s_syms)}")
     parts.append(_emit_post_state(body_affines, n))
     for pattern, k in pins.items():
-        parts.append(_emit_signs_def(f"pin_signs_{k}", pattern, pcert.pinned_units, n))
-    for pattern, k in bnds.items():
-        parts.append(_emit_signs_def(f"bnd_signs_{k}", pattern, pcert.bounded_units, n))
+        parts.append(_emit_signs_def(f"signs_{k}", pattern, pcert.units, n))
     for r, pats in enumerate(of_region):
         parts.append(f"def cell{r}_signs (s : Vector {n} Int) : Prop :=\n"
                      f"  {' ∧ '.join(f'{d} s' for d in _cell_sign_defs(pats))}")
@@ -764,21 +711,13 @@ def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
             continue
         parts.append(_emit_activations(f"act{k}", units, inp, unfold, n, str(dev.net)))
         m = len(units)
-        if dev.pinned:
-            for r, c in enumerate(reps):
-                sl = tuple(c.pattern_sp)[dev.offset:dev.offset + m]
-                parts.append(_bool_vec(f"pat{k}_{r}", sl))
-                parts.append(_emit_collapse(k, r, c.affines[k], n, dev, inp,
-                                            f"cell{r}_signs", tuple(_cell_sign_defs(of_region[r]))))
-                haves[r].append(f"have hc{k} := c0{k}_{r} s hs")
-        else:
-            masks = {}
-            for r, c in enumerate(reps):
-                sl = tuple(c.mu)[dev.offset:dev.offset + m]
-                masks.setdefault(sl, (len(masks), c.affines[k]))
-                haves[r].append(f"have hb{k} := lb{k}_{masks[sl][0]} s")
-            for sl, (mi, aff) in masks.items():
-                parts.append(_emit_lower_bound(k, mi, sl, aff, n, dev, inp))
+        for r, c in enumerate(reps):
+            sl = tuple(c.pattern)[dev.offset:dev.offset + m]
+            parts.append(_bool_vec(f"pat{k}_{r}", sl))
+            parts.append(_emit_collapse(k, r, c.affines[k], n, dev, inp,
+                                        f"cell{r}_signs",
+                                        tuple(_cell_sign_defs(of_region[r]))))
+            haves[r].append(f"have hc{k} := c0{k}_{r} s hs")
 
     for r, cs in enumerate(regions):
         for c in cs:
@@ -966,7 +905,7 @@ def _emit_safety_composition(path_names, n: int, init_lean: str, trivial_inv: bo
 
 
 _HEADER = (
-    "import Coverage\nimport Net\nimport Subgrad\nimport Termination\n"
+    "import Coverage\nimport Net\nimport Termination\n"
     "set_option linter.unusedVariables false\n"
     "set_option linter.unusedSimpArgs false\n"
     "set_option maxHeartbeats 1000000\n"

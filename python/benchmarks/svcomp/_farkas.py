@@ -12,26 +12,19 @@ theorem; a safety property is :func:`inductive`; several ranks are
 
 The procedure is sound and incomplete, and what it cannot handle it refuses by
 name: :data:`OPS` for the theory's operations, :func:`check_supported` for the
-module, :func:`rule_for` for the property, :func:`_dnf` and :func:`_polarity` for
-the rule's shape.
+module, :func:`rule_for` for the property, :func:`_dnf` and
+:func:`_check_linear` for the rule's shape.
 
 The method
 ==========
-A wire behind a ReLU network is piecewise-affine: on a fixed **activation
-pattern** it is an affine function of the columns, the polyhedron where each
-pre-activation has the sign the pattern dictates. The rule's negation is cut into
-**disjuncts** of linear rows (:func:`_dnf`); each row needs the wires it names
-either *exact* or *bounded from below*, and which is read off its coefficients
-(:func:`_polarity`): where a wire's coefficient is non-negative in every row
-``A·x <= b`` a lower bound only weakens the row, so a mask suffices; everywhere
-else the wire is pinned to a region — strictly (``> 0`` active, ``<= 0``
-inactive), so regions partition rather than overlap.
+A wire behind a piecewise-linear node is affine once that node's **mode** is
+fixed: a ReLU is the identity or zero according to the sign of its input. A
+**region** fixes the mode of every node the rule's wires read through, strictly
+(``> 0`` active, ``<= 0`` inactive), so regions partition rather than overlap,
+and over one region every named wire is a single affine function of the columns.
 
-  * a pinned wire's pattern is what a **region** constrains; over the region its
-    value is one affine piece;
-  * a bounded wire takes a mask — each dropped unit contributes ``relu >= 0``, each
-    kept one ``relu(z) >= z`` — a free parameter of the certificate, sound for
-    any choice and exact where it matches the true pattern.
+The rule's negation is cut into **disjuncts** of linear rows (:func:`_dnf`), and
+each row is then linear in the columns alone.
 
 Over a region each disjunct is a linear infeasibility, discharged by proving
 ``region ∧ domain ∧ invariants ∧ disjunct`` infeasible via Farkas' lemma (over
@@ -42,13 +35,11 @@ pinned pattern; certifying and blocking it until none is left is the coverage
 proof, since regions are complementary.
 
 ``V >= 0`` for a ranking network is *not* Farkas-certified: it holds structurally
-because the output layer is non-negative. The mask bound needs that same
-non-negativity — see :func:`output_weights`.
+because the output layer is non-negative, and the client checks it before asking.
 """
 from __future__ import annotations
 
 import dataclasses
-import itertools
 from dataclasses import dataclass, field
 from fractions import Fraction
 from math import gcd, lcm
@@ -143,25 +134,12 @@ def _pre_activations(net: Net, inputs):
     return pres
 
 
-def output_weights(net: Net):
-    """``net.out``, checked non-negative: ``V = sum_j c_j relu(z_j) + k``.
+def piece_value(pres, weights, pattern):
+    """The wire's affine piece where ``pattern`` is the active set:
+    ``sum_j c_j * pres_j`` over the active units, plus the output bias.
 
-    The mask bound needs ``c_j >= 0``, which holds structurally because the output
-    layer is frozen non-negative. The assert fails fast on a net that breaks that;
-    the binding check is in Lean, where ``affine_mask_le``'s ``hW`` side goal is
-    ``0 <= W i j`` and would not close."""
-    c, k = net.out
-    assert all(x >= 0 for x in c), f"output layer must be non-negative: {c}"
-    return list(c), k
-
-
-def masked_value(pres, weights, pattern):
-    """``V`` with ``pattern`` deciding which hidden units contribute:
-    ``sum_j c_j * pres_j`` over the marked units, plus the output bias.
-
-    Where ``pattern`` is the true activation pattern at these pre-activations this
-    is ``V`` exactly; for any other pattern it is a lower bound, since each dropped
-    unit contributes ``relu >= 0`` and each kept one ``relu(z) >= z``."""
+    A region fixes the pattern to the true one, so on that region this is the
+    wire's value exactly."""
     c, k = weights
     out = z3.IntVal(k)
     for cj, pre, on in zip(c, pres, pattern):
@@ -170,75 +148,38 @@ def masked_value(pres, weights, pattern):
     return out
 
 
-def pinned_nodes(pinned):
-    """``(kind, expr)`` for every node the groups in ``pinned`` name, in order."""
-    return tuple((kind, e) for kind, exprs in pinned for e in exprs)
+def mode_nodes(modes):
+    """``(kind, expr)`` for every node the groups in ``modes`` name, in order."""
+    return tuple((kind, e) for kind, exprs in modes for e in exprs)
 
 
-def mode_region(pinned, pattern):
-    """The region a mode assignment names, each node through its own kind. Nodes the
-    pattern leaves open (``None``) contribute nothing."""
+def mode_region(modes, pattern):
+    """The region a mode assignment names, each node through its own kind.
+
+    The modes a kind offers are complementary, so the regions partition the state
+    space and a state lies in exactly one."""
     out = []
-    for (kind, e), m in zip(pinned_nodes(pinned), pattern):
-        if m is not None:
-            out += list(_MODE_OF[kind].region(e, m))
+    for (kind, e), m in zip(mode_nodes(modes), pattern):
+        out += list(_MODE_OF[kind].region(e, m))
     return tuple(out)
 
 
-def modes_at(pinned, model):
-    """The mode each pinned node is in at ``model``."""
-    return tuple(_MODE_OF[kind].at(model, e) for kind, e in pinned_nodes(pinned))
-
-
-def strict_signs(pres, pattern):
-    """The region ``pattern`` names, as complementary literals: ``0 < e`` where
-    active, ``e <= 0`` where not, nothing where the pattern leaves a unit open
-    (``None``). Complementary, so the regions partition."""
-    return tuple((p > 0) if a else (p <= 0)
-                 for p, a in zip(pres, pattern) if a is not None)
+def modes_at(modes, model):
+    """The mode each node is in at ``model``."""
+    return tuple(_MODE_OF[kind].at(model, e) for kind, e in mode_nodes(modes))
 
 
 def exact_value(pres, weights):
     """``V`` with the ReLUs left in: ``sum_j c_j * relu(pres_j) + k``.
 
-    The strongest bound any mask can reach, since a mask matching the true signs
-    is exactly this. Used to reject a class no mask could certify without paying
-    for the search."""
+    The wire's truth, whatever region a state lies in. Used to tell a region the
+    LP could not close from one where the rule genuinely fails."""
     c, k = weights
     out = z3.IntVal(k)
     for cj, pre in zip(c, pres):
         if cj:
             out = out + cj * z3.If(pre > 0, pre, z3.IntVal(0))
     return out
-
-
-def _sign_status(region, exprs):
-    """Which of ``exprs`` keep one sign throughout ``region``.
-
-    Returns ``(fixed, free)``: ``fixed[j]`` is ``True`` where the expression stays
-    ``>= 0`` and ``False`` where it stays ``<= 0``; ``free`` lists the indices that
-    take both signs. A mask bit is settled for every fixed unit — keeping a
-    non-negative one only raises the bound, keeping a negative one only lowers it —
-    so only the free ones are ever a choice."""
-    fixed, free = {}, []
-    for j, e in enumerate(exprs):
-        if not _feasible(z3.And(region, e < 0)):
-            fixed[j] = True
-        elif not _feasible(z3.And(region, e > 0)):
-            fixed[j] = False
-        else:
-            free.append(j)
-    return fixed, free
-
-
-def _mask_candidates(fixed, free, hint, m):
-    """Masks worth trying, the witness's own first: the settled bits from
-    ``fixed``, the ``free`` ones enumerated."""
-    for combo in itertools.product(*[(hint[j], not hint[j]) for j in free]):
-        mask = [fixed.get(j, False) for j in range(m)]
-        for j, v in zip(free, combo):
-            mask[j] = v
-        yield tuple(mask)
 
 
 # ---------------------------------------------------------------------------
@@ -392,12 +333,11 @@ def atom_rows(atom, syms):
     return []
 
 
-def build_integer_system(pin_signs, bnd_signs, guard, invariants, atoms, syms):
-    """Rows of ``signs ∧ guard ∧ invariants ∧ atoms`` as an integer system
+def build_integer_system(region, guard, invariants, atoms, syms):
+    """Rows of ``region ∧ guard ∧ invariants ∧ atoms`` as an integer system
     ``A·s <= b`` with per-row labels, plus the atoms that carry information the LP
     cannot express. ``atoms`` is one disjunct of the rule's negation, already
     substituted for the region; infeasibility refutes that disjunct on it.
-    ``bnd_signs`` is empty unless the region needed pre-state literals to certify.
 
     Each row is also emitted gcd-tightened (divided through by the gcd of its
     coefficients, constant floored): valid over the integers but out of reach of the
@@ -426,10 +366,8 @@ def build_integer_system(pin_signs, bnd_signs, guard, invariants, atoms, syms):
             if g > 1:
                 add([x // g for x in A_row], b // g, label + "/int")
 
-    for j, c in enumerate(pin_signs):
-        add_atom(c, f"cell_sp[{j}]")
-    for j, c in enumerate(bnd_signs):
-        add_atom(c, f"cell_s[{j}]")
+    for j, c in enumerate(region):
+        add_atom(c, f"cell[{j}]")
     for i, g in enumerate(_flatten_and(guard)):
         add_atom(g, f"guard[{i}]")
     for i, inv in enumerate(invariants):
@@ -485,23 +423,16 @@ class CellCert:
     negation, infeasible together (the integer system and its multipliers, for
     the Lean emitter).
 
-    ``pattern_sp`` is the pinned group's activation pattern, which defines the
-    region; ``mu`` the mask the certificate chose on the bounded group.
-    ``pattern_s`` is ``None`` unless the cell was narrowed by bounded-group
-    literals. It is then *partial*: a sign per unit the narrowing pinned, ``None``
-    for the rest, since splitting stops as soon as some mask certifies.
-
-    ``disjunct`` indexes the rule's disjuncts. ``affines`` gives, per device, the
-    ``(coeffs, const)`` of its value under the region and mask over the state
-    columns — exact for a pinned device, a lower bound for a bounded one — the
-    right-hand sides of the emitted collapse and bound lemmas."""
+    ``pattern`` is the mode of every node the named wires read through, which is
+    what defines the region. ``disjunct`` indexes the rule's disjuncts.
+    ``affines`` gives, per device, the ``(coeffs, const)`` of its value on this
+    region over the state columns — the right-hand sides of the emitted collapse
+    lemmas."""
     A: tuple
     b: tuple
     y: tuple
     labels: tuple
-    pattern_sp: tuple
-    mu: tuple
-    pattern_s: tuple | None = None
+    pattern: tuple
     disjunct: int = 0
     affines: tuple = ()
 
@@ -511,12 +442,10 @@ class Device:
     """A wire the rule names with a reading behind it, as the proof renders it:
     ``net`` indexes the result's distinct networks; ``inputs`` says which end of
     each column the reading takes (``"latched"``, ``"next"`` or ``"unread"``);
-    ``pinned`` whether regions fix its pattern or a mask bounds it; ``offset``
-    where its units start within that group."""
+    ``offset`` where its nodes start in the region's pattern."""
     wire_id: int
     net: int
     inputs: tuple
-    pinned: bool
     offset: int
 
 
@@ -549,16 +478,14 @@ class PathCert:
     ``Step`` relations is the loop's transition — hence a property of every path's
     steps is a property of the program's.
 
-    ``pinned_units`` / ``bounded_units`` hold each hidden unit's pre-activation at
-    this path's round as ``(coeffs, const)`` over the pre-state columns, for the
-    pinned and the bounded group; ``device_units`` the same per device. A cell is
-    the region where the pinned group's expressions take the signs its pattern
-    names, which is what lets the emitter case-split on them."""
+    ``units`` holds each node's pre-activation at this path's round as
+    ``(coeffs, const)`` over the pre-state columns; ``device_units`` the same per
+    device. A region is where those expressions take the signs its pattern names,
+    which is what lets the emitter case-split on them."""
     guard: object
     body: tuple
     cells: tuple
-    pinned_units: tuple = ()
-    bounded_units: tuple = ()
+    units: tuple = ()
     device_units: tuple = ()
 
 
@@ -726,13 +653,12 @@ class Reading:
 
     def value(self, s_syms, body, pattern=None):
         """The wire's value at the round: exact with the ReLUs in when ``pattern``
-        is ``None``, else the mask ``pattern`` applied."""
+        is ``None``, else its affine piece where ``pattern`` is the active set."""
         if not self.net.units:
             return _affine_value(self.net.out, self.args(s_syms, body))
         acts = self.at(s_syms, body)
-        weights = output_weights(self.net)
-        return (exact_value(acts, weights) if pattern is None
-                else masked_value(acts, weights, pattern))
+        return (exact_value(acts, self.net.out) if pattern is None
+                else piece_value(acts, self.net.out, pattern))
 
 
 def _affine_value(weights, args):
@@ -821,9 +747,8 @@ class Step:
     ``ok`` is ``(W, S) -> BoolRef``, a boolean combination of linear comparisons —
     ``W[wire]`` the value a ctrl next wire takes this round, ``S[name]`` a
     column's latched value and ``S.next[name]`` its value after the step — so a
-    rule is written over the graph and knows nothing of programs or ranks. Which
-    wires must be pinned to a region and which a bound suffices for is read off
-    the formula's coefficients, not declared.
+    rule is written over the graph and knows nothing of programs or ranks. The wires
+    it names are the ones a region fixes the modes of.
 
     ``ranks`` pairs ``(at s, at s')`` wires the emitter renders as one network
     ``V`` — the decrease rules; ``inv`` is an inductive rule's invariant and
@@ -1065,25 +990,16 @@ def _dnf(e) -> list:
                       f"comparisons: {e}")
 
 
-def _polarity(disjuncts, wires, syms):
-    """Which named wires must be pinned to a region for the rule's rows to be
-    sound. A wire is substituted by a *lower bound* where that only weakens the
-    row — a non-negative coefficient in the row ``A·x <= b`` — and must be exact
-    (pinned) where any row has it negative; an equality pins. Refuses by name a
-    rule atom that is not linear over the columns and the named wires."""
-    pin = set()
-    n_cols = len(syms) - len(wires)
+def _check_linear(disjuncts, syms) -> None:
+    """Refuse by name a rule atom the LP cannot turn into rows.
+
+    Every atom of the rule's negation must be a linear comparison over the columns
+    and the named wires, since that is what a Farkas row is."""
     for atoms in disjuncts:
         for a in atoms:
-            rows = atom_rows(a, syms)
-            if not rows:
+            if not atom_rows(a, syms):
                 raise Unsupported("rule predicate is not a linear comparison over the "
                                   f"columns and the named wires: {a}")
-            for A_row, _ in rows:
-                for w, c in zip(wires, A_row[n_cols:]):
-                    if c < 0:
-                        pin.add(w.id)
-    return pin
 
 
 # ---------------------------------------------------------------------------
@@ -1170,7 +1086,7 @@ def _feasible(pred) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# The engine: regions, masks, one Farkas system per disjunct
+# The engine: regions, one Farkas system per disjunct
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -1190,11 +1106,10 @@ class _Path:
     """What every region attempt on one path reads, built once by
     :func:`certify`: the columns, the path's guard and invariants and their
     conjunction ``dom``, the rule's formula and the disjuncts of its negation, the
-    named wires as devices, and the pinned / bounded unit groups.
+    named wires as devices, and the piecewise-linear nodes behind them.
 
-    A wire is pinned if any row needs it exact (:func:`_polarity`); the pinned
-    group is what a region enumerates modes over, the bounded group is where a
-    mask suffices."""
+    ``modes`` is what a region enumerates over: every node the named wires read
+    through, in device order."""
     s_syms: tuple
     body: tuple
     guard: object
@@ -1204,8 +1119,7 @@ class _Path:
     disjuncts: tuple
     devices: tuple           # _Device, in the order the rule named the wires
     columns: dict            # wire id -> column index, for a column's own next wire
-    pinned: tuple
-    bounded: tuple
+    modes: tuple
     unused: set
 
     @staticmethod
@@ -1214,34 +1128,34 @@ class _Path:
         invariants = tuple(invariants)
         dom = z3.And(guard, *invariants) if invariants else guard
         s_syms = tuple(system.s_syms)
-        devs, pin_acts, bnd_acts = [], [], []
+        devs, acts_all = [], []
         for spec in devices:
             rd = readings[spec.wire_id]
             args = rd.args(s_syms, body)
             acts = tuple(_pre_activations(rd.net, args))
-            weights = output_weights(rd.net) if rd.net.units else rd.net.out
-            devs.append(_Device(spec, system.W[spec.wire_id], rd, tuple(args), acts, weights))
-            (pin_acts if spec.pinned else bnd_acts).extend(acts)
+            devs.append(_Device(spec, system.W[spec.wire_id], rd, tuple(args), acts,
+                                rd.net.out))
+            acts_all.extend(acts)
         return _Path(s_syms=s_syms, body=tuple(body), guard=guard,
                      invariants=invariants, dom=dom, ok=ok, disjuncts=tuple(disjuncts),
                      devices=tuple(devs), columns=dict(columns),
-                     pinned=(("relu", tuple(pin_acts)),) if pin_acts else (),
-                     bounded=tuple(bnd_acts), unused=set())
+                     modes=(("relu", tuple(acts_all)),) if acts_all else (),
+                     unused=set())
 
     def _values(self, system, value_of) -> list:
         out = [(system.W[wid], self.body[k]) for wid, k in self.columns.items()]
         return out + [(d.sym, value_of(d)) for d in self.devices]
 
-    def subst(self, system, lam, mu) -> list:
-        """``(W symbol, value)`` for every named wire under the region ``lam`` and
-        mask ``mu``: pinned wires exact on the region, bounded ones from below,
-        a column's next wire its body on this path, a ReLU-free wire its value."""
+    def subst(self, system, lam) -> list:
+        """``(W symbol, value)`` for every named wire on the region ``lam``: its
+        affine piece there, a column's next wire its body on this path, and a
+        node-free wire its value outright."""
         def value(d):
             n = len(d.acts)
             if not n:
                 return _affine_value(d.weights, d.args)
-            pat = (lam if d.spec.pinned else mu)[d.spec.offset:d.spec.offset + n]
-            return masked_value(d.acts, d.weights, pat)
+            return piece_value(d.acts, d.weights,
+                               lam[d.spec.offset:d.spec.offset + n])
         return self._values(system, value)
 
     def exact(self, system) -> list:
@@ -1256,91 +1170,48 @@ class _Path:
 
     def affines(self, sub) -> tuple:
         """Per device, the ``(coeffs, const)`` of its substituted value over the
-        columns — what the emitter's bound and collapse lemmas state."""
+        columns — what the emitter's collapse lemmas state."""
         smap = {str(k): v for k, v in sub}
         return tuple(_affine_pair(z3.simplify(smap[str(d.sym)]), self.s_syms)
                      for d in self.devices)
 
 
-def _signs_at(model, exprs):
-    """The sign pattern ``model`` gives ``exprs``: ``True`` where positive."""
-    return tuple(model.eval(e, model_completion=True).as_long() > 0
-                 for e in exprs)
-
-
-def _try_cell(system, p: _Path, lam, mu, pat_b):
-    """Farkas-certify one region: the pinned pattern ``lam``, the mask ``mu``, and
-    any literals ``pat_b`` narrowing the bounded group.
+def _try_cell(system, p: _Path, lam):
+    """Farkas-certify one region, named by the mode pattern ``lam``.
 
     One LP per disjunct of the rule's negation — the rows of the region, the
     guard, the invariants and the disjunct. Returns one :class:`CellCert` per
     disjunct, or ``None`` if some disjunct stays feasible on the region."""
-    bnd_signs = strict_signs(p.bounded, pat_b) if pat_b is not None else ()
-    sub = p.subst(system, lam, mu)
+    sub = p.subst(system, lam)
     affines = p.affines(sub)
     certs = []
     for d, atoms in enumerate(p.disjuncts):
         rows = [z3.substitute(a, *sub) for a in atoms] if sub else list(atoms)
         A, b, labels, unused = build_integer_system(
-            mode_region(p.pinned, lam), bnd_signs, p.guard, list(p.invariants),
-            rows, p.s_syms)
+            mode_region(p.modes, lam), p.guard, list(p.invariants), rows, p.s_syms)
         p.unused.update(str(a) for a in unused)
         y = find_infeasibility_certificate(A, b)
         if y is None:
             return None
         certs.append(CellCert(tuple(map(tuple, A)), tuple(b), tuple(y), tuple(labels),
-                              tuple(lam), tuple(mu),
-                              tuple(pat_b) if bnd_signs else None,
-                              disjunct=d, affines=affines))
+                              tuple(lam), disjunct=d, affines=affines))
     return certs
 
 
-def _certify_cell(system, p: _Path, lam, hint):
-    """Certify the pinned-pattern class ``lam``, searching for a mask.
+def _certify_cell(system, p: _Path, lam):
+    """Certify the region ``lam`` names, or say why not.
 
-    ``hint`` — the witness's own bounded-group pattern, where the bound is exact —
-    is tried alone first; that settles most regions in a single LP. Failing that
-    the class is checked against the rule's *exact* violation, which no mask can
-    beat, so a failure there is a genuine counterexample rather than a bound too
-    weak to certify. Only then does :func:`_narrow` search masks and, where it
-    must, split."""
-    certs = _try_cell(system, p, lam, hint, None)
+    Over the region every named wire is one affine piece, so a disjunct the LP
+    leaves feasible is either a genuine counterexample or an entailment only the
+    integers witness. Evaluating the rule *exactly* on the region tells the two
+    apart."""
+    certs = _try_cell(system, p, lam)
     if certs is not None:
         return certs, "ok"
-    region = z3.And(p.dom, *mode_region(p.pinned, lam))
+    region = z3.And(p.dom, *mode_region(p.modes, lam))
     if _feasible(z3.And(region, p.violation(system))):
         return None, "violated"
-    cells = _narrow(system, p, lam, hint, region, (None,) * len(lam))
-    return cells, "ok" if cells is not None else "uncertifiable"
-
-
-def _narrow(system, p: _Path, lam, hint, region, pinned):
-    """The cells certifying ``region`` — the class narrowed by whatever bounded
-    literals ``pinned`` names — or ``None`` if some part of it stays uncertifiable.
-
-    Splitting is lazy: pin a single sign-indefinite unit, then retry the mask
-    search on each half. With every unit pinned the mask matches the true pattern
-    and the bound is exact, so the recursion bottoms out at the joint cell."""
-    fixed, free = _sign_status(region, p.bounded)
-    for mu in _mask_candidates(fixed, free, hint, len(p.bounded)):
-        certs = _try_cell(system, p, lam, mu, pinned)
-        if certs is not None:
-            return certs
-    if not free:
-        return None
-    j = free[0]
-    cells = []
-    for truth in (True, False):
-        sub_pinned = list(pinned)
-        sub_pinned[j] = truth
-        sub = z3.And(region, (p.bounded[j] > 0) if truth else (p.bounded[j] <= 0))
-        if not _feasible(sub):
-            continue
-        got = _narrow(system, p, lam, hint, sub, tuple(sub_pinned))
-        if got is None:
-            return None
-        cells.extend(got)
-    return cells
+    return None, "uncertifiable"
 
 
 def _certify_path(system, p: _Path, max_iters):
@@ -1362,18 +1233,18 @@ def _certify_path(system, p: _Path, max_iters):
             return False, cells, None, "UNKNOWN"
         model = solver.model()
         s_val = [model.eval(x, model_completion=True).as_long() for x in s_syms]
-        lam, hint = modes_at(p.pinned, model), _signs_at(model, p.bounded)
+        lam = modes_at(p.modes, model)
         if z3.is_true(model.eval(p.violation(system), model_completion=True)):
             return False, cells, np.array(s_val, dtype=np.float64), "FAILED(violated)"
         try:
-            new, status = _certify_cell(system, p, lam, hint)
+            new, status = _certify_cell(system, p, lam)
         except ValueError as exc:            # non-affine even after splitting
             return (False, cells, np.array(s_val, dtype=np.float64),
                     f"FAILED(non-affine: {exc})")
         if status != "ok":
             return False, cells, np.array(s_val, dtype=np.float64), f"FAILED({status})"
         cells.extend(new)
-        block = mode_region(p.pinned, lam)
+        block = mode_region(p.modes, lam)
         solver.add(z3.Not(z3.And(*block)) if block else z3.BoolVal(False))
     return False, cells, None, "FAILED(max_iters)"
 
@@ -1400,8 +1271,7 @@ def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasRes
 
     Preconditions first (:func:`check_supported`); the rule's formula is resolved
     over the columns and the named wires, its negation cut into disjuncts of rows
-    and the wires classified by their coefficients; the rule's whole-run facts
-    next; then the property's domain is expanded into cases (:func:`expand_cases`),
+    the rule's whole-run facts next; then the property's domain is expanded into cases (:func:`expand_cases`),
     each a convex region with an affine transition, and each certified by the
     region/CEGAR engine. Nothing here knows what a program or a rank is."""
     check_supported(system, prop, rule)
@@ -1409,20 +1279,19 @@ def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasRes
     ok, wires, pred, inv = _resolve(rule, prop, system)
     W_syms = [system.W[w.id] for w in wires]
     disjuncts = _dnf(z3.Not(ok))
-    pin_ids = _polarity(disjuncts, wires, list(system.s_syms) + W_syms)
+    _check_linear(disjuncts, list(system.s_syms) + W_syms)
     nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
     columns = {w.id: nexts[w.id] for w in wires if w.id in nexts}
     readings = {w.id: reading(system, w) for w in wires if w.id not in nexts}
-    nets, devices, offset = [], [], {True: 0, False: 0}
+    nets, devices, offset = [], [], 0
     for w in wires:
         if w.id in columns:
             continue
         rd = readings[w.id]
         if rd.net not in nets:
             nets.append(rd.net)
-        pinned = w.id in pin_ids
-        devices.append(Device(w.id, nets.index(rd.net), rd.inputs, pinned, offset[pinned]))
-        offset[pinned] += len(rd.net.units)
+        devices.append(Device(w.id, nets.index(rd.net), rd.inputs, offset))
+        offset += len(rd.net.units)
     _check_ranks(rule, devices, readings)
     nets, devices = tuple(nets), tuple(devices)
 
@@ -1457,11 +1326,10 @@ def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasRes
         unused |= p.unused
         if not verified:
             return result(False, [], cex, status, unused)
-        pin_acts = p.pinned[0][1] if p.pinned else ()
+        acts = p.modes[0][1] if p.modes else ()
         paths.append(PathCert(
             pguard, tuple(pbody), tuple(cells),
-            pinned_units=tuple(_affine_pair(e, s_syms) for e in pin_acts),
-            bounded_units=tuple(_affine_pair(e, s_syms) for e in p.bounded),
+            units=tuple(_affine_pair(e, s_syms) for e in acts),
             device_units=tuple(tuple(_affine_pair(e, s_syms) for e in d.acts)
                                for d in p.devices)))
     if not paths:
