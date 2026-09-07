@@ -37,9 +37,24 @@ def test_core_files_present(sync_core_templates):
 def test_generated_files_present(generate_lean_files):
     """ZerothHammer.lean and Certs/*.lean exist after generation fixture runs."""
     assert (_LEAN_DIR / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
-    for name in ("Countdown", "TwoVars", "Collatz"):
+    for name in ("Countdown", "TwoVars", "Collatz", "ArgmaxScalar"):
         path = _LEAN_DIR / "Certs" / f"{name}.lean"
         assert path.exists(), f"Certs/{name}.lean not generated"
+
+
+def test_generated_argmax_scalar_mirrors_matrix_form(generate_lean_files):
+    """The emitted scalar Argmax must seed from s0 and compare strictly.
+
+    `argmax1d_scalar_n_eq` proves the unrolled form equal to
+    `Core.Mat.argmax_1d` by unfolding both, so a neutral seed or a
+    non-strict comparison here would leave that proof passing against a
+    definition that disagrees with `torch.argmax`.
+    """
+    src = (_LEAN_DIR / "Certs" / "ArgmaxScalar.lean").read_text()
+    assert "let b0 : Nat × Int := (0, s0)" in src, "scalar Argmax is not seeded with element 0"
+    assert "(0, (0 : Int))" not in src, "scalar Argmax still seeds a neutral value"
+    assert ".2 < s1" in src, "scalar Argmax does not use a strict comparison"
+    assert ".2 ≤ s" not in src, "scalar Argmax still uses a non-strict comparison"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -80,6 +95,20 @@ def test_manual_tests_build(generate_lean_files):
     )
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "ManualTests" in l]
     assert not sorry_lines, "ManualTests proof used sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
+def test_argmax_scalar_equiv_build(generate_lean_files):
+    """Certs/ArgmaxScalar.lean compiles — each `argmax1d_scalar_n_eq` proof
+    goes through, which is what ties the generated unrolled form to
+    `Core.Mat.argmax_1d`."""
+    r = _lake_build("Certs.ArgmaxScalar")
+    assert r.returncode == 0, (
+        f"lake build Certs.ArgmaxScalar failed.\n"
+        f"stdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert not sorry_lines, "ArgmaxScalar proof used sorry:\n" + "\n".join(sorry_lines)
 
 
 @pytest.mark.slow

@@ -13,10 +13,11 @@
  [[lean_lib]]
  name = "Certs"
 
- # Manually written: test zeroth_hammer on standalone goal shapes
+ # Manually written: test zeroth_hammer on standalone goal shapes, and pin
+ # the semantics of Core.Mat definitions that no certificate exercises
  [[lean_lib]]
  name = "ManualTests"
- roots = ["ManualTests.Basic"]
+ roots = ["ManualTests.Basic", "ManualTests.Argmax"]
 
  [[lean_lib]]
  name = "ZerothHammerTests"

@@ -22,6 +22,7 @@ from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
 from zrth.analyzer import convert_method
 from zrth.lean.cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
+from zrth.lean.translate.scalar import _argmax_scalar_def_lines
 
 _LEAN_DIR = Path(__file__).parent
 _CORE_DIR = _LEAN_DIR / "Core"
@@ -175,6 +176,11 @@ _COUNTDOWN_CERT = CertificateData(
 )
 
 
+# (elem_ty, n) pairs for the generated scalar Argmax variants. n = 1 is the
+# degenerate single-element case; the rest exercise the fold.
+_ARGMAX_SCALAR_SPECS = [("Int", 1), ("Int", 2), ("Int", 4), ("Real", 3)]
+
+
 _CERT_SPECS = [
     (
         "BigCounter",
@@ -258,3 +264,13 @@ def generate_lean_files(sync_core_templates) -> None:
         lean_cert = smt_predicates_to_lean(cert_data, module)
         content = generate_standalone_cert_lean(module, lean_cert)
         (_CERTS_DIR / f"{name}.lean").write_text(content)
+
+    # Certs/ArgmaxScalar.lean — the scalar Argmax variants exactly as the
+    # generator emits them. Each carries an `argmax1d_scalar_n_eq` theorem
+    # proving it equal to Core.Mat.argmax_1d, so building this file is what
+    # keeps the unrolled scalar form and the matrix definition in step. No
+    # certificate module currently uses Argmax, so nothing else compiles it.
+    argmax_lines = ["import Core.Mat", ""]
+    for elem_ty, n in _ARGMAX_SCALAR_SPECS:
+        argmax_lines.extend(_argmax_scalar_def_lines(elem_ty, n))
+    (_CERTS_DIR / "ArgmaxScalar.lean").write_text("\n".join(argmax_lines))

@@ -69,18 +69,23 @@ def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
 
 
 def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
-    """Emit a scalar def and simp theorem for argmax over n elements."""
+    """Emit a scalar def and simp theorem for argmax over n elements.
+
+    Mirrors ``Core.Mat.argmax_1d`` step for step -- seeded with element 0 and
+    updating on a strict ``<`` so the first maximal index wins -- because
+    ``{name}_eq`` below proves the two equal by unfolding both. A neutral
+    seed or a non-strict comparison here would either break that proof or,
+    worse, keep it provable against an equally wrong matrix definition.
+    """
     name = _argmax_scalar_name(n)
     noncomp = "noncomputable " if elem_ty == "Real" else ""
     params = " ".join(f"(s{i} : {elem_ty})" for i in range(n))
-    default_map = {"Real": "(0 : Real)", "Int": "(0 : Int)", "Bool": "false"}
-    default = default_map.get(elem_ty, f"(Inhabited.default : {elem_ty})")
-    body = [f"  let b0 : Nat × {elem_ty} := (0, {default})"]
-    for i in range(n):
+    body = [f"  let b0 : Nat × {elem_ty} := (0, s0)"]
+    for i in range(1, n):
         body.append(
-            f"  let b{i+1} : Nat × {elem_ty} := if b{i}.2 ≤ s{i} then ({i}, s{i}) else b{i}"
+            f"  let b{i} : Nat × {elem_ty} := if b{i-1}.2 < s{i} then ({i}, s{i}) else b{i-1}"
         )
-    body.append(f"  (b{n}.1 : Int)")
+    body.append(f"  (b{n-1}.1 : Int)")
     eq_params = " ".join(f"(v 0 {i})" for i in range(n))
     return [
         f"{noncomp}def {name} {params} : Int :=",
@@ -88,7 +93,7 @@ def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
         "",
         f"@[simp] theorem {name}_eq (v : Mat {elem_ty} 1 {n}) :",
         f"    {name} {eq_params} = (↑(argmax_1d v 0 0) : Int) := by",
-        f"  simp only [{name}, argmax_1d, List.finRange, List.foldl]",
+        f"  simp only [{name}, argmax_1d, List.finRange]",
         f"  rfl",
         "",
     ]
