@@ -77,7 +77,7 @@ _LEAN_OP_BOX: dict[str, str] = {
     "Gt": "Box.gt",
     "Ge": "Box.ge",
     "Eq": "Box.eq",
-    "Neq": "Box.neq",
+    "Ne": "Box.neq",
     "Min": "Box.min",
     "Max": "Box.max",
     "MatMul": "Box.mul",
