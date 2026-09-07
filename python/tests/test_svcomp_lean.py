@@ -15,7 +15,11 @@ import z3
 
 from tests._fixtures import loop_bench
 from benchmarks.svcomp._lean import _render_conjuncts, _trivial, emit_program
-from benchmarks.svcomp._verify_ranking import build_obligation, farkas_cell
+from benchmarks.svcomp._farkas import certify, lex_decrease, read_system
+from benchmarks.svcomp._property import Fixpoint
+from benchmarks.svcomp._verify_ranking import (_v_module, build_obligation,
+                                               farkas_cell, system_of)
+from zrth import Module
 from zrth.sugar import ite, ne
 
 LEAN_DIR = Path(__file__).resolve().parents[1] / "benchmarks" / "svcomp" / "lean"
@@ -156,6 +160,55 @@ def test_emitted_proof_kernel_checks(tmp_path):
     out.mkdir(parents=True, exist_ok=True)
     f = out / "program.lean"
     f.write_text(emit_program("decrement", system, res))
+    try:
+        r = subprocess.run(["lake", "env", "lean", str(f.relative_to(LEAN_DIR))],
+                           cwd=LEAN_DIR, capture_output=True, text=True, timeout=600)
+        assert r.returncode == 0 and not r.stdout.strip(), r.stdout + r.stderr
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+def _lex_obligation():
+    """The nested loop ``while (i > 0) { if (j > 0) j--; else { i--; j = 3; } }``
+    with the ranks ``relu(i)``, ``relu(j)`` each composed in at both ends of a
+    step, certified lexicographically. Returns the composed system and the result
+    carrying the rule and the ranks' networks."""
+    prog = system_of(loop_bench(("i", "j"),
+        lambda c: (ite(c[0] > 0, ite(c[1] > 0, c[0], c[0] - 1), c[0]),
+                   ite(c[0] > 0, ite(c[1] > 0, c[1] - 1, 3), c[1]))))
+    mods, ranks = [], []
+    for W in ([[1, 0]], [[0, 1]]):
+        layers = [(np.array(W), np.array([0])), (np.array([[1]]), np.array([0]))]
+        vs_mod, vs = _v_module(prog.pairs, layers, read_next=False)
+        vsp_mod, vsp = _v_module(prog.pairs, layers, read_next=True)
+        mods += [vs_mod, vsp_mod]; ranks.append((vs[1], vsp[1]))
+    system = read_system(Module.parallel(prog.module, *mods), prog.names)
+    prop, rule = Fixpoint(over=system.pairs), lex_decrease(tuple(ranks))
+    res = certify(system, prop, rule)
+    assert res.verified, res.status
+    return system, res
+
+
+def test_lex_emits_one_network_per_rank():
+    """Two ranks emit two networks and conclude through ``no_infinite_run_lex`` on
+    the list of both, each path's ``lex_step`` proving ``lexDec`` directly."""
+    system, res = _lex_obligation()
+    src = emit_program("lex", system, res)
+    for decl in ("def V_0 ", "def V_1 ", "def R0 ", "def R1 ",
+                 "lexDec [R0, R1]", "no_infinite_run_lex [R0, R1]",
+                 "theorem program_terminates", "cell0d0_refute", "cell0d1_refute"):
+        assert decl in src, f"missing {decl!r}"
+    assert "sorry" not in src
+
+
+@pytest.mark.skipif(shutil.which("lake") is None, reason="no Lean toolchain")
+def test_lex_proof_kernel_checks():
+    """End-to-end for a lexicographic rank: the emitted proof compiles."""
+    system, res = _lex_obligation()
+    out = LEAN_DIR / "proofs" / "_test_lex"
+    out.mkdir(parents=True, exist_ok=True)
+    f = out / "program.lean"
+    f.write_text(emit_program("lex", system, res))
     try:
         r = subprocess.run(["lake", "env", "lean", str(f.relative_to(LEAN_DIR))],
                            cwd=LEAN_DIR, capture_output=True, text=True, timeout=600)
