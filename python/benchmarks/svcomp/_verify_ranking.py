@@ -35,6 +35,7 @@ from ._bench import Bench, INT, pair  # noqa: F401
 from ._domain import guard_from_transition
 from ._farkas import (System, certify_decrease, entry_predicate, read_system,
                       reading)
+from ._property import Fixpoint
 from zrth import LIA, Module, sugar
 from zrth.sugar import expr, nxt, relu
 
@@ -72,6 +73,7 @@ class Obligation:
     layers: object = None
     net: object = None
     system: object = None    # program ⊕ V(s) ⊕ V(s'), as it was read
+    prop: object = None      # Fixpoint over the program's columns
     init: object = None
 
 
@@ -177,6 +179,7 @@ def build_obligation(bench: Bench, layers, delta: float, invariants=None,
                                             composed.names),
                       invariants=inv_preds, layers=layers,
                       net=reading(composed, vs[1]).net, system=composed,
+                      prop=Fixpoint(over=composed.pairs),
                       init=entry_predicate(composed))
 
 
@@ -223,7 +226,6 @@ def farkas_cell(ob: Obligation) -> VerifyResult:
     out_c, out_k = ob.net.out
     if not (all(c >= 0 for c in out_c) and out_k >= 0):
         return VerifyResult(False, status="FAILED(V>=0 not structural)")
-    r = certify_decrease(ob.net, ob.s_syms, ob.sp_syms, ob.guard,
-                         ob.invariants, ob.delta)
+    r = certify_decrease(ob.system, ob.prop, ob.net, ob.delta)
     return VerifyResult(r.verified, r.counterexample,
                         certificate=r.certificates, status=r.status)

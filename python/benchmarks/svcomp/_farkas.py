@@ -36,7 +36,6 @@ import numpy as np
 import z3
 from zrth import Sort
 
-from ._domain import guard_ite
 from ._nodes import ModeKind, Op, Unsupported, free_symbols, node_view
 
 
@@ -254,16 +253,19 @@ def _flatten_and(pred):
     return [pred]
 
 
-def _convex_alternatives(atom):
-    """Disjoint alternatives replacing a non-convex ``atom``, or ``None`` if it is
-    left alone. A disjunction becomes its disjuncts, each excluding the earlier
-    ones; ``a != b`` becomes ``a < b`` and ``a > b``."""
-    if z3.is_or(atom):
-        alts, earlier = [], []
-        for d in atom.children():
-            alts.append(z3.And(*earlier, d) if earlier else d)
-            earlier.append(z3.simplify(z3.Not(d)))
-        return alts
+def _or_alts(atom):
+    """A disjunction as disjoint alternatives, each excluding the earlier ones."""
+    if not z3.is_or(atom):
+        return None
+    alts, earlier = [], []
+    for d in atom.children():
+        alts.append(z3.And(*earlier, d) if earlier else d)
+        earlier.append(z3.simplify(z3.Not(d)))
+    return alts
+
+
+def _ne_alts(atom):
+    """``a != b`` as ``a < b`` and ``a > b``."""
     eq = atom.arg(0) if z3.is_not(atom) and z3.is_eq(atom.arg(0)) else None
     if eq is not None:
         return [eq.arg(0) < eq.arg(1), eq.arg(0) > eq.arg(1)]
@@ -272,38 +274,38 @@ def _convex_alternatives(atom):
     return None
 
 
-def split_guard(guard, max_pieces: int = 16):
-    """Split ``guard`` into disjoint conjunctions whose union is exactly ``guard``.
+def _implies_alts(atom):
+    """``a -> c`` as the disjoint ``¬a`` and ``a ∧ c``."""
+    if not (z3.is_app(atom) and atom.decl().kind() == z3.Z3_OP_IMPLIES):
+        return None
+    a, c = atom.arg(0), atom.arg(1)
+    return [z3.Not(a), z3.And(a, c)]
 
-    ``atom_rows`` keeps only linear half-spaces, so a disjunction or a ``!=`` in
-    the guard reaches the LP as no rows at all — the domain the certificate is
-    proved over is then weaker than the loop's own guard. Splitting recovers those
-    rows, the way :func:`enumerate_paths` splits an ``ite`` in the body.
 
-    Returns ``[guard]`` unchanged when it is already a conjunction of half-spaces,
-    and also when the split would exceed ``max_pieces`` (a weaker domain only
-    costs certificates, never soundness)."""
-    pieces = [guard]
-    for _ in range(max_pieces):
-        out, changed = [], False
-        for g in pieces:
-            conj = _flatten_and(g)
-            for i, c in enumerate(conj):
-                alts = _convex_alternatives(c)
-                if alts is None:
-                    continue
-                rest = conj[:i] + conj[i + 1:]
-                out += [z3.And(*rest, a) if rest else a for a in alts]
-                changed = True
-                break
-            else:
-                out.append(g)
-        if not changed:
-            return pieces
-        if len(out) > max_pieces:
-            return [guard]
-        pieces = out
-    return [guard]
+def _not_and_alts(atom):
+    """``¬(a ∧ b ∧ …)`` as the disjunction of the negations (De Morgan).
+
+    A ``!=`` on a state component simplifies to this shape, so without it the
+    conjunct is not a half-space and ``atom_rows`` drops it."""
+    if z3.is_not(atom) and z3.is_and(atom.arg(0)):
+        return _or_alts(z3.Or(*[z3.Not(c) for c in atom.arg(0).children()]))
+    return None
+
+
+# Predicate kinds the domain splitter knows. A kind maps an atom to disjoint
+# alternatives whose union is the atom, or ``None`` if it does not apply — so a
+# new kind is an entry here rather than a new splitter.
+PRED_MODES = (_or_alts, _ne_alts, _implies_alts, _not_and_alts)
+
+
+def _convex_alternatives(atom):
+    """Disjoint alternatives replacing a non-convex ``atom``, or ``None`` if no
+    kind in :data:`PRED_MODES` applies and it is left alone."""
+    for kind in PRED_MODES:
+        alts = kind(atom)
+        if alts is not None:
+            return alts
+    return None
 
 
 _CMP = {z3.Z3_OP_GE: ">=", z3.Z3_OP_LE: "<=", z3.Z3_OP_GT: ">",
@@ -360,7 +362,7 @@ def build_integer_system(sp_signs, s_signs, guard, invariants, lower, post,
     coefficients, constant floored): valid over the integers but out of reach of the
     rational LP, as ``2y <= 1`` gives ``y <= 0``. Lean proves every row by ``omega``,
     which is integer-complete, so a tightened row needs no extra machinery."""
-    rows, labels, seen = [], [], set()
+    rows, labels, seen, unused = [], [], set(), []
 
     def add(A_row, b, label):
         if all(c == 0 for c in A_row) and b >= 0:
@@ -372,7 +374,10 @@ def build_integer_system(sp_signs, s_signs, guard, invariants, lower, post,
         rows.append((list(A_row), b)); labels.append(label)
 
     def add_atom(atom, label):
-        for A_row, b in atom_rows(atom, syms):
+        got = atom_rows(atom, syms)
+        if not got and not z3.is_true(z3.simplify(atom)):
+            unused.append(atom)      # carries information the LP cannot express
+        for A_row, b in got:
             add(A_row, b, label)
             g = 0
             for x in A_row:
@@ -394,7 +399,7 @@ def build_integer_system(sp_signs, s_signs, guard, invariants, lower, post,
     rows.append((list(alpha), int(delta) - 1 - beta))
     labels.append("neg_decrease")
 
-    return [r[0] for r in rows], [r[1] for r in rows], labels
+    return [r[0] for r in rows], [r[1] for r in rows], labels, tuple(unused)
 
 
 def find_infeasibility_certificate(A, b):
@@ -468,6 +473,7 @@ class FarkasResult:
     certificates: list           # list[PathCert]
     counterexample: object = None
     status: str = ""
+    unused: tuple = ()           # domain atoms the LP could not express
 
 
 @dataclass(frozen=True)
@@ -498,20 +504,6 @@ class PathCert:
         return self.units[len(self.units) // 2:]
 
 
-def _on_guard_body(sp_syms, s_syms):
-    """The loop body's next-state (on-guard): the ``then`` branch of each
-    guard-``ite`` (``ite(guard, body, self)``), so the transition is affine."""
-    body = []
-    for sp, s in zip(sp_syms, s_syms):
-        ite = guard_ite(sp, s)
-        body.append(ite.arg(1) if ite is not None else sp)
-    return body
-
-
-# ---------------------------------------------------------------------------
-# Path splitting: expand in-loop branches into affine paths
-# ---------------------------------------------------------------------------
-
 def _find_ite_cond(e):
     """The condition of some ``ite`` node in ``e`` (depth-first), or ``None``."""
     if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE:
@@ -529,14 +521,577 @@ def _select(e, cond, truth: bool):
     return z3.simplify(z3.substitute(e, (cond, z3.BoolVal(truth))))
 
 
-def enumerate_paths(body, guard):
-    """Expand the (possibly branching) next-state ``body`` into affine paths.
+def lift_ites(pred):
+    """``pred`` with every ``ite`` *term* case-split away, leaving a Boolean
+    combination of linear atoms.
 
-    An in-loop branch appears as a nested ``ite`` in ``body``. Splitting on each
-    ``ite`` condition both ways yields, at the leaves, a next-state with no
-    ``ite`` left — a single affine map — under the path condition ``guard ∧
-    branch-literals``. Returns ``[(path_guard, affine_body), ...]``; the paths
-    partition the guard, so their union is exactly the loop's transition."""
+    An ``ite`` inside a comparison is not a half-space, so ``atom_rows`` drops the
+    conjunct holding it. The domain ``T(s) != s`` puts the transition's ``ite``s
+    there by construction, so they have to be lifted before the domain is split."""
+    cond = _find_ite_cond(pred)
+    if cond is None:
+        return pred
+    return z3.Or(*[z3.And(cond if truth else z3.Not(cond),
+                          lift_ites(_select(pred, cond, truth)))
+                   for truth in (True, False)])
+
+
+# ---------------------------------------------------------------------------
+# The system: a module read once
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class System:
+    """A reactive module as read, plus what is known about its states.
+
+    Built by :func:`read_system`, the one place a module is walked; everything
+    here is a value, so refining a system costs nothing and re-reads nothing.
+
+    ``pairs`` are the *columns*: the ctrl pairs whose latched wire some term
+    reads. That is what a free input to the round is — a value the round depends
+    on and carries in — so it is the state the proofs quantify over. A latched
+    wire nothing reads (a ranking function's own previous value, composed
+    alongside) is not a column; its next value is still a wire of the graph and
+    a rule may name it. Nothing is classified by kind: only by data flow.
+
+    ``W`` gives each ctrl next wire a symbol a rule's predicate can name; the
+    engine resolves it, per region, to the wire's value at that round.
+    ``assume`` is what may be assumed of the entry state (a ``state_map ->
+    predicates`` callable, or ``None``) and ``invariants`` an over-approximation
+    of the reachable states. Both describe the module's state space, not any
+    property of it. ``names`` is provenance only, defaulting to the wire ids."""
+    module: object
+    view: object
+    pairs: tuple
+    all_pairs: tuple
+    s_syms: tuple
+    seed: dict
+    W: dict
+    atom_of: dict = field(default_factory=dict)
+    entry_inputs: tuple = ()
+    names: tuple = ()
+    assume: object = None
+    invariants: tuple = ()
+
+    @property
+    def sp_syms(self) -> list:
+        """The transition, read off the columns' next wires."""
+        return [self.view.values[pr[1]][0] for pr in self.pairs]
+
+    def index(self, pair) -> int:
+        for k, pr in enumerate(self.pairs):
+            if pr[0].id == pair[0].id:
+                return k
+        raise Unsupported(f"wire pair {pair[0].id} is not a column of this system")
+
+    def sym_of(self, pair):
+        return self.s_syms[self.index(pair)]
+
+    def next_of(self, pair):
+        return self.view.values[pair[1]][0]
+
+    @property
+    def entry(self) -> dict:
+        """Each column's value at tick 0, by name, from the init block."""
+        return {n: self.view.entry[pr[1]][0] for n, pr in zip(self.names, self.pairs)}
+
+    @property
+    def s_map(self) -> dict:
+        return dict(zip(self.names, self.s_syms))
+
+    @property
+    def sp_map(self) -> dict:
+        return dict(zip(self.names, self.sp_syms))
+
+
+_SCALAR = Sort.Int([1, 1])
+
+
+def read_system(module, names=()) -> System:
+    """``module`` walked once, as a :class:`System`.
+
+    Every latched ctrl wire is seeded with a symbol, and awaited inputs with
+    theirs; the columns are the latched wires some update term actually reads.
+    ``names`` labels the columns — a tuple in column order, or a mapping from a
+    latched wire to its name.
+
+    Wires are scalar integers: a symbol per wire is what the rows, the regions
+    and the proof's ``Vector n Int`` state quantify over, so anything else is
+    refused here by name rather than read element by element."""
+    all_pairs = tuple(tuple(pr) for pr in module.ctrl)
+    inputs = tuple(tuple(pr) for pr in module.extl)
+    for w in (w for pr in all_pairs + inputs for w in pr):
+        if w.dtype != _SCALAR:
+            raise Unsupported(f"wire {w.id} has sort Int{w.dtype[0]}; only scalar "
+                              f"integer wires are supported")
+    read = {w.id for a in module.atoms for w in a.read}
+    pairs = tuple(pr for pr in all_pairs if pr[0].id in read)
+    if isinstance(names, dict):
+        names = tuple(names.get(pr[0], names.get(pr[0].id, f"w{pr[0].id}")) for pr in pairs)
+    else:
+        names = tuple(names) or tuple(f"w{pr[0].id}" for pr in pairs)
+    if len(names) != len(pairs):
+        raise Unsupported(f"{len(names)} names for {len(pairs)} columns")
+    syms = tuple(z3.Int(n) for n in names)
+    seed = {pr[0]: [s] for pr, s in zip(pairs, syms)}
+    for pr in all_pairs:                       # unread latched wires: seeded, never used
+        seed.setdefault(pr[0], [z3.Int(f"_w{pr[0].id}")])
+    for i, pr in enumerate(inputs):
+        seed[pr[0]] = [z3.Int(f"_in{i}")]
+        seed[pr[1]] = [z3.Int(f"_in{i}_next")]
+    entry_seed = {pr[1]: [z3.Int(f"_entry{i}")] for i, pr in enumerate(inputs)}
+    W = {pr[1].id: z3.Int(f"_W{pr[1].id}") for pr in all_pairs}
+    atom_of = {w.id: a for a in module.atoms for w in a.ctrl}
+    return System(module, node_view(module, seed, OPS, entry_seed), pairs, all_pairs,
+                  syms, seed, W, atom_of=atom_of,
+                  entry_inputs=tuple(v[0] for v in entry_seed.values()), names=names)
+
+
+@dataclass(frozen=True)
+class Reading:
+    """A ctrl next wire as a function of the round: its network over the atom's
+    inputs, and where each input comes from — ``("latched", k)`` the column
+    ``k``'s pre-state value, ``("next", k)`` its value after the step,
+    ``("unread", k)`` a column the atom does not read. A wire with no ReLU behind
+    it is a reading with no units, its ``out`` affine in the inputs."""
+    wire: object
+    net: Net
+    inputs: tuple
+
+    def args(self, s_syms, body):
+        """The reading's inputs at the round ``(s_syms, body)``."""
+        return tuple(body[k] if kind == "next" else s_syms[k] for kind, k in self.inputs)
+
+    def at(self, s_syms, body):
+        """The reading's pre-activations at the round ``(s_syms, body)``."""
+        return tuple(_pre_activations(self.net, self.args(s_syms, body)))
+
+    def value(self, s_syms, body, pattern=None):
+        """The wire's value at the round: exact with the ReLUs in when ``pattern``
+        is ``None``, else the mask ``pattern`` applied."""
+        if not self.net.units:
+            return _affine_value(self.net.out, self.args(s_syms, body))
+        acts = self.at(s_syms, body)
+        weights = output_weights(self.net)
+        return (exact_value(acts, weights) if pattern is None
+                else masked_value(acts, weights, pattern))
+
+
+def _affine_value(weights, args):
+    """``Σ cⱼ·argsⱼ + k`` for ``weights = (c, k)`` — a ReLU-free wire's value."""
+    c, k = weights
+    out = z3.IntVal(k)
+    for cj, a in zip(c, args):
+        if cj:
+            out = out + cj * a
+    return out
+
+
+def reading(system: System, wire) -> Reading:
+    """The :class:`Reading` behind ``wire``, a ctrl next wire.
+
+    Its atom is walked alone with the wires its **update block** reads seeded as
+    the corresponding column symbols, so its structure comes out over the columns
+    whatever round it is applied to; ``inputs`` records which end of each column
+    the update takes, so the engine can evaluate it at either. (The atom's
+    ``wait`` interface also lists what its *init* awaits, which is not this.)"""
+    atom = system.atom_of.get(wire.id)
+    if atom is None:
+        raise Unsupported(f"wire {wire.id} is not a ctrl wire of this system")
+    latched = {pr[0].id: k for k, pr in enumerate(system.pairs)}
+    nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
+    rd, wr = atom.update.read(), atom.update.write()
+    reads = [rd[i] for i in range(len(rd))]
+    at, kind_of = {}, {}
+    written = {wr[i].id for i in range(len(wr))}
+    for w in reads:
+        if w.id in written:
+            continue                                   # an internal wire of the block
+        if w.id in latched:
+            at[w] = [system.s_syms[latched[w.id]]]; kind_of[latched[w.id]] = "latched"
+        elif w.id in nexts:
+            at[w] = [system.s_syms[nexts[w.id]]]; kind_of[nexts[w.id]] = "next"
+        else:
+            raise Unsupported(f"the atom behind wire {wire.id} reads wire {w.id}, "
+                              f"which is not a column of this system")
+    view = node_view(system.module, at, OPS, atoms=(atom,))
+    value = view.opaque[wire][0]
+    relus = view.feeding(value, "relu")
+    col_syms = list(system.s_syms)
+    if relus:
+        net = Net(tuple(_affine_pair(n.args[0], col_syms) for n in relus),
+                  _affine_pair(value, [n.sym for n in relus]))
+    else:
+        net = Net((), _affine_pair(value, col_syms))
+    inputs = tuple((kind_of.get(k, "unread"), k) for k in range(len(system.pairs)))
+    return Reading(wire, net, inputs)
+
+
+def entry_predicate(system: System):
+    """The entry state as a predicate over ``system``'s pre-state symbols.
+
+    ``system.entry`` is the init block's value per column, with each nondet input
+    a fresh symbol; this conjoins ``v == <v's entry value>`` per column plus
+    ``assume``. Inputs are substituted away first (see below), so the result is a
+    relation between columns, e.g. ``i == n - 1``."""
+    init_vals, s_map = system.entry, system.s_map
+    # A column initialised to a bare input (``v := input``) holds that input at
+    # entry, so the input symbol can be replaced by v's state symbol.
+    sub = []
+    for insym in system.entry_inputs:
+        for v in system.names:
+            if z3.eq(z3.simplify(init_vals[v]), insym):
+                sub.append((insym, s_map[v]))
+                break
+    conj = []
+    for n in system.names:
+        e = z3.substitute(init_vals[n], *sub) if sub else init_vals[n]
+        conj.append(s_map[n] == e)
+    conj += list((system.assume or (lambda st: []))(s_map))
+    return z3.And(*conj) if conj else z3.BoolVal(True)
+
+
+# ---------------------------------------------------------------------------
+# The rule: one formula over wires
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Step:
+    """How this procedure discharges a property: a formula that holds on every
+    step of the property's domain.
+
+    ``ok`` is ``(W, S) -> BoolRef``, a boolean combination of linear comparisons —
+    ``W[wire]`` the value a ctrl next wire takes this round, ``S[name]`` a
+    column's latched value and ``S.next[name]`` its value after the step — so a
+    rule is written over the graph and knows nothing of programs or ranks. Which
+    wires must be pinned to a region and which a bound suffices for is read off
+    the formula's coefficients, not declared.
+
+    ``ranks`` pairs ``(at s, at s')`` wires the emitter renders as one network
+    ``V`` — the decrease rules; ``inv`` is an inductive rule's invariant and
+    ``whole`` its facts about the run as a whole."""
+    ok: object
+    proves: type
+    ranks: tuple = ()
+    inv: tuple = ()
+    whole: object = None          # (system, prop) -> ((name, must-be-unsat), ...)
+
+
+def decrease(v_s, v_sp, delta: float = 1.0) -> Step:
+    """Termination by one rank: ``V(s) - V(s') >= delta`` on every step. ``v_s`` and
+    ``v_sp`` are the next wires carrying the rank at the pre- and post-state — two
+    readings of the same function, one of the latched state, one of the next.
+    ``V >= 0`` is structural (a non-negative output layer) and checked before."""
+    return lex_decrease(((v_s, v_sp),), delta)
+
+
+def lex_decrease(ranks, delta: float = 1.0) -> Step:
+    """Termination by several ranks, lexicographically: on every step some rank
+    drops by ``delta`` while every earlier one does not increase — the
+    substrate's ``lexDec``, which one rank instantiates as a plain drop."""
+    d, ranks = int(delta), tuple(tuple(r) for r in ranks)
+
+    def ok(W, S):
+        alts = []
+        for i, (v, vp) in enumerate(ranks):
+            held = [W[ranks[j][1]] <= W[ranks[j][0]] for j in range(i)]
+            drop = W[v] - W[vp] >= d
+            alts.append(z3.And(*held, drop) if held else drop)
+        return z3.Or(*alts) if len(alts) > 1 else alts[0]
+
+    return Step(ok=ok, proves=Fixpoint, ranks=ranks)
+
+
+_STATE_ONLY = ("an invariant is over the state; a wire belongs in the property or "
+               "the rule")
+
+
+def inductive(inv) -> Step:
+    """Safety by an inductive invariant ``inv``: predicates over the state — ``S``
+    alone — that the entry state satisfies and every step preserves, all of them
+    at the next state given all of them at the pre-state. What the invariant is
+    *for* the property says; see :func:`rule_for`."""
+    inv = tuple(inv)
+
+    def ok(W, S):
+        if not inv:
+            return z3.BoolVal(True)
+        return z3.Implies(z3.And(*[f(W, S) for f in inv]),
+                          z3.And(*[f(W.next, S.next) for f in inv]))
+
+    def whole(system, prop):
+        W = _WireMap(system, refuse=_STATE_ONLY)
+        S = _StateMap(system, W)
+        conj = z3.And(*[f(W, S) for f in inv]) if inv else z3.BoolVal(True)
+        return (("initiation", z3.And(entry_predicate(system), z3.Not(conj))),)
+
+    return Step(ok=ok, proves=Always, inv=inv, whole=whole)
+
+
+def _over_state(pred, system) -> bool:
+    """Whether ``pred`` names the state alone — no wire, no next value."""
+    W = _WireMap(system, refuse=_STATE_ONLY)
+    try:
+        pred(W, _StateMap(system, W))
+    except Unsupported:
+        return False
+    return True
+
+
+def rule_for(prop, system, rule=None) -> Step:
+    """The rule for ``prop`` on ``system``, or ``rule`` checked against it.
+
+    With no rule, :class:`Always` takes its predicate as its own invariant when
+    that is a state predicate (a predicate naming a wire has the empty invariant,
+    so it must hold outright); :class:`Fixpoint` has nothing to guess a rank from
+    and asks for one.
+
+    For :class:`Always` the step formula also carries the property's own demand:
+    wherever the invariant holds, the predicate does. That implication closes the
+    proof, and it goes through the same regions as the rest, since the predicate
+    may name a wire behind a network."""
+    if rule is None:
+        if isinstance(prop, Always):
+            rule = inductive((prop.pred,) if _over_state(prop.pred, system) else ())
+        elif isinstance(prop, Fixpoint):
+            raise Unsupported("Fixpoint needs a rank: pass decrease(v_s, v_sp) or "
+                              "lex_decrease(...)")
+        else:
+            raise Unsupported(f"no rule for property {type(prop).__name__!r}")
+    if not isinstance(prop, rule.proves):
+        raise Unsupported(f"the rule proves {rule.proves.__name__}, "
+                          f"not {type(prop).__name__}")
+    if isinstance(prop, Always):
+        step, inv, pred = rule.ok, rule.inv, prop.pred
+
+        def ok(W, S):
+            held = z3.And(*[f(W, S) for f in inv]) if inv else z3.BoolVal(True)
+            return z3.And(step(W, S), z3.Implies(held, pred(W, S)))
+
+        rule = dataclasses.replace(rule, ok=ok)
+    return rule
+
+
+class _WireMap:
+    """``W`` as a predicate sees it: indexable by a ctrl next wire, handing out the
+    system's symbol for it and recording which wires were named. ``next`` is the
+    same map one round on, which this procedure cannot yet evaluate — so it
+    refuses by name, as does a map built with ``refuse`` for a predicate that may
+    not name wires at all."""
+    def __init__(self, system, used=None, refuse=None):
+        self.system, self.refuse = system, refuse
+        self.used = [] if used is None else used
+
+    def __getitem__(self, wire):
+        if self.refuse:
+            raise Unsupported(f"wire {wire.id}: {self.refuse}")
+        sym = self.system.W.get(wire.id)
+        if sym is None:
+            raise Unsupported(f"wire {wire.id} is not a ctrl wire of this system")
+        if all(w.id != wire.id for w in self.used):
+            self.used.append(wire)
+        return sym
+
+    @property
+    def next(self):
+        return _WireMap(self.system, self.used,
+                        refuse="a wire's value one round ahead is not available")
+
+
+class _StateMap:
+    """``S`` as a predicate sees it: a column's latched value by name, and
+    ``next`` the same columns after the step — each the ``W`` of the column's
+    next wire, so naming one is recorded like naming a wire."""
+    def __init__(self, system, W, ahead: bool = False):
+        self.system, self.W, self.ahead = system, W, ahead
+
+    def __getitem__(self, name):
+        if name not in self.system.names:
+            raise Unsupported(f"{name!r} is not a column of this system")
+        k = self.system.names.index(name)
+        if self.ahead:
+            return self.W[self.system.pairs[k][1]]
+        return self.system.s_syms[k]
+
+    @property
+    def next(self):
+        if self.ahead:
+            raise Unsupported("the state two rounds ahead is not available")
+        return _StateMap(self.system, self.W, ahead=True)
+
+
+def _resolve(rule: Step, prop, system: System):
+    """The rule's formula as z3 over the columns' symbols and the wire symbols
+    ``system.W`` — the form the engine cuts into rows and substitutes into — with
+    the wires it named, in order; plus the property's predicate and the rule's
+    invariants in the same form, for the proof.
+
+    An :class:`Always` predicate speaks of a state, so it may name a wire whose
+    value is a function of the latched state and nothing of the next round."""
+    Wi = _WireMap(system, refuse=_STATE_ONLY)      # invariants first: the clearer refusal
+    inv = tuple(lift_ites(f(Wi, _StateMap(system, Wi))) for f in rule.inv)
+    used = []
+    W = _WireMap(system, used)
+    ok = lift_ites(rule.ok(W, _StateMap(system, W)))
+    pred = None
+    if isinstance(prop, Always):
+        named = []
+        Wp = _WireMap(system, named)
+        pred = lift_ites(prop.pred(Wp, _StateMap(system, Wp)))
+        nexts = {pr[1].id for pr in system.pairs}
+        for w in named:
+            if w.id in nexts or any(k == "next" for k, _ in reading(system, w).inputs):
+                raise Unsupported(f"Always speaks of a state: its predicate names wire "
+                                  f"{w.id}, whose value depends on the next state")
+    return ok, tuple(used), pred, inv
+
+
+def _is_cmp(e) -> bool:
+    return z3.is_app(e) and e.decl().kind() in _CMP
+
+
+def _dnf(e) -> list:
+    """The disjuncts of ``e``: each a list of linear atoms whose conjunction is
+    one disjunct of ``e``'s disjunctive normal form. Negation is pushed to the
+    atoms (an atom may stay negated — :func:`atom_rows` flips it), ``a != b``
+    becomes its two strict sides, an implication its disjunction. Anything that
+    is not a boolean combination of comparisons is refused by name."""
+    if z3.is_true(e):
+        return [[]]
+    if z3.is_false(e):
+        return []
+    if z3.is_and(e):
+        out = [[]]
+        for c in e.children():
+            out = [a + b for a in out for b in _dnf(c)]
+        return out
+    if z3.is_or(e):
+        return [d for c in e.children() for d in _dnf(c)]
+    kind = e.decl().kind() if z3.is_app(e) else None
+    if kind == z3.Z3_OP_IMPLIES:
+        return _dnf(z3.Or(z3.Not(e.arg(0)), e.arg(1)))
+    if kind == z3.Z3_OP_IFF:
+        a, b = e.arg(0), e.arg(1)
+        return _dnf(z3.Or(z3.And(a, b), z3.And(z3.Not(a), z3.Not(b))))
+    if kind == z3.Z3_OP_ITE:
+        c, t, f = e.arg(0), e.arg(1), e.arg(2)
+        return _dnf(z3.Or(z3.And(c, t), z3.And(z3.Not(c), f)))
+    if z3.is_distinct(e) and e.num_args() == 2:
+        return _dnf(z3.Or(e.arg(0) < e.arg(1), e.arg(0) > e.arg(1)))
+    if z3.is_not(e):
+        x = e.arg(0)
+        if z3.is_not(x):
+            return _dnf(x.arg(0))
+        if z3.is_true(x) or z3.is_false(x) or z3.is_and(x) or z3.is_or(x):
+            return _dnf(z3.simplify(z3.Not(x))) if z3.is_true(x) or z3.is_false(x) else (
+                _dnf(z3.Or(*[z3.Not(c) for c in x.children()])) if z3.is_and(x)
+                else _dnf(z3.And(*[z3.Not(c) for c in x.children()])))
+        xk = x.decl().kind() if z3.is_app(x) else None
+        if xk == z3.Z3_OP_IMPLIES:
+            return _dnf(z3.And(x.arg(0), z3.Not(x.arg(1))))
+        if xk == z3.Z3_OP_IFF:
+            a, b = x.arg(0), x.arg(1)
+            return _dnf(z3.Or(z3.And(a, z3.Not(b)), z3.And(z3.Not(a), b)))
+        if xk == z3.Z3_OP_ITE:
+            c, t, f = x.arg(0), x.arg(1), x.arg(2)
+            return _dnf(z3.Or(z3.And(c, z3.Not(t)), z3.And(z3.Not(c), z3.Not(f))))
+        if z3.is_eq(x):
+            return _dnf(z3.Or(x.arg(0) < x.arg(1), x.arg(0) > x.arg(1)))
+        if z3.is_distinct(x) and x.num_args() == 2:
+            return [[x.arg(0) == x.arg(1)]]
+        if _is_cmp(x):
+            return [[e]]
+    elif _is_cmp(e):
+        return [[e]]
+    raise Unsupported("rule predicate is not a boolean combination of linear "
+                      f"comparisons: {e}")
+
+
+def _polarity(disjuncts, wires, syms):
+    """Which named wires must be pinned to a region for the rule's rows to be
+    sound. A wire is substituted by a *lower bound* where that only weakens the
+    row — a non-negative coefficient in the row ``A·x <= b`` — and must be exact
+    (pinned) where any row has it negative; an equality pins. Refuses by name a
+    rule atom that is not linear over the columns and the named wires."""
+    pin = set()
+    n_cols = len(syms) - len(wires)
+    for atoms in disjuncts:
+        for a in atoms:
+            rows = atom_rows(a, syms)
+            if not rows:
+                raise Unsupported("rule predicate is not a linear comparison over the "
+                                  f"columns and the named wires: {a}")
+            for A_row, _ in rows:
+                for w, c in zip(wires, A_row[n_cols:]):
+                    if c < 0:
+                        pin.add(w.id)
+    return pin
+
+
+# ---------------------------------------------------------------------------
+# Doors
+# ---------------------------------------------------------------------------
+
+def check_kinds(nodes) -> None:
+    """Raise :class:`Unsupported` for a node whose kind this procedure has no rule
+    for — neither a cell rule nor a case split.
+
+    Defensive: every such kind in :data:`OPS` also has no Z3 translation, so the
+    walk refuses it first. It is what catches a kind added to the vocabulary before
+    its rule."""
+    for node in nodes:
+        if node.kind not in _MODE_OF and node.kind not in _SPLIT:
+            raise Unsupported(
+                f"node kind {node.kind!r} is recognised but has neither a cell "
+                f"rule nor a case split; pinnable kinds are {sorted(_MODE_OF)}")
+
+
+def check_supported(system: System, prop, rule=None) -> None:
+    """Raise :class:`Unsupported`, naming the reason, if this procedure has no rule
+    for something in ``system``'s module or for ``prop``.
+
+    Checked before any work so the interior can assume its preconditions. The
+    alternative — proceeding with whatever it happens to understand — reports a
+    proof that will not close rather than the thing it could not use."""
+    check_kinds(system.view.nodes)
+    names = [str(s) for s in system.s_syms]
+    for name, e in zip(names, system.sp_syms):
+        extra = free_symbols(e) - set(names)
+        if extra:
+            raise Unsupported(
+                f"the next value of {name!r} reads {sorted(extra)}, which are not "
+                f"columns — nondeterministic inputs are not supported")
+    rule_for(prop, system, rule)
+
+
+def expand_cases(guard, body, budget: int = 16):
+    """Every ``(guard, body)`` case of the loop, by one recursion over the kinds
+    that need a case split.
+
+    Two things need splitting and they are the same operation on different
+    subjects: a guard conjunct that is not a half-space (:data:`PRED_MODES` — a
+    disjunction, a ``!=``), and an ``ite`` term in the body. Both replace their
+    subject by disjoint alternatives and recurse, so at the leaves the guard is a
+    conjunction of half-spaces and the body is ite-free — a single affine map under
+    a convex domain, which is what the LP needs.
+
+    Guard conjuncts go first, so a body branch is only split once the domain is
+    convex. ``budget`` caps how far the guard is split; past it the unsplit guard
+    is kept, which only weakens the domain. The cases partition the guard, so the
+    union of their ``Step`` relations is exactly the loop's transition."""
+    conj = _flatten_and(guard)
+    for i, c in enumerate(conj):
+        alts = _convex_alternatives(c)
+        if alts is None:
+            continue
+        if len(alts) > budget:
+            break                     # stop splitting; a weaker domain is still sound
+        rest = conj[:i] + conj[i + 1:]
+        out = []
+        for a in alts:
+            g = z3.And(*rest, a) if rest else a
+            out += expand_cases(g, body, budget - len(alts))
+        return out
     cond = None
     for e in body:
         cond = _find_ite_cond(e)
@@ -544,43 +1099,16 @@ def enumerate_paths(body, guard):
             break
     if cond is None:
         return [(guard, body)]
-    then_body = [_select(e, cond, True) for e in body]
-    else_body = [_select(e, cond, False) for e in body]
-    return (enumerate_paths(then_body, z3.And(guard, cond))
-            + enumerate_paths(else_body, z3.And(guard, z3.Not(cond))))
+    return (expand_cases(z3.And(guard, cond),
+                         [_select(e, cond, True) for e in body], budget)
+            + expand_cases(z3.And(guard, z3.Not(cond)),
+                           [_select(e, cond, False) for e in body], budget))
 
 
 def _feasible(pred) -> bool:
     s = z3.Solver()
     s.add(pred)
     return s.check() == z3.sat
-
-
-def _atoms(pred):
-    """Every comparison atom occurring in ``pred``."""
-    if z3.is_app(pred) and pred.decl().kind() in _CMP:
-        return [pred]
-    out = []
-    for c in pred.children():
-        out += _atoms(c)
-    return out
-
-
-def _entailed_atoms(dom, invariants, syms):
-    """Half-space consequences of ``dom``, taken from the invariants' own atoms.
-
-    A conditional invariant (``b <= 0 ∨ t = 1``) is not a half-space, so
-    ``atom_rows`` drops it. Where the path's guard settles one side, the other
-    follows from ``dom`` and its rows can be added: under ``b >= 1``, ``t = 1``."""
-    out = []
-    for inv in invariants:
-        if atom_rows(inv, syms):
-            continue                       # already a half-space: rows come directly
-        for atom in _atoms(inv):
-            for cand in (atom, z3.Not(atom)):
-                if atom_rows(cand, syms) and not _feasible(z3.And(dom, z3.Not(cand))):
-                    out.append(cand)
-    return tuple(out)
 
 
 @dataclass(frozen=True)
@@ -590,29 +1118,26 @@ class _Path:
     their conjunction ``dom``, the decrease margin, the hidden pre-activations at
     each end of a step, and the output-layer weights.
 
-    ``row_invariants`` is what the LP sees: the invariants plus their half-space
-    consequences (:func:`_entailed_atoms`)."""
+    ``unused`` collects the domain atoms the LP could not express."""
     s_syms: list
     guard: object
     invariants: tuple
-    row_invariants: tuple
     dom: object
     delta: float
     z_s: tuple
     z_sp: tuple
     weights: tuple
+    unused: set
 
     @staticmethod
     def of(net, s_syms, body, guard, invariants, delta) -> "_Path":
         invariants = tuple(invariants)
         dom = z3.And(guard, *invariants) if invariants else guard
         return _Path(s_syms=s_syms, guard=guard, invariants=invariants,
-                     row_invariants=invariants + _entailed_atoms(dom, invariants,
-                                                                 s_syms),
                      dom=dom, delta=delta,
                      z_s=tuple(_pre_activations(net, s_syms)),
                      z_sp=tuple(_pre_activations(net, body)),
-                     weights=output_weights(net))
+                     weights=output_weights(net), unused=set())
 
 
 def _signs_at(model, exprs):
@@ -628,9 +1153,10 @@ def _try_cell(p: _Path, lam, mu, pat_s):
     s_signs = strict_signs(p.z_s, pat_s) if pat_s is not None else ()
     lower = masked_value(p.z_s, p.weights, mu)
     post = masked_value(p.z_sp, p.weights, lam)
-    A, b, labels = build_integer_system(strict_signs(p.z_sp, lam), s_signs,
-                                        p.guard, list(p.row_invariants),
-                                        lower, post, p.s_syms, p.delta)
+    A, b, labels, unused = build_integer_system(
+        strict_signs(p.z_sp, lam), s_signs, p.guard, list(p.invariants),
+        lower, post, p.s_syms, p.delta)
+    p.unused.update(str(a) for a in unused)
     y = find_infeasibility_certificate(A, b)
     if y is None:
         return None
@@ -707,7 +1233,7 @@ def _certify_path(net, s_syms, body, guard, invariants, delta, max_iters):
     block that cell — until the path's domain is exhausted. Because the blocked
     regions are complementary, exhausting the domain *is* the coverage guarantee.
 
-    Returns ``(ok, cells, counterexample, status)``."""
+    Returns ``(ok, cells, counterexample, status, path)``."""
     p = _Path.of(net, s_syms, body, guard, invariants, delta)
     solver = z3.Solver()
     solver.add(p.dom)
@@ -716,9 +1242,9 @@ def _certify_path(net, s_syms, body, guard, invariants, delta, max_iters):
     for _ in range(max_iters):
         r = solver.check()
         if r == z3.unsat:
-            return True, cells, None, "VERIFIED"
+            return True, cells, None, "VERIFIED", p
         if r == z3.unknown:
-            return False, cells, None, "UNKNOWN"
+            return False, cells, None, "UNKNOWN", p
         model = solver.model()
         s_val = [model.eval(x, model_completion=True).as_long() for x in s_syms]
         lam, hint = _signs_at(model, p.z_sp), _signs_at(model, p.z_s)
@@ -728,49 +1254,56 @@ def _certify_path(net, s_syms, body, guard, invariants, delta, max_iters):
         drop = (masked_value(p.z_s, p.weights, hint)
                 - masked_value(p.z_sp, p.weights, lam))
         if model.eval(drop, model_completion=True).as_long() < delta:
-            return False, cells, np.array(s_val, dtype=np.float64), "FAILED(decrease)"
+            return (False, cells, np.array(s_val, dtype=np.float64),
+                    "FAILED(decrease)", p)
 
         try:
             new, status = _certify_cell(p, lam, hint)
         except ValueError:        # non-affine even after splitting (nondet, etc.)
-            return False, cells, np.array(s_val, dtype=np.float64), "FAILED(non-affine)"
+            return (False, cells, np.array(s_val, dtype=np.float64),
+                    "FAILED(non-affine)", p)
         if status != "ok":
             return (False, cells, np.array(s_val, dtype=np.float64),
-                    f"FAILED({status})")
+                    f"FAILED({status})", p)
         cells.extend(new)
 
         # block the whole successor-sign class so the next witness lies elsewhere
         solver.add(z3.Not(z3.And(*strict_signs(p.z_sp, lam))))
 
-    return False, cells, None, "FAILED(max_iters)"
+    return False, cells, None, "FAILED(max_iters)", p
 
 
-def certify_decrease(net, s_syms, sp_syms, guard, invariants, delta,
+def certify_decrease(system, prop, net, delta,
                      max_iters: int = 1000) -> FarkasResult:
-    """Certify the loop's decrease by splitting the guard into convex pieces
-    (:func:`split_guard`), each of those into affine paths
-    (:func:`enumerate_paths`), and certifying each with the cell/CEGAR engine
-    (:func:`_certify_path`). Every feasible path must strictly drop ``V``; the
-    result carries one :class:`PathCert` per path (a non-branching loop under a
-    conjunctive guard is a single path, so this subsumes the scalar case)."""
-    body = _on_guard_body(sp_syms, s_syms)
+    """Certify the decrease of ``net`` on every step of ``prop``'s domain.
+
+    The property says which steps the obligation ranges over, and that domain is
+    expanded into cases (:func:`expand_cases`) — each a convex region with an
+    affine transition — and each certified by the cell/CEGAR engine
+    (:func:`_certify_path`). The cases partition the domain, so the union of
+    their step relations is the loop's transition on it."""
+    s_syms, sp_syms = system.s_syms, system.sp_syms
+    invariants = system.invariants
     paths: list[PathCert] = []
-    for pguard, pbody in [p for g in split_guard(guard)
-                          for p in enumerate_paths(body, g)]:
-        dom = z3.And(pguard, *invariants) if invariants else pguard
-        if not _feasible(dom):
-            continue                       # dead path (guard unsat) — never taken
-        ok, cells, cex, status = _certify_path(
+    unused: set = set()
+    dom = lift_ites(prop.domain(system))
+    for pguard, pbody in expand_cases(dom, list(sp_syms)):
+        region = z3.And(pguard, *invariants) if invariants else pguard
+        if not _feasible(region):
+            continue                       # dead case — no state takes this step
+        ok, cells, cex, status, p = _certify_path(
             net, s_syms, pbody, pguard, invariants, delta, max_iters)
+        unused |= p.unused
         if not ok:
-            return FarkasResult(False, [], cex, status)
+            return FarkasResult(False, [], cex, status, tuple(sorted(unused)))
         units = tuple(affine_coeffs(e, s_syms)
                       for e in (_pre_activations(net, s_syms)
                                 + _pre_activations(net, pbody)))
         paths.append(PathCert(pguard, tuple(pbody), tuple(cells), units))
     if not paths:
-        return FarkasResult(False, [], None, "FAILED(no feasible path)")
-    return FarkasResult(True, paths, None, "VERIFIED")
+        return FarkasResult(False, [], None, "FAILED(no step in the domain)",
+                            tuple(sorted(unused)))
+    return FarkasResult(True, paths, None, "VERIFIED", tuple(sorted(unused)))
 
 
 # ---------------------------------------------------------------------------
