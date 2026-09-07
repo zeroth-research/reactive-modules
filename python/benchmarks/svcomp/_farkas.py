@@ -1,32 +1,52 @@
-"""Farkas-certified ranking verification (cell / CEGAR).
+"""A decision procedure over a reactive module: Farkas-certified regions (CEGAR).
 
-A ranking net ``V(s) = W2·relu(W1·s + b1) + b2`` is piecewise-affine: on a fixed
-ReLU **activation pattern** it is an affine function of the state, the polyhedron
-where each hidden pre-activation ``W1[j]·s + b1[j]`` has the sign the pattern
-dictates. The decrease obligation ``V(s) - V(s') >= delta`` needs the two ends of
-a step treated differently, because it needs a *lower* bound on ``V(s)`` and an
-*upper* bound on ``V(s')``:
+Given a :class:`System` — a module read once, by :func:`read_system` — and a
+property over it, :func:`certify` proves the property on every step of its domain
+by a :class:`Step` rule: one boolean formula over the graph's *wires* that must
+hold on each step. The rule names wires (``W[wire]``) and columns (``S[name]``,
+``S.next[name]``); it knows nothing of programs or ranks. Termination is the
+client :func:`decrease` — ``V(s) - V(s') >= delta`` over two wires computing the
+same function at each end of a step — plus the substrate's well-foundedness
+theorem.
 
-  * at the successor, ``V(s')`` must be exact, so the pattern there is pinned —
-    this is what a **cell** constrains, strictly (``> 0`` active, ``<= 0``
-    inactive), so the cells partition rather than overlap;
-  * at the pre-state, any mask under-approximates ``V(s)`` (each dropped unit
-    contributes ``relu >= 0``, each kept one ``relu(z) >= z``), so no constraint
-    is needed at all. The mask is a free parameter of the certificate: sound for
-    any choice, and exact where it matches the true pattern.
+The procedure is sound and incomplete, and what it cannot handle it refuses by
+name: :data:`OPS` for the theory's operations, :func:`check_supported` for the
+module, :func:`rule_for` for the property, :func:`_dnf` and :func:`_polarity` for
+the rule's shape.
 
-So a cell fixes the successor signs alone, and one cell covers what the joint
-pre/post patterns would have split into many. Over a cell the obligation is a
-linear entailment, discharged by proving ``cell ∧ guard ∧ invariants ∧ ¬decrease``
-infeasible via Farkas' lemma (over z3's exact LRA) — an exact, checkable integer
-certificate (the multipliers ``y``: ``y >= 0``, ``Aᵀy = 0``, ``b·y < 0``).
+The method
+==========
+A wire behind a ReLU network is piecewise-affine: on a fixed **activation
+pattern** it is an affine function of the columns, the polyhedron where each
+pre-activation has the sign the pattern dictates. The rule's negation is cut into
+**disjuncts** of linear rows (:func:`_dnf`); each row needs the wires it names
+either *exact* or *bounded from below*, and which is read off its coefficients
+(:func:`_polarity`): where a wire's coefficient is non-negative in every row
+``A·x <= b`` a lower bound only weakens the row, so a mask suffices; everywhere
+else the wire is pinned to a region — strictly (``> 0`` active, ``<= 0``
+inactive), so regions partition rather than overlap.
 
-``V >= 0`` is *not* Farkas-certified: it holds structurally because the output
-layer is non-negative (a positive sum of ReLUs). The mask bound needs that same
+  * a pinned wire's pattern is what a **region** constrains; over the region its
+    value is one affine piece;
+  * a bounded wire takes a mask — each dropped unit contributes ``relu >= 0``, each
+    kept one ``relu(z) >= z`` — a free parameter of the certificate, sound for
+    any choice and exact where it matches the true pattern.
+
+Over a region each disjunct is a linear infeasibility, discharged by proving
+``region ∧ domain ∧ invariants ∧ disjunct`` infeasible via Farkas' lemma (over
+z3's exact LRA) — an exact, checkable integer certificate (the multipliers ``y``:
+``y >= 0``, ``Aᵀy = 0``, ``b·y < 0``). Every disjunct refuted is the rule proved
+on the region. CEGAR finds the regions: an uncovered state names one by its
+pinned pattern; certifying and blocking it until none is left is the coverage
+proof, since regions are complementary.
+
+``V >= 0`` for a ranking network is *not* Farkas-certified: it holds structurally
+because the output layer is non-negative. The mask bound needs that same
 non-negativity — see :func:`output_weights`.
 """
 from __future__ import annotations
 
+import dataclasses
 import itertools
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -37,6 +57,7 @@ import z3
 from zrth import Sort
 
 from ._nodes import ModeKind, Op, Unsupported, free_symbols, node_view
+from ._property import Fixpoint
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +96,10 @@ OPS = {
     "LIA_Argmax": Op("argmax"),
 }
 
+# Derived, so the table above stays the single source of truth.
+_MODE_OF = {op.kind: op.mode for op in OPS.values() if op.kind and op.mode}
+_SPLIT = {op.kind for op in OPS.values() if op.split}
+
 
 @dataclass(frozen=True)
 class Net:
@@ -82,10 +107,10 @@ class Net:
 
     ``units`` is each ReLU's pre-activation as ``(coeffs, const)`` over the state
     columns; ``out`` is ``(coeffs, const)`` from the unit outputs to ``V``, so
-    ``V = sum_j out_c[j] * relu(unit_j) + out_k``. Both are read off the composed
-    module by :func:`.._verify_ranking.net_of`, so unit count and wiring are not
-    assumed — only that every pre-activation is affine in the state and ``V`` is
-    affine in the unit outputs."""
+    ``V = sum_j out_c[j] * relu(unit_j) + out_k``. Both are read off the graph by
+    :func:`reading`, so unit count and wiring are not assumed — only that every
+    pre-activation is affine in the columns and ``V`` is affine in the unit
+    outputs."""
     units: tuple
     out: tuple
 
@@ -103,7 +128,6 @@ def _affine_pair(e, syms):
     """``affine_coeffs`` with tuple coefficients, so a :class:`Net` is hashable."""
     coeffs, const = affine_coeffs(e, syms)
     return tuple(coeffs), const
-
 
 
 def _pre_activations(net: Net, inputs):
@@ -143,6 +167,26 @@ def masked_value(pres, weights, pattern):
         if cj and on:
             out = out + cj * pre
     return out
+
+
+def pinned_nodes(pinned):
+    """``(kind, expr)`` for every node the groups in ``pinned`` name, in order."""
+    return tuple((kind, e) for kind, exprs in pinned for e in exprs)
+
+
+def mode_region(pinned, pattern):
+    """The region a mode assignment names, each node through its own kind. Nodes the
+    pattern leaves open (``None``) contribute nothing."""
+    out = []
+    for (kind, e), m in zip(pinned_nodes(pinned), pattern):
+        if m is not None:
+            out += list(_MODE_OF[kind].region(e, m))
+    return tuple(out)
+
+
+def modes_at(pinned, model):
+    """The mode each pinned node is in at ``model``."""
+    return tuple(_MODE_OF[kind].at(model, e) for kind, e in pinned_nodes(pinned))
 
 
 def strict_signs(pres, pattern):
@@ -347,16 +391,12 @@ def atom_rows(atom, syms):
     return []
 
 
-def build_integer_system(sp_signs, s_signs, guard, invariants, lower, post,
-                         syms, delta):
-    """Rows of ``signs ∧ guard ∧ invariants ∧ ¬(lower - post >= delta)`` as an
-    integer system ``A·s <= b`` with per-row labels. Infeasibility of this system
-    certifies the decrease on the cell.
-
-    ``lower`` under-approximates ``V(s)`` (the mask bound, valid with no
-    pre-state signs) and ``post`` is ``V(s')`` exactly on ``sp_signs``, so
-    ``lower - post <= V(s) - V(s')`` and the decrease follows. ``s_signs`` is
-    empty unless the cell needed pre-state literals to certify.
+def build_integer_system(pin_signs, bnd_signs, guard, invariants, atoms, syms):
+    """Rows of ``signs ∧ guard ∧ invariants ∧ atoms`` as an integer system
+    ``A·s <= b`` with per-row labels, plus the atoms that carry information the LP
+    cannot express. ``atoms`` is one disjunct of the rule's negation, already
+    substituted for the region; infeasibility refutes that disjunct on it.
+    ``bnd_signs`` is empty unless the region needed pre-state literals to certify.
 
     Each row is also emitted gcd-tightened (divided through by the gcd of its
     coefficients, constant floored): valid over the integers but out of reach of the
@@ -385,20 +425,18 @@ def build_integer_system(sp_signs, s_signs, guard, invariants, lower, post,
             if g > 1:
                 add([x // g for x in A_row], b // g, label + "/int")
 
-    for j, c in enumerate(sp_signs):
+    for j, c in enumerate(pin_signs):
         add_atom(c, f"cell_sp[{j}]")
-    for j, c in enumerate(s_signs):
+    for j, c in enumerate(bnd_signs):
         add_atom(c, f"cell_s[{j}]")
     for i, g in enumerate(_flatten_and(guard)):
         add_atom(g, f"guard[{i}]")
     for i, inv in enumerate(invariants):
         add_atom(inv, f"inv[{i}]")
-
-    # negated decrease: lower - post <= delta - 1  (integer). Kept unconditionally.
-    alpha, beta = affine_coeffs(z3.simplify(lower - post), syms)
-    rows.append((list(alpha), int(delta) - 1 - beta))
-    labels.append("neg_decrease")
-
+    for i, a in enumerate(atoms):
+        if not atom_rows(a, syms):
+            raise ValueError(f"rule atom is not linear over the columns: {a}")
+        add_atom(a, f"rule[{i}]")
     return [r[0] for r in rows], [r[1] for r in rows], labels, tuple(unused)
 
 
@@ -442,38 +480,60 @@ def find_infeasibility_certificate(A, b):
 
 @dataclass(frozen=True)
 class CellCert:
-    """A per-cell decrease certificate: the integer system and its Farkas
-    multipliers, the successor activation pattern that defines the cell, and V's
-    two affine forms (all consumed by the Lean emitter).
+    """One Farkas certificate: a region's rows and one disjunct of the rule's
+    negation, infeasible together (the integer system and its multipliers, for
+    the Lean emitter).
 
-    ``pattern_sp`` is the successor pattern whose signs define the cell; ``mu`` the
-    mask the certificate chose for the bound on ``V(s)``.
+    ``pattern_sp`` is the pinned group's activation pattern, which defines the
+    region; ``mu`` the mask the certificate chose on the bounded group.
+    ``pattern_s`` is ``None`` unless the cell was narrowed by bounded-group
+    literals. It is then *partial*: a sign per unit the narrowing pinned, ``None``
+    for the rest, since splitting stops as soon as some mask certifies.
 
-    ``pre_affine``/``post_affine`` are ``(coeffs, const)`` over the state columns,
-    with ``pre_affine <= V(s)`` and ``V(s') = post_affine`` on this cell — the
-    right-hand sides of the emitted mask-bound and collapse lemmas.
-
-    ``pattern_s`` is ``None`` unless the cell was narrowed by pre-state literals. It
-    is then *partial*: a sign per unit the narrowing pinned, ``None`` for the rest,
-    since splitting stops as soon as some mask certifies."""
+    ``disjunct`` indexes the rule's disjuncts. ``affines`` gives, per device, the
+    ``(coeffs, const)`` of its value under the region and mask over the state
+    columns — exact for a pinned device, a lower bound for a bounded one — the
+    right-hand sides of the emitted collapse and bound lemmas."""
     A: tuple
     b: tuple
     y: tuple
     labels: tuple
     pattern_sp: tuple
     mu: tuple
-    pre_affine: tuple = ((), 0)
-    post_affine: tuple = ((), 0)
     pattern_s: tuple | None = None
+    disjunct: int = 0
+    affines: tuple = ()
+
+
+@dataclass(frozen=True)
+class Device:
+    """A wire the rule names with a reading behind it, as the proof renders it:
+    ``net`` indexes the result's distinct networks; ``inputs`` says which end of
+    each column the reading takes (``"latched"``, ``"next"`` or ``"unread"``);
+    ``pinned`` whether regions fix its pattern or a mask bounds it; ``offset``
+    where its units start within that group."""
+    wire_id: int
+    net: int
+    inputs: tuple
+    pinned: bool
+    offset: int
 
 
 @dataclass
 class FarkasResult:
+    """What a ``certify`` run established, and what the proof of it needs: the
+    per-path certificates, the rule with its formula ``ok`` resolved over the
+    columns and the wire symbols, and the named wires as devices over the
+    distinct networks they read through."""
     verified: bool
     certificates: list           # list[PathCert]
     counterexample: object = None
     status: str = ""
     unused: tuple = ()           # domain atoms the LP could not express
+    rule: object = None
+    ok: object = None            # the rule's formula, z3 over columns and wires
+    devices: tuple = ()          # Device, in the order the rule named them
+    nets: tuple = ()             # the distinct Net each device reads through
 
 
 @dataclass(frozen=True)
@@ -481,27 +541,21 @@ class PathCert:
     """One affine path of the loop body: its path condition ``guard`` (the loop
     guard strengthened by the branch literals taken along the path), its affine
     next-state ``body`` (z3 exprs over the pre-state symbols), and the per-cell
-    decrease certificates on it. The paths partition the loop guard, so the union
-    of their ``Step`` relations is the loop's transition — hence termination of
-    the union (every path strictly drops ``V``) is termination of the program.
+    certificates on it. The paths partition the loop guard, so the union of their
+    ``Step`` relations is the loop's transition — hence a property of every path's
+    steps is a property of the program's.
 
-    ``units`` holds each hidden unit's pre-activation as ``(coeffs, const)`` over
-    the pre-state columns: the first half evaluated at ``s``, the second at the
-    successor. Read them through :attr:`pre_units` / :attr:`post_units`. A cell is
-    the region where the successor expressions take the signs its pattern names,
-    which is what lets the emitter case-split on them."""
+    ``pinned_units`` / ``bounded_units`` hold each hidden unit's pre-activation at
+    this path's round as ``(coeffs, const)`` over the pre-state columns, for the
+    pinned and the bounded group; ``device_units`` the same per device. A cell is
+    the region where the pinned group's expressions take the signs its pattern
+    names, which is what lets the emitter case-split on them."""
     guard: object
     body: tuple
     cells: tuple
-    units: tuple = ()
-
-    @property
-    def pre_units(self) -> tuple:
-        return self.units[:len(self.units) // 2]
-
-    @property
-    def post_units(self) -> tuple:
-        return self.units[len(self.units) // 2:]
+    pinned_units: tuple = ()
+    bounded_units: tuple = ()
+    device_units: tuple = ()
 
 
 def _find_ite_cond(e):
@@ -768,13 +822,10 @@ class Step:
     the formula's coefficients, not declared.
 
     ``ranks`` pairs ``(at s, at s')`` wires the emitter renders as one network
-    ``V`` — the decrease rules; ``inv`` is an inductive rule's invariant and
-    ``whole`` its facts about the run as a whole."""
+    ``V``."""
     ok: object
     proves: type
     ranks: tuple = ()
-    inv: tuple = ()
-    whole: object = None          # (system, prop) -> ((name, must-be-unsat), ...)
 
 
 def decrease(v_s, v_sp, delta: float = 1.0) -> Step:
@@ -782,93 +833,23 @@ def decrease(v_s, v_sp, delta: float = 1.0) -> Step:
     ``v_sp`` are the next wires carrying the rank at the pre- and post-state — two
     readings of the same function, one of the latched state, one of the next.
     ``V >= 0`` is structural (a non-negative output layer) and checked before."""
-    return lex_decrease(((v_s, v_sp),), delta)
-
-
-def lex_decrease(ranks, delta: float = 1.0) -> Step:
-    """Termination by several ranks, lexicographically: on every step some rank
-    drops by ``delta`` while every earlier one does not increase — the
-    substrate's ``lexDec``, which one rank instantiates as a plain drop."""
-    d, ranks = int(delta), tuple(tuple(r) for r in ranks)
-
-    def ok(W, S):
-        alts = []
-        for i, (v, vp) in enumerate(ranks):
-            held = [W[ranks[j][1]] <= W[ranks[j][0]] for j in range(i)]
-            drop = W[v] - W[vp] >= d
-            alts.append(z3.And(*held, drop) if held else drop)
-        return z3.Or(*alts) if len(alts) > 1 else alts[0]
-
-    return Step(ok=ok, proves=Fixpoint, ranks=ranks)
-
-
-_STATE_ONLY = ("an invariant is over the state; a wire belongs in the property or "
-               "the rule")
-
-
-def inductive(inv) -> Step:
-    """Safety by an inductive invariant ``inv``: predicates over the state — ``S``
-    alone — that the entry state satisfies and every step preserves, all of them
-    at the next state given all of them at the pre-state. What the invariant is
-    *for* the property says; see :func:`rule_for`."""
-    inv = tuple(inv)
-
-    def ok(W, S):
-        if not inv:
-            return z3.BoolVal(True)
-        return z3.Implies(z3.And(*[f(W, S) for f in inv]),
-                          z3.And(*[f(W.next, S.next) for f in inv]))
-
-    def whole(system, prop):
-        W = _WireMap(system, refuse=_STATE_ONLY)
-        S = _StateMap(system, W)
-        conj = z3.And(*[f(W, S) for f in inv]) if inv else z3.BoolVal(True)
-        return (("initiation", z3.And(entry_predicate(system), z3.Not(conj))),)
-
-    return Step(ok=ok, proves=Always, inv=inv, whole=whole)
-
-
-def _over_state(pred, system) -> bool:
-    """Whether ``pred`` names the state alone — no wire, no next value."""
-    W = _WireMap(system, refuse=_STATE_ONLY)
-    try:
-        pred(W, _StateMap(system, W))
-    except Unsupported:
-        return False
-    return True
+    d = int(delta)
+    return Step(ok=lambda W, S: W[v_s] - W[v_sp] >= d, proves=Fixpoint,
+                ranks=((v_s, v_sp),))
 
 
 def rule_for(prop, system, rule=None) -> Step:
-    """The rule for ``prop`` on ``system``, or ``rule`` checked against it.
+    """``rule`` checked against ``prop`` on ``system``.
 
-    With no rule, :class:`Always` takes its predicate as its own invariant when
-    that is a state predicate (a predicate naming a wire has the empty invariant,
-    so it must hold outright); :class:`Fixpoint` has nothing to guess a rank from
-    and asks for one.
-
-    For :class:`Always` the step formula also carries the property's own demand:
-    wherever the invariant holds, the predicate does. That implication closes the
-    proof, and it goes through the same regions as the rest, since the predicate
-    may name a wire behind a network."""
+    :class:`Fixpoint` has nothing to guess a rank from, so a rule is asked for
+    rather than invented."""
     if rule is None:
-        if isinstance(prop, Always):
-            rule = inductive((prop.pred,) if _over_state(prop.pred, system) else ())
-        elif isinstance(prop, Fixpoint):
-            raise Unsupported("Fixpoint needs a rank: pass decrease(v_s, v_sp) or "
-                              "lex_decrease(...)")
-        else:
-            raise Unsupported(f"no rule for property {type(prop).__name__!r}")
+        if isinstance(prop, Fixpoint):
+            raise Unsupported("Fixpoint needs a rank: pass decrease(v_s, v_sp)")
+        raise Unsupported(f"no rule for property {type(prop).__name__!r}")
     if not isinstance(prop, rule.proves):
         raise Unsupported(f"the rule proves {rule.proves.__name__}, "
                           f"not {type(prop).__name__}")
-    if isinstance(prop, Always):
-        step, inv, pred = rule.ok, rule.inv, prop.pred
-
-        def ok(W, S):
-            held = z3.And(*[f(W, S) for f in inv]) if inv else z3.BoolVal(True)
-            return z3.And(step(W, S), z3.Implies(held, pred(W, S)))
-
-        rule = dataclasses.replace(rule, ok=ok)
     return rule
 
 
@@ -920,30 +901,13 @@ class _StateMap:
         return _StateMap(self.system, self.W, ahead=True)
 
 
-def _resolve(rule: Step, prop, system: System):
+def _resolve(rule: Step, system: System):
     """The rule's formula as z3 over the columns' symbols and the wire symbols
     ``system.W`` — the form the engine cuts into rows and substitutes into — with
-    the wires it named, in order; plus the property's predicate and the rule's
-    invariants in the same form, for the proof.
-
-    An :class:`Always` predicate speaks of a state, so it may name a wire whose
-    value is a function of the latched state and nothing of the next round."""
-    Wi = _WireMap(system, refuse=_STATE_ONLY)      # invariants first: the clearer refusal
-    inv = tuple(lift_ites(f(Wi, _StateMap(system, Wi))) for f in rule.inv)
+    the wires it named, in order."""
     used = []
     W = _WireMap(system, used)
-    ok = lift_ites(rule.ok(W, _StateMap(system, W)))
-    pred = None
-    if isinstance(prop, Always):
-        named = []
-        Wp = _WireMap(system, named)
-        pred = lift_ites(prop.pred(Wp, _StateMap(system, Wp)))
-        nexts = {pr[1].id for pr in system.pairs}
-        for w in named:
-            if w.id in nexts or any(k == "next" for k, _ in reading(system, w).inputs):
-                raise Unsupported(f"Always speaks of a state: its predicate names wire "
-                                  f"{w.id}, whose value depends on the next state")
-    return ok, tuple(used), pred, inv
+    return lift_ites(rule.ok(W, _StateMap(system, W))), tuple(used)
 
 
 def _is_cmp(e) -> bool:
@@ -1111,33 +1075,97 @@ def _feasible(pred) -> bool:
     return s.check() == z3.sat
 
 
+# ---------------------------------------------------------------------------
+# The engine: regions, masks, one Farkas system per disjunct
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class _Device:
+    """One named wire on a path: its :class:`Device`, its symbol, its reading, and
+    the inputs, pre-activations and output weights at this path's round."""
+    spec: Device
+    sym: object
+    reading: Reading
+    args: tuple
+    acts: tuple
+    weights: tuple
+
+
 @dataclass(frozen=True)
 class _Path:
-    """What every cell attempt on one path reads, built once by
-    :func:`_certify_path`: the state symbols, the path's guard and invariants and
-    their conjunction ``dom``, the decrease margin, the hidden pre-activations at
-    each end of a step, and the output-layer weights.
+    """What every region attempt on one path reads, built once by
+    :func:`certify`: the columns, the path's guard and invariants and their
+    conjunction ``dom``, the rule's formula and the disjuncts of its negation, the
+    named wires as devices, and the pinned / bounded unit groups.
 
-    ``unused`` collects the domain atoms the LP could not express."""
-    s_syms: list
+    A wire is pinned if any row needs it exact (:func:`_polarity`); the pinned
+    group is what a region enumerates modes over, the bounded group is where a
+    mask suffices."""
+    s_syms: tuple
+    body: tuple
     guard: object
     invariants: tuple
     dom: object
-    delta: float
-    z_s: tuple
-    z_sp: tuple
-    weights: tuple
+    ok: object
+    disjuncts: tuple
+    devices: tuple           # _Device, in the order the rule named the wires
+    columns: dict            # wire id -> column index, for a column's own next wire
+    pinned: tuple
+    bounded: tuple
     unused: set
 
     @staticmethod
-    def of(net, s_syms, body, guard, invariants, delta) -> "_Path":
+    def of(system, ok, disjuncts, devices, readings, columns, body, guard,
+           invariants) -> "_Path":
         invariants = tuple(invariants)
         dom = z3.And(guard, *invariants) if invariants else guard
-        return _Path(s_syms=s_syms, guard=guard, invariants=invariants,
-                     dom=dom, delta=delta,
-                     z_s=tuple(_pre_activations(net, s_syms)),
-                     z_sp=tuple(_pre_activations(net, body)),
-                     weights=output_weights(net), unused=set())
+        s_syms = tuple(system.s_syms)
+        devs, pin_acts, bnd_acts = [], [], []
+        for spec in devices:
+            rd = readings[spec.wire_id]
+            args = rd.args(s_syms, body)
+            acts = tuple(_pre_activations(rd.net, args))
+            weights = output_weights(rd.net) if rd.net.units else rd.net.out
+            devs.append(_Device(spec, system.W[spec.wire_id], rd, tuple(args), acts, weights))
+            (pin_acts if spec.pinned else bnd_acts).extend(acts)
+        return _Path(s_syms=s_syms, body=tuple(body), guard=guard,
+                     invariants=invariants, dom=dom, ok=ok, disjuncts=tuple(disjuncts),
+                     devices=tuple(devs), columns=dict(columns),
+                     pinned=(("relu", tuple(pin_acts)),) if pin_acts else (),
+                     bounded=tuple(bnd_acts), unused=set())
+
+    def _values(self, system, value_of) -> list:
+        out = [(system.W[wid], self.body[k]) for wid, k in self.columns.items()]
+        return out + [(d.sym, value_of(d)) for d in self.devices]
+
+    def subst(self, system, lam, mu) -> list:
+        """``(W symbol, value)`` for every named wire under the region ``lam`` and
+        mask ``mu``: pinned wires exact on the region, bounded ones from below,
+        a column's next wire its body on this path, a ReLU-free wire its value."""
+        def value(d):
+            n = len(d.acts)
+            if not n:
+                return _affine_value(d.weights, d.args)
+            pat = (lam if d.spec.pinned else mu)[d.spec.offset:d.spec.offset + n]
+            return masked_value(d.acts, d.weights, pat)
+        return self._values(system, value)
+
+    def exact(self, system) -> list:
+        """``(W symbol, value)`` with every ReLU left in — the rule's truth."""
+        return self._values(system, lambda d: (exact_value(d.acts, d.weights) if d.acts
+                                               else _affine_value(d.weights, d.args)))
+
+    def violation(self, system):
+        """The rule false at a state, on exact values."""
+        sub = self.exact(system)
+        return z3.Not(z3.substitute(self.ok, *sub) if sub else self.ok)
+
+    def affines(self, sub) -> tuple:
+        """Per device, the ``(coeffs, const)`` of its substituted value over the
+        columns — what the emitter's bound and collapse lemmas state."""
+        smap = {str(k): v for k, v in sub}
+        return tuple(_affine_pair(z3.simplify(smap[str(d.sym)]), self.s_syms)
+                     for d in self.devices)
 
 
 def _signs_at(model, exprs):
@@ -1146,142 +1174,150 @@ def _signs_at(model, exprs):
                  for e in exprs)
 
 
-def _try_cell(p: _Path, lam, mu, pat_s):
-    """Farkas-certify one cell: the successor pattern ``lam``, the mask ``mu`` for
-    the lower bound on ``V(s)``, and any pre-state literals ``pat_s`` narrowing it.
-    Returns a :class:`CellCert`, or ``None`` if the LP is feasible."""
-    s_signs = strict_signs(p.z_s, pat_s) if pat_s is not None else ()
-    lower = masked_value(p.z_s, p.weights, mu)
-    post = masked_value(p.z_sp, p.weights, lam)
-    A, b, labels, unused = build_integer_system(
-        strict_signs(p.z_sp, lam), s_signs, p.guard, list(p.invariants),
-        lower, post, p.s_syms, p.delta)
-    p.unused.update(str(a) for a in unused)
-    y = find_infeasibility_certificate(A, b)
-    if y is None:
-        return None
-    pre_c, pre_k = affine_coeffs(z3.simplify(lower), p.s_syms)
-    post_c, post_k = affine_coeffs(z3.simplify(post), p.s_syms)
-    return CellCert(tuple(map(tuple, A)), tuple(b), tuple(y), tuple(labels),
-                    tuple(lam), tuple(mu), (tuple(pre_c), pre_k),
-                    (tuple(post_c), post_k),
-                    tuple(pat_s) if s_signs else None)
+def _try_cell(system, p: _Path, lam, mu, pat_b):
+    """Farkas-certify one region: the pinned pattern ``lam``, the mask ``mu``, and
+    any literals ``pat_b`` narrowing the bounded group.
+
+    One LP per disjunct of the rule's negation — the rows of the region, the
+    guard, the invariants and the disjunct. Returns one :class:`CellCert` per
+    disjunct, or ``None`` if some disjunct stays feasible on the region."""
+    bnd_signs = strict_signs(p.bounded, pat_b) if pat_b is not None else ()
+    sub = p.subst(system, lam, mu)
+    affines = p.affines(sub)
+    certs = []
+    for d, atoms in enumerate(p.disjuncts):
+        rows = [z3.substitute(a, *sub) for a in atoms] if sub else list(atoms)
+        A, b, labels, unused = build_integer_system(
+            mode_region(p.pinned, lam), bnd_signs, p.guard, list(p.invariants),
+            rows, p.s_syms)
+        p.unused.update(str(a) for a in unused)
+        y = find_infeasibility_certificate(A, b)
+        if y is None:
+            return None
+        certs.append(CellCert(tuple(map(tuple, A)), tuple(b), tuple(y), tuple(labels),
+                              tuple(lam), tuple(mu),
+                              tuple(pat_b) if bnd_signs else None,
+                              disjunct=d, affines=affines))
+    return certs
 
 
-def _certify_cell(p: _Path, lam, hint):
-    """Certify the successor-pattern class ``lam``, searching for a mask.
+def _certify_cell(system, p: _Path, lam, hint):
+    """Certify the pinned-pattern class ``lam``, searching for a mask.
 
-    ``hint`` — the witness's own pre-state pattern, where the bound is exact — is
-    tried alone first, before the sign-status queries :func:`_narrow` needs; that
-    settles most cells in a single LP. Failing that the class is checked against
-    the *exact* decrease, which no mask can beat, so a failure there is a genuine
-    counterexample rather than a bound too weak to certify. Only then does
-    :func:`_narrow` search masks and, where it must, split.
-
-    Returns ``(cells, status)``: the cells on ``"ok"``, else ``None`` with status
-    ``"decrease"`` (the real V does not drop somewhere in the class) or
-    ``"uncertifiable"``."""
-    cert = _try_cell(p, lam, hint, None)
-    if cert is not None:
-        return [cert], "ok"
-
-    region = z3.And(p.dom, *strict_signs(p.z_sp, lam))
-    if _feasible(z3.And(region, exact_value(p.z_s, p.weights)
-                        - exact_value(p.z_sp, p.weights) < p.delta)):
-        return None, "decrease"
-
-    cells = _narrow(p, lam, hint, region, (None,) * len(lam))
+    ``hint`` — the witness's own bounded-group pattern, where the bound is exact —
+    is tried alone first; that settles most regions in a single LP. Failing that
+    the class is checked against the rule's *exact* violation, which no mask can
+    beat, so a failure there is a genuine counterexample rather than a bound too
+    weak to certify. Only then does :func:`_narrow` search masks and, where it
+    must, split."""
+    certs = _try_cell(system, p, lam, hint, None)
+    if certs is not None:
+        return certs, "ok"
+    region = z3.And(p.dom, *mode_region(p.pinned, lam))
+    if _feasible(z3.And(region, p.violation(system))):
+        return None, "violated"
+    cells = _narrow(system, p, lam, hint, region, (None,) * len(lam))
     return cells, "ok" if cells is not None else "uncertifiable"
 
 
-def _narrow(p: _Path, lam, hint, region, pinned):
-    """The cells certifying ``region`` — the class narrowed by whatever pre-state
+def _narrow(system, p: _Path, lam, hint, region, pinned):
+    """The cells certifying ``region`` — the class narrowed by whatever bounded
     literals ``pinned`` names — or ``None`` if some part of it stays uncertifiable.
 
     Splitting is lazy: pin a single sign-indefinite unit, then retry the mask
-    search on each half. Pinning a unit makes it sign-definite there, so its mask
-    bit settles and its slack vanishes; often that is enough and the sibling units
-    stay open. With every unit pinned the mask matches the true pattern and the
-    bound is exact, so the recursion bottoms out at the joint activation cell."""
-    fixed, free = _sign_status(region, p.z_s)
-    for mu in _mask_candidates(fixed, free, hint, len(p.z_s)):
-        cert = _try_cell(p, lam, mu, pinned)
-        if cert is not None:
-            return [cert]
+    search on each half. With every unit pinned the mask matches the true pattern
+    and the bound is exact, so the recursion bottoms out at the joint cell."""
+    fixed, free = _sign_status(region, p.bounded)
+    for mu in _mask_candidates(fixed, free, hint, len(p.bounded)):
+        certs = _try_cell(system, p, lam, mu, pinned)
+        if certs is not None:
+            return certs
     if not free:
-        return None                   # fully pinned and still no certificate
-
+        return None
     j = free[0]
     cells = []
     for truth in (True, False):
         sub_pinned = list(pinned)
         sub_pinned[j] = truth
-        sub = z3.And(region, (p.z_s[j] > 0) if truth else (p.z_s[j] <= 0))
+        sub = z3.And(region, (p.bounded[j] > 0) if truth else (p.bounded[j] <= 0))
         if not _feasible(sub):
             continue
-        got = _narrow(p, lam, hint, sub, tuple(sub_pinned))
+        got = _narrow(system, p, lam, hint, sub, tuple(sub_pinned))
         if got is None:
             return None
         cells.extend(got)
     return cells
 
 
-def _certify_path(net, s_syms, body, guard, invariants, delta, max_iters):
-    """CEGAR over one affine path: certify the decrease on every cell of
-    ``guard ∧ invariants`` under next-state ``body``. Repeatedly find an
-    uncovered in-domain state, certify the cell of successor signs it lies in, and
-    block that cell — until the path's domain is exhausted. Because the blocked
-    regions are complementary, exhausting the domain *is* the coverage guarantee.
-
-    Returns ``(ok, cells, counterexample, status, path)``."""
-    p = _Path.of(net, s_syms, body, guard, invariants, delta)
+def _certify_path(system, p: _Path, max_iters):
+    """CEGAR over one affine path: discharge the rule on every region of
+    ``guard ∧ invariants`` under next-state ``body``. Repeatedly find an uncovered
+    in-domain state, certify the region its pinned pattern names, and block that
+    region — until the path's domain is exhausted. Because the blocked regions are
+    complementary, exhausting the domain *is* the coverage guarantee. With nothing
+    pinned there is one region, so one pass."""
     solver = z3.Solver()
     solver.add(p.dom)
     cells: list[CellCert] = []
-
+    s_syms = p.s_syms
     for _ in range(max_iters):
         r = solver.check()
         if r == z3.unsat:
-            return True, cells, None, "VERIFIED", p
+            return True, cells, None, "VERIFIED"
         if r == z3.unknown:
-            return False, cells, None, "UNKNOWN", p
+            return False, cells, None, "UNKNOWN"
         model = solver.model()
         s_val = [model.eval(x, model_completion=True).as_long() for x in s_syms]
-        lam, hint = _signs_at(model, p.z_sp), _signs_at(model, p.z_s)
-
-        # genuine counterexample: the real V does not decrease at this state
-        # (both masks match the true signs here, so both values are exact)
-        drop = (masked_value(p.z_s, p.weights, hint)
-                - masked_value(p.z_sp, p.weights, lam))
-        if model.eval(drop, model_completion=True).as_long() < delta:
-            return (False, cells, np.array(s_val, dtype=np.float64),
-                    "FAILED(decrease)", p)
-
+        lam, hint = modes_at(p.pinned, model), _signs_at(model, p.bounded)
+        if z3.is_true(model.eval(p.violation(system), model_completion=True)):
+            return False, cells, np.array(s_val, dtype=np.float64), "FAILED(violated)"
         try:
-            new, status = _certify_cell(p, lam, hint)
-        except ValueError:        # non-affine even after splitting (nondet, etc.)
+            new, status = _certify_cell(system, p, lam, hint)
+        except ValueError as exc:            # non-affine even after splitting
             return (False, cells, np.array(s_val, dtype=np.float64),
-                    "FAILED(non-affine)", p)
+                    f"FAILED(non-affine: {exc})")
         if status != "ok":
-            return (False, cells, np.array(s_val, dtype=np.float64),
-                    f"FAILED({status})", p)
+            return False, cells, np.array(s_val, dtype=np.float64), f"FAILED({status})"
         cells.extend(new)
-
-        # block the whole successor-sign class so the next witness lies elsewhere
-        solver.add(z3.Not(z3.And(*strict_signs(p.z_sp, lam))))
-
-    return False, cells, None, "FAILED(max_iters)", p
+        block = mode_region(p.pinned, lam)
+        solver.add(z3.Not(z3.And(*block)) if block else z3.BoolVal(False))
+    return False, cells, None, "FAILED(max_iters)"
 
 
-def certify_decrease(system, prop, net, delta,
-                     max_iters: int = 1000) -> FarkasResult:
-    """Certify the decrease of ``net`` on every step of ``prop``'s domain.
+def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasResult:
+    """Certify ``prop`` of ``system`` on every step of the property's domain, by
+    ``rule`` — one formula over the graph's wires.
 
-    The property says which steps the obligation ranges over, and that domain is
-    expanded into cases (:func:`expand_cases`) — each a convex region with an
-    affine transition — and each certified by the cell/CEGAR engine
-    (:func:`_certify_path`). The cases partition the domain, so the union of
-    their step relations is the loop's transition on it."""
+    Preconditions first (:func:`check_supported`); the rule's formula is resolved
+    over the columns and the named wires, its negation cut into disjuncts of rows
+    and the wires classified by their coefficients; then the property's domain is expanded into cases (:func:`expand_cases`),
+    each a convex region with an affine transition, and each certified by the
+    region/CEGAR engine. Nothing here knows what a program or a rank is."""
+    check_supported(system, prop, rule)
+    rule = rule_for(prop, system, rule)
+    ok, wires = _resolve(rule, system)
+    W_syms = [system.W[w.id] for w in wires]
+    disjuncts = _dnf(z3.Not(ok))
+    pin_ids = _polarity(disjuncts, wires, list(system.s_syms) + W_syms)
+    nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
+    columns = {w.id: nexts[w.id] for w in wires if w.id in nexts}
+    readings = {w.id: reading(system, w) for w in wires if w.id not in nexts}
+    nets, devices, offset = [], [], {True: 0, False: 0}
+    for w in wires:
+        if w.id in columns:
+            continue
+        rd = readings[w.id]
+        if rd.net not in nets:
+            nets.append(rd.net)
+        pinned = w.id in pin_ids
+        devices.append(Device(w.id, nets.index(rd.net), rd.inputs, pinned, offset[pinned]))
+        offset[pinned] += len(rd.net.units)
+    nets, devices = tuple(nets), tuple(devices)
+
+    def result(verified, paths, cex, status, unused=()):
+        return FarkasResult(verified, paths, cex, status, tuple(sorted(unused)), rule,
+                            ok, devices, nets)
+
     s_syms, sp_syms = system.s_syms, system.sp_syms
     invariants = system.invariants
     paths: list[PathCert] = []
@@ -1291,231 +1327,19 @@ def certify_decrease(system, prop, net, delta,
         region = z3.And(pguard, *invariants) if invariants else pguard
         if not _feasible(region):
             continue                       # dead case — no state takes this step
-        ok, cells, cex, status, p = _certify_path(
-            net, s_syms, pbody, pguard, invariants, delta, max_iters)
+        p = _Path.of(system, ok, disjuncts, devices, readings, columns, pbody, pguard,
+                     invariants)
+        verified, cells, cex, status = _certify_path(system, p, max_iters)
         unused |= p.unused
-        if not ok:
-            return FarkasResult(False, [], cex, status, tuple(sorted(unused)))
-        units = tuple(affine_coeffs(e, s_syms)
-                      for e in (_pre_activations(net, s_syms)
-                                + _pre_activations(net, pbody)))
-        paths.append(PathCert(pguard, tuple(pbody), tuple(cells), units))
+        if not verified:
+            return result(False, [], cex, status, unused)
+        pin_acts = p.pinned[0][1] if p.pinned else ()
+        paths.append(PathCert(
+            pguard, tuple(pbody), tuple(cells),
+            pinned_units=tuple(_affine_pair(e, s_syms) for e in pin_acts),
+            bounded_units=tuple(_affine_pair(e, s_syms) for e in p.bounded),
+            device_units=tuple(tuple(_affine_pair(e, s_syms) for e in d.acts)
+                               for d in p.devices)))
     if not paths:
-        return FarkasResult(False, [], None, "FAILED(no step in the domain)",
-                            tuple(sorted(unused)))
-    return FarkasResult(True, paths, None, "VERIFIED", tuple(sorted(unused)))
-
-
-# ---------------------------------------------------------------------------
-# The system: a module read once
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class System:
-    """A reactive module as read, plus what is known about its states.
-
-    Built by :func:`read_system`, the one place a module is walked; everything
-    here is a value, so refining a system costs nothing and re-reads nothing.
-
-    ``pairs`` are the *columns*: the ctrl pairs whose latched wire some term
-    reads. That is what a free input to the round is — a value the round depends
-    on and carries in — so it is the state the proofs quantify over. A latched
-    wire nothing reads (a ranking function's own previous value, composed
-    alongside) is not a column; its next value is still a wire of the graph and
-    a rule may name it. Nothing is classified by kind: only by data flow.
-
-    ``W`` gives each ctrl next wire a symbol a rule's predicate can name; the
-    engine resolves it, per region, to the wire's value at that round.
-    ``assume`` is what may be assumed of the entry state (a ``state_map ->
-    predicates`` callable, or ``None``) and ``invariants`` an over-approximation
-    of the reachable states. Both describe the module's state space, not any
-    property of it. ``names`` is provenance only, defaulting to the wire ids."""
-    module: object
-    view: object
-    pairs: tuple
-    all_pairs: tuple
-    s_syms: tuple
-    seed: dict
-    W: dict
-    atom_of: dict = field(default_factory=dict)
-    entry_inputs: tuple = ()
-    names: tuple = ()
-    assume: object = None
-    invariants: tuple = ()
-
-    @property
-    def sp_syms(self) -> list:
-        """The transition, read off the columns' next wires."""
-        return [self.view.values[pr[1]][0] for pr in self.pairs]
-
-    def index(self, pair) -> int:
-        for k, pr in enumerate(self.pairs):
-            if pr[0].id == pair[0].id:
-                return k
-        raise Unsupported(f"wire pair {pair[0].id} is not a column of this system")
-
-    def sym_of(self, pair):
-        return self.s_syms[self.index(pair)]
-
-    def next_of(self, pair):
-        return self.view.values[pair[1]][0]
-
-    @property
-    def entry(self) -> dict:
-        """Each column's value at tick 0, by name, from the init block."""
-        return {n: self.view.entry[pr[1]][0] for n, pr in zip(self.names, self.pairs)}
-
-    @property
-    def s_map(self) -> dict:
-        return dict(zip(self.names, self.s_syms))
-
-    @property
-    def sp_map(self) -> dict:
-        return dict(zip(self.names, self.sp_syms))
-
-
-_SCALAR = Sort.Int([1, 1])
-
-
-def read_system(module, names=()) -> System:
-    """``module`` walked once, as a :class:`System`.
-
-    Every latched ctrl wire is seeded with a symbol, and awaited inputs with
-    theirs; the columns are the latched wires some update term actually reads.
-    ``names`` labels the columns — a tuple in column order, or a mapping from a
-    latched wire to its name.
-
-    Wires are scalar integers: a symbol per wire is what the rows, the regions
-    and the proof's ``Vector n Int`` state quantify over, so anything else is
-    refused here by name rather than read element by element."""
-    all_pairs = tuple(tuple(pr) for pr in module.ctrl)
-    inputs = tuple(tuple(pr) for pr in module.extl)
-    for w in (w for pr in all_pairs + inputs for w in pr):
-        if w.dtype != _SCALAR:
-            raise Unsupported(f"wire {w.id} has sort Int{w.dtype[0]}; only scalar "
-                              f"integer wires are supported")
-    read = {w.id for a in module.atoms for w in a.read}
-    pairs = tuple(pr for pr in all_pairs if pr[0].id in read)
-    if isinstance(names, dict):
-        names = tuple(names.get(pr[0], names.get(pr[0].id, f"w{pr[0].id}")) for pr in pairs)
-    else:
-        names = tuple(names) or tuple(f"w{pr[0].id}" for pr in pairs)
-    if len(names) != len(pairs):
-        raise Unsupported(f"{len(names)} names for {len(pairs)} columns")
-    syms = tuple(z3.Int(n) for n in names)
-    seed = {pr[0]: [s] for pr, s in zip(pairs, syms)}
-    for pr in all_pairs:                       # unread latched wires: seeded, never used
-        seed.setdefault(pr[0], [z3.Int(f"_w{pr[0].id}")])
-    for i, pr in enumerate(inputs):
-        seed[pr[0]] = [z3.Int(f"_in{i}")]
-        seed[pr[1]] = [z3.Int(f"_in{i}_next")]
-    entry_seed = {pr[1]: [z3.Int(f"_entry{i}")] for i, pr in enumerate(inputs)}
-    W = {pr[1].id: z3.Int(f"_W{pr[1].id}") for pr in all_pairs}
-    atom_of = {w.id: a for a in module.atoms for w in a.ctrl}
-    return System(module, node_view(module, seed, OPS, entry_seed), pairs, all_pairs,
-                  syms, seed, W, atom_of=atom_of,
-                  entry_inputs=tuple(v[0] for v in entry_seed.values()), names=names)
-
-
-@dataclass(frozen=True)
-class Reading:
-    """A ctrl next wire as a function of the round: its network over the atom's
-    inputs, and where each input comes from — ``("latched", k)`` the column
-    ``k``'s pre-state value, ``("next", k)`` its value after the step,
-    ``("unread", k)`` a column the atom does not read. A wire with no ReLU behind
-    it is a reading with no units, its ``out`` affine in the inputs."""
-    wire: object
-    net: Net
-    inputs: tuple
-
-    def args(self, s_syms, body):
-        """The reading's inputs at the round ``(s_syms, body)``."""
-        return tuple(body[k] if kind == "next" else s_syms[k] for kind, k in self.inputs)
-
-    def at(self, s_syms, body):
-        """The reading's pre-activations at the round ``(s_syms, body)``."""
-        return tuple(_pre_activations(self.net, self.args(s_syms, body)))
-
-    def value(self, s_syms, body, pattern=None):
-        """The wire's value at the round: exact with the ReLUs in when ``pattern``
-        is ``None``, else the mask ``pattern`` applied."""
-        if not self.net.units:
-            return _affine_value(self.net.out, self.args(s_syms, body))
-        acts = self.at(s_syms, body)
-        weights = output_weights(self.net)
-        return (exact_value(acts, weights) if pattern is None
-                else masked_value(acts, weights, pattern))
-
-
-def _affine_value(weights, args):
-    """``Σ cⱼ·argsⱼ + k`` for ``weights = (c, k)`` — a ReLU-free wire's value."""
-    c, k = weights
-    out = z3.IntVal(k)
-    for cj, a in zip(c, args):
-        if cj:
-            out = out + cj * a
-    return out
-
-
-def reading(system: System, wire) -> Reading:
-    """The :class:`Reading` behind ``wire``, a ctrl next wire.
-
-    Its atom is walked alone with the wires its **update block** reads seeded as
-    the corresponding column symbols, so its structure comes out over the columns
-    whatever round it is applied to; ``inputs`` records which end of each column
-    the update takes, so the engine can evaluate it at either. (The atom's
-    ``wait`` interface also lists what its *init* awaits, which is not this.)"""
-    atom = system.atom_of.get(wire.id)
-    if atom is None:
-        raise Unsupported(f"wire {wire.id} is not a ctrl wire of this system")
-    latched = {pr[0].id: k for k, pr in enumerate(system.pairs)}
-    nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
-    rd, wr = atom.update.read(), atom.update.write()
-    reads = [rd[i] for i in range(len(rd))]
-    at, kind_of = {}, {}
-    written = {wr[i].id for i in range(len(wr))}
-    for w in reads:
-        if w.id in written:
-            continue                                   # an internal wire of the block
-        if w.id in latched:
-            at[w] = [system.s_syms[latched[w.id]]]; kind_of[latched[w.id]] = "latched"
-        elif w.id in nexts:
-            at[w] = [system.s_syms[nexts[w.id]]]; kind_of[nexts[w.id]] = "next"
-        else:
-            raise Unsupported(f"the atom behind wire {wire.id} reads wire {w.id}, "
-                              f"which is not a column of this system")
-    view = node_view(system.module, at, OPS, atoms=(atom,))
-    value = view.opaque[wire][0]
-    relus = view.feeding(value, "relu")
-    col_syms = list(system.s_syms)
-    if relus:
-        net = Net(tuple(_affine_pair(n.args[0], col_syms) for n in relus),
-                  _affine_pair(value, [n.sym for n in relus]))
-    else:
-        net = Net((), _affine_pair(value, col_syms))
-    inputs = tuple((kind_of.get(k, "unread"), k) for k in range(len(system.pairs)))
-    return Reading(wire, net, inputs)
-
-
-def entry_predicate(system: System):
-    """The entry state as a predicate over ``system``'s pre-state symbols.
-
-    ``system.entry`` is the init block's value per column, with each nondet input
-    a fresh symbol; this conjoins ``v == <v's entry value>`` per column plus
-    ``assume``. Inputs are substituted away first (see below), so the result is a
-    relation between columns, e.g. ``i == n - 1``."""
-    init_vals, s_map = system.entry, system.s_map
-    # A column initialised to a bare input (``v := input``) holds that input at
-    # entry, so the input symbol can be replaced by v's state symbol.
-    sub = []
-    for insym in system.entry_inputs:
-        for v in system.names:
-            if z3.eq(z3.simplify(init_vals[v]), insym):
-                sub.append((insym, s_map[v]))
-                break
-    conj = []
-    for n in system.names:
-        e = z3.substitute(init_vals[n], *sub) if sub else init_vals[n]
-        conj.append(s_map[n] == e)
-    conj += list((system.assume or (lambda st: []))(s_map))
-    return z3.And(*conj) if conj else z3.BoolVal(True)
+        return result(False, [], None, "FAILED(no step in the domain)", unused)
+    return result(True, paths, None, "VERIFIED", unused)
