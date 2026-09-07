@@ -14,40 +14,16 @@ from __future__ import annotations
 import z3
 from z3.z3util import get_vars
 
-from ._bench import Bench
 from ._domain import guard_from_transition
-from zrth import z3 as zz3
 
 # A candidate is (label, state_map -> z3.BoolRef); state_map is {var_name: expr}.
 Candidate = tuple
 
 
-def _transition(bench: Bench):
-    """Symbolic loop step: latched state (fresh ints) -> next state."""
-    prog, ctrl, _extl = bench.build()
-    st = {ctrl[n][0]: [z3.Int(n)] for n in bench.state}
-    for atom in prog.atoms:
-        for t in atom.update:
-            st.update(zip(t.write, zz3.eval(t.itype, [st[w] for w in t.read])))
-    s = {n: st[ctrl[n][0]][0] for n in bench.state}
-    sp = {n: st[ctrl[n][1]][0] for n in bench.state}
-    return s, sp
-
-
-def _init_state(bench: Bench):
-    """Symbolic initial state: run the init block with fresh nondet inputs."""
-    prog, ctrl, extl = bench.build()
-    st = {extl[name][1]: [z3.Int(f"_in_{name}")] for name in bench.inputs}
-    for atom in prog.atoms:
-        for t in atom.init:
-            st.update(zip(t.write, zz3.eval(t.itype, [st[w] for w in t.read])))
-    return {n: st[ctrl[n][1]][0] for n in bench.state}
-
-
-def _candidates(bench: Bench) -> list[Candidate]:
+def _candidates(names) -> list[Candidate]:
     """Sign predicates per variable and ±-relations between pairs."""
     cands: list[Candidate] = []
-    for v in bench.state:
+    for v in names:
         cands += [
             (f"{v}>0",   (lambda st, v=v: st[v] > 0)),
             (f"{v}>=0",  (lambda st, v=v: st[v] >= 0)),
@@ -56,7 +32,7 @@ def _candidates(bench: Bench) -> list[Candidate]:
             (f"{v}>=1",  (lambda st, v=v: st[v] >= 1)),
             (f"{v}<=-1", (lambda st, v=v: st[v] <= -1)),
         ]
-    vs = list(bench.state)
+    vs = list(names)
     for i in range(len(vs)):
         for j in range(i + 1, len(vs)):
             a, b = vs[i], vs[j]
@@ -80,14 +56,14 @@ def _as_int_const(expr):
     return None
 
 
-def _const_candidates(bench: Bench, vals: dict) -> list[Candidate]:
+def _const_candidates(names, vals: dict) -> list[Candidate]:
     """Candidates from a state's constant coordinates (nuTerm's ``_seed_candidates``,
     applied to a cut-point segment's post-state). ``vals`` is a symbolic state
     (the body post-state ``T(s)`` or the init state ``s0``): ``v==c`` / ``v>=c`` /
     ``v<=c`` when ``vals[v]`` is constant, and ``vi-vj==d`` / ``vi+vj==s`` when a
     pair combination is constant."""
     cands: list[Candidate] = []
-    for v in bench.state:
+    for v in names:
         c = _as_int_const(vals[v])
         if c is not None:
             cands += [
@@ -95,7 +71,7 @@ def _const_candidates(bench: Bench, vals: dict) -> list[Candidate]:
                 (f"{v}>={c}", (lambda st, v=v, c=c: st[v] >= c)),
                 (f"{v}<={c}", (lambda st, v=v, c=c: st[v] <= c)),
             ]
-    vs = list(bench.state)
+    vs = list(names)
     for i in range(len(vs)):
         for j in range(i + 1, len(vs)):
             a, b = vs[i], vs[j]
@@ -119,7 +95,7 @@ def _ite_conds(e) -> list:
     return out
 
 
-def _cond_const_candidates(bench: Bench, s0: dict) -> list[Candidate]:
+def _cond_const_candidates(names, s0: dict) -> list[Candidate]:
     """``cond -> v == c``: what a state variable is on one branch of the init block.
 
     :func:`_const_candidates` reads a coordinate only where it is already constant,
@@ -127,11 +103,10 @@ def _cond_const_candidates(bench: Bench, s0: dict) -> list[Candidate]:
     makes both branches constant. The condition is over the init block's nondet
     inputs, so it is rewritten over the state variables latching them, and skipped
     when it mentions anything else."""
-    latched = [(s0[v], v) for v in bench.state
+    latched = [(s0[v], v) for v in names
                if z3.is_const(s0[v]) and s0[v].decl().kind() == z3.Z3_OP_UNINTERPRETED]
     if not latched:
         return []
-    names = list(bench.state)
 
     def over_state(pred):
         """``pred`` over the state variables, or ``None`` if an input is left."""
@@ -139,7 +114,7 @@ def _cond_const_candidates(bench: Bench, s0: dict) -> list[Candidate]:
         return None if {str(x) for x in get_vars(out)} - set(names) else out
 
     cands: list[Candidate] = []
-    for v in bench.state:
+    for v in names:
         for cond in _ite_conds(s0[v]):
             for truth in (True, False):
                 pred = over_state(cond if truth else z3.Not(cond))
@@ -156,18 +131,22 @@ def _cond_const_candidates(bench: Bench, s0: dict) -> list[Candidate]:
     return cands
 
 
-def infer_invariants(bench: Bench, timeout_ms: int = 2000) -> list[Candidate]:
-    """Inductive loop invariants for ``bench`` (initiation + consecution)."""
+def infer_invariants(system, timeout_ms: int = 2000) -> list[Candidate]:
+    """Inductive loop invariants for ``system`` (initiation + consecution).
+
+    The transition and the entry state are read off ``system`` — one walk of the
+    module, shared with the verifier — so nothing here reads the program itself.
+    Invariants are a fact about the module, not about any property of it."""
+    names = system.names
+    s, sp, s0 = system.s_map, system.sp_map, system.entry
     try:
-        s, sp = _transition(bench)
-        s0 = _init_state(bench)
-    except Exception:
-        return []                              # no invariants -> plain domain
-    dom = guard_from_transition(s, sp, bench.state)
+        dom = guard_from_transition(s, sp, names)
+    except ValueError:
+        return []                              # no loop shape -> plain domain
 
     # The outer if-gate precondition: assumed at loop entry (initiation) and its
     # conjuncts seeded as candidates (so precondition facts survive as invariants).
-    pre = bench.precondition or (lambda st: [])
+    pre = system.assume or (lambda st: [])
     pre_init = list(pre(s0))                    # entry-gate assumptions at s0
     pre_cands = [(f"pre[{i}]", (lambda st, i=i: pre(st)[i])) for i in range(len(pre(s)))]
 
@@ -175,10 +154,10 @@ def infer_invariants(bench: Bench, timeout_ms: int = 2000) -> list[Candidate]:
     # (T(s)) and the init state (s0) — the cut-point segments nuTerm seeds from.
     seen: set[str] = set()
     cands: list[Candidate] = []
-    for lbl, f in (_candidates(bench)
-                   + _const_candidates(bench, sp)
-                   + _const_candidates(bench, s0)
-                   + _cond_const_candidates(bench, s0)
+    for lbl, f in (_candidates(names)
+                   + _const_candidates(names, sp)
+                   + _const_candidates(names, s0)
+                   + _cond_const_candidates(names, s0)
                    + pre_cands):
         if lbl not in seen:
             seen.add(lbl)

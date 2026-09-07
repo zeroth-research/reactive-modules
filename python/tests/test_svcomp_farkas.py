@@ -30,9 +30,16 @@ from benchmarks.svcomp._farkas import (
     find_infeasibility_certificate,
     masked_value,
     output_weights,
+    read_system,
     split_guard,
     strict_signs,
 )
+from benchmarks.svcomp._bench import INT
+from benchmarks.svcomp._nodes import Unsupported, node_view
+from tests._fixtures import loop_bench
+from zrth import LIA, Wire, sugar
+from zrth.sugar import argmax as dsl_argmax
+from zrth.sugar import ite as dsl_ite
 
 x, y = z3.Ints("x y")
 
@@ -295,3 +302,48 @@ def test_certify_decrease_certificates_are_valid():
         for j in range(n):
             assert sum(c.y[i] * c.A[i][j] for i in range(len(c.A))) == 0
         assert sum(c.y[i] * c.b[i] for i in range(len(c.b))) < 0
+
+
+def test_the_vocabulary_covers_the_theory():
+    """``OPS`` answers for every LIA operation, so one added to the theory shows up
+    as a failure here rather than as a refusal on some benchmark. ``Uninterpreted``
+    has no linear reading at all, so it is excluded by name."""
+    theory = {f"LIA_{n}" for n in dir(LIA) if not n.startswith("_")}
+    assert set(_farkas.OPS) - theory == set(), "declared but not in the theory"
+    assert theory - set(_farkas.OPS) == {"LIA_Uninterpreted"}
+
+
+def test_an_itype_outside_the_vocabulary_is_refused():
+    """``OPS`` is the procedure's declaration of what it understands, so the walk
+    refuses an operation absent from it by name rather than guessing a kind."""
+    bench = loop_bench(("x",), lambda x: dsl_ite(x > 0, x - 1, x))
+    prog, ctrl, _ = bench.build()
+    ops = {k: v for k, v in _farkas.OPS.items() if k != "LIA_Ite"}
+    with pytest.raises(Unsupported, match="LIA_Ite"):
+        node_view(prog, {ctrl[n][0]: [z3.Int(n)] for n in bench.state}, ops)
+
+
+def _prog(update, *, extl=()):
+    """A one-variable program module, for the tests that need an operation or a
+    wiring the fixture's DSL spec cannot express. ``update`` takes the latched
+    variable and the awaited inputs, as a DSL update block does."""
+    pair = (Wire(INT), Wire(INT))
+
+    class Program(sugar.Module):
+        def init(self, *a):
+            return (0,)
+
+        def update(self, ctrl, extl):
+            return update(ctrl, extl)
+
+    return Program(theory=LIA, ctrl=(pair,), extl=extl), pair
+
+
+def test_an_untranslatable_itype_is_refused():
+    """An op the theory has but Z3 cannot read is refused by name in the walk,
+    rather than surfacing as a backend error from underneath it."""
+    for build in (lambda c, _e: (c - 1)._unop(LIA.Min(), out=c.dtype),
+                  lambda c, _e: dsl_argmax(c)):
+        prog, _ = _prog(build)
+        with pytest.raises(Unsupported, match="no Z3 translation"):
+            read_system(prog, ("x",))

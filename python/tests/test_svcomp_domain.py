@@ -11,6 +11,7 @@ import pytest
 
 from benchmarks.svcomp import discover
 from benchmarks.svcomp._domain import domain
+from benchmarks.svcomp._verify_ranking import system_of
 
 _BENCHES = {b.name: b for b in discover()}
 
@@ -18,13 +19,13 @@ _BENCHES = {b.name: b for b in discover()}
 def _guard(name: str):
     """The derived loop guard of a benchmark, over z3.Int(state-name) symbols."""
     b = _BENCHES[name]
-    return domain(b)({n: z3.Int(n) for n in b.state})
+    return domain(system_of(b))({n: z3.Int(n) for n in b.state})
 
 
 def test_guard_derivable_for_every_benchmark():
     """Every encoding must yield a boolean loop guard (extraction never fails)."""
     for b in discover():
-        g = domain(b)({n: z3.Int(n) for n in b.state})
+        g = domain(system_of(b))({n: z3.Int(n) for n in b.state})
         assert z3.is_bool(g), f"{b.name}: derived guard is not boolean"
 
 
