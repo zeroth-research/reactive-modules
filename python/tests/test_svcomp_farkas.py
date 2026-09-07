@@ -37,8 +37,9 @@ from benchmarks.svcomp._farkas import (
 from benchmarks.svcomp._bench import INT
 from benchmarks.svcomp._nodes import Unsupported, node_view
 from tests._fixtures import loop_bench
-from zrth import LIA, Wire, sugar
+from zrth import LIA, Sort, Wire, sugar
 from zrth.sugar import argmax as dsl_argmax
+from zrth.sugar import expr as dsl_expr
 from zrth.sugar import ite as dsl_ite
 
 x, y = z3.Ints("x y")
@@ -302,6 +303,24 @@ def test_certify_decrease_certificates_are_valid():
         for j in range(n):
             assert sum(c.y[i] * c.A[i][j] for i in range(len(c.A))) == 0
         assert sum(c.y[i] * c.b[i] for i in range(len(c.b))) < 0
+
+
+def test_a_vector_wire_is_refused():
+    """The reader takes scalar integer wires — one symbol per wire is what the
+    rows, the regions and the proof's state quantify over — so a vector-valued
+    wire is refused by name at the door rather than read element by element."""
+    vec = Sort.Int([2, 1])
+    pair = (Wire(vec), Wire(vec))
+
+    class Program(sugar.Module):
+        def init(self):
+            return (dsl_expr(np.zeros((2, 1), dtype=int), theory=LIA, sort=vec),)
+
+        def update(self, ctrl):
+            return ctrl
+
+    with pytest.raises(Unsupported, match="scalar"):
+        read_system(Program(theory=LIA, ctrl=(pair,)), ("v",))
 
 
 def test_the_vocabulary_covers_the_theory():
