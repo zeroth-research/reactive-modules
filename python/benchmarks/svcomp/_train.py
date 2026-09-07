@@ -20,7 +20,7 @@ from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
 from ._domain import domain as loop_domain
 from ._equiv import _run_block
 from ._invariants import infer_invariants
-from ._verify_ranking import build_obligation, smt_oneshot
+from ._verify_ranking import build_obligation, smt_oneshot, system_of
 
 
 # ---------------------------------------------------------------------------
@@ -105,12 +105,12 @@ def _pas_sample(dim: int, sigma: float, rng) -> np.ndarray:
     return np.round(rng.multivariate_normal(np.zeros(dim), cov)).astype(np.float64)
 
 
-def rollout(bench: Bench, n_traj: int, max_len: int, sigma: float,
+def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
             rng) -> tuple[np.ndarray, np.ndarray]:
     """nt-style trajectory rollouts: PAS-sample the inputs, init, execute the
     module up to `max_len`, collecting consecutive in-domain (s, T(s)) pairs."""
     prog, ctrl, extl = bench.build()
-    dom = loop_domain(bench)                      # loop guard, derived from update
+    dom = loop_domain(system)                     # loop guard, from the transition
     n_in = len(bench.inputs)
     S, Sp = [], []
     n_trials = n_traj if n_in > 0 else 1          # deterministic program -> 1 trajectory
@@ -167,14 +167,16 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
 
     ``verifier`` is any ``Obligation -> VerifyResult`` (like nt's
     ``verifier_method``): the round-and-rebuild loop builds the obligation for
-    each candidate (via ``build_obligation``, the composition seam) and accepts
-    the first V it verifies. Default is ``smt_oneshot``; a Farkas or
-    invariant-augmented verifier — or the Phase-2 composed-system verifier
-    (program ⊕ V as one module) — swaps in without touching the trainer."""
+    each candidate (via ``build_obligation``) and accepts the first V it verifies.
+    Default is ``smt_oneshot``; a Farkas or invariant-augmented verifier swaps in
+    without touching the trainer."""
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
     sigma = float(np.sqrt(initial_variance))
-    S, Sp = rollout(bench, n_trajectories, max_trajectory_length, sigma, rng)
+    # The program is read once here and reused: neither the transition nor the
+    # invariants depend on the ranking candidate.
+    system = system_of(bench)
+    S, Sp = rollout(bench, system, n_trajectories, max_trajectory_length, sigma, rng)
     if S.shape[0] == 0:
         return TrainResult(bench.name, False, 0, float("nan"), reason="no in-domain samples")
     Xs = torch.from_numpy(S)
@@ -182,7 +184,7 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
     dim = len(bench.state)
 
     # Houdini invariants (V-independent): inferred once, reused for every candidate.
-    invariants = infer_invariants(bench) if use_invariants else []
+    invariants = infer_invariants(system) if use_invariants else []
 
     final_loss = float("inf")
     last_layers = None
@@ -198,7 +200,8 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
         for scale in scales:
             layers = model.to_layers(scale)
             last_layers = layers
-            ob = build_obligation(bench, layers, delta, invariants)
+            ob = build_obligation(bench, layers, delta, invariants,
+                                  system=system)
             res = verifier(ob)
             if res.verified:
                 return TrainResult(bench.name, True, S.shape[0], final_loss, layers,

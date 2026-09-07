@@ -23,6 +23,7 @@ so different methods plug in interchangeably.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from typing import Callable
 
@@ -30,11 +31,11 @@ import numpy as np
 import z3
 
 # torch must load before the zrth C-extension (see _bench)
-from ._bench import Bench, INT  # noqa: F401
+from ._bench import Bench, INT, pair  # noqa: F401
 from ._domain import guard_from_transition
-from ._farkas import Net, affine_coeffs, certify_decrease
-from zrth import LIA, Module, Wire, sugar
-from zrth import z3 as zz3
+from ._farkas import (System, certify_decrease, entry_predicate, read_system,
+                      reading)
+from zrth import LIA, Module, sugar
 from zrth.sugar import expr, nxt, relu
 
 
@@ -52,9 +53,10 @@ class Obligation:
     separate from the guard for certificate provenance. The verification domain
     is ``guard`` ∧ ⋀``invariants`` (see :func:`verification_domain`).
 
-    ``layers`` (the integer NRF) is only needed by the Farkas/cell verifier,
-    which decomposes the network into activation-pattern cells; an SMT verifier
-    uses ``V_s``/``V_sp`` directly.
+    ``net`` is V as the cell verifier reads it off V's module; ``layers`` (the
+    integer NRF the trainer produced) is kept for the trainer's record only. An
+    SMT verifier uses ``V_s``/``V_sp`` directly. ``system`` is the composed module
+    as read, which the guard, the invariants and the entry state come from.
 
     ``init``: the loop-entry predicate over ``s_syms`` (the init block's state
     relations conjoined with the precondition), the premise of the emitted
@@ -69,6 +71,7 @@ class Obligation:
     invariants: tuple = ()
     layers: object = None
     net: object = None
+    system: object = None    # program ⊕ V(s) ⊕ V(s'), as it was read
     init: object = None
 
 
@@ -107,37 +110,6 @@ def _xs(extl):
     return list(extl) if isinstance(extl, tuple) else [extl]
 
 
-def _affine(e, syms):
-    """``affine_coeffs`` with the coefficients as a tuple, for a hashable ``Net``."""
-    coeffs, const = affine_coeffs(e, syms)
-    return tuple(coeffs), const
-
-
-def net_of(system, ctrl, state, out_pair) -> Net:
-    """``V`` read off the composed module: each ReLU's affine pre-activation over
-    the state, and the affine map from the ReLU outputs to ``V``.
-
-    The atom driving ``out_pair`` is walked with every ReLU output replaced by a
-    fresh symbol, so ``V``'s wire comes out affine in those. Nothing about layer
-    count or wiring is assumed; a pre-activation that is not affine in the state
-    (a deeper net) raises out of ``affine_coeffs``."""
-    z = {ctrl[n][0]: [z3.Int(n)] for n in state}
-    s_syms = [z3.Int(n) for n in state]
-    for atom in system.atoms:
-        if out_pair[1] not in {w for t in atom.update for w in t.write}:
-            continue
-        units, opaque = [], []
-        for t in atom.update:
-            if type(t.itype).__name__ == "LIA_ReLU":
-                units.append(_affine(z[t.read[0]][0], s_syms))
-                opaque.append(z3.Int(f"_h{len(opaque)}"))
-                z.update(zip(t.write, [[opaque[-1]]]))
-            else:
-                z.update(zip(t.write, zz3.eval(t.itype, [z[w] for w in t.read])))
-        return Net(tuple(units), _affine(z[out_pair[1]][0], opaque))
-    raise ValueError("no atom drives the ranking output wire")
-
-
 def _v_module(state_pairs, layers, *, read_next: bool):
     """A one-output module computing V over the program's state wires.
 
@@ -146,7 +118,7 @@ def _v_module(state_pairs, layers, *, read_next: bool):
     latched wire; update reads the latched state).
     ``read_next=True``  -> V(s'): only ever awaits the program's *next* state, so it
     is a **combinatorial** atom (a single ``assign`` block, no init)."""
-    out = (Wire(INT), Wire(INT))
+    out = pair()
     if read_next:
         class _V(sugar.Module):
             def assign(self, extl):
@@ -166,74 +138,46 @@ def _v_module(state_pairs, layers, *, read_next: bool):
 # Building the obligation (the composition seam)
 # ---------------------------------------------------------------------------
 
-def build_obligation(bench: Bench, layers, delta: float, invariants=None) -> Obligation:
-    """Compose program ⊕ V(s) ⊕ V(s') into ONE reactive module, then read the
+def system_of(bench: Bench) -> System:
+    """``bench``'s program module, read once, with its precondition as ``assume``.
+
+    Built per benchmark and reused for the guard, the invariants and every ranking
+    candidate, none of which depend on the candidate."""
+    prog, _ctrl, _extl = bench.build()
+    return dataclasses.replace(read_system(prog, bench.state),
+                               assume=bench.precondition)
+
+
+def build_obligation(bench: Bench, layers, delta: float, invariants=None,
+                     system=None) -> Obligation:
+    """Compose program ⊕ V(s) ⊕ V(s') into ONE reactive module and read the
     ranking obligation off it.
 
     The program, the ranking value at the current state V(s), and the value at
-    the successor V(s') are three atoms of a single ``Module.parallel`` system;
-    await-ordering places V(s') after the program's transition. We symbolically
-    execute one ``update`` (latched state = fresh Z3 ints) and read s' = T(s),
-    V(s) and V(s') straight off the composed system's wires.
+    the successor V(s') are three atoms of a single ``Module.parallel`` module,
+    which :func:`._farkas.read_system` walks once. The columns are the latched
+    wires some update reads, which are the program's; V's two wires are read as
+    functions of them by :func:`._farkas.reading`.
 
     ``invariants`` (from :func:`._invariants.infer_invariants`) are inductive
     loop facts conjoined with the guard to shrink the verification domain to the
     reachable loop states."""
-    prog, ctrl, _extl = bench.build()
-    state_pairs = [ctrl[n] for n in bench.state]
-    vs_mod, vs = _v_module(state_pairs, layers, read_next=False)
-    vsp_mod, vsp = _v_module(state_pairs, layers, read_next=True)
-    system = Module.parallel(prog, vs_mod, vsp_mod)
-    net = net_of(system, ctrl, bench.state, vs)
-
-    z = {ctrl[n][0]: [z3.Int(n)] for n in bench.state}
-    for atom in system.atoms:
-        for term in atom.update:
-            z.update(zip(term.write, zz3.eval(term.itype, [z[w] for w in term.read])))
-    s_syms = [z[ctrl[n][0]][0] for n in bench.state]
-    sp_syms = [z[ctrl[n][1]][0] for n in bench.state]
-    s_map = {n: z[ctrl[n][0]][0] for n in bench.state}
-    sp_map = {n: z[ctrl[n][1]][0] for n in bench.state}
-    guard = guard_from_transition(s_map, sp_map, bench.state)
-    inv_preds = tuple(f(s_map) for _, f in (invariants or []))
-    init = _init_predicate(bench, s_map)
-    return Obligation(bench.state, s_syms, sp_syms, z[vs[1]][0], z[vsp[1]][0],
-                      float(delta), guard, invariants=inv_preds, layers=layers,
-                      net=net, init=init)
-
-
-def _init_predicate(bench: Bench, s_map: dict):
-    """The loop-entry predicate over the pre-state symbols ``s_map``.
-
-    Runs the ``init`` block symbolically with each nondet input as a fresh symbol,
-    then conjoins ``v == <v's init value>`` per state variable, plus the
-    precondition. Inputs are substituted away first (see below), so the result is
-    a relation between state variables, e.g. ``i == n - 1``."""
-    try:
-        prog, ctrl, extl = bench.build()
-        st = {extl[name][1]: [z3.Int(f"_in_{name}")] for name in bench.inputs}
-        for atom in prog.atoms:
-            for t in atom.init:
-                st.update(zip(t.write, zz3.eval(t.itype, [st[w] for w in t.read])))
-        init_vals = {n: st[ctrl[n][1]][0] for n in bench.state}
-    except Exception:
-        return None
-    # A variable initialised to a bare input (``v := input``) holds that input at
-    # entry, so the input symbol can be replaced by v's state symbol.
-    sub = []
-    for name in bench.inputs:
-        insym = z3.Int(f"_in_{name}")
-        for v in bench.state:
-            if z3.eq(z3.simplify(init_vals[v]), insym):
-                sub.append((insym, s_map[v]))
-                break
-    conj = []
-    for n in bench.state:
-        e = z3.substitute(init_vals[n], *sub) if sub else init_vals[n]
-        conj.append(s_map[n] == e)
-    pre = bench.precondition or (lambda st: [])
-    conj += list(pre(s_map))
-    return z3.And(*conj) if conj else z3.BoolVal(True)
+    if system is None:
+        system = system_of(bench)
+    inv_preds = tuple(f(system.s_map) for _, f in (invariants or []))
+    vs_mod, vs = _v_module(system.pairs, layers, read_next=False)
+    vsp_mod, vsp = _v_module(system.pairs, layers, read_next=True)
+    composed = dataclasses.replace(
+        read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names),
+        assume=system.assume, invariants=inv_preds)
+    z = composed.view.values
+    return Obligation(composed.names, list(composed.s_syms), composed.sp_syms,
+                      z[vs[1]][0], z[vsp[1]][0], float(delta),
+                      guard_from_transition(composed.s_map, composed.sp_map,
+                                            composed.names),
+                      invariants=inv_preds, layers=layers,
+                      net=reading(composed, vs[1]).net, system=composed,
+                      init=entry_predicate(composed))
 
 
 # ---------------------------------------------------------------------------
@@ -276,11 +220,10 @@ def farkas_cell(ob: Obligation) -> VerifyResult:
     structurally (non-negative output layer). Sound but incomplete — cells with a
     non-affine transition or a nonlinear/disjunctive guard atom cannot be
     certified (returns FAILED)."""
-    net = ob.net if ob.net is not None else Net.from_layers(ob.layers)
-    out_c, out_k = net.out
+    out_c, out_k = ob.net.out
     if not (all(c >= 0 for c in out_c) and out_k >= 0):
         return VerifyResult(False, status="FAILED(V>=0 not structural)")
-    r = certify_decrease(net, ob.s_syms, ob.sp_syms, ob.guard,
+    r = certify_decrease(ob.net, ob.s_syms, ob.sp_syms, ob.guard,
                          ob.invariants, ob.delta)
     return VerifyResult(r.verified, r.counterexample,
                         certificate=r.certificates, status=r.status)

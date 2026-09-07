@@ -28,7 +28,7 @@ non-negativity — see :func:`output_weights`.
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fractions import Fraction
 from math import gcd, lcm
 
@@ -36,6 +36,44 @@ import numpy as np
 import z3
 
 from ._domain import guard_ite
+from ._nodes import ModeKind, Op, Unsupported, free_symbols, node_view
+
+
+# ---------------------------------------------------------------------------
+# The procedure's vocabulary
+# ---------------------------------------------------------------------------
+
+def _relu_at(model, e):
+    """A ReLU's mode at a witness: active where the pre-activation is positive."""
+    return model.eval(e, model_completion=True).as_long() > 0
+
+
+def _relu_region(e, mode):
+    """A ReLU's mode as constraints: strictly ``> 0`` active, ``<= 0`` inactive."""
+    return ((e > 0,) if mode else (e <= 0,))
+
+
+# This procedure's vocabulary: what it understands of the theory's operations, in
+# one place. An itype absent here is refused by :func:`._nodes.node_view`; a kind
+# with neither a cell rule nor a case split is refused by :func:`check_supported`.
+# Adding support for an operation is an entry here and nothing else.
+OPS = {
+    # affine arithmetic — evaluated straight through
+    "LIA_Linear": Op(), "LIA_Add": Op(), "LIA_Sub": Op(), "LIA_Const": Op(),
+    "LIA_Id": Op(), "LIA_Transpose": Op(),
+    # boolean structure — z3 handles it, and PRED_MODES splits what the LP cannot
+    "LIA_And": Op(), "LIA_Or": Op(), "LIA_Xor": Op(), "LIA_Not": Op(),
+    "LIA_Le": Op(), "LIA_Lt": Op(), "LIA_Ge": Op(), "LIA_Gt": Op(),
+    "LIA_Eq": Op(), "LIA_Ne": Op(),
+    # piecewise-linear
+    "LIA_ReLU": Op("relu", mode=ModeKind(_relu_at, _relu_region)),
+    "LIA_Ite": Op("ite", split=True),
+    # recognised, no cell rule — and no Z3 translation either, so in practice a
+    # module carrying one is refused by the walk before `check_supported` sees it
+    "LIA_Min": Op("min"),
+    "LIA_Max": Op("max"),
+    "LIA_Argmax": Op("argmax"),
+}
 
 
 @dataclass(frozen=True)
@@ -59,6 +97,13 @@ class Net:
         units = tuple((tuple(int(c) for c in W1[j]), int(b1[j]))
                       for j in range(W1.shape[0]))
         return Net(units, (tuple(int(c) for c in W2[0]), int(b2[0])))
+
+
+def _affine_pair(e, syms):
+    """``affine_coeffs`` with tuple coefficients, so a :class:`Net` is hashable."""
+    coeffs, const = affine_coeffs(e, syms)
+    return tuple(coeffs), const
+
 
 
 def _pre_activations(net: Net, inputs):
@@ -725,3 +770,207 @@ def certify_decrease(net, s_syms, sp_syms, guard, invariants, delta,
     if not paths:
         return FarkasResult(False, [], None, "FAILED(no feasible path)")
     return FarkasResult(True, paths, None, "VERIFIED")
+
+
+# ---------------------------------------------------------------------------
+# The system: a module read once
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class System:
+    """A reactive module as read, plus what is known about its states.
+
+    Built by :func:`read_system`, the one place a module is walked; everything
+    here is a value, so refining a system costs nothing and re-reads nothing.
+
+    ``pairs`` are the *columns*: the ctrl pairs whose latched wire some term
+    reads. That is what a free input to the round is — a value the round depends
+    on and carries in — so it is the state the proofs quantify over. A latched
+    wire nothing reads (a ranking function's own previous value, composed
+    alongside) is not a column; its next value is still a wire of the graph and
+    a rule may name it. Nothing is classified by kind: only by data flow.
+
+    ``W`` gives each ctrl next wire a symbol a rule's predicate can name; the
+    engine resolves it, per region, to the wire's value at that round.
+    ``assume`` is what may be assumed of the entry state (a ``state_map ->
+    predicates`` callable, or ``None``) and ``invariants`` an over-approximation
+    of the reachable states. Both describe the module's state space, not any
+    property of it. ``names`` is provenance only, defaulting to the wire ids."""
+    module: object
+    view: object
+    pairs: tuple
+    all_pairs: tuple
+    s_syms: tuple
+    seed: dict
+    W: dict
+    atom_of: dict = field(default_factory=dict)
+    entry_inputs: tuple = ()
+    names: tuple = ()
+    assume: object = None
+    invariants: tuple = ()
+
+    @property
+    def sp_syms(self) -> list:
+        """The transition, read off the columns' next wires."""
+        return [self.view.values[pr[1]][0] for pr in self.pairs]
+
+    def index(self, pair) -> int:
+        for k, pr in enumerate(self.pairs):
+            if pr[0].id == pair[0].id:
+                return k
+        raise Unsupported(f"wire pair {pair[0].id} is not a column of this system")
+
+    def sym_of(self, pair):
+        return self.s_syms[self.index(pair)]
+
+    def next_of(self, pair):
+        return self.view.values[pair[1]][0]
+
+    @property
+    def entry(self) -> dict:
+        """Each column's value at tick 0, by name, from the init block."""
+        return {n: self.view.entry[pr[1]][0] for n, pr in zip(self.names, self.pairs)}
+
+    @property
+    def s_map(self) -> dict:
+        return dict(zip(self.names, self.s_syms))
+
+    @property
+    def sp_map(self) -> dict:
+        return dict(zip(self.names, self.sp_syms))
+
+
+def read_system(module, names=()) -> System:
+    """``module`` walked once, as a :class:`System`.
+
+    Every latched ctrl wire is seeded with a symbol, and awaited inputs with
+    theirs; the columns are the latched wires some update term actually reads.
+    ``names`` labels the columns — a tuple in column order, or a mapping from a
+    latched wire to its name."""
+    all_pairs = tuple(tuple(pr) for pr in module.ctrl)
+    inputs = tuple(tuple(pr) for pr in module.extl)
+    read = {w.id for a in module.atoms for w in a.read}
+    pairs = tuple(pr for pr in all_pairs if pr[0].id in read)
+    if isinstance(names, dict):
+        names = tuple(names.get(pr[0], names.get(pr[0].id, f"w{pr[0].id}")) for pr in pairs)
+    else:
+        names = tuple(names) or tuple(f"w{pr[0].id}" for pr in pairs)
+    if len(names) != len(pairs):
+        raise Unsupported(f"{len(names)} names for {len(pairs)} columns")
+    syms = tuple(z3.Int(n) for n in names)
+    seed = {pr[0]: [s] for pr, s in zip(pairs, syms)}
+    for pr in all_pairs:                       # unread latched wires: seeded, never used
+        seed.setdefault(pr[0], [z3.Int(f"_w{pr[0].id}")])
+    for i, pr in enumerate(inputs):
+        seed[pr[0]] = [z3.Int(f"_in{i}")]
+        seed[pr[1]] = [z3.Int(f"_in{i}_next")]
+    entry_seed = {pr[1]: [z3.Int(f"_entry{i}")] for i, pr in enumerate(inputs)}
+    W = {pr[1].id: z3.Int(f"_W{pr[1].id}") for pr in all_pairs}
+    atom_of = {w.id: a for a in module.atoms for w in a.ctrl}
+    return System(module, node_view(module, seed, OPS, entry_seed), pairs, all_pairs,
+                  syms, seed, W, atom_of=atom_of,
+                  entry_inputs=tuple(v[0] for v in entry_seed.values()), names=names)
+
+
+@dataclass(frozen=True)
+class Reading:
+    """A ctrl next wire as a function of the round: its network over the atom's
+    inputs, and where each input comes from — ``("latched", k)`` the column
+    ``k``'s pre-state value, ``("next", k)`` its value after the step,
+    ``("unread", k)`` a column the atom does not read. A wire with no ReLU behind
+    it is a reading with no units, its ``out`` affine in the inputs."""
+    wire: object
+    net: Net
+    inputs: tuple
+
+    def args(self, s_syms, body):
+        """The reading's inputs at the round ``(s_syms, body)``."""
+        return tuple(body[k] if kind == "next" else s_syms[k] for kind, k in self.inputs)
+
+    def at(self, s_syms, body):
+        """The reading's pre-activations at the round ``(s_syms, body)``."""
+        return tuple(_pre_activations(self.net, self.args(s_syms, body)))
+
+    def value(self, s_syms, body, pattern=None):
+        """The wire's value at the round: exact with the ReLUs in when ``pattern``
+        is ``None``, else the mask ``pattern`` applied."""
+        if not self.net.units:
+            return _affine_value(self.net.out, self.args(s_syms, body))
+        acts = self.at(s_syms, body)
+        weights = output_weights(self.net)
+        return (exact_value(acts, weights) if pattern is None
+                else masked_value(acts, weights, pattern))
+
+
+def _affine_value(weights, args):
+    """``Σ cⱼ·argsⱼ + k`` for ``weights = (c, k)`` — a ReLU-free wire's value."""
+    c, k = weights
+    out = z3.IntVal(k)
+    for cj, a in zip(c, args):
+        if cj:
+            out = out + cj * a
+    return out
+
+
+def reading(system: System, wire) -> Reading:
+    """The :class:`Reading` behind ``wire``, a ctrl next wire.
+
+    Its atom is walked alone with the wires its **update block** reads seeded as
+    the corresponding column symbols, so its structure comes out over the columns
+    whatever round it is applied to; ``inputs`` records which end of each column
+    the update takes, so the engine can evaluate it at either. (The atom's
+    ``wait`` interface also lists what its *init* awaits, which is not this.)"""
+    atom = system.atom_of.get(wire.id)
+    if atom is None:
+        raise Unsupported(f"wire {wire.id} is not a ctrl wire of this system")
+    latched = {pr[0].id: k for k, pr in enumerate(system.pairs)}
+    nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
+    rd, wr = atom.update.read(), atom.update.write()
+    reads = [rd[i] for i in range(len(rd))]
+    at, kind_of = {}, {}
+    written = {wr[i].id for i in range(len(wr))}
+    for w in reads:
+        if w.id in written:
+            continue                                   # an internal wire of the block
+        if w.id in latched:
+            at[w] = [system.s_syms[latched[w.id]]]; kind_of[latched[w.id]] = "latched"
+        elif w.id in nexts:
+            at[w] = [system.s_syms[nexts[w.id]]]; kind_of[nexts[w.id]] = "next"
+        else:
+            raise Unsupported(f"the atom behind wire {wire.id} reads wire {w.id}, "
+                              f"which is not a column of this system")
+    view = node_view(system.module, at, OPS, atoms=(atom,))
+    value = view.opaque[wire][0]
+    relus = view.feeding(value, "relu")
+    col_syms = list(system.s_syms)
+    if relus:
+        net = Net(tuple(_affine_pair(n.args[0], col_syms) for n in relus),
+                  _affine_pair(value, [n.sym for n in relus]))
+    else:
+        net = Net((), _affine_pair(value, col_syms))
+    inputs = tuple((kind_of.get(k, "unread"), k) for k in range(len(system.pairs)))
+    return Reading(wire, net, inputs)
+
+
+def entry_predicate(system: System):
+    """The entry state as a predicate over ``system``'s pre-state symbols.
+
+    ``system.entry`` is the init block's value per column, with each nondet input
+    a fresh symbol; this conjoins ``v == <v's entry value>`` per column plus
+    ``assume``. Inputs are substituted away first (see below), so the result is a
+    relation between columns, e.g. ``i == n - 1``."""
+    init_vals, s_map = system.entry, system.s_map
+    # A column initialised to a bare input (``v := input``) holds that input at
+    # entry, so the input symbol can be replaced by v's state symbol.
+    sub = []
+    for insym in system.entry_inputs:
+        for v in system.names:
+            if z3.eq(z3.simplify(init_vals[v]), insym):
+                sub.append((insym, s_map[v]))
+                break
+    conj = []
+    for n in system.names:
+        e = z3.substitute(init_vals[n], *sub) if sub else init_vals[n]
+        conj.append(s_map[n] == e)
+    conj += list((system.assume or (lambda st: []))(s_map))
+    return z3.And(*conj) if conj else z3.BoolVal(True)
