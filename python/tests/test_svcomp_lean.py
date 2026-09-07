@@ -13,24 +13,26 @@ import numpy as np
 import pytest
 import z3
 
-from benchmarks.svcomp._farkas import Net, certify_decrease
 from benchmarks.svcomp._lean import _trivial, emit_program
-from benchmarks.svcomp._verify_ranking import Obligation
+from benchmarks.svcomp._verify_ranking import build_obligation, farkas_cell
+from tests._fixtures import loop_bench
+from zrth.sugar import ite, ne
 
 LEAN_DIR = Path(__file__).resolve().parents[1] / "benchmarks" / "svcomp" / "lean"
 
 
 def _decrement_obligation(invariants=(), init=None):
-    """`while (x > 0) x = x - 1` with V(s) = relu(x), as an Obligation plus its
-    certified paths."""
+    """`while (x > 0) x = x - 1` with V(s) = relu(x), built as a real module: the
+    Obligation the pipeline produces, plus its certified paths."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
-    x = z3.Int("x")
-    s, sp = [x], [z3.If(x > 0, x - 1, x)]
-    res = certify_decrease(Net.from_layers(layers), s, sp, x > 0, invariants, 1.0)
+    bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
+    named = [(f"inv{k}", (lambda st, p=p: p)) for k, p in enumerate(invariants)]
+    ob = build_obligation(bench, layers, 1.0, named)
+    if init is not None:
+        ob.init = init
+    res = farkas_cell(ob)
     assert res.verified, res.status
-    ob = Obligation(("x",), s, sp, None, None, 1.0, x > 0,
-                    invariants=invariants, layers=layers, init=init)
-    return ob, res.certificates
+    return ob, res.certificate
 
 
 def test_emit_contains_the_proof_skeleton():
@@ -126,13 +128,12 @@ def test_emit_multi_path_unions_the_step():
     union, dispatched in `program_terminates`."""
     layers = [(np.array([[1], [-1]]), np.array([0, 0])),
               (np.array([[1, 1]]), np.array([0]))]
-    x = z3.Int("x")
-    s, sp = [x], [z3.If(x != 0, z3.If(x > 0, x - 1, x + 1), x)]
-    res = certify_decrease(Net.from_layers(layers), s, sp, x != 0, (), 1.0)
+    bench = loop_bench(("x",), lambda x: ite(ne(x, 0), ite(x > 0, x - 1, x + 1), x))
+    ob = build_obligation(bench, layers, 1.0, [])
+    res = farkas_cell(ob)
     assert res.verified, res.status
-    assert len(res.certificates) == 2
-    ob = Obligation(("x",), s, sp, None, None, 1.0, x != 0, layers=layers)
-    src = emit_program("branching", ob, res.certificates)
+    assert len(res.certificate) >= 2, "a branching body should give several paths"
+    src = emit_program("branching", ob, res.certificate)
     assert "namespace loop0_path0" in src and "namespace loop0_path1" in src
     assert "loop0_path0.Step a b ∨ loop0_path1.Step a b" in src
     assert "rintro a b (h | h)" in src
@@ -142,12 +143,11 @@ def test_non_trivial_cell_uses_its_certificate():
     """A cell whose decrease needs the guard carries a Farkas system, and the
     emitted proof reaches it through farkas_sound and decrease_bridge."""
     layers = [(np.array([[2]]), np.array([-1])), (np.array([[1]]), np.array([0]))]
-    x = z3.Int("x")
-    s, sp = [x], [z3.If(x > 0, x - 1, x)]
-    res = certify_decrease(Net.from_layers(layers), s, sp, x > 0, (), 1.0)
+    bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
+    ob = build_obligation(bench, layers, 1.0, [])
+    res = farkas_cell(ob)
     assert res.verified, res.status
-    ob = Obligation(("x",), s, sp, None, None, 1.0, x > 0, layers=layers)
-    src = emit_program("nontrivial", ob, res.certificates)
+    src = emit_program("nontrivial", ob, res.certificate)
     assert "farkas_sound" in src and "decrease_bridge" in src
 
 

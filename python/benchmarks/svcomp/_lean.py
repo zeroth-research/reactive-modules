@@ -22,7 +22,7 @@ proving the program terminates, against the vendored ``lean/`` substrate
 
 Scope: scalar (single-component) ranking function, single loop with a single
 hidden layer. In-loop branching is handled by *path-splitting*: the body's nested
-``ite``s are expanded into affine paths (:func:`._farkas.enumerate_paths`), one
+``ite``s are expanded into affine paths (:func:`._farkas.expand_cases`), one
 namespace each, and ``Step`` is the union of the per-path relations."""
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from ._farkas import CellCert, _find_ite_cond, _flatten_and, affine_coeffs
 
 def _contains_ite(e) -> bool:
     """True if a z3 term still has an ``ite`` — a path body must have none (all
-    in-loop branches are split out by ``enumerate_paths`` before emission)."""
+    in-loop branches are split out by ``expand_cases`` before emission)."""
     if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE:
         return True
     return any(_contains_ite(c) for c in e.children())
@@ -673,7 +673,7 @@ def _emit_path(path: str, pcert, s_syms, trivial_inv: bool, invariants) -> str:
     trans_lean = _render_conjuncts(pcert.guard, s_syms)
     body = list(pcert.body)
     assert not any(_contains_ite(e) for e in body), \
-        "path body must be affine (enumerate_paths should have split every ite)"
+        "path body must be affine (expand_cases should have split every ite)"
     body_affines = [affine_coeffs(e, s_syms) for e in body]
 
     parts = []
