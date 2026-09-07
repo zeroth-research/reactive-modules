@@ -4,12 +4,14 @@ Here we discharge the *ranking* obligation: given integer NRF layers
 V, that `V(s) >= 0` and `V(s) - V(s') >= delta` for every state s in the loop
 domain, where s' = T(s) is the module's transition.
 
-The composed system
-===================
-The obligation is read off the *composed* system. :func:`build_obligation`
-builds `program ⊕ V(s) ⊕ V(s')` as one ``Module.parallel``. V(s) is a sequential
-atom over the latched state; V(s') is a combinatorial atom awaiting the program's
-next state. V(s), V(s') and s' = T(s) are all wires of that single module.
+One module, a property over its wires
+====================================
+The program and V are composed into one module and read together: V once as a
+sequential atom reading the latched state (its wire carries V(s)) and once as a
+combinatorial atom awaiting the next state (V(s')). The property is
+``Fixpoint(over=<the program's columns>)`` and the rule is
+``decrease(V(s) wire, V(s') wire, δ)`` — a linear predicate over two wires of the
+graph. Nothing distinguishes program from rank except what the property names.
 
 Interface
 =========
@@ -33,8 +35,7 @@ import z3
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench, INT, pair  # noqa: F401
 from ._domain import guard_from_transition
-from ._farkas import (System, certify_decrease, entry_predicate, read_system,
-                      reading)
+from ._farkas import System, certify, decrease, read_system, reading
 from ._property import Fixpoint
 from zrth import LIA, Module, sugar
 from zrth.sugar import expr, nxt, relu
@@ -46,7 +47,7 @@ from zrth.sugar import expr, nxt, relu
 
 @dataclass
 class Obligation:
-    """The ranking obligation over the (composed) system, as Z3 terms.
+    """The ranking obligation over the program module, as Z3 terms.
 
     ``s_syms``/``sp_syms``: pre- and next-state (the transition). ``V_s``/``V_sp``:
     V evaluated on each. ``guard``: the bare loop guard over ``s_syms``.
@@ -56,12 +57,8 @@ class Obligation:
 
     ``net`` is V as the cell verifier reads it off V's module; ``layers`` (the
     integer NRF the trainer produced) is kept for the trainer's record only. An
-    SMT verifier uses ``V_s``/``V_sp`` directly. ``system`` is the composed module
-    as read, which the guard, the invariants and the entry state come from.
-
-    ``init``: the loop-entry predicate over ``s_syms`` (the init block's state
-    relations conjoined with the precondition), the premise of the emitted
-    ``initiation`` lemma. ``None`` when the init block cannot be evaluated."""
+    SMT verifier uses ``V_s``/``V_sp`` directly. ``system`` is what the decision
+    procedure and the proof read; the entry state is theirs to read off it."""
     state: tuple[str, ...]
     s_syms: list
     sp_syms: list
@@ -72,16 +69,16 @@ class Obligation:
     invariants: tuple = ()
     layers: object = None
     net: object = None
-    system: object = None    # program ⊕ V(s) ⊕ V(s'), as it was read
+    system: object = None    # program ⊕ V(s) ⊕ V(s'), as the verifier reads it
     prop: object = None      # Fixpoint over the program's columns
-    init: object = None
+    rule: object = None      # decrease(V(s) wire, V(s') wire, delta)
 
 
 @dataclass
 class VerifyResult:
     verified: bool
     counterexample: np.ndarray | None = None   # domain state where V fails (for CEGAR)
-    certificate: object | None = None           # e.g. Farkas cert (future backends)
+    certificate: object | None = None           # the FarkasResult, when certified
     status: str = ""                             # VERIFIED / FAILED(...) / UNKNOWN
 
 
@@ -115,11 +112,11 @@ def _xs(extl):
 def _v_module(state_pairs, layers, *, read_next: bool):
     """A one-output module computing V over the program's state wires.
 
-    ``read_next=False`` -> V(s): reads the *latched* state, so it is a **sequential**
-    atom (init awaits the next state, since a sequential atom's init may not read a
-    latched wire; update reads the latched state).
-    ``read_next=True``  -> V(s'): only ever awaits the program's *next* state, so it
-    is a **combinatorial** atom (a single ``assign`` block, no init)."""
+    ``read_next=False`` -> V(s): a **sequential** atom reading the *latched* state
+    (its init awaits the next state, since a sequential atom's init may not read a
+    latched wire). ``read_next=True`` -> V(s'): a **combinatorial** atom awaiting
+    the program's *next* state. Both compute the same function; composed with the
+    program they are two wires the rule can name — V at each end of a step."""
     out = pair()
     if read_next:
         class _V(sugar.Module):
@@ -137,7 +134,7 @@ def _v_module(state_pairs, layers, *, read_next: bool):
 
 
 # ---------------------------------------------------------------------------
-# Building the obligation (the composition seam)
+# Building the obligation (the seam onto the decision procedure)
 # ---------------------------------------------------------------------------
 
 def system_of(bench: Bench) -> System:
@@ -152,14 +149,11 @@ def system_of(bench: Bench) -> System:
 
 def build_obligation(bench: Bench, layers, delta: float, invariants=None,
                      system=None) -> Obligation:
-    """Compose program ⊕ V(s) ⊕ V(s') into ONE reactive module and read the
-    ranking obligation off it.
+    """The ranking obligation, read off the program module and V's.
 
-    The program, the ranking value at the current state V(s), and the value at
-    the successor V(s') are three atoms of a single ``Module.parallel`` module,
-    which :func:`._farkas.read_system` walks once. The columns are the latched
-    wires some update reads, which are the program's; V's two wires are read as
-    functions of them by :func:`._farkas.reading`.
+    The program is composed with two V modules — one reading the latched state,
+    one awaiting the next — and read as one system. The columns are the latched
+    wires some term reads (the program's); V's two wires are named by the rule.
 
     ``invariants`` (from :func:`._invariants.infer_invariants`) are inductive
     loop facts conjoined with the guard to shrink the verification domain to the
@@ -173,14 +167,15 @@ def build_obligation(bench: Bench, layers, delta: float, invariants=None,
         read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names),
         assume=system.assume, invariants=inv_preds)
     z = composed.view.values
+    prop = Fixpoint(over=composed.pairs)
+    rule = decrease(vs[1], vsp[1], delta)
     return Obligation(composed.names, list(composed.s_syms), composed.sp_syms,
                       z[vs[1]][0], z[vsp[1]][0], float(delta),
                       guard_from_transition(composed.s_map, composed.sp_map,
                                             composed.names),
                       invariants=inv_preds, layers=layers,
                       net=reading(composed, vs[1]).net, system=composed,
-                      prop=Fixpoint(over=composed.pairs),
-                      init=entry_predicate(composed))
+                      prop=prop, rule=rule)
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +221,5 @@ def farkas_cell(ob: Obligation) -> VerifyResult:
     out_c, out_k = ob.net.out
     if not (all(c >= 0 for c in out_c) and out_k >= 0):
         return VerifyResult(False, status="FAILED(V>=0 not structural)")
-    r = certify_decrease(ob.system, ob.prop, ob.net, ob.delta)
-    return VerifyResult(r.verified, r.counterexample,
-                        certificate=r.certificates, status=r.status)
+    r = certify(ob.system, ob.prop, ob.rule)
+    return VerifyResult(r.verified, r.counterexample, certificate=r, status=r.status)

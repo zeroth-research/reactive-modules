@@ -29,7 +29,8 @@ from zrth import LIA, Module, Sort, Wire, sugar
 from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
 from zrth.sugar import ite as dsl_ite
-from benchmarks.svcomp._farkas import certify_decrease, read_system
+from benchmarks.svcomp._farkas import (certify, check_kinds, check_supported,
+                                      decrease, read_system, rule_for)
 from benchmarks.svcomp._property import Fixpoint
 from benchmarks.svcomp._nodes import Node, Unsupported, node_view
 from benchmarks.svcomp._farkas import (
@@ -59,10 +60,13 @@ def _decrement(layers, delta=1.0, step=1):
     return _obligation(("x",), lambda v: dsl_ite(v > 0, v - step, v), layers, delta=delta)
 
 
-def _certify(ob, prop=None):
-    """``ob``'s system under ``prop``, defaulting to the obligation's own
-    termination property."""
-    return certify_decrease(ob.system, prop or ob.prop, ob.net, ob.delta)
+def _certify(ob, prop=None, rule=None):
+    """``ob``'s system under ``prop`` (default: the obligation's termination
+    property) by ``rule`` (default: the obligation's decrease rule for termination,
+    else the procedure's own pick)."""
+    if rule is None and prop is None:
+        rule = ob.rule
+    return certify(ob.system, prop or ob.prop, rule)
 
 
 # --- affine_coeffs: exact on affine input, rejects everything else ----------
@@ -231,6 +235,15 @@ def _prog(update, *, extl=()):
     return Program(theory=LIA, ctrl=(pair,), extl=extl), pair
 
 
+def test_a_node_kind_without_a_cell_rule_is_refused():
+    """A kind the procedure cannot pin is named, rather than the module being
+    reasoned over with whatever happens to be understood. Defensive today: every
+    such kind also lacks a Z3 translation, so the walk refuses it first (see
+    below) — this is what catches a kind declared before its rule."""
+    with pytest.raises(Unsupported, match="min"):
+        check_kinds((Node("min", z3.Int("_nx"), (z3.Int("x"),)),))
+
+
 def test_an_untranslatable_itype_is_refused():
     """An op the theory has but Z3 cannot read is refused by name in the walk,
     rather than surfacing as a backend error from underneath it."""
@@ -259,6 +272,38 @@ def test_a_vector_wire_is_refused():
         read_system(Program(theory=LIA, ctrl=(pair,)), ("v",))
 
 
+def test_a_nondeterministic_transition_is_refused():
+    """A next value reading an awaited input is nondeterminism, which this procedure
+    has no rule for — so it says so, naming the input."""
+    prog, _ = _prog(lambda c, e: c + e, extl=((Wire(INT), Wire(INT)),))
+    system = read_system(prog, ("x",))
+    with pytest.raises(Unsupported, match="_in0"):
+        check_supported(system, Fixpoint(over=system.pairs))
+
+
+def test_a_supported_module_passes_the_door():
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    ob = _decrement(layers)
+    check_supported(ob.system, ob.prop, ob.rule)               # does not raise
+
+
+def test_a_property_without_a_rule_is_refused():
+    """The property says what to prove and the rule how, so a property with
+    nothing to guess a witness from asks for one, and one this procedure has no
+    rule for at all is refused by name."""
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    ob = _decrement(layers)
+    with pytest.raises(Unsupported, match="needs a rank"):
+        rule_for(ob.prop, ob.system)              # nothing to guess a rank from
+
+    class Liveness:            # a property this procedure has no rule for
+        def domain(self, system):
+            return z3.BoolVal(True)
+
+    with pytest.raises(Unsupported, match="no rule for property"):
+        rule_for(Liveness(), ob.system)
+
+
 def test_the_property_owns_the_domain():
     """The engine asks the property which steps the obligation must hold on, so a
     different domain is a property change rather than an engine change."""
@@ -269,11 +314,22 @@ def test_the_property_owns_the_domain():
         def domain(self, system):
             return z3.BoolVal(False)
 
-    empty = _certify(ob, NoSteps(over=ob.prop.over))
+    empty = _certify(ob, NoSteps(over=ob.prop.over), ob.rule)
     assert not empty.verified and "no step" in empty.status, empty.status
     # and the real property does find steps on the same obligation
-    full = _certify(ob, ob.prop)
+    full = _certify(ob, ob.prop, ob.rule)
     assert full.verified, full.status
+
+
+def test_the_rule_owns_the_goal():
+    """The obligation reaches the LP as the rule's negated row, so tightening the
+    margin is a rule change and is rejected for the same net."""
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    ob = _decrement(layers)
+    v_s, v_sp = ob.rule.ranks[0]
+    assert _certify(ob, rule=decrease(v_s, v_sp, 1.0)).verified
+    hard = _certify(ob, rule=decrease(v_s, v_sp, 2.0))
+    assert not hard.verified, "x decreases by 1, so a margin of 2 cannot hold"
 
 
 def test_conditional_loop_certifies():
@@ -321,7 +377,7 @@ def test_cells_partition_the_domain():
     ob = _decrement(layers)
     res = farkas_cell(ob)
     assert res.verified, res.status
-    for path in res.certificate:
+    for path in res.certificate.certificates:
         regions = []
         for c in path.cells:
             lits = list(strict_signs(_pre_activations(Net.from_layers(layers), list(path.body)),
@@ -368,10 +424,11 @@ def test_mixed_output_weights_and_bias_are_carried():
     (W1, b1), (W2, b2) = layers
     res = farkas_cell(_decrement(layers))
     assert res.verified, res.status
-    for c in (c for p in res.certificate for c in p.cells):
-        # z_j(s) = W1[j]·x + b1[j];  z_j(s') is the same at x - 1
-        for pattern, affine, shift in ((c.mu, c.pre_affine, 0),
-                                       (c.pattern_sp, c.post_affine, -1)):
+    for c in (c for p in res.certificate.certificates for c in p.cells):
+        # z_j(s) = W1[j]·x + b1[j];  z_j(s') is the same at x - 1; the devices are
+        # V(s) (bounded, the mask's floor) then V(s') (pinned, the pattern's piece)
+        for pattern, affine, shift in ((c.mu, c.affines[0], 0),
+                                       (c.pattern_sp, c.affines[1], -1)):
             kept = [j for j, on in enumerate(pattern) if on]
             coeff = sum(int(W2[0][j]) * int(W1[j][0]) for j in kept)
             const = int(b2[0]) + sum(int(W2[0][j]) * (int(b1[j]) + shift)
@@ -381,11 +438,13 @@ def test_mixed_output_weights_and_bias_are_carried():
 
 def test_margin_the_rank_cannot_meet_is_rejected():
     """``relu(x)`` drops by 1 at ``x = 1``, so a margin of 2 is a real
-    counterexample and has to be reported as one."""
+    counterexample and has to be reported as one. Two checks can catch it — the
+    witness-level one in ``_certify_path`` and the region-wide prune in
+    ``_certify_cell`` — and the guarantee holds as long as either does."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     res = farkas_cell(_decrement(layers, delta=2.0, step=2))
     assert not res.verified
-    assert res.status == "FAILED(decrease)"
+    assert res.status == "FAILED(violated)"
 
 
 def test_certificates_are_valid():
@@ -395,7 +454,7 @@ def test_certificates_are_valid():
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     res = farkas_cell(_decrement(layers))
     assert res.verified, res.status
-    cells = [c for p in res.certificate for c in p.cells]
+    cells = [c for p in res.certificate.certificates for c in p.cells]
     assert cells
     for c in cells:
         n = len(c.A[0])

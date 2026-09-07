@@ -1,37 +1,38 @@
-"""Emit a kernel-checkable Lean termination proof from Farkas certificates.
+"""Emit a kernel-checkable Lean proof from a decision procedure's certificates.
 
-Consumes the :class:`._farkas.CellCert` set a ``farkas_cell`` run captures (plus
-the :class:`._verify_ranking.Obligation` it was run on) and writes ONE Lean file
-proving the program terminates, against the vendored ``lean/`` substrate
-(``Coverage``/``Net``/``Termination``). The file contains:
+Consumes the :class:`._farkas.FarkasResult` a ``certify`` run returns (plus the
+:class:`._farkas.System` it was run on) and writes ONE Lean file
+against the vendored ``lean/`` substrate (``Coverage``/``Net``/``Termination``).
+The file follows the rule's shape, whatever the property:
 
-  * the integer ranking network ``V`` and its structural ``V_nonneg``;
-  * per cell: the Farkas system ``A``/``b``/``y``, the three side-condition
-    goals, the ``farkas_sound`` infeasibility, and the scalar ``decrease``
-    entailment (via the substrate's ``decrease_bridge`` tactic);
-  * ``trans``/``invariants`` (the loop guard, and the Houdini invariants), the
-    per-cell sign regions, and ``covered`` (the cells tile the guard — the CEGAR
-    coverage guarantee, discharged by ``omega``);
-  * the two V lemmas a step needs — ``pre_lb`` (a mask under-approximates ``V(s)``,
-    no hypothesis) and ``post_c0`` (``V(s')`` equals its affine piece on the cell's
-    successor pattern) — and, from them, ``lex_step`` (``V`` strictly drops on
-    every guarded step);
-  * ``initiation`` and per-path ``consecution``, proving the invariants inductive;
-  * ``program_terminates`` — from any loop-entry (``Init``) state there is no
-    infinite run of guarded steps — via ``no_infinite_run_lex``.
-
-Scope: scalar (single-component) ranking function, single loop with a single
-hidden layer. In-loop branching is handled by *path-splitting*: the body's nested
-``ite``s are expanded into affine paths (:func:`._farkas.expand_cases`), one
-namespace each, and ``Step`` is the union of the per-path relations."""
+  * every network a named wire is read through, once, with its structural
+    non-negativity ``V_j_nonneg``;
+  * per affine path (in-loop branching is *path-split*: the body's nested
+    ``ite``s are expanded into affine paths by :func:`._farkas.expand_cases`, one
+    namespace each): ``trans`` and ``post_state``; the regions — one per pinned
+    pattern, partitioning the guard — and ``covered``, the CEGAR coverage
+    guarantee, by ``omega`` over a sign-literal decision tree; per device its
+    pre-activations, then a mask lower bound where a bound suffices or an exact
+    collapse per region where it is pinned; per region and per disjunct of the
+    rule's negation the Farkas system ``A``/``b``/``y``, its ``farkas_sound``
+    infeasibility and the ``refute`` lemma (via the substrate's
+    ``refute_bridge``); the rule's formula ``ok`` and ``step_ok``, which puts the
+    bounds, collapses and refutations together by ``omega``; and
+    ``Step``/``RawStep``/``consecution``;
+  * the whole-program composition: ``no_infinite_run_lex`` over the rank, fed
+    each path's ``lex_step``, with ``initiation`` and per-path ``consecution``
+    carrying the invariant along any run.
+"""
 from __future__ import annotations
+
+import dataclasses
 
 from pathlib import Path
 
-import numpy as np
 import z3
 
-from ._farkas import CellCert, _find_ite_cond, _flatten_and, affine_coeffs
+from ._farkas import (CellCert, _find_ite_cond, _flatten_and, affine_coeffs,
+                      entry_predicate)
 
 
 def _contains_ite(e) -> bool:
@@ -80,17 +81,27 @@ def _mat_def(name: str, A, render) -> str:
 # Affine expressions and rows (omega-friendly plain integers)
 # ---------------------------------------------------------------------------
 
-def _affine_str(coeffs, const: int, var: str = "s") -> str:
-    """``Σ cⱼ·(var j) + const`` over the nonzero coefficients (``const`` if none)."""
-    terms = [f"({int(c)} * {var} {_fin(j)})" for j, c in enumerate(coeffs) if c]
-    if not terms:
+def _affine_terms(coeffs, const: int, terms) -> str:
+    """``Σ cⱼ·termsⱼ + const`` over the nonzero coefficients (``const`` if none);
+    ``terms[j]`` is the Lean term the ``j``-th symbol stands for."""
+    parts = [f"({int(c)} * {t})" for c, t in zip(coeffs, terms) if c]
+    if not parts:
         return f"{int(const)}"
-    expr = terms[0]
-    for t in terms[1:]:
+    expr = parts[0]
+    for t in parts[1:]:
         expr = f"({expr} + {t})"
     if const:
         expr = f"({expr} + {int(const)})"
     return expr
+
+
+def _state_terms(n: int, var: str = "s") -> list:
+    return [f"{var} {_fin(j)}" for j in range(n)]
+
+
+def _affine_str(coeffs, const: int, var: str = "s") -> str:
+    """``Σ cⱼ·(var j) + const`` over the nonzero coefficients (``const`` if none)."""
+    return _affine_terms(coeffs, const, _state_terms(len(coeffs), var))
 
 
 def _affine_z3(coeffs, const: int, syms):
@@ -111,30 +122,35 @@ class _Drop(Exception):
     dropping a conjunct only weakens ``trans``, an over-approximation)."""
 
 
-def _z3_prop(a, syms) -> str:
-    """Render a z3 boolean expression to a Lean ``Prop`` over ``s`` (integer
-    columns ``syms``). Handles ∧ / ∨ / ¬ / linear comparisons; raises
-    :class:`_Drop` on anything non-linear."""
+def _z3_prop(a, syms, terms=None) -> str:
+    """Render a z3 boolean expression to a Lean ``Prop`` over the integer symbols
+    ``syms`` — the state columns by default, or ``terms[j]`` for each symbol when
+    some stand for other Lean terms. Handles ∧ / ∨ / ¬ / → / linear comparisons;
+    raises :class:`_Drop` on anything non-linear."""
+    if z3.is_true(a):
+        return "True"
+    if z3.is_false(a):
+        return "False"
     if z3.is_and(a):
-        return "(" + " ∧ ".join(_z3_prop(c, syms) for c in a.children()) + ")"
+        return "(" + " ∧ ".join(_z3_prop(c, syms, terms) for c in a.children()) + ")"
     if z3.is_or(a):
-        return "(" + " ∨ ".join(_z3_prop(c, syms) for c in a.children()) + ")"
+        return "(" + " ∨ ".join(_z3_prop(c, syms, terms) for c in a.children()) + ")"
     if z3.is_not(a):
         inner = a.arg(0)
         if z3.is_app(inner) and inner.decl().kind() == z3.Z3_OP_EQ:
-            return f"({_cmp_prop(inner, syms, op='≠')})"
-        return f"(¬ {_z3_prop(inner, syms)})"
+            return f"({_cmp_prop(inner, syms, '≠', terms)})"
+        return f"(¬ {_z3_prop(inner, syms, terms)})"
     if z3.is_app(a) and a.decl().kind() == z3.Z3_OP_IMPLIES:
-        return (f"({_z3_prop(z3.Not(a.arg(0)), syms)} ∨ "   # omega case-splits it
-                f"{_z3_prop(a.arg(1), syms)})")
+        return (f"({_z3_prop(z3.Not(a.arg(0)), syms, terms)} ∨ "   # omega case-splits it
+                f"{_z3_prop(a.arg(1), syms, terms)})")
     if z3.is_app(a) and a.decl().kind() in _CMP:
-        return _cmp_prop(a, syms)
+        return _cmp_prop(a, syms, None, terms)
     if z3.is_app(a) and a.decl().kind() == z3.Z3_OP_DISTINCT:
-        return _cmp_prop(a, syms, op="≠")
+        return _cmp_prop(a, syms, "≠", terms)
     raise _Drop(str(a))
 
 
-def _cmp_prop(a, syms, op: str | None = None) -> str:
+def _cmp_prop(a, syms, op: str | None = None, terms=None) -> str:
     """A comparison ``lhs ⋈ rhs`` as ``(<lhs-rhs> ⋈ 0)`` (linear, omega-ready)."""
     if op is None:
         op = _CMP[a.decl().kind()]
@@ -142,7 +158,8 @@ def _cmp_prop(a, syms, op: str | None = None) -> str:
         coeffs, const = affine_coeffs(a.arg(0) - a.arg(1), syms)
     except ValueError:
         raise _Drop(str(a))
-    return f"({_affine_str(coeffs, const)} {op} 0)"
+    terms = terms if terms is not None else _state_terms(len(syms))
+    return f"({_affine_terms(coeffs, const, terms)} {op} 0)"
 
 
 def _expand_ites(pred):
@@ -196,12 +213,12 @@ def _pattern_literals(pattern, units):
     return [(c, k, a) for (c, k), a in zip(units, pattern) if a is not None]
 
 
-def _cell_literals(cert: CellCert, pre_units, post_units):
-    """The full region of one cell: its successor pattern, plus the pre-state
+def _cell_literals(cert: CellCert, pinned_units, bounded_units):
+    """The full region of one cell: its pinned pattern, plus the bounded-group
     literals a narrowed cell pinned."""
-    lits = _pattern_literals(cert.pattern_sp, post_units)
+    lits = _pattern_literals(cert.pattern_sp, pinned_units)
     if cert.pattern_s is not None:
-        lits += _pattern_literals(cert.pattern_s, pre_units)
+        lits += _pattern_literals(cert.pattern_s, bounded_units)
     return lits
 
 
@@ -216,17 +233,17 @@ def _lit_z3(lit, syms):
     return (e > 0) if active else (e <= 0)
 
 
-def _neg_decrease(cert: CellCert):
-    for a, b, lbl in zip(cert.A, cert.b, cert.labels):
-        if lbl == "neg_decrease":
-            return a, b
-    raise ValueError("certificate has no neg_decrease row")
+def _rule_rows(cert: CellCert):
+    """The disjunct's own rows ``(coeffs, const)`` — ``coeffs·s ≤ const`` — as the
+    LP saw them, without their gcd-tightened variants (``omega`` re-derives those)."""
+    return [(a, b) for a, b, lbl in zip(cert.A, cert.b, cert.labels)
+            if lbl.startswith("rule[") and not lbl.endswith("/int")]
 
 
 def _trivial(cert: CellCert) -> bool:
     """The support reduces to a constant infeasibility ``0·s ≤ c`` (c < 0): the
-    decrease holds *unconditionally* on this cell, so it needs no Farkas
-    certificate — ``omega`` closes ``(c+1) ≤ 0`` directly."""
+    disjunct is false on its own, so it needs no Farkas certificate — ``omega``
+    refutes it directly."""
     A, *_ = _support(cert)
     return all(all(x == 0 for x in row) for row in A)
 
@@ -254,141 +271,151 @@ def _emit_system(prefix: str, A, b, y, labels) -> str:
     ])
 
 
+def _emit_cell(idx: str, cert: CellCert) -> str:
+    pre = "" if cert.pattern_s is None else f" pattern_s={list(cert.pattern_s)}"
+    manifest = (f"-- cell {idx}: pattern={list(cert.pattern_sp)} "
+                f"mu={list(cert.mu)}{pre}")
+    if _trivial(cert):
+        return manifest + f"\n-- cell {idx}: constant infeasibility (no Farkas system)"
+    A, b, y, labels = _support(cert)
+    return manifest + "\n\n" + _emit_system(f"cell{idx}", A, b, y, labels)
+
+
 # ---------------------------------------------------------------------------
-# The ranking network V (the integer net the V-lift reasons about)
+# The networks the named wires are read through
 # ---------------------------------------------------------------------------
 
-# `simp only` set for the collapse / bounded-below proofs: structural unfoldings,
-# the `Fin` expanders, the network defs, the ReLU `ite` reduction, and the
-# cast/base reducers that turn `sum`'s base and casts into literals so `omega`
-# sees them. Network-independent; the caller appends per-cell pattern/slice defs.
-_SIMP = (
-    "affine, addᵥ, mulVec_apply, sum, mask, Function.comp, "
-    "forall_fin_succ, forall_fin_zero, ↓reduceIte, "
-    "nrf_W0, nrf_b0, nrf_W1, nrf_b1, "
-    "Nat.zero_eq, Int.ofNat_eq_natCast, Int.cast_ofNat_Int, Int.reduceNeg, "
-    "Int.reduceLE, Int.neg_ofNat_le_ofNat, Int.add_zero, Int.zero_add, "
-    "Int.mul_one, Int.mul_zero, Int.zero_mul, Int.mul_neg_one, Int.neg_nonneg, "
-    "Int.neg_le_zero_iff, Int.zero_le_ofNat, Std.le_refl, and_true, true_and, "
-    "and_self, forall_const, imp_self, implies_true, "
-    "Bool.true_eq_false, Bool.false_eq_true, false_implies"
-)
+def _dev(tag: str) -> str:
+    """Name suffix for the ``tag``-th network."""
+    return f"_{tag}"
 
 
-def _int_grid(W):
-    return tuple(tuple(int(round(float(x))) for x in row) for row in np.asarray(W))
+def _simp(tags=("0",)) -> str:
+    """The `simp only` set for the collapse / bounded-below proofs: structural
+    unfoldings, the `Fin` expanders, every named network's defs, the ReLU `ite`
+    reduction, and the cast/base reducers that turn `sum`'s base and casts into
+    literals so `omega` sees them. The caller appends per-cell pattern defs."""
+    nets = ", ".join(f"nrf{_dev(g)}_W0, nrf{_dev(g)}_b0, nrf{_dev(g)}_W1, nrf{_dev(g)}_b1"
+                     for g in tags)
+    return (
+        "affine, addᵥ, mulVec_apply, sum, mask, Function.comp, "
+        "forall_fin_succ, forall_fin_zero, ↓reduceIte, "
+        f"{nets}, "
+        "Nat.zero_eq, Int.ofNat_eq_natCast, Int.cast_ofNat_Int, Int.reduceNeg, "
+        "Int.reduceLE, Int.neg_ofNat_le_ofNat, Int.add_zero, Int.zero_add, "
+        "Int.mul_one, Int.mul_zero, Int.zero_mul, Int.mul_neg_one, Int.neg_nonneg, "
+        "Int.neg_le_zero_iff, Int.zero_le_ofNat, Std.le_refl, and_true, true_and, "
+        "and_self, forall_const, imp_self, implies_true, "
+        "Bool.true_eq_false, Bool.false_eq_true, false_implies"
+    )
 
 
-def _int_vec(b):
-    return tuple(int(round(float(x))) for x in np.asarray(b))
+def _net_arrays(net):
+    """``(W0, b0, W1, b1)`` as integer grids/vectors, read off a :class:`Net`: one
+    hidden row per unit, one output row."""
+    W0 = tuple(tuple(int(c) for c in coeffs) for coeffs, _ in net.units)
+    b0 = tuple(int(k) for _, k in net.units)
+    W1 = (tuple(int(c) for c in net.out[0]),)
+    b1 = (int(net.out[1]),)
+    return W0, b0, W1, b1
 
 
-def _emit_network(layers) -> str:
-    (W0, b0), (W1, b1) = layers
-    n_in, n_out = _int_grid(W0)[0].__len__(), len(_int_vec(b1))
+def _emit_network(net, tag: str) -> str:
+    W0, b0, W1, b1 = _net_arrays(net)
+    n_in, n_out = len(W0[0]), len(b1)
+    d = _dev(tag)
     blocks = [
-        _mat_def("nrf_W0", _int_grid(W0), str),
-        _vec_def("nrf_b0", _int_vec(b0), str),
-        _mat_def("nrf_W1", _int_grid(W1), str),
-        _vec_def("nrf_b1", _int_vec(b1), str),
-        f"def V (s : Vector {n_in} Int) : Vector {n_out} Int :=\n"
-        f"  (affine nrf_W1 nrf_b1 (reluᵥ (affine nrf_W0 nrf_b0 s)))",
+        _mat_def(f"nrf{d}_W0", W0, str),
+        _vec_def(f"nrf{d}_b0", b0, str),
+        _mat_def(f"nrf{d}_W1", W1, str),
+        _vec_def(f"nrf{d}_b1", b1, str),
+        f"def V{d} (s : Vector {n_in} Int) : Vector {n_out} Int :=\n"
+        f"  (affine nrf{d}_W1 nrf{d}_b1 (reluᵥ (affine nrf{d}_W0 nrf{d}_b0 s)))",
     ]
     return "\n\n".join(blocks)
 
 
-def _emit_out_apply(layers) -> str:
-    """The output layer applied to an arbitrary vector, reduced once per program.
+def _emit_out_apply(net, tag: str) -> str:
+    """The output layer applied to an arbitrary vector, reduced once per network.
 
-    ``pre_lb``'s ``heq`` and ``post_c0``'s tail both reduce
+    Every bound's ``heq`` and every collapse's tail reduce
     ``affine nrf_W1 nrf_b1 (mask _ _) fzero``, and that matrix product expands the
     same way every time — only the mask differs. Rewriting by this leaves each site
     with the mask reduction alone."""
-    _, (W1, b1) = layers
-    c, k = _int_grid(W1)[0], _int_vec(b1)[0]
-    return (f"theorem out_apply (v : Vector {len(c)} Int) :\n"
-            f"    affine nrf_W1 nrf_b1 v fzero = {_affine_str(c, k, 'v')} := by\n"
-            f"  simp only [{_SIMP}] <;> omega")
+    _, _, W1, b1 = _net_arrays(net)
+    c, k = W1[0], b1[0]
+    d = _dev(tag)
+    return (f"theorem out_apply{d} (v : Vector {len(c)} Int) :\n"
+            f"    affine nrf{d}_W1 nrf{d}_b1 v fzero = {_affine_str(c, k, 'v')} := by\n"
+            f"  simp only [{_simp((tag,))}] <;> omega")
 
 
-def _emit_out_nonneg() -> str:
-    """The output layer's non-negativity, proved once per program.
-
-    ``affine_mask_le`` and ``affine_nonneg`` both take these as side goals, and
-    neither depends on a cell or a mask — they are facts about ``nrf_W1``/``nrf_b1``
-    alone. Proving them inline made every ``pre_lb`` and ``V_nonneg`` re-run the
-    same full-set ``simp``."""
+def _emit_out_nonneg(tag: str) -> str:
+    """The output layer's non-negativity, proved once per network: the side goals
+    of ``affine_mask_le`` and ``affine_nonneg``, facts about ``nrf_W1``/``nrf_b1``
+    alone."""
+    d = _dev(tag)
     return "\n\n".join([
-        f"theorem nrf_W1_nonneg : ∀ i j, 0 ≤ nrf_W1 i j := by\n"
-        f"  simp only [{_SIMP}]",
-        f"theorem nrf_b1_nonneg : ∀ i, 0 ≤ nrf_b1 i := by\n"
-        f"  simp only [{_SIMP}]",
+        f"theorem nrf{d}_W1_nonneg : ∀ i j, 0 ≤ nrf{d}_W1 i j := by\n"
+        f"  simp only [{_simp((tag,))}]",
+        f"theorem nrf{d}_b1_nonneg : ∀ i, 0 ≤ nrf{d}_b1 i := by\n"
+        f"  simp only [{_simp((tag,))}]",
     ])
 
 
-def _emit_nonneg(layers) -> str:
-    (W0, _), (W1, b1) = layers
-    n_in, n_out = _int_grid(W0)[0].__len__(), len(_int_vec(b1))
+def _emit_nonneg(net, tag: str) -> str:
+    W0, _, _, b1 = _net_arrays(net)
+    n_in, n_out = len(W0[0]), len(b1)
+    d = _dev(tag)
     return (
-        f"theorem V_nonneg (s : Vector {n_in} Int) (j : Fin {n_out}) : 0 ≤ V s j := by\n"
-        f"  simp only [V]\n"
-        f"  exact affine_nonneg nrf_W1 nrf_b1 _\n"
-        f"    nrf_W1_nonneg nrf_b1_nonneg\n"
+        f"theorem V{d}_nonneg (s : Vector {n_in} Int) (j : Fin {n_out}) : 0 ≤ V{d} s j := by\n"
+        f"  simp only [V{d}]\n"
+        f"  exact affine_nonneg nrf{d}_W1 nrf{d}_b1 _\n"
+        f"    nrf{d}_W1_nonneg nrf{d}_b1_nonneg\n"
         f"    (fun k => reluᵥ_nonneg _ k) j"
     )
 
 
 # ---------------------------------------------------------------------------
-# Per-path proof (single affine path): predicates, decrease, coverage, collapse
+# Regions, their signs and the coverage of a path
 # ---------------------------------------------------------------------------
 
-
-def _decrease_goal(cert: CellCert) -> str:
-    """``(b_nd + 1) ≤ Σ aⱼ·sⱼ`` — the negation of the ``neg_decrease`` row
-    ``Σ aⱼ·sⱼ ≤ b_nd``; over the integers this is the strict decrease."""
-    a, b = _neg_decrease(cert)
-    return f"({int(b) + 1} ≤ {_affine_str(a, 0)})"
-
-
-def _emit_cell(idx: int, cert: CellCert) -> str:
-    pre = "" if cert.pattern_s is None else f" pattern_s={list(cert.pattern_s)}"
-    manifest = (f"-- cell {idx}: pattern_sp={list(cert.pattern_sp)} "
-                f"mu={list(cert.mu)}{pre}")
-    if _trivial(cert):
-        return manifest + f"\n-- cell {idx}: unconditional decrease (no Farkas system)"
-    A, b, y, labels = _support(cert)
-    return manifest + "\n\n" + _emit_system(f"cell{idx}", A, b, y, labels)
-
-
-def _patterns(certs):
-    """Index a path's distinct masks and activation patterns, and map each cell to
-    the indices it uses.
-
-    Cells sharing a mask share one ``pre_lb`` lemma, and cells sharing a successor
-    pattern share one ``post_c0``, so each is emitted once and named by its index.
-
-    Returns ``(mus, posts, pres, of_cell)``. ``mus`` and ``posts`` map a pattern to
-    ``(index, affine)`` — the affine form its lemma states; ``pres`` maps to an
-    index alone, a pre-state pattern yielding only a sign definition.
-    ``of_cell[k]`` is ``(mu_idx, post_idx, pre_idx | None)``."""
-    mus, posts, pres, of_cell = {}, {}, {}, []
+def _regions(certs):
+    """Group a path's certificates into regions — the cells sharing a pinned
+    pattern, mask and narrowing — each with its disjuncts in order. A certified
+    region carries one certificate per disjunct of the rule's negation."""
+    regions, index = [], {}
     for c in certs:
-        mu, q = tuple(c.mu), tuple(c.pattern_sp)
-        mus.setdefault(mu, (len(mus), c.pre_affine))
-        posts.setdefault(q, (len(posts), c.post_affine))
+        key = (tuple(c.pattern_sp), tuple(c.mu),
+               None if c.pattern_s is None else tuple(c.pattern_s))
+        if key not in index:
+            index[key] = len(regions)
+            regions.append([])
+        regions[index[key]].append(c)
+    for cs in regions:
+        cs.sort(key=lambda c: c.disjunct)
+    return regions
+
+
+def _sign_index(reps):
+    """Index a path's distinct pinned patterns and narrowing literal sets, and map
+    each region to the indices it uses: ``of_region[r]`` is ``(pin, bnd | None)``.
+    Regions sharing a pattern share one sign definition, emitted once."""
+    pins, bnds, of_region = {}, {}, []
+    for c in reps:
+        q = tuple(c.pattern_sp)
+        pins.setdefault(q, len(pins))
         p = None if c.pattern_s is None else tuple(c.pattern_s)
         if p is not None:
-            pres.setdefault(p, len(pres))
-        of_cell.append((mus[mu][0], posts[q][0],
-                        None if p is None else pres[p]))
-    return mus, posts, pres, of_cell
+            bnds.setdefault(p, len(bnds))
+        of_region.append((pins[q], None if p is None else bnds[p]))
+    return pins, bnds, of_region
 
 
 def _emit_signs_def(name: str, pattern, units, n: int) -> str:
     """A pattern's region, one condition per hidden unit it pins: ``0 < e`` where
     the pattern says active, ``e ≤ 0`` where inactive, nothing where it leaves the
-    unit open (``None`` — a pre-state pattern only pins what the certificate
-    needed).
+    unit open (``None`` — a narrowing only pins what the certificate needed).
 
     The two forms are complementary, so the regions partition the state space and
     a state lies in exactly one. Written in the form :func:`_tiling_tree` splits
@@ -399,67 +426,42 @@ def _emit_signs_def(name: str, pattern, units, n: int) -> str:
 
 
 def _cell_sign_defs(pats: tuple) -> list[str]:
-    """The sign definitions ``cellK_signs`` is built from: the successor pattern
-    always, plus a pre-state pattern for a narrowed cell."""
-    _, post_i, pre_i = pats
-    names = [f"post_signs_{post_i}"]
-    if pre_i is not None:
-        names.append(f"pre_signs_{pre_i}")
+    """The sign definitions ``cellR_signs`` is built from: the pinned pattern
+    always, plus a bounded-group literal set for a narrowed region."""
+    pin_i, bnd_i = pats
+    names = [f"pin_signs_{pin_i}"]
+    if bnd_i is not None:
+        names.append(f"bnd_signs_{bnd_i}")
     return names
-
-
-def _emit_decrease(idx: int, cert: CellCert, n: int, pats: tuple) -> str:
-    """``cellK_signs s → trans s → invariants s → decrease`` via the substrate's
-    one-line ``decrease_bridge`` (it rebuilds the row system and feeds
-    ``cellK_infeasible``, closed by ``omega``). The full cell signs are always
-    taken as a hypothesis so every support row is available.
-
-    The decrease is stated on the *bound* — ``pre_affine - post_affine >= delta``
-    — which the mask lemma and the collapse lemma turn into the drop in ``V``."""
-    hyps = (f"(hg : trans s) (hinv : invariants s) (hs : cell{idx}_signs s)")
-    goal = _decrease_goal(cert)
-    if _trivial(cert):
-        # unconditional: goal is ``(c+1) ≤ 0`` with c < 0 — omega, no certificate.
-        return (f"theorem cell{idx}_decrease (s : Vector {n} Int)\n"
-                f"    {hyps} :\n    {goal} := by omega")
-    unfold = ", ".join(["trans", "invariants", f"cell{idx}_signs"]
-                       + _cell_sign_defs(pats)
-                       + [f"cell{idx}_A", f"cell{idx}_b"])
-    return (
-        f"theorem cell{idx}_decrease (s : Vector {n} Int)\n"
-        f"    {hyps} :\n"
-        f"    {goal} := by\n"
-        f"  decrease_bridge (cell{idx}_infeasible s) with {unfold}"
-    )
 
 
 def _tiling_tree(pcert, invariants, s_syms):
     """A decision tree over the hidden units' sign literals whose leaves each name
-    one certified cell.
+    one region.
 
-    Splitting on ``0 < unitⱼ`` in turn narrows which cells a branch can still be
+    Splitting on ``0 < unitⱼ`` in turn narrows which regions a branch can still be
     in, and a branch is finished as soon as the literals taken so far *entail* some
-    cell's sign rows — checked here, so the ``omega`` the leaf emits is known to
+    region's sign rows — checked here, so the ``omega`` the leaf emits is known to
     succeed. Entailment rather than a pattern match is the leaf test because a
-    branch can settle a cell before every literal is taken, and because the guard
-    may imply signs no literal has fixed.
+    branch can settle a region before every literal is taken, and because the
+    guard may imply signs no literal has fixed.
 
     z3 also prunes: a branch no guarded state satisfies becomes ``dead``, which
-    keeps the tree the size of the certificate set instead of ``2^units``.
+    keeps the tree the size of the region set instead of ``2^units``.
 
     Returns ``("split", lean_literal, yes, no)``, ``("cell", index)`` or
     ``("dead",)``; raises :class:`_Drop` if a live branch runs out of literals
-    without entailing any cell, which means the cells do not tile the guard."""
+    without entailing any region, which means the regions do not tile the guard."""
     # One literal per unit: ``0 < e`` and its negation ``e ≤ 0`` are exactly the two
-    # sides a pattern names, so a single split settles the unit. The successor units
-    # come first — they alone pin a cell unless it was narrowed.
+    # sides a pattern names, so a single split settles the unit. The pinned units
+    # come first — they alone pin a region unless it was narrowed.
     lits = []
-    for coeffs, const in list(pcert.post_units) + list(pcert.pre_units):
+    for coeffs, const in list(pcert.pinned_units) + list(pcert.bounded_units):
         lean, e = _affine_str(coeffs, const), _affine_z3(coeffs, const, s_syms)
         lits.append((f"0 < {lean}", e > 0))
     domain = [pcert.guard, *invariants]
     signs = [z3.And(*[_lit_z3(l, s_syms)
-                      for l in _cell_literals(c, pcert.pre_units, pcert.post_units)])
+                      for l in _cell_literals(c, pcert.pinned_units, pcert.bounded_units)])
              for c in pcert.cells]
 
     def unsat(*claims) -> bool:
@@ -481,7 +483,7 @@ def _tiling_tree(pcert, invariants, s_syms):
                 continue
             break
         if i == len(lits):
-            raise _Drop("cells do not tile the guard")
+            raise _Drop("regions do not tile the guard")
         lean_lit, z3_lit = lits[i]
         yes = build(i + 1, taken + [z3_lit], live)
         no = build(i + 1, taken + [z3.Not(z3_lit)], live)
@@ -492,78 +494,69 @@ def _tiling_tree(pcert, invariants, s_syms):
     return build(0, [], list(range(len(pcert.cells))))
 
 
-def _emit_covered(certs, n: int, tree, pat_of_cell) -> str:
-    """Every guarded state lies in a certified cell that decreases, from two
-    separate ingredients:
-
-      * **coverage** — ``omega`` proves the cells' sign regions tile the guard
-        (``guard ∧ inv → ⋁ᵢ cellᵢ_signs``), a linear fact over the sign rows;
-      * **decrease** — the covering cell's ``cellᵢ_decrease`` supplies the drop,
-        backed by its Farkas certificate ``cellᵢ_infeasible``.
-
-    Deleting a certificate therefore breaks this proof."""
-    hyps = "(hg : trans s) (hinv : invariants s)"
-    dec_args = "s hg hinv"
-    disj = "\n      ∨ ".join(
-        f"(cell{i}_signs s ∧ {_decrease_goal(c)})" for i, c in enumerate(certs))
-    ncerts = len(certs)
-    if ncerts == 1:
-        unfold = ", ".join(["trans", "invariants", "cell0_signs"]
-                           + _cell_sign_defs(pat_of_cell[0]))
-        body = (f"  have h : cell0_signs s := by\n"
-                f"    simp only [{unfold}] at *\n"
-                f"    omega\n"
-                f"  exact ⟨h, cell0_decrease {dec_args} h⟩")
-    else:
-        body = _emit_tiling_tree(certs, tree, dec_args, pat_of_cell)
-    return (
-        f"theorem covered (s : Vector {n} Int)\n"
-        f"    {hyps} :\n"
-        f"    {disj} := by\n"
-        f"{body}"
-    )
-
-
 def _disjunct(i: int, total: int) -> tuple[str, str]:
     """``Or`` injections wrapping the ``i``-th of ``total`` disjuncts."""
     return "Or.inr (" * i + ("Or.inl " if i < total - 1 else ""), ")" * i
 
 
-def _emit_tiling_tree(certs, tree, dec_args: str, pat_of_cell, depth: int = 1) -> str:
+def _emit_tiling_tree(reps, tree, of_region, depth: int = 1) -> str:
     """The coverage case split, as a decision tree over the hidden units' sign
     literals rather than one ``omega`` over the whole disjunction.
 
     ``omega`` decides a conjunctive goal in time linear in its facts, but the flat
-    tiling goal ``⋁ᵢ cellᵢ_signs`` negates into a clause per cell, and the case
-    split across those clauses grows exponentially in the number of cells — 12
-    cells already exhaust the elaborator's budget. Splitting on the sign literals
-    instead reaches, at each leaf, an assignment that names one cell, so every
-    ``omega`` sees a conjunction: the accumulated literals entailing that cell's
+    tiling goal ``⋁ᵢ cellᵢ_signs`` negates into a clause per region, and the case
+    split across those clauses grows exponentially in the number of regions — 12
+    already exhaust the elaborator's budget. Splitting on the sign literals
+    instead reaches, at each leaf, an assignment that names one region, so every
+    ``omega`` sees a conjunction: the accumulated literals entailing that region's
     sign rows. The tree is built with the guard in hand, so a branch no state can
     satisfy is closed rather than explored (see :func:`_tiling_tree`)."""
     pad = "  " * depth
     kind = tree[0]
     if kind == "cell":
         i = tree[1]
-        inj, close = _disjunct(i, len(certs))
-        halves = ", ".join(_cell_sign_defs(pat_of_cell[i]))
+        inj, close = _disjunct(i, len(reps))
+        halves = ", ".join(_cell_sign_defs(of_region[i]))
         return (f"{pad}have hc : cell{i}_signs s := by\n"
                 f"{pad}  simp only [trans, invariants, cell{i}_signs, {halves}] at *\n"
                 f"{pad}  omega\n"
-                f"{pad}exact {inj}⟨hc, cell{i}_decrease {dec_args} hc⟩{close}")
+                f"{pad}exact {inj}hc{close}")
     if kind == "dead":
         return (f"{pad}exfalso\n"
                 f"{pad}simp only [trans, invariants] at *\n"
                 f"{pad}omega")
     _, lit, yes, no = tree
     return (f"{pad}by_cases hs{depth} : {lit}\n"
-            f"{pad}· {_emit_tiling_tree(certs, yes, dec_args, pat_of_cell, depth + 1).lstrip()}\n"
-            f"{pad}· {_emit_tiling_tree(certs, no, dec_args, pat_of_cell, depth + 1).lstrip()}")
+            f"{pad}· {_emit_tiling_tree(reps, yes, of_region, depth + 1).lstrip()}\n"
+            f"{pad}· {_emit_tiling_tree(reps, no, of_region, depth + 1).lstrip()}")
 
+
+def _emit_covered(reps, n: int, tree, of_region, pcert) -> str:
+    """Every guarded state lies in some region: ``⋁ᵣ cellR_signs s``, by the
+    sign-literal decision tree — the CEGAR coverage guarantee, re-proved."""
+    hyps = "(hg : trans s) (hinv : invariants s)"
+    disj = "\n      ∨ ".join(f"cell{i}_signs s" for i in range(len(reps)))
+    if len(reps) == 1:
+        if not _cell_literals(reps[0], pcert.pinned_units, pcert.bounded_units):
+            body = "  exact trivial"           # nothing pinned: the one region is everything
+        else:
+            unfold = ", ".join(["trans", "invariants", "cell0_signs"]
+                               + _cell_sign_defs(of_region[0]))
+            body = f"  simp only [{unfold}] at *\n  omega"
+    else:
+        body = _emit_tiling_tree(reps, tree, of_region)
+    return (f"theorem covered (s : Vector {n} Int)\n"
+            f"    {hyps} :\n"
+            f"    {disj} := by\n"
+            f"{body}")
+
+
+# ---------------------------------------------------------------------------
+# Devices on a path: activations, mask bounds, collapses
+# ---------------------------------------------------------------------------
 
 def _emit_post_state(body_affines, n: int) -> str:
-    """``post_state s = body(s)`` — the loop body's next state as an affine map
-    (V is evaluated here for the successor rank)."""
+    """``post_state s = body(s)`` — the loop body's next state as an affine map."""
     arms = "\n".join(
         f"    | {_fin(k)} => {_affine_str(c, kk)}"
         for k, (c, kk) in enumerate(body_affines))
@@ -575,83 +568,255 @@ def _bool_vec(name: str, p) -> str:
     return _vec_def(name, p, lambda x: "true" if x else "false", typ="Bool")
 
 
+def _input(k: int, dev, n: int):
+    """The Lean term a device's reading is applied to — the state, the successor,
+    or a per-device vector mixing both ends — as ``(term, definition | None,
+    names to unfold)``."""
+    kinds = {kind for kind, _ in dev.inputs if kind != "unread"}
+    if kinds <= {"latched"}:
+        return "s", None, []
+    if kinds == {"next"}:
+        return "post_state s", None, ["post_state"]
+    arms = "\n".join(
+        f"    | {_fin(j)} => {'post_state s' if kind == 'next' else 's'} {_fin(j)}"
+        for kind, j in dev.inputs)
+    return (f"in{k} s",
+            f"def in{k} (s : Vector {n} Int) : Vector {n} Int := fun i =>\n"
+            f"  match i with\n{arms}",
+            [f"in{k}", "post_state"])
+
+
+def _arg(inp: str) -> str:
+    """``inp`` as a function argument: parenthesised only when compound."""
+    return inp if " " not in inp else f"({inp})"
+
+
+def _device_term(dev, net, inp: str) -> str:
+    """The Lean term for a device's value: its network applied to its input, or
+    the affine form over the input for a ReLU-free reading."""
+    if net.units:
+        return f"V{_dev(str(dev.net))} {_arg(inp)} fzero"
+    coeffs, const = net.out
+    return _affine_terms(coeffs, const, [f"{inp} {_fin(j)}" for j in range(len(coeffs))])
+
+
 def _emit_activations(name: str, units, input_term: str, extra_unfold: list[str],
-                      n: int) -> str:
+                      n: int, tag: str) -> str:
     """The hidden layer's pre-activations at ``input_term``, as an explicit vector
     plus the lemma identifying it with ``affine nrf_W0 nrf_b0 <input>``.
 
     Unfolding that matrix product is the single most expensive step in a proof, and
-    it is the same work for every cell of a path. Doing it once here leaves each
-    cell's mask side-goal to be read off an explicit affine form."""
+    it is the same work for every region of a path. Doing it once here leaves each
+    region's mask side-goal to be read off an explicit affine form."""
     arms = "\n".join(f"  | {_fin(j)} => {_affine_str(c, k)}"
                      for j, (c, k) in enumerate(units))
+    d = _dev(tag)
     cases = "\n".join(
-        f"  | {_fin(j)} => simp only [{', '.join([_SIMP, name] + extra_unfold)}] <;> omega"
+        f"  | {_fin(j)} => simp only [{', '.join([_simp((tag,)), name] + extra_unfold)}] <;> omega"
         for j in range(len(units)))
     return (
         f"def {name} (s : Vector {n} Int) : Vector {len(units)} Int := fun\n{arms}\n\n"
         f"theorem {name}_eq (s : Vector {n} Int) :\n"
-        f"    affine nrf_W0 nrf_b0 ({input_term}) = {name} s := by\n"
+        f"    affine nrf{d}_W0 nrf{d}_b0 {_arg(input_term)} = {name} s := by\n"
         f"  funext i\n"
         f"  match i with\n{cases}"
     )
 
 
-def _emit_lower_bound(k: int, mu, affine, n: int) -> str:
-    """``<affine> ≤ V s fzero`` — the mask bound at the pre-state, with no
-    hypothesis at all.
+def _emit_lower_bound(k: int, m: int, mu, affine, n: int, dev, inp: str) -> str:
+    """``<affine> ≤ V (input) fzero`` — the mask bound on a bounded device, with
+    no hypothesis at all.
 
     ``affine_mask_le`` (:file:`lean/Subgrad.lean`) holds for every pattern, so
     the mask needs no sign conditions: masking under-approximates the ReLU layer
     either way round. Only the identification of the masked affine layer with the
     emitted affine form is per-mask work."""
     coeffs, const = affine
-    pat = f"mu_pat_{k}"
+    d = _dev(str(dev.net))
+    pat, acts = f"mask{k}_{m}", f"act{k}"
     return "\n\n".join([
         _bool_vec(pat, mu),
-        f"theorem pre_lb_{k} (s : Vector {n} Int) :\n"
-        f"    {_affine_str(coeffs, const)} ≤ V s fzero := by\n"
-        f"  have heq : affine nrf_W1 nrf_b1 (mask {pat} (affine nrf_W0 nrf_b0 s)) fzero\n"
+        f"theorem lb{k}_{m} (s : Vector {n} Int) :\n"
+        f"    {_affine_str(coeffs, const)} ≤ V{d} {_arg(inp)} fzero := by\n"
+        f"  have heq : affine nrf{d}_W1 nrf{d}_b1 (mask {pat} (affine nrf{d}_W0 nrf{d}_b0 {_arg(inp)})) fzero\n"
         f"           = {_affine_str(coeffs, const)} := by\n"
-        f"    rw [pre_act_eq, out_apply]\n"
+        f"    rw [{acts}_eq, out_apply{d}]\n"
         f"    simp only [mask, {pat}, Bool.true_eq_false, Bool.false_eq_true,\n"
-        f"               ↓reduceIte, pre_act] <;> omega\n"
-        f"  have hle := affine_mask_le nrf_W1 nrf_b1 {pat} (affine nrf_W0 nrf_b0 s)\n"
-        f"      nrf_W1_nonneg fzero\n"
+        f"               ↓reduceIte, {acts}] <;> omega\n"
+        f"  have hle := affine_mask_le nrf{d}_W1 nrf{d}_b1 {pat} (affine nrf{d}_W0 nrf{d}_b0 {_arg(inp)})\n"
+        f"      nrf{d}_W1_nonneg fzero\n"
         f"  rw [heq] at hle\n"
-        f"  simp only [V]\n"
+        f"  simp only [V{d}]\n"
         f"  exact hle",
     ])
 
 
-def _emit_collapse(k: int, affine, n: int) -> str:
-    """``V (post_state s) fzero = <affine piece>`` wherever the successor pattern
-    holds: rewrite the ReLU layer by the pattern's mask (``reluᵥ_eq_mask``, its side
-    goal read off ``post_act``), unfold the output layer, and ``omega``.
-
-    Only the successor needs this exact form; the pre-state is bounded instead (see
-    :func:`_emit_lower_bound`)."""
+def _emit_collapse(k: int, r: int, affine, n: int, dev, inp: str, signs: str,
+                   unfold_signs: tuple) -> str:
+    """``V (input) fzero = <affine piece>`` wherever region ``r`` holds: rewrite
+    the ReLU layer by the pattern's mask (``reluᵥ_eq_mask``, its side goal read
+    off the device's activations), unfold the output layer, and ``omega``."""
     coeffs, const = affine
-    pat, signs, acts = f"post_pat_{k}", f"post_signs_{k}", "post_act"
-    inp = "post_state s"
+    d = _dev(str(dev.net))
+    pat, acts = f"pat{k}_{r}", f"act{k}"
     small = ", ".join([acts, pat, "forall_fin_succ", "forall_fin_zero",
                        "↓reduceIte", "and_true", "true_and", "implies_true",
                        "Bool.true_eq_false", "Bool.false_eq_true", "false_implies",
                        "forall_const", "imp_self"])
     return (
-        f"theorem post_c0_{k} (s : Vector {n} Int)\n"
-        f"    (hs : {signs} s) : V ({inp}) fzero = {_affine_str(coeffs, const)} := by\n"
-        f"  simp only [{signs}] at hs\n"
-        f"  have hmask : reluᵥ (affine nrf_W0 nrf_b0 ({inp}))\n"
-        f"             = mask {pat} (affine nrf_W0 nrf_b0 ({inp})) := by\n"
+        f"theorem c0{k}_{r} (s : Vector {n} Int)\n"
+        f"    (hs : {signs} s) : V{d} {_arg(inp)} fzero = {_affine_str(coeffs, const)} := by\n"
+        f"  simp only [{', '.join([signs, *unfold_signs])}] at hs\n"
+        f"  have hmask : reluᵥ (affine nrf{d}_W0 nrf{d}_b0 {_arg(inp)})\n"
+        f"             = mask {pat} (affine nrf{d}_W0 nrf{d}_b0 {_arg(inp)}) := by\n"
         f"    rw [{acts}_eq]\n"
         f"    apply reluᵥ_eq_mask\n"
         f"    simp only [{small}] <;> omega\n"
-        f"  simp only [V]\n"
-        f"  rw [hmask, {acts}_eq, out_apply]\n"
+        f"  simp only [V{d}]\n"
+        f"  rw [hmask, {acts}_eq, out_apply{d}]\n"
         f"  simp only [mask, {pat}, Bool.true_eq_false, Bool.false_eq_true,\n"
-        f"             ↓reduceIte, {acts}, post_state] <;> omega"
+        f"             ↓reduceIte, {acts}] <;> omega"
     )
+
+
+# ---------------------------------------------------------------------------
+# The rule on a path: refuting each disjunct on each region, then `step_ok`
+# ---------------------------------------------------------------------------
+
+def _emit_refute(r: int, cert: CellCert, n: int, sign_defs: list[str]) -> str:
+    """``cellR_signs s → trans s → invariants s → ¬(disjunct)``: the disjunct's
+    rows, taken as hypotheses, complete the region's Farkas system (the
+    substrate's ``refute_bridge`` rebuilds the rows and feeds
+    ``cellRdD_infeasible``, closed by ``omega``). A constant infeasibility needs
+    no system: ``omega`` refutes the disjunct on its own."""
+    name = f"cell{r}d{cert.disjunct}"
+    rows = _rule_rows(cert)
+    conj = " ∧ ".join(f"({_affine_str(a, 0)} ≤ {int(b)})" for a, b in rows) or "True"
+    head = (f"theorem {name}_refute (s : Vector {n} Int)\n"
+            f"    (hg : trans s) (hinv : invariants s) (hs : cell{r}_signs s) :\n"
+            f"    ¬ ({conj}) := by\n")
+    if _trivial(cert):
+        return head + "  omega"
+    unfold = ", ".join(["trans", "invariants", f"cell{r}_signs"] + sign_defs
+                       + [f"{name}_A", f"{name}_b"])
+    return head + f"  refute_bridge ({name}_infeasible s) with {unfold}"
+
+
+def _formula_prop(formula, s_syms, wire_terms: dict) -> str:
+    """A rule or property formula, z3 over the columns and wire symbols, as a
+    Lean ``Prop`` over ``s`` — each wire symbol standing for the Lean term
+    ``wire_terms`` gives it."""
+    syms = list(s_syms) + list(wire_terms)
+    terms = _state_terms(len(s_syms)) + list(wire_terms.values())
+    try:
+        return _z3_prop(formula, syms, terms)
+    except _Drop as exc:
+        raise ValueError(f"formula is not linear over the columns and wires: {exc}")
+
+
+def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
+               invariants) -> str:
+    """One affine path: its Farkas systems, ``trans`` and ``post_state``, the
+    regions' signs and ``covered``, each device's activations with its bounds or
+    collapses, the ``refute`` lemmas, ``ok`` and ``step_ok``, ``Step`` (and
+    ``lex_step`` under a ranking rule), ``RawStep`` and ``consecution``."""
+    n = len(s_syms)
+    regions = _regions(pcert.cells)
+    reps = [cs[0] for cs in regions]
+    tree = (_tiling_tree(dataclasses.replace(pcert, cells=tuple(reps)), invariants, s_syms)
+            if len(reps) > 1 else None)
+    body = list(pcert.body)
+    assert not any(_contains_ite(e) for e in body), \
+        "path body must be affine (expand_cases should have split every ite)"
+    body_affines = [affine_coeffs(e, s_syms) for e in body]
+    pins, bnds, of_region = _sign_index(reps)
+
+    parts = []
+    for r, cs in enumerate(regions):
+        for c in cs:
+            parts.append(_emit_cell(f"{r}d{c.disjunct}", c))
+    parts.append(f"def trans (s : Vector {n} Int) : Prop :=\n"
+                 f"  {_render_conjuncts(pcert.guard, s_syms)}")
+    parts.append(_emit_post_state(body_affines, n))
+    for pattern, k in pins.items():
+        parts.append(_emit_signs_def(f"pin_signs_{k}", pattern, pcert.pinned_units, n))
+    for pattern, k in bnds.items():
+        parts.append(_emit_signs_def(f"bnd_signs_{k}", pattern, pcert.bounded_units, n))
+    for r, pats in enumerate(of_region):
+        parts.append(f"def cell{r}_signs (s : Vector {n} Int) : Prop :=\n"
+                     f"  {' ∧ '.join(f'{d} s' for d in _cell_sign_defs(pats))}")
+    if reps:
+        parts.append(_emit_covered(reps, n, tree, of_region, pcert))
+
+    # per device: its input, activations, and a bound per distinct mask slice or a
+    # collapse per region; `haves[r]` collects what `step_ok` brings in on region r
+    wire_terms = {system.W[pr[1].id]: _affine_str(c, k)
+                  for pr, (c, k) in zip(system.pairs, body_affines)}
+    haves = [[] for _ in regions]
+    for k, dev in enumerate(res.devices):
+        net, units = res.nets[dev.net], pcert.device_units[k]
+        inp, in_def, unfold = _input(k, dev, n)
+        if in_def:
+            parts.append(in_def)
+        wire_terms[system.W[dev.wire_id]] = _device_term(dev, net, inp)
+        if not net.units:
+            continue
+        parts.append(_emit_activations(f"act{k}", units, inp, unfold, n, str(dev.net)))
+        m = len(units)
+        if dev.pinned:
+            for r, c in enumerate(reps):
+                sl = tuple(c.pattern_sp)[dev.offset:dev.offset + m]
+                parts.append(_bool_vec(f"pat{k}_{r}", sl))
+                parts.append(_emit_collapse(k, r, c.affines[k], n, dev, inp,
+                                            f"cell{r}_signs", tuple(_cell_sign_defs(of_region[r]))))
+                haves[r].append(f"have hc{k} := c0{k}_{r} s hs")
+        else:
+            masks = {}
+            for r, c in enumerate(reps):
+                sl = tuple(c.mu)[dev.offset:dev.offset + m]
+                masks.setdefault(sl, (len(masks), c.affines[k]))
+                haves[r].append(f"have hb{k} := lb{k}_{masks[sl][0]} s")
+            for sl, (mi, aff) in masks.items():
+                parts.append(_emit_lower_bound(k, mi, sl, aff, n, dev, inp))
+
+    for r, cs in enumerate(regions):
+        for c in cs:
+            parts.append(_emit_refute(r, c, n, _cell_sign_defs(of_region[r])))
+
+    parts.append(f"/-- The rule on this path's round. -/\n"
+                 f"def ok (s : Vector {n} Int) : Prop :=\n"
+                 f"  {_formula_prop(res.ok, s_syms, wire_terms)}")
+    head = (f"theorem step_ok (s : Vector {n} Int) (hg : trans s) (hinv : invariants s) :\n"
+            f"    ok s := by\n")
+    if not regions:                          # the rule holds outright: no disjunct to refute
+        parts.append(head + "  unfold ok\n  trivial")
+    else:
+        branches = " | ".join("hs" for _ in regions)
+        bullets = []
+        for r, cs in enumerate(regions):
+            lines = haves[r] + [f"have hr{c.disjunct} := cell{r}d{c.disjunct}_refute s hg hinv hs"
+                                for c in cs] + ["unfold ok", "omega"]
+            bullets.append("  · " + "\n    ".join(lines))
+        parts.append(head + f"  rcases covered s hg hinv with {branches}\n" + "\n".join(bullets))
+
+    # The transition is functional (b = post_state a on the guard), so Step needs
+    # no SSA witness: the pre-state *is* a.
+    parts.append(f"def Step (a b : Vector {n} Int) : Prop :=\n"
+                 f"  trans a ∧ invariants a ∧ post_state a = b")
+    if res.rule.ranks:
+        ranks = ", ".join(f"R{d}" for d in range(len(res.rule.ranks)))
+        parts.append(
+            f"/-- lex step of this path: the ranks drop lexicographically. -/\n"
+            f"theorem lex_step (a b : Vector {n} Int) (h : Step a b) :\n"
+            f"    lexDec [{ranks}] a b := by\n"
+            f"  obtain ⟨hg, hinv, hpost⟩ := h\n"
+            f"  subst hpost\n"
+            f"  have hok := step_ok a hg hinv\n"
+            f"  unfold ok at hok\n"
+            f"  simp only [lexDec, {ranks}]\n"
+            f"  omega")
+    parts += _emit_rawstep_consecution(n, trivial_inv)
+    return f"namespace {path}\n\n" + "\n\n".join(parts) + f"\n\nend {path}"
 
 
 def _inv_proof(trivial_inv: bool, unfold: str) -> str:
@@ -663,158 +828,100 @@ def _inv_proof(trivial_inv: bool, unfold: str) -> str:
     return f"  simp only [{unfold}] at *\n  omega"
 
 
-def _emit_path(path: str, pcert, s_syms, trivial_inv: bool, invariants) -> str:
-    """One affine path: its Farkas cells, ``trans``, ``covered``, ``post_state``,
-    the pre-state mask bounds and successor collapse lemmas, ``Step``/``lex_step``,
-    and ``RawStep``/``consecution``."""
-    n = len(s_syms)
-    certs = pcert.cells
-    tree = _tiling_tree(pcert, invariants, s_syms) if len(certs) > 1 else None
-    trans_lean = _render_conjuncts(pcert.guard, s_syms)
-    body = list(pcert.body)
-    assert not any(_contains_ite(e) for e in body), \
-        "path body must be affine (expand_cases should have split every ite)"
-    body_affines = [affine_coeffs(e, s_syms) for e in body]
-
-    parts = []
-    for idx, cert in enumerate(certs):
-        parts.append(_emit_cell(idx, cert))
-    parts.append(f"def trans (s : Vector {n} Int) : Prop :=\n  {trans_lean}")
-    mus, post_pats, pre_pats, pat_of_cell = _patterns(certs)
-    for pattern, k in pre_pats.items():
-        parts.append(_emit_signs_def(f"pre_signs_{k}", pattern, pcert.pre_units, n))
-    for pattern, (k, _) in post_pats.items():
-        parts.append(_emit_signs_def(f"post_signs_{k}", pattern, pcert.post_units, n))
-    for idx, pats in enumerate(pat_of_cell):
-        parts.append(f"def cell{idx}_signs (s : Vector {n} Int) : Prop :=\n"
-                     f"  {' ∧ '.join(f'{d} s' for d in _cell_sign_defs(pats))}")
-    for idx, cert in enumerate(certs):
-        parts.append(_emit_decrease(idx, cert, n, pat_of_cell[idx]))
-    parts.append(_emit_covered(certs, n, tree, pat_of_cell))
-    parts.append(_emit_post_state(body_affines, n))
-    parts.append(_emit_activations("pre_act", pcert.pre_units, "s", [], n))
-    parts.append(_emit_activations("post_act", pcert.post_units, "post_state s",
-                                   ["post_state"], n))
-    for mu, (k, affine) in mus.items():
-        parts.append(_emit_lower_bound(k, mu, affine, n))
-    for pattern, (k, affine) in post_pats.items():
-        parts.append(_bool_vec(f"post_pat_{k}", pattern))
-        parts.append(_emit_collapse(k, affine, n))
-
-    # The transition is functional (b = post_state a on the guard), so Step needs
-    # no SSA witness: the pre-state *is* a.
-    branches = " | ".join("⟨hs, hd⟩" for _ in certs)
-    bullets = "\n".join(
-        f"  · have hlb := pre_lb_{mu_i} a\n"
-        f"    rw [post_c0_{post_i} a {'hs' if pre_i is None else 'hs.1'}]\n"
-        f"    omega"
-        for mu_i, post_i, pre_i in pat_of_cell)
-    parts.append(
-        f"def Step (a b : Vector {n} Int) : Prop :=\n"
-        f"  trans a ∧ invariants a ∧ post_state a = b")
-    parts.append(
-        f"/-- lex step of this path (strict component 0). -/\n"
-        f"theorem lex_step (a b : Vector {n} Int) (h : Step a b) :\n"
-        f"    V b fzero < V a fzero := by\n"
-        f"  obtain ⟨hg, hinv, hpost⟩ := h\n"
-        f"  subst hpost\n"
-        f"  rcases covered a hg hinv with {branches}\n"
-        f"{bullets}")
-    parts.append(
+def _emit_rawstep_consecution(n: int, trivial_inv: bool) -> list[str]:
+    """The path's transition relation and its consecution lemma — what any
+    property's proof needs of a path, with no certificate involved."""
+    return [
         f"/-- One iteration of this path: the guard and the body. -/\n"
         f"def RawStep (a b : Vector {n} Int) : Prop :=\n"
-        f"  trans a ∧ post_state a = b")
-    parts.append(
+        f"  trans a ∧ post_state a = b",
         f"/-- Consecution: the body preserves the invariant on this path. -/\n"
         f"theorem consecution (s : Vector {n} Int)\n"
         f"    (hg : trans s) (hinv : invariants s) :\n"
         f"    invariants (post_state s) := by\n"
-        f"{_inv_proof(trivial_inv, 'trans, invariants, post_state')}")
-    return f"namespace {path}\n\n" + "\n\n".join(parts) + f"\n\nend {path}"
+        f"{_inv_proof(trivial_inv, 'trans, invariants, post_state')}",
+    ]
 
 
 # ---------------------------------------------------------------------------
-# Composition: program_terminates via no_infinite_run_lex
+# Whole-program compositions
 # ---------------------------------------------------------------------------
 
-def _v0_and_step(path_names, n: int) -> str:
-    """The ranking projection ``V0`` and the whole-program step relation ``Step``
-    (the union of the per-path relations)."""
-    step = " ∨ ".join(f"{p}.Step a b" for p in path_names)
-    return (f"def V0 : Vector {n} Int → Int := fun s => V s fzero\n\n"
-            f"/-- The program's step relation: one iteration of the loop (any path). -/\n"
-            f"def Step (a b : Vector {n} Int) : Prop := {step}")
-
-
-def _no_inf_run_body(path_names) -> str:
-    """Tactic body proving ``¬ ∃ f, ∀ _, Step ..``: ``no_infinite_run_lex`` needs
-    V ≥ 0 (``V_nonneg``) and a strict drop on every step, which each path's
-    ``lex_step`` supplies after the union is case-split."""
-    pat = " | ".join("h" for _ in path_names)
-    bullets = "\n".join(
-        f"    · simp only [lexDec, V0]\n"
-        f"      have hx := {p}.lex_step a b h\n"
-        f"      exact Or.inl (hx)" for p in path_names)
-    return (
-        f"  apply no_infinite_run_lex [V0] Step\n"
-        f"  · intro W hW s\n"
-        f"    simp only [List.mem_cons, List.not_mem_nil, or_false] at hW\n"
-        f"    rcases hW with rfl\n"
-        f"    · exact V_nonneg s fzero\n"
-        f"  · rintro a b ({pat})\n"
-        f"{bullets}")
-
-
-def _emit_composition(path_names, n: int, init_lean: str, trivial_inv: bool) -> str:
-    """The whole-program theorem: from any ``Init`` state there is no infinite run
-    of ``RawStep`` (the guard and body, no invariant). The proof derives
-    ``invariants (f i)`` along the run by induction — ``initiation`` at the entry
-    state, the taken path's ``consecution`` at each step — which upgrades every
-    ``RawStep`` to a ``Step`` and contradicts :func:`no_inf_step`."""
-    rawstep = " ∨ ".join(f"{p}.RawStep a b" for p in path_names)
-
+def _hinv_induction(path_names) -> str:
+    """``have hInv : ∀ i, invariants (f i)`` along a run of ``RawStep``:
+    ``initiation`` at the entry state, the taken path's ``consecution`` at each
+    step. Shared by every whole-program theorem, whatever the property."""
     if len(path_names) == 1:
         p = path_names[0]
         cons_case = (f"      obtain ⟨hg, hp⟩ := hstep k\n"
                      f"      rw [← hp]\n"
                      f"      exact {p}.consecution (f k) hg ih")
-        step_run = (f"  obtain ⟨hg, hp⟩ := hstep i\n"
-                    f"  exact ⟨hg, hInv i, hp⟩")
     else:
         rc = " | ".join("h" for _ in path_names)
         cons_case = (f"      rcases hstep k with {rc}\n" + "\n".join(
             f"      · obtain ⟨hg, hp⟩ := h\n"
             f"        rw [← hp]\n"
             f"        exact {p}.consecution (f k) hg ih" for p in path_names))
+    return (f"  have hInv : ∀ i, invariants (f i) := by\n"
+            f"    intro i\n"
+            f"    induction i with\n"
+            f"    | zero => rw [hf0]; exact initiation s0 hinit\n"
+            f"    | succ k ih =>\n"
+            f"{cons_case}")
+
+
+def _emit_init_and_initiation(n: int, init_lean: str, trivial_inv: bool) -> str:
+    return (f"def Init (s : Vector {n} Int) : Prop :=\n  {init_lean}\n\n"
+            f"/-- Initiation: the loop is entered in an invariant-satisfying state. -/\n"
+            f"theorem initiation (s : Vector {n} Int) (h : Init s) : invariants s := by\n"
+            f"{_inv_proof(trivial_inv, 'Init, invariants')}")
+
+
+def _emit_termination_composition(path_names, n: int, init_lean: str, trivial_inv: bool,
+                                  rank_nets) -> str:
+    """The whole-program theorem under a ranking rule: ``Step`` as the union of
+    the paths, ``no_infinite_run_lex [R0, …]`` fed each rank's non-negativity and
+    each path's ``lex_step``, and ``program_terminates`` — from any ``Init``
+    state there is no infinite run of ``RawStep``, since the invariant derived
+    along the run upgrades every ``RawStep`` to a ``Step``."""
+    K = len(rank_nets)
+    ranks = ", ".join(f"R{d}" for d in range(K))
+    step = " ∨ ".join(f"{p}.Step a b" for p in path_names)
+    rawstep = " ∨ ".join(f"{p}.RawStep a b" for p in path_names)
+    pos_pat = " | ".join("rfl" for _ in range(K))
+    pos = "\n".join(f"    · exact V{_dev(str(j))}_nonneg s fzero" for j in rank_nets)
+    pat = " | ".join("h" for _ in path_names)
+    dec = "\n".join(f"    · exact {p}.lex_step a b h" for p in path_names)
+    if len(path_names) == 1:
+        step_run = f"  obtain ⟨hg, hp⟩ := hstep i\n  exact ⟨hg, hInv i, hp⟩"
+    else:
+        rc = " | ".join("h" for _ in path_names)
         step_bul = []
         for i, p in enumerate(path_names):
-            inj = "Or.inr (" * i + ("Or.inl " if i < len(path_names) - 1 else "")
-            step_bul.append(f"  · obtain ⟨hg, hp⟩ := h\n"
-                            f"    exact {inj}⟨hg, hInv i, hp⟩{')' * i}")
+            inj, close = _disjunct(i, len(path_names))
+            step_bul.append(f"  · obtain ⟨hg, hp⟩ := h\n    exact {inj}⟨hg, hInv i, hp⟩{close}")
         step_run = f"  rcases hstep i with {rc}\n" + "\n".join(step_bul)
-
     return (
-        f"{_v0_and_step(path_names, n)}\n\n"
-        f"def Init (s : Vector {n} Int) : Prop :=\n  {init_lean}\n\n"
-        f"/-- Initiation: the loop is entered in an invariant-satisfying state. -/\n"
-        f"theorem initiation (s : Vector {n} Int) (h : Init s) : invariants s := by\n"
-        f"{_inv_proof(trivial_inv, 'Init, invariants')}\n\n"
+        f"/-- The program's step relation: one iteration of the loop (any path). -/\n"
+        f"def Step (a b : Vector {n} Int) : Prop := {step}\n\n"
+        f"{_emit_init_and_initiation(n, init_lean, trivial_inv)}\n\n"
         f"/-- One iteration of the loop on any path: the guard and the body. -/\n"
         f"def RawStep (a b : Vector {n} Int) : Prop := {rawstep}\n\n"
         f"theorem no_inf_step :\n"
         f"    ¬ ∃ f : Nat → Vector {n} Int, ∀ m, Step (f m) (f (m + 1)) := by\n"
-        f"{_no_inf_run_body(path_names)}\n\n"
+        f"  apply no_infinite_run_lex [{ranks}] Step\n"
+        f"  · intro W hW s\n"
+        f"    simp only [List.mem_cons, List.not_mem_nil, or_false] at hW\n"
+        f"    rcases hW with {pos_pat}\n"
+        f"{pos}\n"
+        f"  · rintro a b ({pat})\n"
+        f"{dec}\n\n"
         f"/-- The program terminates: from any loop-entry state there is no\n"
         f"    infinite run of guarded steps. -/\n"
         f"theorem program_terminates (s0 : Vector {n} Int) (hinit : Init s0) :\n"
         f"    ¬ ∃ f : Nat → Vector {n} Int, f 0 = s0 ∧ ∀ i, RawStep (f i) (f (i + 1)) := by\n"
         f"  rintro ⟨f, hf0, hstep⟩\n"
-        f"  have hInv : ∀ i, invariants (f i) := by\n"
-        f"    intro i\n"
-        f"    induction i with\n"
-        f"    | zero => rw [hf0]; exact initiation s0 hinit\n"
-        f"    | succ k ih =>\n"
-        f"{cons_case}\n"
+        f"{_hinv_induction(path_names)}\n"
         f"  apply no_inf_step\n"
         f"  refine ⟨f, fun i => ?_⟩\n"
         f"{step_run}"
@@ -831,44 +938,51 @@ _HEADER = (
 _FOOTER = "\nend Matrix\n"
 
 
-def emit_program(name: str, ob, paths) -> str:
-    """The whole ``program.lean`` proving ``name`` terminates, from the per-path
-    Farkas certificates (:class:`._farkas.PathCert`) captured on ``ob``. Emits the
-    network, the invariant, one namespace per affine path (``loop0_path{i}``), and
-    the composition that discharges the invariant and concludes termination."""
+def emit_program(name: str, system, result) -> str:
+    """The whole ``program.lean`` for ``name``, from ``system`` — the module as
+    read, with what is known of its states — and ``result``, the
+    :class:`._farkas.FarkasResult` a ``certify`` run on it returned: the
+    certificates, the resolved formula, the rule and the devices.
+
+    The entry state is read off the system, the networks off the result's
+    devices — never the weights."""
+    rule = result.rule
+    paths = result.certificates
     if not paths:
         raise ValueError(f"{name}: no certified paths to emit")
-    n = len(ob.s_syms)
+    s_syms = list(system.s_syms)
+    n = len(s_syms)
     path_names = [f"loop0_path{i}" for i in range(len(paths))]
-    cols = ", ".join(f"s {j} = {nm}" for j, nm in enumerate(ob.state))
+    cols = ", ".join(f"s {j} = {nm}" for j, nm in enumerate(system.names))
     npaths = f" ({len(paths)} paths)" if len(paths) > 1 else ""
-    # Shared top-level invariant, proved inductive below by `initiation` and the
-    # per-path `consecution`; `True` when none were inferred.
-    inv_lean = (_render_conjuncts(z3.And(*ob.invariants), ob.s_syms)
-                if ob.invariants else "True")
+    init_lean = _render_conjuncts(entry_predicate(system), s_syms)
+    inv_all = list(system.invariants)
+    inv_lean = _render_conjuncts(z3.And(*inv_all), s_syms) if inv_all else "True"
     trivial_inv = inv_lean == "True"
-    init_lean = ("True" if ob.init is None
-                 else _render_conjuncts(ob.init, ob.s_syms))
-    parts = [
-        f"/- ──── program: {name} — terminates via a ranking function{npaths}.\n"
-        f"   Columns: {cols}. ──── -/",
-        _emit_network(ob.layers),
-        _emit_out_apply(ob.layers),
-        _emit_out_nonneg(),
-        _emit_nonneg(ob.layers),
-        f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}",
-    ]
+    by_id = {d.wire_id: d for d in result.devices}
+    rank_nets = [by_id[v_s.id].net for v_s, _ in rule.ranks]
+
+    parts = [f"/- ──── program: {name} — terminates via a ranking function"
+             f"{npaths}.\n   Columns: {cols}. ──── -/"]
+    for j, net in enumerate(result.nets):
+        if net.units:
+            parts += [_emit_network(net, str(j)), _emit_out_apply(net, str(j)),
+                      _emit_out_nonneg(str(j)), _emit_nonneg(net, str(j))]
+    for d, j in enumerate(rank_nets):
+        parts.append(f"def R{d} : Vector {n} Int → Int := fun s => V{_dev(str(j))} s fzero")
+    parts.append(f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}")
     for pname, pcert in zip(path_names, paths):
-        parts.append(_emit_path(pname, pcert, ob.s_syms, trivial_inv,
-                                ob.invariants))
-    parts.append(_emit_composition(path_names, n, init_lean, trivial_inv))
+        parts.append(_emit_path(pname, pcert, result, system, s_syms, trivial_inv,
+                                inv_all))
+    parts.append(_emit_termination_composition(path_names, n, init_lean, trivial_inv,
+                                               rank_nets))
     return _HEADER + "\n\n".join(parts) + _FOOTER
 
 
-def write_program_proof(name: str, ob, paths, out_dir: Path) -> Path:
+def write_program_proof(name: str, system, result, out_dir: Path) -> Path:
     """Write ``<out_dir>/<name>/program.lean`` and return its path."""
     target = Path(out_dir) / name
     target.mkdir(parents=True, exist_ok=True)
     out = target / "program.lean"
-    out.write_text(emit_program(name, ob, paths))
+    out.write_text(emit_program(name, system, result))
     return out

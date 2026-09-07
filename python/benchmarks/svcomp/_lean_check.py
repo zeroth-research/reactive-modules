@@ -92,13 +92,14 @@ def _first_error(out: str) -> str:
     return out.strip().splitlines()[0] if out.strip() else ""
 
 
-def certify(name: str, obligation, paths, timeout: float = CHECK_TIMEOUT) -> CheckResult:
-    """Emit the proof for ``paths`` (the per-path Farkas certificates a
-    ``farkas_cell`` run produced on ``obligation``) and compile it."""
+def certify(name: str, system, result, timeout: float = CHECK_TIMEOUT) -> CheckResult:
+    """Emit the proof for ``result`` — what a ``certify`` run established on
+    ``system`` — and compile it."""
     t0 = time.perf_counter()
-    out = write_program_proof(name, obligation, paths, LEAN_DIR / "proofs")
+    out = write_program_proof(name, system, result, LEAN_DIR / "proofs")
     outcome, detail = check_file(out, timeout)
+    paths = result.certificates
     return CheckResult(name, outcome, n_paths=len(paths),
                        n_cells=sum(len(p.cells) for p in paths),
-                       n_invariants=len(obligation.invariants), detail=detail,
+                       n_invariants=len(system.invariants), detail=detail,
                        check_s=time.perf_counter() - t0)

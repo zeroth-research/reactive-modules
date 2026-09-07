@@ -46,30 +46,28 @@ theorem forall_fin_zero {P : Fin 0 → Prop} : (∀ i, P i) ↔ True := by
   · intro _ i
     nomatch i
 
-/- ### The per-cell decrease bridge, as one tactic
+/- ### The per-disjunct refutation bridge, as one tactic
 
-Every generated `cellK_decrease` lemma has the same shape: from the cell's
+Every generated `cellRdD_refute` lemma has the same shape: from the region's
 `farkas_sound` infeasibility `hinf : ¬ (A *ᵥ s ≤ᵥ b)` and the guard/invariant
-(and any sign) hypotheses, conclude the scalar decrease `(b_nd + 1) ≤ <Δ>`.
-The proof is mechanical and identical save for the names involved, so it
-lives here once instead of being re-emitted per cell:
+and sign hypotheses, conclude `¬ (row₁ ∧ … ∧ rowₖ)` for the rows of one disjunct
+of the rule's negation. The proof is mechanical and identical save for the names
+involved, so it lives here once instead of being re-emitted per disjunct:
 
-  - turn the goal `(b_nd + 1) ≤ <Δ>` into its contrapositive `¬ (<Δ> < b_nd + 1)`
-    (`Int.not_lt.mp`) and assume the strict failure;
-  - feed `hinf` the missing inequality by rebuilding the full row system —
-    `simp only` unfolds the matrix product (`mulVec_apply`/`sum`/`forall_fin_*`)
-    and the guard/invariant predicates into scalar rows;
+  - assume the disjunct's rows;
+  - feed `hinf` the full row system — `simp only` unfolds the matrix product
+    (`mulVec_apply`/`sum`/`forall_fin_*`) and the guard/invariant/sign
+    predicates into scalar rows;
   - `omega` closes: the sign/guard/invariant rows hold by hypothesis and the
-    `neg_decrease` row holds by the assumed failure, contradicting `hinf`.
+    disjunct's rows by assumption, contradicting `hinf`.
 
-`hinf` is passed already applied to the state (`cellK_infeasible s`); the
-`with` clause lists the definitions to unfold — `guard`, optionally
-`invariants`, and the cell's `cellK_A`/`cellK_b`. -/
-syntax "decrease_bridge" term " with " Lean.Parser.Tactic.simpLemma,* : tactic
+`hinf` is passed already applied to the state (`cellRdD_infeasible s`); the
+`with` clause lists the definitions to unfold — `trans`, `invariants`, the
+region's signs, and the cell's `cellRdD_A`/`cellRdD_b`. -/
+syntax "refute_bridge" term " with " Lean.Parser.Tactic.simpLemma,* : tactic
 macro_rules
-  | `(tactic| decrease_bridge $inf with $us,*) => `(tactic| (
-      apply Int.not_lt.mp
-      intro _hlt
+  | `(tactic| refute_bridge $inf with $us,*) => `(tactic| (
+      intro _hrows
       apply $inf
       simp only [lessOrEqualᵥ, forall_fin_succ, forall_fin_zero, mulVec_apply, sum,
                  Int.negOfNat_eq, $us,*] at *
