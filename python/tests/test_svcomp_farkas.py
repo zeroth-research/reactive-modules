@@ -29,10 +29,10 @@ from zrth import LIA, Module, Sort, Wire, sugar
 from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
 from zrth.sugar import ite as dsl_ite
-from benchmarks.svcomp._farkas import (certify, check_kinds, check_supported,
-                                      decrease, lex_decrease, read_system,
-                                      rule_for)
-from benchmarks.svcomp._property import Fixpoint
+from benchmarks.svcomp._farkas import (Step, certify, check_kinds, check_supported,
+                                      decrease, inductive, lex_decrease,
+                                      read_system, rule_for)
+from benchmarks.svcomp._property import Always, Fixpoint
 from benchmarks.svcomp._nodes import Node, Unsupported, node_view
 from benchmarks.svcomp._farkas import (
     Net,
@@ -279,7 +279,7 @@ def test_a_nondeterministic_transition_is_refused():
     prog, _ = _prog(lambda c, e: c + e, extl=((Wire(INT), Wire(INT)),))
     system = read_system(prog, ("x",))
     with pytest.raises(Unsupported, match="_in0"):
-        check_supported(system, Fixpoint(over=system.pairs))
+        check_supported(system, Fixpoint(over=system.pairs), inductive(()))
 
 
 def test_a_supported_module_passes_the_door():
@@ -288,12 +288,39 @@ def test_a_supported_module_passes_the_door():
     check_supported(ob.system, ob.prop, ob.rule)               # does not raise
 
 
-def test_a_property_without_a_rule_is_refused():
-    """The property says what to prove and the rule how, so a property with
-    nothing to guess a witness from asks for one, and one this procedure has no
-    rule for at all is refused by name."""
+def test_a_second_property_runs_through_the_same_engine():
+    """``Always(pred)`` is a property of the *program*, discharged by an inductive
+    invariant through the same region engine — with no ReLU-bearing wire named,
+    there is one region per path, and the same Farkas rows close it: one per
+    disjunct of the rule's negation (the invariant not preserved, the invariant
+    not implying the predicate)."""
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    ob = _decrement(layers)                    # while (x > 0) x = x - 1, from x = 0
+
+    ok = _certify(ob, Always(lambda W, S: S["x"] >= 0))
+    assert ok.verified, ok.status
+    assert ok.rule.inv, "the procedure picked pred as its own invariant"
+    assert all({c.disjunct for c in p.cells} == {0, 1} and len(p.cells) == 2
+               for p in ok.certificates), "no device: one region, two disjuncts"
+
+    # false at entry: x starts at 0
+    bad = _certify(ob, Always(lambda W, S: S["x"] >= 1))
+    assert not bad.verified and bad.status == "FAILED(initiation)", bad.status
+
+    # true at entry, preserved by the step, but not what was asked: a state the
+    # invariant admits violates the predicate, and the exact check finds it
+    weak = _certify(ob, Always(lambda W, S: S["x"] <= 5),
+                    inductive((lambda W, S: S["x"] >= 0,)))
+    assert not weak.verified and weak.status == "FAILED(violated)", weak.status
+
+
+def test_the_procedure_picks_the_rule_from_the_property():
+    """The property says what to prove and the procedure says how, so the rule is
+    the procedure's own choice — and a property it has no rule for is refused."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
+    picked = rule_for(Always(lambda W, S: S["x"] >= 0), ob.system)
+    assert isinstance(picked, Step) and picked.proves is Always and len(picked.inv) == 1
     with pytest.raises(Unsupported, match="needs a rank"):
         rule_for(ob.prop, ob.system)              # nothing to guess a rank from
 
@@ -303,6 +330,8 @@ def test_a_property_without_a_rule_is_refused():
 
     with pytest.raises(Unsupported, match="no rule for property"):
         rule_for(Liveness(), ob.system)
+    with pytest.raises(Unsupported, match="proves"):
+        rule_for(ob.prop, ob.system, inductive(()))
 
 
 def test_the_property_owns_the_domain():
@@ -516,3 +545,82 @@ def test_lexicographic_rank_must_prove_earlier_ranks_do_not_increase():
 
 # --- the rule as a formula: disjunction, disequality, wires in the property ---
 
+def test_a_disjunctive_invariant_goes_through_the_disjuncts():
+    """The rule's negation is cut into disjuncts of rows, so a disjunctive
+    invariant is one more shape of formula rather than a refusal: ``while (x > 0)
+    x--`` from ``x = 0`` keeps ``x >= 0 ∨ x <= -5`` — each disjunct of its negation
+    (each side of the invariant at ``s`` with both sides false at ``s'``, and each
+    side with the predicate false) is refuted on the one region per path."""
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    ob = _decrement(layers)
+    res = _certify(ob, Always(lambda W, S: z3.Or(S["x"] >= 0, S["x"] <= -5)))
+    assert res.verified, res.status
+    assert all(len({c.disjunct for c in p.cells}) == 4 for p in res.certificates), \
+        [len(p.cells) for p in res.certificates]
+    bad = _certify(ob, Always(lambda W, S: z3.Or(S["x"] >= 1, S["x"] <= -5)))
+    assert not bad.verified and bad.status == "FAILED(initiation)", bad.status
+
+
+def test_a_disequality_in_the_rule_splits_into_its_two_sides():
+    """``x != -1`` is no half-space, but as a formula it is ``x < -1 ∨ x > -1``,
+    and its negation the equality's two rows — so it certifies where before it
+    was refused as \"not a linear comparison\"."""
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    ob = _decrement(layers)
+    res = _certify(ob, Always(lambda W, S: S["x"] != -1))
+    assert res.verified, res.status
+
+
+def _computed(state, update, layers, *, init=None):
+    """``state``'s program composed with one sequential atom computing a network
+    of the latched state — a wire of the graph a property may name. Returns the
+    system and that wire."""
+    prog = system_of(loop_bench(state, update, init=init))
+    mod, out = _v_module(prog.pairs, layers, read_next=False)
+    return read_system(Module.parallel(prog.module, mod), prog.names), out[1]
+
+
+def test_a_property_may_name_a_computed_wire():
+    """``while (i < n) i++`` beside ``d = relu(n - i)``: the claim ``d == n - i``
+    names the computed wire, and holds because ``i <= n`` is invariant. The
+    equality pins ``d``, so the engine regions over its pattern and refutes the
+    two sides of the disequality on each; the invariant is a state predicate the
+    same rule carries. Without it the claim must hold outright, and does not."""
+    system, d = _computed(("i", "n"),
+                          lambda c: (dsl_ite(c[0] < c[1], c[0] + 1, c[0]), c[1]),
+                          [(np.array([[-1, 1]]), np.array([0])),
+                           (np.array([[1]]), np.array([0]))],
+                          init=lambda: (0, 5))
+    prop = Always(lambda W, S: W[d] == S["n"] - S["i"])
+    res = certify(system, prop, inductive((lambda W, S: S["i"] <= S["n"],)))
+    assert res.verified, res.status
+    assert len(res.devices) == 1 and res.devices[0].pinned, res.devices
+    assert res.pred is not None and len(res.inv) == 1
+    assert any(len(p.cells) >= 2 for p in res.certificates), "the wire's two sides"
+    alone = certify(system, prop)             # no state predicate to take as invariant
+    assert not alone.verified and alone.status == "FAILED(violated)", alone.status
+
+
+def test_a_property_over_the_next_round_is_refused():
+    """``Always`` speaks of a state: a predicate naming the next state, or a wire
+    whose value depends on it, is refused by name."""
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    ob = _decrement(layers)
+    with pytest.raises(Unsupported, match="speaks of a state"):
+        _certify(ob, Always(lambda W, S: S.next["x"] >= 0))
+    v_sp = ob.rule.ranks[0][1]                # V read at the next state
+    with pytest.raises(Unsupported, match="speaks of a state"):
+        _certify(ob, Always(lambda W, S: W[v_sp] >= 0))
+
+
+def test_an_invariant_may_not_name_a_wire():
+    """Invariants are state predicates — a wire belongs in the property or the
+    rule — and a rule whose atom is not linear is refused by name too."""
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    ob = _decrement(layers)
+    v_s = ob.rule.ranks[0][0]
+    with pytest.raises(Unsupported, match="over the state"):
+        _certify(ob, Always(lambda W, S: S["x"] >= 0),
+                 inductive((lambda W, S: W[v_s] >= 0,)))
+    with pytest.raises(Unsupported, match="linear"):
+        _certify(ob, Always(lambda W, S: S["x"] * S["x"] >= 0))

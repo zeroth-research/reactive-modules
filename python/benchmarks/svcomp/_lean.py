@@ -19,9 +19,10 @@ The file follows the rule's shape, whatever the property:
     ``refute_bridge``); the rule's formula ``ok`` and ``step_ok``, which puts the
     bounds, collapses and refutations together by ``omega``; and
     ``Step``/``RawStep``/``consecution``;
-  * the whole-program composition: ``no_infinite_run_lex`` over the ranks, fed
-    each path's ``lex_step``, with ``initiation`` and per-path ``consecution``
-    carrying the invariant along any run.
+  * the composition the property needs: ranks conclude ``program_terminates``
+    through ``lexDec`` and ``no_infinite_run_lex``; an invariant concludes
+    ``always_holds``, with ``initiation`` and per-path ``consecution`` carrying the
+    invariant along any run and ``step_ok`` closing the predicate at each state.
 """
 from __future__ import annotations
 
@@ -928,6 +929,42 @@ def _emit_termination_composition(path_names, n: int, init_lean: str, trivial_in
     )
 
 
+def _emit_safety_composition(path_names, n: int, init_lean: str, trivial_inv: bool) -> str:
+    """The whole-program safety theorem: along any run of ``RawStep`` from an
+    ``Init`` state, ``pred`` holds at every step. The invariant carries the
+    proof — :func:`_hinv_induction` derives it along the run — and the taken
+    path's ``step_ok`` closes the predicate at each state."""
+    rawstep = " ∨ ".join(f"{p}.RawStep a b" for p in path_names)
+
+    def close(p: str, pad: str) -> str:
+        return (f"{pad}have hok := {p}.step_ok (f i) hg (hInv i)\n"
+                f"{pad}have hi := hInv i\n"
+                f"{pad}unfold {p}.ok at hok\n"
+                f"{pad}unfold pred\n"
+                f"{pad}unfold invariants at hi\n"
+                f"{pad}omega")
+
+    if len(path_names) == 1:
+        body = f"  obtain ⟨hg, _⟩ := hstep i\n{close(path_names[0], '  ')}"
+    else:
+        rc = " | ".join("h" for _ in path_names)
+        body = f"  rcases hstep i with {rc}\n" + "\n".join(
+            f"  · obtain ⟨hg, _⟩ := h\n{close(p, '    ')}" for p in path_names)
+    return (
+        f"{_emit_init_and_initiation(n, init_lean, trivial_inv)}\n\n"
+        f"/-- One iteration of the loop on any path: the guard and the body. -/\n"
+        f"def RawStep (a b : Vector {n} Int) : Prop := {rawstep}\n\n"
+        f"/-- The property holds: along any run from a loop-entry state, every\n"
+        f"    state satisfies ``pred``. -/\n"
+        f"theorem always_holds (s0 : Vector {n} Int) (hinit : Init s0)\n"
+        f"    (f : Nat → Vector {n} Int) (hf0 : f 0 = s0)\n"
+        f"    (hstep : ∀ i, RawStep (f i) (f (i + 1))) : ∀ i, pred (f i) := by\n"
+        f"  intro i\n"
+        f"{_hinv_induction(path_names)}\n"
+        f"{body}"
+    )
+
+
 _HEADER = (
     "import Coverage\nimport Net\nimport Subgrad\nimport Termination\n"
     "set_option linter.unusedVariables false\n"
@@ -942,10 +979,12 @@ def emit_program(name: str, system, result) -> str:
     """The whole ``program.lean`` for ``name``, from ``system`` — the module as
     read, with what is known of its states — and ``result``, the
     :class:`._farkas.FarkasResult` a ``certify`` run on it returned: the
-    certificates, the resolved formula, the rule and the devices.
+    certificates, the resolved formula and predicate, the rule and the devices.
 
-    The entry state is read off the system, the networks off the result's
-    devices — never the weights."""
+    A rule with ranks proves termination, concluding ``program_terminates``; a
+    rule without proves the :class:`._property.Always` property, concluding
+    ``always_holds``. The entry state is read off the system, the networks off
+    the result's devices — never the weights."""
     rule = result.rule
     paths = result.certificates
     if not paths:
@@ -956,14 +995,21 @@ def emit_program(name: str, system, result) -> str:
     cols = ", ".join(f"s {j} = {nm}" for j, nm in enumerate(system.names))
     npaths = f" ({len(paths)} paths)" if len(paths) > 1 else ""
     init_lean = _render_conjuncts(entry_predicate(system), s_syms)
-    inv_all = list(system.invariants)
+    inv_all = list(result.inv) + list(system.invariants)
     inv_lean = _render_conjuncts(z3.And(*inv_all), s_syms) if inv_all else "True"
     trivial_inv = inv_lean == "True"
     by_id = {d.wire_id: d for d in result.devices}
     rank_nets = [by_id[v_s.id].net for v_s, _ in rule.ranks]
 
-    what = ("terminates via a ranking function" if len(rank_nets) == 1 else
-            f"terminates via a lexicographic rank of {len(rank_nets)} networks")
+    if rank_nets:
+        what = ("terminates via a ranking function" if len(rank_nets) == 1 else
+                f"terminates via a lexicographic rank of {len(rank_nets)} networks")
+        pred_lean = None
+    else:
+        terms = {system.W[d.wire_id]: _device_term(d, result.nets[d.net], "s")
+                 for d in result.devices}
+        pred_lean = _formula_prop(result.pred, s_syms, terms)
+        what = f"`{pred_lean}` holds on every run"
     parts = [f"/- ──── program: {name} — {what}{npaths}.\n   Columns: {cols}. ──── -/"]
     for j, net in enumerate(result.nets):
         if net.units:
@@ -972,11 +1018,16 @@ def emit_program(name: str, system, result) -> str:
     for d, j in enumerate(rank_nets):
         parts.append(f"def R{d} : Vector {n} Int → Int := fun s => V{_dev(str(j))} s fzero")
     parts.append(f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}")
+    if pred_lean is not None:
+        parts.append(f"def pred (s : Vector {n} Int) : Prop :=\n  {pred_lean}")
     for pname, pcert in zip(path_names, paths):
         parts.append(_emit_path(pname, pcert, result, system, s_syms, trivial_inv,
                                 inv_all))
-    parts.append(_emit_termination_composition(path_names, n, init_lean, trivial_inv,
-                                               rank_nets))
+    if rank_nets:
+        parts.append(_emit_termination_composition(path_names, n, init_lean, trivial_inv,
+                                                   rank_nets))
+    else:
+        parts.append(_emit_safety_composition(path_names, n, init_lean, trivial_inv))
     return _HEADER + "\n\n".join(parts) + _FOOTER
 
 
