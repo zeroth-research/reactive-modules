@@ -3,7 +3,7 @@
 Consumes the :class:`._farkas.FarkasResult` a ``certify`` run returns (plus the
 :class:`._farkas.System` it was run on) and writes ONE Lean file
 against the vendored ``lean/`` substrate (``Coverage``/``Net``/``Termination``).
-The file follows the rule's shape, whatever the property:
+The file follows the rule's shape:
 
   * every network a named wire is read through, once, with its structural
     non-negativity ``V_j_nonneg``;
