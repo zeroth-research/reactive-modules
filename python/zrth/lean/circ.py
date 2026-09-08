@@ -19,6 +19,8 @@ from zrth.lean.common import (
     is_constant_name,
 )
 
+from zrth.lean.native import _check_argmax_output
+
 from dataclasses import dataclass
 
 from zrth import Wire, Term
@@ -98,8 +100,15 @@ def _linear_box(term: Term) -> str:
     return f"(Box.linear {out_m} {a_lit} {b_lit})"
 
 
-def _argmax_box(input_shape: list[int]) -> str:
-    """Pick the Box variant of argmax based on input shape."""
+def _argmax_box(
+    input_shape: list[int], output_shape: "list[int] | None" = None
+) -> str:
+    """Pick the Box variant of argmax based on input shape.
+
+    Both variants have codomain `[Mat Int 1 1]` -- one flat index, per
+    `torch.argmax` -- so a wider output wire is rejected here rather than
+    producing a Box whose codomain does not match the wire it feeds."""
+    _check_argmax_output(output_shape)
     if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
         return "Box.argmax_1d"
     if len(input_shape) == 2:
@@ -349,7 +358,12 @@ def _translate_terms_circ(
                     out_ty.append(dtype_to_lean_type(w))
                 else:
                     if name == "Argmax":
-                        boxes.append(_argmax_box(dtype_shape(term.read[0].dtype)))
+                        boxes.append(
+                            _argmax_box(
+                                dtype_shape(term.read[0].dtype),
+                                dtype_shape(term.write[0].dtype),
+                            )
+                        )
                     elif name == "Linear":
                         boxes.append(_linear_box(term))
                     else:

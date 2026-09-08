@@ -205,8 +205,8 @@ infixr:75 " ⊗ " => par
     {n : Nat} : Box [Mat t 1 n] [Mat Int 1 1] :=
   ⟨fun val!(x) => val!(fun i j => ((_root_.argmax_1d x) i j : Int))⟩
 
-@[simp] def argmax {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [Inhabited t]
-    {m n : Nat} : Box [Mat t m n] [Mat Int 1 2] :=
+@[simp] def argmax {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
+    {m n : Nat} : Box [Mat t m n] [Mat Int 1 1] :=
   ⟨fun val!(x) => val!(fun i j => ((_root_.argmax x) i j : Int))⟩
 
 end Box

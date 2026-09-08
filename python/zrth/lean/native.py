@@ -10,6 +10,7 @@ IType operation to its Lean equivalent.
 from __future__ import annotations
 from zrth.lean.common import (
     dtype_shape,
+    _is_scalar_shape,
     ConstantRegistry,
     _constant_expr,
     itype_name,
@@ -122,9 +123,16 @@ _SCALAR_OP: dict[str, Callable] = {
 }
 
 
-def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
+def _argmax_expr(
+    arg_expr: str, input_shape: list[int], output_shape: "list[int] | None" = None
+) -> str:
     """Emit `argmax_1d` for 1-d input and `argmax` for generic 2-d input.
-    Wrap output as `Mat Int 1 _` to match the Python IR's Int output type."""
+
+    Both yield a single index in a `Mat _ 1 1` -- the column index for one
+    row, the row-major flat index otherwise -- so the two agree wherever
+    they overlap. Wrap output as `Mat Int 1 _` to match the Python IR's Int
+    output type."""
+    _check_argmax_output(output_shape)
     if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
         return f"(fun i j => ((argmax_1d {arg_expr}) i j : Int))"
     if len(input_shape) == 2:
@@ -132,6 +140,26 @@ def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
     raise ValueError(
         f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
     )
+
+
+def _check_argmax_output(output_shape: "list[int] | None") -> None:
+    """Reject an Argmax output wider than the single index we can emit.
+
+    Argmax follows `torch.argmax`, which returns one row-major flat index,
+    so both Lean variants produce a `Mat _ 1 1`. The theory is looser -- it
+    accepts any vector output (see the FIXME on `LIA::Argmax` in
+    theory/src/lia.rs) -- and a wider wire would previously get that 1x1
+    body ascribed to it, which does not elaborate. Fail here with the reason
+    instead of emitting Lean that cannot compile.
+    """
+    if output_shape is None:
+        return
+    if not _is_scalar_shape(output_shape):
+        raise ValueError(
+            f"argmax: output shape {output_shape} holds more than one element, "
+            "but argmax yields a single flat index (torch.argmax semantics); "
+            "declare a [1, 1] output wire"
+        )
 
 
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:
@@ -193,7 +221,11 @@ def _translate_terms(
             expr = _constant_expr(name, term, term.write[0], constants)
         elif name == "Argmax":
             arg_expr = wire_expr[term.read[0].id]
-            expr = _argmax_expr(arg_expr, dtype_shape(term.read[0].dtype))
+            expr = _argmax_expr(
+                arg_expr,
+                dtype_shape(term.read[0].dtype),
+                dtype_shape(term.write[0].dtype),
+            )
         elif name == "Linear":
             expr = _linear_expr(term, wire_expr)
         else:
@@ -288,12 +320,17 @@ def _translate_terms_scalar(
             expr = _constant_expr_scalar(name, term, write_wire, constants)
         elif name == "Argmax":
             in_wire = term.read[0]
+            _check_argmax_output(dtype_shape(write_wire.dtype))
             slots = flat_slots.get(in_wire.id)
             if slots is not None:
                 axiom_name = _argmax_scalar_name(len(slots))
                 expr = f"({axiom_name} {' '.join(slots)})"
             else:
-                mat_expr = _argmax_expr(wire_expr[in_wire.id], dtype_shape(in_wire.dtype))
+                mat_expr = _argmax_expr(
+                    wire_expr[in_wire.id],
+                    dtype_shape(in_wire.dtype),
+                    dtype_shape(write_wire.dtype),
+                )
                 expr = f"({mat_expr} 0 0)" if _is_scalar_wire(write_wire) else mat_expr
         elif name == "Linear":
             expr = _linear_expr(term, wire_expr)

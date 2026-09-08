@@ -1,24 +1,31 @@
 """Argmax semantics must agree across the three implementations.
 
 `Argmax` exists three times over: `torch.argmax` in the evaluator (the
-runtime reference), `_argmax_1d` in the SMT encoder (what CEGAR reasons
-about), and `argmax_1d` in Core/Mat.lean (what the certificate states). If
-they disagree, CEGAR can prove an invariant that is false of the system the
-Lean proof is about — so these tests pin all three to torch.
+runtime reference), `_argmax_flat` in the SMT encoder (what CEGAR reasons
+about), and `argmax_1d` / `argmax` in Core/Mat.lean (what the certificate
+states). If they disagree, CEGAR can prove an invariant that is false of the
+system the Lean proof is about — so these tests pin all three to torch.
 
-The historical bug: the Lean fold seeded its accumulator with
-`(0, default)` and updated on a non-strict `<=`, which made ties resolve to
-the *last* index and made every all-negative row report index 0. The
-generated scalar variant mirrored the same fold, so `argmax1d_scalar_n_eq`
-stayed provable while both sides were wrong.
+Two historical bugs, one per Lean definition:
+
+* `argmax_1d` seeded its fold with `(0, default)` and updated on a
+  non-strict `<=`, so ties resolved to the *last* index and every
+  all-negative row reported index 0. The generated scalar variant mirrored
+  the same fold, so `argmax1d_scalar_n_eq` stayed provable while both sides
+  were wrong.
+* `argmax` had the same mis-seeding *and* returned the wrong kind of answer:
+  the `[i, j]` pair of the maximum packed as `Mat Nat 1 2`, where torch
+  flattens row-major and returns the single index `i * n + j`. The SMT
+  encoder had no 2-D path at all — it rejected `m != 1` outright.
 """
 
 import cvc5
 import pytest
 import torch
 
-from zrth import Int
-from zrth.lean.smt_encode import _argmax_1d, MatShape, elem_sort
+from zrth import Int, Term, Module, LIA, Var, X
+from zrth.lean import ModuleToLean4
+from zrth.lean.smt_encode import _argmax_flat, MatShape, elem_sort
 
 
 # (row, expected) — expected is torch's answer, computed below to keep the
@@ -37,37 +44,123 @@ _ROWS = [
 ]
 
 
-def _torch_argmax(row):
-    return int(torch.argmax(torch.tensor(row, dtype=torch.int64)).item())
+def _torch_argmax(rows):
+    """torch's own answer: a single index into the row-major flattening."""
+    return int(torch.argmax(torch.tensor(rows, dtype=torch.int64)).item())
 
 
-def _smt_argmax(row):
-    """Evaluate the SMT encoder's argmax on a concrete row."""
+def _smt_argmax(rows):
+    """Evaluate the SMT encoder's argmax on a concrete m x n matrix."""
+    flat = [v for row in rows for v in row]
+    m, n = len(rows), len(rows[0])
     tm = cvc5.TermManager()
     solver = cvc5.Solver(tm)
     solver.setOption("produce-models", "true")
-    shape = MatShape(1, len(row))
-    elem = elem_sort(tm, Int([1, len(row)]))
-    tup = tm.mkTupleSort(*([elem] * len(row)))
+    shape = MatShape(m, n)
+    elem = elem_sort(tm, Int([m, n]))
+    tup = tm.mkTupleSort(*([elem] * len(flat)))
     const = tm.mkConst(tup, "x")
     solver.assertFormula(
         tm.mkTerm(
             cvc5.Kind.EQUAL,
             const,
-            tm.mkTuple([tm.mkInteger(v) for v in row]),
+            tm.mkTuple([tm.mkInteger(v) for v in flat]),
         )
     )
-    idx = _argmax_1d(tm, const, shape)
+    idx = _argmax_flat(tm, const, shape)
     assert solver.checkSat().isSat()
     return int(str(solver.getValue(idx)))
 
 
+# 2-D matrices, as row lists. torch flattens row-major, so the expected
+# answer is a single index into the concatenation of these rows.
+_MATRICES = [
+    [[1, 9, 3], [4, 5, 6]],        # maximum in the first row
+    [[1, 2, 3], [4, 5, 9]],        # maximum in the last position
+    [[9, 2, 3], [4, 5, 6]],        # maximum first
+    [[1, 2, 3], [4, 5, 6]],        # increasing: maximum last
+    [[9, 9, 3], [4, 5, 6]],        # tie within a row
+    [[1, 2, 3], [9, 5, 9]],        # tie within the second row
+    [[5, 5], [5, 5]],              # everything tied -> flat index 0
+    [[-9, -2, -3], [-4, -5, -6]],  # all negative
+    [[-9, -8, -7], [-6, -5, -4]],  # all negative, maximum last
+    [[3], [1], [2]],               # single column
+    [[7]],                         # 1x1
+    [[0, -1], [-2, -3]],           # zero is the genuine maximum
+]
+
+
 @pytest.mark.parametrize("row", _ROWS, ids=lambda r: ",".join(map(str, r)))
-def test_smt_argmax_matches_torch(row):
-    assert _smt_argmax(row) == _torch_argmax(row)
+def test_smt_argmax_matches_torch_1d(row):
+    assert _smt_argmax([row]) == _torch_argmax([row])
+
+
+@pytest.mark.parametrize("rows", _MATRICES, ids=lambda m: ";".join(
+    ",".join(map(str, r)) for r in m))
+def test_smt_argmax_matches_torch_2d(rows):
+    assert _smt_argmax(rows) == _torch_argmax(rows)
+
+
+@pytest.mark.parametrize("row", _ROWS, ids=lambda r: ",".join(map(str, r)))
+def test_single_row_flat_index_is_the_column_index(row):
+    """What makes `argmax` and `argmax_1d` interchangeable on one row."""
+    assert _smt_argmax([row]) < len(row)
 
 
 def test_torch_reference_conventions():
-    """Spell out the two conventions the other two implementations must share."""
-    assert _torch_argmax([3, 3]) == 0, "ties resolve to the first index"
-    assert _torch_argmax([-5, -3]) == 1, "a neutral 0 is not a candidate"
+    """Spell out the conventions all three implementations must share."""
+    assert _torch_argmax([[3, 3]]) == 0, "ties resolve to the first index"
+    assert _torch_argmax([[-5, -3]]) == 1, "a neutral 0 is not a candidate"
+    assert _torch_argmax([[1, 9], [3, 4]]) == 1, "2-D returns one row-major flat index"
+    assert _torch_argmax([[1, 2], [9, 4]]) == 2, "flat index crosses row boundaries"
+
+
+# ──────────────────────────────────────────────────────────────
+# Emission: one flat index out, in every encoding
+# ──────────────────────────────────────────────────────────────
+
+_ENCODINGS = ["to_lean_functional", "to_lean_circ", "to_lean_scalar"]
+
+
+def _argmax_module(in_shape, out_shape):
+    """Sequential module whose update takes the Argmax of its own state."""
+    s = Var(Int(in_shape))
+    out = Var(Int(out_shape))
+    init = [
+        Term(LIA.Int(torch.zeros(*in_shape, dtype=torch.int64)), [X(s)]),
+        Term(LIA.Int(torch.zeros(*out_shape, dtype=torch.int64)), [X(out)]),
+    ]
+    update = [
+        Term(LIA.Id(), [X(s)], [s]),
+        Term(LIA.Argmax(), [X(out)], [s]),
+    ]
+    return Module.sequential([s, out], init, update)
+
+
+@pytest.mark.parametrize("encoding", _ENCODINGS)
+def test_argmax_emits_for_multi_row_input(encoding):
+    """A genuinely 2-D input reaches Lean as the general `argmax`."""
+    lean = getattr(ModuleToLean4(_argmax_module([3, 4], [1, 1])), encoding)()
+    assert "argmax" in lean
+
+
+def test_multi_row_input_selects_the_general_variant():
+    """1-row input uses argmax_1d; more rows use argmax (a `Mat _ 1 1` either way)."""
+    one_row = ModuleToLean4(_argmax_module([1, 4], [1, 1])).to_lean_functional()
+    many_row = ModuleToLean4(_argmax_module([3, 4], [1, 1])).to_lean_functional()
+    assert "argmax_1d" in one_row
+    assert "(Mat Int 1 1) := (fun i j => ((argmax ctrl" in many_row, (
+        "multi-row Argmax should use the general variant with a 1x1 result"
+    )
+
+
+@pytest.mark.parametrize("encoding", _ENCODINGS)
+def test_wider_argmax_output_is_rejected(encoding):
+    """The theory allows any vector output, but argmax yields one index.
+
+    Such a module used to emit a `Mat _ 1 1` body ascribed to a wider wire,
+    which does not elaborate; codegen must say why instead.
+    """
+    module = _argmax_module([3, 4], [1, 4])
+    with pytest.raises(ValueError, match="single flat index"):
+        getattr(ModuleToLean4(module), encoding)()

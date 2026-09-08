@@ -191,22 +191,33 @@ def _matmul(
     return mat_pack(tm, out_shape, elems)
 
 
-def _argmax_1d(
+def _argmax_flat(
     tm: cvc5.TermManager,
     x: cvc5.Term,
     shape: MatShape,
 ) -> cvc5.Term:
-    """Scalar Int: index of max element in a `Mat t 1 n` term."""
-    if shape.m != 1:
-        raise ValueError(f"argmax_1d needs a 1-row matrix, got {shape}")
-    n = shape.n
-    xs = [mat_select(tm, x, shape, 0, j) for j in range(n)]
+    """Scalar Int: row-major flat index of the max element of a `Mat t m n`.
+
+    Matches `torch.argmax`, which flattens before searching and yields the
+    single index `i * n + j` rather than an `[i, j]` pair. The comparison is
+    strict against the incumbent, so the lowest flat index wins a tie, and
+    the scan starts from element 0 rather than a neutral value. For a single
+    row the flat index is the column index, which is what
+    `Core.Mat.argmax_1d` computes; `Core.Mat.argmax` covers the general case.
+    """
+    xs = [
+        mat_select(tm, x, shape, i, j)
+        for i in range(shape.m)
+        for j in range(shape.n)
+    ]
+    if not xs:
+        raise ValueError(f"argmax needs a non-empty matrix, got {shape}")
     best_idx = tm.mkInteger(0)
     best_val = xs[0]
-    for j in range(1, n):
-        cond = tm.mkTerm(Kind.GT, xs[j], best_val)
-        best_idx = tm.mkTerm(Kind.ITE, cond, tm.mkInteger(j), best_idx)
-        best_val = tm.mkTerm(Kind.ITE, cond, xs[j], best_val)
+    for k in range(1, len(xs)):
+        cond = tm.mkTerm(Kind.GT, xs[k], best_val)
+        best_idx = tm.mkTerm(Kind.ITE, cond, tm.mkInteger(k), best_idx)
+        best_val = tm.mkTerm(Kind.ITE, cond, xs[k], best_val)
     return best_idx
 
 
@@ -430,8 +441,8 @@ def translate_terms(
             cast = tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.GEQ, a, zero), a, zero)
             wt[write.id] = mat_pack(tm, out_shape, [cast])
         elif name == "Argmax":
-            idx = _argmax_1d(tm, args[0], in_shapes[0])
-            # _argmax_1d builds an Int index; LRA modules carry it on a Real wire
+            idx = _argmax_flat(tm, args[0], in_shapes[0])
+            # _argmax_flat builds an Int index; LRA modules carry it on a Real wire
             if isinstance(write.dtype, Real):
                 idx = tm.mkTerm(Kind.TO_REAL, idx)
             wt[write.id] = mat_pack(tm, out_shape, [idx])
