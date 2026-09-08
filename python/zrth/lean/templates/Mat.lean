@@ -45,12 +45,8 @@ def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
 
 /-- 1-dimensional argmax: returns the column index of the maximum element
     of a `Mat t 1 n`, packed as `Mat Nat 1 1`.
-
-    Follows `torch.argmax`, the runtime reference the SMT encoding also
-    matches: the *first* maximal index wins a tie (hence the strict `<`),
-    and the search is seeded with element 0 rather than a neutral value.
-    Seeding with `default` would enter 0 as a candidate and report index 0
-    for any all-negative row. An empty row has no argmax and yields 0. -/
+    In case there are multiple greatest elements, the *first* maximal index
+    is returned. An empty row has no argmax and yields 0. -/
 def argmax_1d {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
     {n : Nat} (x : Mat t 1 n) : Mat Nat 1 1 :=
   fun _ _ =>
