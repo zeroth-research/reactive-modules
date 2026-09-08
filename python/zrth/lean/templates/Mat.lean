@@ -60,13 +60,10 @@ def argmax_1d {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
         (j0.val, x 0 j0)).1
 
 /-- 2-dimensional argmax: the *row-major flat* index `i * n + j` of the
-    maximum element of a `Mat t m n`, packed as `Mat Nat 1 1`.
-
-    Follows `torch.argmax`, which flattens before searching and returns a
-    single index — not an `[i, j]` pair. Ties go to the lowest flat index
-    and the fold is seeded with element `(0, 0)`, matching `argmax_1d`,
-    which this agrees with whenever `m = 1` (there `i * n + j = j`). An
-    empty matrix has no argmax and yields 0. -/
+    maximum element of a `Mat t m n`, packed as `Mat Nat 1 1` — a single
+    index, not an `[i, j]` pair.
+    Ties go to the lowest flat index, so this agrees with `argmax_1d`
+    whenever `m = 1`. An empty matrix has no argmax and yields 0. -/
 def argmax {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
     {m n : Nat} (x : Mat t m n) : Mat Nat 1 1 :=
   fun _ _ =>
