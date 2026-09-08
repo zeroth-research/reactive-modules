@@ -412,7 +412,27 @@ where
             }
             Ok(())
         }
-        LRA::Argmax() | LRA::Min() | LRA::Max() => {
+        // See the note on `LIA::Argmax`: one index out, matching
+        // `torch.argmax`, the SMT encoding and `Core.Mat.argmax`. An LRA
+        // module carries that index on a Real wire.
+        LRA::Argmax() => {
+            // TODO: check whether the conditions of the read are sound
+            let (_r1, None) = (next_with_degree(&mut read, 0)?, read.next()) else {
+                return Err(format!("{:?}: must read exactly one value", op));
+            };
+            let (w1, None) = (next_with_degree(&mut write, 0)?, write.next()) else {
+                return Err(format!("{:?}: must write exactly one value", op));
+            };
+            match w1 {
+                (Sort::Real([1, 1]), _) => Ok(()),
+                (Sort::Real([i, j]), _) => Err(format!(
+                    "{:?}: output must hold exactly one index, got {}x{}",
+                    op, i, j
+                )),
+                _ => Err(format!("{:?}: output must be real matrix", op)),
+            }
+        }
+        LRA::Min() | LRA::Max() => {
             // TODO: check whether the conditions of the read are sound
             let (_r1, None) = (next_with_degree(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
@@ -422,7 +442,9 @@ where
             };
             match w1 {
                 (Sort::Real([i, j]), _) => {
-                    // FIXME: we should fix which dimension is 1..
+                    // FIXME: we should fix which dimension is 1.. and settle
+                    // whether these are reductions at all -- the evaluator
+                    // treats them as binary elementwise ops.
                     if i == 1 || j == 1 {
                         return Ok(());
                     }
@@ -832,9 +854,15 @@ mod tests {
 
     #[test]
     fn argmax_ok() {
+        // one index out, whatever the input shape
         assert!(
             LRA::Argmax()
-                .check([real(3, 4)].map(deg0), [real(1, 4)].map(deg0))
+                .check([real(3, 4)].map(deg0), [real(1, 1)].map(deg0))
+                .is_ok()
+        );
+        assert!(
+            LRA::Argmax()
+                .check([real(1, 4)].map(deg0), [real(1, 1)].map(deg0))
                 .is_ok()
         );
     }
@@ -844,6 +872,22 @@ mod tests {
         assert!(
             LRA::Argmax()
                 .check([real(3, 4)].map(deg0), [real(3, 4)].map(deg0))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn argmax_vector_output_fails() {
+        // a vector output would mean per-column argmax, which neither
+        // `torch.argmax` nor the SMT/Lean encodings implement
+        assert!(
+            LRA::Argmax()
+                .check([real(3, 4)].map(deg0), [real(1, 4)].map(deg0))
+                .is_err()
+        );
+        assert!(
+            LRA::Argmax()
+                .check([real(3, 4)].map(deg0), [real(4, 1)].map(deg0))
                 .is_err()
         );
     }

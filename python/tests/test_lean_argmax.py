@@ -154,13 +154,30 @@ def test_multi_row_input_selects_the_general_variant():
     )
 
 
-@pytest.mark.parametrize("encoding", _ENCODINGS)
-def test_wider_argmax_output_is_rejected(encoding):
-    """The theory allows any vector output, but argmax yields one index.
+@pytest.mark.parametrize("out_shape", [[1, 4], [4, 1], [3, 4]])
+def test_theory_rejects_wider_argmax_output(out_shape):
+    """Argmax yields one index, so the theory admits only a [1, 1] output.
 
-    Such a module used to emit a `Mat _ 1 1` body ascribed to a wider wire,
-    which does not elaborate; codegen must say why instead.
+    A vector output would have to mean per-column argmax, which nothing
+    implements. This used to be accepted and then emitted a `Mat _ 1 1` body
+    ascribed to the wider wire, which does not elaborate.
     """
-    module = _argmax_module([3, 4], [1, 4])
-    with pytest.raises(ValueError, match="single flat index"):
-        getattr(ModuleToLean4(module), encoding)()
+    s = Var(Int([3, 4]))
+    out = Var(Int(out_shape))
+    with pytest.raises(Exception, match="exactly one index|vector|matrix"):
+        Term(LIA.Argmax(), [X(out)], [s])
+
+
+def test_codegen_guard_still_states_the_one_index_contract():
+    """Defence in depth behind the theory check, which now catches this first.
+
+    Kept so the contract is stated where the Lean is emitted: both variants
+    produce a `Mat _ 1 1`, so a wider wire cannot be served.
+    """
+    from zrth.lean.native import _check_argmax_output
+
+    _check_argmax_output([1, 1])  # the only shape argmax can fill
+    _check_argmax_output(None)  # opt out
+    for bad in ([1, 4], [4, 1], [3, 4]):
+        with pytest.raises(ValueError, match="single flat index"):
+            _check_argmax_output(bad)

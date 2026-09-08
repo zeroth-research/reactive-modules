@@ -387,7 +387,29 @@ where
             }
             Ok(())
         }
-        LIA::Argmax() | LIA::Min() | LIA::Max() => {
+        // Argmax reduces the whole matrix to one index. It follows
+        // `torch.argmax`, which flattens row-major and returns the single
+        // index `i * n + j`, so the output holds exactly one element -- the
+        // SMT encoding and `Core.Mat.argmax` in the Lean codegen both agree
+        // on that. A wider output would have to mean per-column argmax,
+        // which nothing implements.
+        LIA::Argmax() => {
+            let (_r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
+                return Err(format!("{:?}: must read exactly one value", op));
+            };
+            let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+                return Err(format!("{:?}: must write exactly one value", op));
+            };
+            match w1 {
+                Sort::Int([1, 1]) => Ok(()),
+                Sort::Int([i, j]) => Err(format!(
+                    "{:?}: output must hold exactly one index, got {}x{}",
+                    op, i, j
+                )),
+                _ => Err(format!("{:?}: output must be integer matrix", op)),
+            }
+        }
+        LIA::Min() | LIA::Max() => {
             let (_r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
@@ -396,7 +418,9 @@ where
             };
             match w1 {
                 Sort::Int([i, j]) => {
-                    // FIXME: we should fix which dimension is 1..
+                    // FIXME: we should fix which dimension is 1.. and settle
+                    // whether these are reductions at all -- the evaluator
+                    // treats them as binary elementwise ops.
                     if i == 1 || j == 1 {
                         return Ok(());
                     }
@@ -782,9 +806,15 @@ mod tests {
 
     #[test]
     fn argmax_ok() {
+        // one index out, whatever the input shape
         assert!(
             LIA::Argmax()
-                .check([int(3, 4)].map(deg0), [int(1, 4)].map(deg0))
+                .check([int(3, 4)].map(deg0), [int(1, 1)].map(deg0))
+                .is_ok()
+        );
+        assert!(
+            LIA::Argmax()
+                .check([int(1, 4)].map(deg0), [int(1, 1)].map(deg0))
                 .is_ok()
         );
     }
@@ -794,6 +824,31 @@ mod tests {
         assert!(
             LIA::Argmax()
                 .check([int(3, 4)].map(deg0), [int(3, 4)].map(deg0))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn argmax_vector_output_fails() {
+        // a vector output would mean per-column argmax, which neither
+        // `torch.argmax` nor the SMT/Lean encodings implement
+        assert!(
+            LIA::Argmax()
+                .check([int(3, 4)].map(deg0), [int(1, 4)].map(deg0))
+                .is_err()
+        );
+        assert!(
+            LIA::Argmax()
+                .check([int(3, 4)].map(deg0), [int(4, 1)].map(deg0))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn argmax_bool_output_fails() {
+        assert!(
+            LIA::Argmax()
+                .check([int(3, 4)].map(deg0), [bool_t(1, 1)].map(deg0))
                 .is_err()
         );
     }
