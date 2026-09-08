@@ -1,21 +1,17 @@
 """The verifier's view of a composed module, indexed by its non-affine nodes.
 
-A ``zrth`` module is already a graph: each term carries an ``itype`` and its
-read/write wires. This is not a second graph — it is a *view* of that one, taking
-it from wire space into solver space and keeping the structure the cell engine
+A module is already a graph: each term carries an ``itype`` and its
+read/write wires. This takes it from wire space into solver space and keeping the structure the cell engine
 needs.
 
-:func:`node_view` walks the terms once and does two things. It **classifies**:
-which terms are affine and which are piecewise-linear, so need a case split or a
-relaxation — a judgement the module itself does not make. And it **partially
-evaluates**: affine terms are folded into z3 expressions, while each
-piecewise-linear term keeps a symbol standing for its output. On a typical
-benchmark that is 121 terms in, 11 nodes out.
+:func:`node_view` walks the terms once and does two things. It classifies
+which terms are affine and which are piecewise-linear, so it may need a case split or a
+relaxation. And it partially evaluates: affine terms are folded into z3 expressions, while each
+piecewise-linear term keeps a symbol standing for its output. 
 
 So a wire's value comes back affine in the state and the node symbols, and the
 nodes say what each symbol means. ``ReLU`` and ``Ite`` are the kinds the engine
-splits today; ``Min``/``Max``/``Argmax`` are the same shape and are listed so an
-unhandled one is reported rather than silently linearised.
+splits today (later to be extended).
 """
 from __future__ import annotations
 
