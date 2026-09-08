@@ -276,3 +276,9 @@ it is unguarded in the direction that loses information.
 * `tests/lean/Core/` is **generated** — the `sync_core_templates` fixture
   copies the templates in, and the directory is gitignored. Running
   `lake build` there without running pytest first compiles a stale copy.
+* `templates/` used to hold a second, byte-identical set of the Core files
+  and the LeanAI tree next to the ones under `templates/static/`. Only the
+  `static/` copies were ever read, so editing a top-level one did nothing —
+  which is exactly what happened to `templates/Mat.lean` in 879d9f7. The
+  duplicates are gone and `tests/test_lean_templates.py` guards against a
+  new one appearing.
