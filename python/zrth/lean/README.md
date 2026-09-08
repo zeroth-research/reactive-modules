@@ -4,25 +4,29 @@ This package translates Python reactive modules (an SSA-style IR) into Lean 4
 source files that encode the module and carry machine-checked proofs of
 safety/liveness properties.
 
+Known defects in this pipeline, fixed and open, are catalogued in
+[KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+
 ---
 
 ## Reactive Module IR
 
 A **`Module`** is the top-level object.  It has:
 
-- **`ctrl`** wires — the module's mutable state: list of `(latched, next)` wire
-  pairs.  `latched` holds the value from the previous step; `next` is what
-  `update` writes.
-- **`extl`** wires — external/environment inputs, also `(latched, next)` pairs.
+- **`ctrl`** — the module's mutable state, as a sequence of `Var`s.  A `Var`
+  stands for its *latched* wire (the value from the previous step), and
+  `X(v)` is its *next* wire, which `update` writes.
+- **`extl`** — external/environment inputs, also a sequence of `Var`s.
 - **atoms** — currently always a single atom (the combinational logic block).
   Each atom has an **`init`** term list and an **`update`** term list.
 
-A **`Wire`** carries a `DType` (`Bool`, `Int`, `Float`) and a shape
-(`[]`/`[1]` = scalar, `[n]` = row vector, `[m, n]` = matrix).
+A **`Wire`** carries a `Sort` (`Bool`, `Int`, `Real`, `BitVec`) and a shape,
+always 2-D here: `[1, 1]` = scalar, `[1, n]` = row vector, `[m, n]` = matrix.
 
-A **`Term`** is one SSA node: a single `IType` operation, reading from some
-wires (`term.read`) and writing one output wire (`term.write[0]`).  The term
-lists form a topologically-sorted dataflow graph.
+A **`Term`** is one SSA node: a single operation drawn from a theory
+namespace (`LIA`, `LRA`, `BV`), reading from some wires (`term.read`) and
+writing one output wire (`term.write[0]`).  The term lists form a
+topologically-sorted dataflow graph.
 
 ---
 
