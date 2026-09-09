@@ -27,11 +27,19 @@ def _wrap(t, sort):
 
 
 def _linear(weight, bias, x):
-    """A·x (+ b). An empty bias tensor means no bias (matmul-as-Linear)."""
-    weight = weight.to(x.dtype)  # baked Int weights vs float runtime tensors
-    if bias is None or bias.numel() == 0:
-        return weight @ x
-    return weight @ x + bias.to(x.dtype)
+    """A·x (+ b). An empty bias tensor means no bias (matmul-as-Linear).
+
+    Operands are promoted to a common dtype rather than coerced to `x`'s.
+    Baked Int weights meet float runtime tensors (what the promotion was
+    added for), but the reverse also occurs -- `LIA.Linear` accepts float
+    weights on Int wires -- and casting those down to `x` floored every
+    coefficient below 1 to zero with no error.
+    """
+    dtype = torch.promote_types(weight.dtype, x.dtype)
+    if bias is not None and bias.numel() != 0:
+        dtype = torch.promote_types(dtype, bias.dtype)
+        return weight.to(dtype) @ x.to(dtype) + bias.to(dtype)
+    return weight.to(dtype) @ x.to(dtype)
 
 
 def eval_itype(itype, read, out_sort=None):

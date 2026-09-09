@@ -371,3 +371,56 @@ def test_twobitcounter_mixed():
     assert _bits(history[5], b0, b1) == (True, False)  # hold
     assert _bits(history[6], b0, b1) == (True, True)  # 2->3
     assert _bits(history[7], b0, b1) == (False, False)  # 3->0
+
+
+# ──────────────────────────────────────────────────────────────
+# Linear: mixed weight/input dtypes must not lose information
+# ──────────────────────────────────────────────────────────────
+
+
+def test_linear_promotes_int_weights_against_float_input():
+    """The case `_linear`'s cast was written for: baked Int weights, float x."""
+    from zrth.eval import _linear
+
+    W = torch.tensor([[2, 3]], dtype=torch.int64)
+    x = torch.tensor([[1.5], [2.5]], dtype=torch.float32)
+    out = _linear(W, None, x)
+    assert out.dtype.is_floating_point
+    assert out.tolist() == [[2 * 1.5 + 3 * 2.5]]
+
+
+def test_linear_does_not_truncate_float_weights_against_int_input():
+    """The other direction: coercing to x's dtype would silently floor.
+
+    `LIA.Linear` accepts float weights on Int wires, so this is reachable,
+    and demoting turned every |w| < 1 into 0 with no error.
+    """
+    from zrth.eval import _linear
+
+    W = torch.tensor([[0.5, 0.5]], dtype=torch.float32)
+    x = torch.tensor([[3], [3]], dtype=torch.int64)
+    out = _linear(W, None, x)
+    assert out.tolist() == [[3.0]], "float weights were truncated toward zero"
+    assert out.dtype.is_floating_point
+
+
+def test_linear_bias_follows_the_same_promotion():
+    """A float bias must not be floored against an int product either."""
+    from zrth.eval import _linear
+
+    W = torch.tensor([[1, 1]], dtype=torch.int64)
+    b = torch.tensor([[0.25]], dtype=torch.float32)
+    x = torch.tensor([[1], [1]], dtype=torch.int64)
+    out = _linear(W, b, x)
+    assert out.tolist() == [[2.25]], "float bias was truncated"
+
+
+def test_linear_keeps_integer_arithmetic_when_nothing_is_float():
+    """All-int stays int: promotion must not silently make everything float."""
+    from zrth.eval import _linear
+
+    W = torch.tensor([[2, 3]], dtype=torch.int64)
+    x = torch.tensor([[4], [5]], dtype=torch.int64)
+    out = _linear(W, None, x)
+    assert not out.dtype.is_floating_point
+    assert out.tolist() == [[2 * 4 + 3 * 5]]
