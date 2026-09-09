@@ -71,7 +71,7 @@ ascribed to the wider wire, which does not elaborate.
 Now restricted to a `[1, 1]` output. Both Python front-ends
 (`builder.py`, `expr.py`) already produced exactly that, so nothing that
 worked before is rejected. `Argmax` was split out of the shared
-`Argmax | Min | Max` arm to keep 19 out of scope.
+`Argmax | Min | Max` arm to keep 18 out of scope.
 
 ---
 
@@ -115,34 +115,43 @@ A Bool matrix constant is therefore never interned by
 `_tensor_to_lean_inline`, and hits `tensor.item()`:
 `RuntimeError: a Tensor with 6 elements cannot be converted to Scalar`.
 
-### 7. Scalar encoding mixes bare scalars with `Mat`-expecting builders · CONFIRMED
+### 7. The scalar encoding flattens the signature but not the body · CONFIRMED
 
-`native.py`, the `_LEAN_OP` fallback in `_translate_terms_scalar`. The
-scalar encoding binds 1×1 wires to bare `Bool`/`Int`, but `_LEAN_OP`
-builders index operands with `0 0`. A matrix `Ite` with a scalar Bool
-condition emits
+`_scalar_bindings_with_recon` is built to flatten multi-element wires --
+`_product_type_scalar` turns a `Mat Int 1 3` ctrl wire into `Int × Int ×
+Int` -- but the term body still produces the whole matrix, so the returned
+tuple does not match the declared type. Compiling
+`to_lean_functional() + to_lean_scalar()` together (which is how a generated
+project arranges them) gives, for the tests/lean modules:
 
-```lean
-let x1 : (Mat Int 1 3) := (if ctrl.2.2.2 0 0 then x0 else _m0)
-```
+| module | state | errors |
+|---|---|---|
+| `_make_countdown()` | `Int([1,1])` | **0** |
+| `_make_countdown_vec(6)` | `Int([6,1])` | 4 |
+| `_make_counter()` | `Int([3,1])` | 4 |
 
-where `unpack_ctrl` types `ctrl.2.2.2` as `Bool`. Applying a `Bool` to two
-arguments does not elaborate, so `System/Scalar.lean` fails to build for any
-module combining a matrix wire with a scalar-conditioned op.
+all of the form `Type mismatch` on the result tuple, plus the
+`_scalar_eq` theorems then failing to elaborate. So the encoding works for
+all-1×1 modules and is unfinished for the multi-element wires it was
+designed to flatten.
 
-### 8. `Linear` in the scalar encoding emits wrong operand and result types · CONFIRMED
+**Needs a decision.** Two ways out, and they are not equivalent: finish the
+flattening so the body emits per-element scalars, or narrow
+`_can_scalarize()` (whose current check, `len(dtype_shape(w.dtype)) <= 2`,
+is vacuous — every shape here is 2-D — so it gates nothing) and let matrix
+modules take the "not available" comment the callers already document. The
+second is a few lines but withdraws intended capability; tried and reverted
+for that reason. Nothing else depends on the answer: the standalone
+certificates in `Certs/` carry no Scalar section, which is why this went
+unnoticed.
 
-`native.py`. Unlike the adjacent `Argmax` branch there is no `0 0`
-extraction and no scalar path, so a 1×1 `LIA.Linear` emits
+Two narrower type errors underneath it are fixed in `39be96d`: the
+`_LEAN_OP` fallback applied `0 0` to scalar-bound operands (a matrix `Ite`
+with a scalar Bool condition emitted `if ctrl.2.2.2 0 0 then ...`), and
+`Linear` had no scalar path, passing a bare scalar to `matVecAffine` and
+ascribing its matrix result to `Int`.
 
-```lean
-let x0 : Int := (matVecAffine 1 ([[1]] : List (List Int)) ([1] : List Int) ctrl)
-```
-
-with `ctrl : Int`. Both the argument (needs `Mat t n batch`) and the ascribed
-result (`Mat t 1 batch`, not `Int`) are wrong.
-
-### 9. `generate_main_lean` calls `update` with one tuple instead of three args · CONFIRMED
+### 8. `generate_main_lean` calls `update` with one tuple instead of three args · CONFIRMED
 
 `project.py` emits `update (state.1, state.2, extl)` while
 `atom_to_lean_functional` emits `def update (ctrl) (extl_l) (extl_n)` —
@@ -150,7 +159,7 @@ three curried parameters. `extl_l` is silently dropped. Any project
 generated with `verith -x` fails to elaborate. Verified on
 `tests/fixtures/twobit.py`.
 
-### 10. `generate_main_lean` reverses tuple component order · CONFIRMED
+### 9. `generate_main_lean` reverses tuple component order · CONFIRMED
 
 `project.py`: `reversed(parse_vars)` and `reversed(destr_vars)`, but
 `_product_type`/`_build_tuple` never reverse, so the reversal is unpaired in
@@ -159,7 +168,7 @@ then `s!"{showMat 1 1 v0} {showMat 1 1 v1}"`, so the executable prints `b1`
 before `b0`. With heterogeneous ctrl types it is a hard type error, applying
 the wrong `showBool`/`showMat` to each slot.
 
-### 11. `parseExtl`/`showCtrl` pin the element type to `Int` · CONFIRMED
+### 10. `parseExtl`/`showCtrl` pin the element type to `Int` · CONFIRMED
 
 `project.py`. The `Bool`/`Int` branches compare against bare `"Bool"`/`"Int"`,
 but `dtype_to_lean_type(w)` is called with the default `simple_types=False`
@@ -169,7 +178,7 @@ BitVec fixture: `parseExtl` is declared `IO ((Mat (BitVec 1) 1 1))` while
 its body builds `let e0 : Fin 1 → Fin 1 → Int`, and `showMat` only accepts
 `Fin m → Fin n → Int`. Bool, BitVec and Real IO all mistype.
 
-### 12. BV modules get Boolean Lean operators · CONFIRMED
+### 11. BV modules get Boolean Lean operators · CONFIRMED
 
 Found by building a generated executable project. `_LEAN_OP` is shared
 across theories, so `BV.Not`/`BV.And`/`BV.Ite` emit Lean's *Boolean* `!`,
@@ -186,7 +195,7 @@ BitVec 1 but is expected to have type Bool`, five times over. BitVec wants
 condition has to be compared (`if c = 1 then`) or routed through
 `BV.BVToBool`. So `verith -x` works for LIA/LRA modules but not BV ones.
 
-### 13. `unknown` solver result crashes the CEGAR driver · PLAUSIBLE
+### 12. `unknown` solver result crashes the CEGAR driver · PLAUSIBLE
 
 `magic_cegar.py`. Only `res.isUnsat()` short-circuits; an `unknown` result
 falls into the counterexample path and calls `solver.getValue(v)` with no
@@ -194,7 +203,7 @@ model available, raising `CVC5ApiException`. A nonlinear ranking function or
 an `--infer ai-cegar` query that times out crashes the whole run instead of
 producing feedback.
 
-### 14. `BitVec.ofNat` emitted for negative values · PLAUSIBLE
+### 13. `BitVec.ofNat` emitted for negative values · PLAUSIBLE
 
 `common.py` and `smt_to_lean.py` emitted `BitVec.ofNat w v`, which does not
 elaborate for a negative `v` — Lean reports `failed to synthesize Neg ℕ`.
@@ -205,7 +214,7 @@ never sees a BitVec wire, and cvc5's `getBitVectorValue` is unsigned. So
 nothing fed a negative through. Switched to `BitVec.ofInt`, which wraps to
 two's complement and agrees with `ofNat` on non-negatives.
 
-### 15. FBK's state tuple is incompatible with `ScalarRel.effect_i` · PLAUSIBLE
+### 14. FBK's state tuple is incompatible with `ScalarRel.effect_i` · PLAUSIBLE
 
 `translate/fbk.py`. `_state_tuple` builds its `TypeMap` from
 `dtype_to_lean_type(w, simple_types=True)`, so a multi-element ctrl wire
@@ -214,7 +223,7 @@ stays a matrix, while `ScalarRel`'s state type comes from
 `Int([1,3])` the generated `effect_i_eq`/`R_i_iff` theorems are ill-typed —
 for exactly the matrix modules `_can_scalarize()` admits.
 
-### 16. argmax scalar variants collide on name · PLAUSIBLE
+### 15. argmax scalar variants collide on name · PLAUSIBLE
 
 `translate/scalar.py`. `_collect_argmax_variants` dedupes on `(ety, n)`
 while `_argmax_scalar_name(n)` ignores the element type. A module with an
@@ -222,7 +231,7 @@ Argmax over `Mat Int 1 4` and another over `Mat Real 1 4` emits two
 `def argmax1d_scalar_4` declarations and two `_eq` theorems — duplicate
 declaration error, plus the same name twice in the simp set.
 
-### 17. `_prepend_recon` makes call sites under-apply `effect_i` · PLAUSIBLE
+### 16. `_prepend_recon` makes call sites under-apply `effect_i` · PLAUSIBLE
 
 `translate/fbk.py`. The reconstruction `let`s are emitted unconditionally
 from the shared `update_recon`, so Lean's `variable` auto-binding pulls
@@ -231,14 +240,14 @@ argument list from `_consumed()` and lists only the groups actually read.
 For a module with a multi-element `extl_l` and an `effect_0` depending only
 on state, the emitted `effect_0 state` is missing an argument.
 
-### 18. `IndexError` when a module has no ctrl wires · PLAUSIBLE
+### 17. `IndexError` when a module has no ctrl wires · PLAUSIBLE
 
 `translate/fbk.py`. `ctrl_types[0]`, and `ctrl_types[-1]` in the `else`
 branch (`all_same` is `False` for the empty list), both index an empty list.
 A purely combinational atom crashes `to_lean_bool_rel()` instead of emitting
 the "not available" comment that `to_lean_scalar`/`to_lean_rel` produce.
 
-### 19. Theory and evaluator disagree about `Min`/`Max` · CONFIRMED
+### 18. Theory and evaluator disagree about `Min`/`Max` · CONFIRMED
 
 Noticed while tightening the `Argmax` shape rule. `check_mat_ops` groups
 `Min`/`Max` with `Argmax` and requires **one** read plus a vector output —
@@ -251,7 +260,7 @@ Left alone deliberately when `Argmax` was split out and tightened (see
 below), because which of the two readings is intended is a design question.
 `Min`/`Max` keep the looser vector rule and the `FIXME`.
 
-### 20. `README.md` described the pre-`Var` IR · CONFIRMED
+### 19. `README.md` described the pre-`Var` IR · CONFIRMED
 `FIXED` alongside this file.
 
 The "Reactive Module IR" section still said `ctrl`/`extl` were lists of
@@ -261,12 +270,12 @@ its latched wire, `X(v)` is the next one), sorts are `Bool`/`Int`/`Real`/
 `BitVec` under `Sort`, and operations come from the `LIA`/`LRA`/`BV`
 namespaces. Missed when the code was migrated in `1c88c5b`.
 
-### 21. Unused `List.foldl`-era duplication in `rel.py` · PLAUSIBLE
+### 20. Unused `List.foldl`-era duplication in `rel.py` · PLAUSIBLE
 
 `translate/rel.py` computes `unpack_pack_simp`/`unpack_pack_simp_str` twice
 and never uses either.
 
-### 22. `eval.py::_linear` truncates float weights against an int input · PLAUSIBLE
+### 21. `eval.py::_linear` truncates float weights against an int input · PLAUSIBLE
 
 `_linear` does `weight.to(x.dtype)` in both directions. Baked *float*
 weights against an int-typed `x` would truncate to 0. The cast was added to

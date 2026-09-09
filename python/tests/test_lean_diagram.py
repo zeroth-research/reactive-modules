@@ -376,26 +376,22 @@ def test_rel_encoding_has_no_unused_simp_placeholders():
 # ──────────────────────────────────────────────────────────────
 
 
-def test_scalar_encoding_lifts_scalar_operands_for_matrix_ops():
+def test_scalar_encoding_lifts_scalar_operand_for_relu():
     """`_LEAN_OP` builders apply operands to `0 0`, so scalars need lifting.
 
-    A matrix `Ite` with a scalar Bool condition emitted
-    `if ctrl.2.2.2 0 0 then ...`, applying a bare `Bool` to two arguments.
+    `ReLU` is the one op with a matrix form but no `_SCALAR_OP` entry, so a
+    1x1 ReLU takes that fallback with a scalar-bound operand.
     """
-    m3 = Var(Int([1, 3]))
-    c = Var(Bool([1, 1]))
-    init = [
-        Term(LIA.Int(torch.zeros(1, 3, dtype=torch.int64)), [X(m3)]),
-        Term(LIA.Bool(torch.tensor([[True]])), [X(c)]),
-    ]
-    update = [
-        Term(LIA.Id(), [X(c)], [c]),
-        Term(LIA.Ite(), [X(m3)], [c, m3, m3]),
-    ]
-    lean = ModuleToLean4(Module.sequential([m3, c], init, update)).to_lean_scalar()
-    ite = [l for l in lean.splitlines() if "if " in l]
-    assert ite, "no Ite emitted"
-    for line in ite:
+    s = Var(Int([1, 1]))
+    module = Module.sequential(
+        [s],
+        [Term(LIA.Int(torch.tensor([[0]])), [X(s)])],
+        [Term(LIA.ReLU(), [X(s)], [s])],
+    )
+    lean = ModuleToLean4(module).to_lean_scalar()
+    relu = [l for l in lean.splitlines() if "Max.max" in l or "ReLu" in l]
+    assert relu, f"no ReLU emitted:\n{lean}"
+    for line in relu:
         assert "(fun _ _ =>" in line, f"scalar operand not lifted: {line.strip()}"
 
 
@@ -412,3 +408,28 @@ def test_scalar_encoding_extracts_a_scalar_from_linear():
     assert line.strip().endswith("0 0)"), f"result not extracted: {line.strip()}"
     assert "(fun _ _ => ctrl)" in line, f"operand not lifted: {line.strip()}"
     assert ": Int :=" in line, "a 1x1 write wire should stay scalar-typed"
+
+
+def test_scalar_encoding_lifts_a_scalar_ite_condition():
+    """A matrix `Ite` with a scalar Bool condition emitted
+    `if ctrl.2.2.2 0 0 then ...`, applying a bare `Bool` to two arguments.
+
+    (The rest of this module's scalar encoding is still ill-typed — the
+    signature flattens multi-element wires while the body keeps them as
+    matrices — so this checks the operand form, not the whole file.)
+    """
+    m3 = Var(Int([1, 3]))
+    c = Var(Bool([1, 1]))
+    init = [
+        Term(LIA.Int(torch.zeros(1, 3, dtype=torch.int64)), [X(m3)]),
+        Term(LIA.Bool(torch.tensor([[True]])), [X(c)]),
+    ]
+    update = [
+        Term(LIA.Id(), [X(c)], [c]),
+        Term(LIA.Ite(), [X(m3)], [c, m3, m3]),
+    ]
+    lean = ModuleToLean4(Module.sequential([m3, c], init, update)).to_lean_scalar()
+    ite = [l for l in lean.splitlines() if "if " in l]
+    assert ite, "no Ite emitted"
+    for line in ite:
+        assert "(fun _ _ =>" in line, f"scalar operand not lifted: {line.strip()}"
