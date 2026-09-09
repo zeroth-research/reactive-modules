@@ -3,7 +3,12 @@ Build a Lean4 project with Mathlib, Cslib, and a custom git dependency,
 copy template library files, and generate a diagram Lean file.
 """
 
-from zrth.lean.common import LeanContext, dtype_to_lean_type, dtype_shape
+from zrth.lean.common import (
+    LeanContext,
+    dtype_to_lean_type,
+    dtype_shape,
+    _flat_element_type,
+)
 
 from zrth.lean.cert import (
     generate_certificate_lean,
@@ -78,6 +83,41 @@ def _token_count(wire: Wire) -> int:
     raise ValueError("Unsupported DType for token count")
 
 
+def _unsupported_io_sort(elem: str, wire: Wire) -> ValueError:
+    return ValueError(
+        f"generate_main_lean: no Lean IO for element type {elem} "
+        f"(wire dtype {wire.dtype}); `Real` is noncomputable in Lean, so it "
+        "cannot be parsed or printed by the generated executable"
+    )
+
+
+def _elem_parser(elem: str, wire: Wire) -> "tuple[str, str]":
+    """`(bind, push)` for reading one element of `elem` from a token.
+
+    `bind` is `:=` for a pure parser and `←` for one in IO; `push` is the
+    expression stored into the array.
+    """
+    if elem == "Bool":
+        return ":=", "(parseBool v)"
+    if elem == "Int":
+        return "←", "v"
+    if elem.startswith("(BitVec "):
+        width = elem[len("(BitVec ") : -1]
+        return "←", f"(BitVec.ofInt {width} v)"
+    raise _unsupported_io_sort(elem, wire)
+
+
+def _elem_shower(elem: str, wire: Wire) -> str:
+    """Lean function rendering one element of `elem` as a String."""
+    if elem == "Bool":
+        return "showBool"
+    if elem == "Int":
+        return "toString"
+    if elem.startswith("(BitVec "):
+        return "toString"
+    raise _unsupported_io_sort(elem, wire)
+
+
 def generate_main_lean(project_name: str, module: Module, module_name: str) -> str:
     """Generate Main.lean source that runs init/update in a stdin/stdout loop."""
     extl_next = [X(v) for v in module.extl]
@@ -89,8 +129,10 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
 
     lines: list[str] = []
 
-    # Imports
-    lines.append(f"import {project_name}.{module_name}")
+    # Imports. `init`/`update` are emitted into System/System.lean, which the
+    # `System` lean_lib's root module pulls in; `{project_name}.{module_name}`
+    # named no file the generator ever writes.
+    lines.append("import System")
     lines.append("open Box")
     lines.append("")
 
@@ -107,9 +149,12 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         '  | none => throw (.userError s!"Invalid integer: {s.trimAscii.toString}")'
     )
     lines.append("")
-    lines.append("def showMat (m n : Nat) (mat : Fin m → Fin n → Int) : String :=")
     lines.append(
-        "  let vals := (List.ofFn fun i => List.ofFn fun j => [toString (mat i j)]).flatten.flatten"
+        "def showMat {t : Type} (m n : Nat) (f : t → String) (mat : Fin m → Fin n → t)"
+        " : String :="
+    )
+    lines.append(
+        "  let vals := (List.ofFn fun i => List.ofFn fun j => [f (mat i j)]).flatten.flatten"
     )
     lines.append('  String.intercalate " " vals')
     lines.append("")
@@ -125,29 +170,24 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     offset = 0
     parse_vars: list[str] = []
     for i, w in enumerate(extl_next):
-        ty = dtype_to_lean_type(w)
+        elem = _flat_element_type(w)
         var = f"e{i}"
-        if ty == "Bool":
-            lines.append(f"  let {var} := parseBool tokens[{offset}]!")
-            offset += 1
-        elif ty == "Int":
-            lines.append(f"  let {var} ← parseIntOrFail tokens[{offset}]!")
-            offset += 1
-        else:
-            # .mat m n
-            dt = w.dtype
-            shape = dtype_shape(dt)
-            m = shape[0]
-            n = shape[1] if len(shape) == 2 else 1
-            # Parse m*n tokens into a matrix
-            lines.append(f"  let mut arr{i} : Array Int := #[]")
-            lines.append(f"  for k in List.range {m * n} do")
-            lines.append(f"    let v ← parseIntOrFail tokens[{offset} + k]!")
-            lines.append(f"    arr{i} := arr{i}.push v")
-            lines.append(
-                f"  let {var} : Fin {m} → Fin {n} → Int := fun i j => arr{i}[i.val * {n} + j.val]!"
-            )
-            offset += m * n
+        shape = dtype_shape(w.dtype)
+        m = shape[0]
+        n = shape[1] if len(shape) == 2 else 1
+        # Every wire is a matrix here, so parse m*n tokens into an array of
+        # the wire's own element type -- reading them all as Int made the
+        # body disagree with the ascribed return type for every other sort.
+        bind, push = _elem_parser(elem, w)
+        lines.append(f"  let mut arr{i} : Array {elem} := #[]")
+        lines.append(f"  for k in List.range {m * n} do")
+        lines.append(f"    let v {bind} tokens[{offset} + k]!")
+        lines.append(f"    arr{i} := arr{i}.push {push}")
+        lines.append(
+            f"  let {var} : Fin {m} → Fin {n} → {elem} :="
+            f" fun i j => arr{i}[i.val * {n} + j.val]!"
+        )
+        offset += m * n
         parse_vars.append(var)
 
     # `_product_type` orders components as the wires are declared, and
@@ -166,21 +206,17 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     # below pick showBool/toString/showMat from that wire's type.
     lines.append(f"  let {_build_tuple(destr_vars)} := v")
 
-    # Format each variable
+    # Format each variable. `dtype_to_lean_type` always returns a `Mat ...`
+    # here, so dispatch on the element sort instead: comparing that string
+    # against "Bool"/"Int" never matched and pinned every element to Int.
     show_parts: list[str] = []
     for i, w in enumerate(ctrl_next):
-        ty = dtype_to_lean_type(w)
+        elem = _flat_element_type(w)
         var = f"v{i}"
-        if ty == "Bool":
-            show_parts.append(f"showBool {var}")
-        elif ty == "Int":
-            show_parts.append(f"toString {var}")
-        else:
-            dt = w.dtype
-            shape = dtype_shape(dt)
-            m = shape[0]
-            n = shape[1] if len(shape) == 2 else 1
-            show_parts.append(f"showMat {m} {n} {var}")
+        shape = dtype_shape(w.dtype)
+        m = shape[0]
+        n = shape[1] if len(shape) == 2 else 1
+        show_parts.append(f"showMat {m} {n} {_elem_shower(elem, w)} {var}")
 
     if len(show_parts) == 1:
         lines.append(f"  {show_parts[0]}")

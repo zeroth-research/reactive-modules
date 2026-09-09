@@ -197,3 +197,65 @@ def test_cert_collatz_build(generate_lean_files):
         f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
     )
     assert not sorry_lines, "Collatz certificate has sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
+def test_generated_executable_builds_and_runs(generate_lean_files):
+    """`verith -x` end to end: generate a project, build `main`, run it.
+
+    The only coverage the executable path has. Its three generated pieces
+    have to agree — `update`'s curried signature, the component order in
+    `showCtrl`/`parseExtl`, and each wire's element type — and none of that
+    is visible without elaborating the result.
+
+    Reuses this project's already-built `.lake/packages` so the run does not
+    refetch Mathlib; skipped if they are not built yet.
+    """
+    import shutil
+    import sys
+    import tempfile
+
+    packages = _LEAN_DIR / ".lake" / "packages"
+    manifest = _LEAN_DIR / "lake-manifest.json"
+    if not packages.is_dir() or not manifest.is_file():
+        pytest.skip("tests/lean packages not built; run the other slow tests first")
+
+    sys.path.insert(0, str(_LEAN_DIR.parent / "fixtures"))
+    try:
+        import counter
+    finally:
+        sys.path.pop(0)
+    from zrth.lean.project import create_project
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        project = create_project(out, counter.module(), "Rea", executable=True)
+
+        (project / ".lake").mkdir(exist_ok=True)
+        (project / ".lake" / "packages").symlink_to(packages)
+        shutil.copy2(manifest, project / "lake-manifest.json")
+
+        build = subprocess.run(
+            ["lake", "build", "main"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        assert build.returncode == 0, (
+            "lake build main failed.\n"
+            f"stdout:\n{build.stdout[-2000:]}\nstderr:\n{build.stderr[-800:]}"
+        )
+
+        # counter: starts at 0, increments each step, resets at 10
+        run = subprocess.run(
+            [str(project / ".lake" / "build" / "bin" / "main")],
+            input="x\nx\nx\n",
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert run.returncode == 0, f"executable failed: {run.stderr[-500:]}"
+        assert run.stdout.split() == ["0", "1", "2"], (
+            f"unexpected trace: {run.stdout.split()}"
+        )

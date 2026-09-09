@@ -122,3 +122,61 @@ def test_single_component_needs_no_tuple():
     main = generate_main_lean("Rea", _module_without_extl(), "Rea")
     assert "let v0 := v" in main
     assert "let (v0) := v" not in main
+
+
+# ──────────────────────────────────────────────────────────────
+# Element types: IO must match the wire's own sort
+# ──────────────────────────────────────────────────────────────
+
+
+def test_main_imports_a_module_that_exists():
+    """`init`/`update` land in System/System.lean, under the `System` lib root.
+
+    The import was built as `{project_name}.{module_name}`, which named no
+    file the generator writes.
+    """
+    main = generate_main_lean("Rea", _module_without_extl(), "Rea")
+    assert main.splitlines()[0] == "import System"
+    assert "import Rea.Rea" not in main
+
+
+def test_bool_ctrl_is_shown_as_bool():
+    """`dtype_to_lean_type` always returns a `Mat ...`, so the old string
+    comparison against "Bool" never matched and every element became Int."""
+    main = generate_main_lean("Rea", _heterogeneous_module(), "Rea")
+    assert "showMat 1 1 showBool v0" in main, "Bool ctrl is not shown as Bool"
+    assert "showMat 1 1 toString v1" in main, "Int ctrl is not shown as Int"
+
+
+def test_bitvec_extl_is_parsed_as_bitvec():
+    """A BitVec input wire must build a BitVec array, not an Int one."""
+    b = Var(BitVec(8, [1, 1]))
+    s = Var(BitVec(8, [1, 1]))
+    init = [Term(BV.Const(torch.tensor([[0]])), [X(s)])]
+    update = [Term(BV.Id(), [X(s)], [X(b)])]
+    module = Module.sequential([s, b], init, update)
+
+    main = generate_main_lean("Rea", module, "Rea")
+    assert "Array (BitVec 8)" in main, "BitVec input parsed into an Int array"
+    assert "BitVec.ofInt 8 v" in main, "BitVec input is not converted"
+    assert "Fin 1 → Fin 1 → (BitVec 8)" in main
+    assert "Array Int" not in main
+
+
+def test_real_io_is_refused_with_a_reason():
+    """Lean's `Real` is noncomputable: no parsing, no printing, so say so."""
+    r = Var(Real([1, 1]))
+    module = Module.sequential(
+        [r],
+        [Term(LRA.Real(torch.tensor([[0.0]])), [X(r)])],
+        [Term(LRA.Id(), [X(r)], [r])],
+    )
+    with pytest.raises(ValueError, match="noncomputable"):
+        generate_main_lean("Rea", module, "Rea")
+
+
+def test_show_mat_is_generic_over_its_element():
+    """The shower takes the element renderer, so it is not pinned to Int."""
+    main = generate_main_lean("Rea", _heterogeneous_module(), "Rea")
+    assert "def showMat {t : Type} (m n : Nat) (f : t → String)" in main
+    assert "(mat : Fin m → Fin n → Int)" not in main
