@@ -68,14 +68,15 @@ def _cert_def_lines(
         lines.append(f"{noncomp}instance : DecidablePred P := sorry")
     lines.append("")
 
-    # ranking (Nat, not Prop)
+    # ranking (Nat, not Prop). Noncomputable for a Real state: `to_int`
+    # emits `⌊·⌋`, which goes through the noncomputable `Real.instFloorRing`.
     if c["ranking_body"] is not None:
-        lines.append(f"def ranking (s : {ctrl_native}) : Nat :=")
+        lines.append(f"{noncomp}def ranking (s : {ctrl_native}) : Nat :=")
         lines.append(c["ranking_body"])
     elif c["ranking_expr"] is not None:
-        lines.append(f"def ranking : {ctrl_native} → Nat := {c['ranking_expr']}")
+        lines.append(f"{noncomp}def ranking : {ctrl_native} → Nat := {c['ranking_expr']}")
     else:
-        lines.append(f"def ranking (s : {ctrl_native}) : Nat := sorry")
+        lines.append(f"{noncomp}def ranking (s : {ctrl_native}) : Nat := sorry")
     lines.append("")
 
     return lines

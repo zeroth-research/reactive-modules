@@ -137,6 +137,11 @@ def _walk(
         parts = [recur(c) for c in t]
         return "(" + _INFIX_LOGIC[k].join(parts) + ")"
 
+    if k == Kind.IMPLIES:
+        # cvc5 keeps `=>` variadic and right-associated.
+        parts = [recur(c) for c in t]
+        return "(" + " → ".join(parts) + ")"
+
     if k in _INFIX_ARITH:
         parts = [recur(c) for c in t]
         return "(" + _INFIX_ARITH[k].join(parts) + ")"

@@ -73,6 +73,7 @@ _LEAN_OP: dict[str, Callable] = {
     "Max": lambda a: f"(matMax {a[0]})",
     "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
     "Id": lambda a: a[0],
+    "Transpose": lambda a: f"(MatTranspose {a[0]})",
     # Linear is handled specially (its A, B are baked into the op, not read
     # wires) — see `_linear_expr`.
     "ReLU": lambda a: f"ReLu {a[0]}",
@@ -137,6 +138,10 @@ _SCALAR_OP: dict[str, Callable] = {
     "Ne": lambda a: f"(decide ({a[0]} ≠ {a[1]}))",
     "MatMul": lambda a: f"({a[0]} * {a[1]})",
     "Id": lambda a: a[0],
+    # `ReLu` is a matrix op; on a scalar-bound wire it has to be the bare
+    # `max 0 x`. Lifting the operand and projecting the result instead
+    # leaves `ReLu (fun _ _ => x) 0 0` with unconstrained dimensions.
+    "ReLU": lambda a: f"(Max.max 0 {a[0]})",
     "TensorGet": lambda a: a[0],
     "ToUnsigned": lambda a: f"(Int.toNat {a[0]})",
 }
@@ -205,7 +210,12 @@ def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
     lifted = dict(wire_expr)
     for w in term.read:
         if _is_scalar_wire(w):
-            lifted[w.id] = f"(fun _ _ => {wire_expr[w.id]})"
+            # The ascription is load-bearing: `matVecAffine`'s batch
+            # dimension is not determined by `fun _ _ => x`, so an
+            # un-ascribed lift leaves `n` unsolved ("don't know how to
+            # synthesize implicit argument `n`").
+            ty = f"Mat {_flat_element_type(w)} 1 1"
+            lifted[w.id] = f"((fun _ _ => {wire_expr[w.id]} : {ty}))"
     return lifted
 
 
@@ -424,6 +434,12 @@ def _translate_terms_scalar(
             lifted = _lift_scalar_reads(term, wire_expr)
             input_exprs = [lifted[w.id] for w in term.read]
             expr = table[name](input_exprs)
+            # A matrix form yields a `Mat`; a scalar write wire is ascribed
+            # the bare element type, so project it — the same step the
+            # `Argmax` and `Linear` branches above already take. Without it
+            # a 1x1 `Min`/`Max` emitted `let x : Int := matMax …`.
+            if _is_scalar_wire(write_wire):
+                expr = f"({expr} 0 0)"
 
         wire_expr[write_wire.id] = var
         # Track flat scalar slots for the written wire so downstream Argmax
@@ -431,8 +447,11 @@ def _translate_terms_scalar(
         if _is_scalar_wire(write_wire):
             flat_slots[write_wire.id] = [var]
         else:
+            # Parenthesised: these are spliced into an application
+            # (`argmax1d_scalar_int_3 <slots>`), where a bare `x0 0 0`
+            # would be read as three separate arguments.
             flat_slots[write_wire.id] = [
-                f"{var} {r} {c}" for r, c in _flat_indices(write_wire)
+                f"({var} {r} {c})" for r, c in _flat_indices(write_wire)
             ]
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")

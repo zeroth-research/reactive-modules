@@ -8,6 +8,14 @@ import System.Data
 {% endif %}
 import ZerothHammer
 
+-- `simp_mat` unfolds the whole transition body at once, so its recursion
+-- depth tracks the number of terms in the module, not the state width. The
+-- default 512 gives out somewhere between 44 and 48 chained operations.
+set_option maxRecDepth 100000
+-- `decide` on a finite state and `simp_mat` on a wide one both run past
+-- the default budget before they can conclude.
+set_option maxHeartbeats 2000000
+
 {% if module_inline %}
 {{ module_inline }}
 
@@ -45,13 +53,13 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
    try simp_mat
    try simp_defs
-   all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto)
+   all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto | decide | bv_decide | (simp_all; done) | (simp_all; omega) | (simp_all; linarith))
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
    try simp_defs
    try simp_mat
-   all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto)
+   all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto | decide | bv_decide | (simp_all; done) | (simp_all; omega) | (simp_all; linarith))
 
 section TS
 
@@ -81,7 +89,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     rw [← heq]
     try simp_defs
     try simp_mat
-    all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto)
+    all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto | decide | bv_decide | (simp_all; done) | (simp_all; omega) | (simp_all; linarith))
 
 {{ noncomp }}def buchi := rule_buchi
   lts

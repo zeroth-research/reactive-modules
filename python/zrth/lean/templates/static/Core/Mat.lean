@@ -2,6 +2,10 @@ import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 import Mathlib.Algebra.BigOperators.Fin
 import Mathlib.Data.Fintype.Basic
 import Mathlib.Data.Real.Basic
+-- `⌊x⌋` (the `to_int` of a Real-valued ranking) needs both the
+-- notation and the `FloorRing ℝ` instance.
+import Mathlib.Algebra.Order.Floor.Defs
+import Mathlib.Data.Real.Archimedean
 import Mathlib.Data.List.OfFn
 import Mathlib.Data.List.Zip
 import Mathlib.Tactic.FinCases

@@ -89,6 +89,7 @@ def _recon_lemma_lines(w) -> "list[str]":
     name = f"recon_{_elem_ty_slug(elem)}_{m}_{n}"
     return [
         "set_option maxHeartbeats 2000000 in",
+        "set_option maxRecDepth 100000 in",
         f"@[simp] theorem {name} (c : {dtype_to_lean_type(w)}) :",
         f"    {lhs} = c := by",
         "  funext i j",
@@ -264,6 +265,7 @@ def to_lean_scalar_equiv(
             # grows with the state width: a 32-wide module exceeds the default
             # budget. Raised per theorem rather than file-wide.
             f"set_option maxHeartbeats 2000000 in",
+            f"set_option maxRecDepth 100000 in",
             f"theorem {func_name}_scalar_eq : ∀ {' '.join(binders)},",
             f"    {func_name} {' '.join(vars_)} = {rhs} := by",
             f"  intro {' '.join(vars_)}",

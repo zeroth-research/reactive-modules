@@ -376,11 +376,17 @@ def test_rel_encoding_has_no_unused_simp_placeholders():
 # ──────────────────────────────────────────────────────────────
 
 
-def test_scalar_encoding_lifts_scalar_operand_for_relu():
-    """`_LEAN_OP` builders apply operands to `0 0`, so scalars need lifting.
+def test_scalar_encoding_emits_a_scalar_relu():
+    """A 1x1 `ReLU` must be scalar on both sides, operand *and* result.
 
-    `ReLU` is the one op with a matrix form but no `_SCALAR_OP` entry, so a
-    1x1 ReLU takes that fallback with a scalar-bound operand.
+    It used to take the `_LEAN_OP` matrix fallback, which lifts the operand
+    but never projects the result: `let x : Int := ReLu (fun _ _ => y)`
+    ascribes `Mat ℤ ?m ?n` to `Int`. Asserting only that the operand was
+    lifted (as this test once did) passes on exactly that output, so the
+    check has to be that no `Mat`-valued form survives at all — lifting the
+    operand and projecting the result is not a fix either, since `ReLu`'s
+    dimensions are then unconstrained ("typeclass instance problem is
+    stuck").
     """
     s = Var(Int([1, 1]))
     module = Module.sequential(
@@ -392,7 +398,8 @@ def test_scalar_encoding_lifts_scalar_operand_for_relu():
     relu = [l for l in lean.splitlines() if "Max.max" in l or "ReLu" in l]
     assert relu, f"no ReLU emitted:\n{lean}"
     for line in relu:
-        assert "(fun _ _ =>" in line, f"scalar operand not lifted: {line.strip()}"
+        assert "ReLu" not in line, f"matrix ReLu in the scalar encoding: {line.strip()}"
+        assert "Max.max 0" in line, f"not a scalar ReLU: {line.strip()}"
 
 
 def test_scalar_encoding_extracts_a_scalar_from_linear():
@@ -406,7 +413,12 @@ def test_scalar_encoding_extracts_a_scalar_from_linear():
     lean = ModuleToLean4(module).to_lean_scalar()
     line = next(l for l in lean.splitlines() if "matVecAffine" in l)
     assert line.strip().endswith("0 0)"), f"result not extracted: {line.strip()}"
-    assert "(fun _ _ => ctrl)" in line, f"operand not lifted: {line.strip()}"
+    # Ascribed, not a bare `fun _ _ => ctrl`: `matVecAffine`'s batch
+    # dimension is not determined by the lambda, and an un-ascribed lift
+    # leaves `n` unsolved wherever the surrounding term does not pin it.
+    assert "(fun _ _ => ctrl : Mat Int 1 1)" in line, (
+        f"operand not lifted with its type: {line.strip()}"
+    )
     assert ": Int :=" in line, "a 1x1 write wire should stay scalar-typed"
 
 

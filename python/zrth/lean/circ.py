@@ -84,6 +84,7 @@ _LEAN_OP_BOX: dict[str, str] = {
     "Max": "Box.max",
     "MatMul": "Box.mul",
     "Id": "Box.id",
+    "Transpose": "Box.transpose",
     # Linear is handled specially (A, b are baked into the op) — see `_linear_box`.
     "ReLU": "Box.relu",
 }

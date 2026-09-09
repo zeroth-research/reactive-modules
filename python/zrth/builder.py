@@ -429,7 +429,7 @@ class LIATermBuilder(TermBuilder):
         tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
         if tensor.dtype == torch.bool:
             w = output_wire or Wire(Bool(shape))
-            return Term.constant(LIA.Const(tensor), [w])
+            return Term.constant(LIA.Bool(tensor), [w])
         w = output_wire or Wire(Int(shape))
         return Term.constant(LIA.Int(tensor), [w])
 

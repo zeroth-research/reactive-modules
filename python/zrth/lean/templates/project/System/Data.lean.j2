@@ -43,10 +43,10 @@ def P (s : {{ ctrl_type }}) : Prop := sorry
 {% endif %}
 
 {% if ranking_body %}
-def ranking (s : {{ ctrl_type }}) : Nat :=
+{{ noncomp }}def ranking (s : {{ ctrl_type }}) : Nat :=
 {{ ranking_body }}
 {% elif ranking_expr %}
-def ranking : {{ ctrl_type }} → Nat := {{ ranking_expr }}
+{{ noncomp }}def ranking : {{ ctrl_type }} → Nat := {{ ranking_expr }}
 {% else %}
-def ranking (s : {{ ctrl_type }}) : Nat := sorry
+{{ noncomp }}def ranking (s : {{ ctrl_type }}) : Nat := sorry
 {% endif %}

@@ -87,10 +87,18 @@ elab_rules : tactic
       try evalTactic (← `(tactic| simp_defs)) catch _ => pure ()
       if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
       -- Check for contradictory hypotheses (e.g. ¬True from vacuous hrank)
-      try evalTactic (← `(tactic| contradiction)); return catch _ => pure ()
+      -- `contradiction`, `decide` and `native_decide` act on the main goal
+      -- only. Returning unconditionally after one of them therefore left any
+      -- sibling goal an earlier split had produced unproved *and* skipped the
+      -- `sorry` fallback below, surfacing as "unsolved goals" rather than a
+      -- give-up. Apply them to every goal and return only if none remain.
+      try evalTactic (← `(tactic| all_goals contradiction)) catch _ => pure ()
+      if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
       -- Try decide/native_decide after full reduction (works for finite Bool state)
-      try evalTactic (← `(tactic| decide)); return catch _ => pure ()
-      try evalTactic (← `(tactic| native_decide)); return catch _ => pure ()
+      try evalTactic (← `(tactic| all_goals decide)) catch _ => pure ()
+      if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
+      try evalTactic (← `(tactic| all_goals native_decide)) catch _ => pure ()
+      if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
       -- Reduce matrices and collapse Mat 1 1 to bare scalar arithmetic
       try evalTactic (← `(tactic| simp_mat)) catch _ => pure ()
       try evalTactic (← `(tactic| mat_collapse)) catch _ => pure ()

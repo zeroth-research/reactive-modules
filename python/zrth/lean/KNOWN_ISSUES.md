@@ -7,6 +7,10 @@ rediscovered; each says how it fails, not just that it does.
 `CONFIRMED` was reproduced by running the code; `PLAUSIBLE` comes from
 reading it and has not been executed.
 
+For what the pipeline can and cannot *prove* — as opposed to what is
+outright broken — see [`VERITH_LIMITS.md`](VERITH_LIMITS.md), which measures
+36 modules end to end and carries the open proof-automation issues.
+
 None of this came from the `origin/main` rebase. The dead-name family
 predates it (`IType`-era names that never existed at the merge base) and the
 rest is older still. The suite passed because none of these paths were
@@ -65,7 +69,12 @@ for every wire turns `Certs/RelEncMixed` from 0 errors into 6.
 Unlike `Mod` and `MatAdd`, these have no variant to rename to. **Needs a
 decision:** drop the entries, or implement the ops. Allowlisted in
 `tests/test_lean_ops.py` meanwhile, so the guard still catches new ones.
-`Transpose` and `Uninterpreted` are real variants absent from the tables.
+
+`Transpose` and `Uninterpreted` were the reverse case — real variants absent
+from the tables. `Transpose` is now mapped (`MatTranspose` in `_LEAN_OP`,
+`Box.transpose` in `_LEAN_OP_BOX`); it had a Lean counterpart in
+`Core/Mat.lean` all along. `Uninterpreted` still has none and needs its own
+decision: emit an `opaque` declaration, or reject it at the front end.
 
 ### 24. `_can_scalarize()` gates nothing · CONFIRMED
 
