@@ -37,6 +37,9 @@ encoding, BV codegen and the whole `verith -x` path were all uncovered.
 | 16 | `_linear` floored float weights against an int input — `[[0.5,0.5]]·[[3],[3]]` gave 0, not 3.0 | `e2935ec` |
 | 17 | `README.md` still described the pre-`Var` IR | `53fa3de` |
 | 18 | Two computed-but-unused simp lists in `rel.py` | `6122591` |
+| 19 | `Mod` assumed an integer modulo no theory has; `MatAdd` duplicated `Add` | `862d247` |
+| 20 | FBK's state was per wire while `ScalarRel.effect_i` takes it per element | `d49ebdb` |
+| 21 | `_prepend_recon` gave every body every reconstruction, so call sites under-applied | `fa7bfa6` |
 
 Two of these carried the same lesson: **the equivalence theorems can stay
 provable while both sides are wrong.** `argmax1d_scalar_n_eq` proved the
@@ -48,61 +51,40 @@ alone would have broken it.
 
 ## Open
 
-### 19. Dead dispatch keys: `Mod`, `TensorGet`, `ToUnsigned`, `MatAdd` · CONFIRMED
+### 22. `rel.py` projects per wire against a per-element tuple · CONFIRMED
 
-Same root cause as (1): emission dispatches on the name `itype_name()`
-returns, so a key matching no variant can never fire.
+`atom_to_lean_rel` relates `effect_i` to `Scalar.update` by projecting tuple
+component `i` (`_accessor(i, n_ctrl)`), which assumes one component per
+ctrl *wire*. The scalar encoding's tuple has one per *element*, so for a
+multi-element wire the data for wire `i` is not at position `i`: the
+projection needs to become an offset-and-length slice, and `effect_i`'s
+codomain has to agree with whichever side it is compared to.
 
-| Key | Where | Should be |
-|---|---|---|
-| `Mod` | `native.py` (both tables), `smt_encode.py` | BV has `SMod`/`UMod`; LIA/LRA have no modulo |
-| `MatAdd` | `circ.py` | `Add` |
-| `TensorGet` | `native.py` ×2, `smt_encode.py` | no modern equivalent |
-| `ToUnsigned` | `native.py` ×2, `smt_encode.py` | no modern equivalent |
+Compiling functional + scalar + rel together for the tests/lean 6-wide
+countdown shows the shape of it: `effect_0 ... = Scalar.update ...` puts a
+`Mat Int 6 1` against an `Int × … × Int`. This predates the recent work —
+the two sides never agreed for a multi-element wire — but the scalar
+encoding's flattening (`5b32d2f`) makes it the remaining blocker for
+ScalarRel and, through it, FBK.
 
-`Mod` is the sharp one: `87bcec0 lean: support 'Mod' operation` is dead code
-as written. `MatAdd` -> `Add` is mechanical. **`TensorGet`/`ToUnsigned` need
-a decision** — remove them, or implement the ops.
+`Certs/` carries no ScalarRel or FBK section, so nothing compiles either
+today; a `Certs/RelEnc*` pair like `ScalarEnc*` would pin it.
 
-`tests/test_lean_ops.py::test_op_table_has_no_new_dead_keys` allowlists
-these four, so the guard catches *new* dead keys and the allowlist is the
-todo list. `"Implies"`/`"ToInt"` in `smt_prompt.py` are **not** in this
-family — they are predicate-DSL namespace keys.
+### 23. `TensorGet` / `ToUnsigned` are dead keys with no modern equivalent · CONFIRMED
 
-Also absent from the tables though they are real variants: `Transpose` and
-`Uninterpreted`. (`Argmax`, `Linear`, `Min`, `Max` have dedicated branches.)
+Unlike `Mod` and `MatAdd`, these have no variant to rename to. **Needs a
+decision:** drop the entries, or implement the ops. Allowlisted in
+`tests/test_lean_ops.py` meanwhile, so the guard still catches new ones.
+`Transpose` and `Uninterpreted` are real variants absent from the tables.
 
-### 20. FBK's state tuple is incompatible with `ScalarRel.effect_i` · PLAUSIBLE
-
-`translate/fbk.py`. `_state_tuple` builds its `TypeMap` from
-`dtype_to_lean_type(w, simple_types=True)`, so a multi-element ctrl wire
-stays a matrix, while `ScalarRel`'s state type comes from
-`_product_type_scalar`, which flattens it. For a ctrl component of
-`Int([1,3])` the generated `effect_i_eq`/`R_i_iff` theorems are ill-typed —
-for exactly the matrix modules `_can_scalarize()` admits.
-
-Worth re-checking against `5b32d2f`: the Scalar encoding now flattens its
-body, so this may be the same defect one layer up, and the same four pieces
-may apply.
-
-### 21. `_prepend_recon` makes call sites under-apply `effect_i` · PLAUSIBLE
-
-`translate/fbk.py`. The reconstruction `let`s are emitted unconditionally
-from the shared `update_recon`, so Lean's `variable` auto-binding pulls
-`extl_l`/`extl_n` into `effect_i`/`init_i`, while `_effect_args` derives the
-argument list from `_consumed()` and lists only the groups actually read.
-For a module with a multi-element `extl_l` and an `effect_0` depending only
-on state, the emitted `effect_0 state` is missing an argument.
-
-### 22. `_can_scalarize()` gates nothing · CONFIRMED
+### 24. `_can_scalarize()` gates nothing · CONFIRMED
 
 `len(dtype_shape(w.dtype)) <= 2` is vacuous: every shape here is 2-D. It no
-longer causes ill-typed output now that the flattening is finished
-(`5b32d2f`), so this is tidiness rather than a bug — but the docstring and
-the callers' "not available" message both claim it rejects matrix wires,
-and it does not.
+longer produces ill-typed output now that the flattening is finished, so
+this is tidiness — but the docstring and the callers' "not available"
+message both claim it rejects matrix wires, and it does not.
 
-### 23. `Real` has no Lean IO · by design, but worth revisiting
+### 25. `Real` has no Lean IO · by design, but worth revisiting
 
 `generate_main_lean` refuses a `Real` wire: Lean's `Real` is noncomputable,
 so the generated executable can neither parse nor print it. A float
