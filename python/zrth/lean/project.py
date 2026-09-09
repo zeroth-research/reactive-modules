@@ -19,6 +19,7 @@ from pathlib import Path
 from zrth import Module, Wire, Env, X
 from .native import (
     _product_type,
+    _build_tuple,
 )
 
 from .translate import ModuleToLean4
@@ -149,9 +150,10 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
             offset += m * n
         parse_vars.append(var)
 
-    # Build ValTuple literal: (e0, (e1, ()))
-    vt = f"({', '.join(reversed(parse_vars))})"
-    lines.append(f"  pure {vt}")
+    # `_product_type` orders components as the wires are declared, and
+    # `_accessor` projects them the same way, so the literal follows suit.
+    # (An earlier right-nested `ValTuple` encoding needed the reverse.)
+    lines.append(f"  pure {_build_tuple(parse_vars)}")
     lines.append("")
 
     # showCtrl
@@ -160,9 +162,9 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     destr_vars: list[str] = []
     for i in range(len(ctrl_next)):
         destr_vars.append(f"v{i}")
-    # Build destructuring pattern: let (v0, v1) := v
-    pat = f"({', '.join(reversed(destr_vars))})"
-    lines.append(f"  let {pat} := v")
+    # Same order here: v{i} must bind ctrl_next[i], since the formatters
+    # below pick showBool/toString/showMat from that wire's type.
+    lines.append(f"  let {_build_tuple(destr_vars)} := v")
 
     # Format each variable
     show_parts: list[str] = []

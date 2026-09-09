@@ -71,3 +71,54 @@ def test_main_threads_the_previous_external_input(make):
     main = generate_main_lean("Rea", make(), "Rea")
     assert "let mut extlPrev := extl0" in main, "extl_l is never initialised"
     assert "extlPrev := extl" in main, "extl_l is never advanced"
+
+
+# ──────────────────────────────────────────────────────────────
+# Component order: the literals must match `_product_type`
+# ──────────────────────────────────────────────────────────────
+
+
+def _heterogeneous_module():
+    """Bool then Int ctrl, so a swapped order is a type error, not a silent one."""
+    b = Var(Bool([1, 1]))
+    n = Var(Int([1, 1]))
+    init = [
+        Term(LIA.Bool(torch.tensor([[True]])), [X(b)]),
+        Term(LIA.Int(torch.tensor([[7]])), [X(n)]),
+    ]
+    update = [Term(LIA.Id(), [X(b)], [b]), Term(LIA.Id(), [X(n)], [n])]
+    return Module.sequential([b, n], init, update)
+
+
+def test_show_ctrl_destructures_in_declaration_order():
+    """`v{i}` must bind ctrl[i]: the formatter per slot is chosen from its type.
+
+    `_product_type` and `_accessor` both order components as declared, but
+    the pattern was built reversed, so every slot got the wrong formatter.
+    """
+    main = generate_main_lean("Rea", _heterogeneous_module(), "Rea")
+    assert "let (v0, v1) := v" in main
+    assert "let (v1, v0) := v" not in main, "destructuring is reversed"
+    # and the ctrl type ascription is in the same order
+    assert "showCtrl (v : (Mat Bool 1 1) × (Mat Int 1 1))" in main
+
+
+def test_parse_extl_builds_the_tuple_in_declaration_order():
+    """Same for the parsed input tuple, against `parseExtl`'s return type."""
+    e0 = Var(Bool([1, 1]))
+    e1 = Var(Int([1, 1]))
+    s = Var(Int([1, 1]))
+    init = [Term(LIA.Int(torch.tensor([[0]])), [X(s)])]
+    update = [Term(LIA.Ite(), [X(s)], [X(e0), X(e1), s])]
+    module = Module.sequential([s, e0, e1], init, update)
+
+    main = generate_main_lean("Rea", module, "Rea")
+    assert "pure (e0, e1)" in main
+    assert "pure (e1, e0)" not in main, "parsed tuple is reversed"
+
+
+def test_single_component_needs_no_tuple():
+    """One wire: the value itself, matching `_accessor`'s total==1 case."""
+    main = generate_main_lean("Rea", _module_without_extl(), "Rea")
+    assert "let v0 := v" in main
+    assert "let (v0) := v" not in main
