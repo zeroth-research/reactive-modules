@@ -25,6 +25,17 @@ def fresh(dtype, prefix):
             raise NotImplementedError(f"fresh not implemented for dtype {dtype}")
 
 
+def _reduce_elems(x, pick):
+    """Fold a 2-D array of z3 expressions to a 1x1 array, row-major."""
+    flat = list(x.flat)
+    if not flat:
+        raise ValueError("reduction needs a non-empty operand")
+    acc = flat[0]
+    for e in flat[1:]:
+        acc = pick(acc, e)
+    return _np.array([[acc]], dtype=object)
+
+
 def interpret(itype):
     match itype:
         case LRA.Id() | LIA.Id():
@@ -77,10 +88,12 @@ def interpret(itype):
         # neural-ish / aggregate
         case LRA.ReLU() | LIA.ReLU():
             return _np.frompyfunc(lambda x: _z3.If(x > 0., x, 0.), 1, 1)
+        # Reductions over one operand, matching the theory and the torch
+        # evaluator -- these were elementwise binaries.
         case LRA.Min() | LIA.Min():
-            return _np.frompyfunc(lambda x, y: _z3.If(x <= y, x, y), 2, 1)
+            return lambda x: _reduce_elems(x, lambda a, b: _z3.If(a <= b, a, b))
         case LRA.Max() | LIA.Max():
-            return _np.frompyfunc(lambda x, y: _z3.If(x >= y, x, y), 2, 1)
+            return lambda x: _reduce_elems(x, lambda a, b: _z3.If(a >= b, a, b))
 
         case LRA.Transpose() | LIA.Transpose():
             return _np.transpose

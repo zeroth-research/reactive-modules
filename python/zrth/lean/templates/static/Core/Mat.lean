@@ -43,6 +43,23 @@ def affineLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t]
 def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
   fun i j => Max.max 0 (x i j)
 
+/-- Reduce a matrix to its minimum, packed as `Mat t 1 1`.
+    Folds row-major from element `(0,0)`; an empty matrix has no minimum and
+    yields `default`. Min/Max are unary reductions in the theory, matching
+    `Argmax`'s shape. -/
+def matMin {t : Type} [Min t] [Inhabited t] {m n : Nat} (x : Mat t m n) : Mat t 1 1 :=
+  fun _ _ =>
+    match (List.finRange m).flatMap (fun i => (List.finRange n).map (fun j => (i, j))) with
+    | [] => default
+    | p0 :: ps => ps.foldl (fun best p => Min.min best (x p.1 p.2)) (x p0.1 p0.2)
+
+/-- Reduce a matrix to its maximum, packed as `Mat t 1 1`. See `matMin`. -/
+def matMax {t : Type} [Max t] [Inhabited t] {m n : Nat} (x : Mat t m n) : Mat t 1 1 :=
+  fun _ _ =>
+    match (List.finRange m).flatMap (fun i => (List.finRange n).map (fun j => (i, j))) with
+    | [] => default
+    | p0 :: ps => ps.foldl (fun best p => Max.max best (x p.1 p.2)) (x p0.1 p0.2)
+
 /-- 1-dimensional argmax: returns the column index of the maximum element
     of a `Mat t 1 n`, packed as `Mat Nat 1 1`.
     In case there are multiple greatest elements, the *first* maximal index

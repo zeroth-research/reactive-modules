@@ -166,11 +166,14 @@ infixr:75 " ⊗ " => par
 @[simp] def or: Box [Mat Bool 1 1, Mat Bool 1 1] [Mat Bool 1 1] :=
   ⟨fun val!(a, b) => val!(fun _ _ => (a 0 0 || b 0 0))⟩
 
-@[simp] def min {t: Type} [Min t]: Box [t, t] [t] :=
-  ⟨fun val!(a, b) => val!(Min.min a b)⟩
+-- Unary reductions, matching the theory: one operand in, a single element out.
+@[simp] def min {t : Type} [Min t] [Inhabited t] {m n : Nat} :
+    Box [Mat t m n] [Mat t 1 1] :=
+  ⟨fun val!(a) => val!(_root_.matMin a)⟩
 
-@[simp] def max {t: Type} [Max t]: Box [t, t] [t] :=
-  ⟨fun val!(a, b) => val!(Max.max a b)⟩
+@[simp] def max {t : Type} [Max t] [Inhabited t] {m n : Nat} :
+    Box [Mat t m n] [Mat t 1 1] :=
+  ⟨fun val!(a) => val!(_root_.matMax a)⟩
 
 @[simp] def ite {t: Type}: Box [Mat Bool 1 1, t, t] [t] :=
   ⟨fun val!(c, a, b) => if c 0 0 then val!(a) else val!(b)⟩

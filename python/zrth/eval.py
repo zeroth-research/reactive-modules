@@ -152,10 +152,13 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0].relu()]
         case LRA.Argmax() | LIA.Argmax():
             return [r[0].argmax()]
+        # Reductions, not elementwise binaries: the theory checks Min/Max as
+        # one read to a single-element write (`check_mat_ops`, and its own
+        # `min_ok` asserts int(4,1) -> int(1,1)), the same shape as Argmax.
         case LRA.Min() | LIA.Min():
-            return [torch.minimum(r[0], r[1])]
+            return [r[0].min()]
         case LRA.Max() | LIA.Max():
-            return [torch.maximum(r[0], r[1])]
+            return [r[0].max()]
 
         # --- matrix ---
         case LRA.Transpose() | LIA.Transpose():

@@ -220,3 +220,20 @@ example : BitVec.ofInt 8 (-3) = 253#8 := by decide
 example : BitVec.ofInt 8 (3) = 3#8 := by decide
 example : BitVec.ofInt 1 (-1) = 1#1 := by decide
 example : (BitVec.ofInt 8 (5)) = (BitVec.ofNat 8 5) := by decide
+
+/-! ## Min/Max are unary reductions
+
+The theory checks them as one read to a single-element write (its own
+`min_ok` asserts `int(4,1) -> int(1,1)`), so `matMin`/`matMax` fold the whole
+matrix rather than combining two operands elementwise. -/
+
+private def mmRow : Mat Int 1 3 := fun _ j => if j = 0 then 3 else if j = 1 then 1 else 2
+private def mmCol : Mat Int 3 1 := fun i _ => if i = 0 then 7 else if i = 1 then 4 else 9
+private def mmOne : Mat Int 1 1 := fun _ _ => 5
+
+example : (matMin mmRow) 0 0 = 1 := by decide
+example : (matMax mmRow) 0 0 = 3 := by decide
+example : (matMin mmCol) 0 0 = 4 := by decide
+example : (matMax mmCol) 0 0 = 9 := by decide
+example : (matMin mmOne) 0 0 = 5 := by decide
+example : (matMax mmOne) 0 0 = 5 := by decide

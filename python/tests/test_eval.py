@@ -424,3 +424,42 @@ def test_linear_keeps_integer_arithmetic_when_nothing_is_float():
     out = _linear(W, None, x)
     assert not out.dtype.is_floating_point
     assert out.tolist() == [[2 * 4 + 3 * 5]]
+
+
+# ──────────────────────────────────────────────────────────────
+# Min/Max are unary reductions
+# ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "rows,expected_min,expected_max",
+    [
+        ([[3], [1], [2]], 1, 3),
+        ([[3, 1, 2]], 1, 3),
+        ([[5]], 5, 5),
+        ([[-3, -1], [-2, -9]], -9, -1),
+        ([[4, 4], [4, 4]], 4, 4),
+    ],
+)
+def test_min_max_reduce_one_operand(rows, expected_min, expected_max):
+    """The theory checks Min/Max as one read to a single-element write.
+
+    `eval.py` computed `torch.minimum(r[0], r[1])` — an elementwise binary
+    over two operands — which the theory would never typecheck.
+    """
+    from zrth.eval import eval_itype
+    from zrth import LIA
+
+    x = torch.tensor(rows, dtype=torch.int64)
+    assert eval_itype(LIA.Min(), [x])[0].item() == expected_min
+    assert eval_itype(LIA.Max(), [x])[0].item() == expected_max
+
+
+def test_min_max_agree_with_the_theory_arity():
+    """One read, not two: passing a second operand is not the contract."""
+    from zrth import Wire, Term, Int, LIA
+
+    # the theory accepts exactly one read and a [1, 1] write
+    Term(LIA.Min(), [Wire(Int([1, 1]))], [Wire(Int([4, 1]))])
+    with pytest.raises(Exception):
+        Term(LIA.Min(), [Wire(Int([1, 1]))], [Wire(Int([4, 1])), Wire(Int([4, 1]))])
