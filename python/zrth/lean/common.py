@@ -266,11 +266,14 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
 
 
 def _is_scalar_tensor(wire: Wire) -> bool:
-    """True if the wire carries a scalar Bool or Int (not a matrix)."""
+    """True if the wire carries a scalar Bool, Int or BitVec (not a matrix).
+
+    Bool used to answer `True` for any shape, skipping the check the other
+    two get, so a Bool *matrix* constant was never interned and reached
+    `_tensor_to_lean_inline`, which calls `.item()` on it.
+    """
     dt = wire.dtype
-    if isinstance(dt, Bool):
-        return True
-    if isinstance(dt, (Int, BitVec)):
+    if isinstance(dt, (Bool, Int, BitVec)):
         return _is_scalar_shape(dtype_shape(dt))
     return False
 
