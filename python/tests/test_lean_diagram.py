@@ -433,3 +433,54 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
     assert ite, "no Ite emitted"
     for line in ite:
         assert "(fun _ _ =>" in line, f"scalar operand not lifted: {line.strip()}"
+
+
+# ──────────────────────────────────────────────────────────────
+# FBK state layout
+# ──────────────────────────────────────────────────────────────
+
+
+def _six_wide_module():
+    """A single 6-element ctrl wire: state slots and wires diverge."""
+    s = Var(Int([6, 1]))
+    init = [Term(LIA.Int(torch.zeros(6, 1, dtype=torch.int64)), [X(s)])]
+    update = [Term(LIA.Id(), [X(s)], [s])]
+    return Module.sequential([s], init, update)
+
+
+def test_fbk_state_has_one_slot_per_element():
+    """`ScalarRel.effect_i` takes a flattened state, so FBK must match it.
+
+    FBK's `TypeMap` gave one slot per *wire* holding the whole `Mat`, which
+    could not be passed to `ScalarRel.effect_i` at all.
+    """
+    lean = ModuleToLean4(_six_wide_module()).to_lean_bool_rel()
+    assert "| _ => Int" in lean, f"TypeMap is not per element:\n{lean[:400]}"
+    assert "(Mat Int 6 1)" not in lean.split("abbrev StateType")[0], (
+        "TypeMap still holds a whole matrix"
+    )
+    # six slots, and the tuple passed to ScalarRel has six components
+    assert "abbrev var_5 := state 5" in lean
+    assert "((state 0), ((state 1), ((state 2), ((state 3), ((state 4), (state 5))))))" in lean
+
+
+def test_fbk_reconstructs_a_multi_element_wire():
+    """With a per-element state, a term needing the whole Mat rebuilds it."""
+    lean = ModuleToLean4(_six_wide_module()).to_lean_bool_rel()
+    assert "let _s0 : (Mat Int 6 1) :=" in lean
+    assert "match i, j with" in lean, "reconstruction should use a match"
+
+
+def test_scalar_translator_flattening_is_opt_in():
+    """`rel.py`/`fbk.py` type `effect_i` as the wire's `Mat`, so they opt out.
+
+    Making the flattening unconditional in `_translate_terms_scalar` broke
+    both, and nothing compiled them to notice.
+    """
+    from zrth.lean.native import _translate_terms_scalar
+    import inspect
+
+    sig = inspect.signature(_translate_terms_scalar)
+    assert sig.parameters["flatten_outputs"].default is False, (
+        "flattening must be opt-in so the matrix-typed callers keep working"
+    )

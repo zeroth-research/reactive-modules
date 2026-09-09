@@ -351,6 +351,7 @@ def _translate_terms_scalar(
     block_outputs: list[Wire],
     constants: ConstantRegistry,
     flat_slots: "dict[int, list[str]] | None" = None,
+    flatten_outputs: bool = False,
 ) -> str:
     """Compile terms into a Lean body using scalar types for 1×1 wires.
 
@@ -363,12 +364,10 @@ def _translate_terms_scalar(
     """
     term_list = list(terms)
     if not term_list:
-        # Same flattening as the main return below: the codomain is
-        # per-element, so pass through the input wires' flat slots.
         slots = dict(flat_slots or {})
         passthrough: list[str] = []
         for w in block_outputs:
-            if w.id in slots:
+            if flatten_outputs and w.id in slots:
                 passthrough.extend(slots[w.id])
             elif w.id in input_bindings:
                 passthrough.append(input_bindings[w.id])
@@ -438,13 +437,16 @@ def _translate_terms_scalar(
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
-    # The codomain is `_product_type_scalar`: one component per *element* of
-    # each output wire. Return the flat slots rather than the matrices the
-    # terms built -- `flat_slots` already carries the per-element accessors
-    # for every wire written above, and for the input groups passed in.
+    # `flatten_outputs` says which codomain the caller declared. The scalar
+    # encoding uses `_product_type_scalar` -- one component per *element* --
+    # so it wants the flat slots; `rel.py` and `fbk.py` type their `effect_i`
+    # as the wire's own `Mat`, so they want the matrix the terms built.
     out_exprs: list[str] = []
     for w in block_outputs:
-        out_exprs.extend(flat_slots.get(w.id, [wire_expr[w.id]]))
+        if flatten_outputs:
+            out_exprs.extend(flat_slots.get(w.id, [wire_expr[w.id]]))
+        else:
+            out_exprs.append(wire_expr[w.id])
     result_line = f"  {_build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])
