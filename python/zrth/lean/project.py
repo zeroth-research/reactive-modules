@@ -90,19 +90,20 @@ def _unsupported_io_sort(elem: str, wire: Wire) -> ValueError:
     )
 
 
-def _elem_parser(elem: str, wire: Wire) -> "tuple[str, str]":
-    """`(bind, push)` for reading one element of `elem` from a token.
+def _elem_parser(elem: str, wire: Wire) -> "tuple[str, str, str]":
+    """`(bind, parser, push)` for reading one element of `elem` from a token.
 
-    `bind` is `:=` for a pure parser and `←` for one in IO; `push` is the
-    expression stored into the array.
+    The emitted line is `let v <bind> <parser> tokens[...]!`, so `bind` is
+    `:=` for a pure parser and `←` for one in IO; `push` is the expression
+    stored into the array.
     """
     if elem == "Bool":
-        return ":=", "(parseBool v)"
+        return ":=", "parseBool", "v"
     if elem == "Int":
-        return "←", "v"
+        return "←", "parseIntOrFail", "v"
     if elem.startswith("(BitVec "):
         width = elem[len("(BitVec ") : -1]
-        return "←", f"(BitVec.ofInt {width} v)"
+        return "←", "parseIntOrFail", f"(BitVec.ofInt {width} v)"
     raise _unsupported_io_sort(elem, wire)
 
 
@@ -177,10 +178,10 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         # Every wire is a matrix here, so parse m*n tokens into an array of
         # the wire's own element type -- reading them all as Int made the
         # body disagree with the ascribed return type for every other sort.
-        bind, push = _elem_parser(elem, w)
+        bind, parser, push = _elem_parser(elem, w)
         lines.append(f"  let mut arr{i} : Array {elem} := #[]")
         lines.append(f"  for k in List.range {m * n} do")
-        lines.append(f"    let v {bind} tokens[{offset} + k]!")
+        lines.append(f"    let v {bind} {parser} tokens[{offset} + k]!")
         lines.append(f"    arr{i} := arr{i}.push {push}")
         lines.append(
             f"  let {var} : Fin {m} → Fin {n} → {elem} :="

@@ -19,7 +19,7 @@ from zrth.lean.common import (
     is_constant_name,
 )
 
-from zrth.lean.native import _check_argmax_output
+from zrth.lean.native import _check_argmax_output, _is_bv_itype
 
 from dataclasses import dataclass
 
@@ -98,6 +98,27 @@ def _linear_box(term: Term) -> str:
     """
     out_m, a_lit, b_lit, _ = linear_list_literals(term)
     return f"(Box.linear {out_m} {a_lit} {b_lit})"
+
+
+# BV needs BitVec-typed boxes: `Box.and`/`not`/`or` are fixed to
+# `Mat Bool 1 1`, and `Box.ite`/`eq`/`neq` take or produce a Bool. See the
+# note beside these definitions in Core/Box.lean.
+_BV_LEAN_OP_BOX = {
+    "Not": "Box.bvNot",
+    "And": "Box.bvAnd",
+    "Or": "Box.bvOr",
+    "Xor": "Box.bvXor",
+    "Ite": "Box.bvIte",
+    "Eq": "Box.bvEq",
+    "Ne": "Box.bvNe",
+}
+
+
+def _box_for(itype, name: str) -> str:
+    """Box combinator for this op, per its theory."""
+    if _is_bv_itype(itype) and name in _BV_LEAN_OP_BOX:
+        return _BV_LEAN_OP_BOX[name]
+    return _LEAN_OP_BOX[name]
 
 
 def _argmax_box(
@@ -367,7 +388,7 @@ def _translate_terms_circ(
                     elif name == "Linear":
                         boxes.append(_linear_box(term))
                     else:
-                        boxes.append(_LEAN_OP_BOX[name])
+                        boxes.append(_box_for(term.itype, name))
                     in_ty.extend([dtype_to_lean_type(u) for u in term.read])
                     out_ty.extend([dtype_to_lean_type(u) for u in term.write])
         assert boxes

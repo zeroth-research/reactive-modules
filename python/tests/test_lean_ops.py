@@ -89,3 +89,74 @@ def test_ne_emits_in_scalar_encoding():
 def test_ne_emits_in_circuit_encoding():
     lean = ModuleToLean4(_make_ne_module()).to_lean_circ()
     assert "Box.neq" in lean, "Ne did not reach the circuit (Box) encoding"
+
+
+# ──────────────────────────────────────────────────────────────
+# BV uses BitVec operators, never the Boolean ones
+# ──────────────────────────────────────────────────────────────
+
+# BV has no Bool wires at all: an `Ite` condition and an `Eq` result are both
+# `BitVec 1` (the theory rejects a Bool there). So the Boolean forms cannot
+# serve it, and a 1-bit condition is compared against 1 directly rather than
+# converted through `BV.BVToBool`.
+_BV_DIVERGENT = ["Not", "And", "Or", "Xor", "Ite", "Eq", "Ne"]
+
+
+def test_bv_theory_has_no_bool_wires():
+    """Pins the premise: BV's condition and comparison sorts are BitVec."""
+    from zrth import Wire, BitVec, Bool
+
+    with pytest.raises(Exception):
+        Term(BV.Ite(), [Wire(BitVec(8, [1, 1]))],
+             [Wire(Bool([1, 1])), Wire(BitVec(8, [1, 1])), Wire(BitVec(8, [1, 1]))])
+    with pytest.raises(Exception):
+        Term(BV.Eq(), [Wire(Bool([1, 1]))],
+             [Wire(BitVec(8, [1, 1])), Wire(BitVec(8, [1, 1]))])
+
+
+@pytest.mark.parametrize("name", _BV_DIVERGENT)
+def test_bv_overrides_the_boolean_form(name):
+    """Each divergent op has a BitVec form in all three emitter tables."""
+    from zrth.lean.native import _BV_LEAN_OP, _BV_SCALAR_OP
+    from zrth.lean.circ import _BV_LEAN_OP_BOX
+
+    assert name in _BV_LEAN_OP, f"{name} has no BitVec matrix form"
+    assert name in _BV_SCALAR_OP, f"{name} has no BitVec scalar form"
+    assert name in _BV_LEAN_OP_BOX, f"{name} has no BitVec Box"
+
+
+def _twobit():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent / "fixtures"))
+    try:
+        import twobit
+    finally:
+        sys.path.pop(0)
+    return twobit.module()
+
+
+def test_bv_module_emits_bitvec_operators_not_boolean_ones():
+    """`!`/`&&`/`||` and a bare `if c then` do not elaborate on `BitVec 1`."""
+    lean = ModuleToLean4(_twobit()).to_lean_functional()
+    assert "~~~" in lean, "BV Not did not use BitVec complement"
+    assert "&&&" in lean, "BV And did not use BitVec conjunction"
+    assert "= 1 then" in lean, "BV Ite did not compare its 1-bit condition"
+    for boolean in (" && ", " || ", "=> !("):
+        assert boolean not in lean, f"Boolean form {boolean!r} emitted for BV"
+    assert "BVToBool" not in lean, "should not route through BVToBool"
+
+
+def test_bv_module_emits_bitvec_boxes():
+    lean = ModuleToLean4(_twobit()).to_lean_circ()
+    assert "Box.bvNot" in lean and "Box.bvAnd" in lean and "Box.bvIte" in lean
+    # Only the composed layers matter: `_LAYER_SIMP` lists every Box name as a
+    # simp lemma regardless of which ones this module uses.
+    layers = [l for l in lean.splitlines() if "⊗" in l or ("Box." in l and ":=" in l)]
+    assert layers, "no composed layers emitted"
+    for boolean in ("Box.not", "Box.and", "Box.or", "Box.ite", "Box.eq", "Box.neq"):
+        for line in layers:
+            assert boolean not in line, (
+                f"Boolean box {boolean} emitted for BV in: {line.strip()[:90]}"
+            )

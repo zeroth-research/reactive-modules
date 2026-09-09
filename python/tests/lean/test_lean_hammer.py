@@ -200,7 +200,18 @@ def test_cert_collatz_build(generate_lean_files):
 
 
 @pytest.mark.slow
-def test_generated_executable_builds_and_runs(generate_lean_files):
+@pytest.mark.parametrize(
+    "fixture,stdin,expected",
+    [
+        # LIA: x starts at 0, increments each step, resets at 10
+        ("counter", "x\nx\nx\n", ["0", "1", "2"]),
+        # BV: two-bit counter with enable=1 counts 00, 10, 01, 11
+        ("twobit", "1\n1\n1\n", ["0x0#1", "0x0#1", "0x1#1", "0x0#1", "0x0#1", "0x1#1"]),
+    ],
+)
+def test_generated_executable_builds_and_runs(
+    generate_lean_files, fixture, stdin, expected
+):
     """`verith -x` end to end: generate a project, build `main`, run it.
 
     The only coverage the executable path has. Its three generated pieces
@@ -220,16 +231,18 @@ def test_generated_executable_builds_and_runs(generate_lean_files):
     if not packages.is_dir() or not manifest.is_file():
         pytest.skip("tests/lean packages not built; run the other slow tests first")
 
+    import importlib
+
     sys.path.insert(0, str(_LEAN_DIR.parent / "fixtures"))
     try:
-        import counter
+        module_def = importlib.import_module(fixture).module()
     finally:
         sys.path.pop(0)
     from zrth.lean.project import create_project
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
-        project = create_project(out, counter.module(), "Rea", executable=True)
+        project = create_project(out, module_def, "Rea", executable=True)
 
         (project / ".lake").mkdir(exist_ok=True)
         (project / ".lake" / "packages").symlink_to(packages)
@@ -247,16 +260,15 @@ def test_generated_executable_builds_and_runs(generate_lean_files):
             f"stdout:\n{build.stdout[-2000:]}\nstderr:\n{build.stderr[-800:]}"
         )
 
-        # counter: starts at 0, increments each step, resets at 10
         run = subprocess.run(
             [str(project / ".lake" / "build" / "bin" / "main")],
-            input="x\nx\nx\n",
+            input=stdin,
             capture_output=True,
             text=True,
             timeout=60,
         )
         assert run.returncode == 0, f"executable failed: {run.stderr[-500:]}"
-        assert run.stdout.split() == ["0", "1", "2"], (
+        assert run.stdout.split() == expected, (
             f"unexpected trace: {run.stdout.split()}"
         )
 

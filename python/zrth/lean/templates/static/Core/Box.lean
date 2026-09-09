@@ -209,6 +209,37 @@ infixr:75 " ⊗ " => par
     {m n : Nat} : Box [Mat t m n] [Mat Int 1 1] :=
   ⟨fun val!(x) => val!(fun i j => ((_root_.argmax x) i j : Int))⟩
 
+-- BV works entirely in BitVec: that theory has no Bool wires, so an `ite`
+-- condition and an `eq` result are both `Mat (BitVec 1) 1 1`. The Boolean
+-- combinators above cannot serve it, and we compare a 1-bit value against 1
+-- directly rather than converting through a BVToBool box.
+
+@[simp] def bvNot {w m n : Nat} : Box [Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a) => val!(fun i j => ~~~(a i j))⟩
+
+@[simp] def bvAnd {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => (a i j) &&& (b i j))⟩
+
+@[simp] def bvOr {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => (a i j) ||| (b i j))⟩
+
+@[simp] def bvXor {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => (a i j) ^^^ (b i j))⟩
+
+@[simp] def bvIte {t : Type} : Box [Mat (BitVec 1) 1 1, t, t] [t] :=
+  ⟨fun val!(c, a, b) => if c 0 0 = 1 then val!(a) else val!(b)⟩
+
+@[simp] def bvEq {w : Nat} :
+    Box [Mat (BitVec w) 1 1, Mat (BitVec w) 1 1] [Mat (BitVec 1) 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => if a 0 0 = b 0 0 then 1 else 0)⟩
+
+@[simp] def bvNe {w : Nat} :
+    Box [Mat (BitVec w) 1 1, Mat (BitVec w) 1 1] [Mat (BitVec 1) 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => if a 0 0 = b 0 0 then 0 else 1)⟩
+
 end Box
 
 /- ite simplifications -/
