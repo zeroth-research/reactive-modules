@@ -263,7 +263,20 @@ class TA2MagicCEGAR(TA2Magic):
         res = solver.checkSat()
         if res.isUnsat():
             return ObligationResult(name, True, None)
-        # SAT or unknown — extract model values
+        if not res.isSat():
+            # `unknown` -- a timeout, or arithmetic the solver is incomplete
+            # for (a nonlinear ranking function, say). There is no model, so
+            # `getValue` below would raise CVC5ApiException and take the whole
+            # run down. Report it as unproven, with the solver's reason, so
+            # CEGAR can carry on.
+            why = res.getUnknownExplanation()
+            return ObligationResult(
+                name,
+                False,
+                f"{name}: solver returned unknown ({why}); no counterexample "
+                "available. The obligation is neither proved nor refuted.",
+            )
+        # SAT — read the counterexample off the model
         lines = [f"{name}: obligation violated. Counterexample:"]
         for label, group in extra_vars:
             for i, v in enumerate(group):
