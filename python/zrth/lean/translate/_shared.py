@@ -54,8 +54,38 @@ def _scalar_bindings_with_recon(
     return let_lines, bindings, flat_slots
 
 
+def _recon_var(let_line: str) -> str:
+    """The variable a reconstruction let binds (`  let _m0 : ... := ...`)."""
+    return let_line.split("let ", 1)[1].split(" ", 1)[0]
+
+
+def _needed_recon(recon_lets: "list[str]", body: str) -> "list[str]":
+    """The reconstruction lets `body` actually refers to, in order.
+
+    An unused let still mentions its parameter group (`extl_l.1` and so on),
+    and Lean's `variable` auto-binding would then add that parameter to the
+    declaration -- while the call sites are built from what the body
+    consumes, so they would under-apply it. Iterated to a fixed point in
+    case one reconstruction ever refers to another.
+    """
+    kept: list[str] = []
+    text = body
+    changed = True
+    while changed:
+        changed = False
+        for line in recon_lets:
+            if line in kept:
+                continue
+            if _recon_var(line) in text:
+                kept.append(line)
+                text += "\n" + line
+                changed = True
+    return [line for line in recon_lets if line in kept]
+
+
 def _prepend_recon(recon_lets: "list[str]", body: str) -> str:
-    """Prepend Mat reconstruction let-lines to a function body."""
-    if recon_lets:
-        return "\n".join(recon_lets) + "\n" + body
+    """Prepend the Mat reconstruction let-lines this body needs."""
+    needed = _needed_recon(recon_lets, body)
+    if needed:
+        return "\n".join(needed) + "\n" + body
     return body
