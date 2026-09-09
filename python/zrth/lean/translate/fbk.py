@@ -84,6 +84,11 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
 
     # --- TypeMap / StateType ---
     ctrl_types = [dtype_to_lean_type(w, simple_types=True) for w in ctx.ctrl_next]
+    if not ctrl_types:
+        # `TypeMap` is a total function `Nat -> Type`, so it needs at least
+        # one case to fall back on. A module with no controlled state has no
+        # state relation to encode; say so rather than indexing an empty list.
+        return "-- FBK encoding not available: module has no ctrl wires"
     all_same = len(set(ctrl_types)) == 1
     lines.append("abbrev TypeMap : Nat → Type")
     if all_same:

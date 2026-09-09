@@ -308,3 +308,35 @@ def test_certificate_matrix_simp_reduces_matmul():
     # unfolds to MatMul + b, so the proof simp set must carry MatMul_apply to
     # reduce the matrix obligations.
     assert "MatMul_apply" in cert
+
+
+# ──────────────────────────────────────────────────────────────
+# Degenerate modules
+# ──────────────────────────────────────────────────────────────
+
+
+def _no_ctrl_module():
+    """A module with no controlled state: `module.ctrl` is empty."""
+    w = Wire(Bool([1, 1]))
+    return Module.combinatorial([], [Term(LIA.Bool(torch.tensor([[True]])), [w])])
+
+
+@pytest.mark.parametrize(
+    "encoding",
+    ["to_lean_functional", "to_lean_scalar", "to_lean_rel", "to_lean_bool_rel"],
+)
+def test_no_ctrl_module_does_not_crash_any_encoding(encoding):
+    """Every encoder must cope with an empty `ctrl`, not raise.
+
+    `to_lean_bool_rel` indexed `ctrl_types[0]` (and `[-1]`) unguarded and
+    raised IndexError, where the sibling encoders returned a comment.
+    """
+    out = getattr(ModuleToLean4(_no_ctrl_module()), encoding)()
+    assert isinstance(out, str)
+
+
+def test_no_ctrl_module_says_why_fbk_is_unavailable():
+    """The bail-out follows the wording the other encoders use."""
+    out = ModuleToLean4(_no_ctrl_module()).to_lean_bool_rel()
+    assert out.startswith("-- FBK encoding not available")
+    assert "no ctrl wires" in out
