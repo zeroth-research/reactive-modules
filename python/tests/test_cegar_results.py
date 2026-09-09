@@ -7,7 +7,6 @@ timeout, so the test is fast and deterministic.
 """
 
 import cvc5
-import pytest
 
 from zrth.lean import magic_cegar
 from zrth.lean.magic_cegar import TA2MagicCEGAR

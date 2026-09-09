@@ -5,7 +5,6 @@ copy template library files, and generate a diagram Lean file.
 
 from zrth.lean.common import (
     LeanContext,
-    dtype_to_lean_type,
     dtype_shape,
     _flat_element_type,
 )

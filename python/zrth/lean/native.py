@@ -15,7 +15,6 @@ from zrth.lean.common import (
     _constant_expr,
     itype_name,
     is_constant_name,
-    _accessor,
     dtype_to_lean_type,
     linear_list_literals,
     _is_scalar_wire,
