@@ -51,21 +51,6 @@ def _build_tuple(exprs: list[str]) -> str:
     return "(" + ", ".join(exprs) + ")"
 
 
-def _append_expr(var1: str, count1: int, var2: str, count2: int) -> str:
-    """Generate an expression that concatenates two tuples into one.
-
-    E.g. _append_expr("x", 2, "e", 1) -> "(x.1, x.2, e)"
-    """
-    parts = []
-    for i in range(count1):
-        acc = _accessor(i, count1)
-        parts.append(f"{var1}{acc}")
-    for i in range(count2):
-        acc = _accessor(i, count2)
-        parts.append(f"{var2}{acc}")
-    return _build_tuple(parts)
-
-
 # Map operations to Lean expression builder (takes list of arg strings).
 # Operands and results are all `Mat _ 1 1` (scalar)
 # FIXME: element-wise ops extract position `0 0`, but

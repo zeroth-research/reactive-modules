@@ -19,7 +19,6 @@ from pathlib import Path
 from zrth import Module, Wire, Env, X
 from .native import (
     _product_type,
-    _append_expr,
 )
 
 from .translate import ModuleToLean4
@@ -189,9 +188,10 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         lines.append(f'  s!"{interp}"')
     lines.append("")
 
-    # main function
-    main_append = _append_expr("state", len(ctrl_next), "extl", len(extl_next))
-
+    # main function. `update` is emitted curried as
+    # `update (ctrl) (extl_l) (extl_n)`, so the three groups are applied
+    # separately -- and `extl_l` is the *previous* step's input, which the
+    # loop therefore has to carry.
     lines.append(f"""\
 def main : IO Unit := do
   let stdin ← IO.getStdin
@@ -199,14 +199,16 @@ def main : IO Unit := do
   if line0.trimAscii.toString.isEmpty then return
   let extl0 ← parseExtl (line0.trimAscii.toString.splitOn " " |>.toArray)
   let mut state := init extl0
+  let mut extlPrev := extl0
   IO.println (showCtrl state)
   repeat do
     let line ← stdin.getLine
     if line.trimAscii.toString.isEmpty then break
     let extl ← parseExtl (line.trimAscii.toString.splitOn " " |>.toArray)
-    let state' := update {main_append}
+    let state' := update state extlPrev extl
     IO.println (showCtrl state')
     state := state'
+    extlPrev := extl
 """)
 
     return "\n".join(lines)
