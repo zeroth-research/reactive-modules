@@ -215,7 +215,10 @@ def _get_dtype_item(dtype: Sort, item) -> str:
     if isinstance(dtype, Real):
         return _float_literal(float(item))
     if isinstance(dtype, BitVec):
-        return f"(BitVec.ofNat {dtype._0} {int(item)})"
+        # `ofInt`, not `ofNat`: a negative entry has no `Neg ℕ` instance,
+        # so `BitVec.ofNat w -3` does not elaborate. `ofInt` wraps to
+        # two's complement and handles non-negative values identically.
+        return f"(BitVec.ofInt {dtype._0} ({int(item)}))"
     raise NotImplementedError(f"Unhnadled type: {dtype}")
 
 

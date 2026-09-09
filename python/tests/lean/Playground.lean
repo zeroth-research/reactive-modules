@@ -209,3 +209,14 @@ example (x : Mat Int 2 2) :
     matVecAffine 2 [[1, 0], [0, 3]] [5, 0] x
       = affineLinear (matrixOf 2 2 [[1, 0], [0, 3]]) x (colOf 2 2 [5, 0]) :=
   matVecAffine_eq 2 2 2 _ _ x (by decide)
+
+/-! ## BitVec literals from negative constants
+
+The codegen emits `BitVec.ofInt`, not `ofNat`: `BitVec.ofNat w (-3)` needs a
+`Neg ℕ` instance and does not elaborate. `ofInt` wraps to two's complement,
+and agrees with `ofNat` on non-negative values. -/
+
+example : BitVec.ofInt 8 (-3) = 253#8 := by decide
+example : BitVec.ofInt 8 (3) = 3#8 := by decide
+example : BitVec.ofInt 1 (-1) = 1#1 := by decide
+example : (BitVec.ofInt 8 (5)) = (BitVec.ofNat 8 5) := by decide

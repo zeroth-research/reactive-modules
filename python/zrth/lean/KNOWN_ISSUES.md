@@ -196,10 +196,14 @@ producing feedback.
 
 ### 14. `BitVec.ofNat` emitted for negative values · PLAUSIBLE
 
-`common.py`: `f"(BitVec.ofNat {dtype._0} {int(item)})"` yields
-`(BitVec.ofNat 8 -3)` for a negative entry, but `ofNat` takes a `Nat`.
-Reachable from `_tensor_to_lean_def` and `linear_list_literals`.
-`BitVec.ofInt` is the right constructor.
+`common.py` and `smt_to_lean.py` emitted `BitVec.ofNat w v`, which does not
+elaborate for a negative `v` — Lean reports `failed to synthesize Neg ℕ`.
+
+Latent, not live: `BV.Const` rejects negative tensors outright (`min_val <
+0` in `theory/src/bv.rs`), BV has no `Linear` so `linear_list_literals`
+never sees a BitVec wire, and cvc5's `getBitVectorValue` is unsigned. So
+nothing fed a negative through. Switched to `BitVec.ofInt`, which wraps to
+two's complement and agrees with `ofNat` on non-negatives.
 
 ### 15. FBK's state tuple is incompatible with `ScalarRel.effect_i` · PLAUSIBLE
 

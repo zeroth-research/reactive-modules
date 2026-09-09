@@ -118,7 +118,8 @@ def _walk(
     if k == Kind.CONST_BITVECTOR:
         width = t.getSort().getBitVectorSize()
         value = int(t.getBitVectorValue(10))
-        return f"(BitVec.ofNat {width} {value})"
+        # see the note in common.py: `ofNat` rejects a negative literal
+        return f"(BitVec.ofInt {width} ({value}))"
     if k == Kind.CONSTANT:
         name = t.getSymbol()
         if name in var_accessor:

@@ -130,3 +130,43 @@ def test_bool_matrix_constant_is_interned_not_inlined():
     )
     lean = ModuleToLean4(module).to_lean_functional()
     assert "Mat Bool 2 3" in lean, "the Bool matrix constant was not emitted"
+
+
+# ──────────────────────────────────────────────────────────────
+# BitVec literals
+# ──────────────────────────────────────────────────────────────
+
+
+def test_bitvec_literal_uses_of_int():
+    """`BitVec.ofNat w (-3)` has no `Neg ℕ` instance and does not elaborate.
+
+    Latent rather than live: `BV.Const` rejects negative tensors ("Const:
+    tensor values do not fit in N bits") and BV has no `Linear`, so nothing
+    currently feeds a negative here. `ofInt` closes the trap and agrees with
+    `ofNat` on non-negatives — both facts pinned in
+    tests/lean/Playground.lean.
+    """
+    from zrth import Wire, BitVec
+    from zrth.lean.common import _get_dtype_item
+
+    dt = Wire(BitVec(8, [1, 1])).dtype
+    assert _get_dtype_item(dt, -3) == "(BitVec.ofInt 8 (-3))"
+    assert _get_dtype_item(dt, 3) == "(BitVec.ofInt 8 (3))"
+    assert "ofNat" not in _get_dtype_item(dt, -1)
+
+
+def test_non_negative_bitvec_constant_still_emits():
+    """The reachable case must be unchanged by the switch to `ofInt`."""
+    import torch
+    from zrth import Term, Module, BitVec, BV, Var, X
+    from zrth.lean import ModuleToLean4
+
+    v = Var(BitVec(8, [1, 1]))
+    module = Module.sequential(
+        [v],
+        [Term(BV.Const(torch.tensor([[5]])), [X(v)])],
+        [Term(BV.Id(), [X(v)], [v])],
+    )
+    lean = ModuleToLean4(module).to_lean_functional()
+    assert "BitVec.ofInt 8 (5)" in lean
+    assert "BitVec.ofNat" not in lean
