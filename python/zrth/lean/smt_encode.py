@@ -338,10 +338,14 @@ def translate_terms(
             bw = term.read[0].dtype._0
             pred = tm.mkTerm(Kind.DISTINCT, a, tm.mkBitVector(bw, 0))
             wt[write.id] = mat_pack(tm, out_shape, [_bool_or_bv1(tm, pred, True)])
-        elif name == "Mod":
+        elif name in ("UMod", "SMod"):
+            # BV is the only theory with modulo, and it distinguishes the two.
+            # This branch was keyed `"Mod"` with `Kind.INTS_MODULUS`, matching
+            # no variant any theory defines.
             a = mat_select(tm, args[0], in_shapes[0], 0, 0)
             b = mat_select(tm, args[1], in_shapes[1], 0, 0)
-            wt[write.id] = mat_pack(tm, out_shape, [tm.mkTerm(Kind.INTS_MODULUS, a, b)])
+            kind = Kind.BITVECTOR_UREM if name == "UMod" else Kind.BITVECTOR_SMOD
+            wt[write.id] = mat_pack(tm, out_shape, [tm.mkTerm(kind, a, b)])
         elif name in ("Lt", "Le", "Gt", "Ge", "Eq", "Ne"):
             kind = {
                 "Lt": Kind.LT,

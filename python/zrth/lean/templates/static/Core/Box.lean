@@ -232,6 +232,14 @@ infixr:75 " ⊗ " => par
     Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
   ⟨fun val!(a, b) => val!(fun i j => (a i j) ^^^ (b i j))⟩
 
+@[simp] def bvUMod {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => BitVec.umod (a i j) (b i j))⟩
+
+@[simp] def bvSMod {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => BitVec.smod (a i j) (b i j))⟩
+
 @[simp] def bvIte {t : Type} : Box [Mat (BitVec 1) 1 1, t, t] [t] :=
   ⟨fun val!(c, a, b) => if c 0 0 = 1 then val!(a) else val!(b)⟩
 

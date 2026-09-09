@@ -83,7 +83,6 @@ _LEAN_OP_BOX: dict[str, str] = {
     "Min": "Box.min",
     "Max": "Box.max",
     "MatMul": "Box.mul",
-    "MatAdd": "Box.add",
     "Id": "Box.id",
     # Linear is handled specially (A, b are baked into the op) — see `_linear_box`.
     "ReLU": "Box.relu",
@@ -111,6 +110,8 @@ _BV_LEAN_OP_BOX = {
     "Ite": "Box.bvIte",
     "Eq": "Box.bvEq",
     "Ne": "Box.bvNe",
+    "UMod": "Box.bvUMod",
+    "SMod": "Box.bvSMod",
 }
 
 

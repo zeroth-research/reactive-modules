@@ -62,7 +62,6 @@ _LEAN_OP: dict[str, Callable] = {
     "Add": lambda a: f"({a[0]} + {a[1]})",
     "Sub": lambda a: f"({a[0]} - {a[1]})",
     "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Mod": lambda a: f"(fun _ _ => ({a[0]} 0 0 % {a[1]} 0 0))",
     "Neg": lambda a: f"(-{a[0]})",
     "Lt": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 < {a[1]} 0 0))",
     "Le": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≤ {a[1]} 0 0))",
@@ -96,6 +95,8 @@ _BV_LEAN_OP: dict[str, Callable] = {
     "Ite": lambda a: f"(if {a[0]} 0 0 = 1 then {a[1]} else {a[2]})",
     "Eq": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0)",
     "Ne": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1)",
+    "UMod": lambda a: f"(fun i j => BitVec.umod ({a[0]} i j) ({a[1]} i j))",
+    "SMod": lambda a: f"(fun i j => BitVec.smod ({a[0]} i j) ({a[1]} i j))",
 }
 
 
@@ -127,7 +128,6 @@ _SCALAR_OP: dict[str, Callable] = {
     "Add": lambda a: f"({a[0]} + {a[1]})",
     "Sub": lambda a: f"({a[0]} - {a[1]})",
     "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Mod": lambda a: f"({a[0]} % {a[1]})",
     "Neg": lambda a: f"(-{a[0]})",
     "Lt": lambda a: f"(decide ({a[0]} < {a[1]}))",
     "Le": lambda a: f"(decide ({a[0]} ≤ {a[1]}))",
@@ -151,6 +151,8 @@ _BV_SCALAR_OP: dict[str, Callable] = {
     "Ite": lambda a: f"(if {a[0]} = 1 then {a[1]} else {a[2]})",
     "Eq": lambda a: f"(if {a[0]} = {a[1]} then 1 else 0)",
     "Ne": lambda a: f"(if {a[0]} = {a[1]} then 0 else 1)",
+    "UMod": lambda a: f"(BitVec.umod {a[0]} {a[1]})",
+    "SMod": lambda a: f"(BitVec.smod {a[0]} {a[1]})",
 }
 
 

@@ -9,7 +9,7 @@ theories actually expose.
 
 import torch
 import pytest
-from zrth import Wire, Term, Module, Bool, Int, LIA, LRA, BV, Var, X
+from zrth import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
 from zrth.lean import ModuleToLean4
 from zrth.lean.common import itype_name
 from zrth.lean.native import _LEAN_OP, _SCALAR_OP
@@ -20,9 +20,13 @@ from zrth.lean.circ import _LEAN_OP_BOX
 # dead code awaiting either a real variant or removal. Listed explicitly so
 # that a *newly* introduced dead key still fails the test below.
 _KNOWN_DEAD = {
-    "_LEAN_OP": {"Mod", "TensorGet", "ToUnsigned"},
-    "_SCALAR_OP": {"Mod", "TensorGet", "ToUnsigned"},
-    "_LEAN_OP_BOX": {"MatAdd"},
+    # `TensorGet`/`ToUnsigned` are `IType`-era names with no modern
+    # equivalent, so they need a decision (remove, or implement the ops)
+    # rather than a rename. `Mod` and `MatAdd` are gone: BV's `UMod`/`SMod`
+    # replaced the first, and `Add` already covered the second.
+    "_LEAN_OP": {"TensorGet", "ToUnsigned"},
+    "_SCALAR_OP": {"TensorGet", "ToUnsigned"},
+    "_LEAN_OP_BOX": set(),
 }
 
 _TABLES = [
@@ -160,3 +164,46 @@ def test_bv_module_emits_bitvec_boxes():
             assert boolean not in line, (
                 f"Boolean box {boolean} emitted for BV in: {line.strip()[:90]}"
             )
+
+
+@pytest.mark.parametrize("name", ["UMod", "SMod"])
+def test_bv_modulo_is_dispatchable(name):
+    """BV is the only theory with modulo, and it has two of them.
+
+    The tables carried one `"Mod"` key, which no theory defines: LIA and LRA
+    have no modulo at all, and BV spells its `UMod`/`SMod`.
+    """
+    from zrth.lean.native import _BV_LEAN_OP, _BV_SCALAR_OP
+    from zrth.lean.circ import _BV_LEAN_OP_BOX
+
+    assert getattr(BV, name, None) is not None, f"BV.{name} does not exist"
+    assert name in _BV_LEAN_OP and name in _BV_SCALAR_OP and name in _BV_LEAN_OP_BOX
+    assert "Mod" not in _LEAN_OP and "Mod" not in _SCALAR_OP, (
+        "the dead integer Mod key is back"
+    )
+
+
+def test_mat_add_is_not_a_separate_key():
+    """`MatAdd` duplicated `Add`'s mapping under a name no theory defines."""
+    assert "MatAdd" not in _LEAN_OP_BOX
+    assert _LEAN_OP_BOX["Add"] == "Box.add"
+
+
+def _bv_mod_module(op):
+    """BV module whose update takes a modulo of its state."""
+    s = Var(BitVec(8, [1, 1]))
+    d = Var(BitVec(8, [1, 1]))
+    init = [
+        Term(BV.Const(torch.tensor([[7]])), [X(s)]),
+        Term(BV.Const(torch.tensor([[3]])), [X(d)]),
+    ]
+    update = [Term(BV.Id(), [X(d)], [d]), Term(op, [X(s)], [s, d])]
+    return Module.sequential([s, d], init, update)
+
+
+@pytest.mark.parametrize(
+    "op,expected", [(BV.UMod(), "BitVec.umod"), (BV.SMod(), "BitVec.smod")]
+)
+def test_bv_modulo_emits_the_right_lean(op, expected):
+    lean = ModuleToLean4(_bv_mod_module(op)).to_lean_functional()
+    assert expected in lean
