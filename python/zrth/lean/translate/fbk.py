@@ -13,7 +13,12 @@ from zrth.lean.common import (
     _flat_size,
     _mat_from_scalars,
 )
-from zrth.lean.translate._shared import _scalar_bindings_with_recon, _prepend_recon
+from zrth.lean.translate._shared import (
+    _scalar_bindings_with_recon,
+    _prepend_recon,
+    _flat_layout,
+    _effect_type,
+)
 
 
 def _build_state_bindings(
@@ -54,14 +59,18 @@ def _state_slot_types(wires: list) -> "list[str]":
     return [_flat_element_type(w) for w in wires for _ in range(_flat_size(w))]
 
 
-def _state_tuple(varname: str, n: int) -> str:
+def _state_tuple(varname: str, n: int, offset: int = 0) -> str:
     """Build the ScalarRel-compatible tuple from a StateType variable.
 
     n=1 → ``varname 0``
     n=2 → ``(varname 0, varname 1)``
     n=3 → ``(varname 0, (varname 1, varname 2))``  (right-nested)
+
+    ``offset`` starts the run later, which is what one wire's slice of the
+    state needs: `ScalarRel` groups the state per element, so wire `i`'s
+    components begin after every element before it.
     """
-    items = [f"({varname} {i})" for i in range(n)]
+    items = [f"({varname} {offset + i})" for i in range(n)]
     if len(items) == 1:
         return items[0]
     result = items[-1]
@@ -76,9 +85,11 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
 
     # One `effect_i`/`R_i` per ctrl *wire*, but one state slot per *element*:
     # `ScalarRel` draws the same distinction and the two counts differ for a
-    # multi-element wire.
+    # multi-element wire. `spans[i]` is where wire `i`'s elements sit in the
+    # state, so `R_i` compares that run of slots -- not slot `i` -- against
+    # `effect_i`.
     n_ctrl = len(ctx.ctrl_next)
-    n_slots = sum(_flat_size(w) for w in ctx.ctrl_next)
+    spans, n_slots = _flat_layout(ctx.ctrl_next)
 
     def _ty(wires):
         return _product_type_scalar(wires) if wires else "Unit"
@@ -160,13 +171,14 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
     if has_update:
         update_data: list[tuple[int, str, str, list[str]]] = []
         for i, w in enumerate(ctx.ctrl_next):
-            ty = dtype_to_lean_type(w, simple_types=True)
+            ty = _effect_type(w)
             body = _translate_terms_scalar(
                 _reachable_terms(ctx.atom.update, [w]),
                 update_bindings,
                 [w],
                 ctx.constants,
                 flat_slots=update_flat,
+                flatten_outputs=True,
             )
             eargs = _effect_args(_consumed(ctx.atom.update, w))
             update_data.append((i, ty, _prepend_recon(update_recon, body), eargs))
@@ -187,11 +199,12 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
             lines.append("")
 
         # Emit R_i abbrevs — access newstate via function application.
-        for i in range(n_ctrl):
+        for i, (offset, size) in enumerate(spans):
             eargs = effect_arg_lists[i]
             eargs_str = (" " + " ".join(eargs)) if eargs else ""
             lines.append(f"{noncomp}abbrev R_{i} : Bool :=")
-            lines.append(f"  (newstate {i}) == effect_{i}{eargs_str}")
+            new_slice = _state_tuple("newstate", size, offset)
+            lines.append(f"  {new_slice} == effect_{i}{eargs_str}")
             lines.append("")
 
         # Emit TransRel abbrev.
@@ -233,13 +246,14 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
     if has_init:
         init_data: list[tuple[int, str, str, list[str]]] = []
         for i, w in enumerate(ctx.ctrl_next):
-            ty = dtype_to_lean_type(w, simple_types=True)
+            ty = _effect_type(w)
             body = _translate_terms_scalar(
                 _reachable_terms(ctx.atom.init, [w]),
                 init_bindings,
                 [w],
                 ctx.constants,
                 flat_slots=init_flat,
+                flatten_outputs=True,
             )
             iargs = _init_args(_consumed(ctx.atom.init, w))
             init_data.append((i, ty, _prepend_recon(init_recon, body), iargs))
@@ -259,11 +273,12 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
             lines.append("")
 
         # Emit Init_i abbrevs — access s via function application.
-        for i in range(n_ctrl):
+        for i, (offset, size) in enumerate(spans):
             iargs = init_arg_lists[i]
             iargs_str = (" " + " ".join(iargs)) if iargs else ""
             lines.append(f"{noncomp}abbrev Init_{i} : Bool :=")
-            lines.append(f"  (s {i}) == init_{i}{iargs_str}")
+            s_slice = _state_tuple("s", size, offset)
+            lines.append(f"  {s_slice} == init_{i}{iargs_str}")
             lines.append("")
 
         # Emit InitCond abbrev.

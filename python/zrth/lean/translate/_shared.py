@@ -8,6 +8,48 @@ from zrth.lean.common import (
     dtype_to_lean_type,
     _mat_from_scalars,
 )
+from zrth.lean.native import _build_tuple, _product_type_scalar
+
+
+def _flat_layout(wires: "list") -> "tuple[list[tuple[int, int]], int]":
+    """``([(offset, size)] per wire, total)`` in the flattened element tuple.
+
+    The scalar encoding's state tuple carries one component per *element*, so
+    a wire's data starts at the sum of the sizes before it -- not at its own
+    index. Consumers that relate a per-wire definition to that tuple need
+    both halves of this.
+    """
+    sizes = [_flat_size(w) for w in wires]
+    offset = 0
+    spans: list[tuple[int, int]] = []
+    for size in sizes:
+        spans.append((offset, size))
+        offset += size
+    return spans, offset
+
+
+def _flat_slice(expr: str, offset: int, size: int, total: int) -> str:
+    """The `size` components of the `total`-wide tuple `expr` from `offset`.
+
+    A wire covering the whole tuple slices to `expr` itself: projecting and
+    re-tupling would be a no-op that repeats `expr` once per element, and
+    `expr` is a whole `Scalar.update` call at the only call sites.
+    """
+    if offset == 0 and size == total:
+        return expr
+    return _build_tuple(
+        [f"{expr}{_accessor(offset + k, total)}" for k in range(size)]
+    )
+
+
+def _effect_type(wire) -> str:
+    """Codomain of a per-wire `effect_i`/`init_i`: its own flat element tuple.
+
+    One component per element, so it can be compared to the matching slice of
+    the scalar encoding's state tuple. Typing it as the wire's `Mat` instead
+    put a `Mat Int 6 1` against an `Int x ... x Int`.
+    """
+    return _product_type_scalar([wire])
 
 
 def _scalar_bindings_with_recon(

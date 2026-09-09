@@ -10,8 +10,9 @@ reading it and has not been executed.
 None of this came from the `origin/main` rebase. The dead-name family
 predates it (`IType`-era names that never existed at the merge base) and the
 rest is older still. The suite passed because none of these paths were
-reached by it: `!=`, `%`, `Argmax`, Bool matrix constants, the scalar
-encoding, BV codegen and the whole `verith -x` path were all uncovered.
+reached by it: `!=`, `%`, `Argmax`, Bool matrix constants, the scalar and
+relational encodings, BV codegen and the whole `verith -x` path were all
+uncovered.
 
 ---
 
@@ -40,6 +41,7 @@ encoding, BV codegen and the whole `verith -x` path were all uncovered.
 | 19 | `Mod` assumed an integer modulo no theory has; `MatAdd` duplicated `Add` | `862d247` |
 | 20 | FBK's state was per wire while `ScalarRel.effect_i` takes it per element | `d49ebdb` |
 | 21 | `_prepend_recon` gave every body every reconstruction, so call sites under-applied | `fa7bfa6` |
+| 22 | `ScalarRel`/`FBK` projected component `i` of a per-element tuple for wire `i`; now an offset-and-length slice against a flat `effect_i` | *this change* |
 
 Two of these carried the same lesson: **the equivalence theorems can stay
 provable while both sides are wrong.** `argmax1d_scalar_n_eq` proved the
@@ -47,28 +49,16 @@ unrolled scalar form equal to `argmax_1d` by unfolding both, so it went on
 passing while each had the tie-breaking and seeding wrong. A fix to one side
 alone would have broken it.
 
+The corollary is which theorem to point a new certificate at. #22's slice is
+computed the same way on both sides of `effect_i_eq`, so that theorem alone
+would hold at a wrong offset; `TransRel_scalar_eq` into `TransRel_func_eq`
+is what does not, because it carries the relation back to the functional
+`update` through `pack`/`unpack`. Mutating `_flat_layout` to return offset 0
+for every wire turns `Certs/RelEncMixed` from 0 errors into 6.
+
 ---
 
 ## Open
-
-### 22. `rel.py` projects per wire against a per-element tuple · CONFIRMED
-
-`atom_to_lean_rel` relates `effect_i` to `Scalar.update` by projecting tuple
-component `i` (`_accessor(i, n_ctrl)`), which assumes one component per
-ctrl *wire*. The scalar encoding's tuple has one per *element*, so for a
-multi-element wire the data for wire `i` is not at position `i`: the
-projection needs to become an offset-and-length slice, and `effect_i`'s
-codomain has to agree with whichever side it is compared to.
-
-Compiling functional + scalar + rel together for the tests/lean 6-wide
-countdown shows the shape of it: `effect_0 ... = Scalar.update ...` puts a
-`Mat Int 6 1` against an `Int × … × Int`. This predates the recent work —
-the two sides never agreed for a multi-element wire — but the scalar
-encoding's flattening (`5b32d2f`) makes it the remaining blocker for
-ScalarRel and, through it, FBK.
-
-`Certs/` carries no ScalarRel or FBK section, so nothing compiles either
-today; a `Certs/RelEnc*` pair like `ScalarEnc*` would pin it.
 
 ### 23. `TensorGet` / `ToUnsigned` are dead keys with no modern equivalent · CONFIRMED
 
@@ -123,6 +113,12 @@ modules; that is a decision about what the executable is for.
   Only `static/` was ever read, so editing a top-level copy did nothing —
   which happened in `879d9f7`. Removed in `7f3f753`, guarded by
   `tests/test_lean_templates.py`.
-* The standalone certificates in `Certs/` carry no Scalar section, which is
-  why the scalar encoding went uncompiled for so long. `Certs/ScalarEnc*`
-  now cover it.
+* The standalone certificates in `Certs/` carry no Scalar, ScalarRel or FBK
+  section, which is why those encodings went uncompiled for so long.
+  `Certs/ScalarEnc*` and `Certs/RelEnc*` now cover them. `RelEncMixed` is
+  the only one whose state has both several wires and a multi-element one —
+  every other spec is either all-1×1 (slot `i` *is* wire `i`) or a single
+  wire (its slice is the whole tuple), so neither catches a per-wire
+  projection of a per-element tuple.
+* `templates/project/System/ScalarRel.lean.j2` is not rendered either (same
+  as `Scalar.lean.j2`), and is kept in step for the same reason.

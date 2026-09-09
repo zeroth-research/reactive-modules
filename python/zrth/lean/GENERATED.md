@@ -385,6 +385,13 @@ Encoding 4 again, but over bare scalars instead of matrices. Same names
 (`effect_i`, `R_i`, `TransRel`, `init_i`, `Init_i`, `InitCond`), inside
 `namespace ScalarRel`.
 
+Still one `effect_i` per state *variable*, but the state tuple carries one
+component per *element* — so the two counts differ as soon as a variable holds
+more than one. A variable of three elements returns all three, and `R_i`
+compares its run of the tuple: `(new.2.1, new.2.2.1, new.2.2.2)` for a
+3-element second variable, not `new.2`. The example below has one element per
+variable, where the two happen to coincide.
+
 ```lean
 namespace ScalarRel
 

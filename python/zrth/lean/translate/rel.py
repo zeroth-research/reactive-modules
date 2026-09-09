@@ -6,19 +6,25 @@ from zrth.lean.native import (
     _translate_terms_scalar,
     _reachable_terms,
 )
-from zrth.lean.common import (
-    LeanContext,
-    _accessor,
-    dtype_to_lean_type,
+from zrth.lean.common import LeanContext
+from zrth.lean.translate._shared import (
+    _scalar_bindings_with_recon,
+    _prepend_recon,
+    _flat_layout,
+    _flat_slice,
+    _effect_type,
 )
-from zrth.lean.translate._shared import _scalar_bindings_with_recon, _prepend_recon
 
 
 def atom_to_lean_rel(ctx: LeanContext) -> str:
     """Generate the relational encoding inside ``namespace ScalarRel``."""
     noncomp = "noncomputable " if ctx.uses_real else ""
 
-    n_ctrl = len(ctx.ctrl_next)
+    # One `effect_i`/`R_i` per ctrl *wire*, but one state component per
+    # *element*: `Scalar.update`'s codomain is the flattened tuple, so wire
+    # `i`'s data sits at `spans[i]` in it, not at position `i`.
+    spans, n_slots = _flat_layout(ctx.ctrl_next)
+    n_ctrl = len(spans)
     state_ty = _product_type_scalar(ctx.ctrl_next)
 
     def _ty(wires):
@@ -56,9 +62,12 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         all_binders: str,
         all_args: str,
         intro_vars: str,
-        acc: str,
+        span: "tuple[int, int]",
     ) -> "list[str]":
-        scalar_proj = f"({scalar_func} {all_args}){acc}"
+        offset, size = span
+        scalar_proj = _flat_slice(
+            f"({scalar_func} {all_args})", offset, size, n_slots
+        )
         return [
             f"theorem {func_name}_eq : ∀ {all_binders},",
             f"    {func_name} {all_args} = {scalar_proj} := by",
@@ -71,6 +80,24 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
             "",
         ]
 
+    def _pack_roundtrip(var: str) -> "list[str]":
+        """Tactics for ``var = Scalar.pack (Scalar.unpack_ctrl var)``.
+
+        The functional and scalar states differ by exactly this round trip.
+        Widest tactic first, as in `scalar.py`: a multi-element wire leaves a
+        `match i, j with` on a symbolic `i` that only `fin_cases` clears, and
+        once `i`/`j` are introduced a later `funext` can no longer fire.
+        """
+        return [
+            f"    have hpack : {var} = Scalar.pack (Scalar.unpack_ctrl {var}) := by",
+            "      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]",
+            "      try rfl",
+            "      try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
+            "      try (funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
+            "      try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
+            "      try (funext i j; simp [Fin.fin_one_eq_zero])",
+        ]
+
     lines = ["namespace ScalarRel", ""]
 
     has_update = bool(list(ctx.atom.update))
@@ -78,13 +105,14 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
 
     if has_update:
         for i, w in enumerate(ctx.ctrl_next):
-            ty = dtype_to_lean_type(w, simple_types=True)
+            ty = _effect_type(w)
             body = _translate_terms_scalar(
                 _reachable_terms(ctx.atom.update, [w]),
                 update_bindings,
                 [w],
                 ctx.constants,
                 flat_slots=update_flat,
+                flatten_outputs=True,
             )
             lines.append(
                 f"@[simp] {noncomp}def effect_{i} {update_binders} : {ty} :="
@@ -92,8 +120,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
             lines.append(_prepend_recon(update_recon, body))
             lines.append("")
 
-        for i in range(n_ctrl):
-            acc = _accessor(i, n_ctrl)
+        for i, span in enumerate(spans):
             lines.extend(
                 _proj_theorem(
                     f"effect_{i}",
@@ -101,16 +128,16 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
                     update_binders,
                     update_args,
                     update_intro,
-                    acc,
+                    span,
                 )
             )
 
-        for i in range(n_ctrl):
-            acc = _accessor(i, n_ctrl)
+        for i, (offset, size) in enumerate(spans):
             lines.append(
                 f"def R_{i} (old new : {state_ty}) {extl_binders} : Prop :="
             )
-            lines.append(f"  new{acc} = effect_{i} old {extl_args}")
+            new_slice = _flat_slice("new", offset, size, n_slots)
+            lines.append(f"  {new_slice} = effect_{i} old {extl_args}")
             lines.append("")
 
         r_calls = [f"R_{i} old new {extl_args}" for i in range(n_ctrl)]
@@ -122,20 +149,20 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
 
     if has_init:
         for i, w in enumerate(ctx.ctrl_next):
-            ty = dtype_to_lean_type(w, simple_types=True)
+            ty = _effect_type(w)
             body = _translate_terms_scalar(
                 _reachable_terms(ctx.atom.init, [w]),
                 init_bindings,
                 [w],
                 ctx.constants,
                 flat_slots=init_flat,
+                flatten_outputs=True,
             )
             lines.append(f"@[simp] {noncomp}def init_{i} {extl_n_binder} : {ty} :=")
             lines.append(_prepend_recon(init_recon, body))
             lines.append("")
 
-        for i in range(n_ctrl):
-            acc = _accessor(i, n_ctrl)
+        for i, span in enumerate(spans):
             lines.extend(
                 _proj_theorem(
                     f"init_{i}",
@@ -143,14 +170,14 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
                     extl_n_binder,
                     "extl_n",
                     "extl_n",
-                    acc,
+                    span,
                 )
             )
 
-        for i in range(n_ctrl):
-            acc = _accessor(i, n_ctrl)
+        for i, (offset, size) in enumerate(spans):
             lines.append(f"def Init_{i} (s : {state_ty}) {extl_n_binder} : Prop :=")
-            lines.append(f"  s{acc} = init_{i} extl_n")
+            s_slice = _flat_slice("s", offset, size, n_slots)
+            lines.append(f"  {s_slice} = init_{i} extl_n")
             lines.append("")
 
         init_calls = [f"Init_{i} s extl_n" for i in range(n_ctrl)]
@@ -192,9 +219,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         lines.append("  rw [InitCond_scalar_eq, init_scalar_eq]")
         lines.append("  constructor")
         lines.append("  · intro h")
-        lines.append(f"    have hpack : ctrl' = Scalar.pack (Scalar.unpack_ctrl ctrl') := by")
-        lines.append(f"      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]")
-        lines.append(f"      try (funext i j; simp [Fin.fin_one_eq_zero])")
+        lines.extend(_pack_roundtrip("ctrl'"))
         lines.append("    rw [h] at hpack; exact hpack")
         lines.append("  · intro h")
         lines.append(f"    simp [Scalar.pack, Scalar.unpack_ctrl, h]")
@@ -251,9 +276,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         lines.append("  rw [TransRel_scalar_eq, update_scalar_eq]")
         lines.append("  constructor")
         lines.append("  · intro h")
-        lines.append(f"    have hpack : ctrl' = Scalar.pack (Scalar.unpack_ctrl ctrl') := by")
-        lines.append(f"      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]")
-        lines.append(f"      try (funext i j; simp [Fin.fin_one_eq_zero])")
+        lines.extend(_pack_roundtrip("ctrl'"))
         lines.append("    rw [h] at hpack; exact hpack")
         lines.append("  · intro h")
         lines.append(f"    simp [Scalar.pack, Scalar.unpack_ctrl, h]")

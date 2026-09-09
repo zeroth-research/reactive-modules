@@ -291,3 +291,29 @@ def test_scalar_encoding_builds(generate_lean_files, name):
     )
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert not sorry_lines, f"ScalarEnc{name} used sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "name", ["Scalar", "Vec6", "Counter", "Vec32", "TwoVars", "Mixed"]
+)
+def test_relational_encoding_builds(generate_lean_files, name):
+    """ScalarRel and FBK elaborate on top of the scalar encoding.
+
+    `effect_i` is per ctrl *wire*; the state tuple it is related to is per
+    *element*. Projecting component `i` of that tuple therefore put a
+    `Mat Int 6 1` against an `Int x ... x Int` for any multi-element wire, and
+    `Mixed` is the case where the offsets differ too. The chain that has teeth
+    here is `TransRel_scalar_eq` into `TransRel_func_eq`: it ties the sliced
+    relation back to the functional `update` through `pack`/`unpack`, so a
+    slice at the wrong offset does not typecheck rather than proving a wrong
+    equation. No certificate in Certs/ carries a ScalarRel or FBK section, so
+    without this neither encoding was compiled at all.
+    """
+    r = _lake_build(f"Certs.RelEnc{name}")
+    assert r.returncode == 0, (
+        f"lake build Certs.RelEnc{name} failed.\n"
+        f"stdout:\n{r.stdout[-2000:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert not sorry_lines, f"RelEnc{name} used sorry:\n" + "\n".join(sorry_lines)
