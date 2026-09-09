@@ -340,3 +340,32 @@ def test_no_ctrl_module_says_why_fbk_is_unavailable():
     out = ModuleToLean4(_no_ctrl_module()).to_lean_bool_rel()
     assert out.startswith("-- FBK encoding not available")
     assert "no ctrl wires" in out
+
+
+# ──────────────────────────────────────────────────────────────
+# Relational encoding: characterisation
+# ──────────────────────────────────────────────────────────────
+
+
+def test_rel_encoding_emits_its_equivalence_theorems():
+    """Pins what the Rel encoding produces, so refactors there stay silent.
+
+    Added when two computed-but-unused simp lists were removed from
+    `rel.py`; the proofs inline their own `simp only` sets, so dropping them
+    left the output byte-identical.
+    """
+    lean = ModuleToLean4(_make_twobitcounter()).to_lean_rel()
+    for expected in (
+        "namespace ScalarRel",
+        "theorem InitCond_func_eq",
+        "theorem TransRel_func_eq",
+        "rw [TransRel_scalar_eq, update_scalar_eq]",
+        "simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]",
+    ):
+        assert expected in lean, f"missing from the Rel encoding: {expected!r}"
+
+
+def test_rel_encoding_has_no_unused_simp_placeholders():
+    """The removed lists were never interpolated; nothing should reference them."""
+    lean = ModuleToLean4(_make_twobitcounter()).to_lean_rel()
+    assert "unpack_pack_simp" not in lean

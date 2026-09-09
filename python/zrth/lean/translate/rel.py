@@ -178,12 +178,6 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         def _unpack(param, wires):
             return f"(Scalar.unpack_{param} {param})" if wires else param
 
-        unpack_pack_simp = (
-            ["Scalar.pack", "Scalar.unpack_ctrl"]
-            + (["Scalar.unpack_extl_n"] if ctx.extl_next else [])
-        )
-        unpack_pack_simp_str = ", ".join(unpack_pack_simp)
-
         new_unpack    = f"(Scalar.unpack_ctrl ctrl')" if ctx.ctrl_next else "ctrl'"
         extl_n_unpack = _unpack("extl_n", ctx.extl_next)
         init_cond_call = f"InitCond {new_unpack} {extl_n_unpack}"
@@ -246,13 +240,6 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         new_unpack = f"(Scalar.unpack_ctrl ctrl')" if ctx.ctrl_next else "ctrl'"
         extl_unpacks = " ".join(_unpack(p, w) for p, w in extl_groups)
         trans_func_call = f"TransRel {old_unpack} {new_unpack} {extl_unpacks}"
-
-        unpack_pack_simp = (
-            ["Scalar.pack", "Scalar.unpack_ctrl"]
-            + (["Scalar.unpack_extl_l"] if ctx.extl_latched else [])
-            + (["Scalar.unpack_extl_n"] if ctx.extl_next else [])
-        )
-        unpack_pack_simp_str = ", ".join(unpack_pack_simp)
 
         lines.append(
             f"theorem TransRel_func_eq : ∀ (ctrl ctrl' : {mat_ctrl_ty}) {func_extl_binders},"
