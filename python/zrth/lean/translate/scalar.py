@@ -77,7 +77,7 @@ def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
     seed or a non-strict comparison here would either break that proof or,
     worse, keep it provable against an equally wrong matrix definition.
     """
-    name = _argmax_scalar_name(n)
+    name = _argmax_scalar_name(elem_ty, n)
     noncomp = "noncomputable " if elem_ty == "Real" else ""
     params = " ".join(f"(s{i} : {elem_ty})" for i in range(n))
     body = [f"  let b0 : Nat × {elem_ty} := (0, s0)"]
@@ -199,8 +199,8 @@ def to_lean_scalar_equiv(
         return f"(Scalar.unpack_{param} {param})" if wires else param
 
     argmax_eq_lemmas = [
-        f"{_argmax_scalar_name(n)}_eq"
-        for _, n in argmax_variants
+        f"{_argmax_scalar_name(ety, n)}_eq"
+        for ety, n in argmax_variants
     ]
 
     def _proof(

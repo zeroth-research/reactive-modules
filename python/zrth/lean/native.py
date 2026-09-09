@@ -264,9 +264,22 @@ def _constant_expr_scalar(
     return _tensor_to_lean_inline(term.itype._0, w)
 
 
-def _argmax_scalar_name(n: int) -> str:
-    """Name of the scalar axiom for 1-d argmax over n elements."""
-    return f"argmax1d_scalar_{n}"
+def _argmax_scalar_name(elem_ty: str, n: int) -> str:
+    """Name of the scalar axiom for 1-d argmax over n elements of `elem_ty`.
+
+    The element type belongs in the name: variants are collected per
+    `(elem_ty, n)`, so naming them by `n` alone made an Argmax over
+    `Mat Int 1 4` and one over `Mat Real 1 4` emit two definitions and two
+    `_eq` theorems under one name.
+    """
+    return f"argmax1d_scalar_{_elem_ty_slug(elem_ty)}_{n}"
+
+
+def _elem_ty_slug(elem_ty: str) -> str:
+    """Lean-identifier-safe form of an element type, e.g. `(BitVec 8)` -> `bv8`."""
+    if elem_ty.startswith("(BitVec "):
+        return f"bv{elem_ty[len('(BitVec '):-1].strip()}"
+    return elem_ty.lower()
 
 
 def _translate_terms_scalar(
@@ -308,7 +321,9 @@ def _translate_terms_scalar(
             _check_argmax_output(dtype_shape(write_wire.dtype))
             slots = flat_slots.get(in_wire.id)
             if slots is not None:
-                axiom_name = _argmax_scalar_name(len(slots))
+                axiom_name = _argmax_scalar_name(
+                    _flat_element_type(in_wire), len(slots)
+                )
                 expr = f"({axiom_name} {' '.join(slots)})"
             else:
                 mat_expr = _argmax_expr(

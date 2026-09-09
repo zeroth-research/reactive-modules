@@ -178,7 +178,15 @@ _COUNTDOWN_CERT = CertificateData(
 
 # (elem_ty, n) pairs for the generated scalar Argmax variants. n = 1 is the
 # degenerate single-element case; the rest exercise the fold.
-_ARGMAX_SCALAR_SPECS = [("Int", 1), ("Int", 2), ("Int", 4), ("Real", 3)]
+# Int and Real at the same width sit together on purpose: the variant
+# names used to be built from `n` alone, so these two collided.
+_ARGMAX_SCALAR_SPECS = [
+    ("Int", 1),
+    ("Int", 2),
+    ("Int", 4),
+    ("Real", 3),
+    ("Real", 4),
+]
 
 
 _CERT_SPECS = [

@@ -181,3 +181,37 @@ def test_codegen_guard_still_states_the_one_index_contract():
     for bad in ([1, 4], [4, 1], [3, 4]):
         with pytest.raises(ValueError, match="single flat index"):
             _check_argmax_output(bad)
+
+
+def test_scalar_argmax_variants_are_named_per_element_type():
+    """Variants are collected per (elem_ty, n), so the name needs both.
+
+    Naming by `n` alone emitted two `def argmax1d_scalar_4` and two `_eq`
+    theorems into one file for an Int and a Real Argmax of equal width.
+    """
+    from zrth.lean.native import _argmax_scalar_name
+
+    names = {
+        _argmax_scalar_name(ety, 4)
+        for ety in ("Int", "Real", "Bool", "(BitVec 8)")
+    }
+    assert len(names) == 4, f"variant names collide: {sorted(names)}"
+    assert _argmax_scalar_name("Int", 4) != _argmax_scalar_name("Real", 4)
+    # widths stay distinguished too
+    assert _argmax_scalar_name("Int", 4) != _argmax_scalar_name("Int", 8)
+    # and the names are Lean identifiers
+    assert all(n.replace("_", "").isalnum() for n in names), sorted(names)
+
+
+def test_same_width_variants_emit_distinct_definitions():
+    """Two element types at one width must not produce one name twice."""
+    import re
+    from zrth.lean.translate.scalar import _argmax_scalar_def_lines
+
+    src = "\n".join(
+        _argmax_scalar_def_lines("Int", 4) + _argmax_scalar_def_lines("Real", 4)
+    )
+    defs = re.findall(r"^(?:noncomputable )?def (\w+)", src, re.M)
+    assert len(defs) == len(set(defs)), f"duplicate definitions: {defs}"
+    theorems = re.findall(r"^@\[simp\] theorem (\w+)", src, re.M)
+    assert len(theorems) == len(set(theorems)), f"duplicate theorems: {theorems}"
