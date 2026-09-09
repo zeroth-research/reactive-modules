@@ -430,19 +430,30 @@ def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
     """Build a Lean ``Mat T m n`` expression from flat scalar slot strings.
 
     shape [] or [1]: ``(fun _ _ => slots[0])``
-    shape [n]:       ``(fun _ j => Fin.cons s0 (Fin.cons s1 ...) j)``
-    shape [m, n]:    ``(fun i j => Fin.cons row0 (Fin.cons row1 ...) i j)``
+    otherwise:       ``(fun i j => match i, j with | 0, 0 => s0 | ...)``
+
+    Matched on the indices rather than built from nested ``Fin.cons``. The
+    equivalence theorems in the scalar encoding prove `pack (unpack x) = x`
+    elementwise, which means discharging the goal at each concrete index
+    after `fin_cases`; a `Fin.cons` chain does not reduce there (a numeral
+    index is not syntactically `Fin.succ`, and neither `Fin.cons_succ`,
+    `Fin.cons` unfolding nor the `Matrix.cons_val_*` set rewrites it), while
+    a `match` does. It is also the form `_tensor_to_lean_def` already emits
+    for constants, whose side of those goals always reduced.
     """
     if _is_scalar_shape(shape):
         assert len(slots) == 1
         return f"(fun _ _ => {slots[0]})"
     if len(shape) == 1:
-        n = shape[0]
-        assert len(slots) == n, f"expected {n} slots, got {len(slots)}"
-        return f"(fun _ j => {_vec_from_scalars(slots, elem_ty)} j)"
-    if len(shape) == 2:
-        r, c = shape
-        assert len(slots) == r * c
-        row_exprs = [_vec_from_scalars(slots[ri * c : (ri + 1) * c], elem_ty) for ri in range(r)]
-        return f"(fun i j => {_vec_from_scalars(row_exprs, f'Fin {c} → {elem_ty}')} i j)"
-    raise ValueError(f"Shape {shape} not supported for _mat_from_scalars")
+        m, n = 1, shape[0]
+    elif len(shape) == 2:
+        m, n = shape
+    else:
+        raise ValueError(f"Shape {shape} not supported for _mat_from_scalars")
+    assert len(slots) == m * n, f"expected {m * n} slots, got {len(slots)}"
+    arms = " ".join(
+        f"| {i}, {j} => {slots[i * n + j]}" for i in range(m) for j in range(n)
+    )
+    # Catch-all for the same reason as `_tensor_to_lean_def`: Lean cannot see
+    # that `0..k-1` exhausts `Fin k` for larger k.
+    return f"(fun i j => match i, j with {arms} | _, _ => {slots[0]})"

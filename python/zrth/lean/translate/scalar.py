@@ -1,6 +1,7 @@
 """Scalar encoding translation."""
 
 from zrth.lean.native import (
+    _elem_ty_slug,
     _product_type,
     _product_type_scalar,
     _translate_terms_scalar,
@@ -9,6 +10,7 @@ from zrth.lean.native import (
 )
 from zrth.lean.common import (
     dtype_shape,
+    dtype_to_lean_type,
     LeanContext,
     _accessor,
     _flat_size,
@@ -68,6 +70,33 @@ def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
     return result
 
 
+def _recon_lemma_lines(w) -> "list[str]":
+    """Lemma: rebuilding a wire from its own elements gives the wire back.
+
+    `Scalar.update` reconstructs a `Mat` from the unpacked scalars whenever a
+    term needs the whole matrix (`matVecAffine`, say). In `update_scalar_eq`
+    that reconstruction sits inside the argument, so the two sides differ by
+    exactly `pack (unpack ctrl)` vs `ctrl` and `simp` cannot close the gap
+    without this. Built by the same `_mat_from_scalars` as the reconstruction
+    itself, so the shapes match syntactically.
+    """
+    shape = list(dtype_shape(w.dtype))
+    elem = _flat_element_type(w)
+    m = shape[0]
+    n = shape[1] if len(shape) == 2 else 1
+    slots = [f"c {i} {j}" for i in range(m) for j in range(n)]
+    lhs = _mat_from_scalars(slots, shape, elem)
+    name = f"recon_{_elem_ty_slug(elem)}_{m}_{n}"
+    return [
+        "set_option maxHeartbeats 2000000 in",
+        f"@[simp] theorem {name} (c : {dtype_to_lean_type(w)}) :",
+        f"    {lhs} = c := by",
+        "  funext i j",
+        "  fin_cases i <;> fin_cases j <;> simp",
+        "",
+    ]
+
+
 def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
     """Emit a scalar def and simp theorem for argmax over n elements.
 
@@ -118,6 +147,16 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     ]
 
     lines: list[str] = []
+    seen_recon: set[tuple] = set()
+    for _, wires in input_groups:
+        for w in wires:
+            if _flat_size(w) == 1:
+                continue
+            key = (tuple(dtype_shape(w.dtype)), _flat_element_type(w))
+            if key in seen_recon:
+                continue
+            seen_recon.add(key)
+            lines.extend(_recon_lemma_lines(w))
     for ety, n in argmax_variants:
         lines.extend(_argmax_scalar_def_lines(ety, n))
 
@@ -219,11 +258,23 @@ def to_lean_scalar_equiv(
             + ["Fin.cons_zero", "Fin.cons_succ"]
         )
         return [
+            # `fin_cases` enumerates every index of every wire, so the cost
+            # grows with the state width: a 32-wide module exceeds the default
+            # budget. Raised per theorem rather than file-wide.
+            f"set_option maxHeartbeats 2000000 in",
             f"theorem {func_name}_scalar_eq : ∀ {' '.join(binders)},",
             f"    {func_name} {' '.join(vars_)} = {rhs} := by",
             f"  intro {' '.join(vars_)}",
             f"  simp only [{', '.join(simp_names)}]",
             f"  try rfl",
+            # Enumerate the matrix indices first. `Fin.fin_one_eq_zero` alone
+            # only collapses a `Fin 1`, so a wire with several elements is
+            # left with a `match i, j with ...` on a symbolic `i`; and once an
+            # earlier step has introduced `i`/`j`, a later `funext` can no
+            # longer fire, so the general form has to come before the narrow
+            # ones rather than after.
+            f"  try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
+            f"  try (funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
             f"  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
             f"  try (funext i j; simp [Fin.fin_one_eq_zero])",
             f"  try simp [Fin.fin_one_eq_zero]",

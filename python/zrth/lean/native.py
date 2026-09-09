@@ -313,10 +313,18 @@ def _translate_terms_scalar(
     """
     term_list = list(terms)
     if not term_list:
-        out_exprs = [input_bindings.get(w.id) for w in block_outputs]
-        if all(e is not None for e in out_exprs):
-            return f"  {_build_tuple(out_exprs)}"
-        return "sorry /- no terms -/"
+        # Same flattening as the main return below: the codomain is
+        # per-element, so pass through the input wires' flat slots.
+        slots = dict(flat_slots or {})
+        passthrough: list[str] = []
+        for w in block_outputs:
+            if w.id in slots:
+                passthrough.extend(slots[w.id])
+            elif w.id in input_bindings:
+                passthrough.append(input_bindings[w.id])
+            else:
+                return "sorry /- no terms -/"
+        return f"  {_build_tuple(passthrough)}"
 
     wire_expr: dict[int, str] = dict(input_bindings)
     flat_slots = dict(flat_slots or {})
@@ -379,7 +387,13 @@ def _translate_terms_scalar(
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
-    out_exprs = [wire_expr[w.id] for w in block_outputs]
+    # The codomain is `_product_type_scalar`: one component per *element* of
+    # each output wire. Return the flat slots rather than the matrices the
+    # terms built -- `flat_slots` already carries the per-element accessors
+    # for every wire written above, and for the input groups passed in.
+    out_exprs: list[str] = []
+    for w in block_outputs:
+        out_exprs.extend(flat_slots.get(w.id, [wire_expr[w.id]]))
     result_line = f"  {_build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])

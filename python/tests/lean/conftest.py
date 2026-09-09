@@ -180,6 +180,16 @@ _COUNTDOWN_CERT = CertificateData(
 # degenerate single-element case; the rest exercise the fold.
 # Int and Real at the same width sit together on purpose: the variant
 # names used to be built from `n` alone, so these two collided.
+# Widths that exercise the scalar encoding's flattening: all-1x1, then
+# multi-element state, up to the 32 that stresses the index enumeration.
+_SCALAR_ENC_SPECS = [
+    ("Scalar", _make_countdown),
+    ("Vec6", lambda: _make_countdown_vec(6)),
+    ("Counter", _make_counter),
+    ("Vec32", lambda: _make_countdown_vec(32)),
+]
+
+
 _ARGMAX_SCALAR_SPECS = [
     ("Int", 1),
     ("Int", 2),
@@ -278,6 +288,23 @@ def generate_lean_files(sync_core_templates) -> None:
     # proving it equal to Core.Mat.argmax_1d, so building this file is what
     # keeps the unrolled scalar form and the matrix definition in step. No
     # certificate module currently uses Argmax, so nothing else compiles it.
+    # Certs/ScalarEnc.lean — the functional and scalar encodings together, the
+    # way a generated project arranges them (System/System.lean +
+    # System/Scalar.lean). The `_scalar_eq` theorems only elaborate if the
+    # flattening lines up, and no certificate carries a Scalar section, so
+    # this is the only thing that compiles them.
+    from zrth.lean.translate import ModuleToLean4
+
+    for name, make_module in _SCALAR_ENC_SPECS:
+        t = ModuleToLean4(make_module())
+        (_CERTS_DIR / f"ScalarEnc{name}.lean").write_text(
+            "import Core.Mat\nimport Core.Box\n\n"
+            + t.to_lean_functional()
+            + "\n\n"
+            + t.to_lean_scalar()
+            + "\n"
+        )
+
     argmax_lines = ["import Core.Mat", ""]
     for elem_ty, n in _ARGMAX_SCALAR_SPECS:
         argmax_lines.extend(_argmax_scalar_def_lines(elem_ty, n))

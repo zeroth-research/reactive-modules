@@ -259,3 +259,23 @@ def test_generated_executable_builds_and_runs(generate_lean_files):
         assert run.stdout.split() == ["0", "1", "2"], (
             f"unexpected trace: {run.stdout.split()}"
         )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", ["Scalar", "Vec6", "Counter", "Vec32"])
+def test_scalar_encoding_builds(generate_lean_files, name):
+    """The scalar encoding elaborates alongside the functional one.
+
+    `_product_type_scalar` flattens a multi-element wire into one component
+    per element, and the body and the `_scalar_eq` proofs have to follow. No
+    certificate in Certs/ carries a Scalar section, so without this the
+    encoding was never compiled at all — it had four type errors per
+    matrix-state module.
+    """
+    r = _lake_build(f"Certs.ScalarEnc{name}")
+    assert r.returncode == 0, (
+        f"lake build Certs.ScalarEnc{name} failed.\n"
+        f"stdout:\n{r.stdout[-2000:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert not sorry_lines, f"ScalarEnc{name} used sorry:\n" + "\n".join(sorry_lines)
