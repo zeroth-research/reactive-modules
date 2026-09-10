@@ -79,6 +79,31 @@ _ERR = re.compile(r"^(?:error|warning): (?P<file>[^:]+\.lean):(\d+):(\d+): (?P<m
 _FAILED_TGT = re.compile(r"^✖ \[[\d/]+\] Built (?P<t>\S+)")
 
 
+def ensure_shared_lake() -> None:
+    """Point the shared build dir's `packages` at the already-built ones.
+
+    Without this every project tries to fetch and build Mathlib for itself,
+    which shows up as `external command 'git' exited with code 128` on every
+    case at once. `packages` is only ever read, so several build dirs may
+    point at it -- unlike the build dir itself, which takes one writer.
+    """
+    warm = WARM / ".lake" / "packages"
+    if not warm.is_dir():
+        raise SystemExit(
+            f"error: {warm} does not exist. Build the warm project first:\n"
+            f"    cd {WARM} && lake build"
+        )
+    SHARED.mkdir(parents=True, exist_ok=True)
+    link = SHARED / "packages"
+    if link.is_symlink():
+        if link.readlink() == warm:
+            return
+        link.unlink()
+    elif link.exists():
+        raise SystemExit(f"error: {link} exists and is not a symlink")
+    link.symlink_to(warm)
+
+
 def run_lake(case) -> dict:
     proj = PROJECTS / case["name"] / "Rea"
     lake = proj / ".lake"
@@ -135,7 +160,8 @@ def verdict(case, gen, build) -> str:
 
 def main() -> None:
     only = set(sys.argv[1:])
-    PROJECTS.mkdir(exist_ok=True)
+    PROJECTS.mkdir(parents=True, exist_ok=True)
+    ensure_shared_lake()
     results_path = WORK / "results.json"
     results = json.loads(results_path.read_text()) if results_path.exists() else {}
 

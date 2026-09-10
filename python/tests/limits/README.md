@@ -39,8 +39,11 @@ VERITH_LIMITS_WORK=/tmp/mine     uv run python tests/limits/run_regress.py
 Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs
 `python/tests/lean/.lake` already built (Mathlib, cslib, lean-smt): every
 generated project symlinks its `.lake` to one shared build dir whose
-`packages` points there, so Core / LeanAI / ZerothHammer are compiled once
-and only `System/*` and `Certificate/*` recompile per case.
+`packages` the runner points there, so Core / LeanAI / ZerothHammer are
+compiled once and only `System/*` and `Certificate/*` recompile per case.
+
+The **first** case in a fresh work directory pays for all of that: 654 s
+against ~10 s for its neighbours. That is the cache filling, not the case.
 
 Generated projects, the shared build dir and the results JSON all go to
 `/tmp/verith-limits` (override with `VERITH_LIMITS_WORK`), never into the
@@ -123,8 +126,8 @@ certificate, and this is the usual reason a "correct-looking" case fails.
 
 ## Final numbers
 
-Measured on a quiet machine, `baseline.json`, 76 cases in 1044 s
-(`NN2RealAllPos4` is the 77th, added after the run — see below).
+Measured on a quiet machine, 76 cases in 1044 s. `NN2RealAllPos4` was added
+afterwards and verified separately, so `baseline.json` holds 77.
 
 | | |
 |---|---|
@@ -148,7 +151,7 @@ layers, 2-D Lyapunov nets, nets over ℝ and nets over a vector state. The
 slowest are `NN2Deep5` 83.5 s, `NN2RealFrac` 75.5 s, `NN2RealWide4` 72.8 s;
 everything else is under 26 s and most are around 10 s.
 
-Supporting suites: `just py-test` 450 passed / 5 skipped / 2 xfailed.
+Supporting suites: `just py-test` 450 passed / 5 skipped / 2 xfailed, `just test-lean` 25 passed.
 
 ---
 
@@ -212,9 +215,17 @@ Compressed; each has a section in `VERITH_LIMITS.md` or `SMT_ASSIST.md`.
    problem. Redefine over `List.ofFn`, whose `ofFn_succ` / `ofFn_zero` are
    already in `simp_mat`, then re-run this matrix.
 2. **`Uninterpreted` has no Lean form** — the one generation failure.
-3. **cvc5 abduction and SyGuS** — plans and runnable evidence in
+3. **`--smt-tactics=cvc5` does not pay yet.** `NN2RealAllPos4` exists to
+   give it the best case there is — a Real net whose every ReLU is
+   non-negative under the invariant, so cvc5 settles all four branch
+   conditions. Timing the `Certificate.Certificate` job alone, alternating
+   and deleting the olean each time: 77 s / 76 s off against 75 s / 71 s on.
+   The `have` is proved; the open question is whether
+   `simp only [if_pos hf0]` actually collapses the `if`, since only the
+   rewrite removes the split. Find that out before turning the flag on.
+4. **cvc5 abduction and SyGuS** — plans and runnable evidence in
    `SMT_ASSIST.md` §6 and §7; `probes/abduction.py` and `probes/sygus.py`
    produce the numbers those plans are costed against.
-4. **Nothing in CI builds a generated project.** This directory is now
+5. **Nothing in CI builds a generated project.** This directory is now
    checked in, which is the precondition; the remaining work is a slow-marked
    test that runs a handful of cases the way `just test-lean` does.

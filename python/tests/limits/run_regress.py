@@ -40,7 +40,8 @@ def main() -> None:
     if missing:
         print(f"!! baseline names no longer in cases.py: {missing}")
 
-    PROJECTS.mkdir(exist_ok=True)
+    PROJECTS.mkdir(parents=True, exist_ok=True)
+    run_limits.ensure_shared_lake()
     print(f"{len(todo)} baseline cases\n")
     out, regressions, fixes = {}, [], []
     t0 = time.time()

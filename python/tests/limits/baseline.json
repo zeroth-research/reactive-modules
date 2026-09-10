@@ -226,5 +226,8 @@
  },
  "NN2Width6Big": {
   "verdict": "VERIFIED"
+ },
+ "NN2RealAllPos4": {
+  "verdict": "VERIFIED"
  }
 }
