@@ -309,6 +309,12 @@ def test_relational_encoding_builds(generate_lean_files, name):
     slice at the wrong offset does not typecheck rather than proving a wrong
     equation. No certificate in Certs/ carries a ScalarRel or FBK section, so
     without this neither encoding was compiled at all.
+
+    The four encodings are separate modules (see `conftest.py`), as they are
+    in a generated project. Concatenated into one file they elaborate more
+    than they do apart -- a `match` gets one auxiliary matcher per module --
+    and that difference alone was enough to hide a broken `FBK.effect_i_eq`
+    from this test.
     """
     r = _lake_build(f"Certs.RelEnc{name}")
     assert r.returncode == 0, (

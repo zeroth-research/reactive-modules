@@ -218,11 +218,28 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
 
         # Collect effect_i_eq theorems.
         # ScalarRel.effect_i takes a tuple state; build it from state i.
+        #
+        # `rfl` leads, and `simp` is only the fallback. The two bodies are the
+        # same terms over different bindings -- `state k` here, `ctrl.2.1`
+        # there -- so applying `ScalarRel.effect_i` to the literal state tuple
+        # makes them definitionally equal. But a multi-element wire is rebuilt
+        # with `fun i j => match i, j with ...`, and every `match` in a
+        # definition elaborates to an auxiliary matcher named after its
+        # enclosing declaration: `FBK.effect_i.match_1` on one side,
+        # `ScalarRel.effect_i.match_1` on the other (likewise `_proof_1` for
+        # the `Fin` literal bounds). simp closes a goal only up to *syntactic*
+        # equality after rewriting, so it left `X = X` unsolved -- the two
+        # matchers print identically and are defeq, but are not the same
+        # constant. `rfl` checks defeq at default transparency and unfolds
+        # them. Modules whose ctrl wires are all 1x1 emit no `match` at all,
+        # which is why this only ever bit the multi-element ones.
         st = _state_tuple("state", n_slots)
         for i, _ty, _body, eargs in update_data:
             lhs = f"effect_{i}" + ((" " + " ".join(eargs)) if eargs else "")
             thm_lines.append(f"theorem effect_{i}_eq : {lhs} = ScalarRel.effect_{i} {st} extl_l extl_n := by")
-            thm_lines.append(f"  simp [effect_{i}, ScalarRel.effect_{i}]")
+            thm_lines.append(
+                f"  first | rfl | simp [effect_{i}, ScalarRel.effect_{i}]"
+            )
             thm_lines.append("")
 
         # Collect R_i_iff theorems.
@@ -294,7 +311,7 @@ def atom_to_lean_bool_rel(ctx: LeanContext) -> str:
         for i, _ty, _body, iargs in init_data:
             lhs = f"init_{i}" + ((" " + " ".join(iargs)) if iargs else "")
             thm_lines.append(f"theorem init_{i}_eq : {lhs} = ScalarRel.init_{i} extl_n := by")
-            thm_lines.append(f"  simp [init_{i}, ScalarRel.init_{i}]")
+            thm_lines.append(f"  first | rfl | simp [init_{i}, ScalarRel.init_{i}]")
             thm_lines.append("")
 
         # Collect Init_i_iff theorems.

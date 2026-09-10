@@ -483,6 +483,24 @@ def test_fbk_reconstructs_a_multi_element_wire():
     assert "match i, j with" in lean, "reconstruction should use a match"
 
 
+def test_fbk_effect_eq_tries_rfl_before_simp():
+    """`effect_i_eq` must lead with `rfl`, not `simp`.
+
+    The two bodies are the same terms over different bindings, so they are
+    definitionally equal -- but the `match` that rebuilds a multi-element wire
+    elaborates to an auxiliary matcher named after its enclosing declaration.
+    `FBK.effect_0.match_1` and `ScalarRel.effect_0.match_1` print identically
+    and are defeq, yet are different constants, so simp reduced the goal to
+    `X = X` and could not close it. Every generated project with a
+    multi-element ctrl wire failed to compile `System/FBK.lean`.
+    """
+    lean = ModuleToLean4(_six_wide_module()).to_lean_bool_rel()
+    tactic = lean.split("theorem effect_0_eq")[1].splitlines()[1]
+    assert tactic.strip().startswith("first | rfl"), (
+        f"effect_0_eq no longer tries rfl first: {tactic!r}"
+    )
+
+
 def test_scalar_translator_flattening_is_opt_in():
     """`rel.py`/`fbk.py` type `effect_i` as the wire's `Mat`, so they opt out.
 
