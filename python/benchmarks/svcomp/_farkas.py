@@ -764,7 +764,7 @@ def decrease(v_s, v_sp, delta: float = 1.0) -> Step:
     """Termination by one rank: ``V(s) - V(s') >= delta`` on every step. ``v_s`` and
     ``v_sp`` are the next wires carrying the rank at the pre- and post-state — two
     readings of the same function, one of the latched state, one of the next.
-    ``V >= 0`` is structural (a non-negative output layer) and checked before."""
+    What the wires must be for that is :func:`check_ranks`'s to say."""
     return lex_decrease(((v_s, v_sp),), delta)
 
 
@@ -1249,20 +1249,26 @@ def _certify_path(system, p: _Path, max_iters):
     return False, cells, None, "FAILED(max_iters)"
 
 
-def _check_ranks(rule: Step, devices, readings) -> None:
-    """A rank is one network read at both ends of a step: its two wires are
-    devices behind the same network, the first reading nothing of the next state
-    and the second nothing of the latched — what lets the proof state the rank as
-    one ``V`` and apply it to the state at either end."""
-    by_id = {d.wire_id: d for d in devices}
-    for v_s, v_sp in rule.ranks:
-        a, b = by_id.get(v_s.id), by_id.get(v_sp.id)
-        if (a is None or b is None or a.net != b.net
-                or not readings[v_s.id].net.units
+def check_ranks(system: System, ranks) -> None:
+    """What a rank witness needs of its wires, refused by name otherwise.
+
+    A rank is one network read at both ends of a step: its two wires read the same
+    network, the first nothing of the next state and the second nothing of the
+    latched — what lets the proof state the rank as one ``V`` and apply it to the
+    state at either end. And that network's output layer is non-negative, which is
+    how the proof knows the rank is bounded below; a rank the decrease alone would
+    certify is no use to the well-foundedness theorem without it."""
+    for v_s, v_sp in ranks:
+        a, b = reading(system, v_s), reading(system, v_sp)
+        if (a.net != b.net or not a.net.units
                 or any(k == "next" for k, _ in a.inputs)
                 or any(k == "latched" for k, _ in b.inputs)):
             raise Unsupported(f"rank ({v_s.id}, {v_sp.id}) is not one network read at "
                               f"the latched state and at the next state")
+        c, k = a.net.out
+        if not (all(x >= 0 for x in c) and k >= 0):
+            raise Unsupported(f"rank ({v_s.id}, {v_sp.id}): the network's output layer "
+                              f"is not non-negative, so the rank is not bounded below")
 
 
 def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasResult:
@@ -1292,7 +1298,7 @@ def certify(system: System, prop, rule=None, max_iters: int = 1000) -> FarkasRes
             nets.append(rd.net)
         devices.append(Device(w.id, nets.index(rd.net), rd.inputs, offset))
         offset += len(rd.net.units)
-    _check_ranks(rule, devices, readings)
+    check_ranks(system, rule.ranks)
     nets, devices = tuple(nets), tuple(devices)
 
     def result(verified, paths, cex, status, unused=()):
