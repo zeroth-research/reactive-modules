@@ -385,6 +385,10 @@ class TacticPlan:
 
         `simp_all` is superlinear in the hypothesis count and `nlinarith`
         multiplies pairs of them, so an unused hypothesis is not free.
+
+        `step_inv` and `hrank` only: both bind `update_pre`, which is what
+        the cores were taken over. `init_inv`'s `hpre` is `init_pre`, a
+        different predicate that nothing here has looked at.
         """
         if getattr(self.hints, "pre_unused", False):
             return "try clear hpre"

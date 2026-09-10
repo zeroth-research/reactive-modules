@@ -736,10 +736,12 @@ def solver_hints(q: "ModuleQueries | None", budget: SmtBudget, log=None) -> Solv
         except Exception as e:  # pragma: no cover -- the point is to not raise
             hints.notes.append(f"gave up: {type(e).__name__}")
     if log:
-        if hints.any:
-            log(f"   cvc5 assists: {'; '.join(hints.why().splitlines())[:200]}")
+        reasons = [ln.removeprefix("-- cvc5: ") for ln in hints.why().splitlines()]
+        if reasons:
+            for reason in reasons:
+                log(f"   {reason}")
         else:
-            log("   cvc5 assists: nothing to add")
+            log("   nothing cvc5 can add to the plan")
     return hints
 
 

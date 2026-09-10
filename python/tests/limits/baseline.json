@@ -1,0 +1,230 @@
+{
+ "Countdown": {
+  "verdict": "VERIFIED"
+ },
+ "TwoVars": {
+  "verdict": "VERIFIED"
+ },
+ "NoCert": {
+  "verdict": "PROOF-FAIL"
+ },
+ "PropOnly": {
+  "verdict": "PROOF-FAIL"
+ },
+ "InvTrue": {
+  "verdict": "PROOF-FAIL"
+ },
+ "InvDisj": {
+  "verdict": "VERIFIED"
+ },
+ "InvMod": {
+  "verdict": "VERIFIED"
+ },
+ "InvNe": {
+  "verdict": "VERIFIED"
+ },
+ "InvIte": {
+  "verdict": "VERIFIED"
+ },
+ "InvImplies": {
+  "verdict": "VERIFIED"
+ },
+ "InvMixed": {
+  "verdict": "VERIFIED"
+ },
+ "RankConst": {
+  "verdict": "PROOF-FAIL"
+ },
+ "RankLinear": {
+  "verdict": "VERIFIED"
+ },
+ "RankLex": {
+  "verdict": "VERIFIED"
+ },
+ "RankQuadratic": {
+  "verdict": "VERIFIED"
+ },
+ "RankToInt": {
+  "verdict": "VERIFIED"
+ },
+ "Relu": {
+  "verdict": "VERIFIED"
+ },
+ "ReluRankRelu": {
+  "verdict": "VERIFIED"
+ },
+ "ReluInvRelu": {
+  "verdict": "VERIFIED"
+ },
+ "ReluVec": {
+  "verdict": "VERIFIED"
+ },
+ "ReluLRA": {
+  "verdict": "VERIFIED"
+ },
+ "ReluNet": {
+  "verdict": "VERIFIED"
+ },
+ "ReluInput": {
+  "verdict": "VERIFIED"
+ },
+ "ReluInputNoPre": {
+  "verdict": "PROOF-FAIL"
+ },
+ "BoolState": {
+  "verdict": "VERIFIED"
+ },
+ "BVState": {
+  "verdict": "VERIFIED"
+ },
+ "LRALinear": {
+  "verdict": "VERIFIED"
+ },
+ "OpMax": {
+  "verdict": "PROOF-FAIL"
+ },
+ "OpMin": {
+  "verdict": "PROOF-FAIL"
+ },
+ "OpArgmax": {
+  "verdict": "PROOF-FAIL"
+ },
+ "OpTranspose": {
+  "verdict": "VERIFIED"
+ },
+ "OpUninterp": {
+  "verdict": "GEN-FAIL"
+ },
+ "Vec32": {
+  "verdict": "VERIFIED"
+ },
+ "Deep64": {
+  "verdict": "VERIFIED"
+ },
+ "NNRank": {
+  "verdict": "VERIFIED"
+ },
+ "NNRankWide": {
+  "verdict": "VERIFIED"
+ },
+ "NNRankDeep": {
+  "verdict": "VERIFIED"
+ },
+ "NNInv": {
+  "verdict": "VERIFIED"
+ },
+ "NNInvIneq": {
+  "verdict": "VERIFIED"
+ },
+ "NNBoth": {
+  "verdict": "VERIFIED"
+ },
+ "NNTwoInput": {
+  "verdict": "VERIFIED"
+ },
+ "NNNetModule": {
+  "verdict": "VERIFIED"
+ },
+ "RealConjDisj": {
+  "verdict": "VERIFIED"
+ },
+ "RealNonlin": {
+  "verdict": "VERIFIED"
+ },
+ "RealNet": {
+  "verdict": "VERIFIED"
+ },
+ "BadInv": {
+  "verdict": "PROOF-FAIL"
+ },
+ "BadRankDir": {
+  "verdict": "PROOF-FAIL"
+ },
+ "RealConjDisjUnsat": {
+  "verdict": "PROOF-FAIL"
+ },
+ "NN2Width4": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Width6": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Width8": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Width10": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Width12": {
+  "verdict": "VERIFIED"
+ },
+ "NN2WidthDup8": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Deep3": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Deep4": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Deep5": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Narrow8": {
+  "verdict": "VERIFIED"
+ },
+ "NN2InvWide4": {
+  "verdict": "VERIFIED"
+ },
+ "NN2InvWide8": {
+  "verdict": "VERIFIED"
+ },
+ "NN2RealWide4": {
+  "verdict": "VERIFIED"
+ },
+ "NN2RealFrac": {
+  "verdict": "VERIFIED"
+ },
+ "NN2RealNetInv": {
+  "verdict": "VERIFIED"
+ },
+ "NN2VecNet": {
+  "verdict": "VERIFIED"
+ },
+ "NN2NetMod8": {
+  "verdict": "VERIFIED"
+ },
+ "NN2NetMod16": {
+  "verdict": "VERIFIED"
+ },
+ "NN2WideInput": {
+  "verdict": "VERIFIED"
+ },
+ "NN2MixedSign": {
+  "verdict": "VERIFIED"
+ },
+ "NN2BigWeights": {
+  "verdict": "VERIFIED"
+ },
+ "NN2ToNatClamp": {
+  "verdict": "VERIFIED"
+ },
+ "NN2CmpBoth": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Lyapunov": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Lyap2D": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Width3": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Width5": {
+  "verdict": "VERIFIED"
+ },
+ "NN2Width6Big": {
+  "verdict": "VERIFIED"
+ }
+}

@@ -8,7 +8,8 @@ Known defects in this pipeline, fixed and open, are catalogued in
 [KNOWN_ISSUES.md](KNOWN_ISSUES.md).  What cvc5 is used for -- the obligation
 pre-check, sharing in the printer, and the solver-informed tactics -- is in
 [SMT_ASSIST.md](SMT_ASSIST.md), together with cold-start plans for abduction
-and SyGuS.
+and SyGuS.  The 77-case limit matrix those two are measured on, with its
+runners and baseline, is in [`tests/limits/`](../../tests/limits/README.md).
 
 ---
 

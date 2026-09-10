@@ -32,6 +32,15 @@ so the two must be read apart: until open issue 1 was fixed, five cases had a
 verifying certificate inside a project whose `lake build` failed. No case is in
 that state now — every remaining failure is a certificate failure.
 
+There is now a third question, and it is answered in milliseconds rather than
+seconds: `--pre-check cvc5` says whether the obligation is *true* at all. Run
+it first on any case that fails — a failing `lake build` cannot tell a wrong
+certificate from weak tactics, and more than one entry below was the former.
+See [SMT_ASSIST.md](SMT_ASSIST.md).
+
+The matrix itself, the runners and this file's baseline are in
+[`tests/limits/`](../../tests/limits/README.md).
+
 ### Running it in seconds per case
 
 A fresh project would refetch and rebuild Mathlib. Instead, point every
@@ -408,6 +417,14 @@ already in `simp_mat`. The second is a semantics-preserving redefinition of
 `Core/Mat.lean` and needs the slow suite to confirm nothing that reasons about
 these two regresses.
 
+**Confirmed provable.** The SMT encoder could not build these modules at all
+until this pass — `Min`/`Max` were wired to the binary `_elementwise` path
+although they are unary reductions, so any cvc5 query about them raised
+`TypeError`. With that fixed, `--pre-check cvc5` says all three obligations
+hold for `OpMax` and `OpMin`, in 4.6 ms and 4.2 ms. So there is nothing wrong
+with the certificates and nothing to find in the tactic plan: the Lean-side
+fold is the whole of it.
+
 ### 3. ~~Real (LRA): a conjunction of disjunctions still defeats the plan~~ — not a tool limit
 
 Real modules verify: `LRALinear`, `RankToInt` (a non-integral state in steps
@@ -550,12 +567,23 @@ the warm project rather than a `verith -o` output.
 `.lake` (the recipe above; `test_generated_executable_builds_and_runs` already
 does exactly this for the `-x` path) and builds `System` and `Certificate`.
 
+The precondition is now met: the whole matrix -- 77 cases, 37 module
+fixtures, the runners and the baseline -- lives in
+[`tests/limits/`](../../tests/limits/README.md) instead of a scratch
+directory, so every number in this file is reproducible with one command.
+What remains is wiring a handful of its cases into a slow-marked test.
+
 ### 9. Argmax certificates
 
 `OpArgmax` compiles all six encodings now but the certificate fails:
 `argmax_1d` does not reduce under the tactic chain, the same shape of problem
 as issue 2. The generated `argmax1d_scalar_n_eq` theorems tie the unrolled
 scalar form to `Core.Mat.argmax_1d`, but nothing brings either into a goal.
+
+`--pre-check cvc5` reports all three obligations holding in 3.2 ms, so this is
+the same story as issue 2: a true certificate that Lean cannot reduce its way
+to. `Argmax` was always encoded correctly for SMT (`_argmax_flat`), which is
+why it could be checked before `Min`/`Max` could.
 
 ### 10. Pre-existing entries still open
 

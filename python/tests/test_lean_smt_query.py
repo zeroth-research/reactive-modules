@@ -337,4 +337,4 @@ def test_the_hint_log_says_when_there_is_nothing_to_add():
         SmtBudget(),
         log=lines.append,
     )
-    assert any("nothing to add" in ln for ln in lines)
+    assert any("nothing cvc5 can add" in ln for ln in lines)

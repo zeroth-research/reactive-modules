@@ -27,6 +27,12 @@ behaviour `verith` had before. Nothing here may take information away.
 The two always-on items do no solving at all -- they read the parsed terms --
 so they need no budget and cannot hang.
 
+Both flags act on the predicates *as supplied*, before `--infer` runs. They
+have nothing to say about an inferred certificate: `magic` hands back Lean
+text rather than SMT-LIB, so there is no term left to ask cvc5 about. Closing
+that would mean `magic` returning the term alongside the rendering --
+worthwhile, since `--infer ai` does no verification of its own, and cheap.
+
 ---
 
 ## 1. `--pre-check=cvc5`
@@ -44,9 +50,16 @@ cvc5 answers all three obligations in milliseconds, with a counterexample:
 | BadRankDir | 6.0 s fail | 3.8 ms | `hrank` false at `s0=1` |
 | RealConjDisjUnsat | 9.2 s fail | 5.8 ms | `hrank` false at `s0=3.0, s1=2.0` |
 
-Five "tool limits" found over the previous two passes turned out to be broken
-test cases. This is the check that would have caught each of them in
-milliseconds instead of hours.
+More than one "tool limit" in the earlier passes turned out to be a broken
+test case instead — `RealConjDisjUnsat` in the table is the one kept as a
+control, and establishing that by hand in Lean took the better part of an
+afternoon. This is the check that answers it in 5.8 ms.
+
+**Prerequisite.** `Min` and `Max` had to be fixed in the SMT encoder first.
+They are unary reductions over a matrix, like `Argmax`, but were wired to the
+binary `_elementwise` path, so building the term for any module using one
+raised `TypeError: <lambda>() missing 1 required positional argument` and took
+down every cvc5 query about that module — `--infer ai-cegar` included.
 
 ```
 $ verith m.py -P '(= s0 0)' --invariant '(and (>= s0 0) (<= s0 100))' \
@@ -123,15 +136,30 @@ is asked whether `inv ∧ c` or `inv ∧ ¬c` is unsatisfiable. Either answer me
 the proof can discharge the condition once instead of splitting on it:
 
 ```lean
+-- NN2RealWide4, generated verbatim (wrapped here to fit)
 macro "cert_facts" v:ident : tactic =>
   `(tactic| (try (have hf0 : (((1 : Real) * (($v) 0 0)) ≥ (0 : Real)) := by
                     (first | omega | linarith | norm_num);
                   try simp only [if_pos hf0])))
 ```
 
+and in the obligations:
+
+```lean
+    try simp_defs      -- unfolds `inv`, so the `have` is provable
+    try cert_facts s
+    try simp_mat       -- from here the arithmetic moves and `if_pos` would miss
+```
+
 Every step is `try`: cvc5 is the stronger prover, so a `have` the Lean
 tactics cannot reproduce has to cost nothing and leave the `split_ifs` route
 intact.
+
+It fires, and it does not pay. Rebuilt with the `try` removed, so that a
+failing `have` would be an error rather than a no-op, NN2RealWide4's
+`hf0 : 1 * s 0 0 ≥ 0` is proved and the certificate closes in 61 s against
+~68 s. But that is one of its four conditions, and one is not enough to show
+above the noise. Hence the flag: implemented, sound, bounded, and off.
 
 **Product hints for `nlinarith`.** cvc5's proofs are not translatable — this
 build offers alethe, cpc, dot and lfsc, and Mathlib reads none of them — but
@@ -167,6 +195,25 @@ nothing about it. It is sound, it is one line, and it is a catastrophe:
 NN2Deep4 went from 22.4 s to **1077.5 s**, NN2Deep5 from 76.2 s to 981.5 s,
 and NN2RealWide4 from 68 s to a 2027 s timeout. Unfolding a net-shaped
 invariant at a net-shaped successor doubles everything downstream. Removed.
+
+---
+
+## Measuring any of this
+
+Every project's `.lake` symlinks to one shared build directory, and the module
+names (`System.Data`, `Certificate.Certificate`, …) are identical across
+projects, so **two processes building different projects into one build
+directory overwrite each other's oleans**. That does not surface as a clean
+failure: it surfaces as heartbeat timeouts and `unknown constant 'hrank'`,
+which reads exactly like a codegen bug.
+
+Even with the harness isolated (`shared_lake_regress`, `projects_regress`),
+an unrelated heavy process on the machine distorts wall-clock badly enough to
+invent findings. One run of the 12-case subset reported Countdown at 801.8 s,
+NN2Width12 at 978.9 s and NN2Deep5 at 1996.2 s — for a Countdown certificate
+whose generated file differs from the baseline's by one comment line. Re-run
+quiet: 9.4 s, 11.3 s, 74.9 s. Verdicts were unaffected throughout; only the
+timings were nonsense. Re-time anything surprising before believing it.
 
 ---
 
@@ -236,10 +283,12 @@ The constraints are the obligations `magic_cegar` already builds:
    on a two-variable module and will not scale; a grammar of linear
    combinations of the state with small integer coefficients, plus one level
    of `ite` over comparisons, covers everything in the matrix and prunes hard.
-4. Bound it: SyGuS has no `tlimit` that reliably interrupts `checkSynth`, so
-   it needs to run in a subprocess with a wall-clock kill, not in-process.
-   **This is the one piece of the whole cvc5 integration that cannot be put
-   on cvc5's own leash.**
+4. Bound it, and check *how* first. Every other phase here rides on cvc5's
+   `tlimit`; whether that actually interrupts `checkSynth` is untested and
+   has to be established before it is relied on, because a synthesis that
+   ignores its limit hangs generation. If it does not hold, this phase needs
+   a subprocess with a wall-clock kill instead — and it would then be the
+   one part of the integration not on cvc5's own leash.
 5. Translate the result with the existing `smt_to_lean_nat`. A synthesised
    `ite` folds through the min/max peephole for free.
 6. Fall back to `--infer ai-cegar` when synthesis returns no solution, and to
