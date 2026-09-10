@@ -1,6 +1,6 @@
 """Emit a kernel-checkable Lean proof from a decision procedure's certificates.
 
-Consumes the :class:`._farkas.FarkasResult` a ``certify`` run returns (plus the
+Consumes the :class:`._farkas.Proof` a ``certify`` run returns (plus the
 :class:`._farkas.System` it was run on) and writes ONE Lean file
 against the vendored ``lean/`` substrate (``Coverage``/``Net``/``Termination``).
 The file follows the rule's shape:
@@ -32,8 +32,8 @@ from pathlib import Path
 
 import z3
 
-from ._farkas import (CellCert, _find_ite_cond, _flatten_and, affine_coeffs,
-                      entry_predicate)
+from ._farkas import (CellCert, Unsupported, _find_ite_cond, _flatten_and,
+                      affine_coeffs, entry_predicate, reading, resolve)
 
 
 def _contains_ite(e) -> bool:
@@ -725,7 +725,7 @@ def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
 
     parts.append(f"/-- The rule on this path's round. -/\n"
                  f"def ok (s : Vector {n} Int) : Prop :=\n"
-                 f"  {_formula_prop(res.ok, s_syms, wire_terms)}")
+                 f"  {_formula_prop(res.formula, s_syms, wire_terms)}")
     head = (f"theorem step_ok (s : Vector {n} Int) (hg : trans s) (hinv : invariants s) :\n"
             f"    ok s := by\n")
     if not regions:                          # the rule holds outright: no disjunct to refute
@@ -743,8 +743,9 @@ def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
     # no SSA witness: the pre-state *is* a.
     parts.append(f"def Step (a b : Vector {n} Int) : Prop :=\n"
                  f"  trans a ∧ invariants a ∧ post_state a = b")
-    if res.rule.ranks:
-        ranks = ", ".join(f"R{d}" for d in range(len(res.rule.ranks)))
+    n_ranks = len(getattr(res.witness, "ranks", ()))
+    if n_ranks:
+        ranks = ", ".join(f"R{d}" for d in range(n_ranks))
         parts.append(
             f"/-- lex step of this path: the ranks drop lexicographically. -/\n"
             f"theorem lex_step (a b : Vector {n} Int) (h : Step a b) :\n"
@@ -917,14 +918,13 @@ _FOOTER = "\nend Matrix\n"
 def emit_program(name: str, system, result) -> str:
     """The whole ``program.lean`` for ``name``, from ``system`` — the module as
     read, with what is known of its states — and ``result``, the
-    :class:`._farkas.FarkasResult` a ``certify`` run on it returned: the
-    certificates, the resolved formula and predicate, the rule and the devices.
+    :class:`._farkas.Proof` a ``certify`` run on it returned: the certificates,
+    the resolved formula, the claim, the witness and the devices.
 
-    A rule with ranks proves termination, concluding ``program_terminates``; a
-    rule without proves the :class:`._property.Always` property, concluding
+    A witness with ranks proves termination, concluding ``program_terminates``; one
+    without proves the :class:`._property.Safety` claim, concluding
     ``always_holds``. The entry state is read off the system, the networks off
     the result's devices — never the weights."""
-    rule = result.rule
     paths = result.certificates
     if not paths:
         raise ValueError(f"{name}: no certified paths to emit")
@@ -934,11 +934,12 @@ def emit_program(name: str, system, result) -> str:
     cols = ", ".join(f"s {j} = {nm}" for j, nm in enumerate(system.names))
     npaths = f" ({len(paths)} paths)" if len(paths) > 1 else ""
     init_lean = _render_conjuncts(entry_predicate(system), s_syms)
-    inv_all = list(result.inv) + list(system.invariants)
+    inv_res = [resolve(system, f)[0] for f in getattr(result.witness, "inv", ())]
+    inv_all = inv_res + list(system.invariants)
     inv_lean = _render_conjuncts(z3.And(*inv_all), s_syms) if inv_all else "True"
     trivial_inv = inv_lean == "True"
     by_id = {d.wire_id: d for d in result.devices}
-    rank_nets = [by_id[v_s.id].net for v_s, _ in rule.ranks]
+    rank_nets = [by_id[v_s.id].net for v_s, _ in getattr(result.witness, "ranks", ())]
 
     if rank_nets:
         what = ("terminates via a ranking function" if len(rank_nets) == 1 else
@@ -947,7 +948,13 @@ def emit_program(name: str, system, result) -> str:
     else:
         terms = {system.W[d.wire_id]: _device_term(d, result.nets[d.net], "s")
                  for d in result.devices}
-        pred_lean = _formula_prop(result.pred, s_syms, terms)
+        holds, named = resolve(system, result.claim.holds)
+        nexts = {pr[1].id for pr in system.pairs}
+        if any(w.id in nexts or any(k == "next" for k, _ in reading(system, w).inputs)
+               for w in named):
+            raise Unsupported("the proof layer has no composition for a safety claim "
+                              "over the step yet: its predicate names the next state")
+        pred_lean = _formula_prop(holds, s_syms, terms)
         what = f"`{pred_lean}` holds on every run"
     parts = [f"/- ──── program: {name} — {what}{npaths}.\n   Columns: {cols}. ──── -/"]
     for j, net in enumerate(result.nets):

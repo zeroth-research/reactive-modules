@@ -17,10 +17,10 @@ from tests._fixtures import loop_bench
 from benchmarks.svcomp._lean import _render_conjuncts, _trivial, emit_program
 from benchmarks.svcomp import discover
 from benchmarks.svcomp._farkas import certify, inductive, lex_decrease, read_system
-from benchmarks.svcomp._property import Fixpoint
+from benchmarks.svcomp._property import terminates
 from benchmarks.svcomp._verify_ranking import _v_module, system_of
 from zrth import Module
-from benchmarks.svcomp._property import Always
+from benchmarks.svcomp._property import Safety
 from benchmarks.svcomp._verify_ranking import build_obligation, farkas_cell
 from zrth.sugar import ite, ne
 
@@ -176,7 +176,7 @@ def _always_obligation(pred, inv=None):
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
     ob = build_obligation(bench, layers, 1.0, [])
-    prop = Always(pred)
+    prop = Safety(pred)
     rule = inductive((inv or pred,))
     res = certify(ob.system, prop, rule)
     assert res.verified, res.status
@@ -228,7 +228,7 @@ def _lex_obligation():
         vsp_mod, vsp = _v_module(prog.pairs, layers, read_next=True)
         mods += [vs_mod, vsp_mod]; ranks.append((vs[1], vsp[1]))
     system = read_system(Module.parallel(prog.module, *mods), prog.names)
-    prop, rule = Fixpoint(over=system.pairs), lex_decrease(tuple(ranks))
+    prop, rule = terminates(), lex_decrease(tuple(ranks))
     res = certify(system, prop, rule)
     assert res.verified, res.status
     return system, res
@@ -269,8 +269,8 @@ def test_always_on_a_real_benchmark_kernel_checks():
     own predicate is the inductive invariant; the proof compiles."""
     bench = next(b for b in discover() if b.name.endswith("ndecr"))
     system = system_of(bench)
-    prop = Always(lambda W, S: S["i"] <= S["n"])
-    res = certify(system, prop)                    # the procedure picks inductive((pred,))
+    prop = Safety(lambda W, S: S["i"] <= S["n"])
+    res = certify(system, prop, inductive((prop.holds,)))
     assert res.verified, res.status
     out = LEAN_DIR / "proofs" / "_test_always_ndecr"
     out.mkdir(parents=True, exist_ok=True)
@@ -321,7 +321,7 @@ def test_property_over_a_computed_wire_kernel_checks():
     mod, out = _v_module(prog.pairs, layers, read_next=False)
     system = read_system(Module.parallel(prog.module, mod), prog.names)
     d = out[1]
-    prop = Always(lambda W, S: W[d] == S["n"] - S["i"])
+    prop = Safety(lambda W, S: W[d] == S["n"] - S["i"])
     rule = inductive((lambda W, S: S["i"] <= S["n"],))
     res = certify(system, prop, rule)
     assert res.verified, res.status
@@ -329,3 +329,18 @@ def test_property_over_a_computed_wire_kernel_checks():
     assert "V_0 s fzero" in src.split("def pred")[1].split("\n\n")[0]
     assert "theorem always_holds" in src
     _compiles("wire", src)
+
+
+def test_the_proof_layer_refuses_a_safety_claim_over_the_step():
+    """The engine certifies a safety claim relating a state to its successor, but
+    the substrate has one composition for safety, over single states — so the
+    proof layer refuses such a claim by name rather than emit a theorem of the
+    wrong shape."""
+    from benchmarks.svcomp._nodes import Unsupported
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
+    ob = build_obligation(bench, layers, 1.0, [])
+    res = certify(ob.system, Safety(lambda W, S: S.next["x"] <= S["x"]), inductive(()))
+    assert res.verified, res.status
+    with pytest.raises(Unsupported, match="over the step"):
+        emit_program("step", ob.system, res)

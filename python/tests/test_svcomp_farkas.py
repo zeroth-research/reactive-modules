@@ -27,10 +27,10 @@ from zrth import LIA, Module, Sort, Wire, sugar
 from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
 from zrth.sugar import ite as dsl_ite
-from benchmarks.svcomp._farkas import (Step, certify, check_kinds, check_supported,
+from benchmarks.svcomp._farkas import (certify, check_kinds, check_supported,
                                       decrease, inductive, lex_decrease,
-                                      read_system, rule_for)
-from benchmarks.svcomp._property import Always, Fixpoint
+                                      read_system)
+from benchmarks.svcomp._property import Liveness, Safety, terminates
 from benchmarks.svcomp._nodes import Node, Unsupported, node_view
 from benchmarks.svcomp._farkas import (
     Net,
@@ -60,10 +60,10 @@ def _decrement(layers, delta=1.0, step=1):
 
 def _certify(ob, prop=None, rule=None):
     """``ob``'s system under ``prop`` (default: the obligation's termination
-    property) by ``rule`` (default: the obligation's decrease rule for termination,
-    else the procedure's own pick)."""
-    if rule is None and prop is None:
-        rule = ob.rule
+    claim) by ``rule`` (default: the obligation's decrease witness; for a Safety
+    claim given without one, its own predicate as the inductive invariant)."""
+    if rule is None:
+        rule = ob.rule if prop is None else inductive((prop.holds,))
     return certify(ob.system, prop or ob.prop, rule)
 
 
@@ -279,17 +279,17 @@ def test_a_nondeterministic_transition_is_refused():
     prog, _ = _prog(lambda c, e: c + e, extl=((Wire(INT), Wire(INT)),))
     system = read_system(prog, ("x",))
     with pytest.raises(Unsupported, match="_in0"):
-        check_supported(system, Fixpoint(over=system.pairs), inductive(()))
+        check_supported(system)
 
 
 def test_a_supported_module_passes_the_door():
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
-    check_supported(ob.system, ob.prop, ob.rule)               # does not raise
+    check_supported(ob.system)                                 # does not raise
 
 
 def test_a_second_property_runs_through_the_same_engine():
-    """``Always(pred)`` is a property of the *program*, discharged by an inductive
+    """``Safety(pred)`` is a property of the *program*, discharged by an inductive
     invariant through the same region engine — with no ReLU-bearing wire named,
     there is one region per path, and the same Farkas rows close it: one per
     disjunct of the rule's negation (the invariant not preserved, the invariant
@@ -297,41 +297,33 @@ def test_a_second_property_runs_through_the_same_engine():
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)                    # while (x > 0) x = x - 1, from x = 0
 
-    ok = _certify(ob, Always(lambda W, S: S["x"] >= 0))
+    ok = _certify(ob, Safety(lambda W, S: S["x"] >= 0))
     assert ok.verified, ok.status
-    assert ok.rule.inv, "the procedure picked pred as its own invariant"
+    assert ok.witness.inv, "pred serves as its own invariant"
     assert all({c.disjunct for c in p.cells} == {0, 1} and len(p.cells) == 2
                for p in ok.certificates), "no device: one region, two disjuncts"
 
     # false at entry: x starts at 0
-    bad = _certify(ob, Always(lambda W, S: S["x"] >= 1))
+    bad = _certify(ob, Safety(lambda W, S: S["x"] >= 1))
     assert not bad.verified and bad.status == "FAILED(initiation)", bad.status
 
     # true at entry, preserved by the step, but not what was asked: a state the
     # invariant admits violates the predicate, and the exact check finds it
-    weak = _certify(ob, Always(lambda W, S: S["x"] <= 5),
+    weak = _certify(ob, Safety(lambda W, S: S["x"] <= 5),
                     inductive((lambda W, S: S["x"] >= 0,)))
     assert not weak.verified and weak.status == "FAILED(violated)", weak.status
 
 
-def test_the_procedure_picks_the_rule_from_the_property():
-    """The property says what to prove and the procedure says how, so the rule is
-    the procedure's own choice — and a property it has no rule for is refused."""
+def test_a_witness_refuses_a_claim_it_cannot_use():
+    """A witness is a strategy for one kind of claim: ``inductive`` needs a predicate
+    to imply, which a ``Liveness`` claim has not, and says so by name. Nothing
+    picks a witness on the caller's behalf — a rank is not a thing to guess."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
-    picked = rule_for(Always(lambda W, S: S["x"] >= 0), ob.system)
-    assert isinstance(picked, Step) and picked.proves is Always and len(picked.inv) == 1
-    with pytest.raises(Unsupported, match="needs a rank"):
-        rule_for(ob.prop, ob.system)              # nothing to guess a rank from
-
-    class Liveness:            # a property this procedure has no rule for
-        def domain(self, system):
-            return z3.BoolVal(True)
-
-    with pytest.raises(Unsupported, match="no rule for property"):
-        rule_for(Liveness(), ob.system)
-    with pytest.raises(Unsupported, match="proves"):
-        rule_for(ob.prop, ob.system, inductive(()))
+    with pytest.raises(Unsupported, match="has none"):
+        certify(ob.system, ob.prop, inductive(()))
+    with pytest.raises(TypeError):
+        certify(ob.system, ob.prop)
 
 
 def test_the_property_owns_the_domain():
@@ -340,11 +332,7 @@ def test_the_property_owns_the_domain():
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
 
-    class NoSteps(Fixpoint):
-        def domain(self, system):
-            return z3.BoolVal(False)
-
-    empty = _certify(ob, NoSteps(over=ob.prop.over), ob.rule)
+    empty = _certify(ob, Liveness(lambda W, S: z3.BoolVal(False)), ob.rule)
     assert not empty.verified and "no step" in empty.status, empty.status
     # and the real property does find steps on the same obligation
     full = _certify(ob, ob.prop, ob.rule)
@@ -485,7 +473,7 @@ def _two_ranks(update):
         mods += [vs_mod, vsp_mod]; ranks.append((vs[1], vsp[1]))
     system = read_system(Module.parallel(prog.module, *mods), prog.names)
     assert len(system.pairs) == 2 and len(system.all_pairs) == 6
-    return system, Fixpoint(over=system.pairs), tuple(ranks)
+    return system, terminates(), tuple(ranks)
 
 
 def test_lexicographic_rank_where_no_single_rank_works():
@@ -531,11 +519,11 @@ def test_a_disjunctive_invariant_goes_through_the_disjuncts():
     side with the predicate false) is refuted on the one region per path."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
-    res = _certify(ob, Always(lambda W, S: z3.Or(S["x"] >= 0, S["x"] <= -5)))
+    res = _certify(ob, Safety(lambda W, S: z3.Or(S["x"] >= 0, S["x"] <= -5)))
     assert res.verified, res.status
     assert all(len({c.disjunct for c in p.cells}) == 4 for p in res.certificates), \
         [len(p.cells) for p in res.certificates]
-    bad = _certify(ob, Always(lambda W, S: z3.Or(S["x"] >= 1, S["x"] <= -5)))
+    bad = _certify(ob, Safety(lambda W, S: z3.Or(S["x"] >= 1, S["x"] <= -5)))
     assert not bad.verified and bad.status == "FAILED(initiation)", bad.status
 
 
@@ -545,7 +533,7 @@ def test_a_disequality_in_the_rule_splits_into_its_two_sides():
     was refused as \"not a linear comparison\"."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
-    res = _certify(ob, Always(lambda W, S: S["x"] != -1))
+    res = _certify(ob, Safety(lambda W, S: S["x"] != -1))
     assert res.verified, res.status
 
 
@@ -569,26 +557,30 @@ def test_a_property_may_name_a_computed_wire():
                           [(np.array([[-1, 1]]), np.array([0])),
                            (np.array([[1]]), np.array([0]))],
                           init=lambda: (0, 5))
-    prop = Always(lambda W, S: W[d] == S["n"] - S["i"])
+    prop = Safety(lambda W, S: W[d] == S["n"] - S["i"])
     res = certify(system, prop, inductive((lambda W, S: S["i"] <= S["n"],)))
     assert res.verified, res.status
     assert len(res.devices) == 1, res.devices
-    assert res.pred is not None and len(res.inv) == 1
+    assert res.claim.holds is not None and len(res.witness.inv) == 1
     assert any(len(p.cells) >= 2 for p in res.certificates), "the wire's two sides"
-    alone = certify(system, prop)             # no state predicate to take as invariant
+    alone = certify(system, prop, inductive(()))      # no invariant: hold outright
     assert not alone.verified and alone.status == "FAILED(violated)", alone.status
 
 
-def test_a_property_over_the_next_round_is_refused():
-    """``Always`` speaks of a state: a predicate naming the next state, or a wire
-    whose value depends on it, is refused by name."""
+def test_a_safety_claim_may_speak_of_the_step():
+    """A round holds a state and its successor, so a safety claim may relate the
+    two — ``x`` never increases — and the engine treats it as any other predicate
+    over the round: certified where it holds, refuted where it does not, including
+    at the stuttering rounds a run claim would not count."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
-    ob = _decrement(layers)
-    with pytest.raises(Unsupported, match="speaks of a state"):
-        _certify(ob, Always(lambda W, S: S.next["x"] >= 0))
-    v_sp = ob.rule.ranks[0][1]                # V read at the next state
-    with pytest.raises(Unsupported, match="speaks of a state"):
-        _certify(ob, Always(lambda W, S: W[v_sp] >= 0))
+    ob = _decrement(layers)                    # while (x > 0) x = x - 1, from x = 0
+    down = _certify(ob, Safety(lambda W, S: S.next["x"] <= S["x"]), inductive(()))
+    assert down.verified, down.status
+    v_sp = ob.rule.ranks[0][1]                 # V read at the next state: a wire too
+    bounded = _certify(ob, Safety(lambda W, S: W[v_sp] >= 0), inductive(()))
+    assert bounded.verified, bounded.status
+    up = _certify(ob, Safety(lambda W, S: S.next["x"] >= S["x"] + 1), inductive(()))
+    assert not up.verified and up.status == "FAILED(violated)", up.status
 
 
 def test_an_invariant_may_not_name_a_wire():
@@ -598,7 +590,7 @@ def test_an_invariant_may_not_name_a_wire():
     ob = _decrement(layers)
     v_s = ob.rule.ranks[0][0]
     with pytest.raises(Unsupported, match="over the state"):
-        _certify(ob, Always(lambda W, S: S["x"] >= 0),
+        _certify(ob, Safety(lambda W, S: S["x"] >= 0),
                  inductive((lambda W, S: W[v_s] >= 0,)))
     with pytest.raises(Unsupported, match="linear"):
-        _certify(ob, Always(lambda W, S: S["x"] * S["x"] >= 0))
+        _certify(ob, Safety(lambda W, S: S["x"] * S["x"] >= 0))
