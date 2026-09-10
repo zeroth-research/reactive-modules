@@ -1,6 +1,6 @@
 # What `uv run verith` can verify
 
-Measured, not guessed: 36 modules were put through the whole pipeline — Python
+Measured, not guessed: 47 modules were put through the whole pipeline — Python
 module → generated Lean project → `lake build` — and the outcome of each was
 recorded. This file says which classes of module, invariant and ranking
 function come out proved, which come out broken, and for the broken ones what
@@ -28,8 +28,9 @@ separately:
 | `Certificate` | do `init_inv`, `step_inv` and `hrank` discharge? | only `System.System` + `System.Data` |
 
 A broken Scalar or FBK encoding therefore does **not** block the certificate,
-and four cases below have a verifying certificate inside a project whose
-`lake build` fails.
+so the two must be read apart: until open issue 1 was fixed, five cases had a
+verifying certificate inside a project whose `lake build` failed. No case is in
+that state now — every remaining failure is a certificate failure.
 
 ### Running it in seconds per case
 
@@ -56,7 +57,7 @@ cache afterwards; only `System/*` and `Certificate/*` recompile. Measured:
 
 ## Results
 
-46 of 47 cases generate; 41 compile all six encodings; 34 certificates discharge. Of the 12 that
+46 of 47 cases generate; 46 compile all six encodings; 34 certificates discharge. Of the 12 that
 do not, **7 are negative controls that are supposed to fail** — a missing
 property, a non-inductive invariant, a constant or increasing ranking, a
 dropped precondition. That leaves 5 real limits (`BVState`, `OpArgmax`, `OpMax`, `OpMin`, `RealConjDisj`),
@@ -69,9 +70,9 @@ to break a fixed tactic chain — were added along the way):
 | | before | after |
 |---|---|---|
 | generates | 33 / 36 | **35 / 36** |
-| `System` compiles | 20 / 36 | **31 / 36** |
+| `System` compiles | 20 / 36 | **35 / 36** |
 | `Certificate` discharges | 15 / 36 | **24 / 36** |
-| whole project green | 8 / 36 | **20 / 36** |
+| whole project green | 8 / 36 | **24 / 36** |
 
 Four of those cases were also *corrected* along the way, and the gain is
 theirs as much as the tool's: the three Real ones asked for an interval
@@ -79,11 +80,12 @@ invariant, which is not inductive over the reals (x = 0.5 escapes
 `0 ≤ x ≤ 5`), and `InvImplies` was given a ranking that could never
 decrease. A wrong test failing is not a tool limit.
 
-Over the full 47-case matrix: 46 generate, 41 compile all six encodings, 34
-certificates discharge, 29 projects are green end to end. No case that
-verified at any earlier point in this work stopped verifying — the switch
-from a fixed tactic chain to a generated plan reproduced all 44 shared
-verdicts exactly.
+Over the full 47-case matrix: 46 generate, all 46 compile all six encodings,
+34 certificates discharge, and the same 34 projects are green end to end —
+`System` no longer fails anywhere. No case that verified at any earlier point
+in this work stopped verifying: the switch from a fixed tactic chain to a
+generated plan reproduced all 44 shared verdicts exactly, and the FBK fix moved
+five cases from broken to green while leaving every other verdict untouched.
 
 | case | what it probes | gen | System | Certificate |
 |---|---|---|---|---|
@@ -97,7 +99,7 @@ verdicts exactly.
 | `InvNe` | DISTINCT in an invariant | ok | ok | ok |
 | `InvIte` | Ite in Prop position over a Bool state component | ok | ok | ok |
 | `InvImplies` | Implies in a Prop position — same module and ranking as InvIte, so the only difference from that case is the connective | ok | ok | ok |
-| `InvMixed` | 1x1 + 3x1 state: wire index and flat slot disagree; x is unbounded | ok | **fail** | ok |
+| `InvMixed` | 1x1 + 3x1 state: wire index and flat slot disagree; x is unbounded | ok | ok | ok |
 | `RankConst` | constant ranking — hrank needs 0 < 0 | ok | ok | **fail** |
 | `RankLinear` | bare linear ranking, no Ite guard | ok | ok | ok |
 | `RankLex` | nested loops; lexicographic (y,x) folded into one Nat | ok | ok | ok |
@@ -108,7 +110,7 @@ verdicts exactly.
 | `ReluInvRelu` | ReLU-shaped invariant: `x = relu(x)` written as an Ite | ok | ok | ok |
 | `ReluVec` | element-wise ReLU on a 3-vector state | ok | ok | ok |
 | `ReluLRA` | ReLU over Real — noncomputable RM, linarith instead of omega | ok | ok | ok |
-| `ReluNet` | Linear -> ReLU -> Linear, the shape a small Q-network compiles to | ok | **fail** | ok |
+| `ReluNet` | Linear -> ReLU -> Linear, the shape a small Q-network compiles to | ok | ok | ok |
 | `ReluInput` | ReLU + external input, sound under the precondition | ok | ok | ok |
 | `ReluInputNoPre` | same module without --pre: e is unconstrained, ranking cannot decrease | ok | ok | **fail** |
 | `BoolState` | Bool state (2-bit counter), Bool->Int ranking via Ite | ok | ok | ok |
@@ -117,9 +119,9 @@ verdicts exactly.
 | `OpMax` | Max as a unary reduction: x' = max(x-1, 0), i.e. ReLU spelled Max | ok | ok | **fail** |
 | `OpMin` | Min as a unary reduction: x' = min(x+1, 5) | ok | ok | **fail** |
 | `OpArgmax` | Argmax in the transition — does argmax_1d reduce under the hammer? | ok | ok | **fail** |
-| `OpTranspose` | Transpose in the transition (MatTranspose / Box.transpose) | ok | **fail** | ok |
+| `OpTranspose` | Transpose in the transition (MatTranspose / Box.transpose) | ok | ok | ok |
 | `OpUninterp` | an uninterpreted symbol — no Lean counterpart exists | **fail** | — | — |
-| `Vec32` | 32-wide state, all six encodings — the scaling ceiling | ok | **fail** | ok |
+| `Vec32` | 32-wide state, all six encodings — the scaling ceiling | ok | ok | ok |
 | `Deep64` | 64-deep straight-line transition body | ok | ok | ok |
 | `NNRank` | ranking is a 2-unit ReLU net: 2·relu(x-1) + relu(x) | ok | ok | ok |
 | `NNRankWide` | ranking is a 3-unit ReLU net with distinct thresholds | ok | ok | ok |
@@ -128,7 +130,7 @@ verdicts exactly.
 | `NNInvIneq` | net invariant in inequality form — the shape a learned barrier/Lyapunov function takes | ok | ok | ok |
 | `NNBoth` | invariant and ranking both nets, over the same state | ok | ok | ok |
 | `NNTwoInput` | two-input net invariant: relu(y-x) + relu(x) = y | ok | ok | ok |
-| `NNNetModule` | the module is Linear->ReLU->Linear *and* both certificate predicates are nets — the fully neural case | ok | **fail** | ok |
+| `NNNetModule` | the module is Linear->ReLU->Linear *and* both certificate predicates are nets — the fully neural case | ok | ok | ok |
 | `RealConjDisj` | Real, invariant is a conjunction of disjunctions: omega does not apply and `constructor <;> linarith` cannot prove a disjunct | ok | ok | **fail** |
 | `RealNonlin` | Real *and* nonlinear: needs nlinarith over an ordered field, not omega | ok | ok | ok |
 | `RealNet` | a ReLU net over Real as the ranking: ite branches, real literals and a floor, all at once | ok | ok | ok |
@@ -238,9 +240,8 @@ All eight cases below discharge their certificate:
 
 The cases are generated from explicit weight matrices (`net(...)` in the
 harness), not hand-written formulas, so they cannot be quietly tuned to what
-the prover happens to close. `NNNetModule`'s certificate discharges; its
-project still fails to build because of open issue 1, which is unrelated to
-the net.
+the prover happens to close. All eight are green, `NNNetModule` included — its
+project used to fail to build on open issue 1, which was never about the net.
 
 Note that an affine layer is *linear* — `2 * x` is not a product of two
 state-dependent terms — so nets do not drag `nlinarith` into the plan. That
@@ -250,35 +251,46 @@ is what keeps a 3-unit net at ~10 s.
 
 ## Open issues
 
-### 1. `FBK` only compiles when it shares a file with `ScalarRel`
+### 1. ~~`FBK` only compiles when it shares a file with `ScalarRel`~~ — fixed
 
-**Symptom.** `System/FBK.lean` fails with `unsolved goals ⊢ X = X` — the two
-sides print identically — for any module with a multi-element wire whose
-transition uses `Linear`. Affects `InvMixed`, `ReluNet`, `OpTranspose`,
-`Vec32`: the four remaining `System` failures.
+**Symptom.** `System/FBK.lean` failed with `unsolved goals ⊢ X = X` — the two
+sides printed identically — for any module with a multi-element ctrl wire.
+It cost `InvMixed`, `ReluNet`, `OpTranspose`, `Vec32` and `NNNetModule`: every
+remaining `System` failure. In all five the *certificate* discharged; only the
+encoding failed to compile.
 
-**Mechanism, as far as it is pinned.** Not the module, not the imports, and
-not the text. `Certs/RelEncMixed.lean` in the test suite holds the functional,
-scalar, ScalarRel and FBK sections in **one** module and compiles. Splitting
-that same file in two — everything up to `namespace FBK` in one module, the
-FBK section in another that imports it — reproduces the failure exactly.
-Adding `import Core.Basic` to the single-file version does not. So it is the
-module boundary between the `ScalarRel` definitions and the `FBK` theorems
-that breaks the `simp [effect_0, ScalarRel.effect_0]` proofs, presumably
-through how the equation lemmas of these `let`-heavy definitions are exported.
+**Mechanism.** `pp.explicit` shows what the pretty printer hides. The goal was
 
-**Why it was never caught.** `verith` always emits the split form
-(`System/ScalarRel.lean` + `System/FBK.lean`); the suite only ever compiles
-the concatenated form. `Certs/RelEnc*` passing says nothing about the layout
-users get. See issue 8.
+```
+matVecAffine … (fun i j => FBK.effect_0.match_1 …) 0 0
+  = matVecAffine … (fun i j => ScalarRel.effect_0.match_1 …) 0 0
+```
 
-**Repro.** Split any `Certs/RelEnc*.lean` at `namespace FBK` into two modules
-and build the second.
+A multi-element wire is rebuilt with `fun i j => match i, j with …`, and every
+`match` in a definition elaborates to an auxiliary matcher named after its
+enclosing declaration — likewise `_proof_1` for the `Fin` literal bounds. The
+two matchers have identical bodies and are definitionally equal, but they are
+*different constants*, and `simp` closes a goal only up to syntactic equality
+after rewriting. So `simp [effect_0, ScalarRel.effect_0]` reduced both sides to
+the same printed term and then could not finish.
 
-**Resolution.** Unknown; needs a Lean-level diagnosis of what the proof loses
-across the boundary. Two candidate directions: give the `ScalarRel` effect
-definitions explicit `@[simp]` equation lemmas rather than relying on
-unfolding, or emit FBK into the same module as ScalarRel.
+Lean reuses a matcher within a module and generates a fresh one across a module
+boundary, which is why the single-file form compiled and the split form did not
+— the module boundary was a symptom, not the cause. The earlier guess that
+`let`-heavy equation lemmas were failing to export was wrong.
+
+**Fix.** `translate/fbk.py` emits `first | rfl | simp […]` for `effect_i_eq` and
+`init_i_eq`. `rfl` checks definitional equality at default transparency, which
+unfolds both matchers; the `simp` fallback stays for anything `rfl` cannot do.
+Modules whose ctrl wires are all `1×1` emit no `match` at all, which is why only
+the multi-element ones were ever affected.
+
+**Regression cover.** `Certs/RelEnc*` in the slow suite now generates four
+separate modules — functional, Scalar, ScalarRel, FBK — exactly as
+`create_project` splits them, instead of concatenating them into one file. The
+concatenated form is a strictly weaker test: it shares matchers that a real
+project does not. `tests/test_lean_diagram.py` additionally pins the `rfl`-first
+tactic without needing `lake`.
 
 ### 2. `matMin` / `matMax` never reduce, so `Min`/`Max` modules cannot be proved
 
@@ -375,10 +387,15 @@ the interactive/experimental tactic it is used as in `ManualTests`.
 
 ### 8. Nothing in CI builds a generated project
 
-Every Lean test compiles either a standalone `Certs/*.lean` or a concatenated
-encoding file. No test runs `lake build` on the output of `verith -o`. That is
-why issue 1 survived, and why 13 of 33 projects failed `System` before this
-pass while the suite was green.
+Every Lean test compiles a standalone `Certs/*.lean`. No test runs
+`lake build` on the output of `verith -o`. That is why issue 1 survived, and
+why 13 of 33 projects failed `System` before this pass while the suite was
+green.
+
+Partly addressed: `Certs/RelEnc*` now mirrors the *module layout* of a
+generated project — four separate modules rather than one concatenated file —
+which is what makes it able to see issue 1 at all. It still builds fixtures in
+the warm project rather than a `verith -o` output.
 
 **Resolution.** One slow test that generates a project, symlinks the shared
 `.lake` (the recipe above; `test_generated_executable_builds_and_runs` already
@@ -422,3 +439,4 @@ no Lean IO, so `verith -x` refuses a Real wire) are unchanged by this pass.
 | 18 | Rational literals were emitted with `str(term)`, i.e. SMT-LIB: cvc5 prints 0.5 as `(/ 1 2)` | build the literal from `getRealValue()` |
 | 19 | One fixed tactic chain for every module: `bv_decide` on integer goals, no `nlinarith` on nonlinear ones, no way to add a prep step for a new shape | generate `cert_prep`/`cert_close` from the module and predicates (`zrth/lean/tactics.py`), pinned by `tests/test_lean_tactics.py` |
 | 20 | `Certificate.lean` was treated as stable across a change of predicates, but its tactics are now generated from them | `--infer` rewrites it alongside `Data.lean` |
+| 21 | `FBK.effect_i_eq` closed with `simp`, which cannot equate two auto-generated matchers — `FBK.effect_i.match_1` vs `ScalarRel.effect_i.match_1` — so `System/FBK.lean` failed for every multi-element ctrl wire | `first \| rfl \| simp […]`: `rfl` unfolds both at default transparency. The slow suite now builds the four encodings as separate modules, as a real project does |
