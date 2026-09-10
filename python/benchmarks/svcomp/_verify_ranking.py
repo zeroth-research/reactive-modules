@@ -9,7 +9,7 @@ One module, a property over its wires
 The program and V are composed into one module and read together: V once as a
 sequential atom reading the latched state (its wire carries V(s)) and once as a
 combinatorial atom awaiting the next state (V(s')). The property is
-``Fixpoint(over=<the program's columns>)`` and the rule is
+``terminates()`` over the program's columns and the witness is
 ``decrease(V(s) wire, V(s') wire, δ)`` — a linear predicate over two wires of the
 graph. Nothing distinguishes program from rank except what the property names.
 
@@ -36,7 +36,7 @@ import z3
 from ._bench import Bench, INT, pair  # noqa: F401
 from ._domain import guard_from_transition
 from ._farkas import System, certify, decrease, read_system, reading
-from ._property import Fixpoint
+from ._property import terminates
 from zrth import LIA, Module, sugar
 from zrth.sugar import expr, nxt, relu
 
@@ -70,7 +70,7 @@ class Obligation:
     layers: object = None
     net: object = None
     system: object = None    # program ⊕ V(s) ⊕ V(s'), as the verifier reads it
-    prop: object = None      # Fixpoint over the program's columns
+    prop: object = None      # terminates(), over the program's columns
     rule: object = None      # decrease(V(s) wire, V(s') wire, delta)
 
 
@@ -78,7 +78,7 @@ class Obligation:
 class VerifyResult:
     verified: bool
     counterexample: np.ndarray | None = None   # domain state where V fails (for CEGAR)
-    certificate: object | None = None           # the FarkasResult, when certified
+    certificate: object | None = None           # the Proof, when certified
     status: str = ""                             # VERIFIED / FAILED(...) / UNKNOWN
 
 
@@ -167,7 +167,7 @@ def build_obligation(bench: Bench, layers, delta: float, invariants=None,
         read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names),
         assume=system.assume, invariants=inv_preds)
     z = composed.view.values
-    prop = Fixpoint(over=composed.pairs)
+    prop = terminates()
     rule = decrease(vs[1], vsp[1], delta)
     return Obligation(composed.names, list(composed.s_syms), composed.sp_syms,
                       z[vs[1]][0], z[vsp[1]][0], float(delta),
