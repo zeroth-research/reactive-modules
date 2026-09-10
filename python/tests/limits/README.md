@@ -189,6 +189,11 @@ Compressed; each has a section in `VERITH_LIMITS.md` or `SMT_ASSIST.md`.
   over a matrix, like `Argmax`, but were wired to the binary `_elementwise`
   path, so any cvc5 query about such a module raised `TypeError` —
   `--infer ai-cegar` included.
+- **A generated tactic is not tested until Lean has parsed it.** Unit tests
+  on the emitted *string* miss syntax the quotation rejects — `;`-separated
+  steps broken across lines fail with `unexpected token 'try'; expected ')'`,
+  and only from two steps on, so every case in the matrix built clean while
+  the bug sat there. Exercise more than one of whatever you add.
 - **Giving `hrank` the invariant at the successor state is a trap.** `have
   hinv_next : inv (RM.update s l) := step_inv s l ⟨hpre, hi⟩` is sound, one
   line, and took NN2Deep4 from 22.4 s to 1077.5 s and NN2RealWide4 to a 2027 s

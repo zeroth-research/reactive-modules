@@ -392,3 +392,15 @@ def _solver_hints(**fields):
     from zrth.lean.smt_query import SolverHints
 
     return SolverHints(**fields)
+
+
+def test_several_settled_conditions_stay_on_one_line():
+    """A `;`-separated tactic sequence in a quotation cannot be wrapped.
+
+    Broken across lines, Lean rejects the second step with
+    `unexpected token 'try'; expected ')'` -- and only from two conditions
+    on, so a single-condition case builds happily and hides it.
+    """
+    tac = _hinted(determined=[("a", True), ("b", True), ("c", False)]).facts_tactic
+    assert "\n" not in tac
+    assert tac.count("try (have") == 3

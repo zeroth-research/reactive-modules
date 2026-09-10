@@ -186,6 +186,20 @@ removing a closer only speeds up the runs that were going to fail anyway —
 and cvc5 reasoning linearly about a goal is no promise that Mathlib's
 `linarith` can.
 
+### A generated tactic is not tested until Lean has parsed it
+
+The unit tests check the *string* `facts_tactic` produces. That is not the
+same as checking Lean accepts it, and the gap bit immediately: steps joined
+with `;` across lines are rejected inside a `` `(tactic| …) `` quotation with
+
+    unexpected token 'try'; expected ')'
+
+which appears only from **two** settled conditions on. Every case in the
+matrix with settled conditions had exactly one, so the whole 12-case subset
+built clean and the bug surfaced only on a case constructed on purpose to
+have four. Join on one line; and when adding anything to the generated
+tactics, build a case that exercises more than one of it.
+
 ### Measured cost of getting this wrong
 
 The first cut also derived the invariant at the successor state in `hrank`
