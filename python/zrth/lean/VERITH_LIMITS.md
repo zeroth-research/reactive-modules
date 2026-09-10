@@ -1,6 +1,6 @@
 # What `uv run verith` can verify
 
-Measured, not guessed: 47 modules were put through the whole pipeline — Python
+Measured, not guessed: 48 modules were put through the whole pipeline — Python
 module → generated Lean project → `lake build` — and the outcome of each was
 recorded. This file says which classes of module, invariant and ranking
 function come out proved, which come out broken, and for the broken ones what
@@ -57,15 +57,16 @@ cache afterwards; only `System/*` and `Certificate/*` recompile. Measured:
 
 ## Results
 
-46 of 47 cases generate; 46 compile all six encodings; 34 certificates discharge. Of the 12 that
-do not, **7 are negative controls that are supposed to fail** — a missing
+47 of 48 cases generate; 47 compile all six encodings; 35 certificates discharge. Of the 12 that
+do not, **8 are negative controls that are supposed to fail** — a missing
 property, a non-inductive invariant, a constant or increasing ranking, a
-dropped precondition. That leaves 5 real limits (`BVState`, `OpArgmax`, `OpMax`, `OpMin`, `RealConjDisj`),
+dropped precondition. That leaves 4 real limits (`BVState`, `OpArgmax`, `OpMax`, `OpMin`),
 all in the next section.
 
 Against the pipeline as it stood before this work, measured on the 36 cases
-that existed then (the other 11 — eight neural-network cases and three built
-to break a fixed tactic chain — were added along the way):
+that existed then (the other 12 — eight neural-network cases, three built to
+break a fixed tactic chain, and one negative control — were added along the
+way):
 
 | | before | after |
 |---|---|---|
@@ -78,10 +79,11 @@ Four of those cases were also *corrected* along the way, and the gain is
 theirs as much as the tool's: the three Real ones asked for an interval
 invariant, which is not inductive over the reals (x = 0.5 escapes
 `0 ≤ x ≤ 5`), and `InvImplies` was given a ranking that could never
-decrease. A wrong test failing is not a tool limit.
+decrease. A fifth, `RealConjDisj`, was wrong in the same family and is
+dissected in open issue 3. A wrong test failing is not a tool limit.
 
-Over the full 47-case matrix: 46 generate, all 46 compile all six encodings,
-34 certificates discharge, and the same 34 projects are green end to end —
+Over the full 48-case matrix: 47 generate, all 47 compile all six encodings,
+35 certificates discharge, and the same 35 projects are green end to end —
 `System` no longer fails anywhere. No case that verified at any earlier point
 in this work stopped verifying: the switch from a fixed tactic chain to a
 generated plan reproduced all 44 shared verdicts exactly, and the FBK fix moved
@@ -131,7 +133,8 @@ five cases from broken to green while leaving every other verdict untouched.
 | `NNBoth` | invariant and ranking both nets, over the same state | ok | ok | ok |
 | `NNTwoInput` | two-input net invariant: relu(y-x) + relu(x) = y | ok | ok | ok |
 | `NNNetModule` | the module is Linear->ReLU->Linear *and* both certificate predicates are nets — the fully neural case | ok | ok | ok |
-| `RealConjDisj` | Real, invariant is a conjunction of disjunctions: omega does not apply and `constructor <;> linarith` cannot prove a disjunct | ok | ok | **fail** |
+| `RealConjDisj` | Real, invariant is a conjunction of two 4-way disjunctions: omega does not apply and `constructor <;> linarith` cannot prove a disjunct, so the plan has to case on both | ok | ok | ok |
+| `RealConjDisjUnsat` | two Real components that both *cycle*: the product of their ranges admits (1,2)->(2,5)->(3,2)->(0,5)->(1,2), which never reaches P, so hrank is false for every ranking. Must be rejected | ok | ok | **fail** |
 | `RealNonlin` | Real *and* nonlinear: needs nlinarith over an ordered field, not omega | ok | ok | ok |
 | `RealNet` | a ReLU net over Real as the ranking: ite branches, real literals and a floor, all at once | ok | ok | ok |
 | `BadInv` | not inductive (init is 100) — init_inv must fail | ok | ok | **fail** |
@@ -309,26 +312,45 @@ already in `simp_mat`. The second is a semantics-preserving redefinition of
 `Core/Mat.lean` and needs the slow suite to confirm nothing that reasons about
 these two regresses.
 
-### 3. Real (LRA): a conjunction of disjunctions still defeats the plan
+### 3. ~~Real (LRA): a conjunction of disjunctions still defeats the plan~~ — not a tool limit
 
-Real modules verify now — `LRALinear`, `RankToInt` (a non-integral state in
-steps of 0.5), `ReluLRA`, `RealNonlin` and `RealNet` all discharge, once the
-three codegen blockers were fixed and `simp_all` moved into prep. What is
-left is one shape: `RealConjDisj`, whose invariant is a conjunction of
-disjunctions over two Real components.
+Real modules verify: `LRALinear`, `RankToInt` (a non-integral state in steps
+of 0.5), `ReluLRA`, `RealNonlin`, `RealNet` and now `RealConjDisj` — an
+invariant that is a conjunction of two 4-way disjunctions over two Real
+components — all discharge.
 
-**Mechanism.** After prep the goal is e.g. `0 < ⌊4 - x⌋ + 4` under
-`x = 0`, one branch of a fan-out that `split_ifs` and `casesm*` have already
-multiplied. Each such goal closes in isolation (`simp_all`, or `subst` then
-`norm_num`), but not in the branch context the chain hands them: the
-substitution has to happen against the *right* one of several equality
-hypotheses, and `simp_all` in prep does not always pick it.
+`RealConjDisj` was previously listed here as the one shape the generated plan
+could not serve. That was wrong: **the obligation it stated was false.** Its
+module (`m_lra_two`) has two components that both *cycle*, x over
+`{0,1,2,3}` and y over `{2,5}`, and the invariant was the product of their two
+ranges. That product loses the phase relation between them and admits
 
-**Resolution.** Probably a per-disjunct `rcases` in prep, driven by the
-detected disjunction count, rather than relying on `casesm*` plus a global
-`simp_all`. This is the case where the shape-directed plan is still too
-coarse: it knows the predicates are disjunctive, but it does not yet use
-*which* disjuncts.
+```
+(1,2) → (2,5) → (3,2) → (0,5) → (1,2)
+```
+
+— four states that all satisfy the invariant, none of which is `P = (0,2)`.
+`hrank` asks for `ranking s' < ranking s` on every invariant state off `P`,
+which no ranking function can satisfy around a cycle. Checked in Lean, not by
+hand: each of the four states satisfies `inv`, none satisfies `P`, and each
+`update` step is provable by `norm_num`. So the certificate was unprovable by
+construction, and no tactic could ever have closed it.
+
+Restated over two components that *converge* instead of cycling
+(`m_lra_conv`: `x' = if x > 0 then x - 1 else 0`, `y' = if y > 2 then y - 1
+else 2`), keeping the same conjunction-of-disjunctions shape, it verifies in
+13 s with no change to the plan. The step that carries it is the
+`casesm* _ ∧ _, _ ∨ _` the plan already emits for a disjunctive predicate:
+deleting just that step from the generated `cert_prep` turns 0 errors into 9.
+
+The original module is kept as `RealConjDisjUnsat`, a negative control — the
+tool must go on rejecting it.
+
+**Lesson for the harness.** Two independent cyclic components cannot be
+covered by a conjunction of per-component ranges; the invariant has to relate
+their phases. Three earlier cases in this matrix were wrong the same way (an
+interval invariant is not inductive over the reals), and a wrong test failing
+is not a tool limit.
 
 ### 4. BitVec: the invariant obligations pass, the ranking one does not
 
