@@ -19,7 +19,7 @@ The file follows the rule's shape:
     ``refute_bridge``); the rule's formula ``ok`` and ``step_ok``, which puts the
     bounds, collapses and refutations together by ``omega``; and
     ``Step``/``RawStep``/``consecution``;
-  * the composition the property needs: ranks conclude ``program_terminates``
+  * the composition the claim needs: ranks conclude ``no_infinite_run``
     through ``lexDec`` and ``no_infinite_run_lex``; an invariant concludes
     ``always_holds``, with ``initiation`` and per-path ``consecution`` carrying the
     invariant along any run and ``step_ok`` closing the predicate at each state.
@@ -34,6 +34,7 @@ import z3
 
 from ._farkas import (CellCert, Unsupported, _find_ite_cond, _flatten_and,
                       affine_coeffs, entry_predicate, reading, resolve)
+from ._property import Liveness
 
 
 def _contains_ite(e) -> bool:
@@ -818,11 +819,11 @@ def _emit_init_and_initiation(n: int, init_lean: str, trivial_inv: bool) -> str:
             f"{_inv_proof(trivial_inv, 'Init, invariants')}")
 
 
-def _emit_termination_composition(path_names, n: int, init_lean: str, trivial_inv: bool,
+def _emit_liveness_composition(path_names, n: int, init_lean: str, trivial_inv: bool,
                                   rank_nets) -> str:
     """The whole-program theorem under a ranking rule: ``Step`` as the union of
     the paths, ``no_infinite_run_lex [R0, …]`` fed each rank's non-negativity and
-    each path's ``lex_step``, and ``program_terminates`` — from any ``Init``
+    each path's ``lex_step``, and ``no_infinite_run`` — from any ``Init``
     state there is no infinite run of ``RawStep``, since the invariant derived
     along the run upgrades every ``RawStep`` to a ``Step``."""
     K = len(rank_nets)
@@ -857,9 +858,10 @@ def _emit_termination_composition(path_names, n: int, init_lean: str, trivial_in
         f"{pos}\n"
         f"  · rintro a b ({pat})\n"
         f"{dec}\n\n"
-        f"/-- The program terminates: from any loop-entry state there is no\n"
-        f"    infinite run of guarded steps. -/\n"
-        f"theorem program_terminates (s0 : Vector {n} Int) (hinit : Init s0) :\n"
+        f"/-- From any entry state there is no infinite run of steps inside the\n"
+        f"    domain: the run leaves it. Where the domain is the moving columns,\n"
+        f"    leaving it is a fixed point, and this is termination. -/\n"
+        f"theorem no_infinite_run (s0 : Vector {n} Int) (hinit : Init s0) :\n"
         f"    ¬ ∃ f : Nat → Vector {n} Int, f 0 = s0 ∧ ∀ i, RawStep (f i) (f (i + 1)) := by\n"
         f"  rintro ⟨f, hf0, hstep⟩\n"
         f"{_hinv_induction(path_names)}\n"
@@ -921,9 +923,10 @@ def emit_program(name: str, system, result) -> str:
     :class:`._farkas.Proof` a ``certify`` run on it returned: the certificates,
     the resolved formula, the claim, the witness and the devices.
 
-    A witness with ranks proves termination, concluding ``program_terminates``; one
-    without proves the :class:`._property.Safety` claim, concluding
-    ``always_holds``. The entry state is read off the system, the networks off
+    Which of the two kinds the claim is picks the closing theorem: a
+    :class:`._property.Liveness` claim concludes ``no_infinite_run`` from the
+    witness's ranks, a :class:`._property.Safety` claim concludes ``always_holds``
+    from its predicate. The entry state is read off the system, the networks off
     the result's devices — never the weights."""
     paths = result.certificates
     if not paths:
@@ -940,8 +943,12 @@ def emit_program(name: str, system, result) -> str:
     trivial_inv = inv_lean == "True"
     by_id = {d.wire_id: d for d in result.devices}
     rank_nets = [by_id[v_s.id].net for v_s, _ in getattr(result.witness, "ranks", ())]
+    liveness = isinstance(result.claim, Liveness)
+    if liveness and not rank_nets:
+        raise Unsupported("the proof layer discharges a liveness claim by ranks "
+                          "(no_infinite_run_lex); this witness names none")
 
-    if rank_nets:
+    if liveness:
         what = ("terminates via a ranking function" if len(rank_nets) == 1 else
                 f"terminates via a lexicographic rank of {len(rank_nets)} networks")
         pred_lean = None
@@ -969,8 +976,8 @@ def emit_program(name: str, system, result) -> str:
     for pname, pcert in zip(path_names, paths):
         parts.append(_emit_path(pname, pcert, result, system, s_syms, trivial_inv,
                                 inv_all))
-    if rank_nets:
-        parts.append(_emit_termination_composition(path_names, n, init_lean, trivial_inv,
+    if liveness:
+        parts.append(_emit_liveness_composition(path_names, n, init_lean, trivial_inv,
                                                    rank_nets))
     else:
         parts.append(_emit_safety_composition(path_names, n, init_lean, trivial_inv))
