@@ -11,7 +11,7 @@ import pytest
 
 from benchmarks.svcomp import discover
 from benchmarks.svcomp._domain import domain
-from benchmarks.svcomp._verify_ranking import system_of
+from benchmarks.svcomp._termination import system_of
 
 _BENCHES = {b.name: b for b in discover()}
 

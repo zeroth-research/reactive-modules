@@ -34,7 +34,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import discover
 from ._train import learn_ranking
-from ._verify_ranking import farkas_cell
+from ._termination import farkas_cell
 
 WORKER_FLAG = "--worker"
 _WORKER_TIMEOUT = 2400.0        # above _lean_check.CHECK_TIMEOUT plus training
