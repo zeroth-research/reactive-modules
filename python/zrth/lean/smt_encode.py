@@ -221,6 +221,36 @@ def _argmax_flat(
     return best_idx
 
 
+def _reduce_flat(
+    tm: cvc5.TermManager,
+    x: cvc5.Term,
+    shape: MatShape,
+    take_min: bool,
+) -> cvc5.Term:
+    """Scalar: the min/max element of a `Mat t m n`, folded row-major.
+
+    `Min`/`Max` are *unary reductions* in the theory -- one read wire of any
+    shape, a `Mat t 1 1` written -- exactly like `Argmax`, and `Core.Mat`
+    folds them row-major from element `(0,0)`. They were wired to
+    `_elementwise` with a binary lambda instead, so a real `Max` term raised
+    `TypeError: <lambda>() missing 1 required positional argument`, taking
+    down every SMT query about a module that uses one.
+    """
+    xs = [
+        mat_select(tm, x, shape, i, j)
+        for i in range(shape.m)
+        for j in range(shape.n)
+    ]
+    if not xs:
+        raise ValueError(f"Min/Max needs a non-empty matrix, got {shape}")
+    kind = Kind.LEQ if take_min else Kind.GEQ
+    best = xs[0]
+    for nxt in xs[1:]:
+        # `best` first, matching `foldl (fun best p => Min.min best (x p))`.
+        best = tm.mkTerm(Kind.ITE, tm.mkTerm(kind, best, nxt), best, nxt)
+    return best
+
+
 def _unop_scalar(tm, kind):
     return lambda a: tm.mkTerm(kind, a)
 
@@ -377,19 +407,11 @@ def translate_terms(
             # gives back from BITVECTOR_U*/S* comparison Kinds.
             pred = tm.mkTerm(kind, a, b)
             wt[write.id] = mat_pack(tm, out_shape, [_bool_or_bv1(tm, pred, True)])
-        elif name == "Min":
-            wt[write.id] = _elementwise(
+        elif name in ("Min", "Max"):
+            wt[write.id] = mat_pack(
                 tm,
                 out_shape,
-                lambda x, y: tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.LEQ, x, y), x, y),
-                *args,
-            )
-        elif name == "Max":
-            wt[write.id] = _elementwise(
-                tm,
-                out_shape,
-                lambda x, y: tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.GEQ, x, y), x, y),
-                *args,
+                [_reduce_flat(tm, args[0], in_shapes[0], name == "Min")],
             )
         elif name == "MatMul":
             wt[write.id] = _matmul(tm, args[0], args[1], in_shapes[0], in_shapes[1])
