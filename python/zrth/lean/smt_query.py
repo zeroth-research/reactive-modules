@@ -29,9 +29,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import cvc5
-    from zrth import Module
-    from .cert import CertificateData
+    from .cert import CertificateData as _CertificateData  # noqa: F401
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -343,7 +341,11 @@ def pre_check(module, cert_data, budget: SmtBudget, log=print) -> list[Verdict]:
         return []
     verdicts = q.check_obligations(budget)
     if not verdicts:
-        log("   nothing to check (no invariant given)")
+        if cert_data.inv is None:
+            log("   nothing to check (no invariant given)")
+        else:
+            log("   the invariant is not SMT-LIB, so cvc5 cannot state the "
+                "obligations -- skipping the pre-check")
         return []
     for v in verdicts:
         log(v.line)
@@ -591,22 +593,24 @@ class SolverHints:
     linear_proof: "bool | None" = None
     # Lean terms to hand `nlinarith`.
     nlinarith_hints: list = field(default_factory=list)
+    # A real precondition that no obligation's refutation needed.
+    pre_unused: bool = False
     notes: list = field(default_factory=list)
 
     @property
     def any(self) -> bool:
-        return bool(self.determined or self.nlinarith_hints) or (
-            self.linear_proof is not None
-        )
+        return bool(
+            self.determined or self.nlinarith_hints or self.pre_unused
+        ) or (self.linear_proof is not None)
 
     def why(self) -> str:
         bits = []
         for text, value in self.determined:
             bits.append(f"inv forces `{text}` to be {str(value).lower()}")
-        if self.linear_proof is True:
-            bits.append("cvc5's refutations are linear: no nlinarith")
-        elif self.linear_proof is False:
+        if self.linear_proof is False:
             bits.append(f"cvc5 needed {len(self.nlinarith_hints)} product hint(s)")
+        if self.pre_unused:
+            bits.append("no refutation needed the precondition: clearing it")
         bits += self.notes
         return "\n".join(f"-- cvc5: {b}" for b in bits)
 
@@ -630,7 +634,7 @@ def _kept_conditions(t, out: dict) -> None:
         stack.extend(node)
 
 
-def _proof_facts(solver, tm) -> tuple[bool, list]:
+def _proof_facts(solver) -> tuple[bool, list]:
     """`(is_linear, multiplied_terms)` from cvc5's refutation.
 
     Walks the proof for the nonlinear-arithmetic rules. Their conclusions
@@ -664,7 +668,7 @@ def _proof_facts(solver, tm) -> tuple[bool, list]:
     return linear, list(products.values())
 
 
-def _hint_terms(products, state_vars, ctrl_next) -> list:
+def _hint_terms(products, ctrl_next) -> list:
     """`nlinarith` hint terms for the products cvc5 multiplied.
 
     `nlinarith` looks for degree-2 certificates by multiplying pairs of
@@ -697,6 +701,13 @@ def _hint_terms(products, state_vars, ctrl_next) -> list:
     return out
 
 
+def _in_core(solver, term) -> bool:
+    try:
+        return any(term == c for c in solver.getUnsatCore())
+    except Exception:
+        return True  # unknown: assume it is needed
+
+
 def _core_note(solver, labels: dict) -> "str | None":
     """Which of the named hypotheses cvc5's refutation actually used."""
     try:
@@ -717,14 +728,13 @@ def solver_hints(q: "ModuleQueries | None", budget: SmtBudget, log=None) -> Solv
     been. Never raises.
     """
     hints = SolverHints()
-    if q is None or q.inv is None:
-        return hints
-    budget.start_phase()
-    try:
-        _branch_polarity(q, budget, hints)
-        _refutation_shape(q, budget, hints)
-    except Exception as e:  # pragma: no cover -- the whole point is to not raise
-        hints.notes.append(f"gave up: {type(e).__name__}")
+    if q is not None and q.inv is not None:
+        budget.start_phase()
+        try:
+            _branch_polarity(q, budget, hints)
+            _refutation_shape(q, budget, hints)
+        except Exception as e:  # pragma: no cover -- the point is to not raise
+            hints.notes.append(f"gave up: {type(e).__name__}")
     if log:
         if hints.any:
             log(f"   cvc5 assists: {'; '.join(hints.why().splitlines())[:200]}")
@@ -755,9 +765,13 @@ def _branch_polarity(q: "ModuleQueries", budget: SmtBudget, hints: SolverHints) 
         if value is None:
             continue
         try:
-            hints.determined.append((smt_to_lean_body(cond, q.msmt.ctrl_next), value))
+            # `($v)` is the macro's own binder: the condition is spliced into
+            # a tactic, so it has to read whichever state the obligation
+            # bound rather than a fixed name.
+            text = smt_to_lean_body(cond, q.msmt.ctrl_next, param_name="($v)")
         except Exception:
             continue
+        hints.determined.append((text, value))
 
 
 def _refutation_shape(
@@ -771,11 +785,11 @@ def _refutation_shape(
     "linear" from `step_inv` on its own would take the closer away from the
     obligation that needs it.
     """
-    from cvc5 import Kind
-
     linear_all = True
     products: list = []
     proved_any = False
+    pre_offered = False
+    pre_used = False
     for name, labels in _obligation_labels(q):
         if budget.exhausted:
             break
@@ -787,20 +801,24 @@ def _refutation_shape(
                 solver.assertFormula(term)
             if not solver.checkSat().isUnsat():
                 continue
-            linear, prods = _proof_facts(solver, q.tm)
+            linear, prods = _proof_facts(solver)
         except Exception:
             continue
         proved_any = True
         linear_all = linear_all and linear
         products += prods
+        if "pre" in labels:
+            pre_offered = True
+            pre_used = pre_used or _in_core(solver, labels["pre"])
         note = _core_note(solver, labels)
         if note:
             hints.notes.append(f"{name}: {note}")
     if not proved_any:
         return
     hints.linear_proof = linear_all
+    hints.pre_unused = pre_offered and not pre_used
     if not linear_all:
-        hints.nlinarith_hints = _hint_terms(products, q.state_vars, q.msmt.ctrl_next)
+        hints.nlinarith_hints = _hint_terms(products, q.msmt.ctrl_next)
 
 
 def _obligation_labels(q: "ModuleQueries"):

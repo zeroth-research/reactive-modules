@@ -5,7 +5,10 @@ source files that encode the module and carry machine-checked proofs of
 safety/liveness properties.
 
 Known defects in this pipeline, fixed and open, are catalogued in
-[KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+[KNOWN_ISSUES.md](KNOWN_ISSUES.md).  What cvc5 is used for -- the obligation
+pre-check, sharing in the printer, and the solver-informed tactics -- is in
+[SMT_ASSIST.md](SMT_ASSIST.md), together with cold-start plans for abduction
+and SyGuS.
 
 ---
 

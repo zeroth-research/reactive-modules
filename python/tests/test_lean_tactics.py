@@ -308,3 +308,87 @@ def test_without_facts_everything_falls_back_to_the_text():
     assert f.nonlinear is True
     assert f.n_branch == 1
     assert f.n_conditions == 1
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Solver-informed tactics
+#
+# The contract is that hints only ever *add*: with none, the plan is byte
+# for byte the one that was emitted before cvc5 was asked anything.
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _hinted(**fields):
+    from zrth.lean.smt_query import SolverHints
+
+    return plan_for(
+        LeanContext(_int_module()),
+        "fun s => (s 0 0)",
+        hints=SolverHints(**fields),
+    )
+
+
+def test_without_hints_the_new_macros_are_inert():
+    plan = plan_for(LeanContext(_int_module()), "fun s => (s 0 0)")
+    assert plan.facts_tactic == "skip"
+    assert plan.clear_tactic == "skip"
+
+
+def test_a_settled_condition_becomes_a_guarded_have_and_a_rewrite():
+    plan = _hinted(determined=[("(($v) 0 0) ≥ 0", True)])
+    tac = plan.facts_tactic
+    assert tac.startswith("try (have hf0 : (($v) 0 0) ≥ 0 := by ")
+    assert "simp only [if_pos hf0]" in tac
+
+
+def test_a_refuted_condition_is_negated_and_uses_if_neg():
+    plan = _hinted(determined=[("(($v) 0 0) ≥ 0", False)])
+    tac = plan.facts_tactic
+    assert "have hf0 : ¬ ((($v) 0 0) ≥ 0)" in tac
+    assert "if_neg hf0" in tac
+
+
+def test_every_settled_condition_gets_its_own_guarded_step():
+    """A `have` the tactics cannot reproduce must cost nothing."""
+    plan = _hinted(determined=[("a", True), ("b", False), ("c", True)])
+    assert plan.facts_tactic.count("try (have") == 3
+
+
+def test_an_unused_precondition_is_cleared():
+    assert _hinted(pre_unused=True).clear_tactic == "try clear hpre"
+
+
+def test_product_hints_are_added_before_the_bare_nlinarith():
+    """Naming the squares turns nlinarith's search into a check."""
+    plan = plan_for(
+        LeanContext(_int_module()),
+        "fun s => ((s 0 0) * (s 0 0))",       # nonlinear, so nlinarith is in
+        hints=_solver_hints(nlinarith_hints=["mul_self_nonneg ((s 0 0) - 1)"]),
+    )
+    closers = plan.closers
+    assert "nlinarith [mul_self_nonneg ((s 0 0) - 1)]" in closers
+    assert closers.index("nlinarith [mul_self_nonneg ((s 0 0) - 1)]") < closers.index(
+        "nlinarith"
+    )
+
+
+def test_hints_never_remove_a_closer():
+    """`first | a | b` costs nothing for `b`, so there is no case for it."""
+    ctx = LeanContext(_int_module())
+    text = "fun s => ((s 0 0) * (s 0 0))"
+    plain = plan_for(ctx, text)
+    hinted = plan_for(ctx, text, hints=_solver_hints(linear_proof=True))
+    assert set(plain.closers) <= set(hinted.closers)
+
+
+def test_the_reasons_are_recorded_in_the_generated_comment():
+    plan = _hinted(determined=[("(($v) 0 0) ≥ 0", True)], pre_unused=True)
+    why = plan.why()
+    assert "cvc5: inv forces" in why
+    assert "clearing it" in why
+
+
+def _solver_hints(**fields):
+    from zrth.lean.smt_query import SolverHints
+
+    return SolverHints(**fields)

@@ -66,7 +66,14 @@ import argparse
 from pathlib import Path
 
 from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
-from .smt_query import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget, pre_check
+from .smt_query import (
+    DEFAULT_CALL_MS,
+    DEFAULT_PHASE_MS,
+    ModuleQueries,
+    SmtBudget,
+    pre_check,
+    solver_hints,
+)
 from .project import (
     create_project,
     generate_standalone_cert_lean,
@@ -96,6 +103,10 @@ examples:
   # ask cvc5 whether the obligations are true before spending a lake build on them
   uv run verith mymodule.py -P "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
       --pre-check cvc5 -o out/ -p MyProject
+
+  # let cvc5 discharge the branch conditions the invariant settles
+  uv run verith mymodule.py -P "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
+      --smt-tactics cvc5 -o out/ -p MyProject
 
   # certify through lean-ltl-certifying's proveit.py (lean2vmt -> ic3ia -> vmt2lean)
   uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p MyProject \\
@@ -271,6 +282,19 @@ def main():
         ),
     )
     parser.add_argument(
+        "--smt-tactics",
+        default="none",
+        choices=["none", "cvc5"],
+        help=(
+            "Let cvc5 inform the generated tactics: discharge the branch "
+            "conditions the invariant already settles instead of splitting "
+            "on them, hand `nlinarith` the products cvc5's own refutation "
+            "needed, and drop a precondition no refutation used. Bounded by "
+            "--smt-timeout / --smt-budget; strictly additive, so anything "
+            "cvc5 cannot answer leaves the plan as it would have been."
+        ),
+    )
+    parser.add_argument(
         "--smt-timeout",
         type=int,
         default=DEFAULT_CALL_MS,
@@ -362,6 +386,15 @@ def main():
     project_cert_data = cert_data
     if cert_data is not None:
         project_cert_data = smt_predicates_to_lean(cert_data, module)
+
+    if args.smt_tactics == "cvc5" and cert_data is not None:
+        print(
+            f".. SMT-informed tactics (cvc5): <={budget.per_call_ms} ms per "
+            f"query, <={budget.phase_ms} ms total"
+        )
+        hints = solver_hints(ModuleQueries.build(module, cert_data), budget, log=print)
+        if project_cert_data is not None:
+            project_cert_data.hints = hints
 
     # --cert-file: generate a standalone, self-contained certificate file and exit
     if args.cert_file:

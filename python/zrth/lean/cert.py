@@ -33,6 +33,10 @@ class CertificateData:
     # falls back to reading the rendered Lean.
     facts: "object | None" = None
 
+    # `smt_query.SolverHints` when `--smt-tactics=cvc5` ran. `None`
+    # otherwise, and the plan is exactly the one it would have emitted.
+    hints: "object | None" = None
+
 
 def _cert_def_lines(
     ctx: LeanContext,
@@ -220,7 +224,12 @@ def generate_certificate_lean(
     if const_list:
         all_defs += f", {const_list}"
 
-    plan = plan_for(ctx, _predicate_text(ctx, cert_data), facts=cert_data.facts)
+    plan = plan_for(
+        ctx,
+        _predicate_text(ctx, cert_data),
+        facts=cert_data.facts,
+        hints=cert_data.hints,
+    )
 
     return render(
         "project/Certificate/Certificate.lean.j2",

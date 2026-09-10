@@ -18,6 +18,7 @@ from zrth.lean.smt_query import (
     Status,
     pre_check,
     predicate_facts,
+    solver_hints,
 )
 
 
@@ -249,3 +250,91 @@ def test_facts_record_which_state_slots_are_mentioned():
 
 def test_facts_are_absent_rather_than_wrong_when_cvc5_cannot_parse():
     assert predicate_facts(None) is None
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Solver-informed tactics
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _hints(cert, budget=None):
+    q = ModuleQueries.build(countdown(), cert)
+    return solver_hints(q, budget or SmtBudget())
+
+
+def test_a_condition_the_invariant_settles_is_reported():
+    """`s0 ≥ 0` is forced by the invariant, so `split_ifs` need not split."""
+    h = _hints(
+        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 0) s0 1)")
+    )
+    assert [value for _, value in h.determined] == [True]
+    assert "≥" in h.determined[0][0]
+
+
+def test_a_condition_the_invariant_refutes_is_reported():
+    h = _hints(
+        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (< s0 0) 7 s0)")
+    )
+    assert [value for _, value in h.determined] == [False]
+
+
+def test_an_undetermined_condition_is_left_to_split_ifs():
+    h = _hints(
+        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 50) s0 1)")
+    )
+    assert h.determined == []
+
+
+def test_conditions_are_rendered_against_the_macro_binder():
+    """They are spliced into a tactic, so they read the obligation's state."""
+    h = _hints(
+        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 0) s0 1)")
+    )
+    assert "($v)" in h.determined[0][0]
+
+
+def test_a_folded_relu_is_not_offered_as_a_condition():
+    """It becomes `max`, which never splits, so deciding it buys nothing."""
+    h = _hints(
+        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 0) s0 0)")
+    )
+    assert h.determined == []
+
+
+def test_a_precondition_no_refutation_needs_is_reported_as_unused():
+    cert = CertificateData(
+        prp=GOOD.prp, inv=GOOD.inv, ranking="s0", update_pre="(= 1 1)"
+    )
+    assert _hints(cert).pre_unused is True
+
+
+def test_the_refutations_are_recorded_as_linear_when_they_are():
+    assert _hints(GOOD).linear_proof is True
+
+
+def test_no_invariant_means_no_hints_and_no_queries():
+    h = _hints(CertificateData(prp="(= s0 0)"))
+    assert not h.any
+
+
+def test_a_spent_budget_yields_no_hints_rather_than_an_exception():
+    h = _hints(
+        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 0) s0 1)"),
+        SmtBudget(per_call_ms=5000, phase_ms=0),
+    )
+    assert h.determined == []
+    assert h.linear_proof is None
+
+
+def test_hints_survive_a_module_cvc5_cannot_encode():
+    assert solver_hints(None, SmtBudget()).any is False
+
+
+def test_the_hint_log_says_when_there_is_nothing_to_add():
+    lines: list[str] = []
+    solver_hints(
+        ModuleQueries.build(countdown(), CertificateData(prp="(= s0 0)")),
+        SmtBudget(),
+        log=lines.append,
+    )
+    assert any("nothing to add" in ln for ln in lines)

@@ -51,6 +51,16 @@ macro "cert_close" : tactic =>
 macro "cert_states" v:ident : tactic =>
   `(tactic| ({{ plan.state_case_tactic }}))
 
+-- Branch conditions cvc5 decided under the invariant, so `split_ifs` does
+-- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
+-- obligation's own state binder; every step is `try`.
+macro "cert_facts" v:ident : tactic =>
+  `(tactic| ({{ plan.facts_tactic }}))
+
+-- Hypotheses no refutation needed. `skip` otherwise.
+macro "cert_thin" : tactic =>
+  `(tactic| ({{ plan.clear_tactic }}))
+
 -- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
 -- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
 macro "mat_collapse" : tactic =>
@@ -69,6 +79,7 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
    try simp_defs
+   try cert_facts s
    try simp_mat
    try cert_states s
    all_goals (cert_prep <;> cert_close)
@@ -100,7 +111,9 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     obtain ⟨l, hpre, heq⟩ := htr
     rw [← heq]
     clear heq
+    try cert_thin
     try simp_defs
+    try cert_facts s
     try simp_mat
     try cert_states s
     all_goals (cert_prep <;> cert_close)
