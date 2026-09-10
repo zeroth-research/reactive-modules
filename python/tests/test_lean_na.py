@@ -167,16 +167,26 @@ def test_state_type_is_top_level_and_M_is_emitted():
     assert tail.index("end Definition") < tail.index("abbrev M")
 
 
-def test_file_is_self_contained():
-    """It is elaborated inside lean-ltl-certifying, not the generated project."""
+def test_imports_are_only_what_M_needs():
+    """The driver pre-builds exactly this list, so it stays minimal.
+
+    Everything below `namespace Definition` is core Lean and the LTL
+    vocabulary belongs to the certificate, which imports it itself — so
+    neither `Mathlib` nor `LTLCertifying.*` belongs here, and nothing from
+    the generated project can, since the file is elaborated inside
+    lean-ltl-certifying.
+    """
     src = _na(_counter(), "(not (= s0 15))")
     imports = [l for l in src.splitlines() if l.startswith("import ")]
-    assert imports == [
-        "import LTLCertifying.Safety.Lemmas",
-        "import Mathlib",
-        "import Mathlib.Logic.Basic",
-        "import Cslib.Computability.Automata.NA.Basic",
-    ]
+    assert imports == ["import Cslib.Computability.Automata.NA.Basic"]
+
+
+def test_the_prebuild_targets_are_the_models_imports():
+    """Drift between the two is what leaves `lean2vmt` unable to elaborate."""
+    from zrth.lean.fbk_proveit import _LAKE_TARGETS
+    from zrth.lean.translate.na import NA_IMPORTS
+
+    assert _LAKE_TARGETS == NA_IMPORTS
 
 
 def test_binders_are_explicit_so_INIT_and_TRANS_keep_their_arity():

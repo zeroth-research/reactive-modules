@@ -49,16 +49,16 @@ class NAUnsupported(Exception):
     """The module cannot be expressed in the shape `lean2vmt` reads."""
 
 
-# Imports of the emitted model, copied from the hand-written reference model
-# `LTLCertifying/RMNATranslation/NACounterInt.lean`: that is the one input
-# `proveit.py` is known to accept, and `Mathlib` is what the LTL package's
-# own `Safety.Lemmas` elaborates against.  `M`'s type comes from Cslib.
-NA_IMPORTS = [
-    "LTLCertifying.Safety.Lemmas",
-    "Mathlib",
-    "Mathlib.Logic.Basic",
-    "Cslib.Computability.Automata.NA.Basic",
-]
+# What the model imports -- and, because the driver builds exactly this
+# list, what `lean2vmt` needs compiled before it can elaborate the file.
+#
+# The hand-written reference model
+# `LTLCertifying/RMNATranslation/NACounterInt.lean` also pulls in `Mathlib`
+# and `LTLCertifying.Safety.Lemmas`, but neither is used here: everything
+# below `namespace Definition` is core Lean, and the LTL vocabulary belongs
+# to the certificate, which imports it on its own.  Keeping the list at one
+# entry is what makes the pre-build cheap.
+NA_IMPORTS = ["Cslib.Computability.Automata.NA.Basic"]
 
 # `vmt2lean.py`'s `tp()` asserts on anything that is neither Int nor Bool,
 # and `lean2vmt` declares state constants by the abbrev's ascribed type.

@@ -451,11 +451,34 @@ describe the module:
 | a property outside that same fragment | ditto — `smt_to_lean_bool` raises rather than guess |
 | `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
 
-Two limits are by design rather than by defect: `lake build LTLCertifying` is
-run first (`lean2vmt` elaborates the model with `processHeader`, so the
-model's imports must already be compiled), and the installed certificate is
-**not** checked — it imports `LTLCertifying.*` and `Smt`, which the generated
-project does not provide, so `lake build Certificate` never sees it.
+Two limits are by design rather than by defect. First, the model's imports
+are `lake build`-ed before `proveit.py` runs: `lean2vmt` elaborates the model
+with `processHeader`, so they must already exist as oleans, and `lake exe
+lean2vmt` builds only the executable (whose own imports are just `Lean`).
+The model imports `Cslib.Computability.Automata.NA.Basic` and nothing else —
+`M`'s type is all it needs — so that pre-build is one target;
+`NA_IMPORTS` and `fbk_proveit._LAKE_TARGETS` are the same list, pinned by a
+test, because drift between them leaves `lean2vmt` unable to elaborate.
+Second, the installed certificate is **not** checked — it imports
+`LTLCertifying.*` and `Smt`, which the generated project does not provide,
+and `lake build Certificate` never reaches it either (the `Certificate`
+lean_lib globs only its root module, which imports `Certificate.Certificate`
+alone).
+
+### The `lean-ltl-certifying` side
+
+The route needs that checkout on the same toolchain as the generated
+projects, **v4.28.0**; it was pinned to v4.27.0 with `mathlib a3a10db` and
+`cslib d69fa7d`. Ported by matching `project.py`'s package set exactly
+(`cslib v4.28.0`, `smt f58d19d…`, Mathlib inherited through cslib), which
+lets one already-built `.lake/packages` — e.g. `python/tests/lean`'s — serve
+both. One source fix was needed: `bv_decide_light` dropped `bvSimprocs`
+along with the `seval` simp sets, and without it the `Bool` structure of a
+hypothesis reaches the bitblaster unnormalised, which abstracts whole
+`||`/`&&`/`==` compounds as opaque variables and reports a "potentially
+spurious counterexample". That is the SAT path (`vmt2lean -m sat`), not the
+`smt` one this route uses, but it is what `NACounterBoolTS_cert` and
+`lmcs06mutex0` are built on.
 
 [ltl]: https://github.com/zeroth/proof-prototyping
 

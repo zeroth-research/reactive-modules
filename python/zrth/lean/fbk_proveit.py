@@ -36,7 +36,12 @@ import sys
 from pathlib import Path
 
 from .common import LeanContext
-from .translate.na import NAUnsupported, atom_to_lean_na, check_na_supported
+from .translate.na import (
+    NA_IMPORTS,
+    NAUnsupported,
+    atom_to_lean_na,
+    check_na_supported,
+)
 
 
 class ProveItError(RuntimeError):
@@ -51,9 +56,14 @@ _REQUIRED = (
     Path("LTLCertifying") / "lean2vmt.lean",
 )
 
-# The lake target whose oleans `lean2vmt` needs on `LEAN_PATH` to elaborate
-# the generated model — it imports `LTLCertifying.Safety.Lemmas`.
-_LAKE_TARGET = "LTLCertifying"
+# `lean2vmt` elaborates the model with `processHeader`, so the model's
+# imports have to be on `LEAN_PATH` as oleans first — `lake exe lean2vmt`
+# builds only the executable, whose own import list is just `Lean`.
+# Building the model's *imports* rather than a lib target keeps the two in
+# step, and is also what works: the `LTLCertifying` lean_lib globs its root
+# module alone, so `lake build LTLCertifying` compiles `LTLCertifying.lean`
+# and nothing the model actually names.
+_LAKE_TARGETS = list(NA_IMPORTS)
 
 
 def resolve_project(path: str | Path) -> Path:
@@ -181,14 +191,9 @@ def run(
     )
     model = write_na_model(project_dir, project_name, ctx, property_lean)
 
-    # `lean2vmt` elaborates the model with `processHeader`, so the model's
-    # imports must already be compiled; `lake exe lean2vmt` alone builds
-    # only the executable.
-    print(
-        f".. Building {_LAKE_TARGET} in {root} "
-        "(needed to elaborate the model's imports)"
-    )
-    _run(["lake", "build", _LAKE_TARGET], cwd=root, what=f"lake build {_LAKE_TARGET}")
+    targets = " ".join(_LAKE_TARGETS)
+    print(f".. Building the model's imports ({targets}) in {root}")
+    _run(["lake", "build", *_LAKE_TARGETS], cwd=root, what=f"lake build {targets}")
 
     raw_cert = model.with_name(f"{project_name}Cert.lean")
     # `proveit.py` prompts before overwriting its output and we run it with
