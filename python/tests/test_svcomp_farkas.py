@@ -20,7 +20,7 @@ import z3
 
 from benchmarks.svcomp import _farkas
 from benchmarks.svcomp._bench import INT
-from benchmarks.svcomp._verify_ranking import (_v_module, build_obligation,
+from benchmarks.svcomp._termination import (_v_module, build_candidate,
                                                farkas_cell, system_of)
 from tests._fixtures import loop_bench
 from zrth import LIA, Module, Sort, Wire, sugar
@@ -50,7 +50,7 @@ def _obligation(state, update, layers, invariants=(), delta=1.0):
     """A real obligation for a compact loop spec — the module is built and walked
     exactly as the pipeline does it (see :mod:`tests._fixtures`)."""
     named = [(f"inv{k}", (lambda st, p=p: p)) for k, p in enumerate(invariants)]
-    return build_obligation(loop_bench(state, update), layers, delta, named)
+    return build_candidate(loop_bench(state, update), layers, delta, named)
 
 
 def _decrement(layers, delta=1.0, step=1):
@@ -63,8 +63,8 @@ def _certify(ob, prop=None, rule=None):
     claim) by ``rule`` (default: the obligation's decrease witness; for a Safety
     claim given without one, its own predicate as the inductive invariant)."""
     if rule is None:
-        rule = ob.rule if prop is None else inductive((prop.holds,))
-    return certify(ob.system, prop or ob.prop, rule)
+        rule = ob.witness if prop is None else inductive((prop.holds,))
+    return certify(ob.system, prop or ob.claim, rule)
 
 
 # --- affine_coeffs: exact on affine input, rejects everything else ----------
@@ -321,9 +321,9 @@ def test_a_witness_refuses_a_claim_it_cannot_use():
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
     with pytest.raises(Unsupported, match="has none"):
-        certify(ob.system, ob.prop, inductive(()))
+        certify(ob.system, ob.claim, inductive(()))
     with pytest.raises(TypeError):
-        certify(ob.system, ob.prop)
+        certify(ob.system, ob.claim)
 
 
 def test_the_property_owns_the_domain():
@@ -332,10 +332,10 @@ def test_the_property_owns_the_domain():
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
 
-    empty = _certify(ob, Liveness(lambda W, S: z3.BoolVal(False)), ob.rule)
+    empty = _certify(ob, Liveness(lambda W, S: z3.BoolVal(False)), ob.witness)
     assert not empty.verified and "no step" in empty.status, empty.status
     # and the real property does find steps on the same obligation
-    full = _certify(ob, ob.prop, ob.rule)
+    full = _certify(ob, ob.claim, ob.witness)
     assert full.verified, full.status
 
 
@@ -344,7 +344,7 @@ def test_the_rule_owns_the_goal():
     margin is a rule change and is rejected for the same net."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
-    v_s, v_sp = ob.rule.ranks[0]
+    v_s, v_sp = ob.witness.ranks[0]
     assert _certify(ob, rule=decrease(v_s, v_sp, 1.0)).verified
     hard = _certify(ob, rule=decrease(v_s, v_sp, 2.0))
     assert not hard.verified, "x decreases by 1, so a margin of 2 cannot hold"
@@ -576,7 +576,7 @@ def test_a_safety_claim_may_speak_of_the_step():
     ob = _decrement(layers)                    # while (x > 0) x = x - 1, from x = 0
     down = _certify(ob, Safety(lambda W, S: S.next["x"] <= S["x"]), inductive(()))
     assert down.verified, down.status
-    v_sp = ob.rule.ranks[0][1]                 # V read at the next state: a wire too
+    v_sp = ob.witness.ranks[0][1]                 # V read at the next state: a wire too
     bounded = _certify(ob, Safety(lambda W, S: W[v_sp] >= 0), inductive(()))
     assert bounded.verified, bounded.status
     up = _certify(ob, Safety(lambda W, S: S.next["x"] >= S["x"] + 1), inductive(()))
@@ -588,7 +588,7 @@ def test_an_invariant_may_not_name_a_wire():
     rule — and a rule whose atom is not linear is refused by name too."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
-    v_s = ob.rule.ranks[0][0]
+    v_s = ob.witness.ranks[0][0]
     with pytest.raises(Unsupported, match="over the state"):
         _certify(ob, Safety(lambda W, S: S["x"] >= 0),
                  inductive((lambda W, S: W[v_s] >= 0,)))

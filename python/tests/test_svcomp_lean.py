@@ -18,10 +18,10 @@ from benchmarks.svcomp._lean import _render_conjuncts, _trivial, emit_program
 from benchmarks.svcomp import discover
 from benchmarks.svcomp._farkas import certify, inductive, lex_decrease, read_system
 from benchmarks.svcomp._property import terminates
-from benchmarks.svcomp._verify_ranking import _v_module, system_of
+from benchmarks.svcomp._termination import _v_module, system_of
 from zrth import Module
 from benchmarks.svcomp._property import Safety
-from benchmarks.svcomp._verify_ranking import build_obligation, farkas_cell
+from benchmarks.svcomp._termination import build_candidate, farkas_cell
 from zrth.sugar import ite, ne
 
 LEAN_DIR = Path(__file__).resolve().parents[1] / "benchmarks" / "svcomp" / "lean"
@@ -33,7 +33,7 @@ def _decrement_obligation(invariants=()):
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
     named = [(f"inv{k}", (lambda st, p=p: p)) for k, p in enumerate(invariants)]
-    ob = build_obligation(bench, layers, 1.0, named)
+    ob = build_candidate(bench, layers, 1.0, named)
     res = farkas_cell(ob)
     assert res.verified, res.status
     return ob.system, res.certificate
@@ -131,7 +131,7 @@ def test_emit_multi_path_unions_the_step():
     layers = [(np.array([[1], [-1]]), np.array([0, 0])),
               (np.array([[1, 1]]), np.array([0]))]
     bench = loop_bench(("x",), lambda x: ite(ne(x, 0), ite(x > 0, x - 1, x + 1), x))
-    ob = build_obligation(bench, layers, 1.0, [])
+    ob = build_candidate(bench, layers, 1.0, [])
     res = farkas_cell(ob)
     assert res.verified, res.status
     assert len(res.certificate.certificates) >= 2, "a branching body should give several paths"
@@ -146,7 +146,7 @@ def test_non_trivial_cell_uses_its_certificate():
     emitted proof reaches it through farkas_sound and refute_bridge."""
     layers = [(np.array([[2]]), np.array([-1])), (np.array([[1]]), np.array([0]))]
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
-    ob = build_obligation(bench, layers, 1.0, [])
+    ob = build_candidate(bench, layers, 1.0, [])
     res = farkas_cell(ob)
     assert res.verified, res.status
     src = emit_program("nontrivial", ob.system, res.certificate)
@@ -175,7 +175,7 @@ def _always_obligation(pred, inv=None):
     proved by the invariant ``inv`` (default: ``pred`` itself)."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
-    ob = build_obligation(bench, layers, 1.0, [])
+    ob = build_candidate(bench, layers, 1.0, [])
     prop = Safety(pred)
     rule = inductive((inv or pred,))
     res = certify(ob.system, prop, rule)
@@ -339,7 +339,7 @@ def test_the_proof_layer_refuses_a_safety_claim_over_the_step():
     from benchmarks.svcomp._nodes import Unsupported
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
-    ob = build_obligation(bench, layers, 1.0, [])
+    ob = build_candidate(bench, layers, 1.0, [])
     res = certify(ob.system, Safety(lambda W, S: S.next["x"] <= S["x"]), inductive(()))
     assert res.verified, res.status
     with pytest.raises(Unsupported, match="over the step"):

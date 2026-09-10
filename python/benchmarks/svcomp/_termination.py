@@ -15,10 +15,10 @@ graph. Nothing distinguishes program from rank except what the property names.
 
 Interface
 =========
-The obligation is packaged as an :class:`Obligation` (backend-neutral Z3 pieces)
-built by :func:`build_obligation`, and a **verifier** is any callable
+A candidate rank is packaged as a :class:`Candidate` (backend-neutral Z3 pieces)
+built by :func:`build_candidate`, and a **verifier** is any callable
 
-    Verifier = Callable[[Obligation], VerifyResult]
+    Verifier = Callable[[Candidate], VerifyResult]
 
 so different methods plug in interchangeably.
 """
@@ -46,7 +46,7 @@ from zrth.sugar import expr, nxt, relu
 # ---------------------------------------------------------------------------
 
 @dataclass
-class Obligation:
+class Candidate:
     """The ranking obligation over the program module, as Z3 terms.
 
     ``s_syms``/``sp_syms``: pre- and next-state (the transition). ``V_s``/``V_sp``:
@@ -70,8 +70,8 @@ class Obligation:
     layers: object = None
     net: object = None
     system: object = None    # program ⊕ V(s) ⊕ V(s'), as the verifier reads it
-    prop: object = None      # terminates(), over the program's columns
-    rule: object = None      # decrease(V(s) wire, V(s') wire, delta)
+    claim: object = None     # terminates(), over the program's columns
+    witness: object = None   # decrease(V(s) wire, V(s') wire, delta)
 
 
 @dataclass
@@ -82,7 +82,7 @@ class VerifyResult:
     status: str = ""                             # VERIFIED / FAILED(...) / UNKNOWN
 
 
-Verifier = Callable[[Obligation], VerifyResult]
+Verifier = Callable[[Candidate], VerifyResult]
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ def _v_module(state_pairs, layers, *, read_next: bool):
     (its init awaits the next state, since a sequential atom's init may not read a
     latched wire). ``read_next=True`` -> V(s'): a **combinatorial** atom awaiting
     the program's *next* state. Both compute the same function; composed with the
-    program they are two wires the rule can name — V at each end of a step."""
+    program they are two wires the witness can name — V at each end of a step."""
     out = pair()
     if read_next:
         class _V(sugar.Module):
@@ -147,13 +147,13 @@ def system_of(bench: Bench) -> System:
                                assume=bench.precondition)
 
 
-def build_obligation(bench: Bench, layers, delta: float, invariants=None,
-                     system=None) -> Obligation:
+def build_candidate(bench: Bench, layers, delta: float, invariants=None,
+                     system=None) -> Candidate:
     """The ranking obligation, read off the program module and V's.
 
     The program is composed with two V modules — one reading the latched state,
     one awaiting the next — and read as one system. The columns are the latched
-    wires some term reads (the program's); V's two wires are named by the rule.
+    wires some term reads (the program's); V's two wires are named by the witness.
 
     ``invariants`` (from :func:`._invariants.infer_invariants`) are inductive
     loop facts conjoined with the guard to shrink the verification domain to the
@@ -167,33 +167,33 @@ def build_obligation(bench: Bench, layers, delta: float, invariants=None,
         read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names),
         assume=system.assume, invariants=inv_preds)
     z = composed.view.values
-    prop = terminates()
-    rule = decrease(vs[1], vsp[1], delta)
-    return Obligation(composed.names, list(composed.s_syms), composed.sp_syms,
+    claim = terminates()
+    witness = decrease(vs[1], vsp[1], delta)
+    return Candidate(composed.names, list(composed.s_syms), composed.sp_syms,
                       z[vs[1]][0], z[vsp[1]][0], float(delta),
                       guard_from_transition(composed.s_map, composed.sp_map,
                                             composed.names),
                       invariants=inv_preds, layers=layers,
                       net=reading(composed, vs[1]).net, system=composed,
-                      prop=prop, rule=rule)
+                      claim=claim, witness=witness)
 
 
 # ---------------------------------------------------------------------------
-# Verifiers  (Obligation -> VerifyResult)
+# Verifiers  (Candidate -> VerifyResult)
 # ---------------------------------------------------------------------------
 
-def verification_domain(ob: Obligation):
+def verification_domain(ob: Candidate):
     """The states the obligation must hold on: guard ∧ invariants."""
     return z3.And(ob.guard, *ob.invariants) if ob.invariants else ob.guard
 
 
-def _model_cex(ob: Obligation, solver: z3.Solver) -> np.ndarray:
+def _model_cex(ob: Candidate, solver: z3.Solver) -> np.ndarray:
     m = solver.model()
     return np.array([m.eval(v, model_completion=True).as_long() for v in ob.s_syms],
                     dtype=np.float64)
 
 
-def smt_oneshot(ob: Obligation) -> VerifyResult:
+def smt_oneshot(ob: Candidate) -> VerifyResult:
     """One-shot Z3 check: V >= 0 and V(s) - V(s') >= delta on the domain."""
     dom = verification_domain(ob)
     s1 = z3.Solver(); s1.add(dom); s1.add(ob.V_s < 0)
@@ -212,11 +212,11 @@ def smt_oneshot(ob: Obligation) -> VerifyResult:
     return VerifyResult(True, status="VERIFIED")
 
 
-def farkas_cell(ob: Obligation) -> VerifyResult:
+def farkas_cell(ob: Candidate) -> VerifyResult:
     """Cell/CEGAR Farkas verifier: certifies ``V(s) - V(s') >= delta`` per ReLU
     cell with an exact Farkas certificate (for Lean export). Sound but incomplete
     — cells with a non-affine transition or a nonlinear/disjunctive guard atom
     cannot be certified (returns FAILED). That the rank is bounded below is the
     witness's own check (:func:`._farkas.check_ranks`)."""
-    r = certify(ob.system, ob.prop, ob.rule)
+    r = certify(ob.system, ob.claim, ob.witness)
     return VerifyResult(r.verified, r.counterexample, certificate=r, status=r.status)

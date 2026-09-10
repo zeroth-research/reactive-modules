@@ -20,7 +20,7 @@ from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
 from ._domain import domain as loop_domain
 from ._equiv import _run_block
 from ._invariants import infer_invariants
-from ._verify_ranking import build_obligation, smt_oneshot, system_of
+from ._termination import build_candidate, smt_oneshot, system_of
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +165,9 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
     """nt-matched: PAS trajectory rollouts, AdamW hinge loss, outer
     round-and-rebuild. Defaults mirror nt's learn_nrf_cfa.
 
-    ``verifier`` is any ``Obligation -> VerifyResult`` (like nt's
+    ``verifier`` is any ``Candidate -> VerifyResult`` (like nt's
     ``verifier_method``): the round-and-rebuild loop builds the obligation for
-    each candidate (via ``build_obligation``) and accepts the first V it verifies.
+    each candidate (via ``build_candidate``) and accepts the first V it verifies.
     Default is ``smt_oneshot``; a Farkas or invariant-augmented verifier swaps in
     without touching the trainer."""
     rng = np.random.default_rng(seed)
@@ -200,7 +200,7 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
         for scale in scales:
             layers = model.to_layers(scale)
             last_layers = layers
-            ob = build_obligation(bench, layers, delta, invariants,
+            ob = build_candidate(bench, layers, delta, invariants,
                                   system=system)
             res = verifier(ob)
             if res.verified:

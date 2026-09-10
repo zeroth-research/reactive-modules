@@ -3,11 +3,11 @@
 A test that hands the verifier hand-written z3 terms cannot exercise anything the
 verifier reads off the *module* — the guard's shape, the node view, the ranking
 wire. :func:`loop_bench` builds a real module from a compact spec, so a
-test goes through :func:`._verify_ranking.build_obligation` and the production
+test goes through :func:`._termination.build_candidate` and the production
 verifier rather than a parallel path.
 
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
-    ob = build_obligation(bench, layers, 1.0, [])
+    ob = build_candidate(bench, layers, 1.0, [])
 """
 from __future__ import annotations
 
