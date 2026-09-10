@@ -247,3 +247,98 @@ def _selector_index(sel: cvc5.Term) -> int:
     if "_stor_" in sym:
         return int(sym.rsplit("_stor_", 1)[1])
     raise ValueError(f"Cannot extract selector index from `{sym}`")
+
+
+# ---------------------------------------------------------------------
+# Bool-valued output, for the NA encoding (`translate/na.py`)
+# ---------------------------------------------------------------------
+
+# `lean2vmt`'s `exprToSMT` reads `decide`'s *instance* argument, not its
+# proposition, so a comparison only survives the round trip when the
+# instance it picks is one of `Int.decLt` / `Int.decLe` / `Int.decEq`.
+# Normalising `>`/`≥` into `<`/`≤` with swapped operands keeps it that way
+# without relying on how `GT.gt` unfolds during instance synthesis.
+_BOOL_CMP = {
+    Kind.LT: ("<", False),
+    Kind.LEQ: ("≤", False),
+    Kind.GT: ("<", True),
+    Kind.GEQ: ("≤", True),
+}
+
+_BOOL_ARITH = {
+    Kind.ADD: " + ",
+    Kind.SUB: " - ",
+    Kind.MULT: " * ",
+}
+
+
+def smt_to_lean_bool(term: cvc5.Term, var_accessor: dict[str, str]) -> str:
+    """Translate `term` into a **Bool**-valued Lean expression.
+
+    `var_accessor` maps each SMT constant name to the Lean expression that
+    reads it (for the NA encoding, `s0` → `(var_0 state)`).
+
+    Unlike :func:`smt_to_lean`, which emits `Prop` (`∧`, `¬`, `≤`), this
+    stays in `Bool` (`&&`, `!`, `decide (… ≤ …)`) because that is what
+    `lean2vmt` can translate: `decide` applied to a compound proposition
+    hands it `instDecidableAnd`, which it prints as an unapplied leaf.
+    Raises `ValueError` on anything outside that fragment rather than
+    emitting Lean that would silently mistranslate.
+    """
+    return _walk_bool(term, var_accessor)
+
+
+def _walk_bool(t: cvc5.Term, acc: dict[str, str]) -> str:
+    k = t.getKind()
+    recur = lambda x: _walk_bool(x, acc)
+
+    if k == Kind.CONST_BOOLEAN:
+        return "true" if t.getBooleanValue() else "false"
+    if k == Kind.CONST_INTEGER:
+        return f"({t.getIntegerValue()} : Int)"
+    if k == Kind.CONSTANT:
+        name = t.getSymbol()
+        if name in acc:
+            return acc[name]
+        raise ValueError(
+            f"Unknown free variable `{name}` (known: {sorted(acc)})"
+        )
+
+    if k == Kind.NOT:
+        return f"(!{recur(t[0])})"
+    if k == Kind.AND:
+        return "(" + " && ".join(recur(c) for c in t) + ")"
+    if k == Kind.OR:
+        return "(" + " || ".join(recur(c) for c in t) + ")"
+    if k == Kind.IMPLIES:
+        # cvc5 keeps `=>` variadic and right-associated; `a → b` is `!a || b`.
+        parts = [recur(c) for c in t]
+        out = parts[-1]
+        for p in reversed(parts[:-1]):
+            out = f"((!{p}) || {out})"
+        return out
+    if k == Kind.XOR:
+        return f"(!({recur(t[0])} == {recur(t[1])}))"
+
+    if k == Kind.EQUAL:
+        return f"({recur(t[0])} == {recur(t[1])})"
+    if k == Kind.DISTINCT:
+        return f"(!({recur(t[0])} == {recur(t[1])}))"
+
+    if k in _BOOL_CMP:
+        op, swap = _BOOL_CMP[k]
+        lhs, rhs = (t[1], t[0]) if swap else (t[0], t[1])
+        return f"(decide ({recur(lhs)} {op} {recur(rhs)}))"
+
+    if k in _BOOL_ARITH:
+        return "(" + _BOOL_ARITH[k].join(recur(c) for c in t) + ")"
+    if k == Kind.NEG:
+        return f"(-{recur(t[0])})"
+
+    if k == Kind.ITE:
+        return f"(if {recur(t[0])} then {recur(t[1])} else {recur(t[2])})"
+
+    raise ValueError(
+        f"SMT→Bool Lean: unsupported kind {k} in {t}; lean2vmt has no "
+        "translation for it"
+    )

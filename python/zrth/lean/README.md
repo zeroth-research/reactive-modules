@@ -370,6 +370,8 @@ path/NameScalar.lean         # scalar encoding + equivalence theorems
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
+| `--fbk-proveit` | — | Path to a `lean-ltl-certifying` checkout; certify through its `proveit.py` instead (see below) |
+| `--ic3ia` | — | Path to the `ic3ia` binary, forwarded to `proveit.py` |
 
 ### State variable naming in SMT-LIB predicates
 
@@ -377,6 +379,85 @@ path/NameScalar.lean         # scalar encoding + equivalence theorems
 `vars` list passed to `Module.sequential`).  For tuple/matrix wires, use
 SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 `e0..eM-1` (next) and `el0..elM-1` (latched).
+
+---
+
+## Certifying through `lean-ltl-certifying` (`--fbk-proveit`)
+
+`--fbk-proveit=<dir>` swaps verith's own invariant machinery for the
+`proveit.py` driver of the [`lean-ltl-certifying`][ltl] repository, which
+model-checks the system with ic3ia and renders the inductive invariant it
+finds back as a Lean certificate:
+
+```bash
+uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p Counter \
+    --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying \
+    --ic3ia ~/ic3ia/build/ic3ia
+```
+
+```
+mymodule.py ──verith──▶ out/Counter/                       (bare, as usual)
+                        out/Counter/ProveIt/CounterNA.lean (the NA encoding)
+                                  │
+                                  ▼   proveit.py
+                        lean2vmt ─▶ ic3ia ─▶ vmt2lean
+                                  │
+                                  ▼
+                        out/Counter/ProveIt/CounterCert.lean
+                                  │
+                                  ▼   "processing" — a copy, for now
+                        out/Counter/Certificate/ProveItCert.lean
+```
+
+The project itself is generated **bare**: the invariant comes from ic3ia, so
+`--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
+silently ignored, and `--property` is required.
+
+### Encoding 7 — NA (`translate/na.py`)
+
+`proveit.py`'s first step, `lake exe lean2vmt`, pattern-matches on a very
+specific Lean shape, and the FBK encoding misses on every point — so this is
+a separate encoding, emitted only for this route and never part of the
+generated project's `lake build`:
+
+| `lean2vmt` requires | why | FBK emits |
+|---|---|---|
+| binders `state` / `statenext` | `emitDefs` looks them up by name to tell current from next | `state`, `newstate`, `s` |
+| state read as `var_i state` | `exprToSMT`'s `.fvar` case returns the bare binder name and **drops the index**, collapsing every slot onto one variable | `(state i)` |
+| next state as `var_i statenext` | this is how `collectLatchesIndices` finds the latches at all | `(newstate i)` |
+| `INIT` / `TRANS` / `PROPERTY` | they become `:init`, `:trans`, `:invar-property` | `InitCond`, `TransRel`, nothing |
+| top-level `StateType`, `abbrev M : … NA …` | the certificate template imports the model and names both | everything inside `namespace FBK` |
+| self-contained imports | it is elaborated inside the `lean-ltl-certifying` package | imports `Core.Basic`, `System.Scalar`, … |
+
+The property is translated to **`Bool`**-valued Lean (`&&`, `!`,
+`decide (… ≤ …)`), not the `Prop` form `smt_to_lean` emits: `lean2vmt` reads
+`decide`'s *instance* argument, so `decide` applied to a compound proposition
+hands it `instDecidableAnd`, which it prints as an unapplied leaf.  `>` / `≥`
+are normalised to `<` / `≤` with swapped operands for the same reason.
+
+### What the route refuses
+
+Everything `lean2vmt`/`vmt2lean.py` cannot represent aborts with a non-zero
+exit instead of producing a transition system that parses but does not
+describe the module:
+
+| rejected | because |
+|---|---|
+| external input wires | `lean2vmt` models only `state`/`statenext` |
+| a ctrl wire holding more than one element | `R_i` would compare a tuple |
+| state elements other than `Int`/`Bool` | `vmt2lean.py`'s `tp()` maps back only those two |
+| state mixing `Int` and `Bool` | a per-index `TypeMap` needs a `match`, whose auxiliary matcher has never been through `lean2vmt` |
+| `Ne`, `ReLU`, `ToUnsigned`, `Argmax`, `Linear`, any BV op | their Lean form reaches `exprToSMT` as an unapplied leaf (`instDecidableNot`, `max`, `toNat`) or calls into `Core.Basic` |
+| a property outside that same fragment | ditto — `smt_to_lean_bool` raises rather than guess |
+| `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
+
+Two limits are by design rather than by defect: `lake build LTLCertifying` is
+run first (`lean2vmt` elaborates the model with `processHeader`, so the
+model's imports must already be compiled), and the installed certificate is
+**not** checked — it imports `LTLCertifying.*` and `Smt`, which the generated
+project does not provide, so `lake build Certificate` never sees it.
+
+[ltl]: https://github.com/zeroth/proof-prototyping
 
 ---
 

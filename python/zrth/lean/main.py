@@ -91,6 +91,10 @@ examples:
   # AI inference with Ollama (requires pip install zrth[ai-local])
   uv run verith mymodule.py -P "x == 0" --infer \\
       --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p MyProject
+
+  # certify through lean-ltl-certifying's proveit.py (lean2vmt -> ic3ia -> vmt2lean)
+  uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p MyProject \\
+      --fbk-proveit ~/proof-prototyping/lean-ltl-certifying --ic3ia ~/ic3ia/build/ic3ia
 """
 
 
@@ -224,8 +228,57 @@ def main():
         default=None,
         help="Write a standalone ZerothHammer.lean to this path.",
     )
+    parser.add_argument(
+        "--fbk-proveit",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Path to a `lean-ltl-certifying` checkout. Certify through its "
+            "proveit.py (lean2vmt -> ic3ia -> vmt2lean) instead of verith's "
+            "own route: the project is generated bare, an NA-encoded model "
+            "is written to <project>/ProveIt/, and the resulting certificate "
+            "is installed as <project>/Certificate/ProveItCert.lean. "
+            "Requires --property; rejects --infer/--invariant/--ranking/--pre."
+        ),
+    )
+    parser.add_argument(
+        "--ic3ia",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path to the ic3ia executable, forwarded to proveit.py. "
+            "When omitted proveit.py falls back to $IC3IA, then to `ic3ia` "
+            "on PATH. Only meaningful with --fbk-proveit."
+        ),
+    )
 
     args = parser.parse_args()
+
+    # --fbk-proveit takes over the whole certification route, so anything it
+    # would have to ignore is an error rather than a silent no-op.
+    if args.fbk_proveit:
+        if not args.property:
+            parser.error("--fbk-proveit requires --property")
+        conflicts = [
+            name
+            for name, value in (
+                ("--infer", args.infer),
+                ("--invariant", args.invariant),
+                ("--ranking", args.ranking),
+                ("--pre", args.pre),
+                ("--cert-file", args.cert_file),
+                ("--hammer-file", args.hammer_file),
+            )
+            if value
+        ]
+        if conflicts:
+            parser.error(
+                f"--fbk-proveit is incompatible with {', '.join(conflicts)}: "
+                "the invariant comes from ic3ia and the project is generated "
+                "bare"
+            )
+    elif args.ic3ia:
+        parser.error("--ic3ia is only meaningful together with --fbk-proveit")
 
     # --hammer-file: generate ZerothHammer.lean and exit (no module needed)
     if args.hammer_file:
@@ -308,6 +361,24 @@ import {out.stem}Scalar
         cert_data=project_cert_data,
         module_file=args.module_file,
     )
+
+    if args.fbk_proveit:
+        from .fbk_proveit import ProveItError, run as run_proveit
+
+        print(".. Certifying through lean-ltl-certifying's proveit.py")
+        try:
+            run_proveit(
+                ltl_project=args.fbk_proveit,
+                module=module,
+                project_dir=project_dir,
+                project_name=args.project_name,
+                property_smt=args.property,
+                ic3ia=args.ic3ia,
+            )
+        except ProveItError as e:
+            raise SystemExit(f"error: {e}") from e
+        print(f"\nProject ready at: {project_dir}")
+        return
 
     lean_code = project_dir / "System" / "System.lean"
 
