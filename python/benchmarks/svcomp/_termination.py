@@ -36,7 +36,7 @@ import z3
 from ._bench import Bench, INT, pair  # noqa: F401
 from ._domain import guard_from_transition
 from ._farkas import System, certify, decrease, read_system, reading
-from ._property import terminates
+from ._property import Liveness
 from zrth import LIA, Module, sugar
 from zrth.sugar import expr, nxt, relu
 
@@ -136,6 +136,22 @@ def _v_module(state_pairs, layers, *, read_next: bool):
 # ---------------------------------------------------------------------------
 # Building the obligation (the seam onto the decision procedure)
 # ---------------------------------------------------------------------------
+
+def terminates(over=None) -> Liveness:
+    """This client's claim: the columns ``over`` stop moving.
+
+    A reactive module's update is total, it ticks forever, so termination is a
+    property of what the module *encodes*, under the convention that a finished
+    program stutters: the rounds that count are those where one of these columns
+    changes. Leaving that domain is reaching a fixed point, which a run never
+    leaves, so here "leaves infinitely often" is "leaves for good". Defaults to
+    every column, which is right because the rank atoms composed alongside are
+    stateless; anything stateful composed in must be left out of ``over``."""
+    def moving(W, S):
+        names = over if over is not None else S.names
+        return z3.Or(*[S.next[n] != S[n] for n in names])
+    return Liveness(moving)
+
 
 def system_of(bench: Bench) -> System:
     """``bench``'s program module, read once, with its precondition as ``assume``.

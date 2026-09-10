@@ -30,7 +30,8 @@ from zrth.sugar import ite as dsl_ite
 from benchmarks.svcomp._farkas import (certify, check_kinds, check_supported,
                                       decrease, inductive, lex_decrease,
                                       read_system)
-from benchmarks.svcomp._property import Liveness, Safety, terminates
+from benchmarks.svcomp._property import Liveness, Safety
+from benchmarks.svcomp._termination import terminates
 from benchmarks.svcomp._nodes import Node, Unsupported, node_view
 from benchmarks.svcomp._farkas import (
     Net,
