@@ -66,6 +66,7 @@ import argparse
 from pathlib import Path
 
 from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
+from .smt_query import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget, pre_check
 from .project import (
     create_project,
     generate_standalone_cert_lean,
@@ -91,6 +92,10 @@ examples:
   # AI inference with Ollama (requires pip install zrth[ai-local])
   uv run verith mymodule.py -P "x == 0" --infer \\
       --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p MyProject
+
+  # ask cvc5 whether the obligations are true before spending a lake build on them
+  uv run verith mymodule.py -P "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
+      --pre-check cvc5 -o out/ -p MyProject
 
   # certify through lean-ltl-certifying's proveit.py (lean2vmt -> ic3ia -> vmt2lean)
   uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p MyProject \\
@@ -252,6 +257,41 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--pre-check",
+        default="none",
+        choices=["none", "cvc5"],
+        help=(
+            "Before generating, ask cvc5 whether the certificate obligations "
+            "are actually true. A refuted obligation means the invariant or "
+            "ranking is wrong, which a failing `lake build` cannot tell you "
+            "apart from tactics that are merely too weak. Bounded by "
+            "--smt-timeout / --smt-budget; anything cvc5 cannot answer is "
+            "reported as unknown and changes nothing."
+        ),
+    )
+    parser.add_argument(
+        "--smt-timeout",
+        type=int,
+        default=DEFAULT_CALL_MS,
+        metavar="MS",
+        help=(
+            f"Wall-clock limit for a single SMT query, in ms "
+            f"(default: {DEFAULT_CALL_MS})."
+        ),
+    )
+    parser.add_argument(
+        "--smt-budget",
+        type=int,
+        default=DEFAULT_PHASE_MS,
+        metavar="MS",
+        help=(
+            f"Wall-clock limit for one phase of SMT queries, in ms "
+            f"(default: {DEFAULT_PHASE_MS}). A phase that fans out over many "
+            f"small queries still cannot exceed this."
+        ),
+    )
+
     args = parser.parse_args()
 
     # --fbk-proveit takes over the whole certification route, so anything it
@@ -311,6 +351,14 @@ def main():
     # Translate SMT-LIB predicates to Lean expression strings for codegen.
     # `cert_data` keeps the original SMT source so `magic` can parse it with
     # its own cvc5 context.
+    budget = SmtBudget(per_call_ms=args.smt_timeout, phase_ms=args.smt_budget)
+
+    if args.pre_check == "cvc5":
+        if cert_data is None:
+            print(".. SMT pre-check: nothing to check (no certificate data)")
+        else:
+            pre_check(module, cert_data, budget)
+
     project_cert_data = cert_data
     if cert_data is not None:
         project_cert_data = smt_predicates_to_lean(cert_data, module)
