@@ -148,6 +148,52 @@ def test_finite_state_gets_decide_last():
     assert plan.closers[-1] == "decide"
 
 
+def test_finite_narrow_state_is_enumerated():
+    """A two-valued state element gets split before the closers run.
+
+    `decide` is in the plan for a finite state but can never fire while the
+    state is a free variable, and a branch that is contradictory only because
+    `BitVec 1` has two inhabitants (`x ≠ 0#1` and `x ≠ 1#1`) reduces to a bare
+    `False` that nothing else discharges.
+    """
+    plan = _plan(_bv_module(), "fun s => ((s 0 0) = 1#1)")
+    tac = plan.state_case_tactic
+    assert "BitVec.eq_zero_or_eq_one" in tac
+    assert "($v)" in tac, "the enumeration must take the obligation's binder"
+    assert "simp only [h0" in tac, "the two values have to reach the hypotheses"
+
+
+def test_unbounded_state_is_not_enumerated():
+    """Nothing to enumerate over Int or Real, so the step is a no-op."""
+    assert _plan(_int_module(), "fun s => True").state_case_tactic == "skip"
+    assert _plan(_real_module(), "fun s => True").state_case_tactic == "skip"
+
+
+def test_wide_finite_state_is_not_enumerated():
+    """Each element doubles the fan-out, so a wide state opts out."""
+    from zrth.lean.tactics import MAX_ENUMERABLE_SLOTS
+
+    b = Var(BitVec(1, [MAX_ENUMERABLE_SLOTS + 1, 1]))
+    wide = Module.sequential(
+        [b],
+        [Term(BV.Const(torch.zeros((MAX_ENUMERABLE_SLOTS + 1, 1), dtype=torch.int64)),
+              [X(b)])],
+        [Term(BV.Id(), [X(b)], [b])],
+    )
+    assert _plan(wide, "fun s => True").state_case_tactic == "skip"
+
+
+def test_wide_bitvec_is_not_enumerated():
+    """`BitVec.eq_zero_or_eq_one` is width-1 only; wider has 2^w values."""
+    b = Var(BitVec(8, [1, 1]))
+    m = Module.sequential(
+        [b],
+        [Term(BV.Const(torch.tensor([[0]])), [X(b)])],
+        [Term(BV.Id(), [X(b)], [b])],
+    )
+    assert _plan(m, "fun s => True").state_case_tactic == "skip"
+
+
 def test_flat_predicates_skip_the_splitting_steps():
     """Nothing to split, nothing to case on."""
     x = Var(Int([1, 1]))

@@ -53,14 +53,23 @@ Give every project the same package name (`-p Rea`) and `Core`, `LeanAI` and
 cache afterwards; only `System/*` and `Certificate/*` recompile. Measured:
 **~9 s per project**, 20 MB of shared build output, Mathlib never rebuilt.
 
+**One shared build directory takes one writer.** `System.System`, `System.Data`
+and the rest have the same module names in every project, so the olean for
+`System.System` in the shared `build/` belongs to whichever project compiled
+last. Two sweeps running at once silently serve each other's modules, and the
+symptom is not a clean failure: it is `unknown constant 'c0'` and type
+mismatches inside `System/Rel.lean` or `System/FBK.lean`, which read exactly
+like a codegen bug. Give each concurrent runner its own `build/` (the
+`packages` symlink can still be shared — Mathlib is read-only).
+
 ---
 
 ## Results
 
-47 of 48 cases generate; 47 compile all six encodings; 35 certificates discharge. Of the 12 that
+47 of 48 cases generate; 47 compile all six encodings; 36 certificates discharge. Of the 11 that
 do not, **8 are negative controls that are supposed to fail** — a missing
 property, a non-inductive invariant, a constant or increasing ranking, a
-dropped precondition. That leaves 4 real limits (`BVState`, `OpArgmax`, `OpMax`, `OpMin`),
+dropped precondition. That leaves 3 real limits (`OpArgmax`, `OpMax`, `OpMin`),
 all in the next section.
 
 Against the pipeline as it stood before this work, measured on the 36 cases
@@ -83,11 +92,13 @@ decrease. A fifth, `RealConjDisj`, was wrong in the same family and is
 dissected in open issue 3. A wrong test failing is not a tool limit.
 
 Over the full 48-case matrix: 47 generate, all 47 compile all six encodings,
-35 certificates discharge, and the same 35 projects are green end to end —
-`System` no longer fails anywhere. No case that verified at any earlier point
-in this work stopped verifying: the switch from a fixed tactic chain to a
-generated plan reproduced all 44 shared verdicts exactly, and the FBK fix moved
-five cases from broken to green while leaving every other verdict untouched.
+36 certificates discharge, and the same 36 projects are green end to end —
+`System` no longer fails anywhere, and every remaining failure is a
+certificate failure. No case that verified at any earlier point in this work
+stopped verifying: the switch from a fixed tactic chain to a generated plan
+reproduced all 44 shared verdicts exactly, the FBK fix moved five cases from
+broken to green, and the state-enumeration step moved `BVState` — each time
+with every other verdict unchanged.
 
 | case | what it probes | gen | System | Certificate |
 |---|---|---|---|---|
@@ -116,7 +127,7 @@ five cases from broken to green while leaving every other verdict untouched.
 | `ReluInput` | ReLU + external input, sound under the precondition | ok | ok | ok |
 | `ReluInputNoPre` | same module without --pre: e is unconstrained, ranking cannot decrease | ok | ok | **fail** |
 | `BoolState` | Bool state (2-bit counter), Bool->Int ranking via Ite | ok | ok | ok |
-| `BVState` | BitVec state — omega does not reason about BitVec | ok | ok | **fail** |
+| `BVState` | BitVec state: omega does not model BitVec, and a branch that is contradictory only because a 1-bit vector has two values needs the state enumerated | ok | ok | ok |
 | `LRALinear` | Real state, no ReLU — an interval invariant is not inductive over the reals, so the invariant pins exact values | ok | ok | ok |
 | `OpMax` | Max as a unary reduction: x' = max(x-1, 0), i.e. ReLU spelled Max | ok | ok | **fail** |
 | `OpMin` | Min as a unary reduction: x' = min(x+1, 5) | ok | ok | **fail** |
@@ -206,7 +217,10 @@ obvious guess.
 two integer certificates that were closing on it — an integer goal that omega
 cannot phrase is still ordinary linear arithmetic.
 
-**`bv_decide` belongs in none.** It only ever reaches goals every cheaper
+**`bv_decide` belongs in none.** Open issue 4 adds a second reason — on the
+generated goals it abstracts `Mat` projections into opaque variables and
+returns a spurious counterexample — but the measured one was enough. It only
+ever reaches goals every cheaper
 prover has already failed on, and on those it bit-blasts: including it took a
 BitVec certificate from 10 s to 977 s while closing nothing `decide` had not
 already closed. The obligation it might have helped with — `hrank`, mixing
@@ -352,22 +366,53 @@ their phases. Three earlier cases in this matrix were wrong the same way (an
 interval invariant is not inductive over the reals), and a wrong test failing
 is not a tool limit.
 
-### 4. BitVec: the invariant obligations pass, the ranking one does not
+### 4. ~~BitVec: the invariant obligations pass, the ranking one does not~~ — fixed
 
-**Symptom.** `BVState`. `decide` closes `init_inv` and `step_inv`; `hrank`
-fails, in 10 s.
+**Symptom.** `BVState`. `init_inv` and `step_inv` closed; `hrank` failed with
+eight goals that were, literally, `⊢ False`.
 
-**Mechanism.** After `split_ifs` the surviving branches are bare `False`
-goals whose hypotheses are contradictory only because a `BitVec 1` has
-exactly two values — `¬(b = 1#1)` together with `¬(b = 0#1)`. Closing that
-needs case analysis over the bit, which `decide` cannot do (it ignores
-hypotheses) and `contradiction` cannot see. `bv_decide` can, and is
-deliberately excluded: see the note in the generated-tactics section.
+**Mechanism.** After `split_ifs` the surviving branches are contradictory
+only because a `BitVec 1` has exactly two inhabitants — `s.1 0 0 ≠ 0#1`
+together with `s.1 0 0 ≠ 1#1`. Nothing in the plan could see that:
+`contradiction` needs a literal `h`/`¬h` pair, `simp_all` has no lemma for
+the cardinality of `BitVec 1`, and `omega` does not model BitVec at all.
+`decide` is in the plan for exactly this case and yet can never fire — it
+evaluates *closed* propositions, and every goal here is under a free state
+variable, so all it can report is that `False` is false.
 
-**Resolution.** Either a prep step that reverts BitVec hypotheses into the
-goal so `decide` can settle the implication, or emitting `Bool` rather than
-`BitVec 1` for single-bit wires, which would put the whole thing in
-`decide`'s reach.
+**Fix.** A generated prep step that enumerates the state. When every state
+element has two values and there are at most `MAX_ENUMERABLE_SLOTS` of them,
+the plan emits
+
+```lean
+macro "cert_states" v:ident : tactic =>
+  `(tactic| (rcases BitVec.eq_zero_or_eq_one (($v).1 0 0) with h0 | h0 <;>
+     rcases BitVec.eq_zero_or_eq_one (($v).2 0 0) with h1 | h1 <;>
+     try simp only [h0, h1] at *))
+```
+
+and `step_inv` and `hrank` call it on their own state binder before the
+closers run. Once the elements are concrete every later goal is closed, which
+is what the rest of the plan was always built for. `BVState` verifies in 11 s;
+`BoolState`, the same counter over `Bool`, went from 15 s to 10 s. Modules
+whose state is not finite emit `skip`, so nothing else changes.
+
+The bound matters: each element doubles the fan-out, so a wide finite state
+opts out rather than producing `2^n` branches. `BitVec.eq_zero_or_eq_one` is
+width-1 only, so a wider BitVec also opts out and would still hit the original
+wall — untested, since nothing in the matrix has one.
+
+**A note on two dead ends.** `bv_omega` closes seven of the eight goals and is
+a reasonable prover for a BitVec state (the plan has no integer reasoner for
+one, though `ranking` is always `Nat`-valued); it was not needed once the
+state was enumerated, so it is not in the plan. `bv_decide` closes the eighth
+in isolation but not in context: it reports *"a potentially spurious
+counterexample — abstracted the following unsupported expressions as opaque
+variables: [s.2 0 0, s.1 0 0, s.1 0 0]"*. Under `pp.explicit` the reason is
+the same class of defect as open issue 1 — one occurrence carries
+`@Fin.instOfNat 1 init_pre._proof_1 0` and another `@Fin.instOfNat 1
+update._proof_1 0`, two auto-generated per-declaration instance proofs, so
+`s.1 0 0` is two syntactically different terms that print identically.
 
 ### 5. Nonlinear ranking functions — fixed, with one caveat
 
@@ -461,4 +506,5 @@ no Lean IO, so `verith -x` refuses a Real wire) are unchanged by this pass.
 | 18 | Rational literals were emitted with `str(term)`, i.e. SMT-LIB: cvc5 prints 0.5 as `(/ 1 2)` | build the literal from `getRealValue()` |
 | 19 | One fixed tactic chain for every module: `bv_decide` on integer goals, no `nlinarith` on nonlinear ones, no way to add a prep step for a new shape | generate `cert_prep`/`cert_close` from the module and predicates (`zrth/lean/tactics.py`), pinned by `tests/test_lean_tactics.py` |
 | 20 | `Certificate.lean` was treated as stable across a change of predicates, but its tactics are now generated from them | `--infer` rewrites it alongside `Data.lean` |
+| 22 | A finite state's obligations could produce a bare `False` goal, contradictory only because `BitVec 1` has two inhabitants. `decide` is in the plan for finite states but evaluates closed propositions, so under a free state variable it can never fire | generate a `cert_states` prep step that enumerates each two-valued state element (`BitVec.eq_zero_or_eq_one` / `Bool.eq_false_or_eq_true`), bounded by `MAX_ENUMERABLE_SLOTS` so the fan-out stays small |
 | 21 | `FBK.effect_i_eq` closed with `simp`, which cannot equate two auto-generated matchers — `FBK.effect_i.match_1` vs `ScalarRel.effect_i.match_1` — so `System/FBK.lean` failed for every multi-element ctrl wire | `first \| rfl \| simp […]`: `rfl` unfolds both at default transparency. The slow suite now builds the four encodings as separate modules, as a real project does |

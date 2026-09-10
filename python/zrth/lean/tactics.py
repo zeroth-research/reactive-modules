@@ -24,7 +24,11 @@ So the plan is read off the obligations instead:
   every closer afterwards sees numerals rather than an opaque `⌊4 - x⌋`;
 * how big the module is — `maxRecDepth` scales with the term count, and the
   heartbeat budget is left low unless something in the plan is known to be
-  slow, so a failing proof fails fast.
+  slow, so a failing proof fails fast;
+* whether the state is finite *and* narrow — then each element is enumerated
+  over its two values before anything tries to close, which is the only way
+  to discharge a branch that is contradictory purely because the state has
+  finitely many inhabitants.
 
 `plan_for` returns a `TacticPlan`; `Certificate.lean.j2` renders it as two
 macros, `cert_prep` and `cert_close`, which the three proofs then share.
@@ -37,7 +41,7 @@ from dataclasses import dataclass, field
 
 from zrth import Bool, Int, Real, BitVec
 
-from .common import dtype_shape, itype_name
+from .common import _accessor, dtype_shape, itype_name
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -53,6 +57,10 @@ class Features:
     ops: set[str] = field(default_factory=set)
     n_terms: int = 0
     n_slots: int = 0
+
+    # (accessor, lemma) per state element that ranges over exactly two values,
+    # empty if any element does not. See `_two_valued_slots`.
+    two_valued: list[tuple[str, str]] = field(default_factory=list)
 
     has_ite: bool = False
     has_and: bool = False
@@ -181,6 +189,42 @@ def is_nonlinear(text: str) -> bool:
     return False
 
 
+# A finite state is only worth enumerating if the fan-out stays small: each
+# slot doubles the number of branches every later tactic has to run on.
+MAX_ENUMERABLE_SLOTS = 4
+
+
+def _two_valued_slots(ctx) -> list[tuple[str, str]]:
+    """One `(accessor, lemma)` per state element that has exactly two values.
+
+    Returns `[]` unless *every* element does, since enumerating some of a
+    state and not the rest buys nothing. `accessor` is relative to the state
+    variable, e.g. `.2.1 0 0`, so the caller can prefix whichever binder the
+    obligation uses.
+    """
+    wires = list(ctx.ctrl_next)
+    n = len(wires)
+    out: list[tuple[str, str]] = []
+    for i, w in enumerate(wires):
+        dt = w.dtype
+        if isinstance(dt, Bool):
+            lemma = "Bool.eq_false_or_eq_true"
+        elif isinstance(dt, BitVec) and dt._0 == 1:
+            lemma = "BitVec.eq_zero_or_eq_one"
+        else:
+            # Wider BitVec has 2^w values and no two-way lemma; Int and Real
+            # are not finite at all.
+            return []
+        acc = _accessor(i, n)
+        shape = dtype_shape(dt)
+        rows = shape[0] if shape else 1
+        cols = shape[1] if len(shape) > 1 else 1
+        for r in range(rows):
+            for c in range(cols):
+                out.append((f"{acc} {r} {c}", lemma))
+    return out if len(out) <= MAX_ENUMERABLE_SLOTS else []
+
+
 def features_for(ctx, pred_text: str) -> Features:
     """Read the shape of `ctx`'s module and its certificate predicates."""
     f = Features()
@@ -208,6 +252,8 @@ def features_for(ctx, pred_text: str) -> Features:
     f.has_eq = " = " in pred_text
     f.has_floor = "⌊" in pred_text
     f.nonlinear = is_nonlinear(pred_text)
+    if f.finite_state:
+        f.two_valued = _two_valued_slots(ctx)
     return f
 
 
@@ -235,6 +281,33 @@ class TacticPlan:
     def close_tactic(self) -> str:
         return "first | " + " | ".join(self.closers)
 
+    @property
+    def state_case_tactic(self) -> str:
+        """Enumerate the state, as the body of a macro over its binder `$v`.
+
+        `decide` is in the closer list for a finite state but can never fire
+        while the state is a free variable -- it evaluates closed
+        propositions, and every goal here is quantified over `s`. Worse, a
+        branch whose hypotheses are contradictory *only because the state is
+        finite* (`x ≠ 0#1` together with `x ≠ 1#1`) reduces to a bare `False`
+        that nothing in the chain can discharge: `contradiction` needs a
+        literal `h`/`¬h` pair, and omega and simp know nothing about the
+        cardinality of `BitVec 1`.
+
+        Splitting each element into its two values first makes every later
+        goal closed, which is what the rest of the plan was already built
+        for. `skip` when the state is not finite, or is too wide to fan out.
+        """
+        if not self.features.two_valued:
+            return "skip"
+        steps = [
+            f"rcases {lemma} (($v){acc}) with h{k} | h{k}"
+            for k, (acc, lemma) in enumerate(self.features.two_valued)
+        ]
+        names = ", ".join(f"h{k}" for k in range(len(self.features.two_valued)))
+        steps.append(f"try simp only [{names}] at *")
+        return " <;>\n     ".join(steps)
+
     def why(self) -> str:
         """One line per decision, emitted as a comment above the macros."""
         f = self.features
@@ -247,6 +320,11 @@ class TacticPlan:
             f"{', nonlinear' if f.nonlinear else ', linear'}"
             f"{', floor' if f.has_floor else ''}",
         ]
+        if f.two_valued:
+            bits.append(
+                f"state is finite and narrow: enumerating "
+                f"{len(f.two_valued)} two-valued element(s) before the closers"
+            )
         return "\n".join(f"-- {b}" for b in bits)
 
 

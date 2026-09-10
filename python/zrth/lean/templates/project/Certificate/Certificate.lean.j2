@@ -46,6 +46,11 @@ macro "cert_prep" : tactic =>
 macro "cert_close" : tactic =>
   `(tactic| {{ plan.close_tactic }})
 
+-- Enumerate the state, when it is finite and narrow enough to be worth it.
+-- `skip` otherwise. Takes the obligation's own state binder.
+macro "cert_states" v:ident : tactic =>
+  `(tactic| ({{ plan.state_case_tactic }}))
+
 -- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
 -- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
 macro "mat_collapse" : tactic =>
@@ -65,6 +70,7 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    intro s e ⟨hpre, hinv⟩
    try simp_defs
    try simp_mat
+   try cert_states s
    all_goals (cert_prep <;> cert_close)
 
 section TS
@@ -96,6 +102,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     clear heq
     try simp_defs
     try simp_mat
+    try cert_states s
     all_goals (cert_prep <;> cert_close)
 
 {{ noncomp }}def buchi := rule_buchi
