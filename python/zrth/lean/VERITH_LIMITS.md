@@ -1,6 +1,6 @@
 # What `uv run verith` can verify
 
-Measured, not guessed: 48 modules were put through the whole pipeline — Python
+Measured, not guessed: 76 modules were put through the whole pipeline — Python
 module → generated Lean project → `lake build` — and the outcome of each was
 recorded. This file says which classes of module, invariant and ranking
 function come out proved, which come out broken, and for the broken ones what
@@ -66,16 +66,16 @@ like a codegen bug. Give each concurrent runner its own `build/` (the
 
 ## Results
 
-47 of 48 cases generate; 47 compile all six encodings; 36 certificates discharge. Of the 11 that
+75 of 76 cases generate; 75 compile all six encodings; 64 certificates discharge. Of the 11 that
 do not, **8 are negative controls that are supposed to fail** — a missing
 property, a non-inductive invariant, a constant or increasing ranking, a
 dropped precondition. That leaves 3 real limits (`OpArgmax`, `OpMax`, `OpMin`),
 all in the next section.
 
 Against the pipeline as it stood before this work, measured on the 36 cases
-that existed then (the other 12 — eight neural-network cases, three built to
-break a fixed tactic chain, and one negative control — were added along the
-way):
+that existed then (the other 40 — eight neural-network cases, three built to
+break a fixed tactic chain, one negative control, and a 28-case batch built
+to find where neural certificates stop working — were added along the way):
 
 | | before | after |
 |---|---|---|
@@ -91,14 +91,20 @@ invariant, which is not inductive over the reals (x = 0.5 escapes
 decrease. A fifth, `RealConjDisj`, was wrong in the same family and is
 dissected in open issue 3. A wrong test failing is not a tool limit.
 
-Over the full 48-case matrix: 47 generate, all 47 compile all six encodings,
-36 certificates discharge, and the same 36 projects are green end to end —
+Over the full 76-case matrix: 75 generate, all 75 compile all six encodings,
+64 certificates discharge, and the same 64 projects are green end to end —
 `System` no longer fails anywhere, and every remaining failure is a
-certificate failure. No case that verified at any earlier point in this work
-stopped verifying: the switch from a fixed tactic chain to a generated plan
-reproduced all 44 shared verdicts exactly, the FBK fix moved five cases from
-broken to green, and the state-enumeration step moved `BVState` — each time
-with every other verdict unchanged.
+certificate failure. Of the twelve, eight are negative controls, one is the
+`Uninterpreted` codegen gap, and **the only three real limits left are
+`OpMax`, `OpMin` and `OpArgmax`, which are all the same defect**: a matrix
+fold that never reduces.
+
+No case that verified at any earlier point in this work stopped verifying.
+Each change was measured against the whole matrix in an isolated build
+directory: the fixed-chain-to-generated-plan switch reproduced all 44 shared
+verdicts exactly, the FBK fix moved five cases, the state-enumeration step
+moved `BVState`, the `min`/`max` folding moved eleven, and the Real budget
+rule moved two — each time with every other verdict unchanged.
 
 | case | what it probes | gen | System | Certificate |
 |---|---|---|---|---|
@@ -150,6 +156,34 @@ with every other verdict unchanged.
 | `RealNet` | a ReLU net over Real as the ranking: ite branches, real literals and a floor, all at once | ok | ok | ok |
 | `BadInv` | not inductive (init is 100) — init_inv must fail | ok | ok | **fail** |
 | `BadRankDir` | ranking increases along the transition — hrank must fail | ok | ok | **fail** |
+| `NN2Width4` | 4-unit ranking net, distinct thresholds — 8 ite in hrank | ok | ok | ok |
+| `NN2Width6` | 6-unit ranking net — 12 ite in hrank | ok | ok | ok |
+| `NN2Width8` | 8-unit ranking net — 16 ite in hrank | ok | ok | ok |
+| `NN2Width10` | 10-unit ranking net — 20 ite in hrank | ok | ok | ok |
+| `NN2Width12` | 12-unit ranking net — 24 ite in hrank | ok | ok | ok |
+| `NN2WidthDup8` | 8 units but one distinct condition — control separating the cost of net *size* from the cost of net *branching* | ok | ok | ok |
+| `NN2Deep3` | 3 dense hidden layers — 6 ite per copy, text doubles per layer | ok | ok | ok |
+| `NN2Deep4` | 4 dense hidden layers — 8 ite per copy, 16 in hrank | ok | ok | ok |
+| `NN2Deep5` | 5 dense hidden layers — 10 ite per copy, 20 in hrank | ok | ok | ok |
+| `NN2Narrow8` | 8 layers of one unit each: same 16 ite as NN2Width8 but linear text — does depth or does size cost? | ok | ok | ok |
+| `NN2InvWide4` | invariant is a 4-unit net equality that *is* the box 0..100 | ok | ok | ok |
+| `NN2InvWide8` | the same, 8 units wide — step_inv now carries 16 ite | ok | ok | ok |
+| `NN2RealWide4` | 4-unit net over Real — no omega, linarith on 2^8 branches | ok | ok | ok |
+| `NN2RealFrac` | weights 1.5 / 0.25 / -0.5 and a negative output weight — the weights a trained net actually has | ok | ok | ok |
+| `NN2RealNetInv` | a net *invariant* over Real: the exact-value disjunction keeps it inductive, the net box is the learned part | ok | ok | ok |
+| `NN2VecNet` | 3-input net invariant over a 3-vector state: Σ relu(vᵢ) = Σ vᵢ is componentwise non-negativity, and Σ relu(vᵢ) ≤ 6 bounds it | ok | ok | ok |
+| `NN2NetMod8` | the module's own net is 8 wide and both predicates are nets — module width against certificate width | ok | ok | ok |
+| `NN2NetMod16` | the same with a 16-wide module net | ok | ok | ok |
+| `NN2WideInput` | a net that reads 8 state slots but has only 2 units — input width without branch width, over the 32-wide state | ok | ok | ok |
+| `NN2MixedSign` | mixed-sign weights, thresholds at 0 and 10 so two branches are live at once, output bias keeping the value non-negative | ok | ok | ok |
+| `NN2BigWeights` | weights 10007 / 3001 / 499 — coefficient size, not branch count | ok | ok | ok |
+| `NN2ToNatClamp` | net(x) = 3x - 2 is negative at x = 0, so Int.toNat clamps; the obligation is still true because the clamp only bites under P | ok | ok | ok |
+| `NN2CmpBoth` | a net on each side of ≤ — relu(x)+relu(y-x) ≤ relu(y) is 0≤x≤y | ok | ok | ok |
+| `NN2Lyapunov` | |x-5| as a 2-unit net, used as *both* invariant and ranking over a plant that converges from either side: a genuine piecewise-linear Lyapunov function whose decrease needs the ReLU split | ok | ok | ok |
+| `NN2Lyap2D` | the same in two dimensions: a 4-unit Lyapunov net over a plant with two independent piecewise-linear legs | ok | ok | ok |
+| `NN2Width3` | 3-unit ranking net — the last width that closes | ok | ok | ok |
+| `NN2Width5` | 5-unit ranking net — bisects the knee | ok | ok | ok |
+| `NN2Width6Big` | the 6-unit net of NN2Width6 over the 32-slot module: identical certificate and identical transition shape, but the plan calls the module slow and raises the heartbeat budget 5x | ok | ok | ok |
 
 ---
 
@@ -208,7 +242,8 @@ proofs share. Each certificate carries a comment saying what was detected.
 | `∧` / `∨` in the predicates | `casesm*` and `simp only [not_and_or]` in prep |
 | an `=` in the predicates | the `ne_iff_lt_or_gt` split, *after* `norm_num at *` |
 | term count | `maxRecDepth` scales with it |
-| nothing known to be slow | heartbeat budget stays at 400 000, so failures fail fast |
+| branch points in the predicates | scales the heartbeat budget — this, not module size, is what a net costs |
+| nothing known to be slow | heartbeat budget stays at 400 000 for economy (it does *not* bound failures — see "Nets over ℝ") |
 
 Two decisions are worth recording because measurement contradicted the
 obvious guess.
@@ -239,30 +274,77 @@ regression shows up in the fast suite rather than only in a slow Lean build.
 ## Neural-network invariants and ranking functions
 
 A ReLU net can serve as the invariant, as the ranking, or as both, over a
-module that is itself a net. There is no `max` in the SMT→Lean translator, so
-a unit is an `ite` and a `k`-unit layer costs `k` branches to `split_ifs`.
+module that is itself a net. Every case is generated from explicit weight
+matrices (`net(...)` in the harness), never a hand-written formula, so none of
+them can be quietly tuned to what the prover happens to close.
 
-All eight cases below discharge their certificate:
+### What the ceiling turned out to be
 
-| case | net |
-|---|---|
-| `NNRank` | ranking `2·relu(x−1) + relu(x)` |
-| `NNRankWide` | ranking, three units with distinct thresholds |
-| `NNRankDeep` | ranking, two hidden layers |
-| `NNInv` | invariant `relu(x) + relu(9−x) = 9`, i.e. exactly `0 ≤ x ≤ 9` |
-| `NNInvIneq` | the same in inequality form — the shape a learned barrier takes |
-| `NNBoth` | invariant and ranking both nets |
-| `NNTwoInput` | two-input net invariant `relu(y−x) + relu(x) = y` |
-| `NNNetModule` | module is `Linear → ReLU → Linear` *and* both predicates are nets |
+The first eight cases all passed, so a second batch was built to find where
+nets stop working: width 3 to 12 units, three to five dense hidden layers,
+net invariants, net Lyapunov functions, nets over ℝ, nets over a vector
+state, and a module that is itself `Linear → ReLU → Linear` with both
+predicates nets.
 
-The cases are generated from explicit weight matrices (`net(...)` in the
-harness), not hand-written formulas, so they cannot be quietly tuned to what
-the prover happens to close. All eight are green, `NNNetModule` included — its
-project used to fail to build on open issue 1, which was never about the net.
+Thirteen of them failed — **and every failure was the heartbeat budget, not
+the proof.** Each one closed when `maxHeartbeats` was raised, some at 4M,
+some only at 40M, taking 27 s to 491 s. That is the wrong kind of fix: it
+turns "fails in 16 s" into "passes in 491 s".
 
-Note that an affine layer is *linear* — `2 * x` is not a product of two
-state-dependent terms — so nets do not drag `nlinarith` into the plan. That
-is what keeps a 3-unit net at ~10 s.
+The cause was in the translator, not the tactics. There is no `max` kind to
+translate from, so every ReLU unit arrived as `(ite (>= e 0) e 0)`. Left as
+an `ite` each unit costs a `split_ifs` branch, and `hrank` mentions the
+ranking twice, so a k-unit net fans one goal out into 2^(2k) — each of them
+paying for the whole prep chain. `omega` reasons about `min`/`max` over `Int`
+natively, with **no split at all**.
+
+Folding that shape back into `max` (`smt_to_lean.py`, Int only) collapses it:
+
+| case | before | after |
+|---|---|---|
+| `NN2Width6` — 6-unit ranking net | 491 s (needed 40M heartbeats) | **9.6 s** at the base budget |
+| `NN2Deep3` — three dense hidden layers | 164 s (40M) | **11.8 s** |
+| `NN2Lyap2D` — 2-D piecewise-linear Lyapunov net | 220 s (40M) | **12.0 s** |
+| `NN2Width12` — 12-unit layer | did not close | **11.6 s** |
+
+Eleven cases went green on that one change. What is left of the cost tracks
+the number of branch points in the *predicate*, which the budget rule now
+reads directly — the module stays a one-wire countdown whether its ranking
+has 3 branch points or 62, so module size was never the right proxy.
+
+### Where it stands
+
+Every integer net in the matrix verifies: up to a 12-unit layer, five dense
+hidden layers (62 branch points, 79 s), nets as invariant, as ranking, as
+both, over a vector state, with mixed-sign and large weights, with a net
+module underneath, and as a piecewise-linear Lyapunov function in one and two
+dimensions.
+
+An affine layer is *linear* — `2 * x` is not a product of two
+state-dependent terms — so nets do not drag `nlinarith` into the plan, which
+is what keeps a small net at ~10 s.
+
+### Nets over ℝ
+
+A Real net cannot use the folding above — `linarith`, which is what a Real
+goal gets, has no `min`/`max` support, so there the `ite` and its `split_ifs`
+branch are still the way through. Those cases verify, but they cost a bigger
+heartbeat budget and about 70 s where the integer equivalent takes 10 s.
+
+Raising that budget is what made them verify at all, and the measurement
+behind it inverts an assumption this report used to state. A low cap does
+**not** make a failing proof fail fast:
+
+| | base budget | raised |
+|---|---|---|
+| `NN2RealWide4` — 4-unit net over ℝ | **fails** in 106 s | **succeeds** in 71 s |
+| `NN2RealFrac` — fractional weights | **fails** in 23 s | **succeeds** in 2.4 s |
+
+Both are *faster* with more budget. When a tactic hits the cap it throws,
+`first` catches that like any other failure and moves on to a more expensive
+alternative, which burns up to the cap again; a low cap multiplies the wasted
+work rather than cutting it short. The base budget is still low, but for
+economy on ordinary goals, not to bound failures.
 
 ---
 
@@ -506,5 +588,7 @@ no Lean IO, so `verith -x` refuses a Real wire) are unchanged by this pass.
 | 18 | Rational literals were emitted with `str(term)`, i.e. SMT-LIB: cvc5 prints 0.5 as `(/ 1 2)` | build the literal from `getRealValue()` |
 | 19 | One fixed tactic chain for every module: `bv_decide` on integer goals, no `nlinarith` on nonlinear ones, no way to add a prep step for a new shape | generate `cert_prep`/`cert_close` from the module and predicates (`zrth/lean/tactics.py`), pinned by `tests/test_lean_tactics.py` |
 | 20 | `Certificate.lean` was treated as stable across a change of predicates, but its tactics are now generated from them | `--infer` rewrites it alongside `Data.lean` |
+| 24 | A branchy Real predicate cannot fold to `min`/`max`, keeps a `split_ifs` branch per ReLU unit, and exhausted the base budget | raise it for `Real` + branch points. Measured, this is also *faster*: the case failed in 106 s at the base budget and succeeds in 71 s at the raised one — a cap that is hit makes `first` fall through to more expensive alternatives, so a low cap multiplies wasted work instead of bounding it |
+| 23 | Every ReLU unit reached Lean as `(ite (>= e 0) e 0)`, so a k-unit net fanned one goal into 2^(2k) under `split_ifs` and neural certificates died on the heartbeat budget rather than on the proof | fold that shape to `max` in `smt_to_lean.py` (Int only — `linarith` has no min/max), and scale the budget by the predicate's branch count rather than the module's size. Eleven cases went green; `NN2Width6` went from 491 s to 9.6 s |
 | 22 | A finite state's obligations could produce a bare `False` goal, contradictory only because `BitVec 1` has two inhabitants. `decide` is in the plan for finite states but evaluates closed propositions, so under a free state variable it can never fire | generate a `cert_states` prep step that enumerates each two-valued state element (`BitVec.eq_zero_or_eq_one` / `Bool.eq_false_or_eq_true`), bounded by `MAX_ENUMERABLE_SLOTS` so the fan-out stays small |
 | 21 | `FBK.effect_i_eq` closed with `simp`, which cannot equate two auto-generated matchers — `FBK.effect_i.match_1` vs `ScalarRel.effect_i.match_1` — so `System/FBK.lean` failed for every multi-element ctrl wire | `first \| rfl \| simp […]`: `rfl` unfolds both at default transparency. The slow suite now builds the four encodings as separate modules, as a real project does |

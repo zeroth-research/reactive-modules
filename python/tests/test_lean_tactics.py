@@ -207,6 +207,49 @@ def test_flat_predicates_skip_the_splitting_steps():
     assert not any("casesm" in p for p in plan.prep)
 
 
+def test_budget_scales_with_predicate_branch_points():
+    """A net's cost lives in its branch points, not in the module's size.
+
+    A 12-unit ranking net over a one-wire countdown leaves `n_slots` and
+    `n_terms` tiny, so the module-size rule alone left it on the base budget
+    and it timed out rather than failing to be provable.
+    """
+    m = _int_module()
+    flat = _plan(m, "fun s => ((s 0 0) ≥ 0)")
+    assert flat.max_heartbeats == 400000
+
+    mid = _plan(m, "fun s => " + " + ".join(f"(max ((s 0 0) - {k}) 0)" for k in range(20)))
+    assert mid.max_heartbeats >= 2000000
+
+    wide = _plan(m, "fun s => " + " + ".join(f"(max ((s 0 0) - {k}) 0)" for k in range(70)))
+    assert wide.max_heartbeats > mid.max_heartbeats
+
+
+def test_branch_points_count_ite_as_well_as_min_max():
+    """Over the reals a ReLU stays an `ite`, and costs a `split_ifs` branch."""
+    plan = _plan(
+        _real_module(),
+        "fun s => " + " + ".join(
+            f"(if (s 0 0) ≥ {k} then (s 0 0) else 0)" for k in range(20)
+        ),
+    )
+    assert plan.features.n_branch >= 20
+    assert plan.max_heartbeats >= 2000000
+
+
+def test_branchy_real_gets_a_higher_budget():
+    """A ReLU over the reals cannot fold to `max`, so it keeps its branches.
+
+    `linarith` has no min/max support, so a Real net still pays a `split_ifs`
+    branch per unit. Measured, the base budget makes such a case *fail* in
+    106 s where the higher one *succeeds* in 71 s.
+    """
+    branchy = _plan(_real_module(), "fun s => (if (s 0 0) ≥ 0 then (s 0 0) else 0) = 0")
+    assert branchy.max_heartbeats >= 2000000
+    flat = _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)")
+    assert flat.max_heartbeats == 400000
+
+
 def test_budgets_scale_with_the_module():
     """`maxRecDepth` tracks the term count; the heartbeat budget stays low
     unless something in the plan is known to be slow, so failures are fast."""

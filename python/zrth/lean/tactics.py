@@ -62,6 +62,12 @@ class Features:
     # empty if any element does not. See `_two_valued_slots`.
     two_valued: list[tuple[str, str]] = field(default_factory=list)
 
+    # `min`/`max`/`ite` occurrences in the predicates. Each is a case: omega
+    # splits `min`/`max` internally, `split_ifs` fans an `ite` out, and
+    # `hrank` mentions the ranking twice. This, not the module's size, is
+    # what makes a neural certificate expensive.
+    n_branch: int = 0
+
     has_ite: bool = False
     has_and: bool = False
     has_or: bool = False
@@ -252,6 +258,9 @@ def features_for(ctx, pred_text: str) -> Features:
     f.has_eq = " = " in pred_text
     f.has_floor = "⌊" in pred_text
     f.nonlinear = is_nonlinear(pred_text)
+    f.n_branch = (
+        pred_text.count("(max ") + pred_text.count("(min ") + pred_text.count("if ")
+    )
     if f.finite_state:
         f.two_valued = _two_valued_slots(ctx)
     return f
@@ -318,7 +327,8 @@ class TacticPlan:
             f"{', conjunctive' if f.has_and else ''}"
             f"{', disjunctive' if f.has_or else ''}"
             f"{', nonlinear' if f.nonlinear else ', linear'}"
-            f"{', floor' if f.has_floor else ''}",
+            f"{', floor' if f.has_floor else ''}"
+            f"{f', {f.n_branch} branch point(s)' if f.n_branch else ''}",
         ]
         if f.two_valued:
             bits.append(
@@ -408,10 +418,33 @@ def plan_for(ctx, pred_text: str) -> TacticPlan:
     # `simp_mat` unfolds the whole transition at once, so recursion depth
     # tracks the term count rather than the state width.
     max_rec_depth = max(4096, 1500 * f.n_terms)
-    # Leave the heartbeat budget low so a failing proof fails fast; raise it
-    # only where something in the plan is known to be slow.
+    # The base budget is low, but not to make failures fail fast -- measured,
+    # it does not. When a tactic hits the cap it throws, `first` catches that
+    # like any other failure and moves on to a *more expensive* alternative,
+    # which burns up to the cap again; a low cap multiplies the wasted work
+    # instead of cutting it short. Two Real cases below are faster at the
+    # higher budget than at the lower one, succeeding rather than failing.
+    # So raise it wherever the shape is known to need it.
     slow = f.finite_state or f.has_bitvec or f.n_slots > 8 or f.n_terms > 32
     max_heartbeats = 2000000 if slow else 400000
+    # A wide or deep net puts far more branch points in one predicate than the
+    # module's own size suggests, and the whole cost of a neural certificate
+    # lives there. Measured on nets built from explicit weight matrices: 14
+    # branch points (a 12-unit layer, or three dense hidden layers) close
+    # inside the base budget, 30 needs 2M, 62 needs 4M. Raising the cap costs
+    # nothing on a proof that closes; it only makes a failing one give up
+    # later, and a predicate this size was never going to fail fast anyway.
+    if f.n_branch > 32:
+        max_heartbeats = max(max_heartbeats, 8000000)
+    elif f.n_branch > 16:
+        max_heartbeats = max(max_heartbeats, 2000000)
+    if f.has_real and f.n_branch:
+        # A branchy Real predicate cannot use the `min`/`max` folding above --
+        # `linarith` has no support for either -- so it still pays a
+        # `split_ifs` branch per unit, and each branch is closed by linarith
+        # rather than omega. Measured on a 4-unit net over the reals: 106 s to
+        # *fail* at the base budget, 71 s to succeed at this one.
+        max_heartbeats = max(max_heartbeats, 2000000)
 
     return TacticPlan(
         prep=prep,

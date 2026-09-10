@@ -101,6 +101,49 @@ def smt_to_lean_nat(
 # ---------------------------------------------------------------------
 
 
+# `ite (a ≥ b) a b` is `max a b`, `ite (a ≥ b) b a` is `min a b`, and so on
+# for each strict/non-strict comparison. The flag says whether the branches
+# are in the same order as the comparison's operands.
+_MIN_MAX = {
+    (Kind.GEQ, True): "max", (Kind.GT, True): "max",
+    (Kind.LEQ, True): "min", (Kind.LT, True): "min",
+    (Kind.GEQ, False): "min", (Kind.GT, False): "min",
+    (Kind.LEQ, False): "max", (Kind.LT, False): "max",
+}
+
+
+def _fold_min_max(t: cvc5.Term, recur) -> str | None:
+    """An `ite` that is really a `min`/`max`, emitted as one. None otherwise.
+
+    Every ReLU unit arrives here as `(ite (>= e 0) e 0)`, because there is no
+    `max` kind to translate from. Left as an `ite` it costs the certificate a
+    `split_ifs` branch, and `hrank` mentions the ranking twice, so a k-unit
+    net fans a single goal out into 2^(2k) of them -- 4096 for six units,
+    each one paying for the whole prep chain. That is what makes a net
+    ranking exhaust the heartbeat budget rather than fail to be provable.
+    `omega` reasons about `min`/`max` over `Int` natively, with no split.
+
+    Int only. A Real goal is closed by `linarith`, which has no `min`/`max`
+    support, so there the `ite` and its `split_ifs` branch are still the way
+    through.
+    """
+    if not t.getSort().isInteger():
+        return None
+    cond = t[0]
+    kind = cond.getKind()
+    if kind not in (Kind.GEQ, Kind.GT, Kind.LEQ, Kind.LT):
+        return None
+    lhs, rhs = cond[0], cond[1]
+    then_, else_ = t[1], t[2]
+    if lhs == then_ and rhs == else_:
+        in_order = True
+    elif lhs == else_ and rhs == then_:
+        in_order = False
+    else:
+        return None
+    return f"({_MIN_MAX[(kind, in_order)]} {recur(lhs)} {recur(rhs)})"
+
+
 def _walk(
     t: cvc5.Term,
     var_accessor: dict[str, str],
@@ -161,6 +204,9 @@ def _walk(
         return f"(- {recur(t[0])})"
 
     if k == Kind.ITE:
+        folded = _fold_min_max(t, recur)
+        if folded is not None:
+            return folded
         return f"(if {recur(t[0])} then {recur(t[1])} else {recur(t[2])})"
 
     if k == Kind.TO_INTEGER:
