@@ -354,3 +354,516 @@ def pre_check(module, cert_data, budget: SmtBudget, log=print) -> list[Verdict]:
             "the certificate is wrong, not merely hard -- Lean cannot close it"
         )
     return verdicts
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Predicate shape, read off the terms
+# ══════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class PredicateFacts:
+    """What the certificate predicates contain, from the cvc5 terms.
+
+    `tactics.features_for` reads the same things off the *rendered Lean*
+    with a regex. For anything the printer emits verbatim -- how many `max`
+    applications end up in the file -- that is the right measurement and
+    stays. These are the ones text cannot get right:
+
+    * `nonlinear` -- the regex hand-rolls operand scanning around each `*`
+      and deliberately over-reports, so a net's affine layers can drag
+      `nlinarith` into a plan that has no use for it. A `MULT` with two
+      state-dependent children is exact.
+    * `n_branch` -- how many branch points the predicate really contains,
+      counted over the expanded tree. The regex counts `max` and `if` in
+      the *printer's output*, which moves whenever the printer moves:
+      teaching it to share subterms cut a five-layer net from 62 `max` to
+      10 and silently dropped that case two budget tiers. The term's own
+      count does not move.
+    * `n_conditions` -- `split_ifs` splits once per *distinct* condition and
+      reuses the hypothesis for repeats, so counting occurrences
+      overestimates its fan-out, sometimes by a lot.
+    * `has_and` / `has_or` / `has_eq` -- structure, rather than a substring
+      search for `" ∧ "` over a string that also holds names and comments.
+    """
+
+    nonlinear: bool = False
+    n_branch: int = 0
+    n_conditions: int = 0
+    has_and: bool = False
+    has_or: bool = False
+    has_eq: bool = False
+    has_ite: bool = False
+    mentioned: frozenset = frozenset()
+
+    def why(self) -> str:
+        bits = [f"{self.n_branch} branch point(s)"]
+        if self.n_conditions != self.n_branch:
+            bits.append(f"{self.n_conditions} distinct condition(s)")
+        bits.append("nonlinear" if self.nonlinear else "linear")
+        if self.mentioned:
+            bits.append(f"mentions slot(s) {sorted(self.mentioned)}")
+        return "cvc5: " + ", ".join(bits)
+
+
+def _facts_walk(t, acc: dict) -> None:
+    """Accumulate shape over the DAG of one predicate."""
+    from cvc5 import Kind
+
+    from .smt_to_lean import min_max_of
+
+    seen = set()
+    stack = [t]
+    while stack:
+        node = stack.pop()
+        key = node.getId()
+        if key in seen:
+            continue
+        seen.add(key)
+        k = node.getKind()
+        if k == Kind.AND:
+            acc["and"] = True
+        elif k == Kind.OR:
+            acc["or"] = True
+        elif k == Kind.EQUAL:
+            acc["eq"] = True
+        elif k == Kind.CONSTANT:
+            name = node.getSymbol()
+            if name.startswith("s") and name[1:].isdigit():
+                acc["mentioned"].add(int(name[1:]))
+        elif k == Kind.ITE:
+            # The condition is what `split_ifs` splits on, so identical
+            # conditions in different `ite`s cost one split between them.
+            # A folded `min`/`max` costs no split at all.
+            if min_max_of(node) is None:
+                acc["ite"] = True
+                acc["conds"].add(node[0].getId())
+        elif k == Kind.MULT:
+            if sum(1 for c in node if _state_dependent(c)) > 1:
+                acc["nonlinear"] = True
+        stack.extend(node)
+
+
+def _tree_branch_points(t) -> int:
+    """Branch points in the unfolded goal, memoised over the DAG.
+
+    Two printer behaviours pull in opposite directions here and only one of
+    them belongs in a cost model:
+
+    * folding `ite (e ≥ 0) e 0` into `max e 0` drops the branches and keeps
+      the condition's operands, so the subterm `e` is emitted *once* rather
+      than twice. That is a real reduction -- it is the same term the goal
+      will carry -- so this count follows the fold. Ignoring it inflates a
+      five-layer net from 62 branch points to 682.
+    * `let`-sharing emits a subterm once and refers to it by name, but
+      `simp` is zeta-reducing by default, so the goal the closers see is the
+      expanded one either way. This count therefore ignores sharing, which
+      is what keeps the heartbeat budget steady across a change to the
+      printer that moved a five-layer net two budget tiers.
+    """
+    from cvc5 import Kind
+
+    from .smt_to_lean import min_max_of
+
+    memo: dict[int, int] = {}
+
+    def count(node) -> int:
+        key = node.getId()
+        hit = memo.get(key)
+        if hit is not None:
+            return hit
+        if node.getKind() == Kind.ITE:
+            cond = node[0]
+            if min_max_of(node) is not None:
+                total = 1 + count(cond[0]) + count(cond[1])
+            else:
+                total = 1 + sum(count(c) for c in node)
+        else:
+            total = sum(count(c) for c in node)
+        memo[key] = total
+        return total
+
+    return count(t)
+
+
+def _state_dependent(t) -> bool:
+    """Does this subterm read the state at all, or is it ground arithmetic?
+
+    The visited set is not an optimisation: without it a shared DAG is
+    walked as its expanded tree, which is exponential in a deep net.
+    """
+    from cvc5 import Kind
+
+    stack, seen = [t], set()
+    while stack:
+        node = stack.pop()
+        key = node.getId()
+        if key in seen:
+            continue
+        seen.add(key)
+        if node.getKind() == Kind.CONSTANT:
+            return True
+        stack.extend(node)
+    return False
+
+
+def predicate_facts(q: "ModuleQueries | None") -> PredicateFacts | None:
+    """Read the shape of every predicate `q` parsed. `None` if cvc5 is out."""
+    if q is None:
+        return None
+    acc = {
+        "and": False,
+        "or": False,
+        "eq": False,
+        "ite": False,
+        "nonlinear": False,
+        "branch": 0,
+        "conds": set(),
+        "mentioned": set(),
+    }
+    try:
+        for t in (q.prp, q.inv, q.ranking, q.init_pre, q.update_pre):
+            if t is not None:
+                _facts_walk(t, acc)
+                acc["branch"] += _tree_branch_points(t)
+    except Exception:
+        return None
+    return PredicateFacts(
+        nonlinear=acc["nonlinear"],
+        n_branch=acc["branch"],
+        n_conditions=len(acc["conds"]),
+        has_and=acc["and"],
+        has_or=acc["or"],
+        has_eq=acc["eq"],
+        has_ite=acc["ite"],
+        mentioned=frozenset(acc["mentioned"]),
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Solver-informed tactics
+#
+# Everything above reads the terms. This asks the solver questions whose
+# answers change what the certificate's tactics do -- so it is the part
+# that has to be careful, and every query here shares one phase budget.
+#
+# Two kinds of answer are worth having:
+#
+#   * a branch condition the invariant already settles. `split_ifs` fans a
+#     goal out into 2^k over k conditions; a condition cvc5 can decide
+#     under `inv` is one the proof can rewrite away instead of splitting.
+#   * what cvc5's own refutation needed. When nonlinear rules appear, the
+#     products they multiply are exactly the hint terms that turn
+#     `nlinarith`'s search into a check.
+#
+# Both are strictly *additive*. It is tempting to read "cvc5's proof was
+# linear" as licence to drop `nlinarith` from the closer list, and that is
+# a bad trade twice over: `first | a | b` costs nothing for `b` when `a`
+# closes the goal, so removing a closer only speeds up the runs that fail
+# anyway -- and cvc5 reasoning linearly about a goal is no promise that
+# Mathlib's `linarith` can. So nothing here ever takes a tactic away.
+#
+# cvc5's proofs are not translatable into Lean -- this build offers
+# alethe, cpc, dot and lfsc, none of which Mathlib reads -- but nothing
+# here needs the proof itself, only what it mentions.
+# ══════════════════════════════════════════════════════════════════════
+
+# Two queries per condition, so the phase budget still has to cover the
+# obligations' own proofs. Conditions past this are left to `split_ifs`.
+MAX_DECIDED_CONDITIONS = 8
+
+_NONLINEAR_RULES = {
+    "ARITH_MULT_POS",
+    "ARITH_MULT_NEG",
+    "ARITH_MULT_SIGN",
+    "ARITH_MULT_TANGENT",
+    "ARITH_MULT_ABS_COMPARISON",
+}
+
+
+@dataclass
+class SolverHints:
+    """What cvc5 established about the obligations, for the tactic plan."""
+
+    # (Lean text of the condition, the value `inv` forces it to).
+    determined: list = field(default_factory=list)
+    # None when no obligation was proved, so nothing may be concluded.
+    linear_proof: "bool | None" = None
+    # Lean terms to hand `nlinarith`.
+    nlinarith_hints: list = field(default_factory=list)
+    notes: list = field(default_factory=list)
+
+    @property
+    def any(self) -> bool:
+        return bool(self.determined or self.nlinarith_hints) or (
+            self.linear_proof is not None
+        )
+
+    def why(self) -> str:
+        bits = []
+        for text, value in self.determined:
+            bits.append(f"inv forces `{text}` to be {str(value).lower()}")
+        if self.linear_proof is True:
+            bits.append("cvc5's refutations are linear: no nlinarith")
+        elif self.linear_proof is False:
+            bits.append(f"cvc5 needed {len(self.nlinarith_hints)} product hint(s)")
+        bits += self.notes
+        return "\n".join(f"-- cvc5: {b}" for b in bits)
+
+
+def _kept_conditions(t, out: dict) -> None:
+    """Conditions of the `ite`s the printer will *not* fold into min/max."""
+    from cvc5 import Kind
+
+    from .smt_to_lean import min_max_of
+
+    stack, seen = [t], set()
+    while stack:
+        node = stack.pop()
+        key = node.getId()
+        if key in seen:
+            continue
+        seen.add(key)
+        if node.getKind() == Kind.ITE and min_max_of(node) is None:
+            cond = node[0]
+            out.setdefault(cond.getId(), cond)
+        stack.extend(node)
+
+
+def _proof_facts(solver, tm) -> tuple[bool, list]:
+    """`(is_linear, multiplied_terms)` from cvc5's refutation.
+
+    Walks the proof for the nonlinear-arithmetic rules. Their conclusions
+    name the products cvc5 had to reason about, which is precisely what
+    `nlinarith` would otherwise have to guess.
+    """
+    from cvc5 import Kind
+
+    products: dict[int, object] = {}
+    linear = True
+    stack, seen = list(solver.getProof()), set()
+    while stack:
+        step = stack.pop()
+        key = id(step)
+        if key in seen:
+            continue
+        seen.add(key)
+        if str(step.getRule()).rsplit(".", 1)[-1] in _NONLINEAR_RULES:
+            linear = False
+            sub, sub_seen = [step.getResult()], set()
+            while sub:
+                node = sub.pop()
+                nid = node.getId()
+                if nid in sub_seen:
+                    continue
+                sub_seen.add(nid)
+                if node.getKind() == Kind.MULT:
+                    products.setdefault(nid, node)
+                sub.extend(node)
+        stack.extend(step.getChildren())
+    return linear, list(products.values())
+
+
+def _hint_terms(products, state_vars, ctrl_next) -> list:
+    """`nlinarith` hint terms for the products cvc5 multiplied.
+
+    `nlinarith` looks for degree-2 certificates by multiplying pairs of
+    hypotheses; naming the squares it needs up front turns that search into
+    a check. `mul_self_nonneg (a - b)` and `(a + b)` between them span the
+    products of two atoms, which is what the arithmetic rules produce.
+    """
+    from .smt_to_lean import smt_to_lean_body
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for prod in products:
+        args = [c for c in prod if _state_dependent(c)]
+        if len(args) < 2:
+            continue
+        try:
+            a, b = (
+                smt_to_lean_body(args[0], ctrl_next),
+                smt_to_lean_body(args[1], ctrl_next),
+            )
+        except Exception:
+            continue
+        for hint in (
+            f"mul_self_nonneg ({a} - {b})",
+            f"mul_self_nonneg ({a} + {b})",
+        ):
+            if hint not in seen:
+                seen.add(hint)
+                out.append(hint)
+    return out
+
+
+def _core_note(solver, labels: dict) -> "str | None":
+    """Which of the named hypotheses cvc5's refutation actually used."""
+    try:
+        core = solver.getUnsatCore()
+    except Exception:
+        return None
+    used = [name for name, term in labels.items() if any(term == c for c in core)]
+    if not used or len(used) == len(labels):
+        return None
+    return f"the core needs only {', '.join(sorted(used))} of {len(labels)}"
+
+
+def solver_hints(q: "ModuleQueries | None", budget: SmtBudget, log=None) -> SolverHints:
+    """Ask cvc5 the questions whose answers change the tactic plan.
+
+    Bounded and total: whatever is not answered inside the budget is simply
+    absent from the result, and the plan falls back to what it would have
+    been. Never raises.
+    """
+    hints = SolverHints()
+    if q is None or q.inv is None:
+        return hints
+    budget.start_phase()
+    try:
+        _branch_polarity(q, budget, hints)
+        _refutation_shape(q, budget, hints)
+    except Exception as e:  # pragma: no cover -- the whole point is to not raise
+        hints.notes.append(f"gave up: {type(e).__name__}")
+    if log:
+        if hints.any:
+            log(f"   cvc5 assists: {'; '.join(hints.why().splitlines())[:200]}")
+        else:
+            log("   cvc5 assists: nothing to add")
+    return hints
+
+
+def _branch_polarity(q: "ModuleQueries", budget: SmtBudget, hints: SolverHints) -> None:
+    """Conditions the invariant already settles, so `split_ifs` need not."""
+    from .smt_to_lean import smt_to_lean_body
+
+    conds: dict = {}
+    for t in (q.inv, q.ranking, q.prp):
+        if t is not None:
+            _kept_conditions(t, conds)
+    for cond in list(conds.values())[:MAX_DECIDED_CONDITIONS]:
+        if budget.exhausted:
+            return
+        s = q.msmt.fresh_ctrl("d_s")
+        inv_s = q._sub_state(q.inv, s)
+        cond_s = cond.substitute(q.state_vars, s)
+        value = None
+        if _unsat(q, q._and(inv_s, cond_s), budget):
+            value = False
+        elif _unsat(q, q._and(inv_s, q._not(cond_s)), budget):
+            value = True
+        if value is None:
+            continue
+        try:
+            hints.determined.append((smt_to_lean_body(cond, q.msmt.ctrl_next), value))
+        except Exception:
+            continue
+
+
+def _refutation_shape(
+    q: "ModuleQueries", budget: SmtBudget, hints: SolverHints
+) -> None:
+    """Prove each obligation with proofs on, and read what they needed.
+
+    Both obligations, not just `step_inv`: the ranking is usually where the
+    nonlinearity lives, so a module whose invariant is inductive by linear
+    reasoning alone can still need `nlinarith` for `hrank`. Concluding
+    "linear" from `step_inv` on its own would take the closer away from the
+    obligation that needs it.
+    """
+    from cvc5 import Kind
+
+    linear_all = True
+    products: list = []
+    proved_any = False
+    for name, labels in _obligation_labels(q):
+        if budget.exhausted:
+            break
+        try:
+            solver = q._solver(budget)
+            solver.setOption("produce-proofs", "true")
+            solver.setOption("produce-unsat-cores", "true")
+            for term in labels.values():
+                solver.assertFormula(term)
+            if not solver.checkSat().isUnsat():
+                continue
+            linear, prods = _proof_facts(solver, q.tm)
+        except Exception:
+            continue
+        proved_any = True
+        linear_all = linear_all and linear
+        products += prods
+        note = _core_note(solver, labels)
+        if note:
+            hints.notes.append(f"{name}: {note}")
+    if not proved_any:
+        return
+    hints.linear_proof = linear_all
+    if not linear_all:
+        hints.nlinarith_hints = _hint_terms(products, q.state_vars, q.msmt.ctrl_next)
+
+
+def _obligation_labels(q: "ModuleQueries"):
+    """`(name, {hypothesis name: term})` for each obligation cvc5 can state.
+
+    A hypothesis that is literally `true` is left out: it would be in no
+    unsat core and would make every core look like a strict subset.
+    """
+    from cvc5 import Kind
+
+    out = []
+    s = q.msmt.fresh_ctrl("h_s")
+    el = q.msmt.fresh_extl_l("h_el")
+    en = q.msmt.fresh_extl_n("h_en")
+    nxt = q.msmt.update_state(s, el, en)
+
+    def keep(d):
+        return {
+            k: v
+            for k, v in d.items()
+            if v is not None and v.getKind() != Kind.CONST_BOOLEAN
+        }
+
+    out.append(
+        (
+            "step_inv",
+            keep(
+                {
+                    "inv": q._sub_state(q.inv, s),
+                    "pre": q._sub_inputs(q.update_pre, el, en),
+                    "goal": q._not(q._sub_state(q.inv, nxt)),
+                }
+            ),
+        )
+    )
+    if q.ranking is not None and q.prp is not None:
+        decrease = q.tm.mkTerm(
+            Kind.LT,
+            q._clamp(q._sub_state(q.ranking, nxt)),
+            q._clamp(q._sub_state(q.ranking, s)),
+        )
+        out.append(
+            (
+                "hrank",
+                keep(
+                    {
+                        "inv": q._sub_state(q.inv, s),
+                        "notP": q._not(q._sub_state(q.prp, s)),
+                        "pre": q._sub_inputs(q.update_pre, el, en),
+                        "goal": q._not(decrease),
+                    }
+                ),
+            )
+        )
+    return out
+
+
+def _unsat(q: "ModuleQueries", formula, budget: SmtBudget) -> bool:
+    if budget.exhausted:
+        return False
+    try:
+        solver = q._solver(budget)
+        solver.assertFormula(formula)
+        return solver.checkSat().isUnsat()
+    except Exception:
+        return False

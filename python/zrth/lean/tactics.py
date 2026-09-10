@@ -68,6 +68,11 @@ class Features:
     # what makes a neural certificate expensive.
     n_branch: int = 0
 
+    # Distinct branch *conditions*. `split_ifs` splits once per condition
+    # and reuses the hypothesis for repeats, so this, not `n_branch`, is
+    # what its fan-out costs. Falls back to `n_branch` without cvc5.
+    n_conditions: int = 0
+
     has_ite: bool = False
     has_and: bool = False
     has_or: bool = False
@@ -231,8 +236,15 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
     return out if len(out) <= MAX_ENUMERABLE_SLOTS else []
 
 
-def features_for(ctx, pred_text: str) -> Features:
-    """Read the shape of `ctx`'s module and its certificate predicates."""
+def features_for(ctx, pred_text: str, facts=None) -> Features:
+    """Read the shape of `ctx`'s module and its certificate predicates.
+
+    `facts` is `smt_query.PredicateFacts` when the predicates came from
+    SMT-LIB and cvc5 could parse them: the same questions answered against
+    the terms rather than against the printed Lean. It is `None` for
+    predicates compiled from Python IR, and then everything below falls back
+    to reading the text, exactly as it did before.
+    """
     f = Features()
 
     for w in (*ctx.ctrl_next, *ctx.extl_next):
@@ -258,9 +270,24 @@ def features_for(ctx, pred_text: str) -> Features:
     f.has_eq = " = " in pred_text
     f.has_floor = "⌊" in pred_text
     f.nonlinear = is_nonlinear(pred_text)
-    f.n_branch = (
+    text_branch = (
         pred_text.count("(max ") + pred_text.count("(min ") + pred_text.count("if ")
     )
+    f.n_branch = text_branch
+    if facts is not None:
+        # Exact where the text is a guess. `n_branch` takes the larger of the
+        # two: the terms cover only the fields that came from SMT-LIB, so a
+        # predicate compiled from Python IR alongside them would otherwise go
+        # uncounted, and over-counting only ever buys a bigger budget.
+        f.nonlinear = facts.nonlinear
+        f.has_and = f.has_and or facts.has_and
+        f.has_or = f.has_or or facts.has_or
+        f.has_eq = f.has_eq or facts.has_eq
+        f.has_ite = f.has_ite or facts.has_ite
+        f.n_branch = max(text_branch, facts.n_branch)
+        f.n_conditions = facts.n_conditions
+    else:
+        f.n_conditions = text_branch
     if f.finite_state:
         f.two_valued = _two_valued_slots(ctx)
     return f
@@ -328,7 +355,8 @@ class TacticPlan:
             f"{', disjunctive' if f.has_or else ''}"
             f"{', nonlinear' if f.nonlinear else ', linear'}"
             f"{', floor' if f.has_floor else ''}"
-            f"{f', {f.n_branch} branch point(s)' if f.n_branch else ''}",
+            f"{f', {f.n_branch} branch point(s)' if f.n_branch else ''}"
+            f"{f' ({f.n_conditions} distinct)' if f.n_conditions != f.n_branch else ''}",
         ]
         if f.two_valued:
             bits.append(
@@ -338,9 +366,9 @@ class TacticPlan:
         return "\n".join(f"-- {b}" for b in bits)
 
 
-def plan_for(ctx, pred_text: str) -> TacticPlan:
+def plan_for(ctx, pred_text: str, facts=None) -> TacticPlan:
     """Build the tactic plan for this module's proof obligations."""
-    f = features_for(ctx, pred_text)
+    f = features_for(ctx, pred_text, facts)
 
     # ── prep: canonicalise the goal before anything tries to close it ──
     prep: list[str] = []

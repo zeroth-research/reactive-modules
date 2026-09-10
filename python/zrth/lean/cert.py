@@ -28,6 +28,11 @@ class CertificateData:
     update_pre: Expr | str | None = None
     ranking: Expr | str | None = None
 
+    # Shape of the predicates as cvc5 sees them, when they came from SMT-LIB
+    # and cvc5 could parse them. `None` everywhere else, and the tactic plan
+    # falls back to reading the rendered Lean.
+    facts: "object | None" = None
+
 
 def _cert_def_lines(
     ctx: LeanContext,
@@ -215,7 +220,7 @@ def generate_certificate_lean(
     if const_list:
         all_defs += f", {const_list}"
 
-    plan = plan_for(ctx, _predicate_text(ctx, cert_data))
+    plan = plan_for(ctx, _predicate_text(ctx, cert_data), facts=cert_data.facts)
 
     return render(
         "project/Certificate/Certificate.lean.j2",
@@ -247,20 +252,19 @@ def smt_predicates_to_lean(
         return cert_data
 
     # Lazy imports keep cvc5 off the critical path when this function is unused.
-    import cvc5
-
-    from .smt_module import ModuleSMT
-    from .smt_prompt import CegarPromptEnv, parse_predicate
+    from .smt_query import ModuleQueries, predicate_facts
     from .smt_to_lean import smt_to_lean, smt_to_lean_nat
 
-    tm = cvc5.TermManager()
-    msmt = ModuleSMT(tm=tm, module=module)
-    env = CegarPromptEnv(msmt)
+    q = ModuleQueries.build(module, cert_data)
+    if q is None:
+        # cvc5 could not parse or encode; leave the SMT sources in place and
+        # let the codegen path fail with its own message.
+        return cert_data
+    msmt = q.msmt
 
-    def translate(smt_src: str | None, mode: str) -> str | None:
-        if not isinstance(smt_src, str):
-            return smt_src
-        term = parse_predicate(env, smt_src)
+    def translate(term, mode: str, original) -> str | None:
+        if term is None:
+            return original
         if mode in ("property", "invariant"):
             return smt_to_lean(term, msmt.ctrl_next, param_name="s")
         if mode == "ranking":
@@ -277,9 +281,12 @@ def smt_predicates_to_lean(
         )
 
     return CertificateData(
-        prp=translate(cert_data.prp, "property"),
-        init_pre=translate(cert_data.init_pre, "pre"),
-        update_pre=translate(cert_data.update_pre, "pre"),
-        inv=translate(cert_data.inv, "invariant"),
-        ranking=translate(cert_data.ranking, "ranking"),
+        prp=translate(q.prp, "property", cert_data.prp),
+        init_pre=translate(q.init_pre, "pre", cert_data.init_pre),
+        update_pre=translate(q.update_pre, "pre", cert_data.update_pre),
+        inv=translate(q.inv, "invariant", cert_data.inv),
+        ranking=translate(q.ranking, "ranking", cert_data.ranking),
+        # The terms are already parsed, so reading their shape is free. The
+        # tactic plan uses it in place of guessing from the printed Lean.
+        facts=predicate_facts(q),
     )

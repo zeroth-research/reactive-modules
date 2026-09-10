@@ -12,7 +12,7 @@ import pytest
 
 from zrth import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
 from zrth.lean.common import LeanContext
-from zrth.lean.tactics import is_nonlinear, plan_for
+from zrth.lean.tactics import features_for, is_nonlinear, plan_for
 
 
 # ── the nonlinearity detector ────────────────────────────────────────────
@@ -265,3 +265,46 @@ def test_budgets_scale_with_the_module():
     plan = _plan(wide, "fun s => True")
     assert plan.max_heartbeats > small.max_heartbeats
     assert plan.max_rec_depth >= 4096
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Features taken from the cvc5 terms rather than from the printed Lean
+# ══════════════════════════════════════════════════════════════════════
+
+
+def test_facts_override_the_text_scan_for_nonlinearity():
+    """The regex over-reports by design; the term does not."""
+    from zrth.lean.smt_query import PredicateFacts
+
+    ctx = LeanContext(_int_module())
+    linear = features_for(ctx, "fun s => ((s 0 0) * (s 0 0))")
+    assert linear.nonlinear is True                       # text says yes
+    facts = PredicateFacts(nonlinear=False)
+    assert features_for(ctx, "fun s => ((s 0 0) * (s 0 0))", facts).nonlinear is False
+
+
+def test_facts_never_lower_the_branch_count():
+    """Terms cover only the SMT-derived fields, so text still counts too."""
+    from zrth.lean.smt_query import PredicateFacts
+
+    ctx = LeanContext(_int_module())
+    text = "fun s => (max (s 0 0) 0) + (max (s 0 0) 1) + (max (s 0 0) 2)"
+    f = features_for(ctx, text, PredicateFacts(n_branch=1))
+    assert f.n_branch == 3
+
+
+def test_facts_raise_the_branch_count_above_what_the_printer_shows():
+    """Sharing shrinks the output; the goal the closers see is unchanged."""
+    from zrth.lean.smt_query import PredicateFacts
+
+    ctx = LeanContext(_int_module())
+    f = features_for(ctx, "fun s => (max (s 0 0) 0)", PredicateFacts(n_branch=62))
+    assert f.n_branch == 62
+
+
+def test_without_facts_everything_falls_back_to_the_text():
+    ctx = LeanContext(_int_module())
+    f = features_for(ctx, "fun s => ((s 0 0) * (s 0 0)) + (max (s 0 0) 0)")
+    assert f.nonlinear is True
+    assert f.n_branch == 1
+    assert f.n_conditions == 1

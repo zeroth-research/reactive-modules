@@ -72,6 +72,7 @@ def smt_to_lean(
     *,
     param_name: str = "s",
     extra: list[tuple[str, str, list[Wire]]] | None = None,
+    share: bool = True,
 ) -> str:
     """Translate `term` into a Lean 4 expression in a single parameter.
 
@@ -80,8 +81,24 @@ def smt_to_lean(
     """
     bindings = [("s", param_name, state_wires)] + (extra or [])
     var_accessor, var_wire = build_var_map(bindings)
-    body = _walk(term, var_accessor, var_wire)
-    return f"fun {param_name} => {body}"
+    body, lets = _render(term, var_accessor, var_wire, share)
+    return f"fun {param_name} => {_with_lets(body, lets)}"
+
+
+def smt_to_lean_body(
+    term: cvc5.Term,
+    state_wires: list[Wire],
+    *,
+    param_name: str = "s",
+) -> str:
+    """The expression alone, with no `fun` and no `let`s wrapped round it.
+
+    For splicing a subterm into a tactic -- a branch condition inside a
+    `have`, say -- where a binder would be wrong and a `let` could not be
+    referred to from the surrounding proof.
+    """
+    var_accessor, var_wire = build_var_map([("s", param_name, state_wires)])
+    return _walk(term, var_accessor, var_wire)
 
 
 def smt_to_lean_nat(
@@ -90,12 +107,121 @@ def smt_to_lean_nat(
     *,
     param_name: str = "s",
     extra: list[tuple[str, str, list[Wire]]] | None = None,
+    share: bool = True,
 ) -> str:
     """Int-sorted term → Lean `Nat` expression, clamped via `Int.toNat`."""
     bindings = [("s", param_name, state_wires)] + (extra or [])
     var_accessor, var_wire = build_var_map(bindings)
-    body = _walk(term, var_accessor, var_wire)
-    return f"fun {param_name} => (({body} : Int)).toNat"
+    body, lets = _render(term, var_accessor, var_wire, share)
+    return f"fun {param_name} => {_with_lets(f'(({body} : Int)).toNat', lets)}"
+
+
+# ---------------------------------------------------------------------
+# Sharing
+#
+# cvc5 hash-conses, so a predicate reaches us as a DAG; `_walk` alone prints
+# it as a tree. That is not a cosmetic difference. A dense net whose hidden
+# layer feeds the next one shares every unit, and the expansion is
+# exponential in depth: a five-layer net that is 10 distinct ReLU units in
+# the DAG printed as 62 `max` applications, and a sixth layer would have
+# printed 126. `let`-binding each subterm that is reached more than once
+# puts the emitted definition back in step with the term's real size.
+#
+# Only arithmetic is shared. Binding a Bool-sorted subterm would hide the
+# predicate's logical structure behind a name, and `split_ifs` / `casesm*` /
+# `not_and_or` in the prep chain all match on that structure.
+# ---------------------------------------------------------------------
+
+
+def _with_lets(body: str, lets: list[tuple[str, str]]) -> str:
+    if not lets:
+        return body
+    binds = "".join(f"\n  let {name} := {expr}" for name, expr in lets)
+    return f"{binds}\n  {body}"
+
+
+def _shared_nodes(t: cvc5.Term) -> set[int]:
+    """Ids of the arithmetic subterms the printer would emit more than once.
+
+    The test is "reached by two or more distinct parent edges", which is
+    exactly the set that needs its own binding: a node with a single parent
+    is printed once *inside* that parent, however often the parent itself is
+    printed.
+    """
+    edges: dict[int, int] = {}
+    nodes: dict[int, cvc5.Term] = {}
+    stack = [t]
+    while stack:
+        node = stack.pop()
+        key = node.getId()
+        nodes[key] = node
+        edges[key] = edges.get(key, 0) + 1
+        if edges[key] > 1:
+            continue  # its children were already walked from the first edge
+        stack.extend(node)
+    return {k for k, n in edges.items() if n > 1 and _worth_binding(nodes[k])}
+
+
+def _worth_binding(t: cvc5.Term) -> bool:
+    """Compound, state-dependent, and not a proposition.
+
+    Bool is excluded for the reason in the note above. A *ground* subterm --
+    `(- 1)`, or any numeral arithmetic -- is excluded because binding it
+    costs more text than repeating it, and the elaborator does not care
+    about either.
+    """
+    if t.getSort().isBoolean() or t.getNumChildren() == 0:
+        return False
+    stack, seen = [t], set()
+    while stack:
+        node = stack.pop()
+        key = node.getId()
+        if key in seen:
+            continue
+        seen.add(key)
+        if node.getKind() == Kind.CONSTANT:
+            return True
+        stack.extend(node)
+    return False
+
+
+def _render(
+    t: cvc5.Term,
+    var_accessor: dict[str, str],
+    var_wire: dict[str, Wire],
+    share: bool,
+) -> tuple[str, list[tuple[str, str]]]:
+    """`(body, lets)`, with `lets` already in dependency order."""
+    if not share:
+        return _walk(t, var_accessor, var_wire), []
+    plain = _walk(t, var_accessor, var_wire)
+    shared = _shared_nodes(t)
+    if not shared:
+        return plain, []
+    names: dict[int, str] = {}
+    lets: list[tuple[str, str]] = []
+
+    def emit(node: cvc5.Term) -> str:
+        key = node.getId()
+        if key in names:
+            return names[key]
+        text = _walk(node, var_accessor, var_wire, emit_child=emit)
+        if key in shared:
+            name = f"u{len(lets)}"
+            # Children are emitted before the parent, so appending here is
+            # already a topological order.
+            lets.append((name, text))
+            names[key] = name
+            return name
+        return text
+
+    body = _walk(t, var_accessor, var_wire, emit_child=emit)
+    # Sharing is only ever worth a `let` if it actually shrinks the output.
+    # A shallow net repeats little, and there each binding costs more text
+    # than the repetition it removes.
+    if len(_with_lets(body, lets)) >= len(plain):
+        return plain, []
+    return body, lets
 
 
 # ---------------------------------------------------------------------
@@ -110,6 +236,30 @@ _MIN_MAX = {
     (Kind.GEQ, False): "min", (Kind.GT, False): "min",
     (Kind.LEQ, False): "max", (Kind.LT, False): "max",
 }
+
+
+def min_max_of(t: cvc5.Term) -> str | None:
+    """`"min"` / `"max"` if this `ite` is really one, else None.
+
+    Split out from `_fold_min_max` so that feature detection can ask the
+    same question the printer will answer, rather than counting `max` in
+    the printer's output and thereby depending on it.
+    """
+    if t.getKind() != Kind.ITE or not t.getSort().isInteger():
+        return None
+    cond = t[0]
+    kind = cond.getKind()
+    if kind not in (Kind.GEQ, Kind.GT, Kind.LEQ, Kind.LT):
+        return None
+    lhs, rhs = cond[0], cond[1]
+    then_, else_ = t[1], t[2]
+    if lhs == then_ and rhs == else_:
+        in_order = True
+    elif lhs == else_ and rhs == then_:
+        in_order = False
+    else:
+        return None
+    return _MIN_MAX[(kind, in_order)]
 
 
 def _fold_min_max(t: cvc5.Term, recur) -> str | None:
@@ -127,28 +277,20 @@ def _fold_min_max(t: cvc5.Term, recur) -> str | None:
     support, so there the `ite` and its `split_ifs` branch are still the way
     through.
     """
-    if not t.getSort().isInteger():
+    op = min_max_of(t)
+    if op is None:
         return None
-    cond = t[0]
-    kind = cond.getKind()
-    if kind not in (Kind.GEQ, Kind.GT, Kind.LEQ, Kind.LT):
-        return None
-    lhs, rhs = cond[0], cond[1]
-    then_, else_ = t[1], t[2]
-    if lhs == then_ and rhs == else_:
-        in_order = True
-    elif lhs == else_ and rhs == then_:
-        in_order = False
-    else:
-        return None
-    return f"({_MIN_MAX[(kind, in_order)]} {recur(lhs)} {recur(rhs)})"
+    return f"({op} {recur(t[0][0])} {recur(t[0][1])})"
 
 
 def _walk(
     t: cvc5.Term,
     var_accessor: dict[str, str],
     var_wire: dict[str, Wire],
+    emit_child=None,
 ) -> str:
+    """Print `t`. `emit_child`, when given, prints each child instead of
+    recursing directly, which is how `_render` interposes its `let` names."""
     k = t.getKind()
 
     if k == Kind.CONST_BOOLEAN:
@@ -176,7 +318,7 @@ def _walk(
             f"Unknown free variable `{name}` (known: {list(var_accessor)})"
         )
 
-    recur = lambda x: _walk(x, var_accessor, var_wire)
+    recur = emit_child or (lambda x: _walk(x, var_accessor, var_wire))
 
     if k == Kind.NOT:
         return f"¬ ({recur(t[0])})"

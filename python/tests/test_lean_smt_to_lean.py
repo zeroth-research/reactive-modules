@@ -1,6 +1,6 @@
 """Tests for the SMT -> Lean expression translator (`zrth.lean.smt_to_lean`).
 
-Focused on the `min`/`max` peephole. There is no `max` kind to translate
+Covers the `min`/`max` peephole and the sharing pass. There is no `max` kind to translate
 from, so a ReLU unit reaches the translator as `(ite (>= e 0) e 0)`. Left as
 an `ite` each unit costs the certificate a `split_ifs` branch, and `hrank`
 mentions the ranking twice, so a k-unit net fans one goal out into 2^(2k) --
@@ -98,3 +98,82 @@ def test_a_whole_relu_layer_folds():
     ).ranking
     assert lean.count("max") == 3, lean
     assert "if " not in lean, lean
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Sharing
+#
+# cvc5 hash-conses, so a predicate arrives as a DAG and the printer used to
+# expand it into a tree. For a dense net whose hidden layer feeds the next
+# that expansion is exponential in depth.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _relu(e: str) -> str:
+    return f"(ite (>= {e} 0) {e} 0)"
+
+
+def _dense(layers: int) -> str:
+    """`layers` hidden layers of two units, each reading both units below."""
+    a, b = "s0", "s0"
+    for _ in range(layers):
+        a, b = (
+            _relu(f"(+ {a} {b})"),
+            _relu(f"(+ {a} (- {b}))"),
+        )
+    return f"(+ {a} {b})"
+
+
+def _rank(module, smt: str) -> str:
+    return smt_predicates_to_lean(CertificateData(ranking=smt), module).ranking
+
+
+def test_a_deep_net_is_emitted_once_per_unit_not_once_per_path():
+    """Four layers of two units: 8 units, but 30 `max` when expanded."""
+    lean = _rank(_int_module(), _dense(4))
+    assert lean.count("(max ") == 8, lean
+    # every repeated subterm gets a name, pre-activations included
+    assert lean.count("let ") == 14
+
+
+def test_the_same_net_without_sharing_shows_what_it_costs():
+    from zrth.lean.smt_to_lean import smt_to_lean_nat
+    from zrth.lean.smt_query import ModuleQueries
+
+    q = ModuleQueries.build(_int_module(), CertificateData(ranking=_dense(4)))
+    plain = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
+    assert plain.count("(max ") == 30
+    assert "let " not in plain
+
+
+def test_sharing_never_makes_the_output_longer():
+    from zrth.lean.smt_to_lean import smt_to_lean_nat
+    from zrth.lean.smt_query import ModuleQueries
+
+    for smt in ("s0", "(+ s0 1)", _relu("s0"), _dense(1), _dense(2), _dense(5)):
+        q = ModuleQueries.build(_int_module(), CertificateData(ranking=smt))
+        wires = q.msmt.ctrl_next
+        assert len(smt_to_lean_nat(q.ranking, wires, share=True)) <= len(
+            smt_to_lean_nat(q.ranking, wires, share=False)
+        ), smt
+
+
+def test_a_shallow_net_gets_no_bindings():
+    """One layer repeats nothing worth naming, so no `let` appears."""
+    assert "let " not in _rank(_int_module(), _dense(1))
+
+
+def test_propositions_are_never_bound():
+    """`split_ifs` / `casesm*` / `not_and_or` all match on this structure."""
+    shared_cond = "(and (>= s0 3) (or (>= s0 3) (<= s0 9)))"
+    lean = smt_predicates_to_lean(
+        CertificateData(inv=shared_cond), _int_module()
+    ).inv
+    assert "let " not in lean, lean
+    assert lean.count("≥ 3") == 2
+
+
+def test_ground_subterms_are_never_bound():
+    """Binding `(- 1)` costs more text than repeating it."""
+    lean = _rank(_int_module(), "(+ (* s0 (- 1)) (* s0 (- 1)))")
+    assert "let u0 := (- 1)" not in lean, lean

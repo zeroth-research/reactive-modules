@@ -17,6 +17,7 @@ from zrth.lean.smt_query import (
     SmtBudget,
     Status,
     pre_check,
+    predicate_facts,
 )
 
 
@@ -159,3 +160,92 @@ def test_pre_check_names_the_refuted_obligations():
     body = "\n".join(lines)
     assert "REFUTED" in body and "hrank" in body
     assert "counterexample: s0 = 1" in body
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Predicate shape read off the terms
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _facts(**fields):
+    return predicate_facts(ModuleQueries.build(countdown(), CertificateData(**fields)))
+
+
+def _relu(e: str) -> str:
+    return f"(ite (>= {e} 0) {e} 0)"
+
+
+def _dense(layers: int) -> str:
+    a, b = "s0", "s0"
+    for _ in range(layers):
+        a, b = _relu(f"(+ {a} {b})"), _relu(f"(+ {a} (- {b}))")
+    return f"(+ {a} {b})"
+
+
+@pytest.mark.parametrize(
+    "ranking,nonlinear",
+    [
+        ("(* 3 s0)", False),        # an affine layer's weight
+        ("(+ s0 s0)", False),
+        ("(* s0 s0)", True),
+        ("(* (+ s0 1) (- s0 1))", True),
+    ],
+)
+def test_nonlinearity_is_read_off_the_multiplication(ranking, nonlinear):
+    assert _facts(ranking=ranking).nonlinear is nonlinear
+
+
+def test_branch_points_follow_the_min_max_fold():
+    """A folded ReLU prints the condition's operands, not both branches.
+
+    So `max e 0` emits `e` once where the `ite` would have emitted it
+    twice, and the count has to follow that or a deep net reads as ten
+    times more branchy than the goal it produces.
+    """
+    assert _facts(ranking=_dense(4)).n_branch == 30
+    assert _facts(ranking=_dense(5)).n_branch == 62
+
+
+def test_branch_points_do_not_move_when_the_printer_shares():
+    """The whole point of counting on the term rather than on the output.
+
+    `simp` is zeta-reducing, so the goal is the expanded one whether or not
+    the printer bound the repeats to names -- and the heartbeat budget is
+    calibrated against that goal.
+    """
+    from zrth.lean.smt_to_lean import smt_to_lean_nat
+
+    q = ModuleQueries.build(countdown(), CertificateData(ranking=_dense(5)))
+    unshared = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
+    shared = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=True)
+    assert unshared.count("(max ") == 62
+    assert shared.count("(max ") == 10          # the printer did move
+    assert predicate_facts(q).n_branch == 62    # the count did not
+
+
+def test_repeated_conditions_cost_one_split_between_them():
+    """`split_ifs` splits per distinct condition, not per occurrence."""
+    twice = "(+ (ite (>= s0 4) 1 2) (ite (>= s0 4) 3 7))"
+    f = _facts(ranking=twice)
+    assert f.n_branch == 2
+    assert f.n_conditions == 1
+
+
+def test_a_folded_relu_costs_no_split_at_all():
+    f = _facts(ranking=_relu("s0"))
+    assert f.n_branch == 1
+    assert f.n_conditions == 0
+    assert f.has_ite is False
+
+
+def test_structure_comes_from_the_term_not_a_substring_search():
+    f = _facts(inv="(and (>= s0 0) (or (<= s0 5) (= s0 9)))")
+    assert (f.has_and, f.has_or, f.has_eq) == (True, True, True)
+
+
+def test_facts_record_which_state_slots_are_mentioned():
+    assert _facts(inv="(>= s0 0)").mentioned == frozenset({0})
+
+
+def test_facts_are_absent_rather_than_wrong_when_cvc5_cannot_parse():
+    assert predicate_facts(None) is None
