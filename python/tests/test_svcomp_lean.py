@@ -46,7 +46,7 @@ def test_emit_contains_the_proof_skeleton():
                  "theorem covered", "def post_state", "def ok", "theorem step_ok",
                  "def Step", "theorem lex_step", "def Init", "theorem initiation",
                  "theorem consecution", "def RawStep", "theorem no_inf_step",
-                 "theorem program_terminates", "no_infinite_run_lex"):
+                 "theorem no_infinite_run", "no_infinite_run_lex"):
         assert decl in src, f"missing {decl!r}"
     assert "sorry" not in src
 
@@ -97,7 +97,7 @@ def test_emit_with_invariants_proves_them():
     assert "def invariants (s : Vector 1 Int) : Prop :=\n  True" not in src
     assert "theorem initiation" in src and "theorem consecution" in src
     # the termination theorem takes the entry state and its Init proof
-    assert "theorem program_terminates (s0 : Vector 1 Int) (hinit : Init s0)" in src
+    assert "theorem no_infinite_run (s0 : Vector 1 Int) (hinit : Init s0)" in src
 
 
 def test_conditional_invariant_reaches_the_emitted_file():
@@ -127,7 +127,7 @@ def test_branching_entry_fact_is_case_split_not_dropped():
 
 def test_emit_multi_path_unions_the_step():
     """A branching body yields one namespace per path and a Step that is their
-    union, dispatched in `program_terminates`."""
+    union, dispatched in `no_infinite_run`."""
     layers = [(np.array([[1], [-1]]), np.array([0, 0])),
               (np.array([[1, 1]]), np.array([0]))]
     bench = loop_bench(("x",), lambda x: ite(ne(x, 0), ite(x > 0, x - 1, x + 1), x))
@@ -185,14 +185,14 @@ def _always_obligation(pred, inv=None):
 
 def test_always_emits_its_own_theorem():
     """A safety property emits no network and no ranking — the invariant is the
-    device — and concludes ``always_holds`` rather than ``program_terminates``."""
+    device — and concludes ``always_holds`` rather than ``no_infinite_run``."""
     system, res = _always_obligation(lambda W, S: S["x"] >= 0)
     src = emit_program("safe", system, res)
     for decl in ("def pred", "def invariants", "theorem initiation",
                  "theorem consecution", "def ok", "theorem step_ok",
                  "theorem always_holds"):
         assert decl in src, f"missing {decl!r}"
-    for absent in ("def V_", "nrf_", "lex_step", "program_terminates", "sorry"):
+    for absent in ("def V_", "nrf_", "lex_step", "no_infinite_run", "sorry"):
         assert absent not in src, f"unexpected {absent!r} in a safety proof"
     assert "(((1 * s 0)) ≥ 0)" in src or "≥ 0" in src.split("def pred")[1].split("\n\n")[0]
 
@@ -241,7 +241,7 @@ def test_lex_emits_one_network_per_rank():
     src = emit_program("lex", system, res)
     for decl in ("def V_0 ", "def V_1 ", "def R0 ", "def R1 ",
                  "lexDec [R0, R1]", "no_infinite_run_lex [R0, R1]",
-                 "theorem program_terminates", "cell0d0_refute", "cell0d1_refute"):
+                 "theorem no_infinite_run", "cell0d0_refute", "cell0d1_refute"):
         assert decl in src, f"missing {decl!r}"
     assert "sorry" not in src
 
