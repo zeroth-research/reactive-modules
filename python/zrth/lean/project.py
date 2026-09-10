@@ -297,8 +297,11 @@ def write_certificate_lean(
 
     Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
     from ``create_project`` which already has one).
-    ``cert_data`` is accepted for compatibility but not used — the data lives in
-    XXXData.lean.  Call ``write_data_lean`` to update the data.
+
+    The *definitions* still live in XXXData.lean, but ``cert_data`` is no
+    longer inert here: the proof tactics are generated from the shape of the
+    predicates (see ``zrth.lean.tactics``), so this file has to be rewritten
+    whenever they change — after ``--infer``, for instance.
     """
     module_name = project_name
     if ctx is None:
@@ -307,7 +310,7 @@ def write_certificate_lean(
     cert_dir = project_dir / "Certificate"
     cert_dir.mkdir(parents=True, exist_ok=True)
     cert_file = cert_dir / "Certificate.lean"
-    cert_file.write_text(generate_certificate_lean(ctx))
+    cert_file.write_text(generate_certificate_lean(ctx, cert_data))
     print(f"Wrote {cert_file}")
     return cert_file
 
@@ -504,7 +507,7 @@ import System.ScalarRel
     # ----------------------------------------------------------
     # Always write Certificate.lean (stable proof structure, imports XXXData)
     # ----------------------------------------------------------
-    write_certificate_lean(project_dir, project_name, module, ctx=ctx)
+    write_certificate_lean(project_dir, project_name, module, cert_data, ctx=ctx)
 
     print()
     print(f"DONE: Project created at: {project_dir}")

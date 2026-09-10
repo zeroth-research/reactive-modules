@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type, _translate_terms
 from zrth.lean.common import LeanContext, _bind_wires
+from zrth.lean.tactics import plan_for
 from zrth.lean.template_env import render
 from ..expr import Expr
 
@@ -141,6 +142,21 @@ def _cert_def_context(ctx: LeanContext, cert_data: CertificateData) -> dict:
     )
 
 
+def _predicate_text(ctx: LeanContext, cert_data: CertificateData) -> str:
+    """The Lean text of every certificate predicate, for shape detection.
+
+    Fields reach us as compiled term lists, as already-translated Lean
+    expression strings, or not at all; `_cert_def_context` has normalised all
+    three into `_body` / `_expr` entries by the time we look.
+    """
+    c = _cert_def_context(ctx, cert_data)
+    return "\n".join(
+        str(v)
+        for k, v in c.items()
+        if v and (k.endswith("_body") or k.endswith("_expr"))
+    )
+
+
 def generate_data_lean(
     ctx: LeanContext,
     cert_data: CertificateData | None = None,
@@ -199,6 +215,8 @@ def generate_certificate_lean(
     if const_list:
         all_defs += f", {const_list}"
 
+    plan = plan_for(ctx, _predicate_text(ctx, cert_data))
+
     return render(
         "project/Certificate/Certificate.lean.j2",
         module_inline=module_inline,
@@ -207,6 +225,7 @@ def generate_certificate_lean(
         extl_type=extl_native,
         ctrl_type=ctrl_native,
         all_defs=all_defs,
+        plan=plan,
     )
 
 

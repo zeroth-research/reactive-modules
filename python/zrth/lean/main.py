@@ -336,9 +336,14 @@ import {out.stem}Scalar
         project_cert_data.inv = cert_data.inv
         project_cert_data.ranking = cert_data.ranking
 
-    # After inference, rewrite only System/Data.lean (Certificate.lean is stable).
+    # After inference the predicates are new, so both files are rewritten:
+    # Data.lean holds the definitions, and Certificate.lean's tactics are
+    # generated from their shape.
     if args.infer:
         write_data_lean(project_dir, args.project_name, module, project_cert_data)
+        write_certificate_lean(
+            project_dir, args.project_name, module, project_cert_data
+        )
 
     print(f"\nProject ready at: {project_dir}")
 

@@ -8,13 +8,11 @@ import System.Data
 {% endif %}
 import ZerothHammer
 
--- `simp_mat` unfolds the whole transition body at once, so its recursion
--- depth tracks the number of terms in the module, not the state width. The
--- default 512 gives out somewhere between 44 and 48 chained operations.
-set_option maxRecDepth 100000
--- `decide` on a finite state and `simp_mat` on a wide one both run past
--- the default budget before they can conclude.
-set_option maxHeartbeats 2000000
+-- Budgets and tactics below are generated from the shape of this module and
+-- its certificate; see `zrth/lean/tactics.py`.
+{{ plan.why() }}
+set_option maxRecDepth {{ plan.max_rec_depth }}
+set_option maxHeartbeats {{ plan.max_heartbeats }}
 
 {% if module_inline %}
 {{ module_inline }}
@@ -40,6 +38,14 @@ macro "simp_mat" : tactic =>
 macro "simp_defs" : tactic =>
   `(tactic| (simp only [{{ all_defs }}] at *; try dsimp at *))
 
+-- Canonicalise the goal: only the steps this module's shapes call for.
+macro "cert_prep" : tactic =>
+  `(tactic| ({{ plan.prep_tactic }}))
+
+-- Close it: only the provers this state can use, cheapest first.
+macro "cert_close" : tactic =>
+  `(tactic| {{ plan.close_tactic }})
+
 -- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
 -- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
 macro "mat_collapse" : tactic =>
@@ -53,13 +59,13 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
    try simp_mat
    try simp_defs
-   all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto | decide | bv_decide | (simp_all; done) | (simp_all; omega) | (simp_all; linarith))
+   all_goals (cert_prep <;> cert_close)
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
    try simp_defs
    try simp_mat
-   all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto | decide | bv_decide | (simp_all; done) | (simp_all; omega) | (simp_all; linarith))
+   all_goals (cert_prep <;> cert_close)
 
 section TS
 
@@ -87,9 +93,10 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
     obtain ⟨l, hpre, heq⟩ := htr
     rw [← heq]
+    clear heq
     try simp_defs
     try simp_mat
-    all_goals ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try norm_num at *) <;> (try casesm* _ ∧ _, _ ∨ _) <;> first | omega | (norm_cast; omega) | (norm_num; done) | (constructor <;> linarith) | linarith | tauto | decide | bv_decide | (simp_all; done) | (simp_all; omega) | (simp_all; linarith))
+    all_goals (cert_prep <;> cert_close)
 
 {{ noncomp }}def buchi := rule_buchi
   lts
