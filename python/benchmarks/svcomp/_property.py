@@ -15,8 +15,9 @@ so the run leaves it again and again. That is recurrence, and the other liveness
 shapes are it plus a safety claim plus columns: "eventually P" is
 ``Liveness(not P)``; "eventually P forever" is ``Liveness(not P)`` with the
 stability ``Safety(P -> P')``; "after p, eventually q" is ``Liveness(waiting)`` for
-a column set by ``p`` and cleared by ``q``; termination is :func:`terminates`, where
-leaving the domain is a fixed point and stability comes free. Any ω-regular
+a column set by ``p`` and cleared by ``q``; termination is the ``Liveness`` whose
+domain is "some column moves", where leaving it is a fixed point and stability
+comes free. Any ω-regular
 liveness property reduces to recurrence the same way, by composing its automaton
 in as columns — which is why one class is enough.
 """
@@ -56,18 +57,3 @@ class Liveness:
     domain: object
     holds: ClassVar[None] = None
 
-
-def terminates(over=None) -> Liveness:
-    """Termination: the columns ``over`` stop moving.
-
-    A reactive module's update is total — it ticks forever — so termination is a
-    property of what the module *encodes*, under the convention that a finished
-    program stutters: the rounds that count are those where one of these columns
-    changes. Leaving that domain is reaching a fixed point, which a run never
-    leaves, so here "leaves infinitely often" is "leaves for good". Defaults to
-    every column, which is right unless something stateful is composed alongside
-    that keeps moving after the rest has stopped; then name the columns meant."""
-    def moving(W, S):
-        names = over if over is not None else S.names
-        return z3.Or(*[S.next[n] != S[n] for n in names])
-    return Liveness(moving)

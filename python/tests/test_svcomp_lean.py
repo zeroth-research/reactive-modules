@@ -17,7 +17,7 @@ from tests._fixtures import loop_bench
 from benchmarks.svcomp._lean import _render_conjuncts, _trivial, emit_program
 from benchmarks.svcomp import discover
 from benchmarks.svcomp._farkas import certify, inductive, lex_decrease, read_system
-from benchmarks.svcomp._property import terminates
+from benchmarks.svcomp._termination import terminates
 from benchmarks.svcomp._termination import _v_module, system_of
 from zrth import Module
 from benchmarks.svcomp._property import Safety
