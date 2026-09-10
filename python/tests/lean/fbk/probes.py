@@ -106,6 +106,10 @@ HAND_WRITTEN = [
     ("DeepBody64",  "m_deep",      "(distinct s0 101)", "certified"),
     ("DeepBody48",  "m_depth48",   "(distinct s0 101)", "certified"),
     ("DeepBody8",   "m_depth8",    "(distinct s0 101)", "certified"),
+
+    # -- mixed Bool+Int state: a per-index `TypeMap`, so `var_0 : Bool` and
+    #    `var_1 : Int` have to reach the VMT as different sorts.
+    ("MixedBoolInt", "m_boolint",  "(and (>= s1 0) (<= s1 5))", "certified"),
 ]
 
 PROBES = FROM_CASE_MATRIX + NET_SHAPED + HAND_WRITTEN
@@ -124,7 +128,6 @@ REJECTED = {
     "m_relu_vec":   ("verith",   "ctrl wire holds more than one element"),
     "m_transpose":  ("verith",   "ctrl wire holds more than one element"),
     "m_vec32":      ("verith",   "ctrl wire holds more than one element"),
-    "m_boolint":    ("verith",   "state mixes element types"),
     "m_lra_conv":   ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_lra_half":   ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_lra_lin":    ("vmt2lean", "Real state: tp() maps only Int and Bool"),

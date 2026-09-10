@@ -203,9 +203,21 @@ def test_binders_are_explicit_so_INIT_and_TRANS_keep_their_arity():
     assert "\nvariable " not in src
 
 
-def test_typemap_is_the_uniform_form():
+def test_typemap_is_a_single_wildcard_when_the_state_is_uniform():
     assert "abbrev TypeMap : Nat → Type\n  | _ => Int" in _na(_counter(), "(= s0 0)")
     assert "abbrev TypeMap : Nat → Type\n  | _ => Bool" in _na(_two_bools(), "(not s0)")
+
+
+def test_typemap_has_an_arm_per_slot_when_the_state_is_mixed():
+    src = _na(_mixed_state(), "(>= s0 0)")
+    assert "abbrev TypeMap : Nat → Type\n  | 0 => Int\n  | 1 => Bool\n  | _ => Bool" in src
+
+
+def test_var_abbrevs_are_ascribed_their_own_slot_type():
+    """`matchTypeName` reads the ascription to pick the VMT sort."""
+    src = _na(_mixed_state(), "(>= s0 0)")
+    assert "abbrev var_0 (state : StateType) : Int := state 0" in src
+    assert "abbrev var_1 (state : StateType) : Bool := state 1" in src
 
 
 # ── the property, in Bool ───────────────────────────────────────────────────
@@ -257,9 +269,12 @@ def test_real_state_aborts():
         check_na_supported(LeanContext(_real_state()))
 
 
-def test_mixed_element_types_abort():
-    with pytest.raises(NAUnsupported, match="mixes element types"):
-        check_na_supported(LeanContext(_mixed_state()))
+def test_mixed_element_types_are_accepted():
+    """Verified against the real lean2vmt: a per-index `TypeMap` declares
+    `var_0 Bool` / `var_1 Int` correctly, and the `TypeMap.match_1` the
+    equation compiler generates never reaches the VMT — `emitDefs` keeps
+    only declarations whose return type whnfs to Prop/Int/Bool."""
+    check_na_supported(LeanContext(_mixed_state()))
 
 
 def test_op_without_a_lean2vmt_translation_aborts():

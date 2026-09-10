@@ -123,12 +123,6 @@ def check_na_supported(ctx: LeanContext) -> None:
             f"state element type(s) {', '.join(sorted(bad))} unsupported; "
             "vmt2lean.py only maps Int and Bool back to Lean"
         )
-    if len(elem_types) > 1:
-        raise NAUnsupported(
-            f"state mixes element types ({', '.join(sorted(elem_types))}); "
-            "a per-index `TypeMap` needs a `match`, and the auxiliary "
-            "matcher it generates has never been through lean2vmt"
-        )
 
     if not list(ctx.atom.init):
         raise NAUnsupported("the module has no init terms, so there is no INIT")
@@ -190,7 +184,7 @@ def atom_to_lean_na(
     check_na_supported(ctx)
 
     n = len(ctx.ctrl_next)
-    elem_ty = _flat_element_type(ctx.ctrl_next[0])
+    slot_ty = [_flat_element_type(w) for w in ctx.ctrl_next]
 
     # One slot per wire (`check_na_supported` rejects wider wires), so wire
     # `i` is slot `i` on both the read and the write side.
@@ -213,8 +207,18 @@ def atom_to_lean_na(
 
     # `TypeMap`/`StateType` sit *outside* `Definition`: the certificate
     # template opens `Definition` but names `StateType` unqualified.
+    # A uniform state gets the wildcard arm alone; a mixed one gets an arm
+    # per slot. The equation compiler builds a `TypeMap.match_1` for the
+    # latter, which `emitDefs` skips of its own accord: it keeps only
+    # declarations whose return type whnfs to `Prop`/`Int`/`Bool`, and a
+    # matcher's is `motive n` with `motive` a free variable.
     lines.append("abbrev TypeMap : Nat → Type")
-    lines.append(f"  | _ => {elem_ty}")
+    if len(set(slot_ty)) == 1:
+        lines.append(f"  | _ => {slot_ty[0]}")
+    else:
+        for i, ty in enumerate(slot_ty):
+            lines.append(f"  | {i} => {ty}")
+        lines.append(f"  | _ => {slot_ty[-1]}")
     lines.append("")
     lines.append("abbrev StateType := (n : Nat) → TypeMap n")
     lines.append("")
@@ -225,8 +229,10 @@ def atom_to_lean_na(
     # `variable`: auto-binding drops a binder the body happens not to use,
     # and `M` below applies `INIT`/`TRANS` to a fixed number of arguments.
     lines.append("-- state variables")
+    # The ascription is what `matchTypeName` reads to pick the VMT sort, so
+    # it has to be the slot's own type, not a shared one.
     for i in range(n):
-        lines.append(f"abbrev var_{i} (state : StateType) : {elem_ty} := state {i}")
+        lines.append(f"abbrev var_{i} (state : StateType) : {slot_ty[i]} := state {i}")
     lines.append("")
 
     # --- transition relation ---
