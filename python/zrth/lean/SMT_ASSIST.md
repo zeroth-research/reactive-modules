@@ -155,11 +155,71 @@ Every step is `try`: cvc5 is the stronger prover, so a `have` the Lean
 tactics cannot reproduce has to cost nothing and leave the `split_ifs` route
 intact.
 
-It fires, and it does not pay. Rebuilt with the `try` removed, so that a
+**It fires, and it does not pay.** Rebuilt with the `try` removed, so that a
 failing `have` would be an error rather than a no-op, NN2RealWide4's
-`hf0 : 1 * s 0 0 ≥ 0` is proved and the certificate closes in 61 s against
-~68 s. But that is one of its four conditions, and one is not enough to show
-above the noise. Hence the flag: implemented, sound, bounded, and off.
+`hf0 : 1 * s 0 0 ≥ 0` is proved and the certificate closes. But that is one
+of its four conditions, so `NN2RealAllPos4` was built to give it every one:
+a Real net whose every ReLU is non-negative under the invariant, all four
+conditions settled. Alternating runs with the olean deleted each time, so
+only the `Certificate.Certificate` job is being timed:
+
+| | off | on |
+|---|---|---|
+| first pair | 77 s | 75 s |
+| second pair | 76 s | 71 s |
+
+3-7%, which is at the edge of the noise on this machine even quiet.
+
+**Why: sharing and `cert_facts` are pulling against each other**, and both
+are additions from this pass. `ranking` is emitted with its repeated
+subterms `let`-bound, so its branch conditions read
+
+```lean
+let u3 := (u0 + (3 : Real))
+… (if (u3 ≥ (0 : Real)) then u3 else (0 : Real)) …
+```
+
+while `cert_facts` states the *expanded* condition, because a `have` outside
+the definition cannot refer to `u3`:
+
+```lean
+have hf0 : ((((1 : Real) * (($v) 0 0)) + (3 : Real)) ≥ (0 : Real)) := …
+```
+
+The `have` is proved either way -- it is a true statement about the state --
+but `simp only [if_pos hf0]` has nothing to match unless the `let`s have
+already been zeta-reduced into the goal, and only the rewrite removes the
+split. That is the whole of the missing benefit.
+
+So the predicate is now rendered **unshared whenever cvc5 settled a
+condition in it** (`solver_hints` runs before `smt_predicates_to_lean`, and
+passes `share=False`). That costs almost nothing: settled conditions only
+survive as `if`s in Real predicates, where sharing saves little
+(NN2RealWide4 is 556 chars against 422), while the deep Int nets where
+sharing matters fold to `max` and offer no conditions to settle at all.
+The two shapes now match on the nose.
+
+**And it still does not pay.** Same measurement after the fix:
+
+| | off | on |
+|---|---|---|
+| first pair | 68 s | 68 s |
+| second pair | 69 s | 70 s |
+
+Identical -- which also says the 3-7% before the fix was noise, not a
+partial win.
+
+And the rewrite is firing. Rebuilt with the inner `try` stripped, so that a
+`simp only` making no progress would be an error, it builds clean: all four
+branches really are collapsed, and the certificate still takes 70 s. So
+`split_ifs` over four conditions was never the cost. The Real goal carries
+`⌊·⌋` and `Int.toNat` and is closed by `linarith`; that is where to look
+next. The flag stays off.
+
+The premise was wrong, not the implementation, and that is worth more than
+a speed-up: `n_conditions` is a bad cost model for a Real certificate, and
+the next attempt should profile where the time actually goes before
+optimising anything.
 
 **Product hints for `nlinarith`.** cvc5's proofs are not translatable — this
 build offers alethe, cpc, dot and lfsc, and Mathlib reads none of them — but

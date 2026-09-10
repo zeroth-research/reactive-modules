@@ -338,3 +338,19 @@ def test_the_hint_log_says_when_there_is_nothing_to_add():
         log=lines.append,
     )
     assert any("nothing cvc5 can add" in ln for ln in lines)
+
+
+def test_translation_can_be_asked_not_to_share():
+    """`cert_facts` states a condition expanded, so the definition must be.
+
+    A `have` outside the definition cannot name a `let` bound inside it, so
+    a shared `if (u3 ≥ 0) …` gives `simp only [if_pos hf0]` nothing to match
+    and the branch is never collapsed.
+    """
+    from zrth.lean.cert import smt_predicates_to_lean
+
+    cert = CertificateData(ranking=_dense(4))
+    shared = smt_predicates_to_lean(cert, countdown(), share=True).ranking
+    plain = smt_predicates_to_lean(cert, countdown(), share=False).ranking
+    assert "let " in shared
+    assert "let " not in plain

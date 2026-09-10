@@ -383,18 +383,23 @@ def main():
         else:
             pre_check(module, cert_data, budget)
 
-    project_cert_data = cert_data
-    if cert_data is not None:
-        project_cert_data = smt_predicates_to_lean(cert_data, module)
-
+    # The hints have to come first: a settled branch condition is spliced
+    # into a tactic in expanded form, so the definition it has to match must
+    # be printed unshared.
+    hints = None
     if args.smt_tactics == "cvc5" and cert_data is not None:
         print(
             f".. SMT-informed tactics (cvc5): <={budget.per_call_ms} ms per "
             f"query, <={budget.phase_ms} ms total"
         )
         hints = solver_hints(ModuleQueries.build(module, cert_data), budget, log=print)
-        if project_cert_data is not None:
-            project_cert_data.hints = hints
+
+    project_cert_data = cert_data
+    if cert_data is not None:
+        project_cert_data = smt_predicates_to_lean(
+            cert_data, module, share=not (hints and hints.determined)
+        )
+        project_cert_data.hints = hints
 
     # --cert-file: generate a standalone, self-contained certificate file and exit
     if args.cert_file:

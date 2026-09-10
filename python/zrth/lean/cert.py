@@ -244,11 +244,18 @@ def generate_certificate_lean(
 
 
 def smt_predicates_to_lean(
-    cert_data: CertificateData, module: "Module"
+    cert_data: CertificateData, module: "Module", *, share: bool = True
 ) -> CertificateData:
     """Translate SMT-LIB string fields in *cert_data* to Lean expression strings.
 
     None and compiled term-list fields pass through unchanged.
+
+    `share=False` prints repeated subterms in full instead of `let`-binding
+    them. The caller wants that when `--smt-tactics` settled a branch
+    condition: `cert_facts` states the condition expanded, because a `have`
+    outside the definition cannot name a `let` inside it, and
+    `simp only [if_pos …]` then has nothing to match against a shared
+    `if (u3 ≥ 0) …`.
     """
     fields = (
         cert_data.prp,
@@ -275,9 +282,9 @@ def smt_predicates_to_lean(
         if term is None:
             return original
         if mode in ("property", "invariant"):
-            return smt_to_lean(term, msmt.ctrl_next, param_name="s")
+            return smt_to_lean(term, msmt.ctrl_next, param_name="s", share=share)
         if mode == "ranking":
-            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s")
+            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s", share=share)
         # preconditions
         return smt_to_lean(
             term,
@@ -287,6 +294,7 @@ def smt_predicates_to_lean(
                 ("e", "e.2", msmt.extl_next),
                 ("el", "e.1", msmt.extl_latched),
             ],
+            share=share,
         )
 
     return CertificateData(

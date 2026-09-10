@@ -220,9 +220,17 @@ Compressed; each has a section in `VERITH_LIMITS.md` or `SMT_ASSIST.md`.
    non-negative under the invariant, so cvc5 settles all four branch
    conditions. Timing the `Certificate.Certificate` job alone, alternating
    and deleting the olean each time: 77 s / 76 s off against 75 s / 71 s on.
-   The `have` is proved; the open question is whether
-   `simp only [if_pos hf0]` actually collapses the `if`, since only the
-   rewrite removes the split. Find that out before turning the flag on.
+   A first suspect was that `ranking`'s conditions read `u3 ≥ 0` (shared)
+   while `cert_facts` stated the expanded `1 * s 0 0 + 3 ≥ 0`, so
+   `simp only [if_pos hf0]` had nothing to match. A predicate with a
+   settled condition is now printed unshared and the two match exactly —
+   and the numbers did not move: 68 / 69 s off against 68 / 70 s on. The
+   3-7% before the fix was noise. Rebuilt with the inner `try` stripped, so
+   a no-op `simp only` would be an error, it builds clean — the rewrite
+   *is* firing and all four branches really are collapsed. So `split_ifs`
+   over four conditions was never the cost. The Real goal carries `⌊·⌋` and
+   `Int.toNat` and is closed by `linarith`; profile where the 68 s actually
+   goes before optimising anything else here.
 4. **cvc5 abduction and SyGuS** — plans and runnable evidence in
    `SMT_ASSIST.md` §6 and §7; `probes/abduction.py` and `probes/sygus.py`
    produce the numbers those plans are costed against.
