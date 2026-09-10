@@ -214,12 +214,9 @@ def smt_oneshot(ob: Obligation) -> VerifyResult:
 
 def farkas_cell(ob: Obligation) -> VerifyResult:
     """Cell/CEGAR Farkas verifier: certifies ``V(s) - V(s') >= delta`` per ReLU
-    cell with an exact Farkas certificate (for Lean export). ``V >= 0`` must hold
-    structurally (non-negative output layer). Sound but incomplete — cells with a
-    non-affine transition or a nonlinear/disjunctive guard atom cannot be
-    certified (returns FAILED)."""
-    out_c, out_k = ob.net.out
-    if not (all(c >= 0 for c in out_c) and out_k >= 0):
-        return VerifyResult(False, status="FAILED(V>=0 not structural)")
+    cell with an exact Farkas certificate (for Lean export). Sound but incomplete
+    — cells with a non-affine transition or a nonlinear/disjunctive guard atom
+    cannot be certified (returns FAILED). That the rank is bounded below is the
+    witness's own check (:func:`._farkas.check_ranks`)."""
     r = certify(ob.system, ob.prop, ob.rule)
     return VerifyResult(r.verified, r.counterexample, certificate=r, status=r.status)
