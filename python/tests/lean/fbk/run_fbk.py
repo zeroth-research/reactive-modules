@@ -159,6 +159,15 @@ def main() -> int:
     if not opts.ltl:
         p.error("--ltl is required unless --screen is given")
 
+    # The same resolution `verith` does, so that the separate `proveit.py -c`
+    # invocation below accepts a build *directory* too -- otherwise it fails
+    # there with no `error:` line and the probe looks like a Lean failure.
+    from zrth.lean.fbk_proveit import ProveItError, resolve_ic3ia
+    try:
+        opts.ic3ia = resolve_ic3ia(opts.ic3ia)
+    except ProveItError as e:
+        p.error(str(e))
+
     selected = [c for c in PROBES if not opts.only or re.search(opts.only, c[0])]
     print(f"{len(selected)} probe(s), sequential"
           f"{'' if not opts.no_check else ', route only (no Lean check)'}\n")

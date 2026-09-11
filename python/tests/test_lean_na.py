@@ -307,6 +307,37 @@ def test_non_scalar_ctrl_wire_aborts():
         check_na_supported(LeanContext(Module.sequential([v], init, update)))
 
 
+def test_ic3ia_directory_resolves_to_the_binary_inside_it():
+    """The build directory is the obvious thing to reach for, and
+    `proveit.py` reports it as "executable not found" with the binary
+    sitting inside."""
+    from zrth.lean.fbk_proveit import resolve_ic3ia
+
+    with tempfile.TemporaryDirectory() as tmp:
+        binary = Path(tmp) / "ic3ia"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        assert resolve_ic3ia(tmp) == str(binary)
+        assert resolve_ic3ia(tmp + "/") == str(binary)
+        assert resolve_ic3ia(str(binary)) == str(binary)
+
+
+def test_ic3ia_bad_paths_say_which_way_they_are_bad():
+    from zrth.lean.fbk_proveit import resolve_ic3ia
+
+    assert resolve_ic3ia(None) is None
+    with tempfile.TemporaryDirectory() as tmp:
+        with pytest.raises(ProveItError, match="is a directory and holds no"):
+            resolve_ic3ia(tmp)
+        dud = Path(tmp) / "ic3ia"
+        dud.write_text("not executable")
+        dud.chmod(0o644)
+        with pytest.raises(ProveItError, match="not executable"):
+            resolve_ic3ia(str(dud))
+        with pytest.raises(ProveItError, match="no such file"):
+            resolve_ic3ia(str(Path(tmp) / "nope"))
+
+
 def test_resolve_project_rejects_a_directory_that_is_not_the_checkout():
     with tempfile.TemporaryDirectory() as tmp:
         with pytest.raises(ProveItError, match="does not look like"):

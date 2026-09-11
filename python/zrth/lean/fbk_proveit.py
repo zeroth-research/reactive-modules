@@ -30,6 +30,7 @@ alone.  ``README.md`` spells the whole envelope out.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -85,8 +86,8 @@ def check_toolchain(python: str) -> None:
 
     `vmt2lean.py` starts with ``from mathsat import *``; run under an
     interpreter without the MathSAT bindings it dies three steps into the
-    pipeline, after the ic3ia run.  ic3ia itself `proveit.py` resolves and
-    reports on its own.
+    pipeline, after the ic3ia run.  ic3ia is handled by
+    :func:`resolve_ic3ia`, which reports better than `proveit.py` does.
     """
     if shutil.which("lake") is None:
         raise ProveItError(
@@ -106,6 +107,47 @@ def check_toolchain(python: str) -> None:
             "built for this interpreter, e.g.\n"
             "  PYTHONPATH=/path/to/mathsat/python uv run verith ..."
         )
+
+
+def resolve_ic3ia(spec: str | None) -> str | None:
+    """Turn `--ic3ia` into a path `proveit.py` will accept, or abort.
+
+    `proveit.py` resolves it as `which(spec) or spec-if-a-file`, so a
+    directory -- the build directory, the obvious thing to reach for --
+    fails both tests and is reported as "executable not found" with the
+    binary sitting inside it. Do the resolution here, where it can say
+    what it actually found.
+
+    `None` is passed through: `proveit.py` then falls back to `$IC3IA`
+    and then to `ic3ia` on PATH, and reports that itself.
+    """
+    if spec is None:
+        return None
+    path = Path(spec).expanduser()
+
+    if path.is_dir():
+        candidate = path / "ic3ia"
+        if os.access(candidate, os.X_OK):
+            print(f".. --ic3ia is a directory; using {candidate}")
+            return str(candidate)
+        raise ProveItError(
+            f"--ic3ia: {path} is a directory and holds no executable "
+            "`ic3ia`. Pass the binary itself, e.g. "
+            f"{path / 'ic3ia'}"
+        )
+
+    if path.is_file():
+        if not os.access(path, os.X_OK):
+            raise ProveItError(f"--ic3ia: {path} is not executable")
+        return str(path)
+
+    found = shutil.which(spec)
+    if found:
+        return found
+    raise ProveItError(
+        f"--ic3ia: no such file: {path}. Pass the ic3ia binary, a "
+        "directory containing it, or a name on PATH."
+    )
 
 
 def property_to_bool_lean(module, property_smt: str, n_state: int) -> str:
@@ -154,15 +196,57 @@ def write_na_model(
     return model
 
 
-def _run(cmd: list[str], *, cwd: Path, what: str) -> None:
-    """Run `cmd`, streaming its output; raise `ProveItError` if it fails."""
+def _run(cmd: list[str], *, cwd: Path, what: str) -> str:
+    """Run `cmd`, streaming its output; raise `ProveItError` if it fails.
+
+    Returns the output as well as streaming it, so the caller can say what
+    went wrong instead of only that something did.
+    """
     print(f"$ {' '.join(cmd)}")
+    chunks: list[str] = []
     try:
-        rc = subprocess.run(cmd, cwd=cwd, stdin=subprocess.DEVNULL).returncode
+        proc = subprocess.Popen(
+            cmd, cwd=cwd, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
     except FileNotFoundError as e:
         raise ProveItError(f"--fbk-proveit: cannot run {cmd[0]}: {e}") from e
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        chunks.append(line)
+        print(line, end="")
+    rc = proc.wait()
+    out = "".join(chunks)
     if rc != 0:
-        raise ProveItError(f"--fbk-proveit: {what} failed (exit {rc})")
+        raise ProveItError(f"--fbk-proveit: {what} failed (exit {rc})\n{_why(out)}")
+    return out
+
+
+def _why(out: str) -> str:
+    """The reason `proveit.py` stopped, restated where the user will see it.
+
+    Its own diagnosis is accurate but scrolls past behind the ic3ia
+    statistics, leaving a bare "failed (exit 1)" as the last line.
+    """
+    if "UNSAFE" in out:
+        return (
+            "  ic3ia found a counterexample: the property does not hold of "
+            "every reachable state.\n"
+            "  This route proves `[] PROPERTY`. A property that is merely "
+            "*reached* -- the `P` of\n"
+            "  a verith certificate, which pairs it with a ranking function "
+            "-- is not a safety\n"
+            "  property: `(= s0 0)` is false at step 0 for a counter "
+            "starting anywhere else."
+        )
+    if "did not prove" in out or "unknown" in out:
+        return (
+            "  ic3ia could not decide it. It is IC3 with implicit predicate "
+            "abstraction over\n  linear arithmetic, so a nonlinear property "
+            "is out of scope by construction."
+        )
+    return "  (see the output above)"
 
 
 def run(
@@ -178,6 +262,9 @@ def run(
     """Run the whole route and return the installed certificate's path."""
     python = python or sys.executable
     root = resolve_project(ltl_project)
+    # Resolve before anything expensive: a bad --ic3ia would otherwise
+    # surface only after the model is written and lake has run.
+    ic3ia = resolve_ic3ia(ic3ia)
     check_toolchain(python)
 
     ctx = LeanContext(module)
