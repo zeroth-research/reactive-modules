@@ -46,13 +46,23 @@ build will not load.
 ```sh
 # https://mathsat.fbk.eu/download.html  -> unpack to $MSAT
 cd $MSAT/python
-uv run --with setuptools python setup.py build_ext \
-    --build-lib /tmp/msat --build-temp /tmp/msat/tmp \
+uv run --with setuptools python setup.py build_ext --inplace \
     -I$(brew --prefix gmp)/include -L$(brew --prefix gmp)/lib
-cp mathsat.py /tmp/msat/
-export PYTHONPATH=/tmp/msat
+export PYTHONPATH=$MSAT/python
 uv run python -c 'import mathsat; print("ok")'
 ```
+
+`--inplace` drops `_mathsat.<abi>.so` next to the `mathsat.py` that ships
+with MathSAT, so that one directory is the whole `PYTHONPATH` and it
+survives a reboot.  Building to a scratch directory works just as well
+until the directory is cleaned up, and then the failure looks like a
+MathSAT that was never built.  The linker prints a wall of
+`was built for newer 'macOS' version` warnings; they are harmless.
+
+The `.so` is tied to the interpreter that built it, so build it with the
+same `uv run` that will run `verith` -- a `PYTHONPATH` pointing at a
+build for another Python version will not load, and `verith` will report
+exactly that.
 
 `verith` checks this before it does anything else and aborts with the fix if
 the interpreter cannot import `mathsat`.
@@ -102,12 +112,12 @@ cd python
 uv run python tests/lean/fbk/run_fbk.py --mods <mods> --screen
 
 # the full sweep, ~30 probes, one at a time
-PYTHONPATH=/tmp/msat uv run python tests/lean/fbk/run_fbk.py \
+PYTHONPATH=$MSAT/python uv run python tests/lean/fbk/run_fbk.py \
     --mods <mods> --ltl <lean-ltl-certifying> --ic3ia $IC3IA \
-    --json /tmp/fbk.json
+    --json /tmp/fbk.json    # results table, for diffing against a later run
 
 # one group, route only (no Lean check) — about a third of the wall clock
-PYTHONPATH=/tmp/msat uv run python tests/lean/fbk/run_fbk.py \
+PYTHONPATH=$MSAT/python uv run python tests/lean/fbk/run_fbk.py \
     --mods <mods> --ltl <ltl> --only '^Ni' --no-check
 ```
 
@@ -126,7 +136,7 @@ probe disagrees with its `expect`.
 ## Reading the results
 
 A verdict that differs from `expect` is the point of the table.  As of the
-last sweep, 30 probes: 23 `certified`, 3 `unsafe`, 1 `unknown`, 1 `abort`,
+last sweep, 29 probes: 23 `certified`, 3 `unsafe`, 1 `unknown`, 1 `abort`,
 2 `lean-fail`.
 
 ### On the choice of properties
@@ -145,25 +155,35 @@ properties written for this route: true-but-not-inductive (ic3ia has to
 synthesise the bound), relational over two state variables, nonlinear,
 `ite`-in-the-property, and false-but-only-refutable-after-100-steps.
 
-### The four obstacles the sweep found
+### What the sweep found
 
-1. **`mod` has no path through** (`InvMod`).  `smt_to_lean_bool` refuses
-   `INTS_MODULUS`.  This is not over-caution: `lean2vmt.lean` has no case
-   for mod at all, so `x % 2` would reach `exprToSMT` and be printed as an
-   unapplied leaf — a VMT file that parses and describes a different system.
-   Lifting it needs a `lean2vmt` change first.
+Two of the four obstacles it turned up have since been fixed; these are
+the standing ones.
 
-2. **`vmt2lean.py` emits a constant invariant ill-typed** (`InvTrue`).
-   `MSAT_TAG_TRUE` maps to the Lean *`Prop`* `True`, which then lands in
-   `abbrev INVAR : Bool := True`.  Fires whenever ic3ia's invariant is
-   literally `true`, i.e. whenever the property is trivially safe.
+1. **`mod` stops at the witness, not the model** (`InvMod`, `abort`).
+   `lean2vmt` does translate `%`, and ic3ia proves such a property — but
+   MathSAT eliminates the mod from the *witness*, returning
+   `x + (-2) * to_int ((1/2) * to_real x) = 0`, and `vmt2lean.py` renders
+   neither `to_real`/`to_int` nor a Real inside a `Bool`-valued `INVAR`.
+   `smt_to_lean_bool` therefore refuses `INTS_MODULUS` at the front of the
+   pipeline, where the message can say why rather than dying inside
+   `vmt2lean`.
 
-3. **`lean-smt` miscompiles a proof** (`NiS2Odd3`).  See
-   [`lean-smt-bug.md`](lean-smt-bug.md).  Not verith, not
-   `lean-ltl-certifying`.
+2. **`lean-smt` miscompiles two kinds of proof** (`NiS2Odd3`,
+   `ReluTrans`, both `lean-fail`).  A `sum_ub` step returns an equality
+   where a `≤` is wanted, and `Max` trips universe-level bookkeeping.  Two
+   standalone reproducers in [`lean-smt-bug.md`](lean-smt-bug.md).  In both
+   cases the VMT and the certificate are correct and only the tactic
+   fails — neither is verith's or `lean-ltl-certifying`'s.
 
-4. **Nonlinear ⇒ `unknown`** (`NonlinLexMul`).  Expected: ic3ia is IC3 with
+3. **Nonlinear ⇒ `unknown`** (`NonlinLexMul`).  Expected: ic3ia is IC3 with
    implicit predicate abstraction over *linear* arithmetic.  The route
    aborts cleanly.
+
+Fixed since: a trivially safe property produced an uncompilable
+certificate (two `vmt2lean` template bugs plus a tactic that ran past a
+closed goal), and `Ne`/`ReLU`/`Max`/`Min` were emitted as unapplied
+leaves by `lean2vmt`.  `InvTrue` and `MixedBoolInt` cover the first,
+`ReluTrans` the second.
 
 [ltl]: https://github.com/zeroth/proof-prototyping
