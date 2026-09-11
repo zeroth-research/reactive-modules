@@ -555,7 +555,7 @@ class System:
     atom_of: dict = field(default_factory=dict)
     entry_inputs: tuple = ()
     names: tuple = ()
-    assume: object = None
+    precondition: object = None
     invariants: tuple = ()
 
     @property
@@ -591,7 +591,7 @@ class System:
     def assuming(self, precondition) -> "System":
         """This system with ``precondition`` assumable at entry: ``state_map ->
         [BoolRef]``, the facts the entry state may be taken to satisfy."""
-        return dataclasses.replace(self, assume=precondition)
+        return dataclasses.replace(self, precondition=precondition)
 
     def knowing(self, invariants) -> "System":
         """This system with ``invariants`` — z3 over the columns, true of every
@@ -741,7 +741,7 @@ def entry_predicate(system: System):
     for n in system.names:
         e = z3.substitute(init_vals[n], *sub) if sub else init_vals[n]
         conj.append(s_map[n] == e)
-    conj += list((system.assume or (lambda st: []))(s_map))
+    conj += list((system.precondition or (lambda st: []))(s_map))
     return z3.And(*conj) if conj else z3.BoolVal(True)
 
 

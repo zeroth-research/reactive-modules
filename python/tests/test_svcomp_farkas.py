@@ -20,12 +20,13 @@ import z3
 
 from benchmarks.svcomp import _farkas
 from benchmarks.svcomp._bench import INT
-from benchmarks.svcomp._termination import _v_module, system_of
+from benchmarks.svcomp._termination import _v_module, compose, system_of
 from tests._fixtures import candidate, loop_bench
 from zrth import LIA, Module, Sort, Wire, sugar
 from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
 from zrth.sugar import ite as dsl_ite
+from zrth.sugar import ne as dsl_ne
 from benchmarks.svcomp._farkas import (certify, check_supported,
                                       decrease, inductive, lex_decrease,
                                       read_system)
@@ -600,3 +601,58 @@ def test_an_invariant_may_not_name_a_wire():
                  inductive((lambda W, S: W[v_s] >= 0,)))
     with pytest.raises(Unsupported, match="linear"):
         _certify(ob, Safety(lambda W, S: S["x"] * S["x"] >= 0))
+
+
+# ---------------------------------------------------------------------------
+# Planned: invariants are proved Safety claims (strict expected failures until built)
+# ---------------------------------------------------------------------------
+
+_PLANNED = "planned: invariants are proved Safety claims; knowing takes proofs"
+
+
+@pytest.mark.xfail(strict=True, reason=_PLANNED)
+def test_knowing_takes_only_proved_safety_claims():
+    """The engine assumes a fact only through a proof of it. ``knowing`` takes a
+    verified Proof of a Safety claim over these columns, exposes its predicate as
+    ``invariants`` and keeps the proof for the emitter — and refuses by name an
+    unverified proof, a liveness proof, and a proof over other columns."""
+    bench = loop_bench(("x",), lambda x: dsl_ite(dsl_ne(x, 0), x - 1, x), init=lambda: (5,))
+    system = system_of(bench)
+    nonneg = lambda W, S: S["x"] >= 0
+    proof = certify(system, Safety(nonneg), inductive((nonneg,)))
+    assert proof.verified, proof.status
+    known = system.knowing(proof)
+    assert known.invariant_proofs == (proof,) and len(known.invariants) == 1
+    false = certify(system, Safety(lambda W, S: S["x"] >= 6), inductive(()))
+    assert not false.verified
+    with pytest.raises(Unsupported, match="not verified"):
+        system.knowing(false)
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    composed, witness = compose(known, layers)
+    live = certify(composed, terminates(), witness)
+    with pytest.raises(Unsupported, match="Safety"):
+        system.knowing(live)
+    other = system_of(loop_bench(("y", "z"), lambda c: (c[0] - 1, c[1]), init=lambda: (5, 5)))
+    five = lambda W, S: S["z"] == 5
+    elsewhere = certify(other, Safety(five), inductive((five,)))
+    assert elsewhere.verified
+    with pytest.raises(Unsupported, match="columns"):
+        system.knowing(elsewhere)
+
+
+@pytest.mark.xfail(strict=True, reason=_PLANNED)
+def test_a_proved_invariant_narrows_the_liveness_obligation():
+    """``while (x != 0) x--`` from 5 with the rank ``relu(x)``: at an unreachable
+    state ``x < 0`` the rank does not drop, so over all integers the claim fails,
+    and on the states ``x >= 0`` admits it holds. The fact reaches the engine only
+    as a proof of the Safety claim — the same object the proof layer will cite."""
+    bench = loop_bench(("x",), lambda x: dsl_ite(dsl_ne(x, 0), x - 1, x), init=lambda: (5,))
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    system = system_of(bench)
+    bare, w = compose(system, layers)
+    assert certify(bare, terminates(), w).status == "FAILED(violated)"
+    nonneg = lambda W, S: S["x"] >= 0
+    proof = certify(system, Safety(nonneg), inductive((nonneg,)))
+    composed, witness = compose(system.knowing(proof), layers)
+    res = certify(composed, terminates(), witness)
+    assert res.verified, res.status
