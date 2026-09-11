@@ -14,15 +14,14 @@ from __future__ import annotations
 import z3
 from z3.z3util import get_vars
 
-from ._domain import guard_from_transition
 
 # A candidate is (label, state_map -> z3.BoolRef); state_map is {var_name: expr}.
-Candidate = tuple
+Guess = tuple
 
 
-def _candidates(names) -> list[Candidate]:
+def _candidates(names) -> list[Guess]:
     """Sign predicates per variable and ±-relations between pairs."""
-    cands: list[Candidate] = []
+    cands: list[Guess] = []
     for v in names:
         cands += [
             (f"{v}>0",   (lambda st, v=v: st[v] > 0)),
@@ -56,13 +55,13 @@ def _as_int_const(expr):
     return None
 
 
-def _const_candidates(names, vals: dict) -> list[Candidate]:
+def _const_candidates(names, vals: dict) -> list[Guess]:
     """Candidates from a state's constant coordinates (nuTerm's ``_seed_candidates``,
     applied to a cut-point segment's post-state). ``vals`` is a symbolic state
     (the body post-state ``T(s)`` or the init state ``s0``): ``v==c`` / ``v>=c`` /
     ``v<=c`` when ``vals[v]`` is constant, and ``vi-vj==d`` / ``vi+vj==s`` when a
     pair combination is constant."""
-    cands: list[Candidate] = []
+    cands: list[Guess] = []
     for v in names:
         c = _as_int_const(vals[v])
         if c is not None:
@@ -95,7 +94,7 @@ def _ite_conds(e) -> list:
     return out
 
 
-def _cond_const_candidates(names, s0: dict) -> list[Candidate]:
+def _cond_const_candidates(names, s0: dict) -> list[Guess]:
     """``cond -> v == c``: what a state variable is on one branch of the init block.
 
     :func:`_const_candidates` reads a coordinate only where it is already constant,
@@ -113,7 +112,7 @@ def _cond_const_candidates(names, s0: dict) -> list[Candidate]:
         out = z3.substitute(pred, *[(e, z3.Int(v)) for e, v in latched])
         return None if {str(x) for x in get_vars(out)} - set(names) else out
 
-    cands: list[Candidate] = []
+    cands: list[Guess] = []
     for v in names:
         for cond in _ite_conds(s0[v]):
             for truth in (True, False):
@@ -131,18 +130,18 @@ def _cond_const_candidates(names, s0: dict) -> list[Candidate]:
     return cands
 
 
-def infer_invariants(system, timeout_ms: int = 2000) -> list[Candidate]:
-    """Inductive loop invariants for ``system`` (initiation + consecution).
+def infer_invariants(system, timeout_ms: int = 2000) -> list[Guess]:
+    """Inductive invariants of ``system``: facts about every reachable state,
+    holding at entry (initiation) and preserved by every step (consecution).
 
     The transition and the entry state are read off ``system`` — one walk of the
-    module, shared with the verifier — so nothing here reads the program itself.
-    Invariants are a fact about the module, not about any property of it."""
+    module, shared with the verifier — so nothing here reads the program itself,
+    and consecution ranges over every step rather than over a loop guard: an
+    invariant is a fact about the module, not about any claim made of it. For a
+    module that stutters when its program is done the two agree, since a stutter
+    preserves any state predicate."""
     names = system.names
     s, sp, s0 = system.s_map, system.sp_map, system.entry
-    try:
-        dom = guard_from_transition(s, sp, names)
-    except ValueError:
-        return []                              # no loop shape -> plain domain
 
     # The outer if-gate precondition: assumed at loop entry (initiation) and its
     # conjuncts seeded as candidates (so precondition facts survive as invariants).
@@ -153,7 +152,7 @@ def infer_invariants(system, timeout_ms: int = 2000) -> list[Candidate]:
     # static sign/pairwise candidates + constants derived from the body post-state
     # (T(s)) and the init state (s0) — the cut-point segments nuTerm seeds from.
     seen: set[str] = set()
-    cands: list[Candidate] = []
+    cands: list[Guess] = []
     for lbl, f in (_candidates(names)
                    + _const_candidates(names, sp)
                    + _const_candidates(names, s0)
@@ -173,11 +172,11 @@ def infer_invariants(system, timeout_ms: int = 2000) -> list[Candidate]:
     # initiation: candidate holds at the initial state, under the precondition
     kept = [(lbl, f) for (lbl, f) in cands if unsat(z3.Not(f(s0)), *pre_init)]
 
-    # consecution: Houdini fixpoint — (guard & kept(s)) implies candidate(T(s))
+    # consecution: Houdini fixpoint — kept(s) implies candidate(T(s)), every step
     changed = True
     while changed:
         changed = False
-        assumps = [dom] + [f(s) for _, f in kept]
+        assumps = [f(s) for _, f in kept]
         survivors = []
         for lbl, f in kept:
             if unsat(z3.Not(f(sp)), *assumps):
