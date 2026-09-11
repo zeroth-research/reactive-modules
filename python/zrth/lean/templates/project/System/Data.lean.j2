@@ -42,6 +42,7 @@ def P (s : {{ ctrl_type }}) : Prop := sorry
 {{ noncomp }}instance : DecidablePred P := sorry
 {% endif %}
 
+{% if not is_safety %}
 {% if ranking_body %}
 {{ noncomp }}def ranking (s : {{ ctrl_type }}) : Nat :=
 {{ ranking_body }}
@@ -49,4 +50,5 @@ def P (s : {{ ctrl_type }}) : Prop := sorry
 {{ noncomp }}def ranking : {{ ctrl_type }} → Nat := {{ ranking_expr }}
 {% else %}
 {{ noncomp }}def ranking (s : {{ ctrl_type }}) : Nat := sorry
+{% endif %}
 {% endif %}

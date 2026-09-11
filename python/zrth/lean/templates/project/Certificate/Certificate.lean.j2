@@ -105,6 +105,29 @@ theorem hinv : lts.StateSet_isInvariant inv := by
   apply TS.StateSet_ind_init_is_inv lts
   exact hinv'
 
+{% if is_safety %}
+-- `G P`. The invariant does the work; all that is left is that it is a
+-- *strengthening* of the property. `StateSet_isInvariant` is
+-- `reachableSet ⊆ ·`, so a superset of an invariant is invariant too, and
+-- `rule_globally` turns that into `G (AP P)` on every trace.
+theorem inv_imp_P : ∀ s, inv s → P s := by
+    intro s hi
+    try cert_thin
+    try simp_defs
+    try cert_facts s
+    try simp_mat
+    try cert_states s
+    all_goals (cert_prep <;> cert_close)
+
+theorem hP : lts.StateSet_isInvariant P := by
+    intro s hs
+    exact inv_imp_P s (hinv s hs)
+
+{{ noncomp }}def safety := rule_globally
+  lts
+  P
+  hP
+{% else %}
 theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
     intro s s' ⟨hi, hP, htr⟩
@@ -126,6 +149,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
   hinv
   ranking
   hrank
+{% endif %}
 
 
 end TS

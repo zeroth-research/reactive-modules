@@ -92,6 +92,40 @@ def test_no_invariant_means_nothing_to_check():
     assert q.check_obligations(SmtBudget()) == []
 
 
+# ── which third obligation ───────────────────────────────────────────
+
+
+SAFE = CertificateData(
+    kind="safety", prp="(<= s0 100)", inv="(and (>= s0 0) (<= s0 100))"
+)
+
+
+def test_a_safety_certificate_is_checked_against_rule_globally():
+    """`G P` needs `inv -> P`, and has no ranking function to rank."""
+    q = ModuleQueries.build(countdown(), SAFE)
+    verdicts = q.check_obligations(SmtBudget())
+    assert [v.name for v in verdicts] == ["init_inv", "step_inv", "inv_imp_P"]
+    assert {v.status for v in verdicts} == {Status.HOLDS}
+
+
+def test_an_invariant_too_weak_for_the_property_is_refuted():
+    """Inductive and true at init, but it admits a state where `P` is false
+    -- which a Buchi certificate would not care about at all."""
+    cert = CertificateData(kind="safety", prp="(<= s0 50)", inv=SAFE.inv)
+    by_name = {v.name: v for v in ModuleQueries.build(countdown(), cert).check_obligations(SmtBudget())}
+    assert by_name["init_inv"].status is Status.HOLDS
+    assert by_name["step_inv"].status is Status.HOLDS
+    assert by_name["inv_imp_P"].status is Status.REFUTED
+    assert "s0 = " in by_name["inv_imp_P"].detail
+
+
+def test_a_safety_certificate_never_states_hrank():
+    """Even handed a ranking function, `G P` has no obligation about it."""
+    cert = CertificateData(kind="safety", prp=SAFE.prp, inv=SAFE.inv, ranking="s0")
+    names = [v.name for v in ModuleQueries.build(countdown(), cert).check_obligations(SmtBudget())]
+    assert "hrank" not in names and "inv_imp_P" in names
+
+
 # ── the leash ────────────────────────────────────────────────────────
 
 
@@ -316,6 +350,19 @@ def test_a_condition_the_invariant_settles_is_reported():
     )
     assert [value for _, value in h.determined] == [True]
     assert "≥" in h.determined[0][0]
+
+
+def test_the_hint_layer_shapes_the_obligation_the_kind_states():
+    """The plan is read off the obligations the certificate actually has,
+    so a safety certificate contributes `inv_imp_P` where a Buchi one
+    contributes `hrank`."""
+    from zrth.lean.smt_query import _obligation_labels
+
+    buchi = ModuleQueries.build(countdown(), GOOD)
+    assert [name for name, _ in _obligation_labels(buchi)] == ["step_inv", "hrank"]
+
+    safe = ModuleQueries.build(countdown(), SAFE)
+    assert [name for name, _ in _obligation_labels(safe)] == ["step_inv", "inv_imp_P"]
 
 
 def test_a_condition_the_invariant_refutes_is_reported():

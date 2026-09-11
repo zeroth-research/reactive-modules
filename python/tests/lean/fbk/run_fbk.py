@@ -71,7 +71,7 @@ def probe(name, mod, prop, expect, opts) -> dict:
 
     cmd = [
         "uv", "run", "verith", str(Path(opts.mods) / f"{mod}.py"),
-        "-P", prop, "-o", str(out_dir), "-p", name,
+        "--safety", prop, "-o", str(out_dir), "-p", name,
         "--fbk-proveit", str(opts.ltl),
     ]
     if opts.ic3ia:

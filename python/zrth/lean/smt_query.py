@@ -137,6 +137,7 @@ class ModuleQueries:
         # After `--infer`, `inv` and `ranking` hold Lean printed from a cvc5
         # term, which nothing parses back; `inv_smt` / `ranking_smt` keep the
         # source the solver was handed, and that is what it can read.
+        self.kind = getattr(cert_data, "kind", "buchi")
         self.prp = opt(cert_data.prp)
         self.inv = opt(getattr(cert_data, "inv_smt", None) or cert_data.inv)
         self.ranking = opt(
@@ -313,14 +314,43 @@ class ModuleQueries:
 
         return self._ask("hrank", build, budget)
 
+    def check_inv_imp_P(self, budget: SmtBudget) -> Verdict:
+        """`inv s → P s` -- the safety route's third obligation.
+
+        `rule_globally` needs the invariant to be a strengthening of the
+        property; that is the whole difference from the Büchi route, where
+        `P` is merely re-reached and a ranking says how soon.
+        """
+
+        def build():
+            s = self.msmt.fresh_ctrl("p_s")
+            return (
+                self._and(
+                    self._sub_state(self.inv, s),
+                    self._not(self._sub_state(self.prp, s)),
+                ),
+                self._labelled(s),
+            )
+
+        return self._ask("inv_imp_P", build, budget)
+
     def check_obligations(self, budget: SmtBudget) -> list[Verdict]:
-        """Every obligation the certificate data actually states."""
+        """Every obligation the certificate data actually states.
+
+        Which third obligation there is follows the certificate's kind:
+        `hrank` for `G (F P)`, `inv_imp_P` for `G P`.
+        """
         budget.start_phase()
         out: list[Verdict] = []
-        if self.inv is not None:
-            out.append(self.check_init_inv(budget))
-            out.append(self.check_step_inv(budget))
-        if self.inv is not None and self.ranking is not None and self.prp is not None:
+        if self.inv is None:
+            return out
+        out.append(self.check_init_inv(budget))
+        out.append(self.check_step_inv(budget))
+        if self.prp is None:
+            return out
+        if self.kind == "safety":
+            out.append(self.check_inv_imp_P(budget))
+        elif self.ranking is not None:
             out.append(self.check_hrank(budget))
         return out
 
@@ -801,7 +831,8 @@ def _refutation_shape(
     nonlinearity lives, so a module whose invariant is inductive by linear
     reasoning alone can still need `nlinarith` for `hrank`. Concluding
     "linear" from `step_inv` on its own would take the closer away from the
-    obligation that needs it.
+    obligation that needs it. On the safety route the same applies to
+    `inv_imp_P`, where the property itself is the thing being reasoned about.
     """
     linear_all = True
     products: list = []
@@ -842,6 +873,11 @@ def _refutation_shape(
 def _obligation_labels(q: "ModuleQueries"):
     """`(name, {hypothesis name: term})` for each obligation cvc5 can state.
 
+    `step_inv` always, and then whichever third obligation the certificate's
+    kind states -- `hrank` for `G (F P)`, `inv_imp_P` for `G P`. `init_inv`
+    is left out of both: it binds no state, so its proof says nothing about
+    the shapes the plan chooses between.
+
     A hypothesis that is literally `true` is left out: it would be in no
     unsat core and would make every core look like a strict subset.
     """
@@ -872,6 +908,20 @@ def _obligation_labels(q: "ModuleQueries"):
             ),
         )
     )
+    if q.kind == "safety":
+        if q.prp is not None:
+            out.append(
+                (
+                    "inv_imp_P",
+                    keep(
+                        {
+                            "inv": q._sub_state(q.inv, s),
+                            "goal": q._not(q._sub_state(q.prp, s)),
+                        }
+                    ),
+                )
+            )
+        return out
     if q.ranking is not None and q.prp is not None:
         decrease = q.tm.mkTerm(
             Kind.LT,

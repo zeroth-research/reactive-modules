@@ -48,7 +48,10 @@ that route in SMT-LIB too, as `ai-cegar` does.
 
 A failing `lake build` cannot distinguish "the obligation is false" from "the
 tactics are too weak", and it takes 9-79 s per case to not distinguish it.
-cvc5 answers all three obligations in milliseconds, with a counterexample:
+cvc5 answers all three obligations in milliseconds, with a counterexample.
+Which three depends on the property: `init_inv`, `step_inv` and `hrank` under
+`--buchi`; `init_inv`, `step_inv` and `inv_imp_P` under `--safety`, where the
+invariant has to imply the property and there is no ranking to rank.
 
 | case | `lake build` | cvc5, all three | verdict |
 |---|---|---|---|
@@ -71,7 +74,7 @@ raised `TypeError: <lambda>() missing 1 required positional argument` and took
 down every cvc5 query about that module — `--infer ai-cegar` included.
 
 ```
-$ verith m.py -P '(= s0 0)' --invariant '(and (>= s0 0) (<= s0 100))' \
+$ verith m.py --buchi '(= s0 0)' --invariant '(and (>= s0 0) (<= s0 100))' \
       --ranking '(- 100 s0)' --pre-check cvc5 -o out -p Rea
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    init_inv  holds         1 ms

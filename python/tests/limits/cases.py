@@ -117,10 +117,10 @@ CASES = [
       rank="(ite (= s0 s1) 0 (- s1 s0))",
       note="two 1x1 wires, relational invariant, difference ranking"),
     C(name="NoCert", group="baseline", mod="m_countdown", expect="fail",
-      note="no -P at all: what does a bare `verith` project contain?"),
+      note="no property at all: what does a bare `verith` project contain?"),
     C(name="PropOnly", group="baseline", mod="m_countdown", expect="fail",
       P="(= s0 0)",
-      note="-P but no --invariant/--ranking: inv defaults to True, ranking to sorry"),
+      note="--buchi but no --invariant/--ranking: inv defaults to True, ranking to sorry"),
 
     # ─────────────────────── invariant shapes ───────────────────
     C(name="InvTrue", group="invariant", mod="m_countdown", expect="fail",

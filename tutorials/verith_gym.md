@@ -162,27 +162,26 @@ selectors: `((_ tuple.select 1) e0)` is the second component of the action.
 
 ## Step 4 — Generate the certificate
 
-The certificate proves a **recurrence property**: `P` holds infinitely often
-along every run. It is built from three ingredients you pass on the command
-line (all SMT-LIB 2 expressions over `s0..sN-1`):
+A certificate proves one of two properties, and the flag you pass the formula
+under is the choice:
 
-- `-P` — the property,
-- `--invariant` — an inductive invariant,
-- `--ranking` — a non-negative integer ranking function that strictly
-  decreases on every step where `P` does not hold.
+- `--buchi P` — a **recurrence** property: `P` holds infinitely often along
+  every run. Built from an inductive `--invariant` and a `--ranking`: a
+  non-negative integer that strictly decreases on every step where `P` does
+  not hold.
+- `--safety P` — a **safety** property: `P` holds in *every* reachable state.
+  Built from an `--invariant` alone, which has to imply `P`. There is no
+  ranking function on this route at all.
 
-If you only know the property, Step 7 shows how to have an LLM infer the
-other two.
+If you only know the property, Step 7 shows how to have an LLM infer the rest.
 
-For a pure safety property ("the chain position always stays in `[0, 2]`")
-set `P` equal to the invariant and use the constant ranking `0` — if `P` is
-invariant it trivially holds infinitely often:
+"The chain position always stays in `[0, 2]`" is a safety property, so the
+invariant is the whole certificate:
 
 ```bash
 uv run verith chain_env.py \
-    -P          "(and (>= s4 0.0) (<= s4 2.0))" \
+    --safety    "(and (>= s4 0.0) (<= s4 2.0))" \
     --invariant "(and (>= s4 0.0) (<= s4 2.0))" \
-    --ranking   "0" \
     -o out/ -p ChainCert
 ```
 
@@ -194,9 +193,10 @@ def inv : (Mat Real 1 1) × (Mat Real 1 1) × (Mat Bool 1 1) × (Mat Bool 1 1) �
   fun s => (((s.2.2.2.2 0 0) ≥ 0.0) ∧ ((s.2.2.2.2 0 0) ≤ 2.0))
 
 def P : ... → Prop := fun s => (((s.2.2.2.2 0 0) ≥ 0.0) ∧ ((s.2.2.2.2 0 0) ≤ 2.0))
-
-def ranking : ... → Nat := fun s => ((0 : Int)).toNat
 ```
+
+(a `--buchi` certificate would also carry a `def ranking : ... → Nat`; a
+safety one defines none.)
 
 `Certificate/Certificate.lean` states the obligations and tries to discharge
 them with generated tactic scripts:
@@ -313,7 +313,7 @@ a precondition, since a zero action freezes the state forever:
 
 ```bash
 uv run verith cycle_env.py \
-    -P          "(= s4 0)" \
+    --buchi          "(= s4 0)" \
     --pre       "(>= el0 1)" \
     --invariant "(and (>= s4 0) (<= s4 3))" \
     --ranking   "(ite (= s4 0) 0 (- 4 s4))" \
@@ -391,7 +391,7 @@ weights 3, 2, 1 count the steps remaining until the wrap:
 
 ```bash
 uv run verith matcycle_env.py \
-    -P   '(= ((_ tuple.select 0) s4) 1)' \
+    --buchi   '(= ((_ tuple.select 0) s4) 1)' \
     --pre '(>= el0 1)' \
     --invariant '(and (>= ((_ tuple.select 0) s4) 0) (<= ((_ tuple.select 0) s4) 1)
                       (>= ((_ tuple.select 1) s4) 0) (<= ((_ tuple.select 1) s4) 1)
@@ -423,7 +423,7 @@ Dropping `--invariant` and `--ranking` from the Step 6 liveness example:
 
 ```bash
 uv run verith cycle_env.py \
-    -P    "(= s4 0)" \
+    --buchi    "(= s4 0)" \
     --pre "(>= el0 1)" \
     --infer -o out/ -p CycleCert
 ```
@@ -492,7 +492,7 @@ vendors under one key:
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 
-uv run verith cycle_env.py -P "(= s4 0)" --pre "(>= el0 1)" --infer \
+uv run verith cycle_env.py --buchi "(= s4 0)" --pre "(>= el0 1)" --infer \
     --model anthropic/claude-haiku-4.5 \
     --base-url https://openrouter.ai/api/v1 -o out/ -p CycleCert
 ```
@@ -503,7 +503,7 @@ once the daemon is running):
 ```bash
 ollama pull qwen3-coder         # once
 
-uv run verith cycle_env.py -P "(= s4 0)" --pre "(>= el0 1)" --infer \
+uv run verith cycle_env.py --buchi "(= s4 0)" --pre "(>= el0 1)" --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p CycleCert
 ```
 
@@ -513,7 +513,7 @@ default):
 ```bash
 vllm serve Qwen/Qwen2.5-Coder-32B-Instruct   # in another terminal
 
-uv run verith cycle_env.py -P "(= s4 0)" --pre "(>= el0 1)" --infer \
+uv run verith cycle_env.py --buchi "(= s4 0)" --pre "(>= el0 1)" --infer \
     --model Qwen/Qwen2.5-Coder-32B-Instruct \
     --base-url http://localhost:8000/v1 -o out/ -p CycleCert
 ```
@@ -539,10 +539,9 @@ action always prefers "right":
 
 ```bash
 uv run verith chain_env.py \
-    -P "(and (>= s4 0.0) (<= s4 2.0))" \
+    --safety "(and (>= s4 0.0) (<= s4 2.0))" \
     --pre "(> ((_ tuple.select 1) e0) ((_ tuple.select 0) e0))" \
     --invariant "(and (>= s4 0.0) (<= s4 2.0))" \
-    --ranking "0" \
     -o out/ -p ChainCert
 ```
 
@@ -553,17 +552,16 @@ Instead of a full project scaffold, emit self-contained `.lean` files
 
 ```bash
 uv run verith chain_env.py \
-    -P          "(and (>= s4 0.0) (<= s4 2.0))" \
+    --safety    "(and (>= s4 0.0) (<= s4 2.0))" \
     --invariant "(and (>= s4 0.0) (<= s4 2.0))" \
-    --ranking   "0" \
     --cert-file out/ChainCert.lean
 ```
 
 writes `ChainCert.lean` (init/update + certificate) plus `ChainCertRel.lean`,
 `ChainCertScalar.lean`, and `ChainCertScalarRel.lean` (alternative encodings
-with equivalence theorems). Pass the invariant and ranking too — without
-them those certificate fields are emitted as `sorry` placeholders and the
-proof obligations cannot close. To check the files, add them as `lean_lib`
+with equivalence theorems). Pass the invariant too — and, under `--buchi`, the
+ranking — without them those certificate fields are emitted as `sorry`
+placeholders and the proof obligations cannot close. To check the files, add them as `lean_lib`
 entries in a lake project that also contains the `Core` library and
 `ZerothHammer.lean` (copy both from any `verith`-generated project).
 
@@ -574,7 +572,8 @@ entries in a lake project that also contains the `Core` library and
 | `-o` / `--output-dir` | `.` | Where to create the project |
 | `-p` / `--project-name` | `Rea` | Lean package name |
 | `-d` / `--module-def` | `module` | Factory function name in the module file |
-| `-P` / `--property` | — | SMT-LIB 2 Bool over `s0..sN-1` |
+| `--safety` | — | SMT-LIB 2 Bool over `s0..sN-1`, true in every reachable state |
+| `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, true infinitely often |
 | `--pre` | — | SMT-LIB 2 Bool over `e0..`/`el0..` input vars |
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking function |

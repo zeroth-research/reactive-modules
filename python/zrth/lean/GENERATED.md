@@ -102,11 +102,11 @@ The whole package comes from one command:
 
 ```bash
 uv run verith tests/fixtures/twobit.py \
-    -P "(and (= s0 (_ bv0 1)) (= s1 (_ bv0 1)))" \
+    --buchi "(and (= s0 (_ bv0 1)) (= s1 (_ bv0 1)))" \
     -o out/ -p TwoBit
 ```
 
-`-P` is the property, written in SMT-LIB. State variables are called `s0`,
+`--buchi` is the property, written in SMT-LIB. State variables are called `s0`,
 `s1`, ... in the order they were listed when creating the module (omitted here).
 
 ---
@@ -493,7 +493,7 @@ def ranking (s : (Mat (BitVec 1) 1 1) × (Mat (BitVec 1) 1 1)) : Nat := sorry
 - `init_pre` / `update_pre` — assumptions on the external inputs. `True` unless
   you pass `--pre`.
 - `inv` — the invariant. `True` unless you pass `--invariant` or `--infer`.
-- `P` — the property. This is where the `-P "(and (= s0 ...) (= s1 ...))"`
+- `P` — the property. This is where the `--buchi "(and (= s0 ...) (= s1 ...))"`
   argument ended up. The `DecidablePred` instance next to it is needed by the
   proof rule.
 - `ranking` — the ranking function, a `Nat` that must strictly decrease while
@@ -580,6 +580,29 @@ The argument is the standard one. `hinv` says `inv` over-approximates the
 reachable states. `hrank` says that from any `inv` state where `P` is false, a
 natural number strictly decreases. A natural number cannot decrease forever, so
 `P` must keep recurring.
+
+### `--safety`: the same file, ending in `rule_globally`
+
+`--safety PROPERTY` asks for `□ P` rather than `□◇ P`, and that changes what a
+certificate *is*. Everything through `hinv` is identical; there is no ranking
+function anywhere in the project (`System/Data.lean` defines none), and the
+ending is:
+
+```lean
+theorem inv_imp_P : ∀ s, inv s → P s        -- the invariant is a strengthening of P
+theorem hP : lts.StateSet_isInvariant P     -- so P over-approximates the reachable states too
+def safety := rule_globally lts P hP
+```
+
+```lean
+∀ ss μs, lts.ωTrace ss μs → ss ⊧ G (AP P)
+```
+
+`StateSet_isInvariant` is `reachableSet ⊆ ·`, so `hP` is one step from `hinv`:
+a superset of an invariant is an invariant. All the work is in `inv_imp_P`,
+which is why the invariant a safety route infers has to be strong enough to
+rule out every state where `P` is false -- where a Büchi invariant only has to
+be strong enough to make the ranking argument go through.
 
 ---
 

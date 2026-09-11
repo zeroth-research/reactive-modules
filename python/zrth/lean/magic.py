@@ -8,6 +8,13 @@ class TA2Magic:
     Infers invariants and ranking functions for a reactive module
     or its source code to prove that `G (F prp)` holds about the system.
     That is, to prove that `prp` holds infinitely often.
+
+    `cd.kind == "safety"` asks for the other property instead -- `G prp`,
+    every reachable state -- and then there is no ranking function to infer:
+    the invariant has to imply `prp`, and `rule_globally` does the rest.
+    Only `TA2MagicCEGAR` implements that; `TA2MagicAI` is Buchi-only, and
+    `main` rejects the combination rather than inferring something the
+    certificate cannot use.
     """
 
     def __init__(self, source: str):

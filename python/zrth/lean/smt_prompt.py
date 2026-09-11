@@ -43,7 +43,7 @@ class _E:
 
     Lets the user write `s0 > 0`, `s0 == s4`, `a + b`, `a & b` etc. in
     Python, producing cvc5 Terms under the hood. Used as a convenience
-    layer for `--property` / `--pre` / `--invariant` / `--ranking`.
+    layer for `--safety` / `--buchi` / `--pre` / `--invariant` / `--ranking`.
     """
 
     __slots__ = ("_tm", "_t")
@@ -313,12 +313,52 @@ Tuple fields are accessed with `((_ tuple.select k) t)`.
 """
 
 
+CEGAR_SAFETY_SYSTEM = """\
+You are a formal verification expert. Given a reactive module and a \
+property, propose an inductive invariant as a pure SMT-LIB 2 *expression* \
+(not a lambda, not a definition).
+
+The invariant must satisfy all three of:
+1. it holds in every initial state (for inputs satisfying init_pre),
+2. it is preserved by every update (for inputs satisfying update_pre),
+3. it IMPLIES the property: every state satisfying the invariant also \
+satisfies the property.
+
+Point 3 is what makes this a safety proof. The property must hold in \
+*every* reachable state, so the invariant has to be strong enough to rule \
+out every state where the property is false. There is NO ranking function \
+on this route -- do not propose one. If the property is already inductive, \
+the invariant may simply be the property itself; more often it has to be \
+strengthened with the extra facts that make it inductive.
+
+The module's state components are already declared as top-level SMT \
+constants named `s0`, `s1`, …, `sN-1`. You MUST refer to them by these \
+exact names. Do NOT introduce new variables, do NOT write a binder \
+(no `lambda`, no `fun`, no `let`). Your expression's free variables \
+must be a subset of {s0, s1, …, sN-1}.
+
+Reply with EXACTLY this format (NO other text, NO code fences, NO \
+markdown):
+INVARIANT: <SMT-LIB 2 expression of sort Bool>
+
+Examples of valid expressions:
+  (and (>= s0 0) (<= s0 100))
+  (or (not s0) (= s1 0))
+
+Use standard SMT-LIB syntax: (and ...), (or ...), (not ...), (= ...), \
+(< ...), (<= ...), (+ ...), (- ...), (* ...), (ite cond a b). \
+Tuple fields are accessed with `((_ tuple.select k) t)`.
+"""
+
+
 @dataclass
 class PromptResult:
     inv_src: str
-    ranking_src: str
+    # `None` on the safety route: `rule_globally` takes no ranking function,
+    # so none is asked for and none comes back.
+    ranking_src: str | None
     inv_term: cvc5.Term
-    ranking_term: cvc5.Term
+    ranking_term: cvc5.Term | None
 
 
 class CegarPromptEnv:
@@ -481,6 +521,7 @@ def prompt_inv_ranking(
     *,
     fixed_inv_src: str | None = None,
     fixed_ranking_src: str | None = None,
+    kind: str = "buchi",
 ) -> PromptResult:
     """Call `chat` with the CEGAR prompt, parse reply into SMT terms.
 
@@ -488,17 +529,31 @@ def prompt_inv_ranking(
     treated as a user-provided input: not requested from the LLM, and
     shown in the prompt so the LLM sees it while searching for the other.
     If both are fixed, no LLM call is made.
+
+    `kind="safety"` asks for an invariant alone. `rule_globally` takes no
+    ranking function, so there is none to propose; what the invariant has
+    to do instead is *imply* the property rather than merely be re-reached,
+    and the system prompt says so. A fixed invariant is then the whole
+    certificate, and no LLM call is made.
     """
-    if fixed_inv_src is not None and fixed_ranking_src is not None:
+    safety = kind == "safety"
+    if safety:
+        fixed_ranking_src = None
+    if fixed_inv_src is not None and (safety or fixed_ranking_src is not None):
         return PromptResult(
             fixed_inv_src,
             fixed_ranking_src,
             parse_predicate(env, fixed_inv_src),
-            parse_predicate(env, fixed_ranking_src),
+            None if fixed_ranking_src is None else parse_predicate(env, fixed_ranking_src),
         )
+    goal = (
+        "Property (prp), to hold in EVERY reachable state"
+        if safety
+        else "Property (prp), to hold infinitely often"
+    )
     user_msg = (
         f"Source code:\n```python\n{source}\n```\n\n"
-        f"Property (prp): {prp}\n\n"
+        f"{goal}: {prp}\n\n"
         f"{preconds}\n\n"
         f"{env.state_description()}\n\n"
         f"{env.transition_description()}\n"
@@ -516,16 +571,17 @@ def prompt_inv_ranking(
             "Reply with ONLY an `INVARIANT:` line.\n"
         )
     if feedback:
+        what = "invariant" if safety else "invariant and ranking"
         user_msg += (
             "\nPrevious attempt was rejected. Feedback:\n"
             f"{feedback}\n"
-            "Please try again with corrected invariant and ranking.\n"
+            f"Please try again with a corrected {what}.\n"
         )
-    text = chat(CEGAR_GENERATE_SYSTEM, user_msg)
+    text = chat(CEGAR_SAFETY_SYSTEM if safety else CEGAR_GENERATE_SYSTEM, user_msg)
     inv_src, ranking_src = parse_llm_reply(
         text,
         require_inv=fixed_inv_src is None,
-        require_ranking=fixed_ranking_src is None,
+        require_ranking=not safety and fixed_ranking_src is None,
     )
     if fixed_inv_src is not None:
         inv_src = fixed_inv_src
@@ -538,6 +594,15 @@ def prompt_inv_ranking(
             f"Could not parse INVARIANT `{inv_src}`: {e}. "
             f"Use only s0..s{len(env.state_vars) - 1}."
         ) from e
+    if str(inv_term.getSort()) != "Bool":
+        raise PromptParseError(
+            f"INVARIANT must have sort Bool, got {inv_term.getSort()}."
+        )
+    if safety:
+        # An LLM that volunteered a RANKING anyway has offered something
+        # this route has no obligation to state; drop it rather than carry
+        # a term nothing checks.
+        return PromptResult(inv_src, None, inv_term, None)
     try:
         ranking_term = parse_predicate(env, ranking_src)
     except RuntimeError as e:
@@ -545,10 +610,6 @@ def prompt_inv_ranking(
             f"Could not parse RANKING `{ranking_src}`: {e}. "
             f"Use only s0..s{len(env.state_vars) - 1}."
         ) from e
-    if str(inv_term.getSort()) != "Bool":
-        raise PromptParseError(
-            f"INVARIANT must have sort Bool, got {inv_term.getSort()}."
-        )
     if str(ranking_term.getSort()) != "Int":
         raise PromptParseError(
             f"RANKING must have sort Int, got {ranking_term.getSort()}."

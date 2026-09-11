@@ -312,25 +312,35 @@ def module() -> Module:
 # Bare Lean project (all certificate fields left as sorry)
 uv run verith mymodule.py -o out/ -p MyProject
 
-# Specify the property to prove (SMT-LIB 2 Bool over s0..sN-1)
-uv run verith mymodule.py -P "(= s0 0)" -o out/ -p MyProject
+# Specify the property to prove (SMT-LIB 2 Bool over s0..sN-1). Which flag it
+# goes under is the choice of proof rule -- see "Safety or Büchi" below.
+uv run verith mymodule.py --buchi "(= s0 0)" -o out/ -p MyProject
+uv run verith mymodule.py --safety "(<= s0 10)" -o out/ -p MyProject
 
 # Also supply invariant and ranking manually
-uv run verith mymodule.py -P "(= s0 0)" \
+uv run verith mymodule.py --buchi "(= s0 0)" \
     --invariant "(and (>= s0 0) (<= s0 10))" \
     --ranking   "(ite (= s0 0) 0 s0)" \
     -o out/ -p MyProject
 
+# A safety certificate is an invariant alone -- no ranking function exists
+uv run verith mymodule.py --safety "(<= s0 10)" \
+    --invariant "(and (>= s0 0) (<= s0 10))" \
+    -o out/ -p MyProject
+
 # AI inference with Claude (requires ANTHROPIC_API_KEY + pip install zrth[ai])
-uv run verith mymodule.py -P "(= s0 0)" --infer -o out/ -p MyProject
+uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
+
+# ... and for a safety property, through the cvc5-checked loop
+uv run verith mymodule.py --safety "(<= s0 10)" --infer ai-cegar -o out/ -p MyProject
 
 # AI inference with a local LLM via Ollama (requires pip install zrth[ai-local])
-uv run verith mymodule.py -P "(= s0 0)" --infer \
+uv run verith mymodule.py --buchi "(= s0 0)" --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 \
     -o out/ -p MyProject
 
 # Standalone self-contained certificate (no project scaffold)
-uv run verith mymodule.py -P "(= s0 0)" --cert-file out/MyCert.lean
+uv run verith mymodule.py --buchi "(= s0 0)" --cert-file out/MyCert.lean
 # → writes out/MyCert.lean  (certificate)
 # → writes out/MyCertScalar.lean  (scalar encoding + equivalence theorems)
 ```
@@ -359,6 +369,31 @@ path/Name.lean               # self-contained: init/update + certificate
 path/NameScalar.lean         # scalar encoding + equivalence theorems
 ```
 
+### Safety or Büchi
+
+The property comes in under one of two flags, and the choice is not a label:
+it decides which proof rule the certificate is built on, and so what the
+certificate consists of.
+
+| | `--safety P` | `--buchi P` |
+|---|---|---|
+| proves | `G P` — `P` in every reachable state | `G (F P)` — `P` infinitely often |
+| proof rule | `rule_globally` | `rule_buchi` |
+| certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
+| obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
+| `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
+| routes | `--fbk-proveit` (ic3ia finds the invariant), or `--infer ai-cegar` | `--infer ai` or `--infer ai-cegar` |
+
+Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
+the project is generated from whatever predicates were supplied, and the two
+flags simply say which certificate to emit. `--safety` and `--buchi` are
+mutually exclusive, and `--fbk-proveit` takes only `--safety` — ic3ia decides
+reachability of `¬P`, which is not a question about recurrence.
+
+The distinction is not academic. Countdown starts at 100 and counts down, so
+`(= s0 0)` is reached over and over — true under `--buchi`, and false under
+`--safety` at step 0.
+
 ### Key flags
 
 | Flag | Default | Description |
@@ -366,7 +401,8 @@ path/NameScalar.lean         # scalar encoding + equivalence theorems
 | `-o` / `--output-dir` | `.` | Where to create the project |
 | `-p` / `--project-name` | `Rea` | Lean package name |
 | `-d` / `--module-def` | `module` | Name of the factory function in the Python file |
-| `-P` / `--property` | — | SMT-LIB 2 Bool over `s0..sN-1` |
+| `--safety` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold in every reachable state (`G P`) |
+| `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
 | `--infer` | — | `ai` or `ai-cegar` (default when flag given without value) |
@@ -395,14 +431,14 @@ project. All three routes that fill a certificate qualify —
 
 ```bash
 # predicates supplied
-uv run verith mymodule.py -P "(= s0 0)" --invariant "(<= s0 100)" \
+uv run verith mymodule.py --buchi "(= s0 0)" --invariant "(<= s0 100)" \
     --ranking "s0" --build-cert -o out/ -p Counter
 
 # predicates inferred
-uv run verith mymodule.py -P "(= s0 0)" --infer --build-cert -o out/ -p Counter
+uv run verith mymodule.py --buchi "(= s0 0)" --infer --build-cert -o out/ -p Counter
 
 # predicates from ic3ia
-uv run verith mymodule.py -P "(not (= s0 15))" --build-cert -o out/ -p Counter \
+uv run verith mymodule.py --safety "(not (= s0 15))" --build-cert -o out/ -p Counter \
     --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying
 ```
 
@@ -413,7 +449,7 @@ uv run verith mymodule.py -P "(not (= s0 15))" --build-cert -o out/ -p Counter \
 | no `--invariant`/`--ranking`, no `--infer`, no `--fbk-proveit` | every obligation in a bare project is `sorry`. Lake compiles that and exits 0, so "built" would mean nothing |
 | `--cert-file`, `--hammer-file` | they write a file and return; there is no project to build |
 
-`--invariant` without `--ranking` (or either without `--property`) is the
+`--invariant` without `--ranking` (or either without a property) is the
 first row: a missing predicate is a `sorry`, not a weaker proof.
 
 Two checks sit past the parse-time gate, because a flag cannot promise what
@@ -449,7 +485,7 @@ model-checks the system with ic3ia and renders the inductive invariant it
 finds back as a Lean certificate:
 
 ```bash
-uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p Counter \
+uv run verith mymodule.py --safety "(not (= s0 15))" -o out/ -p Counter \
     --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying \
     --ic3ia ~/ic3ia/build/ic3ia
 ```
@@ -490,7 +526,7 @@ without the `--plugin=` that `proveit.py` has to pass to a bare `lean`.
 
 Of the *invariant* the project is still **bare**: it comes from ic3ia, so
 `--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
-silently ignored, and `--property` is required.
+silently ignored, and `--safety` is required.
 
 ### Encoding 7 — NA (`translate/na.py`)
 

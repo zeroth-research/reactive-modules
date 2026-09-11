@@ -1,7 +1,8 @@
 """Shape-directed tactic generation for the certificate proofs.
 
-The three obligations (`init_inv`, `step_inv`, `hrank`) used to be closed by
-one fixed tactic chain, identical for every module. That is wasteful in both
+The three obligations (`init_inv`, `step_inv`, and `hrank` -- or `inv_imp_P`
+on the `--safety` route) used to be closed by one fixed tactic chain,
+identical for every module. That is wasteful in both
 directions. An integer module with a linear ranking wants `omega` and nothing
 else, yet paid for `decide` and `bv_decide` on every goal — and `bv_decide`,
 which can only ever help a BitVec module, took one BitVec certificate from

@@ -13,17 +13,24 @@ Generate a bare Lean project (all certificate fields left as ``sorry``)::
 
     uv run verith mymodule.py -o out/ -p MyProject
 
-Pass a property so the certificate knows what to prove::
+Pass the property so the certificate knows what to prove.  Which flag it
+goes under is the choice of proof rule, and so of what the certificate
+contains::
 
-    uv run verith mymodule.py -P "x == 0" -o out/ -p MyProject
+    # `G (F x == 0)` -- holds infinitely often: invariant + ranking function
+    uv run verith mymodule.py --buchi "x == 0" -o out/ -p MyProject
 
-Ask the AI to infer the invariant and ranking function automatically::
+    # `G (x <= 100)` -- holds in every reachable state: invariant alone
+    uv run verith mymodule.py --safety "x <= 100" -o out/ -p MyProject
 
-    uv run verith mymodule.py -P "x == 0" --infer -o out/ -p MyProject
+Ask the AI to infer the certificate automatically (the ranking function too,
+for a Buchi property)::
+
+    uv run verith mymodule.py --buchi "x == 0" --infer -o out/ -p MyProject
 
 Use a local LLM via Ollama instead of Claude::
 
-    uv run verith mymodule.py -P "x == 0" --infer \\
+    uv run verith mymodule.py --buchi "x == 0" --infer \\
         --model qwen3-coder --base-url http://localhost:11434/v1 \\
         -o out/ -p MyProject
 
@@ -91,34 +98,40 @@ examples:
   # bare project — all certificate fields left as sorry
   uv run verith mymodule.py -o out/ -p MyProject
 
-  # pass a property (certificate stub with known P)
-  uv run verith mymodule.py -P "x == 0" -o out/ -p MyProject
+  # a Buchi property, `G (F (= s0 0))` (certificate stub with known P)
+  uv run verith mymodule.py --buchi "(= s0 0)" -o out/ -p MyProject
+
+  # a safety property, `G (<= s0 100)`: invariant only, no ranking function
+  uv run verith mymodule.py --safety "(<= s0 100)" -o out/ -p MyProject
 
   # AI inference with Claude (requires ANTHROPIC_API_KEY + pip install zrth[ai])
-  uv run verith mymodule.py -P "x == 0" --infer -o out/ -p MyProject
+  uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
+
+  # ... and the same loop for a safety property (cvc5-checked route only)
+  uv run verith mymodule.py --safety "(<= s0 100)" --infer ai-cegar -o out/ -p MyProject
 
   # AI inference with Ollama (requires pip install zrth[ai-local])
-  uv run verith mymodule.py -P "x == 0" --infer \\
+  uv run verith mymodule.py --buchi "(= s0 0)" --infer \\
       --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p MyProject
 
   # ask cvc5 whether the obligations are true before spending a lake build on them
-  uv run verith mymodule.py -P "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
+  uv run verith mymodule.py --buchi "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
       --pre-check cvc5 -o out/ -p MyProject
 
   # let cvc5 discharge the branch conditions the invariant settles
-  uv run verith mymodule.py -P "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
+  uv run verith mymodule.py --buchi "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
       --smt-tactics cvc5 -o out/ -p MyProject
 
   # certify through lean-ltl-certifying's proveit.py (lean2vmt -> ic3ia -> vmt2lean)
-  uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p MyProject \\
+  uv run verith mymodule.py --safety "(not (= s0 15))" -o out/ -p MyProject \\
       --fbk-proveit ~/proof-prototyping/lean-ltl-certifying --ic3ia ~/ic3ia/build/ic3ia
 
   # ... and build the certificate that route produces
-  uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p MyProject \\
+  uv run verith mymodule.py --safety "(not (= s0 15))" -o out/ -p MyProject \\
       --fbk-proveit ~/proof-prototyping/lean-ltl-certifying --build-cert
 
   # build the certificate of any route that fills it: `lake build Certificate`
-  uv run verith mymodule.py -P "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
+  uv run verith mymodule.py --buchi "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
       --build-cert -o out/ -p MyProject
 """
 
@@ -136,15 +149,11 @@ def _build_cert(args, project_dir: Path, cert_data) -> None:
     if not args.build_cert:
         return
     if cert_data is not None:
-        missing = [
-            name
-            for name, value in (
-                ("property", cert_data.prp),
-                ("invariant", cert_data.inv),
-                ("ranking", cert_data.ranking),
-            )
-            if not value
-        ]
+        # A safety certificate has no ranking function to be missing.
+        required = [("property", cert_data.prp), ("invariant", cert_data.inv)]
+        if not cert_data.is_safety:
+            required.append(("ranking", cert_data.ranking))
+        missing = [name for name, value in required if not value]
         if missing:
             raise SystemExit(
                 f"error: --build-cert: the certificate has no "
@@ -162,7 +171,10 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Generate a Lean4 certificate project from a Python reactive module. "
-            "With --infer an LLM automatically finds the invariant and ranking function."
+            "The property goes under --safety (`G FORMULA`: every reachable "
+            "state) or --buchi (`G (F FORMULA)`: infinitely often); with --infer "
+            "an LLM finds the invariant, and the ranking function a Buchi "
+            "certificate also needs."
         ),
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -206,13 +218,28 @@ def main():
         help="Generate Main.lean and add [[lean_exe]] to lakefile for a runnable binary.",
     )
     parser.add_argument(
-        "-P",
-        "--property",
+        "--safety",
         default=None,
+        metavar="FORMULA",
         help=(
-            "Property as an SMT-LIB 2 Bool expression over state vars "
-            "`s0..sN-1` (ctrl-next components). "
-            "Example: '(= s0 false)'. Required when using --infer."
+            "Safety property `G FORMULA`: an SMT-LIB 2 Bool expression over "
+            "state vars `s0..sN-1` (ctrl-next components) that must hold in "
+            "*every* reachable state. Certified with `rule_globally`, which "
+            "needs an invariant implying FORMULA and no ranking function at "
+            "all. Certifiable by --fbk-proveit (ic3ia finds the invariant) "
+            "or by --infer ai-cegar. Example: '(not (= s0 15))'."
+        ),
+    )
+    parser.add_argument(
+        "--buchi",
+        default=None,
+        metavar="FORMULA",
+        help=(
+            "Buchi property `G (F FORMULA)`: an SMT-LIB 2 Bool expression "
+            "over state vars `s0..sN-1` that must hold infinitely often. "
+            "Certified with `rule_buchi`, which needs an invariant *and* a "
+            "ranking function that decreases in every state where FORMULA "
+            "is false. Inferrable by --infer. Example: '(= s0 0)'."
         ),
     )
     parser.add_argument(
@@ -232,8 +259,9 @@ def main():
         help=(
             "Invariant as an SMT-LIB 2 Bool expression over state vars "
             "`s0..sN-1`. When combined with --infer, only a ranking "
-            "function is inferred (the invariant is fixed). "
-            "Example: '(= s0 s5)'."
+            "function is inferred (the invariant is fixed) -- and with "
+            "--safety, which infers no ranking function, the certificate is "
+            "then complete and only checked. Example: '(= s0 s5)'."
         ),
     )
     parser.add_argument(
@@ -241,9 +269,9 @@ def main():
         default=None,
         help=(
             "Ranking as an SMT-LIB 2 Int expression over state vars "
-            "`s0..sN-1`. When combined with --infer, only an invariant "
-            "is inferred. Must satisfy `ranking ≥ 0` under the invariant. "
-            "Example: '(ite s5 (ite s4 1 2) 0)'."
+            "`s0..sN-1`, for --buchi only. When combined with --infer, only "
+            "an invariant is inferred. Must satisfy `ranking >= 0` under the "
+            "invariant. Example: '(ite s5 (ite s4 1 2) 0)'."
         ),
     )
     parser.add_argument(
@@ -253,10 +281,11 @@ def main():
         default=None,
         choices=["ai", "ai-cegar"],
         help=(
-            "Infer the invariant and ranking function for --property. "
-            "`ai` uses plain LLM self-check; `ai-cegar` uses LLM + cvc5 "
-            "counterexample-guided refinement (default when --infer is "
-            "passed without a value)."
+            "Infer the certificate for --safety or --buchi: the invariant, "
+            "plus the ranking function --buchi needs. `ai` uses plain LLM "
+            "self-check; `ai-cegar` uses LLM + cvc5 counterexample-guided "
+            "refinement (default when --infer is passed without a value, and "
+            "the only route that can serve --safety)."
         ),
     )
     parser.add_argument(
@@ -300,7 +329,8 @@ def main():
             "is installed as <project>/Certificate/Certificate.lean, which "
             "the project's root module imports. The lakefile requires this "
             "checkout so that certificate builds. "
-            "Requires --property; rejects --infer/--invariant/--ranking/--pre."
+            "Requires --safety -- ic3ia decides `G PROPERTY`, not `G (F "
+            "PROPERTY)`; rejects --infer/--invariant/--ranking/--pre."
         ),
     )
     parser.add_argument(
@@ -398,12 +428,40 @@ def main():
             "shell variable?). Pass a real one or drop the flag."
         )
 
+    # A certificate proves one property under one proof rule, and which rule
+    # decides what the certificate even consists of -- a ranking function or
+    # no ranking function. So the two flags are not a pair of properties to
+    # be combined; they are the choice.
+    if args.safety and args.buchi:
+        parser.error(
+            "--safety and --buchi are mutually exclusive: a certificate "
+            "proves `G FORMULA` or `G (F FORMULA)`, under one proof rule"
+        )
+    property_smt = args.safety or args.buchi
+    kind = "safety" if args.safety else "buchi"
+
+    # `G FORMULA` needs no ranking function -- `rule_globally` has nowhere to
+    # put one. Taking it and dropping it would look like it had been used.
+    if args.safety and args.ranking:
+        parser.error(
+            "--ranking is meaningless with --safety: `G FORMULA` is proved "
+            "by an invariant that implies FORMULA, and `rule_globally` takes "
+            "no ranking function. Ranking functions belong to --buchi."
+        )
+
     # --fbk-proveit takes over the whole certification route, so anything it
     # would have to ignore is an error rather than a silent no-op.
     ltl_project = None
     if args.fbk_proveit is not None:
-        if not args.property:
-            parser.error("--fbk-proveit requires --property")
+        if args.buchi:
+            parser.error(
+                "--fbk-proveit is incompatible with --buchi: proveit.py "
+                "proves `G PROPERTY` through ic3ia, which is a safety "
+                "question. Pass --safety, or infer a Buchi certificate with "
+                "--infer ai-cegar."
+            )
+        if not args.safety:
+            parser.error("--fbk-proveit requires --safety")
         conflicts = [
             name
             for name, value in (
@@ -444,15 +502,15 @@ def main():
                 f"--build-cert is incompatible with {which}: that writes a "
                 "file and generates no project to build"
             )
-        if not (
-            args.fbk_proveit
-            or args.infer
-            or (args.property and args.invariant and args.ranking)
-        ):
+        # A safety certificate is complete without a ranking function, so
+        # what counts as "worth building" follows the kind.
+        supplied = property_smt and args.invariant and (args.safety or args.ranking)
+        if not (args.fbk_proveit or args.infer or supplied):
             parser.error(
-                "--build-cert needs a certificate to build: pass --property "
-                "with --invariant and --ranking, or --infer, or "
-                "--fbk-proveit. Without them every obligation is `sorry`."
+                "--build-cert needs a certificate to build: pass --safety "
+                "with --invariant, or --buchi with --invariant and "
+                "--ranking, or --infer, or --fbk-proveit. Without them "
+                "every obligation is `sorry`."
             )
 
     # --hammer-file: generate ZerothHammer.lean and exit (no module needed)
@@ -466,8 +524,18 @@ def main():
     if not args.module_file:
         parser.error("module_file is required (unless --hammer-file is used alone)")
 
-    if args.infer and not args.property:
-        parser.error("--infer requires --property")
+    if args.infer and not property_smt:
+        parser.error("--infer requires --safety or --buchi")
+
+    # `--infer ai` prompts for Lean and cross-checks with a second LLM call,
+    # and both halves are written around an invariant *and* a ranking
+    # function. Only the cvc5 loop states the safety obligations.
+    if args.safety and args.infer == "ai":
+        parser.error(
+            "--safety needs --infer ai-cegar: the `ai` route infers a "
+            "ranking function `rule_globally` cannot take, and nothing "
+            "checks that the invariant implies the property"
+        )
 
     # The standalone certificate is written before inference runs and then
     # returns, so the inferred predicates could never reach it -- and the
@@ -479,8 +547,8 @@ def main():
         )
 
     cert_data: CertificateData | None = None
-    if args.property or args.pre or args.invariant or args.ranking:
-        cert_data = CertificateData(prp=args.property)
+    if property_smt or args.pre or args.invariant or args.ranking:
+        cert_data = CertificateData(prp=property_smt, kind=kind)
         if args.pre:
             cert_data.init_pre = args.pre
             cert_data.update_pre = args.pre
@@ -583,7 +651,7 @@ import {out.stem}Scalar
                 module=module,
                 project_dir=project_dir,
                 project_name=args.project_name,
-                property_smt=args.property,
+                property_smt=property_smt,
                 ic3ia=args.ic3ia,
             )
         except ProveItError as e:
@@ -618,9 +686,11 @@ import {out.stem}Scalar
         if args.pre_check == "cvc5":
             pre_check(module, cert_data, budget)
 
-        # Merge inferred inv/ranking into project_cert_data.
+        # Merge inferred inv/ranking into project_cert_data. The kind comes
+        # along: it decides which proof rule the rewritten files state, and
+        # `ranking` is `None` for a safety certificate by construction.
         if project_cert_data is None:
-            project_cert_data = CertificateData()
+            project_cert_data = CertificateData(kind=kind)
         project_cert_data.inv = cert_data.inv
         project_cert_data.ranking = cert_data.ranking
 

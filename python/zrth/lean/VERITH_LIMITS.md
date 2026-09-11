@@ -51,7 +51,7 @@ already-built package set of `tests/lean`:
 mkdir -p /tmp/shared/.lake/build
 ln -s <repo>/python/tests/lean/.lake/packages /tmp/shared/.lake/packages
 
-uv run verith mymodule.py -P … --invariant … --ranking … -o /tmp/case1 -p Rea
+uv run verith mymodule.py --buchi … --invariant … --ranking … -o /tmp/case1 -p Rea
 ln -s /tmp/shared/.lake /tmp/case1/Rea/.lake
 cp <repo>/python/tests/lean/lake-manifest.json /tmp/case1/Rea/
 cd /tmp/case1/Rea && lake build
@@ -119,8 +119,8 @@ rule moved two — each time with every other verdict unchanged.
 |---|---|---|---|---|
 | `Countdown` | LIA 1x1, conjunctive bound, Ite ranking — the known-good control | ok | ok | ok |
 | `TwoVars` | two 1x1 wires, relational invariant, difference ranking | ok | ok | ok |
-| `NoCert` | no -P at all: what does a bare `verith` project contain? | ok | ok | **fail** |
-| `PropOnly` | -P but no --invariant/--ranking: inv defaults to True, ranking to sorry | ok | ok | **fail** |
+| `NoCert` | no property at all: what does a bare `verith` project contain? | ok | ok | **fail** |
+| `PropOnly` | `--buchi` but no --invariant/--ranking: inv defaults to True, ranking to sorry | ok | ok | **fail** |
 | `InvTrue` | trivially inductive invariant; hrank has no bound to work with | ok | ok | **fail** |
 | `InvDisj` | 6-way disjunctive invariant — needs the casesm* _ v _ branch | ok | ok | ok |
 | `InvMod` | parity invariant: INTS_MODULUS through smt_to_lean, then omega | ok | ok | ok |

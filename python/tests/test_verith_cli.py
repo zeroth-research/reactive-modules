@@ -39,7 +39,7 @@ def _ollama_available() -> bool:
 
 
 def test_verith_no_property():
-    """Without --property the certificate uses sorry placeholders."""
+    """Without a property the certificate uses sorry placeholders."""
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "CounterBasic")
         assert r.returncode == 0, r.stderr
@@ -51,17 +51,17 @@ def test_verith_no_property():
 
 
 def test_verith_with_property():
-    """--property without --infer writes prp as sorry (string not compiled to Terms)."""
+    """A property without --infer writes prp as sorry (string not compiled to Terms)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTER_MODULE), "-P", "s0 == 0", "-o", tmpdir, "-p", "CounterProp"
+            str(COUNTER_MODULE), "--buchi", "s0 == 0", "-o", tmpdir, "-p", "CounterProp"
         )
         assert r.returncode == 0, r.stderr
         assert (Path(tmpdir) / "CounterProp").exists()
 
 
 def test_verith_infer_requires_property():
-    """--infer without --property exits with a non-zero status."""
+    """--infer without --safety or --buchi exits with a non-zero status."""
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(str(COUNTER_MODULE), "--infer", "-o", tmpdir)
         assert r.returncode != 0
@@ -72,7 +72,7 @@ def test_verith_infer_rejects_cert_file():
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
             str(COUNTER_MODULE),
-            "-P",
+            "--buchi",
             "(= s0 0)",
             "--infer",
             "--cert-file",
@@ -90,7 +90,7 @@ def test_verith_infer_rejects_cert_file():
 # `--infer ai-cegar` with both predicates fixed makes no LLM call: the CEGAR
 # loop just verifies them once. That is the whole inference path, offline.
 CEGAR_FIXED = (
-    "-P", "(= s0 0)",
+    "--buchi", "(= s0 0)",
     "--invariant", "(and (>= s0 0) (<= s0 9))",
     "--ranking", "(ite (= s0 0) 0 (- 10 s0))",
     "--infer", "ai-cegar",
@@ -114,6 +114,100 @@ def test_pre_check_checks_the_inferred_certificate():
         assert out.index("TA2Magic") < out.index("SMT pre-check")
 
 
+# ── safety and Buchi are different certificates ─────────────────────────────
+
+
+def _cert(tmpdir, name) -> tuple[str, str]:
+    """(Data.lean, Certificate.lean) of a generated project."""
+    root = Path(tmpdir) / name
+    return (
+        (root / "System" / "Data.lean").read_text(),
+        (root / "Certificate" / "Certificate.lean").read_text(),
+    )
+
+
+def test_buchi_generates_a_ranking_certificate():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = _verith(
+            str(COUNTER_MODULE), "--buchi", "(= s0 0)",
+            "--invariant", "(and (>= s0 0) (<= s0 9))",
+            "--ranking", "(ite (= s0 0) 0 (- 10 s0))",
+            "-o", tmpdir, "-p", "CounterBuchi",
+        )
+        assert r.returncode == 0, r.stderr
+        data, cert = _cert(tmpdir, "CounterBuchi")
+        assert "def ranking" in data
+        assert "rule_buchi" in cert and "theorem hrank" in cert
+
+
+def test_safety_generates_a_rule_globally_certificate():
+    """`G P` is proved by an invariant that implies `P`. No ranking function
+    is defined, stated or mentioned -- `rule_globally` has nowhere to put
+    one, and a `def ranking := sorry` would be a `sorry` in a file whose
+    point is that it has none."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = _verith(
+            str(COUNTER_MODULE), "--safety", "(<= s0 9)",
+            "--invariant", "(and (>= s0 0) (<= s0 9))",
+            "-o", tmpdir, "-p", "CounterSafety",
+        )
+        assert r.returncode == 0, r.stderr
+        data, cert = _cert(tmpdir, "CounterSafety")
+        assert "ranking" not in data and "ranking" not in cert
+        assert "rule_globally" in cert and "def safety" in cert
+        assert "theorem inv_imp_P" in cert
+        assert "rule_buchi" not in cert
+
+
+def test_safety_and_buchi_are_mutually_exclusive(tmp_path):
+    r = _verith(
+        str(COUNTER_MODULE), "--safety", "(<= s0 9)", "--buchi", "(= s0 0)",
+        "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert "mutually exclusive" in r.stderr
+
+
+def test_safety_rejects_a_ranking(tmp_path):
+    """Taking a ranking function and dropping it would look like it was used."""
+    r = _verith(
+        str(COUNTER_MODULE), "--safety", "(<= s0 9)", "--ranking", "s0",
+        "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert "--ranking is meaningless with --safety" in r.stderr
+
+
+def test_safety_rejects_the_unchecked_inference_route(tmp_path):
+    """`--infer ai` infers a ranking function and checks nothing with cvc5."""
+    r = _verith(
+        str(COUNTER_MODULE), "--safety", "(<= s0 9)", "--infer", "ai",
+        "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert "--safety needs --infer ai-cegar" in r.stderr
+
+
+def test_cegar_infers_a_safety_certificate():
+    """The CEGAR loop with the invariant fixed makes no LLM call: it states
+    the safety obligations (init, inductive, `inv -> P`) and verifies them,
+    which is the whole route minus the prompting."""
+    pytest.importorskip("anthropic")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = _verith(
+            str(COUNTER_MODULE), "--safety", "(<= s0 9)",
+            "--invariant", "(and (>= s0 0) (<= s0 9))",
+            "--infer", "ai-cegar", "--pre-check", "cvc5",
+            "-o", tmpdir, "-p", "CounterSafetyInfer",
+        )
+        assert r.returncode == 0, r.stderr
+        assert "all obligations UNSAT" in r.stdout
+        # The pre-check states the safety obligation, not `hrank`.
+        assert "inv_imp_P" in r.stdout and "hrank" not in r.stdout
+        data, cert = _cert(tmpdir, "CounterSafetyInfer")
+        assert "ranking" not in data and "rule_globally" in cert
+
+
 # ── AI inference ────────────────────────────────────────────────────────────
 
 
@@ -126,7 +220,7 @@ def test_verith_infer_claude():
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
             str(COUNTER_MODULE),
-            "-P",
+            "--buchi",
             "s0 == 0",
             "--infer",
             "-o",
@@ -152,7 +246,7 @@ def test_verith_infer_ollama():
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
             str(COUNTER_MODULE),
-            "-P",
+            "--buchi",
             "s0 == 0",
             "--infer",
             "--model",
@@ -180,14 +274,14 @@ def test_build_cert_needs_a_certificate_to_build(tmp_path):
     """A bare project's obligations are all `sorry`. Lake compiles that and
     proves nothing, so asking for the build is a mistake, not a no-op."""
     r = _verith(
-        str(COUNTER_MODULE), "-P", "(= s0 0)",
+        str(COUNTER_MODULE), "--buchi", "(= s0 0)",
         "-o", str(tmp_path), "-p", "P", "--build-cert",
     )
     assert r.returncode != 0
     assert "--build-cert needs a certificate to build" in r.stderr
     # An invariant without a ranking is still a `sorry`, so it is not enough.
     r = _verith(
-        str(COUNTER_MODULE), "-P", "(= s0 0)", "--invariant", "(<= s0 100)",
+        str(COUNTER_MODULE), "--buchi", "(= s0 0)", "--invariant", "(<= s0 100)",
         "-o", str(tmp_path), "-p", "P", "--build-cert",
     )
     assert r.returncode != 0
@@ -206,15 +300,17 @@ def _fake_ltl_checkout(root: Path) -> Path:
 @pytest.mark.parametrize(
     "route",
     [
-        ["--invariant", "(<= s0 100)", "--ranking", "s0"],
-        ["--infer"],
-        ["--fbk-proveit", "<checkout>"],
+        ["--buchi", "(= s0 0)", "--invariant", "(<= s0 100)", "--ranking", "s0"],
+        # A safety certificate is complete without a ranking function.
+        ["--safety", "(<= s0 100)", "--invariant", "(<= s0 100)"],
+        ["--buchi", "(= s0 0)", "--infer"],
+        ["--safety", "(= s0 0)", "--fbk-proveit", "<checkout>"],
     ],
 )
 def test_build_cert_is_accepted_by_every_route_that_fills_the_certificate(
     route, tmp_path
 ):
-    """The three ways a certificate acquires predicates all pass the gate.
+    """Every way a certificate acquires predicates passes the gate.
 
     The module file does not exist, so each run stops at loading it -- after
     the gate and before any project, LLM or lake. What this pins is that the
@@ -225,7 +321,7 @@ def test_build_cert_is_accepted_by_every_route_that_fills_the_certificate(
         for a in route
     ]
     r = _verith(
-        str(tmp_path / "no-such-module.py"), "-P", "(= s0 0)",
+        str(tmp_path / "no-such-module.py"),
         "-o", str(tmp_path), "-p", "P", "--build-cert", *route,
     )
     assert r.returncode != 0
@@ -238,7 +334,7 @@ def test_build_cert_rejects_the_routes_that_generate_no_project(tmp_path):
         ("--hammer-file", str(tmp_path / "H.lean")),
     ):
         r = _verith(
-            str(COUNTER_MODULE), "-P", "(= s0 0)", "--invariant", "(<= s0 100)",
+            str(COUNTER_MODULE), "--buchi", "(= s0 0)", "--invariant", "(<= s0 100)",
             "--ranking", "s0", "-o", str(tmp_path), "-p", "P",
             "--build-cert", flag, value,
         )

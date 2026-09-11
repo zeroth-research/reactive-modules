@@ -281,6 +281,18 @@ _CERT_SPECS = [
         ),
     ),
     (
+        # The safety shape: `rule_globally`, an invariant that implies the
+        # property, and no ranking function anywhere in the file. Nothing
+        # else in this suite compiles a `--safety` certificate.
+        "CountdownSafe",
+        _make_countdown,
+        CertificateData(
+            kind="safety",
+            prp="(<= s0 100)",
+            inv="(and (>= s0 0) (<= s0 100))",
+        ),
+    ),
+    (
         "TwoVars",
         _make_twovars,
         CertificateData(

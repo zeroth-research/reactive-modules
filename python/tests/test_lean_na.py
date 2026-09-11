@@ -247,7 +247,7 @@ def test_implication_becomes_or_not():
 
 
 def test_property_outside_the_fragment_aborts():
-    with pytest.raises(ProveItError, match="cannot encode --property"):
+    with pytest.raises(ProveItError, match="cannot encode --safety"):
         _na(_counter(), "(> (div s0 2) 3)")
 
 
@@ -359,11 +359,13 @@ def _verith(*args) -> subprocess.CompletedProcess:
 @pytest.mark.parametrize(
     "extra,expected",
     [
-        ([], "--fbk-proveit requires --property"),
-        (["-P", "(= s0 0)", "--infer"], "incompatible with --infer"),
-        (["-P", "(= s0 0)", "--invariant", "(= s0 0)"], "incompatible with --invariant"),
-        (["-P", "(= s0 0)", "--ranking", "s0"], "incompatible with --ranking"),
-        (["-P", "(= s0 0)", "--pre", "true"], "incompatible with --pre"),
+        ([], "--fbk-proveit requires --safety"),
+        # ic3ia decides `G P`; a Buchi property is a different question.
+        (["--buchi", "(= s0 0)"], "incompatible with --buchi"),
+        (["--safety", "(= s0 0)", "--infer"], "incompatible with --infer"),
+        (["--safety", "(= s0 0)", "--invariant", "(= s0 0)"], "incompatible with --invariant"),
+        (["--safety", "(= s0 0)", "--ranking", "s0"], "is meaningless with --safety"),
+        (["--safety", "(= s0 0)", "--pre", "true"], "incompatible with --pre"),
     ],
 )
 def test_fbk_proveit_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
@@ -382,7 +384,7 @@ def test_fbk_proveit_rejects_what_it_would_have_to_ignore(extra, expected, tmp_p
     [
         ("--fbk-proveit", "--fbk-proveit"),
         ("--ic3ia", "--ic3ia"),
-        ("-P", "--property"),      # reported under its long spelling
+        ("--safety", "--safety"),
     ],
 )
 def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
@@ -396,7 +398,7 @@ def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
     out = tmp_path / "out"
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
-        "-P", "(= s0 0)", "-o", str(out), "-p", "P",
+        "--safety", "(= s0 0)", "-o", str(out), "-p", "P",
         "--fbk-proveit", str(tmp_path),
         flag, "",
     )
@@ -408,7 +410,7 @@ def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
 def test_ic3ia_alone_is_an_error(tmp_path):
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
-        "-P", "(= s0 0)", "-o", str(tmp_path), "-p", "P",
+        "--safety", "(= s0 0)", "-o", str(tmp_path), "-p", "P",
         "--ic3ia", "/bin/true",
     )
     assert r.returncode != 0
@@ -461,7 +463,7 @@ def test_a_checkout_that_is_not_one_fails_before_the_project_exists(tmp_path):
     out = tmp_path / "out"
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
-        "-P", "(= s0 0)", "-o", str(out), "-p", "P",
+        "--safety", "(= s0 0)", "-o", str(out), "-p", "P",
         "--fbk-proveit", str(tmp_path / "nowhere"),
     )
     assert r.returncode != 0

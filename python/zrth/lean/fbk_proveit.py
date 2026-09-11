@@ -18,7 +18,8 @@ to the ``proveit.py`` driver of the ``lean-ltl-certifying`` repository:
 
 The Lean project verith generates is *bare* of an invariant — it comes from
 ic3ia, so `--infer`, `--invariant` and `--ranking` are rejected rather than
-quietly ignored — but it is not unaware of the route: `create_project` is
+quietly ignored, and the property has to be `--safety`: ic3ia decides
+reachability of `¬P`, which is not a question about recurrence — but it is not unaware of the route: `create_project` is
 given the checkout, so the lakefile requires `LTL_Certifying` and declares
 the NA model's lean_lib.  Without those two the installed certificate is a
 file lake reaches and cannot elaborate.
@@ -158,7 +159,7 @@ def resolve_ic3ia(spec: str | None) -> str | None:
 
 
 def property_to_bool_lean(module, property_smt: str, n_state: int) -> str:
-    """Translate the `--property` SMT source to Bool-valued Lean.
+    """Translate the `--safety` SMT source to Bool-valued Lean.
 
     The result reads state through `(var_i state)`, exactly as
     ``translate/na.py`` binds it.
@@ -173,12 +174,12 @@ def property_to_bool_lean(module, property_smt: str, n_state: int) -> str:
     env = CegarPromptEnv(ModuleSMT(tm=tm, module=module))
     term = parse_predicate(env, property_smt)
     if not term.getSort().isBoolean():
-        raise ProveItError(f"--property must have sort Bool, got {term.getSort()}")
+        raise ProveItError(f"--safety must have sort Bool, got {term.getSort()}")
     accessors = {f"s{i}": f"(var_{i} state)" for i in range(n_state)}
     try:
         return smt_to_lean_bool(term, accessors)
     except ValueError as e:
-        raise ProveItError(f"--fbk-proveit: cannot encode --property: {e}") from e
+        raise ProveItError(f"--fbk-proveit: cannot encode --safety: {e}") from e
 
 
 def write_na_model(
@@ -238,12 +239,12 @@ def _why(out: str) -> str:
         return (
             "  ic3ia found a counterexample: the property does not hold of "
             "every reachable state.\n"
-            "  This route proves `[] PROPERTY`. A property that is merely "
-            "*reached* -- the `P` of\n"
-            "  a verith certificate, which pairs it with a ranking function "
-            "-- is not a safety\n"
-            "  property: `(= s0 0)` is false at step 0 for a counter "
-            "starting anywhere else."
+            "  This route proves `[] PROPERTY`, which is what --safety "
+            "means. A property that is\n"
+            "  merely *re-reached* is --buchi, and pairs with a ranking "
+            "function instead:\n"
+            "  `(= s0 0)` is false at step 0 for a counter starting anywhere "
+            "else."
         )
     if "did not prove" in out or "unknown" in out:
         return (

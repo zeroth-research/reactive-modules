@@ -60,7 +60,8 @@ def run_verith(case) -> dict:
         shutil.rmtree(out)
     cmd = ["uv", "run", "verith", str(module_path(case["mod"]))]
     if case.get("P"):
-        cmd += ["-P", case["P"]]
+        # Every case here is a Buchi property: `P` comes with a ranking.
+        cmd += ["--buchi", case["P"]]
     if case.get("inv"):
         cmd += ["--invariant", case["inv"]]
     if case.get("rank"):

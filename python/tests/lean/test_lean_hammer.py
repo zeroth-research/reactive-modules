@@ -37,7 +37,7 @@ def test_core_files_present(sync_core_templates):
 def test_generated_files_present(generate_lean_files):
     """ZerothHammer.lean and Certs/*.lean exist after generation fixture runs."""
     assert (_LEAN_DIR / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
-    for name in ("Countdown", "TwoVars", "Collatz", "ArgmaxScalar"):
+    for name in ("Countdown", "CountdownSafe", "TwoVars", "Collatz", "ArgmaxScalar"):
         path = _LEAN_DIR / "Certs" / f"{name}.lean"
         assert path.exists(), f"Certs/{name}.lean not generated"
 
@@ -173,6 +173,31 @@ def test_cert_countdown_build(generate_lean_files):
         f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
     )
     assert not sorry_lines, "Countdown certificate has sorry:\n" + "\n".join(sorry_lines)
+
+
+def test_generated_safety_cert_has_no_ranking(generate_lean_files):
+    """`Certs/CountdownSafe.lean` is the `--safety` shape: `rule_globally`
+    over an invariant that implies `P`, with no ranking function defined or
+    named anywhere -- a `def ranking := sorry` would be a `sorry` in a file
+    whose point is that it has none."""
+    src = (_LEAN_DIR / "Certs" / "CountdownSafe.lean").read_text()
+    assert "rule_globally" in src and "theorem inv_imp_P" in src
+    assert "rule_buchi" not in src
+    assert "ranking" not in src and "sorry" not in src
+
+
+@pytest.mark.slow
+def test_cert_countdownsafe_build(generate_lean_files):
+    """Certs/CountdownSafe.lean: the safety certificate elaborates, which is
+    what says `rule_globally lts P hP` is applied to the right things --
+    `hP` transfers the invariant to `P` through `inv_imp_P`."""
+    r = _lake_build("Certs.CountdownSafe")
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert r.returncode == 0, (
+        f"lake build Certs.CountdownSafe failed.\n"
+        f"stdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    assert not sorry_lines, "CountdownSafe certificate has sorry:\n" + "\n".join(sorry_lines)
 
 
 @pytest.mark.slow
