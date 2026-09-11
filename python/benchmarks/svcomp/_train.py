@@ -7,7 +7,6 @@ V(s) - V(s') >= delta on the loop domain).
 
 from __future__ import annotations
 
-import dataclasses
 
 from dataclasses import dataclass
 
@@ -20,7 +19,7 @@ from torch import nn
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
 from ._farkas import certify, resolve_domain
-from ._equiv import _run_block
+from ._equiv import run_block
 from ._invariants import infer_invariants
 from ._termination import compose, system_of, terminates
 
@@ -82,14 +81,14 @@ def _in_domain(dom, state: dict[str, int], system) -> bool:
 def _step(prog, ctrl, state: dict[str, int]) -> dict[str, int]:
     """One program step: latched `state` -> next state (via the update block)."""
     st = {ctrl[n][0]: _t(state[n]) for n in state}
-    _run_block(prog.atoms, st, lambda a: a.update)
+    run_block(prog.atoms, st, lambda a: a.update)
     return {n: int(st[ctrl[n][1]].reshape(-1)[0]) for n in state}
 
 
 def _init_state(prog, ctrl, extl, bench: Bench, inputs: dict[str, int]) -> dict[str, int]:
     """Run the init block with the given extl (nondet) inputs -> initial state."""
     st = {extl[name][1]: _t(val) for name, val in inputs.items()}
-    _run_block(prog.atoms, st, lambda a: a.init)
+    run_block(prog.atoms, st, lambda a: a.init)
     return {n: int(st[ctrl[n][1]].reshape(-1)[0]) for n in bench.state}
 
 
@@ -188,8 +187,7 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
 
     # Houdini invariants (V-independent): inferred once, reused for every candidate.
     invariants = infer_invariants(system) if use_invariants else []
-    system = dataclasses.replace(system, invariants=tuple(f(system.s_map)
-                                                          for _, f in invariants))
+    system = system.knowing(f(system.s_map) for _, f in invariants)
 
     final_loss = float("inf")
     last_layers = None

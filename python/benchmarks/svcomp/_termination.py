@@ -24,7 +24,6 @@ it certifies. Nothing here verifies anything itself.
 
 from __future__ import annotations
 
-import dataclasses
 
 import z3
 
@@ -110,8 +109,7 @@ def system_of(bench: Bench) -> System:
     Built per benchmark and reused for the guard, the invariants and every ranking
     candidate, none of which depend on the candidate."""
     prog, _ctrl, _extl = bench.build()
-    return dataclasses.replace(read_system(prog, bench.state),
-                               assume=bench.precondition)
+    return read_system(prog, bench.state).assuming(bench.precondition)
 
 
 def compose(system: System, layers, delta: float = 1.0):
@@ -125,7 +123,6 @@ def compose(system: System, layers, delta: float = 1.0):
     ``decrease(V(s) wire, V(s') wire, delta)``."""
     vs_mod, vs = _v_module(system.pairs, layers, read_next=False)
     vsp_mod, vsp = _v_module(system.pairs, layers, read_next=True)
-    composed = dataclasses.replace(
-        read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names),
-        assume=system.assume, invariants=system.invariants)
+    composed = (read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names)
+                .assuming(system.assume).knowing(system.invariants))
     return composed, decrease(vs[1], vsp[1], delta)

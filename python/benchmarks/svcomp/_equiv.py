@@ -114,7 +114,7 @@ def _run_c(binf: Path, inputs: list[int], state: tuple[str, ...],
 # Module side
 # ---------------------------------------------------------------------------
 
-def _run_block(atoms, state, get_block):
+def run_block(atoms, state, get_block):
     for a in atoms:
         for t in get_block(a):
             read = [state[w] for w in t.read]
@@ -133,7 +133,7 @@ def _run_module(bench: Bench, inputs: list[int], max_steps: int) -> dict[str, in
         _lat, nxt = extl[name]
         state[nxt] = torch.tensor([[val]], dtype=torch.int64)
 
-    _run_block(prog.atoms, state, lambda a: a.init)   # writes ctrl NEXT wires
+    run_block(prog.atoms, state, lambda a: a.init)   # writes ctrl NEXT wires
     latched = {name: state[ctrl[name][1]] for name in bench.state}
 
     def as_ints(d):
@@ -142,7 +142,7 @@ def _run_module(bench: Bench, inputs: list[int], max_steps: int) -> dict[str, in
     prev = as_ints(latched)
     for _ in range(max_steps):
         st = {ctrl[n][0]: latched[n] for n in bench.state}   # latch: next -> latched
-        _run_block(prog.atoms, st, lambda a: a.update)
+        run_block(prog.atoms, st, lambda a: a.update)
         nxt = {n: st[ctrl[n][1]] for n in bench.state}
         cur = as_ints(nxt)
         if cur == prev:                                       # fixpoint (guard false)
@@ -158,7 +158,7 @@ def _init_state_ints(bench: Bench, inputs: list[int]) -> dict[str, int]:
     state: dict = {}
     for name, val in zip(bench.inputs, inputs):
         state[extl[name][1]] = torch.tensor([[val]], dtype=torch.int64)
-    _run_block(prog.atoms, state, lambda a: a.init)
+    run_block(prog.atoms, state, lambda a: a.init)
     return {n: int(state[ctrl[n][1]].reshape(-1)[0]) for n in bench.state}
 
 
