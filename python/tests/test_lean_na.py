@@ -277,9 +277,26 @@ def test_mixed_element_types_are_accepted():
     check_na_supported(LeanContext(_mixed_state()))
 
 
+def test_ne_is_accepted_now_that_lean2vmt_translates_it():
+    """`decide (a ≠ b)` hands `exprToSMT` the *instance*
+    `instDecidableNot (Int.decEq a b)`, which it used to print as that bare
+    word. Verified against the real translator: it now yields
+    `(not (= var_0 7))`."""
+    check_na_supported(LeanContext(_uses_ne()))
+
+
 def test_op_without_a_lean2vmt_translation_aborts():
-    with pytest.raises(NAUnsupported, match="Ne"):
-        check_na_supported(LeanContext(_uses_ne()))
+    """`Xor` has no `_SCALAR_OP` entry, so it falls back to the matrix
+    table and reaches `exprToSMT` as something it cannot read."""
+    b = Var(Bool([1, 1]))
+    t = Wire(Bool([1, 1]))
+    init = [Term(LIA.Bool(torch.tensor([[False]])), [X(b)])]
+    update = [
+        Term(LIA.Bool(torch.tensor([[True]])), [t]),
+        Term(LIA.Xor(), [X(b)], [b, t]),
+    ]
+    with pytest.raises(NAUnsupported, match="Xor"):
+        check_na_supported(LeanContext(Module.sequential([b], init, update)))
 
 
 def test_non_scalar_ctrl_wire_aborts():

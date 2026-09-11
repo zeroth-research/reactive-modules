@@ -67,22 +67,26 @@ NA_ELEMENT_TYPES = frozenset({"Int", "Bool"})
 # Ops whose scalar emission (`native._SCALAR_OP`) lands inside what
 # `exprToSMT` translates.  Deliberately *not* here:
 #
-#   Ne        `decide (a ≠ b)` hands `exprToSMT` the instance
-#             `instDecidableNot …`, which it prints as the bare word
-#             "instDecidableNot"
-#   ReLU      `Max.max 0 x` → "max"
-#   ToUnsigned`Int.toNat x`  → "toNat"
+#   ToUnsigned`Int.toNat x` → "toNat", and the result would be Nat-sorted
+#             where the VMT declares Int
 #   Argmax    calls the `argmax1d_scalar_*` axioms from `Core.Basic`
 #   Linear    calls `matVecAffine`, likewise from `Core.Basic`
 #
 # each of which `exprToSMT` prints as an unapplied leaf — a silently wrong
 # transition system rather than an error.  `MatMul` is here because on two
 # 1x1 wires it emits plain `*`.
+#
+# `Ne`, `ReLU`, `Max` and `Min` used to be on that list too and are now
+# translated, but only by a `lean2vmt` carrying the commit "lean2vmt:
+# translate mod, max/min and a negated decidable instance".  Against an
+# older checkout they go back to being printed as "instDecidableNot",
+# "max" and "min", so this set and that commit have to travel together.
 NA_OPS = frozenset({
     "Not", "And", "Or", "Ite",
     "Add", "Sub", "Mul", "Neg",
-    "Lt", "Le", "Gt", "Ge", "Eq",
+    "Lt", "Le", "Gt", "Ge", "Eq", "Ne",
     "Id", "TensorGet", "MatMul",
+    "ReLU", "Max", "Min",
 })
 
 # Constant variants that inline as a bare Int/Bool literal.

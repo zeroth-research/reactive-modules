@@ -411,6 +411,13 @@ _BOOL_ARITH = {
     Kind.ADD: " + ",
     Kind.SUB: " - ",
     Kind.MULT: " * ",
+    # No `INTS_MODULUS`. `lean2vmt` does now translate `%` (as SMT-LIB
+    # `mod`) and ic3ia proves such a property, but the *witness* comes back
+    # with the mod eliminated: MathSAT rewrites `x mod 2 = 0` into
+    # `x + (-2) * to_int ((1/2) * to_real x) = 0`, and `vmt2lean.py` has no
+    # case for `to_real`/`to_int`/`/` -- rendering them would also drag Real
+    # into a Bool-valued `INVAR`. Rejecting here keeps the failure at the
+    # front of the pipeline, where the message can say why.
 }
 
 
@@ -481,6 +488,12 @@ def _walk_bool(t: cvc5.Term, acc: dict[str, str]) -> str:
         return f"(if {recur(t[0])} then {recur(t[1])} else {recur(t[2])})"
 
     raise ValueError(
-        f"SMT→Bool Lean: unsupported kind {k} in {t}; lean2vmt has no "
-        "translation for it"
+        f"SMT→Bool Lean: unsupported kind {k} in {t}; "
+        + (
+            "lean2vmt does translate `mod`, and ic3ia proves such a "
+            "property, but MathSAT eliminates the mod from the witness "
+            "(via to_real/to_int) and vmt2lean cannot render that back"
+            if k == Kind.INTS_MODULUS
+            else "lean2vmt has no translation for it"
+        )
     )

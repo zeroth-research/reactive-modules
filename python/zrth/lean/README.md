@@ -451,8 +451,9 @@ describe the module:
 | a ctrl wire holding more than one element | `R_i` would compare a tuple |
 | state elements other than `Int`/`Bool` | `vmt2lean.py`'s `tp()` maps back only those two |
 | — | a state *mixing* `Int` and `Bool` is fine: `TypeMap` gets an arm per slot, and the `TypeMap.match_1` the equation compiler generates never reaches the VMT, because `emitDefs` keeps only declarations whose return type whnfs to `Prop`/`Int`/`Bool` |
-| `Ne`, `ReLU`, `ToUnsigned`, `Argmax`, `Linear`, any BV op | their Lean form reaches `exprToSMT` as an unapplied leaf (`instDecidableNot`, `max`, `toNat`) or calls into `Core.Basic` |
-| a property outside that same fragment | ditto — `smt_to_lean_bool` raises rather than guess |
+| `ToUnsigned`, `Argmax`, `Linear`, `Transpose`, `Xor`, any BV op | their Lean form reaches `exprToSMT` as an unapplied leaf (`toNat`) or calls into `Core.Basic` |
+| — | `Ne`, `ReLU`, `Max` and `Min` are accepted, but only against a `lean2vmt` carrying the commit *"translate mod, max/min and a negated decidable instance"*; against an older one they go back to being printed as `instDecidableNot` / `max` / `min`, so `NA_OPS` and that commit travel together |
+| a property outside that same fragment | ditto — `smt_to_lean_bool` raises rather than guess. `mod` is refused here even though `lean2vmt` translates it and ic3ia proves such a property: MathSAT eliminates the mod from the *witness*, as `x + (-2) * to_int ((1/2) * to_real x) = 0`, and `vmt2lean.py` renders neither those operators nor a Real inside a `Bool` `INVAR` |
 | `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
 
 Two limits are by design rather than by defect. First, the model's imports

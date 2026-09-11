@@ -80,6 +80,32 @@ And these do **not** matter — the bug survives them:
 So the shape is: **two variables linked by a linear equation, a disjunctive
 hypothesis, and a disequality goal.**
 
+## A second, unrelated symptom: `Max`
+
+Probe `ReluTrans`. A transition containing a ReLU reaches Lean as
+`Max.max 0 (x - 1)` — that is how the scalar encoding spells it — and the
+goal carrying it fails at `smt` with
+
+```
+error: incorrect number of universe levels Max
+```
+
+Reproducer, again nothing but `Smt`:
+
+```lean
+import Smt
+
+example (x x' : Int) (h : x' = Max.max 0 (x - 1)) (hx : 0 <= x) : 0 <= x' := by
+  revert h hx
+  smt
+```
+
+Different failure mode from the `sum_ub` one above — this is universe-level
+bookkeeping on the `Max` constant, not a mis-typed arithmetic lemma — so it
+is probably a separate issue. Worth noting that the VMT and the certificate
+are both correct here; only the tactic fails. `omega` closes the same goal
+after `simp [Max.max]`.
+
 ## Why it matters here
 
 This is the shape every *parity-like* safety obligation takes. `m_step2`

@@ -31,12 +31,18 @@ FROM_CASE_MATRIX = [
     ("InvLex",      "m_lex",       "(and (>= s0 0) (<= s0 3) (>= s1 0) (<= s1 3))", "certified"),
     # negative control: x reaches 100, so the bound at 50 is false
     ("InvHalf",     "m_countdown", "(and (>= s0 0) (<= s0 50))", "unsafe"),
-    # `mod` has no path through: lean2vmt has no case for it, so emitting it
-    # would produce a VMT file that parses and describes a different system
+    # `mod` now reaches the VMT (lean2vmt translates `%`) and ic3ia proves
+    # it safe -- but the *witness* comes back with the mod eliminated, as
+    # `x + (-2) * to_int ((1/2) * to_real x) = 0`, and vmt2lean renders
+    # neither `to_real` nor `to_int`, nor a Real inside a Bool `INVAR`.
+    # So verith still refuses it up front, where the message can say why.
     ("InvMod",      "m_step2",     "(and (= (mod s0 2) 0) (>= s0 0) (<= s0 10))", "abort"),
-    # ic3ia's invariant is literally `true`; vmt2lean renders that as the
-    # Lean *Prop* `True` inside `abbrev INVAR : Bool`
-    ("InvTrue",     "m_countdown", "true", "lean-fail"),
+    # a trivially safe property, so ic3ia's invariant is literally `true`.
+    # Two vmt2lean bugs used to fire here at once: `MSAT_TAG_TRUE` rendered
+    # as the Lean *Prop* `True` inside `abbrev INVAR : Bool`, and `INVAR`
+    # left `state` to the section `variable`, which binds nothing when the
+    # invariant mentions no state.
+    ("InvTrue",     "m_countdown", "true", "certified"),
 ]
 
 # ── B. net-shaped invariants: a ReLU net *is* the property.  Built by
@@ -110,6 +116,13 @@ HAND_WRITTEN = [
     # -- mixed Bool+Int state: a per-index `TypeMap`, so `var_0 : Bool` and
     #    `var_1 : Int` have to reach the VMT as different sorts.
     ("MixedBoolInt", "m_boolint",  "(and (>= s1 0) (<= s1 5))", "certified"),
+
+    # -- ReLU in the *transition*: the scalar encoding spells it
+    #    `Max.max 0 (x - 1)`, which lean2vmt now expands to an `ite`. The
+    #    VMT is right and ic3ia proves it, but `smt` then dies on the
+    #    `Max` still in the model -- "incorrect number of universe levels
+    #    Max". Second lean-smt symptom; see lean-smt-bug.md.
+    ("ReluTrans",   "m_relu",      "(and (>= s0 0) (<= s0 5))", "lean-fail"),
 ]
 
 PROBES = FROM_CASE_MATRIX + NET_SHAPED + HAND_WRITTEN
@@ -134,9 +147,8 @@ REJECTED = {
     "m_lra_two":    ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_relu_lra":   ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_argmax":     ("lean2vmt", "Argmax/Linear reach exprToSMT as a leaf"),
-    "m_max":        ("lean2vmt", "Max/Linear reach exprToSMT as a leaf"),
-    "m_min":        ("lean2vmt", "Min/Linear reach exprToSMT as a leaf"),
-    "m_relu":       ("lean2vmt", "ReLU emits Max.max, printed as `max`"),
+    "m_max":        ("lean2vmt", "Linear reaches exprToSMT as a leaf"),
+    "m_min":        ("lean2vmt", "Linear reaches exprToSMT as a leaf"),
     "m_uninterp":   ("lean2vmt", "no Lean counterpart for an uninterpreted op"),
     "m_relu_input": ("lean2vmt", "models only state/statenext, no inputs"),
 }
