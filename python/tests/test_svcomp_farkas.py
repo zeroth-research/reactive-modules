@@ -20,9 +20,8 @@ import z3
 
 from benchmarks.svcomp import _farkas
 from benchmarks.svcomp._bench import INT
-from benchmarks.svcomp._termination import (_v_module, build_candidate,
-                                               farkas_cell, system_of)
-from tests._fixtures import loop_bench
+from benchmarks.svcomp._termination import _v_module, system_of
+from tests._fixtures import candidate, loop_bench
 from zrth import LIA, Module, Sort, Wire, sugar
 from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
@@ -51,12 +50,17 @@ def _obligation(state, update, layers, invariants=(), delta=1.0):
     """A real obligation for a compact loop spec — the module is built and walked
     exactly as the pipeline does it (see :mod:`tests._fixtures`)."""
     named = [(f"inv{k}", (lambda st, p=p: p)) for k, p in enumerate(invariants)]
-    return build_candidate(loop_bench(state, update), layers, delta, named)
+    return candidate(loop_bench(state, update), layers, delta, named)
 
 
 def _decrement(layers, delta=1.0, step=1):
     """`while (x > 0) x = x - step` as an obligation."""
     return _obligation(("x",), lambda v: dsl_ite(v > 0, v - step, v), layers, delta=delta)
+
+
+def _cell(c):
+    """``c`` under its own claim and witness: the termination path."""
+    return certify(c.system, c.claim, c.witness)
 
 
 def _certify(ob, prop=None, rule=None):
@@ -160,14 +164,14 @@ def test_a_disjunctive_guard_reaches_the_lp_only_once_split(monkeypatch):
                      lambda c: (dsl_ite((c[0] < c[1]) | (c[0] < c[2]), c[0] + 1, c[0]),
                                 c[1], c[2]),
                      layers)
-    split = farkas_cell(ob)
-    assert split.verified and split.certificate.unused == (), split.certificate.unused
+    split = _cell(ob)
+    assert split.verified and split.unused == (), split.unused
 
     monkeypatch.setattr(_farkas, "_convex_alternatives", lambda a: None)
-    unsplit = farkas_cell(ob)
-    assert unsplit.certificate.unused, \
+    unsplit = _cell(ob)
+    assert unsplit.unused, \
         "the un-split disjunction should be reported as unusable by the LP"
-    assert all("Or" in u for u in unsplit.certificate.unused), unsplit.certificate.unused
+    assert all("Or" in u for u in unsplit.unused), unsplit.unused
 
 
 def _conditional_loop():
@@ -361,7 +365,7 @@ def test_conditional_loop_certifies():
                                         dsl_ite(c[2] >= 1, c[0] + c[3], c[0] - c[3]),
                                         c[0]), c[1], c[2], c[3]),
                      layers, invariants=invariants)
-    assert farkas_cell(ob).verified
+    assert _cell(ob).verified
 
 
 def test_expand_cases_keeps_an_affine_body_single():
@@ -394,9 +398,9 @@ def test_cells_partition_the_domain():
     layers = [(np.array([[1], [1]]), np.array([0, -3])),
               (np.array([[1, 1]]), np.array([0]))]
     ob = _decrement(layers)
-    res = farkas_cell(ob)
+    res = _cell(ob)
     assert res.verified, res.status
-    for path in res.certificate.certificates:
+    for path in res.certificates:
         acts = [z3.IntVal(k) + c[0] * x for c, k in path.units]
         regions = [z3.And(*mode_region((("relu", tuple(acts)),), c.pattern))
                    for c in path.cells]
@@ -418,11 +422,11 @@ def test_mixed_output_weights_and_bias_are_carried():
     layers = [(np.array([[1], [1]]), np.array([0, -3])),
               (np.array([[1, 2]]), np.array([5]))]
     (W1, b1), (W2, b2) = layers
-    res = farkas_cell(_decrement(layers))
+    res = _cell(_decrement(layers))
     assert res.verified, res.status
-    devs = res.certificate.devices          # V(s) reads x, V(s') reads x - 1
+    devs = res.devices          # V(s) reads x, V(s') reads x - 1
     shifts = {0: 0, 1: -1}
-    for c in (c for p in res.certificate.certificates for c in p.cells):
+    for c in (c for p in res.certificates for c in p.cells):
         for d, dev in enumerate(devs):
             m = len(W1)
             pattern = c.pattern[dev.offset:dev.offset + m]
@@ -439,7 +443,7 @@ def test_margin_the_rank_cannot_meet_is_rejected():
     witness-level one in ``_certify_path`` and the region-wide prune in
     ``_certify_cell`` — and the guarantee holds as long as either does."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
-    res = farkas_cell(_decrement(layers, delta=2.0, step=2))
+    res = _cell(_decrement(layers, delta=2.0, step=2))
     assert not res.verified
     assert res.status == "FAILED(violated)"
 
@@ -449,9 +453,9 @@ def test_certificates_are_valid():
     conditions on its own system — the facts ``farkas_sound`` consumes."""
     # V(s) = relu(x) over the loop `while (x > 0) x = x - 1`
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
-    res = farkas_cell(_decrement(layers))
+    res = _cell(_decrement(layers))
     assert res.verified, res.status
-    cells = [c for p in res.certificate.certificates for c in p.cells]
+    cells = [c for p in res.certificates for c in p.cells]
     assert cells
     for c in cells:
         n = len(c.A[0])

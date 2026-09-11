@@ -6,7 +6,7 @@
     python -m benchmarks.svcomp --lean --jobs 4  # with four benchmarks in flight
 
 Without ``--lean`` each DSL-encoded program gets a trained neural ranking
-function verified over the composed module (``smt_oneshot``), summarised as
+function certified over the composed module, summarised as
 ``verified / total``.
 
 With ``--lean`` the ranking function is verified by the Farkas cell/CEGAR
@@ -34,7 +34,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import discover
 from ._train import learn_ranking
-from ._termination import farkas_cell
 
 WORKER_FLAG = "--worker"
 _WORKER_TIMEOUT = 2400.0        # above _lean_check.CHECK_TIMEOUT plus training
@@ -64,9 +63,9 @@ def certify_one(bench):
     t0 = time.perf_counter()
     try:
         # the trainer verified the candidate it accepted; emit that evidence
-        r = learn_ranking(bench, verifier=farkas_cell)
+        r = learn_ranking(bench)
         t_train = time.perf_counter() - t0
-        res = (lc.certify(bench.name, r.obligation.system, r.verification.certificate)
+        res = (lc.certify(bench.name, r.system, r.proof)
                if r.verified
                else lc.CheckResult(bench.name, "UNVERIFIED", detail=r.reason or ""))
     except Exception as e:
