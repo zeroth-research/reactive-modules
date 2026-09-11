@@ -8,10 +8,13 @@ needs the output Sort for its width — threaded in as `out_sort`.
 
 import torch
 from .zrth import LRA, LIA, BV
-from .sort import BitVec
+from .sort import BitVec, Sort
 
 
-def _bv_width(sort):
+def _bv_width(sort: Sort):
+    """Get bitwidth of the given `Sort` if the sort is `BV`
+    (return `None` otherwise).
+    """
     match sort:
         case BitVec(bw, _):
             return bw
