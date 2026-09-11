@@ -890,9 +890,11 @@ def resolve(system: System, pred):
     return lift_ites(pred(W, _StateMap(system, W))), tuple(used)
 
 
-def _resolve_domain(system: System, domain):
+def resolve_domain(system: System, domain):
     """A claim's domain as z3 over the columns and the transition, ready to be
-    split into cases. A domain is over the columns; a wire belongs in the formula."""
+    split into cases — and, for a client, to be sampled: the trainer draws its
+    pairs from the rounds the claim counts. A domain is over the columns; a wire
+    belongs in the formula."""
     W = _WireMap(system, refuse="a domain is over the columns and their next values; "
                                 "a wire belongs in the formula")
     return lift_ites(domain(W, _StateMap(system, W, concrete=True)))
@@ -1288,7 +1290,7 @@ def certify(system: System, claim, witness, max_iters: int = 1000) -> Proof:
             return result(False, [], cex, f"FAILED({name})")
     paths: list[PathCert] = []
     unused: set = set()
-    dom = _resolve_domain(system, ob.domain)
+    dom = resolve_domain(system, ob.domain)
     for pguard, pbody in expand_cases(dom, list(sp_syms)):
         region = z3.And(pguard, *invariants) if invariants else pguard
         if not _feasible(region):

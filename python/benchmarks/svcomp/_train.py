@@ -17,10 +17,10 @@ from torch import nn
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
-from ._domain import domain as loop_domain
+from ._farkas import resolve_domain
 from ._equiv import _run_block
 from ._invariants import infer_invariants
-from ._termination import build_candidate, smt_oneshot, system_of
+from ._termination import build_candidate, smt_oneshot, system_of, terminates
 
 
 # ---------------------------------------------------------------------------
@@ -65,8 +65,10 @@ def _t(v: int) -> torch.Tensor:
     return torch.tensor([[int(v)]], dtype=torch.int64)
 
 
-def _in_domain(dom, state: dict[str, int], state_names) -> bool:
-    d = z3.simplify(dom({n: z3.IntVal(state[n]) for n in state_names}))
+def _in_domain(dom, state: dict[str, int], system) -> bool:
+    """Whether ``state`` is a round the claim counts: ``dom`` at its values."""
+    d = z3.simplify(z3.substitute(dom, *[(sym, z3.IntVal(state[n]))
+                                         for sym, n in zip(system.s_syms, system.names)]))
     if z3.is_true(d):
         return True
     if z3.is_false(d):
@@ -108,9 +110,10 @@ def _pas_sample(dim: int, sigma: float, rng) -> np.ndarray:
 def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
             rng) -> tuple[np.ndarray, np.ndarray]:
     """nt-style trajectory rollouts: PAS-sample the inputs, init, execute the
-    module up to `max_len`, collecting consecutive in-domain (s, T(s)) pairs."""
+    module up to `max_len`, collecting consecutive (s, T(s)) pairs on the rounds
+    the termination claim counts — the ones the rank must drop on."""
     prog, ctrl, extl = bench.build()
-    dom = loop_domain(system)                     # loop guard, from the transition
+    dom = resolve_domain(system, terminates().domain)
     n_in = len(bench.inputs)
     S, Sp = [], []
     n_trials = n_traj if n_in > 0 else 1          # deterministic program -> 1 trajectory
@@ -123,7 +126,7 @@ def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
         if bench.precondition is not None and not all(bench.precondition(s)):
             continue
         for _ in range(max_len):
-            if not _in_domain(dom, s, bench.state):
+            if not _in_domain(dom, s, system):
                 break
             sp = _step(prog, ctrl, s)
             S.append([s[n] for n in bench.state])
