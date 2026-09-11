@@ -814,10 +814,15 @@ class Inductive:
             f(Wi, _StateMap(system, Wi))
 
         def formula(W, S):
-            held = z3.And(*[f(W, S) for f in inv]) if inv else z3.BoolVal(True)
+            now = [f(W, S) for f in inv]
+            held = z3.And(*now) if inv else z3.BoolVal(True)
             step = (z3.Implies(held, z3.And(*[f(W.next, S.next) for f in inv]))
                     if inv else z3.BoolVal(True))
-            return z3.And(step, z3.Implies(held, claim.holds(W, S)))
+            holds = claim.holds(W, S)
+            parts = holds.children() if z3.is_and(holds) else [holds]
+            if inv and len(parts) == len(now) and all(a.eq(b) for a, b in zip(parts, now)):
+                return step              # the claim is its own invariant: nothing left to imply
+            return z3.And(step, z3.Implies(held, holds))
 
         Wc = _WireMap(system, refuse=_STATE_ONLY)
         Sc = _StateMap(system, Wc)

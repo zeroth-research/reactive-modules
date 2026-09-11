@@ -301,16 +301,16 @@ def test_a_second_property_runs_through_the_same_engine():
     """``Safety(pred)`` is a property of the *program*, discharged by an inductive
     invariant through the same region engine — with no ReLU-bearing wire named,
     there is one region per path, and the same Farkas rows close it: one per
-    disjunct of the rule's negation (the invariant not preserved, the invariant
-    not implying the predicate)."""
+    disjunct of the rule's negation. A claim that is its own invariant has only
+    consecution to show, so that is one disjunct."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)                    # while (x > 0) x = x - 1, from x = 0
 
     ok = _certify(ob, Safety(lambda W, S: S["x"] >= 0))
     assert ok.verified, ok.status
     assert ok.witness.inv, "pred serves as its own invariant"
-    assert all({c.disjunct for c in p.cells} == {0, 1} and len(p.cells) == 2
-               for p in ok.certificates), "no device: one region, two disjuncts"
+    assert all({c.disjunct for c in p.cells} == {0} and len(p.cells) == 1
+               for p in ok.certificates), "no device: one region, one disjunct"
 
     # false at entry: x starts at 0
     bad = _certify(ob, Safety(lambda W, S: S["x"] >= 1))
@@ -525,13 +525,13 @@ def test_a_disjunctive_invariant_goes_through_the_disjuncts():
     """The rule's negation is cut into disjuncts of rows, so a disjunctive
     invariant is one more shape of formula rather than a refusal: ``while (x > 0)
     x--`` from ``x = 0`` keeps ``x >= 0 ∨ x <= -5`` — each disjunct of its negation
-    (each side of the invariant at ``s`` with both sides false at ``s'``, and each
-    side with the predicate false) is refuted on the one region per path."""
+    (each side of the invariant at ``s`` with both sides false at ``s'``) is refuted
+    on the one region per path."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
     res = _certify(ob, Safety(lambda W, S: z3.Or(S["x"] >= 0, S["x"] <= -5)))
     assert res.verified, res.status
-    assert all(len({c.disjunct for c in p.cells}) == 4 for p in res.certificates), \
+    assert all(len({c.disjunct for c in p.cells}) == 2 for p in res.certificates), \
         [len(p.cells) for p in res.certificates]
     bad = _certify(ob, Safety(lambda W, S: z3.Or(S["x"] >= 1, S["x"] <= -5)))
     assert not bad.verified and bad.status == "FAILED(initiation)", bad.status
