@@ -8,7 +8,6 @@ is exponential in depth and printing it as a DAG is linear.
 
 import importlib
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
