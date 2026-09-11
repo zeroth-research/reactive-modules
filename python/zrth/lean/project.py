@@ -18,6 +18,7 @@ from zrth.lean.cert import (
 from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 
 import shutil
+import subprocess
 from pathlib import Path
 
 from zrth import Module, Wire, Env, X
@@ -47,18 +48,138 @@ TEMPLATE_DIR = STATIC_DIR
 CORE_FILES = ["Basic.lean", "Box.lean", "LTL.lean", "Mat.lean"]
 LEAN_AI_FILES = ["LeanAI.lean", "LeanAI"]
 
+# The `--fbk-proveit` route's subdirectory inside the generated project. Its
+# NA model is both a `proveit.py` input and a lake target of the project, so
+# the directory and the model's module name are needed on both sides.
+PROVEIT_DIR = "ProveIt"
+
+
+def na_module_name(project_name: str) -> str:
+    """Lean module name of the NA model the `--fbk-proveit` route writes.
+
+    `proveit.py` compiles an out-of-tree model into an olean and imports it
+    under the file stem, so the file name *is* the module name the generated
+    certificate carries -- and the name the project's lakefile has to map
+    back onto ``PROVEIT_DIR``.
+    """
+    return f"{project_name}NA"
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # Lean project files
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def generate_lakefile(project_name: str, executable: bool = False) -> str:
+def generate_lakefile(
+    project_name: str,
+    executable: bool = False,
+    ltl_project: Path | str | None = None,
+) -> str:
+    """Render the project's lakefile.
+
+    `ltl_project` is the `--fbk-proveit` checkout: given one, the lakefile
+    also requires it and declares the NA model as a lean_lib, which is what
+    makes the installed certificate -- `Certificate/Certificate.lean`, which
+    the root module imports -- a buildable target rather than a file lake
+    reaches and cannot elaborate.
+    """
     return render(
         "project/lakefile.toml.j2",
         project_name=project_name,
         executable=executable,
         cslib_rev=CSLIB_REV,
+        ltl_project=str(ltl_project) if ltl_project is not None else None,
+        na_lib=na_module_name(project_name) if ltl_project is not None else None,
+        proveit_dir=PROVEIT_DIR,
+    )
+
+
+class LakeBuildError(RuntimeError):
+    """`lake` could not build the generated project's certificate."""
+
+
+def stream(cmd: list[str], *, cwd: Path) -> tuple[int, str]:
+    """Run `cmd` in `cwd`, echoing its output as it arrives.
+
+    Returns the exit code *and* the output rather than raising, so each
+    caller can say what went wrong in its own vocabulary -- `lake` and
+    `proveit.py` do not fail in the same words. `FileNotFoundError`
+    propagates: a missing executable is the caller's to name.
+    """
+    print(f"$ {' '.join(cmd)}")
+    chunks: list[str] = []
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        chunks.append(line)
+        print(line, end="")
+    return proc.wait(), "".join(chunks)
+
+
+def build_certificate(project_dir: Path) -> None:
+    """`lake build` the certificate of a generated project.
+
+    `lake update` runs first: a freshly generated project has no manifest at
+    all, and one left by an earlier run predates this run's lakefile -- with
+    `--fbk-proveit` that lakefile has a require the manifest has never seen,
+    and `lake build` resolves neither case.
+
+    A build that succeeds while the certificate still holds `sorry` is not a
+    proof, so that is an error too. `zeroth_hammer` leaves a `sorry` where it
+    cannot close an obligation, and lake reports those as warnings and exits
+    0 -- which would make "built" mean nothing.
+    """
+    for cmd in (["lake", "update"], ["lake", "build", "Certificate"]):
+        try:
+            rc, out = stream(cmd, cwd=project_dir)
+        except FileNotFoundError as e:
+            raise LakeBuildError(f"cannot run {cmd[0]}: {e}") from e
+        if rc != 0:
+            raise LakeBuildError(
+                f"`{' '.join(cmd)}` failed (exit {rc}) in {project_dir}\n"
+                + _build_why(out)
+            )
+
+    unproved = [l for l in out.splitlines() if "sorry" in l and "Certificate/" in l]
+    if unproved:
+        raise LakeBuildError(
+            f"the certificate compiles but is not proved: "
+            f"{len(unproved)} obligation(s) left as `sorry`\n"
+            + "\n".join(f"  {l.strip()}" for l in unproved[:5])
+        )
+    print(f"Certificate built: lake build Certificate in {project_dir}")
+
+
+def _build_why(out: str) -> str:
+    """The reason lake refused, restated where the user will see it.
+
+    Its own diagnosis is accurate but scrolls past behind thousands of
+    replayed Mathlib jobs, leaving a bare "failed (exit 1)" as the last line.
+    """
+    # Lake's own two wrapper lines say only that something failed, which is
+    # what this is already replacing; the diagnostics are the lines between.
+    noise = ("error: build failed", "error: Lean exited with code")
+    errors = [
+        l
+        for l in out.splitlines()
+        if l.startswith("error:") and not l.startswith(noise)
+    ]
+    if not errors:
+        return "  (see the output above)"
+    return (
+        "\n".join(f"  {l}" for l in errors[:5])
+        + "\n  An unresolved import means the project cannot see what the "
+        "certificate needs.\n  A failed tactic means an obligation "
+        "`zeroth_hammer` could not close: the invariant\n  or the ranking "
+        "function is wrong, or too weak to be inductive."
     )
 
 
@@ -323,6 +444,7 @@ def create_project(
     executable: bool = False,
     cert_data: CertificateData | None = None,
     module_file: Path | str | None = None,
+    ltl_project: Path | str | None = None,
 ) -> Path:
     """
     Create a full Lean4 project.
@@ -336,6 +458,10 @@ def create_project(
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
         `module_file`:     Path to the Python source file used to create the module
                            (written as a debug artifact alongside the project).
+        `ltl_project`:     A `lean-ltl-certifying` checkout (the `--fbk-proveit`
+                           route). The lakefile then requires it and declares
+                           the NA model's lean_lib, so the certificate that
+                           route installs is buildable here.
     """
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
@@ -357,7 +483,11 @@ def create_project(
 
     # Render and write project-level files from templates
     lakefile = project_dir / "lakefile.toml"
-    lakefile.write_text(generate_lakefile(project_name, executable=executable))
+    lakefile.write_text(
+        generate_lakefile(
+            project_name, executable=executable, ltl_project=ltl_project
+        )
+    )
     print(f"Wrote {lakefile}")
 
     toolchain = project_dir / "lean-toolchain"

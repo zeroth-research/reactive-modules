@@ -376,6 +376,7 @@ path/NameScalar.lean         # scalar encoding + equivalence theorems
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
 | `--fbk-proveit` | — | Path to a `lean-ltl-certifying` checkout; certify through its `proveit.py` instead (see below) |
 | `--ic3ia` | — | Path to the `ic3ia` binary, forwarded to `proveit.py` |
+| `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
 
 ### State variable naming in SMT-LIB predicates
 
@@ -385,6 +386,60 @@ SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 `e0..eM-1` (next) and `el0..elM-1` (latched).
 
 ---
+
+## Building the certificate (`--build-cert`)
+
+`--build-cert` is route-independent: it builds whatever certificate the run
+produced, with `lake update` then `lake build Certificate` in the generated
+project. All three routes that fill a certificate qualify —
+
+```bash
+# predicates supplied
+uv run verith mymodule.py -P "(= s0 0)" --invariant "(<= s0 100)" \
+    --ranking "s0" --build-cert -o out/ -p Counter
+
+# predicates inferred
+uv run verith mymodule.py -P "(= s0 0)" --infer --build-cert -o out/ -p Counter
+
+# predicates from ic3ia
+uv run verith mymodule.py -P "(not (= s0 15))" --build-cert -o out/ -p Counter \
+    --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying
+```
+
+— and the two that do not are refused rather than silently doing nothing:
+
+| refused | because |
+|---|---|
+| no `--invariant`/`--ranking`, no `--infer`, no `--fbk-proveit` | every obligation in a bare project is `sorry`. Lake compiles that and exits 0, so "built" would mean nothing |
+| `--cert-file`, `--hammer-file` | they write a file and return; there is no project to build |
+
+`--invariant` without `--ranking` (or either without `--property`) is the
+first row: a missing predicate is a `sorry`, not a weaker proof.
+
+Two checks sit past the parse-time gate, because a flag cannot promise what
+inference returns and lake cannot be trusted to fail loudly:
+
+* **After the route, before the build.** `--infer` can come back without an
+  invariant or a ranking — an LLM that answers nothing usable — and the
+  error names which one is missing instead of building a proof of `sorry`.
+  (`--fbk-proveit` is exempt: its certificate is ic3ia's, and no
+  `CertificateData` describes it.)
+* **After the build.** `zeroth_hammer` leaves a `sorry` where it cannot
+  close an obligation, and lake reports that as a *warning* and exits 0. So
+  `build_certificate` also scans the log for `sorry` under `Certificate/` —
+  a dependency's own `sorry` (lean-smt ships one) is not ours — and raises
+  if it finds any.
+
+A build that fails is a `LakeBuildError`, and the run exits non-zero with
+the Lean diagnostics restated: lake's log ends with thousands of replayed
+Mathlib jobs, so a bare "exit 1" as the last line would bury them.
+
+Off by default because the build resolves and compiles `cslib`, Mathlib,
+`lean-smt` and cvc5 — minutes against a warm `.lake/packages`, far longer
+against a cold one. Because the require set is pinned to the checkout's, one
+already-built `.lake/packages` serves both: copying (or cloning, on APFS)
+the checkout's into the generated project makes the first `lake update` a
+no-op fetch.
 
 ## Certifying through `lean-ltl-certifying` (`--fbk-proveit`)
 
@@ -399,6 +454,9 @@ uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p Counter \
     --ic3ia ~/ic3ia/build/ic3ia
 ```
 
+Add `--build-cert` to have the certificate compiled rather than merely
+written (see [Building the certificate](#building-the-certificate---build-cert)).
+
 ```
 mymodule.py ──verith──▶ out/Counter/                       (bare, as usual)
                         out/Counter/ProveIt/CounterNA.lean (the NA encoding)
@@ -410,10 +468,27 @@ mymodule.py ──verith──▶ out/Counter/                       (bare, as u
                         out/Counter/ProveIt/CounterCert.lean
                                   │
                                   ▼   "processing" — a copy, for now
-                        out/Counter/Certificate/ProveItCert.lean
+                        out/Counter/Certificate/Certificate.lean
 ```
 
-The project itself is generated **bare**: the invariant comes from ic3ia, so
+The installed file is the project's *own* certificate — the same
+`Certificate/Certificate.lean` that `Certificate.lean` root-imports and that
+`lake build Certificate` reaches, overwriting the `sorry` stub the bare
+project would have carried. For that reach to end in a build rather than an
+unknown identifier, `create_project` is given the checkout and the lakefile
+gains two entries:
+
+| lakefile entry | resolves |
+|---|---|
+| `[[require]] name = "LTL_Certifying", path = <checkout>` | `import LTLCertifying.Safety.Lemmas` and its two siblings. A path require because the route already holds the checkout, and because that checkout pins `cslib` and `smt` to the revisions the generated project already requires — the two package sets resolve as one |
+| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `project.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
+
+`import Smt` needs nothing new — verith's own route already requires
+`smt` — and neither does the cvc5 shared library the `smt` tactic dlopens:
+lean-cvc5 declares `precompileModules := true`, so `lake build` loads it
+without the `--plugin=` that `proveit.py` has to pass to a bare `lean`.
+
+Of the *invariant* the project is still **bare**: it comes from ic3ia, so
 `--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
 silently ignored, and `--property` is required.
 
@@ -421,8 +496,8 @@ silently ignored, and `--property` is required.
 
 `proveit.py`'s first step, `lake exe lean2vmt`, pattern-matches on a very
 specific Lean shape, and the FBK encoding misses on every point — so this is
-a separate encoding, emitted only for this route and never part of the
-generated project's `lake build`:
+a separate encoding, emitted only for this route — though the project does
+build it, as the `<Proj>NA` lean_lib, because the certificate imports it:
 
 | `lean2vmt` requires | why | FBK emits |
 |---|---|---|
@@ -464,11 +539,11 @@ The model imports `Cslib.Computability.Automata.NA.Basic` and nothing else —
 `M`'s type is all it needs — so that pre-build is one target;
 `NA_IMPORTS` and `fbk_proveit._LAKE_TARGETS` are the same list, pinned by a
 test, because drift between them leaves `lean2vmt` unable to elaborate.
-Second, the installed certificate is **not** checked — it imports
-`LTLCertifying.*` and `Smt`, which the generated project does not provide,
-and `lake build Certificate` never reaches it either (the `Certificate`
-lean_lib globs only its root module, which imports `Certificate.Certificate`
-alone).
+Second, the installed certificate is by default **written but not
+compiled** — not because the project cannot compile it (it can: the lakefile
+requires the checkout and declares the NA lib) but because doing so resolves
+and builds Mathlib. That is `--build-cert`, which is not this route's flag:
+see [Building the certificate](#building-the-certificate---build-cert).
 
 ### The `lean-ltl-certifying` side
 

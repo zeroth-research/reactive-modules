@@ -377,6 +377,34 @@ def test_fbk_proveit_rejects_what_it_would_have_to_ignore(extra, expected, tmp_p
     assert expected in r.stderr
 
 
+@pytest.mark.parametrize(
+    "flag,reported",
+    [
+        ("--fbk-proveit", "--fbk-proveit"),
+        ("--ic3ia", "--ic3ia"),
+        ("-P", "--property"),      # reported under its long spelling
+    ],
+)
+def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
+    """`--fbk-proveit "$LTL"` with `LTL` unset used to read as "not passed".
+
+    Every check gating the route is a truthiness test, so an empty path
+    dropped the route *and* the checks that would have reported it: verith
+    generated an ordinary project and exited 0, having silently certified
+    nothing.  The blank is the error.
+    """
+    out = tmp_path / "out"
+    r = _verith(
+        str(FIXTURE_DIR / "counter.py"),
+        "-P", "(= s0 0)", "-o", str(out), "-p", "P",
+        "--fbk-proveit", str(tmp_path),
+        flag, "",
+    )
+    assert r.returncode != 0
+    assert f"{reported} was given an empty value" in r.stderr
+    assert not out.exists()
+
+
 def test_ic3ia_alone_is_an_error(tmp_path):
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
@@ -385,3 +413,57 @@ def test_ic3ia_alone_is_an_error(tmp_path):
     )
     assert r.returncode != 0
     assert "only meaningful together with --fbk-proveit" in r.stderr
+
+
+
+# ── the certificate as a lake target ───────────────────────────────────────
+
+
+def test_the_proveit_lakefile_can_see_what_the_certificate_imports():
+    """`Certificate/Certificate.lean` is root-imported, so `lake build`
+    reaches it. It imports `LTLCertifying.*`, `Smt` and the NA model, and a
+    lakefile missing any of the three turns that reach into an error."""
+    from zrth.lean.project import generate_lakefile, na_module_name
+
+    bare = generate_lakefile("Proj")
+    assert "LTL_Certifying" not in bare
+    assert "srcDir" not in bare
+
+    wired = generate_lakefile("Proj", ltl_project="/checkout")
+    assert 'name = "LTL_Certifying"' in wired
+    assert 'path = "/checkout"' in wired
+    # The NA lib maps the model's module name onto the directory it is
+    # written to; `import ProjNA` in the certificate resolves through it.
+    assert f'name = "{na_module_name("Proj")}"' in wired
+    assert 'srcDir = "ProveIt"' in wired
+    # `Smt` was already required for verith's own route.
+    assert 'name = "smt"' in wired
+
+
+def test_the_na_lib_names_the_file_the_model_is_written_to(tmp_path):
+    """The lean_lib's name and srcDir are the model's module name and
+    directory. Drift between them is a `lake build` that cannot find an
+    import the certificate already carries."""
+    from zrth.lean.project import PROVEIT_DIR, na_module_name
+    from zrth.lean.fbk_proveit import write_na_model
+
+    model = write_na_model(
+        tmp_path, "Proj", LeanContext(_counter()), "true"
+    )
+    assert model.parent.name == PROVEIT_DIR
+    assert model.stem == na_module_name("Proj")
+
+
+def test_a_checkout_that_is_not_one_fails_before_the_project_exists(tmp_path):
+    """The lakefile names the checkout, so it is resolved before anything is
+    generated — otherwise a typo leaves a project whose lakefile points at
+    nothing."""
+    out = tmp_path / "out"
+    r = _verith(
+        str(FIXTURE_DIR / "counter.py"),
+        "-P", "(= s0 0)", "-o", str(out), "-p", "P",
+        "--fbk-proveit", str(tmp_path / "nowhere"),
+    )
+    assert r.returncode != 0
+    assert "--fbk-proveit: not a directory" in r.stderr
+    assert not out.exists()
