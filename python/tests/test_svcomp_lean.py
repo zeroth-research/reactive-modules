@@ -345,7 +345,6 @@ def test_the_proof_layer_refuses_a_safety_claim_over_the_step():
         emit_program("step", ob.system, res)
 
 
-@pytest.mark.xfail(strict=True, reason="planned: the liveness theorem cites the invariant proof")
 def test_the_liveness_theorem_cites_the_invariant_proof():
     """With an invariant assumed as a proved Safety claim, the file carries both
     claims: a ``safety0`` namespace proving ``always_holds``, and a liveness
