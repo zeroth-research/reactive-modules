@@ -130,6 +130,11 @@ class TA2MagicCEGAR(TA2Magic):
                 print("[CEGAR] all obligations UNSAT — accepted")
                 cd.inv = smt_to_lean(result.inv_term, msmt.ctrl_next)
                 cd.ranking = smt_to_lean_nat(result.ranking_term, msmt.ctrl_next)
+                # Keep what cvc5 was given: the Lean above is a rendering, and
+                # nothing can parse it back, so `--pre-check` would have no
+                # term left to ask about the certificate that was inferred.
+                cd.inv_smt = result.inv_src
+                cd.ranking_smt = result.ranking_src
                 return cd
 
             feedback = self._format_feedback(failures)

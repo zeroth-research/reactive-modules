@@ -28,6 +28,13 @@ class CertificateData:
     update_pre: Expr | str | None = None
     ranking: Expr | str | None = None
 
+    # SMT-LIB (or Python-expression) source for `inv` / `ranking` when those
+    # fields hold Lean text printed from a cvc5 term -- the `--infer ai-cegar`
+    # route. The project needs the Lean; cvc5 needs its own input back, so
+    # `--pre-check` restates the obligations from these.
+    inv_smt: str | None = None
+    ranking_smt: str | None = None
+
     # Shape of the predicates as cvc5 sees them, when they came from SMT-LIB
     # and cvc5 could parse them. `None` everywhere else, and the tactic plan
     # falls back to reading the rendered Lean.

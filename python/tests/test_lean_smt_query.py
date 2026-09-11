@@ -143,11 +143,58 @@ def test_an_unencodable_module_gives_no_queries_rather_than_raising():
     assert by_name["init_inv"].status is not Status.UNKNOWN
 
 
-def test_pre_check_reports_without_raising_on_a_module_it_cannot_encode():
+def test_pre_check_reports_without_raising_on_a_predicate_it_cannot_parse():
     lines: list[str] = []
     out = pre_check(countdown(), CertificateData(inv="(bogus"), SmtBudget(), log=lines.append)
     assert out == []
-    assert any("skipping" in ln for ln in lines)
+    # And it says *what* it could not read: the module encodes fine here, and
+    # blaming it would send the reader after the wrong thing.
+    assert any("predicates are not SMT-LIB" in ln for ln in lines)
+    assert not any("could not encode this module" in ln for ln in lines)
+
+
+# ── the inferred certificate ─────────────────────────────────────────
+
+
+INFERRED = CertificateData(
+    prp=GOOD.prp,
+    # What `--infer ai-cegar` leaves behind: Lean in the fields the project
+    # is generated from, the SMT-LIB cvc5 was given beside them.
+    inv="fun s => 0 <= s.1 0 0 ∧ s.1 0 0 <= 100",
+    ranking="fun s => (s.1 0 0).toNat",
+    inv_smt=GOOD.inv,
+    ranking_smt=GOOD.ranking,
+)
+
+
+def test_an_inferred_certificate_is_checked_through_its_smt_source():
+    """The Lean rendering parses back as nothing; `inv_smt` is the way in."""
+    q = ModuleQueries.build(countdown(), INFERRED)
+    assert [v.status for v in q.check_obligations(SmtBudget())] == [Status.HOLDS] * 3
+
+
+def test_an_inferred_certificate_that_is_wrong_is_refuted():
+    cert = CertificateData(
+        prp=GOOD.prp,
+        inv=INFERRED.inv,
+        ranking=INFERRED.ranking,
+        inv_smt=GOOD.inv,
+        ranking_smt="(- 100 s0)",
+    )
+    lines: list[str] = []
+    pre_check(countdown(), cert, SmtBudget(), log=lines.append)
+    assert "REFUTED" in "\n".join(lines)
+
+
+def test_an_inferred_certificate_with_no_smt_source_says_so():
+    """`--infer ai` hands back Lean only, and nothing can parse it back."""
+    lines: list[str] = []
+    out = pre_check(
+        countdown(), CertificateData(prp=GOOD.prp, inv=INFERRED.inv), SmtBudget(),
+        log=lines.append,
+    )
+    assert out == []
+    assert any("predicates are not SMT-LIB" in ln for ln in lines)
 
 
 def test_pre_check_names_the_refuted_obligations():

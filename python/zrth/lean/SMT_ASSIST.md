@@ -27,11 +27,20 @@ behaviour `verith` had before. Nothing here may take information away.
 The two always-on items do no solving at all -- they read the parsed terms --
 so they need no budget and cannot hang.
 
-Both flags act on the predicates *as supplied*, before `--infer` runs. They
-have nothing to say about an inferred certificate: `magic` hands back Lean
-text rather than SMT-LIB, so there is no term left to ask cvc5 about. Closing
-that would mean `magic` returning the term alongside the rendering --
-worthwhile, since `--infer ai` does no verification of its own, and cheap.
+`--smt-tactics` acts on the predicates *as supplied*, before `--infer` runs.
+`--pre-check` no longer does: run there, the invariant it would check does
+not exist yet, so it reported "nothing to check" and the certificate that
+reached Lean went unchecked. With `--infer` it runs **after** inference, on
+what `magic` returned. `magic` hands back Lean text, which nothing parses
+back, so `ai-cegar` keeps the SMT-LIB it gave the solver in
+`CertificateData.inv_smt` / `.ranking_smt` and the check restates the
+obligations from that.
+
+`--infer ai` is still out of reach, and it is the route that needs it most:
+it asks an LLM for Lean and verifies with a second LLM call, so there is no
+SMT-LIB anywhere on that path and no Lean parser to make one. The pre-check
+says exactly that rather than reporting nothing. Closing it means prompting
+that route in SMT-LIB too, as `ai-cegar` does.
 
 ---
 

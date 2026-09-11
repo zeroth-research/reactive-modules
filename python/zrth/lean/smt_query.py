@@ -134,9 +134,14 @@ class ModuleQueries:
         def opt(src):
             return parse_predicate(self.env, src) if isinstance(src, str) else None
 
+        # After `--infer`, `inv` and `ranking` hold Lean printed from a cvc5
+        # term, which nothing parses back; `inv_smt` / `ranking_smt` keep the
+        # source the solver was handed, and that is what it can read.
         self.prp = opt(cert_data.prp)
-        self.inv = opt(cert_data.inv)
-        self.ranking = opt(cert_data.ranking)
+        self.inv = opt(getattr(cert_data, "inv_smt", None) or cert_data.inv)
+        self.ranking = opt(
+            getattr(cert_data, "ranking_smt", None) or cert_data.ranking
+        )
         self.init_pre = opt(cert_data.init_pre)
         self.update_pre = opt(cert_data.update_pre)
         # Keep every solver alive: the cvc5 bindings segfault at shutdown if a
@@ -337,7 +342,18 @@ def pre_check(module, cert_data, budget: SmtBudget, log=print) -> list[Verdict]:
     )
     q = ModuleQueries.build(module, cert_data)
     if q is None:
-        log("   cvc5 could not encode this module -- skipping the pre-check")
+        # Two unrelated failures land here: the module is outside the encoder,
+        # or a predicate is not something cvc5 can parse -- Lean text from
+        # `--infer ai`, say, which has no SMT-LIB source beside it. Rebuilding
+        # with no certificate at all separates them for the price of one
+        # encoding, and nothing here is allowed to be misleading.
+        from .cert import CertificateData
+
+        if ModuleQueries.build(module, CertificateData()) is None:
+            log("   cvc5 could not encode this module -- skipping the pre-check")
+        else:
+            log("   the certificate predicates are not SMT-LIB, so cvc5 "
+                "cannot state the obligations -- skipping the pre-check")
         return []
     verdicts = q.check_obligations(budget)
     if not verdicts:
