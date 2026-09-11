@@ -124,5 +124,5 @@ def compose(system: System, layers, delta: float = 1.0):
     vs_mod, vs = _v_module(system.pairs, layers, read_next=False)
     vsp_mod, vsp = _v_module(system.pairs, layers, read_next=True)
     composed = (read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names)
-                .assuming(system.assume).knowing(system.invariants))
+                .assuming(system.precondition).knowing(system.invariants))
     return composed, decrease(vs[1], vsp[1], delta)

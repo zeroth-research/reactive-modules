@@ -145,7 +145,7 @@ def infer_invariants(system, timeout_ms: int = 2000) -> list[Guess]:
 
     # The outer if-gate precondition: assumed at loop entry (initiation) and its
     # conjuncts seeded as candidates (so precondition facts survive as invariants).
-    pre = system.assume or (lambda st: [])
+    pre = system.precondition or (lambda st: [])
     pre_init = list(pre(s0))                    # entry-gate assumptions at s0
     pre_cands = [(f"pre[{i}]", (lambda st, i=i: pre(st)[i])) for i in range(len(pre(s)))]
 

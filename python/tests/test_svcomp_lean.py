@@ -18,7 +18,7 @@ from benchmarks.svcomp._lean import _render_conjuncts, _trivial, emit_program
 from benchmarks.svcomp import discover
 from benchmarks.svcomp._farkas import certify, inductive, lex_decrease, read_system
 from benchmarks.svcomp._termination import terminates
-from benchmarks.svcomp._termination import _v_module, system_of
+from benchmarks.svcomp._termination import _v_module, compose, system_of
 from zrth import Module
 from benchmarks.svcomp._property import Safety
 from zrth.sugar import ite, ne
@@ -343,3 +343,25 @@ def test_the_proof_layer_refuses_a_safety_claim_over_the_step():
     assert res.verified, res.status
     with pytest.raises(Unsupported, match="over the step"):
         emit_program("step", ob.system, res)
+
+
+@pytest.mark.xfail(strict=True, reason="planned: the liveness theorem cites the invariant proof")
+def test_the_liveness_theorem_cites_the_invariant_proof():
+    """With an invariant assumed as a proved Safety claim, the file carries both
+    claims: a ``safety0`` namespace proving ``always_holds``, and a liveness
+    theorem that cites it for the invariant along the run instead of re-deriving
+    it by an inline induction — so no ``consecution`` remains outside ``safety0``.
+    And the two-claim file kernel-checks."""
+    bench = loop_bench(("x",), lambda x: ite(ne(x, 0), x - 1, x), init=lambda: (5,))
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    system = system_of(bench)
+    nonneg = lambda W, S: S["x"] >= 0
+    proof = certify(system, Safety(nonneg), inductive((nonneg,)))
+    composed, witness = compose(system.knowing(proof), layers)
+    live = certify(composed, terminates(), witness)
+    assert live.verified, live.status
+    src = emit_program("assumed", composed, live)
+    assert "namespace safety0" in src and "safety0.always_holds" in src
+    outside = src.split("namespace safety0")[0] + src.split("end safety0")[-1]
+    assert "theorem consecution" not in outside
+    _compiles("assumed", src)
