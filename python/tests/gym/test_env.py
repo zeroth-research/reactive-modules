@@ -7,11 +7,11 @@ import torch
 import gymnasium as gym
 from gymnasium import spaces
 
-from .environments import SimpleEnv
+from .environments import SimpleEnv, TwoBitCounterEnv
 from .qnetworks import SimpleQNet
 from zrth.gym import Env
 from zrth.torch import Module
-from zrth import Wire, Real, Int, Var, X
+from zrth import Wire, Bool, Real, Int, LIA, Var, X
 
 # SimpleEnv's only private state is `state`; its sort must be declared explicitly.
 STATE = Real([1, 1])
@@ -264,3 +264,63 @@ def test_step_ignores_action_when_driven():
         a.step(torch.tensor([99.0, -99.0]))
         b.step(torch.tensor([-99.0, 99.0]))
         assert a.x == b.x
+
+
+# ── theory selection ──────────────────────────────────────────────
+
+def test_lia_gives_a_discrete_action_an_int_sort():
+    """A Discrete(n) action is a vector of n scores. Under LIA those scores are
+    Ints: handing `LIA.Argmax` a Real operand is an invalid cast, so an LIA gym
+    module used to die in the builder rather than translate."""
+    e = Env(SimpleEnv(), attrs=Int([1, 1]), theory=LIA)
+    assert [w.dtype for w in e.extl] == [Int([1, 2])]
+    assert e.get_prvt("state").dtype == Int([1, 1])
+
+
+def test_lra_gives_a_discrete_action_a_real_sort():
+    e = Env(SimpleEnv(), attrs=Real([1, 1]))
+    assert [w.dtype for w in e.extl] == [Real([1, 2])]
+
+
+# ── TwoBitCounterEnv ──────────────────────────────────────────────
+
+_ENABLE = torch.tensor([0.0, 1.0])
+_HOLD = torch.tensor([1.0, 0.0])
+
+
+def test_two_bit_counter_counts():
+    """b0 toggles every enabled tick, b1 every second one: 00 01 10 11 00."""
+    e = Env(TwoBitCounterEnv(), attrs=Bool([1, 1]), theory=LIA)
+    e.reset()
+    seen = [(e.b0, e.b1)]
+    for _ in range(4):
+        e.step(_ENABLE)
+        seen.append((e.b0, e.b1))
+    assert seen == [
+        (False, False),
+        (True, False),
+        (False, True),
+        (True, True),
+        (False, False),
+    ]
+
+
+def test_two_bit_counter_holds_when_disabled():
+    e = Env(TwoBitCounterEnv(), attrs=Bool([1, 1]), theory=LIA)
+    e.reset()
+    e.step(_ENABLE)
+    for _ in range(3):
+        e.step(_HOLD)
+        assert (e.b0, e.b1) == (True, False)
+
+
+def test_two_bit_counter_interpreted_matches_real():
+    """The extracted terms and the Python env agree step for step."""
+    real_env = Env(TwoBitCounterEnv(), attrs=Bool([1, 1]), theory=LIA)
+    sim = Env(TwoBitCounterEnv(), attrs=Bool([1, 1]), theory=LIA, interpret=True)
+    real_env.reset()
+    sim.reset()
+    for action in (_ENABLE, _ENABLE, _HOLD, _ENABLE, _ENABLE, _ENABLE):
+        real_env.step(action)
+        sim.step(action)
+        assert (sim.b0, sim.b1) == (real_env.b0, real_env.b1)

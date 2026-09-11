@@ -31,7 +31,8 @@ def space_to_dtype(space, theory, is_action: bool) -> Sort:
             bits = max(1, int(math.ceil(math.log2(n + 1))))
             return BitVec(bits, [1, 1])
         if is_action:
-            return Real([1, n])
+            # a vector of per-action scores, `argmax`-ed to the index
+            return Int([1, n]) if theory is LIA else Real([1, n])
         return Int([1, 1]) if theory is LIA else Real([1, 1])
     elif isinstance(space, gym.spaces.Box):
         shape = _normalize_shape(list(space.shape))
