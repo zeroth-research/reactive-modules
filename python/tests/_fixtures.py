@@ -14,7 +14,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import z3
+
 from benchmarks.svcomp._bench import Bench, INT
+from benchmarks.svcomp._farkas import certify, inductive
+from benchmarks.svcomp._invariants import as_predicates
+from benchmarks.svcomp._property import Safety
 from benchmarks.svcomp._termination import compose, system_of, terminates
 from zrth import LIA, Wire, sugar
 
@@ -31,9 +36,15 @@ def candidate(bench, layers, delta=1.0, invariants=()) -> Cand:
     """``bench``'s program with ``layers`` composed in as a rank, under
     ``terminates()`` and ``decrease``: the production path from a bench to a
     ``certify`` call. ``invariants`` are ``(label, state_map -> BoolRef)`` pairs as
-    :func:`._invariants.infer_invariants` returns them."""
+    :func:`._invariants.infer_invariants` returns them; they are certified as one
+    Safety claim and assumed, as the client does."""
     system = system_of(bench)
-    system = system.knowing(f(system.s_map) for _, f in invariants)
+    if invariants:
+        preds = as_predicates(invariants)
+        proof = certify(system, Safety(lambda W, S: z3.And(*[p(W, S) for p in preds])),
+                        inductive(preds))
+        assert proof.verified, proof.status
+        system = system.knowing(proof)
     composed, witness = compose(system, layers, delta)
     return Cand(composed, terminates(), witness)
 

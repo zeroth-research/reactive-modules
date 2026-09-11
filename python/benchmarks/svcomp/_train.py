@@ -20,8 +20,7 @@ from torch import nn
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
 from ._farkas import certify, resolve_domain
 from ._equiv import run_block
-from ._invariants import infer_invariants
-from ._termination import compose, system_of, terminates
+from ._termination import compose, prove_invariants, system_of, terminates
 
 
 # ---------------------------------------------------------------------------
@@ -185,9 +184,12 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
     Xsp = torch.from_numpy(Sp)
     dim = len(bench.state)
 
-    # Houdini invariants (V-independent): inferred once, reused for every candidate.
-    invariants = infer_invariants(system) if use_invariants else []
-    system = system.knowing(f(system.s_map) for _, f in invariants)
+    # Houdini's invariants, certified once as a Safety claim (V-independent) and
+    # assumed for every candidate; if they do not certify, proceed without them.
+    if use_invariants:
+        inv = prove_invariants(system)
+        if inv is not None and inv.verified:
+            system = system.knowing(inv)
 
     final_loss = float("inf")
     last_layers = None

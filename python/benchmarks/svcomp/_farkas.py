@@ -48,6 +48,7 @@ import z3
 from zrth import Sort
 
 from ._nodes import ModeKind, Op, Unsupported, free_symbols, node_view
+from ._property import Safety
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +465,7 @@ class Proof:
     formula: object = None       # the obligation's formula, z3 over columns and wires
     devices: tuple = ()          # Device, in the order the formula named them
     nets: tuple = ()             # the distinct Net each device reads through
+    columns: tuple = ()          # the column names this was certified over
 
 
 @dataclass(frozen=True)
@@ -556,7 +558,7 @@ class System:
     entry_inputs: tuple = ()
     names: tuple = ()
     precondition: object = None
-    invariants: tuple = ()
+    invariant_proofs: tuple = ()   # verified Proofs of Safety claims: the facts assumed
 
     @property
     def sp_syms(self) -> list:
@@ -593,10 +595,34 @@ class System:
         [BoolRef]``, the facts the entry state may be taken to satisfy."""
         return dataclasses.replace(self, precondition=precondition)
 
-    def knowing(self, invariants) -> "System":
-        """This system with ``invariants`` — z3 over the columns, true of every
-        reachable state — which narrow what a claim's obligation ranges over."""
-        return dataclasses.replace(self, invariants=tuple(invariants))
+    def knowing(self, *proofs) -> "System":
+        """This system assuming the facts ``proofs`` establish: each a verified
+        :class:`Proof` of a :class:`._property.Safety` claim over these columns.
+        The engine narrows a claim's obligation by them and the proof layer proves
+        them in the same file and cites them, so what is assumed and what is proved
+        are one object. Anything else is refused by name — an assumption without a
+        proof has no place here."""
+        for p in proofs:
+            claim = getattr(p, "claim", None)
+            if not isinstance(claim, Safety):
+                raise Unsupported("knowing takes proofs of Safety claims; got a proof of "
+                                  f"{type(claim).__name__ if claim is not None else type(p).__name__}")
+            if not p.verified:
+                raise Unsupported("knowing takes a verified proof; this one is not verified: "
+                                  f"{p.status}")
+            if tuple(p.columns) != tuple(self.names):
+                raise Unsupported(f"the proof is over columns {tuple(p.columns)}, "
+                                  f"not {tuple(self.names)}")
+        return dataclasses.replace(self, invariant_proofs=self.invariant_proofs + tuple(proofs))
+
+    @property
+    def invariants(self) -> tuple:
+        """The assumed facts as z3 over the columns, one conjunct each — what a
+        claim's obligation may narrow its domain by."""
+        out = []
+        for p in self.invariant_proofs:
+            out += _flatten_and(resolve(self, p.claim.holds)[0])
+        return tuple(out)
 
 
 _SCALAR = Sort.Int([1, 1])
@@ -1270,7 +1296,7 @@ def certify(system: System, claim, witness, max_iters: int = 1000) -> Proof:
 
     def result(verified, paths, cex, status, unused=()):
         return Proof(verified, paths, cex, status, tuple(sorted(unused)), claim,
-                     witness, formula, devices, nets)
+                     witness, formula, devices, nets, columns=tuple(system.names))
 
     s_syms, sp_syms = system.s_syms, system.sp_syms
     invariants = system.invariants
