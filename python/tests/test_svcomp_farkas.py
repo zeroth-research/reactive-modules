@@ -324,13 +324,17 @@ def test_a_second_property_runs_through_the_same_engine():
 
 
 def test_a_witness_refuses_a_claim_it_cannot_use():
-    """A witness is a strategy for one kind of claim: ``inductive`` needs a predicate
-    to imply, which a ``Liveness`` claim has not, and says so by name. Nothing
+    """A witness is a strategy for one kind of claim, and refuses the other by name:
+    ``inductive`` needs a predicate to imply, which a ``Liveness`` claim has not;
+    ``decrease`` discharges a run claim, which a ``Safety`` claim is not (its ranks
+    would otherwise be asked to drop on every round, a claim nobody made). Nothing
     picks a witness on the caller's behalf — a rank is not a thing to guess."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
     with pytest.raises(Unsupported, match="has none"):
         certify(ob.system, ob.claim, inductive(()))
+    with pytest.raises(Unsupported, match="has one"):          # and the mirror image
+        certify(ob.system, Safety(lambda W, S: S["x"] >= 0), ob.witness)
     with pytest.raises(TypeError):
         certify(ob.system, ob.claim)
 

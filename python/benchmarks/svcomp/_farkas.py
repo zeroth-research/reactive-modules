@@ -846,6 +846,9 @@ class LexDecrease:
         self.delta = int(delta)
 
     def obligation(self, claim, system) -> Obligation:
+        if claim.holds is not None:
+            raise Unsupported(f"lex decrease discharges a run claim, one with no predicate; "
+                              f"{type(claim).__name__} has one")
         check_ranks(system, self.ranks)
         ranks, d = self.ranks, self.delta
 
