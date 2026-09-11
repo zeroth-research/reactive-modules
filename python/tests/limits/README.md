@@ -223,6 +223,20 @@ Compressed; each has a section in `VERITH_LIMITS.md` or `SMT_ASSIST.md`.
   nothing (77.9 s) — the cost is the goal, not the context. Over ℝ it is
   load-bearing: goal-only leaves two obligations of `NN2RealAllPos4`
   unproved, because `linarith` needs the hypotheses normalised.
+- **Explicit instances in the source cannot help the instance search.**
+  Emitting `@HAdd.hAdd ℝ ℝ ℝ instHAdd x y` for `x + y` saves nothing, and
+  `Real.add` does not even exist. `System/Data.lean` holds every `+`, `*`,
+  `≥`, `⌊·⌋` and numeral in the certificate and costs **6.17 ms** of
+  typeclass inference; the Certificate costs **17.7 s**. The search all
+  happens while the tactics rewrite, on terms they construct. Of the
+  searches over 1 ms, 862 are for `CanonicallyOrderedAdd` — a class ℝ
+  cannot satisfy, so 862 *failures*, 2.6 s, from simp/norm_num retrying
+  lemmas guarded on it.
+- **Real has no equivalent win.** Its prep runs two full-context passes,
+  `norm_num at *` and `simp_all`; dropping the second gives 3-5% on the
+  three Real cases, inside the noise, and `simp_all` is load-bearing for
+  invariants that pin exact values. The Real cost is diffuse — thousands
+  of sub-millisecond instance searches — with no single step to remove.
 - **A generated tactic is not tested until Lean has parsed it.** Unit tests
   on the emitted *string* miss syntax the quotation rejects — `;`-separated
   steps broken across lines fail with `unexpected token 'try'; expected ')'`,

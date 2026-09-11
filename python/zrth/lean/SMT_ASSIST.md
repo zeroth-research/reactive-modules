@@ -261,6 +261,53 @@ Restricting it to the goal instead saves nothing (77.9 s).
 Over the reals it has to stay: goal-only leaves two of `NN2RealAllPos4`'s
 obligations unproved, because `linarith` needs the hypotheses normalised.
 
+### Writing the instances explicitly cannot help
+
+A reasonable-looking idea, and measurably wrong: emit `Real.add x y` or
+`@HAdd.hAdd ℝ ℝ ℝ instHAdd x y` in place of `x + y`, to spare the
+elaborator the instance search.
+
+`Real.add` does not exist -- `x + y` over ℝ elaborates to
+`@HAdd.hAdd ℝ ℝ ℝ (@instHAdd ℝ Real.instAdd) x y`, so there is no such
+constant to bypass to. And the explicit form saves nothing, because the
+search is not happening where it looks:
+
+| | typeclass inference | elaboration |
+|---|---|---|
+| `System/Data.lean` -- every `+`, `*`, `≥`, `⌊·⌋` and numeral, in notation | **6.17 ms** | 8.01 ms |
+| `Certificate/Certificate.lean` -- the proofs | **17,700 ms** | 322 ms |
+
+Source-level resolution is 0.03% of the bill. By the time the tactics run,
+`ranking`'s instances are already resolved and baked into the term; the
+17.7 s is the tactics synthesising instances for terms *they* build while
+rewriting, which no annotation in the source reaches.
+
+Per class, of the searches over 1 ms:
+
+| class | total | calls |
+|---|---|---|
+| **`CanonicallyOrderedAdd`** | **2641 ms** | **862** |
+| `CharZero` | 322 ms | 298 |
+| `NeZero`, `NatCast`, `AddRightMono`, … | < 30 ms each | |
+
+ℝ is not canonically ordered, so all 862 of those are *failures* -- simp
+and norm_num retrying lemmas guarded on a class ℝ can never satisfy, each
+one walking the instance tree before giving up. They come to 3.0 s; the
+remaining ~14.7 s is in searches under the 1 ms reporting threshold, which
+is to say thousands of cheap ones. Death by a thousand cuts, plus one
+class retried 862 times.
+
+The lever is therefore the same one that worked for Int: fewer passes over
+the goal, not a different way of spelling the arithmetic.
+
+There is no second `norm_num`-shaped win here, though. Real prep runs two
+full-context passes -- `norm_num at *` and `simp_all` -- and dropping the
+second gives 69.9 -> 66.5 s, 62.4 -> 60.2 s, 67.4 -> 65.8 s on the three
+Real cases, with no errors. Three to five percent, inside the noise, and
+`simp_all` is load-bearing for the invariants that pin exact values
+(`RealConjDisj`, `LRALinear`), so it stays. The Real cost is genuinely
+diffuse: no one step to remove.
+
 Two incidentals from the same profile, both cosmetic but in every generated
 file: `init_inv`'s `all_goals (cert_prep <;> cert_close)` is flagged
 "tactic does nothing" -- `simp_mat` and `simp_defs` have already closed it
