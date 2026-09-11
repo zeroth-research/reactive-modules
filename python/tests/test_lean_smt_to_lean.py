@@ -177,3 +177,17 @@ def test_ground_subterms_are_never_bound():
     """Binding `(- 1)` costs more text than repeating it."""
     lean = _rank(_int_module(), "(+ (* s0 (- 1)) (* s0 (- 1)))")
     assert "let u0 := (- 1)" not in lean, lean
+
+
+def test_an_int_literal_against_a_real_var_becomes_a_real_literal():
+    """cvc5 wraps the `0` of `(= s0 0)` in `to_real` when `s0` is Real."""
+    lean = _inv(_real_module(), "(= s0 0)")
+    assert "(0 : Real)" in lean, lean
+    assert "to_real" not in lean, lean
+
+
+def test_a_non_literal_to_real_is_coerced_from_int():
+    """The `Argmax` index an LRA module carries on a Real wire arrives this way."""
+    lean = _inv(_real_module(), "(= s0 (to_real (to_int s0)))")
+    assert ": Int) : Real)" in lean, lean
+    assert "⌊" in lean, lean

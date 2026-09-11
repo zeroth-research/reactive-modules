@@ -354,6 +354,16 @@ def _walk(
     if k == Kind.TO_INTEGER:
         return f"⌊{recur(t[0])}⌋"
 
+    if k == Kind.TO_REAL:
+        # cvc5 inserts `to_real` wherever an Int-sorted subterm meets a Real
+        # one: an integer literal in the property, or the `Argmax` index that
+        # an LRA module carries on a Real wire. An integer literal becomes a
+        # Real literal outright; anything else elaborates at Int and is coerced.
+        child = t[0]
+        if child.getKind() == Kind.CONST_INTEGER:
+            return f"({child.getIntegerValue()} : Real)"
+        return f"((({recur(child)}) : Int) : Real)"
+
     if k == Kind.APPLY_SELECTOR:
         sel = t[0]
         obj = t[1]
