@@ -122,8 +122,9 @@ def _run_lean(benches, jobs: int) -> int:
                 print(f"{res.outcome.lower():10s} {res.name}: {res.detail} "
                       f"[{res.train_s:.1f}s]", flush=True)
             else:
+                unused = f", {res.n_unused} atoms unused" if res.n_unused else ""
                 print(f"{res.outcome:10s} {res.name}: {res.n_paths} paths, "
-                      f"{res.n_cells} cells, {res.n_invariants} invariants "
+                      f"{res.n_cells} cells, {res.n_invariants} invariants{unused} "
                       f"[train {res.train_s:.1f}s, check {res.check_s:.1f}s]", flush=True)
                 if res.detail:
                     print(f"           {res.detail}", flush=True)
