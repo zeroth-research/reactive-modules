@@ -211,10 +211,63 @@ partial win.
 
 And the rewrite is firing. Rebuilt with the inner `try` stripped, so that a
 `simp only` making no progress would be an error, it builds clean: all four
-branches really are collapsed, and the certificate still takes 70 s. So
-`split_ifs` over four conditions was never the cost. The Real goal carries
-`⌊·⌋` and `Int.toNat` and is closed by `linarith`; that is where to look
-next. The flag stays off.
+branches really are collapsed, and the certificate still takes 70 s.
+
+### Where the 70 s actually goes
+
+`set_option profiler true`, elaborating the file directly:
+
+| | |
+|---|---|
+| **typeclass inference** | **17.7 s** |
+| simp | 12.2 s |
+| norm_num | 6.2 s |
+| ring | 2.6 s |
+| everything else | < 1 s each |
+
+and, replacing `hrank`'s proof with `sorry`, the whole rest of the file --
+`init_inv`, `step_inv`, `hinv'`, `hinv`, `buchi`, every definition -- comes
+to **5.2 s against 75.2 s**. So `hrank` is 93% of the certificate, and
+inside it typeclass inference is the largest single item, bigger than simp
+and about seven times anything `split_ifs` could have saved.
+
+That is `Real`'s algebraic hierarchy. Every `≥`, `+`, `*`, `⌊·⌋` and
+`Int.toNat` in the goal triggers an instance search through Mathlib's
+ordered-field tower, and `norm_num`, `ring` and `linarith` each re-resolve
+them on every branch. Pruning branches divides that cost; it does not touch
+the per-branch constant, and the per-branch constant is the bill.
+
+**So the cost model is wrong in kind, not in calibration.** `n_branch` and
+`n_conditions` count branches; what is being paid for is the prep chain
+walking a large goal, over and over, synthesising instances each time.
+
+The same profile on an *integer* net says it even more plainly.
+`NN2Deep5`, whose branches the min/max fold had already removed entirely:
+
+| | |
+|---|---|
+| **`norm_num` tactic execution** | **15.3 s + 32 s = 47.3 s** |
+| typeclass inference | 12.5 s |
+| simp | 1.0 s |
+| **`omega`, which closes the goal** | **0.79 s** |
+
+48.7 s of tactic execution, 47.3 s of it in a canonicalisation step that
+`omega` does not need -- it normalises numerals itself and reads
+`min`/`max`/`Int.toNat` natively. Dropping `norm_num at *` from prep for a
+non-Real state takes that case from **75.9 s to 7.0 s** with the same
+proof and no errors, and the full matrix unchanged at 0 regressions.
+Restricting it to the goal instead saves nothing (77.9 s).
+
+Over the reals it has to stay: goal-only leaves two of `NN2RealAllPos4`'s
+obligations unproved, because `linarith` needs the hypotheses normalised.
+
+Two incidentals from the same profile, both cosmetic but in every generated
+file: `init_inv`'s `all_goals (cert_prep <;> cert_close)` is flagged
+"tactic does nothing" -- `simp_mat` and `simp_defs` have already closed it
+-- and `cert_states`'s macro binder `v` is an unused-variable warning
+whenever the state is not finite and the body is `skip`.
+
+The flag stays off.
 
 The premise was wrong, not the implementation, and that is worth more than
 a speed-up: `n_conditions` is a bad cost model for a Real certificate, and

@@ -33,7 +33,7 @@ uv run python tests/limits/run_regress.py                # only baseline.json's 
 uv run python tests/limits/run_regress.py other.json     # against a different baseline
 
 VERITH_EXTRA="--smt-tactics cvc5" uv run python tests/limits/run_regress.py
-VERITH_LIMITS_WORK=/tmp/mine     uv run python tests/limits/run_regress.py
+VERITH_LIMITS_WORK=/tmp/mine.noindex uv run python tests/limits/run_regress.py
 ```
 
 Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs
@@ -46,8 +46,8 @@ The **first** case in a fresh work directory pays for all of that: 654 s
 against ~10 s for its neighbours. That is the cache filling, not the case.
 
 Generated projects, the shared build dir and the results JSON all go to
-`/tmp/verith-limits` (override with `VERITH_LIMITS_WORK`), never into the
-tree.
+`/tmp/verith-limits.noindex` (override with `VERITH_LIMITS_WORK`), never
+into the tree. **Keep the `.noindex` suffix** — see below.
 
 ### Two ways the harness will lie to you
 
@@ -62,11 +62,21 @@ running at the same time.
 
 **Wall-clock is worthless under load.** Another Lean build anywhere on the
 machine is enough — including the `--fbk-proveit` / ic3ia pipeline in a
-neighbouring checkout. One 12-case run reported Countdown at
-801.8 s, NN2Width12 at 978.9 s and NN2Deep5 at 1996.2 s — for a Countdown
+neighbouring checkout. One 12-case run reported Countdown at 801.8 s,
+NN2Width12 at 978.9 s and NN2Deep5 at 1996.2 s — for a Countdown
 certificate whose generated file differed from the baseline's by a single
-comment line. Quiet re-run: 9.4 s, 11.3 s, 74.9 s. Verdicts were unaffected
-throughout. Re-time anything surprising before believing it.
+comment line. Quiet re-run: 9.4 s, 11.3 s, 74.9 s.
+
+The worst offender turned out to be **Spotlight**. A full pass writes tens
+of thousands of `.olean` files, `spotlightknowledged` sits at 100% of a
+core indexing them, and the damage is wildly uneven — in one run five of
+nine cases came in at 9 s and the other four at 928 s, 928 s, 1053 s and
+1940 s. Hence the `.noindex` suffix on the work directory, which is the
+documented way to make Spotlight skip one. If you point
+`VERITH_LIMITS_WORK` somewhere else, keep the suffix.
+
+Verdicts were unaffected through all of this. Only timings lie — re-time
+anything surprising before believing it.
 
 ---
 
@@ -147,9 +157,21 @@ The 12 that do not verify:
 | generation gap | 1 | `OpUninterp` |
 
 Every neural-network case passes, up to a 12-unit layer, five dense hidden
-layers, 2-D Lyapunov nets, nets over ℝ and nets over a vector state. The
-slowest are `NN2Deep5` 83.5 s, `NN2RealFrac` 75.5 s, `NN2RealWide4` 72.8 s;
-everything else is under 26 s and most are around 10 s.
+layers, 2-D Lyapunov nets, nets over ℝ and nets over a vector state.
+
+Since dropping `norm_num` from Int prep (below), the deep Int nets are no
+longer the slow ones — measured quiet, with Spotlight excluded:
+
+| | before | after |
+|---|---|---|
+| `NN2Deep5` | 83.5 s | **12.3 s** |
+| `NN2Deep4` | 23.9 s | **11.2 s** |
+| `NN2Deep3` | 12.5 s | 9.9 s |
+| `NN2RealWide4` | 72.8 s | 70.5 s *(Real: keeps `norm_num`)* |
+| `NN2RealFrac` | 75.5 s | 82.7 s *(as above)* |
+
+The two Real cases are now the only ones over 30 s. Everything else sits
+around 10 s.
 
 Supporting suites: `just py-test` 450 passed / 5 skipped / 2 xfailed, `just test-lean` 25 passed.
 
@@ -192,6 +214,15 @@ Compressed; each has a section in `VERITH_LIMITS.md` or `SMT_ASSIST.md`.
   over a matrix, like `Argmax`, but were wired to the binary `_elementwise`
   path, so any cvc5 query about such a module raised `TypeError` —
   `--infer ai-cegar` included.
+- **`norm_num at *` was the whole bill for an Int net, and unnecessary.**
+  Profiled, `NN2Deep5` spent 47.3 s of its 48.7 s of tactic execution in
+  `norm_num`, and 0.79 s in the `omega` that actually closed the goal.
+  `omega` normalises numerals itself and reads `min`/`max`/`Int.toNat`
+  natively, so dropping it from prep for non-Real states took that case
+  from **75.9 s to 7.0 s**, same proof. Restricting it to the goal saved
+  nothing (77.9 s) — the cost is the goal, not the context. Over ℝ it is
+  load-bearing: goal-only leaves two obligations of `NN2RealAllPos4`
+  unproved, because `linarith` needs the hypotheses normalised.
 - **A generated tactic is not tested until Lean has parsed it.** Unit tests
   on the emitted *string* miss syntax the quotation rejects — `;`-separated
   steps broken across lines fail with `unexpected token 'try'; expected ')'`,
@@ -227,10 +258,17 @@ Compressed; each has a section in `VERITH_LIMITS.md` or `SMT_ASSIST.md`.
    and the numbers did not move: 68 / 69 s off against 68 / 70 s on. The
    3-7% before the fix was noise. Rebuilt with the inner `try` stripped, so
    a no-op `simp only` would be an error, it builds clean — the rewrite
-   *is* firing and all four branches really are collapsed. So `split_ifs`
-   over four conditions was never the cost. The Real goal carries `⌊·⌋` and
-   `Int.toNat` and is closed by `linarith`; profile where the 68 s actually
-   goes before optimising anything else here.
+   *is* firing and all four branches really are collapsed.
+
+   Profiled, the cost is somewhere else entirely. `hrank` is **70 s of the
+   75** (the whole rest of the file, `sorry`ing it out, is 5.2 s), and
+   inside it **typeclass inference is 17.7 s**, simp 12.2 s, norm_num
+   6.2 s, ring 2.6 s. That is `Real`'s algebraic hierarchy: every `≥`, `+`,
+   `⌊·⌋` and `Int.toNat` starts an instance search, and `norm_num`, `ring`
+   and `linarith` each redo them per branch. Pruning branches divides that;
+   it does not touch the per-branch constant, which is the bill. So
+   `n_branch` and `n_conditions` are the wrong cost model in kind — they
+   count branches, and what is paid for is instances per branch.
 4. **cvc5 abduction and SyGuS** — plans and runnable evidence in
    `SMT_ASSIST.md` §6 and §7; `probes/abduction.py` and `probes/sygus.py`
    produce the numbers those plans are costed against.

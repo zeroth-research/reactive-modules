@@ -30,7 +30,13 @@ MODS = SP / "mods"
 # Generated projects and their shared build dir are build artifacts, so they
 # live outside the tree. Override with VERITH_LIMITS_WORK to put them
 # elsewhere -- see the single-writer warning in README.md.
-WORK = Path(os.environ.get("VERITH_LIMITS_WORK", "/tmp/verith-limits"))
+#
+# The `.noindex` suffix is load-bearing on macOS: Spotlight will happily
+# index tens of thousands of freshly written `.olean` files, and
+# `spotlightknowledged` pinning a core turns a 9 s case into a 928 s one.
+# A directory whose name ends in `.noindex` is skipped. Keep the suffix on
+# any path passed through VERITH_LIMITS_WORK too.
+WORK = Path(os.environ.get("VERITH_LIMITS_WORK", "/tmp/verith-limits.noindex"))
 PROJECTS = WORK / "projects"
 SHARED = WORK / "shared_lake"
 MANIFEST = SP / "lake-manifest.json"
@@ -70,7 +76,7 @@ def run_verith(case) -> dict:
         return dict(ok=False, secs=time.time() - t0, err="verith timed out (600s)")
     if r.returncode != 0:
         tail = (r.stderr or r.stdout).strip().splitlines()
-        err = " | ".join(l.strip() for l in tail[-3:])
+        err = " | ".join(ln.strip() for ln in tail[-3:])
         return dict(ok=False, secs=time.time() - t0, err=err)
     return dict(ok=True, secs=time.time() - t0, err="")
 
@@ -125,11 +131,11 @@ def run_lake(case) -> dict:
     out = r.stdout + "\n" + r.stderr
     lines = out.splitlines()
 
-    failed = [m.group("t") for l in lines if (m := _FAILED_TGT.match(l))]
+    failed = [m.group("t") for ln in lines if (m := _FAILED_TGT.match(ln))]
     errors, sorries = [], []
-    for i, l in enumerate(lines):
-        if l.startswith("error: ") and ".lean:" in l:
-            m = _ERR.match(l)
+    for i, ln in enumerate(lines):
+        if ln.startswith("error: ") and ".lean:" in ln:
+            m = _ERR.match(ln)
             if m:
                 # first message line, plus the next line if the message is empty
                 msg = m.group("msg").strip()
@@ -137,12 +143,14 @@ def run_lake(case) -> dict:
                     msg = lines[i + 1].strip()
                 errors.append(f"{Path(m.group('file')).name}: {msg}")
             else:
-                errors.append(l[7:])
-        elif l.startswith("error: ") and "Lean exited" not in l:
-            errors.append(l[7:])
-        if "declaration uses 'sorry'" in l:
-            m = _ERR.match(l)
-            sorries.append(f"{Path(m.group('file')).name}:{m.group(2)}" if m else l.strip())
+                errors.append(ln[7:])
+        elif ln.startswith("error: ") and "Lean exited" not in ln:
+            errors.append(ln[7:])
+        if "declaration uses 'sorry'" in ln:
+            m = _ERR.match(ln)
+            sorries.append(
+                f"{Path(m.group('file')).name}:{m.group(2)}" if m else ln.strip()
+            )
     return dict(ok=r.returncode == 0 and not sorries, raw_ok=r.returncode == 0,
                 secs=time.time() - t0, targets=failed,
                 errors=errors[:6], sorries=sorries[:8])

@@ -436,7 +436,24 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
         prep.append("casesm* _ ∧ _")
     if f.has_and or f.has_or:
         prep.append("simp only [not_and_or] at *")
-    prep.append("norm_num at *")
+    if f.has_real:
+        # Profiled, this is the single most expensive thing in the plan, and
+        # over the reals it is also load-bearing: dropping it to the goal
+        # alone leaves two obligations of NN2RealAllPos4 unproved, because
+        # `linarith` needs the hypotheses normalised.
+        #
+        # For an integer state it is neither. `omega` normalises numerals
+        # itself and reads `min`/`max`/`Int.toNat` natively, so `norm_num`
+        # only re-traverses a goal omega is about to take apart anyway.
+        # Measured on NN2Deep5, a five-layer net: 75.9 s with it, **7.0 s**
+        # without, same proof, no errors -- `norm_num` was 47.3 s of the
+        # 48.7 s of tactic execution while `omega`, which actually closed
+        # the goal, took 0.79 s. Restricting it to the goal saves nothing
+        # (77.9 s): the cost is the goal, not the context.
+        #
+        # `(norm_num; done)` stays in the closers either way, so a goal that
+        # really does need it still gets it.
+        prep.append("norm_num at *")
     if f.has_real and f.has_eq:
         # Over the reals an inductive invariant has to pin exact values, so
         # the hypotheses are equalities and the goal is a numeral once they
@@ -446,8 +463,8 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
     if f.has_eq:
         # `¬(x = c)` carries a strict bound only through integrality, which
         # linarith and nlinarith do not do. Split it so the `casesm*` below
-        # hands each branch a usable inequality. Must follow `norm_num at *`,
-        # which renormalises `≠` back to `¬ =`.
+        # hands each branch a usable inequality. Must follow `norm_num at *`
+        # where that runs at all, since it renormalises `≠` back to `¬ =`.
         prep.append("simp only [← ne_eq, ne_iff_lt_or_gt] at *")
     if f.has_and or f.has_or or f.has_eq:
         prep.append("casesm* _ ∧ _, _ ∨ _")

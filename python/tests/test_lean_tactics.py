@@ -132,9 +132,12 @@ def test_real_state_substitutes_equalities_in_prep():
 
 def test_disequality_split_follows_norm_num():
     """`norm_num at *` renormalises `≠` back to `¬ =`, so the split that
-    turns it into a usable bound has to come after it."""
-    plan = _plan(_int_module(), "fun s => ((s 0 0) = 0)")
-    steps = plan.prep
+    turns it into a usable bound has to come after it.
+
+    Only a Real state runs `norm_num` in prep at all now, so that is where
+    the ordering can be observed.
+    """
+    steps = _plan(_real_module(), "fun s => ((s 0 0) = 0)").prep
     assert "norm_num at *" in steps
     split = "simp only [← ne_eq, ne_iff_lt_or_gt] at *"
     assert split in steps
@@ -404,3 +407,18 @@ def test_several_settled_conditions_stay_on_one_line():
     tac = _hinted(determined=[("a", True), ("b", True), ("c", False)]).facts_tactic
     assert "\n" not in tac
     assert tac.count("try (have") == 3
+
+
+def test_norm_num_is_only_for_real_states():
+    """It is 47 s of NN2Deep5's 49 s of tactic execution, and omega does
+    not need it: 75.9 s with, 7.0 s without, same proof."""
+    int_plan = plan_for(LeanContext(_int_module()), "fun s => (s 0 0)")
+    assert not any("norm_num" in p for p in int_plan.prep)
+    # still available as a closer for a goal that really does need it
+    assert any("norm_num" in c for c in int_plan.closers)
+
+
+def test_a_real_state_keeps_norm_num_in_prep():
+    """Dropping it there leaves two of NN2RealAllPos4's obligations open."""
+    plan = plan_for(LeanContext(_real_module()), "fun s => ((s 0 0) ≥ 0)")
+    assert "norm_num at *" in plan.prep
