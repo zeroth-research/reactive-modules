@@ -1,8 +1,8 @@
 """Verify a ranking function against a program module (termination obligation).
 
 Here we discharge the *ranking* obligation: given integer NRF layers
-V, that `V(s) >= 0` and `V(s) - V(s') >= delta` for every state s in the loop
-domain, where s' = T(s) is the module's transition.
+V, that `V(s) >= 0` and `V(s) - V(s') >= delta` on every round the claim
+counts, where s' = T(s) is the module's transition.
 
 One module, a property over its wires
 ====================================
@@ -15,74 +15,25 @@ graph. Nothing distinguishes program from rank except what the property names.
 
 Interface
 =========
-A candidate rank is packaged as a :class:`Candidate` (backend-neutral Z3 pieces)
-built by :func:`build_candidate`, and a **verifier** is any callable
-
-    Verifier = Callable[[Candidate], VerifyResult]
-
-so different methods plug in interchangeably.
+:func:`system_of` reads the program module once; :func:`compose` adds the rank
+as two atoms and returns the composed system with the witness that names them;
+:func:`terminates` is this client's claim. Certifying is the procedure's own
+``certify(system, claim, witness)``, and the trainer accepts the first candidate
+it certifies. Nothing here verifies anything itself.
 """
 
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass
-from typing import Callable
 
-import numpy as np
 import z3
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench, INT, pair  # noqa: F401
-from ._domain import guard_from_transition
-from ._farkas import System, certify, decrease, read_system, reading
+from ._farkas import System, decrease, read_system
 from ._property import Liveness
 from zrth import LIA, Module, sugar
 from zrth.sugar import expr, nxt, relu
-
-
-# ---------------------------------------------------------------------------
-# Data types
-# ---------------------------------------------------------------------------
-
-@dataclass
-class Candidate:
-    """The ranking obligation over the program module, as Z3 terms.
-
-    ``s_syms``/``sp_syms``: pre- and next-state (the transition). ``V_s``/``V_sp``:
-    V evaluated on each. ``guard``: the bare loop guard over ``s_syms``.
-    ``invariants``: the inferred invariant predicates over ``s_syms``, kept
-    separate from the guard for certificate provenance. The verification domain
-    is ``guard`` ∧ ⋀``invariants`` (see :func:`verification_domain`).
-
-    ``net`` is V as the cell verifier reads it off V's module; ``layers`` (the
-    integer NRF the trainer produced) is kept for the trainer's record only. An
-    SMT verifier uses ``V_s``/``V_sp`` directly. ``system`` is what the decision
-    procedure and the proof read; the entry state is theirs to read off it."""
-    state: tuple[str, ...]
-    s_syms: list
-    sp_syms: list
-    V_s: object
-    V_sp: object
-    delta: float
-    guard: object
-    invariants: tuple = ()
-    layers: object = None
-    net: object = None
-    system: object = None    # program ⊕ V(s) ⊕ V(s'), as the verifier reads it
-    claim: object = None     # terminates(), over the program's columns
-    witness: object = None   # decrease(V(s) wire, V(s') wire, delta)
-
-
-@dataclass
-class VerifyResult:
-    verified: bool
-    counterexample: np.ndarray | None = None   # domain state where V fails (for CEGAR)
-    certificate: object | None = None           # the Proof, when certified
-    status: str = ""                             # VERIFIED / FAILED(...) / UNKNOWN
-
-
-Verifier = Callable[[Candidate], VerifyResult]
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +85,7 @@ def _v_module(state_pairs, layers, *, read_next: bool):
 
 
 # ---------------------------------------------------------------------------
-# Building the obligation (the seam onto the decision procedure)
+# Building the candidate (the seam onto the decision procedure)
 # ---------------------------------------------------------------------------
 
 def terminates(over=None) -> Liveness:
@@ -163,76 +114,18 @@ def system_of(bench: Bench) -> System:
                                assume=bench.precondition)
 
 
-def build_candidate(bench: Bench, layers, delta: float, invariants=None,
-                     system=None) -> Candidate:
-    """The ranking obligation, read off the program module and V's.
+def compose(system: System, layers, delta: float = 1.0):
+    """``system`` with the rank composed in, and the witness that names it.
 
-    The program is composed with two V modules — one reading the latched state,
-    one awaiting the next — and read as one system. The columns are the latched
-    wires some term reads (the program's); V's two wires are named by the witness.
-
-    ``invariants`` (from :func:`._invariants.infer_invariants`) are inductive
-    loop facts conjoined with the guard to shrink the verification domain to the
-    reachable loop states."""
-    if system is None:
-        system = system_of(bench)
-    inv_preds = tuple(f(system.s_map) for _, f in (invariants or []))
+    V is written out twice as ordinary atoms — once reading the latched state, so
+    its wire carries V(s), once awaiting the next, so its wire carries V(s') —
+    and the whole is read as one system. The columns are unchanged, since the
+    rank atoms' own latched wires are read by nothing; the program's precondition
+    and invariants carry over. Returns the composed system and
+    ``decrease(V(s) wire, V(s') wire, delta)``."""
     vs_mod, vs = _v_module(system.pairs, layers, read_next=False)
     vsp_mod, vsp = _v_module(system.pairs, layers, read_next=True)
     composed = dataclasses.replace(
         read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names),
-        assume=system.assume, invariants=inv_preds)
-    z = composed.view.values
-    claim = terminates()
-    witness = decrease(vs[1], vsp[1], delta)
-    return Candidate(composed.names, list(composed.s_syms), composed.sp_syms,
-                      z[vs[1]][0], z[vsp[1]][0], float(delta),
-                      guard_from_transition(composed.s_map, composed.sp_map,
-                                            composed.names),
-                      invariants=inv_preds, layers=layers,
-                      net=reading(composed, vs[1]).net, system=composed,
-                      claim=claim, witness=witness)
-
-
-# ---------------------------------------------------------------------------
-# Verifiers  (Candidate -> VerifyResult)
-# ---------------------------------------------------------------------------
-
-def verification_domain(ob: Candidate):
-    """The states the obligation must hold on: guard ∧ invariants."""
-    return z3.And(ob.guard, *ob.invariants) if ob.invariants else ob.guard
-
-
-def _model_cex(ob: Candidate, solver: z3.Solver) -> np.ndarray:
-    m = solver.model()
-    return np.array([m.eval(v, model_completion=True).as_long() for v in ob.s_syms],
-                    dtype=np.float64)
-
-
-def smt_oneshot(ob: Candidate) -> VerifyResult:
-    """One-shot Z3 check: V >= 0 and V(s) - V(s') >= delta on the domain."""
-    dom = verification_domain(ob)
-    s1 = z3.Solver(); s1.add(dom); s1.add(ob.V_s < 0)
-    r1 = s1.check()
-    if r1 == z3.sat:
-        return VerifyResult(False, _model_cex(ob, s1), status="FAILED(V<0)")
-    if r1 == z3.unknown:
-        return VerifyResult(False, None, status="UNKNOWN(V>=0)")
-    s2 = z3.Solver(); s2.add(dom)
-    s2.add(ob.V_s - ob.V_sp < z3.RealVal(ob.delta))
-    r2 = s2.check()
-    if r2 == z3.sat:
-        return VerifyResult(False, _model_cex(ob, s2), status="FAILED(decrease)")
-    if r2 == z3.unknown:
-        return VerifyResult(False, None, status="UNKNOWN(decrease)")
-    return VerifyResult(True, status="VERIFIED")
-
-
-def farkas_cell(ob: Candidate) -> VerifyResult:
-    """Cell/CEGAR Farkas verifier: certifies ``V(s) - V(s') >= delta`` per ReLU
-    cell with an exact Farkas certificate (for Lean export). Sound but incomplete
-    — cells with a non-affine transition or a nonlinear/disjunctive guard atom
-    cannot be certified (returns FAILED). That the rank is bounded below is the
-    witness's own check (:func:`._farkas.check_ranks`)."""
-    r = certify(ob.system, ob.claim, ob.witness)
-    return VerifyResult(r.verified, r.counterexample, certificate=r, status=r.status)
+        assume=system.assume, invariants=system.invariants)
+    return composed, decrease(vs[1], vsp[1], delta)

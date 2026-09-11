@@ -3,16 +3,41 @@
 A test that hands the verifier hand-written z3 terms cannot exercise anything the
 verifier reads off the *module* — the guard's shape, the node view, the ranking
 wire. :func:`loop_bench` builds a real module from a compact spec, so a
-test goes through :func:`._termination.build_candidate` and the production
-verifier rather than a parallel path.
+test goes through :func:`candidate` — the production path from a bench to a
+``certify`` call — rather than a parallel one.
 
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
-    ob = build_candidate(bench, layers, 1.0, [])
+    c = candidate(bench, layers)
+    proof = certify(c.system, c.claim, c.witness)
 """
 from __future__ import annotations
 
+import dataclasses
+from dataclasses import dataclass
+
 from benchmarks.svcomp._bench import Bench, INT
+from benchmarks.svcomp._termination import compose, system_of, terminates
 from zrth import LIA, Wire, sugar
+
+
+@dataclass
+class Cand:
+    """A composed system, the claim and the witness: what a test hands ``certify``."""
+    system: object
+    claim: object
+    witness: object
+
+
+def candidate(bench, layers, delta=1.0, invariants=()) -> Cand:
+    """``bench``'s program with ``layers`` composed in as a rank, under
+    ``terminates()`` and ``decrease``: the production path from a bench to a
+    ``certify`` call. ``invariants`` are ``(label, state_map -> BoolRef)`` pairs as
+    :func:`._invariants.infer_invariants` returns them."""
+    system = system_of(bench)
+    system = dataclasses.replace(system, invariants=tuple(f(system.s_map)
+                                                          for _, f in invariants))
+    composed, witness = compose(system, layers, delta)
+    return Cand(composed, terminates(), witness)
 
 
 def loop_bench(state, update, *, init=None, precondition=None, name="test"):

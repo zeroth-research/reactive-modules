@@ -7,6 +7,8 @@ V(s) - V(s') >= delta on the loop domain).
 
 from __future__ import annotations
 
+import dataclasses
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -17,10 +19,10 @@ from torch import nn
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
-from ._farkas import resolve_domain
+from ._farkas import certify, resolve_domain
 from ._equiv import _run_block
 from ._invariants import infer_invariants
-from ._termination import build_candidate, smt_oneshot, system_of, terminates
+from ._termination import compose, system_of, terminates
 
 
 # ---------------------------------------------------------------------------
@@ -144,19 +146,20 @@ def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
 class TrainResult:
     """The outcome of one ``learn_ranking`` run.
 
-    ``obligation`` and ``verification`` are what the accepted candidate was
-    checked against and the verifier's verdict on it, so a caller that needs the
-    evidence — the Farkas certificates the Lean emitter consumes — reads it here
-    rather than verifying the same layers a second time. Both are ``None`` when
-    no candidate verified."""
+    ``system``, ``witness`` and ``proof`` are the composed module the accepted
+    rank was certified on, the witness that named it, and what ``certify``
+    established — the evidence the Lean emitter consumes, so a caller reads it
+    here rather than certifying the same layers a second time. All ``None`` when
+    no candidate certified."""
     name: str
     verified: bool
     n_pairs: int
     final_loss: float
     layers: object = None
     reason: str | None = None
-    obligation: object = None
-    verification: object = None
+    system: object = None       # the program with the accepted rank composed in
+    witness: object = None      # decrease over the rank's two wires
+    proof: object = None        # what certify established
 
 
 def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: int = 0,
@@ -164,15 +167,12 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
                   initial_variance: float = 100.0, n_epochs: int = 1000,
                   lr: float = 0.05, outer: int = 20,
                   scales: tuple[float, ...] = (0.5, 1.0),
-                  verifier=smt_oneshot, use_invariants: bool = True) -> TrainResult:
+                  use_invariants: bool = True) -> TrainResult:
     """nt-matched: PAS trajectory rollouts, AdamW hinge loss, outer
     round-and-rebuild. Defaults mirror nt's learn_nrf_cfa.
 
-    ``verifier`` is any ``Candidate -> VerifyResult`` (like nt's
-    ``verifier_method``): the round-and-rebuild loop builds the obligation for
-    each candidate (via ``build_candidate``) and accepts the first V it verifies.
-    Default is ``smt_oneshot``; a Farkas or invariant-augmented verifier swaps in
-    without touching the trainer."""
+    The round-and-rebuild loop composes each candidate into the program
+    (:func:`compose`) and accepts the first the procedure certifies."""
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
     sigma = float(np.sqrt(initial_variance))
@@ -188,6 +188,8 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
 
     # Houdini invariants (V-independent): inferred once, reused for every candidate.
     invariants = infer_invariants(system) if use_invariants else []
+    system = dataclasses.replace(system, invariants=tuple(f(system.s_map)
+                                                          for _, f in invariants))
 
     final_loss = float("inf")
     last_layers = None
@@ -203,12 +205,11 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
         for scale in scales:
             layers = model.to_layers(scale)
             last_layers = layers
-            ob = build_candidate(bench, layers, delta, invariants,
-                                  system=system)
-            res = verifier(ob)
-            if res.verified:
+            composed, witness = compose(system, layers, delta)
+            proof = certify(composed, terminates(), witness)
+            if proof.verified:
                 return TrainResult(bench.name, True, S.shape[0], final_loss, layers,
-                                   obligation=ob, verification=res)
+                                   system=composed, witness=witness, proof=proof)
     return TrainResult(bench.name, False, S.shape[0], final_loss, last_layers,
                        reason="trained but not verified")
 
