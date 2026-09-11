@@ -42,6 +42,7 @@ class CheckResult:
     n_paths: int = 0
     n_cells: int = 0
     n_invariants: int = 0
+    n_unused: int = 0           # domain atoms the LP could not express, dropped soundly
     detail: str = ""
     train_s: float = 0.0        # training, including the verification that accepted V
     check_s: float = 0.0        # emitting and compiling the proof
@@ -101,5 +102,6 @@ def certify(name: str, system, result, timeout: float = CHECK_TIMEOUT) -> CheckR
     paths = result.certificates
     return CheckResult(name, outcome, n_paths=len(paths),
                        n_cells=sum(len(p.cells) for p in paths),
-                       n_invariants=len(system.invariants), detail=detail,
+                       n_invariants=len(system.invariants),
+                       n_unused=len(result.unused), detail=detail,
                        check_s=time.perf_counter() - t0)
