@@ -67,7 +67,8 @@ def _relu_region(e, mode):
 
 # This procedure's vocabulary: what it understands of the theory's operations, in
 # one place. An itype absent here is refused by :func:`._nodes.node_view`; a kind
-# with neither a cell rule nor a case split is refused by :func:`check_supported`.
+# with neither a cell rule nor a case split is one Z3 cannot read either, so the
+# walk refuses it too — a test pins that those are the only such kinds.
 # Adding support for an operation is an entry here and nothing else.
 OPS = {
     # affine arithmetic — evaluated straight through
@@ -80,8 +81,8 @@ OPS = {
     # piecewise-linear
     "LIA_ReLU": Op("relu", mode=ModeKind(_relu_at, _relu_region)),
     "LIA_Ite": Op("ite", split=True),
-    # recognised, no cell rule — and no Z3 translation either, so in practice a
-    # module carrying one is refused by the walk before `check_supported` sees it
+    # recognised, no cell rule — and no Z3 translation either, so the walk refuses
+    # a module carrying one by name
     "LIA_Min": Op("min"),
     "LIA_Max": Op("max"),
     "LIA_Argmax": Op("argmax"),
@@ -89,7 +90,6 @@ OPS = {
 
 # Derived, so the table above stays the single source of truth.
 _MODE_OF = {op.kind: op.mode for op in OPS.values() if op.kind and op.mode}
-_SPLIT = {op.kind for op in OPS.values() if op.split}
 
 
 @dataclass(frozen=True)
@@ -977,20 +977,6 @@ def _check_linear(disjuncts, syms) -> None:
 # Doors
 # ---------------------------------------------------------------------------
 
-def check_kinds(nodes) -> None:
-    """Raise :class:`Unsupported` for a node whose kind this procedure has no rule
-    for — neither a cell rule nor a case split.
-
-    Defensive: every such kind in :data:`OPS` also has no Z3 translation, so the
-    walk refuses it first. It is what catches a kind added to the vocabulary before
-    its rule."""
-    for node in nodes:
-        if node.kind not in _MODE_OF and node.kind not in _SPLIT:
-            raise Unsupported(
-                f"node kind {node.kind!r} is recognised but has neither a cell "
-                f"rule nor a case split; pinnable kinds are {sorted(_MODE_OF)}")
-
-
 def check_supported(system: System) -> None:
     """Raise :class:`Unsupported`, naming the reason, if this procedure has no rule
     for something in ``system``'s module. What a claim or a witness may ask is
@@ -999,7 +985,6 @@ def check_supported(system: System) -> None:
     Checked before any work so the interior can assume its preconditions. The
     alternative — proceeding with whatever it happens to understand — reports a
     proof that will not close rather than the thing it could not use."""
-    check_kinds(system.view.nodes)
     names = [str(s) for s in system.s_syms]
     for name, e in zip(names, system.sp_syms):
         extra = free_symbols(e) - set(names)
