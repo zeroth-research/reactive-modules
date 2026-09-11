@@ -1,14 +1,13 @@
 """A decision procedure over a reactive module: Farkas-certified regions (CEGAR).
 
-Given a :class:`System` — a module read once, by :func:`read_system` — and a
-property over it, :func:`certify` proves the property on every step of its domain
-by a witness's formula: one boolean formula over the graph's *wires* that must
-hold on each step. The rule names wires (``W[wire]``) and columns (``S[name]``,
-``S.next[name]``); it knows nothing of programs or ranks. Termination is the
-client :func:`decrease` — ``V(s) - V(s') >= delta`` over two wires computing the
-same function at each end of a step — plus the substrate's well-foundedness
-theorem; a safety property is :func:`inductive`; several ranks are
-:func:`lex_decrease`.
+Given a :class:`System` — a module read once, by :func:`read_system` — a claim
+over it and a witness, :func:`certify` proves the witness's obligation on every
+round of the claim's domain: one boolean formula over the graph's *wires*. The
+formula names wires (``W[wire]``) and columns (``S[name]``, ``S.next[name]``); it
+knows nothing of programs or ranks. A :class:`._property.Liveness` claim is
+discharged by :func:`lex_decrease` (:func:`decrease` for one rank) plus the
+substrate's well-foundedness theorem; a :class:`._property.Safety` claim by
+:func:`inductive`.
 
 The procedure is sound and incomplete, and what it cannot handle it refuses by
 name: :data:`OPS` for the theory's operations, :func:`check_supported` for the
@@ -476,15 +475,18 @@ class PathCert:
     ``Step`` relations is the loop's transition — hence a property of every path's
     steps is a property of the program's.
 
-    ``units`` holds each node's pre-activation at this path's round as
-    ``(coeffs, const)`` over the pre-state columns; ``device_units`` the same per
-    device. A region is where those expressions take the signs its pattern names,
-    which is what lets the emitter case-split on them."""
+    ``device_units`` holds, per named wire, its nodes' pre-activations at this
+    path's round as ``(coeffs, const)`` over the pre-state columns; ``units`` is
+    their concatenation. A region is where those expressions take the signs its
+    pattern names, which is what lets the emitter case-split on them."""
     guard: object
     body: tuple
     cells: tuple
-    units: tuple = ()
     device_units: tuple = ()
+
+    @property
+    def units(self) -> tuple:
+        return sum(self.device_units, ())
 
 
 def _find_ite_cond(e):
@@ -585,6 +587,16 @@ class System:
     @property
     def sp_map(self) -> dict:
         return dict(zip(self.names, self.sp_syms))
+
+    def assuming(self, precondition) -> "System":
+        """This system with ``precondition`` assumable at entry: ``state_map ->
+        [BoolRef]``, the facts the entry state may be taken to satisfy."""
+        return dataclasses.replace(self, assume=precondition)
+
+    def knowing(self, invariants) -> "System":
+        """This system with ``invariants`` — z3 over the columns, true of every
+        reachable state — which narrow what a claim's obligation ranges over."""
+        return dataclasses.replace(self, invariants=tuple(invariants))
 
 
 _SCALAR = Sort.Int([1, 1])
@@ -1286,10 +1298,8 @@ def certify(system: System, claim, witness, max_iters: int = 1000) -> Proof:
         unused |= p.unused
         if not verified:
             return result(False, [], cex, status, unused)
-        acts = p.modes[0][1] if p.modes else ()
         paths.append(PathCert(
             pguard, tuple(pbody), tuple(cells),
-            units=tuple(_affine_pair(e, s_syms) for e in acts),
             device_units=tuple(tuple(_affine_pair(e, s_syms) for e in d.acts)
                                for d in p.devices)))
     if not paths:

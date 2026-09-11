@@ -12,7 +12,6 @@ test goes through :func:`candidate` — the production path from a bench to a
 """
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass
 
 from benchmarks.svcomp._bench import Bench, INT
@@ -34,8 +33,7 @@ def candidate(bench, layers, delta=1.0, invariants=()) -> Cand:
     ``certify`` call. ``invariants`` are ``(label, state_map -> BoolRef)`` pairs as
     :func:`._invariants.infer_invariants` returns them."""
     system = system_of(bench)
-    system = dataclasses.replace(system, invariants=tuple(f(system.s_map)
-                                                          for _, f in invariants))
+    system = system.knowing(f(system.s_map) for _, f in invariants)
     composed, witness = compose(system, layers, delta)
     return Cand(composed, terminates(), witness)
 
