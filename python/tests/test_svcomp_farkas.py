@@ -26,12 +26,12 @@ from zrth import LIA, Module, Sort, Wire, sugar
 from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
 from zrth.sugar import ite as dsl_ite
-from benchmarks.svcomp._farkas import (certify, check_kinds, check_supported,
+from benchmarks.svcomp._farkas import (certify, check_supported,
                                       decrease, inductive, lex_decrease,
                                       read_system)
 from benchmarks.svcomp._property import Liveness, Safety
 from benchmarks.svcomp._termination import terminates
-from benchmarks.svcomp._nodes import Node, Unsupported, node_view
+from benchmarks.svcomp._nodes import Unsupported, node_view
 from benchmarks.svcomp._farkas import (
     Net,
     _pre_activations,
@@ -241,13 +241,14 @@ def _prog(update, *, extl=()):
     return Program(theory=LIA, ctrl=(pair,), extl=extl), pair
 
 
-def test_a_node_kind_without_a_cell_rule_is_refused():
-    """A kind the procedure cannot pin is named, rather than the module being
-    reasoned over with whatever happens to be understood. Defensive today: every
-    such kind also lacks a Z3 translation, so the walk refuses it first (see
-    below) — this is what catches a kind declared before its rule."""
-    with pytest.raises(Unsupported, match="min"):
-        check_kinds((Node("min", z3.Int("_nx"), (z3.Int("x"),)),))
+def test_the_kinds_without_a_rule_are_the_ones_the_walk_refuses():
+    """The vocabulary's kinds with neither a cell rule nor a case split are exactly
+    the ones Z3 cannot read, so the walk refuses a module carrying one by name
+    (see below) before the engine could reason over it. A kind declared here
+    before its rule shows up in this set."""
+    from benchmarks.svcomp._farkas import OPS
+    unruled = {op.kind for op in OPS.values() if op.kind and not op.mode and not op.split}
+    assert unruled == {"min", "max", "argmax"}
 
 
 def test_an_untranslatable_itype_is_refused():
