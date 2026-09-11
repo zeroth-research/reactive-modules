@@ -47,11 +47,12 @@ from benchmarks.svcomp._farkas import (
 x, y = z3.Ints("x y")
 
 
-def _obligation(state, update, layers, invariants=(), delta=1.0):
+def _obligation(state, update, layers, invariants=(), delta=1.0, init=None):
     """A real obligation for a compact loop spec — the module is built and walked
-    exactly as the pipeline does it (see :mod:`tests._fixtures`)."""
+    exactly as the pipeline does it (see :mod:`tests._fixtures`). ``invariants``
+    are certified as a Safety claim and assumed, so they must hold at ``init``."""
     named = [(f"inv{k}", (lambda st, p=p: p)) for k, p in enumerate(invariants)]
-    return candidate(loop_bench(state, update), layers, delta, named)
+    return candidate(loop_bench(state, update, init=init), layers, delta, named)
 
 
 def _decrement(layers, delta=1.0, step=1):
@@ -200,7 +201,8 @@ def test_atoms_the_lp_cannot_express_are_reported():
                      lambda c: (dsl_ite(c[0] <= c[1],
                                         dsl_ite(c[2] >= 1, c[0] + c[3], c[0] - c[3]),
                                         c[0]), c[1], c[2], c[3]),
-                     lay, invariants=invariants)
+                     lay, invariants=invariants,
+                     init=lambda: (0, 5, 1, 1))   # t set from b before the loop
     res = _certify(ob)
     assert res.verified, res.status
     assert res.unused, "the disjunctive invariants are not expressible as rows"
@@ -366,7 +368,8 @@ def test_conditional_loop_certifies():
                      lambda c: (dsl_ite(c[0] <= c[1],
                                         dsl_ite(c[2] >= 1, c[0] + c[3], c[0] - c[3]),
                                         c[0]), c[1], c[2], c[3]),
-                     layers, invariants=invariants)
+                     layers, invariants=invariants,
+                     init=lambda: (0, 5, 1, 1))   # t set from b before the loop
     assert _cell(ob).verified
 
 
@@ -604,13 +607,9 @@ def test_an_invariant_may_not_name_a_wire():
 
 
 # ---------------------------------------------------------------------------
-# Planned: invariants are proved Safety claims (strict expected failures until built)
+# Invariants are proved Safety claims
 # ---------------------------------------------------------------------------
 
-_PLANNED = "planned: invariants are proved Safety claims; knowing takes proofs"
-
-
-@pytest.mark.xfail(strict=True, reason=_PLANNED)
 def test_knowing_takes_only_proved_safety_claims():
     """The engine assumes a fact only through a proof of it. ``knowing`` takes a
     verified Proof of a Safety claim over these columns, exposes its predicate as
@@ -640,7 +639,6 @@ def test_knowing_takes_only_proved_safety_claims():
         system.knowing(elsewhere)
 
 
-@pytest.mark.xfail(strict=True, reason=_PLANNED)
 def test_a_proved_invariant_narrows_the_liveness_obligation():
     """``while (x != 0) x--`` from 5 with the rank ``relu(x)``: at an unreachable
     state ``x < 0`` the rank does not drop, so over all integers the claim fails,

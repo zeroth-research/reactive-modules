@@ -185,3 +185,10 @@ def infer_invariants(system, timeout_ms: int = 2000) -> list[Guess]:
                 changed = True
         kept = survivors
     return kept
+
+
+def as_predicates(facts):
+    """``facts`` as claim predicates ``(W, S) -> BoolRef``: what a Safety claim
+    states and what its inductive witness carries. Houdini's own shape is
+    ``state_map -> BoolRef``; the two differ only in how the columns are named."""
+    return tuple((lambda W, S, f=f: f({n: S[n] for n in S.names})) for _, f in facts)

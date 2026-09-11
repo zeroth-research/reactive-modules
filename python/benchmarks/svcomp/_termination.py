@@ -29,8 +29,9 @@ import z3
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench, INT, pair  # noqa: F401
-from ._farkas import System, decrease, read_system
-from ._property import Liveness
+from ._farkas import System, certify, decrease, inductive, read_system
+from ._invariants import as_predicates, infer_invariants
+from ._property import Liveness, Safety
 from zrth import LIA, Module, sugar
 from zrth.sugar import expr, nxt, relu
 
@@ -112,6 +113,19 @@ def system_of(bench: Bench) -> System:
     return read_system(prog, bench.state).assuming(bench.precondition)
 
 
+def prove_invariants(system: System):
+    """The invariants Houdini finds for ``system``, certified as one Safety claim
+    with themselves as the inductive witness — the same route any safety property
+    takes. ``None`` when there are none. Candidate-independent: the rank atoms add
+    no column, so this is done once per program and assumed for every rank."""
+    facts = infer_invariants(system)
+    if not facts:
+        return None
+    preds = as_predicates(facts)
+    return certify(system, Safety(lambda W, S: z3.And(*[p(W, S) for p in preds])),
+                   inductive(preds))
+
+
 def compose(system: System, layers, delta: float = 1.0):
     """``system`` with the rank composed in, and the witness that names it.
 
@@ -124,5 +138,5 @@ def compose(system: System, layers, delta: float = 1.0):
     vs_mod, vs = _v_module(system.pairs, layers, read_next=False)
     vsp_mod, vsp = _v_module(system.pairs, layers, read_next=True)
     composed = (read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names)
-                .assuming(system.precondition).knowing(system.invariants))
+                .assuming(system.precondition).knowing(*system.invariant_proofs))
     return composed, decrease(vs[1], vsp[1], delta)
