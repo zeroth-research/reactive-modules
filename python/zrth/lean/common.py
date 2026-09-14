@@ -123,9 +123,7 @@ class ConstantRegistry:
         return list(self._defs)
 
 
-def _constant_expr(
-    const_name: str, term: Term, w: Wire, constants: "ConstantRegistry"
-) -> str:
+def _constant_expr(term: Term, w: Wire, constants: "ConstantRegistry") -> str:
     # Matrix constants are interned as top-level defs; scalars are inlined as
     # a 1x1 matrix literal driven by the wire's element type (Bool/Int/Real).
     name = constants.lookup(w.id)

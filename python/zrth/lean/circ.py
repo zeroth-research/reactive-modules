@@ -327,7 +327,7 @@ def _translate_terms_circ(
                 name = itype_name(term.itype)
 
                 if is_constant_name(name):
-                    expr = _constant_expr(name, term, w, constants)
+                    expr = _constant_expr(term, w, constants)
 
                     boxes.append(f"@Box.const {dtype_to_lean_type(w)} {expr}")
                     out_ty.append(dtype_to_lean_type(w))

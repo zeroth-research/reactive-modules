@@ -163,7 +163,7 @@ def _translate_terms(
         name = itype_name(term.itype)
 
         if is_constant_name(name):
-            expr = _constant_expr(name, term, term.write[0], constants)
+            expr = _constant_expr(term, term.write[0], constants)
         elif name == "Argmax":
             arg_expr = wire_expr[term.read[0].id]
             expr = _argmax_expr(
@@ -207,9 +207,7 @@ def _product_type_scalar(wires: list[Wire]) -> str:
     return " × ".join(parts)
 
 
-def _constant_expr_scalar(
-    const_name: str, term, w: "Wire", constants: ConstantRegistry
-) -> str:
+def _constant_expr_scalar(term, w: "Wire", constants: ConstantRegistry) -> str:
     """Like _constant_expr but returns bare scalar values (no Mat wrapper)."""
     if _is_scalar_wire(w):
         # Element type (Bool/Int/Real) is taken from the wire's dtype.
@@ -279,7 +277,7 @@ def _translate_terms_scalar(
         var = f"x{var_counter}"
 
         if is_constant_name(name):
-            expr = _constant_expr_scalar(name, term, write_wire, constants)
+            expr = _constant_expr_scalar(term, write_wire, constants)
         elif name == "Argmax":
             in_wire = term.read[0]
             _check_argmax_output(dtype_shape(write_wire.dtype))
