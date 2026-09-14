@@ -71,7 +71,8 @@ def certify_one(bench):
         # the trainer verified the candidate it accepted; emit that evidence
         r = learn_ranking(bench, ranks=RANKS)
         t_train = time.perf_counter() - t0
-        res = (lc.certify(bench.name, r.system, r.proof)
+        res = (lc.certify(bench.name, r.system, r.proof,
+                          label="terminates via a ranking function")
                if r.verified
                else lc.CheckResult(bench.name, "UNVERIFIED", detail=r.reason or ""))
     except Exception as e:
