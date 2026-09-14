@@ -1,0 +1,46 @@
+"""LeikeHeizmann-TACAS2014-Ex1 — if/else body branching on a second variable.
+
+    int q, y;
+    q = __VERIFIER_nondet_int();
+    y = __VERIFIER_nondet_int();
+    while (q > 0) {
+        if (y > 0) { q = q - y - 1; }
+        else       { q = q + y - 1; }
+    }
+"""
+
+from __future__ import annotations
+
+from zrth import LIA
+from zrth.sugar import Module, nxt, ite
+
+from .._bench import Bench, pair
+
+
+class Program(Module):
+    def init(self, extl):
+        q0, y0 = extl
+        return nxt(q0), nxt(y0)                  # q, y both nondet
+
+    def update(self, ctrl):
+        q, y = ctrl
+        guard = q > 0
+        wq, wy = q, y
+        wq = ite(wy > 0, wq - wy - 1, wq + wy - 1)   # if (y>0) q-y-1 else q+y-1
+        return ite(guard, wq, q), ite(guard, wy, y)
+
+
+def _build():
+    q, y = pair(), pair()
+    q0, y0 = pair(), pair()
+    prog = Program(theory=LIA, ctrl=(q, y), extl=(q0, y0))
+    return prog, {"q": q, "y": y}, {"q0": q0, "y0": y0}
+
+
+BENCH = Bench(
+    name="LeikeHeizmann-TACAS2014-Ex1",
+    source="LeikeHeizmann-TACAS2014-Ex1.c",
+    state=("q", "y"),
+    inputs=("q0", "y0"),
+    build=_build,
+)
