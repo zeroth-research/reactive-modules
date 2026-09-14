@@ -203,7 +203,12 @@ def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
 
     tm = cvc5.TermManager()
     env = CegarPromptEnv(ModuleSMT(tm=tm, module=module))
-    term = parse_predicate(env, property_smt)
+    # cvc5's parser raises a bare `RuntimeError` naming the token it stopped
+    # at, with no hint that the token came from `--safety`.
+    try:
+        term = parse_predicate(env, property_smt)
+    except RuntimeError as e:
+        raise ProveItError(f"--safety: cannot read `{property_smt}`: {e}") from e
     if not term.getSort().isBoolean():
         raise ProveItError(f"--safety must have sort Bool, got {term.getSort()}")
     try:

@@ -8,6 +8,7 @@ For local LLMs (Ollama, vLLM, etc.) and OpenAI-compatible providers
 import os
 
 from .cert import CertificateData
+from .common import Refused
 from .magic import TA2Magic
 
 try:
@@ -146,6 +147,18 @@ def _make_client(base_url: str | None, model: str):
         client = anthropic.Anthropic()
 
         def chat(system: str, user: str) -> str:
+            # Checked here rather than around the constructor: a CEGAR run
+            # with the invariant fixed builds a client and never calls it,
+            # and that run needs no key. Without a key the request itself
+            # fails with a TypeError about header resolution, which says
+            # nothing about the flag that needs one.
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise Refused(
+                    "ANTHROPIC_API_KEY is not set, and the default model is "
+                    "reached through the Anthropic API. Set it, or point "
+                    "--base-url at an OpenAI-compatible server (a local one "
+                    "needs no key)."
+                )
             resp = client.messages.create(
                 model=model,
                 max_tokens=1024,

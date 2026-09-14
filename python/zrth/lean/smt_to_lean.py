@@ -12,7 +12,7 @@ import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort
-from .common import _accessor, dtype_shape, _is_scalar_shape
+from .common import Refused, _accessor, dtype_shape, _is_scalar_shape
 
 
 # Binary / variadic operator maps
@@ -314,7 +314,7 @@ def _walk(
         name = t.getSymbol()
         if name in var_accessor:
             return var_accessor[name]
-        raise ValueError(
+        raise Refused(
             f"Unknown free variable `{name}` (known: {list(var_accessor)})"
         )
 

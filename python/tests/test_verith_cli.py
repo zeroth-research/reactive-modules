@@ -50,6 +50,29 @@ def test_verith_no_property():
         assert "sorry" in data
 
 
+def test_a_refusal_is_an_error_line_not_a_traceback():
+    """Every one of these is a decision the generator makes about its input,
+    and each already carries a message saying why. A traceback buries that
+    message under frames the user cannot act on."""
+    real_module = FIXTURE_DIR / "simple_env.py"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cases = [
+            # `Real` is noncomputable in Lean, so `-x` cannot print it
+            (str(real_module), "-x"),
+            # a path that is not there
+            ("/nonexistent/module.py",),
+            # a `-d` the file does not define
+            (str(COUNTER_MODULE), "-d", "no_such_function"),
+            # a state variable in a precondition, which reads inputs
+            (str(COUNTER_MODULE), "--pre", "(= s0 0)"),
+        ]
+        for case in cases:
+            r = _verith(*case, "-o", tmpdir, "-p", "Refused")
+            assert r.returncode != 0, f"{case} was accepted"
+            assert "Traceback" not in r.stderr, f"{case} crashed:\n{r.stderr}"
+            assert "error:" in r.stderr, f"{case} said nothing:\n{r.stderr}"
+
+
 def test_a_stale_bridge_is_not_left_for_lake_to_build():
     """`Certificate/` is globbed by the lakefile, so every file in it is
     built. Only `--fbk-proveit` writes `Equivalence.lean`, and it is about

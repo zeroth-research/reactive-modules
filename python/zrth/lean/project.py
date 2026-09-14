@@ -5,6 +5,7 @@ copy template library files, and generate a diagram Lean file.
 
 from zrth.lean.common import (
     LeanContext,
+    Refused,
     dtype_shape,
     _flat_element_type,
 )
@@ -308,8 +309,8 @@ def _token_count(wire: Wire) -> int:
     raise ValueError("Unsupported DType for token count")
 
 
-def _unsupported_io_sort(elem: str, wire: Wire) -> ValueError:
-    return ValueError(
+def _unsupported_io_sort(elem: str, wire: Wire) -> Refused:
+    return Refused(
         f"generate_main_lean: no Lean IO for element type {elem} "
         f"(wire dtype {wire.dtype}); `Real` is noncomputable in Lean, so it "
         "cannot be parsed or printed by the generated executable"

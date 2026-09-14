@@ -16,6 +16,7 @@ except ImportError:
 from zrth import Module
 
 from .cert import CertificateData
+from .common import Refused
 from .magic import TA2Magic
 from .magic_ai import _make_client, _describe_preconditions
 from .smt_module import ModuleSMT
@@ -121,6 +122,10 @@ class TA2MagicCEGAR(TA2Magic):
                     fixed_ranking_src=fixed_ranking,
                     kind=cd.kind,
                 )
+            except Refused:
+                # Not a reply to be parsed: the run cannot be made at all,
+                # and retrying it five times only hides the reason.
+                raise
             except ValueError as e:
                 print(f"  parse error: {e}")
                 feedback = f"Your reply could not be parsed: {e}"
