@@ -4,6 +4,7 @@
     python -m benchmarks.svcomp ndecr            # only names containing 'ndecr'
     python -m benchmarks.svcomp --lean           # also emit and kernel-check proofs
     python -m benchmarks.svcomp --lean --jobs 4  # with four benchmarks in flight
+    python -m benchmarks.svcomp --export out/     # write each proof as its own project
 
 Without ``--lean`` each DSL-encoded program gets a trained neural ranking
 function certified over the composed module, summarised as
@@ -15,6 +16,10 @@ verifier, its certificates are emitted as a Lean proof under
 substrate. The summary counts ``CHECKED`` — programs whose termination the Lean
 kernel verified — and breaks the rest down by outcome (see :mod:`._lean_check`).
 Requires ``lake`` on PATH.
+
+With ``--export DIR`` each verified proof is written to ``DIR/<name>/`` as a Lean
+project that builds on its own — the proof, the substrate libraries it imports, a
+lakefile and the toolchain file — and nothing is compiled.
 
 Faithfulness of the encodings against the C sources is a separate check::
 
@@ -31,6 +36,7 @@ import sys
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from . import discover
 from ._train import learn_ranking
@@ -138,6 +144,25 @@ def _run_lean(benches, jobs: int) -> int:
     return tally["CHECKED"]
 
 
+def _run_export(benches, out_dir: Path) -> int:
+    """Train and verify each benchmark, then write its proof as a standalone
+    project under ``out_dir``. Nothing is compiled here."""
+    from . import _lean_check as lc
+
+    written = 0
+    for bench in benches:
+        r = learn_ranking(bench)
+        if not r.verified:
+            print(f"unverified {bench.name}: {r.reason or ''}", flush=True)
+            continue
+        path = lc.export_project(bench.name, r.system, r.proof, out_dir,
+                                 label="terminates via a ranking function")
+        written += 1
+        print(f"exported   {bench.name} -> {path}", flush=True)
+    print(f"\n{written}/{len(benches)} exported")
+    return written
+
+
 def _run_worker(name: str) -> int:
     """One benchmark, one JSON line on stdout. Invoked by :func:`_spawn`."""
     match = [b for b in discover() if b.name == name]
@@ -163,6 +188,15 @@ def main(argv: list[str]) -> int:
             return 2
         del argv[i:i + 2]
 
+    export_to = None
+    if "--export" in argv:
+        i = argv.index("--export")
+        if i + 1 >= len(argv) or argv[i + 1].startswith("--"):
+            print("--export needs a directory")
+            return 2
+        export_to = Path(argv[i + 1])
+        del argv[i:i + 2]
+
     flags = {a for a in argv if a.startswith("--")}
     unknown = flags - {"--lean", WORKER_FLAG}
     if unknown:
@@ -180,7 +214,10 @@ def main(argv: list[str]) -> int:
         return 1
 
     t0 = time.perf_counter()
-    n = (_run_lean(benches, jobs) if "--lean" in flags else _run_plain(benches))
+    if export_to is not None:
+        n = _run_export(benches, export_to)
+    else:
+        n = (_run_lean(benches, jobs) if "--lean" in flags else _run_plain(benches))
     if n < 0:
         return 1
     print(f"({time.perf_counter() - t0:.1f}s)")
