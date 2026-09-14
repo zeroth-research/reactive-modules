@@ -332,6 +332,39 @@ def test_always_on_a_real_benchmark_kernel_checks():
         shutil.rmtree(out, ignore_errors=True)
 
 
+def test_an_exported_project_carries_everything_it_imports():
+    """``export_project`` writes a directory that stands alone: the proof, a copy
+    of every substrate library the proof imports, a lakefile naming them, and the
+    toolchain file."""
+    import tempfile
+    from benchmarks.svcomp import _lean_check as lc
+
+    system, res = _decrement_obligation()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = lc.export_project("decrement", system, res, Path(tmp))
+        names = {p.name for p in out.iterdir()}
+        assert {"Program.lean", "lakefile.toml", "lean-toolchain"} <= names
+        assert {f"{lib}.lean" for lib in lc.SUBSTRATE} <= names
+        src = (out / "Program.lean").read_text()
+        imports = {l.split()[1] for l in src.splitlines() if l.startswith("import ")}
+        assert imports <= set(lc.SUBSTRATE), f"imports nothing carries: {imports}"
+        lakefile = (out / "lakefile.toml").read_text()
+        for lib in lc.SUBSTRATE + ("Program",):
+            assert f'name = "{lib}"' in lakefile, lib
+
+
+@pytest.mark.skipif(shutil.which("lake") is None, reason="no Lean toolchain")
+def test_an_exported_project_builds_on_its_own(tmp_path):
+    """End-to-end: the exported project compiles from scratch, outside this
+    package, with nothing but the toolchain."""
+    from benchmarks.svcomp import _lean_check as lc
+
+    system, res = _decrement_obligation()
+    out = lc.export_project("decrement", system, res, tmp_path)
+    outcome, detail = lc.build_project(out)
+    assert outcome == "CHECKED", detail
+
+
 def _compiles(name: str, src: str) -> None:
     """Compile an emitted proof against the substrate and assert it kernel-checks."""
     out = LEAN_DIR / "proofs" / f"_test_{name}"
