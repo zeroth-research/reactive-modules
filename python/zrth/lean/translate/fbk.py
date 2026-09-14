@@ -229,16 +229,6 @@ def _slot_accessors(ctrl_next, binder: str = "state") -> dict[str, list[str]]:
     return out
 
 
-# Kept alive for the process's lifetime: the cvc5 bindings segfault at
-# shutdown when a TermManager is collected out of order with the solvers and
-# terms minted from it, and a `verith` run builds one of these per model.
-#
-# Per *model*, not per caller: `check_na_supported` hands its encoding back
-# and the emissions are written from it, so the list holds one entry where
-# it used to hold five (measured, one-wire counter).
-_LIVE: list = []
-
-
 def _scalar_element(tm, term, shape, i: int, j: int):
     """Element `[i][j]` of a matrix-valued term, as a *scalar* term.
 
@@ -297,9 +287,10 @@ def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
     """`(update, init)` Lean text for every state slot, in slot order.
 
     One cvc5 `TermManager` and `Solver` per call, both retained for the
-    process's lifetime (`_LIVE`), so the callers go through
+    process's lifetime (`smt_module.keep_alive`), so the callers go through
     :func:`check_na_supported` and pass the result along rather than calling
-    this again.
+    this again. Retained per *model*, not per caller: one entry where it
+    used to be five (measured, one-wire counter).
 
     The transition comes from `smt_encode` -- the encoder `--pre-check` and
     `--infer ai-cegar` already run on, so the model `lean2vmt` reads and the
@@ -310,14 +301,14 @@ def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
     import cvc5
 
     from ..smt_encode import wire_shape
-    from ..smt_module import ModuleSMT
+    from ..smt_module import ModuleSMT, keep_alive
     from ..smt_to_lean import smt_to_lean_bool
 
     tm = cvc5.TermManager()
     msmt = ModuleSMT(tm=tm, module=ctx.module)
     solver = cvc5.Solver(tm)
     solver.setLogic("ALL")
-    _LIVE.append((tm, msmt, solver))
+    keep_alive(tm, msmt, solver)
 
     acc = _slot_accessors(ctx.ctrl_next)
     layout = flat_layout(ctx.ctrl_next)

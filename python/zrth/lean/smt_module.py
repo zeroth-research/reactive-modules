@@ -22,6 +22,22 @@ from zrth import Wire, Var, Module, X
 from .smt_encode import translate_terms, wire_sort
 
 
+# Everything cvc5 mints, kept alive for the process's lifetime: the bindings
+# segfault at shutdown when a `TermManager` is collected out of order with
+# the solvers and terms made from it, and a GC cycle collects the two
+# together in arbitrary order. One list, here, because the ordering it
+# defends against is global -- a per-module list only orders the objects
+# inside it, so two of them (`smt_query`'s queries and the fbk route's
+# encodings) could still be finalised in the wrong order relative to each
+# other. A `verith` run keeps a handful of entries and then exits.
+_LIVE: list = []
+
+
+def keep_alive(*objs: object) -> None:
+    """Retain cvc5 objects until the process exits. See `_LIVE`."""
+    _LIVE.extend(objs)
+
+
 @dataclass
 class ModuleSMT:
     tm: cvc5.TermManager

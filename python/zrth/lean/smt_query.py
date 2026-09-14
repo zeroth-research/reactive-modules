@@ -107,10 +107,6 @@ class Verdict:
 # ══════════════════════════════════════════════════════════════════════
 
 
-# See `ModuleQueries.__init__`.
-_LIVE: list["ModuleQueries"] = []
-
-
 class ModuleQueries:
     """A cvc5 view of one module together with its certificate predicates.
 
@@ -122,7 +118,7 @@ class ModuleQueries:
     def __init__(self, module, cert_data):
         import cvc5
 
-        from .smt_module import ModuleSMT
+        from .smt_module import ModuleSMT, keep_alive
         from .smt_prompt import CegarPromptEnv, parse_predicate
 
         self.cvc5 = cvc5
@@ -145,13 +141,12 @@ class ModuleQueries:
         )
         self.init_pre = opt(cert_data.init_pre)
         self.update_pre = opt(cert_data.update_pre)
-        # Keep every solver alive: the cvc5 bindings segfault at shutdown if a
-        # TermManager is collected out of order with the solvers and terms
-        # minted from it. `_LIVE` extends that to the whole instance, since a
-        # GC cycle would otherwise collect the two together in arbitrary
-        # order. A `verith` run builds a handful of these and then exits.
+        # Retained whole, solvers included: `smt_module.keep_alive` owns the
+        # shutdown-ordering workaround for every cvc5 object this package
+        # mints, and the instance is what ties this term manager to the
+        # solvers built from it.
         self._solvers: list = []
-        _LIVE.append(self)
+        keep_alive(self)
 
     @classmethod
     def build(cls, module, cert_data) -> "ModuleQueries | None":
