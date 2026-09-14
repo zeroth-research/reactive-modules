@@ -64,6 +64,8 @@ fragment is chosen to be what `lean2vmt` reads.  Three things follow:
   could drift apart.
 """
 
+from typing import NamedTuple
+
 from zrth.lean.common import (
     LeanContext,
     _flat_element_type,
@@ -75,6 +77,20 @@ from zrth.lean.translate._skeleton import RelBlock, RelSyntax, emit_rel_block
 
 class NAUnsupported(Exception):
     """The module cannot be expressed in the shape `lean2vmt` reads."""
+
+
+class SlotBodies(NamedTuple):
+    """The Lean text of every state slot, in slot order: `(update, init)`.
+
+    What `_slot_bodies` builds and what `check_na_supported` hands back --
+    the check *is* the encoding (see the comment on it), so the bodies it
+    printed to decide the question are the bodies the emission wants, and
+    returning them is what keeps one cvc5 encoding per module instead of
+    one per caller.
+    """
+
+    update: list[str]
+    init: list[str]
 
 
 # What the model imports -- and, because the driver builds exactly this
@@ -106,9 +122,17 @@ NA_ELEMENT_TYPES = frozenset({"Int", "Bool"})
 # printing it. Two consequences: `Linear` and the rest come through as the
 # scalar arithmetic they expand to, and an op neither component handles
 # cannot reach the file at all. `check_na_supported` therefore *does* the
-# translation and reports whatever it raises.
-def check_na_supported(ctx: LeanContext, simplify: bool = True) -> None:
-    """Raise :class:`NAUnsupported` unless `ctx` fits the NA encoding.
+# translation and reports whatever it raises -- and hands the result back,
+# so that translation is the one the emission uses rather than one thrown
+# away and repeated.
+def check_na_supported(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
+    """`ctx`'s slot bodies; :class:`NAUnsupported` if it has no NA encoding.
+
+    Both emissions on this route want exactly those bodies --
+    `atom_to_lean_na` for the model, `atom_to_lean_fbk_bridge` for the proof
+    that the model is the module -- so they take them rather than ask for
+    them again. A caller that only wants the question answered can discard
+    the answer.
 
     Every restriction here is one `lean2vmt`/`vmt2lean.py` cannot express;
     letting one through would produce a VMT model that parses but does not
@@ -164,7 +188,7 @@ def check_na_supported(ctx: LeanContext, simplify: bool = True) -> None:
     # SMT kind. Cheap -- the same work the emission does, on modules small
     # enough that `lake` dominates either way.
     try:
-        _slot_bodies(ctx, simplify)
+        return _slot_bodies(ctx, simplify)
     except NAUnsupported:
         raise
     except Exception as e:
@@ -208,6 +232,10 @@ def _slot_accessors(ctrl_next, binder: str = "state") -> dict[str, list[str]]:
 # Kept alive for the process's lifetime: the cvc5 bindings segfault at
 # shutdown when a TermManager is collected out of order with the solvers and
 # terms minted from it, and a `verith` run builds one of these per model.
+#
+# Per *model*, not per caller: `check_na_supported` hands its encoding back
+# and the emissions are written from it, so the list holds one entry where
+# it used to hold five (measured, one-wire counter).
 _LIVE: list = []
 
 
@@ -265,8 +293,13 @@ def _simplify(solver, term, enabled: bool = True):
     return solver.simplify(term)
 
 
-def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> tuple[list[str], list[str]]:
+def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
     """`(update, init)` Lean text for every state slot, in slot order.
+
+    One cvc5 `TermManager` and `Solver` per call, both retained for the
+    process's lifetime (`_LIVE`), so the callers go through
+    :func:`check_na_supported` and pass the result along rather than calling
+    this again.
 
     The transition comes from `smt_encode` -- the encoder `--pre-check` and
     `--infer ai-cegar` already run on, so the model `lean2vmt` reads and the
@@ -303,7 +336,7 @@ def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> tuple[list[str], li
         init = _simplify(solver, _scalar_element(tm, ini[i], shape, r, c), simplify)
         update_text.append(smt_to_lean_bool(upd, acc))
         init_text.append(smt_to_lean_bool(init, acc))
-    return update_text, init_text
+    return SlotBodies(update_text, init_text)
 
 
 def atom_to_lean_na(
@@ -312,19 +345,27 @@ def atom_to_lean_na(
     *,
     module_name: str = "",
     simplify: bool = True,
+    bodies: SlotBodies | None = None,
 ) -> str:
     """Emit the whole NA model file for `ctx`.
 
     `property_lean` is a Bool-valued Lean expression over the same
     `(var_i state)` bindings this encoding uses — see
-    ``smt_to_lean.smt_to_lean_bool``.  Call :func:`check_na_supported` first.
+    ``smt_to_lean.smt_to_lean_bool``.
+
+    `bodies` is what :func:`check_na_supported` returned for this `ctx` and
+    `simplify`; passing it is what keeps a route that has already checked
+    the module from encoding it into cvc5 a second time.  Left out, the
+    check runs here -- so a caller that has not checked still cannot emit an
+    unsupported module.
     """
-    check_na_supported(ctx, simplify)
+    if bodies is None:
+        bodies = check_na_supported(ctx, simplify)
+    update_text, init_text = bodies
 
     layout = flat_layout(ctx.ctrl_next)
     n = layout.total
     slot_ty = layout.element_types()
-    update_text, init_text = _slot_bodies(ctx, simplify)
 
     subject = f"reactive module `{module_name}`" if module_name else "a reactive module"
     how = "" if simplify else " --fbk-simplify none"

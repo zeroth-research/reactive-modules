@@ -48,6 +48,7 @@ from .project import PROVEIT_DIR, na_module_name, stream
 from .translate.fbk import (
     NA_IMPORTS,
     NAUnsupported,
+    SlotBodies,
     atom_to_lean_na,
     check_na_supported,
 )
@@ -158,17 +159,24 @@ def resolve_ic3ia(spec: str | None) -> str | None:
     )
 
 
-def check_module(module, simplify: bool = True) -> None:
-    """Raise `ProveItError` unless the NA encoding can express `module`.
+def check_module(module, simplify: bool = True) -> SlotBodies:
+    """The module's slot bodies; `ProveItError` if the NA encoding has none.
 
     Called before anything is generated as well as inside :func:`run`: a
     module this route cannot encode would otherwise be met first by
     `create_project`, which fails about the Lean *project* -- a traceback
     out of the functional encoder, for an op that has nothing to do with
     the certificate route the user asked for.
+
+    Answering the question means encoding the module into cvc5, so the
+    answer is handed back and carried to the two files written from it
+    (:func:`write_na_model`, :func:`write_equivalence`).  `main.py`'s call,
+    before the project is generated, is then the only encoding a whole run
+    makes: five of them on a one-wire counter before this was threaded
+    through, one now.
     """
     try:
-        check_na_supported(LeanContext(module), simplify)
+        return check_na_supported(LeanContext(module), simplify)
     except NAUnsupported as e:
         raise ProveItError(f"--fbk-proveit: {e}") from e
 
@@ -210,6 +218,7 @@ def write_na_model(
     ctx: LeanContext,
     property_lean: str,
     simplify: bool = True,
+    bodies: SlotBodies | None = None,
 ) -> Path:
     """Write the NA model `proveit.py` consumes and return its path.
 
@@ -224,7 +233,11 @@ def write_na_model(
     model = out_dir / f"{na_module_name(project_name)}.lean"
     model.write_text(
         atom_to_lean_na(
-            ctx, property_lean, module_name=project_name, simplify=simplify
+            ctx,
+            property_lean,
+            module_name=project_name,
+            simplify=simplify,
+            bodies=bodies,
         )
     )
     print(f"Wrote NA model for proveit.py: {model}")
@@ -293,8 +306,15 @@ def run(
     python: str | None = None,
     simplify: bool = True,
     equivalence: bool = True,
+    bodies: SlotBodies | None = None,
 ) -> Path:
-    """Run the whole route and return the installed certificate's path."""
+    """Run the whole route and return the installed certificate's path.
+
+    `bodies` is what `check_module` returned to a caller that has already
+    made the check -- `main.py` does, before it generates the project.  The
+    check is repeated here when it is left out, because `run` is also called
+    on its own.
+    """
     python = python or sys.executable
     root = resolve_project(ltl_project)
     # Resolve before anything expensive: a bad --ic3ia would otherwise
@@ -303,11 +323,12 @@ def run(
     check_toolchain(python)
 
     ctx = LeanContext(module)
-    check_module(module, simplify)
+    if bodies is None:
+        bodies = check_module(module, simplify)
 
     property_lean = property_to_bool_lean(module, property_smt)
     model = write_na_model(
-        project_dir, project_name, ctx, property_lean, simplify=simplify
+        project_dir, project_name, ctx, property_lean, simplify, bodies
     )
 
     targets = " ".join(_LAKE_TARGETS)
@@ -336,7 +357,9 @@ def run(
     print(f"Installed certificate: {installed}")
 
     if equivalence:
-        write_equivalence(project_dir, project_name, ctx, simplify=simplify)
+        write_equivalence(
+            project_dir, project_name, ctx, simplify=simplify, bodies=bodies
+        )
     return installed
 
 
@@ -346,6 +369,7 @@ def write_equivalence(
     ctx: LeanContext,
     *,
     simplify: bool = True,
+    bodies: SlotBodies | None = None,
 ) -> Path:
     """Write the proof that the model is the module, and make lake see it.
 
@@ -361,7 +385,10 @@ def write_equivalence(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
         atom_to_lean_fbk_bridge(
-            ctx, na_module=na_module_name(project_name), simplify=simplify
+            ctx,
+            na_module=na_module_name(project_name),
+            simplify=simplify,
+            bodies=bodies,
         )
     )
     root = project_dir / "Certificate.lean"

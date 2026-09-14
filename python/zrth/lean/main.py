@@ -609,11 +609,17 @@ def main():
     # Left until `run`, a module the NA encoding cannot express is met first
     # by `create_project` -- which fails about the functional encoding, in a
     # traceback, for a route that was never going to use it.
+    #
+    # Making the check *is* encoding the module into cvc5, so what it
+    # answered with is kept and handed to `run_proveit` below: the NA model
+    # and the bridge are written from it rather than from two more
+    # encodings of the same module.
+    na_bodies = None
     if args.fbk_proveit:
         from .fbk_proveit import ProveItError, check_module
 
         try:
-            check_module(module, args.fbk_simplify == "cvc5")
+            na_bodies = check_module(module, args.fbk_simplify == "cvc5")
         except ProveItError as e:
             raise SystemExit(f"error: {e}") from e
 
@@ -712,6 +718,7 @@ import {out.stem}Scalar
                 ic3ia=args.ic3ia,
                 simplify=args.fbk_simplify == "cvc5",
                 equivalence=args.fbk_equiv == "lean",
+                bodies=na_bodies,
             )
         except ProveItError as e:
             raise SystemExit(f"error: {e}") from e

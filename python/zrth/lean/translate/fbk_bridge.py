@@ -44,7 +44,7 @@ from zrth.lean.common import (
     flat_layout,
 )
 from zrth.lean.native import _product_type
-from zrth.lean.translate.fbk import _slot_bodies
+from zrth.lean.translate.fbk import SlotBodies, check_na_supported
 
 # The certificate's own `simp_mat` arsenal. Without it a `Linear` arrives as
 # `matVecAffine 2 [[1, 0], [0, 1]] [0, 1] (fun i j => match i, j with ...)`
@@ -85,15 +85,21 @@ def atom_to_lean_fbk_bridge(
     *,
     na_module: str,
     simplify: bool = True,
+    bodies: SlotBodies | None = None,
 ) -> str:
     """Emit the bridge file for `ctx`.
 
     `na_module` is the Lean module name of the NA model (`project.na_module_name`).
+
+    `bodies` are the slot texts the model was written from -- the same ones,
+    because the theorem below is about *that* file. Pass what
+    `check_na_supported` returned; left out, it is asked again, which encodes
+    the module into cvc5 a second time.
     """
     layout = flat_layout(ctx.ctrl_next)
     n = layout.total
     ty = layout.element_types()
-    upd, _init = _slot_bodies(ctx, simplify)
+    upd = (bodies if bodies is not None else check_na_supported(ctx, simplify)).update
 
     binders = " ".join(f"(x{k} : {ty[k]})" for k in range(n))
     args = " ".join(f"x{k}" for k in range(n))
