@@ -5,7 +5,7 @@ verification's Farkas certificates and compiles it against the vendored
 substrate, returning one :class:`CheckResult`. The outcome separates the ways a
 proof can fail to compile, because they call for different work:
 
-  ``CHECKED``    the proof compiled: the program's termination is kernel-verified
+  ``CHECKED``    the proof compiled: the claim about the module is kernel-verified
   ``HEARTBEAT``  the elaborator hit its heartbeat budget (coverage ``omega`` cost)
   ``SCALE``      the elaborator hit its recursion depth (term too large)
   ``OMEGA``      a goal ``omega`` cannot prove — the coverage cells do not tile
@@ -93,11 +93,12 @@ def _first_error(out: str) -> str:
     return out.strip().splitlines()[0] if out.strip() else ""
 
 
-def certify(name: str, system, result, timeout: float = CHECK_TIMEOUT) -> CheckResult:
+def certify(name: str, system, result, timeout: float = CHECK_TIMEOUT,
+            label: str | None = None) -> CheckResult:
     """Emit the proof for ``result`` — what a ``certify`` run established on
     ``system`` — and compile it."""
     t0 = time.perf_counter()
-    out = write_program_proof(name, system, result, LEAN_DIR / "proofs")
+    out = write_program_proof(name, system, result, LEAN_DIR / "proofs", label)
     outcome, detail = check_file(out, timeout)
     paths = result.certificates
     return CheckResult(name, outcome, n_paths=len(paths),

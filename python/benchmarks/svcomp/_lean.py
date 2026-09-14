@@ -1,29 +1,38 @@
 """Emit a kernel-checkable Lean proof from a decision procedure's certificates.
 
 Consumes the :class:`._farkas.Proof` a ``certify`` run returns (plus the
-:class:`._farkas.System` it was run on) and writes ONE Lean file
-against the vendored ``lean/`` substrate (``Coverage``/``Net``/``Termination``).
-The file follows the rule's shape:
+:class:`._farkas.System` it was run on) and writes ONE Lean file against the
+vendored ``lean/`` substrate. The file mirrors the procedure's three axes:
 
-  * every network a named wire is read through, once, with its structural
-    non-negativity ``V_j_nonneg``;
-  * per affine path (in-loop branching is *path-split*: the body's nested
-    ``ite``s are expanded into affine paths by :func:`._farkas.expand_cases`, one
-    namespace each): ``trans`` and ``post_state``; the regions — one per mode
-    pattern, partitioning the guard — and ``covered``, the CEGAR coverage
-    guarantee, by ``omega`` over a sign-literal decision tree; per device its
-    pre-activations and its exact collapse per region; per region and per
-    disjunct of the
-    rule's negation the Farkas system ``A``/``b``/``y``, its ``farkas_sound``
-    infeasibility and the ``refute`` lemma (via the substrate's
-    ``refute_bridge``); the rule's formula ``ok`` and ``step_ok``, which puts the
-    bounds, collapses and refutations together by ``omega``; and
-    ``Step``/``RawStep``/``consecution``;
-  * the composition the claim needs: ranks conclude ``no_infinite_run``, citing
-    each assumed Safety proof's ``always_holds`` for the invariant along the run
-    through ``lexDec`` and ``no_infinite_run_lex``; an invariant concludes
-    ``always_holds``, with ``initiation`` and per-path ``consecution`` carrying the
-    invariant along any run and ``step_ok`` closing the predicate at each state.
+  * **the module**, once, from the system alone — ``update``, each column's
+    next value rendered from the transition as read (an ``ite`` tree over
+    affine leaves), ``init_pre``, the entry states, and ``RM``, the two as a
+    ``ReactiveModule``: ``init`` and ``update`` with a precondition each, whose
+    runs are the traces every claim below is stated over;
+  * **one namespace per claim** — the assumed Safety proofs first, ``claim0``,
+    ``claim1``, …, the main claim last — each stating what it proves over
+    ``RM.traces`` in LTL from the claim alone: ``G (AP pred)`` for a Safety
+    claim over the state, ``G (APₛ pred)`` over the step, ``G (F (Not (APₛ
+    domain)))`` for a Liveness claim, the run leaving its domain again and
+    again;
+  * **the witness's proof** of that statement, and the witness's own material:
+    every network a wire it names is read through, with that network's
+    structural non-negativity ``V_j_nonneg``, and each rank ``R_d``; per affine
+    path (branching is path-split by :func:`._farkas.expand_cases`, one
+    namespace each) ``trans`` and ``post_state``, the regions and ``covered``,
+    per device its collapse per region, per region and disjunct the Farkas
+    system with its ``farkas_sound`` infeasibility and ``refute``, then ``ok``
+    and ``step_ok``, ``Step`` and (under ranks) ``lex_step``, ``refines`` — on
+    the path's guard the module's transition IS this path's body — and (under
+    an inductive invariant) ``consecution``; per claim ``some_path`` — from an
+    invariant state the paths cover the module's rounds inside the domain — and
+    the rule the witness names: :class:`._farkas.Inductive` proves
+    ``own_initial``, ``own_step``, ``invariant`` (by the substrate's
+    assume-guarantee ``StateSet_isInvariant_relative``), ``pred_holds``,
+    ``pred_invariant`` and concludes ``holds`` through ``rule_globally`` or
+    ``rule_globally_step``; :class:`._farkas.LexDecrease` proves ``invariant``,
+    ``hpos``, ``hrank`` and concludes it through ``rule_buchi_lex``. Either
+    cites the earlier claims' ``pred_invariant`` for what it assumes.
 """
 from __future__ import annotations
 
@@ -33,8 +42,8 @@ from pathlib import Path
 
 import z3
 
-from ._farkas import (CellCert, Unsupported, _find_ite_cond, _flatten_and,
-                      affine_coeffs, entry_predicate, reading, resolve)
+from ._farkas import (CellCert, Inductive, LexDecrease, Unsupported, _find_ite_cond,
+                      _flatten_and, affine_coeffs, entry_predicate, reading, resolve)
 from ._property import Liveness
 
 
@@ -121,8 +130,13 @@ _CMP = {z3.Z3_OP_GE: "≥", z3.Z3_OP_LE: "≤", z3.Z3_OP_GT: ">",
 
 
 class _Drop(Exception):
-    """Raised when a guard/invariant atom is not integer-linear (soundly skipped:
-    dropping a conjunct only weakens ``trans``, an over-approximation)."""
+    """Raised when a conjunct is not integer-linear. Every use of
+    :func:`_render_conjuncts` is a place where dropping one is sound because it
+    only weakens what is being rendered: a weaker ``trans`` or ``invariants`` is
+    an over-approximation the proof still closes, and a weaker ``init_pre``
+    admits more traces, so what is proved about them is stronger. The module's
+    transition is NOT rendered this way — :func:`_term_str` refuses what it
+    cannot render exactly."""
 
 
 def _z3_prop(a, syms, terms=None) -> str:
@@ -667,7 +681,7 @@ def _formula_prop(formula, s_syms, wire_terms: dict) -> str:
 
 
 def _emit_direct_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
-                      consecution: bool) -> str:
+                      depths, consecution: bool) -> str:
     """A path that names no device: one region, so ``step_ok`` is a linear
     entailment over the columns and ``omega`` closes it outright — the same proof
     ``consecution`` has always used — with no certificate to elaborate."""
@@ -687,20 +701,24 @@ def _emit_direct_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
              f"  simp only [ok, trans, invariants, true_and, and_true, true_implies] at *\n"
              f"  omega",
              f"def Step (a b : Vector {n} Int) : Prop :=\n"
-             f"  trans a ∧ invariants a ∧ post_state a = b"]
-    parts += _emit_rawstep_consecution(n, trivial_inv, consecution)
+             f"  trans a ∧ invariants a ∧ post_state a = b",
+             _emit_refines(n, depths)]
+    if consecution:
+        parts.append(_emit_consecution(n, trivial_inv))
     return f"namespace {path}\n\n" + "\n\n".join(parts) + f"\n\nend {path}"
 
 
 def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
-               invariants, consecution: bool = True) -> str:
+               invariants, depths, consecution: bool = True) -> str:
     """One affine path: its Farkas systems, ``trans`` and ``post_state``, the
     regions' signs and ``covered``, each device's activations with its bounds or
     collapses, the ``refute`` lemmas, ``ok`` and ``step_ok``, ``Step`` (and
-    ``lex_step`` under a ranking rule), ``RawStep`` and ``consecution``. A path
-    naming no device takes :func:`_emit_direct_path` instead."""
+    ``lex_step`` under a ranking rule), ``refines`` and, for a claim carrying
+    its own invariant, ``consecution``. A path naming no device takes
+    :func:`_emit_direct_path` instead."""
     if not res.devices:
-        return _emit_direct_path(path, pcert, res, system, s_syms, trivial_inv, consecution)
+        return _emit_direct_path(path, pcert, res, system, s_syms, trivial_inv, depths,
+                                 consecution)
     n = len(s_syms)
     regions = _regions(pcert.cells)
     reps = [cs[0] for cs in regions]
@@ -787,358 +805,422 @@ def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
             f"  unfold ok at hok\n"
             f"  simp only [lexDec, {ranks}]\n"
             f"  omega")
-    parts += _emit_rawstep_consecution(n, trivial_inv, consecution)
+    parts.append(_emit_refines(n, depths))
+    if consecution:
+        parts.append(_emit_consecution(n, trivial_inv))
     return f"namespace {path}\n\n" + "\n\n".join(parts) + f"\n\nend {path}"
 
 
 def _inv_proof(trivial_inv: bool, unfold: str) -> str:
-    """Tactic closing an invariant lemma (``initiation`` / ``consecution``):
-    ``trivial`` for the ``True`` invariant, else ``omega`` on the linear
-    entailment left by unfolding ``unfold``."""
+    """Tactic closing :func:`_emit_consecution`'s goal: ``trivial`` for the
+    ``True`` invariant, else ``omega`` on the linear entailment left by
+    unfolding ``unfold``."""
     if trivial_inv:
         return "  trivial"
     return f"  simp only [{unfold}] at *\n  omega"
 
 
-def _emit_rawstep_consecution(n: int, trivial_inv: bool, consecution: bool = True) -> list[str]:
-    """The path's transition relation and, when the claim derives its own
-    invariant along the run, the consecution lemma that carries it one step. A
-    claim that cites an assumed Safety proof for the invariant needs no
-    consecution of its own."""
-    out = [f"/-- One iteration of this path: the guard and the body. -/\n"
-           f"def RawStep (a b : Vector {n} Int) : Prop :=\n"
-           f"  trans a ∧ post_state a = b"]
-    if consecution:
-        out.append(f"/-- Consecution: the body preserves the invariant on this path. -/\n"
-                   f"theorem consecution (s : Vector {n} Int)\n"
-                   f"    (hg : trans s) (hinv : invariants s) :\n"
-                   f"    invariants (post_state s) := by\n"
-                   f"{_inv_proof(trivial_inv, 'trans, invariants, post_state')}")
-    return out
+def _emit_consecution(n: int, trivial_own: bool) -> str:
+    """Consecution for the claim's own invariant: from a state satisfying every
+    invariant (own and assumed) the path's body keeps the own part. The
+    assumed part is not re-proved — it is cited from its own proof."""
+    return (f"/-- Consecution: the body preserves the claim's own invariant on this path. -/\n"
+            f"theorem consecution (s : Vector {n} Int)\n"
+            f"    (hg : trans s) (hinv : invariants s) :\n"
+            f"    own (post_state s) := by\n"
+            f"{_inv_proof(trivial_own, 'trans, invariants, own, post_state')}")
 
 
 # ---------------------------------------------------------------------------
-# Whole-program compositions
+# The module, once: its transition as read, as a ReactiveModule
 # ---------------------------------------------------------------------------
 
-def _hinv_induction(path_names) -> str:
-    """``have hInv : ∀ i, invariants (f i)`` along a run of ``RawStep``:
-    ``initiation`` at the entry state, the taken path's ``consecution`` at each
-    step. Shared by every whole-program theorem, whatever the property."""
-    if len(path_names) == 1:
-        p = path_names[0]
-        cons_case = (f"      obtain ⟨hg, hp⟩ := hstep k\n"
-                     f"      rw [← hp]\n"
-                     f"      exact {p}.consecution (f k) hg ih")
+def _ite_count(e) -> int:
+    """How many ``ite`` nodes a term has — the rounds of ``split`` that expose
+    every branch of it."""
+    here = 1 if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE else 0
+    return here + sum(_ite_count(c) for c in e.children())
+
+
+def _term_str(e, syms) -> str:
+    """A z3 integer term over the columns as a Lean ``Int`` term: an ``ite``
+    tree whose conditions are linear and whose leaves are affine — the
+    transition as read. Anything else is refused by name: the module's
+    definition is rendered exactly or not at all."""
+    if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE:
+        try:
+            cond = _z3_prop(e.arg(0), syms)
+        except _Drop as exc:
+            raise Unsupported(f"a transition condition is not linear: {exc}")
+        return (f"(if {cond} then {_term_str(e.arg(1), syms)} "
+                f"else {_term_str(e.arg(2), syms)})")
+    try:
+        coeffs, const = affine_coeffs(e, syms)
+    except ValueError as exc:
+        raise Unsupported(f"a transition term is not affine: {exc}")
+    return _affine_str(coeffs, const)
+
+
+def _emit_module(system, s_syms) -> str:
+    """``update``, ``init_pre`` and ``RM``: the module from the system alone.
+
+    The entry state is nondeterministic, so it is the module's input at entry:
+    ``Extl`` is the state type, ``init`` the identity, ``init_pre`` the
+    precondition. After entry the module reads nothing, so ``update`` ignores
+    its input and ``update_pre`` is ``True``."""
+    n = len(s_syms)
+    arms = "\n".join(f"    | {_fin(k)} => {_term_str(e, s_syms)}"
+                     for k, e in enumerate(system.sp_syms))
+    return (f"/-- The module's transition as read: each column's next value. -/\n"
+            f"def update (s : Vector {n} Int) : Vector {n} Int := fun i =>\n"
+            f"  match i with\n{arms}\n\n"
+            f"/-- The entry states: what the module assumes of its first state. -/\n"
+            f"def init_pre (s : Vector {n} Int) : Prop :=\n"
+            f"  {_render_conjuncts(entry_predicate(system), s_syms)}\n\n"
+            f"/-- The module as a `ReactiveModule`: its entry state comes in as the\n"
+            f"    input to `init`, constrained by `init_pre`; after entry it reads\n"
+            f"    nothing. Every claim below is about `RM.traces`. -/\n"
+            f"def RM : ReactiveModule (Vector {n} Int) (Vector {n} Int) :=\n"
+            f"  {{ init := fun e => e, update := fun s _ => update s,\n"
+            f"    init_pre := init_pre, update_pre := fun _ => True }}")
+
+
+def _splits(k: int, at: str = "") -> str:
+    """``k`` rounds of ``try split``, each on every goal the last one left."""
+    return "".join(f"(try split{at}) <;> " for _ in range(k))
+
+
+def _fin_cases(n: int, leaf, indent: str = "  ") -> str:
+    """A tactic block case-splitting ``i : Fin n`` down to each index, closing
+    index ``k`` with ``leaf(k)``; ``Fin 0`` has no constructor, so its ``cases``
+    leaves no goal."""
+    def rec(k: int, ind: str) -> str:
+        if k == n:
+            return f"{ind}cases i"
+        return (f"{ind}cases i with\n"
+                f"{ind}| fzero => {leaf(k)}\n"
+                f"{ind}| fsucc i =>\n" + rec(k + 1, ind + "  "))
+    return rec(0, indent)
+
+
+def _emit_refines(n: int, depths) -> str:
+    """The path refines the module: on its guard the transition is its affine
+    body. Per column, unfold and split the transition's ``if``s; ``omega`` takes
+    the branch the guard selects and refutes the others from it."""
+    def leaf(k: int) -> str:
+        return (f"simp only [update, post_state, trans, true_and, and_true] at * <;> "
+                f"{_splits(depths[k])}omega")
+    return (f"/-- On this path's guard the module's transition is its body. -/\n"
+            f"theorem refines (s : Vector {n} Int) (hg : trans s) :\n"
+            f"    update s = post_state s := by\n"
+            f"  funext i\n" + _fin_cases(n, leaf))
+
+
+# ---------------------------------------------------------------------------
+# One claim: its statement from the claim, its proof from the witness
+# ---------------------------------------------------------------------------
+
+def _claim_terms(system, s_syms, named, devices, nets, what: str):
+    """Lean terms for the wires a claim names: a column's next wire is the
+    successor state's component (making the claim a step claim), a device of
+    this proof is its network at the state. A wire reading the next state is
+    refused by name. Returns ``(terms, step)``."""
+    n = len(s_syms)
+    nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
+    by_id = {d.wire_id: d for d in devices}
+    terms, step = {}, False
+    for w in named:
+        if w.id in nexts:
+            terms[system.W[w.id]] = _state_terms(n, "s'")[nexts[w.id]]
+            step = True
+        elif w.id in by_id:
+            if any(k == "next" for k, _ in reading(system, w).inputs):
+                raise Unsupported(f"{what} names wire {w.id}, which reads the next "
+                                  "state; a device on the next state is not yet emitted")
+            d = by_id[w.id]
+            terms[system.W[w.id]] = _device_term(d, nets[d.net], "s")
+        else:
+            raise Unsupported(f"{what} names wire {w.id}, which is neither a column's "
+                              "next value nor a device of this proof")
+    return terms, step
+
+
+def _claim_predicate(system, claim, s_syms, devices, nets):
+    """A Safety claim's predicate as a Lean ``Prop`` over ``s`` (and ``s'`` when
+    it reaches into the next round). Returns ``(lean, step)``."""
+    holds, named = resolve(system, claim.holds)
+    terms, step = _claim_terms(system, s_syms, named, devices, nets, "the claim's predicate")
+    return _formula_prop(holds, s_syms, terms), step
+
+
+def _claim_domain(system, claim, s_syms) -> str:
+    """A claim's domain as a Lean ``Prop`` over ``s`` and ``s'``."""
+    dom, named = resolve(system, claim.domain)
+    terms, _ = _claim_terms(system, s_syms, named, (), (), "the claim's domain")
+    return _formula_prop(dom, s_syms, terms)
+
+
+def _emit_some_path(path_names, n: int, depth: int) -> str:
+    disj = " ∨ ".join(f"{p}.trans s" for p in path_names)
+    unfold = ", ".join(["domain", "update", "invariants"] + [f"{p}.trans" for p in path_names]
+                       + ["true_and", "and_true"])
+    return (f"/-- The paths cover the module's rounds inside the domain, from an\n"
+            f"    invariant state: a case the invariant rules out has no path. -/\n"
+            f"theorem some_path (s : Vector {n} Int) (hI : invariants s) (hd : domain s (update s)) :\n"
+            f"    {disj} := by\n"
+            f"  simp only [{unfold}] at * <;> {_splits(depth, ' at hd')}omega")
+
+
+def _cases(path_names, body, indent: str = "  "):
+    """``rcases some_path … with hg | hg | …`` and one bullet per path at
+    ``indent``; ``body(p)`` gives the bullet's lines."""
+    rc = " | ".join("hg" for _ in path_names)
+    bullets = "\n".join(f"{indent}· " + f"\n{indent}  ".join(body(p)) for p in path_names)
+    return rc, bullets
+
+
+def _emit_safety_rule(path_names, n: int, trivial_inv: bool, step_pred: bool) -> str:
+    """The inductive-invariant rule, assume-guarantee style: the claim's own
+    invariant is initial and inductive relative to the assumed one, so with the
+    assumed claims' invariance (``assumed_invariant``) the whole ``invariants``
+    is invariant (``StateSet_isInvariant_relative``); on every invariant state
+    the taken path's ``step_ok`` gives ``pred``; ``rule_globally`` (or
+    ``rule_globally_step``) lifts that to every trace."""
+    rc, steps = _cases(path_names, lambda p: [
+        f"rw [show RM.update s l = update s from rfl, {p}.refines s hg]",
+        f"exact {p}.consecution s hg hI"])
+    own_initial = (f"theorem own_initial (l : Vector {n} Int) (hl : init_pre l) : own l := by\n"
+                   f"  simp only [init_pre, own, true_and, and_true] at * <;> omega")
+    own_step = (f"theorem own_step (s l : Vector {n} Int) (hA : assumed s) (hO : own s)\n"
+                f"    (_ : RM.update_pre l) : own (RM.update s l) := by\n"
+                f"  have hI : invariants s := by\n"
+                f"    simp only [invariants, assumed, own, true_and, and_true] at * <;> omega\n"
+                f"  rcases some_path s hI trivial with {rc}\n{steps}")
+    if trivial_inv:
+        invariant = (f"theorem invariant : RM.StateSet_isInvariant invariants :=\n"
+                     f"  fun _ _ => trivial")
     else:
-        rc = " | ".join("h" for _ in path_names)
-        cons_case = (f"      rcases hstep k with {rc}\n" + "\n".join(
-            f"      · obtain ⟨hg, hp⟩ := h\n"
-            f"        rw [← hp]\n"
-            f"        exact {p}.consecution (f k) hg ih" for p in path_names))
-    return (f"  have hInv : ∀ i, invariants (f i) := by\n"
-            f"    intro i\n"
-            f"    induction i with\n"
-            f"    | zero => rw [hf0]; exact initiation s0 hinit\n"
-            f"    | succ k ih =>\n"
-            f"{cons_case}")
+        invariant = (f"theorem invariant : RM.StateSet_isInvariant invariants := fun s hr => by\n"
+                     f"  have h := RM.StateSet_isInvariant_relative assumed own assumed_invariant\n"
+                     f"    own_initial own_step s hr\n"
+                     f"  simp only [invariants, assumed, own, true_and, and_true] at * <;> omega")
+    target = "pred s (update s)" if step_pred else "pred s"
+    rc, closes = _cases(path_names, lambda p: (
+        [f"have hok := {p}.step_ok s hg hI"] +
+        ([f"rw [{p}.refines s hg]"] if step_pred else []) +
+        [f"simp only [{p}.ok, pred, {p}.post_state, invariants, true_and, and_true] at * <;> omega"]))
+    pred_holds = (f"theorem pred_holds (s : Vector {n} Int) (hI : invariants s) : {target} := by\n"
+                  f"  rcases some_path s hI trivial with {rc}\n{closes}")
+    if step_pred:
+        holds = (f"/-- The claim: on every trace of the module, `pred` holds on every step. -/\n"
+                 f"theorem holds : ∀ ss, RM.traces ss → ss ⊧ G (LTLFormula.APₛ pred) :=\n"
+                 f"  RM.rule_globally_step pred invariants invariant\n"
+                 f"    (fun s l s' hI _ hs' => by rw [hs']; exact pred_holds s hI)")
+    else:
+        holds = (f"theorem pred_invariant : RM.StateSet_isInvariant pred :=\n"
+                 f"  fun s hr => pred_holds s (invariant s hr)\n\n"
+                 f"/-- The claim: on every trace of the module, `pred` holds on every state. -/\n"
+                 f"theorem holds : ∀ ss, RM.traces ss → ss ⊧ G (LTLFormula.AP pred) :=\n"
+                 f"  RM.rule_globally pred pred_invariant")
+    return "\n\n".join([own_initial, own_step, invariant, pred_holds, holds])
 
 
-def _emit_init(n: int, init_lean: str) -> str:
-    return f"def Init (s : Vector {n} Int) : Prop :=\n  {init_lean}"
-
-
-def _emit_initiation(n: int, trivial_inv: bool) -> str:
-    return (f"/-- Initiation: the entry state satisfies the invariant. -/\n"
-            f"theorem initiation (s : Vector {n} Int) (h : Init s) : invariants s := by\n"
-            f"{_inv_proof(trivial_inv, 'Init, invariants')}")
-
-
-def _bridges(path_names, assumed) -> str:
-    """Per liveness path, per assumed claim: this path's step is a step of the
-    assumed claim's transition too — its guard implies that case's guard, and the
-    bodies are the same affine map — so a run of liveness steps is a run the
-    assumed claim's ``always_holds`` speaks about."""
-    out = []
-    for ns, cases, n_safe in assumed:
-        for j, (p, m) in enumerate(zip(path_names, cases)):
-            inj, close = _disjunct(m, n_safe)
-            out.append(
-                f"theorem {p}_into_{ns} (a b : Vector {{n}} Int) (h : {p}.RawStep a b) :\n"
-                f"    {ns}.RawStep a b := by\n"
-                f"  obtain ⟨hg, hp⟩ := h\n"
-                f"  refine {inj}⟨?_, ?_⟩{close}\n"
-                f"  · simp only [{p}.trans, {ns}.loop0_path{m}.trans, true_and, and_true] at *\n"
-                f"    omega\n"
-                f"  · simpa only [{p}.post_state, {ns}.loop0_path{m}.post_state] using hp")
-    return "\n\n".join(out)
-
-
-def _emit_liveness_composition(path_names, n: int, trivial_inv: bool, rank_nets,
-                               assumed=()) -> str:
-    """The whole-program theorem under a ranking witness: ``Step`` as the union
-    of the paths, ``no_infinite_run_lex [R0, …]`` fed each rank's non-negativity
-    and each path's ``lex_step``, and ``no_infinite_run`` — from any ``Init``
-    state there is no infinite run of ``RawStep``, since the invariant along the
-    run upgrades every ``RawStep`` to a ``Step``.
-
-    The invariant along the run comes from one of two places. With nothing
-    assumed, ``initiation`` and each path's ``consecution`` derive it by
-    induction, as any safety proof does. With assumed Safety proofs — ``assumed``
-    is ``(namespace, matched case per path, number of cases)`` for each — the
-    run is bridged into each assumed claim's transition and its ``always_holds``
-    is cited; no invariant is re-derived here."""
+def _emit_liveness_rule(path_names, n: int, rank_nets, trivial_inv: bool) -> str:
+    """The ranking rule: the assumed claims' invariance is the invariant, the
+    ranks are non-negative, and on every round inside the domain the taken
+    path's ``lex_step`` drops them; ``rule_buchi_lex`` concludes that every
+    trace leaves the domain again and again."""
     K = len(rank_nets)
     ranks = ", ".join(f"R{d}" for d in range(K))
-    step = " ∨ ".join(f"{p}.Step a b" for p in path_names)
-    rawstep = " ∨ ".join(f"{p}.RawStep a b" for p in path_names)
     pos_pat = " | ".join("rfl" for _ in range(K))
-    pos = "\n".join(f"    · exact V{_dev(str(j))}_nonneg s fzero" for j in rank_nets)
-    pat = " | ".join("h" for _ in path_names)
-    dec = "\n".join(f"    · exact {p}.lex_step a b h" for p in path_names)
-    if len(path_names) == 1:
-        step_run = f"  obtain ⟨hg, hp⟩ := hstep i\n  exact ⟨hg, hInv i, hp⟩"
+    pos = "\n".join(f"  · exact V{_dev(str(j))}_nonneg s fzero" for j in rank_nets)
+    if trivial_inv:
+        invariant = (f"theorem invariant : RM.StateSet_isInvariant invariants :=\n"
+                     f"  fun _ _ => trivial")
     else:
-        rc = " | ".join("h" for _ in path_names)
-        step_bul = []
-        for i, p in enumerate(path_names):
-            inj, close = _disjunct(i, len(path_names))
-            step_bul.append(f"  · obtain ⟨hg, hp⟩ := h\n    exact {inj}⟨hg, hInv i, hp⟩{close}")
-        step_run = f"  rcases hstep i with {rc}\n" + "\n".join(step_bul)
+        invariant = (f"theorem invariant : RM.StateSet_isInvariant invariants := fun s hr => by\n"
+                     f"  have h := assumed_invariant s hr\n"
+                     f"  simp only [invariants, assumed, true_and, and_true] at * <;> omega")
+    rc, bullets = _cases(path_names, lambda p: [
+        f"exact {p}.lex_step s (update s) ⟨hg, hI, ({p}.refines s hg).symm⟩"])
+    return "\n\n".join([
+        invariant,
+        f"theorem hpos : ∀ V ∈ [{ranks}], ∀ s, 0 ≤ V s := by\n"
+        f"  intro W hW s\n"
+        f"  simp only [List.mem_cons, List.not_mem_nil, or_false] at hW\n"
+        f"  rcases hW with {pos_pat}\n{pos}",
+        f"/-- Inside the domain, from an invariant state, the ranks drop. -/\n"
+        f"theorem hrank (s s' : Vector {n} Int) (hI : invariants s) (hs' : s' = update s)\n"
+        f"    (hd : domain s s') : lexDec [{ranks}] s s' := by\n"
+        f"  subst hs'\n"
+        f"  rcases some_path s hI hd with {rc}\n{bullets}",
+        f"/-- The claim: every trace of the module leaves the domain again and again. -/\n"
+        f"theorem holds : ∀ ss, RM.traces ss →\n"
+        f"    ss ⊧ G (F (LTLFormula.Not (LTLFormula.APₛ domain))) :=\n"
+        f"  RM.rule_buchi_lex domain invariants invariant [{ranks}] hpos\n"
+        f"    (fun s l s' hI _ hs' hd => hrank s s' hI hs' hd)"])
 
-    if not assumed:
-        pre = _emit_initiation(n, trivial_inv) + "\n\n"
-        hinv = _hinv_induction(path_names)
-        bridges = ""
+
+def _emit_claim(ns: str, proof, system, s_syms, cited, assumed_invs, rank_nets):
+    """One claim as its own namespace: ``own`` (the witness's invariant),
+    ``assumed`` (the cited claims' predicates), ``invariants`` (both, flat, as
+    the paths were certified), ``pred`` or ``domain`` from the claim, the paths,
+    the cover lemma ``some_path``, and the composition its witness's rule gives,
+    concluding ``holds``.
+
+    The two axes are read off separately: what is stated comes from the claim —
+    ``Safety`` gives ``pred`` and ``G (AP pred)`` (``G (APₛ pred)`` when it
+    reaches into the next round), ``Liveness`` gives ``domain`` and ``G (F (Not
+    (APₛ domain)))`` — and how it is proved comes from the witness's own class,
+    each of which the substrate has one rule for. A witness this layer has no
+    rule for is refused by name, never emitted under another's rule. Returns
+    ``(text, step)``."""
+    n = len(s_syms)
+    paths = proof.certificates
+    if not paths:
+        raise ValueError(f"{ns}: no certified paths to emit")
+    path_names = [f"path{i}" for i in range(len(paths))]
+    liveness = isinstance(proof.claim, Liveness)
+    witness = proof.witness
+    if isinstance(witness, LexDecrease):
+        by_ranks = True
+    elif isinstance(witness, Inductive):
+        by_ranks = False
     else:
-        pre = ""
-        bridges = _bridges(path_names, assumed).replace("{n}", str(n)) + "\n\n"
-        runs, cites = [], []
-        for ns, _cases, _k in assumed:
-            if len(path_names) == 1:
-                body = f"    exact {path_names[0]}_into_{ns} _ _ (hstep i)"
-            else:
-                rc = " | ".join("h" for _ in path_names)
-                body = (f"    rcases hstep i with {rc}\n" +
-                        "\n".join(f"    · exact {p}_into_{ns} _ _ h" for p in path_names))
-            runs.append(f"  have hrun_{ns} : ∀ i, {ns}.RawStep (f i) (f (i + 1)) := fun i => by\n{body}")
-            cites.append(f"({ns}.always_holds s0 hinit f hf0 hrun_{ns} i)")
-        hinv = ("\n".join(runs) + "\n"
-                f"  have hInv : ∀ i, invariants (f i) := fun i =>\n"
-                f"    inv_of_assumed (f i) {' '.join(cites)}")
-    return (
-        f"/-- The program's step relation: one iteration of the loop (any path). -/\n"
-        f"def Step (a b : Vector {n} Int) : Prop := {step}\n\n"
-        f"{pre}"
-        f"/-- One iteration of the loop on any path: the guard and the body. -/\n"
-        f"def RawStep (a b : Vector {n} Int) : Prop := {rawstep}\n\n"
-        f"{bridges}"
-        f"theorem no_inf_step :\n"
-        f"    ¬ ∃ f : Nat → Vector {n} Int, ∀ m, Step (f m) (f (m + 1)) := by\n"
-        f"  apply no_infinite_run_lex [{ranks}] Step\n"
-        f"  · intro W hW s\n"
-        f"    simp only [List.mem_cons, List.not_mem_nil, or_false] at hW\n"
-        f"    rcases hW with {pos_pat}\n"
-        f"{pos}\n"
-        f"  · rintro a b ({pat})\n"
-        f"{dec}\n\n"
-        f"/-- From any entry state there is no infinite run of steps inside the\n"
-        f"    domain: the run leaves it. Where the domain is the moving columns,\n"
-        f"    leaving it is a fixed point, and this is termination. -/\n"
-        f"theorem no_infinite_run (s0 : Vector {n} Int) (hinit : Init s0) :\n"
-        f"    ¬ ∃ f : Nat → Vector {n} Int, f 0 = s0 ∧ ∀ i, RawStep (f i) (f (i + 1)) := by\n"
-        f"  rintro ⟨f, hf0, hstep⟩\n"
-        f"{hinv}\n"
-        f"  apply no_inf_step\n"
-        f"  refine ⟨f, fun i => ?_⟩\n"
-        f"{step_run}"
-    )
+        raise Unsupported(f"the proof layer has no rule for a {type(witness).__name__} "
+                          "witness; it proves a claim by an inductive invariant "
+                          "(rule_globally) or by ranks (rule_buchi_lex)")
+    if by_ranks != liveness:                 # each witness refuses the other kind
+        raise Unsupported(f"a {type(witness).__name__} witness does not discharge a "
+                          f"{type(proof.claim).__name__} claim")
+    inv_res = [resolve(system, f)[0] for f in getattr(witness, "inv", ())]
+    inv_all = inv_res + list(assumed_invs)
 
-
-def _emit_safety_composition(path_names, n: int, trivial_inv: bool) -> str:
-    """The whole-program safety theorem: along any run of ``RawStep`` from an
-    ``Init`` state, ``pred`` holds at every step. The invariant carries the
-    proof — :func:`_hinv_induction` derives it along the run — and the taken
-    path's ``step_ok`` closes the predicate at each state."""
-    rawstep = " ∨ ".join(f"{p}.RawStep a b" for p in path_names)
-
-    def close(p: str, pad: str) -> str:
-        return (f"{pad}have hok := {p}.step_ok (f i) hg (hInv i)\n"
-                f"{pad}have hi := hInv i\n"
-                f"{pad}unfold {p}.ok at hok\n"
-                f"{pad}unfold pred\n"
-                f"{pad}unfold invariants at hi\n"
-                f"{pad}omega")
-
-    if len(path_names) == 1:
-        body = f"  obtain ⟨hg, _⟩ := hstep i\n{close(path_names[0], '  ')}"
+    def conj(fs):
+        return _render_conjuncts(z3.And(*fs), s_syms) if fs else "True"
+    own_lean, assumed_lean, inv_lean = conj(inv_res), conj(list(assumed_invs)), conj(inv_all)
+    trivial_own, trivial_inv = own_lean == "True", inv_lean == "True"
+    parts = [f"/-- The witness's own invariant. -/\n"
+             f"def own (s : Vector {n} Int) : Prop :=\n  {own_lean}",
+             f"/-- What the assumed claims establish. -/\n"
+             f"def assumed (s : Vector {n} Int) : Prop :=\n  {assumed_lean}",
+             f"/-- Everything the paths were certified under. -/\n"
+             f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}"]
+    step_pred = False
+    if liveness:
+        if not rank_nets:
+            raise Unsupported("a lex decrease witness proves its claim by ranks "
+                              "(rule_buchi_lex); this one names no network")
+        parts.append(f"/-- The rounds the claim counts: the run must leave them again and again. -/\n"
+                     f"def domain (s s' : Vector {n} Int) : Prop :=\n"
+                     f"  {_claim_domain(system, proof.claim, s_syms)}")
     else:
-        rc = " | ".join("h" for _ in path_names)
-        body = f"  rcases hstep i with {rc}\n" + "\n".join(
-            f"  · obtain ⟨hg, _⟩ := h\n{close(p, '    ')}" for p in path_names)
-    return (
-        f"{_emit_initiation(n, trivial_inv)}\n\n"
-        f"/-- One iteration of the loop on any path: the guard and the body. -/\n"
-        f"def RawStep (a b : Vector {n} Int) : Prop := {rawstep}\n\n"
-        f"/-- The property holds: along any run from a loop-entry state, every\n"
-        f"    state satisfies ``pred``. -/\n"
-        f"theorem always_holds (s0 : Vector {n} Int) (hinit : Init s0)\n"
-        f"    (f : Nat → Vector {n} Int) (hf0 : f 0 = s0)\n"
-        f"    (hstep : ∀ i, RawStep (f i) (f (i + 1))) : ∀ i, pred (f i) := by\n"
-        f"  intro i\n"
-        f"{_hinv_induction(path_names)}\n"
-        f"{body}"
-    )
+        pred_lean, step_pred = _claim_predicate(system, proof.claim, s_syms,
+                                                proof.devices, proof.nets)
+        binder = f"(s s' : Vector {n} Int)" if step_pred else f"(s : Vector {n} Int)"
+        parts.append(f"def pred {binder} : Prop :=\n  {pred_lean}")
+        parts.append(f"def domain (s s' : Vector {n} Int) : Prop :=\n  True")
+    if cited:
+        hs = " ".join(f"(h{k} : {c}.pred s)" for k, c in enumerate(cited))
+        preds = ", ".join(f"{c}.pred" for c in cited)
+        cites = " ".join(f"({c}.pred_invariant s hr)" for c in cited)
+        parts.append(f"/-- The assumed claims' predicates are what is assumed. -/\n"
+                     f"theorem inv_of_assumed (s : Vector {n} Int) {hs} : assumed s := by\n"
+                     f"  simp only [assumed, {preds}, true_and, and_true] at * <;> omega")
+        parts.append(f"theorem assumed_invariant : RM.StateSet_isInvariant assumed :=\n"
+                     f"  fun s hr => inv_of_assumed s {cites}")
+    else:
+        parts.append(f"theorem assumed_invariant : RM.StateSet_isInvariant assumed :=\n"
+                     f"  fun _ _ => trivial")
+    depths = [_ite_count(e) for e in system.sp_syms]
+    for pn, pc in zip(path_names, paths):
+        parts.append(_emit_path(pn, pc, proof, system, s_syms, trivial_own, inv_all, depths,
+                                consecution=not by_ranks))
+    parts.append(_emit_some_path(path_names, n, sum(depths)))
+    if by_ranks:
+        parts.append(_emit_liveness_rule(path_names, n, rank_nets, trivial_inv))
+    else:
+        parts.append(_emit_safety_rule(path_names, n, trivial_inv, step_pred))
+    return f"namespace {ns}\n\n" + "\n\n".join(parts) + f"\n\nend {ns}", step_pred
 
 
 _HEADER = (
-    "import Coverage\nimport Net\nimport Termination\n"
+    "import Coverage\nimport Net\nimport ReactiveModule\n"
     "set_option linter.unusedVariables false\n"
     "set_option linter.unusedSimpArgs false\n"
     "set_option maxHeartbeats 1000000\n"
-    "namespace Matrix\nopen Fin\n"
+    "namespace Matrix\nopen Fin\nopen scoped LTLFormula\n"
 )
 _FOOTER = "\nend Matrix\n"
 
 
-def _state_predicate(system, claim, s_syms, devices, nets):
-    """A safety claim's predicate rendered over the state, refusing one that
-    reaches into the next round — the substrate has one safety composition and it
-    quantifies over single states."""
-    terms = {system.W[d.wire_id]: _device_term(d, nets[d.net], "s") for d in devices}
-    holds, named = resolve(system, claim.holds)
-    nexts = {pr[1].id for pr in system.pairs}
-    if any(w.id in nexts or any(k == "next" for k, _ in reading(system, w).inputs)
-           for w in named):
-        raise Unsupported("the proof layer has no composition for a safety claim over "
-                          "the step yet: its predicate names the next state")
-    return _formula_prop(holds, s_syms, terms)
-
-
-def _emit_assumed(ns: str, proof, system, s_syms) -> str:
-    """One assumed Safety proof as its own namespace: its invariant and
-    predicate, its paths, and ``always_holds`` — exactly what a standalone safety
-    proof emits, minus ``Init``, which the file defines once."""
-    if proof.devices:
-        raise Unsupported(f"{ns}: an assumed claim naming a wire is not yet emitted; "
-                          "assumed claims are over the columns")
-    n = len(s_syms)
-    paths = proof.certificates
-    path_names = [f"loop0_path{i}" for i in range(len(paths))]
-    inv_res = [resolve(system, f)[0] for f in getattr(proof.witness, "inv", ())]
-    inv_lean = _render_conjuncts(z3.And(*inv_res), s_syms) if inv_res else "True"
-    trivial_inv = inv_lean == "True"
-    pred_lean = _state_predicate(system, proof.claim, s_syms, (), ())
-    parts = [f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}",
-             f"def pred (s : Vector {n} Int) : Prop :=\n  {pred_lean}"]
-    parts += [_emit_path(pn, pc, proof, system, s_syms, trivial_inv, inv_res)
-              for pn, pc in zip(path_names, paths)]
-    parts.append(_emit_safety_composition(path_names, n, trivial_inv))
-    return f"namespace {ns}\n\n" + "\n\n".join(parts) + f"\n\nend {ns}"
-
-
-def _match_cases(live_paths, safe_paths):
-    """For each liveness path, the one safety case it refines: the same affine
-    body and a guard that implies the case's. Refused by name if there is none."""
-    def valid(e):
-        s = z3.Solver(); s.add(z3.Not(e)); return s.check() == z3.unsat
-    out = []
-    for j, pj in enumerate(live_paths):
-        ks = [k for k, pk in enumerate(safe_paths)
-              if len(pk.body) == len(pj.body)
-              and all(a.eq(b) for a, b in zip(pj.body, pk.body))
-              and valid(z3.Implies(pj.guard, pk.guard))]
-        if not ks:
-            raise Unsupported(f"liveness path {j} refines no case of the assumed claim, "
-                              "so its run cannot be bridged into always_holds")
-        out.append(ks[0])
-    return out
-
-
-def emit_program(name: str, system, result) -> str:
+def emit_program(name: str, system, result, label: str | None = None) -> str:
     """The whole ``program.lean`` for ``name``, from ``system`` — the module as
     read, with the Safety proofs it assumes — and ``result``, the
     :class:`._farkas.Proof` a ``certify`` run on it returned.
 
-    One file, several claims. Each proof in ``system.invariant_proofs`` is
-    emitted first in its own namespace, ``safety0``, ``safety1``, …, proving its
-    ``always_holds``; the main claim follows at top level. Which of the two kinds
-    the main claim is picks its closing theorem: a :class:`._property.Liveness`
-    claim concludes ``no_infinite_run`` from the witness's ranks, citing each
-    assumed claim's ``always_holds`` for the invariant along the run; a
-    :class:`._property.Safety` claim concludes ``always_holds`` from its
-    predicate. The entry state is read off the system, the networks off the
-    result's devices — never the weights."""
-    paths = result.certificates
-    if not paths:
+    One module, several claims. The module is emitted once as ``RM``. Each proof
+    in ``system.invariant_proofs`` follows in its own namespace, ``claim0``,
+    ``claim1``, …, then the main claim; every one states its ``holds`` over
+    ``RM.traces`` in the LTL of its kind and proves it by its witness's rule,
+    citing the earlier claims' ``pred_invariant`` where it assumes them.
+    ``label`` is the client's word for the main claim, kept to the header. The
+    entry state is read off the system, the networks off the result's devices —
+    never the weights."""
+    if not result.certificates:
         raise ValueError(f"{name}: no certified paths to emit")
     s_syms = list(system.s_syms)
     n = len(s_syms)
-    path_names = [f"loop0_path{i}" for i in range(len(paths))]
-    cols = ", ".join(f"s {j} = {nm}" for j, nm in enumerate(system.names))
-    npaths = f" ({len(paths)} paths)" if len(paths) > 1 else ""
-    init_lean = _render_conjuncts(entry_predicate(system), s_syms)
     assumed = tuple(system.invariant_proofs)
     liveness = isinstance(result.claim, Liveness)
-    if assumed and not liveness:
-        raise Unsupported("a safety claim assuming other proofs is not yet emitted; "
-                          "assumed proofs are cited by a liveness claim")
-    inv_res = [resolve(system, f)[0] for f in getattr(result.witness, "inv", ())]
-    inv_all = inv_res + list(system.invariants)
-    inv_lean = _render_conjuncts(z3.And(*inv_all), s_syms) if inv_all else "True"
-    trivial_inv = inv_lean == "True"
     by_id = {d.wire_id: d for d in result.devices}
     rank_nets = [by_id[v_s.id].net for v_s, _ in getattr(result.witness, "ranks", ())]
-    if liveness and not rank_nets:
-        raise Unsupported("the proof layer discharges a liveness claim by ranks "
-                          "(no_infinite_run_lex); this witness names none")
-
-    if liveness:
-        what = ("terminates via a ranking function" if len(rank_nets) == 1 else
-                f"terminates via a lexicographic rank of {len(rank_nets)} networks")
-        pred_lean = None
-    else:
-        pred_lean = _state_predicate(system, result.claim, s_syms, result.devices, result.nets)
-        what = f"`{pred_lean}` holds on every run"
-    assuming = f", assuming {len(assumed)} proved invariant claim(s)" if assumed else ""
-    parts = [f"/- ──── program: {name} — {what}{npaths}{assuming}.\n   Columns: {cols}. ──── -/"]
+    kind = ("liveness: every run leaves the domain again and again" if liveness else
+            "safety: the predicate holds on every round")
+    what = f"{label} — {kind}" if label else kind
+    cols = ", ".join(f"s {j} = {nm}" for j, nm in enumerate(system.names))
+    assuming = f", assuming {len(assumed)} proved Safety claim(s)" if assumed else ""
+    parts = [f"/- ──── module: {name}. Columns: {cols}.\n"
+             f"   claim{len(assumed)}: {what}{assuming}. ──── -/"]
     for j, net in enumerate(result.nets):
         if net.units:
             parts += [_emit_network(net, str(j)), _emit_out_apply(net, str(j)),
                       _emit_out_nonneg(str(j)), _emit_nonneg(net, str(j))]
     for d, j in enumerate(rank_nets):
         parts.append(f"def R{d} : Vector {n} Int → Int := fun s => V{_dev(str(j))} s fzero")
-    parts.append(_emit_init(n, init_lean))
-    namespaces = []
+    parts.append(_emit_module(system, s_syms))
+    if tuple(result.assumed) != assumed:
+        raise Unsupported(
+            f"{name}: this proof was certified assuming {len(result.assumed)} claim(s) but "
+            f"the system carries {len(assumed)} — the file would state its invariant over "
+            "facts the proof did not have")
+    cited = []
     for k, proof in enumerate(assumed):
-        ns = f"safety{k}"
-        parts.append(_emit_assumed(ns, proof, system, s_syms))
-        namespaces.append((ns, _match_cases(paths, proof.certificates), len(proof.certificates)))
-    parts.append(f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}")
-    if pred_lean is not None:
-        parts.append(f"def pred (s : Vector {n} Int) : Prop :=\n  {pred_lean}")
-    if assumed:
-        hs = " ".join(f"(h{k} : safety{k}.pred s)" for k in range(len(assumed)))
-        preds = ", ".join(f"safety{k}.pred" for k in range(len(assumed)))
-        parts.append(f"/-- The assumed claims' predicates are the invariant. -/\n"
-                     f"theorem inv_of_assumed (s : Vector {n} Int) {hs} : invariants s := by\n"
-                     f"  simp only [invariants, {preds}] at *\n"
-                     f"  omega")
-    for pname, pcert in zip(path_names, paths):
-        parts.append(_emit_path(pname, pcert, result, system, s_syms, trivial_inv,
-                                inv_all, consecution=not assumed))
-    if liveness:
-        parts.append(_emit_liveness_composition(path_names, n, trivial_inv, rank_nets,
-                                                namespaces))
-    else:
-        parts.append(_emit_safety_composition(path_names, n, trivial_inv))
+        ns = f"claim{k}"
+        if proof.assumed:
+            raise Unsupported(f"{ns}: an assumed claim that itself assumed {len(proof.assumed)} "
+                              "claim(s) is not yet emitted; its own proof would be stated "
+                              "without the facts it rests on")
+        if proof.devices:
+            raise Unsupported(f"{ns}: an assumed claim naming a wire is not yet emitted; "
+                              "its networks would need names of their own")
+        text, step = _emit_claim(ns, proof, system, s_syms, (), (), ())
+        if step:
+            raise Unsupported(f"{ns}: an assumed claim over the step is not yet used as "
+                              "an invariant; it has no pred_invariant")
+        parts.append(text)
+        cited.append(ns)
+    text, _ = _emit_claim(f"claim{len(assumed)}", result, system, s_syms, cited,
+                          list(system.invariants), rank_nets)
+    parts.append(text)
     return _HEADER + "\n\n".join(parts) + _FOOTER
 
 
-def write_program_proof(name: str, system, result, out_dir: Path) -> Path:
+def write_program_proof(name: str, system, result, out_dir: Path,
+                        label: str | None = None) -> Path:
     """Write ``<out_dir>/<name>/program.lean`` and return its path."""
     target = Path(out_dir) / name
     target.mkdir(parents=True, exist_ok=True)
     out = target / "program.lean"
-    out.write_text(emit_program(name, system, result))
+    out.write_text(emit_program(name, system, result, label))
     return out
