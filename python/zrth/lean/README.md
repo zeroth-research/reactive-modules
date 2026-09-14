@@ -412,6 +412,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
 | `--fbk-proveit` | — | Path to a `lean-ltl-certifying` checkout; certify through its `proveit.py` instead (see below) |
 | `--ic3ia` | — | Path to the `ic3ia` binary, forwarded to `proveit.py` |
+| `--fbk-simplify` | `cvc5` | `none` leaves the NA model's transition the shape the module's own terms give it |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
 
 ### State variable naming in SMT-LIB predicates
@@ -574,6 +575,28 @@ and `--infer ai-cegar` run on — simplified by cvc5 and printed by
 `smt_to_lean_bool`. So the model `lean2vmt` reads and the obligations cvc5
 answers about the same module are one encoding rather than two readings, and
 the refusal list above is exactly what those two components cannot express.
+
+**`--fbk-simplify none`** turns the rewriter off. It is a spelling, not a
+semantics: a module whose update reads `if x + 1 = 10 then 0 else x + 1`
+emits
+
+```lean
+-- default
+abbrev effect_0 (state : StateType) : Int :=
+  (if ((var_0 state) == (9 : Int)) then (0 : Int) else ((1 : Int) + (var_0 state)))
+-- --fbk-simplify none
+abbrev effect_0 (state : StateType) : Int :=
+  (if (((var_0 state) + (1 : Int)) == (10 : Int)) then (0 : Int) else ((var_0 state) + (1 : Int)))
+```
+
+— the same transition, and only the second one can be read against the
+source. Bool slots are never simplified either way, for a reason worth
+knowing: the rewriter turns `ite c b (¬b)` into an equality, which moves the
+slot from a branch into a *condition*, and `vmt2lean`'s `generalizeNatVar`
+then retypes it to the unreduced `TypeMap` match where the `Decidable`
+instance cannot be synthesised. What the rewriter buys on the arithmetic is
+size: a 32-wide affine layer is 97 KB of term unfolded and 1.9 KB folded, so
+`none` is for reading small models, not for running the sweep.
 
 Two limits are by design rather than by defect. First, the model's imports
 are `lake build`-ed before `proveit.py` runs: `lean2vmt` elaborates the model

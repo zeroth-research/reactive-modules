@@ -601,6 +601,31 @@ def test_the_emitted_transition_agrees_with_the_module(module_fn, values):
         assert got == expected, f"state {state}: {got} != {expected}"
 
 
+def test_simplification_can_be_turned_off_without_changing_the_meaning():
+    """`--fbk-simplify none` is a spelling, not a semantics.
+
+    The module says "if x + 1 = 10 then 0 else x + 1". cvc5's rewriter
+    rebalances that into "if x = 9 then 0 else 1 + x" -- the same
+    transition, and no longer the one you can read against the source.
+    Both must agree with the module on every state.
+    """
+    module = _counter()
+    folded = _effect_bodies(_na(module, "true"))
+    raw = _effect_bodies(
+        atom_to_lean_na(
+            LeanContext(module), "true", module_name="T", simplify=False
+        )
+    )
+    for state in ([0], [4], [9], [10], [-3]):
+        expected = _reference_step(module, state)
+        assert [_eval_lean(b, state) for b in folded] == expected
+        assert [_eval_lean(b, state) for b in raw] == expected
+
+    assert "(9 : Int)" in folded[0], "the rewriter folds the +1 into the test"
+    assert "(10 : Int)" in raw[0], "unsimplified, the module's own 10 survives"
+    assert "((var_0 state) + (1 : Int))" in raw[0]
+
+
 def test_ic3ia_directory_resolves_to_the_binary_inside_it():
     """The build directory is the obvious thing to reach for, and
     `proveit.py` reports it as "executable not found" with the binary

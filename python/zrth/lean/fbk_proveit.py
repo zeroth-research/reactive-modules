@@ -158,7 +158,7 @@ def resolve_ic3ia(spec: str | None) -> str | None:
     )
 
 
-def check_module(module) -> None:
+def check_module(module, simplify: bool = True) -> None:
     """Raise `ProveItError` unless the NA encoding can express `module`.
 
     Called before anything is generated as well as inside :func:`run`: a
@@ -168,7 +168,7 @@ def check_module(module) -> None:
     the certificate route the user asked for.
     """
     try:
-        check_na_supported(LeanContext(module))
+        check_na_supported(LeanContext(module), simplify)
     except NAUnsupported as e:
         raise ProveItError(f"--fbk-proveit: {e}") from e
 
@@ -209,6 +209,7 @@ def write_na_model(
     project_name: str,
     ctx: LeanContext,
     property_lean: str,
+    simplify: bool = True,
 ) -> Path:
     """Write the NA model `proveit.py` consumes and return its path.
 
@@ -221,7 +222,11 @@ def write_na_model(
     out_dir = project_dir / PROVEIT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     model = out_dir / f"{na_module_name(project_name)}.lean"
-    model.write_text(atom_to_lean_na(ctx, property_lean, module_name=project_name))
+    model.write_text(
+        atom_to_lean_na(
+            ctx, property_lean, module_name=project_name, simplify=simplify
+        )
+    )
     print(f"Wrote NA model for proveit.py: {model}")
     return model
 
@@ -286,6 +291,7 @@ def run(
     property_smt: str,
     ic3ia: str | None = None,
     python: str | None = None,
+    simplify: bool = True,
 ) -> Path:
     """Run the whole route and return the installed certificate's path."""
     python = python or sys.executable
@@ -296,10 +302,12 @@ def run(
     check_toolchain(python)
 
     ctx = LeanContext(module)
-    check_module(module)
+    check_module(module, simplify)
 
     property_lean = property_to_bool_lean(module, property_smt)
-    model = write_na_model(project_dir, project_name, ctx, property_lean)
+    model = write_na_model(
+        project_dir, project_name, ctx, property_lean, simplify=simplify
+    )
 
     targets = " ".join(_LAKE_TARGETS)
     print(f".. Building the model's imports ({targets}) in {root}")
