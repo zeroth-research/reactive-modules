@@ -71,6 +71,7 @@ from zrth.lean.common import (
     _flat_size,
 )
 from zrth.lean.native import _reachable_terms
+from zrth.lean.translate._skeleton import RelBlock, RelSyntax, emit_rel_block
 
 
 class NAUnsupported(Exception):
@@ -371,41 +372,57 @@ def atom_to_lean_na(
         lines.append(f"abbrev var_{i} (state : StateType) : {slot_ty[i]} := state {i}")
     lines.append("")
 
+    # The body def / relation / conjunction shape below is the one `Rel` and
+    # `ScalarRel` emit too, so it comes from the shared skeleton -- spelled
+    # here in `abbrev`, `Bool`, `==` and `&&`, which is what `lean2vmt`
+    # reads, and with no `*_eq` theorem block: a cvc5-printed body is the
+    # module's transition spelled differently, not syntactically equal to the
+    # Lean one, so this route relates the two semantically (`fbk_bridge.py`).
+    syn = RelSyntax(
+        body_decl="abbrev",
+        rel_decl="abbrev",
+        prop="Bool",
+        eq="==",
+        conj="&&",
+        slot_ty=lambda i: slot_ty[i],
+        project=lambda e, i: f"var_{i} {e}",
+    )
+
     # --- transition relation ---
     # A slot whose next value does not read the state is a closed term, and
     # the binder is left off rather than written and unused.
     effect_uses_state = ["state" in body for body in update_text]
-    for i, body in enumerate(update_text):
-        binder = " (state : StateType)" if effect_uses_state[i] else ""
-        lines.append(f"abbrev effect_{i}{binder} : {slot_ty[i]} :=")
-        lines.append(f"  {body}")
-        lines.append("")
-
-    for i in range(n):
-        arg = " state" if effect_uses_state[i] else ""
-        lines.append(f"abbrev R_{i} (state statenext : StateType) : Bool :=")
-        lines.append(f"  var_{i} statenext == effect_{i}{arg}")
-        lines.append("")
-
-    lines.append("abbrev TRANS (state statenext : StateType) : Bool :=")
-    lines.append("  " + " &&\n  ".join(f"R_{i} state statenext" for i in range(n)))
-    lines.append("")
+    lines += emit_rel_block(
+        syn,
+        RelBlock(
+            body_name="effect",
+            rel_name="R",
+            conj_name="TRANS",
+            state_binders="(state statenext : StateType)",
+            state_args="state statenext",
+            target="statenext",
+            binders=[" (state : StateType)" if u else "" for u in effect_uses_state],
+            args=[" state" if u else "" for u in effect_uses_state],
+        ),
+        [f"  {body}" for body in update_text],
+    )
 
     # --- initial condition ---
     # No extl wires (checked), so `init_i` is a closed term.
-    for i, body in enumerate(init_text):
-        lines.append(f"abbrev init_{i} : {slot_ty[i]} :=")
-        lines.append(f"  {body}")
-        lines.append("")
-
-    for i in range(n):
-        lines.append(f"abbrev Init_{i} (state : StateType) : Bool :=")
-        lines.append(f"  var_{i} state == init_{i}")
-        lines.append("")
-
-    lines.append("abbrev INIT (state : StateType) : Bool :=")
-    lines.append("  " + " &&\n  ".join(f"Init_{i} state" for i in range(n)))
-    lines.append("")
+    lines += emit_rel_block(
+        syn,
+        RelBlock(
+            body_name="init",
+            rel_name="Init",
+            conj_name="INIT",
+            state_binders="(state : StateType)",
+            state_args="state",
+            target="state",
+            binders=[""] * n,
+            args=[""] * n,
+        ),
+        [f"  {body}" for body in init_text],
+    )
 
     # --- property ---
     lines.append("abbrev PROPERTY (state : StateType) : Bool :=")

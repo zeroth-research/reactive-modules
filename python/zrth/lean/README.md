@@ -704,3 +704,13 @@ so does a row no theory backs.
 3. Optionally add an equivalence theorem connecting the new encoding to the
    existing functional one.
 4. Wire it into `to_lean()`.
+
+If the new encoding is *relational* — a per-slot body def, a per-slot
+relation, and a conjunction over them — do not spell that shape a fourth
+time: build a `RelSyntax` and a `RelBlock` and call `emit_rel_block` from
+`translate/_skeleton.py`, as `Rel`, `ScalarRel` (both in
+`translate/relational.py`) and the NA model (`translate/fbk.py`) do.  It is
+parameterised on the type builder, the projection, and the spelling
+(`def`/`abbrev`, `Prop`/`Bool`, `=`/`==`, `∧`/`&&`); the body producer stays
+yours, and the per-slot `*_eq` theorems are emitted only if you name a
+functional counterpart to prove them against.

@@ -16,8 +16,10 @@ from zrth.lean.translate.scalar import (
     atom_to_lean_scalar as _atom_to_lean_scalar,
     to_lean_scalar_equiv as _to_lean_scalar_equiv,
 )
-from zrth.lean.translate.rel import atom_to_lean_rel as _atom_to_lean_rel
-from zrth.lean.translate.mat_rel import atom_to_lean_mat_rel as _atom_to_lean_mat_rel
+from zrth.lean.translate.relational import (
+    atom_to_lean_rel as _atom_to_lean_rel,
+    atom_to_lean_mat_rel as _atom_to_lean_mat_rel,
+)
 
 
 class ModuleToLean4:
