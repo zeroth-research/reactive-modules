@@ -7,7 +7,7 @@ These pin the properties the emitted proofs rest on:
     return a linear fit for a branching transition, which would then be
     certified — so the rejection is a soundness property, not a nicety.
   * ``expand_cases`` expands a branching body and a non-convex guard into cases
-    whose guards partition the original guard — what the emitted ``RawStep``
+    whose guards partition the original guard — what the emitted ``some_path``
     union rests on.
   * a certificate the verifier returns satisfies the three Farkas conditions on
     its own system.
@@ -128,9 +128,9 @@ def test_expand_cases_splits_a_branch():
 
 
 def test_expand_cases_covers_exactly_and_does_not_overlap():
-    """The emitted ``RawStep`` is the union of the cases, so they must cover the
-    guard exactly — under-covering would state termination of a subset of the
-    program's steps — and stay disjoint, so no state is certified twice."""
+    """The emitted ``some_path`` says the cases cover the module's rounds in the
+    domain, so they must cover the guard exactly — under-covering would leave a
+    round no path speaks for — and stay disjoint, so no state is certified twice."""
     x, m, i, j, n = z3.Ints("x m i j n")
     for guard in (x != m, z3.Or(i < m, j < n), z3.And(x > 0, z3.Or(i < m, j < n))):
         pieces = [g for g, _ in expand_cases(guard, [x])]
@@ -618,7 +618,8 @@ def test_knowing_takes_only_proved_safety_claims():
     """The engine assumes a fact only through a proof of it. ``knowing`` takes a
     verified Proof of a Safety claim over these columns, exposes its predicate as
     ``invariants`` and keeps the proof for the emitter — and refuses by name an
-    unverified proof, a liveness proof, and a proof over other columns."""
+    unverified proof, a liveness proof, a proof over other columns, and a proof
+    of a claim that is not about a state at all."""
     bench = loop_bench(("x",), lambda x: dsl_ite(dsl_ne(x, 0), x - 1, x), init=lambda: (5,))
     system = system_of(bench)
     nonneg = lambda W, S: S["x"] >= 0
@@ -641,6 +642,13 @@ def test_knowing_takes_only_proved_safety_claims():
     assert elsewhere.verified
     with pytest.raises(Unsupported, match="columns"):
         system.knowing(elsewhere)
+    # What is assumed of a state is a predicate over that state: a claim about
+    # the step, or about a computed wire, is refused here rather than silently
+    # dropped when it is resolved into `invariants`.
+    step = certify(system, Safety(lambda W, S: S.next["x"] <= S["x"]), inductive(()))
+    assert step.verified, step.status
+    with pytest.raises(Unsupported, match="names wire"):
+        system.knowing(step)
 
 
 def test_a_proved_invariant_narrows_the_liveness_obligation():
