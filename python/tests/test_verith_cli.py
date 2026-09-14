@@ -50,6 +50,28 @@ def test_verith_no_property():
         assert "sorry" in data
 
 
+def test_a_predicate_cvc5_cannot_read_is_refused_not_pasted():
+    """The fields become the bodies of `def P`, `def inv`, `def ranking`.
+    A source that does not parse used to be interpolated into them verbatim
+    -- `def P : … → Prop := (= s0` -- and the run still said `Project ready`,
+    leaving a Lean parse error in generated code as the first sign."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cases = [
+            (("--safety", "(= s0"), "--safety"),          # unbalanced
+            (("--safety", "(= s9 0)"), "--safety"),       # no such state var
+            (("--buchi", "(and s0"), "--buchi"),
+            (("--safety", "true", "--invariant", "(bogus s0)"), "--invariant"),
+        ]
+        for args, flag in cases:
+            r = _verith(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Unparsed")
+            assert r.returncode != 0, f"{args} was accepted"
+            assert "Traceback" not in r.stderr, r.stderr
+            assert flag in r.stderr, f"{args} did not name the flag:\n{r.stderr}"
+            data = Path(tmpdir) / "Unparsed" / "System" / "Data.lean"
+            if data.exists():
+                assert args[1] not in data.read_text(), "the SMT source was pasted"
+
+
 def test_a_refusal_is_an_error_line_not_a_traceback():
     """Every one of these is a decision the generator makes about its input,
     and each already carries a message saying why. A traceback buries that

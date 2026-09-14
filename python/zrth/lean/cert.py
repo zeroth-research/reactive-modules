@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type, _translate_terms
-from zrth.lean.common import LeanContext, _bind_wires
+from zrth.lean.common import LeanContext, Refused, _bind_wires
 from zrth.lean.tactics import plan_for
 from zrth.lean.template_env import render
 from ..expr import Expr
@@ -303,11 +303,18 @@ def smt_predicates_to_lean(
     from .smt_query import ModuleQueries, predicate_facts
     from .smt_to_lean import smt_to_lean, smt_to_lean_nat
 
-    q = ModuleQueries.build(module, cert_data)
-    if q is None:
-        # cvc5 could not parse or encode; leave the SMT sources in place and
-        # let the codegen path fail with its own message.
-        return cert_data
+    # Not `build`: its `None` would leave the SMT sources in the fields this
+    # function exists to translate, and they are interpolated into the `def`
+    # bodies further down -- `def P : … → Prop := (= s0` reaches the user as
+    # a Lean parse error in generated code, if it reaches them at all.
+    try:
+        q = ModuleQueries(module, cert_data)
+    except Refused:
+        raise
+    except Exception as e:
+        raise Refused(
+            f"the certificate predicates cannot be read for this module: {e}"
+        ) from e
     msmt = q.msmt
 
     def translate(term, mode: str, original) -> str | None:
@@ -329,12 +336,26 @@ def smt_predicates_to_lean(
             share=share,
         )
 
+    def named(flag: str, term, mode: str, original) -> str | None:
+        """`translate`, with the flag the source came from on any refusal.
+
+        The translator walks a cvc5 term and knows nothing of the command
+        line; `--pre (= s0 0)` parses and then fails on a name preconditions
+        do not bind, and "Unknown free variable `s0`" alone does not say
+        which of five sources asked for it.
+        """
+        try:
+            return translate(term, mode, original)
+        except Refused as e:
+            raise Refused(f"{flag}: {e}") from e
+
+    prp_flag = "--safety" if cert_data.is_safety else "--buchi"
     return CertificateData(
-        prp=translate(q.prp, "property", cert_data.prp),
-        init_pre=translate(q.init_pre, "pre", cert_data.init_pre),
-        update_pre=translate(q.update_pre, "pre", cert_data.update_pre),
-        inv=translate(q.inv, "invariant", cert_data.inv),
-        ranking=translate(q.ranking, "ranking", cert_data.ranking),
+        prp=named(prp_flag, q.prp, "property", cert_data.prp),
+        init_pre=named("--pre", q.init_pre, "pre", cert_data.init_pre),
+        update_pre=named("--pre", q.update_pre, "pre", cert_data.update_pre),
+        inv=named("--invariant", q.inv, "invariant", cert_data.inv),
+        ranking=named("--ranking", q.ranking, "ranking", cert_data.ranking),
         # The rendering changes the predicates, not what they are a
         # certificate *of*, nor what cvc5 was given to read them from.
         kind=cert_data.kind,
