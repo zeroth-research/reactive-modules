@@ -50,6 +50,22 @@ def test_verith_no_property():
         assert "sorry" in data
 
 
+def test_a_stale_bridge_is_not_left_for_lake_to_build():
+    """`Certificate/` is globbed by the lakefile, so every file in it is
+    built. Only `--fbk-proveit` writes `Equivalence.lean`, and it is about
+    the module of the run that wrote it -- a copy left in an `-o` reused by
+    another module would be built against the wrong `System/`."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cert_dir = Path(tmpdir) / "Stale" / "Certificate"
+        cert_dir.mkdir(parents=True)
+        (cert_dir / "Equivalence.lean").write_text("import NoSuchModule\n")
+
+        r = _verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "Stale")
+        assert r.returncode == 0, r.stderr
+        assert not (cert_dir / "Equivalence.lean").exists()
+        assert (cert_dir / "Certificate.lean").exists()
+
+
 def test_verith_with_property():
     """A property without --infer writes prp as sorry (string not compiled to Terms)."""
     with tempfile.TemporaryDirectory() as tmpdir:

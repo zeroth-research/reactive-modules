@@ -607,6 +607,14 @@ def create_project(
 
     (project_dir / "Certificate.lean").write_text(render("project/Certificate.lean.j2"))
 
+    # The `Certificate` lean_lib globs its submodules, so every file in
+    # `Certificate/` is built -- including one this run did not write.
+    # `Certificate/Certificate.lean` is rewritten below; the bridge is
+    # written later and only by `--fbk-proveit`, so a copy left by an
+    # earlier run into the same `-o` is about a different module, and lake
+    # would build it against this run's `System/`.
+    (project_dir / "Certificate" / "Equivalence.lean").unlink(missing_ok=True)
+
     # Copy static files (Core/, LeanAI/)
     core_dir = project_dir / "Core"
     core_dir.mkdir(parents=True, exist_ok=True)
