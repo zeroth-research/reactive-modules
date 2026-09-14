@@ -19,6 +19,7 @@ from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 
 import shutil
 import subprocess
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from zrth import Module, Wire, Env, X
@@ -183,9 +184,113 @@ def _build_why(out: str) -> str:
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# The emitted encodings
+#
+# One row per Lean file `ModuleToLean4` prints, and one writer for all of
+# them. Both routes that emit encodings -- the project (`create_project`)
+# and the standalone `--cert-file` -- walk this same table, so the header,
+# the imports and the producer agree across the two by construction rather
+# than by inspection. They differ only in how a row becomes a path and a
+# Lean module name, which is what `Layout` supplies.
+#
+# Row order is emission order, and it is load-bearing: `to_lean_*` methods
+# feed each other's lemma lists (see `translate/__init__.py`), so the
+# functional encoding has to be printed before the encodings that quote it.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Where one route puts an encoding and what Lean calls it.
+
+    `base` is the name of the row with no suffix -- the functional encoding
+    -- and every other row hangs off it. In the project the files live in
+    their own `System/` directory and are named by suffix alone; a
+    `--cert-file` writes them next to whatever else is in the output
+    directory, so there the names carry `base` too (`flat`).
+    """
+
+    base: str
+    prefix: str = ""            # Lean module prefix, e.g. "System."
+    flat: bool = False          # file names carry `base`
+    directory: Path = Path()    # only `path` uses it
+
+    def stem(self, suffix: str) -> str:
+        return f"{self.base}{suffix}" if self.flat else (suffix or self.base)
+
+    def path(self, suffix: str) -> Path:
+        return self.directory / f"{self.stem(suffix)}.lean"
+
+    def lean_module(self, suffix: str) -> str:
+        return f"{self.prefix}{self.stem(suffix)}"
+
+
+# The project's own layout, also the one `generate_root` imports through.
+SYSTEM_LAYOUT = Layout(base="System", prefix="System.")
+
+
+@dataclass(frozen=True)
+class Encoding:
+    """One Lean file: what names it, what it says, what it needs, who prints it."""
+
+    suffix: str                 # appended to the layout's base; "" is the base
+    title: str                  # header comment, "<title> of reactive module `X`"
+    core: str                   # the Core module the encoding is written against
+    needs: tuple[str, ...]      # suffixes of the sibling encodings it imports
+    producer: str               # the `ModuleToLean4` method that prints it
+    scalar: bool = False        # only sound when the module scalarizes
+    cert_file: bool = True      # also written by the `--cert-file` route
+
+
+ENCODINGS: tuple[Encoding, ...] = (
+    # The functional encoding is the base every other row imports. The
+    # `--cert-file` route gets its own copy inlined into the standalone
+    # certificate by `generate_standalone_cert_lean`, so it is not written
+    # again there; `Circ` has no consumer on that route at all.
+    Encoding("", "Functional encoding", "Core.Box", (), "to_lean_functional",
+             cert_file=False),
+    Encoding("Circ", "Circuit encoding", "Core.Box", ("",), "to_lean_circ",
+             cert_file=False),
+    Encoding("Rel", "Matrix-domain relational encoding", "Core.Basic", ("",),
+             "to_lean_mat_rel"),
+    Encoding("Scalar", "Scalar encoding", "Core.Basic", ("",), "to_lean_scalar",
+             scalar=True),
+    Encoding("ScalarRel", "Scalar-relational encoding", "Core.Basic", ("Scalar",),
+             "to_lean_rel", scalar=True),
+)
+
+
+def write_encoding(
+    enc: Encoding, m2l: "ModuleToLean4", layout: Layout, module_name: str
+) -> Path:
+    """Print one encoding and write it where `layout` says it goes."""
+    imports = [enc.core] + [layout.lean_module(s) for s in enc.needs]
+    body = getattr(m2l, enc.producer)()
+    path = layout.path(enc.suffix)
+    path.write_text(
+        f"/- {enc.title} of reactive module `{module_name}` -/\n"
+        + "".join(f"import {i}\n" for i in imports)
+        + f"\n{body}\n"
+    )
+    return path
+
+
 def generate_root(scalar: bool = True) -> str:
-    """Root module file that imports System.* encodings."""
-    return render("project/Root.lean.j2", scalar=scalar)
+    """Root module file that imports the `System.*` encodings.
+
+    The import list is the encoding table, so a row added there reaches the
+    root without a second edit. `scalar` drops the rows whose encoding only
+    holds for a module the scalar layout can express.
+    """
+    return render(
+        "project/Root.lean.j2",
+        imports=[
+            SYSTEM_LAYOUT.lean_module(e.suffix)
+            for e in ENCODINGS
+            if scalar or not e.scalar
+        ],
+    )
 
 
 def _token_count(wire: Wire) -> int:
@@ -551,64 +656,12 @@ def create_project(
     root_lean.write_text(generate_root(scalar=m2l._can_scalarize()))
     print(f"Wrote root module {root_lean}")
 
-    mod_file = src_dir / "System.lean"
-    print(f"Generating `{mod_file.absolute()}`")
-    mod_file.write_text(f"""\
-/- Functional encoding of reactive module `{module_name}` -/
-import Core.Box
-
-{m2l.to_lean_functional()}
-""")
-    assert mod_file.exists()
-    print(f"++ Generated {mod_file} ++")
-
-    mod_file = src_dir / "Circ.lean"
-    print(f"Generating `{mod_file.absolute()}`")
-    mod_file.write_text(f"""\
-/- Circuit encoding of reactive module `{module_name}` -/
-import Core.Box
-import System.System
-
-{m2l.to_lean_circ()}
-""")
-    assert mod_file.exists()
-    print(f"++ Generated {mod_file} ++")
-
-    mat_rel_file = src_dir / "Rel.lean"
-    print(f"Generating `{mat_rel_file.absolute()}`")
-    mat_rel_file.write_text(f"""\
-/- Matrix-domain relational encoding of reactive module `{module_name}` -/
-import Core.Basic
-import System.System
-
-{m2l.to_lean_mat_rel()}
-""")
-    assert mat_rel_file.exists()
-    print(f"++ Generated {mat_rel_file} ++")
-
-    scalar_file = src_dir / "Scalar.lean"
-    print(f"Generating `{scalar_file.absolute()}`")
-    scalar_file.write_text(f"""\
-/- Scalar encoding of reactive module `{module_name}` -/
-import Core.Basic
-import System.System
-
-{m2l.to_lean_scalar()}
-""")
-    assert scalar_file.exists()
-    print(f"++ Generated {scalar_file} ++")
-
-    scalar_rel_file = src_dir / "ScalarRel.lean"
-    print(f"Generating `{scalar_rel_file.absolute()}`")
-    scalar_rel_file.write_text(f"""\
-/- Scalar-relational encoding of reactive module `{module_name}` -/
-import Core.Basic
-import System.Scalar
-
-{m2l.to_lean_rel()}
-""")
-    assert scalar_rel_file.exists()
-    print(f"++ Generated {scalar_rel_file} ++")
+    # Every encoding the project carries, in table order. The scalar rows
+    # are written whether or not the module scalarizes -- only the root
+    # import list is gated, which is what it has always done.
+    layout = replace(SYSTEM_LAYOUT, directory=src_dir)
+    for enc in ENCODINGS:
+        print(f"++ Generated {write_encoding(enc, m2l, layout, module_name)} ++")
 
     # -- certificate data (init_pre, inv, P, ranking — placeholders if no cert_data) --
     write_data_lean(project_dir, project_name, module, cert_data, ctx=ctx)
