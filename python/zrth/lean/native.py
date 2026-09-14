@@ -25,10 +25,9 @@ from zrth.lean.common import (
     _flat_size,
     _flat_indices,
 )
+from zrth.lean.ops import mat_emitter, scalar_emitter
 
-from typing import Callable
-
-from zrth import Wire, Sort
+from zrth import Wire
 
 
 def _product_type(wires: list[Wire]) -> str:
@@ -48,117 +47,6 @@ def _build_tuple(exprs: list[str]) -> str:
     if len(exprs) == 1:
         return exprs[0]
     return "(" + ", ".join(exprs) + ")"
-
-
-# Map operations to Lean expression builder (takes list of arg strings).
-# Operands and results are all `Mat _ 1 1` (scalar)
-# FIXME: element-wise ops extract position `0 0`, but
-# it should be defined elem-wise on the whole matrix to match Rust
-_LEAN_OP: dict[str, Callable] = {
-    "Not": lambda a: f"(fun _ _ => !({a[0]} 0 0))",
-    "And": lambda a: f"(fun _ _ => ({a[0]} 0 0 && {a[1]} 0 0))",
-    "Or": lambda a: f"(fun _ _ => ({a[0]} 0 0 || {a[1]} 0 0))",
-    "Ite": lambda a: f"(if {a[0]} 0 0 then {a[1]} else {a[2]})",
-    "Add": lambda a: f"({a[0]} + {a[1]})",
-    "Sub": lambda a: f"({a[0]} - {a[1]})",
-    "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Neg": lambda a: f"(-{a[0]})",
-    "Lt": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 < {a[1]} 0 0))",
-    "Le": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≤ {a[1]} 0 0))",
-    "Gt": lambda a: f"(fun _ _ => decide ({a[1]} 0 0 < {a[0]} 0 0))",
-    "Ge": lambda a: f"(fun _ _ => decide ({a[1]} 0 0 ≤ {a[0]} 0 0))",
-    "Eq": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 = {a[1]} 0 0))",
-    "Ne": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≠ {a[1]} 0 0))",
-    "Min": lambda a: f"(matMin {a[0]})",
-    "Max": lambda a: f"(matMax {a[0]})",
-    "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
-    "Id": lambda a: a[0],
-    "Transpose": lambda a: f"(MatTranspose {a[0]})",
-    # Linear is handled specially (its A, B are baked into the op, not read
-    # wires) — see `_linear_expr`.
-    "ReLU": lambda a: f"ReLu {a[0]}",
-    "TensorGet": lambda a: f"({a[0]} 0 0)",
-    "ToUnsigned": lambda a: f"(fun _ _ => Int.toNat ({a[0]} 0 0))",
-}
-
-
-# BV works entirely in BitVec: that theory has no Bool wires at all -- an
-# `Ite` condition and an `Eq` result are both `BitVec 1`. The Boolean forms
-# above therefore do not apply to it (`!`, `&&`, `||` and a bare `if c then`
-# were emitted against `BitVec 1` values, which does not elaborate). These
-# use BitVec's own operators and compare a 1-bit value against 1 directly,
-# rather than converting through `BV.BVToBool`.
-_BV_LEAN_OP: dict[str, Callable] = {
-    "Not": lambda a: f"(fun i j => ~~~({a[0]} i j))",
-    "And": lambda a: f"(fun i j => ({a[0]} i j) &&& ({a[1]} i j))",
-    "Or": lambda a: f"(fun i j => ({a[0]} i j) ||| ({a[1]} i j))",
-    "Xor": lambda a: f"(fun i j => ({a[0]} i j) ^^^ ({a[1]} i j))",
-    "Ite": lambda a: f"(if {a[0]} 0 0 = 1 then {a[1]} else {a[2]})",
-    "Eq": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0)",
-    "Ne": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1)",
-    "UMod": lambda a: f"(fun i j => BitVec.umod ({a[0]} i j) ({a[1]} i j))",
-    "SMod": lambda a: f"(fun i j => BitVec.smod ({a[0]} i j) ({a[1]} i j))",
-}
-
-
-def _is_bv_itype(itype) -> bool:
-    """True for an op drawn from the BV theory (PyO3 names them `BV_*`)."""
-    return type(itype).__name__.startswith("BV_")
-
-
-def _op_table(itype) -> dict:
-    """The matrix-form emitter table for this op's theory."""
-    if _is_bv_itype(itype) and itype_name(itype) in _BV_LEAN_OP:
-        return _BV_LEAN_OP
-    return _LEAN_OP
-
-
-def _scalar_op_table(itype) -> dict:
-    """The scalar-form emitter table for this op's theory."""
-    if _is_bv_itype(itype) and itype_name(itype) in _BV_SCALAR_OP:
-        return _BV_SCALAR_OP
-    return _SCALAR_OP
-
-
-
-_SCALAR_OP: dict[str, Callable] = {
-    "Not": lambda a: f"(!{a[0]})",
-    "And": lambda a: f"({a[0]} && {a[1]})",
-    "Or": lambda a: f"({a[0]} || {a[1]})",
-    "Ite": lambda a: f"(if {a[0]} then {a[1]} else {a[2]})",
-    "Add": lambda a: f"({a[0]} + {a[1]})",
-    "Sub": lambda a: f"({a[0]} - {a[1]})",
-    "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Neg": lambda a: f"(-{a[0]})",
-    "Lt": lambda a: f"(decide ({a[0]} < {a[1]}))",
-    "Le": lambda a: f"(decide ({a[0]} ≤ {a[1]}))",
-    "Gt": lambda a: f"(decide ({a[1]} < {a[0]}))",
-    "Ge": lambda a: f"(decide ({a[1]} ≤ {a[0]}))",
-    "Eq": lambda a: f"(decide ({a[0]} = {a[1]}))",
-    "Ne": lambda a: f"(decide ({a[0]} ≠ {a[1]}))",
-    "MatMul": lambda a: f"({a[0]} * {a[1]})",
-    "Id": lambda a: a[0],
-    # `ReLu` is a matrix op; on a scalar-bound wire it has to be the bare
-    # `max 0 x`. Lifting the operand and projecting the result instead
-    # leaves `ReLu (fun _ _ => x) 0 0` with unconstrained dimensions.
-    "ReLU": lambda a: f"(Max.max 0 {a[0]})",
-    "TensorGet": lambda a: a[0],
-    "ToUnsigned": lambda a: f"(Int.toNat {a[0]})",
-}
-
-
-# Scalar-encoding counterpart of `_BV_LEAN_OP`, on bare BitVec values.
-_BV_SCALAR_OP: dict[str, Callable] = {
-    "Not": lambda a: f"(~~~{a[0]})",
-    "And": lambda a: f"({a[0]} &&& {a[1]})",
-    "Or": lambda a: f"({a[0]} ||| {a[1]})",
-    "Xor": lambda a: f"({a[0]} ^^^ {a[1]})",
-    "Ite": lambda a: f"(if {a[0]} = 1 then {a[1]} else {a[2]})",
-    "Eq": lambda a: f"(if {a[0]} = {a[1]} then 1 else 0)",
-    "Ne": lambda a: f"(if {a[0]} = {a[1]} then 0 else 1)",
-    "UMod": lambda a: f"(BitVec.umod {a[0]} {a[1]})",
-    "SMod": lambda a: f"(BitVec.smod {a[0]} {a[1]})",
-}
 
 
 def _argmax_expr(
@@ -286,11 +174,8 @@ def _translate_terms(
         elif name == "Linear":
             expr = _linear_expr(term, wire_expr)
         else:
-            table = _op_table(term.itype)
-            if name not in table:
-                raise ValueError(f"No Lean expression mapping for: {name}")
             input_exprs = [wire_expr[w.id] for w in term.read]
-            expr = table[name](input_exprs)
+            expr = mat_emitter(term.itype)(input_exprs)
 
         # Each term writes exactly one wire
         write_wire = term.write[0]
@@ -369,8 +254,8 @@ def _translate_terms_scalar(
     provided, ``Argmax`` on a wire whose slots are known emits a call to the
     scalar axiom ``argmax1d_scalar_n`` instead of reconstructing a matrix.
 
-    Falls back to `_LEAN_OP` (matrix form) for non-scalar output wires or
-    operations not in `_SCALAR_OP`.
+    Falls back to the op table's matrix column for non-scalar output wires
+    and for the ops whose scalar cell is `ViaMat`.
     """
     term_list = list(terms)
     if not term_list:
@@ -420,20 +305,17 @@ def _translate_terms_scalar(
             expr = _linear_expr(term, _lift_scalar_reads(term, wire_expr))
             if _is_scalar_wire(write_wire):
                 expr = f"({expr} 0 0)"
-        elif _is_scalar_wire(write_wire) and name in _scalar_op_table(term.itype):
+        elif _is_scalar_wire(write_wire) and scalar_emitter(term.itype) is not None:
             input_exprs = [wire_expr[w.id] for w in term.read]
-            expr = _scalar_op_table(term.itype)[name](input_exprs)
+            expr = scalar_emitter(term.itype)(input_exprs)
         else:
-            table = _op_table(term.itype)
-            if name not in table:
-                raise ValueError(f"No Lean expression mapping for: {name}")
-            # `_LEAN_OP` holds the matrix forms, which apply operands to
-            # `0 0`. Scalar-bound reads must be lifted first: a matrix
+            # The `mat` column holds the matrix forms, which apply operands
+            # to `0 0`. Scalar-bound reads must be lifted first: a matrix
             # `Ite` with a scalar Bool condition emitted
             # `if <Bool> 0 0 then ...`, which does not elaborate.
             lifted = _lift_scalar_reads(term, wire_expr)
             input_exprs = [lifted[w.id] for w in term.read]
-            expr = table[name](input_exprs)
+            expr = mat_emitter(term.itype)(input_exprs)
             # A matrix form yields a `Mat`; a scalar write wire is ascribed
             # the bare element type, so project it — the same step the
             # `Argmax` and `Linear` branches above already take. Without it

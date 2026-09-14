@@ -9,18 +9,23 @@ Matrix representation
 (element `[i][j]` at index `i*n + j`). When `m = n = 1`, the tuple
 collapses to the scalar sort `t` — this matches the common Lean use of
 `Mat t 1 1` for scalar values.
+
+What this module owns is that representation. *Which* term each op builds
+is the `smt` column of the op table in `ops.py`, one cell per variant;
+`translate_terms` walks the IR and hands each op an `SmtOp` to build with.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, ClassVar
 
 import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort, BitVec, Bool, Int, Real, Term
 from .common import itype_name, dtype_shape
+from .ops import smt_emitter
 
 
 @dataclass(frozen=True)
@@ -251,14 +256,6 @@ def _reduce_flat(
     return best
 
 
-def _unop_scalar(tm, kind):
-    return lambda a: tm.mkTerm(kind, a)
-
-
-def _binop_scalar(tm, kind):
-    return lambda a, b: tm.mkTerm(kind, a, b)
-
-
 def _bool_or_bv1(tm: cvc5.TermManager, pred: cvc5.Term, want_bv1: bool) -> cvc5.Term:
     """cvc5 comparison Kinds (EQUAL, BITVECTOR_ULT, ...) always yield a native
     Bool term. LIA/LRA comparisons want that Bool as-is, but BV comparisons are
@@ -266,6 +263,92 @@ def _bool_or_bv1(tm: cvc5.TermManager, pred: cvc5.Term, want_bv1: bool) -> cvc5.
     if not want_bv1:
         return pred
     return tm.mkTerm(Kind.ITE, pred, tm.mkBitVector(1, 1), tm.mkBitVector(1, 0))
+
+
+@dataclass(frozen=True)
+class SmtOp:
+    """One term being translated, and every handle its emitter needs.
+
+    The emitters live in `ops.py`, one cell of the op table, and that module
+    must not import cvc5 — the Lean path has to keep working where cvc5 is
+    absent. So everything cvc5 arrives here: the term manager, the `Kind`
+    enum as `K`, and thin wrappers over this module's matrix primitives.
+    """
+
+    tm: cvc5.TermManager
+    term: Term
+    name: str
+    args: list[cvc5.Term]
+    in_shapes: list[MatShape]
+    out_shape: MatShape
+
+    #: `cvc5.Kind`, reached through the context rather than imported.
+    K: ClassVar = Kind
+
+    @property
+    def write(self) -> Wire:
+        """The single wire this term writes."""
+        return self.term.write[0]
+
+    @property
+    def is_bv(self) -> bool:
+        """True when the written wire is a BitVec, which is what decides
+        between a BitVec Kind and its Bool/Int/Real counterpart."""
+        return isinstance(self.write.dtype, BitVec)
+
+    # -- builders ---------------------------------------------------------
+    def mk(self, kind, *args: cvc5.Term) -> cvc5.Term:
+        return self.tm.mkTerm(kind, *args)
+
+    def unop(self, kind) -> Callable[[cvc5.Term], cvc5.Term]:
+        return lambda a: self.tm.mkTerm(kind, a)
+
+    def binop(self, kind) -> Callable[[cvc5.Term, cvc5.Term], cvc5.Term]:
+        return lambda a, b: self.tm.mkTerm(kind, a, b)
+
+    def integer(self, value: int) -> cvc5.Term:
+        return self.tm.mkInteger(value)
+
+    def bitvector(self, width: int, value: int) -> cvc5.Term:
+        return self.tm.mkBitVector(width, value)
+
+    def const(self, dt: Sort, raw) -> cvc5.Term:
+        return _scalar_const(self.tm, dt, raw)
+
+    def tensor(self, wire: Wire, data) -> cvc5.Term:
+        return _tensor_const(self.tm, wire, data)
+
+    # -- matrices ---------------------------------------------------------
+    def shape(self, m: int, n: int) -> MatShape:
+        return MatShape(m, n)
+
+    def scalar(self, index: int, i: int = 0, j: int = 0) -> cvc5.Term:
+        """Element `[i][j]` of read operand `index`."""
+        return mat_select(self.tm, self.args[index], self.in_shapes[index], i, j)
+
+    def pack(self, elems: list[cvc5.Term]) -> cvc5.Term:
+        """Build the written wire's matrix from its row-major elements."""
+        return mat_pack(self.tm, self.out_shape, elems)
+
+    def pack_at(self, shape: MatShape, elems: list[cvc5.Term]) -> cvc5.Term:
+        return mat_pack(self.tm, shape, elems)
+
+    def elementwise(self, op: Callable[..., cvc5.Term], *mats: cvc5.Term) -> cvc5.Term:
+        return _elementwise(self.tm, self.out_shape, op, *mats)
+
+    def matmul(
+        self, a: cvc5.Term, b: cvc5.Term, a_shape: MatShape, b_shape: MatShape
+    ) -> cvc5.Term:
+        return _matmul(self.tm, a, b, a_shape, b_shape)
+
+    def argmax_flat(self, index: int) -> cvc5.Term:
+        return _argmax_flat(self.tm, self.args[index], self.in_shapes[index])
+
+    def reduce_flat(self, index: int, take_min: bool) -> cvc5.Term:
+        return _reduce_flat(self.tm, self.args[index], self.in_shapes[index], take_min)
+
+    def bool_or_bv1(self, pred: cvc5.Term, want_bv1: bool) -> cvc5.Term:
+        return _bool_or_bv1(self.tm, pred, want_bv1)
 
 
 def translate_terms(
@@ -278,201 +361,26 @@ def translate_terms(
     `input_bindings` maps block-input wire IDs to their already-built
     cvc5 terms. The returned dict is a superset including every computed
     wire.
+
+    Every variant is dispatched through `ops.OPS` — constants included — so
+    what this encoder covers is one column of that table rather than the
+    shape of an if/elif chain, and a variant it does not cover is refused
+    with the reason the table records.
     """
     wt: dict[int, cvc5.Term] = dict(input_bindings)
 
     for term in terms:
-        name = itype_name(term.itype)
+        emit = smt_emitter(term.itype)
         write = term.write[0]
-        out_shape = wire_shape(write)
-
-        if name == "Tensor":
-            wt[write.id] = _tensor_const(tm, write, term.itype._0)
-            continue
-        if name in ("Bool", "Int", "Real", "Const"):
-            payload = term.itype._0
-            numel = payload.numel() if hasattr(payload, "numel") else 1
-            if numel > 1:
-                # matrix constant: materialize per element (payload matches shape)
-                wt[write.id] = _tensor_const(tm, write, payload)
-            else:
-                # BV.Const's element type isn't encoded in the name (unlike
-                # LIA.Bool/LIA.Int/LRA.Real) — read it off the write wire.
-                elem = (
-                    write.dtype
-                    if name == "Const"
-                    else {
-                        "Bool": Bool([1, 1]),
-                        "Int": Int([1, 1]),
-                        "Real": Real([1, 1]),
-                    }[name]
-                )
-                v = _scalar_const(tm, elem, payload)
-                wt[write.id] = mat_pack(tm, out_shape, [v] * out_shape.total)
-            continue
-
-        args = [wt[w.id] for w in term.read]
-        in_shapes = [wire_shape(w) for w in term.read]
-
-        is_bv = isinstance(write.dtype, BitVec)
-
-        if name == "Id":
-            wt[write.id] = args[0]
-        elif name == "Not":
-            kind = Kind.BITVECTOR_NOT if is_bv else Kind.NOT
-            wt[write.id] = _elementwise(tm, out_shape, _unop_scalar(tm, kind), args[0])
-        elif name == "And":
-            kind = Kind.BITVECTOR_AND if is_bv else Kind.AND
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
-        elif name == "Or":
-            kind = Kind.BITVECTOR_OR if is_bv else Kind.OR
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
-        elif name == "Xor":
-            kind = Kind.BITVECTOR_XOR if is_bv else Kind.XOR
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
-        elif name == "Ite":
-            # cond is Mat Bool 1 1 (LIA/LRA) or Mat BV<1> 1 1 (BV); extract its
-            # scalar, coercing a BV<1> condition to a genuine Bool via `!= 0`.
-            cond = mat_select(tm, args[0], in_shapes[0], 0, 0)
-            cond_dtype = term.read[0].dtype
-            if isinstance(cond_dtype, BitVec):
-                cond = tm.mkTerm(
-                    Kind.DISTINCT, cond, tm.mkBitVector(cond_dtype._0, 0)
-                )
-            wt[write.id] = tm.mkTerm(Kind.ITE, cond, args[1], args[2])
-        elif name == "Add":
-            kind = Kind.BITVECTOR_ADD if is_bv else Kind.ADD
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
-        elif name == "Sub":
-            kind = Kind.BITVECTOR_SUB if is_bv else Kind.SUB
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
-        elif name == "Mul":
-            kind = Kind.BITVECTOR_MULT if is_bv else Kind.MULT
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
-        elif name == "Neg":
-            kind = Kind.BITVECTOR_NEG if is_bv else Kind.NEG
-            wt[write.id] = _elementwise(
-                tm, out_shape, lambda a: tm.mkTerm(kind, a), args[0]
+        wt[write.id] = emit(
+            SmtOp(
+                tm=tm,
+                term=term,
+                name=itype_name(term.itype),
+                args=[wt[w.id] for w in term.read],
+                in_shapes=[wire_shape(w) for w in term.read],
+                out_shape=wire_shape(write),
             )
-        elif name in ("UDiv", "SDiv", "UMod", "SMod"):
-            kind = {
-                "UDiv": Kind.BITVECTOR_UDIV,
-                "SDiv": Kind.BITVECTOR_SDIV,
-                "UMod": Kind.BITVECTOR_UREM,
-                "SMod": Kind.BITVECTOR_SMOD,
-            }[name]
-            wt[write.id] = _elementwise(tm, out_shape, _binop_scalar(tm, kind), *args)
-        elif name == "BVToBool":
-            # Despite the name, output is BV<1> (non-zero test), not Bool.
-            a = mat_select(tm, args[0], in_shapes[0], 0, 0)
-            bw = term.read[0].dtype._0
-            pred = tm.mkTerm(Kind.DISTINCT, a, tm.mkBitVector(bw, 0))
-            wt[write.id] = mat_pack(tm, out_shape, [_bool_or_bv1(tm, pred, True)])
-        elif name in ("UMod", "SMod"):
-            # BV is the only theory with modulo, and it distinguishes the two.
-            # This branch was keyed `"Mod"` with `Kind.INTS_MODULUS`, matching
-            # no variant any theory defines.
-            a = mat_select(tm, args[0], in_shapes[0], 0, 0)
-            b = mat_select(tm, args[1], in_shapes[1], 0, 0)
-            kind = Kind.BITVECTOR_UREM if name == "UMod" else Kind.BITVECTOR_SMOD
-            wt[write.id] = mat_pack(tm, out_shape, [tm.mkTerm(kind, a, b)])
-        elif name in ("Lt", "Le", "Gt", "Ge", "Eq", "Ne"):
-            kind = {
-                "Lt": Kind.LT,
-                "Le": Kind.LEQ,
-                "Gt": Kind.GT,
-                "Ge": Kind.GEQ,
-                "Eq": Kind.EQUAL,
-                "Ne": Kind.DISTINCT,
-            }[name]
-            a = mat_select(tm, args[0], in_shapes[0], 0, 0)
-            b = mat_select(tm, args[1], in_shapes[1], 0, 0)
-            # LIA/LRA Eq/Ne write Bool; BV.Eq/BV.Ne write BV<1> (bv.rs).
-            pred = tm.mkTerm(kind, a, b)
-            wt[write.id] = mat_pack(tm, out_shape, [_bool_or_bv1(tm, pred, is_bv)])
-        elif name in ("ULe", "ULt", "UGe", "UGt", "SLe", "SLt", "SGe", "SGt"):
-            kind = {
-                "ULe": Kind.BITVECTOR_ULE,
-                "ULt": Kind.BITVECTOR_ULT,
-                "UGe": Kind.BITVECTOR_UGE,
-                "UGt": Kind.BITVECTOR_UGT,
-                "SLe": Kind.BITVECTOR_SLE,
-                "SLt": Kind.BITVECTOR_SLT,
-                "SGe": Kind.BITVECTOR_SGE,
-                "SGt": Kind.BITVECTOR_SGT,
-            }[name]
-            a = mat_select(tm, args[0], in_shapes[0], 0, 0)
-            b = mat_select(tm, args[1], in_shapes[1], 0, 0)
-            # These are BV-only ops; output is BV<1>, not the native Bool cvc5
-            # gives back from BITVECTOR_U*/S* comparison Kinds.
-            pred = tm.mkTerm(kind, a, b)
-            wt[write.id] = mat_pack(tm, out_shape, [_bool_or_bv1(tm, pred, True)])
-        elif name in ("Min", "Max"):
-            wt[write.id] = mat_pack(
-                tm,
-                out_shape,
-                [_reduce_flat(tm, args[0], in_shapes[0], name == "Min")],
-            )
-        elif name == "MatMul":
-            wt[write.id] = _matmul(tm, args[0], args[1], in_shapes[0], in_shapes[1])
-        elif name == "Linear":
-            # Convention Y = A·X + B: A ([out,in]) and B ([out,1] or empty) are
-            # baked into the op; args[0] is the single read wire X ([in,batch]).
-            A_tensor = term.itype._0
-            B_tensor = term.itype._1
-            a_rows, a_cols = int(A_tensor.shape[0]), int(A_tensor.shape[1])
-            A_shape = MatShape(a_rows, a_cols)
-            A_data = A_tensor.reshape(a_rows, a_cols)
-            A_term = mat_pack(
-                tm,
-                A_shape,
-                [
-                    _scalar_const(tm, write.dtype, A_data[i, j].item())
-                    for i in range(a_rows)
-                    for j in range(a_cols)
-                ],
-            )
-            ax = _matmul(tm, A_term, args[0], A_shape, in_shapes[0])
-            if B_tensor.numel() == 0:
-                wt[write.id] = ax
-            else:
-                B_data = B_tensor.reshape(int(B_tensor.shape[0]), int(B_tensor.shape[1]))
-                B_term = mat_pack(
-                    tm,
-                    out_shape,
-                    [
-                        _scalar_const(tm, write.dtype, B_data[i, 0].item())
-                        for i in range(out_shape.m)
-                        for _ in range(out_shape.n)
-                    ],
-                )
-                wt[write.id] = _elementwise(
-                    tm, out_shape, _binop_scalar(tm, Kind.ADD), ax, B_term
-                )
-        elif name == "ReLU":
-            zero = _scalar_const(tm, write.dtype, 0)
-            wt[write.id] = _elementwise(
-                tm,
-                out_shape,
-                lambda a: tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.GEQ, a, zero), a, zero),
-                args[0],
-            )
-        elif name == "TensorGet":
-            wt[write.id] = mat_pack(
-                tm, out_shape, [mat_select(tm, args[0], in_shapes[0], 0, 0)]
-            )
-        elif name == "ToUnsigned":
-            a = mat_select(tm, args[0], in_shapes[0], 0, 0)
-            zero = tm.mkInteger(0)
-            cast = tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.GEQ, a, zero), a, zero)
-            wt[write.id] = mat_pack(tm, out_shape, [cast])
-        elif name == "Argmax":
-            idx = _argmax_flat(tm, args[0], in_shapes[0])
-            # _argmax_flat builds an Int index; LRA modules carry it on a Real wire
-            if isinstance(write.dtype, Real):
-                idx = tm.mkTerm(Kind.TO_REAL, idx)
-            wt[write.id] = mat_pack(tm, out_shape, [idx])
-        else:
-            raise ValueError(f"SMT translator: unsupported IType {name}")
+        )
 
     return wt
