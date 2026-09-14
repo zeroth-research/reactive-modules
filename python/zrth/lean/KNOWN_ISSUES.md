@@ -126,6 +126,25 @@ so the generated executable can neither parse nor print it. A float
 approximation at the IO boundary would work if `verith -x` is wanted for LRA
 modules; that is a decision about what the executable is for.
 
+### 31. The NA model is not tied to the module · CONFIRMED
+
+Every other encoding carries an equivalence theorem back to the functional
+one; the `--fbk-proveit` route's model carries none, because trust leaves
+Lean through ic3ia and returns as `vmt2lean.py`'s certificate. A
+mistranslation in `smt_encode`, `_scalar_element`, cvc5's rewriter or
+`smt_to_lean_bool` therefore yields a model that parses, model-checks and
+carries a machine-checked certificate about a *different* system.
+
+`tests/test_lean_fbk.py::test_the_emitted_transition_agrees_with_the_module`
+evaluates the emitted slot bodies against the module's own execution, which
+catches a flattening or indexing error but is not a proof and does not run in
+the generated project.
+
+**Resolution.** [`FBK_EQUIVALENCE.md`](FBK_EQUIVALENCE.md) designs it: the
+bridge from each slot body to `Scalar.update`, which `update_scalar_eq`
+already ties to the functional encoding. Measured to close on all eight
+module shapes the route accepts, 2 s to 73 s, without needing `lean-smt`.
+
 ### 26. `matMin` / `matMax` never reduce, so `Min`/`Max` modules cannot be proved · CONFIRMED
 
 **Symptom.** `OpMax`, `OpMin`. The certificate goal keeps an opaque

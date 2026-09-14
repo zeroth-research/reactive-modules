@@ -5,7 +5,9 @@ source files that encode the module and carry machine-checked proofs of
 safety/liveness properties.
 
 Known defects in this pipeline, fixed and open, are catalogued in
-[KNOWN_ISSUES.md](KNOWN_ISSUES.md).  What cvc5 is used for -- the obligation
+[KNOWN_ISSUES.md](KNOWN_ISSUES.md).  The one link the `--fbk-proveit` route
+is missing -- a proof that the NA model *is* the module -- is designed, with
+measurements, in [FBK_EQUIVALENCE.md](FBK_EQUIVALENCE.md).  What cvc5 is used for -- the obligation
 pre-check, sharing in the printer, and the solver-informed tactics -- is in
 [SMT_ASSIST.md](SMT_ASSIST.md), together with cold-start plans for abduction
 and SyGuS.  The 77-case limit matrix those two are measured on, with its
@@ -39,6 +41,7 @@ topologically-sorted dataflow graph.
 | File | Role |
 |------|------|
 | `common.py` | Shared utilities: `LeanContext`, type helpers, `ConstantRegistry`, wire-binding helpers |
+| `ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
 | `translate.py` | Top-level `ModuleToLean4` class; assembles functional + circuit encodings |
@@ -98,10 +101,11 @@ Lean function body as a string of `let` bindings followed by the output tuple:
   (x6, x5)
 ```
 
-Each term is looked up in `_LEAN_OP` (keyed by `IType` variant name).
-Operations produce `Mat T 1 1` values even for scalar results — conditions
-extract `0 0`, boolean ops wrap in `fun _ _ => ...`.  Non-scalar ops
-(`MatMul`, `Linear`, `ReLU`) use their native matrix forms.
+Each term is looked up in the op table's `mat` column (`ops.mat_emitter`,
+keyed by theory and variant name).  Operations produce `Mat T 1 1` values
+even for scalar results — conditions extract `0 0`, boolean ops wrap in
+`fun _ _ => ...`.  Non-scalar ops (`MatMul`, `Linear`, `ReLU`) use their
+native matrix forms.
 
 `ModuleToLean4.atom_to_lean_functional()` wraps the body into:
 
@@ -672,6 +676,21 @@ spurious counterexample". That is the SAT path (`vmt2lean -m sat`), not the
 `lmcs06mutex0` are built on.
 
 [ltl]: https://github.com/zeroth/proof-prototyping
+
+---
+
+## Adding a New Op (`ops.py`)
+
+Every backend dispatches through one table, so an op is added in one place:
+a row in `ops.OPS` giving its name, the theories that expose it, and a cell
+for each of `mat`, `scalar`, `box` and `smt`.  A cell is an emitter, or
+`ViaMat`/`Inline`/`Unsupported` saying why it is not one — `Unsupported`'s
+reason is what the caller is told when it hits the gap.
+
+`python -m zrth.lean.ops` prints the whole matrix and every gap in it.
+`tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
+directions: a variant a theory gained but the table has not fails there, and
+so does a row no theory backs.
 
 ---
 
