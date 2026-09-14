@@ -12,6 +12,7 @@ test goes through :func:`candidate` — the production path from a bench to a
 """
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 
 import z3
@@ -21,7 +22,7 @@ from benchmarks.svcomp._farkas import certify, inductive
 from benchmarks.svcomp._invariants import as_predicates
 from benchmarks.svcomp._property import Safety
 from benchmarks.svcomp._termination import compose, system_of, terminates
-from zrth import LIA, Wire, sugar
+from zrth import LIA, Var, sugar
 
 
 @dataclass
@@ -49,6 +50,22 @@ def candidate(bench, layers, delta=1.0, invariants=()) -> Cand:
     return Cand(composed, terminates(), witness)
 
 
+def _of_arity(spec, params):
+    """``spec`` as a block method of ``params`` variables.
+
+    :class:`zrth.sugar.Module` binds each variable to its own parameter and checks
+    the count, which a fixture whose width is the caller's choice cannot write out
+    — so the wrapper declares the signature it is being checked against, and the
+    spec still sees the state as one value or one tuple."""
+    def block(self, *args):
+        return spec(args[0] if len(args) == 1 else args)
+
+    block.__signature__ = inspect.Signature(
+        [inspect.Parameter(n, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+         for n in ("self",) + tuple(params)])
+    return block
+
+
 def loop_bench(state, update, *, init=None, precondition=None, name="test"):
     """A :class:`Bench` for a closed loop over ``state``.
 
@@ -60,17 +77,13 @@ def loop_bench(state, update, *, init=None, precondition=None, name="test"):
     zeros = tuple(0 for _ in names)
 
     def build():
-        pairs = {n: (Wire(INT), Wire(INT)) for n in names}
-
-        class Program(sugar.Module):
-            def init(self):
-                return (init or (lambda: zeros))()
-
-            def update(self, ctrl):
-                return update(ctrl)
-
-        prog = Program(theory=LIA, ctrl=tuple(pairs[n] for n in names))
-        return prog, pairs, {}
+        state_vars = {n: Var(INT) for n in names}
+        Program = type("Program", (sugar.Module,), {
+            "init": _of_arity(lambda _: (init or (lambda: zeros))(), ()),
+            "update": _of_arity(update, names),
+        })
+        prog = Program(ctrl=tuple(state_vars[n] for n in names), theory=LIA)
+        return prog, state_vars, {}
 
     return Bench(name=name, source="", state=names, inputs=(), build=build,
                  precondition=precondition)

@@ -16,27 +16,25 @@ Precondition: y1 > 0 && y2 > 0.
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module, nxt, ite, ne
+from zrth.sugar import Module, X, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, var
 
 
 class Program(Module):
-    def init(self, extl):
-        y1_0, y2_0 = extl
-        return nxt(y1_0), nxt(y2_0)
+    def init(self, y1_0, y2_0):
+        return X(y1_0), X(y2_0)
 
-    def update(self, ctrl):
-        y1, y2 = ctrl
-        guard = ne(y1, y2)
+    def update(self, y1, y2, _y1_0, _y2_0):
+        guard = (y1 != y2)
         wy1 = ite(y1 > y2, y1 - y2, y1)
         wy2 = ite(y1 > y2, y2, y2 - y1)
         return ite(guard, wy1, y1), ite(guard, wy2, y2)
 
 
 def _build():
-    y1, y2 = pair(), pair()
-    y1_0, y2_0 = pair(), pair()
+    y1, y2 = var(), var()
+    y1_0, y2_0 = var(), var()
     prog = Program(theory=LIA, ctrl=(y1, y2), extl=(y1_0, y2_0))
     return prog, {"y1": y1, "y2": y2}, {"y1_0": y1_0, "y2_0": y2_0}
 

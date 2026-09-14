@@ -85,9 +85,12 @@ def interpret(itype):
         case LRA.Ite() | LIA.Ite():
             return _np.frompyfunc(lambda c, tt, ff: _z3.If(c, tt, ff), 3, 1)
 
-        # neural-ish / aggregate
-        case LRA.ReLU() | LIA.ReLU():
-            return _np.frompyfunc(lambda x: _z3.If(x > 0., x, 0.), 1, 1)
+        # neural-ish / aggregate -- the zero is the theory's own, so an
+        # integer ReLU stays integral instead of being lifted through ToReal
+        case LRA.ReLU():
+            return _np.frompyfunc(lambda x: _z3.If(x > 0, x, _z3.RealVal(0)), 1, 1)
+        case LIA.ReLU():
+            return _np.frompyfunc(lambda x: _z3.If(x > 0, x, _z3.IntVal(0)), 1, 1)
         # Reductions over one operand, matching the theory and the torch
         # evaluator -- these were elementwise binaries.
         case LRA.Min() | LIA.Min():

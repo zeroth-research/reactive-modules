@@ -19,9 +19,9 @@ from benchmarks.svcomp import discover
 from benchmarks.svcomp._farkas import certify, inductive, lex_decrease, read_system
 from benchmarks.svcomp._termination import terminates
 from benchmarks.svcomp._termination import _v_module, compose, system_of
-from zrth import Module
+from zrth import Module, X
 from benchmarks.svcomp._property import Safety
-from zrth.sugar import ite, ne
+from zrth.sugar import ite
 
 LEAN_DIR = Path(__file__).resolve().parents[1] / "benchmarks" / "svcomp" / "lean"
 
@@ -129,7 +129,7 @@ def test_emit_multi_path_unions_the_step():
     union, dispatched in `no_infinite_run`."""
     layers = [(np.array([[1], [-1]]), np.array([0, 0])),
               (np.array([[1, 1]]), np.array([0]))]
-    bench = loop_bench(("x",), lambda x: ite(ne(x, 0), ite(x > 0, x - 1, x + 1), x))
+    bench = loop_bench(("x",), lambda x: ite(x != 0, ite(x > 0, x - 1, x + 1), x))
     ob = candidate(bench, layers)
     res = certify(ob.system, ob.claim, ob.witness)
     assert res.verified, res.status
@@ -223,10 +223,10 @@ def _lex_obligation():
     mods, ranks = [], []
     for W in ([[1, 0]], [[0, 1]]):
         layers = [(np.array(W), np.array([0])), (np.array([[1]]), np.array([0]))]
-        vs_mod, vs = _v_module(prog.pairs, layers, read_next=False)
-        vsp_mod, vsp = _v_module(prog.pairs, layers, read_next=True)
-        mods += [vs_mod, vsp_mod]; ranks.append((vs[1], vsp[1]))
-    system = read_system(Module.parallel(prog.module, *mods), prog.names)
+        vs_mod, vs = _v_module(prog.vars, layers, read_next=False)
+        vsp_mod, vsp = _v_module(prog.vars, layers, read_next=True)
+        mods += [vs_mod, vsp_mod]; ranks.append((X(vs), X(vsp)))
+    system = read_system(Module.compose(prog.module, *mods), prog.names)
     prop, rule = terminates(), lex_decrease(tuple(ranks))
     res = certify(system, prop, rule)
     assert res.verified, res.status
@@ -317,9 +317,9 @@ def test_property_over_a_computed_wire_kernel_checks():
                                 lambda c: (ite(c[0] < c[1], c[0] + 1, c[0]), c[1]),
                                 init=lambda: (0, 5)))
     layers = [(np.array([[-1, 1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
-    mod, out = _v_module(prog.pairs, layers, read_next=False)
-    system = read_system(Module.parallel(prog.module, mod), prog.names)
-    d = out[1]
+    mod, out = _v_module(prog.vars, layers, read_next=False)
+    system = read_system(Module.compose(prog.module, mod), prog.names)
+    d = X(out)
     prop = Safety(lambda W, S: W[d] == S["n"] - S["i"])
     rule = inductive((lambda W, S: S["i"] <= S["n"],))
     res = certify(system, prop, rule)
@@ -351,7 +351,7 @@ def test_the_liveness_theorem_cites_the_invariant_proof():
     theorem that cites it for the invariant along the run instead of re-deriving
     it by an inline induction — so no ``consecution`` remains outside ``safety0``.
     And the two-claim file kernel-checks."""
-    bench = loop_bench(("x",), lambda x: ite(ne(x, 0), x - 1, x), init=lambda: (5,))
+    bench = loop_bench(("x",), lambda x: ite(x != 0, x - 1, x), init=lambda: (5,))
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     system = system_of(bench)
     nonneg = lambda W, S: S["x"] >= 0

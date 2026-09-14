@@ -45,7 +45,7 @@ from math import gcd, lcm
 
 import numpy as np
 import z3
-from zrth import Sort
+from zrth import Int, X
 
 from ._nodes import ModeKind, Op, Unsupported, free_symbols, node_view
 from ._property import Safety
@@ -72,8 +72,8 @@ def _relu_region(e, mode):
 # Adding support for an operation is an entry here and nothing else.
 OPS = {
     # affine arithmetic — evaluated straight through
-    "LIA_Linear": Op(), "LIA_Add": Op(), "LIA_Sub": Op(), "LIA_Const": Op(),
-    "LIA_Id": Op(), "LIA_Transpose": Op(),
+    "LIA_Linear": Op(), "LIA_Add": Op(), "LIA_Sub": Op(), "LIA_Int": Op(),
+    "LIA_Bool": Op(), "LIA_Id": Op(), "LIA_Transpose": Op(),
     # boolean structure — z3 handles it, and PRED_MODES splits what the LP cannot
     "LIA_And": Op(), "LIA_Or": Op(), "LIA_Xor": Op(), "LIA_Not": Op(),
     "LIA_Le": Op(), "LIA_Lt": Op(), "LIA_Ge": Op(), "LIA_Gt": Op(),
@@ -81,8 +81,13 @@ OPS = {
     # piecewise-linear
     "LIA_ReLU": Op("relu", mode=ModeKind(_relu_at, _relu_region)),
     "LIA_Ite": Op("ite", split=True),
-    # recognised, no cell rule — and no Z3 translation either, so the walk refuses
-    # a module carrying one by name
+    # the theory's havoc: a fresh value each round. Named so the vocabulary is
+    # complete, but Z3 has no translation for one, so the walk refuses a module
+    # carrying it — as `check_supported` would of a transition reading a fresh
+    # value.
+    "LIA_AnyInt": Op(), "LIA_AnyBool": Op(),
+    # recognised, no cell rule — so the walk refuses a module carrying one by
+    # name, whether or not Z3 can read it
     "LIA_Min": Op("min"),
     "LIA_Max": Op("max"),
     "LIA_Argmax": Op("argmax"),
@@ -534,12 +539,13 @@ class System:
     Built by :func:`read_system`, the one place a module is walked; everything
     here is a value, so refining a system costs nothing and re-reads nothing.
 
-    ``pairs`` are the *columns*: the ctrl pairs whose latched wire some term
+    ``vars`` are the *columns*: the ctrl variables whose latched wire some term
     reads. That is what a free input to the round is — a value the round depends
-    on and carries in — so it is the state the proofs quantify over. A latched
-    wire nothing reads (a ranking function's own previous value, composed
-    alongside) is not a column; its next value is still a wire of the graph and
-    a rule may name it. Nothing is classified by kind: only by data flow.
+    on and carries in — so it is the state the proofs quantify over. A variable
+    nothing reads latched (a ranking function's own previous value, composed
+    alongside) is not a column; its next wire ``X(v)`` is still a wire of the
+    graph and a rule may name it. Nothing is classified by kind: only by data
+    flow.
 
     ``W`` gives each ctrl next wire a symbol a rule's predicate can name; the
     engine resolves it, per region, to the wire's value at that round.
@@ -549,8 +555,8 @@ class System:
     property of it. ``names`` is provenance only, defaulting to the wire ids."""
     module: object
     view: object
-    pairs: tuple
-    all_pairs: tuple
+    vars: tuple
+    all_vars: tuple
     s_syms: tuple
     seed: dict
     W: dict
@@ -563,24 +569,24 @@ class System:
     @property
     def sp_syms(self) -> list:
         """The transition, read off the columns' next wires."""
-        return [self.view.values[pr[1]][0] for pr in self.pairs]
+        return [self.view.values[X(v)][0] for v in self.vars]
 
-    def index(self, pair) -> int:
-        for k, pr in enumerate(self.pairs):
-            if pr[0].id == pair[0].id:
+    def index(self, var) -> int:
+        for k, v in enumerate(self.vars):
+            if v.id == var.id:
                 return k
-        raise Unsupported(f"wire pair {pair[0].id} is not a column of this system")
+        raise Unsupported(f"variable {var.id} is not a column of this system")
 
-    def sym_of(self, pair):
-        return self.s_syms[self.index(pair)]
+    def sym_of(self, var):
+        return self.s_syms[self.index(var)]
 
-    def next_of(self, pair):
-        return self.view.values[pair[1]][0]
+    def next_of(self, var):
+        return self.view.values[X(var)][0]
 
     @property
     def entry(self) -> dict:
         """Each column's value at tick 0, by name, from the init block."""
-        return {n: self.view.entry[pr[1]][0] for n, pr in zip(self.names, self.pairs)}
+        return {n: self.view.entry[X(v)][0] for n, v in zip(self.names, self.vars)}
 
     @property
     def s_map(self) -> dict:
@@ -625,45 +631,47 @@ class System:
         return tuple(out)
 
 
-_SCALAR = Sort.Int([1, 1])
+_SCALAR = Int([1, 1])
 
 
 def read_system(module, names=()) -> System:
     """``module`` walked once, as a :class:`System`.
 
     Every latched ctrl wire is seeded with a symbol, and awaited inputs with
-    theirs; the columns are the latched wires some update term actually reads.
-    ``names`` labels the columns — a tuple in column order, or a mapping from a
-    latched wire to its name.
+    theirs; the columns are the variables some update term actually reads
+    latched. ``names`` labels the columns — a tuple in column order, or a
+    mapping from a variable to its name.
 
-    Wires are scalar integers: a symbol per wire is what the rows, the regions
-    and the proof's ``Vector n Int`` state quantify over, so anything else is
-    refused here by name rather than read element by element."""
-    all_pairs = tuple(tuple(pr) for pr in module.ctrl)
-    inputs = tuple(tuple(pr) for pr in module.extl)
-    for w in (w for pr in all_pairs + inputs for w in pr):
-        if w.dtype != _SCALAR:
-            raise Unsupported(f"wire {w.id} has sort Int{w.dtype[0]}; only scalar "
+    A variable stands for its latched wire, so it is the key the seed is written
+    under and ``X(v)`` is the other end of the round. Wires are scalar integers:
+    a symbol per wire is what the rows, the regions and the proof's
+    ``Vector n Int`` state quantify over, so anything else is refused here by
+    name rather than read element by element."""
+    all_vars = tuple(module.ctrl)
+    inputs = tuple(module.extl)
+    for v in all_vars + inputs:
+        if v.dtype != _SCALAR:
+            raise Unsupported(f"wire {v.id} has sort Int{v.dtype[0]}; only scalar "
                               f"integer wires are supported")
-    read = {w.id for a in module.atoms for w in a.read}
-    pairs = tuple(pr for pr in all_pairs if pr[0].id in read)
+    read = {v.id for a in module.atoms for v in a.read}
+    cols = tuple(v for v in all_vars if v.id in read)
     if isinstance(names, dict):
-        names = tuple(names.get(pr[0], names.get(pr[0].id, f"w{pr[0].id}")) for pr in pairs)
+        names = tuple(names.get(v, names.get(v.id, f"w{v.id}")) for v in cols)
     else:
-        names = tuple(names) or tuple(f"w{pr[0].id}" for pr in pairs)
-    if len(names) != len(pairs):
-        raise Unsupported(f"{len(names)} names for {len(pairs)} columns")
+        names = tuple(names) or tuple(f"w{v.id}" for v in cols)
+    if len(names) != len(cols):
+        raise Unsupported(f"{len(names)} names for {len(cols)} columns")
     syms = tuple(z3.Int(n) for n in names)
-    seed = {pr[0]: [s] for pr, s in zip(pairs, syms)}
-    for pr in all_pairs:                       # unread latched wires: seeded, never used
-        seed.setdefault(pr[0], [z3.Int(f"_w{pr[0].id}")])
-    for i, pr in enumerate(inputs):
-        seed[pr[0]] = [z3.Int(f"_in{i}")]
-        seed[pr[1]] = [z3.Int(f"_in{i}_next")]
-    entry_seed = {pr[1]: [z3.Int(f"_entry{i}")] for i, pr in enumerate(inputs)}
-    W = {pr[1].id: z3.Int(f"_W{pr[1].id}") for pr in all_pairs}
-    atom_of = {w.id: a for a in module.atoms for w in a.ctrl}
-    return System(module, node_view(module, seed, OPS, entry_seed), pairs, all_pairs,
+    seed = {v: [s] for v, s in zip(cols, syms)}
+    for v in all_vars:                         # unread latched wires: seeded, never used
+        seed.setdefault(v, [z3.Int(f"_w{v.id}")])
+    for i, v in enumerate(inputs):
+        seed[v] = [z3.Int(f"_in{i}")]
+        seed[X(v)] = [z3.Int(f"_in{i}_next")]
+    entry_seed = {X(v): [z3.Int(f"_entry{i}")] for i, v in enumerate(inputs)}
+    W = {X(v).id: z3.Int(f"_W{X(v).id}") for v in all_vars}
+    atom_of = {X(v).id: a for a in module.atoms for v in a.ctrl}
+    return System(module, node_view(module, seed, OPS, entry_seed), cols, all_vars,
                   syms, seed, W, atom_of=atom_of,
                   entry_inputs=tuple(v[0] for v in entry_seed.values()), names=names)
 
@@ -718,8 +726,8 @@ def reading(system: System, wire) -> Reading:
     atom = system.atom_of.get(wire.id)
     if atom is None:
         raise Unsupported(f"wire {wire.id} is not a ctrl wire of this system")
-    latched = {pr[0].id: k for k, pr in enumerate(system.pairs)}
-    nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
+    latched = {v.id: k for k, v in enumerate(system.vars)}
+    nexts = {X(v).id: k for k, v in enumerate(system.vars)}
     rd, wr = atom.update.read(), atom.update.write()
     reads = [rd[i] for i in range(len(rd))]
     at, kind_of = {}, {}
@@ -743,7 +751,7 @@ def reading(system: System, wire) -> Reading:
                   _affine_pair(value, [n.sym for n in relus]))
     else:
         net = Net((), _affine_pair(value, col_syms))
-    inputs = tuple((kind_of.get(k, "unread"), k) for k in range(len(system.pairs)))
+    inputs = tuple((kind_of.get(k, "unread"), k) for k in range(len(system.vars)))
     return Reading(wire, net, inputs)
 
 
@@ -917,7 +925,7 @@ class _StateMap:
         k = self.system.names.index(name)
         if self.ahead:
             return (self.system.sp_syms[k] if self.concrete
-                    else self.W[self.system.pairs[k][1]])
+                    else self.W[X(self.system.vars[k])])
         return self.system.s_syms[k]
 
     @property
@@ -1288,7 +1296,7 @@ def certify(system: System, claim, witness, max_iters: int = 1000) -> Proof:
     W_syms = [system.W[w.id] for w in wires]
     disjuncts = _dnf(z3.Not(formula))
     _check_linear(disjuncts, list(system.s_syms) + W_syms)
-    nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
+    nexts = {X(v).id: k for k, v in enumerate(system.vars)}
     columns = {w.id: nexts[w.id] for w in wires if w.id in nexts}
     readings = {w.id: reading(system, w) for w in wires if w.id not in nexts}
     nets, devices, offset = [], [], 0

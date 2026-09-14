@@ -18,18 +18,16 @@ Precondition: m > 0 && n > m (outer if also initialises i, j).
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module, nxt, ite
+from zrth.sugar import Module, X, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, var
 
 
 class Program(Module):
-    def init(self, extl):
-        n0, m0 = extl                            # read order: n, m
-        return 0, 0, nxt(m0), nxt(n0)            # i = 0, j = 0, m, n
+    def init(self, n0, m0):  # read order: n, m
+        return 0, 0, X(m0), X(n0)            # i = 0, j = 0, m, n
 
-    def update(self, ctrl):
-        i, j, m, n = ctrl
+    def update(self, i, j, m, n, _n0, _m0):
         guard = i < n
         wi = ite(j < m, i, i + 1)
         wj = ite(j < m, j + 1, 0)
@@ -37,8 +35,8 @@ class Program(Module):
 
 
 def _build():
-    i, j, m, n = pair(), pair(), pair(), pair()
-    n0, m0 = pair(), pair()
+    i, j, m, n = var(), var(), var(), var()
+    n0, m0 = var(), var()
     prog = Program(theory=LIA, ctrl=(i, j, m, n), extl=(n0, m0))
     return (
         prog,

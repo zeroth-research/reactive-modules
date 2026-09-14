@@ -15,18 +15,16 @@ Note: `-b` is encoded as `-1 * b` (unary minus is not overloaded).
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module, nxt, ite
+from zrth.sugar import Module, X, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, var
 
 
 class Program(Module):
-    def init(self, extl):
-        a0, b0 = extl
-        return nxt(a0), nxt(b0)                  # a, b both nondet
+    def init(self, a0, b0):
+        return X(a0), X(b0)                  # a, b both nondet
 
-    def update(self, ctrl):
-        a, b = ctrl
+    def update(self, a, b, _a0, _b0):
         guard = a >= 0
         wa, wb = a, b
         wa = wa + wb                                    # a = a + b   (old b)
@@ -35,8 +33,8 @@ class Program(Module):
 
 
 def _build():
-    a, b = pair(), pair()
-    a0, b0 = pair(), pair()
+    a, b = var(), var()
+    a0, b0 = var(), var()
     prog = Program(theory=LIA, ctrl=(a, b), extl=(a0, b0))
     return prog, {"a": a, "b": b}, {"a0": a0, "b0": b0}
 

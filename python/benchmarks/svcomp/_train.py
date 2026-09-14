@@ -15,6 +15,7 @@ import torch
 import torch.nn.functional as F
 import z3
 from torch import nn
+from zrth import X
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
@@ -79,16 +80,16 @@ def _in_domain(dom, state: dict[str, int], system) -> bool:
 
 def _step(prog, ctrl, state: dict[str, int]) -> dict[str, int]:
     """One program step: latched `state` -> next state (via the update block)."""
-    st = {ctrl[n][0]: _t(state[n]) for n in state}
+    st = {ctrl[n]: _t(state[n]) for n in state}
     run_block(prog.atoms, st, lambda a: a.update)
-    return {n: int(st[ctrl[n][1]].reshape(-1)[0]) for n in state}
+    return {n: int(st[X(ctrl[n])].reshape(-1)[0]) for n in state}
 
 
 def _init_state(prog, ctrl, extl, bench: Bench, inputs: dict[str, int]) -> dict[str, int]:
     """Run the init block with the given extl (nondet) inputs -> initial state."""
-    st = {extl[name][1]: _t(val) for name, val in inputs.items()}
+    st = {X(extl[name]): _t(val) for name, val in inputs.items()}
     run_block(prog.atoms, st, lambda a: a.init)
-    return {n: int(st[ctrl[n][1]].reshape(-1)[0]) for n in bench.state}
+    return {n: int(st[X(ctrl[n])].reshape(-1)[0]) for n in bench.state}
 
 
 # PAS: high-variance Gaussian with one anticorrelated pair (ported from nt).

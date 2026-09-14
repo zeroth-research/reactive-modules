@@ -18,15 +18,14 @@ from __future__ import annotations
 from zrth import LIA
 from zrth.sugar import Module, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, var
 
 
 class Program(Module):
-    def init(self, extl):
+    def init(self):
         return 10000, 1                          # ctrl order i, j: i=10000, j=1
 
-    def update(self, ctrl):
-        i, j = ctrl
+    def update(self, i, j):
         guard = (i - j) >= 1
         wi, wj = i, j
         wj = wj + 1        # j = j + 1
@@ -35,7 +34,7 @@ class Program(Module):
 
 
 def _build():
-    i, j = pair(), pair()
+    i, j = var(), var()
     prog = Program(theory=LIA, ctrl=(i, j), extl=())
     return prog, {"i": i, "j": j}, {}
 

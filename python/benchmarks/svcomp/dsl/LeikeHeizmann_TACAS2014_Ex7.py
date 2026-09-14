@@ -15,18 +15,16 @@ scalar constant is allowed).
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module, nxt, ite
+from zrth.sugar import Module, X, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, var
 
 
 class Program(Module):
-    def init(self, extl):
-        q0, z0 = extl
-        return nxt(q0), nxt(z0)                  # q, z both nondet
+    def init(self, q0, z0):
+        return X(q0), X(z0)                  # q, z both nondet
 
-    def update(self, ctrl):
-        q, z = ctrl
+    def update(self, q, z, _q0, _z0):
         guard = q > 0
         wq, wz = q, z
         wq = wq + wz - 1       # q = q + z   (old z)
@@ -35,8 +33,8 @@ class Program(Module):
 
 
 def _build():
-    q, z = pair(), pair()
-    q0, z0 = pair(), pair()
+    q, z = var(), var()
+    q0, z0 = var(), var()
     prog = Program(theory=LIA, ctrl=(q, z), extl=(q0, z0))
     return prog, {"q": q, "z": z}, {"q0": q0, "z0": z0}
 

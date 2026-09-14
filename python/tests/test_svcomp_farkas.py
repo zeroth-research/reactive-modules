@@ -22,11 +22,10 @@ from benchmarks.svcomp import _farkas
 from benchmarks.svcomp._bench import INT
 from benchmarks.svcomp._termination import _v_module, compose, system_of
 from tests._fixtures import candidate, loop_bench
-from zrth import LIA, Module, Sort, Wire, sugar
+from zrth import LIA, Int, Module, Var, X, sugar
 from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
 from zrth.sugar import ite as dsl_ite
-from zrth.sugar import ne as dsl_ne
 from benchmarks.svcomp._farkas import (certify, check_supported,
                                       decrease, inductive, lex_decrease,
                                       read_system)
@@ -225,67 +224,78 @@ def test_an_itype_outside_the_vocabulary_is_refused():
     prog, ctrl, _ = bench.build()
     ops = {k: v for k, v in _farkas.OPS.items() if k != "LIA_Ite"}
     with pytest.raises(Unsupported, match="LIA_Ite"):
-        node_view(prog, {ctrl[n][0]: [z3.Int(n)] for n in bench.state}, ops)
+        node_view(prog, {ctrl[n]: [z3.Int(n)] for n in bench.state}, ops)
 
 
 def _prog(update, *, extl=()):
     """A one-variable program module, for the tests that need an operation or a
     wiring the fixture's DSL spec cannot express. ``update`` takes the latched
-    variable and the awaited inputs, as a DSL update block does."""
-    pair = (Wire(INT), Wire(INT))
+    variable and the awaited input, as a DSL update block does."""
+    x = Var(INT)
 
-    class Program(sugar.Module):
-        def init(self, *a):
-            return (0,)
+    if extl:
+        class Program(sugar.Module):
+            def init(self, e):
+                return (0,)
 
-        def update(self, ctrl, extl):
-            return update(ctrl, extl)
+            def update(self, ctrl, e):
+                return update(ctrl, e)
+    else:
+        class Program(sugar.Module):
+            def init(self):
+                return (0,)
 
-    return Program(theory=LIA, ctrl=(pair,), extl=extl), pair
+            def update(self, ctrl):
+                return update(ctrl, None)
+
+    return Program(ctrl=(x,), extl=extl, theory=LIA), x
 
 
 def test_the_kinds_without_a_rule_are_the_ones_the_walk_refuses():
-    """The vocabulary's kinds with neither a cell rule nor a case split are exactly
-    the ones Z3 cannot read, so the walk refuses a module carrying one by name
-    (see below) before the engine could reason over it. A kind declared here
-    before its rule shows up in this set."""
+    """The vocabulary's kinds with neither a cell rule nor a case split are the
+    ones the walk refuses a module for by name (see below), before the engine
+    could reason over an output it can neither pin nor split. A kind declared
+    here before its rule shows up in this set."""
     from benchmarks.svcomp._farkas import OPS
     unruled = {op.kind for op in OPS.values() if op.kind and not op.mode and not op.split}
     assert unruled == {"min", "max", "argmax"}
 
 
-def test_an_untranslatable_itype_is_refused():
-    """An op the theory has but Z3 cannot read is refused by name in the walk,
-    rather than surfacing as a backend error from underneath it."""
-    for build in (lambda c, _e: (c - 1)._unop(LIA.Min(), out=c.dtype),
-                  lambda c, _e: dsl_argmax(c)):
-        prog, _ = _prog(build)
-        with pytest.raises(Unsupported, match="no Z3 translation"):
-            read_system(prog, ("x",))
+@pytest.mark.parametrize("build, itype, why", [
+    (lambda c, _e: (c - 1)._unop(LIA.Min(), out=c.dtype), "LIA_Min", "no rule"),
+    (lambda c, _e: dsl_argmax(c), "LIA_Argmax", "no Z3 translation"),
+])
+def test_an_op_the_procedure_cannot_use_is_refused(build, itype, why):
+    """An op with no cell rule, and one Z3 cannot read, are both refused by name in
+    the walk — the first before the engine meets an output it cannot pin, the
+    second rather than surfacing as a backend error from underneath it."""
+    prog, _ = _prog(build)
+    with pytest.raises(Unsupported, match=f"{itype}.*{why}"):
+        read_system(prog, ("x",))
 
 
 def test_a_vector_wire_is_refused():
     """The reader takes scalar integer wires — one symbol per wire is what the
     rows, the regions and the proof's state quantify over — so a vector-valued
     wire is refused by name at the door rather than read element by element."""
-    vec = Sort.Int([2, 1])
-    pair = (Wire(vec), Wire(vec))
+    vec = Int([2, 1])
+    v = Var(vec)
 
     class Program(sugar.Module):
         def init(self):
-            return (dsl_expr(np.zeros((2, 1), dtype=int), theory=LIA, sort=vec),)
+            return (dsl_expr([[0], [0]], theory=LIA, sort=vec),)
 
         def update(self, ctrl):
             return ctrl
 
     with pytest.raises(Unsupported, match="scalar"):
-        read_system(Program(theory=LIA, ctrl=(pair,)), ("v",))
+        read_system(Program(ctrl=(v,), theory=LIA), ("v",))
 
 
 def test_a_nondeterministic_transition_is_refused():
     """A next value reading an awaited input is nondeterminism, which this procedure
     has no rule for — so it says so, naming the input."""
-    prog, _ = _prog(lambda c, e: c + e, extl=((Wire(INT), Wire(INT)),))
+    prog, _ = _prog(lambda c, e: c + e, extl=(Var(INT),))
     system = read_system(prog, ("x",))
     with pytest.raises(Unsupported, match="_in0"):
         check_supported(system)
@@ -482,11 +492,11 @@ def _two_ranks(update):
     mods, ranks = [], []
     for W in ([[1, 0]], [[0, 1]]):
         layers = [(np.array(W), np.array([0])), (np.array([[1]]), np.array([0]))]
-        vs_mod, vs = _v_module(prog.pairs, layers, read_next=False)
-        vsp_mod, vsp = _v_module(prog.pairs, layers, read_next=True)
-        mods += [vs_mod, vsp_mod]; ranks.append((vs[1], vsp[1]))
-    system = read_system(Module.parallel(prog.module, *mods), prog.names)
-    assert len(system.pairs) == 2 and len(system.all_pairs) == 6
+        vs_mod, vs = _v_module(prog.vars, layers, read_next=False)
+        vsp_mod, vsp = _v_module(prog.vars, layers, read_next=True)
+        mods += [vs_mod, vsp_mod]; ranks.append((X(vs), X(vsp)))
+    system = read_system(Module.compose(prog.module, *mods), prog.names)
+    assert len(system.vars) == 2 and len(system.all_vars) == 6
     return system, terminates(), tuple(ranks)
 
 
@@ -556,8 +566,8 @@ def _computed(state, update, layers, *, init=None):
     of the latched state — a wire of the graph a property may name. Returns the
     system and that wire."""
     prog = system_of(loop_bench(state, update, init=init))
-    mod, out = _v_module(prog.pairs, layers, read_next=False)
-    return read_system(Module.parallel(prog.module, mod), prog.names), out[1]
+    mod, out = _v_module(prog.vars, layers, read_next=False)
+    return read_system(Module.compose(prog.module, mod), prog.names), X(out)
 
 
 def test_a_property_may_name_a_computed_wire():
@@ -619,7 +629,7 @@ def test_knowing_takes_only_proved_safety_claims():
     verified Proof of a Safety claim over these columns, exposes its predicate as
     ``invariants`` and keeps the proof for the emitter — and refuses by name an
     unverified proof, a liveness proof, and a proof over other columns."""
-    bench = loop_bench(("x",), lambda x: dsl_ite(dsl_ne(x, 0), x - 1, x), init=lambda: (5,))
+    bench = loop_bench(("x",), lambda x: dsl_ite(x != 0, x - 1, x), init=lambda: (5,))
     system = system_of(bench)
     nonneg = lambda W, S: S["x"] >= 0
     proof = certify(system, Safety(nonneg), inductive((nonneg,)))
@@ -648,7 +658,7 @@ def test_a_proved_invariant_narrows_the_liveness_obligation():
     state ``x < 0`` the rank does not drop, so over all integers the claim fails,
     and on the states ``x >= 0`` admits it holds. The fact reaches the engine only
     as a proof of the Safety claim — the same object the proof layer will cite."""
-    bench = loop_bench(("x",), lambda x: dsl_ite(dsl_ne(x, 0), x - 1, x), init=lambda: (5,))
+    bench = loop_bench(("x",), lambda x: dsl_ite(x != 0, x - 1, x), init=lambda: (5,))
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     system = system_of(bench)
     bare, w = compose(system, layers)

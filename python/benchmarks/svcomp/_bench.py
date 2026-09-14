@@ -1,7 +1,7 @@
 """Shared scaffolding for the SV-COMP DSL encodings.
 
 Each encoding module in this package exposes one ``BENCH`` (a :class:`Bench`).
-This module provides the common ``INT`` sort, a small wire-pair helper, the
+This module provides the common ``INT`` sort, a fresh-variable helper, the
 ``Bench`` record, and a ``discover`` helper that imports every sibling
 encoding module and collects their ``BENCH`` objects.
 
@@ -16,18 +16,21 @@ from dataclasses import dataclass
 from typing import Callable
 import torch 
 
-from zrth import Sort, Wire
+from zrth import Int, Var
 
 # Scalar integer sort: every program variable is a 1x1 integer matrix.
-INT = Sort.Int([1, 1])
+INT = Int([1, 1])
 
 # (module, ctrl_by_name, extl_by_name) — the return of a Bench.build()
-BuildResult = tuple[object, dict[str, tuple], dict[str, tuple]]
+BuildResult = tuple[object, dict[str, Var], dict[str, Var]]
 
 
-def pair() -> tuple[Wire, Wire]:
-    """A fresh ``(latched, next)`` integer wire pair."""
-    return (Wire(INT), Wire(INT))
+def var() -> Var:
+    """A fresh scalar integer state variable.
+
+    A :class:`zrth.Var` stands for its latched wire and carries its next wire,
+    reached by ``X(v)`` — so one variable is both ends of a round."""
+    return Var(INT)
 
 
 @dataclass(frozen=True)
@@ -40,8 +43,8 @@ class Bench:
     - ``state``  : ctrl variable names, in C declaration order.
     - ``inputs`` : extl (nondeterministic input) names.
     - ``build``  : ``() -> (module, ctrl_by_name, extl_by_name)`` — builds the
-                   module with fresh wires and returns name->pair maps so a
-                   runner can seed Z3 symbols on the latched wires.
+                   module with fresh variables and returns name->``Var`` maps so
+                   a runner can seed Z3 symbols on the latched wires.
                    The loop guard (verification domain) is *not* declared here —
                    it is derived from the ``update`` block (``ite(guard, body,
                    self)``) by :mod:`._domain`, so the update is its single

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
 import z3
 
 from zrth import z3 as zz3
@@ -103,15 +104,21 @@ def _eval(term, reads, ops):
 
     An itype outside ``ops``, or one the Z3 backend cannot translate, is refused by
     name — the procedure says what it understands, and anything else stops here
-    rather than being evaluated away or surfacing as a backend error."""
+    rather than being evaluated away or surfacing as a backend error.
+
+    :mod:`zrth.z3` speaks in 2-D arrays, one per wire, because a wire carries a
+    tensor. Every wire this procedure reads is a scalar (:func:`._farkas.read_system`
+    refuses the rest), so a value is wrapped into its 1x1 array on the way in and
+    read back out of one on the way out, and the maps here hold plain expressions."""
     name = type(term.itype).__name__
     op = ops.get(name)
     if op is None:
         raise Unsupported(f"itype {name!r} is not in this procedure's vocabulary")
     try:
-        return op.kind, zz3.eval(term.itype, reads)
+        out = zz3.eval(term.itype, [np.array([[r[0]]], dtype=object) for r in reads])
     except Exception as e:
         raise Unsupported(f"itype {name!r} has no Z3 translation: {e}")
+    return op.kind, [[a.reshape(-1)[0]] for a in out]
 
 
 def _entry_values(module, seed, ops) -> dict:
@@ -136,7 +143,10 @@ def node_view(module, seed, ops, entry_seed=None, atoms=None) -> NodeView:
 
     ``ops`` maps an itype's class name to the :class:`Op` describing it. An itype
     absent from it raises :class:`Unsupported` rather than being evaluated away —
-    the procedure says what it understands, and anything else is refused.
+    the procedure says what it understands, and anything else is refused. So is a
+    kind the table names but has no rule for: Z3 may well read it, and then its
+    output would be a symbol the engine can neither pin nor split, which is a
+    proof that does not close rather than the reason it could not.
 
     ``entry_seed``, when given, is the seed for a second walk over the ``init``
     block, whose values land in ``entry``. ``atoms`` restricts the walk to some of
@@ -151,6 +161,12 @@ def node_view(module, seed, ops, entry_seed=None, atoms=None) -> NodeView:
             kind, out = _eval(t_, reads, ops)
             values.update(zip(t_.write, out))
             if kind is not None:
+                op = ops[type(t_.itype).__name__]
+                if not op.mode and not op.split:
+                    raise Unsupported(
+                        f"itype {type(t_.itype).__name__!r} has no rule in this "
+                        f"procedure: its kind {kind!r} has neither a cell rule "
+                        f"nor a case split")
                 sym = z3.Int(f"_n{len(nodes)}")
                 nodes.append(Node(kind, sym, tuple(r[0] for r in reads)))
                 opaque.update(zip(t_.write, [[sym]]))

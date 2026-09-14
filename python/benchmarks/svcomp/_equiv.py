@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+from zrth import X
 from zrth.eval import eval_itype
 
 from ._bench import Bench
@@ -130,20 +131,19 @@ def _run_module(bench: Bench, inputs: list[int], max_steps: int) -> dict[str, in
     # seed extl NEXT wires with the inputs (Bench.inputs order == C nondet order)
     state: dict = {}
     for name, val in zip(bench.inputs, inputs):
-        _lat, nxt = extl[name]
-        state[nxt] = torch.tensor([[val]], dtype=torch.int64)
+        state[X(extl[name])] = torch.tensor([[val]], dtype=torch.int64)
 
     run_block(prog.atoms, state, lambda a: a.init)   # writes ctrl NEXT wires
-    latched = {name: state[ctrl[name][1]] for name in bench.state}
+    latched = {name: state[X(ctrl[name])] for name in bench.state}
 
     def as_ints(d):
         return {n: int(t.reshape(-1)[0]) for n, t in d.items()}
 
     prev = as_ints(latched)
     for _ in range(max_steps):
-        st = {ctrl[n][0]: latched[n] for n in bench.state}   # latch: next -> latched
+        st = {ctrl[n]: latched[n] for n in bench.state}      # latch: next -> latched
         run_block(prog.atoms, st, lambda a: a.update)
-        nxt = {n: st[ctrl[n][1]] for n in bench.state}
+        nxt = {n: st[X(ctrl[n])] for n in bench.state}
         cur = as_ints(nxt)
         if cur == prev:                                       # fixpoint (guard false)
             return cur
@@ -157,9 +157,9 @@ def _init_state_ints(bench: Bench, inputs: list[int]) -> dict[str, int]:
     prog, ctrl, extl = bench.build()
     state: dict = {}
     for name, val in zip(bench.inputs, inputs):
-        state[extl[name][1]] = torch.tensor([[val]], dtype=torch.int64)
+        state[X(extl[name])] = torch.tensor([[val]], dtype=torch.int64)
     run_block(prog.atoms, state, lambda a: a.init)
-    return {n: int(state[ctrl[n][1]].reshape(-1)[0]) for n in bench.state}
+    return {n: int(state[X(ctrl[n])].reshape(-1)[0]) for n in bench.state}
 
 
 # ---------------------------------------------------------------------------

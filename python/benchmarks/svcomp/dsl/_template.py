@@ -8,14 +8,18 @@ Steps:
      ``update`` (``ite(guard, body, self)``) — do not declare it separately.
 
 Key rules:
-  - state var -> ctrl wire pair (C declaration order); nondet -> extl input
+  - state var -> ctrl ``Var`` (C declaration order); nondet -> extl input
     (list ``inputs`` in the order the C reads nondet); constant init -> the
     literal; guard computed once, wrapped as ``ite(guard, new, old)`` per var.
-  - `==`/`!=` are not overloaded: use ``eq(a, b)`` / ``ne(a, b)``. Boolean
+  - a block takes one parameter per variable, in order: ``init`` the extl
+    inputs, ``update`` the ctrl variables followed by the extl ones. A loop body
+    reads no nondet input, so ``update``'s extl parameters are named ``_``.
+    ``X(v)`` is a variable's next value, which is how ``init`` reads an input.
+  - comparisons are the Python operators, ``==`` and ``!=`` included; boolean
     ``& | ~``; `*` only with a scalar constant.
-  - WORKING-COPY body rule (below): unpack ctrl to originals, copy to working
-    vars, transcribe the C body line-for-line reassigning the copies (each RHS
-    reads the current copies == C sequential semantics), then return
+  - WORKING-COPY body rule (below): copy the ctrl parameters to working vars,
+    transcribe the C body line-for-line reassigning the copies (each RHS reads
+    the current copies == C sequential semantics), then return
     ``ite(guard, <copy>, <original>)`` per state var.
 
 The worked example below encodes:
@@ -36,24 +40,22 @@ real encoding.
 
 from __future__ import annotations
 
-from zrth import LIA, Wire
-from zrth.sugar import Module, nxt, ite, eq, ne  # noqa: F401  (eq/ne used by many encodings)
+from zrth import LIA
+from zrth.sugar import Module, X, ite
 
-from .._bench import Bench, INT, pair
+from .._bench import Bench, INT, var
 
 
 class Program(Module):
     # while (i <= 100 && j <= k) { tmp = i; i = j; j = tmp + 1; k = k - 1; }
-    def init(self, extl):
-        # `extl` is the tuple of nondet inputs, in the order passed to `extl=`.
-        # A single input is unwrapped (so `x0 = extl`); here we have three.
-        k0, i0, j0 = extl
+    def init(self, k0, i0, j0):
+        # one parameter per nondet input, in the order passed to `extl=`.
         # each ctrl var's initial value, aligned to `ctrl=(k, i, j)`:
-        return nxt(k0), nxt(i0), nxt(j0)      # all nondet-initialised
+        return X(k0), X(i0), X(j0)            # all nondet-initialised
 
-    def update(self, ctrl):
-        # `ctrl` gives the LATCHED (pre-state) values, in declaration order.
-        k, i, j = ctrl
+    def update(self, k, i, j, _k0, _i0, _j0):
+        # the ctrl parameters are the LATCHED (pre-state) values, in declaration
+        # order; the extl ones follow and a loop body does not read them.
 
         # loop condition — the verification domain is derived from this guard
         # (via the ite below), so it need not be declared anywhere else.
@@ -71,8 +73,8 @@ class Program(Module):
 
 
 def _build():
-    k, i, j = pair(), pair(), pair()          # ctrl (state)
-    k0, i0, j0 = pair(), pair(), pair()        # extl (nondet inputs)
+    k, i, j = var(), var(), var()             # ctrl (state)
+    k0, i0, j0 = var(), var(), var()          # extl (nondet inputs)
     prog = Program(theory=LIA, ctrl=(k, i, j), extl=(k0, i0, j0))
     return prog, {"k": k, "i": i, "j": j}, {"k0": k0, "i0": i0, "j0": j0}
 

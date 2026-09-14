@@ -5,7 +5,7 @@ V, that `V(s) >= 0` and `V(s) - V(s') >= delta` on every round the claim
 counts, where s' = T(s) is the module's transition.
 
 One module, a property over its wires
-====================================
+=====================================
 The program and V are composed into one module and read together: V once as a
 sequential atom reading the latched state (its wire carries V(s)) and once as a
 combinatorial atom awaiting the next state (V(s')). The property is
@@ -28,12 +28,13 @@ from __future__ import annotations
 import z3
 
 # torch must load before the zrth C-extension (see _bench)
-from ._bench import Bench, INT, pair  # noqa: F401
+from ._bench import Bench, INT, var  # noqa: F401
 from ._farkas import System, certify, decrease, inductive, read_system
 from ._invariants import as_predicates, infer_invariants
 from ._property import Liveness, Safety
-from zrth import LIA, Module, sugar
-from zrth.sugar import expr, nxt, relu
+from zrth import LIA, Module, Term, X
+from zrth.expr import collecting
+from zrth.sugar import expr, relu
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +42,7 @@ from zrth.sugar import expr, nxt, relu
 # ---------------------------------------------------------------------------
 
 def _V_term(xs, layers):
-    """V(x) as an LIA term over the state wires ``xs`` (integer arithmetic,
+    """V(x) as an LIA term over the state expressions ``xs`` (integer arithmetic,
     matching the quantized net). layers = [(W1,b1),(W2,b2)]; ReLU -> relu()."""
     (W1, b1), (W2, b2) = layers
     hid = []
@@ -56,32 +57,32 @@ def _V_term(xs, layers):
     return out
 
 
-def _xs(extl):
-    return list(extl) if isinstance(extl, tuple) else [extl]
+def _v_module(state_vars, layers, *, read_next: bool):
+    """A one-output module computing V over the program's state variables.
 
+    ``read_next=False`` -> V(s): a **sequential** atom whose update reads the
+    *latched* state, so its output wire carries V(s) (its init awaits the next
+    state, since a sequential atom's init may not read a latched wire).
+    ``read_next=True`` -> V(s'): a **combinatorial** atom awaiting the program's
+    *next* state. Both compute the same function; composed with the program they
+    are two wires the witness can name — V at each end of a step.
 
-def _v_module(state_pairs, layers, *, read_next: bool):
-    """A one-output module computing V over the program's state wires.
+    The blocks are written out as ordinary terms rather than through
+    :mod:`zrth.sugar`, whose methods take one parameter per variable: the state
+    here is as wide as the program, which is not known until it is read."""
+    out = var()
+    state_vars = tuple(state_vars)
 
-    ``read_next=False`` -> V(s): a **sequential** atom reading the *latched* state
-    (its init awaits the next state, since a sequential atom's init may not read a
-    latched wire). ``read_next=True`` -> V(s'): a **combinatorial** atom awaiting
-    the program's *next* state. Both compute the same function; composed with the
-    program they are two wires the witness can name — V at each end of a step."""
-    out = pair()
+    def block(at_next: bool):
+        with collecting() as terms:
+            xs = [expr(X(v) if at_next else v, theory=LIA) for v in state_vars]
+            terms.append(Term(LIA.Id(), [X(out)], [_V_term(xs, layers).wire]))
+        return terms
+
+    declared = (out,) + state_vars
     if read_next:
-        class _V(sugar.Module):
-            def assign(self, extl):
-                return _V_term([nxt(x) for x in _xs(extl)], layers)
-    else:
-        class _V(sugar.Module):
-            def init(self, extl):
-                return _V_term([nxt(x) for x in _xs(extl)], layers)
-
-            def update(self, ctrl, extl):
-                return _V_term(_xs(extl), layers)
-
-    return _V(theory=LIA, ctrl=(out,), extl=tuple(state_pairs)), out
+        return Module.combinatorial(declared, block(True)), out
+    return Module.sequential(declared, block(True), block(False)), out
 
 
 # ---------------------------------------------------------------------------
@@ -132,11 +133,12 @@ def compose(system: System, layers, delta: float = 1.0):
     V is written out twice as ordinary atoms — once reading the latched state, so
     its wire carries V(s), once awaiting the next, so its wire carries V(s') —
     and the whole is read as one system. The columns are unchanged, since the
-    rank atoms' own latched wires are read by nothing; the program's precondition
-    and invariants carry over. Returns the composed system and
-    ``decrease(V(s) wire, V(s') wire, delta)``."""
-    vs_mod, vs = _v_module(system.pairs, layers, read_next=False)
-    vsp_mod, vsp = _v_module(system.pairs, layers, read_next=True)
-    composed = (read_system(Module.parallel(system.module, vs_mod, vsp_mod), system.names)
+    rank variables are read latched by nothing; the program's precondition and
+    invariants carry over. The program comes first in the composition, so its
+    init has written the next state by the time the rank's block reads it.
+    Returns the composed system and ``decrease(V(s) wire, V(s') wire, delta)``."""
+    vs_mod, vs = _v_module(system.vars, layers, read_next=False)
+    vsp_mod, vsp = _v_module(system.vars, layers, read_next=True)
+    composed = (read_system(Module.compose(system.module, vs_mod, vsp_mod), system.names)
                 .assuming(system.precondition).knowing(*system.invariant_proofs))
-    return composed, decrease(vs[1], vsp[1], delta)
+    return composed, decrease(X(vs), X(vsp), delta)
