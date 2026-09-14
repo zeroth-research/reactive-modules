@@ -9,9 +9,18 @@ Jupyter notebooks that walk through `zrth` step by step:
 
 Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
-There is also a plain-markdown tutorial, [verith_gym.md](verith_gym.md), on
-generating a Lean 4 certificate for a gymnasium environment with the
-`uv run verith` CLI.
+## Lean certificates (`uv run verith`)
+
+- **[verith.ipynb](verith.ipynb)**: the `uv run verith` CLI end to end — safety
+  and Büchi certificates for modules written in the Python API and for one read
+  out of a gymnasium environment, what a failing verification looks like (an
+  invalid invariant, a missing precondition), and the `--infer` and
+  `--fbk-proveit` routes. Checking a certificate needs a Lean toolchain; the
+  optional routes need API keys or an ic3ia build, and the notebook's first
+  cell is where all of that is configured.
+- **[verith_gym.md](verith_gym.md)**: the same CLI from the gymnasium side, in
+  plain markdown — designing an environment that extracts into integer
+  arithmetic, matrix-shaped state, and the `--infer` backends.
 
 ## Termination examples
 
