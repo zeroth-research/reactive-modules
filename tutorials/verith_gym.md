@@ -224,12 +224,11 @@ an unsolved goal — open the file in a Lean editor and finish the proof by
 hand, or refine the invariant and re-run `verith`.
 
 `lake build` (no target) additionally builds the auxiliary encodings
-(`System/Circ.lean`, `System/FBK.lean`, …). These are not needed for the
+(`System/Circ.lean`, `System/ScalarRel.lean`, …). These are not needed for the
 certificate, and currently do not compile for gym modules that use `argmax`
 over real-valued wires: the circuit encoding types `argmax_1d` as
-integer-valued while the functional encoding treats it as real, and the FBK
-relational encoding applies its `effect_*` abbreviations with a mismatched
-argument list. Until those translator bugs are fixed, build the
+integer-valued while the functional encoding treats it as real. Until those
+translator bugs are fixed, build the
 `Certificate` target.
 
 ## Step 6 — An integer-only environment (LIA)

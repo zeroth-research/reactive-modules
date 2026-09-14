@@ -245,6 +245,45 @@ strings by parsing them with cvc5 and translating the AST.
 
 ---
 
+## Tactic plans (`tactics.py`)
+
+The three obligations used to be closed by one hardcoded chain, textually
+identical in every certificate — wasteful in both directions: an integer
+module with a linear ranking paid for `decide` and `bv_decide` on every goal,
+and a shape nobody had anticipated had no way to ask for the step it needed.
+
+`plan_for` reads the module and its predicates and emits two macros,
+`cert_prep` (canonicalise) and `cert_close` (decide), which the three proofs
+share; each certificate carries a comment saying what was detected.
+
+| detected | consequence |
+|---|---|
+| Int / Bool in the state | `omega` is available |
+| Real | `omega` is dropped; `linarith`, `norm_num` and `norm_cast; linarith` take over |
+| Real *and* equalities in the predicates | `simp_all` moves into **prep**, so the closers see numerals, not an opaque `⌊4 - x⌋` |
+| a product of two state-dependent terms | `nlinarith`, `positivity` |
+| finite state (Bool/BitVec only) | `decide`, last, because it is the most expensive step |
+| an `Ite`/`ReLU`/`Min`/`Max` anywhere | `split_ifs` in prep |
+| `∧` / `∨` in the predicates | `casesm*` and `simp only [not_and_or]` in prep |
+| an `=` in the predicates | the `ne_iff_lt_or_gt` split, *after* `norm_num at *` |
+| term count | `maxRecDepth` scales with it |
+| branch points in the predicates | scales the heartbeat budget — this, not module size, is what a net costs |
+| nothing known to be slow | heartbeat budget stays at 400 000 for economy (it does *not* bound failures — see "Nets over ℝ") |
+
+Two decisions are worth recording because measurement contradicted the
+obvious guess. **`linarith` belongs in every plan** — gating it on `Real`
+looked right and cost two integer certificates that were closing on it; an
+integer goal `omega` cannot phrase is still ordinary linear arithmetic.
+**`bv_decide` belongs in none** — it only ever reaches goals every cheaper
+prover has already failed on, and there it bit-blasts: including it took a
+BitVec certificate from 10 s to 977 s while closing nothing `decide` had not
+already closed.
+
+Because the plan depends on the predicates, `Certificate.lean` is not stable
+across a change of invariant: `--infer` rewrites it alongside `Data.lean`.
+`tests/test_lean_tactics.py` pins these decisions in the fast suite, so a
+plan regression does not wait for a Lean build.
+
 ## ZerothHammer (`cert.py`)
 
 A Lean 4 elaborator tactic that cascades proof strategies:
@@ -529,21 +568,26 @@ Of the *invariant* the project is still **bare**: it comes from ic3ia, so
 `--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
 silently ignored, and `--safety` is required.
 
-### Encoding 7 — NA (`translate/na.py`)
+### Encoding 6 — NA, for the FBK toolchain (`translate/fbk.py`)
 
 `proveit.py`'s first step, `lake exe lean2vmt`, pattern-matches on a very
-specific Lean shape, and the FBK encoding misses on every point — so this is
-a separate encoding, emitted only for this route — though the project does
-build it, as the `<Proj>NA` lean_lib, because the certificate imports it:
+specific Lean shape. This encoding is emitted only for that route, and is
+not one of the five above — though the project does build it, as the
+`<Proj>NA` lean_lib, because the certificate imports it:
 
-| `lean2vmt` requires | why | FBK emits |
+| `lean2vmt` requires | why | what it would otherwise get |
 |---|---|---|
 | binders `state` / `statenext` | `emitDefs` looks them up by name to tell current from next | `state`, `newstate`, `s` |
 | state read as `var_i state` | `exprToSMT`'s `.fvar` case returns the bare binder name and **drops the index**, collapsing every slot onto one variable | `(state i)` |
 | next state as `var_i statenext` | this is how `collectLatchesIndices` finds the latches at all | `(newstate i)` |
 | `INIT` / `TRANS` / `PROPERTY` | they become `:init`, `:trans`, `:invar-property` | `InitCond`, `TransRel`, nothing |
-| top-level `StateType`, `abbrev M : … NA …` | the certificate template imports the model and names both | everything inside `namespace FBK` |
+| top-level `StateType`, `abbrev M : … NA …` | the certificate template imports the model and names both | everything inside a namespace |
 | self-contained imports | it is elaborated inside the `lean-ltl-certifying` package | imports `Core.Basic`, `System.Scalar`, … |
+
+The right-hand column is what the project's own Bool-valued relational
+encoding emitted. That encoding — `System/FBK.lean`, one of six until this
+one replaced it — missed every row, which is why the two could never be the
+same file; nothing else read it, so it is gone and its name is here.
 
 The property is translated to **`Bool`**-valued Lean (`&&`, `!`,
 `decide (… ≤ …)`), not the `Prop` form `smt_to_lean` emits: `lean2vmt` reads
@@ -569,7 +613,7 @@ describe the module:
 | a property outside that same fragment | ditto — `smt_to_lean_bool` raises rather than guess. `mod` is refused here even though `lean2vmt` translates it and ic3ia proves such a property: MathSAT eliminates the mod from the *witness*, as `x + (-2) * to_int ((1/2) * to_real x) = 0`, and `vmt2lean.py` renders neither those operators nor a Real inside a `Bool` `INVAR` |
 | `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
 
-The transition itself is not written by `translate/na.py`. Each state slot's
+The transition itself is not written by `translate/fbk.py`. Each state slot's
 next value is `smt_encode`'s term for that element — the encoder `--pre-check`
 and `--infer ai-cegar` run on — simplified by cvc5 and printed by
 `smt_to_lean_bool`. So the model `lean2vmt` reads and the obligations cvc5

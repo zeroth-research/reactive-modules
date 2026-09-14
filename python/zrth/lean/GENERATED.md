@@ -126,14 +126,13 @@ out/TwoBit/
   LeanAI/                  copied     optional LLM-in-Lean helpers (not needed for proofs)
   ZerothHammer.lean        generated  the `zeroth_hammer` proof tactic (identical for every module)
 
-  System.lean              generated  root file, just imports the six System/* files
+  System.lean              generated  root file, just imports the System/* files
   System/
     System.lean            generated  ENCODING 1 — functional
     Circ.lean              generated  ENCODING 2 — circuit      + equivalence to 1
     Scalar.lean            generated  ENCODING 3 — scalar       + equivalence to 1
     Rel.lean               generated  ENCODING 4 — relational, matrix domain + equivalence to 1
     ScalarRel.lean         generated  ENCODING 5 — relational, scalar domain + equivalence to 3 and 1
-    FBK.lean               generated  ENCODING 6 — relational, Bool-valued    + equivalence to 5
     Data.lean              generated  the certificate data: pre, inv, P, ranking
 
   Certificate.lean         generated  one-line shim: `import Certificate.Certificate`
@@ -149,7 +148,7 @@ Two extra files appear on demand:
 
 - `Main.lean` — with `--executable`. It runs `init`/`update` in a
   stdin/stdout loop, so the encoded module can be executed.
-- Nothing else is optional; all six encodings are always emitted (at this moment).
+- Nothing else is optional; all five encodings are always emitted (at this moment).
 
 ---
 
@@ -422,52 +421,6 @@ theorem TransRel_func_eq : ∀ (ctrl ctrl' : (Mat (BitVec 1) 1 1) × (Mat (BitVe
 
 ---
 
-## Encoding 6 — relational, `Bool`-valued (`System/FBK.lean`)
-
-The last one drops two more things. The state is no longer a tuple but a
-*function from indices*: `state 0` is the first variable, `state 1` the second.
-And the relations return `Bool` (a computable yes/no) rather than `Prop`.
-
-```lean
-namespace FBK
-
-abbrev TypeMap : Nat → Type
-  | _ => (BitVec 1)
-
-abbrev StateType := (n : Nat) → TypeMap n
-
-variable (state newstate s : StateType) (extl_l : (BitVec 1)) (extl_n : (BitVec 1))
-
-abbrev var_0 := state 0
-abbrev var_1 := state 1
-
-abbrev effect_0 : (BitVec 1) :=
-  let x0 : (BitVec 1) := (!(state 0))
-  let x1 : (BitVec 1) := (if extl_n then x0 else (state 0))
-  x1
-
-abbrev R_0 : Bool :=
-  (newstate 0) == effect_0 state extl_n
-
-abbrev TransRel : Bool :=
-  R_0 state newstate extl_n &&
-  R_1 state newstate extl_n
-```
-
-Note `∧` became `&&` and `=` became `==`. Everything is `abbrev`, so Lean
-unfolds it automatically. The theorems link each `Bool` back to the
-corresponding `Prop` in Encoding 5:
-
-```lean
-theorem TransRel_iff : (TransRel state newstate extl_n = true) ↔
-    ScalarRel.TransRel ((state 0), (state 1)) ((newstate 0), (newstate 1)) extl_l extl_n := by ...
-
-theorem InitCond_iff : (InitCond s = true) ↔
-    ScalarRel.InitCond ((s 0), (s 1)) extl_n := by ...
-```
-
----
-
 ## The certificate data (`System/Data.lean`)
 
 Five definitions, and they are the only place where *your* input about the
@@ -649,7 +602,7 @@ out/TwoBitCertScalarRel.lean   Encoding 5
 
 Differences from project mode: `init`/`update` are inlined into the certificate
 rather than imported, the `Data` definitions sit in the same file, and there is
-no circuit encoding and no `FBK`.
+no circuit encoding.
 
 ---
 
@@ -663,12 +616,11 @@ no circuit encoding and no `FBK`.
 | `Rel.TransRel_func_eq`, `Rel.InitCond_func_eq` | matrix relation ↔ functional |
 | `ScalarRel.TransRel_scalar_eq`, `ScalarRel.InitCond_scalar_eq` | scalar relation ↔ scalar functional |
 | `ScalarRel.TransRel_func_eq`, `ScalarRel.InitCond_func_eq` | scalar relation ↔ matrix functional |
-| `FBK.TransRel_iff`, `FBK.InitCond_iff`, `FBK.R_i_iff`, `FBK.Init_i_iff` | `Bool` relation ↔ scalar relation |
 | `init_inv`, `step_inv`, `hinv'`, `hinv` | `inv` is an invariant of the system |
 | `hrank` | `ranking` decreases whenever `P` is false |
 | `buchi` | every run satisfies `G F P` |
 
-The first seven rows are proved outright by the generator. The last three
+The first six rows are proved outright by the generator. The last three
 depend on `inv` and `ranking`; they are only real once those stop being `True`
 and `sorry`.
 

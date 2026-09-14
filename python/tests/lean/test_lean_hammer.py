@@ -323,7 +323,7 @@ def test_scalar_encoding_builds(generate_lean_files, name):
     "name", ["Scalar", "Vec6", "Counter", "Vec32", "TwoVars", "Mixed"]
 )
 def test_relational_encoding_builds(generate_lean_files, name):
-    """ScalarRel and FBK elaborate on top of the scalar encoding.
+    """ScalarRel elaborates on top of the scalar encoding.
 
     `effect_i` is per ctrl *wire*; the state tuple it is related to is per
     *element*. Projecting component `i` of that tuple therefore put a
@@ -332,14 +332,14 @@ def test_relational_encoding_builds(generate_lean_files, name):
     here is `TransRel_scalar_eq` into `TransRel_func_eq`: it ties the sliced
     relation back to the functional `update` through `pack`/`unpack`, so a
     slice at the wrong offset does not typecheck rather than proving a wrong
-    equation. No certificate in Certs/ carries a ScalarRel or FBK section, so
-    without this neither encoding was compiled at all.
+    equation. No certificate in Certs/ carries a ScalarRel section, so
+    without this it was not compiled at all.
 
-    The four encodings are separate modules (see `conftest.py`), as they are
-    in a generated project. Concatenated into one file they elaborate more
-    than they do apart -- a `match` gets one auxiliary matcher per module --
-    and that difference alone was enough to hide a broken `FBK.effect_i_eq`
-    from this test.
+    The encodings are separate modules (see `conftest.py`), as they are in a
+    generated project. Concatenated into one file they elaborate more than
+    they do apart -- a `match` gets one auxiliary matcher per module -- and
+    that difference alone was enough to hide a broken `effect_i_eq` from
+    this test.
     """
     r = _lake_build(f"Certs.RelEnc{name}")
     assert r.returncode == 0, (

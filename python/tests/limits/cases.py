@@ -248,7 +248,7 @@ CASES = [
     C(name="Vec32", group="scale", mod="m_vec32", expect="?", timeout=2400,
       P="s[0][0] == 0", inv="And(s[0][0] >= 0, s[0][0] <= 100)",
       rank="Ite(s[0][0] == 0, 0, s[0][0])",
-      note="32-wide state, all six encodings — the scaling ceiling"),
+      note="32-wide state, every encoding — the scaling ceiling"),
     C(name="Deep64", group="scale", mod="m_deep", expect="?", timeout=1200,
       P="(= s0 0)", inv="(and (>= s0 0) (<= s0 100))", rank="(ite (= s0 0) 0 s0)",
       note="64-deep straight-line transition body"),

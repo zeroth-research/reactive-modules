@@ -7,19 +7,20 @@ and must be read apart:
 | | question |
 |---|---|
 | generation | does `verith` emit a project at all? |
-| `System` target | do all six encodings compile? (functional, Circ, Rel, Scalar, ScalarRel, FBK) |
+| `System` target | do all five encodings compile? (functional, Circ, Rel, Scalar, ScalarRel) |
 | `Certificate` target | do `init_inv`, `step_inv` and `hrank` discharge? |
 
 `Certificate.lean` imports only `System.System` and `System.Data`, so a broken
-Scalar or FBK encoding does **not** stop the certificate from verifying. Until
+Scalar or ScalarRel encoding does **not** stop the certificate from verifying. Until
 that was noticed, five cases had a verifying certificate inside a project
 whose `lake build` failed.
 
-The narrative version of what has been learned lives in
-[`../../zrth/lean/VERITH_LIMITS.md`](../../zrth/lean/VERITH_LIMITS.md) (what
-verifies, what does not, why) and
-[`../../zrth/lean/SMT_ASSIST.md`](../../zrth/lean/SMT_ASSIST.md) (what cvc5 is
-used for, and the two cold-start plans). This file is the operational one.
+This file is both the operational one and the record of what the matrix
+found: how to run it, what verifies, what does not, and why. The defects
+behind the failures are catalogued in
+[`../../zrth/lean/KNOWN_ISSUES.md`](../../zrth/lean/KNOWN_ISSUES.md), and what
+cvc5 is used for is in
+[`../../zrth/lean/SMT_ASSIST.md`](../../zrth/lean/SMT_ASSIST.md).
 
 ---
 
@@ -134,6 +135,40 @@ certificate, and this is the usual reason a "correct-looking" case fails.
 
 ---
 
+## What verifies
+
+**State.** Integer (LIA) state of any shape tried: a single `1×1` wire,
+several `1×1` wires, a 3-, 6- or 32-element vector, and a mixed state whose
+wire indices and flat element slots disagree (`1×1` + `3×1`). Components that
+grow without bound are fine as long as the invariant does not mention them.
+Bool state works. External inputs work, with `--pre` constraining them.
+
+**Invariants.** Conjunctive interval bounds; relational (`x ≤ y`); six-way
+disjunctions; parity via `%`; `≠`; `Ite` and `Implies` in a `Prop` position
+over a Bool component; per-component predicates over a vector.
+
+**Ranking functions.** A bare linear `x`; the guarded `ite(P, 0, x)`; a
+difference `y − x`; a lexicographic order on two counters folded into one
+`Nat` as `4y + x`.
+
+**ReLU — in every position tried.** In the transition at `1×1`
+(`x' = relu(x−1)`, emitted as `Max.max 0 (x−1)`) and element-wise on a
+3-vector; as a ReLU-shaped *ranking* (`ite(x>0, x, 0)` — the SMT→Lean
+translator has no `max`, so it must be written as an `Ite`); as a ReLU-shaped
+*invariant* (`x = ite(x≥0, x, 0)`); in a `Linear → ReLU → Linear` net, the
+shape a small Q-network compiles to; and combined with an external input under
+`--pre "(>= e0 1)"`. It works because `Core/Mat.lean` gives `ReLu` a `@[simp]
+relu_apply` and `omega` understands `max` over `Int` — which is exactly what
+`Min`/`Max` lack (`KNOWN_ISSUES.md` #26).
+
+**Scale.** A 32-wide state verifies. A straight-line transition body verifies
+to at least 64 chained operations now that `maxRecDepth` is raised; the
+default limit gave out between 44 and 48.
+
+---
+
+---
+
 ## Final numbers
 
 Measured on a quiet machine, 76 cases in 1044 s. `NN2RealAllPos4` was added
@@ -143,7 +178,7 @@ afterwards and verified separately, so `baseline.json` holds 77.
 |---|---|
 | cases | **76** |
 | generate | **75** (1 `GEN-FAIL`: `OpUninterp`) |
-| all six encodings compile | **75 / 75** |
+| all five encodings compile | **75 / 75** |
 | certificates discharge | **64** |
 | green end to end | **64** |
 | regressions from the previous pass | **0** |
@@ -179,7 +214,8 @@ Supporting suites: `just py-test` 450 passed / 5 skipped / 2 xfailed, `just test
 
 ## What has been fixed, and what the evidence was
 
-Compressed; each has a section in `VERITH_LIMITS.md` or `SMT_ASSIST.md`.
+Compressed; the ones with more to say have a section in `SMT_ASSIST.md`
+or an entry in `../../zrth/lean/KNOWN_ISSUES.md`.
 
 - **FBK only compiled when it shared a file with ScalarRel.** `simp` cannot
   equate `FBK.effect_0.match_1` with `ScalarRel.effect_0.match_1`: two
@@ -252,14 +288,16 @@ Compressed; each has a section in `VERITH_LIMITS.md` or `SMT_ASSIST.md`.
 
 ## Where to pick up
 
-1. **`matMin` / `matMax` / `argmax_1d` never reduce** — the only three real
-   limits left, and all one defect: they are folds over
+1. **`matMin` / `matMax` / `argmax_1d` never reduce**
+   (`KNOWN_ISSUES.md` #26, #30) — the only three real limits left, and all
+   one defect: they are folds over
    `(List.finRange m).flatMap …` and `simp_mat` carries nothing that computes
    `List.finRange`. `--pre-check cvc5` confirms all three certificates are
    *true* (4.6 / 4.2 / 3.2 ms), so this is purely a Lean-side reduction
    problem. Redefine over `List.ofFn`, whose `ofFn_succ` / `ofFn_zero` are
    already in `simp_mat`, then re-run this matrix.
-2. **`Uninterpreted` has no Lean form** — the one generation failure.
+2. **`Uninterpreted` has no Lean form** (`KNOWN_ISSUES.md` #23, #27) — the
+   one generation failure.
 3. **`--smt-tactics=cvc5` does not pay yet.** `NN2RealAllPos4` exists to
    give it the best case there is — a Real net whose every ReLU is
    non-negative under the invariant, so cvc5 settles all four branch
@@ -286,6 +324,7 @@ Compressed; each has a section in `VERITH_LIMITS.md` or `SMT_ASSIST.md`.
 4. **cvc5 abduction and SyGuS** — plans and runnable evidence in
    `SMT_ASSIST.md` §6 and §7; `probes/abduction.py` and `probes/sygus.py`
    produce the numbers those plans are costed against.
-5. **Nothing in CI builds a generated project.** This directory is now
+5. **Nothing in CI builds a generated project** (`KNOWN_ISSUES.md` #29).
+   This directory is now
    checked in, which is the precondition; the remaining work is a slow-marked
    test that runs a handful of cases the way `just test-lean` does.

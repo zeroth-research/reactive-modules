@@ -1,4 +1,4 @@
-"""The NA encoding and the `--fbk-proveit` route (`zrth.lean.translate.na`).
+"""The NA encoding and the `--fbk-proveit` route (`zrth.lean.translate.fbk`).
 
 The shape asserted here is not cosmetic: `lean2vmt` in `lean-ltl-certifying`
 pattern-matches on it, and every mismatch is silent. `(state i)` in place of
@@ -17,7 +17,7 @@ import torch
 from zrth import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
 from zrth.lean.common import LeanContext, dtype_shape
 from zrth.lean.fbk_proveit import ProveItError, property_to_bool_lean, resolve_project
-from zrth.lean.translate.na import NAUnsupported, atom_to_lean_na, check_na_supported
+from zrth.lean.translate.fbk import NAUnsupported, atom_to_lean_na, check_na_supported
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 PKG_ROOT = Path(__file__).parent.parent
@@ -266,7 +266,7 @@ def test_imports_are_only_what_M_needs():
 def test_the_prebuild_targets_are_the_models_imports():
     """Drift between the two is what leaves `lean2vmt` unable to elaborate."""
     from zrth.lean.fbk_proveit import _LAKE_TARGETS
-    from zrth.lean.translate.na import NA_IMPORTS
+    from zrth.lean.translate.fbk import NA_IMPORTS
 
     assert _LAKE_TARGETS == NA_IMPORTS
 

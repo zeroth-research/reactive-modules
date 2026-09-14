@@ -45,7 +45,7 @@ from pathlib import Path
 
 from .common import LeanContext
 from .project import PROVEIT_DIR, na_module_name, stream
-from .translate.na import (
+from .translate.fbk import (
     NA_IMPORTS,
     NAUnsupported,
     atom_to_lean_na,
@@ -177,7 +177,7 @@ def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
     """Translate the `--safety` SMT source to Bool-valued Lean.
 
     The result reads state through `(var_k state)`, exactly as
-    ``translate/na.py`` binds it -- one slot per *element*, so a wire wider
+    ``translate/fbk.py`` binds it -- one slot per *element*, so a wire wider
     than 1x1 is read through the tuple selectors the property already uses
     (`((_ tuple.select 2) s0)`), resolved to the slot that element lives in.
     Both sides get that map from `na._slot_accessors`, which is what keeps
@@ -191,7 +191,7 @@ def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
     from .smt_module import ModuleSMT
     from .smt_prompt import CegarPromptEnv, parse_predicate
     from .smt_to_lean import smt_to_lean_bool
-    from .translate.na import _slot_accessors
+    from .translate.fbk import _slot_accessors
 
     tm = cvc5.TermManager()
     env = CegarPromptEnv(ModuleSMT(tm=tm, module=module))

@@ -9,7 +9,7 @@ test in this directory runs:
      • Certs/TwoVars.lean
      • Certs/Collatz.lean
      • Certs/ScalarEnc*.lean  (functional + scalar encodings)
-     • Certs/RelEnc*/     (those two + ScalarRel + FBK, one module each)
+     • Certs/RelEnc*/     (those two + ScalarRel, one module each)
      • Certs/ArgmaxScalar.lean  (the scalar Argmax variants)
 
 The generated files import ZerothHammer for the tactic and define their own
@@ -368,21 +368,20 @@ def generate_lean_files(sync_core_templates) -> None:
             + "\n"
         )
 
-    # Certs/RelEnc*/ — functional, scalar, ScalarRel and FBK, one module each,
+    # Certs/RelEnc*/ — functional, scalar and ScalarRel, one module each,
     # exactly the way `create_project` splits them: System/Scalar.lean imports
-    # System/System.lean, System/ScalarRel.lean imports Scalar, System/FBK.lean
-    # imports both. `ScalarRel.effect_i` is per wire while the state tuple it
-    # is compared to is per element, so these are what keep the slice and the
-    # codomain in agreement; no certificate carries a ScalarRel or FBK section.
+    # System/System.lean and System/ScalarRel.lean imports Scalar.
+    # `ScalarRel.effect_i` is per wire while the state tuple it is compared to
+    # is per element, so these are what keep the slice and the codomain in
+    # agreement; no certificate carries a ScalarRel section.
     #
-    # The split is load-bearing, not cosmetic. These four used to be
-    # concatenated into one file, which is a weaker test than four separate
-    # modules: a `match` elaborates to an auxiliary matcher that is reused
-    # within a module but regenerated across module boundaries, so
-    # `FBK.effect_i_eq` saw one matcher constant on both sides here and two
-    # different ones in a real project. Every generated project with a
-    # multi-element ctrl wire failed to compile `System/FBK.lean` while this
-    # test passed.
+    # The split is load-bearing, not cosmetic. These used to be concatenated
+    # into one file, which is a weaker test than separate modules: a `match`
+    # elaborates to an auxiliary matcher that is reused within a module but
+    # regenerated across module boundaries, so an `effect_i_eq` saw one
+    # matcher constant on both sides here and two different ones in a real
+    # project, and every generated project with a multi-element ctrl wire
+    # failed to compile while this test passed.
     for name, make_module in _REL_ENC_SPECS:
         t = ModuleToLean4(make_module())
         base = f"Certs.RelEnc{name}"
@@ -397,12 +396,7 @@ def generate_lean_files(sync_core_templates) -> None:
         (d / "ScalarRel.lean").write_text(
             f"import Core.Basic\nimport {base}.Scalar\n\n" + t.to_lean_rel() + "\n"
         )
-        (d / "FBK.lean").write_text(
-            f"import Core.Basic\nimport {base}.Scalar\nimport {base}.ScalarRel\n\n"
-            + t.to_lean_bool_rel()
-            + "\n"
-        )
-        (_CERTS_DIR / f"RelEnc{name}.lean").write_text(f"import {base}.FBK\n")
+        (_CERTS_DIR / f"RelEnc{name}.lean").write_text(f"import {base}.ScalarRel\n")
 
     argmax_lines = ["import Core.Mat", ""]
     for elem_ty, n in _ARGMAX_SCALAR_SPECS:

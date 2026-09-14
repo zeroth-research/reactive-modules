@@ -402,7 +402,7 @@ def _selector_index(sel: cvc5.Term) -> int:
 
 
 # ---------------------------------------------------------------------
-# Bool-valued output, for the NA encoding (`translate/na.py`)
+# Bool-valued output, for the NA encoding (`translate/fbk.py`)
 # ---------------------------------------------------------------------
 
 # `lean2vmt`'s `exprToSMT` reads `decide`'s *instance* argument, not its

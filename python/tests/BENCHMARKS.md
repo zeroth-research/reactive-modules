@@ -463,7 +463,7 @@ uv run verith tests/limits/mods/m_uninterp.py \
 
 Width and depth of the module itself, independent of the certificate. Both are slow; see the timeouts in `cases.py`.
 
-**`Vec32`** — 32-wide state, all six encodings — the scaling ceiling  
+**`Vec32`** — 32-wide state, every encoding — the scaling ceiling  
 <sub>`m_vec32` · expect `?` · baseline `VERIFIED` · timeout 2400s</sub>
 
 ```bash
@@ -1334,7 +1334,7 @@ uv run verith tests/limits/mods/m_relu.py \
 
 These never reach ic3ia. `run_fbk.py --screen` checks that each still fails
 for the reason recorded here, so a lifted restriction shows up as a surprise
-rather than silently. `verith` = a restriction in `translate/na.py`;
+rather than silently. `verith` = a restriction in `translate/fbk.py`;
 `lean2vmt` / `vmt2lean` = an upstream limit that has to be fixed there first.
 
 ```bash

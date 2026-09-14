@@ -323,23 +323,17 @@ def _no_ctrl_module():
 
 @pytest.mark.parametrize(
     "encoding",
-    ["to_lean_functional", "to_lean_scalar", "to_lean_rel", "to_lean_bool_rel"],
+    ["to_lean_functional", "to_lean_scalar", "to_lean_rel"],
 )
 def test_no_ctrl_module_does_not_crash_any_encoding(encoding):
     """Every encoder must cope with an empty `ctrl`, not raise.
 
-    `to_lean_bool_rel` indexed `ctrl_types[0]` (and `[-1]`) unguarded and
-    raised IndexError, where the sibling encoders returned a comment.
+    An encoder that indexed `ctrl_types[0]` unguarded raised IndexError
+    where its siblings returned a comment.
     """
     out = getattr(ModuleToLean4(_no_ctrl_module()), encoding)()
     assert isinstance(out, str)
 
-
-def test_no_ctrl_module_says_why_fbk_is_unavailable():
-    """The bail-out follows the wording the other encoders use."""
-    out = ModuleToLean4(_no_ctrl_module()).to_lean_bool_rel()
-    assert out.startswith("-- FBK encoding not available")
-    assert "no ctrl wires" in out
 
 
 # ──────────────────────────────────────────────────────────────
@@ -448,64 +442,15 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
 
 
 # ──────────────────────────────────────────────────────────────
-# FBK state layout
+# Scalar flattening
 # ──────────────────────────────────────────────────────────────
 
 
-def _six_wide_module():
-    """A single 6-element ctrl wire: state slots and wires diverge."""
-    s = Var(Int([6, 1]))
-    init = [Term(LIA.Int(torch.zeros(6, 1, dtype=torch.int64)), [X(s)])]
-    update = [Term(LIA.Id(), [X(s)], [s])]
-    return Module.sequential([s], init, update)
-
-
-def test_fbk_state_has_one_slot_per_element():
-    """`ScalarRel.effect_i` takes a flattened state, so FBK must match it.
-
-    FBK's `TypeMap` gave one slot per *wire* holding the whole `Mat`, which
-    could not be passed to `ScalarRel.effect_i` at all.
-    """
-    lean = ModuleToLean4(_six_wide_module()).to_lean_bool_rel()
-    assert "| _ => Int" in lean, f"TypeMap is not per element:\n{lean[:400]}"
-    assert "(Mat Int 6 1)" not in lean.split("abbrev StateType")[0], (
-        "TypeMap still holds a whole matrix"
-    )
-    # six slots, and the tuple passed to ScalarRel has six components
-    assert "abbrev var_5 := state 5" in lean
-    assert "((state 0), ((state 1), ((state 2), ((state 3), ((state 4), (state 5))))))" in lean
-
-
-def test_fbk_reconstructs_a_multi_element_wire():
-    """With a per-element state, a term needing the whole Mat rebuilds it."""
-    lean = ModuleToLean4(_six_wide_module()).to_lean_bool_rel()
-    assert "let _s0 : (Mat Int 6 1) :=" in lean
-    assert "match i, j with" in lean, "reconstruction should use a match"
-
-
-def test_fbk_effect_eq_tries_rfl_before_simp():
-    """`effect_i_eq` must lead with `rfl`, not `simp`.
-
-    The two bodies are the same terms over different bindings, so they are
-    definitionally equal -- but the `match` that rebuilds a multi-element wire
-    elaborates to an auxiliary matcher named after its enclosing declaration.
-    `FBK.effect_0.match_1` and `ScalarRel.effect_0.match_1` print identically
-    and are defeq, yet are different constants, so simp reduced the goal to
-    `X = X` and could not close it. Every generated project with a
-    multi-element ctrl wire failed to compile `System/FBK.lean`.
-    """
-    lean = ModuleToLean4(_six_wide_module()).to_lean_bool_rel()
-    tactic = lean.split("theorem effect_0_eq")[1].splitlines()[1]
-    assert tactic.strip().startswith("first | rfl"), (
-        f"effect_0_eq no longer tries rfl first: {tactic!r}"
-    )
-
-
 def test_scalar_translator_flattening_is_opt_in():
-    """`rel.py`/`fbk.py` type `effect_i` as the wire's `Mat`, so they opt out.
+    """`rel.py` types `effect_i` as the wire's `Mat`, so it opts out.
 
     Making the flattening unconditional in `_translate_terms_scalar` broke
-    both, and nothing compiled them to notice.
+    it, and nothing compiled it to notice.
     """
     from zrth.lean.native import _translate_terms_scalar
     import inspect
@@ -565,7 +510,7 @@ def test_effect_gets_only_the_reconstructions_it_uses():
     so an extra parameter means every call under-applies. `effect_0` here
     reads only `state`, but got the `extl_l` and `extl_n` reconstructions.
     """
-    lean = ModuleToLean4(_mixed_dependency_module()).to_lean_bool_rel()
+    lean = ModuleToLean4(_mixed_dependency_module()).to_lean_rel()
     effects = _split_effects(lean)
     assert effects, f"no effects found in:\n{lean[:400]}"
     assert effects["0"] == [], (

@@ -30,11 +30,10 @@ and a `lean-ltl-certifying` checkout.
 
 ### 1. The fixture modules (`--mods`)
 
-The probes run on the limit-probe fixture set — the `m_*.py` modules behind
-[`VERITH_LIMITS.md`](../../../zrth/lean/VERITH_LIMITS.md).  They are not in
-the repo; they live in the harness scratch directory that produced that
-file.  Any directory of `m_*.py` files exposing `module()` will do; the
-probe table names 11 of them.
+The probes run on the limit-probe fixture set — the `m_*.py` modules of
+[`tests/limits/`](../../limits/README.md), which is in the repo at
+`tests/limits/mods`.  Any directory of `m_*.py` files exposing `module()`
+will do; the probe table names 11 of them.
 
 ### 2. MathSAT + its Python bindings
 
@@ -146,7 +145,7 @@ last sweep, 39 probes: 32 `certified`, 4 `unsafe`, 1 `unknown`, 1 `abort`,
 
 ### On the choice of properties
 
-The `P` column of the `VERITH_LIMITS.md` case matrix is **not** usable here.
+The `P` column of the `tests/limits` case matrix is **not** usable here.
 That `P` is a reachability target for verith's own certificate, which proves
 `inv` + `ranking` ⇒ `P` is reached; this route proves `□ PROPERTY`.  They are
 different properties.  Countdown starts at 100, so `□(x = 0)` is false at

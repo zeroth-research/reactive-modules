@@ -11,8 +11,8 @@ route *should* report, so a surprise is visible:
                see README.md; every one of these is upstream, not verith
 
 The modules live in the limit-probe fixture set (`--mods`), the same one
-`VERITH_LIMITS.md` uses.  Note the properties are **not** the `P` of that
-file's case matrix: `P` there is a reachability target for verith's own
+`tests/limits/` uses.  Note the properties are **not** the `P` of that
+matrix: `P` there is a reachability target for verith's own
 liveness-style certificate (`inv` + `ranking` => `P` is reached), whereas
 this route proves `[] PROPERTY`.  Feeding `P` straight through makes every
 case trivially unsafe -- Countdown starts at 100, so `[](x = 0)` is false
@@ -20,7 +20,7 @@ at step 0.  What transfers is each case's *invariant*, which is the thing
 meant to hold always; those are the `inv-` probes below.
 """
 
-# ── A. invariants from the VERITH_LIMITS case matrix, used as safety
+# ── A. invariants from the `tests/limits` case matrix, used as safety
 #      properties.  These are inductive by construction, so they measure
 #      the plumbing rather than ic3ia.
 FROM_CASE_MATRIX = [
@@ -187,7 +187,7 @@ PROBES = FROM_CASE_MATRIX + NET_SHAPED + HAND_WRITTEN + HARDER
 # ── D. modules the route rejects before ic3ia ever runs.  `run_fbk.py
 #      --screen` checks that each still fails for the reason recorded here,
 #      so a lifted restriction shows up as a surprise rather than silently.
-#      "verith" = a restriction in `translate/na.py`; "lean2vmt" /
+#      "verith" = a restriction in `translate/fbk.py`; "lean2vmt" /
 #      "vmt2lean" = an upstream limit that has to be fixed there first.
 # Nine modules left this table when the encoding stopped writing the
 # transition itself. A wire wider than 1x1 now becomes one state slot per

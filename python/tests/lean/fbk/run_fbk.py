@@ -4,7 +4,7 @@
     uv run python tests/lean/fbk/run_fbk.py --mods <dir> --ltl <dir> [--ic3ia P]
 
 `--mods` is the limit-probe fixture directory (the `m_*.py` modules that
-`VERITH_LIMITS.md` measures); `--ltl` is a `lean-ltl-certifying` checkout.
+`tests/limits/` measures); `--ltl` is a `lean-ltl-certifying` checkout.
 See README.md for the cold start, including how to get both.
 
 Probes run strictly sequentially.  They share one `lean-ltl-certifying`
@@ -117,7 +117,7 @@ def screen(opts) -> int:
     sys.path.insert(0, str(Path(opts.mods).resolve()))
     from zrth.lean.common import LeanContext
     from zrth.lean.project import load_module_from_file
-    from zrth.lean.translate.na import NAUnsupported, check_na_supported
+    from zrth.lean.translate.fbk import NAUnsupported, check_na_supported
 
     accepted, rejected, surprises = [], {}, []
     for path in sorted(Path(opts.mods).glob("m_*.py")):

@@ -610,19 +610,6 @@ import System.Scalar
     assert scalar_rel_file.exists()
     print(f"++ Generated {scalar_rel_file} ++")
 
-    fbk_file = src_dir / "FBK.lean"
-    print(f"Generating `{fbk_file.absolute()}`")
-    fbk_file.write_text(f"""\
-/- Bool-valued relational encoding of reactive module `{module_name}` -/
-import Core.Basic
-import System.Scalar
-import System.ScalarRel
-
-{m2l.to_lean_bool_rel()}
-""")
-    assert fbk_file.exists()
-    print(f"++ Generated {fbk_file} ++")
-
     # -- certificate data (init_pre, inv, P, ranking — placeholders if no cert_data) --
     write_data_lean(project_dir, project_name, module, cert_data, ctx=ctx)
 

@@ -25,7 +25,11 @@ So the plan is read off the obligations instead:
   every closer afterwards sees numerals rather than an opaque `⌊4 - x⌋`;
 * how big the module is — `maxRecDepth` scales with the term count, and the
   heartbeat budget is left low unless something in the plan is known to be
-  slow, so a failing proof fails fast;
+  slow. For economy on ordinary goals, *not* to bound failures: a tactic that
+  hits the cap throws, `first` catches that like any other failure and moves
+  to a more expensive alternative, so a low cap multiplies the wasted work
+  rather than cutting it short. Measured, `NN2RealWide4` fails in 106 s at
+  400k and succeeds in 71 s at 2M;
 * whether the state is finite *and* narrow — then each element is enumerated
   over its two values before anything tries to close, which is the only way
   to discharge a branch that is contradictory purely because the state has
