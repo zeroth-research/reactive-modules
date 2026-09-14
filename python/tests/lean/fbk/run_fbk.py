@@ -64,13 +64,24 @@ def classify(out: str) -> tuple[str, str]:
     return "error", (out.strip().splitlines() or [""])[-1][:100]
 
 
+def module_path(mod: str, mods_dir) -> Path:
+    """`TESTS/<name>` is `tests/fixtures/<name>.py`, anything else `--mods`.
+
+    The limit harness spells it the same way (`run_limits.module_path`), so
+    a probe can name either set.
+    """
+    if mod.startswith("TESTS/"):
+        return HERE.parent.parent / "fixtures" / f"{mod.split('/', 1)[1]}.py"
+    return Path(mods_dir) / f"{mod}.py"
+
+
 def probe(name, mod, prop, expect, opts) -> dict:
     out_dir = Path(opts.out) / name
     shutil.rmtree(out_dir, ignore_errors=True)
     started = time.monotonic()
 
     cmd = [
-        "uv", "run", "verith", str(Path(opts.mods) / f"{mod}.py"),
+        "uv", "run", "verith", str(module_path(mod, opts.mods)),
         "--safety", prop, "-o", str(out_dir), "-p", name,
         "--fbk-proveit", str(opts.ltl),
     ]
