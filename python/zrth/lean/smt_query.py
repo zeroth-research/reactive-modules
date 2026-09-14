@@ -131,17 +131,30 @@ class ModuleQueries:
         self.env = CegarPromptEnv(self.msmt)
         self.state_vars = self.env.state_vars
 
-        def opt(src, flag):
+        def opt(src, flag, want: str = "Bool"):
             """Parse one predicate source, or refuse naming the flag it came
             from. cvc5's parser reports the token it stopped at and nothing
             about where the text came from, and the caller that prints this
-            has five sources in hand."""
+            has five sources in hand.
+
+            `want` is the sort the field is declared as and the Lean printer
+            assumes: a property, an invariant and a precondition become the
+            body of a `Prop`, a ranking function the body of a `Nat`. An Int
+            where a Prop is expected elaborates to nothing; a Bool ranking
+            prints as `(((s 0 0) = 0) : Int).toNat`, which is not Lean. cvc5
+            knows the sort here, so the flag can be told it is the wrong one
+            rather than Lean being shown the result.
+            """
             if not isinstance(src, str):
                 return None
             try:
-                return parse_predicate(self.env, src)
+                term = parse_predicate(self.env, src)
             except Exception as e:
                 raise Refused(f"{flag}: cannot read `{src}`: {e}") from e
+            got = term.getSort()
+            if not (got.isBoolean() if want == "Bool" else got.isInteger()):
+                raise Refused(f"{flag}: must have sort {want}, got {got}")
+            return term
 
         # After `--infer`, `inv` and `ranking` hold Lean printed from a cvc5
         # term, which nothing parses back; `inv_smt` / `ranking_smt` keep the
@@ -153,7 +166,9 @@ class ModuleQueries:
             getattr(cert_data, "inv_smt", None) or cert_data.inv, "--invariant"
         )
         self.ranking = opt(
-            getattr(cert_data, "ranking_smt", None) or cert_data.ranking, "--ranking"
+            getattr(cert_data, "ranking_smt", None) or cert_data.ranking,
+            "--ranking",
+            want="Int",
         )
         self.init_pre = opt(cert_data.init_pre, "--pre")
         self.update_pre = opt(cert_data.update_pre, "--pre")

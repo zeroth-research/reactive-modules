@@ -50,6 +50,31 @@ def test_verith_no_property():
         assert "sorry" in data
 
 
+def test_a_predicate_of_the_wrong_sort_is_refused():
+    """The fields are declared: a property, an invariant and a precondition
+    become the body of a `Prop`, a ranking function the body of a `Nat`. An
+    Int property printed as a `Prop` and a Bool ranking printed as
+    `((… = 0) : Int).toNat` are both only Lean's problem otherwise, and
+    `--fbk-proveit` has always checked its own."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        refused = [
+            ("--safety", "s0"),                              # Int as a Prop
+            ("--pre", "(+ 1 1)"),                            # Int as a Prop
+            ("--buchi", "(= s0 0)", "--ranking", "(= s0 0)"),  # Bool as a Nat
+        ]
+        for args in refused:
+            r = _verith(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Sorts")
+            assert r.returncode != 0, f"{args} was accepted"
+            assert "must have sort" in r.stderr, r.stderr
+
+        # and the shapes that are right still pass
+        r = _verith(
+            str(COUNTER_MODULE), "--buchi", "(= s0 0)", "--ranking", "s0",
+            "-o", tmpdir, "-p", "Sorts",
+        )
+        assert r.returncode == 0, r.stderr
+
+
 def test_a_predicate_cvc5_cannot_read_is_refused_not_pasted():
     """The fields become the bodies of `def P`, `def inv`, `def ranking`.
     A source that does not parse used to be interpolated into them verbatim
