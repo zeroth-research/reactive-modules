@@ -12,11 +12,10 @@ from zrth.lean.common import (
     dtype_shape,
     dtype_to_lean_type,
     LeanContext,
-    _accessor,
     _flat_size,
-    _flat_indices,
     _flat_element_type,
     _mat_from_scalars,
+    flat_layout,
     itype_name,
 )
 from zrth.lean.translate._shared import _scalar_bindings_with_recon, _prepend_recon
@@ -30,26 +29,30 @@ def _scalar_dom(param: str, wires: "list[Wire]") -> str:
 
 def _unpack_body(param: str, wires: "list[Wire]") -> str:
     """Body of ``unpack_<param>``: extract all flat elements from the wire."""
-    n = len(wires)
-    parts = []
-    for i, w in enumerate(wires):
-        base = f"{param}{_accessor(i, n)}"
-        for row, col in _flat_indices(w):
-            parts.append(f"{base} {row} {col}")
-    return _build_tuple(parts)
+    layout = flat_layout(wires)
+    return _build_tuple([layout.wire_accessor(param, s) for s in layout.slots])
 
 
 def _pack_body(var: str, wires: "list[Wire]") -> str:
-    """Body of ``pack``: reconstruct each wire's Mat from flat scalar slots."""
-    total = sum(_flat_size(w) for w in wires)
-    flat_accrs = [f"{var}{_accessor(k, total)}" for k in range(total)]
+    """Body of ``pack``: reconstruct each wire's Mat from flat scalar slots.
+
+    The exact inverse of `_unpack_body`, and it has to be: `update_scalar_eq`
+    and the `ScalarRel` bridges all rest on `pack (unpack x) = x`. Both walk
+    the one layout, so the round trip is by construction rather than by two
+    functions agreeing.
+    """
+    layout = flat_layout(wires)
+    flat_accrs = layout.flat_accessors(var)
     parts = []
-    offset = 0
     for w in wires:
-        n = _flat_size(w)
-        slots = flat_accrs[offset : offset + n]
-        parts.append(_mat_from_scalars(slots, list(dtype_shape(w.dtype)), _flat_element_type(w)))
-        offset += n
+        offset, size = layout.span(w)
+        parts.append(
+            _mat_from_scalars(
+                flat_accrs[offset : offset + size],
+                list(dtype_shape(w.dtype)),
+                _flat_element_type(w),
+            )
+        )
     return _build_tuple(parts)
 
 

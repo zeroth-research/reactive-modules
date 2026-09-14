@@ -40,7 +40,7 @@ topologically-sorted dataflow graph.
 
 | File | Role |
 |------|------|
-| `common.py` | Shared utilities: `LeanContext`, type helpers, `ConstantRegistry`, wire-binding helpers |
+| `common.py` | Shared utilities: `LeanContext`, type helpers, `ConstantRegistry`, wire-binding helpers, `flat_layout` (the row-major element order every scalar encoding shares) |
 | `ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |

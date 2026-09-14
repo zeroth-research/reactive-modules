@@ -1,44 +1,33 @@
 """Shared helpers used by multiple translate sub-modules."""
 
 from zrth.lean.common import (
+    FlatLayout,
     dtype_shape,
     _accessor,
-    _flat_size,
     _flat_element_type,
     dtype_to_lean_type,
     _mat_from_scalars,
+    flat_layout,
 )
 from zrth.lean.native import _build_tuple, _product_type_scalar
 
 
-def _flat_layout(wires: "list") -> "tuple[list[tuple[int, int]], int]":
-    """``([(offset, size)] per wire, total)`` in the flattened element tuple.
+def _flat_slice(expr: str, layout: FlatLayout, wire) -> str:
+    """The components of the flat tuple `expr` that `wire` owns.
 
-    The scalar encoding's state tuple carries one component per *element*, so
-    a wire's data starts at the sum of the sizes before it -- not at its own
-    index. Consumers that relate a per-wire definition to that tuple need
-    both halves of this.
-    """
-    sizes = [_flat_size(w) for w in wires]
-    offset = 0
-    spans: list[tuple[int, int]] = []
-    for size in sizes:
-        spans.append((offset, size))
-        offset += size
-    return spans, offset
-
-
-def _flat_slice(expr: str, offset: int, size: int, total: int) -> str:
-    """The `size` components of the `total`-wide tuple `expr` from `offset`.
+    Takes the wire and the layout rather than an offset and a length: the
+    only two numbers involved are a position in one index space and a length
+    in another, and `KNOWN_ISSUES` #22 was them mismatched at a call site.
 
     A wire covering the whole tuple slices to `expr` itself: projecting and
     re-tupling would be a no-op that repeats `expr` once per element, and
     `expr` is a whole `Scalar.update` call at the only call sites.
     """
-    if offset == 0 and size == total:
+    offset, size = layout.span(wire)
+    if offset == 0 and size == layout.total:
         return expr
     return _build_tuple(
-        [f"{expr}{_accessor(offset + k, total)}" for k in range(size)]
+        [f"{expr}{_accessor(offset + k, layout.total)}" for k in range(size)]
     )
 
 
@@ -74,15 +63,14 @@ def _scalar_bindings_with_recon(
     let_counter = [0]
 
     for name, wires in params:
-        flat_sizes = [_flat_size(w) for w in wires]
-        total = sum(flat_sizes)
-        flat_accrs = [f"{name}{_accessor(k, total)}" for k in range(total)]
+        layout = flat_layout(wires)
+        flat_accrs = layout.flat_accessors(name)
 
-        offset = 0
-        for w, fsize in zip(wires, flat_sizes):
-            slots = flat_accrs[offset : offset + fsize]
+        for w in wires:
+            offset, size = layout.span(w)
+            slots = flat_accrs[offset : offset + size]
             flat_slots[w.id] = slots
-            if fsize == 1:
+            if size == 1:
                 bindings[w.id] = slots[0]
             else:
                 mat_ty = dtype_to_lean_type(w)
@@ -91,7 +79,6 @@ def _scalar_bindings_with_recon(
                 let_counter[0] += 1
                 let_lines.append(f"  let {var_name} : {mat_ty} := {mat_expr}")
                 bindings[w.id] = var_name
-            offset += fsize
 
     return let_lines, bindings, flat_slots
 

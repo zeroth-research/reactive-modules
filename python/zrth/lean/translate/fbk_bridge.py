@@ -41,11 +41,10 @@ import re
 
 from zrth.lean.common import (
     LeanContext,
-    _accessor,
-    _flat_element_type,
+    flat_layout,
 )
 from zrth.lean.native import _product_type
-from zrth.lean.translate.fbk import _slot_bodies, _slot_layout
+from zrth.lean.translate.fbk import _slot_bodies
 
 # The certificate's own `simp_mat` arsenal. Without it a `Linear` arrives as
 # `matVecAffine 2 [[1, 0], [0, 1]] [0, 1] (fun i j => match i, j with ...)`
@@ -81,16 +80,6 @@ def _cascade(defs: str, extra: str = "") -> list[str]:
     ]
 
 
-def _slot_accessor(ctx: LeanContext, wire_index: int, row: int, col: int) -> str:
-    """How the *functional* state reads the element a slot holds.
-
-    The same layout `scalar.py::_unpack_body` uses, so the two agree about
-    which element is which without either consulting the other.
-    """
-    n = len(ctx.ctrl_next)
-    return f"s{_accessor(wire_index, n)} {row} {col}"
-
-
 def atom_to_lean_fbk_bridge(
     ctx: LeanContext,
     *,
@@ -101,9 +90,9 @@ def atom_to_lean_fbk_bridge(
 
     `na_module` is the Lean module name of the NA model (`project.na_module_name`).
     """
-    layout = _slot_layout(ctx.ctrl_next)
-    n = len(layout)
-    ty = [_flat_element_type(ctx.ctrl_next[i]) for i, _, _ in layout]
+    layout = flat_layout(ctx.ctrl_next)
+    n = layout.total
+    ty = layout.element_types()
     upd, _init = _slot_bodies(ctx, simplify)
 
     binders = " ".join(f"(x{k} : {ty[k]})" for k in range(n))
@@ -145,16 +134,16 @@ def atom_to_lean_fbk_bridge(
         f"abbrev CtrlNative := {ctrl_native}",
         "",
         "/-- A module state, read as the model's slots. The arms are the flat",
-        "    element order `_slot_layout` fixes, which is also the order",
-        "    `Scalar.unpack_ctrl` unpacks in. The last arm is `_ + n` rather",
+        "    element order `common.flat_layout` fixes, which is the order",
+        "    `Scalar.unpack_ctrl` unpacks in -- the same call, not a matching",
+        "    one. The last arm is `_ + n` rather",
         "    than `_`: at a variable index `TypeMap` is stuck, and only the",
         "    successor pattern lets it reduce to the fallback type. -/",
         "def toSlots (s : CtrlNative) : StateType",
     ]
-    for k, (i, r, c) in enumerate(layout):
-        lines.append(f"  | {k} => {_slot_accessor(ctx, i, r, c)}")
-    last_i, last_r, last_c = layout[-1]
-    lines.append(f"  | _ + {n} => {_slot_accessor(ctx, last_i, last_r, last_c)}")
+    for k, slot in enumerate(layout.slots):
+        lines.append(f"  | {k} => {layout.wire_accessor('s', slot)}")
+    lines.append(f"  | _ + {n} => {layout.wire_accessor('s', layout.slots[-1])}")
     lines.append("")
 
     lines += [
@@ -185,8 +174,11 @@ def atom_to_lean_fbk_bridge(
         "-- nothing else; the rest is what this file exists for.",
         "",
     ]
+    # The right-hand sides are slot `k` of the flat transition, read out by
+    # the same layout the left-hand sides were numbered by.
+    scalar_slots = layout.flat_accessors(f"(Scalar.update ({flat}) () ())")
     for k in range(n):
-        rhs = f"(Scalar.update ({flat}) () ()){_accessor(k, n)}"
+        rhs = scalar_slots[k]
         lines += [
             f"theorem bridge_{k} {binders} :",
             f"    effect_{k}_fn {args} = {rhs} := by",

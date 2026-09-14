@@ -22,8 +22,8 @@ from zrth.lean.common import (
     _bind_wires_scalar,
     _tensor_to_lean_inline,
     _flat_element_type,
-    _flat_size,
     _flat_indices,
+    flat_layout,
 )
 from zrth.lean.ops import mat_emitter, scalar_emitter
 
@@ -194,15 +194,14 @@ def _translate_terms(
 def _product_type_scalar(wires: list[Wire]) -> str:
     """Build a flat scalar product type, expanding multi-element wires.
 
-    Each wire contributes ``_flat_size(w)`` copies of its base type.
+    One component per slot, in slot order: the type view of the same
+    flattening `flat_layout` owns, so the tuple's shape and the slot
+    numbering cannot disagree.
     E.g. [Int(1), Float(2)] → ``"Int × Real × Real"``.
     """
     if not wires:
         return "Unit"
-    parts: list[str] = []
-    for w in wires:
-        ty = _flat_element_type(w)
-        parts.extend([ty] * _flat_size(w))
+    parts = flat_layout(wires).element_types()
     if len(parts) == 1:
         return parts[0]
     return " × ".join(parts)
