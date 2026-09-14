@@ -70,6 +70,7 @@ returns a :class:`zrth.Module`::
 """
 
 import argparse
+import re
 from pathlib import Path
 
 from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
@@ -90,6 +91,7 @@ from .project import (
     create_project,
     generate_standalone_cert_lean,
     load_module_from_file,
+    na_module_name,
     write_certificate_lean,
     write_data_lean,
     write_encoding,
@@ -196,12 +198,6 @@ def main():
         "--output-dir",
         default=".",
         help="Directory where the Lean project will be created (default: current directory).",
-    )
-    parser.add_argument(
-        "-n",
-        "--module-name",
-        default="ReactiveModule",
-        help="Name for the generated Lean module file (default: ReactiveModule).",
     )
     parser.add_argument(
         "-p",
@@ -313,7 +309,9 @@ def main():
         help=(
             "Write a standalone, self-contained certificate .lean file to this path "
             "instead of creating a full project.  The file inlines init/update and "
-            "imports zeroth_hammer from ZerothHammer."
+            "imports zeroth_hammer from ZerothHammer.  The other encodings of the "
+            "same module are written beside it under the same stem (Rel, Scalar, "
+            "ScalarRel), as they are in a project."
         ),
     )
     parser.add_argument(
@@ -472,6 +470,13 @@ def main():
             "--safety and --buchi are mutually exclusive: a certificate "
             "proves `G FORMULA` or `G (F FORMULA)`, under one proof rule"
         )
+    # `phase_left_ms` is `max(0, phase_ms - spent)` and a phase is exhausted
+    # at zero, so a non-positive budget is not "unlimited": it is a phase
+    # that never runs a query and says nothing about why.
+    for flag, value in (("--smt-timeout", args.smt_timeout), ("--smt-budget", args.smt_budget)):
+        if value <= 0:
+            parser.error(f"{flag} must be a positive number of milliseconds, got {value}")
+
     property_smt = args.safety or args.buchi
     kind = "safety" if args.safety else "buchi"
 
@@ -497,6 +502,17 @@ def main():
             )
         if not args.safety:
             parser.error("--fbk-proveit requires --safety")
+        # This route is the one that turns the project name into a Lean
+        # module name -- `<Proj>NA`, which the certificate imports and the
+        # lakefile declares. `import 1projNA` is "unexpected token; expected
+        # identifier", four steps later and in generated code.
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_']*", args.project_name):
+            parser.error(
+                f"--fbk-proveit needs a -p that is a Lean identifier: "
+                f"`{na_module_name(args.project_name)}` is the module name "
+                f"the NA model and the certificate are written under, and "
+                f"`{args.project_name}` does not start one"
+            )
         conflicts = [
             name
             for name, value in (

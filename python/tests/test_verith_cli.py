@@ -50,6 +50,28 @@ def test_verith_no_property():
         assert "sorry" in data
 
 
+def test_the_flags_the_cli_offers_are_flags_it_reads():
+    """`-n/--module-name` was parsed, defaulted, and never read: the module
+    file is named after the project. A budget that cannot bound anything and
+    a project name that cannot be a Lean module name are rejected where they
+    are given, not four steps later in generated code."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = _verith(str(COUNTER_MODULE), "-n", "Foo", "-o", tmpdir)
+        assert r.returncode != 0 and "unrecognized arguments" in r.stderr
+
+        for flag in ("--smt-timeout", "--smt-budget"):
+            for value in ("0", "-5"):
+                r = _verith(str(COUNTER_MODULE), flag, value, "-o", tmpdir)
+                assert r.returncode != 0, f"{flag} {value} was accepted"
+                assert "must be a positive number" in r.stderr, r.stderr
+
+        # `-p` only has to be a Lean identifier where a module name is made
+        # of it, which is the proveit route -- elsewhere it names a package
+        # directory and lake takes what it is given.
+        r = _verith(str(COUNTER_MODULE), "-p", "my-proj", "-o", tmpdir)
+        assert r.returncode == 0, r.stderr
+
+
 def test_a_predicate_of_the_wrong_sort_is_refused():
     """The fields are declared: a property, an invariant and a precondition
     become the body of a `Prop`, a ranking function the body of a `Nat`. An
