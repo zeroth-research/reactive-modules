@@ -1,6 +1,7 @@
 /-!
-Well-foundedness principles for ranking functions, proven once and instantiated
-per program — the `farkas_sound` of the termination argument.
+Well-foundedness principles for ranking functions, proven once — the
+`farkas_sound` of a ranking argument. `ReactiveModule.rule_buchi_lex` is the one
+place they are instantiated: an emitted proof cites that rule, never these.
 
   * `peel` — the recursive engine: a bounded-below rank `V` that on every step
     either strictly drops, or is non-increasing and hands off to a sub-relation
