@@ -102,7 +102,7 @@ cvc5 rewrites `x - 1` to `-1 + x`, folds `x + 1 = 10` into `x = 9`, expands
 affine layers, and reshapes `ite c b (¬b)` into an equality.
 
 **Measured**, on every module the FBK encoding accepts, with the cascade
-below and *without* the `smt` fallback firing at all:
+below:
 
 | module | slots | shape | time |
 |---|---|---|---|
@@ -126,7 +126,6 @@ first
   | (simp [effect_k_fn, Scalar.update, <matrix set>]; omega)
   | (simp [effect_k_fn, Scalar.update, <matrix set>]; split_ifs <;> omega)
   | (simp [effect_k_fn, Scalar.update, <matrix set>]; simp_all)
-  | (simp only [effect_k_fn, Scalar.update]; smt)
 ```
 
 `<matrix set>` is the certificate's own `simp_mat` list — `matVecAffine`,
@@ -140,10 +139,18 @@ the simp set, not by a better prover.
 
 Three things the measurements settle:
 
-* **`smt` is insurance, not the mechanism.** Every case closed with the
-  `smt` alternative deleted. Keep it last — a module with a `Mul` of two
-  state elements would need it — but the bridge does not depend on
-  `lean-smt`, whose two reconstruction bugs are catalogued in
+* **`smt` cannot be in the cascade at all.** Every case closed without it,
+  which was measured first and is why the arm was only ever insurance — a
+  module with a `Mul` of two state elements would have needed it. But the
+  arm was measured in a *single file*, where the model and the bridge share
+  an environment; in the generated project they are two, and `smt` is only
+  in scope after `import Smt`. That import pulls in `auto` and with it
+  `Auto.instBEqInt_auto`, a `BEq Int` instance outranking the
+  `instBEqOfDecidableEq` the NA model elaborated its `==` against — so
+  `effect_k_fn` is built over a different instance than `effect_k` and
+  `link_k := rfl` stops typechecking. The insurance breaks the mechanism,
+  so the bridge carries no `smt` arm and does not depend on `lean-smt`,
+  whose two reconstruction bugs are catalogued in
   [`../../tests/lean/fbk/lean-smt-bug.md`](../../tests/lean/fbk/lean-smt-bug.md).
 * **`decide` is useless here** and should not be in the cascade: the goal has
   free variables, and it fails with "Expected type must not contain free
@@ -228,9 +235,18 @@ transition and silent about the property.
 
 Implemented as designed, with the numbers below measured on the emitted
 files rather than on prototypes. `translate/fbk_bridge.py` emits
-`<Proj>/Certificate/Equivalence.lean`, the project's root `Certificate.lean`
-imports it so `--build-cert` builds it, `Core/Basic.lean` carries
+`<Proj>/Certificate/Equivalence.lean`, the `Certificate` lean_lib globs its
+submodules so `--build-cert` builds it, `Core/Basic.lean` carries
 `TS.transfer`, and `--fbk-equiv none` turns it off.
+
+The glob rather than an import from the root `Certificate.lean` is forced:
+the bridge is stated in `Core.LTL`'s vocabulary and the certificate in
+`LTLCertifying`'s, and both declare a top-level `LTLFormula`, so a module
+importing the two is rejected before it is elaborated. Nothing is lost
+today — `module_safety` takes the model-side statement as a hypothesis
+rather than reading it out of the certificate — but discharging that
+hypothesis means putting the two in one environment, so the name clash is
+part of the work `KNOWN_ISSUES.md` #31 still records as outstanding.
 
 **14 of the 17 module shapes the route accepts get a complete bridge.** The
 three that do not are `m_max`, `m_min` and `m_argmax`, and they fail for the
@@ -305,5 +321,5 @@ one whose *certificate* already exhausts Lean's heartbeats
   back out of the `.lean` file.
 * **`Real` and `BitVec` states are out of scope** because the route already
   refuses them (`vmt2lean.py` maps only `Int` and `Bool`). If that changes,
-  `omega` stops applying and the cascade's `smt`/`linarith` alternatives
-  become load-bearing rather than insurance.
+  `omega` stops applying and the cascade needs an arm that is not `omega` —
+  `linarith`, since `smt` is ruled out by the instance clash above.

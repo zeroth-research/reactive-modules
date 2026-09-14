@@ -12,8 +12,15 @@ name = "LeanAI"
 [[lean_lib]]
 name = "ZerothHammer"
 
+# The root `Certificate.lean` imports the certificate alone. On the
+# `--fbk-proveit` route the directory also holds `Equivalence.lean`, the
+# proof that the NA model is the module -- stated in `Core.LTL`'s vocabulary
+# while the certificate is stated in `LTLCertifying`'s, and both libraries
+# declare a top-level `LTLFormula`. One module importing the two is rejected
+# before elaboration, so the glob reaches the bridge as a module of its own.
 [[lean_lib]]
 name = "Certificate"
+globs = ["Certificate", "Certificate.+"]
 
 [[lean_lib]]
 name = "System"

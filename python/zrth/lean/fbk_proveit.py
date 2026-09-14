@@ -375,9 +375,17 @@ def write_equivalence(
 
     The certificate `proveit.py` installs is about the NA model. This is the
     file that carries it back to the module -- see `translate/fbk_bridge.py`
-    and `FBK_EQUIVALENCE.md`. The project's root `Certificate.lean` imports
-    it, so `lake build Certificate` (that is, `--build-cert`) builds both;
-    left out of the import list it would be a file nothing reaches.
+    and `FBK_EQUIVALENCE.md`.
+
+    Lake reaches it through the `Certificate` lean_lib's glob, not through
+    the root `Certificate.lean`'s import list, and that is not a detail:
+    this file is stated in `Core.LTL`'s vocabulary and the certificate in
+    `LTLCertifying`'s, and both libraries declare a top-level `LTLFormula`.
+    A module importing the two is rejected before it is elaborated
+    ("environment already contains 'LTLFormula'"), so `--build-cert` builds
+    them as two modules, which is also all the bridge needs today: its
+    `module_safety` takes the model-side statement as a hypothesis rather
+    than reading it out of the certificate.
     """
     from .translate.fbk_bridge import atom_to_lean_fbk_bridge
 
@@ -391,10 +399,5 @@ def write_equivalence(
             bodies=bodies,
         )
     )
-    root = project_dir / "Certificate.lean"
-    line = "import Certificate.Equivalence"
-    text = root.read_text() if root.is_file() else "import Certificate.Certificate\n"
-    if line not in text:
-        root.write_text(text.rstrip("\n") + "\n" + line + "\n")
     print(f"Wrote the model-is-the-module proof: {out}")
     return out

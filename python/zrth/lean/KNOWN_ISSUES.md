@@ -153,7 +153,13 @@ compare against, and fixing the fold fixes both -- and the last link of
 `module_safety`, whose hypothesis is the model-side statement the installed
 certificate proves in `lean-ltl-certifying`'s LTL vocabulary rather than
 `Core.LTL`'s. Translating between the two is fixed work that does not vary
-per module.
+per module, but it is not only a translation: both libraries declare a
+top-level `LTLFormula`, so a module importing the certificate and the bridge
+together is rejected before it is elaborated. That is why `--build-cert`
+reaches the bridge through the `Certificate` lean_lib's glob and not through
+the root `Certificate.lean`'s import list -- the two files compile, in
+separate environments, and the day the hypothesis is discharged one of the
+two `LTLFormula`s has to move.
 
 ### 26. `matMin` / `matMax` never reduce, so `Min`/`Max` modules cannot be proved · CONFIRMED
 

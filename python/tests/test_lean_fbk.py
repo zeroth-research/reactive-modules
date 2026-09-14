@@ -695,6 +695,34 @@ def test_the_bridge_carries_the_budgets():
     assert "set_option maxHeartbeats" in src
 
 
+def test_the_bridge_closes_goals_only_with_tactics_it_imports():
+    """No `smt` arm. It is not in scope -- the file imports no `Smt` -- and
+    it cannot be brought into scope: `lean-smt` pulls in `auto`, whose
+    `Auto.instBEqInt_auto` outranks the `BEq Int` the NA model elaborated
+    its own `==` against, and `link_k := rfl` then stops typechecking."""
+    src = _bridge(_wide_mixed())
+    assert "import Smt" not in src
+    arms = [l for l in src.splitlines() if l.lstrip().startswith("| ")]
+    assert arms, "the cascade went missing"
+    assert not [l for l in arms if "smt" in l], "an arm needs `import Smt`"
+
+
+def test_the_bridge_is_not_imported_by_the_certificate_root(tmp_path):
+    """The bridge speaks `Core.LTL` and the certificate speaks
+    `LTLCertifying`, and both declare a top-level `LTLFormula`: one module
+    importing the two is rejected before it is elaborated. Lake reaches the
+    bridge through the `Certificate` lean_lib's glob instead."""
+    from zrth.lean.fbk_proveit import write_equivalence
+
+    root = tmp_path / "Certificate.lean"
+    root.write_text("import Certificate.Certificate\n")
+
+    out = write_equivalence(tmp_path, "Proj", LeanContext(_counter()))
+
+    assert out.read_text()
+    assert root.read_text() == "import Certificate.Certificate\n"
+
+
 def test_ic3ia_directory_resolves_to_the_binary_inside_it():
     """The build directory is the obvious thing to reach for, and
     `proveit.py` reports it as "executable not found" with the binary

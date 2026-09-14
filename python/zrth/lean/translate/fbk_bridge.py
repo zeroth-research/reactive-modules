@@ -30,7 +30,7 @@ read as an `Int` and `smt` will not read at all. Hence `effect_k_fn`, the
 same body over honest scalar binders, tied to the model by `rfl`.
 
 `FBK_EQUIVALENCE.md` has the measurements this is built on, including why
-the cascade is what it is: `smt` never fires, `decide` cannot (free
+the cascade is what it is: `decide` cannot close these goals (free
 variables), `split_ifs` before `simp` splits `(x == 0)` and `decide (x = 0)`
 into four branches, and the `Linear` cases need the certificate's own matrix
 simp set because `_translate_terms_scalar` does not scalarise a `Linear` --
@@ -61,9 +61,17 @@ def _cascade(defs: str, extra: str = "") -> list[str]:
     """The closer chain, cheapest first.
 
     Measured over every module shape the route accepts: `rfl` closes the
-    trivial ones, `simp` + `omega` the rest, and the `smt` alternative never
-    fires -- it is last because a product of two state elements would need
-    it, and because `lean-smt` has two open reconstruction bugs.
+    trivial ones and `simp` + `omega` the rest.
+
+    There is no `smt` arm, and this file cannot have one.  `smt` comes from
+    `lean-smt`, which pulls in `auto` and with it `Auto.instBEqInt_auto`, a
+    `BEq Int` instance that outranks the `instBEqOfDecidableEq` the NA model
+    elaborated its own `==` against -- the model imports `Cslib` alone.
+    Adding `import Smt` here re-elaborates `effect_k_fn` against Auto's
+    instance, and `link_k := rfl`, the one step that crosses from the model
+    into this file, stops being a definitional equality.  The measurements
+    say the arm never fired anyway: it was insurance, and the insurance is
+    what broke the `rfl`.
     """
     plain = f"{defs}{extra}"
     mat = f"{defs}, {_MAT_SIMP}{extra}"
@@ -76,7 +84,6 @@ def _cascade(defs: str, extra: str = "") -> list[str]:
         f"    | (simp [{mat}]; omega)",
         f"    | (simp [{mat}]; split_ifs <;> omega)",
         f"    | (simp [{mat}]; simp_all)",
-        f"    | (simp only [{plain}]; smt)",
     ]
 
 
