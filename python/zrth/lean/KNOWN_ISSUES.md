@@ -243,6 +243,47 @@ the same story as #26: a true certificate that Lean cannot reduce its way
 to. `Argmax` was always encoded correctly for SMT (`_argmax_flat`), which is
 why it could be checked before `Min`/`Max` could.
 
+### 32. The same module generates two different Lean files · CONFIRMED
+
+**Symptom.** Two runs of the generator over one unchanged module emit
+different `System.lean` and `Scalar.lean`: the `let` bindings for two
+independent `Ite`s swap places and the `x{n}` numbering shifts with them.
+Six fixtures do it — `m_lex`, `m_nonlin`, `m_twovars`, `svcomp_gcd`,
+`svcomp_nested`, `svcomp_twovars` — which is every module whose update block
+writes two or more ctrl wires under one branch. Both spellings are the same
+program (the lets are independent and the output tuple still reads the right
+wires) and both build, so nothing fails. What breaks is reproducibility.
+
+**Mechanism.** Not in `zrth/lean`, which is deterministic given the IR. The
+IR differs per process: `analyzer.py:1477` merges the two branch scopes as
+`set(if_scope_after.keys()) | set(else_scope_after.keys())` and emits one
+`Ite` per member, so the terms are built in the iteration order of a set of
+variable-*name* strings — which Python randomises per process. Measured on
+`m_twovars`:
+
+```
+ Ite write 13 reads [8, 3, 12]   Ite write 14 reads [8, 10, 11]
+ Ite write 13 reads [8, 10, 11]  Ite write 14 reads [8, 3, 12]   <- next process
+```
+
+The term *sequence* is stable; which body lands on which wire is not.
+`PYTHONHASHSEED=0` pins the output and two different seeds give two
+different `to_lean_functional()` hashes, which is the confirmation that it
+is string hashing and nothing else.
+
+**Why it is worth fixing.** A regenerated project is byte-different from the
+last one, so `lake` rebuilds `System` and everything downstream of it even
+when the module has not changed. And byte-diffing generated Lean — the
+cheapest way to show that a refactor changed nothing — is unreliable for
+those six modules unless both sides are generated in one process or under a
+fixed seed. That is how this was found: a no-op refactor of the flattening
+appeared to change six files.
+
+**Resolution.** Iterate that merged scope in a deterministic order — the
+order the two scopes were built in, with sorted names for anything only one
+branch has. It is a change to `zrth/analyzer.py` rather than to the Lean
+pipeline, and those six modules are already in `tests/limits/mods` to pin it.
+
 ---
 
 ## Not bugs (checked)
