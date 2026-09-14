@@ -11,7 +11,7 @@ Two independent suites:
 | suite | what it measures | route |
 |---|---|---|
 | [Limit matrix](#a-limit-matrix) (77 cases) | which certificates `verith` can generate *and* Lean can discharge | verith's own `inv` + `ranking` machinery |
-| [`--fbk-proveit` sweep](#b---fbk-proveit-sweep) (29 probes) | which safety properties survive `lean2vmt` → ic3ia → `vmt2lean` | the `lean-ltl-certifying` driver, no invariant supplied |
+| [`--fbk-proveit` sweep](#b---fbk-proveit-sweep) (39 probes) | which safety properties survive `lean2vmt` → ic3ia → `vmt2lean` | the `lean-ltl-certifying` driver, no invariant supplied |
 
 The properties are **not** interchangeable between the two, and the CLI now
 says so. The limit matrix's `--buchi P` is a reachability target (`inv` +
@@ -978,7 +978,7 @@ uv run verith tests/limits/mods/m_vec32.py \
 
 ## B. `--fbk-proveit` sweep
 
-29 probes, `tests/lean/fbk/`. No invariant is supplied: `verith`
+39 probes, `tests/lean/fbk/`. No invariant is supplied: `verith`
 emits the NA encoding, `proveit.py` runs `lean2vmt` → ic3ia → `vmt2lean`, and
 the invariant comes back from the model checker. `--safety P` is proved as
 `□ P`; `--buchi` is rejected on this route, since ic3ia decides reachability
@@ -1343,21 +1343,20 @@ uv run python tests/lean/fbk/run_fbk.py --mods tests/limits/mods --screen
 
 | module | where | why |
 |---|---|---|
-| `m_mixed` | verith | ctrl wire holds more than one element |
-| `m_relu_net` | verith | ctrl wire holds more than one element |
-| `m_relu_net8` | verith | ctrl wire holds more than one element |
-| `m_relu_net16` | verith | ctrl wire holds more than one element |
-| `m_relu_vec` | verith | ctrl wire holds more than one element |
-| `m_transpose` | verith | ctrl wire holds more than one element |
-| `m_vec32` | verith | ctrl wire holds more than one element |
 | `m_lra_conv` | vmt2lean | Real state: tp() maps only Int and Bool |
 | `m_lra_half` | vmt2lean | Real state: tp() maps only Int and Bool |
 | `m_lra_lin` | vmt2lean | Real state: tp() maps only Int and Bool |
 | `m_lra_two` | vmt2lean | Real state: tp() maps only Int and Bool |
 | `m_relu_lra` | vmt2lean | Real state: tp() maps only Int and Bool |
-| `m_argmax` | lean2vmt | Argmax/Linear reach exprToSMT as a leaf |
-| `m_max` | lean2vmt | Linear reaches exprToSMT as a leaf |
-| `m_min` | lean2vmt | Linear reaches exprToSMT as a leaf |
-| `m_uninterp` | lean2vmt | no Lean counterpart for an uninterpreted op |
+| `m_transpose` | verith | `smt_encode` has no term for `Transpose` |
+| `m_uninterp` | verith | `smt_encode` has no term for `Uninterpreted` |
 | `m_relu_input` | lean2vmt | models only state/statenext, no inputs |
+
+Nine modules left this table when the NA encoding stopped writing the
+transition itself and started printing `smt_encode`'s terms: the six with a
+ctrl wire wider than 1x1 (`m_mixed`, `m_relu_net`, `m_relu_net8`,
+`m_relu_net16`, `m_relu_vec`, `m_vec32`), which now get one state slot per
+*element*, and `m_argmax` / `m_max` / `m_min`, whose `Linear` and `Argmax`
+had no scalar Lean form but do have SMT terms — an affine sum and a nested
+`ite` chain, both inside the fragment `lean2vmt` reads.
 

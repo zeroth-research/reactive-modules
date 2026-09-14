@@ -15,7 +15,7 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
-from zrth.lean.common import LeanContext
+from zrth.lean.common import LeanContext, dtype_shape
 from zrth.lean.fbk_proveit import ProveItError, property_to_bool_lean, resolve_project
 from zrth.lean.translate.na import NAUnsupported, atom_to_lean_na, check_na_supported
 
@@ -112,6 +112,88 @@ def _uses_ne() -> Module:
         Term(LIA.Ite(), [X(n)], [differs, one, n]),
     ]
     return Module.sequential([n], init, update)
+
+
+def _wide_vec() -> Module:
+    """`m_vec32` in miniature: a 3-wide state, `Linear` and a wide `Ite`.
+
+    The shape of every module the width restriction used to refuse -- a
+    scalar condition over two matrix-valued branches, each an affine map of
+    the whole state. Element 0 counts down from 9 and resets; the other two
+    are carried along.
+    """
+    n = 3
+    v = Var(Int([n, 1]))
+    z11 = torch.zeros((1, 1), dtype=torch.int64)
+    x, zc = Wire(Int([1, 1])), Wire(Int([1, 1]))
+    cond = Wire(Bool([1, 1]))
+    reset, dec = Wire(Int([n, 1])), Wire(Int([n, 1]))
+
+    row0 = torch.zeros((1, n), dtype=torch.int64)
+    row0[0][0] = 1
+    keep = torch.eye(n, dtype=torch.int64)
+    keep[0][0] = 0
+    b9 = torch.zeros((n, 1), dtype=torch.int64)
+    b9[0][0] = 9
+    bneg = torch.zeros((n, 1), dtype=torch.int64)
+    bneg[0][0] = -1
+
+    init_vec = torch.zeros((n, 1), dtype=torch.int64)
+    init_vec[0][0] = 9
+    return Module.sequential(
+        [v],
+        [Term(LIA.Int(init_vec), [X(v)])],
+        [
+            Term(LIA.Linear(row0, z11), [x], [v]),
+            Term(LIA.Int(torch.tensor([[0]])), [zc]),
+            Term(LIA.Eq(), [cond], [x, zc]),
+            Term(LIA.Linear(keep, b9), [reset], [v]),
+            Term(LIA.Linear(torch.eye(n, dtype=torch.int64), bneg), [dec], [v]),
+            Term(LIA.Ite(), [X(v)], [cond, reset, dec]),
+        ],
+    )
+
+
+def _wide_mixed() -> Module:
+    """A Bool wire and a 3-wide Int wire: slots of two types in one state.
+
+    Each element moves by a different amount, so a slot reading the wrong
+    element shows up as a wrong value rather than a wrong shape.
+    """
+    b = Var(Bool([1, 1]))
+    v = Var(Int([3, 1]))
+    nb = Wire(Bool([1, 1]))
+    step = Wire(Int([3, 1]))
+    moved = Wire(Int([3, 1]))
+    init = [
+        Term(LIA.Bool(torch.tensor([[False]])), [X(b)]),
+        Term(LIA.Int(torch.tensor([[0], [1], [2]])), [X(v)]),
+    ]
+    update = [
+        Term(LIA.Not(), [nb], [b]),
+        Term(LIA.Id(), [X(b)], [nb]),
+        Term(LIA.Int(torch.tensor([[1], [10], [100]])), [step]),
+        Term(LIA.Add(), [moved], [v, step]),
+        Term(LIA.Id(), [X(v)], [moved]),
+    ]
+    return Module.sequential([b, v], init, update)
+
+
+def _wide_matrix() -> Module:
+    """A genuine 2x2 state: the only shape that can tell row-major from
+    column-major, since either order flattens a vector the same way."""
+    v = Var(Int([2, 2]))
+    step = Wire(Int([2, 2]))
+    moved = Wire(Int([2, 2]))
+    return Module.sequential(
+        [v],
+        [Term(LIA.Int(torch.tensor([[0, 1], [2, 3]])), [X(v)])],
+        [
+            Term(LIA.Int(torch.tensor([[1, 10], [100, 1000]])), [step]),
+            Term(LIA.Add(), [moved], [v, step]),
+            Term(LIA.Id(), [X(v)], [moved]),
+        ],
+    )
 
 
 def _na(module: Module, prop_smt: str) -> str:
@@ -285,9 +367,7 @@ def test_ne_is_accepted_now_that_lean2vmt_translates_it():
     check_na_supported(LeanContext(_uses_ne()))
 
 
-def test_op_without_a_lean2vmt_translation_aborts():
-    """`Xor` has no `_SCALAR_OP` entry, so it falls back to the matrix
-    table and reaches `exprToSMT` as something it cannot read."""
+def _xor_module() -> Module:
     b = Var(Bool([1, 1]))
     t = Wire(Bool([1, 1]))
     init = [Term(LIA.Bool(torch.tensor([[False]])), [X(b)])]
@@ -295,16 +375,230 @@ def test_op_without_a_lean2vmt_translation_aborts():
         Term(LIA.Bool(torch.tensor([[True]])), [t]),
         Term(LIA.Xor(), [X(b)], [b, t]),
     ]
-    with pytest.raises(NAUnsupported, match="Xor"):
-        check_na_supported(LeanContext(Module.sequential([b], init, update)))
+    return Module.sequential([b], init, update)
 
 
-def test_non_scalar_ctrl_wire_aborts():
+def test_an_op_with_no_scalar_lean_form_is_still_encoded():
+    """`Xor` has no `_SCALAR_OP` entry and used to be refused for it.
+
+    The transition no longer goes through the scalar *Lean* printer, so
+    "has a scalar Lean form" stopped being the question: `smt_encode` gives
+    the term and `smt_to_lean_bool` prints `Xor` as `!(a == b)`, which is
+    inside the fragment lean2vmt reads.
+    """
+    check_na_supported(LeanContext(_xor_module()))
+    src = _na(_xor_module(), "true")
+    assert "!(" in src and "==" in src
+
+
+def test_an_op_the_encoder_has_no_term_for_aborts():
+    """The boundary is now `smt_encode` and the Bool printer, and it is the
+    *reason* they give that reaches the user -- `Transpose` has no SMT
+    term at all, so no VMT model can be built from it."""
+    v = Var(Int([1, 3]))
+    t = Wire(Int([3, 1]))
+    init = [Term(LIA.Int(torch.tensor([[0, 0, 0]])), [X(v)])]
+    update = [
+        Term(LIA.Transpose(), [t], [v]),
+        Term(LIA.Transpose(), [X(v)], [t]),
+    ]
+    with pytest.raises(NAUnsupported, match="Transpose"):
+        check_na_supported(LeanContext(Module.sequential([v], init, update)))
+
+
+def test_a_non_scalar_ctrl_wire_becomes_one_slot_per_element():
+    """The restriction this encoding used to carry.
+
+    `R_i` compares `var_i statenext` against `effect_i`, and a tuple has no
+    comparison lean2vmt translates -- so a wire holding three elements gets
+    three slots rather than one, and every comparison stays scalar.
+    """
+    v = Var(Int([1, 3]))
+    init = [Term(LIA.Int(torch.tensor([[0, 1, 2]])), [X(v)])]
+    update = [Term(LIA.Id(), [X(v)], [v])]
+    module = Module.sequential([v], init, update)
+    check_na_supported(LeanContext(module))
+
+    src = _na(module, "(<= ((_ tuple.select 1) s0) 10)")
+    for k in range(3):
+        assert f"abbrev var_{k} (state : StateType) : Int := state {k}" in src
+        assert f"abbrev R_{k} (state statenext : StateType) : Bool :=" in src
+        assert f"var_{k} statenext == effect_{k}" in src
+    assert "abbrev var_3" not in src
+    assert "TRANS" in src and "R_0 state statenext &&" in src
+    # init is a literal per slot, not a tuple
+    assert "abbrev init_1 : Int :=\n  (1 : Int)" in src
+    # and the property's tuple selector resolves to that element's slot
+    assert "(var_1 state)" in src
+
+
+def test_an_element_of_a_wide_wire_reads_its_own_slot():
+    """The property and the transition have to agree about which slot an
+    element lives in; both take the layout from `_slot_accessors`."""
     v = Var(Int([1, 3]))
     init = [Term(LIA.Int(torch.tensor([[0, 0, 0]])), [X(v)])]
     update = [Term(LIA.Id(), [X(v)], [v])]
-    with pytest.raises(NAUnsupported, match="more than one element"):
-        check_na_supported(LeanContext(Module.sequential([v], init, update)))
+    module = Module.sequential([v], init, update)
+    src = _na(module, "(= ((_ tuple.select 2) s0) 7)")
+    assert "abbrev PROPERTY (state : StateType) : Bool :=\n  ((var_2 state) == (7 : Int))" in src
+
+
+# ── the emitted transition means what the module means ──────────────────────
+#
+# The slot bodies come from `smt_encode` and are printed by
+# `smt_to_lean_bool`, so the arithmetic is not re-implemented here -- but the
+# *flattening* is: which slot an element lands in, and which element of a
+# wire's next value a slot's `effect_k` computes. Getting that wrong produces
+# a model that elaborates, model-checks, and describes a different system.
+# So the emitted text is evaluated against the module's own execution.
+
+
+def _tokens(src: str) -> list:
+    return re.findall(r"\(|\)|[^\s()]+", src)
+
+
+def _eval_lean(src: str, slots: list):
+    """Evaluate the fragment `smt_to_lean_bool` emits, on concrete slots."""
+    toks = _tokens(src)
+    pos = 0
+
+    def peek(k=0):
+        return toks[pos + k] if pos + k < len(toks) else None
+
+    def take(expected=None):
+        nonlocal pos
+        t = toks[pos]
+        assert expected is None or t == expected, f"expected {expected}, got {t}"
+        pos += 1
+        return t
+
+    def atom():
+        nonlocal pos
+        t = peek()
+        if t == "(":
+            return parens()
+        take()
+        if t == "true":
+            return True
+        if t == "false":
+            return False
+        if re.fullmatch(r"-?\d+", t):
+            return int(t)
+        raise AssertionError(f"unexpected token {t!r} in {src!r}")
+
+    def parens():
+        take("(")
+        if peek() == "if":
+            take("if")
+            cond = atom()
+            take("then")
+            a = atom()
+            take("else")
+            b = atom()
+            take(")")
+            return a if cond else b
+        if peek() == "decide":
+            take("decide")
+            v = parens()
+            take(")")
+            return v
+        if peek() == "!":
+            take("!")
+            v = atom()
+            take(")")
+            return not v
+        if peek() == "-" :
+            take("-")
+            v = atom()
+            take(")")
+            return -v
+        if peek() is not None and re.fullmatch(r"var_\d+", peek()):
+            k = int(take()[4:])
+            take("state")
+            take(")")
+            return slots[k]
+        left = atom()
+        while peek() != ")":
+            op = take()
+            if op == ":":            # `(7 : Int)` -- an ascription, not an op
+                take()               # the type
+                continue
+            right = atom()
+            left = {
+                "+": lambda a, b: a + b,
+                "-": lambda a, b: a - b,
+                "*": lambda a, b: a * b,
+                "&&": lambda a, b: a and b,
+                "||": lambda a, b: a or b,
+                "==": lambda a, b: a == b,
+                "<": lambda a, b: a < b,
+                "<=": lambda a, b: a <= b,
+                "≤": lambda a, b: a <= b,
+                ">": lambda a, b: a > b,
+                ">=": lambda a, b: a >= b,
+                "≥": lambda a, b: a >= b,
+                "=": lambda a, b: a == b,
+            }[op](left, right)
+        take(")")
+        return left
+
+    value = atom()
+    assert pos == len(toks), f"trailing tokens in {src!r}"
+    return value
+
+
+def _effect_bodies(src: str) -> list[str]:
+    """The `effect_k` body lines of an emitted model, in slot order."""
+    out = {}
+    lines = src.splitlines()
+    for i, line in enumerate(lines):
+        m = re.match(r"abbrev effect_(\d+)", line)
+        if m:
+            out[int(m.group(1))] = lines[i + 1].strip()
+    return [out[k] for k in sorted(out)]
+
+
+def _reference_step(module, values: list) -> list:
+    """Run one `update` of the module on `values`, flat element order."""
+    from zrth.eval import execute_update
+
+    state = {}
+    k = 0
+    for var in module.ctrl:
+        shape = dtype_shape(var.dtype)
+        rows, cols = (1, shape[0]) if len(shape) == 1 else tuple(shape)
+        elems = values[k : k + rows * cols]
+        k += rows * cols
+        is_bool = isinstance(var.dtype, Bool)
+        state[var] = torch.tensor(
+            [[elems[r * cols + c] for c in range(cols)] for r in range(rows)],
+            dtype=torch.bool if is_bool else torch.int64,
+        )
+    execute_update(state, module.atoms)
+    out = []
+    for var in module.ctrl:
+        t = state[X(var)]
+        out.extend(v.item() for v in t.flatten())
+    return out
+
+
+@pytest.mark.parametrize(
+    "module_fn,values",
+    [
+        (_counter, [[0], [4], [9], [10], [-3]]),
+        (_two_bools, [[True, False], [False, True], [True, True]]),
+        (_wide_vec, [[0, 1, 2], [5, -5, 100], [7, 7, 7]]),
+        (_wide_mixed, [[True, 0, 1, 2], [False, 3, 4, 5]]),
+        (_wide_matrix, [[0, 1, 2, 3], [7, -7, 0, 9]]),
+    ],
+)
+def test_the_emitted_transition_agrees_with_the_module(module_fn, values):
+    module = module_fn()
+    bodies = _effect_bodies(_na(module, "true"))
+    for state in values:
+        expected = _reference_step(module, state)
+        got = [_eval_lean(b, state) for b in bodies]
+        assert got == expected, f"state {state}: {got} != {expected}"
 
 
 def test_ic3ia_directory_resolves_to_the_binary_inside_it():

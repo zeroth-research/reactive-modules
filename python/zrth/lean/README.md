@@ -559,13 +559,21 @@ describe the module:
 | rejected | because |
 |---|---|
 | external input wires | `lean2vmt` models only `state`/`statenext` |
-| a ctrl wire holding more than one element | `R_i` would compare a tuple |
 | state elements other than `Int`/`Bool` | `vmt2lean.py`'s `tp()` maps back only those two |
 | — | a state *mixing* `Int` and `Bool` is fine: `TypeMap` gets an arm per slot, and the `TypeMap.match_1` the equation compiler generates never reaches the VMT, because `emitDefs` keeps only declarations whose return type whnfs to `Prop`/`Int`/`Bool` |
-| `ToUnsigned`, `Argmax`, `Linear`, `Transpose`, `Xor`, any BV op | their Lean form reaches `exprToSMT` as an unapplied leaf (`toNat`) or calls into `Core.Basic` |
-| — | `Ne`, `ReLU`, `Max` and `Min` are accepted, but only against a `lean2vmt` carrying the commit *"translate mod, max/min and a negated decidable instance"*; against an older one they go back to being printed as `instDecidableNot` / `max` / `min`, so `NA_OPS` and that commit travel together |
+| — | a ctrl wire *wider* than 1×1 is fine too, and used to be the largest refusal here: the state is flattened to one VMT variable per **element**, so `R_k` compares two scalars where it once would have compared two tuples |
+| an op `smt_encode` has no term for (`Transpose`, `Uninterpreted`) | the transition is `smt_encode`'s term for each element, printed by `smt_to_lean_bool` — no term, no model |
+| an op the Bool printer cannot render | same boundary from the other side: the printer raises rather than emit something `exprToSMT` would misread. `Linear`, `Argmax`, `Max`/`Min`, `Xor` and `Ne` all pass it — as an affine sum, a nested `ite` chain, `max`/`min`, `!(a == b)` and a negated equality — which is why they are no longer refused |
+| — | `Ne`, `ReLU`, `Max` and `Min` need a `lean2vmt` carrying the commit *"translate mod, max/min and a negated decidable instance"*; against an older one they go back to being printed as `instDecidableNot` / `max` / `min` |
 | a property outside that same fragment | ditto — `smt_to_lean_bool` raises rather than guess. `mod` is refused here even though `lean2vmt` translates it and ic3ia proves such a property: MathSAT eliminates the mod from the *witness*, as `x + (-2) * to_int ((1/2) * to_real x) = 0`, and `vmt2lean.py` renders neither those operators nor a Real inside a `Bool` `INVAR` |
 | `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
+
+The transition itself is not written by `translate/na.py`. Each state slot's
+next value is `smt_encode`'s term for that element — the encoder `--pre-check`
+and `--infer ai-cegar` run on — simplified by cvc5 and printed by
+`smt_to_lean_bool`. So the model `lean2vmt` reads and the obligations cvc5
+answers about the same module are one encoding rather than two readings, and
+the refusal list above is exactly what those two components cannot express.
 
 Two limits are by design rather than by defect. First, the model's imports
 are `lake build`-ed before `proveit.py` runs: `lean2vmt` elaborates the model

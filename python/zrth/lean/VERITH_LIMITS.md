@@ -108,6 +108,15 @@ certificate failure. Of the twelve, eight are negative controls, one is the
 `OpMax`, `OpMin` and `OpArgmax`, which are all the same defect**: a matrix
 fold that never reduces.
 
+That diagnosis has since been confirmed from the outside. The
+`--fbk-proveit` route now encodes all three modules -- it takes its
+transition from `smt_encode` rather than from the scalar Lean printer, so
+`Linear` and `Argmax` arrive as arithmetic -- and ic3ia certifies a safety
+property for each. The modules are fine, the SMT encoding of them is fine,
+and what is left is the Lean-side fold: exactly what `--pre-check cvc5`
+already said when it discharged all three obligations in 4.6, 4.2 and
+3.2 ms.
+
 No case that verified at any earlier point in this work stopped verifying.
 Each change was measured against the whole matrix in an isolated build
 directory: the fixed-chain-to-generated-plan switch reproduced all 44 shared

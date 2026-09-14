@@ -560,6 +560,18 @@ def main():
     module = load_module_from_file(args.module_file, module_def=args.module_def)
     print(module)
 
+    # The proveit route's own shape check, before a line of Lean is written.
+    # Left until `run`, a module the NA encoding cannot express is met first
+    # by `create_project` -- which fails about the functional encoding, in a
+    # traceback, for a route that was never going to use it.
+    if args.fbk_proveit:
+        from .fbk_proveit import ProveItError, check_module
+
+        try:
+            check_module(module)
+        except ProveItError as e:
+            raise SystemExit(f"error: {e}") from e
+
     # Translate SMT-LIB predicates to Lean expression strings for codegen.
     # `cert_data` keeps the original SMT source so `magic` can parse it with
     # its own cvc5 context.

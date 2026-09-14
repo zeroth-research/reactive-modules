@@ -431,11 +431,15 @@ _BOOL_ARITH = {
 }
 
 
-def smt_to_lean_bool(term: cvc5.Term, var_accessor: dict[str, str]) -> str:
+def smt_to_lean_bool(term: cvc5.Term, var_slots: dict[str, list[str]]) -> str:
     """Translate `term` into a **Bool**-valued Lean expression.
 
-    `var_accessor` maps each SMT constant name to the Lean expression that
-    reads it (for the NA encoding, `s0` → `(var_0 state)`).
+    `var_slots` maps each SMT constant name to the Lean expressions that read
+    its *elements* -- one per flat element, so a 1×1 wire has a single entry
+    (`s0` → `["(var_0 state)"]`) and a wider one has an entry per element,
+    reached through the tuple selectors cvc5 builds. The constant itself is
+    only usable where it has exactly one element: a whole tuple has no
+    Bool/Int value to print.
 
     Unlike :func:`smt_to_lean`, which emits `Prop` (`∧`, `¬`, `≤`), this
     stays in `Bool` (`&&`, `!`, `decide (… ≤ …)`) because that is what
@@ -444,10 +448,10 @@ def smt_to_lean_bool(term: cvc5.Term, var_accessor: dict[str, str]) -> str:
     Raises `ValueError` on anything outside that fragment rather than
     emitting Lean that would silently mistranslate.
     """
-    return _walk_bool(term, var_accessor)
+    return _walk_bool(term, var_slots)
 
 
-def _walk_bool(t: cvc5.Term, acc: dict[str, str]) -> str:
+def _walk_bool(t: cvc5.Term, acc: dict[str, list[str]]) -> str:
     k = t.getKind()
     recur = lambda x: _walk_bool(x, acc)
 
@@ -458,10 +462,40 @@ def _walk_bool(t: cvc5.Term, acc: dict[str, str]) -> str:
     if k == Kind.CONSTANT:
         name = t.getSymbol()
         if name in acc:
-            return acc[name]
+            slots = acc[name]
+            if len(slots) == 1:
+                return slots[0]
+            raise ValueError(
+                f"`{name}` holds {len(slots)} elements, so it has no single "
+                "value; select an element instead"
+            )
         raise ValueError(
             f"Unknown free variable `{name}` (known: {sorted(acc)})"
         )
+
+    if k == Kind.APPLY_SELECTOR:
+        obj = t[1]
+        idx = _selector_index(t[0])
+        # A tuple built on the spot -- `smt_encode` packs every matrix-valued
+        # wire, so a constant matrix arrives as `select k (tuple …)`. Project
+        # it away here: a constructor has no form `lean2vmt` reads, and the
+        # element is what the slot wanted anyway. Child 0 is the constructor,
+        # so element `k` is child `k + 1`.
+        if obj.getKind() == Kind.APPLY_CONSTRUCTOR:
+            return recur(obj[idx + 1])
+        # A wide wire reaches here as a tuple constant; its elements are
+        # exactly the state slots, in the row-major order `mat_select` packs.
+        if obj.getKind() != Kind.CONSTANT or obj.getSymbol() not in acc:
+            raise ValueError(
+                f"tuple selector against a non-state term is not supported: {t}"
+            )
+        slots = acc[obj.getSymbol()]
+        if idx >= len(slots):
+            raise ValueError(
+                f"element {idx} of `{obj.getSymbol()}`, which has "
+                f"{len(slots)}"
+            )
+        return slots[idx]
 
     if k == Kind.NOT:
         return f"(!{recur(t[0])})"

@@ -30,19 +30,41 @@ emitted for the ``--fbk-proveit`` route and is never part of the generated
 lake project's build.
 
 Everything `lean2vmt` and `vmt2lean.py` cannot represent is rejected up
-front by :func:`check_na_supported` — see the module-level constants for the
-exact set — so nothing silently degrades into a wrong transition system.
+front by :func:`check_na_supported`, so nothing silently degrades into a
+wrong transition system.
+
+Where the transition comes from
+-------------------------------
+
+One VMT variable per state *element*.  A wire holding a 3-vector is
+`var_k, var_k+1, var_k+2`; `R_k` compares one scalar against one scalar,
+which is all `lean2vmt` can translate.  This encoding used to reject any
+wire wider than 1x1 for exactly that reason — `R_i` compared `var_i
+statenext` against a tuple — and 11 of the limit matrix's 77 cases were
+refused by it.
+
+The body of each slot is *not* written by this module.  It is
+`smt_encode`'s term for that element — the encoder `--pre-check` and
+`--infer ai-cegar` already run on — printed by `smt_to_lean_bool`, whose
+fragment is chosen to be what `lean2vmt` reads.  Three things follow:
+
+* an op with no *scalar Lean* form is no longer a problem, because no
+  scalar Lean is emitted: `Linear` arrives as the affine sum it expands to,
+  `Argmax` as the nested `ite` chain, and both are inside the fragment;
+* an op neither component handles cannot reach the file at all — the
+  encoder or the printer raises, and `check_na_supported` reports it;
+* the model `lean2vmt` reads and the obligations cvc5 answers about the
+  same module are now the *same encoding*, rather than two readings that
+  could drift apart.
 """
 
 from zrth.lean.common import (
     LeanContext,
     _flat_element_type,
+    _flat_indices,
     _flat_size,
-    is_constant_name,
-    itype_name,
 )
-from zrth.lean.native import _reachable_terms, _translate_terms_scalar
-from zrth.lean.translate._shared import _effect_type
+from zrth.lean.native import _reachable_terms
 
 
 class NAUnsupported(Exception):
@@ -64,35 +86,21 @@ NA_IMPORTS = ["Cslib.Computability.Automata.NA.Basic"]
 # and `lean2vmt` declares state constants by the abbrev's ascribed type.
 NA_ELEMENT_TYPES = frozenset({"Int", "Bool"})
 
-# Ops whose scalar emission (`native._SCALAR_OP`) lands inside what
-# `exprToSMT` translates.  Deliberately *not* here:
+# There is no op allowlist any more, and the reason is worth stating.
 #
-#   ToUnsigned`Int.toNat x` → "toNat", and the result would be Nat-sorted
-#             where the VMT declares Int
-#   Argmax    calls the `argmax1d_scalar_*` axioms from `Core.Basic`
-#   Linear    calls `matVecAffine`, likewise from `Core.Basic`
+# This encoding used to emit each wire's transition through the *scalar Lean*
+# printer, which meant an op with no scalar form -- `Linear` (`matVecAffine`),
+# `Argmax`, `Transpose` -- reached `lean2vmt` as an unapplied leaf: a VMT file
+# that parses and does not describe the module. The allowlist was what stood
+# between that and a silently wrong model.
 #
-# each of which `exprToSMT` prints as an unapplied leaf — a silently wrong
-# transition system rather than an error.  `MatMul` is here because on two
-# 1x1 wires it emits plain `*`.
-#
-# `Ne`, `ReLU`, `Max` and `Min` used to be on that list too and are now
-# translated, but only by a `lean2vmt` carrying the commit "lean2vmt:
-# translate mod, max/min and a negated decidable instance".  Against an
-# older checkout they go back to being printed as "instDecidableNot",
-# "max" and "min", so this set and that commit have to travel together.
-NA_OPS = frozenset({
-    "Not", "And", "Or", "Ite",
-    "Add", "Sub", "Mul", "Neg",
-    "Lt", "Le", "Gt", "Ge", "Eq", "Ne",
-    "Id", "TensorGet", "MatMul",
-    "ReLU", "Max", "Min",
-})
-
-# Constant variants that inline as a bare Int/Bool literal.
-NA_CONSTANTS = frozenset({"Int", "Bool"})
-
-
+# The transition is now built by `smt_encode` (the encoder `--pre-check` and
+# `--infer ai-cegar` already run on) and printed by `smt_to_lean_bool`, which
+# raises on anything outside the fragment `lean2vmt` reads rather than
+# printing it. Two consequences: `Linear` and the rest come through as the
+# scalar arithmetic they expand to, and an op neither component handles
+# cannot reach the file at all. `check_na_supported` therefore *does* the
+# translation and reports whatever it raises.
 def check_na_supported(ctx: LeanContext) -> None:
     """Raise :class:`NAUnsupported` unless `ctx` fits the NA encoding.
 
@@ -109,17 +117,6 @@ def check_na_supported(ctx: LeanContext) -> None:
     if not ctx.ctrl_next:
         raise NAUnsupported("the module has no controlled state to encode")
 
-    wide = [
-        f"#{i}" for i, w in enumerate(ctx.ctrl_next) if _flat_size(w) != 1
-    ]
-    if wide:
-        raise NAUnsupported(
-            f"ctrl wire(s) {', '.join(wide)} hold more than one element; "
-            "the NA encoding needs one state slot per wire, because "
-            "`R_i` compares `var_i statenext` against `effect_i` and "
-            "lean2vmt cannot translate a tuple comparison"
-        )
-
     elem_types = {_flat_element_type(w) for w in ctx.ctrl_next}
     bad = elem_types - NA_ELEMENT_TYPES
     if bad:
@@ -133,10 +130,10 @@ def check_na_supported(ctx: LeanContext) -> None:
     if not list(ctx.atom.update):
         raise NAUnsupported("the module has no update terms, so there is no TRANS")
 
-    # A ctrl wire nothing writes is a free (nondeterministic) variable.
-    # `_translate_terms_scalar` renders it as `sorry`, and `Init_i`/`R_i`
-    # would then pin the state to that -- an unprovable model rather than
-    # an unconstrained one.
+    # A ctrl wire nothing writes is a free (nondeterministic) variable, and
+    # this encoding has no way to say that: `Init_k`/`R_k` pin every slot to
+    # a value. Caught here rather than left to the encoder, whose own error
+    # for an unbound wire says nothing about why it matters.
     for block, terms in (("init", ctx.atom.init), ("update", ctx.atom.update)):
         loose = [
             f"#{i}"
@@ -150,27 +147,150 @@ def check_na_supported(ctx: LeanContext) -> None:
                 "unconstrained"
             )
 
-    unsupported: set[str] = set()
-    for term in list(ctx.atom.init) + list(ctx.atom.update):
-        name = itype_name(term.itype)
-        if type(term.itype).__name__.startswith("BV_"):
-            unsupported.add(f"BV.{name}")
-        elif is_constant_name(name):
-            if name not in NA_CONSTANTS:
-                unsupported.add(name)
-        elif name not in NA_OPS:
-            unsupported.add(name)
-    if unsupported:
+    # The one check that cannot be made by inspection: encode the module and
+    # print it. Whatever `smt_encode` or `smt_to_lean_bool` refuses is what
+    # this encoding cannot express, and their messages name the op or the
+    # SMT kind. Cheap -- the same work the emission does, on modules small
+    # enough that `lake` dominates either way.
+    try:
+        _slot_bodies(ctx)
+    except NAUnsupported:
+        raise
+    except Exception as e:
         raise NAUnsupported(
-            f"op(s) {', '.join(sorted(unsupported))} have no lean2vmt "
-            "translation; their Lean form would be emitted as an unapplied "
-            "leaf, silently changing the transition relation"
+            f"the transition cannot be expressed in the fragment lean2vmt "
+            f"reads: {e}"
+        ) from e
+
+
+# ══════════════════════════════════════════════════════════════════════
+# State layout
+#
+# One VMT variable per *element*, not per wire. A wire holding a 3-vector
+# becomes `var_k, var_k+1, var_k+2`, in the row-major order `mat_select`
+# packs a matrix into a cvc5 tuple, so slot arithmetic here and element
+# selection there stay in step by construction.
+#
+# Per wire was the older layout, and it is why this encoding used to reject
+# any wire holding more than one element: `R_i` compares `var_i statenext`
+# against `effect_i`, and a tuple has no comparison `lean2vmt` translates.
+# Per element there is nothing to compare but scalars.
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _slot_layout(ctrl_next) -> list[tuple[int, int, int]]:
+    """`(wire index, row, col)` for each state slot, in slot order."""
+    return [
+        (i, r, c) for i, w in enumerate(ctrl_next) for (r, c) in _flat_indices(w)
+    ]
+
+
+def _slot_accessors(ctrl_next, binder: str = "state") -> dict[str, list[str]]:
+    """`s{i}` → the `(var_k <binder>)` reads of wire `i`'s elements.
+
+    This is the map `smt_to_lean_bool` resolves both the state constants and
+    their tuple selectors through, so it is the single place that decides
+    which slot an element lives in.
+    """
+    out: dict[str, list[str]] = {}
+    k = 0
+    for i, w in enumerate(ctrl_next):
+        n = _flat_size(w)
+        out[f"s{i}"] = [f"(var_{k + j} {binder})" for j in range(n)]
+        k += n
+    return out
+
+
+# Kept alive for the process's lifetime: the cvc5 bindings segfault at
+# shutdown when a TermManager is collected out of order with the solvers and
+# terms minted from it, and a `verith` run builds one of these per model.
+_LIVE: list = []
+
+
+def _scalar_element(tm, term, shape, i: int, j: int):
+    """Element `[i][j]` of a matrix-valued term, as a *scalar* term.
+
+    `mat_select` alone leaves `select k (…)` sitting on whatever built the
+    matrix, and the two things that build one here are a tuple constructor
+    and an `ite` over tuples. Pushing the selection through both is what
+    turns a wire's transition into one scalar expression per slot; the
+    rewrite is the tuple axiom in each case, and cvc5's own simplifier does
+    the rest.
+    """
+    from cvc5 import Kind
+
+    from ..smt_encode import mat_select
+
+    if shape.is_scalar:
+        return term
+    idx = i * shape.n + j
+    kind = term.getKind()
+    if kind == Kind.APPLY_CONSTRUCTOR:
+        return term[idx + 1]          # child 0 is the constructor
+    if kind == Kind.ITE:
+        return tm.mkTerm(
+            Kind.ITE,
+            term[0],
+            _scalar_element(tm, term[1], shape, i, j),
+            _scalar_element(tm, term[2], shape, i, j),
         )
+    return mat_select(tm, term, shape, i, j)
 
 
-def _state_binding(index: int) -> str:
-    """How the encoding reads state slot `index` — never `(state i)`."""
-    return f"(var_{index} state)"
+def _simplify(solver, term):
+    """cvc5's rewriter, but never on a Bool-sorted slot.
+
+    On the arithmetic it is what makes the model tractable: `m_vec32`'s
+    affine layer is 97 KB of term before the constant weights are folded and
+    1.9 KB after. On a *Bool* slot it rewrites `ite c b (!b)` into the
+    equality `b = c`, which moves the state variable from a branch into a
+    condition -- and a condition is where `vmt2lean`'s certificate cannot
+    follow it: `generalizeNatVar` retypes the slot to the unreduced
+    `TypeMap` match, and the `Decidable`/`BEq` instance the condition needs
+    can no longer be synthesised. The measured symptom is `MixedBoolInt`
+    failing its certificate with "Tactic `generalize` failed".
+    """
+    return term if term.getSort().isBoolean() else solver.simplify(term)
+
+
+def _slot_bodies(ctx: LeanContext) -> tuple[list[str], list[str]]:
+    """`(update, init)` Lean text for every state slot, in slot order.
+
+    The transition comes from `smt_encode` -- the encoder `--pre-check` and
+    `--infer ai-cegar` already run on, so the model `lean2vmt` reads and the
+    obligations cvc5 answers are the same encoding, not two readings of one
+    module -- and is printed by `smt_to_lean_bool`, whose fragment is chosen
+    to be what `lean2vmt` translates.
+    """
+    import cvc5
+
+    from ..smt_encode import wire_shape
+    from ..smt_module import ModuleSMT
+    from ..smt_to_lean import smt_to_lean_bool
+
+    tm = cvc5.TermManager()
+    msmt = ModuleSMT(tm=tm, module=ctx.module)
+    solver = cvc5.Solver(tm)
+    solver.setLogic("ALL")
+    _LIVE.append((tm, msmt, solver))
+
+    acc = _slot_accessors(ctx.ctrl_next)
+    state = msmt.fresh_ctrl("s")
+    nxt = msmt.update_state(state, [], [])
+    ini = msmt.init_state([])
+
+    update_text: list[str] = []
+    init_text: list[str] = []
+    for i, r, c in _slot_layout(ctx.ctrl_next):
+        shape = wire_shape(ctx.ctrl_next[i])
+        # Simplified because the encoder builds a matrix and then takes one
+        # element of it: `m_vec32`'s affine layer is 97 KB of term before
+        # the rewriter folds the constant weights and 1.9 KB after.
+        upd = _simplify(solver, _scalar_element(tm, nxt[i], shape, r, c))
+        init = _simplify(solver, _scalar_element(tm, ini[i], shape, r, c))
+        update_text.append(smt_to_lean_bool(upd, acc))
+        init_text.append(smt_to_lean_bool(init, acc))
+    return update_text, init_text
 
 
 def atom_to_lean_na(
@@ -187,19 +307,10 @@ def atom_to_lean_na(
     """
     check_na_supported(ctx)
 
-    n = len(ctx.ctrl_next)
-    slot_ty = [_flat_element_type(w) for w in ctx.ctrl_next]
-
-    # One slot per wire (`check_na_supported` rejects wider wires), so wire
-    # `i` is slot `i` on both the read and the write side.
-    update_bindings = {w.id: _state_binding(i) for i, w in enumerate(ctx.ctrl_latched)}
-    update_flat = {w.id: [_state_binding(i)] for i, w in enumerate(ctx.ctrl_latched)}
-
-    def _reads_state(terms, wire) -> bool:
-        consumed = {
-            r.id for t in _reachable_terms(terms, [wire]) for r in t.read
-        }
-        return any(w.id in consumed for w in ctx.ctrl_latched)
+    layout = _slot_layout(ctx.ctrl_next)
+    n = len(layout)
+    slot_ty = [_flat_element_type(ctx.ctrl_next[i]) for i, _, _ in layout]
+    update_text, init_text = _slot_bodies(ctx)
 
     subject = f"reactive module `{module_name}`" if module_name else "a reactive module"
     lines: list[str] = [
@@ -240,21 +351,13 @@ def atom_to_lean_na(
     lines.append("")
 
     # --- transition relation ---
-    effect_uses_state: list[bool] = []
-    for i, w in enumerate(ctx.ctrl_next):
-        body = _translate_terms_scalar(
-            _reachable_terms(ctx.atom.update, [w]),
-            update_bindings,
-            [w],
-            ctx.constants,
-            flat_slots=update_flat,
-            flatten_outputs=True,
-        )
-        uses_state = _reads_state(ctx.atom.update, w)
-        effect_uses_state.append(uses_state)
-        binder = " (state : StateType)" if uses_state else ""
-        lines.append(f"abbrev effect_{i}{binder} : {_effect_type(w)} :=")
-        lines.append(body)
+    # A slot whose next value does not read the state is a closed term, and
+    # the binder is left off rather than written and unused.
+    effect_uses_state = ["state" in body for body in update_text]
+    for i, body in enumerate(update_text):
+        binder = " (state : StateType)" if effect_uses_state[i] else ""
+        lines.append(f"abbrev effect_{i}{binder} : {slot_ty[i]} :=")
+        lines.append(f"  {body}")
         lines.append("")
 
     for i in range(n):
@@ -269,17 +372,9 @@ def atom_to_lean_na(
 
     # --- initial condition ---
     # No extl wires (checked), so `init_i` is a closed term.
-    for i, w in enumerate(ctx.ctrl_next):
-        body = _translate_terms_scalar(
-            _reachable_terms(ctx.atom.init, [w]),
-            {},
-            [w],
-            ctx.constants,
-            flat_slots={},
-            flatten_outputs=True,
-        )
-        lines.append(f"abbrev init_{i} : {_effect_type(w)} :=")
-        lines.append(body)
+    for i, body in enumerate(init_text):
+        lines.append(f"abbrev init_{i} : {slot_ty[i]} :=")
+        lines.append(f"  {body}")
         lines.append("")
 
     for i in range(n):

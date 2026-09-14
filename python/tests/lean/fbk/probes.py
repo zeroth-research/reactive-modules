@@ -117,15 +117,71 @@ HAND_WRITTEN = [
     #    `var_1 : Int` have to reach the VMT as different sorts.
     ("MixedBoolInt", "m_boolint",  "(and (>= s1 0) (<= s1 5))", "certified"),
 
-    # -- ReLU in the *transition*: the scalar encoding spells it
-    #    `Max.max 0 (x - 1)`, which lean2vmt now expands to an `ite`. The
-    #    VMT is right and ic3ia proves it, but `smt` then dies on the
-    #    `Max` still in the model -- "incorrect number of universe levels
-    #    Max". Second lean-smt symptom; see lean-smt-bug.md.
-    ("ReluTrans",   "m_relu",      "(and (>= s0 0) (<= s0 5))", "lean-fail"),
+    # -- ReLU in the *transition*. This was the second lean-smt symptom for
+    #    as long as the model spelled it `Max.max 0 (x - 1)`: the VMT was
+    #    right and ic3ia proved it, and `smt` then died on the `Max` left in
+    #    the model -- "incorrect number of universe levels Max". The NA
+    #    encoding now takes its transition from `smt_encode`, where a ReLU
+    #    is an `ite`, so no `Max` reaches Lean and the certificate checks.
+    #    The bug is still there (`lean-smt-bug.md` keeps the reproducer);
+    #    this route no longer walks into it.
+    ("ReluTrans",   "m_relu",      "(and (>= s0 0) (<= s0 5))", "certified"),
 ]
 
-PROBES = FROM_CASE_MATRIX + NET_SHAPED + HAND_WRITTEN
+# ── D. harder properties for the modules the route certifies.  Group A's
+#      invariants are inductive by construction and group C's are mostly
+#      single disequalities; these are neither.  Each one needs a
+#      strengthening it does not state -- a coupling between two state
+#      components, a parity argument, or a case split -- so ic3ia has to
+#      *find* an invariant rather than check one.  Found by running the
+#      whole limit matrix through this route (`run_fbk_limits.py`).
+HARDER = [
+    # -- three bands covering 0..100.  True only because of the bound, and
+    #    a three-way case split the property does not state.
+    ("CdBands",     "m_countdown",
+     "(or (<= s0 33) (and (> s0 33) (<= s0 66)) (and (> s0 66) (<= s0 100)))",
+     "certified"),
+    # the same bands with the middle one removed: x walks through 50, so
+    # this exercises the counterexample path on a *disjunctive* property
+    # rather than on a disequality.
+    ("CdGapFalse",  "m_countdown", "(or (<= s0 33) (> s0 66))", "unsafe"),
+    # -- parity again, but asked as an implication into a disjunction of
+    #    equalities instead of a disequality.  Same module and the same
+    #    parity argument as `NiS2Odd3`, and it certifies where that one
+    #    hits the lean-smt bug -- the evidence that narrowed the
+    #    reproducer in lean-smt-bug.md.
+    ("Step2Odd",    "m_step2",
+     "(=> (>= s0 5) (or (= s0 6) (= s0 8) (= s0 10)))", "certified"),
+    # -- relational, with a conjunction under the implication: the bound on
+    #    x holds only under y = 10, which the property assumes not states.
+    ("TvRelational", "m_twovars",
+     "(=> (> s0 0) (and (= s1 10) (<= s0 10)))", "certified"),
+    # -- one linear inequality coupling both counters, true only from the
+    #    conjunction of their separate bounds (max is 4*3 + 3).
+    ("LexLinComb",  "m_lex",       "(<= (+ (* 4 s1) s0) 15)", "certified"),
+    # -- an exact disjunctive description of a reachable set, rather than a
+    #    box that contains it.
+    ("T5Exact",     "m_toward5",
+     "(or (= s0 5) (and (>= s0 6) (<= s0 10)))", "certified"),
+    # -- Bool/Int split: the same bound under each branch of the mode flag,
+    #    so the case split has to survive the encoding as well as ic3ia.
+    ("BiSplit",     "m_boolint",
+     "(or (and s0 (and (>= s1 0) (<= s1 5))) (and (not s0) (and (>= s1 0) (<= s1 5))))",
+     "certified"),
+    # -- the three-band property over a 64-deep straight-line transition:
+    #    body size and case split at once.
+    ("DeepBands",   "m_deep",
+     "(or (<= s0 33) (and (> s0 33) (<= s0 66)) (and (> s0 66) (<= s0 100)))",
+     "certified"),
+    # -- a fixture from `tests/fixtures` rather than the probe set: x resets
+    #    before reaching 10, so this is true but not inductive.
+    ("CounterNe10", "TESTS/counter", "(not (= s0 10))", "certified"),
+    # -- the same plant under an implication rather than a bound: two
+    #    property shapes over the transition that used to carry `Max`.
+    ("ReluImplies", "m_relu",      "(=> (> s0 0) (<= s0 5))", "certified"),
+]
+
+PROBES = FROM_CASE_MATRIX + NET_SHAPED + HAND_WRITTEN + HARDER
 
 
 # ── D. modules the route rejects before ic3ia ever runs.  `run_fbk.py
@@ -133,22 +189,21 @@ PROBES = FROM_CASE_MATRIX + NET_SHAPED + HAND_WRITTEN
 #      so a lifted restriction shows up as a surprise rather than silently.
 #      "verith" = a restriction in `translate/na.py`; "lean2vmt" /
 #      "vmt2lean" = an upstream limit that has to be fixed there first.
+# Nine modules left this table when the encoding stopped writing the
+# transition itself. A wire wider than 1x1 now becomes one state slot per
+# element instead of being refused (`m_mixed`, `m_relu_*`, `m_vec32`), and
+# an op with no scalar *Lean* form is no longer a problem because no scalar
+# Lean is emitted: `smt_encode` gives the term and `smt_to_lean_bool` prints
+# it, so `Linear` arrives as its affine sum and `Argmax` as nested `ite`s
+# (`m_argmax`, `m_max`, `m_min`). What is left is what neither component can
+# express at all.
 REJECTED = {
-    "m_mixed":      ("verith",   "ctrl wire holds more than one element"),
-    "m_relu_net":   ("verith",   "ctrl wire holds more than one element"),
-    "m_relu_net8":  ("verith",   "ctrl wire holds more than one element"),
-    "m_relu_net16": ("verith",   "ctrl wire holds more than one element"),
-    "m_relu_vec":   ("verith",   "ctrl wire holds more than one element"),
-    "m_transpose":  ("verith",   "ctrl wire holds more than one element"),
-    "m_vec32":      ("verith",   "ctrl wire holds more than one element"),
     "m_lra_conv":   ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_lra_half":   ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_lra_lin":    ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_lra_two":    ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_relu_lra":   ("vmt2lean", "Real state: tp() maps only Int and Bool"),
-    "m_argmax":     ("lean2vmt", "Argmax/Linear reach exprToSMT as a leaf"),
-    "m_max":        ("lean2vmt", "Linear reaches exprToSMT as a leaf"),
-    "m_min":        ("lean2vmt", "Linear reaches exprToSMT as a leaf"),
-    "m_uninterp":   ("lean2vmt", "no Lean counterpart for an uninterpreted op"),
+    "m_transpose":  ("verith",   "smt_encode has no term for Transpose"),
+    "m_uninterp":   ("verith",   "smt_encode has no term for Uninterpreted"),
     "m_relu_input": ("lean2vmt", "models only state/statenext, no inputs"),
 }
