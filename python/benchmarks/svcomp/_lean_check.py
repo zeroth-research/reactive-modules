@@ -2,8 +2,11 @@
 
 ``certify`` emits ``program.lean`` under ``lean/proofs/<name>/`` from a
 verification's Farkas certificates and compiles it against the vendored
-substrate, returning one :class:`CheckResult`. The outcome separates the ways a
-proof can fail to compile, because they call for different work:
+substrate, returning one :class:`CheckResult`. ``export_project`` writes the same
+proof as a project that builds on its own, carrying the substrate with it.
+
+The outcome separates the ways a proof can fail to compile, because they call for
+different work:
 
   ``CHECKED``    the proof compiled: the claim about the module is kernel-verified
   ``HEARTBEAT``  the elaborator hit its heartbeat budget (coverage ``omega`` cost)
@@ -21,9 +24,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._lean import write_program_proof
+from ._lean import emit_program, write_program_proof
 
 LEAN_DIR = Path(__file__).resolve().parent / "lean"
+
+#: the substrate libraries, in dependency order; an exported project carries them
+SUBSTRATE = ("Matrix", "Farkas", "Coverage", "Net", "Termination", "LTL",
+             "ReactiveModule")
 
 CHECK_TIMEOUT = 1200.0
 
@@ -50,6 +57,45 @@ class CheckResult:
     @property
     def checked(self) -> bool:
         return self.outcome == "CHECKED"
+
+
+def _lakefile(libs) -> str:
+    """A lakefile naming ``libs`` as the package's libraries and its targets."""
+    targets = ", ".join(f'"{lib}"' for lib in libs)
+    blocks = "\n\n".join(f'[[lean_lib]]\nname = "{lib}"' for lib in libs)
+    return f'name = "proof"\ndefaultTargets = [{targets}]\n\n{blocks}\n'
+
+
+def export_project(name: str, system, result, out_dir: Path,
+                   label: str | None = None) -> Path:
+    """Write ``<out_dir>/<name>/`` as a Lean project that builds on its own:
+    ``Program.lean`` for the proof, a copy of each substrate library it imports,
+    a lakefile naming them, and the toolchain file. Returns the directory."""
+    target = Path(out_dir) / name
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "Program.lean").write_text(emit_program(name, system, result, label))
+    for lib in SUBSTRATE:
+        shutil.copyfile(LEAN_DIR / f"{lib}.lean", target / f"{lib}.lean")
+    shutil.copyfile(LEAN_DIR / "lean-toolchain", target / "lean-toolchain")
+    (target / "lakefile.toml").write_text(_lakefile(SUBSTRATE + ("Program",)))
+    return target
+
+
+def build_project(path: Path, timeout: float = CHECK_TIMEOUT) -> tuple[str, str]:
+    """Build an exported project from scratch. Returns ``(outcome, first error
+    line)``, read the same way as :func:`check_file`."""
+    try:
+        r = subprocess.run(["lake", "build"], cwd=path,
+                           capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "TIMEOUT", f"exceeded {timeout:.0f}s"
+    out = r.stdout + r.stderr
+    if r.returncode == 0:
+        return "CHECKED", ""
+    for marker, outcome in _MARKERS:
+        if marker in out:
+            return outcome, _first_error(out)
+    return "ERROR", _first_error(out)
 
 
 def toolchain_available() -> bool:
