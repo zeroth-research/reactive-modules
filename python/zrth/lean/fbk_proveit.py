@@ -292,6 +292,7 @@ def run(
     ic3ia: str | None = None,
     python: str | None = None,
     simplify: bool = True,
+    equivalence: bool = True,
 ) -> Path:
     """Run the whole route and return the installed certificate's path."""
     python = python or sys.executable
@@ -333,4 +334,40 @@ def run(
     installed.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(raw_cert, installed)
     print(f"Installed certificate: {installed}")
+
+    if equivalence:
+        write_equivalence(project_dir, project_name, ctx, simplify=simplify)
     return installed
+
+
+def write_equivalence(
+    project_dir: Path,
+    project_name: str,
+    ctx: LeanContext,
+    *,
+    simplify: bool = True,
+) -> Path:
+    """Write the proof that the model is the module, and make lake see it.
+
+    The certificate `proveit.py` installs is about the NA model. This is the
+    file that carries it back to the module -- see `translate/fbk_bridge.py`
+    and `FBK_EQUIVALENCE.md`. The project's root `Certificate.lean` imports
+    it, so `lake build Certificate` (that is, `--build-cert`) builds both;
+    left out of the import list it would be a file nothing reaches.
+    """
+    from .translate.fbk_bridge import atom_to_lean_fbk_bridge
+
+    out = project_dir / "Certificate" / "Equivalence.lean"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        atom_to_lean_fbk_bridge(
+            ctx, na_module=na_module_name(project_name), simplify=simplify
+        )
+    )
+    root = project_dir / "Certificate.lean"
+    line = "import Certificate.Equivalence"
+    text = root.read_text() if root.is_file() else "import Certificate.Certificate\n"
+    if line not in text:
+        root.write_text(text.rstrip("\n") + "\n" + line + "\n")
+    print(f"Wrote the model-is-the-module proof: {out}")
+    return out

@@ -250,6 +250,16 @@ _ARGMAX_SCALAR_SPECS = [
 ]
 
 
+# (name, module, safety property) for the `--fbk-proveit` equivalence proof.
+# One per shape class the route accepts: a scalar Int state, a mixed Bool/Int
+# state, and a module whose transition is a net (`Linear` -> `ReLU` ->
+# `Linear`), which is the case that needs the matrix simp set.
+_BRIDGE_SPECS = [
+    ("Countdown", _make_countdown, "(and (>= s0 0) (<= s0 100))"),
+    ("TwoVars", _make_twovars, "(and (>= s0 0) (<= s0 s1) (= s1 10))"),
+]
+
+
 _CERT_SPECS = [
     (
         "BigCounter",
@@ -397,6 +407,50 @@ def generate_lean_files(sync_core_templates) -> None:
             f"import Core.Basic\nimport {base}.Scalar\n\n" + t.to_lean_rel() + "\n"
         )
         (_CERTS_DIR / f"RelEnc{name}.lean").write_text(f"import {base}.ScalarRel\n")
+
+    # Certs/Bridge*.lean — the `--fbk-proveit` route's model, the module's
+    # own encodings, and the proof that the first is the second. The bridge
+    # normally imports `System.*` and the NA model from a generated project;
+    # inlining all of them in the order the project has them is the same
+    # elaboration problem, and it runs in this warm build instead of a cold
+    # `lake update` per case.
+    from zrth.lean.cert import generate_data_lean
+    from zrth.lean.common import LeanContext
+    from zrth.lean.fbk_proveit import property_to_bool_lean
+    from zrth.lean.translate.fbk import atom_to_lean_na
+    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+
+    def _strip(src: str) -> str:
+        out, in_doc = [], False
+        for line in src.splitlines():
+            if line.startswith("/-"):
+                in_doc = True
+            if in_doc:
+                if "-/" in line:
+                    in_doc = False
+                continue
+            if line.startswith("import "):
+                continue
+            out.append(line)
+        return "\n".join(out)
+
+    for name, make_module, prop in _BRIDGE_SPECS:
+        module = make_module()
+        ctx = LeanContext(module)
+        t = ModuleToLean4(module)
+        cert = smt_predicates_to_lean(CertificateData(prp=prop, kind="safety"), module)
+        (_CERTS_DIR / f"Bridge{name}.lean").write_text(
+            "\n".join([
+                "import Core.Basic", "import Core.Box", "import Core.Mat",
+                "import Smt", "",
+                t.to_lean_functional(), "",
+                t.to_lean_scalar(), "",
+                _strip(generate_data_lean(ctx, cert)), "",
+                _strip(atom_to_lean_na(ctx, property_to_bool_lean(module, prop),
+                                       module_name=name)), "",
+                _strip(atom_to_lean_fbk_bridge(ctx, na_module=name)),
+            ]) + "\n"
+        )
 
     argmax_lines = ["import Core.Mat", ""]
     for elem_ty, n in _ARGMAX_SCALAR_SPECS:

@@ -140,10 +140,19 @@ evaluates the emitted slot bodies against the module's own execution, which
 catches a flattening or indexing error but is not a proof and does not run in
 the generated project.
 
-**Resolution.** [`FBK_EQUIVALENCE.md`](FBK_EQUIVALENCE.md) designs it: the
-bridge from each slot body to `Scalar.update`, which `update_scalar_eq`
-already ties to the functional encoding. Measured to close on all eight
-module shapes the route accepts, 2 s to 73 s, without needing `lean-smt`.
+**Built**, for 14 of the 17 module shapes the route accepts:
+`translate/fbk_bridge.py` emits `Certificate/Equivalence.lean`, whose
+`module_safety` says safety of the model is safety of the module, over the
+module's own `init`/`update` and its own `P`. See
+[`FBK_EQUIVALENCE.md`](FBK_EQUIVALENCE.md).
+
+What is left is the three modules of #26 and #30 -- `matMin`/`matMax`/
+`argmax_1d` do not reduce, so the bridge cannot compute the side it has to
+compare against, and fixing the fold fixes both -- and the last link of
+`module_safety`, whose hypothesis is the model-side statement the installed
+certificate proves in `lean-ltl-certifying`'s LTL vocabulary rather than
+`Core.LTL`'s. Translating between the two is fixed work that does not vary
+per module.
 
 ### 26. `matMin` / `matMax` never reduce, so `Min`/`Max` modules cannot be proved · CONFIRMED
 

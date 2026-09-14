@@ -37,7 +37,8 @@ def test_core_files_present(sync_core_templates):
 def test_generated_files_present(generate_lean_files):
     """ZerothHammer.lean and Certs/*.lean exist after generation fixture runs."""
     assert (_LEAN_DIR / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
-    for name in ("Countdown", "CountdownSafe", "TwoVars", "Collatz", "ArgmaxScalar"):
+    for name in ("Countdown", "CountdownSafe", "TwoVars", "Collatz",
+                 "ArgmaxScalar", "BridgeCountdown", "BridgeTwoVars"):
         path = _LEAN_DIR / "Certs" / f"{name}.lean"
         assert path.exists(), f"Certs/{name}.lean not generated"
 
@@ -184,6 +185,27 @@ def test_generated_safety_cert_has_no_ranking(generate_lean_files):
     assert "rule_globally" in src and "theorem inv_imp_P" in src
     assert "rule_buchi" not in src
     assert "ranking" not in src and "sorry" not in src
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", ["Countdown", "TwoVars"])
+def test_fbk_bridge_builds(generate_lean_files, name):
+    """`Certs/Bridge*.lean`: the proof that the `--fbk-proveit` model is the
+    module.
+
+    The certificate that route installs is about the *model*; this is the
+    file that carries it back. Two independent translators are on the two
+    sides of `bridge_k` -- `smt_encode` + cvc5 against
+    `_translate_terms_scalar` -- so nothing here closes by `rfl` alone, and
+    a translation defect in either shows up as an unclosed goal.
+    """
+    r = _lake_build(f"Certs.Bridge{name}")
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert r.returncode == 0, (
+        f"lake build Certs.Bridge{name} failed.\n"
+        f"stdout:\n{r.stdout[-2000:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    assert not sorry_lines, f"Bridge{name} used sorry:\n" + "\n".join(sorry_lines)
 
 
 @pytest.mark.slow

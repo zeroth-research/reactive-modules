@@ -224,9 +224,35 @@ transition and silent about the property.
 
 ---
 
-## Implementation plan
+## Built
 
-One new generated file, one static lemma, one flag.
+Implemented as designed, with the numbers below measured on the emitted
+files rather than on prototypes. `translate/fbk_bridge.py` emits
+`<Proj>/Certificate/Equivalence.lean`, the project's root `Certificate.lean`
+imports it so `--build-cert` builds it, `Core/Basic.lean` carries
+`TS.transfer`, and `--fbk-equiv none` turns it off.
+
+**14 of the 17 module shapes the route accepts get a complete bridge.** The
+three that do not are `m_max`, `m_min` and `m_argmax`, and they fail for the
+reason already recorded as `KNOWN_ISSUES.md` #26 and #30: `matMin`, `matMax`
+and `argmax_1d` are folds that never reduce, so the *right-hand* side of
+`bridge_k` cannot be computed. The same defect blocks those modules' own
+Büchi certificates. It fails loudly -- an unclosed goal in
+`Equivalence.lean`, not a silent gap -- and `--fbk-equiv none` is the escape
+hatch until the fold is fixed.
+
+Two things the implementation added that the design did not have:
+
+* **the budgets.** `set_option maxRecDepth 100000` / `maxHeartbeats 2000000`,
+  the same the certificate and the scalar equivalence carry. Without them a
+  64-deep straight-line transition (`m_deep`) exhausts the default recursion
+  depth *inside `simp`* before any prover sees the goal.
+* **the fallback arm of `toSlots`.** `TypeMap` is stuck at a variable index,
+  so `| _ => …` does not typecheck -- the arm's expected type is
+  `TypeMap x✝`, which reduces to nothing. `| _ + N => …` does, because the
+  successor pattern lets the match reach its own fallback.
+
+The plan it was built from:
 
 1. **`Core/Basic.lean`** — add `TS.transfer` (above). Module-independent,
    written once, ~15 lines.
@@ -244,6 +270,7 @@ One new generated file, one static lemma, one flag.
 5. **`main.py`** — `--fbk-equiv {lean,none}`, default `lean`. `none` for the
    cases where the bridge is the expensive part (`m_vec32`: 73 s against the
    ~5 s the rest of the route takes) and the user only wants the model.
+   Refused without `--fbk-proveit`, like `--ic3ia` and `--fbk-simplify`.
 6. **Tests** — `tests/test_lean_fbk.py` gets the emitter's shape (one `_fn`
    per slot, the substitution is total, the cascade is present); one
    slow-marked case per shape class (`m_countdown`, `m_boolint`,

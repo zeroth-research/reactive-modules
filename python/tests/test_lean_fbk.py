@@ -626,6 +626,75 @@ def test_simplification_can_be_turned_off_without_changing_the_meaning():
     assert "((var_0 state) + (1 : Int))" in raw[0]
 
 
+# ── the proof that the model is the module ──────────────────────────────────
+
+
+def _bridge(module: Module) -> str:
+    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+
+    return atom_to_lean_fbk_bridge(LeanContext(module), na_module="TNA")
+
+
+def test_the_bridge_states_one_obligation_per_slot():
+    """`link_k` is structural and `bridge_k` semantic, and there is one of
+    each per *element* -- the same layout the model uses."""
+    src = _bridge(_wide_mixed())          # 1 Bool slot + a 3-wide Int wire
+    for k in range(4):
+        assert f"theorem link_{k} (state : StateType)" in src
+        assert f"theorem bridge_{k} " in src
+        assert f"abbrev effect_{k}_fn " in src
+    assert "theorem link_4" not in src
+    assert "theorem bridge_4" not in src
+
+
+def test_the_bridge_reads_slots_as_variables_not_through_the_state():
+    """`state k` has type `TypeMap k`, a stuck match that `omega` will not
+    read as an `Int`. The semantic obligation has to be over plain binders,
+    which is why `effect_k_fn` exists at all."""
+    src = _bridge(_counter())
+    body = src.split("abbrev effect_0_fn")[1].split("theorem")[0]
+    assert "var_0 state" not in body, f"the model's state leaked into: {body}"
+    assert "(x0 : Int)" in src.split("abbrev effect_0_fn")[1].split(":=")[0]
+    # and the two are tied by `rfl`, which is where the TypeMap is crossed
+    assert "effect_0_fn (Definition.var_0 state) := rfl" in src
+
+
+def test_the_bridge_targets_the_scalar_encoding():
+    """`Scalar.update` is the flat-slot transition function, and
+    `update_scalar_eq` already ties it to the functional encoding -- so the
+    solver never sees a matrix."""
+    src = _bridge(_counter())
+    assert "Scalar.update (x0) () ()" in src
+    assert "update_scalar_eq" in src
+    assert "init_scalar_eq" in src
+
+
+def test_the_bridge_proves_the_property_twice_translated():
+    """`PROPERTY` is `smt_to_lean_bool`'s reading of the formula and `P` is
+    `smt_predicates_to_lean`'s. Without tying them the chain would be sound
+    about the transition and silent about what is proved of it."""
+    src = _bridge(_counter())
+    assert "theorem PROPERTY_iff" in src
+    assert "Definition.PROPERTY (toSlots s) = true ↔ P s" in src
+    assert "theorem module_safety" in src
+
+
+def test_the_bridges_fallback_arm_can_reduce():
+    """`TypeMap` is stuck at a variable index, so a bare `_` arm does not
+    typecheck -- only the successor pattern lets it reach the fallback."""
+    src = _bridge(_wide_mixed())
+    assert "| _ + 4 =>" in src
+    assert "\n  | _ =>" not in src
+
+
+def test_the_bridge_carries_the_budgets():
+    """A 64-deep straight-line transition exhausts the default recursion
+    depth inside `simp` before any prover sees the goal."""
+    src = _bridge(_counter())
+    assert "set_option maxRecDepth" in src
+    assert "set_option maxHeartbeats" in src
+
+
 def test_ic3ia_directory_resolves_to_the_binary_inside_it():
     """The build directory is the obvious thing to reach for, and
     `proveit.py` reports it as "executable not found" with the binary

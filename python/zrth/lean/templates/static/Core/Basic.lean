@@ -191,6 +191,30 @@ theorem rule_buchi {State: Type u} {Label : Type v}
       exact hbx
 
 
+/-- Every run of `A` is a run of `B`, so a `G`-property of `B` is one of `A`.
+
+    The `--fbk-proveit` route ends in a certificate about a *model* -- the NA
+    encoding `translate/fbk.py` writes and `lean2vmt` reads. This is what
+    carries that back to the module: `f` maps a module state to the model's
+    slots, `hinit`/`hstep` say the model admits every module step, and the
+    property comes back through `f`. Only one direction is needed, because a
+    model with *more* behaviours still satisfies `G Q` on fewer. -/
+theorem TS.transfer {S : Type u} {T : Type u} {L : Type v}
+    (A : TS S L) (B : TS T L) (f : S → T)
+    (hinit : ∀ s, A.start s → B.start (f s))
+    (hstep : ∀ s l s', A.Tr s l s' → B.Tr (f s) l (f s'))
+    (Q : StateSet T)
+    (hB : ∀ ts μs, B.ωTrace ts μs → ts ⊧ G (AP Q)) :
+    ∀ ss μs, A.ωTrace ss μs → ss ⊧ G (AP (fun s => Q (f s))) := by
+  intro ss μs htr
+  have hmap : B.ωTrace (Cslib.ωSequence.map f ss) μs :=
+    ⟨hinit _ htr.1, fun i => hstep _ _ _ (htr.2 i)⟩
+  have h := hB _ _ hmap
+  simp [sem] at h ⊢
+  intro x
+  exact h x
+
+
 /-- a weaker version of rule_buchi -/
 theorem rule_buchi' {State: Type u} {Label : Type v}
     (lts : TS State Label)                    -- the TS
