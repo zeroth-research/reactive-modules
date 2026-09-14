@@ -1474,7 +1474,12 @@ class MethodVisitor(ast.NodeVisitor):
                 if self._should_escape_scope(k)
             }
 
-        all_vars = set(if_scope_after.keys()) | set(else_scope_after.keys())
+        # Merge in the order the two scopes were built, not set order: a set of
+        # variable-*name* strings iterates differently per process, which made the
+        # Ite terms — and so the generated Lean — differ between runs of one module.
+        all_vars = list(if_scope_after) + [
+            v for v in else_scope_after if v not in if_scope_after
+        ]
 
         for var in all_vars:
             if_wire = if_scope_after.get(var)
