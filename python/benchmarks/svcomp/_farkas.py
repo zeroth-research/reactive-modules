@@ -466,6 +466,7 @@ class Proof:
     devices: tuple = ()          # Device, in the order the formula named them
     nets: tuple = ()             # the distinct Net each device reads through
     columns: tuple = ()          # the column names this was certified over
+    assumed: tuple = ()          # the Proofs the system assumed while certifying this
 
 
 @dataclass(frozen=True)
@@ -613,6 +614,12 @@ class System:
             if tuple(p.columns) != tuple(self.names):
                 raise Unsupported(f"the proof is over columns {tuple(p.columns)}, "
                                   f"not {tuple(self.names)}")
+            named = resolve(self, claim.holds)[1]
+            if named:
+                raise Unsupported(
+                    "knowing takes a proof of a claim over the columns; this one's "
+                    f"predicate names wire {named[0].id} — a fact about a computed wire "
+                    "or about the next state is not a fact about a state")
         return dataclasses.replace(self, invariant_proofs=self.invariant_proofs + tuple(proofs))
 
     @property
@@ -868,7 +875,7 @@ def lex_decrease(ranks, delta=1) -> LexDecrease:
 
 
 def decrease(v_s, v_sp, delta=1) -> LexDecrease:
-    """Termination by one rank: ``V(s) - V(s') >= delta`` on every counting round."""
+    """A Liveness claim by one rank: ``V(s) - V(s') >= delta`` on every round in its domain."""
     return LexDecrease(((v_s, v_sp),), delta)
 
 
@@ -1304,7 +1311,8 @@ def certify(system: System, claim, witness, max_iters: int = 1000) -> Proof:
 
     def result(verified, paths, cex, status, unused=()):
         return Proof(verified, paths, cex, status, tuple(sorted(unused)), claim,
-                     witness, formula, devices, nets, columns=tuple(system.names))
+                     witness, formula, devices, nets, columns=tuple(system.names),
+                     assumed=tuple(system.invariant_proofs))
 
     s_syms, sp_syms = system.s_syms, system.sp_syms
     invariants = system.invariants
