@@ -1,5 +1,5 @@
 name = "termination"
-defaultTargets = ["Matrix", "Farkas", "Coverage", "Logic", "Net", "MainTheorem", "Termination"]
+defaultTargets = ["Matrix", "Farkas", "Coverage", "Net", "Termination", "LTL", "ReactiveModule"]
 
 [[lean_lib]]
 name = "Matrix"
@@ -11,13 +11,13 @@ name = "Farkas"
 name = "Coverage"
 
 [[lean_lib]]
-name = "Logic"
-
-[[lean_lib]]
 name = "Net"
 
 [[lean_lib]]
-name = "MainTheorem"
+name = "Termination"
 
 [[lean_lib]]
-name = "Termination"
+name = "LTL"
+
+[[lean_lib]]
+name = "ReactiveModule"
