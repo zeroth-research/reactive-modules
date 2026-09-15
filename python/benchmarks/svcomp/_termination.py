@@ -29,7 +29,7 @@ import z3
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench, INT, var  # noqa: F401
-from ._farkas import System, certify, decrease, inductive, read_system
+from ._farkas import System, certify, inductive, lex_decrease, read_system
 from ._invariants import as_predicates, infer_invariants
 from ._property import Liveness, Safety
 from zrth import LIA, Module, Term, X
@@ -127,18 +127,32 @@ def prove_invariants(system: System):
                    inductive(preds))
 
 
-def compose(system: System, layers, delta: float = 1.0):
-    """``system`` with the rank composed in, and the witness that names it.
+def compose_lex(system: System, nets, delta: float = 1.0):
+    """``system`` with ``nets`` composed in as one lexicographic rank.
 
-    V is written out twice as ordinary atoms — once reading the latched state, so
-    its wire carries V(s), once awaiting the next, so its wire carries V(s') —
-    and the whole is read as one system. The columns are unchanged, since the
-    rank variables are read latched by nothing; the program's precondition and
-    invariants carry over. The program comes first in the composition, so its
-    init has written the next state by the time the rank's block reads it.
-    Returns the composed system and ``decrease(V(s) wire, V(s') wire, delta)``."""
-    vs_mod, vs = _v_module(system.vars, layers, read_next=False)
-    vsp_mod, vsp = _v_module(system.vars, layers, read_next=True)
-    composed = (read_system(Module.compose(system.module, vs_mod, vsp_mod), system.names)
+    On each counting round some net drops by ``delta`` while every earlier one
+    does not increase -- the substrate's ``lexDec``, which one net instantiates
+    as a plain drop.
+
+    Each net is written out twice as ordinary atoms — once reading the latched
+    state, so its wire carries V(s), once awaiting the next, so its wire carries
+    V(s') — and the whole is read as one system. The columns are unchanged,
+    since the rank variables are read latched by nothing; the program's
+    precondition and invariants carry over. The program comes first in the
+    composition, so its init has written the next state by the time a rank's
+    block reads it. Returns the composed system and
+    ``lex_decrease(((V(s) wire, V(s') wire), ...), delta)``."""
+    mods, ranks = [], []
+    for net in nets:
+        vs_mod, vs = _v_module(system.vars, net, read_next=False)
+        vsp_mod, vsp = _v_module(system.vars, net, read_next=True)
+        mods += [vs_mod, vsp_mod]
+        ranks.append((X(vs), X(vsp)))
+    composed = (read_system(Module.compose(system.module, *mods), system.names)
                 .assuming(system.precondition).knowing(*system.invariant_proofs))
-    return composed, decrease(X(vs), X(vsp), delta)
+    return composed, lex_decrease(tuple(ranks), delta)
+
+
+def compose(system: System, layers, delta: float = 1.0):
+    """``system`` with one net composed in as its rank. See :func:`compose_lex`."""
+    return compose_lex(system, (layers,), delta)

@@ -4,6 +4,7 @@
     python -m benchmarks.svcomp ndecr            # only names containing 'ndecr'
     python -m benchmarks.svcomp --lean           # also emit and kernel-check proofs
     python -m benchmarks.svcomp --lean --jobs 4  # with four benchmarks in flight
+    python -m benchmarks.svcomp --ranks 2        # allow a lexicographic rank
 
 Without ``--lean`` each DSL-encoded program gets a trained neural ranking
 function certified over the composed module, summarised as
@@ -43,10 +44,15 @@ def _default_jobs() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
+# How many components a rank may have (`--ranks`). One is a plain drop; more is
+# a lexicographic rank, for a program no single rank decreases on.
+RANKS = 1
+
+
 def _run_plain(benches) -> int:
     verified = 0
     for b in benches:
-        r = learn_ranking(b)
+        r = learn_ranking(b, ranks=RANKS)
         verified += bool(r.verified)
         tag = "VERIFIED  " if r.verified else "unverified"
         extra = f" ({r.reason})" if r.reason else ""
@@ -63,7 +69,7 @@ def certify_one(bench):
     t0 = time.perf_counter()
     try:
         # the trainer verified the candidate it accepted; emit that evidence
-        r = learn_ranking(bench)
+        r = learn_ranking(bench, ranks=RANKS)
         t_train = time.perf_counter() - t0
         res = (lc.certify(bench.name, r.system, r.proof)
                if r.verified
@@ -81,6 +87,8 @@ def _spawn(name: str):
     from . import _lean_check as lc
 
     cmd = [sys.executable, "-m", "benchmarks.svcomp", WORKER_FLAG, name]
+    if RANKS != 1:
+        cmd += ["--ranks", str(RANKS)]      # a worker is a fresh process
     # the ranking nets have a handful of hidden units, so a worker gains nothing
     # from intra-op threads; left at the default each would claim several cores
     # and the pool would oversubscribe the machine several times over.
@@ -159,6 +167,19 @@ def main(argv: list[str]) -> int:
             return 2
         if jobs < 1:
             print("--jobs needs a positive integer")
+            return 2
+        del argv[i:i + 2]
+
+    global RANKS
+    if "--ranks" in argv:
+        i = argv.index("--ranks")
+        try:
+            RANKS = int(argv[i + 1])
+        except (IndexError, ValueError):
+            print("--ranks needs a positive integer")
+            return 2
+        if RANKS < 1:
+            print("--ranks needs a positive integer")
             return 2
         del argv[i:i + 2]
 

@@ -21,7 +21,7 @@ from zrth import X
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
 from ._farkas import certify, resolve_domain
 from ._equiv import run_block
-from ._termination import compose, prove_invariants, system_of, terminates
+from ._termination import compose_lex, prove_invariants, system_of, terminates
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +152,50 @@ def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
 # Orchestrator: rollout -> train -> round -> verify (round-and-rebuild)
 # ---------------------------------------------------------------------------
 
+def _fit(Xs, Xsp, dim, hidden_dim, delta, lr, n_epochs, mask=None):
+    """One net trained to drop by ``delta`` on the rounds ``mask`` selects.
+
+    The loss is the hinge on ``V(s') - V(s) + delta``: zero exactly where the
+    net already drops by enough, and pushing the difference down everywhere
+    else -- so a round it cannot make drop it still makes as flat as it can,
+    which is what a lexicographic rank needs of every component before the one
+    that covers the round."""
+    A, B = (Xs, Xsp) if mask is None else (Xs[mask], Xsp[mask])
+    model = TorchNRF(dim, hidden_dim).double()
+    opt = torch.optim.AdamW(model.parameters(), lr=lr)
+    loss = float("inf")
+    for _e in range(n_epochs):
+        out = torch.relu(model(B) - model(A) + delta).mean()
+        opt.zero_grad(); out.backward(); opt.step()
+        loss = float(out.detach())
+        if loss <= 1e-6:
+            break
+    return model, loss
+
+
+def _fit_lex(Xs, Xsp, dim, hidden_dim, delta, lr, n_epochs, ranks):
+    """``ranks`` nets, each trained on the rounds its predecessors leave over.
+
+    A lexicographic rank covers a round at the first component that drops on it,
+    so the second component is only ever asked about the rounds the first does
+    not cover, and so on. Fitting them that way rather than all on everything is
+    what makes the later ones specialise; the rounds are re-partitioned after
+    each fit, from the net as trained. Stops early once nothing is left over --
+    another component would have nothing to learn from."""
+    models, loss, left = [], float("inf"), None
+    for _ in range(ranks):
+        model, loss = _fit(Xs, Xsp, dim, hidden_dim, delta, lr, n_epochs, left)
+        models.append(model)
+        with torch.no_grad():
+            uncovered = (model(Xs) - model(Xsp)) < delta
+        if left is not None:
+            uncovered = uncovered & left
+        if not bool(uncovered.any()):
+            break
+        left = uncovered
+    return models, loss
+
+
 @dataclass
 class TrainResult:
     """The outcome of one ``learn_ranking`` run.
@@ -160,12 +204,17 @@ class TrainResult:
     rank was certified on, the witness that named it, and what ``certify``
     established — the evidence the Lean emitter consumes, so a caller reads it
     here rather than certifying the same layers a second time. All ``None`` when
-    no candidate certified."""
+    no candidate certified.
+
+    ``layers`` is the accepted net; ``nets`` is every component of the rank in
+    lexicographic order, which is the same thing in a tuple when the rank is one
+    net."""
     name: str
     verified: bool
     n_pairs: int
     final_loss: float
     layers: object = None
+    nets: tuple = ()
     reason: str | None = None
     system: object = None       # the program with the accepted rank composed in
     witness: object = None      # decrease over the rank's two wires
@@ -177,12 +226,19 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
                   initial_variance: float = 100.0, n_epochs: int = 1000,
                   lr: float = 0.05, outer: int = 20,
                   scales: tuple[float, ...] = (0.5, 1.0),
-                  use_invariants: bool = True, claim=None) -> TrainResult:
+                  use_invariants: bool = True, claim=None,
+                  ranks: int = 1) -> TrainResult:
     """nt-matched: PAS trajectory rollouts, AdamW hinge loss, outer
     round-and-rebuild. Defaults mirror nt's learn_nrf_cfa.
 
     The round-and-rebuild loop composes each candidate into the program
     (:func:`compose`) and accepts the first the procedure certifies.
+
+    ``ranks`` is how many components the rank may have: one is a plain drop,
+    more is a lexicographic rank, which is what a program whose inner loop
+    restarts needs -- no single rank drops on both its steps, and ``(outer,
+    inner)`` drops on each. Each component is fitted on what the ones before it
+    leave over.
 
     ``claim`` is the :class:`._property.Liveness` claim the rank discharges, and
     defaults to :func:`._termination.terminates` — that the program stops. Any
@@ -212,25 +268,21 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
             system = system.knowing(inv)
 
     final_loss = float("inf")
-    last_layers = None
+    last_nets = ()
     for _o in range(outer):
-        model = TorchNRF(dim, hidden_dim).double()
-        opt = torch.optim.AdamW(model.parameters(), lr=lr)
-        for _e in range(n_epochs):
-            loss = torch.relu(model(Xsp) - model(Xs) + delta).mean()
-            opt.zero_grad(); loss.backward(); opt.step()
-            final_loss = float(loss.detach())
-            if final_loss <= 1e-6:
-                break
+        models, final_loss = _fit_lex(Xs, Xsp, dim, hidden_dim, delta, lr,
+                                      n_epochs, ranks)
         for scale in scales:
-            layers = model.to_layers(scale)
-            last_layers = layers
-            composed, witness = compose(system, layers, delta)
+            nets = tuple(m.to_layers(scale) for m in models)
+            last_nets = nets
+            composed, witness = compose_lex(system, nets, delta)
             proof = certify(composed, claim, witness)
             if proof.verified:
-                return TrainResult(bench.name, True, S.shape[0], final_loss, layers,
-                                   system=composed, witness=witness, proof=proof)
-    return TrainResult(bench.name, False, S.shape[0], final_loss, last_layers,
+                return TrainResult(bench.name, True, S.shape[0], final_loss,
+                                   nets[0], nets, system=composed,
+                                   witness=witness, proof=proof)
+    return TrainResult(bench.name, False, S.shape[0], final_loss,
+                       last_nets[0] if last_nets else None, last_nets,
                        reason="trained but not verified")
 
 

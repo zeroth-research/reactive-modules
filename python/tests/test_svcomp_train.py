@@ -10,7 +10,7 @@ import numpy as np
 
 from benchmarks.svcomp._property import Liveness
 from benchmarks.svcomp._termination import system_of, terminates
-from benchmarks.svcomp._train import rollout
+from benchmarks.svcomp._train import learn_ranking, rollout
 from tests._fixtures import loop_bench
 from zrth.sugar import ite
 
@@ -50,3 +50,38 @@ def test_the_pairs_are_consecutive_states():
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x), init=lambda: (3,))
     S, Sp = _rollout(bench, terminates())
     assert list(S[:, 0]) == [3, 2, 1] and list(Sp[:, 0]) == [2, 1, 0]
+
+
+def test_a_lexicographic_rank_is_fitted_component_by_component():
+    """`ranks=2` asks for a rank of two components, and each is fitted on the
+    rounds the one before it does not cover -- so the second specialises rather
+    than re-learning the first. What comes back is certified by
+    `lex_decrease`: on each counting round some component drops while every
+    earlier one does not increase."""
+    # while (x > 0) { if (y > 0) y-- ; else { x--; y = x } } -- the inner bound
+    # is the outer variable, so the two are ordered rather than combinable.
+    def update(c):
+        x, y = c
+        inner = y > 0
+        return (ite(x > 0, ite(inner, x, x - 1), x),
+                ite(x > 0, ite(inner, y - 1, x - 1), y))
+
+    bench = loop_bench(("x", "y"), update, init=lambda: (4, 4))
+    r = learn_ranking(bench, ranks=2, outer=8, n_epochs=500)
+    assert r.verified, r.reason
+    assert len(r.nets) == 2, "the second component was never fitted"
+    assert len(r.witness.ranks) == 2, "the witness names one rank, not two"
+
+
+def test_one_component_is_the_default_and_a_plain_drop():
+    bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x), init=lambda: (5,))
+    r = learn_ranking(bench, outer=4, n_epochs=300)
+    assert r.verified and len(r.nets) == 1 and len(r.witness.ranks) == 1
+
+
+def test_a_component_with_nothing_left_over_is_not_fitted():
+    """A rank that already covers every round makes the next component
+    pointless, so `ranks` is a ceiling and not a count."""
+    bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x), init=lambda: (5,))
+    r = learn_ranking(bench, ranks=3, outer=4, n_epochs=300)
+    assert r.verified and len(r.nets) == 1, r.nets
