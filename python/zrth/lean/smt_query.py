@@ -126,6 +126,11 @@ class ModuleQueries:
         from .smt_prompt import CegarPromptEnv, parse_predicate
 
         self.cvc5 = cvc5
+        # `artifacts/` is written through this, when a caller supplies one.
+        # Left off by default so that constructing the queries stays a pure
+        # encoding step -- `predicate_facts` and `solver_hints` build these
+        # too, and neither is the run's record of what it asked.
+        self.artifacts = None
         self.tm = cvc5.TermManager()
         self.msmt = ModuleSMT(tm=self.tm, module=module)
         self.env = CegarPromptEnv(self.msmt)
@@ -238,6 +243,7 @@ class ModuleQueries:
         t0 = time.perf_counter()
         try:
             negation, witness = build()
+            self._dump(name, negation)
             solver = self._solver(budget)
             if witness:
                 solver.setOption("produce-models", "true")
@@ -252,6 +258,73 @@ class ModuleQueries:
         if not res.isSat():
             return Verdict(name, Status.UNKNOWN, dt, res.getUnknownExplanation())
         return Verdict(name, Status.REFUTED, dt, self._witness(solver, witness))
+
+    def _dump(self, name: str, negation) -> None:
+        """Leave this obligation in `artifacts/`, as the script cvc5 is given.
+
+        Inside `_ask`'s `try`, so its own failure would otherwise read as the
+        obligation being unencodable: a record of the question is worth having
+        and worth nothing at the price of changing the answer."""
+        if self.artifacts is None:
+            return
+        try:
+            text = _script([negation])
+        except Exception as e:                       # noqa: BLE001
+            text = f"; this obligation could not be written out: {e}\n"
+        self.artifacts.encoded(
+            "obligation", f"obligation-{name}", text,
+            what=_OBLIGATIONS.get(name, f"The `{name}` obligation, negated."),
+        )
+
+    def dump_system(self, artifacts) -> None:
+        """Leave the module itself in `artifacts/`, as cvc5 encoded it.
+
+        One `define-fun` per state component per block: `init<i>` over the
+        inputs awaited at tick 0, `next<i>` over the latched state and both
+        ends of the inputs. Together they are the transition every obligation
+        above is stated against, which is the thing a reader most often wants
+        to check by eye when an answer surprises them."""
+        if artifacts is None:
+            return
+        try:
+            s = self.msmt.fresh_ctrl("s")
+            el = self.msmt.fresh_extl_l("el")
+            en = self.msmt.fresh_extl_n("en")
+            ins = [(str(t), str(t.getSort())) for t in en]
+            step = [(str(t), str(t.getSort())) for t in s + el + en]
+            state = [(str(t), str(t.getSort())) for t in self.state_vars]
+            defines = [
+                (f"init{i}", ins, str(t.getSort()), t)
+                for i, t in enumerate(self.msmt.init_state(en))
+            ] + [
+                (f"next{i}", step, str(t.getSort()), t)
+                for i, t in enumerate(self.msmt.update_state(s, el, en))
+            ] + [
+                # The certificate's own predicates, encoded over the same
+                # state. The `.smt` files beside this one are their source;
+                # these are the form the obligations are actually stated in,
+                # and the form a reader can apply to a state by hand.
+                (name, state, str(term.getSort()), term)
+                for name, term in (("P", self.prp), ("inv", self.inv),
+                                   ("ranking", self.ranking))
+                if term is not None
+            ]
+            text = _script([], defines=defines)
+        except Exception as e:                       # noqa: BLE001
+            # `update_state` raises on an op with no SMT form -- an
+            # uninterpreted symbol, say. The run carries on; the note says why
+            # the file a reader expects is not here.
+            text = f"; this module has no SMT encoding: {e}\n"
+        artifacts.encoded(
+            "system", "system", text,
+            what="The whole problem as cvc5 encoded it. `init<i>` is state "
+                 "component `i` after tick 0 and `next<i>` the same component "
+                 "after one round, over the latched state `s*` and the inputs "
+                 "`el*` / `en*` latched and awaited; `P`, `inv` and `ranking` "
+                 "are the certificate's predicates over that state. No "
+                 "assertion -- this file is what the obligations beside it "
+                 "are stated against, and what to apply to a state by hand.",
+        )
 
     def _witness(self, solver, witness) -> str | None:
         if not witness:
@@ -386,11 +459,76 @@ class ModuleQueries:
 # ══════════════════════════════════════════════════════════════════════
 
 
-def pre_check(module, cert_data, budget: SmtBudget, log=print) -> list[Verdict]:
+def _constants(term, seen: dict) -> dict:
+    """Every free constant in `term`, by symbol.
+
+    cvc5 has no "the declarations this term needs", so the term is walked. A
+    constant is `Kind.CONSTANT`; an operator, a bound variable and a literal
+    are none of them declared.
+    """
+    import cvc5
+
+    if term.getKind() == cvc5.Kind.CONSTANT:
+        seen.setdefault(term.getSymbol(), term)
+        return seen
+    for child in term:
+        _constants(child, seen)
+    return seen
+
+
+def _script(asserts, *, defines=(), logic: str = "ALL") -> str:
+    """`asserts` as a script that runs on its own under any SMT-LIB solver.
+
+    `defines` are `(name, params, sort, body)` emitted as `define-fun` ahead of
+    the assertions -- how the transition is written out, one function per state
+    component. Declarations are collected from everything mentioned, so a
+    caller states what it wants said and not what it depends on.
+    """
+    seen: dict = {}
+    for _n, _p, _s, body in defines:
+        _constants(body, seen)
+    for term in asserts:
+        _constants(term, seen)
+
+    bound = {p for _n, params, _s, _b in defines for p, _ps in params}
+    lines = [f"(set-logic {logic})", ""]
+    lines += [f"(declare-fun {sym} () {seen[sym].getSort()})"
+              for sym in sorted(seen) if sym not in bound]
+    if len(lines) > 2:
+        lines.append("")
+    for name, params, sort, body in defines:
+        args = " ".join(f"({p} {srt})" for p, srt in params)
+        lines.append(f"(define-fun {name} ({args}) {sort} {body})")
+    if defines:
+        lines.append("")
+    lines += [f"(assert {term})" for term in asserts]
+    lines += ["", "(check-sat)"]
+    return "\n".join(lines) + "\n"
+
+
+_OBLIGATIONS = {
+    "init_inv": "`init_pre e -> inv (init e)`: the invariant holds in the state "
+                "the module starts in.",
+    "step_inv": "`inv s /\\ update_pre e -> inv (update s e)`: every round "
+                "preserves the invariant.",
+    "hrank": "`inv s /\\ ~P s /\\ update_pre e -> ranking (update s e) < "
+             "ranking s`: the ranking function drops on every round the "
+             "property does not hold.",
+    "inv_imp_P": "`inv s -> P s`: what makes the invariant a proof of the "
+                 "safety property rather than merely a fact about the module.",
+}
+
+
+def pre_check(module, cert_data, budget: SmtBudget, log=print,
+              artifacts=None) -> list[Verdict]:
     """Run the obligation pre-check and report it in a few lines.
 
     Never raises: a module cvc5 cannot encode reports one `unknown` line and
     generation carries on exactly as it would have.
+
+    `artifacts` is where the module and each obligation are written out as
+    runnable SMT-LIB -- see :mod:`.dump`. Nothing about the check changes when
+    it is `None`.
     """
     log(
         f".. SMT pre-check (cvc5): <={budget.per_call_ms} ms per query, "
@@ -411,6 +549,8 @@ def pre_check(module, cert_data, budget: SmtBudget, log=print) -> list[Verdict]:
             log("   the certificate predicates are not SMT-LIB, so cvc5 "
                 "cannot state the obligations -- skipping the pre-check")
         return []
+    q.artifacts = artifacts
+    q.dump_system(artifacts)
     verdicts = q.check_obligations(budget)
     if not verdicts:
         if cert_data.inv is None:

@@ -820,6 +820,48 @@ directory first, which is what to pass when a bad artifact is being
 inherited by every run.  `artifacts/` belongs to no route, so a regenerating
 run must never treat it as its own output to clean up.
 
+#### The questions, not only the answers
+
+The same directory holds what the run *asked*, which is the other half of
+being able to check it.  A run encodes a good deal on its way to a
+certificate — the module's transition, the property, the invariant, one query
+per obligation — and until it was written down, all of it lived and died
+inside the process.  What reached the user was a project and a line saying
+`holds` or `REFUTED`: the conclusion without the question.
+
+| file | what it is |
+|---|---|
+| `system.smt2` | the whole problem as cvc5 encoded it: `init<i>` / `next<i>` per state component, and `P`, `inv`, `ranking` over the same state |
+| `obligation-<name>.smt2` | one obligation, **negated**, exactly as it was asked |
+| `property.smt`, `inv.smt`, `ranking.smt` | the predicate source, as a flag was given it or a route found it |
+
+`.smt2` is a script — declarations, definitions, `(check-sat)` — so
+`cvc5 artifacts/obligation-step_inv.smt2` answers without `verith` in the
+loop, and `unsat` there is the `holds` the pre-check printed.  That is what
+makes it worth having when the answer surprises: a refuted obligation becomes
+a file to bisect rather than a message to trust.  `.smt` is one predicate and
+not a script; the encoded form of the same thing is in `system.smt2`.
+
+These are written by `smt_query` as it builds each query, so they appear when
+something was encoded — `--pre-check cvc5` is what asks for the obligations.
+`--artifacts ignore` still records them: it is about where a run *starts*, not
+about what it leaves.
+
+#### `README.md` — the index components write
+
+`artifacts/README.md` is the human-readable half of `index.json`, and nothing
+assembles it centrally: no one place knows what a run will produce, which
+routes will run, or what a component added later will want to leave behind.
+So each component passes `what=` to `store.put` / `store.encoded` — one
+sentence saying what its file *is* — and the README is rendered from the index
+after every write.  It is therefore always exactly what was written, in the
+order it was written, and a file a later run rewrites replaces its own section
+rather than gaining a second one.
+
+`what` is the counterpart of `why`: `why` says what was wrong with a candidate,
+`what` says what the file is.  A question the run asked has a `what` and no
+`why`, which is why its status (`encoded`) is not flagged in the README.
+
 ---
 
 ## Adding a New Encoding

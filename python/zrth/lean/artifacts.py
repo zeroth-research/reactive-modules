@@ -42,10 +42,17 @@ from pathlib import Path
 
 ARTIFACTS_DIR = "artifacts"
 _INDEX = "index.json"
+_README = "README.md"
 
 # What an artifact is.  `other` is not a gap: an arbitrary file a route
 # understands and the table does not is exactly what it is for.
-ROLES = ("inv", "ranking", "note", "other")
+#
+# The last three are not candidate certificates but the *questions* a run
+# asked: the module as some solver was given it, the property it was asked
+# about, and one obligation apiece.  Nothing resumes from them -- they are
+# here because a run that reports `REFUTED` should leave behind the file that
+# says so, not only the word.
+ROLES = ("inv", "ranking", "note", "other", "system", "property", "obligation")
 
 # Why it is in `artifacts/` rather than in the certificate.  What a consumer
 # filters on; `why` carries the prose.
@@ -56,13 +63,43 @@ STATUSES = (
     "unsupported",      # true, but uses something the certificate cannot express
     "refuted",          # a counterexample is known, in `why`
     "unknown",          # the procedure did not finish, or nothing said
+    "encoded",          # not a candidate at all: a question this run asked
 )
 
 # The suffix a language is *written* under, declared forwards. `.smt` reads
 # as SMT-LIB too but is not what `put` writes, so the two directions are not
 # each other's inverse and the forward map is the one to state.
-_SUFFIX = {"smt": ".smt2", "md": ".md", "lean": ".lean", "json": ".json", "text": ".txt"}
-_LANGUAGES = {suffix: lang for lang, suffix in _SUFFIX.items()} | {".smt": "smt"}
+# `smt` is a runnable script; `smt-src` is a predicate on its own, which is
+# what a flag was given and not something a solver can be handed.
+_SUFFIX = {"smt": ".smt2", "smt-src": ".smt", "md": ".md", "lean": ".lean",
+           "json": ".json", "text": ".txt"}
+_PREAMBLE = """\
+# `artifacts/`
+
+What this run left behind: the questions it asked, and the answers it found
+that did not make it into the certificate.
+
+Every `.smt2` file here is self-contained -- declarations, assertions,
+`(check-sat)` -- so it can be run without `verith` in the loop:
+
+```bash
+cvc5 <file>        # or: z3 <file>
+```
+
+A `.smt` file is not a script: it is one predicate, exactly the text a flag
+was given or a route found. `system.smt2` has the same predicates encoded,
+where they can be run.
+
+An **obligation** is written as its *negation*, which is how it is asked:
+`unsat` means the obligation holds, `sat` means it is refuted and the model is
+the counterexample. That is the same question `--pre-check cvc5` asks and the
+same answer it reports.
+
+`index.json` beside this file says the same thing in a form a program can
+filter. What follows is written by the components of the run, in the order
+they ran.
+"""
+_LANGUAGES = {suffix: lang for lang, suffix in _SUFFIX.items()}
 
 
 def language_of(path: "Path | str") -> str:
@@ -88,6 +125,7 @@ class Artifact:
     role: str = "other"             # one of ROLES
     language: str = "other"         # one of _LANGUAGES' values
     status: str = "unknown"         # one of STATUSES
+    what: str = ""                  # prose: what the file is
     why: str = ""                   # prose: what was wrong with it
     producer: str = ""              # the `--infer` route that wrote it
     seq: int = 0                    # monotonic; ordering across runs
@@ -202,16 +240,27 @@ class ArtifactStore:
         text: str,
         *,
         status: str = "unknown",
+        what: str = "",
         why: str = "",
         language: str = "smt",
         derived_from: "tuple[Artifact | str, ...]" = (),
         stem: str = "",
+        unique: bool = False,
     ) -> Artifact:
         """Record what this run found, whether or not it proved anything.
 
         `status` and `why` are not optional in spirit: an artifact whose
         status is `unknown` and whose `why` is empty is a file the next run
         can do nothing with but read.
+
+        `what` is the other half, and it is for a person: a sentence saying
+        what the file *is*, appended to `README.md` under the file's name.
+        Nothing here knows what a run will produce -- which routes will run,
+        what a later component will want to leave behind -- so the index is
+        not one writer's table of contents. Each component says its own line
+        as it writes, which makes the README exactly what was written, in the
+        order it was written, including by code that did not exist when this
+        module was.
         """
         if role not in ROLES:
             raise ValueError(f"unknown artifact role {role!r}; one of {ROLES}")
@@ -221,13 +270,29 @@ class ArtifactStore:
         entries = self._index()
         seq = max((e.get("seq", 0) for e in entries), default=0) + 1
         suffix = _SUFFIX.get(language, ".txt")
-        name = f"{stem or role}-{seq:04d}-{self.producer or 'verith'}{suffix}"
+        name = (f"{stem}{suffix}" if unique
+                else f"{stem or role}-{seq:04d}-{self.producer or 'verith'}{suffix}")
+        if unique:
+            # A run records its predicates once before a route and once after,
+            # so that an inferred one is written down too. When the route
+            # changed nothing, saying so twice is noise and rewriting the file
+            # is a lie about when it was written.
+            here = self.dir / name
+            if here.is_file() and here.read_text() == text:
+                known = next((e for e in entries if e.get("name") == name), None)
+                if known is not None:
+                    return Artifact(**{**known,
+                                       "derived_from": tuple(known.get("derived_from", ()))})
+        # A `unique` artifact is the same file every run, so its entry replaces
+        # the previous one rather than accumulating beside it.
+        entries = [e for e in entries if e.get("name") != name]
         (self.dir / name).write_text(text)
         artifact = Artifact(
             name=name,
             role=role,
             language=language,
             status=status,
+            what=what,
             why=why,
             producer=self.producer,
             seq=seq,
@@ -241,12 +306,50 @@ class ArtifactStore:
         )
         entries.append(asdict(artifact))
         (self.dir / _INDEX).write_text(json.dumps(entries, indent=2) + "\n")
+        self._describe(entries)
         self._say(f"   wrote artifact {name} ({status})")
         return artifact
+
+    def _describe(self, entries: list[dict]) -> None:
+        """Rewrite `README.md` from the index.
+
+        Rendered rather than appended to. A component says its line once, by
+        passing `what` to :meth:`put`, and this is where every line said so far
+        becomes a file -- so the README is always exactly the index, and a
+        `unique` artifact rewritten by a later run replaces its own section
+        instead of gaining a second one.
+        """
+        out = [_PREAMBLE]
+        for e in sorted(entries, key=lambda e: e.get("seq", 0)):
+            said = (e.get("what") or "").strip() or \
+                f"A `{e.get('role', 'other')}` artifact this run wrote."
+            if (e.get("why") or "").strip():
+                said += ("\n\nWhy it is here rather than in the certificate: "
+                         + e["why"].strip())
+            status = e.get("status", "unknown")
+            # `proved` and `encoded` are not news: the first is a certificate
+            # that worked and the second is a question, which the preamble
+            # already explains. A status line is for what went wrong.
+            out.append(f"\n## `{e['name']}`\n\n{said}\n"
+                       + (f"\n*status: {status}*\n"
+                          if status not in ("proved", "encoded") else ""))
+        (self.dir / _README).write_text("".join(out))
 
     def note(self, text: str, **kw) -> Artifact:
         """A `.md` artifact: what a route wants the next run's prompt to know."""
         return self.put("note", text, language="md", **kw)
+
+    def encoded(self, role: str, name: str, text: str, *, what: str,
+                language: str = "smt") -> Artifact:
+        """A file this run *encoded*, under a name it chose.
+
+        `put` names an artifact after its role and a sequence number, which is
+        right for a candidate an indefinite number of runs may produce and
+        wrong for the one system or the one `step_inv` obligation: those are
+        overwritten each run and are looked for by name.
+        """
+        return self.put(role, text, status="encoded", what=what,
+                        language=language, stem=name, unique=True)
 
     # --- lifecycle ------------------------------------------------------
 

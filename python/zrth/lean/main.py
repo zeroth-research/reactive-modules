@@ -178,6 +178,45 @@ def _standalone(settings: Settings, module, cert_data) -> None:
         print(f"Wrote {enc.title.lower()}: {write_encoding(enc, m2l, layout, out.stem)}")
 
 
+# `inv` / `ranking` hold SMT-LIB when they were supplied and Lean once a route
+# has rendered them, and `*_smt` is where that route keeps the source. So each
+# is looked for in both places, source first.
+_PREDICATES = (
+    ("property", ("prp",),
+     "The property this run was asked to prove, as it was given to "
+     "`--safety` / `--buchi`."),
+    ("inv", ("inv_smt", "inv"),
+     "The invariant the certificate is generated from."),
+    ("ranking", ("ranking_smt", "ranking"),
+     "The ranking function the certificate is generated from."),
+)
+
+
+def _record_predicates(store, settings: Settings, cert_data, *,
+                       inferred: bool = False) -> None:
+    """Leave the certificate's predicates in `artifacts/`, as SMT-LIB.
+
+    They are what every obligation beside them is stated against, so a reader
+    comparing `system.smt2` with a refuted obligation has the third side of it
+    here rather than having to dig it out of `System/Data.lean`, where it is
+    Lean and no longer the text any solver was given.
+    """
+    if store is None or cert_data is None:
+        return
+    for role, fields, what in _PREDICATES:
+        src = next(
+            (v for v in (getattr(cert_data, f, None) for f in fields)
+             if isinstance(v, str) and v.strip()),
+            None,
+        )
+        if src is None:
+            continue
+        store.encoded(
+            role, role, src.strip(), language="smt-src",
+            what=(what + " Inferred by this run's route." if inferred else what),
+        )
+
+
 def _workspace(settings: Settings, module, project_dir: Path) -> ArtifactStore:
     """The project's `artifacts/`, as this run sees it.
 
@@ -320,6 +359,18 @@ def main():
         if settings.ranking:
             cert_data.ranking = settings.ranking
 
+    # The workspace belongs to the project, not to the route: `--artifacts
+    # reset` is what to pass when a bad artifact is being inherited by every
+    # run, and a run that selects no route is one of those runs. Built before
+    # the pre-check rather than after `create_project`, because the pre-check
+    # is the run's first encoding and what it encodes is worth keeping.
+    store = (
+        None if settings.cert_file or settings.hammer_file
+        else _workspace(settings, module,
+                        settings.output_dir / settings.project_name)
+    )
+    _record_predicates(store, settings, cert_data)
+
     # With a route the certificate the project gets is the inferred one, so
     # the check has to wait for it -- run at this point, there is no
     # invariant yet to refute.
@@ -327,7 +378,7 @@ def main():
         if cert_data is None:
             print(".. SMT pre-check: nothing to check (no certificate data)")
         else:
-            pre_check(module, cert_data, settings.budget)
+            pre_check(module, cert_data, settings.budget, artifacts=store)
 
     # The hints have to come first: a settled branch condition is spliced
     # into a tactic in expanded form, so the definition it has to match must
@@ -381,11 +432,6 @@ def main():
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e
 
-    # The workspace belongs to the project, not to the route: `--artifacts
-    # reset` is what to pass when a bad artifact is being inherited by every
-    # run, and a run that selects no route is one of those runs.
-    store = _workspace(settings, module, project_dir)
-
     print(".. Doing TA2Magic")
     if settings.route is not None:
         handle = ProjectHandle(
@@ -409,7 +455,8 @@ def main():
             return
 
         if settings.pre_check == "cvc5":
-            pre_check(module, inferred, settings.budget)
+            pre_check(module, inferred, settings.budget, artifacts=store)
+        _record_predicates(store, settings, inferred, inferred=True)
 
         # Merge the inferred predicates into what the project is generated
         # from. The kind comes along: it decides which proof rule the
