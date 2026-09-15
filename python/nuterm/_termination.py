@@ -129,12 +129,12 @@ def compose_lex(system: System, nets, delta: float = 1.0):
     """``system`` with ``nets`` composed in as one lexicographic rank.
 
     On each counting round some net drops by ``delta`` while every earlier one
-    does not increase -- the substrate's ``lexDec``, which one net instantiates
-    as a plain drop.
+    does not increase (the substrate's ``lexDec``, which one net instantiates
+    as a plain drop).
 
-    Each net is written out twice as ordinary atoms — once reading the latched
+    Each net is written out twice as ordinary atoms once reading the latched
     state, so its wire carries V(s), once awaiting the next, so its wire carries
-    V(s') — and the whole is read as one system. The columns are unchanged,
+    V(s') and the whole is read as one system. The columns are unchanged,
     since the rank variables are read latched by nothing; the program's
     precondition and invariants carry over. The program comes first in the
     composition, so its init has written the next state by the time a rank's
