@@ -576,7 +576,7 @@ entries in a lake project that also contains the `Core` library and
 | `--pre` | — | SMT-LIB 2 Bool over `e0..`/`el0..` input vars |
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking function |
-| `--infer [ai\|ai-cegar\|learn]` | `ai-cegar` | Infer missing invariant/ranking — with an LLM, or (`learn`) by training a ranking function and certifying it |
-| `--model`, `--base-url` | `claude-sonnet-4-6`, — | LLM selection for `--infer`; rejected with `--infer learn` |
+| `--infer [ai\|ai-cegar\|nuterm]` | `ai-cegar` | Infer missing invariant/ranking — with an LLM, or (`nuterm`) by training a ranking function and certifying it |
+| `--model`, `--base-url` | `claude-sonnet-4-6`, — | LLM selection for `--infer`; rejected with `--infer nuterm` |
 | `--cert-file` | — | Standalone certificate files instead of a project |
 | `-x` / `--executable` | off | Also generate a runnable `Main.lean` |

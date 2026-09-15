@@ -356,7 +356,7 @@ def generate_lean_files(sync_core_templates) -> None:
         content = generate_standalone_cert_lean(module, lean_cert)
         (_CERTS_DIR / f"{name}.lean").write_text(content)
 
-    # Certs/LearnedCountdown.lean — the certificate `--infer learn` produces,
+    # Certs/LearnedCountdown.lean — the certificate `--infer nuterm` produces,
     # rather than one written by hand. Its ranking function is a sum of ReLU
     # units, `(+ (* c (ite (> <affine> 0) <affine> 0)) ...)`, which no
     # hand-written certificate in this suite has: whether `zeroth_hammer`

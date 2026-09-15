@@ -314,16 +314,16 @@ def _pre_check(stdout: str) -> dict:
 
 
 def test_learn_infers_a_buchi_certificate_and_it_pre_checks():
-    """`--infer learn` needs no key and no LLM: it trains a ranking function,
+    """`--infer nuterm` needs no key and no LLM: it trains a ranking function,
     certifies it, and the certificate it writes is one cvc5 then confirms."""
     pytest.importorskip("cvc5")
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "learn",
+            str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "nuterm",
             "--pre-check", "cvc5", "-o", tmpdir, "-p", "CountdownLearn",
         )
         assert r.returncode == 0, r.stderr
-        assert "[learn] ranking function certified" in r.stdout
+        assert "[nuterm] ranking function certified" in r.stdout
         data, _ = _cert(tmpdir, "CountdownLearn")
         assert "sorry" not in data
         assert _pre_check(r.stdout) == {
@@ -338,11 +338,11 @@ def test_learn_serves_safety_as_well():
     pytest.importorskip("cvc5")
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTDOWN_MODULE), "--safety", "(<= s0 100)", "--infer", "learn",
+            str(COUNTDOWN_MODULE), "--safety", "(<= s0 100)", "--infer", "nuterm",
             "--pre-check", "cvc5", "-o", tmpdir, "-p", "BoundedLearn",
         )
         assert r.returncode == 0, r.stderr
-        assert "[learn] safety invariant certified" in r.stdout
+        assert "[nuterm] safety invariant certified" in r.stdout
         assert _pre_check(r.stdout) == {
             "init_inv": "holds", "step_inv": "holds", "inv_imp_P": "holds"
         }, r.stdout
@@ -360,7 +360,7 @@ def test_learn_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
     inputs, so a predicate or a precondition passed alongside would be dropped
     -- and an LLM flag names a model it never calls."""
     r = _verith(
-        str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "learn",
+        str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "nuterm",
         *extra, "-o", str(tmp_path), "-p", "P",
     )
     assert r.returncode != 0
@@ -376,7 +376,7 @@ def test_learn_is_an_answer_to_safety_where_the_ai_route_is_not():
             "-o", tmpdir, "-p", "P",
         )
         assert r.returncode != 0
-        assert "--infer ai-cegar or --infer learn" in r.stderr
+        assert "--infer ai-cegar or --infer nuterm" in r.stderr
 
 
 def test_cegar_infers_a_safety_certificate():
@@ -495,7 +495,7 @@ def _fake_ltl_checkout(root: Path) -> Path:
         # A safety certificate is complete without a ranking function.
         ["--safety", "(<= s0 100)", "--invariant", "(<= s0 100)"],
         ["--buchi", "(= s0 0)", "--infer"],
-        ["--buchi", "(= s0 0)", "--infer", "learn"],
+        ["--buchi", "(= s0 0)", "--infer", "nuterm"],
         ["--safety", "(= s0 0)", "--fbk-proveit", "<checkout>"],
     ],
 )

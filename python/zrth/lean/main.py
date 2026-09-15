@@ -28,12 +28,12 @@ for a Buchi property)::
 
     uv run verith mymodule.py --buchi "x == 0" --infer -o out/ -p MyProject
 
-Or infer it without an LLM at all: ``--infer learn`` trains a ranking function
+Or infer it without an LLM at all: ``--infer nuterm`` trains a ranking function
 on rollouts of the module and hands it over only once a Farkas/CEGAR decision
 procedure has certified it, with the invariant inferred by Houdini.  It needs
 no API key, and it reads modules whose state is scalar integers::
 
-    uv run verith mymodule.py --buchi "(= s0 0)" --infer learn -o out/ -p MyProject
+    uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
 
 Use a local LLM via Ollama instead of Claude::
 
@@ -124,7 +124,7 @@ examples:
   uv run verith mymodule.py --safety "(<= s0 100)" --infer ai-cegar -o out/ -p MyProject
 
   # no LLM: learn a ranking function and certify it before it is offered
-  uv run verith mymodule.py --buchi "(= s0 0)" --infer learn -o out/ -p MyProject
+  uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
 
   # AI inference with Ollama (requires pip install zrth[ai-local])
   uv run verith mymodule.py --buchi "(= s0 0)" --infer \\
@@ -290,13 +290,13 @@ def main():
         nargs="?",
         const="ai-cegar",
         default=None,
-        choices=["ai", "ai-cegar", "learn"],
+        choices=["ai", "ai-cegar", "nuterm"],
         help=(
             "Infer the certificate for --safety or --buchi: the invariant, "
             "plus the ranking function --buchi needs. `ai` uses plain LLM "
             "self-check; `ai-cegar` uses LLM + cvc5 counterexample-guided "
             "refinement (default when --infer is passed without a value); "
-            "`learn` trains a ranking function on rollouts of the module and "
+            "`nuterm` trains a ranking function on rollouts of the module and "
             "returns it only once a Farkas/CEGAR decision procedure has "
             "certified it, with the invariant inferred by Houdini -- no LLM "
             "and no API key, but it reads scalar-integer state only."
@@ -615,7 +615,7 @@ def main():
     # obligations.
     if args.safety and args.infer == "ai":
         parser.error(
-            "--safety needs --infer ai-cegar or --infer learn: the `ai` route "
+            "--safety needs --infer ai-cegar or --infer nuterm: the `ai` route "
             "infers a ranking function `rule_globally` cannot take, and nothing "
             "checks that the invariant implies the property"
         )
@@ -624,7 +624,7 @@ def main():
     # it over, so a predicate supplied alongside would be discarded -- and it
     # assumes nothing of the inputs, so a precondition would be too. Both are
     # said rather than silently dropped.
-    if args.infer == "learn":
+    if args.infer == "nuterm":
         discarded = [
             name
             for name, value in (
@@ -636,14 +636,14 @@ def main():
         ]
         if discarded:
             parser.error(
-                f"--infer learn is incompatible with {', '.join(discarded)}: the "
+                f"--infer nuterm is incompatible with {', '.join(discarded)}: the "
                 "certificate comes from the learner and its invariant holds at "
                 "entry for every input, which is stronger than any precondition "
                 "would make it"
             )
         if args.model != parser.get_default("model") or args.base_url:
             parser.error(
-                "--model and --base-url are for the LLM routes; --infer learn "
+                "--model and --base-url are for the LLM routes; --infer nuterm "
                 "trains its own ranking function"
             )
 
@@ -804,7 +804,7 @@ def main():
                 magic = TA2MagicAI(
                     lean_code.read_text(), model=args.model, base_url=args.base_url
                 )
-            elif args.infer == "learn":
+            elif args.infer == "nuterm":
                 from .magic_learn import TA2MagicLearn
 
                 magic = TA2MagicLearn(lean_code.read_text(), module)

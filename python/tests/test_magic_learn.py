@@ -1,4 +1,4 @@
-"""The `--infer learn` route (`zrth.lean.magic_learn`).
+"""The `--infer nuterm` route (`zrth.lean.magic_learn`).
 
 What the route promises is that the certificate it returns has already been
 proved, so the tests that matter put its output to verith's *own* obligations

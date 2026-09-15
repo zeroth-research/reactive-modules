@@ -383,7 +383,7 @@ uv run verith mymodule.py --buchi "(= s0 0)" --infer \
     -o out/ -p MyProject
 
 # No LLM: learn a ranking function and certify it before it is offered
-uv run verith mymodule.py --buchi "(= s0 0)" --infer learn -o out/ -p MyProject
+uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
 
 # Standalone self-contained certificate (no project scaffold)
 uv run verith mymodule.py --buchi "(= s0 0)" --cert-file out/MyCert.lean
@@ -428,7 +428,7 @@ certificate consists of.
 | certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
-| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegar`, or `--infer learn` | `--infer ai`, `--infer ai-cegar`, or `--infer learn` |
+| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegar`, or `--infer nuterm` | `--infer ai`, `--infer ai-cegar`, or `--infer nuterm` |
 
 Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
 the project is generated from whatever predicates were supplied, and the two
@@ -451,8 +451,8 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--infer` | — | `ai`, `ai-cegar` (default when flag given without value), or `learn` (see below) |
-| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected with `--infer learn`, which calls none |
+| `--infer` | — | `ai`, `ai-cegar` (default when flag given without value), or `nuterm` (see below) |
+| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected with `--infer nuterm`, which calls none |
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
@@ -468,9 +468,9 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 `e0..eM-1` (next) and `el0..elM-1` (latched).
 
-### Inferring without an LLM (`--infer learn`)
+### Inferring without an LLM (`--infer nuterm`)
 
-`--infer learn` searches for the certificate the way a termination prover
+`--infer nuterm` searches for the certificate the way a termination prover
 does, and proves it before offering it:
 
 1. **The invariant** — Houdini over a candidate lattice of sign and pairwise
@@ -492,7 +492,7 @@ So unlike the `ai` routes, what reaches the certificate has already been
 proved — `--pre-check cvc5` and `lake build Certificate` confirm it rather
 than discovering it.  The trade is reach:
 
-| | `--infer learn` | `--infer ai-cegar` | `--fbk-proveit` |
+| | `--infer nuterm` | `--infer ai-cegar` | `--fbk-proveit` |
 |---|---|---|---|
 | needs | nothing but the repo | an API key or a local LLM | an `ic3ia` build and a `lean-ltl-certifying` checkout |
 | state it reads | scalar integers | whatever cvc5 encodes | whatever the NA encoding expresses |

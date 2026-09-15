@@ -1,6 +1,6 @@
 """TA2Magic by a learned ranking function, certified before it is offered.
 
-``--infer learn``. Where ``--infer ai`` and ``--infer ai-cegar`` ask an LLM for
+``--infer nuterm``. Where ``--infer ai`` and ``--infer ai-cegar`` ask an LLM for
 the certificate, this route learns one. A small ReLU network is trained on
 rollouts of the module to drop on the rounds the property does not hold, its
 weights are rounded to integers, and the candidate is put to a decision
@@ -67,7 +67,7 @@ def _engine():
         from benchmarks.svcomp._train import learn_ranking
     except ImportError as e:      # pragma: no cover - a broken checkout
         raise Refused(
-            f"--infer learn needs the `benchmarks.svcomp` package, which is not "
+            f"--infer nuterm needs the `benchmarks.svcomp` package, which is not "
             f"importable: {e}"
         ) from e
     return SimpleNamespace(
@@ -160,7 +160,7 @@ def _parse_property(src: str, declared: tuple, columns: tuple) -> object:
         asserted = z3.parse_smt2_string(f"{decls}\n(assert {src})")
     except z3.Z3Exception as e:
         raise Refused(
-            f"--infer learn reads the property as an SMT-LIB expression over "
+            f"--infer nuterm reads the property as an SMT-LIB expression over "
             f"{', '.join(declared) or 'the state components'}; z3 could not "
             f"parse {src!r}: {e}"
         ) from e
@@ -219,7 +219,7 @@ class TA2MagicLearn(TA2Magic):
             system = eng.read_system(self.module, names)
             eng.check_supported(system)
         except eng.Unsupported as e:
-            raise Refused(f"--infer learn cannot read this module: {e}") from e
+            raise Refused(f"--infer nuterm cannot read this module: {e}") from e
         return system
 
     def _declared(self) -> tuple:
@@ -245,10 +245,10 @@ class TA2MagicLearn(TA2Magic):
     def infer(self, cd: CertificateData) -> CertificateData:
         eng = _engine()
         if not isinstance(cd.prp, str):
-            raise Refused("--infer learn needs a property: pass --safety or --buchi")
+            raise Refused("--infer nuterm needs a property: pass --safety or --buchi")
         system = self._system(eng)
         prp = _parse_property(cd.prp, self._declared(), system.names)
-        self.log(f"[learn] columns: {', '.join(system.names)}")
+        self.log(f"[nuterm] columns: {', '.join(system.names)}")
 
         if cd.is_safety:
             inv_smt = self._safety_invariant(eng, system, prp)
@@ -268,7 +268,7 @@ class TA2MagicLearn(TA2Magic):
         survived -- and then the invariant implies it by containing it."""
         facts = eng.infer_invariants(
             system, extra=[("P", lambda st: self._at(prp, system, st))])
-        self.log(f"[learn] invariant candidates kept: {[lbl for lbl, _ in facts]}")
+        self.log(f"[nuterm] invariant candidates kept: {[lbl for lbl, _ in facts]}")
         claim = eng.Safety(
             lambda W, S: self._at(prp, system, {n: S[n] for n in S.names}))
         proof = eng.certify(system, claim,
@@ -280,7 +280,7 @@ class TA2MagicLearn(TA2Magic):
                 f"facts; for an invariant outside that lattice use "
                 f"--fbk-proveit, or --infer ai-cegar."
             )
-        self.log("[learn] safety invariant certified")
+        self.log("[nuterm] safety invariant certified")
         # Houdini states a fact as `state_map -> BoolRef`, and the system's own
         # `s_map` is that map over the columns -- so the conjunct printed here
         # is the one the proof carried.
@@ -295,12 +295,12 @@ class TA2MagicLearn(TA2Magic):
         domain = (lambda W, S:
                   z3.Not(self._at(prp, system, {n: S[n] for n in S.names})))
         bench = self._bench(eng, system)
-        self.log("[learn] training a ranking function")
+        self.log("[nuterm] training a ranking function")
         result = eng.learn_ranking(
             bench, delta=self.delta, hidden_dim=self.hidden_dim, seed=self.seed,
             claim=eng.Liveness(domain),
         )
-        self.log(f"[learn] {result.n_pairs} sampled rounds, loss {result.final_loss:.4g}")
+        self.log(f"[nuterm] {result.n_pairs} sampled rounds, loss {result.final_loss:.4g}")
         if not result.verified:
             raise Refused(
                 f"no ranking function was certified ({result.reason}). The rank "
@@ -308,7 +308,7 @@ class TA2MagicLearn(TA2Magic):
                 f"fails, so a property that never fails on one, or a decrease no "
                 f"piecewise-linear rank witnesses, leaves nothing to certify."
             )
-        self.log("[learn] ranking function certified")
+        self.log("[nuterm] ranking function certified")
         invariants = result.system.invariants
         return (_smt_conjunction(list(invariants)),
                 _smt_ranking(result.layers, result.system.names))
@@ -327,9 +327,9 @@ class TA2MagicLearn(TA2Magic):
         The project needs Lean; ``--pre-check`` needs cvc5's own input back, and
         nothing parses the Lean rendering into one -- so both are kept, as the
         other inferring routes keep them."""
-        self.log(f"[learn] inv: {inv_smt}")
+        self.log(f"[nuterm] inv: {inv_smt}")
         if rank_smt is not None:
-            self.log(f"[learn] ranking: {rank_smt}")
+            self.log(f"[nuterm] ranking: {rank_smt}")
         lean = smt_predicates_to_lean(
             CertificateData(prp=cd.prp, kind=cd.kind, inv=inv_smt, ranking=rank_smt),
             self.module,

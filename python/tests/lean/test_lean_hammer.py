@@ -44,7 +44,7 @@ def test_generated_files_present(generate_lean_files):
 
 
 def test_the_learned_certificate_is_generated(generate_lean_files):
-    """`--infer learn` writes one too, so the `Certs` build elaborates a
+    """`--infer nuterm` writes one too, so the `Certs` build elaborates a
     ranking function of the shape the learner produces. It needs cvc5 to
     render its SMT-LIB as Lean, so its absence is a skip, not a failure."""
     pytest.importorskip("cvc5")
@@ -128,7 +128,7 @@ def test_argmax_scalar_equiv_build(generate_lean_files):
 def test_the_learned_certificate_closes_in_lean(generate_lean_files):
     """`Certs/LearnedCountdown.lean` compiles.
 
-    The certificate `--infer learn` proved for itself is one `zeroth_hammer`
+    The certificate `--infer nuterm` proved for itself is one `zeroth_hammer`
     closes too -- `hrank` included, over a ranking function that is a sum of
     ReLU units rather than the single `ite` every hand-written certificate in
     this suite uses."""
