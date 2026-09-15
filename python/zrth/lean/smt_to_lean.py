@@ -24,6 +24,11 @@ _INFIX_ARITH = {
     Kind.ADD: " + ",
     Kind.SUB: " - ",
     Kind.MULT: " * ",
+    # SMT-LIB's `div`/`mod` are Euclidean -- `a = b * (a div b) + (a mod b)`
+    # with `0 <= a mod b < |b|` -- and so are Lean 4's `/` and `%` on `Int`:
+    # `(-7 : Int) / 2` is `-4` and `(-7 : Int) % 2` is `1`, where truncating
+    # division would give `-3` and `-1`. The pair goes across unchanged.
+    Kind.INTS_DIVISION: " / ",
     Kind.INTS_MODULUS: " % ",
 }
 _INFIX_CMP = {

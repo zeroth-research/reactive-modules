@@ -191,3 +191,16 @@ def test_a_non_literal_to_real_is_coerced_from_int():
     lean = _inv(_real_module(), "(= s0 (to_real (to_int s0)))")
     assert ": Int) : Real)" in lean, lean
     assert "⌊" in lean, lean
+
+
+def test_euclidean_division_and_modulus_go_across_unchanged():
+    """SMT-LIB's `div`/`mod` are Euclidean and so are Lean 4's `/` and `%` on
+    `Int` -- `(-7 : Int) / 2` is `-4` where truncating division gives `-3` --
+    so the pair renders as the operators rather than being refused.
+
+    An LLM reaches for them on any program whose invariant is a congruence:
+    `m_step2` steps by two, its invariant is `(= (mod s0 2) 0)`, and the rank
+    that goes with it counts in halves. `div` having no case turned a
+    certificate cvc5 had just accepted into a traceback."""
+    lean = _inv(_int_module(), "(and (= (mod s0 2) 0) (= (div s0 2) 3))")
+    assert "% 2" in lean and "/ 2" in lean, lean
