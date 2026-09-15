@@ -356,6 +356,37 @@ def generate_lean_files(sync_core_templates) -> None:
         content = generate_standalone_cert_lean(module, lean_cert)
         (_CERTS_DIR / f"{name}.lean").write_text(content)
 
+    # Certs/LearnedCountdown.lean — the certificate `--infer learn` produces,
+    # rather than one written by hand. Its ranking function is a sum of ReLU
+    # units, `(+ (* c (ite (> <affine> 0) <affine> 0)) ...)`, which no
+    # hand-written certificate in this suite has: whether `zeroth_hammer`
+    # closes `hrank` for that shape is a question only the learner's own
+    # output asks. The route proves the obligations before emitting them, so
+    # a failure here is the Lean side, not the certificate.
+    try:
+        import cvc5  # noqa: F401
+        from zrth.lean.magic_learn import TA2MagicLearn
+    except ImportError:
+        pass
+    else:
+        module = _make_countdown()
+        learned = TA2MagicLearn("", module, log=lambda *a: None).infer(
+            CertificateData(prp="(= s0 0)", kind="buchi")
+        )
+        # The Lean the route rendered is for a project; a standalone
+        # certificate is generated from the SMT-LIB it kept beside it.
+        (_CERTS_DIR / "LearnedCountdown.lean").write_text(
+            generate_standalone_cert_lean(
+                module,
+                smt_predicates_to_lean(
+                    CertificateData(prp="(= s0 0)", kind="buchi",
+                                    inv=learned.inv_smt,
+                                    ranking=learned.ranking_smt),
+                    module,
+                ),
+            )
+        )
+
     # Certs/ArgmaxScalar.lean — the scalar Argmax variants exactly as the
     # generator emits them. Each carries an `argmax1d_scalar_n_eq` theorem
     # proving it equal to Core.Mat.argmax_1d, so building this file is what

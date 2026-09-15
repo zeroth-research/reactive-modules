@@ -28,6 +28,13 @@ for a Buchi property)::
 
     uv run verith mymodule.py --buchi "x == 0" --infer -o out/ -p MyProject
 
+Or infer it without an LLM at all: ``--infer learn`` trains a ranking function
+on rollouts of the module and hands it over only once a Farkas/CEGAR decision
+procedure has certified it, with the invariant inferred by Houdini.  It needs
+no API key, and it reads modules whose state is scalar integers::
+
+    uv run verith mymodule.py --buchi "(= s0 0)" --infer learn -o out/ -p MyProject
+
 Use a local LLM via Ollama instead of Claude::
 
     uv run verith mymodule.py --buchi "x == 0" --infer \\
@@ -116,6 +123,9 @@ examples:
   # ... and the same loop for a safety property (cvc5-checked route only)
   uv run verith mymodule.py --safety "(<= s0 100)" --infer ai-cegar -o out/ -p MyProject
 
+  # no LLM: learn a ranking function and certify it before it is offered
+  uv run verith mymodule.py --buchi "(= s0 0)" --infer learn -o out/ -p MyProject
+
   # AI inference with Ollama (requires pip install zrth[ai-local])
   uv run verith mymodule.py --buchi "(= s0 0)" --infer \\
       --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p MyProject
@@ -179,8 +189,9 @@ def main():
             "Generate a Lean4 certificate project from a Python reactive module. "
             "The property goes under --safety (`G FORMULA`: every reachable "
             "state) or --buchi (`G (F FORMULA)`: infinitely often); with --infer "
-            "an LLM finds the invariant, and the ranking function a Buchi "
-            "certificate also needs."
+            "the invariant is searched for -- by an LLM, or by learning a "
+            "ranking function and certifying it -- along with the ranking "
+            "function a Buchi certificate also needs."
         ),
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -279,13 +290,16 @@ def main():
         nargs="?",
         const="ai-cegar",
         default=None,
-        choices=["ai", "ai-cegar"],
+        choices=["ai", "ai-cegar", "learn"],
         help=(
             "Infer the certificate for --safety or --buchi: the invariant, "
             "plus the ranking function --buchi needs. `ai` uses plain LLM "
             "self-check; `ai-cegar` uses LLM + cvc5 counterexample-guided "
-            "refinement (default when --infer is passed without a value, and "
-            "the only route that can serve --safety)."
+            "refinement (default when --infer is passed without a value); "
+            "`learn` trains a ranking function on rollouts of the module and "
+            "returns it only once a Farkas/CEGAR decision procedure has "
+            "certified it, with the invariant inferred by Houdini -- no LLM "
+            "and no API key, but it reads scalar-integer state only."
         ),
     )
     parser.add_argument(
@@ -597,13 +611,41 @@ def main():
 
     # `--infer ai` prompts for Lean and cross-checks with a second LLM call,
     # and both halves are written around an invariant *and* a ranking
-    # function. Only the cvc5 loop states the safety obligations.
+    # function. Only the cvc5 loop and the learner state the safety
+    # obligations.
     if args.safety and args.infer == "ai":
         parser.error(
-            "--safety needs --infer ai-cegar: the `ai` route infers a "
-            "ranking function `rule_globally` cannot take, and nothing "
+            "--safety needs --infer ai-cegar or --infer learn: the `ai` route "
+            "infers a ranking function `rule_globally` cannot take, and nothing "
             "checks that the invariant implies the property"
         )
+
+    # The learner computes the whole certificate and proves it before handing
+    # it over, so a predicate supplied alongside would be discarded -- and it
+    # assumes nothing of the inputs, so a precondition would be too. Both are
+    # said rather than silently dropped.
+    if args.infer == "learn":
+        discarded = [
+            name
+            for name, value in (
+                ("--invariant", args.invariant),
+                ("--ranking", args.ranking),
+                ("--pre", args.pre),
+            )
+            if value
+        ]
+        if discarded:
+            parser.error(
+                f"--infer learn is incompatible with {', '.join(discarded)}: the "
+                "certificate comes from the learner and its invariant holds at "
+                "entry for every input, which is stronger than any precondition "
+                "would make it"
+            )
+        if args.model != parser.get_default("model") or args.base_url:
+            parser.error(
+                "--model and --base-url are for the LLM routes; --infer learn "
+                "trains its own ranking function"
+            )
 
     # The standalone certificate is written before inference runs and then
     # returns, so the inferred predicates could never reach it -- and the
@@ -762,6 +804,10 @@ def main():
                 magic = TA2MagicAI(
                     lean_code.read_text(), model=args.model, base_url=args.base_url
                 )
+            elif args.infer == "learn":
+                from .magic_learn import TA2MagicLearn
+
+                magic = TA2MagicLearn(lean_code.read_text(), module)
             else:  # "ai-cegar"
                 from .magic_cegar import TA2MagicCEGAR
 

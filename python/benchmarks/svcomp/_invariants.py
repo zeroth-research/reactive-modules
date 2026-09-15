@@ -130,9 +130,14 @@ def _cond_const_candidates(names, s0: dict) -> list[Guess]:
     return cands
 
 
-def infer_invariants(system, timeout_ms: int = 2000) -> list[Guess]:
+def infer_invariants(system, timeout_ms: int = 2000, extra=()) -> list[Guess]:
     """Inductive invariants of ``system``: facts about every reachable state,
     holding at entry (initiation) and preserved by every step (consecution).
+
+    ``extra`` are candidates to seed alongside the ones read off the module —
+    how a caller asks whether a fact it cares about is invariant, since Houdini
+    keeps a seeded candidate exactly when it survives with the rest. A safety
+    claim seeds its own property that way.
 
     The transition and the entry state are read off ``system`` — one walk of the
     module, shared with the verifier — so nothing here reads the program itself,
@@ -153,7 +158,8 @@ def infer_invariants(system, timeout_ms: int = 2000) -> list[Guess]:
     # (T(s)) and the init state (s0) — the cut-point segments nuTerm seeds from.
     seen: set[str] = set()
     cands: list[Guess] = []
-    for lbl, f in (_candidates(names)
+    for lbl, f in (list(extra)
+                   + _candidates(names)
                    + _const_candidates(names, sp)
                    + _const_candidates(names, s0)
                    + _cond_const_candidates(names, s0)

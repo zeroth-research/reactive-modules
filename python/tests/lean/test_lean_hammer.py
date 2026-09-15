@@ -43,6 +43,18 @@ def test_generated_files_present(generate_lean_files):
         assert path.exists(), f"Certs/{name}.lean not generated"
 
 
+def test_the_learned_certificate_is_generated(generate_lean_files):
+    """`--infer learn` writes one too, so the `Certs` build elaborates a
+    ranking function of the shape the learner produces. It needs cvc5 to
+    render its SMT-LIB as Lean, so its absence is a skip, not a failure."""
+    pytest.importorskip("cvc5")
+    path = _LEAN_DIR / "Certs" / "LearnedCountdown.lean"
+    assert path.exists(), "Certs/LearnedCountdown.lean not generated"
+    src = path.read_text()
+    assert "sorry" not in src, "the learned certificate left an obligation open"
+    assert "if " in src, "the ranking function should carry the net's ReLU units"
+
+
 def test_generated_argmax_scalar_mirrors_matrix_form(generate_lean_files):
     """The emitted scalar Argmax must seed from s0 and compare strictly.
 
@@ -110,6 +122,24 @@ def test_argmax_scalar_equiv_build(generate_lean_files):
     )
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert not sorry_lines, "ArgmaxScalar proof used sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
+def test_the_learned_certificate_closes_in_lean(generate_lean_files):
+    """`Certs/LearnedCountdown.lean` compiles.
+
+    The certificate `--infer learn` proved for itself is one `zeroth_hammer`
+    closes too -- `hrank` included, over a ranking function that is a sum of
+    ReLU units rather than the single `ite` every hand-written certificate in
+    this suite uses."""
+    pytest.importorskip("cvc5")
+    r = _lake_build("Certs.LearnedCountdown")
+    assert r.returncode == 0, (
+        f"lake build Certs.LearnedCountdown failed.\n"
+        f"stdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert not sorry_lines, "learned certificate used sorry:\n" + "\n".join(sorry_lines)
 
 
 @pytest.mark.slow

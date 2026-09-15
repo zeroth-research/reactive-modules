@@ -296,6 +296,89 @@ def test_safety_rejects_the_unchecked_inference_route(tmp_path):
     assert "--safety needs --infer ai-cegar" in r.stderr
 
 
+# ── the learning route ──────────────────────────────────────────────────────
+
+COUNTDOWN_MODULE = FIXTURE_DIR / "svcomp_countdown.py"
+
+_OBLIGATIONS = ("init_inv", "step_inv", "hrank", "inv_imp_P")
+
+
+def _pre_check(stdout: str) -> dict:
+    """The `--pre-check` verdict per obligation, read off its report."""
+    out = {}
+    for line in stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] in _OBLIGATIONS:
+            out[parts[0]] = parts[1]
+    return out
+
+
+def test_learn_infers_a_buchi_certificate_and_it_pre_checks():
+    """`--infer learn` needs no key and no LLM: it trains a ranking function,
+    certifies it, and the certificate it writes is one cvc5 then confirms."""
+    pytest.importorskip("cvc5")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = _verith(
+            str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "learn",
+            "--pre-check", "cvc5", "-o", tmpdir, "-p", "CountdownLearn",
+        )
+        assert r.returncode == 0, r.stderr
+        assert "[learn] ranking function certified" in r.stdout
+        data, _ = _cert(tmpdir, "CountdownLearn")
+        assert "sorry" not in data
+        assert _pre_check(r.stdout) == {
+            "init_inv": "holds", "step_inv": "holds", "hrank": "holds"
+        }, r.stdout
+
+
+def test_learn_serves_safety_as_well():
+    """`rule_globally` takes an invariant alone, and the route infers one --
+    which is what makes it an alternative to --fbk-proveit and not only to
+    --infer ai-cegar."""
+    pytest.importorskip("cvc5")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = _verith(
+            str(COUNTDOWN_MODULE), "--safety", "(<= s0 100)", "--infer", "learn",
+            "--pre-check", "cvc5", "-o", tmpdir, "-p", "BoundedLearn",
+        )
+        assert r.returncode == 0, r.stderr
+        assert "[learn] safety invariant certified" in r.stdout
+        assert _pre_check(r.stdout) == {
+            "init_inv": "holds", "step_inv": "holds", "inv_imp_P": "holds"
+        }, r.stdout
+
+
+@pytest.mark.parametrize("extra, expected", [
+    (["--invariant", "(<= s0 100)"], "--invariant"),
+    (["--ranking", "s0"], "--ranking"),
+    (["--pre", "true"], "--pre"),
+    (["--model", "claude-sonnet-4-6-x"], "--model and --base-url"),
+    (["--base-url", "http://localhost:11434/v1"], "--model and --base-url"),
+])
+def test_learn_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
+    """The learner computes the whole certificate and assumes nothing of the
+    inputs, so a predicate or a precondition passed alongside would be dropped
+    -- and an LLM flag names a model it never calls."""
+    r = _verith(
+        str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "learn",
+        *extra, "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert expected in r.stderr, r.stderr
+
+
+def test_learn_is_an_answer_to_safety_where_the_ai_route_is_not():
+    """The message that turns --safety away from `--infer ai` names both routes
+    that can serve it."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = _verith(
+            str(COUNTDOWN_MODULE), "--safety", "(<= s0 100)", "--infer", "ai",
+            "-o", tmpdir, "-p", "P",
+        )
+        assert r.returncode != 0
+        assert "--infer ai-cegar or --infer learn" in r.stderr
+
+
 def test_cegar_infers_a_safety_certificate():
     """The CEGAR loop with the invariant fixed makes no LLM call: it states
     the safety obligations (init, inductive, `inv -> P`) and verifies them,
@@ -412,6 +495,7 @@ def _fake_ltl_checkout(root: Path) -> Path:
         # A safety certificate is complete without a ranking function.
         ["--safety", "(<= s0 100)", "--invariant", "(<= s0 100)"],
         ["--buchi", "(= s0 0)", "--infer"],
+        ["--buchi", "(= s0 0)", "--infer", "learn"],
         ["--safety", "(= s0 0)", "--fbk-proveit", "<checkout>"],
     ],
 )

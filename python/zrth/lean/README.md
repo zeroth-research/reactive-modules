@@ -382,6 +382,9 @@ uv run verith mymodule.py --buchi "(= s0 0)" --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 \
     -o out/ -p MyProject
 
+# No LLM: learn a ranking function and certify it before it is offered
+uv run verith mymodule.py --buchi "(= s0 0)" --infer learn -o out/ -p MyProject
+
 # Standalone self-contained certificate (no project scaffold)
 uv run verith mymodule.py --buchi "(= s0 0)" --cert-file out/MyCert.lean
 # → writes out/MyCert.lean  (certificate)
@@ -425,7 +428,7 @@ certificate consists of.
 | certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
-| routes | `--fbk-proveit` (ic3ia finds the invariant), or `--infer ai-cegar` | `--infer ai` or `--infer ai-cegar` |
+| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegar`, or `--infer learn` | `--infer ai`, `--infer ai-cegar`, or `--infer learn` |
 
 Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
 the project is generated from whatever predicates were supplied, and the two
@@ -448,8 +451,8 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--infer` | — | `ai` or `ai-cegar` (default when flag given without value) |
-| `--model` | `claude-sonnet-4-6` | LLM model for inference |
+| `--infer` | — | `ai`, `ai-cegar` (default when flag given without value), or `learn` (see below) |
+| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected with `--infer learn`, which calls none |
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
@@ -464,6 +467,45 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 `vars` list passed to `Module.sequential`).  For tuple/matrix wires, use
 SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 `e0..eM-1` (next) and `el0..elM-1` (latched).
+
+### Inferring without an LLM (`--infer learn`)
+
+`--infer learn` searches for the certificate the way a termination prover
+does, and proves it before offering it:
+
+1. **The invariant** — Houdini over a candidate lattice of sign and pairwise
+   facts (`benchmarks/svcomp/_invariants.py`): seed the candidates, drop the
+   ones that do not hold at entry or are not preserved by a step, and certify
+   the survivors as one inductive `Safety` claim.  With `--safety`, the
+   property itself is seeded as a candidate, so it is an invariant exactly
+   when it survives with the rest.
+2. **The ranking function** (`--buchi` only) — a small ReLU network is trained
+   on rollouts of the module to drop on the rounds where the property does not
+   hold, its weights are rounded to integers, and the candidate is composed
+   into the module as two ordinary atoms, `V(s)` and `V(s')`.  The obligation
+   `V(s) - V(s') >= 1` on that domain goes to a decision procedure over the
+   composed module's wires: Farkas-certified linear regions, with CEGAR
+   finding the regions (`benchmarks/svcomp/_farkas.py`).  Only a candidate it
+   certifies is returned.
+
+So unlike the `ai` routes, what reaches the certificate has already been
+proved — `--pre-check cvc5` and `lake build Certificate` confirm it rather
+than discovering it.  The trade is reach:
+
+| | `--infer learn` | `--infer ai-cegar` | `--fbk-proveit` |
+|---|---|---|---|
+| needs | nothing but the repo | an API key or a local LLM | an `ic3ia` build and a `lean-ltl-certifying` checkout |
+| state it reads | scalar integers | whatever cvc5 encodes | whatever the NA encoding expresses |
+| property | `--safety` or `--buchi` | `--safety` or `--buchi` | `--safety` |
+| invariants it can find | Houdini's lattice | whatever the LLM proposes and cvc5 confirms | ic3ia's interpolants |
+| deterministic | yes (a fixed seed) | no | yes |
+
+The procedure refuses by name what it has no rule for — a matrix-shaped or
+real-valued component, a next value that reads an awaited input, an operation
+with no cell rule — rather than degrading quietly.  `--invariant`,
+`--ranking` and `--pre` are rejected alongside it: the route computes the
+whole certificate, and its invariant holds at entry for *every* input, which
+is stronger than any precondition would make it.
 
 ---
 
