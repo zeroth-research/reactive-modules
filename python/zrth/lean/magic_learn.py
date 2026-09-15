@@ -316,6 +316,13 @@ class TA2MagicLearn(TA2Magic):
         facts = eng.infer_invariants(
             system, extra=[("P", lambda st: self._at(prp, system, st))])
         self.log(f"[nuterm] invariant candidates kept: {[lbl for lbl, _ in facts]}")
+        # Pruned *before* the witness is built, not only before it is printed:
+        # the conjunct count is what the obligation's disjuncts are exponential
+        # in, so this is the difference between certifying and not.
+        by_label = dict(facts)                  # Houdini's labels are unique
+        kept = _prune([(lbl, f(system.s_map)) for lbl, f in facts])
+        facts = [(lbl, by_label[lbl]) for lbl, _ in kept]
+        self.log(f"[nuterm] invariant after pruning: {[lbl for lbl, _ in kept]}")
         claim = eng.Safety(
             lambda W, S: self._at(prp, system, {n: S[n] for n in S.names}))
         proof = eng.certify(system, claim,
@@ -328,13 +335,9 @@ class TA2MagicLearn(TA2Magic):
                 f"--fbk-proveit, or --infer ai-cegar."
             )
         self.log("[nuterm] safety invariant certified")
-        # Houdini states a fact as `state_map -> BoolRef`, and the system's own
-        # `s_map` is that map over the columns -- so the conjunct emitted here
-        # is the one the proof carried. The seeded property is printed as it was
-        # written, which is the same predicate and the only one big enough for
-        # z3 to reach for a `let`.
-        kept = _prune([(lbl, f(system.s_map)) for lbl, f in facts])
-        self.log(f"[nuterm] invariant after pruning: {[lbl for lbl, _ in kept]}")
+        # The seeded property is printed as it was written, which is the same
+        # predicate and the only conjunct big enough for z3 to reach for a
+        # `let`; the rest are the z3 terms the proof carried.
         return _smt_conjunction([prp_src if lbl == "P" else _smt_term(t)
                                  for lbl, t in kept])
 

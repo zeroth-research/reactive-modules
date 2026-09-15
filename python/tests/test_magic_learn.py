@@ -293,6 +293,40 @@ def test_nothing_is_dropped_when_nothing_is_implied():
     assert [lbl for lbl, _ in _prune(facts)] == ["s0>=0", "s1<=3"]
 
 
+def test_the_witness_carries_the_pruned_invariant(monkeypatch):
+    """Pruning has to happen before the witness is built, not before it is
+    printed.
+
+    The conjunct count is what the obligation\'s disjuncts are exponential in:
+    the fbk sweep\'s `NetTwoInput` does not finish in ten minutes carrying
+    Houdini\'s ten conjuncts, and takes half a second carrying the four the
+    rest do not imply. So what matters is which set reaches `certify`, and
+    that is what this reads off rather than the clock."""
+    import benchmarks.svcomp._farkas as farkas
+    import benchmarks.svcomp._invariants as invariants
+
+    found, carried = [], []
+    real_infer, real_certify = invariants.infer_invariants, farkas.certify
+
+    def spy_infer(system, *a, **kw):
+        out = real_infer(system, *a, **kw)
+        found.append(len(out))
+        return out
+
+    def spy_certify(system, claim, witness, *a, **kw):
+        carried.append(len(getattr(witness, "inv", ())))
+        return real_certify(system, claim, witness, *a, **kw)
+
+    monkeypatch.setattr(invariants, "infer_invariants", spy_infer)
+    monkeypatch.setattr(farkas, "certify", spy_certify)
+    cd = _learn(_countdown(), "(<= s0 100)", "safety")
+
+    assert found and carried, "the route did not reach Houdini and the procedure"
+    assert carried[0] < found[0], "the witness carried every candidate Houdini kept"
+    # ... and the certificate states exactly what the witness carried
+    assert cd.inv_smt.count("(<=") + cd.inv_smt.count("(>=") == carried[0]
+
+
 def test_the_invariant_carries_no_redundant_conjunct():
     """End to end: the certificate states each fact once, and the property it
     has to imply need not appear in it -- being implied is the obligation."""
