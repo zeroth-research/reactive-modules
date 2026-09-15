@@ -112,7 +112,17 @@ def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
             rng, claim=None) -> tuple[np.ndarray, np.ndarray]:
     """nt-style trajectory rollouts: PAS-sample the inputs, init, execute the
     module up to `max_len`, collecting consecutive (s, T(s)) pairs on the rounds
-    ``claim`` counts — the ones the rank must drop on."""
+    ``claim`` counts — the ones the rank must drop on.
+
+    A run leaves the domain and may well come back: for a recurrence claim that
+    is the whole point, and the initial state need not be in the domain at all
+    (a counter that starts at the value the property names is outside it on
+    round one). So the trajectory is followed to ``max_len`` whatever the domain
+    says, and only the rounds inside it are collected. What does end a
+    trajectory is a fixed point, where every later round repeats this one --
+    which is where a terminating program under :func:`._termination.terminates`
+    arrives, so that case still stops as soon as there is nothing more to
+    see."""
     prog, ctrl, extl = bench.build()
     dom = resolve_domain(system, (claim or terminates()).domain)
     n_in = len(bench.inputs)
@@ -127,11 +137,12 @@ def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
         if bench.precondition is not None and not all(bench.precondition(s)):
             continue
         for _ in range(max_len):
-            if not _in_domain(dom, s, system):
-                break
             sp = _step(prog, ctrl, s)
-            S.append([s[n] for n in bench.state])
-            Sp.append([sp[n] for n in bench.state])
+            if _in_domain(dom, s, system):
+                S.append([s[n] for n in bench.state])
+                Sp.append([sp[n] for n in bench.state])
+            if sp == s:
+                break
             s = sp
     return (np.array(S, dtype=np.float64).reshape(-1, len(bench.state)),
             np.array(Sp, dtype=np.float64).reshape(-1, len(bench.state)))

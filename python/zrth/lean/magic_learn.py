@@ -128,22 +128,69 @@ def _smt_ranking(layers, names) -> str:
     return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
 
 
-def _smt_conjunction(preds) -> str:
-    """``preds`` -- z3 predicates over the columns -- as one SMT-LIB Bool term."""
-    if not preds:
-        return "true"
-    # A seeded candidate the lattice also proposes survives as both, and the
-    # same conjunct twice is noise in every file it reaches.
-    rendered = list(dict.fromkeys(p.sexpr() for p in preds))
-    lets = [r for r in rendered if "(let " in r]
-    if lets:
+def _smt_term(pred) -> str:
+    """One z3 predicate over the columns as an SMT-LIB Bool term.
+
+    z3's printer ``let``-binds a repeated subterm, which the body of a Lean
+    definition cannot carry. Houdini's own candidates are small enough that it
+    never does; a conjunct that is written some other way (the property, seeded
+    as a candidate) is printed from that source instead, so this is a refusal
+    rather than a case to handle."""
+    src = pred.sexpr()
+    if "(let " in src:
         raise Refused(
             "an inferred invariant prints with a `let` binding, which the "
-            f"certificate's definition cannot carry: {lets[0]}"
+            f"certificate's definition cannot carry: {src[:160]}"
         )
+    return src
+
+
+def _smt_conjunction(terms) -> str:
+    """SMT-LIB Bool terms as one. Empty is ``true``, one is itself."""
+    # A seeded candidate the lattice also proposes survives as both, and the
+    # same conjunct twice is noise in every file it reaches.
+    rendered = list(dict.fromkeys(terms))
+    if not rendered:
+        return "true"
     if len(rendered) == 1:
         return rendered[0]
     return "(and " + " ".join(rendered) + ")"
+
+
+def _prune(facts, s_map, timeout_ms: int = 2000) -> list:
+    """``facts`` with every conjunct the others already imply dropped.
+
+    Houdini keeps every candidate that survives and its lattice is redundant by
+    construction: ``s1 == 10`` arrives beside ``s1 >= 1``, ``s1 <= 10``,
+    ``s1 >= 10`` and more. Dropping a conjunct the rest imply leaves the
+    conjunction the same predicate -- ``rest ∧ f`` is ``rest`` when ``rest → f``
+    -- so the invariant is as strong, still inductive and still implies whatever
+    it implied.
+
+    What it saves is paid twice over. The obligation an inductive witness builds
+    carries one implication per conjunct, and the negation of that is cut into
+    disjuncts: the conjunct count is what makes that explode, and a redundant
+    set can put a claim out of reach that its own content does not. The
+    certificate also states each conjunct in Lean, where six ways of saying
+    ``s1 == 10`` are six things for the hammer to carry.
+
+    A query that times out drops nothing: a conjunct is removed only when the
+    rest are *proved* to imply it."""
+    kept = list(facts)
+    i = 0
+    while i < len(kept):
+        rest = [f(s_map) for j, (_, f) in enumerate(kept) if j != i]
+        implied = False
+        if rest:
+            solver = z3.Solver()
+            solver.set("timeout", timeout_ms)
+            solver.add(z3.And(*rest), z3.Not(kept[i][1](s_map)))
+            implied = solver.check() == z3.unsat
+        if implied:
+            kept.pop(i)
+        else:
+            i += 1
+    return kept
 
 
 def _parse_property(src: str, declared: tuple, columns: tuple) -> object:
@@ -251,7 +298,7 @@ class TA2MagicLearn(TA2Magic):
         self.log(f"[nuterm] columns: {', '.join(system.names)}")
 
         if cd.is_safety:
-            inv_smt = self._safety_invariant(eng, system, prp)
+            inv_smt = self._safety_invariant(eng, system, prp, cd.prp)
             rank_smt = None
         else:
             inv_smt, rank_smt = self._buchi_certificate(eng, system, prp)
@@ -260,7 +307,7 @@ class TA2MagicLearn(TA2Magic):
 
     # --- the two kinds --------------------------------------------------
 
-    def _safety_invariant(self, eng, system, prp) -> str:
+    def _safety_invariant(self, eng, system, prp, prp_src: str) -> str:
         """An inductive invariant implying ``prp``, or the reason there is none.
 
         The property is seeded as a candidate alongside the lattice's own, so
@@ -269,6 +316,8 @@ class TA2MagicLearn(TA2Magic):
         facts = eng.infer_invariants(
             system, extra=[("P", lambda st: self._at(prp, system, st))])
         self.log(f"[nuterm] invariant candidates kept: {[lbl for lbl, _ in facts]}")
+        facts = _prune(facts, system.s_map)
+        self.log(f"[nuterm] after pruning the implied: {[lbl for lbl, _ in facts]}")
         claim = eng.Safety(
             lambda W, S: self._at(prp, system, {n: S[n] for n in S.names}))
         proof = eng.certify(system, claim,
@@ -283,8 +332,11 @@ class TA2MagicLearn(TA2Magic):
         self.log("[nuterm] safety invariant certified")
         # Houdini states a fact as `state_map -> BoolRef`, and the system's own
         # `s_map` is that map over the columns -- so the conjunct printed here
-        # is the one the proof carried.
-        return _smt_conjunction([f(system.s_map) for _, f in facts])
+        # is the one the proof carried. The seeded property is the exception:
+        # it is printed as it was written, which is the same predicate and the
+        # only one big enough for z3 to reach for a `let`.
+        return _smt_conjunction([prp_src if lbl == "P" else _smt_term(f(system.s_map))
+                                 for lbl, f in facts])
 
     def _buchi_certificate(self, eng, system, prp) -> tuple:
         """An invariant and a rank that drops wherever ``prp`` does not hold.
@@ -309,8 +361,7 @@ class TA2MagicLearn(TA2Magic):
                 f"piecewise-linear rank witnesses, leaves nothing to certify."
             )
         self.log("[nuterm] ranking function certified")
-        invariants = result.system.invariants
-        return (_smt_conjunction(list(invariants)),
+        return (_smt_conjunction([_smt_term(p) for p in result.system.invariants]),
                 _smt_ranking(result.layers, result.system.names))
 
     # --- rendering ------------------------------------------------------

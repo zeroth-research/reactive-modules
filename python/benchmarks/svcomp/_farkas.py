@@ -651,7 +651,7 @@ def read_system(module, names=()) -> System:
     inputs = tuple(module.extl)
     for v in all_vars + inputs:
         if v.dtype != _SCALAR:
-            raise Unsupported(f"wire {v.id} has sort Int{v.dtype[0]}; only scalar "
+            raise Unsupported(f"wire {v.id} has sort {v.dtype}; only scalar "
                               f"integer wires are supported")
     read = {v.id for a in module.atoms for v in a.read}
     cols = tuple(v for v in all_vars if v.id in read)

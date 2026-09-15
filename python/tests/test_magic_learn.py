@@ -21,10 +21,12 @@ from zrth.lean.common import Refused
 from zrth.lean.magic_learn import (
     TA2MagicLearn,
     _parse_property,
+    _prune,
     _smt_affine,
     _smt_conjunction,
     _smt_int,
     _smt_ranking,
+    _smt_term,
 )
 from zrth.lean.smt_query import SmtBudget, Status, pre_check
 
@@ -228,12 +230,81 @@ def test_a_unit_the_output_layer_drops_is_not_printed():
 def test_the_same_fact_twice_is_one_conjunct():
     """A property seeded as a candidate that the lattice also proposes survives
     as both, and the certificate should carry it once."""
+    assert _smt_conjunction(["(<= s0 100)", "(>= s0 0)", "(<= s0 100)"]) == \
+        "(and (<= s0 100) (>= s0 0))"
+    assert _smt_conjunction(["(<= s0 100)"]) == "(<= s0 100)"
+    assert _smt_conjunction([]) == "true"
+
+
+def test_a_conjunct_z3_cannot_print_flat_is_refused():
+    """z3 `let`-binds a repeated subterm, and the body of a Lean definition
+    cannot carry one -- so a conjunct that prints that way is named rather than
+    pasted. Houdini's own candidates never do; the property, which can, is
+    printed from its own source instead."""
     import z3
     s0 = z3.Int("s0")
-    assert _smt_conjunction([s0 <= 100, s0 >= 0, s0 <= 100]) == \
-        "(and (<= s0 100) (>= s0 0))"
-    assert _smt_conjunction([s0 <= 100]) == "(<= s0 100)"
-    assert _smt_conjunction([]) == "true"
+    big = z3.If(s0 > 0, s0, 0) + z3.If(s0 > 0, s0, 0)
+    for _ in range(4):
+        big = big + big
+    with pytest.raises(Refused, match="let"):
+        _smt_term(big >= 0)
+    assert _smt_term(s0 >= 0) == "(>= s0 0)"
+
+
+def test_a_net_shaped_property_gets_a_flat_certificate():
+    """`relu(x) + relu(100 - x) = 100` is `0 <= x <= 100` written as a net. The
+    route proves it, and what it hands over is a certificate a Lean definition
+    can carry: no `let`, whether the property survives pruning (and is printed
+    from its own source) or is dropped for the simpler facts that imply it."""
+    module = _countdown()
+    net = ("(and (>= (+ (ite (>= s0 0) s0 0) (ite (>= (- 100 s0) 0) (- 100 s0) 0)) 100)"
+           " (<= (+ (ite (>= s0 0) s0 0) (ite (>= (- 100 s0) 0) (- 100 s0) 0)) 100))")
+    cd = _learn(module, net, "safety")
+    assert "let" not in cd.inv_smt, cd.inv_smt
+    v = _verdicts(module, cd)
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "inv_imp_P": Status.HOLDS}, v
+
+
+# ---------------------------------------------------------------------------
+# What the invariant carries
+# ---------------------------------------------------------------------------
+
+def test_a_conjunct_the_others_imply_is_dropped():
+    """Houdini's lattice is redundant: `s1 == 10` arrives beside five weaker
+    facts about `s1`. Dropping what the rest imply leaves the same predicate,
+    and the conjunct count is what the obligation's disjuncts are exponential
+    in."""
+    import z3
+    facts = [
+        ("s1>0", lambda st: st["s1"] > 0),
+        ("s1>=1", lambda st: st["s1"] >= 1),
+        ("s1==10", lambda st: st["s1"] == 10),
+        ("s0>=0", lambda st: st["s0"] >= 0),
+    ]
+    s_map = {"s0": z3.Int("s0"), "s1": z3.Int("s1")}
+    kept = _prune(facts, s_map)
+    assert [lbl for lbl, _ in kept] == ["s1==10", "s0>=0"], kept
+    # ... and the conjunction is the one it started as
+    before = z3.And(*[f(s_map) for _, f in facts])
+    after = z3.And(*[f(s_map) for _, f in kept])
+    solver = z3.Solver(); solver.add(before != after)
+    assert solver.check() == z3.unsat
+
+
+def test_nothing_is_dropped_when_nothing_is_implied():
+    import z3
+    facts = [("s0>=0", lambda st: st["s0"] >= 0), ("s1<=3", lambda st: st["s1"] <= 3)]
+    s_map = {"s0": z3.Int("s0"), "s1": z3.Int("s1")}
+    assert [lbl for lbl, _ in _prune(facts, s_map)] == ["s0>=0", "s1<=3"]
+
+
+def test_the_invariant_carries_no_redundant_conjunct():
+    """End to end: the certificate states each fact once, and the property it
+    has to imply need not appear in it -- being implied is the obligation."""
+    module = _countdown()
+    cd = _learn(module, "(<= s0 100)", "safety")
+    assert cd.inv_smt.count("(<= s0 100)") == 1, cd.inv_smt
 
 
 def test_a_property_is_parsed_over_the_columns():
