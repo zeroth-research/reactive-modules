@@ -11,6 +11,24 @@ System/* and Certificate/* recompile per case.
 
 Verdicts land in $VERITH_LIMITS_WORK/results.json (default
 /tmp/verith-limits); a table is printed as it goes.
+
+Two environment switches pick *what* is measured, so the same plumbing --
+one project per case against a shared `.lake` -- serves more than the one
+question the matrix was written for:
+
+    VERITH_SUITE=limits|fbk    which case table (default `limits`)
+    VERITH_ROUTE=supplied|nuterm   where the certificate comes from
+
+`VERITH_SUITE=fbk` reads `tests/lean/fbk/probes.py`, whose probes are
+`--safety` properties over the same modules; `run_fbk.py` puts them through
+ic3ia, and this puts them through verith's own certificate.
+
+`VERITH_ROUTE=nuterm` drops each case's supplied `inv`/`rank`/`pre` and
+passes `--infer nuterm` instead. The matrix varies the supplied predicates
+over a much smaller set of (module, property) pairs, so an inferring route
+is asked each *distinct* pair once and the case names that share it are
+listed together. A non-default suite or route writes its own results file,
+`results-<suite>-<route>.json`, rather than overwriting the baseline's.
 """
 import json
 import os
@@ -47,6 +65,43 @@ from cases import CASES  # noqa: E402
 
 DEFAULT_TIMEOUT = 900
 
+SUITE = os.environ.get("VERITH_SUITE", "limits")
+ROUTE = os.environ.get("VERITH_ROUTE", "supplied")
+
+
+def load_cases() -> list:
+    """The case table `VERITH_SUITE` names, as this runner's case dicts.
+
+    An inferring route reads none of the supplied predicates, so the cases
+    that differ only in those are one problem: they are collapsed onto their
+    (module, property, precondition) key and `shared` lists the names that
+    fell together, so a verdict is not counted as many times as the matrix
+    happens to spell it."""
+    if SUITE == "limits":
+        cases = list(CASES)
+    elif SUITE == "fbk":
+        sys.path.insert(0, str(PY / "tests" / "lean" / "fbk"))
+        from probes import PROBES                        # noqa: PLC0415
+        cases = [dict(name=n, group="fbk", mod=m, S=prop, expect=e)
+                 for n, m, prop, e in PROBES]
+    else:
+        raise SystemExit(f"error: VERITH_SUITE={SUITE!r} is not `limits` or `fbk`")
+
+    if ROUTE == "supplied":
+        return cases
+    problems: dict = {}
+    for c in cases:
+        if not (c.get("P") or c.get("S")):
+            continue          # nothing to infer against: the case has no property
+        key = (c["mod"], c.get("P"), c.get("S"), c.get("pre") or "")
+        problems.setdefault(key, []).append(c)
+    out = []
+    for group in problems.values():
+        first = dict(group[0])
+        first["shared"] = [c["name"] for c in group]
+        out.append(first)
+    return out
+
 
 def module_path(mod: str) -> Path:
     if mod.startswith("TESTS/"):
@@ -60,14 +115,22 @@ def run_verith(case) -> dict:
         shutil.rmtree(out)
     cmd = ["uv", "run", "verith", str(module_path(case["mod"]))]
     if case.get("P"):
-        # Every case here is a Buchi property: `P` comes with a ranking.
+        # A limit-matrix property is a Buchi one: `P` comes with a ranking.
         cmd += ["--buchi", case["P"]]
-    if case.get("inv"):
-        cmd += ["--invariant", case["inv"]]
-    if case.get("rank"):
-        cmd += ["--ranking", case["rank"]]
-    if case.get("pre"):
-        cmd += ["--pre", case["pre"]]
+    if case.get("S"):
+        cmd += ["--safety", case["S"]]
+    if ROUTE == "nuterm":
+        # The route computes the whole certificate and refuses a supplied
+        # predicate or a precondition, so this is the case stripped to its
+        # question: this module, this property, find the rest.
+        cmd += ["--infer", "nuterm"]
+    else:
+        if case.get("inv"):
+            cmd += ["--invariant", case["inv"]]
+        if case.get("rank"):
+            cmd += ["--ranking", case["rank"]]
+        if case.get("pre"):
+            cmd += ["--pre", case["pre"]]
     cmd += ["-o", str(out), "-p", "Rea"]
     cmd += os.environ.get("VERITH_EXTRA", "").split()
     t0 = time.time()
@@ -159,6 +222,10 @@ def run_lake(case) -> dict:
 
 def verdict(case, gen, build) -> str:
     if not gen["ok"]:
+        # An inferring route that finds nothing is not a generation bug; it
+        # is the measurement. `main` wraps its refusal under this prefix.
+        if "error: --infer:" in gen["err"]:
+            return "NO-CERT"
         return "GEN-FAIL"
     if build.get("sorries") and build.get("raw_ok"):
         return "SORRY"
@@ -171,11 +238,13 @@ def main() -> None:
     only = set(sys.argv[1:])
     PROJECTS.mkdir(parents=True, exist_ok=True)
     ensure_shared_lake()
-    results_path = WORK / "results.json"
+    stem = ("results" if (SUITE, ROUTE) == ("limits", "supplied")
+            else f"results-{SUITE}-{ROUTE}")
+    results_path = WORK / f"{stem}.json"
     results = json.loads(results_path.read_text()) if results_path.exists() else {}
 
-    todo = [c for c in CASES if not only or c["name"] in only]
-    print(f"{len(todo)} cases\n")
+    todo = [c for c in load_cases() if not only or c["name"] in only]
+    print(f"{len(todo)} cases  (suite {SUITE}, route {ROUTE})\n")
     for n, case in enumerate(todo, 1):
         name = case["name"]
         print(f"[{n}/{len(todo)}] {name:<16} ", end="", flush=True)
@@ -186,9 +255,14 @@ def main() -> None:
         results[name] = dict(case={k: v2 for k, v2 in case.items() if k != "timeout"},
                              gen=gen, build=build, verdict=v)
         results_path.write_text(json.dumps(results, indent=1))
-        flag = "" if (v == "VERIFIED") == (case["expect"] == "ok") else "  <-- unexpected"
+        # `expect` records what the *supplied* predicates were meant to show,
+        # so it says nothing about a route that replaces them.
+        flag = ("" if ROUTE != "supplied" or (v == "VERIFIED") == (case["expect"] == "ok")
+                else "  <-- unexpected")
         print(f"{v:<11} gen {gen['secs']:5.1f}s  build {build['secs']:6.1f}s{flag}")
-        if v == "GEN-FAIL":
+        if len(case.get("shared", [])) > 1:
+            print(f"      shares this problem: {', '.join(case['shared'][1:])}")
+        if v in ("GEN-FAIL", "NO-CERT"):
             print(f"      {gen['err'][:200]}")
         for e in (build["errors"] or [])[:2]:
             print(f"      {e[:150]}")

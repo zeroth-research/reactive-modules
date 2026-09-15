@@ -35,7 +35,26 @@ uv run python tests/limits/run_regress.py other.json     # against a different b
 
 VERITH_EXTRA="--smt-tactics cvc5" uv run python tests/limits/run_regress.py
 VERITH_LIMITS_WORK=/tmp/mine.noindex uv run python tests/limits/run_regress.py
+
+# the same plumbing, pointed at another question
+VERITH_ROUTE=nuterm uv run python tests/limits/run_limits.py
+VERITH_SUITE=fbk VERITH_ROUTE=nuterm uv run python tests/limits/run_limits.py
 ```
+
+`VERITH_SUITE` picks the case table — `limits` (this one) or `fbk`
+([`../lean/fbk/probes.py`](../lean/fbk/probes.py), whose probes are `--safety`
+properties over the same modules). `VERITH_ROUTE` picks where the certificate
+comes from — `supplied` (the matrix's own `inv`/`rank`) or `nuterm`
+(`--infer nuterm`, which drops them). A non-default suite or route writes
+`results-<suite>-<route>.json` and leaves `results.json` alone, so
+`run_regress.py` still compares like with like.
+
+An inferring route reads none of the supplied predicates, so cases differing
+only in those are one problem and are collapsed onto their (module, property,
+precondition) key: the 77-case matrix is **30** distinct questions to ask
+`--infer nuterm`, and the run prints which names fell together. A route that
+finds nothing verdicts `NO-CERT` rather than `GEN-FAIL` — that is the
+measurement, not a defect.
 
 Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs
 `python/tests/lean/.lake` already built (Mathlib, cslib, lean-smt): every
@@ -209,6 +228,72 @@ The two Real cases are now the only ones over 30 s. Everything else sits
 around 10 s.
 
 Supporting suites: `just py-test` 450 passed / 5 skipped / 2 xfailed, `just test-lean` 25 passed.
+
+---
+
+## `--infer nuterm` over both suites
+
+`VERITH_ROUTE=nuterm`, measured on the code at the time of writing. The
+matrix's 77 cases vary the *supplied* predicates over 30 distinct (module,
+property, precondition) problems, and an inferring route is asked each once;
+the fbk probes are 39 `--safety` properties. Both are full projects built
+against the shared `.lake`, so `VERIFIED` means Lean discharged the
+obligations, not merely that verith emitted something.
+
+| | limit matrix (Büchi) | fbk probes (safety) |
+|---|---|---|
+| problems | 30 (77 cases) | 39 |
+| **verified end to end** | **6** (40 of the 76 cases carrying a property) | **28** |
+| no certificate | 23 | 11 |
+| generation failed | 1 | 0 |
+| wall clock | 41 s generate, 68 s build | 41 s generate, 282 s build |
+
+The two suites ask different questions of it, and it answers them very
+differently.
+
+### Safety: 28 of the 32 the ic3ia route is meant to certify
+
+The fbk probes come with `expect`, so the comparison is direct. Of the 32
+probes `--fbk-proveit` is expected to certify, `--infer nuterm` certifies 28 —
+with no ic3ia build and no `lean-ltl-certifying` checkout. All four probes
+whose property is *false* are refused, as are the three the fbk route cannot
+deliver either (`abort`, `unknown`, `lean-fail`). Net-shaped properties are in
+reach: `NetBox`, `NetBoxIneq`, `NetTwoInput` and `NetLyapunov` all verify.
+
+The four it misses are two Bool-state modules (`MixedBoolInt`, `BiSplit`) and
+two properties outside Houdini's lattice of signs and pairwise facts
+(`NiT5Ne4`, `Step2Odd`). Two more are refused for a rule predicate the LP
+cannot read as linear rows — `(mod s0 2)` and `s0*s1`.
+
+### Büchi: 6 of 30, and the rank class is why
+
+`Countdown` verifies, and with it the 31 matrix cases that differ only in the
+predicates supplied; so do `TwoVars`, `RankLex`, `Relu`, `Deep64` and
+`NN2Lyap2D`. The 24 that do not divide into three kinds, and only the last is
+about ranking at all:
+
+| | | |
+|---|---|---|
+| the state is not scalar `Int` | 15 | Real ×5, Bool ×2, BV ×1, vector or matrix `Int` ×7 |
+| the procedure has no rule for an operation | 3 | `LIA_Max`, `LIA_Min`, `LIA_Argmax` |
+| the transition reads an awaited input | 2 | `m_relu_input`, with and without `--pre` |
+| no rank certified | 3 | `m_step2`, `TESTS/counter`, `m_toward5` |
+| generation failed | 1 | `OpUninterp` — verith's own codegen gap, and the same case the supplied route fails |
+
+The three that train but do not certify are one fact about the rank class, not
+three accidents. `TorchNRF` is a sum of ReLUs with a non-negative output layer,
+which makes `V` **convex** in the state — and each of those three programs
+wraps around: `m_step2` runs 0, 2, …, 10 and resets, `TESTS/counter` runs
+0…9 and resets. The rounds the rank must drop on then include the reset, so it
+needs `V` to fall along the ramp *and* fall again across the wrap, which no
+convex function does. `Countdown` verifies because counting down to the
+property makes its rank linear.
+
+So the Büchi number is about the shape of the rank, and lifting it means a
+rank class that is not convex — lexicographic ranks, which
+[`_farkas.lex_decrease`](../../benchmarks/svcomp/_farkas.py) already
+discharges, or an output layer allowed to go negative with `V >= 0` carried
+some other way.
 
 ---
 

@@ -13,6 +13,18 @@ Two independent suites:
 | [Limit matrix](#a-limit-matrix) (77 cases) | which certificates `verith` can generate *and* Lean can discharge | verith's own `inv` + `ranking` machinery |
 | [`--fbk-proveit` sweep](#b---fbk-proveit-sweep) (39 probes) | which safety properties survive `lean2vmt` → ic3ia → `vmt2lean` | the `lean-ltl-certifying` driver, no invariant supplied |
 
+Either table can also be put to `--infer nuterm`, which supplies the
+certificate itself rather than taking one:
+
+```bash
+VERITH_ROUTE=nuterm uv run python tests/limits/run_limits.py
+VERITH_SUITE=fbk VERITH_ROUTE=nuterm uv run python tests/limits/run_limits.py
+```
+
+The commands below are the ones each suite's own route makes; what the
+learning route did with the same modules and properties is written up in
+[`limits/README.md`](limits/README.md#--infer-nuterm-over-both-suites).
+
 The properties are **not** interchangeable between the two, and the CLI now
 says so. The limit matrix's `--buchi P` is a reachability target (`inv` +
 `ranking` ⇒ `P` is reached infinitely often); the sweep's `--safety P` proves
