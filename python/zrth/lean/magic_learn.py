@@ -157,8 +157,8 @@ def _smt_conjunction(terms) -> str:
     return "(and " + " ".join(rendered) + ")"
 
 
-def _prune(facts, s_map, timeout_ms: int = 2000) -> list:
-    """``facts`` with every conjunct the others already imply dropped.
+def _prune(conjuncts, timeout_ms: int = 2000) -> list:
+    """``conjuncts`` -- ``(label, z3 term)`` -- with every one the rest imply dropped.
 
     Houdini keeps every candidate that survives and its lattice is redundant by
     construction: ``s1 == 10`` arrives beside ``s1 >= 1``, ``s1 <= 10``,
@@ -176,15 +176,15 @@ def _prune(facts, s_map, timeout_ms: int = 2000) -> list:
 
     A query that times out drops nothing: a conjunct is removed only when the
     rest are *proved* to imply it."""
-    kept = list(facts)
+    kept = list(conjuncts)
     i = 0
     while i < len(kept):
-        rest = [f(s_map) for j, (_, f) in enumerate(kept) if j != i]
+        rest = [t for j, (_, t) in enumerate(kept) if j != i]
         implied = False
         if rest:
             solver = z3.Solver()
             solver.set("timeout", timeout_ms)
-            solver.add(z3.And(*rest), z3.Not(kept[i][1](s_map)))
+            solver.add(z3.And(*rest), z3.Not(kept[i][1]))
             implied = solver.check() == z3.unsat
         if implied:
             kept.pop(i)
@@ -316,8 +316,6 @@ class TA2MagicLearn(TA2Magic):
         facts = eng.infer_invariants(
             system, extra=[("P", lambda st: self._at(prp, system, st))])
         self.log(f"[nuterm] invariant candidates kept: {[lbl for lbl, _ in facts]}")
-        facts = _prune(facts, system.s_map)
-        self.log(f"[nuterm] after pruning the implied: {[lbl for lbl, _ in facts]}")
         claim = eng.Safety(
             lambda W, S: self._at(prp, system, {n: S[n] for n in S.names}))
         proof = eng.certify(system, claim,
@@ -331,12 +329,14 @@ class TA2MagicLearn(TA2Magic):
             )
         self.log("[nuterm] safety invariant certified")
         # Houdini states a fact as `state_map -> BoolRef`, and the system's own
-        # `s_map` is that map over the columns -- so the conjunct printed here
-        # is the one the proof carried. The seeded property is the exception:
-        # it is printed as it was written, which is the same predicate and the
-        # only one big enough for z3 to reach for a `let`.
-        return _smt_conjunction([prp_src if lbl == "P" else _smt_term(f(system.s_map))
-                                 for lbl, f in facts])
+        # `s_map` is that map over the columns -- so the conjunct emitted here
+        # is the one the proof carried. The seeded property is printed as it was
+        # written, which is the same predicate and the only one big enough for
+        # z3 to reach for a `let`.
+        kept = _prune([(lbl, f(system.s_map)) for lbl, f in facts])
+        self.log(f"[nuterm] invariant after pruning: {[lbl for lbl, _ in kept]}")
+        return _smt_conjunction([prp_src if lbl == "P" else _smt_term(t)
+                                 for lbl, t in kept])
 
     def _buchi_certificate(self, eng, system, prp) -> tuple:
         """An invariant and a rank that drops wherever ``prp`` does not hold.
@@ -361,7 +361,13 @@ class TA2MagicLearn(TA2Magic):
                 f"piecewise-linear rank witnesses, leaves nothing to certify."
             )
         self.log("[nuterm] ranking function certified")
-        return (_smt_conjunction([_smt_term(p) for p in result.system.invariants]),
+        # The rank was certified against every invariant the system assumed;
+        # the certificate states the same predicate with the redundant conjuncts
+        # gone, which is one `step_inv` obligation each that Lean is spared.
+        kept = _prune([(i, t) for i, t in enumerate(result.system.invariants)])
+        self.log(f"[nuterm] invariant: {len(kept)} of "
+                 f"{len(result.system.invariants)} conjuncts after pruning")
+        return (_smt_conjunction([_smt_term(t) for _, t in kept]),
                 _smt_ranking(result.layers, result.system.names))
 
     # --- rendering ------------------------------------------------------

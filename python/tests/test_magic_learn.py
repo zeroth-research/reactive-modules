@@ -276,27 +276,21 @@ def test_a_conjunct_the_others_imply_is_dropped():
     and the conjunct count is what the obligation's disjuncts are exponential
     in."""
     import z3
-    facts = [
-        ("s1>0", lambda st: st["s1"] > 0),
-        ("s1>=1", lambda st: st["s1"] >= 1),
-        ("s1==10", lambda st: st["s1"] == 10),
-        ("s0>=0", lambda st: st["s0"] >= 0),
-    ]
-    s_map = {"s0": z3.Int("s0"), "s1": z3.Int("s1")}
-    kept = _prune(facts, s_map)
+    s0, s1 = z3.Int("s0"), z3.Int("s1")
+    facts = [("s1>0", s1 > 0), ("s1>=1", s1 >= 1), ("s1==10", s1 == 10),
+             ("s0>=0", s0 >= 0)]
+    kept = _prune(facts)
     assert [lbl for lbl, _ in kept] == ["s1==10", "s0>=0"], kept
     # ... and the conjunction is the one it started as
-    before = z3.And(*[f(s_map) for _, f in facts])
-    after = z3.And(*[f(s_map) for _, f in kept])
-    solver = z3.Solver(); solver.add(before != after)
+    solver = z3.Solver()
+    solver.add(z3.And(*[t for _, t in facts]) != z3.And(*[t for _, t in kept]))
     assert solver.check() == z3.unsat
 
 
 def test_nothing_is_dropped_when_nothing_is_implied():
     import z3
-    facts = [("s0>=0", lambda st: st["s0"] >= 0), ("s1<=3", lambda st: st["s1"] <= 3)]
-    s_map = {"s0": z3.Int("s0"), "s1": z3.Int("s1")}
-    assert [lbl for lbl, _ in _prune(facts, s_map)] == ["s0>=0", "s1<=3"]
+    facts = [("s0>=0", z3.Int("s0") >= 0), ("s1<=3", z3.Int("s1") <= 3)]
+    assert [lbl for lbl, _ in _prune(facts)] == ["s0>=0", "s1<=3"]
 
 
 def test_the_invariant_carries_no_redundant_conjunct():
