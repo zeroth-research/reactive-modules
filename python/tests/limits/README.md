@@ -243,57 +243,74 @@ obligations, not merely that verith emitted something.
 | | limit matrix (Büchi) | fbk probes (safety) |
 |---|---|---|
 | problems | 30 (77 cases) | 39 |
-| **verified end to end** | **6** (40 of the 76 cases carrying a property) | **28** |
-| no certificate | 23 | 11 |
+| **verified end to end** | **8** (42 of the 76 cases carrying a property) | **29** |
+| no certificate | 21 | 10 |
 | generation failed | 1 | 0 |
-| wall clock | 41 s generate, 68 s build | 41 s generate, 282 s build |
+| wall clock | 43 s generate, 85 s build | 42 s generate, 287 s build |
 
-The two suites ask different questions of it, and it answers them very
-differently.
-
-### Safety: 28 of the 32 the ic3ia route is meant to certify
+### Safety: 29 of the 32 the ic3ia route is meant to certify
 
 The fbk probes come with `expect`, so the comparison is direct. Of the 32
-probes `--fbk-proveit` is expected to certify, `--infer nuterm` certifies 28 —
+probes `--fbk-proveit` is expected to certify, `--infer nuterm` certifies 29 —
 with no ic3ia build and no `lean-ltl-certifying` checkout. All four probes
 whose property is *false* are refused, as are the three the fbk route cannot
 deliver either (`abort`, `unknown`, `lean-fail`). Net-shaped properties are in
 reach: `NetBox`, `NetBoxIneq`, `NetTwoInput` and `NetLyapunov` all verify.
 
-The four it misses are two Bool-state modules (`MixedBoolInt`, `BiSplit`) and
-two properties outside Houdini's lattice of signs and pairwise facts
-(`NiT5Ne4`, `Step2Odd`). Two more are refused for a rule predicate the LP
-cannot read as linear rows — `(mod s0 2)` and `s0*s1`.
+The three it misses are two Bool-state modules (`MixedBoolInt`, `BiSplit`) and
+one property outside Houdini's lattice. Two more are refused for a rule
+predicate the LP cannot read as linear rows — `(mod s0 2)` and `s0*s1`.
 
-### Büchi: 6 of 30, and the rank class is why
+### Büchi: 8 of 30, and 21 of the other 22 are reach, not ranking
 
 `Countdown` verifies, and with it the 31 matrix cases that differ only in the
-predicates supplied; so do `TwoVars`, `RankLex`, `Relu`, `Deep64` and
-`NN2Lyap2D`. The 24 that do not divide into three kinds, and only the last is
-about ranking at all:
+predicates supplied; so do `TwoVars`, `RankLex`, `Relu`, `Deep64`, `NNInv`,
+`NN2Lyapunov` and `NN2Lyap2D`. What stops the rest is almost never the rank:
 
 | | | |
 |---|---|---|
 | the state is not scalar `Int` | 15 | Real ×5, Bool ×2, BV ×1, vector or matrix `Int` ×7 |
 | the procedure has no rule for an operation | 3 | `LIA_Max`, `LIA_Min`, `LIA_Argmax` |
 | the transition reads an awaited input | 2 | `m_relu_input`, with and without `--pre` |
-| no rank certified | 3 | `m_step2`, `TESTS/counter`, `m_toward5` |
 | generation failed | 1 | `OpUninterp` — verith's own codegen gap, and the same case the supplied route fails |
+| **no rank certified** | **1** | `m_step2` |
 
-The three that train but do not certify are one fact about the rank class, not
-three accidents. `TorchNRF` is a sum of ReLUs with a non-negative output layer,
-which makes `V` **convex** in the state — and each of those three programs
-wraps around: `m_step2` runs 0, 2, …, 10 and resets, `TESTS/counter` runs
-0…9 and resets. The rounds the rank must drop on then include the reset, so it
-needs `V` to fall along the ramp *and* fall again across the wrap, which no
-convex function does. `Countdown` verifies because counting down to the
-property makes its rank linear.
+The one left is a fact about the candidate lattice, not the rank: `m_step2`
+runs 0, 2, …, 10 and resets, so its invariant needs `x` to be even, and no
+candidate Houdini has can say so.
 
-So the Büchi number is about the shape of the rank, and lifting it means a
-rank class that is not convex — lexicographic ranks, which
-[`_farkas.lex_decrease`](../../benchmarks/svcomp/_farkas.py) already
-discharges, or an output layer allowed to go negative with `V >= 0` carried
-some other way.
+`NNInv` and `NN2Lyapunov` were in this column until two changes landed
+together. A rank only has to rank the rounds *before* the property is reached
+— refuting an infinite stretch of those proves recurrence, since a run that
+never reaches the property is exactly such a stretch — and `ite(P, 0, δ + V)`
+turns one of those into the stronger thing `check_hrank` asks for, at no extra
+proof: off the reaching round the `δ` cancels, and on it the rank falls from at
+least `δ` to zero because `check_ranks` already required `V >= 0`. That is the
+shape this matrix supplies by hand for `NNInv`. It needs the invariant
+`0 <= x <= 9`, whose `9` is a constant only the guard mentions — and only once
+`x + 1 == 10` is normalised onto `x` — so Houdini now seeds the literals the
+program mentions, simplified first.
+
+### What a lexicographic rank does and does not fix
+
+`lex_decrease` is available to the learner (`learn_ranking(ranks=N)`,
+`python -m benchmarks.svcomp --ranks N`) and is worth a lot where it applies:
+on the SV-COMP termination corpus it takes **38/57 to 45/57**, losing nothing,
+and what it unlocks is the nested loops — `cousot9`, `speedpldi3`,
+`ChenFlurMukhopadhyay` Ex2.01, Ex2.08 and Fig1, both `Masse-VMCAI2014`.
+
+It does **not** fix a wrap-around, and not for want of tuning. Each component
+is a non-negative sum of ReLUs, hence convex in the state, and in lex order the
+first component must be non-increasing along the whole chain of counting
+rounds. For a counter running 1..9 and back to 0 that means
+`V₁(1) >= … >= V₁(9) >= V₁(0)`; convexity makes the differences
+`dₖ = V₁(k+1) − V₁(k)` non-decreasing, so `d₁…d₈ <= 0` forces `d₀ <= 0` and
+`Σd <= 0`, while `V₁(9) >= V₁(0)` says `Σd >= 0`. Every `dₖ` is therefore zero,
+`V₁` is constant, it covers no round, and the argument recurses into `V₂`.
+
+Nor can a lexicographic rank reach a verith certificate at all: `rule_buchi`
+takes one ranking function and `CertificateData.ranking` is one `Int`
+expression. `--ranks` is for the Farkas side, which has `lexDec` end to end.
 
 ---
 
