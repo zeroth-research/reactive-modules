@@ -3,6 +3,7 @@
     python -m nuterm FILE.py                 # train and verify
     python -m nuterm FILE.py --lean          # also emit and kernel-check the proof
     python -m nuterm FILE.py --export out/   # write the proof as its own Lean project
+    python -m nuterm FILE.py --ranks 2       # allow a lexicographic rank
 
 ``FILE.py`` defines ``module()``, returning a ``zrth.Module``, or ``BENCH``, a
 :class:`nuterm._bench.Bench`. The exit code is 0 when every file is verified
@@ -19,6 +20,10 @@ from pathlib import Path
 
 from ._bench import Bench, bench_of_module
 from ._train import learn_ranking
+
+# How many components a rank may have (`--ranks`). One is a plain drop; more is
+# a lexicographic rank, for a program no single rank decreases on.
+RANKS = 1
 
 
 def _import(path: Path):
@@ -58,7 +63,7 @@ def load(path: Path) -> Bench:
 def run_plain(benches) -> int:
     verified = 0
     for b in benches:
-        r = learn_ranking(b)
+        r = learn_ranking(b, ranks=RANKS)
         verified += bool(r.verified)
         tag = "VERIFIED  " if r.verified else "unverified"
         extra = f" ({r.reason})" if r.reason else ""
@@ -75,7 +80,7 @@ def certify_one(bench):
     t0 = time.perf_counter()
     try:
         # the trainer verified the candidate it accepted; emit that evidence
-        r = learn_ranking(bench)
+        r = learn_ranking(bench, ranks=RANKS)
         t_train = time.perf_counter() - t0
         res = (lc.certify(bench.name, r.system, r.proof,
                           label="terminates via a ranking function")
@@ -95,7 +100,7 @@ def run_export(benches, out_dir: Path) -> int:
 
     written = 0
     for bench in benches:
-        r = learn_ranking(bench)
+        r = learn_ranking(bench, ranks=RANKS)
         if not r.verified:
             print(f"unverified {bench.name}: {r.reason or ''}", flush=True)
             continue
@@ -129,7 +134,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("files", nargs="+", type=Path, help="Python files defining `module()` or `BENCH`")
     ap.add_argument("--lean", action="store_true", help="emit and kernel-check the proof")
     ap.add_argument("--export", type=Path, metavar="DIR", help="write each proof as a Lean project")
+    ap.add_argument("--ranks", type=int, default=1, metavar="N",
+                    help="allow a lexicographic rank of up to N components")
     args = ap.parse_args(argv)
+    if args.ranks < 1:
+        ap.error("--ranks needs a positive integer")
+    global RANKS
+    RANKS = args.ranks
 
     benches = [load(f) for f in args.files]
     t0 = time.perf_counter()
