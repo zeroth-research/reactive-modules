@@ -307,7 +307,7 @@ class TA2MagicLearn(TA2Magic):
                 inv_smt = self._safety_invariant(eng, system, prp, cd.prp)
                 rank_smt = None
             else:
-                inv_smt, rank_smt = self._buchi_certificate(eng, system, prp)
+                inv_smt, rank_smt = self._buchi_certificate(eng, system, prp, cd.prp)
         except eng.Unsupported as e:
             raise Refused(f"--infer nuterm cannot certify this property: {e}") from e
 
@@ -349,37 +349,101 @@ class TA2MagicLearn(TA2Magic):
         return _smt_conjunction([prp_src if lbl == "P" else _smt_term(t)
                                  for lbl, t in kept])
 
-    def _buchi_certificate(self, eng, system, prp) -> tuple:
+    def _buchi_certificate(self, eng, system, prp, prp_src: str) -> tuple:
         """An invariant and a rank that drops wherever ``prp`` does not hold.
 
         The claim handed to the procedure is ``Liveness(not P)``: no infinite
         stretch of rounds where ``P`` is false, which is ``G (F P)``. The rank
-        drops on exactly those rounds, which is verith's ranking obligation."""
-        domain = (lambda W, S:
-                  z3.Not(self._at(prp, system, {n: S[n] for n in S.names})))
+        drops on exactly those rounds, which is verith's ranking obligation.
+
+        A program that *wraps around* has no such rank in this class. The rank
+        is a non-negative sum of ReLUs, so it is convex in the state, and a
+        counter running 1..9 and back to 0 needs one that falls along the ramp
+        and falls again across the reset -- a shape no convex function has, and
+        none a lexicographic rank of convex components has either, since its
+        first component would have to be non-increasing along the whole chain
+        and convex, which forces it constant.
+
+        What such a program does have is a rank on the rounds *before* the one
+        that reaches ``P``, zeroed where ``P`` holds: ``ite(P, 0, V)``. So that
+        is the second thing tried -- see :meth:`_zeroed_rank`."""
         bench = self._bench(eng, system)
-        self.log("[nuterm] training a ranking function")
+        result = self._learn(eng, bench, self._outside(system, prp),
+                             "drops on every round the property fails")
+        if result is None:
+            return self._zeroed_rank(eng, system, bench, prp, prp_src)
+        return (self._invariant_of(result),
+                _smt_ranking(result.layers, result.system.names))
+
+    # --- the two rank shapes -------------------------------------------
+
+    def _outside(self, system, prp):
+        """``not P`` at the round's pre-state: verith's own ranking domain."""
+        return lambda W, S: z3.Not(
+            self._at(prp, system, {n: S[n] for n in S.names}))
+
+    def _learn(self, eng, bench, domain, why: str):
+        """A certified rank for ``domain``, or ``None`` with the reason logged."""
+        self.log(f"[nuterm] training a ranking function that {why}")
         result = eng.learn_ranking(
             bench, delta=self.delta, hidden_dim=self.hidden_dim, seed=self.seed,
             claim=eng.Liveness(domain),
         )
-        self.log(f"[nuterm] {result.n_pairs} sampled rounds, loss {result.final_loss:.4g}")
-        if not result.verified:
+        self.log(f"[nuterm] {result.n_pairs} sampled rounds, "
+                 f"loss {result.final_loss:.4g} -- "
+                 f"{'certified' if result.verified else result.reason}")
+        return result if result.verified else None
+
+    def _zeroed_rank(self, eng, system, bench, prp, prp_src: str) -> tuple:
+        """``ite(P, 0, delta + V)``, for a program no rank of this class drops on.
+
+        Leaving out the round that *reaches* ``P`` still proves recurrence -- a
+        run that never reaches ``P`` is an infinite stretch of rounds that stay
+        outside it, which is what the claim refutes -- and it is the round a
+        wrap-around cannot rank, since falling along the ramp and again across
+        the reset is not something a convex function does.
+
+        verith asks for more than that: `check_hrank` is over every round where
+        ``P`` fails, the reaching one included. Zeroing the rank where ``P``
+        holds and lifting it by ``delta`` where ``P`` fails bridges the two,
+        and needs nothing proved that is not already:
+
+          * ``P`` fails after the step -- both ends are ``delta + V`` and the
+            ``delta`` cancels, so the drop is the certified one;
+          * ``P`` holds after it -- the rank is ``0`` against ``delta + V(s)``,
+            which is at least ``delta`` because ``V >= 0`` holds structurally.
+            That is :func:`._farkas.check_ranks`'s condition on the output
+            layer, checked before the witness was accepted.
+        """
+        outside = self._outside(system, prp)
+        result = self._learn(
+            eng, bench,
+            lambda W, S: z3.And(outside(W, S), outside(W, S.next)),
+            "drops until the property is reached")
+        if result is None:
             raise Refused(
-                f"no ranking function was certified ({result.reason}). The rank "
-                f"is learned from rollouts of the rounds where the property "
-                f"fails, so a property that never fails on one, or a decrease no "
-                f"piecewise-linear rank witnesses, leaves nothing to certify."
+                "no ranking function was certified. The rank is a non-negative "
+                "sum of ReLUs, so it is convex in the state: a program whose "
+                "run wraps around needs one that falls along the ramp and again "
+                "across the reset, which no convex rank does. It is learned "
+                "from rollouts too, so a property that never fails on one "
+                "leaves nothing to train on."
             )
-        self.log("[nuterm] ranking function certified")
-        # The rank was certified against every invariant the system assumed;
-        # the certificate states the same predicate with the redundant conjuncts
-        # gone, which is one `step_inv` obligation each that Lean is spared.
+        self.log("[nuterm] zeroing the rank where the property holds")
+        rank = _smt_ranking(result.layers, result.system.names)
+        return (self._invariant_of(result),
+                f"(ite {prp_src} 0 (+ {_smt_int(self.delta)} {rank}))")
+
+    def _invariant_of(self, result) -> str:
+        """The invariant ``result`` was certified against, as SMT-LIB.
+
+        The rank was certified against every invariant the system assumed; the
+        certificate states the same predicate with the redundant conjuncts gone,
+        which is one `step_inv` obligation each that Lean is spared."""
         kept = _prune([(i, t) for i, t in enumerate(result.system.invariants)])
         self.log(f"[nuterm] invariant: {len(kept)} of "
                  f"{len(result.system.invariants)} conjuncts after pruning")
-        return (_smt_conjunction([_smt_term(t) for _, t in kept]),
-                _smt_ranking(result.layers, result.system.names))
+        return _smt_conjunction([_smt_term(t) for _, t in kept])
 
     # --- rendering ------------------------------------------------------
 

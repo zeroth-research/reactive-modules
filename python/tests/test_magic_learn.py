@@ -354,3 +354,56 @@ def test_a_property_is_parsed_over_the_columns():
 def test_a_property_that_is_two_expressions_is_refused():
     with pytest.raises(Refused, match="one expression"):
         _parse_property("(= s0 0)) (assert (> s0 1)", ("s0",), ("s0",))
+
+
+# ---------------------------------------------------------------------------
+# The rank shape a wrap-around needs
+# ---------------------------------------------------------------------------
+
+def _counter(bound: int):
+    """`x = 0; loop { x = (x + 1) % (bound + 1) }` -- a run that wraps around.
+
+    `x == 0` recurs, but no rank of the learner's class drops on every round it
+    fails on: a non-negative sum of ReLUs is convex in the state, and this needs
+    one that falls along 1..bound and falls again from bound back to 0."""
+    class Counter(sugar.Module):
+        def init(self):
+            return 0
+
+        def update(self, x):
+            return ite(x == bound, 0, x + 1)
+
+    return Counter(ctrl=(Var(Int([1, 1])),), theory=LIA)
+
+
+def test_a_wrap_around_gets_a_rank_zeroed_where_the_property_holds():
+    """No rank in the class drops on the round that wraps, so the route falls
+    back to ranking the rounds *before* the property is reached and zeroing the
+    rank where it holds. That is still verith's obligation: the round that
+    reaches `P` drops from `delta + V` to `0`, and `V >= 0` structurally."""
+    module = _counter(9)
+    cd = _learn(module, "(= s0 0)", "buchi")
+    assert cd.ranking_smt.startswith("(ite (= s0 0) 0 (+ 1 "), cd.ranking_smt
+    v = _verdicts(module, cd)
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "hrank": Status.HOLDS}, v
+
+
+def test_a_rank_that_needs_no_zeroing_is_left_alone():
+    """Counting *down* to the property needs no wrap, so the first shape works
+    and the certificate carries the net itself."""
+    cd = _learn(_countdown(), "(= s0 0)", "buchi")
+    assert not cd.ranking_smt.startswith("(ite"), cd.ranking_smt
+
+
+def test_the_bound_in_the_guard_is_offered_to_houdini():
+    """`0 <= x <= 9` is what makes the wrap-around's rank certify, and `9` is a
+    constant only the guard mentions -- and only after `x + 1 == 10` has been
+    normalised onto `x`. Neither the sign candidates nor the constant-coordinate
+    ones carry it."""
+    import benchmarks.svcomp._farkas as farkas
+    from benchmarks.svcomp._invariants import infer_invariants
+
+    module = _counter(9)
+    system = farkas.read_system(module, {v: f"s{i}" for i, v in enumerate(module.ctrl)})
+    assert "s0<=9" in [lbl for lbl, _ in infer_invariants(system)]

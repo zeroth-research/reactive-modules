@@ -94,6 +94,47 @@ def _ite_conds(e) -> list:
     return out
 
 
+# How many of the program's own constants to seed bounds from. Each one costs
+# three candidates per column and a Z3 query apiece; the programs this reads
+# mention a handful, and a bound this misses is a bound Houdini cannot keep.
+_MAX_LITERALS = 12
+
+
+def _int_literals(e) -> list[int]:
+    """Every integer literal in ``e``."""
+    if z3.is_int_value(e):
+        return [int(e.as_long())]
+    return [c for ch in e.children() for c in _int_literals(ch)]
+
+
+def _literal_candidates(names, exprs) -> list[Guess]:
+    """``v <= c`` / ``v >= c`` / ``v == c`` per column, per constant the program
+    mentions.
+
+    The bound that makes a counter's invariant is written in its own guard:
+    ``x == 9`` in the update is why ``0 <= x <= 9`` holds. Neither of the other
+    seeds has it -- :func:`_candidates` carries no constant beyond zero and one,
+    and :func:`_const_candidates` reads a coordinate that is *already* constant,
+    which ``ite(x == 9, 0, x + 1)`` is not. So the transition and the entry state
+    are read for their literals and every column is offered each one.
+
+    Read after :func:`z3.simplify`, because the constant that bounds a column is
+    often not the one the program spells: a counter written ``if (x + 1 == 10)``
+    is bounded by ``9``, which becomes a literal only once the comparison has
+    been normalised onto ``x``."""
+    lits = sorted({c for e in exprs for c in _int_literals(z3.simplify(e))},
+                  key=lambda c: (abs(c), c))
+    cands: list[Guess] = []
+    for c in lits[:_MAX_LITERALS]:
+        for v in names:
+            cands += [
+                (f"{v}<={c}", (lambda st, v=v, c=c: st[v] <= c)),
+                (f"{v}>={c}", (lambda st, v=v, c=c: st[v] >= c)),
+                (f"{v}=={c}", (lambda st, v=v, c=c: st[v] == c)),
+            ]
+    return cands
+
+
 def _cond_const_candidates(names, s0: dict) -> list[Guess]:
     """``cond -> v == c``: what a state variable is on one branch of the init block.
 
@@ -163,6 +204,7 @@ def infer_invariants(system, timeout_ms: int = 2000, extra=()) -> list[Guess]:
                    + _const_candidates(names, sp)
                    + _const_candidates(names, s0)
                    + _cond_const_candidates(names, s0)
+                   + _literal_candidates(names, list(sp.values()) + list(s0.values()))
                    + pre_cands):
         if lbl not in seen:
             seen.add(lbl)

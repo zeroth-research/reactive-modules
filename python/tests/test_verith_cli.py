@@ -323,7 +323,7 @@ def test_learn_infers_a_buchi_certificate_and_it_pre_checks():
             "--pre-check", "cvc5", "-o", tmpdir, "-p", "CountdownLearn",
         )
         assert r.returncode == 0, r.stderr
-        assert "[nuterm] ranking function certified" in r.stdout
+        assert "-- certified" in r.stdout, r.stdout
         data, _ = _cert(tmpdir, "CountdownLearn")
         assert "sorry" not in data
         assert _pre_check(r.stdout) == {
