@@ -124,12 +124,12 @@ def _pas_sample(dim: int, sigma: float, rng) -> np.ndarray:
 
 
 def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
-            rng) -> tuple[np.ndarray, np.ndarray]:
+            rng, claim=None) -> tuple[np.ndarray, np.ndarray]:
     """Trajectory rollouts: sample the inputs, initialise, execute the
     module up to `max_len`, collecting consecutive (s, T(s)) pairs on the rounds
-    the termination claim counts, the ones the rank must drop on."""
+    ``claim`` counts, the ones the rank must drop on."""
     prog, ctrl, extl = bench.build()
-    dom = resolve_domain(system, terminates().domain)
+    dom = resolve_domain(system, (claim or terminates()).domain)
     n_in = len(bench.inputs)
     S, Sp = [], []
     n_trials = n_traj if n_in > 0 else 1          # deterministic program -> 1 trajectory
@@ -181,7 +181,7 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
                   initial_variance: float = 100.0, n_epochs: int = 1000,
                   lr: float = 0.05, outer: int = 20,
                   scales: tuple[float, ...] = (0.5, 1.0),
-                  use_invariants: bool = True) -> TrainResult:
+                  use_invariants: bool = True, claim=None) -> TrainResult:
     """Train a ranking function for ``bench`` and return the first candidate the
     procedure certifies.
 
@@ -189,14 +189,22 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
     supplies the gradient, and the outer loop rebuilds the network from scratch
     each round. Each candidate is quantized at every scale in ``scales``,
     composed into the program by :func:`compose`, and offered to
-    :func:`._farkas.certify`."""
+    :func:`._farkas.certify`.
+
+    ``claim`` is the :class:`._property.Liveness` claim the rank discharges, and
+    defaults to :func:`._termination.terminates`, that the program stops. Any
+    other says which rounds the rank must drop on: a recurrence property's
+    domain is the rounds its formula does not hold, and the rank is what shows
+    the run leaves them."""
+    claim = claim or terminates()
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
     sigma = float(np.sqrt(initial_variance))
     # The program is read once here and reused: neither the transition nor the
     # invariants depend on the ranking candidate.
     system = system_of(bench)
-    S, Sp = rollout(bench, system, n_trajectories, max_trajectory_length, sigma, rng)
+    S, Sp = rollout(bench, system, n_trajectories, max_trajectory_length, sigma,
+                    rng, claim)
     if S.shape[0] == 0:
         return TrainResult(bench.name, False, 0, float("nan"), reason="no in-domain samples")
     Xs = torch.from_numpy(S)
@@ -225,7 +233,7 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
             layers = model.to_layers(scale)
             last_layers = layers
             composed, witness = compose(system, layers, delta)
-            proof = certify(composed, terminates(), witness)
+            proof = certify(composed, claim, witness)
             if proof.verified:
                 return TrainResult(bench.name, True, S.shape[0], final_loss, layers,
                                    system=composed, witness=witness, proof=proof)
