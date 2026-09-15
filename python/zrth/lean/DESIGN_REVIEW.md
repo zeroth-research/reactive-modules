@@ -1,100 +1,12 @@
-# Design review: the encoding paths in `zrth/lean`
-
-A read of the whole package — `common.py`, `native.py`, `circ.py`,
-`translate/*`, `smt_encode.py`, `smt_module.py`, `smt_to_lean.py`,
-`smt_query.py`, `cert.py`, `project.py`, `main.py`, `fbk_proveit.py` — asking
-one question: where is the structure duplicated, and how much of the SMT path
-`translate/fbk.py` opened up can the other encodings reuse.
-
 Defects already catalogued in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) are not
 repeated here; this is about shape, not breakage. Where the two overlap, the
 issue number is cited.
 
-`MEASURED` was reproduced by running the code. `READ` comes from reading it.
-
 ---
 
-## The question that prompted this: can `Rel`/`ScalarRel` reuse the SMT path?
-
-**Not as a body producer, and the reason is structural rather than
-incidental.**
-
-`translate/fbk.py` can build its transition from `smt_encode` because the NA
-model carries no Lean-side proof obligation. Nothing has to show `effect_i`
-equals anything: trust leaves Lean through ic3ia and comes back as
-`vmt2lean.py`'s own certificate. That frees the body to be whatever cvc5
-hands back.
-
-`Rel` and `ScalarRel` exist *for* their equivalence theorems — rows 3-6 of
-`GENERATED.md`'s "Summary of what is claimed". Those proofs are:
-
-```python
-# translate/rel.py:75-79
-f"  simp only [{scalar_func}, {func_name}, Fin.cons_zero, Fin.cons_succ]",
-f"  try rfl",
-```
-
-They close only because both sides are emitted by the *same*
-`_translate_terms_scalar` over the same `_reachable_terms`, so `effect_i` and
-the matching slice of `Scalar.update` are syntactically equal. A cvc5-printed
-body is normalised — constant folding, `ite` reshaping, affine expansion;
-`fbk.py`'s own docstring measures 97 KB to 1.9 KB on `m_vec32` — and `rfl`
-will not bridge that. `--fbk-simplify none` does not help either: it only
-disables `solver.simplify`, and `smt_encode` has already flattened and
-reassociated during term construction.
-
-Swapping the body producer would trade a `rfl`-provable equivalence for one
-nothing can discharge.
-
-**What the fbk work does make reusable** is the skeleton (A), the slot layout
-(B), and the SMT path *as a checker* rather than a generator (G).
-
----
 
 ## Findings
 
-### A. Three relational emitters spell one skeleton three times · MEASURED
-
-| emitter | namespace | domain | body from |
-|---|---|---|---|
-| `translate/mat_rel.py:16` `atom_to_lean_mat_rel` | `Rel` | `Mat`, Prop | `_translate_terms` |
-| `translate/rel.py:19` `atom_to_lean_rel` | `ScalarRel` | flat scalars, Prop | `_translate_terms_scalar` |
-| `translate/fbk.py:315` `atom_to_lean_na` | `Definition` | flat scalars, Bool | `smt_encode` + `smt_to_lean_bool` |
-
-All three emit the same shape: a per-slot body def (`effect_i` / `init_i`), a
-per-slot relation (`R_i` / `Init_i`), and a conjunction over them
-(`TransRel` / `INIT`).
-
-94 of `mat_rel.py`'s 162 body lines are byte-identical to lines in `rel.py`
-(`diff -u`, counting context lines).
-
-They vary on exactly three axes:
-
-1. **type builder** — `_product_type` vs `_product_type_scalar` vs the
-   per-slot type list;
-2. **body producer** — the three in the table above;
-3. **projection** — `_accessor(i, n)` vs `_flat_slice(offset, size, total)`
-   vs `var_k state`.
-
-One emitter parameterised on those three, with the `*_eq` theorem block
-optional, collapses `rel.py` and `mat_rel.py` into one and lets `fbk.py`
-supply its own body producer without owning a copy of the skeleton. It
-touches no proof: the theorem block stays exactly where it is, emitted only
-by the two instances that can prove it.
-
-### B. The element flattening has three owners · READ
-
-Three views of one row-major flattening, derived independently:
-
-| function | returns |
-|---|---|
-| `translate/_shared.py:14` `_flat_layout` | `[(offset, size)]` per wire, plus total |
-| `translate/fbk.py:192` `_slot_layout` | `(wire index, row, col)` per slot |
-| `translate/fbk.py:199` `_slot_accessors` | `s{i}` to its `(var_k state)` reads |
-
-`KNOWN_ISSUES` #20 and #22 are both exactly these drifting apart — a per-wire
-layout meeting a per-element one. One owner returning all three views makes
-that class of bug unrepresentable rather than merely fixed.
 
 ### E. The NA route encodes the module into cvc5 two to three times per run · MEASURED
 
