@@ -182,6 +182,15 @@ def test_a_property_that_is_not_smt_lib_is_refused():
         _learn(_countdown(), "x == 0", "buchi")
 
 
+def test_a_rule_shape_the_procedure_cannot_read_is_a_refusal_not_a_traceback():
+    """The procedure refuses by raising, and not all of it happens at the door:
+    a rule the LP cannot read as linear rows is met when the obligation is cut
+    up. That is still a reason this route cannot answer, so it reaches the user
+    as an error line."""
+    with pytest.raises(Refused, match="cannot certify this property"):
+        _learn(_countdown(), "(= (mod s0 2) 0)", "safety")
+
+
 def test_a_run_with_no_property_is_refused():
     with pytest.raises(Refused, match="--safety or --buchi"):
         TA2MagicLearn("", _countdown()).infer(CertificateData())

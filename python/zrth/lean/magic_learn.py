@@ -297,11 +297,19 @@ class TA2MagicLearn(TA2Magic):
         prp = _parse_property(cd.prp, self._declared(), system.names)
         self.log(f"[nuterm] columns: {', '.join(system.names)}")
 
-        if cd.is_safety:
-            inv_smt = self._safety_invariant(eng, system, prp, cd.prp)
-            rank_smt = None
-        else:
-            inv_smt, rank_smt = self._buchi_certificate(eng, system, prp)
+        # The procedure refuses what it has no rule for by raising, and that
+        # can happen anywhere inside it -- a rule shape the LP cannot read is
+        # met when the obligation is cut into rows, not at the door. Every one
+        # of them is a reason this route cannot answer, so none of them is a
+        # traceback.
+        try:
+            if cd.is_safety:
+                inv_smt = self._safety_invariant(eng, system, prp, cd.prp)
+                rank_smt = None
+            else:
+                inv_smt, rank_smt = self._buchi_certificate(eng, system, prp)
+        except eng.Unsupported as e:
+            raise Refused(f"--infer nuterm cannot certify this property: {e}") from e
 
         return self._emit(cd, inv_smt, rank_smt)
 
