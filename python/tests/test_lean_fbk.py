@@ -775,10 +775,12 @@ def _verith(*args) -> subprocess.CompletedProcess:
 @pytest.mark.parametrize(
     "extra,expected",
     [
-        ([], "--fbk-proveit requires --safety"),
+        ([], "--infer fbk-proveit requires --safety"),
         # ic3ia decides `G P`; a Buchi property is a different question.
         (["--buchi", "(= s0 0)"], "incompatible with --buchi"),
-        (["--safety", "(= s0 0)", "--infer"], "incompatible with --infer"),
+        # The route *is* an `--infer` value, so a second one is not a
+        # conflicting flag, it is a second route for one run.
+        (["--safety", "(= s0 0)", "--infer"], "a run takes one route"),
         (["--safety", "(= s0 0)", "--invariant", "(= s0 0)"], "incompatible with --invariant"),
         (["--safety", "(= s0 0)", "--ranking", "s0"], "is meaningless with --safety"),
         (["--safety", "(= s0 0)", "--pre", "true"], "incompatible with --pre"),
@@ -830,7 +832,7 @@ def test_ic3ia_alone_is_an_error(tmp_path):
         "--ic3ia", "/bin/true",
     )
     assert r.returncode != 0
-    assert "only meaningful together with --fbk-proveit" in r.stderr
+    assert "only meaningful together with --infer fbk-proveit" in r.stderr
 
 
 

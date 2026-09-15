@@ -321,7 +321,7 @@ that certificate files override.
 
 ---
 
-## `uv run verith` CLI (`main.py`, `project.py`)
+## `uv run verith` CLI (`cli.py`, `main.py`, `project.py`)
 
 `verith` is the command-line tool that drives the full pipeline: Python module
 → Lean project or standalone certificate files.
@@ -451,15 +451,21 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--infer` | — | `ai`, `ai-cegar` (default when flag given without value), or `nuterm` (see below) |
-| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected with `--infer nuterm`, which calls none |
+| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegar` (default when the flag is given without a value), `nuterm`, or `fbk-proveit` (see below) |
+| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
-| `--fbk-proveit` | — | Path to a `lean-ltl-certifying` checkout; certify through its `proveit.py` instead (see below) |
-| `--ic3ia` | — | Path to the `ic3ia` binary, forwarded to `proveit.py` |
-| `--fbk-simplify` | `cvc5` | `none` leaves the NA model's transition the shape the module's own terms give it |
+| `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets a route resume from what an earlier run left, `ignore` searches afresh, `reset` empties it first |
+| `--proveit-dir` | — | `--infer fbk-proveit`: path to a `lean-ltl-certifying` checkout |
+| `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
+| `--fbk-simplify` | `cvc5` | `--infer fbk-proveit`: `none` leaves the NA model's transition the shape the module's own terms give it |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
+
+Each route is one row of `infer_route.ROUTES`, and a flag in the bottom half
+of the table belongs to a route rather than to verith: passed without its
+route selected it is an error, not a no-op.  `--fbk-proveit DIR` is the older
+spelling of `--infer fbk-proveit --proveit-dir DIR` and still works.
 
 ### State variable naming in SMT-LIB predicates
 
@@ -492,7 +498,7 @@ So unlike the `ai` routes, what reaches the certificate has already been
 proved — `--pre-check cvc5` and `lake build Certificate` confirm it rather
 than discovering it.  The trade is reach:
 
-| | `--infer nuterm` | `--infer ai-cegar` | `--fbk-proveit` |
+| | `--infer nuterm` | `--infer ai-cegar` | `--infer fbk-proveit` |
 |---|---|---|---|
 | needs | nothing but the repo | an API key or a local LLM | an `ic3ia` build and a `lean-ltl-certifying` checkout |
 | state it reads | scalar integers | whatever cvc5 encodes | whatever the NA encoding expresses |
@@ -563,7 +569,7 @@ already-built `.lake/packages` serves both: copying (or cloning, on APFS)
 the checkout's into the generated project makes the first `lake update` a
 no-op fetch.
 
-## Certifying through `lean-ltl-certifying` (`--fbk-proveit`)
+## Certifying through `lean-ltl-certifying` (`--infer fbk-proveit`)
 
 `--fbk-proveit=<dir>` swaps verith's own invariant machinery for the
 `proveit.py` driver of the [`lean-ltl-certifying`][ltl] repository, which
@@ -733,6 +739,86 @@ reason is what the caller is told when it hits the gap.
 `tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
 directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.
+
+---
+
+## Adding an Inference Route (`infer_route.py`)
+
+Every way verith can be handed a certificate is one row of
+`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is added
+there and nowhere else: `cli.py` reads the rows, so the `--infer` choices,
+the help text, every cross-flag rule and the dispatch all follow from the
+row rather than from an edit apiece.
+
+A row says:
+
+* **the property** — `kinds` (`"safety"`, `"buchi"`, or both) and
+  `kinds_refusal`, the sentence printed when the property is the other one.
+  The check is generic and the reason is not: why the `ai` route cannot
+  certify `G P` is prose about `rule_globally`, and why `nuterm` discards a
+  precondition is prose about Houdini.
+* **what it seeds from** — `seeds`, the `CertificateData` fields it will
+  *use* rather than discard, and `seeds_refusal`.  A predicate outside the
+  set is refused where it is passed, not dropped four steps later.
+* **the project** — `reads` (encoding suffixes; `""` is the functional one)
+  and `owns` (project-relative paths it may write).  The route is handed a
+  `ProjectHandle`, so these two are the whole of its access, and a route
+  that needs more of the project than the predicates says which more.
+* **`artifacts/`** — `reads_artifacts`, the roles it may resume from.  It is
+  declared access, like `reads`: `ProjectHandle.resume(role, …)` refuses an
+  undeclared role, and the filtering (stale module, stale property, stale
+  proof rule, plus the languages and statuses asked for) is the store's, so
+  there is one filter and one place that reports what it dropped.
+* **the hooks** — `resolve` at parse time (a route whose lakefile names a
+  path has to reject a bad one before any of the project exists), `precheck`
+  once the module is loaded and before it is generated (a module shape the
+  route cannot express is met there rather than as a traceback out of an
+  encoder it never wanted), and `run`.
+* **what comes back** — `returns`: `"smt"` (SMT-LIB predicates, which
+  `--pre-check` can restate the obligations from), `"lean"` (nothing parses
+  it back, so they cannot be restated), or `"installed"` (the route wrote the
+  certificate itself).  The row *declares* it and the `InferResult` carries
+  it, and `main` checks the two agree once rather than each reader trusting
+  whichever is nearer to hand.  Plus `uses_llm`, and `errors_self_named` for
+  a route whose refusals already name their own flag.
+* **its own flags** — `options`, a tuple of `Opt`.  Passed without the route
+  selected, each is an error rather than a no-op.  `aliases` carries any
+  older spelling that selects the route and fills one of those options
+  (`--fbk-proveit DIR`), so a deprecated flag goes away with its row.
+
+A route that renders its own Lean hands **both** spellings back in its
+`InferResult`.  Rendering means encoding the module into cvc5 again, and
+`magic_cegar` and `magic_learn` both already have the Lean — so the pipeline
+renders only for a route that returns SMT alone.
+
+`tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
+checks the op matrix: a row declaring an encoding no row emits, an artifact
+role that is not one, a refusal with no reason, or two routes claiming one
+flag fails there rather than in generated code.
+
+### `artifacts/` — the project as a workspace
+
+The project is generated *before* inference runs, and what a run leaves in
+`<project>/artifacts/` outlives it: an invariant that was inductive but too
+weak, a ranking function that used an op the certificate cannot express, a
+note for the next prompt.  A second `uv run verith` into the same `-o`
+continues rather than restarts — take that invariant and strengthen it, or
+take it as given and infer only the ranking function.
+
+Artifacts are arbitrary files (`.smt2` and `.md`, mostly, plus whatever a
+subprocess drops there); `artifacts/index.json` types the ones it knows, and
+a file with no entry is still listed, as `role="other"`.  Each entry carries
+`status` — what a consumer filters on — and `why`, the prose it puts in a
+prompt.  Three more fields exist only so a stale artifact is not trusted:
+`module_digest`, `prp` and `kind`.  An invariant found for another property,
+another proof rule or a since-edited module is not about this run, and
+`usable()` drops it and says so, because two identical command lines that
+resume differently is the one thing a workspace must not do quietly.
+
+`--artifacts ignore` searches afresh; `--artifacts reset` empties the
+directory first, which is what to pass when a bad artifact is being
+inherited by every run.  `artifacts/` belongs to no route, so a regenerating
+run must never treat it as its own output to clean up.
 
 ---
 

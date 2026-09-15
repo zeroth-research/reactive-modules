@@ -576,7 +576,8 @@ entries in a lake project that also contains the `Core` library and
 | `--pre` | — | SMT-LIB 2 Bool over `e0..`/`el0..` input vars |
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking function |
-| `--infer [ai\|ai-cegar\|nuterm]` | `ai-cegar` | Infer missing invariant/ranking — with an LLM, or (`nuterm`) by training a ranking function and certifying it |
-| `--model`, `--base-url` | `claude-sonnet-4-6`, — | LLM selection for `--infer`; rejected with `--infer nuterm` |
+| `--infer [ai\|ai-cegar\|nuterm\|fbk-proveit]` | `ai-cegar` | Which route finds the certificate — an LLM, (`nuterm`) a ranking function trained and then certified, or (`fbk-proveit`) ic3ia through `lean-ltl-certifying` |
+| `--model`, `--base-url` | `claude-sonnet-4-6`, — | LLM selection for `--infer`; rejected by a route that calls none |
+| `--artifacts` | `use` | The project's `artifacts/` across runs: `use` resumes from what an earlier run left, `ignore` searches afresh, `reset` empties it |
 | `--cert-file` | — | Standalone certificate files instead of a project |
 | `-x` / `--executable` | off | Also generate a runnable `Main.lean` |
