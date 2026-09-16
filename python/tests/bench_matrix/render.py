@@ -52,10 +52,12 @@ SUITE_BLURB = {
     "svcomp": (
         "The SV-COMP <code>termination-crafted-lit</code> corpus, "
         "<code>benchmarks/svcomp/dsl/</code> &mdash; 57 benchmarks, the ones the nuterm "
-        "learner is scored on. Neither property is written down in the corpus, because "
+        "learner is scored on. No property is written down in the corpus, because "
         "these are termination benchmarks and the Farkas pipeline states termination as a "
         "claim over wires rather than as the one-state predicate <code>verith</code> wants. "
-        "Both are therefore read off the module, and how is recorded per row."),
+        "Each benchmark is asked <code>terminates</code>, read off its loop guard, and the 23 "
+        "Houdini finds invariants for are also asked <code>houdini-inv</code>; how is "
+        "recorded per property."),
 }
 
 VERDICTS = {
@@ -195,6 +197,19 @@ table.kv td:first-child{color:var(--dim);white-space:nowrap;width:1%}
  border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:baseline;
  flex-wrap:wrap}
 .bench>h3 .path{font-size:11.5px;color:var(--dim);font-weight:400}
+.bench>.bh{padding:11px 16px 9px;background:var(--code);border-bottom:1px solid var(--line);
+ display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.bh .bname{font-weight:700;font-size:1rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.bh .path{font-size:11.5px;color:var(--dim)}
+h3.dir{margin:2.2em 0 .7em;font-size:1.05rem}
+.tag.suite{background:var(--openbg);color:var(--open)}
+.grid .m.missing{color:var(--dim);border-top:1px solid var(--line)}
+dl.suites{font-size:.9rem;margin:.6em 0 1.4em}
+dl.suites dt{font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:.7em}
+dl.suites dd{margin:.15em 0 0 1.4em;color:var(--dim)}
+.tocdir{margin:.5em 0;break-inside:avoid}
+.tocb{font-size:11.5px;line-height:1.55;margin:.2em 0 0 1em}
+.tocb a{display:inline;margin-right:.55em;white-space:nowrap}
 .prop{padding:12px 16px;border-bottom:1px solid var(--line)}
 .prop:last-child{border-bottom:0}
 .prop>.head{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;
@@ -204,7 +219,7 @@ table.kv td:first-child{color:var(--dim);white-space:nowrap;width:1%}
  display:block;margin:.3em 0 .1em;background:transparent;padding:0}
 .prop .note{font-size:11.5px;color:var(--dim);margin:.35em 0 .6em}
 .grid{border:1px solid var(--line);border-radius:6px;overflow:hidden}
-.grid .hd,.grid summary{display:grid;
+.grid .hd,.grid summary,.grid .m.missing{display:grid;
  grid-template-columns:minmax(88px,1.4fr) 92px 66px 66px 16px;
  gap:8px;align-items:center;padding:6px 10px;font-size:12.5px}
 .grid .hd{background:var(--code);color:var(--dim);font-size:10.5px;
@@ -317,6 +332,88 @@ def warnings_section(warns: list, w) -> None:
               + (f"\n... and {len(x.cells) - 60} more" if len(x.cells) > 60 else "")
               + "</pre></details>")
         w("</div>")
+
+
+# The directories benchmark files live in, in the order the page lists them.
+DIR_ORDER = ["tests/fixtures", "tests/limits/mods", "benchmarks/svcomp/dsl"]
+SVCOMP_DSL = PY / "benchmarks" / "svcomp" / "dsl"
+
+
+def _svcomp_files() -> dict:
+    """SV-COMP benchmark name -> its file. The rows name a benchmark, and run it
+    through the one adapter, so the file the benchmark *is* has to be found by
+    the `name=` it declares."""
+    out = {}
+    for f in sorted(SVCOMP_DSL.glob("*.py")):
+        m = re.search(r'\bname\s*=\s*"([^"]+)"', f.read_text())
+        if m:
+            out[m.group(1)] = f"benchmarks/svcomp/dsl/{f.name}"
+    return out
+
+
+_SVCOMP = None
+
+
+def source_of(row: dict) -> str:
+    """The benchmark file a row asks about, relative to `python/`."""
+    global _SVCOMP
+    if row["suite"] == "svcomp":
+        if _SVCOMP is None:
+            _SVCOMP = _svcomp_files()
+        return _SVCOMP.get(row["bench"], row["module"])
+    return row["module"]
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-")
+
+
+def method_row(w, rt: str, run: dict) -> None:
+    """One route's row: the summary line, and the panel it opens."""
+    cls = VERDICTS.get(run["verdict"], ("", ""))[0]
+    dis = run.get("disagreed")
+    w('<details class="m"><summary>')
+    w(f'<span class="name">{esc(rt)}</span>')
+    w(f'<span class="v {cls}">{esc(run["verdict"])}</span>'
+      + (f'<span class="flag" title="{esc("passes disagreed: " + ", ".join(f"{v} x{c}" for v, c in dis.items()))}">!</span>'
+         if dis else ""))
+    na = run["verdict"] == "UNSUPPORTED"
+    w(f'<span class="t">{"" if na else timing(run["gen"])}</span>')
+    w(f'<span class="t">{"" if na else timing(run["build"])}</span>')
+    w('<span class="chev">&#9656;</span>')
+    w("</summary>")
+    w('<div class="body">')
+    w(f'<pre>{esc(run["command"])}</pre>')
+    if dis:
+        w('<div class="lbl">the passes disagreed</div>'
+          '<p class="note">'
+          + esc(", ".join(f"{v} in {c} pass{'es' if c != 1 else ''}"
+                          for v, c in sorted(dis.items())))
+          + ". The row shows the most common one; its timing "
+            "averages only the runs that reached it.</p>")
+    found = run["gen"].get("inferred") or {}
+    for lbl in ("inv", "ranking"):
+        if found.get(lbl):
+            w(f'<div class="lbl">{lbl} it found</div>'
+              f'<div class="found"><code>{esc(found[lbl])}</code></div>')
+    if run["gen"].get("err"):
+        w(f'<div class="lbl">{"why verith refused" if na else "why it returned nothing"}</div>')
+        w(f'<pre class="err">{esc(run["gen"].get("err_full") or run["gen"]["err"])}</pre>')
+    errs, seen = [], set()
+    for e in run["build"].get("errors", []):
+        if e.startswith("(not built") or e.strip() == "build failed":
+            continue
+        if e not in seen:
+            seen.add(e)
+            errs.append(e)
+    if errs:
+        w('<div class="lbl">lake said</div>')
+        for e in errs[:4]:
+            w(f'<div class="err">{esc(e)}</div>')
+    if run["build"].get("sorries"):
+        w('<div class="lbl">obligations left open</div>')
+        w('<div class="found">' + esc(", ".join(run["build"]["sorries"])) + "</div>")
+    w("</div></details>")
 
 
 def render(data: dict, warns: list = ()) -> str:
@@ -465,29 +562,46 @@ def render(data: dict, warns: list = ()) -> str:
     w("</tbody></table></div>")
 
     # ── the matrix ──────────────────────────────────────────────────────
+    # Benchmark file, then the properties asked of it -- from whichever suite
+    # asked them, since the fbk probes and the limit matrix share modules --
+    # then one row per `--infer` route, every route on every property.
     w("<h2 id=matrix>The matrix</h2>")
+    w("<p>Where the properties come from:</p><dl class=suites>")
+    for s_ in suites:
+        w(f"<dt>{esc(s_)}</dt><dd>{SUITE_BLURB[s_]}</dd>")
+    w("</dl>")
+
+    by_file: dict = {}
+    for key, row in rows.items():
+        by_file.setdefault(source_of(row), []).append((key, row))
+    dirs: dict = {}
+    for path in by_file:
+        dirs.setdefault(str(Path(path).parent), []).append(path)
+    dir_order = sorted(dirs, key=lambda d: (DIR_ORDER.index(d) if d in DIR_ORDER else 99, d))
+
     w('<div class="toc">')
-    for s in suites:
-        n = len({v["bench"] for v in rows.values() if v["suite"] == s})
-        w(f'<a href="#s-{esc(s)}">{esc(s)} &mdash; {n} benchmarks</a>')
+    for d in dir_order:
+        w(f'<div class="tocdir"><a href="#d-{slug(d)}"><code>{esc(d)}/</code></a> '
+          f'&mdash; {len(dirs[d])} benchmarks<div class="tocb">'
+          + " ".join(f'<a href="#b-{slug(f)}">{esc(Path(f).stem)}</a>'
+                     for f in sorted(dirs[d]))
+          + "</div></div>")
     w("</div>")
 
-    for suite in suites:
-        w(f'<h2 id="s-{esc(suite)}">{esc(suite)}</h2>')
-        w(f"<p>{SUITE_BLURB[suite]}</p>")
-        benches: dict = {}
-        for key, row in rows.items():
-            if row["suite"] == suite:
-                benches.setdefault(row["bench"], []).append((key, row))
-        for bench, items in benches.items():
-            w('<div class="bench">')
-            w(f'<h3><code>{esc(bench)}</code>'
-              f'<span class="path">{esc(items[0][1]["module"])}</span></h3>')
+    suite_rank = {s_: i for i, s_ in enumerate(SUITE_BLURB)}
+    for d in dir_order:
+        w(f'<h3 class="dir" id="d-{slug(d)}"><code>{esc(d)}/</code></h3>')
+        for path in sorted(dirs[d]):
+            items = sorted(by_file[path], key=lambda kv: (suite_rank.get(kv[1]["suite"], 9), kv[0]))
+            w(f'<div class="bench" id="b-{slug(path)}">')
+            w(f'<div class="bh"><span class="bname">{esc(Path(path).stem)}</span>'
+              f'<span class="path">{esc(path)}</span></div>')
             for key, row in items:
                 w('<div class="prop">')
                 w('<div class="head">')
                 w(f'<b>{esc(row["prop_label"] or row["kind"])}</b>')
                 w(f'<span class=tag>--{esc(row["kind"])}</span>')
+                w(f'<span class="tag suite">{esc(row["suite"])}</span>')
                 w("</div>")
                 w(f'<code class="smt">{esc(row["prop"])}</code>')
                 note = row["note"].split("; the cases sharing it")[0]
@@ -505,51 +619,11 @@ def render(data: dict, warns: list = ()) -> str:
                 for rt in route_order:
                     run = runs.get(f"{key}::{rt}")
                     if not run:
+                        w(f'<div class="m missing"><span class="name">{esc(rt)}</span>'
+                          '<span class="v na">not measured</span>'
+                          "<span></span><span></span><span></span></div>")
                         continue
-                    cls = VERDICTS.get(run["verdict"], ("", ""))[0]
-                    dis = run.get("disagreed")
-                    w('<details class="m"><summary>')
-                    w(f'<span class="name">{esc(rt)}</span>')
-                    w(f'<span class="v {cls}">{esc(run["verdict"])}</span>'
-                      + (f'<span class="flag" title="{esc("passes disagreed: " + ", ".join(f"{v} x{c}" for v, c in dis.items()))}">!</span>'
-                         if dis else ""))
-                    w(f'<span class="t">{timing(run["gen"])}</span>')
-                    w(f'<span class="t">{timing(run["build"])}</span>')
-                    w('<span class="chev">&#9656;</span>')
-                    w("</summary>")
-                    w('<div class="body">')
-                    w(f'<pre>{esc(run["command"])}</pre>')
-                    if dis:
-                        w('<div class="lbl">the passes disagreed</div>'
-                          '<p class="note">'
-                          + esc(", ".join(f"{v} in {c} pass{'es' if c != 1 else ''}"
-                                          for v, c in sorted(dis.items())))
-                          + ". The row shows the most common one; its timing "
-                            "averages only the runs that reached it.</p>")
-                    found = run["gen"].get("inferred") or {}
-                    for lbl in ("inv", "ranking"):
-                        if found.get(lbl):
-                            w(f'<div class="lbl">{lbl} it found</div>'
-                              f'<div class="found"><code>{esc(found[lbl])}</code></div>')
-                    if run["gen"].get("err"):
-                        w('<div class="lbl">why it returned nothing</div>')
-                        w(f'<pre class="err">{esc(run["gen"].get("err_full") or run["gen"]["err"])}</pre>')
-                    errs, seen = [], set()
-                    for e in run["build"].get("errors", []):
-                        if e.startswith("(not built") or e.strip() == "build failed":
-                            continue
-                        if e not in seen:
-                            seen.add(e)
-                            errs.append(e)
-                    if errs:
-                        w('<div class="lbl">lake said</div>')
-                        for e in errs[:4]:
-                            w(f'<div class="err">{esc(e)}</div>')
-                    if run["build"].get("sorries"):
-                        w('<div class="lbl">obligations left open</div>')
-                        w('<div class="found">'
-                          + esc(", ".join(run["build"]["sorries"])) + "</div>")
-                    w("</div></details>")
+                    method_row(w, rt, run)
                 w("</div></div>")
             w("</div>")
 
