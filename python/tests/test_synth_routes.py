@@ -261,6 +261,25 @@ def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
     assert "do not propose anything of a shape ruled out" in seen[0]
 
 
+def test_an_empty_ranking_is_a_parse_error_the_loop_can_answer():
+    """`RANKING:` with nothing after it is feedback, not a cvc5 crash.
+
+    cvc5 parses an empty source to a null term, and `getSort()` on one raises
+    a `RuntimeError` from inside the binding -- which `TA2MagicCEGAR`'s loop does
+    not catch, so the whole route died on one bad reply."""
+    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt_prompt import CegarPromptEnv, PromptParseError, prompt_inv_ranking
+    import cvc5
+
+    tm = cvc5.TermManager()
+    env = CegarPromptEnv(ModuleSMT(tm=tm, module=module_of("m_countdown")))
+
+    def chat(system: str, user: str) -> str:
+        return "INVARIANT: (and (>= s0 0) (<= s0 100))\nRANKING:"
+
+    with pytest.raises(PromptParseError, match="RANKING"):
+        prompt_inv_ranking(env, chat, "source", "(= s0 0)", "", None)
+
 def test_only_a_proof_of_absence_reaches_the_prompt(tmp_path):
     """`_ruled_out` filters on `no_solution`, so a timed-out search stays out."""
     from zrth.lean.infer_route import InferInput, ProjectHandle, _ruled_out

@@ -279,7 +279,15 @@ def parse_predicate(env: "CegarPromptEnv", src: str) -> cvc5.Term:
         # Some other Python object — fall through to SMT-LIB
     except Exception:
         pass
-    return env.parse_expr(src)
+    term = env.parse_expr(src)
+    if term.isNull():
+        # cvc5 parses an empty or all-blank source to a null term rather than
+        # an error, and the first use of one -- `getSort()` -- raises from
+        # inside the binding: an LLM that wrote `RANKING:` and nothing after
+        # it crashed `--infer ai-cegar` instead of being told. Every caller
+        # already turns a `RuntimeError` into "could not parse".
+        raise RuntimeError("the expression is empty")
+    return term
 
 
 CEGAR_GENERATE_SYSTEM = """\
