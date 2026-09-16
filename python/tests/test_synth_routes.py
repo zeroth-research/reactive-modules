@@ -147,6 +147,21 @@ def test_smt_linear_finds_a_rank_when_the_shape_has_one():
     assert out.ranking_smt == "s0"
 
 
+def test_smt_linear_ranks_a_loop_whose_exit_states_are_unbounded():
+    """`while (y >= 0) y = y - 1`: `rule_buchi` asks the rank to fall only
+    where the property fails, and `1 + y` does, over the invariant `true`.
+
+    The route used to demand `rank >= 0` over every state as well. Where the
+    property holds `y` runs to minus infinity, so no linear rank survived that,
+    and the empty space was reported as a *proof* that none exists."""
+    from benchmarks.svcomp import discover
+    from zrth.lean.magic_linear import TA2MagicLinear
+
+    bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
+    cd = CertificateData(prp="(not (<= 0 s0))", kind="buchi")
+    out = TA2MagicLinear(bench.build()[0], log=lambda *_: None).infer(cd)
+    assert out.ranking_smt is not None
+
 def test_smt_linear_proves_a_shape_empty_rather_than_failing_to_search_it():
     """`m_toward5` moves toward 5 from both sides, so a rank has to branch.
 

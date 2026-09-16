@@ -222,11 +222,19 @@ class TA2MagicLinear(TA2Magic):
     # --- the ranking function, over a fixed invariant -------------------
 
     def _buchi(self, ctx: SynthContext, cols: list, inv_src: str) -> Search:
-        """`inv -> rank >= 0` and `inv /\\ ~P -> rank(next) < rank`.
+        """`inv /\\ ~P -> rank >= 1 /\\ rank(next) < rank`.
 
-        The two obligations `rule_buchi` states, with `rank` the template and
-        the state universally quantified -- the same pair `magic_cegar`
-        checks one candidate against, asked about all candidates at once.
+        `rule_buchi`'s one ranking obligation, `hrank`, over the Lean ranking
+        `Int.toNat rank`: `toNat r' < toNat r` holds exactly when `r >= 1` and
+        `r' < r`. Only the states where `P` fails are constrained -- where it
+        holds, the rank may be anything, negative included.
+
+        This used to ask `inv -> rank >= 0` over *every* state as well, which
+        `rule_buchi` never states. On an unbounded integer state that rules out
+        every linear rank, since the property's own states run to minus
+        infinity, and the route reported the empty space as a proof: `while (y
+        >= 0) y := y - 1` was "proved" to have no linear rank, and Lean accepts
+        `(1 + y).toNat` for it under the invariant `true`.
         """
         from .smt_prompt import parse_predicate
 
@@ -255,16 +263,13 @@ class TA2MagicLinear(TA2Magic):
             inv_s = inv_term.substitute(ctx.state, st)
             nxt = ctx.msmt.update_state(st, el, en)
             return tm.mkTerm(
-                Kind.AND,
-                tm.mkTerm(Kind.IMPLIES, inv_s,
-                          tm.mkTerm(Kind.GEQ, rank(st), tm.mkInteger(0))),
-                tm.mkTerm(
-                    Kind.IMPLIES,
-                    tm.mkTerm(Kind.AND, inv_s,
-                              tm.mkTerm(Kind.NOT, ctx.at(ctx.prp, st)),
-                              ctx.with_inputs(ctx.update_pre, el, en)),
-                    tm.mkTerm(Kind.LT, rank(nxt), rank(st)),
-                ),
+                Kind.IMPLIES,
+                tm.mkTerm(Kind.AND, inv_s,
+                          tm.mkTerm(Kind.NOT, ctx.at(ctx.prp, st)),
+                          ctx.with_inputs(ctx.update_pre, el, en)),
+                tm.mkTerm(Kind.AND,
+                          tm.mkTerm(Kind.GEQ, rank(st), tm.mkInteger(1)),
+                          tm.mkTerm(Kind.LT, rank(nxt), rank(st))),
             )
 
         shape = f"`{_shape([col.name for col in cols])}`"
@@ -281,8 +286,9 @@ class TA2MagicLinear(TA2Magic):
         return Search(
             "ranking",
             f"No ranking function linear in the state -- {shape}, integer "
-            f"coefficients, no branching -- satisfies the two ranking "
-            f"obligations under the invariant `{inv_src}`.{verdict.caveat}",
+            f"coefficients, no branching -- drops by at least one and stays "
+            f"positive wherever the property fails, under the invariant "
+            f"`{inv_src}`.{verdict.caveat}",
             how=verdict.how,
             exhausted=verdict.answer == "unsat",
             detail=(
