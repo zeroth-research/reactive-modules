@@ -325,9 +325,13 @@ _REFUTED = re.compile(r"found a counterexample|\bUNSAFE\b|property does not hold
 # `kinds_refusal`, or the generic `--infer X is incompatible with --buchi`.
 _UNSUPPORTED = re.compile(
     r"is incompatible with --(?:buchi|safety)\b|--(?:safety|buchi) needs --infer")
+# `ai` checks its own candidates with a second model call and gives up after
+# `max_attempts` rejections -- the same outcome as `ai-cegar` running out of
+# attempts, reported in its own words.
 _NO_CERT = re.compile(
     r"error: --infer|CEGAR failed after|obligation violated|found no ranking"
-    r"|found no invariant|could not decide|cannot decide|--fbk-proveit:|--ic3ia:")
+    r"|found no invariant|could not decide|cannot decide|--fbk-proveit:|--ic3ia:"
+    r"|Failed to find valid invariant/ranking after")
 
 
 # What a certificate is made of. Everything else a project builds -- the five
