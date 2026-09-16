@@ -106,6 +106,21 @@ Put NO OTHER TEXT in the response.
 # the Anthropic SDK insists on streaming.
 MAX_TOKENS = 8192
 
+def _unquote(value: str) -> str:
+    """``value`` without the one pair of backticks a model wraps it in.
+
+    The prompt writes Lean as inline code -- `` `fun s => expr` `` -- and a
+    model answers in kind. Lean reads a backtick as the start of a name
+    literal, so a quoted answer reaches `Data.lean` as
+    ``def inv : T → Prop := `fun s => ...` `` and fails with `Function
+    expected ... this term has type Lean.Name`, which says nothing about
+    quoting. Only an enclosing pair is removed: a backtick inside the
+    expression is Lean's and stays."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] == "`":
+        value = value[1:-1].strip()
+    return value
+
 def _describe_preconditions(cd: CertificateData) -> str:
     parts = []
     if cd.init_pre is not None:
@@ -268,9 +283,9 @@ class TA2MagicAI(TA2Magic):
         for line in text.strip().splitlines():
             line = line.strip()
             if line.startswith("INVARIANT:"):
-                inv = line[len("INVARIANT:") :].strip()
+                inv = _unquote(line[len("INVARIANT:") :])
             elif line.startswith("RANKING:"):
-                ranking = line[len("RANKING:") :].strip()
+                ranking = _unquote(line[len("RANKING:") :])
         if inv is None or ranking is None:
             raise ValueError(f"Failed to parse AI response:\n{text}")
         return inv, ranking
