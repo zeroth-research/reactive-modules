@@ -285,6 +285,15 @@ def to_lean_scalar_equiv(
             f"  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
             f"  try (funext i j; simp [Fin.fin_one_eq_zero])",
             f"  try simp [Fin.fin_one_eq_zero]",
+            # The scalar side repacks a 1×1 wire as `fun _ _ => w 0 0`, and
+            # the matrix side hands `w` itself to an operator that consumes
+            # the whole matrix (`matVecAffine ... w`). Neither `fin_cases`
+            # nor `Fin.fin_one_eq_zero` touches the argument, so what is left
+            # is `op w 0 0 = op (fun _ _ => w 0 0) 0 0` -- true, and closed
+            # only by rewriting the repacked wire back into the wire. Over
+            # every goal: with two or more wires `Prod.ext` leaves one per
+            # component, each with its own copy of the residue.
+            f"  all_goals try simp [← Mat_1_1_eq]",
         ]
 
     input_groups = [
