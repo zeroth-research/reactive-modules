@@ -557,6 +557,30 @@ def test_several_assumed_claims_kernel_check():
     _compiles("two", emit_program("two", known, res))
 
 
+def test_a_rule_per_witness_is_the_whole_seam():
+    """What the proof layer knows about a witness is one rule, and the registry
+    is where a witness is paired with it: each rule names the claim kind it
+    concludes, and the witness for it refuses every other kind itself."""
+    from benchmarks.svcomp._lean import RULES
+    from benchmarks.svcomp._farkas import Inductive, LexDecrease
+    from benchmarks.svcomp._property import Liveness, Safety
+
+    assert set(RULES) == {Inductive, LexDecrease}
+    assert RULES[Inductive].discharges is Safety
+    assert RULES[LexDecrease].discharges is Liveness
+    for witness, rule in RULES.items():
+        for hook in ("discharges", "invariant", "prelude", "evidence", "state", "compose"):
+            assert hasattr(rule, hook), f"{rule.__name__} has no {hook}"
+    layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
+    bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
+    ob = candidate(bench, layers)
+    # each witness refuses the claim kind its rule does not conclude
+    with pytest.raises(Unsupported):
+        certify(ob.system, Safety(lambda W, S: S["x"] >= 0), ob.witness)
+    with pytest.raises(Unsupported):
+        certify(ob.system, ob.claim, inductive(()))
+
+
 def test_the_proof_layer_refuses_what_it_has_no_rule_for():
     """The statement comes from the claim and the proof from the witness, so a
     witness this layer has no rule for is refused by name rather than emitted
