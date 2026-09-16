@@ -50,7 +50,6 @@ from .smt_synth import (
     bounded_solver,
     int_readings,
     moduli,
-    no_let,
     program_constants,
     record,
 )
@@ -187,7 +186,10 @@ class TA2MagicSygus(TA2Magic):
         if result.hasSolution():
             body, bound = body_of(solver.getSynthSolution(inv))
             src = str(body.substitute(bound, ctx.state) if bound else body)
-            return Search("inv", space, found=no_let(src, what="invariant"))
+            # cvc5 `let`-binds a repeated subterm when it prints, and that is
+            # fine: the term is parsed back before it is rendered, and
+            # `smt_to_lean` gives what is shared a Lean `let` of its own.
+            return Search("inv", space, found=src)
         exhausted = result.hasNoSolution()
         return Search(
             "inv",

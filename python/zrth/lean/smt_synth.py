@@ -386,22 +386,6 @@ def body_of(solution) -> tuple:
     return solution[1], list(solution[0])
 
 
-def no_let(src: str, *, what: str) -> str:
-    """`src`, unless it is a term no certificate definition can carry.
-
-    cvc5 hash-conses and its printer `let`-binds what repeats. That is right
-    for a file a solver reads and wrong for the body of a Lean `def`, so it
-    is a refusal rather than something to unfold here -- the same rule
-    `magic_learn` states for z3's printer.
-    """
-    if "(let " in src:
-        raise Refused(
-            f"the synthesised {what} prints with a `let` binding, which the "
-            f"certificate's definition cannot carry: {src[:160]}"
-        )
-    return src
-
-
 # ══════════════════════════════════════════════════════════════════════════
 # What became of the looking
 # ══════════════════════════════════════════════════════════════════════════
