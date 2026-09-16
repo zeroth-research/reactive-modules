@@ -32,7 +32,7 @@ from .smt_query import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 _EPILOG = """\
 examples:
-  # bare project — all certificate fields left as sorry
+  # bare project — no property, so `P` and `ranking` are sorry
   uv run verith mymodule.py -o out/ -p MyProject
 
   # a Buchi property, `G (F (= s0 0))` (certificate stub with known P)
@@ -650,8 +650,11 @@ def _check_route(parser: argparse.ArgumentParser, args, settings: Settings) -> N
 
 def _check_outputs(parser: argparse.ArgumentParser, settings: Settings) -> None:
     # --build-cert is route-independent, but it needs a certificate worth
-    # building. A bare project's obligations are all `sorry`: lake compiles
-    # that and proves nothing, so asking for it is a mistake, not a no-op.
+    # building. A bare project's unsupplied fields default to `True`
+    # (`inv`, the preconditions) or to `sorry` (`P`, `ranking`), and its
+    # obligations are still handed to the tactics -- which cannot close one
+    # stated over a `sorry`, so `lake build` fails on it rather than
+    # compiling to a proof of nothing. Asking for that is a mistake.
     if settings.build_cert:
         if settings.cert_file or settings.hammer_file:
             which = "--cert-file" if settings.cert_file else "--hammer-file"
@@ -663,8 +666,9 @@ def _check_outputs(parser: argparse.ArgumentParser, settings: Settings) -> None:
             parser.error(
                 "--build-cert needs a certificate to build: pass --safety "
                 "with --invariant, or --buchi with --invariant and "
-                "--ranking, or --infer. Without them every obligation is "
-                "`sorry`."
+                "--ranking, or --infer. Without them the certificate's "
+                "predicates are `True` or `sorry`, and its obligations "
+                "cannot be discharged."
             )
 
     # `artifacts/` lives in the project, so the routes that write a file and

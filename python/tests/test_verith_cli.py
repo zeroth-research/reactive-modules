@@ -462,8 +462,8 @@ def test_verith_infer_ollama():
 
 
 def test_build_cert_needs_a_certificate_to_build(tmp_path):
-    """A bare project's obligations are all `sorry`. Lake compiles that and
-    proves nothing, so asking for the build is a mistake, not a no-op."""
+    """A bare project's `ranking` is `sorry`, and no tactic closes an
+    obligation stated over it, so asking for the build is a mistake."""
     r = _verith(
         str(COUNTER_MODULE), "--buchi", "(= s0 0)",
         "-o", str(tmp_path), "-p", "P", "--build-cert",
