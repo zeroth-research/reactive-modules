@@ -422,6 +422,9 @@ def main() -> None:
     ap.add_argument("--routes", nargs="*", default=[], help="route names to measure")
     ap.add_argument("--only", nargs="*", default=[], help="substring match on benchmark")
     ap.add_argument("--redo", action="store_true", help="re-measure pairs already recorded")
+    ap.add_argument("--pairs", metavar="FILE",
+                    help="re-measure exactly the pairs named in FILE, one "
+                         "`suite/bench/prop::route` per line (implies --redo)")
     ap.add_argument("--no-build", action="store_true", help="generate only, skip lake")
     # A repeat measurement is a *new sample*, not an amendment to the old
     # one: it goes in its own file and `render.py` averages the files it is
@@ -491,6 +494,18 @@ def main() -> None:
     if args.routes:
         rts = [r for r in rts if r.name in args.routes]
     todo = pairs(rows, rts)
+    if args.pairs:
+        # After a fix, what needs measuring again is the cells it touched,
+        # which cut across suites, routes and benchmarks alike, so no
+        # combination of the filters above names them.
+        wanted = {ln.strip() for ln in Path(args.pairs).read_text().splitlines()
+                  if ln.strip() and not ln.startswith("#")}
+        known = {f"{r.key}::{rt.name}" for r, rt in todo}
+        if wanted - known:
+            raise SystemExit("error: --pairs names pairs the suites do not produce:\n  "
+                             + "\n  ".join(sorted(wanted - known)))
+        todo = [(r, rt) for r, rt in todo if f"{r.key}::{rt.name}" in wanted]
+        args.redo = True
 
     for row in rows:
         results["rows"][row.key] = dict(

@@ -233,6 +233,7 @@ uv run python tests/bench_matrix/run_matrix.py --no-build        # generation on
 uv run python tests/bench_matrix/suites.py                      # just count the rows
 uv run python tests/bench_matrix/run_matrix.py --reverdict       # reclassify, no re-measuring
 uv run python tests/bench_matrix/run_matrix.py --prune           # forget rows suites.py dropped
+uv run python tests/bench_matrix/run_matrix.py --pairs FILE      # exactly these, e.g. after a fix
 ```
 
 `--reverdict` recomputes every recorded verdict from the output already
