@@ -157,6 +157,20 @@ def child_env(row, route) -> dict:
     return env
 
 
+# The cell running now, so stopping the harness can stop it too. Leading its
+# own process group is what lets a timeout take the whole cell down, and it is
+# also what keeps a signal to the harness from reaching it: SIGTERM to `uv run
+# python run_matrix.py` ended the harness and left `verith` running under init.
+_CURRENT: "subprocess.Popen | None" = None
+
+
+def _stop(signum, _frame) -> None:
+    """Take the running cell down with the harness, then exit."""
+    if _CURRENT is not None and _CURRENT.poll() is None:
+        _kill_group(_CURRENT)
+    raise SystemExit(128 + signum)
+
+
 def run_capped(cmd, *, cwd, env=None, timeout: int):
     """`cmd` under a wall-clock cap that takes its whole subtree with it.
 
@@ -173,9 +187,11 @@ def run_capped(cmd, *, cwd, env=None, timeout: int):
     Returns `(completed, timed_out)`; on a timeout the partial output is
     still returned, since a refusal is often printed before the hang.
     """
+    global _CURRENT
     proc = subprocess.Popen(cmd, cwd=cwd, env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             start_new_session=True)
+    _CURRENT = proc
     try:
         out, err = proc.communicate(timeout=timeout)
         return subprocess.CompletedProcess(cmd, proc.returncode, out, err), False
@@ -401,6 +417,8 @@ def machine() -> dict:
 
 def main() -> None:
     global RESULTS
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, _stop)
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--suites", nargs="*", default=[], help="limits fbk tests svcomp")
