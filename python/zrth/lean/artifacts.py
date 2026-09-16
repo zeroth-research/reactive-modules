@@ -49,9 +49,12 @@ _README = "README.md"
 #
 # The last three are not candidate certificates but the *questions* a run
 # asked: the module as some solver was given it, the property it was asked
-# about, and one obligation apiece.  Nothing resumes from them -- they are
-# here because a run that reports `REFUTED` should leave behind the file that
-# says so, not only the word.
+# about, and one obligation apiece.  They are here because a run that reports
+# `REFUTED` should leave behind the file that says so, not only the word --
+# and an `obligation` carries the answer as well as the question, since
+# :meth:`ArtifactStore.resolve` writes the pre-check's verdict back onto it.
+# That is what makes `index.json` say which obligation was refuted, and with
+# which counterexample, rather than only which ones were asked.
 ROLES = ("inv", "ranking", "note", "other", "system", "property", "obligation")
 
 # Why it is in `artifacts/` rather than in the certificate.  What a consumer
@@ -93,7 +96,11 @@ where they can be run.
 An **obligation** is written as its *negation*, which is how it is asked:
 `unsat` means the obligation holds, `sat` means it is refuted and the model is
 the counterexample. That is the same question `--pre-check cvc5` asks and the
-same answer it reports.
+same answer it reports -- and the answer is recorded here too, as the
+obligation's `status`: `proved`, `refuted` with the counterexample beside it,
+or `unknown`. So the one refuted obligation in a certificate that does not
+work is a file to re-run and a line in `index.json`, not a line of a log that
+is gone with the process.
 
 `index.json` beside this file says the same thing in a form a program can
 filter. What follows is written by the components of the run, in the order
@@ -324,8 +331,13 @@ class ArtifactStore:
             said = (e.get("what") or "").strip() or \
                 f"A `{e.get('role', 'other')}` artifact this run wrote."
             if (e.get("why") or "").strip():
-                said += ("\n\nWhy it is here rather than in the certificate: "
-                         + e["why"].strip())
+                # An obligation is not a candidate that failed to make the
+                # certificate, so it has no "rather than": it is a question,
+                # and its `why` is the answer that came back.
+                lead = ("What the solver answered: "
+                        if e.get("role") == "obligation"
+                        else "Why it is here rather than in the certificate: ")
+                said += "\n\n" + lead + e["why"].strip()
             status = e.get("status", "unknown")
             # `proved` and `encoded` are not news: the first is a certificate
             # that worked and the second is a question, which the preamble
@@ -350,6 +362,37 @@ class ArtifactStore:
         """
         return self.put(role, text, status="encoded", what=what,
                         language=language, stem=name, unique=True)
+
+    def resolve(self, artifact: "Artifact | str", *, status: str,
+                why: str = "") -> None:
+        """Say how a question turned out, once the answer is in.
+
+        An obligation is written to `artifacts/` as the script the solver is
+        handed, and it is written *before* the solver runs -- so that a
+        question that cannot be solved still leaves the file saying what was
+        asked. The verdict arrives afterwards, which is why recording it is a
+        second step rather than an argument to :meth:`encoded`.
+
+        The file does not change: it is the same question either way. What
+        changes is the metadata beside it, which is the half a consumer
+        filters on -- `index.json` saying `hrank` was `refuted`, with the
+        counterexample in `why`, is the difference between a next run that
+        knows this certificate is wrong and one that re-derives it.
+
+        Silent when the artifact was never indexed (`--artifacts ignore`
+        writes nothing, and there is then no entry to answer).
+        """
+        if status not in STATUSES:
+            raise ValueError(f"unknown artifact status {status!r}; one of {STATUSES}")
+        name = artifact if isinstance(artifact, str) else artifact.name
+        entries = self._index()
+        entry = next((e for e in entries if e.get("name") == name), None)
+        if entry is None:
+            return
+        entry["status"] = status
+        entry["why"] = why
+        (self.dir / _INDEX).write_text(json.dumps(entries, indent=2) + "\n")
+        self._describe(entries)
 
     # --- lifecycle ------------------------------------------------------
 

@@ -94,7 +94,7 @@ from .project import (
     load_module_from_file,
     write_encoding,
 )
-from .smt_query import ModuleQueries, pre_check, solver_hints
+from .smt_query import ModuleQueries, pre_check, predicate_facts, solver_hints
 from .translate import ModuleToLean4
 
 
@@ -240,6 +240,71 @@ def _workspace(settings: Settings, module, project_dir: Path) -> ArtifactStore:
         gone = store.reset()
         print(f".. artifacts: cleared {gone} file(s) from {store.dir}")
     return store
+
+
+def _replan(settings: Settings, module, inferred, project_cert_data) -> None:
+    """Restate the tactic plan's inputs over the predicates that were inferred.
+
+    Both of them are computed before the route runs, which is before there is
+    an invariant to compute them *from*. `predicate_facts` then reads the
+    shape of the property alone, and `solver_hints` answers nothing at all --
+    every question it asks is asked under the invariant, so a `None` one is
+    answered by returning immediately. A `--infer` certificate was therefore
+    generated from a plan about predicates it does not carry, and in two ways
+    that matter:
+
+    * `cert_facts` and `cert_thin` were `skip` on every inferred certificate,
+      however branchy the inferred predicates turned out to be -- the run
+      printed "nothing cvc5 can add to the plan" before the route that would
+      produce the thing to add it about had run;
+    * `features_for` takes `nonlinear` from the facts *over* what it read in
+      the printed Lean rather than merging the two, so an inferred nonlinear
+      predicate lost `nlinarith` and `positivity` from the closer list
+      entirely. Measured on a `(* s0 s0)` ranking, that is the whole
+      difference between a plan that can close `hrank` and one that cannot.
+
+    Needs the SMT source, since nothing parses the printed Lean back into a
+    term: that is what `inv_smt` / `ranking_smt` keep, and what
+    `_record_predicates` has just written to `artifacts/` beside the
+    obligations stated against it. A route that answers in Lean alone leaves
+    nothing to read and the plan stays exactly as it was.
+    """
+    q = ModuleQueries.build(module, inferred)
+    if q is None:
+        return
+
+    facts = predicate_facts(q)
+    if facts is not None:
+        project_cert_data.facts = facts
+
+    if settings.smt_tactics != "cvc5":
+        return
+    print(
+        f".. SMT-informed tactics (cvc5), restated over the inferred "
+        f"predicates: <={settings.budget.per_call_ms} ms per query, "
+        f"<={settings.budget.phase_ms} ms total"
+    )
+    hints = solver_hints(q, settings.budget, log=print)
+    project_cert_data.hints = hints
+    if not hints.determined:
+        return
+
+    # The same care the pre-inference path takes, for the same reason: a
+    # settled condition is spliced into a tactic in expanded form, so the
+    # definition it has to match cannot have its repeated subterms shared
+    # behind a `let` the `have` outside cannot name. Every predicate is
+    # reprinted, not only the two that were inferred -- a condition can come
+    # from the property, which was printed shared when the hints were empty.
+    try:
+        lean = smt_predicates_to_lean(inferred, module, share=False)
+    except Refused:
+        # Unshared printing is an optimisation on top of a plan that is
+        # already better than the one this function replaced. Losing it is
+        # not worth losing the run: the `have`s stay, each one `try`ed, and
+        # the ones that cannot match cost nothing.
+        return
+    for field in ("prp", "inv", "ranking", "init_pre", "update_pre"):
+        setattr(project_cert_data, field, getattr(lean, field))
 
 
 def _infer(
@@ -464,6 +529,10 @@ def main():
         # certificate by construction.
         project_cert_data.inv = inferred.inv
         project_cert_data.ranking = inferred.ranking
+
+        # And the tactic plan's two inputs with them: until this point there
+        # were no inferred predicates for either to be about.
+        _replan(settings, module, inferred, project_cert_data)
 
         # After inference the predicates are new, so both files are
         # rewritten -- `Data.lean` holds the definitions and

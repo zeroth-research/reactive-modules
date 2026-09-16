@@ -104,6 +104,17 @@ class Verdict:
         return out
 
 
+# How a verdict is recorded on the obligation artifact it answers. The two
+# vocabularies are separate on purpose: `Status` is what this module decides,
+# `artifacts.STATUSES` is what every producer in the package shares, and a
+# consumer filtering `artifacts/` should not have to know cvc5 wrote it.
+_VERDICT_STATUS = {
+    Status.HOLDS: "proved",
+    Status.REFUTED: "refuted",
+    Status.UNKNOWN: "unknown",
+}
+
+
 # ══════════════════════════════════════════════════════════════════════
 # Queries
 # ══════════════════════════════════════════════════════════════════════
@@ -131,6 +142,10 @@ class ModuleQueries:
         # encoding step -- `predicate_facts` and `solver_hints` build these
         # too, and neither is the run's record of what it asked.
         self.artifacts = None
+        # Obligation name -> the artifact `_dump` wrote for it, so `_record`
+        # answers the file that was actually written rather than rebuilding
+        # its name and having to know which suffix `put` chose.
+        self._dumped: dict = {}
         self.tm = cvc5.TermManager()
         self.msmt = ModuleSMT(tm=self.tm, module=module)
         self.env = CegarPromptEnv(self.msmt)
@@ -251,27 +266,69 @@ class ModuleQueries:
             res = solver.checkSat()
         except Exception as e:  # cvc5 raises on unsupported terms and options
             dt = (time.perf_counter() - t0) * 1000
-            return Verdict(name, Status.UNKNOWN, dt, f"cannot encode: {e}"[:120])
+            return self._record(
+                Verdict(name, Status.UNKNOWN, dt, f"cannot encode: {e}"[:120])
+            )
         dt = (time.perf_counter() - t0) * 1000
         if res.isUnsat():
-            return Verdict(name, Status.HOLDS, dt)
+            return self._record(Verdict(name, Status.HOLDS, dt))
         if not res.isSat():
-            return Verdict(name, Status.UNKNOWN, dt, res.getUnknownExplanation())
-        return Verdict(name, Status.REFUTED, dt, self._witness(solver, witness))
+            return self._record(
+                Verdict(name, Status.UNKNOWN, dt, res.getUnknownExplanation())
+            )
+        return self._record(
+            Verdict(name, Status.REFUTED, dt, self._witness(solver, witness))
+        )
+
+    def _record(self, verdict: Verdict) -> Verdict:
+        """Write the answer back onto the obligation `_dump` already wrote.
+
+        The question is left in `artifacts/` before the solver runs, so that
+        one that cannot be solved still says what was asked; this is the other
+        half, and without it `index.json` records only which obligations a run
+        asked about and never which of them came back refuted.
+
+        Returned rather than assigned, so the call reads as a pass-through on
+        each of `_ask`'s return paths. There are four, and a verdict recorded
+        on three of them would be worse than one recorded on none: a stale
+        `encoded` beside three answered obligations reads as "not asked".
+        """
+        written = self._dumped.get(verdict.name)
+        if self.artifacts is None or written is None:
+            # No artifact for this obligation: `--artifacts ignore`, or the
+            # encoding failed before `_dump` ran. Either way there is no
+            # question on disk for this to be the answer to.
+            return verdict
+        why = verdict.detail or ""
+        if verdict.status is Status.HOLDS:
+            # Nothing was wrong with it. `_describe` prints no status line for
+            # `proved` and no prose for an empty `why`, so an obligation that
+            # holds says nothing beyond what it is -- which is right.
+            why = ""
+        elif verdict.status is Status.REFUTED and not why:
+            why = "refuted, but the counterexample could not be read back"
+        try:
+            self.artifacts.resolve(
+                written, status=_VERDICT_STATUS[verdict.status], why=why
+            )
+        except Exception:      # pragma: no cover -- never worth the run
+            pass
+        return verdict
 
     def _dump(self, name: str, negation) -> None:
         """Leave this obligation in `artifacts/`, as the script cvc5 is given.
 
         Inside `_ask`'s `try`, so its own failure would otherwise read as the
         obligation being unencodable: a record of the question is worth having
-        and worth nothing at the price of changing the answer."""
+        and worth nothing at the price of changing the answer. What came back
+        is written onto it afterwards, by `_record`."""
         if self.artifacts is None:
             return
         try:
             text = _script([negation])
         except Exception as e:                       # noqa: BLE001
             text = f"; this obligation could not be written out: {e}\n"
-        self.artifacts.encoded(
+        self._dumped[name] = self.artifacts.encoded(
             "obligation", f"obligation-{name}", text,
             what=_OBLIGATIONS.get(name, f"The `{name}` obligation, negated."),
         )

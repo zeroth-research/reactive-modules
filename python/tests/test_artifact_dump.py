@@ -150,3 +150,72 @@ def test_artifacts_ignore_still_records_this_run():
         art = Path(tmp) / "Rea" / "artifacts"
         assert (art / "system.smt2").is_file()
         assert (art / "obligation-step_inv.smt2").is_file()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# The answer, written back onto the question
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _obligations(art: Path) -> dict:
+    """`{name: (status, why)}` for every obligation the index describes."""
+    import json
+
+    return {
+        e["name"].removeprefix("obligation-").removesuffix(".smt2"):
+            (e["status"], e["why"])
+        for e in json.loads((art / "index.json").read_text())
+        if e["role"] == "obligation"
+    }
+
+
+def test_resolve_answers_a_question_without_rewriting_it(tmp_path):
+    """The file is the question either way; only the metadata moves."""
+    store = _store(tmp_path)
+    a = store.encoded("obligation", "obligation-hrank", "(check-sat)",
+                      what="The `hrank` obligation, negated.")
+    assert a.status == "encoded"
+
+    store.resolve(a, status="refuted", why="counterexample: s0 = 1")
+    entry = _obligations(tmp_path / "artifacts")["hrank"]
+    assert entry == ("refuted", "counterexample: s0 = 1")
+    assert (tmp_path / "artifacts" / "obligation-hrank.smt2").read_text() \
+        == "(check-sat)", "the question was rewritten, not merely answered"
+
+
+def test_resolve_is_silent_about_a_question_never_asked(tmp_path):
+    """`--artifacts ignore` indexes nothing, and an answer to nothing is not
+    an error -- the pre-check has to run identically either way."""
+    store = _store(tmp_path)
+    store.encoded("obligation", "obligation-hrank", "(check-sat)", what="x")
+    store.resolve("obligation-nosuch.smt2", status="refuted", why="...")
+    assert set(_obligations(tmp_path / "artifacts")) == {"hrank"}
+
+
+def test_the_precheck_verdict_lands_on_the_obligation_it_answers():
+    """`index.json` records which obligation was refuted, and with which
+    counterexample -- not only which ones this run thought to ask."""
+    with tempfile.TemporaryDirectory() as tmp:
+        # `--ranking 0` last wins, and a constant rank cannot decrease.
+        _verith(Path(tmp), "--pre-check", "cvc5", "--ranking", "0")
+        got = _obligations(Path(tmp) / "Rea" / "artifacts")
+
+        assert got["init_inv"][0] == "proved"
+        assert got["step_inv"][0] == "proved"
+        assert got["hrank"][0] == "refuted", got
+        assert "s0" in got["hrank"][1], "the counterexample is not carried"
+        # An obligation that holds has nothing wrong with it to explain.
+        assert got["init_inv"][1] == ""
+
+
+def test_a_refuted_obligation_says_so_in_the_readme_as_an_answer():
+    """Prose for a person, beside the status a program filters on. An
+    obligation is a question, so its `why` is what came back -- not the
+    "rather than in the certificate" a rejected candidate's would be."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _verith(Path(tmp), "--pre-check", "cvc5", "--ranking", "0")
+        readme = (Path(tmp) / "Rea" / "artifacts" / "README.md").read_text()
+
+        assert "What the solver answered:" in readme
+        assert "*status: refuted*" in readme
+        assert "rather than in the certificate: counterexample" not in readme
