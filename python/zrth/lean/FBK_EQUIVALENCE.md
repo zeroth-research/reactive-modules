@@ -277,7 +277,7 @@ The plan it was built from:
    textual and total: `(var_k state)` ↦ `xk`.
 3. **New `translate/fbk_bridge.py`** (or a section of `fbk.py`) — emit
    `<Proj>/Certificate/Equivalence.lean`:
-   `import System.System`, `System.Scalar`, `System.Data`, `<Proj>NA`; the
+   `import System.System`, `System.Scalar`, `Certificate.Data`, `<Proj>NA`; the
    `_fn` abbrevs; `link_k` (`rfl`); `bridge_k` (cascade); `INIT_iff`,
    `TRANS_iff`, `PROPERTY_iff`; `module_safety` via `TS.transfer`.
 4. **`fbk_proveit.py`** — write it after the certificate is installed, and

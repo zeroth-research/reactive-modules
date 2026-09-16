@@ -512,15 +512,23 @@ def write_data_lean(
     cert_data: CertificateData | None,
     ctx: LeanContext | None = None,
 ) -> Path:
-    """Write/overwrite XXXData.lean with init_pre, update_pre, inv, P, ranking.
+    """Write/overwrite Certificate/Data.lean with init_pre, update_pre, inv, P,
+    ranking.
 
     Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
     from ``create_project`` which already has one).
+
+    Beside ``Certificate.lean`` rather than under ``System/``: both files are
+    about the certificate and both are rewritten whenever the predicates
+    change, while ``System/`` holds the module, which does not. The directory
+    is made here because this can be called on its own, after inference, and
+    is not guaranteed to run after ``write_certificate_lean``.
     """
     if ctx is None:
         ctx = lean_context_for(module, cert_data)
 
-    src_dir = project_dir / "System"
+    src_dir = project_dir / "Certificate"
+    src_dir.mkdir(parents=True, exist_ok=True)
     data_file = src_dir / "Data.lean"
     data_file.write_text(generate_data_lean(ctx, cert_data))
     print(f"Wrote {data_file}")
@@ -534,12 +542,13 @@ def write_certificate_lean(
     cert_data: CertificateData | None = None,
     ctx: LeanContext | None = None,
 ) -> Path:
-    """Write/overwrite Certificate.lean (stable proof structure, imports XXXData).
+    """Write/overwrite Certificate.lean (stable proof structure, imports Data).
 
     Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
     from ``create_project`` which already has one).
 
-    The *definitions* still live in XXXData.lean, but ``cert_data`` is no
+    The *definitions* still live in ``Certificate/Data.lean`` beside it, but
+    ``cert_data`` is no
     longer inert here: the proof tactics are generated from the shape of the
     predicates (see ``zrth.lean.tactics``), so this file has to be rewritten
     whenever they change — after ``--infer``, for instance.

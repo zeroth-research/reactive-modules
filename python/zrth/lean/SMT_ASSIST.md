@@ -300,7 +300,7 @@ search is not happening where it looks:
 
 | | typeclass inference | elaboration |
 |---|---|---|
-| `System/Data.lean` -- every `+`, `*`, `≥`, `⌊·⌋` and numeral, in notation | **6.17 ms** | 8.01 ms |
+| `Certificate/Data.lean` -- every `+`, `*`, `≥`, `⌊·⌋` and numeral, in notation | **6.17 ms** | 8.01 ms |
 | `Certificate/Certificate.lean` -- the proofs | **17,700 ms** | 322 ms |
 
 Source-level resolution is 0.03% of the bill. By the time the tactics run,
@@ -401,7 +401,7 @@ invariant at a net-shaped successor doubles everything downstream. Removed.
 ## Measuring any of this
 
 Every project's `.lake` symlinks to one shared build directory, and the module
-names (`System.Data`, `Certificate.Certificate`, …) are identical across
+names (`Certificate.Data`, `Certificate.Certificate`, …) are identical across
 projects, so **two processes building different projects into one build
 directory overwrite each other's oleans**. That does not surface as a clean
 failure: it surfaces as heartbeat timeouts and `unknown constant 'hrank'`,

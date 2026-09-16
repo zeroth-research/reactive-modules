@@ -45,7 +45,7 @@ def test_verith_no_property():
         assert r.returncode == 0, r.stderr
         assert (Path(tmpdir) / "CounterBasic").exists()
         data = (
-            Path(tmpdir) / "CounterBasic" / "System" / "Data.lean"
+            Path(tmpdir) / "CounterBasic" / "Certificate" / "Data.lean"
         ).read_text()
         assert "sorry" in data
 
@@ -114,7 +114,7 @@ def test_a_predicate_cvc5_cannot_read_is_refused_not_pasted():
             assert r.returncode != 0, f"{args} was accepted"
             assert "Traceback" not in r.stderr, r.stderr
             assert flag in r.stderr, f"{args} did not name the flag:\n{r.stderr}"
-            data = Path(tmpdir) / "Unparsed" / "System" / "Data.lean"
+            data = Path(tmpdir) / "Unparsed" / "Certificate" / "Data.lean"
             if data.exists():
                 assert args[1] not in data.read_text(), "the SMT source was pasted"
 
@@ -229,7 +229,7 @@ def _cert(tmpdir, name) -> tuple[str, str]:
     """(Data.lean, Certificate.lean) of a generated project."""
     root = Path(tmpdir) / name
     return (
-        (root / "System" / "Data.lean").read_text(),
+        (root / "Certificate" / "Data.lean").read_text(),
         (root / "Certificate" / "Certificate.lean").read_text(),
     )
 

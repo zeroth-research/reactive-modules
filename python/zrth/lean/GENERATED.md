@@ -133,11 +133,11 @@ out/TwoBit/
     Scalar.lean            generated  ENCODING 3 — scalar       + equivalence to 1
     Rel.lean               generated  ENCODING 4 — relational, matrix domain + equivalence to 1
     ScalarRel.lean         generated  ENCODING 5 — relational, scalar domain + equivalence to 3 and 1
-    Data.lean              generated  the certificate data: pre, inv, P, ranking
 
   Certificate.lean         generated  one-line shim: `import Certificate.Certificate`
   Certificate/
     Certificate.lean       generated  the reactive module as `RM`, tactic macros, the proofs
+    Data.lean              generated  the certificate data: pre, inv, P, ranking
 
   dbg/
     system.txt             generated  the module printed in text form (debug aid)
@@ -421,7 +421,7 @@ theorem TransRel_func_eq : ∀ (ctrl ctrl' : (Mat (BitVec 1) 1 1) × (Mat (BitVe
 
 ---
 
-## The certificate data (`System/Data.lean`)
+## The certificate data (`Certificate/Data.lean`)
 
 Five definitions, and they are the only place where *your* input about the
 problem lands. Everything above was derived mechanically from the module.
@@ -538,7 +538,7 @@ natural number strictly decreases. A natural number cannot decrease forever, so
 
 `--safety PROPERTY` asks for `□ P` rather than `□◇ P`, and that changes what a
 certificate *is*. Everything through `hinv` is identical; there is no ranking
-function anywhere in the project (`System/Data.lean` defines none), and the
+function anywhere in the project (`Certificate/Data.lean` defines none), and the
 ending is:
 
 ```lean

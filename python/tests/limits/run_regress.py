@@ -21,7 +21,7 @@ from run_limits import run_verith, run_lake, verdict  # noqa: E402
 from cases import CASES  # noqa: E402
 
 # Isolate from anything else using the harness. Every project symlinks its
-# `.lake` to one shared build dir, and the module names (`System.Data`, ...)
+# `.lake` to one shared build dir, and the module names (`Certificate.Data`, ...)
 # are the same in every project, so two processes building different projects
 # into one build dir overwrite each other's oleans -- which shows up as
 # heartbeat timeouts and `unknown constant 'hrank'`, not as a clean failure.

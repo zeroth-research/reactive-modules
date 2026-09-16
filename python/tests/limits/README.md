@@ -10,7 +10,7 @@ and must be read apart:
 | `System` target | do all five encodings compile? (functional, Circ, Rel, Scalar, ScalarRel) |
 | `Certificate` target | do `init_inv`, `step_inv` and `hrank` discharge? |
 
-`Certificate.lean` imports only `System.System` and `System.Data`, so a broken
+`Certificate.lean` imports only `System.System` and `Certificate.Data`, so a broken
 Scalar or ScalarRel encoding does **not** stop the certificate from verifying. Until
 that was noticed, five cases had a verifying certificate inside a project
 whose `lake build` failed.
@@ -71,7 +71,7 @@ into the tree. **Keep the `.noindex` suffix** — see below.
 
 ### Two ways the harness will lie to you
 
-**One shared build dir takes one writer.** Module names (`System.Data`,
+**One shared build dir takes one writer.** Module names (`Certificate.Data`,
 `Certificate.Certificate`, …) are identical in every generated project, so two
 concurrent runs overwrite each other's oleans. It does not fail cleanly: it
 shows up as heartbeat timeouts and `unknown constant 'hrank'`, which reads
@@ -363,7 +363,7 @@ or an entry in `../../zrth/lean/KNOWN_ISSUES.md`.
   unproved, because `linarith` needs the hypotheses normalised.
 - **Explicit instances in the source cannot help the instance search.**
   Emitting `@HAdd.hAdd ℝ ℝ ℝ instHAdd x y` for `x + y` saves nothing, and
-  `Real.add` does not even exist. `System/Data.lean` holds every `+`, `*`,
+  `Real.add` does not even exist. `Certificate/Data.lean` holds every `+`, `*`,
   `≥`, `⌊·⌋` and numeral in the certificate and costs **6.17 ms** of
   typeclass inference; the Certificate costs **17.7 s**. The search all
   happens while the tactics rewrite, on terms they construct. Of the

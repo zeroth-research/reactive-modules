@@ -211,7 +211,7 @@ def _record_predicates(store, settings: Settings, cert_data, *,
 
     They are what every obligation beside them is stated against, so a reader
     comparing `system.smt2` with a refuted obligation has the third side of it
-    here rather than having to dig it out of `System/Data.lean`, where it is
+    here rather than having to dig it out of `Certificate/Data.lean`, where it is
     Lean and no longer the text any solver was given.
     """
     if store is None or cert_data is None:
