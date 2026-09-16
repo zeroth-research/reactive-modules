@@ -457,50 +457,138 @@ still true at init — abduction will happily converge on `False`.
 
 ---
 
-## 7. Cold start: SyGuS to synthesise the ranking function
+## 7. Synthesis: `--infer sygus` and `--infer smt-linear` — **built**
 
-**What it does.** `Solver.synthFun` + `addSygusConstraint` + `checkSynth`
-finds a ranking function outright, with no LLM, no API key, and a
-deterministic answer. Measured against the fixtures:
+Written as a plan for a SyGuS *ranking function*; built as an invariant
+synthesiser and a template query, because that is what the measurements
+said. What follows is the plan's own claims against what running them
+showed (cvc5 1.3.4, `tests/limits` fixtures), and then what shipped.
+
+**What the plan had right.** `Solver.synthFun` + `addSygusConstraint` +
+`checkSynth` does find ranking functions with no LLM and no API key, and
+`ModuleSMT.update_state` against `declareSygusVar` state variables is the
+encoding — step 2 was exactly right and is what both routes do.
+
+**Step 3 — "give it a grammar" — was half wrong.** A grammar is not
+automatically a pruning:
 
 ```
-m_countdown  (lambda ((x0 Int)) x0)                              5 ms
-m_toward5    (lambda ((x0 Int)) (ite (<= x0 5) (- 6 x0) x0))    3.7 s
-m_twovars    (lambda ((x0 Int) (x1 Int)) ...)                   10.9 s
+                     default LIA    loose grammar    template grammar
+m_countdown              10 ms           7 ms             7 ms
+m_toward5               4.5 s           8.6 s            2.0 s
+m_twovars              14.4 s          12.8 s           14.6 s
+m_lex                      --              --             124 s
 ```
 
-The constraints are the obligations `magic_cegar` already builds:
-`inv s → rank s ≥ 0` and `inv s ∧ ¬P s → rank (update s) < rank s`.
+The "linear combinations plus one `ite`" grammar the plan describes is
+*slower than no grammar at all* on `m_toward5`. What prunes is fixing the
+affine form and enumerating only its coefficients — and even that does not
+rescue two variables. `m_lex` is the case that settles it: 124 s for a rank
+`--infer nuterm` certifies in seconds, and the answer that comes back is
+`ite (-2 + 2*x1 <= 12 - 2*x0 - x1) (100 + 2*x0 + 100*x1) (1 + 10*x0 + 3*x1)`
+where `4*x1 + x0` would do.
 
-**Steps.**
+**Step 4 — "check how it is bounded first" — was the right worry and has an
+answer.** `tlimit` does **not** stop `checkSynth`: a 1000 ms limit ran 13.9 s
+and returned a solution. It does not stop a quantified `checkSat` either — a
+20 s limit ran past 400 s. **`tlimit-per` stops both** (1001 ms and 5007 ms,
+`unknown`). No subprocess is needed; `smt_query._solver` already sets the
+pair, and `smt_synth.bounded_solver` is that pair for the searches.
 
-1. `--infer sygus` alongside `ai` and `ai-cegar`, in a new `magic_sygus.py`
-   that subclasses `TA2Magic`. It needs no `_make_client`, so it runs in CI.
-2. Reuse `ModuleSMT.update_state` against `declareSygusVar` state variables —
-   the encoding is identical to `magic_cegar._check_ranking_decrease`, only
-   with `rank` as a `synthFun` instead of a parsed term.
-3. Give it a grammar rather than the default. Unrestricted `LIA` took 10.9 s
-   on a two-variable module and will not scale; a grammar of linear
-   combinations of the state with small integer coefficients, plus one level
-   of `ite` over comparisons, covers everything in the matrix and prunes hard.
-4. Bound it, and check *how* first. Every other phase here rides on cvc5's
-   `tlimit`; whether that actually interrupts `checkSynth` is untested and
-   has to be established before it is relied on, because a synthesis that
-   ignores its limit hangs generation. If it does not hold, this phase needs
-   a subprocess with a wall-clock kill instead — and it would then be the
-   one part of the integration not on cvc5's own leash.
-5. Translate the result with the existing `smt_to_lean_nat`. A synthesised
-   `ite` folds through the min/max peephole for free.
-6. Fall back to `--infer ai-cegar` when synthesis returns no solution, and to
-   nothing when there is no LLM configured.
+**Step 5 — "a synthesised `ite` folds through the min/max peephole for free"
+— is wrong.** `smt_to_lean.min_max_of` fires only on `ite (a ⋈ b) a b`, where
+the branches *are* the comparison's operands. No solution cvc5 returned here
+has that shape, so each one costs a `split_ifs` branch, doubled because
+`hrank` mentions the ranking twice.
 
-**Where the value is.** Not in replacing the LLM for hard cases — SyGuS will
-lose there — but in making the easy 80% reproducible and free, and in giving
-the CEGAR loop a *starting* candidate instead of a blank prompt.
+**Step 6 — "fall back to `--infer ai-cegar`" — was not built, deliberately.**
+A route is a row and routes do not chain: a route that silently becomes
+another one makes two identical command lines mean different things, which
+is the argument `_resume_inv` already makes about inheriting a predicate.
+The handoff is through `artifacts/` instead, which is explicit, inspectable
+and survives the process.
 
-**Also worth trying.** The same machinery synthesises the *missing invariant
-conjunct*: fix the shape as `inv ∧ ?B` and synthesise `?B` under the same
-constraints. That is option 6 done properly, with a grammar bounding how
-strong the repair may be.
+**Where the value actually was: the invariant, and the `no`.**
 
-**Effort.** A day and a half, most of it steps 3 and 4.
+```
+inv + rank together, four hand-rolled constraints (m_step2)   nothing in 300 s
+the invariant alone, hand-rolled                                        10 ms
+the invariant alone, addSygusInvConstraint                              11 ms
+```
+
+`m_step2` is the one Buchi case `--infer nuterm` misses on the certificate
+rather than on reach, and the cause is the invariant: `x` is even, and no
+candidate Houdini has says so. A grammar with `(= (mod lin 2) 0)` in it says
+it in 11 ms — through the *dedicated* SyGuS-IF invariant track, which is not
+a convenience but the difference between 11 ms and not returning.
+
+The other half is the linear template asked as a plain quantified query,
+which needs no SyGuS at all:
+
+```
+m_countdown  rank        sat    6 ms    (rank = s0)
+m_toward5    rank      unsat    2 ms
+m_twovars    rank      unsat    2 ms
+m_lex        rank      unsat   30 ms
+m_countdown  inv k=1     sat   11 ms    (200 - 2*s0 >= 0)
+m_countdown  inv k=2   unknown 30 s     -- the width is the cost, not the module
+m_step2      inv k=2   unsat    2 ms    -- needs the congruence, as above
+```
+
+An `unsat` there is a **proof that the shape is empty**. That is the one
+thing neither an LLM nor a learner produces, and it is what the routes were
+built around: it goes to `artifacts/` as a `no_solution` note and into the
+`--infer ai-cegar` prompt on the next run.
+
+**What shipped.**
+
+* `--infer sygus` (`--safety`) — `magic_sygus.py`. `addSygusInvConstraint`
+  over a grammar of affine comparisons plus congruences, with the constants
+  seeded from the program's own literals. The conjunction is bounded
+  (`--sygus-conjuncts`, default 3) and that is load-bearing: `B -> (and B B)`
+  is an infinite space, where "nothing works" can only come back as
+  `unknown`, and a bounded one is finite, where cvc5 answers `hasNoSolution`
+  — measured at 10 / 25 / 166 ms for 1 / 2 / 3 atoms on `m_step2` with the
+  congruences dropped. External inputs are existentially quantified inside
+  `pre`/`trans`, so `--pre` works and a module with inputs is in reach
+  (`m_relu_input`: invariant found, and all three obligations hold). Writes
+  the invariant as a resumable `inv`.
+* `--infer smt-linear` (`--safety` and `--buchi`) — `magic_linear.py`. One
+  quantified query per shape; widths tried smallest first; a supplied or
+  resumed invariant is *strengthened* rather than replaced. Every scalar
+  component is a column whatever its sort — `Int` as itself, `Bool` as
+  `(ite s0 1 0)`, a bitvector as `(ubv_to_int s0)` — so a Bool-state module,
+  which `--infer nuterm` refuses, is in reach and so is a BitVec one.
+* **A bitvector column needs a second engine.** Measured: with one in the
+  formula cvc5 answers the `exists c. forall s.` query
+  `unknown (INCOMPLETE)` in *one millisecond*, at every width — a refusal to
+  state it, not a timeout. So when the direct query comes back unknown the
+  same question runs as a counterexample-guided loop whose halves are both
+  quantifier-free: propose coefficients against the states seen so far
+  (linear, whatever the module's sorts), verify against the whole
+  transition, add the counterexample. An 8-bit counter's invariant takes 55
+  samples and 538 ms. The loop needs a *bounded* candidate space to
+  terminate, so its `unsat` is a proof about that box rather than about
+  every integer — and the note says so, because the difference is exactly
+  what an LLM route would otherwise be told wrongly. The bound is read off
+  the program's own constants, like the grammar route's: measured, a tight
+  bound is what makes it converge (55 samples inside one, no answer in 200
+  outside).
+* **`bv_omega` joined the closer list** (`tactics.py`), for BitVec states
+  only. A bitvector read as `BitVec.toNat` is arithmetic no other closer can
+  phrase, and `decide` — which cannot fire while the state is a free
+  variable — *errors* there rather than failing, which escapes the `first`
+  chain and fails the build. With it, an 8-bit counter's certificate builds
+  in 3.4 s. `BVState` and `BoolState` in the limit matrix still verify.
+* `artifacts.STATUSES` gained `no_solution`, told apart from `unknown`
+  because the difference is a proof versus a timeout, and a consumer that
+  confused them would put a falsehood in a prompt.
+* `--infer ai-cegar` resumes `note` artifacts as well as `inv` ones, and
+  states them in the prompt as established facts.
+
+**What is still open.** Both searches are integer-only and refuse a Real,
+Bool, bitvector or matrix-shaped state by name; the `--safety` template
+stops being decidable in practice at two rows, which a CEGIS loop (sample
+states, solve for coefficients over the samples, verify, repeat) would
+push much further — it turns one hard `NIA` query into a loop of easy `LIA`
+ones, and an unsat sample system is still a proof of absence.

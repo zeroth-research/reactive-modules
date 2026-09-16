@@ -15,8 +15,9 @@ at the end.
 So the plan is read off the obligations instead:
 
 * which theories the state actually uses — `omega` is emitted only where
-  integers are in play and `decide` only for a finite state, and `bv_decide`
-  not at all (see the note beside `decide` below);
+  integers are in play, `bv_omega` only where a bitvector is, `decide` only
+  for a finite state, and `bv_decide` not at all (see the note beside
+  `decide` below);
 * whether the predicates are nonlinear — `nlinarith` is expensive and useless
   on a linear goal;
 * whether they branch, conjoin or disjoin — `split_ifs` and `casesm*` are
@@ -485,6 +486,20 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
     closers.append("contradiction")
     if f.has_int:
         closers.append("omega")
+    if f.has_bitvec:
+        # A bitvector read as the number it holds -- `BitVec.toNat`, which
+        # `--infer smt-linear` weighs a BitVec column by -- is arithmetic no
+        # other closer here can phrase: omega and linarith know nothing
+        # about it, and `decide` cannot fire while the state is a free
+        # variable. Worse than failing, `decide` *errors* there ("Expected
+        # type must not contain free variables"), which is an elaboration
+        # error rather than a tactic failure and so escapes the `first`
+        # chain and fails the build. `bv_omega` is the cheap one for this
+        # shape -- `simp` with the BitVec lemmas, then omega -- and it is
+        # not `bv_decide`, which bit-blasts for minutes (see the note below).
+        # Measured on an 8-bit counter's safety certificate: the build fails
+        # without it and takes 3.4 s with it.
+        closers.append("bv_omega")
     closers.append("linarith")
     if f.has_int:
         closers.append("(norm_cast; omega)")

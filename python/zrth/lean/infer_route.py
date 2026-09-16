@@ -194,6 +194,12 @@ class InferInput:
     opts: dict                          # this route's own options, by dest
     config: object | None = None        # what `resolve` returned
     prechecked: object | None = None    # what `precheck` returned
+    # This run's `--smt-timeout` / `--smt-budget`, for a route that asks cvc5
+    # a question of its own. The obligation queries have always been on it
+    # (`smt_query.SmtBudget`); a route that *searches* has to be, for the
+    # same reason and more so -- a synthesis with no limit hangs generation,
+    # and `tlimit-per` is the option that actually stops one.
+    budget: object | None = None
     model: str | None = None            # meaningful iff the row uses an LLM
     base_url: str | None = None
     log: Callable = print
@@ -394,22 +400,69 @@ def _resume_inv(inp: InferInput) -> "Artifact | None":
     return None
 
 
+def _resume_inv_to_strengthen(inp: InferInput) -> "Artifact | None":
+    """An invariant from a previous run to *add to*, or `None`.
+
+    Not the same question as `_resume_inv`, and the difference is `too_weak`.
+    A route that takes an invariant as given needs one that already does the
+    whole job; `--infer smt-linear --safety` searches for the conjuncts that
+    are *missing*, so an invariant that is inductive and does not yet imply
+    the property is the best thing it can be handed.
+    """
+    if inp.cert_data.inv:
+        return None
+    for a in inp.project.resume("inv", languages=("smt",), statuses=FIXABLE):
+        return a
+    return None
+
+
+def _take_inv(inp: InferInput, resumed, what: str) -> None:
+    """Put a resumed invariant into `cert_data`, saying so."""
+    if resumed is None:
+        return
+    inp.log(f".. resuming from {resumed.name} ({resumed.status}): {what}")
+    inp.cert_data.inv = inp.project.artifacts.read(resumed)
+
+
+def _ruled_out(inp: InferInput) -> tuple[str, ...]:
+    """What earlier runs *proved* is not there, as prose for the prompt.
+
+    Only `no_solution`: a note whose status is `unknown` records a search
+    that ran out of budget, and telling a model that a shape is empty when
+    all that happened is a timeout would put a falsehood in the prompt. The
+    store has already dropped anything found against another module,
+    property or proof rule, which is the other half of the same care.
+    """
+    notes = inp.project.resume("note", languages=("md",),
+                               statuses=("no_solution",))
+    out = []
+    for a in notes:
+        inp.log(f".. resuming from {a.name}: a space an earlier run ruled out")
+        out.append(inp.project.artifacts.read(a))
+    return tuple(out)
+
+
 def _run_ai_cegar(inp: InferInput) -> InferResult:
     from .magic_cegar import TA2MagicCEGAR
 
-    resumed = _resume_inv(inp)
-    if resumed is not None:
-        inp.log(
-            f".. resuming from {resumed.name} ({resumed.status}): taking its "
-            f"invariant as given and inferring the ranking function"
-        )
-        inp.cert_data.inv = inp.project.artifacts.read(resumed)
+    _take_inv(
+        inp,
+        _resume_inv(inp),
+        # On `--safety` the invariant *is* the certificate, so there is
+        # nothing left to infer and no LLM call to make: saying "and
+        # inferring the ranking function" there would name a field
+        # `rule_globally` does not have.
+        "taking it as the certificate"
+        if inp.cert_data.is_safety
+        else "taking its invariant as given and inferring the ranking function",
+    )
 
     magic = TA2MagicCEGAR(
         inp.project.encoding(""),
         inp.module,
         model=inp.model,
         base_url=inp.base_url,
+        known=_ruled_out(inp),
     )
     cd = magic.infer(inp.cert_data)
     # It renders the Lean from its own cvc5 context, where it is free, so
@@ -435,6 +488,45 @@ def _run_nuterm(inp: InferInput) -> InferResult:
         inv_lean=cd.inv,
         ranking_lean=cd.ranking,
     )
+
+
+def _run_sygus(inp: InferInput) -> InferResult:
+    from .magic_sygus import TA2MagicSygus
+
+    magic = TA2MagicSygus(
+        inp.module,
+        grammar=inp.opts["sygus_grammar"],
+        conjuncts=inp.opts["sygus_conjuncts"],
+        budget=inp.budget,
+        artifacts=inp.project.artifacts,
+        log=inp.log,
+    )
+    cd = magic.infer(inp.cert_data)
+    # SMT-LIB only: the search answers in cvc5 terms and never renders Lean,
+    # so the pipeline renders it once -- which is what `returns="smt"` says.
+    return InferResult(inv_smt=cd.inv_smt)
+
+
+def _run_smt_linear(inp: InferInput) -> InferResult:
+    from .magic_linear import TA2MagicLinear
+
+    _take_inv(
+        inp,
+        (_resume_inv_to_strengthen(inp) if inp.cert_data.is_safety
+         else _resume_inv(inp)),
+        ("adding to it the conjuncts the property needs"
+         if inp.cert_data.is_safety
+         else "taking its invariant as given and ranking over it"),
+    )
+    magic = TA2MagicLinear(
+        inp.module,
+        rows=inp.opts["linear_rows"],
+        budget=inp.budget,
+        artifacts=inp.project.artifacts,
+        log=inp.log,
+    )
+    cd = magic.infer(inp.cert_data)
+    return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
 
 
 def _resolve_fbk(opts: dict):
@@ -542,8 +634,11 @@ ROUTES: tuple[InferRoute, ...] = (
         reads=("",),
         # It already takes a fixed invariant from `--invariant` and infers
         # only what is left, so an inductive invariant a previous run left in
-        # `artifacts/` is the same seed from the other source.
-        reads_artifacts=frozenset({"inv"}),
+        # `artifacts/` is the same seed from the other source. A `note` is
+        # the other direction: what `--infer smt-linear` or `--infer sygus`
+        # *refuted* goes into the prompt, so the model is not asked to
+        # rediscover that a shape is empty one API call at a time.
+        reads_artifacts=frozenset({"inv", "note"}),
         returns="smt",
         uses_llm=True,
         run=_run_ai_cegar,
@@ -566,6 +661,116 @@ ROUTES: tuple[InferRoute, ...] = (
         ),
         returns="smt",
         run=_run_nuterm,
+    ),
+    InferRoute(
+        name="sygus",
+        summary=(
+            "no LLM: the invariant synthesised outright by cvc5's SyGuS "
+            "invariant track, over a grammar of linear facts and congruences "
+            "-- the one shape `nuterm`'s Houdini lattice cannot state -- and "
+            "left in artifacts/ for a later run to take as given; scalar "
+            "integer state only"
+        ),
+        kinds=frozenset({"safety"}),
+        kinds_refusal=(
+            "--infer sygus is incompatible with --buchi: what it synthesises "
+            "is `pre -> inv`, `inv /\\ trans -> inv'`, `inv -> post`, which is "
+            "what `G P` is made of, and a Buchi certificate also needs a "
+            "ranking function. Synthesis loses at those -- measured, 124 s on "
+            "a two-variable module for a rank `--infer nuterm` certifies in "
+            "seconds. Pass --safety, or infer a Buchi certificate with "
+            "--infer nuterm or --infer ai-cegar."
+        ),
+        seeds=frozenset({"pre"}),
+        seeds_refusal=(
+            "the invariant is the whole of what this route synthesises, so a "
+            "supplied one leaves it nothing to do, and a ranking function "
+            "belongs to --buchi, which it does not certify"
+        ),
+        returns="smt",
+        run=_run_sygus,
+        options=(
+            Opt(
+                ("--sygus-conjuncts",),
+                dict(
+                    type=int,
+                    default=3,
+                    metavar="N",
+                    help=(
+                        "How many atoms the synthesised invariant may be a "
+                        "conjunction of (default: 3). It bounds the "
+                        "certificate -- every conjunct is one more "
+                        "implication in the obligation -- and it is what "
+                        "makes a failure informative: a bounded conjunction "
+                        "is a finite space, so cvc5 can report it *empty* "
+                        "rather than merely not searched, and that proof is "
+                        "what lands in artifacts/."
+                    ),
+                ),
+            ),
+            Opt(
+                ("--sygus-grammar",),
+                dict(
+                    default="congruence",
+                    choices=["congruence", "linear"],
+                    help=(
+                        "What an atom of the synthesised invariant may be "
+                        "(default: congruence). `linear` gives comparisons of "
+                        "affine combinations of the state, which is roughly "
+                        "what `--infer nuterm` already covers and what "
+                        "`--infer smt-linear` decides in milliseconds. "
+                        "`congruence` adds `(= (mod a0 + a1*s0 + ... k) 0)` "
+                        "for the `k` the program mentions -- `m_step2` steps "
+                        "by two, so its invariant is that `x` is even, and "
+                        "that is the fact no lattice of signs and pairwise "
+                        "relations can state."
+                    ),
+                ),
+            ),
+        ),
+    ),
+    InferRoute(
+        name="smt-linear",
+        summary=(
+            "no LLM: one cvc5 query per shape -- a ranking function linear "
+            "in the state (--buchi), an invariant that is a conjunction of "
+            "linear inequalities (--safety) -- over scalar Int, Bool and "
+            "bitvector components alike, where a refuted query is a *proof* "
+            "that the shape is empty, written to artifacts/ for --infer "
+            "ai-cegar to read into its prompt"
+        ),
+        kinds=frozenset({"safety", "buchi"}),
+        kinds_refusal="",
+        seeds=frozenset({"inv", "pre"}),
+        seeds_refusal=(
+            "a ranking function is what this route searches for on --buchi, "
+            "so a supplied one would leave it nothing to do"
+        ),
+        # `--buchi` ranks over a fixed invariant and `--safety` strengthens
+        # one, so both directions of the workspace matter here: what another
+        # run left is either what this one ranks over or what it adds to.
+        reads_artifacts=frozenset({"inv"}),
+        returns="smt",
+        run=_run_smt_linear,
+        options=(
+            Opt(
+                ("--linear-rows",),
+                dict(
+                    type=int,
+                    default=2,
+                    metavar="N",
+                    help=(
+                        "How many linear inequalities the --safety invariant "
+                        "may be a conjunction of (default: 2). Tried one "
+                        "width at a time, smallest first, because the width "
+                        "is what the search costs: a one-row invariant for "
+                        "`G (s0 <= 100)` is 11 ms and two rows do not finish "
+                        "in 30 s. Ignored for --buchi, whose template is one "
+                        "ranking function."
+                    ),
+                ),
+            ),
+        ),
     ),
     InferRoute(
         name="fbk-proveit",

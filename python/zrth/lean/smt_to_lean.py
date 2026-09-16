@@ -359,6 +359,15 @@ def _walk(
     if k == Kind.TO_INTEGER:
         return f"⌊{recur(t[0])}⌋"
 
+    if k == Kind.BITVECTOR_UBV_TO_INT:
+        # `bv2nat`/`ubv_to_int`: a bitvector read as the number it holds.
+        # `--infer smt-linear` weighs a BitVec state component this way, so
+        # one `Int` template covers a mixed state instead of a template per
+        # sort. `Int.ofNat` rather than a coercion arrow: the surrounding
+        # expression is `Int`-typed and an inserted `↑` there is a different
+        # elaboration problem in each place it lands.
+        return f"(Int.ofNat (BitVec.toNat {recur(t[0])}))"
+
     if k == Kind.TO_REAL:
         # cvc5 inserts `to_real` wherever an Int-sorted subterm meets a Real
         # one: an integer literal in the property, or the `Argmax` index that

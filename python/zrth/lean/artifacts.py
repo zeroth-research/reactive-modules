@@ -67,6 +67,14 @@ STATUSES = (
     "refuted",          # a counterexample is known, in `why`
     "unknown",          # the procedure did not finish, or nothing said
     "encoded",          # not a candidate at all: a question this run asked
+    # Not a candidate either, and not a failure: a space that was *decided
+    # empty*. `--infer smt-linear` refuting its template is a proof that no
+    # certificate of that shape exists, which is a fact about the module
+    # worth as much as one that does -- and the one thing worth telling an
+    # LLM route before it proposes the same shape again. Told apart from
+    # `unknown` because the difference is proof versus running out of time,
+    # and a consumer that confused the two would put a falsehood in a prompt.
+    "no_solution",
 )
 
 # The suffix a language is *written* under, declared forwards. `.smt` reads

@@ -522,6 +522,7 @@ def prompt_inv_ranking(
     fixed_inv_src: str | None = None,
     fixed_ranking_src: str | None = None,
     kind: str = "buchi",
+    known: tuple[str, ...] = (),
 ) -> PromptResult:
     """Call `chat` with the CEGAR prompt, parse reply into SMT terms.
 
@@ -529,6 +530,13 @@ def prompt_inv_ranking(
     treated as a user-provided input: not requested from the LLM, and
     shown in the prompt so the LLM sees it while searching for the other.
     If both are fixed, no LLM call is made.
+
+    `known` is what earlier runs *proved* about the shape of the answer --
+    that no ranking function linear in the state works under this invariant,
+    say. It is stated before the question rather than as feedback, because
+    it is not about an attempt: it is a fact about the module that holds
+    whatever this model proposes, and the one thing worth knowing before
+    proposing anything.
 
     `kind="safety"` asks for an invariant alone. `rule_globally` takes no
     ranking function, so there is none to propose; what the invariant has
@@ -558,6 +566,19 @@ def prompt_inv_ranking(
         f"{env.state_description()}\n\n"
         f"{env.transition_description()}\n"
     )
+    if known:
+        # Numbered and quoted as established, not as advice: each line was
+        # written by a decision procedure that refuted a whole space, and the
+        # model's job is to propose something outside it.
+        established = "\n".join(f"{i}. {text.strip()}"
+                                 for i, text in enumerate(known, 1))
+        user_msg += (
+            "\nAlready established about this module by a decision procedure "
+            "(cvc5), in earlier runs. These are proofs that a space is empty, "
+            "not opinions -- do not propose anything of a shape ruled out "
+            "here:\n"
+            f"{established}\n"
+        )
     if fixed_inv_src is not None:
         user_msg += (
             f"\nThe invariant is GIVEN (do not propose a new one):\n"

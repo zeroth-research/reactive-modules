@@ -50,6 +50,14 @@ examples:
   # no LLM: learn a ranking function and certify it before it is offered
   uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
 
+  # no LLM: synthesise the invariant, congruences included (`x` even), and
+  # leave it in artifacts/ for the next run to take as given
+  uv run verith mymodule.py --safety "(not (= s0 1))" --infer sygus -o out/ -p MyProject
+
+  # no LLM: one query per shape -- and a refuted shape is a *proof* that no
+  # certificate of that shape exists, which --infer ai-cegar reads next run
+  uv run verith mymodule.py --buchi "(= s0 0)" --infer smt-linear -o out/ -p MyProject
+
   # AI inference with Ollama (requires pip install zrth[ai-local])
   uv run verith mymodule.py --buchi "(= s0 0)" --infer \\
       --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p MyProject

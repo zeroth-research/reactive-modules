@@ -423,9 +423,13 @@ or an entry in `../../zrth/lean/KNOWN_ISSUES.md`.
    it does not touch the per-branch constant, which is the bill. So
    `n_branch` and `n_conditions` are the wrong cost model in kind — they
    count branches, and what is paid for is instances per branch.
-4. **cvc5 abduction and SyGuS** — plans and runnable evidence in
-   `SMT_ASSIST.md` §6 and §7; `probes/abduction.py` and `probes/sygus.py`
-   produce the numbers those plans are costed against.
+4. **cvc5 abduction** — the plan and its runnable evidence are in
+   `SMT_ASSIST.md` §6 and `probes/abduction.py`. §7's half of this is done:
+   `--infer sygus` and `--infer smt-linear` are routes, and §7 now records
+   what the measurements said about the plan as written (the grammar step
+   was half wrong, `tlimit-per` is what bounds `checkSynth`, and the value
+   was in the invariant and in the refutations, not in a synthesised rank).
+   `probes/sygus.py` still produces the ranking-function numbers §7 quotes.
 5. **Nothing in CI builds a generated project** (`KNOWN_ISSUES.md` #29).
    This directory is now
    checked in, which is the precondition; the remaining work is a slow-marked

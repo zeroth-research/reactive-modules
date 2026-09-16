@@ -35,6 +35,19 @@ no API key, and it reads modules whose state is scalar integers::
 
     uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
 
+Two more routes need no LLM and search a *shape* rather than proposing
+candidates, so that failing to find one is an answer with content:
+``--infer sygus`` synthesises the invariant of a ``--safety`` property with
+cvc5's SyGuS invariant track (congruences included -- ``x`` even -- which no
+lattice of signs and pairwise facts can state), and ``--infer smt-linear``
+asks for a linear ranking function or a conjunction of linear inequalities as
+one quantified query.  A refuted query proves that nothing of that shape
+works, and both leave what they found and what they ruled out in the
+project's ``artifacts/``, where the next run picks it up::
+
+    uv run verith mymodule.py --safety "(not (= s0 1))" --infer sygus -o out/ -p MyProject
+    uv run verith mymodule.py --buchi "(= s0 0)" --infer smt-linear -o out/ -p MyProject
+
 Use a local LLM via Ollama instead of Claude::
 
     uv run verith mymodule.py --buchi "x == 0" --infer \\
@@ -330,6 +343,7 @@ def _infer(
                 opts=settings.route_opts,
                 config=settings.route_config,
                 prechecked=prechecked,
+                budget=settings.budget,
                 model=settings.model,
                 base_url=settings.base_url,
                 log=print,

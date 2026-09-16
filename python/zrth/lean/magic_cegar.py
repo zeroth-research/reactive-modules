@@ -45,6 +45,12 @@ class TA2MagicCEGAR(TA2Magic):
          rank-nonneg). Each check is: assert the negation, SAT ⇒ failure.
       3. If all UNSAT, return. Else format model as feedback and retry.
 
+    `known` is what earlier runs established about *shapes* rather than
+    about candidates -- "no ranking function linear in the state satisfies
+    the obligations under this invariant", proved by cvc5 and left in
+    `artifacts/` by `--infer smt-linear`. It is stated in the prompt so an
+    attempt is not spent proposing what is already known not to exist.
+
     A safety certificate (`cd.kind == "safety"`, from `--safety`) is the
     same loop over a smaller certificate: the LLM is asked for an invariant
     alone, and the obligations are init, inductive, and `inv → prp` --
@@ -60,6 +66,7 @@ class TA2MagicCEGAR(TA2Magic):
         model: str = "gpt-4",
         max_attempts: int = 5,
         base_url: str | None = None,
+        known: tuple[str, ...] = (),
     ):
         super().__init__(source)
         if cvc5 is None:
@@ -69,6 +76,12 @@ class TA2MagicCEGAR(TA2Magic):
             )
         self.module = module
         self.max_attempts = max_attempts
+        # What another run *proved* is not there -- `--infer smt-linear`
+        # refuting its template, `--infer sygus` exhausting its grammar. It
+        # goes into the prompt rather than into the loop: the obligations
+        # already refute a bad candidate in milliseconds, and what this saves
+        # is the attempt being spent on a shape a solver has ruled out.
+        self.known = tuple(known)
         self._chat = _make_client(base_url, model)
 
     # --- driver ---------------------------------------------------------
@@ -121,6 +134,7 @@ class TA2MagicCEGAR(TA2Magic):
                     fixed_inv_src=fixed_inv,
                     fixed_ranking_src=fixed_ranking,
                     kind=cd.kind,
+                    known=self.known,
                 )
             except Refused:
                 # Not a reply to be parsed: the run cannot be made at all,
