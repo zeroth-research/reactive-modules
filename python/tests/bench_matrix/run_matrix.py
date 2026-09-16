@@ -234,12 +234,16 @@ def inferred_from(stdout: str) -> dict:
 
     Worth keeping beside the timing: two routes that both certify a row did
     not necessarily find the same certificate, and the table's `VERIFIED`
-    cannot show that."""
+    cannot show that.
+
+    Kept exactly as printed. It used to be stripped of backticks for
+    display, which hid the one thing wrong with `--infer ai`'s answers: they
+    reached `Data.lean` quoted, and the record showed them clean."""
     found: dict = {}
     for line in stdout.splitlines():
         m = _PRED.match(line)
         if m and m.group(1) not in found:
-            found[m.group(1)] = m.group(2).strip("`")
+            found[m.group(1)] = m.group(2)
     return found
 
 
