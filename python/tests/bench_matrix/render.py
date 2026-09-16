@@ -79,22 +79,10 @@ VERDICTS = {
     "TIMEOUT": ("bad", "The cell was killed at the clock rather than measured &mdash; "
                        "so it is not evidence either way. The budgets are stated in "
                        "the machine block above."),
-    "SORRY": ("open", "The project is well-formed and the obligations are left open. This "
-                      "is what the <code>none</code> control is for."),
-    "SORRY+FAIL": ("open", "Obligations left open <em>and</em> the build failed &mdash; the "
-                           "usual shape of the <code>none</code> control, whose empty "
-                           "certificate gives the tactics nothing to close "
-                           "<code>hrank</code> with."),
+    "SORRY": ("open", "The project built with an obligation left as <code>sorry</code>."),
+    "SORRY+FAIL": ("open", "An obligation left as <code>sorry</code> <em>and</em> a build "
+                           "failure besides it."),
 }
-
-NONE_BLURB = (
-    "Not an <code>--infer</code> route: the property alone, no predicates, so every "
-    "obligation is emitted as <code>sorry</code>. It is the control for the other six "
-    "&mdash; it answers whether <code>verith</code> can generate this module at all and "
-    "whether the Lean it emits is well-formed, which is the question underneath "
-    "&ldquo;did the certificate discharge&rdquo;. A <code>SORRY+FAIL</code> here is the "
-    "expected reading, not a defect.")
-
 
 def prose(text: str) -> str:
     """A route's `summary`, marked up. It is written as plain text for
@@ -107,14 +95,13 @@ def prose(text: str) -> str:
 
 
 def route_docs():
-    """Each route as the CLI's own table describes it, plus the `none` control."""
+    """Each route as the CLI's own table describes it."""
     from zrth.lean.cli import _SEED_FLAGS
     from zrth.lean.infer_route import ROUTES
 
     flag_of = {field: flag for field, _attr, flag in _SEED_FLAGS}
 
-    out = [dict(name="none", summary=NONE_BLURB, kinds=["buchi", "safety"],
-                llm=False, returns="&mdash;", seeds=[], opts=[])]
+    out = []
     for r in ROUTES:
         out.append(dict(
             name=r.name, summary=r.summary, kinds=sorted(r.kinds), llm=r.uses_llm,
@@ -365,7 +352,7 @@ def render(data: dict, warns: list = ()) -> str:
         llm = '<span class="tag llm">LLM</span>' if r["llm"] else ""
         w('<div class="card">')
         w(f'<h4><code>{esc(r["name"])}</code>{kinds}{llm}</h4>')
-        w(f"<p>{r['summary'] if r['name'] == 'none' else prose(r['summary'])}</p>")
+        w(f"<p>{prose(r['summary'])}</p>")
         bits = []
         if r["seeds"]:
             bits.append("seeds from " + ", ".join(f"<code>{esc(s)}</code>"

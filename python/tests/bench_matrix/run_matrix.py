@@ -59,7 +59,7 @@ BUILD_TIMEOUT = 420
 
 # The two paths `--infer fbk-proveit` needs, and the MathSAT bindings its
 # `vmt2lean.py` imports. Overridable, but defaulted so a plain run measures
-# all seven columns rather than silently six.
+# all six routes rather than silently five.
 PROVEIT_DIR = os.environ.get("VERITH_PROVEIT_DIR",
                              str(Path.home() / "zeroth/proof-prototyping/lean-ltl-certifying"))
 IC3IA = os.environ.get("VERITH_IC3IA", str(Path.home() / "zeroth/fbk/ic3ia/build"))
@@ -331,9 +331,8 @@ def verdict(gen, bld) -> str:
     A route that searched a shape and found it empty is the measurement, not
     a defect, so `NO-CERT` is kept apart from `GEN-FAIL`; and a route that
     *disproved* the property is a third thing again, which the deliberately
-    false controls are there to produce. `SORRY` is what the `none` control
-    is for -- the project is well-formed and the obligations are simply
-    open."""
+    false controls are there to produce. `SORRY` is a route that built with
+    an obligation left open."""
     if not gen["ok"]:
         err = gen["err"] + " " + gen.get("err_full", "")
         if "timed out" in gen["err"]:
@@ -419,16 +418,19 @@ def main() -> None:
                          "data and exit -- what to run after correcting `verdict()`, "
                          "so a rule change does not cost a re-measurement")
     ap.add_argument("--prune", action="store_true",
-                    help="drop recorded rows and runs the suites no longer produce, "
-                         "and exit -- what to run after `suites.py` stops emitting a row")
+                    help="drop recorded rows and runs the suites and routes no longer "
+                         "produce, and exit -- what to run after `suites.py` stops "
+                         "emitting a row or a route")
     args = ap.parse_args()
     RESULTS = Path(args.results)
 
     if args.prune:
         data = json.loads(RESULTS.read_text())
         keep = {r.key for r in all_rows()}
+        names = {rt.name for rt in routes(proveit_dir=PROVEIT_DIR, ic3ia=IC3IA)}
         gone = sorted(k for k in data["rows"] if k not in keep)
-        runs = [p for p in data["runs"] if p.split("::")[0] not in keep]
+        runs = [p for p, run in data["runs"].items()
+                if p.split("::")[0] not in keep or run["route"] not in names]
         for k in gone:
             del data["rows"][k]
         for p in runs:

@@ -220,15 +220,9 @@ class Route:
 
 
 def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None) -> list[Route]:
-    """The route column, with the two paths `fbk-proveit` needs filled in.
-
-    `none` is not an `--infer` route at all: the property alone, with no
-    predicates, so every obligation is emitted as `sorry`. It is the control
-    for the other six -- it says whether `verith` can generate this module
-    and whether the project Lean gets is well-formed, which is the question
-    underneath "did the certificate discharge"."""
+    """The route column, with the two paths `fbk-proveit` needs filled in:
+    the six `--infer` routes, and nothing that is not one."""
     out = [
-        Route("none", frozenset({"safety", "buchi"})),
         Route("ai", frozenset({"buchi"}), ("--infer", "ai"), needs_llm=True),
         Route("ai-cegar", frozenset({"safety", "buchi"}), ("--infer", "ai-cegar"),
               needs_llm=True),
