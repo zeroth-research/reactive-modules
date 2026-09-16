@@ -628,7 +628,7 @@ def render(data: dict, warns: list = ()) -> str:
     w(f"<style>{CSS}</style>")
     w('<div class="wrap">')
     w("<h1>The <code>--infer</code> route matrix</h1>")
-    w('<p class="lede">Every way <code>verith</code> can be handed a certificate, '
+    w('<p class="lede">Every <code>--infer</code> route of <code>verith</code>, '
       "put to every benchmark and property in the tree. One cell is one "
       "<code>uv run verith</code> followed by one <code>lake build</code>, and both are "
       "timed &mdash; click a method to get the command back.</p>")
@@ -639,7 +639,7 @@ def render(data: dict, warns: list = ()) -> str:
     stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M %Z")
     done = len(runs)
     w(f'<p class="stamp">Rendered {stamp} &middot; {len(rows)} properties over '
-      f'{len({r["bench"] for r in rows.values()})} benchmarks &middot; {done} measured runs</p>')
+      f'{len({source_of(r) for r in rows.values()})} benchmarks &middot; {done} measured runs</p>')
 
     # ── the routes ──────────────────────────────────────────────────────
     w("<h2 id=methods>The methods</h2>")
