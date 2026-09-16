@@ -248,7 +248,10 @@ def inferred_from(stdout: str) -> dict:
 # upstream sorry of its own (lean-smt's `Smt/Reconstruct/BitVec/Bitblast`),
 # so a sorry only counts when it is in a file this project owns.
 _ERR = re.compile(r"^(?:error|warning): (?P<file>[^:]+\.lean):(\d+):(\d+):\s*(?P<msg>.*)$")
-_FAILED = re.compile(r"^✖ \[[\d/]+\] Built (?P<t>\S+)")
+# A target that fails is reported as `✖ [n/m] Building X`; a finished one as
+# `Built X`. Matching only the second recorded no failed target, ever, so
+# `BUILD-FAIL` could not be told from `PROOF-FAIL`.
+_FAILED = re.compile(r"^✖ \[[\d/]+\] Buil(?:t|ding) (?P<t>\S+)")
 _SORRY = re.compile(r"declaration uses [`']sorry[`']")
 OURS = ("Certificate/", "System/", "Core/", "LeanAI/", "ZerothHammer/", "ProveIt/")
 
@@ -280,7 +283,7 @@ def build(row, route, out: Path) -> dict:
             if m:
                 msg = m.group("msg").strip() or (lines[i + 1].strip()
                                                  if i + 1 < len(lines) else "")
-                errors.append(f"{Path(m.group('file')).name}: {msg}")
+                errors.append(f"{m.group('file')}: {msg}")
             elif "Lean exited" not in ln:
                 errors.append(ln[7:])
     return dict(ok=r.returncode == 0 and not sorries, raw_ok=r.returncode == 0,
@@ -296,6 +299,26 @@ _REFUTED = re.compile(r"found a counterexample|\bUNSAFE\b|property does not hold
 _NO_CERT = re.compile(
     r"error: --infer|CEGAR failed after|obligation violated|found no ranking"
     r"|found no invariant|could not decide|cannot decide|--fbk-proveit:|--ic3ia:")
+
+
+# What a certificate is made of. Everything else a project builds -- the five
+# encodings under `System/`, `Core`, the hammer -- is the module, and a failure
+# there is not the certificate's.
+_CERT_FILES = {"Certificate.lean", "Data.lean", "Equivalence.lean"}
+
+
+def failed_outside_certificate(bld) -> bool:
+    """Whether something other than the certificate failed to build.
+
+    A failed encoding takes the certificate down with it -- `Certificate`
+    imports `System` -- so a failed `Certificate.*` target says nothing on its
+    own; any failed target *outside* it does. Runs recorded before the target
+    list was captured fall back on the file each error names."""
+    targets = [t for t in bld.get("targets", []) if t != "<timeout>"]
+    if targets:
+        return any(not t.startswith("Certificate") for t in targets)
+    files = [e.split(":", 1)[0] for e in bld.get("errors", [])]
+    return any(Path(f).name not in _CERT_FILES for f in files if f.endswith(".lean"))
 
 
 def verdict(gen, bld) -> str:
@@ -316,11 +339,14 @@ def verdict(gen, bld) -> str:
         return "NO-CERT" if _NO_CERT.search(err) else "GEN-FAIL"
     if "<timeout>" in bld.get("targets", []):
         return "TIMEOUT"
+    # Before the sorries: a module that does not build is the headline, and
+    # a `sorry` in the certificate beside it is not what stopped the build.
+    if not bld.get("raw_ok") and failed_outside_certificate(bld):
+        return "BUILD-FAIL"
     if bld.get("sorries"):
         return "SORRY" if bld.get("raw_ok") else "SORRY+FAIL"
     if not bld["ok"]:
-        joined = " ".join(bld["targets"])
-        return "PROOF-FAIL" if not bld["targets"] or "Certificate" in joined else "BUILD-FAIL"
+        return "PROOF-FAIL"
     return "VERIFIED"
 
 
