@@ -26,13 +26,13 @@ vendored ``lean/`` substrate. The file mirrors the procedure's three axes:
     the path's guard the module's transition IS this path's body — and (under
     an inductive invariant) ``consecution``; per claim ``some_path`` — from an
     invariant state the paths cover the module's rounds inside the domain — and
-    the rule the witness names: :class:`._farkas.Inductive` proves
-    ``own_initial``, ``own_step``, ``invariant`` (by the substrate's
-    assume-guarantee ``StateSet_isInvariant_relative``), ``pred_holds``,
-    ``pred_invariant`` and concludes ``holds`` through ``rule_globally`` or
-    ``rule_globally_step``; :class:`._farkas.LexDecrease` proves ``invariant``,
-    ``hpos``, ``hrank`` and concludes it through ``rule_buchi_lex``. Either
-    cites the earlier claims' ``pred_invariant`` for what it assumes.
+    the rule its witness is carried by. A rule says which claim kind it
+    concludes, what it wants from each path, and how those reach the claim;
+    :data:`RULES` maps a witness class to one. An inductive invariant wants
+    ``consecution`` from each path and concludes ``holds`` through
+    ``rule_globally`` or ``rule_globally_step``; ranks want ``lex_step`` and
+    conclude through ``rule_buchi_lex``. Either cites the earlier claims'
+    ``pred_invariant`` for what it assumes.
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ import z3
 
 from ._farkas import (CellCert, Inductive, LexDecrease, Unsupported, _find_ite_cond,
                       _flatten_and, affine_coeffs, entry_predicate, reading, resolve)
-from ._property import Liveness
+from ._property import Liveness, Safety
 
 
 def _contains_ite(e) -> bool:
@@ -681,7 +681,7 @@ def _formula_prop(formula, s_syms, wire_terms: dict) -> str:
 
 
 def _emit_direct_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
-                      depths, consecution: bool) -> str:
+                      depths, rule) -> str:
     """A path that names no device: one region, so ``step_ok`` is a linear
     entailment over the columns and ``omega`` closes it outright — the same proof
     ``consecution`` has always used — with no certificate to elaborate."""
@@ -701,24 +701,22 @@ def _emit_direct_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
              f"  simp only [ok, trans, invariants, true_and, and_true, true_implies] at *\n"
              f"  omega",
              f"def Step (a b : Vector {n} Int) : Prop :=\n"
-             f"  trans a ∧ invariants a ∧ post_state a = b",
-             _emit_refines(n, depths)]
-    if consecution:
-        parts.append(_emit_consecution(n, trivial_inv))
+             f"  trans a ∧ invariants a ∧ post_state a = b"]
+    parts += rule.evidence(n, res, trivial_inv)
+    parts.append(_emit_refines(n, depths))
     return f"namespace {path}\n\n" + "\n\n".join(parts) + f"\n\nend {path}"
 
 
 def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
-               invariants, depths, consecution: bool = True) -> str:
+               invariants, depths, rule) -> str:
     """One affine path: its Farkas systems, ``trans`` and ``post_state``, the
     regions' signs and ``covered``, each device's activations with its bounds or
-    collapses, the ``refute`` lemmas, ``ok`` and ``step_ok``, ``Step`` (and
-    ``lex_step`` under a ranking rule), ``refines`` and, for a claim carrying
-    its own invariant, ``consecution``. A path naming no device takes
-    :func:`_emit_direct_path` instead."""
+    collapses, the ``refute`` lemmas, ``ok`` and ``step_ok``, ``Step``, whatever
+    evidence ``rule`` wants from a path, and ``refines``. A path naming no device
+    takes :func:`_emit_direct_path` instead."""
     if not res.devices:
         return _emit_direct_path(path, pcert, res, system, s_syms, trivial_inv, depths,
-                                 consecution)
+                                 rule)
     n = len(s_syms)
     regions = _regions(pcert.cells)
     reps = [cs[0] for cs in regions]
@@ -792,22 +790,8 @@ def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
     # no SSA witness: the pre-state *is* a.
     parts.append(f"def Step (a b : Vector {n} Int) : Prop :=\n"
                  f"  trans a ∧ invariants a ∧ post_state a = b")
-    n_ranks = len(getattr(res.witness, "ranks", ()))
-    if n_ranks:
-        ranks = ", ".join(f"R{d}" for d in range(n_ranks))
-        parts.append(
-            f"/-- lex step of this path: the ranks drop lexicographically. -/\n"
-            f"theorem lex_step (a b : Vector {n} Int) (h : Step a b) :\n"
-            f"    lexDec [{ranks}] a b := by\n"
-            f"  obtain ⟨hg, hinv, hpost⟩ := h\n"
-            f"  subst hpost\n"
-            f"  have hok := step_ok a hg hinv\n"
-            f"  unfold ok at hok\n"
-            f"  simp only [lexDec, {ranks}]\n"
-            f"  omega")
+    parts += rule.evidence(n, res, trivial_inv)
     parts.append(_emit_refines(n, depths))
-    if consecution:
-        parts.append(_emit_consecution(n, trivial_inv))
     return f"namespace {path}\n\n" + "\n\n".join(parts) + f"\n\nend {path}"
 
 
@@ -1061,7 +1045,111 @@ def _emit_liveness_rule(path_names, n: int, rank_nets, trivial_inv: bool) -> str
         f"    (fun s l s' hI _ hs' hd => hrank s s' hI hs' hd)"])
 
 
-def _emit_claim(ns: str, proof, system, s_syms, cited, assumed_invs, rank_nets):
+class Ranks:
+    """A claim discharged by ranks that drop lexicographically: each path shows
+    the drop, and the substrate's ``rule_buchi_lex`` carries it to the claim."""
+    discharges = Liveness
+
+    @staticmethod
+    def nets(result):
+        """The network behind each rank, in rank order."""
+        by_id = {d.wire_id: d for d in result.devices}
+        return [by_id[v_s.id].net for v_s, _ in result.witness.ranks]
+
+    @staticmethod
+    def invariant(witness):
+        return ()
+
+    @classmethod
+    def prelude(cls, result, n: int) -> list:
+        return [f"def R{d} : Vector {n} Int → Int := fun s => V{_dev(str(j))} s fzero"
+                for d, j in enumerate(cls.nets(result))]
+
+    @classmethod
+    def evidence(cls, n: int, res, trivial_inv: bool) -> list:
+        ranks = ", ".join(f"R{d}" for d in range(len(cls.nets(res))))
+        return [f"/-- lex step of this path: the ranks drop lexicographically. -/\n"
+                f"theorem lex_step (a b : Vector {n} Int) (h : Step a b) :\n"
+                f"    lexDec [{ranks}] a b := by\n"
+                f"  obtain ⟨hg, hinv, hpost⟩ := h\n"
+                f"  subst hpost\n"
+                f"  have hok := step_ok a hg hinv\n"
+                f"  unfold ok at hok\n"
+                f"  simp only [lexDec, {ranks}]\n"
+                f"  omega"]
+
+    @classmethod
+    def state(cls, system, claim, s_syms, result) -> tuple:
+        if not cls.nets(result):
+            raise Unsupported("a lex decrease witness proves its claim by ranks "
+                              "(rule_buchi_lex); this one names no network")
+        n = len(s_syms)
+        return ([f"/-- The rounds the claim counts: the run must leave them again and again. -/\n"
+                 f"def domain (s s' : Vector {n} Int) : Prop :=\n"
+                 f"  {_claim_domain(system, claim, s_syms)}"], False)
+
+    @classmethod
+    def compose(cls, path_names, n: int, trivial_inv: bool, step_pred: bool, result) -> str:
+        return _emit_liveness_rule(path_names, n, cls.nets(result), trivial_inv)
+
+
+class Invariant:
+    """A claim discharged by an inductive invariant: each path shows it preserves
+    the invariant, and the substrate's ``rule_globally`` carries the predicate to
+    every state (``rule_globally_step`` to every step)."""
+    discharges = Safety
+
+    @staticmethod
+    def invariant(witness):
+        return witness.inv
+
+    @staticmethod
+    def prelude(result, n: int) -> list:
+        return []
+
+    @staticmethod
+    def evidence(n: int, res, trivial_inv: bool) -> list:
+        return [_emit_consecution(n, trivial_inv)]
+
+    @staticmethod
+    def state(system, claim, s_syms, result) -> tuple:
+        n = len(s_syms)
+        pred_lean, step_pred = _claim_predicate(system, claim, s_syms,
+                                                result.devices, result.nets)
+        binder = f"(s s' : Vector {n} Int)" if step_pred else f"(s : Vector {n} Int)"
+        return ([f"def pred {binder} : Prop :=\n  {pred_lean}",
+                 f"def domain (s s' : Vector {n} Int) : Prop :=\n  True"], step_pred)
+
+    @staticmethod
+    def compose(path_names, n: int, trivial_inv: bool, step_pred: bool, result) -> str:
+        return _emit_safety_rule(path_names, n, trivial_inv, step_pred)
+
+
+# How each witness's evidence reaches its claim, in one place. A witness absent
+# here is refused by name rather than emitted under another's rule. A rule says
+# which claim kind it concludes (``discharges``), where its witness keeps its
+# invariant (``invariant``), what it defines before the module (``prelude``),
+# what it wants from each path (``evidence``), how the claim is stated
+# (``state``), and how those reach it (``compose``).
+# Adding a witness is an entry here, a rule beside these, and the substrate
+# lemma that rule's ``compose`` applies.
+RULES = {LexDecrease: Ranks, Inductive: Invariant}
+
+
+def _rule_for(witness, claim):
+    """The rule for ``witness``, checked against the kind of claim it concludes."""
+    rule = RULES.get(type(witness))
+    if rule is None:
+        raise Unsupported(f"the proof layer has no rule for a {type(witness).__name__} "
+                          f"witness; it has one for each of "
+                          f"{', '.join(sorted(w.__name__ for w in RULES))}")
+    if not isinstance(claim, rule.discharges):
+        raise Unsupported(f"a {type(witness).__name__} witness does not discharge a "
+                          f"{type(claim).__name__} claim")
+    return rule
+
+
+def _emit_claim(ns: str, proof, system, s_syms, cited, assumed_invs):
     """One claim as its own namespace: ``own`` (the witness's invariant),
     ``assumed`` (the cited claims' predicates), ``invariants`` (both, flat, as
     the paths were certified), ``pred`` or ``domain`` from the claim, the paths,
@@ -1080,20 +1168,8 @@ def _emit_claim(ns: str, proof, system, s_syms, cited, assumed_invs, rank_nets):
     if not paths:
         raise ValueError(f"{ns}: no certified paths to emit")
     path_names = [f"path{i}" for i in range(len(paths))]
-    liveness = isinstance(proof.claim, Liveness)
-    witness = proof.witness
-    if isinstance(witness, LexDecrease):
-        by_ranks = True
-    elif isinstance(witness, Inductive):
-        by_ranks = False
-    else:
-        raise Unsupported(f"the proof layer has no rule for a {type(witness).__name__} "
-                          "witness; it proves a claim by an inductive invariant "
-                          "(rule_globally) or by ranks (rule_buchi_lex)")
-    if by_ranks != liveness:                 # each witness refuses the other kind
-        raise Unsupported(f"a {type(witness).__name__} witness does not discharge a "
-                          f"{type(proof.claim).__name__} claim")
-    inv_res = [resolve(system, f)[0] for f in getattr(witness, "inv", ())]
+    rule = _rule_for(proof.witness, proof.claim)
+    inv_res = [resolve(system, f)[0] for f in rule.invariant(proof.witness)]
     inv_all = inv_res + list(assumed_invs)
 
     def conj(fs):
@@ -1106,20 +1182,8 @@ def _emit_claim(ns: str, proof, system, s_syms, cited, assumed_invs, rank_nets):
              f"def assumed (s : Vector {n} Int) : Prop :=\n  {assumed_lean}",
              f"/-- Everything the paths were certified under. -/\n"
              f"def invariants (s : Vector {n} Int) : Prop :=\n  {inv_lean}"]
-    step_pred = False
-    if liveness:
-        if not rank_nets:
-            raise Unsupported("a lex decrease witness proves its claim by ranks "
-                              "(rule_buchi_lex); this one names no network")
-        parts.append(f"/-- The rounds the claim counts: the run must leave them again and again. -/\n"
-                     f"def domain (s s' : Vector {n} Int) : Prop :=\n"
-                     f"  {_claim_domain(system, proof.claim, s_syms)}")
-    else:
-        pred_lean, step_pred = _claim_predicate(system, proof.claim, s_syms,
-                                                proof.devices, proof.nets)
-        binder = f"(s s' : Vector {n} Int)" if step_pred else f"(s : Vector {n} Int)"
-        parts.append(f"def pred {binder} : Prop :=\n  {pred_lean}")
-        parts.append(f"def domain (s s' : Vector {n} Int) : Prop :=\n  True")
+    stated, step_pred = rule.state(system, proof.claim, s_syms, proof)
+    parts += stated
     if cited:
         hs = " ".join(f"(h{k} : {c}.pred s)" for k, c in enumerate(cited))
         preds = ", ".join(f"{c}.pred" for c in cited)
@@ -1134,13 +1198,10 @@ def _emit_claim(ns: str, proof, system, s_syms, cited, assumed_invs, rank_nets):
                      f"  fun _ _ => trivial")
     depths = [_ite_count(e) for e in system.sp_syms]
     for pn, pc in zip(path_names, paths):
-        parts.append(_emit_path(pn, pc, proof, system, s_syms, trivial_own, inv_all, depths,
-                                consecution=not by_ranks))
+        parts.append(_emit_path(pn, pc, proof, system, s_syms, trivial_own, inv_all,
+                                depths, rule))
     parts.append(_emit_some_path(path_names, n, sum(depths)))
-    if by_ranks:
-        parts.append(_emit_liveness_rule(path_names, n, rank_nets, trivial_inv))
-    else:
-        parts.append(_emit_safety_rule(path_names, n, trivial_inv, step_pred))
+    parts.append(rule.compose(path_names, n, trivial_inv, step_pred, proof))
     return f"namespace {ns}\n\n" + "\n\n".join(parts) + f"\n\nend {ns}", step_pred
 
 
@@ -1173,8 +1234,7 @@ def emit_program(name: str, system, result, label: str | None = None) -> str:
     n = len(s_syms)
     assumed = tuple(system.invariant_proofs)
     liveness = isinstance(result.claim, Liveness)
-    by_id = {d.wire_id: d for d in result.devices}
-    rank_nets = [by_id[v_s.id].net for v_s, _ in getattr(result.witness, "ranks", ())]
+    rule = _rule_for(result.witness, result.claim)
     kind = ("liveness: every run leaves the domain again and again" if liveness else
             "safety: the predicate holds on every round")
     what = f"{label} — {kind}" if label else kind
@@ -1186,8 +1246,7 @@ def emit_program(name: str, system, result, label: str | None = None) -> str:
         if net.units:
             parts += [_emit_network(net, str(j)), _emit_out_apply(net, str(j)),
                       _emit_out_nonneg(str(j)), _emit_nonneg(net, str(j))]
-    for d, j in enumerate(rank_nets):
-        parts.append(f"def R{d} : Vector {n} Int → Int := fun s => V{_dev(str(j))} s fzero")
+    parts += rule.prelude(result, n)
     parts.append(_emit_module(system, s_syms))
     if tuple(result.assumed) != assumed:
         raise Unsupported(
@@ -1204,14 +1263,14 @@ def emit_program(name: str, system, result, label: str | None = None) -> str:
         if proof.devices:
             raise Unsupported(f"{ns}: an assumed claim naming a wire is not yet emitted; "
                               "its networks would need names of their own")
-        text, step = _emit_claim(ns, proof, system, s_syms, (), (), ())
+        text, step = _emit_claim(ns, proof, system, s_syms, (), ())
         if step:
             raise Unsupported(f"{ns}: an assumed claim over the step is not yet used as "
                               "an invariant; it has no pred_invariant")
         parts.append(text)
         cited.append(ns)
     text, _ = _emit_claim(f"claim{len(assumed)}", result, system, s_syms, cited,
-                          list(system.invariants), rank_nets)
+                          list(system.invariants))
     parts.append(text)
     return _HEADER + "\n\n".join(parts) + _FOOTER
 
