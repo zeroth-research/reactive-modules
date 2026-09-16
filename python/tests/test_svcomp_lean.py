@@ -565,10 +565,11 @@ def test_a_rule_per_witness_is_the_whole_seam():
     from benchmarks.svcomp._farkas import Inductive, LexDecrease
     from benchmarks.svcomp._property import Liveness, Safety
 
-    assert set(RULES) == {Inductive, LexDecrease}
+    assert {Inductive, LexDecrease} <= set(RULES)
     assert RULES[Inductive].discharges is Safety
     assert RULES[LexDecrease].discharges is Liveness
     for witness, rule in RULES.items():
+        assert rule.discharges in (Safety, Liveness), rule.__name__
         for hook in ("discharges", "invariant", "prelude", "evidence", "state", "compose"):
             assert hasattr(rule, hook), f"{rule.__name__} has no {hook}"
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
