@@ -201,6 +201,20 @@ table.kv td:first-child{color:var(--dim);white-space:nowrap;width:1%}
  display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
 .bh .bname{font-weight:700;font-size:1rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .bh .path{font-size:11.5px;color:var(--dim)}
+a.file{color:inherit;text-decoration:underline;text-decoration-style:dotted;
+ text-underline-offset:2px;cursor:pointer}
+a.file:hover{color:var(--accent);text-decoration-style:solid}
+a.file.path{color:var(--dim)}
+dialog#srcdlg{width:min(900px,94vw);height:min(80vh,900px);padding:0;border:1px solid var(--line);
+ border-radius:8px;background:var(--bg);color:var(--fg)}
+dialog#srcdlg::backdrop{background:rgba(0,0,0,.35)}
+.dlg-bar{position:sticky;top:0;display:flex;gap:12px;align-items:baseline;padding:9px 14px;
+ background:var(--code);border-bottom:1px solid var(--line)}
+.dlg-bar .dlg-close{margin-left:auto}
+pre.src{margin:0;padding:10px 0;counter-reset:ln;font-size:12.5px;background:transparent}
+pre.src .ln{display:block;padding-right:14px;white-space:pre-wrap;word-break:break-word}
+pre.src .ln::before{counter-increment:ln;content:counter(ln);display:inline-block;width:3.2em;
+ margin-right:1em;text-align:right;color:var(--dim);user-select:none}
 h3.dir{margin:2.2em 0 .7em;font-size:1.05rem}
 .tag.suite{background:var(--openbg);color:var(--open)}
 .grid .m.missing{color:var(--dim);border-top:1px solid var(--line)}
@@ -416,9 +430,130 @@ def method_row(w, rt: str, run: dict) -> None:
     w("</div></details>")
 
 
+# Where a path in the page's prose is relative to: the prose is written from
+# `python/`, with a few names local to this directory or the limit matrix's.
+LINK_BASES = [PY, PY.parent, SP, PY / "tests" / "limits", WORK]
+# Embedded so the popup works from a copied page and without a server; larger
+# or non-text files are linked, not embedded.
+EMBED_SUFFIXES = {".py", ".md", ".lean", ".toml", ".txt", ".j2"}
+EMBED_MAX = 300_000
+
+
+def resolve(text: str) -> "Path | None":
+    """The file or directory `text` names, if it names one."""
+    text = text.strip()
+    if not text or " " in text or len(text) > 200:
+        return None
+    cand = Path(text)
+    if cand.is_absolute():
+        return cand if cand.exists() else None
+    for base in LINK_BASES:
+        full = (base / cand).resolve()
+        if full.exists():
+            return full
+    return None
+
+
+class Files:
+    """The files the page links, and the text of those it embeds."""
+
+    def __init__(self):
+        self.text: dict = {}
+
+    def link(self, full: Path, label: str, cls: str = "file") -> str:
+        href = "file://" + str(full) + ("/" if full.is_dir() else "")
+        if full.is_file() and full.suffix in EMBED_SUFFIXES and full.stat().st_size <= EMBED_MAX:
+            key = str(full.relative_to(PY.parent)) if full.is_relative_to(PY.parent) else str(full)
+            self.text.setdefault(key, full.read_text(errors="replace"))
+            return (f'<a class="{cls}" href="{esc(href)}" data-src="{esc(key)}" '
+                    f'title="open {esc(key)}">{label}</a>')
+        return (f'<a class="{cls}" href="{esc(href)}" target="_blank" '
+                f'title="open {esc(str(full))}">{label}</a>')
+
+    def linkify(self, page: str) -> str:
+        """Every `<code>` in `page` whose whole text names a file or directory,
+        as a link to it. Commands are in `<pre>`, not `<code>`, so they stay
+        pasteable."""
+        def one(m):
+            full = resolve(html.unescape(m.group(1)))
+            return self.link(full, m.group(0)) if full else m.group(0)
+        return re.sub(r"<code>([^<]{2,200})</code>", one, page)
+
+    def payload(self) -> str:
+        return (json.dumps(self.text, ensure_ascii=False)
+                .replace("</", "<\\/").replace("<!--", "<\\!--"))
+
+
+VIEWER_JS = r"""
+(function () {
+  var SRC = JSON.parse(document.getElementById('srcs').textContent);
+  function esc(t) {
+    return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function lines(text) {
+    return text.replace(/\n$/, '').split('\n').map(function (l) {
+      return '<span class="ln">' + esc(l) + '</span>';
+    }).join('\n');
+  }
+  var STYLE =
+    ':root{color-scheme:light dark}' +
+    'body{margin:0;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;' +
+    'background:#fbfbf9;color:#1c1b19}' +
+    'header{position:sticky;top:0;padding:9px 14px;background:#f3f1ec;' +
+    'border-bottom:1px solid #e2ded6;display:flex;gap:12px;align-items:baseline}' +
+    'header b{font-size:13px}header a{font-size:11.5px;color:#2f5d8a}' +
+    'pre{margin:0;padding:10px 0;counter-reset:ln}' +
+    '.ln{display:block;padding:0 14px 0 0;white-space:pre-wrap;word-break:break-word}' +
+    '.ln::before{counter-increment:ln;content:counter(ln);display:inline-block;' +
+    'width:3.2em;margin-right:1em;text-align:right;color:#9a968d;user-select:none}' +
+    '@media(prefers-color-scheme:dark){body{background:#161614;color:#e7e4dc}' +
+    'header{background:#24241f;border-color:#2e2d29}.ln::before{color:#6b6862}' +
+    'header a{color:#8fb4dc}}';
+  function doc(key, href, text) {
+    return '<!doctype html><meta charset="utf-8"><title>' + esc(key) + '</title>' +
+      '<style>' + STYLE + '</style><header><b>' + esc(key) + '</b>' +
+      '<a href="' + esc(href) + '">open the file itself</a></header>' +
+      '<pre>' + lines(text) + '</pre>';
+  }
+  function inPage(key, href, text) {
+    var d = document.getElementById('srcdlg');
+    d.querySelector('.dlg-title').textContent = key;
+    d.querySelector('.dlg-raw').setAttribute('href', href);
+    d.querySelector('pre').innerHTML = lines(text);
+    d.showModal();
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-src]');
+    if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var key = a.getAttribute('data-src'), text = SRC[key];
+    if (text == null) return;
+    e.preventDefault();
+    var href = a.getAttribute('href'), win = null;
+    try {
+      win = window.open('', 'verith-source', 'popup,width=860,height=780');
+      if (win) {
+        win.document.open();
+        win.document.write(doc(key, href, text));
+        win.document.close();
+        win.focus();
+        return;
+      }
+    } catch (err) {
+      if (win) { try { win.close(); } catch (_) {} }
+    }
+    inPage(key, href, text);
+  });
+  document.getElementById('srcdlg').addEventListener('click', function (e) {
+    if (e.target === this || e.target.classList.contains('dlg-close')) this.close();
+  });
+})();
+"""
+
+
 def render(data: dict, warns: list = ()) -> str:
     meta, rows, runs = data["meta"], data["rows"], data["runs"]
     m = meta["machine"]
+    files = Files()
     o = []
     w = o.append
 
@@ -595,7 +730,7 @@ def render(data: dict, warns: list = ()) -> str:
             items = sorted(by_file[path], key=lambda kv: (suite_rank.get(kv[1]["suite"], 9), kv[0]))
             w(f'<div class="bench" id="b-{slug(path)}">')
             w(f'<div class="bh"><span class="bname">{esc(Path(path).stem)}</span>'
-              f'<span class="path">{esc(path)}</span></div>')
+              + files.link((PY / path).resolve(), esc(path), "file path") + "</div>")
             for key, row in items:
                 w('<div class="prop">')
                 w('<div class="head">')
@@ -667,7 +802,14 @@ def render(data: dict, warns: list = ()) -> str:
       "<code>tests/bench_matrix/README.md</code> for what to do when a number surprises "
       "you.</p>")
     w("</div>")
-    return "\n".join(o)
+    w('<dialog id="srcdlg"><div class="dlg-bar"><b class="dlg-title"></b>'
+      '<a class="dlg-raw" href="#">open the file itself</a>'
+      '<button class="dlg-close" type="button">close</button></div>'
+      '<pre class="src"></pre></dialog>')
+    page = files.linkify("\n".join(o))
+    return (page
+            + f'\n<script type="application/json" id="srcs">{files.payload()}</script>'
+            + f"\n<script>{VIEWER_JS}</script>")
 
 
 def main() -> None:
