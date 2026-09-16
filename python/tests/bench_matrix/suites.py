@@ -15,7 +15,7 @@ restated here that one of them already says.
              fixtures, whose `--buchi` property is stated in their docstrings
              ("Property: x == 0 holds infinitely often") and transcribed here.
     svcomp   `benchmarks/svcomp/dsl/` -- 57 SV-COMP termination benchmarks,
-             two properties each, both *derived* rather than written down:
+             one or two properties each, *derived* rather than written down:
              see `svcomp_rows`.
 
 A row is one question; a (row, route) pair is one `uv run verith`.
@@ -139,7 +139,9 @@ def svcomp_rows() -> list[Row]:
     `_invariants.infer_invariants` finds. Inductive by construction, so like
     the fbk suite's `inv-` probes this measures the plumbing rather than the
     search; it is kept unpruned (redundant conjuncts included) because it is
-    the invariant the corpus's own inference produced, not a tidied one.
+    the invariant the corpus's own inference produced, not a tidied one. A
+    benchmark Houdini finds nothing for has no such row: its property would be
+    `true`, which every route verifies and nothing is learned from.
     """
     import z3                                               # noqa: PLC0415
 
@@ -172,10 +174,15 @@ def svcomp_rows() -> list[Row]:
         ))
         facts = infer_invariants(system)
         smap = {n: system.s_map[n] for n in system.names}
-        inv = z3.And(*[f(smap) for _, f in facts]) if facts else z3.BoolVal(True)
+        inv = smt(z3.And(*[f(smap) for _, f in facts]), bench.state) if facts else "true"
+        if inv == "true":
+            # Houdini found nothing, and `G true` holds of every module: every
+            # route verifies it and learns nothing. 34 of the 57 used to
+            # contribute such a row, a third of the suite's cells.
+            continue
         out.append(Row(
             suite="svcomp", bench=bench.name, kind="safety",
-            prop=smt(inv, bench.state), module=SVCOMP_ADAPTER,
+            prop=inv, module=SVCOMP_ADAPTER,
             prop_label="houdini-inv", env=env,
             note=(f"the conjunction of the {len(facts)} invariant"
                   f"{'' if len(facts) == 1 else 's'} Houdini found for this "

@@ -431,8 +431,27 @@ def main() -> None:
                     help="recompute every recorded verdict from its stored gen/build "
                          "data and exit -- what to run after correcting `verdict()`, "
                          "so a rule change does not cost a re-measurement")
+    ap.add_argument("--prune", action="store_true",
+                    help="drop recorded rows and runs the suites no longer produce, "
+                         "and exit -- what to run after `suites.py` stops emitting a row")
     args = ap.parse_args()
     RESULTS = Path(args.results)
+
+    if args.prune:
+        data = json.loads(RESULTS.read_text())
+        keep = {r.key for r in all_rows()}
+        gone = sorted(k for k in data["rows"] if k not in keep)
+        runs = [p for p in data["runs"] if p.split("::")[0] not in keep]
+        for k in gone:
+            del data["rows"][k]
+        for p in runs:
+            del data["runs"][p]
+        RESULTS.write_text(json.dumps(data, indent=1))
+        for k in gone:
+            print(f"  dropped {k}")
+        print(f"{len(gone)} rows and {len(runs)} runs dropped; "
+              f"{len(data['rows'])} rows and {len(data['runs'])} runs kept")
+        return
 
     if args.reverdict:
         data = json.loads(RESULTS.read_text())

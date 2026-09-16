@@ -69,7 +69,7 @@ a `lake update` would re-resolve the other thirteen packages).
 | `limits` | 30 | [`../limits/cases.py`](../limits/cases.py) | `--buchi`, the matrix's own reachability target |
 | `fbk` | 39 | [`../lean/fbk/probes.py`](../lean/fbk/probes.py) | `--safety` |
 | `tests` | 6 | [`../fixtures/`](../fixtures/) | `--buchi`, from each fixture's docstring |
-| `svcomp` | 114 | [`../../benchmarks/svcomp/dsl/`](../../benchmarks/svcomp/dsl/) | both, derived — see below |
+| `svcomp` | 80 | [`../../benchmarks/svcomp/dsl/`](../../benchmarks/svcomp/dsl/) | both, derived — see below |
 
 The limit matrix's 77 cases vary the *supplied* `--invariant` and
 `--ranking`, which no `--infer` route reads, so they collapse onto their
@@ -96,6 +96,9 @@ wants a file with a no-argument `module()` and a one-state predicate, so:
   the fbk suite's `inv-` probes it measures the plumbing rather than the
   search. Kept **unpruned**: it is the invariant the corpus's own inference
   produced, not a tidied one, and several rows are redundant as a result.
+  Only 23 benchmarks have one. For the other 34 Houdini finds nothing, the
+  conjunction is `true`, and a row for it would be verified by every route
+  and say nothing — so there is none.
 
 A column's z3 symbol is its name and `verith` indexes state by ctrl
 declaration order, which `Bench.state` already is, so the rename onto
@@ -229,6 +232,7 @@ uv run python tests/bench_matrix/run_matrix.py --only Countdown --redo
 uv run python tests/bench_matrix/run_matrix.py --no-build        # generation only
 uv run python tests/bench_matrix/suites.py                      # just count the rows
 uv run python tests/bench_matrix/run_matrix.py --reverdict       # reclassify, no re-measuring
+uv run python tests/bench_matrix/run_matrix.py --prune           # forget rows suites.py dropped
 ```
 
 `--reverdict` recomputes every recorded verdict from the output already
