@@ -106,6 +106,7 @@ declaration order, which `Bench.state` already is, so the rename onto
 | `PROOF-FAIL` | A certificate was produced and Lean rejected it. |
 | `BUILD-FAIL` | The project failed outside the certificate: one of the five encodings did not compile. |
 | `SORRY` / `SORRY+FAIL` | An obligation left as `sorry`, the build otherwise clean / not. |
+| `UNSUPPORTED` | The route does not take this property's kind (`sygus` and `fbk-proveit` are safety-only, `ai` Büchi-only); `verith` refused it up front. |
 
 `NO-CERT`, `REFUTED` and `GEN-FAIL` are kept apart because they are
 different measurements, and telling them apart is not a prefix match: `main`

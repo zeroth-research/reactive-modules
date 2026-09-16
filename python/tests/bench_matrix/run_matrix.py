@@ -300,6 +300,10 @@ def build(row, route, out: Path) -> dict:
 # --infer:`, but a route whose row sets `errors_self_named` names its own
 # flag instead (`--fbk-proveit:`), so the prefix alone is not enough.
 _REFUTED = re.compile(r"found a counterexample|\bUNSAFE\b|property does not hold")
+# The CLI's refusal of a property kind the route does not take -- each route's
+# `kinds_refusal`, or the generic `--infer X is incompatible with --buchi`.
+_UNSUPPORTED = re.compile(
+    r"is incompatible with --(?:buchi|safety)\b|--(?:safety|buchi) needs --infer")
 _NO_CERT = re.compile(
     r"error: --infer|CEGAR failed after|obligation violated|found no ranking"
     r"|found no invariant|could not decide|cannot decide|--fbk-proveit:|--ic3ia:")
@@ -337,6 +341,8 @@ def verdict(gen, bld) -> str:
         err = gen["err"] + " " + gen.get("err_full", "")
         if "timed out" in gen["err"]:
             return "TIMEOUT"
+        if _UNSUPPORTED.search(err):
+            return "UNSUPPORTED"
         if _REFUTED.search(err):
             return "REFUTED"
         return "NO-CERT" if _NO_CERT.search(err) else "GEN-FAIL"

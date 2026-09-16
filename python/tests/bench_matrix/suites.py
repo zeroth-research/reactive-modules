@@ -240,8 +240,12 @@ def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None) -> list[
 
 
 def pairs(rows, route_list):
-    """Every (row, route) the kinds allow, in a stable order."""
-    return [(r, rt) for r in rows for rt in route_list if r.kind in rt.kinds]
+    """Every (row, route), in a stable order.
+
+    Including the pairs whose kind the route does not take: `verith` refuses
+    those up front and says why, and a property's table should show every
+    route with that answer rather than leave the route out."""
+    return [(r, rt) for r in rows for rt in route_list]
 
 
 if __name__ == "__main__":

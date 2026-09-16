@@ -60,6 +60,9 @@ SUITE_BLURB = {
 
 VERDICTS = {
     "VERIFIED": ("ok", "Lean discharged every obligation."),
+    "UNSUPPORTED": ("na", "The route does not take this kind of property, and "
+                          "<code>verith</code> refused it before generating anything. "
+                          "The panel carries its reason."),
     "REFUTED": ("no", "The route did not merely fail to find a certificate &mdash; it "
                        "<em>disproved</em> the property, with a counterexample. The "
                        "suites carry deliberately false controls to produce exactly "
@@ -184,6 +187,7 @@ table.kv td:first-child{color:var(--dim);white-space:nowrap;width:1%}
 .v.no{background:var(--nobg);color:var(--no)}
 .v.bad{background:var(--badbg);color:var(--bad)}
 .v.open{background:var(--openbg);color:var(--open)}
+.v.na{background:transparent;color:var(--dim);border:1px dashed var(--line)}
 /* the matrix */
 .bench{background:var(--card);border:1px solid var(--line);border-radius:8px;
  margin:14px 0;overflow:hidden}
@@ -452,7 +456,8 @@ def render(data: dict, warns: list = ()) -> str:
         w(f"<tr><td>{esc(suite)}</td>")
         for rt in present:
             ks = [k for k, v in rows.items() if suite in (v["suite"], "all")]
-            got = [runs[f"{k}::{rt}"] for k in ks if f"{k}::{rt}" in runs]
+            got = [runs[f"{k}::{rt}"] for k in ks if f"{k}::{rt}" in runs
+                   and runs[f"{k}::{rt}"]["verdict"] != "UNSUPPORTED"]
             ok = sum(1 for g in got if g["verdict"] == "VERIFIED")
             w(f'<td class="{"n0" if not got else ""}">'
               + (f"{ok} / {len(got)}" if got else "&mdash;") + "</td>")
