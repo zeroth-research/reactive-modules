@@ -67,10 +67,10 @@ VERDICTS = {
                           "<code>verith</code> refused it before generating anything. "
                           "The panel carries its reason."),
     "REFUTED": ("no", "The route did not merely fail to find a certificate &mdash; it "
-                       "<em>disproved</em> the property, with a counterexample. The "
-                       "suites carry deliberately false controls to produce exactly "
-                       "this, so it is a pass, not a failure, wherever a control is "
-                       "what produced it."),
+                       "<em>disproved</em> the property, with a counterexample. Green "
+                       "where the property is <em>known false</em>, which is what the "
+                       "suites' deliberately false controls are there to produce; red "
+                       "where it is known to hold."),
     "NO-CERT": ("no", "The route searched its shape and returned nothing. For "
                       "<code>sygus</code> and <code>smt-linear</code> a bounded shape that "
                       "comes back empty is a <em>proof</em> that it is empty, not a search "
@@ -222,6 +222,8 @@ pre.src .ln::before{counter-increment:ln;content:counter(ln);display:inline-bloc
  margin-right:1em;text-align:right;color:var(--dim);user-select:none}
 h3.dir{margin:2.2em 0 .7em;font-size:1.05rem}
 .tag.suite{background:var(--openbg);color:var(--open)}
+.tag.truth.holds{background:var(--okbg);color:var(--ok)}
+.tag.truth.fails{background:var(--badbg);color:var(--bad)}
 .grid .m.missing{color:var(--dim);border-top:1px solid var(--line)}
 dl.suites{font-size:.9rem;margin:.6em 0 1.4em}
 dl.suites dt{font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:.7em}
@@ -433,9 +435,23 @@ def slug(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-")
 
 
-def method_row(w, rt: str, run: dict) -> None:
+def verdict_class(verdict: str, truth: "str | None") -> str:
+    """The label's colour: green for a right answer, red for a wrong one.
+
+    `VERIFIED` is Lean's, so it is right unless the property is known to fail
+    -- which would be a soundness bug, and is drawn as one. `REFUTED` is right
+    exactly where the property is known to fail, and wrong where it is known
+    to hold. Everything else keeps its legend colour."""
+    if verdict == "VERIFIED":
+        return "bad" if truth == "fails" else "ok"
+    if verdict == "REFUTED" and truth:
+        return "ok" if truth == "fails" else "bad"
+    return VERDICTS.get(verdict, ("", ""))[0]
+
+
+def method_row(w, rt: str, run: dict, truth: "str | None" = None) -> None:
     """One route's row: the summary line, and the panel it opens."""
-    cls = VERDICTS.get(run["verdict"], ("", ""))[0]
+    cls = verdict_class(run["verdict"], truth)
     dis = run.get("disagreed")
     w('<details class="m"><summary>')
     w(f'<span class="name">{esc(rt)}</span>')
@@ -714,6 +730,12 @@ def render(data: dict, warns: list = ()) -> str:
 
     # ── verdicts ────────────────────────────────────────────────────────
     w("<h2 id=verdicts>Verdicts</h2>")
+    w("<p>A label is <b>green when the answer is right</b>: a <code>VERIFIED</code> "
+      "(Lean checked it), and a <code>REFUTED</code> on a property known to be false. "
+      "It is red when the answer contradicts what is known about the property. Where "
+      "that is known, the property carries a <em>known to hold</em> or <em>known "
+      "false</em> tag: the fbk probes' declared outcome, the fixtures' own docstrings, "
+      "and Houdini's invariants, which hold by construction.</p>")
     w('<table class="kv">')
     for name, (cls, blurb) in VERDICTS.items():
         n = sum(1 for r in runs.values() if r["verdict"] == name)
@@ -791,6 +813,10 @@ def render(data: dict, warns: list = ()) -> str:
                 w(f'<b>{esc(row["prop_label"] or row["kind"])}</b>')
                 w(f'<span class=tag>--{esc(row["kind"])}</span>')
                 w(f'<span class="tag suite">{esc(row["suite"])}</span>')
+                if row.get("truth"):
+                    w(f'<span class="tag truth {esc(row["truth"])}" title="what is known '
+                      f'about this property, independently of any route">'
+                      f'{"known to hold" if row["truth"] == "holds" else "known false"}</span>')
                 w("</div>")
                 w(f'<code class="smt">{esc(row["prop"])}</code>')
                 note = row["note"].split("; the cases sharing it")[0]
@@ -812,7 +838,7 @@ def render(data: dict, warns: list = ()) -> str:
                           '<span class="v na">not measured</span>'
                           "<span></span><span></span><span></span></div>")
                         continue
-                    method_row(w, rt, run)
+                    method_row(w, rt, run, row.get("truth"))
                 w("</div></div>")
             w("</div>")
 

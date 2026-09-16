@@ -51,6 +51,10 @@ class Row:
     env: dict = field(default_factory=dict)   # extra env the module needs
     note: str = ""                  # why this property, when it was derived
     shared: tuple = ()              # other case names asking the same thing
+    # Whether the property is known to hold ("holds"), known not to ("fails"),
+    # or neither is written down anywhere (None). What makes a route's answer
+    # *correct*: a `REFUTED` is right only where the property fails.
+    truth: "str | None" = None
 
     @property
     def key(self) -> str:
@@ -95,8 +99,16 @@ def fbk_rows() -> list[Row]:
 
     return [Row(suite="fbk", bench=mod, kind="safety", prop=prop,
                 module=_module_path(mod), prop_label=name,
-                note=f"probe expects `{expect}` of the ic3ia route")
+                note=f"probe expects `{expect}` of the ic3ia route",
+                truth=PROBE_TRUTH.get(expect))
             for name, mod, prop, expect in PROBES]
+
+
+# What a probe's `expect` says about the property itself. `certified` and
+# `lean-fail` both mean ic3ia proved it -- the second only that Lean then
+# rejected the reconstruction -- and `unsafe` that ic3ia found a
+# counterexample. `unknown` and `abort` say nothing about the property.
+PROBE_TRUTH = {"certified": "holds", "lean-fail": "holds", "unsafe": "fails"}
 
 
 # The CLI fixtures state their property in their docstring; this is that line,
@@ -116,7 +128,8 @@ TESTS_PROPS = (
 def tests_rows() -> list[Row]:
     return [Row(suite="tests", bench=mod, kind="buchi", prop=prop,
                 module=FIXTURES / f"{mod}.py", prop_label=label,
-                note="the property the fixture's own docstring states")
+                note="the property the fixture's own docstring states",
+                truth="holds")
             for mod, prop, label in TESTS_PROPS]
 
 
@@ -183,7 +196,7 @@ def svcomp_rows() -> list[Row]:
         out.append(Row(
             suite="svcomp", bench=bench.name, kind="safety",
             prop=inv, module=SVCOMP_ADAPTER,
-            prop_label="houdini-inv", env=env,
+            prop_label="houdini-inv", env=env, truth="holds",
             note=(f"the conjunction of the {len(facts)} invariant"
                   f"{'' if len(facts) == 1 else 's'} Houdini found for this "
                   "module, unpruned. Inductive by construction."),

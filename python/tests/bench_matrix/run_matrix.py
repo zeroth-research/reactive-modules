@@ -499,7 +499,7 @@ def main() -> None:
         results["rows"][row.key] = dict(
             suite=row.suite, bench=row.bench, kind=row.kind, prop=row.prop,
             prop_label=row.prop_label, module=rel(row.module), note=row.note,
-            env=row.env, shared=list(row.shared))
+            env=row.env, shared=list(row.shared), truth=row.truth)
 
     pending = [(r, rt) for r, rt in todo
                if args.redo or f"{r.key}::{rt.name}" not in results["runs"]]
