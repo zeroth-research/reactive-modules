@@ -98,6 +98,14 @@ Put NO OTHER TEXT in the response.
 """
 
 
+# Room for the answer *after* the reasoning. The generate prompt asks for two
+# lines, but a model reasons in prose first and the lines come last, so a cap
+# sized for the answer cuts the reply before it: at 1024 tokens 56 of the
+# bench matrix's `--infer ai` cells ended mid-sentence, some inside
+# `INVARIANT: fun s => s`, and failed to parse. Kept below the size at which
+# the Anthropic SDK insists on streaming.
+MAX_TOKENS = 8192
+
 def _describe_preconditions(cd: CertificateData) -> str:
     parts = []
     if cd.init_pre is not None:
@@ -129,7 +137,7 @@ def _make_client(base_url: str | None, model: str):
         def chat(system: str, user: str) -> str:
             resp = client.chat.completions.create(
                 model=model,
-                max_tokens=1024,
+                max_tokens=MAX_TOKENS,
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
@@ -161,7 +169,7 @@ def _make_client(base_url: str | None, model: str):
                 )
             resp = client.messages.create(
                 model=model,
-                max_tokens=1024,
+                max_tokens=MAX_TOKENS,
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
