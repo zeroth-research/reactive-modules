@@ -239,7 +239,7 @@ def generate(row, route, out: Path) -> dict:
         return dict(ok=False, secs=time.time() - t0,
                     err=" | ".join(tail[-8:]), err_full=blob[-4000:])
     return dict(ok=True, secs=time.time() - t0, err="",
-                inferred=inferred_from(r.stdout))
+                inferred=inferred_from(r.stdout), inferred_rule="last")
 
 
 _PRED = re.compile(r"^\s*(?:\[[\w-]+\]\s*)?(inv|ranking)\s*:\s*(.+?)\s*$")
@@ -254,11 +254,16 @@ def inferred_from(stdout: str) -> dict:
 
     Kept exactly as printed. It used to be stripped of backticks for
     display, which hid the one thing wrong with `--infer ai`'s answers: they
-    reached `Data.lean` quoted, and the record showed them clean."""
+    reached `Data.lean` quoted, and the record showed them clean.
+
+    The *last* one printed. `ai` and `ai-cegar` print a candidate per attempt
+    and stop at the one that is accepted, so the first line is attempt 0 --
+    which, on any run that needed a second attempt, is a candidate that was
+    rejected, and not the certificate that was built."""
     found: dict = {}
     for line in stdout.splitlines():
         m = _PRED.match(line)
-        if m and m.group(1) not in found:
+        if m:
             found[m.group(1)] = m.group(2)
     return found
 

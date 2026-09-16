@@ -264,6 +264,7 @@ details.m[open]>summary{background:var(--code)}
  color:var(--dim);font-weight:600;margin-top:.7em}
 .m .body .found{font-size:11.5px;word-break:break-all;color:var(--dim)}
 .m .body .err{font-size:11.5px;color:var(--bad);word-break:break-word}
+.m .body .lbl .hint{text-transform:none;letter-spacing:0;font-weight:400}
 pre.err{color:var(--bad);white-space:pre-wrap;max-height:19em;overflow-y:auto}
 .mean{white-space:nowrap}
 .mean .n{color:var(--dim);font-size:10px;margin-left:.25em;font-weight:400}
@@ -473,9 +474,16 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None) -> None:
           + ". The row shows the most common one; its timing "
             "averages only the runs that reached it.</p>")
     found = run["gen"].get("inferred") or {}
+    # Recorded before the harness kept the last candidate a route printed, a
+    # multi-attempt run's value is attempt 0's -- possibly one it rejected.
+    first = run["gen"].get("inferred_rule") != "last" and rt in ("ai", "ai-cegar")
     for lbl in ("inv", "ranking"):
         if found.get(lbl):
-            w(f'<div class="lbl">{lbl} it found</div>'
+            w(f'<div class="lbl">{lbl} {"it printed first" if first else "it found"}'
+              + ('<span class="hint" title="recorded from the first candidate this '
+                 'route printed; if it took more than one attempt, the certificate '
+                 'built was a later one"> (attempt 0 &mdash; may not be the one built)</span>'
+                 if first else "") + "</div>"
               f'<div class="found"><code>{esc(found[lbl])}</code></div>')
     if run["gen"].get("err"):
         w(f'<div class="lbl">{"why verith refused" if na else "why it returned nothing"}</div>')
