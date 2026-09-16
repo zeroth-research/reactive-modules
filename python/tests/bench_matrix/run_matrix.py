@@ -119,7 +119,8 @@ def write_manifest(proj: Path, route_name: str) -> None:
 def command(row, route, out: Path) -> list[str]:
     """The `uv run verith` this pair is, as a list. Also what the page shows."""
     cmd = ["uv", "run", "verith", rel(row.module),
-           f"--{row.kind}", row.prop, *route.args,
+           f"--{row.kind}", row.prop,
+           *(["--pre", row.pre] if row.pre else []), *route.args,
            "--artifacts", "reset", "-o", str(out), "-p", "Rea"]
     if route.needs_llm and MODEL:
         cmd += ["--model", MODEL]
@@ -324,7 +325,7 @@ _REFUTED = re.compile(r"found a counterexample|\bUNSAFE\b|property does not hold
 # The CLI's refusal of a property kind the route does not take -- each route's
 # `kinds_refusal`, or the generic `--infer X is incompatible with --buchi`.
 _UNSUPPORTED = re.compile(
-    r"is incompatible with --(?:buchi|safety)\b|--(?:safety|buchi) needs --infer")
+    r"is incompatible with --(?:buchi|safety|pre)\b|--(?:safety|buchi) needs --infer")
 # `ai` checks its own candidates with a second model call and gives up after
 # `max_attempts` rejections -- the same outcome as `ai-cegar` running out of
 # attempts, reported in its own words.
@@ -526,7 +527,7 @@ def main() -> None:
         results["rows"][row.key] = dict(
             suite=row.suite, bench=row.bench, kind=row.kind, prop=row.prop,
             prop_label=row.prop_label, module=rel(row.module), note=row.note,
-            env=row.env, shared=list(row.shared), truth=row.truth)
+            env=row.env, shared=list(row.shared), truth=row.truth, pre=row.pre)
 
     pending = [(r, rt) for r, rt in todo
                if args.redo or f"{r.key}::{rt.name}" not in results["runs"]]

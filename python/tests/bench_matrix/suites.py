@@ -55,6 +55,10 @@ class Row:
     # or neither is written down anywhere (None). What makes a route's answer
     # *correct*: a `REFUTED` is right only where the property fails.
     truth: "str | None" = None
+    # The benchmark's precondition, as `--pre` takes it: SMT-LIB over the
+    # inputs `e0..eM-1`. Part of the question -- a property that holds only
+    # from the states it admits does not hold of the module without it.
+    pre: str = ""
 
     @property
     def key(self) -> str:
@@ -84,9 +88,8 @@ def limits_rows() -> list[Row]:
             suite="limits", bench=mod, kind="buchi", prop=prop,
             module=_module_path(mod),
             prop_label=group[0]["name"],
-            note=("the matrix's own reachability target"
-                  + (f". Its precondition {pre} is dropped: no --infer route "
-                     "reads a supplied one" if pre else "")),
+            note="the matrix's own reachability target",
+            pre=pre,
             shared=tuple(c["name"] for c in group[1:]),
         ))
     return out
@@ -133,6 +136,31 @@ def tests_rows() -> list[Row]:
             for mod, prop, label in TESTS_PROPS]
 
 
+def entry_pre(system, bench) -> str:
+    """`bench`'s precondition as `--pre` takes it, or `""` when it has none.
+
+    A benchmark's precondition is the C program's `if (P)` around its loop: a
+    predicate over the *state* at entry. `verith`'s `--pre` is over the module's
+    inputs, `e0..eM-1` in declaration order. The two meet in the init block:
+    `system.entry` gives every column's value at tick 0 as a term over
+    `system.entry_inputs`, the same inputs in the same order, so the
+    precondition is read at entry and those inputs renamed. The update block
+    reads no input, so `--pre` also constraining `update_pre` admits every
+    step it did before.
+
+    Dropping it -- as this harness did -- asks a different question: 8 of the
+    corpus's Houdini invariants hold only from the states the precondition
+    admits, and every route that took one without it could not prove it."""
+    import z3                                               # noqa: PLC0415
+
+    if bench.precondition is None:
+        return ""
+    at_entry = z3.And(*bench.precondition(system.entry))
+    renamed = z3.substitute(at_entry, *[(v, z3.Int(f"e{i}"))
+                                        for i, v in enumerate(system.entry_inputs)])
+    return " ".join(z3.simplify(renamed).sexpr().split())
+
+
 def svcomp_rows() -> list[Row]:
     """The 57 termination benchmarks, two derived properties each.
 
@@ -176,11 +204,12 @@ def svcomp_rows() -> list[Row]:
     for bench in discover():
         system = system_of(bench)
         env = {"SVCOMP_BENCH": bench.name}
+        pre = entry_pre(system, bench)
         guard = resolve_domain(system, terminates().domain)
         out.append(Row(
             suite="svcomp", bench=bench.name, kind="buchi",
             prop=smt(z3.Not(guard), bench.state), module=SVCOMP_ADAPTER,
-            prop_label="terminates", env=env,
+            prop_label="terminates", env=env, pre=pre,
             note=("`G F not guard`: the loop guard, read off the module's "
                   "`ite(guard, body, self)`, negated. Reaching it is the "
                   "fixed point the run never leaves, so it is termination."),
@@ -196,7 +225,7 @@ def svcomp_rows() -> list[Row]:
         out.append(Row(
             suite="svcomp", bench=bench.name, kind="safety",
             prop=inv, module=SVCOMP_ADAPTER,
-            prop_label="houdini-inv", env=env, truth="holds",
+            prop_label="houdini-inv", env=env, truth="holds", pre=pre,
             note=(f"the conjunction of the {len(facts)} invariant"
                   f"{'' if len(facts) == 1 else 's'} Houdini found for this "
                   "module, unpruned. Inductive by construction."),

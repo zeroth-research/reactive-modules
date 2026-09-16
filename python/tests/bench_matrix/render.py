@@ -63,9 +63,10 @@ SUITE_BLURB = {
 
 VERDICTS = {
     "VERIFIED": ("ok", "Lean discharged every obligation."),
-    "UNSUPPORTED": ("na", "The route does not take this kind of property, and "
-                          "<code>verith</code> refused it before generating anything. "
-                          "The panel carries its reason."),
+    "UNSUPPORTED": ("na", "The route does not take this question &mdash; this kind of "
+                          "property, or a precondition &mdash; and <code>verith</code> "
+                          "refused it before generating anything. The panel carries its "
+                          "reason."),
     "REFUTED": ("no", "The route did not merely fail to find a certificate &mdash; it "
                        "<em>disproved</em> the property, with a counterexample. Green "
                        "where the property is <em>known false</em>, which is what the "
@@ -827,6 +828,9 @@ def render(data: dict, warns: list = ()) -> str:
                       f'{"known to hold" if row["truth"] == "holds" else "known false"}</span>')
                 w("</div>")
                 w(f'<code class="smt">{esc(row["prop"])}</code>')
+                if row.get("pre"):
+                    w(f'<p class="note">under the precondition <code>{esc(row["pre"])}</code> '
+                      "on the inputs, passed as <code>--pre</code></p>")
                 note = row["note"].split("; the cases sharing it")[0]
                 if note:
                     w(f'<p class="note">{esc(note)}</p>')
