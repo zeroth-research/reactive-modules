@@ -31,16 +31,12 @@ matrix cannot survive.
 Seven columns: the six `--infer` routes of
 [`zrth/lean/infer_route.py`](../../zrth/lean/infer_route.py), plus `none`.
 
-`none` is the control: the property alone, no predicates. It answers
-whether `verith` can generate this module at all and whether the Lean it
-emits is well-formed — the question underneath "did the certificate
-discharge". Its obligations are not `sorry`: `inv` defaults to `True` and
-`ranking` to `sorry`, and the obligations are still handed to the tactics,
-which cannot close them, so `lake build` fails in
-`Certificate/Certificate.lean`. A build that fails there and nowhere else
-is recorded as `SORRY`, its clean reading; anything failing before it is
-`BUILD-FAIL` or `PROOF-FAIL` as for any route. The few `none` cells that
-verify have a property that holds of every state.
+`none` is the control: the property alone, no predicates, so every
+obligation is emitted as `sorry`. It answers whether `verith` can generate
+this module at all and whether the Lean it emits is well-formed — the
+question underneath "did the certificate discharge". `SORRY+FAIL` is its
+expected reading, not a defect: an empty certificate gives the tactics
+nothing to close `hrank` with.
 
 Three routes need something from outside this repo, and the defaults in
 `run_matrix.py` point at where they were found on the machine that ran it:
@@ -116,8 +112,7 @@ declaration order, which `Bench.state` already is, so the rename onto
 | `GEN-FAIL` | No project was emitted at all — a codegen gap, or a shape refused up front. |
 | `PROOF-FAIL` | A certificate was produced and Lean rejected it. |
 | `BUILD-FAIL` | The project failed outside the certificate: one of the five encodings did not compile. |
-| `SORRY` | The module and predicates built and the obligations are open. `none`'s clean reading. |
-| `SORRY+FAIL` | A `sorry` left open *and* a build failure besides it. |
+| `SORRY` / `SORRY+FAIL` | Obligations left open, the build clean / not. What `none` is for. |
 
 `NO-CERT`, `REFUTED` and `GEN-FAIL` are kept apart because they are
 different measurements, and telling them apart is not a prefix match: `main`

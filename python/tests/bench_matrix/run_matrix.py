@@ -325,19 +325,7 @@ def failed_outside_certificate(bld) -> bool:
     return any(Path(f).name not in _CERT_FILES for f in files if f.endswith(".lean"))
 
 
-def obligations_only(bld) -> bool:
-    """Whether every error is in `Certificate/Certificate.lean`: the
-    obligations, with the predicates in `Data.lean` elaborated and the module
-    built."""
-    targets = [t for t in bld.get("targets", []) if t != "<timeout>"]
-    files = [e.split(":", 1)[0] for e in bld.get("errors", [])]
-    files = [f for f in files if f.endswith(".lean")]
-    return (bool(files)
-            and all(Path(f).name == "Certificate.lean" for f in files)
-            and all(t == "Certificate.Certificate" for t in targets))
-
-
-def verdict(gen, bld, route: str = "") -> str:
+def verdict(gen, bld) -> str:
     """What this pair showed.
 
     A route that searched a shape and found it empty is the measurement, not
@@ -359,14 +347,6 @@ def verdict(gen, bld, route: str = "") -> str:
     # a `sorry` in the certificate beside it is not what stopped the build.
     if not bld.get("raw_ok") and failed_outside_certificate(bld):
         return "BUILD-FAIL"
-    # `none` supplies no predicate, and its obligations are still handed to
-    # the tactics, which cannot close one over a `ranking := sorry` or an
-    # `inv := True` the property does not follow from. A build that stops
-    # there and nowhere else is that control's clean reading -- the module
-    # generated, the project elaborated, the obligations open -- not a
-    # failure of anything the column measures.
-    if route == "none" and not bld.get("raw_ok") and obligations_only(bld):
-        return "SORRY"
     if bld.get("sorries"):
         return "SORRY" if bld.get("raw_ok") else "SORRY+FAIL"
     if not bld["ok"]:
@@ -464,7 +444,7 @@ def main() -> None:
         data = json.loads(RESULTS.read_text())
         changed = 0
         for pair, run in data["runs"].items():
-            was, now = run["verdict"], verdict(run["gen"], run["build"], run["route"])
+            was, now = run["verdict"], verdict(run["gen"], run["build"])
             if was != now:
                 run["verdict"] = now
                 changed += 1
@@ -532,7 +512,7 @@ def main() -> None:
                        else ["(not built: --no-build)"])
         else:
             bld = build(row, route, out)
-        v = verdict(gen, bld, route.name) if not args.no_build or not gen["ok"] else "GEN-OK"
+        v = verdict(gen, bld) if not args.no_build or not gen["ok"] else "GEN-OK"
         # When, not just how long: a timing is only as good as what else
         # the machine was doing, and without this the only way to place a
         # cell in time is to count lines in the log.
