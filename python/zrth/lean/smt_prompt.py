@@ -310,8 +310,10 @@ Examples of valid expressions:
   (and (= s0 false) (<= s1 10))
   (ite (= s0 true) 0 (- 10 s1))
 
-The ranking expression must have sort **Int** and satisfy \
-`ranking >= 0` whenever the invariant holds. If a state component is \
+The ranking expression must have sort **Int**, and wherever the \
+invariant holds and the property does not, it must be at least 1 and \
+strictly smaller after the step. Where the property holds it is \
+unconstrained, negative included. If a state component is \
 Real, wrap it in `(to_int ...)` to convert to Int; Bool components \
 can be mapped via `(ite s_k 1 0)`.
 

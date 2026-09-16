@@ -212,7 +212,7 @@ class TA2MagicCEGAR(TA2Magic):
         else:
             checks += [
                 self._check_ranking_decrease(msmt, env, r, prp_term, update_pre_term),
-                self._check_ranking_nonneg(msmt, env, r),
+                self._check_ranking_positive(msmt, env, r, prp_term, update_pre_term),
             ]
         return checks
 
@@ -292,14 +292,29 @@ class TA2MagicCEGAR(TA2Magic):
             ],
         )
 
-    def _check_ranking_nonneg(self, msmt, env, r):
+    def _check_ranking_positive(self, msmt, env, r, prp_term, update_pre_term):
+        """`inv s ∧ ¬P s ∧ update_pre → ranking s >= 1`.
+
+        With `rank_decrease`, exactly `rule_buchi`'s `hrank` over the Lean
+        ranking `Int.toNat ranking`: `toNat r' < toNat r` holds iff `r >= 1`
+        and `r' < r`. It used to be `inv s → ranking s >= 0` over every state,
+        which `hrank` never asks -- and which rejects every linear rank of a
+        state that is unbounded where the property already holds, such as
+        `1 + y` for `while (y >= 0) y = y - 1`.
+        """
         tm = msmt.tm
-        s = msmt.fresh_ctrl("rn_s")
+        s = msmt.fresh_ctrl("rp_s")
+        el = msmt.fresh_extl_l("rp_el")
+        en = msmt.fresh_extl_n("rp_en")
         inv_s = r.inv_term.substitute(env.state_vars, s)
+        pre = self._subst_inputs(env, update_pre_term, el, en)
+        prp_s = prp_term.substitute(env.state_vars, s)
         rank_s = r.ranking_term.substitute(env.state_vars, s)
-        nonneg = tm.mkTerm(Kind.GEQ, rank_s, tm.mkInteger(0))
-        neg_query = tm.mkTerm(Kind.AND, inv_s, tm.mkTerm(Kind.NOT, nonneg))
-        return self._run_query("rank_nonneg", neg_query, env, extra_vars=[("s", s)])
+        positive = tm.mkTerm(Kind.GEQ, rank_s, tm.mkInteger(1))
+        neg_query = tm.mkTerm(Kind.AND, inv_s, tm.mkTerm(Kind.NOT, prp_s), pre,
+                              tm.mkTerm(Kind.NOT, positive))
+        return self._run_query("rank_positive", neg_query, env,
+                               extra_vars=[("s", s), ("ranking(s)", [rank_s])])
 
     # --- solver driver --------------------------------------------------
 

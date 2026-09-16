@@ -190,6 +190,28 @@ def test_an_invariant_too_weak_for_the_property_comes_back_as_feedback(monkeypat
     assert cd.inv_smt == "(and (>= s0 0) (<= s0 9))"
 
 
+def test_a_rank_is_bounded_only_where_the_property_fails(monkeypatch):
+    """`while (y >= 0) y = y - 1` ranks by `1 + y` under the invariant `true`.
+
+    `rule_buchi` bounds the rank only on the states where the property fails.
+    The check used to demand `ranking >= 0` wherever the invariant holds,
+    which `1 + y` breaks at `y = -5` -- a state where the property already
+    holds -- so a certificate Lean accepts came back as a counterexample."""
+    from benchmarks.svcomp import discover
+
+    prompts = []
+    pending = ["INVARIANT: true\nRANKING: (+ 1 s0)"]
+
+    def chat(system, user):
+        prompts.append(user)
+        return pending.pop(0)
+
+    monkeypatch.setattr(magic_cegar, "_make_client", lambda base_url, model: chat)
+    bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
+    cd = TA2MagicCEGAR("", bench.build()[0]).infer(CertificateData(prp="(not (<= 0 s0))"))
+    assert len(prompts) == 1, "the candidate should have been accepted as proposed"
+    assert cd.ranking_smt == "(+ 1 s0)"
+
 def test_a_buchi_property_still_asks_for_both(monkeypatch):
     cd, prompts = _infer(
         monkeypatch,
