@@ -12,6 +12,7 @@ the timings were taken on.
 from __future__ import annotations
 
 import argparse
+import ast
 import html
 import json
 import re
@@ -205,6 +206,10 @@ a.file{color:inherit;text-decoration:underline;text-decoration-style:dotted;
  text-underline-offset:2px;cursor:pointer}
 a.file:hover{color:var(--accent);text-decoration-style:solid}
 a.file.path{color:var(--dim)}
+.bench>.desc{margin:0;padding:7px 16px 8px;font-size:12.5px;color:var(--dim);
+ border-bottom:1px solid var(--line);background:var(--code)}
+.bench>.desc code{font-size:11.5px;background:transparent;padding:0}
+.bench>.bh:has(+ .desc){border-bottom:0}
 dialog#srcdlg{width:min(900px,94vw);height:min(80vh,900px);padding:0;border:1px solid var(--line);
  border-radius:8px;background:var(--bg);color:var(--fg)}
 dialog#srcdlg::backdrop{background:rgba(0,0,0,.35)}
@@ -376,6 +381,52 @@ def source_of(row: dict) -> str:
             _SVCOMP = _svcomp_files()
         return _SVCOMP.get(row["bench"], row["module"])
     return row["module"]
+
+
+def _c_loop(docstring: str) -> "str | None":
+    """The C loop an SV-COMP benchmark's docstring carries, on one line: whole
+    when it is short, its header and `{ … }` when it is not."""
+    m = re.search(r"\b(?:while|for)\s*\(", docstring)
+    if not m:
+        return None
+    depth, end = 0, m.end() - 1
+    for end in range(m.end() - 1, len(docstring)):
+        depth += docstring[end] == "("
+        depth -= docstring[end] == ")"
+        if depth == 0:
+            break
+    header = " ".join(docstring[m.start():end + 1].split())
+    brace = docstring.find("{", end)
+    if brace < 0 or docstring[end + 1:brace].strip():
+        return header
+    depth = 0
+    for close in range(brace, len(docstring)):
+        depth += docstring[close] == "{"
+        depth -= docstring[close] == "}"
+        if depth == 0:
+            break
+    whole = f"{header} {' '.join(docstring[brace:close + 1].split())}"
+    return whole if len(whole) <= 90 else f"{header} {{ … }}"
+
+
+def describe(path: str) -> str:
+    """What the benchmark is, in a line, read from its own docstring.
+
+    A module fixture or a limit-matrix module says so in its first paragraph.
+    An SV-COMP benchmark's first line is mostly its own name; what it *is*
+    is the C loop underneath, so that is shown, with the author's gloss after
+    the dash where the first line has one."""
+    try:
+        doc = ast.get_docstring(ast.parse((PY / path).read_text())) or ""
+    except (OSError, SyntaxError):
+        return ""
+    first = " ".join(doc.split("\n\n")[0].split())
+    if path.startswith("benchmarks/svcomp/"):
+        gloss = first.split(" — ", 1)[1] if " — " in first else ""
+        loop = _c_loop(doc)
+        parts = ([f"<code>{esc(loop)}</code>"] if loop else []) + ([prose(gloss)] if gloss else [])
+        return " &mdash; ".join(parts)
+    return prose(first)
 
 
 def slug(text: str) -> str:
@@ -731,6 +782,9 @@ def render(data: dict, warns: list = ()) -> str:
             w(f'<div class="bench" id="b-{slug(path)}">')
             w(f'<div class="bh"><span class="bname">{esc(Path(path).stem)}</span>'
               + files.link((PY / path).resolve(), esc(path), "file path") + "</div>")
+            desc = describe(path)
+            if desc:
+                w(f'<p class="desc">{desc}</p>')
             for key, row in items:
                 w('<div class="prop">')
                 w('<div class="head">')
