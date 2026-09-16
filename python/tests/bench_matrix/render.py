@@ -79,12 +79,13 @@ VERDICTS = {
     "TIMEOUT": ("bad", "The cell was killed at the clock rather than measured &mdash; "
                        "so it is not evidence either way. The budgets are stated in "
                        "the machine block above."),
-    "SORRY": ("open", "The project is well-formed and the obligations are left open. This "
-                      "is what the <code>none</code> control is for."),
-    "SORRY+FAIL": ("open", "Obligations left open <em>and</em> the build failed &mdash; the "
-                           "usual shape of the <code>none</code> control, whose empty "
-                           "certificate gives the tactics nothing to close "
-                           "<code>hrank</code> with."),
+    "SORRY": ("open", "The module and the predicates built, and the obligations are "
+                      "open. For the <code>none</code> control that is the clean "
+                      "reading: with no predicate supplied the tactics cannot close "
+                      "<code>hrank</code> over <code>ranking := sorry</code>, so a "
+                      "build that stops there and nowhere else is counted here."),
+    "SORRY+FAIL": ("open", "A route left a <code>sorry</code> <em>and</em> the build failed "
+                           "on something besides it."),
 }
 
 NONE_BLURB = (

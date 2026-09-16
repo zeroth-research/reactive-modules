@@ -216,7 +216,7 @@ def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None) -> list[
     """The route column, with the two paths `fbk-proveit` needs filled in.
 
     `none` is not an `--infer` route at all: the property alone, with no
-    predicates, so every obligation is emitted as `sorry`. It is the control
+    predicates, whose obligations the tactics then cannot close. It is the control
     for the other six -- it says whether `verith` can generate this module
     and whether the project Lean gets is well-formed, which is the question
     underneath "did the certificate discharge"."""
