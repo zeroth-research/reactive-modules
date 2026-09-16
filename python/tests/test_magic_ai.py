@@ -53,6 +53,35 @@ def test_a_backtick_inside_the_expression_is_not_a_quote():
     )
     assert inv == "fun s => s.1 0 0 = `x.name"
 
+# --- what the model is told about the state (no model) ---
+
+ONE_WIRE_INIT = "@[simp] def init (extl_n: Unit) : (Mat Int 1 1) :=\n  x0\n"
+THREE_WIRE_INIT = ("@[simp] def init (extl_n: (Mat Int 1 1) × (Mat Int 1 1)) : "
+                   "(Mat Int 1 1) × (Mat Int 1 1) × (Mat Int 1 1) :=\n  x0\n")
+
+
+def test_a_one_component_state_is_named_as_the_matrix_itself():
+    """`s.1` on a single `Mat` is a projection out of a function, which Lean
+    refuses; the message has to say this state has no `.1`."""
+    from zrth.lean.magic_ai import _state_type_line
+    line = _state_type_line(ONE_WIRE_INIT)
+    assert "`(Mat Int 1 1)`" in line
+    assert "`s 0 0`" in line
+
+
+def test_a_tuple_state_is_named_with_its_whole_type():
+    from zrth.lean.magic_ai import _state_type_line
+    line = _state_type_line(THREE_WIRE_INIT)
+    assert "`(Mat Int 1 1) × (Mat Int 1 1) × (Mat Int 1 1)`" in line
+    assert "tuple" in line
+
+
+def test_no_prompt_says_every_state_is_read_through_dot_one():
+    from zrth.lean.magic_ai import GENERATE_SYSTEM, VERIFY_SYSTEM
+    for prompt in (GENERATE_SYSTEM, VERIFY_SYSTEM):
+        assert "there is no `.1`" in prompt
+        assert "accessed via `.1`, `.2.1`, `.2.2.1`" not in prompt
+
 # --- Claude API tests ---
 
 @pytest.mark.skipif(
