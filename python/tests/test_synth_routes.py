@@ -127,7 +127,7 @@ def test_a_real_state_is_refused_by_name_by_both_routes():
     cd = CertificateData(prp="(>= s0 0.0)", kind="safety")
     for magic in (TA2MagicSygus(module_of("m_lra_lin"), log=lambda *_: None),
                   TA2MagicLinear(module_of("m_lra_lin"), log=lambda *_: None)):
-        with pytest.raises(Refused, match="not weighable"):
+        with pytest.raises(Refused, match="no integer reading"):
             magic.infer(cd)
 
 

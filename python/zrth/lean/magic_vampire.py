@@ -49,18 +49,43 @@ that found nothing is repeated at the next -- proofs already found are
 kept, and only what failed is asked again.
 
 What the route needs of a module
-================================
-Scalar ``Int`` and ``Bool`` state and inputs.  Vampire's SMT-LIB front end
-has integer and real arithmetic and datatypes but no bitvectors, a Real
-component has no integer reading for a ranking function to land in `Nat`
-by, and a matrix-shaped one would be a column per element; each is refused
-by name before Vampire is started.
+===============================
+Scalar ``Int``, ``Bool`` and ``Real`` state and inputs.  Vampire's SMT-LIB
+front end has integer and real arithmetic and datatypes but no bitvectors,
+and a matrix-shaped component would be a column per element; both are
+refused by name before Vampire is started.
+
+A Real component changes two things, and only two.
+
+**Its invariant is a set of values, not an interval.**  Over the reals a
+bound is almost never inductive on its own -- ``m_lra_lin`` steps
+``x' = x - 1`` while ``x > 0``, so ``0 <= x <= 5`` admits ``x = 1/2`` and
+steps it to ``-1/2`` -- while the values a run actually takes are finitely
+many and closed under the round.  So a Real component whose runs stay
+within a few values is offered that disjunction as one fact, which is the
+shape `tests/limits` records the hand-written LRA certificates needing.
+
+**Its ranking function is floored, and scaled first.**  `rule_buchi` ranks
+by a `Nat`, so a real-valued rank is read through ``to_int``; and flooring
+a quantity that falls by less than one need not fall at all --
+``m_lra_half`` steps by ``1/2``, where ``to_int x`` repeats.  The scale is
+the least common denominator of the literals the program mentions, so the
+rank is ``(to_int (* 2.0 s0))`` there and ``(to_int s0)`` where the program
+is integral.  Vampire proves the floored obligation directly:
+``to_int (x - 1.0) < to_int x`` is one of its unsat answers, not something
+this module reasons about.
+
+Literals are printed as decimals throughout, because Vampire's front end
+sorts them strictly: it reads neither cvc5's ``(/ 1 2)`` for one half nor a
+bare ``3`` where a Real is expected.
 """
 
 from __future__ import annotations
 
+import math
 import os
 import random
+import re
 import shutil
 import signal
 import subprocess
@@ -68,6 +93,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from fractions import Fraction
 from itertools import product
 from pathlib import Path
 
@@ -117,6 +143,68 @@ _MAX_BRANCH_FORMS = 6
 _MAX_DENSE = 5
 # Constant-derived shifts offered above a fitted one, per form.
 _MAX_SHIFTS = 2
+
+# A Real component whose runs stay within this many values is offered the
+# disjunction of them as one fact, and the scale a ranking function is
+# floored after is at most this. Both bound how long a certificate can get:
+# the disjunction is one `step_inv` case per value, and the scale is a
+# literal in the rank.
+_MAX_VALUES = 8
+_MAX_SCALE = 64
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Literals Vampire reads
+# ══════════════════════════════════════════════════════════════════════════
+#
+# Its SMT-LIB front end sorts literals strictly, and cvc5's printer does
+# not write for it: a rational prints as `(/ 1 2)`, whose arguments are Int
+# ("invalid sort $int for interpretation /"), and an Int numeral anywhere a
+# Real is expected is a parse error rather than a coercion. So every real
+# literal this module writes is a decimal, and every term cvc5 prints is
+# passed through `decimals` on its way into a script.
+
+
+def smt_real(value) -> str:
+    """A Real literal: a decimal where one is exact, else a quotient of two.
+
+    `1/2` is `0.5` and `1/3` is `(/ 1.0 3.0)` -- a decimal cannot say the
+    second, and rounding it would state a different obligation.
+    """
+    q = Fraction(value)
+    sign, q = ("(- ", -q) if q < 0 else ("", -(-q))
+    close = ")" if sign else ""
+    rest = q.denominator
+    for factor in (2, 5):
+        while rest % factor == 0:
+            rest //= factor
+    if rest != 1:
+        return f"{sign}(/ {q.numerator}.0 {q.denominator}.0){close}"
+    places = 0
+    while 10 ** places % q.denominator:
+        places += 1
+    digits = str(q.numerator * 10 ** places // q.denominator).rjust(places + 1, "0")
+    whole, frac = digits[:len(digits) - places], digits[len(digits) - places:]
+    return f"{sign}{whole}.{frac or '0'}{close}"
+
+
+# `(/ 1 2)`, `(/ (- 1) 4)`: a rational as cvc5 prints one. Integer division
+# prints as `div`, so a `/` whose arguments are both numerals is always this.
+_RATIONAL = re.compile(r"\(/ (?:\(- (\d+)\)|(\d+)) (\d+)\)")
+
+
+def decimals(text: str) -> str:
+    """`text` with cvc5's rational literals rewritten as Vampire reads them."""
+    def fix(m: re.Match) -> str:
+        neg, num, den = m.groups()
+        return smt_real(Fraction(-int(neg) if neg else int(num), int(den)))
+
+    return _RATIONAL.sub(fix, text)
+
+
+def smt_lit(value, sort) -> str:
+    """`value` as a literal of `sort`: an Int numeral, or a decimal."""
+    return smt_real(value) if sort.isReal() else smt_int(int(value))
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -431,12 +519,22 @@ class Obligations:
         lines += [f"(assert (! {t} :named {n}))" for n, t in hyps]
         lines.append(f"(assert (! (not {goal}) :named goal))")
         lines.append("(check-sat)")
-        return "\n".join(lines) + "\n"
+        return decimals("\n".join(lines)) + "\n"
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # Evaluation
 # ══════════════════════════════════════════════════════════════════════════
+
+
+def _term(tm, sort, value):
+    """`value` as a cvc5 literal of `sort`."""
+    if sort.isBoolean():
+        return tm.mkBoolean(bool(value))
+    if sort.isReal():
+        q = Fraction(value)
+        return tm.mkReal(q.numerator, q.denominator)
+    return tm.mkInteger(int(value))
 
 
 class _Unevaluable(Exception):
@@ -498,6 +596,14 @@ def _modulus(vals):
     return a % abs(b)
 
 
+def _quotient(vals):
+    """Real `/`. Exact, on `Fraction`: a float would round a guard's corner."""
+    a, b = vals
+    if a is _UNDEF or b is _UNDEF or b == 0:
+        return _UNDEF
+    return Fraction(a) / Fraction(b)
+
+
 _OPS = {} if Kind is None else {
     Kind.ITE: _ite,
     Kind.AND: _and,
@@ -518,6 +624,14 @@ _OPS = {} if Kind is None else {
     Kind.GEQ: _chain(lambda a, b: a >= b),
     Kind.INTS_DIVISION: _division,
     Kind.INTS_MODULUS: _modulus,
+    Kind.DIVISION: _quotient,
+    # The Real/Int boundary. `to_real` is the identity on a value this
+    # evaluator already keeps exactly; `to_int` is the floor `Int.toNat`
+    # sees, and the reason a ranking function over a Real component has to
+    # be scaled before it is read.
+    Kind.TO_REAL: _strict(lambda vs: Fraction(vs[0])),
+    Kind.TO_INTEGER: _strict(lambda vs: math.floor(vs[0])),
+    Kind.IS_INTEGER: _strict(lambda vs: Fraction(vs[0]).denominator == 1),
 }
 
 
@@ -576,6 +690,8 @@ class Evaluator:
             k = t.getKind()
             if k == Kind.CONST_INTEGER:
                 op = (0, t.getIntegerValue())
+            elif k == Kind.CONST_RATIONAL:
+                op = (0, t.getRealValue())
             elif k == Kind.CONST_BOOLEAN:
                 op = (0, t.getBooleanValue())
             elif k == Kind.CONSTANT:
@@ -604,11 +720,12 @@ class Evaluator:
             v = env.get(c.getSymbol())
             if v is None:
                 raise _Unevaluable(f"no value for {c.getSymbol()}")
-            vals.append(tm.mkBoolean(v) if isinstance(v, bool)
-                        else tm.mkInteger(int(v)))
+            vals.append(_term(tm, c.getSort(), v))
         r = self._solver.simplify(t.substitute(consts, vals) if consts else t)
         if r.getKind() == Kind.CONST_INTEGER:
             return r.getIntegerValue()
+        if r.getKind() == Kind.CONST_RATIONAL:
+            return r.getRealValue()
         if r.getKind() == Kind.CONST_BOOLEAN:
             return r.getBooleanValue()
         raise _Unevaluable(f"{t.getKind()} does not evaluate to a literal")
@@ -640,10 +757,16 @@ class Draws:
     Integers come from the program's own constants half the time -- the
     value a guard compares against is the one worth hitting -- and from a
     range a little wider than those constants otherwise.
+
+    A real is drawn on the lattice the program lives on -- multiples of
+    `1/scale`, plus the rationals it mentions -- most of the time, and off
+    it the rest: a state with a denominator the program never writes is what
+    shows an interval is not inductive over the reals, and a state on the
+    lattice is what a fact about the values a run takes has to be tested at.
     """
 
     def __init__(self, ctx: SynthContext, constants, seed: int,
-                 wide: bool = False):
+                 wide: bool = False, rationals=(), scale: int = 1):
         self.rng = random.Random(seed)
         self.pool = sorted(set(constants) | {-1, 0, 1})
         self.reach = min(1000, 2 * max(abs(c) for c in self.pool) + 10)
@@ -656,11 +779,21 @@ class Draws:
             self.reach = _WIDE
         self.fresh = 0.5 if wide else 0.25
         self.sorts = [v.getSort() for v in ctx.state]
+        self.rpool = sorted(set(rationals) | {Fraction(c) for c in self.pool})
+        self.step = Fraction(1, scale)
 
     def value(self, sort):
         rng = self.rng
         if sort.isBoolean():
             return rng.random() < 0.5
+        if sort.isReal():
+            roll = rng.random()
+            if roll < 0.4:
+                return rng.choice(self.rpool)
+            if roll < 0.8:
+                return self.step * rng.randint(-self.reach, self.reach)
+            return Fraction(rng.randint(-self.reach, self.reach),
+                            rng.choice((3, 5, 7, 8)))
         if rng.random() < 0.5:
             return rng.choice(self.pool)
         return rng.randint(-self.reach, self.reach)
@@ -675,15 +808,16 @@ class Draws:
             if self.sorts[i].isBoolean():
                 s[i] = not s[i]
             elif rng.random() < 0.6:
-                s[i] = s[i] + rng.choice((-2, -1, 1, 2))
+                step = self.step if self.sorts[i].isReal() else 1
+                s[i] = s[i] + step * rng.choice((-2, -1, 1, 2))
             else:
                 s[i] = self.value(self.sorts[i])
         return tuple(s)
 
 
 def simulate(ctx: SynthContext, ob: Obligations, ev: Evaluator,
-             constants: tuple[int, ...], *, safety: bool,
-             seed: int = 0) -> Runs:
+             constants: tuple[int, ...], *, safety: bool, seed: int = 0,
+             rationals=(), scale: int = 1) -> Runs:
     """Run the module from its entry states, drawing inputs as `--pre` allows.
 
     A run is a run of the module: each round's latched inputs are the values
@@ -691,7 +825,7 @@ def simulate(ctx: SynthContext, ob: Obligations, ev: Evaluator,
     state reached is reachable -- a fact it violates is not an invariant, and
     a `--safety` property it violates does not hold.
     """
-    draws = Draws(ctx, constants, seed)
+    draws = Draws(ctx, constants, seed, rationals=rationals, scale=scale)
     names = ctx.names
     latched = [str(c) for c in ob.el]
     awaited = [(str(c), c.getSort()) for c in ob.en]
@@ -803,6 +937,54 @@ def sample_rounds(ctx: SynthContext, ob: Obligations, ev: Evaluator,
 # ══════════════════════════════════════════════════════════════════════════
 
 
+def program_rationals(ctx: SynthContext) -> tuple:
+    """The Real literals this module and its property mention, as fractions.
+
+    `program_constants` reads the integer ones, and an LRA module has none
+    of those to read: `m_lra_lin` writes `0.0`, `1.0` and `5.0`, so the
+    bounds, the value sets and the lattice a state is drawn on all come from
+    here instead.
+    """
+    roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
+    roots += list(ctx.msmt.init_state(ctx.extl_next))
+    roots += list(ctx.msmt.update_state(ctx.state, ctx.extl_latched, ctx.extl_next))
+    seen: set = set()
+    visited: set = set()
+    stack = list(roots)
+    while stack:
+        t = stack.pop()
+        if t.getId() in visited:
+            continue
+        visited.add(t.getId())
+        if t.getKind() == Kind.CONST_RATIONAL:
+            q = t.getRealValue()
+            if abs(q) <= 10_000:
+                # As `program_constants` does: a literal is worth its
+                # neighbours, since the bound is usually one step past the
+                # guard's own constant.
+                seen.update({q, q - 1, q + 1, -q, 1 - q, -1 - q})
+        stack.extend(list(t))
+    return tuple(sorted(seen)[:32])
+
+
+def denominator_scale(rationals) -> int:
+    """What a real-valued ranking function is multiplied by before flooring.
+
+    `Int.toNat` reads a rank through `to_int`, and a quantity that falls by
+    less than one need not floor to a smaller number -- `m_lra_half` steps
+    by `1/2`, where `to_int x` stalls on every other round. An affine
+    transition moves a state by the literals it writes, so the least common
+    denominator of those is a scale at which a fall is a whole number.
+    """
+    scale = 1
+    for q in rationals:
+        scale = scale * Fraction(q).denominator // math.gcd(
+            scale, Fraction(q).denominator)
+        if scale > _MAX_SCALE:
+            return _MAX_SCALE
+    return scale
+
+
 def _reading(ctx: SynthContext, i: int) -> str:
     return f"(ite s{i} 1 0)" if ctx.env.state_sorts[i].isBoolean() else f"s{i}"
 
@@ -821,28 +1003,56 @@ def _bounds(values, constants) -> tuple["int | None", "int | None"]:
     return (max(below) if below else None, min(above) if above else None)
 
 
+def pinned_values(ctx: SynthContext, runs: Runs) -> dict[str, str]:
+    """For each Real component the runs keep to a few values, those values.
+
+    Over the reals an interval is hardly ever inductive -- `0 <= x <= 5`
+    admits `x = 1/2`, and `x' = x - 1` steps it out -- while the values a
+    run takes are finitely many and closed under the round. It is the fact
+    the LRA certificates `tests/limits` carries by hand are written with,
+    and the one a floored ranking function needs: see `_pins`.
+    """
+    out: dict[str, str] = {}
+    for i, srt in enumerate(ctx.env.state_sorts):
+        if not (srt.isReal() and runs.states):
+            continue
+        values = sorted({s[i] for s in runs.states})
+        if 1 < len(values) <= _MAX_VALUES:
+            out[f"s{i}"] = ("(or " + " ".join(f"(= s{i} {smt_real(v)})"
+                                              for v in values) + ")")
+    return out
+
+
 def invariant_candidates(ctx: SynthContext, runs: Runs,
                          constants: tuple[int, ...],
-                         conjuncts: list[str]) -> list[str]:
+                         conjuncts: list[str],
+                         rationals: tuple = ()) -> list[str]:
     """Facts every simulated state satisfies, as SMT-LIB over `s0..`."""
     consts = tuple(sorted(set(constants) | {0}))
+    rconsts = tuple(sorted({Fraction(c) for c in consts}
+                           | {Fraction(q) for q in rationals}))
     states = runs.states
-    ints = [i for i, srt in enumerate(ctx.env.state_sorts) if srt.isInteger()]
-    bools = [i for i, srt in enumerate(ctx.env.state_sorts) if srt.isBoolean()]
+    sorts = ctx.env.state_sorts
+    ints = [i for i, srt in enumerate(sorts) if srt.isInteger()]
+    bools = [i for i, srt in enumerate(sorts) if srt.isBoolean()]
+    reals = [i for i, srt in enumerate(sorts) if srt.isReal()]
     out: list[str] = list(conjuncts)
     if not states:
         return out
 
-    def bounded(form: str, values, cs=consts) -> list[str]:
+    def bounded(form: str, values, cs=consts, lit=smt_int) -> list[str]:
         lo, hi = _bounds(values, cs)
         facts = []
         if len(set(values)) == 1 and len(states) > 1:
-            facts.append(f"(= {form} {smt_int(values[0])})")
+            facts.append(f"(= {form} {lit(values[0])})")
         if lo is not None:
-            facts.append(f"(<= {smt_int(lo)} {form})")
+            facts.append(f"(<= {lit(lo)} {form})")
         if hi is not None:
-            facts.append(f"(<= {form} {smt_int(hi)})")
+            facts.append(f"(<= {form} {lit(hi)})")
         return facts
+
+    def near_zero(cs):
+        return tuple(c for c in cs if abs(c) <= 1)
 
     for i in ints:
         values = [s[i] for s in states]
@@ -852,6 +1062,15 @@ def invariant_candidates(ctx: SynthContext, runs: Runs,
             residues = {v % k for v in values}
             if len(residues) == 1 and len(distinct) > 2:
                 out.append(f"(= (mod s{i} {k}) {residues.pop()})")
+    pins = pinned_values(ctx, runs)
+    for i in reals:
+        values = [s[i] for s in states]
+        # The values themselves, before any bound -- listed first so that
+        # the minimiser, which drops from the end, tries the bounds before
+        # the fact that carries the module.
+        if f"s{i}" in pins:
+            out.append(pins[f"s{i}"])
+        out += bounded(f"s{i}", values, rconsts, smt_real)
     for i in bools:
         values = {s[i] for s in states}
         if len(values) == 1:
@@ -863,16 +1082,24 @@ def invariant_candidates(ctx: SynthContext, runs: Runs,
                 for fact in bounded(f"s{j}", [s[j] for s in side]):
                     if fact not in out:
                         out.append(f"(=> {lit} {fact})")
-    for a, i in enumerate(ints):
-        for j in ints[a + 1:]:
-            for form, values in (
-                (f"(- s{i} s{j})", [s[i] - s[j] for s in states]),
-                (f"(+ s{i} s{j})", [s[i] + s[j] for s in states]),
-            ):
-                # Relations against the constants near zero only: a sum
-                # bounded by some large literal is rarely what holds a run in.
-                out += bounded(form, values,
-                               tuple(c for c in consts if abs(c) <= 1))
+            for j in reals:
+                for fact in bounded(f"s{j}", [s[j] for s in side],
+                                    rconsts, smt_real):
+                    if fact not in out:
+                        out.append(f"(=> {lit} {fact})")
+    # Relations between two components of the same sort -- mixing an Int one
+    # with a Real one would need a `to_real` on the sum, and the certificate
+    # is easier to read one sort at a time -- against the constants near zero
+    # only: a sum bounded by some large literal is rarely what holds a run in.
+    for group, cs, lit in ((ints, near_zero(consts), smt_int),
+                           (reals, near_zero(rconsts), smt_real)):
+        for a, i in enumerate(group):
+            for j in group[a + 1:]:
+                for form, values in (
+                    (f"(- s{i} s{j})", [s[i] - s[j] for s in states]),
+                    (f"(+ s{i} s{j})", [s[i] + s[j] for s in states]),
+                ):
+                    out += bounded(form, values, cs, lit)
     return list(dict.fromkeys(out))
 
 
@@ -901,15 +1128,23 @@ def split_conditions(ctx: SynthContext, ob: Obligations) -> list[str]:
         k = t.getKind()
         kids = list(t)
         if k in (Kind.LT, Kind.LEQ, Kind.GT, Kind.GEQ) or (
-            k == Kind.EQUAL and kids and kids[0].getSort().isInteger()
+            k == Kind.EQUAL and kids
+            and (kids[0].getSort().isInteger() or kids[0].getSort().isReal())
         ):
             if set(_constants(t, {})) <= state:
-                out.append(str(t))
+                out.append(decimals(str(t)))
         stack.extend(kids)
-    ints = [i for i, srt in enumerate(ctx.env.state_sorts) if srt.isInteger()]
-    for i, srt in enumerate(ctx.env.state_sorts):
-        out.append(f"s{i}" if srt.isBoolean() else f"(<= 0 s{i})")
-    out += [f"(<= s{i} s{j})" for a, i in enumerate(ints) for j in ints[a + 1:]]
+    sorts = ctx.env.state_sorts
+    ints = [i for i, srt in enumerate(sorts) if srt.isInteger()]
+    reals = [i for i, srt in enumerate(sorts) if srt.isReal()]
+    for i, srt in enumerate(sorts):
+        if srt.isBoolean():
+            out.append(f"s{i}")
+        else:
+            out.append(f"(<= {smt_lit(0, srt)} s{i})")
+    for group in (ints, reals):
+        out += [f"(<= s{i} s{j})"
+                for a, i in enumerate(group) for j in group[a + 1:]]
     return list(dict.fromkeys(out))[:_MAX_SPLITS]
 
 
@@ -927,17 +1162,25 @@ class Ranks:
     """
 
     def __init__(self, ctx: SynthContext, ev: Evaluator, prp_src: str,
-                 splits: list[str], constants: tuple[int, ...] = ()):
+                 splits: list[str], constants: tuple[int, ...] = (),
+                 rationals: tuple = (), scale: int = 1):
         self.ctx, self.ev, self.prp_src = ctx, ev, prp_src
+        # What a real-valued form is multiplied by before it is floored, and
+        # whether it has to be: a state of `Int` and `Bool` is read as it is.
+        self.scale = max(1, int(scale))
+        self.real = any(srt.isReal() for srt in ctx.env.state_sorts)
         # Shifts a guard's constant suggests: `c` and one past it. A shift
         # fitted to sampled rounds is only as low as the lowest one sampled,
         # and the round that needs the largest shift is usually the corner
         # the guard names -- `y <= 100 && z <= x` needs `101 + x - y - z`,
         # where samples that never hit `y = 100, z = x` exactly fit `95`.
-        self.shift_pool = sorted({c + d for c in constants for d in (0, 1)})
+        # A real literal suggests one at the scale the rank is floored at.
+        shifts = set(constants) | {math.floor(self.scale * Fraction(q))
+                                   for q in rationals}
+        self.shift_pool = sorted({c + d for c in shifts for d in (0, 1)})
         self.names = ctx.names
         n = len(self.names)
-        self.readings = [_reading(ctx, i) for i in range(n)]
+        self.readings = [self._reading(ctx, i) for i in range(n)]
         if n <= _MAX_DENSE:
             # Every form with coefficients in {-1, 0, 1}: `100 - y + x - z`
             # ranks `ColonSipma-TACAS2001-Fig1`, and no pair of its three
@@ -965,6 +1208,44 @@ class Ranks:
                 self.splits.append((src, term))
         self._truth: dict = {}
 
+    def _reading(self, ctx: SynthContext, i: int) -> str:
+        """Component `i` in the arithmetic this rank's forms are summed in.
+
+        Integer, unless some component is Real -- then every reading is
+        lifted to Real, because a sum has one sort and `to_real` is the only
+        way an `Int` component joins it.
+        """
+        srt = ctx.env.state_sorts[i]
+        if not self.real:
+            return _reading(ctx, i)
+        if srt.isBoolean():
+            return f"(ite s{i} 1.0 0.0)"
+        return f"s{i}" if srt.isReal() else f"(to_real s{i})"
+
+    def _src(self, shift: int, form) -> str:
+        """The shape as the certificate carries it: an `Int`-sorted term.
+
+        Over a real form that is `(to_int (scale*form + shift))`. Flooring
+        after the shift is the same number as flooring before it -- the
+        shift is a whole number -- which is what lets everything downstream
+        fit shifts and offsets in integers.
+        """
+        if not self.real:
+            return affine_smt(shift, form, self.readings)
+        coeffs = [self.scale * c for c in form]
+        if not any(coeffs):
+            return smt_int(shift)
+        parts = [] if not shift else [smt_real(shift)]
+        for c, name in zip(coeffs, self.readings):
+            if c == 1:
+                parts.append(name)
+            elif c == -1:
+                parts.append(f"(- {name})")
+            elif c:
+                parts.append(f"(* {smt_real(c)} {name})")
+        body = parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
+        return f"(to_int {body})"
+
     def holds(self, state, term=None) -> bool:
         key = (state, None if term is None else term.getId())
         if key not in self._truth:
@@ -991,7 +1272,7 @@ class Ranks:
             shift = 1 - min(self._at(form, s) for s, _ in outside)
             above = [c for c in self.shift_pool if c > shift][:_MAX_SHIFTS]
             for sh in dict.fromkeys((0, shift, *above)):
-                src = affine_smt(sh, form, self.readings)
+                src = self._src(sh, form)
                 out += self._accept(src, lambda st, f=form, sh=sh: self._at(f, st) + sh,
                                     outside)
         for c_src, c_term in self.splits:
@@ -1010,7 +1291,8 @@ class Ranks:
             for j in range(n):
                 if i == j:
                     continue
-                ys = [int(s[j]) for s, _ in outside]
+                unit = tuple(1 if k == j else 0 for k in range(n))
+                ys = [self._at(unit, s) for s, _ in outside]
                 width = max(ys) - min(ys) + 1
                 if width > 1000:
                     continue
@@ -1041,8 +1323,8 @@ class Ranks:
                 if offsets is None:
                     continue
                 sf, sg = sf + offsets[0], sg + offsets[1]
-                src = (f"(ite {c_src} {affine_smt(sf, f, self.readings)} "
-                       f"{affine_smt(sg, g, self.readings)})")
+                src = (f"(ite {c_src} {self._src(sf, f)} "
+                       f"{self._src(sg, g)})")
 
                 def rank(st, f=f, g=g, sf=sf, sg=sg):
                     if self.holds(st, c_term):
@@ -1081,9 +1363,11 @@ class Ranks:
             out.append(f"(ite {self.prp_src} 0 {src})")
         return out
 
-    @staticmethod
-    def _at(form, state) -> int:
-        return sum(c * int(v) for c, v in zip(form, state) if c)
+    def _at(self, form, state) -> int:
+        """What `_src(0, form)` evaluates to at `state` -- floored, if real."""
+        total = sum(c * (int(v) if isinstance(v, bool) else v)
+                    for c, v in zip(form, state) if c)
+        return math.floor(self.scale * total) if self.real else int(total)
 
 
 def _drops(before: int, after: int) -> bool:
@@ -1118,16 +1402,22 @@ class TA2MagicVampire(TA2Magic):
     # --- driver ---------------------------------------------------------
 
     def infer(self, cd: CertificateData) -> CertificateData:
-        ctx = SynthContext.build(self.module, cd, route="vampire")
+        ctx = SynthContext.build(self.module, cd, route="vampire", reals=True)
         self._check_sorts(ctx)
         self.ctx = ctx
         self.ob = ob = Obligations(ctx)
         self.ev = ev = Evaluator(ctx.tm)
         constants = program_constants(ctx)
+        rationals = program_rationals(ctx)
+        scale = denominator_scale(rationals)
         self.log("[vampire] columns: "
                  + ", ".join(_reading(ctx, i) for i in range(len(ctx.state))))
+        if any(srt.isReal() for srt in ctx.env.state_sorts):
+            self.log(f"[vampire] Real state: a ranking function is floored "
+                     f"after scaling by {scale}")
 
-        runs = simulate(ctx, ob, ev, constants, safety=cd.is_safety)
+        runs = simulate(ctx, ob, ev, constants, safety=cd.is_safety,
+                        rationals=rationals, scale=scale)
         self.log(f"[vampire] simulated {len(runs.rounds)} rounds, "
                  f"{len(runs.states)} distinct states")
         if runs.violation is not None:
@@ -1139,15 +1429,19 @@ class TA2MagicVampire(TA2Magic):
                 f"violates, so there is nothing to put to Vampire."
             )
         self.runs = runs
-        self.draws = Draws(ctx, constants, seed=1)
-        self.wide = Draws(ctx, constants, seed=2, wide=True)
+        self.draws = Draws(ctx, constants, seed=1,
+                           rationals=rationals, scale=scale)
+        self.wide = Draws(ctx, constants, seed=2, wide=True,
+                          rationals=rationals, scale=scale)
 
+        self.pins = pinned_values(ctx, runs)
         conjuncts = self._conjuncts(ctx, cd) if cd.is_safety else []
-        facts = self._parse(invariant_candidates(ctx, runs, constants, conjuncts))
+        facts = self._parse(invariant_candidates(ctx, runs, constants,
+                                                 conjuncts, rationals))
         self.log(f"[vampire] {len(facts)} candidate facts hold on the runs")
         ranks = None if cd.is_safety else Ranks(ctx, ev, cd.prp,
                                                 split_conditions(ctx, ob),
-                                                constants)
+                                                constants, rationals, scale)
 
         prover = Vampire(self.exe, seconds=self.timeout, cores=self.cores,
                          log=self.log)
@@ -1177,8 +1471,11 @@ class TA2MagicVampire(TA2Magic):
                 rank = candidates[at]
                 self.log(f"[vampire] ranking function proved: {rank.src}")
                 core = prover.prove(ob.drops(inv, rank), limit, core=True).core
-                inv = self._shrink(prover, inv, self._named(inv, core), limit)
-                found = (self._minimise(prover, inv, [], (ranks, rank)), rank)
+                pins = self._pins(inv, rank) if ranks.real else []
+                need = self._named(inv, core) + pins
+                inv = self._shrink(prover, inv, need, limit)
+                found = (self._minimise(prover, inv, [f.src for f in pins],
+                                        (ranks, rank)), rank)
                 break
         self.log(f"[vampire] {prover.calls} Vampire calls, {prover.spent:.1f} s")
         if found is None:
@@ -1269,6 +1566,25 @@ class TA2MagicVampire(TA2Magic):
             except _Unevaluable:
                 continue
         return True
+
+    def _pins(self, inv: list[Candidate], rank: Candidate) -> list[Candidate]:
+        """The value-set facts about the components a floored rank reads.
+
+        Kept whether or not a proof used them, which is the one place this
+        route carries a fact Vampire can do without. A real ranking function
+        reaches Lean as `Int.toNat ⌊·⌋`, and `hrank` asks for `0 < ⌊x⌋`
+        wherever the property fails; the tactics get there by *computing*
+        the floor, which needs `x` pinned to a value rather than bounded or
+        related to something else. Measured on `m_lra_conv`: the cores leave
+        `x - y = -2` and `y in {2..5}`, from which Vampire proves everything
+        and Lean proves nothing, while adding `x in {0..3}` back -- a fact
+        the other two imply -- builds in 2.6 s.
+        """
+        from .smt_query import _constants
+
+        read = set(_constants(rank.term, {}))
+        wanted = {src for name, src in self.pins.items() if name in read}
+        return [f for f in inv if f.src in wanted]
 
     def _property_rests_on(self, prover, inv, conjuncts,
                            limit) -> "list[Candidate] | None":
@@ -1385,17 +1701,20 @@ class TA2MagicVampire(TA2Magic):
     # --- reading the module and the property ------------------------------
 
     def _check_sorts(self, ctx: SynthContext) -> None:
+        def scalar(s) -> bool:
+            return s.isInteger() or s.isBoolean() or s.isReal()
+
         bad = [f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
-               if not (s.isInteger() or s.isBoolean())]
+               if not scalar(s)]
         bad += [f"{c} is {c.getSort()}"
                 for c in list(ctx.extl_next) + list(ctx.extl_latched)
-                if not (c.getSort().isInteger() or c.getSort().isBoolean())]
+                if not scalar(c.getSort())]
         if bad:
             raise Refused(
-                f"--infer vampire reads Int and Bool state and inputs, and "
-                f"this module has {', '.join(bad)}. Vampire's SMT-LIB front "
-                f"end has no bitvector theory. `--infer smt-linear` weighs a "
-                f"bitvector as its unsigned value."
+                f"--infer vampire reads Int, Bool and Real state and inputs, "
+                f"and this module has {', '.join(bad)}. Vampire's SMT-LIB "
+                f"front end has no bitvector theory. `--infer smt-linear` "
+                f"weighs a bitvector as its unsigned value."
             )
 
     def _conjuncts(self, ctx: SynthContext, cd: CertificateData) -> list[str]:

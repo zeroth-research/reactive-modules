@@ -804,7 +804,8 @@ ROUTES: tuple[InferRoute, ...] = (
             "lexicographic shapes, each kept only once the Vampire theorem "
             "prover proves its obligation from SMT-LIB, at a time limit that "
             "climbs 2 s, 10 s, 60 s and then the rest of --vampire-timeout "
-            "-- scalar Int and Bool state only"
+            "-- scalar Int, Bool and Real state, the last ranked through "
+            "to_int after scaling by the denominators the program writes"
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",

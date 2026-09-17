@@ -15,6 +15,7 @@ fact Houdini kept.
 from __future__ import annotations
 
 import importlib.util
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -116,6 +117,65 @@ def test_a_bitvector_state_is_refused_by_name():
               fixture=FIXTURES)
 
 
+@pytest.mark.parametrize(("value", "written"), [
+    ("1/2", "0.5"),
+    ("-1/4", "(- 0.25)"),
+    ("3", "3.0"),
+    ("-2", "(- 2.0)"),
+    ("5/8", "0.625"),
+    # No decimal says a third, and one that rounded it would state a
+    # different obligation than the module's.
+    ("1/3", "(/ 1.0 3.0)"),
+    ("-1/3", "(- (/ 1.0 3.0))"),
+])
+def test_a_real_literal_is_written_as_a_decimal_where_one_is_exact(value, written):
+    from fractions import Fraction
+
+    from zrth.lean.magic_vampire import smt_real
+
+    assert smt_real(Fraction(value)) == written
+
+
+def test_cvc5s_rationals_are_rewritten_on_the_way_into_a_script():
+    """cvc5 prints one half as `(/ 1 2)`, whose arguments are Int-sorted;
+    Vampire answers that with `invalid sort $int for interpretation /`."""
+    from zrth.lean.magic_vampire import decimals
+
+    assert decimals("(- v_s0 (/ 1 2))") == "(- v_s0 0.5)"
+    assert decimals("(* (/ (- 1) 4) x)") == "(* (- 0.25) x)"
+    assert decimals("(div a 2)") == "(div a 2)"
+
+
+def test_the_evaluator_floors_a_real_the_way_to_int_does():
+    """The scale a real ranking function is read at exists because of this:
+    a quantity that falls by a half need not floor to a smaller number."""
+    import cvc5
+    from cvc5 import Kind
+
+    from zrth.lean.magic_vampire import Evaluator
+
+    tm = cvc5.TermManager()
+    x = tm.mkConst(tm.getRealSort(), "x")
+    ev = Evaluator(tm)
+    floor = tm.mkTerm(Kind.TO_INTEGER, x)
+    assert [ev(floor, {"x": Fraction(k, 2)}) for k in range(5)] == [0, 0, 1, 1, 2]
+    scaled = tm.mkTerm(Kind.TO_INTEGER, tm.mkTerm(Kind.MULT, tm.mkReal(2), x))
+    assert [ev(scaled, {"x": Fraction(k, 2)}) for k in range(5)] == [0, 1, 2, 3, 4]
+
+
+def test_a_real_module_is_no_longer_refused_for_its_sort():
+    """It is the shapes that have to answer for a Real component now, not a
+    sort check: `SynthContext.build` still refuses one for every other route."""
+    from zrth.lean.smt_synth import SynthContext
+
+    cd = CertificateData(prp="(= s0 0.0)", kind="buchi")
+    module = module_at(LIMITS / "m_lra_lin.py")
+    with pytest.raises(Refused, match="no integer reading"):
+        SynthContext.build(module, cd, route="smt-linear")
+    ctx = SynthContext.build(module, cd, route="vampire", reals=True)
+    assert [str(s) for s in ctx.env.state_sorts] == ["Real"]
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # With the prover
 # ══════════════════════════════════════════════════════════════════════════
@@ -139,3 +199,30 @@ def test_vampire_keeps_the_congruence_a_parity_property_needs():
     to 5), and `s0` being even is the fact that makes it so."""
     cd = infer("m_step2", "safety", "(not (= s0 5))", vampire=vampire_or_skip())
     assert "(= (mod s0 2) 0)" in cd.inv_smt
+
+
+def test_a_real_invariant_is_the_values_a_run_takes():
+    """`m_lra_lin` steps `x' = x - 1` while `x > 0`, so `0 <= x <= 5` admits
+    `x = 1/2` and steps it out: over the reals it is the value set, not the
+    interval, that is inductive. The pair `tests/limits` carries by hand."""
+    cd = infer("m_lra_lin", "buchi", "(= s0 0.0)", vampire=vampire_or_skip())
+    assert cd.inv_smt == ("(or (= s0 0.0) (= s0 1.0) (= s0 2.0) (= s0 3.0) "
+                          "(= s0 4.0) (= s0 5.0))")
+    assert cd.ranking_smt == "(to_int s0)"
+
+
+def test_a_real_ranking_function_is_scaled_before_it_is_floored():
+    """`m_lra_half` steps by a half, where `to_int s0` repeats -- 3.0 and 2.5
+    both floor to 3 -- so the scale is the denominator the program writes."""
+    cd = infer("m_lra_half", "buchi", "(= s0 0.0)", vampire=vampire_or_skip())
+    assert cd.ranking_smt == "(to_int (* 2.0 s0))"
+    assert "(= s0 0.5)" in cd.inv_smt
+
+
+def test_two_real_components_are_ranked_by_the_one_that_falls():
+    """`m_lra_conv`: `x` converges to 0 and `y` to 2, two rounds apart. The
+    relation between them is a fact, so `y`'s range carries `x`'s rank."""
+    cd = infer("m_lra_conv", "buchi", "(and (= s0 0.0) (= s1 2.0))",
+               vampire=vampire_or_skip())
+    assert cd.ranking_smt == "(to_int s0)"
+    assert "(= (- s0 s1) (- 2.0))" in cd.inv_smt

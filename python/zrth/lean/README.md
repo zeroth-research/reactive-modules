@@ -609,7 +609,8 @@ keeps a candidate only once Vampire proves it:
 * **invariant** — Houdini over facts that hold on simulated runs of the
   module: bounds stated with the program's own constants, congruences,
   sums and differences of two components against zero, bounds on each side
-  of a Bool flag, and under `--safety` the property's conjuncts.
+  of a Bool flag, the values a Real component keeps to, and under
+  `--safety` the property's conjuncts.
 * **ranking function** — affine forms of one or two components, `K*x + y`,
   and piecewise `(ite c f g)` over the conditions the property and
   transition branch on and the order of each pair of components. Each is
@@ -644,12 +645,33 @@ uv run verith mymodule.py --buchi "(= s0 0)" --infer vampire \
 # [vampire] invariant minimised to 1 of 2 facts
 ```
 
-It reads scalar `Int` and `Bool` state and inputs; Vampire has no bitvector
-theory, and a matrix-shaped or `Real` component is refused as it is by
+It reads scalar `Int`, `Bool` and `Real` state and inputs; Vampire has no
+bitvector theory, and a matrix-shaped component is refused as it is by
 `smt-linear`. A tuple the transition builds internally is folded away by
 cvc5's rewriter before Vampire sees it. When nothing is found, the note in
 `artifacts/` says `unknown`, not `no_solution`: a prover that cannot refute
 proves no space empty.
+
+A `Real` component changes two things. Its invariant is a **set of values**
+rather than an interval, because over the reals a bound is hardly ever
+inductive — `m_lra_lin` steps `x' = x - 1` while `x > 0`, so `0 ≤ x ≤ 5`
+admits `x = 1/2` and steps it out — while the values a run takes are
+finitely many and closed under the round. And its ranking function is
+**scaled, then floored**: `rule_buchi` ranks by a `Nat`, so a real rank is
+read through `to_int`, and a quantity that falls by less than one need not
+floor to a smaller number. The scale is the least common denominator of the
+literals the program writes, so `m_lra_half`, which steps by a half, is
+ranked by `(to_int (* 2.0 s0))`. Literals are written as decimals
+throughout: Vampire's front end sorts them strictly and reads neither
+cvc5's `(/ 1 2)` nor a bare `3` where a `Real` belongs.
+
+```bash
+uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= s0 0.0)" \
+    --infer vampire -o out/ -p Rea
+# [vampire] Real state: a ranking function is floored after scaling by 1
+# [vampire] inv: (or (= s0 0.0) (= s0 1.0) ... (= s0 5.0))
+# [vampire] ranking: (to_int s0)
+```
 
 ---
 
