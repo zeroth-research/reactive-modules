@@ -1,59 +1,86 @@
-"""TA2Magic by theorem proving: candidates the Vampire prover proves.
+"""TA2Magic by proposing and proving: Houdini, and a ranking search.
 
-``--infer vampire``.  Vampire is a first-order theorem prover that reads
-SMT-LIB, and what that changes about a search is that its answer is
-one-sided.  Handed the *negation* of an obligation it either refutes it --
-the obligation holds, and the refutation is the warrant -- or it runs out of
-time.  It never says "false" and never hands back a model, so there is no
-counterexample to guide anything by and nothing here asks it to *find* a
-certificate.  The route proposes, and Vampire decides what stays:
+``--infer houdini``.  Nothing here searches for a certificate.  The route
+*proposes* -- candidate invariant facts read off the module and off
+simulated runs of it, ranking functions from a fixed list of shapes -- and a
+solver decides what stays:
 
-* **the invariant** is Houdini's.  Candidate facts are read off the module
-  and off simulated runs of it -- the bound a component stays within, stated
-  with a constant the program mentions; a congruence the runs keep; a
-  relation between two components; the bounds a component keeps on each
-  side of a Bool flag; and under ``--safety`` the property's own conjuncts.
-  Each is put to Vampire (it holds at entry; a round preserves it given the
-  others) and dropped when not proved, until a pass drops nothing.
+* **the invariant** is Houdini's.  Candidate facts are the bound a component
+  stays within, stated with a constant the program mentions; a congruence
+  the runs keep; a relation between two components; the bounds a component
+  keeps on each side of a Bool flag; and under ``--safety`` the property's
+  own conjuncts.  Each is put to the solver (it holds at entry; a round
+  preserves it given the others) and dropped when not proved, until a pass
+  drops nothing.
 * **the ranking function** (``--buchi``) is one of a fixed list of shapes --
   an affine form of one or two components, or ``K*x + y`` for a
   lexicographic pair, shifted to stay positive where the property fails and
   optionally zeroed where it holds -- tried smallest first against
   ``rule_buchi``'s own ``hrank``.
-* **the certificate is then cut down to what the proofs used.**  Vampire
-  reports an unsat core, which names the invariant facts a refutation
+* **the certificate is then cut down to what the proofs used.**  Both
+  solvers report an unsat core, which names the invariant facts a refutation
   needed, so the invariant handed on is the closure of those under the
   preservation proofs rather than everything Houdini kept.  Every fact is
   one more `step_inv` implication for Lean to close.
 
-Two things follow from the one-sidedness, both measured.
+Which solver
+============
+``--houdini-solver`` picks it and :mod:`zrth.lean.houdini_solver` is the
+seam.  The engine here never asks which one it is holding; it asks each
+query for an unsat core and for a counter-model and uses whichever came
+back.  The difference the choice makes is one thing, and it runs through
+everything below:
+
+**cvc5 decides these obligations; Vampire only refutes them.**  The queries
+are quantifier-free -- the inputs are free constants, so what an obligation
+quantifies over is its free variables -- and what is left is linear integer
+and real arithmetic with ``to_int``, ``div``, ``mod`` and ``ite``.  cvc5
+answers `sat` or `unsat`; Vampire, handed the negation, either refutes it or
+runs out of time, and those two failures look the same from outside.
+
+So with cvc5 a failed proof carries a **counterexample**, and the engine
+spends it twice.  A Houdini pass that fails learns from one model which
+facts to drop -- the model is a state every kept fact holds at whose
+successor breaks some of them, which is Houdini's step exactly -- where
+Vampire has to ask again once per fact.  And a refuted candidate is gone for
+the rest of the run rather than retried at the next rung, because `sat`
+holds at every time limit there will ever be.
+
+Two things follow from Vampire's one-sidedness, both measured, and both are
+why the shape below is what it is even though cvc5 no longer needs them.
 
 **A candidate that is false costs a whole time limit**, because nothing
 comes back early to say so.  That is why the module is *simulated* first:
-a fact some reachable state violates is gone before Vampire is asked, which
-is free, and what is left is mostly true.  The runs quantify the inputs the
-way the obligations do -- each round's inputs drawn afresh, subject to
-``--pre`` -- so a state they reach is one every certificate has to cover,
-and under ``--safety`` a reached state where the property fails ends the
-route there, with the state.
+a fact some reachable state violates is gone before any solver is asked,
+which is free, and what is left is mostly true.  The runs quantify the
+inputs the way the obligations do -- each round's inputs drawn afresh,
+subject to ``--pre`` -- so a state they reach is one every certificate has
+to cover, and under ``--safety`` a reached state where the property fails
+ends the route there, with the state.  It stays on both solvers: it is
+cheaper than a call either way, and it is what makes the *candidates* good
+rather than only the answers.
 
 **The time limit climbs: 2 s, 10 s, 60 s, then what is left of
-``--vampire-timeout``.**  Vampire's portfolio divides its time limit among
+``--houdini-timeout``.**  Vampire's portfolio divides its time limit among
 its strategies, so a short limit is a different schedule rather than a
 truncated long one, and a proof one limit finds another may not.  Measured
 on the 399 obligations of certificates the benchmark matrix verified, the
 `smtcomp` portfolio refuted 369 within 2 s, nearly all in 10-20 ms; the rest
 were encodings it cannot read (bitvectors, tuples, reals) or obligations
-that are false.  So a whole search runs at one limit, and only a search
-that found nothing is repeated at the next -- proofs already found are
-kept, and only what failed is asked again.
+that are false.  So a whole search runs at one limit, and only a search that
+found nothing is repeated at the next -- proofs already found are kept, and
+only what failed is asked again.  cvc5 climbs a shorter ladder for a
+different reason: its search at a longer limit contains the shorter one, so
+the rungs are there only to stop one query eating a whole budget.
 
 What the route needs of a module
 ===============================
-Scalar ``Int``, ``Bool`` and ``Real`` state and inputs.  Vampire's SMT-LIB
-front end has integer and real arithmetic and datatypes but no bitvectors,
-and a matrix-shaped component would be a column per element; both are
-refused by name before Vampire is started.
+Scalar ``Int``, ``Bool`` and ``Real`` state and inputs, whichever solver is
+chosen.  Vampire's SMT-LIB front end has integer and real arithmetic and
+datatypes but no bitvectors; cvc5 has bitvectors, but the candidate shapes
+below do not -- a bound stated with a program constant, a congruence, an
+affine relation -- and a matrix-shaped component would be a column per
+element.  Both are refused by name before a solver is started.
 
 A Real component changes two things, and only two.
 
@@ -71,34 +98,37 @@ a quantity that falls by less than one need not fall at all --
 ``m_lra_half`` steps by ``1/2``, where ``to_int x`` repeats.  The scale is
 the least common denominator of the literals the program mentions, so the
 rank is ``(to_int (* 2.0 s0))`` there and ``(to_int s0)`` where the program
-is integral.  Vampire proves the floored obligation directly:
-``to_int (x - 1.0) < to_int x`` is one of its unsat answers, not something
+is integral.  Either solver proves the floored obligation directly:
+``to_int (x - 1.0) < to_int x`` is one of their unsat answers, not something
 this module reasons about.
 
 Literals are printed as decimals throughout, because Vampire's front end
 sorts them strictly: it reads neither cvc5's ``(/ 1 2)`` for one half nor a
-bare ``3`` where a Real is expected.
+bare ``3`` where a Real is expected.  cvc5 reads a decimal as happily, so
+the certificate carries one spelling whoever proved it.
 """
 
 from __future__ import annotations
 
 import math
-import os
 import random
-import re
-import shutil
-import signal
-import subprocess
-import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
 from itertools import product
-from pathlib import Path
 
 from .cert import CertificateData
 from .common import Refused
+from .houdini_solver import (
+    DEFAULT_SOLVER,
+    DEFAULT_TIMEOUT,
+    Query,
+    Solver,
+    SolverSpec,
+    decimals,
+    smt_lit,
+    smt_real,
+)
 from .magic import TA2Magic
 from .smt_synth import SynthContext, affine_smt, moduli, program_constants, smt_int
 
@@ -109,30 +139,24 @@ except ImportError:                                  # pragma: no cover
     cvc5 = None
     Kind = None
 
-# The rungs below the final one, in seconds. The final rung is whatever is
-# left of `--vampire-timeout`.
-LADDER = (2, 10, 60)
-DEFAULT_TIMEOUT = 120
-DEFAULT_CORES = 4
-ENV = "VAMPIRE"
-
 # How much of the module the simulation may evaluate, and for how long. The
-# runs only *filter*: a fact they keep is still proved or dropped by Vampire.
+# runs only *filter*: a fact they keep is still proved or dropped by the
+# solver.
 _MAX_ROUNDS = 4000
 _SIM_SECONDS = 3.0
 _TRIES = 64                     # input draws per round before a run is ended
 _OVERFLOW = 10**9               # a run past this is diverging, not informing
 
 # Sampled rounds: how long one batch may take, and how many batches a
-# Houdini pass draws before asking Vampire.
+# Houdini pass draws before asking the solver.
 _SAMPLE_SECONDS = 1.0
 _WIDE = 10**6
 _SAMPLE_PASSES = 4
 # The most a certificate's minimisation may take, of what is left.
 _MINIMISE_SECONDS = 15.0
 
-# A ranking search asks Vampire about at most this many shapes, smallest
-# first; fits them to at most this many rounds; branches on at most this many
+# A ranking search asks about at most this many shapes, smallest first; fits
+# them to at most this many rounds; branches on at most this many
 # conditions, with at most this many forms on each side of one.
 _MAX_RANKS = 48
 _MAX_OUTSIDE = 1000
@@ -154,237 +178,7 @@ _MAX_SCALE = 64
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# Literals Vampire reads
-# ══════════════════════════════════════════════════════════════════════════
-#
-# Its SMT-LIB front end sorts literals strictly, and cvc5's printer does
-# not write for it: a rational prints as `(/ 1 2)`, whose arguments are Int
-# ("invalid sort $int for interpretation /"), and an Int numeral anywhere a
-# Real is expected is a parse error rather than a coercion. So every real
-# literal this module writes is a decimal, and every term cvc5 prints is
-# passed through `decimals` on its way into a script.
-
-
-def smt_real(value) -> str:
-    """A Real literal: a decimal where one is exact, else a quotient of two.
-
-    `1/2` is `0.5` and `1/3` is `(/ 1.0 3.0)` -- a decimal cannot say the
-    second, and rounding it would state a different obligation.
-    """
-    q = Fraction(value)
-    sign, q = ("(- ", -q) if q < 0 else ("", -(-q))
-    close = ")" if sign else ""
-    rest = q.denominator
-    for factor in (2, 5):
-        while rest % factor == 0:
-            rest //= factor
-    if rest != 1:
-        return f"{sign}(/ {q.numerator}.0 {q.denominator}.0){close}"
-    places = 0
-    while 10 ** places % q.denominator:
-        places += 1
-    digits = str(q.numerator * 10 ** places // q.denominator).rjust(places + 1, "0")
-    whole, frac = digits[:len(digits) - places], digits[len(digits) - places:]
-    return f"{sign}{whole}.{frac or '0'}{close}"
-
-
-# `(/ 1 2)`, `(/ (- 1) 4)`: a rational as cvc5 prints one. Integer division
-# prints as `div`, so a `/` whose arguments are both numerals is always this.
-_RATIONAL = re.compile(r"\(/ (?:\(- (\d+)\)|(\d+)) (\d+)\)")
-
-
-def decimals(text: str) -> str:
-    """`text` with cvc5's rational literals rewritten as Vampire reads them."""
-    def fix(m: re.Match) -> str:
-        neg, num, den = m.groups()
-        return smt_real(Fraction(-int(neg) if neg else int(num), int(den)))
-
-    return _RATIONAL.sub(fix, text)
-
-
-def smt_lit(value, sort) -> str:
-    """`value` as a literal of `sort`: an Int numeral, or a decimal."""
-    return smt_real(value) if sort.isReal() else smt_int(int(value))
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# Finding the binary
-# ══════════════════════════════════════════════════════════════════════════
-
-
-def resolve_vampire(spec: "str | None") -> str:
-    """`--vampire` as an executable, else `$VAMPIRE`, else `vampire` on PATH.
-
-    Resolved at parse time, so a run that cannot start the prover says so
-    before a project is generated rather than after. A directory is accepted
-    when it holds a `vampire` -- the release zip unpacks to one.
-    """
-    for source, value in (("--vampire", spec), (f"${ENV}", os.environ.get(ENV))):
-        if not value:
-            continue
-        path = Path(value).expanduser()
-        if path.is_dir():
-            path = path / "vampire"
-        if path.is_file():
-            if not os.access(path, os.X_OK):
-                raise Refused(f"{source}: {path} is not executable")
-            return str(path)
-        found = shutil.which(value)
-        if found:
-            return found
-        raise Refused(
-            f"{source}: no such file: {path}. Pass the Vampire binary, a "
-            f"directory holding one, or a name on PATH."
-        )
-    found = shutil.which("vampire")
-    if found:
-        return found
-    raise Refused(
-        "--infer vampire needs the Vampire prover: pass --vampire PATH, set "
-        f"${ENV}, or put `vampire` on PATH. Builds for Linux and macOS are at "
-        "https://github.com/vprover/vampire/releases"
-    )
-
-
-def ladder(total: float) -> tuple[float, ...]:
-    """The time limits a search runs at, in order, ending at `total`."""
-    return tuple(t for t in LADDER if t < total) + (float(total),)
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# Asking Vampire
-# ══════════════════════════════════════════════════════════════════════════
-
-
-@dataclass(frozen=True)
-class Answer:
-    proved: bool
-    secs: float = 0.0
-    core: "frozenset[str] | None" = None    # names, when a core was asked for
-
-
-class Vampire:
-    """The prover, on this run's deadline, with what it has already answered.
-
-    A proof is kept whatever limit found it; a failure is kept with the limit
-    it failed at, so the next rung asks again only what the last one could
-    not answer. Queries are SMT-LIB text, so the text is the key.
-    """
-
-    def __init__(self, exe: str, *, seconds: float, cores: int, log=print):
-        self.exe = exe
-        self.cores = max(1, int(cores))
-        self.deadline = time.monotonic() + seconds
-        # Portfolio calls side by side. Each spreads its strategies over
-        # `cores` processes; more calls than the machine has cores for would
-        # only make every limit mean less time.
-        self.jobs = max(1, min(4, (os.cpu_count() or 4) // self.cores))
-        self.log = log
-        self.calls = 0
-        self.spent = 0.0
-        self._proved: dict[str, Answer] = {}
-        self._failed: dict[str, float] = {}
-
-    def left(self) -> float:
-        return self.deadline - time.monotonic()
-
-    def prove(self, script: str, limit: float, *, core: bool = False) -> Answer:
-        hit = self._proved.get(script)
-        if hit is not None and (hit.core is not None or not core):
-            return hit
-        if self._failed.get(script, 0.0) >= limit:
-            return Answer(False)
-        budget = min(limit, self.left())
-        if budget < 0.5:
-            return Answer(False)
-        answer = self._run(script, budget, core)
-        if answer.proved:
-            self._proved[script] = answer
-        else:
-            self._failed[script] = max(self._failed.get(script, 0.0), limit)
-        return answer
-
-    def prove_all(self, scripts: list[str], limit: float) -> list[Answer]:
-        if len(scripts) <= 1 or self.jobs == 1:
-            return [self.prove(s, limit) for s in scripts]
-        with ThreadPoolExecutor(self.jobs) as pool:
-            return list(pool.map(lambda s: self.prove(s, limit), scripts))
-
-    def first(self, scripts: list[str], limit: float) -> "int | None":
-        """The index of the first script proved, trying `jobs` at a time."""
-        for at in range(0, len(scripts), self.jobs):
-            if self.left() < 0.5:
-                return None
-            batch = scripts[at:at + self.jobs]
-            for i, answer in enumerate(self.prove_all(batch, limit)):
-                if answer.proved:
-                    return at + i
-        return None
-
-    def _run(self, script: str, budget: float, core: bool) -> Answer:
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".smt2", prefix="verith-vampire-", delete=False
-        ) as f:
-            f.write(script)
-            path = f.name
-        cmd = [
-            self.exe, "--input_syntax", "smtlib2",
-            "--mode", "portfolio", "--schedule", "smtcomp",
-            "--cores", str(self.cores),
-            "--output_mode", "ucore" if core else "smtcomp",
-            # Deciseconds: a limit below a second is a real limit.
-            "--time_limit", f"{max(1, int(budget * 10))}d",
-            path,
-        ]
-        t0 = time.perf_counter()
-        # Its own session: the portfolio forks a process per strategy, and a
-        # run killed from outside has to take them all with it.
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True,
-                                start_new_session=True)
-        try:
-            out, _ = proc.communicate(timeout=budget + 10)
-        except subprocess.TimeoutExpired:
-            _kill_group(proc)
-            out = ""
-        finally:
-            _kill_group(proc)
-            Path(path).unlink(missing_ok=True)
-        dt = time.perf_counter() - t0
-        self.calls += 1
-        self.spent += dt
-        lines = [ln.strip() for ln in out.splitlines()]
-        if "unsat" in lines:
-            names = None
-            if core:
-                at = lines.index("unsat") + 1
-                names = frozenset(
-                    ln for ln in lines[at:] if ln and ln not in "()"
-                    and not ln.startswith("%")
-                )
-            return Answer(True, dt, names)
-        error = next((ln for ln in lines
-                      if "User error" in ln or "Parsing Error" in ln), None)
-        if error is not None:
-            detail = out[out.find(error):].strip().splitlines()
-            raise Refused(
-                f"Vampire cannot read this module's encoding: "
-                f"{' '.join(detail[:2])[:300]}"
-            )
-        return Answer(False, dt)
-
-
-def _kill_group(proc: subprocess.Popen) -> None:
-    if proc.poll() is None:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        proc.wait()
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# The obligations, as SMT-LIB
+# The obligations
 # ══════════════════════════════════════════════════════════════════════════
 
 
@@ -397,12 +191,18 @@ class Candidate:
 
 
 class Obligations:
-    """One module's obligations, written for Vampire.
+    """One module's obligations, as questions rather than as files.
 
-    The round is stated once per script as `define-fun`s -- the successor
-    state `v_sp*` over the latched state `v_s*` and the inputs -- and every
-    fact is read at it, so a query about twenty facts carries the transition
-    once rather than twenty times.
+    The round is stated once per query as `defines` -- the successor state
+    `v_sp*` over the latched state `v_s*` and the inputs -- and every fact
+    is read at it, so a query about twenty facts carries the transition once
+    rather than twenty times.
+
+    A query that asks about several facts at once names each of them as a
+    *probe*, so a solver that returns a counter-model says which of them it
+    breaks. That is the whole of what the engine needs to take Houdini's
+    step from one answer instead of one answer per fact; a solver that
+    returns no model ignores them and the engine asks fact by fact.
     """
 
     def __init__(self, ctx: SynthContext):
@@ -440,25 +240,25 @@ class Obligations:
 
     # --- the queries ------------------------------------------------------
 
-    def holds_at_entry(self, facts: list[Candidate]) -> str:
+    def holds_at_entry(self, facts: list[Candidate]) -> Query:
         """`init_pre e -> fact (init e)`, for all of `facts` at once."""
-        goal = self._and([self._at(f.term, self.si) for f in facts])
-        return self._script([("pre", self.init_pre)], goal,
-                            defines=zip(self.si, self.init))
+        at = [self._at(f.term, self.si) for f in facts]
+        return self._query([("pre", self.init_pre)], self._and(at),
+                           defines=zip(self.si, self.init), probes=at)
 
-    def preserved(self, hyps: list[Candidate], goals: list[Candidate]) -> str:
+    def preserved(self, hyps: list[Candidate], goals: list[Candidate]) -> Query:
         """`hyps s /\\ update_pre e -> goals (update s e)`."""
         named = [(f"h{i}", self._at(h.term, self.s)) for i, h in enumerate(hyps)]
-        goal = self._and([self._at(g.term, self.sp) for g in goals])
-        return self._script(named + [("pre", self.update_pre)], goal,
-                            defines=zip(self.sp, self.next))
+        at = [self._at(g.term, self.sp) for g in goals]
+        return self._query(named + [("pre", self.update_pre)], self._and(at),
+                           defines=zip(self.sp, self.next), probes=at)
 
-    def implies(self, hyps: list[Candidate], goal) -> str:
+    def implies(self, hyps: list[Candidate], goal) -> Query:
         """`hyps s -> goal s`: the invariant is a proof of the property."""
         named = [(f"h{i}", self._at(h.term, self.s)) for i, h in enumerate(hyps)]
-        return self._script(named, self._at(goal, self.s))
+        return self._query(named, self._at(goal, self.s))
 
-    def drops(self, hyps: list[Candidate], rank: Candidate) -> str:
+    def drops(self, hyps: list[Candidate], rank: Candidate) -> Query:
         """`hrank`: `inv s /\\ ~P s /\\ update_pre e -> V (update s e) < V s`.
 
         With `V = Int.toNat rank`, exactly as `rule_buchi` states it and
@@ -476,7 +276,7 @@ class Obligations:
             self._clamp(self._at(rank.term, self.sp)),
             self._clamp(self._at(rank.term, self.s)),
         )
-        return self._script(named, goal, defines=zip(self.sp, self.next))
+        return self._query(named, goal, defines=zip(self.sp, self.next))
 
     # --- plumbing ---------------------------------------------------------
 
@@ -494,32 +294,24 @@ class Obligations:
         zero = tm.mkInteger(0)
         return tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.GEQ, t, zero), t, zero)
 
-    def _script(self, hyps, goal, *, defines=()) -> str:
-        """Named hypotheses and a goal, as a script whose `unsat` is a proof.
+    @staticmethod
+    def _query(hyps, goal, *, defines=(), probes=()) -> Query:
+        """Named hypotheses, a goal, and the conjuncts of it worth naming.
 
-        The goal is asserted negated. Hypotheses are named so that an unsat
-        core can say which of them the proof used; the goal is named too, so
-        a core is never empty for a reason other than the goal being false.
+        A probe is named `g<i>` against the position of the fact it came
+        from, which is how `_survivors` reads a counter-model back: the
+        names are positions in the list the caller asked about. A goal that
+        is one thing gets no probes -- there would be nothing to learn from
+        naming it that `REFUTED` does not already say.
         """
-        from .smt_query import _constants
-
-        defines = list(defines)
-        seen: dict = {}
-        for _v, body in defines:
-            _constants(body, seen)
-        for _n, t in hyps:
-            _constants(t, seen)
-        _constants(goal, seen)
-        defined = {str(v) for v, _b in defines}
-        lines = ["(set-logic ALL)"]
-        lines += [f"(declare-fun {sym} () {seen[sym].getSort()})"
-                  for sym in sorted(seen) if sym not in defined]
-        lines += [f"(define-fun {v} () {v.getSort()} {body})"
-                  for v, body in defines]
-        lines += [f"(assert (! {t} :named {n}))" for n, t in hyps]
-        lines.append(f"(assert (! (not {goal}) :named goal))")
-        lines.append("(check-sat)")
-        return decimals("\n".join(lines)) + "\n"
+        probes = list(probes)
+        return Query(
+            hyps=tuple(hyps),
+            goal=goal,
+            defines=tuple(defines),
+            probes=tuple((f"g{i}", t) for i, t in enumerate(probes))
+            if len(probes) > 1 else (),
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -905,9 +697,10 @@ def sample_rounds(ctx: SynthContext, ob: Obligations, ev: Evaluator,
     What an obligation quantifies over is every state the invariant admits,
     with any inputs `--pre` allows -- latched ones included -- so a round
     from such a state that breaks a fact, or that a ranking function does not
-    drop on, is a counterexample to that obligation as Vampire would be asked
-    it. Finding one here is free, and asking Vampire would cost a whole time
-    limit to learn nothing.
+    drop on, is a counterexample to that obligation as a solver would be
+    asked it. Finding one here is free, where a call costs milliseconds at
+    best and, on a solver that cannot refute, a whole time limit to learn
+    nothing.
     """
     ins = [(str(c), c.getSort()) for c in ob.el + ob.en]
     names = [str(c) for c in ob.s]
@@ -1380,29 +1173,36 @@ def _drops(before: int, after: int) -> bool:
 # ══════════════════════════════════════════════════════════════════════════
 
 
-class TA2MagicVampire(TA2Magic):
-    """Houdini and a ranking search, with Vampire as the only judge."""
+class TA2MagicHoudini(TA2Magic):
+    """Houdini and a ranking search, put to whichever solver was chosen.
 
-    def __init__(self, module, *, vampire: str, timeout: float = DEFAULT_TIMEOUT,
-                 cores: int = DEFAULT_CORES, artifacts=None, log=print):
+    `solver` is a `SolverSpec` -- what `--houdini-solver` and the flags
+    belonging to the one it names resolved to at parse time -- or the bare
+    name of one, which is what a caller with no binary to point at wants.
+    The solver itself is built in `infer`, because it needs the cvc5
+    `TermManager` the module is encoded into and because its deadline
+    starts when the search does, not when the object is made.
+    """
+
+    def __init__(self, module, *, solver=DEFAULT_SOLVER,
+                 timeout: float = DEFAULT_TIMEOUT, artifacts=None, log=print):
         super().__init__("")
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
-                "--infer vampire needs the `cvc5` package to encode the "
+                "--infer houdini needs the `cvc5` package to encode the "
                 "module, which is not importable. Install with: "
                 "uv pip install cvc5"
             )
+        self.spec = solver if isinstance(solver, SolverSpec) else SolverSpec(solver)
         self.module = module
-        self.exe = vampire
         self.timeout = float(timeout)
-        self.cores = int(cores)
         self.artifacts = artifacts
         self.log = log
 
     # --- driver ---------------------------------------------------------
 
     def infer(self, cd: CertificateData) -> CertificateData:
-        ctx = SynthContext.build(self.module, cd, route="vampire", reals=True)
+        ctx = SynthContext.build(self.module, cd, route="houdini", reals=True)
         self._check_sorts(ctx)
         self.ctx = ctx
         self.ob = ob = Obligations(ctx)
@@ -1410,23 +1210,24 @@ class TA2MagicVampire(TA2Magic):
         constants = program_constants(ctx)
         rationals = program_rationals(ctx)
         scale = denominator_scale(rationals)
-        self.log("[vampire] columns: "
+        self.log(f"[houdini] solver: {self.spec.kind}")
+        self.log("[houdini] columns: "
                  + ", ".join(_reading(ctx, i) for i in range(len(ctx.state))))
         if any(srt.isReal() for srt in ctx.env.state_sorts):
-            self.log(f"[vampire] Real state: a ranking function is floored "
+            self.log(f"[houdini] Real state: a ranking function is floored "
                      f"after scaling by {scale}")
 
         runs = simulate(ctx, ob, ev, constants, safety=cd.is_safety,
                         rationals=rationals, scale=scale)
-        self.log(f"[vampire] simulated {len(runs.rounds)} rounds, "
+        self.log(f"[houdini] simulated {len(runs.rounds)} rounds, "
                  f"{len(runs.states)} distinct states")
         if runs.violation is not None:
             state = ", ".join(f"s{i} = {v}" for i, v in enumerate(runs.violation))
             raise Refused(
-                f"--infer vampire: the property does not hold -- a run of "
+                f"--infer houdini: the property does not hold -- a run of "
                 f"{runs.depth} round(s), with inputs drawn as `--pre` allows, "
                 f"reaches {state}. No invariant implies a property the module "
-                f"violates, so there is nothing to put to Vampire."
+                f"violates, so there is nothing to put to a solver."
             )
         self.runs = runs
         self.draws = Draws(ctx, constants, seed=1,
@@ -1438,22 +1239,21 @@ class TA2MagicVampire(TA2Magic):
         conjuncts = self._conjuncts(ctx, cd) if cd.is_safety else []
         facts = self._parse(invariant_candidates(ctx, runs, constants,
                                                  conjuncts, rationals))
-        self.log(f"[vampire] {len(facts)} candidate facts hold on the runs")
+        self.log(f"[houdini] {len(facts)} candidate facts hold on the runs")
         ranks = None if cd.is_safety else Ranks(ctx, ev, cd.prp,
                                                 split_conditions(ctx, ob),
                                                 constants, rationals, scale)
 
-        prover = Vampire(self.exe, seconds=self.timeout, cores=self.cores,
-                         log=self.log)
+        prover = self.spec.build(ctx.tm, seconds=self.timeout, log=self.log)
         found, reached, tried = None, 0.0, 0
-        for limit in ladder(self.timeout):
+        for limit in prover.ladder(self.timeout):
             if prover.left() < 0.5:
                 break
             reached = limit
-            self.log(f"[vampire] time limit {limit:g} s "
+            self.log(f"[houdini] time limit {limit:g} s "
                      f"({prover.left():.0f} s of the budget left)")
             inv = self._houdini(prover, facts, limit)
-            self.log(f"[vampire] Houdini kept {len(inv)} of {len(facts)}: "
+            self.log(f"[houdini] Houdini kept {len(inv)} of {len(facts)}: "
                      + " ".join(f.src for f in inv))
             if cd.is_safety:
                 need = self._property_rests_on(prover, inv, conjuncts, limit)
@@ -1469,7 +1269,7 @@ class TA2MagicVampire(TA2Magic):
             at = prover.first([ob.drops(inv, r) for r in candidates], limit)
             if at is not None:
                 rank = candidates[at]
-                self.log(f"[vampire] ranking function proved: {rank.src}")
+                self.log(f"[houdini] ranking function proved: {rank.src}")
                 core = prover.prove(ob.drops(inv, rank), limit, core=True).core
                 pins = self._pins(inv, rank) if ranks.real else []
                 need = self._named(inv, core) + pins
@@ -1477,7 +1277,9 @@ class TA2MagicVampire(TA2Magic):
                 found = (self._minimise(prover, inv, [f.src for f in pins],
                                         (ranks, rank)), rank)
                 break
-        self.log(f"[vampire] {prover.calls} Vampire calls, {prover.spent:.1f} s")
+        refuted = f", {prover.refuted} refuted" if prover.refutes else ""
+        self.log(f"[houdini] {prover.calls} {prover.name} calls{refuted}, "
+                 f"{prover.spent:.1f} s")
         if found is None:
             return self._none(cd, len(facts), tried, reached, prover)
         inv, rank = found
@@ -1491,35 +1293,87 @@ class TA2MagicVampire(TA2Magic):
         except _Unevaluable:
             return True
 
-    def _houdini(self, prover: Vampire, facts: list[Candidate],
+    def _houdini(self, prover: Solver, facts: list[Candidate],
                  limit: float) -> list[Candidate]:
-        """The largest subset of `facts` Vampire proves inductive at `limit`.
+        """The largest subset of `facts` the solver proves inductive at `limit`.
 
         Each pass first drops what a sampled round refutes -- a state every
         kept fact holds at, whose successor breaks one -- which is Houdini's
-        own step taken without a prover, and then asks Vampire about the
-        rest.
+        own step taken without a solver, and then asks about the rest.
+
+        One question is asked per pass, not one per fact, and what happens
+        when it comes back false is where the solvers part. A counter-model
+        *is* the pass's next step -- a state the kept facts admit whose
+        successor breaks some of them, named by `_survivors` and dropped
+        together -- so cvc5 converges in one call per pass. Vampire has no
+        model to read, so the pass falls back to asking about each fact on
+        its own, which is where the old cost per pass came from.
         """
         ob = self.ob
         if not facts:
             return []
-        kept = list(facts)
-        if not prover.prove(ob.holds_at_entry(kept), limit).proved:
-            answers = prover.prove_all([ob.holds_at_entry([f]) for f in kept], limit)
-            kept = [f for f, a in zip(kept, answers) if a.proved]
+        kept = self._at_entry(prover, list(facts), limit)
         while kept and prover.left() >= 0.5:
             kept = self._refuted_by_sampling(kept)
             if not kept:
                 break
-            if prover.prove(ob.preserved(kept, kept), limit).proved:
+            step = prover.prove(ob.preserved(kept, kept), limit, model=True)
+            if step.proved:
                 return kept
-            answers = prover.prove_all([ob.preserved(kept, [f]) for f in kept], limit)
-            survivors = [f for f, a in zip(kept, answers) if a.proved]
+            survivors = self._survivors(
+                prover, step, kept,
+                lambda fs: [ob.preserved(fs, [f]) for f in fs], limit)
             if len(survivors) == len(kept):
+                # Nothing to drop and the conjunction was not proved: the
+                # solver ran out of time on it, not out of facts.
                 return kept
             kept = survivors
         # Out of budget mid-pass: what is left was not shown inductive.
         return [] if kept and prover.left() < 0.5 else kept
+
+    def _at_entry(self, prover: Solver, kept: list[Candidate],
+                  limit: float) -> list[Candidate]:
+        """`kept` less the facts the initial state does not satisfy.
+
+        Asked again until it is proved, because one counter-model names the
+        facts *that* initial state breaks and another may break others --
+        narrowing from models is a fixpoint where asking fact by fact
+        answers in a single round. Both have to reach the same set: a fact
+        that fails at entry and is kept anyway is an `init_inv` Lean cannot
+        close, and nothing downstream asks this question again.
+        """
+        ob = self.ob
+        while kept:
+            entry = prover.prove(ob.holds_at_entry(kept), limit, model=True)
+            if entry.proved:
+                break
+            survivors = self._survivors(
+                prover, entry, kept,
+                lambda fs: [ob.holds_at_entry([f]) for f in fs], limit)
+            if len(survivors) == len(kept):
+                break               # nothing to drop: unanswered, not false
+            kept = survivors
+        return kept
+
+    def _survivors(self, prover: Solver, answer, kept: list[Candidate],
+                   per_fact, limit: float) -> list[Candidate]:
+        """`kept` less what `answer` says is broken.
+
+        From the counter-model where there is one -- the probes are the
+        facts in the order they were asked about, so a name is a position --
+        and otherwise by asking about each fact on its own, which is what a
+        solver that cannot produce a model leaves as the only way to find
+        out. An empty `broken` on a refuted answer means the model could not
+        be read back rather than that nothing is wrong, so that falls back
+        too.
+        """
+        if answer.broken:
+            out = [f for i, f in enumerate(kept) if f"g{i}" not in answer.broken]
+            self.log(f"[houdini] a counterexample drops "
+                     f"{len(kept) - len(out)} of {len(kept)} facts")
+            return out
+        answers = prover.prove_all(per_fact(kept), limit)
+        return [f for f, a in zip(kept, answers) if a.proved]
 
     def _refuted_by_sampling(self, kept: list[Candidate]) -> list[Candidate]:
         for n in range(_SAMPLE_PASSES):
@@ -1539,8 +1393,8 @@ class TA2MagicVampire(TA2Magic):
 
         Fitted to the reached rounds and to sampled ones from states `inv`
         admits where the property fails -- `hrank` quantifies over all of
-        those, so a shape that does not drop on a sampled round would only
-        cost Vampire a time limit.
+        those, so a shape that does not drop on a sampled round is one the
+        solver would only be asked about to be told no.
         """
         sampled = sample_rounds(
             self.ctx, self.ob, self.ev, self.draws, self.runs.states,
@@ -1550,7 +1404,7 @@ class TA2MagicVampire(TA2Magic):
             self.ctx, self.ob, self.ev, self.wide, self.runs.states,
             lambda s: not ranks.holds(s) and all(self._holds(f, s) for f in inv))
         kept = [r for r in fitted if self._drops_on(r, wide)]
-        self.log(f"[vampire] {len(fitted)} ranking functions drop on "
+        self.log(f"[houdini] {len(fitted)} ranking functions drop on "
                  f"{len(self.runs.rounds)} reached and {len(sampled)} sampled "
                  f"rounds; {len(kept)} also on {len(wide)} rounds from a wider "
                  f"range")
@@ -1571,12 +1425,12 @@ class TA2MagicVampire(TA2Magic):
         """The value-set facts about the components a floored rank reads.
 
         Kept whether or not a proof used them, which is the one place this
-        route carries a fact Vampire can do without. A real ranking function
+        route carries a fact the proofs can do without. A real ranking function
         reaches Lean as `Int.toNat ⌊·⌋`, and `hrank` asks for `0 < ⌊x⌋`
         wherever the property fails; the tactics get there by *computing*
         the floor, which needs `x` pinned to a value rather than bounded or
         related to something else. Measured on `m_lra_conv`: the cores leave
-        `x - y = -2` and `y in {2..5}`, from which Vampire proves everything
+        `x - y = -2` and `y in {2..5}`, from which a solver proves everything
         and Lean proves nothing, while adding `x in {0..3}` back -- a fact
         the other two imply -- builds in 2.6 s.
         """
@@ -1605,7 +1459,7 @@ class TA2MagicVampire(TA2Magic):
 
     # --- cutting the certificate down ---------------------------------------
 
-    def _shrink(self, prover: Vampire, inv: list[Candidate],
+    def _shrink(self, prover: Solver, inv: list[Candidate],
                 need: list[Candidate], limit: float) -> list[Candidate]:
         """The facts `need` rests on, closed under the preservation proofs.
 
@@ -1613,8 +1467,8 @@ class TA2MagicVampire(TA2Magic):
         and its core names the facts it used; those join `need` until a proof
         uses nothing new. The set that comes out is inductive by those
         proofs, and it is checked once more on its own before it replaces
-        `inv` -- a core Vampire over-trims would otherwise surface as a Lean
-        failure. Anything that does not come back proved keeps `inv` whole.
+        `inv` -- a core over-trimmed would otherwise surface as a Lean
+        failure, and neither solver promises a core is one its goal needs. Anything that does not come back proved keeps `inv` whole.
         """
         ob = self.ob
         need = list(dict.fromkeys(need))
@@ -1631,12 +1485,12 @@ class TA2MagicVampire(TA2Magic):
         if len(need) == len(inv):
             return inv
         if prover.prove(ob.preserved(need, need), limit).proved:
-            self.log(f"[vampire] invariant cut to the {len(need)} of "
+            self.log(f"[houdini] invariant cut to the {len(need)} of "
                      f"{len(inv)} facts its proofs use")
             return need
         return inv
 
-    def _minimise(self, prover: Vampire, inv: list[Candidate],
+    def _minimise(self, prover: Solver, inv: list[Candidate],
                   keep: list[str], ranked) -> list[Candidate]:
         """`inv` with each fact the rest do without taken out, one at a time.
 
@@ -1645,9 +1499,9 @@ class TA2MagicVampire(TA2Magic):
         nothing needs. Dropping one is tried against sampled rounds first --
         a state the rest admit whose successor breaks one of them, or that
         the ranking function does not drop on -- and only a drop no sample
-        refutes is put to Vampire, at a short limit and on a small share of
-        the budget: a smaller certificate is worth having, and not worth the
-        search that found it.
+        refutes is put to the solver, at a short limit and on a small share
+        of the budget: a smaller certificate is worth having, and not worth
+        the search that found it.
         """
         ob = self.ob
         deadline = time.monotonic() + min(_MINIMISE_SECONDS, max(prover.left(), 0) / 4)
@@ -1661,11 +1515,11 @@ class TA2MagicVampire(TA2Magic):
             scripts = [ob.preserved(rest, rest)]
             if ranked is not None:
                 scripts.append(ob.drops(rest, ranked[1]))
-            limit = min(LADDER[0], deadline - time.monotonic())
+            limit = min(prover.short, deadline - time.monotonic())
             if limit > 0.5 and all(a.proved for a in prover.prove_all(scripts, limit)):
                 kept = rest
         if len(kept) < len(inv):
-            self.log(f"[vampire] invariant minimised to {len(kept)} of {len(inv)} facts")
+            self.log(f"[houdini] invariant minimised to {len(kept)} of {len(inv)} facts")
         return kept
 
     def _sampled_counterexample(self, facts: list[Candidate], ranked) -> bool:
@@ -1710,11 +1564,18 @@ class TA2MagicVampire(TA2Magic):
                 for c in list(ctx.extl_next) + list(ctx.extl_latched)
                 if not scalar(c.getSort())]
         if bad:
+            why = (
+                "Vampire's SMT-LIB front end has no bitvector theory"
+                if self.spec.kind == "vampire" else
+                "cvc5 has a bitvector theory, but the candidate shapes here "
+                "do not -- a bound stated with a program constant, a "
+                "congruence, an affine relation -- so there would be nothing "
+                "to propose about one"
+            )
             raise Refused(
-                f"--infer vampire reads Int, Bool and Real state and inputs, "
-                f"and this module has {', '.join(bad)}. Vampire's SMT-LIB "
-                f"front end has no bitvector theory. `--infer smt-linear` "
-                f"weighs a bitvector as its unsigned value."
+                f"--infer houdini reads Int, Bool and Real state and inputs, "
+                f"and this module has {', '.join(bad)}. {why}. `--infer "
+                f"smt-linear` weighs a bitvector as its unsigned value."
             )
 
     def _conjuncts(self, ctx: SynthContext, cd: CertificateData) -> list[str]:
@@ -1747,10 +1608,10 @@ class TA2MagicVampire(TA2Magic):
         srcs = [f.src for f in inv]
         inv_src = ("true" if not srcs else srcs[0] if len(srcs) == 1
                    else "(and " + " ".join(srcs) + ")")
-        self.log(f"[vampire] inv: {inv_src}")
+        self.log(f"[houdini] inv: {inv_src}")
         cd.inv = cd.inv_smt = inv_src
         if rank is not None:
-            self.log(f"[vampire] ranking: {rank.src}")
+            self.log(f"[houdini] ranking: {rank.src}")
             cd.ranking = cd.ranking_smt = rank.src
         self._record(inv_src, rank)
         return cd
@@ -1758,16 +1619,17 @@ class TA2MagicVampire(TA2Magic):
     def _record(self, inv_src: str, rank: "Candidate | None") -> None:
         if self.artifacts is None:
             return
-        what = ("Houdini over facts read off simulated runs of the module, "
-                "each proved by Vampire -- it holds at entry and every round "
-                "preserves it -- and cut down to the facts the proofs used.")
+        by = self.spec.kind
+        what = (f"Houdini over facts read off simulated runs of the module, "
+                f"each proved by {by} -- it holds at entry and every round "
+                f"preserves it -- and cut down to the facts the proofs used.")
         self.artifacts.put("inv", inv_src, status="proved", language="smt",
                            what=f"The invariant this run found. {what}")
         if rank is not None:
             self.artifacts.put(
                 "ranking", rank.src, status="proved", language="smt",
-                what="The ranking function this run found: Vampire proved "
-                     "`hrank` for it over the invariant beside it.",
+                what=f"The ranking function this run found: {by} proved "
+                     f"`hrank` for it over the invariant beside it.",
             )
 
     def _none(self, cd, n_facts, n_ranks, reached, prover) -> CertificateData:
@@ -1779,19 +1641,22 @@ class TA2MagicVampire(TA2Magic):
             started = (f"Houdini started from {n_facts} facts the simulated "
                        f"runs keep, and at most {n_ranks} ranking functions "
                        f"dropped on every reached and sampled round")
+        refuted = (f", {prover.refuted} of them refuted"
+                   if prover.refutes else "")
         detail = (
-            f"{started}; Vampire's time limit reached {reached:g} s over "
-            f"{prover.calls} calls. Vampire cannot refute a candidate, so "
-            f"this is not a proof that none exists: a fact or a shape outside "
-            f"the candidates -- a disjunction, a relation of three "
-            f"components, a constant the program never mentions -- or a "
-            f"longer time limit may be what is missing."
+            f"{started}; the time limit reached {reached:g} s over "
+            f"{prover.calls} {prover.name} calls{refuted}. "
+            f"{prover.inconclusive}"
         )
         if self.artifacts is not None:
             self.artifacts.note(
-                f"--infer vampire found no {what}. {detail}\n",
+                f"--infer houdini found no {what}. {detail}\n",
                 status="unknown",
                 what=f"A search for {article} {what} that did not succeed.",
-                why="Vampire proves or times out; nothing here was refuted.",
+                why=(f"{prover.name} decided every candidate it was asked "
+                     f"about; the shapes proposed were the limit."
+                     if prover.refutes else
+                     f"{prover.name} proves or times out; nothing here was "
+                     f"refuted."),
             )
-        raise Refused(f"--infer vampire found no {what}. {detail}")
+        raise Refused(f"--infer houdini found no {what}. {detail}")

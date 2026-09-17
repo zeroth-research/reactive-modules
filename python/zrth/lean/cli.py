@@ -58,9 +58,13 @@ examples:
   # certificate of that shape exists, which --infer ai-cegis reads next run
   uv run verith mymodule.py --buchi "(= s0 0)" --infer smt-linear -o out/ -p MyProject
 
-  # no LLM: Houdini and a ranking search, each candidate proved by Vampire
-  uv run verith mymodule.py --buchi "(= s0 0)" --infer vampire \\
-      --vampire ~/vampire/vampire -o out/ -p MyProject
+  # no LLM: Houdini and a ranking search, each candidate decided by cvc5 --
+  # a candidate it cannot prove comes back with the counterexample that kills it
+  uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini -o out/ -p MyProject
+
+  # ... the same search, refuted by the Vampire prover instead
+  uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini \\
+      --houdini-solver vampire --vampire ~/vampire/vampire -o out/ -p MyProject
 
   # AI inference with Ollama (requires pip install zrth[ai-local])
   uv run verith mymodule.py --buchi "(= s0 0)" --infer \\

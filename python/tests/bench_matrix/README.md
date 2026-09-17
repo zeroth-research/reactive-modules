@@ -28,16 +28,20 @@ matrix cannot survive.
 
 ### The routes
 
-The seven `--infer` routes of
-[`zrth/lean/infer_route.py`](../../zrth/lean/infer_route.py).
+The `--infer` routes of
+[`zrth/lean/infer_route.py`](../../zrth/lean/infer_route.py), one column each
+-- except `houdini`, which is two: the same proposals decided by cvc5
+(`houdini`) or refuted by Vampire (`houdini-vampire`), so a cell where one
+succeeds and the other times out says which half of the route the difference
+is in. The Vampire column appears only when a binary was found.
 
-Four routes need something from outside this repo, and the defaults in
+Some routes need something from outside this repo, and the defaults in
 `run_matrix.py` point at where they were found on the machine that ran it:
 
 | | needs | env override |
 |---|---|---|
 | `ai`, `ai-cegis` | an Anthropic API key | read from `../../CLAUDE_KEY.txt`, or `ANTHROPIC_API_KEY` |
-| `vampire` | a Vampire binary (the release zip, unpacked) | `VERITH_VAMPIRE` |
+| `houdini-vampire` | a Vampire binary (the release zip, unpacked) | `VERITH_VAMPIRE` |
 | `fbk-proveit` | a `lean-ltl-certifying` checkout | `VERITH_PROVEIT_DIR` |
 | `fbk-proveit` | an `ic3ia` binary (or its build dir) | `VERITH_IC3IA` |
 | `fbk-proveit` | the MathSAT Python bindings | `VERITH_MATHSAT_PY` |

@@ -39,6 +39,14 @@ from typing import TYPE_CHECKING
 from .artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
 from .cert import CertificateData
 from .common import Refused
+# Constants only -- the module imports cvc5 lazily, so naming its defaults
+# in the table below costs a bare run nothing.
+from .houdini_solver import (
+    DEFAULT_CORES,
+    DEFAULT_SOLVER,
+    DEFAULT_TIMEOUT,
+    SOLVERS,
+)
 
 if TYPE_CHECKING:
     from zrth import Module
@@ -529,20 +537,43 @@ def _run_smt_linear(inp: InferInput) -> InferResult:
     return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
 
 
-def _resolve_vampire(opts: dict):
-    from .magic_vampire import resolve_vampire
+def _resolve_houdini(opts: dict):
+    from .houdini_solver import resolve_solver
 
-    return resolve_vampire(opts["vampire"])
+    return resolve_solver(opts["houdini_solver"], opts["vampire"],
+                          opts["vampire_cores"])
 
 
-def _run_vampire(inp: InferInput) -> InferResult:
-    from .magic_vampire import TA2MagicVampire
+def _check_houdini_options(settings, opts) -> "str | None":
+    """The flags that belong to a solver this run did not choose.
 
-    magic = TA2MagicVampire(
+    Not a cell of the table: `--vampire` is an option of this route
+    whichever solver it names, and only the *value* of another option says
+    whether it means anything. Refused rather than ignored, for the reason
+    `Opt` exists at all -- a flag that quietly does nothing is worse than
+    one that is an error.
+    """
+    if opts["houdini_solver"] == "vampire":
+        return None
+    spare = [f for f, v in (("--vampire", opts["vampire"]),
+                            ("--vampire-cores", opts["vampire_cores"]))
+             if v is not None]
+    if not spare:
+        return None
+    return (
+        f"{', '.join(spare)} configures the Vampire prover, and this run is "
+        f"--houdini-solver {opts['houdini_solver']}, which starts no binary. "
+        f"Pass --houdini-solver vampire, or drop the flag."
+    )
+
+
+def _run_houdini(inp: InferInput) -> InferResult:
+    from .magic_houdini import TA2MagicHoudini
+
+    magic = TA2MagicHoudini(
         inp.module,
-        vampire=inp.config,
-        timeout=inp.opts["vampire_timeout"],
-        cores=inp.opts["vampire_cores"],
+        solver=inp.config,
+        timeout=inp.opts["houdini_timeout"],
         artifacts=inp.project.artifacts,
         log=inp.log,
     )
@@ -797,15 +828,16 @@ ROUTES: tuple[InferRoute, ...] = (
         ),
     ),
     InferRoute(
-        name="vampire",
+        name="houdini",
         summary=(
             "no LLM: Houdini over facts read off simulated runs of the module "
             "and a ranking function from a fixed list of affine and "
-            "lexicographic shapes, each kept only once the Vampire theorem "
-            "prover proves its obligation from SMT-LIB, at a time limit that "
-            "climbs 2 s, 10 s, 60 s and then the rest of --vampire-timeout "
-            "-- scalar Int, Bool and Real state, the last ranked through "
-            "to_int after scaling by the denominators the program writes"
+            "lexicographic shapes, each kept only once --houdini-solver "
+            "proves its obligation -- cvc5 (default), which decides them and "
+            "so answers a failed candidate with a counterexample, or the "
+            "Vampire theorem prover, which refutes or times out -- scalar "
+            "Int, Bool and Real state, the last ranked through to_int after "
+            "scaling by the denominators the program writes"
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",
@@ -816,34 +848,55 @@ ROUTES: tuple[InferRoute, ...] = (
             "supplied predicate would be one it is not allowed to decide"
         ),
         returns="smt",
-        resolve=_resolve_vampire,
-        run=_run_vampire,
+        resolve=_resolve_houdini,
+        extra_check=_check_houdini_options,
+        run=_run_houdini,
         options=(
+            Opt(
+                ("--houdini-solver",),
+                dict(
+                    choices=list(SOLVERS),
+                    default=DEFAULT_SOLVER,
+                    help=(
+                        f"Which solver decides the obligations (default: "
+                        f"{DEFAULT_SOLVER}). `cvc5` needs no binary -- it is "
+                        f"the package that encoded the module -- and it "
+                        f"*decides* them: a candidate it cannot prove comes "
+                        f"back refuted, with a counterexample that says which "
+                        f"facts to drop and that holds at every time limit. "
+                        f"`vampire` is a first-order prover on printed "
+                        f"SMT-LIB: it refutes the negation or runs out of "
+                        f"time, and the two are indistinguishable."
+                    ),
+                ),
+            ),
+            Opt(
+                ("--houdini-timeout",),
+                dict(
+                    type=float,
+                    default=DEFAULT_TIMEOUT,
+                    metavar="SECONDS",
+                    help=(
+                        f"Wall-clock budget for all solver calls together "
+                        f"(default: {DEFAULT_TIMEOUT}). The search runs whole "
+                        f"at a per-call limit of 2 s, then whatever is left; "
+                        f"under `--houdini-solver vampire` the rungs are 2 s, "
+                        f"10 s, 60 s and the rest, because a short limit "
+                        f"makes its portfolio a different schedule rather "
+                        f"than a truncated one. Either way only what came "
+                        f"back unanswered is asked again."
+                    ),
+                ),
+            ),
             Opt(
                 ("--vampire",),
                 dict(
                     metavar="PATH",
                     help=(
-                        "Path to the Vampire executable, or a directory "
-                        "holding one (the release zip unpacks to one). When "
-                        "omitted, $VAMPIRE, then `vampire` on PATH."
-                    ),
-                ),
-            ),
-            Opt(
-                ("--vampire-timeout",),
-                dict(
-                    type=float,
-                    default=120,
-                    metavar="SECONDS",
-                    help=(
-                        "Wall-clock budget for all Vampire calls together "
-                        "(default: 120). The search runs whole at a time "
-                        "limit of 2 s per call, then 10 s, then 60 s, then "
-                        "whatever is left: a short limit makes Vampire's "
-                        "portfolio a different schedule, not a truncated one, "
-                        "and a candidate that is false costs a full limit "
-                        "because Vampire cannot refute it."
+                        "--houdini-solver vampire: path to the Vampire "
+                        "executable, or a directory holding one (the release "
+                        "zip unpacks to one). When omitted, $VAMPIRE, then "
+                        "`vampire` on PATH."
                     ),
                 ),
             ),
@@ -851,13 +904,14 @@ ROUTES: tuple[InferRoute, ...] = (
                 ("--vampire-cores",),
                 dict(
                     type=int,
-                    default=4,
+                    default=None,
                     metavar="N",
                     help=(
-                        "Processes each Vampire call spreads its portfolio "
-                        "over (default: 4). Calls also run side by side, as "
-                        "many as the machine's cores allow at this width, up "
-                        "to four."
+                        f"--houdini-solver vampire: processes each call "
+                        f"spreads its portfolio over (default: "
+                        f"{DEFAULT_CORES}). Calls also run side by side, as "
+                        f"many as the machine's cores allow at this width, up "
+                        f"to four."
                     ),
                 ),
             ),

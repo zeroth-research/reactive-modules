@@ -429,7 +429,7 @@ certificate consists of.
 | certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
-| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegis`, `--infer nuterm`, `--infer sygus`, `--infer smt-linear`, or `--infer vampire` | `--infer ai`, `--infer ai-cegis`, `--infer nuterm`, `--infer smt-linear`, or `--infer vampire` |
+| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegis`, `--infer nuterm`, `--infer sygus`, `--infer smt-linear`, or `--infer houdini` | `--infer ai`, `--infer ai-cegis`, `--infer nuterm`, `--infer smt-linear`, or `--infer houdini` |
 
 Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
 the project is generated from whatever predicates were supplied, and the two
@@ -452,7 +452,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `vampire`, or `fbk-proveit` (see below) |
+| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `houdini`, or `fbk-proveit` (see below) |
 | `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
@@ -461,9 +461,10 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
 | `--sygus-conjuncts` | `3` | `--infer sygus`: how many atoms the invariant may be a conjunction of — the bound is what makes the space finite, and so decidably empty |
 | `--linear-rows` | `2` | `--infer smt-linear --safety`: how many linear inequalities the invariant may be a conjunction of |
-| `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--infer vampire`: the Vampire binary, or a directory holding one |
-| `--vampire-timeout` | `120` | `--infer vampire`: seconds for all Vampire calls together; each call's limit climbs 2 s, 10 s, 60 s, then the rest |
-| `--vampire-cores` | `4` | `--infer vampire`: processes each call's portfolio spreads over |
+| `--houdini-solver` | `cvc5` | `--infer houdini`: which solver decides the obligations. `cvc5` needs no binary and refutes what it cannot prove, with a counterexample; `vampire` refutes or times out |
+| `--houdini-timeout` | `120` | `--infer houdini`: seconds for all solver calls together; each call is capped at 2 s, then the rest (under `vampire`: 2 s, 10 s, 60 s, then the rest) |
+| `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--houdini-solver vampire`: the Vampire binary, or a directory holding one |
+| `--vampire-cores` | `4` | `--houdini-solver vampire`: processes each call's portfolio spreads over |
 | `--proveit-dir` | — | `--infer fbk-proveit`: path to a `lean-ltl-certifying` checkout |
 | `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
 | `--fbk-simplify` | `cvc5` | `--infer fbk-proveit`: `none` leaves the NA model's transition the shape the module's own terms give it |
@@ -597,14 +598,10 @@ with it and lose on ranking functions, where a learned rank handles shapes a
 linear template has no room for.  What they add is the *no*, and one
 invariant shape — a congruence — that nothing else here can state.
 
-### Proposing candidates and proving them (`--infer vampire`)
+### Proposing candidates and proving them (`--infer houdini`)
 
-[Vampire](https://github.com/vprover/vampire) is a first-order theorem
-prover that reads SMT-LIB. Handed the negation of an obligation it either
-refutes it — the obligation holds — or runs out of time: it never answers
-*false* and never returns a model. So this route does not ask it to find
-anything. It proposes candidates, drops the ones a cheap test refutes, and
-keeps a candidate only once Vampire proves it:
+This route does not search for a certificate. It *proposes* — candidates that
+hold on simulated runs of the module — and a solver decides what stays:
 
 * **invariant** — Houdini over facts that hold on simulated runs of the
   module: bounds stated with the program's own constants, congruences,
@@ -616,41 +613,75 @@ keeps a candidate only once Vampire proves it:
   transition branch on and the order of each pair of components. Each is
   shifted to be positive on the rounds where the property fails and offered
   zeroed where it holds.
-* **smaller certificate** — Vampire's unsat cores name the facts a proof
-  used; the invariant handed on is their closure, then minimised one fact
-  at a time.
+* **smaller certificate** — the unsat cores name the facts a proof used;
+  the invariant handed on is their closure, then minimised one fact at a
+  time. Both solvers report one.
 
-Because a false candidate costs a whole time limit, nothing is put to
-Vampire that a sampled round refutes: states near the reached ones — and
-from a range far wider than the program's constants, which is what exposes
-a shift fitted to small numbers — where the invariant holds, with inputs as
+#### Which solver (`--houdini-solver`)
+
+The obligations are quantifier-free — the inputs are free constants, so what
+an obligation quantifies over is its free variables — and what is left is
+linear integer and real arithmetic with `to_int`, `div`, `mod` and `ite`.
+Two solvers answer them, and the difference is one thing:
+
+| | `cvc5` (default) | `vampire` |
+|---|---|---|
+| binary | none — it is the package that encoded the module | `--vampire`, `$VAMPIRE`, or on `PATH` |
+| a candidate it cannot prove | **refuted, with a counterexample** | out of time, or false — indistinguishable |
+| a failed Houdini pass | one model names every fact to drop: **one call** | one call per fact |
+| a refuted candidate | gone for the run | retried at the next rung |
+| per-call limits | 2 s, then the rest of `--houdini-timeout` | 2 s, 10 s, 60 s, then the rest |
+
+[Vampire](https://github.com/vprover/vampire) is a first-order theorem
+prover that reads SMT-LIB. Handed the negation of an obligation it either
+refutes it — the obligation holds — or runs out of time: it never answers
+*false* and never returns a model. cvc5 *decides* these obligations, so
+`sat` is a counterexample, and a counterexample holds at every time limit
+there will ever be.
+
+That is why the ladder of per-call limits differs. Vampire's `smtcomp`
+portfolio divides its limit among its strategies, so a short limit is a
+different schedule rather than a truncated long one, and a whole search runs
+at one limit before the next is tried. cvc5's search at a longer limit
+simply contains the shorter one, so its rungs are only a cap that stops one
+query eating a whole budget. Either way a repeated pass re-asks only what
+came back unanswered — a proof or a refutation already in hand is kept.
+
+Measured on the 399 obligations of certificates the benchmark matrix had
+verified, Vampire's portfolio refuted 369 within 2 s, nearly all in
+10–20 ms; the rest were encodings it cannot read or obligations that were
+false — that is, nothing in that corpus needed a first-order prover rather
+than a decision procedure.
+
+#### What both solvers get
+
+Because a false candidate can cost a whole time limit, nothing is put to a
+solver that a sampled round refutes: states near the reached ones — and from
+a range far wider than the program's constants, which is what exposes a
+shift fitted to small numbers — where the invariant holds, with inputs as
 `--pre` allows. On `ChenFlurMukhopadhyay-SAS2012-Ex3.01` the wide sample
-took the ranking search from 46 Vampire calls and 84 s to 3 calls and
-0.1 s. A `--safety` property a run of the module violates is reported as
-not holding, before Vampire is started.
-
-Vampire runs as its `smtcomp` portfolio. A whole search runs at one time
-limit per call — 2 s, then 10 s, then 60 s, then what is left of
-`--vampire-timeout` — because a short limit is a different schedule rather
-than a truncated long one. Measured on the 399 obligations of certificates
-the benchmark matrix had verified, the portfolio refuted 369 within 2 s,
-nearly all in 10–20 ms; the rest were encodings it cannot read or
-obligations that were false.
+took the ranking search from 46 Vampire calls and 84 s to 3 calls and 0.1 s.
+It stays on both solvers: it is cheaper than a call either way, and it is
+what makes the *candidates* good rather than only the answers. A `--safety`
+property a run of the module violates is reported as not holding, before any
+solver is started.
 
 ```bash
-uv run verith mymodule.py --buchi "(= s0 0)" --infer vampire \
-    --vampire ~/vampire/vampire -o out/ -p Rea
-# [vampire] Houdini kept 2 of 2: (<= 0 s0) (<= s0 100)
-# [vampire] ranking function proved: s0
-# [vampire] invariant minimised to 1 of 2 facts
+uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini -o out/ -p Rea
+# [houdini] solver: cvc5
+# [houdini] Houdini kept 2 of 2: (<= 0 s0) (<= s0 100)
+# [houdini] ranking function proved: s0
+# [houdini] invariant cut to the 1 of 2 facts its proofs use
 ```
 
-It reads scalar `Int`, `Bool` and `Real` state and inputs; Vampire has no
-bitvector theory, and a matrix-shaped component is refused as it is by
-`smt-linear`. A tuple the transition builds internally is folded away by
-cvc5's rewriter before Vampire sees it. When nothing is found, the note in
-`artifacts/` says `unknown`, not `no_solution`: a prover that cannot refute
-proves no space empty.
+It reads scalar `Int`, `Bool` and `Real` state and inputs, whichever solver
+is chosen: Vampire has no bitvector theory, and cvc5 has one but the
+candidate shapes above do not, so a bitvector is refused by name for both
+and a matrix-shaped component is refused as it is by `smt-linear`. A tuple
+the transition builds internally is folded away by cvc5's rewriter before
+Vampire sees it. When nothing is found, the note in `artifacts/` says
+`unknown`, not `no_solution`: even under cvc5, what was refuted is the
+candidates proposed, not the space they were drawn from.
 
 A `Real` component changes two things. Its invariant is a **set of values**
 rather than an interval, because over the reals a bound is hardly ever
@@ -663,14 +694,18 @@ floor to a smaller number. The scale is the least common denominator of the
 literals the program writes, so `m_lra_half`, which steps by a half, is
 ranked by `(to_int (* 2.0 s0))`. Literals are written as decimals
 throughout: Vampire's front end sorts them strictly and reads neither
-cvc5's `(/ 1 2)` nor a bare `3` where a `Real` belongs.
+cvc5's `(/ 1 2)` nor a bare `3` where a `Real` belongs, and cvc5 reads a
+decimal as happily, so the certificate carries one spelling whoever proved
+it.
 
 ```bash
 uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= s0 0.0)" \
-    --infer vampire -o out/ -p Rea
-# [vampire] Real state: a ranking function is floored after scaling by 1
-# [vampire] inv: (or (= s0 0.0) (= s0 1.0) ... (= s0 5.0))
-# [vampire] ranking: (to_int s0)
+    --infer houdini --houdini-solver vampire --vampire ~/vampire/vampire \
+    -o out/ -p Rea
+# [houdini] solver: vampire
+# [houdini] Real state: a ranking function is floored after scaling by 1
+# [houdini] inv: (or (= s0 0.0) (= s0 1.0) ... (= s0 5.0))
+# [houdini] ranking: (to_int s0)
 ```
 
 ---

@@ -64,7 +64,9 @@ PROVEIT_DIR = os.environ.get("VERITH_PROVEIT_DIR",
                              str(Path.home() / "zeroth/proof-prototyping/lean-ltl-certifying"))
 IC3IA = os.environ.get("VERITH_IC3IA", str(Path.home() / "zeroth/fbk/ic3ia/build"))
 MATHSAT_PY = os.environ.get("VERITH_MATHSAT_PY", str(Path.home() / "zeroth/fbk/mathsat/python"))
-# The prover `--infer vampire` runs: the macOS/Linux release binary, unzipped.
+# The prover `--infer houdini --houdini-solver vampire` runs: the
+# macOS/Linux release binary, unzipped. Without it that column is dropped
+# and only the cvc5 one is measured.
 VAMPIRE = os.environ.get("VERITH_VAMPIRE", str(Path.home() / "zeroth/vampire/vampire"))
 KEY_FILE = REPO / "CLAUDE_KEY.txt"
 MODEL = os.environ.get("VERITH_MODEL", "")     # "" = verith's own default

@@ -263,8 +263,14 @@ class Route:
 
 def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None,
            vampire: str | None = None) -> list[Route]:
-    """The route column, with the paths `vampire` and `fbk-proveit` need
-    filled in: the seven `--infer` routes, and nothing that is not one."""
+    """The route column, with the paths `houdini` and `fbk-proveit` need
+    filled in: the `--infer` routes, and nothing that is not one.
+
+    `--infer houdini` is two columns, because its two solvers are the
+    comparison the route exists to make: the same proposals, decided by cvc5
+    or refuted by Vampire, so a cell where one succeeds and the other times
+    out says which half of the route the difference is in.
+    """
     out = [
         Route("ai", frozenset({"buchi"}), ("--infer", "ai"), needs_llm=True),
         Route("ai-cegis", frozenset({"safety", "buchi"}), ("--infer", "ai-cegis"),
@@ -272,9 +278,14 @@ def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None,
         Route("nuterm", frozenset({"safety", "buchi"}), ("--infer", "nuterm")),
         Route("sygus", frozenset({"safety"}), ("--infer", "sygus")),
         Route("smt-linear", frozenset({"safety", "buchi"}), ("--infer", "smt-linear")),
-        Route("vampire", frozenset({"safety", "buchi"}),
-              ("--infer", "vampire", *(("--vampire", vampire) if vampire else ()))),
+        Route("houdini", frozenset({"safety", "buchi"}),
+              ("--infer", "houdini", "--houdini-solver", "cvc5")),
     ]
+    if vampire:
+        out.append(Route(
+            "houdini-vampire", frozenset({"safety", "buchi"}),
+            ("--infer", "houdini", "--houdini-solver", "vampire",
+             "--vampire", vampire)))
     if proveit_dir:
         args = ["--infer", "fbk-proveit", "--proveit-dir", proveit_dir]
         if ic3ia:

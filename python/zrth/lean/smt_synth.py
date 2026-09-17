@@ -109,7 +109,7 @@ class SynthContext:
         bitvectors as well.
 
         ``reals`` is a route saying it has an answer to the Real question:
-        `--infer vampire` states its candidates in real arithmetic and reads
+        `--infer houdini` states its candidates in real arithmetic and reads
         a ranking function through `to_int`, so it asks for the component
         rather than an integer reading of it.
         """
