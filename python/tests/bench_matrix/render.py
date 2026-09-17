@@ -222,10 +222,6 @@ dialog#srcdlg::backdrop{background:rgba(0,0,0,.35)}
 .dlg-bar{position:sticky;top:0;display:flex;gap:12px;align-items:baseline;padding:9px 14px;
  background:var(--code);border-bottom:1px solid var(--line)}
 .dlg-bar .dlg-close{margin-left:auto}
-pre.src{margin:0;padding:10px 0;counter-reset:ln;font-size:12.5px;background:transparent}
-pre.src .ln{display:block;padding-right:14px;white-space:pre-wrap;word-break:break-word}
-pre.src .ln::before{counter-increment:ln;content:counter(ln);display:inline-block;width:3.2em;
- margin-right:1em;text-align:right;color:var(--dim);user-select:none}
 h3.dir{margin:2.2em 0 .7em;font-size:1.05rem}
 .tag.suite{background:var(--openbg);color:var(--open)}
 .tag.truth.holds{background:var(--okbg);color:var(--ok)}
@@ -535,13 +531,19 @@ HL_KINDS = [
     (Token.Generic.Heading, "h"),
     (Token.Generic.Subheading, "h"),
 ]
-# Shared by the in-page dialog and the popup window, which has no other
-# stylesheet; the popup reads it from the page's `<style id="srccss">`.
-HL_CSS = """
+# The whole source viewer -- line numbering as well as colour -- so that the
+# in-page dialog and the popup window, which has no other stylesheet, lay a
+# file out identically; the popup reads it from the page's `<style id="srccss">`.
+SRC_CSS = """
 .src{--hk:#7b36a8;--hs:#2f6f3a;--hd:#4d6b3c;--hc:#736f67;--hn:#a14f00;--hf:#245b91;
- --hb:#17707c;--ha:#8a6100}
+ --hb:#17707c;--ha:#8a6100;--hln:#9a968d}
 @media (prefers-color-scheme:dark){.src{--hk:#c79be6;--hs:#9fcf8c;--hd:#a8bd8a;
- --hc:#8d8a82;--hn:#e6a86e;--hf:#8fb8de;--hb:#79c5cf;--ha:#d9b65e}}
+ --hc:#8d8a82;--hn:#e6a86e;--hf:#8fb8de;--hb:#79c5cf;--ha:#d9b65e;--hln:#6f6b64}}
+pre.src{margin:0;padding:8px 0;counter-reset:ln;background:transparent;
+ font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre.src .ln{display:block;padding-right:14px;white-space:pre-wrap;word-break:break-word}
+pre.src .ln::before{counter-increment:ln;content:counter(ln);display:inline-block;
+ width:3.2em;margin-right:1em;text-align:right;color:var(--hln);user-select:none}
 .src .k{color:var(--hk)}.src .s{color:var(--hs)}.src .d{color:var(--hd)}
 .src .c{color:var(--hc);font-style:italic}.src .n{color:var(--hn)}
 .src .f,.src .h{color:var(--hf)}.src .h{font-weight:600}.src .b{color:var(--hb)}
@@ -632,10 +634,12 @@ VIEWER_JS = r"""
     return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
   // SRC holds each file already highlighted, a span never crossing a line.
+  // The spans are blocks and join with nothing between them: a newline here
+  // would be one more line box inside the <pre>, doubling every gap.
   function lines(src) {
     return src.replace(/\n$/, '').split('\n').map(function (l) {
       return '<span class="ln">' + l + '</span>';
-    }).join('\n');
+    }).join('');
   }
   var STYLE =
     ':root{color-scheme:light dark}' +
@@ -644,13 +648,8 @@ VIEWER_JS = r"""
     'header{position:sticky;top:0;padding:9px 14px;background:#f3f1ec;' +
     'border-bottom:1px solid #e2ded6;display:flex;gap:12px;align-items:baseline}' +
     'header b{font-size:13px}header a{font-size:11.5px;color:#2f5d8a}' +
-    'pre{margin:0;padding:10px 0;counter-reset:ln}' +
-    '.ln{display:block;padding:0 14px 0 0;white-space:pre-wrap;word-break:break-word}' +
-    '.ln::before{counter-increment:ln;content:counter(ln);display:inline-block;' +
-    'width:3.2em;margin-right:1em;text-align:right;color:#9a968d;user-select:none}' +
     '@media(prefers-color-scheme:dark){body{background:#161614;color:#e7e4dc}' +
-    'header{background:#24241f;border-color:#2e2d29}.ln::before{color:#6b6862}' +
-    'header a{color:#8fb4dc}}' +
+    'header{background:#24241f;border-color:#2e2d29}header a{color:#8fb4dc}}' +
     document.getElementById('srccss').textContent;
   function doc(key, href, text) {
     return '<!doctype html><meta charset="utf-8"><title>' + esc(key) + '</title>' +
@@ -967,7 +966,7 @@ def render(data: dict, warns: list = ()) -> str:
       '<pre class="src"></pre></dialog>')
     page = files.linkify("\n".join(o))
     return (page
-            + f'\n<style id="srccss">{HL_CSS}</style>'
+            + f'\n<style id="srccss">{SRC_CSS}</style>'
             + f'\n<script type="application/json" id="srcs">{files.payload()}</script>'
             + f"\n<script>{VIEWER_JS}</script>")
 
