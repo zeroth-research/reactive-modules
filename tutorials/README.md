@@ -11,13 +11,14 @@ Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
 ## Lean certificates (`uv run verith`)
 
-- **[verith.ipynb](verith.ipynb)**: the `uv run verith` CLI end to end — safety
-  and Büchi certificates for modules written in the Python API and for one read
-  out of a gymnasium environment, what a failing verification looks like (an
-  invalid invariant, a missing precondition), and the `--infer` and
-  `--fbk-proveit` routes. Checking a certificate needs a Lean toolchain; the
-  optional routes need API keys or an ic3ia build, and the notebook's first
-  cell is where all of that is configured.
+- **[verith.md](verith.md)**: the `uv run verith` CLI end to end, as a shell
+  session — safety and Büchi certificates for modules written in the Python API
+  and for one read out of a gymnasium environment, what a failing verification
+  looks like (an invalid invariant, a missing precondition), and every `--infer`
+  route: the LLM loop, the learner, the two that search a fixed shape and can
+  *prove* one empty, and ic3ia through `--fbk-proveit`. Checking a certificate
+  needs a Lean toolchain; the optional routes need API keys or an ic3ia build,
+  and section 1 is where all of that is configured.
 - **[verith_gym.md](verith_gym.md)**: the same CLI from the gymnasium side, in
   plain markdown — designing an environment that extracts into integer
   arithmetic, matrix-shaped state, and the `--infer` backends.
