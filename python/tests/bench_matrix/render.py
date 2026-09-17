@@ -177,6 +177,11 @@ p{margin:.65em 0}
 .lede{color:var(--dim);font-size:1.02rem;max-width:66ch}
 .stamp{color:var(--dim);font-size:.83rem;margin-top:.6em}
 a{color:var(--accent)}
+p.jump{margin:1.3em 0 0}
+p.jump a{display:inline-block;padding:7px 13px;border:1px solid var(--bandline);
+ border-radius:6px;background:var(--band);font-weight:600;font-size:.92rem;
+ text-decoration:none}
+p.jump a:hover{border-color:var(--accent);color:var(--accent)}
 table.kv{border-collapse:collapse;font-size:.88rem;width:100%}
 table.kv td{padding:5px 12px 5px 0;border-bottom:1px solid var(--line);
  vertical-align:top}
@@ -721,6 +726,8 @@ def render(data: dict, warns: list = ()) -> str:
     w(f'<p class="stamp">Rendered {stamp} &middot; {len(rows)} properties over '
       f'{len({source_of(r) for r in rows.values()})} benchmarks &middot; {done} measured runs</p>')
 
+    w('<p class="jump"><a href="#summary">Jump to the results &darr;</a></p>')
+
     # ── the routes ──────────────────────────────────────────────────────
     w("<h2 id=methods>The methods</h2>")
     w("<p>A route&rsquo;s own row in <code>zrth/lean/infer_route.py</code> is what "
@@ -819,16 +826,25 @@ def render(data: dict, warns: list = ()) -> str:
           f'<td>{blurb} <b>{n}</b> of {done}.</td></tr>')
     w("</table>")
 
-    # ── summary matrix ──────────────────────────────────────────────────
+    # ── the route columns, and what merge.py flagged ────────────────────
     route_order = [r["name"] for r in route_docs()]
     present = [r for r in route_order if any(x["route"] == r for x in runs.values())]
     warnings_section(list(warns), w)
 
-    w("<h2 id=summary>Summary</h2>")
+
+    # ── the matrix ──────────────────────────────────────────────────────
+    # The scoreboard first -- what each route carried, by suite -- and then
+    # the same measurements one at a time: benchmark file, the properties
+    # asked of it (from whichever suite asked them, since the fbk probes and
+    # the limit matrix share modules), then one row per `--infer` route,
+    # every route on every property.
+    w("<h2 id=matrix>The matrix</h2>")
     w("<p>How many of each suite&rsquo;s properties each route certified end to end "
       "&mdash; Lean discharged every obligation &mdash; out of the properties whose "
-      "kind that route accepts.</p>")
-    w('<div class="scroll"><table class="sum"><thead><tr><th>suite</th>')
+      "kind that route accepts. Every cell behind these counts is below it, one "
+      "property at a time.</p>")
+    w('<div class="scroll" id=summary><table class="sum">'
+      '<thead><tr><th>suite</th>')
     for r in present:
         w(f"<th>{esc(r)}</th>")
     w("</tr></thead><tbody>")
@@ -844,12 +860,6 @@ def render(data: dict, warns: list = ()) -> str:
               + (f"{ok} / {len(got)}" if got else "&mdash;") + "</td>")
         w("</tr>")
     w("</tbody></table></div>")
-
-    # ── the matrix ──────────────────────────────────────────────────────
-    # Benchmark file, then the properties asked of it -- from whichever suite
-    # asked them, since the fbk probes and the limit matrix share modules --
-    # then one row per `--infer` route, every route on every property.
-    w("<h2 id=matrix>The matrix</h2>")
     w("<p>Where the properties come from:</p><dl class=suites>")
     for s_ in suites:
         w(f"<dt>{esc(s_)}</dt><dd>{SUITE_BLURB[s_]}</dd>")
