@@ -831,35 +831,15 @@ def render(data: dict, warns: list = ()) -> str:
     present = [r for r in route_order if any(x["route"] == r for x in runs.values())]
     warnings_section(list(warns), w)
 
-
     # ── the matrix ──────────────────────────────────────────────────────
-    # The scoreboard first -- what each route carried, by suite -- and then
-    # the same measurements one at a time: benchmark file, the properties
-    # asked of it (from whichever suite asked them, since the fbk probes and
-    # the limit matrix share modules), then one row per `--infer` route,
-    # every route on every property.
+    # Where the properties come from and an index into them, then the
+    # scoreboard -- what each route carried, by suite -- and then the same
+    # measurements one at a time: benchmark file, the properties asked of it
+    # (from whichever suite asked them, since the fbk probes and the limit
+    # matrix share modules), then one row per `--infer` route, every route
+    # on every property.
     w("<h2 id=matrix>The matrix</h2>")
-    w("<p>How many of each suite&rsquo;s properties each route certified end to end "
-      "&mdash; Lean discharged every obligation &mdash; out of the properties whose "
-      "kind that route accepts. Every cell behind these counts is below it, one "
-      "property at a time.</p>")
-    w('<div class="scroll" id=summary><table class="sum">'
-      '<thead><tr><th>suite</th>')
-    for r in present:
-        w(f"<th>{esc(r)}</th>")
-    w("</tr></thead><tbody>")
     suites = [s for s in SUITE_BLURB if any(v["suite"] == s for v in rows.values())]
-    for suite in suites + ["all"]:
-        w(f"<tr{' class=all' if suite == 'all' else ''}><td>{esc(suite)}</td>")
-        for rt in present:
-            ks = [k for k, v in rows.items() if suite in (v["suite"], "all")]
-            got = [runs[f"{k}::{rt}"] for k in ks if f"{k}::{rt}" in runs
-                   and runs[f"{k}::{rt}"]["verdict"] != "UNSUPPORTED"]
-            ok = sum(1 for g in got if g["verdict"] == "VERIFIED")
-            w(f'<td class="{"n0" if not got else ""}">'
-              + (f"{ok} / {len(got)}" if got else "&mdash;") + "</td>")
-        w("</tr>")
-    w("</tbody></table></div>")
     w("<p>Where the properties come from:</p><dl class=suites>")
     for s_ in suites:
         w(f"<dt>{esc(s_)}</dt><dd>{SUITE_BLURB[s_]}</dd>")
@@ -881,6 +861,27 @@ def render(data: dict, warns: list = ()) -> str:
                      for f in sorted(dirs[d]))
           + "</div></div>")
     w("</div>")
+
+    w("<h2 id=summary>Summary</h2>")
+    w("<p>How many of each suite&rsquo;s properties each route certified end to end "
+      "&mdash; Lean discharged every obligation &mdash; out of the properties whose "
+      "kind that route accepts. Every cell behind these counts is below it, one "
+      "property at a time.</p>")
+    w('<div class="scroll"><table class="sum"><thead><tr><th>suite</th>')
+    for r in present:
+        w(f"<th>{esc(r)}</th>")
+    w("</tr></thead><tbody>")
+    for suite in suites + ["all"]:
+        w(f"<tr{' class=all' if suite == 'all' else ''}><td>{esc(suite)}</td>")
+        for rt in present:
+            ks = [k for k, v in rows.items() if suite in (v["suite"], "all")]
+            got = [runs[f"{k}::{rt}"] for k in ks if f"{k}::{rt}" in runs
+                   and runs[f"{k}::{rt}"]["verdict"] != "UNSUPPORTED"]
+            ok = sum(1 for g in got if g["verdict"] == "VERIFIED")
+            w(f'<td class="{"n0" if not got else ""}">'
+              + (f"{ok} / {len(got)}" if got else "&mdash;") + "</td>")
+        w("</tr>")
+    w("</tbody></table></div>")
 
     suite_rank = {s_: i for i, s_ in enumerate(SUITE_BLURB)}
     for d in dir_order:
