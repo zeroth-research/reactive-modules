@@ -2,6 +2,28 @@
 expressions, cvc5 verifies, counterexamples are fed back to the LLM.
 """
 
+# TODO: this is CEGIS, not CEGAR -- the counterexample refines the *candidate*,
+# and there is no abstraction to refine; the obligations are checked over the
+# concrete transition relation. The route was renamed (`--infer ai-cegar` ->
+# `--infer ai-cegis`); the driver was not, so `ai-cegis` still runs
+# `TA2MagicCEGAR` out of `magic_cegar.py` and prints `[CEGAR] attempt 0`.
+# What the rename has to reach, together, in one commit:
+#   * this module (-> `magic_cegis.py`), `TA2MagicCEGAR`, the docstring above,
+#     and the `magic_cegar` mentions in `infer_route.py`, `smt_synth.py` and
+#     `magic_sygus.py`;
+#   * `smt_prompt.CegarPromptEnv`, `CEGAR_GENERATE_SYSTEM`,
+#     `CEGAR_SAFETY_SYSTEM` and the `"cegar"` parser tag -- `smt_synth.py`,
+#     `smt_query.py` and `tests/test_synth_routes.py` import them too;
+#   * `tests/test_cegar_results.py`, and `CEGAR_FIXED` in
+#     `tests/test_verith_cli.py`;
+#   * the `[CEGAR] ...` lines printed below -- quoted verbatim in the
+#     transcripts in `tutorials/verith.md`, `tutorials/verith_gym.md` and
+#     `README.md`, and matched by `CEGAR failed after` in
+#     `tests/bench_matrix/run_matrix.py`'s failure regex. Those are why this
+#     is a sweep of its own rather than part of the flag rename.
+# Leave `magic_learn`'s Farkas/CEGAR alone: that one really does refine an
+# abstraction.
+
 from __future__ import annotations
 
 from dataclasses import dataclass
