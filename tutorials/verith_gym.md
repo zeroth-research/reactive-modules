@@ -428,7 +428,7 @@ uv run verith cycle_env.py \
     --infer -o out/ -p CycleCert
 ```
 
-The default `ai-cegar` mode prints each proposal and cvc5's verdict:
+The default `ai-cegis` mode prints each proposal and cvc5's verdict:
 
 ```
 [CEGAR] attempt 0
@@ -455,7 +455,7 @@ below.
 What happens:
 
 1. The project is generated as in Step 2, with the property compiled in.
-2. The inference loop runs. `--infer` without a value means `ai-cegar`: each
+2. The inference loop runs. `--infer` without a value means `ai-cegis`: each
    LLM proposal is checked with cvc5, and counterexamples are fed back to
    the model until the invariant is inductive and the ranking decreases
    (`--infer ai` skips the cvc5 loop and relies on LLM self-checking).
@@ -519,7 +519,7 @@ uv run verith cycle_env.py --buchi "(= s4 0)" --pre "(>= el0 1)" --infer \
 ```
 
 A local model is typically weaker at proposing invariants than a frontier
-one, which is exactly what the default `ai-cegar` mode is for: cvc5 rejects
+one, which is exactly what the default `ai-cegis` mode is for: cvc5 rejects
 unsound proposals and returns concrete counterexamples to the model, so a
 smaller model usually still converges — it just needs more refinement
 rounds. Prefer code- or reasoning-tuned models; tiny chat models tend to
@@ -577,7 +577,7 @@ entries in a lake project that also contains the `Core` library and
 | `--pre` | — | SMT-LIB 2 Bool over `e0..`/`el0..` input vars |
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking function |
-| `--infer [ai\|ai-cegar\|nuterm\|fbk-proveit]` | `ai-cegar` | Which route finds the certificate — an LLM, (`nuterm`) a ranking function trained and then certified, or (`fbk-proveit`) ic3ia through `lean-ltl-certifying` |
+| `--infer [ai\|ai-cegis\|nuterm\|fbk-proveit]` | `ai-cegis` | Which route finds the certificate — an LLM, (`nuterm`) a ranking function trained and then certified, or (`fbk-proveit`) ic3ia through `lean-ltl-certifying` |
 | `--model`, `--base-url` | `claude-sonnet-4-6`, — | LLM selection for `--infer`; rejected by a route that calls none |
 | `--artifacts` | `use` | The project's `artifacts/` across runs: `use` resumes from what an earlier run left, `ignore` searches afresh, `reset` empties it |
 | `--cert-file` | — | Standalone certificate files instead of a project |

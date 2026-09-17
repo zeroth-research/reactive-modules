@@ -173,7 +173,7 @@ def test_a_route_needs_a_property_and_names_the_kinds_it_takes(route):
 def test_ai_does_not_infer_a_safety_certificate():
     """`main.py:616`, from the row's `kinds` + `kinds_refusal`."""
     message = err(["m.py", "--safety", "(= s0 0)", "--infer", "ai"])
-    assert "rule_globally" in message and "ai-cegar" in message
+    assert "rule_globally" in message and "ai-cegis" in message
 
 
 @pytest.mark.parametrize(
@@ -351,7 +351,7 @@ def test_the_legacy_flag_and_a_different_route_conflict(tmp_path):
             "--safety",
             "(= s0 0)",
             "--infer",
-            "ai-cegar",
+            "ai-cegis",
             "--fbk-proveit",
             str(_checkout(tmp_path)),
         ]
@@ -484,7 +484,7 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi"):
 
 def test_lean_that_came_back_is_not_rendered_again(monkeypatch, tmp_path):
     """Rendering encodes the module into cvc5 again, so a route that already
-    has the Lean -- both `ai-cegar` and `nuterm` do -- is taken at its word.
+    has the Lean -- both `ai-cegis` and `nuterm` do -- is taken at its word.
     """
     out, rendered = _run_infer(
         monkeypatch,
@@ -551,7 +551,7 @@ def test_artifacts_defaults_to_use():
     assert parse_args(["m.py", "--buchi", "(= s0 0)"]).artifacts == "use"
 
 
-# --- resuming, as `ai-cegar` does it -------------------------------------
+# --- resuming, as `ai-cegis` does it -------------------------------------
 
 
 def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):

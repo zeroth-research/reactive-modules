@@ -38,7 +38,7 @@ class CertificateData:
     ranking: Expr | str | None = None
 
     # SMT-LIB (or Python-expression) source for `inv` / `ranking` when those
-    # fields hold Lean text printed from a cvc5 term -- the `--infer ai-cegar`
+    # fields hold Lean text printed from a cvc5 term -- the `--infer ai-cegis`
     # route. The project needs the Lean; cvc5 needs its own input back, so
     # `--pre-check` restates the obligations from these.
     inv_smt: str | None = None

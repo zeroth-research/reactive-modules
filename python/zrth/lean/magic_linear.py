@@ -25,7 +25,7 @@ certificate of that shape exists*, which nothing else in this package can
 produce.  Measured: `m_toward5`, `m_twovars` and `m_lex` have no linear
 ranking function and cvc5 says so in 2-30 ms, where an LLM asked for one
 spends an API call per attempt discovering the same thing.  That answer is
-written to `artifacts/` as a note, and `--infer ai-cegar` reads it into its
+written to `artifacts/` as a note, and `--infer ai-cegis` reads it into its
 prompt on the next run -- which is the whole reason this route is worth
 running before the expensive one.
 
@@ -295,11 +295,11 @@ class TA2MagicLinear(TA2Magic):
                 "A ranking function for this module needs something outside "
                 "that shape: a branch (`ite`), which is what a program whose "
                 "run wraps around needs, or a stronger invariant to rank "
-                "over. `--infer ai-cegar` and `--infer nuterm` both search "
+                "over. `--infer ai-cegis` and `--infer nuterm` both search "
                 "shapes that have one."
                 if verdict.answer == "unsat" else
                 "Raise `--smt-timeout`, or try `--infer nuterm` / "
-                "`--infer ai-cegar`."
+                "`--infer ai-cegis`."
             ),
         )
 
@@ -312,7 +312,7 @@ class TA2MagicLinear(TA2Magic):
         A supplied invariant is not replaced but *strengthened*: it is the
         first conjunct and the rows are what is added to it, so
         `--invariant` here means "this much is known, find the rest" -- the
-        same thing a resumed `inv` artifact means to `--infer ai-cegar`.
+        same thing a resumed `inv` artifact means to `--infer ai-cegis`.
 
         The widths are separate queries, smallest first, because the cost is
         in the width: one row is 11 ms on `m_countdown` and two do not finish

@@ -64,7 +64,7 @@ FIRST_BUILD_NOTE = (
     "build dir holding nothing but the <code>packages</code> symlink. This is "
     "the shared cache filling, paid once per build dir. Routes that declare a "
     "library of their own pay a further one-time cost on top: "
-    "<code>LeanAI/</code> for <code>ai</code> and <code>ai-cegar</code>, "
+    "<code>LeanAI/</code> for <code>ai</code> and <code>ai-cegis</code>, "
     "<code>ProveIt/</code> for <code>fbk-proveit</code>. "
     "<code>../limits/README.md</code> records 654 s for this measurement; it "
     "did not reproduce here, and that figure has no target list attached.")

@@ -134,7 +134,7 @@ class SynthContext:
                 f"and this module has one that is not weighable: "
                 f"{', '.join(bad)}. A Real component has no integer reading "
                 f"and a ranking function has to land in `Nat`; a matrix-shaped "
-                f"one would be a column per element. Use --infer ai-cegar."
+                f"one would be a column per element. Use --infer ai-cegis."
             )
         true = tm.mkBoolean(True)
         return cls(
@@ -224,7 +224,7 @@ def int_readings(ctx: "SynthContext", *, allow: tuple[str, ...],
             f"--infer {route} reads a state of scalar integers, and this "
             f"module's is not one: {', '.join(refused)}. `--infer smt-linear` "
             f"weighs a Bool component as 0/1 and a bitvector as its unsigned "
-            f"value, and `--infer ai-cegar` reads whatever cvc5 encodes."
+            f"value, and `--infer ai-cegis` reads whatever cvc5 encodes."
         )
     return out
 
@@ -424,7 +424,7 @@ class Search:
     def note(self) -> str:
         """The note an empty space leaves, written to be read by an LLM.
 
-        It goes into `artifacts/` and out again into the `--infer ai-cegar`
+        It goes into `artifacts/` and out again into the `--infer ai-cegis`
         prompt verbatim, so it is prose about this module and not a log line:
         what was ruled out, that it was *proved* rather than not found, and
         what that leaves.
@@ -447,7 +447,7 @@ def record(store, search: Search, *, log=None) -> None:
 
     A found predicate is written as its own role, in SMT-LIB and with the
     status that makes it resumable -- `infer_route.FIXABLE` is what a later
-    `--infer ai-cegar` will take as given. An empty space is written as a
+    `--infer ai-cegis` will take as given. An empty space is written as a
     note, because what it is worth is what it *says*, and `no_solution` is
     the status that tells a consumer the saying was proved.
     """

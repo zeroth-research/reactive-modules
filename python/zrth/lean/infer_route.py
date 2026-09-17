@@ -442,7 +442,7 @@ def _ruled_out(inp: InferInput) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _run_ai_cegar(inp: InferInput) -> InferResult:
+def _run_ai_cegis(inp: InferInput) -> InferResult:
     from .magic_cegar import TA2MagicCEGAR
 
     _take_inv(
@@ -630,7 +630,7 @@ ROUTES: tuple[InferRoute, ...] = (
         ),
         kinds=frozenset({"buchi"}),
         kinds_refusal=(
-            "--safety needs --infer ai-cegar or --infer nuterm: the `ai` route "
+            "--safety needs --infer ai-cegis or --infer nuterm: the `ai` route "
             "infers a ranking function `rule_globally` cannot take, and nothing "
             "checks that the invariant implies the property"
         ),
@@ -645,11 +645,12 @@ ROUTES: tuple[InferRoute, ...] = (
         run=_run_ai,
     ),
     InferRoute(
-        name="ai-cegar",
+        name="ai-cegis",
         summary=(
-            "LLM + cvc5 counterexample-guided refinement: each candidate is "
-            "put to the obligations and the model that refutes one is fed "
-            "back (the default when --infer is passed without a value)"
+            "LLM + cvc5 counterexample-guided inductive synthesis: each "
+            "candidate is put to the obligations and the model that refutes "
+            "one is fed back (the default when --infer is passed without a "
+            "value)"
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",
@@ -664,7 +665,7 @@ ROUTES: tuple[InferRoute, ...] = (
         reads_artifacts=frozenset({"inv", "note"}),
         returns="smt",
         uses_llm=True,
-        run=_run_ai_cegar,
+        run=_run_ai_cegis,
     ),
     InferRoute(
         name="nuterm",
@@ -702,7 +703,7 @@ ROUTES: tuple[InferRoute, ...] = (
             "ranking function. Synthesis loses at those -- measured, 124 s on "
             "a two-variable module for a rank `--infer nuterm` certifies in "
             "seconds. Pass --safety, or infer a Buchi certificate with "
-            "--infer nuterm or --infer ai-cegar."
+            "--infer nuterm or --infer ai-cegis."
         ),
         seeds=frozenset({"pre"}),
         seeds_refusal=(
@@ -760,7 +761,7 @@ ROUTES: tuple[InferRoute, ...] = (
             "linear inequalities (--safety) -- over scalar Int, Bool and "
             "bitvector components alike, where a refuted query is a *proof* "
             "that the shape is empty, written to artifacts/ for --infer "
-            "ai-cegar to read into its prompt"
+            "ai-cegis to read into its prompt"
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",
@@ -874,7 +875,7 @@ ROUTES: tuple[InferRoute, ...] = (
         kinds_refusal=(
             "--infer fbk-proveit is incompatible with --buchi: proveit.py "
             "proves `G PROPERTY` through ic3ia, which is a safety question. "
-            "Pass --safety, or infer a Buchi certificate with --infer ai-cegar."
+            "Pass --safety, or infer a Buchi certificate with --infer ai-cegis."
         ),
         seeds=frozenset(),
         seeds_refusal=(
@@ -966,7 +967,7 @@ ROUTES: tuple[InferRoute, ...] = (
 )
 
 
-DEFAULT_ROUTE = "ai-cegar"
+DEFAULT_ROUTE = "ai-cegis"
 
 
 def index_routes(routes: "tuple[InferRoute, ...]") -> dict[str, InferRoute]:

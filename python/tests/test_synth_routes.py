@@ -266,7 +266,7 @@ def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
 
 
 def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
-    """`--infer smt-linear` refutes a shape; `--infer ai-cegar` is told.
+    """`--infer smt-linear` refutes a shape; `--infer ai-cegis` is told.
 
     The note is written to be read by a model, so what is checked is that it
     arrives in the message verbatim and is framed as established rather than

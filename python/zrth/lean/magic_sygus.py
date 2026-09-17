@@ -31,7 +31,7 @@ certificate's `init_inv` and `step_inv` obligations quantify over, and a
 
 What it leaves behind
 =====================
-The invariant, in `artifacts/`, as a resumable `inv`: `--infer ai-cegar` in
+The invariant, in `artifacts/`, as a resumable `inv`: `--infer ai-cegis` in
 a later run takes it as given and infers only what is left.  That is the
 route's second purpose and the reason it is worth running even when the
 project it generates is not the one wanted -- the certificate is the answer,
@@ -203,10 +203,10 @@ class TA2MagicSygus(TA2Magic):
                 "An invariant for this module needs something the grammar "
                 "does not have -- a disjunction, a product of two "
                 "components, a constant the program never mentions, or more "
-                "than `--sygus-conjuncts` of them. `--infer ai-cegar` "
+                "than `--sygus-conjuncts` of them. `--infer ai-cegis` "
                 "searches no fixed space and is what to try next."
                 if exhausted else
-                "Raise `--smt-timeout`, or try `--infer ai-cegar`, which "
+                "Raise `--smt-timeout`, or try `--infer ai-cegis`, which "
                 "searches no fixed space."
             ),
         )

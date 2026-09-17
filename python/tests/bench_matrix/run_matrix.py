@@ -181,7 +181,7 @@ def run_capped(cmd, *, cwd, env=None, timeout: int):
     that process is a wrapper: `uv run` for generation, `lake` for the build.
     On a timeout the wrapper died and the real worker -- verith itself, or
     the `lean` processes under lake -- was reparented to init and kept
-    running. One orphaned `--infer ai-cegar` cell held a core for 2h38m
+    running. One orphaned `--infer ai-cegis` cell held a core for 2h38m
     beside the pass that had already written it off as TIMEOUT, so every
     timing taken next to it is a timing of a busier machine than the page
     claims. The child therefore leads its own process group and the cap
@@ -259,7 +259,7 @@ def inferred_from(stdout: str) -> dict:
     display, which hid the one thing wrong with `--infer ai`'s answers: they
     reached `Data.lean` quoted, and the record showed them clean.
 
-    The *last* one printed. `ai` and `ai-cegar` print a candidate per attempt
+    The *last* one printed. `ai` and `ai-cegis` print a candidate per attempt
     and stop at the one that is accepted, so the first line is attempt 0 --
     which, on any run that needed a second attempt, is a candidate that was
     rejected, and not the certificate that was built."""
@@ -329,7 +329,7 @@ _REFUTED = re.compile(r"found a counterexample|\bUNSAFE\b|property does not hold
 _UNSUPPORTED = re.compile(
     r"is incompatible with --(?:buchi|safety|pre)\b|--(?:safety|buchi) needs --infer")
 # `ai` checks its own candidates with a second model call and gives up after
-# `max_attempts` rejections -- the same outcome as `ai-cegar` running out of
+# `max_attempts` rejections -- the same outcome as `ai-cegis` running out of
 # attempts, reported in its own words.
 _NO_CERT = re.compile(
     r"error: --infer|CEGAR failed after|obligation violated|found no ranking"

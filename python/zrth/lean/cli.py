@@ -45,7 +45,7 @@ examples:
   uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
 
   # ... and the same loop for a safety property (cvc5-checked route only)
-  uv run verith mymodule.py --safety "(<= s0 100)" --infer ai-cegar -o out/ -p MyProject
+  uv run verith mymodule.py --safety "(<= s0 100)" --infer ai-cegis -o out/ -p MyProject
 
   # no LLM: learn a ranking function and certify it before it is offered
   uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
@@ -55,7 +55,7 @@ examples:
   uv run verith mymodule.py --safety "(not (= s0 1))" --infer sygus -o out/ -p MyProject
 
   # no LLM: one query per shape -- and a refuted shape is a *proof* that no
-  # certificate of that shape exists, which --infer ai-cegar reads next run
+  # certificate of that shape exists, which --infer ai-cegis reads next run
   uv run verith mymodule.py --buchi "(= s0 0)" --infer smt-linear -o out/ -p MyProject
 
   # no LLM: Houdini and a ranking search, each candidate proved by Vampire

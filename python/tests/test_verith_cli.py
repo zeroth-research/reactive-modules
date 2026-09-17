@@ -195,13 +195,13 @@ def test_verith_infer_rejects_cert_file():
 # ── the pre-check and inference, in that order ──────────────────────────────
 
 
-# `--infer ai-cegar` with both predicates fixed makes no LLM call: the CEGAR
+# `--infer ai-cegis` with both predicates fixed makes no LLM call: the CEGAR
 # loop just verifies them once. That is the whole inference path, offline.
 CEGAR_FIXED = (
     "--buchi", "(= s0 0)",
     "--invariant", "(and (>= s0 0) (<= s0 9))",
     "--ranking", "(ite (= s0 0) 0 (- 10 s0))",
-    "--infer", "ai-cegar",
+    "--infer", "ai-cegis",
 )
 
 
@@ -293,7 +293,7 @@ def test_safety_rejects_the_unchecked_inference_route(tmp_path):
         "-o", str(tmp_path), "-p", "P",
     )
     assert r.returncode != 0
-    assert "--safety needs --infer ai-cegar" in r.stderr
+    assert "--safety needs --infer ai-cegis" in r.stderr
 
 
 # ── the learning route ──────────────────────────────────────────────────────
@@ -334,7 +334,7 @@ def test_learn_infers_a_buchi_certificate_and_it_pre_checks():
 def test_learn_serves_safety_as_well():
     """`rule_globally` takes an invariant alone, and the route infers one --
     which is what makes it an alternative to --fbk-proveit and not only to
-    --infer ai-cegar."""
+    --infer ai-cegis."""
     pytest.importorskip("cvc5")
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
@@ -376,7 +376,7 @@ def test_learn_is_an_answer_to_safety_where_the_ai_route_is_not():
             "-o", tmpdir, "-p", "P",
         )
         assert r.returncode != 0
-        assert "--infer ai-cegar or --infer nuterm" in r.stderr
+        assert "--infer ai-cegis or --infer nuterm" in r.stderr
 
 
 def test_cegar_infers_a_safety_certificate():
@@ -388,7 +388,7 @@ def test_cegar_infers_a_safety_certificate():
         r = _verith(
             str(COUNTER_MODULE), "--safety", "(<= s0 9)",
             "--invariant", "(and (>= s0 0) (<= s0 9))",
-            "--infer", "ai-cegar", "--pre-check", "cvc5",
+            "--infer", "ai-cegis", "--pre-check", "cvc5",
             "-o", tmpdir, "-p", "CounterSafetyInfer",
         )
         assert r.returncode == 0, r.stderr

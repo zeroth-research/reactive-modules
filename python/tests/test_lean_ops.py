@@ -11,7 +11,7 @@ was meant to serve — but nothing could see a variant with no emitter at all,
 because there was no one place that knew which variants there are. That is
 how every unsigned and signed BV comparison came to be encoded for cvc5 and
 for no Lean backend: a module using one passed `--pre-check` and
-`--infer ai-cegar`, then failed at project generation.
+`--infer ai-cegis`, then failed at project generation.
 
 So: a variant added to a theory fails `test_every_variant_has_a_row` until
 someone writes its row, and writing that row means saying what all four

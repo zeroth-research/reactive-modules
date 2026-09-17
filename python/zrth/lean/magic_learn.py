@@ -1,6 +1,6 @@
 """TA2Magic by a learned ranking function, certified before it is offered.
 
-``--infer nuterm``. Where ``--infer ai`` and ``--infer ai-cegar`` ask an LLM for
+``--infer nuterm``. Where ``--infer ai`` and ``--infer ai-cegis`` ask an LLM for
 the certificate, this route learns one. A small ReLU network is trained on
 rollouts of the module to drop on the rounds the property does not hold, its
 weights are rounded to integers, and the candidate is put to a decision
@@ -340,7 +340,7 @@ class TA2MagicLearn(TA2Magic):
                 f"no inductive invariant implying the property was found "
                 f"({proof.status}). Houdini's candidates are sign and pairwise "
                 f"facts; for an invariant outside that lattice use "
-                f"--fbk-proveit, or --infer ai-cegar."
+                f"--fbk-proveit, or --infer ai-cegis."
             )
         self.log("[nuterm] safety invariant certified")
         # The seeded property is printed as it was written, which is the same

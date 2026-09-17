@@ -1,7 +1,7 @@
 """Bounded cvc5 queries about a module and its certificate.
 
 `verith` already builds a complete symbolic encoding of every module
-(`smt_module.ModuleSMT`) but, outside the `--infer ai-cegar` loop, never asks
+(`smt_module.ModuleSMT`) but, outside the `--infer ai-cegis` loop, never asks
 the solver anything: cvc5 is used only to parse the SMT-LIB predicates and
 hand them to the Lean printer. That leaves the two questions that matter
 unanswered before a `lake build` that takes tens of seconds --

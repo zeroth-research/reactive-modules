@@ -267,7 +267,7 @@ def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None,
     filled in: the seven `--infer` routes, and nothing that is not one."""
     out = [
         Route("ai", frozenset({"buchi"}), ("--infer", "ai"), needs_llm=True),
-        Route("ai-cegar", frozenset({"safety", "buchi"}), ("--infer", "ai-cegar"),
+        Route("ai-cegis", frozenset({"safety", "buchi"}), ("--infer", "ai-cegis"),
               needs_llm=True),
         Route("nuterm", frozenset({"safety", "buchi"}), ("--infer", "nuterm")),
         Route("sygus", frozenset({"safety"}), ("--infer", "sygus")),

@@ -376,7 +376,7 @@ uv run verith mymodule.py --safety "(<= s0 10)" \
 uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
 
 # ... and for a safety property, through the cvc5-checked loop
-uv run verith mymodule.py --safety "(<= s0 10)" --infer ai-cegar -o out/ -p MyProject
+uv run verith mymodule.py --safety "(<= s0 10)" --infer ai-cegis -o out/ -p MyProject
 
 # AI inference with a local LLM via Ollama (requires pip install zrth[ai-local])
 uv run verith mymodule.py --buchi "(= s0 0)" --infer \
@@ -429,7 +429,7 @@ certificate consists of.
 | certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
-| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegar`, `--infer nuterm`, `--infer sygus`, `--infer smt-linear`, or `--infer vampire` | `--infer ai`, `--infer ai-cegar`, `--infer nuterm`, `--infer smt-linear`, or `--infer vampire` |
+| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegis`, `--infer nuterm`, `--infer sygus`, `--infer smt-linear`, or `--infer vampire` | `--infer ai`, `--infer ai-cegis`, `--infer nuterm`, `--infer smt-linear`, or `--infer vampire` |
 
 Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
 the project is generated from whatever predicates were supplied, and the two
@@ -452,7 +452,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegar` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `vampire`, or `fbk-proveit` (see below) |
+| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `vampire`, or `fbk-proveit` (see below) |
 | `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
@@ -505,7 +505,7 @@ So unlike the `ai` routes, what reaches the certificate has already been
 proved — `--pre-check cvc5` and `lake build Certificate` confirm it rather
 than discovering it.  The trade is reach:
 
-| | `--infer nuterm` | `--infer ai-cegar` | `--infer fbk-proveit` |
+| | `--infer nuterm` | `--infer ai-cegis` | `--infer fbk-proveit` |
 |---|---|---|---|
 | needs | nothing but the repo | an API key or a local LLM | an `ic3ia` build and a `lean-ltl-certifying` checkout |
 | state it reads | scalar integers | whatever cvc5 encodes | whatever the NA encoding expresses |
@@ -548,7 +548,7 @@ the whole space to cvc5 at once, so "not found" is an answer with content:
 **A refuted search is a proof, and it is kept.**  When the template query
 comes back `unsat`, nothing of that shape satisfies the obligations — a fact
 about the module, not a failure to look.  It is written to `artifacts/` as a
-`no_solution` note, and `--infer ai-cegar` reads those notes into its prompt
+`no_solution` note, and `--infer ai-cegis` reads those notes into its prompt
 on the next run, so an attempt is not spent proposing what a decision
 procedure has already ruled out.  A search that runs out of budget writes an
 `unknown` note instead and is *not* carried into any prompt: the difference
@@ -563,7 +563,7 @@ uv run verith m_toward5.py --buchi "(= s0 5)" \
 
 # 2. the expensive one, now knowing that
 uv run verith m_toward5.py --buchi "(= s0 5)" \
-    --invariant "(and (>= s0 0) (<= s0 10))" --infer ai-cegar -o out/ -p Rea
+    --invariant "(and (>= s0 0) (<= s0 10))" --infer ai-cegis -o out/ -p Rea
 # .. resuming from note-0003-smt-linear.md: a space an earlier run ruled out
 ```
 
@@ -574,7 +574,7 @@ invariant as a resumable `inv`, so the next run takes it as given:
 uv run verith m_step2.py --safety "(not (= s0 1))" --infer sygus -o out/ -p Rea
 # [sygus] inv: (= (mod (+ (- 2) (* (- 1) s0)) 2) 0)        -- `x` is even
 
-uv run verith m_step2.py --safety "(not (= s0 1))" --infer ai-cegar \
+uv run verith m_step2.py --safety "(not (= s0 1))" --infer ai-cegis \
     --pre-check cvc5 -o out/ -p Rea
 # .. resuming from inv-0002-sygus.smt2 (proved): taking it as the certificate
 # [CEGAR] all obligations UNSAT — accepted        -- and no LLM call was made
@@ -805,7 +805,7 @@ describe the module:
 
 The transition itself is not written by `translate/fbk.py`. Each state slot's
 next value is `smt_encode`'s term for that element — the encoder `--pre-check`
-and `--infer ai-cegar` run on — simplified by cvc5 and printed by
+and `--infer ai-cegis` run on — simplified by cvc5 and printed by
 `smt_to_lean_bool`. So the model `lean2vmt` reads and the obligations cvc5
 answers about the same module are one encoding rather than two readings, and
 the refusal list above is exactly what those two components cannot express.

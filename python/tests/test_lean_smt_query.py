@@ -192,7 +192,7 @@ def test_pre_check_reports_without_raising_on_a_predicate_it_cannot_parse():
 
 INFERRED = CertificateData(
     prp=GOOD.prp,
-    # What `--infer ai-cegar` leaves behind: Lean in the fields the project
+    # What `--infer ai-cegis` leaves behind: Lean in the fields the project
     # is generated from, the SMT-LIB cvc5 was given beside them.
     inv="fun s => 0 <= s.1 0 0 ∧ s.1 0 0 <= 100",
     ranking="fun s => (s.1 0 0).toNat",

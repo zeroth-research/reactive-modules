@@ -51,7 +51,7 @@ refused by it.
 
 The body of each slot is *not* written by this module.  It is
 `smt_encode`'s term for that element — the encoder `--pre-check` and
-`--infer ai-cegar` already run on — printed by `smt_to_lean_bool`, whose
+`--infer ai-cegis` already run on — printed by `smt_to_lean_bool`, whose
 fragment is chosen to be what `lean2vmt` reads.  Three things follow:
 
 * an op with no *scalar Lean* form is no longer a problem, because no
@@ -117,7 +117,7 @@ NA_ELEMENT_TYPES = frozenset({"Int", "Bool"})
 # between that and a silently wrong model.
 #
 # The transition is now built by `smt_encode` (the encoder `--pre-check` and
-# `--infer ai-cegar` already run on) and printed by `smt_to_lean_bool`, which
+# `--infer ai-cegis` already run on) and printed by `smt_to_lean_bool`, which
 # raises on anything outside the fragment `lean2vmt` reads rather than
 # printing it. Two consequences: `Linear` and the rest come through as the
 # scalar arithmetic they expand to, and an op neither component handles
@@ -293,7 +293,7 @@ def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
     used to be five (measured, one-wire counter).
 
     The transition comes from `smt_encode` -- the encoder `--pre-check` and
-    `--infer ai-cegar` already run on, so the model `lean2vmt` reads and the
+    `--infer ai-cegis` already run on, so the model `lean2vmt` reads and the
     obligations cvc5 answers are the same encoding, not two readings of one
     module -- and is printed by `smt_to_lean_bool`, whose fragment is chosen
     to be what `lean2vmt` translates.

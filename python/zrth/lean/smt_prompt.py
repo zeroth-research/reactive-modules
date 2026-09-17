@@ -284,7 +284,7 @@ def parse_predicate(env: "CegarPromptEnv", src: str) -> cvc5.Term:
         # cvc5 parses an empty or all-blank source to a null term rather than
         # an error, and the first use of one -- `getSort()` -- raises from
         # inside the binding: an LLM that wrote `RANKING:` and nothing after
-        # it crashed `--infer ai-cegar` instead of being told. Every caller
+        # it crashed `--infer ai-cegis` instead of being told. Every caller
         # already turns a `RuntimeError` into "could not parse".
         raise RuntimeError("the expression is empty")
     return term

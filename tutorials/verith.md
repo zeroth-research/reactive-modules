@@ -120,7 +120,7 @@ says() {                                       # what verith says about the cert
 Two routes are optional and need more than the checkout:
 
 ```bash
-# `--infer` / `--infer ai-cegar`: an LLM proposes the certificate
+# `--infer` / `--infer ai-cegis`: an LLM proposes the certificate
 export ANTHROPIC_API_KEY=sk-ant-...            # or --base-url for an OpenAI-compatible server
 uv sync --extra ai                             # --extra ai-local for --base-url
 
@@ -680,7 +680,7 @@ as true as that promise. It belongs in the specification, not in the tactics.
 ## 6. Letting an LLM find the certificate (`--infer`)
 
 Everything so far supplied the certificate by hand. `--infer` searches for it.
-The default route is `ai-cegar`: an LLM proposes an invariant and a ranking
+The default route is `ai-cegis`: an LLM proposes an invariant and a ranking
 function as SMT-LIB, cvc5 puts them to the obligations, and a refuted
 candidate goes back to the model *with its counterexample* — a CEGAR loop
 whose checker is a decision procedure, so a wrong proposal costs one round
@@ -829,7 +829,7 @@ The LLM has no lattice, so a congruence costs it nothing to propose:
 
 ```bash
 uv run verith tests/limits/mods/m_step2.py \
-    --buchi '(= s0 0)' --infer ai-cegar --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
+    --buchi '(= s0 0)' --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
 ```
@@ -937,7 +937,7 @@ uv run verith tests/limits/mods/m_toward5.py \
 
 ```
 [smt-linear] columns: s0
-error: --infer: --infer smt-linear found no ranking function. No ranking function linear in the state -- `c0 + c1*s0`, integer coefficients, no branching -- drops by at least one and stays positive wherever the property fails, under the invariant `(and (>= s0 0) (<= s0 10))`. This is a proof that the space is empty, not a search that ran out of time: the query is `exists c. forall s. obligations(c)` over the coefficients, and cvc5 came back unsat. A ranking function for this module needs something outside that shape: a branch (`ite`), which is what a program whose run wraps around needs, or a stronger invariant to rank over. `--infer ai-cegar` and `--infer nuterm` both search shapes that have one.
+error: --infer: --infer smt-linear found no ranking function. No ranking function linear in the state -- `c0 + c1*s0`, integer coefficients, no branching -- drops by at least one and stays positive wherever the property fails, under the invariant `(and (>= s0 0) (<= s0 10))`. This is a proof that the space is empty, not a search that ran out of time: the query is `exists c. forall s. obligations(c)` over the coefficients, and cvc5 came back unsat. A ranking function for this module needs something outside that shape: a branch (`ite`), which is what a program whose run wraps around needs, or a stronger invariant to rank over. `--infer ai-cegis` and `--infer nuterm` both search shapes that have one.
 ```
 
 That is not "the search gave up". `exists c. forall s. …` came back **unsat**,
@@ -956,7 +956,7 @@ cat "$(ls -t "$OUT/$PROJ"/artifacts/note-*.md | head -1)"
 ```
 
 ```
-No ranking function linear in the state -- `c0 + c1*s0`, integer coefficients, no branching -- drops by at least one and stays positive wherever the property fails, under the invariant `(and (>= s0 0) (<= s0 10))`. This is a proof that the space is empty, not a search that ran out of time: the query is `exists c. forall s. obligations(c)` over the coefficients, and cvc5 came back unsat. A ranking function for this module needs something outside that shape: a branch (`ite`), which is what a program whose run wraps around needs, or a stronger invariant to rank over. `--infer ai-cegar` and `--infer nuterm` both search shapes that have one.
+No ranking function linear in the state -- `c0 + c1*s0`, integer coefficients, no branching -- drops by at least one and stays positive wherever the property fails, under the invariant `(and (>= s0 0) (<= s0 10))`. This is a proof that the space is empty, not a search that ran out of time: the query is `exists c. forall s. obligations(c)` over the coefficients, and cvc5 came back unsat. A ranking function for this module needs something outside that shape: a branch (`ite`), which is what a program whose run wraps around needs, or a stronger invariant to rank over. `--infer ai-cegis` and `--infer nuterm` both search shapes that have one.
 ```
 
 ### 8b. Cascading: what one route rules out, the next one takes up
@@ -1033,12 +1033,12 @@ inv      encoded      sygus       inv.smt
 The `inv` row is not only a record. It is written in SMT-LIB with the status a
 later run filters on, so the next `verith` in this project **takes it as
 given** — and for a safety property that is the whole certificate, so the run
-below closes it without an LLM call even though `ai-cegar` is an LLM route:
+below closes it without an LLM call even though `ai-cegis` is an LLM route:
 
 ```bash
 uv run verith tests/limits/mods/m_step2.py \
     --safety '(not (= s0 1))' \
-    --infer ai-cegar --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
+    --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
 ```
@@ -1064,7 +1064,7 @@ runs.
 ### 8c. The other direction: a refutation in an LLM's prompt
 
 The same note that made 8a readable by a human is written to be read by a
-model. `--infer ai-cegar` resumes `no_solution` notes and states them in its
+model. `--infer ai-cegis` resumes `no_solution` notes and states them in its
 prompt as established facts — so the attempt that would have gone on a linear
 ranking function goes somewhere else instead:
 
@@ -1077,13 +1077,13 @@ uv run verith tests/limits/mods/m_toward5.py \
 uv run verith tests/limits/mods/m_toward5.py \
     --buchi     '(= s0 5)' \
     --invariant '(and (>= s0 0) (<= s0 10))' \
-    --infer ai-cegar --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
+    --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
 ```
 .. artifacts: cleared 10 file(s) from /tmp/verith-tutorial.noindex/Rea/artifacts
 [smt-linear] columns: s0
-error: --infer: --infer smt-linear found no ranking function. No ranking function linear in the state -- `c0 + c1*s0`, integer coefficients, no branching -- drops by at least one and stays positive wherever the property fails, under the invariant `(and (>= s0 0) (<= s0 10))`. This is a proof that the space is empty, not a search that ran out of time: the query is `exists c. forall s. obligations(c)` over the coefficients, and cvc5 came back unsat. A ranking function for this module needs something outside that shape: a branch (`ite`), which is what a program whose run wraps around needs, or a stronger invariant to rank over. `--infer ai-cegar` and `--infer nuterm` both search shapes that have one.
+error: --infer: --infer smt-linear found no ranking function. No ranking function linear in the state -- `c0 + c1*s0`, integer coefficients, no branching -- drops by at least one and stays positive wherever the property fails, under the invariant `(and (>= s0 0) (<= s0 10))`. This is a proof that the space is empty, not a search that ran out of time: the query is `exists c. forall s. obligations(c)` over the coefficients, and cvc5 came back unsat. A ranking function for this module needs something outside that shape: a branch (`ite`), which is what a program whose run wraps around needs, or a stronger invariant to rank over. `--infer ai-cegis` and `--infer nuterm` both search shapes that have one.
 ```
 
 ```
@@ -1298,7 +1298,7 @@ Build completed successfully (3473 jobs).
 | `--pre-check cvc5` | `none` | ask cvc5 whether the obligations hold, before generating |
 | `--smt-tactics cvc5` | `none` | let cvc5 settle branch conditions and hint `nlinarith` |
 | `--smt-timeout`, `--smt-budget` | 5000, 20000 ms | per-query and per-phase limits for both of the above |
-| `--infer [ai\|ai-cegar\|nuterm\|sygus\|smt-linear\|fbk-proveit]` | `ai-cegar` | which route finds the certificate: an LLM, (`nuterm`) a learned and certified ranking function, (`sygus`) an invariant synthesised over a grammar, (`smt-linear`) the coefficients of a fixed linear shape, or (`fbk-proveit`) ic3ia |
+| `--infer [ai\|ai-cegis\|nuterm\|sygus\|smt-linear\|fbk-proveit]` | `ai-cegis` | which route finds the certificate: an LLM, (`nuterm`) a learned and certified ranking function, (`sygus`) an invariant synthesised over a grammar, (`smt-linear`) the coefficients of a fixed linear shape, or (`fbk-proveit`) ic3ia |
 | `--model`, `--base-url` | `claude-sonnet-4-6`, — | which LLM, and which endpoint; rejected by a route that calls none |
 | `--sygus-grammar`, `--sygus-conjuncts` | `congruence`, 3 | `--infer sygus`: what an atom may be, and how many of them — the bound is what makes the space finite, and so decidably empty |
 | `--linear-rows N` | 2 | `--infer smt-linear --safety`: how many linear inequalities the invariant may conjoin; tried one width at a time |

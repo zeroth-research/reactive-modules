@@ -488,7 +488,7 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None) -> None:
     found = run["gen"].get("inferred") or {}
     # Recorded before the harness kept the last candidate a route printed, a
     # multi-attempt run's value is attempt 0's -- possibly one it rejected.
-    first = run["gen"].get("inferred_rule") != "last" and rt in ("ai", "ai-cegar")
+    first = run["gen"].get("inferred_rule") != "last" and rt in ("ai", "ai-cegis")
     for lbl in ("inv", "ranking"):
         if found.get(lbl):
             w(f'<div class="lbl">{lbl} {"it printed first" if first else "it found"}'
@@ -756,7 +756,7 @@ def render(data: dict, warns: list = ()) -> str:
         w("</div>")
     w("</div>")
     w('<div class="warn"><p><b>Two routes were measured with outside help.</b> '
-      f'<code>ai</code> and <code>ai-cegar</code> called <code>{esc(meta["model"])}</code> '
+      f'<code>ai</code> and <code>ai-cegis</code> called <code>{esc(meta["model"])}</code> '
       "over the Anthropic API, so their timings include network latency and are not "
       "reproducible run to run &mdash; a different pass may find a different "
       "certificate, or none. <code>fbk-proveit</code> ran against the "

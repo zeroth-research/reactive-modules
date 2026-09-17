@@ -351,7 +351,7 @@ or an entry in `../../zrth/lean/KNOWN_ISSUES.md`.
 - **`Min`/`Max` were not encodable for SMT at all.** They are unary reductions
   over a matrix, like `Argmax`, but were wired to the binary `_elementwise`
   path, so any cvc5 query about such a module raised `TypeError` —
-  `--infer ai-cegar` included.
+  `--infer ai-cegis` included.
 - **`norm_num at *` was the whole bill for an Int net, and unnecessary.**
   Profiled, `NN2Deep5` spent 47.3 s of its 48.7 s of tactic execution in
   `norm_num`, and 0.79 s in the `omega` that actually closed the goal.

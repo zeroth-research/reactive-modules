@@ -36,7 +36,7 @@ Four routes need something from outside this repo, and the defaults in
 
 | | needs | env override |
 |---|---|---|
-| `ai`, `ai-cegar` | an Anthropic API key | read from `../../CLAUDE_KEY.txt`, or `ANTHROPIC_API_KEY` |
+| `ai`, `ai-cegis` | an Anthropic API key | read from `../../CLAUDE_KEY.txt`, or `ANTHROPIC_API_KEY` |
 | `vampire` | a Vampire binary (the release zip, unpacked) | `VERITH_VAMPIRE` |
 | `fbk-proveit` | a `lean-ltl-certifying` checkout | `VERITH_PROVEIT_DIR` |
 | `fbk-proveit` | an `ic3ia` binary (or its build dir) | `VERITH_IC3IA` |
@@ -146,7 +146,7 @@ loud; this one is not. On 2026-09-16 a pass ran for three hours beside two
 processes nobody was watching — a pytest orphaned 30 h earlier spinning in
 z3, and a background waiter of a previous session busy-looping on a
 condition that could never become true — plus, for part of it, a
-`--infer ai-cegar` cell that the harness *believed* it had killed at the
+`--infer ai-cegis` cell that the harness *believed* it had killed at the
 timeout. `subprocess.run(timeout=)` signals only the process it started, so
 capping `uv run verith` left the `verith` underneath it reparented to init
 and running. Nothing in the results looked wrong, because a busy machine is
@@ -168,7 +168,7 @@ ps -axo pid,ppid,etime,%cpu,command | awk '$2==1'         # orphans
 ## Several passes, averaged
 
 One pass is one sample: one machine, one afternoon, and — for `ai` and
-`ai-cegar` — one set of answers from a model that need not give the same
+`ai-cegis` — one set of answers from a model that need not give the same
 ones twice. A repeat measurement is therefore a **new file**, not an
 amendment to the old one:
 
@@ -194,7 +194,7 @@ passes arguably should not be averaged at all:
 | warning | severity | what it means |
 | --- | --- | --- |
 | `machine-mismatch` | high | different machines; the mean describes neither |
-| `model-mismatch` | high | different model behind `ai`/`ai-cegar` |
+| `model-mismatch` | high | different model behind `ai`/`ai-cegis` |
 | `gen-timeout-mismatch`, `build-timeout-mismatch` | high | different budgets, so different censoring |
 | `overlapping-passes` | high | two passes ran concurrently, so both measured a loaded machine |
 | `verdict-disagreement` | high | the same pair answered differently on different days |
