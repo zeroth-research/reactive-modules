@@ -797,18 +797,11 @@ def render(data: dict, warns: list = ()) -> str:
     w("</table>")
     if cold.get("explain"):
         w(f"<p>{cold['explain']}</p>")
-    w('<div class="warn"><p><b>Wall clock is only as quiet as the machine.</b> '
-      "Another Lean build anywhere is enough to inflate these numbers several-fold, "
-      "and unevenly: one earlier pass reported a case at 1996 s that re-timed at 75 s. "
-      "Spotlight is the worst offender &mdash; a pass writes tens of thousands of "
-      "<code>.olean</code> files &mdash; which is why the work directory is named "
-      "<code>.noindex</code>. Verdicts were never affected by any of it; only timings "
-      "lie. Re-time anything surprising before believing it.</p>"
-      "<p><b>The matrix is strictly serial, and must be.</b> Every generated project "
-      "symlinks its <code>.lake</code> to one shared build dir, and module names are "
-      "identical across projects, so two concurrent runs overwrite each other&rsquo;s "
-      "oleans. It does not fail cleanly: it reads as <code>unknown constant "
-      "'hrank'</code>.</p></div>")
+    w('<div class="warn"><p><b>The matrix is strictly serial, and must be.</b> '
+      "Every generated project symlinks its <code>.lake</code> to one shared build "
+      "dir, and module names are identical across projects, so two concurrent runs "
+      "overwrite each other&rsquo;s oleans. It does not fail cleanly: it reads as "
+      "<code>unknown constant &#39;hrank&#39;</code>.</p></div>")
 
     # ── verdicts ────────────────────────────────────────────────────────
     w("<h2 id=verdicts>Verdicts</h2>")
@@ -943,6 +936,13 @@ def render(data: dict, warns: list = ()) -> str:
       "uv run python tests/bench_matrix/coldstart.py\n\n"
       "# render this page\n"
       "uv run python tests/bench_matrix/render.py -o matrix.html</pre>")
+    w('<div class="warn"><p><b>Wall clock is only as quiet as the machine.</b> '
+      "Another Lean build anywhere is enough to inflate these numbers several-fold, "
+      "and unevenly: one earlier pass reported a case at 1996 s that re-timed at 75 s. "
+      "Spotlight is the worst offender &mdash; a pass writes tens of thousands of "
+      "<code>.olean</code> files &mdash; which is why the work directory is named "
+      "<code>.noindex</code>. Verdicts were never affected by any of it; only timings "
+      "lie. Re-time anything surprising before believing it.</p></div>")
     w("<h3>Building what one cell emits</h3>")
     w("<p>A command from a cell writes a Lean project and stops. To build it the way "
       "the matrix does &mdash; against the already-built Mathlib, so nothing resolves "
