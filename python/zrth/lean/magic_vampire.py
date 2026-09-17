@@ -68,6 +68,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from itertools import product
 from pathlib import Path
 
 from .cert import CertificateData
@@ -111,6 +112,11 @@ _MAX_RANKS = 48
 _MAX_OUTSIDE = 1000
 _MAX_SPLITS = 24
 _MAX_BRANCH_FORMS = 6
+# Up to this many components, every {-1, 0, 1} combination is a form; past
+# it, one or two components at a time.
+_MAX_DENSE = 5
+# Constant-derived shifts offered above a fitted one, per form.
+_MAX_SHIFTS = 2
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -921,20 +927,33 @@ class Ranks:
     """
 
     def __init__(self, ctx: SynthContext, ev: Evaluator, prp_src: str,
-                 splits: list[str]):
+                 splits: list[str], constants: tuple[int, ...] = ()):
         self.ctx, self.ev, self.prp_src = ctx, ev, prp_src
+        # Shifts a guard's constant suggests: `c` and one past it. A shift
+        # fitted to sampled rounds is only as low as the lowest one sampled,
+        # and the round that needs the largest shift is usually the corner
+        # the guard names -- `y <= 100 && z <= x` needs `101 + x - y - z`,
+        # where samples that never hit `y = 100, z = x` exactly fit `95`.
+        self.shift_pool = sorted({c + d for c in constants for d in (0, 1)})
         self.names = ctx.names
         n = len(self.names)
         self.readings = [_reading(ctx, i) for i in range(n)]
-        forms: list[tuple[int, ...]] = []
-        for i in range(n):
-            for sign in (1, -1):
-                forms.append(tuple(sign if k == i else 0 for k in range(n)))
-        for i in range(n):
-            for j in range(i + 1, n):
-                for si, sj in ((1, -1), (-1, 1), (1, 1), (-1, -1)):
-                    forms.append(tuple(si if k == i else sj if k == j else 0
-                                       for k in range(n)))
+        if n <= _MAX_DENSE:
+            # Every form with coefficients in {-1, 0, 1}: `100 - y + x - z`
+            # ranks `ColonSipma-TACAS2001-Fig1`, and no pair of its three
+            # components does.
+            forms = [v for v in product((1, -1, 0), repeat=n) if any(v)]
+        else:
+            forms = []
+            for i in range(n):
+                for sign in (1, -1):
+                    forms.append(tuple(sign if k == i else 0 for k in range(n)))
+            for i in range(n):
+                for j in range(i + 1, n):
+                    for si, sj in ((1, -1), (-1, 1), (1, 1), (-1, -1)):
+                        forms.append(tuple(si if k == i else sj if k == j else 0
+                                           for k in range(n)))
+        forms.sort(key=lambda v: sum(map(abs, v)))
         self.forms = forms
         self.splits = []
         for src in splits:
@@ -970,7 +989,8 @@ class Ranks:
         out: list[str] = []
         for form in dict.fromkeys(forms):
             shift = 1 - min(self._at(form, s) for s, _ in outside)
-            for sh in dict.fromkeys((0, shift)):
+            above = [c for c in self.shift_pool if c > shift][:_MAX_SHIFTS]
+            for sh in dict.fromkeys((0, shift, *above)):
                 src = affine_smt(sh, form, self.readings)
                 out += self._accept(src, lambda st, f=form, sh=sh: self._at(f, st) + sh,
                                     outside)
@@ -1126,7 +1146,8 @@ class TA2MagicVampire(TA2Magic):
         facts = self._parse(invariant_candidates(ctx, runs, constants, conjuncts))
         self.log(f"[vampire] {len(facts)} candidate facts hold on the runs")
         ranks = None if cd.is_safety else Ranks(ctx, ev, cd.prp,
-                                                split_conditions(ctx, ob))
+                                                split_conditions(ctx, ob),
+                                                constants)
 
         prover = Vampire(self.exe, seconds=self.timeout, cores=self.cores,
                          log=self.log)
