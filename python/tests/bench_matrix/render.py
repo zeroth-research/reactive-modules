@@ -753,7 +753,10 @@ def render(data: dict, warns: list = ()) -> str:
       "reproducible run to run &mdash; a different pass may find a different "
       "certificate, or none. <code>fbk-proveit</code> ran against the "
       f'<code>{esc(Path(meta["proveit_dir"]).name)}</code> checkout and the ic3ia binary '
-      f'at <code>{esc(meta["ic3ia"])}</code>.</p></div>')
+      f'at <code>{esc(meta["ic3ia"])}</code>.'
+      + (f' <code>vampire</code> ran the prover at <code>{esc(meta["vampire"])}</code>.'
+         if meta.get("vampire") else "")
+      + "</p></div>")
 
     # ── machine ─────────────────────────────────────────────────────────
     w("<h2 id=machine>The machine, and what the cold start costs</h2>")

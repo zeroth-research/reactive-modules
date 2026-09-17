@@ -59,11 +59,13 @@ BUILD_TIMEOUT = 420
 
 # The two paths `--infer fbk-proveit` needs, and the MathSAT bindings its
 # `vmt2lean.py` imports. Overridable, but defaulted so a plain run measures
-# all six routes rather than silently five.
+# all seven routes rather than silently six.
 PROVEIT_DIR = os.environ.get("VERITH_PROVEIT_DIR",
                              str(Path.home() / "zeroth/proof-prototyping/lean-ltl-certifying"))
 IC3IA = os.environ.get("VERITH_IC3IA", str(Path.home() / "zeroth/fbk/ic3ia/build"))
 MATHSAT_PY = os.environ.get("VERITH_MATHSAT_PY", str(Path.home() / "zeroth/fbk/mathsat/python"))
+# The prover `--infer vampire` runs: the macOS/Linux release binary, unzipped.
+VAMPIRE = os.environ.get("VERITH_VAMPIRE", str(Path.home() / "zeroth/vampire/vampire"))
 KEY_FILE = REPO / "CLAUDE_KEY.txt"
 MODEL = os.environ.get("VERITH_MODEL", "")     # "" = verith's own default
 
@@ -461,7 +463,7 @@ def main() -> None:
     if args.prune:
         data = json.loads(RESULTS.read_text())
         keep = {r.key for r in all_rows()}
-        names = {rt.name for rt in routes(proveit_dir=PROVEIT_DIR, ic3ia=IC3IA)}
+        names = {rt.name for rt in routes(proveit_dir=PROVEIT_DIR, ic3ia=IC3IA, vampire=VAMPIRE)}
         gone = sorted(k for k in data["rows"] if k not in keep)
         runs = [p for p, run in data["runs"].items()
                 if p.split("::")[0] not in keep or run["route"] not in names]
@@ -502,11 +504,12 @@ def main() -> None:
     results["meta"]["build_timeout"] = BUILD_TIMEOUT
     results["meta"]["proveit_dir"] = PROVEIT_DIR
     results["meta"]["ic3ia"] = IC3IA
+    results["meta"]["vampire"] = VAMPIRE
 
     rows = all_rows(args.suites)
     if args.only:
         rows = [r for r in rows if any(o.lower() in r.bench.lower() for o in args.only)]
-    rts = routes(proveit_dir=PROVEIT_DIR, ic3ia=IC3IA)
+    rts = routes(proveit_dir=PROVEIT_DIR, ic3ia=IC3IA, vampire=VAMPIRE)
     if args.routes:
         rts = [r for r in rts if r.name in args.routes]
     todo = pairs(rows, rts)

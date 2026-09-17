@@ -28,15 +28,16 @@ matrix cannot survive.
 
 ### The routes
 
-The six `--infer` routes of
+The seven `--infer` routes of
 [`zrth/lean/infer_route.py`](../../zrth/lean/infer_route.py).
 
-Three routes need something from outside this repo, and the defaults in
+Four routes need something from outside this repo, and the defaults in
 `run_matrix.py` point at where they were found on the machine that ran it:
 
 | | needs | env override |
 |---|---|---|
 | `ai`, `ai-cegar` | an Anthropic API key | read from `../../CLAUDE_KEY.txt`, or `ANTHROPIC_API_KEY` |
+| `vampire` | a Vampire binary (the release zip, unpacked) | `VERITH_VAMPIRE` |
 | `fbk-proveit` | a `lean-ltl-certifying` checkout | `VERITH_PROVEIT_DIR` |
 | `fbk-proveit` | an `ic3ia` binary (or its build dir) | `VERITH_IC3IA` |
 | `fbk-proveit` | the MathSAT Python bindings | `VERITH_MATHSAT_PY` |

@@ -261,9 +261,10 @@ class Route:
     needs_env: tuple = ()           # env keys that must be set to run it
 
 
-def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None) -> list[Route]:
-    """The route column, with the two paths `fbk-proveit` needs filled in:
-    the six `--infer` routes, and nothing that is not one."""
+def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None,
+           vampire: str | None = None) -> list[Route]:
+    """The route column, with the paths `vampire` and `fbk-proveit` need
+    filled in: the seven `--infer` routes, and nothing that is not one."""
     out = [
         Route("ai", frozenset({"buchi"}), ("--infer", "ai"), needs_llm=True),
         Route("ai-cegar", frozenset({"safety", "buchi"}), ("--infer", "ai-cegar"),
@@ -271,6 +272,8 @@ def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None) -> list[
         Route("nuterm", frozenset({"safety", "buchi"}), ("--infer", "nuterm")),
         Route("sygus", frozenset({"safety"}), ("--infer", "sygus")),
         Route("smt-linear", frozenset({"safety", "buchi"}), ("--infer", "smt-linear")),
+        Route("vampire", frozenset({"safety", "buchi"}),
+              ("--infer", "vampire", *(("--vampire", vampire) if vampire else ()))),
     ]
     if proveit_dir:
         args = ["--infer", "fbk-proveit", "--proveit-dir", proveit_dir]
@@ -293,7 +296,7 @@ def pairs(rows, route_list):
 if __name__ == "__main__":
     os.environ.setdefault("PYTHONWARNINGS", "ignore")
     rows = all_rows(sys.argv[1:])
-    rts = routes(proveit_dir="/x", ic3ia="/y")
+    rts = routes(proveit_dir="/x", ic3ia="/y", vampire="/z")
     print(f"{len(rows)} rows, {len(pairs(rows, rts))} (row, route) pairs\n")
     for suite in SUITES:
         sub = [r for r in rows if r.suite == suite]
