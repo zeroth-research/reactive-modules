@@ -153,11 +153,12 @@ def timing(h: dict) -> str:
 CSS = """
 :root{--bg:#fbfbf9;--fg:#1c1b19;--dim:#6b6862;--line:#e2ded6;--card:#fff;
  --ok:#1a7f4b;--okbg:#e7f5ec;--no:#8a6d1f;--nobg:#fbf3dc;--bad:#a8332a;
- --badbg:#fdeceb;--open:#4c5a72;--openbg:#eef1f6;--code:#f3f1ec;--accent:#2f5d8a}
+ --badbg:#fdeceb;--open:#4c5a72;--openbg:#eef1f6;--code:#f3f1ec;--accent:#2f5d8a;
+ --band:#e8eff7;--bandline:#bed3e5}
 @media (prefers-color-scheme:dark){:root{--bg:#161614;--fg:#e9e6e0;--dim:#9d9a93;
  --line:#2e2d29;--card:#1e1e1b;--ok:#6fd39b;--okbg:#14301f;--no:#e0bd63;--nobg:#332a12;
  --bad:#f08b80;--badbg:#3a1a17;--open:#a8b8d4;--openbg:#1c222e;--code:#24241f;
- --accent:#8fb8de}}
+ --accent:#8fb8de;--band:#1b2531;--bandline:#3a5271}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);
  font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
@@ -199,23 +200,26 @@ table.kv td:first-child{color:var(--dim);white-space:nowrap;width:1%}
 .v.na{background:transparent;color:var(--dim);border:1px dashed var(--line)}
 /* the matrix */
 .bench{background:var(--card);border:1px solid var(--line);border-radius:8px;
- margin:14px 0;overflow:hidden}
-.bench>h3{margin:0;padding:11px 16px;font-size:.97rem;background:var(--code);
- border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:baseline;
- flex-wrap:wrap}
-.bench>h3 .path{font-size:11.5px;color:var(--dim);font-weight:400}
-.bench>.bh{padding:11px 16px 9px;background:var(--code);border-bottom:1px solid var(--line);
+ margin:26px 0;overflow:clip}
+/* The header band -- name, path, description -- is tinted and accented, so a
+   benchmark is seen to start; it sticks while its properties scroll past. */
+.bench>.bh{padding:11px 16px 9px;background:var(--band);
+ box-shadow:inset 3px 0 0 var(--accent);position:sticky;top:0;z-index:2;
  display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
-.bh .bname{font-weight:700;font-size:1rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.bh .bname{font-weight:700;font-size:1.06rem;letter-spacing:-.01em;
+ font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .bh .path{font-size:11.5px;color:var(--dim)}
+.bh .bcount{margin-left:auto;font-size:11px;letter-spacing:.04em;
+ text-transform:uppercase;color:var(--dim);font-weight:600}
 a.file{color:inherit;text-decoration:underline;text-decoration-style:dotted;
  text-underline-offset:2px;cursor:pointer}
 a.file:hover{color:var(--accent);text-decoration-style:solid}
 a.file.path{color:var(--dim)}
 .bench>.desc{margin:0;padding:7px 16px 8px;font-size:12.5px;color:var(--dim);
- border-bottom:1px solid var(--line);background:var(--code)}
+ background:var(--band);box-shadow:inset 3px 0 0 var(--accent)}
 .bench>.desc code{font-size:11.5px;background:transparent;padding:0}
-.bench>.bh:has(+ .desc){border-bottom:0}
+.bench>.bh,.bench>.desc{border-bottom:1px solid var(--bandline)}
+.bench>.bh:not(:has(+ .desc)),.bench>.desc{border-bottom-width:2px}
 dialog#srcdlg{width:min(900px,94vw);height:min(80vh,900px);padding:0;border:1px solid var(--line);
  border-radius:8px;background:var(--bg);color:var(--fg)}
 dialog#srcdlg::backdrop{background:rgba(0,0,0,.35)}
@@ -878,7 +882,9 @@ def render(data: dict, warns: list = ()) -> str:
             items = sorted(by_file[path], key=lambda kv: (suite_rank.get(kv[1]["suite"], 9), kv[0]))
             w(f'<div class="bench" id="b-{slug(path)}">')
             w(f'<div class="bh"><span class="bname">{esc(Path(path).stem)}</span>'
-              + files.link((PY / path).resolve(), esc(path), "file path") + "</div>")
+              + files.link((PY / path).resolve(), esc(path), "file path")
+              + f'<span class="bcount">{len(items)} '
+                f'{"property" if len(items) == 1 else "properties"}</span></div>')
             desc = describe(path)
             if desc:
                 w(f'<p class="desc">{desc}</p>')

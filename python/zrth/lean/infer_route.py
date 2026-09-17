@@ -529,6 +529,29 @@ def _run_smt_linear(inp: InferInput) -> InferResult:
     return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
 
 
+def _resolve_vampire(opts: dict):
+    from .magic_vampire import resolve_vampire
+
+    return resolve_vampire(opts["vampire"])
+
+
+def _run_vampire(inp: InferInput) -> InferResult:
+    from .magic_vampire import TA2MagicVampire
+
+    magic = TA2MagicVampire(
+        inp.module,
+        vampire=inp.config,
+        timeout=inp.opts["vampire_timeout"],
+        cores=inp.opts["vampire_cores"],
+        artifacts=inp.project.artifacts,
+        log=inp.log,
+    )
+    cd = magic.infer(inp.cert_data)
+    # SMT-LIB only, like `smt-linear`: every candidate is a source string it
+    # wrote, and the pipeline renders the Lean once.
+    return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
+
+
 def _resolve_fbk(opts: dict):
     from .fbk_proveit import resolve_project
 
@@ -767,6 +790,72 @@ ROUTES: tuple[InferRoute, ...] = (
                         "`G (s0 <= 100)` is 11 ms and two rows do not finish "
                         "in 30 s. Ignored for --buchi, whose template is one "
                         "ranking function."
+                    ),
+                ),
+            ),
+        ),
+    ),
+    InferRoute(
+        name="vampire",
+        summary=(
+            "no LLM: Houdini over facts read off simulated runs of the module "
+            "and a ranking function from a fixed list of affine and "
+            "lexicographic shapes, each kept only once the Vampire theorem "
+            "prover proves its obligation from SMT-LIB, at a time limit that "
+            "climbs 2 s, 10 s, 60 s and then the rest of --vampire-timeout "
+            "-- scalar Int and Bool state only"
+        ),
+        kinds=frozenset({"safety", "buchi"}),
+        kinds_refusal="",
+        seeds=frozenset({"pre"}),
+        seeds_refusal=(
+            "the route proposes the invariant and proves which of its facts "
+            "stay, and a ranking function is what it searches for, so a "
+            "supplied predicate would be one it is not allowed to decide"
+        ),
+        returns="smt",
+        resolve=_resolve_vampire,
+        run=_run_vampire,
+        options=(
+            Opt(
+                ("--vampire",),
+                dict(
+                    metavar="PATH",
+                    help=(
+                        "Path to the Vampire executable, or a directory "
+                        "holding one (the release zip unpacks to one). When "
+                        "omitted, $VAMPIRE, then `vampire` on PATH."
+                    ),
+                ),
+            ),
+            Opt(
+                ("--vampire-timeout",),
+                dict(
+                    type=float,
+                    default=120,
+                    metavar="SECONDS",
+                    help=(
+                        "Wall-clock budget for all Vampire calls together "
+                        "(default: 120). The search runs whole at a time "
+                        "limit of 2 s per call, then 10 s, then 60 s, then "
+                        "whatever is left: a short limit makes Vampire's "
+                        "portfolio a different schedule, not a truncated one, "
+                        "and a candidate that is false costs a full limit "
+                        "because Vampire cannot refute it."
+                    ),
+                ),
+            ),
+            Opt(
+                ("--vampire-cores",),
+                dict(
+                    type=int,
+                    default=4,
+                    metavar="N",
+                    help=(
+                        "Processes each Vampire call spreads its portfolio "
+                        "over (default: 4). Calls also run side by side, as "
+                        "many as the machine's cores allow at this width, up "
+                        "to four."
                     ),
                 ),
             ),
