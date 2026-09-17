@@ -299,6 +299,7 @@ table.sum th:first-child,table.sum td:first-child{text-align:left;
 table.sum thead th{background:var(--code);color:var(--dim);font-size:10.5px;
  letter-spacing:.04em;text-transform:uppercase}
 table.sum td.n0{color:var(--line)}
+table.sum tr.all td{font-weight:700}
 .scroll{overflow-x:auto}
 .toc{font-size:.9rem;columns:2;column-gap:28px;margin:1em 0}
 .toc a{display:block;padding:1px 0}
@@ -833,7 +834,7 @@ def render(data: dict, warns: list = ()) -> str:
     w("</tr></thead><tbody>")
     suites = [s for s in SUITE_BLURB if any(v["suite"] == s for v in rows.values())]
     for suite in suites + ["all"]:
-        w(f"<tr><td>{esc(suite)}</td>")
+        w(f"<tr{' class=all' if suite == 'all' else ''}><td>{esc(suite)}</td>")
         for rt in present:
             ks = [k for k, v in rows.items() if suite in (v["suite"], "all")]
             got = [runs[f"{k}::{rt}"] for k in ks if f"{k}::{rt}" in runs
