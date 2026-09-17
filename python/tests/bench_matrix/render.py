@@ -21,6 +21,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pygments.lexers import get_lexer_for_filename
+from pygments.lexers.special import TextLexer
+from pygments.token import Token
+from pygments.util import ClassNotFound
+
 SP = Path(__file__).resolve().parent
 PY = SP.parent.parent
 sys.path.insert(0, str(PY))
@@ -514,6 +519,65 @@ LINK_BASES = [PY, PY.parent, SP, PY / "tests" / "limits", WORK]
 EMBED_SUFFIXES = {".py", ".md", ".lean", ".toml", ".txt", ".j2"}
 EMBED_MAX = 300_000
 
+# The token kinds the source viewer colours, most specific first; names,
+# operators and punctuation keep the text colour.
+HL_KINDS = [
+    (Token.String.Doc, "d"),
+    (Token.Comment, "c"),
+    (Token.String, "s"),
+    (Token.Keyword, "k"),
+    (Token.Operator.Word, "k"),
+    (Token.Name.Builtin, "b"),
+    (Token.Name.Function, "f"),
+    (Token.Name.Class, "f"),
+    (Token.Name.Decorator, "a"),
+    (Token.Number, "n"),
+    (Token.Generic.Heading, "h"),
+    (Token.Generic.Subheading, "h"),
+]
+# Shared by the in-page dialog and the popup window, which has no other
+# stylesheet; the popup reads it from the page's `<style id="srccss">`.
+HL_CSS = """
+.src{--hk:#7b36a8;--hs:#2f6f3a;--hd:#4d6b3c;--hc:#736f67;--hn:#a14f00;--hf:#245b91;
+ --hb:#17707c;--ha:#8a6100}
+@media (prefers-color-scheme:dark){.src{--hk:#c79be6;--hs:#9fcf8c;--hd:#a8bd8a;
+ --hc:#8d8a82;--hn:#e6a86e;--hf:#8fb8de;--hb:#79c5cf;--ha:#d9b65e}}
+.src .k{color:var(--hk)}.src .s{color:var(--hs)}.src .d{color:var(--hd)}
+.src .c{color:var(--hc);font-style:italic}.src .n{color:var(--hn)}
+.src .f,.src .h{color:var(--hf)}.src .h{font-weight:600}.src .b{color:var(--hb)}
+.src .a{color:var(--ha)}
+"""
+
+
+def highlight(name: str, text: str) -> str:
+    """`text` as HTML, its tokens in `<span class=…>` by `HL_KINDS`. No span
+    crosses a line, so the viewer numbers lines by splitting on newlines."""
+    try:
+        lexer = get_lexer_for_filename(name, stripnl=False, ensurenl=False)
+    except ClassNotFound:
+        lexer = TextLexer(stripnl=False, ensurenl=False)
+    out, open_kind = [], None
+    for ttype, value in lexer.get_tokens(text):
+        kind = next((k for t, k in HL_KINDS if ttype in t), None)
+        for i, part in enumerate(value.split("\n")):
+            if i:
+                if open_kind:
+                    out.append("</span>")
+                    open_kind = None
+                out.append("\n")
+            if not part:
+                continue
+            if kind != open_kind and not (kind is None and part.isspace()):
+                if open_kind:
+                    out.append("</span>")
+                if kind:
+                    out.append(f'<span class="{kind}">')
+                open_kind = kind
+            out.append(html.escape(part, quote=False))
+    if open_kind:
+        out.append("</span>")
+    return "".join(out)
+
 
 def resolve(text: str) -> "Path | None":
     """The file or directory `text` names, if it names one."""
@@ -531,7 +595,7 @@ def resolve(text: str) -> "Path | None":
 
 
 class Files:
-    """The files the page links, and the text of those it embeds."""
+    """The files the page links, and the highlighted text of those it embeds."""
 
     def __init__(self):
         self.text: dict = {}
@@ -540,7 +604,8 @@ class Files:
         href = "file://" + str(full) + ("/" if full.is_dir() else "")
         if full.is_file() and full.suffix in EMBED_SUFFIXES and full.stat().st_size <= EMBED_MAX:
             key = str(full.relative_to(PY.parent)) if full.is_relative_to(PY.parent) else str(full)
-            self.text.setdefault(key, full.read_text(errors="replace"))
+            if key not in self.text:
+                self.text[key] = highlight(full.name, full.read_text(errors="replace"))
             return (f'<a class="{cls}" href="{esc(href)}" data-src="{esc(key)}" '
                     f'title="open {esc(key)}">{label}</a>')
         return (f'<a class="{cls}" href="{esc(href)}" target="_blank" '
@@ -566,9 +631,10 @@ VIEWER_JS = r"""
   function esc(t) {
     return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
-  function lines(text) {
-    return text.replace(/\n$/, '').split('\n').map(function (l) {
-      return '<span class="ln">' + esc(l) + '</span>';
+  // SRC holds each file already highlighted, a span never crossing a line.
+  function lines(src) {
+    return src.replace(/\n$/, '').split('\n').map(function (l) {
+      return '<span class="ln">' + l + '</span>';
     }).join('\n');
   }
   var STYLE =
@@ -584,12 +650,13 @@ VIEWER_JS = r"""
     'width:3.2em;margin-right:1em;text-align:right;color:#9a968d;user-select:none}' +
     '@media(prefers-color-scheme:dark){body{background:#161614;color:#e7e4dc}' +
     'header{background:#24241f;border-color:#2e2d29}.ln::before{color:#6b6862}' +
-    'header a{color:#8fb4dc}}';
+    'header a{color:#8fb4dc}}' +
+    document.getElementById('srccss').textContent;
   function doc(key, href, text) {
     return '<!doctype html><meta charset="utf-8"><title>' + esc(key) + '</title>' +
       '<style>' + STYLE + '</style><header><b>' + esc(key) + '</b>' +
       '<a href="' + esc(href) + '">open the file itself</a></header>' +
-      '<pre>' + lines(text) + '</pre>';
+      '<pre class="src">' + lines(text) + '</pre>';
   }
   function inPage(key, href, text) {
     var d = document.getElementById('srcdlg');
@@ -900,6 +967,7 @@ def render(data: dict, warns: list = ()) -> str:
       '<pre class="src"></pre></dialog>')
     page = files.linkify("\n".join(o))
     return (page
+            + f'\n<style id="srccss">{HL_CSS}</style>'
             + f'\n<script type="application/json" id="srcs">{files.payload()}</script>'
             + f"\n<script>{VIEWER_JS}</script>")
 
