@@ -567,6 +567,28 @@ def _check_houdini_options(settings, opts) -> "str | None":
     )
 
 
+def _resolve_vampire(opts: dict):
+    from .houdini_solver import resolve_vampire
+
+    return resolve_vampire(opts["vampire"])
+
+
+def _run_vampire(inp: InferInput) -> InferResult:
+    from .magic_vampire import TA2MagicVampire
+
+    magic = TA2MagicVampire(
+        inp.module,
+        vampire=inp.config,
+        timeout=inp.opts["vampire_timeout"],
+        artifacts=inp.project.artifacts,
+        log=inp.log,
+    )
+    cd = magic.infer(inp.cert_data)
+    # SMT-LIB only: the template is rebuilt as source strings from the
+    # numbers Vampire answered, and the pipeline renders the Lean once.
+    return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
+
+
 def _run_houdini(inp: InferInput) -> InferResult:
     from .magic_houdini import TA2MagicHoudini
 
@@ -893,7 +915,8 @@ ROUTES: tuple[InferRoute, ...] = (
                 dict(
                     metavar="PATH",
                     help=(
-                        "--houdini-solver vampire: path to the Vampire "
+                        "The Vampire binary, for `--infer vampire` and for "
+                        "`--infer houdini --houdini-solver vampire`: the "
                         "executable, or a directory holding one (the release "
                         "zip unpacks to one). When omitted, $VAMPIRE, then "
                         "`vampire` on PATH."
@@ -912,6 +935,62 @@ ROUTES: tuple[InferRoute, ...] = (
                         f"{DEFAULT_CORES}). Calls also run side by side, as "
                         f"many as the machine's cores allow at this width, up "
                         f"to four."
+                    ),
+                ),
+            ),
+        ),
+    ),
+    InferRoute(
+        name="vampire",
+        summary=(
+            "no LLM, and nothing proposed: the obligations are stated with "
+            "the certificate itself left open -- an interval per component, "
+            "and under --buchi an affine ranking function -- and Vampire's "
+            "answer literals return the coefficients, which are then checked "
+            "against the module's encoding with cvc5. Scalar Int state only, "
+            "and the transition is branch-split because a conditional "
+            "defeats the search. Measured reach: two holes, which is one "
+            "component under --safety; --infer houdini is what searches a "
+            "wider module"
+        ),
+        kinds=frozenset({"safety", "buchi"}),
+        kinds_refusal="",
+        seeds=frozenset({"pre"}),
+        seeds_refusal=(
+            "the whole certificate is what this route asks Vampire for, in "
+            "one question, so a supplied predicate would be half of an "
+            "answer it is not able to ask for half of"
+        ),
+        returns="smt",
+        resolve=_resolve_vampire,
+        run=_run_vampire,
+        options=(
+            Opt(
+                ("--vampire",),
+                dict(
+                    metavar="PATH",
+                    help=(
+                        "The Vampire binary, for `--infer vampire` and for "
+                        "`--infer houdini --houdini-solver vampire`: the "
+                        "executable, or a directory holding one (the release "
+                        "zip unpacks to one). When omitted, $VAMPIRE, then "
+                        "`vampire` on PATH."
+                    ),
+                ),
+            ),
+            Opt(
+                ("--vampire-timeout",),
+                dict(
+                    type=float,
+                    default=DEFAULT_TIMEOUT,
+                    metavar="SECONDS",
+                    help=(
+                        f"--infer vampire: wall-clock budget for all "
+                        f"answer-literal calls together (default: "
+                        f"{DEFAULT_TIMEOUT}). One call per template, and a "
+                        f"template that does not answer inside it is not "
+                        f"retried -- there is no schedule to vary, only the "
+                        f"next template."
                     ),
                 ),
             ),
@@ -1063,6 +1142,35 @@ def route_names() -> tuple[str, ...]:
 def all_route_options() -> tuple[tuple[InferRoute, Opt], ...]:
     """Every route-scoped option, with the route that owns it."""
     return tuple((r, o) for r in ROUTES for o in r.options)
+
+
+def shared_route_options() -> tuple[tuple[Opt, tuple[InferRoute, ...]], ...]:
+    """Every distinct option, with every route that declares it.
+
+    An option can belong to more than one route: `--vampire` names the same
+    binary whether `--infer houdini` is putting candidates to it or `--infer
+    vampire` is asking it to derive one. Declared on both rows, because the
+    row is what `--help` groups by and what the "only meaningful with" check
+    reads -- and registered once here, because argparse takes a flag once.
+
+    Keyed by `dest` rather than by the flag tuple, so two rows spelling the
+    same option differently would be caught here as the mistake it is.
+    """
+    order: list[str] = []
+    seen: dict[str, tuple[Opt, list[InferRoute]]] = {}
+    for route, opt in all_route_options():
+        if opt.dest not in seen:
+            order.append(opt.dest)
+            seen[opt.dest] = (opt, [])
+        first, owners = seen[opt.dest]
+        if first.flags != opt.flags:
+            raise Refused(
+                f"--infer {route.name} declares {opt.flags[-1]} for the same "
+                f"option `{opt.dest}` that --infer {owners[0].name} spells "
+                f"{first.flags[-1]}: one option, one spelling"
+            )
+        owners.append(route)
+    return tuple((seen[d][0], tuple(seen[d][1])) for d in order)
 
 
 def all_route_aliases() -> tuple[tuple[InferRoute, Alias], ...]:

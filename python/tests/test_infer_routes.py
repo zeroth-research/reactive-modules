@@ -108,9 +108,33 @@ def test_row_promises_match_what_it_returns():
             )
 
 
-def test_route_options_do_not_collide():
-    dests = [o.dest for _, o in all_route_options()]
-    assert len(dests) == len(set(dests)), "two routes claiming one flag"
+def test_an_option_two_routes_declare_is_one_option():
+    """A flag may belong to more than one row -- `--vampire` names the same
+    binary whether `--infer houdini` is putting candidates to it or `--infer
+    vampire` is asking it to derive one -- but then it has to be the *same*
+    option: one `dest`, one spelling, registered once.
+
+    The rule this replaces was "no two routes claim one flag", which is what
+    `shared_route_options` now makes safe rather than forbidden.
+    """
+    from zrth.lean.infer_route import shared_route_options
+
+    by_dest: dict = {}
+    for route, opt in all_route_options():
+        by_dest.setdefault(opt.dest, []).append((route, opt))
+    for dest, claims in by_dest.items():
+        spellings = {o.flags for _r, o in claims}
+        assert len(spellings) == 1, f"{dest} is spelled {len(spellings)} ways"
+
+    # And every distinct option appears exactly once in what the CLI
+    # registers, with every route that declared it.
+    shared = shared_route_options()
+    assert [o.dest for o, _ in shared] == list(by_dest)
+    assert all(len(owners) == len(by_dest[o.dest]) for o, owners in shared)
+
+    # Two flags must still never share a `dest`, and two `dest`s never a flag.
+    flags = [f for o, _ in shared for f in o.flags]
+    assert len(flags) == len(set(flags)), "two options claiming one flag"
 
 
 def test_parser_offers_exactly_the_rows():

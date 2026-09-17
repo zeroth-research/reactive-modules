@@ -269,7 +269,9 @@ def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None,
     `--infer houdini` is two columns, because its two solvers are the
     comparison the route exists to make: the same proposals, decided by cvc5
     or refuted by Vampire, so a cell where one succeeds and the other times
-    out says which half of the route the difference is in.
+    out says which half of the route the difference is in. `--infer vampire`
+    is a third, and a different question again: the certificate derived by
+    Vampire rather than proposed by anything.
     """
     out = [
         Route("ai", frozenset({"buchi"}), ("--infer", "ai"), needs_llm=True),
@@ -286,6 +288,14 @@ def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None,
             "houdini-vampire", frozenset({"safety", "buchi"}),
             ("--infer", "houdini", "--houdini-solver", "vampire",
              "--vampire", vampire)))
+        # The third Vampire column, and a different question: not the same
+        # candidates refuted by a prover, but the certificate derived by one
+        # from a template with its coefficients left open. Its reach is
+        # narrow by measurement, so most cells are a refusal -- which is the
+        # comparison, against the two columns above.
+        out.append(Route(
+            "vampire", frozenset({"safety", "buchi"}),
+            ("--infer", "vampire", "--vampire", vampire)))
     if proveit_dir:
         args = ["--infer", "fbk-proveit", "--proveit-dir", proveit_dir]
         if ic3ia:

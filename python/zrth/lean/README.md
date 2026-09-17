@@ -429,7 +429,7 @@ certificate consists of.
 | certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
-| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegis`, `--infer nuterm`, `--infer sygus`, `--infer smt-linear`, or `--infer houdini` | `--infer ai`, `--infer ai-cegis`, `--infer nuterm`, `--infer smt-linear`, or `--infer houdini` |
+| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegis`, `--infer nuterm`, `--infer sygus`, `--infer smt-linear`, `--infer houdini`, or `--infer vampire` | `--infer ai`, `--infer ai-cegis`, `--infer nuterm`, `--infer smt-linear`, `--infer houdini`, or `--infer vampire` |
 
 Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
 the project is generated from whatever predicates were supplied, and the two
@@ -452,7 +452,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `houdini`, or `fbk-proveit` (see below) |
+| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `houdini`, `vampire`, or `fbk-proveit` (see below) |
 | `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
@@ -463,7 +463,8 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--linear-rows` | `2` | `--infer smt-linear --safety`: how many linear inequalities the invariant may be a conjunction of |
 | `--houdini-solver` | `cvc5` | `--infer houdini`: which solver decides the obligations. `cvc5` needs no binary and refutes what it cannot prove, with a counterexample; `vampire` refutes or times out |
 | `--houdini-timeout` | `120` | `--infer houdini`: seconds for all solver calls together; each call is capped at 2 s, then the rest (under `vampire`: 2 s, 10 s, 60 s, then the rest) |
-| `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--houdini-solver vampire`: the Vampire binary, or a directory holding one |
+| `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--infer vampire` and `--houdini-solver vampire`: the Vampire binary, or a directory holding one |
+| `--vampire-timeout` | `120` | `--infer vampire`: seconds for all answer-literal calls together; one call per template, and a template that does not answer is not retried |
 | `--vampire-cores` | `4` | `--houdini-solver vampire`: processes each call's portfolio spreads over |
 | `--proveit-dir` | — | `--infer fbk-proveit`: path to a `lean-ltl-certifying` checkout |
 | `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
@@ -706,6 +707,86 @@ uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= s0 0.0)" \
 # [houdini] Real state: a ranking function is floored after scaling by 1
 # [houdini] inv: (or (= s0 0.0) (= s0 1.0) ... (= s0 5.0))
 # [houdini] ranking: (to_int s0)
+```
+
+
+### Deriving the certificate outright (`--infer vampire`)
+
+Where `--infer houdini` proposes candidates and asks a solver which survive,
+this route proposes nothing. It states the obligations with the certificate
+*itself* left open — a template whose coefficients are existentially
+quantified — and asks Vampire for the coefficients:
+
+```
+tff(cert, conjecture, ?[A0:$int,B0:$int]: ( ... )).
+% SZS answers Tuple [([0,100]|[0,100])|_] for cert
+```
+
+which is `0 <= s0 <= 100`, derived rather than checked. That is Vampire's
+*answer literal* mechanism (`--question_answering plain`): it refutes the
+negation of the conjecture and reports the substitution the refutation used.
+
+The templates are tried smallest first — `A_i <= s_i <= B_i` per component,
+then the same plus `C_ij <= s_i - s_j <= D_ij` for each pair. Under
+`--buchi` the ranking function is more holes in the *same* question rather
+than a second search, stated as `rank(s) > 0` where the property fails and
+`rank(s') < rank(s)`, which implies the clamped `Int.toNat` form
+`rule_buchi` asks for.
+
+#### What the question has to look like
+
+Two restrictions, both measured on `m_countdown`, and the first decides the
+shape of the whole route.
+
+**No `$ite`, anywhere.** Stated with the transition as one conditional, the
+step obligation does not come back inside 40 s; split into its two guarded
+branches it is answered in under a second. So the transition is
+*branch-split* before it is printed: every `ite` condition the update and
+the init terms mention becomes a case, cvc5's rewriter folds the
+conditionals away under each assignment, and each case is one more
+implication with its guard as a hypothesis. The round and the initial state
+are split apart, because they are not quantified over the same things — a
+guard from the round tests the latched state, which the entry obligation
+does not have.
+
+**Not the portfolio.** `--mode portfolio --schedule casc` reaches the time
+limit on this route's own question where the default mode answers at once. A
+portfolio strategy is tuned to find a refutation; what is wanted here is the
+*substitution* a refutation carries.
+
+#### The reach
+
+Small, and worth knowing before reaching for it. Vampire's answer-literal
+search closes the **two-hole** question and does not close a three-hole one:
+adding a third, otherwise-free hole to the `m_countdown` question above
+turns an instant answer into a time limit, and so does the `--buchi` rank
+obligation at any hole count. Five option settings were tried against both
+ceilings — `-qago on`, `--saturation_algorithm otter`, `--saturation_algorithm
+lrs`, `--theory_instantiation all`, `--unification_with_abstraction
+one_side_interpreted` — and none moved either.
+
+So in practice this route derives a safety invariant for a **one-component
+Int** module, and refuses past that pointing at `--infer houdini`, which
+searches a wider module by proposing facts and proving them. It reads scalar
+`Int` state only: TPTP has `$real` and Vampire reads it, but the templates
+here are integer intervals and integer coefficients.
+
+#### What comes back is checked
+
+An answer literal is the substitution *a* refutation used, and this route
+wrote the question it refuted. So the coefficients are put back into the
+template and the obligations are re-asked of cvc5 — through the same seam
+`--infer houdini` uses, in milliseconds. A certificate that does not survive
+that is reported as not found. This is not Houdini: nothing is filtered and
+nothing is proposed; it is the one check that the derivation is honest.
+
+```bash
+uv run verith tests/limits/mods/m_countdown.py --safety "(<= s0 100)" \
+    --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
+# [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
+# [vampire] template intervals: 2 holes, 401 chars
+# [vampire] Vampire answered A0=0, B0=100
+# [vampire] inv: (and (<= 0 s0) (<= s0 100))
 ```
 
 ---

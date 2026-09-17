@@ -33,7 +33,10 @@ The `--infer` routes of
 -- except `houdini`, which is two: the same proposals decided by cvc5
 (`houdini`) or refuted by Vampire (`houdini-vampire`), so a cell where one
 succeeds and the other times out says which half of the route the difference
-is in. The Vampire column appears only when a binary was found.
+is in. `vampire` is a third Vampire column and a different question again --
+the certificate *derived* by Vampire from a template rather than proposed by
+anything, which reaches one-component Int safety and refuses past that. The
+two Vampire columns appear only when a binary was found.
 
 Some routes need something from outside this repo, and the defaults in
 `run_matrix.py` point at where they were found on the machine that ran it:
