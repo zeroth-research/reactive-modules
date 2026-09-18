@@ -17,7 +17,7 @@
  # the semantics of Core.Mat definitions that no certificate exercises
  [[lean_lib]]
  name = "ManualTests"
- roots = ["ManualTests.Basic", "ManualTests.Argmax"]
+ roots = ["ManualTests.Basic", "ManualTests.Argmax", "ManualTests.Reduce"]
 
  [[lean_lib]]
  name = "ZerothHammerTests"
