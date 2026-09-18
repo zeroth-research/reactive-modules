@@ -110,7 +110,7 @@ def test_the_initial_state_is_split_apart_from_the_round():
 
     from zrth.lean.magic.vampire import templates
 
-    script = q.conjecture(templates(ctx, ranked=False)[0], ctx.prp, safety=True)
+    script = q.conjecture(templates(ctx, ranked=False)[0], ctx.prp)
     # The entry obligation is the one conjunct with no `forall` over it, and
     # it mentions no state variable.
     entry = script[script.index("(and ") : script.index("(forall")]
@@ -179,7 +179,7 @@ def test_the_conjecture_states_every_obligation_under_one_existential():
     from zrth.lean.magic.vampire import templates
 
     tpl = templates(ctx, ranked=False)[0]
-    script = q.conjecture(tpl, ctx.prp, safety=True)
+    script = q.conjecture(tpl, ctx.prp)
 
     assert script.startswith("(set-logic ALL)\n(assert-not "
                              "(exists ((A0 Int) (B0 Int)) ")
@@ -190,17 +190,51 @@ def test_the_conjecture_states_every_obligation_under_one_existential():
     assert script.count("(forall ((s0 Int))") == 3
 
 
-def test_a_buchi_conjecture_asks_for_the_ranking_in_the_same_question():
+def test_buchi_is_two_questions_of_two_holes_not_one_of_four():
+    """Two holes is what the answer-literal search closes, so the invariant
+    and the rank are asked apart -- the rank over an invariant that is
+    already numbers rather than holes."""
     ctx, _ob, q = parts("m_countdown", "buchi", "(= s0 0)")
     from zrth.lean.magic.vampire import templates
 
     tpl = templates(ctx, ranked=True)[0]
-    assert tpl.all_holes == ("A0", "B0", "R0", "Rc")
-    script = q.conjecture(tpl, ctx.prp, safety=False)
+    assert tpl.holes == ("A0", "B0") and tpl.rank == ("R0", "Rc")
+
+    stage1 = q.invariant_conjecture(tpl)
+    assert "(exists ((A0 Int) (B0 Int))" in stage1
+    # No rank and no property: an inductive invariant is all it asks for.
+    assert "R0" not in stage1 and "Rc" not in stage1
+
+    stage2 = q.rank_conjecture(tpl, ctx.prp, {"A0": 0, "B0": 100})
+    assert "(exists ((R0 Int) (Rc Int))" in stage2
+    assert "A0" not in stage2 and "(<= 0 s0)" in stage2
     # `rank > 0` where the property fails and `rank' < rank`: ite-free, and
     # it implies the clamped `Int.toNat` form `rule_buchi` asks for.
-    assert "(+ Rc (* R0 s0))" in script
-    assert "(> " in script and "(< " in script
+    assert "(+ Rc (* R0 s0))" in stage2
+    assert "(> " in stage2 and "(< " in stage2
+
+
+def test_only_the_question_that_needs_a_window_gets_one():
+    """An invariant asked for on its own is loose -- nothing pins the
+    interval and the search is over the whole of `Int`. The safety question
+    has `inv -> prp` doing that already, and measured, the window costs it
+    `m_max` and `m_toward5`. So it is asked for where it is needed."""
+    ctx, _ob, q = parts("m_countdown", "safety", "(<= s0 100)")
+    from zrth.lean.magic.vampire import templates, window_for
+
+    tpl = templates(ctx, ranked=False)[0]
+    window = window_for(ctx)
+    assert window >= 100                       # `m_countdown` counts to 100
+    assert str(window) not in q.conjecture(tpl, ctx.prp)
+
+    ctx, _ob, q = parts("m_countdown", "buchi", "(= s0 0)")
+    tpl = templates(ctx, ranked=True)[0]
+    stage1 = q.invariant_conjecture(tpl)
+    # cvc5 hoists the repeated `(- 1010)` into a `let`, so the lower bounds
+    # read off the binding rather than the numeral.
+    assert f"(- {window})" in stage1
+    for hole in ("A0", "B0"):
+        assert f"(<= {hole} {window})" in stage1
 
 
 def test_a_template_row_is_one_body_read_two_ways():
@@ -289,8 +323,9 @@ def test_both_namings_are_asked_and_each_is_told_the_whole_budget(tmp_path):
     assert asked.ask("(check-sat)\n", 2) is None
 
     lines = log.read_text().splitlines()
-    assert len(lines) == 2
-    assert "--naming 0" not in lines[0] and "--naming 0" in lines[1]
+    # Both strategies on the short rung, then both on the long one.
+    assert len(lines) == 4
+    assert [("--naming 0" in ln) for ln in lines] == [False, True, False, True]
     assert all("--time_limit 30" in ln for ln in lines)
 
 
@@ -350,6 +385,17 @@ def test_what_vampire_answers_is_checked_before_it_is_emitted():
             derive("m_countdown", "safety", "(<= s0 100)", timeout=10)
     finally:
         mv.TA2MagicVampire._checks_out = old
+
+
+def test_vampire_derives_a_countdowns_invariant_and_ranking():
+    """The Buchi claim, and the reason it is two questions: nothing proposed
+    `0 <= s0 <= 100` or `1 + s0`, and the joint four-hole question for this
+    module answers neither."""
+    cd = derive("m_countdown", "buchi", "(= s0 0)", timeout=40)
+    assert cd.inv_smt == "(and (<= 0 s0) (<= s0 100))"
+    assert cd.ranking_smt is not None
+    # Any `c + s0` ranks it; which constant Vampire picks is its business.
+    assert cd.ranking_smt.endswith(" s0)") and cd.ranking_smt.startswith("(+ ")
 
 
 def test_the_reach_is_two_holes():

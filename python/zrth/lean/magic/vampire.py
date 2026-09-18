@@ -66,11 +66,41 @@ naming, and on a conjecture with holes that is decisive in *both*
 directions.  Measured over `tests/limits`, 30 s each: naming answers
 `m_max` and `m_toward5` where ``--naming 0`` does not; ``--naming 0``
 answers `m_relu` where naming does not; they agree on `m_countdown`,
-`m_deep` and `m_min`.  Neither setting is the right one, so both are asked
-and the union is what this route reaches -- six of eleven, where either
-alone reaches five or four.  Every answer measured came back inside four
-seconds and every miss ran to the limit, which is why the short rung comes
-first and why asking twice costs so little.
+`m_deep` and `m_min`.  Neither setting is the right one, so both are asked,
+each on a share of what is left, and the union is what this route reaches.
+
+``--time_limit`` is a *scheduling* input before it is a cap: Vampire slices
+it between strategies, so a small one runs a different search rather than
+the same one cut short.  `m_max`'s question reaches the limit at
+``--time_limit 20`` and answers after 2.5 s at 25.  So every call declares
+the run's whole budget and the wall clock is what bounds it.
+
+Two holes at a time
+===================
+Two holes is what this mechanism closes; three is a time limit, measured
+both ways and against five option settings that moved neither ceiling.  So
+the questions are kept to two where they can be:
+
+* ``--safety`` is one question.  ``inv -> prp`` is what pins the interval
+  down, and with it the coefficients are two.
+* ``--buchi`` is two questions: an inductive invariant, then a rank that
+  drops on *that* invariant, with its coefficients already numbers.  The
+  joint question is four holes for a one-component module and answered
+  nothing at all over `tests/limits`; the split derives `m_countdown` and
+  `m_deep`, invariant in about a second and rank in about fifteen.
+
+Splitting a search can cost what a joint one would have found -- an
+inductive invariant need not admit a rank, and the second question cannot
+go back and ask for another.  So every alternative of the first answer is
+carried into the second.
+
+An invariant asked for on its own is *looser* than one asked for with the
+property, and loose is harder: with nothing pinning the interval the search
+is over the whole of `Int`, and `m_countdown`'s invariant-only question does
+not come back inside 30 s.  Bounded to a window around the module's own
+constants it answers ``[0,100]`` in three.  The same window costs the safety
+questions `m_max` and `m_toward5`, whose obligations pin the interval
+already -- so it is asked for where it is needed and nowhere else.
 
 The templates, smallest first
 =============================
@@ -83,23 +113,20 @@ and the narrow one is usually enough:
   D_ij`` for each pair.  What a module whose components move together needs,
   and quadratic in the width, which is why it is second.
 
-Under ``--buchi`` the ranking function is more holes in the same question
-rather than a second search: ``R_0*s_0 + ... + R_n-1*s_n-1 + R_c``, asked
-for alongside the invariant, so what comes back is an invariant that admits
-a rank and a rank that drops on it.  The obligation is stated as ``rank(s) >
-0`` where the property fails and ``rank(s') < rank(s)``, which is ite-free
-and implies the clamped ``Int.toNat`` form `rule_buchi` asks for: where
-``r > 0`` and ``r' < r``, ``max(r',0) < max(r,0)`` whatever the sign of
-``r'``.
+Under ``--buchi`` the ranking function is ``R_0*s_0 + ... + R_n-1*s_n-1 +
+R_c``, asked for in the second question above.  Its obligation is stated as
+``rank(s) > 0`` where the property fails and ``rank(s') < rank(s)``, which
+is ite-free and implies the clamped ``Int.toNat`` form `rule_buchi` asks
+for: where ``r > 0`` and ``r' < r``, ``max(r',0) < max(r,0)`` whatever the
+sign of ``r'``.
 
 What comes back is checked
 ==========================
 An answer literal is a substitution *a* refutation used, and a refutation of
 a mis-stated question proves nothing about the module -- nor does one branch
 of a disjunctive answer.  So the coefficients Vampire returns are put back
-into the template and the four obligations are re-asked of cvc5 -- through
-the same
-:mod:`zrth.lean.houdini_solver` seam `--infer houdini` uses, in
+into the template and the obligations are re-asked of cvc5 -- through the
+same :mod:`zrth.lean.houdini_solver` seam `--infer houdini` uses, in
 milliseconds.  A certificate that does not survive that is reported as not
 found, with what Vampire said.  This is not Houdini: nothing is filtered and
 nothing is proposed, it is the one check that the derivation is honest.
@@ -124,7 +151,7 @@ from ..houdini_solver import (
 )
 from . import TA2Magic
 from .houdini import Candidate, Obligations
-from ..smt_synth import SynthContext, smt_int
+from ..smt_synth import SynthContext, program_constants, smt_int
 
 try:
     import cvc5                                      # type: ignore
@@ -285,6 +312,21 @@ def free_constants(term) -> list:
 # ══════════════════════════════════════════════════════════════════════════
 
 
+# How far outside the module's own numbers a coefficient is looked for. The
+# bound that makes an invariant true is almost always a constant the program
+# already contains -- what `program_constants` is seeded from and what
+# `tests/limits/README.md` records about Houdini -- so the window only has
+# to be wide enough to hold a little arithmetic around them.
+_WINDOW_MARGIN = 10
+_MIN_WINDOW = 100
+
+
+def window_for(ctx: SynthContext) -> int:
+    """How far a template coefficient may reach from zero."""
+    biggest = max((abs(c) for c in program_constants(ctx)), default=0)
+    return max(_MIN_WINDOW, biggest * _WINDOW_MARGIN)
+
+
 @dataclass(frozen=True)
 class Row:
     """One `lo <= body <= hi` of a template, with `lo` and `hi` still holes.
@@ -388,6 +430,7 @@ class Question:
                        for i, c in enumerate(list(ob.el) + list(ob.en))]
         self.vars = self.state + self.inputs
         self.holes: dict = {}
+        self.window = window_for(ctx)
 
     # --- the template, as a term over a state ----------------------------
 
@@ -424,29 +467,54 @@ class Question:
 
     # --- the obligations --------------------------------------------------
 
-    def conjecture(self, tpl: Template, prp, *, safety: bool) -> str:
-        """Every obligation under one existential, as an SMT-LIB problem."""
-        return script_for(self.term(tpl, prp, safety=safety))
+    def conjecture(self, tpl: Template, prp) -> str:
+        """`--safety`: an inductive invariant that implies the property."""
+        obs = self._obligations(tpl, prp, inductive=True, implies=True,
+                                ranked=False)
+        return script_for(self._ask_for(tpl.holes, obs))
 
-    def term(self, tpl: Template, prp, *, safety: bool):
+    def invariant_conjecture(self, tpl: Template) -> str:
+        """`init_inv` and `step_inv` alone -- an inductive invariant, with
+        no claim about the property. Stage one of the Buchi split."""
+        obs = self._obligations(tpl, None, inductive=True, implies=False,
+                                ranked=False)
+        return script_for(self._ask_for(tpl.holes, obs, bounded=True))
+
+    def rank_conjecture(self, tpl: Template, prp, fixed: dict) -> str:
+        """`hrank` over an invariant already derived. Stage two.
+
+        Only the rank obligations: the invariant is in them already, as the
+        hypothesis `here`, and with its coefficients fixed to numbers it is
+        a statement about the module rather than a hole to fill. `init_inv`
+        and `step_inv` are settled and asking them again is clauses for
+        nothing.
+        """
+        obs = self._obligations(tpl, prp, inductive=False, implies=False,
+                                ranked=True)
+        return script_for(self._ask_for(tpl.rank, obs, fixed=fixed))
+
+    def _obligations(self, tpl: Template, prp, *, inductive: bool,
+                     implies: bool, ranked: bool) -> list:
         tm, ob = self.tm, self.ob
         obligations = []
         # init_inv. The initial state is a function of the inputs alone, so
         # this is quantified over the inputs and split on its own
         # conditions -- a guard from the round would leave a latched-state
         # variable here that nothing binds.
-        for br in self.entry:
-            hyp = self._and([ob.init_pre, *br.guard])
-            obligations.append(self._forall(
-                self.inputs,
-                self._implies(hyp, self._rows(tpl, list(br.state)))))
+        if inductive:
+            for br in self.entry:
+                hyp = self._and([ob.init_pre, *br.guard])
+                obligations.append(self._forall(
+                    self.inputs,
+                    self._implies(hyp, self._rows(tpl, list(br.state)))))
         for br in self.step:
             here = self._rows(tpl, list(ob.s))
-            hyp = self._and([here, ob.update_pre, *br.guard])
-            obligations.append(self._forall(
-                self.vars,
-                self._implies(hyp, self._rows(tpl, list(br.state)))))
-            if not safety:
+            if inductive:
+                hyp = self._and([here, ob.update_pre, *br.guard])
+                obligations.append(self._forall(
+                    self.vars,
+                    self._implies(hyp, self._rows(tpl, list(br.state)))))
+            if ranked:
                 # hrank, ite-free: positive where the property fails, and
                 # smaller after the round. Implies the `Int.toNat` form.
                 now = self._rank(tpl, list(ob.s))
@@ -460,15 +528,45 @@ class Question:
                     self._implies(
                         self._and([here, fails, ob.update_pre, *br.guard]),
                         drops)))
-        if safety:
+        if implies:
             obligations.append(self._forall(
                 self.state,
                 self._implies(self._rows(tpl, list(ob.s)),
                               self._at(prp, ob.s))))
-        holes = [self._hole(h) for h in tpl.all_holes]
+        return obligations
+
+    def _ask_for(self, holes: tuple[str, ...], obligations: list,
+                 fixed: "dict | None" = None, bounded: bool = False):
+        """`obligations`, with `fixed` filled in and `holes` left open.
+
+        `bounded` confines each open hole to the window, and it is asked for
+        only where the obligations leave the coefficients loose. Measured
+        both ways over `tests/limits`: bounding costs the safety questions
+        `m_max` and `m_toward5`, whose `inv -> prp` obligation pins the
+        interval already so the window is clauses for nothing; and it is
+        what makes the invariant-only question answerable at all --
+        `m_countdown`'s does not come back inside 30 s free and answers
+        `[0,100]` in three seconds bounded. A refutation only has to produce
+        *a* witness, and where nothing else pins one down a window is what
+        makes producing one a finite matter rather than a guess.
+        """
+        tm = self.tm
+        body = self._and(obligations)
+        if fixed:
+            body = body.substitute(
+                [self._hole(h) for h in fixed],
+                [tm.mkInteger(v) for v in fixed.values()])
+        parts = []
+        if bounded:
+            window = tm.mkInteger(self.window)
+            parts = [b for h in holes for b in (
+                tm.mkTerm(Kind.LEQ, tm.mkTerm(Kind.NEG, window),
+                          self._hole(h)),
+                tm.mkTerm(Kind.LEQ, self._hole(h), window))]
         out = tm.mkTerm(Kind.EXISTS,
-                        tm.mkTerm(Kind.VARIABLE_LIST, *holes),
-                        self._and(obligations))
+                        tm.mkTerm(Kind.VARIABLE_LIST,
+                                  *[self._hole(h) for h in holes]),
+                        self._and(parts + [body]))
         refuse_ites(out)
         return out
 
@@ -601,6 +699,12 @@ class Answers:
     # answers that the other does not. Named rather than a bare tuple of
     # flags so the log can say which one came back.
     STRATEGIES = (("naming", ()), ("no naming", ("--naming", "0")))
+    # The short rung's wall clock. Measured over `tests/limits` with the
+    # declared limit left alone: every answer but `m_max`'s and `m_relu`'s
+    # arrives inside eight seconds, so one pass at this over every strategy
+    # is what keeps the questions that do answer from waiting behind the
+    # ones that do not.
+    SHORT = 8.0
 
     def __init__(self, exe: str, *, seconds: float, log=print):
         self.exe = exe
@@ -621,15 +725,25 @@ class Answers:
         return self.deadline - time.monotonic()
 
     def ask(self, script: str, holes: int) -> "Derived | None":
-        """The first answer any strategy gives, on a share of what is left."""
-        for n, (name, extra) in enumerate(self.STRATEGIES):
-            # What is left, shared out between the strategies still to come,
-            # so the last one is still asked.
-            share = self.left() / (len(self.STRATEGIES) - n)
-            answer = self._call(script, holes, share, extra)
-            if answer is not None:
-                self.log(f"[vampire] answered with {name}")
-                return answer
+        """The first answer any strategy gives, short rung first.
+
+        The rungs are wall clock, and the declared limit does not move with
+        them -- which is the whole reason a short rung is safe here. A short
+        `--time_limit` would have Vampire run a *different* search; a short
+        wall runs the same one and stops it early, and most answers measured
+        over `tests/limits` arrive in under four seconds.
+        """
+        for short in (True, False):
+            for n, (name, extra) in enumerate(self.STRATEGIES):
+                left = self.left()
+                # On the long rung what is left is shared out between the
+                # strategies still to come, so the last is still asked.
+                budget = (min(self.SHORT, left) if short
+                          else left / (len(self.STRATEGIES) - n))
+                answer = self._call(script, holes, budget, extra)
+                if answer is not None:
+                    self.log(f"[vampire] answered with {name}")
+                    return answer
         return None
 
     def _call(self, script: str, holes: int, budget: float,
@@ -756,41 +870,94 @@ class TA2MagicVampire(TA2Magic):
                  f"{len(ctx.state)} component(s)")
 
         asker = Answers(self.exe, seconds=self.timeout, log=self.log)
+        derive = self._safety if cd.is_safety else self._ranked
         tried = []
         for tpl in templates(ctx, ranked=not cd.is_safety):
             if asker.left() < 1:
                 break
-            script = q.conjecture(tpl, ctx.prp, safety=cd.is_safety)
-            self.log(f"[vampire] template {tpl.name}: "
-                     f"{len(tpl.all_holes)} holes, {len(script)} chars")
             tried.append(tpl.name)
-            answer = asker.ask(script, len(tpl.all_holes))
-            if answer is None:
-                self.log(f"[vampire] no answer for {tpl.name} "
-                         f"({asker.spent:.1f} s spent)")
-                continue
-            # A disjunctive answer says one of these is a witness, so each is
-            # a candidate until the obligations say otherwise. Checking one
-            # is cvc5 on four small queries, but there can be a dozen of
-            # them, so the run's own deadline bounds the loop -- after the
-            # first, which is always worth the check.
-            for n, values in enumerate(answer.answers):
-                if n and asker.left() < 0:
-                    self.log(f"[vampire] out of time with "
-                             f"{len(answer.answers) - n} alternative(s) "
-                             f"of the answer unchecked")
-                    break
-                named = dict(zip(tpl.all_holes, values))
-                self.log("[vampire] Vampire answered "
-                         + ", ".join(f"{h}={v}" for h, v in named.items()))
-                inv, rank = self._read_back(tpl, named, cd)
-                if self._checks_out(inv, rank, cd):
-                    return self._emit(cd, inv, rank, tpl)
-                self.log("[vampire] that answer does not satisfy the "
-                         "obligations when they are restated")
+            out = derive(q, tpl, asker, cd)
+            if out is not None:
+                return out
+            self.log(f"[vampire] nothing from {tpl.name} "
+                     f"({asker.spent:.1f} s spent)")
         self.log(f"[vampire] {asker.calls} Vampire call(s), "
                  f"{asker.spent:.1f} s")
         return self._none(cd, tried, asker)
+
+    def _safety(self, q: Question, tpl: Template, asker: Answers,
+                cd: CertificateData) -> "CertificateData | None":
+        """One question: the invariant and the property it has to imply.
+
+        `inv -> prp` is what pins the coefficients down, which is why this
+        is one question where `--buchi` is two.
+        """
+        script = q.conjecture(tpl, self.ctx.prp)
+        self.log(f"[vampire] template {tpl.name}: {len(tpl.holes)} holes, "
+                 f"{len(script)} chars")
+        answer = asker.ask(script, len(tpl.holes))
+        if answer is None:
+            return None
+        for named in self._alternatives(answer, tpl.holes, asker):
+            inv, _ = self._read_back(tpl, named, cd)
+            if self._checks_out(inv, None, cd):
+                return self._emit(cd, inv, None, tpl)
+        return None
+
+    def _ranked(self, q: Question, tpl: Template, asker: Answers,
+                cd: CertificateData) -> "CertificateData | None":
+        """Two questions: an inductive invariant, then a rank that drops on
+        it.
+
+        Asked apart rather than as one conjecture with every hole in it,
+        because two holes is what this mechanism reaches: the joint question
+        for a one-component module is four, and it answered nothing at all
+        over `tests/limits`, where the split derives `m_countdown` and
+        `m_deep` -- invariant in about a second, rank in about fifteen.
+
+        Splitting a search can cost what a joint one would have found: an
+        invariant that is inductive need not admit a rank, and this one
+        cannot go back and ask for another. So every alternative of the
+        first answer is carried into the second, which is the disjunctive
+        answer earning its keep twice.
+        """
+        script = q.invariant_conjecture(tpl)
+        self.log(f"[vampire] template {tpl.name}: an invariant in "
+                 f"{len(tpl.holes)} holes, {len(script)} chars")
+        answer = asker.ask(script, len(tpl.holes))
+        if answer is None:
+            return None
+        for inv_named in self._alternatives(answer, tpl.holes, asker):
+            ranks = asker.ask(q.rank_conjecture(tpl, self.ctx.prp, inv_named),
+                              len(tpl.rank))
+            if ranks is None:
+                self.log("[vampire] no ranking over that invariant")
+                continue
+            for named in self._alternatives(ranks, tpl.rank, asker):
+                inv, rank = self._read_back(tpl, {**inv_named, **named}, cd)
+                if self._checks_out(inv, rank, cd):
+                    return self._emit(cd, inv, rank, tpl)
+        return None
+
+    def _alternatives(self, answer: Derived, holes: tuple[str, ...],
+                      asker: Answers):
+        """Each alternative of a disjunctive answer, named, while time lasts.
+
+        One of them is a witness, not each of them, so each is a candidate
+        until the obligations say otherwise. Checking one is cvc5 on a few
+        small queries, but there can be a dozen, so the run's own deadline
+        bounds the loop -- after the first, which is always worth it.
+        """
+        for n, values in enumerate(answer.answers):
+            if n and asker.left() < 0:
+                self.log(f"[vampire] out of time with "
+                         f"{len(answer.answers) - n} alternative(s) of the "
+                         f"answer unchecked")
+                return
+            named = dict(zip(holes, values))
+            self.log("[vampire] Vampire answered "
+                     + ", ".join(f"{h}={v}" for h, v in named.items()))
+            yield named
 
     # --- what the answer means --------------------------------------------
 
@@ -805,7 +972,9 @@ class TA2MagicVampire(TA2Magic):
                else "(and " + " ".join(facts) + ")")
         if cd.is_safety:
             return inv, None
-        terms = [f"(* {smt_int(named[c])} s{i})"
+        # A coefficient of one is the component itself: `(* 1 s0)` is what
+        # the template says and `s0` is what the certificate should read.
+        terms = [f"s{i}" if named[c] == 1 else f"(* {smt_int(named[c])} s{i})"
                  for i, c in enumerate(tpl.rank[:-1]) if named[c]]
         const = named[tpl.rank[-1]]
         parts = ([smt_int(const)] if const or not terms else []) + terms

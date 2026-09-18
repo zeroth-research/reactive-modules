@@ -739,11 +739,37 @@ cvc5 prints it as SMT-LIB. `assert-not` is what marks the formula that
 assertion is refuted without an answer.
 
 The templates are tried smallest first — `A_i <= s_i <= B_i` per component,
-then the same plus `C_ij <= s_i - s_j <= D_ij` for each pair. Under
-`--buchi` the ranking function is more holes in the *same* question rather
-than a second search, stated as `rank(s) > 0` where the property fails and
-`rank(s') < rank(s)`, which implies the clamped `Int.toNat` form
-`rule_buchi` asks for.
+then the same plus `C_ij <= s_i - s_j <= D_ij` for each pair.
+
+#### Two holes at a time
+
+Two holes is what the answer-literal search closes; three is a time limit.
+So the questions are kept to two where they can be:
+
+* `--safety` is **one** question. `inv -> prp` is what pins the interval
+  down, and with it the coefficients are two.
+* `--buchi` is **two**: an inductive invariant, then a ranking function that
+  drops on *that* invariant, with its coefficients already numbers. The
+  joint question is four holes for a one-component module and answered
+  nothing at all over `tests/limits`; the split derives `m_countdown` and
+  `m_deep` — invariant in about a second, rank in about eight. The rank
+  obligation is `rank(s) > 0` where the property fails and `rank(s') <
+  rank(s)`, which implies the clamped `Int.toNat` form `rule_buchi` asks
+  for.
+
+Splitting a search can cost what a joint one would have found — an
+inductive invariant need not admit a rank, and the second question cannot go
+back and ask for another. So every alternative of the first answer is
+carried into the second.
+
+An invariant asked for on its own is *looser* than one asked for with the
+property, and loose is harder: with nothing pinning the interval the search
+is over the whole of `Int`, and `m_countdown`'s invariant-only question does
+not come back inside 30 s. Bounded to a window around the module's own
+constants (`program_constants`, the same seed Houdini uses) it answers
+`[0,100]` in three. The same window costs the safety questions `m_max` and
+`m_toward5`, whose obligations pin the interval already — so it is asked for
+where it is needed and nowhere else.
 
 #### What the question has to look like
 
@@ -785,16 +811,15 @@ run's whole budget and the wall clock is what actually bounds it.
 Small, and worth knowing before reaching for it. Vampire's answer-literal
 search closes the **two-hole** question and does not close a three-hole one:
 adding a third, otherwise-free hole to the `m_countdown` question above
-turns an instant answer into a time limit, and so does the `--buchi` rank
-obligation at any hole count. Five option settings were tried against both
-ceilings — `-qago on`, `--saturation_algorithm otter`, `--saturation_algorithm
+turns an instant answer into a time limit. Five option settings were tried
+against that ceiling — `-qago on`, `--saturation_algorithm otter`, `--saturation_algorithm
 lrs`, `--theory_instantiation all`, `--unification_with_abstraction
 one_side_interpreted` — and none moved either.
 
-So in practice this route derives a safety invariant for a **one-component
-Int** module — six of the fourteen `tests/limits` safety and Büchi pairs —
-and refuses past that pointing at `--infer houdini`, which searches a wider
-module by proposing facts and proving them. It reads scalar `Int` state
+So in practice this route derives a certificate for a **one-component Int**
+module — eight of seventeen `tests/limits` safety and Büchi pairs, two of
+them Büchi — and refuses past that pointing at `--infer houdini`, which
+searches a wider module by proposing facts and proving them. It reads scalar `Int` state
 only: Vampire reads reals, but the templates here are integer intervals and
 integer coefficients.
 
