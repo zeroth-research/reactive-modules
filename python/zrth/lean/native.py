@@ -25,9 +25,42 @@ from zrth.lean.common import (
     _flat_indices,
     flat_layout,
 )
-from zrth.lean.ops import mat_emitter, scalar_emitter
+from zrth.lean.ops import lean_gap, mat_emitter, scalar_emitter
 
 from zrth import Wire
+
+
+def lean_gaps(ctx) -> list[str]:
+    """Every operator in this module that no Lean column can write.
+
+    One sentence per operator, in the order the module first reaches for it:
+    which block, which wire, and the reason the op table records.
+
+    Asked before anything is generated, which is the whole point. The same
+    module met during codegen raises about a missing table cell, half way
+    through a file, for a route that may never have wanted the functional
+    encoding -- and that is what the limit matrix's only `GEN-FAIL` was. A
+    module that generates has nothing to report here, because an operator
+    with no matrix form has no emitter in the other two Lean columns either
+    (:func:`ops.lean_gap`), so this cannot refuse anything that works.
+    """
+    out, seen = [], set()
+    for block in ("init", "update"):
+        # Only what the next state is built from, which is what the encoders
+        # walk: a term nothing reads is pruned before it is ever emitted, and
+        # refusing a module over one would refuse a module that generates.
+        terms = _reachable_terms(getattr(ctx.atom, block), ctx.ctrl_next)
+        for term in terms:
+            name = itype_name(term.itype)
+            why = None if name in seen else lean_gap(term.itype)
+            if why is None:
+                continue
+            seen.add(name)
+            out.append(
+                f"the `{block}` block writes wire #{term.write[0].id} with "
+                f"`{name}`, and {why}"
+            )
+    return out
 
 
 def _product_type(wires: list[Wire]) -> str:

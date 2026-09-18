@@ -861,6 +861,20 @@ def _reason(row: Op, cell) -> str:
     return f"the matrix form serves it ({cell.note})"
 
 
+def lean_gap(itype) -> "str | None":
+    """Why no Lean column can write this operator, or None if one can.
+
+    What :func:`mat_emitter` would raise with, as a value: a caller checking
+    a whole module before generating any of it should not have to provoke an
+    exception per term. `Inline` is not a gap -- it is the table saying the
+    emitter lives beside it -- and neither is `ViaMat`, so only `Unsupported`
+    answers here. Nothing has an unsupported matrix form and an emitter in
+    another Lean column, so this is the whole question for all three.
+    """
+    row = op_for(itype)
+    return _reason(row, row.mat) if isinstance(row.mat, Unsupported) else None
+
+
 def _lean_emitter(itype, row: Op, cell, column: str):
     """Unwrap a Lean cell, or raise carrying the reason the table records."""
     if isinstance(cell, (Unsupported, Inline, ViaMat)):

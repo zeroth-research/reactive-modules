@@ -94,7 +94,8 @@ from pathlib import Path
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
 from .cli import Settings, parse_args
-from .common import Refused
+from .common import LeanContext, Refused
+from .native import lean_gaps
 from .infer_route import InferInput, ProjectHandle
 from .project import (
     ENCODINGS,
@@ -426,6 +427,21 @@ def main():
             )
         except (Refused, ImportError) as e:
             raise _refused(settings, e) from e
+
+    # The same question for the *project*, which every route needs written
+    # whatever it infers. After the route's own check, so a route with an
+    # opinion about this module still gets to state it in its own words.
+    #
+    # An operator with no Lean form is a fact about the module, and saying so
+    # here says it once, before any of the project exists. Left to codegen it
+    # arrives as a missing table cell in the middle of a file, which is a
+    # sentence about `ops.py` for a user who asked about a module.
+    gaps = lean_gaps(LeanContext(module))
+    if gaps:
+        raise _refused(settings, Refused(
+            "this module has no Lean form: "
+            + "; also ".join(gaps)
+        ))
 
     cert_data: CertificateData | None = None
     if settings.prp or settings.pre or settings.invariant or settings.ranking:

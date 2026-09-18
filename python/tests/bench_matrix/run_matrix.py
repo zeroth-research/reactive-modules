@@ -337,6 +337,11 @@ _NO_CERT = re.compile(
     r"error: --infer|CEGAR failed after|obligation violated|found no ranking"
     r"|found no invariant|could not decide|cannot decide|--fbk-proveit:|--ic3ia:"
     r"|Failed to find valid invariant/ranking after")
+# A module shape no Lean column can write. `verith` refuses it before
+# generating and the message is prefixed like every other `--infer` refusal,
+# so it has to be told from one: nothing was searched, and `GEN-FAIL` is what
+# the page promises for a module shape refused up front.
+_NO_LEAN = re.compile(r"has no Lean form")
 
 
 # What a certificate is made of. Everything else a project builds -- the five
@@ -375,6 +380,8 @@ def verdict(gen, bld) -> str:
             return "UNSUPPORTED"
         if _REFUTED.search(err):
             return "REFUTED"
+        if _NO_LEAN.search(err):
+            return "GEN-FAIL"
         return "NO-CERT" if _NO_CERT.search(err) else "GEN-FAIL"
     if "<timeout>" in bld.get("targets", []):
         return "TIMEOUT"

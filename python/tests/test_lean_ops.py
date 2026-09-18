@@ -22,7 +22,8 @@ import torch
 import pytest
 from zrth import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.common import itype_name
+from zrth.lean.common import LeanContext, itype_name
+from zrth.lean.native import lean_gaps
 from zrth.lean import ops
 from zrth.lean.ops import (
     COLUMNS,
@@ -280,6 +281,47 @@ def test_an_op_no_backend_has_names_its_own_reason():
     """`Uninterpreted` is the limit matrix's only generation failure."""
     with pytest.raises(ValueError, match="KNOWN_ISSUES #27"):
         mat_emitter(LIA.Uninterpreted("f"))
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  The same gap, asked of a whole module before it is generated
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _uninterp_module():
+    """The limit matrix's `m_uninterp`: a lone `Uninterpreted` write, read."""
+    x = Var(Int([1, 1]))
+    y = Wire(Int([1, 1]))
+    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
+    update = [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])]
+    return Module.sequential([x], init, update)
+
+
+def test_a_module_with_no_lean_form_says_which_wire_and_why():
+    """The reason the table records, about the module rather than the table.
+
+    Met during codegen this is `No Lean expression mapping for:
+    Uninterpreted (matrix form)` -- a sentence about `ops.py`, raised half
+    way through a file, for a user who asked about a module."""
+    gaps = lean_gaps(LeanContext(_uninterp_module()))
+    assert len(gaps) == 1
+    assert "`update` block" in gaps[0] and "`Uninterpreted`" in gaps[0]
+    assert "wire #" in gaps[0] and "KNOWN_ISSUES #27" in gaps[0]
+
+
+def test_a_module_that_generates_reports_no_gap():
+    """The check cannot refuse what codegen accepts, so it says so here."""
+    assert lean_gaps(LeanContext(_bv_mod_module(BV.UMod()))) == []
+
+
+def test_an_unreachable_term_is_not_a_gap():
+    """Nothing reads `y`, so no encoder ever emits it and neither branch of
+    the tool should care that it has no Lean form."""
+    x = Var(Int([1, 1]))
+    y = Wire(Int([1, 1]))
+    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
+    update = [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [x])]
+    assert lean_gaps(LeanContext(Module.sequential([x], init, update))) == []
 
 
 # ══════════════════════════════════════════════════════════════════════
