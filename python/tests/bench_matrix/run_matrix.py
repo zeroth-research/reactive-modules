@@ -435,7 +435,8 @@ def main() -> None:
         signal.signal(sig, _stop)
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--suites", nargs="*", default=[], help="limits fbk tests svcomp")
+    ap.add_argument("--suites", nargs="*", default=[],
+                    help="limits fbk tests svcomp hybrid petri")
     ap.add_argument("--routes", nargs="*", default=[], help="route names to measure")
     ap.add_argument("--only", nargs="*", default=[], help="substring match on benchmark")
     ap.add_argument("--redo", action="store_true", help="re-measure pairs already recorded")

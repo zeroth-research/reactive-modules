@@ -44,7 +44,7 @@ Some routes need something from outside this repo, and the defaults in
 | | needs | env override |
 |---|---|---|
 | `ai`, `ai-cegis` | an Anthropic API key | read from `../../CLAUDE_KEY.txt`, or `ANTHROPIC_API_KEY` |
-| `houdini-vampire` | a Vampire binary (the release zip, unpacked) | `VERITH_VAMPIRE` |
+| `houdini-vampire`, `vampire` | a Vampire binary (the release zip, unpacked) | `VERITH_VAMPIRE` |
 | `fbk-proveit` | a `lean-ltl-certifying` checkout | `VERITH_PROVEIT_DIR` |
 | `fbk-proveit` | an `ic3ia` binary (or its build dir) | `VERITH_IC3IA` |
 | `fbk-proveit` | the MathSAT Python bindings | `VERITH_MATHSAT_PY` |
@@ -67,6 +67,8 @@ a `lake update` would re-resolve the other thirteen packages).
 | `fbk` | 39 | [`../lean/fbk/probes.py`](../lean/fbk/probes.py) | `--safety` |
 | `tests` | 6 | [`../fixtures/`](../fixtures/) | `--buchi`, from each fixture's docstring |
 | `svcomp` | 80 | [`../../benchmarks/svcomp/dsl/`](../../benchmarks/svcomp/dsl/) | both, derived — see below |
+| `hybrid` | 26 | [`hybrid/cases.py`](hybrid/cases.py) | both, over 8 sampled hybrid systems |
+| `petri` | 35 | [`petri/cases.py`](petri/cases.py) | both, over 13 nets and 2 extensions |
 
 The limit matrix's 77 cases vary the *supplied* `--invariant` and
 `--ranking`, which no `--infer` route reads, so they collapse onto their
@@ -100,6 +102,118 @@ wants a file with a no-argument `module()` and a one-state predicate, so:
 A column's z3 symbol is its name and `verith` indexes state by ctrl
 declaration order, which `Bench.state` already is, so the rename onto
 `s0..sN-1` is positional. All 57 check out.
+
+#### hybrid — continuous state, discrete time
+
+Eight textbook hybrid systems under a first-order Euler step, which is what
+makes each one a reactive module: **Real** state, discrete time,
+piecewise-affine updates. A thermostat with hysteresis, the ARCH-COMP leaking
+tank (and the same tank against an adversarial consumption disturbance), the
+Fehnker–Ivančić two-tank and room-heating benchmarks, a bouncing ball, an
+adaptive cruise controller, and Alur's reactor rod control. Each states where
+it comes from in its own docstring.
+
+Three conventions are worth knowing before adding to [`hybrid/`](hybrid/) —
+the second is about the benchmarks, the other two about what compiles:
+
+- **Every Real constant is a dyadic rational.** A wire's value is a float32
+  tensor, so `0.9` reaches the certificate as `0.8999999761581421`, and the
+  property is then about a constant nobody wrote. Eighths and quarters are
+  exact; tenths are not.
+- **The controllers sample.** A mode is read off the *current* state, so every
+  one of these overshoots its own setpoints by a tick — the tank's controller
+  switches at 6 and 12 and the level covers [5.5, 14.5]. That gap is not a
+  modelling slip, it is what the benchmarks are about, and it is why the safe
+  band in a row is wider than the guards in the module.
+- **Every scaling multiplies a state variable.** `System/`'s
+  scalar-to-matrix equivalence proof closes for a `Linear` term that reads a
+  ctrl component and does not for one that reads a derived wire, so
+  `-(v - 1)/2` is written `-v/2 + 1/2` and a saturation is distributed into
+  its `ite` branches rather than applied and then scaled. A module that
+  scales an intermediate value is `BUILD-FAIL` on every route and measures
+  none of them — `m_bounce` and `m_cruise` both were, before being rewritten.
+
+#### petri — nets, and four extensions
+
+Thirteen place/transition nets live as data in
+[`petri/nets.py`](petri/nets.py) and are built by
+[`petri_mod.py`](petri_mod.py), one net per `$PETRI_NET` in the same shape as
+`svcomp_mod.py`; a time Petri net and a hybrid Petri net, which carry clocks
+and a fluid level rather than only a marking, are written out in
+[`petri/`](petri/).
+
+One tick is one attempted firing, and **which** transition fires is an
+external input — so a `--safety` property is a claim about every firing
+sequence rather than about one schedule, and a selection whose transition is
+dead leaves the marking alone (that adds no reachable marking, and it makes
+the transition relation total, which the obligation needs). Recurrence is
+asked of the `-rr` variants instead, where a round-robin counter replaces the
+input as a last state component: under a free input `G F p` is false for
+nearly any `p`, because the input may select a dead transition for ever.
+
+The four extensions — inhibitor, reset, transfer and continuous (real-valued,
+fractionally-fired markings) — are each one field on `Trans` or one flag on
+`Net`, and each carries a property that turns on it: two that hold *because*
+of the arc (`inhibit/queue-bound`, `transfer/conserved`) and two classical
+invariants it breaks (`reset/slots-eq`, `sem-cont/integral`). The `reset`
+and `transfer` nets are the same shape with one arc different, so the pair
+says what each arc costs rather than only that it exists.
+
+**A place's next marking is a *sum* of guarded deltas, not a chain of
+overrides.** Exactly one transition fires per tick, so the two are equivalent
+— and only the first compiles. `System/Circ.lean` is laid out by walking back
+from the block's outputs without merging a shared subterm, and each layer is
+then bubble-sorted, so what that file costs is the number of distinct
+output-to-input *paths*, squared. A chain reads its own running value twice
+per transition and doubles that count each time: the seven-place
+mutual-exclusion net reached a 131-wide layer and 800 KB of `Circ.lean`.
+Summing `ite(g, d, 0)` puts constants in both branches, which is where the
+walk stops, so the count is merely additive — 131 wide became 57.
+
+Finding the wall this way is also what turned up a missing budget: the two
+`*_circ_eq` theorems ran at Lean's default `maxHeartbeats` while `Scalar`'s
+equivalents have long carried `2000000`. Every net above four places timed
+out inside `simp` — `BUILD-FAIL` on every route, for modules nothing else was
+wrong with. [`../../zrth/lean/translate/circ.py`](../../zrth/lean/translate/circ.py)
+now raises it, and the same net builds `System.Circ` in 13 s.
+
+**What is left of the wall, measured.** With the sum encoding and the raised
+budget, a block up to about 70 paths wide compiles and one at 99 does not:
+
+| net | widest layer | `System.Circ` |
+|---|---|---|
+| `reset`, `transfer`, `sem` | 25–34 | builds |
+| `readwrite`, `inhibit`, `sem-cont` | 46–47 | builds |
+| `prodcons`, `mutex` | 54–57 | builds |
+| `philo` (forks only, 6 places) | 69 | builds |
+| `philo` with a `thinking` place each | 99 | **fails** |
+| `mutex` over the reals (7 places) | 104 | **fails** |
+
+That is why two nets here are folded rather than written the textbook way:
+the philosophers drop their redundant `thinking` places, and the continuous
+net is built over the three-place `sem` rather than over `mutex`. Both folds
+are behaviour-preserving on the places that remain, and both are explained in
+`nets.py` where they are made. A net much larger than these does not belong
+in this suite until `_circ_translate_body` merges shared subterms.
+
+#### What `truth` rests on in these two
+
+`Row.truth` decides whether a route's answer is *correct* — only a row whose
+property fails may honestly be `REFUTED` — and a wrong one turns every honest
+refutation into what looks like a route bug. The other four suites transcribe
+it from something upstream that already paid for it. These two have no
+upstream, so it is measured: [`test_rows.py`](test_rows.py) steps every one of
+the 61 rows and compares the claim with the states the run reaches, under
+`just py-test`.
+
+That is one-sided on purpose, and [`sim.py`](sim.py) says so at length: a
+`fails` row is *established* by its counterexample, a `holds` row is only
+**not refuted**. Certifying a property is the matrix's own job.
+
+Every module carries at least one property that fails — a test asserts it.
+A suite of only-true properties measures half a route: nothing in it can show
+that a `REFUTED` was right, so a route that answered `VERIFIED` to everything
+would score perfectly on it.
 
 ---
 
@@ -249,6 +363,11 @@ tree; the rendered page is the only output that belongs in it.
 ```
 suites.py      every (benchmark, property) row, and the route column
 svcomp_mod.py  one adapter so verith can load any SV-COMP bench ($SVCOMP_BENCH)
+petri_mod.py   one adapter so verith can load any net in petri/ ($PETRI_NET)
+hybrid/        8 sampled hybrid systems, a file each, + cases.py
+petri/         nets.py (12 nets as data), 2 written-out extensions, + cases.py
+sim.py         step a module and see whether the runs refute a row's property
+test_rows.py   that check over every hybrid/petri row, under `just py-test`
 run_matrix.py  generate + build every cell, record verdicts and timings
 coldstart.py   what the first project in a fresh build dir costs
 merge.py       fold several passes into one averaged dataset, and flag it

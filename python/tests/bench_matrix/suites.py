@@ -1,6 +1,6 @@
 """Every (benchmark, property) the route matrix is measured over, and the routes.
 
-Four suites, each already the source of truth for its own harness; nothing is
+Six suites, each already the source of truth for its own harness; nothing is
 restated here that one of them already says.
 
     limits   `tests/limits/cases.py` -- 77 cases over 38 module fixtures, each
@@ -17,8 +17,23 @@ restated here that one of them already says.
     svcomp   `benchmarks/svcomp/dsl/` -- 57 SV-COMP termination benchmarks,
              one or two properties each, *derived* rather than written down:
              see `svcomp_rows`.
+    hybrid   `hybrid/` -- 8 sampled hybrid systems (thermostat, water tanks,
+             room heating, bouncing ball, cruise control, reactor rods): Real
+             state under discrete time, with `hybrid/cases.py` naming 26
+             safety and recurrence properties over them.
+    petri    `petri/` -- 12 place/transition nets in `petri/nets.py` plus a
+             time and a hybrid Petri net written out, 34 properties in
+             `petri/cases.py`. Firing is a step and the choice of transition
+             an input, so a safety property is one about every firing
+             sequence; the extensions (inhibitor, reset, transfer, continuous)
+             each carry a property that turns on them.
 
 A row is one question; a (row, route) pair is one `uv run verith`.
+
+The last two suites are the only ones whose `truth` is not transcribed from
+an upstream harness, so it is measured instead: `test_rows.py` steps every
+one of their modules and checks the claim (see `sim.py` for what a simulation
+can and cannot establish).
 """
 from __future__ import annotations
 
@@ -32,6 +47,28 @@ PY = SP.parent.parent                       # python/
 MODS = PY / "tests" / "limits" / "mods"
 FIXTURES = PY / "tests" / "fixtures"
 SVCOMP_ADAPTER = SP / "svcomp_mod.py"
+HYBRID = SP / "hybrid"
+PETRI = SP / "petri"
+PETRI_ADAPTER = SP / "petri_mod.py"
+
+
+def table(path: Path, symbol: str):
+    """The named table out of a fixture directory's own case file.
+
+    Loaded by path under a unique module name on purpose: four files in the
+    tree are called `cases.py`, so a `sys.path` insert followed by
+    `import cases` returns whichever suite was built first -- silently, and
+    with another suite's rows."""
+    import importlib.util                                 # noqa: PLC0415
+
+    name = f"_bench_{path.parent.name}_{path.stem}"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    # Registered before it is executed: `@dataclass` resolves its own class's
+    # `__module__` through `sys.modules`, and raises if it is not there.
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return getattr(mod, symbol)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -74,11 +111,8 @@ def _module_path(mod: str) -> Path:
 
 def limits_rows() -> list[Row]:
     """The limit matrix, collapsed onto the question an inferring route sees."""
-    sys.path.insert(0, str(PY / "tests" / "limits"))
-    from cases import CASES                                  # noqa: PLC0415
-
     problems: dict = {}
-    for c in CASES:
+    for c in table(PY / "tests" / "limits" / "cases.py", "CASES"):
         if not c.get("P"):
             continue                    # no property: nothing to infer against
         problems.setdefault((c["mod"], c["P"], c.get("pre") or ""), []).append(c)
@@ -97,14 +131,12 @@ def limits_rows() -> list[Row]:
 
 def fbk_rows() -> list[Row]:
     """The `--fbk-proveit` sweep's 39 safety properties."""
-    sys.path.insert(0, str(PY / "tests" / "lean" / "fbk"))
-    from probes import PROBES                                # noqa: PLC0415
-
     return [Row(suite="fbk", bench=mod, kind="safety", prop=prop,
                 module=_module_path(mod), prop_label=name,
                 note=f"probe expects `{expect}` of the ic3ia route",
                 truth=PROBE_TRUTH.get(expect))
-            for name, mod, prop, expect in PROBES]
+            for name, mod, prop, expect
+            in table(PY / "tests" / "lean" / "fbk" / "probes.py", "PROBES")]
 
 
 # What a probe's `expect` says about the property itself. `certified` and
@@ -233,11 +265,59 @@ def svcomp_rows() -> list[Row]:
     return out
 
 
+def hybrid_rows() -> list[Row]:
+    """The sampled hybrid systems: one module per plant, its properties data.
+
+    A plant is a program rather than a table -- every one has its own
+    dynamics -- so each is its own file, as the limit matrix's fixtures are,
+    and `hybrid/cases.py` says which properties are asked of it."""
+    return [Row(suite="hybrid", bench=c["mod"], kind=c["kind"], prop=c["P"],
+                module=HYBRID / f"{c['mod']}.py", prop_label=c["name"],
+                note=c["note"], truth=c["truth"], pre=c.get("pre", ""))
+            for c in table(HYBRID / "cases.py", "CASES")]
+
+
+def petri_pre(net) -> str:
+    """The input precondition a net's own shape fixes.
+
+    Not written in `petri/cases.py`, because it is not a choice: it is the
+    range of the transition selector, which is the net's transition count, and
+    for a continuous net also the firing amount, which is (0, 1] by
+    definition. A round-robin net has no input at all -- its scheduler is a
+    state component."""
+    n = len(net.trans)
+    if net.sched == "rr":
+        return ""
+    if net.real:
+        return f"(and (>= e0 0.0) (<= e0 {float(n)}) (> e1 0.0) (<= e1 1.0))"
+    return f"(and (>= e0 0) (<= e0 {n - 1}))"
+
+
+def petri_rows() -> list[Row]:
+    """The Petri nets. A `net=` row is data for `petri_mod.py`; a `mod=` row
+    is a file of its own, for the two nets that carry more than a marking."""
+    nets = table(PETRI / "nets.py", "NETS")
+    out = []
+    for c in table(PETRI / "cases.py", "CASES"):
+        common = dict(suite="petri", kind=c["kind"], prop=c["P"],
+                      prop_label=c["name"], note=c["note"], truth=c["truth"])
+        if "net" in c:
+            out.append(Row(bench=c["net"], module=PETRI_ADAPTER,
+                           env={"PETRI_NET": c["net"]},
+                           pre=petri_pre(nets[c["net"]]), **common))
+        else:
+            out.append(Row(bench=c["mod"], module=PETRI / f"{c['mod']}.py",
+                           pre=c.get("pre", ""), **common))
+    return out
+
+
 SUITES = {
     "limits": limits_rows,
     "fbk": fbk_rows,
     "tests": tests_rows,
     "svcomp": svcomp_rows,
+    "hybrid": hybrid_rows,
+    "petri": petri_rows,
 }
 
 
