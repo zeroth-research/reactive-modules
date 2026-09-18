@@ -861,18 +861,37 @@ def _reason(row: Op, cell) -> str:
     return f"the matrix form serves it ({cell.note})"
 
 
+def gap_of(row: Op) -> "str | None":
+    """Why no Lean column can write this row's operator, or None if one can.
+
+    Asked of all three Lean columns, not of `mat` alone. No row in the table
+    has an unsupported matrix form and an emitter in another Lean column --
+    but that is a fact about today's rows, and a check that refuses a
+    *module* on the strength of it would start refusing modules that build
+    the day someone adds the first such row. It is one `isinstance` to not
+    depend on it.
+
+    Per column: `Unsupported` cannot write, and neither can `ViaMat`, which
+    says the matrix form serves it -- and the matrix form is the gap.
+    `Inline` can: it is the table saying the emitter lives beside it, in a
+    branch that is reached before the table is asked.
+    """
+    if not isinstance(row.mat, Unsupported):
+        return None
+    if any(not isinstance(cell, (Unsupported, ViaMat))
+           for cell in (row.scalar, row.box)):
+        return None
+    return _reason(row, row.mat)
+
+
 def lean_gap(itype) -> "str | None":
-    """Why no Lean column can write this operator, or None if one can.
+    """:func:`gap_of` for an operator, looked up by theory and variant.
 
     What :func:`mat_emitter` would raise with, as a value: a caller checking
     a whole module before generating any of it should not have to provoke an
-    exception per term. `Inline` is not a gap -- it is the table saying the
-    emitter lives beside it -- and neither is `ViaMat`, so only `Unsupported`
-    answers here. Nothing has an unsupported matrix form and an emitter in
-    another Lean column, so this is the whole question for all three.
+    exception per term.
     """
-    row = op_for(itype)
-    return _reason(row, row.mat) if isinstance(row.mat, Unsupported) else None
+    return gap_of(op_for(itype))
 
 
 def _lean_emitter(itype, row: Op, cell, column: str):

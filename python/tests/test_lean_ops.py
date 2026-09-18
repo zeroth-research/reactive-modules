@@ -324,6 +324,34 @@ def test_an_unreachable_term_is_not_a_gap():
     assert lean_gaps(LeanContext(Module.sequential([x], init, update))) == []
 
 
+def _cells(mat, scalar, box) -> ops.Op:
+    """A row of the shape under test. No theory claims it, so nothing can
+    reach it through `itype_name`; `gap_of` is asked about it directly."""
+    return ops.Op("Fake", (), mat=mat, scalar=scalar, box=box,
+                  smt=ops.Unsupported("not the question here"))
+
+
+def test_a_gap_is_asked_of_every_lean_column_not_only_the_matrix_one():
+    """Today every row with no matrix form has no other Lean form either, so
+    reading `mat` alone gets the right answer for all 24 of them. That is a
+    fact about the table's contents, and this check refuses a *module* on
+    the strength of it -- so the day a row has a `Box` and no matrix form,
+    reading `mat` alone would refuse a module the circuit encoding builds.
+    """
+    unsupported = ops.Unsupported("no matrix form")
+    see_mat = ops.Unsupported("see the matrix column")
+
+    assert ops.gap_of(_cells(unsupported, see_mat, see_mat)) == "no matrix form"
+    assert ops.gap_of(_cells(unsupported, see_mat, "Box.fake")) is None
+    assert ops.gap_of(_cells(unsupported, lambda a: a[0], see_mat)) is None
+    # `ViaMat` is served by the matrix form, which is the gap -- so it is
+    # not an escape from one, unlike `Inline`, whose branch is reached
+    # before the table is asked at all.
+    assert ops.gap_of(_cells(unsupported, ops.ViaMat("folds to 1x1"), see_mat)) \
+        == "no matrix form"
+    assert ops.gap_of(_cells(unsupported, ops.Inline("native._special"), see_mat)) is None
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  Dispatch: the cases the six tables got wrong
 # ══════════════════════════════════════════════════════════════════════
