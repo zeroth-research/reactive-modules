@@ -441,3 +441,30 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
 20. **`truth` is `None` for all 30 limits/buchi and all 57 svcomp/buchi rows**
     -- 40% of the page, where the matrix can only say a route answered, not
     that it answered correctly.
+
+    **Do not fill these in with `sim.observe`.** Measured over all 87: it
+    reports `fails` on five, and four of those five -- `m_countdown/
+    Countdown`, `m_lex/RankLex`, `m_deep/Deep64`, `svcomp/genady/terminates`
+    -- are `VERIFIED` by four or five routes each, with Lean proofs. The
+    rule is why: a buchi row is refuted when the property recurs fewer than
+    `TAIL` = 4 times in the last quarter of a `STEPS` = 200 tick run, so it
+    assumes a recurrence period of about twelve ticks or less. That is the
+    hybrid and petri family it was written for; `m_countdown` counts 100
+    down to 0 and resets, period 101, and hits its property at most once in
+    a 50-tick tail. **On this family it is a false-refutation machine**, and
+    `test_rows.py`'s own warning applies to it -- a wrong `truth` turns every
+    honest `REFUTED` into what looks like a route bug.
+
+    A further 12 of the 87 error rather than answer, and they are 8's cells
+    plus three more: the simulator carries the same scalar assumption
+    (`sim: Int([3,1]) is not a 1x1 component`, `Bv1([1,1])`), `m_max`,
+    `m_min` and `m_argmax` raise a matmul shape error, and `m_uninterp`
+    cannot be evaluated at all.
+
+    So this needs either a period-aware refutation rule -- which would have
+    to be re-checked against the 4 hybrid/petri buchi rows currently
+    declared `fails`, since it can only loosen them -- or truth transcribed
+    from somewhere upstream, which for the svcomp rows means the task
+    definitions the benchmarks were converted from. The one row that looks
+    genuinely `fails` is `limits/m_relu_input/ReluInputNoPre`: `NO-CERT` on
+    all seven routes, and it is the variant with the precondition removed.
