@@ -718,13 +718,25 @@ this route proposes nothing. It states the obligations with the certificate
 quantified — and asks Vampire for the coefficients:
 
 ```
-tff(cert, conjecture, ?[A0:$int,B0:$int]: ( ... )).
-% SZS answers Tuple [([0,100]|[0,100])|_] for cert
+(assert-not (exists ((A0 Int) (B0 Int)) (and ... )))
+% SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert
 ```
 
-which is `0 <= s0 <= 100`, derived rather than checked. That is Vampire's
-*answer literal* mechanism (`--question_answering plain`): it refutes the
-negation of the conjecture and reports the substitution the refutation used.
+which carries `0 <= s0 <= 100`, derived rather than checked. That is
+Vampire's *answer literal* mechanism (`--question_answering plain`): it
+refutes the negation of the conjecture and reports the substitutions the
+refutation used. Those alternatives are a **disjunctive** answer — one of
+them is a witness, not each of them, because a split refutation closes each
+branch under its own hypothesis — so every one is tried against the
+obligations and the one they accept is the certificate. Here the first,
+`1 <= s0 <= 100`, is not preserved: `s0 = 1` steps to `0`.
+
+The question is not printed by this route. The obligations are cvc5 terms —
+the module's own encoding, the same terms `--infer houdini` proves — so the
+conjecture is *built* as one cvc5 term, holes and quantifiers and all, and
+cvc5 prints it as SMT-LIB. `assert-not` is what marks the formula that
+`--question_answering` attaches answer literals to; an ordinary negated
+assertion is refuted without an answer.
 
 The templates are tried smallest first — `A_i <= s_i <= B_i` per component,
 then the same plus `C_ij <= s_i - s_j <= D_ij` for each pair. Under
@@ -738,7 +750,7 @@ than a second search, stated as `rank(s) > 0` where the property fails and
 Two restrictions, both measured on `m_countdown`, and the first decides the
 shape of the whole route.
 
-**No `$ite`, anywhere.** Stated with the transition as one conditional, the
+**No `ite`, anywhere.** Stated with the transition as one conditional, the
 step obligation does not come back inside 40 s; split into its two guarded
 branches it is answered in under a second. So the transition is
 *branch-split* before it is printed: every `ite` condition the update and
@@ -754,6 +766,20 @@ limit on this route's own question where the default mode answers at once. A
 portfolio strategy is tuned to find a refutation; what is wanted here is the
 *substitution* a refutation carries.
 
+**Both namings, and the whole budget declared to each.** Vampire introduces
+a Tseitin definition for each subformula it judges worth naming, and on a
+conjecture with holes that is decisive in *both* directions: over
+`tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
+`--naming 0` does not, `--naming 0` answers `m_relu` where naming does not,
+and they agree on `m_countdown`, `m_deep` and `m_min`. So both are asked,
+each on a share of what is left of the run.
+
+And `--time_limit` is a *scheduling* input before it is a cap — Vampire
+slices it between strategies, so a small one runs a different search rather
+than the same one cut short. `m_max`'s question reaches the limit at
+`--time_limit 20` and answers after 2.5 s at 25. So every call declares the
+run's whole budget and the wall clock is what actually bounds it.
+
 #### The reach
 
 Small, and worth knowing before reaching for it. Vampire's answer-literal
@@ -766,10 +792,11 @@ lrs`, `--theory_instantiation all`, `--unification_with_abstraction
 one_side_interpreted` — and none moved either.
 
 So in practice this route derives a safety invariant for a **one-component
-Int** module, and refuses past that pointing at `--infer houdini`, which
-searches a wider module by proposing facts and proving them. It reads scalar
-`Int` state only: TPTP has `$real` and Vampire reads it, but the templates
-here are integer intervals and integer coefficients.
+Int** module — six of the fourteen `tests/limits` safety and Büchi pairs —
+and refuses past that pointing at `--infer houdini`, which searches a wider
+module by proposing facts and proving them. It reads scalar `Int` state
+only: Vampire reads reals, but the templates here are integer intervals and
+integer coefficients.
 
 #### What comes back is checked
 
@@ -784,7 +811,8 @@ nothing is proposed; it is the one check that the derivation is honest.
 uv run verith tests/limits/mods/m_countdown.py --safety "(<= s0 100)" \
     --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
 # [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
-# [vampire] template intervals: 2 holes, 401 chars
+# [vampire] template intervals: 2 holes, 409 chars
+# [vampire] answered with naming
 # [vampire] Vampire answered A0=0, B0=100
 # [vampire] inv: (and (<= 0 s0) (<= s0 100))
 ```

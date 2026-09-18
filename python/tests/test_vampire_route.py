@@ -6,9 +6,10 @@ Three layers, and only the last needs the prover.
 pure term rewriting: the conditions an `ite` tests, the cases they generate,
 and the guard that stands in for each. It runs everywhere.
 
-**The TPTP printer** is the other half of the same thing -- what a cvc5 term
-looks like as a conjecture with holes in it, and what it refuses to print
-rather than ask Vampire a question it cannot read. Also everywhere.
+**The question** is the other half of the same thing -- a cvc5 term with
+holes in it, printed by cvc5 as SMT-LIB, and the two things it refuses to
+state rather than ask Vampire something it reads and never answers. Also
+everywhere.
 
 **The derivations** need the binary and are skipped without one (`$VAMPIRE`,
 or `vampire` on PATH). They are the route's whole claim: the coefficients
@@ -110,8 +111,10 @@ def test_the_initial_state_is_split_apart_from_the_round():
     from zrth.lean.magic.vampire import templates
 
     script = q.conjecture(templates(ctx, ranked=False)[0], ctx.prp, safety=True)
-    entry = script[script.index("(") : script.index("![")]
-    assert "S0" not in entry
+    # The entry obligation is the one conjunct with no `forall` over it, and
+    # it mentions no state variable.
+    entry = script[script.index("(and ") : script.index("(forall")]
+    assert "s0" not in entry
 
 
 def test_a_transition_with_too_many_conditions_is_refused_by_name():
@@ -135,61 +138,40 @@ def test_a_transition_with_too_many_conditions_is_refused_by_name():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# TPTP
+# The question cvc5 prints
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def test_a_term_prints_as_tptp_over_the_names_it_was_given():
+def test_an_ite_that_survived_the_split_is_refused_rather_than_stated():
+    """The one thing this route cannot state. SMT-LIB has `ite` and Vampire
+    reads it, so stating it anyway is a question that comes back as a
+    timeout rather than as the unsupported shape it is."""
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic.vampire import Tptp
-
-    tm = cvc5.TermManager()
-    x = tm.mkConst(tm.getIntegerSort(), "v_s0")
-    y = tm.mkConst(tm.getIntegerSort(), "v_s1")
-    p = Tptp({"v_s0": "S0", "v_s1": "S1"})
-
-    assert p(tm.mkTerm(Kind.ADD, x, y)) == "$sum(S0,S1)"
-    assert p(tm.mkTerm(Kind.SUB, x, y)) == "$difference(S0,S1)"
-    assert p(tm.mkTerm(Kind.LEQ, x, y)) == "$lesseq(S0,S1)"
-    assert p(tm.mkTerm(Kind.EQUAL, x, y)) == "(S0 = S1)"
-    assert p(tm.mkInteger(-3)) == "$uminus(3)"
-    assert p(tm.mkTerm(Kind.NOT, tm.mkTerm(Kind.GT, x, tm.mkInteger(0)))) == (
-        "~($greater(S0,0))")
-    # n-ary in cvc5, binary in TPTP.
-    assert p(tm.mkTerm(Kind.ADD, x, y, tm.mkInteger(1))) == (
-        "$sum($sum(S0,S1),1)")
-
-
-def test_an_ite_that_survived_the_split_is_refused_rather_than_printed():
-    """The one thing this route cannot state. Printing it anyway would be a
-    question Vampire reads and never answers, which reads as a timeout
-    rather than as the unsupported shape it is."""
-    import cvc5
-    from cvc5 import Kind
-
-    from zrth.lean.magic.vampire import Tptp
+    from zrth.lean.magic.vampire import refuse_ites
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getIntegerSort(), "v_s0")
     ite = tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.GT, x, tm.mkInteger(0)),
                     x, tm.mkInteger(0))
     with pytest.raises(Refused, match="still holds an `ite`"):
-        Tptp({"v_s0": "S0"})(ite)
+        refuse_ites(tm.mkTerm(Kind.LEQ, ite, tm.mkInteger(3)))
+    refuse_ites(tm.mkTerm(Kind.LEQ, x, tm.mkInteger(3)))    # no ite, no news
 
 
-def test_a_symbol_with_no_variable_is_refused_rather_than_invented():
-    """A constant this route did not put there would be printed as a fresh
-    TPTP symbol and quantified over, which silently changes the question."""
+def test_a_constant_no_quantifier_binds_is_refused_rather_than_printed():
+    """cvc5 prints a stray constant perfectly happily, and then the question
+    is over a free symbol nothing declared -- which is a different question
+    from the one the module means. The old TPTP printer refused it for free
+    by having no variable for it; this says it by name."""
+    ctx, ob, q = parts("m_countdown", "safety", "(<= s0 100)")
     import cvc5
 
-    from zrth.lean.magic.vampire import Tptp
-
-    tm = cvc5.TermManager()
-    stray = tm.mkConst(tm.getIntegerSort(), "elsewhere")
-    with pytest.raises(Refused, match="no TPTP variable for it"):
-        Tptp({})(stray)
+    stray = ctx.tm.mkConst(ctx.tm.getIntegerSort(), "elsewhere")
+    body = ctx.tm.mkTerm(cvc5.Kind.LEQ, stray, ctx.tm.mkInteger(0))
+    with pytest.raises(Refused, match="nothing there binds"):
+        q._forall(q.state, body)
 
 
 def test_the_conjecture_states_every_obligation_under_one_existential():
@@ -199,11 +181,13 @@ def test_the_conjecture_states_every_obligation_under_one_existential():
     tpl = templates(ctx, ranked=False)[0]
     script = q.conjecture(tpl, ctx.prp, safety=True)
 
-    assert script.startswith("tff(cert, conjecture, ?[A0:$int,B0:$int]:")
-    assert script.rstrip().endswith(").")
-    assert "$ite" not in script
-    # One entry obligation, one step per branch, one for the property.
-    assert script.count("![S0:$int]") == 3
+    assert script.startswith("(set-logic ALL)\n(assert-not "
+                             "(exists ((A0 Int) (B0 Int)) ")
+    assert script.rstrip().endswith("(check-sat)")
+    assert "ite" not in script
+    # One entry obligation, one step per branch, one for the property; the
+    # entry one is over the inputs, which `m_countdown` has none of.
+    assert script.count("(forall ((s0 Int))") == 3
 
 
 def test_a_buchi_conjecture_asks_for_the_ranking_in_the_same_question():
@@ -215,8 +199,18 @@ def test_a_buchi_conjecture_asks_for_the_ranking_in_the_same_question():
     script = q.conjecture(tpl, ctx.prp, safety=False)
     # `rank > 0` where the property fails and `rank' < rank`: ite-free, and
     # it implies the clamped `Int.toNat` form `rule_buchi` asks for.
-    assert "$greater($sum(Rc,$product(R0,S0)),0)" in script
-    assert "$less(" in script
+    assert "(+ Rc (* R0 s0))" in script
+    assert "(> " in script and "(< " in script
+
+
+def test_a_template_row_is_one_body_read_two_ways():
+    """A row is needed as a cvc5 term in the question and as SMT-LIB in the
+    certificate, so it holds which components it reads rather than text one
+    side prints and the other parses back."""
+    from zrth.lean.magic.vampire import Row
+
+    assert Row("A0", "B0", (0,)).smt == "s0"
+    assert Row("C0_1", "D0_1", (0, 1)).smt == "(- s0 s1)"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -275,21 +269,46 @@ def test_no_answer_at_all_is_no_certificate():
         "% Termination reason: Time limit", 2, 0.0) is None
 
 
+def test_both_namings_are_asked_and_each_is_told_the_whole_budget(tmp_path):
+    """Two things at once, because they are the same decision.
+
+    Vampire slices `--time_limit` between its strategies, so a small one
+    runs a *different* search rather than the same one cut short --
+    `m_max`'s question reaches the limit at `--time_limit 20` and answers
+    after 2.5 s at 25. So the limit it is told is the run's whole budget and
+    the wall clock is what actually bounds a call. And naming is asked both
+    ways, because neither setting answers what the other does.
+    """
+    from zrth.lean.magic.vampire import Answers
+
+    fake, log = tmp_path / "vampire", tmp_path / "argv"
+    fake.write_text(f'#!/bin/sh\necho "$@" >> {log}\n')
+    fake.chmod(0o755)
+
+    asked = Answers(str(fake), seconds=30, log=lambda *_: None)
+    assert asked.ask("(check-sat)\n", 2) is None
+
+    lines = log.read_text().splitlines()
+    assert len(lines) == 2
+    assert "--naming 0" not in lines[0] and "--naming 0" in lines[1]
+    assert all("--time_limit 30" in ln for ln in lines)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # What the module has to be
 # ══════════════════════════════════════════════════════════════════════════
 
 
 def test_a_real_component_is_refused_by_name():
-    """TPTP has `$real` and Vampire reads it, but the templates here are
-    integer intervals and integer coefficients -- so this route takes the
-    same gate `--infer smt-linear` does, before anything is printed."""
+    """Vampire reads reals, but the templates here are integer intervals
+    and integer coefficients -- so this route takes the same gate `--infer
+    smt-linear` does, before anything is stated."""
     with pytest.raises(Refused, match="s0 is Real"):
         derive("m_lra_lin", "buchi", "(= s0 0.0)", vampire="/nowhere")
 
 
 def test_a_bitvector_state_is_refused_by_name():
-    with pytest.raises(Refused, match="integers and no bitvectors"):
+    with pytest.raises(Refused, match="states its obligations over integers"):
         derive("twobit", "buchi", "(and (= s0 (_ bv0 1)) (= s1 (_ bv0 1)))",
                fixture=FIXTURES, vampire="/nowhere")
 

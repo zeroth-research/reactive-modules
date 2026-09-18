@@ -24,28 +24,53 @@ What the obligations have to look like
 Three restrictions, and the first is the one that decides the shape of this
 whole module.
 
-**No ``$ite``, anywhere.**  Vampire's answer-literal search is superposition
+**No ``ite``, anywhere.**  Vampire's answer-literal search is superposition
 plus theory reasoning, and a conditional in the goal defeats it -- measured:
 `m_countdown`'s own step obligation, stated with the transition as one
-``$ite``, does not come back inside 40 s, and the same obligation split into
+``ite``, does not come back inside 40 s, and the same obligation split into
 its two guarded branches is answered in under one.  So the transition is
 *branch-split* before it is printed: every ``ite`` condition the update and
 the init terms mention becomes a case, cvc5's rewriter folds the
 conditionals away under each assignment of them, and each case is one more
 implication with its guard as a hypothesis.  A term that still holds an
 ``ite`` after that -- a condition over something the split did not reach --
-is refused by name rather than printed into a question Vampire cannot
-answer.
+is refused by name rather than printed into a question Vampire reads
+perfectly well and never answers.
 
 **No uninterpreted function for the round.**  Same measurement: defining
 ``nxt(S)`` by an axiom and asking about ``nxt`` is a time limit where
 inlining the same arithmetic is an answer.  So the successor state is
 substituted into the obligation, once per branch.
 
-**Integer state.**  TPTP has ``$real`` and Vampire reads it, but the
-templates below are integer intervals and integer coefficients, and a Real
-component would need the value-set shape that `--infer houdini` carries.
-Refused by name.
+**Integer state.**  Vampire reads reals, but the templates below are integer
+intervals and integer coefficients, and a Real component would need the
+value-set shape that `--infer houdini` carries.  Refused by name.
+
+cvc5 writes the question
+========================
+The obligations are cvc5 terms -- the module's own encoding, the same terms
+`--infer houdini` proves -- so the conjecture is *built* as one cvc5 term,
+holes and quantifiers and all, and cvc5 prints it as SMT-LIB.  There is no
+printer in this module on purpose: one was here, in TPTP, and every kind it
+did not know was a way to state something other than what was encoded (a
+bitvector reached it once and crashed it).  What is left is the two
+refusals a printer gave for free -- an ``ite`` that survived the split, and
+a constant no quantifier binds -- said by name, and `assert-not`, which is
+how SMT-LIB marks the formula that ``--question_answering`` attaches answer
+literals to.
+
+Naming is asked both ways
+=========================
+Vampire introduces a Tseitin definition for each subformula it judges worth
+naming, and on a conjecture with holes that is decisive in *both*
+directions.  Measured over `tests/limits`, 30 s each: naming answers
+`m_max` and `m_toward5` where ``--naming 0`` does not; ``--naming 0``
+answers `m_relu` where naming does not; they agree on `m_countdown`,
+`m_deep` and `m_min`.  Neither setting is the right one, so both are asked
+and the union is what this route reaches -- six of eleven, where either
+alone reaches five or four.  Every answer measured came back inside four
+seconds and every miss ran to the limit, which is why the short rung comes
+first and why asking twice costs so little.
 
 The templates, smallest first
 =============================
@@ -196,105 +221,63 @@ def split(ctx: SynthContext, terms, what: str) -> list[Branch]:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# TPTP
+# SMT-LIB: cvc5 prints the question it built
 # ══════════════════════════════════════════════════════════════════════════
 
-_BINARY = {
-    Kind.ADD: "$sum", Kind.SUB: "$difference", Kind.MULT: "$product",
-    Kind.INTS_DIVISION: "$quotient_e", Kind.INTS_MODULUS: "$remainder_e",
-}
-_RELATION = {
-    Kind.LT: "$less", Kind.LEQ: "$lesseq",
-    Kind.GT: "$greater", Kind.GEQ: "$greatereq",
-}
-_CONNECTIVE = {Kind.AND: " & ", Kind.OR: " | ", Kind.IMPLIES: " => ",
-               Kind.XOR: " <~> "}
+_PRELUDE = "(set-logic ALL)\n"
+# Not `(assert (not ...))`: `assert-not` is what marks a formula as *the*
+# conjecture, which is what `--question_answering` attaches answer literals
+# to. An ordinary negated assertion is refuted without an answer.
+_CONJECTURE = "(assert-not {})\n(check-sat)\n"
 
 
-class Tptp:
-    """A printer from cvc5 terms to TPTP, over one naming of the constants.
+def script_for(conjecture) -> str:
+    """One cvc5 term as a whole SMT-LIB problem for Vampire.
 
-    `names` maps a constant's printed form to the TPTP variable standing for
-    it -- the state `S0..`, the inputs `E0..`, and the template's holes,
-    which are variables of the conjecture's existential rather than symbols
-    of the problem. Anything not in it is a constant this route did not put
-    there, and is refused rather than printed as a fresh symbol Vampire
-    would happily quantify over.
+    The term *is* the question, so cvc5 prints it and this adds the two
+    lines around it. There is no printer here on purpose: the obligations
+    are cvc5 terms the module's own encoding produced, and every printer
+    between them and the prover is a chance to state something other than
+    what was encoded.
     """
+    return _PRELUDE + _CONJECTURE.format(conjecture)
 
-    def __init__(self, names: dict):
-        self.names = names
 
-    def __call__(self, t) -> str:
-        k = t.getKind()
-        kids = list(t)
-        if k == Kind.CONSTANT:
-            name = self.names.get(str(t))
-            if name is None:
-                raise Refused(
-                    f"--infer vampire met the symbol `{t}` in an obligation "
-                    f"and has no TPTP variable for it"
-                )
-            return name
-        if k == Kind.CONST_INTEGER:
-            return _numeral(t.getIntegerValue())
-        if k == Kind.CONST_BOOLEAN:
-            return "$true" if t.getBooleanValue() else "$false"
-        if k == Kind.ITE:
-            raise Refused(
-                "--infer vampire cannot state an obligation that still holds "
-                "an `ite` after the transition was branch-split: Vampire's "
-                "answer-literal search does not see through a conditional. "
-                "`--infer houdini` proves the same obligation with one."
-            )
-        if k == Kind.NEG:
-            return f"$uminus({self(kids[0])})"
-        if k == Kind.NOT:
-            return f"~({self(kids[0])})"
-        if k in _BINARY:
-            return self._fold(_BINARY[k], kids)
-        if k in _RELATION:
-            return self._chain(_RELATION[k], kids)
-        if k in _CONNECTIVE:
-            return "(" + _CONNECTIVE[k].join(self(c) for c in kids) + ")"
-        if k == Kind.EQUAL:
-            op = " <=> " if kids[0].getSort().isBoolean() else " = "
-            return self._chain_infix(op, kids)
-        if k == Kind.DISTINCT:
-            return self._chain_infix(" != ", kids)
+def refuse_ites(term) -> None:
+    """An `ite` the split did not reach is refused rather than printed.
+
+    It would print perfectly well -- SMT-LIB has `ite` and Vampire reads it
+    -- and then never be answered, which reaches the user as a timeout
+    rather than as the unsupported shape it is. Asked of the whole assembled
+    question, so a conditional in the property or in a precondition is met
+    here too and not only one the branch split left behind.
+    """
+    if ite_conditions([term]):
         raise Refused(
-            f"--infer vampire has no TPTP for `{t.getKind()}` (in `{t}`). "
-            f"`--infer houdini` states obligations in SMT-LIB, which cvc5 "
-            f"and Vampire both read whole."
+            "--infer vampire cannot state an obligation that still holds "
+            "an `ite` after the transition was branch-split: Vampire's "
+            "answer-literal search does not see through a conditional. "
+            "`--infer houdini` proves the same obligation with one."
         )
 
-    def _fold(self, op: str, kids) -> str:
-        """`$sum` and friends are binary in TPTP; cvc5's are n-ary."""
-        out = self(kids[0])
-        for c in kids[1:]:
-            out = f"{op}({out},{self(c)})"
-        return out
 
-    def _chain(self, op: str, kids) -> str:
-        parts = [f"{op}({self(a)},{self(b)})"
-                 for a, b in zip(kids, kids[1:])]
-        return parts[0] if len(parts) == 1 else "(" + " & ".join(parts) + ")"
+def free_constants(term) -> list:
+    """Every uninterpreted constant `term` still mentions, outermost first.
 
-    def _chain_infix(self, op: str, kids) -> str:
-        parts = [f"({self(a)}{op}{self(b)})" for a, b in zip(kids, kids[1:])]
-        return parts[0] if len(parts) == 1 else "(" + " & ".join(parts) + ")"
+    What the old TPTP printer refused for free by having no variable for a
+    symbol: cvc5 prints a stray constant perfectly happily, and Vampire
+    reads an undeclared one as an error three steps later.
+    """
+    seen: dict = {}
 
+    def walk(t):
+        if t.getKind() == Kind.CONSTANT:
+            seen.setdefault(str(t), t)
+        for child in t:
+            walk(child)
 
-def _numeral(v) -> str:
-    """TPTP writes a negative integer as `$uminus` of a positive one."""
-    return f"$uminus({-int(v)})" if v < 0 else str(int(v))
-
-
-def _all(parts) -> str:
-    kept = [p for p in parts if p != "$true"]
-    if not kept:
-        return "$true"
-    return kept[0] if len(kept) == 1 else "(" + " & ".join(kept) + ")"
+    walk(term)
+    return list(seen.values())
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -303,20 +286,47 @@ def _all(parts) -> str:
 
 
 @dataclass(frozen=True)
+class Row:
+    """One `lo <= body <= hi` of a template, with `lo` and `hi` still holes.
+
+    `at` is which components the body reads: one index is the component
+    itself, two is their difference. It is kept as indices rather than as
+    text because the row is needed twice over -- as a cvc5 term in the
+    question, and as SMT-LIB in the certificate -- and a body that is
+    printed one way and parsed back the other is a way for those two to
+    disagree without anything saying so.
+    """
+
+    lo: str
+    hi: str
+    at: tuple[int, ...]
+
+    def term(self, tm, state: list):
+        """The body over `state`, which is one term per component."""
+        if len(self.at) == 1:
+            return state[self.at[0]]
+        i, j = self.at
+        return tm.mkTerm(Kind.SUB, state[i], state[j])
+
+    @property
+    def smt(self) -> str:
+        """The body as the certificate carries it."""
+        if len(self.at) == 1:
+            return f"s{self.at[0]}"
+        return f"(- s{self.at[0]} s{self.at[1]})"
+
+
+@dataclass(frozen=True)
 class Template:
     """The certificate with its coefficients left open.
 
-    `holes` are the TPTP variables of the conjecture's existential, in the
-    order Vampire reports them, which is how an answer tuple is read back.
-    `rows` say how to rebuild the invariant from them: each is a term
-    printer over the answer, in SMT-LIB, because SMT-LIB is what the
-    certificate carries.
+    `holes` are the variables of the conjecture's existential, in the order
+    Vampire reports them, which is how an answer tuple is read back.
     """
 
     name: str
     holes: tuple[str, ...]
-    # `(hole_lo, hole_hi, smt_body)` -- `lo <= body <= hi`.
-    rows: tuple[tuple[str, str, str], ...]
+    rows: tuple[Row, ...]
     rank: tuple[str, ...] = ()      # rank coefficient holes, then the constant
 
     @property
@@ -330,12 +340,12 @@ def template(ctx: SynthContext, which: str, *, ranked: bool) -> Template:
     rows, holes = [], []
     for i in range(width):
         lo, hi = f"A{i}", f"B{i}"
-        rows.append((lo, hi, f"s{i}"))
+        rows.append(Row(lo, hi, (i,)))
         holes += [lo, hi]
     if which == "differences":
         for i, j in combinations(range(width), 2):
             lo, hi = f"C{i}_{j}", f"D{i}_{j}"
-            rows.append((lo, hi, f"(- s{i} s{j})"))
+            rows.append(Row(lo, hi, (i, j)))
             holes += [lo, hi]
     rank = tuple([f"R{i}" for i in range(width)] + ["Rc"]) if ranked else ()
     return Template(which, tuple(holes), tuple(rows), rank)
@@ -355,101 +365,149 @@ def templates(ctx: SynthContext, *, ranked: bool) -> list[Template]:
 
 
 class Question:
-    """One module's obligations as a TPTP conjecture with holes in it."""
+    """One module's obligations as one cvc5 term with holes in it.
+
+    The obligations are built over the constants `Obligations` already made
+    -- `v_s0`, `v_el0`, `v_en0` -- and turned into bound variables only on
+    the way out, by `_forall`. That way every term here is a term of the
+    module's own encoding right up to the point where it is quantified, and
+    the question Vampire reads is cvc5's printing of it.
+    """
 
     def __init__(self, ctx: SynthContext, ob: Obligations,
                  entry: list[Branch], step: list[Branch]):
-        self.ctx, self.ob = ctx, ob
+        self.ctx, self.ob, self.tm = ctx, ob, ctx.tm
         self.entry, self.step = entry, step
-        self.state = [f"S{i}" for i in range(len(ctx.state))]
-        self.inputs = [f"E{i}" for i in range(len(ob.el) + len(ob.en))]
-        names = {str(c): n for c, n in zip(ob.s, self.state)}
-        names.update({str(c): n for c, n in
-                      zip(list(ob.el) + list(ob.en), self.inputs)})
-        self.names = names
-        self.p = Tptp(names)
+        ints = ctx.tm.getIntegerSort()
+        # One bound variable per constant. The names reach Vampire through
+        # cvc5's printer, so they have to be distinct: two `mkVar`s of one
+        # name print alike and mean different things.
+        self.consts = list(ob.s) + list(ob.el) + list(ob.en)
+        self.state = [ctx.tm.mkVar(ints, f"s{i}") for i in range(len(ob.s))]
+        self.inputs = [ctx.tm.mkVar(c.getSort(), f"e{i}")
+                       for i, c in enumerate(list(ob.el) + list(ob.en))]
+        self.vars = self.state + self.inputs
+        self.holes: dict = {}
 
-    # --- the template, as TPTP over a state ------------------------------
+    # --- the template, as a term over a state ----------------------------
 
-    def _rows(self, tpl: Template, at: list[str]) -> str:
-        """`tpl` read at `at`, which is a TPTP term per component."""
+    def _hole(self, name: str):
+        """The variable standing for one coefficient, made once per name."""
+        if name not in self.holes:
+            self.holes[name] = self.tm.mkVar(self.tm.getIntegerSort(), name)
+        return self.holes[name]
+
+    def _rows(self, tpl: Template, at: list):
+        """`tpl` read at `at`, which is one term per component."""
         out = []
-        for lo, hi, body in tpl.rows:
-            term = self._body(body, at)
-            out += [f"$lesseq({lo},{term})", f"$lesseq({term},{hi})"]
-        return _all(out)
+        for row in tpl.rows:
+            body = row.term(self.tm, at)
+            out += [self.tm.mkTerm(Kind.LEQ, self._hole(row.lo), body),
+                    self.tm.mkTerm(Kind.LEQ, body, self._hole(row.hi))]
+        return self._and(out)
 
-    def _rank(self, tpl: Template, at: list[str]) -> str:
-        parts = [f"$product({c},{v})" for c, v in zip(tpl.rank, at)]
-        out = tpl.rank[-1]
-        for p in parts:
-            out = f"$sum({out},{p})"
+    def _rank(self, tpl: Template, at: list):
+        """`Rc + R0*s0 + ... `, the rank with its coefficients left open."""
+        out = self._hole(tpl.rank[-1])
+        for c, v in zip(tpl.rank, at):
+            out = self.tm.mkTerm(Kind.ADD, out,
+                                 self.tm.mkTerm(Kind.MULT, self._hole(c), v))
         return out
 
-    @staticmethod
-    def _body(body: str, at: list[str]) -> str:
-        """A template row's SMT body, as TPTP over `at`.
-
-        The bodies are this module's own two shapes, so they are built here
-        rather than parsed: a component, or a difference of two.
-        """
-        if body.startswith("(- "):
-            i, j = (int(x[1:]) for x in body[3:-1].split())
-            return f"$difference({at[i]},{at[j]})"
-        return at[int(body[1:])]
+    def _and(self, parts):
+        kept = [p for p in parts
+                if not (p.getKind() == Kind.CONST_BOOLEAN
+                        and p.getBooleanValue())]
+        if not kept:
+            return self.tm.mkBoolean(True)
+        return kept[0] if len(kept) == 1 else self.tm.mkTerm(Kind.AND, *kept)
 
     # --- the obligations --------------------------------------------------
 
     def conjecture(self, tpl: Template, prp, *, safety: bool) -> str:
-        p, ob = self.p, self.ob
+        """Every obligation under one existential, as an SMT-LIB problem."""
+        return script_for(self.term(tpl, prp, safety=safety))
+
+    def term(self, tpl: Template, prp, *, safety: bool):
+        tm, ob = self.tm, self.ob
         obligations = []
         # init_inv. The initial state is a function of the inputs alone, so
         # this is quantified over the inputs and split on its own
         # conditions -- a guard from the round would leave a latched-state
         # variable here that nothing binds.
         for br in self.entry:
-            hyp = _all([p(ob.init_pre)] + [p(g) for g in br.guard])
+            hyp = self._and([ob.init_pre, *br.guard])
             obligations.append(self._forall(
                 self.inputs,
-                f"({hyp} => {self._rows(tpl, [p(t) for t in br.state])})"))
+                self._implies(hyp, self._rows(tpl, list(br.state)))))
         for br in self.step:
-            guard = _all([p(g) for g in br.guard])
-            here = self._rows(tpl, self.state)
-            nxt = [p(t) for t in br.state]
-            hyp = _all([here, p(ob.update_pre), guard])
+            here = self._rows(tpl, list(ob.s))
+            hyp = self._and([here, ob.update_pre, *br.guard])
             obligations.append(self._forall(
-                self.state + self.inputs,
-                f"({hyp} => {self._rows(tpl, nxt)})"))
+                self.vars,
+                self._implies(hyp, self._rows(tpl, list(br.state)))))
             if not safety:
                 # hrank, ite-free: positive where the property fails, and
                 # smaller after the round. Implies the `Int.toNat` form.
-                drops = _all([
-                    f"$greater({self._rank(tpl, self.state)},0)",
-                    f"$less({self._rank(tpl, nxt)},"
-                    f"{self._rank(tpl, self.state)})",
+                now = self._rank(tpl, list(ob.s))
+                drops = self._and([
+                    tm.mkTerm(Kind.GT, now, tm.mkInteger(0)),
+                    tm.mkTerm(Kind.LT, self._rank(tpl, list(br.state)), now),
                 ])
-                fails = f"~({p(self._at(prp, ob.s))})"
+                fails = tm.mkTerm(Kind.NOT, self._at(prp, ob.s))
                 obligations.append(self._forall(
-                    self.state + self.inputs,
-                    f"({_all([here, fails, p(ob.update_pre), guard])} "
-                    f"=> {drops})"))
+                    self.vars,
+                    self._implies(
+                        self._and([here, fails, ob.update_pre, *br.guard]),
+                        drops)))
         if safety:
             obligations.append(self._forall(
                 self.state,
-                f"({self._rows(tpl, self.state)} "
-                f"=> {p(self._at(prp, ob.s))})"))
-        holes = ",".join(f"{h}:$int" for h in tpl.all_holes)
-        body = _all(obligations)
-        return f"tff(cert, conjecture, ?[{holes}]: {body}).\n"
+                self._implies(self._rows(tpl, list(ob.s)),
+                              self._at(prp, ob.s))))
+        holes = [self._hole(h) for h in tpl.all_holes]
+        out = tm.mkTerm(Kind.EXISTS,
+                        tm.mkTerm(Kind.VARIABLE_LIST, *holes),
+                        self._and(obligations))
+        refuse_ites(out)
+        return out
+
+    def _implies(self, hyp, goal):
+        if hyp.getKind() == Kind.CONST_BOOLEAN and hyp.getBooleanValue():
+            return goal
+        return self.tm.mkTerm(Kind.IMPLIES, hyp, goal)
 
     def _at(self, term, vs):
         return term.substitute(self.ctx.state, vs)
 
-    @staticmethod
-    def _forall(vs: list[str], body: str) -> str:
+    def _forall(self, vs: list, body):
+        """`body` over the constants, quantified over the variables for them.
+
+        The substitution is what turns `v_s0` into the bound `s0`, and only
+        the constants `vs` stands for are substituted: a constant left over
+        is one this obligation is not quantified over, and it is refused by
+        name rather than printed as a symbol nothing declares. That is the
+        entry obligation's own failure mode -- a guard from the round
+        mentions the latched state, which nothing binds there.
+        """
+        names = {str(v) for v in vs}
+        pairs = [(c, v) for c, v in zip(self.consts, self.vars)
+                 if str(v) in names]
+        if pairs:
+            body = body.substitute([c for c, _ in pairs],
+                                   [v for _, v in pairs])
+        stray = free_constants(body)
+        if stray:
+            raise Refused(
+                f"--infer vampire states an obligation over "
+                f"{', '.join(sorted(str(v) for v in vs)) or 'nothing'}, and "
+                f"it mentions {', '.join(str(c) for c in stray)}, which "
+                f"nothing there binds"
+            )
         if not vs:
             return body
-        return "![" + ",".join(f"{v}:$int" for v in vs) + "]: " + body
+        return self.tm.mkTerm(Kind.FORALL,
+                              self.tm.mkTerm(Kind.VARIABLE_LIST, *vs), body)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -538,9 +596,23 @@ class Derived:
 class Answers:
     """Vampire in question-answering mode, on this run's deadline."""
 
+    # Both ways of naming subformulas, because on a conjecture with holes
+    # neither is the right one -- see the module docstring for what each
+    # answers that the other does not. Named rather than a bare tuple of
+    # flags so the log can say which one came back.
+    STRATEGIES = (("naming", ()), ("no naming", ("--naming", "0")))
+
     def __init__(self, exe: str, *, seconds: float, log=print):
         self.exe = exe
         self.deadline = time.monotonic() + seconds
+        # What Vampire is *told* it has, which is not what it is given.
+        # `--time_limit` is a scheduling input before it is a cap: Vampire
+        # slices it between strategies, so a small one runs a different
+        # search rather than the same one cut short. Measured on `m_max`'s
+        # question -- `--time_limit 20` reaches the limit, `--time_limit 25`
+        # answers after 2.5 s. So every call declares the run's whole
+        # budget, and what actually bounds a call is the wall clock below.
+        self.declared = max(1, int(seconds))
         self.log = log
         self.calls = 0
         self.spent = 0.0
@@ -548,12 +620,24 @@ class Answers:
     def left(self) -> float:
         return self.deadline - time.monotonic()
 
-    def ask(self, script: str, holes: int, limit: float) -> "Derived | None":
-        budget = min(limit, self.left())
+    def ask(self, script: str, holes: int) -> "Derived | None":
+        """The first answer any strategy gives, on a share of what is left."""
+        for n, (name, extra) in enumerate(self.STRATEGIES):
+            # What is left, shared out between the strategies still to come,
+            # so the last one is still asked.
+            share = self.left() / (len(self.STRATEGIES) - n)
+            answer = self._call(script, holes, share, extra)
+            if answer is not None:
+                self.log(f"[vampire] answered with {name}")
+                return answer
+        return None
+
+    def _call(self, script: str, holes: int, budget: float,
+              extra: tuple) -> "Derived | None":
         if budget < 1:
             return None
         with tempfile.NamedTemporaryFile(
-            "w", suffix=".p", prefix="verith-vampire-qa-", delete=False
+            "w", suffix=".smt2", prefix="verith-vampire-qa-", delete=False
         ) as f:
             f.write(script)
             path = f.name
@@ -563,9 +647,10 @@ class Answers:
         # at once. A portfolio strategy is tuned to find a refutation, and
         # what is wanted here is the *substitution* a refutation carries.
         cmd = [
-            self.exe, "--input_syntax", "tptp",
+            self.exe, "--input_syntax", "smtlib2",
             "--question_answering", "plain",
-            "--time_limit", f"{max(1, int(budget))}",
+            *extra,
+            "--time_limit", f"{self.declared}",
             path,
         ]
         t0 = time.perf_counter()
@@ -573,7 +658,9 @@ class Answers:
                                 stderr=subprocess.STDOUT, text=True,
                                 start_new_session=True)
         try:
-            out, _ = proc.communicate(timeout=budget + 10)
+            # The real bound: `--time_limit` told Vampire what schedule to
+            # run, and this is the share of the deadline it actually gets.
+            out, _ = proc.communicate(timeout=budget)
         except subprocess.TimeoutExpired:
             _kill_group(proc)
             out = ""
@@ -677,7 +764,7 @@ class TA2MagicVampire(TA2Magic):
             self.log(f"[vampire] template {tpl.name}: "
                      f"{len(tpl.all_holes)} holes, {len(script)} chars")
             tried.append(tpl.name)
-            answer = asker.ask(script, len(tpl.all_holes), asker.left())
+            answer = asker.ask(script, len(tpl.all_holes))
             if answer is None:
                 self.log(f"[vampire] no answer for {tpl.name} "
                          f"({asker.spent:.1f} s spent)")
@@ -711,9 +798,9 @@ class TA2MagicVampire(TA2Magic):
                    cd: CertificateData) -> tuple:
         """The template with Vampire's numbers in it, as SMT-LIB."""
         facts = []
-        for lo, hi, body in tpl.rows:
-            facts.append(f"(<= {smt_int(named[lo])} {body})")
-            facts.append(f"(<= {body} {smt_int(named[hi])})")
+        for row in tpl.rows:
+            facts.append(f"(<= {smt_int(named[row.lo])} {row.smt})")
+            facts.append(f"(<= {row.smt} {smt_int(named[row.hi])})")
         inv = ("true" if not facts else facts[0] if len(facts) == 1
                else "(and " + " ".join(facts) + ")")
         if cd.is_safety:
@@ -760,14 +847,14 @@ class TA2MagicVampire(TA2Magic):
     # --- reading the module -----------------------------------------------
 
     def _check_sorts(self, ctx: SynthContext) -> None:
-        """Every component an `$int` variable, not merely readable as one.
+        """Every component an integer variable, not merely readable as one.
 
         `SynthContext` lets a bitvector through -- it has an integer
         *reading*, its unsigned value, which is what `--infer smt-linear`
-        weighs it by -- but the terms that reach the printer are still
-        bitvector operations, and TPTP has no theory for them. Met here, by
-        sort, rather than as `no TPTP for Kind.CONST_BITVECTOR` four steps
-        later.
+        weighs it by -- but the terms are still bitvector operations, and
+        the templates below are integer intervals with integer coefficients
+        that `<=` a bitvector nowhere. Met here, by sort, rather than as a
+        sort error out of cvc5 four steps later.
         """
         bad = [f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
                if not s.isInteger()]
@@ -776,11 +863,11 @@ class TA2MagicVampire(TA2Magic):
                 if not c.getSort().isInteger()]
         if bad:
             raise Refused(
-                f"--infer vampire states its obligations in TPTP arithmetic, "
-                f"which has integers and no bitvectors, and this module has "
+                f"--infer vampire states its obligations over integers, "
+                f"which is what its templates bound, and this module has "
                 f"{', '.join(bad)}. `--infer houdini` states them in SMT-LIB "
                 f"-- still not bitvectors, but it says so of the candidate "
-                f"shapes rather than of the printer; `--infer smt-linear` "
+                f"shapes rather than of the templates; `--infer smt-linear` "
                 f"weighs a bitvector as its unsigned value."
             )
 
