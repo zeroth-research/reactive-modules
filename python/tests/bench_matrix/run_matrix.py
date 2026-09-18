@@ -265,9 +265,34 @@ def generate(row, route, out: Path) -> dict:
     if r.returncode != 0:
         blob = (r.stderr or r.stdout).strip()
         return dict(ok=False, secs=time.time() - t0,
-                    err=diagnosis(blob), err_full=blob[-4000:])
+                    err=diagnosis(blob), err_full=blob[-4000:],
+                    gave_up=gave_up(out))
     return dict(ok=True, secs=time.time() - t0, err="",
                 inferred=inferred_from(r.stdout), inferred_rule="last")
+
+
+def gave_up(out: Path) -> str:
+    """Which kind of giving up this was, as the route itself recorded it.
+
+    `NO-CERT` is three measurements in one name -- `no_solution` is a space
+    proved empty, `unknown` a search that ran out, `declined` a shape no
+    search was run on -- and reading them back off the prose was guesswork:
+    a dozen wordings per route, ~160 of 312 unmatched, 7 matching two
+    buckets at once. The status is what the route wrote down, so it is what
+    this reads.
+
+    The *last* note, because a run that resumed may carry an earlier one,
+    and `""` when there is none -- a refusal from the CLI happens before a
+    project exists, and a pass taken before routes recorded this has no
+    note at all.
+    """
+    index = out / "Rea" / "artifacts" / "index.json"
+    try:
+        entries = json.loads(index.read_text())
+    except (OSError, ValueError):
+        return ""
+    notes = [e for e in entries if e.get("role") == "note"]
+    return notes[-1].get("status", "") if notes else ""
 
 
 _PRED = re.compile(r"^\s*(?:\[[\w-]+\]\s*)?(inv|ranking)\s*:\s*(.+?)\s*$")

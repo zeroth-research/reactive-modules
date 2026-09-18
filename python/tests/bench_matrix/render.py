@@ -96,6 +96,19 @@ SUITE_BLURB = {
     ),
 }
 
+# What a route wrote down about giving up, as one line for the panel. The
+# three are the measurements `NO-CERT` conflates, and they are the route's
+# own word rather than this file's reading of its prose.
+_GAVE_UP = {
+    "no_solution": "The shape was searched and <em>proved</em> empty: no "
+                   "certificate of that form exists for this module.",
+    "unknown": "A search ran and did not finish. Nothing is known about the "
+               "shape &mdash; only that it was not cheap.",
+    "declined": "Nothing was searched. The route does not take this module "
+                "or this property, so this says nothing about how hard it is.",
+}
+
+
 VERDICTS = {
     "VERIFIED": ("ok", "Lean discharged every obligation."),
     "UNSUPPORTED": (
@@ -115,10 +128,10 @@ VERDICTS = {
     ),
     "NO-CERT": (
         "no",
-        "The route searched its shape and returned nothing. For "
-        "<code>sygus</code> and <code>smt-linear</code> a bounded shape that "
-        "comes back empty is a <em>proof</em> that it is empty, not a search "
-        "that ran out of time.",
+        "The route searched its shape and returned nothing &mdash; or never "
+        "searched at all. Which of the three it was is the route&rsquo;s own "
+        "record, shown in the panel: a space <em>proved</em> empty, a budget "
+        "that ran out, or a shape the route declined.",
     ),
     "GEN-FAIL": (
         "bad",
@@ -375,6 +388,7 @@ details.m[open]>summary{background:var(--code)}
  color:var(--dim);font-weight:600;margin-top:.7em}
 .m .body .found{font-size:11.5px;word-break:break-all;color:var(--dim)}
 .m .body .err{font-size:11.5px;color:var(--bad);word-break:break-word}
+.m .body .gaveup{font-size:11.5px;margin:.2em 0 .45em;opacity:.85}
 .m .body .lbl .hint{text-transform:none;letter-spacing:0;font-weight:400}
 pre.err{color:var(--bad);white-space:pre-wrap;max-height:19em;overflow-y:auto}
 .mean{white-space:nowrap}
@@ -674,6 +688,13 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None,
         w(
             f'<div class="lbl">{"why verith refused" if na else "why it returned nothing"}</div>'
         )
+        # Which of the three `NO-CERT` is, as the route recorded it rather
+        # than as its prose reads. Absent on a pass taken before the routes
+        # wrote it, and on a refusal from the CLI, which happens before a
+        # project exists to record anything in.
+        said = _GAVE_UP.get(run["gen"].get("gave_up", ""))
+        if said:
+            w(f'<div class="gaveup">{said}</div>')
         # The diagnosis, then everything that was printed. They are the same
         # text for a refusal, and for a traceback they are not: the run's
         # whole output opens with whatever the process said first, which on
