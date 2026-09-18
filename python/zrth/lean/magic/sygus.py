@@ -29,6 +29,15 @@ transition when *some* input does -- which is the same relation the
 certificate's `init_inv` and `step_inv` obligations quantify over, and a
 `--pre` precondition restricts it exactly as it restricts them.
 
+How wide an invariant it looks for
+==================================
+One width at a time, `1, 2, ... --sygus-conjuncts`, the first that answers
+winning -- not one query at the ceiling.  The widths nest, so this costs no
+reach and the *narrowest* answer is the one that comes back; and because the
+search is not monotone in the width, asking only at the ceiling was losing
+both halves of what this route is for.  :meth:`TA2MagicSygus._synthesise`
+has the measurement.
+
 What it leaves behind
 =====================
 The invariant, in `artifacts/`, as a resumable `inv`: `--infer ai-cegis` in
@@ -67,13 +76,15 @@ except ImportError:                                  # pragma: no cover
 # what Houdini's lattice already covers.
 GRAMMARS = ("congruence", "linear")
 
-# How many atoms the invariant may be a conjunction of. A bound rather than
-# a free `B -> A | (and B B)` for two reasons, and the second is the one that
-# matters: a bounded conjunction is a *finite* space, and a finite space can
-# be decided empty -- `hasNoSolution` rather than `unknown`, which is the
-# difference between leaving a proof behind and leaving a shrug. (The first
-# reason is the ordinary one: every conjunct is restated in Lean and is one
-# more implication in the obligation, which `magic.learn._prune` exists for.)
+# The *ceiling* on how many atoms the invariant may be a conjunction of: the
+# widths are asked one at a time, `1, 2, ... n`, and the first that answers
+# wins. A bound rather than a free `B -> A | (and B B)` for two reasons, and
+# the second is the one that matters: a bounded conjunction is a *finite*
+# space, and a finite space can be decided empty -- `hasNoSolution` rather
+# than `unknown`, which is the difference between leaving a proof behind and
+# leaving a shrug. (The first reason is the ordinary one: every conjunct is
+# restated in Lean and is one more implication in the obligation, which
+# `magic.learn._prune` exists for.)
 # Measured on `m_step2` with the congruence atoms dropped, which has no
 # answer in this space: decided empty in 10 / 25 / 166 ms at 1 / 2 / 3.
 DEFAULT_CONJUNCTS = 3
@@ -84,7 +95,8 @@ class TA2MagicSygus(TA2Magic):
 
     ``grammar`` chooses what an atom may be: `linear` gives comparisons of
     affine combinations of the state, `congruence` adds `(= (mod lin k) 0)`
-    for the `k` the program mentions.
+    for the `k` the program mentions.  ``conjuncts`` is a *ceiling*: the
+    widths are asked one at a time and the first that answers wins.
     """
 
     def __init__(
@@ -146,7 +158,55 @@ class TA2MagicSygus(TA2Magic):
     # --- the search -----------------------------------------------------
 
     def _synthesise(self, ctx: SynthContext, consts) -> Search:
-        """`pre -> inv`, `inv /\\ trans -> inv'`, `inv -> post`, as one query."""
+        """`pre -> inv`, `inv /\\ trans -> inv'`, `inv -> post`, width by width.
+
+        One query per width, narrowest first, as `magic.linear` runs its
+        rows -- and here for a stronger reason than cost, because **the
+        search is not monotone in the width**.  The widths nest: the start
+        rule at width `w` is `A | A /\\ A | ... ` up to `w`, so a wider
+        grammar's language contains every narrower one and an answer found
+        at 2 is inside the space searched at 3.  cvc5 still does not find it
+        there.  Measured over the 59 matrix cells that reach the grammar:
+        `wise` finds a two-atom invariant at width 3 and times out at 2;
+        `T5Exact` finds one at 2 and times out at 3; `NiLexNe4` and
+        `RelTvImplies` find *one-atom* invariants in under a second and time
+        out at 3.  So the ceiling is the worst single width to ask at, and
+        asking only there is what this route used to do: 28 found, 1 space
+        decided empty, 30 cells that learned nothing.  Every width, first
+        answer wins: 31 found, 22 decided, 6 that learned nothing.
+
+        Nesting is also what lets the note claim the *widest* width that
+        came back empty rather than a prefix of them -- an empty width 3
+        subsumes 1 and 2 whatever they did.
+        """
+        decided, undecided = 0, []
+        for k in range(1, self.conjuncts + 1):
+            found, exhausted = self._at_width(ctx, consts, k)
+            if found is not None:
+                self.log(f"[sygus] found at {k} atom(s)")
+                return Search("inv", self._found_space(consts, k), found=found)
+            if exhausted:
+                decided = k
+                self.log(f"[sygus] no invariant of {k} atom(s); widening")
+            else:
+                undecided.append(k)
+                self.log(f"[sygus] {k} atom(s) did not finish; widening")
+            if self.budget is not None and self.budget.exhausted:
+                break
+        # Only a width *above* the decided one is still open: the widths
+        # nest, so one that ran out of budget under a width that came back
+        # empty was decided after all, by the wider query that contains it.
+        return self._empty(
+            consts, decided,
+            undecided_at=min((k for k in undecided if k > decided), default=0),
+        )
+
+    def _at_width(self, ctx: SynthContext, consts, width: int):
+        """One SyGuS query, over a grammar of at most `width` atoms.
+
+        Returns the invariant if there is one, else whether the space was
+        *decided* empty rather than merely not searched.
+        """
         tm, n = ctx.tm, len(ctx.state)
         solver = bounded_solver(tm, self.budget, sygus="true")
         try:
@@ -156,12 +216,11 @@ class TA2MagicSygus(TA2Magic):
 
         Int, Bool = tm.getIntegerSort(), tm.getBooleanSort()
         args = [tm.mkVar(Int, f"x{i}") for i in range(n)]
-        grammar = self._grammar(solver, ctx, args, consts)
+        grammar = self._grammar(solver, ctx, args, consts, width)
         inv = solver.synthFun("inv", args, Bool, grammar)
 
         state = [tm.mkVar(Int, f"s{i}_") for i in range(n)]
         nxt = [tm.mkVar(Int, f"sp{i}_") for i in range(n)]
-        space = self._space(ctx, consts)
         try:
             solver.addSygusInvConstraint(
                 inv,
@@ -185,44 +244,12 @@ class TA2MagicSygus(TA2Magic):
 
         if result.hasSolution():
             body, bound = body_of(solver.getSynthSolution(inv))
-            src = str(body.substitute(bound, ctx.state) if bound else body)
             # cvc5 `let`-binds a repeated subterm when it prints, and that is
             # fine: the term is parsed back before it is rendered, and
             # `smt_to_lean` gives what is shared a Lean `let` of its own.
-            return Search("inv", space, found=src)
-        exhausted = result.hasNoSolution()
-        return Search(
-            "inv",
-            space,
-            exhausted=exhausted,
-            how=(
-                f"the grammar is finite -- at most {self.conjuncts} atoms "
-                f"over a fixed set of coefficients -- and cvc5 enumerated it"
-            ),
-            detail=(
-                "An invariant for this module needs something the grammar "
-                "does not have -- a disjunction, a product of two "
-                "components, a constant the program never mentions, or more "
-                "than `--sygus-conjuncts` of them. `--infer ai-cegis` "
-                "searches no fixed space and is what to try next."
-                if exhausted else
-                # The timeout is named last and as what it is -- a knob,
-                # not a remedy -- because naming it first sends the reader
-                # to spend two minutes arriving back here. The reason given
-                # is the route's own shape, which holds for any module; the
-                # measurement behind it is six benchmark modules re-run at
-                # 12 to 24 times the budget, and it is quoted as the six it
-                # is rather than as a property of the route.
-                "`--infer ai-cegis` searches no fixed space and is what to "
-                "try next; `--infer smt-linear` decides a narrower shape "
-                "rather than enumerating this one. `--smt-timeout` raises "
-                "the budget, but this grammar is finite and fixed, so more "
-                "seconds buy a fraction more of a space this query did not "
-                "come close to exhausting: tried at 12 to 24 times the "
-                "default on six modules that stopped here, it finished "
-                "none of them."
-            ),
-        )
+            src = str(body.substitute(bound, ctx.state) if bound else body)
+            return src, False
+        return None, result.hasNoSolution()
 
     # --- the three formulas `G P` is made of ----------------------------
 
@@ -275,7 +302,7 @@ class TA2MagicSygus(TA2Magic):
 
     # --- the grammar ----------------------------------------------------
 
-    def _grammar(self, solver, ctx: SynthContext, args: list, consts):
+    def _grammar(self, solver, ctx: SynthContext, args: list, consts, width):
         """Conjunctions of comparisons between affine combinations.
 
         Shaped as a *template* rather than a free arithmetic grammar, because
@@ -291,13 +318,15 @@ class TA2MagicSygus(TA2Magic):
         lin = tm.mkVar(Int, "L")
         coeff = tm.mkVar(Int, "K")
         grammar = solver.mkGrammar(args, [start, atom, lin, coeff])
-        # The finite ladder: one atom, two, ... up to the bound. `B -> (and
+        # The finite ladder: one atom, two, ... up to `width`. `B -> (and
         # B B)` would say the same thing about what is *reachable* and make
         # the space infinite, and then "nothing here works" stops being
-        # something cvc5 can answer.
+        # something cvc5 can answer. Keeping the narrower rungs in is what
+        # makes the widths nest, which is what lets an empty width subsume
+        # the ones below it.
         ladder = [atom]
         wider = atom
-        for _ in range(self.conjuncts - 1):
+        for _ in range(width - 1):
             wider = tm.mkTerm(Kind.AND, wider, atom)
             ladder.append(wider)
         grammar.addRules(start, ladder)
@@ -322,18 +351,85 @@ class TA2MagicSygus(TA2Magic):
         grammar.addRules(coeff, [tm.mkInteger(c) for c in consts])
         return grammar
 
-    def _space(self, ctx: SynthContext, consts) -> str:
+    # --- what the widths add up to, as prose for the artifact -----------
+
+    def _atoms(self, consts) -> str:
         atoms = "`c0 + c1*s0 + ... <= 0` and `= 0`"
         if self.grammar == "congruence":
             atoms += (
                 f", and `(= (mod c0 + c1*s0 + ... k) 0)` for k in "
                 f"{list(moduli(consts))}"
             )
+        return atoms
+
+    def _found_space(self, consts, width: int) -> str:
         return (
-            f"No inductive invariant implying the property is a conjunction "
-            f"of at most {self.conjuncts} atoms of the form {atoms}, with "
-            f"coefficients from {list(consts)} -- the constants this module "
-            f"and property mention."
+            f"It is a conjunction of at most {width} "
+            f"{'atom' if width == 1 else 'atoms'} of the form "
+            f"{self._atoms(consts)}, with coefficients from {list(consts)}."
+        )
+
+    def _empty(self, consts, decided: int, undecided_at: int = 0) -> Search:
+        """What the widths add up to, and no more than that.
+
+        `decided` is the widest width cvc5 enumerated, and it is all the note
+        may claim. A width that ran out of budget is not evidence of anything
+        -- the narrower widths it sits above still count, because they are
+        inside it, but the ones above it do not.
+        """
+        shape = (
+            f"{self._atoms(consts)}, with coefficients from {list(consts)} "
+            f"-- the constants this module and property mention"
+        )
+        if not decided:
+            # The shape is named even here. What was searched is the useful
+            # half of "and nothing came of it", and a reader who is choosing
+            # the next route needs it whether or not the query finished.
+            space = (
+                f"Nothing was proved about invariants that are conjunctions "
+                f"of atoms of the form {shape}."
+            )
+        else:
+            space = (
+                f"No inductive invariant implying the property is a "
+                f"conjunction of at most {decided} "
+                f"{'atom' if decided == 1 else 'atoms'} of the form {shape}."
+            )
+        return Search(
+            "inv",
+            space,
+            exhausted=decided > 0,
+            how=(
+                f"the grammar is finite -- at most {decided} "
+                f"{'atom' if decided == 1 else 'atoms'} over a fixed set of "
+                f"coefficients -- and cvc5 enumerated it"
+            ),
+            detail=(
+                # The timeout is named last and as what it is -- a knob, not
+                # a remedy -- because naming it first sends the reader to
+                # spend two minutes arriving back here. The measurement
+                # behind it is six benchmark modules re-run at 12 to 24 times
+                # the budget, and it is quoted as the six it is rather than
+                # as a property of the route.
+                # `Search.note` has already said a query did not finish, so
+                # what is left to say is *which width* is still open -- the
+                # one thing the reader cannot infer from the rest.
+                f"It stopped at {undecided_at} "
+                f"{'atom' if undecided_at == 1 else 'atoms'}"
+                f"{f', above the {decided} proved empty' if decided else ''}. "
+                f"`--infer ai-cegis` searches no fixed space and is what to "
+                f"try next; `--infer smt-linear` decides a narrower shape "
+                f"rather than enumerating this one. `--smt-timeout` raises "
+                f"the per-query budget, though tried at 12 to 24 times the "
+                f"default on six modules that stopped here it finished none "
+                f"of them."
+                if undecided_at else
+                "An invariant for this module needs something the grammar "
+                "does not have -- a disjunction, a product of two "
+                "components, a constant the program never mentions, or more "
+                "than `--sygus-conjuncts` of them. `--infer ai-cegis` "
+                "searches no fixed space and is what to try next."
+            ),
         )
 
     # --- out ------------------------------------------------------------

@@ -139,6 +139,53 @@ def test_sygus_sends_a_bool_state_to_the_route_that_weighs_it():
         TA2MagicSygus(module_of("m_boolint"), log=lambda *_: None).infer(cd)
 
 
+def test_sygus_asks_the_narrow_grammars_before_the_wide_one():
+    """`m_countdown |- G (0 <= s0 <= 100)` has no one-atom invariant.
+
+    The widths are separate queries because the search is not monotone in
+    the width -- measured over the 59 matrix cells that reach the grammar,
+    two of them find a *one-atom* invariant in under a second and time out
+    at three. Asked only at the ceiling, as this route used to be, those
+    came back as "did not finish".
+    """
+    from zrth.lean.magic.sygus import TA2MagicSygus
+
+    lines: list[str] = []
+    cd = CertificateData(prp="(and (>= s0 0) (<= s0 100))", kind="safety")
+    out = TA2MagicSygus(module_of("m_countdown"), log=lines.append).infer(cd)
+    assert "[sygus] no invariant of 1 atom(s); widening" in lines
+    assert "[sygus] found at 2 atom(s)" in lines
+    assert out.inv_smt
+
+
+def test_the_note_claims_the_widths_that_finished_and_no_more():
+    """A width that ran out of budget is not evidence of anything.
+
+    The narrower widths still count -- the start rule at width `w` is
+    `A | A /\\ A | ...`, so the widths nest and an empty one subsumes every
+    one below it -- but nothing above the width that stopped does.
+    """
+    from zrth.lean.magic.sygus import TA2MagicSygus
+
+    magic = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None)
+    note = magic._empty((-2, -1, 0, 1, 2), decided=2, undecided_at=3).note
+    assert "at most 2 atoms" in note
+    assert "proof that the space is empty" in note
+    assert "It stopped at 3 atoms, above the 2 proved empty" in note
+
+
+def test_a_ladder_that_decided_nothing_claims_nothing():
+    """`exhausted` is what carries a note into the `ai-cegis` prompt, so a
+    ladder whose first width already timed out must not set it."""
+    from zrth.lean.magic.sygus import TA2MagicSygus
+
+    magic = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None)
+    search = magic._empty((-2, -1, 0, 1, 2), decided=0, undecided_at=1)
+    assert not search.exhausted
+    assert "Nothing was proved" in search.note
+    assert "proof that the space is empty" not in search.note
+
+
 def test_sygus_is_a_safety_route_in_the_class_as_well_as_the_row():
     from zrth.lean.magic.sygus import TA2MagicSygus
 

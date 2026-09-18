@@ -459,7 +459,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
 | `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets a route resume from what an earlier run left, `ignore` searches afresh, `reset` empties it first |
 | `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
-| `--sygus-conjuncts` | `3` | `--infer sygus`: how many atoms the invariant may be a conjunction of — the bound is what makes the space finite, and so decidably empty |
+| `--sygus-conjuncts` | `3` | `--infer sygus`: a ceiling on how many atoms the invariant may be a conjunction of, tried `1, 2, … N` — the bound is what makes each space finite, and so decidably empty |
 | `--linear-rows` | `2` | `--infer smt-linear --safety`: how many linear inequalities the invariant may be a conjunction of |
 | `--houdini-solver` | `cvc5` | `--infer houdini`: which solver decides the obligations. `cvc5` needs no binary and refutes what it cannot prove, with a counterexample; `vampire` refutes or times out |
 | `--houdini-timeout` | `120` | `--infer houdini`: seconds for all solver calls together; each call is capped at 2 s, then the rest (under `vampire`: 2 s, 10 s, 60 s, then the rest) |
@@ -526,7 +526,8 @@ is stronger than any precondition would make it.
 
 Two more routes need no LLM, and they differ from `nuterm` in what they do
 when they fail.  Both fix the *space* the certificate may live in and hand
-the whole space to cvc5 at once, so "not found" is an answer with content:
+it to cvc5 a width at a time, narrowest first, so "not found" is an answer
+with content: what is decided is decided about a width that was reached.
 
 * **`--infer smt-linear`** fixes the shape and leaves the coefficients open,
   which makes the search one query — `exists c. forall s. obligations(c . s)`.
@@ -546,6 +547,12 @@ the whole space to cvc5 at once, so "not found" is an answer with content:
   `nuterm`.  The conjunction is bounded (`--sygus-conjuncts`, default 3),
   which bounds the certificate and, more to the point, makes the space
   *finite*: cvc5 can then report it empty rather than merely unsearched.
+  The widths run `1, 2, … N` and the first that answers wins, because the
+  search is **not monotone in the width** — measured over the 59 matrix
+  cells that reach the grammar, two modules have a one-atom invariant found
+  in under a second that the three-atom query does not finish.  Asked only
+  at the ceiling the route found 28 and decided 1 space empty; a width at a
+  time it finds 31 and decides 22.
 
 **A refuted search is a proof, and it is kept.**  When the template query
 comes back `unsat`, nothing of that shape satisfies the obligations — a fact
@@ -588,8 +595,8 @@ What each is for, measured on the `tests/limits` fixtures:
 |---|---|---|
 | property | `--safety` or `--buchi` | `--safety` |
 | finds | coefficients of a fixed shape | any term its grammar generates |
-| answers `no` | yes, as a proof — 2–30 ms for a ranking function | yes, as a proof — the bounded grammar is finite (10–166 ms) |
-| cost | milliseconds per width; a second invariant row can cost more than 30 s | 11 ms for `m_step2`'s congruence |
+| answers `no` | yes, as a proof — 2–30 ms for a ranking function | yes, as a proof — each bounded grammar is finite (10–166 ms), and the note claims the widest width that finished |
+| cost | milliseconds per width; a second invariant row can cost more than 30 s | 11 ms for `m_step2`'s congruence; a width that finds nothing costs the per-query budget, and there are `--sygus-conjuncts` of them |
 | engine | one quantified query, or — when cvc5 will not state it, which a bitvector column always does — a counterexample loop over a bounded coefficient box | cvc5's SyGuS invariant track |
 | state it reads | scalar `Int`, `Bool` and `BitVec` | scalar integers, transition in `LIA` |
 | seeds | `--invariant` (strengthened, not replaced), `--pre` | `--pre` |

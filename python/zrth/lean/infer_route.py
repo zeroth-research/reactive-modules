@@ -802,14 +802,17 @@ ROUTES: tuple[InferRoute, ...] = (
                     default=3,
                     metavar="N",
                     help=(
-                        "How many atoms the synthesised invariant may be a "
-                        "conjunction of (default: 3). It bounds the "
-                        "certificate -- every conjunct is one more "
-                        "implication in the obligation -- and it is what "
-                        "makes a failure informative: a bounded conjunction "
-                        "is a finite space, so cvc5 can report it *empty* "
-                        "rather than merely not searched, and that proof is "
-                        "what lands in artifacts/."
+                        "A ceiling on how many atoms the synthesised "
+                        "invariant may be a conjunction of (default: 3). The "
+                        "widths run 1, 2, ... N and the first that answers "
+                        "wins, because the search is not monotone in the "
+                        "width: measured, invariants found at 1 and at 2 "
+                        "time out at 3. It bounds the certificate -- every "
+                        "conjunct is one more implication in the obligation "
+                        "-- and it is what makes a failure informative: a "
+                        "bounded conjunction is a finite space, so cvc5 can "
+                        "report it *empty* rather than merely not searched, "
+                        "and that proof is what lands in artifacts/."
                     ),
                 ),
             ),
