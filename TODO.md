@@ -1,6 +1,6 @@
 - houdini: store results to artifacts
 - Try using facts from Vampire to generate tactics; dump to artifacts/
-- Allow --pre for more configurations
+- ~~Allow --pre for more configurations~~ **Done** -- item 15 below: every route that has somewhere to put one now takes it.
 - Prune selectively -- if Vampire proves inv but not ranking, try preserving that inv
 - [later] Cooperative infer through artifacts: smt + vampire in parallel for 4 seconds; then one after another (with known artifacts) and nuterm; then ai-cegis; then ai-fix
 - [later] Try vampire instead of lean-smt in hammer
@@ -172,17 +172,35 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     re-querying; `ai` has no such loop. An elaboration pre-check turns them
     into either a repair or an honest `NO-CERT`.
 
-15. **`--pre` is refused by ai / nuterm / fbk-proveit** -- 38 `UNSUPPORTED`
-    cells now, but 50 rows carry a `--pre` and 29 of those are petri, so this
-    becomes ~150 cells once the missing suites run: the largest single category
-    on the page. Sizes "Allow --pre for more configurations" above.
-    **`fbk-proveit` done** (`da78190`, `89b6ad7`); `ai` and `nuterm` are
-    what is left of it.
+15. ~~**`--pre` is refused by ai / nuterm / fbk-proveit**~~ **Done**
+    (`da78190`, `89b6ad7` fbk-proveit; `8aaaf28` ai; `ffad4ab` nuterm) -- 38
+    `UNSUPPORTED` cells, and 50 rows carry a `--pre` with 29 of those petri,
+    so it was ~150 cells once the missing suites run: the largest single
+    category on the page. Sized "Allow --pre for more configurations" above.
 
-    All 8 of the svcomp safety column's `--pre` cells were this. **6 are now
-    `VERIFIED`** and 2 are refused in the encoding's own words (two slots
-    starting at one input, which the NA has nowhere to say). The 39-cell fbk
-    suite is unchanged.
+    All 8 of the svcomp safety column's `fbk-proveit` cells were this. **6
+    are now `VERIFIED`** and 2 are refused in the encoding's own words (two
+    slots starting at one input, which the NA has nowhere to say). The
+    39-cell fbk suite is unchanged.
+
+    `nuterm`'s 19: **10 `VERIFIED`**, 6 `NO-CERT`, 3 `TIMEOUT`, from 19
+    `UNSUPPORTED`. All eight svcomp `houdini-inv` rows verify, and the
+    control says what they needed -- without `--pre` the same cells come
+    back "no inductive invariant implying the property was found". Nothing
+    that did not verify failed for a `--pre` reason: three are module
+    shapes the procedure refuses by name and had been masked by the seed
+    refusal firing first -- a `Bool` wire and a `Bv1` wire, which are item
+    8, and a step reading a nondeterministic input, which is not on this
+    list -- three are the convex-rank limit (a rank that is a non-negative
+    sum of ReLUs is convex, and these runs wrap around), three the 300 s
+    budget.
+
+    `ai`'s 19 are unmeasured: 8 are `--safety` and stay `UNSUPPORTED` for
+    the *kind*, and the other 11 need an API key this environment has not
+    got. Its refusal was simply stale -- both prompts already stated the
+    obligations with `init_pre`/`update_pre` in them and already wrote the
+    predicates into each message, so the row was declining a flag the
+    module beside it was using.
 
     A precondition is a predicate over inputs and the NA model has no
     inputs -- but `init` writes each input it reads to one slot, so reading
@@ -206,8 +224,22 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
 
     For `ai` and `nuterm` the "both halves" reading is the right one and is
     already what `smt_query` states -- `init_pre e -> inv (init e)` and
-    `update_pre e /\ inv s -> inv (update s e)`. What is missing there is
-    only that the routes decline the flag.
+    `update_pre e /\ inv s -> inv (update s e)`. `ai` needed nothing for
+    it: `Certificate/Data.lean` carries both whatever route ran, so `lake
+    build` was always going to check under them.
+
+    `nuterm` takes the init half as `System.assuming`, the entry assumption
+    the svcomp harness already uses for a benchmark's own `if (P)` gate.
+    That assumption is a predicate over *columns* and `--pre` is one over
+    inputs; they meet where they met in the other direction when the
+    harness derived the flag (`suites.entry_pre`), at a column whose init
+    value is a bare input. The update half needs nothing there either, and
+    for a sharper reason than fbk-proveit's: `_farkas.check_supported`
+    already refuses every module whose next value reads an input, so the
+    step reads none and `update_pre` constrains nothing it looks at.
+    Dropping it is exact rather than an over-approximation -- which is the
+    thing to keep an eye on, since a route that certifies rather than
+    searches must not quietly widen what it assumed.
 
 16. `fbk/m_step2/NiS2Odd3::fbk-proveit` -- `(kernel) application type mismatch`
     in `Certificate.lean`. A certificate ic3ia produced that `vmt2lean`
