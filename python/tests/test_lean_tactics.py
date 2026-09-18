@@ -214,12 +214,13 @@ def test_budget_scales_with_predicate_branch_points():
     """A net's cost lives in its branch points, not in the module's size.
 
     A 12-unit ranking net over a one-wire countdown leaves `n_slots` and
-    `n_terms` tiny, so the module-size rule alone left it on the base budget
-    and it timed out rather than failing to be provable.
+    `n_terms` tiny, so nothing about the module says what the predicate
+    costs. Only a net past 32 branch points goes above the standard budget
+    -- everything else is already at it.
     """
     m = _int_module()
     flat = _plan(m, "fun s => ((s 0 0) ≥ 0)")
-    assert flat.max_heartbeats == 400000
+    assert flat.max_heartbeats == 2000000
 
     mid = _plan(m, "fun s => " + " + ".join(f"(max ((s 0 0) - {k}) 0)" for k in range(20)))
     assert mid.max_heartbeats >= 2000000
@@ -244,20 +245,23 @@ def test_branchy_real_gets_a_higher_budget():
     """A ReLU over the reals cannot fold to `max`, so it keeps its branches.
 
     `linarith` has no min/max support, so a Real net still pays a `split_ifs`
-    branch per unit. Measured, the base budget makes such a case *fail* in
-    106 s where the higher one *succeeds* in 71 s.
+    branch per unit. Measured, the old 400k floor made such a case *fail* in
+    106 s where 2M *succeeds* in 71 s -- which is why there is no longer a
+    floor below 2M for it to fall to.
     """
     branchy = _plan(_real_module(), "fun s => (if (s 0 0) ≥ 0 then (s 0 0) else 0) = 0")
     assert branchy.max_heartbeats >= 2000000
     flat = _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)")
-    assert flat.max_heartbeats == 400000
+    assert flat.max_heartbeats == 2000000
 
 
-def test_budgets_scale_with_the_module():
-    """`maxRecDepth` tracks the term count; the heartbeat budget stays low
-    unless something in the plan is known to be slow, so failures are fast."""
+def test_only_recursion_depth_scales_with_the_module():
+    """`maxRecDepth` tracks the term count. The heartbeat budget does not:
+    it is the same 2000000 every other generated file carries, whatever the
+    module's size, because a lower floor never made a failure faster -- a
+    tactic that hits the cap throws and `first` moves to a dearer one."""
     small = _plan(_int_module(), "fun s => ((s 0 0) = 0)")
-    assert small.max_heartbeats == 400000
+    assert small.max_heartbeats == 2000000
 
     x = Var(Int([64, 1]))
     wide = Module.sequential(
@@ -266,7 +270,8 @@ def test_budgets_scale_with_the_module():
         [Term(LIA.Id(), [X(x)], [x])],
     )
     plan = _plan(wide, "fun s => True")
-    assert plan.max_heartbeats > small.max_heartbeats
+    # 64 slots used to be one of the shapes that bought a bigger budget.
+    assert plan.max_heartbeats == small.max_heartbeats
     assert plan.max_rec_depth >= 4096
 
 
