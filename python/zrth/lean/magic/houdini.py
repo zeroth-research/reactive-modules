@@ -130,7 +130,15 @@ from ..houdini_solver import (
     smt_real,
 )
 from . import TA2Magic
-from ..smt_synth import SynthContext, affine_smt, moduli, program_constants, smt_int
+from ..smt_synth import (
+    SynthContext,
+    affine_smt,
+    denominator_scale,
+    moduli,
+    program_constants,
+    program_rationals,
+    smt_int,
+)
 
 try:
     import cvc5                                      # type: ignore
@@ -169,12 +177,11 @@ _MAX_DENSE = 5
 _MAX_SHIFTS = 2
 
 # A Real component whose runs stay within this many values is offered the
-# disjunction of them as one fact, and the scale a ranking function is
-# floored after is at most this. Both bound how long a certificate can get:
-# the disjunction is one `step_inv` case per value, and the scale is a
-# literal in the rank.
+# disjunction of them as one fact. It bounds how long a certificate can get:
+# the disjunction is one `step_inv` case per value. The other half of that
+# bound, the scale a ranking function is floored after, is
+# `smt_synth._MAX_SCALE`, since every route that reads a Real rank wants it.
 _MAX_VALUES = 8
-_MAX_SCALE = 64
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -728,54 +735,6 @@ def sample_rounds(ctx: SynthContext, ob: Obligations, ev: Evaluator,
 # ══════════════════════════════════════════════════════════════════════════
 # Candidates
 # ══════════════════════════════════════════════════════════════════════════
-
-
-def program_rationals(ctx: SynthContext) -> tuple:
-    """The Real literals this module and its property mention, as fractions.
-
-    `program_constants` reads the integer ones, and an LRA module has none
-    of those to read: `m_lra_lin` writes `0.0`, `1.0` and `5.0`, so the
-    bounds, the value sets and the lattice a state is drawn on all come from
-    here instead.
-    """
-    roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
-    roots += list(ctx.msmt.init_state(ctx.extl_next))
-    roots += list(ctx.msmt.update_state(ctx.state, ctx.extl_latched, ctx.extl_next))
-    seen: set = set()
-    visited: set = set()
-    stack = list(roots)
-    while stack:
-        t = stack.pop()
-        if t.getId() in visited:
-            continue
-        visited.add(t.getId())
-        if t.getKind() == Kind.CONST_RATIONAL:
-            q = t.getRealValue()
-            if abs(q) <= 10_000:
-                # As `program_constants` does: a literal is worth its
-                # neighbours, since the bound is usually one step past the
-                # guard's own constant.
-                seen.update({q, q - 1, q + 1, -q, 1 - q, -1 - q})
-        stack.extend(list(t))
-    return tuple(sorted(seen)[:32])
-
-
-def denominator_scale(rationals) -> int:
-    """What a real-valued ranking function is multiplied by before flooring.
-
-    `Int.toNat` reads a rank through `to_int`, and a quantity that falls by
-    less than one need not floor to a smaller number -- `m_lra_half` steps
-    by `1/2`, where `to_int x` stalls on every other round. An affine
-    transition moves a state by the literals it writes, so the least common
-    denominator of those is a scale at which a fall is a whole number.
-    """
-    scale = 1
-    for q in rationals:
-        scale = scale * Fraction(q).denominator // math.gcd(
-            scale, Fraction(q).denominator)
-        if scale > _MAX_SCALE:
-            return _MAX_SCALE
-    return scale
 
 
 def _reading(ctx: SynthContext, i: int) -> str:

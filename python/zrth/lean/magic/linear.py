@@ -66,7 +66,7 @@ from ..smt_synth import (
     affine_smt,
     bounded_solver,
     conjunction_smt,
-    int_readings,
+    readings,
     program_constants,
     record,
 )
@@ -183,7 +183,7 @@ class TA2MagicLinear(TA2Magic):
 
     def infer(self, cd: CertificateData) -> CertificateData:
         ctx = SynthContext.build(self.module, cd, route="smt-linear")
-        cols = int_readings(ctx, allow=("int", "bool", "bv"), route="smt-linear")
+        cols = readings(ctx, allow=("int", "bool", "bv"), route="smt-linear")
         self.log(f"[smt-linear] columns: {', '.join(c.name for c in cols)}")
         if cd.is_safety:
             search = self._safety(ctx, cols, cd)

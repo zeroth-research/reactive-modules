@@ -43,7 +43,9 @@ pair, and :func:`bounded_solver` is the same pair for the searches here.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from fractions import Fraction
 
 from .common import Refused
 
@@ -104,7 +106,7 @@ class SynthContext:
         function has to land in `Nat`) and a matrix-shaped one (its elements
         would each be a column, which is a wider change than a sort check).
         Which of the remaining sorts a particular route reads is that
-        route's question, asked through :func:`int_readings` -- the grammar
+        route's question, asked through :func:`readings` -- the grammar
         one takes integers only, the template one weighs Bools and
         bitvectors as well.
 
@@ -131,9 +133,10 @@ class SynthContext:
         keep_alive(tm, msmt, env)
 
         def weighable(sort) -> bool:
-            if sort.isInteger() or sort.isBoolean() or sort.isBitVector():
+            kind = reading_kind(sort)
+            if kind in ("int", "bool", "bv"):
                 return True
-            return reals and sort.isReal()
+            return reals and kind == "real"
 
         bad = [
             f"s{i} is {sort}"
@@ -185,7 +188,7 @@ class SynthContext:
 
 @dataclass(frozen=True)
 class Reading:
-    """One state component as the integer a template weighs it by.
+    """One integer a template can weigh a state component by.
 
     An `Int` component is itself. A `Bool` one is `0`/`1` -- which is what
     makes `b` and `¬b` expressible as rows (`(ite s0 1 0) - 1 >= 0`), and
@@ -198,16 +201,76 @@ class Reading:
     that survives is correct about the bitvector and not about a story told
     over it -- wraparound included, since the query quantifies over every
     state the real transition can reach.
+
+    A component need not have exactly one reading: :func:`component_readings`
+    returns a list, so a matrix-shaped component is a column per element.
     """
 
     name: str                       # SMT-LIB over `s0..`, for printing
     term: object                    # the same, over `ctx.state`
-    sort: str                       # "int" | "bool" | "bv"
+    kind: str                       # one of `READING_KINDS`
+    index: int                      # which state component it reads
 
 
-def int_readings(ctx: "SynthContext", *, allow: tuple[str, ...],
-                 route: str) -> list[Reading]:
-    """The state components `route` can weigh, or why one of them is not.
+# Every kind of state component there is a reading for. A sort absent from
+# here has none at all, which is a different refusal from a route declining
+# a kind that exists: the first is this front end's limit, the second is the
+# route's own contract.
+READING_KINDS = ("int", "bool", "bv", "real", "tuple")
+
+
+def reading_kind(sort) -> "str | None":
+    """Which of :data:`READING_KINDS` a cvc5 sort is read as, or `None`."""
+    for name, is_it in (("int", sort.isInteger), ("bool", sort.isBoolean),
+                        ("bv", sort.isBitVector), ("real", sort.isReal),
+                        ("tuple", sort.isTuple)):
+        if is_it():
+            return name
+    return None
+
+
+def component_readings(ctx: "SynthContext", i: int, *,
+                       scale: int = 1) -> list[Reading]:
+    """Every integer reading of state component `i`, in column order.
+
+    One reading for a scalar; one *per element* for a matrix-shaped
+    component, which cvc5 encodes as a tuple and which is projected with the
+    selectors `smt_to_lean` already renders. A Real component is read
+    through `to_int` -- the floor `Int.toNat` sees -- after multiplying by
+    `scale`, because flooring a quantity that falls by less than one need
+    not fall at all.
+    """
+    tm = ctx.tm
+    var, sort = ctx.state[i], ctx.env.state_sorts[i]
+    kind = reading_kind(sort)
+    if kind == "int":
+        return [Reading(f"s{i}", var, kind, i)]
+    if kind == "bool":
+        return [Reading(f"(ite s{i} 1 0)",
+                        tm.mkTerm(Kind.ITE, var, tm.mkInteger(1),
+                                  tm.mkInteger(0)), kind, i)]
+    if kind == "bv":
+        return [Reading(f"(ubv_to_int s{i})",
+                        tm.mkTerm(Kind.BITVECTOR_UBV_TO_INT, var), kind, i)]
+    if kind == "real":
+        inner, name = var, f"s{i}"
+        if scale != 1:
+            inner = tm.mkTerm(Kind.MULT, tm.mkReal(scale, 1), var)
+            name = f"(* {scale}.0 s{i})"
+        return [Reading(f"(to_int {name})",
+                        tm.mkTerm(Kind.TO_INTEGER, inner), kind, i)]
+    if kind == "tuple":
+        ctor = sort.getDatatype()[0]
+        return [Reading(f"((_ tuple.select {k}) s{i})",
+                        tm.mkTerm(Kind.APPLY_SELECTOR, ctor[k].getTerm(), var),
+                        kind, i)
+                for k in range(sort.getTupleLength())]
+    return []
+
+
+def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
+             scale: int = 1) -> list[Reading]:
+    """The columns `route` weighs this module by, or why one component is not.
 
     `allow` is the route's own contract rather than the context's: the
     grammar route's `synthFun` takes integer arguments and has nowhere to
@@ -216,25 +279,13 @@ def int_readings(ctx: "SynthContext", *, allow: tuple[str, ...],
     route that does read it is the difference between "try something else"
     and "try everything else".
     """
-    tm = ctx.tm
     out: list[Reading] = []
     refused: list[str] = []
-    for i, (var, sort) in enumerate(zip(ctx.state, ctx.env.state_sorts)):
-        if sort.isInteger():
-            kind = "int"
-            name, term = f"s{i}", var
-        elif sort.isBoolean():
-            kind = "bool"
-            name = f"(ite s{i} 1 0)"
-            term = tm.mkTerm(Kind.ITE, var, tm.mkInteger(1), tm.mkInteger(0))
-        else:
-            kind = "bv"
-            name = f"(ubv_to_int s{i})"
-            term = tm.mkTerm(Kind.BITVECTOR_UBV_TO_INT, var)
-        if kind not in allow:
+    for i, sort in enumerate(ctx.env.state_sorts):
+        if reading_kind(sort) not in allow:
             refused.append(f"s{i} is {sort}")
             continue
-        out.append(Reading(name=name, term=term, sort=kind))
+        out.extend(component_readings(ctx, i, scale=scale))
     if refused:
         raise Refused(
             f"--infer {route} reads a state of scalar integers, and this "
@@ -304,6 +355,61 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
         stack.extend(list(t))
     out = sorted(seen, key=lambda v: (abs(v), v))[:_CONSTANT_COUNT]
     return tuple(sorted(out))
+
+
+def program_rationals(ctx: SynthContext) -> tuple:
+    """The Real literals this module and its property mention, as fractions.
+
+    :func:`program_constants` reads the integer ones, and an LRA module has
+    none of those to read: `m_lra_lin` writes `0.0`, `1.0` and `5.0`, so the
+    bounds, the value sets and the lattice a state is drawn on all come from
+    here instead.
+    """
+    roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
+    roots += list(ctx.msmt.init_state(ctx.extl_next))
+    roots += list(ctx.msmt.update_state(ctx.state, ctx.extl_latched,
+                                        ctx.extl_next))
+    seen: set = set()
+    visited: set = set()
+    stack = list(roots)
+    while stack:
+        t = stack.pop()
+        if t.getId() in visited:
+            continue
+        visited.add(t.getId())
+        if t.getKind() == Kind.CONST_RATIONAL:
+            q = t.getRealValue()
+            if abs(q) <= _CONSTANT_LIMIT:
+                # As `program_constants` does: a literal is worth its
+                # neighbours, since the bound is usually one step past the
+                # guard's own constant.
+                seen.update({q, q - 1, q + 1, -q, 1 - q, -1 - q})
+        stack.extend(list(t))
+    return tuple(sorted(seen)[:32])
+
+
+# The scale a real-valued ranking function is floored after is at most this:
+# the scale becomes a literal in the rank, so it bounds how long the emitted
+# certificate can get.
+_MAX_SCALE = 64
+
+
+def denominator_scale(rationals) -> int:
+    """What a real-valued ranking function is multiplied by before flooring.
+
+    `Int.toNat` reads a rank through `to_int`, and a quantity that falls by
+    less than one need not floor to a smaller number -- `m_lra_half` steps
+    by `1/2`, where `to_int x` stalls on every other round. An affine
+    transition moves a state by the literals it writes, so the least common
+    denominator of those is a scale at which a fall is a whole number.
+    """
+    scale = 1
+    for q in rationals:
+        den = Fraction(q).denominator
+        scale = scale * den // math.gcd(scale, den)
+        if scale > _MAX_SCALE:
+            return _MAX_SCALE
+    return scale
 
 
 def moduli(constants: tuple[int, ...]) -> tuple[int, ...]:

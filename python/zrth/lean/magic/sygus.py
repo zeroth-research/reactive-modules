@@ -48,7 +48,7 @@ from ..smt_synth import (
     SynthContext,
     body_of,
     bounded_solver,
-    int_readings,
+    readings,
     moduli,
     program_constants,
     record,
@@ -129,7 +129,7 @@ class TA2MagicSygus(TA2Magic):
         # Integers only: the invariant is a `synthFun` over integer
         # arguments, so a Bool or bitvector column has nowhere to go. The
         # template route weighs those, and the refusal says so.
-        int_readings(ctx, allow=("int",), route="sygus")
+        readings(ctx, allow=("int",), route="sygus")
         self.log(f"[sygus] columns: {', '.join(ctx.names)}")
         consts = program_constants(ctx)
         self.log(f"[sygus] grammar: {self.grammar}, constants {list(consts)}")
