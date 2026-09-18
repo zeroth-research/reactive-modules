@@ -698,10 +698,21 @@ ROUTES: tuple[InferRoute, ...] = (
             "infers a ranking function `rule_globally` cannot take, and nothing "
             "checks that the invariant implies the property"
         ),
-        seeds=frozenset(),
+        # `--pre` is the one predicate this route has somewhere to put. It is
+        # not something the route must hold a candidate to -- it is an
+        # assumption the candidate may lean on -- and both prompts already
+        # carry it: `GENERATE_SYSTEM` states the two obligations with
+        # `init_pre` and `update_pre` in them, `VERIFY_SYSTEM` tells the
+        # auditor to assume them, and `_describe_preconditions` writes the
+        # predicates themselves into each user message. `Certificate/Data.lean`
+        # carries them whatever the route, so `lake build` checks the reply
+        # under the same assumption the reply was asked for under.
+        seeds=frozenset({"pre"}),
         seeds_refusal=(
-            "the `ai` route prompts for a whole certificate and does not state "
-            "the obligations, so it has nothing to hold a supplied predicate to"
+            "the `ai` route asks for the invariant and the ranking function "
+            "together in one reply and nothing puts a supplied one to the "
+            "obligations, so it would be overwritten rather than used -- "
+            "--infer ai-cegis takes either as given and infers what is left"
         ),
         reads=("",),
         returns="lean",

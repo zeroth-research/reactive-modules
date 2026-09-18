@@ -200,6 +200,22 @@ def test_ai_does_not_infer_a_safety_certificate():
     assert "rule_globally" in message and "ai-cegis" in message
 
 
+def test_ai_takes_a_precondition():
+    """`--pre` is not a candidate this route would have to hold to the
+    obligations -- it is an assumption the reply may lean on, and both
+    `magic.ai` prompts already carry it (`test_magic_ai.py`)."""
+    assert err(["m.py", "--buchi", "(= s0 0)", "--infer", "ai",
+                "--pre", "(>= e0 0)"]) == ""
+
+
+@pytest.mark.parametrize("flag,value", [("--invariant", "(= s0 1)"), ("--ranking", "s0")])
+def test_ai_refuses_a_supplied_certificate(flag, value):
+    """The other half: this route answers with both at once and puts a
+    supplied one to nothing, so it would be overwritten rather than used."""
+    message = err(["m.py", "--buchi", "(= s0 0)", "--infer", "ai", flag, value])
+    assert flag in message and "ai-cegis" in message
+
+
 @pytest.mark.parametrize(
     "flag,value",
     [("--invariant", "(= s0 1)"), ("--ranking", "s0"), ("--pre", "true")],
