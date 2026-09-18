@@ -222,35 +222,124 @@ class Obligations:
     def __init__(self, ctx: SynthContext):
         tm = ctx.tm
         self.ctx = ctx
+        self._rewriter = cvc5.Solver(tm)
 
         def consts(vs, prefix):
-            return [tm.mkConst(v.getSort(), f"{prefix}{i}")
-                    for i, v in enumerate(vs)]
+            """One holder per component, over one *constant* per element.
+
+            A scalar component is a constant, as it always was. A
+            matrix-shaped one is the constructor over a constant per
+            element -- `(tuple v_s0_0 v_s0_1 v_s0_2)` -- so that a
+            component is still one thing to substitute while every name
+            that reaches a solver is a scalar. `_readable` folds the
+            selects that leaves behind, and a prover with no tuple theory
+            then never sees a tuple: not in a `declare-fun`, not in a
+            `define-fun`, and not in an obligation.
+            """
+            out = []
+            for i, v in enumerate(vs):
+                sort = v.getSort()
+                if not sort.isTuple():
+                    out.append(tm.mkConst(sort, f"{prefix}{i}"))
+                    continue
+                out.append(tm.mkTuple([tm.mkConst(e, f"{prefix}{i}_{k}")
+                                       for k, e in
+                                       enumerate(sort.getTupleSorts())]))
+            return out
 
         self.s = consts(ctx.state, "v_s")
         self.sp = consts(ctx.state, "v_sp")
         self.si = consts(ctx.state, "v_si")
         self.el = consts(ctx.extl_latched, "v_el")
         self.en = consts(ctx.extl_next, "v_en")
-        rewriter = cvc5.Solver(tm)
-
-        def readable(t):
-            """`t`, with the tuples a matrix-shaped intermediate leaves folded.
-
-            A module with scalar state can still compute through a matrix --
-            `m_max` takes the max of a 2-vector -- and cvc5 encodes that as
-            `tuple`/`tuple.select`, which Vampire's SMT-LIB front end does not
-            have. The rewriter folds a select of a constructor away, so the
-            round Vampire is shown is the same function without them. It is
-            only called where a tuple is printed: a term that has none is
-            handed over exactly as encoded.
-            """
-            return rewriter.simplify(t) if "tuple" in str(t) else t
+        readable = self._readable
 
         self.next = [readable(t) for t in ctx.msmt.update_state(self.s, self.el, self.en)]
         self.init = [readable(t) for t in ctx.msmt.init_state(self.en)]
         self.update_pre = readable(ctx.with_inputs(ctx.update_pre, self.el, self.en))
         self.init_pre = readable(ctx.with_inputs(ctx.init_pre, self.el, self.en))
+
+    def _readable(self, t):
+        """`t`, with every tuple the encoding leaves folded away.
+
+        A module with scalar state can still compute through a matrix --
+        `m_max` takes the max of a 2-vector -- and cvc5 encodes that as
+        `tuple`/`tuple.select`, which Vampire's SMT-LIB front end does not
+        have. The rewriter folds a select of a constructor away, so the
+        round a prover is shown is the same function without them. Since
+        the state holders are constructors too (`consts`), that covers a
+        matrix-shaped *component* and not only an intermediate. It is only
+        called where a tuple is printed: a term that has none is handed
+        over exactly as encoded.
+        """
+        return self._rewriter.simplify(t) if "tuple" in str(t) else t
+
+    @staticmethod
+    def slots(holders) -> list:
+        """`(name, sort)` for every constant in `holders` -- one per element.
+
+        What a caller drawing input values needs: the names are the ones a
+        term mentions, so a matrix-shaped input is drawn element by element
+        rather than as a tuple under a name nothing uses.
+        """
+        out = []
+        for h in holders:
+            if h.getKind() == Kind.APPLY_CONSTRUCTOR:
+                out += [(c.getSymbol(), c.getSort()) for c in list(h)[1:]]
+            else:
+                out.append((str(h), h.getSort()))
+        return out
+
+    def env_of(self, state, holders=None) -> dict:
+        """A simulated state as values for the constants `holders` names.
+
+        One entry per element, because that is what the constants are: a
+        matrix-shaped component contributes its elements under the names
+        `consts` gave them, not a tuple under the component's name.
+        """
+        out: dict = {}
+        for h, v in zip(holders if holders is not None else self.s, state):
+            if h.getKind() == Kind.APPLY_CONSTRUCTOR:
+                for c, x in zip(list(h)[1:], v):
+                    out[c.getSymbol()] = x
+            else:
+                out[str(h)] = v
+        return out
+
+    def _select(self, t, k):
+        """Element `k` of `t`, pushed down to where the tuple is built.
+
+        `simplify` folds a select of a constructor, but not one of an `ite`
+        *between* constructors -- and that is exactly the shape of a round
+        that branches, as `m_mixed` does when it resets its vector instead
+        of decrementing it. Pushing the select into the branches is what
+        leaves a scalar per element rather than a tuple under a selector.
+        """
+        tm = self.ctx.tm
+        if t.getKind() == Kind.ITE:
+            return tm.mkTerm(Kind.ITE, t[0],
+                             self._select(t[1], k), self._select(t[2], k))
+        if t.getKind() == Kind.APPLY_CONSTRUCTOR:
+            return list(t)[1 + k]
+        ctor = t.getSort().getDatatype()[0]
+        return self._readable(
+            tm.mkTerm(Kind.APPLY_SELECTOR, ctor[k].getTerm(), t))
+
+    def _defines(self, holders, values) -> list:
+        """The round as `define-fun`s: one per constant, so one per element.
+
+        There is no constant of tuple sort to define -- by construction, see
+        `consts` -- so a matrix-shaped component is defined element by
+        element, the `k`-th from the `k`-th element of the round.
+        """
+        out = []
+        for h, v in zip(holders, values):
+            if h.getKind() != Kind.APPLY_CONSTRUCTOR:
+                out.append((h, v))
+                continue
+            for k, c in enumerate(list(h)[1:]):
+                out.append((c, self._select(v, k)))
+        return out
 
     # --- the queries ------------------------------------------------------
 
@@ -258,14 +347,16 @@ class Obligations:
         """`init_pre e -> fact (init e)`, for all of `facts` at once."""
         at = [self._at(f.term, self.si) for f in facts]
         return self._query([("pre", self.init_pre)], self._and(at),
-                           defines=zip(self.si, self.init), probes=at)
+                           defines=self._defines(self.si, self.init),
+                           probes=at)
 
     def preserved(self, hyps: list[Candidate], goals: list[Candidate]) -> Query:
         """`hyps s /\\ update_pre e -> goals (update s e)`."""
         named = [(f"h{i}", self._at(h.term, self.s)) for i, h in enumerate(hyps)]
         at = [self._at(g.term, self.sp) for g in goals]
         return self._query(named + [("pre", self.update_pre)], self._and(at),
-                           defines=zip(self.sp, self.next), probes=at)
+                           defines=self._defines(self.sp, self.next),
+                           probes=at)
 
     def implies(self, hyps: list[Candidate], goal) -> Query:
         """`hyps s -> goal s`: the invariant is a proof of the property."""
@@ -290,12 +381,15 @@ class Obligations:
             self._clamp(self._at(rank.term, self.sp)),
             self._clamp(self._at(rank.term, self.s)),
         )
-        return self._query(named, goal, defines=zip(self.sp, self.next))
+        return self._query(named, goal,
+                           defines=self._defines(self.sp, self.next))
 
     # --- plumbing ---------------------------------------------------------
 
     def _at(self, term, vs):
-        return term.substitute(self.ctx.state, vs)
+        # Folded, because substituting a matrix-shaped holder leaves a
+        # select of a constructor where the component was.
+        return self._readable(term.substitute(self.ctx.state, vs))
 
     def _and(self, terms):
         tm = self.ctx.tm
@@ -698,8 +792,8 @@ def simulate(ctx: SynthContext, ob: Obligations, ev: Evaluator,
     """
     draws = Draws(ctx, constants, seed, rationals=rationals, scale=scale)
     names = ctx.names
-    latched = [str(c) for c in ob.el]
-    awaited = [(str(c), c.getSort()) for c in ob.en]
+    latched = [n for n, _ in ob.slots(ob.el)]
+    awaited = ob.slots(ob.en)
 
     def inputs(pre, base, before):
         """Awaited inputs `pre` allows. At entry nothing is latched yet, so
@@ -754,7 +848,7 @@ def simulate(ctx: SynthContext, ob: Obligations, ev: Evaluator,
                     or any(not isinstance(v, bool) and abs(v) > _OVERFLOW
                            for v in _scalars(s))):
                 break
-            base = {str(c): v for c, v in zip(ob.s, s)}
+            base = ob.env_of(s)
             env = inputs(ob.update_pre, base, before)
             if env is None:
                 break
@@ -781,8 +875,7 @@ def sample_rounds(ctx: SynthContext, ob: Obligations, ev: Evaluator,
     best and, on a solver that cannot refute, a whole time limit to learn
     nothing.
     """
-    ins = [(str(c), c.getSort()) for c in ob.el + ob.en]
-    names = [str(c) for c in ob.s]
+    ins = ob.slots(ob.el) + ob.slots(ob.en)
     out: list = []
     t_end = time.monotonic() + seconds
     for _ in range(40 * want):
@@ -792,7 +885,7 @@ def sample_rounds(ctx: SynthContext, ob: Obligations, ev: Evaluator,
         try:
             if not keep(s):
                 continue
-            base = dict(zip(names, s))
+            base = ob.env_of(s)
             for _ in range(8):
                 env = dict(base)
                 env.update({n: draws.value(srt) for n, srt in ins})
