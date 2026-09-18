@@ -176,10 +176,38 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     cells now, but 50 rows carry a `--pre` and 29 of those are petri, so this
     becomes ~150 cells once the missing suites run: the largest single category
     on the page. Sizes "Allow --pre for more configurations" above.
-    **Now the whole of what is left on the svcomp safety column**: with 6
-    done, 8 of its 15 unverified cells are this and nothing else, and they
-    are rows whose invariant is inductive by construction. Worth doing
-    before the harder half of 7 or 8.
+    **`fbk-proveit` done** (`da78190`, `89b6ad7`); `ai` and `nuterm` are
+    what is left of it.
+
+    All 8 of the svcomp safety column's `--pre` cells were this. **6 are now
+    `VERIFIED`** and 2 are refused in the encoding's own words (two slots
+    starting at one input, which the NA has nowhere to say). The 39-cell fbk
+    suite is unchanged.
+
+    A precondition is a predicate over inputs and the NA model has no
+    inputs -- but `init` writes each input it reads to one slot, so reading
+    that slot back *is* reading the input, and `--pre` becomes one more
+    conjunct of `INIT`. Exactly the module's initial set, not a superset,
+    which this route needs because it reports `REFUTED`. Two refusals keep
+    it that way: a *latched* input, which `init` never read, and a next
+    input that starts no slot -- both would need the NA to say "some value
+    satisfying it exists", and it has no quantifier.
+
+    `INIT` and not `TRANS`, though a precondition *is* an auxiliary
+    invariant and in an encoding with real input variables would belong in
+    both. Here the transition reads no input at all, so `update_pre`
+    constrains a label `update` never looks at; the conjunct one could
+    write, `PRE statenext`, is a claim about the *initial* inputs asserted
+    of an evolved state. Lean catches that rather than leaving it to the
+    argument: `TS.transfer` takes a simulation, so `step_maps` has to hold
+    for every pair of states and not only the reachable ones. And with
+    `PRE` in `INIT` the model is already exactly the module, so there is no
+    imprecision for an auxiliary invariant to remove.
+
+    For `ai` and `nuterm` the "both halves" reading is the right one and is
+    already what `smt_query` states -- `init_pre e -> inv (init e)` and
+    `update_pre e /\ inv s -> inv (update s e)`. What is missing there is
+    only that the routes decline the flag.
 
 16. `fbk/m_step2/NiS2Odd3::fbk-proveit` -- `(kernel) application type mismatch`
     in `Certificate.lean`. A certificate ic3ia produced that `vmt2lean`
@@ -190,6 +218,18 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     term" over `@purify_3` / `to_real`. Same family as the `mod` note on
     `fbk/m_step2/InvMod`: the solver rewrites the witness into a vocabulary
     `vmt2lean` cannot render back.
+
+    A third member of this family is closed (`89b6ad7`), and it was not
+    about a witness: `vmt2lean`'s proof of the first validity check
+    generalises each state slot out of the initial condition, and
+    `generalize` cannot abstract a slot that a `Decidable` instance still
+    mentions -- `with_reducible reduce` rewrites `var_k (trace 0)` to
+    `trace 0 k` in the proposition under a `decide` and not in the instance
+    beside it. Invisible while `INIT` was all `var_k state == c`; `--pre`
+    is the first thing to put a comparison there. The installed certificate
+    now leaves `Bool` before generalising. Worth knowing for 16 and 17: the
+    route's "processing" step is a real place to repair a rendering, and
+    one that reports how many proofs it touched.
 
 18. **The pass is ~67% of what the page claims.** hybrid (26 rows) and petri
     (35 rows) have zero runs on every column -- the two newest suites, and the
