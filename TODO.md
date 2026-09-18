@@ -173,17 +173,42 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    verbose, and a budget-bound minimisation rather than anything the
    columns did.
 
-8. **`nuterm` reads only scalar `Int` -- 15 cells**: 7 `Int([n,m])`, 5 `Real`,
-   3 `Bool`. **Not one fix, and bigger than it looks.** The refusal is in
-   `benchmarks/svcomp/_farkas.read_system`, but the scalar assumption is the
-   procedure's data model, not that check: `_nodes._eval` wraps every read
-   into a 1x1 array (`np.array([[r[0]]])`) and says so in its docstring, and
-   `node_view` gives each non-affine term one symbol (`Node(kind, sym,
-   tuple(r[0] for r in reads))`). A matrix component means one column per
-   element through `_eval`, `values`/`opaque`, the region machinery and the
-   Lean emitter's `Vector n Int` state. The current refusal is at least
-   honest -- it names the wire and its sort -- so this is worth doing
-   deliberately or not at all.
+8. **`nuterm` reads only scalar `Int`.** **Not one fix, and it is three
+   different ones** -- measured, 17 cells rather than 15, and the split is
+   what decides whether any of it is worth doing:
+
+   * **7 matrix `Int`** (`m_relu_vec`, `m_relu_net`, `net8`, `net16`,
+     `m_vec32`, `m_mixed`, `m_transpose`). The one this item described, and
+     the only one that keeps the machinery's arithmetic: a matrix of
+     integers is just more integer columns.
+   * **5 scalar `Real`** (`m_lra_*`, `m_relu_lra`). A different arithmetic,
+     not a shape -- the rows are integer-affine and the rank lands in `Nat`.
+   * **4 scalar `Bool` + 1 `BitVec`** (`m_boolint` x3, `twobit_lia`,
+     `twobit`). **Not a matrix problem at all, and not a cheap widening**:
+     the columns are integer-*affine* (`affine_coeffs` fits by 0/1
+     substitution and then verifies the fit), so a Bool column is a
+     *branch*, not a wider element type. Reading it as `If(b,1,0)` does not
+     help, because the transition is affine in `b`'s branches rather than
+     in that reading.
+
+   For the matrix slice the sites are known and a probe gets most of the
+   way: making `_nodes._eval` shape-aware -- `np.array(r).reshape(shape(w))`
+   instead of `np.array([[r[0]]])` -- already walks `m_relu_vec` and
+   `m_vec32` to correct per-element transitions (`If(w0_0 - 1 > 0, w0_0 - 1,
+   0)`). What is left is `node_view` giving a non-affine term one symbol per
+   *element* rather than one per wire (`Node(kind, sym, tuple(r[0] for r in
+   reads))`, `opaque.update(zip(t_.write, [[sym]]))`), `read_system` making
+   a column per element, and `System.sp_syms` / `index` / `entry`, which
+   read `[0]` off each var and so need the wire-vs-column split that
+   `magic.houdini.Column` is on the other side of the house.
+
+   **What should decide it**: the payoff is now *second-route coverage*, not
+   reach. `--infer ai` verifies all 7 of those modules and `--infer houdini`
+   verifies 6 of them since `68ac231`, so this buys a second opinion on
+   modules that are already certified, at the cost of a wire/column split
+   through ~1550 lines (`_farkas.py`, `_nodes.py`), `_termination.py`,
+   `magic/learn.py` and five test files. The current refusal is honest --
+   it names the wire and its sort.
 
 9. ~~**smt-linear searches the ranking under the invariant `true`.**~~
    **Done** (`946e6ec`). The rank and `k` invariant rows are one query,
