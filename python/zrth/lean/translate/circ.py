@@ -210,6 +210,16 @@ def to_lean_equiv_theorems(
         lhs_input = _natives_to_vt([("extl_n", n_extl_n)])
         rhs_output = _native_to_vt("r", n_ctrl)
 
+        # One `simp_circ` per layer, and a layer's width grows with the
+        # number of output-to-input paths through the block, so the proof's
+        # cost is set by the module rather than by this file: a Petri net
+        # with a dozen place-transition incidences exceeds the default
+        # budget, and `System/Circ.lean` then fails to compile at all --
+        # BUILD-FAIL, on every route, for a module that is otherwise fine.
+        # The same budget `scalar.py` raises for the same reason, and per
+        # theorem rather than file-wide.
+        lines.append("set_option maxHeartbeats 2000000 in")
+        lines.append("set_option maxRecDepth 100000 in")
         lines.append(f"theorem init_circ_eq : ∀ {init_binder},")
         lines.append(f"    Circ.init.fn {lhs_input} =")
         lines.append("    let r := init extl_n")
@@ -238,6 +248,8 @@ def to_lean_equiv_theorems(
         )
         rhs_output = _native_to_vt("r", n_ctrl)
 
+        lines.append("set_option maxHeartbeats 2000000 in")
+        lines.append("set_option maxRecDepth 100000 in")
         lines.append(f"theorem update_circ_eq : ∀ {update_binders},")
         lines.append(f"    Circ.update.fn {lhs_input} =")
         lines.append("    let r := update ctrl extl_l extl_n")

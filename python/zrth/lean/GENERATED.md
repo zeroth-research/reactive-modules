@@ -263,6 +263,15 @@ theorem update_circ_eq : ∀ (ctrl : ...) (extl_l : ...) (extl_n : ...),
 The file also defines a helper tactic macro `simp_circ`, used inside those
 proofs to unfold one layer at a time.
 
+Both theorems carry `set_option maxHeartbeats 2000000` / `maxRecDepth 100000`,
+for the same reason `Scalar`'s do: their cost is set by the module, not by the
+generator. A layer's width is the number of output-to-input *paths* through
+the block — `_circ_translate_body` walks back from the outputs and does not
+merge a shared subterm — so a block that reads one value from many places runs
+past the default budget, and the file then fails to compile at all. That is a
+`BUILD-FAIL` on every route, for a module nothing else is wrong with, which is
+how it was found: a Petri net with a dozen place-transition incidences.
+
 ---
 
 ## Encoding 3 — scalar (`System/Scalar.lean`)
