@@ -256,6 +256,36 @@ def test_a_matrix_component_is_a_column_per_element():
     )
 
 
+def test_an_element_is_read_by_its_own_sort_not_the_component_s():
+    """A matrix of `Bool` has an integer reading; the selector alone does not.
+
+    `component_slots` says what a component is made of and
+    `component_readings` reads each piece by *its* sort, so a `Bool`
+    element becomes `0`/`1` the same way a scalar `Bool` component does.
+    Reading it by the component's sort instead -- `tuple` -- hands a
+    template a Bool where it multiplies by a coefficient, which is a sort
+    error several steps after the mistake.
+    """
+    import torch
+
+    from zrth import LIA, Bool, Module, Term, Var, Wire, X
+    from zrth.lean.smt_synth import SynthContext, component_readings, component_slots
+
+    b, n = Var(Bool([2, 1])), Wire(Bool([2, 1]))
+    module = Module.sequential(
+        [b],
+        [Term(LIA.Bool(torch.tensor([[True], [False]])), [X(b)])],
+        [Term(LIA.Not(), [n], [b]), Term(LIA.Id(), [X(b)], [n])],
+    )
+    ctx = SynthContext.build(module, CertificateData(prp="true", kind="safety"),
+                             route="test", takes=("bool", "tuple"))
+    assert [slot for slot, _ in component_slots(ctx, 0)] == [0, 1]
+    assert [(r.name, r.kind, r.slot) for r in component_readings(ctx, 0)] == [
+        ("(ite ((_ tuple.select 0) s0) 1 0)", "bool", 0),
+        ("(ite ((_ tuple.select 1) s0) 1 0)", "bool", 1),
+    ]
+
+
 def test_smt_linear_finds_a_rank_when_the_shape_has_one():
     from zrth.lean.magic.linear import TA2MagicLinear
 

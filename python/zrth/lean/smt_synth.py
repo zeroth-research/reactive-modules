@@ -207,14 +207,21 @@ class Reading:
 
     name: str                       # SMT-LIB over `s0..`, for printing
     term: object                    # the same, over `ctx.state`
-    kind: str                       # one of `READING_KINDS`
+    kind: str                       # one of `READING_KINDS`, of the *element*
     index: int                      # which state component it reads
+    slot: "int | None" = None       # which element of it, or the whole thing
 
 
 # Every kind of state component there is a reading for. A sort absent from
 # here has none at all, which is a different refusal from a route declining
 # a kind that exists: the first is this front end's limit, the second is the
 # route's own contract.
+#
+# `tuple` is the odd one out, and deliberately: it is not a kind anything is
+# *read* as, it is the kind that has elements. A route that takes it is
+# saying it states itself over elements rather than over components -- see
+# :func:`component_slots` -- and what each element is read as is one of the
+# other four.
 READING_KINDS = ("int", "bool", "bv", "real", "tuple")
 
 
@@ -228,6 +235,41 @@ def reading_kind(sort) -> "str | None":
     return None
 
 
+def component_slots(ctx: "SynthContext", i: int) -> list[tuple]:
+    """The scalars state component `i` is made of: `(slot, sort)` apiece.
+
+    A scalar component is one slot, `None` -- it *is* the scalar, and there
+    is no selector to write. A matrix-shaped one is a slot per element, in
+    the order `smt_encode.wire_sort` laid the tuple out: flat, `m*n`
+    elements of one scalar sort, row by row. Flat is why this is one level
+    and not a recursion -- a 2-D component is `(Tuple Int Int ...)`, never a
+    tuple of tuples -- and it is the same order `smt_to_lean` renders the
+    selectors in and the Lean state is written in, so a certificate stated
+    over slot `k` here means element `k` there.
+
+    This is the one place that answers "what is this component made of",
+    and it is separate from :func:`component_readings` because the routes
+    that need elements do not all want them read the same way: `smt-linear`
+    wants an integer per element, `houdini` wants each element in its own
+    sort so a Real one keeps its rationals, and `vampire` wants a variable
+    per element because its prover has no tuples at all.
+    """
+    sort = ctx.env.state_sorts[i]
+    if not sort.isTuple():
+        return [(None, sort)]
+    return list(enumerate(sort.getTupleSorts()))
+
+
+def element(ctx: "SynthContext", i: int, slot: "int | None") -> tuple:
+    """One slot of component `i`: how it is written, and the term for it."""
+    var = ctx.state[i]
+    if slot is None:
+        return f"s{i}", var
+    ctor = ctx.env.state_sorts[i].getDatatype()[0]
+    return (f"((_ tuple.select {slot}) s{i})",
+            ctx.tm.mkTerm(Kind.APPLY_SELECTOR, ctor[slot].getTerm(), var))
+
+
 def component_readings(ctx: "SynthContext", i: int, *,
                        scale: int = 1) -> list[Reading]:
     """Every integer reading of state component `i`, in column order.
@@ -238,33 +280,35 @@ def component_readings(ctx: "SynthContext", i: int, *,
     through `to_int` -- the floor `Int.toNat` sees -- after multiplying by
     `scale`, because flooring a quantity that falls by less than one need
     not fall at all.
+
+    An element is read by *its own* sort rather than by the component's,
+    which is the only reading of a matrix of Bools or of Reals that is an
+    integer at all: the selector alone is a Bool, and a template that
+    multiplies it by a coefficient is a sort error four steps later.
     """
     tm = ctx.tm
-    var, sort = ctx.state[i], ctx.env.state_sorts[i]
-    kind = reading_kind(sort)
-    if kind == "int":
-        return [Reading(f"s{i}", var, kind, i)]
-    if kind == "bool":
-        return [Reading(f"(ite s{i} 1 0)",
-                        tm.mkTerm(Kind.ITE, var, tm.mkInteger(1),
-                                  tm.mkInteger(0)), kind, i)]
-    if kind == "bv":
-        return [Reading(f"(ubv_to_int s{i})",
-                        tm.mkTerm(Kind.BITVECTOR_UBV_TO_INT, var), kind, i)]
-    if kind == "real":
-        inner, name = var, f"s{i}"
-        if scale != 1:
-            inner = tm.mkTerm(Kind.MULT, tm.mkReal(scale, 1), var)
-            name = f"(* {scale}.0 s{i})"
-        return [Reading(f"(to_int {name})",
-                        tm.mkTerm(Kind.TO_INTEGER, inner), kind, i)]
-    if kind == "tuple":
-        ctor = sort.getDatatype()[0]
-        return [Reading(f"((_ tuple.select {k}) s{i})",
-                        tm.mkTerm(Kind.APPLY_SELECTOR, ctor[k].getTerm(), var),
-                        kind, i)
-                for k in range(sort.getTupleLength())]
-    return []
+    out: list[Reading] = []
+    for slot, sort in component_slots(ctx, i):
+        name, var = element(ctx, i, slot)
+        kind = reading_kind(sort)
+        if kind == "int":
+            out.append(Reading(name, var, kind, i, slot))
+        elif kind == "bool":
+            out.append(Reading(f"(ite {name} 1 0)",
+                               tm.mkTerm(Kind.ITE, var, tm.mkInteger(1),
+                                         tm.mkInteger(0)), kind, i, slot))
+        elif kind == "bv":
+            out.append(Reading(f"(ubv_to_int {name})",
+                               tm.mkTerm(Kind.BITVECTOR_UBV_TO_INT, var),
+                               kind, i, slot))
+        elif kind == "real":
+            inner = var
+            if scale != 1:
+                inner = tm.mkTerm(Kind.MULT, tm.mkReal(scale, 1), var)
+                name = f"(* {scale}.0 {name})"
+            out.append(Reading(f"(to_int {name})",
+                               tm.mkTerm(Kind.TO_INTEGER, inner), kind, i, slot))
+    return out
 
 
 def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
