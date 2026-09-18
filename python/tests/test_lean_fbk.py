@@ -954,6 +954,48 @@ def test_resolve_project_rejects_a_directory_that_is_not_the_checkout():
 # ── CLI wiring ──────────────────────────────────────────────────────────────
 
 
+# ── what the installed certificate is processed for ─────────────────────────
+
+
+_RAW_CHECK = """\
+#print "Validity check 1"
+theorem validity_check_1_prop (trace : TraceType) :
+    ( (I M) trace 0) ->  (INV trace 0) := by
+  try dsimp only
+  repeat intro
+  with_reducible reduce at *
+  expose_names
+  simp
+  all_goals (revert h; generalizeNatVar trace at 0 using 4; smt)
+"""
+
+
+def test_the_certificate_leaves_Bool_before_it_generalises():
+    """`generalizeNatVar` cannot abstract a slot that a `Decidable` instance
+    still mentions, and `--pre` is what first puts one in `INIT`."""
+    from zrth.lean.fbk_proveit import leave_bool_before_generalize
+
+    out, n = leave_bool_before_generalize(_RAW_CHECK)
+    assert n == 1
+    line = next(l for l in out.splitlines() if "generalizeNatVar" in l)
+    assert "revert h; try simp only [" in line
+    assert line.index("simp only") < line.index("generalizeNatVar")
+    # All of `Bool` or none of it: a `decide` normalised while a `==` is
+    # left behind is a `Prop` goal under a `Bool` hypothesis, which is worse
+    # than not touching it (`fbk/m_countdown/InvBase`).
+    assert "beq_iff_eq" in line and "decide_eq_true_eq" in line
+    assert "Bool.and_eq_true" in line
+
+
+def test_a_certificate_this_does_not_recognise_is_installed_as_it_came():
+    """This rewrites another project's generated proof. A `proveit.py` whose
+    template has moved on should cost a run nothing."""
+    from zrth.lean.fbk_proveit import leave_bool_before_generalize
+
+    other = "theorem t : True := by trivial\n"
+    assert leave_bool_before_generalize(other) == (other, 0)
+
+
 def _verith(*args) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["uv", "run", "verith", *args],
