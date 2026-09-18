@@ -209,18 +209,38 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     the page already promises for a module shape refused up front -- the
     open `opaque`-vs-reject decision (KNOWN_ISSUES #27) is untouched.
 
-11. **`NO-CERT` conflates three different measurements.** Of 312: 88 are a
-    proof the space is empty, 34 are budget exhaustion, ~190 are the route
-    declining the shape. The verdict does not distinguish them. **"The
-    underlying messages already distinguish them cleanly" is too
-    optimistic** -- classifying by regex over the prose leaves ~160
-    unmatched across a dozen wordings per route, and 7 match two buckets at
-    once. What *is* clean is `smt_synth.Search.exhausted`, which verith
-    already writes to `artifacts/` as `status="no_solution" | "unknown"`.
-    Read that rather than the prose -- which means the routes that do not go
-    through `Search` (nuterm, vampire, the LLM ones) need to record it too.
-    Partly relieved by `74393b0`: a failed cell's one-line summary is now
-    what was raised rather than the frames above it.
+11. ~~**`NO-CERT` conflates three different measurements.**~~ **Done**
+    (`8a8dea4`, `926b641`). Of 312: 88 a proof the space is empty, 34 budget
+    exhaustion, ~190 the route declining the shape -- and classifying by
+    regex over the prose left ~160 unmatched across a dozen wordings per
+    route, with 7 matching two buckets at once.
+
+    Every route records which it was now, and the mechanism is one flag
+    rather than one edit per route: `Refused` carries `searched`, defaulting
+    to `False` because most refusals are *gates* -- a sort the route cannot
+    weigh, an operator with no encoding, a property kind it does not take --
+    all reached before a solver starts. `main._infer` writes the note
+    centrally, so a route added later cannot forget, and only when the route
+    wrote none of its own (`smt-linear`, `sygus`, `houdini` and `vampire`
+    each leave a richer one).
+
+    `declined` is the new status, told from `unknown` in the direction
+    `no_solution` is: `unknown` means a search ran and did not finish, which
+    is a fact about how hard the module is, while `declined` means none ran
+    and there is no such fact. `ai` and `ai-cegis` were raising
+    `RuntimeError` on running out of attempts -- a traceback, and nothing
+    recorded; they refuse like every other route now.
+
+    The harness reads the status and the panel shows it. **The verdict is
+    unchanged, deliberately**: `NO-CERT` is load-bearing in the truth
+    comparison, the colouring and the counts, and splitting the vocabulary
+    would churn all three to say what the panel now says directly. Also
+    relieved by `74393b0`: a failed cell's one-line summary is what was
+    raised rather than the frames above it.
+
+    Still to do, and it is 18's pass rather than this item's code: the
+    counts above are from the old classification, so what each bucket really
+    holds is not known until a pass recorded the statuses.
 
 12. ~~**`Certificate.lean`'s heartbeat floor is 400000**~~ **Done**
     (`932ab14`). It is 2000000 now, what every other generated file carries.
