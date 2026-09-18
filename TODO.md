@@ -433,10 +433,33 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     two whose `truth` is measured by `test_rows.py` rather than transcribed.
     With houdini at 37/216 and vampire at 36/216, 570 of 1728 cells are blank.
 
+    **Sized, so it is not started blind.** hybrid + petri is 61 rows over 9
+    routes = 549 cells, and the API key is present so every route runs.
+    Measured throughput on this machine: **50 s per cell of wall clock**, so
+    **about 8 hours**, and that is with `smt-linear` -- `ai` and `ai-cegis`
+    cost 4 to 7 times as much per cell by recorded time, so the real figure
+    is higher. An overnight job, not an afternoon one.
+
+    Note the gap that makes it so: the *recorded* `gen`+`build` seconds
+    average 14 s, and the wall is 50 s. The other 36 s is per-cell process
+    overhead -- a fresh `uv run verith`, the shared `.lake` symlink, the
+    manifest, the teardown. Anyone estimating from `results.json`'s own
+    timings will be out by a factor of three.
+
+    One column of it is done as a by-product of that sizing:
+    `smt-linear` x hybrid, 26 cells, **`NO-CERT` on all 26**.
+
 19. **houdini and houdini-vampire agree on every verdict on the 37 rows both
     ran** (0 of 37 differ), so the split has so far produced none of the
     "which half of the route the difference is in" it exists for. Either run
     both everywhere so the comparison means something, or drop one.
+
+    One disagreement is known now without a pass, and it is worth having
+    before the decision: since `5101824` both solvers read a matrix-shaped
+    module, and on `m_relu_net16` the vampire prover returns a 50-fact
+    invariant where cvc5 cuts it to one. Same verdict, very different
+    certificate -- which is the kind of difference this column exists to
+    show, and the kind a verdict-only comparison cannot.
 
 20. **`truth` is `None` for all 30 limits/buchi and all 57 svcomp/buchi rows**
     -- 40% of the page, where the matrix can only say a route answered, not
