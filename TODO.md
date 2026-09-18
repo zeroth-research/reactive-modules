@@ -13,14 +13,20 @@ One pass, 2026-09-18, 1158 measured cells over 216 rows
 cells from that pass. No soundness defect: nothing verified a row known to
 fail, and every `REFUTED` landed on a `truth=fails` row.
 
-1. **`houdini-vampire` renders nowhere -- 155 cells, 112 `VERIFIED`, dropped on
-   the floor.** Two causes: `run_matrix.py` records those runs with
-   `"route": "vampire"`, and `render.py:1018` builds the column list from that
-   field (`any(x["route"] == r ...)`) while every cell lookup uses the `::` key
-   suffix -- and `route_order` comes from `ROUTES`, which has 8 names and no
-   `houdini-vampire`. The page shows a 36-cell `vampire` column instead of the
-   155-cell one that worked. Fix both halves; it changes what the page says,
-   not just how it looks.
+1. ~~**`houdini-vampire` renders nowhere -- 155 cells, 112 `VERIFIED`, dropped
+   on the floor.**~~ **Done** (`73b6d9e`). Both halves were one mistake: a
+   column is not a route, and the page asked `infer_route.ROUTES` what the
+   columns were. `houdini-vampire` is `--infer houdini` over its second
+   solver, so it can never be in that list; and the presence test read the
+   `route` field while every cell lookup used the `::` key suffix. The
+   harness that measured the columns now lists them (`suites.routes`,
+   `column_of`), and a suffix it no longer declares is carried at the end
+   rather than dropped. The 155 cells' recorded commands say `--infer
+   vampire` -- which meant this search before `25bfb58` split the flag and
+   means a different route now -- so each says so in its panel; the verdict
+   is what was measured, the command is what no longer reproduces it.
+   Re-measuring that column would make the commands true again, which is a
+   pass, not a fix.
 
 2. ~~**A `Real` component has no ranking function.**~~ **Done** (`bf01f67`).
    A Real column is `(to_int s0)`, scaled first by `denominator_scale`.
@@ -43,8 +49,19 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    `smt_query.py:41`) inside a 300 s cell budget; its mean gen over all 155
    cells is 1.7 s. Exactly 1 of the 34 is a proof of emptiness -- so the
    README's "a bounded shape that comes back empty is a proof" is true of
-   smt-linear (87 of 103) and backwards for sygus. Cheapest column improvement
-   available: it costs a config default.
+   smt-linear (87 of 103) and backwards for sygus.
+   **"Cheapest column improvement available: it costs a config default" was
+   wrong, and measuring it is what says so.** Six of those cells re-run at
+   12-24x the budget: `m_twovars/TvRelational` at 60 s, and `CdBands`,
+   `InvLex`, `InvDisj`, `T5Exact`, `InvTwoVars` at 83-121 s against a 120 s
+   per-call budget. Every one still did not finish. The grammar is what is
+   missing, not the seconds. What came of it is a message that no longer
+   sends the reader to spend two minutes arriving back at it (`47dce43`).
+   **Still open, and now the interesting half:** a finite grammar that is
+   never *decided* is a shape this route cannot report on. 1 decision in 34
+   says the space is too big to enumerate -- a smaller default grammar
+   would trade reach for proofs of emptiness, which is the answer the route
+   exists to give. That wants measuring before it is chosen.
 
 5. **`argmax_1d` does not reduce -- 4 cells** (KNOWN_ISSUES #30). `OpArgmax`,
    same four columns, same failure and same shape of fix as 3.
@@ -89,12 +106,20 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    have one, and `m_lex`'s is a lexicographic argument as a single linear
    rank. `m_twovars` is still empty at every width.
 
-10. **`Uninterpreted` crashes instead of refusing -- 7 cells, the matrix's only
-    `GEN-FAIL`** (KNOWN_ISSUES #27), all `m_uninterp/OpUninterp`, one per
-    column. `fbk-proveit` already refuses it cleanly in `check_module`; every
-    other route dies in a traceback out of `native.py`. Hoisting that refusal
-    into the shared front end is separable from the open `opaque`-vs-reject
-    decision and turns a crash into an honest verdict today.
+10. ~~**`Uninterpreted` crashes instead of refusing -- 7 cells, the matrix's
+    only `GEN-FAIL`**~~ **Done** (`fd775b5`), with the premise corrected:
+    nothing crashed. It was a clean `Refused`, but raised from the middle of
+    codegen and phrased as a missing cell of `ops.py` (`No Lean expression
+    mapping for: Uninterpreted (matrix form)`) for a user who asked about a
+    module. The op table now answers as a value (`lean_gap`) and
+    `native.lean_gaps` asks it of a whole module, before any of the project
+    exists and after the route's own precheck; the message names the block,
+    the wire and the operator. It covers all 24 unsupported ops, not
+    `Uninterpreted` alone, and cannot refuse what generates: no op with an
+    unsupported matrix form emits in another Lean column, and the walk
+    prunes terms nothing reads. The verdict stays `GEN-FAIL`, which is what
+    the page already promises for a module shape refused up front -- the
+    open `opaque`-vs-reject decision (KNOWN_ISSUES #27) is untouched.
 
 11. **`NO-CERT` conflates three different measurements.** Of 312: 88 are a
     proof the space is empty, 34 are budget exhaustion, ~190 are the route
