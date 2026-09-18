@@ -129,17 +129,49 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    `VERIFIED`; the fbk suite's 39 are unchanged. Of the 15 svcomp rows
    still not verified, 8 are `--pre` (15) and 5 are those precise refusals.
 
-7. ~~**Tuple- and matrix-shaped components have no route.**~~ **Partly done**
-   (`c2264db`). `smt-linear` reads a matrix component as one column per
-   element through the tuple selectors `smt_to_lean` already rendered, and
-   `m_relu_vec` builds. Finding the invariant unaided does not follow: cvc5
-   will not state the quantified form once a tuple is in it, and the
-   counterexample loop did not finish in 200 s at width 0, so these reach
-   `NO-CERT` with a note unless the invariant is supplied or resumed -- see
-   4. **Still open: houdini (7 cells) and vampire (12).** Their candidates
-   and templates are stated over components rather than over readings, so
-   the shared `readings` layer does not reach them; each needs its own
-   candidate machinery taught about elements.
+7. ~~**Tuple- and matrix-shaped components have no route.**~~ **Done**
+   (`c2264db`, then `30fe154`, `e129ba5`, `68ac231`, `5101824`, `4943def`).
+   `smt-linear` reads a matrix component as one column per element through
+   the tuple selectors `smt_to_lean` already rendered, and `m_relu_vec`
+   builds. Finding the invariant unaided does not follow there: cvc5 will
+   not state the quantified form once a tuple is in it, and the
+   counterexample loop did not finish in 200 s at width 0, so those reach
+   `NO-CERT` with a note unless the invariant is supplied or resumed.
+
+   **houdini now verifies six of the seven, end to end.** `m_relu_vec`,
+   `m_relu_net`, `m_mixed`, `m_relu_net8`, `m_relu_net16` and `m_vec32`, on
+   both provers -- so twelve cells across the `houdini` and
+   `houdini-vampire` columns, every one of them from refused. The
+   certificate is `0 <= v[0]` with rank `v[0]` in all six: the shape the
+   modules always had, and unsayable while a fact had to be about a whole
+   tuple. The seventh, `m_transpose`, is refused for its `Transpose`, which
+   has no cvc5 term at all.
+
+   **"vampire (12)" was two counts added together.** Seven of those cells
+   are matrix-shaped; the other five (`m_lra_half`, `m_relu_lra`,
+   `m_lra_lin`, `m_lra_conv`, `m_lra_two`) are `Real`, which is a different
+   limitation -- a ranking function has to land in `Nat` -- and is not what
+   this item is about. So it was 7 and 7, not 7 and 12.
+
+   **The vampire half derives nothing, and that is the honest result.**
+   `--infer vampire` can now *state* these: its rows and rank coefficients
+   are columns, and the test instantiates the certificate `m_relu_vec`
+   actually has into the template and has cvc5 prove it. Vampire does not
+   pin the coefficients down -- 120 s each on three modules, 60 s on a
+   safety property as easy as this shape gets. Three ReLUs split the round
+   into eight branches against six holes, where scalar `m_relu` is two and
+   two and is one of the 114 cells the route does verify. No verdict moves;
+   what moves is the note, from "cannot read this shape" to "searched it
+   and derived nothing", which is what 11 wants to tell apart.
+
+   Two things found on the way, both recorded rather than folded in:
+   `c2264db` removed the sort gate that happened to catch `m_transpose`, so
+   every SMT route on it had been dying with a `ValueError` traceback since
+   -- unmeasured, because the `smt-linear` column has not been re-run since
+   that commit (`e129ba5`). And under the vampire prover `m_relu_net16`
+   comes back with a 50-fact invariant where cvc5 cuts it to one: correct,
+   verbose, and a budget-bound minimisation rather than anything the
+   columns did.
 
 8. **`nuterm` reads only scalar `Int` -- 15 cells**: 7 `Int([n,m])`, 5 `Real`,
    3 `Bool`. **Not one fix, and bigger than it looks.** The refusal is in
