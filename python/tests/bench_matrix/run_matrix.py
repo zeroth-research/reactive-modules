@@ -225,6 +225,32 @@ def _kill_group(proc):
         return "", ""
 
 
+def diagnosis(blob: str) -> str:
+    """The part of a failed run's output that says what went wrong.
+
+    Two shapes reach here. A refusal is prose `verith` wrote: the first line
+    is the diagnosis and the lines under it are the hint, so a tail of it is
+    the answer -- which is why this is a tail and not a head.
+
+    A traceback is Python's, and there the answer is the exception at the
+    bottom; the frames above it are the path there. Taking the last lines of
+    one gave `cd = magic.infer(...) | File "...", line 177, in infer | raise
+    RuntimeError(` -- the call that raised, not what it said. `err_full`
+    keeps the whole thing for the page's detail panel either way.
+    """
+    lines = blob.splitlines()
+    frames = [i for i, ln in enumerate(lines) if ln.startswith('  File "')]
+    if not frames:
+        tail = [ln.strip() for ln in lines if ln.strip()]
+        return " | ".join(tail[-8:])
+    # The exception is the first unindented line after the last frame -- its
+    # own message may run on over indented lines, so those come with it.
+    for j in range(frames[-1] + 1, len(lines)):
+        if lines[j].strip() and not lines[j][0].isspace():
+            return "\n".join(lines[j:]).strip()
+    return lines[-1].strip()
+
+
 def generate(row, route, out: Path) -> dict:
     if out.exists():
         shutil.rmtree(out)
@@ -236,13 +262,9 @@ def generate(row, route, out: Path) -> dict:
                     err=f"verith timed out ({GEN_TIMEOUT}s)",
                     err_full=((r.stderr or r.stdout) or "").strip()[-4000:])
     if r.returncode != 0:
-        # The diagnosis is often the *first* line of a refusal and the lines
-        # after it are the hint, so a 3-line tail threw away the reason.
-        # `err_full` keeps the whole thing for the page's detail panel.
         blob = (r.stderr or r.stdout).strip()
-        tail = [ln.strip() for ln in blob.splitlines() if ln.strip()]
         return dict(ok=False, secs=time.time() - t0,
-                    err=" | ".join(tail[-8:]), err_full=blob[-4000:])
+                    err=diagnosis(blob), err_full=blob[-4000:])
     return dict(ok=True, secs=time.time() - t0, err="",
                 inferred=inferred_from(r.stdout), inferred_rule="last")
 

@@ -674,9 +674,17 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None,
         w(
             f'<div class="lbl">{"why verith refused" if na else "why it returned nothing"}</div>'
         )
-        w(
-            f'<pre class="err">{esc(run["gen"].get("err_full") or run["gen"]["err"])}</pre>'
-        )
+        # The diagnosis, then everything that was printed. They are the same
+        # text for a refusal, and for a traceback they are not: the run's
+        # whole output opens with whatever the process said first, which on
+        # the LLM routes is an SDK warning about credentials that has nothing
+        # to do with why the route returned nothing.
+        why = run["gen"].get("err") or ""
+        full = run["gen"].get("err_full") or why
+        if why and why not in full[: len(why) + 200]:
+            w(f'<pre class="err">{esc(why)}</pre>')
+            w('<div class="lbl">everything it printed</div>')
+        w(f'<pre class="err">{esc(full)}</pre>')
     errs, seen = [], set()
     for e in run["build"].get("errors", []):
         if e.startswith("(not built") or e.strip() == "build failed":
