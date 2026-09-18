@@ -9,11 +9,15 @@ numbers make the whole thing inductive?" once.
 
 That is Vampire's *answer literal* mechanism (``--question_answering
 plain``).  Handed a conjecture ``?[A,B]: phi(A,B)`` it refutes the negation
-and reports the substitution the refutation used::
+and reports the substitutions the refutation used::
 
-    % SZS answers Tuple [([0,100]|[0,100]|[0,100])|_] for full
+    % SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert
 
-which is `0 <= s0 <= 100` for `m_countdown`, derived rather than checked.
+which carries `0 <= s0 <= 100` for `m_countdown`, derived rather than
+checked.  The alternatives are a *disjunctive* answer -- one of them is a
+witness, not each of them, because a split refutation closes each branch
+under its own hypothesis -- so all of them are tried below, and the one the
+obligations accept is the certificate.
 
 What the obligations have to look like
 ======================================
@@ -65,10 +69,11 @@ and implies the clamped ``Int.toNat`` form `rule_buchi` asks for: where
 
 What comes back is checked
 ==========================
-An answer literal is the substitution *a* refutation used, and a refutation
-of a mis-stated question proves nothing about the module.  So the
-coefficients Vampire returns are put back into the template and the four
-obligations are re-asked of cvc5 -- through the same
+An answer literal is a substitution *a* refutation used, and a refutation of
+a mis-stated question proves nothing about the module -- nor does one branch
+of a disjunctive answer.  So the coefficients Vampire returns are put back
+into the template and the four obligations are re-asked of cvc5 -- through
+the same
 :mod:`zrth.lean.houdini_solver` seam `--infer houdini` uses, in
 milliseconds.  A certificate that does not survive that is reported as not
 found, with what Vampire said.  This is not Houdini: nothing is filtered and
@@ -451,14 +456,24 @@ class Question:
 # Asking Vampire for an answer rather than a yes
 # ══════════════════════════════════════════════════════════════════════════
 
-# `% SZS answers Tuple [([0,100]|[0,100])|_] for cert`, and the one-answer
-# form `% SZS answers Tuple [[0,100]|_]`. The alternatives after `|` are the
-# same answer reported per disjunct, so the first is taken.
+# `% SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert`, and the
+# single form `% SZS answers Tuple [[0,100]|_]`.
+#
+# The alternatives after `|` are a *disjunctive* answer: the refutation
+# established that one of them is a witness, not that each is. A split
+# refutation -- AVATAR's, which is what closes these questions -- reports one
+# tuple per branch it closed, and a branch closed under a hypothesis that
+# does not hold contributes a tuple that is not a witness at all. Measured on
+# `m_countdown`: twelve alternatives, ten of them the `[0,100]` that is an
+# invariant and the first two `[1,100]`, which is not preserved (`s0 = 1`
+# steps to `0`). So every alternative is a candidate and they are tried in
+# turn against the obligations; taking the first is how this route spent a
+# while reporting no certificate for a module it had been handed one for.
 _ANSWER = "SZS answers Tuple "
 
 
-def answer_tuple(line: str) -> "list[str] | None":
-    """The substitution in a `SZS answers` line, one string per hole.
+def answer_tuples(line: str) -> "list[list[str]] | None":
+    """Every alternative in a `SZS answers` line, one string per hole.
 
     Scanned with a bracket depth rather than matched with a regex: a hole
     the refutation never pinned down prints as `∀X0.[X0]`, brackets and all,
@@ -474,10 +489,23 @@ def answer_tuple(line: str) -> "list[str] | None":
     rest = rest[1:].lstrip()
     if rest.startswith("("):                         # the per-disjunct form
         rest = rest[1:].lstrip()
-    if not rest.startswith("["):
-        return None
+    out = []
+    while rest.startswith("["):
+        one, rest = _one_tuple(rest)
+        if one is None:
+            break
+        out.append(one)
+        rest = rest.lstrip()
+        if not rest.startswith("|"):
+            break
+        rest = rest[1:].lstrip()
+    return out or None
+
+
+def _one_tuple(rest: str) -> "tuple[list[str] | None, str]":
+    """One `[a,b,...]`, and what is left of the line after it."""
     depth, out, cur = 0, [], ""
-    for ch in rest[1:]:
+    for i, ch in enumerate(rest[1:], start=2):
         if ch in "([":
             depth += 1
         elif ch == ")":
@@ -485,21 +513,25 @@ def answer_tuple(line: str) -> "list[str] | None":
         elif ch == "]":
             if depth == 0:
                 out.append(cur)
-                return out
+                return out, rest[i:]
             depth -= 1
         elif ch == "," and depth == 0:
             out.append(cur)
             cur = ""
             continue
         cur += ch
-    return None
+    return None, ""
 
 
 @dataclass(frozen=True)
 class Derived:
-    """What Vampire answered: one integer per hole, in the hole order."""
+    """What Vampire answered: the alternatives, each one value per hole.
 
-    values: tuple[int, ...]
+    Any one of them may be the witness, and which one is settled by putting
+    it back into the template and re-asking the obligations.
+    """
+
+    answers: tuple[tuple[int, ...], ...]
     secs: float
 
 
@@ -561,25 +593,31 @@ class Answers:
         return self._read(out, holes, dt)
 
     def _read(self, out: str, holes: int, dt: float) -> "Derived | None":
-        parts = next(
-            (t for t in (answer_tuple(ln) for ln in out.splitlines())
+        alts = next(
+            (t for t in (answer_tuples(ln) for ln in out.splitlines())
              if t is not None), None)
-        if parts is None:
+        if alts is None:
             return None
-        values = []
-        for part in parts:
-            v = _integer(part.strip())
-            if v is None:
-                # A hole the refutation never had to pin down: any value
-                # serves, and zero is the one the certificate reads best.
-                # It is checked with the rest before anything is emitted.
-                v = 0
-            values.append(v)
-        if len(values) != holes:
-            self.log(f"[vampire] the answer has {len(values)} values for "
-                     f"{holes} holes; ignoring it")
-            return None
-        return Derived(tuple(values), dt)
+        seen, kept = set(), []
+        for parts in alts:
+            values = []
+            for part in parts:
+                v = _integer(part.strip())
+                if v is None:
+                    # A hole the refutation never had to pin down: any value
+                    # serves, and zero is the one the certificate reads
+                    # best. It is checked with the rest before anything is
+                    # emitted.
+                    v = 0
+                values.append(v)
+            if len(values) != holes:
+                self.log(f"[vampire] an answer has {len(values)} values for "
+                         f"{holes} holes; ignoring it")
+                continue
+            if tuple(values) not in seen:
+                seen.add(tuple(values))
+                kept.append(tuple(values))
+        return Derived(tuple(kept), dt) if kept else None
 
 
 def _integer(text: str) -> "int | None":
@@ -644,14 +682,25 @@ class TA2MagicVampire(TA2Magic):
                 self.log(f"[vampire] no answer for {tpl.name} "
                          f"({asker.spent:.1f} s spent)")
                 continue
-            named = dict(zip(tpl.all_holes, answer.values))
-            self.log("[vampire] Vampire answered "
-                     + ", ".join(f"{h}={v}" for h, v in named.items()))
-            inv, rank = self._read_back(tpl, named, cd)
-            if self._checks_out(inv, rank, cd):
-                return self._emit(cd, inv, rank, tpl)
-            self.log("[vampire] the answer does not satisfy the obligations "
-                     "when they are restated; trying the next template")
+            # A disjunctive answer says one of these is a witness, so each is
+            # a candidate until the obligations say otherwise. Checking one
+            # is cvc5 on four small queries, but there can be a dozen of
+            # them, so the run's own deadline bounds the loop -- after the
+            # first, which is always worth the check.
+            for n, values in enumerate(answer.answers):
+                if n and asker.left() < 0:
+                    self.log(f"[vampire] out of time with "
+                             f"{len(answer.answers) - n} alternative(s) "
+                             f"of the answer unchecked")
+                    break
+                named = dict(zip(tpl.all_holes, values))
+                self.log("[vampire] Vampire answered "
+                         + ", ".join(f"{h}={v}" for h, v in named.items()))
+                inv, rank = self._read_back(tpl, named, cd)
+                if self._checks_out(inv, rank, cd):
+                    return self._emit(cd, inv, rank, tpl)
+                self.log("[vampire] that answer does not satisfy the "
+                         "obligations when they are restated")
         self.log(f"[vampire] {asker.calls} Vampire call(s), "
                  f"{asker.spent:.1f} s")
         return self._none(cd, tried, asker)

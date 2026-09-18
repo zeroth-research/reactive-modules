@@ -225,15 +225,28 @@ def test_a_buchi_conjecture_asks_for_the_ranking_in_the_same_question():
 
 
 @pytest.mark.parametrize(("line", "want"), [
-    ("% SZS answers Tuple [[0,100]|_] for cert", (0, 100)),
-    ("% SZS answers Tuple [([0,100]|[0,100])|_] for cert", (0, 100)),
-    ("% SZS answers Tuple [[$uminus(3),7]|_] for cert", (-3, 7)),
+    ("% SZS answers Tuple [[0,100]|_] for cert", ((0, 100),)),
+    ("% SZS answers Tuple [([0,100]|[0,100])|_] for cert", ((0, 100),)),
+    ("% SZS answers Tuple [[$uminus(3),7]|_] for cert", ((-3, 7),)),
 ])
 def test_an_answer_tuple_is_read_off_vampires_output(line, want):
     from zrth.lean.magic.vampire import Answers
 
-    got = Answers("/nowhere", seconds=1)._read(line, len(want), 0.0)
-    assert got is not None and got.values == want
+    got = Answers("/nowhere", seconds=1)._read(line, len(want[0]), 0.0)
+    assert got is not None and got.answers == want
+
+
+def test_every_alternative_of_a_disjunctive_answer_is_a_candidate():
+    """The alternatives say one of these is a witness, not that each is: a
+    split refutation closes each branch under its own hypothesis. Vampire
+    answers `m_countdown` with `[1,100]` first and `[0,100]` after it, and
+    only the second is an invariant -- `s0 = 1` steps to `0`."""
+    from zrth.lean.magic.vampire import Answers
+
+    got = Answers("/nowhere", seconds=1)._read(
+        "% SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert", 2, 0.0)
+    # Deduplicated, in the order Vampire listed them.
+    assert got is not None and got.answers == ((1, 100), (0, 100))
 
 
 def test_a_hole_the_refutation_never_pinned_down_reads_as_zero():
@@ -243,7 +256,7 @@ def test_a_hole_the_refutation_never_pinned_down_reads_as_zero():
 
     got = Answers("/nowhere", seconds=1)._read(
         "% SZS answers Tuple [[∀X0.[X0],100]|_] for cert", 2, 0.0)
-    assert got is not None and got.values == (0, 100)
+    assert got is not None and got.answers == ((0, 100),)
 
 
 def test_an_answer_of_the_wrong_width_is_ignored():
