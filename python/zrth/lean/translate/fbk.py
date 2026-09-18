@@ -92,6 +92,38 @@ of its own, and `toSlots` would be back to inventing values it cannot see.
 Sharing one slot between them is the tempting mistake -- it quietly forces
 the input this step ends with to be the input the next one begins with,
 which the module does not.
+
+`--pre` rides on the same fact.  A precondition is a predicate over inputs,
+and this model has no inputs -- but the slot an input started is the input,
+still there and still readable, so the precondition becomes one more
+conjunct of `INIT` over those slots (:func:`pre_over_slots`).  A
+precondition over an input that started no slot, or over a *latched* one
+that `init` never read, is refused: the state kept no value to read it back
+from, and saying "some input satisfying it exists" needs a quantifier the
+NA has not got.
+
+`INIT` and not `TRANS`, and that is worth stating because a precondition
+*is* an auxiliary invariant and in an encoding with real input variables it
+would belong in both.  Here it does not, on two counts.
+
+It would not be sound.  `--pre` fills `update_pre` as well, but the
+transition reads no input at all, so `update_pre` constrains a label
+`update` never looks at: there is nothing in `TRANS` for it to constrain.
+The conjunct one *could* write -- `PRE statenext`, the predicate re-read off
+the same slots -- is a claim about the initial inputs asserted of an evolved
+state, and a slot the transition writes need not still satisfy it.  Lean
+catches this rather than trusting the argument: `TS.transfer` takes a
+simulation, so `step_maps` has to hold for *every* pair of states and not
+only the reachable ones, and an invariant conjunct in `TRANS` is not
+something a simulation can prove.
+
+It would not buy anything either.  With the conjunct in `INIT` the model is
+*exactly* the module -- same initial states, same steps -- so there is no
+imprecision for an auxiliary invariant to remove.  The only case where
+`PRE statenext` would be sound is a slot the transition leaves latched, and
+there `TRANS` already pins `var_k statenext == var_k state`, which makes the
+conjunct one-step inductive from `INIT` and leaves ic3ia nothing to
+discover.
 """
 
 import re
@@ -122,9 +154,12 @@ class SlotBodies(NamedTuple):
 
     update: list[str]
     init: list[str]
-    # Slots `INIT` says nothing about, because the module starts them at an
-    # unconstrained external input. See :func:`_free_init_slots`.
-    free_init: tuple = ()
+    # `slot -> the external input element it starts at`, for the slots `INIT`
+    # says nothing about. See :func:`_free_init_slots`. Keyed by slot because
+    # every reader asks "is this slot free?"; the input is carried because
+    # `--pre` is a predicate over inputs and this is the only place that says
+    # which slot holds one (:func:`pre_over_slots`).
+    free_init: dict = {}
 
 
 # What the model imports -- and, because the driver builds exactly this
@@ -272,38 +307,64 @@ def _slot_accessors(
 # Spelled so it cannot be mistaken for one and cannot arise from anything
 # else: `smt_to_lean_bool` substitutes these verbatim, and what comes back is
 # read by :func:`_free_init_slots`.
+#
+# Two families, because the two kinds of input are refused for different
+# reasons and a marker that cannot say which it came from cannot say why.
+# They are disjoint by construction: `\d` does not match the `l` in `__extl_l_`.
 _INPUT = "__extl_"
 _INPUT_RE = re.compile(r"__extl_\d+")
+_LATCHED = "__extl_l_"
+_LATCHED_RE = re.compile(r"__extl_l_\d+")
 
 
-def _input_markers(extl_next, prefix: str) -> dict[str, list[str]]:
+def _input_markers(wires, prefix: str, marker: str = _INPUT) -> dict[str, list[str]]:
     """`{prefix}{i}` → one marker per element of input wire `i`."""
-    layout = flat_layout(extl_next)
+    layout = flat_layout(wires)
     out: dict[str, list[str]] = {}
-    for i, w in enumerate(extl_next):
+    for i, w in enumerate(wires):
         start, size = layout.span(w)
-        out[f"{prefix}{i}"] = [f"{_INPUT}{start + j}" for j in range(size)]
+        out[f"{prefix}{i}"] = [f"{marker}{start + j}" for j in range(size)]
     return out
 
 
-def _free_init_slots(init_text: list[str]) -> tuple[int, ...]:
-    """The slots `INIT` must leave alone, or :class:`NAUnsupported`.
+def _input_names(acc: dict[str, list[str]]) -> dict[str, str]:
+    """Marker → the name the user wrote it as, for a refusal to quote.
+
+    `e0` where the wire is 1×1 and `e0[2]` where it is wider: a refusal that
+    says `__extl_7` names an implementation detail of this file, and the
+    person reading it passed `--pre`.
+    """
+    return {
+        m: (wire if len(markers) == 1 else f"{wire}[{j}]")
+        for wire, markers in acc.items()
+        for j, m in enumerate(markers)
+    }
+
+
+def _free_init_slots(init_text: list[str]) -> dict[int, str]:
+    """`slot -> input marker` for the slots `INIT` must leave alone.
+
+    Raises :class:`NAUnsupported` for anything else that reads an input.
 
     A slot whose initial value is *exactly* one external input is a slot the
-    module leaves free: this route refuses `--pre`, so nothing constrains an
-    input, and "`s_k` starts at an arbitrary value" is said by writing no
-    `Init_k` at all. That is the module's own initial set, not a weakening
-    of it, which matters because `TS.transfer` carries proofs from the model
-    to the module in one direction only -- a model admitting *more* runs
-    still proves `G P` for the module, but a counterexample it finds need
-    not be one of the module's, and this route reports those.
+    module leaves free: absent `--pre` nothing constrains an input, and
+    "`s_k` starts at an arbitrary value" is said by writing no `Init_k` at
+    all. That is the module's own initial set, not a weakening of it, which
+    matters because `TS.transfer` carries proofs from the model to the module
+    in one direction only -- a model admitting *more* runs still proves
+    `G P` for the module, but a counterexample it finds need not be one of
+    the module's, and this route reports those.
+
+    With `--pre` the same slot is where the precondition lands: the input is
+    readable as the slot it started, and nowhere else (:func:`pre_over_slots`).
 
     Anything else that reads an input is refused for exactly that reason.
     `s_k := 2 * input` would have to become "`s_k` is anything", and a
     REFUTED read off a model that admits odd `s_k` would be a counterexample
     the module cannot produce.
     """
-    free, claimed = [], {}
+    free: dict[int, str] = {}
+    claimed: dict[str, int] = {}
     for k, body in enumerate(init_text):
         found = _INPUT_RE.findall(body)
         if not found:
@@ -323,8 +384,68 @@ def _free_init_slots(init_text: list[str]) -> tuple[int, ...]:
                 "admits initial states the module has not got"
             )
         claimed[found[0]] = k
-        free.append(k)
-    return tuple(free)
+        free[k] = found[0]
+    return free
+
+
+def pre_over_slots(ctx: LeanContext, pre_term, bodies: SlotBodies) -> str:
+    """`--pre`, as a Bool over the slots its inputs start.
+
+    The module's initial states are `{init e | pre e}`. `init` writes each
+    input it reads to one slot and nothing else (:func:`_free_init_slots`),
+    so reading that slot back *is* reading the input, and the precondition
+    becomes one more conjunct of `INIT` rather than a constraint on a
+    variable the NA has not got. The result is exact -- the same set of
+    states, not a superset -- which is what this route needs: it reports
+    REFUTED, and a counterexample from a larger initial set need not be one
+    of the module's.
+
+    Two refusals keep it exact, and both are about an input the state cannot
+    be read for:
+
+    * a **latched** input. `init` reads `e.2` only, so `pre` over `e.1`
+      admits `init e.2` whenever *some* latched value satisfies it. That is
+      an existential the NA cannot write.
+    * a **next** input that starts no slot -- read by the property, say, or
+      by nothing. Constraining it is again an existential over the value the
+      state did not keep.
+
+    The transition is not the other half of this. `--pre` fills `update_pre`
+    too, and `TRANS` has no guard for it; it needs none, because the
+    transition reads no input at all (:func:`_slot_bodies` refuses one that
+    does), so `update x l` is the same state for every `l`. Every step
+    `TRANS` admits is one the module admits under any `l` satisfying the
+    precondition, and if no `l` satisfies it then the same conjunct makes
+    `INIT` empty and the model has no runs to report.
+    """
+    from ..smt_to_lean import smt_to_lean_bool
+
+    acc = {
+        **_input_markers(ctx.extl_next, "e"),
+        **_input_markers(ctx.extl_latched, "el", _LATCHED),
+    }
+    try:
+        text = smt_to_lean_bool(pre_term, acc)
+    except ValueError as e:
+        raise NAUnsupported(f"--pre cannot be encoded: {e}") from e
+
+    names = _input_names(acc)
+    latched = _LATCHED_RE.findall(text)
+    if latched:
+        raise NAUnsupported(
+            f"--pre constrains the latched input {names[latched[0]]}, which "
+            "`init` does not read; the NA encoding would have to say that "
+            "some latched value satisfies it, and it has no quantifier"
+        )
+    slot_of = {marker: k for k, marker in bodies.free_init.items()}
+    loose = [m for m in _INPUT_RE.findall(text) if m not in slot_of]
+    if loose:
+        raise NAUnsupported(
+            f"--pre constrains the input {names[loose[0]]}, which starts no "
+            "state slot; the model keeps no value to read it back from, so "
+            "the constraint has nowhere to go"
+        )
+    return _INPUT_RE.sub(lambda m: f"(var_{slot_of[m.group(0)]} state)", text)
 
 
 def _scalar_element(tm, term, shape, i: int, j: int):
@@ -463,12 +584,19 @@ def atom_to_lean_na(
     module_name: str = "",
     simplify: bool = True,
     bodies: SlotBodies | None = None,
+    pre_lean: str = "",
 ) -> str:
     """Emit the whole NA model file for `ctx`.
 
     `property_lean` is a Bool-valued Lean expression over the same
     `(var_i state)` bindings this encoding uses — see
     ``smt_to_lean.smt_to_lean_bool``.
+
+    `pre_lean` is `--pre` in those same bindings (:func:`pre_over_slots`), or
+    `""` for a module that was given none. It becomes one more conjunct of
+    `INIT`, which is where a precondition over inputs belongs in a model
+    that has no inputs: `init` wrote each one to a slot, so the state is
+    where it is still readable.
 
     `bodies` is what :func:`check_na_supported` returned for this `ctx` and
     `simplify`; passing it is what keeps a route that has already checked
@@ -562,6 +690,15 @@ def atom_to_lean_na(
     # `init_i` is a closed term: an input read is the one thing that could
     # make it otherwise, and a slot that starts at one is left out of `INIT`
     # entirely rather than given a body (:func:`_free_init_slots`).
+    #
+    # `--pre` is what puts such a slot back under a constraint, and it is a
+    # conjunct rather than a body because it is one predicate over the whole
+    # state -- `(>= e0 e1)` pins neither slot on its own.
+    if pre_lean:
+        lines.append("-- `--pre`, over the slots its inputs start")
+        lines.append("abbrev PRE (state : StateType) : Bool :=")
+        lines.append(f"  {pre_lean}")
+        lines.append("")
     pinned = [k for k in range(n) if k not in bodies.free_init]
     lines += emit_rel_block(
         syn,
@@ -575,6 +712,7 @@ def atom_to_lean_na(
             binders=[""] * len(pinned),
             args=[""] * len(pinned),
             slots=tuple(pinned),
+            extra=("PRE state",) if pre_lean else (),
         ),
         [f"  {init_text[k]}" for k in pinned],
     )

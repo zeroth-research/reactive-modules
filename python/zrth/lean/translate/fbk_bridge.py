@@ -60,11 +60,28 @@ _MAT_SIMP = (
 )
 
 
-def _cascade(defs: str, extra: str = "") -> list[str]:
+def _lemmas(*names: str) -> str:
+    """`", a, b, c"`, or `""` when there are none.
+
+    A module can have no pinned slot at all -- every one of them starts at
+    an unconstrained input -- and a bare `", "` before the closing bracket
+    is a simp set with a hole in it.
+    """
+    return "".join(f", {n}" for n in names)
+
+
+def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False) -> list[str]:
     """The closer chain, cheapest first.
 
     Measured over every module shape the route accepts: `rfl` closes the
     trivial ones and `simp` + `omega` the rest.
+
+    `from_hyps` switches `simp` for `simp_all`, for the one goal whose
+    content is in a hypothesis rather than in the definitions: `start_maps`
+    under `--pre` has to carry `init_pre l` into a `PRE` conjunct, and a
+    `simp` that rewrites only the goal never reads it. Off elsewhere,
+    because `simp_all` also rewrites *with* every hypothesis in scope, which
+    on the other goals is work that cannot help.
 
     There is no `smt` arm, and this file cannot have one.  `smt` comes from
     `lean-smt`, which pulls in `auto` and with it `Auto.instBEqInt_auto`, a
@@ -78,14 +95,15 @@ def _cascade(defs: str, extra: str = "") -> list[str]:
     """
     plain = f"{defs}{extra}"
     mat = f"{defs}, {_MAT_SIMP}{extra}"
+    s = "simp_all" if from_hyps else "simp"
     return [
         "  first",
         "    | rfl",
-        f"    | (simp [{plain}]; done)",
-        f"    | (simp [{plain}]; omega)",
-        f"    | (simp [{mat}]; done)",
-        f"    | (simp [{mat}]; omega)",
-        f"    | (simp [{mat}]; split_ifs <;> omega)",
+        f"    | ({s} [{plain}]; done)",
+        f"    | ({s} [{plain}]; omega)",
+        f"    | ({s} [{mat}]; done)",
+        f"    | ({s} [{mat}]; omega)",
+        f"    | ({s} [{mat}]; split_ifs <;> omega)",
         f"    | (simp [{mat}]; simp_all)",
     ]
 
@@ -96,6 +114,7 @@ def atom_to_lean_fbk_bridge(
     na_module: str,
     simplify: bool = True,
     bodies: SlotBodies | None = None,
+    pre_lean: str = "",
 ) -> str:
     """Emit the bridge file for `ctx`.
 
@@ -105,6 +124,11 @@ def atom_to_lean_fbk_bridge(
     because the theorem below is about *that* file. Pass what
     `check_na_supported` returned; left out, it is asked again, which encodes
     the module into cvc5 a second time.
+
+    `pre_lean` is what the model's `PRE` was written from, and it is passed
+    rather than a flag so that the two files cannot disagree about whether
+    there is one: `start_maps` proves `INIT`, and an `INIT` with a conjunct
+    this file does not know about is a proof that does not close.
     """
     layout = flat_layout(ctx.ctrl_next)
     n = layout.total
@@ -112,8 +136,11 @@ def atom_to_lean_fbk_bridge(
     slot_bodies = bodies if bodies is not None else check_na_supported(ctx, simplify)
     upd = slot_bodies.update
     # `INIT` says nothing about a slot the module starts at an unconstrained
-    # input, so there is no `Init_k` to unfold for one (`fbk._free_init_slots`).
+    # input, so there is no `Init_k` to unfold for one (`fbk._free_init_slots`)
+    # -- unless `--pre` put it back under a constraint, which is a conjunct
+    # over the slots rather than a body for any one of them.
     pinned = [k for k in range(n) if k not in slot_bodies.free_init]
+    has_pre = bool(pre_lean)
 
     binders = " ".join(f"(x{k} : {ty[k]})" for k in range(n))
     args = " ".join(f"x{k}" for k in range(n))
@@ -234,13 +261,23 @@ def atom_to_lean_fbk_bridge(
         "    RM.toTS.start s → Definition.INIT (toSlots s) = true := by",
         "  intro hs",
         "  simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs",
-        "  obtain ⟨l, _, hl⟩ := hs",
-        "  rw [← hl]",
+        # The `rfl` pattern substitutes `s := init l.2` rather than rewriting
+        # under an equation that stays in scope: the arms below reason from
+        # the hypotheses, and `init l.2 = s` left in context is a rewrite
+        # back to `s` that undoes the step this line just took.
+        #
+        # `hpre : init_pre l` is named only when `INIT` has a `PRE` conjunct
+        # to discharge from it. Without one the module's precondition is
+        # `True` and naming it leaves an unused hypothesis; with one it is
+        # the whole content of that conjunct -- `PRE (toSlots (init l.2))`
+        # reads back the very inputs `init` wrote to those slots, so it *is*
+        # `init_pre l`, spelled in `Bool`.
+        f"  obtain ⟨l, {'hpre' if has_pre else '_'}, rfl⟩ := hs",
         *_cascade(
-            "Definition.INIT, toSlots, init_scalar_eq, Scalar.pack, Scalar.init",
-            ", " + ", ".join(
-                f"Definition.Init_{k}, Definition.var_{k}" for k in pinned
-            ),
+            "Definition.INIT, toSlots, init_scalar_eq, Scalar.pack, Scalar.init"
+            + (", Definition.PRE, init_pre" if has_pre else ""),
+            _lemmas(*(f"Definition.Init_{k}, Definition.var_{k}" for k in pinned)),
+            from_hyps=has_pre,
         ),
         "",
         "theorem step_maps (s : CtrlNative) (l : " + extl_native + ") (s' : CtrlNative) :",

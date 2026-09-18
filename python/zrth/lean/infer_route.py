@@ -329,11 +329,17 @@ class InferRoute:
     # that are not a cell of this table.  `fbk-proveit` has one -- the
     # project name becomes a Lean module name.
     extra_check: Callable | None = None
-    # `precheck(module, opts, config) -> object` once the module is loaded
-    # and before it is generated: a module shape the route cannot express is
-    # met here rather than as a traceback out of an encoder it never wanted.
-    # What it computed reaches `run` as `prechecked`, so the module is not
-    # encoded twice to answer one question.
+    # `precheck(module, opts, config, cert_data) -> object` once the module
+    # is loaded and before it is generated: a module shape the route cannot
+    # express is met here rather than as a traceback out of an encoder it
+    # never wanted.  What it computed reaches `run` as `prechecked`, so the
+    # module is not encoded twice to answer one question.
+    #
+    # `cert_data` carries the seeds in their SMT source (it may be `None`),
+    # because whether a route can take one is not always a question about
+    # the flag alone: `fbk-proveit` accepts `--pre` over an input its model
+    # keeps and refuses one over an input it does not, and only the module's
+    # encoding knows which is which.
     precheck: Callable | None = None
     run: Callable | None = None      # `(InferInput) -> InferResult`
 
@@ -632,11 +638,15 @@ def _check_fbk_project_name(settings, opts) -> "str | None":
     )
 
 
-def _precheck_fbk(module, opts, config):
+def _precheck_fbk(module, opts, config, cert_data):
     from .fbk_proveit import ProveItError, check_module
 
     try:
-        return check_module(module, opts["fbk_simplify"] == "cvc5")
+        return check_module(
+            module,
+            opts["fbk_simplify"] == "cvc5",
+            cert_data.init_pre if cert_data else None,
+        )
     except ProveItError as e:
         # One exception type crosses the seam, so `main` catches what every
         # route raises. The message keeps naming `--fbk-proveit` itself,
@@ -662,10 +672,11 @@ def _run_fbk(inp: InferInput) -> InferResult:
             project_dir=inp.project.dir,
             project_name=inp.project.name,
             property_smt=str(inp.cert_data.prp),
+            pre_smt=inp.cert_data.init_pre,
             ic3ia=inp.opts["ic3ia"],
             simplify=inp.opts["fbk_simplify"] == "cvc5",
             equivalence=inp.opts["fbk_equiv"] == "lean",
-            bodies=inp.prechecked,
+            prechecked=inp.prechecked,
         )
     except ProveItError as e:
         raise Refused(str(e)) from e
@@ -1011,9 +1022,13 @@ ROUTES: tuple[InferRoute, ...] = (
             "proves `G PROPERTY` through ic3ia, which is a safety question. "
             "Pass --safety, or infer a Buchi certificate with --infer ai-cegis."
         ),
-        seeds=frozenset(),
+        seeds=frozenset({"pre"}),
         seeds_refusal=(
-            "the invariant comes from ic3ia and the project is generated bare"
+            "the invariant comes from ic3ia and the project is generated "
+            "bare. `--pre` is taken: it is an assumption about the module's "
+            "inputs rather than a piece of the certificate, and the NA model "
+            "carries it as an `INIT` conjunct over the slots those inputs "
+            "start"
         ),
         owns=(
             "ProveIt/",

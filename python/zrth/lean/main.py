@@ -412,6 +412,22 @@ def main():
         raise SystemExit(f"error: {e}") from e
     print(module)
 
+    # The flags, gathered before anything asks about them. Nothing here
+    # needs the module; it is first because the route's shape check below
+    # is entitled to an opinion about the predicates as well as about the
+    # module -- `--pre` on `--infer fbk-proveit` is answerable only by the
+    # encoding, so it is answered where the encoding is made.
+    cert_data: CertificateData | None = None
+    if settings.prp or settings.pre or settings.invariant or settings.ranking:
+        cert_data = CertificateData(prp=settings.prp, kind=settings.kind)
+        if settings.pre:
+            cert_data.init_pre = settings.pre
+            cert_data.update_pre = settings.pre
+        if settings.invariant:
+            cert_data.inv = settings.invariant
+        if settings.ranking:
+            cert_data.ranking = settings.ranking
+
     # The route's own shape check, before a line of Lean is written. Left
     # until the route runs, a module its encoding cannot express is met
     # first by `create_project` -- which fails about the functional
@@ -423,7 +439,7 @@ def main():
     if settings.route is not None and settings.route.precheck is not None:
         try:
             prechecked = settings.route.precheck(
-                module, settings.route_opts, settings.route_config
+                module, settings.route_opts, settings.route_config, cert_data
             )
         except (Refused, ImportError) as e:
             raise _refused(settings, e) from e
@@ -442,17 +458,6 @@ def main():
             "this module has no Lean form: "
             + "; also ".join(gaps)
         ))
-
-    cert_data: CertificateData | None = None
-    if settings.prp or settings.pre or settings.invariant or settings.ranking:
-        cert_data = CertificateData(prp=settings.prp, kind=settings.kind)
-        if settings.pre:
-            cert_data.init_pre = settings.pre
-            cert_data.update_pre = settings.pre
-        if settings.invariant:
-            cert_data.inv = settings.invariant
-        if settings.ranking:
-            cert_data.ranking = settings.ranking
 
     # The workspace belongs to the project, not to the route: `--artifacts
     # reset` is what to pass when a bad artifact is being inherited by every

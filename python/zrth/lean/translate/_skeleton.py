@@ -73,6 +73,11 @@ class RelBlock:
     # the module starts at an unconstrained input, and the slots it does
     # pin keep their own numbers, because `Init_k` names `var_k`.
     slots: "tuple[int, ...]" = ()
+    # Conjuncts that are not a slot, already applied to their arguments, and
+    # joined after the per-slot ones. The NA model's `INIT` carries `--pre`
+    # here: it constrains the state without pinning any one slot to a body,
+    # so it is a conjunct and nothing else in this shape.
+    extra: "tuple[str, ...]" = ()
     extl_binders: str = ""  # the external inputs, carried by every declaration
     extl_args: str = ""
     # The functional counterpart to relate each slot back to. Empty means no
@@ -166,7 +171,7 @@ def emit_rel_block(
     calls = [
         _apply(f"{blk.rel_name}_{i}", blk.state_args, blk.extl_args)
         for i in slots
-    ]
+    ] + list(blk.extra)
     lines.append(
         _decl(
             syn.rel_decl,
