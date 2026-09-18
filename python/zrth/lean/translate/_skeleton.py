@@ -66,8 +66,13 @@ class RelBlock:
     state_binders: str  # what quantifies the state(s): `(old new : S)`
     state_args: str  # and their names: `old new`
     target: str  # the state each slot is projected out of: `new`
-    binders: "list[str]"  # per slot, what its body def binds (leading space)
-    args: "list[str]"  # per slot, what the relation applies it to (leading space)
+    binders: "list[str]"  # per body, what its body def binds (leading space)
+    args: "list[str]"  # per body, what the relation applies it to (leading space)
+    # Which slot each body belongs to. Empty means the bodies *are* the
+    # slots, which is every case but one: the NA model's `INIT` omits a slot
+    # the module starts at an unconstrained input, and the slots it does
+    # pin keep their own numbers, because `Init_k` names `var_k`.
+    slots: "tuple[int, ...]" = ()
     extl_binders: str = ""  # the external inputs, carried by every declaration
     extl_args: str = ""
     # The functional counterpart to relate each slot back to. Empty means no
@@ -121,26 +126,28 @@ def emit_rel_block(
 ) -> "list[str]":
     """Emit one block: the bodies, their `*_eq` theorems, the relations, the conjunction.
 
-    `bodies` is the body producer's output, one entry per slot, already
-    indented the way that producer indents; its length is what the skeleton
-    takes for the number of slots.
+    `bodies` is the body producer's output, one entry per body, already
+    indented the way that producer indents. Which slot each belongs to is
+    `blk.slots`, and by default that is simply its position.
     """
     n = len(bodies)
+    slots = blk.slots or tuple(range(n))
     lines: "list[str]" = []
 
-    for i, body in enumerate(bodies):
+    for pos, body in enumerate(bodies):
+        i = slots[pos]
         lines.append(
-            f"{syn.body_decl} {blk.body_name}_{i}{blk.binders[i]} "
+            f"{syn.body_decl} {blk.body_name}_{i}{blk.binders[pos]} "
             f": {syn.slot_ty(i)} :="
         )
         lines.append(body)
         lines.append("")
 
     if blk.ref:
-        for i in range(n):
+        for i in slots:
             lines.extend(_eq_theorem(syn, blk, i))
 
-    for i in range(n):
+    for pos, i in enumerate(slots):
         lines.append(
             _decl(
                 syn.rel_decl,
@@ -152,13 +159,13 @@ def emit_rel_block(
         )
         lines.append(
             f"  {syn.project(blk.target, i)} {syn.eq} "
-            f"{blk.body_name}_{i}{blk.args[i]}"
+            f"{blk.body_name}_{i}{blk.args[pos]}"
         )
         lines.append("")
 
     calls = [
         _apply(f"{blk.rel_name}_{i}", blk.state_args, blk.extl_args)
-        for i in range(n)
+        for i in slots
     ]
     lines.append(
         _decl(
@@ -169,7 +176,11 @@ def emit_rel_block(
             ty=syn.prop,
         )
     )
-    lines.append("  " + f" {syn.conj}\n  ".join(calls))
+    # An empty conjunction is `true`, and it is reachable: a module whose
+    # every slot starts at an unconstrained input constrains nothing at
+    # time 0, which is a state set, not a missing one.
+    empty = "true" if syn.prop == "Bool" else "True"
+    lines.append("  " + (f" {syn.conj}\n  ".join(calls) if calls else empty))
     lines.append("")
 
     return lines

@@ -198,16 +198,21 @@ theorem rule_buchi {State: Type u} {Label : Type v}
     carries that back to the module: `f` maps a module state to the model's
     slots, `hinit`/`hstep` say the model admits every module step, and the
     property comes back through `f`. Only one direction is needed, because a
-    model with *more* behaviours still satisfies `G Q` on fewer. -/
-theorem TS.transfer {S : Type u} {T : Type u} {L : Type v}
-    (A : TS S L) (B : TS T L) (f : S → T)
+    model with *more* behaviours still satisfies `G Q` on fewer.
+
+    `g` relabels. The two systems agree about states and need not agree
+    about labels: a reactive module is labelled by its external inputs,
+    while the NA model reads its inputs out of the state and is labelled by
+    `Unit × Unit`. Nothing here reads a label, so `g` only has to exist. -/
+theorem TS.transfer {S : Type u} {T : Type u} {L : Type v} {L' : Type v}
+    (A : TS S L) (B : TS T L') (f : S → T) (g : L → L')
     (hinit : ∀ s, A.start s → B.start (f s))
-    (hstep : ∀ s l s', A.Tr s l s' → B.Tr (f s) l (f s'))
+    (hstep : ∀ s l s', A.Tr s l s' → B.Tr (f s) (g l) (f s'))
     (Q : StateSet T)
     (hB : ∀ ts μs, B.ωTrace ts μs → ts ⊧ G (AP Q)) :
     ∀ ss μs, A.ωTrace ss μs → ss ⊧ G (AP (fun s => Q (f s))) := by
   intro ss μs htr
-  have hmap : B.ωTrace (Cslib.ωSequence.map f ss) μs :=
+  have hmap : B.ωTrace (Cslib.ωSequence.map f ss) (Cslib.ωSequence.map g μs) :=
     ⟨hinit _ htr.1, fun i => hstep _ _ _ (htr.2 i)⟩
   have h := hB _ _ hmap
   simp [sem] at h ⊢

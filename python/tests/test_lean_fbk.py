@@ -341,9 +341,97 @@ def test_property_must_be_boolean():
 # ── what the route refuses ──────────────────────────────────────────────────
 
 
-def test_external_inputs_abort():
-    with pytest.raises(NAUnsupported, match="external input"):
+def test_an_input_read_while_stepping_aborts():
+    """`x := x + e` reads its input mid-transition.
+
+    Not a printing problem: `update x l x'` draws `l` afresh at each step,
+    so the input is a slot of neither `state` nor `statenext`, and the one
+    slot it might share would force this step's input to be the next step's.
+    """
+    with pytest.raises(NAUnsupported, match="transition reads an external input"):
         check_na_supported(LeanContext(_with_extl()))
+
+
+def _input_start() -> Module:
+    """`y` starts at an unconstrained input, `x` at 0; both then hold.
+
+    The svcomp `houdini-inv` shape: a program variable whose initial value
+    the source leaves to the environment.
+    """
+    x = Var(Int([1, 1]))
+    y = Var(Int([1, 1]))
+    e = Var(Int([1, 1]))
+    init = [
+        Term(LIA.Int(torch.tensor([[0]])), [X(x)]),
+        Term(LIA.Id(), [X(y)], [X(e)]),
+    ]
+    update = [Term(LIA.Id(), [X(x)], [x]), Term(LIA.Id(), [X(y)], [y])]
+    return Module.sequential([x, y, e], init, update)
+
+
+def test_a_slot_that_starts_at_an_input_is_left_out_of_INIT():
+    """"`y` starts anywhere" is said by writing no `Init_1` for it.
+
+    That is the module's own initial set rather than a weakening of it,
+    which matters because a counterexample this route reports has to be a
+    run the module has.
+    """
+    src = _na(_input_start(), "(>= s0 0)")
+    assert "abbrev Init_0" in src and "abbrev Init_1" not in src
+    assert "INIT (state : StateType) : Bool :=\n  Init_0 state\n" in src
+
+
+def test_an_input_costs_no_state_slot():
+    """The input is not a variable of the model -- there is nothing to be
+    free, only a conjunct that is not there."""
+    src = _na(_input_start(), "(>= s0 0)")
+    assert "abbrev var_2" not in src
+    assert "abbrev StateType" in src and "| 2 =>" not in src
+
+
+def test_every_slot_free_leaves_INIT_as_true():
+    """An empty conjunction is a state set, not a missing one."""
+    x = Var(Int([1, 1]))
+    e = Var(Int([1, 1]))
+    module = Module.sequential(
+        [x, e],
+        [Term(LIA.Id(), [X(x)], [X(e)])],
+        [Term(LIA.Id(), [X(x)], [x])],
+    )
+    assert "abbrev INIT (state : StateType) : Bool :=\n  true\n" in _na(
+        module, "(>= s0 0)"
+    )
+
+
+def test_an_initial_value_built_from_an_input_is_refused():
+    """`x := e + 1` would have to become "`x` is anything", and a REFUTED
+    read off a model admitting more than the module is a counterexample the
+    module cannot produce."""
+    x = Var(Int([1, 1]))
+    e = Var(Int([1, 1]))
+    one = Wire(Int([1, 1]))
+    module = Module.sequential(
+        [x, e],
+        [Term(LIA.Int(torch.tensor([[1]])), [one]),
+         Term(LIA.Add(), [X(x)], [X(e), one])],
+        [Term(LIA.Id(), [X(x)], [x])],
+    )
+    with pytest.raises(NAUnsupported, match="rather than being one"):
+        check_na_supported(LeanContext(module))
+
+
+def test_two_slots_from_one_input_are_refused():
+    """They start equal, and two slots each left free do not."""
+    x = Var(Int([1, 1]))
+    y = Var(Int([1, 1]))
+    e = Var(Int([1, 1]))
+    module = Module.sequential(
+        [x, y, e],
+        [Term(LIA.Id(), [X(x)], [X(e)]), Term(LIA.Id(), [X(y)], [X(e)])],
+        [Term(LIA.Id(), [X(x)], [x]), Term(LIA.Id(), [X(y)], [y])],
+    )
+    with pytest.raises(NAUnsupported, match="both start at the same"):
+        check_na_supported(LeanContext(module))
 
 
 def test_real_state_aborts():

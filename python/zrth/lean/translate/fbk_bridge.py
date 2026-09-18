@@ -43,7 +43,7 @@ from zrth.lean.common import (
     LeanContext,
     flat_layout,
 )
-from zrth.lean.native import _product_type
+from zrth.lean.native import _product_type, _product_type_scalar
 from zrth.lean.translate.fbk import SlotBodies, check_na_supported
 
 # The certificate's own `simp_mat` arsenal. Without it a `Linear` arrives as
@@ -109,14 +109,32 @@ def atom_to_lean_fbk_bridge(
     layout = flat_layout(ctx.ctrl_next)
     n = layout.total
     ty = layout.element_types()
-    upd = (bodies if bodies is not None else check_na_supported(ctx, simplify)).update
+    slot_bodies = bodies if bodies is not None else check_na_supported(ctx, simplify)
+    upd = slot_bodies.update
+    # `INIT` says nothing about a slot the module starts at an unconstrained
+    # input, so there is no `Init_k` to unfold for one (`fbk._free_init_slots`).
+    pinned = [k for k in range(n) if k not in slot_bodies.free_init]
 
     binders = " ".join(f"(x{k} : {ty[k]})" for k in range(n))
     args = " ".join(f"x{k}" for k in range(n))
     flat = ", ".join(f"x{k}" for k in range(n))
     slots_of_state = " ".join(f"(Definition.var_{k} state)" for k in range(n))
     ctrl_native = _product_type(ctx.ctrl_next)
-    extl_native = "(Unit) × (Unit)"
+    extl_native = (
+        f"({_product_type(ctx.extl_latched)}) × ({_product_type(ctx.extl_next)})"
+    )
+    # The transition reads no input -- `check_na_supported` refuses a module
+    # whose does -- so `bridge_k` quantifies over them and `Scalar.update`
+    # is applied to the binders rather than to a value that would have to be
+    # invented. With no inputs at all both sides are `Unit`, spelled `()`.
+    if ctx.extl_next:
+        extl_binders = (
+            f" (el : {_product_type_scalar(ctx.extl_latched)})"
+            f" (en : {_product_type_scalar(ctx.extl_next)})"
+        )
+        extl_args = "el en"
+    else:
+        extl_binders, extl_args = "", "() ()"
 
     def as_fn(body: str) -> str:
         """`(var_k state)` is the model's read; `xk` is the same slot."""
@@ -192,11 +210,11 @@ def atom_to_lean_fbk_bridge(
     ]
     # The right-hand sides are slot `k` of the flat transition, read out by
     # the same layout the left-hand sides were numbered by.
-    scalar_slots = layout.flat_accessors(f"(Scalar.update ({flat}) () ())")
+    scalar_slots = layout.flat_accessors(f"(Scalar.update ({flat}) {extl_args})")
     for k in range(n):
         rhs = scalar_slots[k]
         lines += [
-            f"theorem bridge_{k} {binders} :",
+            f"theorem bridge_{k} {binders}{extl_binders} :",
             f"    effect_{k}_fn {args} = {rhs} := by",
             *_cascade(f"effect_{k}_fn, Scalar.update"),
             "",
@@ -221,7 +239,7 @@ def atom_to_lean_fbk_bridge(
         *_cascade(
             "Definition.INIT, toSlots, init_scalar_eq, Scalar.pack, Scalar.init",
             ", " + ", ".join(
-                f"Definition.Init_{k}, Definition.var_{k}" for k in range(n)
+                f"Definition.Init_{k}, Definition.var_{k}" for k in pinned
             ),
         ),
         "",
@@ -230,11 +248,20 @@ def atom_to_lean_fbk_bridge(
         "  intro hstep",
         "  simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep",
         "  rw [← hstep.2]",
+        # `effect_k_fn` is unfolded only when the module has inputs, and it
+        # has to be: `bridge_k` is then not a rewrite `simp` can apply,
+        # because its right-hand side binds the inputs and its left-hand
+        # side does not, so there is nothing to instantiate them from. The
+        # transition reads no input (`check_na_supported`), so unfolding the
+        # body leaves the same arithmetic on both sides and the cascade
+        # closes it where `bridge_k` would have. Left off otherwise: it is
+        # another definition in every `simp` arm of every slot.
         *_cascade(
             "Definition.TRANS, toSlots, update_scalar_eq, Scalar.pack, "
             "Scalar.unpack_ctrl",
             ", " + ", ".join(
                 f"Definition.R_{k}, Definition.var_{k}, link_{k}, bridge_{k}"
+                + (f", effect_{k}_fn" if ctx.extl_next else "")
                 for k in range(n)
             ),
         ),
@@ -259,7 +286,11 @@ def atom_to_lean_fbk_bridge(
         "-- ── what it all buys ─────────────────────────────────────────────",
         "",
         "/-- the model as a transition system -/",
-        f"abbrev MTS : TS StateType ({extl_native}) := {{ toNA := M }}",
+        "-- The model's own label type, not the module's: the NA reads its",
+        "-- inputs out of the state and is labelled by `Unit × Unit`, while a",
+        "-- reactive module is labelled by its external inputs. `TS.transfer`",
+        "-- takes the map between them, and nothing reads a label.",
+        "abbrev MTS : TS StateType (Unit × Unit) := { toNA := M }",
         "",
         "/-- **Safety of the model is safety of the module.**",
         "",
@@ -275,7 +306,7 @@ def atom_to_lean_fbk_bridge(
         "    (hM : ∀ ts μs, MTS.ωTrace ts μs →",
         "            ts ⊧ G (AP (fun st => Definition.PROPERTY st = true))) :",
         "    ∀ ss μs, RM.toTS.ωTrace ss μs → ss ⊧ G (AP P) := by",
-        "  have h := TS.transfer RM.toTS MTS toSlots start_maps step_maps _ hM",
+        "  have h := TS.transfer RM.toTS MTS toSlots (fun _ => ((), ()))\n            start_maps step_maps _ hM",
         "  rw [← property_eq]",
         "  exact h",
         "",
