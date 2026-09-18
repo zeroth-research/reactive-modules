@@ -530,6 +530,47 @@ def test_a_real_ranking_function_is_scaled_before_it_is_floored(solver):
     assert "(= s0 0.5)" in cd.inv_smt
 
 
+def test_a_matrix_component_is_ranked_by_one_of_its_elements():
+    """`m_relu_vec` is a 3-vector stepping `v' = relu(v - 1)` from `(3,2,1)`.
+
+    The route refused the module outright for its sort. Its elements are
+    columns now, so `0 <= v[0]` is a candidate and `v[0]` is a rank, which
+    is the whole certificate -- and neither is sayable about the tuple
+    itself, which has no order to bound and no arithmetic to fall.
+
+    cvc5 only, unlike the cases around it: the obligations are stated in
+    the module's own encoding, and Vampire's SMT-LIB front end has no tuple
+    theory to read that in. It says so by name -- the case below -- rather
+    than answering wrongly.
+    """
+    cd = infer("m_relu_vec", "buchi", "(= ((_ tuple.select 0) s0) 0)")
+    assert cd.ranking_smt == "((_ tuple.select 0) s0)"
+    assert cd.inv_smt == "(<= 0 ((_ tuple.select 0) s0))"
+
+
+def test_an_element_of_one_component_is_told_from_an_element_of_another():
+    """`m_mixed`'s state is `x : 1x1` and `v : 3x1`, so the second
+    component's elements are columns 1, 2 and 3 while its own slots are 0,
+    1 and 2. The property is about `v[0]`, and a certificate that confused
+    the two indices would rank `x`."""
+    cd = infer("m_mixed", "buchi", "(= ((_ tuple.select 0) s1) 0)")
+    assert cd.ranking_smt == "((_ tuple.select 0) s1)"
+
+
+def test_the_vampire_prover_says_it_cannot_read_a_matrix_encoding():
+    """What the case above opts out of, stated rather than left implicit.
+
+    The columns are the route's, not the prover's: Houdini proposes the
+    same facts either way, and it is the obligation -- `(Tuple Int Int
+    Int)` in a `define-fun` -- that Vampire's front end cannot parse. A
+    refusal naming the solver that can, not a wrong answer and not a
+    traceback.
+    """
+    with pytest.raises(Refused, match="cannot read this module's encoding"):
+        infer("m_relu_vec", "buchi", "(= ((_ tuple.select 0) s0) 0)",
+              solver=solver_or_skip("vampire"))
+
+
 @BOTH
 def test_two_real_components_are_ranked_by_the_one_that_falls(solver):
     """`m_lra_conv`: `x` converges to 0 and `y` to 2, two rounds apart. The
