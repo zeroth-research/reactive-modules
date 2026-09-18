@@ -100,22 +100,22 @@ class SynthContext:
 
     @classmethod
     def build(cls, module, cd, *, route: str,
-              reals: bool = False) -> "SynthContext":
-        """The context, or the reason this module is not one these routes read.
+              takes: tuple[str, ...] = ("int", "bool", "bv")) -> "SynthContext":
+        """The context, or the reason this module is not one `route` reads.
 
-        What is refused here is what *neither* search can weigh: a Real
-        component (the templates are integer arithmetic and a ranking
-        function has to land in `Nat`) and a matrix-shaped one (its elements
-        would each be a column, which is a wider change than a sort check).
-        Which of the remaining sorts a particular route reads is that
-        route's question, asked through :func:`readings` -- the grammar
-        one takes integers only, the template one weighs Bools and
-        bitvectors as well.
+        ``takes`` is the route's contract, as :data:`READING_KINDS`, and it
+        is the same tuple :func:`readings` is given -- a route that declines
+        a kind here declines it there, so there is one answer to "what can
+        this route read" rather than two that have to agree. What a sort
+        costs beyond being readable is the route's own business:
+        `--infer sygus` takes the context's Bool and then refuses it in
+        `readings`, because its `synthFun` has nowhere to put a Bool column
+        even though the context can weigh one.
 
-        ``reals`` is a route saying it has an answer to the Real question:
-        `--infer houdini` states its candidates in real arithmetic and reads
-        a ranking function through `to_int`, so it asks for the component
-        rather than an integer reading of it.
+        A kind outside ``takes`` is refused here, before a solver starts,
+        and named: `--infer houdini` states its candidates in real
+        arithmetic and so asks for `real`; `--infer smt-linear` reads a
+        Real through a floor and asks for it too.
         """
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
@@ -134,28 +134,25 @@ class SynthContext:
         env = CegarPromptEnv(msmt)
         keep_alive(tm, msmt, env)
 
-        def weighable(sort) -> bool:
-            kind = reading_kind(sort)
-            if kind in ("int", "bool", "bv"):
-                return True
-            return reals and kind == "real"
-
         bad = [
             f"s{i} is {sort}"
             for i, sort in enumerate(env.state_sorts)
-            if not weighable(sort)
+            if reading_kind(sort) not in takes
         ]
         if bad:
-            takes = ("reads a scalar state" if reals else
+            reads = ("reads a scalar state" if "real" in takes else
                      "weighs each state component as an integer")
-            why = "" if reals else (
+            why = "" if "real" in takes else (
                 "A Real component has no integer reading and a ranking "
                 "function has to land in `Nat`. "
             )
+            shaped = "" if "tuple" in takes else (
+                "A matrix-shaped component would be a column per element. "
+            )
             raise Refused(
-                f"--infer {route} {takes}, and this module has one it "
-                f"cannot: {', '.join(bad)}. {why}A matrix-shaped component "
-                f"would be a column per element. Use --infer ai-cegis."
+                f"--infer {route} {reads}, and this module has one it "
+                f"cannot: {', '.join(bad)}. {why}{shaped}"
+                f"Use --infer ai-cegis."
             )
         true = tm.mkBoolean(True)
         return cls(

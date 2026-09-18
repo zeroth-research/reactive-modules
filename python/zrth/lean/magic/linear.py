@@ -10,15 +10,20 @@ fixed and its coefficients are ordinary constants, so the whole search is one
 a fixed invariant.  ``--safety`` asks it for the invariant itself, as a
 conjunction of ``a0 + a1*s0 + ... >= 0`` rows.
 
-**Every scalar component is a column, whatever its sort.**  An ``Int`` is
-itself, a ``Bool`` is ``0``/``1`` (``(ite s0 1 0)``, which is how a row says
-``b`` or ``¬b`` and how a rank falls when a flag flips), a bitvector is
-its unsigned value (``(ubv_to_int s0)``), and a ``Real`` is read through a
-floor (``(to_int s0)``).  One integer template then covers a mixed state
-instead of a template per sort -- and the lifting is only the search space:
-the obligations are stated against the module's own transition in its own
-sorts, wraparound and all, so what survives is right about the bitvector
-rather than about a story told over it.
+**Every component is a column, whatever its sort -- and a matrix-shaped one
+is a column per element.**  An ``Int`` is itself, a ``Bool`` is ``0``/``1``
+(``(ite s0 1 0)``, which is how a row says ``b`` or ``¬b`` and how a rank
+falls when a flag flips), a bitvector is its unsigned value
+(``(ubv_to_int s0)``), and a ``Real`` is read through a floor
+(``(to_int s0)``).  A matrix-shaped component is the tuple cvc5 encodes it
+as, reached through the selectors ``smt_to_lean`` already renders
+(``((_ tuple.select 0) s0)``) -- so ``m_relu_vec``'s ``v[0] >= 0`` and a rank
+over ``v[0]`` are both sayable, which is the whole certificate for
+``v' = relu(v - 1)``.  One integer template then covers a mixed state instead
+of a template per sort -- and the lifting is only the search space: the
+obligations are stated against the module's own transition in its own sorts,
+wraparound and all, so what survives is right about the bitvector rather than
+about a story told over it.
 
 **A Real column is scaled before it is floored.**  ``rule_buchi`` ranks by
 a ``Nat``, and flooring a quantity that falls by less than one need not fall
@@ -105,6 +110,12 @@ try:
 except ImportError:                                  # pragma: no cover
     cvc5 = None
     Kind = None
+
+# What this route reads: every kind with an integer reading. One tuple for
+# both gates -- the context's, which refuses a component before a solver
+# starts, and `readings`', which turns the rest into columns -- because a
+# route that declines a kind in one place declines it in the other.
+READS = ("int", "bool", "bv", "real", "tuple")
 
 DEFAULT_ROWS = 2
 
@@ -211,10 +222,9 @@ class TA2MagicLinear(TA2Magic):
 
     def infer(self, cd: CertificateData) -> CertificateData:
         ctx = SynthContext.build(self.module, cd, route="smt-linear",
-                                 reals=True)
+                                 takes=READS)
         scale = denominator_scale(program_rationals(ctx))
-        cols = readings(ctx, allow=("int", "bool", "bv", "real"),
-                        route="smt-linear", scale=scale)
+        cols = readings(ctx, allow=READS, route="smt-linear", scale=scale)
         self.log(f"[smt-linear] columns: {', '.join(c.name for c in cols)}")
         if scale != 1:
             self.log(f"[smt-linear] Real state: read through a floor after "

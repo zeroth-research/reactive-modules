@@ -83,7 +83,7 @@ def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"),
                             log=lambda *_: None)
     magic.ctx = SynthContext.build(magic.module, cd, route="houdini",
-                                   reals=True)
+                                   takes=("int", "bool", "bv", "real"))
     return magic, Obligations(magic.ctx)
 
 
@@ -231,7 +231,8 @@ def test_a_real_module_is_no_longer_refused_for_its_sort():
     module = module_at(LIMITS / "m_lra_lin.py")
     with pytest.raises(Refused, match="no integer reading"):
         SynthContext.build(module, cd, route="smt-linear")
-    ctx = SynthContext.build(module, cd, route="houdini", reals=True)
+    ctx = SynthContext.build(module, cd, route="houdini",
+                             takes=("int", "bool", "bv", "real"))
     assert [str(s) for s in ctx.env.state_sorts] == ["Real"]
 
 

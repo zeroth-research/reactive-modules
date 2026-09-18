@@ -181,6 +181,34 @@ def test_a_real_rank_is_scaled_before_it_is_floored():
     assert any("scaling by 2" in line for line in said)
 
 
+def test_a_matrix_component_is_a_column_per_element():
+    """`m_relu_vec`'s state is one 3x1 wire, which cvc5 encodes as a tuple.
+
+    The route refused the module outright for it. Its elements are columns
+    now, reached through the selectors `smt_to_lean` already renders, so
+    `v[0] >= 0` and a rank over `v[0]` are both sayable -- which is the
+    whole certificate for `v' = relu(v - 1)`.
+
+    The invariant is supplied because finding it *and* the rank in one
+    query over tuple columns does not finish inside the budget: cvc5 will
+    not state the quantified form once a tuple is in it, and the
+    counterexample loop is slower than the phase allows. What this pins is
+    the reading, which is what the route could not do at all before.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_relu_vec")
+    said: list[str] = []
+    cd = CertificateData(prp="(= ((_ tuple.select 0) s0) 0)", kind="buchi",
+                         inv="(>= ((_ tuple.select 0) s0) 0)")
+    out = TA2MagicLinear(module, log=said.append).infer(cd)
+    assert out.ranking_smt is not None
+    assert obligations_of(module, out) == []
+    assert any("tuple.select 2" in line for line in said), (
+        "every element is a column, not just the one the property reads"
+    )
+
+
 def test_smt_linear_finds_a_rank_when_the_shape_has_one():
     from zrth.lean.magic.linear import TA2MagicLinear
 
