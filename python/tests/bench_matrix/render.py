@@ -9,6 +9,7 @@ rather than restated, so the page cannot drift from the table that drives
 the CLI; everything else comes from the results file, including the machine
 the timings were taken on.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,19 +43,22 @@ SUITE_BLURB = {
         "smaller set of questions, and no <code>--infer</code> route reads a supplied "
         "predicate, so the cases collapse onto their (module, property, precondition) key "
         "the way <code>run_limits.py</code> collapses them: 30 distinct questions. "
-        "Every property is a <code>--buchi</code> reachability target."),
+        "Every property is a <code>--buchi</code> reachability target."
+    ),
     "fbk": (
         "The <code>--fbk-proveit</code> sweep, <code>tests/lean/fbk/probes.py</code>. "
         "39 <code>--safety</code> properties over the same module fixtures. The first "
         "group are the limit matrix's own invariants reused as safety properties, so they "
         "are inductive by construction and measure the plumbing; the rest are net-shaped, "
-        "hand-written or deliberately hard."),
+        "hand-written or deliberately hard."
+    ),
     "tests": (
         "The CLI's own fixtures, <code>tests/fixtures/</code>. Each states its "
         "<code>--buchi</code> property in its docstring (&ldquo;Property: x == 0 holds "
         "infinitely often&rdquo;); that line, as SMT-LIB, is what is asked here. "
         "<code>counter</code>, <code>twobit</code> and <code>twobit_lia</code> also appear "
-        "in the limit matrix, under other properties."),
+        "in the limit matrix, under other properties."
+    ),
     "svcomp": (
         "The SV-COMP <code>termination-crafted-lit</code> corpus, "
         "<code>benchmarks/svcomp/dsl/</code> &mdash; 57 benchmarks, the ones the nuterm "
@@ -63,38 +67,91 @@ SUITE_BLURB = {
         "claim over wires rather than as the one-state predicate <code>verith</code> wants. "
         "Each benchmark is asked <code>terminates</code>, read off its loop guard, and the 23 "
         "Houdini finds invariants for are also asked <code>houdini-inv</code>; how is "
-        "recorded per property."),
+        "recorded per property."
+    ),
+    "hybrid": (
+        "Hybrid and continuous systems, <code>tests/bench_matrix/hybrid/</code> "
+        "&mdash; a thermostat, three tank systems, a room-heating benchmark, a "
+        "bouncing ball, an adaptive cruise controller and a reactor&rsquo;s rod "
+        "control, each a textbook hybrid automaton under a first-order Euler step: "
+        "<em>Real</em> state, discrete time, piecewise-affine updates. Every "
+        "coefficient is a dyadic rational, so the float32 tensor holding it is the "
+        "constant the certificate reasons about. <code>hybrid/cases.py</code> asks "
+        "each plant a safe-band <code>--safety</code> property, one or more "
+        "<code>--buchi</code> recurrences, and at least one property that is "
+        "<em>false</em>."
+    ),
+    "petri": (
+        "Petri nets and their extensions, <code>tests/bench_matrix/petri/</code>. "
+        "Thirteen place/transition nets live as data in <code>petri/nets.py</code> and "
+        "are built by one adapter; a time Petri net and a hybrid Petri net, which "
+        "carry clocks and a fluid level rather than only a marking, are written out. "
+        "Firing is one step and <em>which</em> transition fires is an input, so a "
+        "<code>--safety</code> property here is a claim about every firing sequence, "
+        "and recurrence is asked of the round-robin variants, where the scheduler is "
+        "part of the state. Beyond the classical nets, the inhibitor, reset, transfer "
+        "and continuous extensions each carry a property that turns on that arc "
+        "&mdash; two that hold because of it and two classical invariants it breaks."
+    ),
 }
 
 VERDICTS = {
     "VERIFIED": ("ok", "Lean discharged every obligation."),
-    "UNSUPPORTED": ("na", "The route does not take this question &mdash; this kind of "
-                          "property, or a precondition &mdash; and <code>verith</code> "
-                          "refused it before generating anything. The panel carries its "
-                          "reason."),
-    "REFUTED": ("no", "The route did not merely fail to find a certificate &mdash; it "
-                       "<em>disproved</em> the property, with a counterexample. Green "
-                       "where the property is <em>known false</em>, which is what the "
-                       "suites' deliberately false controls are there to produce; red "
-                       "where it is known to hold."),
-    "NO-CERT": ("no", "The route searched its shape and returned nothing. For "
-                      "<code>sygus</code> and <code>smt-linear</code> a bounded shape that "
-                      "comes back empty is a <em>proof</em> that it is empty, not a search "
-                      "that ran out of time."),
-    "GEN-FAIL": ("bad", "<code>verith</code> could not emit a project at all &mdash; a "
-                        "codegen gap, or a module shape the route refused up front."),
-    "PROOF-FAIL": ("bad", "A certificate was produced and Lean rejected it: either the "
-                          "certificate is wrong or the tactics are too weak. "
-                          "<code>--pre-check cvc5</code> is what tells those apart."),
-    "BUILD-FAIL": ("bad", "The project failed to build outside the certificate &mdash; one "
-                          "of the five encodings of the module did not compile."),
-    "TIMEOUT": ("bad", "The cell was killed at the clock rather than measured &mdash; "
-                       "so it is not evidence either way. The budgets are stated in "
-                       "the machine block above."),
-    "SORRY": ("open", "The project built with an obligation left as <code>sorry</code>."),
-    "SORRY+FAIL": ("open", "An obligation left as <code>sorry</code> <em>and</em> a build "
-                           "failure besides it."),
+    "UNSUPPORTED": (
+        "na",
+        "The route does not take this question &mdash; this kind of "
+        "property, or a precondition &mdash; and <code>verith</code> "
+        "refused it before generating anything. The panel carries its "
+        "reason.",
+    ),
+    "REFUTED": (
+        "no",
+        "The route did not merely fail to find a certificate &mdash; it "
+        "<em>disproved</em> the property, with a counterexample. Green "
+        "where the property is <em>known false</em>, which is what the "
+        "suites' deliberately false controls are there to produce; red "
+        "where it is known to hold.",
+    ),
+    "NO-CERT": (
+        "no",
+        "The route searched its shape and returned nothing. For "
+        "<code>sygus</code> and <code>smt-linear</code> a bounded shape that "
+        "comes back empty is a <em>proof</em> that it is empty, not a search "
+        "that ran out of time.",
+    ),
+    "GEN-FAIL": (
+        "bad",
+        "<code>verith</code> could not emit a project at all &mdash; a "
+        "codegen gap, or a module shape the route refused up front.",
+    ),
+    "PROOF-FAIL": (
+        "bad",
+        "A certificate was produced and Lean rejected it: either the "
+        "certificate is wrong or the tactics are too weak. "
+        "<code>--pre-check cvc5</code> is what tells those apart.",
+    ),
+    "BUILD-FAIL": (
+        "bad",
+        "The project failed to build outside the certificate &mdash; one "
+        "of the five encodings of the module did not compile.",
+    ),
+    "TIMEOUT": (
+        "bad",
+        "The cell was killed at the clock rather than measured &mdash; "
+        "so it is not evidence either way. The budgets are stated in "
+        "the machine block above.",
+    ),
+    "SORRY": (
+        "open",
+        "The project built with an obligation left as <code>sorry</code>.",
+    ),
+    "SORRY+FAIL": (
+        "open",
+        "An obligation left as <code>sorry</code> <em>and</em> a build "
+        "failure besides it.",
+    ),
 }
+
 
 def prose(text: str) -> str:
     """A route's `summary`, marked up. It is written as plain text for
@@ -115,11 +172,18 @@ def route_docs():
 
     out = []
     for r in ROUTES:
-        out.append(dict(
-            name=r.name, summary=r.summary, kinds=sorted(r.kinds), llm=r.uses_llm,
-            returns=r.returns, seeds=sorted(flag_of[s] for s in r.seeds),
-            opts=[f for o in r.options for f in o.flags],
-            kinds_refusal=r.kinds_refusal))
+        out.append(
+            dict(
+                name=r.name,
+                summary=r.summary,
+                kinds=sorted(r.kinds),
+                llm=r.uses_llm,
+                returns=r.returns,
+                seeds=sorted(flag_of[s] for s in r.seeds),
+                opts=[f for o in r.options for f in o.flags],
+                kinds_refusal=r.kinds_refusal,
+            )
+        )
     return out
 
 
@@ -145,8 +209,10 @@ def timing(h: dict) -> str:
         pm = h.get("spread", 0.0) / 2
         title = f"mean of {n}: {', '.join(f'{v:g}s' for v in h.get('samples', []))}"
         extra = f"&plusmn;{pm:.1f}" if pm >= 0.05 else ""
-        return (f'<span class="mean" title="{esc(title)}">{txt}'
-                f'<span class="n">{extra}</span></span>')
+        return (
+            f'<span class="mean" title="{esc(title)}">{txt}'
+            f'<span class="n">{extra}</span></span>'
+        )
     return txt
 
 
@@ -233,6 +299,9 @@ dialog#srcdlg::backdrop{background:rgba(0,0,0,.35)}
 .dlg-bar .dlg-close{margin-left:auto}
 h3.dir{margin:2.2em 0 .7em;font-size:1.05rem}
 .tag.suite{background:var(--openbg);color:var(--open)}
+/* a benchmark name, not a category: kept as written, so `mutex-cont` reads
+   as the identifier it is rather than as a label */
+.tag.bench{text-transform:none;letter-spacing:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .tag.truth.holds{background:var(--okbg);color:var(--ok)}
 .tag.truth.fails{background:var(--badbg);color:var(--bad)}
 .grid .m.missing{color:var(--dim);border-top:1px solid var(--line)}
@@ -308,6 +377,14 @@ table.sum tr.all td{font-weight:700}
 .scroll{overflow-x:auto}
 .toc{font-size:.9rem;columns:2;column-gap:28px;margin:1em 0}
 .toc a{display:block;padding:1px 0}
+details.tocx{margin:1em 0}
+details.tocx>summary{cursor:pointer;font-size:.9rem;color:var(--accent);
+ width:fit-content;list-style:none;display:flex;gap:7px;align-items:baseline}
+details.tocx>summary::-webkit-details-marker{display:none}
+details.tocx>summary:hover{text-decoration:underline}
+details.tocx>summary::before{content:"▸";font-size:10px;color:var(--dim)}
+details.tocx[open]>summary::before{content:"▾"}
+details.tocx>.toc{margin:.4em 0 0}
 .warn{background:var(--nobg);border-left:3px solid var(--no);padding:10px 14px;
  border-radius:0 5px 5px 0;font-size:.88rem;margin:1.1em 0}
 .warn p{margin:.3em 0}
@@ -323,17 +400,28 @@ def samples_cell(meta: dict) -> str:
     if len(ss) <= 1:
         one = ss[0] if ss else {}
         span = one.get("span")
-        return ("one pass"
-                + (f', {esc(span[0].replace("T", " "))} &ndash; '
-                   f'{esc(span[1].split("T")[-1])}' if span else "")
-                + " &mdash; every timing below is a single reading, not a mean")
+        return (
+            "one pass"
+            + (
+                f", {esc(span[0].replace('T', ' '))} &ndash; "
+                f"{esc(span[1].split('T')[-1])}"
+                if span
+                else ""
+            )
+            + " &mdash; every timing below is a single reading, not a mean"
+        )
     out = [f"<b>{len(ss)} passes</b>, averaged:"]
     for one in ss:
         span = one.get("span")
-        out.append(f'<br><code>{esc(one["label"])}</code> &middot; {one["runs"]} runs'
-                   + (f' &middot; {esc(span[0].replace("T", " "))} &ndash; '
-                      f'{esc(span[1].split("T")[-1])}' if span else
-                      " &middot; <i>undated</i>"))
+        out.append(
+            f"<br><code>{esc(one['label'])}</code> &middot; {one['runs']} runs"
+            + (
+                f" &middot; {esc(span[0].replace('T', ' '))} &ndash; "
+                f"{esc(span[1].split('T')[-1])}"
+                if span
+                else " &middot; <i>undated</i>"
+            )
+        )
     return "".join(out)
 
 
@@ -346,30 +434,44 @@ def warnings_section(warns: list, w) -> None:
     if not warns:
         return
     high = [x for x in warns if x.severity == "high"]
-    w('<h2 id=caveats>What these numbers do not support</h2>')
-    w("<p>Raised by <code>merge.py</code> when the passes were folded together. "
-      + ("Nothing here invalidates the table, but each is a place where a "
-         "reading is softer than it looks." if not high else
-         "<b>The first entries are serious</b> &mdash; they describe passes "
-         "that should arguably not be averaged at all.")
-      + "</p>")
+    w("<h2 id=caveats>Threads to validity</h2>")
+    w(
+        "<p>"
+        + (
+            "Nothing here invalidates the table, but the results must be taken with caution."
+            if not high
+            else "<b>The first entries are serious</b> &mdash; they describe passes "
+            "that should arguably not be averaged at all."
+        )
+        + "</p>"
+    )
     for x in sorted(warns, key=lambda x: x.severity != "high"):
         w(f'<div class="cav {"cav-hi" if x.severity == "high" else ""}">')
-        w(f'<div class="cav-h"><code>{esc(x.kind)}</code>'
-          + (f'<span class="cav-n">{len(x.cells)} cell'
-             f'{"s" if len(x.cells) != 1 else ""}</span>' if x.cells else "")
-          + "</div>")
+        w(
+            f'<div class="cav-h"><code>{esc(x.kind)}</code>'
+            + (
+                f'<span class="cav-n">{len(x.cells)} cell'
+                f"{'s' if len(x.cells) != 1 else ''}</span>"
+                if x.cells
+                else ""
+            )
+            + "</div>"
+        )
         w(f"<p>{esc(x.message)}</p>")
         if x.cells:
-            w("<details><summary>which</summary><pre>"
-              + esc("\n".join(x.cells[:60]))
-              + (f"\n... and {len(x.cells) - 60} more" if len(x.cells) > 60 else "")
-              + "</pre></details>")
+            w(
+                "<details><summary>which</summary><pre>"
+                + esc("\n".join(x.cells[:60]))
+                + (f"\n... and {len(x.cells) - 60} more" if len(x.cells) > 60 else "")
+                + "</pre></details>"
+            )
         w("</div>")
 
 
 # The directories benchmark files live in, in the order the page lists them.
-DIR_ORDER = ["tests/fixtures", "tests/limits/mods", "benchmarks/svcomp/dsl"]
+DIR_ORDER = ["tests/fixtures", "tests/limits/mods", "benchmarks/svcomp/dsl",
+             "tests/bench_matrix/hybrid", "tests/bench_matrix/petri",
+             "tests/bench_matrix"]
 SVCOMP_DSL = PY / "benchmarks" / "svcomp" / "dsl"
 
 
@@ -410,9 +512,9 @@ def _c_loop(docstring: str) -> "str | None":
         depth -= docstring[end] == ")"
         if depth == 0:
             break
-    header = " ".join(docstring[m.start():end + 1].split())
+    header = " ".join(docstring[m.start() : end + 1].split())
     brace = docstring.find("{", end)
-    if brace < 0 or docstring[end + 1:brace].strip():
+    if brace < 0 or docstring[end + 1 : brace].strip():
         return header
     depth = 0
     for close in range(brace, len(docstring)):
@@ -420,7 +522,7 @@ def _c_loop(docstring: str) -> "str | None":
         depth -= docstring[close] == "}"
         if depth == 0:
             break
-    whole = f"{header} {' '.join(docstring[brace:close + 1].split())}"
+    whole = f"{header} {' '.join(docstring[brace : close + 1].split())}"
     return whole if len(whole) <= 90 else f"{header} {{ … }}"
 
 
@@ -439,7 +541,9 @@ def describe(path: str) -> str:
     if path.startswith("benchmarks/svcomp/"):
         gloss = first.split(" — ", 1)[1] if " — " in first else ""
         loop = _c_loop(doc)
-        parts = ([f"<code>{esc(loop)}</code>"] if loop else []) + ([prose(gloss)] if gloss else [])
+        parts = ([f"<code>{esc(loop)}</code>"] if loop else []) + (
+            [prose(gloss)] if gloss else []
+        )
         return " &mdash; ".join(parts)
     return prose(first)
 
@@ -468,38 +572,59 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None) -> None:
     dis = run.get("disagreed")
     w('<details class="m"><summary>')
     w(f'<span class="name">{esc(rt)}</span>')
-    w(f'<span class="v {cls}">{esc(run["verdict"])}</span>'
-      + (f'<span class="flag" title="{esc("passes disagreed: " + ", ".join(f"{v} x{c}" for v, c in dis.items()))}">!</span>'
-         if dis else ""))
+    w(
+        f'<span class="v {cls}">{esc(run["verdict"])}</span>'
+        + (
+            f'<span class="flag" title="{esc("passes disagreed: " + ", ".join(f"{v} x{c}" for v, c in dis.items()))}">!</span>'
+            if dis
+            else ""
+        )
+    )
     na = run["verdict"] == "UNSUPPORTED"
     w(f'<span class="t">{"" if na else timing(run["gen"])}</span>')
     w(f'<span class="t">{"" if na else timing(run["build"])}</span>')
     w('<span class="chev">&#9656;</span>')
     w("</summary>")
     w('<div class="body">')
-    w(f'<pre>{esc(run["command"])}</pre>')
+    w(f"<pre>{esc(run['command'])}</pre>")
     if dis:
-        w('<div class="lbl">the passes disagreed</div>'
-          '<p class="note">'
-          + esc(", ".join(f"{v} in {c} pass{'es' if c != 1 else ''}"
-                          for v, c in sorted(dis.items())))
-          + ". The row shows the most common one; its timing "
-            "averages only the runs that reached it.</p>")
+        w(
+            '<div class="lbl">the passes disagreed</div>'
+            '<p class="note">'
+            + esc(
+                ", ".join(
+                    f"{v} in {c} pass{'es' if c != 1 else ''}"
+                    for v, c in sorted(dis.items())
+                )
+            )
+            + ". The row shows the most common one; its timing "
+            "averages only the runs that reached it.</p>"
+        )
     found = run["gen"].get("inferred") or {}
     # Recorded before the harness kept the last candidate a route printed, a
     # multi-attempt run's value is attempt 0's -- possibly one it rejected.
     first = run["gen"].get("inferred_rule") != "last" and rt in ("ai", "ai-cegis")
     for lbl in ("inv", "ranking"):
         if found.get(lbl):
-            w(f'<div class="lbl">{lbl} {"it printed first" if first else "it found"}'
-              + ('<span class="hint" title="recorded from the first candidate this '
-                 'route printed; if it took more than one attempt, the certificate '
-                 'built was a later one"> (attempt 0 &mdash; may not be the one built)</span>'
-                 if first else "") + "</div>"
-              f'<div class="found"><code>{esc(found[lbl])}</code></div>')
+            w(
+                f'<div class="lbl">{lbl} {"it printed first" if first else "it found"}'
+                + (
+                    '<span class="hint" title="recorded from the first candidate this '
+                    "route printed; if it took more than one attempt, the certificate "
+                    'built was a later one"> (attempt 0 &mdash; may not be the one built)</span>'
+                    if first
+                    else ""
+                )
+                + "</div>"
+                f'<div class="found"><code>{esc(found[lbl])}</code></div>'
+            )
     if run["gen"].get("err"):
-        w(f'<div class="lbl">{"why verith refused" if na else "why it returned nothing"}</div>')
-        w(f'<pre class="err">{esc(run["gen"].get("err_full") or run["gen"]["err"])}</pre>')
+        w(
+            f'<div class="lbl">{"why verith refused" if na else "why it returned nothing"}</div>'
+        )
+        w(
+            f'<pre class="err">{esc(run["gen"].get("err_full") or run["gen"]["err"])}</pre>'
+        )
     errs, seen = [], set()
     for e in run["build"].get("errors", []):
         if e.startswith("(not built") or e.strip() == "build failed":
@@ -614,27 +739,44 @@ class Files:
 
     def link(self, full: Path, label: str, cls: str = "file") -> str:
         href = "file://" + str(full) + ("/" if full.is_dir() else "")
-        if full.is_file() and full.suffix in EMBED_SUFFIXES and full.stat().st_size <= EMBED_MAX:
-            key = str(full.relative_to(PY.parent)) if full.is_relative_to(PY.parent) else str(full)
+        if (
+            full.is_file()
+            and full.suffix in EMBED_SUFFIXES
+            and full.stat().st_size <= EMBED_MAX
+        ):
+            key = (
+                str(full.relative_to(PY.parent))
+                if full.is_relative_to(PY.parent)
+                else str(full)
+            )
             if key not in self.text:
                 self.text[key] = highlight(full.name, full.read_text(errors="replace"))
-            return (f'<a class="{cls}" href="{esc(href)}" data-src="{esc(key)}" '
-                    f'title="open {esc(key)}">{label}</a>')
-        return (f'<a class="{cls}" href="{esc(href)}" target="_blank" '
-                f'title="open {esc(str(full))}">{label}</a>')
+            return (
+                f'<a class="{cls}" href="{esc(href)}" data-src="{esc(key)}" '
+                f'title="open {esc(key)}">{label}</a>'
+            )
+        return (
+            f'<a class="{cls}" href="{esc(href)}" target="_blank" '
+            f'title="open {esc(str(full))}">{label}</a>'
+        )
 
     def linkify(self, page: str) -> str:
         """Every `<code>` in `page` whose whole text names a file or directory,
         as a link to it. Commands are in `<pre>`, not `<code>`, so they stay
         pasteable."""
+
         def one(m):
             full = resolve(html.unescape(m.group(1)))
             return self.link(full, m.group(0)) if full else m.group(0)
+
         return re.sub(r"<code>([^<]{2,200})</code>", one, page)
 
     def payload(self) -> str:
-        return (json.dumps(self.text, ensure_ascii=False)
-                .replace("</", "<\\/").replace("<!--", "<\\!--"))
+        return (
+            json.dumps(self.text, ensure_ascii=False)
+            .replace("</", "<\\/")
+            .replace("<!--", "<\\!--")
+        )
 
 
 VIEWER_JS = r"""
@@ -713,117 +855,162 @@ def render(data: dict, warns: list = ()) -> str:
     w(f"<style>{CSS}</style>")
     w('<div class="wrap">')
     w("<h1>The <code>--infer</code> route matrix</h1>")
-    w('<p class="lede">Every <code>--infer</code> route of <code>verith</code>, '
-      "put to every benchmark and property in the tree. One cell is one "
-      "<code>uv run verith</code> followed by one <code>lake build</code>, and both are "
-      "timed &mdash; click a method to get the command back.</p>")
-    w('<p class="lede">A command pasted from a cell <em>generates</em>; building what '
-      "it emits needs the shared <code>.lake</code> that keeps Mathlib from being "
-      'rebuilt, which is four more lines &mdash; see <a href="#reproduce">Reproducing '
-      "this</a>.</p>")
+    w(
+        '<p class="lede">Every <code>--infer</code> route of <code>verith</code>, '
+        "put to every benchmark and property in the tree. One cell is one "
+        "<code>uv run verith</code> followed by one <code>lake build</code>, and both are "
+        "timed &mdash; click a method to get the command back.</p>"
+    )
+    w(
+        '<p class="lede">A command pasted from a cell <em>generates</em>; building what '
+        "it emits needs the shared <code>.lake</code> that keeps Mathlib from being "
+        'rebuilt, which is four more lines &mdash; see <a href="#reproduce">Reproducing '
+        "this</a>.</p>"
+    )
     stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M %Z")
     done = len(runs)
-    w(f'<p class="stamp">Rendered {stamp} &middot; {len(rows)} properties over '
-      f'{len({source_of(r) for r in rows.values()})} benchmarks &middot; {done} measured runs</p>')
+    w(
+        f'<p class="stamp">Rendered {stamp} &middot; {len(rows)} properties over '
+        f"{len({source_of(r) for r in rows.values()})} benchmarks &middot; {done} measured runs</p>"
+    )
 
     w('<p class="jump"><a href="#summary">Jump to the results &darr;</a></p>')
 
     # ── the routes ──────────────────────────────────────────────────────
     w("<h2 id=methods>The methods</h2>")
-    w("<p>A route&rsquo;s own row in <code>zrth/lean/infer_route.py</code> is what "
-      "describes it below; the CLI reads the same rows, so this cannot drift from "
-      "what <code>--infer</code> actually accepts. What a route needs of the property "
-      "is the first tag: a <code>--buchi</code> certificate needs an invariant "
-      "<em>and</em> a ranking function, a <code>--safety</code> one needs only an "
-      "invariant, and several routes do just one of the two.</p>")
+    w(
+        "<p>A route&rsquo;s own row in <code>zrth/lean/infer_route.py</code> is what "
+        "describes it below; the CLI reads the same rows, so this cannot drift from "
+        "what <code>--infer</code> actually accepts. What a route needs of the property "
+        "is the first tag: a <code>--buchi</code> certificate needs an invariant "
+        "<em>and</em> a ranking function, a <code>--safety</code> one needs only an "
+        "invariant, and several routes do just one of the two.</p>"
+    )
     w('<div class="cards">')
     for r in route_docs():
-        kinds = " ".join(f'<span class=tag>--{k}</span>' for k in r["kinds"])
+        kinds = " ".join(f"<span class=tag>--{k}</span>" for k in r["kinds"])
         llm = '<span class="tag llm">LLM</span>' if r["llm"] else ""
         w('<div class="card">')
-        w(f'<h4><code>{esc(r["name"])}</code>{kinds}{llm}</h4>')
+        w(f"<h4><code>{esc(r['name'])}</code>{kinds}{llm}</h4>")
         w(f"<p>{prose(r['summary'])}</p>")
         bits = []
         if r["seeds"]:
-            bits.append("seeds from " + ", ".join(f"<code>{esc(s)}</code>"
-                                                  for s in r["seeds"]))
+            bits.append(
+                "seeds from " + ", ".join(f"<code>{esc(s)}</code>" for s in r["seeds"])
+            )
         if r["opts"]:
-            bits.append("tunable with " + ", ".join(f"<code>{esc(f)}</code>" for f in r["opts"]))
+            bits.append(
+                "tunable with " + ", ".join(f"<code>{esc(f)}</code>" for f in r["opts"])
+            )
         if r.get("kinds_refusal"):
             bits.append("refuses the other kind, and says why")
         if bits:
             w(f"<p>{'; '.join(bits).capitalize()}.</p>")
         w("</div>")
     w("</div>")
-    w('<div class="warn"><p><b>Two routes were measured with outside help.</b> '
-      f'<code>ai</code> and <code>ai-cegis</code> called <code>{esc(meta["model"])}</code> '
-      "over the Anthropic API, so their timings include network latency and are not "
-      "reproducible run to run &mdash; a different pass may find a different "
-      "certificate, or none. <code>fbk-proveit</code> ran against the "
-      f'<code>{esc(Path(meta["proveit_dir"]).name)}</code> checkout and the ic3ia binary '
-      f'at <code>{esc(meta["ic3ia"])}</code>.'
-      + (f' <code>vampire</code> ran the prover at <code>{esc(meta["vampire"])}</code>.'
-         if meta.get("vampire") else "")
-      + "</p></div>")
+    w(
+        '<div class="warn"><p><b>Two routes were measured with outside help.</b> '
+        f"<code>ai</code> and <code>ai-cegis</code> called <code>{esc(meta['model'])}</code> "
+        "over the Anthropic API, so their timings include network latency and are not "
+        "reproducible run to run &mdash; a different pass may find a different "
+        "certificate, or none. <code>fbk-proveit</code> ran against the "
+        f"<code>{esc(Path(meta['proveit_dir']).name)}</code> checkout and the ic3ia binary "
+        f"at <code>{esc(meta['ic3ia'])}</code>."
+        + (
+            f" <code>houdini-vampire</code> ran the prover at "
+            f"<code>{esc(meta['vampire'])}</code>; the <code>houdini</code> "
+            f"column is the same search decided by cvc5, in this process."
+            if meta.get("vampire")
+            else ""
+        )
+        + "</p></div>"
+    )
 
     # ── machine ─────────────────────────────────────────────────────────
     w("<h2 id=machine>The machine, and what the cold start costs</h2>")
     w('<table class="kv">')
-    core = (f'{m["cores"]} cores'
-            + (f' ({m["perf_cores"]}P + {m["eff_cores"]}E)' if m.get("perf_cores") else ""))
+    core = f"{m['cores']} cores" + (
+        f" ({m['perf_cores']}P + {m['eff_cores']}E)" if m.get("perf_cores") else ""
+    )
     for k, v in [
-        ("CPU", f'{esc(m["cpu"])} &middot; {core}'),
-        ("Memory", f'{m["memory_gb"]} GB'),
-        ("OS", f'macOS {esc(m["os_product"])} ({esc(m["os_build"])}), '
-               f'Darwin {esc(m["os"].split()[-1])}'),
-        ("Lean", f'<code>{esc(m["toolchain"])}</code> &middot; {esc(m["lake"])}'),
+        ("CPU", f"{esc(m['cpu'])} &middot; {core}"),
+        ("Memory", f"{m['memory_gb']} GB"),
+        (
+            "OS",
+            f"macOS {esc(m['os_product'])} ({esc(m['os_build'])}), "
+            f"Darwin {esc(m['os'].split()[-1])}",
+        ),
+        ("Lean", f"<code>{esc(m['toolchain'])}</code> &middot; {esc(m['lake'])}"),
         ("Python", esc(m["python"])),
-        ("Timeouts", f'{meta["gen_timeout"]} s per <code>verith</code>, '
-                     f'{meta["build_timeout"]} s per <code>lake build</code>'),
+        (
+            "Timeouts",
+            f"{meta['gen_timeout']} s per <code>verith</code>, "
+            f"{meta['build_timeout']} s per <code>lake build</code>",
+        ),
         ("Samples", samples_cell(meta)),
     ]:
         w(f"<tr><td>{k}</td><td>{v}</td></tr>")
     cold = meta.get("coldstart", {})
     if cold:
-        w(f'<tr><td>Shared <code>.lake</code></td><td>{m["lake_packages_gb"]} GB, '
-          f'{len(m["packages"])} packages &mdash; '
-          + ", ".join(f'<code>{esc(n)}</code> {esc(v)}'
-                      for n, v in list(m["packages"].items())[:4])
-          + ", &hellip;</td></tr>")
+        w(
+            f"<tr><td>Shared <code>.lake</code></td><td>{m['lake_packages_gb']} GB, "
+            f"{len(m['packages'])} packages &mdash; "
+            + ", ".join(
+                f"<code>{esc(n)}</code> {esc(v)}"
+                for n, v in list(m["packages"].items())[:4]
+            )
+            + ", &hellip;</td></tr>"
+        )
         for k, v in [
             ("Mathlib, cold", cold.get("mathlib_note", "")),
-            ("First project in a fresh build dir",
-             (f'<b>{cold["first_build_s"]:.0f} s</b> &mdash; '
-              + cold.get("first_build_note", "")) if cold.get("first_build_s") else ""),
-            ("Each project after it",
-             f'{cold["warm_build_s"]:.1f} s' if cold.get("warm_build_s") else ""),
-            ("No-op <code>lake build</code>",
-             f'{cold["noop_build_s"]:.1f} s' if cold.get("noop_build_s") else ""),
+            (
+                "First project in a fresh build dir",
+                (
+                    f"<b>{cold['first_build_s']:.0f} s</b> &mdash; "
+                    + cold.get("first_build_note", "")
+                )
+                if cold.get("first_build_s")
+                else "",
+            ),
+            (
+                "Each project after it",
+                f"{cold['warm_build_s']:.1f} s" if cold.get("warm_build_s") else "",
+            ),
+            (
+                "No-op <code>lake build</code>",
+                f"{cold['noop_build_s']:.1f} s" if cold.get("noop_build_s") else "",
+            ),
         ]:
             if v:
                 w(f"<tr><td>{k}</td><td>{v}</td></tr>")
     w("</table>")
     if cold.get("explain"):
         w(f"<p>{cold['explain']}</p>")
-    w('<div class="warn"><p><b>The matrix is strictly serial, and must be.</b> '
-      "Every generated project symlinks its <code>.lake</code> to one shared build "
-      "dir, and module names are identical across projects, so two concurrent runs "
-      "overwrite each other&rsquo;s oleans. It does not fail cleanly: it reads as "
-      "<code>unknown constant &#39;hrank&#39;</code>.</p></div>")
+    w(
+        '<div class="warn"><p><b>The matrix is strictly serial, and must be.</b> '
+        "Every generated project symlinks its <code>.lake</code> to one shared build "
+        "dir, and module names are identical across projects, so two concurrent runs "
+        "overwrite each other&rsquo;s oleans. It does not fail cleanly: it reads as "
+        "<code>unknown constant &#39;hrank&#39;</code>.</p></div>"
+    )
 
     # ── verdicts ────────────────────────────────────────────────────────
     w("<h2 id=verdicts>Verdicts</h2>")
-    w("<p>A label is <b>green when the answer is right</b>: a <code>VERIFIED</code> "
-      "(Lean checked it), and a <code>REFUTED</code> on a property known to be false. "
-      "It is red when the answer contradicts what is known about the property. Where "
-      "that is known, the property carries a <em>known to hold</em> or <em>known "
-      "false</em> tag: the fbk probes' declared outcome, the fixtures' own docstrings, "
-      "and Houdini's invariants, which hold by construction.</p>")
+    w(
+        "<p>A label is <b>green when the answer is right</b>: a <code>VERIFIED</code> "
+        "(Lean checked it), and a <code>REFUTED</code> on a property known to be false. "
+        "It is red when the answer contradicts what is known about the property. Where "
+        "that is known, the property carries a <em>known to hold</em> or <em>known "
+        "false</em> tag: the fbk probes' declared outcome, the fixtures' own docstrings, "
+        "and Houdini's invariants, which hold by construction.</p>"
+    )
     w('<table class="kv">')
     for name, (cls, blurb) in VERDICTS.items():
         n = sum(1 for r in runs.values() if r["verdict"] == name)
-        w(f'<tr><td><span class="v {cls}">{name}</span></td>'
-          f'<td>{blurb} <b>{n}</b> of {done}.</td></tr>')
+        w(
+            f'<tr><td><span class="v {cls}">{name}</span></td>'
+            f"<td>{blurb} <b>{n}</b> of {done}.</td></tr>"
+        )
     w("</table>")
 
     # ── the route columns, and what merge.py flagged ────────────────────
@@ -851,22 +1038,37 @@ def render(data: dict, warns: list = ()) -> str:
     dirs: dict = {}
     for path in by_file:
         dirs.setdefault(str(Path(path).parent), []).append(path)
-    dir_order = sorted(dirs, key=lambda d: (DIR_ORDER.index(d) if d in DIR_ORDER else 99, d))
+    dir_order = sorted(
+        dirs, key=lambda d: (DIR_ORDER.index(d) if d in DIR_ORDER else 99, d)
+    )
 
+    # The index is long -- one line per directory plus every benchmark in it --
+    # and it sits between the suite blurbs and the results, so it is collapsed:
+    # a <details>, closed, with no script behind it.
+    w(
+        f'<details class="tocx"><summary>All {len(by_file)} benchmarks, '
+        "by directory</summary>"
+    )
     w('<div class="toc">')
     for d in dir_order:
-        w(f'<div class="tocdir"><a href="#d-{slug(d)}"><code>{esc(d)}/</code></a> '
-          f'&mdash; {len(dirs[d])} benchmarks<div class="tocb">'
-          + " ".join(f'<a href="#b-{slug(f)}">{esc(Path(f).stem)}</a>'
-                     for f in sorted(dirs[d]))
-          + "</div></div>")
-    w("</div>")
+        w(
+            f'<div class="tocdir"><a href="#d-{slug(d)}"><code>{esc(d)}/</code></a> '
+            f'&mdash; {len(dirs[d])} benchmarks<div class="tocb">'
+            + " ".join(
+                f'<a href="#b-{slug(f)}">{esc(Path(f).stem)}</a>'
+                for f in sorted(dirs[d])
+            )
+            + "</div></div>"
+        )
+    w("</div></details>")
 
     w("<h2 id=summary>Summary</h2>")
-    w("<p>How many of each suite&rsquo;s properties each route certified end to end "
-      "&mdash; Lean discharged every obligation &mdash; out of the properties whose "
-      "kind that route accepts. Every cell behind these counts is below it, one "
-      "property at a time.</p>")
+    w(
+        "<p>How many of each suite&rsquo;s properties each route certified end to end "
+        "&mdash; Lean discharged every obligation &mdash; out of the properties whose "
+        "kind that route accepts. Every cell behind these counts is below it, one "
+        "property at a time.</p>"
+    )
     w('<div class="scroll"><table class="sum"><thead><tr><th>suite</th>')
     for r in present:
         w(f"<th>{esc(r)}</th>")
@@ -875,11 +1077,18 @@ def render(data: dict, warns: list = ()) -> str:
         w(f"<tr{' class=all' if suite == 'all' else ''}><td>{esc(suite)}</td>")
         for rt in present:
             ks = [k for k, v in rows.items() if suite in (v["suite"], "all")]
-            got = [runs[f"{k}::{rt}"] for k in ks if f"{k}::{rt}" in runs
-                   and runs[f"{k}::{rt}"]["verdict"] != "UNSUPPORTED"]
+            got = [
+                runs[f"{k}::{rt}"]
+                for k in ks
+                if f"{k}::{rt}" in runs
+                and runs[f"{k}::{rt}"]["verdict"] != "UNSUPPORTED"
+            ]
             ok = sum(1 for g in got if g["verdict"] == "VERIFIED")
-            w(f'<td class="{"n0" if not got else ""}">'
-              + (f"{ok} / {len(got)}" if got else "&mdash;") + "</td>")
+            w(
+                f'<td class="{"n0" if not got else ""}">'
+                + (f"{ok} / {len(got)}" if got else "&mdash;")
+                + "</td>"
+            )
         w("</tr>")
     w("</tbody></table></div>")
 
@@ -887,121 +1096,170 @@ def render(data: dict, warns: list = ()) -> str:
     for d in dir_order:
         w(f'<h3 class="dir" id="d-{slug(d)}"><code>{esc(d)}/</code></h3>')
         for path in sorted(dirs[d]):
-            items = sorted(by_file[path], key=lambda kv: (suite_rank.get(kv[1]["suite"], 9), kv[0]))
+            items = sorted(
+                by_file[path], key=lambda kv: (suite_rank.get(kv[1]["suite"], 9), kv[0])
+            )
             w(f'<div class="bench" id="b-{slug(path)}">')
-            w(f'<div class="bh"><span class="bname">{esc(Path(path).stem)}</span>'
-              + files.link((PY / path).resolve(), esc(path), "file path")
-              + f'<span class="bcount">{len(items)} '
-                f'{"property" if len(items) == 1 else "properties"}</span></div>')
+            w(
+                f'<div class="bh"><span class="bname">{esc(Path(path).stem)}</span>'
+                + files.link((PY / path).resolve(), esc(path), "file path")
+                + f'<span class="bcount">{len(items)} '
+                f"{'property' if len(items) == 1 else 'properties'}</span></div>"
+            )
             desc = describe(path)
             if desc:
                 w(f'<p class="desc">{desc}</p>')
+            # One adapter can serve many benchmarks -- `petri_mod.py` builds any
+            # of twelve nets -- and then the block heading is the adapter, so
+            # each property has to say which benchmark it is about.
+            many = len({r["bench"] for _, r in items}) > 1
             for key, row in items:
                 w('<div class="prop">')
                 w('<div class="head">')
-                w(f'<b>{esc(row["prop_label"] or row["kind"])}</b>')
-                w(f'<span class=tag>--{esc(row["kind"])}</span>')
+                w(f"<b>{esc(row['prop_label'] or row['kind'])}</b>")
+                if many:
+                    w(f'<span class="tag bench">{esc(row["bench"])}</span>')
+                w(f"<span class=tag>--{esc(row['kind'])}</span>")
                 w(f'<span class="tag suite">{esc(row["suite"])}</span>')
                 if row.get("truth"):
-                    w(f'<span class="tag truth {esc(row["truth"])}" title="what is known '
-                      f'about this property, independently of any route">'
-                      f'{"known to hold" if row["truth"] == "holds" else "known false"}</span>')
+                    w(
+                        f'<span class="tag truth {esc(row["truth"])}" title="what is known '
+                        f'about this property, independently of any route">'
+                        f"{'known to hold' if row['truth'] == 'holds' else 'known false'}</span>"
+                    )
                 w("</div>")
                 w(f'<code class="smt">{esc(row["prop"])}</code>')
                 if row.get("pre"):
-                    w(f'<p class="note">under the precondition <code>{esc(row["pre"])}</code> '
-                      "on the inputs, passed as <code>--pre</code></p>")
+                    w(
+                        f'<p class="note">under the precondition <code>{esc(row["pre"])}</code> '
+                        "on the inputs, passed as <code>--pre</code></p>"
+                    )
                 note = row["note"].split("; the cases sharing it")[0]
                 if note:
                     w(f'<p class="note">{esc(note)}</p>')
                 if row.get("shared"):
                     sh = row["shared"]
-                    w(f'<p class="note">Asked once for all {len(sh) + 1} cases that '
-                      "differ only in the predicates they supply: "
-                      + ", ".join(f"<code>{esc(n)}</code>" for n in sh[:6])
-                      + (f" and {len(sh) - 6} more" if len(sh) > 6 else "") + ".</p>")
+                    w(
+                        f'<p class="note">Asked once for all {len(sh) + 1} cases that '
+                        "differ only in the predicates they supply: "
+                        + ", ".join(f"<code>{esc(n)}</code>" for n in sh[:6])
+                        + (f" and {len(sh) - 6} more" if len(sh) > 6 else "")
+                        + ".</p>"
+                    )
                 w('<div class="grid">')
-                w("<div class=hd><span>method</span><span>verdict</span>"
-                  "<span>gen&nbsp;s</span><span>build&nbsp;s</span><span></span></div>")
+                w(
+                    "<div class=hd><span>method</span><span>verdict</span>"
+                    "<span>gen&nbsp;s</span><span>build&nbsp;s</span><span></span></div>"
+                )
                 for rt in route_order:
                     run = runs.get(f"{key}::{rt}")
                     if not run:
-                        w(f'<div class="m missing"><span class="name">{esc(rt)}</span>'
-                          '<span class="v na">not measured</span>'
-                          "<span></span><span></span><span></span></div>")
+                        w(
+                            f'<div class="m missing"><span class="name">{esc(rt)}</span>'
+                            '<span class="v na">not measured</span>'
+                            "<span></span><span></span><span></span></div>"
+                        )
                         continue
                     method_row(w, rt, run, row.get("truth"))
                 w("</div></div>")
             w("</div>")
 
-    w('<h2 id=reproduce>Reproducing this</h2>')
-    w("<p>Both halves are one command each, from <code>python/</code>. The measuring "
-      "pass is resumable &mdash; a pair already in <code>results.json</code> is skipped "
-      "&mdash; so it can be stopped and restarted, and a single route re-measured "
-      "without disturbing its neighbours.</p>")
-    w("<pre>cd python\n\n"
-      "# measure: one verith + one lake build per cell, strictly serially\n"
-      "uv run python tests/bench_matrix/run_matrix.py\n"
-      "uv run python tests/bench_matrix/run_matrix.py --suites limits --routes nuterm\n"
-      "uv run python tests/bench_matrix/run_matrix.py --only Countdown --redo\n\n"
-      "# measure the cold start (needs a quiet machine; writes its own build dir)\n"
-      "uv run python tests/bench_matrix/coldstart.py\n\n"
-      "# render this page\n"
-      "uv run python tests/bench_matrix/render.py -o matrix.html</pre>")
-    w('<div class="warn"><p><b>Wall clock is only as quiet as the machine.</b> '
-      "Another Lean build anywhere is enough to inflate these numbers several-fold, "
-      "and unevenly: one earlier pass reported a case at 1996 s that re-timed at 75 s. "
-      "Spotlight is the worst offender &mdash; a pass writes tens of thousands of "
-      "<code>.olean</code> files &mdash; which is why the work directory is named "
-      "<code>.noindex</code>. Verdicts were never affected by any of it; only timings "
-      "lie. Re-time anything surprising before believing it.</p></div>")
+    w("<h2 id=reproduce>Reproducing this</h2>")
+    w(
+        "<p>Both halves are one command each, from <code>python/</code>. The measuring "
+        "pass is resumable &mdash; a pair already in <code>results.json</code> is skipped "
+        "&mdash; so it can be stopped and restarted, and a single route re-measured "
+        "without disturbing its neighbours.</p>"
+    )
+    w(
+        "<pre>cd python\n\n"
+        "# measure: one verith + one lake build per cell, strictly serially\n"
+        "uv run python tests/bench_matrix/run_matrix.py\n"
+        "uv run python tests/bench_matrix/run_matrix.py --suites limits --routes nuterm\n"
+        "uv run python tests/bench_matrix/run_matrix.py --only Countdown --redo\n\n"
+        "# measure the cold start (needs a quiet machine; writes its own build dir)\n"
+        "uv run python tests/bench_matrix/coldstart.py\n\n"
+        "# render this page\n"
+        "uv run python tests/bench_matrix/render.py -o matrix.html</pre>"
+    )
+    w(
+        '<div class="warn"><p><b>Wall clock is only as quiet as the machine.</b> '
+        "Another Lean build anywhere is enough to inflate these numbers several-fold, "
+        "and unevenly: one earlier pass reported a case at 1996 s that re-timed at 75 s. "
+        "Spotlight is the worst offender &mdash; a pass writes tens of thousands of "
+        "<code>.olean</code> files &mdash; which is why the work directory is named "
+        "<code>.noindex</code>. Verdicts were never affected by any of it; only timings "
+        "lie. Re-time anything surprising before believing it.</p></div>"
+    )
     w("<h3>Building what one cell emits</h3>")
-    w("<p>A command from a cell writes a Lean project and stops. To build it the way "
-      "the matrix does &mdash; against the already-built Mathlib, so nothing resolves "
-      "or recompiles it &mdash; point the project&rsquo;s <code>.lake</code> at the "
-      "shared one and give it the manifest that goes with it:</p>")
-    w("<pre>P=/tmp/verith-out.noindex/&lt;cell&gt;/Rea      # the -o of the pasted command\n"
-      "mkdir -p /tmp/shared.noindex\n"
-      "ln -sfn \"$PWD/tests/lean/.lake/packages\" /tmp/shared.noindex/packages\n"
-      "ln -sfn /tmp/shared.noindex \"$P/.lake\"\n"
-      "cp tests/limits/lake-manifest.json \"$P/\"\n"
-      "(cd \"$P\" &amp;&amp; lake build)</pre>")
-    w("<p>Two things that are not optional. The <code>.noindex</code> suffix &mdash; a "
-      "build writes tens of thousands of <code>.olean</code> files and Spotlight "
-      "indexing them is what turns a 9&nbsp;s case into a 928&nbsp;s one. And "
-      "<b>one build directory takes one writer</b>: module names are identical across "
-      "generated projects, so a second build into the same shared directory serves the "
-      "first one&rsquo;s oleans, and the symptom is <code>unknown constant "
-      "&#39;hrank&#39;</code> rather than a clean failure. "
-      "The <code>fbk-proveit</code> column needs one line more, because its lakefile "
-      "adds a path require: <code>lake update LTL_Certifying</code> before the build.</p>")
-    w("<p>The prose above is generated too: the method cards come from "
-      "<code>zrth/lean/infer_route.py</code>, the machine block and every timing from "
-      "<code>results.json</code>. See "
-      "<code>tests/bench_matrix/README.md</code> for what to do when a number surprises "
-      "you.</p>")
+    w(
+        "<p>A command from a cell writes a Lean project and stops. To build it the way "
+        "the matrix does &mdash; against the already-built Mathlib, so nothing resolves "
+        "or recompiles it &mdash; point the project&rsquo;s <code>.lake</code> at the "
+        "shared one and give it the manifest that goes with it:</p>"
+    )
+    w(
+        "<pre>P=/tmp/verith-out.noindex/&lt;cell&gt;/Rea      # the -o of the pasted command\n"
+        "mkdir -p /tmp/shared.noindex\n"
+        'ln -sfn "$PWD/tests/lean/.lake/packages" /tmp/shared.noindex/packages\n'
+        'ln -sfn /tmp/shared.noindex "$P/.lake"\n'
+        'cp tests/limits/lake-manifest.json "$P/"\n'
+        '(cd "$P" &amp;&amp; lake build)</pre>'
+    )
+    w(
+        "<p>Two things that are not optional. The <code>.noindex</code> suffix &mdash; a "
+        "build writes tens of thousands of <code>.olean</code> files and Spotlight "
+        "indexing them is what turns a 9&nbsp;s case into a 928&nbsp;s one. And "
+        "<b>one build directory takes one writer</b>: module names are identical across "
+        "generated projects, so a second build into the same shared directory serves the "
+        "first one&rsquo;s oleans, and the symptom is <code>unknown constant "
+        "&#39;hrank&#39;</code> rather than a clean failure. "
+        "The <code>fbk-proveit</code> column needs one line more, because its lakefile "
+        "adds a path require: <code>lake update LTL_Certifying</code> before the build.</p>"
+    )
+    w(
+        "<p>The prose above is generated too: the method cards come from "
+        "<code>zrth/lean/infer_route.py</code>, the machine block and every timing from "
+        "<code>results.json</code>. See "
+        "<code>tests/bench_matrix/README.md</code> for what to do when a number surprises "
+        "you.</p>"
+    )
     w("</div>")
-    w('<dialog id="srcdlg"><div class="dlg-bar"><b class="dlg-title"></b>'
-      '<a class="dlg-raw" href="#">open the file itself</a>'
-      '<button class="dlg-close" type="button">close</button></div>'
-      '<pre class="src"></pre></dialog>')
+    w(
+        '<dialog id="srcdlg"><div class="dlg-bar"><b class="dlg-title"></b>'
+        '<a class="dlg-raw" href="#">open the file itself</a>'
+        '<button class="dlg-close" type="button">close</button></div>'
+        '<pre class="src"></pre></dialog>'
+    )
     page = files.linkify("\n".join(o))
-    return (page
-            + f'\n<style id="srccss">{SRC_CSS}</style>'
-            + f'\n<script type="application/json" id="srcs">{files.payload()}</script>'
-            + f"\n<script>{VIEWER_JS}</script>")
+    return (
+        page
+        + f'\n<style id="srccss">{SRC_CSS}</style>'
+        + f'\n<script type="application/json" id="srcs">{files.payload()}</script>'
+        + f"\n<script>{VIEWER_JS}</script>"
+    )
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Render the matrix page from one or more measurement passes.",
         epilog="Several -r files are averaged per cell; see merge.py for what "
-               "is averaged and what is flagged instead.")
+        "is averaged and what is flagged instead.",
+    )
     ap.add_argument("-o", "--out", default=str(SP / "matrix.html"))
-    ap.add_argument("-r", "--results", nargs="+", default=[str(WORK / "results.json")],
-                    metavar="PATH", help="results file(s) to average")
-    ap.add_argument("--strict", action="store_true",
-                    help="exit non-zero if any high-severity warning was raised")
+    ap.add_argument(
+        "-r",
+        "--results",
+        nargs="+",
+        default=[str(WORK / "results.json")],
+        metavar="PATH",
+        help="results file(s) to average",
+    )
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="exit non-zero if any high-severity warning was raised",
+    )
     args = ap.parse_args()
 
     data, warns = merge(load(args.results))
@@ -1012,11 +1270,15 @@ def main() -> None:
     for x in warns:
         print(x.line(), file=sys.stderr)
     n = data["meta"]["n_passes"]
-    print(f"wrote {args.out}  ({Path(args.out).stat().st_size / 1024:.0f} KB, "
-          f"{len(data['runs'])} cells from {n} pass{'es' if n != 1 else ''})")
+    print(
+        f"wrote {args.out}  ({Path(args.out).stat().st_size / 1024:.0f} KB, "
+        f"{len(data['runs'])} cells from {n} pass{'es' if n != 1 else ''})"
+    )
     if args.strict and any(x.severity == "high" for x in warns):
-        raise SystemExit(f"error: {sum(x.severity == 'high' for x in warns)} "
-                         f"high-severity warning(s); page written anyway")
+        raise SystemExit(
+            f"error: {sum(x.severity == 'high' for x in warns)} "
+            f"high-severity warning(s); page written anyway"
+        )
 
 
 if __name__ == "__main__":
