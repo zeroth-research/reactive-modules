@@ -12,12 +12,25 @@ conjunction of ``a0 + a1*s0 + ... >= 0`` rows.
 
 **Every scalar component is a column, whatever its sort.**  An ``Int`` is
 itself, a ``Bool`` is ``0``/``1`` (``(ite s0 1 0)``, which is how a row says
-``b`` or ``¬b`` and how a rank falls when a flag flips), and a bitvector is
-its unsigned value (``(ubv_to_int s0)``).  One integer template then covers
-a mixed state instead of a template per sort -- and the lifting is only the
-search space: the obligations are stated against the module's own transition
-in its own sorts, wraparound and all, so what survives is right about the
-bitvector rather than about a story told over it.
+``b`` or ``¬b`` and how a rank falls when a flag flips), a bitvector is
+its unsigned value (``(ubv_to_int s0)``), and a ``Real`` is read through a
+floor (``(to_int s0)``).  One integer template then covers a mixed state
+instead of a template per sort -- and the lifting is only the search space:
+the obligations are stated against the module's own transition in its own
+sorts, wraparound and all, so what survives is right about the bitvector
+rather than about a story told over it.
+
+**A Real column is scaled before it is floored.**  ``rule_buchi`` ranks by
+a ``Nat``, and flooring a quantity that falls by less than one need not fall
+at all -- ``m_lra_half`` steps by ``1/2``, where ``to_int x`` stalls on every
+other round.  The scale is the least common denominator of the literals the
+program writes (:func:`smt_synth.denominator_scale`, which
+``--infer houdini`` reads the same way), so the column is
+``(to_int (* 2.0 s0))`` there and ``(to_int s0)`` where the program is
+integral.  What this costs on the Lean side is a bridge rather than a
+lemma: ``linarith`` reads ``⌊x⌋`` as an opaque ``Int`` atom and cannot reach
+a hypothesis about the ``Real`` under it, so ``tactics.cert_floors`` states
+the sign of each floored quantity in ``Int``, where ``omega`` can use it.
 
 **The refutation is the point.**  A `sat` answer is a certificate, and there
 is a cheaper route to most of those; an `unsat` answer is a *proof that no
@@ -79,8 +92,10 @@ from ..smt_synth import (
     affine_smt,
     bounded_solver,
     conjunction_smt,
-    readings,
+    denominator_scale,
     program_constants,
+    program_rationals,
+    readings,
     record,
 )
 
@@ -195,9 +210,15 @@ class TA2MagicLinear(TA2Magic):
     # --- driver ---------------------------------------------------------
 
     def infer(self, cd: CertificateData) -> CertificateData:
-        ctx = SynthContext.build(self.module, cd, route="smt-linear")
-        cols = readings(ctx, allow=("int", "bool", "bv"), route="smt-linear")
+        ctx = SynthContext.build(self.module, cd, route="smt-linear",
+                                 reals=True)
+        scale = denominator_scale(program_rationals(ctx))
+        cols = readings(ctx, allow=("int", "bool", "bv", "real"),
+                        route="smt-linear", scale=scale)
         self.log(f"[smt-linear] columns: {', '.join(c.name for c in cols)}")
+        if scale != 1:
+            self.log(f"[smt-linear] Real state: read through a floor after "
+                     f"scaling by {scale}")
         if cd.is_safety:
             search = self._safety(ctx, cols, cd)
             if search.found is not None:

@@ -564,3 +564,53 @@ def test_replan_leaves_the_plan_alone_when_the_route_answered_in_lean():
     _replan(_Settings(), module, inferred, project)
     assert project.facts is before
     assert project.hints is None
+
+
+# ── floored ranks ────────────────────────────────────────────────────────
+
+
+def test_a_floored_rank_gets_the_bridge_to_the_real_under_it():
+    """`linarith` reads `⌊x⌋` as an opaque `Int` atom.
+
+    The hypotheses that would pin it are about the `Real` `x`, so nothing in
+    the closer chain can cross: `0 < s 0 0 ⊢ 0 < 2 + ⌊s 0 0⌋` fails with the
+    bracketing lemmas passed in, because half the facts are in the wrong
+    sort. `cert_floors` states the bridge in `Int`, where `omega` can use it.
+    """
+    plan = _plan(_real_module(), "fun s => ((2 + ⌊(s 0 0)⌋ : Int)).toNat")
+    assert plan.features.has_floor
+    assert plan.features.floor_args == ("(s 0 0)",)
+    body = plan.floor_tactic
+    assert "Int.floor_nonneg" in body
+    assert "($v)" in body, "the macro's own binder, not the printer's `s`"
+
+
+def test_the_floor_sign_is_split_rather_than_assumed():
+    """A `have` whose side condition needs a nested `by` cannot be recovered.
+
+    A nested `by` that fails logs `unsolved goals` at its own position
+    instead of raising, so the enclosing `try` does not catch it and the
+    failure lands in the build. `by_cases` has no side condition to get
+    wrong, and one branch of it is `skip`.
+    """
+    plan = _plan(_real_module(), "fun s => ((2 + ⌊(s 0 0)⌋ : Int)).toNat")
+    assert "by_cases" in plan.floor_tactic
+    assert ":= by" not in plan.floor_tactic
+
+
+def test_a_scaled_floor_distributes_before_the_closers():
+    """`norm_num` knows `⌊y - 1⌋ < ⌊y⌋` and not `⌊k*(x - c)⌋ < ⌊k*x⌋`.
+
+    `m_lra_half` ranks by `⌊2*s⌋` and steps by `1/2`, so the scale has to be
+    distributed for the two arguments to differ by a literal.
+    """
+    plan = _plan(_real_module(), "fun s => ((2 + ⌊((2 : Real) * (s 0 0))⌋ : Int)).toNat")
+    assert "simp only [mul_sub]" in plan.prep
+    assert plan.features.floor_args == ("((2 : Real) * (s 0 0))",)
+
+
+def test_an_integer_module_pays_nothing_for_floors():
+    plan = _plan(_int_module(), "fun s => ((s 0 0) = 2)")
+    assert not plan.features.has_floor
+    assert plan.floor_tactic == "skip"
+    assert "simp only [mul_sub]" not in plan.prep

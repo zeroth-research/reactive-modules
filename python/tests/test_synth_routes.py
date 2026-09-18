@@ -115,20 +115,18 @@ def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
     assert store.read(kept[0]) == cd.inv_smt
 
 
-def test_a_real_state_is_refused_by_name_by_both_routes():
-    """No integer reading, and a ranking function has to land in `Nat`.
+def test_a_real_state_is_refused_by_name_by_the_grammar_route():
+    """The grammar's `synthFun` takes integer arguments, so a Real column
+    has nowhere to go.
 
-    Refused where the sorts are read rather than inside a grammar rule or a
-    template, so the message names the component instead of a cvc5 error.
+    Refused where the sorts are read rather than inside a grammar rule, so
+    the message names the component instead of a cvc5 error.
     """
-    from zrth.lean.magic.linear import TA2MagicLinear
     from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(>= s0 0.0)", kind="safety")
-    for magic in (TA2MagicSygus(module_of("m_lra_lin"), log=lambda *_: None),
-                  TA2MagicLinear(module_of("m_lra_lin"), log=lambda *_: None)):
-        with pytest.raises(Refused, match="no integer reading"):
-            magic.infer(cd)
+    with pytest.raises(Refused, match="no integer reading"):
+        TA2MagicSygus(module_of("m_lra_lin"), log=lambda *_: None).infer(cd)
 
 
 def test_sygus_sends_a_bool_state_to_the_route_that_weighs_it():
@@ -152,6 +150,35 @@ def test_sygus_is_a_safety_route_in_the_class_as_well_as_the_row():
 # ══════════════════════════════════════════════════════════════════════════
 # --infer smt-linear
 # ══════════════════════════════════════════════════════════════════════════
+
+
+def test_a_real_component_is_read_through_a_floor():
+    """`rule_buchi` ranks by a `Nat`, so a Real rank is read through `to_int`.
+
+    The scale is the least common denominator of the literals the program
+    writes, because flooring a quantity that falls by less than one need not
+    fall at all -- `m_lra_half` steps by `1/2`, where `to_int x` stalls on
+    every other round.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_lra_lin")
+    cd = CertificateData(prp="(<= s0 0.0)", kind="buchi")
+    out = TA2MagicLinear(module, log=lambda *_: None).infer(cd)
+    assert "to_int s0" in out.ranking_smt
+    assert obligations_of(module, out) == []
+
+
+def test_a_real_rank_is_scaled_before_it_is_floored():
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_lra_half")
+    said: list[str] = []
+    cd = CertificateData(prp="(<= s0 0.0)", kind="buchi")
+    out = TA2MagicLinear(module, log=said.append).infer(cd)
+    assert "(to_int (* 2.0 s0))" in out.ranking_smt
+    assert obligations_of(module, out) == []
+    assert any("scaling by 2" in line for line in said)
 
 
 def test_smt_linear_finds_a_rank_when_the_shape_has_one():

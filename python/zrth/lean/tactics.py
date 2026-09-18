@@ -85,6 +85,12 @@ class Features:
     has_eq: bool = False
     has_floor: bool = False
     nonlinear: bool = False
+    # The distinct `⌊·⌋` arguments the predicates take a floor of, as Lean
+    # text over the state binder. A floored rank is the only thing that puts
+    # one here, and `cert_floors` needs the argument: `linarith` reads
+    # `⌊x⌋` as an opaque `Int` atom and cannot cross to a hypothesis about
+    # the `Real` `x`, so the bridge has to be stated per argument.
+    floor_args: tuple[str, ...] = ()
 
     @property
     def has_int(self) -> bool:
@@ -275,6 +281,7 @@ def features_for(ctx, pred_text: str, facts=None) -> Features:
     f.has_or = " ∨ " in pred_text
     f.has_eq = " = " in pred_text
     f.has_floor = "⌊" in pred_text
+    f.floor_args = floor_arguments(pred_text)
     f.nonlinear = is_nonlinear(pred_text)
     text_branch = (
         pred_text.count("(max ") + pred_text.count("(min ") + pred_text.count("if ")
@@ -355,6 +362,38 @@ class TacticPlan:
         return " <;>\n     ".join(steps)
 
     @property
+    def floor_tactic(self) -> str:
+        """Bridge each `⌊x⌋` to a bound on `x`, as the body of a macro over `$v`.
+
+        `linarith` reads `⌊x⌋` as an opaque `Int` atom, and the hypotheses
+        that would pin it are about the `Real` `x`, so it cannot cross:
+        `0 < s 0 0 ⊢ 0 < 2 + ⌊s 0 0⌋` fails with the bracketing lemmas
+        passed in, because half the facts are in the wrong sort. Stating the
+        bridge in `Int` is what closes it -- and then `omega` finishes,
+        since the floor is an atom it now has a bound for.
+
+        The sign is *split* rather than assumed, so the step cannot fail:
+        a `have` whose side condition needs proving would be discharged by a
+        nested `by`, and a nested `by` that fails logs `unsolved goals` at
+        its own position instead of raising, which `try` does not catch --
+        the failure lands in the build rather than falling through to the
+        next step. `rcases` has no side condition to get wrong.
+
+        `skip` when nothing is floored, which is every integer module.
+        """
+        if not self.features.floor_args:
+            return "skip"
+        steps = []
+        for k, arg in enumerate(self.features.floor_args):
+            a = _rebind(arg)
+            steps.append(
+                f"by_cases hs{k} : (0:Real) ≤ ({a}) <;> "
+                f"[(have hfl{k} : (0:Int) ≤ ⌊{a}⌋ := Int.floor_nonneg.mpr hs{k}); "
+                f"skip]"
+            )
+        return " <;> ".join(steps)
+
+    @property
     def facts_tactic(self) -> str:
         """Discharge the branch conditions the invariant already settles.
 
@@ -430,6 +469,39 @@ class TacticPlan:
         return out
 
 
+def _rebind(arg: str) -> str:
+    """`arg`'s state binder rewritten to a macro's own `$v`.
+
+    The printer names the certificate's parameter `s` (`smt_to_lean`'s
+    `param_name`), and the obligation's binder is whatever the proof calls
+    it, so the text cannot reference `s` directly from inside a macro.
+    """
+    return re.sub(r"\bs\b", "($v)", arg)
+
+
+def floor_arguments(pred_text: str) -> tuple[str, ...]:
+    """The distinct `x` of every `⌊x⌋` in `pred_text`, in order.
+
+    A scan rather than a parse: what is between the brackets is Lean text
+    this package printed itself, so the only thing that can nest inside is a
+    balanced `⌊⌋` pair, and the depth counter handles that.
+    """
+    out: list[str] = []
+    depth, start = 0, 0
+    for i, ch in enumerate(pred_text):
+        if ch == "⌊":
+            if not depth:
+                start = i + 1
+            depth += 1
+        elif ch == "⌋" and depth:
+            depth -= 1
+            if not depth:
+                arg = pred_text[start:i].strip()
+                if arg and arg not in out:
+                    out.append(arg)
+    return tuple(out)
+
+
 def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
     """Build the tactic plan for this module's proof obligations."""
     f = features_for(ctx, pred_text, facts)
@@ -442,6 +514,13 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
         prep.append("casesm* _ ∧ _")
     if f.has_and or f.has_or:
         prep.append("simp only [not_and_or] at *")
+    if f.has_floor:
+        # A scaled rank floors `k * (x - c)`, and `norm_num` knows
+        # `⌊y - 1⌋ < ⌊y⌋` but not `⌊k*(x - c)⌋ < ⌊k*x⌋` -- the scale has to
+        # be distributed first for the two arguments to differ by a literal.
+        # `m_lra_half` ranks by `⌊2*s⌋` and steps by `1/2`; without this its
+        # decrease obligation is the one goal left standing.
+        prep.append("simp only [mul_sub]")
     if f.has_real:
         # Profiled, this is the single most expensive thing in the plan, and
         # over the reals it is also load-bearing: dropping it to the goal
