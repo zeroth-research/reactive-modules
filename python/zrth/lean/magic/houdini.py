@@ -274,21 +274,34 @@ class Obligations:
         """
         return self._rewriter.simplify(t) if "tuple" in str(t) else t
 
-    @staticmethod
-    def slots(holders) -> list:
+    def flatten(self, holders, terms=None) -> list:
+        """One term per element: `terms` shaped by `holders`, or the holders.
+
+        `holders` says what has elements and how many -- a constructor is a
+        matrix-shaped component, anything else is a scalar -- and `terms`
+        are the terms standing in those positions, which for the round is
+        the successor and for the holders themselves is the constants. The
+        two are separate because a caller that wants the *names* and one
+        that wants the round both need the same shape read off the same
+        place.
+        """
+        out = []
+        for h, t in zip(holders, holders if terms is None else terms):
+            if h.getKind() != Kind.APPLY_CONSTRUCTOR:
+                out.append(t)
+            else:
+                out += [self._select(t, k)
+                        for k in range(h.getNumChildren() - 1)]
+        return out
+
+    def slots(self, holders) -> list:
         """`(name, sort)` for every constant in `holders` -- one per element.
 
         What a caller drawing input values needs: the names are the ones a
         term mentions, so a matrix-shaped input is drawn element by element
         rather than as a tuple under a name nothing uses.
         """
-        out = []
-        for h in holders:
-            if h.getKind() == Kind.APPLY_CONSTRUCTOR:
-                out += [(c.getSymbol(), c.getSort()) for c in list(h)[1:]]
-            else:
-                out.append((str(h), h.getSort()))
-        return out
+        return [(str(c), c.getSort()) for c in self.flatten(holders)]
 
     def env_of(self, state, holders=None) -> dict:
         """A simulated state as values for the constants `holders` names.

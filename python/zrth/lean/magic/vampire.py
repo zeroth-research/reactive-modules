@@ -150,7 +150,7 @@ from ..houdini_solver import (
     _kill_group,
 )
 from . import TA2Magic
-from .houdini import Candidate, Obligations
+from .houdini import Candidate, Obligations, columns
 from ..smt_synth import SynthContext, program_constants, smt_int
 
 try:
@@ -331,20 +331,26 @@ def window_for(ctx: SynthContext) -> int:
 class Row:
     """One `lo <= body <= hi` of a template, with `lo` and `hi` still holes.
 
-    `at` is which components the body reads: one index is the component
-    itself, two is their difference. It is kept as indices rather than as
-    text because the row is needed twice over -- as a cvc5 term in the
-    question, and as SMT-LIB in the certificate -- and a body that is
-    printed one way and parsed back the other is a way for those two to
-    disagree without anything saying so.
+    `at` is which *columns* the body reads -- the scalars the state is made
+    of, so an element of a matrix-shaped component and not the component
+    around it. One index is the column itself, two is their difference. It
+    is kept as indices rather than as text because the row is needed twice
+    over -- as a cvc5 term in the question, and as SMT-LIB in the
+    certificate -- and a body that is printed one way and parsed back the
+    other is a way for those two to disagree without anything saying so.
+
+    `reads` is how those same columns are written, carried alongside for
+    the certificate: `s0` for a scalar, `((_ tuple.select k) s0)` for an
+    element.
     """
 
     lo: str
     hi: str
     at: tuple[int, ...]
+    reads: tuple[str, ...]
 
     def term(self, tm, state: list):
-        """The body over `state`, which is one term per component."""
+        """The body over `state`, which is one term per column."""
         if len(self.at) == 1:
             return state[self.at[0]]
         i, j = self.at
@@ -353,9 +359,9 @@ class Row:
     @property
     def smt(self) -> str:
         """The body as the certificate carries it."""
-        if len(self.at) == 1:
-            return f"s{self.at[0]}"
-        return f"(- s{self.at[0]} s{self.at[1]})"
+        if len(self.reads) == 1:
+            return self.reads[0]
+        return f"(- {self.reads[0]} {self.reads[1]})"
 
 
 @dataclass(frozen=True)
@@ -377,26 +383,39 @@ class Template:
 
 
 def template(ctx: SynthContext, which: str, *, ranked: bool) -> Template:
-    """The `which` template over this module's components."""
-    width = len(ctx.state)
+    """The `which` template over this module's columns.
+
+    Columns, not components: a matrix-shaped component is an interval per
+    element, because the tuple itself has no order for `lo <= _ <= hi` to
+    bound. So the width a template is built at is the number of scalars the
+    state is made of, which is also what the rank has a coefficient per.
+    """
+    reads = [c.src for c in columns(ctx)]
+    width = len(reads)
     rows, holes = [], []
     for i in range(width):
         lo, hi = f"A{i}", f"B{i}"
-        rows.append(Row(lo, hi, (i,)))
+        rows.append(Row(lo, hi, (i,), (reads[i],)))
         holes += [lo, hi]
     if which == "differences":
         for i, j in combinations(range(width), 2):
             lo, hi = f"C{i}_{j}", f"D{i}_{j}"
-            rows.append(Row(lo, hi, (i, j)))
+            rows.append(Row(lo, hi, (i, j), (reads[i], reads[j])))
             holes += [lo, hi]
     rank = tuple([f"R{i}" for i in range(width)] + ["Rc"]) if ranked else ()
     return Template(which, tuple(holes), tuple(rows), rank)
 
 
 def templates(ctx: SynthContext, *, ranked: bool) -> list[Template]:
-    """The templates this module is worth asking about, smallest first."""
+    """The templates this module is worth asking about, smallest first.
+
+    The differences template is quadratic in the columns, and the width it
+    is measured against is the column count for the same reason the rows
+    are: a 32-element vector is 32 columns whatever it is declared as.
+    """
+    width = len(columns(ctx))
     out = [template(ctx, "intervals", ranked=ranked)]
-    if len(ctx.state) > 1 and len(ctx.state) <= _MAX_WIDTH_FOR_DIFFERENCES:
+    if 1 < width <= _MAX_WIDTH_FOR_DIFFERENCES:
         out.append(template(ctx, "differences", ranked=ranked))
     return out
 
@@ -420,14 +439,21 @@ class Question:
                  entry: list[Branch], step: list[Branch]):
         self.ctx, self.ob, self.tm = ctx, ob, ctx.tm
         self.entry, self.step = entry, step
-        ints = ctx.tm.getIntegerSort()
-        # One bound variable per constant. The names reach Vampire through
-        # cvc5's printer, so they have to be distinct: two `mkVar`s of one
-        # name print alike and mean different things.
-        self.consts = list(ob.s) + list(ob.el) + list(ob.en)
-        self.state = [ctx.tm.mkVar(ints, f"s{i}") for i in range(len(ob.s))]
+        # One bound variable per constant, and the constants are one per
+        # *element* -- a matrix-shaped component is not a name Vampire can
+        # be given. The names reach Vampire through cvc5's printer, so they
+        # have to be distinct: two `mkVar`s of one name print alike and
+        # mean different things. `v_s0_1` is bound as `s0_1`, which is the
+        # constant's own name without the prefix that marks it a constant.
+        flat_s = ob.flatten(ob.s)
+        flat_e = ob.flatten(list(ob.el) + list(ob.en))
+        self.consts = flat_s + flat_e
+        self.state = [ctx.tm.mkVar(c.getSort(), str(c)[2:]) for c in flat_s]
+        # The latched state as one term per column, which is what a row and
+        # a rank coefficient are indexed by.
+        self.here = flat_s
         self.inputs = [ctx.tm.mkVar(c.getSort(), f"e{i}")
-                       for i, c in enumerate(list(ob.el) + list(ob.en))]
+                       for i, c in enumerate(flat_e)]
         self.vars = self.state + self.inputs
         self.holes: dict = {}
         self.window = window_for(ctx)
@@ -506,21 +532,21 @@ class Question:
                 hyp = self._and([ob.init_pre, *br.guard])
                 obligations.append(self._forall(
                     self.inputs,
-                    self._implies(hyp, self._rows(tpl, list(br.state)))))
+                    self._implies(hyp, self._rows(tpl, self._cols(br)))))
         for br in self.step:
-            here = self._rows(tpl, list(ob.s))
+            here = self._rows(tpl, self.here)
             if inductive:
                 hyp = self._and([here, ob.update_pre, *br.guard])
                 obligations.append(self._forall(
                     self.vars,
-                    self._implies(hyp, self._rows(tpl, list(br.state)))))
+                    self._implies(hyp, self._rows(tpl, self._cols(br)))))
             if ranked:
                 # hrank, ite-free: positive where the property fails, and
                 # smaller after the round. Implies the `Int.toNat` form.
-                now = self._rank(tpl, list(ob.s))
+                now = self._rank(tpl, self.here)
                 drops = self._and([
                     tm.mkTerm(Kind.GT, now, tm.mkInteger(0)),
-                    tm.mkTerm(Kind.LT, self._rank(tpl, list(br.state)), now),
+                    tm.mkTerm(Kind.LT, self._rank(tpl, self._cols(br)), now),
                 ])
                 fails = tm.mkTerm(Kind.NOT, self._at(prp, ob.s))
                 obligations.append(self._forall(
@@ -531,7 +557,7 @@ class Question:
         if implies:
             obligations.append(self._forall(
                 self.state,
-                self._implies(self._rows(tpl, list(ob.s)),
+                self._implies(self._rows(tpl, self.here),
                               self._at(prp, ob.s))))
         return obligations
 
@@ -576,7 +602,13 @@ class Question:
         return self.tm.mkTerm(Kind.IMPLIES, hyp, goal)
 
     def _at(self, term, vs):
-        return term.substitute(self.ctx.state, vs)
+        # Folded: substituting a matrix-shaped holder leaves a select of a
+        # constructor, and a tuple is the one thing Vampire cannot be shown.
+        return self.ob._readable(term.substitute(self.ctx.state, vs))
+
+    def _cols(self, br: Branch) -> list:
+        """A branch's successor state, one term per column."""
+        return self.ob.flatten(self.ob.s, list(br.state))
 
     def _forall(self, vs: list, body):
         """`body` over the constants, quantified over the variables for them.
@@ -858,16 +890,18 @@ class TA2MagicVampire(TA2Magic):
         # `SynthContext.build` refuses a component this route cannot weigh
         # as an integer -- Real, bitvector, matrix-shaped -- before anything
         # here is printed, which is the same gate `--infer smt-linear` uses.
-        ctx = SynthContext.build(self.module, cd, route="vampire")
+        ctx = SynthContext.build(self.module, cd, route="vampire",
+                                 takes=("int", "bool", "bv", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx
+        self.width = len(columns(ctx))
         self.ob = ob = Obligations(ctx)
         entry = split(ctx, ob.init, "the initial state")
         step = split(ctx, ob.next, "the round")
         q = Question(ctx, ob, entry, step)
         self.log(f"[vampire] {len(step)} branch(es) of the round, "
                  f"{len(entry)} of the initial state, "
-                 f"{len(ctx.state)} component(s)")
+                 f"{self.width} column(s)")
 
         asker = Answers(self.exe, seconds=self.timeout, log=self.log)
         derive = self._safety if cd.is_safety else self._ranked
@@ -972,9 +1006,13 @@ class TA2MagicVampire(TA2Magic):
                else "(and " + " ".join(facts) + ")")
         if cd.is_safety:
             return inv, None
-        # A coefficient of one is the component itself: `(* 1 s0)` is what
-        # the template says and `s0` is what the certificate should read.
-        terms = [f"s{i}" if named[c] == 1 else f"(* {smt_int(named[c])} s{i})"
+        # A coefficient of one is the column itself: `(* 1 s0)` is what the
+        # template says and `s0` is what the certificate should read. The
+        # columns come off the rows, which carry how each is written, so a
+        # rank over an element says `((_ tuple.select k) s0)`.
+        reads = [row.reads[0] for row in tpl.rows if len(row.reads) == 1]
+        terms = [reads[i] if named[c] == 1
+                 else f"(* {smt_int(named[c])} {reads[i]})"
                  for i, c in enumerate(tpl.rank[:-1]) if named[c]]
         const = named[tpl.rank[-1]]
         parts = ([smt_int(const)] if const or not terms else []) + terms
@@ -1025,11 +1063,23 @@ class TA2MagicVampire(TA2Magic):
         that `<=` a bitvector nowhere. Met here, by sort, rather than as a
         sort error out of cvc5 four steps later.
         """
+        def integral(s) -> bool:
+            """An integer, or a matrix of them -- a column apiece either way.
+
+            A matrix-shaped component is bounded and ranked element by
+            element, and every element of one is an integer variable in the
+            obligation, so what has to hold of a component holds of its
+            elements instead.
+            """
+            if s.isTuple():
+                return all(e.isInteger() for e in s.getTupleSorts())
+            return s.isInteger()
+
         bad = [f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
-               if not s.isInteger()]
+               if not integral(s)]
         bad += [f"{c} is {c.getSort()}"
                 for c in list(ctx.extl_next) + list(ctx.extl_latched)
-                if not c.getSort().isInteger()]
+                if not integral(c.getSort())]
         if bad:
             raise Refused(
                 f"--infer vampire states its obligations over integers, "
@@ -1074,7 +1124,7 @@ class TA2MagicVampire(TA2Magic):
         detail = (
             f"Vampire was asked for one as the coefficients of "
             f"{' and '.join(tried) or 'no'} template(s), over "
-            f"{len(self.ob.s)} component(s), in {asker.calls} call(s) taking "
+            f"{self.width} column(s), in {asker.calls} call(s) taking "
             f"{asker.spent:.1f} s. An answer literal comes back only when a "
             f"refutation pins the coefficients down, so this is not a proof "
             f"that no certificate of this shape exists -- a longer "

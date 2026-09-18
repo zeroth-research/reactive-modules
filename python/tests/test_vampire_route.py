@@ -60,7 +60,8 @@ def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
 
     cd = CertificateData(prp=prp, kind=kind)
     ctx = SynthContext.build(module_at(fixture / f"{name}.py"), cd,
-                             route="vampire")
+                             route="vampire",
+                             takes=("int", "bool", "bv", "tuple"))
     ob = Obligations(ctx)
     entry = split(ctx, ob.init, "the initial state")
     step = split(ctx, ob.next, "the round")
@@ -239,12 +240,57 @@ def test_only_the_question_that_needs_a_window_gets_one():
 
 def test_a_template_row_is_one_body_read_two_ways():
     """A row is needed as a cvc5 term in the question and as SMT-LIB in the
-    certificate, so it holds which components it reads rather than text one
+    certificate, so it holds which columns it reads rather than text one
     side prints and the other parses back."""
     from zrth.lean.magic.vampire import Row
 
-    assert Row("A0", "B0", (0,)).smt == "s0"
-    assert Row("C0_1", "D0_1", (0, 1)).smt == "(- s0 s1)"
+    assert Row("A0", "B0", (0,), ("s0",)).smt == "s0"
+    assert Row("C0_1", "D0_1", (0, 1), ("s0", "s1")).smt == "(- s0 s1)"
+    # A column of a matrix-shaped component is written as the selector the
+    # certificate carries, not as the component it is an element of.
+    sel = "((_ tuple.select 2) s0)"
+    assert Row("A2", "B2", (2,), (sel,)).smt == sel
+
+
+def test_a_matrix_component_is_an_interval_per_element():
+    """`m_relu_vec`'s state is one 3x1 wire, and the route refused it.
+
+    A tuple has no order for `lo <= _ <= hi` to bound, so the template is
+    built over the *columns* -- one interval per element, one rank
+    coefficient per element -- and the obligation names an integer variable
+    per element, never the component.
+
+    What is pinned here is that the obligation says the right thing: the
+    certificate this module actually has, instantiated into the template,
+    is proved by cvc5. Whether Vampire *derives* those numbers is a
+    separate matter and on this module it does not -- three ReLUs split the
+    round into eight branches against six holes.
+    """
+    import cvc5
+    from cvc5 import Kind
+
+    from zrth.lean.magic.houdini import columns
+    from zrth.lean.magic.vampire import template
+
+    ctx, _ob, q = parts("m_relu_vec", "safety",
+                        "(<= ((_ tuple.select 0) s0) 3)")
+    assert [c.src for c in columns(ctx)] == [
+        f"((_ tuple.select {k}) s0)" for k in range(3)]
+
+    tpl = template(ctx, "intervals", ranked=False)
+    obs = q._obligations(tpl, ctx.prp, inductive=True, implies=True,
+                         ranked=False)
+    body = q._and(obs)
+    assert "tuple" not in str(body).lower(), "an obligation Vampire can read"
+
+    # `v' = relu(v - 1)` from (3,2,1): every element stays within its start.
+    want = {"A0": 0, "B0": 3, "A1": 0, "B1": 2, "A2": 0, "B2": 1}
+    body = body.substitute([q._hole(h) for h in want],
+                           [ctx.tm.mkInteger(v) for v in want.values()])
+    solver = cvc5.Solver(ctx.tm)
+    solver.setOption("tlimit", "20000")
+    solver.assertFormula(ctx.tm.mkTerm(Kind.NOT, body))
+    assert solver.checkSat().isUnsat()
 
 
 # ══════════════════════════════════════════════════════════════════════════
