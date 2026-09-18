@@ -72,12 +72,26 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    the same commit as 3 and for the same reason; 2-D `argmax` went with them
    rather than be left the odd one out.
 
-6. **`lean2vmt` models only `state`/`statenext`, so external inputs have no VMT
-   counterpart -- 13 cells.** All 13 are svcomp `houdini-inv` rows with
-   `truth=holds` whose invariant is inductive by construction -- the easiest
-   certificates on the page, and the only thing between `fbk-proveit` and the
-   whole svcomp safety column. VMT-LIB can carry an input as an unconstrained
-   variable absent from the next-state relation.
+6. ~~**`lean2vmt` models only `state`/`statenext`, so external inputs have
+   no VMT counterpart.**~~ **Done** (`263214f`), and not the way this item
+   proposed. "VMT-LIB can carry an input as an unconstrained variable" is
+   true and is not the obstacle: `lean2vmt` annotates `:next` only on slots
+   written as `var_k statenext`, so an unwritten slot is *already* an
+   unconstrained variable. Lean is what refuses -- `TS.transfer` carries
+   the certificate back along a **function** from module states to model
+   states, and a module state does not say which input produced it. A
+   simulation relation would express it; a function cannot.
+   What works instead costs no variable at all: measured, all 21 modules
+   with inputs read one in exactly one place -- `init`, as the initial
+   value of one slot -- and none reads one while stepping. So such a slot
+   gets **no `Init_k`**: `x := nondeterministic` is "`x` starts anywhere",
+   which is the module's own initial set rather than a superset of it. That
+   distinction is the whole point, because this route reports REFUTED and a
+   model admitting more than the module would report counterexamples the
+   module has not got -- so everything else that touches an input is
+   refused in its own words rather than approximated. 8 cells `NO-CERT` ->
+   `VERIFIED`; the fbk suite's 39 are unchanged. Of the 15 svcomp rows
+   still not verified, 8 are `--pre` (15) and 5 are those precise refusals.
 
 7. ~~**Tuple- and matrix-shaped components have no route.**~~ **Partly done**
    (`c2264db`). `smt-linear` reads a matrix component as one column per
@@ -162,6 +176,10 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     cells now, but 50 rows carry a `--pre` and 29 of those are petri, so this
     becomes ~150 cells once the missing suites run: the largest single category
     on the page. Sizes "Allow --pre for more configurations" above.
+    **Now the whole of what is left on the svcomp safety column**: with 6
+    done, 8 of its 15 unverified cells are this and nothing else, and they
+    are rows whose invariant is inductive by construction. Worth doing
+    before the harder half of 7 or 8.
 
 16. `fbk/m_step2/NiS2Odd3::fbk-proveit` -- `(kernel) application type mismatch`
     in `Certificate.lean`. A certificate ic3ia produced that `vmt2lean`
