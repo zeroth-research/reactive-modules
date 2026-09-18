@@ -180,20 +180,42 @@ def test_smt_linear_ranks_a_loop_whose_exit_states_are_unbounded():
     assert out.ranking_smt is not None
 
 def test_smt_linear_proves_a_shape_empty_rather_than_failing_to_search_it():
-    """`m_toward5` moves toward 5 from both sides, so a rank has to branch.
+    """`m_twovars` has no linear rank under any invariant this route states.
 
     The refusal says so as a *proof*, which is the difference between this
     route and an LLM that tried linear candidates until its attempts ran
-    out.
+    out -- and the note names the invariant width it got to, since an empty
+    space at two rows is not an empty space at three.
     """
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    cd = CertificateData(
-        prp="(= s0 5)", kind="buchi", inv="(and (>= s0 0) (<= s0 10))"
-    )
+    cd = CertificateData(prp="(and (= s0 0) (= s1 0))", kind="buchi")
     with pytest.raises(Refused) as e:
-        TA2MagicLinear(module_of("m_toward5"), log=lambda *_: None).infer(cd)
+        TA2MagicLinear(module_of("m_twovars"), log=lambda *_: None).infer(cd)
     assert "proof that the space is empty" in str(e.value)
+    assert "under any invariant of up to 2 linear inequalities" in str(e.value)
+
+
+def test_smt_linear_finds_the_invariant_it_needs_to_rank_over():
+    """`m_toward5` has no rank under `true` and one under `s0 >= 5`.
+
+    The rank and the invariant are one query, because an invariant searched
+    on its own has nothing to be strong enough *for*: `true` is inductive,
+    so a search for one alone returns it and the rank is no better off.
+    Asking for both at once is what makes the solver find the bound.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_toward5")
+    said: list[str] = []
+    cd = CertificateData(prp="(= s0 5)", kind="buchi")
+    out = TA2MagicLinear(module, log=said.append).infer(cd)
+    assert out.ranking_smt is not None
+    assert out.inv_smt != "true", "it had to find an invariant to rank under"
+    assert obligations_of(module, out) == []
+    assert any("widening the invariant" in line for line in said), (
+        "width 0 is tried first, so the rank under `true` still costs one query"
+    )
 
 
 def test_smt_linear_finds_a_one_row_safety_invariant():
@@ -217,20 +239,19 @@ def test_smt_linear_strengthens_a_supplied_invariant_rather_than_replacing_it():
 def test_smt_linear_writes_what_it_ruled_out(tmp_path):
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    store = store_for(tmp_path, "m_toward5", kind="buchi", prp="(= s0 5)",
+    prp = "(and (= s0 0) (= s1 0))"
+    store = store_for(tmp_path, "m_twovars", kind="buchi", prp=prp,
                       producer="smt-linear")
-    cd = CertificateData(
-        prp="(= s0 5)", kind="buchi", inv="(and (>= s0 0) (<= s0 10))"
-    )
+    cd = CertificateData(prp=prp, kind="buchi")
     with pytest.raises(Refused):
         TA2MagicLinear(
-            module_of("m_toward5"), artifacts=store, log=lambda *_: None
+            module_of("m_twovars"), artifacts=store, log=lambda *_: None
         ).infer(cd)
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     assert len(notes) == 1
     text = store.read(notes[0])
     assert "No ranking function linear in the state" in text
-    assert "(and (>= s0 0) (<= s0 10))" in text, "the invariant it searched under"
+    assert "up to 2 linear inequalities" in text, "the invariants it ranked under"
 
 
 def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):

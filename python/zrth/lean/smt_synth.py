@@ -20,10 +20,12 @@ prompt can carry.
 Measured on the `tests/limits` fixtures with cvc5 1.3.4, which is what the
 shapes below are chosen from:
 
-* a linear rank is decided in **2-30 ms** either way -- `m_countdown` sat
-  (`rank = s0`), `m_toward5`, `m_twovars` and `m_lex` all unsat, which is the
-  useful half: those three need a branch, and now nothing has to discover
-  that by proposing one.
+* a linear rank is decided in **2-30 ms** under a fixed invariant --
+  `m_countdown` sat (`rank = s0`), `m_toward5`, `m_twovars` and `m_lex` all
+  unsat under `true`, which is the useful half: nothing has to discover that
+  by proposing one.  Searching the rank *with* an invariant to rank under
+  finds one for `m_toward5` and `m_lex` and costs a second or two; only
+  `m_twovars` is empty at every width.
 * a linear invariant costs what its *conjunct count* costs, not what the
   module costs: `m_countdown |- G (s0 <= 100)` is 11 ms at one row and does
   not finish in 30 s at two.  So the rows are tried in order and each one is
