@@ -126,7 +126,7 @@ def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
         "",
         f"@[simp] theorem {name}_eq (v : Mat {elem_ty} 1 {n}) :",
         f"    {name} {eq_params} = (↑(argmax_1d v 0 0) : Int) := by",
-        f"  simp only [{name}, argmax_1d, List.finRange]",
+        f"  simp only [{name}, argmax_1d, List.ofFn_succ, List.ofFn_zero]",
         f"  rfl",
         "",
     ]

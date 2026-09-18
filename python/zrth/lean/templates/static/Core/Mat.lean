@@ -47,22 +47,30 @@ def affineLinear [HMul t t t] [AddCommMonoid t] [HAdd t t t]
 def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
   fun i j => Max.max 0 (x i j)
 
+/-! The three reductions below enumerate their elements with `List.ofFn`
+    rather than `List.finRange`, and the difference is not cosmetic: the
+    certificates' `simp_mat` carries `List.ofFn_succ` and `List.ofFn_zero`
+    and no lemma that computes `List.finRange`, so a `finRange` fold stays
+    stuck in the goal at every concrete shape and every closer fails on it
+    (KNOWN_ISSUES #26, #30). Row-major order, seeds and tie-breaking are
+    exactly as they were. -/
+
 /-- Reduce a matrix to its minimum, packed as `Mat t 1 1`.
     Folds row-major from element `(0,0)`; an empty matrix has no minimum and
     yields `default`. Min/Max are unary reductions in the theory, matching
     `Argmax`'s shape. -/
 def matMin {t : Type} [Min t] [Inhabited t] {m n : Nat} (x : Mat t m n) : Mat t 1 1 :=
   fun _ _ =>
-    match (List.finRange m).flatMap (fun i => (List.finRange n).map (fun j => (i, j))) with
+    match (List.ofFn (fun i : Fin m => List.ofFn (fun j : Fin n => x i j))).flatten with
     | [] => default
-    | p0 :: ps => ps.foldl (fun best p => Min.min best (x p.1 p.2)) (x p0.1 p0.2)
+    | v0 :: vs => vs.foldl Min.min v0
 
 /-- Reduce a matrix to its maximum, packed as `Mat t 1 1`. See `matMin`. -/
 def matMax {t : Type} [Max t] [Inhabited t] {m n : Nat} (x : Mat t m n) : Mat t 1 1 :=
   fun _ _ =>
-    match (List.finRange m).flatMap (fun i => (List.finRange n).map (fun j => (i, j))) with
+    match (List.ofFn (fun i : Fin m => List.ofFn (fun j : Fin n => x i j))).flatten with
     | [] => default
-    | p0 :: ps => ps.foldl (fun best p => Max.max best (x p.1 p.2)) (x p0.1 p0.2)
+    | v0 :: vs => vs.foldl Max.max v0
 
 /-- 1-dimensional argmax: returns the column index of the maximum element
     of a `Mat t 1 n`, packed as `Mat Nat 1 1`.
@@ -71,14 +79,11 @@ def matMax {t : Type} [Max t] [Inhabited t] {m n : Nat} (x : Mat t m n) : Mat t 
 def argmax_1d {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
     {n : Nat} (x : Mat t 1 n) : Mat Nat 1 1 :=
   fun _ _ =>
-    match List.finRange n with
+    match List.ofFn (fun j : Fin n => (j.val, x 0 j)) with
     | [] => 0
-    | j0 :: js =>
-      (js.foldl
-        (fun (best : Nat × t) j =>
-          let v := x 0 j
-          if best.2 < v then (j.val, v) else best)
-        (j0.val, x 0 j0)).1
+    | p0 :: ps =>
+      (ps.foldl
+        (fun (best : Nat × t) p => if best.2 < p.2 then p else best) p0).1
 
 /-- 2-dimensional argmax: the *row-major flat* index `i * n + j` of the
     maximum element of a `Mat t m n`, packed as `Mat Nat 1 1` — a single
@@ -88,14 +93,12 @@ def argmax_1d {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
 def argmax {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
     {m n : Nat} (x : Mat t m n) : Mat Nat 1 1 :=
   fun _ _ =>
-    match (List.finRange m).flatMap (fun i => (List.finRange n).map (fun j => (i, j))) with
+    match (List.ofFn (fun i : Fin m =>
+             List.ofFn (fun j : Fin n => (i.val * n + j.val, x i j)))).flatten with
     | [] => 0
     | p0 :: ps =>
       (ps.foldl
-        (fun (best : Nat × t) p =>
-          let v := x p.1 p.2
-          if best.2 < v then (p.1.val * n + p.2.val, v) else best)
-        (p0.1.val * n + p0.2.val, x p0.1 p0.2)).1
+        (fun (best : Nat × t) p => if best.2 < p.2 then p else best) p0).1
 
 
 /-! Helper lemmas for simp -/

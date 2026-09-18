@@ -53,7 +53,10 @@ _MAT_SIMP = (
     "MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, "
     "add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, "
     "Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, "
-    "Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero"
+    "Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, "
+    # The three reductions unfold to a `List.ofFn` fold that the two lemmas
+    # above then compute; without the defs here the fold never opens.
+    "matMin, matMax, argmax_1d, argmax"
 )
 
 

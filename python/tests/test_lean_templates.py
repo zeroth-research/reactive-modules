@@ -59,3 +59,51 @@ def test_generator_reads_the_static_tree():
         assert (TEMPLATE_DIR / "Core" / name).is_file(), f"Core/{name} missing"
     for name in LEAN_AI_FILES:
         assert (TEMPLATE_DIR / name).exists(), f"{name} missing"
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  The reductions have to stay computable under the certificate's `simp`
+# ══════════════════════════════════════════════════════════════════════
+
+REDUCTIONS = ("matMin", "matMax", "argmax_1d", "argmax")
+
+
+def _mat_source() -> str:
+    return (STATIC_DIR / "Core" / "Mat.lean").read_text()
+
+
+def test_the_reductions_enumerate_with_ofFn_not_finRange():
+    """`List.finRange` is what made these unprovable for a year.
+
+    `simp_mat` carries `List.ofFn_succ` and `List.ofFn_zero` and no lemma
+    that computes `List.finRange`, so a `finRange` fold stays stuck in the
+    goal at every concrete shape and every closer fails on it -- which is
+    what KNOWN_ISSUES #26 and #30 were. Rewriting one of these back to
+    `finRange` would look like a simplification and would silently cost
+    twelve certificates.
+    """
+    src = _mat_source()
+    for name in REDUCTIONS:
+        body = src.split(f"def {name} ", 1)[1].split("\ndef ", 1)[0]
+        assert "List.ofFn" in body, f"{name} no longer enumerates with List.ofFn"
+        assert "List.finRange" not in body, (
+            f"{name} enumerates with List.finRange, which `simp_mat` cannot "
+            f"compute; see KNOWN_ISSUES #26"
+        )
+
+
+def test_the_certificate_simp_set_unfolds_them():
+    """Computing the fold is no use if the definition never opens."""
+    cert = (PROJECT_TEMPLATES_DIR / "Certificate" / "Certificate.lean.j2").read_text()
+    simp_mat = [ln for ln in cert.splitlines() if "MatAdd_apply" in ln]
+    assert simp_mat, "the simp_mat macro moved"
+    for name in REDUCTIONS:
+        assert name in simp_mat[0], f"{name} is not in simp_mat"
+
+
+def test_the_fbk_bridge_simp_set_agrees_with_it():
+    """The bridge proves the NA model is the module, over the same terms."""
+    from zrth.lean.translate.fbk_bridge import _MAT_SIMP
+
+    for name in REDUCTIONS:
+        assert name in _MAT_SIMP, f"{name} is not in the fbk bridge's simp set"
