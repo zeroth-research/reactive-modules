@@ -96,6 +96,8 @@ wrong one.
 | 22 | A finite state's obligations could produce a bare `False` goal, contradictory only because `BitVec 1` has two inhabitants. `decide` is in the plan for finite states but evaluates closed propositions, so under a free state variable it can never fire | generate a `cert_states` prep step that enumerates each two-valued state element (`BitVec.eq_zero_or_eq_one` / `Bool.eq_false_or_eq_true`), bounded by `MAX_ENUMERABLE_SLOTS` so the fan-out stays small |
 | 21 | `FBK.effect_i_eq` closed with `simp`, which cannot equate two auto-generated matchers — `FBK.effect_i.match_1` vs `ScalarRel.effect_i.match_1` — so `System/FBK.lean` failed for every multi-element ctrl wire | `first \| rfl \| simp […]`: `rfl` unfolds both at default transparency. The slow suite now builds the four encodings as separate modules, as a real project does |
 | 32 | `visit_If` merged the two branch scopes through a `set` of variable-*name* strings, so two runs of the generator over one unchanged module emitted different `System.lean`/`Scalar.lean` — the `let`s for independent `Ite`s swapped and the `x{n}` numbering shifted with them. Same program either way, but a regenerated project was byte-different, so `lake` rebuilt everything downstream and byte-diffing generated Lean could not show that a refactor changed nothing | merge in the order the two scopes were built (`zrth/analyzer.py`); `tests/test_lean_determinism.py` pins the six modules under two `PYTHONHASHSEED`s |
+| 26 | `matMin`/`matMax` enumerated with `List.finRange`, which `simp_mat` carries no lemma to compute, so the fold stayed opaque in every goal and every closer failed on it as `linarith failed` — on certificates `--pre-check cvc5` confirms in ~4 ms | enumerate with `List.ofFn` (`Core/Mat.lean`) and put the three defs in `simp_mat`, which was tried alone before and is not enough: opening the definition only exposes the fold. Order, seeds and tie-breaking unchanged | `be70a43` |
+| 30 | `argmax_1d` (and 2-D `argmax`) had the same defect and the same symptom | same fix; `scalar.py`'s generated `argmax1d_scalar_n_eq` named `List.finRange` in its own proof and now names the two `ofFn` lemmas | `be70a43` |
 
 ---
 
@@ -161,32 +163,9 @@ the root `Certificate.lean`'s import list -- the two files compile, in
 separate environments, and the day the hypothesis is discharged one of the
 two `LTLFormula`s has to move.
 
-### 26. `matMin` / `matMax` never reduce, so `Min`/`Max` modules cannot be proved · CONFIRMED
+### 26. `matMin` / `matMax` never reduce, so `Min`/`Max` modules cannot be proved · FIXED
 
-**Symptom.** `OpMax`, `OpMin`. The certificate goal keeps an opaque
-`matMax (matVecAffine …) 0 0` and every closer fails on it.
-
-**Mechanism.** `ReLu` has a `@[simp] relu_apply`; `matMin`/`matMax` have no
-apply lemma and are not in `simp_mat`'s list. Adding the bare definitions to
-that list is not enough — tried and reverted: they are folds over
-`(List.finRange m).flatMap …`, and `simp_mat` carries no lemmas that compute
-`List.finRange`, so the fold stays stuck.
-
-**Resolution.** Either add computed `@[simp]` lemmas for `matMin`/`matMax`, or
-redefine them over `List.ofFn`, whose `List.ofFn_succ` / `List.ofFn_zero` are
-already in `simp_mat`. The second is a semantics-preserving redefinition of
-`Core/Mat.lean` and needs the slow suite to confirm nothing that reasons about
-these two regresses.
-
-**Confirmed provable, twice.** The SMT encoder could not build these modules
-at all until `Min`/`Max` were moved off the binary `_elementwise` path they
-were wired to — they are unary reductions, so any cvc5 query about such a
-module raised `TypeError`. With that fixed, `--pre-check cvc5` says all three
-obligations hold for `OpMax` and `OpMin`, in 4.6 ms and 4.2 ms. And the
-`--fbk-proveit` route, which takes its transition from `smt_encode` rather
-than from the scalar Lean printer, certifies a safety property for both.
-There is nothing wrong with the certificates and nothing to find in the
-tactic plan: the Lean-side fold is the whole of it.
+See the Fixed table above (`be70a43`).
 
 ### 27. `Uninterpreted` has no Lean form · CONFIRMED
 
@@ -199,8 +178,16 @@ it, or reject it at the front end with a message.
 
 The `--fbk-proveit` route already takes the second option: `check_module`
 runs before anything is generated and reports "smt_encode has no term for
-Uninterpreted". The ordinary route still dies in a traceback out of the
-functional encoder.
+Uninterpreted".
+
+**Half of it is settled** (`fd775b5`). Every route now refuses this module
+before a line of the project exists, and says which block writes which wire
+with what — `native.lean_gaps`, asked by `main` after the route's own
+precheck. That covers all 24 operators with no Lean form, not this one, and
+cannot refuse a module that generates: nothing with an unsupported matrix
+form emits in another Lean column, and the walk prunes terms nothing reads.
+What is still open is the choice above — an `opaque` declaration, or this
+refusal as the final answer.
 
 ### 28. `zeroth_hammer` and the generated plan have diverged further
 
@@ -238,17 +225,9 @@ the runners and the baseline -- lives in
 directory, so every verdict is reproducible with one command. What remains
 is wiring a handful of its cases into a slow-marked test.
 
-### 30. Argmax certificates · CONFIRMED
+### 30. Argmax certificates · FIXED
 
-`OpArgmax` compiles every encoding now but the certificate fails:
-`argmax_1d` does not reduce under the tactic chain, the same shape of problem
-as #26. The generated `argmax1d_scalar_n_eq` theorems tie the unrolled
-scalar form to `Core.Mat.argmax_1d`, but nothing brings either into a goal.
-
-`--pre-check cvc5` reports all three obligations holding in 3.2 ms, so this is
-the same story as #26: a true certificate that Lean cannot reduce its way
-to. `Argmax` was always encoded correctly for SMT (`_argmax_flat`), which is
-why it could be checked before `Min`/`Max` could.
+See the Fixed table above (`be70a43`).
 
 ---
 

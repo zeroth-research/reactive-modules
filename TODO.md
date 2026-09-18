@@ -37,12 +37,17 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    each floored quantity's sign in `Int`. `m_lra_lin` and `m_lra_half` both
    build end to end through a route that refused them outright.
 
-3. **`matMin`/`matMax` never reduce -- 8 cells** (KNOWN_ISSUES #26). `OpMax`
-   and `OpMin` are `PROOF-FAIL` with `linarith failed` on all four columns that
-   produce a certificate. `--pre-check cvc5` says the obligations hold in
-   ~4 ms, so the fold is the whole problem. Redefine over `List.ofFn`
-   (`ofFn_succ`/`ofFn_zero` are already in `simp_mat`). Also unblocks the
-   `fbk_bridge` equivalence for these modules (#31).
+3. ~~**`matMin`/`matMax` never reduce -- 8 cells**~~ **Done** (`be70a43`),
+   together with 5. The three reductions enumerate with `List.ofFn` and are
+   in `simp_mat`; adding them to `simp_mat` alone had been tried and is not
+   enough, because opening the definition only exposes the fold that will
+   not compute. Measured: `OpMax`, `OpMin` and `OpArgmax` go `PROOF-FAIL` ->
+   `VERIFIED`, the slow Lean suite passes, and 20 `VERIFIED` cells sampled
+   over four routes and five suites are unchanged. Order, seeds and
+   tie-breaking are untouched, which is what `ManualTests/Argmax.lean` pins
+   by `decide`. Still to check: the `fbk_bridge` equivalence for these
+   modules (#31) -- the bridge's simp set got the same four defs, but no
+   cell of the matrix measures it.
 
 4. **sygus gives up at the 5 s default -- 30 of its 34 `NO-CERT`s are budget
    exhaustion**, all stopping at 5.6-5.9 s (`DEFAULT_CALL_MS = 5000`,
@@ -63,8 +68,9 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    would trade reach for proofs of emptiness, which is the answer the route
    exists to give. That wants measuring before it is chosen.
 
-5. **`argmax_1d` does not reduce -- 4 cells** (KNOWN_ISSUES #30). `OpArgmax`,
-   same four columns, same failure and same shape of fix as 3.
+5. ~~**`argmax_1d` does not reduce -- 4 cells**~~ **Done** (`be70a43`), in
+   the same commit as 3 and for the same reason; 2-D `argmax` went with them
+   rather than be left the odd one out.
 
 6. **`lean2vmt` models only `state`/`statenext`, so external inputs have no VMT
    counterpart -- 13 cells.** All 13 are svcomp `houdini-inv` rows with
@@ -123,8 +129,16 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
 
 11. **`NO-CERT` conflates three different measurements.** Of 312: 88 are a
     proof the space is empty, 34 are budget exhaustion, ~190 are the route
-    declining the shape. The underlying messages already distinguish them
-    cleanly; the verdict does not. Split it.
+    declining the shape. The verdict does not distinguish them. **"The
+    underlying messages already distinguish them cleanly" is too
+    optimistic** -- classifying by regex over the prose leaves ~160
+    unmatched across a dozen wordings per route, and 7 match two buckets at
+    once. What *is* clean is `smt_synth.Search.exhausted`, which verith
+    already writes to `artifacts/` as `status="no_solution" | "unknown"`.
+    Read that rather than the prose -- which means the routes that do not go
+    through `Search` (nuterm, vampire, the LLM ones) need to record it too.
+    Partly relieved by `74393b0`: a failed cell's one-line summary is now
+    what was raised rather than the frames above it.
 
 12. **`Certificate.lean`'s heartbeat floor is 400000** (`tactics.py:642`,
     unless `slow`), while every other generated file carries 2000000
