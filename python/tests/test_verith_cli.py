@@ -348,17 +348,48 @@ def test_learn_serves_safety_as_well():
         }, r.stdout
 
 
+BOUNDED_INPUT_MODULE = FIXTURE_DIR / "svcomp_bounded_input.py"
+
+
+def test_learn_takes_the_precondition_as_its_entry_assumption(tmp_path):
+    """`0 <= x` is inductive from the states `0 <= n` admits and from no
+    larger set, so this run is the flag doing the work -- and `--pre-check`
+    grants the same assumption the search made, which is what makes the
+    certificate one verith's own obligations accept."""
+    r = _verith(
+        str(BOUNDED_INPUT_MODULE), "--safety", "(>= s0 0)", "--infer", "nuterm",
+        "--pre", "(>= e0 0)", "--pre-check", "cvc5", "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode == 0, r.stderr
+    assert "[nuterm] --pre at entry: e0=s0" in r.stdout, r.stdout
+    assert _pre_check(r.stdout) == {
+        "init_inv": "holds", "step_inv": "holds", "inv_imp_P": "holds"
+    }, r.stdout
+
+
+def test_without_the_precondition_the_same_run_finds_nothing(tmp_path):
+    """The control for the test above: not a module the route cannot read,
+    and not a false property -- a question that is only answerable from the
+    states the precondition admits."""
+    r = _verith(
+        str(BOUNDED_INPUT_MODULE), "--safety", "(>= s0 0)", "--infer", "nuterm",
+        "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert "no inductive invariant" in r.stderr, r.stderr
+
+
 @pytest.mark.parametrize("extra, expected", [
     (["--invariant", "(<= s0 100)"], "--invariant"),
     (["--ranking", "s0"], "--ranking"),
-    (["--pre", "true"], "--pre"),
     (["--model", "claude-sonnet-4-6-x"], "--model and --base-url"),
     (["--base-url", "http://localhost:11434/v1"], "--model and --base-url"),
 ])
 def test_learn_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
-    """The learner computes the whole certificate and assumes nothing of the
-    inputs, so a predicate or a precondition passed alongside would be dropped
-    -- and an LLM flag names a model it never calls."""
+    """The learner computes the whole certificate, so a predicate passed
+    alongside would be dropped -- and an LLM flag names a model it never
+    calls. `--pre` is not one of these: it is an assumption rather than a
+    candidate, and the two tests above are it being used."""
     r = _verith(
         str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "nuterm",
         *extra, "-o", str(tmp_path), "-p", "P",

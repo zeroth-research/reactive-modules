@@ -35,6 +35,14 @@ refuses anything else by name -- a matrix-shaped state, a real or boolean
 component, a next value reading an awaited input. A property naming a state
 component the module never reads latched is refused too: such a component is not
 a column of the system the proof quantifies over.
+
+``--pre`` is taken as the entry assumption. Initiation is then checked from the
+states the precondition admits rather than from every state the init block can
+produce, which is the difference between finding an invariant and finding none:
+8 of the svcomp corpus's Houdini invariants hold only from the admitted states.
+It reaches the procedure as ``System.assuming`` -- see :meth:`TA2MagicLearn._assuming`
+for how a predicate over inputs becomes one over columns, and for the one input
+shape that is refused instead.
 """
 
 from __future__ import annotations
@@ -224,6 +232,37 @@ def _parse_property(src: str, declared: tuple, columns: tuple) -> object:
     return term
 
 
+def _parse_precondition(src: str, n_inputs: int):
+    """``--pre`` as one z3 term over ``e0..eM-1``, refused if it is not one.
+
+    ``el0..`` are declared alongside so that naming a *latched* input is met
+    here, where the flag's own spelling is still in hand, rather than as an
+    undeclared symbol z3 would report as a parse error about ``el0``."""
+    decls = "\n".join(f"(declare-const e{i} Int)\n(declare-const el{i} Int)"
+                      for i in range(n_inputs))
+    try:
+        asserted = z3.parse_smt2_string(f"{decls}\n(assert {src})")
+    except z3.Z3Exception as e:
+        over = (f"e0..e{n_inputs - 1}" if n_inputs > 1
+                else "e0" if n_inputs == 1 else "nothing: this module has no inputs")
+        raise Refused(
+            f"--infer nuterm reads --pre as an SMT-LIB expression over "
+            f"{over}; z3 could not parse {src!r}: {e}"
+        ) from e
+    if len(asserted) != 1:
+        raise Refused(f"--pre must be one expression; {src!r} is {len(asserted)}")
+    return asserted[0]
+
+
+def _conjuncts(term) -> list:
+    """``term``'s top-level conjuncts, so each is its own Houdini candidate.
+
+    ``infer_invariants`` seeds the precondition's conjuncts one by one, and a
+    conjunction seeded whole survives only if *all* of it is inductive. Split,
+    the half that is keeps working."""
+    return list(term.children()) if z3.is_and(term) else [term]
+
+
 # ---------------------------------------------------------------------------
 # The route
 # ---------------------------------------------------------------------------
@@ -269,6 +308,77 @@ class TA2MagicLearn(TA2Magic):
             raise Refused(f"--infer nuterm cannot read this module: {e}") from e
         return system
 
+    def _assuming(self, system, pre_smt: str):
+        """``system`` with ``--pre`` assumable at entry.
+
+        The procedure's entry assumption is a ``state_map -> [BoolRef]``: a
+        predicate over the *columns*, which is what `_farkas.entry_predicate`
+        conjoins and what `_invariants.infer_invariants` evaluates at the entry
+        state to decide initiation. ``--pre`` is a predicate over the module's
+        *inputs*. The two meet the way they met in the other direction when the
+        bench harness derived the flag (`suites.entry_pre`): a column whose
+        init block value is a bare input holds that input at entry, so reading
+        the column *is* reading the input, and ``e_i`` becomes that column.
+
+        Every call site then gets the right thing from one callable.
+        ``pre(system.entry)`` substitutes each column's entry value, which for
+        these columns is the input symbol itself -- so initiation is checked
+        under exactly the flag and nothing more. ``pre(system.s_map)`` is a
+        genuine state predicate, which is what the conjuncts seeded as Houdini
+        candidates have to be.
+
+        An input that is no column's entry value is refused rather than
+        dropped. The model keeps no value to read it back from, so the
+        constraint would have to be "some input satisfying it existed", and the
+        obligations here are quantifier-free rows of a linear program.
+
+        ``--pre`` fills ``update_pre`` as well, and that half needs nothing:
+        `check_supported` has already refused every module whose next value
+        reads an input, so the step reads none and ``update_pre`` constrains
+        nothing it looks at. Dropping it is exact, not an over-approximation --
+        which matters, because this route certifies rather than searches and an
+        assumption it quietly widened would be a proof of the wrong thing.
+        """
+        inputs = tuple(self.module.extl)
+        term = _parse_precondition(pre_smt, len(inputs))
+        entry_vals, entry_inputs = system.entry, system.entry_inputs
+
+        # `e_i` -> the column that starts at input `i`, by the same test
+        # `entry_predicate` uses to substitute the other way.
+        col_of: dict[int, str] = {}
+        for i, insym in enumerate(entry_inputs):
+            for name in system.names:
+                if z3.eq(z3.simplify(entry_vals[name]), insym):
+                    col_of[i] = name
+                    break
+
+        used = sorted({str(v) for v in get_vars(term)})
+        latched = [v for v in used if v.startswith("el")]
+        if latched:
+            raise Refused(
+                f"--pre constrains the latched input {latched[0]}, which the "
+                f"init block does not read -- at entry there is no previous "
+                f"round for it to have come from"
+            )
+        loose = [v for v in used if int(v[1:]) not in col_of]
+        if loose:
+            raise Refused(
+                f"--pre constrains the input {loose[0]}, which starts no column "
+                f"of this module -- nothing carries its value into the state, "
+                f"so there is no state predicate that says the same thing"
+            )
+
+        conjuncts = _conjuncts(term)
+        sub_of = {i: z3.Int(f"e{i}") for i in col_of}
+
+        def pre(st):
+            sub = [(sym, st[col_of[i]]) for i, sym in sub_of.items()]
+            return [z3.substitute(c, *sub) for c in conjuncts]
+
+        self.log("[nuterm] --pre at entry: "
+                 + ", ".join(f"{v}={col_of[int(v[1:])]}" for v in used))
+        return system.assuming(pre)
+
     def _declared(self) -> tuple:
         """``s0..sN-1``: one name per ctrl variable, which is how verith numbers
         the state and so how a property written against it reads."""
@@ -294,6 +404,8 @@ class TA2MagicLearn(TA2Magic):
         if not isinstance(cd.prp, str):
             raise Refused("--infer nuterm needs a property: pass --safety or --buchi")
         system = self._system(eng)
+        if isinstance(cd.init_pre, str):
+            system = self._assuming(system, cd.init_pre)
         prp = _parse_property(cd.prp, self._declared(), system.names)
         self.log(f"[nuterm] columns: {', '.join(system.names)}")
 

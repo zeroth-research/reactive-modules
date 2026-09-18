@@ -217,13 +217,21 @@ def test_ai_refuses_a_supplied_certificate(flag, value):
 
 
 @pytest.mark.parametrize(
-    "flag,value",
-    [("--invariant", "(= s0 1)"), ("--ranking", "s0"), ("--pre", "true")],
+    "flag,value", [("--invariant", "(= s0 1)"), ("--ranking", "s0")],
 )
 def test_nuterm_refuses_what_it_would_discard(flag, value):
-    """`main.py:627`, from the row's `seeds` + `seeds_refusal`."""
+    """`main.py:627`, from the row's `seeds` + `seeds_refusal`.
+
+    `--pre` is no longer one of these: it is the entry assumption Houdini
+    checks initiation under, and `test_magic_learn.py` measures that it is
+    used rather than merely accepted."""
     message = err(["m.py", "--buchi", "(= s0 0)", "--infer", "nuterm", flag, value])
     assert flag in message and "comes from the learner" in message
+
+
+def test_nuterm_takes_a_precondition():
+    assert err(["m.py", "--buchi", "(= s0 0)", "--infer", "nuterm",
+                "--pre", "(>= e0 0)"]) == ""
 
 
 @pytest.mark.parametrize(

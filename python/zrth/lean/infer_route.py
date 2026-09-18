@@ -752,11 +752,17 @@ ROUTES: tuple[InferRoute, ...] = (
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",
-        seeds=frozenset(),
+        # `--pre` is the entry assumption Houdini checks initiation under.
+        # Refusing it used to be argued from soundness -- an invariant that
+        # holds at entry for *every* input is stronger than one that holds
+        # only from the admitted states -- which is true of the invariants the
+        # route finds and says nothing about the ones it then cannot. That is
+        # the whole effect: 8 of the svcomp corpus's own Houdini invariants
+        # hold only from the states the precondition admits.
+        seeds=frozenset({"pre"}),
         seeds_refusal=(
-            "the certificate comes from the learner and its invariant holds at "
-            "entry for every input, which is stronger than any precondition "
-            "would make it"
+            "the certificate comes from the learner, which infers both halves "
+            "of it and puts a supplied one to nothing"
         ),
         returns="smt",
         run=_run_nuterm,

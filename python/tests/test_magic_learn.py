@@ -12,8 +12,9 @@ and what it refuses.
 
 import numpy as np
 import pytest
+import torch
 
-from zrth import Int, LIA, Module, Real, Var, X, sugar
+from zrth import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
 from zrth.analyzer import convert_method
 from zrth.sugar import ite
 from zrth.lean.cert import CertificateData
@@ -194,6 +195,104 @@ def test_a_rule_shape_the_procedure_cannot_read_is_a_refusal_not_a_traceback():
 def test_a_run_with_no_property_is_refused():
     with pytest.raises(Refused, match="--safety or --buchi"):
         TA2MagicLearn("", _countdown()).infer(CertificateData())
+
+
+# ---------------------------------------------------------------------------
+# `--pre`, as the entry assumption
+# ---------------------------------------------------------------------------
+
+def _starts_at_an_input() -> Module:
+    """`x := n; loop { x = if x > 0 then x - 1 else x }`.
+
+    `n` is never written, so it is an external input, and `x` starts at it
+    *bare* -- which is what lets a constraint on the input be read back as one
+    on the column. `0 <= x` is an invariant exactly when `0 <= n`."""
+    x = Var(Int([1, 1]))
+    n = Var(Int([1, 1]))
+
+    def update(old_x):
+        if old_x > 0:
+            return old_x - 1
+        return old_x
+
+    return Module.sequential(
+        [x, n],
+        [Term(LIA.Id(), [X(x)], [X(n)])],
+        convert_method(update, {"old_x": x}, [X(x)], theory=LIA),
+    )
+
+
+def _learn_pre(module, prp, kind, pre):
+    cd = CertificateData(prp=prp, kind=kind)
+    cd.init_pre = cd.update_pre = pre          # `--pre` fills both
+    return TA2MagicLearn("", module, log=lambda *a: None).infer(cd)
+
+
+def test_without_the_precondition_there_is_no_invariant_to_find():
+    """The control. `x` starts at an unconstrained input, so `0 <= x` fails
+    initiation and Houdini drops it -- the property is not false, it is one
+    the route cannot establish from every state the init block can produce."""
+    with pytest.raises(Refused, match="no inductive invariant"):
+        _learn(_starts_at_an_input(), "(>= s0 0)", "safety")
+
+
+def test_the_precondition_is_what_makes_the_invariant_inductive():
+    """And with it the same question is answerable, by the same search."""
+    module = _starts_at_an_input()
+    cd = _learn_pre(module, "(>= s0 0)", "safety", "(>= e0 0)")
+    assert cd.inv and "(>= s0 0)" in cd.inv_smt, cd.inv_smt
+
+
+def test_the_certificate_holds_under_verith_own_obligations():
+    """What the route returns has to survive `--pre-check`, which states the
+    obligations with `init_pre` in them -- so the assumption the search made
+    and the assumption the check grants are the same one."""
+    module = _starts_at_an_input()
+    cd = _learn_pre(module, "(>= s0 0)", "safety", "(>= e0 0)")
+    v = _verdicts(module, cd)
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "inv_imp_P": Status.HOLDS}, v
+
+
+def test_a_precondition_over_an_input_that_starts_no_column_is_refused():
+    """`x := n + 1` reads the input and keeps no column equal to it, so no
+    state predicate says what `--pre` says. Refused rather than dropped:
+    dropping it would search under an assumption the user did not make and
+    report the failure as the module's."""
+    x = Var(Int([1, 1]))
+    n = Var(Int([1, 1]))
+    one = Wire(Int([1, 1]))
+    module = Module.sequential(
+        [x, n],
+        [Term(LIA.Int(torch.tensor([[1]])), [one]),
+         Term(LIA.Add(), [X(x)], [X(n), one])],
+        [Term(LIA.Id(), [X(x)], [x])],
+    )
+    with pytest.raises(Refused, match="e0, which starts no column"):
+        _learn_pre(module, "(>= s0 0)", "safety", "(>= e0 0)")
+
+
+def test_a_precondition_over_a_latched_input_is_refused():
+    """`el0` is the input as the *previous* round left it, and at entry there
+    is no previous round."""
+    with pytest.raises(Refused, match="latched input el0"):
+        _learn_pre(_starts_at_an_input(), "(>= s0 0)", "safety", "(>= el0 0)")
+
+
+def test_a_precondition_that_is_not_smt_lib_is_refused():
+    with pytest.raises(Refused, match="could not parse"):
+        _learn_pre(_starts_at_an_input(), "(>= s0 0)", "safety", "n >= 0")
+
+
+def test_the_conjuncts_are_seeded_one_by_one():
+    """A conjunction seeded whole survives only if all of it is inductive.
+    Split, the half that is keeps working -- here `0 <= x` survives while the
+    precondition's other half, about an input nothing preserves, does not."""
+    from zrth.lean.magic.learn import _conjuncts
+    import z3
+    a, b = z3.Int("a"), z3.Int("b")
+    assert _conjuncts(z3.And(a >= 0, b >= 0)) == [a >= 0, b >= 0]
+    assert _conjuncts(a >= 0) == [a >= 0]
 
 
 # ---------------------------------------------------------------------------
