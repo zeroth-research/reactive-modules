@@ -332,18 +332,43 @@ def all_rows(suites=()) -> list[Row]:
 
 @dataclass(frozen=True)
 class Route:
-    """One `--infer` method, as the matrix invokes it."""
+    """One column of the matrix: an `--infer` method, as it is invoked here.
+
+    A column is not a route. `houdini` and `houdini-vampire` are one route
+    measured over its two solvers, so `name` -- what a cell's key is suffixed
+    with, and so the only thing that says which column a run belongs to -- is
+    not `infer`, which is the route the page borrows its description from.
+    What the route *is* stays in `zrth/lean/infer_route.py` and is not
+    restated here, so the two cannot drift.
+    """
 
     name: str
-    kinds: frozenset
     args: tuple = ()
     needs_llm: bool = False
     needs_env: tuple = ()           # env keys that must be set to run it
+    # What tells this column from a sibling selecting the same route. Empty
+    # for a column that is the only one of its route.
+    note: str = ""
+
+    @property
+    def infer(self) -> str:
+        """The `--infer` route this column selects."""
+        return self.args[self.args.index("--infer") + 1]
+
+
+def column_of(pair: str) -> str:
+    """Which column a recorded `row::column` pair belongs to.
+
+    The key is what a cell is looked up by, so the key is what decides --
+    and not the `route` field recorded beside it, which names the *route*
+    and so is one string for two of these columns.
+    """
+    return pair.split("::", 1)[1] if "::" in pair else ""
 
 
 def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None,
            vampire: str | None = None) -> list[Route]:
-    """The route column, with the paths `houdini` and `fbk-proveit` need
+    """The column order, with the paths `houdini` and `fbk-proveit` need
     filled in: the `--infer` routes, and nothing that is not one.
 
     `--infer houdini` is two columns, because its two solvers are the
@@ -354,34 +379,34 @@ def routes(*, proveit_dir: str | None = None, ic3ia: str | None = None,
     Vampire rather than proposed by anything.
     """
     out = [
-        Route("ai", frozenset({"buchi"}), ("--infer", "ai"), needs_llm=True),
-        Route("ai-cegis", frozenset({"safety", "buchi"}), ("--infer", "ai-cegis"),
-              needs_llm=True),
-        Route("nuterm", frozenset({"safety", "buchi"}), ("--infer", "nuterm")),
-        Route("sygus", frozenset({"safety"}), ("--infer", "sygus")),
-        Route("smt-linear", frozenset({"safety", "buchi"}), ("--infer", "smt-linear")),
-        Route("houdini", frozenset({"safety", "buchi"}),
-              ("--infer", "houdini", "--houdini-solver", "cvc5")),
+        Route("ai", ("--infer", "ai"), needs_llm=True),
+        Route("ai-cegis", ("--infer", "ai-cegis"), needs_llm=True),
+        Route("nuterm", ("--infer", "nuterm")),
+        Route("sygus", ("--infer", "sygus")),
+        Route("smt-linear", ("--infer", "smt-linear")),
+        Route("houdini", ("--infer", "houdini", "--houdini-solver", "cvc5"),
+              note="Decided by cvc5, in this process, so a candidate that "
+                   "fails comes back as the counterexample that failed it."),
     ]
     if vampire:
         out.append(Route(
-            "houdini-vampire", frozenset({"safety", "buchi"}),
+            "houdini-vampire",
             ("--infer", "houdini", "--houdini-solver", "vampire",
-             "--vampire", vampire)))
+             "--vampire", vampire),
+            note="The same candidates, refuted by the Vampire binary "
+                 "instead: it refutes or runs out of time, and from the "
+                 "answer the two are indistinguishable."))
         # The third Vampire column, and a different question: not the same
         # candidates refuted by a prover, but the certificate derived by one
         # from a template with its coefficients left open. Its reach is
         # narrow by measurement, so most cells are a refusal -- which is the
         # comparison, against the two columns above.
-        out.append(Route(
-            "vampire", frozenset({"safety", "buchi"}),
-            ("--infer", "vampire", "--vampire", vampire)))
+        out.append(Route("vampire", ("--infer", "vampire", "--vampire", vampire)))
     if proveit_dir:
         args = ["--infer", "fbk-proveit", "--proveit-dir", proveit_dir]
         if ic3ia:
             args += ["--ic3ia", ic3ia]
-        out.append(Route("fbk-proveit", frozenset({"safety"}), tuple(args),
-                         needs_env=("PYTHONPATH",)))
+        out.append(Route("fbk-proveit", tuple(args), needs_env=("PYTHONPATH",)))
     return out
 
 

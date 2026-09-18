@@ -47,7 +47,7 @@ MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
 
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(SP))
-from suites import all_rows, pairs, routes  # noqa: E402
+from suites import all_rows, column_of, pairs, routes  # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 PROJECTS = WORK / "projects"
@@ -468,8 +468,11 @@ def main() -> None:
         keep = {r.key for r in all_rows()}
         names = {rt.name for rt in routes(proveit_dir=PROVEIT_DIR, ic3ia=IC3IA, vampire=VAMPIRE)}
         gone = sorted(k for k in data["rows"] if k not in keep)
-        runs = [p for p, run in data["runs"].items()
-                if p.split("::")[0] not in keep or run["route"] not in names]
+        # By the key, not by the `route` field beside it: the key is what a
+        # cell is looked up by, and the field names the route rather than
+        # the column, so two columns record the same one.
+        runs = [p for p in data["runs"]
+                if p.split("::")[0] not in keep or column_of(p) not in names]
         for k in gone:
             del data["rows"][k]
         for p in runs:
@@ -558,6 +561,10 @@ def main() -> None:
         # When, not just how long: a timing is only as good as what else
         # the machine was doing, and without this the only way to place a
         # cell in time is to count lines in the log.
+        # `route` is the column, the same string the key is suffixed with;
+        # the key is what anything reading this file should go by, because a
+        # file written before a column was renamed still carries the old one
+        # here (`column_of`).
         results["runs"][pair] = dict(route=route.name, verdict=v, gen=gen, build=bld,
                                      when=time.strftime("%Y-%m-%dT%H:%M:%S"),
                                      command=shown(row, route,

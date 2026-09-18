@@ -33,6 +33,7 @@ sys.path.insert(0, str(PY))
 sys.path.insert(0, str(SP))
 
 from merge import load, merge  # noqa: E402
+from suites import column_of, routes as bench_routes  # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 
@@ -163,18 +164,34 @@ def prose(text: str) -> str:
     return re.sub(r"\*(\w[^*]*?)\*", r"<em>\1</em>", joined)
 
 
-def route_docs():
-    """Each route as the CLI's own table describes it."""
+def column_docs():
+    """Each column of the matrix, described by the route it selects.
+
+    A column is not a route -- `houdini` and `houdini-vampire` are the same
+    route decided by two different solvers -- so the list of columns comes
+    from the harness that measured them and only the description comes from
+    `zrth.lean.infer_route`, which is what keeps the description from
+    drifting away from what `--infer` accepts.
+
+    The paths are placeholders because they only fill in a column's `args`,
+    which this page does not read. Taking them from `meta` instead would
+    drop a column whenever a results file is rendered on a machine without
+    the binary it names -- and take that column's measured cells with it.
+    """
     from zrth.lean.cli import _SEED_FLAGS
     from zrth.lean.infer_route import ROUTES
 
     flag_of = {field: flag for field, _attr, flag in _SEED_FLAGS}
+    by_name = {r.name: r for r in ROUTES}
 
     out = []
-    for r in ROUTES:
+    for col in bench_routes(proveit_dir="?", ic3ia="?", vampire="?"):
+        r = by_name[col.infer]
         out.append(
             dict(
-                name=r.name,
+                name=col.name,
+                note=col.note,
+                infer=col.infer,
                 summary=r.summary,
                 kinds=sorted(r.kinds),
                 llm=r.uses_llm,
@@ -185,6 +202,20 @@ def route_docs():
             )
         )
     return out
+
+
+def columns(runs: dict) -> list[str]:
+    """Every column the page has to show, in the order the harness declares.
+
+    A measured cell always gets a column: a suffix the harness no longer
+    declares is carried at the end rather than dropped, because a page that
+    quietly loses a run is worse than one carrying a column it cannot
+    describe. That is not hypothetical -- `houdini-vampire` was 155 measured
+    cells shown nowhere, back when this list came from the route table.
+    """
+    declared = [c["name"] for c in column_docs()]
+    measured = {column_of(p) for p in runs}
+    return declared + sorted(measured - set(declared) - {""})
 
 
 def esc(s) -> str:
@@ -566,8 +597,20 @@ def verdict_class(verdict: str, truth: "str | None") -> str:
     return VERDICTS.get(verdict, ("", ""))[0]
 
 
-def method_row(w, rt: str, run: dict, truth: "str | None" = None) -> None:
-    """One route's row: the summary line, and the panel it opens."""
+def selected_by(command: str) -> str:
+    """The `--infer` route a recorded command actually asked for."""
+    m = re.search(r"--infer\s+(\S+)", command)
+    return m.group(1) if m else ""
+
+
+def method_row(w, rt: str, run: dict, truth: "str | None" = None,
+               selects: str = "") -> None:
+    """One route's row: the summary line, and the panel it opens.
+
+    `selects` is the `--infer` route this column asks for *today*, which the
+    recorded command is checked against: a cell measured before a flag was
+    split carries a command that now runs something else, and the page hands
+    that command to the reader."""
     cls = verdict_class(run["verdict"], truth)
     dis = run.get("disagreed")
     w('<details class="m"><summary>')
@@ -587,6 +630,15 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None) -> None:
     w("</summary>")
     w('<div class="body">')
     w(f"<pre>{esc(run['command'])}</pre>")
+    was = selected_by(run["command"])
+    if selects and was and was != selects:
+        w(
+            '<p class="note">Recorded before the flags changed: this command '
+            f"selects <code>--infer {esc(was)}</code>, and this column is "
+            f"<code>--infer {esc(selects)}</code> today, so pasting it now "
+            "runs something else. The verdict stands &mdash; it is what was "
+            "measured; the command is what no longer reproduces it.</p>"
+        )
     if dis:
         w(
             '<div class="lbl">the passes disagreed</div>'
@@ -886,13 +938,20 @@ def render(data: dict, warns: list = ()) -> str:
         "<em>and</em> a ranking function, a <code>--safety</code> one needs only an "
         "invariant, and several routes do just one of the two.</p>"
     )
+    w(
+        "<p>A <em>column</em> is not quite a route: one route measured two ways is "
+        "two columns, and then both carry the route&rsquo;s description and each says "
+        "underneath it what tells it from its sibling.</p>"
+    )
     w('<div class="cards">')
-    for r in route_docs():
+    for r in column_docs():
         kinds = " ".join(f"<span class=tag>--{k}</span>" for k in r["kinds"])
         llm = '<span class="tag llm">LLM</span>' if r["llm"] else ""
         w('<div class="card">')
         w(f"<h4><code>{esc(r['name'])}</code>{kinds}{llm}</h4>")
         w(f"<p>{prose(r['summary'])}</p>")
+        if r.get("note"):
+            w(f'<p class="note">{prose(r["note"])}</p>')
         bits = []
         if r["seeds"]:
             bits.append(
@@ -1014,8 +1073,13 @@ def render(data: dict, warns: list = ()) -> str:
     w("</table>")
 
     # ── the route columns, and what merge.py flagged ────────────────────
-    route_order = [r["name"] for r in route_docs()]
-    present = [r for r in route_order if any(x["route"] == r for x in runs.values())]
+    # Which column a run is in is the key suffix, here and in every cell
+    # lookup below -- one notion of it, so the scoreboard and the grid
+    # cannot disagree about what was measured.
+    route_order = columns(runs)
+    measured = {column_of(p) for p in runs}
+    present = [r for r in route_order if r in measured]
+    selects_of = {c["name"]: c["infer"] for c in column_docs()}
     warnings_section(list(warns), w)
 
     # ── the matrix ──────────────────────────────────────────────────────
@@ -1160,7 +1224,7 @@ def render(data: dict, warns: list = ()) -> str:
                             "<span></span><span></span><span></span></div>"
                         )
                         continue
-                    method_row(w, rt, run, row.get("truth"))
+                    method_row(w, rt, run, row.get("truth"), selects_of.get(rt, ""))
                 w("</div></div>")
             w("</div>")
 
