@@ -206,16 +206,21 @@ class TA2MagicSygus(TA2Magic):
                 "than `--sygus-conjuncts` of them. `--infer ai-cegis` "
                 "searches no fixed space and is what to try next."
                 if exhausted else
-                # Measured, on six of the cells that land here: re-run at 12
-                # to 24 times the budget, every one of them still did not
-                # finish. So the timeout is named last and as what it is --
-                # a knob, not a remedy -- because naming it first sends the
-                # reader to spend two minutes arriving back here.
+                # The timeout is named last and as what it is -- a knob,
+                # not a remedy -- because naming it first sends the reader
+                # to spend two minutes arriving back here. The reason given
+                # is the route's own shape, which holds for any module; the
+                # measurement behind it is six benchmark modules re-run at
+                # 12 to 24 times the budget, and it is quoted as the six it
+                # is rather than as a property of the route.
                 "`--infer ai-cegis` searches no fixed space and is what to "
                 "try next; `--infer smt-linear` decides a narrower shape "
-                "rather than enumerating this one. Raising `--smt-timeout` "
-                "is measured not to help on this route: queries that miss "
-                "this budget miss a much larger one too."
+                "rather than enumerating this one. `--smt-timeout` raises "
+                "the budget, but this grammar is finite and fixed, so more "
+                "seconds buy a fraction more of a space this query did not "
+                "come close to exhausting: tried at 12 to 24 times the "
+                "default on six modules that stopped here, it finished "
+                "none of them."
             ),
         )
 
