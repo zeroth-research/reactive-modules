@@ -154,6 +154,22 @@ class SynthContext:
                 f"cannot: {', '.join(bad)}. {why}{shaped}"
                 f"Use --infer ai-cegis."
             )
+        # The transition, encoded once here rather than lazily by whichever
+        # route first builds an obligation out of it. A module with an
+        # operator cvc5 has no term for -- `Transpose`, say -- is a refusal
+        # either way, but raised from the middle of a search it is a
+        # `ValueError` traceback several steps past the fact, for a user who
+        # asked about a module. Named up front instead, which is what
+        # `native.lean_gaps` does for the Lean side.
+        try:
+            msmt.init_state(env.extl_next_vars)
+            msmt.update_state(env.state_vars, env.extl_latched_vars,
+                              env.extl_next_vars)
+        except ValueError as e:
+            raise Refused(
+                f"--infer {route} encodes this module's transition for cvc5, "
+                f"and an operator in it has no encoding. {e}"
+            ) from e
         true = tm.mkBoolean(True)
         return cls(
             module=module,

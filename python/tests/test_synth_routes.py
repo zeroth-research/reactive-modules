@@ -256,6 +256,24 @@ def test_a_matrix_component_is_a_column_per_element():
     )
 
 
+def test_an_operator_cvc5_cannot_encode_is_refused_before_the_search():
+    """`m_transpose` is a 1x3 vector -- a column per element -- with a
+    `Transpose` in its round, which has no cvc5 term at all.
+
+    The sort gate passes it, so until the transition is encoded nothing has
+    noticed, and the failure used to arrive as a `ValueError` traceback out
+    of whichever obligation a route built first. `build` forces the
+    encoding and names the operator, which is what `native.lean_gaps` does
+    for the Lean side.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_transpose")
+    cd = CertificateData(prp="(= ((_ tuple.select 0) s0) 1)", kind="buchi")
+    with pytest.raises(Refused, match="operator in it has no encoding"):
+        TA2MagicLinear(module, log=lambda _: None).infer(cd)
+
+
 def test_an_element_is_read_by_its_own_sort_not_the_component_s():
     """A matrix of `Bool` has an integer reading; the selector alone does not.
 
