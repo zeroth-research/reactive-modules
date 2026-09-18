@@ -49,12 +49,17 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    modules (#31) -- the bridge's simp set got the same four defs, but no
    cell of the matrix measures it.
 
-4. **sygus gives up at the 5 s default -- 30 of its 34 `NO-CERT`s are budget
-   exhaustion**, all stopping at 5.6-5.9 s (`DEFAULT_CALL_MS = 5000`,
-   `smt_query.py:41`) inside a 300 s cell budget; its mean gen over all 155
-   cells is 1.7 s. Exactly 1 of the 34 is a proof of emptiness -- so the
-   README's "a bounded shape that comes back empty is a proof" is true of
-   smt-linear (87 of 103) and backwards for sygus.
+4. ~~**sygus gives up at the 5 s default -- 30 of its 34 `NO-CERT`s are budget
+   exhaustion**~~ **Done** (`5fdc214`), and the premise was wrong twice.
+   The measurements are worth keeping in the order they landed, because
+   each one killed the fix the one before it suggested.
+
+   The reading was right: all 30 stop at 5.6-5.9 s (`DEFAULT_CALL_MS =
+   5000`, `smt_query.py:41`) inside a 300 s cell budget, and exactly 1 of
+   the 34 is a proof of emptiness -- so the README's "a bounded shape that
+   comes back empty is a proof" was true of smt-linear (87 of 103) and
+   backwards for sygus.
+
    **"Cheapest column improvement available: it costs a config default" was
    wrong, and measuring it is what says so.** Six of those cells re-run at
    12-24x the budget: `m_twovars/TvRelational` at 60 s, and `CdBands`,
@@ -62,11 +67,42 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    per-call budget. Every one still did not finish. The grammar is what is
    missing, not the seconds. What came of it is a message that no longer
    sends the reader to spend two minutes arriving back at it (`47dce43`).
-   **Still open, and now the interesting half:** a finite grammar that is
-   never *decided* is a shape this route cannot report on. 1 decision in 34
-   says the space is too big to enumerate -- a smaller default grammar
-   would trade reach for proofs of emptiness, which is the answer the route
-   exists to give. That wants measuring before it is chosen.
+
+   **"A smaller default grammar would trade reach for proofs of emptiness"
+   was wrong too, and there is no trade.** The sweep it asked for is all 59
+   cells that reach the grammar, at 1 / 2 / 3 atoms separately, and what it
+   shows is that **the search is not monotone in the width**. The widths
+   nest -- the start rule at width `w` is `A | A /\ A | ...` up to `w` -- so
+   an answer found at 2 lies inside the space searched at 3, and cvc5 still
+   does not find it there: `wise` finds a two-atom invariant at 3 and times
+   out at 2, `T5Exact` finds one at 2 and times out at 3, and `NiLexNe4`
+   and `RelTvImplies` find *one-atom* invariants in under a second and time
+   out at 3. The ceiling is the worst single width to ask at and it was the
+   only one asked. So the fix is not a smaller grammar but the ladder
+   `--infer smt-linear` has run all along: widths `1, 2, ... N`, first to
+   answer wins.
+
+   Asked only at the ceiling: 28 found, 1 space decided empty, 30 cells
+   that learned nothing. A width at a time: **31 found, 22 decided, 6 that
+   learned nothing** -- predicted from the per-width sweep and then
+   reproduced exactly by the route, no disagreement on any of the 59. The
+   column is 28 -> 31 `VERIFIED` with nothing lost, and 22 of its 31
+   remaining `NO-CERT`s carry a proof of absence rather than a shrug. The
+   cost is the widths that find nothing: 201 s -> 352 s of search over the
+   59, bounded by `SmtBudget.phase_ms`, which is what a phase already
+   means.
+
+   What is left is a different knob, and the 6 cells that still learn
+   nothing are all of one kind: their *one-atom* space does not finish in
+   5 s either. A single atom is `|consts|^(columns+1)` linear forms times
+   the atom shapes, so those six are 10^5 to 10^6 atoms wide at the
+   narrowest rung -- `easy1` at 3 columns and 16 constants, `NoriSharma
+   Fig7`/`Fig8` at 7 columns and 5. **That** is where a smaller default
+   grammar would be the question this item first guessed it was, and the
+   knob is `_CONSTANT_COUNT` (`smt_synth.py`), not `--sygus-conjuncts`.
+   Worth its own item if the 6 are worth chasing; the seeding comment in
+   `program_constants` argues the constants are the half that must not
+   shrink.
 
 5. ~~**`argmax_1d` does not reduce -- 4 cells**~~ **Done** (`be70a43`), in
    the same commit as 3 and for the same reason; 2-D `argmax` went with them
