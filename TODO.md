@@ -222,16 +222,38 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     Partly relieved by `74393b0`: a failed cell's one-line summary is now
     what was raised rather than the frames above it.
 
-12. **`Certificate.lean`'s heartbeat floor is 400000** (`tactics.py:642`,
-    unless `slow`), while every other generated file carries 2000000
-    (`scalar.py:94,270`, `circ.py:221,251`, `fbk_bridge.py:141`) -- and raising
-    exactly this budget is what unblocked the petri nets. 6 cells hit the
-    limit; 2 of the 6 already ran at 2000000, so those want the tactic plan
-    looked at rather than the budget.
+12. ~~**`Certificate.lean`'s heartbeat floor is 400000**~~ **Done**
+    (`932ab14`). It is 2000000 now, what every other generated file carries.
+    The floor had six rungs climbing back to exactly 2M -- finite state, a
+    bitvector, more than 8 slots, more than 32 terms, a branchy Real
+    predicate, more than 16 branch points -- and the list still growing,
+    which is the tell. **A low floor never bounded a failure**: a tactic
+    that hits the cap *throws*, `first` catches that like any other failure
+    and moves to a dearer alternative, so it capped the cheap attempts and
+    let the expensive ones run anyway.
 
-13. **`(kernel) unknown constant 'hrank'` is always a cascade** -- all 6
-    occurrences follow a `whnf` heartbeat timeout. Suppress the follow-on error
-    so the log names its own cause instead of a kernel symbol.
+    Measured, one project apiece with only that number changed:
+    `svcomp_collatz_bounded` fails in 29 s at 400k and **builds in 66 s** at
+    2M -- so the floor was the whole difference, and it cost 37 s to find
+    that out rather than saving any.
+    `ChenFlurMukhopadhyay-SAS2012-Ex1.01` still fails, but with `linarith
+    failed to find a contradiction` instead of a heartbeat timeout, which is
+    the truth about it: cvc5 refutes that certificate's `hrank` outright at
+    `s0 = 1`. **A budget error had been standing in front of a wrong
+    certificate.** So 4 of the 6 cells move, 2 of them to a proof. The other
+    2 (`m_lra_two`) already ran at 2M and want the tactic plan, as this item
+    said. Only `n_branch > 32 -> 8M` survives, being the one rung that went
+    anywhere above the standard budget.
+
+13. ~~**`(kernel) unknown constant 'hrank'` is always a cascade**~~ **Done**
+    (`c8294f3`). A declaration whose elaboration fails is never added to the
+    environment, so the next one that mentions it fails again in the kernel.
+    `without_cascades` sits next to the build reporting in `project.py`, so
+    verith's own `--build-cert` output and the bench harness apply one rule
+    rather than two that have to agree; checked against the real failing
+    build rather than a fixture. It only ever drops a *later* kernel
+    `unknown constant` -- one that is the first thing to go wrong is kept,
+    since then it is nobody's shadow and something really is missing.
 
 14. **The `ai` route writes the model's string straight into `Data.lean`.** 2
     of its 15 `PROOF-FAIL`s are unparseable rather than wrong:
