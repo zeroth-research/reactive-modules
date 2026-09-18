@@ -18,6 +18,7 @@ from zrth.lean.cert import (
 )
 from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, replace
@@ -160,6 +161,31 @@ def build_certificate(project_dir: Path) -> None:
     print(f"Certificate built: lake build Certificate in {project_dir}")
 
 
+# A declaration whose elaboration fails is never added to the environment,
+# so the next one that mentions it fails again -- in the kernel this time,
+# as `(kernel) unknown constant 'hrank'` after `hrank` itself timed out at
+# `whnf`. The second error is the first one's shadow: it names a symbol
+# where the first named a cause, and it is the one that reads like a
+# codegen bug rather than a certificate that could not be proved. Over the
+# matrix every occurrence of it follows an earlier error.
+_CASCADE = re.compile(r"\(kernel\) unknown constant")
+
+
+def without_cascades(errors: list) -> list:
+    """`errors`, without the ones an earlier error already accounts for.
+
+    Only ever drops a *later* kernel `unknown constant`. A build whose
+    first complaint is one is left alone: nothing came before it to be a
+    shadow of, and then something really is missing.
+    """
+    out: list = []
+    for e in errors:
+        if out and _CASCADE.search(str(e)):
+            continue
+        out.append(e)
+    return out
+
+
 def _build_why(out: str) -> str:
     """The reason lake refused, restated where the user will see it.
 
@@ -169,11 +195,11 @@ def _build_why(out: str) -> str:
     # Lake's own two wrapper lines say only that something failed, which is
     # what this is already replacing; the diagnostics are the lines between.
     noise = ("error: build failed", "error: Lean exited with code")
-    errors = [
+    errors = without_cascades([
         l
         for l in out.splitlines()
         if l.startswith("error:") and not l.startswith(noise)
-    ]
+    ])
     if not errors:
         return "  (see the output above)"
     return (

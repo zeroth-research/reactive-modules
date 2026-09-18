@@ -629,3 +629,41 @@ def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(
     logs["build"] = (1, "error: Certificate/Certificate.lean:9:2: omega failed\n")
     with pytest.raises(project.LakeBuildError, match="omega failed"):
         project.build_certificate(tmp_path)
+
+
+def test_a_kernel_error_after_another_one_is_not_reported_twice(
+    monkeypatch, tmp_path
+):
+    """A declaration that fails to elaborate is never added to the
+    environment, so the next one to mention it fails again in the kernel.
+
+    `hrank` times out at `whnf`, and then `(kernel) unknown constant
+    'hrank'` -- which names a symbol where the first line named a cause,
+    and reads like a codegen bug rather than a proof that did not close.
+    Every occurrence of it in the matrix follows an earlier error.
+    """
+    from zrth.lean import project
+
+    logs: dict[str, tuple[int, str]] = {}
+    monkeypatch.setattr(project, "stream", lambda cmd, *, cwd: logs[cmd[1]])
+    logs["update"] = (0, "")
+    logs["build"] = (
+        1,
+        "error: Certificate/Certificate.lean:117:4: (deterministic) timeout "
+        "at `whnf`, maximum number of heartbeats (400000) has been reached\n"
+        "error: Certificate/Certificate.lean:119:4: (kernel) unknown "
+        "constant 'hrank'\n",
+    )
+    with pytest.raises(project.LakeBuildError) as raised:
+        project.build_certificate(tmp_path)
+    assert "heartbeats" in str(raised.value)
+    assert "unknown constant" not in str(raised.value)
+
+    # On its own it is nobody's shadow, and something really is missing.
+    logs["build"] = (
+        1,
+        "error: Certificate/Certificate.lean:119:4: (kernel) unknown "
+        "constant 'hrank'\n",
+    )
+    with pytest.raises(project.LakeBuildError, match="unknown constant"):
+        project.build_certificate(tmp_path)

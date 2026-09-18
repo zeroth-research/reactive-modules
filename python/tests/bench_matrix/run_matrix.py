@@ -48,6 +48,7 @@ MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
+from zrth.lean.project import without_cascades  # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 PROJECTS = WORK / "projects"
@@ -338,9 +339,12 @@ def build(row, route, out: Path) -> dict:
                 errors.append(f"{m.group('file')}: {msg}")
             elif "Lean exited" not in ln:
                 errors.append(ln[7:])
+    # A kernel `unknown constant` after an earlier error is that error's
+    # shadow -- the declaration it names is the one that just failed to
+    # elaborate -- and it is the line that reads like a codegen bug.
     return dict(ok=r.returncode == 0 and not sorries, raw_ok=r.returncode == 0,
                 secs=time.time() - t0, targets=failed,
-                errors=errors[:6], sorries=sorries[:8])
+                errors=without_cascades(errors)[:6], sorries=sorries[:8])
 
 
 # A route that produced no project did so for one of three reasons, and they
