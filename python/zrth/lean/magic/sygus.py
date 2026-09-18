@@ -206,8 +206,16 @@ class TA2MagicSygus(TA2Magic):
                 "than `--sygus-conjuncts` of them. `--infer ai-cegis` "
                 "searches no fixed space and is what to try next."
                 if exhausted else
-                "Raise `--smt-timeout`, or try `--infer ai-cegis`, which "
-                "searches no fixed space."
+                # Measured, on six of the cells that land here: re-run at 12
+                # to 24 times the budget, every one of them still did not
+                # finish. So the timeout is named last and as what it is --
+                # a knob, not a remedy -- because naming it first sends the
+                # reader to spend two minutes arriving back here.
+                "`--infer ai-cegis` searches no fixed space and is what to "
+                "try next; `--infer smt-linear` decides a narrower shape "
+                "rather than enumerating this one. Raising `--smt-timeout` "
+                "is measured not to help on this route: queries that miss "
+                "this budget miss a much larger one too."
             ),
         )
 
