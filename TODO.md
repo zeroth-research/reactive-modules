@@ -255,12 +255,26 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     `unknown constant` -- one that is the first thing to go wrong is kept,
     since then it is nobody's shadow and something really is missing.
 
-14. **The `ai` route writes the model's string straight into `Data.lean`.** 2
-    of its 15 `PROOF-FAIL`s are unparseable rather than wrong:
-    `fun s => s 0 0.toNat` (Lean reads `0.toNat` as a decimal literal) and
-    `Real.toNat`, which does not exist. `ai-cegis` catches these by
-    re-querying; `ai` has no such loop. An elaboration pre-check turns them
-    into either a repair or an honest `NO-CERT`.
+14. ~~**The `ai` route writes the model's string straight into
+    `Data.lean`.**~~ **Done** (`3657574`), and the two cells wanted opposite
+    treatment rather than one pre-check.
+
+    `fun s => s 0 0.toNat` is a slip, and Lean's own error is the repair --
+    "consider parenthesizing the number". Exactly one parenthesisation
+    elaborates, because the projection is of the state *element*; both
+    halves checked against Lean rather than argued, `(s 0 0).toNat`
+    compiles and `s 0 0.toNat` is the recorded type mismatch. The model
+    writes the parenthesised form on nine other cells, so it is rewritten in
+    place, as `_unquote` already rewrites the backticks a model wraps an
+    answer in.
+
+    `Real.toNat` is **not** rewritten: it could be a floor, a ceiling or a
+    truncation, and picking one would be inventing the certificate rather
+    than reading it. It goes back as feedback naming the missing constant,
+    through the retry loop the route already has, and survives to an honest
+    failure if the model keeps it. Such a candidate never reaches `_verify`
+    -- there is nothing for an auditor to be right or wrong about in an
+    expression Lean will not read.
 
 15. ~~**`--pre` is refused by ai / nuterm / fbk-proveit**~~ **Done**
     (`da78190`, `89b6ad7` fbk-proveit; `8aaaf28` ai; `ffad4ab` nuterm) -- 38
