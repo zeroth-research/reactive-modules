@@ -1,0 +1,6 @@
+- houdini: store results to artifacts
+- Try using facts from Vampire to generate tactics; dump to artifacts/
+- Allow --pre for more configurations
+- Prune selectively -- if Vampire proves inv but not ranking, try preserving that inv
+- [later] Cooperative infer through artifacts: smt + vampire in parallel for 4 seconds; then one after another (with known artifacts) and nuterm; then ai-cegis; then ai-fix
+- [later] Try vampire instead of lean-smt in hammer
