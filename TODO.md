@@ -345,15 +345,31 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     thing to keep an eye on, since a route that certifies rather than
     searches must not quietly widen what it assumed.
 
-16. `fbk/m_step2/NiS2Odd3::fbk-proveit` -- `(kernel) application type mismatch`
-    in `Certificate.lean`. A certificate ic3ia produced that `vmt2lean`
-    rendered ill-typed. The only one of its kind, so likely a single
-    translation rule.
+16. ~~`fbk/m_step2/NiS2Odd3::fbk-proveit` -- `(kernel) application type
+    mismatch`~~ **Done** (`0737c49`), together with 17, and the premise here
+    was wrong. It is not "a certificate ic3ia produced that `vmt2lean`
+    rendered ill-typed" and so not a translation rule: the term the kernel
+    rejects is `Smt.Reconstruct.Prop.eqResolve` over a chain of
+    `Smt.Reconstruct.Int.sum_ub`, which is **lean-smt reconstructing a cvc5
+    proof**. Nothing `vmt2lean` wrote. That makes 16 and 17 one bug and not
+    two, which is why they close together.
 
-17. `svcomp/genady/houdini-inv::fbk-proveit` -- cvc5 "Failed to reconstruct
-    term" over `@purify_3` / `to_real`. Same family as the `mod` note on
-    `fbk/m_step2/InvMod`: the solver rewrites the witness into a vocabulary
-    `vmt2lean` cannot render back.
+17. ~~`svcomp/genady/houdini-inv::fbk-proveit` -- cvc5 "Failed to
+    reconstruct term"~~ **Done** (`0737c49`), and the "same family" guess was
+    right for a better reason than the one given: not a witness `vmt2lean`
+    cannot render back, but lean-smt failing to turn a cvc5 proof into a
+    kernel-valid term. 17 fails loudly at reconstruction; 16 hands the kernel
+    a term it will not take. One cause.
+
+    The repair is neither solver's: a validity check is linear integer
+    arithmetic, which `omega` decides, and `omega` builds its own proof
+    instead of translating cvc5's -- so where it applies there is no
+    reconstruction to get wrong. It is offered before the `smt` that closes
+    a check, costing a millisecond failure where it does not apply.
+
+    Measured end to end from ic3ia to `lake build`: both cells go
+    `PROOF-FAIL` -> build, and five that already built (`InvBase`,
+    `InvDisj`, `InvLex`, `InvTwoVars`, `CdBands`) still do.
 
     A third member of this family is closed (`89b6ad7`), and it was not
     about a witness: `vmt2lean`'s proof of the first validity check
