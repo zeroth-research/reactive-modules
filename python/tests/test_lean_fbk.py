@@ -996,6 +996,28 @@ def test_a_certificate_this_does_not_recognise_is_installed_as_it_came():
     assert leave_bool_before_generalize(other) == (other, 0)
 
 
+def test_omega_is_offered_before_the_smt_that_closes_a_check():
+    """`smt` reconstructs a cvc5 proof, and on `fbk/m_step2/NiS2Odd3` the
+    kernel rejects the term it builds -- `(kernel) application type
+    mismatch` inside a `Smt.Reconstruct.Int.sum_ub` chain, which is
+    lean-smt's reconstruction rather than anything `vmt2lean` wrote.
+
+    A validity check is linear integer arithmetic, so `omega` decides it and
+    builds its own proof instead of translating one. Measured: that
+    certificate builds with this and does not without.
+    """
+    from zrth.lean.fbk_proveit import try_omega_before_smt
+
+    out, n = try_omega_before_smt(_RAW_CHECK)
+    assert n == 1
+    assert "using 4; first | omega | smt)" in out
+
+    # Only an `smt` that closes a goal. One already allowed to fail is left
+    # as it is, and so is a name that merely ends in those three letters.
+    left = "  try smt\n  exact foo.smt\n"
+    assert try_omega_before_smt(left) == (left, 0)
+
+
 def _verith(*args) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["uv", "run", "verith", *args],

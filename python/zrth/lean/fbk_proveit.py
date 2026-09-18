@@ -256,6 +256,38 @@ def leave_bool_before_generalize(cert: str) -> "tuple[str, int]":
     return text, n
 
 
+# `smt` reconstructs a cvc5 proof into a Lean term, and on
+# `fbk/m_step2/NiS2Odd3`'s second validity check the kernel rejects the term
+# it builds: `(kernel) application type mismatch`, inside a chain of
+# `Smt.Reconstruct.Int.sum_ub`. That is lean-smt's reconstruction and not
+# anything `vmt2lean` wrote, which is the same root as the `Failed to
+# reconstruct term` on `svcomp/genady/houdini-inv` -- one fails loudly, the
+# other hands the kernel a term it will not take.
+#
+# A validity check is linear integer arithmetic, which is what `omega`
+# decides, and it builds its own proof rather than translating one. So it is
+# offered first: where it applies there is no reconstruction to get wrong,
+# and where it does not it fails in milliseconds and `smt` runs as before.
+# Measured on `NiS2Odd3`, whose certificate builds with it and does not
+# without.
+#
+# Only an `smt` that closes a goal -- the last tactic of a parenthesised
+# group. The `try smt` further down is already allowed to fail and is left
+# alone.
+_SMT_CLOSER = re.compile(r"(?<![\w.])smt\b(?=\s*\))")
+
+
+def try_omega_before_smt(cert: str) -> "tuple[str, int]":
+    """`cert` with `omega` offered before each closing `smt`, and a count.
+
+    A count rather than a raised error, for the reason
+    :func:`leave_bool_before_generalize` gives: this rewrites another
+    project's generated proof script, and one that has changed its template
+    should be left as it came rather than fail a run that may well build.
+    """
+    return _SMT_CLOSER.subn("first | omega | smt", cert)
+
+
 def _parse(module, src: str, flag: str):
     """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
 
@@ -453,9 +485,15 @@ def run(
     installed = project_dir / "Certificate" / "Certificate.lean"
     installed.parent.mkdir(parents=True, exist_ok=True)
     text, patched = leave_bool_before_generalize(raw_cert.read_text())
+    text, omegas = try_omega_before_smt(text)
     installed.write_text(text)
+    notes = []
+    if patched:
+        notes.append(f"{patched} normalised out of Bool")
+    if omegas:
+        notes.append(f"{omegas} offered omega before smt")
     print(f"Installed certificate: {installed}"
-          + (f" ({patched} proof(s) normalised out of Bool)" if patched else ""))
+          + (f" ({', '.join(notes)})" if notes else ""))
 
     if equivalence:
         write_equivalence(
