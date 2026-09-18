@@ -321,6 +321,41 @@ def _replan(settings: Settings, module, inferred, project_cert_data) -> None:
         setattr(project_cert_data, field, getattr(lean, field))
 
 
+def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
+    """Leave *why* a route gave up in `artifacts/`, if it did not say so itself.
+
+    `NO-CERT` is three measurements wearing one name -- a space proved
+    empty, a budget that ran out, a shape the route never looked at -- and
+    the prose that distinguishes them is a dozen wordings per route, which
+    is why reading it back is guesswork. The status is not: a route that
+    searched a bounded shape and refuted it writes `no_solution`, one whose
+    budget ran out writes `unknown`, and everything else is a decline.
+
+    Only when the route wrote nothing. `smt-linear`, `sygus`, `houdini` and
+    `vampire` each leave a note of their own with more in it than this, and
+    a second one saying less would be worse than none.
+
+    An `ImportError` is not about the module at all -- a package or a key is
+    missing -- so it is left unrecorded rather than filed against a run that
+    never started.
+    """
+    store = getattr(handle, "artifacts", None)
+    if store is None or store.notes or isinstance(e, ImportError):
+        return
+    searched = getattr(e, "searched", False)
+    store.note(
+        f"{e}\n",
+        status="unknown" if searched else "declined",
+        what=(f"A search by `--infer {route.name}` that did not finish."
+              if searched else
+              f"`--infer {route.name}` declined this module and property."),
+        why=("The budget ran out first; nothing is known about the space."
+             if searched else
+             "Nothing was searched, so this says what the route does not "
+             "take rather than anything about the module's difficulty."),
+    )
+
+
 def _infer(
     settings: Settings, module, handle: ProjectHandle, cert_data, prechecked
 ) -> "CertificateData | None":
@@ -353,6 +388,7 @@ def _infer(
     except (Refused, ImportError) as e:
         # A missing package and a missing key are both about how the route
         # was asked for, not about the module.
+        _note_refusal(handle, route, e)
         raise _refused(settings, e) from e
 
     # The row *declares* what comes back and the result carries it, so the

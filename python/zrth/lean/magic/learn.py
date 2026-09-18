@@ -452,7 +452,8 @@ class TA2MagicLearn(TA2Magic):
                 f"no inductive invariant implying the property was found "
                 f"({proof.status}). Houdini's candidates are sign and pairwise "
                 f"facts; for an invariant outside that lattice use "
-                f"--fbk-proveit, or --infer ai-cegis."
+                f"--fbk-proveit, or --infer ai-cegis.",
+                searched=True,
             )
         self.log("[nuterm] safety invariant certified")
         # The seeded property is printed as it was written, which is the same
@@ -539,7 +540,8 @@ class TA2MagicLearn(TA2Magic):
                 "run wraps around needs one that falls along the ramp and again "
                 "across the reset, which no convex rank does. It is learned "
                 "from rollouts too, so a property that never fails on one "
-                "leaves nothing to train on."
+                "leaves nothing to train on.",
+                searched=True,
             )
         self.log("[nuterm] zeroing the rank where the property holds")
         rank = _smt_ranking(result.layers, result.system.names)

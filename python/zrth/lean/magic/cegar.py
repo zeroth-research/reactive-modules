@@ -196,8 +196,12 @@ class TA2MagicCEGAR(TA2Magic):
             feedback = self._format_feedback(failures)
             print(f"[CEGAR] failures: {[o.name for o in failures]}")
 
-        raise RuntimeError(
-            f"CEGAR failed after {self.max_attempts} attempts. Last feedback:\n{feedback}"
+        # `Refused` for the reason `magic.ai` gives: running out of
+        # attempts is this route giving up, not a defect.
+        raise Refused(
+            f"CEGAR failed after {self.max_attempts} attempts. "
+            f"Last feedback:\n{feedback}",
+            searched=True,
         )
 
     # --- obligation checks ---------------------------------------------

@@ -291,9 +291,14 @@ class TA2MagicAI(TA2Magic):
                 cd.inv = inv
                 cd.ranking = ranking
                 return cd
-        raise RuntimeError(
-            f"Failed to find valid invariant/ranking after {self.max_attempts} attempts. "
-            f"Last feedback: {feedback}"
+        # `Refused`, not `RuntimeError`: a route that asked the model
+        # `max_attempts` times and did not get a certificate has given up, the
+        # way every other route gives up, and that is a decision about the
+        # module rather than a defect with a traceback to read.
+        raise Refused(
+            f"Failed to find valid invariant/ranking after {self.max_attempts} "
+            f"attempts. Last feedback: {feedback}",
+            searched=True,
         )
 
     def _generate(self, cd: CertificateData, feedback: str | None) -> tuple[str, str]:

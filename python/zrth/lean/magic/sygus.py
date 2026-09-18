@@ -150,7 +150,8 @@ class TA2MagicSygus(TA2Magic):
         record(self.artifacts, search, log=self.log)
         if search.found is None:
             raise Refused(
-                f"--infer sygus found no invariant. {search.note}"
+                f"--infer sygus found no invariant. {search.note}",
+                searched=True,
             )
         self.log(f"[sygus] inv: {search.found}")
         return self._emit(cd, search.found)

@@ -235,7 +235,9 @@ class TA2MagicLinear(TA2Magic):
                 self.log(f"[smt-linear] inv: {search.found}")
             record(self.artifacts, search, log=self.log)
             if search.found is None:
-                raise Refused(f"--infer smt-linear found no invariant. {search.note}")
+                raise Refused(
+                    f"--infer smt-linear found no invariant. {search.note}",
+                    searched=True)
             cd.inv = cd.inv_smt = search.found
             return cd
 
@@ -257,7 +259,8 @@ class TA2MagicLinear(TA2Magic):
         record(self.artifacts, search, log=self.log)
         if search.found is None:
             raise Refused(
-                f"--infer smt-linear found no ranking function. {search.note}"
+                f"--infer smt-linear found no ranking function. {search.note}",
+                searched=True,
             )
         cd.inv = cd.inv_smt = inv_src
         cd.ranking = cd.ranking_smt = search.found

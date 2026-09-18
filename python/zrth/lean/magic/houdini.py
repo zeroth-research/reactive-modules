@@ -1872,4 +1872,5 @@ class TA2MagicHoudini(TA2Magic):
                      f"{prover.name} proves or times out; nothing here was "
                      f"refuted."),
             )
-        raise Refused(f"--infer houdini found no {what}. {detail}")
+        raise Refused(f"--infer houdini found no {what}. {detail}",
+                      searched=True)

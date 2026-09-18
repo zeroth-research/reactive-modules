@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -75,6 +75,14 @@ STATUSES = (
     # `unknown` because the difference is proof versus running out of time,
     # and a consumer that confused the two would put a falsehood in a prompt.
     "no_solution",
+    # Nothing was searched at all: the route declined this module's shape --
+    # a sort it cannot weigh, an operator with no encoding, a property kind
+    # it does not take. Told apart from `unknown` for the same reason
+    # `no_solution` is, and in the other direction: `unknown` means a search
+    # ran and did not finish, which is a fact about how hard this module is,
+    # while this means no search ran and there is no such fact. A consumer
+    # that merged them would read "hard" off a module nobody tried.
+    "declined",
 )
 
 # The suffix a language is *written* under, declared forwards. `.smt` reads
@@ -173,6 +181,14 @@ class ArtifactStore:
     producer: str = ""              # the route writing, for `put`
     enabled: bool = True            # `--artifacts ignore` reads nothing
     log: "object" = None
+    # How many *notes* this store has written in this process, so that a
+    # caller can tell "the route said nothing" from "the route said its own
+    # thing". Notes rather than artifacts: a run writes its property and its
+    # encodings whatever happens, and counting those would make every route
+    # look as though it had already explained itself. The index on disk
+    # cannot answer it either -- it carries earlier runs' entries too, unless
+    # `--artifacts reset` cleared them.
+    notes: int = field(default=0, init=False)
 
     # --- reading --------------------------------------------------------
 
@@ -357,7 +373,9 @@ class ArtifactStore:
 
     def note(self, text: str, **kw) -> Artifact:
         """A `.md` artifact: what a route wants the next run's prompt to know."""
-        return self.put("note", text, language="md", **kw)
+        out = self.put("note", text, language="md", **kw)
+        self.notes += 1
+        return out
 
     def encoded(self, role: str, name: str, text: str, *, what: str,
                 language: str = "smt") -> Artifact:

@@ -1139,4 +1139,5 @@ class TA2MagicVampire(TA2Magic):
                 what=f"A derivation of {what} that did not succeed.",
                 why="Vampire answers or times out; nothing was refuted.",
             )
-        raise Refused(f"--infer vampire derived no {what}. {detail}")
+        raise Refused(f"--infer vampire derived no {what}. {detail}",
+                      searched=True)

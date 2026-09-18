@@ -15,7 +15,21 @@ class Refused(ValueError):
 
     `ValueError` is the base because that is what these sites raised before
     the type existed, and callers that catch it still do.
+
+    `searched` is whether anything was *looked for* before giving up, and it
+    is the difference between two refusals that read alike and mean opposite
+    things: a route that declines a module's shape has learned nothing about
+    it, while one whose budget ran out has learned that this shape is not
+    cheap. The default is `False` because most refusals are gates -- a sort
+    the route cannot weigh, an operator with no encoding, a flag that does
+    not apply -- and every one of those is reached before a solver starts.
+    A route that gives up *after* searching says so, and `main` records the
+    two under different statuses.
     """
+
+    def __init__(self, *args, searched: bool = False):
+        super().__init__(*args)
+        self.searched = searched
 
 
 def dtype_shape(dt) -> list:
