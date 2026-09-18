@@ -85,16 +85,16 @@ from dataclasses import dataclass
 from itertools import combinations, product
 from pathlib import Path
 
-from .cert import CertificateData
-from .common import Refused
-from .houdini_solver import (
+from ..cert import CertificateData
+from ..common import Refused
+from ..houdini_solver import (
     DEFAULT_TIMEOUT,
     Cvc5Solver,
     _kill_group,
 )
-from .magic import TA2Magic
-from .magic_houdini import Candidate, Obligations
-from .smt_synth import SynthContext, smt_int
+from . import TA2Magic
+from .houdini import Candidate, Obligations
+from ..smt_synth import SynthContext, smt_int
 
 try:
     import cvc5                                      # type: ignore

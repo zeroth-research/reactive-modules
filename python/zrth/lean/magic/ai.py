@@ -8,9 +8,9 @@ For local LLMs (Ollama, vLLM, etc.) and OpenAI-compatible providers
 import os
 import re
 
-from .cert import CertificateData
-from .common import Refused
-from .magic import TA2Magic
+from ..cert import CertificateData
+from ..common import Refused
+from . import TA2Magic
 
 try:
     import anthropic

@@ -2,7 +2,7 @@
 
 ``--infer houdini`` proposes and a solver decides.  *What* it proposes --
 the invariant facts read off simulated runs of the module, the ranking
-shapes tried smallest first -- is :mod:`zrth.lean.magic_houdini`, and is the
+shapes tried smallest first -- is :mod:`zrth.lean.magic.houdini`, and is the
 same whichever solver answers.  This module is the seam between the two: an
 obligation as a *question* rather than as a file, and the solvers that
 answer one.

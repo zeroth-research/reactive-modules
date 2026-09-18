@@ -176,7 +176,7 @@ class SynthContext:
 
         A precondition is written over `e0..`/`el0..`, which are constants of
         the parsing env; an obligation quantifies its own, so the two have to
-        be brought together exactly as `magic_cegar._subst_inputs` does it.
+        be brought together exactly as `magic.cegar._subst_inputs` does it.
         """
         old = list(self.extl_next) + list(self.extl_latched)
         new = list(en) + list(el)
@@ -362,7 +362,7 @@ def affine_smt(const: int, coeffs, names) -> str:
     Written out here rather than printed from the model's own term: what this
     string has to survive is being parsed back and rendered as the body of a
     Lean definition, and a printer that `let`-binds a repeated subterm
-    produces something that cannot be one (`magic_learn._smt_term` refuses
+    produces something that cannot be one (`magic.learn._smt_term` refuses
     exactly that).
     """
     parts = [] if not int(const) else [smt_int(const)]

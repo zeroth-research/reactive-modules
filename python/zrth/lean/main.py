@@ -371,8 +371,8 @@ def _infer(
     cert_data.inv_smt, cert_data.ranking_smt = result.inv_smt, result.ranking_smt
 
     if result.inv_lean or result.ranking_lean:
-        # The route rendered its own Lean -- `magic_cegar` from the cvc5
-        # context it already had, `magic_learn` on its way out. Rendering it
+        # The route rendered its own Lean -- `magic.cegar` from the cvc5
+        # context it already had, `magic.learn` on its way out. Rendering it
         # again here would encode the module into cvc5 one more time for a
         # string we were handed.
         cert_data.inv, cert_data.ranking = result.inv_lean, result.ranking_lean

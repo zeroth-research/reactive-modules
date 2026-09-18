@@ -66,7 +66,7 @@ BOTH = pytest.mark.parametrize("solver", ["cvc5", "vampire"])
 
 def infer(name: str, kind: str, prp: str, *, solver="cvc5",
           timeout: float = 60, fixture: Path = LIMITS, log=None):
-    from zrth.lean.magic_houdini import TA2MagicHoudini
+    from zrth.lean.magic.houdini import TA2MagicHoudini
 
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"), solver=solver,
                             timeout=timeout, log=log or (lambda *_: None))
@@ -76,7 +76,7 @@ def infer(name: str, kind: str, prp: str, *, solver="cvc5",
 def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A route mid-flight: its context, obligations and candidate parser,
     without a search having been run. What the seam's cases ask about."""
-    from zrth.lean.magic_houdini import Obligations, TA2MagicHoudini
+    from zrth.lean.magic.houdini import Obligations, TA2MagicHoudini
     from zrth.lean.smt_synth import SynthContext
 
     cd = CertificateData(prp=prp, kind=kind)
@@ -144,7 +144,7 @@ def test_the_evaluator_divides_the_way_smt_lib_does(a, b):
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic_houdini import Evaluator
+    from zrth.lean.magic.houdini import Evaluator
 
     tm = cvc5.TermManager()
     solver = cvc5.Solver(tm)
@@ -190,7 +190,7 @@ def test_a_bitvector_state_is_refused_by_name(solver, why):
 def test_a_real_literal_is_written_as_a_decimal_where_one_is_exact(value, written):
     from fractions import Fraction
 
-    from zrth.lean.magic_houdini import smt_real
+    from zrth.lean.magic.houdini import smt_real
 
     assert smt_real(Fraction(value)) == written
 
@@ -198,7 +198,7 @@ def test_a_real_literal_is_written_as_a_decimal_where_one_is_exact(value, writte
 def test_cvc5s_rationals_are_rewritten_on_the_way_into_a_vampire_script():
     """cvc5 prints one half as `(/ 1 2)`, whose arguments are Int-sorted;
     Vampire answers that with `invalid sort $int for interpretation /`."""
-    from zrth.lean.magic_houdini import decimals
+    from zrth.lean.magic.houdini import decimals
 
     assert decimals("(- v_s0 (/ 1 2))") == "(- v_s0 0.5)"
     assert decimals("(* (/ (- 1) 4) x)") == "(* (- 0.25) x)"
@@ -211,7 +211,7 @@ def test_the_evaluator_floors_a_real_the_way_to_int_does():
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic_houdini import Evaluator
+    from zrth.lean.magic.houdini import Evaluator
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getRealSort(), "x")

@@ -542,7 +542,7 @@ built around: it goes to `artifacts/` as a `no_solution` note and into the
 
 **What shipped.**
 
-* `--infer sygus` (`--safety`) — `magic_sygus.py`. `addSygusInvConstraint`
+* `--infer sygus` (`--safety`) — `magic/sygus.py`. `addSygusInvConstraint`
   over a grammar of affine comparisons plus congruences, with the constants
   seeded from the program's own literals. The conjunction is bounded
   (`--sygus-conjuncts`, default 3) and that is load-bearing: `B -> (and B B)`
@@ -553,7 +553,7 @@ built around: it goes to `artifacts/` as a `no_solution` note and into the
   `pre`/`trans`, so `--pre` works and a module with inputs is in reach
   (`m_relu_input`: invariant found, and all three obligations hold). Writes
   the invariant as a resumable `inv`.
-* `--infer smt-linear` (`--safety` and `--buchi`) — `magic_linear.py`. One
+* `--infer smt-linear` (`--safety` and `--buchi`) — `magic/linear.py`. One
   quantified query per shape; widths tried smallest first; a supplied or
   resumed invariant is *strengthened* rather than replaced. Every scalar
   component is a column whatever its sort — `Int` as itself, `Bool` as

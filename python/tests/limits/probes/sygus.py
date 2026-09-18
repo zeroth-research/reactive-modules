@@ -1,6 +1,6 @@
 """Proof of concept for SMT_ASSIST.md item 7: synthesise the ranking function.
 
-No LLM, no API key, deterministic. The constraints are the two `magic_cegar`
+No LLM, no API key, deterministic. The constraints are the two `magic.cegar`
 already builds -- `inv s → rank s ≥ 0` and
 `inv s ∧ ¬P s → rank (update s) < rank s` -- with `rank` a `synthFun`
 instead of a parsed term.

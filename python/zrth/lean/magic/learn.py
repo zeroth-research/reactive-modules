@@ -46,9 +46,9 @@ from z3.z3util import get_vars
 
 from zrth import Module
 
-from .cert import CertificateData, smt_predicates_to_lean
-from .common import Refused
-from .magic import TA2Magic
+from ..cert import CertificateData, smt_predicates_to_lean
+from ..common import Refused
+from . import TA2Magic
 
 
 def _engine():

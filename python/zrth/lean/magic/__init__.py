@@ -1,6 +1,25 @@
-"""Inference of invariants and ranking functions for reactive modules."""
+"""Inference of invariants and ranking functions for reactive modules.
 
-from .cert import CertificateData
+`TA2Magic` below is the contract every route implements; one module here is
+one route, selected by an `infer_route` row:
+
+* `ai` -- an LLM proposes the whole certificate (`--infer ai`).
+* `cegar` -- an LLM proposes, cvc5 refutes, the counterexample goes back
+  (`--infer ai-cegis`).
+* `houdini` -- candidate facts, greatest inductive subset, over either
+  solver (`--infer houdini`).
+* `learn` -- Farkas/CEGAR learning from simulation traces (`--infer nuterm`).
+* `linear` -- one linear template, solved directly (`--infer smt-linear`).
+* `sygus` -- cvc5's `addSygusInvConstraint` (`--infer sygus`).
+* `vampire` -- Vampire derives the certificate itself, nothing proposes it
+  (`--infer vampire`).
+
+Nothing is imported here: `ai` pulls in `anthropic` at module scope, and the
+route rows import their own module, which is what keeps `verith --help`
+cheap. Importing a route from this package's `__init__` would undo that.
+"""
+
+from ..cert import CertificateData
 
 
 class TA2Magic:

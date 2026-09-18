@@ -367,7 +367,7 @@ class InferRoute:
 
 
 def _run_ai(inp: InferInput) -> InferResult:
-    from .magic_ai import TA2MagicAI
+    from .magic.ai import TA2MagicAI
 
     magic = TA2MagicAI(
         inp.project.encoding(""), model=inp.model, base_url=inp.base_url
@@ -379,7 +379,7 @@ def _run_ai(inp: InferInput) -> InferResult:
 
 
 # Statuses that make a previously-found invariant a *fixed* invariant for
-# this route: `magic_cegar` takes `cd.inv` as given and infers only what is
+# this route: `magic.cegar` takes `cd.inv` as given and infers only what is
 # left, so what it is handed has to be inductive. `too_weak` is inductive
 # and merely fails to imply the property, which `rule_buchi` never asked of
 # it -- so it is usable for a Buchi certificate and is exactly the wrong
@@ -397,7 +397,7 @@ def _resume_inv(inp: InferInput) -> "Artifact | None":
     if inp.cert_data.inv:
         return None
     # An inductive invariant is what this route can take as *given*:
-    # `magic_cegar` infers only what is left around a fixed `cd.inv`.
+    # `magic.cegar` infers only what is left around a fixed `cd.inv`.
     for a in inp.project.resume("inv", languages=("smt",), statuses=FIXABLE):
         # The one thing the store cannot filter on: `too_weak` means
         # inductive but not implying the property, which is all `rule_buchi`
@@ -451,7 +451,7 @@ def _ruled_out(inp: InferInput) -> tuple[str, ...]:
 
 
 def _run_ai_cegis(inp: InferInput) -> InferResult:
-    from .magic_cegar import TA2MagicCEGAR
+    from .magic.cegar import TA2MagicCEGAR
 
     _take_inv(
         inp,
@@ -484,11 +484,11 @@ def _run_ai_cegis(inp: InferInput) -> InferResult:
 
 
 def _run_nuterm(inp: InferInput) -> InferResult:
-    from .magic_learn import TA2MagicLearn
+    from .magic.learn import TA2MagicLearn
 
     magic = TA2MagicLearn("", inp.module, log=inp.log)
     cd = magic.infer(inp.cert_data)
-    # `magic_learn._emit` already rendered the Lean, so it comes along rather
+    # `magic.learn._emit` already rendered the Lean, so it comes along rather
     # than being rendered a second time from the same SMT.
     return InferResult(
         inv_smt=cd.inv_smt,
@@ -499,7 +499,7 @@ def _run_nuterm(inp: InferInput) -> InferResult:
 
 
 def _run_sygus(inp: InferInput) -> InferResult:
-    from .magic_sygus import TA2MagicSygus
+    from .magic.sygus import TA2MagicSygus
 
     magic = TA2MagicSygus(
         inp.module,
@@ -516,7 +516,7 @@ def _run_sygus(inp: InferInput) -> InferResult:
 
 
 def _run_smt_linear(inp: InferInput) -> InferResult:
-    from .magic_linear import TA2MagicLinear
+    from .magic.linear import TA2MagicLinear
 
     _take_inv(
         inp,
@@ -574,7 +574,7 @@ def _resolve_vampire(opts: dict):
 
 
 def _run_vampire(inp: InferInput) -> InferResult:
-    from .magic_vampire import TA2MagicVampire
+    from .magic.vampire import TA2MagicVampire
 
     magic = TA2MagicVampire(
         inp.module,
@@ -590,7 +590,7 @@ def _run_vampire(inp: InferInput) -> InferResult:
 
 
 def _run_houdini(inp: InferInput) -> InferResult:
-    from .magic_houdini import TA2MagicHoudini
+    from .magic.houdini import TA2MagicHoudini
 
     magic = TA2MagicHoudini(
         inp.module,

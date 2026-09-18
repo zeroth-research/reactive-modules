@@ -53,8 +53,8 @@ def vampire_or_skip() -> str:
 
 def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A module's context, obligations and branches, without asking anything."""
-    from zrth.lean.magic_houdini import Obligations
-    from zrth.lean.magic_vampire import Question, split
+    from zrth.lean.magic.houdini import Obligations
+    from zrth.lean.magic.vampire import Question, split
     from zrth.lean.smt_synth import SynthContext
 
     cd = CertificateData(prp=prp, kind=kind)
@@ -68,7 +68,7 @@ def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
 
 def derive(name: str, kind: str, prp: str, *, timeout: float = 30,
            fixture: Path = LIMITS, vampire: "str | None" = None):
-    from zrth.lean.magic_vampire import TA2MagicVampire
+    from zrth.lean.magic.vampire import TA2MagicVampire
 
     magic = TA2MagicVampire(module_at(fixture / f"{name}.py"),
                             vampire=vampire or vampire_or_skip(),
@@ -84,7 +84,7 @@ def derive(name: str, kind: str, prp: str, *, timeout: float = 30,
 def test_the_round_is_split_on_the_conditions_its_ites_test():
     """`m_countdown` resets at zero, so its round is one `ite` and two cases,
     each with the condition as a guard rather than inside the term."""
-    from zrth.lean.magic_vampire import ite_conditions, split
+    from zrth.lean.magic.vampire import ite_conditions, split
 
     ctx, ob, _q = parts("m_countdown", "safety", "(<= s0 100)")
     assert [str(c) for c in ite_conditions(ob.next)] == ["(= v_s0 0)"]
@@ -107,7 +107,7 @@ def test_the_initial_state_is_split_apart_from_the_round():
     assert len(q.entry) == 1        # the initial state does not
     assert q.entry[0].guard == ()
 
-    from zrth.lean.magic_vampire import templates
+    from zrth.lean.magic.vampire import templates
 
     script = q.conjecture(templates(ctx, ranked=False)[0], ctx.prp, safety=True)
     entry = script[script.index("(") : script.index("![")]
@@ -115,15 +115,15 @@ def test_the_initial_state_is_split_apart_from_the_round():
 
 
 def test_a_transition_with_too_many_conditions_is_refused_by_name():
-    from zrth.lean.magic_vampire import _MAX_CONDITIONS
+    from zrth.lean.magic.vampire import _MAX_CONDITIONS
 
     assert _MAX_CONDITIONS >= 1
     ctx, ob, _q = parts("m_countdown", "safety", "(<= s0 100)")
-    from zrth.lean.magic_vampire import split
+    from zrth.lean.magic.vampire import split
 
     # The bound is on the *count*, so it is checked by lowering it rather
     # than by finding a module with thirty conditionals.
-    import zrth.lean.magic_vampire as mv
+    import zrth.lean.magic.vampire as mv
 
     old = mv._MAX_CONDITIONS
     try:
@@ -143,7 +143,7 @@ def test_a_term_prints_as_tptp_over_the_names_it_was_given():
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic_vampire import Tptp
+    from zrth.lean.magic.vampire import Tptp
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getIntegerSort(), "v_s0")
@@ -169,7 +169,7 @@ def test_an_ite_that_survived_the_split_is_refused_rather_than_printed():
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic_vampire import Tptp
+    from zrth.lean.magic.vampire import Tptp
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getIntegerSort(), "v_s0")
@@ -184,7 +184,7 @@ def test_a_symbol_with_no_variable_is_refused_rather_than_invented():
     TPTP symbol and quantified over, which silently changes the question."""
     import cvc5
 
-    from zrth.lean.magic_vampire import Tptp
+    from zrth.lean.magic.vampire import Tptp
 
     tm = cvc5.TermManager()
     stray = tm.mkConst(tm.getIntegerSort(), "elsewhere")
@@ -194,7 +194,7 @@ def test_a_symbol_with_no_variable_is_refused_rather_than_invented():
 
 def test_the_conjecture_states_every_obligation_under_one_existential():
     ctx, _ob, q = parts("m_countdown", "safety", "(<= s0 100)")
-    from zrth.lean.magic_vampire import templates
+    from zrth.lean.magic.vampire import templates
 
     tpl = templates(ctx, ranked=False)[0]
     script = q.conjecture(tpl, ctx.prp, safety=True)
@@ -208,7 +208,7 @@ def test_the_conjecture_states_every_obligation_under_one_existential():
 
 def test_a_buchi_conjecture_asks_for_the_ranking_in_the_same_question():
     ctx, _ob, q = parts("m_countdown", "buchi", "(= s0 0)")
-    from zrth.lean.magic_vampire import templates
+    from zrth.lean.magic.vampire import templates
 
     tpl = templates(ctx, ranked=True)[0]
     assert tpl.all_holes == ("A0", "B0", "R0", "Rc")
@@ -230,7 +230,7 @@ def test_a_buchi_conjecture_asks_for_the_ranking_in_the_same_question():
     ("% SZS answers Tuple [[$uminus(3),7]|_] for cert", (-3, 7)),
 ])
 def test_an_answer_tuple_is_read_off_vampires_output(line, want):
-    from zrth.lean.magic_vampire import Answers
+    from zrth.lean.magic.vampire import Answers
 
     got = Answers("/nowhere", seconds=1)._read(line, len(want), 0.0)
     assert got is not None and got.values == want
@@ -239,7 +239,7 @@ def test_an_answer_tuple_is_read_off_vampires_output(line, want):
 def test_a_hole_the_refutation_never_pinned_down_reads_as_zero():
     """Vampire reports `∀X0.[X0]` for a hole any value serves. Zero is the
     one the certificate reads best, and it is checked with the rest."""
-    from zrth.lean.magic_vampire import Answers
+    from zrth.lean.magic.vampire import Answers
 
     got = Answers("/nowhere", seconds=1)._read(
         "% SZS answers Tuple [[∀X0.[X0],100]|_] for cert", 2, 0.0)
@@ -247,7 +247,7 @@ def test_a_hole_the_refutation_never_pinned_down_reads_as_zero():
 
 
 def test_an_answer_of_the_wrong_width_is_ignored():
-    from zrth.lean.magic_vampire import Answers
+    from zrth.lean.magic.vampire import Answers
 
     said = []
     a = Answers("/nowhere", seconds=1, log=said.append)
@@ -256,7 +256,7 @@ def test_an_answer_of_the_wrong_width_is_ignored():
 
 
 def test_no_answer_at_all_is_no_certificate():
-    from zrth.lean.magic_vampire import Answers
+    from zrth.lean.magic.vampire import Answers
 
     assert Answers("/nowhere", seconds=1)._read(
         "% Termination reason: Time limit", 2, 0.0) is None
@@ -282,7 +282,7 @@ def test_a_bitvector_state_is_refused_by_name():
 
 
 def test_the_templates_are_tried_smallest_first():
-    from zrth.lean.magic_vampire import templates
+    from zrth.lean.magic.vampire import templates
 
     ctx, _ob, _q = parts("m_toward2d", "safety", "(<= s0 10)")
     tpls = [t.name for t in templates(ctx, ranked=False)]
@@ -309,7 +309,7 @@ def test_what_vampire_answers_is_checked_before_it_is_emitted():
     route wrote the question. So a certificate that does not satisfy the
     module's own obligations is reported as not found rather than handed on
     -- here by making the check reject whatever came back."""
-    import zrth.lean.magic_vampire as mv
+    import zrth.lean.magic.vampire as mv
 
     old = mv.TA2MagicVampire._checks_out
     try:

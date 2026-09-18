@@ -1,7 +1,7 @@
 """Lean 4 certificate generation for reactive modules.
 
 `TA2Magic` and `TA2MagicAI` resolve on first use rather than at import:
-`magic_ai` imports `anthropic` at module scope (236 ms of the 850 ms a
+`magic.ai` imports `anthropic` at module scope (236 ms of the 850 ms a
 `verith --help` takes), and the routes that need an LLM are imported by the
 row that selects them -- which is the discipline `infer_route` documents and
 an eager import here defeated for every invocation.
@@ -12,7 +12,7 @@ from .translate import ModuleToLean4
 
 __all__ = ["ModuleToLean4", "CertificateData", "TA2Magic", "TA2MagicAI"]
 
-_LAZY = {"TA2Magic": ".magic", "TA2MagicAI": ".magic_ai"}
+_LAZY = {"TA2Magic": ".magic", "TA2MagicAI": ".magic.ai"}
 
 
 def __getattr__(name: str):

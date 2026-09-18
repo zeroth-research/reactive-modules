@@ -35,7 +35,7 @@ row, and a row no theory backs fails it too.
 
 This module never imports cvc5, on purpose: `native.py` and `circ.py`
 import *it*, and the Lean path has to keep working where cvc5 is absent
-(see `magic_cegar.py`'s guarded import). The SMT emitters reach cvc5 only
+(see `magic/cegar.py`'s guarded import). The SMT emitters reach cvc5 only
 through the `SmtOp` context `smt_encode` hands them — `op.K` is
 `cvc5.Kind`.
 """

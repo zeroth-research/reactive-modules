@@ -55,12 +55,12 @@ what answered.
 
 from __future__ import annotations
 
-from .cert import CertificateData
-from .common import Refused
-from .magic import TA2Magic
+from ..cert import CertificateData
+from ..common import Refused
+from . import TA2Magic
 from dataclasses import dataclass
 
-from .smt_synth import (
+from ..smt_synth import (
     Search,
     SynthContext,
     affine_smt,
@@ -236,7 +236,7 @@ class TA2MagicLinear(TA2Magic):
         >= 0) y := y - 1` was "proved" to have no linear rank, and Lean accepts
         `(1 + y).toNat` for it under the invariant `true`.
         """
-        from .smt_prompt import parse_predicate
+        from ..smt_prompt import parse_predicate
 
         tm, n = ctx.tm, len(cols)
         inv_term = parse_predicate(ctx.env, inv_src)
@@ -339,7 +339,7 @@ class TA2MagicLinear(TA2Magic):
         self, ctx: SynthContext, cols: list, given: "str | None", k: int
     ) -> tuple["str | None", "_Verdict"]:
         """The invariant with `k` added rows, or why there is none."""
-        from .smt_prompt import parse_predicate
+        from ..smt_prompt import parse_predicate
 
         tm, n = ctx.tm, len(cols)
         Int = tm.getIntegerSort()

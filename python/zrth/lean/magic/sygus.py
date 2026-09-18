@@ -40,10 +40,10 @@ and the artifact is the answer being *reusable*.
 
 from __future__ import annotations
 
-from .cert import CertificateData
-from .common import Refused
-from .magic import TA2Magic
-from .smt_synth import (
+from ..cert import CertificateData
+from ..common import Refused
+from . import TA2Magic
+from ..smt_synth import (
     Search,
     SynthContext,
     body_of,
@@ -73,7 +73,7 @@ GRAMMARS = ("congruence", "linear")
 # be decided empty -- `hasNoSolution` rather than `unknown`, which is the
 # difference between leaving a proof behind and leaving a shrug. (The first
 # reason is the ordinary one: every conjunct is restated in Lean and is one
-# more implication in the obligation, which `magic_learn._prune` exists for.)
+# more implication in the obligation, which `magic.learn._prune` exists for.)
 # Measured on `m_step2` with the congruence atoms dropped, which has no
 # answer in this space: decided empty in 10 / 25 / 166 ms at 1 / 2 / 3.
 DEFAULT_CONJUNCTS = 3
@@ -328,7 +328,7 @@ class TA2MagicSygus(TA2Magic):
     def _emit(self, cd: CertificateData, inv_smt: str) -> CertificateData:
         """The certificate, as SMT-LIB. The pipeline renders the Lean.
 
-        Unlike `magic_cegar` and `magic_learn` this route holds no rendering
+        Unlike `magic.cegar` and `magic.learn` this route holds no rendering
         of its own -- it never built one -- so handing back the SMT alone is
         what its row's `returns="smt"` means, and `main` prints it once.
         """

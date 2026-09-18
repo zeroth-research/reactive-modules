@@ -1064,7 +1064,7 @@ A row says:
 
 A route that renders its own Lean hands **both** spellings back in its
 `InferResult`.  Rendering means encoding the module into cvc5 again, and
-`magic_cegar` and `magic_learn` both already have the Lean — so the pipeline
+`magic.cegar` and `magic.learn` both already have the Lean — so the pipeline
 renders only for a route that returns SMT alone.
 
 `tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`

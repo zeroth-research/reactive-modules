@@ -6,11 +6,11 @@ expressions, cvc5 verifies, counterexamples are fed back to the LLM.
 # and there is no abstraction to refine; the obligations are checked over the
 # concrete transition relation. The route was renamed (`--infer ai-cegar` ->
 # `--infer ai-cegis`); the driver was not, so `ai-cegis` still runs
-# `TA2MagicCEGAR` out of `magic_cegar.py` and prints `[CEGAR] attempt 0`.
+# `TA2MagicCEGAR` out of `magic/cegar.py` and prints `[CEGAR] attempt 0`.
 # What the rename has to reach, together, in one commit:
-#   * this module (-> `magic_cegis.py`), `TA2MagicCEGAR`, the docstring above,
-#     and the `magic_cegar` mentions in `infer_route.py`, `smt_synth.py` and
-#     `magic_sygus.py`;
+#   * this module (-> `magic/cegis.py`), `TA2MagicCEGAR`, the docstring above,
+#     and the `magic.cegar` mentions in `infer_route.py`, `smt_synth.py` and
+#     `magic/sygus.py`;
 #   * `smt_prompt.CegarPromptEnv`, `CEGAR_GENERATE_SYSTEM`,
 #     `CEGAR_SAFETY_SYSTEM` and the `"cegar"` parser tag -- `smt_synth.py`,
 #     `smt_query.py` and `tests/test_synth_routes.py` import them too;
@@ -21,7 +21,7 @@ expressions, cvc5 verifies, counterexamples are fed back to the LLM.
 #     `README.md`, and matched by `CEGAR failed after` in
 #     `tests/bench_matrix/run_matrix.py`'s failure regex. Those are why this
 #     is a sweep of its own rather than part of the flag rename.
-# Leave `magic_learn`'s Farkas/CEGAR alone: that one really does refine an
+# Leave `magic.learn`'s Farkas/CEGAR alone: that one really does refine an
 # abstraction.
 
 from __future__ import annotations
@@ -37,18 +37,18 @@ except ImportError:
 
 from zrth import Module
 
-from .cert import CertificateData
-from .common import Refused
-from .magic import TA2Magic
-from .magic_ai import _make_client, _describe_preconditions
-from .smt_module import ModuleSMT
-from .smt_prompt import (
+from ..cert import CertificateData
+from ..common import Refused
+from . import TA2Magic
+from .ai import _make_client, _describe_preconditions
+from ..smt_module import ModuleSMT
+from ..smt_prompt import (
     CegarPromptEnv,
     PromptResult,
     parse_predicate,
     prompt_inv_ranking,
 )
-from .smt_to_lean import smt_to_lean, smt_to_lean_nat
+from ..smt_to_lean import smt_to_lean, smt_to_lean_nat
 
 
 @dataclass

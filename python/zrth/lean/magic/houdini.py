@@ -117,9 +117,9 @@ from dataclasses import dataclass
 from fractions import Fraction
 from itertools import product
 
-from .cert import CertificateData
-from .common import Refused
-from .houdini_solver import (
+from ..cert import CertificateData
+from ..common import Refused
+from ..houdini_solver import (
     DEFAULT_SOLVER,
     DEFAULT_TIMEOUT,
     Query,
@@ -129,8 +129,8 @@ from .houdini_solver import (
     smt_lit,
     smt_real,
 )
-from .magic import TA2Magic
-from .smt_synth import SynthContext, affine_smt, moduli, program_constants, smt_int
+from . import TA2Magic
+from ..smt_synth import SynthContext, affine_smt, moduli, program_constants, smt_int
 
 try:
     import cvc5                                      # type: ignore
@@ -501,7 +501,7 @@ class Evaluator:
         return ops, [slot[t.getId()] for t in terms]
 
     def _rewrite(self, t, env):
-        from .smt_query import _constants
+        from ..smt_query import _constants
 
         tm = self.tm
         if self._solver is None:
@@ -906,7 +906,7 @@ def split_conditions(ctx: SynthContext, ob: Obligations) -> list[str]:
     and is `(ite (<= y z) (- z x) (- y x))`, a branch the program never
     spells.
     """
-    from .smt_query import _constants
+    from ..smt_query import _constants
 
     out: list[str] = []
     state = set(ctx.names)
@@ -1434,7 +1434,7 @@ class TA2MagicHoudini(TA2Magic):
         and Lean proves nothing, while adding `x in {0..3}` back -- a fact
         the other two imply -- builds in 2.6 s.
         """
-        from .smt_query import _constants
+        from ..smt_query import _constants
 
         read = set(_constants(rank.term, {}))
         wanted = {src for name, src in self.pins.items() if name in read}
