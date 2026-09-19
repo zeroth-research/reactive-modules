@@ -203,13 +203,15 @@ class SynthContext:
 
 @dataclass(frozen=True)
 class Reading:
-    """One integer a template can weigh a state component by.
+    """One quantity a template can weigh a state component by.
 
     An `Int` component is itself. A `Bool` one is `0`/`1` -- which is what
     makes `b` and `¬b` expressible as rows (`(ite s0 1 0) - 1 >= 0`), and
     what lets a rank fall when a flag flips. A bitvector is its unsigned
     value, `ubv_to_int`, so a counter in `BitVec 8` is ranked by the number
-    it holds rather than by its bits.
+    it holds rather than by its bits. A Real is a floor, or itself, and
+    which one is the caller's `floor_reals` -- see :func:`component_readings`
+    for why that is a question about ranking rather than about sorts.
 
     The lifting is only the *search space*. Every obligation is still stated
     against the module's own transition, in its own sorts, so a candidate
@@ -286,21 +288,30 @@ def element(ctx: "SynthContext", i: int, slot: "int | None") -> tuple:
             ctx.tm.mkTerm(Kind.APPLY_SELECTOR, ctor[slot].getTerm(), var))
 
 
-def component_readings(ctx: "SynthContext", i: int, *,
-                       scale: int = 1) -> list[Reading]:
-    """Every integer reading of state component `i`, in column order.
+def component_readings(ctx: "SynthContext", i: int, *, scale: int = 1,
+                       floor_reals: bool = True) -> list[Reading]:
+    """Every arithmetic reading of state component `i`, in column order.
 
     One reading for a scalar; one *per element* for a matrix-shaped
     component, which cvc5 encodes as a tuple and which is projected with the
-    selectors `smt_to_lean` already renders. A Real component is read
-    through `to_int` -- the floor `Int.toNat` sees -- after multiplying by
-    `scale`, because flooring a quantity that falls by less than one need
-    not fall at all.
+    selectors `smt_to_lean` already renders.
 
     An element is read by *its own* sort rather than by the component's,
-    which is the only reading of a matrix of Bools or of Reals that is an
-    integer at all: the selector alone is a Bool, and a template that
+    which is the only reading of a matrix of Bools or of Reals that is
+    arithmetic at all: the selector alone is a Bool, and a template that
     multiplies it by a coefficient is a sort error four steps later.
+
+    ``floor_reals`` is what a Real costs, and it is the caller's question
+    rather than this function's. A **ranking** function has to land in
+    `Nat`, so a route that weighs one reads a Real through `to_int` -- the
+    floor `Int.toNat` sees -- after multiplying by ``scale``, because
+    flooring a quantity that falls by less than one need not fall at all.
+    An **invariant** has no such obligation: it is a predicate, and
+    flooring one is not conservative in either direction -- `to_int s0 +
+    to_int s1 <= 1` neither implies nor is implied by `s0 + s1 <= 1.0`, as
+    `s0 = s1 = 0.6` shows. So a route that only ever states an invariant
+    passes `floor_reals=False` and keeps the rationals, and its linear
+    combinations live in Real arithmetic instead.
     """
     tm = ctx.tm
     out: list[Reading] = []
@@ -318,6 +329,9 @@ def component_readings(ctx: "SynthContext", i: int, *,
                                tm.mkTerm(Kind.BITVECTOR_UBV_TO_INT, var),
                                kind, i, slot))
         elif kind == "real":
+            if not floor_reals:
+                out.append(Reading(name, var, kind, i, slot))
+                continue
             inner = var
             if scale != 1:
                 inner = tm.mkTerm(Kind.MULT, tm.mkReal(scale, 1), var)
@@ -328,15 +342,19 @@ def component_readings(ctx: "SynthContext", i: int, *,
 
 
 def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
-             scale: int = 1) -> list[Reading]:
+             scale: int = 1, floor_reals: bool = True) -> list[Reading]:
     """The columns `route` weighs this module by, or why one component is not.
 
-    `allow` is the route's own contract rather than the context's: the
-    grammar route's `synthFun` takes integer arguments and has nowhere to
-    put a Bool column, while a template weighs whatever has an integer
-    reading. Refused by name either way -- naming the component and the
-    route that does read it is the difference between "try something else"
-    and "try everything else".
+    `allow` is the route's own contract rather than the context's: a route
+    whose obligations are stated in integer arithmetic has nowhere to put a
+    Real column, while a template weighs whatever has a reading. Refused by
+    name either way -- naming the component and the route that does read it
+    is the difference between "try something else" and "try everything
+    else".
+
+    ``scale`` and ``floor_reals`` are passed through to
+    :func:`component_readings`, which is where what a Real costs is
+    written down.
     """
     out: list[Reading] = []
     refused: list[str] = []
@@ -344,7 +362,8 @@ def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
         if reading_kind(sort) not in allow:
             refused.append(f"s{i} is {sort}")
             continue
-        out.extend(component_readings(ctx, i, scale=scale))
+        out.extend(component_readings(ctx, i, scale=scale,
+                                      floor_reals=floor_reals))
     if refused:
         raise Refused(
             f"--infer {route} reads a state of scalar integers, and this "

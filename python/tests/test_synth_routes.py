@@ -35,6 +35,18 @@ def module_of(name: str):
     return mod.module()
 
 
+def _int_cols(n: int):
+    """`n` scalar integer columns, for the note-shaping tests.
+
+    The prose only reads a column's name and kind, so the terms are not
+    worth a cvc5 context here -- what is being checked is which widths the
+    note claims, not what was searched.
+    """
+    from zrth.lean.smt_synth import Reading
+
+    return [Reading(f"s{i}", None, "int", i) for i in range(n)]
+
+
 def store_for(tmp_path: Path, name: str, *, kind: str, prp: str,
               producer: str = "test") -> ArtifactStore:
     return ArtifactStore(
@@ -115,28 +127,42 @@ def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
     assert store.read(kept[0]) == cd.inv_smt
 
 
-def test_a_real_state_is_refused_by_name_by_the_grammar_route():
-    """The grammar's `synthFun` takes integer arguments, so a Real column
-    has nowhere to go.
+def test_a_real_state_keeps_its_rationals_in_the_grammar_route():
+    """A Real component is a Real column, not a floored one.
 
-    Refused where the sorts are read rather than inside a grammar rule, so
-    the message names the component instead of a cvc5 error.
+    This route only ever states an invariant, and a predicate has no reason
+    to land in `Nat`. Flooring one is not conservative in either direction
+    -- `to_int s0 + to_int s1 <= 1` holds at `s0 = s1 = 0.6` where
+    `s0 + s1 <= 1.0` fails -- so the floor `--infer smt-linear` weighs a
+    Real by would search a space that cannot state the property.
     """
     from zrth.lean.magic.sygus import TA2MagicSygus
 
+    lines: list[str] = []
     cd = CertificateData(prp="(>= s0 0.0)", kind="safety")
-    with pytest.raises(Refused, match="no integer reading"):
-        TA2MagicSygus(module_of("m_lra_lin"), log=lambda *_: None).infer(cd)
+    try:
+        TA2MagicSygus(module_of("m_lra_lin"), log=lines.append).infer(cd)
+    except Refused:
+        pass                                 # the search may come back empty
+    assert "[sygus] columns: s0" in lines
+    assert not any("to_int" in ln for ln in lines)
 
 
-def test_sygus_sends_a_bool_state_to_the_route_that_weighs_it():
-    """The grammar's `synthFun` takes integer arguments, so a Bool column has
-    nowhere to go -- and the refusal names the route that does read it."""
+def test_sygus_weighs_a_bool_column_as_zero_or_one():
+    """A Bool component has an arithmetic reading, so an atom can hold it.
+
+    The `synthFun` still takes the component itself -- `pre` and `trans` are
+    the module's own transition -- and it is the *grammar* that reads it.
+    """
     from zrth.lean.magic.sygus import TA2MagicSygus
 
+    lines: list[str] = []
     cd = CertificateData(prp="(>= s1 0)", kind="safety")
-    with pytest.raises(Refused, match="--infer smt-linear"):
-        TA2MagicSygus(module_of("m_boolint"), log=lambda *_: None).infer(cd)
+    try:
+        TA2MagicSygus(module_of("m_boolint"), log=lines.append).infer(cd)
+    except Refused:
+        pass
+    assert any("(ite s0 1 0)" in ln for ln in lines if ln.startswith("[sygus] columns"))
 
 
 def test_sygus_asks_the_narrow_grammars_before_the_wide_one():
@@ -168,7 +194,8 @@ def test_the_note_claims_the_widths_that_finished_and_no_more():
     from zrth.lean.magic.sygus import TA2MagicSygus
 
     magic = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None)
-    note = magic._empty((-2, -1, 0, 1, 2), decided=2, undecided_at=3).note
+    note = magic._empty(_int_cols(1), (-2, -1, 0, 1, 2),
+                        decided=2, undecided_at=3).note
     assert "at most 2 atoms" in note
     assert "proof that the space is empty" in note
     assert "It stopped at 3 atoms, above the 2 proved empty" in note
@@ -180,7 +207,8 @@ def test_a_ladder_that_decided_nothing_claims_nothing():
     from zrth.lean.magic.sygus import TA2MagicSygus
 
     magic = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None)
-    search = magic._empty((-2, -1, 0, 1, 2), decided=0, undecided_at=1)
+    search = magic._empty(_int_cols(1), (-2, -1, 0, 1, 2),
+                          decided=0, undecided_at=1)
     assert not search.exhausted
     assert "Nothing was proved" in search.note
     assert "proof that the space is empty" not in search.note
