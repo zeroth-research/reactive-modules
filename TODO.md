@@ -591,16 +591,44 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
       rather than a refusal -- which is the honest answer the route exists
       to give. Soundness clean: no `VERIFIED` on a `fails` row.
 
-    * **`vampire` (35 cells) -- shallower than it looks, not yet done.**
-      The solver layer is already there: `houdini_solver` feeds Vampire
-      SMT-LIB2 under `(set-logic ALL)` and handles `to_int` and rational
-      printing, which is why `houdini-vampire` takes Real today. What is
-      int-bound is the route's own second gate (`_check_sorts`, which wants
-      integer *variables* and not merely integer readings) and its
-      templates, which are integer intervals with integer coefficients.
-      Unlike `sygus` this route also ranks, so a Real rank does need the
-      floor -- the two halves want different readings, which is exactly
-      what `floor_reals` is now for.
+    * **`vampire` -- done for Real, and only 9 of the 35 were Real.**
+      The count was the surprise: lifting the sorts gate admitted 9 cells,
+      and **26 are refused on a Bool column**, which is a different problem
+      (below). The 9 now search honestly -- 120 s, 4 Vampire calls -- and
+      **not one of them produced a certificate**. Unlike `sygus`, this gate
+      lift bought no verdicts: the intervals-and-differences templates
+      state single columns and pairwise differences, and `sem-cont`'s
+      invariant is a *sum*. The column now reads 23 searched, 26 refused on
+      Bool/bitvector, 12 refused at the `ite` branch cap.
+
+      Two things were worth the trip. A Real column gets an interval with
+      *integer* endpoints, because Vampire reports an answer as a literal
+      and this route reads an integer one -- a restriction on reach and not
+      on soundness, since `_checks_out` re-asks cvc5. And the rank floors
+      where the invariant does not (`hrank` lands in `Nat`), so one route
+      wants **both** readings of one column, which is what earns
+      `floor_reals` its existence rather than a per-route rule.
+
+      The bug underneath: **`script_for` never passed its term through
+      `decimals`**. A rational prints as `(/ 1 2)`, whose arguments are
+      Int, and Vampire answers "invalid sort $int for interpretation /".
+      `houdini_solver` has documented that since it began routing its own
+      scripts through the function; this route did not, and nothing noticed
+      because the sorts gate refused every module with a rational in it.
+      Six of the nine failed to parse until it was fixed.
+
+    * **`vampire`'s Bool column (26 cells) -- a template shape, not a
+      reading.** The obvious move is to weigh a Bool as `(ite b 1 0)` the
+      way every other route does, and it is wrong here: `refuse_ites`
+      rejects any question holding an `ite`, on a measurement in the
+      route's own docstring -- `m_countdown`'s step obligation does not
+      come back inside 40 s stated as one `ite` and answers in under a
+      second branch-split. So reading a Bool as 0/1 would make the route
+      refuse its own question. What a Bool wants is not two integer holes
+      but three cases (always true, always false, free), which is a
+      template shape this route does not have. **This is now the largest
+      single blocked group in the matrix**, and it is a design question
+      rather than a wiring one.
 
     * **`nuterm` (35 cells) -- three layers, and it is item 8's problem.**
       `_farkas.read_system` seeds `z3.Int` per wire, `affine_coeffs` fits by
