@@ -380,18 +380,48 @@ def test_both_namings_are_asked_and_each_is_told_the_whole_budget(tmp_path):
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def test_a_real_component_is_refused_by_name():
-    """Vampire reads reals, but the templates here are integer intervals
-    and integer coefficients -- so this route takes the same gate `--infer
-    smt-linear` does, before anything is stated."""
-    with pytest.raises(Refused, match="s0 is Real"):
-        derive("m_lra_lin", "buchi", "(= s0 0.0)", vampire="/nowhere")
+def test_a_real_component_reaches_the_templates():
+    """A Real column is bounded by an interval with *integer* endpoints.
+
+    The coefficients stay integers because Vampire reports an answer as a
+    literal and this route reads an integer one, but `0 <= s0 <= 9` is a
+    true and useful thing to say about a rational column -- so the sorts
+    gate lets it through and the search decides, rather than the gate.
+    Getting as far as looking for the prover is getting past both gates.
+    """
+    from zrth.lean.magic.vampire import TA2MagicVampire, template
+    from zrth.lean.smt_synth import SynthContext
+
+    magic = TA2MagicVampire(module_at(LIMITS / "m_lra_lin.py"),
+                            vampire="/nowhere", log=lambda *_: None)
+    ctx = SynthContext.build(magic.module,
+                             CertificateData(prp="(= s0 0.0)", kind="buchi"),
+                             route="vampire",
+                             takes=("int", "bool", "bv", "real", "tuple"))
+    magic._check_sorts(ctx)                  # the gate that used to refuse it
+    tpl = template(ctx, "intervals", ranked=True)
+    assert [r.smt for r in tpl.rows] == ["s0"]
 
 
 def test_a_bitvector_state_is_refused_by_name():
-    with pytest.raises(Refused, match="states its obligations over integers"):
+    """A Real is arithmetic and a bitvector is not: a template row `<=` one
+    nowhere, and reading it as `ubv_to_int` would put wraparound into a
+    shape that has no word for it."""
+    with pytest.raises(Refused, match="states its obligations over numbers"):
         derive("twobit", "buchi", "(and (= s0 (_ bv0 1)) (= s1 (_ bv0 1)))",
                fixture=FIXTURES, vampire="/nowhere")
+
+
+def test_a_bool_component_is_still_refused_and_says_why():
+    """`ite` is the one thing this route cannot print.
+
+    A Bool column's arithmetic reading is `(ite b 1 0)`, and `refuse_ites`
+    rejects any question holding one -- measured: a conditional in the goal
+    defeats the answer-literal search. So a Bool is not a wiring problem
+    here the way a Real was; it needs a template shape of its own.
+    """
+    with pytest.raises(Refused, match="is Bool"):
+        derive("m_boolint", "safety", "(>= s1 0)", vampire="/nowhere")
 
 
 def test_the_templates_are_tried_smallest_first():

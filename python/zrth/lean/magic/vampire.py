@@ -42,9 +42,23 @@ perfectly well and never answers.
 inlining the same arithmetic is an answer.  So the successor state is
 substituted into the obligation, once per branch.
 
-**Integer state.**  Vampire reads reals, but the templates below are integer
-intervals and integer coefficients, and a Real component would need the
-value-set shape that `--infer houdini` carries.  Refused by name.
+**Arithmetic state.**  An `Int` or a `Real` component, or a matrix of
+either; a Bool or a bitvector is refused by name, because a template row
+``<=`` one nowhere.  The coefficients stay integers whatever the column --
+Vampire reports an answer as a literal and this route reads an integer one
+-- so a Real column gets an interval with *integer* endpoints, which is a
+restriction on reach and not on soundness: `0 <= s0 <= 9` is a true and
+useful thing to say about a tank level, and every answer is put back to
+cvc5 against the module's own encoding before it is emitted.
+
+The rank is the one place a Real cannot stay one, because ``hrank`` lands
+in ``Nat``.  There a Real column is read as ``to_int`` of itself scaled by
+the module's least common denominator -- the reading `--infer smt-linear`
+ranks one by, for the reason it has: a quantity that falls by less than one
+need not floor to anything smaller.  So the two halves of a Buchi
+certificate read the same column differently, the invariant keeping its
+rationals and the rank flooring them, which is what
+`smt_synth.component_readings`'s ``floor_reals`` is the general form of.
 
 cvc5 writes the question
 ========================
@@ -148,10 +162,19 @@ from ..houdini_solver import (
     DEFAULT_TIMEOUT,
     Cvc5Solver,
     _kill_group,
+    decimals,
 )
 from . import TA2Magic
 from .houdini import Candidate, Obligations, columns
-from ..smt_synth import SynthContext, program_constants, smt_int
+from ..smt_synth import (
+    SynthContext,
+    denominator_scale,
+    floor_real,
+    floor_real_src,
+    program_constants,
+    program_rationals,
+    smt_int,
+)
 
 try:
     import cvc5                                      # type: ignore
@@ -261,13 +284,21 @@ _CONJECTURE = "(assert-not {})\n(check-sat)\n"
 def script_for(conjecture) -> str:
     """One cvc5 term as a whole SMT-LIB problem for Vampire.
 
+    Through `decimals`, which is the one rewrite cvc5's printing needs
+    before Vampire reads it: a rational prints as `(/ 1 2)`, whose
+    arguments are Int, and Vampire's SMT-LIB front end sorts literals
+    strictly enough to call that "invalid sort $int for interpretation /".
+    `houdini_solver` has said so since it began passing its own scripts
+    through the same function; this one did not, and nothing noticed while
+    the sorts gate refused every module with a rational in it.
+
     The term *is* the question, so cvc5 prints it and this adds the two
     lines around it. There is no printer here on purpose: the obligations
     are cvc5 terms the module's own encoding produced, and every printer
     between them and the prover is a chance to state something other than
     what was encoded.
     """
-    return _PRELUDE + _CONJECTURE.format(conjecture)
+    return _PRELUDE + decimals(_CONJECTURE.format(conjecture))
 
 
 def refuse_ites(term) -> None:
@@ -457,31 +488,67 @@ class Question:
         self.vars = self.state + self.inputs
         self.holes: dict = {}
         self.window = window_for(ctx)
+        # What a Real column is multiplied by before the rank floors it.
+        # 1 for a module with no rationals in it, which is every module this
+        # route took before it read them.
+        self.scale = denominator_scale(program_rationals(ctx))
 
     # --- the template, as a term over a state ----------------------------
 
     def _hole(self, name: str):
-        """The variable standing for one coefficient, made once per name."""
+        """The variable standing for one coefficient, made once per name.
+
+        Always an integer, whatever the column it bounds. Vampire reports an
+        answer as a literal and `_number` reads an integer one, so a Real
+        hole would come back as a rational this route cannot carry -- and an
+        integer endpoint on a rational column is still a true statement about
+        it. `_fit` is what makes the sorts agree.
+        """
         if name not in self.holes:
             self.holes[name] = self.tm.mkVar(self.tm.getIntegerSort(), name)
         return self.holes[name]
+
+    def _fit(self, hole, body):
+        """`hole` in `body`'s arithmetic, so the printed question is sorted.
+
+        cvc5 coerces an `Int` against a `Real` silently and prints `(<= A
+        x)`, which is well sorted only if the reader coerces too. Vampire's
+        SMT-LIB front end is the reader, and the one thing this module has
+        learned about it is not to find out: `to_real` is written down.
+        """
+        return (self.tm.mkTerm(Kind.TO_REAL, hole)
+                if body.getSort().isReal() else hole)
 
     def _rows(self, tpl: Template, at: list):
         """`tpl` read at `at`, which is one term per component."""
         out = []
         for row in tpl.rows:
             body = row.term(self.tm, at)
-            out += [self.tm.mkTerm(Kind.LEQ, self._hole(row.lo), body),
-                    self.tm.mkTerm(Kind.LEQ, body, self._hole(row.hi))]
+            out += [self.tm.mkTerm(Kind.LEQ, self._fit(self._hole(row.lo), body),
+                                   body),
+                    self.tm.mkTerm(Kind.LEQ, body,
+                                   self._fit(self._hole(row.hi), body))]
         return self._and(out)
 
     def _rank(self, tpl: Template, at: list):
-        """`Rc + R0*s0 + ... `, the rank with its coefficients left open."""
+        """`Rc + R0*s0 + ... `, the rank with its coefficients left open.
+
+        Over the *floored* columns: `hrank` lands in `Nat`, so a Real column
+        is read as `to_int` of itself scaled by the module's least common
+        denominator -- the same reading `--infer smt-linear` ranks one by,
+        and for the same reason, that a quantity falling by less than one
+        need not floor to anything smaller. The invariant rows above keep
+        their rationals; only the rank has to be an integer.
+        """
         out = self._hole(tpl.rank[-1])
-        for c, v in zip(tpl.rank, at):
+        for c, v in zip(tpl.rank, self.ranked_cols(at)):
             out = self.tm.mkTerm(Kind.ADD, out,
                                  self.tm.mkTerm(Kind.MULT, self._hole(c), v))
         return out
+
+    def ranked_cols(self, at: list) -> list:
+        """`at` with every Real column floored, in column order."""
+        return [floor_real(self.tm, v, self.scale) for v in at]
 
     def _and(self, parts):
         kept = [p for p in parts
@@ -891,7 +958,7 @@ class TA2MagicVampire(TA2Magic):
         # as an integer -- Real, bitvector, matrix-shaped -- before anything
         # here is printed, which is the same gate `--infer smt-linear` uses.
         ctx = SynthContext.build(self.module, cd, route="vampire",
-                                 takes=("int", "bool", "bv", "tuple"))
+                                 takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx
         self.width = len(columns(ctx))
@@ -899,9 +966,15 @@ class TA2MagicVampire(TA2Magic):
         entry = split(ctx, ob.init, "the initial state")
         step = split(ctx, ob.next, "the round")
         q = Question(ctx, ob, entry, step)
+        # The question owns the scale; `_read_back` prints the same floor it
+        # put in the conjecture, so there is one of them and not two.
+        self.scale = q.scale
         self.log(f"[vampire] {len(step)} branch(es) of the round, "
                  f"{len(entry)} of the initial state, "
                  f"{self.width} column(s)")
+        if self.scale != 1:
+            self.log(f"[vampire] Real column(s): the rank reads them "
+                     f"through a floor after scaling by {self.scale}")
 
         asker = Answers(self.exe, seconds=self.timeout, log=self.log)
         derive = self._safety if cd.is_safety else self._ranked
@@ -1009,8 +1082,12 @@ class TA2MagicVampire(TA2Magic):
         # A coefficient of one is the column itself: `(* 1 s0)` is what the
         # template says and `s0` is what the certificate should read. The
         # columns come off the rows, which carry how each is written, so a
-        # rank over an element says `((_ tuple.select k) s0)`.
-        reads = [row.reads[0] for row in tpl.rows if len(row.reads) == 1]
+        # rank over an element says `((_ tuple.select k) s0)` -- and a Real
+        # one says `(to_int ...)`, the same floor `_rank` put in the
+        # question, because `hrank` lands in `Nat`.
+        cols = columns(self.ctx)
+        reads = [floor_real_src(row.reads[0], cols[i].sort, self.scale)
+                 for i, row in enumerate(tpl.rows) if len(row.reads) == 1]
         terms = [reads[i] if named[c] == 1
                  else f"(* {smt_int(named[c])} {reads[i]})"
                  for i, c in enumerate(tpl.rank[:-1]) if named[c]]
@@ -1054,40 +1131,51 @@ class TA2MagicVampire(TA2Magic):
     # --- reading the module -----------------------------------------------
 
     def _check_sorts(self, ctx: SynthContext) -> None:
-        """Every component an integer variable, not merely readable as one.
+        """Every component an arithmetic variable, not merely readable as one.
 
-        `SynthContext` lets a bitvector through -- it has an integer
-        *reading*, its unsigned value, which is what `--infer smt-linear`
-        weighs it by -- but the terms are still bitvector operations, and
-        the templates below are integer intervals with integer coefficients
-        that `<=` a bitvector nowhere. Met here, by sort, rather than as a
-        sort error out of cvc5 four steps later.
+        `SynthContext` lets a bitvector and a Bool through -- both have an
+        integer *reading*, an unsigned value and `0`/`1`, which is what
+        `--infer smt-linear` weighs them by -- but the terms are still
+        bitvector and Bool operations, and a template row `<=` one nowhere.
+        Met here, by sort, rather than as a sort error out of cvc5 four
+        steps later.
+
+        A **Real** is arithmetic and is let through. An interval with
+        integer endpoints is a perfectly good statement about a rational
+        column -- `0 <= s0 <= 9` says something true and useful about a
+        tank level -- and the rank, which does have to land in `Nat`, reads
+        such a column through a floor. What the endpoints cannot be is
+        fractional, and that is a restriction on what this route reaches
+        rather than a soundness question: every answer is put back to cvc5
+        against the module's own encoding by `_checks_out` before anything
+        is emitted.
         """
-        def integral(s) -> bool:
-            """An integer, or a matrix of them -- a column apiece either way.
+        def arithmetic(s) -> bool:
+            """A number, or a matrix of them -- a column apiece either way.
 
             A matrix-shaped component is bounded and ranked element by
-            element, and every element of one is an integer variable in the
-            obligation, so what has to hold of a component holds of its
+            element, and every element of one is an arithmetic variable in
+            the obligation, so what has to hold of a component holds of its
             elements instead.
             """
             if s.isTuple():
-                return all(e.isInteger() for e in s.getTupleSorts())
-            return s.isInteger()
+                return all(e.isInteger() or e.isReal() for e in s.getTupleSorts())
+            return s.isInteger() or s.isReal()
 
         bad = [f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
-               if not integral(s)]
+               if not arithmetic(s)]
         bad += [f"{c} is {c.getSort()}"
                 for c in list(ctx.extl_next) + list(ctx.extl_latched)
-                if not integral(c.getSort())]
+                if not arithmetic(c.getSort())]
         if bad:
             raise Refused(
-                f"--infer vampire states its obligations over integers, "
+                f"--infer vampire states its obligations over numbers, "
                 f"which is what its templates bound, and this module has "
                 f"{', '.join(bad)}. `--infer houdini` states them in SMT-LIB "
                 f"-- still not bitvectors, but it says so of the candidate "
                 f"shapes rather than of the templates; `--infer smt-linear` "
-                f"weighs a bitvector as its unsigned value."
+                f"weighs a bitvector as its unsigned value and a Bool as "
+                f"0/1."
             )
 
     # --- out ---------------------------------------------------------------

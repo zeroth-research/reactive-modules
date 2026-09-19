@@ -341,6 +341,31 @@ def component_readings(ctx: "SynthContext", i: int, *, scale: int = 1,
     return out
 
 
+def floor_real(tm, term, scale: int = 1):
+    """`term` as an integer if it is a Real, and itself if it is not.
+
+    The reading :func:`component_readings` gives a Real under
+    `floor_reals`, for a caller that holds the term rather than the
+    component -- `magic.vampire` floors a column it has already built for
+    the rank while the same column keeps its rationals in the invariant
+    rows. :func:`floor_real_src` is the other half, the SMT-LIB a
+    certificate carries; the two have to say the same thing, so they are
+    written next to each other.
+    """
+    if not term.getSort().isReal():
+        return term
+    inner = (term if scale == 1
+             else tm.mkTerm(Kind.MULT, tm.mkReal(scale, 1), term))
+    return tm.mkTerm(Kind.TO_INTEGER, inner)
+
+
+def floor_real_src(src: str, sort, scale: int = 1) -> str:
+    """:func:`floor_real`, as the SMT-LIB a certificate carries."""
+    if not sort.isReal():
+        return src
+    return f"(to_int {src if scale == 1 else f'(* {scale}.0 {src})'})"
+
+
 def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
              scale: int = 1, floor_reals: bool = True) -> list[Reading]:
     """The columns `route` weighs this module by, or why one component is not.
