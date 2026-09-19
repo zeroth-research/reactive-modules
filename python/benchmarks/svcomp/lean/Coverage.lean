@@ -52,7 +52,7 @@ Every generated `cellRdD_refute` lemma has the same shape: from the region's
 `farkas_sound` infeasibility `hinf : ¬ (A *ᵥ s ≤ᵥ b)` and the guard/invariant
 and sign hypotheses, conclude `¬ (row₁ ∧ … ∧ rowₖ)` for the rows of one disjunct
 of the rule's negation. The proof is mechanical and identical save for the names
-involved, so it lives here once instead of being re-emitted per disjunct:
+involved, so it lives here once and every disjunct cites it:
 
   - assume the disjunct's rows;
   - feed `hinf` the full row system; `simp only` unfolds the matrix product

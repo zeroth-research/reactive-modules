@@ -140,7 +140,7 @@ def infer_invariants(system, timeout_ms: int = 2000) -> list[Guess]:
 
     The transition and the entry state are read off ``system``, which is one walk
     of the module shared with the verifier, so nothing here reads the program itself,
-    and consecution ranges over every step rather than over a loop guard: an
+    and consecution ranges over every step of the module, so an
     invariant is a fact about the module, not about any claim made of it. For a
     module that stutters when its program is done the two agree, since a stutter
     preserves any state predicate."""

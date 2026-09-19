@@ -16,7 +16,7 @@ Lean core only.
 
 inductive LTLFormula {State : Type} where
   | AP    : (State → Prop) → LTLFormula            -- atomic proposition over a state
-  | APₛ   : (State → State → Prop) → LTLFormula    -- atomic proposition over a step (our addition)
+  | APₛ   : (State → State → Prop) → LTLFormula    -- atomic proposition over a step
   | Next  : LTLFormula → LTLFormula
   | Until : LTLFormula → LTLFormula → LTLFormula
   | Or    : LTLFormula → LTLFormula → LTLFormula
