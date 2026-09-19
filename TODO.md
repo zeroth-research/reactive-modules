@@ -446,8 +446,20 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     manifest, the teardown. Anyone estimating from `results.json`'s own
     timings will be out by a factor of three.
 
-    One column of it is done as a by-product of that sizing:
-    `smt-linear` x hybrid, 26 cells, **`NO-CERT` on all 26**.
+    **hybrid is measured, and the answer is not "blank" but "out of
+    reach".** All 234 cells -- 26 rows over 9 routes -- and **not one
+    `VERIFIED`**: 178 `NO-CERT`, 37 `UNSUPPORTED`, 12 `REFUTED`, 7
+    `PROOF-FAIL`. petri, running next, verifies from the start, so the
+    shutout is about hybrid's **Real dynamics** rather than about the suites
+    being new -- every route's Real limitation bites at once, and the page
+    should say that rather than show emptiness.
+
+    The soundness check passes on the new cells: **all 14 `REFUTED` land on
+    a row declared `fails`, none on a row declared `holds`.** That is worth
+    more than usual here, because these are the two suites whose `truth` is
+    *measured* by `test_rows.py` rather than transcribed -- nine independent
+    routes agreeing with the simulator is evidence the declarations are
+    right, in the one family where 20's refutation rule is calibrated.
 
 19. **houdini and houdini-vampire agree on every verdict on the 37 rows both
     ran** (0 of 37 differ), so the split has so far produced none of the
