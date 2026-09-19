@@ -1,25 +1,23 @@
-"""Verify a ranking function against a program module (termination obligation).
+"""The termination client: a program module, a ranking function, and the claim
+that ties them together.
 
-Here we discharge the *ranking* obligation: given integer NRF layers
-V, that `V(s) >= 0` and `V(s) - V(s') >= delta` on every round the claim
-counts, where s' = T(s) is the module's transition.
-
-One module, a property over its wires
-=====================================
-The program and V are composed into one module and read together: V once as a
-sequential atom reading the latched state (its wire carries V(s)) and once as a
-combinatorial atom awaiting the next state (V(s')). The property is
-``terminates()`` over the program's columns and the witness is
-``decrease(V(s) wire, V(s') wire, δ)`` — a linear predicate over two wires of the
-graph. Nothing distinguishes program from rank except what the property names.
+A ranking function is a network with integer weights. It is composed into the
+program as two ordinary atoms and read as one module: once as a sequential atom
+over the latched state, so its wire carries ``V(s)``, and once as a
+combinatorial atom awaiting the next state, so its wire carries ``V(s')``. The
+claim is :func:`terminates`, a :class:`._property.Liveness` over the program's
+columns, and the witness is ``decrease(V(s) wire, V(s') wire, delta)``, a linear
+predicate over those two wires. Nothing distinguishes program from ranking
+function except which wires the witness names.
 
 Interface
 =========
-:func:`system_of` reads the program module once; :func:`compose` adds the rank
-as two atoms and returns the composed system with the witness that names them;
-:func:`terminates` is this client's claim. Certifying is the procedure's own
-``certify(system, claim, witness)``, and the trainer accepts the first candidate
-it certifies. Nothing here verifies anything itself.
+:func:`system_of` reads a benchmark's program module once. :func:`prove_invariants`
+certifies the invariants Houdini finds as one Safety claim. :func:`compose` adds
+the ranking function as two atoms and returns the composed system with the witness
+that names them. :func:`terminates` is this client's claim. Certifying is the
+procedure's own ``certify(system, claim, witness)``; nothing here verifies
+anything itself.
 """
 
 from __future__ import annotations
@@ -116,7 +114,7 @@ def system_of(bench: Bench) -> System:
 
 def prove_invariants(system: System):
     """The invariants Houdini finds for ``system``, certified as one Safety claim
-    with themselves as the inductive witness — the same route any safety property
+    with themselves as the inductive witness, the same route any safety property
     takes. ``None`` when there are none. Candidate-independent: the rank atoms add
     no column, so this is done once per program and assumed for every rank."""
     facts = infer_invariants(system)

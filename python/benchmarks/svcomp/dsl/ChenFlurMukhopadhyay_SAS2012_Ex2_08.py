@@ -1,4 +1,4 @@
-"""ChenFlurMukhopadhyay-SAS2012-Ex2.08 — scalar-mul in x update.
+"""ChenFlurMukhopadhyay-SAS2012-Ex2.08: scalar-mul in x update.
 
     int x, y;
     x = __VERIFIER_nondet_int();

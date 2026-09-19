@@ -1,4 +1,4 @@
-"""ChenFlurMukhopadhyay-SAS2012-Ex2.01 — archetype of the ChenFlur cluster.
+"""ChenFlurMukhopadhyay-SAS2012-Ex2.01: archetype of the ChenFlur cluster.
 
     int x, y;
     x = __VERIFIER_nondet_int();

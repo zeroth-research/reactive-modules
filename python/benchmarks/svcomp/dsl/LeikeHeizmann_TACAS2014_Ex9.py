@@ -1,4 +1,4 @@
-"""LeikeHeizmann-TACAS2014-Ex9 — nested if/else, three-conjunct guard.
+"""LeikeHeizmann-TACAS2014-Ex9: nested if/else, three-conjunct guard.
 
     int p, q;
     q = __VERIFIER_nondet_int();

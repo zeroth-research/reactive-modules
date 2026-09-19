@@ -1,4 +1,4 @@
-"""NoriSharma-FSE2013-Fig7 — two-disjunct guard, ghost/parameter variables.
+"""NoriSharma-FSE2013-Fig7: two-disjunct guard, ghost/parameter variables.
 
     int a, b, c, i, j, M, N;
     i = __VERIFIER_nondet_int();

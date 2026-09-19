@@ -1,7 +1,7 @@
 import Matrix
 
 /-!
-Integer ReLU networks over the `Matrix` substrate — the proof-side network the
+Integer ReLU networks over the `Matrix` substrate: the proof-side network the
 V-lift reasons about.
 
 Unlike a `Float` model, every value is an exact `Int`, and the linear algebra is
@@ -51,7 +51,7 @@ theorem reluᵥ_eq_mask {n : Nat} (p : Vector n Bool) (v : Vector n Int)
   · rw [if_pos h]; exact relu_of_nonneg ((hp i).1 h)
   · rw [if_neg h]; exact relu_of_nonpos ((hp i).2 (by simp_all))
 
-/-- Vector addition — a layer's bias. -/
+/-- Vector addition, a layer's bias. -/
 def addᵥ {n : Nat} (x y : Vector n Int) : Vector n Int := fun i => x i + y i
 
 infixl:65 " +ᵥ " => addᵥ

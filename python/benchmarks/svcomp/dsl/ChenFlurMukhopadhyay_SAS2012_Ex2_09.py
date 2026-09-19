@@ -1,4 +1,4 @@
-"""ChenFlurMukhopadhyay-SAS2012-Ex2.09 — three nondet vars, param `n`.
+"""ChenFlurMukhopadhyay-SAS2012-Ex2.09: three nondet vars, param `n`.
 
     int x, y, n;
     x = __VERIFIER_nondet_int();
@@ -10,7 +10,7 @@
     }
 
 Notes:
-  - `n` is a nondet parameter, read in the guard, never written — held as ctrl.
+  - `n` is a nondet parameter, read in the guard, never written, held as ctrl.
 """
 
 from __future__ import annotations

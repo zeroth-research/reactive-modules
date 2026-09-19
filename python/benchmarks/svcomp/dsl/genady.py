@@ -1,4 +1,4 @@
-"""genady — constant-initialised, no nondet inputs (closed program).
+"""genady: constant-initialised, no nondet inputs (closed program).
 
     int i, j;
     j = 1;
