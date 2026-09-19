@@ -448,12 +448,12 @@ def _tiling_tree(pcert, invariants, s_syms):
     Splitting on ``0 < unitⱼ`` in turn narrows which regions a branch can still be
     in, and a branch is finished as soon as the literals taken so far *entail* some
     region's sign rows, checked here, so the ``omega`` the leaf emits is known to
-    succeed. Entailment rather than a pattern match is the leaf test because a
-    branch can settle a region before every literal is taken, and because the
-    guard may imply signs no literal has fixed.
+    succeed. The leaf test is entailment, because a branch can settle a region
+    before every literal is taken, and because the guard may imply signs no
+    literal has fixed.
 
     z3 also prunes: a branch no guarded state satisfies becomes ``dead``, which
-    keeps the tree the size of the region set instead of ``2^units``.
+    keeps the tree the size of the region set, well under ``2^units``.
 
     Returns ``("split", lean_literal, yes, no)``, ``("cell", index)`` or
     ``("dead",)``; raises :class:`_Drop` if a live branch runs out of literals
@@ -506,16 +506,16 @@ def _disjunct(i: int, total: int) -> tuple[str, str]:
 
 def _emit_tiling_tree(reps, tree, of_region, depth: int = 1) -> str:
     """The coverage case split, as a decision tree over the hidden units' sign
-    literals rather than one ``omega`` over the whole disjunction.
+    literals.
 
     ``omega`` decides a conjunctive goal in time linear in its facts, but the flat
     tiling goal ``⋁ᵢ cellᵢ_signs`` negates into a clause per region, and the case
-    split across those clauses grows exponentially in the number of regions: 12
-    already exhaust the elaborator's budget. Splitting on the sign literals
-    instead reaches, at each leaf, an assignment that names one region, so every
-    ``omega`` sees a conjunction: the accumulated literals entailing that region's
-    sign rows. The tree is built with the guard in hand, so a branch no state can
-    satisfy is closed rather than explored (see :func:`_tiling_tree`)."""
+    split across those clauses grows exponentially in the number of regions, and
+    a dozen exhausts the elaborator's budget. Splitting on the sign literals
+    reaches, at each leaf, an assignment that names one region, so every ``omega``
+    sees a conjunction: the accumulated literals entailing that region's sign
+    rows. The tree is built with the guard in hand, so a branch no state can
+    satisfy is closed on the spot (see :func:`_tiling_tree`)."""
     pad = "  " * depth
     kind = tree[0]
     if kind == "cell":
@@ -1137,7 +1137,7 @@ class Invariant:
 
 
 # How each witness's evidence reaches its claim, in one place. A witness absent
-# here is refused by name rather than emitted under another's rule. A rule says
+# here is refused by name, and never emitted under another's rule. A rule says
 # which claim kind it concludes (``discharges``), where its witness keeps its
 # invariant (``invariant``), what it defines before the module (``prelude``),
 # what it wants from each path (``evidence``), how the claim is stated

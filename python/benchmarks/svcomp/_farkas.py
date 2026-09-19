@@ -19,7 +19,7 @@ The method
 A wire behind a piecewise-linear node is affine once that node's **mode** is
 fixed: a ReLU is the identity or zero according to the sign of its input. A
 **region** fixes the mode of every node the rule's wires read through, strictly
-(``> 0`` active, ``<= 0`` inactive), so regions partition rather than overlap,
+(``> 0`` active, ``<= 0`` inactive), so regions partition the guard,
 and over one region every named wire is a single affine function of the columns.
 
 The rule's negation is cut into **disjuncts** of linear rows (:func:`_dnf`), and
@@ -208,7 +208,7 @@ def affine_coeffs(expr, syms):
     fit. Trusting it would certify the decrease of the wrong (linearised)
     transition. The fit is therefore verified: the reconstructed form must equal
     ``expr`` on all inputs (z3-valid). Only a genuinely affine ``expr`` passes;
-    anything else is rejected here rather than certified downstream."""
+    anything else is rejected here, before it can be certified downstream."""
     zeros = [(s, z3.IntVal(0)) for s in syms]
     beta = _int(z3.substitute(expr, *zeros))
     alpha = []
@@ -279,7 +279,7 @@ def _not_and_alts(atom):
 
 # Predicate kinds the domain splitter knows. A kind maps an atom to disjoint
 # alternatives whose union is the atom, or ``None`` if it does not apply, so a
-# new kind is an entry here rather than a new splitter.
+# new kind is one entry here.
 PRED_MODES = (_or_alts, _ne_alts, _implies_alts, _not_and_alts)
 
 
@@ -645,7 +645,7 @@ def read_system(module, names=()) -> System:
 
     Wires are scalar integers: a symbol per wire is what the rows, the regions
     and the proof's ``Vector n Int`` state quantify over, so anything else is
-    refused here by name rather than read element by element."""
+    refused here by name."""
     all_pairs = tuple(tuple(pr) for pr in module.ctrl)
     inputs = tuple(tuple(pr) for pr in module.extl)
     for w in (w for pr in all_pairs + inputs for w in pr):
@@ -1041,7 +1041,7 @@ def check_supported(system: System) -> None:
 
     Checked before any work so the interior can assume its preconditions. The
     alternative, proceeding with whatever it happens to understand, reports a
-    proof that will not close rather than the thing it could not use."""
+    proof that will not close, and the reason stays hidden."""
     names = [str(s) for s in system.s_syms]
     for name, e in zip(names, system.sp_syms):
         extra = free_symbols(e) - set(names)
