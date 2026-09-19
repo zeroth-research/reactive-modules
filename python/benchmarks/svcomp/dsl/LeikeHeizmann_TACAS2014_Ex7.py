@@ -1,4 +1,4 @@
-"""LeikeHeizmann-TACAS2014-Ex7 — negation of a variable each iteration.
+"""LeikeHeizmann-TACAS2014-Ex7: negation of a variable each iteration.
 
     int q, z;
     q = __VERIFIER_nondet_int();

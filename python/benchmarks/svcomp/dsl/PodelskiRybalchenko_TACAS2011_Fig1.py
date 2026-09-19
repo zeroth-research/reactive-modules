@@ -1,4 +1,4 @@
-"""PodelskiRybalchenko-TACAS2011-Fig1 — single-variable countdown.
+"""PodelskiRybalchenko-TACAS2011-Fig1: single-variable countdown.
 
     int y;
     y = __VERIFIER_nondet_int();

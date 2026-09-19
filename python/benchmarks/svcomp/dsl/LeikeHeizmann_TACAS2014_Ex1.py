@@ -1,4 +1,4 @@
-"""LeikeHeizmann-TACAS2014-Ex1 — if/else body branching on a second variable.
+"""LeikeHeizmann-TACAS2014-Ex1: if/else body branching on a second variable.
 
     int q, y;
     q = __VERIFIER_nondet_int();

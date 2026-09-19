@@ -1,6 +1,6 @@
 """A decision procedure over a reactive module: Farkas-certified regions (CEGAR).
 
-Given a :class:`System` — a module read once, by :func:`read_system` — a claim
+Given a :class:`System`, a module read once by :func:`read_system`, plus a claim
 over it and a witness, :func:`certify` proves the witness's obligation on every
 round of the claim's domain: one boolean formula over the graph's *wires*. The
 formula names wires (``W[wire]``) and columns (``S[name]``, ``S.next[name]``); it
@@ -27,7 +27,7 @@ each row is then linear in the columns alone.
 
 Over a region each disjunct is a linear infeasibility, discharged by proving
 ``region ∧ domain ∧ invariants ∧ disjunct`` infeasible via Farkas' lemma (over
-z3's exact LRA) — an exact, checkable integer certificate (the multipliers ``y``:
+z3's exact LRA), giving an exact, checkable integer certificate (the multipliers ``y``:
 ``y >= 0``, ``Aᵀy = 0``, ``b·y < 0``). Every disjunct refuted is the rule proved
 on the region. CEGAR finds the regions: an uncovered state names one by its
 pinned pattern; certifying and blocking it until none is left is the coverage
@@ -68,20 +68,20 @@ def _relu_region(e, mode):
 # This procedure's vocabulary: what it understands of the theory's operations, in
 # one place. An itype absent here is refused by :func:`._nodes.node_view`; a kind
 # with neither a cell rule nor a case split is one Z3 cannot read either, so the
-# walk refuses it too — a test pins that those are the only such kinds.
+# walk refuses it too; a test pins that those are the only such kinds.
 # Adding support for an operation is an entry here and nothing else.
 OPS = {
-    # affine arithmetic — evaluated straight through
+    # affine arithmetic, evaluated straight through
     "LIA_Linear": Op(), "LIA_Add": Op(), "LIA_Sub": Op(), "LIA_Const": Op(),
     "LIA_Id": Op(), "LIA_Transpose": Op(),
-    # boolean structure — z3 handles it, and PRED_MODES splits what the LP cannot
+    # boolean structure: z3 handles it, and PRED_MODES splits what the LP cannot
     "LIA_And": Op(), "LIA_Or": Op(), "LIA_Xor": Op(), "LIA_Not": Op(),
     "LIA_Le": Op(), "LIA_Lt": Op(), "LIA_Ge": Op(), "LIA_Gt": Op(),
     "LIA_Eq": Op(), "LIA_Ne": Op(),
     # piecewise-linear
     "LIA_ReLU": Op("relu", mode=ModeKind(_relu_at, _relu_region)),
     "LIA_Ite": Op("ite", split=True),
-    # recognised, no cell rule — and no Z3 translation either, so the walk refuses
+    # recognised, no cell rule, and no Z3 translation either, so the walk refuses
     # a module carrying one by name
     "LIA_Min": Op("min"),
     "LIA_Max": Op("max"),
@@ -99,7 +99,7 @@ class Net:
     ``units`` is each ReLU's pre-activation as ``(coeffs, const)`` over the state
     columns; ``out`` is ``(coeffs, const)`` from the unit outputs to ``V``, so
     ``V = sum_j out_c[j] * relu(unit_j) + out_k``. Both are read off the graph by
-    :func:`reading`, so unit count and wiring are not assumed — only that every
+    :func:`reading`, so unit count and wiring are not assumed, only that every
     pre-activation is affine in the columns and ``V`` is affine in the unit
     outputs."""
     units: tuple
@@ -198,7 +198,7 @@ def _int(e) -> int:
 
 
 def affine_coeffs(expr, syms):
-    """(alpha, beta) with ``expr == sum(alpha_k * syms_k) + beta`` — by 0/1
+    """(alpha, beta) with ``expr == sum(alpha_k * syms_k) + beta``, by 0/1
     substitution. Raises ``ValueError`` if ``expr`` is not integer-affine over
     ``syms``.
 
@@ -206,9 +206,9 @@ def affine_coeffs(expr, syms):
     an ``ite`` from an in-loop branch, ``ite(x>0, x-1, x+1)``) evaluates to a
     constant at each integer sample, so sampling silently returns a bogus linear
     fit. Trusting it would certify the decrease of the wrong (linearised)
-    transition. So we verify the fit: the reconstructed form must equal ``expr``
-    on all inputs (z3-valid). Only a genuinely affine ``expr`` passes; anything else is rejected here rather than certified
-    downstream."""
+    transition. The fit is therefore verified: the reconstructed form must equal
+    ``expr`` on all inputs (z3-valid). Only a genuinely affine ``expr`` passes;
+    anything else is rejected here rather than certified downstream."""
     zeros = [(s, z3.IntVal(0)) for s in syms]
     beta = _int(z3.substitute(expr, *zeros))
     alpha = []
@@ -278,7 +278,7 @@ def _not_and_alts(atom):
 
 
 # Predicate kinds the domain splitter knows. A kind maps an atom to disjoint
-# alternatives whose union is the atom, or ``None`` if it does not apply — so a
+# alternatives whose union is the atom, or ``None`` if it does not apply, so a
 # new kind is an entry here rather than a new splitter.
 PRED_MODES = (_or_alts, _ne_alts, _implies_alts, _not_and_alts)
 
@@ -300,7 +300,7 @@ _FLIP = {">=": "<", "<=": ">", ">": "<=", "<": ">=", "==": None}
 
 def atom_rows(atom, syms):
     """Integer rows ``A·s <= b`` for a single linear atom, or ``[]`` if it is not
-    a linear half-space (disjunction / != / boolean / nonlinear — soundly skipped).
+    a linear half-space (disjunction / != / boolean / nonlinear, soundly skipped).
     Strict inequalities are integer-tightened."""
     a = atom
     neg = False
@@ -425,7 +425,7 @@ class CellCert:
     ``pattern`` is the mode of every node the named wires read through, which is
     what defines the region. ``disjunct`` indexes the rule's disjuncts.
     ``affines`` gives, per device, the ``(coeffs, const)`` of its value on this
-    region over the state columns — the right-hand sides of the emitted collapse
+    region over the state columns: the right-hand sides of the emitted collapse
     lemmas."""
     A: tuple
     b: tuple
@@ -475,7 +475,7 @@ class PathCert:
     guard strengthened by the branch literals taken along the path), its affine
     next-state ``body`` (z3 exprs over the pre-state symbols), and the per-cell
     certificates on it. The paths partition the loop guard, so the union of their
-    ``Step`` relations is the loop's transition — hence a property of every path's
+    ``Step`` relations is the loop's transition, hence a property of every path's
     steps is a property of the program's.
 
     ``device_units`` holds, per named wire, its nodes' pre-activations at this
@@ -504,7 +504,7 @@ def _find_ite_cond(e):
 
 
 def _select(e, cond, truth: bool):
-    """``e`` with ``cond`` pinned to ``truth`` — every ``ite(cond, ..)`` collapses
+    """``e`` with ``cond`` pinned to ``truth``, so every ``ite(cond, ..)`` collapses
     to its taken branch (substitute the condition, then simplify)."""
     return z3.simplify(z3.substitute(e, (cond, z3.BoolVal(truth))))
 
@@ -536,17 +536,17 @@ class System:
     here is a value, so refining a system costs nothing and re-reads nothing.
 
     ``pairs`` are the *columns*: the ctrl pairs whose latched wire some term
-    reads. That is what a free input to the round is — a value the round depends
-    on and carries in — so it is the state the proofs quantify over. A latched
+    reads. That is what a free input to the round is, a value the round depends
+    on and carries in, so it is the state the proofs quantify over. A latched
     wire nothing reads (a ranking function's own previous value, composed
     alongside) is not a column; its next value is still a wire of the graph and
     a rule may name it. Nothing is classified by kind: only by data flow.
 
     ``W`` gives each ctrl next wire a symbol a rule's predicate can name; the
     engine resolves it, per region, to the wire's value at that round.
-    ``assume`` is what may be assumed of the entry state (a ``state_map ->
+    ``precondition`` is what may be assumed of the entry state (a ``state_map ->
     predicates`` callable, or ``None``) and ``invariants`` an over-approximation
-    of the reachable states. Both describe the module's state space, not any
+    of the reachable states, resolved from the proofs in ``invariant_proofs``. Both describe the module's state space, not any
     property of it. ``names`` is provenance only, defaulting to the wire ids."""
     module: object
     view: object
@@ -601,7 +601,7 @@ class System:
         :class:`Proof` of a :class:`._property.Safety` claim over these columns.
         The engine narrows a claim's obligation by them and the proof layer proves
         them in the same file and cites them, so what is assumed and what is proved
-        are one object. Anything else is refused by name — an assumption without a
+        are one object. Anything else is refused by name; an assumption without a
         proof has no place here."""
         for p in proofs:
             claim = getattr(p, "claim", None)
@@ -618,13 +618,13 @@ class System:
             if named:
                 raise Unsupported(
                     "knowing takes a proof of a claim over the columns; this one's "
-                    f"predicate names wire {named[0].id} — a fact about a computed wire "
+                    f"predicate names wire {named[0].id}: a fact about a computed wire "
                     "or about the next state is not a fact about a state")
         return dataclasses.replace(self, invariant_proofs=self.invariant_proofs + tuple(proofs))
 
     @property
     def invariants(self) -> tuple:
-        """The assumed facts as z3 over the columns, one conjunct each — what a
+        """The assumed facts as z3 over the columns, one conjunct each, which is what a
         claim's obligation may narrow its domain by."""
         out = []
         for p in self.invariant_proofs:
@@ -640,7 +640,7 @@ def read_system(module, names=()) -> System:
 
     Every latched ctrl wire is seeded with a symbol, and awaited inputs with
     theirs; the columns are the latched wires some update term actually reads.
-    ``names`` labels the columns — a tuple in column order, or a mapping from a
+    ``names`` labels the columns: a tuple in column order, or a mapping from a
     latched wire to its name.
 
     Wires are scalar integers: a symbol per wire is what the rows, the regions
@@ -678,7 +678,7 @@ def read_system(module, names=()) -> System:
 @dataclass(frozen=True)
 class Reading:
     """A ctrl next wire as a function of the round: its network over the atom's
-    inputs, and where each input comes from — ``("latched", k)`` the column
+    inputs, and where each input comes from: ``("latched", k)`` the column
     ``k``'s pre-state value, ``("next", k)`` its value after the step,
     ``("unread", k)`` a column the atom does not read. A wire with no ReLU behind
     it is a reading with no units, its ``out`` affine in the inputs."""
@@ -705,7 +705,7 @@ class Reading:
 
 
 def _affine_value(weights, args):
-    """``Σ cⱼ·argsⱼ + k`` for ``weights = (c, k)`` — a ReLU-free wire's value."""
+    """``Σ cⱼ·argsⱼ + k`` for ``weights = (c, k)``, a ReLU-free wire's value."""
     c, k = weights
     out = z3.IntVal(k)
     for cj, a in zip(c, args):
@@ -789,8 +789,8 @@ class Obligation:
 
     ``domain`` and ``formula`` are ``(W, S) -> BoolRef`` over the module's wires
     (see :mod:`._property`) and are resolved here; ``whole`` is already z3 over
-    the columns, a fact about the run as a whole — the entry state satisfies the
-    invariant — being about no round in particular. This is the engine's whole
+    the columns, a fact about the run as a whole, such as the entry state
+    satisfying the invariant, which is about no round in particular. This is the engine's whole
     contract: paths, regions, the LP and the certificates see nothing else, and
     know nothing of programs, ranks or invariants."""
     domain: object
@@ -804,7 +804,7 @@ _STATE_ONLY = ("an invariant is over the state; a wire belongs in the claim or "
 
 class Inductive:
     """Discharge a :class:`._property.Safety` claim by an inductive invariant:
-    predicates over the state — ``S`` alone — that the entry state satisfies and
+    predicates over the state (``S`` alone) that the entry state satisfies and
     every step preserves, all of them at the next state given all of them at the
     pre-state; and wherever they hold, the claim's predicate does. With no
     invariant the claim must hold outright."""
@@ -839,13 +839,15 @@ class Inductive:
 
 
 def inductive(inv=()) -> Inductive:
+    """A Safety claim by the inductive invariant ``inv``, empty when the claim
+    holds outright."""
     return Inductive(inv)
 
 
 class LexDecrease:
     """Discharge a :class:`._property.Liveness` claim by ranks that drop
     lexicographically: on every round inside the domain some rank drops by ``delta`` while
-    every earlier one does not increase — the substrate's ``lexDec``, which one
+    every earlier one does not increase. This is the substrate's ``lexDec``, which one
     rank instantiates as a plain drop. ``ranks`` pairs ``(at s, at s')`` wires, two
     readings of one function; what they must be is :func:`check_ranks`'s to say."""
     def __init__(self, ranks, delta=1):
@@ -871,6 +873,8 @@ class LexDecrease:
 
 
 def lex_decrease(ranks, delta=1) -> LexDecrease:
+    """A Liveness claim by ``ranks``, ``(at s, at s')`` wire pairs dropping
+    lexicographically by ``delta`` on every round in the claim's domain."""
     return LexDecrease(ranks, delta)
 
 
@@ -882,7 +886,7 @@ def decrease(v_s, v_sp, delta=1) -> LexDecrease:
 class _WireMap:
     """``W`` as a predicate sees it: indexable by a ctrl next wire, handing out the
     system's symbol for it and recording which wires were named. ``next`` is the
-    same map one round on, which this procedure cannot yet evaluate — so it
+    same map one round on, which this procedure cannot yet evaluate, so it
     refuses by name, as does a map built with ``refuse`` for a predicate that may
     not name wires at all."""
     def __init__(self, system, used=None, refuse=None):
@@ -907,7 +911,7 @@ class _WireMap:
 
 class _StateMap:
     """``S`` as a predicate sees it: a column's latched value by name, ``names``
-    the columns, and ``next`` the same columns after the step — each the ``W`` of
+    the columns, and ``next`` the same columns after the step, each the ``W`` of
     the column's next wire, so naming one is recorded like naming a wire. A
     ``concrete`` map hands out the transition itself for the next value instead,
     which is what a domain wants: the cases are split on the transition."""
@@ -935,7 +939,7 @@ class _StateMap:
 
 
 def resolve(system: System, pred):
-    """``pred`` — ``(W, S) -> BoolRef`` — as z3 over the columns' symbols and the
+    """``pred``, a ``(W, S) -> BoolRef``, as z3 over the columns' symbols and the
     wire symbols ``system.W``, with the wires it named in order. The form the
     engine cuts into rows and substitutes into, and what the proof layer renders."""
     used = []
@@ -945,7 +949,7 @@ def resolve(system: System, pred):
 
 def resolve_domain(system: System, domain):
     """A claim's domain as z3 over the columns and the transition, ready to be
-    split into cases — and, for a client, to be sampled: the trainer draws its
+    split into cases, and, for a client, to be sampled: the trainer draws its
     pairs from the rounds the claim counts. A domain is over the columns; a wire
     belongs in the formula."""
     W = _WireMap(system, refuse="a domain is over the columns and their next values; "
@@ -960,7 +964,7 @@ def _is_cmp(e) -> bool:
 def _dnf(e) -> list:
     """The disjuncts of ``e``: each a list of linear atoms whose conjunction is
     one disjunct of ``e``'s disjunctive normal form. Negation is pushed to the
-    atoms (an atom may stay negated — :func:`atom_rows` flips it), ``a != b``
+    atoms (an atom may stay negated, since :func:`atom_rows` flips it), ``a != b``
     becomes its two strict sides, an implication its disjunction. Anything that
     is not a boolean combination of comparisons is refused by name."""
     if z3.is_true(e):
@@ -1036,7 +1040,7 @@ def check_supported(system: System) -> None:
     theirs to refuse.
 
     Checked before any work so the interior can assume its preconditions. The
-    alternative — proceeding with whatever it happens to understand — reports a
+    alternative, proceeding with whatever it happens to understand, reports a
     proof that will not close rather than the thing it could not use."""
     names = [str(s) for s in system.s_syms]
     for name, e in zip(names, system.sp_syms):
@@ -1044,7 +1048,7 @@ def check_supported(system: System) -> None:
         if extra:
             raise Unsupported(
                 f"the next value of {name!r} reads {sorted(extra)}, which are not "
-                f"columns — nondeterministic inputs are not supported")
+                f"columns; nondeterministic inputs are not supported")
 
 
 def expand_cases(guard, body, budget: int = 16):
@@ -1052,10 +1056,10 @@ def expand_cases(guard, body, budget: int = 16):
     that need a case split.
 
     Two things need splitting and they are the same operation on different
-    subjects: a guard conjunct that is not a half-space (:data:`PRED_MODES` — a
+    subjects: a guard conjunct that is not a half-space (:data:`PRED_MODES`, i.e. a
     disjunction, a ``!=``), and an ``ite`` term in the body. Both replace their
     subject by disjoint alternatives and recurse, so at the leaves the guard is a
-    conjunction of half-spaces and the body is ite-free — a single affine map under
+    conjunction of half-spaces and the body is ite-free: a single affine map under
     a convex domain, which is what the LP needs.
 
     Guard conjuncts go first, so a body branch is only split once the domain is
@@ -1168,7 +1172,7 @@ class _Path:
         return self._values(system, value)
 
     def exact(self, system) -> list:
-        """``(W symbol, value)`` with every ReLU left in — the rule's truth."""
+        """``(W symbol, value)`` with every ReLU left in, the rule's truth."""
         return self._values(system, lambda d: (exact_value(d.acts, d.weights) if d.acts
                                                else _affine_value(d.weights, d.args)))
 
@@ -1179,7 +1183,7 @@ class _Path:
 
     def affines(self, sub) -> tuple:
         """Per device, the ``(coeffs, const)`` of its substituted value over the
-        columns — what the emitter's collapse lemmas state."""
+        columns, which is what the emitter's collapse lemmas state."""
         smap = {str(k): v for k, v in sub}
         return tuple(_affine_pair(z3.simplify(smap[str(d.sym)]), self.s_syms)
                      for d in self.devices)
@@ -1188,7 +1192,7 @@ class _Path:
 def _try_cell(system, p: _Path, lam):
     """Farkas-certify one region, named by the mode pattern ``lam``.
 
-    One LP per disjunct of the rule's negation — the rows of the region, the
+    One LP per disjunct of the rule's negation: the rows of the region, the
     guard, the invariants and the disjunct. Returns one :class:`CellCert` per
     disjunct, or ``None`` if some disjunct stays feasible on the region."""
     sub = p.subst(system, lam)
@@ -1227,7 +1231,7 @@ def _certify_path(system, p: _Path, max_iters):
     """CEGAR over one affine path: discharge the rule on every region of
     ``guard ∧ invariants`` under next-state ``body``. Repeatedly find an uncovered
     in-domain state, certify the region its pinned pattern names, and block that
-    region — until the path's domain is exhausted. Because the blocked regions are
+    region, until the path's domain is exhausted. Because the blocked regions are
     complementary, exhausting the domain *is* the coverage guarantee. With nothing
     pinned there is one region, so one pass."""
     solver = z3.Solver()
@@ -1263,7 +1267,7 @@ def check_ranks(system: System, ranks) -> None:
 
     A rank is one network read at both ends of a step: its two wires read the same
     network, the first nothing of the next state and the second nothing of the
-    latched — what lets the proof state the rank as one ``V`` and apply it to the
+    latched, which lets the proof state the rank as one ``V`` and apply it to the
     state at either end. And that network's output layer is non-negative, which is
     how the proof knows the rank is bounded below; a rank the decrease alone would
     certify is no use to the well-foundedness theorem without it."""
@@ -1333,7 +1337,7 @@ def certify(system: System, claim, witness, max_iters: int = 1000) -> Proof:
     for pguard, pbody in expand_cases(dom, list(sp_syms)):
         region = z3.And(pguard, *invariants) if invariants else pguard
         if not _feasible(region):
-            continue                       # dead case — no state takes this step
+            continue                       # dead case: no state takes this step
         p = _Path.of(system, formula, disjuncts, devices, readings, columns, pbody,
                      pguard, invariants)
         verified, cells, cex, status = _certify_path(system, p, max_iters)

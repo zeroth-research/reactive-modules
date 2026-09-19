@@ -1,13 +1,18 @@
 """Houdini-style loop-invariant inference to strengthen the verification domain.
 
-We seed sign/relational candidate predicates, then drop any that are not **established at loop entry** (initiation) or not **preserved by
-the body** (consecution), and return the survivors. Conjoining them with the loop guard shrinks the verification domain to an over-approximation of the reachable
-loop states.
+Sign and relational predicates are seeded as candidates, then any that is not
+**established at loop entry** (initiation) or not **preserved by the body**
+(consecution) is dropped; the survivors are returned. Conjoining them with the
+loop guard shrinks the verification domain to an over-approximation of the
+reachable loop states.
 
 Soundness
 =========
-Both filters are checked with Z3; a ``sat`` or ``unknown`` result drops the candidate (never keeps a candidate we cannot prove), so survivors are genuine
-inductive invariants. Initiation is checked against the ``init`` block for *all* inputs (ignoring any precondition) — stronger than required, hence sound, though it may miss invariants that hold only under a precondition. 
+Both filters are checked with Z3, and a ``sat`` or ``unknown`` result drops the
+candidate, so a candidate is kept only when it is proved and every survivor is a
+genuine inductive invariant. Initiation is checked against the ``init`` block for
+*all* inputs, ignoring any precondition: stronger than required, hence sound,
+though it misses invariants that hold only under a precondition.
 """
 from __future__ import annotations
 
@@ -56,8 +61,7 @@ def _as_int_const(expr):
 
 
 def _const_candidates(names, vals: dict) -> list[Guess]:
-    """Candidates from a state's constant coordinates (nuTerm's ``_seed_candidates``,
-    applied to a cut-point segment's post-state). ``vals`` is a symbolic state
+    """Candidates from a state's constant coordinates. ``vals`` is a symbolic state
     (the body post-state ``T(s)`` or the init state ``s0``): ``v==c`` / ``v>=c`` /
     ``v<=c`` when ``vals[v]`` is constant, and ``vi-vj==d`` / ``vi+vj==s`` when a
     pair combination is constant."""
@@ -134,8 +138,8 @@ def infer_invariants(system, timeout_ms: int = 2000) -> list[Guess]:
     """Inductive invariants of ``system``: facts about every reachable state,
     holding at entry (initiation) and preserved by every step (consecution).
 
-    The transition and the entry state are read off ``system`` — one walk of the
-    module, shared with the verifier — so nothing here reads the program itself,
+    The transition and the entry state are read off ``system``, which is one walk
+    of the module shared with the verifier, so nothing here reads the program itself,
     and consecution ranges over every step rather than over a loop guard: an
     invariant is a fact about the module, not about any claim made of it. For a
     module that stutters when its program is done the two agree, since a stutter
@@ -149,8 +153,8 @@ def infer_invariants(system, timeout_ms: int = 2000) -> list[Guess]:
     pre_init = list(pre(s0))                    # entry-gate assumptions at s0
     pre_cands = [(f"pre[{i}]", (lambda st, i=i: pre(st)[i])) for i in range(len(pre(s)))]
 
-    # static sign/pairwise candidates + constants derived from the body post-state
-    # (T(s)) and the init state (s0) — the cut-point segments nuTerm seeds from.
+    # static sign/pairwise candidates, plus constants derived from the body
+    # post-state T(s) and from the init state s0
     seen: set[str] = set()
     cands: list[Guess] = []
     for lbl, f in (_candidates(names)
@@ -172,7 +176,7 @@ def infer_invariants(system, timeout_ms: int = 2000) -> list[Guess]:
     # initiation: candidate holds at the initial state, under the precondition
     kept = [(lbl, f) for (lbl, f) in cands if unsat(z3.Not(f(s0)), *pre_init)]
 
-    # consecution: Houdini fixpoint — kept(s) implies candidate(T(s)), every step
+    # consecution: Houdini fixpoint, kept(s) implies candidate(T(s)), every step
     changed = True
     while changed:
         changed = False

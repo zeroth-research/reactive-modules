@@ -1,4 +1,4 @@
-"""LeikeHeizmann-TACAS2014-Fig1 — simple two-variable coupled loop.
+"""LeikeHeizmann-TACAS2014-Fig1: simple two-variable coupled loop.
 
     int q, y;
     q = __VERIFIER_nondet_int();

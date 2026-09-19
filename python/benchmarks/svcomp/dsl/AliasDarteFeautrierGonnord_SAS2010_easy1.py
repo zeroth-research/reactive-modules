@@ -1,4 +1,4 @@
-"""AliasDarteFeautrierGonnord-SAS2010-easy1 — if/else body, constant init, a
+"""AliasDarteFeautrierGonnord-SAS2010-easy1: if/else body, constant init, a
 parameter variable.
 
     int x = 0, y = 100, z = __VERIFIER_nondet_int();

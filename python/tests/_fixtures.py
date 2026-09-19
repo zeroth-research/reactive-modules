@@ -1,10 +1,10 @@
 """Small synthetic benchmarks, for tests that exercise the real pipeline.
 
 A test that hands the verifier hand-written z3 terms cannot exercise anything the
-verifier reads off the *module* — the guard's shape, the node view, the ranking
+verifier reads off the *module*: the guard's shape, the node view, the ranking
 wire. :func:`loop_bench` builds a real module from a compact spec, so a
-test goes through :func:`candidate` — the production path from a bench to a
-``certify`` call — rather than a parallel one.
+test goes through :func:`candidate`, the production path from a bench to a
+``certify`` call, rather than a parallel one.
 
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
     c = candidate(bench, layers)
@@ -52,8 +52,8 @@ def candidate(bench, layers, delta=1.0, invariants=()) -> Cand:
 def loop_bench(state, update, *, init=None, precondition=None, name="test"):
     """A :class:`Bench` for a closed loop over ``state``.
 
-    ``update`` takes the latched state variables — the single one if ``state`` has
-    one entry, else a tuple — and returns their next values, exactly as a DSL
+    ``update`` takes the latched state variables, the single one if ``state`` has
+    one entry and otherwise a tuple, and returns their next values, exactly as a DSL
     ``update`` block does. ``init`` does the same for tick 0 and defaults to zeros,
     which is all a test needs unless it exercises ``initiation``."""
     names = tuple(state)

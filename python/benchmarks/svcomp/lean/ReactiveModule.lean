@@ -10,10 +10,10 @@ sequences; an invariant is a set of states containing every reachable state
 (`StateSet_isInductiveInitial`) is one.
 
 Proof rules, stated in the LTL of `LTL.lean`:
-  * `rule_globally`      — an invariant holds `G`lobally on every trace.
-  * `rule_globally_step` — a step property implied by the invariant holds
+  * `rule_globally`:      an invariant holds `G`lobally on every trace.
+  * `rule_globally_step`: a step property implied by the invariant holds
                            `G`lobally on every trace (over steps, not states).
-  * `rule_buchi_lex`     — a Büchi-style liveness rule: if inside the step
+  * `rule_buchi_lex`:     a Büchi-style liveness rule. If inside the step
                            domain `D` a lexicographic list of bounded-below
                            integer ranks strictly decreases, every trace leaves
                            `D` infinitely often (`G F ¬D`). Discharged by
@@ -106,7 +106,7 @@ theorem rule_buchi_lex (M : ReactiveModule Extl State) (D : State → State → 
     exact hcon ⟨i, hNi, hD⟩
   have hI := trace_states_in_invariant M I hinv ss htr
   -- So the tail `fun k => ss (N + k)` is an infinite run of the guarded step
-  -- relation, on which the ranks decrease lexicographically — impossible.
+  -- relation, on which the ranks decrease lexicographically, which is impossible.
   refine no_infinite_run_lex Vs
     (fun s s' => I s ∧ D s s' ∧ ∃ l, M.update_pre l ∧ s' = M.update s l) hpos
     (by rintro s s' ⟨hIs, hD, l, hpre, heq⟩; exact hrank s l s' hIs hpre heq hD)

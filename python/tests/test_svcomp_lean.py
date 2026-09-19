@@ -55,7 +55,7 @@ def test_emit_contains_the_proof_skeleton():
 
 def test_the_module_is_rendered_exactly():
     """``update`` is the transition as read: one arm per column, the branch an
-    ``if`` on the guard's linear condition, each leaf the affine body — so what
+    ``if`` on the guard's linear condition, each leaf the affine body, so what
     the kernel reasons about is the module, not a summary of it."""
     system, res = _decrement_obligation()
     src = emit_program("decrement", system, res)
@@ -162,7 +162,7 @@ def test_conditional_invariant_reaches_the_emitted_file():
 
 def test_branching_entry_fact_is_case_split_not_dropped():
     """An `ite` in an entry value is not linear, so the renderer must case-split
-    its conjunct rather than drop it — else `initiation` loses its premise."""
+    its conjunct rather than drop it, or `initiation` loses its premise."""
     x = z3.Int("x")
     # branches must differ, or z3 folds the ite away before it is ever rendered, and
     # the condition must be over the state columns or the conjunct is not affine
@@ -231,8 +231,8 @@ def _always_obligation(pred, inv=None):
 
 
 def test_always_emits_its_own_theorem():
-    """A safety property emits no network and no ranking — the invariant is the
-    device — and concludes ``G (AP pred)`` through ``rule_globally``."""
+    """A safety property emits no network and no ranking, since the invariant is
+    the device, and concludes ``G (AP pred)`` through ``rule_globally``."""
     system, res = _always_obligation(lambda W, S: S["x"] >= 0)
     src = emit_program("safe", system, res)
     for decl in ("def pred", "def own", "def assumed", "def invariants",
@@ -453,7 +453,7 @@ def test_a_safety_claim_over_the_step_kernel_checks():
 def test_the_module_is_emitted_once_from_the_system():
     """``update``, ``init_pre`` and ``RM`` come from the system alone: two
     different claims about the same module emit the module block verbatim, and
-    each claim's statement is decided by its kind — ``G (F (Not (APₛ domain)))``
+    each claim's statement is decided by its kind: ``G (F (Not (APₛ domain)))``
     for a Liveness claim, ``G (AP pred)`` for a Safety claim."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
@@ -665,7 +665,7 @@ def test_the_liveness_theorem_cites_the_invariant_proof():
     """With an invariant assumed as a proved Safety claim, the file carries both
     claims: a ``claim0`` namespace proving its ``holds`` and ``pred_invariant``,
     and a liveness claim that cites ``pred_invariant`` for the invariant instead
-    of re-deriving it — so no ``consecution`` remains outside ``claim0``. And the
+    of re-deriving it, so no ``consecution`` remains outside ``claim0``. And the
     two-claim file kernel-checks."""
     bench = loop_bench(("x",), lambda x: ite(ne(x, 0), x - 1, x), init=lambda: (5,))
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]

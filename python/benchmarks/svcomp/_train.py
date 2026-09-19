@@ -1,8 +1,11 @@
-"""learn a neural ranking function for a program module, verify it.
+"""Learn a ranking function for a program module and certify it.
 
-Trains a small ReLU net V (Linear -> ReLU -> sum) outside the reactive-module
-framework (plain torch + Adam), then verifies the candidate with Z3 (V >= 0 and
-V(s) - V(s') >= delta on the loop domain).
+A small network ``V`` (linear, then rectified units, then a sum) is trained in
+torch, outside the reactive-module framework, on state pairs sampled from runs of
+the program. Its weights are then quantized to integers, composed into the module
+as two atoms, and handed with :func:`._termination.terminates` to
+:func:`._farkas.certify`. The first candidate that certifies is returned;
+training itself proves nothing.
 """
 
 from __future__ import annotations
@@ -24,11 +27,11 @@ from ._termination import compose, prove_invariants, system_of, terminates
 
 
 # ---------------------------------------------------------------------------
-# The ranking net (ported from neural-termination TorchNRF, scalar case)
+# The ranking network: one hidden layer of rectified units, summed
 # ---------------------------------------------------------------------------
 
 class TorchNRF(nn.Module):
-    """V(x) = sum_j ReLU(W_j . x + b_j) — a positive sum of ReLUs, so V >= 0 by
+    """V(x) = sum_j ReLU(W_j . x + b_j), a positive sum of ReLUs, so V >= 0 by
     construction (frozen all-ones output layer, no output bias)."""
 
     def __init__(self, input_dim: int, hidden_dim: int = 7, quantize: bool = False):
@@ -91,7 +94,9 @@ def _init_state(prog, ctrl, extl, bench: Bench, inputs: dict[str, int]) -> dict[
     return {n: int(st[ctrl[n][1]].reshape(-1)[0]) for n in bench.state}
 
 
-# PAS: high-variance Gaussian with one anticorrelated pair (ported from nt).
+# Input sampling: a high-variance Gaussian in which one randomly chosen pair of
+# coordinates is anticorrelated, which reaches states a spherical sample rarely
+# does. _PAS_RHO is that pair's correlation coefficient.
 _PAS_RHO = 0.25
 
 
@@ -109,9 +114,9 @@ def _pas_sample(dim: int, sigma: float, rng) -> np.ndarray:
 
 def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
             rng) -> tuple[np.ndarray, np.ndarray]:
-    """nt-style trajectory rollouts: PAS-sample the inputs, init, execute the
+    """Trajectory rollouts: sample the inputs, initialise, execute the
     module up to `max_len`, collecting consecutive (s, T(s)) pairs on the rounds
-    the termination claim counts — the ones the rank must drop on."""
+    the termination claim counts, the ones the rank must drop on."""
     prog, ctrl, extl = bench.build()
     dom = resolve_domain(system, terminates().domain)
     n_in = len(bench.inputs)
@@ -146,7 +151,7 @@ class TrainResult:
 
     ``system``, ``witness`` and ``proof`` are the composed module the accepted
     rank was certified on, the witness that named it, and what ``certify``
-    established — the evidence the Lean emitter consumes, so a caller reads it
+    established. This is the evidence the Lean emitter consumes, so a caller reads it
     here rather than certifying the same layers a second time. All ``None`` when
     no candidate certified."""
     name: str
@@ -166,11 +171,14 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
                   lr: float = 0.05, outer: int = 20,
                   scales: tuple[float, ...] = (0.5, 1.0),
                   use_invariants: bool = True) -> TrainResult:
-    """nt-matched: PAS trajectory rollouts, AdamW hinge loss, outer
-    round-and-rebuild. Defaults mirror nt's learn_nrf_cfa.
+    """Train a ranking function for ``bench`` and return the first candidate the
+    procedure certifies.
 
-    The round-and-rebuild loop composes each candidate into the program
-    (:func:`compose`) and accepts the first the procedure certifies."""
+    Rollouts supply the state pairs, a hinge loss on ``V(s) - V(s') >= delta``
+    supplies the gradient, and the outer loop rebuilds the network from scratch
+    each round. Each candidate is quantized at every scale in ``scales``,
+    composed into the program by :func:`compose`, and offered to
+    :func:`._farkas.certify`."""
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
     sigma = float(np.sqrt(initial_variance))

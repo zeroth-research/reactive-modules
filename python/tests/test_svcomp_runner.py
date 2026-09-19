@@ -3,8 +3,8 @@
 The property under test is that a benchmark's result does not depend on what ran
 before it. Z3's context is global and accumulates every term created in the
 process, and the CEGAR loop's choice of uncovered witness depends on it, so
-running benchmarks in one process makes the cell decomposition — and with it the
-emitted proof — a function of the whole sequence. The runner gives each benchmark
+running benchmarks in one process makes the cell decomposition, and with it the
+emitted proof, a function of the whole sequence. The runner gives each benchmark
 its own process to remove that coupling.
 """
 import shutil

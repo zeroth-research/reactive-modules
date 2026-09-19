@@ -1,4 +1,4 @@
-"""Masse-VMCAI2014-Ex6 — conditional decrement of the second variable.
+"""Masse-VMCAI2014-Ex6: conditional decrement of the second variable.
 
     int x, y;
     x = __VERIFIER_nondet_int();

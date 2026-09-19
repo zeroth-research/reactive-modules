@@ -1,38 +1,49 @@
 """Emit a kernel-checkable Lean proof from a decision procedure's certificates.
 
-Consumes the :class:`._farkas.Proof` a ``certify`` run returns (plus the
-:class:`._farkas.System` it was run on) and writes ONE Lean file against the
-vendored ``lean/`` substrate. The file mirrors the procedure's three axes:
+Consumes the :class:`._farkas.Proof` a ``certify`` run returns, plus the
+:class:`._farkas.System` it was run on, and writes one Lean file against the
+vendored ``lean/`` substrate. The file has three parts.
 
-  * **the module**, once, from the system alone — ``update``, each column's
-    next value rendered from the transition as read (an ``ite`` tree over
-    affine leaves), ``init_pre``, the entry states, and ``RM``, the two as a
-    ``ReactiveModule``: ``init`` and ``update`` with a precondition each, whose
-    runs are the traces every claim below is stated over;
-  * **one namespace per claim** — the assumed Safety proofs first, ``claim0``,
-    ``claim1``, …, the main claim last — each stating what it proves over
-    ``RM.traces`` in LTL from the claim alone: ``G (AP pred)`` for a Safety
-    claim over the state, ``G (APₛ pred)`` over the step, ``G (F (Not (APₛ
-    domain)))`` for a Liveness claim, the run leaving its domain again and
-    again;
-  * **the witness's proof** of that statement, and the witness's own material:
-    every network a wire it names is read through, with that network's
-    structural non-negativity ``V_j_nonneg``, and each rank ``R_d``; per affine
-    path (branching is path-split by :func:`._farkas.expand_cases`, one
-    namespace each) ``trans`` and ``post_state``, the regions and ``covered``,
-    per device its collapse per region, per region and disjunct the Farkas
-    system with its ``farkas_sound`` infeasibility and ``refute``, then ``ok``
-    and ``step_ok``, ``Step`` and (under ranks) ``lex_step``, ``refines`` — on
-    the path's guard the module's transition IS this path's body — and (under
-    an inductive invariant) ``consecution``; per claim ``some_path`` — from an
-    invariant state the paths cover the module's rounds inside the domain — and
-    the rule its witness is carried by. A rule says which claim kind it
-    concludes, what it wants from each path, and how those reach the claim;
-    :data:`RULES` maps a witness class to one. An inductive invariant wants
-    ``consecution`` from each path and concludes ``holds`` through
-    ``rule_globally`` or ``rule_globally_step``; ranks want ``lex_step`` and
-    conclude through ``rule_buchi_lex``. Either cites the earlier claims'
-    ``pred_invariant`` for what it assumes.
+The module, once, from the system alone
+=======================================
+``update`` gives each column's next value, rendered from the transition as read:
+an ``ite`` tree over affine leaves. ``init_pre`` gives the entry states. ``RM``
+packages the two as a ``ReactiveModule``, whose runs are the traces every claim
+is stated over.
+
+One namespace per claim
+=======================
+The Safety proofs the system assumes come first, as ``claim0``, ``claim1``, …,
+and the main claim last. Each states what it proves over ``RM.traces``, in a form
+the claim's kind decides:
+
+  Safety over a state   ``G (AP pred)``
+  Safety over a step    ``G (APₛ pred)``
+  Liveness              ``G (F (Not (APₛ domain)))``
+
+Each claim cites the earlier ones' ``pred_invariant`` for what it assumes.
+
+The witness's proof, and its own material
+========================================
+Every network a named wire is read through is emitted with its structural
+non-negativity ``V_j_nonneg``, and each rank as ``R_d``.
+
+Branching is path-split by :func:`._farkas.expand_cases`, giving one namespace
+per affine path. A path carries ``trans`` and ``post_state``; its regions and
+``covered``; each device's collapse per region; per region and disjunct the
+Farkas system with its ``farkas_sound`` infeasibility and ``refute``; then ``ok``
+and ``step_ok``; ``Step``; and ``refines``, which says the module's transition is
+this path's body on this path's guard.
+
+Per claim, ``some_path`` says the paths cover the module's rounds inside the
+domain, from an invariant state.
+
+What carries that evidence to the claim is the witness's rule. A rule names the
+claim kind it concludes, what it wants from each path, and how those reach the
+claim; :data:`RULES` maps a witness class to one. An inductive invariant wants
+``consecution`` from each path and concludes through ``rule_globally`` or
+``rule_globally_step``; ranks want ``lex_step`` and conclude through
+``rule_buchi_lex``.
 """
 from __future__ import annotations
 
@@ -48,7 +59,7 @@ from ._property import Liveness, Safety
 
 
 def _contains_ite(e) -> bool:
-    """True if a z3 term still has an ``ite`` — a path body must have none (all
+    """True if a z3 term still has an ``ite``. A path body must have none (all
     in-loop branches are split out by ``expand_cases`` before emission)."""
     if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE:
         return True
@@ -68,7 +79,7 @@ def _fin(i: int) -> str:
 
 
 def _encode_int(n: int) -> str:
-    """An ``Int`` literal in constructor form (reduces definitionally — needed by
+    """An ``Int`` literal in constructor form (reduces definitionally, needed by
     the ``rfl`` / ``Int.negSucc_lt_zero`` proofs of the Farkas side goals)."""
     return f"Int.ofNat {n}" if n >= 0 else f"Int.negOfNat {abs(n)}"
 
@@ -135,13 +146,13 @@ class _Drop(Exception):
     only weakens what is being rendered: a weaker ``trans`` or ``invariants`` is
     an over-approximation the proof still closes, and a weaker ``init_pre``
     admits more traces, so what is proved about them is stronger. The module's
-    transition is NOT rendered this way — :func:`_term_str` refuses what it
+    transition is NOT rendered this way; :func:`_term_str` refuses what it
     cannot render exactly."""
 
 
 def _z3_prop(a, syms, terms=None) -> str:
     """Render a z3 boolean expression to a Lean ``Prop`` over the integer symbols
-    ``syms`` — the state columns by default, or ``terms[j]`` for each symbol when
+    ``syms``, the state columns by default, or ``terms[j]`` for each symbol when
     some stand for other Lean terms. Handles ∧ / ∨ / ¬ / → / linear comparisons;
     raises :class:`_Drop` on anything non-linear."""
     if z3.is_true(a):
@@ -211,7 +222,7 @@ def _render_conjuncts(pred, syms) -> str:
 # ---------------------------------------------------------------------------
 
 def _support(cert: CellCert):
-    """The rows with a nonzero multiplier — infeasibility of this subset implies
+    """The rows with a nonzero multiplier, since infeasibility of this subset implies
     it for the full system, and the cert is valid verbatim on it. Returns
     ``(A, b, y, labels)``."""
     idx = [i for i, yv in enumerate(cert.y) if yv != 0]
@@ -242,7 +253,7 @@ def _lit_z3(lit, syms):
 
 
 def _rule_rows(cert: CellCert):
-    """The disjunct's own rows ``(coeffs, const)`` — ``coeffs·s ≤ const`` — as the
+    """The disjunct's own rows ``(coeffs, const)``, i.e. ``coeffs·s ≤ const``, as the
     LP saw them, without their gcd-tightened variants (``omega`` re-derives those)."""
     return [(a, b) for a, b, lbl in zip(cert.A, cert.b, cert.labels)
             if lbl.startswith("rule[") and not lbl.endswith("/int")]
@@ -250,7 +261,7 @@ def _rule_rows(cert: CellCert):
 
 def _trivial(cert: CellCert) -> bool:
     """The support reduces to a constant infeasibility ``0·s ≤ c`` (c < 0): the
-    disjunct is false on its own, so it needs no Farkas certificate — ``omega``
+    disjunct is false on its own, so it needs no Farkas certificate; ``omega``
     refutes it directly."""
     A, *_ = _support(cert)
     return all(all(x == 0 for x in row) for row in A)
@@ -346,7 +357,7 @@ def _emit_out_apply(net, tag: str) -> str:
 
     Every bound's ``heq`` and every collapse's tail reduce
     ``affine nrf_W1 nrf_b1 (mask _ _) fzero``, and that matrix product expands the
-    same way every time — only the mask differs. Rewriting by this leaves each site
+    same way every time, and only the mask differs. Rewriting by this leaves each site
     with the mask reduction alone."""
     _, _, W1, b1 = _net_arrays(net)
     c, k = W1[0], b1[0]
@@ -386,8 +397,8 @@ def _emit_nonneg(net, tag: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _regions(certs):
-    """Group a path's certificates into regions — the cells sharing a mode
-    pattern — each with its disjuncts in order. A certified region carries one
+    """Group a path's certificates into regions, the cells sharing a mode
+    pattern, each with its disjuncts in order. A certified region carries one
     certificate per disjunct of the rule's negation."""
     regions, index = [], {}
     for c in certs:
@@ -415,7 +426,7 @@ def _sign_index(reps):
 def _emit_signs_def(name: str, pattern, units, n: int) -> str:
     """A pattern's region, one condition per hidden unit it pins: ``0 < e`` where
     the pattern says active, ``e ≤ 0`` where inactive, nothing where it leaves the
-    unit open (``None`` — a narrowing only pins what the certificate needed).
+    unit open (``None``, since a narrowing only pins what the certificate needed).
 
     The two forms are complementary, so the regions partition the state space and
     a state lies in exactly one. Written in the form :func:`_tiling_tree` splits
@@ -436,7 +447,7 @@ def _tiling_tree(pcert, invariants, s_syms):
 
     Splitting on ``0 < unitⱼ`` in turn narrows which regions a branch can still be
     in, and a branch is finished as soon as the literals taken so far *entail* some
-    region's sign rows — checked here, so the ``omega`` the leaf emits is known to
+    region's sign rows, checked here, so the ``omega`` the leaf emits is known to
     succeed. Entailment rather than a pattern match is the leaf test because a
     branch can settle a region before every literal is taken, and because the
     guard may imply signs no literal has fixed.
@@ -499,7 +510,7 @@ def _emit_tiling_tree(reps, tree, of_region, depth: int = 1) -> str:
 
     ``omega`` decides a conjunctive goal in time linear in its facts, but the flat
     tiling goal ``⋁ᵢ cellᵢ_signs`` negates into a clause per region, and the case
-    split across those clauses grows exponentially in the number of regions — 12
+    split across those clauses grows exponentially in the number of regions: 12
     already exhaust the elaborator's budget. Splitting on the sign literals
     instead reaches, at each leaf, an assignment that names one region, so every
     ``omega`` sees a conjunction: the accumulated literals entailing that region's
@@ -527,7 +538,7 @@ def _emit_tiling_tree(reps, tree, of_region, depth: int = 1) -> str:
 
 def _emit_covered(reps, n: int, tree, of_region, pcert) -> str:
     """Every guarded state lies in some region: ``⋁ᵣ cellR_signs s``, by the
-    sign-literal decision tree — the CEGAR coverage guarantee, re-proved."""
+    sign-literal decision tree, the CEGAR coverage guarantee, re-proved."""
     hyps = "(hg : trans s) (hinv : invariants s)"
     disj = "\n      ∨ ".join(f"cell{i}_signs s" for i in range(len(reps)))
     if len(reps) == 1:
@@ -550,7 +561,7 @@ def _emit_covered(reps, n: int, tree, of_region, pcert) -> str:
 # ---------------------------------------------------------------------------
 
 def _emit_post_state(body_affines, n: int) -> str:
-    """``post_state s = body(s)`` — the loop body's next state as an affine map."""
+    """``post_state s = body(s)``, the loop body's next state as an affine map."""
     arms = "\n".join(
         f"    | {_fin(k)} => {_affine_str(c, kk)}"
         for k, (c, kk) in enumerate(body_affines))
@@ -563,8 +574,8 @@ def _bool_vec(name: str, p) -> str:
 
 
 def _input(k: int, dev, n: int):
-    """The Lean term a device's reading is applied to — the state, the successor,
-    or a per-device vector mixing both ends — as ``(term, definition | None,
+    """The Lean term a device's reading is applied to: the state, the successor,
+    or a per-device vector mixing both ends, as ``(term, definition | None,
     names to unfold)``."""
     kinds = {kind for kind, _ in dev.inputs if kind != "unread"}
     if kinds <= {"latched"}:
@@ -670,7 +681,7 @@ def _emit_refute(r: int, cert: CellCert, n: int, sign_defs: list[str]) -> str:
 
 def _formula_prop(formula, s_syms, wire_terms: dict) -> str:
     """A rule or property formula, z3 over the columns and wire symbols, as a
-    Lean ``Prop`` over ``s`` — each wire symbol standing for the Lean term
+    Lean ``Prop`` over ``s``, each wire symbol standing for the Lean term
     ``wire_terms`` gives it."""
     syms = list(s_syms) + list(wire_terms)
     terms = _state_terms(len(s_syms)) + list(wire_terms.values())
@@ -683,8 +694,8 @@ def _formula_prop(formula, s_syms, wire_terms: dict) -> str:
 def _emit_direct_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
                       depths, rule) -> str:
     """A path that names no device: one region, so ``step_ok`` is a linear
-    entailment over the columns and ``omega`` closes it outright — the same proof
-    ``consecution`` has always used — with no certificate to elaborate."""
+    entailment over the columns and ``omega`` closes it outright, the same proof
+    ``consecution`` uses, with no certificate to elaborate."""
     n = len(s_syms)
     body = list(pcert.body)
     body_affines = [affine_coeffs(e, s_syms) for e in body]
@@ -807,7 +818,7 @@ def _inv_proof(trivial_inv: bool, unfold: str) -> str:
 def _emit_consecution(n: int, trivial_own: bool) -> str:
     """Consecution for the claim's own invariant: from a state satisfying every
     invariant (own and assumed) the path's body keeps the own part. The
-    assumed part is not re-proved — it is cited from its own proof."""
+    assumed part is not re-proved; it is cited from its own proof."""
     return (f"/-- Consecution: the body preserves the claim's own invariant on this path. -/\n"
             f"theorem consecution (s : Vector {n} Int)\n"
             f"    (hg : trans s) (hinv : invariants s) :\n"
@@ -820,7 +831,7 @@ def _emit_consecution(n: int, trivial_own: bool) -> str:
 # ---------------------------------------------------------------------------
 
 def _ite_count(e) -> int:
-    """How many ``ite`` nodes a term has — the rounds of ``split`` that expose
+    """How many ``ite`` nodes a term has, the rounds of ``split`` that expose
     every branch of it."""
     here = 1 if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE else 0
     return here + sum(_ite_count(c) for c in e.children())
@@ -828,7 +839,7 @@ def _ite_count(e) -> int:
 
 def _term_str(e, syms) -> str:
     """A z3 integer term over the columns as a Lean ``Int`` term: an ``ite``
-    tree whose conditions are linear and whose leaves are affine — the
+    tree whose conditions are linear and whose leaves are affine, giving the
     transition as read. Anything else is refused by name: the module's
     definition is rendered exactly or not at all."""
     if z3.is_app(e) and e.decl().kind() == z3.Z3_OP_ITE:
@@ -1156,13 +1167,11 @@ def _emit_claim(ns: str, proof, system, s_syms, cited, assumed_invs):
     the cover lemma ``some_path``, and the composition its witness's rule gives,
     concluding ``holds``.
 
-    The two axes are read off separately: what is stated comes from the claim —
+    The two axes are read off separately. What is stated comes from the claim:
     ``Safety`` gives ``pred`` and ``G (AP pred)`` (``G (APₛ pred)`` when it
     reaches into the next round), ``Liveness`` gives ``domain`` and ``G (F (Not
-    (APₛ domain)))`` — and how it is proved comes from the witness's own class,
-    each of which the substrate has one rule for. A witness this layer has no
-    rule for is refused by name, never emitted under another's rule. Returns
-    ``(text, step)``."""
+    (APₛ domain)))``. How it is proved comes from the witness's rule (:data:`RULES`).
+    Returns ``(text, step)``."""
     n = len(s_syms)
     paths = proof.certificates
     if not paths:
@@ -1216,8 +1225,8 @@ _FOOTER = "\nend Matrix\n"
 
 
 def emit_program(name: str, system, result, label: str | None = None) -> str:
-    """The whole ``program.lean`` for ``name``, from ``system`` — the module as
-    read, with the Safety proofs it assumes — and ``result``, the
+    """The whole ``program.lean`` for ``name``, from ``system`` (the module as
+    read, with the Safety proofs it assumes) and ``result``, the
     :class:`._farkas.Proof` a ``certify`` run on it returned.
 
     One module, several claims. The module is emitted once as ``RM``. Each proof
@@ -1226,7 +1235,7 @@ def emit_program(name: str, system, result, label: str | None = None) -> str:
     ``RM.traces`` in the LTL of its kind and proves it by its witness's rule,
     citing the earlier claims' ``pred_invariant`` where it assumes them.
     ``label`` is the client's word for the main claim, kept to the header. The
-    entry state is read off the system, the networks off the result's devices —
+    entry state is read off the system and the networks off the result's devices,
     never the weights."""
     if not result.certificates:
         raise ValueError(f"{name}: no certified paths to emit")
@@ -1237,7 +1246,7 @@ def emit_program(name: str, system, result, label: str | None = None) -> str:
     rule = _rule_for(result.witness, result.claim)
     kind = ("liveness: every run leaves the domain again and again" if liveness else
             "safety: the predicate holds on every round")
-    what = f"{label} — {kind}" if label else kind
+    what = f"{label}. {kind}" if label else kind
     cols = ", ".join(f"s {j} = {nm}" for j, nm in enumerate(system.names))
     assuming = f", assuming {len(assumed)} proved Safety claim(s)" if assumed else ""
     parts = [f"/- ──── module: {name}. Columns: {cols}.\n"
@@ -1251,7 +1260,7 @@ def emit_program(name: str, system, result, label: str | None = None) -> str:
     if tuple(result.assumed) != assumed:
         raise Unsupported(
             f"{name}: this proof was certified assuming {len(result.assumed)} claim(s) but "
-            f"the system carries {len(assumed)} — the file would state its invariant over "
+            f"the system carries {len(assumed)}; the file would state its invariant over "
             "facts the proof did not have")
     cited = []
     for k, proof in enumerate(assumed):

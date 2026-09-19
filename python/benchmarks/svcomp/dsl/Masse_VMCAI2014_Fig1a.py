@@ -1,4 +1,4 @@
-"""Masse-VMCAI2014-Fig1a — if/else both branches negating the second variable.
+"""Masse-VMCAI2014-Fig1a: if/else both branches negating the second variable.
 
     int a, b;
     a = __VERIFIER_nondet_int();

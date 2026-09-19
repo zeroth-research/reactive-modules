@@ -5,9 +5,9 @@ These pin the properties the emitted proofs rest on:
   * ``affine_coeffs`` returns coefficients only for genuinely affine input. Its
     0/1 sampling alone would accept an ``ite`` (each sample is a constant) and
     return a linear fit for a branching transition, which would then be
-    certified — so the rejection is a soundness property, not a nicety.
+    certified, so the rejection is a soundness property, not a nicety.
   * ``expand_cases`` expands a branching body and a non-convex guard into cases
-    whose guards partition the original guard — what the emitted ``some_path``
+    whose guards partition the original guard, which is what the emitted ``some_path``
     union rests on.
   * a certificate the verifier returns satisfies the three Farkas conditions on
     its own system.
@@ -48,7 +48,7 @@ x, y = z3.Ints("x y")
 
 
 def _obligation(state, update, layers, invariants=(), delta=1.0, init=None):
-    """A real obligation for a compact loop spec — the module is built and walked
+    """A real obligation for a compact loop spec: the module is built and walked
     exactly as the pipeline does it (see :mod:`tests._fixtures`). ``invariants``
     are certified as a Safety claim and assumed, so they must hold at ``init``."""
     named = [(f"inv{k}", (lambda st, p=p: p)) for k, p in enumerate(invariants)]
@@ -129,8 +129,8 @@ def test_expand_cases_splits_a_branch():
 
 def test_expand_cases_covers_exactly_and_does_not_overlap():
     """The emitted ``some_path`` says the cases cover the module's rounds in the
-    domain, so they must cover the guard exactly — under-covering would leave a
-    round no path speaks for — and stay disjoint, so no state is certified twice."""
+    domain, so they must cover the guard exactly, since under-covering would leave
+    a round no path speaks for, and stay disjoint, so no state is certified twice."""
     x, m, i, j, n = z3.Ints("x m i j n")
     for guard in (x != m, z3.Or(i < m, j < n), z3.And(x > 0, z3.Or(i < m, j < n))):
         pieces = [g for g, _ in expand_cases(guard, [x])]
@@ -147,7 +147,7 @@ def test_expand_cases_covers_exactly_and_does_not_overlap():
 
 def test_expand_cases_leaves_a_convex_guard_and_affine_body_alone():
     """A conjunction of half-spaces with an ite-free body already reaches the LP
-    intact, so it yields one case — the emitted proof stays unchanged."""
+    intact, so it yields one case and the emitted proof stays unchanged."""
     x, m = z3.Ints("x m")
     for guard in (x > 0, z3.And(x > 0, x < m)):
         assert expand_cases(guard, [x - 1]) == [(guard, [x - 1])]
@@ -188,8 +188,8 @@ def _conditional_loop():
 
 
 def test_atoms_the_lp_cannot_express_are_reported():
-    """Dropping a disjunctive invariant is legitimate — it still shapes the domain
-    and reaches the emitted proof — but it is information the LP does not get, so
+    """Dropping a disjunctive invariant is legitimate, since it still shapes the
+    domain and reaches the emitted proof, but it is information the LP does not get, so
     the result names it rather than proceeding silently. A trivially true conjunct
     is no information and is not reported."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
@@ -265,8 +265,8 @@ def test_an_untranslatable_itype_is_refused():
 
 
 def test_a_vector_wire_is_refused():
-    """The reader takes scalar integer wires — one symbol per wire is what the
-    rows, the regions and the proof's state quantify over — so a vector-valued
+    """The reader takes scalar integer wires, since one symbol per wire is what the
+    rows, the regions and the proof's state quantify over, so a vector-valued
     wire is refused by name at the door rather than read element by element."""
     vec = Sort.Int([2, 1])
     pair = (Wire(vec), Wire(vec))
@@ -284,7 +284,7 @@ def test_a_vector_wire_is_refused():
 
 def test_a_nondeterministic_transition_is_refused():
     """A next value reading an awaited input is nondeterminism, which this procedure
-    has no rule for — so it says so, naming the input."""
+    has no rule for, so it says so, naming the input."""
     prog, _ = _prog(lambda c, e: c + e, extl=((Wire(INT), Wire(INT)),))
     system = read_system(prog, ("x",))
     with pytest.raises(Unsupported, match="_in0"):
@@ -299,7 +299,7 @@ def test_a_supported_module_passes_the_door():
 
 def test_a_second_property_runs_through_the_same_engine():
     """``Safety(pred)`` is a property of the *program*, discharged by an inductive
-    invariant through the same region engine — with no ReLU-bearing wire named,
+    invariant through the same region engine. With no ReLU-bearing wire named,
     there is one region per path, and the same Farkas rows close it: one per
     disjunct of the rule's negation. A claim that is its own invariant has only
     consecution to show, so that is one disjunct."""
@@ -328,7 +328,7 @@ def test_a_witness_refuses_a_claim_it_cannot_use():
     ``inductive`` needs a predicate to imply, which a ``Liveness`` claim has not;
     ``decrease`` discharges a run claim, which a ``Safety`` claim is not (its ranks
     would otherwise be asked to drop on every round, a claim nobody made). Nothing
-    picks a witness on the caller's behalf — a rank is not a thing to guess."""
+    picks a witness on the caller's behalf; a rank is not a thing to guess."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
     with pytest.raises(Unsupported, match="has none"):
@@ -365,7 +365,7 @@ def test_the_rule_owns_the_goal():
 
 def test_conditional_loop_certifies():
     """No negative arm: the domain is now ``T(s) != s``, and on the ``b >= 1``
-    branch that says ``x + t != x`` — so the sign of ``t`` is in the domain
+    branch that says ``x + t != x``, so the sign of ``t`` is in the domain
     without any entailment step deducing it."""
     layers, invariants = _conditional_loop()
     ob = _obligation(("x", "n", "b", "t"),
@@ -448,9 +448,9 @@ def test_mixed_output_weights_and_bias_are_carried():
 
 def test_margin_the_rank_cannot_meet_is_rejected():
     """``relu(x)`` drops by 1 at ``x = 1``, so a margin of 2 is a real
-    counterexample and has to be reported as one. Two checks can catch it — the
+    counterexample and has to be reported as one. Two checks can catch it, the
     witness-level one in ``_certify_path`` and the region-wide prune in
-    ``_certify_cell`` — and the guarantee holds as long as either does."""
+    ``_certify_cell``, and the guarantee holds as long as either does."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     res = _cell(_decrement(layers, delta=2.0, step=2))
     assert not res.verified
@@ -459,7 +459,7 @@ def test_margin_the_rank_cannot_meet_is_rejected():
 
 def test_certificates_are_valid():
     """Every cell certificate of a certified loop satisfies the three Farkas
-    conditions on its own system — the facts ``farkas_sound`` consumes."""
+    conditions on its own system, the facts ``farkas_sound`` consumes."""
     # V(s) = relu(x) over the loop `while (x > 0) x = x - 1`
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     res = _cell(_decrement(layers))
@@ -492,7 +492,7 @@ def _two_ranks(update):
 
 def test_lexicographic_rank_where_no_single_rank_works():
     """``while (i > 0) { if (j > 0) j--; else { i--; j = 3; } }``: the inner step
-    keeps ``i`` and the outer resets ``j``, so neither rank drops on every step —
+    keeps ``i`` and the outer resets ``j``, so neither rank drops on every step,
     but ``(i, j)`` drops lexicographically."""
     system, prop, (r0, r1) = _two_ranks(
         lambda c: (dsl_ite(c[0] > 0, dsl_ite(c[1] > 0, c[0], c[0] - 1), c[0]),
@@ -528,7 +528,7 @@ def test_lexicographic_rank_must_prove_earlier_ranks_do_not_increase():
 def test_a_disjunctive_invariant_goes_through_the_disjuncts():
     """The rule's negation is cut into disjuncts of rows, so a disjunctive
     invariant is one more shape of formula rather than a refusal: ``while (x > 0)
-    x--`` from ``x = 0`` keeps ``x >= 0 ∨ x <= -5`` — each disjunct of its negation
+    x--`` from ``x = 0`` keeps ``x >= 0 ∨ x <= -5``: each disjunct of its negation
     (each side of the invariant at ``s`` with both sides false at ``s'``) is refuted
     on the one region per path."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
@@ -543,7 +543,7 @@ def test_a_disjunctive_invariant_goes_through_the_disjuncts():
 
 def test_a_disequality_in_the_rule_splits_into_its_two_sides():
     """``x != -1`` is no half-space, but as a formula it is ``x < -1 ∨ x > -1``,
-    and its negation the equality's two rows — so it certifies where before it
+    and its negation the equality's two rows, so it certifies where before it
     was refused as \"not a linear comparison\"."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
@@ -553,7 +553,7 @@ def test_a_disequality_in_the_rule_splits_into_its_two_sides():
 
 def _computed(state, update, layers, *, init=None):
     """``state``'s program composed with one sequential atom computing a network
-    of the latched state — a wire of the graph a property may name. Returns the
+    of the latched state, a wire of the graph a property may name. Returns the
     system and that wire."""
     prog = system_of(loop_bench(state, update, init=init))
     mod, out = _v_module(prog.pairs, layers, read_next=False)
@@ -583,7 +583,7 @@ def test_a_property_may_name_a_computed_wire():
 
 def test_a_safety_claim_may_speak_of_the_step():
     """A round holds a state and its successor, so a safety claim may relate the
-    two — ``x`` never increases — and the engine treats it as any other predicate
+    two (``x`` never increases) and the engine treats it as any other predicate
     over the round: certified where it holds, refuted where it does not, including
     at the stuttering rounds a run claim would not count."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
@@ -598,8 +598,8 @@ def test_a_safety_claim_may_speak_of_the_step():
 
 
 def test_an_invariant_may_not_name_a_wire():
-    """Invariants are state predicates — a wire belongs in the property or the
-    rule — and a rule whose atom is not linear is refused by name too."""
+    """Invariants are state predicates, since a wire belongs in the property or the
+    rule, and a rule whose atom is not linear is refused by name too."""
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     ob = _decrement(layers)
     v_s = ob.witness.ranks[0][0]
@@ -617,7 +617,7 @@ def test_an_invariant_may_not_name_a_wire():
 def test_knowing_takes_only_proved_safety_claims():
     """The engine assumes a fact only through a proof of it. ``knowing`` takes a
     verified Proof of a Safety claim over these columns, exposes its predicate as
-    ``invariants`` and keeps the proof for the emitter — and refuses by name an
+    ``invariants`` and keeps the proof for the emitter, and refuses by name an
     unverified proof, a liveness proof, a proof over other columns, and a proof
     of a claim that is not about a state at all."""
     bench = loop_bench(("x",), lambda x: dsl_ite(dsl_ne(x, 0), x - 1, x), init=lambda: (5,))
@@ -655,7 +655,7 @@ def test_a_proved_invariant_narrows_the_liveness_obligation():
     """``while (x != 0) x--`` from 5 with the rank ``relu(x)``: at an unreachable
     state ``x < 0`` the rank does not drop, so over all integers the claim fails,
     and on the states ``x >= 0`` admits it holds. The fact reaches the engine only
-    as a proof of the Safety claim — the same object the proof layer will cite."""
+    as a proof of the Safety claim, the same object the proof layer will cite."""
     bench = loop_bench(("x",), lambda x: dsl_ite(dsl_ne(x, 0), x - 1, x), init=lambda: (5,))
     layers = [(np.array([[1]]), np.array([0])), (np.array([[1]]), np.array([0]))]
     system = system_of(bench)

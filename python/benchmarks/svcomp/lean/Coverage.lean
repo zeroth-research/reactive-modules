@@ -6,8 +6,8 @@ open Fin
 /- ### Coverage bridge
 
 The per-cell certificate proofs state infeasibility in *matrix* form
-(`¬ (A *ᵥ s ≤ᵥ b)`, via `farkas_sound`). The coverage proof — that the
-certified cells exhaust the loop guard — is discharged by `omega`, which
+(`¬ (A *ᵥ s ≤ᵥ b)`, via `farkas_sound`). The coverage proof, that the
+certified cells exhaust the loop guard, is discharged by `omega`, which
 reasons over *scalar* linear arithmetic. These lemmas are the one-time
 bridge between the two: they let a matrix inequality `A *ᵥ s ≤ᵥ b` be
 unfolded into an explicit conjunction of scalar row inequalities that
@@ -55,14 +55,14 @@ of the rule's negation. The proof is mechanical and identical save for the names
 involved, so it lives here once instead of being re-emitted per disjunct:
 
   - assume the disjunct's rows;
-  - feed `hinf` the full row system — `simp only` unfolds the matrix product
+  - feed `hinf` the full row system; `simp only` unfolds the matrix product
     (`mulVec_apply`/`sum`/`forall_fin_*`) and the guard/invariant/sign
     predicates into scalar rows;
   - `omega` closes: the sign/guard/invariant rows hold by hypothesis and the
     disjunct's rows by assumption, contradicting `hinf`.
 
 `hinf` is passed already applied to the state (`cellRdD_infeasible s`); the
-`with` clause lists the definitions to unfold — `trans`, `invariants`, the
+`with` clause lists the definitions to unfold: `trans`, `invariants`, the
 region's signs, and the cell's `cellRdD_A`/`cellRdD_b`. -/
 syntax "refute_bridge" term " with " Lean.Parser.Tactic.simpLemma,* : tactic
 macro_rules

@@ -1,4 +1,4 @@
-"""ChawdharyCookGulwaniSagivYang-ESOP2008-easy2 — count-down on nondet z.
+"""ChawdharyCookGulwaniSagivYang-ESOP2008-easy2: count-down on nondet z.
 
     int x = 12, y = 0;
     int z = __VERIFIER_nondet_int();

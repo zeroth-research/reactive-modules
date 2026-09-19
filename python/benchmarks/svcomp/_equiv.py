@@ -8,12 +8,12 @@ that mis-transcribes a guard or body will diverge on some input.
 The compiled C is the ground truth. This is a *sampling* check (finite random
 inputs), not a proof: a symbolic C-vs-DSL equivalence proof would require a
 symbolic model of the C (i.e. re-translating it), which is exactly the
-translation surface this checker exists to guard — so we rely on the real
-compiler instead. Self-contained: only needs ``cc`` and the C files in ``c/``.
+translation surface this checker exists to guard, so the real compiler is the
+reference. Self-contained: only needs ``cc`` and the C files in ``c/``.
 
 ## How inputs are fed
 The clean sv_comp programs read ``__VERIFIER_nondet_int()`` only before the
-loop, in program order. We provide a definition that reads successive ints
+loop, in program order. The harness supplies a definition that reads successive ints
 from **stdin**, so ``main``'s signature is untouched. The i-th value on stdin
 must line up with the module's i-th ``extl`` input, so **``Bench.inputs`` must
 be listed in the order the C reads nondet** (a documented convention).
@@ -115,6 +115,8 @@ def _run_c(binf: Path, inputs: list[int], state: tuple[str, ...],
 # ---------------------------------------------------------------------------
 
 def run_block(atoms, state, get_block):
+    """Evaluate one block of every atom against ``state``, writing each term's
+    outputs back, and return the updated state."""
     for a in atoms:
         for t in get_block(a):
             read = [state[w] for w in t.read]
@@ -152,7 +154,7 @@ def _run_module(bench: Bench, inputs: list[int], max_steps: int) -> dict[str, in
 
 
 def _init_state_ints(bench: Bench, inputs: list[int]) -> dict[str, int]:
-    """The module's initial state (as ints) for the given nondet inputs — used
+    """The module's initial state (as ints) for the given nondet inputs, used
     to evaluate the (state-level) precondition."""
     prog, ctrl, extl = bench.build()
     state: dict = {}
@@ -168,6 +170,8 @@ def _init_state_ints(bench: Bench, inputs: list[int]) -> dict[str, int]:
 
 @dataclass
 class Result:
+    """One benchmark's differential outcome: how many input vectors were compared
+    and where the DSL encoding and the compiled C disagreed."""
     name: str
     trials: int          # decisive trials actually compared
     passed: int
@@ -182,6 +186,8 @@ class Result:
 
 def check(bench: Bench, trials: int = 300, seed: int = 0,
          lo: int = -40, hi: int = 40, max_steps: int = 50_000) -> Result:
+    """Compare ``bench``'s DSL encoding against its compiled C source on random
+    inputs drawn from ``[lo, hi]``, and report where the final states differ."""
     c_source = (_C_DIR / bench.source).read_text()
 
     n_calls = _n_nondet_calls(c_source)
@@ -189,7 +195,7 @@ def check(bench: Bench, trials: int = 300, seed: int = 0,
         return Result(bench.name, 0, 0, [],
                       skipped=f"#nondet calls ({n_calls}) != len(inputs) ({len(bench.inputs)})")
 
-    # Deterministic (no nondet) programs have a single behaviour — one trial suffices.
+    # Deterministic (no nondet) programs have a single behaviour, so one trial suffices.
     if not bench.inputs:
         trials = 1
 
@@ -222,6 +228,7 @@ def check(bench: Bench, trials: int = 300, seed: int = 0,
 
 
 def check_all(**kw) -> list[Result]:
+    """:func:`check` on every discovered benchmark."""
     from . import discover
     return [check(b, **kw) for b in discover()]
 

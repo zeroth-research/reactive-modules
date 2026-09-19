@@ -1,25 +1,34 @@
 """Claims a decision procedure can be asked to prove about a reactive module.
 
-A claim says *what you want*, in terms of the module's wires alone — ``S[name]``
-a column's latched value, ``S.next[name]`` its value after the round, ``W[wire]``
-the value a ctrl next wire takes this round — so it is stateable without knowing
-which witness will discharge it; how to prove one is a witness's business (see
-:mod:`._farkas`).
+A claim says what is wanted, in terms of the module's wires alone: ``S[name]``
+is a column's latched value, ``S.next[name]`` its value after the round, and
+``W[wire]`` the value a ctrl next wire takes this round. A claim is therefore
+stateable without knowing which witness will discharge it; how to prove one is a
+witness's business (see :mod:`._farkas`).
 
 Every property of a module's runs is a safety property intersected with a
-liveness one (Alpern and Schneider), and each has one shape here: one class taking
-one predicate over a round. :class:`Safety` — ``holds`` is true on every round; a
-round already has a state and its successor, so that is every safety property.
-:class:`Liveness` — no infinite stretch of consecutive rounds satisfies ``domain``,
-so the run leaves it again and again. That is recurrence, and the other liveness
-shapes are it plus a safety claim plus columns: "eventually P" is
-``Liveness(not P)``; "eventually P forever" is ``Liveness(not P)`` with the
-stability ``Safety(P -> P')``; "after p, eventually q" is ``Liveness(waiting)`` for
-a column set by ``p`` and cleared by ``q``; termination is the ``Liveness`` whose
-domain is "some column moves", where leaving it is a fixed point and stability
-comes free. Any ω-regular
-liveness property reduces to recurrence the same way, by composing its automaton
-in as columns — which is why one class is enough.
+liveness one (Alpern and Schneider 1985), and there is one class for each, both
+taking a single predicate over a round.
+
+:class:`Safety` holds on every round. A round carries a state and its successor,
+so a predicate over one covers both state and step properties.
+
+:class:`Liveness` names a domain no infinite stretch of consecutive rounds may
+stay inside, so the run leaves it again and again. That is recurrence, and the
+other liveness shapes are built from it by adding a column to the module:
+
+  ``eventually P``          ``Liveness(not P)``
+  ``eventually P forever``  ``Liveness(not P)`` with ``Safety(P -> P')``
+  ``after p, eventually q`` ``Liveness(waiting)``, for a column ``p`` sets and
+                            ``q`` clears
+  termination               ``Liveness`` over the rounds where a column moves,
+                            where leaving the domain is a fixed point
+
+Any ω-regular liveness property reduces to recurrence the same way, by composing
+its automaton into the module as columns.
+
+This module defines no properties of its own: the general layers supply the
+vocabulary and a client states the property in it.
 """
 from __future__ import annotations
 
@@ -49,7 +58,7 @@ class Liveness:
     the run is in it, it leaves.
 
     ``domain`` is ``(W, S) -> BoolRef``, the rounds a witness must show cannot go
-    on forever — a rank bounded below that drops on each of them does it, and may
+    on forever. A rank bounded below that drops on each of them does it, and may
     rise again outside them. What is concluded is exactly that, the run leaves
     ``domain`` infinitely often, not that it stays out: staying out is a separate
     safety fact where it is wanted. A run claim, so nothing must hold on any one

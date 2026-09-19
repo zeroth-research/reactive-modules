@@ -1,4 +1,4 @@
-"""ChenFlurMukhopadhyay-SAS2012-Ex2.06 — per-iteration temp `oldx`.
+"""ChenFlurMukhopadhyay-SAS2012-Ex2.06: per-iteration temp `oldx`.
 
     int x, y, oldx;
     x = __VERIFIER_nondet_int();
@@ -11,7 +11,7 @@
 
 Notes:
   - `oldx` is a per-iteration temporary (assigned from x, used only that
-    iteration) — a plain local, NOT ctrl.
+    iteration), a plain local, NOT ctrl.
   - NONTERMINATING for some inputs (e.g. x=1, y=1), so expect many
     inconclusive trials; decisive trials must agree.
 """

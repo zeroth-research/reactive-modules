@@ -1,19 +1,19 @@
 /-!
-Well-foundedness principles for ranking functions, proven once — the
+Well-foundedness principles for ranking functions, proven once. They are the
 `farkas_sound` of a ranking argument. `ReactiveModule.rule_buchi_lex` is the one
 place they are instantiated: an emitted proof cites that rule, never these.
 
-  * `peel` — the recursive engine: a bounded-below rank `V` that on every step
+  * `peel`, the recursive engine: a bounded-below rank `V` that on every step
     either strictly drops, or is non-increasing and hands off to a sub-relation
     `Step'`, is well-founded provided `Step'` is. `V` can drop only finitely
     often, so on any tail it is constant and the run is a `Step'`-run.
-  * `no_infinite_run_lex` — a *list* of bounded-below ranks decreasing
+  * `no_infinite_run_lex`, a *list* of bounded-below ranks decreasing
     lexicographically (`lexDec`) admits no infinite run, by iterating `peel`
-    down to the empty base. This is the lex order on `ℤ≥0ⁿ` — nested loops /
+    down to the empty base. This is the lex order on `ℤ≥0ⁿ`: nested loops /
     vector ranking functions, with the scalar single loop as the length-1
     instance (`[V]`), so one theorem covers every case.
 
-Only strict decrease is needed — no per-program margin `δ`, since an integer
+Only strict decrease is needed, with no per-program margin `δ`, since an integer
 rank cannot strictly decrease by less than one. (Over the rationals this fails:
 `1, ½, ¼, …`; integer-valuedness is what makes the order well-founded.)
 -/
@@ -60,7 +60,7 @@ def lexDec {S : Type} (Vs : List (S → Int)) (s s' : S) : Prop :=
   | V :: rest => V s' < V s ∨ (V s' ≤ V s ∧ lexDec rest s s')
 
 /-- A list of bounded-below ranks decreasing lexicographically on every step
-    admits no infinite run — well-foundedness of the lex order on `ℤ≥0ⁿ`, by
+    admits no infinite run. This is well-foundedness of the lex order on `ℤ≥0ⁿ`, by
     iterating `peel` (each level peels off the leading rank). -/
 theorem no_infinite_run_lex {S : Type} (Vs : List (S → Int)) :
     ∀ (Step : S → S → Prop),

@@ -1,4 +1,4 @@
-"""ChenFlurMukhopadhyay-SAS2012-Ex2.16 — copy y into x.
+"""ChenFlurMukhopadhyay-SAS2012-Ex2.16: copy y into x.
 
     int x, y;
     x = __VERIFIER_nondet_int();

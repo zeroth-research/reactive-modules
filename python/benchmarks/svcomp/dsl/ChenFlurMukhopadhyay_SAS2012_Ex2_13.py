@@ -1,4 +1,4 @@
-"""ChenFlurMukhopadhyay-SAS2012-Ex2.13 — difference guard.
+"""ChenFlurMukhopadhyay-SAS2012-Ex2.13: difference guard.
 
     int x, y;
     x = __VERIFIER_nondet_int();
