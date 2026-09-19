@@ -446,31 +446,57 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     manifest, the teardown. Anyone estimating from `results.json`'s own
     timings will be out by a factor of three.
 
-    **hybrid is measured, and the answer is not "blank" but "out of
-    reach".** All 234 cells -- 26 rows over 9 routes -- and **not one
-    `VERIFIED`**: 178 `NO-CERT`, 37 `UNSUPPORTED`, 12 `REFUTED`, 7
-    `PROOF-FAIL`. petri, running next, verifies from the start, so the
-    shutout is about hybrid's **Real dynamics** rather than about the suites
-    being new -- every route's Real limitation bites at once, and the page
-    should say that rather than show emptiness.
+    **Done for these two suites** -- 549 cells in 4h29m, results in
+    `/tmp/verith-bench.noindex/results-hybrid-petri.json`. And the answer is
+    not "blank" but two different facts:
 
-    The soundness check passes on the new cells: **all 14 `REFUTED` land on
-    a row declared `fails`, none on a row declared `holds`.** That is worth
-    more than usual here, because these are the two suites whose `truth` is
-    *measured* by `test_rows.py` rather than transcribed -- nine independent
-    routes agreeing with the simulator is evidence the declarations are
-    right, in the one family where 20's refutation rule is calibrated.
+        hybrid (234)  178 NO-CERT  37 UNSUPPORTED  12 REFUTED   7 PROOF-FAIL   0 VERIFIED
+        petri  (315)  189 NO-CERT  43 UNSUPPORTED  20 REFUTED  14 PROOF-FAIL  45 VERIFIED
+                                                    3 TIMEOUT   1 GEN-FAIL
+
+    **hybrid is out of reach for every route** -- 26 rows, 9 routes, not one
+    certificate -- and petri verifying 45 is what says why: the shutout is
+    hybrid's **Real dynamics**, not the suites being new. Every route's Real
+    limitation bites at once. The page should say that rather than show
+    emptiness.
+
+    Per route over the 61 rows: `houdini` 14, `ai-cegis` 13,
+    `houdini-vampire` 13, `smt-linear` 3, `sygus` 2, and **0 for `ai`,
+    `nuterm`, `vampire` and `fbk-proveit`**. That `ai` certifies none while
+    `ai-cegis` certifies 13 is worth its own look -- the counterexample loop
+    is doing all the work on this family.
+
+    Soundness holds on all 549: **no `REFUTED` off a row declared `fails`,
+    and no `VERIFIED` on one**. Worth more than usual here, because these
+    are the two suites whose `truth` is *measured* by `test_rows.py` rather
+    than transcribed -- nine independent routes agreeing with the simulator
+    is evidence in both directions, in the one family where 20's refutation
+    rule is calibrated.
 
 19. **houdini and houdini-vampire agree on every verdict on the 37 rows both
     ran** (0 of 37 differ), so the split has so far produced none of the
     "which half of the route the difference is in" it exists for. Either run
     both everywhere so the comparison means something, or drop one.
 
-    **Answered: keep it.** The hybrid pass produced a verdict disagreement
-    on the twelfth row the two shared -- `hybrid/m_tank_dist/refills`,
-    `houdini` `NO-CERT` against `houdini-vampire` `PROOF-FAIL` -- and it is
-    the informative direction. `houdini-vampire` is **the only route in the
-    matrix that derives a certificate for that row**:
+    **Answered: keep it.** Over the 61 hybrid and petri rows both ran, they
+    differ on two -- and the two go in *opposite* directions, so each prover
+    reaches somewhere the other does not:
+
+        hybrid/m_tank_dist/refills   houdini NO-CERT    houdini-vampire PROOF-FAIL
+        petri/mutex/semiflow         houdini VERIFIED   houdini-vampire PROOF-FAIL
+
+    **One cause underneath both: the vampire prover minimises worse.** On
+    `semiflow` it keeps a *superset* of cvc5's invariant -- the same four
+    conjuncts plus three more -- and Lean then times out at 2000000
+    heartbeats on the bigger certificate, where cvc5's four close. On
+    `m_relu_net16` it is the same story at 50 facts against 1. And on
+    `refills` that same reluctance to cut is what lets it reach a
+    certificate cvc5 never finds. So the fix is one thing, not two: minimise
+    the vampire path as well as the cvc5 one, and `semiflow` should verify
+    while `refills` keeps its reach.
+
+    `houdini-vampire` is **the only route in the matrix that derives a
+    certificate for `refills`**:
 
         inv   (=> (not s1) (<= 5.0 s0))
         rank  (ite s1 (to_int (+ 49.0 (* (- 4.0) s0)))
