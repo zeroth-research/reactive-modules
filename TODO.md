@@ -461,10 +461,15 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     emptiness.
 
     Per route over the 61 rows: `houdini` 14, `ai-cegis` 13,
-    `houdini-vampire` 13, `smt-linear` 3, `sygus` 2, and **0 for `ai`,
-    `nuterm`, `vampire` and `fbk-proveit`**. That `ai` certifies none while
-    `ai-cegis` certifies 13 is worth its own look -- the counterexample loop
-    is doing all the work on this family.
+    `houdini-vampire` 13, `smt-linear` 3, `sygus` 2 (4 since 21), and **0
+    for `ai`, `nuterm`, `vampire` and `fbk-proveit`**.
+
+    This once said that `ai` certifying none while `ai-cegis` certifies 13
+    was worth its own look. It is not: **42 of `ai`'s 61 cells are the CLI
+    gate** -- it infers a ranking function `rule_globally` cannot take, so
+    it refuses every safety row -- and it was only ever eligible on the 19
+    buchi ones, where it produced a certificate 9 times and Lean rejected
+    all 9. The two routes were never running the same cells.
 
     Soundness holds on all 549: **no `REFUTED` off a row declared `fails`,
     and no `VERIFIED` on one**. Worth more than usual here, because these
@@ -548,3 +553,69 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     definitions the benchmarks were converted from. The one row that looks
     genuinely `fails` is `limits/m_relu_input/ReluInputNoPre`: `NO-CERT` on
     all seven routes, and it is the variant with the precondition removed.
+
+21. ~~**The Real-state gate refuses 114 cells before any search.**~~
+    **Half done** (`--infer sygus`); the rest is sized below.
+
+    Counted over the 549-cell hybrid+petri pass, the non-`VERIFIED` cells
+    are not what their verdicts say. 80 `UNSUPPORTED` are the CLI declining
+    a property *kind* (`ai` refuses all 42 safety rows, `sygus` and
+    `fbk-proveit` all 19 buchi ones) and 32 `REFUTED` are correct
+    refutations on `fails` rows. Of the 392 real failures, **114 are a
+    sorts gate that runs no solver at all** -- and that is what keeps
+    hybrid at 0/234, because all 26 hybrid rows carry a Real component
+    where only 9 of 35 petri rows do.
+
+    * **`sygus` (22 cells) -- done.** The route was the one that never
+      adopted the `Reading` layer: it stated its `synthFun` over the state
+      *components*, assumed each was an `Int`, and refused everything else
+      at `SynthContext.build`. It now takes the components in their own
+      sorts -- `pre` and `trans` are the module's own transition, which is
+      where the sorts have to match -- and makes the grammar affine over
+      their **columns**, which also gets it Bool, bitvector and
+      matrix-shaped state, not only Real.
+
+      The part worth keeping: a Real column here is **not** read through
+      `--infer smt-linear`'s floor. That reading exists because a *ranking
+      function* has to land in `Nat`; `sygus` only ever states an
+      invariant, and flooring a predicate is not conservative in either
+      direction -- `to_int s0 + to_int s1 <= 1` holds at `s0 = s1 = 0.6`
+      where `s0 + s1 <= 1.0` fails. Measured both ways: the floored version
+      finds nothing on `petri/sem-cont`, the Real one proves it. That is
+      now `component_readings(floor_reals=)`, with the counterexample in
+      the docstring so the next route does not rediscover it.
+
+      Measured over all 61 rows, `--redo`: **2 `VERIFIED` (`sem-cont/mutex`,
+      `sem-cont/semiflow`), 0 regressions**, and 17 of the remaining 20
+      formerly-gated cells now return *a proof that the space is empty*
+      rather than a refusal -- which is the honest answer the route exists
+      to give. Soundness clean: no `VERIFIED` on a `fails` row.
+
+    * **`vampire` (35 cells) -- shallower than it looks, not yet done.**
+      The solver layer is already there: `houdini_solver` feeds Vampire
+      SMT-LIB2 under `(set-logic ALL)` and handles `to_int` and rational
+      printing, which is why `houdini-vampire` takes Real today. What is
+      int-bound is the route's own second gate (`_check_sorts`, which wants
+      integer *variables* and not merely integer readings) and its
+      templates, which are integer intervals with integer coefficients.
+      Unlike `sygus` this route also ranks, so a Real rank does need the
+      floor -- the two halves want different readings, which is exactly
+      what `floor_reals` is now for.
+
+    * **`nuterm` (35 cells) -- three layers, and it is item 8's problem.**
+      `_farkas.read_system` seeds `z3.Int` per wire, `affine_coeffs` fits by
+      integer 0/1 substitution, and the emitted Lean proof quantifies over
+      `Vector n Int`. It ranks, so Reals need the floor on top of all that.
+
+    * **`fbk-proveit` (22 cells) -- not ours.** The refusal is
+      `vmt2lean.py` mapping only Int and Bool back to Lean, and that file
+      lives in the external proveit checkout, not this repo.
+
+    Two smaller things the same count turned up. The `ai`/`ai-cegis`
+    failures are worth reading as one number and not two: of 41 `ai-cegis`
+    CEGAR give-ups, **29 end on a non-integer counterexample**, so Real
+    dynamics are behind those too. And the `ANTHROPIC_API_KEY` SDK banner
+    prefixes the real error on all 51 `ai`/`ai-cegis` cells -- it appears
+    **71 times in the rendered matrix**. `diagnosis` keeps the real message
+    underneath (it takes an 8-line tail), so this is cosmetic, but it is
+    the first line a reader sees in those panels.
