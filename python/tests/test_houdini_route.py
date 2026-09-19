@@ -403,6 +403,70 @@ def test_a_solver_with_no_model_falls_back_to_asking_fact_by_fact():
     assert [f.src for f in from_model] == ["(<= 0 s0)", "(<= s0 100)"]
 
 
+def test_the_cut_is_taken_again_over_what_it_returned():
+    """A core is what the refutation touched, so a wide pool gives it more
+    to touch -- and one cut is therefore not a fixed point.
+
+    Scripted with the shape Vampire's cores were measured to have: the
+    proof goes through whatever it is asked from, and names half of what it
+    was offered. Asking the same question of the half is a *different*
+    refutation, and it names half again. Four facts have to reach one, and
+    a single pass reaches two.
+    """
+    from zrth.lean.houdini_solver import Answer, Solver, Verdict
+
+    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    magic.ob = ob
+    facts = magic._parse(["(<= 0 s0)", "(<= s0 100)",
+                          "(<= s0 200)", "(<= s0 300)"])
+    pools = []
+
+    class Half(Solver):
+        def _run(self, query, budget, core, model):
+            named = [n for n, _t in query.hyps if n != "pre"]
+            pools.append(len(named))
+            return Answer(Verdict.PROVED,
+                          core=frozenset(named[:(len(named) + 1) // 2]))
+
+    kept = magic._shrink(Half(seconds=30), facts, facts[1:2], 5)
+
+    assert [f.src for f in kept] == ["(<= s0 100)"]
+    # 4, 4 (the closure, asked until it adds nothing), then 2, then 1. The
+    # check that what came out is inductive on its own costs no fifth call:
+    # the last round asked that very question -- a pool whose closure is
+    # the whole of it -- and the cache is keyed on the question.
+    assert pools == [4, 4, 2, 1]
+
+
+def test_a_cut_that_stops_answering_keeps_the_round_before_it():
+    """A later round's time limit is not evidence against an earlier
+    round's proofs, so what the first cut reached still stands."""
+    from zrth.lean.houdini_solver import Answer, Solver, Verdict
+
+    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    magic.ob = ob
+    facts = magic._parse(["(<= 0 s0)", "(<= s0 100)",
+                          "(<= s0 200)", "(<= s0 300)"])
+
+    class Once(Solver):
+        """Answers the first pool it is shown and gives up on every
+        narrower one -- a portfolio that found a proof at four hypotheses
+        and no longer finds it at two."""
+
+        def _run(self, query, budget, core, model):
+            named = [n for n, _t in query.hyps if n != "pre"]
+            if len(named) < len(facts):
+                return Answer(Verdict.UNKNOWN)
+            return Answer(Verdict.PROVED, core=frozenset(named[:2]))
+
+    kept = magic._shrink(Once(seconds=30), facts, facts[1:2], 5)
+
+    # The first cut is two facts and the second round cannot be had. The
+    # two are kept -- but only because they were proved inductive on their
+    # own, which `Once` refuses, so the invariant stays whole.
+    assert [f.src for f in kept] == [f.src for f in facts]
+
+
 def test_a_query_carries_its_transition_once_and_names_every_fact():
     """What the seam promises a solver: the round stated once as `defines`,
     the hypotheses named for a core, the goal's conjuncts named for a model.

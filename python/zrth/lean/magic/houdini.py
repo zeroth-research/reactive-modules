@@ -1668,32 +1668,63 @@ class TA2MagicHoudini(TA2Magic):
                 need: list[Candidate], limit: float) -> list[Candidate]:
         """The facts `need` rests on, closed under the preservation proofs.
 
-        Each proof of "a round preserves `need`" is asked from all of `inv`,
-        and its core names the facts it used; those join `need` until a proof
-        uses nothing new. The set that comes out is inductive by those
-        proofs, and it is checked once more on its own before it replaces
-        `inv` -- a core over-trimmed would otherwise surface as a Lean
-        failure, and neither solver promises a core is one its goal needs. Anything that does not come back proved keeps `inv` whole.
+        The closure is `_closure`, and it is taken **again over what it
+        returned** until a round cuts nothing. One round is not a fixed
+        point, because a core names what the refutation happened to touch
+        and a pool of 87 facts offers more to touch than the 35 that come
+        back: asking the same question of the smaller pool is a different
+        refutation, and on measurement a much tighter one. The rounds
+        shrink strictly or stop, so there are at most as many as there are
+        facts, and each costs a handful of calls against `_minimise`'s one
+        per fact -- which is what makes this the half that carries a
+        refutation-only prover, whose every unproved call costs a whole time
+        limit.
+
+        The set that comes out is inductive by those proofs, and it is
+        checked once more on its own before it replaces `inv` -- a core
+        over-trimmed would otherwise surface as a Lean failure, and neither
+        solver promises a core is one its goal needs. Anything that does not
+        come back proved keeps `inv` whole.
         """
-        ob = self.ob
-        need = list(dict.fromkeys(need))
+        pool = inv
         while True:
-            if not need:
-                return need
-            answer = prover.prove(ob.preserved(inv, need), limit, core=True)
+            cut = self._closure(prover, pool, need, limit)
+            # `None` is a round that could not answer, and it leaves the
+            # round before it standing: what that one cut was closed under
+            # its own proofs and is not made wrong by a later time limit.
+            if cut is None or len(cut) >= len(pool):
+                break
+            pool = cut
+            if not pool:
+                return pool
+        if len(pool) == len(inv):
+            return inv
+        if prover.prove(self.ob.preserved(pool, pool), limit).proved:
+            self.log(f"[houdini] invariant cut to the {len(pool)} of "
+                     f"{len(inv)} facts its proofs use")
+            return pool
+        return inv
+
+    def _closure(self, prover: Solver, pool: list[Candidate],
+                 need: list[Candidate], limit: float) -> "list[Candidate] | None":
+        """`need` closed under "a round preserves it", drawing from `pool`.
+
+        Each proof is asked from all of `pool` and its core names the facts
+        it used; those join `need` until a proof uses nothing new. `None` is
+        "no answer" -- a proof that did not come back, or one with no core
+        -- and leaves the caller with what it had.
+        """
+        need = list(dict.fromkeys(need))
+        while need:
+            answer = prover.prove(self.ob.preserved(pool, need), limit,
+                                  core=True)
             if not answer.proved or answer.core is None:
-                return inv
-            more = [f for f in self._named(inv, answer.core) if f not in need]
+                return None
+            more = [f for f in self._named(pool, answer.core) if f not in need]
             if not more:
                 break
             need += more
-        if len(need) == len(inv):
-            return inv
-        if prover.prove(ob.preserved(need, need), limit).proved:
-            self.log(f"[houdini] invariant cut to the {len(need)} of "
-                     f"{len(inv)} facts its proofs use")
-            return need
-        return inv
+        return need
 
     def _minimise(self, prover: Solver, inv: list[Candidate],
                   keep: list[str], ranked) -> list[Candidate]:
