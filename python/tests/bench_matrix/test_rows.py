@@ -55,6 +55,45 @@ def test_declared_truth(row):
     )
 
 
+# A recurrence row whose runs close no cycle at all. Its `holds` is then
+# weaker than its neighbours': the property was never tested against a
+# cycle, only never contradicted. `m_reactor` is a Real-valued plant whose
+# core temperature is a fresh float every tick, so no configuration is ever
+# revisited exactly -- and it is the whole list, which is what the test
+# below keeps true as rows are added.
+UNCYCLED = {"hybrid/m_reactor/cools"}
+
+
+def test_a_refutation_is_a_cycle_with_a_length():
+    """Every `fails` recurrence row is refuted by a loop, not by a count.
+
+    The period is the evidence: it is how many ticks of recorded inputs have
+    to be replayed to keep the property false for ever. A refutation with no
+    period would be the tail heuristic back again under another name."""
+    for row in [r for r in ROWS if r.kind == "buchi" and r.truth == "fails"]:
+        seen = sim.observe(_load(row), row.prop, row.kind, row.pre)
+        assert seen.refuted and seen.period > 0, (
+            f"{row.key}: refuted with period {seen.period}")
+
+
+def test_which_recurrence_rows_the_runs_actually_test():
+    """A `holds` recurrence row should have met a cycle to be tested against.
+
+    `sim.observe` refutes `G F p` with a loop that avoids `p`, so a run that
+    closes no loop cannot refute anything and its `holds` rests on nothing
+    the simulation established. That is honest and it is not free, so the
+    rows it applies to are named: a new one joining them is a row this file
+    has stopped checking, and it should be noticed rather than pass."""
+    uncycled = set()
+    for row in [r for r in ROWS if r.kind == "buchi" and r.truth == "holds"]:
+        if not sim.observe(_load(row), row.prop, row.kind, row.pre).looped:
+            uncycled.add(row.key)
+
+    assert uncycled == UNCYCLED, (
+        f"recurrence rows whose runs close no cycle: {sorted(uncycled)}; "
+        f"expected {sorted(UNCYCLED)}")
+
+
 def test_every_module_has_a_refutable_row():
     """Each module carries at least one property that fails.
 
