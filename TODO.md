@@ -523,6 +523,44 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     comparison also cannot show, and which suggests the column should be
     compared on *certificates*, not just verdicts.
 
+    **The minimisation is fixed** (`15d2e5a`), and "the vampire prover
+    minimises worse" was the symptom rather than the cause. `_minimise` is
+    solver-independent and was doing its job; what differed was the step
+    before it. `_shrink` asks "which facts do the preservation proofs use?"
+    *once*, of everything Houdini kept, and an unsat core is what the
+    refutation happened to touch rather than the least it could have -- so
+    the wider the pool, the more it touches. cvc5 cut 87 facts to 9;
+    Vampire cut the same 87 to 35.
+
+    So the cut is now taken **again over its own result** until a round cuts
+    nothing, which costs almost nothing: a round's first query is one the
+    last round's core already proved, so it is a proof either solver finds
+    fast, and a round that cannot answer leaves the round before it
+    standing. Vampire goes 35 -> 13, and then `_minimise` reaches 4 where it
+    reached 7:
+
+        cvc5     cut 9 of 87  -> minimised 4     (unchanged)
+        vampire  cut 35 of 87 -> minimised 7     before
+        vampire  cut 13 of 87 -> minimised 4     after
+
+    The two solvers now return the **same certificate**, which is what this
+    column pair exists to compare, and the vampire half is *faster* for it
+    -- 8.9 s over 45 calls against 2.8 s over 39, because `_minimise` is one
+    call per fact and had 22 fewer to ask about. `lake build` closes it, so
+    `semiflow` goes `PROOF-FAIL` -> `VERIFIED` as predicted; `refills`
+    derives the same invariant and rank as before, so the reach is kept.
+
+    Still open, and it is the last paragraph above: comparing the columns on
+    certificates needs the comparison to be *logical*, not textual. The
+    harness already records what each route printed (`inferred_from`), and
+    on `fbk/m_countdown/InvBase` six routes derive the same `0 <= s0 <= 100`
+    written five different ways -- `(and (>= s0 0) (<= s0 100))`, `(and (>=
+    s0 0) (>= (+ 100 (- s0)) 0))`, `(and (<= (+ (- 100) (* (- 101) s0)) 0)
+    ...)`. A textual diff would report five distinct certificates and be
+    wrong five times over, so this is a *measurement* wanting cvc5 and the
+    module's encoding (`ctx.env.parse_expr`, then one equivalence query per
+    pair), not a rendering change.
+
 20. **`truth` is `None` for all 30 limits/buchi and all 57 svcomp/buchi rows**
     -- 40% of the page, where the matrix can only say a route answered, not
     that it answered correctly.
@@ -553,6 +591,40 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     definitions the benchmarks were converted from. The one row that looks
     genuinely `fails` is `limits/m_relu_input/ReluInputNoPre`: `NO-CERT` on
     all seven routes, and it is the variant with the precondition removed.
+
+    **The rule is fixed** (`fb5170f`, `9683f98`), and it wanted to be
+    period-*free* rather than period-aware. `G F p` cannot be refuted by any
+    finite prefix, so the only thing a run can prove is a **cycle**: a
+    return to a configuration it has already been in, with `p` false all the
+    way round. The inputs along that loop are the ones the run drew, so
+    replaying them from the start repeats it for ever. A configuration is
+    `(state, held input)` and not the state alone -- the update reads the
+    latched input too.
+
+    Measured: over the 19 hybrid and petri recurrence rows it reproduces
+    every declared `truth`, all four `fails` among them, each now a concrete
+    loop (periods 60, 17, 6, 3) rather than a count. Over the 75 runnable
+    rows here it agrees with the tail count on 71 and differs on **exactly
+    the four the tail count had wrong**. So the false-refutation machine is
+    gone and nothing else moved.
+
+    What is *not* fixed is this item's headline, and the rule says why. It
+    proves `fails` and cannot prove `holds`, so of the 87 it fills in one --
+    `ReluInputNoPre`, the row this item already singled out. The other 74
+    runnable ones close a cycle their property survives, which is evidence
+    and not proof, and filling `holds` in from it would assert exactly what
+    `sim.py` says a simulation cannot. The upstream half is also not
+    available here: the svcomp benchmarks are checked in as C and DSL
+    (`benchmarks/svcomp/c`, `.../dsl`) with no `.yml` task definition, so
+    the expected verdicts are not in this tree.
+
+    One thing the fix turned up that was invisible before: 18 of the 19
+    recurrence rows close a cycle at all, and `hybrid/m_reactor/cools` does
+    not -- a Real plant whose core temperature is a fresh float every tick,
+    so no configuration is ever revisited exactly. Its `holds` is "never
+    contradicted" where its neighbours' is "no cycle avoids it". That is the
+    shape of what the remaining 74 would be worth, if they were filled in
+    from runs: `--pre`-sampled Real dynamics mostly cannot close a cycle.
 
 21. ~~**The Real-state gate refuses 114 cells before any search.**~~
     **Half done** (`--infer sygus`); the rest is sized below.
