@@ -454,12 +454,31 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     "which half of the route the difference is in" it exists for. Either run
     both everywhere so the comparison means something, or drop one.
 
-    One disagreement is known now without a pass, and it is worth having
-    before the decision: since `5101824` both solvers read a matrix-shaped
-    module, and on `m_relu_net16` the vampire prover returns a 50-fact
-    invariant where cvc5 cuts it to one. Same verdict, very different
-    certificate -- which is the kind of difference this column exists to
-    show, and the kind a verdict-only comparison cannot.
+    **Answered: keep it.** The hybrid pass produced a verdict disagreement
+    on the twelfth row the two shared -- `hybrid/m_tank_dist/refills`,
+    `houdini` `NO-CERT` against `houdini-vampire` `PROOF-FAIL` -- and it is
+    the informative direction. `houdini-vampire` is **the only route in the
+    matrix that derives a certificate for that row**:
+
+        inv   (=> (not s1) (<= 5.0 s0))
+        rank  (ite s1 (to_int (+ 49.0 (* (- 4.0) s0)))
+                      (to_int (+ 13.0 (* 4.0 s0))))
+
+    cvc5-backed `houdini` gives up on it ("at most 18 ranking functions
+    dropped on every reached and sampled round"), and every other route is
+    `NO-CERT` or `UNSUPPORTED`. Lean then fails with unsolved goals on the
+    floored piecewise Real rank, so the cell is not a proof -- but the
+    *search* reached somewhere cvc5 did not, which is exactly the "which
+    half of the route the difference is in" this column exists for. Thirty
+    seven rows of agreement said nothing because they were rows neither half
+    found hard.
+
+    A second, qualitative difference from the same work: since `5101824`
+    both solvers read a matrix-shaped module, and on `m_relu_net16` the
+    vampire prover returns a 50-fact invariant where cvc5 cuts it to one.
+    Same verdict, very different certificate -- which a verdict-only
+    comparison also cannot show, and which suggests the column should be
+    compared on *certificates*, not just verdicts.
 
 20. **`truth` is `None` for all 30 limits/buchi and all 57 svcomp/buchi rows**
     -- 40% of the page, where the matrix can only say a route answered, not
