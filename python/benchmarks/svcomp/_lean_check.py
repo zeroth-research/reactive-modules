@@ -11,7 +11,7 @@ different work:
   ``CHECKED``    the proof compiled: the claim about the module is kernel-verified
   ``HEARTBEAT``  the elaborator hit its heartbeat budget (coverage ``omega`` cost)
   ``SCALE``      the elaborator hit its recursion depth (term too large)
-  ``OMEGA``      a goal ``omega`` cannot prove — the coverage cells do not tile
+  ``OMEGA``      a goal ``omega`` cannot prove: the coverage cells do not tile
   ``ERROR``      any other compile error
   ``TIMEOUT``    the compile exceeded the wall-clock budget
   ``UNVERIFIED`` the Farkas verifier produced no certificate, so nothing was emitted
@@ -44,6 +44,7 @@ _MARKERS = (
 
 @dataclass
 class CheckResult:
+    """One benchmark's outcome, with the shape of the proof and what it cost."""
     name: str
     outcome: str
     n_paths: int = 0
@@ -99,6 +100,7 @@ def build_project(path: Path, timeout: float = CHECK_TIMEOUT) -> tuple[str, str]
 
 
 def toolchain_available() -> bool:
+    """Whether ``lake`` is on PATH, so a proof can be compiled at all."""
     return shutil.which("lake") is not None
 
 
@@ -141,8 +143,8 @@ def _first_error(out: str) -> str:
 
 def certify(name: str, system, result, timeout: float = CHECK_TIMEOUT,
             label: str | None = None) -> CheckResult:
-    """Emit the proof for ``result`` — what a ``certify`` run established on
-    ``system`` — and compile it."""
+    """Emit and compile the proof for ``result``, what a ``certify`` run
+    established on ``system``."""
     t0 = time.perf_counter()
     out = write_program_proof(name, system, result, LEAN_DIR / "proofs", label)
     outcome, detail = check_file(out, timeout)

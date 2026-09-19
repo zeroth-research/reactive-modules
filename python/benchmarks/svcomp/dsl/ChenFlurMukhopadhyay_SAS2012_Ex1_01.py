@@ -1,4 +1,4 @@
-"""ChenFlurMukhopadhyay-SAS2012-Ex1.01 — single variable, scalar-mul update.
+"""ChenFlurMukhopadhyay-SAS2012-Ex1.01: single variable, scalar-mul update.
 
     int x;
     x = __VERIFIER_nondet_int();

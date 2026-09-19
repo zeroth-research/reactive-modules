@@ -2,13 +2,13 @@
 A minimal linear temporal logic over traces. A trace is a plain function
 `Nat → State` and the suffix of a trace is `drop`.
 
-  * `LTLFormula` — syntax. `AP` is an atomic proposition over a state; `APₛ` is
+  * `LTLFormula`, the syntax. `AP` is an atomic proposition over a state; `APₛ` is
     one over a *step* `(tr i, tr (i+1))`, which is what the domain of a
     transition relation is.
-  * `sem` — the standard semantics; `Finally`/`Globally` are the usual
+  * `sem`, the standard semantics; `Finally`/`Globally` are the usual
     abbreviations `F φ = True U φ`, `G φ = ¬ F ¬ φ`.
   * `Globally.explicit`, `Finally.explicit`, `globally_AP`, `globally_APₛ`,
-    `globally_finally_not_APₛ` — the unfolded forms that the proof rules in
+    `globally_finally_not_APₛ`, the unfolded forms that the proof rules in
     `ReactiveModule.lean` consume.
 
 Lean core only.

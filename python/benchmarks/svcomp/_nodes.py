@@ -1,17 +1,18 @@
 """The verifier's view of a composed module, indexed by its non-affine nodes.
 
-A module is already a graph: each term carries an ``itype`` and its
-read/write wires. This takes it from wire space into solver space and keeping the structure the cell engine
-needs.
+A module is already a graph: each term carries an ``itype`` and its read and
+write wires. This takes that graph from wire space into solver space, keeping the
+structure the cell engine needs.
 
-:func:`node_view` walks the terms once and does two things. It classifies
-which terms are affine and which are piecewise-linear, so it may need a case split or a
-relaxation. And it partially evaluates: affine terms are folded into z3 expressions, while each
-piecewise-linear term keeps a symbol standing for its output. 
+:func:`node_view` walks the terms once and does two things. It classifies each
+term as affine or piecewise-linear, since a piecewise-linear one needs a case
+split or a relaxation. And it partially evaluates: an affine term is folded into
+a z3 expression, while a piecewise-linear one keeps a symbol standing for its
+output.
 
-So a wire's value comes back affine in the state and the node symbols, and the
-nodes say what each symbol means. ``ReLU`` and ``Ite`` are the kinds the engine
-splits today (later to be extended).
+A wire's value therefore comes back affine in the columns and the node symbols,
+and the nodes say what each symbol means. ``ReLU`` and ``Ite`` are the kinds the
+engine splits; :data:`._farkas.OPS` is where a kind is declared.
 """
 from __future__ import annotations
 
@@ -34,12 +35,12 @@ class ModeKind:
 class Op:
     """What a procedure knows about one of the theory's operations.
 
-    ``kind`` is ``None`` for an operation the walk evaluates straight through —
+    ``kind`` is ``None`` for an operation the walk evaluates straight through, and
     affine arithmetic, or boolean structure z3 handles directly. Otherwise it names
     a piecewise-linear kind, and exactly one of:
 
-      * ``mode`` — a :class:`ModeKind`, so the kind can be *pinned* into a cell;
-      * ``split`` — the kind is case-split away before the LP is built.
+      * ``mode``, a :class:`ModeKind`, so the kind can be *pinned* into a cell;
+      * ``split``, so the kind is case-split away before the LP is built.
 
     A kind with neither is recognised but unusable, so a module containing it is
     refused rather than reasoned over. The theory publishes no semantics for its
@@ -63,8 +64,8 @@ class Node:
 class NodeView:
     """One traversal, two readings of the same wires.
 
-    ``values`` is each wire evaluated all the way down — the flattened form, with a
-    ReLU as ``If(z > 0, z, 0)`` — which is what the obligation's ``s_syms``,
+    ``values`` is each wire evaluated all the way down: the flattened form, with a
+    ReLU as ``If(z > 0, z, 0)``, which is what the obligation's ``s_syms``,
     ``sp_syms`` and ``V`` terms are. ``opaque`` is the same wires with each
     non-affine node's output left as a symbol, so a value downstream of one comes
     out *affine in those symbols*, which is how ``V``'s structure is read off
@@ -73,9 +74,8 @@ class NodeView:
     The two agree everywhere upstream of a node, so only terms below one are
     evaluated twice.
 
-    ``entry`` is the ``init`` block evaluated the same way — the state's values at
-    tick 0 — empty when the walk was not asked for it. A module's two blocks are
-    two relations, so each is walked once and both are read from here."""
+    ``entry`` is the ``init`` block evaluated the same way, giving the state's
+    values at tick 0, and is empty when the walk was not asked for it."""
     nodes: tuple
     values: dict
     opaque: dict
@@ -102,7 +102,7 @@ def _eval(term, reads, ops):
     """``term`` evaluated to z3, as ``(kind, outputs)``.
 
     An itype outside ``ops``, or one the Z3 backend cannot translate, is refused by
-    name — the procedure says what it understands, and anything else stops here
+    name: the procedure says what it understands, and anything else stops here
     rather than being evaluated away or surfacing as a backend error."""
     name = type(term.itype).__name__
     op = ops.get(name)
@@ -127,21 +127,19 @@ def _entry_values(module, seed, ops) -> dict:
 def node_view(module, seed, ops, entry_seed=None, atoms=None) -> NodeView:
     """Walk ``module``'s update block once, reading it both ways.
 
-    ``seed`` is ``{wire: [value]}`` for the wires the walk starts from — a module's
+    ``seed`` is ``{wire: [value]}`` for the wires the walk starts from: a module's
     latched state, or the wires it awaits. Each term is evaluated to z3 for
     ``values``; a non-affine term additionally gets a symbol for its output in
     ``opaque`` and is recorded as a :class:`Node` with its inputs. Only wires below
     a node differ between the two maps, so the second evaluation is done just for
-    those — everything upstream is shared.
+    those.
 
     ``ops`` maps an itype's class name to the :class:`Op` describing it. An itype
-    absent from it raises :class:`Unsupported` rather than being evaluated away —
-    the procedure says what it understands, and anything else is refused.
+    absent from it raises :class:`Unsupported` rather than being evaluated away.
 
     ``entry_seed``, when given, is the seed for a second walk over the ``init``
-    block, whose values land in ``entry``. ``atoms`` restricts the walk to some of
-    the module's atoms — how a reading's structure is read as a function, by
-    walking its atom alone with the wires it awaits seeded as symbols."""
+    block, whose values land in ``entry``. ``atoms`` restricts the walk to some of the module's atoms (see
+    :func:`._farkas.reading`)."""
     values = {w: list(v) for w, v in seed.items()}
     opaque = dict(values)
     diverged, nodes = set(), []

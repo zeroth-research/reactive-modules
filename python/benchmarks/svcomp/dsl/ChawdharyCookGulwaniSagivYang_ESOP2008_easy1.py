@@ -1,4 +1,4 @@
-"""ChawdharyCookGulwaniSagivYang-ESOP2008-easy1 — if/else body, nondet param z.
+"""ChawdharyCookGulwaniSagivYang-ESOP2008-easy1: if/else body, nondet param z.
 
     int x = 0, y = 100;
     int z = __VERIFIER_nondet_int();
@@ -9,7 +9,7 @@
 
 Notes:
   - `y` is a constant (init 100, never written) and `z` is a nondet parameter
-    (read in the branch, never written) — both held unchanged as ctrl vars.
+    (read in the branch, never written), both held unchanged as ctrl vars.
   - `z == 0` uses `eq()` (`==` is not overloaded).
 """
 

@@ -1,4 +1,4 @@
-"""BrockschmidtCookFuhs-CAV2013-Introduction — constant init for y.
+"""BrockschmidtCookFuhs-CAV2013-Introduction: constant init for y.
 
     int x, y;
     x = __VERIFIER_nondet_int();

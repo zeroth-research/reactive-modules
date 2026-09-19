@@ -13,13 +13,14 @@ function certified over the composed module, summarised as
 With ``--lean`` the ranking function is verified by the Farkas cell/CEGAR
 verifier, its certificates are emitted as a Lean proof under
 ``lean/proofs/<name>/``, and that proof is compiled against the vendored
-substrate. The summary counts ``CHECKED`` — programs whose termination the Lean
-kernel verified — and breaks the rest down by outcome (see :mod:`._lean_check`).
+substrate. The summary counts ``CHECKED``, meaning programs whose termination
+the Lean kernel verified, and breaks the rest down by outcome (see
+:mod:`._lean_check`).
 Requires ``lake`` on PATH.
 
 With ``--export DIR`` each verified proof is written to ``DIR/<name>/`` as a Lean
-project that builds on its own — the proof, the substrate libraries it imports, a
-lakefile and the toolchain file — and nothing is compiled.
+project that builds on its own, carrying the proof, the substrate libraries it
+imports, a lakefile and the toolchain file. Nothing is compiled.
 
 Faithfulness of the encodings against the C sources is a separate check::
 
@@ -108,7 +109,7 @@ def _run_lean(benches, jobs: int) -> int:
     from . import _lean_check as lc
 
     if not lc.toolchain_available():
-        print("no `lake` on PATH — install the Lean toolchain to use --lean")
+        print("no `lake` on PATH: install the Lean toolchain to use --lean")
         return -1
     print(f"building the Lean substrate ... ({len(benches)} benchmarks, "
           f"{jobs} at a time)", flush=True)
@@ -174,6 +175,7 @@ def _run_worker(name: str) -> int:
 
 
 def main(argv: list[str]) -> int:
+    """Parse ``argv`` and run the requested pass. Returns a process exit code."""
     argv = list(argv)
     jobs = _default_jobs()
     if "--jobs" in argv:

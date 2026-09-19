@@ -1,4 +1,4 @@
-"""NoriSharma-FSE2013-Fig8 — if/else with sequential update inside a branch.
+"""NoriSharma-FSE2013-Fig8: if/else with sequential update inside a branch.
 
     int c, u, v, w, x, y, z;
     x = __VERIFIER_nondet_int();

@@ -1,11 +1,11 @@
-"""TEMPLATE — copy this file to encode one SV-COMP benchmark.
+"""TEMPLATE: copy this file to encode one SV-COMP benchmark.
 
 Steps:
   1. Copy to ``<Author><Venue><Year>_<Fig/Ex>.py``.
   2. Paste the C loop into the docstring for reference.
   3. Fill in ``state`` / ``inputs``, the ``init`` / ``update`` blocks, and the
      ``_build`` wiring. The loop guard (verification domain) is derived from the
-     ``update`` (``ite(guard, body, self)``) — do not declare it separately.
+     ``update`` (``ite(guard, body, self)``); do not declare it separately.
 
 Key rules:
   - state var -> ctrl wire pair (C declaration order); nondet -> extl input
@@ -20,7 +20,7 @@ Key rules:
 
 The worked example below encodes:
 
-    // ColonSipma-TACAS2001-Fig1.c  (not the actual file — just an illustration)
+    // ColonSipma-TACAS2001-Fig1.c  (not the actual file, just an illustration)
     int k, i, j, tmp;
     k = nondet(); i = nondet(); j = nondet();
     while (i <= 100 && j <= k) {
@@ -55,7 +55,7 @@ class Program(Module):
         # `ctrl` gives the LATCHED (pre-state) values, in declaration order.
         k, i, j = ctrl
 
-        # loop condition — the verification domain is derived from this guard
+        # loop condition; the verification domain is derived from this guard
         # (via the ite below), so it need not be declared anywhere else.
         guard = (i <= 100) & (j <= k)
 

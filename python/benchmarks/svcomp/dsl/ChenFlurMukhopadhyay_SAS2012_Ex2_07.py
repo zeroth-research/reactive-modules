@@ -1,4 +1,4 @@
-"""ChenFlurMukhopadhyay-SAS2012-Ex2.07 — conjunctive guard.
+"""ChenFlurMukhopadhyay-SAS2012-Ex2.07: conjunctive guard.
 
     int x, y;
     x = __VERIFIER_nondet_int();

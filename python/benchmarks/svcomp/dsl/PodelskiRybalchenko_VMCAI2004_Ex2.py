@@ -1,4 +1,4 @@
-"""PodelskiRybalchenko-VMCAI2004-Ex2 — single variable, affine (negative) update.
+"""PodelskiRybalchenko-VMCAI2004-Ex2: single variable, affine (negative) update.
 
     int x;
     x = __VERIFIER_nondet_int();
