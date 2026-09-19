@@ -27,7 +27,7 @@ from zrth import z3 as zz3
 class ModeKind:
     """A piecewise-linear kind's cell rule: ``at`` reads which mode a witness lies
     in, ``region`` gives the constraints that mode imposes. The modes must be
-    complementary, so cells partition rather than overlap."""
+    complementary, so cells partition the guard."""
     at: object
     region: object
 
@@ -44,7 +44,7 @@ class Op:
       * ``split``, so the kind is case-split away before the LP is built.
 
     A kind with neither is recognised but unusable, so a module containing it is
-    refused rather than reasoned over. The theory publishes no semantics for its
+    refused. The theory publishes no semantics for its
     operations, so this classification is the procedure's own declaration of what
     it understands."""
     kind: str | None = None
@@ -94,9 +94,9 @@ class NodeView:
 class Unsupported(Exception):
     """The module contains something the procedure has no rule for.
 
-    Raised at the door rather than degraded quietly: a procedure that states its
-    preconditions can assume them, and one that silently proceeds with less
-    information reports a proof that will not close instead of the reason."""
+    Raised at the door, so a procedure that states its preconditions can assume
+    them. Proceeding on less information would report a proof that does not
+    close, and leave the reason hidden."""
 
 
 def _eval(term, reads, ops):

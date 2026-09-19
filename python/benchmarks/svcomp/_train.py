@@ -207,9 +207,9 @@ class TrainResult:
 
     ``system``, ``witness`` and ``proof`` are the composed module the accepted
     rank was certified on, the witness that named it, and what ``certify``
-    established. This is the evidence the Lean emitter consumes, so a caller reads it
-    here rather than certifying the same layers a second time. All ``None`` when
-    no candidate certified.
+    established. This is the evidence the Lean emitter consumes, so a caller
+    reads it here and certifies nothing a second time. All ``None`` when no
+    candidate certified.
 
     ``layers`` is the accepted net; ``nets`` is every component of the rank in
     lexicographic order, which is the same thing in a tuple when the rank is one
