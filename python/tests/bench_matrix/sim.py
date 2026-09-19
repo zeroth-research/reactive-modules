@@ -18,6 +18,31 @@ What that buys is one-sided and the asymmetry matters:
                    catch: a row whose stated property is simply false, which
                    would make every honest `REFUTED` look like a route bug.
 
+**A recurrence is refuted by a cycle, not by a quiet tail.** `G F p` cannot
+be refuted by any finite prefix, so the only thing a simulation can offer is
+a run that comes back to a configuration it has already been in with `p`
+false all the way round: the inputs along that loop are the ones the run
+drew, so replaying them from the start repeats it for ever and `p` holds
+finitely often. That is a proof, and `Observation.period` carries it.
+
+This used to be a tail count -- `p` fewer than four times in the last
+quarter of a 200-tick run -- which assumes a recurrence period of about
+twelve ticks or less. That is true of the family it was written for and
+false elsewhere, and it made the rule a false-refutation machine on the
+rest: `m_countdown` counts 100 down to 0 and resets, period 101, so it hits
+its property once in a 50-tick tail and was reported `fails` while five
+routes carried Lean proofs that it holds. Measured over the 19 `hybrid` and
+`petri` recurrence rows the cycle rule reproduces every declared `truth`,
+all four `fails` among them; over the 75 runnable rows with none declared it
+agrees with the tail count on 71 and differs on exactly the four the tail
+count had wrong.
+
+What it costs is reach, and it is the honest direction: a module whose
+period is longer than the run, or whose state never repeats at all, closes
+no cycle and is not refuted rather than refuted on a guess.
+`Observation.looped` is the difference between "no cycle avoids `p`" and
+"no cycle was reached", so a caller need not read the absence as evidence.
+
 Modules here are all 1x1-component, and the nondeterministic ones take their
 choices from external inputs, sampled under the row's `--pre` via z3.
 """
@@ -39,9 +64,12 @@ from zrth.sort import Bool, Int, Real
 # module, is what costs; `holds` is the claim that wants more, so the bounds
 # quoted in the two `cases.py` notes come from runs twenty times longer, worth
 # repeating by hand (`steps=40000, trials=1`) after changing any constant.
+#
+# `STEPS` bounds the recurrence rule too, and there in one direction only: a
+# cycle longer than the run is one this file cannot close, so raising it can
+# turn a `holds` into a `fails` and can never do the reverse.
 STEPS = 200          # ticks per trial
 TRIALS = 8           # independent input profiles per row
-TAIL = 4             # times a buchi property must recur in the last quarter
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -215,23 +243,60 @@ class Inputs:
 # ══════════════════════════════════════════════════════════════════════════
 
 def trace(module, steps: int, inputs: Inputs) -> list:
-    """The latched state after init and after each of `steps` updates."""
+    """The run after init and after each of `steps` updates, tick by tick.
+
+    A tick is `(state, held)` and not the state alone. The next update reads
+    the latched input beside the control variables, so two ticks continue
+    alike only if both agree -- which is what makes a repeat a cycle rather
+    than a coincidence. A module with no inputs has `held` empty and the
+    pair is the state, which is the same statement.
+    """
     extl = list(module.extl)
     state = {}
     fresh = inputs.next()
     for e, v in zip(extl, fresh):
         state[e], state[X(e)] = v, v
     execute_init(state, module.atoms)
-    out = [[state[X(v)] for v in module.ctrl]]
+    held = fresh
+    out = [([state[X(v)] for v in module.ctrl], held)]
     for _ in range(steps):
         nxt = {v: state[X(v)] for v in module.ctrl}
-        prev, fresh = fresh, inputs.next()
-        for e, held, new in zip(extl, prev, fresh):
-            nxt[e], nxt[X(e)] = held, new
+        prev, fresh = held, inputs.next()
+        for e, was, new in zip(extl, prev, fresh):
+            nxt[e], nxt[X(e)] = was, new
         execute_update(nxt, module.atoms)
-        state = nxt
-        out.append([state[X(v)] for v in module.ctrl])
+        state, held = nxt, fresh
+        out.append(([state[X(v)] for v in module.ctrl], held))
     return out
+
+
+def _values(vals) -> tuple:
+    """A tick's tensors as plain Python, which is what can be a dict key."""
+    return tuple(v.flatten()[0].item() for v in vals)
+
+
+def lasso(run: list, prop, consts, dtypes, memo=None) -> "tuple | None":
+    """The first stretch of `run` that loops with `prop` false throughout.
+
+    Returned as `(start, end)`: `run[start]` and `run[end]` are the same
+    configuration and no tick in between satisfies `prop`. Replaying the
+    inputs of `run[start:end]` from `run[start]` therefore repeats it for
+    ever, which refutes `G F prop`.
+
+    Only *consecutive* occurrences of a configuration are compared, and that
+    misses nothing: a loop spanning three occurrences is `prop`-free only if
+    both halves are, and the first half was already checked.
+    """
+    seen: dict = {}
+    for i, (state, held) in enumerate(run):
+        here = (_values(state), _values(held))
+        was = seen.get(here)
+        if was is not None and not any(
+            holds(prop, consts, dtypes, s, memo) for s, _h in run[was:i]
+        ):
+            return was, i
+        seen[here] = i
+    return None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -246,6 +311,11 @@ class Observation:
     witness: tuple = ()             # that state, as plain Python values
     step: int = -1                  # the tick it was reached on
     bounds: list = field(default_factory=list)   # (min, max) per component
+    # `--buchi` only. `period` is the length of the refuting cycle, and
+    # `looped` whether any cycle was closed at all -- which is what tells a
+    # property no cycle avoids from one no cycle was reached to test.
+    period: int = 0
+    looped: bool = False
 
     @property
     def verdict(self) -> str:
@@ -257,11 +327,9 @@ def observe(module, prop: str, kind: str, pre: str = "", *, steps: int = STEPS,
     """Step `module` and report whether the runs refute `prop`.
 
     For `safety` a refutation is one reachable state where the property is
-    false. For `buchi` it is a whole trial whose tail -- the last quarter of
-    the run, long after any transient -- holds the property fewer than `TAIL`
-    times: `G F p` cannot be refuted by a finite run, but a run that stops
-    satisfying `p` for a hundred ticks is the only evidence a simulation can
-    offer, and it is what catches a mis-stated recurrence.
+    false. For `buchi` it is a cycle the property is false all the way
+    round -- see `lasso`, and the module docstring for why a quiet tail is
+    not one.
     """
     if kind not in ("safety", "buchi"):
         raise ValueError(f"sim: unknown property kind {kind!r}")
@@ -274,19 +342,32 @@ def observe(module, prop: str, kind: str, pre: str = "", *, steps: int = STEPS,
     out = Observation()
     for t in range(trials):
         rng = random.Random(seed * 1000 + t)
-        states = trace(module, steps, Inputs([v.dtype for v in module.extl], pre, rng))
-        for i, s in enumerate(states):
+        run = trace(module, steps, Inputs([v.dtype for v in module.extl], pre, rng))
+        for i, (s, _held) in enumerate(run):
             for j, v in enumerate(s):
                 x = float(v.flatten()[0].item())
                 lo[j], hi[j] = min(lo[j], x), max(hi[j], x)
             if kind == "safety" and not out.refuted and not holds(parsed, consts, dtypes, s, memo):
                 out.refuted, out.step = True, i
-                out.witness = tuple(v.flatten()[0].item() for v in s)
+                out.witness = _values(s)
         if kind == "buchi":
-            tail = states[len(states) * 3 // 4:]
-            hits = sum(holds(parsed, consts, dtypes, s, memo) for s in tail)
-            if hits < TAIL and not out.refuted:
-                out.refuted, out.step = True, len(states) - len(tail)
-                out.witness = tuple(v.flatten()[0].item() for v in tail[-1])
+            out.looped = out.looped or _repeats(run)
+            loop = lasso(run, parsed, consts, dtypes, memo)
+            if loop is not None and not out.refuted:
+                start, end = loop
+                out.refuted, out.step, out.period = True, start, end - start
+                out.witness = _values(run[start][0])
     out.bounds = list(zip(lo, hi))
     return out
+
+
+def _repeats(run: list) -> bool:
+    """Whether `run` ever returns to a configuration -- whether, that is,
+    there was any cycle for the property to be tested against."""
+    seen = set()
+    for state, held in run:
+        here = (_values(state), _values(held))
+        if here in seen:
+            return True
+        seen.add(here)
+    return False
