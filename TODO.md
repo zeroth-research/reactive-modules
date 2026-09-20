@@ -550,16 +550,34 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     `semiflow` goes `PROOF-FAIL` -> `VERIFIED` as predicted; `refills`
     derives the same invariant and rank as before, so the reach is kept.
 
-    Still open, and it is the last paragraph above: comparing the columns on
-    certificates needs the comparison to be *logical*, not textual. The
-    harness already records what each route printed (`inferred_from`), and
-    on `fbk/m_countdown/InvBase` six routes derive the same `0 <= s0 <= 100`
-    written five different ways -- `(and (>= s0 0) (<= s0 100))`, `(and (>=
-    s0 0) (>= (+ 100 (- s0)) 0))`, `(and (<= (+ (- 100) (* (- 101) s0)) 0)
-    ...)`. A textual diff would report five distinct certificates and be
-    wrong five times over, so this is a *measurement* wanting cvc5 and the
-    module's encoding (`ctx.env.parse_expr`, then one equivalence query per
-    pair), not a rendering change.
+    **The certificate comparison is done too** (`compare_certs.py`), and it
+    had to be logical rather than textual -- which the first row it meets
+    proves: on `fbk/m_countdown/InvBase` all seven routes derive `0 <= s0 <=
+    100` and write it four ways, so a string diff sorts them into four
+    answers where there is one. Each invariant is parsed back through the
+    module's own cvc5 encoding and compared as a formula, and the groups are
+    then ordered by *implication*, which is the relation worth having: an
+    invariant that implies another is the stronger claim.
+
+    What it says about the column pair, over the re-measured pass: **11 of
+    16 rows are one invariant, 5 are ordered, and the implication goes both
+    ways** -- cvc5 stronger on `prodcons-rr/empties` and `reset/slots-le`,
+    Vampire on `mutex/mutex`, `sem-cont/semiflow` and `sem/integral`. So the
+    pair does earn its place on certificates where its verdicts, now
+    identical on all but one row, say nothing.
+
+    Over all routes and both passes, of 148 rows where more than one route
+    found a certificate: **79 one invariant, 64 a chain, 5 mixed, 0 wholly
+    incomparable.** The routes differ in how much they prove rather than in
+    what they prove.
+
+    One correction worth recording, because the first count was wrong and
+    the code was what made it wrong: "0 incomparable" was an artefact of
+    reporting a row as `stronger` when *any* pair of answers was ordered. 19
+    rows have three or more answers, and on 5 of them some pair is ordered
+    and some pair is not -- `fbk/m_lex/LexLinComb`, where `smt-linear` keeps
+    `s0 >= -2` and nothing else says it, is the shape. The verdict counts
+    pairs now, and `mixed` is its own answer.
 
 20. **`truth` is `None` for all 30 limits/buchi and all 57 svcomp/buchi rows**
     -- 40% of the page, where the matrix can only say a route answered, not
