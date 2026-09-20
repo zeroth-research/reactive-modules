@@ -707,18 +707,50 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
       because the sorts gate refused every module with a rational in it.
       Six of the nine failed to parse until it was fixed.
 
-    * **`vampire`'s Bool column (26 cells) -- a template shape, not a
-      reading.** The obvious move is to weigh a Bool as `(ite b 1 0)` the
-      way every other route does, and it is wrong here: `refuse_ites`
-      rejects any question holding an `ite`, on a measurement in the
-      route's own docstring -- `m_countdown`'s step obligation does not
-      come back inside 40 s stated as one `ite` and answers in under a
-      second branch-split. So reading a Bool as 0/1 would make the route
-      refuse its own question. What a Bool wants is not two integer holes
-      but three cases (always true, always false, free), which is a
-      template shape this route does not have. **This is now the largest
-      single blocked group in the matrix**, and it is a design question
-      rather than a wiring one.
+    * ~~**`vampire`'s Bool column (26 cells) -- a template shape, not a
+      reading.**~~ **Done** (`07c3f97`), and the design this called for is
+      the one thing the measurement says not to build.
+
+      The reading half stands: weighing a Bool as `(ite b 1 0)` is wrong
+      here, because `refuse_ites` rejects any question holding an `ite` --
+      `m_countdown`'s step obligation does not come back inside 40 s stated
+      as one `ite` and answers in under a second branch-split. So the route
+      would refuse its own question.
+
+      But "what a Bool wants is three cases" assumed the Bool is what these
+      cells are blocked on, and it is not. **A column that cannot be
+      bounded does not have to stop the module being asked about**: Vampire
+      reads a Bool perfectly well, and the obligations are stated over the
+      module's own transition whether or not the invariant mentions every
+      column of it. So the column is now carried *unbounded* -- the
+      certificate is weaker, not absent -- and the 26 cells search instead
+      of being refused before a solver starts, which is 11's distinction.
+      The bitvector refusal stays and is now stated as the different thing
+      it is: Vampire's front end has none, so one anywhere makes the script
+      unreadable rather than the certificate weaker.
+
+      **"The largest single blocked group in the matrix" was the wrong
+      reading of the count.** Of the 26, **25 are verified by no route in
+      the matrix at all** -- `houdini` included, which reads a Bool and
+      reads it far more richly than a template would, stating the bounds a
+      component keeps on each side of a flag. They are hybrid and petri
+      rows with Real dynamics; the flag is not what stops them. A
+      three-case Bool row would therefore buy one extra shape on 26 cells
+      where 25 need something else entirely, so it is deliberately not
+      built.
+
+      **The 26th is the item that replaces this one.**
+      `petri/p_timed/deadline` is certified by `houdini`, `houdini-vampire`
+      and `ai-cegis`, and all three found `0 <= s0 <= 5` -- a Real interval
+      with the flag unconstrained, which is exactly `A0=0, B0=5` in the
+      two-hole intervals template. cvc5 discharges `init_inv`, `step_inv`
+      and `inv_imp_P` for it in 2 ms. Vampire searched that two-hole space
+      for 122 s over 4 calls and did not find it. **So the certificate this
+      route needs is inside the space it searched**, and what is missing is
+      the answer-literal search rather than any template shape -- a
+      different question from every bullet in this item, and the one worth
+      asking next about this route. The module is 8 branches of the round,
+      which is where to start looking.
 
     * **`nuterm` (35 cells) -- three layers, and it is item 8's problem.**
       `_farkas.read_system` seeds `z3.Int` per wire, `affine_coeffs` fits by
