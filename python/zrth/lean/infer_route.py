@@ -975,14 +975,16 @@ ROUTES: tuple[InferRoute, ...] = (
         name="vampire",
         summary=(
             "no LLM, and nothing proposed: the obligations are stated with "
-            "the certificate itself left open -- an interval per component, "
+            "the certificate itself left open -- an interval per column, "
             "and under --buchi an affine ranking function -- and Vampire's "
             "answer literals return the coefficients, which are then checked "
-            "against the module's encoding with cvc5. Scalar Int state only, "
-            "and the transition is branch-split because a conditional "
-            "defeats the search. Measured reach: two holes, which is one "
-            "component under --safety; --infer houdini is what searches a "
-            "wider module"
+            "against the module's encoding with cvc5. It bounds what it can "
+            "order: Int and Real state, scalar or element by element, with "
+            "a Bool column carried unbounded and a bitvector refused, since "
+            "Vampire's front end has none. The transition is branch-split, "
+            "because a conditional defeats the search. Measured reach: two "
+            "holes, which is one column under --safety; --infer houdini is "
+            "what searches a wider module"
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",

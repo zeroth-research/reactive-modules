@@ -403,25 +403,64 @@ def test_a_real_component_reaches_the_templates():
     assert [r.smt for r in tpl.rows] == ["s0"]
 
 
-def test_a_bitvector_state_is_refused_by_name():
-    """A Real is arithmetic and a bitvector is not: a template row `<=` one
-    nowhere, and reading it as `ubv_to_int` would put wraparound into a
-    shape that has no word for it."""
-    with pytest.raises(Refused, match="states its obligations over numbers"):
+def test_a_bitvector_is_refused_because_nothing_can_state_it():
+    """Vampire's front end has no bitvectors, so a bitvector anywhere makes
+    the whole script unreadable rather than the certificate weaker. That is
+    a refusal, and unlike a Bool it is not a matter of what the template
+    can bound."""
+    with pytest.raises(Refused, match="front end has no bitvectors"):
         derive("twobit", "buchi", "(and (= s0 (_ bv0 1)) (= s1 (_ bv0 1)))",
                fixture=FIXTURES, vampire="/nowhere")
 
 
-def test_a_bool_component_is_still_refused_and_says_why():
-    """`ite` is the one thing this route cannot print.
+def test_a_bool_column_is_carried_rather_than_refused():
+    """A Bool cannot be bounded and does not stop the module being asked
+    about.
 
-    A Bool column's arithmetic reading is `(ite b 1 0)`, and `refuse_ites`
-    rejects any question holding one -- measured: a conditional in the goal
-    defeats the answer-literal search. So a Bool is not a wiring problem
-    here the way a Real was; it needs a template shape of its own.
+    `lo <= b <= hi` wants an order and two integer endpoints and a Bool has
+    neither -- but Vampire reads a Bool perfectly well, and the obligations
+    are stated over the module's own transition whether or not the
+    invariant mentions every column of it. So `m_boolint`'s Int column is
+    bounded, its Bool column is left out, and the search decides rather than
+    the gate.
     """
-    with pytest.raises(Refused, match="is Bool"):
-        derive("m_boolint", "safety", "(>= s1 0)", vampire="/nowhere")
+    from zrth.lean.magic.vampire import TA2MagicVampire, template
+    from zrth.lean.smt_synth import SynthContext
+
+    magic = TA2MagicVampire(module_at(LIMITS / "m_boolint.py"),
+                            vampire="/nowhere", log=lambda *_: None)
+    ctx = SynthContext.build(magic.module,
+                             CertificateData(prp="(>= s1 0)", kind="safety"),
+                             route="vampire",
+                             takes=("int", "bool", "bv", "real", "tuple"))
+    magic._check_sorts(ctx)                  # the gate that used to refuse it
+
+    tpl = template(ctx, "intervals", ranked=False)
+    # `s0` is the Bool and `s1` the Int, so the one row is the second
+    # column -- and its holes are named after the column, not after its
+    # position among the rows.
+    assert [r.smt for r in tpl.rows] == ["s1"]
+    assert tpl.at == (1,)
+    assert tpl.holes == ("A1", "B1")
+
+
+def test_a_module_with_nothing_to_bound_is_refused():
+    """The limit of carrying a Bool unbounded: with no other column the
+    invariant would be `true`, which is inductive and proves nothing, so
+    the module is turned away up front rather than searched."""
+    from zrth.lean.magic.vampire import TA2MagicVampire
+    from zrth.lean.smt_synth import SynthContext
+
+    magic = TA2MagicVampire(module_at(FIXTURES / "twobit_lia.py"),
+                            vampire="/nowhere", log=lambda *_: None)
+    ctx = SynthContext.build(magic.module,
+                             CertificateData(prp="(not (and s0 s1))",
+                                             kind="safety"),
+                             route="vampire",
+                             takes=("int", "bool", "bv", "real", "tuple"))
+
+    with pytest.raises(Refused, match="no column it can bound"):
+        magic._check_sorts(ctx)
 
 
 def test_the_templates_are_tried_smallest_first():
