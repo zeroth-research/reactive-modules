@@ -2,6 +2,7 @@ pub mod any;
 pub mod bv;
 pub mod lia;
 pub mod lra;
+pub mod spn;
 pub mod tensor;
 
 use std::fmt;
