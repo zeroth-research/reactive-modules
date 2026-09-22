@@ -43,7 +43,7 @@ def test_var_derefs_to_wire():
 
     # unknown attributes still raise, from the wire's lookup
     with pytest.raises(AttributeError):
-        _ = v.no_such_attribute
+        _ = v.no_such_attribute  # ty: ignore
 
     # a variable equals its latched wire (both directions), and they are
     # interchangeable dictionary keys; the other views stay distinct
@@ -432,7 +432,7 @@ def test_show_named_rendering():
     # this test is meant to fail when this convention changes, or errors are raised
     # if any other part of the code relies on the fallback, it is bad
     partial = m.with_varnames({x: "x"})
-    assert f"#" in partial
+    assert "#" in partial
 
     # the atom renders with the same naming
     out = m.atoms[0].show({x: "x", p: "p"})
@@ -458,7 +458,7 @@ def test_heterogeneous_composition():
     comb = [Term(LRA.Add(), [X(z)], [X(x), X(y)])]
     R = Module.combinatorial([x, y, z], comb)
 
-    S = Module.compose(P, Q, R)
+    _ = Module.compose(P, Q, R)
 
 
 # error expected - under the current implementation, itypes must be picked from theories and reused from module
