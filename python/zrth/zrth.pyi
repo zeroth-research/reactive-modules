@@ -258,6 +258,12 @@ class LIA:
     class AnyBool(LIA):
         def __init__(self, shape: list[int]) -> None: ...
 
+    class Zero(LIA):
+        """The unique inhabitant of the `Zero` sort: the only generator
+        writing a `Zero` wire."""
+
+        def __init__(self) -> None: ...
+
 
 class BV:
     @override
@@ -356,11 +362,19 @@ class BV:
     class Uninterpreted(BV):
         def __init__(self, name: str) -> None: ...
 
+    class Havoc(BV):
+        """An arbitrary bit-vector of the given width and shape."""
+
+        def __init__(self, width: int, shape: list[int]) -> None: ...
+
+    class Zero(BV):
+        """The unique inhabitant of the `Zero` sort: the only generator
+        writing a `Zero` wire."""
+
+        def __init__(self) -> None: ...
+
 
 class SPN:
-    @override
-    def __str__(self) -> str: ...
-
     """Stochastic Petri nets: places holding tokens (`Nat`), predicates (`Bool`),
     and the Poisson clocks (`Clock`) that decide when a transition fires.
 
@@ -368,6 +382,9 @@ class SPN:
     constructible from Python: it carries the theory's own sort, which the module
     does not export.
     """
+
+    @override
+    def __str__(self) -> str: ...
 
     class Nat(SPN):
         """A token-count literal."""
@@ -416,6 +433,12 @@ class SPN:
 
     class Ite(SPN):
         def __init__(self) -> None: ...
+
+    class Nondet(SPN):
+        """Nondeterministic choice of a value of the given sort, the generator
+        `Combinatorial.HAVOC` resolves to. It carries the theory's own sort,
+        which the module does not export, so it can be matched (`SPN.Nondet(_)`)
+        but not constructed from Python."""
 
     class Pos(SPN):
         """Arm a fresh Poisson clock with the given rate."""
@@ -521,17 +544,17 @@ def d(var: Var) -> Wire:
 class Term:
     @staticmethod
     def function(
-            itype: LRA | LIA | BV,
+            itype: LRA | LIA | BV | SPN,
             write: Sequence[Wire | Var],
             read: Sequence[Wire | Var],
     ) -> Term: ...
 
     @staticmethod
-    def constant(itype: LRA | LIA | BV, write: Sequence[Wire | Var]) -> Term: ...
+    def constant(itype: LRA | LIA | BV | SPN, write: Sequence[Wire | Var]) -> Term: ...
 
     def __init__(
             self,
-            itype: LRA | LIA | BV,
+            itype: LRA | LIA | BV | SPN,
             write: Sequence[Wire | Var],
             read: Sequence[Wire | Var] | None = None,
     ) -> None: ...
@@ -543,7 +566,7 @@ class Term:
     def read(self) -> Sequence[Wire]: ...
 
     @property
-    def itype(self) -> LRA | LIA | BV: ...
+    def itype(self) -> LRA | LIA | BV | SPN: ...
 
     @override
     def __str__(self) -> str: ...
