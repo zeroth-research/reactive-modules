@@ -31,8 +31,7 @@ class Death(Module):                                        # a death at 1 Hz, w
         return pos(1.0), False
 
     def next(self, clk, dth, n, t):
-        fires = (clk == 0) & (n != 0)
-        return ite(fires, pos(1.0), clk), fires
+        return ite(clk == 0, pos(1.0), clk), clk == 0
 
     def flow(self, clk, dth, n, t):
         return ite(n != 0, -1 * d(t), 0 * d(t)), None
@@ -44,13 +43,16 @@ class Place(Module):                                        # the token count
 
     def next(self, n, bth, dth):
         return ite(X(bth) & ~X(dth), n + 1,
-               ite(X(dth) & ~X(bth), n - 1, n))
+               ite(X(dth) & ~X(bth) & (n != 0), n - 1, n))
 
 
 birth = Birth(theory=SPN, ctrl=(bclk, bth), extl=(t,))
 death = Death(theory=SPN, ctrl=(dclk, dth), extl=(n, t))
 place = Place(theory=SPN, ctrl=(n,), extl=(bth, dth))
 system = compose(birth, death, place, hide={bclk, dclk})
+
+def visual():
+    return compose(birth, death, place, hide={bclk, dclk})
 
 if __name__ == "__main__":
     print(system.with_varnames({t: "t", bclk: "bclk", dclk: "dclk", bth: "bth", dth: "dth", n: "n"}))
