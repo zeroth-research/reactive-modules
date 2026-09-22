@@ -6,11 +6,15 @@ places holding tokens, transitions moving tokens around, and Poisson clocks
 deciding when a transition fires.
 
 Unlike [`crate::lia`], the theory this one is derived from, the sorts are not
-matrix sorts. A [`Sort`] value is one of three scalars, plus the trivial
+matrix sorts. A [`Sort`] value is one of four scalars, plus the trivial
 tangent:
 
 - `Nat` — a token count (the marking of a single place),
 - `Bool` — a truth value (e.g. whether a transition is enabled),
+- `Event` — a truth value again, under another name: the momentary signal that
+  something has happened (a transition has fired). It is an alias of `Bool` in
+  behaviour — every operation takes the one for the other — and a sort of its
+  own only in being recognisable as such, see [`Sort::is_event`],
 - `Clock { rank }` — the time left until a Poisson clock expires; `rank` is the
   differential grade: 0 is a value, 1 a first derivative, and so on — the sort
   former [`Tangent`] raises it,
@@ -18,17 +22,20 @@ tangent:
   whose only writer is the `zero` generator.
 
 The clock is the only sort that can move: a marking changes by firing a
-transition, not by flowing, so `Nat` and `Bool` are constant sorts and their
-tangent is `Zero`. The clock tangent is a sort of its own, inhabited by the
-constant rates a clock can run at.
+transition, not by flowing, so `Nat`, `Bool` and `Event` are constant sorts and
+their tangent is `Zero`. The clock tangent is a sort of its own, inhabited by
+the constant rates a clock can run at.
 
 The operations in [`SPN`] are:
 
 - [`SPN::Nat`], [`SPN::Bool`], [`SPN::Clock`] — literals; each reads nothing and
-  writes a single wire of the corresponding value sort.
-- [`SPN::And`], [`SPN::Or`], [`SPN::Not`] — boolean operations on `Bool`.
+  writes a single wire of the corresponding value sort — the truth-value literal
+  writes a `Bool` and an `Event` wire alike.
+- [`SPN::And`], [`SPN::Or`], [`SPN::Not`] — boolean operations on `Bool`, and so
+  on `Event`.
 - [`SPN::IsZero`], [`SPN::ClkIsZero`] — tests for an empty place (`Nat`) and for
-  an expired clock (`Clock`); both produce a `Bool`.
+  an expired clock (`Clock`); both produce a `Bool` — or an `Event`, e.g. the
+  firing an expiry triggers.
 - [`SPN::Inc`], [`SPN::Dec`] — produce and consume a token: `Nat -> Nat`.
 - [`SPN::Id`] — copies its single read wire to its single write wire; it is
   defined on every sort and acts rank-generically.
@@ -81,6 +88,14 @@ assert!(SPN::IsZero().check([Sort::Nat()].map(ok), [Sort::Bool()].map(ok)).is_ok
 assert!(SPN::IsZero().check([clk].map(ok), [Sort::Bool()].map(ok)).is_err());
 assert!(SPN::ClkIsZero().check([clk].map(ok), [Sort::Bool()].map(ok)).is_ok());
 
+// `Event` is `Bool` under another name: the operations take the one for the
+// other, and only `is_event` tells them apart.
+assert!(SPN::ClkIsZero().check([clk].map(ok), [Sort::Event()].map(ok)).is_ok());
+assert!(SPN::And()
+    .check([Sort::Event(), Sort::Bool()].map(ok), [Sort::Event()].map(ok))
+    .is_ok());
+assert!(Sort::Event().is_bool() && Sort::Event().is_event() && !Sort::Bool().is_event());
+
 // Firing a transition consumes a token: Nat -> Nat.
 assert!(SPN::Dec().check([Sort::Nat()].map(ok), [Sort::Nat()].map(ok)).is_ok());
 
@@ -113,6 +128,12 @@ pub enum Sort {
     Nat(),
     /// A truth value -- for predicates.
     Bool(),
+    /// A truth value again, under another name: the momentary signal that
+    /// something has happened (a transition has fired). `Event` is an alias of
+    /// [`Sort::Bool`] in behaviour -- every operation takes the one for the
+    /// other -- and a sort of its own only in that a wire records which of the
+    /// two names it was declared with, see [`Sort::is_event`].
+    Event(),
     /// The trivial tangent of the constant sorts: a singleton, inhabited by
     /// exactly the zero value.
     Zero(),
@@ -124,8 +145,28 @@ impl Sort {
         Sort::Clock { rank: 0 }
     }
 
+    /// True of the boolean fragment: [`Sort::Bool`] and its alias
+    /// [`Sort::Event`] alike.
     pub fn is_bool(&self) -> bool {
-        matches!(self, Sort::Bool())
+        matches!(self, Sort::Bool() | Sort::Event())
+    }
+
+    /// True of [`Sort::Event`] alone. The alias is transparent to every
+    /// operation of the theory; this is what still tells the two apart.
+    pub fn is_event(&self) -> bool {
+        matches!(self, Sort::Event())
+    }
+
+    /// Do the two sorts describe the same values? Sort equality up to the
+    /// `Event`/`Bool` alias. The checks below compare sorts with this and
+    /// never with `==`, which is what makes an `Event` wire readable and
+    /// writable wherever a `Bool` one is.
+    pub fn agrees(&self, other: &Sort) -> bool {
+        if self.is_bool() {
+            other.is_bool()
+        } else {
+            self == other
+        }
     }
 
     pub fn is_nat(&self) -> bool {
@@ -141,20 +182,20 @@ impl Sort {
     pub fn rank(&self) -> Option<u8> {
         match self {
             Sort::Clock { rank } => Some(*rank),
-            Sort::Nat() | Sort::Bool() | Sort::Zero() => None,
+            Sort::Nat() | Sort::Bool() | Sort::Event() | Sort::Zero() => None,
         }
     }
 }
 
 /// The tangent former: a clock grades up (`rank + 1`); the constant sorts
-/// `Nat` and `Bool` collapse to the trivial tangent `Zero`, which is a fixed
-/// point.
+/// `Nat`, `Bool` and `Event` collapse to the trivial tangent `Zero`, which is a
+/// fixed point.
 impl Tangent for Sort {
     #[allow(non_snake_case)]
     fn T(&self) -> Self {
         match *self {
             Sort::Clock { rank } => Sort::Clock { rank: rank + 1 },
-            Sort::Nat() | Sort::Bool() | Sort::Zero() => Sort::Zero(),
+            Sort::Nat() | Sort::Bool() | Sort::Event() | Sort::Zero() => Sort::Zero(),
         }
     }
 }
@@ -166,6 +207,7 @@ impl fmt::Display for Sort {
             Sort::Clock { rank } => write!(f, "T{rank} Clock"),
             Sort::Nat() => write!(f, "Nat"),
             Sort::Bool() => write!(f, "Bool"),
+            Sort::Event() => write!(f, "Event"),
             Sort::Zero() => write!(f, "Zero"),
         }
     }
@@ -180,7 +222,7 @@ pub enum SPN {
     /// A token-count literal
     #[strum(to_string = "({0} : nat)")]
     Nat(u64),
-    /// A truth-value literal
+    /// A truth-value literal; it writes a `Bool` wire and an `Event` one alike
     #[strum(to_string = "({0} : bool)")]
     Bool(bool),
     /// A clock literal: the time left until the clock expires
@@ -253,7 +295,7 @@ impl Differential for SPN {
         // `range` is the tangent sort the generator writes
         match range {
             Sort::Clock { .. } => SPN::ClkZero(),
-            Sort::Nat() | Sort::Bool() | Sort::Zero() => SPN::Zero(),
+            Sort::Nat() | Sort::Bool() | Sort::Event() | Sort::Zero() => SPN::Zero(),
         }
     }
 }
@@ -318,7 +360,7 @@ where
             "{op:?}: cannot write a constant to the clock tangent {w1}; \
              use ZERO to say that the clock does not run"
         )),
-        _ if w1 != expected => Err(format!(
+        _ if !w1.agrees(&expected) => Err(format!(
             "{op:?}: a {expected} constant cannot be written to a {w1} wire"
         )),
         _ => Ok(()),
@@ -341,10 +383,10 @@ where
             let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
                 return Err(format!("{op:?}: must write a single value (writes more)"));
             };
-            if r1 != Sort::Bool() {
+            if !r1.is_bool() {
                 return Err(format!("{op:?}: input must be Bool, got {r1}"));
             }
-            if w1 != Sort::Bool() {
+            if !w1.is_bool() {
                 return Err(format!("{op:?}: output must be Bool, got {w1}"));
             }
             Ok(())
@@ -360,10 +402,10 @@ where
             let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
                 return Err(format!("{op:?}: must write exactly one value"));
             };
-            if r1 != Sort::Bool() || r2 != Sort::Bool() {
+            if !r1.is_bool() || !r2.is_bool() {
                 return Err(format!("{op:?}: inputs must be Bool, got {r1} and {r2}"));
             }
-            if w1 != Sort::Bool() {
+            if !w1.is_bool() {
                 return Err(format!("{op:?}: output must be Bool, got {w1}"));
             }
             Ok(())
@@ -395,7 +437,7 @@ where
     if r1 != expected {
         return Err(format!("{op:?}: input must be {expected}, got {r1}"));
     }
-    if w1 != Sort::Bool() {
+    if !w1.is_bool() {
         return Err(format!("{op:?}: output must be Bool, got {w1}"));
     }
     Ok(())
@@ -442,7 +484,7 @@ where
             let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
                 return Err(format!("{op:?}: must write exactly one value"));
             };
-            if r1 != w1 {
+            if !r1.agrees(&w1) {
                 return Err(format!(
                     "{op:?}: input and output must have the same sort, got {r1} and {w1}"
                 ));
@@ -461,15 +503,15 @@ where
             let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
                 return Err(format!("{op:?}: must write exactly one value"));
             };
-            if r1 != Sort::Bool() {
+            if !r1.is_bool() {
                 return Err(format!("{op:?}: the guard must be Bool, got {r1}"));
             }
-            if r2 != r3 {
+            if !r2.agrees(&r3) {
                 return Err(format!(
                     "{op:?}: the branches must have the same sort, got {r2} and {r3}"
                 ));
             }
-            if w1 != r2 {
+            if !w1.agrees(&r2) {
                 return Err(format!(
                     "{op:?}: output must have the sort of the branches, got {w1} and {r2}"
                 ));
@@ -482,18 +524,34 @@ where
 
 // Nondeterministic choice is defined on every sort but the trivial tangent,
 // which is inhabited by zero alone — there is nothing to choose there. On a
-// clock tangent it is the rate that is chosen: a clock of unknown speed.
+// clock tangent it is the rate that is chosen: a clock of unknown speed. It
+// reads nothing and writes one wire of the sort it carries — up to the
+// `Event`/`Bool` alias, which is why this is not [`check_havoc`].
 fn check_nondet<R, W, E: fmt::Display>(sort: &Sort, read: R, write: W) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
     W: IntoIterator<Item = Result<Sort, E>>,
 {
+    // exhaustive on purpose: a new sort has to say whether it can be chosen
     match sort {
-        Sort::Zero() => Err(format!(
-            "Nondet: the tangent sort {sort} is inhabited by zero alone; use ZERO"
-        )),
-        Sort::Clock { .. } | Sort::Nat() | Sort::Bool() => check_havoc(sort, read, write),
+        Sort::Zero() => {
+            return Err(format!(
+                "Nondet: the tangent sort {sort} is inhabited by zero alone; use ZERO"
+            ));
+        }
+        Sort::Clock { .. } | Sort::Nat() | Sort::Bool() | Sort::Event() => {}
     }
+    if read.into_iter().next().is_some() {
+        return Err(format!("Nondet({sort}): cannot read values"));
+    }
+    let mut write = write.into_iter();
+    let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
+        return Err(format!("Nondet({sort}): must write exactly one value"));
+    };
+    if !w1.agrees(sort) {
+        return Err(format!("Nondet({sort}): output must be {sort}, got {w1}"));
+    }
+    Ok(())
 }
 
 // Sampling a clock reads nothing and writes exactly one Clock value wire; the
@@ -582,6 +640,9 @@ mod tests {
 
     const NAT: Sort = Sort::Nat();
     const BOOL: Sort = Sort::Bool();
+    /// `Bool` under its other name: the theory's operations cannot tell the two
+    /// apart, everything else can.
+    const EVENT: Sort = Sort::Event();
     const CLOCK: Sort = Sort::Clock { rank: 0 };
     /// The clock tangent: the sort of a clock's rate of change.
     const DCLOCK: Sort = Sort::Clock { rank: 1 };
@@ -595,6 +656,10 @@ mod tests {
     fn sort_predicates() {
         assert!(NAT.is_nat() && !NAT.is_bool() && !NAT.is_clock());
         assert!(BOOL.is_bool() && !BOOL.is_nat() && !BOOL.is_clock());
+        // an event is a boolean, and is the only sort that is also an event
+        assert!(EVENT.is_bool() && !EVENT.is_nat() && !EVENT.is_clock());
+        assert!(EVENT.is_event() && !BOOL.is_event() && !NAT.is_event());
+        assert_eq!(EVENT.rank(), None);
         // a clock is a clock at every grade
         assert!(CLOCK.is_clock() && DCLOCK.is_clock());
         assert!(!ZERO.is_clock() && !ZERO.is_nat() && !ZERO.is_bool());
@@ -611,7 +676,20 @@ mod tests {
         // the constant sorts have the trivial tangent, which is a fixed point
         assert_eq!(NAT.T(), ZERO);
         assert_eq!(BOOL.T(), ZERO);
+        assert_eq!(EVENT.T(), ZERO);
         assert_eq!(ZERO.T(), ZERO);
+    }
+
+    #[test]
+    fn agrees_is_equality_up_to_the_event_alias() {
+        assert!(BOOL.agrees(&EVENT) && EVENT.agrees(&BOOL));
+        for s in [NAT, BOOL, EVENT, CLOCK, DCLOCK, ZERO] {
+            assert!(s.agrees(&s));
+        }
+        // no other pair of sorts collapses
+        for (a, b) in [(NAT, BOOL), (NAT, EVENT), (CLOCK, DCLOCK), (ZERO, EVENT)] {
+            assert!(!a.agrees(&b) && !b.agrees(&a));
+        }
     }
 
     #[test]
@@ -624,6 +702,8 @@ mod tests {
             (DCLOCK.to_string(), ZERO.to_string()),
             ("T1 Clock".to_string(), "Zero".to_string())
         );
+        // the alias is a name of its own, and prints as one
+        assert_eq!(EVENT.to_string(), "Event".to_string());
     }
 
     #[test]
@@ -674,6 +754,59 @@ mod tests {
         // a constant writes a value, never a rate of change
         assert!(SPN::Clock(0.5).check([].map(ok), [DCLOCK].map(ok)).is_err());
         assert!(SPN::Nat(7).check([].map(ok), [ZERO].map(ok)).is_err());
+    }
+
+    #[test]
+    fn event_passes_for_bool_everywhere() {
+        // a truth-value literal writes either name
+        assert!(SPN::Bool(true).check([].map(ok), [EVENT].map(ok)).is_ok());
+        // the boolean operations mix the two freely
+        assert!(SPN::Not().check([EVENT].map(ok), [BOOL].map(ok)).is_ok());
+        assert!(SPN::Not().check([BOOL].map(ok), [EVENT].map(ok)).is_ok());
+        assert!(
+            SPN::And()
+                .check([EVENT, BOOL].map(ok), [EVENT].map(ok))
+                .is_ok()
+        );
+        // a test may write its outcome to an event: the firing an expiry triggers
+        assert!(SPN::IsZero().check([NAT].map(ok), [EVENT].map(ok)).is_ok());
+        assert!(
+            SPN::ClkIsZero()
+                .check([CLOCK].map(ok), [EVENT].map(ok))
+                .is_ok()
+        );
+        // `Id` copies across the alias, and `Ite` guards and branches on it
+        assert!(SPN::Id().check([EVENT].map(ok), [BOOL].map(ok)).is_ok());
+        assert!(SPN::Id().check([BOOL].map(ok), [EVENT].map(ok)).is_ok());
+        assert!(
+            SPN::Ite()
+                .check([EVENT, NAT, NAT].map(ok), [NAT].map(ok))
+                .is_ok()
+        );
+        assert!(
+            SPN::Ite()
+                .check([BOOL, EVENT, BOOL].map(ok), [EVENT].map(ok))
+                .is_ok()
+        );
+        // and nondeterministic choice writes it under either name
+        assert!(SPN::Nondet(EVENT).check([].map(ok), [BOOL].map(ok)).is_ok());
+        assert!(SPN::Nondet(BOOL).check([].map(ok), [EVENT].map(ok)).is_ok());
+    }
+
+    #[test]
+    fn event_is_not_the_other_sorts() {
+        // the alias reaches `Bool` alone: everything else still fails
+        assert!(SPN::Nat(7).check([].map(ok), [EVENT].map(ok)).is_err());
+        assert!(SPN::Not().check([NAT].map(ok), [EVENT].map(ok)).is_err());
+        assert!(SPN::Inc().check([EVENT].map(ok), [NAT].map(ok)).is_err());
+        assert!(
+            SPN::IsZero()
+                .check([EVENT].map(ok), [BOOL].map(ok))
+                .is_err()
+        );
+        assert!(SPN::Id().check([EVENT].map(ok), [NAT].map(ok)).is_err());
+        assert!(SPN::Nondet(EVENT).check([].map(ok), [NAT].map(ok)).is_err());
+        assert!(SPN::Zero().check([].map(ok), [EVENT].map(ok)).is_err());
     }
 
     #[test]
@@ -800,7 +933,7 @@ mod tests {
 
     #[test]
     fn id_ok_on_every_sort() {
-        for s in [NAT, BOOL, CLOCK, DCLOCK, ZERO] {
+        for s in [NAT, BOOL, EVENT, CLOCK, DCLOCK, ZERO] {
             assert!(SPN::Id().check([s].map(ok), [s].map(ok)).is_ok());
         }
     }
@@ -824,7 +957,7 @@ mod tests {
     #[test]
     fn ite_ok_on_every_sort() {
         // the guard is a Bool, the branches and the result share one sort
-        for s in [NAT, BOOL, CLOCK, DCLOCK, ZERO] {
+        for s in [NAT, BOOL, EVENT, CLOCK, DCLOCK, ZERO] {
             assert!(SPN::Ite().check([BOOL, s, s].map(ok), [s].map(ok)).is_ok());
         }
     }
@@ -904,7 +1037,7 @@ mod tests {
 
     #[test]
     fn nondet_ok_on_every_value_sort() {
-        for s in [NAT, BOOL, CLOCK] {
+        for s in [NAT, BOOL, EVENT, CLOCK] {
             let op = <SPN as Combinatorial>::havoc(&s);
             assert!(matches!(op, SPN::Nondet(r) if r == s));
             assert!(op.check([].map(ok), [s].map(ok)).is_ok());
@@ -959,7 +1092,7 @@ mod tests {
             <SPN as Differential>::zero(&CLOCK.T()),
             SPN::ClkZero()
         ));
-        for s in [NAT, BOOL] {
+        for s in [NAT, BOOL, EVENT] {
             assert!(matches!(<SPN as Differential>::zero(&s.T()), SPN::Zero()));
         }
     }

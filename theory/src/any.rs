@@ -29,6 +29,10 @@ pub enum Sort {
     Int([usize; 2]),
     /// A token count: the marking of a place (`spn`).
     Nat(),
+    /// A truth value under another name (`spn`): the momentary signal that
+    /// something has happened. An alias of the scalar `Bool([1, 1])` in
+    /// behaviour, a sort of its own only in being recognisable as one.
+    Event(),
     /// A clock (`spn`); `rank` is the differential grade: 0 = value,
     /// 1 = the rate the clock runs at, ...
     #[pyo3(constructor = (rank = 0))]
@@ -54,6 +58,10 @@ pub enum Sort {
     Int([usize; 2]),
     /// A token count: the marking of a place (`spn`).
     Nat(),
+    /// A truth value under another name (`spn`): the momentary signal that
+    /// something has happened. An alias of the scalar `Bool([1, 1])` in
+    /// behaviour, a sort of its own only in being recognisable as one.
+    Event(),
     /// A clock (`spn`); `rank` is the differential grade: 0 = value,
     /// 1 = the rate the clock runs at, ...
     Clock {
@@ -78,7 +86,7 @@ impl Sort {
 }
 
 /// The tangent former: reals and clocks grade up (`rank + 1`, same
-/// carrier); the constant sorts (Bool, Int, Nat, BitVec) collapse to the
+/// carrier); the constant sorts (Bool, Int, Nat, Event, BitVec) collapse to the
 /// trivial tangent `Zero`, which is a fixed point.
 impl Tangent for Sort {
     #[allow(non_snake_case)]
@@ -89,7 +97,9 @@ impl Tangent for Sort {
                 rank: rank + 1,
             },
             Sort::Clock { rank } => Sort::Clock { rank: rank + 1 },
-            Sort::Bool(_) | Sort::Int(_) | Sort::Nat() | Sort::BitVec(..) => Sort::Zero(),
+            Sort::Bool(_) | Sort::Int(_) | Sort::Nat() | Sort::Event() | Sort::BitVec(..) => {
+                Sort::Zero()
+            }
             Sort::Zero() => Sort::Zero(),
         }
     }
@@ -112,6 +122,9 @@ impl fmt::Display for Sort {
             }
             Sort::Nat() => {
                 write!(f, "Nat")
+            }
+            Sort::Event() => {
+                write!(f, "Event")
             }
             Sort::Clock { rank: 0 } => {
                 write!(f, "Clock")
@@ -159,12 +172,13 @@ impl From<lra::Sort> for Sort {
 }
 
 /// The `spn` sorts are scalar: its `Bool` is the 1x1 boolean matrix, and
-/// `Nat` and `Clock` are sorts of their own.
+/// `Nat`, `Event` and `Clock` are sorts of their own.
 impl From<spn::Sort> for Sort {
     fn from(value: spn::Sort) -> Self {
         match value {
             spn::Sort::Nat() => Sort::Nat(),
             spn::Sort::Bool() => Sort::Bool([1, 1]),
+            spn::Sort::Event() => Sort::Event(),
             spn::Sort::Clock { rank } => Sort::Clock { rank },
             spn::Sort::Zero() => Sort::Zero(),
         }
@@ -178,6 +192,7 @@ impl TryFrom<Sort> for spn::Sort {
         match value {
             Sort::Nat() => Ok(spn::Sort::Nat()),
             Sort::Bool([1, 1]) => Ok(spn::Sort::Bool()),
+            Sort::Event() => Ok(spn::Sort::Event()),
             Sort::Clock { rank } => Ok(spn::Sort::Clock { rank }),
             Sort::Zero() => Ok(spn::Sort::Zero()),
             _ => Err("invalid cast".to_string()),
@@ -489,6 +504,7 @@ mod tests {
         for s in [
             spn::Sort::Nat(),
             spn::Sort::Bool(),
+            spn::Sort::Event(),
             spn::Sort::clock(),
             spn::Sort::Clock { rank: 1 },
             spn::Sort::Zero(),
@@ -496,6 +512,14 @@ mod tests {
             assert_eq!(spn::Sort::try_from(Sort::from(s)), Ok(s));
         }
         assert_eq!(Sort::from(spn::Sort::Bool()), Sort::Bool([1, 1]));
+        // the `Event` alias survives the trip: it is `spn`'s alone, so `any`
+        // carries a name for it rather than collapsing it to the scalar `Bool`
+        assert_eq!(Sort::from(spn::Sort::Event()), Sort::Event());
+        assert_eq!(Sort::Event().to_string(), "Event");
+        assert_eq!(Sort::Event().T(), Sort::Zero());
+        assert!(lia::Sort::try_from(Sort::Event()).is_err());
+        assert!(lra::Sort::try_from(Sort::Event()).is_err());
+        assert!(bv::Sort::try_from(Sort::Event()).is_err());
         // the tangent is taken in `any` and in `spn` alike
         assert_eq!(Sort::from(spn::Sort::clock()).T(), Sort::clock().T());
         assert_eq!(Sort::from(spn::Sort::Nat()).T(), Sort::Zero());
