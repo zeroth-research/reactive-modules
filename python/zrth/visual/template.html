@@ -12,6 +12,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
 #status { font-size: 12px; padding: 2px 8px; border-radius: 10px; }
 #status.connected { background: #1f3d2a; color: #3fb950; }
 #status.disconnected { background: #3d1f2a; color: #f85149; }
+#status.static { background: #1f2d3d; color: #58a6ff; }
 #breadcrumb { font-size: 13px; color: #8b949e; }
 .main { display: flex; flex: 1; overflow: hidden; }
 #graph { flex: 1; overflow: hidden; }
@@ -30,6 +31,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
 .term-box { stroke-width: 1; rx: 4; cursor: pointer; }
 .term-box.init { fill: #1f2d3d; stroke: #58a6ff; }
 .term-box.update { fill: #1f3d2a; stroke: #3fb950; }
+.term-box.flow { fill: #3d2f1f; stroke: #d29922; }
 .term-box.extern { stroke-dasharray: 4 3; }
 .term-box:hover { stroke-width: 2; }
 .term-label.extern { font-style: italic; opacity: 0.85; }
@@ -61,7 +63,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   <div style="display:inline-block;position:relative;">
     <span id="sec-label" class="dd-label">init ▾</span>
     <div id="sec-menu" class="dd-menu">
-      <div data-val="0">init</div><div data-val="1">update</div>
+      <div data-val="0">init</div><div data-val="1">update</div><div data-val="2">flow</div>
     </div>
   </div>
   <div style="display:inline-block;position:relative;">
@@ -83,12 +85,17 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   let MOD=null, vb={x:0,y:0,w:800,h:600}, rendered=false;
   const exp={};
   let focus={level:'module',atom:null,term:null,wire:null};
-  let secMode=0; // 0=init, 1=update
+  let secMode=0; // an index into PHASES
+  // The atom's three term blocks, in the order the picker offers them;
+  // `flow` is the delay block, the continuous phase.
+  const PHASES=['init','update','flow'];
+  const block=(a,k)=>a[k]||[];
+  const allTerms=a=>PHASES.flatMap(k=>block(a,k));
+  const phaseOf=s=>{const m=String(s).match(/^a\d+_([a-z]+)/);return m?m[1]:PHASES[0];};
 
   // ── Dropdowns ──────────────────────────────────────────────
   const secLabel=document.getElementById('sec-label'), secMenu=document.getElementById('sec-menu');
   const expLabel=document.getElementById('exp-label'), expMenu=document.getElementById('exp-menu');
-  const secNames={0:'init',1:'update'};
 
   secLabel.addEventListener('click',e=>{e.stopPropagation();secMenu.style.display=secMenu.style.display==='none'?'block':'none';expMenu.style.display='none';});
   expLabel.addEventListener('click',e=>{e.stopPropagation();expMenu.style.display=expMenu.style.display==='none'?'block':'none';secMenu.style.display='none';});
@@ -103,7 +110,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
 
   function syncToggles(){
     if(!MOD)return;
-    secLabel.textContent=secNames[secMode]+' ▾';
+    secLabel.textContent=PHASES[secMode]+' ▾';
     const allExp=MOD.atoms.every(a=>exp[a.id]),allCol=MOD.atoms.every(a=>!exp[a.id]);
     expLabel.textContent=(allExp?'expand all':allCol?'collapse all':'- - -')+' ▾';
   }
@@ -111,8 +118,12 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   // ── Constants ──────────────────────────────────────────────
   const M=40,MP=30, AP=16,AGX=80,ACW=140,ACH=48,AHH=28, TW=100,TH=32,TGX=24,TRG=8, SGY=12,SLH=20, CR=4,CG=15,CCW=CR*2+20;
 
-  // ── WebSocket ──────────────────────────────────────────────
-  function connect(){const ws=new WebSocket(`ws://127.0.0.1:{{WS_PORT}}`);ws.onopen=()=>{statusEl.textContent='live';statusEl.className='connected';};ws.onclose=()=>{statusEl.textContent='disconnected';statusEl.className='disconnected';setTimeout(connect,2000);};ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='full'){MOD=m.data;render();}};} connect();
+  // ── Data source ────────────────────────────────────────────
+  // A snapshot is inlined by `to_html`; without one we follow a live server.
+  const SNAPSHOT={{SNAPSHOT}};
+  function connect(){const ws=new WebSocket(`ws://127.0.0.1:{{WS_PORT}}`);ws.onopen=()=>{statusEl.textContent='live';statusEl.className='connected';};ws.onclose=()=>{statusEl.textContent='disconnected';statusEl.className='disconnected';setTimeout(connect,2000);};ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='full'){MOD=m.data;render();}};}
+  if(SNAPSHOT){MOD=SNAPSHOT;statusEl.textContent='static';statusEl.className='static';render();}
+  else connect();
 
   // ── Helpers ────────────────────────────────────────────────
   function el(tag,a){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);if(a)for(const[k,v]of Object.entries(a))k==='textContent'?e.textContent=v:e.setAttribute(k,v);return e;}
@@ -151,7 +162,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   function render(){
     if(!MOD)return;while(svg.firstChild)svg.removeChild(svg.firstChild);
     const mod=MOD,cls=classify(mod);
-    const td={};for(const a of mod.atoms)for(const ts of[a.init,a.update])for(const t of ts)td[t.id]=t;
+    const td={};for(const a of mod.atoms)for(const t of allTerms(a))td[t.id]=t;
     const pos={},ac={},grp={},wireEls=[];
 
     // Module circle lookup (populated after circles placed, used by section A)
@@ -168,7 +179,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
       const lcw=dLw.length?CCW:0,rcw=dRw.length?CCW:0;
 
       let aw=ACW,ah=ACH;
-      if(isExp){const activeKey=secMode===0?'init':'update';const activeTerms=activeKey==='init'?atom.init:atom.update;let ih=AHH+AP,mbw=200;if(activeTerms.length){ih+=SLH;const lo=layoutTerms(activeTerms,ax+lcw+AP,ay0+ih,`a${aid}_${activeKey}`,pos);ih+=lo.h;mbw=Math.max(mbw,lo.w);}aw=mbw+AP*2;ah=ih+AP;}
+      if(isExp){const activeKey=PHASES[secMode];const activeTerms=block(atom,activeKey);let ih=AHH+AP,mbw=200;if(activeTerms.length){ih+=SLH;const lo=layoutTerms(activeTerms,ax+lcw+AP,ay0+ih,`a${aid}_${activeKey}`,pos);ih+=lo.h;mbw=Math.max(mbw,lo.w);}aw=mbw+AP*2;ah=ih+AP;}
 
       const bx=ax+lcw;ac[aid]={x:bx,y:ay0,w:aw,h:ah};
       const cs2=CR*2+CG,lCx=lcw>0?ax+lcw/2:bx-CCW/2,rCx=rcw>0?bx+aw+rcw/2:bx+aw+CCW/2;
@@ -217,13 +228,13 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
       const ws=atom.wait.length?`  awaits: ${atom.wait.map(w=>'w'+w.id).join(', ')}`:'';
       const tg=el('text',{class:'toggle',x:a.x+12,y:a.y+18,textContent:isExp?'▼':'▶'});tg.addEventListener('click',e=>{e.stopPropagation();exp[aid]=!isExp;render();});g.appendChild(tg);
       g.appendChild(el('text',{class:'atom-label',x:a.x+26,y:a.y+18,textContent:`Atom ${aid}${ws}`}));
-      if(isExp){let ly=a.y+AHH+AP;const activeKey=secMode===0?'init':'update';const activeTerms=activeKey==='init'?atom.init:atom.update;if(activeTerms.length){g.appendChild(el('text',{class:'toggle',x:a.x+12,y:ly+14,textContent:`${activeKey} (${activeTerms.length})`,style:'cursor:default;'}));let bh=0;const ph=`a${aid}_${activeKey}`;for(const[,p]of Object.entries(pos))if(p.phase===ph)bh=Math.max(bh,p.y+p.h-(ly+SLH));ly+=SLH+bh;}}
+      if(isExp){let ly=a.y+AHH+AP;const activeKey=PHASES[secMode];const activeTerms=block(atom,activeKey);if(activeTerms.length){g.appendChild(el('text',{class:'toggle',x:a.x+12,y:ly+14,textContent:`${activeKey} (${activeTerms.length})`,style:'cursor:default;'}));let bh=0;const ph=`a${aid}_${activeKey}`;for(const[,p]of Object.entries(pos))if(p.phase===ph)bh=Math.max(bh,p.y+p.h-(ly+SLH));ly+=SLH+bh;}}
       g.addEventListener('click',e=>{e.stopPropagation();setFocus('atom',aid);});
       svg.appendChild(g);grp[`a_${aid}`]=g;
     }
 
     // Terms
-    for(const[k,p]of Object.entries(pos)){if(p.isCircle)continue;const g=el('g');const t=td[k];const ec=isExtern(t)?' extern':'';g.appendChild(el('rect',{class:`term-box ${p.phase.includes('init')?'init':'update'}${ec}`,x:p.x,y:p.y,width:p.w,height:p.h}));g.appendChild(el('text',{class:`term-label${ec}`,x:p.x+p.w/2,y:p.y+p.h/2+4,'text-anchor':'middle',textContent:shortLabel(t)}));if(t){const aid=k.match(/^a(\d+)_/);g.addEventListener('click',e=>{e.stopPropagation();setFocus('term',aid?+aid[1]:null,k);});}svg.appendChild(g);grp[`t_${k}`]=g;}
+    for(const[k,p]of Object.entries(pos)){if(p.isCircle)continue;const g=el('g');const t=td[k];const ec=isExtern(t)?' extern':'';g.appendChild(el('rect',{class:`term-box ${phaseOf(p.phase)}${ec}`,x:p.x,y:p.y,width:p.w,height:p.h}));g.appendChild(el('text',{class:`term-label${ec}`,x:p.x+p.w/2,y:p.y+p.h/2+4,'text-anchor':'middle',textContent:shortLabel(t)}));if(t){const aid=k.match(/^a(\d+)_/);g.addEventListener('click',e=>{e.stopPropagation();setFocus('term',aid?+aid[1]:null,k);});}svg.appendChild(g);grp[`t_${k}`]=g;}
 
     // Circles
     const names=wn();
@@ -245,7 +256,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     for(const atom of mod.atoms){
       const aid=atom.id,a=ac[aid];
       if(exp[aid]){
-        const terms=secMode===0?atom.init:atom.update;
+        const terms=block(atom,PHASES[secMode]);
         const wr={};for(const t of terms)for(const w of t.writes)wr[w]=t.id;
         for(const t of terms){const dst=pos[t.id];if(!dst)continue;for(const w of t.reads){if(!wr[w]){const ck=pos[`cl_${aid}_${w}`];if(ck)addW(w,ck.x+ck.r,ck.y,dst.x,dst.y+dst.h/2,'seg_ac_term',false,aid);}}}
         for(const t of terms){const src=pos[t.id];if(!src)continue;for(const w of t.writes){if(terms.some(t2=>t2.reads.includes(w)))continue;const ck=pos[`cr_${aid}_${w}`];if(ck)addW(w,src.x+src.w,src.y+src.h/2,ck.x-ck.r,ck.y,'seg_ac_term',false,aid);}}
@@ -261,7 +272,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     // C: Internal term→term
     for(const atom of mod.atoms){
       if(!exp[atom.id])continue;const aid=atom.id;
-      const terms=secMode===0?atom.init:atom.update;
+      const terms=block(atom,PHASES[secMode]);
       const wr={};for(const t of terms)for(const w of t.writes)wr[w]=t.id;
       for(const t of terms){const dst=pos[t.id];if(!dst)continue;for(const w of t.reads){if(wr[w]){const src=pos[wr[w]];if(src)addW(w,src.x+src.w,src.y+src.h/2,dst.x,dst.y+dst.h/2,'seg_internal',false,aid);}}}
     }
@@ -336,7 +347,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
         for(const w of wireEls)if(w.wid===wid){show(w.el);w.el.classList.add('highlighted');}
         for(const[k,p]of Object.entries(pos))if(p.isCircle&&(p.wid===wid||p.did===wid))show(grp[`c_${k}`]);
         for(const[k,p]of Object.entries(pos))if(!p.isCircle&&td[k]&&(td[k].reads.includes(wid)||td[k].writes.includes(wid)))show(grp[`t_${k}`]);
-        for(const a of mod.atoms)if([...a.init,...a.update].some(t=>t.reads.includes(wid)||t.writes.includes(wid)))show(grp[`a_${a.id}`]);
+        for(const a of mod.atoms)if(allTerms(a).some(t=>t.reads.includes(wid)||t.writes.includes(wid)))show(grp[`a_${a.id}`]);
       }
     }
 
@@ -356,7 +367,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   function tlink(tid,label){return`<a href="#" style="color:#58a6ff;text-decoration:none;" onclick="event.preventDefault();document.getElementById('canvas').dispatchEvent(new CustomEvent('focusTerm',{detail:'${tid}'}))">${label}</a>`;}
   function wdtype(wid){for(const list of[MOD.extl,MOD.intf,MOD.prvt])for(const p of list)if(p.ltc===wid||p.nxt===wid)return p.dtype;for(const a of MOD.atoms)for(const w of[...a.ctrl,...a.read,...a.wait])if(w.id===wid)return w.dtype;return null;}
   function wvis(wid){for(const p of MOD.extl)if(p.ltc===wid||p.nxt===wid)return'external';for(const p of MOD.intf)if(p.ltc===wid||p.nxt===wid)return'interface';for(const p of MOD.prvt)if(p.ltc===wid||p.nxt===wid)return'private';return'temp';}
-  function findTd(tid){for(const a of MOD.atoms)for(const ts of[a.init,a.update]){const t=ts.find(t=>t.id===tid);if(t)return t;}return null;}
+  function findTd(tid){for(const a of MOD.atoms){const t=allTerms(a).find(t=>t.id===tid);if(t)return t;}return null;}
 
   function showFocusDetail(){
     if(focus.level==='atom'&&focus.atom!=null){const a=MOD.atoms.find(a=>a.id===focus.atom);if(a)showAtomDetail(a);}
@@ -366,14 +377,14 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   }
 
   function showTermDetail(t,tid){
-    const phase=tid.includes('init')?'init':'update',sl=shortLabel(t);
+    const phase=phaseOf(tid),sl=shortLabel(t);
     let valHtml='';
     if(t.label.startsWith('Tensor('))valHtml=`<div class="section"><div class="section-title">Value</div><p style="font-family:monospace;font-size:11px;word-break:break-all;">${t.label}</p></div>`;
     else if(t.label.startsWith('Const:'))valHtml=`<div class="section"><div class="section-title">Value</div><p style="font-family:monospace;font-size:11px;">${t.label.replace('Const: ','')}</p></div>`;
     else if(isExtern(t))valHtml=`<div class="section"><div class="section-title">Source</div><p style="font-family:monospace;font-size:11px;word-break:break-all;">${t.label.slice(0,-5)}</p><p style="color:#8b949e;font-size:11px;margin-top:6px;">Untraced call — produced by the real env at runtime; the symbolic interpreter sees it as opaque.</p></div>`;
     else if(t.label==='Linear'&&t.reads.length===3){
       let weightLabel='?',biasLabel='?';
-      for(const a of MOD.atoms)for(const ts of[a.init,a.update])for(const tt of ts){if(tt.writes.includes(t.reads[1]))weightLabel=tt.label;if(tt.writes.includes(t.reads[2]))biasLabel=tt.label;}
+      for(const a of MOD.atoms)for(const tt of allTerms(a)){if(tt.writes.includes(t.reads[1]))weightLabel=tt.label;if(tt.writes.includes(t.reads[2]))biasLabel=tt.label;}
       valHtml=`<div class="section"><div class="section-title">Parameters</div><p style="font-family:monospace;font-size:11px;word-break:break-all;"><b>weight:</b> ${weightLabel}</p><p style="font-family:monospace;font-size:11px;word-break:break-all;"><b>bias:</b> ${biasLabel}</p></div>`;
     }
     detail.innerHTML=`
@@ -385,7 +396,7 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
   function showWireDetail(wid){
     const name=wn()[wid],dtype=wdtype(wid),vis=wvis(wid);
     const writers=[],readers=[];
-    for(const a of MOD.atoms)for(const[phase,ts]of[['init',a.init],['update',a.update]])for(const t of ts){if(t.writes.includes(wid))writers.push({t,phase,aid:a.id});if(t.reads.includes(wid))readers.push({t,phase,aid:a.id});}
+    for(const a of MOD.atoms)for(const[phase,ts]of PHASES.map(k=>[k,block(a,k)]))for(const t of ts){if(t.writes.includes(wid))writers.push({t,phase,aid:a.id});if(t.reads.includes(wid))readers.push({t,phase,aid:a.id});}
     detail.innerHTML=`
       <div class="section"><div class="section-title">Wire w${wid}${name?` — ${name}`:''}</div><ul class="wire-list"><li><b>Visibility:</b> ${vis}</li>${dtype?`<li><b>Dtype:</b> ${dtype}</li>`:''}${name?`<li><b>Name:</b> ${name}</li>`:''}</ul></div>
       <div class="section"><div class="section-title">Written by</div><ul class="wire-list">${writers.length?writers.map(w=>`<li>${tlink(w.t.id,w.t.label)} <span style="color:#8b949e">(${w.phase}, Atom ${w.aid})</span></li>`).join(''):'<li style="color:#8b949e">none</li>'}</ul></div>
@@ -396,8 +407,8 @@ header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
     const fmtT=t=>{const r=t.reads.length?t.reads.map(w=>wlink(w)).join(', ')+' → ':'';return`<li>${r}<b>${tlink(t.id,t.label)}</b> → ${t.writes.map(w=>wlink(w)).join(', ')}</li>`;};
     detail.innerHTML=`
       <div class="section"><div class="section-title">Atom ${a.id}</div><ul class="wire-list"><li><b>Ctrl:</b> ${a.ctrl.map(w=>wlink(w.id)).join(' ')}</li><li><b>Awaits:</b> ${a.wait.length?a.wait.map(w=>wlink(w.id)).join(' '):'—'}</li><li><b>Reads:</b> ${a.read.map(w=>wlink(w.id)).join(' ')}</li></ul></div>
-      <div class="section"><div class="section-title">Init (${a.init.length})</div><ul class="wire-list">${a.init.map(fmtT).join('')}</ul></div>
-      <div class="section"><div class="section-title">Update (${a.update.length})</div><ul class="wire-list">${a.update.map(fmtT).join('')}</ul></div>`;
+      ${PHASES.map(k=>{const ts=block(a,k);const t=k[0].toUpperCase()+k.slice(1);
+        return `<div class="section"><div class="section-title">${t} (${ts.length})</div><ul class="wire-list">${ts.length?ts.map(fmtT).join(''):'<li style="color:#8b949e">none</li>'}</ul></div>`;}).join('')}`;
   }
 
   // ── Interaction ────────────────────────────────────────────

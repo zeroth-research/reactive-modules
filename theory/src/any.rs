@@ -250,9 +250,9 @@ impl TryFrom<Sort> for lra::Sort {
 // `Display` impls.
 
 #[subenum(
-    Combinatorial(cfg_attr(feature = "pyo3", pyclass)),
-    Differential(cfg_attr(feature = "pyo3", pyclass)),
-    Sequential(cfg_attr(feature = "pyo3", pyclass))
+    Combinatorial(cfg_attr(feature = "pyo3", pyclass(str))),
+    Differential(cfg_attr(feature = "pyo3", pyclass(str))),
+    Sequential(cfg_attr(feature = "pyo3", pyclass(str)))
 )]
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, From, strum::Display)]

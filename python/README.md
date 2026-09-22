@@ -18,6 +18,22 @@ If you need to see the output of the test, use the `-s` option with pytest comma
 e.g., `just py-test tests/test_analyzer.py -s`.
 In case a test fails and you need to attach the debugger, use `--pdb` flag with pytest.
 
+## Visualizing a module
+
+`uv run vis` renders a module to a standalone HTML page. Point it at a file and
+a no-argument function in it that returns a `Module`:
+
+```sh
+$ uv run vis path-to-module.py:module_fun --open
+Module visualized in `module.html`
+Opening in browser ...
+```
+
+Use `--output` to write somewhere other than `module.html`. The page carries a
+snapshot of the module, so it needs no server and keeps working once the command
+exits; for a live view that tracks the module as it steps, use `zrth.visual.show`
+from Python instead.
+
 ## Building without `just` and `uv`
 
 Here is a guide how to build the whole project from scratch including Python interface,

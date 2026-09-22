@@ -91,6 +91,9 @@ class Zero(Sort):
 # ---------------------------------------------------------------------------
 
 class LRA:
+    @override
+    def __str__(self) -> str: ...
+
     class Real(LRA):
         def __init__(self, tensor: TorchTensor) -> None: ...
 
@@ -177,6 +180,9 @@ class LRA:
 
 
 class LIA:
+    @override
+    def __str__(self) -> str: ...
+
     class Int(LIA):
         def __init__(self, tensor: TorchTensor) -> None: ...
 
@@ -254,6 +260,9 @@ class LIA:
 
 
 class BV:
+    @override
+    def __str__(self) -> str: ...
+
     class Const(BV):
         def __init__(self, tensor: TorchTensor) -> None: ...
 
@@ -349,6 +358,9 @@ class BV:
 
 
 class SPN:
+    @override
+    def __str__(self) -> str: ...
+
     """Stochastic Petri nets: places holding tokens (`Nat`), predicates (`Bool`),
     and the Poisson clocks (`Clock`) that decide when a transition fires.
 

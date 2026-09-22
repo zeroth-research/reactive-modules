@@ -1,9 +1,10 @@
-"""Live module visualizer with auto-updating via WebSocket.
+"""Module visualizer: a live WebSocket-fed server, or a standalone snapshot.
 
 Usage:
-    from zrth.visual import show
-    show(module)           # opens browser, auto-refreshes on value changes
-    show(module, poll=0.5) # custom poll interval in seconds
+    from zrth.visual import show, to_html
+    show(module)               # opens browser, auto-refreshes on value changes
+    show(module, poll=0.5)     # custom poll interval in seconds
+    to_html(module)            # self-contained HTML string, no server needed
 """
 import json
 import os
@@ -54,6 +55,7 @@ def _serialize_module(module):
             "read": [{"id": v.id, "dtype": str(v.dtype)} for v in atom.read],
             "init": _serialize_terms(atom.init, atom_idx, "init", counter),
             "update": _serialize_terms(atom.update, atom_idx, "update", counter),
+            "flow": _serialize_terms(atom.delay, atom_idx, "flow", counter),
         })
 
     def wire_pairs(iface):
@@ -65,6 +67,47 @@ def _serialize_module(module):
         "intf": wire_pairs(module.intf),
         "prvt": wire_pairs(module.prvt),
     }
+
+
+def _wire_names(names):
+    """Normalize a {Var|Wire|id: name} mapping to {wire id: label}."""
+    wire_names = {}
+    for k, v in (names or {}).items():
+        if isinstance(k, Var):
+            wire_names[k.id] = str(v)
+            wire_names[X(k).id] = str(v) + "'"
+        else:
+            wire_names[k.id if hasattr(k, 'id') else int(k)] = str(v)
+    return wire_names
+
+
+def _render(ws_port=None, snapshot=None):
+    """Fill in the template. A snapshot renders standalone; a port renders live."""
+    # `</` is escaped so a label can never close the inline <script> block early.
+    blob = "null" if snapshot is None else json.dumps(snapshot).replace("</", "<\\/")
+    return (_TEMPLATE_PATH.read_text()
+            .replace("{{WS_PORT}}", str(ws_port if ws_port is not None else 0))
+            .replace("{{SNAPSHOT}}", blob))
+
+
+def to_html(module, names=None):
+    """Render a module to a self-contained HTML page.
+
+    Unlike `show`, this takes a one-off snapshot: the page needs no server and
+    keeps working after this process exits, but it does not track later changes.
+
+    Args:
+        module: A zrth Module (or Env/torch.Module instance).
+        names: Optional dict mapping Vars, Wires, or wire ids to display
+               names (str); a Var names its latched wire and, primed, its
+               next wire. If None, circles show no labels (topology only).
+
+    Returns:
+        The page as a str.
+    """
+    data = _serialize_module(module)
+    data["wire_names"] = _wire_names(names)
+    return _render(snapshot=data)
 
 
 def _find_free_port():
@@ -89,18 +132,11 @@ def show(module, names=None, poll=0.5, open_browser=True):
     Returns:
         A stop function that shuts down the server.
     """
-    wire_names = {}
-    if names:
-        for k, v in names.items():
-            if isinstance(k, Var):
-                wire_names[k.id] = str(v)
-                wire_names[X(k).id] = str(v) + "'"
-            else:
-                wire_names[k.id if hasattr(k, 'id') else int(k)] = str(v)
+    wire_names = _wire_names(names)
     http_port = _find_free_port()
     ws_port = _find_free_port()
 
-    html = _TEMPLATE_PATH.read_text().replace("{{WS_PORT}}", str(ws_port))
+    html = _render(ws_port=ws_port)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):

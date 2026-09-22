@@ -105,7 +105,7 @@ impl fmt::Display for Sort {
 
 /// Signature of bitvector matrices. Operations on bitvectors follow the SMT-LIB2 semantics.
 #[derive(Clone, Debug, strum::Display)]
-#[cfg_attr(feature = "pyo3", pyclass(frozen))]
+#[cfg_attr(feature = "pyo3", pyclass(frozen, str))]
 pub enum BV {
     /// Create constant BV matrix from a given 2-D tensor
     #[strum(to_string = "{0}")]

@@ -171,7 +171,7 @@ impl fmt::Display for Sort {
 /// Theory of stochastic Petri nets over the scalar sorts [`Sort::Nat`],
 /// [`Sort::Bool`] and [`Sort::Clock`].
 #[derive(Clone, Debug, strum::Display)]
-#[cfg_attr(feature = "pyo3", pyclass(frozen))]
+#[cfg_attr(feature = "pyo3", pyclass(frozen, str))]
 pub enum SPN {
     // constants
     /// A token-count literal

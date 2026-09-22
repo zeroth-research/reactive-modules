@@ -94,7 +94,7 @@ impl fmt::Display for Sort {
 }
 
 #[derive(Clone, Debug, strum::Display)]
-#[cfg_attr(feature = "pyo3", pyclass(frozen))]
+#[cfg_attr(feature = "pyo3", pyclass(frozen, str))]
 pub enum LIA {
     // constant matrix literal; its sort (Int or Bool) is taken from the write wire
     #[strum(to_string = "{0}")]

@@ -26,6 +26,10 @@ dependencies = [
     "z3-solver>=4.12",
 ]
 
+[project.scripts]
+# `uv run vis path/to/module.py:module_fun --open`
+vis = "zrth.visual.cli:main"
+
 # [project.optional-dependencies]
 # torch = [
 #     "torch==2.9.0",

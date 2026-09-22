@@ -471,6 +471,16 @@ def test_itype_round_trips():
         Term(itype, [X(v)], [v])
 
 
+def test_itype_str_is_the_theory_rendering():
+    # `str(itype)` must give the theory's own rendering, not the default object
+    # repr -- it is what names a term wherever one is printed or drawn.
+    hold = Module(vars=[Var(Real([1, 1]))]).atoms[0]
+    assert str(hold.init[0].itype) == "HAVOC"
+    assert str(hold.update[0].itype) == "SKIP"
+    assert str(hold.delay[0].itype) == "ZERO"
+    assert str(LIA.Add()) == "Add"
+
+
 # sorts are not hashable in the current implementation - this question belongs to the design of the theory crate
 def test_sort_is_hashable():
     with pytest.raises(Exception):

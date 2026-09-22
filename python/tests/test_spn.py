@@ -247,6 +247,12 @@ def race_net():
     return (p0, p1, p2, c1, c2), init, update, delay
 
 
+def race_net_m() -> Module:
+    variables, init, update, delay = race_net()
+
+    return Module.hybrid(list(variables), init, update, delay)
+
+
 def test_two_transitions_one_atom():
     variables, init, update, delay = race_net()
 
