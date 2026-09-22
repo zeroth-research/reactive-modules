@@ -75,7 +75,7 @@ class Event(Sort):
 
 
 class Clock(Sort):
-    """The time left until a Poisson clock expires (`SPN`)."""
+    """The time left until a clock expires (`SPN`)."""
 
     # `rank` is the differential grade: 0 = value, 1 = the rate it runs at, ...
     def __init__(self, rank: int = 0) -> None: ...
@@ -449,8 +449,9 @@ class SPN:
         which the module does not export, so it can be matched (`SPN.Nondet(_)`)
         but not constructed from Python."""
 
-    class Pos(SPN):
-        """Arm a fresh Poisson clock with the given rate."""
+    class Exp(SPN):
+        """Arm a fresh clock, its time to expiry drawn from the exponential
+        distribution with the given rate."""
 
         def __init__(self, rate: float) -> None: ...
 

@@ -52,7 +52,7 @@ def test_terms_typecheck():
     Term(SPN.IsZero(), [Wire(BOOL)], [p])
     Term(SPN.ClkIsZero(), [Wire(BOOL)], [c])
     Term.constant(SPN.Nat(3), [X(p)])
-    Term.constant(SPN.Pos(RATE), [X(c)])
+    Term.constant(SPN.Exp(RATE), [X(c)])
     # the flows write derivative wires
     Term.constant(SPN.ClkRate(COUNTDOWN), [d(c)])
     Term.constant(SPN.ClkZero(), [d(c)])
@@ -73,8 +73,8 @@ def test_terms_typecheck():
         (lambda p, c: Term.constant(SPN.Clock(1.0), [d(c)]), "clock tangent"),
         (lambda p, c: Term.constant(SPN.ClkRate(COUNTDOWN), [X(c)]), "clock tangent"),
         (lambda p, c: Term.constant(SPN.Zero(), [X(p)]), "ZERO"),
-        # `Pos` arms a clock, nothing else
-        (lambda p, c: Term.constant(SPN.Pos(RATE), [X(p)]), "must be Clock"),
+        # `Exp` arms a clock, nothing else
+        (lambda p, c: Term.constant(SPN.Exp(RATE), [X(p)]), "must be Clock"),
         # `ClkMul` scales a tangent, not a clock value
         (lambda p, c: Term(SPN.ClkMul(COUNTDOWN), [Wire(Clock(1))], [c]), "clock tangent"),
     ],
@@ -103,7 +103,7 @@ def two_place_net():
     init = [
         Term.constant(SPN.Nat(1), [X(p0)]),
         Term.constant(SPN.Nat(0), [X(p1)]),
-        Term.constant(SPN.Pos(RATE), [X(c)]),
+        Term.constant(SPN.Exp(RATE), [X(c)]),
     ]
 
     # the discrete step: move a token when the clock has expired
@@ -116,7 +116,7 @@ def two_place_net():
         Term(SPN.And(), [fire], [enabled, expired]),
         Term(SPN.Dec(), [taken], [p0]),
         Term(SPN.Inc(), [put], [p1]),
-        Term.constant(SPN.Pos(RATE), [fresh]),
+        Term.constant(SPN.Exp(RATE), [fresh]),
         Term(SPN.Ite(), [X(p0)], [fire, taken, p0]),
         Term(SPN.Ite(), [X(p1)], [fire, put, p1]),
         Term(SPN.Ite(), [X(c)], [fire, fresh, c]),
@@ -160,7 +160,7 @@ def test_two_place_net_module():
     assert net.closed()
     assert set(net.ctrl) == {p0, p1, c}
     shown = net.with_varnames({p0: "p0", p1: "p1", c: "c"})
-    assert "Pos(2.5)" in shown and "ClkRate(-1)" in shown
+    assert "Exp(2.5)" in shown and "ClkRate(-1)" in shown
 
 
 def test_net_rejects_a_token_moving_into_a_clock():
@@ -200,8 +200,8 @@ def race_net():
         Term.constant(SPN.Nat(1), [X(p0)]),
         Term.constant(SPN.Nat(0), [X(p1)]),
         Term.constant(SPN.Nat(0), [X(p2)]),
-        Term.constant(SPN.Pos(rate1), [X(c1)]),
-        Term.constant(SPN.Pos(rate2), [X(c2)]),
+        Term.constant(SPN.Exp(rate1), [X(c1)]),
+        Term.constant(SPN.Exp(rate2), [X(c2)]),
     ]
 
     empty, enabled = Wire(BOOL), Wire(BOOL)
@@ -222,8 +222,8 @@ def race_net():
         Term(SPN.Dec(), [taken], [p0]),
         Term(SPN.Inc(), [put1], [p1]),
         Term(SPN.Inc(), [put2], [p2]),
-        Term.constant(SPN.Pos(rate1), [fresh1]),
-        Term.constant(SPN.Pos(rate2), [fresh2]),
+        Term.constant(SPN.Exp(rate1), [fresh1]),
+        Term.constant(SPN.Exp(rate2), [fresh2]),
         Term(SPN.Ite(), [X(p0)], [any_fire, taken, p0]),
         Term(SPN.Ite(), [X(p1)], [fire1, put1, p1]),
         Term(SPN.Ite(), [X(p2)], [fire2, put2, p2]),
@@ -302,7 +302,7 @@ def transition_atom(clk, fire, src, rate, veto=None):
         fires = stands
     update += [
         Term(SPN.Id(), [X(fire)], [fires]),
-        Term.constant(SPN.Pos(rate), [fresh]),
+        Term.constant(SPN.Exp(rate), [fresh]),
         Term(SPN.Ite(), [X(clk)], [fires, fresh, clk]),
     ]
 
@@ -317,7 +317,7 @@ def transition_atom(clk, fire, src, rate, veto=None):
         Term.constant(SPN.Zero(), [d(fire)]),
     ]
     init = [
-        Term.constant(SPN.Pos(rate), [X(clk)]),
+        Term.constant(SPN.Exp(rate), [X(clk)]),
         Term.constant(SPN.Bool(False), [X(fire)]),
     ]
     vars_ = [clk, fire, src] + ([veto] if veto is not None else [])
@@ -374,7 +374,7 @@ def test_transitions_cannot_share_a_place():
             [
                 Term.constant(SPN.Nat(1), [X(p0)]),
                 Term.constant(SPN.Nat(0), [X(dst)]),
-                Term.constant(SPN.Pos(rate), [X(clk)]),
+                Term.constant(SPN.Exp(rate), [X(clk)]),
             ],
             [
                 Term(SPN.IsZero(), [empty], [p0]),
@@ -383,7 +383,7 @@ def test_transitions_cannot_share_a_place():
                 Term(SPN.And(), [fires], [enabled, expired]),
                 Term(SPN.Dec(), [taken], [p0]),
                 Term(SPN.Inc(), [put], [dst]),
-                Term.constant(SPN.Pos(rate), [fresh]),
+                Term.constant(SPN.Exp(rate), [fresh]),
                 Term(SPN.Ite(), [X(p0)], [fires, taken, p0]),
                 Term(SPN.Ite(), [X(dst)], [fires, put, dst]),
                 Term(SPN.Ite(), [X(clk)], [fires, fresh, clk]),

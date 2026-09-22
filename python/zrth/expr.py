@@ -590,10 +590,11 @@ def _spn_const(value, sort, *, tag=None) -> Expr:
     return _wrap(wire, SPN, value=value, tag=tag)
 
 
-def pos(rate) -> Expr:
-    """Arm a fresh Poisson clock with the given rate (SPN): a Clock value."""
+def exp(rate) -> Expr:
+    """Arm a fresh clock, its time to expiry drawn from the exponential distribution
+    with the given rate (SPN): a Clock value."""
     wire = Wire(Clock())
-    _emit(Term.constant(SPN.Pos(float(rate)), [wire]))
+    _emit(Term.constant(SPN.Exp(float(rate)), [wire]))
     return _wrap(wire, SPN)
 
 

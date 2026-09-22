@@ -5,7 +5,7 @@ import pytest
 
 from zrth import SPN, Bool, Clock, Nat, Var, X as _X, d as _d
 from zrth import Module as compose
-from zrth.sugar import Module, X, d, ite, pos, clkrate
+from zrth.sugar import Module, X, d, ite, exp, clkrate
 
 BOOL = Bool([1, 1])
 
@@ -84,7 +84,7 @@ def test_unsupported_operators_raise(body):
 def test_rate_times_time_form_scales_the_time_forms_tangent():
     class M(Module):
         def init(self, t):
-            return pos(2.0)
+            return exp(2.0)
 
         def flow(self, c, t):
             return -1 * d(t)
@@ -101,7 +101,7 @@ def test_rate_times_time_form_scales_the_time_forms_tangent():
 def test_none_is_the_zero_flow():
     class M(Module):
         def init(self, t):
-            return pos(1.0), 0, False
+            return exp(1.0), 0, False
 
         def flow(self, c, n, b, t):
             return None, None, None
@@ -114,7 +114,7 @@ def test_none_is_the_zero_flow():
 def test_conditional_rate_freezes_a_clock():
     class M(Module):
         def init(self, n, t):
-            return pos(1.0)
+            return exp(1.0)
 
         def flow(self, c, n, t):
             return ite(n != 0, -1 * d(t), clkrate(0))
@@ -166,6 +166,6 @@ def test_birth_death_example():
     assert set(bd.system.prvt) == {bd.bclk, bd.dclk}
     assert set(bd.system.intf) == {bd.bth, bd.dth, bd.n}
     shown = bd.system.with_varnames({bd.t: "t", bd.n: "n"})
-    assert "Pos(2)" in shown and "Pos(1)" in shown
+    assert "Exp(2)" in shown and "Exp(1)" in shown
     assert "ClkMul(-1)" in shown and "ClkMul(0)" in shown  # clocks run down against t; the death clock freezes on an empty place
     assert "Zero" in shown  # the flags have no flow

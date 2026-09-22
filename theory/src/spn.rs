@@ -15,7 +15,7 @@ tangent:
   something has happened (a transition has fired). It is an alias of `Bool` in
   behaviour — every operation takes the one for the other — and a sort of its
   own only in being recognisable as such, see [`Sort::is_event`],
-- `Clock { rank }` — the time left until a Poisson clock expires; `rank` is the
+- `Clock { rank }` — the time left until a clock expires; `rank` is the
   differential grade: 0 is a value, 1 a first derivative, and so on — the sort
   former [`Tangent`] raises it,
 - `Zero` — the trivial tangent of the constant sorts, the inhabited singleton
@@ -43,8 +43,9 @@ The operations in [`SPN`] are:
   and the same sort, and writes that sort.
 - [`SPN::Nondet`]`(s)` — nondeterministic choice of a value of the value sort
   `s`; reads nothing and writes a single wire of that sort.
-- [`SPN::Pos`]`(λ)` — arms a fresh Poisson clock with rate `λ`; reads nothing and
-  writes a single `Clock` value wire.
+- [`SPN::Exp`]`(λ)` — arms a fresh clock, its time to expiry drawn from the
+  exponential distribution with rate `λ`; reads nothing and writes a single
+  `Clock` value wire.
 - [`SPN::ClkRate`]`(c)` — constant flow of a clock: reads nothing and writes a
   single clock *tangent* wire (rank at least 1), saying that the clock runs at
   rate `c` — `-1` for a clock counting down to its expiry.
@@ -99,9 +100,9 @@ assert!(Sort::Event().is_bool() && Sort::Event().is_event() && !Sort::Bool().is_
 // Firing a transition consumes a token: Nat -> Nat.
 assert!(SPN::Dec().check([Sort::Nat()].map(ok), [Sort::Nat()].map(ok)).is_ok());
 
-// A fresh Poisson clock with rate 2.5 reads nothing and writes a clock value.
-assert!(SPN::Pos(2.5).check([].map(ok), [clk].map(ok)).is_ok());
-assert!(SPN::Pos(2.5).check([].map(ok), [Sort::Nat()].map(ok)).is_err());
+// A fresh exponential clock of rate 2.5 reads nothing and writes a clock value.
+assert!(SPN::Exp(2.5).check([].map(ok), [clk].map(ok)).is_ok());
+assert!(SPN::Exp(2.5).check([].map(ok), [Sort::Nat()].map(ok)).is_err());
 
 // Tangent wires are written by the flow generators alone: a clock counts
 // down at rate -1, a marking does not move at all.
@@ -251,9 +252,10 @@ pub enum SPN {
     /// Nondeterministic choice of a value of the given value sort
     #[strum(to_string = "(* : {0})")]
     Nondet(Sort),
-    /// Arm a fresh Poisson clock with the given rate
-    #[strum(to_string = "Pos({0})")]
-    Pos(f64),
+    /// Arm a fresh clock, its time to expiry drawn from the exponential
+    /// distribution with the given rate
+    #[strum(to_string = "Exp({0})")]
+    Exp(f64),
     /// Constant flow of a clock: it runs at the given rate, `-1` for a clock
     /// counting down to its expiry. It writes a clock tangent (rank at least
     /// 1) and reads nothing.
@@ -316,7 +318,7 @@ impl Signature for SPN {
             SPN::Inc() | SPN::Dec() => check_nat_ops(self, read, write),
             SPN::Id() | SPN::Ite() => check_flow(self, read, write),
             SPN::Nondet(sort) => check_nondet(sort, read, write),
-            SPN::Pos(_) => check_sample(self, read, write),
+            SPN::Exp(_) => check_sample(self, read, write),
             SPN::ClkRate(_) | SPN::ClkZero() => check_clk_rate(self, read, write),
             SPN::ClkMul(_) => check_clk_mul(self, read, write),
             SPN::Zero() => check_zero(&Sort::Zero(), read, write),
@@ -712,7 +714,7 @@ mod tests {
         assert_eq!(SPN::Bool(true).to_string(), "(true : bool)");
         assert_eq!(SPN::Clock(1.5).to_string(), "(1.5 : clk)");
         assert_eq!(SPN::Nondet(NAT).to_string(), "(* : Nat)");
-        assert_eq!(SPN::Pos(2.5).to_string(), "Pos(2.5)");
+        assert_eq!(SPN::Exp(2.5).to_string(), "Exp(2.5)");
         assert_eq!(SPN::ClkRate(-1.0).to_string(), "ClkRate(-1)");
         assert_eq!(SPN::Id().to_string(), "Id");
         assert_eq!(SPN::Ite().to_string(), "Ite");
@@ -1253,30 +1255,30 @@ mod tests {
     }
 
     #[test]
-    fn pos_ok() {
-        assert!(SPN::Pos(2.5).check([].map(ok), [CLOCK].map(ok)).is_ok());
+    fn exp_ok() {
+        assert!(SPN::Exp(2.5).check([].map(ok), [CLOCK].map(ok)).is_ok());
     }
 
     #[test]
-    fn pos_non_clock_write_fails() {
-        assert!(SPN::Pos(2.5).check([].map(ok), [NAT].map(ok)).is_err());
+    fn exp_non_clock_write_fails() {
+        assert!(SPN::Exp(2.5).check([].map(ok), [NAT].map(ok)).is_err());
         // arming a clock produces a value, not a rate
-        assert!(SPN::Pos(2.5).check([].map(ok), [DCLOCK].map(ok)).is_err());
+        assert!(SPN::Exp(2.5).check([].map(ok), [DCLOCK].map(ok)).is_err());
     }
 
     #[test]
-    fn pos_with_read_fails() {
+    fn exp_with_read_fails() {
         assert!(
-            SPN::Pos(2.5)
+            SPN::Exp(2.5)
                 .check([CLOCK].map(ok), [CLOCK].map(ok))
                 .is_err()
         );
     }
 
     #[test]
-    fn pos_two_writes_fails() {
+    fn exp_two_writes_fails() {
         assert!(
-            SPN::Pos(2.5)
+            SPN::Exp(2.5)
                 .check([].map(ok), [CLOCK, CLOCK].map(ok))
                 .is_err()
         );
