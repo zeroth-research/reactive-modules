@@ -43,12 +43,15 @@ The operations in [`SPN`] are:
   rate `c` — `-1` for a clock counting down to its expiry.
 - [`SPN::ClkZero`] — the zero flow of a clock: `ClkRate(0)` under its own name,
   since the zero flow is the generator [`Differential::zero`] resolves to.
+- [`SPN::ClkMul`]`(k)` — a clock's flow relative to another's: reads one clock
+  tangent and writes a clock tangent of the same rank scaled by `k`, so
+  `d(c) = ClkMul(-1)(d(t))` says `c` counts down at the rate `t` counts up.
 - [`SPN::Zero`] — the unique inhabitant of `Zero`, the trivial tangent of the
   constant sorts.
 
-There are no ordering comparisons and no arithmetic beyond `Inc`/`Dec`: the
-guards of a Petri net only ask whether a place is empty or whether a clock has
-expired.
+There are no ordering comparisons and no arithmetic beyond `Inc`/`Dec` on tokens
+and `ClkMul` on rates: the guards of a Petri net only ask whether a place is
+empty or whether a clock has expired.
 
 [`SPN::ClkIsZero`] holds exactly at zero, and the theory says which clocks run
 and how fast, never when time stops: advancing to the first expiry — the
@@ -218,6 +221,10 @@ pub enum SPN {
     /// under its own name — the generator [`Differential::zero`] resolves to on
     /// the clock fragment.
     ClkZero(),
+    /// A clock's flow relative to another's: reads one clock tangent and writes a
+    /// clock tangent of the same rank, scaled by the constant.
+    #[strum(to_string = "ClkMul({0})")]
+    ClkMul(f64),
     /// The unique inhabitant of the [`Sort::Zero`] sort: the only generator
     /// writing a `Zero` wire (the trivial tangent of the constant sorts).
     Zero(),
@@ -269,6 +276,7 @@ impl Signature for SPN {
             SPN::Nondet(sort) => check_nondet(sort, read, write),
             SPN::Pos(_) => check_sample(self, read, write),
             SPN::ClkRate(_) | SPN::ClkZero() => check_clk_rate(self, read, write),
+            SPN::ClkMul(_) => check_clk_mul(self, read, write),
             SPN::Zero() => check_zero(&Sort::Zero(), read, write),
         }
     }
@@ -524,6 +532,40 @@ where
         Some(Ok(Sort::Clock { rank })) if rank >= 1 => {}
         Some(Ok(sort)) => {
             return Err(format!("{op:?}: must write a clock tangent, got {sort}"));
+        }
+        Some(Err(e)) => return Err(e.to_string()),
+        None => return Err(format!("{op:?}: must write exactly one value, got none")),
+    }
+    if write.next().is_some() {
+        return Err(format!("{op:?}: must write exactly one value, got more"));
+    }
+    Ok(())
+}
+
+// ClkMul scales a tangent: it reads exactly one clock tangent and writes exactly
+// one of the same rank; a clock value (rank 0) has no rate to scale.
+fn check_clk_mul<R, W, E: fmt::Display>(op: &SPN, read: R, write: W) -> Result<(), String>
+where
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
+{
+    let mut read = read.into_iter();
+    let rank = match read.next() {
+        Some(Ok(Sort::Clock { rank })) if rank >= 1 => rank,
+        Some(Ok(sort)) => return Err(format!("{op:?}: must read a clock tangent, got {sort}")),
+        Some(Err(e)) => return Err(e.to_string()),
+        None => return Err(format!("{op:?}: must read exactly one value, got none")),
+    };
+    if read.next().is_some() {
+        return Err(format!("{op:?}: must read exactly one value, got more"));
+    }
+    let mut write = write.into_iter();
+    match write.next() {
+        Some(Ok(Sort::Clock { rank: r })) if r == rank => {}
+        Some(Ok(sort)) => {
+            return Err(format!(
+                "{op:?}: must write a clock tangent of rank {rank}, got {sort}"
+            ));
         }
         Some(Err(e)) => return Err(e.to_string()),
         None => return Err(format!("{op:?}: must write exactly one value, got none")),
@@ -933,6 +975,63 @@ mod tests {
         // never a value, and never the trivial tangent
         assert!(SPN::ClkZero().check([].map(ok), [CLOCK].map(ok)).is_err());
         assert!(SPN::ClkZero().check([].map(ok), [ZERO].map(ok)).is_err());
+    }
+
+    #[test]
+    fn clk_mul_scales_a_tangent() {
+        assert!(
+            SPN::ClkMul(-1.0)
+                .check([DCLOCK].map(ok), [DCLOCK].map(ok))
+                .is_ok()
+        );
+        assert!(
+            SPN::ClkMul(2.0)
+                .check(
+                    [Sort::Clock { rank: 2 }].map(ok),
+                    [Sort::Clock { rank: 2 }].map(ok)
+                )
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn clk_mul_wrong_sorts_and_arity_fail() {
+        // a value has no rate to scale, and the result keeps the rank of the operand
+        assert!(
+            SPN::ClkMul(-1.0)
+                .check([CLOCK].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkMul(-1.0)
+                .check([DCLOCK].map(ok), [CLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkMul(-1.0)
+                .check([DCLOCK].map(ok), [Sort::Clock { rank: 2 }].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkMul(-1.0)
+                .check([NAT].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkMul(-1.0)
+                .check([].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkMul(-1.0)
+                .check([DCLOCK, DCLOCK].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkMul(-1.0)
+                .check([DCLOCK].map(ok), [].map(ok))
+                .is_err()
+        );
     }
 
     #[test]

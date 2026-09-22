@@ -57,6 +57,8 @@ def test_terms_typecheck():
     Term.constant(SPN.ClkRate(COUNTDOWN), [d(c)])
     Term.constant(SPN.ClkZero(), [d(c)])
     Term.constant(SPN.Zero(), [d(p)])
+    # a clock's rate relative to another clock's tangent
+    Term(SPN.ClkMul(COUNTDOWN), [Wire(Clock(1))], [d(c)])
 
 
 @pytest.mark.parametrize(
@@ -73,6 +75,8 @@ def test_terms_typecheck():
         (lambda p, c: Term.constant(SPN.Zero(), [X(p)]), "ZERO"),
         # `Pos` arms a clock, nothing else
         (lambda p, c: Term.constant(SPN.Pos(RATE), [X(p)]), "must be Clock"),
+        # `ClkMul` scales a tangent, not a clock value
+        (lambda p, c: Term(SPN.ClkMul(COUNTDOWN), [Wire(Clock(1))], [c]), "clock tangent"),
     ],
 )
 def test_ill_typed_terms_raise(build, message):

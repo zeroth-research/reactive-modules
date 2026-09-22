@@ -456,6 +456,12 @@ class SPN:
 
         def __init__(self) -> None: ...
 
+    class ClkMul(SPN):
+        """A clock's flow relative to another's: reads a clock tangent and writes one of the
+        same rank scaled by the constant."""
+
+        def __init__(self, rate: float) -> None: ...
+
     class Zero(SPN):
         """The unique inhabitant of the `Zero` sort, the trivial tangent of the
         constant sorts: the derivative of a marking."""
