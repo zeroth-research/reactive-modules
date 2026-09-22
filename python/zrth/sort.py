@@ -16,6 +16,9 @@ for _name in dir(_Sort):
         globals()[_name] = getattr(_Sort, _name)
 
 # Exhaustive on purpose: a new sort must be added here, never given a default.
+# The `SPN` sorts (Nat, Clock) are absent deliberately: that theory's constants
+# are plain numbers, not tensors, so `tensor_for` has nothing to build for them
+# and says so.
 _KINDS = (
     (_Sort.Bool, torch.bool, "boolean"),
     (_Sort.Int, torch.int64, "integer"),

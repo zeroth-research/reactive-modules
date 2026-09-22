@@ -1,6 +1,7 @@
 use ::theory::bv::BV;
 use ::theory::lia::LIA;
 use ::theory::lra::LRA;
+use ::theory::spn::SPN;
 use pyo3::PyClass;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
@@ -39,6 +40,7 @@ fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<LRA>()?;
     m.add_class::<LIA>()?;
     m.add_class::<BV>()?;
+    m.add_class::<SPN>()?;
 
     m.add_function(wrap_pyfunction!(var::x, m)?)?;
     m.add_function(wrap_pyfunction!(var::d, m)?)?;

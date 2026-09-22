@@ -1,7 +1,8 @@
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
-use crate::{Signature, Tangent, bv, lia, lra};
+use crate::spn::SPN;
+use crate::{Signature, Tangent, bv, lia, lra, spn};
 use crate::{check_havoc, check_skip, check_zero};
 use derive_more::From;
 #[cfg(feature = "pyo3")]
@@ -26,8 +27,16 @@ pub enum Sort {
         rank: u8,
     },
     Int([usize; 2]),
+    /// A token count: the marking of a place (`spn`).
+    Nat(),
+    /// A clock (`spn`); `rank` is the differential grade: 0 = value,
+    /// 1 = the rate the clock runs at, ...
+    #[pyo3(constructor = (rank = 0))]
+    Clock {
+        rank: u8,
+    },
     BitVec(usize, [usize; 2]),
-    /// The trivial tangent of the constant sorts (Bool, Int, BitVec): a
+    /// The trivial tangent of the constant sorts (Bool, Int, Nat, BitVec): a
     /// singleton, inhabited by exactly the zero value. Terminal, not empty.
     Zero(),
 }
@@ -43,8 +52,15 @@ pub enum Sort {
         rank: u8,
     },
     Int([usize; 2]),
+    /// A token count: the marking of a place (`spn`).
+    Nat(),
+    /// A clock (`spn`); `rank` is the differential grade: 0 = value,
+    /// 1 = the rate the clock runs at, ...
+    Clock {
+        rank: u8,
+    },
     BitVec(usize, [usize; 2]),
-    /// The trivial tangent of the constant sorts (Bool, Int, BitVec): a
+    /// The trivial tangent of the constant sorts (Bool, Int, Nat, BitVec): a
     /// singleton, inhabited by exactly the zero value. Terminal, not empty.
     Zero(),
 }
@@ -54,11 +70,16 @@ impl Sort {
     pub fn real(shape: [usize; 2]) -> Self {
         Sort::Real { shape, rank: 0 }
     }
+
+    /// A clock value sort (rank 0).
+    pub fn clock() -> Self {
+        Sort::Clock { rank: 0 }
+    }
 }
 
-/// The tangent former: reals grade up (`rank + 1`, same carrier); the
-/// constant sorts (Bool, Int, BitVec) collapse to the trivial tangent
-/// `Zero`, which is a fixed point.
+/// The tangent former: reals and clocks grade up (`rank + 1`, same
+/// carrier); the constant sorts (Bool, Int, Nat, BitVec) collapse to the
+/// trivial tangent `Zero`, which is a fixed point.
 impl Tangent for Sort {
     #[allow(non_snake_case)]
     fn T(&self) -> Self {
@@ -67,7 +88,8 @@ impl Tangent for Sort {
                 shape,
                 rank: rank + 1,
             },
-            Sort::Bool(_) | Sort::Int(_) | Sort::BitVec(..) => Sort::Zero(),
+            Sort::Clock { rank } => Sort::Clock { rank: rank + 1 },
+            Sort::Bool(_) | Sort::Int(_) | Sort::Nat() | Sort::BitVec(..) => Sort::Zero(),
             Sort::Zero() => Sort::Zero(),
         }
     }
@@ -87,6 +109,15 @@ impl fmt::Display for Sort {
             }
             Sort::Int(shape) => {
                 write!(f, "Int([{},{}])", shape[0], shape[1])
+            }
+            Sort::Nat() => {
+                write!(f, "Nat")
+            }
+            Sort::Clock { rank: 0 } => {
+                write!(f, "Clock")
+            }
+            Sort::Clock { rank } => {
+                write!(f, "T{} Clock", rank)
             }
             Sort::BitVec(bw, shape) => {
                 write!(f, "Bv{}([{},{}])", bw, shape[0], shape[1])
@@ -123,6 +154,33 @@ impl From<lra::Sort> for Sort {
             lra::Sort::Bool(shape) => Sort::Bool(shape),
             lra::Sort::Real { shape, rank } => Sort::Real { shape, rank },
             lra::Sort::Zero => Sort::Zero(),
+        }
+    }
+}
+
+/// The `spn` sorts are scalar: its `Bool` is the 1x1 boolean matrix, and
+/// `Nat` and `Clock` are sorts of their own.
+impl From<spn::Sort> for Sort {
+    fn from(value: spn::Sort) -> Self {
+        match value {
+            spn::Sort::Nat() => Sort::Nat(),
+            spn::Sort::Bool() => Sort::Bool([1, 1]),
+            spn::Sort::Clock { rank } => Sort::Clock { rank },
+            spn::Sort::Zero() => Sort::Zero(),
+        }
+    }
+}
+
+impl TryFrom<Sort> for spn::Sort {
+    type Error = String;
+
+    fn try_from(value: Sort) -> Result<Self, Self::Error> {
+        match value {
+            Sort::Nat() => Ok(spn::Sort::Nat()),
+            Sort::Bool([1, 1]) => Ok(spn::Sort::Bool()),
+            Sort::Clock { rank } => Ok(spn::Sort::Clock { rank }),
+            Sort::Zero() => Ok(spn::Sort::Zero()),
+            _ => Err("invalid cast".to_string()),
         }
     }
 }
@@ -173,6 +231,7 @@ impl TryFrom<Sort> for lra::Sort {
 //
 // ```text
 //     LRA -> Combinatorial, Sequential, Differential
+//     SPN -> Combinatorial, Sequential, Differential
 //     LIA -> Combinatorial, Sequential
 //     BV  -> Combinatorial, Sequential
 //     Combinatorial -> Sequential
@@ -216,6 +275,9 @@ pub enum Any {
     #[subenum(Combinatorial, Sequential)]
     #[strum(to_string = "{0}")]
     BV(BV),
+    #[subenum(Combinatorial, Differential, Sequential)]
+    #[strum(to_string = "{0}")]
+    SPN(SPN),
 }
 
 #[cfg(feature = "pyo3")]
@@ -230,8 +292,11 @@ impl<'py> FromPyObject<'py> for Any {
         if let Ok(a) = obj.extract::<BV>() {
             return Ok(Any::BV(a));
         }
+        if let Ok(a) = obj.extract::<SPN>() {
+            return Ok(Any::SPN(a));
+        }
         Err(pyo3::exceptions::PyTypeError::new_err(
-            "expected one of LRA, LIA, or BV",
+            "expected one of LRA, LIA, BV, or SPN",
         ))
     }
 }
@@ -252,6 +317,7 @@ impl<'py> IntoPyObject<'py> for Any {
             Any::LRA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::LIA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::BV(a) => a.into_pyobject(py).map(Bound::into_any),
+            Any::SPN(a) => a.into_pyobject(py).map(Bound::into_any),
         }
     }
 }
@@ -298,6 +364,7 @@ impl Signature for Any {
             Any::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Any::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Any::BV(itype) => itype.check(try_into(read), try_into(write)),
+            Any::SPN(itype) => itype.check(try_into(read), try_into(write)),
         }
     }
 }
@@ -330,6 +397,7 @@ impl Signature for Sequential {
             Sequential::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Sequential::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Sequential::BV(itype) => itype.check(try_into(read), try_into(write)),
+            Sequential::SPN(itype) => itype.check(try_into(read), try_into(write)),
         }
     }
 }
@@ -350,6 +418,7 @@ impl Signature for Combinatorial {
             Combinatorial::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Combinatorial::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Combinatorial::BV(itype) => itype.check(try_into(read), try_into(write)),
+            Combinatorial::SPN(itype) => itype.check(try_into(read), try_into(write)),
         }
     }
 }
@@ -368,6 +437,7 @@ impl Signature for Differential {
         match self {
             Differential::ZERO(range) => check_zero(range, read, write),
             Differential::LRA(itype) => itype.check(try_into(read), try_into(write)),
+            Differential::SPN(itype) => itype.check(try_into(read), try_into(write)),
         }
     }
 }
@@ -382,6 +452,7 @@ impl From<Combinatorial> for Sequential {
             Combinatorial::BV(bv) => Sequential::BV(bv),
             Combinatorial::LRA(lra) => Sequential::LRA(lra),
             Combinatorial::LIA(lia) => Sequential::LIA(lia),
+            Combinatorial::SPN(spn) => Sequential::SPN(spn),
         }
     }
 }
@@ -405,6 +476,59 @@ mod tests {
         assert!(matches!(LIA::Add().into(), Sequential::LIA(LIA::Add())));
         assert!(matches!(BV::And().into(), Combinatorial::BV(BV::And())));
         assert!(matches!(BV::And().into(), Sequential::BV(BV::And())));
+        assert!(matches!(SPN::Inc().into(), Combinatorial::SPN(SPN::Inc())));
+        assert!(matches!(SPN::Inc().into(), Sequential::SPN(SPN::Inc())));
+        assert!(matches!(SPN::Inc().into(), Differential::SPN(SPN::Inc())));
+    }
+
+    // The `spn` sorts embed as themselves, its scalar booleans as 1x1
+    // matrices, and everything else is rejected.
+
+    #[test]
+    fn spn_sorts_round_trip() {
+        for s in [
+            spn::Sort::Nat(),
+            spn::Sort::Bool(),
+            spn::Sort::clock(),
+            spn::Sort::Clock { rank: 1 },
+            spn::Sort::Zero(),
+        ] {
+            assert_eq!(spn::Sort::try_from(Sort::from(s)), Ok(s));
+        }
+        assert_eq!(Sort::from(spn::Sort::Bool()), Sort::Bool([1, 1]));
+        // the tangent is taken in `any` and in `spn` alike
+        assert_eq!(Sort::from(spn::Sort::clock()).T(), Sort::clock().T());
+        assert_eq!(Sort::from(spn::Sort::Nat()).T(), Sort::Zero());
+        // a matrix sort is not an `spn` sort
+        assert!(spn::Sort::try_from(Sort::Bool([2, 2])).is_err());
+        assert!(spn::Sort::try_from(Sort::Int([1, 1])).is_err());
+    }
+
+    #[test]
+    fn spn_checks_through_any() {
+        let nat = || Sort::Nat();
+        let boolean = || Sort::Bool([1, 1]);
+        assert!(
+            Any::SPN(SPN::IsZero())
+                .check([nat()].map(ok), [boolean()].map(ok))
+                .is_ok()
+        );
+        assert!(
+            Any::SPN(SPN::IsZero())
+                .check([nat()].map(ok), [Sort::Bool([2, 2])].map(ok))
+                .is_err()
+        );
+        // the clock flows live in the differential fragment
+        assert!(
+            Differential::SPN(SPN::ClkRate(-1.0))
+                .check([].map(ok), [Sort::clock().T()].map(ok))
+                .is_ok()
+        );
+        assert!(
+            Differential::SPN(SPN::ClkRate(-1.0))
+                .check([].map(ok), [Sort::clock()].map(ok))
+                .is_err()
+        );
     }
 
     #[test]
@@ -432,6 +556,7 @@ mod tests {
         assert_eq!(Any::LRA(LRA::Add()).to_string(), "Add");
         assert_eq!(Sequential::LIA(LIA::ReLU()).to_string(), "ReLU");
         assert_eq!(Combinatorial::BV(BV::MatMul()).to_string(), "MatMul");
+        assert_eq!(Any::SPN(SPN::ClkRate(-1.0)).to_string(), "ClkRate(-1)");
         // Base-theory special cases keep their formats.
         assert_eq!(
             LRA::Uninterpreted("f".to_string()).to_string(),

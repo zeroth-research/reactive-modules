@@ -50,6 +50,13 @@ There are no ordering comparisons and no arithmetic beyond `Inc`/`Dec`: the
 guards of a Petri net only ask whether a place is empty or whether a clock has
 expired.
 
+[`SPN::ClkIsZero`] holds exactly at zero, and the theory says which clocks run
+and how fast, never when time stops: advancing to the first expiry — the
+minimum over the running clocks — and taking the discrete step there is the
+executor's obligation. A minimum is not expressible in this signature, and
+deliberately so; a model with several clocks is well defined only under that
+convention.
+
 `SPN` implements [`Signature`], [`Sequential`], [`Combinatorial`] and
 [`Differential`]; [`Signature::check`] validates the sorts of the read/write
 wires against the selected operation. [`Differential::zero`] resolves to
@@ -181,7 +188,8 @@ pub enum SPN {
     Or(),
     Not(),
     // tests (the only guards the theory provides)
-    /// Has the clock expired? `Clock -> Bool`
+    /// Has the clock expired? `Clock -> Bool`. The test is exact: see the
+    /// module docs on who is responsible for stopping time at zero.
     ClkIsZero(),
     /// Is the place empty? `Nat -> Bool`
     IsZero(),

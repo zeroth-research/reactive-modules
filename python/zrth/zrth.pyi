@@ -4,8 +4,8 @@ They support type checking (mypy) and editor hints only, with no runtime effect,
 are maintained by hand: PyO3 does not generate stubs, so adding a theory or an op means
 updating this file too (see https://pyo3.rs/v0.29.0/python-typing-hints).
 
-The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec), the per-theory
-op enums `LRA` / `LIA` / `BV` (complex enums: each variant is its own subclass,
+The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/Nat/Clock/BitVec), the
+per-theory op enums `LRA` / `LIA` / `BV` / `SPN` (complex enums: each variant is its own subclass,
 payloads are read via `match`/unpacking), and the structural layer `Wire` / `Var` /
 `Term` / `Atom` / `Module`. A `Var` bundles the latched, next (`X(v)`), and
 derivative (`d(v)`) wires of a state variable and stands for its latched wire
@@ -59,12 +59,28 @@ class Real(Sort):
     def rank(self) -> int: ...
 
 
+class Nat(Sort):
+    """A token count: the marking of a place (`SPN`)."""
+
+    def __init__(self) -> None: ...
+
+
+class Clock(Sort):
+    """The time left until a Poisson clock expires (`SPN`)."""
+
+    # `rank` is the differential grade: 0 = value, 1 = the rate it runs at, ...
+    def __init__(self, rank: int = 0) -> None: ...
+
+    @property
+    def rank(self) -> int: ...
+
+
 class BitVec(Sort):
     def __init__(self, width: int, shape: list[int]) -> None: ...
 
 
 class Zero(Sort):
-    """The trivial tangent of the constant sorts (Bool, Int, BitVec): a
+    """The trivial tangent of the constant sorts (Bool, Int, Nat, BitVec): a
     singleton, inhabited by exactly the zero value. Terminal, not empty."""
 
     def __init__(self) -> None: ...
@@ -330,6 +346,86 @@ class BV:
 
     class Uninterpreted(BV):
         def __init__(self, name: str) -> None: ...
+
+
+class SPN:
+    """Stochastic Petri nets: places holding tokens (`Nat`), predicates (`Bool`),
+    and the Poisson clocks (`Clock`) that decide when a transition fires.
+
+    The sorts are scalar, so a `Bool` wire is `Bool([1, 1])`. `SPN.Nondet` is not
+    constructible from Python: it carries the theory's own sort, which the module
+    does not export.
+    """
+
+    class Nat(SPN):
+        """A token-count literal."""
+
+        def __init__(self, value: int) -> None: ...
+
+    class Bool(SPN):
+        def __init__(self, value: bool) -> None: ...
+
+    class Clock(SPN):
+        """A clock literal: the time left until it expires."""
+
+        def __init__(self, value: float) -> None: ...
+
+    class And(SPN):
+        def __init__(self) -> None: ...
+
+    class Or(SPN):
+        def __init__(self) -> None: ...
+
+    class Not(SPN):
+        def __init__(self) -> None: ...
+
+    class ClkIsZero(SPN):
+        """Has the clock expired? `Clock -> Bool`"""
+
+        def __init__(self) -> None: ...
+
+    class IsZero(SPN):
+        """Is the place empty? `Nat -> Bool`"""
+
+        def __init__(self) -> None: ...
+
+    class Inc(SPN):
+        """Produce a token: `Nat -> Nat`"""
+
+        def __init__(self) -> None: ...
+
+    class Dec(SPN):
+        """Consume a token: `Nat -> Nat`"""
+
+        def __init__(self) -> None: ...
+
+    class Id(SPN):
+        def __init__(self) -> None: ...
+
+    class Ite(SPN):
+        def __init__(self) -> None: ...
+
+    class Pos(SPN):
+        """Arm a fresh Poisson clock with the given rate."""
+
+        def __init__(self, rate: float) -> None: ...
+
+    class ClkRate(SPN):
+        """Constant flow of a clock: it runs at the given rate, `-1` for a clock
+        counting down to its expiry. Writes a clock tangent (`Clock(1)`)."""
+
+        def __init__(self, rate: float) -> None: ...
+
+    class ClkZero(SPN):
+        """Zero flow of a clock: it does not run. Writes a clock tangent."""
+
+        def __init__(self) -> None: ...
+
+    class Zero(SPN):
+        """The unique inhabitant of the `Zero` sort, the trivial tangent of the
+        constant sorts: the derivative of a marking."""
+
+        def __init__(self) -> None: ...
 
 
 # ---------------------------------------------------------------------------
