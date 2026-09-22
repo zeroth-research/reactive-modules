@@ -41,8 +41,8 @@ from typing import override
 
 import torch
 
-from .zrth import Term, Wire, LRA, LIA, BV, Var, X as _X, d as _d
-from .sort import Sort, Bool, Int, Real, BitVec, tensor_for
+from .zrth import Term, Wire, LRA, LIA, BV, SPN, Var, X as _X, d as _d
+from .sort import Sort, Bool, Int, Real, BitVec, Nat, Clock, tensor_for
 from .builder import NonLinearError
 
 
@@ -55,6 +55,8 @@ def _shape(sort: Sort) -> list:
             return list(s)
         case BitVec(_, s):
             return list(s)
+        case Nat() | Clock(_):
+            return [1, 1]
     raise TypeError(f"sort has no shape: {sort}")
 
 
@@ -68,6 +70,8 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Real(shape)
         case BitVec(bw, _):
             return BitVec(bw, shape)
+        case Nat() | Clock(_):
+            return sort
     raise TypeError(f"unknown sort: {sort}")
 
 
@@ -90,6 +94,10 @@ def _family(sort: Sort) -> str:
             return "Real"
         case BitVec(bw, _):
             return f"BitVec{bw}"
+        case Nat():
+            return "Nat"
+        case Clock(rank):
+            return f"Clock{rank}"
     raise TypeError(f"unknown sort: {sort}")
 
 
@@ -146,6 +154,8 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
             return AExpr(wire, theory, next=next, value=value, tag=tag)
         case BitVec(_, _):
             return WExpr(wire, theory, next=next, value=value, signed=signed, tag=tag)
+        case Nat() | Clock(_):
+            return SExpr(wire, theory, next=next, value=value, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
 
 
@@ -397,6 +407,44 @@ class WExpr(AExpr):
 
 # ---------------------------------------------------------------------------
 # expr() — single construction / coercion entry point
+class SExpr(Expr):
+    """The scalar SPN sorts, Nat and Clock. The theory has only zero tests, single-token
+    steps and clock rates relative to a time form, so those are the only operators that
+    map: ``x == 0`` / ``x != 0``, ``n + 1`` / ``n - 1``, and ``k * d(t)`` for a rate."""
+
+    def __eq__(self, other):
+        if isinstance(other, Expr) or other != 0:
+            raise TypeError("SPN only tests against zero: write `x == 0`")
+        op = SPN.ClkIsZero() if isinstance(self.dtype, Clock) else SPN.IsZero()
+        return self._unop(op, out=Bool([1, 1]))
+
+    def __ne__(self, other):
+        return ~(self == other)
+
+    def _step(self, o, op):
+        if isinstance(o, Expr) or o != 1 or not isinstance(self.dtype, Nat):
+            raise TypeError("SPN moves one token at a time: write `n + 1` or `n - 1` on a Nat")
+        return self._unop(op)
+
+    def __add__(self, o):  return self._step(o, SPN.Inc())
+    def __radd__(self, o): return self._step(o, SPN.Inc())
+    def __sub__(self, o):  return self._step(o, SPN.Dec())
+
+    def __mul__(self, k):  return self.__rmul__(k)
+
+    def __rmul__(self, k):
+        if isinstance(k, Expr) or not isinstance(k, (int, float)) or not _rank(self.dtype):
+            raise TypeError("an SPN clock rate is a literal times a time form: write `k * d(t)`")
+        return self._unop(SPN.ClkMul(float(k)))
+
+
+def _rank(sort: Sort) -> int:
+    match sort:
+        case Clock(rank):
+            return rank
+    return 0
+
+
 # ---------------------------------------------------------------------------
 
 
@@ -496,6 +544,8 @@ def _const(value, theory, sort, *, signed, bw=None, tag=None) -> Expr:
         raise TypeError("expr(): a numeric literal needs an explicit sort= ")
     if theory is None:
         raise TypeError("expr(): a numeric literal needs an explicit theory= ")
+    if theory is SPN:
+        return _spn_const(value, sort, tag=tag)
 
     # unpack sort family and required shape if any
     sort, bw, required_shape = _unpack_sort_user_argument(sort, bw=bw)
@@ -518,6 +568,41 @@ def _const(value, theory, sort, *, signed, bw=None, tag=None) -> Expr:
     _emit(term)
 
     return _wrap(term.write[0], theory, value=value, signed=signed, tag=tag)
+
+
+def _spn_const(value, sort, *, tag=None) -> Expr:
+    """SPN literals are plain numbers, not tensors: ``Nat(v)``, ``Bool(b)``, ``Clock(x)``."""
+    if not isinstance(value, (bool, int, float)):
+        raise TypeError(f"expr(): SPN literals are scalars, got {type(value).__name__}")
+    if sort is Nat or isinstance(sort, Nat):
+        if value < 0 or value != int(value):
+            raise TypeError(f"expr(): a Nat literal is a non-negative integer, got {value}")
+        op, wire = SPN.Nat(int(value)), Wire(Nat())
+    elif sort is Clock or isinstance(sort, Clock):
+        if _rank(sort) if isinstance(sort, Clock) else 0:
+            raise TypeError("expr(): a clock rate is not a literal: write `k * d(t)`")
+        op, wire = SPN.Clock(float(value)), Wire(Clock())
+    elif sort is Bool or isinstance(sort, Bool):
+        op, wire = SPN.Bool(bool(value)), Wire(Bool([1, 1]))
+    else:
+        raise TypeError(f"expr(): SPN has no literal of sort {sort}")
+    _emit(Term.constant(op, [wire]))
+    return _wrap(wire, SPN, value=value, tag=tag)
+
+
+def pos(rate) -> Expr:
+    """Arm a fresh Poisson clock with the given rate (SPN): a Clock value."""
+    wire = Wire(Clock())
+    _emit(Term.constant(SPN.Pos(float(rate)), [wire]))
+    return _wrap(wire, SPN)
+
+
+def clkrate(rate) -> Expr:
+    """A clock running at the given constant rate against absolute time (SPN): a Clock tangent
+    that reads nothing, for a time source; a clock relative to another spells ``k * d(t)``."""
+    wire = Wire(Clock(1))
+    _emit(Term.constant(SPN.ClkRate(float(rate)), [wire]))
+    return _wrap(wire, SPN)
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 """``zrth.sugar``: author a reactive Module by subclassing (à la ``torch.nn.Module``).
 
 Subclass ``sugar.Module``, pass a ``theory`` and the ``ctrl`` (and optional ``extl``)
-variables — ``zrth.Var`` objects — and override any of ``init`` / ``update`` / ``delay``.
+variables — ``zrth.Var`` objects — and override any of ``init`` / ``update`` / ``delay``
+(``next`` and ``flow`` are accepted as the names of the last two).
 **Instantiating the subclass *is* a base Module** — the methods run symbolically and the
 module is built in the constructor:
 
@@ -53,12 +54,13 @@ Two base-class constraints force this (both flagged for design review):
 
 import inspect
 
-from .zrth import Module as _Module, Term as _Term, X as base_X, d as base_d, Var
+from .zrth import Module as _Module, Term as _Term, X as base_X, d as base_d, Var, SPN
+from .sort import Clock, Zero
 
-from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
+from .expr import expr, cast, ite, relu, argmax, pos, clkrate, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
 
 # Public authoring surface: `from zrth.sugar import Module, expr, X, d, ite, cast, ...`
-__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var"]
+__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "pos", "clkrate", "Expr", "X", "d", "Var"]
 
 
 def _as_tuple(r) -> tuple:
@@ -69,6 +71,27 @@ def _as_tuple(r) -> tuple:
     if isinstance(r, list):
         return tuple(r)
     return (r,)
+
+
+def _method(cls, *names):
+    """The block's authoring method under any of its accepted names; at most one may be defined."""
+    # the pyo3 base has constructors of the same names (`Module.flow`, ...): only
+    # attributes the subclass defines itself count
+    found = [n for n in names if getattr(cls, n, None) is not getattr(_Module, n, None)]
+    if len(found) > 1:
+        raise TypeError(f"{cls.__name__}: define only one of {' / '.join(names)}")
+    return (found[0], getattr(cls, found[0])) if found else (names[0], None)
+
+
+def _zero_flow(theory, var) -> _Term:
+    tangent = base_d(var).dtype
+    if theory is SPN:
+        op = SPN.ClkZero() if isinstance(tangent, Clock) else SPN.Zero()
+    elif isinstance(tangent, Zero):
+        op = theory.Zero()
+    else:
+        raise TypeError(f"{theory.__name__}: no default flow for {tangent}; return an expression")
+    return _Term.constant(op, [base_d(var)])
 
 
 def _build_init_block(cls, ctrl, extl, theory) -> list:
@@ -93,7 +116,7 @@ def _build_init_block(cls, ctrl, extl, theory) -> list:
 
 
 def _build_update_block(cls, ctrl, extl, theory) -> list:
-    fn = getattr(cls, "update", None)
+    name, fn = _method(cls, "update", "next")
     if fn is None:
         return None
     nparams = len(inspect.signature(fn).parameters)
@@ -101,12 +124,12 @@ def _build_update_block(cls, ctrl, extl, theory) -> list:
     # we assume all arguments are taken, otherwise it's too ambiguous
     args = tuple(expr(v, theory=theory) for v in ctrl + extl)
     if nparams != len(args) + 1:
-        raise ValueError(f"update expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
+        raise ValueError(f"{name} expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
 
     with collecting() as terms:
         vals = _as_tuple(fn(None, *args))
         if len(vals) != len(ctrl):
-            raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
+            raise ValueError(f"{name} expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
             terms.append(_Term(theory.Id(), [base_X(var)], [e.wire]))
@@ -114,7 +137,7 @@ def _build_update_block(cls, ctrl, extl, theory) -> list:
 
 
 def _build_delay_block(cls, ctrl, extl, theory) -> list:
-    fn = getattr(cls, "delay", None)
+    name, fn = _method(cls, "delay", "flow")
     if fn is None:
         return None
     nparams = len(inspect.signature(fn).parameters)
@@ -122,13 +145,17 @@ def _build_delay_block(cls, ctrl, extl, theory) -> list:
     # we assume all arguments are taken, otherwise it's too ambiguous
     args = tuple(expr(v, theory=theory) for v in ctrl + extl)
     if nparams != len(args) + 1:
-        raise ValueError(f"delay expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
+        raise ValueError(f"{name} expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
 
     with collecting() as terms:
-        vals = _as_tuple(fn(None, *args))
+        returned = fn(None, *args)
+        vals = (None,) * len(ctrl) if returned is None else _as_tuple(returned)
         if len(vals) != len(ctrl):
-            raise ValueError(f"delay expects {len(ctrl)} return values, got {len(vals)}")
+            raise ValueError(f"{name} expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
+            if val is None:
+                terms.append(_zero_flow(theory, var))
+                continue
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
             terms.append(_Term(theory.Id(), [base_d(var)], [e.wire]))
         return terms
