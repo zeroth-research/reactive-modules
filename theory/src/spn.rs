@@ -19,9 +19,8 @@ tangent:
 
 The clock is the only sort that can move: a marking changes by firing a
 transition, not by flowing, so `Nat` and `Bool` are constant sorts and their
-tangent is `Zero`. The clock tangent is a sort of its own, but it too is
-inhabited by zero alone — the theory has no generator for a non-zero rate of
-change.
+tangent is `Zero`. The clock tangent is a sort of its own, inhabited by the
+constant rates a clock can run at.
 
 The operations in [`SPN`] are:
 
@@ -33,13 +32,17 @@ The operations in [`SPN`] are:
 - [`SPN::Inc`], [`SPN::Dec`] — produce and consume a token: `Nat -> Nat`.
 - [`SPN::Id`] — copies its single read wire to its single write wire; it is
   defined on every sort and acts rank-generically.
+- [`SPN::Ite`] — if-then-else: reads a boolean guard and two branches of one
+  and the same sort, and writes that sort.
 - [`SPN::Nondet`]`(s)` — nondeterministic choice of a value of the value sort
   `s`; reads nothing and writes a single wire of that sort.
 - [`SPN::Pos`]`(λ)` — arms a fresh Poisson clock with rate `λ`; reads nothing and
   writes a single `Clock` value wire.
-- [`SPN::ClkZerograd`] — the zero flow of a clock: reads nothing and writes a
-  single clock *tangent* wire (rank at least 1), saying that the clock does not
-  run.
+- [`SPN::ClkRate`]`(c)` — constant flow of a clock: reads nothing and writes a
+  single clock *tangent* wire (rank at least 1), saying that the clock runs at
+  rate `c` — `-1` for a clock counting down to its expiry.
+- [`SPN::ClkZero`] — the zero flow of a clock: `ClkRate(0)` under its own name,
+  since the zero flow is the generator [`Differential::zero`] resolves to.
 - [`SPN::Zero`] — the unique inhabitant of `Zero`, the trivial tangent of the
   constant sorts.
 
@@ -50,8 +53,9 @@ expired.
 `SPN` implements [`Signature`], [`Sequential`], [`Combinatorial`] and
 [`Differential`]; [`Signature::check`] validates the sorts of the read/write
 wires against the selected operation. [`Differential::zero`] resolves to
-[`SPN::ClkZerograd`] on a clock tangent and to [`SPN::Zero`] on the trivial
-one; those two are the only generators that write a tangent wire.
+[`SPN::ClkZero`] on a clock tangent and to [`SPN::Zero`] on the trivial
+one; together with [`SPN::ClkRate`] they are the only generators that write a
+tangent wire.
 
 ## Examples
 
@@ -74,8 +78,11 @@ assert!(SPN::Dec().check([Sort::Nat()].map(ok), [Sort::Nat()].map(ok)).is_ok());
 assert!(SPN::Pos(2.5).check([].map(ok), [clk].map(ok)).is_ok());
 assert!(SPN::Pos(2.5).check([].map(ok), [Sort::Nat()].map(ok)).is_err());
 
-// Tangent wires are written by the zero generators alone.
-assert!(SPN::ClkZerograd().check([].map(ok), [clk.T()].map(ok)).is_ok());
+// Tangent wires are written by the flow generators alone: a clock counts
+// down at rate -1, a marking does not move at all.
+assert!(SPN::ClkRate(-1.0).check([].map(ok), [clk.T()].map(ok)).is_ok());
+assert!(SPN::ClkRate(-1.0).check([].map(ok), [clk].map(ok)).is_err());
+assert!(SPN::ClkZero().check([].map(ok), [clk.T()].map(ok)).is_ok());
 assert!(SPN::Clock(1.0).check([].map(ok), [clk.T()].map(ok)).is_err());
 assert!(SPN::Zero().check([].map(ok), [Sort::Nat().T()].map(ok)).is_ok());
 ```
@@ -92,16 +99,12 @@ pub enum Sort {
     /// The time left until a Poisson clock expires; `rank` is the
     /// differential grade: 0 = value, 1 = first derivative, ...
     Clock { rank: u8 },
-    // the remaining variants are empty tuple variants, not unit ones: a
-    // `pyclass` complex enum (one with a field-carrying variant) takes no unit
-    // variants
-    /// A token count (the marking of a place): a constant sort — a marking
-    /// changes by firing a transition, not by flowing.
+    /// Natural number -- for representing a token count (the marking of a place)
     Nat(),
-    /// A truth value: a constant sort.
+    /// A truth value -- for predicates.
     Bool(),
     /// The trivial tangent of the constant sorts: a singleton, inhabited by
-    /// exactly the zero value. Terminal, not empty.
+    /// exactly the zero value.
     Zero(),
 }
 
@@ -190,16 +193,23 @@ pub enum SPN {
     Dec(),
     /// Copy a value of any sort
     Id(),
+    /// If-then-else
+    Ite(),
     /// Nondeterministic choice of a value of the given value sort
     #[strum(to_string = "(* : {0})")]
     Nondet(Sort),
     /// Arm a fresh Poisson clock with the given rate
     #[strum(to_string = "Pos({0})")]
     Pos(f64),
-    /// Zero flow of a clock: the clock does not run. It writes a clock
-    /// tangent (rank at least 1) and is what [`Differential::zero`] resolves
-    /// to on the clock fragment.
-    ClkZerograd(),
+    /// Constant flow of a clock: it runs at the given rate, `-1` for a clock
+    /// counting down to its expiry. It writes a clock tangent (rank at least
+    /// 1) and reads nothing.
+    #[strum(to_string = "ClkRate({0})")]
+    ClkRate(f64),
+    /// Zero flow of a clock: the clock does not run. It is [`SPN::ClkRate`]`(0)`
+    /// under its own name — the generator [`Differential::zero`] resolves to on
+    /// the clock fragment.
+    ClkZero(),
     /// The unique inhabitant of the [`Sort::Zero`] sort: the only generator
     /// writing a `Zero` wire (the trivial tangent of the constant sorts).
     Zero(),
@@ -214,10 +224,10 @@ impl Sequential for SPN {
 impl Combinatorial for SPN {
     fn havoc(range: &Sort) -> Self {
         match range {
-            // a tangent sort is inhabited by zero alone, so havoc over it is
-            // that single inhabitant
+            // the trivial tangent is a singleton, so havoc over it is its
+            // single inhabitant; every other sort, clock tangents included,
+            // has a choice to make
             Sort::Zero() => SPN::Zero(),
-            Sort::Clock { rank } if *rank > 0 => SPN::ClkZerograd(),
             _ => SPN::Nondet(*range),
         }
     }
@@ -227,7 +237,7 @@ impl Differential for SPN {
     fn zero(range: &Sort) -> Self {
         // `range` is the tangent sort the generator writes
         match range {
-            Sort::Clock { .. } => SPN::ClkZerograd(),
+            Sort::Clock { .. } => SPN::ClkZero(),
             Sort::Nat() | Sort::Bool() | Sort::Zero() => SPN::Zero(),
         }
     }
@@ -247,10 +257,10 @@ impl Signature for SPN {
             SPN::And() | SPN::Or() | SPN::Not() => check_bool(self, read, write),
             SPN::IsZero() | SPN::ClkIsZero() => check_is_zero(self, read, write),
             SPN::Inc() | SPN::Dec() => check_nat_ops(self, read, write),
-            SPN::Id() => check_flow(self, read, write),
+            SPN::Id() | SPN::Ite() => check_flow(self, read, write),
             SPN::Nondet(sort) => check_nondet(sort, read, write),
             SPN::Pos(_) => check_sample(self, read, write),
-            SPN::ClkZerograd() => check_clk_zerograd(read, write),
+            SPN::ClkRate(_) | SPN::ClkZero() => check_clk_rate(self, read, write),
             SPN::Zero() => check_zero(&Sort::Zero(), read, write),
         }
     }
@@ -398,9 +408,9 @@ where
     Ok(())
 }
 
-// `Id` copies a single value of an arbitrary sort. It applies rank-generically,
-// but never across ranks: the sorts of the two wires must agree, tangent grade
-// included.
+// `Id` copies a single value of an arbitrary sort and `Ite` selects between two
+// values of one sort under a boolean guard. Both apply rank-generically, but
+// never across ranks: the sorts they relate must agree, tangent grade included.
 fn check_flow<R, W, E: fmt::Display>(op: &SPN, read: R, write: W) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
@@ -408,29 +418,62 @@ where
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
-        return Err(format!("{op:?}: must read exactly one value"));
-    };
-    let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
-        return Err(format!("{op:?}: must write exactly one value"));
-    };
-    if r1 != w1 {
-        return Err(format!(
-            "{op:?}: input and output must have the same sort, got {r1} and {w1}"
-        ));
+    match op {
+        SPN::Id() => {
+            let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
+                return Err(format!("{op:?}: must read exactly one value"));
+            };
+            let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
+                return Err(format!("{op:?}: must write exactly one value"));
+            };
+            if r1 != w1 {
+                return Err(format!(
+                    "{op:?}: input and output must have the same sort, got {r1} and {w1}"
+                ));
+            }
+            Ok(())
+        }
+        SPN::Ite() => {
+            let (r1, r2, r3, None) = (
+                next_sort(&mut read, 0)?,
+                next_sort(&mut read, 1)?,
+                next_sort(&mut read, 2)?,
+                read.next(),
+            ) else {
+                return Err(format!("{op:?}: must read exactly three values"));
+            };
+            let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
+                return Err(format!("{op:?}: must write exactly one value"));
+            };
+            if r1 != Sort::Bool() {
+                return Err(format!("{op:?}: the guard must be Bool, got {r1}"));
+            }
+            if r2 != r3 {
+                return Err(format!(
+                    "{op:?}: the branches must have the same sort, got {r2} and {r3}"
+                ));
+            }
+            if w1 != r2 {
+                return Err(format!(
+                    "{op:?}: output must have the sort of the branches, got {w1} and {r2}"
+                ));
+            }
+            Ok(())
+        }
+        _ => unreachable!(),
     }
-    Ok(())
 }
 
-// Nondeterministic choice is defined on the value sorts only: a tangent sort
-// is inhabited by zero alone, so there is nothing to choose there.
+// Nondeterministic choice is defined on every sort but the trivial tangent,
+// which is inhabited by zero alone — there is nothing to choose there. On a
+// clock tangent it is the rate that is chosen: a clock of unknown speed.
 fn check_nondet<R, W, E: fmt::Display>(sort: &Sort, read: R, write: W) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
     W: IntoIterator<Item = Result<Sort, E>>,
 {
     match sort {
-        Sort::Zero() | Sort::Clock { rank: 1.. } => Err(format!(
+        Sort::Zero() => Err(format!(
             "Nondet: the tangent sort {sort} is inhabited by zero alone; use ZERO"
         )),
         Sort::Clock { .. } | Sort::Nat() | Sort::Bool() => check_havoc(sort, read, write),
@@ -458,27 +501,27 @@ where
     Ok(())
 }
 
-// ZERO on the clock fragment: writes exactly one clock *tangent* wire (rank at
-// least 1), and reads nothing.
-fn check_clk_zerograd<R, W, E: fmt::Display>(read: R, write: W) -> Result<(), String>
+// The clock flows, `ClkRate(c)` and its zero `ClkZero`: each writes exactly one
+// clock *tangent* wire (rank at least 1), and reads nothing.
+fn check_clk_rate<R, W, E: fmt::Display>(op: &SPN, read: R, write: W) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
     W: IntoIterator<Item = Result<Sort, E>>,
 {
     if read.into_iter().next().is_some() {
-        return Err("ZERO expects no read wires".to_string());
+        return Err(format!("{op:?}: a flow cannot read values"));
     }
     let mut write = write.into_iter();
     match write.next() {
         Some(Ok(Sort::Clock { rank })) if rank >= 1 => {}
         Some(Ok(sort)) => {
-            return Err(format!("ZERO expects write of a clock tangent, got {sort}"));
+            return Err(format!("{op:?}: must write a clock tangent, got {sort}"));
         }
         Some(Err(e)) => return Err(e.to_string()),
-        None => return Err("ZERO expects exactly one write wire, got none".to_string()),
+        None => return Err(format!("{op:?}: must write exactly one value, got none")),
     }
     if write.next().is_some() {
-        return Err("ZERO expects exactly one write wire, got more".to_string());
+        return Err(format!("{op:?}: must write exactly one value, got more"));
     }
     Ok(())
 }
@@ -540,8 +583,10 @@ mod tests {
         assert_eq!(SPN::Clock(1.5).to_string(), "(1.5 : clk)");
         assert_eq!(SPN::Nondet(NAT).to_string(), "(* : Nat)");
         assert_eq!(SPN::Pos(2.5).to_string(), "Pos(2.5)");
+        assert_eq!(SPN::ClkRate(-1.0).to_string(), "ClkRate(-1)");
         assert_eq!(SPN::Id().to_string(), "Id");
-        assert_eq!(SPN::ClkZerograd().to_string(), "ClkZerograd");
+        assert_eq!(SPN::Ite().to_string(), "Ite");
+        assert_eq!(SPN::ClkZero().to_string(), "ClkZero");
         assert_eq!(SPN::Zero().to_string(), "Zero");
     }
 
@@ -727,6 +772,82 @@ mod tests {
     }
 
     #[test]
+    fn ite_ok_on_every_sort() {
+        // the guard is a Bool, the branches and the result share one sort
+        for s in [NAT, BOOL, CLOCK, DCLOCK, ZERO] {
+            assert!(SPN::Ite().check([BOOL, s, s].map(ok), [s].map(ok)).is_ok());
+        }
+    }
+
+    #[test]
+    fn ite_non_bool_guard_fails() {
+        assert!(
+            SPN::Ite()
+                .check([NAT, NAT, NAT].map(ok), [NAT].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::Ite()
+                .check([CLOCK, CLOCK, CLOCK].map(ok), [CLOCK].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn ite_branch_mismatch_fails() {
+        assert!(
+            SPN::Ite()
+                .check([BOOL, NAT, CLOCK].map(ok), [NAT].map(ok))
+                .is_err()
+        );
+        // the branches agree, the output does not
+        assert!(
+            SPN::Ite()
+                .check([BOOL, NAT, NAT].map(ok), [BOOL].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn ite_rank_mismatch_fails() {
+        // `Ite` applies rank-generically, but never across ranks
+        assert!(
+            SPN::Ite()
+                .check([BOOL, CLOCK, DCLOCK].map(ok), [CLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::Ite()
+                .check([BOOL, DCLOCK, DCLOCK].map(ok), [CLOCK].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn ite_arity_fails() {
+        assert!(
+            SPN::Ite()
+                .check([BOOL, NAT].map(ok), [NAT].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::Ite()
+                .check([BOOL, NAT, NAT, NAT].map(ok), [NAT].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::Ite()
+                .check([BOOL, NAT, NAT].map(ok), [NAT, NAT].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::Ite()
+                .check([BOOL, NAT, NAT].map(ok), [].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn skip_is_id() {
         assert!(matches!(<SPN as Sequential>::skip(&NAT), SPN::Id()));
     }
@@ -755,25 +876,30 @@ mod tests {
     }
 
     #[test]
-    fn nondet_on_a_tangent_fails() {
+    fn nondet_on_the_trivial_tangent_fails() {
         // there is nothing to choose in a sort inhabited by zero alone
-        assert!(
-            SPN::Nondet(DCLOCK)
-                .check([].map(ok), [DCLOCK].map(ok))
-                .is_err()
-        );
         assert!(SPN::Nondet(ZERO).check([].map(ok), [ZERO].map(ok)).is_err());
     }
 
     #[test]
-    fn havoc_on_a_tangent_is_zero() {
-        // the tangent sorts are singletons here, so havoc over them is the
-        // single inhabitant
+    fn nondet_on_a_clock_tangent_ok() {
+        // a clock of unknown speed: the rate is what is chosen
+        assert!(
+            SPN::Nondet(DCLOCK)
+                .check([].map(ok), [DCLOCK].map(ok))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn havoc_on_the_trivial_tangent_is_zero() {
+        // a singleton sort leaves havoc no choice
+        assert!(matches!(<SPN as Combinatorial>::havoc(&ZERO), SPN::Zero()));
+        // a clock tangent is not a singleton: its rate is up for choosing
         assert!(matches!(
             <SPN as Combinatorial>::havoc(&DCLOCK),
-            SPN::ClkZerograd()
+            SPN::Nondet(DCLOCK)
         ));
-        assert!(matches!(<SPN as Combinatorial>::havoc(&ZERO), SPN::Zero()));
     }
 
     #[test]
@@ -781,7 +907,7 @@ mod tests {
         // `Differential::zero` is given the tangent sort it writes
         assert!(matches!(
             <SPN as Differential>::zero(&CLOCK.T()),
-            SPN::ClkZerograd()
+            SPN::ClkZero()
         ));
         for s in [NAT, BOOL] {
             assert!(matches!(<SPN as Differential>::zero(&s.T()), SPN::Zero()));
@@ -790,26 +916,70 @@ mod tests {
 
     #[test]
     fn clk_zerograd_writes_a_clock_tangent() {
+        assert!(SPN::ClkZero().check([].map(ok), [DCLOCK].map(ok)).is_ok());
         assert!(
-            SPN::ClkZerograd()
-                .check([].map(ok), [DCLOCK].map(ok))
-                .is_ok()
-        );
-        assert!(
-            SPN::ClkZerograd()
+            SPN::ClkZero()
                 .check([].map(ok), [Sort::Clock { rank: 2 }].map(ok))
                 .is_ok()
         );
         // never a value, and never the trivial tangent
+        assert!(SPN::ClkZero().check([].map(ok), [CLOCK].map(ok)).is_err());
+        assert!(SPN::ClkZero().check([].map(ok), [ZERO].map(ok)).is_err());
+    }
+
+    #[test]
+    fn clk_rate_writes_a_clock_tangent() {
         assert!(
-            SPN::ClkZerograd()
+            SPN::ClkRate(-1.0)
+                .check([].map(ok), [DCLOCK].map(ok))
+                .is_ok()
+        );
+        assert!(
+            SPN::ClkRate(-1.0)
+                .check([].map(ok), [Sort::Clock { rank: 2 }].map(ok))
+                .is_ok()
+        );
+        // a rate is not a value, and the constant sorts have no rate at all
+        assert!(
+            SPN::ClkRate(-1.0)
                 .check([].map(ok), [CLOCK].map(ok))
                 .is_err()
         );
         assert!(
-            SPN::ClkZerograd()
+            SPN::ClkRate(-1.0)
                 .check([].map(ok), [ZERO].map(ok))
                 .is_err()
+        );
+        assert!(SPN::ClkRate(-1.0).check([].map(ok), [NAT].map(ok)).is_err());
+    }
+
+    #[test]
+    fn clk_rate_with_read_fails() {
+        assert!(
+            SPN::ClkRate(-1.0)
+                .check([DCLOCK].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn clk_rate_arity_fails() {
+        assert!(SPN::ClkRate(-1.0).check([].map(ok), [].map(ok)).is_err());
+        assert!(
+            SPN::ClkRate(-1.0)
+                .check([].map(ok), [DCLOCK, DCLOCK].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn ite_selects_a_clock_flow() {
+        // preemptive resume: der(clk) = if enabled then -1 else 0, with both
+        // branches written by the flow generators
+        assert!(
+            SPN::Ite()
+                .check([BOOL, DCLOCK, DCLOCK].map(ok), [DCLOCK].map(ok))
+                .is_ok()
         );
     }
 
@@ -824,7 +994,7 @@ mod tests {
     fn zero_with_read_fails() {
         assert!(SPN::Zero().check([ZERO].map(ok), [ZERO].map(ok)).is_err());
         assert!(
-            SPN::ClkZerograd()
+            SPN::ClkZero()
                 .check([DCLOCK].map(ok), [DCLOCK].map(ok))
                 .is_err()
         );
@@ -834,9 +1004,9 @@ mod tests {
     fn zero_arity_mismatch_fails() {
         assert!(SPN::Zero().check([].map(ok), [].map(ok)).is_err());
         assert!(SPN::Zero().check([].map(ok), [ZERO, ZERO].map(ok)).is_err());
-        assert!(SPN::ClkZerograd().check([].map(ok), [].map(ok)).is_err());
+        assert!(SPN::ClkZero().check([].map(ok), [].map(ok)).is_err());
         assert!(
-            SPN::ClkZerograd()
+            SPN::ClkZero()
                 .check([].map(ok), [DCLOCK, DCLOCK].map(ok))
                 .is_err()
         );
