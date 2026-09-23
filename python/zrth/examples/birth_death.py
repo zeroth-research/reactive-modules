@@ -2,16 +2,16 @@
 
 Each transition is a module owning a Poisson clock and a "fires now" flag; the place
 is a module counting tokens as it awaits the flags. Clocks run down against the external
-time reference ``t`` (``-1 * d(t)``) and are re-armed with a fresh Poisson delay when
+time reference ``t`` (``-1 * d(t)``) and are re-armed with a fresh Exponential delay when
 they expire; the death clock only runs while there is a token to consume.
 """
 
-from zrth import SPN, Bool, Clock, Nat, Var
+from zrth import SPN, Event, Clock, Nat, Var
 from zrth import Module as compose
 from zrth.sugar import Module, X, d, ite, exp
 
 t, bclk, dclk = Var(Clock()), Var(Clock()), Var(Clock())
-bth, dth = Var(Bool([1, 1])), Var(Bool([1, 1]))
+bth, dth = Var(Event()), Var(Event())
 n = Var(Nat())
 
 
@@ -52,7 +52,11 @@ place = Place(theory=SPN, ctrl=(n,), extl=(bth, dth))
 system = compose(birth, death, place, hide={bclk, dclk})
 
 
+<<<<<<< HEAD
 def visual():
+=======
+def syst():
+>>>>>>> 69b049f ([SQUEEZE] minor changes)
     return compose(birth, death, place, hide={bclk, dclk})
 
 
