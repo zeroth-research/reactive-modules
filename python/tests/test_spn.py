@@ -57,6 +57,23 @@ def test_event_and_bool_are_interchangeable():
     Term(SPN.Id(), [X(b)], [ev])                 # each flows into the other
 
 
+def test_clkge_compares_two_clocks():
+    # the theory's one ordering comparison
+    a, b = Var(Clock()), Var(Clock())
+    Term(SPN.ClkGe(), [Wire(BOOL)], [a, b])
+    bound = Wire(Clock())
+    Term.constant(SPN.Clock(2.5), [bound])
+    Term(SPN.ClkGe(), [Wire(BOOL)], [a, bound])  # against a literal: a threshold
+    with pytest.raises(Exception, match="inputs must be Clock"):
+        Term(SPN.ClkGe(), [Wire(BOOL)], [a, Var(Nat())])
+    with pytest.raises(Exception, match="inputs must be Clock"):
+        Term(SPN.ClkGe(), [Wire(BOOL)], [d(a), d(b)])  # times, not rates
+    with pytest.raises(Exception, match="must read exactly two"):
+        Term(SPN.ClkGe(), [Wire(BOOL)], [a, b, a])
+    with pytest.raises(Exception, match="Arg 1 expected"):
+        Term(SPN.ClkGe(), [Wire(BOOL)], [a])
+
+
 def test_ifthen_is_ite_without_the_else_branch():
     # the theory's one partial operation: a guard and a single branch
     p, fires = Var(Nat()), Wire(BOOL)
