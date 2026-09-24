@@ -52,11 +52,7 @@ place = Place(theory=SPN, ctrl=(n,), extl=(bth, dth))
 system = compose(birth, death, place, hide={bclk, dclk})
 
 
-<<<<<<< HEAD
 def visual():
-=======
-def syst():
->>>>>>> 69b049f ([SQUEEZE] minor changes)
     return compose(birth, death, place, hide={bclk, dclk})
 
 

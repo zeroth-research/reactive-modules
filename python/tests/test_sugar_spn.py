@@ -3,7 +3,7 @@
 
 import pytest
 
-from zrth import SPN, Bool, Clock, Nat, Var, X as _X, d as _d
+from zrth import SPN, Bool, Clock, Event, Nat, Var, X as _X, d as _d
 from zrth import Module as compose
 from zrth.sugar import Module, X, d, ite, exp, clkrate
 
@@ -76,6 +76,24 @@ def test_unsupported_operators_raise(body):
 
     with pytest.raises(TypeError):
         M(theory=SPN, ctrl=(Var(Nat()), Var(Clock())))
+
+
+def test_an_event_flag_takes_the_bool_sugar():
+    class M(Module):
+        def init(self, t):
+            return exp(1.0), False           # a bool literal on an Event variable
+
+        def next(self, clk, fired, t):
+            return ite(clk == 0, exp(1.0), clk), clk == 0   # a Bool-sorted test
+
+        def flow(self, clk, fired, t):
+            return -1 * d(t), None           # the flag has the trivial tangent
+
+    clk, fired, t = Var(Clock()), Var(Event()), Var(Clock())
+    m = M(theory=SPN, ctrl=(clk, fired), extl=(t,))
+    assert _ops(m.atoms[0].delay) == ["ClkMul", "Id", "Zero"]
+    shown = m.with_varnames({t: "t", clk: "clk", fired: "fired"})
+    assert "fired : Event" in shown and "(false : bool)" in shown
 
 
 # --- flows -------------------------------------------------------------------

@@ -6,7 +6,7 @@ like ``x + 1`` or ``ite(x < y, x + 1, y)``: composing one immediately builds the
 are split by *operation family* (the sort picks the class):
 
     AExpr  — Arithmetic   Int / Real     +  -  *  @   and comparisons (-> BExpr)
-    BExpr  — Boolean       Bool           &  |  ~  ^
+    BExpr  — Boolean       Bool / Event   &  |  ~  ^   (SPN's `Event` is its `Bool`)
     WExpr  — Word (BV)     BitVec         AExpr + bitwise + signed/unsigned + width
 
 An ``Expr`` itself is a pure handle — it stores its wire, its theory, the ``next`` wire (for
@@ -42,7 +42,7 @@ from typing import override
 import torch
 
 from .zrth import Term, Wire, LRA, LIA, BV, SPN, Var, X as _X, d as _d
-from .sort import Sort, Bool, Int, Real, BitVec, Nat, Clock, tensor_for
+from .sort import Sort, Event, Bool, Int, Real, BitVec, Nat, Clock, tensor_for
 from .builder import NonLinearError
 
 
@@ -55,7 +55,7 @@ def _shape(sort: Sort) -> list:
             return list(s)
         case BitVec(_, s):
             return list(s)
-        case Nat() | Clock(_):
+        case Nat() | Clock(_) | Event():
             return [1, 1]
     raise TypeError(f"sort has no shape: {sort}")
 
@@ -70,7 +70,7 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Real(shape)
         case BitVec(bw, _):
             return BitVec(bw, shape)
-        case Nat() | Clock(_):
+        case Nat() | Clock(_) | Event():
             return sort
     raise TypeError(f"unknown sort: {sort}")
 
@@ -86,7 +86,7 @@ def _family(sort: Sort) -> str:
     """A key identifying a sort's family (ignoring shape); two exprs may combine only
     if their families match."""
     match sort:
-        case Bool(_):
+        case Bool(_) | Event():
             return "Bool"
         case Int(_):
             return "Int"
@@ -110,7 +110,11 @@ def _normalize_shape(shape: list) -> list:
 
 
 def _is_wire_pair(v) -> bool:
-    return isinstance(v, (tuple, list)) and len(v) == 2 and all(isinstance(w, Wire) for w in v)
+    return (
+        isinstance(v, (tuple, list))
+        and len(v) == 2
+        and all(isinstance(w, Wire) for w in v)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -124,8 +128,8 @@ _open_collectors: list[list[Term]] = []
 class collecting:
     """Context manager: records every Term built inside it, in dependency order.
 
-        with collecting() as terms:
-            e = x + 1          # terms == [<Const 1>, <Add>]
+    with collecting() as terms:
+        e = x + 1          # terms == [<Const 1>, <Add>]
     """
 
     def __enter__(self) -> list[Term]:
@@ -148,7 +152,7 @@ def _emit(term: Term) -> Term:
 
 def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Expr":
     match wire.dtype:
-        case Bool(_):
+        case Bool(_) | Event():
             return BExpr(wire, theory, next=next, value=value, tag=tag)
         case Int(_) | Real(_):
             return AExpr(wire, theory, next=next, value=value, tag=tag)
@@ -225,15 +229,28 @@ class Expr:
         # a coerced literal inherits this expr's signedness (so `5 + xs` and `xs + 5`
         # agree for a signed bit-vector `xs`); it is ignored for non bit-vector sorts.
 
-        return o if isinstance(o, Expr) else expr(
-            o, theory=self._theory, sort=type(self.dtype), bw=self._bw(), signed=getattr(self, "_signed", False))
+        return (
+            o
+            if isinstance(o, Expr)
+            else expr(
+                o,
+                theory=self._theory,
+                sort=type(self.dtype),
+                bw=self._bw(),
+                signed=getattr(self, "_signed", False),
+            )
+        )
 
     def _coerce_same(self, o) -> "Expr":
         o = self._coerce(o)
         if _family(self.dtype) != _family(o.dtype):
-            raise TypeError(f"cannot combine {self.dtype} and {o.dtype} implicitly; use cast()")
+            raise TypeError(
+                f"cannot combine {self.dtype} and {o.dtype} implicitly; use cast()"
+            )
         if getattr(self, "_signed", False) != getattr(o, "_signed", False):
-            raise TypeError("cannot combine a signed and an unsigned bit-vector; make both the same")
+            raise TypeError(
+                "cannot combine a signed and an unsigned bit-vector; make both the same"
+            )
         return o
 
     # --- equality and truth-testing ---
@@ -252,7 +269,9 @@ class Expr:
     # --- build helpers (emit the term, wrap the result by its sort) ---
     def _result(self, term: Term) -> "Expr":
         _emit(term)
-        return _wrap(term.write[0], self._theory, signed=getattr(self, "_signed", False))
+        return _wrap(
+            term.write[0], self._theory, signed=getattr(self, "_signed", False)
+        )
 
     def _binop(self, op, out: Sort, o) -> "Expr":
         """Coerce `o` to my sort, then build a binary Term with `op` and output sort `out`.
@@ -280,32 +299,41 @@ class Expr:
 
 
 class AExpr(Expr):
-    def __add__(self, o):   return self._binop(self._theory.Add(), self.dtype, o)
+    def __add__(self, o):
+        return self._binop(self._theory.Add(), self.dtype, o)
 
-    def __sub__(self, o):   return self._binop(self._theory.Sub(), self.dtype, o)
+    def __sub__(self, o):
+        return self._binop(self._theory.Sub(), self.dtype, o)
 
-    def __radd__(self, o):  return self._coerce(o).__add__(self)
+    def __radd__(self, o):
+        return self._coerce(o).__add__(self)
 
-    def __rsub__(self, o):  return self._coerce(o).__sub__(self)
+    def __rsub__(self, o):
+        return self._coerce(o).__sub__(self)
 
     def __mul__(self, o):  # const*var folds to Linear (LRA/LIA are linear)
         o = self._coerce_same(o)
         return self._result(_mul_as_linear(self._theory, self, o))
 
-    def __rmul__(self, o):  return self._coerce(o).__mul__(self)
+    def __rmul__(self, o):
+        return self._coerce(o).__mul__(self)
 
     def __matmul__(self, o):  # a constant left operand folds to Linear
         o = self._coerce_same(o)
         return self._result(_matmul(self._theory, self, o))
 
     # comparisons -> Bool -> BExpr
-    def __lt__(self, o):  return self._binop(self._theory.Lt(), Bool(self.shape), o)
+    def __lt__(self, o):
+        return self._binop(self._theory.Lt(), Bool(self.shape), o)
 
-    def __le__(self, o):  return self._binop(self._theory.Le(), Bool(self.shape), o)
+    def __le__(self, o):
+        return self._binop(self._theory.Le(), Bool(self.shape), o)
 
-    def __gt__(self, o):  return self._binop(self._theory.Gt(), Bool(self.shape), o)
+    def __gt__(self, o):
+        return self._binop(self._theory.Gt(), Bool(self.shape), o)
 
-    def __ge__(self, o):  return self._binop(self._theory.Ge(), Bool(self.shape), o)
+    def __ge__(self, o):
+        return self._binop(self._theory.Ge(), Bool(self.shape), o)
 
 
 def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
@@ -337,9 +365,13 @@ def _matmul(theory, a: Expr, b: Expr) -> Term:
         elif theory is LIA:
             linear, out_sort = LIA.Linear, Int(out_shape)
         else:
-            raise TypeError(f"{theory.__name__} has no linear fold (expected LRA or LIA)")
+            raise TypeError(
+                f"{theory.__name__} has no linear fold (expected LRA or LIA)"
+            )
         return Term(linear(a._value, torch.empty(0, 0)), [Wire(out_sort)], [b._wire])
-    raise RuntimeError(f"{theory.__name__} matmul requires a constant left operand; use a Linear instead")
+    raise RuntimeError(
+        f"{theory.__name__} matmul requires a constant left operand; use a Linear instead"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -348,13 +380,17 @@ def _matmul(theory, a: Expr, b: Expr) -> Term:
 
 
 class BExpr(Expr):
-    def __and__(self, o):  return self._binop(self._theory.And(), self.dtype, o)
+    def __and__(self, o):
+        return self._binop(self._theory.And(), self.dtype, o)
 
-    def __or__(self, o):   return self._binop(self._theory.Or(), self.dtype, o)
+    def __or__(self, o):
+        return self._binop(self._theory.Or(), self.dtype, o)
 
-    def __xor__(self, o):  return self._binop(self._theory.Xor(), self.dtype, o)
+    def __xor__(self, o):
+        return self._binop(self._theory.Xor(), self.dtype, o)
 
-    def __invert__(self):  return self._unop(self._theory.Not())
+    def __invert__(self):
+        return self._unop(self._theory.Not())
 
 
 # ---------------------------------------------------------------------------
@@ -375,11 +411,14 @@ class WExpr(AExpr):
         return BitVec(1, self.shape)
 
     # arithmetic: inherits +,- from AExpr (BV.Add/Sub); mul is a real BV multiply (no fold)
-    def __mul__(self, o):        return self._binop(BV.Mul(), self.dtype, o)
+    def __mul__(self, o):
+        return self._binop(BV.Mul(), self.dtype, o)
 
-    def __floordiv__(self, o):   return self._binop(BV.SDiv() if self._signed else BV.UDiv(), self.dtype, o)
+    def __floordiv__(self, o):
+        return self._binop(BV.SDiv() if self._signed else BV.UDiv(), self.dtype, o)
 
-    def __mod__(self, o):        return self._binop(BV.SMod() if self._signed else BV.UMod(), self.dtype, o)
+    def __mod__(self, o):
+        return self._binop(BV.SMod() if self._signed else BV.UMod(), self.dtype, o)
 
     def __matmul__(self, o):
         o = self._coerce_same(o)
@@ -387,22 +426,30 @@ class WExpr(AExpr):
         return self._result(Term(BV.MatMul(), [out], [self._wire, o._wire]))
 
     # comparisons pick signed/unsigned; result is BitVec(1)
-    def __lt__(self, o):  return self._binop(BV.SLt() if self._signed else BV.ULt(), self._bv1(), o)
+    def __lt__(self, o):
+        return self._binop(BV.SLt() if self._signed else BV.ULt(), self._bv1(), o)
 
-    def __le__(self, o):  return self._binop(BV.SLe() if self._signed else BV.ULe(), self._bv1(), o)
+    def __le__(self, o):
+        return self._binop(BV.SLe() if self._signed else BV.ULe(), self._bv1(), o)
 
-    def __gt__(self, o):  return self._binop(BV.SGt() if self._signed else BV.UGt(), self._bv1(), o)
+    def __gt__(self, o):
+        return self._binop(BV.SGt() if self._signed else BV.UGt(), self._bv1(), o)
 
-    def __ge__(self, o):  return self._binop(BV.SGe() if self._signed else BV.UGe(), self._bv1(), o)
+    def __ge__(self, o):
+        return self._binop(BV.SGe() if self._signed else BV.UGe(), self._bv1(), o)
 
     # bitwise, width-preserving
-    def __and__(self, o):  return self._binop(BV.And(), self.dtype, o)
+    def __and__(self, o):
+        return self._binop(BV.And(), self.dtype, o)
 
-    def __or__(self, o):   return self._binop(BV.Or(), self.dtype, o)
+    def __or__(self, o):
+        return self._binop(BV.Or(), self.dtype, o)
 
-    def __xor__(self, o):  return self._binop(BV.Xor(), self.dtype, o)
+    def __xor__(self, o):
+        return self._binop(BV.Xor(), self.dtype, o)
 
-    def __invert__(self):  return self._unop(BV.Not())
+    def __invert__(self):
+        return self._unop(BV.Not())
 
 
 # ---------------------------------------------------------------------------
@@ -423,18 +470,32 @@ class SExpr(Expr):
 
     def _step(self, o, op):
         if isinstance(o, Expr) or o != 1 or not isinstance(self.dtype, Nat):
-            raise TypeError("SPN moves one token at a time: write `n + 1` or `n - 1` on a Nat")
+            raise TypeError(
+                "SPN moves one token at a time: write `n + 1` or `n - 1` on a Nat"
+            )
         return self._unop(op)
 
-    def __add__(self, o):  return self._step(o, SPN.Inc())
-    def __radd__(self, o): return self._step(o, SPN.Inc())
-    def __sub__(self, o):  return self._step(o, SPN.Dec())
+    def __add__(self, o):
+        return self._step(o, SPN.Inc())
 
-    def __mul__(self, k):  return self.__rmul__(k)
+    def __radd__(self, o):
+        return self._step(o, SPN.Inc())
+
+    def __sub__(self, o):
+        return self._step(o, SPN.Dec())
+
+    def __mul__(self, k):
+        return self.__rmul__(k)
 
     def __rmul__(self, k):
-        if isinstance(k, Expr) or not isinstance(k, (int, float)) or not _rank(self.dtype):
-            raise TypeError("an SPN clock rate is a literal times a time form: write `k * d(t)`")
+        if (
+            isinstance(k, Expr)
+            or not isinstance(k, (int, float))
+            or not _rank(self.dtype)
+        ):
+            raise TypeError(
+                "an SPN clock rate is a literal times a time form: write `k * d(t)`"
+            )
         return self._unop(SPN.ClkMul(float(k)))
 
 
@@ -562,7 +623,9 @@ def _const(value, theory, sort, *, signed, bw=None, tag=None) -> Expr:
     assert len(term.write) == 1
     shape = _shape(term.write[0].dtype)
     if required_shape is not None and shape != required_shape:
-        raise TypeError(f"expr(): value {value} with shape {shape} cannot be given shape {required_shape}")
+        raise TypeError(
+            f"expr(): value {value} with shape {shape} cannot be given shape {required_shape}"
+        )
 
     # emit into collector
     _emit(term)
@@ -571,12 +634,15 @@ def _const(value, theory, sort, *, signed, bw=None, tag=None) -> Expr:
 
 
 def _spn_const(value, sort, *, tag=None) -> Expr:
-    """SPN literals are plain numbers, not tensors: ``Nat(v)``, ``Bool(b)``, ``Clock(x)``."""
+    """SPN literals are plain numbers, not tensors: ``Nat(v)``, ``Bool(b)``/``Event(b)``,
+    ``Clock(x)``."""
     if not isinstance(value, (bool, int, float)):
         raise TypeError(f"expr(): SPN literals are scalars, got {type(value).__name__}")
     if sort is Nat or isinstance(sort, Nat):
         if value < 0 or value != int(value):
-            raise TypeError(f"expr(): a Nat literal is a non-negative integer, got {value}")
+            raise TypeError(
+                f"expr(): a Nat literal is a non-negative integer, got {value}"
+            )
         op, wire = SPN.Nat(int(value)), Wire(Nat())
     elif sort is Clock or isinstance(sort, Clock):
         if _rank(sort) if isinstance(sort, Clock) else 0:
@@ -584,6 +650,9 @@ def _spn_const(value, sort, *, tag=None) -> Expr:
         op, wire = SPN.Clock(float(value)), Wire(Clock())
     elif sort is Bool or isinstance(sort, Bool):
         op, wire = SPN.Bool(bool(value)), Wire(Bool([1, 1]))
+    elif sort is Event or isinstance(sort, Event):
+        # the same op, on the other wire: `SPN.Bool` writes an `Event` as readily as a `Bool`
+        op, wire = SPN.Bool(bool(value)), Wire(Event())
     else:
         raise TypeError(f"expr(): SPN has no literal of sort {sort}")
     _emit(Term.constant(op, [wire]))
@@ -610,6 +679,7 @@ def clkrate(rate) -> Expr:
 # Cast ops
 # ---------------------------------------------------------------------------
 
+
 def _resolve_sort(sort, shape) -> Sort:
     """`sort` may be a concrete Sort (e.g. from coercion) or a family (Real/Int/Bool)."""
 
@@ -621,7 +691,9 @@ def _resolve_sort(sort, shape) -> Sort:
         return Int(shape)
     if sort is Real:
         return Real(shape)
-    raise TypeError("a bit-vector literal needs a width: pass sort=BitVec(width, [...])")
+    raise TypeError(
+        "a bit-vector literal needs a width: pass sort=BitVec(width, [...])"
+    )
 
 
 def cast(e: Expr, sort) -> Expr:
@@ -664,7 +736,9 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
     if not isinstance(b, Expr):
         b = expr(b, theory=a._theory, sort=a.dtype)
     if _family(a.dtype) != _family(b.dtype):
-        raise TypeError(f"ite branches have different sorts {a.dtype}, {b.dtype}; use cast()")
+        raise TypeError(
+            f"ite branches have different sorts {a.dtype}, {b.dtype}; use cast()"
+        )
     term = Term(cond._theory.Ite(), [Wire(a.dtype)], [cond._wire, a._wire, b._wire])
     _emit(term)
     return _wrap(term.write[0], cond._theory, signed=getattr(a, "_signed", False))

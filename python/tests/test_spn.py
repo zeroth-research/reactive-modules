@@ -6,7 +6,7 @@ Poisson clock expires.
 """
 
 import pytest
-from zrth import SPN, Atom, Bool, Clock, Module, Nat, Term, Var, Wire, X, Zero, d
+from zrth import SPN, Atom, Bool, Clock, Event, Module, Nat, Term, Var, Wire, X, Zero, d
 
 # the firing rate of the transition, and the speed of its countdown clock
 RATE = 2.5
@@ -36,6 +36,32 @@ def test_tangents():
     assert d(Var(Nat())).dtype == Zero()
     assert d(Var(BOOL)).dtype == Zero()
     assert d(Var(Clock())).dtype == Clock(1)
+
+
+def test_event_is_a_sort_of_its_own():
+    # a wire records which of the two names it was declared with, and that is all
+    # that tells them apart
+    assert str(Event()) == "Event" and Event() != BOOL
+    assert d(Var(Event())).dtype == Zero()
+
+
+def test_event_and_bool_are_interchangeable():
+    # every operation takes the one for the other: the alias is transparent
+    ev, b, c, p = Var(Event()), Var(BOOL), Var(Clock()), Var(Nat())
+
+    Term.constant(SPN.Bool(True), [X(ev)])       # the same literal op writes both
+    Term(SPN.ClkIsZero(), [X(ev)], [c])          # a zero test writes an event
+    Term(SPN.IsZero(), [Wire(Event())], [p])
+    Term(SPN.And(), [Wire(Event())], [ev, b])    # and they mix in one term
+    Term(SPN.Not(), [Wire(BOOL)], [ev])
+    Term(SPN.Id(), [X(b)], [ev])                 # each flows into the other
+
+
+def test_event_is_not_a_place():
+    # transparent to the boolean fragment, and to nothing else
+    ev, p = Var(Event()), Var(Nat())
+    with pytest.raises(Exception, match="must be Nat"):
+        Term(SPN.Inc(), [X(p)], [ev])
 
 
 # ---------------------------------------------------------------------------
