@@ -130,6 +130,64 @@ def test_if_then_needs_an_expr_branch_and_an_spn_guard():
             if_then(b, b)
 
 
+@pytest.mark.parametrize(
+    "body, ops",
+    [
+        (lambda a, b: a >= b, ["ClkGe"]),
+        (lambda a, b: a <= b, ["ClkGe"]),  # the swap is in the operands
+        (lambda a, b: a < b, ["ClkGe", "Not"]),  # not (a >= b)
+        (lambda a, b: a > b, ["ClkGe", "Not"]),  # not (b >= a)
+        (lambda a, b: a >= 2.5, ["Clock", "ClkGe"]),  # the bound is a clock literal
+        (lambda a, b: 2.5 <= a, ["Clock", "ClkGe"]),  # python reflects it to `a >= 2.5`
+    ],
+)
+def test_clock_orderings_fold_to_clkge(body, ops):
+    with collecting() as terms:
+        a, b = expr(Var(Clock()), theory=SPN), expr(Var(Clock()), theory=SPN)
+        body(a, b)
+    assert _ops(terms) == ops
+
+
+def test_le_swaps_the_operands_rather_than_negating():
+    a, b = Var(Clock()), Var(Clock())
+    with collecting() as terms:
+        expr(a, theory=SPN) <= expr(b, theory=SPN)
+    [ge] = terms
+    assert list(ge.read) == [b, a]
+
+
+def test_orderings_are_on_clock_values_alone():
+    with collecting():
+        n = expr(Var(Nat()), theory=SPN)
+        c = expr(Var(Clock()), theory=SPN)
+        rate = d(expr(Var(Clock()), theory=SPN))
+        with pytest.raises(TypeError, match="orders clock values"):
+            n >= n  # a place is tested against zero, never ordered
+        with pytest.raises(TypeError, match="orders clock values"):
+            c >= n
+        with pytest.raises(TypeError, match="orders clock values"):
+            rate >= rate  # a rate is not a time
+
+
+def test_the_earlier_of_two_clocks():
+    """`min(a, b)` -- the term the module docs promise, in the DSL."""
+
+    class M(Module):
+        def init(self, t):
+            return exp(2.0), exp(1.0), 0.0
+
+        def next(self, a, b, first, t):
+            return a, b, ite(a >= b, b, a)
+
+        def flow(self, a, b, first, t):
+            return -1 * d(t), -1 * d(t), -1 * d(t)
+
+    a, b, first, t = Var(Clock()), Var(Clock()), Var(Clock()), Var(Clock())
+    m = M(theory=SPN, ctrl=(a, b, first), extl=(t,))
+    ops = _ops(m.atoms[0].update)
+    assert ops.count("ClkGe") == 1 and "Ite" in ops and "Not" not in ops
+
+
 # --- flows -------------------------------------------------------------------
 
 

@@ -455,9 +455,10 @@ class WExpr(AExpr):
 # ---------------------------------------------------------------------------
 # expr() — single construction / coercion entry point
 class SExpr(Expr):
-    """The scalar SPN sorts, Nat and Clock. The theory has only zero tests, single-token
-    steps and clock rates relative to a time form, so those are the only operators that
-    map: ``x == 0`` / ``x != 0``, ``n + 1`` / ``n - 1``, and ``k * d(t)`` for a rate."""
+    """The scalar SPN sorts, Nat and Clock. The theory has only zero tests, the ordering
+    of two clocks, single-token steps and clock rates relative to a time form, so those
+    are the only operators that map: ``x == 0`` / ``x != 0``, ``a >= b`` and its three
+    siblings on clocks, ``n + 1`` / ``n - 1``, and ``k * d(t)`` for a rate."""
 
     def __eq__(self, other):
         if isinstance(other, Expr) or other != 0:
@@ -467,6 +468,41 @@ class SExpr(Expr):
 
     def __ne__(self, other):
         return ~(self == other)
+
+    # --- ordering: one generator, `ClkGe`, and it is on clocks ---
+
+    @staticmethod
+    def _clock_value(sort: Sort) -> None:
+        if not isinstance(sort, Clock) or _rank(sort):
+            raise TypeError(
+                f"SPN orders clock values alone, got {sort}: a place is tested with "
+                "`n == 0`, and a rate is not a time"
+            )
+
+    def _clk_cmp(self, other, *, swap: bool, negate: bool) -> "Expr":
+        """``a >= b`` is `ClkGe`; the other three are that with the operands swapped,
+        the answer negated, or both. The guard on `self` comes before the coercion so a
+        misuse raises instead of leaving a stray literal in the collector."""
+        self._clock_value(self.dtype)
+        o = self._coerce(other)
+        self._clock_value(o.dtype)
+        a, b = (o, self) if swap else (self, o)
+        term = Term(SPN.ClkGe(), [Wire(Bool([1, 1]))], [a._wire, b._wire])
+        _emit(term)
+        ge = _wrap(term.write[0], SPN)
+        return ~ge if negate else ge
+
+    def __ge__(self, o):
+        return self._clk_cmp(o, swap=False, negate=False)
+
+    def __le__(self, o):  # a <= b  is  b >= a
+        return self._clk_cmp(o, swap=True, negate=False)
+
+    def __lt__(self, o):  # a < b  is  not (a >= b)
+        return self._clk_cmp(o, swap=False, negate=True)
+
+    def __gt__(self, o):  # a > b  is  not (b >= a)
+        return self._clk_cmp(o, swap=True, negate=True)
 
     def _step(self, o, op):
         if isinstance(o, Expr) or o != 1 or not isinstance(self.dtype, Nat):
