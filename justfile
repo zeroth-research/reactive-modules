@@ -1,10 +1,11 @@
 # Use bash for better scripting features
 # set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 #
-# Recipes are named by target: `rs-` for Rust, `py-` for Python, `nb-` for
-# notebooks; an unprefixed name means "all" (e.g. `test` = `rs-test` + `py-test`
-# + `nb-test`), and a `-fix` suffix marks the recipes that modify files in the
-# repository — everything else is read-only towards the sources.
+# Recipes are named by target: `rs-` for Rust, `py-` for Python, `lean-` for
+# the Lean crate and library, `nb-` for notebooks; an unprefixed name means
+# "all" (e.g. `test` = `rs-test` + `py-test` + `lean-test` + `nb-test`), and a
+# `-fix` suffix marks the recipes that modify files in the repository —
+# everything else is read-only towards the sources.
 #
 # Prerequisites are declared as native dependencies (not `@just` calls in the
 # bodies), so shared ones run at most once per invocation: `just test` builds
@@ -35,14 +36,14 @@ profile_flag := if PROFILE == "" { "" } else { "--profile " + PROFILE }
 features_flag := if FEATURES == "" { "" } else { "--features " + FEATURES }
 
 # -------------------------------------------------
-# All (unprefixed = Rust + Python + notebooks)
+# All (unprefixed = Rust + Python + Lean + notebooks)
 # -------------------------------------------------
 
-# Build everything: the Rust workspace (all targets and features) and the Python crate
-build: rs-build-all py-build
+# Build everything: the Rust workspace (all targets and features), the Python crate and the Lean library
+build: rs-build-all py-build lean-build
 
-# Run the whole test suite (Rust + Python + notebooks)
-test: rs-test py-test nb-test
+# Run the whole test suite (Rust + Python + Lean + notebooks)
+test: rs-test py-test lean-test nb-test
 
 # Clean the current build (the shared cargo target directory)
 clean:
@@ -121,6 +122,22 @@ py-test *args: (py-run "pytest" args)
 # Run a command inside the `python` crate (with rebuilding the Python crate). The command given is executed from *within* the `python` crate, i.e., with paths relative to the root of the crate.
 py-run *args: py-build
     cd python && uv run {{ args }}
+
+# -------------------------------------------------
+# Lean (lean-)
+# -------------------------------------------------
+
+# The Lean library (a Lake package in `lean/lib`) is the static part common to
+# every module translated by the `lean` crate. Lake picks the toolchain pinned
+# in `lean/lib/lean-toolchain` (via elan).
+
+# Build (i.e., type-check) the Lean library
+lean-build:
+    cd lean/lib && lake build
+
+# Run the tests of the `lean` crate on top of the built Lean library
+lean-test: lean-build
+    {{ CARGO }} test -p lean {{ profile_flag }}
 
 # -------------------------------------------------
 # Notebooks (nb-)

@@ -1,0 +1,6 @@
+name = "zrth"
+version = "0.1.0"
+defaultTargets = ["Zrth"]
+
+[[lean_lib]]
+name = "Zrth"
