@@ -3,9 +3,10 @@
 
 import pytest
 
-from zrth import SPN, Bool, Clock, Event, Nat, Var, X as _X, d as _d
+from zrth import SPN, LIA, Bool, Clock, Event, Nat, Var, X as _X, d as _d
 from zrth import Module as compose
-from zrth.sugar import Module, X, d, ite, exp, clkrate
+from zrth.expr import collecting, expr
+from zrth.sugar import Module, X, d, ite, if_then, exp, clkrate
 
 BOOL = Bool([1, 1])
 
@@ -94,6 +95,39 @@ def test_an_event_flag_takes_the_bool_sugar():
     assert _ops(m.atoms[0].delay) == ["ClkMul", "Id", "Zero"]
     shown = m.with_varnames({t: "t", clk: "clk", fired: "fired"})
     assert "fired : Event" in shown and "(false : bool)" in shown
+
+
+def test_if_then_guards_an_update():
+    """The place counts a token in only on the steps where the transition fires: off
+    those steps the update has no value at all, and `n` is left to the rest of the net."""
+
+    class M(Module):
+        def init(self, t):
+            return exp(1.0), 0
+
+        def next(self, clk, n, t):
+            fires = clk == 0
+            return ite(fires, exp(1.0), clk), if_then(fires, n + 1)
+
+        def flow(self, clk, n, t):
+            return -1 * d(t), None
+
+    clk, n, t = Var(Clock()), Var(Nat()), Var(Clock())
+    m = M(theory=SPN, ctrl=(clk, n), extl=(t,))
+    assert "IfThen" in _ops(m.atoms[0].update)
+    assert "IfThen" in m.with_varnames({t: "t", clk: "clk", n: "n"})
+
+
+def test_if_then_needs_an_expr_branch_and_an_spn_guard():
+    with collecting():
+        c = expr(Var(Clock()), theory=SPN)
+        # the branch carries the sort, so a bare literal has nothing to agree with
+        with pytest.raises(TypeError, match="must be an Expr"):
+            if_then(c == 0, 1)
+        # and the partial form is this theory's alone
+        b = expr(True, theory=LIA)
+        with pytest.raises(TypeError, match="no partial if-then"):
+            if_then(b, b)
 
 
 # --- flows -------------------------------------------------------------------

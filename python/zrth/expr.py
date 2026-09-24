@@ -744,6 +744,25 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
     return _wrap(term.write[0], cond._theory, signed=getattr(a, "_signed", False))
 
 
+def if_then(cond: Expr, then: Expr) -> Expr:
+    """The partial if-then (`SPN` alone): the branch where the guard holds, and no value
+    where it does not. It is a condition on the steps that exist rather than a choice
+    between two values -- `ite()` is the total form, and the one every theory has.
+
+    The branch carries the sort, so it must be an `Expr`: there is no second branch to
+    borrow one from, and nothing for a bare literal to agree with."""
+    if not hasattr(cond._theory, "IfThen"):
+        raise TypeError(f"{cond._theory.__name__} has no partial if-then; use ite()")
+    if not isinstance(then, Expr):
+        raise TypeError(
+            "if_then(): the branch must be an Expr -- it carries the sort; write "
+            "expr(value, theory=..., sort=...) for a literal"
+        )
+    term = Term(cond._theory.IfThen(), [Wire(then.dtype)], [cond._wire, then._wire])
+    _emit(term)
+    return _wrap(term.write[0], cond._theory, signed=getattr(then, "_signed", False))
+
+
 def _cmp_out(a: Expr) -> Sort:
     return BitVec(1, a.shape) if a._theory is BV else Bool(a.shape)
 
