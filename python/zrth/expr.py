@@ -799,6 +799,17 @@ def if_then(cond: Expr, then: Expr) -> Expr:
     return _wrap(term.write[0], cond._theory, signed=getattr(then, "_signed", False))
 
 
+def fired(e: Expr) -> Expr:
+    """Does the event fire in this round? (`SPN` alone.) An `Event` fires by changing
+    value, so this is `X(e) != e`, spelt in the boolean fragment since the theory has no
+    equality: `(X(e) & ~e) | (~X(e) & e)`."""
+    if not (isinstance(e, Expr) and e._theory is SPN and isinstance(e.dtype, Event)):
+        raise TypeError(f"fired() reads an SPN Event variable, got {getattr(e, 'dtype', e)}")
+    nxt = X(e)
+    # TODO: temporary spelling; once SPN gains Eq (or Xor) on booleans, make this `X(e) != e` (and possibly drop the helper)
+    return (nxt & ~e) | (~nxt & e)
+
+
 def _cmp_out(a: Expr) -> Sort:
     return BitVec(1, a.shape) if a._theory is BV else Bool(a.shape)
 

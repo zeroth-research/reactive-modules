@@ -57,10 +57,10 @@ import inspect
 from .zrth import Module as _Module, Term as _Term, X as base_X, d as base_d, Var, SPN
 from .sort import Clock, Zero
 
-from .expr import expr, cast, ite, if_then, relu, argmax, exp, clkrate, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
+from .expr import expr, cast, ite, if_then, fired, relu, argmax, exp, clkrate, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
 
 # Public authoring surface: `from zrth.sugar import Module, expr, X, d, ite, cast, ...`
-__all__ = ["Module", "expr", "cast", "ite", "if_then", "relu", "argmax", "exp", "clkrate", "Expr", "X", "d", "Var"]
+__all__ = ["Module", "expr", "cast", "ite", "if_then", "fired", "relu", "argmax", "exp", "clkrate", "Expr", "X", "d", "Var"]
 
 
 def _as_tuple(r) -> tuple:

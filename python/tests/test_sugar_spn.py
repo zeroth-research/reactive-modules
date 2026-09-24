@@ -6,7 +6,7 @@ import pytest
 from zrth import SPN, LIA, Bool, Clock, Event, Nat, Var, X as _X, d as _d
 from zrth import Module as compose
 from zrth.expr import collecting, expr
-from zrth.sugar import Module, X, d, ite, if_then, exp, clkrate
+from zrth.sugar import Module, X, d, ite, if_then, fired, exp, clkrate
 
 BOOL = Bool([1, 1])
 
@@ -116,6 +116,23 @@ def test_if_then_guards_an_update():
     m = M(theory=SPN, ctrl=(clk, n), extl=(t,))
     assert "IfThen" in _ops(m.atoms[0].update)
     assert "IfThen" in m.with_varnames({t: "t", clk: "clk", n: "n"})
+
+
+def test_fired_is_a_change_of_the_event():
+    # `X(e) != e` in the boolean fragment: the theory has no equality
+    e = Var(Event())
+    with collecting() as terms:
+        out = fired(expr(e, theory=SPN))
+    assert _ops(terms) == ["Not", "And", "Not", "And", "Or"]
+    assert {w for t in terms for w in t.read} >= {e, _X(e)}
+    assert isinstance(out.dtype, Event) and out.wire == terms[-1].write[0]
+
+
+def test_fired_reads_an_event_alone():
+    with collecting():
+        for v in (Var(BOOL), Var(Nat()), Var(Clock())):
+            with pytest.raises(TypeError, match="Event"):
+                fired(expr(v, theory=SPN))
 
 
 def test_if_then_needs_an_expr_branch_and_an_spn_guard():
@@ -234,6 +251,22 @@ def test_conditional_rate_freezes_a_clock():
     assert "Ite" in _ops(m.atoms[0].delay)
     shown = m.with_varnames({})
     assert "ClkMul(-1)" in shown and "ClkRate(0)" in shown
+
+
+def test_if_then_in_a_flow_is_the_invariant():
+    # the clock runs down while it is non-negative; past that the flow has no value
+    class M(Module):
+        def init(self, t):
+            return exp(1.0)
+
+        def flow(self, c, t):
+            return if_then(c >= 0, -1 * d(t))
+
+    c, t = Var(Clock()), Var(Clock())
+    m = M(theory=SPN, ctrl=(c,), extl=(t,))
+    assert _ops(m.atoms[0].delay) == ["Clock", "ClkGe", "ClkMul", "IfThen", "Id"]
+    [guard] = [term for term in m.atoms[0].delay if _ops([term]) == ["IfThen"]]
+    assert guard.write[0].dtype == Clock(1) and _d(c) in m.atoms[0].delay.write()
 
 
 # --- method names -------------------------------------------------------------
