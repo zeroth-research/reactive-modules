@@ -311,4 +311,9 @@ def test_birth_death_example():
     shown = bd.system.with_varnames({bd.t: "t", bd.n: "n"})
     assert "Exp(2)" in shown and "Exp(1)" in shown
     assert "ClkMul(-1)" in shown and "ClkMul(0)" in shown  # clocks run down against t; the death clock freezes on an empty place
-    assert "Zero" in shown  # the flags have no flow
+    assert "Zero" in shown  # the events have no flow
+    for atom in (bd.birth, bd.death):
+        [flow] = [term for term in atom.atoms[0].delay if _ops([term]) == ["IfThen"]]
+        assert flow.write[0].dtype == Clock(1)  # `clk >= 0` guards the clock's rate: the invariant
+        assert "IfThen" in _ops(atom.atoms[0].update)  # the event toggles only where the transition fires
+    assert _ops(bd.place.atoms[0].update).count("Or") == 2  # a `fired` per event
