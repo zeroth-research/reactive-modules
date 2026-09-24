@@ -443,6 +443,14 @@ class SPN:
     class Ite(SPN):
         def __init__(self) -> None: ...
 
+    class IfThen(SPN):
+        """If-then: `Ite` without the else branch, and the theory's one partial
+        operation. It reads a guard and one value and writes that value's sort;
+        where the guard holds it copies the branch, where it does not it has no
+        value, and what a step does there is the executor's to say."""
+
+        def __init__(self) -> None: ...
+
     class Nondet(SPN):
         """Nondeterministic choice of a value of the given sort, the generator
         `Combinatorial.HAVOC` resolves to. It carries the theory's own sort,

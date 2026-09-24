@@ -57,6 +57,18 @@ def test_event_and_bool_are_interchangeable():
     Term(SPN.Id(), [X(b)], [ev])                 # each flows into the other
 
 
+def test_ifthen_is_ite_without_the_else_branch():
+    # the theory's one partial operation: a guard and a single branch
+    p, fires = Var(Nat()), Wire(BOOL)
+    Term(SPN.IfThen(), [X(p)], [fires, p])
+    with pytest.raises(Exception, match="must read exactly two"):
+        Term(SPN.IfThen(), [X(p)], [fires, p, p])
+    with pytest.raises(Exception, match="guard must be Bool"):
+        Term(SPN.IfThen(), [X(p)], [p, p])
+    with pytest.raises(Exception, match="sort of the branch"):
+        Term(SPN.IfThen(), [X(p)], [fires, Var(Clock())])
+
+
 def test_event_is_not_a_place():
     # transparent to the boolean fragment, and to nothing else
     ev, p = Var(Event()), Var(Nat())

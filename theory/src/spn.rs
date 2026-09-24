@@ -41,6 +41,14 @@ The operations in [`SPN`] are:
   defined on every sort and acts rank-generically.
 - [`SPN::Ite`] — if-then-else: reads a boolean guard and two branches of one
   and the same sort, and writes that sort.
+- [`SPN::IfThen`] — if-then: [`SPN::Ite`] without the else branch, and so the
+  one **partial** generator of the theory. It reads a boolean guard and one
+  value and writes that value's sort: where the guard holds it is
+  [`SPN::Id`] of the branch, and where it does not it has no value at all.
+  Sort checking stays total — partiality is about values, not sorts — so what
+  a step does where the guard fails is the executor's obligation, as with the
+  passage of time below. Read the term as a condition on the steps that exist
+  rather than as a choice between two values.
 - [`SPN::Nondet`]`(s)` — nondeterministic choice of a value of the value sort
   `s`; reads nothing and writes a single wire of that sort.
 - [`SPN::Exp`]`(λ)` — arms a fresh clock, its time to expiry drawn from the
@@ -249,6 +257,10 @@ pub enum SPN {
     Id(),
     /// If-then-else
     Ite(),
+    /// If-then (**partial operation**): [`SPN::Ite`] without the else branch,
+    /// so it copies the branch where the guard holds and has no value where it
+    /// does not
+    IfThen(),
     /// Nondeterministic choice of a value of the given value sort
     #[strum(to_string = "(* : {0})")]
     Nondet(Sort),
@@ -316,7 +328,7 @@ impl Signature for SPN {
             SPN::And() | SPN::Or() | SPN::Not() => check_bool(self, read, write),
             SPN::IsZero() | SPN::ClkIsZero() => check_is_zero(self, read, write),
             SPN::Inc() | SPN::Dec() => check_nat_ops(self, read, write),
-            SPN::Id() | SPN::Ite() => check_flow(self, read, write),
+            SPN::Id() | SPN::Ite() | SPN::IfThen() => check_flow(self, read, write),
             SPN::Nondet(sort) => check_nondet(sort, read, write),
             SPN::Exp(_) => check_sample(self, read, write),
             SPN::ClkRate(_) | SPN::ClkZero() => check_clk_rate(self, read, write),
@@ -468,9 +480,12 @@ where
     Ok(())
 }
 
-// `Id` copies a single value of an arbitrary sort and `Ite` selects between two
-// values of one sort under a boolean guard. Both apply rank-generically, but
-// never across ranks: the sorts they relate must agree, tangent grade included.
+// `Id` copies a single value of an arbitrary sort, `Ite` selects between two
+// values of one sort under a boolean guard, and `IfThen` is that guard without
+// the second branch. All three apply rank-generically, but never across ranks:
+// the sorts they relate must agree, tangent grade included. Only the sorts are
+// checked here: that `IfThen` has no value where its guard fails is a fact
+// about steps, not about wires.
 fn check_flow<R, W, E: fmt::Display>(op: &SPN, read: R, write: W) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
@@ -516,6 +531,27 @@ where
             if !w1.agrees(&r2) {
                 return Err(format!(
                     "{op:?}: output must have the sort of the branches, got {w1} and {r2}"
+                ));
+            }
+            Ok(())
+        }
+        SPN::IfThen() => {
+            let (r1, r2, None) = (
+                next_sort(&mut read, 0)?,
+                next_sort(&mut read, 1)?,
+                read.next(),
+            ) else {
+                return Err(format!("{op:?}: must read exactly two values"));
+            };
+            let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
+                return Err(format!("{op:?}: must write exactly one value"));
+            };
+            if !r1.is_bool() {
+                return Err(format!("{op:?}: the guard must be Bool, got {r1}"));
+            }
+            if !w1.agrees(&r2) {
+                return Err(format!(
+                    "{op:?}: output must have the sort of the branch, got {w1} and {r2}"
                 ));
             }
             Ok(())
@@ -718,6 +754,7 @@ mod tests {
         assert_eq!(SPN::ClkRate(-1.0).to_string(), "ClkRate(-1)");
         assert_eq!(SPN::Id().to_string(), "Id");
         assert_eq!(SPN::Ite().to_string(), "Ite");
+        assert_eq!(SPN::IfThen().to_string(), "IfThen");
         assert_eq!(SPN::ClkZero().to_string(), "ClkZero");
         assert_eq!(SPN::Zero().to_string(), "Zero");
     }
@@ -1033,6 +1070,68 @@ mod tests {
     }
 
     #[test]
+    fn ifthen_ok_on_every_sort() {
+        // the guard is a Bool, the one branch and the result share a sort
+        for s in [NAT, BOOL, EVENT, CLOCK, DCLOCK, ZERO] {
+            assert!(SPN::IfThen().check([BOOL, s].map(ok), [s].map(ok)).is_ok());
+        }
+    }
+
+    #[test]
+    fn ifthen_non_bool_guard_fails() {
+        assert!(
+            SPN::IfThen()
+                .check([NAT, NAT].map(ok), [NAT].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::IfThen()
+                .check([CLOCK, CLOCK].map(ok), [CLOCK].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn ifthen_branch_mismatch_fails() {
+        assert!(
+            SPN::IfThen()
+                .check([BOOL, NAT].map(ok), [CLOCK].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn ifthen_rank_mismatch_fails() {
+        // rank-generic like `Id` and `Ite`, and like them never across ranks
+        assert!(
+            SPN::IfThen()
+                .check([BOOL, CLOCK].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn ifthen_arity_fails() {
+        // the else branch is exactly the argument it does not take
+        assert!(
+            SPN::IfThen()
+                .check([BOOL, NAT, NAT].map(ok), [NAT].map(ok))
+                .is_err()
+        );
+        assert!(SPN::IfThen().check([BOOL].map(ok), [NAT].map(ok)).is_err());
+        assert!(
+            SPN::IfThen()
+                .check([BOOL, NAT].map(ok), [NAT, NAT].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::IfThen()
+                .check([BOOL, NAT].map(ok), [].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn skip_is_id() {
         assert!(matches!(<SPN as Sequential>::skip(&NAT), SPN::Id()));
     }
@@ -1221,6 +1320,18 @@ mod tests {
         assert!(
             SPN::Ite()
                 .check([BOOL, DCLOCK, DCLOCK].map(ok), [DCLOCK].map(ok))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn ifthen_guards_a_transitions_update() {
+        // `X(p) := if fires then Dec(p)`: the marking is written by the steps
+        // that fire, and the guard -- an `Event`, as a firing tends to be -- is
+        // what says which those are
+        assert!(
+            SPN::IfThen()
+                .check([EVENT, NAT].map(ok), [NAT].map(ok))
                 .is_ok()
         );
     }
