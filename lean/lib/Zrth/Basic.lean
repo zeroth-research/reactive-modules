@@ -1,5 +1,6 @@
-namespace Zrth
+/-!
+# Basic definitions
 
--- Placeholder until the translation of reactive modules is implemented.
+Definitions shared by the rest of the library.
+-/
 
-end Zrth
