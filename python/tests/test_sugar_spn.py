@@ -1,5 +1,5 @@
 """The SPN theory through the sugar DSL: literals, the few operators the theory maps,
-`next`/`flow` as method names, `None` flows, and the birth-death example."""
+`next`/`flow` as method names, `0` flows, and the birth-death example."""
 
 import pytest
 
@@ -88,7 +88,7 @@ def test_an_event_flag_takes_the_bool_sugar():
             return ite(clk == 0, exp(1.0), clk), clk == 0   # a Bool-sorted test
 
         def flow(self, clk, fired, t):
-            return -1 * d(t), None           # the flag has the trivial tangent
+            return -1 * d(t), 0              # the flag has the trivial tangent
 
     clk, fired, t = Var(Clock()), Var(Event()), Var(Clock())
     m = M(theory=SPN, ctrl=(clk, fired), extl=(t,))
@@ -110,7 +110,7 @@ def test_if_then_guards_an_update():
             return ite(fires, exp(1.0), clk), if_then(fires, n + 1)
 
         def flow(self, clk, n, t):
-            return -1 * d(t), None
+            return -1 * d(t), 0
 
     clk, n, t = Var(Clock()), Var(Nat()), Var(Clock())
     m = M(theory=SPN, ctrl=(clk, n), extl=(t,))
@@ -225,17 +225,31 @@ def test_rate_times_time_form_scales_the_time_forms_tangent():
     assert m.open() and set(m.extl) == {t}  # the time form is read, so t is a real external
 
 
-def test_none_is_the_zero_flow():
+def test_zero_is_the_zero_flow():
     class M(Module):
         def init(self, t):
             return exp(1.0), 0, False
 
         def flow(self, c, n, b, t):
-            return None, None, None
+            return 0, 0, 0
 
     c, n, b, t = Var(Clock()), Var(Nat()), Var(BOOL), Var(Clock())
     ops = _ops(M(theory=SPN, ctrl=(c, n, b), extl=(t,)).atoms[0].delay)
     assert ops == ["ClkZero", "Zero", "Zero"]
+
+
+def test_none_is_not_a_flow():
+    # `None` is an `ite` branch (no flow at all), never a whole variable's flow
+    class M(Module):
+        def init(self, t):
+            return exp(1.0), False
+
+        def flow(self, c, b, t):
+            return -1 * d(t), None
+
+    c, b, t = Var(Clock()), Var(BOOL), Var(Clock())
+    with pytest.raises(TypeError, match="write 0"):
+        M(theory=SPN, ctrl=(c, b), extl=(t,))
 
 
 def test_conditional_rate_freezes_a_clock():
@@ -253,14 +267,25 @@ def test_conditional_rate_freezes_a_clock():
     assert "ClkMul(-1)" in shown and "ClkRate(0)" in shown
 
 
-def test_if_then_in_a_flow_is_the_invariant():
+def test_ite_with_a_none_branch_is_the_partial_if_then():
+    c, n = Var(Clock()), Var(Nat())
+    with collecting() as terms:
+        c, n = expr(c, theory=SPN), expr(n, theory=SPN)
+        ite(c == 0, n + 1, None)
+        ite(c == 0, None, n + 1)      # the other way round: the condition is negated
+    assert _ops(terms) == ["ClkIsZero", "Inc", "IfThen", "ClkIsZero", "Inc", "Not", "IfThen"]
+    with collecting(), pytest.raises(TypeError, match="at most one"):
+        ite(c == 0, None, None)
+
+
+def test_ite_to_none_in_a_flow_is_the_invariant():
     # the clock runs down while it is non-negative; past that the flow has no value
     class M(Module):
         def init(self, t):
             return exp(1.0)
 
         def flow(self, c, t):
-            return if_then(c >= 0, -1 * d(t))
+            return ite(c >= 0, -1 * d(t), None)
 
     c, t = Var(Clock()), Var(Clock())
     m = M(theory=SPN, ctrl=(c,), extl=(t,))
@@ -276,12 +301,12 @@ def test_next_and_flow_are_aliases_for_update_and_delay():
     class WithOld(Module):
         def init(self, t):        return 0
         def update(self, n, t):   return n
-        def delay(self, n, t):    return None
+        def delay(self, n, t):    return 0
 
     class WithNew(Module):
         def init(self, t):        return 0
         def next(self, n, t):     return n
-        def flow(self, n, t):     return None
+        def flow(self, n, t):     return 0
 
     n, t = Var(Nat()), Var(Clock())
     old, new = WithOld(theory=SPN, ctrl=(n,), extl=(t,)), WithNew(theory=SPN, ctrl=(n,), extl=(t,))
@@ -310,10 +335,10 @@ def test_birth_death_example():
     assert set(bd.system.intf) == {bd.bth, bd.dth, bd.n}
     shown = bd.system.with_varnames({bd.t: "t", bd.n: "n"})
     assert "Exp(2)" in shown and "Exp(1)" in shown
-    assert "ClkMul(-1)" in shown and "ClkMul(0)" in shown  # clocks run down against t; the death clock freezes on an empty place
+    assert "ClkMul(-1)" in shown  # clocks run down against t
     assert "Zero" in shown  # the events have no flow
     for atom in (bd.birth, bd.death):
         [flow] = [term for term in atom.atoms[0].delay if _ops([term]) == ["IfThen"]]
         assert flow.write[0].dtype == Clock(1)  # `clk >= 0` guards the clock's rate: the invariant
-        assert "IfThen" in _ops(atom.atoms[0].update)  # the event toggles only where the transition fires
+        assert "IfThen" not in _ops(atom.atoms[0].update)  # the event toggles by a total ite
     assert _ops(bd.place.atoms[0].update).count("Or") == 2  # a `fired` per event

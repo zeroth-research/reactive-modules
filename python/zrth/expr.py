@@ -764,7 +764,16 @@ def d(v: Expr) -> Expr:
 
 
 def ite(cond: Expr, iftrue, iffalse) -> Expr:
+    """If-then-else. A branch may be `None` (`SPN` alone): no value there. In a `flow` that
+    says time may not pass while the condition sends it there (the invariant); in a `next`
+    the atom stutters. It is the total spelling of `if_then`."""
     a, b = iftrue, iffalse
+    if a is None and b is None:
+        raise TypeError("ite(): at most one branch may be None")
+    if a is None:
+        return if_then(~cond, b)
+    if b is None:
+        return if_then(cond, a)
     if not isinstance(a, Expr) and not isinstance(b, Expr):
         raise TypeError("ite(): at least one branch must be an Expr")
     if not isinstance(a, Expr):

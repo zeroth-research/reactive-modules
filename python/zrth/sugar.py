@@ -83,7 +83,12 @@ def _method(cls, *names):
     return (found[0], getattr(cls, found[0])) if found else (names[0], None)
 
 
+def _is_zero(val) -> bool:
+    return isinstance(val, (int, float)) and not isinstance(val, bool) and val == 0
+
+
 def _zero_flow(theory, var) -> _Term:
+    """The flow `0`: the variable does not move (its tangent's zero)."""
     tangent = base_d(var).dtype
     if theory is SPN:
         op = SPN.ClkZero() if isinstance(tangent, Clock) else SPN.Zero()
@@ -148,12 +153,16 @@ def _build_delay_block(cls, ctrl, extl, theory) -> list:
         raise ValueError(f"{name} expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
 
     with collecting() as terms:
-        returned = fn(None, *args)
-        vals = (None,) * len(ctrl) if returned is None else _as_tuple(returned)
+        vals = _as_tuple(fn(None, *args))
         if len(vals) != len(ctrl):
             raise ValueError(f"{name} expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             if val is None:
+                raise TypeError(
+                    f"{name}: a flow may not be None; write 0 for a variable that does not "
+                    "move (None is an `ite` branch alone: no flow at all, a state to never be in)"
+                )
+            if _is_zero(val):
                 terms.append(_zero_flow(theory, var))
                 continue
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
