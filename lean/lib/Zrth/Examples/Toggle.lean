@@ -17,11 +17,11 @@ namespace Zrth.Examples.Toggle
 
 /-! ## Variables -/
 
-def t : @Var SortsLIA := { name := 0, sort := .bool 1 1 }
+def t : Var SortsLIA := { name := 0, sort := .bool 1 1 }
 
 /-! ## Reactive module -/
 
-def atom : @Atom SortsLIA _ where
+def atom : Atom SortsLIA where
   read := [t]
   wait := []
   ctrl := [t]
@@ -32,7 +32,7 @@ def atom : @Atom SortsLIA _ where
   flow := { dom := [.bool 1 1], cod := [] }
 
 /-- The toggle has no inputs; the bit is visible. -/
-def toggle : @Module SortsLIA _ where
+def toggle : Module SortsLIA where
   extl := []
   intf := [t]
   prvt := []

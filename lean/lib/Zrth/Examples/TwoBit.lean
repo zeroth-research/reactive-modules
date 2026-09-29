@@ -20,7 +20,7 @@ namespace Zrth.Examples.TwoBit
 
 /-! ## Variables -/
 
-abbrev VarLIA := @Var SortsLIA
+abbrev VarLIA := Var SortsLIA
 
 def b0 : VarLIA := { name := 0, sort := .bool 1 1 }
 def b1 : VarLIA := { name := 1, sort := .bool 1 1 }
@@ -29,7 +29,7 @@ def enable : VarLIA := { name := 2, sort := .bool 1 1 }
 /-! ## Reactive module -/
 
 /-- The only atom: controls both bits, awaits `enable`. -/
-def atom : @Atom SortsLIA _ where
+def atom : Atom SortsLIA where
   read := [b0, b1]
   wait := [enable]
   ctrl := [b0, b1]
@@ -40,7 +40,7 @@ def atom : @Atom SortsLIA _ where
   flow := { dom := [.bool 1 1, .bool 1 1, .bool 1 1], cod := [] }
 
 /-- The counter: `enable` comes from the environment, the bits are visible. -/
-def counter : @Module SortsLIA _ where
+def counter : Module SortsLIA where
   extl := [enable]
   intf := [b0, b1]
   prvt := []

@@ -12,7 +12,7 @@ namespace Zrth
 
 universe u v n
 
-variable {S: Type u} [MultiSort S]
+variable (S: Type u) [MultiSort S]
 
 abbrev Name := Nat
 
@@ -27,12 +27,12 @@ deriving DecidableEq
 (current round), and the diagrams computing its initial, update and flow
 behavior. -/
 structure Atom where
-  read: List Var
-  wait: List Var
+  read: List (Var S)
+  wait: List (Var S)
   -- controlled variables
-  ctrl: List Var
+  ctrl: List (Var S)
   -- controlled flow variables
-  ctrl_f   : List Var
+  ctrl_f   : List (Var S)
 
   init   : Signature S
   update : Signature S
@@ -46,7 +46,7 @@ structure Atom where
 
   -- The signature of init, update and flow must fit the list of variables
   init_sig_dom: init.dom = wait.map (fun v => v.sort) := by rfl
-  update_sig_dom: update.dom = (read ++ wait).map (fun v : Var => v.sort) := by rfl
+  update_sig_dom: update.dom = (read ++ wait).map (fun v => v.sort) := by rfl
   -- TODO: it can await derivatives
   flow_sig_dom: flow.dom = (read ++ wait).map (fun v => v.sort) := by rfl
 
@@ -56,19 +56,19 @@ structure Atom where
   flow_sig_cod: flow.cod = ctrl_f.map (fun v => v.sort) := by rfl
 
 
-instance: HasSignature S (@Atom S _) where
-  signature := fun (a: Atom) => {
+instance: HasSignature S (Atom S) where
+  signature := fun (a: Atom S) => {
     dom := (a.read ++ a.wait).map Var.sort
     cod := a.ctrl.map Var.sort
   }
 
 /-- A module: its external, interface and private variables, and its atoms. -/
 structure Module where
-  extl  : List (@Var S)
-  intf  : List (@Var S)
-  prvt  : List (@Var S)
+  extl  : List (Var S)
+  intf  : List (Var S)
+  prvt  : List (Var S)
 
-  atoms : List (Atom (S:= S))
+  atoms : List (Atom S)
 
   /-- variable sets are disjoint --/
   extl_intf_disj : ∀ v ∈ extl, v ∉ intf := by decide
@@ -78,8 +78,8 @@ structure Module where
   unique_ctrl : (atoms.flatMap Atom.ctrl).Nodup := by decide
 
 
-instance: HasSignature S (@Module S _) where
-  signature := fun (m: Module) => {
+instance: HasSignature S (Module S) where
+  signature := fun (m: Module S) => {
     dom := m.extl.map Var.sort
     cod := m.intf.map Var.sort
   }

@@ -17,13 +17,13 @@ namespace Zrth.Examples.Accumulator
 
 /-! ## Variables -/
 
-def x : @Var SortsLRA := { name := 0, sort := .real 1 1 }
-def u : @Var SortsLRA := { name := 1, sort := .real 1 1 }
+def x : Var SortsLRA := { name := 0, sort := .real 1 1 }
+def u : Var SortsLRA := { name := 1, sort := .real 1 1 }
 
 /-! ## Reactive module -/
 
 /-- The only atom: controls `x`, awaits `u`. -/
-def atom : @Atom SortsLRA _ where
+def atom : Atom SortsLRA where
   read := [x]
   wait := [u]
   ctrl := [x]
@@ -34,7 +34,7 @@ def atom : @Atom SortsLRA _ where
   flow := { dom := [.real 1 1, .real 1 1], cod := [] }
 
 /-- The accumulator: `u` comes from the environment, the sum is visible. -/
-def accumulator : @Module SortsLRA _ where
+def accumulator : Module SortsLRA where
   extl := [u]
   intf := [x]
   prvt := []
