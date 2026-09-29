@@ -15,9 +15,13 @@ class MultiSort (α : Type u) where
 
 instance [MultiSort α] : DecidableEq α := MultiSort.decEq
 
-/-- Sorts with tangent sorts: `T s` is the sort of the derivatives of `s`. -/
-class Differentiable (α : Type u) extends MultiSort α where
+/-- Sorts closed under the tangent former: `T s` is the sort of the rates of
+change of values of sort `s` (mirrors `theory::Tangent`).
+
+Only the action of `T` on sorts lives here. The zero section is a generator
+of the signature, not a sort. Discrete sorts have a trivial tangent (an
+inhabited singleton sort), not a missing one. -/
+class Tangent (α : Type u) extends MultiSort α where
   T : α → α
-  zero: α
 
 end Zrth

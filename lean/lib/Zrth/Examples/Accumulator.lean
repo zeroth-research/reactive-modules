@@ -48,7 +48,7 @@ def wX' : Wire SortsLRA := ⟨2, .real 1 1⟩
 
 /-- `x' := u'` -/
 def initDiagram : Diagram thrLRA where
-  boxes := [{ gen := .id 1 1, read := [wU], write := [wX'] }]
+  boxes := [{ gen := .id (.real 1 1), read := [wU], write := [wX'] }]
   read := [wU]
   write := [wX']
   wires := [wU, wX']

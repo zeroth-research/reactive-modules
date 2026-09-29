@@ -3,47 +3,61 @@ import Zrth.Theory
 /-!
 # Linear real arithmetic
 
-Sorts and (a fragment of) the signature of linear real arithmetic over matrices.
+Sorts and (a fragment of) the signature of linear real arithmetic over matrices
+(mirrors `theory::lra` in the `theory` crate).
+
+The differential grade is part of the sort: `real m n r` is the `r`-th
+derivative of an `m × n` real matrix, and `T` raises `r`. Booleans are constant
+sorts, so their tangent is the trivial sort `zero`, whose only writer is the
+`zero` generator.
 -/
 
 namespace Zrth
 
-/-- Sorts of LRA: `m × n` matrices of reals or booleans, and the tangent sorts
-(`tan N m n` is the `N`-th tangent; `tan 0` is the zero tangent space). -/
-inductive SortsLRA where | real (m n : Nat) | bool (m n : Nat) | tan (N m n : Nat) deriving DecidableEq, Repr
+/-- Sorts of LRA: `m × n` real matrices of differential grade `rank`
+(0 = value, 1 = first derivative, ...), `m × n` boolean matrices, and the
+trivial tangent `zero` (a singleton: terminal, not empty). -/
+inductive SortsLRA where
+  | real (m n : Nat) (rank : Nat := 0)
+  | bool (m n : Nat)
+  | zero
+deriving DecidableEq, Repr
 
-instance: MultiSort SortsLRA where
+instance: Tangent SortsLRA where
   toType := fun (s: SortsLRA) =>
     match s with
-    | .real m n => Mat Float m n
+    | .real m n _ => Mat Float m n
     | .bool m n => Mat Bool m n
-    | .tan 0 m n => {x : Mat Float m n // ∀ m' n', x m' n' = 0}
-    | .tan _ m n => Mat Float m n
-
-instance: Differentiable SortsLRA where
+    | .zero => Unit
   T := fun (s: SortsLRA) =>
     match s with
-    | .bool m n => SortsLRA.tan 0 m n
-    | .tan 0 m n => SortsLRA.tan 0 m n
-    | .tan N m n => SortsLRA.tan (N + 1) m n
-    | .real m n => SortsLRA.tan 1 m n
-
-  zero := SortsLRA.tan 0 1 1
+    -- the shape is unchanged, the grade goes up
+    | .real m n r => .real m n (r + 1)
+    -- constant sorts have the trivial tangent, which is a fixed point
+    | .bool _ _ | .zero => .zero
 
 namespace LRA
 
-/-- Generators of LRA, indexed by the dimensions of the matrices they work on. -/
+/-- Generators of LRA, indexed by the dimensions (and grades) of the matrices
+they work on. -/
 inductive Gen where
-  | add (m n: Nat)
-  | mul (m n m': Nat)
-  | id (m n: Nat)
+  | add (m n: Nat) (rank : Nat := 0)
+  /-- `X × y` for a constant `X`; linear, so `y` may be a derivative -/
+  | mul (m n m': Nat) (rank : Nat := 0)
+  | id (s : SortsLRA)
+  /-- the unique inhabitant of `zero` -/
+  | zero
+  /-- the zero derivative of an `m × n` real matrix of grade `rank` -/
+  | realZerograd (m n : Nat) (rank : Nat := 0)
 
 /-- The signatures of the LRA generators. -/
 instance : HasSignature SortsLRA Gen where
   signature := fun g => match g with
-    | .add m n => { dom := [SortsLRA.real m n, SortsLRA.real m n], cod := [SortsLRA.real m n]}
-    | .mul m n m' => { dom := [SortsLRA.real m n, SortsLRA.real n m'], cod := [SortsLRA.real m m']}
-    | .id m n  => { dom := [SortsLRA.real m n], cod := [SortsLRA.real m n]}
+    | .add m n r => { dom := [.real m n r, .real m n r], cod := [.real m n r] }
+    | .mul m n m' r => { dom := [.real m n, .real n m' r], cod := [.real m m' r] }
+    | .id s => { dom := [s], cod := [s] }
+    | .zero => { dom := [], cod := [.zero] }
+    | .realZerograd m n r => { dom := [], cod := [.real m n (r + 1)] }
 
 end LRA
 

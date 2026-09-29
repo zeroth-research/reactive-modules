@@ -7,20 +7,24 @@ Sorts and signature of linear integer arithmetic over matrices, mixing integer
 and boolean matrices (mirrors `theory::lia` in the `theory` crate).
 
 Unlike the Rust `check`, the shapes are indices of the generators, so each
-generator has a fixed signature. Wire degrees are not modelled: all
-operands are of degree 0.
+generator has a fixed signature. All sorts are constant: their tangent is the
+trivial sort `zero`, whose only writer is the `zero` generator.
 -/
 
 namespace Zrth
 
-/-- Sorts of LIA: `m × n` matrices of integers or booleans. -/
-inductive SortsLIA where | int (m n : Nat) | bool (m n : Nat) deriving DecidableEq, Repr
+/-- Sorts of LIA: `m × n` matrices of integers or booleans, and the trivial
+tangent `zero`. -/
+inductive SortsLIA where | int (m n : Nat) | bool (m n : Nat) | zero deriving DecidableEq, Repr
 
-instance: MultiSort SortsLIA where
+instance: Tangent SortsLIA where
   toType := fun (s: SortsLIA) =>
     match s with
     | .int m n => Mat Int m n
     | .bool m n => Mat Bool m n
+    | .zero => Unit
+  -- values cannot move during delay
+  T := fun _ => .zero
 
 namespace LIA
 
@@ -61,6 +65,8 @@ inductive Gen where
   -- havoc: an arbitrary value
   | anyInt (m n : Nat)
   | anyBool (m n : Nat)
+  /-- the unique inhabitant of `zero` -/
+  | zero
 
 /-- The signatures of the LIA generators. -/
 instance : HasSignature SortsLIA Gen where
@@ -83,6 +89,7 @@ instance : HasSignature SortsLIA Gen where
     | .uninterpreted _ false s => { dom := [], cod := [s] }
     | .anyInt m n => { dom := [], cod := [.int m n] }
     | .anyBool m n => { dom := [], cod := [.bool m n] }
+    | .zero => { dom := [], cod := [.zero] }
 
 end LIA
 
