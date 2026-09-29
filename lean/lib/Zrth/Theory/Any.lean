@@ -16,11 +16,12 @@ init, next and flow of an atom.
 
 namespace Zrth
 
-/-- Sorts of all theories: boolean, real (of a differential grade), integer
-and bit-vector matrices, and the trivial tangent `zero`. -/
+/-- Sorts of all theories: boolean, real, integer and bit-vector matrices, the
+`(k+1)`-th derivatives of real matrices, and the trivial tangent `zero`. -/
 inductive SortsAny where
   | bool (m n : Nat)
-  | real (m n : Nat) (rank : Nat := 0)
+  | real (m n : Nat)
+  | δreal (m n k : Nat)
   | int (m n : Nat)
   | bitVec (w m n : Nat)
   | zero
@@ -30,20 +31,22 @@ instance: Tangent SortsAny where
   toType := fun (s: SortsAny) =>
     match s with
     | .bool m n => Mat Bool m n
-    | .real m n _ => Mat Float m n
+    | .real m n | .δreal m n _ => Mat Float m n
     | .int m n => Mat Int m n
     | .bitVec w m n => Mat (BitVec w) m n
     | .zero => Unit
   T := fun (s: SortsAny) =>
     match s with
-    -- reals grade up, the constant sorts collapse to `zero`
-    | .real m n r => .real m n (r + 1)
+    -- reals are differentiated, the constant sorts collapse to `zero`
+    | .real m n => .δreal m n 0
+    | .δreal m n k => .δreal m n (k + 1)
     | .bool .. | .int .. | .bitVec .. | .zero => .zero
 
 /-! ## Embeddings of the sorts of the base theories -/
 
 def SortsLRA.toAny : SortsLRA → SortsAny
-  | .real m n r => .real m n r
+  | .real m n => .real m n
+  | .δreal m n k => .δreal m n k
   | .bool m n => .bool m n
   | .zero => .zero
 

@@ -34,13 +34,17 @@ example : ¬ LIA.linearFits ⟨2, 3, fun _ _ => 1⟩ (some ⟨3, 1, fun _ _ => 0
 -- pointwise less-than on scalars: `Real(1,1), Real(1,1) -> Bool(1,1)`
 example : Box thrLRA :=
   { gen := .lt 1 1, read := [⟨0, .real 1 1⟩, ⟨1, .real 1 1⟩], write := [⟨2, .bool 1 1⟩] }
--- linear operations keep the grade: `Y' = A · X'`
+-- linear operations keep the order: `Y' = A · X'`
 example : Box thrLRA :=
   { gen := .linear ⟨2, 3, fun _ _ => 1⟩ none 1 1 (by decide)
     read := [⟨0, Tangent.T (.real 3 1)⟩], write := [⟨1, Tangent.T (.real 2 1)⟩] }
 -- a literal is a value, never a derivative: use `realZerograd`
 example : ∀ c, (signature (LRA.Gen.real c)).cod ≠ [Tangent.T (.real c.rows c.cols)] := by
   intro c; simp [signature, Tangent.T]
+-- comparisons and the other non-linear operations take values only
+example : ∀ m n g, g ∈ [LRA.Gen.lt m n, .relu m n, .min m n] →
+    .δreal m n 0 ∉ (signature g).dom := by
+  intro m n g hg; simp at hg; rcases hg with rfl | rfl | rfl <;> simp [signature]
 example : Box thrLRA := { gen := .realZerograd 1 1, read := [], write := [⟨0, Tangent.T (.real 1 1)⟩] }
 -- the derivative of a boolean is silenced by `zero`
 example : Box thrLRA := { gen := .zero, read := [], write := [⟨0, Tangent.T (.bool 2 2)⟩] }
@@ -71,6 +75,6 @@ example : ¬ (Any.Gen.skip (.int 1 1)).isCombinatorial := by decide
 
 -- `havoc` writes its range, derivatives included
 example : Box thrLRA :=
-  { gen := Combinatorial.havoc (.real 2 2 1), read := [], write := [⟨0, .real 2 2 1⟩] }
+  { gen := Combinatorial.havoc (.δreal 2 2 0), read := [], write := [⟨0, .δreal 2 2 0⟩] }
 
 end Zrth.Examples.Typing
