@@ -459,7 +459,8 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LRA::Add() | LRA::Sub() => {
+        // element-wise, as `minimum`/`maximum` in the evaluator and the SMT encoding
+        LRA::Add() | LRA::Sub() | LRA::Min() | LRA::Max() => {
             let (r1, r2, None) = (
                 next_sort(&mut read, 0)?,
                 next_sort(&mut read, 1)?,
@@ -509,7 +510,7 @@ where
             }
             Ok(())
         }
-        LRA::Argmax() | LRA::Min() | LRA::Max() => {
+        LRA::Argmax() => {
             let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
@@ -1041,20 +1042,26 @@ mod tests {
                 .check([bool_t(3, 4)].map(ok), [w].map(ok))
                 .is_err()
         );
-        assert!(
-            LRA::Min()
-                .check([bool_t(4, 1)].map(ok), [w].map(ok))
-                .is_err()
-        );
     }
 
     #[test]
-    fn min_ok() {
+    fn min_max_ok() {
+        // element-wise, like `Add`
+        let t = real(4, 1);
+        assert!(LRA::Min().check([t, t].map(ok), [t].map(ok)).is_ok());
+        assert!(LRA::Max().check([t, t].map(ok), [t].map(ok)).is_ok());
+    }
+
+    #[test]
+    fn min_max_fail_as_reductions() {
+        let (t, b) = (real(4, 1), bool_t(4, 1));
+        assert!(LRA::Min().check([t].map(ok), [real(1, 1)].map(ok)).is_err());
         assert!(
-            LRA::Min()
-                .check([real(4, 1)].map(ok), [real(1, 1)].map(ok))
-                .is_ok()
+            LRA::Max()
+                .check([t, t].map(ok), [real(1, 1)].map(ok))
+                .is_err()
         );
+        assert!(LRA::Min().check([b, b].map(ok), [b].map(ok)).is_err());
     }
 
     #[test]

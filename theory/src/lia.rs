@@ -377,7 +377,8 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LIA::Add() | LIA::Sub() => {
+        // element-wise, as `minimum`/`maximum` in the evaluator and the SMT encoding
+        LIA::Add() | LIA::Sub() | LIA::Min() | LIA::Max() => {
             let (r1, r2, None) = (
                 next_sort(&mut read, 0)?,
                 next_sort(&mut read, 1)?,
@@ -427,7 +428,7 @@ where
             }
             Ok(())
         }
-        LIA::Argmax() | LIA::Min() | LIA::Max() => {
+        LIA::Argmax() => {
             let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
@@ -868,20 +869,26 @@ mod tests {
                 .check([bool_t(3, 4)].map(ok), [w].map(ok))
                 .is_err()
         );
-        assert!(
-            LIA::Min()
-                .check([bool_t(4, 1)].map(ok), [w].map(ok))
-                .is_err()
-        );
     }
 
     #[test]
-    fn min_ok() {
+    fn min_max_ok() {
+        // element-wise, like `Add`
+        let t = int(4, 1);
+        assert!(LIA::Min().check([t, t].map(ok), [t].map(ok)).is_ok());
+        assert!(LIA::Max().check([t, t].map(ok), [t].map(ok)).is_ok());
+    }
+
+    #[test]
+    fn min_max_fail_as_reductions() {
+        let (t, b) = (int(4, 1), bool_t(4, 1));
+        assert!(LIA::Min().check([t].map(ok), [int(1, 1)].map(ok)).is_err());
         assert!(
-            LIA::Min()
-                .check([int(4, 1)].map(ok), [int(1, 1)].map(ok))
-                .is_ok()
+            LIA::Max()
+                .check([t, t].map(ok), [int(1, 1)].map(ok))
+                .is_err()
         );
+        assert!(LIA::Min().check([b, b].map(ok), [b].map(ok)).is_err());
     }
 
     #[test]

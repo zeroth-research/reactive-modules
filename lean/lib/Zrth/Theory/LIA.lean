@@ -58,8 +58,9 @@ inductive Gen where
   /-- A reduction of an `i × j` matrix to an `m × n` vector. The shapes are not
   related, as in the Rust `check_mat_ops` (FIXME there). -/
   | argmax (i j m n : Nat) (h : m = 1 ∨ n = 1)
-  | min (i j m n : Nat) (h : m = 1 ∨ n = 1)
-  | max (i j m n : Nat) (h : m = 1 ∨ n = 1)
+  -- element-wise minimum and maximum
+  | min (m n : Nat)
+  | max (m n : Nat)
   | transpose (m n : Nat)
   | ite (s : SortsLIA)
   | id (s : SortsLIA)
@@ -80,9 +81,10 @@ instance : HasSignature SortsLIA Gen where
     | .le m n | .lt m n | .ge m n | .gt m n | .eq m n | .ne m n =>
         { dom := [.int m n, .int m n], cod := [.bool m n] }
     | .linear A _ b _ => { dom := [.int A.cols b], cod := [.int A.rows b] }
-    | .add m n | .sub m n => { dom := [.int m n, .int m n], cod := [.int m n] }
+    | .add m n | .sub m n | .min m n | .max m n =>
+        { dom := [.int m n, .int m n], cod := [.int m n] }
     | .relu m n => { dom := [.int m n], cod := [.int m n] }
-    | .argmax i j m n _ | .min i j m n _ | .max i j m n _ =>
+    | .argmax i j m n _ =>
         { dom := [.int i j], cod := [.int m n] }
     | .transpose m n => { dom := [.int m n], cod := [.int n m] }
     | .ite s => { dom := [.bool 1 1, s, s], cod := [s] }

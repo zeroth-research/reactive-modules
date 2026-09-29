@@ -73,8 +73,9 @@ inductive Gen where
   grade `r`. The shapes and grades are not related, as in the Rust
   `check_mat_ops` (FIXME there). -/
   | argmax (i j ri m n r : Nat) (h : m = 1 ∨ n = 1)
-  | min (i j ri m n r : Nat) (h : m = 1 ∨ n = 1)
-  | max (i j ri m n r : Nat) (h : m = 1 ∨ n = 1)
+  -- element-wise minimum and maximum
+  | min (m n : Nat) (r : Nat := 0)
+  | max (m n : Nat) (r : Nat := 0)
   | transpose (m n : Nat) (r : Nat := 0)
   | ite (s : SortsLRA)
   | id (s : SortsLRA)
@@ -98,10 +99,10 @@ instance : HasSignature SortsLRA Gen where
     | .le m n r | .lt m n r | .ge m n r | .gt m n r | .eq m n r | .ne m n r =>
         { dom := [.real m n r, .real m n r], cod := [.bool m n] }
     | .linear A _ b r _ => { dom := [.real A.cols b r], cod := [.real A.rows b r] }
-    | .add m n r | .sub m n r =>
+    | .add m n r | .sub m n r | .min m n r | .max m n r =>
         { dom := [.real m n r, .real m n r], cod := [.real m n r] }
     | .relu m n r => { dom := [.real m n r], cod := [.real m n r] }
-    | .argmax i j ri m n r _ | .min i j ri m n r _ | .max i j ri m n r _ =>
+    | .argmax i j ri m n r _ =>
         { dom := [.real i j ri], cod := [.real m n r] }
     | .transpose m n r => { dom := [.real m n r], cod := [.real n m r] }
     | .ite s => { dom := [.bool 1 1, s, s], cod := [s] }
