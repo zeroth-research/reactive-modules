@@ -1,6 +1,7 @@
 --import Init.Data.List.Basic
 
 import Zrth.Theory
+import Zrth.Theory.Sorts
 
 /-!
 # Reactive modules
@@ -12,7 +13,7 @@ namespace Zrth
 
 universe u v n
 
-variable (S: Type u) [MultiSort S]
+variable (S: Type u) [Tangent S]
 
 abbrev Name := Nat
 
@@ -25,7 +26,16 @@ deriving DecidableEq
 
 /-- An atom: the variables it controls, reads (latched) and waits on
 (current round), and the diagrams computing its initial, update and flow
-behavior. -/
+behavior.
+
+The faces of the variables are given by the role and the list:
+
+| role     | writes                  | reads                                    |
+|----------|-------------------------|------------------------------------------|
+| `init`   | next of `ctrl` (`s`)    | next of `wait` (`s`)                     |
+| `update` | next of `ctrl` (`s`)    | latched `read` (`s`), next of `wait` (`s`) |
+| `flow`   | derivative of `ctrl_f` (`T s`) | latched `read` (`s`), derivative of `wait` (`T s`) |
+-/
 structure Atom where
   read: List (Var S)
   wait: List (Var S)
@@ -47,13 +57,11 @@ structure Atom where
   -- The signature of init, update and flow must fit the list of variables
   init_sig_dom: init.dom = wait.map (fun v => v.sort) := by rfl
   update_sig_dom: update.dom = (read ++ wait).map (fun v => v.sort) := by rfl
-  -- TODO: it can await derivatives
-  flow_sig_dom: flow.dom = (read ++ wait).map (fun v => v.sort) := by rfl
+  flow_sig_dom: flow.dom = read.map (fun v => v.sort) ++ wait.map (fun v => Tangent.T v.sort) := by rfl
 
   init_sig_cod: init.cod = ctrl.map (fun v => v.sort) := by rfl
   update_sig_cod: update.cod = ctrl.map (fun v => v.sort) := by rfl
-  -- TODO: it should write only flow variables
-  flow_sig_cod: flow.cod = ctrl_f.map (fun v => v.sort) := by rfl
+  flow_sig_cod: flow.cod = ctrl_f.map (fun v => Tangent.T v.sort) := by rfl
 
 
 instance: HasSignature S (Atom S) where

@@ -37,7 +37,7 @@ def atom : Atom SortsLIA where
 
   init := { dom := [.bool 1 1], cod := [.bool 1 1, .bool 1 1] }
   update := { dom := [.bool 1 1, .bool 1 1, .bool 1 1], cod := [.bool 1 1, .bool 1 1] }
-  flow := { dom := [.bool 1 1, .bool 1 1, .bool 1 1], cod := [] }
+  flow := { dom := [.bool 1 1, .bool 1 1, .zero], cod := [] }
 
 /-- The counter: `enable` comes from the environment, the bits are visible. -/
 def counter : Module SortsLIA where

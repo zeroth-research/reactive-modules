@@ -31,7 +31,7 @@ def atom : Atom SortsLRA where
 
   init := { dom := [.real 1 1], cod := [.real 1 1] }
   update := { dom := [.real 1 1, .real 1 1], cod := [.real 1 1] }
-  flow := { dom := [.real 1 1, .real 1 1], cod := [] }
+  flow := { dom := [.real 1 1, .real 1 1 1], cod := [] }
 
 /-- The accumulator: `u` comes from the environment, the sum is visible. -/
 def accumulator : Module SortsLRA where
