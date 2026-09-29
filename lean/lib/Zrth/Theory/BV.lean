@@ -109,6 +109,7 @@ instance : Combinatorial SortsBV Gen where
     | .bv w m n => .havoc w m n
     -- havoc over a singleton is the singleton
     | .zero => .zero
+  havoc_sig s := by cases s <;> rfl
 
 end BV
 

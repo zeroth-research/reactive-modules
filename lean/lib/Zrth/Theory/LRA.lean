@@ -84,7 +84,8 @@ inductive Gen where
   /-- the zero derivative of grade `r + 1` -/
   | realZerograd (m n : Nat) (r : Nat := 0)
   | anyBool (m n : Nat)
-  | anyReal (m n : Nat)
+  /-- an arbitrary value or derivative -/
+  | anyReal (m n : Nat) (r : Nat := 0)
 
 /-- The signatures of the LRA generators. -/
 instance : HasSignature SortsLRA Gen where
@@ -110,7 +111,7 @@ instance : HasSignature SortsLRA Gen where
     | .zero => { dom := [], cod := [.zero] }
     | .realZerograd m n r => { dom := [], cod := [.real m n (r + 1)] }
     | .anyBool m n => { dom := [], cod := [.bool m n] }
-    | .anyReal m n => { dom := [], cod := [.real m n] }
+    | .anyReal m n r => { dom := [], cod := [.real m n r] }
 
 instance : Sequential SortsLRA Gen where
   skip s := .id s
@@ -119,9 +120,10 @@ instance : Sequential SortsLRA Gen where
 instance : Combinatorial SortsLRA Gen where
   havoc
     | .bool m n => .anyBool m n
-    | .real m n _ => .anyReal m n
+    | .real m n r => .anyReal m n r
     -- havoc over a singleton is the singleton
     | .zero => .zero
+  havoc_sig s := by cases s <;> rfl
 
 instance : Differential SortsLRA Gen where
   zero

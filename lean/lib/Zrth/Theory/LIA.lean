@@ -103,6 +103,7 @@ instance : Combinatorial SortsLIA Gen where
     | .bool m n => .anyBool m n
     -- havoc over a singleton is the singleton
     | .zero => .zero
+  havoc_sig s := by cases s <;> rfl
 
 end LIA
 

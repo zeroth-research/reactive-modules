@@ -112,7 +112,9 @@ theorem Gen.isSequential_of_isCombinatorial {g : Gen} (h : g.isCombinatorial) :
     g.isSequential := by
   cases g <;> simp_all [isCombinatorial, isSequential]
 
-instance : Combinatorial SortsAny Gen where havoc := .havoc
+instance : Combinatorial SortsAny Gen where
+  havoc := .havoc
+  havoc_sig _ := rfl
 instance : Sequential SortsAny Gen where
   skip := .skip
   skip_sig _ := rfl
@@ -122,8 +124,10 @@ instance : Differential SortsAny Gen where
 
 instance : Combinatorial SortsAny {g : Gen // g.isCombinatorial} where
   havoc s := ⟨.havoc s, rfl⟩
+  havoc_sig _ := rfl
 instance : Combinatorial SortsAny {g : Gen // g.isSequential} where
   havoc s := ⟨.havoc s, rfl⟩
+  havoc_sig _ := rfl
 instance : Sequential SortsAny {g : Gen // g.isSequential} where
   skip s := ⟨.skip s, rfl⟩
   skip_sig _ := rfl

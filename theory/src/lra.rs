@@ -204,9 +204,9 @@ impl Signature for LRA {
             LRA::Real(cm) => check_const(cm, false, read, write),
             LRA::Bool(cm) => check_const(cm, true, read, write),
             LRA::Zero() => check_zero(&Sort::Zero, read, write),
-            LRA::RealZerograd(shape) => check_real_zerograd(shape, read, write),
+            LRA::RealZerograd(shape) => check_real_source("ZERO", shape, 1, read, write),
             LRA::AnyBool(shape) => check_havoc(&Sort::Bool(*shape), read, write),
-            LRA::AnyReal(shape) => check_havoc(&Sort::real(*shape), read, write),
+            LRA::AnyReal(shape) => check_real_source("HAVOC", shape, 0, read, write),
             LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => check_bool(self, read, write),
             LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
                 check_cmp(self, read, write)
@@ -326,10 +326,14 @@ where
     Ok(())
 }
 
-// ZERO on the real fragment: writes exactly one real *tangent* wire (rank
-// at least 1) of the declared shape, and reads nothing.
-fn check_real_zerograd<R, W, E: fmt::Display>(
+// ZERO and HAVOC on the real fragment: write exactly one real wire of the
+// declared shape and of rank at least `min_rank`, and read nothing. ZERO
+// writes derivatives (rank at least 1); HAVOC values or derivatives, so that
+// `havoc(range)` writes `range` for every real sort.
+fn check_real_source<R, W, E: fmt::Display>(
+    name: &str,
     shape: &[usize; 2],
+    min_rank: u8,
     read: R,
     write: W,
 ) -> Result<(), String>
@@ -338,22 +342,22 @@ where
     W: IntoIterator<Item = Result<Sort, E>>,
 {
     if read.into_iter().next().is_some() {
-        return Err("ZERO expects no read wires".to_string());
+        return Err(format!("{name} expects no read wires"));
     }
     let mut write = write.into_iter();
     match write.next() {
-        Some(Ok(Sort::Real { shape: s, rank })) if s == *shape && rank >= 1 => {}
+        Some(Ok(Sort::Real { shape: s, rank })) if s == *shape && rank >= min_rank => {}
         Some(Ok(sort)) => {
             return Err(format!(
-                "ZERO expects write of a real tangent of shape {:?}, got {}",
+                "{name} expects write of a real of shape {:?} and rank at least {min_rank}, got {}",
                 shape, sort
             ));
         }
         Some(Err(e)) => return Err(e.to_string()),
-        None => return Err("ZERO expects exactly one write wire, got none".to_string()),
+        None => return Err(format!("{name} expects exactly one write wire, got none")),
     }
     if write.next().is_some() {
-        return Err("ZERO expects exactly one write wire, got more".to_string());
+        return Err(format!("{name} expects exactly one write wire, got more"));
     }
     Ok(())
 }
@@ -1204,6 +1208,19 @@ mod tests {
                 .check([].map(ok), [bool_t(1, 1)].map(ok))
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn havoc_writes_every_real_sort() {
+        // `havoc(range)` writes `range`, derivatives included
+        for range in [real(2, 1), dreal(2, 1), bool_t(2, 1), Sort::Zero] {
+            assert!(
+                LRA::havoc(&range)
+                    .check([].map(ok), [range].map(ok))
+                    .is_ok(),
+                "havoc({range})"
+            );
+        }
     }
 
     #[test]

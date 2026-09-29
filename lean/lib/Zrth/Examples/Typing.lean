@@ -69,9 +69,8 @@ example : ¬ (Any.Gen.skip (.int 1 1)).isCombinatorial := by decide
 
 /-! ## Structural generators -/
 
--- As in the Rust crate, `havoc` of a derivative does not have its signature:
--- `AnyReal` writes values.
-example : signature (Combinatorial.havoc (G := LRA.Gen) (.real 2 2 1)) ≠ ⟨[], [.real 2 2 1]⟩ := by
-  decide
+-- `havoc` writes its range, derivatives included
+example : Box thrLRA :=
+  { gen := Combinatorial.havoc (.real 2 2 1), read := [], write := [⟨0, .real 2 2 1⟩] }
 
 end Zrth.Examples.Typing

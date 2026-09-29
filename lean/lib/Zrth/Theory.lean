@@ -53,6 +53,7 @@ instance [HasSignature S α] {p : α → Bool} : HasSignature S {a : α // p a} 
 class Combinatorial (S : outParam (Type u)) [MultiSort S] (G : Type v) [HasSignature S G] where
   /-- the generator choosing a value of sort `range` -/
   havoc : (range : S) → G
+  havoc_sig : ∀ s, HasSignature.signature (havoc s) = ⟨[], [s]⟩
 
 /-- Generators with a copy of every sort (mirrors `theory::Sequential`). -/
 class Sequential (S : outParam (Type u)) [MultiSort S] (G : Type v) [HasSignature S G] where
