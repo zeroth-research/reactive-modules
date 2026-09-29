@@ -7,6 +7,7 @@ use derive_more::From;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
+use std::num::NonZeroU8;
 use subenum::subenum;
 
 // The enum is defined twice, gated on the `pyo3` feature: the variant-level
@@ -18,12 +19,15 @@ use subenum::subenum;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sort {
     Bool([usize; 2]),
-    /// A real tensor; `rank` is the differential grade: 0 = value,
-    /// 1 = first derivative, ...
-    #[pyo3(constructor = (shape, rank = 0))]
+    /// A real tensor: a value.
     Real {
         shape: [usize; 2],
-        rank: u8,
+    },
+    /// The `order`-th derivative of a real tensor of the given shape.
+    #[pyo3(constructor = (shape, order = NonZeroU8::MIN))]
+    DeltaReal {
+        shape: [usize; 2],
+        order: NonZeroU8,
     },
     Int([usize; 2]),
     BitVec(usize, [usize; 2]),
@@ -36,11 +40,14 @@ pub enum Sort {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sort {
     Bool([usize; 2]),
-    /// A real tensor; `rank` is the differential grade: 0 = value,
-    /// 1 = first derivative, ...
+    /// A real tensor: a value.
     Real {
         shape: [usize; 2],
-        rank: u8,
+    },
+    /// The `order`-th derivative of a real tensor of the given shape.
+    DeltaReal {
+        shape: [usize; 2],
+        order: NonZeroU8,
     },
     Int([usize; 2]),
     BitVec(usize, [usize; 2]),
@@ -50,22 +57,27 @@ pub enum Sort {
 }
 
 impl Sort {
-    /// A real value sort (rank 0).
+    /// A real value sort.
     pub fn real(shape: [usize; 2]) -> Self {
-        Sort::Real { shape, rank: 0 }
+        Sort::Real { shape }
     }
 }
 
-/// The tangent former: reals grade up (`rank + 1`, same carrier); the
+/// The tangent former: reals are differentiated (same carrier, one order
+/// up); the
 /// constant sorts (Bool, Int, BitVec) collapse to the trivial tangent
 /// `Zero`, which is a fixed point.
 impl Tangent for Sort {
     #[allow(non_snake_case)]
     fn T(&self) -> Self {
         match *self {
-            Sort::Real { shape, rank } => Sort::Real {
+            Sort::Real { shape } => Sort::DeltaReal {
                 shape,
-                rank: rank + 1,
+                order: NonZeroU8::MIN,
+            },
+            Sort::DeltaReal { shape, order } => Sort::DeltaReal {
+                shape,
+                order: order.checked_add(1).expect("derivative order overflows u8"),
             },
             Sort::Bool(_) | Sort::Int(_) | Sort::BitVec(..) => Sort::Zero(),
             Sort::Zero() => Sort::Zero(),
@@ -79,11 +91,11 @@ impl fmt::Display for Sort {
             Sort::Bool(shape) => {
                 write!(f, "Bool([{},{}])", shape[0], shape[1])
             }
-            Sort::Real { shape, rank: 0 } => {
+            Sort::Real { shape } => {
                 write!(f, "Real([{},{}])", shape[0], shape[1])
             }
-            Sort::Real { shape, rank } => {
-                write!(f, "T{} Real([{},{}])", rank, shape[0], shape[1])
+            Sort::DeltaReal { shape, order } => {
+                write!(f, "T{} Real([{},{}])", order, shape[0], shape[1])
             }
             Sort::Int(shape) => {
                 write!(f, "Int([{},{}])", shape[0], shape[1])
@@ -121,7 +133,8 @@ impl From<lra::Sort> for Sort {
     fn from(value: lra::Sort) -> Self {
         match value {
             lra::Sort::Bool(shape) => Sort::Bool(shape),
-            lra::Sort::Real { shape, rank } => Sort::Real { shape, rank },
+            lra::Sort::Real(shape) => Sort::Real { shape },
+            lra::Sort::DeltaReal { shape, order } => Sort::DeltaReal { shape, order },
             lra::Sort::Zero => Sort::Zero(),
         }
     }
@@ -158,7 +171,8 @@ impl TryFrom<Sort> for lra::Sort {
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
             Sort::Bool(shape) => Ok(lra::Sort::Bool(shape)),
-            Sort::Real { shape, rank } => Ok(lra::Sort::Real { shape, rank }),
+            Sort::Real { shape } => Ok(lra::Sort::Real(shape)),
+            Sort::DeltaReal { shape, order } => Ok(lra::Sort::DeltaReal { shape, order }),
             Sort::Zero() => Ok(lra::Sort::Zero),
             _ => Err("invalid cast".to_string()),
         }

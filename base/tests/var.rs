@@ -82,7 +82,7 @@ fn variables_pass_into_term_constructors() {
 #[test]
 fn variable_fail_into_term_constructors() {
     let x = Var::new(Sort::real([1, 1]));
-    // dx = x: the derivative wire carries the tangent sort (rank 1), and
-    // Id never crosses ranks
+    // dx = x: the derivative wire carries the tangent sort (`DeltaReal`), and
+    // Id never crosses from values to derivatives
     assert!(Term::function(LRA::Id(), [d(x)], [x]).is_err());
 }

@@ -10,7 +10,7 @@ helpers below).
 
 import torch
 from .zrth import Wire, Term, LRA, LIA, BV, Var
-from .sort import Sort, Bool, Real, Int, BitVec
+from .sort import Sort, Bool, Real, DeltaReal, Int, BitVec
 
 
 def _wire(t) -> Wire:
@@ -43,7 +43,7 @@ def _normalize_shape(shape: list) -> list:
 
 def _shape(sort: Sort) -> list:
     match sort:
-        case Bool(s) | Int(s) | Real(s):
+        case Bool(s) | Int(s) | Real(s) | DeltaReal(s, _):
             return list(s)
         case BitVec(_, s):
             return list(s)
@@ -58,6 +58,8 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Int(shape)
         case Real(_):
             return Real(shape)
+        case DeltaReal(_, order):
+            return DeltaReal(shape, order)
         case BitVec(bw, _):
             return BitVec(bw, shape)
     raise TypeError(f"unknown sort: {sort}")

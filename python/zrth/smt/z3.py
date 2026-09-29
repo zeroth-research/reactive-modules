@@ -8,14 +8,14 @@ yet (BV ops fall through to a clear error).
 import z3 as _z3
 import torch
 from ..zrth import LRA, LIA, BV, Combinatorial
-from ..sort import Real, Int, Bool
+from ..sort import Real, DeltaReal, Int, Bool
 import numpy as _np
 import operator
 
 
 def fresh(dtype, prefix):
     match dtype:
-        case Real([n, m]):
+        case Real([n, m]) | DeltaReal([n, m], _):
             return _np.array([[_z3.FreshReal(f'{prefix}[{i},{j}]') for j in range(m)] for i in range(n)], dtype=object)
         case Bool([n, m]):
             return _np.array([[_z3.FreshBool(f'{prefix}[{i},{j}]') for j in range(m)] for i in range(n)], dtype=object)

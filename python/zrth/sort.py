@@ -20,6 +20,7 @@ _KINDS = (
     (_Sort.Bool, torch.bool, "boolean"),
     (_Sort.Int, torch.int64, "integer"),
     (_Sort.Real, torch.float32, "real"),
+    (_Sort.DeltaReal, torch.float32, "real derivative"),
     (_Sort.BitVec, torch.int64, "bit-vector"),
 )
 

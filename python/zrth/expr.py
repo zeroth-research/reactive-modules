@@ -42,7 +42,7 @@ from typing import override
 import torch
 
 from .zrth import Term, Wire, LRA, LIA, BV, Var, X as _X, d as _d
-from .sort import Sort, Bool, Int, Real, BitVec, tensor_for
+from .sort import Sort, Bool, Int, Real, DeltaReal, BitVec, tensor_for
 from .builder import NonLinearError
 
 
@@ -51,7 +51,7 @@ from .builder import NonLinearError
 
 def _shape(sort: Sort) -> list:
     match sort:
-        case Bool(s) | Int(s) | Real(s):
+        case Bool(s) | Int(s) | Real(s) | DeltaReal(s, _):
             return list(s)
         case BitVec(_, s):
             return list(s)
@@ -66,6 +66,8 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Int(shape)
         case Real(_):
             return Real(shape)
+        case DeltaReal(_, order):
+            return DeltaReal(shape, order)
         case BitVec(bw, _):
             return BitVec(bw, shape)
     raise TypeError(f"unknown sort: {sort}")
@@ -86,7 +88,8 @@ def _family(sort: Sort) -> str:
             return "Bool"
         case Int(_):
             return "Int"
-        case Real(_):
+        # values and derivatives combine (e.g. `x * d(t)`); the theory checks the order
+        case Real(_) | DeltaReal(_, _):
             return "Real"
         case BitVec(bw, _):
             return f"BitVec{bw}"
@@ -142,7 +145,7 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
     match wire.dtype:
         case Bool(_):
             return BExpr(wire, theory, next=next, value=value, tag=tag)
-        case Int(_) | Real(_):
+        case Int(_) | Real(_) | DeltaReal(_, _):
             return AExpr(wire, theory, next=next, value=value, tag=tag)
         case BitVec(_, _):
             return WExpr(wire, theory, next=next, value=value, signed=signed, tag=tag)
@@ -154,13 +157,13 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
 # ---------------------------------------------------------------------------
 
 
-def _inherit_rank(out: Sort, src: Sort) -> Sort:
-    """The result sort inherits the operand's differential rank (reals
+def _inherit_order(out: Sort, src: Sort) -> Sort:
+    """The result sort inherits the operand's derivative order (reals
     only): operations over derivative wires stay in the derivative
     fragment, values stay values."""
     match out, src:
-        case Real(shape, _), Real(_, rank) if rank:
-            return Real(shape, rank)
+        case Real(shape), DeltaReal(_, order):
+            return DeltaReal(shape, order)
         case _:
             return out
 
@@ -215,8 +218,10 @@ class Expr:
         # a coerced literal inherits this expr's signedness (so `5 + xs` and `xs + 5`
         # agree for a signed bit-vector `xs`); it is ignored for non bit-vector sorts.
 
+        # a literal is a value: next to a derivative, it is a real value
+        family = Real if isinstance(self.dtype, DeltaReal) else type(self.dtype)
         return o if isinstance(o, Expr) else expr(
-            o, theory=self._theory, sort=type(self.dtype), bw=self._bw(), signed=getattr(self, "_signed", False))
+            o, theory=self._theory, sort=family, bw=self._bw(), signed=getattr(self, "_signed", False))
 
     def _coerce_same(self, o) -> "Expr":
         o = self._coerce(o)
@@ -247,15 +252,15 @@ class Expr:
     def _binop(self, op, out: Sort, o) -> "Expr":
         """Coerce `o` to my sort, then build a binary Term with `op` and output sort `out`.
 
-        The result sort inherits this expression's differential rank, so
+        The result sort inherits this expression's derivative order, so
         operations over derivative wires (e.g. `d(t) + d(t)`) stay in the
         derivative fragment."""
         o = self._coerce_same(o)
-        out = _inherit_rank(out, self.dtype)
+        out = _inherit_order(out, self.dtype)
         return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
 
     def _unop(self, op, out: Sort | None = None) -> "Expr":
-        out = _inherit_rank(out if out is not None else self.dtype, self.dtype)
+        out = _inherit_order(out if out is not None else self.dtype, self.dtype)
         return self._result(Term(op, [Wire(out)], [self._wire]))
 
     @override
@@ -314,7 +319,7 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
         n = v.shape[0]
         A = torch.eye(n, dtype=scalar_dtype) * c._value.item()
         bias = torch.zeros(n, 1, dtype=scalar_dtype)
-        # v.dtype carries the differential rank, so the output inherits it
+        # v.dtype carries the derivative order, so the output inherits it
         return Term(linear(A, bias), [Wire(v.dtype)], [v._wire])
     raise NonLinearError(theory.__name__)
 

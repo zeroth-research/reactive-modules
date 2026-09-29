@@ -4,11 +4,14 @@
 Defines the theory [`LRA`] of linear real arithmetic over matrices,
 mixing real and boolean matrices in a single signature.
 
-A [`Sort`] value is `Real { shape, rank }`, `Bool(shape)`, or `Zero`. The
-`rank` is the differential grade: 0 is a value, 1 a first derivative, and
-so on — the sort former [`Tangent`] raises it. Booleans are constant
-sorts: their tangent is [`Sort::Zero`], the inhabited singleton whose only
-writer is the `zero` generator. The operations in [`LRA`] are:
+A [`Sort`] value is `Real(shape)`, `DeltaReal { shape, order }`, `Bool(shape)`,
+or `Zero`. Values and their derivatives are different sorts: `DeltaReal` is the
+`order`-th derivative of a real matrix, and the sort former [`Tangent`] maps
+`Real` to `DeltaReal` and raises the order of a `DeltaReal`. Booleans are
+constant sorts: their tangent is [`Sort::Zero`], the inhabited singleton whose
+only writer is the `zero` generator. The linear operations (`Add`, `Sub`,
+`Linear`, `Transpose`, `Ite`, `Id`) act on values and derivatives alike; the
+others on values only. The operations in [`LRA`] are:
 
 - [`LRA::Real`], [`LRA::Bool`] — real and boolean matrix literals; the
   tensor's element kind must match the variant.
@@ -48,12 +51,14 @@ use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 use std::fmt;
+use std::num::NonZeroU8;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum Sort {
-    /// A real tensor; `rank` is the differential grade: 0 = value,
-    /// 1 = first derivative, ...
-    Real { shape: [usize; 2], rank: u8 },
+    /// A real tensor: a value.
+    Real([usize; 2]),
+    /// The `order`-th derivative of a real tensor of the given shape.
+    DeltaReal { shape: [usize; 2], order: NonZeroU8 },
     /// A boolean tensor: a constant sort — it cannot move during delay.
     Bool([usize; 2]),
     /// The trivial tangent: a singleton, inhabited by exactly the zero
@@ -62,22 +67,42 @@ pub enum Sort {
 }
 
 impl Sort {
-    /// A real value sort (rank 0).
+    /// A real value sort.
     pub fn real(shape: [usize; 2]) -> Self {
-        Sort::Real { shape, rank: 0 }
+        Sort::Real(shape)
+    }
+
+    /// The `order`-th derivative of a real value (the value itself for
+    /// `order = 0`): the sorts the linear operations act on.
+    pub fn graded(shape: [usize; 2], order: u8) -> Self {
+        match NonZeroU8::new(order) {
+            None => Sort::Real(shape),
+            Some(order) => Sort::DeltaReal { shape, order },
+        }
+    }
+
+    /// The shape and derivative order of a real value (order 0) or
+    /// derivative; `None` for the other sorts.
+    pub fn as_graded(&self) -> Option<([usize; 2], u8)> {
+        match *self {
+            Sort::Real(shape) => Some((shape, 0)),
+            Sort::DeltaReal { shape, order } => Some((shape, order.get())),
+            Sort::Bool(_) | Sort::Zero => None,
+        }
     }
 
     pub fn is_bool(&self) -> bool {
         matches!(self, Sort::Bool(..))
     }
 
+    /// Whether this is a real value (not a derivative).
     pub fn is_real(&self) -> bool {
-        matches!(self, Sort::Real { .. })
+        matches!(self, Sort::Real(..))
     }
 
     pub fn shape(&self) -> Option<&[usize; 2]> {
         match self {
-            Sort::Bool(shape) | Sort::Real { shape, .. } => Some(shape),
+            Sort::Bool(shape) | Sort::Real(shape) | Sort::DeltaReal { shape, .. } => Some(shape),
             Sort::Zero => None,
         }
     }
@@ -87,11 +112,14 @@ impl Tangent for Sort {
     #[allow(non_snake_case)]
     fn T(&self) -> Self {
         match *self {
-            // the carrier (shape) is unchanged: the grade rides where
-            // `check` can see it
-            Sort::Real { shape, rank } => Sort::Real {
+            // the carrier (shape) is unchanged, the order goes up
+            Sort::Real(shape) => Sort::DeltaReal {
                 shape,
-                rank: rank + 1,
+                order: NonZeroU8::MIN,
+            },
+            Sort::DeltaReal { shape, order } => Sort::DeltaReal {
+                shape,
+                order: order.checked_add(1).expect("derivative order overflows u8"),
             },
             // constant sorts have the trivial tangent
             Sort::Bool(_) => Sort::Zero,
@@ -104,14 +132,11 @@ impl Tangent for Sort {
 impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Sort::Real {
+            Sort::Real([i, j]) => write!(f, "Real({i}, {j})"),
+            Sort::DeltaReal {
                 shape: [i, j],
-                rank: 0,
-            } => write!(f, "Real({i}, {j})"),
-            Sort::Real {
-                shape: [i, j],
-                rank,
-            } => write!(f, "T{rank} Real({i}, {j})"),
+                order,
+            } => write!(f, "T{order} Real({i}, {j})"),
             Sort::Bool([i, j]) => write!(f, "Bool({i}, {j})"),
             Sort::Zero => write!(f, "Zero"),
         }
@@ -174,7 +199,7 @@ impl Combinatorial for LRA {
     fn havoc(range: &Self::Sort) -> Self {
         match range {
             Sort::Bool(shape) => LRA::AnyBool(*shape),
-            Sort::Real { shape, .. } => LRA::AnyReal(*shape),
+            Sort::Real(shape) | Sort::DeltaReal { shape, .. } => LRA::AnyReal(*shape),
             // havoc over a singleton is the singleton
             Sort::Zero => LRA::Zero(),
         }
@@ -185,7 +210,7 @@ impl Differential for LRA {
     fn zero(range: &Self::Sort) -> Self {
         // `range` is the tangent sort the generator writes
         match range {
-            Sort::Real { shape, .. } => LRA::RealZerograd(*shape),
+            Sort::Real(shape) | Sort::DeltaReal { shape, .. } => LRA::RealZerograd(*shape),
             Sort::Bool(_) | Sort::Zero => LRA::Zero(),
         }
     }
@@ -277,12 +302,12 @@ where
     }
     // the write wire must have the sort of the variant, and the tensor its kind
     let [i, j] = match next_sort(&mut write, 0)? {
-        Sort::Real { shape, rank } => {
+        Sort::DeltaReal { .. } => {
+            return Err("Cannot derive a real. Use ZERO to apply a no change".to_string());
+        }
+        Sort::Real(shape) => {
             if bool_lit {
                 return Err("Const: a Bool literal cannot write a Real wire".into());
-            }
-            if rank != 0 {
-                return Err("Cannot derive a real. Use ZERO to apply a no change".to_string());
             }
             if cm.is_bool() {
                 return Err("Const: write wire is Real but initializer is a boolean tensor".into());
@@ -327,13 +352,14 @@ where
 }
 
 // ZERO and HAVOC on the real fragment: write exactly one real wire of the
-// declared shape and of rank at least `min_rank`, and read nothing. ZERO
-// writes derivatives (rank at least 1); HAVOC values or derivatives, so that
+// declared shape and of derivative order at least `min_order`, and read
+// nothing. ZERO writes derivatives (order at least 1); HAVOC values or
+// derivatives, so that
 // `havoc(range)` writes `range` for every real sort.
 fn check_real_source<R, W, E: fmt::Display>(
     name: &str,
     shape: &[usize; 2],
-    min_rank: u8,
+    min_order: u8,
     read: R,
     write: W,
 ) -> Result<(), String>
@@ -346,10 +372,13 @@ where
     }
     let mut write = write.into_iter();
     match write.next() {
-        Some(Ok(Sort::Real { shape: s, rank })) if s == *shape && rank >= min_rank => {}
+        Some(Ok(sort))
+            if sort
+                .as_graded()
+                .is_some_and(|(s, order)| s == *shape && order >= min_order) => {}
         Some(Ok(sort)) => {
             return Err(format!(
-                "{name} expects write of a real of shape {:?} and rank at least {min_rank}, got {}",
+                "{name} expects write of a real of shape {:?} and derivative order at least {min_order}, got {}",
                 shape, sort
             ));
         }
@@ -430,13 +459,11 @@ where
     if r1 != r2 {
         return Err(format!("{:?}: input values must have the same type", op));
     }
+    // comparisons are not linear: they compare values, not derivatives
     let shape = match r1 {
-        Sort::Real { shape, .. } => shape,
+        Sort::Real(shape) => shape,
         _ => {
-            return Err(format!(
-                "{:?}: inputs must be Real matrices, got {}",
-                op, r1
-            ));
+            return Err(format!("{:?}: inputs must be real values, got {}", op, r1));
         }
     };
     let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
@@ -481,10 +508,13 @@ where
                     op
                 ));
             }
-            if !matches!(w1, Sort::Real { .. }) {
+            // `Add` and `Sub` are linear, so they also act on derivatives
+            let linear = matches!(op, LRA::Add() | LRA::Sub());
+            if !(w1.is_real() || linear && w1.as_graded().is_some()) {
                 return Err(format!(
-                    "{:?}: input and output values must be real matrices",
-                    op
+                    "{:?}: input and output values must be real {}",
+                    op,
+                    if linear { "matrices" } else { "values" }
                 ));
             }
             Ok(())
@@ -502,11 +532,8 @@ where
                     op
                 ));
             }
-            if !matches!(w1, Sort::Real { .. }) {
-                return Err(format!(
-                    "{:?}: input and output values must be real matrices",
-                    op
-                ));
+            if !w1.is_real() {
+                return Err(format!("{:?}: input and output must be real values", op));
             }
             Ok(())
         }
@@ -514,8 +541,8 @@ where
             let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            if !matches!(r1, Sort::Real { .. }) {
-                return Err(format!("{:?}: input must be a real matrix, got {r1}", op));
+            if !r1.is_real() {
+                return Err(format!("{:?}: input must be a real value, got {r1}", op));
             }
             let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
@@ -572,17 +599,9 @@ where
         (b_size[0] as usize, b_size[1] as usize)
     };
 
-    match (r1, w1) {
-        (
-            Sort::Real {
-                shape: [d1, d2],
-                rank: rank0,
-            },
-            Sort::Real {
-                shape: [d3, d4],
-                rank: rank1,
-            },
-        ) => {
+    // linear, so it acts on derivatives too, keeping their order
+    match (r1.as_graded(), w1.as_graded()) {
+        (Some(([d1, d2], order0)), Some(([d3, d4], order1))) => {
             // X has shape [d1=in, d2=batch]; A has shape [a_rows=out, a_cols=in].
             if d1 != a_cols {
                 return Err(format!(
@@ -604,8 +623,8 @@ where
                     op, a_rows, d2, d3, d4
                 ));
             }
-            if rank0 != rank1 {
-                return Err("Differential form rank mismatch".to_string());
+            if order0 != order1 {
+                return Err("Derivative order mismatch".to_string());
             }
             Ok(())
         }
@@ -626,25 +645,17 @@ where
     let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
         return Err(format!("{:?}: must write exactly one value", op));
     };
-    match (r1, w1) {
-        (
-            Sort::Real {
-                shape: [d1, d2],
-                rank: rank0,
-            },
-            Sort::Real {
-                shape: [e1, e2],
-                rank: rank1,
-            },
-        ) => {
+    // linear, so it acts on derivatives too, keeping their order
+    match (r1.as_graded(), w1.as_graded()) {
+        (Some(([d1, d2], order0)), Some(([e1, e2], order1))) => {
             if d2 != e1 || d1 != e2 {
                 return Err(format!(
                     "{:?}: transpose of {}x{} must produce {}x{}, got {}x{}",
                     op, d1, d2, d2, d1, e1, e2
                 ));
             }
-            if rank0 != rank1 {
-                return Err("Differential form rank mismatch".to_string());
+            if order0 != order1 {
+                return Err("Derivative order mismatch".to_string());
             }
             Ok(())
         }
@@ -719,12 +730,9 @@ mod tests {
         Sort::real([r, c])
     }
 
-    /// A real tangent (first derivative, rank 1).
+    /// A real tangent (first derivative).
     fn dreal(r: usize, c: usize) -> Sort {
-        Sort::Real {
-            shape: [r, c],
-            rank: 1,
-        }
+        Sort::graded([r, c], 1)
     }
 
     fn bool_t(r: usize, c: usize) -> Sort {
@@ -739,21 +747,19 @@ mod tests {
     fn type_kind_and_shape() {
         assert!(real(2, 3).is_real() && !real(2, 3).is_bool());
         assert_eq!(real(2, 3).shape(), Some(&[2, 3]));
+        // a derivative is a real matrix, but not a value
+        assert!(!dreal(2, 3).is_real());
+        assert_eq!(dreal(2, 3).shape(), Some(&[2, 3]));
+        assert_eq!(dreal(2, 3).as_graded(), Some(([2, 3], 1)));
         assert!(bool_t(1, 1).is_bool() && !bool_t(1, 1).is_real());
         assert_eq!(Sort::Zero.shape(), None);
     }
 
     #[test]
     fn tangent_grades_reals_and_collapses_bools() {
-        // Real -> Real with rank + 1: the carrier is unchanged
+        // Real -> DeltaReal, and one order up: the carrier is unchanged
         assert_eq!(real(2, 3).T(), dreal(2, 3));
-        assert_eq!(
-            dreal(2, 3).T(),
-            Sort::Real {
-                shape: [2, 3],
-                rank: 2
-            }
-        );
+        assert_eq!(dreal(2, 3).T(), Sort::graded([2, 3], 2));
         // constant sorts have the trivial tangent, which is a fixed point
         assert_eq!(bool_t(1, 1).T(), Sort::Zero);
         assert_eq!(Sort::Zero.T(), Sort::Zero);
@@ -771,8 +777,8 @@ mod tests {
 
     #[test]
     fn const_real_covector_write_fails() {
-        // a real constant writes a value (rank 0), never a derivative:
-        // a tangent (rank 1) write wire must be rejected
+        // a real constant writes a value, never a derivative:
+        // a tangent write wire must be rejected
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64]]).into();
         assert!(
             LRA::Real(cm)
@@ -950,6 +956,25 @@ mod tests {
     }
 
     #[test]
+    fn non_linear_ops_reject_derivatives() {
+        // comparisons and the non-linear operations take values only
+        let (d, b) = (dreal(1, 1), bool_t(1, 1));
+        assert!(LRA::Lt().check([d, d].map(ok), [b].map(ok)).is_err());
+        assert!(LRA::Eq().check([d, d].map(ok), [b].map(ok)).is_err());
+        assert!(LRA::ReLU().check([d].map(ok), [d].map(ok)).is_err());
+        assert!(LRA::Min().check([d, d].map(ok), [d].map(ok)).is_err());
+        assert!(LRA::Max().check([d, d].map(ok), [d].map(ok)).is_err());
+        assert!(
+            LRA::Argmax()
+                .check([d].map(ok), [real(1, 1)].map(ok))
+                .is_err()
+        );
+        // the linear ones act on derivatives
+        assert!(LRA::Add().check([d, d].map(ok), [d].map(ok)).is_ok());
+        assert!(LRA::Sub().check([d, d].map(ok), [d].map(ok)).is_ok());
+    }
+
+    #[test]
     fn cmp_surplus_wires_fail() {
         let (t, b) = (real(1, 1), bool_t(1, 1));
         assert!(LRA::Lt().check([t, t, t].map(ok), [b].map(ok)).is_err());
@@ -973,10 +998,10 @@ mod tests {
 
     #[test]
     fn add_tangents_ok() {
-        // bundle addition: Add acts rank-generically
+        // bundle addition: Add acts on derivatives too
         let dt = dreal(3, 4);
         assert!(LRA::Add().check([dt, dt].map(ok), [dt].map(ok)).is_ok());
-        // but never across ranks
+        // but never across orders
         assert!(
             LRA::Add()
                 .check([dt, real(3, 4)].map(ok), [dt].map(ok))
@@ -1085,8 +1110,8 @@ mod tests {
     }
 
     #[test]
-    fn linear_rank_mismatch_fails() {
-        // a linear map applies rank-generically, but never across ranks
+    fn linear_order_mismatch_fails() {
+        // a linear map applies to derivatives too, but never across orders
         let a: crate::PyTensor =
             tch::Tensor::zeros([2, 3], (tch::Kind::Double, tch::Device::Cpu)).into();
         let b: crate::PyTensor =
@@ -1192,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn id_rank_mismatch_fails() {
+    fn id_order_mismatch_fails() {
         assert!(
             LRA::Id()
                 .check([real(1, 1)].map(ok), [dreal(1, 1)].map(ok))
@@ -1263,7 +1288,7 @@ mod tests {
 
     #[test]
     fn zero_ok() {
-        // ZERO writes a real tangent (rank 1), never a value
+        // ZERO writes a real tangent, never a value
         assert!(
             LRA::RealZerograd([2, 1])
                 .check([].map(ok), [dreal(2, 1)].map(ok))
