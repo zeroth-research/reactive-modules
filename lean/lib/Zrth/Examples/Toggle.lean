@@ -45,14 +45,14 @@ def wT' : Wire SortsLIA := ⟨1, .bool 1 1⟩
 
 /-- `t' := false` -/
 def initDiagram : Diagram thrLIA where
-  boxes := [{ gen := .bool 1 1 (fun _ _ => false), read := [], write := [wT'] }]
+  boxes := [{ gen := .bool ⟨1, 1, fun _ _ => false⟩, read := [], write := [wT'] }]
   read := []
   write := [wT']
   wires := [wT']
 
 /-- `t' := ¬t` -/
 def updateDiagram : Diagram thrLIA where
-  boxes := [{ gen := .not 1 1, read := [wT], write := [wT'] }]
+  boxes := [{ gen := .not, read := [wT], write := [wT'] }]
   read := [wT]
   write := [wT']
   wires := [wT, wT']

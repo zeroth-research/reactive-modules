@@ -1,6 +1,7 @@
 import Zrth.Examples.Toggle
 import Zrth.Examples.TwoBit
 import Zrth.Examples.Accumulator
+import Zrth.Examples.Typing
 
 /-!
 # Examples

@@ -65,8 +65,8 @@ def wB0AndEnable : Wire SortsLIA := ⟨7, .bool 1 1⟩
 /-- `b0' := false; b1' := false` -/
 def initDiagram : Diagram thrLIA where
   boxes := [
-    { gen := .bool 1 1 ff, read := [], write := [wB0'] },
-    { gen := .bool 1 1 ff, read := [], write := [wB1'] }
+    { gen := .bool ⟨1, 1, ff⟩, read := [], write := [wB0'] },
+    { gen := .bool ⟨1, 1, ff⟩, read := [], write := [wB1'] }
   ]
   read := [wEnable]
   write := [wB0', wB1']
@@ -75,11 +75,11 @@ def initDiagram : Diagram thrLIA where
 /-- `b0' := ite enable' (¬b0) b0; b1' := ite (b0 ∧ enable') (¬b1) b1` -/
 def updateDiagram : Diagram thrLIA where
   boxes := [
-    { gen := .not 1 1, read := [wB0], write := [wNotB0] },
-    { gen := .ite (.bool 1 1), read := [wEnable, wNotB0, wB0], write := [wB0'] },
-    { gen := .and 1 1, read := [wB0, wEnable], write := [wB0AndEnable] },
-    { gen := .not 1 1, read := [wB1], write := [wNotB1] },
-    { gen := .ite (.bool 1 1), read := [wB0AndEnable, wNotB1, wB1], write := [wB1'] }
+    { gen := .not, read := [wB0], write := [wNotB0] },
+    { gen := .ite, read := [wEnable, wNotB0, wB0], write := [wB0'] },
+    { gen := .and, read := [wB0, wEnable], write := [wB0AndEnable] },
+    { gen := .not, read := [wB1], write := [wNotB1] },
+    { gen := .ite, read := [wB0AndEnable, wNotB1, wB1], write := [wB1'] }
   ]
   read := [wB0, wB1, wEnable]
   write := [wB0', wB1']
