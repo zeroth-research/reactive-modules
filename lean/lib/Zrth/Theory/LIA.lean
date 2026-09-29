@@ -197,9 +197,19 @@ instance : Elab SortsLIA Gen Inst where
     unfold Gen.infer at h
     split at h <;> (try split at h) <;> cases h <;> rfl
 
+instance : Sequential SortsLIA Gen where
+  skip _ := .id
+
+instance : Combinatorial SortsLIA Gen where
+  havoc
+    | .int m n => .anyInt m n
+    | .bool m n => .anyBool m n
+    -- havoc over a singleton is the singleton
+    | .zero => .zero
+
 end LIA
 
 /-- The theory of LIA. -/
-def thrLIA : Theory SortsLIA := { gen := LIA.Gen, inst := LIA.Inst }
+abbrev thrLIA : Theory SortsLIA := { gen := LIA.Gen, inst := LIA.Inst }
 
 end Zrth

@@ -223,9 +223,24 @@ instance : Elab SortsLRA Gen Inst where
     unfold Gen.infer at h
     split at h <;> (try split at h) <;> cases h <;> rfl
 
+instance : Sequential SortsLRA Gen where
+  skip _ := .id
+
+instance : Combinatorial SortsLRA Gen where
+  havoc
+    | .bool m n => .anyBool m n
+    | .real m n _ => .anyReal m n
+    -- havoc over a singleton is the singleton
+    | .zero => .zero
+
+instance : Differential SortsLRA Gen where
+  zero
+    | .real m n _ => .realZerograd m n
+    | .bool .. | .zero => .zero
+
 end LRA
 
 /-- The theory of LRA. -/
-def thrLRA : Theory SortsLRA := { gen := LRA.Gen, inst := LRA.Inst }
+abbrev thrLRA : Theory SortsLRA := { gen := LRA.Gen, inst := LRA.Inst }
 
 end Zrth

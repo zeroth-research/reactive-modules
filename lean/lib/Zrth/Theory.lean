@@ -135,6 +135,29 @@ end Elab
 
 
 /-! ----------------------------------------------------------
+  ## Structural generators
+- ------------------------------------------------------------/
+
+/-- Generators with an arbitrary value of every sort (mirrors
+`theory::Combinatorial`). -/
+class Combinatorial (S : outParam (Type u)) (G : Type v) where
+  /-- the generator choosing a value of sort `range` -/
+  havoc : (range : S) → G
+
+/-- Generators with a copy of every sort (mirrors `theory::Sequential`). -/
+class Sequential (S : outParam (Type u)) (G : Type v) where
+  /-- the generator leaving a value of sort `range` unchanged -/
+  skip : (range : S) → G
+
+/-- Generators with the zero of every tangent sort (mirrors
+`theory::Differential`). -/
+class Differential (S : outParam (Type u)) (G : Type v) where
+  /-- the generator writing the zero rate of change; `range` is the tangent
+  sort it writes -/
+  zero : (range : S) → G
+
+
+/-! ----------------------------------------------------------
   ## Theory
 - ------------------------------------------------------------/
 
