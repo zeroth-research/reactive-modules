@@ -279,6 +279,10 @@ impl Signature for BV {
             // does not fit into BV<N>
             BV::Not() | BV::Id() | BV::Neg() | BV::Abs() => {
                 let (r, w) = (next_sort(&mut read, 0)?, next_sort(&mut write, 0)?);
+                // `Id` copies any sort (it is `skip`), the others compute on bit-vectors
+                if !matches!(self, BV::Id()) {
+                    bv_bw(&r, self)?;
+                }
                 if r != w {
                     return Err(format!(
                         "{:?}: input and output type must be the same",
@@ -384,6 +388,7 @@ impl Signature for BV {
                 ) else {
                     return Err(format!("{:?}: must read exactly two values", self));
                 };
+                bv_bw(&r1, self)?;
                 if r1 != r2 {
                     return Err(format!("{:?}: input values must have the same type", self));
                 }
@@ -677,6 +682,27 @@ mod tests {
                 .check([bv(8, 1, 2), bv(8, 2, 1)].map(ok), [bv(8, 1, 2)].map(ok))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn zero_operands_fail() {
+        // arithmetic and bit-wise operations compute on bit-vectors only
+        let z = Sort::Zero;
+        for op in [
+            BV::Add(),
+            BV::Sub(),
+            BV::Mul(),
+            BV::And(),
+            BV::Or(),
+            BV::Xor(),
+        ] {
+            assert!(op.check([z, z].map(ok), [z].map(ok)).is_err(), "{op}");
+        }
+        for op in [BV::Not(), BV::Neg(), BV::Abs()] {
+            assert!(op.check([z].map(ok), [z].map(ok)).is_err(), "{op}");
+        }
+        // `Id` is `skip`, which copies any sort
+        assert!(BV::Id().check([z].map(ok), [z].map(ok)).is_ok());
     }
 
     #[test]

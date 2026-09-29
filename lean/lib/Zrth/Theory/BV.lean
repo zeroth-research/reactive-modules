@@ -9,10 +9,6 @@ Sorts and signature of matrices of fixed-width bit-vectors (mirrors
 The generators are those of `theory::bv::BV` at concrete sorts, so each has a
 fixed signature. All sorts are constant: their tangent is the trivial sort
 `zero`, whose only writer is the `zero` generator.
-
-As in `BV::check`, the element-wise operations that only compare their operand
-sorts (`not`, `id`, `neg`, `abs`, `and`, `or`, `xor`, `add`, `sub`, `mul`) also
-accept `zero` operands.
 -/
 
 namespace Zrth
@@ -40,18 +36,18 @@ def constFits (w : Nat) (c : Tensor Int) : Bool :=
 Operations follow the SMT-LIB2 semantics. -/
 inductive Gen where
   | const (w : Nat) (c : Tensor Int) (h : constFits w c = true)
-  -- element-wise operations on operands of sort `s`
-  | add (s : SortsBV)
-  | sub (s : SortsBV)
-  | mul (s : SortsBV)
-  | neg (s : SortsBV)
-  | abs (s : SortsBV)
-  | and (s : SortsBV)
-  | or (s : SortsBV)
-  | xor (s : SortsBV)
-  | not (s : SortsBV)
+  /-- copies a value of any sort (it is `skip`) -/
   | id (s : SortsBV)
   -- element-wise operations on `w`-bit `m × n` matrices
+  | add (w m n : Nat)
+  | sub (w m n : Nat)
+  | mul (w m n : Nat)
+  | neg (w m n : Nat)
+  | abs (w m n : Nat)
+  | and (w m n : Nat)
+  | or (w m n : Nat)
+  | xor (w m n : Nat)
+  | not (w m n : Nat)
   | udiv (w m n : Nat)
   | sdiv (w m n : Nat)
   | umod (w m n : Nat)
@@ -82,9 +78,10 @@ inductive Gen where
 instance : HasSignature SortsBV Gen where
   signature := fun g => match g with
     | .const w c _ => { dom := [], cod := [.bv w c.rows c.cols] }
-    | .add s | .sub s | .mul s | .and s | .or s | .xor s =>
-        { dom := [s, s], cod := [s] }
-    | .neg s | .abs s | .not s | .id s => { dom := [s], cod := [s] }
+    | .id s => { dom := [s], cod := [s] }
+    | .add w m n | .sub w m n | .mul w m n | .and w m n | .or w m n | .xor w m n =>
+        { dom := [.bv w m n, .bv w m n], cod := [.bv w m n] }
+    | .neg w m n | .abs w m n | .not w m n => { dom := [.bv w m n], cod := [.bv w m n] }
     | .udiv w m n | .sdiv w m n | .umod w m n | .smod w m n =>
         { dom := [.bv w m n, .bv w m n], cod := [.bv w m n] }
     | .matmul w m k n => { dom := [.bv w m k, .bv w k n], cod := [.bv w m n] }
