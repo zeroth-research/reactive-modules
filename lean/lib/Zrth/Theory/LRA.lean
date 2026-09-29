@@ -8,13 +8,6 @@ Sorts and (a fragment of) the signature of linear real arithmetic over matrices.
 
 namespace Zrth
 
-
-universe u
-
-/-- An `m × n` matrix with entries in `α`. -/
-def Mat (α : Type u) (m n : Nat) := Fin m → Fin n → α
-
-
 /-- Sorts of LRA: `m × n` matrices of reals or booleans, and the tangent sorts
 (`tan N m n` is the `N`-th tangent; `tan 0` is the zero tangent space). -/
 inductive SortsLRA where | real (m n : Nat) | bool (m n : Nat) | tan (N m n : Nat) deriving DecidableEq, Repr

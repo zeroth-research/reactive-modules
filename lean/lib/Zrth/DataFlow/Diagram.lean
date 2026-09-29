@@ -21,8 +21,8 @@ structure Box [MultiSort S] (thr: Theory S)  where
   write: List (Wire S)
 
   -- the wires must fit the signature of the generator
-  read_sig: read.map (fun w => w.sort) = (HasSignature.signature gen).dom
-  write_sig: write.map (fun w => w.sort) = (HasSignature.signature gen).cod
+  read_sig: read.map (fun w => w.sort) = (HasSignature.signature gen).dom := by rfl
+  write_sig: write.map (fun w => w.sort) = (HasSignature.signature gen).cod := by rfl
 
 /-- A box has the signature of its generator. -/
 instance [MultiSort S] {thr : Theory S} : HasSignature S (Box thr) where

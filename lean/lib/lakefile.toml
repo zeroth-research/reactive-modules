@@ -1,6 +1,10 @@
 name = "zrth"
 version = "0.1.0"
-defaultTargets = ["Zrth"]
+defaultTargets = ["Zrth", "Examples"]
 
 [[lean_lib]]
 name = "Zrth"
+
+[[lean_lib]]
+name = "Examples"
+roots = ["Zrth.Examples"]

@@ -23,7 +23,7 @@ structure Signature (S: Type u) [MultiSort S] where
 
 /-- Anything that has a signature implements this class:
     α HasSignature over the multi-sort S --/
-class HasSignature {S : outParam (Type u)} [MultiSort S] (α : Type v) where
+class HasSignature (S : outParam (Type u)) [MultiSort S] (α : Type v) where
   signature : α → Signature S
 
 

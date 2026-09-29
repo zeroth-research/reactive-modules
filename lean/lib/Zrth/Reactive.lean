@@ -20,6 +20,7 @@ abbrev Name := Nat
 structure Var where
   name: Name
   sort: S
+deriving DecidableEq
 
 
 /-- An atom: the variables it controls, reads (latched) and waits on
@@ -38,22 +39,28 @@ structure Atom where
   flow   : Signature S
 
   -- controlled and awaited variables must be disjoint
-  ctrl_wait_disjoint: ∀ c ∈ ctrl, ∀ w ∈ wait, c ≠ w
+  ctrl_wait_disjoint: ∀ c ∈ ctrl, ∀ w ∈ wait, c ≠ w := by decide
   -- flow variables are subset of controlled variables
-  ctrl_f_subst: ∀ c ∈ ctrl_f, c ∈ ctrl
+  ctrl_f_subst: ∀ c ∈ ctrl_f, c ∈ ctrl := by decide
 
 
   -- The signature of init, update and flow must fit the list of variables
-  init_sig_dom: init.dom = wait.map (fun v => v.sort)
-  update_sig_dom: update.dom = (read ++ wait).map (fun v : Var => v.sort)
+  init_sig_dom: init.dom = wait.map (fun v => v.sort) := by rfl
+  update_sig_dom: update.dom = (read ++ wait).map (fun v : Var => v.sort) := by rfl
   -- TODO: it can await derivatives
-  flow_sig_dom: flow.dom = (read ++ wait).map (fun v => v.sort)
+  flow_sig_dom: flow.dom = (read ++ wait).map (fun v => v.sort) := by rfl
 
-  init_sig_cod: init.cod = ctrl.map (fun v => v.sort)
-  update_sig_cod: update.cod = ctrl.map (fun v => v.sort)
+  init_sig_cod: init.cod = ctrl.map (fun v => v.sort) := by rfl
+  update_sig_cod: update.cod = ctrl.map (fun v => v.sort) := by rfl
   -- TODO: it should write only flow variables
-  flow_sig_cod: flow.cod = ctrl_f.map (fun v => v.sort)
+  flow_sig_cod: flow.cod = ctrl_f.map (fun v => v.sort) := by rfl
 
+
+instance: HasSignature S (@Atom S _) where
+  signature := fun (a: Atom) => {
+    dom := (a.read ++ a.wait).map Var.sort
+    cod := a.ctrl.map Var.sort
+  }
 
 /-- A module: its external, interface and private variables, and its atoms. -/
 structure Module where
@@ -63,6 +70,19 @@ structure Module where
 
   atoms : List (Atom (S:= S))
 
-  -- TODO: : well-formdness predicates
+  /-- variable sets are disjoint --/
+  extl_intf_disj : ∀ v ∈ extl, v ∉ intf := by decide
+  extl_prvt_disj : ∀ v ∈ extl, v ∉ prvt := by decide
+  intf_prvt_disj : ∀ v ∈ intf, v ∉ prvt := by decide
+  /-- variables have unique control --/
+  unique_ctrl : (atoms.flatMap Atom.ctrl).Nodup := by decide
+
+
+instance: HasSignature S (@Module S _) where
+  signature := fun (m: Module) => {
+    dom := m.extl.map Var.sort
+    cod := m.intf.map Var.sort
+  }
+
 
 end Zrth
