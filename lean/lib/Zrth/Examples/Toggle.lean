@@ -52,7 +52,7 @@ def initDiagram : Diagram thrLIA where
 
 /-- `t' := ¬t` -/
 def updateDiagram : Diagram thrLIA where
-  boxes := [{ gen := .not, read := [wT], write := [wT'] }]
+  boxes := [{ gen := .not 1 1, read := [wT], write := [wT'] }]
   read := [wT]
   write := [wT']
   wires := [wT, wT']

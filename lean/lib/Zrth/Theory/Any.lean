@@ -7,8 +7,7 @@ import Zrth.Theory.BV
 
 The union of LRA, LIA and BV over a common multi-sort, with the structural
 generators `havoc`, `skip` and `zero` (mirrors `theory::any` in the `theory`
-crate). A generator of a base theory type-checks against wires whose sorts all
-belong to that theory.
+crate). A generator of a base theory has the signature it has there, embedded.
 
 The catch-alls `Combinatorial`, `Sequential` and `Differential` of
 `theory::any` are the sub-signatures selecting the generators allowed in the
@@ -57,23 +56,6 @@ def SortsBV.toAny : SortsBV → SortsAny
   | .bv w m n => .bitVec w m n
   | .zero => .zero
 
-def SortsAny.toLRA? : SortsAny → Option SortsLRA
-  | .real m n r => some (.real m n r)
-  | .bool m n => some (.bool m n)
-  | .zero => some .zero
-  | _ => none
-
-def SortsAny.toLIA? : SortsAny → Option SortsLIA
-  | .int m n => some (.int m n)
-  | .bool m n => some (.bool m n)
-  | .zero => some .zero
-  | _ => none
-
-def SortsAny.toBV? : SortsAny → Option SortsBV
-  | .bitVec w m n => some (.bv w m n)
-  | .zero => some .zero
-  | _ => none
-
 section Embedding
 
 variable {S : Type} [MultiSort S]
@@ -81,22 +63,6 @@ variable {S : Type} [MultiSort S]
 /-- The image of a signature along an embedding of sorts. -/
 def Signature.map (f : S → SortsAny) (σ : Signature S) : Signature SortsAny :=
   ⟨σ.dom.map f, σ.cod.map f⟩
-
-/-- The preimage of a signature along an embedding of sorts, if all its sorts
-are in the image. -/
-def Signature.pull (f : SortsAny → Option S) (σ : Signature SortsAny) : Option (Signature S) :=
-  return ⟨← σ.dom.mapM f, ← σ.cod.mapM f⟩
-
-omit [MultiSort S] in
-theorem List.mapM_map_of_retract {f : S → SortsAny} {g : SortsAny → Option S}
-    (h : ∀ s, g (f s) = some s) (l : List S) : (l.map f).mapM g = some l := by
-  induction l with
-  | nil => rfl
-  | cons s l ih => simp [List.mapM_cons, h, ih]
-
-theorem Signature.pull_map {f : S → SortsAny} {g : SortsAny → Option S}
-    (h : ∀ s, g (f s) = some s) (σ : Signature S) : (σ.map f).pull g = some σ := by
-  simp [Signature.map, Signature.pull, List.mapM_map_of_retract h]
 
 end Embedding
 
@@ -114,17 +80,8 @@ inductive Gen where
   | lia (g : LIA.Gen)
   | bv (g : BV.Gen)
 
-/-- The generators of all theories at concrete sorts. -/
-inductive Inst where
-  | havoc (s : SortsAny)
-  | skip (s : SortsAny)
-  | zero (s : SortsAny)
-  | lra (i : LRA.Inst)
-  | lia (i : LIA.Inst)
-  | bv (i : BV.Inst)
-
-/-- The signatures of the instances: those of the base theories, embedded. -/
-instance : HasSignature SortsAny Inst where
+/-- The signatures of the generators: those of the base theories, embedded. -/
+instance : HasSignature SortsAny Gen where
   signature := fun g => match g with
     | .havoc s => { dom := [], cod := [s] }
     | .skip s => { dom := [s], cod := [s] }
@@ -132,80 +89,6 @@ instance : HasSignature SortsAny Inst where
     | .lra i => (HasSignature.signature i).map SortsLRA.toAny
     | .lia i => (HasSignature.signature i).map SortsLIA.toAny
     | .bv i => (HasSignature.signature i).map SortsBV.toAny
-
-/-- The generator of an instance. -/
-def Inst.erase : Inst → Gen
-  | .havoc s => .havoc s
-  | .skip s => .skip s
-  | .zero s => .zero s
-  | .lra i => .lra (Elab.erase i)
-  | .lia i => .lia (Elab.erase i)
-  | .bv i => .bv (Elab.erase i)
-
-/-- Infer in the base theory, on the wires cast to its sorts. -/
-def Gen.infer : Gen → Signature SortsAny → Option Inst
-  | .havoc s, _ => some (.havoc s)
-  | .skip s, _ => some (.skip s)
-  | .zero s, _ => some (.zero s)
-  | .lra g, σ => do .lra <$> Elab.infer g (← σ.pull SortsAny.toLRA?)
-  | .lia g, σ => do .lia <$> Elab.infer g (← σ.pull SortsAny.toLIA?)
-  | .bv g, σ => do .bv <$> Elab.infer g (← σ.pull SortsAny.toBV?)
-
-theorem toLRA?_toAny (s : SortsLRA) : s.toAny.toLRA? = some s := by cases s <;> rfl
-theorem toLIA?_toAny (s : SortsLIA) : s.toAny.toLIA? = some s := by cases s <;> rfl
-theorem toBV?_toAny (s : SortsBV) : s.toAny.toBV? = some s := by cases s <;> rfl
-
-instance : Elab SortsAny Gen Inst where
-  infer := Gen.infer
-  erase := Inst.erase
-  infer_erase i := by
-    cases i with
-    | havoc | skip | zero => rfl
-    | lra i =>
-      show Gen.infer _ ((HasSignature.signature i).map _) = _
-      simp only [Inst.erase, Gen.infer, Signature.pull_map toLRA?_toAny]
-      simp [Elab.infer_erase]
-    | lia i =>
-      show Gen.infer _ ((HasSignature.signature i).map _) = _
-      simp only [Inst.erase, Gen.infer, Signature.pull_map toLIA?_toAny]
-      simp [Elab.infer_erase]
-    | bv i =>
-      show Gen.infer _ ((HasSignature.signature i).map _) = _
-      simp only [Inst.erase, Gen.infer, Signature.pull_map toBV?_toAny]
-      simp [Elab.infer_erase]
-  erase_infer g σ i h := by
-    cases g with
-    | havoc | skip | zero => cases h; rfl
-    | lra g =>
-      simp only [Gen.infer] at h
-      cases hp : σ.pull SortsAny.toLRA? with
-      | none => simp [hp] at h
-      | some σ' =>
-        cases hi : Elab.infer g σ' with
-        | none => simp [hp, hi] at h
-        | some i' =>
-          simp [hp, hi] at h; subst h
-          simp [Inst.erase, Elab.erase_infer _ _ _ hi]
-    | lia g =>
-      simp only [Gen.infer] at h
-      cases hp : σ.pull SortsAny.toLIA? with
-      | none => simp [hp] at h
-      | some σ' =>
-        cases hi : Elab.infer g σ' with
-        | none => simp [hp, hi] at h
-        | some i' =>
-          simp [hp, hi] at h; subst h
-          simp [Inst.erase, Elab.erase_infer _ _ _ hi]
-    | bv g =>
-      simp only [Gen.infer] at h
-      cases hp : σ.pull SortsAny.toBV? with
-      | none => simp [hp] at h
-      | some σ' =>
-        cases hi : Elab.infer g σ' with
-        | none => simp [hp, hi] at h
-        | some i' =>
-          simp [hp, hi] at h; subst h
-          simp [Inst.erase, Elab.erase_infer _ _ _ hi]
 
 /-! ## Sub-signatures -/
 
@@ -229,33 +112,40 @@ theorem Gen.isSequential_of_isCombinatorial {g : Gen} (h : g.isCombinatorial) :
     g.isSequential := by
   cases g <;> simp_all [isCombinatorial, isSequential]
 
-instance : Combinatorial SortsAny Gen := ⟨.havoc⟩
-instance : Sequential SortsAny Gen := ⟨.skip⟩
-instance : Differential SortsAny Gen := ⟨.zero⟩
+instance : Combinatorial SortsAny Gen where havoc := .havoc
+instance : Sequential SortsAny Gen where
+  skip := .skip
+  skip_sig _ := rfl
+instance : Differential SortsAny Gen where
+  zero := .zero
+  zero_sig _ := rfl
 
-instance : Combinatorial SortsAny {g : Gen // g.isCombinatorial} := ⟨fun s => ⟨.havoc s, rfl⟩⟩
-instance : Combinatorial SortsAny {g : Gen // g.isSequential} := ⟨fun s => ⟨.havoc s, rfl⟩⟩
-instance : Sequential SortsAny {g : Gen // g.isSequential} := ⟨fun s => ⟨.skip s, rfl⟩⟩
-instance : Differential SortsAny {g : Gen // g.isDifferential} := ⟨fun s => ⟨.zero s, rfl⟩⟩
+instance : Combinatorial SortsAny {g : Gen // g.isCombinatorial} where
+  havoc s := ⟨.havoc s, rfl⟩
+instance : Combinatorial SortsAny {g : Gen // g.isSequential} where
+  havoc s := ⟨.havoc s, rfl⟩
+instance : Sequential SortsAny {g : Gen // g.isSequential} where
+  skip s := ⟨.skip s, rfl⟩
+  skip_sig _ := rfl
+instance : Differential SortsAny {g : Gen // g.isDifferential} where
+  zero s := ⟨.zero s, rfl⟩
+  zero_sig _ := rfl
 
 end Any
 
 /-- The theory of all theories. -/
-abbrev thrAny : Theory SortsAny := { gen := Any.Gen, inst := Any.Inst }
+abbrev thrAny : Theory SortsAny := { gen := Any.Gen }
 
 /-- The theory of the init of an atom. -/
 abbrev thrCombinatorial : Theory SortsAny :=
-  { gen := {g : Any.Gen // g.isCombinatorial}
-    inst := {i : Any.Inst // Any.Gen.isCombinatorial (Elab.erase i)} }
+  { gen := {g : Any.Gen // g.isCombinatorial} }
 
 /-- The theory of the next of an atom. -/
 abbrev thrSequential : Theory SortsAny :=
-  { gen := {g : Any.Gen // g.isSequential}
-    inst := {i : Any.Inst // Any.Gen.isSequential (Elab.erase i)} }
+  { gen := {g : Any.Gen // g.isSequential} }
 
 /-- The theory of the flow of an atom. -/
 abbrev thrDifferential : Theory SortsAny :=
-  { gen := {g : Any.Gen // g.isDifferential}
-    inst := {i : Any.Inst // Any.Gen.isDifferential (Elab.erase i)} }
+  { gen := {g : Any.Gen // g.isDifferential} }
 
 end Zrth
