@@ -9,10 +9,6 @@ and boolean matrices (mirrors `theory::lia` in the `theory` crate).
 The generators are those of `theory::lia::LIA` at concrete shapes, so each has
 a fixed signature. All sorts are constant: their tangent is the trivial sort
 `zero`, whose only writer is the `zero` generator.
-
-Where the signatures are stricter than `LIA::check`:
-- a literal writes the sort of its tensor (`Int(t)` with a boolean `t` writes
-  a `Bool` wire in Rust).
 -/
 
 namespace Zrth

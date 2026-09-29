@@ -9,8 +9,8 @@ A [`Sort`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
 so that integer and propositional terms embed directly into `LIA`. The
 operations in [`LIA`] are:
 
-- [`LIA::Int`] — a matrix literal whose sort (integer or boolean) is taken
-  from the write wire; the tensor's element kind must match that sort.
+- [`LIA::Int`], [`LIA::Bool`] — integer and boolean matrix literals; the
+  tensor's element kind must match the variant.
 - [`LIA::And`], [`LIA::Or`], [`LIA::Xor`], [`LIA::Not`]
   — boolean operations on the boolean fragment of `Type`.
 - [`LIA::Le`], [`LIA::Lt`], [`LIA::Ge`], [`LIA::Gt`], [`LIA::Eq`], [`LIA::Ne`]
@@ -96,7 +96,7 @@ impl fmt::Display for Sort {
 #[derive(Clone, Debug, strum::Display)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LIA {
-    // constant matrix literal; its sort (Int or Bool) is taken from the write wire
+    // constant matrix literals; the variant is the sort (Int or Bool)
     #[strum(to_string = "{0}")]
     Int(crate::PyTensor),
     #[strum(to_string = "{0}")]
@@ -164,7 +164,8 @@ impl Signature for LIA {
         W: IntoIterator<Item = Result<Sort, E>>,
     {
         match self {
-            LIA::Int(cm) | LIA::Bool(cm) => check_const(cm, read, write),
+            LIA::Int(cm) => check_const(cm, false, read, write),
+            LIA::Bool(cm) => check_const(cm, true, read, write),
             LIA::And() | LIA::Or() | LIA::Xor() | LIA::Not() => check_bool(self, read, write),
             LIA::Le() | LIA::Lt() | LIA::Ge() | LIA::Gt() | LIA::Eq() | LIA::Ne() => {
                 check_cmp(self, read, write)
@@ -219,7 +220,14 @@ impl Signature for LIA {
     }
 }
 
-fn check_const<R, W, E: fmt::Display>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
+// `bool_lit` is whether the literal is the `Bool` variant: it writes a `Bool`
+// wire, the other variant a `Int` one.
+fn check_const<R, W, E: fmt::Display>(
+    cm: &crate::PyTensor,
+    bool_lit: bool,
+    read: R,
+    write: W,
+) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
     W: IntoIterator<Item = Result<Sort, E>>,
@@ -229,18 +237,24 @@ where
     if read.next().is_some() {
         return Err("Const: cannot read values".into());
     }
-    // the sort comes from the write wire; validate the tensor's kind matches it
+    // the write wire must have the sort of the variant, and the tensor its kind
     let [i, j] = match next_sort(&mut write, 0)? {
         Sort::Zero => {
             return Err("Const: cannot write a Zero wire. Use ZERO to apply a no change".into());
         }
         Sort::Int([i, j]) => {
+            if bool_lit {
+                return Err("Const: a Bool literal cannot write an Int wire".into());
+            }
             if cm.is_bool() {
                 return Err("Const: write wire is Int but initializer is a boolean tensor".into());
             }
             [i, j]
         }
         Sort::Bool([i, j]) => {
+            if !bool_lit {
+                return Err("Const: an Int literal cannot write a Bool wire".into());
+            }
             if !cm.is_bool() {
                 return Err(
                     "Const: write wire is Bool but initializer is not a boolean tensor".into(),
@@ -653,9 +667,25 @@ mod tests {
     fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
-            LIA::Int(cm)
+            LIA::Bool(cm)
                 .check([].map(ok), [bool_t(2, 2)].map(ok))
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn const_variant_decides_the_sort() {
+        // the variant, not the tensor, decides the sort of the literal
+        let b = || -> crate::PyTensor { tch::Tensor::from_slice2(&[[true]]).into() };
+        assert!(
+            LIA::Int(b())
+                .check([].map(ok), [bool_t(1, 1)].map(ok))
+                .is_err()
+        );
+        assert!(
+            LIA::Bool(b())
+                .check([].map(ok), [int(1, 1)].map(ok))
+                .is_err()
         );
     }
 

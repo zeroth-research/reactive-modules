@@ -13,10 +13,6 @@ sorts, so their tangent is the trivial sort `zero`, whose only writer is the
 
 The generators are those of `theory::lra::LRA` at concrete sorts, so each has
 a fixed signature.
-
-Where the signatures are stricter than `LRA::check`:
-- a literal writes the sort of its tensor (`Real(t)` with a boolean `t` writes
-  a `Bool` wire in Rust).
 -/
 
 namespace Zrth

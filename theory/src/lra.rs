@@ -10,8 +10,8 @@ so on — the sort former [`Tangent`] raises it. Booleans are constant
 sorts: their tangent is [`Sort::Zero`], the inhabited singleton whose only
 writer is the `zero` generator. The operations in [`LRA`] are:
 
-- [`LRA::Real`] — a matrix literal whose sort (real or boolean) is taken
-  from the write wire; the tensor's element kind must match that sort.
+- [`LRA::Real`], [`LRA::Bool`] — real and boolean matrix literals; the
+  tensor's element kind must match the variant.
 - [`LRA::And`], [`LRA::Or`], [`LRA::Xor`], [`LRA::Not`]
   — boolean operations on the boolean fragment.
 - [`LRA::Le`], [`LRA::Lt`], [`LRA::Ge`], [`LRA::Gt`], [`LRA::Eq`], [`LRA::Ne`]
@@ -121,7 +121,7 @@ impl fmt::Display for Sort {
 #[derive(Clone, Debug, strum::Display)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LRA {
-    // constant matrix literal; its sort (Real or Bool) is taken from the write wire
+    // constant matrix literals; the variant is the sort (Real or Bool)
     #[strum(to_string = "{0}")]
     Real(crate::PyTensor),
     #[strum(to_string = "{0}")]
@@ -201,7 +201,8 @@ impl Signature for LRA {
         W: IntoIterator<Item = Result<Sort, E>>,
     {
         match self {
-            LRA::Real(cm) | LRA::Bool(cm) => check_const(cm, read, write),
+            LRA::Real(cm) => check_const(cm, false, read, write),
+            LRA::Bool(cm) => check_const(cm, true, read, write),
             LRA::Zero() => check_zero(&Sort::Zero, read, write),
             LRA::RealZerograd(shape) => check_real_zerograd(shape, read, write),
             LRA::AnyBool(shape) => check_havoc(&Sort::Bool(*shape), read, write),
@@ -257,7 +258,14 @@ impl Signature for LRA {
     }
 }
 
-fn check_const<R, W, E: fmt::Display>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
+// `bool_lit` is whether the literal is the `Bool` variant: it writes a `Bool`
+// wire, the other variant a `Real` one.
+fn check_const<R, W, E: fmt::Display>(
+    cm: &crate::PyTensor,
+    bool_lit: bool,
+    read: R,
+    write: W,
+) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
     W: IntoIterator<Item = Result<Sort, E>>,
@@ -267,9 +275,12 @@ where
     if read.next().is_some() {
         return Err("Const: cannot read values".into());
     }
-    // the sort comes from the write wire; validate the tensor's kind matches it
+    // the write wire must have the sort of the variant, and the tensor its kind
     let [i, j] = match next_sort(&mut write, 0)? {
         Sort::Real { shape, rank } => {
+            if bool_lit {
+                return Err("Const: a Bool literal cannot write a Real wire".into());
+            }
             if rank != 0 {
                 return Err("Cannot derive a real. Use ZERO to apply a no change".to_string());
             }
@@ -279,6 +290,9 @@ where
             shape
         }
         Sort::Bool([i, j]) => {
+            if !bool_lit {
+                return Err("Const: a Real literal cannot write a Bool wire".into());
+            }
             if !cm.is_bool() {
                 return Err(
                     "Const: write wire is Bool but initializer is not a boolean tensor".into(),
@@ -808,9 +822,25 @@ mod tests {
     fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
-            LRA::Real(cm)
+            LRA::Bool(cm)
                 .check([].map(ok), [bool_t(2, 2)].map(ok))
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn const_variant_decides_the_sort() {
+        // the variant, not the tensor, decides the sort of the literal
+        let b = || -> crate::PyTensor { tch::Tensor::from_slice2(&[[true]]).into() };
+        assert!(
+            LRA::Real(b())
+                .check([].map(ok), [bool_t(1, 1)].map(ok))
+                .is_err()
+        );
+        assert!(
+            LRA::Bool(b())
+                .check([].map(ok), [real(1, 1)].map(ok))
+                .is_err()
         );
     }
 
