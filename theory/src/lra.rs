@@ -506,10 +506,12 @@ where
             Ok(())
         }
         LRA::Argmax() | LRA::Min() | LRA::Max() => {
-            // TODO: check whether the conditions of the read are sound
-            let (_r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
+            let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
+            if !matches!(r1, Sort::Real { .. }) {
+                return Err(format!("{:?}: input must be a real matrix, got {r1}", op));
+            }
             let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
@@ -1023,6 +1025,21 @@ mod tests {
         assert!(
             LRA::Argmax()
                 .check([real(3, 4)].map(ok), [real(3, 4)].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn argmax_bool_input_fails() {
+        let w = real(1, 1);
+        assert!(
+            LRA::Argmax()
+                .check([bool_t(3, 4)].map(ok), [w].map(ok))
+                .is_err()
+        );
+        assert!(
+            LRA::Min()
+                .check([bool_t(4, 1)].map(ok), [w].map(ok))
                 .is_err()
         );
     }

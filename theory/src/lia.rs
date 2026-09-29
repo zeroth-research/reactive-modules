@@ -428,9 +428,15 @@ where
             Ok(())
         }
         LIA::Argmax() | LIA::Min() | LIA::Max() => {
-            let (_r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
+            let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
+            if !matches!(r1, Sort::Int(..)) {
+                return Err(format!(
+                    "{:?}: input must be an integer matrix, got {r1}",
+                    op
+                ));
+            }
             let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
@@ -850,6 +856,21 @@ mod tests {
         assert!(
             LIA::Argmax()
                 .check([int(3, 4)].map(ok), [int(3, 4)].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn argmax_bool_input_fails() {
+        let w = int(1, 1);
+        assert!(
+            LIA::Argmax()
+                .check([bool_t(3, 4)].map(ok), [w].map(ok))
+                .is_err()
+        );
+        assert!(
+            LIA::Min()
+                .check([bool_t(4, 1)].map(ok), [w].map(ok))
                 .is_err()
         );
     }

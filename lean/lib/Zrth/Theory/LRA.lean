@@ -69,11 +69,12 @@ inductive Gen where
   | add (m n : Nat) (r : Nat := 0)
   | sub (m n : Nat) (r : Nat := 0)
   | relu (m n : Nat) (r : Nat := 0)
-  /-- A reduction of `s` to an `m × n` vector. The input is unconstrained, as
-  in the Rust `check_mat_ops` (FIXME there). -/
-  | argmax (s : SortsLRA) (m n r : Nat) (h : m = 1 ∨ n = 1)
-  | min (s : SortsLRA) (m n r : Nat) (h : m = 1 ∨ n = 1)
-  | max (s : SortsLRA) (m n r : Nat) (h : m = 1 ∨ n = 1)
+  /-- A reduction of an `i × j` matrix of grade `ri` to an `m × n` vector of
+  grade `r`. The shapes and grades are not related, as in the Rust
+  `check_mat_ops` (FIXME there). -/
+  | argmax (i j ri m n r : Nat) (h : m = 1 ∨ n = 1)
+  | min (i j ri m n r : Nat) (h : m = 1 ∨ n = 1)
+  | max (i j ri m n r : Nat) (h : m = 1 ∨ n = 1)
   | transpose (m n : Nat) (r : Nat := 0)
   | ite (s : SortsLRA)
   | id (s : SortsLRA)
@@ -99,8 +100,8 @@ instance : HasSignature SortsLRA Gen where
     | .add m n r | .sub m n r =>
         { dom := [.real m n r, .real m n r], cod := [.real m n r] }
     | .relu m n r => { dom := [.real m n r], cod := [.real m n r] }
-    | .argmax s m n r _ | .min s m n r _ | .max s m n r _ =>
-        { dom := [s], cod := [.real m n r] }
+    | .argmax i j ri m n r _ | .min i j ri m n r _ | .max i j ri m n r _ =>
+        { dom := [.real i j ri], cod := [.real m n r] }
     | .transpose m n r => { dom := [.real m n r], cod := [.real n m r] }
     | .ite s => { dom := [.bool 1 1, s, s], cod := [s] }
     | .id s => { dom := [s], cod := [s] }
