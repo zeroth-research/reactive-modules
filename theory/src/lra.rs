@@ -520,19 +520,14 @@ where
             let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
-            match w1 {
-                Sort::Real { shape: [i, j], .. } => {
-                    // FIXME: we should fix which dimension is 1..
-                    if i == 1 || j == 1 {
-                        return Ok(());
-                    }
-                    Err(format!(
-                        "{:?}: output must be a vector, got matrix {}x{}",
-                        op, i, j
-                    ))
-                }
-                _ => Err(format!("{:?}: output must be real matrix", op)),
+            // the index of the maximum in the flattened matrix, as in the evaluator
+            if w1 != Sort::real([1, 1]) {
+                return Err(format!(
+                    "{:?}: output must be the index Real(1, 1), got {w1}",
+                    op
+                ));
             }
+            Ok(())
         }
         _ => unreachable!(),
     }
@@ -1020,7 +1015,7 @@ mod tests {
     fn argmax_ok() {
         assert!(
             LRA::Argmax()
-                .check([real(3, 4)].map(ok), [real(1, 4)].map(ok))
+                .check([real(3, 4)].map(ok), [real(1, 1)].map(ok))
                 .is_ok()
         );
     }
@@ -1030,6 +1025,16 @@ mod tests {
         assert!(
             LRA::Argmax()
                 .check([real(3, 4)].map(ok), [real(3, 4)].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn argmax_vector_output_fails() {
+        // the output is a single index, not a vector of indices
+        assert!(
+            LRA::Argmax()
+                .check([real(3, 4)].map(ok), [real(1, 4)].map(ok))
                 .is_err()
         );
     }

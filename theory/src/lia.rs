@@ -441,19 +441,14 @@ where
             let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
-            match w1 {
-                Sort::Int([i, j]) => {
-                    // FIXME: we should fix which dimension is 1..
-                    if i == 1 || j == 1 {
-                        return Ok(());
-                    }
-                    Err(format!(
-                        "{:?}: output must be a vector, got matrix {}x{}",
-                        op, i, j
-                    ))
-                }
-                _ => Err(format!("{:?}: output must be integer matrix", op)),
+            // the index of the maximum in the flattened matrix, as in the evaluator
+            if w1 != Sort::Int([1, 1]) {
+                return Err(format!(
+                    "{:?}: output must be the index Int(1, 1), got {w1}",
+                    op
+                ));
             }
+            Ok(())
         }
         _ => unreachable!(),
     }
@@ -847,7 +842,7 @@ mod tests {
     fn argmax_ok() {
         assert!(
             LIA::Argmax()
-                .check([int(3, 4)].map(ok), [int(1, 4)].map(ok))
+                .check([int(3, 4)].map(ok), [int(1, 1)].map(ok))
                 .is_ok()
         );
     }
@@ -857,6 +852,16 @@ mod tests {
         assert!(
             LIA::Argmax()
                 .check([int(3, 4)].map(ok), [int(3, 4)].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn argmax_vector_output_fails() {
+        // the output is a single index, not a vector of indices
+        assert!(
+            LIA::Argmax()
+                .check([int(3, 4)].map(ok), [int(1, 4)].map(ok))
                 .is_err()
         );
     }

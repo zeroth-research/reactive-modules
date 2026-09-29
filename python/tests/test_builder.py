@@ -23,3 +23,19 @@ def test_mul_scales_a_column_vector(theory, sort, dtype, n):
     vals = torch.arange(1, n + 1, dtype=dtype).reshape(n, 1)
     out = eval_itype(term.itype, [vals], term.write[0].dtype)[0]
     assert out.flatten().tolist() == [3 * v for v in range(1, n + 1)]
+
+
+@pytest.mark.parametrize("theory,sort,dtype", [
+    (LRA, Real, torch.float32),
+    (LIA, Int, torch.int64),
+])
+def test_argmax_is_the_flat_index(theory, sort, dtype):
+    builder = builder_for(theory)
+    x = Wire(sort([2, 3]))
+
+    term = builder.argmax(x)
+
+    vals = torch.tensor([[1, 5, 2], [7, 0, 3]], dtype=dtype)
+    out = eval_itype(term.itype, [vals], term.write[0].dtype)[0]
+    assert out.shape == (1, 1) and out.dtype == dtype
+    assert out.item() == 3

@@ -55,9 +55,8 @@ inductive Gen where
   | add (m n : Nat)
   | sub (m n : Nat)
   | relu (m n : Nat)
-  /-- A reduction of an `i × j` matrix to an `m × n` vector. The shapes are not
-  related, as in the Rust `check_mat_ops` (FIXME there). -/
-  | argmax (i j m n : Nat) (h : m = 1 ∨ n = 1)
+  /-- the index of the maximum of an `i × j` matrix, flattened -/
+  | argmax (i j : Nat)
   -- element-wise minimum and maximum
   | min (m n : Nat)
   | max (m n : Nat)
@@ -84,8 +83,7 @@ instance : HasSignature SortsLIA Gen where
     | .add m n | .sub m n | .min m n | .max m n =>
         { dom := [.int m n, .int m n], cod := [.int m n] }
     | .relu m n => { dom := [.int m n], cod := [.int m n] }
-    | .argmax i j m n _ =>
-        { dom := [.int i j], cod := [.int m n] }
+    | .argmax i j => { dom := [.int i j], cod := [.int 1 1] }
     | .transpose m n => { dom := [.int m n], cod := [.int n m] }
     | .ite s => { dom := [.bool 1 1, s, s], cod := [s] }
     | .id s => { dom := [s], cod := [s] }
