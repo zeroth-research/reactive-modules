@@ -15,8 +15,6 @@ The generators are those of `theory::lra::LRA` at concrete sorts, so each has
 a fixed signature.
 
 Where the signatures are stricter than `LRA::check`:
-- comparisons must read exactly two values and write one (`check_cmp` ignores
-  surplus wires);
 - a literal writes the sort of its tensor (`Real(t)` with a boolean `t` writes
   a `Bool` wire in Rust).
 -/

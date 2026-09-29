@@ -11,8 +11,6 @@ a fixed signature. All sorts are constant: their tangent is the trivial sort
 `zero`, whose only writer is the `zero` generator.
 
 Where the signatures are stricter than `LIA::check`:
-- comparisons must read exactly two values and write one (`check_cmp` ignores
-  surplus wires);
 - a literal writes the sort of its tensor (`Int(t)` with a boolean `t` writes
   a `Bool` wire in Rust).
 -/

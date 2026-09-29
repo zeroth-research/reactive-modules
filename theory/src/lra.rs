@@ -402,8 +402,13 @@ where
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    let r1 = next_sort(&mut read, 0)?;
-    let r2 = next_sort(&mut read, 1)?;
+    let (r1, r2, None) = (
+        next_sort(&mut read, 0)?,
+        next_sort(&mut read, 1)?,
+        read.next(),
+    ) else {
+        return Err(format!("{:?}: must read exactly two values", op));
+    };
     if r1 != r2 {
         return Err(format!("{:?}: input values must have the same type", op));
     }
@@ -416,7 +421,9 @@ where
             ));
         }
     };
-    let w1 = next_sort(&mut write, 0)?;
+    let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
+        return Err(format!("{:?}: must write exactly one value", op));
+    };
     if w1 != Sort::Bool(shape) {
         return Err(format!(
             "{:?}: output must be Bool({:?}), got {w1}",
@@ -908,6 +915,13 @@ mod tests {
     fn cmp_non_bool_output_fails() {
         let t = real(1, 1);
         assert!(LRA::Lt().check([t, t].map(ok), [t].map(ok)).is_err());
+    }
+
+    #[test]
+    fn cmp_surplus_wires_fail() {
+        let (t, b) = (real(1, 1), bool_t(1, 1));
+        assert!(LRA::Lt().check([t, t, t].map(ok), [b].map(ok)).is_err());
+        assert!(LRA::Lt().check([t, t].map(ok), [b, b].map(ok)).is_err());
     }
 
     #[test]
