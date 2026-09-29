@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from zrth import LRA, LIA, Real, Int, Wire
+from zrth import LRA, LIA, Real, Int, Bool, Wire
 from zrth.builder import builder_for
 from zrth.eval import eval_itype
 
@@ -39,3 +39,13 @@ def test_argmax_is_the_flat_index(theory, sort, dtype):
     out = eval_itype(term.itype, [vals], term.write[0].dtype)[0]
     assert out.shape == (1, 1) and out.dtype == dtype
     assert out.item() == 3
+
+
+@pytest.mark.parametrize("theory", [LRA, LIA])
+def test_bool_const(theory):
+    builder = builder_for(theory)
+
+    term = builder.const(torch.tensor([[True, False]]))
+
+    assert isinstance(term.itype, theory.Bool)
+    assert term.write[0].dtype == Bool([1, 2])
