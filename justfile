@@ -131,8 +131,13 @@ py-run *args: py-build
 # every module translated by the `lean` crate. Lake picks the toolchain pinned
 # in `lean/lib/lean-toolchain` (via elan).
 
+# Fetch Mathlib's prebuilt oleans, so that `lean-build` does not compile
+# Mathlib from scratch (a no-op when the cache is already unpacked)
+lean-cache:
+    cd lean/lib && lake exe cache get
+
 # Build (i.e., type-check) the Lean library
-lean-build:
+lean-build: lean-cache
     cd lean/lib && lake build
 
 # Run the tests of the `lean` crate on top of the built Lean library
