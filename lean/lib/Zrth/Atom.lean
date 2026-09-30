@@ -1,5 +1,5 @@
 import Mathlib.Geometry.Manifold.VectorBundle.Tangent
-import Mathlib.Probability.ProbabilityMassFunction.Monad
+import Mathlib.Probability.ProbabilityMassFunction.Constructions
 
 /-!
 # Atoms

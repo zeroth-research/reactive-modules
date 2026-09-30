@@ -28,6 +28,17 @@ The possible runs of the system are its runs with positive probability:
 almost surely, the run of the process is a possible run (`ae_isRun`). Any
 property of all possible runs is thus an almost sure property under every
 scheduler.
+Every step refines into a process of its own, with its own filtration
+(`Disc.filtration`, over a discrete or continuous time):
+
+* a *round* of a module is evaluated atom by atom (`Module.roundMeasure`): the
+  measure on its traces, the valuations drawn before each atom and after the
+  last one, whose σ-algebra at `i` is that of the draws of the first `i` atoms
+  (`Module.ae_roundMeasure`); after the last atom, the valuation is
+  distributed as the round (`Module.roundMeasure_map`);
+* a *flow* evolves in continuous time (`Disc.flowMeasure`): the measure on the
+  trajectories, whose σ-algebra at `t` is that of the trajectory up to `t`; at
+  its duration, the state is the next state of the move (`Disc.flowMeasure_map`).
 -/
 
 namespace Zrth
@@ -53,16 +64,39 @@ theorem Disc.measure_eq_zero_iff {S : Type*} (μ : PMF S) (A : Set S) :
     Disc.measure μ (A : Set (Disc S)) = 0 ↔ Disjoint μ.support A :=
   PMF.toMeasure_apply_eq_zero_iff (α := Disc S) μ MeasurableSet.of_discrete
 
-/-- The filtration of the first steps of the runs in `S`. -/
-def Disc.filtration (S : Type*) :
-    Filtration ℕ (MeasurableSpace.pi : MeasurableSpace (ℕ → Disc S)) :=
+instance {S : Type*} : MeasurableSingletonClass (Disc S) := ⟨fun _ => MeasurableSet.of_discrete⟩
+
+/-- The filtration of the evolutions `ι → S` (of the runs in discrete time,
+    of the trajectories in continuous time): the σ-algebra at `i` is that of
+    the evolution up to `i`. -/
+def Disc.filtration (ι S : Type*) [Preorder ι] :
+    Filtration ι (MeasurableSpace.pi : MeasurableSpace (ι → Disc S)) :=
   Filtration.piLE
 
-/-- The run is adapted to the filtration: the state at step `n` is known after `n` steps. -/
-theorem Disc.measurable_state {S : Type*} (n : ℕ) :
-    Measurable[Disc.filtration S n] fun ω : ℕ → Disc S => ω n :=
-  (measurable_pi_apply (⟨n, Set.mem_Iic.2 le_rfl⟩ : Set.Iic n)).comp
-    (comap_measurable (restrictLe n))
+/-- An evolution is adapted to the filtration: its state at `i` is known at `i`. -/
+theorem Disc.measurable_state {ι S : Type*} [Preorder ι] (i : ι) :
+    Measurable[Disc.filtration ι S i] fun ω : ι → Disc S => ω i :=
+  (measurable_pi_apply (⟨i, Set.mem_Iic.2 le_rfl⟩ : Set.Iic i)).comp
+    (comap_measurable (restrictLe i))
+
+theorem Disc.measure_pure {S : Type*} (a : S) :
+    Disc.measure (PMF.pure a) = Measure.dirac (α := Disc S) a :=
+  PMF.toMeasure_pure (α := Disc S) a
+
+/-- The evolution of a flow along the trajectory `γ`, in continuous time: a
+    (deterministic) process on the trajectories, adapted to the filtration
+    `Disc.filtration ℝ S` of the trajectory up to each time. -/
+noncomputable def Disc.flowMeasure {S : Type*} (γ : ℝ → S) : Measure (ℝ → Disc S) :=
+  Measure.dirac (α := ℝ → Disc S) γ
+
+instance {S : Type*} (γ : ℝ → S) : IsProbabilityMeasure (Disc.flowMeasure γ) :=
+  Measure.dirac.isProbabilityMeasure (α := ℝ → Disc S)
+
+/-- A flow ends as its move: the state at its duration `d` is the next state. -/
+theorem Disc.flowMeasure_map {S : Type*} (γ : ℝ → S) (d : ℝ) :
+    (Disc.flowMeasure γ).map (fun ω => ω d) = Disc.measure (PMF.pure (γ d)) :=
+  (Measure.map_dirac' (measurable_pi_apply (X := fun _ : ℝ => Disc S) d) γ).trans
+    (Disc.measure_pure _).symm
 
 variable {E H : Type*} [NormedAddCommGroup E] [NormedSpace ℝ E] [TopologicalSpace H]
   {I : ModelWithCorners ℝ E H} {S : Type*} [TopologicalSpace S] [ChartedSpace H S]
@@ -201,5 +235,53 @@ theorem ae_forall_of_reachable {P : S → Prop} (hP : ∀ s, h.Reachable s → P
 end Scheduler
 
 end Hybrid
+
+/-! ## Rounds, atom by atom -/
+
+variable {V : Type*} [DecidableEq V]
+  {E : V → Type*} [∀ v, NormedAddCommGroup (E v)] [∀ v, NormedSpace ℝ (E v)]
+  {H : V → Type*} [∀ v, TopologicalSpace (H v)]
+  {I : ∀ v, ModelWithCorners ℝ (E v) (H v)}
+  {M : V → Type*} [∀ v, TopologicalSpace (M v)] [∀ v, ChartedSpace (H v) (M v)]
+
+namespace Module
+
+variable {m : Module I M}
+
+/-- The evaluation of a round from `s`, atom by atom: the probability measure
+    on its traces, adapted to the filtration `Disc.filtration ℕ (Val M m.ctrl)`,
+    whose σ-algebra at `i` is that of the draws of the first `i` atoms. -/
+noncomputable def roundMeasure (κ : m.Draws) (s : Val M m.ctrl) :
+    Measure (ℕ → Disc (Val M m.ctrl)) :=
+  PMF.toMeasure (α := ℕ → Disc (Val M m.ctrl)) (m.trace κ m.atoms (fun _ h => h) s)
+
+instance (κ : m.Draws) (s : Val M m.ctrl) : IsProbabilityMeasure (roundMeasure κ s) :=
+  PMF.toMeasure.isProbabilityMeasure (α := ℕ → Disc (Val M m.ctrl)) _
+
+/-- The evaluation ends as the round: after the last atom, the valuation is
+    distributed as the round. -/
+theorem roundMeasure_map (κ : m.Draws) (s : Val M m.ctrl) :
+    (roundMeasure κ s).map (fun ω => ω m.atoms.length) =
+      Disc.measure (m.round κ m.atoms (fun _ h => h) s) := by
+  exact (PMF.toMeasure_map (α := ℕ → Disc (Val M m.ctrl)) (β := Disc (Val M m.ctrl))
+    (fun ω => ω m.atoms.length) (m.trace κ m.atoms (fun _ h => h) s)
+    (measurable_pi_apply _)).trans
+    (congrArg (PMF.toMeasure (α := Disc (Val M m.ctrl))) trace_map_length)
+
+/-- Almost surely, the evaluation starts from `s`, and every atom in turn
+    overrides the valuation drawn so far with its draw, given it. -/
+theorem ae_roundMeasure (κ : m.Draws) (s : Val M m.ctrl) :
+    ∀ᵐ ω ∂roundMeasure κ s, (ω 0 : Val M m.ctrl) = s ∧ ∀ i (hi : i < m.atoms.length),
+      ∃ c : Val M m.atoms[i].ctrl, c ∈ (κ m.atoms[i] (List.getElem_mem hi) (ω i)).support ∧
+        (ω (i + 1) : Val M m.ctrl) = Val.override (ω i) c := by
+  rw [ae_iff]
+  apply measure_mono_null (t := ((m.trace κ m.atoms (fun _ h => h) s).support : Set (ℕ → Val M m.ctrl))ᶜ)
+  · intro ω hω hs
+    exact hω (trace_step hs)
+  · exact (PMF.toMeasure_apply_eq_zero_iff (α := ℕ → Disc (Val M m.ctrl)) _
+      (PMF.support_countable (α := ℕ → Disc (Val M m.ctrl)) _).measurableSet.compl).2
+      disjoint_compl_right
+
+end Module
 
 end Zrth

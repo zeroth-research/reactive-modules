@@ -291,6 +291,57 @@ theorem round_pure_atoms {κ : m.Draws} {t : Val M m.ctrl}
   funext v
   exact h₁ v ((m.mem_ctrl_iff v.1).1 v.2)
 
+/-! ### Traces of rounds -/
+
+/-- Prepending `x` to the sequence `ω`. -/
+def seqCons {α : Type*} (x : α) (ω : ℕ → α) : ℕ → α
+  | 0 => x
+  | n + 1 => ω n
+
+variable (m) in
+/-- The trace of a round of the atoms `l` (of `m`), starting from `x`: the
+    valuations drawn so far, before each atom in turn and after the last one
+    (then repeated). The evaluation of the round, atom by atom. -/
+noncomputable def trace (κ : m.Draws) :
+    (l : List (Atom I M)) → (∀ a ∈ l, a ∈ m.atoms) → Val M m.ctrl → PMF (ℕ → Val M m.ctrl)
+  | [], _, x => PMF.pure fun _ => x
+  | a :: l, h, x => (κ a (h a List.mem_cons_self) x).bind fun c =>
+      PMF.map (seqCons x) (trace κ l (fun b hb => h b (List.mem_cons_of_mem _ hb)) (Val.override x c))
+
+/-- The end of the trace of a round is distributed as the round. -/
+theorem trace_map_length {κ : m.Draws} {l : List (Atom I M)} {h : ∀ a ∈ l, a ∈ m.atoms}
+    {x : Val M m.ctrl} : PMF.map (fun ω => ω l.length) (m.trace κ l h x) = m.round κ l h x := by
+  induction l generalizing x with
+  | nil => rw [trace, PMF.pure_map]; rfl
+  | cons a l ih =>
+    rw [trace, round, PMF.map_bind]
+    congr 1
+    funext c
+    rw [PMF.map_comp]
+    exact ih
+
+/-- The trace of a round starts from its initial valuation, and every atom in
+    turn overrides the valuation drawn so far with its draw, given it. -/
+theorem trace_step {κ : m.Draws} {l : List (Atom I M)} {h : ∀ a ∈ l, a ∈ m.atoms}
+    {x : Val M m.ctrl} {ω : ℕ → Val M m.ctrl} (hω : ω ∈ (m.trace κ l h x).support) :
+    ω 0 = x ∧ ∀ i (hi : i < l.length),
+      ∃ c : Val M l[i].ctrl, c ∈ (κ l[i] (h _ (List.getElem_mem hi)) (ω i)).support ∧
+        ω (i + 1) = Val.override (ω i) c := by
+  induction l generalizing x ω with
+  | nil =>
+    rw [trace, PMF.support_pure, Set.mem_singleton_iff] at hω
+    exact ⟨by rw [hω], fun _ hi => absurd hi (Nat.not_lt_zero _)⟩
+  | cons a l ih =>
+    rw [trace, PMF.mem_support_bind_iff] at hω
+    obtain ⟨c, hc, hω⟩ := hω
+    rw [PMF.mem_support_map_iff] at hω
+    obtain ⟨ω', hω', rfl⟩ := hω
+    obtain ⟨h₀, hs⟩ := ih hω'
+    refine ⟨rfl, fun i hi => ?_⟩
+    cases i with
+    | zero => exact ⟨c, hc, h₀⟩
+    | succ i => exact hs i (Nat.lt_of_succ_lt_succ hi)
+
 /-! ### The hybrid system -/
 
 variable (m) (hc : m.IsClosed) {a : Atom I M} (ha : a ∈ m.atoms)
