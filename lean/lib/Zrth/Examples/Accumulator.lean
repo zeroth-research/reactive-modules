@@ -17,8 +17,12 @@ namespace Zrth.Examples.Accumulator
 
 /-! ## Variables -/
 
-def x : Var SortsLRA := { name := 0, sort := .real 1 1 }
-def u : Var SortsLRA := { name := 1, sort := .real 1 1 }
+-- we do not import MathLib, so we can use ℝ here
+abbrev ℝ := SortsLRA.real 1 1
+abbrev δℝ := SortsLRA.δreal 1 1 0
+
+def x : Var SortsLRA := { name := 0, sort := ℝ }
+def u : Var SortsLRA := { name := 1, sort := ℝ }
 
 /-! ## Reactive module -/
 
@@ -29,9 +33,9 @@ def atom : Atom SortsLRA where
   ctrl := [x]
   ctrl_f := []
 
-  init := { dom := [.real 1 1], cod := [.real 1 1] }
-  update := { dom := [.real 1 1, .real 1 1], cod := [.real 1 1] }
-  flow := { dom := [.real 1 1, .δreal 1 1 0], cod := [] }
+  init := { dom := [ℝ], cod := [ℝ] }
+  update := { dom := [ℝ, ℝ], cod := [ℝ] }
+  flow := { dom := [ℝ, δℝ], cod := [] }
 
 /-- The accumulator: `u` comes from the environment, the sum is visible. -/
 def accumulator : Module SortsLRA where
@@ -42,13 +46,13 @@ def accumulator : Module SortsLRA where
 
 /-! ## Data-flow diagrams of the atom -/
 
-def wX : Wire SortsLRA := ⟨0, .real 1 1⟩
-def wU : Wire SortsLRA := ⟨1, .real 1 1⟩
-def wX' : Wire SortsLRA := ⟨2, .real 1 1⟩
+def wX : Wire SortsLRA := ⟨0, ℝ⟩
+def wU : Wire SortsLRA := ⟨1, ℝ⟩
+def wX' : Wire SortsLRA := ⟨2, ℝ⟩
 
 /-- `x' := u'` -/
 def initDiagram : Diagram thrLRA where
-  boxes := [{ gen := .id (.real 1 1), read := [wU], write := [wX'] }]
+  boxes := [{ gen := .id (ℝ), read := [wU], write := [wX'] }]
   read := [wU]
   write := [wX']
   wires := [wU, wX']
