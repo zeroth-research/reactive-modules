@@ -20,47 +20,54 @@ namespace Zrth.Examples.TwoBit
 
 /-! ## Variables -/
 
-abbrev VarLIA := Var SortsLIA
+-- abbreviation for the LIA multi-sort
+abbrev 𝕊 := SortsLIA
+-- abbreviation for the 1×1 boolean matrix
+abbrev 𝔹 := SortsLIA.bool 1 1
 
-def b0 : VarLIA := { name := 0, sort := .bool 1 1 }
-def b1 : VarLIA := { name := 1, sort := .bool 1 1 }
-def enable : VarLIA := { name := 2, sort := .bool 1 1 }
+def b0 : Var 𝕊 := { name := 0, sort := 𝔹 }
+def b1 : Var 𝕊  := { name := 1, sort := 𝔹 }
+def enable : Var 𝕊 := { name := 2, sort := 𝔹 }
 
 /-! ## Reactive module -/
 
 /-- The only atom: controls both bits, awaits `enable`. -/
-def atom : Atom SortsLIA where
+def atom : Atom 𝕊 where
   read := [b0, b1]
   wait := [enable]
   ctrl := [b0, b1]
   ctrl_f := []
 
-  init := { dom := [.bool 1 1], cod := [.bool 1 1, .bool 1 1] }
-  update := { dom := [.bool 1 1, .bool 1 1, .bool 1 1], cod := [.bool 1 1, .bool 1 1] }
-  flow := { dom := [.bool 1 1, .bool 1 1, .zero], cod := [] }
+  init := { dom := [𝔹], cod := [𝔹, 𝔹] }
+  update := { dom := [𝔹, 𝔹, 𝔹], cod := [𝔹, 𝔹] }
+  flow := { dom := [𝔹, 𝔹, .zero], cod := [] }
 
 /-- The counter: `enable` comes from the environment, the bits are visible. -/
-def counter : Module SortsLIA where
+def counter : Module 𝕊 where
   extl := [enable]
   intf := [b0, b1]
   prvt := []
   atoms := [atom]
 
+
+
+/- ------------------------------------------------------------ -/
 /-! ## Data-flow diagrams of the atom -/
+/- ------------------------------------------------------------ -/
 
 /-- Constant `false`. -/
 def ff : Mat Bool 1 1 := fun _ _ => false
 
 -- wires of the latched (`b0`, `b1`) and the current-round (`*'`) values
-def wB0 : Wire SortsLIA := ⟨0, .bool 1 1⟩
-def wB1 : Wire SortsLIA := ⟨1, .bool 1 1⟩
-def wEnable : Wire SortsLIA := ⟨2, .bool 1 1⟩
-def wB0' : Wire SortsLIA := ⟨3, .bool 1 1⟩
-def wB1' : Wire SortsLIA := ⟨4, .bool 1 1⟩
+def wB0 : Wire 𝕊  := ⟨0, 𝔹⟩
+def wB1 : Wire 𝕊  := ⟨1, 𝔹⟩
+def wEnable : Wire 𝕊 := ⟨2, 𝔹⟩
+def wB0' : Wire 𝕊 := ⟨3, 𝔹⟩
+def wB1' : Wire 𝕊 := ⟨4, 𝔹⟩
 -- internal wires
-def wNotB0 : Wire SortsLIA := ⟨5, .bool 1 1⟩
-def wNotB1 : Wire SortsLIA := ⟨6, .bool 1 1⟩
-def wB0AndEnable : Wire SortsLIA := ⟨7, .bool 1 1⟩
+def wNotB0 : Wire 𝕊  := ⟨5, 𝔹 ⟩
+def wNotB1 : Wire 𝕊  := ⟨6, 𝔹 ⟩
+def wB0AndEnable : Wire 𝕊 := ⟨7, 𝔹 ⟩
 
 /-- `b0' := false; b1' := false` -/
 def initDiagram : Diagram thrLIA where

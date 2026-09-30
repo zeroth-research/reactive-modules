@@ -67,7 +67,7 @@ inductive Gen where
   | uninterpreted (name : String) (read : Bool) (s : SortsLIA)
   | anyInt (m n : Nat)
   | anyBool (m n : Nat)
-  | zero
+  | zeroFlow
 
 /-- The signatures of the LIA generators. -/
 instance : HasSignature SortsLIA Gen where
@@ -91,7 +91,7 @@ instance : HasSignature SortsLIA Gen where
     | .uninterpreted _ false s => { dom := [], cod := [s] }
     | .anyInt m n => { dom := [], cod := [.int m n] }
     | .anyBool m n => { dom := [], cod := [.bool m n] }
-    | .zero => { dom := [], cod := [.zero] }
+    | .zeroFlow => { dom := [], cod := [.zero] }
 
 instance : Sequential SortsLIA Gen where
   skip s := .id s
@@ -102,7 +102,7 @@ instance : Combinatorial SortsLIA Gen where
     | .int m n => .anyInt m n
     | .bool m n => .anyBool m n
     -- havoc over a singleton is the singleton
-    | .zero => .zero
+    | .zero => .zeroFlow
   havoc_sig s := by cases s <;> rfl
 
 end LIA
