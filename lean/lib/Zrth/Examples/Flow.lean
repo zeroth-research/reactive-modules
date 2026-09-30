@@ -43,8 +43,8 @@ noncomputable def atom : Atom I M where
   wait := {.t}
   read := {.x, .t}
   disjoint_ctrl_wait := by simp
-  init _ := {fun _ => 1}
-  update | (r, _) => {fun _ => r ⟨.x, by simp⟩}
+  init _ := {.pure fun _ => 1}
+  update | (r, _) => {.pure fun _ => r ⟨.x, by simp⟩}
   flow c p :=
     let x := c ⟨.x, Finset.mem_singleton_self _⟩
     let t := p.1 ⟨.t, by simp⟩

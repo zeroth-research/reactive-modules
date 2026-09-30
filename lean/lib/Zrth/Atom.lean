@@ -1,4 +1,5 @@
 import Mathlib.Geometry.Manifold.VectorBundle.Tangent
+import Mathlib.Probability.ProbabilityMassFunction.Monad
 
 /-!
 # Atoms
@@ -21,13 +22,14 @@ form a manifold, modelled by the product `Val.model I X`.
 Writing `C`, `W` and `R` for the valuations of `ctrl`, `wait` and `read`, and
 following the checks of `Atom::new_unchecked`, the blocks have the signatures
 
-* `init   : W → C`             (only next values of awaited variables),
-* `update : R × W → C`         (latched reads and next values of awaited variables),
+* `init   : W → 𝒫 D(C)`        (only next values of awaited variables),
+* `update : R × W → 𝒫 D(C)`    (latched reads and next values of awaited variables),
 * `flow   : C × R × T_W → T C` (current values of the controlled and read
   variables, and tangents of awaited variables),
 
-where `T` is the tangent bundle (`theory::Tangent`) and `T_W` the tangent
-vectors to `W`, `Val.Tangent I wait`.
+where `𝒫 D(C)` are the sets of finitely supported distributions over `C`,
+`T` is the tangent bundle (`theory::Tangent`) and `T_W` the tangent vectors to
+`W`, `Val.Tangent I wait`.
 
 The flows of the atoms of a module form a system of differential equations:
 a flow sees its own current value, and those of the variables it reads, which
@@ -44,13 +46,30 @@ current value `c`, a vector in the fiber `T_c C` over it: the output of
 `flow`, as an element of `T C`, lies over `c` by construction (see
 `Atom.flowBundle`).
 
-The blocks are relations (set-valued maps), since the generators may be
-nondeterministic, e.g., the `HAVOC` of a jump atom's initialisation.
+The discrete blocks are probabilistic and nondeterministic: `init` and
+`update` yield *sets* of finitely supported distributions (`FinDist`) over the
+controlled variables. A set that is not a singleton is a nondeterministic
+choice (e.g., the `HAVOC` of a jump atom's initialisation, the set of all
+Dirac distributions), and an empty set leaves the block undefined (a guard).
+The flow is nondeterministic, but not probabilistic: a differential inclusion.
 -/
 
 namespace Zrth
 
 open Manifold
+
+/-- A finitely supported probability distribution. -/
+structure FinDist (α : Type*) where
+  /-- The distribution. -/
+  toPMF : PMF α
+  /-- Its support is finite. -/
+  finite : toPMF.support.Finite
+
+instance {α : Type*} : CoeOut (FinDist α) (PMF α) := ⟨FinDist.toPMF⟩
+
+/-- The Dirac distribution at `a`. -/
+noncomputable def FinDist.pure {α : Type*} (a : α) : FinDist α :=
+  ⟨PMF.pure a, by simp⟩
 
 /- The variables `V`: each variable `v` ranges over the manifold `M v`
    modelled by `I v`. -/
@@ -83,10 +102,13 @@ structure Atom where
   read : Finset V
   /-- An atom does not await the variables it controls. -/
   disjoint_ctrl_wait : Disjoint ctrl wait
-  /-- The initial action: the initial values of the controlled variables. -/
-  init : Val M wait → Set (Val M ctrl)
-  /-- The update action: the next values of the controlled variables. -/
-  update : Val M read × Val M wait → Set (Val M ctrl)
+  /-- The initial action: the distributions of the initial values of the
+      controlled variables, given the initial values of the awaited ones. -/
+  init : Val M wait → Set (FinDist (Val M ctrl))
+  /-- The update action: the distributions of the next values of the controlled
+      variables, given the latched values of the read variables and the next
+      values of the awaited ones. -/
+  update : Val M read × Val M wait → Set (FinDist (Val M ctrl))
   /-- The flow (the delay activity): the derivatives of the controlled variables
       at their current value `c`, given the current values of the read variables
       and the tangents of the awaited ones. -/

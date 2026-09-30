@@ -1,5 +1,5 @@
 import Zrth.Examples.Clocks
-import Zrth.Hybrid
+import Zrth.Stochastic
 import Mathlib.Analysis.Calculus.Deriv.Prod
 import Mathlib.Analysis.Calculus.MeanValue
 
@@ -24,6 +24,10 @@ which a flow at rate `1` cannot stay at, so it has to stop there:
 Then the same for the composed module (`msys`), where the invariant also
 shows that the clocks stay synchronised (`mreachable_bounds`), and both are
 `0` at once infinitely many times (`minfinite_zero`).
+
+The clocks are deterministic: their initial and update distributions are
+Dirac. The properties of all possible runs hold almost surely under every
+scheduler of the stochastic semantics (`ae_mbounds`, `ae_minfinite_zero`).
 -/
 
 namespace Zrth.Examples.Clocks
@@ -43,14 +47,29 @@ def val (k : Clock) (s : Val M (clock k).ctrl) : ℝ := s ⟨k, Finset.mem_singl
 /-- The ranking function of the clock `k`: the time until its next reset. -/
 def rank (k : Clock) (s : Val M (clock k).ctrl) : ℝ := 5 - val k s
 
-theorem mem_init {s : Val M (clock k).ctrl} : s ∈ (sys k).init ↔ s = 0 := Iff.rfl
+/-- The clock starts at `0`. -/
+theorem of_mem_init {μ : PMF (Val M (clock k).ctrl)} {s : Val M (clock k).ctrl}
+    (hμ : μ ∈ (sys k).init) (hs : s ∈ μ.support) : s = 0 := by
+  obtain ⟨_, rfl, rfl⟩ := hμ
+  exact (PMF.mem_support_pure_iff _ _).1 hs
 
-theorem mem_jump {s s' : Val M (clock k).ctrl} :
-    s' ∈ (sys k).jump s ↔ val k s = 5 ∧ s' = 0 := Iff.rfl
+theorem pure_mem_init : PMF.pure 0 ∈ (sys k).init := ⟨_, rfl, rfl⟩
 
-theorem jump_eq_empty {s : Val M (clock k).ctrl} : (sys k).jump s = ∅ ↔ val k s ≠ 5 := by
-  rw [Set.eq_empty_iff_forall_notMem]
-  exact ⟨fun h h5 => h 0 (mem_jump.2 ⟨h5, rfl⟩), fun h _ hs => h (mem_jump.1 hs).1⟩
+/-- The clock jumps from `5` to `0`. -/
+theorem of_mem_jump {μ : PMF (Val M (clock k).ctrl)} {s s' : Val M (clock k).ctrl}
+    (hμ : μ ∈ (sys k).jump s) (hs' : s' ∈ μ.support) : val k s = 5 ∧ s' = 0 := by
+  obtain ⟨_, ⟨h5, rfl⟩, rfl⟩ := hμ
+  exact ⟨h5, (PMF.mem_support_pure_iff _ _).1 hs'⟩
+
+theorem pure_mem_jump {s : Val M (clock k).ctrl} (h5 : val k s = 5) :
+    PMF.pure 0 ∈ (sys k).jump s := ⟨_, ⟨h5, rfl⟩, rfl⟩
+
+/-- The jump region of the clock: the single point `5`. -/
+theorem regions_eq : (sys k).regions = {{s | val k s = 5}} := by
+  show {{s | _}} = _
+  congr 1
+  ext s
+  exact ⟨fun ⟨_, h, _⟩ => h, fun h => ⟨_, h, rfl⟩⟩
 
 /-- On the valuations of real variables modelled on themselves, a manifold
     derivative is an ordinary one. -/
@@ -104,20 +123,17 @@ theorem val_eq_of_trajectory {γ : ℝ → Val M (clock k).ctrl} {d : ℝ}
     obtain ⟨v, hv, hγt⟩ := hγ.follows t ht
     exact ⟨v, congrFun (hv : v = fun _ => 1) _, hγt⟩
 
-/-- The jump region of the clock: the single point `5`. -/
-theorem mem_region {s : Val M (clock k).ctrl} :
-    s ∈ {s | ((sys k).jump s).Nonempty} ↔ val k s = 5 :=
-  ⟨fun ⟨_, h⟩ => (mem_jump.1 h).1, fun h => ⟨0, mem_jump.2 ⟨h, rfl⟩⟩⟩
-
 /-- A flow cannot get out of the jump region, a single point it cannot stay
     at, so it stops at `5`. -/
 theorem val_le_of_trajectory {γ : ℝ → Val M (clock k).ctrl} {d : ℝ}
     (hγ : (sys k).IsTrajectory γ d) (h5 : val k (γ 0) ≤ 5) : val k (γ 0) + d ≤ 5 := by
   by_contra hlt
   have ht : 5 - val k (γ 0) ∈ Icc 0 d := ⟨by linarith, by linarith⟩
-  have hin : γ (5 - val k (γ 0)) ∈ {s | ((sys k).jump s).Nonempty} :=
-    mem_region.2 (by rw [val_eq_of_trajectory hγ _ ht]; ring)
-  have := mem_region.1 (hγ.stays _ rfl _ ht d ⟨ht.2, le_rfl⟩ hin)
+  have hin : γ (5 - val k (γ 0)) ∈ {s | val k s = 5} := by
+    show val k _ = 5
+    rw [val_eq_of_trajectory hγ _ ht]; ring
+  have : val k (γ d) = 5 :=
+    hγ.stays _ (by rw [regions_eq]; rfl) _ ht d ⟨ht.2, le_rfl⟩ hin
   rw [val_eq_of_trajectory hγ _ ⟨hγ.nonneg, le_rfl⟩] at this
   linarith
 
@@ -127,7 +143,7 @@ theorem step_cases {s s' : Val M (clock k).ctrl} {d : ℝ} (hs : (sys k).Step s 
     (h5 : val k s ≤ 5) :
     (val k s = 5 ∧ s' = 0 ∧ d = 0) ∨ (0 ≤ d ∧ val k s' = val k s + d ∧ val k s' ≤ 5) := by
   cases hs with
-  | jump h => exact .inl ⟨(mem_jump.1 h).1, (mem_jump.1 h).2, rfl⟩
+  | jump hμ hs' => exact .inl ⟨(of_mem_jump hμ hs').1, (of_mem_jump hμ hs').2, rfl⟩
   | flow hγ =>
     have := val_eq_of_trajectory hγ _ ⟨hγ.nonneg, le_rfl⟩
     exact .inr ⟨hγ.nonneg, this, this ▸ val_le_of_trajectory hγ h5⟩
@@ -136,7 +152,7 @@ theorem step_cases {s s' : Val M (clock k).ctrl} {d : ℝ} (hs : (sys k).Step s 
 theorem reachable_bounds {s : Val M (clock k).ctrl} (hs : (sys k).Reachable s) :
     0 ≤ val k s ∧ val k s ≤ 5 := by
   induction hs with
-  | init h => rw [mem_init.1 h]; norm_num [val]
+  | init hμ hs => rw [of_mem_init hμ hs]; norm_num [val]
   | step _ hst ih =>
     rcases step_cases hst ih.2 with ⟨_, rfl, _⟩ | ⟨hd, heq, hle⟩
     · norm_num [val]
@@ -205,12 +221,13 @@ theorem isTrajectory_ramp : (sys k).IsTrajectory (fun t _ => t) 5 where
       hasDerivAt_pi.2 fun _ => hasDerivAt_id t
     exact ⟨fun _ => 1, rfl, hasMFDerivAt_of_hasFDerivAt this.hasFDerivAt⟩
   stays G hG t₁ _ t₂ ht₂ hin := by
+    rw [regions_eq, Set.mem_singleton_iff] at hG
     subst hG
-    have h5 : t₁ = 5 := mem_region.1 hin
+    have h5 : t₁ = 5 := hin
     rwa [show t₂ = t₁ by linarith [ht₂.1, ht₂.2]]
 
 theorem run_isRun : (sys k).IsRun (run k) dur where
-  init := by simp [run, mem_init]
+  init := ⟨_, pure_mem_init, by simp [run]⟩
   step n := by
     rcases Nat.mod_two_eq_zero_or_one n with h | h
     · have h' : (n + 1) % 2 = 1 := by omega
@@ -218,7 +235,7 @@ theorem run_isRun : (sys k).IsRun (run k) dur where
       exact Hybrid.Step.flow isTrajectory_ramp
     · have h' : (n + 1) % 2 = 0 := by omega
       simp only [run, dur, h, h', one_ne_zero, ↓reduceIte]
-      exact Hybrid.Step.jump (mem_jump.2 ⟨rfl, rfl⟩)
+      exact Hybrid.Step.jump (pure_mem_jump rfl) (by simp)
 
 theorem run_divergent : Hybrid.Divergent dur := by
   have hnn : ∀ i, 0 ≤ dur i := fun i => by unfold dur; split_ifs <;> norm_num
@@ -314,58 +331,74 @@ theorem exists_atoms {P : ∀ a, a ∈ composed.atoms → Prop} :
   rcases hmem' with rfl | rfl
   exacts [.inl h, .inr h]
 
-theorem mem_minit {s : Val M composed.ctrl} :
-    s ∈ msys.init ↔ mval .a s = 0 ∧ mval .b s = 0 :=
-  forall_atoms.trans (and_congr
-    (restrict_eq_const .a (composed.ctrl_subset (mem_atoms .a)) s 0)
-    (restrict_eq_const .b (composed.ctrl_subset (mem_atoms .b)) s 0))
-
 /-- The update of a clock is enabled iff the clock is at `5`. -/
-theorem enabled_iff (k : Clock) {s s' : Val M composed.ctrl} :
-    composed.Enabled composed_isClosed (mem_atoms k) s s' ↔ mval k s = 5 :=
-  ⟨fun ⟨_, h, _⟩ => h, fun h => ⟨0, h, rfl⟩⟩
+theorem enabled_iff (k : Clock) {s x : Val M composed.ctrl} :
+    composed.Enabled composed_isClosed (mem_atoms k) s x ↔ mval k s = 5 :=
+  ⟨fun ⟨_, h, _⟩ => h, fun h => ⟨_, h, rfl⟩⟩
 
-theorem fires_iff (k : Clock) {s s' : Val M composed.ctrl} :
-    composed.Fires composed_isClosed (mem_atoms k) s s' ↔ mval k s = 5 ∧ mval k s' = 0 :=
-  and_congr Iff.rfl (restrict_eq_const k (composed.ctrl_subset (mem_atoms k)) s' 0)
+/-- Initially, every clock is at `0`. -/
+theorem init_clock (k : Clock) {s : Val M composed.ctrl}
+    (h : ∃ ν ∈ composed.initDraws composed_isClosed (mem_atoms k) s,
+      Val.restrict (composed.ctrl_subset (mem_atoms k)) s ∈ ν.support) : mval k s = 0 := by
+  obtain ⟨_, ⟨_, rfl, rfl⟩, hs⟩ := h
+  exact (restrict_eq_const k (composed.ctrl_subset (mem_atoms k)) s 0).1
+    ((PMF.mem_support_pure_iff _ _).1 hs)
 
-theorem keeps_iff (k : Clock) {s s' : Val M composed.ctrl} :
-    composed.Keeps (mem_atoms k) s s' ↔ mval k s' = mval k s :=
-  restrict_eq_iff k (composed.ctrl_subset (mem_atoms k)) s' s
+theorem of_mem_minit {μ : PMF (Val M composed.ctrl)} {s : Val M composed.ctrl}
+    (hμ : μ ∈ msys.init) (hs : s ∈ μ.support) : mval .a s = 0 ∧ mval .b s = 0 :=
+  ⟨init_clock .a (Module.draw_of_mem_init hμ hs _ _),
+    init_clock .b (Module.draw_of_mem_init hμ hs _ _)⟩
+
+/-- The deterministic draws of the clocks of a valuation `t`. -/
+noncomputable def pureDraws (t : Val M composed.ctrl) : composed.Draws :=
+  fun _ ha _ => PMF.pure (Val.restrict (composed.ctrl_subset ha) t)
+
+theorem pure_mem_minit : PMF.pure 0 ∈ msys.init :=
+  ⟨pureDraws 0, 0, forall_atoms.2 ⟨fun _ => ⟨_, rfl, rfl⟩, fun _ => ⟨_, rfl, rfl⟩⟩,
+    (Module.round_pure_atoms (fun _ _ _ => rfl) 0).symm⟩
 
 /-- In a jump, the clock `k` resets if it is at `5`, and keeps its value otherwise. -/
 def ResetOrKeep (k : Clock) (s s' : Val M composed.ctrl) : Prop :=
   (mval k s = 5 → mval k s' = 0) ∧ (mval k s ≠ 5 → mval k s' = mval k s)
 
-theorem atom_jump_iff (k : Clock) {s s' : Val M composed.ctrl} :
-    ((composed.Enabled composed_isClosed (mem_atoms k) s s' →
-        composed.Fires composed_isClosed (mem_atoms k) s s') ∧
-      (¬composed.Enabled composed_isClosed (mem_atoms k) s s' →
-        composed.Keeps (mem_atoms k) s s')) ↔ ResetOrKeep k s s' := by
-  rw [enabled_iff, fires_iff, keeps_iff]
-  exact and_congr ⟨fun h h5 => (h h5).2, fun h h5 => ⟨h5, h h5⟩⟩ Iff.rfl
+theorem jump_clock (k : Clock) {s s' : Val M composed.ctrl}
+    (h : ∃ ν ∈ composed.draws composed_isClosed (mem_atoms k) s s',
+      Val.restrict (composed.ctrl_subset (mem_atoms k)) s' ∈ ν.support) : ResetOrKeep k s s' := by
+  obtain ⟨_, ⟨_, _, ⟨h5, rfl⟩, rfl⟩ | ⟨he, rfl⟩, hs'⟩ := h
+  · have := (restrict_eq_const k (composed.ctrl_subset (mem_atoms k)) s' 0).1
+      ((PMF.mem_support_pure_iff _ _).1 hs')
+    exact ⟨fun _ => this, fun h => absurd h5 h⟩
+  · have := (restrict_eq_iff k (composed.ctrl_subset (mem_atoms k)) s' s).1
+      ((PMF.mem_support_pure_iff _ _).1 hs')
+    exact ⟨fun h => absurd ((enabled_iff k).2 h) he, fun _ => this⟩
+
+/-- The jump region of a clock atom: the clock at `5`. -/
+theorem region_iff (k : Clock) {s : Val M composed.ctrl} :
+    s ∈ composed.Region composed_isClosed (mem_atoms k) ↔ mval k s = 5 :=
+  ⟨fun ⟨_, h⟩ => (enabled_iff k).1 h, fun h => ⟨s, (enabled_iff k).2 h⟩⟩
 
 /-- A jump happens when some clock is at `5`; then every clock resets if it is
     at `5`, and keeps its value otherwise. -/
-theorem mem_mjump {s s' : Val M composed.ctrl} :
-    s' ∈ msys.jump s ↔
-      (mval .a s = 5 ∨ mval .b s = 5) ∧ ResetOrKeep .a s s' ∧ ResetOrKeep .b s s' :=
-  and_congr (exists_atoms.trans (or_congr (enabled_iff .a) (enabled_iff .b)))
-    (forall_atoms.trans (and_congr (atom_jump_iff .a) (atom_jump_iff .b)))
+theorem of_mem_mjump {μ : PMF (Val M composed.ctrl)} {s s' : Val M composed.ctrl}
+    (hμ : μ ∈ msys.jump s) (hs' : s' ∈ μ.support) :
+    (mval .a s = 5 ∨ mval .b s = 5) ∧ ResetOrKeep .a s s' ∧ ResetOrKeep .b s s' :=
+  ⟨(exists_atoms.1 hμ.1).imp (region_iff .a).1 (region_iff .b).1,
+    jump_clock .a (Module.draw_of_mem_jump hμ hs' _ _),
+    jump_clock .b (Module.draw_of_mem_jump hμ hs' _ _)⟩
+
+/-- Both clocks at `5` reset together. -/
+theorem pure_mem_mjump {s : Val M composed.ctrl} (ha : mval .a s = 5) (hb : mval .b s = 5) :
+    PMF.pure 0 ∈ msys.jump s :=
+  ⟨⟨_, _, (region_iff .a).2 ha⟩, pureDraws 0,
+    forall_atoms.2 ⟨fun _ => .inl ⟨(enabled_iff .a).2 ha, _, ⟨ha, rfl⟩, rfl⟩,
+      fun _ => .inl ⟨(enabled_iff .b).2 hb, _, ⟨hb, rfl⟩, rfl⟩⟩,
+    (Module.round_pure_atoms (fun _ _ _ => rfl) s).symm⟩
 
 theorem mem_mflow {s : Val M composed.ctrl} {w : TangentSpace (Val.model I composed.ctrl) s} :
     w ∈ msys.flow s ↔ w ⟨.a, mem_ctrl .a⟩ = 1 ∧ w ⟨.b, mem_ctrl .b⟩ = 1 :=
   forall_atoms.trans (and_congr
     (restrict_eq_const .a (composed.ctrl_subset (mem_atoms .a)) w 1)
     (restrict_eq_const .b (composed.ctrl_subset (mem_atoms .b)) w 1))
-
-/-- The race: a jump is possible iff some clock is at `5`. -/
-theorem mjump_eq_empty {s : Val M composed.ctrl} :
-    msys.jump s = ∅ ↔ ¬(mval .a s = 5 ∨ mval .b s = 5) := by
-  rw [Set.eq_empty_iff_forall_notMem]
-  refine ⟨fun h h5 => h (fun v => if s v = 5 then 0 else s v) (mem_mjump.2 ⟨h5, ?_, ?_⟩),
-    fun h s' hs => h (mem_mjump.1 hs).1⟩ <;>
-  · exact ⟨fun h5 => by unfold mval at h5 ⊢; simp [h5], fun h5 => by unfold mval at h5 ⊢; simp [h5]⟩
 
 /-- Along a trajectory of the module, both clocks grow by the time elapsed. -/
 theorem mval_eq_of_trajectory {γ : ℝ → Val M composed.ctrl} {d : ℝ}
@@ -375,11 +408,6 @@ theorem mval_eq_of_trajectory {γ : ℝ → Val M composed.ctrl} {d : ℝ}
     obtain ⟨v, hv, hγt⟩ := hγ.follows t ht
     have := mem_mflow.1 hv
     exact ⟨v, by cases k; exacts [this.1, this.2], hγt⟩
-
-/-- The jump region of a clock atom: the clock at `5`. -/
-theorem region_iff (k : Clock) {s : Val M composed.ctrl} :
-    s ∈ composed.Region composed_isClosed (mem_atoms k) ↔ mval k s = 5 :=
-  ⟨fun ⟨_, h⟩ => (enabled_iff k).1 h, fun h => ⟨s, (enabled_iff k).2 h⟩⟩
 
 theorem region_mem (k : Clock) :
     composed.Region composed_isClosed (mem_atoms k) ∈ msys.regions := ⟨_, _, rfl⟩
@@ -411,8 +439,8 @@ theorem mstep_cases {s s' : Val M composed.ctrl} {d : ℝ} (hs : msys.Step s d s
     (mval .a s = 5 ∧ mval .a s' = 0 ∧ mval .b s' = 0 ∧ d = 0) ∨
       (0 ≤ d ∧ mval .a s' = mval .a s + d ∧ mval .b s' = mval .b s + d ∧ mval .a s' ≤ 5) := by
   cases hs with
-  | jump h =>
-    obtain ⟨h5, ⟨ha, _⟩, ⟨hb, _⟩⟩ := mem_mjump.1 h
+  | jump hμ hs' =>
+    obtain ⟨h5, ⟨ha, _⟩, ⟨hb, _⟩⟩ := of_mem_mjump hμ hs'
     have h5a : mval .a s = 5 := h5.elim id (hab ▸ ·)
     exact .inl ⟨h5a, ha h5a, hb (hab ▸ h5a), rfl⟩
   | flow hγ =>
@@ -424,8 +452,8 @@ theorem mstep_cases {s s' : Val M composed.ctrl} {d : ℝ} (hs : msys.Step s d s
 theorem mreachable_bounds {s : Val M composed.ctrl} (hs : msys.Reachable s) :
     mval .a s = mval .b s ∧ 0 ≤ mval .a s ∧ mval .a s ≤ 5 := by
   induction hs with
-  | init h =>
-    have := mem_minit.1 h
+  | init hμ hs =>
+    have := of_mem_minit hμ hs
     rw [this.1, this.2]
     norm_num
   | step _ hst ih =>
@@ -502,7 +530,7 @@ theorem isTrajectory_mramp : msys.IsTrajectory (fun t _ => t) 5 where
     rwa [show t₂ = t₁ by linarith [ht₂.1, ht₂.2]]
 
 theorem mrun_isRun : msys.IsRun mrun dur where
-  init := by simp only [mrun, Nat.zero_mod, ↓reduceIte]; exact mem_minit.2 ⟨rfl, rfl⟩
+  init := ⟨_, pure_mem_minit, by simp [mrun]⟩
   step n := by
     rcases Nat.mod_two_eq_zero_or_one n with h | h
     · have h' : (n + 1) % 2 = 1 := by omega
@@ -510,11 +538,25 @@ theorem mrun_isRun : msys.IsRun mrun dur where
       exact Hybrid.Step.flow isTrajectory_mramp
     · have h' : (n + 1) % 2 = 0 := by omega
       simp only [mrun, dur, h, h', one_ne_zero, ↓reduceIte]
-      exact Hybrid.Step.jump
-        (mem_mjump.2 ⟨.inl rfl, ⟨fun _ => rfl, fun h => absurd rfl h⟩, fun _ => rfl, fun h => absurd rfl h⟩)
+      exact Hybrid.Step.jump (pure_mem_mjump rfl rfl) (by simp)
 
 /-- Both clocks of the composed module are `0` infinitely many times along `mrun`. -/
 example : {n | mval .a (mrun n) = 0 ∧ mval .b (mrun n) = 0}.Infinite :=
   minfinite_zero mrun_isRun run_divergent
+
+/-! ## Almost surely -/
+
+/-- Under every scheduler, almost surely, the clocks stay synchronised and within `[0, 5]`. -/
+theorem ae_mbounds (σ : msys.Scheduler) :
+    ∀ᵐ ω ∂σ.measure, ∀ n, mval .a (ω n) = mval .b (ω n) ∧ 0 ≤ mval .a (ω n) ∧ mval .a (ω n) ≤ 5 :=
+  σ.ae_forall_of_reachable fun _ => mreachable_bounds
+
+/-- Under every scheduler, almost surely, if time diverges, both clocks are `0`
+    (at once) infinitely many times. -/
+theorem ae_minfinite_zero (σ : msys.Scheduler) :
+    ∀ᵐ ω ∂σ.measure, Hybrid.Divergent (fun n => σ.time n (ω n)) →
+      {n | mval .a (ω n) = 0 ∧ mval .b (ω n) = 0}.Infinite :=
+  σ.ae_of_isRun (P := fun ρ δ => Hybrid.Divergent δ →
+    {n | mval .a (ρ n) = 0 ∧ mval .b (ρ n) = 0}.Infinite) fun _ _ hρ hdiv => minfinite_zero hρ hdiv
 
 end Zrth.Examples.Clocks

@@ -1,37 +1,35 @@
-import Zrth.Hybrid
+import Zrth.Stochastic
 import Mathlib.Analysis.Calculus.Deriv.Prod
 import Mathlib.Analysis.Calculus.MeanValue
-import Mathlib.Analysis.SpecialFunctions.ExpDeriv
+import Mathlib.Probability.ProbabilityMassFunction.Constructions
 
 /-!
-# A continuous birth-death process
+# A birth-death process
 
-Three atoms, one per variable: the population `pop`, and the cumulative
-`births` and `deaths`.
+Four atoms, one per variable: a clock `clk`, the cumulative `births` and
+`deaths`, and the population `pop`. Births and deaths are random events at
+the ticks of the clock:
 
-* The birth atom reads the current population and flows `births' = 2 pop`.
-* The death atom reads the current population and flows `deaths' = pop`.
-* The population atom *awaits the tangents* of `births` and `deaths`, but not
-  their values, and flows `pop' = births' - deaths'`.
+* the clock flows at rate `1` and ticks at `1`, resetting to `0`;
+* at a tick, the birth atom counts a birth with probability `1/2`;
+* at a tick, the death atom counts a death with probability `1/3`, if the
+  population is at least `1`;
+* at a tick, the population atom *awaits the next values* of `births` and
+  `deaths`, drawn before it in the round, and changes by the births and deaths
+  of the round; between ticks, it flows along the *awaited tangents* of
+  `births` and `deaths`, `pop' = births' - deaths'` (here `0`: the counts only
+  change by events).
 
-Their flows form the system of differential equations of the process. The
-updates skip, so jumps only stutter. The population starts at `100`, the
-cumulative counts at `0`.
+The population starts at `100`, the counts at `0`. Proved about every
+possible run, hence almost surely under every scheduler (`ae_invariant`):
 
-Proved about the process:
+* *conservation*: `pop = 100 + births - deaths` (`reachable_invariant`);
+* *nonnegativity*: `births`, `deaths` and `pop` stay nonnegative, as a death
+  needs a living individual.
 
-* *conservation*: since the population follows the awaited tangents,
-  `pop - births + deaths` is constant along every flow, so every reachable
-  state satisfies `pop = 100 + births - deaths` (`reachable_conservation`);
-* *ratio*: births happen at twice the rate of deaths, so `births = 2 deaths`
-  (`reachable_ratio`), and hence `pop = 100 + deaths` (`reachable_pop_eq`);
-* *solution*: along every flow, `pop' = births' - deaths' = pop`, so the
-  population grows exponentially, `pop t = pop 0 * eᵗ` (`pop_of_trajectory`);
-* *survival*: the population never drops below `100` (`reachable_pop_ge`).
-
-The exponential growth `pop = 100 eᵗ`, `births = 200 (eᵗ - 1)`,
-`deaths = 100 (eᵗ - 1)` is a trajectory from the initial state
-(`isTrajectory_growth`, `growth_reachable`).
+The distributions of the atoms are finitely supported: a coin (`coin`) or a
+Dirac. For instance, a birth happens at a tick with probability `1/2`
+(`birth_prob`).
 -/
 
 namespace Zrth.Examples.BirthDeath
@@ -43,59 +41,103 @@ inductive Var
   | pop
   | births
   | deaths
+  | clk
   deriving DecidableEq
 
 /-- Every variable ranges over `ℝ`, modelled on itself. -/
 noncomputable abbrev I (_ : Var) := 𝓘(ℝ, ℝ)
 abbrev M (_ : Var) := ℝ
 
-/-- The birth atom: `births' = 2 pop`, reading the current population. -/
+/-- The coin landing `true` with probability `p`. -/
+noncomputable def flip (p : NNReal) (hp : p ≤ 1) : PMF Bool :=
+  PMF.ofFintype (fun b => if b then (p : ENNReal) else ((1 - p : NNReal) : ENNReal)) (by
+    simp only [Fintype.sum_bool, ↓reduceIte, Bool.false_eq_true, ← ENNReal.coe_add,
+      add_tsub_cancel_of_le hp, ENNReal.coe_one])
+
+/-- The distribution of `x` with probability `p`, and of `y` otherwise. -/
+noncomputable def coin {α : Type*} (p : NNReal) (hp : p ≤ 1) (x y : α) : FinDist α :=
+  ⟨(flip p hp).map fun b => if b then x else y, by
+    rw [PMF.support_map]; exact (Set.toFinite _).image _⟩
+
+theorem mem_coin {α : Type*} {p : NNReal} {hp : p ≤ 1} {x y z : α}
+    (h : z ∈ (coin p hp x y).toPMF.support) : z = x ∨ z = y := by
+  simp only [coin, PMF.support_map] at h
+  obtain ⟨b, _, rfl⟩ := h
+  cases b <;> simp
+
+theorem coin_apply_left {α : Type*} {p : NNReal} {hp : p ≤ 1} {x y : α} (hxy : x ≠ y) :
+    (coin p hp x y).toPMF x = p := by
+  simp only [coin, flip, PMF.map_apply, tsum_fintype, Fintype.sum_bool, PMF.ofFintype_apply,
+    ↓reduceIte, Bool.false_eq_true, hxy, add_zero]
+
+theorem half_le_one : (1 / 2 : NNReal) ≤ 1 := div_le_one_of_le₀ (by norm_num) (by norm_num)
+theorem third_le_one : (1 / 3 : NNReal) ≤ 1 := div_le_one_of_le₀ (by norm_num) (by norm_num)
+
+/-- The clock: it flows at rate `1` and ticks at `1`, resetting to `0`. -/
+noncomputable def tick : Atom I M where
+  ctrl := {.clk}
+  wait := ∅
+  read := {.clk}
+  disjoint_ctrl_wait := Finset.disjoint_empty_right _
+  init _ := {.pure 0}
+  update := fun (r, _) => {μ | r ⟨.clk, by simp⟩ = 1 ∧ μ = .pure 0}
+  flow _ _ := {fun _ => 1}
+
+/-- The birth atom: at a tick, a birth with probability `1/2`. -/
 noncomputable def birth : Atom I M where
   ctrl := {.births}
   wait := ∅
-  read := {.births, .pop}
+  read := {.births, .clk}
   disjoint_ctrl_wait := Finset.disjoint_empty_right _
-  init _ := {0}
-  update | (r, _) => {fun _ => r ⟨.births, by simp⟩}
-  flow _ | (r, _) => {fun _ => 2 * r ⟨.pop, by simp⟩}
+  init _ := {.pure 0}
+  update := fun (r, _) => {μ | r ⟨.clk, by simp⟩ = 1 ∧
+    μ = coin (1 / 2) half_le_one (fun _ => r ⟨.births, by simp⟩ + 1) (fun _ => r ⟨.births, by simp⟩)}
+  flow _ _ := {fun _ => 0}
 
-/-- The death atom: `deaths' = pop`, reading the current population. -/
+/-- The death atom: at a tick, a death with probability `1/3`, if there is
+    someone to die. -/
 noncomputable def death : Atom I M where
   ctrl := {.deaths}
   wait := ∅
-  read := {.deaths, .pop}
+  read := {.deaths, .pop, .clk}
   disjoint_ctrl_wait := Finset.disjoint_empty_right _
-  init _ := {0}
-  update | (r, _) => {fun _ => r ⟨.deaths, by simp⟩}
-  flow _ | (r, _) => {fun _ => r ⟨.pop, by simp⟩}
+  init _ := {.pure 0}
+  update := fun (r, _) => {μ | r ⟨.clk, by simp⟩ = 1 ∧
+    μ = if 1 ≤ r ⟨.pop, by simp⟩ then
+      coin (1 / 3) third_le_one (fun _ => r ⟨.deaths, by simp⟩ + 1) (fun _ => r ⟨.deaths, by simp⟩)
+    else .pure fun _ => r ⟨.deaths, by simp⟩}
+  flow _ _ := {fun _ => 0}
 
-/-- The population atom: `pop' = births' - deaths'`, awaiting the tangents of
-    `births` and `deaths`. -/
+/-- The population atom: at a tick, it changes by the births and deaths of the
+    round, awaiting their next values; between ticks, it flows along their
+    awaited tangents. -/
 noncomputable def population : Atom I M where
   ctrl := {.pop}
   wait := {.births, .deaths}
-  read := {.pop}
+  read := {.pop, .births, .deaths, .clk}
   disjoint_ctrl_wait := by decide
-  init _ := {fun _ => 100}
-  update | (r, _) => {fun _ => r ⟨.pop, by simp⟩}
-  flow _ | (_, w) => {fun _ => w ⟨.births, by simp⟩ - w ⟨.deaths, by simp⟩}
+  init _ := {.pure fun _ => 100}
+  update := fun (r, w) => {μ | r ⟨.clk, by simp⟩ = 1 ∧ μ = .pure fun _ =>
+    r ⟨.pop, by simp⟩ + (w ⟨.births, by simp⟩ - r ⟨.births, by simp⟩) -
+      (w ⟨.deaths, by simp⟩ - r ⟨.deaths, by simp⟩)}
+  flow := fun _ (_, w) => {fun _ => w ⟨.births, by simp⟩ - w ⟨.deaths, by simp⟩}
 
-/-- The process: the three atoms, the population last, since it awaits the others. -/
+/-- The process: the population last, since it awaits the births and deaths. -/
 noncomputable def process : Module I M where
   extl := ∅
-  intf := {.pop, .births, .deaths}
+  intf := {.pop, .births, .deaths, .clk}
   prvt := ∅
-  atoms := [birth, death, population]
+  atoms := [tick, birth, death, population]
   disjoint_extl_intf := Finset.disjoint_empty_left _
   disjoint_extl_prvt := Finset.disjoint_empty_left _
   disjoint_intf_prvt := Finset.disjoint_empty_right _
-  pairwise_disjoint_ctrl := by simp [birth, death, population]
-  mem_ctrl_iff v := by cases v <;> simp [birth, death, population]
+  pairwise_disjoint_ctrl := by simp [tick, birth, death, population]
+  mem_ctrl_iff v := by cases v <;> simp [tick, birth, death, population]
   subset_vars a ha := by
-    change a ∈ [birth, death, population] at ha
+    change a ∈ [tick, birth, death, population] at ha
     simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
-    rcases ha with rfl | rfl | rfl <;> decide
-  pairwise_await := by simp [birth, death, population]
+    rcases ha with rfl | rfl | rfl | rfl <;> decide
+  pairwise_await := by simp [tick, birth, death, population]
 
 theorem process_isClosed : process.IsClosed := rfl
 
@@ -105,24 +147,71 @@ noncomputable def sys : Hybrid (Val.model I process.ctrl) (Val M process.ctrl) :
 
 theorem mem_ctrl (k : Var) : k ∈ process.ctrl := by cases k <;> decide
 
+theorem mem_tick : tick ∈ process.atoms := by simp [process]
 theorem mem_birth : birth ∈ process.atoms := by simp [process]
 theorem mem_death : death ∈ process.atoms := by simp [process]
 theorem mem_population : population ∈ process.atoms := by simp [process]
 
-theorem forall_atoms {P : ∀ a, a ∈ process.atoms → Prop} (h₁ : P birth mem_birth)
-    (h₂ : P death mem_death) (h₃ : P population mem_population) : ∀ a ha, P a ha := by
-  intro a ha
-  have ha' := ha
-  change a ∈ [birth, death, population] at ha'
-  simp only [List.mem_cons, List.not_mem_nil, or_false] at ha'
-  rcases ha' with rfl | rfl | rfl
-  exacts [h₁, h₂, h₃]
-
 /-- The value of the variable `k`. -/
 def val (k : Var) (s : Val M process.ctrl) : ℝ := s ⟨k, mem_ctrl k⟩
 
-/-- The conserved quantity. -/
-def conserved (s : Val M process.ctrl) : ℝ := val .pop s - val .births s + val .deaths s
+/-- The probability of a birth at a tick (the update is only defined at a tick). -/
+theorem birth_prob (r : Val M birth.read) (w : Val M birth.wait)
+    {μ : FinDist (Val M birth.ctrl)} (hμ : μ ∈ birth.update (r, w)) :
+    μ.toPMF (fun _ => r ⟨.births, by simp [birth]⟩ + 1) = 1 / 2 := by
+  obtain ⟨_, rfl⟩ := hμ
+  refine (coin_apply_left fun h => ?_).trans (by norm_num [ENNReal.coe_div])
+  have := congrFun h ⟨.births, by simp⟩
+  simp at this
+
+/-! ## Rounds -/
+
+variable {s s' : Val M process.ctrl}
+
+/-- What the draw of an atom `a` in a jump from `s` to `s'` gives. -/
+abbrev Drawn (a : Atom I M) (ha : a ∈ process.atoms) (s s' : Val M process.ctrl) : Prop :=
+  ∃ ν ∈ process.draws process_isClosed ha s s',
+    Val.restrict (process.ctrl_subset ha) s' ∈ ν.support
+
+/-- Extracting the value of a variable from equal valuations. -/
+theorem val_eq {X : Finset Var} {f g : Val M X} (e : f = g) (k : Var) (hk : k ∈ X) :
+    f ⟨k, hk⟩ = g ⟨k, hk⟩ := congrFun e _
+
+theorem tick_draw (h : Drawn tick mem_tick s s') :
+    (val .clk s = 1 ∧ val .clk s' = 0) ∨ (val .clk s ≠ 1 ∧ val .clk s' = val .clk s) := by
+  obtain ⟨_, ⟨_, _, ⟨h1, rfl⟩, rfl⟩ | ⟨hne, rfl⟩, hs'⟩ := h
+  · exact .inl ⟨h1, val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .clk (Finset.mem_singleton_self _)⟩
+  · exact .inr ⟨fun h1 => hne ⟨_, h1, rfl⟩,
+      val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .clk (Finset.mem_singleton_self _)⟩
+
+theorem birth_draw (h : Drawn birth mem_birth s s') :
+    (val .clk s = 1 ∧ (val .births s' = val .births s + 1 ∨ val .births s' = val .births s)) ∨
+      (val .clk s ≠ 1 ∧ val .births s' = val .births s) := by
+  obtain ⟨_, ⟨_, _, ⟨h1, rfl⟩, rfl⟩ | ⟨hne, rfl⟩, hs'⟩ := h
+  · refine .inl ⟨h1, (mem_coin hs').imp (fun e => ?_) (fun e => ?_)⟩ <;>
+      exact val_eq e .births (Finset.mem_singleton_self _)
+  · exact .inr ⟨fun h1 => hne ⟨_, h1, rfl⟩,
+      val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .births (Finset.mem_singleton_self _)⟩
+
+theorem death_draw (h : Drawn death mem_death s s') :
+    (val .clk s = 1 ∧ ((1 ≤ val .pop s ∧ val .deaths s' = val .deaths s + 1) ∨
+      val .deaths s' = val .deaths s)) ∨ (val .clk s ≠ 1 ∧ val .deaths s' = val .deaths s) := by
+  obtain ⟨_, ⟨_, _, ⟨h1, rfl⟩, rfl⟩ | ⟨hne, rfl⟩, hs'⟩ := h
+  · refine .inl ⟨h1, ?_⟩
+    split_ifs at hs' with hp
+    · refine (mem_coin hs').imp (fun e => ⟨hp, ?_⟩) (fun e => ?_) <;>
+        exact val_eq e .deaths (Finset.mem_singleton_self _)
+    · exact .inr (val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .deaths (Finset.mem_singleton_self _))
+  · exact .inr ⟨fun h1 => hne ⟨_, h1, rfl⟩,
+      val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .deaths (Finset.mem_singleton_self _)⟩
+
+theorem population_draw (h : Drawn population mem_population s s') :
+    (val .clk s = 1 ∧ val .pop s' = val .pop s + (val .births s' - val .births s) -
+      (val .deaths s' - val .deaths s)) ∨ (val .clk s ≠ 1 ∧ val .pop s' = val .pop s) := by
+  obtain ⟨_, ⟨_, _, ⟨h1, rfl⟩, rfl⟩ | ⟨hne, rfl⟩, hs'⟩ := h
+  · exact .inl ⟨h1, val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .pop (Finset.mem_singleton_self _)⟩
+  · exact .inr ⟨fun h1 => hne ⟨_, h1, rfl⟩,
+      val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .pop (Finset.mem_singleton_self _)⟩
 
 /-! ## Flows -/
 
@@ -132,13 +221,6 @@ theorem hasFDerivAt_of_hasMFDerivAt {X : Finset Var} {γ : ℝ → Val M X} {t :
   have := h.2
   simp only [writtenInExtChartAt, extChartAt, mfld_simps] at this
   exact hasFDerivWithinAt_univ.1 this
-
-theorem hasMFDerivAt_of_hasFDerivAt {X : Finset Var} {γ : ℝ → Val M X} {t : ℝ}
-    {f' : ℝ →L[ℝ] ((v : X) → ℝ)} (h : HasFDerivAt γ f' t) :
-    HasMFDerivAt 𝓘(ℝ, ℝ) (Val.model I X) γ t f' := by
-  refine ⟨h.continuousAt, ?_⟩
-  simp only [writtenInExtChartAt, extChartAt, mfld_simps]
-  exact hasFDerivWithinAt_univ.2 h
 
 /-- Along a curve with tangent `w`, every variable moves at the rate `w` gives it. -/
 theorem hasDerivAt_val {γ : ℝ → Val M process.ctrl} {t : ℝ} {w : (v : process.ctrl) → ℝ}
@@ -159,201 +241,87 @@ theorem eq_of_hasDerivAt_zero {f : ℝ → ℝ} {d : ℝ} (hd : ∀ t ∈ Icc 0 
   constant_of_has_deriv_right_zero (fun t ht => (hd t ht).continuousAt.continuousWithinAt)
     (fun t ht => (hd t (Ico_subset_Icc_self ht)).hasDerivWithinAt)
 
-variable {s : Val M process.ctrl} {w : TangentSpace (Val.model I process.ctrl) s}
+/-- Along a flow, the counts and the population do not change: the population
+    follows the awaited tangents of the counts, which only change by events. -/
+theorem flow_rates {w : TangentSpace (Val.model I process.ctrl) s} (hw : w ∈ sys.flow s) :
+    w ⟨.births, mem_ctrl _⟩ = 0 ∧ w ⟨.deaths, mem_ctrl _⟩ = 0 ∧ w ⟨.pop, mem_ctrl _⟩ = 0 := by
+  have hb : w ⟨.births, mem_ctrl _⟩ = 0 :=
+    congrFun (Set.mem_singleton_iff.1 (hw birth mem_birth)) ⟨.births, Finset.mem_singleton_self _⟩
+  have hd : w ⟨.deaths, mem_ctrl _⟩ = 0 :=
+    congrFun (Set.mem_singleton_iff.1 (hw death mem_death)) ⟨.deaths, Finset.mem_singleton_self _⟩
+  have hp : w ⟨.pop, mem_ctrl _⟩ = w ⟨.births, mem_ctrl _⟩ - w ⟨.deaths, mem_ctrl _⟩ :=
+    congrFun (Set.mem_singleton_iff.1 (hw population mem_population))
+      ⟨.pop, Finset.mem_singleton_self _⟩
+  exact ⟨hb, hd, by rw [hp, hb, hd, sub_zero]⟩
 
-/-- Births happen at twice the rate of the population. -/
-theorem flow_births (hw : w ∈ sys.flow s) : w ⟨.births, mem_ctrl _⟩ = 2 * val .pop s :=
-  congrFun (Set.mem_singleton_iff.1 (hw birth mem_birth)) ⟨.births, Finset.mem_singleton_self _⟩
-
-/-- Deaths happen at the rate of the population. -/
-theorem flow_deaths (hw : w ∈ sys.flow s) : w ⟨.deaths, mem_ctrl _⟩ = val .pop s :=
-  congrFun (Set.mem_singleton_iff.1 (hw death mem_death)) ⟨.deaths, Finset.mem_singleton_self _⟩
-
-/-- The flow of the population follows the awaited tangents. -/
-theorem flow_pop (hw : w ∈ sys.flow s) :
-    w ⟨.pop, mem_ctrl _⟩ = w ⟨.births, mem_ctrl _⟩ - w ⟨.deaths, mem_ctrl _⟩ :=
-  congrFun (Set.mem_singleton_iff.1 (hw population mem_population)) ⟨.pop, Finset.mem_singleton_self _⟩
-
-/-- So the population grows at its own rate. -/
-theorem flow_pop' (hw : w ∈ sys.flow s) : w ⟨.pop, mem_ctrl _⟩ = val .pop s := by
-  rw [flow_pop hw, flow_births hw, flow_deaths hw]
-  ring
-
-variable {γ : ℝ → Val M process.ctrl} {d : ℝ}
-
-/-- Along a trajectory, `pop - births + deaths` is constant: the population
-    follows the awaited tangents of births and deaths. -/
-theorem conserved_of_trajectory (hγ : sys.IsTrajectory γ d) :
-    ∀ t ∈ Icc 0 d, conserved (γ t) = conserved (γ 0) :=
-  eq_of_hasDerivAt_zero fun t ht => by
+theorem val_of_trajectory {γ : ℝ → Val M process.ctrl} {d : ℝ} (hγ : sys.IsTrajectory γ d)
+    {k : Var} (hk : k = .births ∨ k = .deaths ∨ k = .pop) :
+    val k (γ d) = val k (γ 0) :=
+  eq_of_hasDerivAt_zero (f := fun t => val k (γ t)) (fun t ht => by
     obtain ⟨w, hw, hγt⟩ := hγ.follows t ht
-    have := ((hasDerivAt_val hγt .pop).sub (hasDerivAt_val hγt .births)).add
-      (hasDerivAt_val hγt .deaths)
-    rwa [flow_pop hw, sub_sub_cancel_left, neg_add_cancel] at this
-
-/-- Along a trajectory, `births - 2 deaths` is constant. -/
-theorem ratio_of_trajectory (hγ : sys.IsTrajectory γ d) :
-    ∀ t ∈ Icc 0 d, val .births (γ t) - 2 * val .deaths (γ t) =
-      val .births (γ 0) - 2 * val .deaths (γ 0) :=
-  eq_of_hasDerivAt_zero (f := fun t => val .births (γ t) - 2 * val .deaths (γ t)) fun t ht => by
-    obtain ⟨w, hw, hγt⟩ := hγ.follows t ht
-    have := (hasDerivAt_val hγt .births).sub ((hasDerivAt_val hγt .deaths).const_mul 2)
-    rwa [flow_births hw, flow_deaths hw, sub_self] at this
-
-/-- Along a trajectory, the population grows exponentially. -/
-theorem pop_of_trajectory (hγ : sys.IsTrajectory γ d) :
-    ∀ t ∈ Icc 0 d, val .pop (γ t) = val .pop (γ 0) * exp t := by
-  have hc := eq_of_hasDerivAt_zero (d := d) (f := fun t => val .pop (γ t) * exp (-t))
-    fun t ht => by
-      obtain ⟨w, hw, hγt⟩ := hγ.follows t ht
-      have := (hasDerivAt_val hγt .pop).mul (hasDerivAt_neg t).exp
-      convert this using 1
-      rw [flow_pop' hw]
-      ring
-  intro t ht
-  have := congrArg (· * exp t) (hc t ht)
-  simp only [neg_zero, exp_zero, mul_one, mul_assoc, ← exp_add, neg_add_cancel] at this
-  exact this
+    have := hasDerivAt_val hγt k
+    obtain ⟨hb, hd, hp⟩ := flow_rates hw
+    rcases hk with rfl | rfl | rfl
+    exacts [hb ▸ this, hd ▸ this, hp ▸ this]) d (right_mem_Icc.2 hγ.nonneg)
 
 /-! ## Invariants -/
 
-/-- A jump stutters: the updates skip. -/
-theorem val_of_jump {s s' : Val M process.ctrl} (h : s' ∈ sys.jump s) (k : Var) :
-    val k s' = val k s := by
-  obtain ⟨_, h⟩ := h
-  cases k
-  · obtain ⟨hf, hk⟩ := h population mem_population
-    by_cases he : process.Enabled process_isClosed mem_population s s'
-    · exact congrFun (Set.mem_singleton_iff.1 (hf he)) ⟨.pop, Finset.mem_singleton_self _⟩
-    · exact congrFun (hk he) ⟨.pop, Finset.mem_singleton_self _⟩
-  · obtain ⟨hf, hk⟩ := h birth mem_birth
-    by_cases he : process.Enabled process_isClosed mem_birth s s'
-    · exact congrFun (Set.mem_singleton_iff.1 (hf he)) ⟨.births, Finset.mem_singleton_self _⟩
-    · exact congrFun (hk he) ⟨.births, Finset.mem_singleton_self _⟩
-  · obtain ⟨hf, hk⟩ := h death mem_death
-    by_cases he : process.Enabled process_isClosed mem_death s s'
-    · exact congrFun (Set.mem_singleton_iff.1 (hf he)) ⟨.deaths, Finset.mem_singleton_self _⟩
-    · exact congrFun (hk he) ⟨.deaths, Finset.mem_singleton_self _⟩
+/-- Initially, the population is `100` and the counts are `0`. -/
+theorem of_mem_init {μ : PMF (Val M process.ctrl)} (hμ : μ ∈ sys.init) (hs : s ∈ μ.support) :
+    val .pop s = 100 ∧ val .births s = 0 ∧ val .deaths s = 0 := by
+  have h := Module.draw_of_mem_init hμ hs
+  obtain ⟨_, ⟨_, rfl, rfl⟩, hp⟩ := h population mem_population
+  obtain ⟨_, ⟨_, rfl, rfl⟩, hb⟩ := h birth mem_birth
+  obtain ⟨_, ⟨_, rfl, rfl⟩, hd⟩ := h death mem_death
+  exact ⟨val_eq ((PMF.mem_support_pure_iff _ _).1 hp) .pop (Finset.mem_singleton_self _),
+    val_eq ((PMF.mem_support_pure_iff _ _).1 hb) .births (Finset.mem_singleton_self _),
+    val_eq ((PMF.mem_support_pure_iff _ _).1 hd) .deaths (Finset.mem_singleton_self _)⟩
 
-theorem val_of_init {s : Val M process.ctrl} (h : s ∈ sys.init) :
-    val .pop s = 100 ∧ val .births s = 0 ∧ val .deaths s = 0 :=
-  ⟨congrFun (Set.mem_singleton_iff.1 (h population mem_population)) ⟨.pop, Finset.mem_singleton_self _⟩,
-    congrFun (Set.mem_singleton_iff.1 (h birth mem_birth)) ⟨.births, Finset.mem_singleton_self _⟩,
-    congrFun (Set.mem_singleton_iff.1 (h death mem_death)) ⟨.deaths, Finset.mem_singleton_self _⟩⟩
+/-- The invariant of the process. -/
+def Inv (s : Val M process.ctrl) : Prop :=
+  val .pop s = 100 + val .births s - val .deaths s ∧ 0 ≤ val .pop s ∧
+    0 ≤ val .births s ∧ 0 ≤ val .deaths s
 
-/-- The invariant of the process: the conservation law, the ratio of births
-    to deaths, and the population never dropping below its initial value. -/
-theorem reachable_invariant {s : Val M process.ctrl} (hs : sys.Reachable s) :
-    conserved s = 100 ∧ val .births s = 2 * val .deaths s ∧ 100 ≤ val .pop s := by
+/-- A jump preserves the invariant: births and deaths are counted in the
+    population, and a death needs a living individual. -/
+theorem inv_of_jump {μ : PMF (Val M process.ctrl)} (hμ : μ ∈ sys.jump s) (hs' : s' ∈ μ.support)
+    (hinv : Inv s) : Inv s' := by
+  have h := Module.draw_of_mem_jump hμ hs'
+  obtain ⟨p, p0, b0, d0⟩ := hinv
+  rcases population_draw (h _ mem_population) with ⟨h1, hp⟩ | ⟨h1, hp⟩
+  · rcases birth_draw (h _ mem_birth) with ⟨_, hb | hb⟩ | ⟨h1', _⟩
+    · rcases death_draw (h _ mem_death) with ⟨_, ⟨hl, hd⟩ | hd⟩ | ⟨h1', _⟩
+      · refine ⟨by rw [hp, hb, hd, p]; ring, by rw [hp, hb, hd]; linarith, by linarith, by linarith⟩
+      · refine ⟨by rw [hp, hb, hd, p]; ring, by rw [hp, hb, hd]; linarith, by linarith, by linarith⟩
+      · exact absurd h1 h1'
+    · rcases death_draw (h _ mem_death) with ⟨_, ⟨hl, hd⟩ | hd⟩ | ⟨h1', _⟩
+      · refine ⟨by rw [hp, hb, hd, p]; ring, by rw [hp, hb, hd]; linarith, by linarith, by linarith⟩
+      · refine ⟨by rw [hp, hb, hd, p]; ring, by rw [hp, hb, hd]; linarith, by linarith, by linarith⟩
+      · exact absurd h1 h1'
+    · exact absurd h1 h1'
+  · rcases birth_draw (h _ mem_birth) with ⟨h1', _⟩ | ⟨_, hb⟩
+    · exact absurd h1' h1
+    rcases death_draw (h _ mem_death) with ⟨h1', _⟩ | ⟨_, hd⟩
+    · exact absurd h1' h1
+    exact ⟨by rw [hp, hb, hd, p], by rw [hp]; exact p0, by rw [hb]; exact b0, by rw [hd]; exact d0⟩
+
+/-- Invariant: conservation, and the population and the counts are nonnegative. -/
+theorem reachable_invariant (hs : sys.Reachable s) : Inv s := by
   induction hs with
-  | init h =>
-    obtain ⟨hp, hb, hd⟩ := val_of_init h
-    simp only [conserved, hp, hb, hd]
-    norm_num
+  | init hμ hs =>
+    obtain ⟨hp, hb, hd⟩ := of_mem_init hμ hs
+    refine ⟨by rw [hp, hb, hd]; ring, ?_, ?_, ?_⟩ <;> simp [hp, hb, hd]
   | step _ hst ih =>
     cases hst with
-    | jump h => simpa only [conserved, val_of_jump h] using ih
+    | jump hμ hs' => exact inv_of_jump hμ hs' ih
     | flow hγ =>
-      have hd := right_mem_Icc.2 hγ.nonneg
-      refine ⟨by rw [conserved_of_trajectory hγ _ hd, ih.1], ?_, ?_⟩
-      · have := ratio_of_trajectory hγ _ hd
-        linarith [ih.2.1]
-      · rw [pop_of_trajectory hγ _ hd]
-        nlinarith [ih.2.2, one_le_exp hγ.nonneg]
+      rw [Inv, val_of_trajectory hγ (.inr (.inr rfl)), val_of_trajectory hγ (.inl rfl),
+        val_of_trajectory hγ (.inr (.inl rfl))]
+      exact ih
 
-/-- Conservation: every reachable state satisfies `pop = 100 + births - deaths`. -/
-theorem reachable_conservation {s : Val M process.ctrl} (hs : sys.Reachable s) :
-    val .pop s = 100 + val .births s - val .deaths s := by
-  have := (reachable_invariant hs).1
-  simp only [conserved] at this
-  linarith
-
-/-- Twice as many births as deaths. -/
-theorem reachable_ratio {s : Val M process.ctrl} (hs : sys.Reachable s) :
-    val .births s = 2 * val .deaths s :=
-  (reachable_invariant hs).2.1
-
-/-- So the population exceeds its initial value by the number of deaths. -/
-theorem reachable_pop_eq {s : Val M process.ctrl} (hs : sys.Reachable s) :
-    val .pop s = 100 + val .deaths s := by
-  rw [reachable_conservation hs, reachable_ratio hs]
-  ring
-
-/-- The population never drops below its initial value, so it never goes extinct. -/
-theorem reachable_pop_ge {s : Val M process.ctrl} (hs : sys.Reachable s) : 100 ≤ val .pop s :=
-  (reachable_invariant hs).2.2
-
-/-! ## Exponential growth -/
-
-/-- The exponential growth of the process. -/
-noncomputable def growth (t : ℝ) : Val M process.ctrl := fun v =>
-  match v.1 with
-  | .pop => 100 * exp t
-  | .births => 200 * (exp t - 1)
-  | .deaths => 100 * (exp t - 1)
-
-/-- The tangent of `growth`. -/
-noncomputable def growth' (t : ℝ) : (v : process.ctrl) → ℝ := fun v =>
-  match v.1 with
-  | .pop => 100 * exp t
-  | .births => 200 * exp t
-  | .deaths => 100 * exp t
-
-theorem hasDerivAt_growth (t : ℝ) : HasDerivAt growth (growth' t) t := by
-  refine hasDerivAt_pi.2 fun ⟨k, _⟩ => ?_
-  cases k
-  · exact (hasDerivAt_exp t).const_mul 100
-  · exact ((hasDerivAt_exp t).sub_const 1).const_mul 200
-  · exact ((hasDerivAt_exp t).sub_const 1).const_mul 100
-
-/-- Every state is in every jump region: the skipping updates are defined everywhere. -/
-theorem mem_region {a : Atom I M} (ha : a ∈ process.atoms) (s : Val M process.ctrl) :
-    s ∈ process.Region process_isClosed ha :=
-  forall_atoms (P := fun _ ha => s ∈ process.Region process_isClosed ha)
-    ⟨s, _, rfl⟩ ⟨s, _, rfl⟩ ⟨s, _, rfl⟩ a ha
-
-theorem isTrajectory_growth {d : ℝ} (hd : 0 ≤ d) : sys.IsTrajectory growth d where
-  nonneg := hd
-  follows t _ := by
-    refine ⟨growth' t, ?_, hasMFDerivAt_of_hasFDerivAt (hasDerivAt_growth t).hasFDerivAt⟩
-    refine forall_atoms ?_ ?_ ?_
-    · refine Set.mem_singleton_iff.2 (funext fun ⟨v, hv⟩ => ?_)
-      obtain rfl := Finset.mem_singleton.1 (hv : v ∈ ({.births} : Finset Var))
-      show 200 * exp t = 2 * (100 * exp t)
-      ring
-    · refine Set.mem_singleton_iff.2 (funext fun ⟨v, hv⟩ => ?_)
-      obtain rfl := Finset.mem_singleton.1 (hv : v ∈ ({.deaths} : Finset Var))
-      rfl
-    · refine Set.mem_singleton_iff.2 (funext fun ⟨v, hv⟩ => ?_)
-      obtain rfl := Finset.mem_singleton.1 (hv : v ∈ ({.pop} : Finset Var))
-      show 100 * exp t = 200 * exp t - 100 * exp t
-      ring
-  stays G hG _ _ t₂ _ _ := by
-    obtain ⟨a, ha, rfl⟩ := hG
-    exact mem_region ha _
-
-theorem growth_init : growth 0 ∈ sys.init := by
-  refine forall_atoms ?_ ?_ ?_
-  · refine Set.mem_singleton_iff.2 (funext fun ⟨v, hv⟩ => ?_)
-    obtain rfl := Finset.mem_singleton.1 (hv : v ∈ ({.births} : Finset Var))
-    show 200 * (exp 0 - 1) = 0
-    simp
-  · refine Set.mem_singleton_iff.2 (funext fun ⟨v, hv⟩ => ?_)
-    obtain rfl := Finset.mem_singleton.1 (hv : v ∈ ({.deaths} : Finset Var))
-    show 100 * (exp 0 - 1) = 0
-    simp
-  · refine Set.mem_singleton_iff.2 (funext fun ⟨v, hv⟩ => ?_)
-    obtain rfl := Finset.mem_singleton.1 (hv : v ∈ ({.pop} : Finset Var))
-    show 100 * exp 0 = 100
-    simp
-
-/-- The exponential growth is reachable at every time. -/
-theorem growth_reachable {d : ℝ} (hd : 0 ≤ d) : sys.Reachable (growth d) :=
-  .step (.init growth_init) (.flow (isTrajectory_growth hd))
-
-/-- ...so it satisfies the conservation law. -/
-example (d : ℝ) (hd : 0 ≤ d) :
-    val .pop (growth d) = 100 + val .births (growth d) - val .deaths (growth d) :=
-  reachable_conservation (growth_reachable hd)
+/-- Under every scheduler, almost surely, the invariant holds at every step:
+    the population is conserved and nonnegative, whatever the random events. -/
+theorem ae_invariant (σ : sys.Scheduler) : ∀ᵐ ω ∂σ.measure, ∀ n, Inv (ω n) :=
+  σ.ae_forall_of_reachable fun _ => reachable_invariant
 
 end Zrth.Examples.BirthDeath

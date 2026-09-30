@@ -30,22 +30,22 @@ noncomputable def clock (k : Clock) : Atom I M where
   wait := ∅
   read := {k}
   disjoint_ctrl_wait := Finset.disjoint_empty_right _
-  init _ := {0}
+  init _ := {.pure 0}
   -- defined on `5` only: no next value otherwise
-  update | (r, _) => {c | r ⟨k, Finset.mem_singleton_self k⟩ = 5 ∧ c = 0}
+  update | (r, _) => {μ | r ⟨k, Finset.mem_singleton_self k⟩ = 5 ∧ μ = .pure 0}
   flow _ _ := {fun _ => (1 : ℝ)}
 
-/-- The update of a clock resets it from `5`... -/
+/-- The update of a clock resets it from `5` (deterministically)... -/
 example (k : Clock) (w : Val M ∅) :
-    (clock k).update (fun _ => 5, w) = {0} := by
-  ext c
+    (clock k).update (fun _ => 5, w) = {.pure 0} := by
+  ext μ
   simp [clock]
   exact Iff.rfl
 
 /-- ...and is undefined elsewhere. -/
 example (k : Clock) (w : Val M ∅) (x : ℝ) (hx : x ≠ 5) :
     (clock k).update (fun _ => x, w) = ∅ := by
-  ext c
+  ext μ
   simp [clock, hx]
   exact Iff.rfl
 
