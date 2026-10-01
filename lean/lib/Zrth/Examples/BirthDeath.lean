@@ -1,7 +1,4 @@
-import Zrth.Stochastic
-import Mathlib.Analysis.Calculus.Deriv.Prod
-import Mathlib.Analysis.Calculus.MeanValue
-import Mathlib.Probability.ProbabilityMassFunction.Constructions
+import Zrth
 
 /-!
 # A birth-death process
@@ -48,28 +45,6 @@ inductive Var
 noncomputable abbrev I (_ : Var) := 𝓘(ℝ, ℝ)
 abbrev M (_ : Var) := ℝ
 
-/-- The coin landing `true` with probability `p`. -/
-noncomputable def flip (p : NNReal) (hp : p ≤ 1) : PMF Bool :=
-  PMF.ofFintype (fun b => if b then (p : ENNReal) else ((1 - p : NNReal) : ENNReal)) (by
-    simp only [Fintype.sum_bool, ↓reduceIte, Bool.false_eq_true, ← ENNReal.coe_add,
-      add_tsub_cancel_of_le hp, ENNReal.coe_one])
-
-/-- The distribution of `x` with probability `p`, and of `y` otherwise. -/
-noncomputable def coin {α : Type*} (p : NNReal) (hp : p ≤ 1) (x y : α) : FinDist α :=
-  ⟨(flip p hp).map fun b => if b then x else y, by
-    rw [PMF.support_map]; exact (Set.toFinite _).image _⟩
-
-theorem mem_coin {α : Type*} {p : NNReal} {hp : p ≤ 1} {x y z : α}
-    (h : z ∈ (coin p hp x y).toPMF.support) : z = x ∨ z = y := by
-  simp only [coin, PMF.support_map] at h
-  obtain ⟨b, _, rfl⟩ := h
-  cases b <;> simp
-
-theorem coin_apply_left {α : Type*} {p : NNReal} {hp : p ≤ 1} {x y : α} (hxy : x ≠ y) :
-    (coin p hp x y).toPMF x = p := by
-  simp only [coin, flip, PMF.map_apply, tsum_fintype, Fintype.sum_bool, PMF.ofFintype_apply,
-    ↓reduceIte, Bool.false_eq_true, hxy, add_zero]
-
 theorem half_le_one : (1 / 2 : NNReal) ≤ 1 := div_le_one_of_le₀ (by norm_num) (by norm_num)
 theorem third_le_one : (1 / 3 : NNReal) ≤ 1 := div_le_one_of_le₀ (by norm_num) (by norm_num)
 
@@ -91,7 +66,7 @@ noncomputable def birth : Atom I M where
   disjoint_ctrl_wait := Finset.disjoint_empty_right _
   init _ := {.pure 0}
   update := fun (r, _) => {μ | r ⟨.clk, by simp⟩ = 1 ∧
-    μ = coin (1 / 2) half_le_one (fun _ => r ⟨.births, by simp⟩ + 1) (fun _ => r ⟨.births, by simp⟩)}
+    μ = .coin (1 / 2) half_le_one (fun _ => r ⟨.births, by simp⟩ + 1) (fun _ => r ⟨.births, by simp⟩)}
   flow _ _ := {fun _ => 0}
 
 /-- The death atom: at a tick, a death with probability `1/3`, if there is
@@ -104,7 +79,7 @@ noncomputable def death : Atom I M where
   init _ := {.pure 0}
   update := fun (r, _) => {μ | r ⟨.clk, by simp⟩ = 1 ∧
     μ = if 1 ≤ r ⟨.pop, by simp⟩ then
-      coin (1 / 3) third_le_one (fun _ => r ⟨.deaths, by simp⟩ + 1) (fun _ => r ⟨.deaths, by simp⟩)
+      .coin (1 / 3) third_le_one (fun _ => r ⟨.deaths, by simp⟩ + 1) (fun _ => r ⟨.deaths, by simp⟩)
     else .pure fun _ => r ⟨.deaths, by simp⟩}
   flow _ _ := {fun _ => 0}
 
@@ -160,7 +135,7 @@ theorem birth_prob (r : Val M birth.read) (w : Val M birth.wait)
     {μ : FinDist (Val M birth.ctrl)} (hμ : μ ∈ birth.update (r, w)) :
     μ.toPMF (fun _ => r ⟨.births, by simp [birth]⟩ + 1) = 1 / 2 := by
   obtain ⟨_, rfl⟩ := hμ
-  refine (coin_apply_left fun h => ?_).trans (by norm_num [ENNReal.coe_div])
+  refine (FinDist.coin_apply_left fun h => ?_).trans (by norm_num [ENNReal.coe_div])
   have := congrFun h ⟨.births, by simp⟩
   simp at this
 
@@ -188,7 +163,7 @@ theorem birth_draw (h : Drawn birth mem_birth s s') :
     (val .clk s = 1 ∧ (val .births s' = val .births s + 1 ∨ val .births s' = val .births s)) ∨
       (val .clk s ≠ 1 ∧ val .births s' = val .births s) := by
   obtain ⟨_, ⟨_, _, ⟨h1, rfl⟩, rfl⟩ | ⟨hne, rfl⟩, hs'⟩ := h
-  · refine .inl ⟨h1, (mem_coin hs').imp (fun e => ?_) (fun e => ?_)⟩ <;>
+  · refine .inl ⟨h1, (FinDist.mem_support_coin hs').imp (fun e => ?_) (fun e => ?_)⟩ <;>
       exact val_eq e .births (Finset.mem_singleton_self _)
   · exact .inr ⟨fun h1 => hne ⟨_, h1, rfl⟩,
       val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .births (Finset.mem_singleton_self _)⟩
@@ -199,7 +174,7 @@ theorem death_draw (h : Drawn death mem_death s s') :
   obtain ⟨_, ⟨_, _, ⟨h1, rfl⟩, rfl⟩ | ⟨hne, rfl⟩, hs'⟩ := h
   · refine .inl ⟨h1, ?_⟩
     split_ifs at hs' with hp
-    · refine (mem_coin hs').imp (fun e => ⟨hp, ?_⟩) (fun e => ?_) <;>
+    · refine (FinDist.mem_support_coin hs').imp (fun e => ⟨hp, ?_⟩) (fun e => ?_) <;>
         exact val_eq e .deaths (Finset.mem_singleton_self _)
     · exact .inr (val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .deaths (Finset.mem_singleton_self _))
   · exact .inr ⟨fun h1 => hne ⟨_, h1, rfl⟩,
@@ -214,32 +189,6 @@ theorem population_draw (h : Drawn population mem_population s s') :
       val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .pop (Finset.mem_singleton_self _)⟩
 
 /-! ## Flows -/
-
-theorem hasFDerivAt_of_hasMFDerivAt {X : Finset Var} {γ : ℝ → Val M X} {t : ℝ}
-    {f' : ℝ →L[ℝ] ((v : X) → ℝ)} (h : HasMFDerivAt 𝓘(ℝ, ℝ) (Val.model I X) γ t f') :
-    HasFDerivAt γ f' t := by
-  have := h.2
-  simp only [writtenInExtChartAt, extChartAt, mfld_simps] at this
-  exact hasFDerivWithinAt_univ.1 this
-
-/-- Along a curve with tangent `w`, every variable moves at the rate `w` gives it. -/
-theorem hasDerivAt_val {γ : ℝ → Val M process.ctrl} {t : ℝ} {w : (v : process.ctrl) → ℝ}
-    (h : HasMFDerivAt 𝓘(ℝ, ℝ) (Val.model I process.ctrl) γ t ((1 : ℝ →L[ℝ] ℝ).smulRight w))
-    (k : Var) : HasDerivAt (fun t => val k (γ t)) (w ⟨k, mem_ctrl k⟩) t := by
-  have hp := (ContinuousLinearMap.proj (R := ℝ) (φ := fun _ : process.ctrl => ℝ)
-    ⟨k, mem_ctrl k⟩).hasFDerivAt.comp t (hasFDerivAt_of_hasMFDerivAt h)
-  rw [hasDerivAt_iff_hasFDerivAt]
-  convert hp using 1
-  · rfl
-  · ext
-    rw [ContinuousLinearMap.toSpanSingleton_apply]
-    rfl
-
-/-- A function with zero derivative on `[0, d]` is constant there. -/
-theorem eq_of_hasDerivAt_zero {f : ℝ → ℝ} {d : ℝ} (hd : ∀ t ∈ Icc 0 d, HasDerivAt f 0 t) :
-    ∀ t ∈ Icc 0 d, f t = f 0 :=
-  constant_of_has_deriv_right_zero (fun t ht => (hd t ht).continuousAt.continuousWithinAt)
-    (fun t ht => (hd t (Ico_subset_Icc_self ht)).hasDerivWithinAt)
 
 /-- Along a flow, the counts and the population do not change: the population
     follows the awaited tangents of the counts, which only change by events. -/
@@ -259,7 +208,7 @@ theorem val_of_trajectory {γ : ℝ → Val M process.ctrl} {d : ℝ} (hγ : sys
     val k (γ d) = val k (γ 0) :=
   eq_of_hasDerivAt_zero (f := fun t => val k (γ t)) (fun t ht => by
     obtain ⟨w, hw, hγt⟩ := hγ.follows t ht
-    have := hasDerivAt_val hγt k
+    have := Val.hasDerivAt_apply ⟨k, mem_ctrl k⟩ hγt
     obtain ⟨hb, hd, hp⟩ := flow_rates hw
     rcases hk with rfl | rfl | rfl
     exacts [hb ▸ this, hd ▸ this, hp ▸ this]) d (right_mem_Icc.2 hγ.nonneg)

@@ -1,5 +1,5 @@
-import Mathlib.Geometry.Manifold.VectorBundle.Tangent
-import Mathlib.Probability.ProbabilityMassFunction.Constructions
+import Zrth.Dist
+import Zrth.Val
 
 /-!
 # Atoms
@@ -58,39 +58,11 @@ namespace Zrth
 
 open Manifold
 
-/-- A finitely supported probability distribution. -/
-structure FinDist (α : Type*) where
-  /-- The distribution. -/
-  toPMF : PMF α
-  /-- Its support is finite. -/
-  finite : toPMF.support.Finite
-
-instance {α : Type*} : CoeOut (FinDist α) (PMF α) := ⟨FinDist.toPMF⟩
-
-/-- The Dirac distribution at `a`. -/
-noncomputable def FinDist.pure {α : Type*} (a : α) : FinDist α :=
-  ⟨PMF.pure a, by simp⟩
-
-/- The variables `V`: each variable `v` ranges over the manifold `M v`
-   modelled by `I v`. -/
 variable {V : Type*}
   {E : V → Type*} [∀ v, NormedAddCommGroup (E v)] [∀ v, NormedSpace ℝ (E v)]
   {H : V → Type*} [∀ v, TopologicalSpace (H v)]
   (I : ∀ v, ModelWithCorners ℝ (E v) (H v))
   (M : V → Type*) [∀ v, TopologicalSpace (M v)] [∀ v, ChartedSpace (H v) (M v)]
-
-/-- The valuations of the variables `X`: a manifold modelled by `Val.model I X`. -/
-abbrev Val (X : Finset V) : Type _ := (v : X) → M v
-
-/-- The model of the valuations of `X`: the product of the models of its variables. -/
-noncomputable abbrev Val.model (X : Finset V) :
-    ModelWithCorners ℝ ((v : X) → E v) (ModelPi fun v : X => H v) :=
-  ModelWithCorners.pi fun v : X => I v
-
-/-- The tangent vectors to the valuations of `X`, at any point: the model vector
-    space of `Val.model I X`, which is every tangent space `TangentSpace (Val.model I X) s`. -/
-abbrev Val.Tangent (_ : ∀ v, ModelWithCorners ℝ (E v) (H v)) (X : Finset V) : Type _ :=
-  (v : X) → E v
 
 /-- An atom controlling `ctrl`, awaiting `wait` and reading `read`. -/
 structure Atom where

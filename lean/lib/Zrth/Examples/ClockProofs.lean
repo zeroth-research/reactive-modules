@@ -1,7 +1,5 @@
+import Zrth
 import Zrth.Examples.Clocks
-import Zrth.Stochastic
-import Mathlib.Analysis.Calculus.Deriv.Prod
-import Mathlib.Analysis.Calculus.MeanValue
 
 /-!
 # Proofs about the clocks
@@ -71,55 +69,10 @@ theorem regions_eq : (sys k).regions = {{s | val k s = 5}} := by
   ext s
   exact ⟨fun ⟨_, h, _⟩ => h, fun h => ⟨_, h, rfl⟩⟩
 
-/-- On the valuations of real variables modelled on themselves, a manifold
-    derivative is an ordinary one. -/
-theorem hasFDerivAt_of_hasMFDerivAt {X : Finset Clock} {γ : ℝ → Val M X} {t : ℝ}
-    {f' : ℝ →L[ℝ] ((v : X) → ℝ)} (h : HasMFDerivAt 𝓘(ℝ, ℝ) (Val.model I X) γ t f') :
-    HasFDerivAt γ f' t := by
-  have := h.2
-  simp only [writtenInExtChartAt, extChartAt, mfld_simps] at this
-  exact hasFDerivWithinAt_univ.1 this
-
-theorem hasMFDerivAt_of_hasFDerivAt {X : Finset Clock} {γ : ℝ → Val M X} {t : ℝ}
-    {f' : ℝ →L[ℝ] ((v : X) → ℝ)} (h : HasFDerivAt γ f' t) :
-    HasMFDerivAt 𝓘(ℝ, ℝ) (Val.model I X) γ t f' := by
-  refine ⟨h.continuousAt, ?_⟩
-  simp only [writtenInExtChartAt, extChartAt, mfld_simps]
-  exact hasFDerivWithinAt_univ.2 h
-
-/-- A coordinate of a curve moving at rate `1` in that coordinate grows by the
-    time elapsed. -/
-theorem coord_eq_of_rate_one {X : Finset Clock} (i : X) {γ : ℝ → Val M X} {d : ℝ}
-    (h : ∀ t ∈ Icc 0 d, ∃ v : (x : X) → ℝ, v i = 1 ∧
-      HasMFDerivAt 𝓘(ℝ, ℝ) (Val.model I X) γ t ((1 : ℝ →L[ℝ] ℝ).smulRight v)) :
-    ∀ t ∈ Icc 0 d, γ t i = γ 0 i + t := by
-  have hd : ∀ t ∈ Icc (0 : ℝ) d, HasDerivAt (fun t => γ t i) 1 t := by
-    intro t ht
-    obtain ⟨v, hv, hγt⟩ := h t ht
-    have hp := (ContinuousLinearMap.proj (R := ℝ) (φ := fun _ : X => ℝ) i).hasFDerivAt.comp t
-      (hasFDerivAt_of_hasMFDerivAt hγt)
-    rw [hasDerivAt_iff_hasFDerivAt]
-    convert hp using 1
-    · rfl
-    · ext
-      rw [ContinuousLinearMap.toSpanSingleton_apply]
-      show (1 : ℝ) • (1 : ℝ) = (1 : ℝ) • v i
-      rw [hv]
-  have hc := constant_of_has_deriv_right_zero (f := fun t => γ t i - t)
-    (fun t ht => ((hd t ht).continuousAt.sub continuousAt_id).continuousWithinAt)
-    (fun t ht => by
-      have := ((hd t (Ico_subset_Icc_self ht)).sub (hasDerivAt_id' t)).hasDerivWithinAt (s := Ici t)
-      rw [sub_self] at this
-      exact this)
-  intro t ht
-  have := hc t ht
-  simp only [sub_zero] at this
-  linarith
-
 /-- Along a trajectory, the clock grows by the time elapsed. -/
 theorem val_eq_of_trajectory {γ : ℝ → Val M (clock k).ctrl} {d : ℝ}
     (hγ : (sys k).IsTrajectory γ d) : ∀ t ∈ Icc 0 d, val k (γ t) = val k (γ 0) + t :=
-  coord_eq_of_rate_one _ fun t ht => by
+  Val.eq_add_of_rate_one _ fun t ht => by
     obtain ⟨v, hv, hγt⟩ := hγ.follows t ht
     exact ⟨v, congrFun (hv : v = fun _ => 1) _, hγt⟩
 
@@ -219,7 +172,7 @@ theorem isTrajectory_ramp : (sys k).IsTrajectory (fun t _ => t) 5 where
   follows t _ := by
     have : HasDerivAt (fun t (_ : (clock k).ctrl) => t) (fun _ => (1 : ℝ)) t :=
       hasDerivAt_pi.2 fun _ => hasDerivAt_id t
-    exact ⟨fun _ => 1, rfl, hasMFDerivAt_of_hasFDerivAt this.hasFDerivAt⟩
+    exact ⟨fun _ => 1, rfl, Val.hasFDerivAt_iff.2 this.hasFDerivAt⟩
   stays G hG t₁ _ t₂ ht₂ hin := by
     rw [regions_eq, Set.mem_singleton_iff] at hG
     subst hG
@@ -404,7 +357,7 @@ theorem mem_mflow {s : Val M composed.ctrl} {w : TangentSpace (Val.model I compo
 theorem mval_eq_of_trajectory {γ : ℝ → Val M composed.ctrl} {d : ℝ}
     (hγ : msys.IsTrajectory γ d) (k : Clock) :
     ∀ t ∈ Icc 0 d, mval k (γ t) = mval k (γ 0) + t :=
-  coord_eq_of_rate_one _ fun t ht => by
+  Val.eq_add_of_rate_one _ fun t ht => by
     obtain ⟨v, hv, hγt⟩ := hγ.follows t ht
     have := mem_mflow.1 hv
     exact ⟨v, by cases k; exacts [this.1, this.2], hγt⟩
@@ -522,7 +475,7 @@ theorem isTrajectory_mramp : msys.IsTrajectory (fun t _ => t) 5 where
   follows t _ := by
     have : HasDerivAt (fun t (_ : composed.ctrl) => t) (fun _ => (1 : ℝ)) t :=
       hasDerivAt_pi.2 fun _ => hasDerivAt_id t
-    exact ⟨fun _ => 1, mem_mflow.2 ⟨rfl, rfl⟩, hasMFDerivAt_of_hasFDerivAt this.hasFDerivAt⟩
+    exact ⟨fun _ => 1, mem_mflow.2 ⟨rfl, rfl⟩, Val.hasFDerivAt_iff.2 this.hasFDerivAt⟩
   stays G hG t₁ _ t₂ ht₂ hin := by
     obtain ⟨a, ha, rfl⟩ := hG
     obtain ⟨k, hk⟩ := exists_region ha
