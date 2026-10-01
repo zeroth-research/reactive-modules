@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::fmt::Debug;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential, Signature};
 
 //============================================================
 // Module
@@ -14,7 +14,7 @@ use theory::{Combinatorial, Differential, Sequential, Theory};
 
 /// This data structure corresponds to the module of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Module<I, J, F, S = <I as Theory>::Sort>
+pub struct Module<I, J, F, S = <I as Signature>::Sort>
 where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,

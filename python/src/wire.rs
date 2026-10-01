@@ -10,9 +10,8 @@ pub(crate) struct Wire {
 #[pymethods]
 impl Wire {
     #[new]
-    #[pyo3(signature = (dtype, degree = 0))]
-    pub(crate) fn new(dtype: Sort, degree: u8) -> Self {
-        let base = base::Wire::new(dtype, degree);
+    pub(crate) fn new(dtype: Sort) -> Self {
+        let base = base::Wire::new(dtype);
         Self { base }
     }
 
@@ -24,11 +23,6 @@ impl Wire {
     #[getter]
     fn dtype(&self) -> Sort {
         self.base.dtype().clone()
-    }
-
-    #[getter]
-    fn degree(&self) -> u8 {
-        self.base.degree()
     }
 
     fn __repr__(&self) -> String {

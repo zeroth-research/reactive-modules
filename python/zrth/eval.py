@@ -142,7 +142,8 @@ def eval_itype(itype, read, out_sort=None):
         case LRA.ReLU() | LIA.ReLU():
             return [r[0].relu()]
         case LRA.Argmax() | LIA.Argmax():
-            return [r[0].argmax()]
+            # the index of the maximum in the flattened matrix, as a 1 × 1 value
+            return [r[0].argmax().reshape(1, 1).to(r[0].dtype)]
         case LRA.Min() | LIA.Min():
             return [torch.minimum(r[0], r[1])]
         case LRA.Max() | LIA.Max():

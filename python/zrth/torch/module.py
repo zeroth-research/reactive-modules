@@ -2,7 +2,7 @@ import inspect
 import torch.nn as nn
 
 from ..zrth import Module as _BaseModule, X
-from ..sort import Real
+from ..sort import Real, DeltaReal
 from ..builder import builder_for
 from ..analyzer import convert_method, resolve_wire
 
@@ -15,7 +15,7 @@ def _numeric_sort(theory, n):
 
 def _is_float_sort(sort) -> bool:
     match sort:
-        case Real(_):
+        case Real(_) | DeltaReal(_, _):
             return True
     return False
 

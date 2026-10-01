@@ -9,7 +9,7 @@ use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fmt::Write;
-use theory::Theory;
+use theory::Signature;
 use theory::any::{Any, Combinatorial, Differential, Sequential, Sort};
 
 mod atom;
@@ -70,7 +70,7 @@ fn try_var_iter_cloned(
 
 fn try_term_iter_cloned<T>(seq: &Bound<'_, PyAny>) -> PyResult<impl Iterator<Item = base::Term<T>>>
 where
-    T: Theory,
+    T: Signature,
     base::Term<Any>: TryInto<base::Term<T>>,
     <base::Term<Any> as TryInto<base::Term<T>>>::Error: Debug,
 {

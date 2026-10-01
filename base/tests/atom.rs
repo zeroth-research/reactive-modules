@@ -69,7 +69,7 @@ fn atom_with_invalid_read() {
     let x = Var::new("A");
     let y = Var::new("B");
     let z = Var::new("C");
-    let p = Wire::scalar("P");
+    let p = Wire::new("P");
 
     let init = Term::function(mk_op("i"), [X(y), X(z)], [p, X(x)]).unwrap();
     let update = Term::function(mk_op("u"), [X(y), X(z)], [p, X(x), *y, *z]).unwrap();
@@ -101,7 +101,7 @@ fn differential_drifting_clocks() {
     use theory::lra::{LRA, Sort};
 
     // Real scalars: 1x1 matrices.
-    let scalar = Sort::Real([1, 1]);
+    let scalar = Sort::real([1, 1]);
     // The input clock, and the two clocks drifting relative to it.
     let t = Var::new(scalar);
     let x = Var::new(scalar);
@@ -172,7 +172,7 @@ fn differential_drifting_clocks() {
 fn differential_module_rejects_dx_equals_x() {
     use theory::lra::{LRA, Sort};
 
-    let scalar = Sort::Real([1, 1]);
+    let scalar = Sort::real([1, 1]);
     let x = Var::new(scalar);
 
     // dx = x: already ill-formed at the term level.
@@ -277,7 +277,7 @@ fn simple_timed_automaton() {
 
     // jump: guard x >= 1; toggle the location and reset the clock when it
     // fires, hold both otherwise
-    let guard = Wire::scalar("bool");
+    let guard = Wire::new("bool");
     let update = [
         Term::function(mk_op("GEQ(1)"), [guard], [x]).unwrap(),
         Term::function(mk_op("TOGGLE_IF"), [X(loc)], [guard, *loc]).unwrap(),
@@ -319,7 +319,7 @@ fn hybrid_rejects_missing_flow() {
         Term::constant(mk_op("CONST(0)"), [X(x)]).unwrap(),
     ];
 
-    let guard = Wire::scalar("bool");
+    let guard = Wire::new("bool");
     let update = [
         Term::function(mk_op("GEQ(1)"), [guard], [x]).unwrap(),
         Term::function(mk_op("TOGGLE_IF"), [X(loc)], [guard, *loc]).unwrap(),
@@ -347,4 +347,57 @@ fn coupled_atoms_can_construct_module() {
 
     let m = Module::observable([a1, a2]);
     assert!(m.is_ok());
+}
+
+#[test]
+fn undeclared_vars() {
+    let x = Var::new("real");
+    let v = Var::new("real");
+
+    let init = [term!(mk_op("C0"), [X(x)]).unwrap()];
+    let update = [
+        term!(mk_op("C1"), [X(v)]).unwrap(),
+        term!(mk_op("ID"), [X(x)], [X(v)]).unwrap(),
+    ];
+    let a1 = Atom::sequential(&[x], init, update);
+    assert!(a1.is_ok());
+
+    let y = Var::new("real");
+    let update = [
+        term!(mk_op("C1"), [X(v)]).unwrap(),
+        term!(mk_op("C1"), [X(y)], [X(v)]).unwrap(),
+    ];
+    let a2 = Atom::jump(&[y], update);
+    assert!(a2.is_ok());
+
+    let m = Module::observable([a1.unwrap(), a2.unwrap()]);
+    assert!(m.is_err());
+}
+
+#[test]
+fn block_read_has_no_duplicates() {
+    let x = Var::new("real");
+    let y = Var::new("real");
+    let z = Var::new("real");
+
+    let init = [
+        term!(mk_op("C0"), [X(x)]).unwrap(),
+        term!(mk_op("C0"), [X(y)]).unwrap(),
+        term!(mk_op("C0"), [X(z)]).unwrap(),
+    ];
+    // both terms read x
+    let update = [
+        term!(mk_op("ID"), [X(y)], [x]).unwrap(),
+        term!(mk_op("ID"), [X(z)], [x]).unwrap(),
+        term!(mk_op("ID"), [X(x)], [x]).unwrap(),
+    ];
+
+    let a = Atom::sequential(&[x, y, z], init, update).unwrap();
+    let read = a.update().read();
+    let mut ids: Vec<usize> = read.iter().map(Wire::id).collect();
+    let before = ids.len();
+    ids.sort();
+    ids.dedup();
+
+    assert_eq!(before, ids.len(), "Block::read() must have no duplicates");
 }

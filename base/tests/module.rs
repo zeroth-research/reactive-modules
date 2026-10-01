@@ -8,7 +8,7 @@ use base::var::{Var, X, d};
 use base::wire::Wire;
 use common::{Atom, Module, Ops, example_counter, example_peterson1, example_tiny1, mk_op};
 use std::fmt;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential, Signature};
 
 #[test]
 fn can_instantiate_partially_observable_module() {
@@ -262,7 +262,7 @@ fn cannot_share_local_wires() {
     let x = Var::new("real");
     let y = Var::new("real");
     // the shared temporary: both atoms compute through it
-    let tmp = Wire::scalar("real");
+    let tmp = Wire::new("real");
 
     let init = [term!(mk_op("CONST"), [X(x)]).unwrap()];
     let update = [
@@ -318,12 +318,12 @@ fn compose_seq_2() {
     .to_vec();
 
     let tmps = [
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
+        Wire::new("real"),
     ];
     let update: Vec<Term<Ops>> = [
         term!(mk_op("Lt"), [tmps[0]], [x, y]).unwrap(),
@@ -349,11 +349,7 @@ fn compose_seq_2() {
     //     def update(self, inv, extl) -> None:
     //         x, y, z = extl
     //         return Or(X(x) <= X(y), X(x) <= X(z))
-    let tmps = [
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-        Wire::scalar("real"),
-    ];
+    let tmps = [Wire::new("real"), Wire::new("real"), Wire::new("real")];
     let assign: Vec<Term<Ops>> = [
         term!(mk_op("Le"), [tmps[0]], [X(x), X(y)]).unwrap(),
         term!(mk_op("Le"), [tmps[1]], [X(x), X(z)]).unwrap(),
@@ -395,25 +391,25 @@ struct SeqOps(&'static str);
 #[derive(Clone, Copy)]
 struct DifOps(&'static str);
 
-impl Theory for SeqOps {
+impl Signature for SeqOps {
     type Sort = &'static str;
     const NAME: &'static str = "SeqOps";
     fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Self::Sort, E>>,
+        W: IntoIterator<Item = Result<Self::Sort, E>>,
     {
         Ok(())
     }
 }
 
-impl Theory for DifOps {
+impl Signature for DifOps {
     type Sort = &'static str;
     const NAME: &'static str = "DifOps";
     fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Self::Sort, E>>,
+        W: IntoIterator<Item = Result<Self::Sort, E>>,
     {
         Ok(())
     }
@@ -561,4 +557,57 @@ fn heterogeneous_composition() {
 
     let S = base::Module::compose([P, Q, R]);
     assert!(S.is_ok());
+}
+
+// nothing requires ctrl to be non-empty or declared
+// variables to be used, and every consistency check quantifies over ctrl.
+#[test]
+fn empty_blocks_are_valid() {
+    let x = Var::new("real");
+    let y = Var::new("real");
+
+    let init: [Term<Ops>; 0] = [];
+    let update: [Term<Ops>; 0] = [];
+
+    let m = Module::sequential(&[x, y], init, update);
+    assert!(m.is_ok(), "unused variables are ignored");
+    // unused variables are unused external variables, and belong to the set of all other undeclared vars,
+    // they should not be included in the module
+}
+
+#[test]
+fn module_unused_variables_must_go() {
+    let x = Var::new("real");
+    let unused = Var::new("real");
+
+    let init = [term!(mk_op("C0"), [X(x)]).unwrap()];
+    let update = [term!(mk_op("ID"), [X(x)], [x]).unwrap()];
+
+    let m = Module::sequential(&[x, unused], init, update);
+    assert!(m.is_ok(), "unused variables are ignored");
+    // unused variables are unused external variables, and belong to the set of all other undeclared vars,
+    // they should not be included in the module
+}
+
+#[test]
+fn undeclared_vars_2() {
+    let x = Var::new("real");
+    let v = Var::new("real");
+
+    let init = [term!(mk_op("C0"), [X(x)]).unwrap()];
+    let update = [
+        term!(mk_op("C1"), [X(v)]).unwrap(),
+        term!(mk_op("ID"), [X(x)], [X(v)]).unwrap(),
+    ];
+    // Problem 1: at this moment, this goes through even when `v` is not declared as a var used by that atom.
+    // `a1` writes to `v`
+    let a1 = Atom::sequential(&[x], init, update).unwrap();
+
+    // `a2` also writes to `v`
+    let init = [term!(mk_op("C0"), [X(v)]).unwrap()];
+    let update = [term!(mk_op("ID"), [X(v)], [v]).unwrap()];
+    let a2 = Atom::sequential(&[v], init, update).unwrap();
+
+    // no error up to now, assertion triggered inside module construction (but only in debug mode, release goes through)
+    assert!(Module::observable([a1, a2]).is_err());
 }

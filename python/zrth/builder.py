@@ -10,7 +10,7 @@ helpers below).
 
 import torch
 from .zrth import Wire, Term, LRA, LIA, BV, Var
-from .sort import Sort, Bool, Real, Int, BitVec
+from .sort import Sort, Bool, Real, DeltaReal, Int, BitVec
 
 
 def _wire(t) -> Wire:
@@ -43,7 +43,7 @@ def _normalize_shape(shape: list) -> list:
 
 def _shape(sort: Sort) -> list:
     match sort:
-        case Bool(s) | Int(s) | Real(s):
+        case Bool(s) | Int(s) | Real(s) | DeltaReal(s, _):
             return list(s)
         case BitVec(_, s):
             return list(s)
@@ -58,6 +58,8 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Int(shape)
         case Real(_):
             return Real(shape)
+        case DeltaReal(_, order):
+            return DeltaReal(shape, order)
         case BitVec(bw, _):
             return BitVec(bw, shape)
     raise TypeError(f"unknown sort: {sort}")
@@ -429,7 +431,7 @@ class LIATermBuilder(TermBuilder):
         tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
         if tensor.dtype == torch.bool:
             w = output_wire or Wire(Bool(shape))
-            return Term.constant(LIA.Const(tensor), [w])
+            return Term.constant(LIA.Bool(tensor), [w])
         w = output_wire or Wire(Int(shape))
         return Term.constant(LIA.Int(tensor), [w])
 

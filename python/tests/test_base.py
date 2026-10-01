@@ -1,6 +1,6 @@
 import pytest
 import torch
-from zrth import Wire, Term, Atom, Module, LIA, Bool, Int, LRA, Real, Var, X, d
+from zrth import Wire, Term, Atom, Module, LIA, Bool, Int, LRA, Real, DeltaReal, Var, X, d
 
 
 def _bool_t(v):
@@ -36,8 +36,9 @@ def test_var_derefs_to_wire():
 
     # attributes Var does not define fall through to the latched wire,
     # mirroring Rust's Deref
-    assert v.degree == 0
     assert v.dtype == Real([2, 3])
+    # the derivative wire carries the tangent sort (`DeltaReal`)
+    assert d(v).dtype == DeltaReal([2, 3], 1)
     assert v.id == Wire(Real([1, 1])).id - 3  # ltc is first of the var's three wires
 
     # unknown attributes still raise, from the wire's lookup
@@ -458,3 +459,19 @@ def test_heterogeneous_composition():
     R = Module.combinatorial([x, y, z], comb)
 
     S = Module.compose(P, Q, R)
+
+
+# error expected - under the current implementation, itypes must be picked from theories and reused from module
+# it requires a much more sophisticated implementation of the theory crate to relax this requirement, which is future work
+def test_itype_round_trips():
+    v = Var(Real([1, 1]))
+    m = Module(vars=[v])
+    itype = m.atoms[0].update[0].itype
+    with pytest.raises(Exception):
+        Term(itype, [X(v)], [v])
+
+
+# sorts are not hashable in the current implementation - this question belongs to the design of the theory crate
+def test_sort_is_hashable():
+    with pytest.raises(Exception):
+        hash(Real([1, 1]))
