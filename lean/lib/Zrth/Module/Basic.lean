@@ -42,6 +42,7 @@ structure Module where
   prvt : Finset V
   /-- The atoms, in a linear order consistent with the await relation. -/
   atoms : List (Atom I M)
+  /-- The three classes of variables are disjoint. -/
   disjoint_extl_intf : Disjoint extl intf
   disjoint_extl_prvt : Disjoint extl prvt
   disjoint_intf_prvt : Disjoint intf prvt
@@ -70,9 +71,11 @@ def vars (m : Module I M) : Finset V := m.extl ∪ m.intf ∪ m.prvt
 /-- A closed module has no external variables. -/
 def IsClosed (m : Module I M) : Prop := m.extl = ∅
 
+/-- An atom controls variables of its module. -/
 theorem ctrl_subset (m : Module I M) {a : Atom I M} (ha : a ∈ m.atoms) :
     a.ctrl ⊆ m.ctrl := fun _ hv => (m.mem_ctrl_iff _).2 ⟨a, ha, hv⟩
 
+/-- An atom reads and awaits variables of its module. -/
 theorem vars_subset (m : Module I M) {a : Atom I M} (ha : a ∈ m.atoms) :
     a.read ∪ a.wait ⊆ m.vars := m.subset_vars a ha
 
@@ -82,16 +85,19 @@ A module is *closed* when it has no external variables: it runs on its own,
 without an environment. All its variables are then controlled by its atoms, so
 whatever an atom reads or awaits is controlled by some atom of the module. -/
 
+/-- In a closed module, an atom reads and awaits controlled variables only. -/
 theorem subset_ctrl_of_isClosed {m : Module I M} (hc : m.IsClosed) {a : Atom I M}
     (ha : a ∈ m.atoms) : a.read ∪ a.wait ⊆ m.ctrl := by
   have := m.vars_subset ha
   rw [vars, show m.extl = ∅ from hc, Finset.empty_union] at this
   exact this
 
+/-- In a closed module, an atom reads controlled variables only. -/
 theorem read_subset {m : Module I M} (hc : m.IsClosed) {a : Atom I M} (ha : a ∈ m.atoms) :
     a.read ⊆ m.ctrl :=
   Finset.subset_union_left.trans (subset_ctrl_of_isClosed hc ha)
 
+/-- In a closed module, an atom awaits controlled variables only. -/
 theorem wait_subset {m : Module I M} (hc : m.IsClosed) {a : Atom I M} (ha : a ∈ m.atoms) :
     a.wait ⊆ m.ctrl :=
   Finset.subset_union_right.trans (subset_ctrl_of_isClosed hc ha)

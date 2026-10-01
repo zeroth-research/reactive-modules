@@ -62,11 +62,13 @@ def Val.override [DecidableEq V] {X Y : Finset V} (x : Val M Y) (c : Val M X) : 
   fun v => if hv : v.1 ∈ X then c ⟨v.1, hv⟩ else x v
 
 omit [∀ v, TopologicalSpace (M v)] in
+/-- Overriding writes the new values on the overridden variables… -/
 theorem Val.override_of_mem [DecidableEq V] {X Y : Finset V} (x : Val M Y) (c : Val M X)
     {v : Y} (hv : v.1 ∈ X) : Val.override x c v = c ⟨v.1, hv⟩ := by
   simp [Val.override, hv]
 
 omit [∀ v, TopologicalSpace (M v)] in
+/-- …and keeps the old values elsewhere. -/
 theorem Val.override_of_not_mem [DecidableEq V] {X Y : Finset V} (x : Val M Y) (c : Val M X)
     {v : Y} (hv : v.1 ∉ X) : Val.override x c v = x v := by
   simp [Val.override, hv]

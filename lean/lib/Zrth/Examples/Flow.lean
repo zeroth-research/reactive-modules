@@ -22,6 +22,7 @@ noncomputable def flow : ℝ × Tℝ → Tℝ
 /-- The output lies over the state: `flow` is a section-like map over `x`. -/
 theorem flow_proj (x : ℝ) (τ : Tℝ) : (flow (x, τ)).proj = x := rfl
 
+-- The tangent part is `x dt`.
 example (x t dt : ℝ) : (flow (x, ⟨t, dt⟩)).2 = x • dt := rfl
 
 /-- The variables of the atom: the state `x` and the time `t`. -/
@@ -30,8 +31,9 @@ inductive Var
   | t
   deriving DecidableEq
 
-/-- Both variables range over `ℝ`, modelled on itself. -/
+/-- Both variables are modelled on `ℝ`… -/
 noncomputable abbrev I (_ : Var) := 𝓘(ℝ, ℝ)
+/-- …and range over `ℝ`. -/
 abbrev M (_ : Var) := ℝ
 
 /-- The differential atom of `dx = x dt`: it controls `x`, reads `x` and `t`
@@ -45,6 +47,7 @@ noncomputable def atom : Atom I M where
   disjoint_ctrl_wait := by simp
   init _ := {.pure fun _ => 1}
   update | (r, _) => {.pure fun _ => r ⟨.x, by simp⟩}
+  -- Pick out `x`, `t` and `dt`, and move `x` at the rate `x dt`.
   flow c p :=
     let x := c ⟨.x, Finset.mem_singleton_self _⟩
     let t := p.1 ⟨.t, by simp⟩

@@ -79,11 +79,14 @@ noncomputable def toHybrid : Hybrid (Val.model I m.ctrl) (Val M m.ctrl) where
 
 variable {m hc}
 
+/-- The possible draws of an atom depend on the valuation drawn so far only
+    through the variables it awaits. -/
 theorem draws_congr {s x y : Val M m.ctrl}
     (hxy : Val.restrict (wait_subset hc ha) x = Val.restrict (wait_subset hc ha) y) :
     m.draws hc ha s x = m.draws hc ha s y := by
   simp only [draws, Enabled, hxy]
 
+/-- So do its possible initial draws. -/
 theorem initDraws_congr {x y : Val M m.ctrl}
     (hxy : Val.restrict (wait_subset hc ha) x = Val.restrict (wait_subset hc ha) y) :
     m.initDraws hc ha x = m.initDraws hc ha y := by
@@ -96,6 +99,8 @@ theorem draw_of_mem_jump {s s' : Val M m.ctrl} {μ : PMF (Val M m.ctrl)}
     (hμ : μ ∈ (m.toHybrid hc).jump s) (hs' : s' ∈ μ.support) :
     ∀ a (ha : a ∈ m.atoms), ∃ ν ∈ m.draws hc ha s s',
       Val.restrict (m.ctrl_subset ha) s' ∈ ν.support := by
+  -- The jump is a round; every atom drew given some `x'` agreeing with the
+  -- final `s'` on what it awaits (`round_draw`), hence from a draw at `s'`.
   obtain ⟨_, κ, hκ, rfl⟩ := hμ
   intro a ha
   obtain ⟨x', hx', hw⟩ := round_draw hs' m.pairwise_disjoint_ctrl m.pairwise_await
@@ -109,6 +114,7 @@ theorem draw_of_mem_init {s' : Val M m.ctrl} {μ : PMF (Val M m.ctrl)}
     (hμ : μ ∈ (m.toHybrid hc).init) (hs' : s' ∈ μ.support) :
     ∀ a (ha : a ∈ m.atoms), ∃ ν ∈ m.initDraws hc ha s',
       Val.restrict (m.ctrl_subset ha) s' ∈ ν.support := by
+  -- As for a jump, with the initial round.
   obtain ⟨κ, x, hκ, rfl⟩ := hμ
   intro a ha
   obtain ⟨x', hx', hw⟩ := round_draw hs' m.pairwise_disjoint_ctrl m.pairwise_await

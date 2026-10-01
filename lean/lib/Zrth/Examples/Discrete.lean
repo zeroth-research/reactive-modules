@@ -16,12 +16,18 @@ open Manifold Bundle
    model space `Unit`, the trivial real normed space. -/
 attribute [local instance] ChartedSpace.ofDiscreteTopology
 
+/-- `ℕ` is a smooth 0-dimensional manifold. -/
 instance : IsManifold 𝓘(ℝ, Unit) ⊤ ℕ := .of_discreteTopology _
+/-- `ℤ` is a smooth 0-dimensional manifold. -/
 instance : IsManifold 𝓘(ℝ, Unit) ⊤ ℤ := .of_discreteTopology _
+/-- `Bool` is a smooth 0-dimensional manifold. -/
 instance : IsManifold 𝓘(ℝ, Unit) ⊤ Bool := .of_discreteTopology _
 
+/-- The tangent bundle of `ℕ`. -/
 abbrev Tℕ := TangentBundle 𝓘(ℝ, Unit) ℕ
+/-- The tangent bundle of `ℤ`. -/
 abbrev Tℤ := TangentBundle 𝓘(ℝ, Unit) ℤ
+/-- The tangent bundle of `Bool`. -/
 abbrev TBool := TangentBundle 𝓘(ℝ, Unit) Bool
 
 -- Every fiber is the singleton `Unit`: the only tangent vector is zero.

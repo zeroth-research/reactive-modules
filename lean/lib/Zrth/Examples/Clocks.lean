@@ -20,8 +20,9 @@ inductive Clock
   | b
   deriving DecidableEq
 
-/-- Every clock ranges over `ℝ`, modelled on itself. -/
+/-- Every clock is modelled on `ℝ`… -/
 noncomputable abbrev I (_ : Clock) := 𝓘(ℝ, ℝ)
+/-- …and ranges over `ℝ`. -/
 abbrev M (_ : Clock) := ℝ
 
 /-- The atom of the clock `k`: it controls and reads `k` and awaits nothing. -/
@@ -30,9 +31,11 @@ noncomputable def clock (k : Clock) : Atom I M where
   wait := ∅
   read := {k}
   disjoint_ctrl_wait := Finset.disjoint_empty_right _
+  -- starts at `0`
   init _ := {.pure 0}
   -- defined on `5` only: no next value otherwise
   update | (r, _) => {μ | r ⟨k, Finset.mem_singleton_self k⟩ = 5 ∧ μ = .pure 0}
+  -- moves at rate `1`
   flow _ _ := {fun _ => (1 : ℝ)}
 
 /-- The update of a clock resets it from `5` (deterministically)... -/
@@ -63,6 +66,7 @@ noncomputable def clocks : Module I M where
   subset_vars := by simp [clock]
   pairwise_await := by simp [clock]
 
+-- No environment: the module is closed.
 example : clocks.IsClosed := rfl
 
 /-- The module of the clock `k` alone, observable. -/

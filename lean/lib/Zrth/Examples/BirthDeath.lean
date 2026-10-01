@@ -41,11 +41,14 @@ inductive Var
   | clk
   deriving DecidableEq
 
-/-- Every variable ranges over `ℝ`, modelled on itself. -/
+/-- Every variable is modelled on `ℝ`… -/
 noncomputable abbrev I (_ : Var) := 𝓘(ℝ, ℝ)
+/-- …and ranges over `ℝ`. -/
 abbrev M (_ : Var) := ℝ
 
+/-- `1/2` is a probability. -/
 theorem half_le_one : (1 / 2 : NNReal) ≤ 1 := div_le_one_of_le₀ (by norm_num) (by norm_num)
+/-- `1/3` is a probability. -/
 theorem third_le_one : (1 / 3 : NNReal) ≤ 1 := div_le_one_of_le₀ (by norm_num) (by norm_num)
 
 /-- The clock: it flows at rate `1` and ticks at `1`, resetting to `0`. -/
@@ -114,18 +117,21 @@ noncomputable def process : Module I M where
     rcases ha with rfl | rfl | rfl | rfl <;> decide
   pairwise_await := by simp [tick, birth, death, population]
 
+/-- The process has no environment. -/
 theorem process_isClosed : process.IsClosed := rfl
 
 /-- The hybrid system of the process. -/
 noncomputable def sys : Hybrid (Val.model I process.ctrl) (Val M process.ctrl) :=
   process.toHybrid process_isClosed
 
+/-- Every variable is controlled by the process. -/
 theorem mem_ctrl (k : Var) : k ∈ process.ctrl := by cases k <;> decide
 
+/-- The four atoms are atoms of the process. -/
 theorem mem_tick : tick ∈ process.atoms := by simp [process]
-theorem mem_birth : birth ∈ process.atoms := by simp [process]
-theorem mem_death : death ∈ process.atoms := by simp [process]
-theorem mem_population : population ∈ process.atoms := by simp [process]
+@[inherit_doc mem_tick] theorem mem_birth : birth ∈ process.atoms := by simp [process]
+@[inherit_doc mem_tick] theorem mem_death : death ∈ process.atoms := by simp [process]
+@[inherit_doc mem_tick] theorem mem_population : population ∈ process.atoms := by simp [process]
 
 /-- The value of the variable `k`. -/
 def val (k : Var) (s : Val M process.ctrl) : ℝ := s ⟨k, mem_ctrl k⟩
@@ -134,6 +140,7 @@ def val (k : Var) (s : Val M process.ctrl) : ℝ := s ⟨k, mem_ctrl k⟩
 theorem birth_prob (r : Val M birth.read) (w : Val M birth.wait)
     {μ : FinDist (Val M birth.ctrl)} (hμ : μ ∈ birth.update (r, w)) :
     μ.toPMF (fun _ => r ⟨.births, by simp [birth]⟩ + 1) = 1 / 2 := by
+  -- The update is the coin, whose faces differ in the births.
   obtain ⟨_, rfl⟩ := hμ
   refine (FinDist.coin_apply_left fun h => ?_).trans (by norm_num [ENNReal.coe_div])
   have := congrFun h ⟨.births, by simp⟩
@@ -152,6 +159,7 @@ abbrev Drawn (a : Atom I M) (ha : a ∈ process.atoms) (s s' : Val M process.ctr
 theorem val_eq {X : Finset Var} {f g : Val M X} (e : f = g) (k : Var) (hk : k ∈ X) :
     f ⟨k, hk⟩ = g ⟨k, hk⟩ := congrFun e _
 
+/-- In a jump, the clock resets if it ticks, and keeps its value otherwise. -/
 theorem tick_draw (h : Drawn tick mem_tick s s') :
     (val .clk s = 1 ∧ val .clk s' = 0) ∨ (val .clk s ≠ 1 ∧ val .clk s' = val .clk s) := by
   obtain ⟨_, ⟨_, _, ⟨h1, rfl⟩, rfl⟩ | ⟨hne, rfl⟩, hs'⟩ := h
@@ -159,6 +167,7 @@ theorem tick_draw (h : Drawn tick mem_tick s s') :
   · exact .inr ⟨fun h1 => hne ⟨_, h1, rfl⟩,
       val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .clk (Finset.mem_singleton_self _)⟩
 
+/-- In a jump, at a tick, the births grow by one or stay; otherwise they stay. -/
 theorem birth_draw (h : Drawn birth mem_birth s s') :
     (val .clk s = 1 ∧ (val .births s' = val .births s + 1 ∨ val .births s' = val .births s)) ∨
       (val .clk s ≠ 1 ∧ val .births s' = val .births s) := by
@@ -168,6 +177,8 @@ theorem birth_draw (h : Drawn birth mem_birth s s') :
   · exact .inr ⟨fun h1 => hne ⟨_, h1, rfl⟩,
       val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .births (Finset.mem_singleton_self _)⟩
 
+/-- In a jump, at a tick, the deaths grow by one (if someone is alive) or stay;
+    otherwise they stay. -/
 theorem death_draw (h : Drawn death mem_death s s') :
     (val .clk s = 1 ∧ ((1 ≤ val .pop s ∧ val .deaths s' = val .deaths s + 1) ∨
       val .deaths s' = val .deaths s)) ∨ (val .clk s ≠ 1 ∧ val .deaths s' = val .deaths s) := by
@@ -180,6 +191,8 @@ theorem death_draw (h : Drawn death mem_death s s') :
   · exact .inr ⟨fun h1 => hne ⟨_, h1, rfl⟩,
       val_eq ((PMF.mem_support_pure_iff _ _).1 hs') .deaths (Finset.mem_singleton_self _)⟩
 
+/-- In a jump, at a tick, the population changes by the births and deaths of
+    the round (their *next* values, which it awaits); otherwise it stays. -/
 theorem population_draw (h : Drawn population mem_population s s') :
     (val .clk s = 1 ∧ val .pop s' = val .pop s + (val .births s' - val .births s) -
       (val .deaths s' - val .deaths s)) ∨ (val .clk s ≠ 1 ∧ val .pop s' = val .pop s) := by
@@ -203,6 +216,7 @@ theorem flow_rates {w : TangentSpace (Val.model I process.ctrl) s} (hw : w ∈ s
       ⟨.pop, Finset.mem_singleton_self _⟩
   exact ⟨hb, hd, by rw [hp, hb, hd, sub_zero]⟩
 
+/-- Along a trajectory, the counts and the population stay as they start. -/
 theorem val_of_trajectory {γ : ℝ → Val M process.ctrl} {d : ℝ} (hγ : sys.IsTrajectory γ d)
     {k : Var} (hk : k = .births ∨ k = .deaths ∨ k = .pop) :
     val k (γ d) = val k (γ 0) :=
@@ -235,6 +249,8 @@ def Inv (s : Val M process.ctrl) : Prop :=
     population, and a death needs a living individual. -/
 theorem inv_of_jump {μ : PMF (Val M process.ctrl)} (hμ : μ ∈ sys.jump s) (hs' : s' ∈ μ.support)
     (hinv : Inv s) : Inv s' := by
+  -- Case on what each atom drew: at a tick, the population follows the counts;
+  -- otherwise nothing changes.
   have h := Module.draw_of_mem_jump hμ hs'
   obtain ⟨p, p0, b0, d0⟩ := hinv
   rcases population_draw (h _ mem_population) with ⟨h1, hp⟩ | ⟨h1, hp⟩

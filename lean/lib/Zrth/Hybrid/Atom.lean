@@ -20,7 +20,8 @@ variable {V : Type*}
   {M : V → Type*} [∀ v, TopologicalSpace (M v)] [∀ v, ChartedSpace (H v) (M v)]
 
 /-- The hybrid system of a closed atom: it awaits nothing and reads only the
-    variables it controls, whose current values it reads. -/
+    variables it controls, whose current values it reads. It may jump wherever
+    its update is defined, and that set is its only jump region. -/
 def Atom.toHybrid (a : Atom I M) (hr : a.read ⊆ a.ctrl) (hw : a.wait = ∅) :
     Hybrid (Val.model I a.ctrl) (Val M a.ctrl) where
   init := FinDist.toPMF '' a.init (Val.empty hw)

@@ -51,6 +51,7 @@ theorem of_mem_init {μ : PMF (Val M (clock k).ctrl)} {s : Val M (clock k).ctrl}
   obtain ⟨_, rfl, rfl⟩ := hμ
   exact (PMF.mem_support_pure_iff _ _).1 hs
 
+/-- Starting at `0` is a possible initialisation. -/
 theorem pure_mem_init : PMF.pure 0 ∈ (sys k).init := ⟨_, rfl, rfl⟩
 
 /-- The clock jumps from `5` to `0`. -/
@@ -59,6 +60,7 @@ theorem of_mem_jump {μ : PMF (Val M (clock k).ctrl)} {s s' : Val M (clock k).ct
   obtain ⟨_, ⟨h5, rfl⟩, rfl⟩ := hμ
   exact ⟨h5, (PMF.mem_support_pure_iff _ _).1 hs'⟩
 
+/-- At `5`, resetting to `0` is a possible jump. -/
 theorem pure_mem_jump {s : Val M (clock k).ctrl} (h5 : val k s = 5) :
     PMF.pure 0 ∈ (sys k).jump s := ⟨_, ⟨h5, rfl⟩, rfl⟩
 
@@ -128,6 +130,7 @@ theorem step_rank {s s' : Val M (clock k).ctrl} {d : ℝ} (hs : (sys k).Reachabl
 /-- Liveness: in a run whose time diverges, the clock is `0` infinitely many times. -/
 theorem frequently_zero {ρ : ℕ → Val M (clock k).ctrl} {δ : ℕ → ℝ} (hρ : (sys k).IsRun ρ δ)
     (hdiv : Hybrid.Divergent δ) : ∀ N, ∃ n ≥ N, val k (ρ n) = 0 := by
+  -- Suppose that after `N` the clock is never `0`, so it never resets.
   intro N
   by_contra hne
   push Not at hne
@@ -150,9 +153,11 @@ theorem frequently_zero {ρ : ℕ → Val M (clock k).ctrl} {δ : ℕ → ℝ} (
     have := key m
     rw [Finset.sum_range_add]
     linarith
+  -- but time diverges: a contradiction
   obtain ⟨n, hn⟩ := (hdiv.eventually_gt_atTop (∑ i ∈ Finset.range N, δ i + 5)).exists_forall_of_atTop
   exact absurd (bound n) (not_le.2 (hn (N + n) (by omega)))
 
+/-- Liveness, as a set: the steps at which the clock is `0` are infinitely many. -/
 theorem infinite_zero {ρ : ℕ → Val M (clock k).ctrl} {δ : ℕ → ℝ} (hρ : (sys k).IsRun ρ δ)
     (hdiv : Hybrid.Divergent δ) : {n | val k (ρ n) = 0}.Infinite :=
   Nat.frequently_atTop_iff_infinite.1 (frequently_atTop.2 (frequently_zero hρ hdiv))
@@ -179,6 +184,7 @@ theorem isTrajectory_ramp : (sys k).IsTrajectory (fun t _ => t) 5 where
     have h5 : t₁ = 5 := hin
     rwa [show t₂ = t₁ by linarith [ht₂.1, ht₂.2]]
 
+/-- `run` is a possible run: flow for `5`, reset, and again. -/
 theorem run_isRun : (sys k).IsRun (run k) dur where
   init := ⟨_, pure_mem_init, by simp [run]⟩
   step n := by
@@ -190,8 +196,10 @@ theorem run_isRun : (sys k).IsRun (run k) dur where
       simp only [run, dur, h, h', one_ne_zero, ↓reduceIte]
       exact Hybrid.Step.jump (pure_mem_jump rfl) (by simp)
 
+/-- The time of `run` diverges: it grows by `5` every two steps. -/
 theorem run_divergent : Hybrid.Divergent dur := by
   have hnn : ∀ i, 0 ≤ dur i := fun i => by unfold dur; split_ifs <;> norm_num
+  -- after `2 m` steps, the time is `5 m`
   have heven : ∀ m, ∑ i ∈ Finset.range (2 * m), dur i = 5 * m := by
     intro m
     induction m with
@@ -204,6 +212,7 @@ theorem run_divergent : Hybrid.Divergent dur := by
       simp only [dur, h₁, h₂, one_ne_zero, ↓reduceIte]
       push_cast
       ring
+  -- the durations are nonnegative, so beyond `2 m` steps the time is at least `5 m`
   refine tendsto_atTop_atTop.2 fun b => ?_
   obtain ⟨m, hm⟩ := exists_nat_ge (b / 5)
   refine ⟨2 * m, fun n hn => ?_⟩
@@ -221,19 +230,29 @@ example (k : Clock) : {n | val k (run k n) = 0}.Infinite :=
 The same properties for `composed`, the parallel composition of the modules of
 either clock, under the module semantics: the clocks flow together, racing to
 their jump regions at `5`, which they cannot get out of; when one of them
-fires there, every clock at `5` resets while the others stutter. The invariant additionally shows that the clocks stay
-synchronised, so they always win the race together. -/
+fires there, every clock at `5` resets while the others stutter. The invariant
+additionally shows that the clocks stay synchronised, so they always win the
+race together.
 
+Most of the work is unfolding the module semantics for two clocks: listing the
+atoms (`forall_atoms`, `exists_atoms`), and reading off what a draw, a jump,
+the flow and the regions mean for each clock (`init_clock`, `jump_clock`,
+`mem_mflow`, `region_iff`). From there, the proofs follow those for one clock. -/
+
+/-- The composed clocks have no environment. -/
 theorem composed_isClosed : composed.IsClosed := show composed.extl = ∅ by decide
 
 /-- The hybrid system of the composed clocks. -/
 noncomputable def msys : Hybrid (Val.model I composed.ctrl) (Val M composed.ctrl) :=
   composed.toHybrid composed_isClosed
 
+/-- Both clocks are controlled by the composed module. -/
 theorem mem_ctrl (k : Clock) : k ∈ composed.ctrl := by cases k <;> decide
 
+/-- The atoms of the composed module: the clock `a`, then the clock `b`. -/
 theorem atoms_composed : composed.atoms = [clock .a, clock .b] := rfl
 
+/-- Each clock atom is an atom of the composed module. -/
 theorem mem_atoms (k : Clock) : clock k ∈ composed.atoms := by
   rw [atoms_composed]; cases k <;> simp
 
@@ -275,6 +294,7 @@ theorem forall_atoms {P : ∀ a, a ∈ composed.atoms → Prop} :
   rcases hmem' with rfl | rfl
   exacts [ha, hb]
 
+/-- Some atom of the composed module is a clock. -/
 theorem exists_atoms {P : ∀ a, a ∈ composed.atoms → Prop} :
     (∃ a, ∃ ha, P a ha) ↔ P (clock .a) (mem_atoms .a) ∨ P (clock .b) (mem_atoms .b) := by
   refine ⟨fun ⟨a, hmem, h⟩ => ?_, fun h => h.elim (⟨_, _, ·⟩) (⟨_, _, ·⟩)⟩
@@ -297,6 +317,7 @@ theorem init_clock (k : Clock) {s : Val M composed.ctrl}
   exact (restrict_eq_const k (composed.ctrl_subset (mem_atoms k)) s 0).1
     ((PMF.mem_support_pure_iff _ _).1 hs)
 
+/-- Initially, both clocks are at `0`. -/
 theorem of_mem_minit {μ : PMF (Val M composed.ctrl)} {s : Val M composed.ctrl}
     (hμ : μ ∈ msys.init) (hs : s ∈ μ.support) : mval .a s = 0 ∧ mval .b s = 0 :=
   ⟨init_clock .a (Module.draw_of_mem_init hμ hs _ _),
@@ -306,6 +327,7 @@ theorem of_mem_minit {μ : PMF (Val M composed.ctrl)} {s : Val M composed.ctrl}
 noncomputable def pureDraws (t : Val M composed.ctrl) : composed.Draws :=
   fun _ ha _ => PMF.pure (Val.restrict (composed.ctrl_subset ha) t)
 
+/-- Starting both clocks at `0` is a possible initialisation. -/
 theorem pure_mem_minit : PMF.pure 0 ∈ msys.init :=
   ⟨pureDraws 0, 0, forall_atoms.2 ⟨fun _ => ⟨_, rfl, rfl⟩, fun _ => ⟨_, rfl, rfl⟩⟩,
     (Module.round_pure_atoms (fun _ _ _ => rfl) 0).symm⟩
@@ -314,6 +336,8 @@ theorem pure_mem_minit : PMF.pure 0 ∈ msys.init :=
 def ResetOrKeep (k : Clock) (s s' : Val M composed.ctrl) : Prop :=
   (mval k s = 5 → mval k s' = 0) ∧ (mval k s ≠ 5 → mval k s' = mval k s)
 
+/-- A clock holding a possible draw of a jump resets if it was at `5`, and
+    keeps its value otherwise (it stutters). -/
 theorem jump_clock (k : Clock) {s s' : Val M composed.ctrl}
     (h : ∃ ν ∈ composed.draws composed_isClosed (mem_atoms k) s s',
       Val.restrict (composed.ctrl_subset (mem_atoms k)) s' ∈ ν.support) : ResetOrKeep k s s' := by
@@ -347,6 +371,7 @@ theorem pure_mem_mjump {s : Val M composed.ctrl} (ha : mval .a s = 5) (hb : mval
       fun _ => .inl ⟨(enabled_iff .b).2 hb, _, ⟨hb, rfl⟩, rfl⟩⟩,
     (Module.round_pure_atoms (fun _ _ _ => rfl) s).symm⟩
 
+/-- The flow of the module moves both clocks at rate `1`. -/
 theorem mem_mflow {s : Val M composed.ctrl} {w : TangentSpace (Val.model I composed.ctrl) s} :
     w ∈ msys.flow s ↔ w ⟨.a, mem_ctrl .a⟩ = 1 ∧ w ⟨.b, mem_ctrl .b⟩ = 1 :=
   forall_atoms.trans (and_congr
@@ -362,9 +387,11 @@ theorem mval_eq_of_trajectory {γ : ℝ → Val M composed.ctrl} {d : ℝ}
     have := mem_mflow.1 hv
     exact ⟨v, by cases k; exacts [this.1, this.2], hγt⟩
 
+/-- The jump region of each clock is a jump region of the module. -/
 theorem region_mem (k : Clock) :
     composed.Region composed_isClosed (mem_atoms k) ∈ msys.regions := ⟨_, _, rfl⟩
 
+/-- Every jump region of the module is a clock at `5`. -/
 theorem exists_region {a : Atom I M} (ha : a ∈ composed.atoms) :
     ∃ k, ∀ s, s ∈ composed.Region composed_isClosed ha ↔ mval k s = 5 := by
   have hmem' := ha
@@ -435,6 +462,7 @@ theorem mstep_rank {s s' : Val M composed.ctrl} {d : ℝ} (hs : msys.Reachable s
     (at once) infinitely many times. -/
 theorem mfrequently_zero {ρ : ℕ → Val M composed.ctrl} {δ : ℕ → ℝ} (hρ : msys.IsRun ρ δ)
     (hdiv : Hybrid.Divergent δ) : ∀ N, ∃ n ≥ N, mval .a (ρ n) = 0 ∧ mval .b (ρ n) = 0 := by
+  -- Suppose that after `N` the clocks are never `0` together, so they never reset.
   intro N
   by_contra hne
   push Not at hne
@@ -458,9 +486,11 @@ theorem mfrequently_zero {ρ : ℕ → Val M composed.ctrl} {δ : ℕ → ℝ} (
     have := key m
     rw [Finset.sum_range_add]
     linarith
+  -- but time diverges: a contradiction
   obtain ⟨n, hn⟩ := (hdiv.eventually_gt_atTop (∑ i ∈ Finset.range N, δ i + 5)).exists_forall_of_atTop
   exact absurd (bound n) (not_le.2 (hn (N + n) (by omega)))
 
+/-- Liveness, as a set: the steps at which both clocks are `0` are infinitely many. -/
 theorem minfinite_zero {ρ : ℕ → Val M composed.ctrl} {δ : ℕ → ℝ} (hρ : msys.IsRun ρ δ)
     (hdiv : Hybrid.Divergent δ) : {n | mval .a (ρ n) = 0 ∧ mval .b (ρ n) = 0}.Infinite :=
   Nat.frequently_atTop_iff_infinite.1 (frequently_atTop.2 (mfrequently_zero hρ hdiv))
@@ -470,6 +500,7 @@ theorem minfinite_zero {ρ : ℕ → Val M composed.ctrl} {δ : ℕ → ℝ} (h�
 noncomputable def mrun : ℕ → Val M composed.ctrl :=
   fun n => if n % 2 = 0 then 0 else fun _ => 5
 
+/-- The trajectory moving both clocks from `0` to `5`. -/
 theorem isTrajectory_mramp : msys.IsTrajectory (fun t _ => t) 5 where
   nonneg := by norm_num
   follows t _ := by
@@ -482,6 +513,7 @@ theorem isTrajectory_mramp : msys.IsTrajectory (fun t _ => t) 5 where
     have h5 : t₁ = 5 := (hk _).1 hin
     rwa [show t₂ = t₁ by linarith [ht₂.1, ht₂.2]]
 
+/-- `mrun` is a possible run of the module. -/
 theorem mrun_isRun : msys.IsRun mrun dur where
   init := ⟨_, pure_mem_minit, by simp [mrun]⟩
   step n := by

@@ -24,6 +24,7 @@ structure FinDist (α : Type*) where
   /-- Its support is finite. -/
   finite : toPMF.support.Finite
 
+/-- A finite distribution is used as a distribution. -/
 instance {α : Type*} : CoeOut (FinDist α) (PMF α) := ⟨FinDist.toPMF⟩
 
 /-- The Dirac distribution at `a`. -/

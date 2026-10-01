@@ -28,11 +28,13 @@ namespace Module
 structure Composable (m₁ m₂ : Module I M) where
   /-- No variable is controlled by both modules. -/
   disjoint_ctrl : Disjoint m₁.ctrl m₂.ctrl
-  /-- The private variables of either module are not coupled with the other. -/
+  /-- The private variables of either module are not coupled with the other:
+      the other module does not know them. -/
   disjoint_prvt_vars : Disjoint m₁.prvt m₂.vars
   disjoint_vars_prvt : Disjoint m₁.vars m₂.prvt
   /-- The atoms of the composite. -/
   atoms : List (Atom I M)
+  /-- They are the atoms of both modules, reordered. -/
   perm : atoms.Perm (m₁.atoms ++ m₂.atoms)
   /-- The await relation is acyclic, witnessed by the order of `atoms`. -/
   pairwise_await : atoms.Pairwise fun a b => Disjoint a.wait b.ctrl
@@ -59,6 +61,8 @@ def compose (m₁ m₂ : Module I M) (h : Composable m₁ m₂) : Module I M whe
   intf := m₁.intf ∪ m₂.intf
   prvt := m₁.prvt ∪ m₂.prvt
   atoms := h.atoms
+  -- The side conditions make the composite a module: its classes of variables
+  -- are disjoint, and its atoms control its interface and private variables.
   disjoint_extl_intf := by
     rw [Finset.disjoint_left]; intro v; simp only [ctrl, Finset.mem_sdiff, Finset.mem_union]
     tauto

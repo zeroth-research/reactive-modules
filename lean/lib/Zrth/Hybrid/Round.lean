@@ -65,7 +65,10 @@ theorem round_frame {κ : m.Draws} {l : List (Atom I M)} {h : ∀ a ∈ l, a ∈
 
 /-- In a round, every atom draws the final values of its controlled variables,
     given the final values of the variables it awaits: the order is consistent
-    with the await relation. -/
+    with the await relation.
+
+    The variables `X b` are some of those `b` awaits; they are controlled in
+    `m` but not by `b`. (For a module, `X b = b.wait`.) -/
 theorem round_draw {κ : m.Draws} {l : List (Atom I M)} {h : ∀ a ∈ l, a ∈ m.atoms}
     {x s' : Val M m.ctrl} (hs' : s' ∈ (m.round κ l h x).support)
     (hctrl : l.Pairwise fun a b => Disjoint a.ctrl b.ctrl)
@@ -83,7 +86,10 @@ theorem round_draw {κ : m.Draws} {l : List (Atom I M)} {h : ∀ a ∈ l, a ∈ 
     rw [List.pairwise_cons] at hctrl hwait
     intro b hb
     rcases List.mem_cons.1 hb with rfl | hb'
-    · refine ⟨x, ?_, ?_⟩
+    · -- The first atom drew `c` given `x`. Later atoms neither control what it
+      -- controls (so `c` survives to the end) nor what it awaits (so the
+      -- awaited values in `x` are still the final ones).
+      refine ⟨x, ?_, ?_⟩
       · convert hc using 1
         funext ⟨v, hv⟩
         rw [Val.restrict, round_frame hs' ⟨v, _⟩ fun b' hb' =>
@@ -94,7 +100,8 @@ theorem round_draw {κ : m.Draws} {l : List (Atom I M)} {h : ∀ a ∈ l, a ∈ 
           Finset.disjoint_left.1 (hwait.1 b' hb') (hXwait b hb hv),
           Val.override_of_not_mem _ _ fun hv' =>
             Finset.disjoint_left.1 (hXctrl b hb) hv' hv]
-    · exact ih hs' hctrl.2 hwait.2 (fun b hb => hX b (List.mem_cons_of_mem _ hb))
+    · -- A later atom: by induction on the rest of the round.
+      exact ih hs' hctrl.2 hwait.2 (fun b hb => hX b (List.mem_cons_of_mem _ hb))
         (fun b hb => hXctrl b (List.mem_cons_of_mem _ hb))
         (fun b hb => hXwait b (List.mem_cons_of_mem _ hb)) b hb'
 
@@ -110,7 +117,9 @@ theorem round_pure {κ : m.Draws} {t : Val M m.ctrl}
     obtain ⟨z, hz, h₁, h₂⟩ := round_pure hκ l (fun b hb => h b (List.mem_cons_of_mem _ hb))
       (Val.override x (Val.restrict (m.ctrl_subset (h a List.mem_cons_self)) t))
     refine ⟨z, by rw [round, hκ, PMF.pure_bind, hz], fun v ⟨b, hb, hv⟩ => ?_, fun v hv => ?_⟩
-    · by_cases hl : ∃ b ∈ l, v.1 ∈ b.ctrl
+    · -- A variable controlled in the round: by a later atom, or else by `a`,
+      -- which wrote `t` on it, and nobody later touched it.
+      by_cases hl : ∃ b ∈ l, v.1 ∈ b.ctrl
       · exact h₁ v hl
       · push Not at hl
         rw [h₂ v hl]
