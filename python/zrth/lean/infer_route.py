@@ -773,8 +773,9 @@ ROUTES: tuple[InferRoute, ...] = (
             "no LLM: the invariant synthesised outright by cvc5's SyGuS "
             "invariant track, over a grammar of linear facts and congruences "
             "-- the one shape `nuterm`'s Houdini lattice cannot state -- and "
-            "left in artifacts/ for a later run to take as given; scalar "
-            "integer state only"
+            "left in artifacts/ for a later run to take as given; Int, Bool, "
+            "bitvector, Real and matrix-shaped components alike, a Real kept "
+            "rational rather than floored and costing only the congruences"
         ),
         kinds=frozenset({"safety"}),
         kinds_refusal=(
