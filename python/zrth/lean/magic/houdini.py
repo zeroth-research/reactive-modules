@@ -1887,10 +1887,16 @@ class TA2MagicHoudini(TA2Magic):
                        f"dropped on every reached and sampled round")
         refuted = (f", {prover.refuted} of them refuted"
                    if prover.refutes else "")
+        if not cd.is_safety and not n_ranks:
+            started += f", so no ranking function was put to {prover.name}"
+        # What was spent, and the per-call limit the last call ran under --
+        # which used to be printed as "the time limit reached 120 s" on runs
+        # that took under a second, because with no candidate to ask about
+        # every rung of the ladder is passed at once.
         detail = (
-            f"{started}; the time limit reached {reached:g} s over "
-            f"{prover.calls} {prover.name} calls{refuted}. "
-            f"{prover.inconclusive}"
+            f"{started}; {prover.calls} {prover.name} calls took "
+            f"{prover.spent:.1f} s, the last under a {reached:g} s limit"
+            f"{refuted}. {prover.inconclusive}"
         )
         if self.artifacts is not None:
             self.artifacts.note(
