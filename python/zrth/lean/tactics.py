@@ -616,6 +616,33 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
     if f.has_real:
         closers.append("(simp_all; norm_num; done)")
 
+    # Structure the closers above do not take apart, each behind every one of
+    # them: a proof that closes today never reaches these, so they can only
+    # turn a failure into a proof, at the price of failing a little later.
+    # Measured on the cells of the bench matrix whose certificate cvc5
+    # accepts and Lean did not, rebuilt with only the closers changed.
+    if f.has_real:
+        # `ZerothHammer`'s `lra_close`: implications and disjunctions taken
+        # apart on both sides, and every floor bounded and the goal moved to
+        # `ℝ`. A hybrid plant's invariant is mode-split -- `b = false → 5 ≤
+        # x` -- and its rank floors a scaled level, which is exactly what
+        # `linarith` cannot see through: `m_thermostat`, `m_tank_dist`,
+        # `m_watertank` and `p_fluid` certificates all build with it and
+        # none did without.
+        closers.append("lra_close")
+    if f.has_int and f.has_ite:
+        # A Bool weighed as `if b then 1 else 0` *inside a hypothesis*:
+        # `split_ifs` in prep splits the goal's branches only, and omega
+        # cannot read the Bool the goal still mentions until `simp_all` has
+        # substituted it. `m_boolint`'s `--infer smt-linear` invariant.
+        closers.append("(split_ifs at * <;> simp_all <;> omega)")
+    if f.nonlinear:
+        # A product with a `max` in it: omega refuses the product, and
+        # `nlinarith` cannot see through the `max` until it is a case.
+        # `cousot9`'s `s0 * (max s2 0 + 1) + max s1 0`.
+        closers.append("(simp only [max_def, min_def] at *; split_ifs at * "
+                       "<;> (repeat' apply And.intro) <;> nlinarith)")
+
     # `decide` goes last: on a finite state it settles goals nothing else
     # can, but it is the most expensive thing in the plan.
     #

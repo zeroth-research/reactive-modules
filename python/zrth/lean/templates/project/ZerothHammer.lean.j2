@@ -9,6 +9,64 @@ macro "simp_mat"     : tactic => `(tactic| simp)
 macro "simp_defs"    : tactic => `(tactic| simp only [])
 macro "mat_collapse" : tactic => `(tactic| simp only [])
 
+-- ── Linear arithmetic under propositional structure ─────────────────────
+--
+-- What `linarith` is handed after `split_ifs` is often not a conjunction of
+-- inequalities: an implication left in the goal, a disjunctive goal, a
+-- hypothesis `b = false → 5 ≤ x`, a floor on either side. Each of those is
+-- still linear arithmetic once the structure is taken apart, and `lra_close`
+-- is the taking apart. The certificates `zrth/lean/tactics.py` gives it to
+-- are ones cvc5 has already checked, so what fails here is the proof search,
+-- never the claim.
+
+/-- Every `⌊a⌋` in `e`, by its argument `a`. Only the outermost application
+    is a floor of something: descending into its function part would meet
+    partial applications of `Int.floor` and take an instance for `a`. -/
+partial def collectFloorArgs (e : Expr) (acc : Array Expr) : Array Expr :=
+  if e.getAppFn.isConstOf ``Int.floor && e.getAppNumArgs > 0 then
+    let a := e.appArg!
+    collectFloorArgs a (if acc.contains a then acc else acc.push a)
+  else match e with
+  | .app f a => collectFloorArgs a (collectFloorArgs f acc)
+  | .lam _ t b _ | .forallE _ t b _ => collectFloorArgs b (collectFloorArgs t acc)
+  | .letE _ t v b _ => collectFloorArgs b (collectFloorArgs v (collectFloorArgs t acc))
+  | .mdata _ b | .proj _ _ b => collectFloorArgs b acc
+  | _ => acc
+
+/-- For every `⌊a⌋` in the goal or the context, add `↑⌊a⌋ ≤ a` and
+    `a < ↑⌊a⌋ + 1`. `linarith` reads `⌊a⌋` as an opaque atom; with these two
+    facts beside it, and the goal moved to `ℝ` by `rify`, a decrease such as
+    `⌊-7x - 30⌋ < ⌊-8x⌋` under `x < 21` is ordinary linear arithmetic. -/
+elab "floor_bounds" : tactic => withMainContext do
+  let mut es := #[← instantiateMVars (← getMainTarget)]
+  for d in ← getLCtx do
+    if !d.isImplementationDetail then es := es.push (← instantiateMVars d.type)
+  for a in es.foldl (fun acc e => collectFloorArgs e acc) #[] do
+    let stx ← Term.exprToSyntax a
+    evalTactic (← `(tactic| have := Int.floor_le $stx))
+    evalTactic (← `(tactic| have := Int.lt_floor_add_one $stx))
+
+-- Every implication and negation becomes a disjunction of atoms.
+macro "lra_atoms" : tactic =>
+  `(tactic| (try simp only [imp_iff_not_or, not_and_or, not_or, not_lt, not_le, not_not,
+                             Bool.not_eq_true, Bool.not_eq_false] at *))
+
+-- One branch: a Bool contradiction, plain linear arithmetic, or the same
+-- with every floor bounded and the goal moved to `ℝ`.
+macro "lra_leaf" : tactic =>
+  `(tactic| first
+     | (simp_all; done)
+     | linarith
+     | (floor_bounds; rify; linarith))
+
+-- Case-split the context, split the goal's conjunction, and refute a
+-- disjunctive goal rather than choosing a side of it.
+macro "lra_close" : tactic =>
+  `(tactic| (intros; lra_atoms; (try casesm* _ ∧ _, _ ∨ _); (repeat' apply And.intro);
+              all_goals first
+                | lra_leaf
+                | (by_contra hneg; lra_atoms; (try casesm* _ ∧ _, _ ∨ _); all_goals lra_leaf)))
+
 syntax "zeroth_hammer" : tactic
 
 /-- Zeroth hammer: cascading automated prover for reactive module goals.

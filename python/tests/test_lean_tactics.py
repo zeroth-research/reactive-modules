@@ -619,3 +619,44 @@ def test_an_integer_module_pays_nothing_for_floors():
     assert not plan.features.has_floor
     assert plan.floor_tactic == "skip"
     assert "simp only [mul_sub]" not in plan.prep
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Closers for structure the cheap provers do not take apart
+# ══════════════════════════════════════════════════════════════════════
+
+
+def test_a_real_state_gets_lra_close_after_every_cheaper_closer():
+    """Behind everything else, so a proof that closes today never reaches it."""
+    plan = _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)")
+    assert "lra_close" in plan.closers
+    assert plan.closers.index("lra_close") > plan.closers.index("(simp_all; norm_num; done)")
+
+
+def test_an_integer_state_does_not_pay_for_lra_close():
+    plan = _plan(_int_module(), "fun s => ((s 0 0) ≥ 0)")
+    assert "lra_close" not in plan.closers
+
+
+def test_a_branching_integer_state_splits_the_hypotheses_too():
+    """`split_ifs` in prep splits the goal; a Bool weighed inside a hypothesis
+    needs `split_ifs at *` and the substitution before omega can read it."""
+    plan = _plan(_int_module(), "fun s => ((if (s 0 0) = 0 then 1 else 0) ≥ 0)")
+    assert "(split_ifs at * <;> simp_all <;> omega)" in plan.closers
+
+
+def test_a_nonlinear_predicate_gets_its_max_split_into_cases():
+    plan = _plan(_int_module(), "fun s => (((s 0 0) * (max (s 0 0) 0) : Int)).toNat")
+    assert any(c.startswith("(simp only [max_def, min_def] at *") and c.endswith("nlinarith)")
+               for c in plan.closers)
+    linear = _plan(_int_module(), "fun s => ((max (s 0 0) 0 : Int)).toNat")
+    assert not any("max_def" in c for c in linear.closers)
+
+
+def test_the_hammer_defines_every_closer_the_plan_can_name():
+    """A closer the plan names and the project does not define is a parse
+    error in every certificate that carries it, not a failed alternative."""
+    from zrth.lean.cert import generate_zeroth_hammer_lean
+    hammer = generate_zeroth_hammer_lean()
+    for name in ("lra_close", "lra_leaf", "lra_atoms", "floor_bounds"):
+        assert f'"{name}"' in hammer
