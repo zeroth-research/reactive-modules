@@ -679,7 +679,7 @@ def _run_fbk(inp: InferInput) -> InferResult:
             prechecked=inp.prechecked,
         )
     except ProveItError as e:
-        raise Refused(str(e)) from e
+        raise Refused(str(e), searched=e.searched) from e
     # The installed certificate carries ic3ia's invariant: no predicates come
     # back, which is what this route's `returns="installed"` declares.
     return InferResult()

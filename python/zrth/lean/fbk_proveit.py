@@ -58,7 +58,17 @@ from .translate.fbk import (
 
 
 class ProveItError(RuntimeError):
-    """A step of the proveit route could not be carried out."""
+    """A step of the proveit route could not be carried out.
+
+    `searched` is `Refused.searched`, for the one step that searches:
+    `proveit.py` failing is ic3ia running and not deciding, which says
+    something about the module, where every other failure here is about
+    what the encoding or the checkout can take.
+    """
+
+    def __init__(self, message: str, *, searched: bool = False):
+        super().__init__(message)
+        self.searched = searched
 
 
 class NAEncoding(NamedTuple):
@@ -378,6 +388,7 @@ def _run(
     cwd: Path,
     what: str,
     why: Callable[[str], str] | None = None,
+    searched: bool = False,
 ) -> str:
     """Run `cmd`, streaming its output; raise `ProveItError` if it fails.
 
@@ -393,7 +404,8 @@ def _run(
         raise ProveItError(f"--fbk-proveit: cannot run {cmd[0]}: {e}") from e
     if rc != 0:
         reason = why(out) if why else "  (see the output above)"
-        raise ProveItError(f"--fbk-proveit: {what} failed (exit {rc})\n{reason}")
+        raise ProveItError(f"--fbk-proveit: {what} failed (exit {rc})\n{reason}",
+                           searched=searched)
     return out
 
 
@@ -474,7 +486,7 @@ def run(
     cmd = [python, str(root / "proveit.py"), str(model), "-o", str(raw_cert)]
     if ic3ia:
         cmd += ["--ic3ia", ic3ia]
-    _run(cmd, cwd=root, what="proveit.py", why=_why)
+    _run(cmd, cwd=root, what="proveit.py", why=_why, searched=True)
 
     if not raw_cert.is_file() or raw_cert.stat().st_size == 0:
         raise ProveItError(
