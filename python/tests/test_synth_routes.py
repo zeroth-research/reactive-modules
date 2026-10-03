@@ -428,8 +428,13 @@ def test_smt_linear_writes_what_it_ruled_out(tmp_path):
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     assert len(notes) == 1
     text = store.read(notes[0])
-    assert "No ranking function linear in the state" in text
+    assert "No ranking function of these shapes" in text
+    assert "linear in the state" in text
     assert "up to 2 linear inequalities" in text, "the invariants it ranked under"
+    # Every shape it searched is named, branching ones included: the note is
+    # read as a list of shapes a later prompt need not propose.
+    assert "zero where the property holds" in text
+    assert "linear on each side of" in text
 
 
 def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
@@ -849,3 +854,34 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
         text = store.read(notes[0])
         assert "coefficients were searched in" in text
         assert "counterexample" in text
+
+
+def _fixture(name: str):
+    """One `tests/fixtures` module, loaded by path."""
+    path = Path(__file__).resolve().parent / "fixtures" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"_f_{name}", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.module()
+
+
+def test_smt_linear_zeroes_the_rank_where_the_property_holds():
+    """A counter that wraps to 0 has no linear rank -- the round from 9 back
+    to 0 rises -- and `(ite P 0 r)` needs only the rounds outside `P` to
+    fall, which is every round but that one."""
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = _fixture("counter")
+    cd = CertificateData(prp="(= s0 0)", kind="buchi")
+    out = TA2MagicLinear(module, log=lambda *_: None).infer(cd)
+    assert out.ranking_smt.startswith("(ite (= s0 0) 0 ")
+    assert obligations_of(module, out) == []
+
+
+def test_smt_linear_keeps_a_linear_rank_where_one_exists():
+    """Linear is tried at every width before anything with a branch."""
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    cd = CertificateData(prp="(= s0 0)", kind="buchi")
+    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
+    assert "ite" not in out.ranking_smt

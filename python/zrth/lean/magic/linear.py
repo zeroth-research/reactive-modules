@@ -91,6 +91,9 @@ from ..common import Refused
 from . import TA2Magic
 from dataclasses import dataclass
 
+from ..houdini_solver import decimals
+from ..smt_prompt import parse_predicate
+from .houdini import Obligations, split_conditions
 from ..smt_synth import (
     Search,
     SynthContext,
@@ -125,6 +128,11 @@ DEFAULT_ROWS = 2
 # 8-bit counter's invariant takes 55 samples, so the cap is well clear of
 # what a small module needs and a big one runs out of budget long before it.
 DEFAULT_SAMPLES = 256
+
+# How many branch conditions a two-piece rank is tried on. Each one is a
+# query per invariant width, and they come property's and transition's own
+# comparisons first, which is where a rank changes what falls.
+MAX_SPLITS = 8
 
 _HOW_QUANTIFIED = (
     "the query is `exists c. forall s. obligations(c)` over the "
@@ -162,6 +170,25 @@ class _Verdict:
     values: "list[int] | None" = None
     how: str = _HOW_QUANTIFIED
     caveat: str = ""                # what narrows an `unsat`, if anything
+
+
+@dataclass(frozen=True)
+class _RankShape:
+    """What a ranking function is made of: see `TA2MagicLinear._shapes`."""
+
+    kind: str                       # "linear" | "zeroed" | "split"
+    cond_src: str = ""              # the branch, as SMT-LIB over `s0..`
+    cond: object = None             # ... and as a term (`split` only)
+
+    def prose(self, names) -> str:
+        lin = f"`{_shape(names)}`"
+        if self.kind == "zeroed":
+            return (f"zero where the property holds and linear elsewhere -- "
+                    f"`(ite P 0 r)`, `r` = {lin}")
+        if self.kind == "split":
+            return (f"linear on each side of `{self.cond_src}` -- "
+                    f"`(ite c r1 r2)`, each `r` = {lin}")
+        return f"linear in the state -- {lin}, integer coefficients, no branching"
 
 
 def _shape(names, prefix: str = "c") -> str:
@@ -252,7 +279,7 @@ class TA2MagicLinear(TA2Magic):
                 "none resumed): searching under `true` first, then for an "
                 "invariant to rank under"
             )
-        search, inv_src = self._buchi(ctx, cols, given)
+        search, inv_src = self._buchi(ctx, cols, given, cd)
         if search.found is not None:
             self.log(f"[smt-linear] inv: {inv_src}")
             self.log(f"[smt-linear] ranking: {search.found}")
@@ -268,8 +295,47 @@ class TA2MagicLinear(TA2Magic):
 
     # --- the ranking function, and the invariant it ranks under ---------
 
+    def _shapes(self, ctx: SynthContext, cd: CertificateData) -> list:
+        """The rank shapes to try, simplest first: linear, then two with a branch.
+
+        Linear comes first and at every invariant width before anything with
+        a branch, so a module that ranks linearly gets the rank it always got.
+        The two branching shapes are where the other routes' ranks were when
+        this one came back empty -- in the bench matrix, 42 of the 56 ranks
+        found on rows it could not rank had an `ite`:
+
+        * **zeroed where the property holds**, `(ite P 0 r)`. `hrank` never
+          constrains a state where `P` holds, so a rank only has to fall on
+          the rounds that stay outside it. A counter that wraps around to the
+          property's state has no linear rank and has this one:
+          `(ite (= s0 0) 0 (- 11 s0))` on `m_step2`.
+        * **two pieces**, `(ite c r1 r2)`, `c` one of the conditions the
+          property and the transition branch on (`houdini.split_conditions`),
+          for a rank that falls through a different quantity on each side --
+          `(ite (<= 0 s1) s0 (- s1))`.
+        """
+        shapes = [_RankShape("linear")]
+        prp_src = cd.prp.strip() if isinstance(cd.prp, str) else ""
+        if not prp_src.startswith("("):
+            # A property written in Python syntax: the rank is SMT-LIB, so the
+            # branch is the property as cvc5 prints it.
+            prp_src = decimals(str(ctx.prp))
+        shapes.append(_RankShape("zeroed", cond_src=prp_src))
+        try:
+            conds = split_conditions(ctx, Obligations(ctx))
+        except Exception as e:                      # pragma: no cover
+            self.log(f"[smt-linear] no branch conditions: {e}")
+            conds = []
+        for src in conds[:MAX_SPLITS]:
+            try:
+                term = parse_predicate(ctx.env, src)
+            except Exception:                       # pragma: no cover
+                continue
+            shapes.append(_RankShape("split", cond_src=src, cond=term))
+        return shapes
+
     def _buchi_at(self, ctx: SynthContext, cols: list, given: "str | None",
-                  k: int) -> tuple["tuple[str, str] | None", "_Verdict"]:
+                  k: int, shape: "_RankShape") -> tuple["tuple[str, str] | None", "_Verdict"]:
         """One query for `k` invariant rows *and* the rank together.
 
         `rule_buchi`'s ranking obligation, `hrank`, over the Lean ranking
@@ -290,13 +356,19 @@ class TA2MagicLinear(TA2Magic):
         infinity, and the route reported the empty space as a proof: `while (y
         >= 0) y := y - 1` was "proved" to have no linear rank, and Lean accepts
         `(1 + y).toNat` for it under the invariant `true`.
+
+        `shape` is what the rank is made of (`_shapes`). Each branching shape
+        keeps the coefficients linear unknowns -- the branch is on the state,
+        never on them -- so the query is the same kind of question.
         """
         tm, n = ctx.tm, len(cols)
         rows, inv = self._inv_rows(ctx, cols, given, k)
         Int = tm.getIntegerSort()
-        c = [tm.mkConst(Int, f"c{i}") for i in range(n + 1)]
+        pieces = 2 if shape.kind == "split" else 1
+        cs = [[tm.mkConst(Int, f"{'cd'[p]}{i}") for i in range(n + 1)]
+              for p in range(pieces)]
 
-        def rank(vs):
+        def affine(c, vs):
             """`c0 + Σ ci·(column i read at `vs`)`.
 
             The columns are terms over `ctx.state`, so reading them at the
@@ -313,8 +385,20 @@ class TA2MagicLinear(TA2Magic):
                 )
             return t
 
+        def rank(vs):
+            if shape.kind == "split":
+                return tm.mkTerm(Kind.ITE, ctx.at(shape.cond, vs),
+                                 affine(cs[0], vs), affine(cs[1], vs))
+            return affine(cs[0], vs)
+
         def build(st, el, en):
             nxt = ctx.msmt.update_state(st, el, en)
+            drops = tm.mkTerm(Kind.LT, rank(nxt), rank(st))
+            if shape.kind == "zeroed":
+                # `(ite P 0 r)` at a successor where `P` holds is 0, below the
+                # `r >= 1` the round starts from: only a round that stays
+                # outside `P` has to fall.
+                drops = tm.mkTerm(Kind.OR, ctx.at(ctx.prp, nxt), drops)
             falls = tm.mkTerm(
                 Kind.IMPLIES,
                 tm.mkTerm(Kind.AND, inv(st),
@@ -322,7 +406,7 @@ class TA2MagicLinear(TA2Magic):
                           ctx.with_inputs(ctx.update_pre, el, en)),
                 tm.mkTerm(Kind.AND,
                           tm.mkTerm(Kind.GEQ, rank(st), tm.mkInteger(1)),
-                          tm.mkTerm(Kind.LT, rank(nxt), rank(st))),
+                          drops),
             )
             if not k:
                 # Nothing to make inductive: the invariant is whatever was
@@ -332,17 +416,27 @@ class TA2MagicLinear(TA2Magic):
                              *self._inductive(ctx, inv, st, el, en), falls)
 
         verdict = self._decide(
-            ctx, _Template(unknowns=rows + c, build=build))
+            ctx, _Template(unknowns=rows + [x for c in cs for x in c], build=build))
         if verdict.answer != "sat":
             return None, verdict
         values = list(verdict.values)
         inv_src = self._rows_smt(cols, given, values, k)
+        # Divided through jointly: one common factor keeps `r >= 1` and every
+        # comparison between the pieces exactly as they were.
         coeffs = _normalise(values[len(rows):])
-        return (inv_src, affine_smt(coeffs[0], coeffs[1:],
-                                    [col.name for col in cols])), verdict
+        names = [col.name for col in cols]
+        lins = [affine_smt(coeffs[p * (n + 1)], coeffs[p * (n + 1) + 1:(p + 1) * (n + 1)],
+                           names) for p in range(pieces)]
+        if shape.kind == "zeroed":
+            rank_src = f"(ite {shape.cond_src} 0 {lins[0]})"
+        elif shape.kind == "split":
+            rank_src = f"(ite {shape.cond_src} {lins[0]} {lins[1]})"
+        else:
+            rank_src = lins[0]
+        return (inv_src, rank_src), verdict
 
-    def _buchi(self, ctx: SynthContext, cols: list,
-               given: "str | None") -> tuple[Search, str]:
+    def _buchi(self, ctx: SynthContext, cols: list, given: "str | None",
+               cd: CertificateData) -> tuple[Search, str]:
         """The rank, and the invariant it ranks under, widening the invariant.
 
         Width 0 is the rank under `given` alone, which is the whole of what
@@ -350,53 +444,108 @@ class TA2MagicLinear(TA2Magic):
         `m_countdown` ranks in milliseconds. Only when that comes back
         `unsat` is a row added, and then the empty space at width 0 is a
         fact about *that* invariant rather than about the module.
+
+        Each shape is widened in turn (`_shapes`), and the note an empty
+        search leaves names exactly the shapes that were decided empty and
+        at what width: one that ran out of budget is named as not decided,
+        since `--infer ai-cegis` reads the note as a list of shapes not to
+        propose.
         """
-        shape = f"`{_shape([col.name for col in cols])}`"
+        names = [col.name for col in cols]
         inv_src = given or "true"
-        decided, verdict = -1, None
-        for k in range(0, self.rows + 1):
-            found, verdict = self._buchi_at(ctx, cols, given, k)
+        shapes = self._shapes(ctx, cd)
+        # Per shape: the widest invariant it was decided empty under (-1 for
+        # none yet), and whether a query about it went unanswered.
+        decided = {i: -1 for i in range(len(shapes))}
+        unanswered: set[int] = set()
+        last = None
+
+        def attempt(i, k):
+            nonlocal last
+            found, verdict = self._buchi_at(ctx, cols, given, k, shapes[i])
+            if found is not None:
+                return found
+            if verdict.answer == "unsat":
+                decided[i], last = k, verdict
+            else:
+                unanswered.add(i)
+            return None
+
+        # Linear first, at every width, before anything with a branch: what
+        # ranked linearly before ranks the same way now. Each family is a
+        # phase of its own -- a fresh `--smt-budget` -- because linear alone
+        # can spend all of one on a module cvc5 will not state the quantified
+        # query for, and then nothing with a branch would be asked at all.
+        # Inside a family the shapes go width by width -- all of them under
+        # the invariant given, then all under one more row -- because a wider
+        # invariant is what makes a query dear.
+        families = [[0]] + [[i for i in range(1, len(shapes))
+                             if (shapes[i].kind == "zeroed") == z]
+                            for z in (True, False)]
+        order = [(f, i, k) for f, fam in enumerate(families)
+                 for k in range(self.rows + 1) for i in fam]
+        phase = 0
+        for f, i, k in order:
+            if f != phase:
+                phase = f
+                if self.budget is not None:
+                    self.budget.start_phase()
+            if i in unanswered or decided[i] != k - 1:
+                continue                # gave up on it, or a narrower width failed open
+            if self.budget is not None and self.budget.exhausted:
+                unanswered.add(i)
+                continue
+            found = attempt(i, k)
             if found is not None:
                 inv_src, rank_src = found
                 over = (f"the invariant `{inv_src}`" if k == 0 else
                         f"an invariant found with it -- `{inv_src}`")
                 return Search(
                     "ranking",
-                    f"It is linear in the state -- {shape}, no branching -- "
-                    f"and ranks under {over}.",
+                    f"It is {shapes[i].prose(names)}, and ranks under {over}.",
                     found=rank_src,
                 ), inv_src
-            if verdict.answer != "unsat":
-                break
-            decided = k
-            if k < self.rows:
-                self.log(
-                    f"[smt-linear] no rank under an invariant of {k} row(s); "
-                    f"widening the invariant"
-                )
-        exhausted = verdict is not None and verdict.answer == "unsat"
-        under = (f"under the invariant `{inv_src}`" if decided <= 0 else
-                 f"under any invariant of up to {decided} linear "
-                 f"{'inequality' if decided == 1 else 'inequalities'} "
-                 f"`{_shape([c.name for c in cols], prefix='a')} >= 0`")
-        return Search(
-            "ranking",
-            f"No ranking function linear in the state -- {shape}, integer "
-            f"coefficients, no branching -- drops by at least one and stays "
-            f"positive wherever the property fails, "
-            f"{under}.{verdict.caveat if verdict else ''}",
-            how=verdict.how if verdict else _HOW_QUANTIFIED,
-            exhausted=exhausted,
-            detail=(
+            if decided[i] == k and k < self.rows:
+                self.log(f"[smt-linear] no {shapes[i].kind} rank under an "
+                         f"invariant of {k} row(s); widening the invariant")
+
+        def under(k):
+            return (f"under the invariant `{inv_src}`" if k <= 0 else
+                    f"under any invariant of up to {k} linear "
+                    f"{'inequality' if k == 1 else 'inequalities'} "
+                    f"`{_shape(names, prefix='a')} >= 0`")
+
+        proved = [f"{shapes[i].prose(names)}, {under(k)}"
+                  for i, k in decided.items() if k >= 0]
+        open_ = [shapes[i].prose(names) for i in sorted(unanswered)]
+        exhausted = bool(proved) and not open_
+        caveat = last.caveat if last is not None else ""
+        if exhausted:
+            space = ("No ranking function of these shapes drops by at least "
+                     "one and stays positive wherever the property fails: "
+                     + "; ".join(proved) + "." + caveat)
+            detail = (
                 "A ranking function for this module needs something outside "
-                "that shape: a branch (`ite`), which is what a program whose "
-                "run wraps around needs, or an invariant wider than "
-                "`--linear-rows` to rank over. `--infer ai-cegis` and "
-                "`--infer nuterm` both search shapes that have one."
-                if exhausted else
-                "Raise `--smt-timeout`, or try `--infer nuterm` / "
+                "those shapes: more than one branch, a product of components, "
+                "or an invariant wider than `--linear-rows` to rank over. "
+                "`--infer ai-cegis` and `--infer nuterm` search shapes with them."
+            )
+        else:
+            # Not a proof, so the note is `unknown` and says nothing is ruled
+            # out -- what *was* decided goes in the detail, as a fact about
+            # this run rather than as a shape a later prompt should avoid.
+            space = ("A ranking function was searched for in these shapes: "
+                     + "; ".join(open_) + ".")
+            detail = (
+                (f"Decided empty before the budget ran out: "
+                 f"{'; '.join(proved)}.{caveat} " if proved else "")
+                + "Raise `--smt-timeout`, or try `--infer nuterm` / "
                 "`--infer ai-cegis`."
-            ),
+            )
+        return Search(
+            "ranking", space,
+            how=last.how if last is not None else _HOW_QUANTIFIED,
+            exhausted=exhausted, detail=detail,
         ), inv_src
 
     # --- the invariant, one row at a time -------------------------------
