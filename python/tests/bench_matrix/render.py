@@ -114,9 +114,8 @@ VERDICTS = {
     "UNSUPPORTED": (
         "na",
         "The route does not take this question &mdash; this kind of "
-        "property, or a precondition &mdash; and <code>verith</code> "
-        "refused it before generating anything. The panel carries its "
-        "reason.",
+        "property, a precondition, or this module&rsquo;s shape &mdash; and "
+        "searched nothing. The panel carries its reason.",
     ),
     "REFUTED": (
         "no",
@@ -128,10 +127,10 @@ VERDICTS = {
     ),
     "NO-CERT": (
         "no",
-        "The route searched its shape and returned nothing &mdash; or never "
-        "searched at all. Which of the three it was is the route&rsquo;s own "
-        "record, shown in the panel: a space <em>proved</em> empty, a budget "
-        "that ran out, or a shape the route declined.",
+        "The route searched its shape and returned nothing. Which of the two "
+        "it was is the route&rsquo;s own record, shown in the panel: a space "
+        "<em>proved</em> empty, or a budget that ran out. A shape the route "
+        "declined without searching is <code>UNSUPPORTED</code>.",
     ),
     "GEN-FAIL": (
         "bad",

@@ -61,3 +61,47 @@ def test_a_refusal_is_left_as_it_was():
 
 def test_a_traceback_with_no_exception_line_still_says_something():
     assert diagnosis('Traceback (most recent call last):\n  File "x", line 1') != ""
+
+
+# ── a refusal is not a search ────────────────────────────────────────────
+
+from run_matrix import gave_up, verdict                        # noqa: E402
+
+NOT_BUILT = dict(ok=False, raw_ok=False, secs=0.0, targets=[], sorries=[],
+                 errors=["(not built: generation failed)"])
+
+
+def _gen(err, gave_up=""):
+    return dict(ok=False, secs=0.5, err=err, err_full=err, gave_up=gave_up)
+
+
+def test_a_declined_module_is_unsupported_not_no_cert():
+    """Nothing was searched, so it belongs in no route's denominator."""
+    err = "error: --infer: --infer nuterm cannot read this module: wire 0 has sort Real([1,1])"
+    assert verdict(_gen(err, "declined"), NOT_BUILT) == "UNSUPPORTED"
+    assert verdict(_gen(err, "unknown"), NOT_BUILT) == "NO-CERT"
+
+
+def test_a_space_proved_empty_stays_no_cert():
+    err = "error: --infer: --infer smt-linear found no ranking function."
+    assert verdict(_gen(err, "no_solution"), NOT_BUILT) == "NO-CERT"
+
+
+def test_a_refusal_before_any_project_exists_is_a_decline(tmp_path):
+    """`fbk-proveit`'s precheck refuses before a project is written, so there
+    is no `artifacts/` for a status -- and a precheck searches nothing."""
+    out = tmp_path / "cell"
+    blob = "error: --fbk-proveit: state element type(s) Real unsupported"
+    assert gave_up(out, blob) == "declined"
+
+
+def test_a_usage_error_is_not_a_decline(tmp_path):
+    blob = "usage: verith [-h] ...\nverith: error: unrecognized arguments: --nope"
+    assert gave_up(tmp_path / "cell", blob) == ""
+
+
+def test_a_project_that_exists_is_read_for_its_own_note(tmp_path):
+    """Once there is a project, the route's note is the answer, not the
+    absence of one."""
+    (tmp_path / "cell" / "Rea").mkdir(parents=True)
+    assert gave_up(tmp_path / "cell", "error: --infer: no luck") == ""

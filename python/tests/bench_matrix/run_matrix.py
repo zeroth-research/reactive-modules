@@ -266,12 +266,12 @@ def generate(row, route, out: Path) -> dict:
         blob = (r.stderr or r.stdout).strip()
         return dict(ok=False, secs=time.time() - t0,
                     err=diagnosis(blob), err_full=blob[-4000:],
-                    gave_up=gave_up(out))
+                    gave_up=gave_up(out, blob))
     return dict(ok=True, secs=time.time() - t0, err="",
                 inferred=inferred_from(r.stdout), inferred_rule="last")
 
 
-def gave_up(out: Path) -> str:
+def gave_up(out: Path, blob: str = "") -> str:
     """Which kind of giving up this was, as the route itself recorded it.
 
     `NO-CERT` is three measurements in one name -- `no_solution` is a space
@@ -282,10 +282,20 @@ def gave_up(out: Path) -> str:
     this reads.
 
     The *last* note, because a run that resumed may carry an earlier one,
-    and `""` when there is none -- a refusal from the CLI happens before a
-    project exists, and a pass taken before routes recorded this has no
-    note at all.
+    and `""` when there is none -- a pass taken before routes recorded this
+    has no note at all.
+
+    A refusal `verith` wrote before any project existed has nowhere to leave
+    a note, and is `declined` all the same: what refuses that early is the
+    CLI's check of the property kind or a route's own `precheck`, and both
+    are a shape check by contract -- nothing is searched before the project
+    is written. `--infer fbk-proveit` refuses a Real state or an input read
+    while stepping there, and those were 49 `NO-CERT` cells with no status
+    at all. A usage error is argparse's, not a refusal, and is left alone.
     """
+    if (blob and not (out / "Rea").exists()
+            and re.search(r"^error: ", blob, re.M) and "usage:" not in blob):
+        return "declined"
     index = out / "Rea" / "artifacts" / "index.json"
     try:
         entries = json.loads(index.read_text())
@@ -433,6 +443,12 @@ def verdict(gen, bld) -> str:
             return "REFUTED"
         if _NO_LEAN.search(err):
             return "GEN-FAIL"
+        # A route that looked at this module and did not take it searched
+        # nothing, so its cell says what the route reads, not how hard the
+        # module is -- and counted as `NO-CERT` it was in every success
+        # rate's denominator: some 165 of the 750 in one pass.
+        if gen.get("gave_up") == "declined":
+            return "UNSUPPORTED"
         return "NO-CERT" if _NO_CERT.search(err) else "GEN-FAIL"
     if "<timeout>" in bld.get("targets", []):
         return "TIMEOUT"
