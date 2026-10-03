@@ -488,7 +488,7 @@ def machine() -> dict:
 
 
 def main() -> None:
-    global RESULTS
+    global RESULTS, GEN_TIMEOUT
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, _stop)
     ap = argparse.ArgumentParser(description=__doc__,
@@ -502,6 +502,8 @@ def main() -> None:
                     help="re-measure exactly the pairs named in FILE, one "
                          "`suite/bench/prop::route` per line (implies --redo)")
     ap.add_argument("--no-build", action="store_true", help="generate only, skip lake")
+    ap.add_argument("--gen-timeout", type=int, default=GEN_TIMEOUT, metavar="SECONDS",
+                    help=f"wall-clock cap on one `verith` run (default: {GEN_TIMEOUT})")
     # A repeat measurement is a *new sample*, not an amendment to the old
     # one: it goes in its own file and `render.py` averages the files it is
     # given. Resuming an interrupted pass means pointing `--results` back at
@@ -520,6 +522,7 @@ def main() -> None:
                          "emitting a row or a route")
     args = ap.parse_args()
     RESULTS = Path(args.results)
+    GEN_TIMEOUT = args.gen_timeout
 
     if args.prune:
         data = json.loads(RESULTS.read_text())
