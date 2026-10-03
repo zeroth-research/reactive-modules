@@ -221,3 +221,52 @@ def test_a_buchi_property_still_asks_for_both(monkeypatch):
     assert prompts[0][0] is CEGAR_GENERATE_SYSTEM
     assert cd.inv is not None and cd.ranking is not None
     assert cd.ranking_smt == "(ite (= s0 0) 0 (- 10 s0))"
+
+
+# ── how long the loop keeps asking ───────────────────────────────────────
+
+
+def _always_wrong(monkeypatch, clock, step):
+    """A model that only ever proposes a refuted invariant, each reply taking
+    `step` seconds on a fake clock."""
+    prompts = []
+
+    def chat(system, user):
+        prompts.append(user)
+        clock[0] += step
+        return "INVARIANT: (>= s0 0)"
+
+    monkeypatch.setattr(cegar, "_make_client", lambda base_url, model: chat)
+    monkeypatch.setattr(cegar.time, "monotonic", lambda: clock[0])
+    return prompts
+
+
+def test_without_a_budget_the_count_is_the_leash(monkeypatch):
+    import pytest
+    from zrth.lean.common import Refused
+    prompts = _always_wrong(monkeypatch, [0.0], 1.0)
+    with pytest.raises(Refused, match="after 5 attempts"):
+        TA2MagicCEGAR("", _counter()).infer(CertificateData(kind="safety", prp="(<= s0 9)"))
+    assert len(prompts) == 5
+
+
+def test_a_budget_keeps_asking_past_five_while_an_attempt_still_fits(monkeypatch):
+    """10 s attempts in a 95 s budget: the ninth ends at 90 s, and a tenth
+    would end at 100 s, past the budget, so it is never started."""
+    import pytest
+    from zrth.lean.common import Refused
+    prompts = _always_wrong(monkeypatch, [0.0], 10.0)
+    with pytest.raises(Refused, match="after 9 attempts in 90 s of a 95 s budget"):
+        TA2MagicCEGAR("", _counter(), budget_s=95).infer(
+            CertificateData(kind="safety", prp="(<= s0 9)"))
+    assert len(prompts) == 9
+
+
+def test_a_budget_always_allows_the_first_attempt(monkeypatch):
+    import pytest
+    from zrth.lean.common import Refused
+    prompts = _always_wrong(monkeypatch, [0.0], 10.0)
+    with pytest.raises(Refused, match="after 1 attempt in "):
+        TA2MagicCEGAR("", _counter(), budget_s=1).infer(
+            CertificateData(kind="safety", prp="(<= s0 9)"))
+    assert len(prompts) == 1

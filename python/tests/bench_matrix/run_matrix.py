@@ -57,6 +57,9 @@ RESULTS = WORK / "results.json"
 
 GEN_TIMEOUT = 300
 BUILD_TIMEOUT = 420
+# What of GEN_TIMEOUT `--infer ai-cegis` does not spend asking: verith's
+# start-up and the project it writes either side of the loop.
+CEGAR_MARGIN = 20
 
 # The two paths `--infer fbk-proveit` needs, and the MathSAT bindings its
 # `vmt2lean.py` imports. Overridable, but defaulted so a plain run measures
@@ -129,6 +132,11 @@ def command(row, route, out: Path) -> list[str]:
            "--artifacts", "reset", "-o", str(out), "-p", "Rea"]
     if route.needs_llm and MODEL:
         cmd += ["--model", MODEL]
+    if route.name == "ai-cegis":
+        # Asked by time rather than by count, so the column uses the budget
+        # the cell has: five attempts used to end at 75-107 s of a 180 s cap.
+        # The margin is the project written before the loop and after it.
+        cmd += ["--cegar-budget", str(GEN_TIMEOUT - CEGAR_MARGIN)]
     return cmd
 
 

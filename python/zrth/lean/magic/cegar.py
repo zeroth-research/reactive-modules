@@ -26,6 +26,7 @@ expressions, cvc5 verifies, counterexamples are fed back to the LLM.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 try:
@@ -89,6 +90,7 @@ class TA2MagicCEGAR(TA2Magic):
         max_attempts: int = 5,
         base_url: str | None = None,
         known: tuple[str, ...] = (),
+        budget_s: float | None = None,
     ):
         super().__init__(source)
         if cvc5 is None:
@@ -98,6 +100,14 @@ class TA2MagicCEGAR(TA2Magic):
             )
         self.module = module
         self.max_attempts = max_attempts
+        # Wall-clock seconds to keep asking for, in place of `max_attempts`.
+        # A fixed count is the wrong leash for a run that has a time limit
+        # around it: in the bench matrix every `ai-cegis` cell that ran out
+        # of attempts did so at 75-107 s of a 180 s cap, a third of the
+        # budget unspent. With a budget an attempt starts only while the
+        # slowest one so far would still finish inside it, so the run gives
+        # up on its own terms rather than being killed mid-reply.
+        self.budget_s = budget_s
         # What another run *proved* is not there -- `--infer smt-linear`
         # refuting its template, `--infer sygus` exhausting its grammar. It
         # goes into the prompt rather than into the loop: the obligations
@@ -141,10 +151,12 @@ class TA2MagicCEGAR(TA2Magic):
         # If everything this kind of certificate needs is user-provided,
         # no LLM loop — just verify once.
         complete = bool(fixed_inv) and (safety or bool(fixed_ranking))
-        loop_count = 1 if complete else self.max_attempts
+        start, slowest, attempt = time.monotonic(), 0.0, 0
 
-        for attempt in range(loop_count):
+        while self._another(attempt, complete, start, slowest):
+            began = time.monotonic()
             print(f"[CEGAR] attempt {attempt}")
+            attempt += 1
             try:
                 result = prompt_inv_ranking(
                     env,
@@ -165,6 +177,7 @@ class TA2MagicCEGAR(TA2Magic):
             except ValueError as e:
                 print(f"  parse error: {e}")
                 feedback = f"Your reply could not be parsed: {e}"
+                slowest = max(slowest, time.monotonic() - began)
                 continue
 
             print(f"  inv: {result.inv_src}")
@@ -195,14 +208,32 @@ class TA2MagicCEGAR(TA2Magic):
 
             feedback = self._format_feedback(failures)
             print(f"[CEGAR] failures: {[o.name for o in failures]}")
+            slowest = max(slowest, time.monotonic() - began)
 
         # `Refused` for the reason `magic.ai` gives: running out of
         # attempts is this route giving up, not a defect.
+        within = (f" in {time.monotonic() - start:.0f} s of a {self.budget_s:g} s "
+                  f"budget" if self.budget_s is not None else "")
         raise Refused(
-            f"CEGAR failed after {self.max_attempts} attempts. "
+            f"CEGAR failed after {attempt} attempt{'' if attempt == 1 else 's'}{within}. "
             f"Last feedback:\n{feedback}",
             searched=True,
         )
+
+    def _another(self, attempt: int, complete: bool, start: float,
+                 slowest: float) -> bool:
+        """Whether to start attempt number `attempt` (counting from 0).
+
+        A certificate supplied whole is checked once and never re-asked.
+        Without a budget the count is the leash; with one, an attempt starts
+        while the slowest so far would still end inside it -- the first
+        always does, since nothing is known about its cost yet.
+        """
+        if complete:
+            return attempt == 0
+        if self.budget_s is None:
+            return attempt < self.max_attempts
+        return attempt == 0 or time.monotonic() - start + slowest <= self.budget_s
 
     # --- obligation checks ---------------------------------------------
 

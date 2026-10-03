@@ -477,6 +477,7 @@ def _run_ai_cegis(inp: InferInput) -> InferResult:
         model=inp.model,
         base_url=inp.base_url,
         known=_ruled_out(inp),
+        budget_s=inp.opts["cegar_budget"],
     )
     cd = magic.infer(inp.cert_data)
     # It renders the Lean from its own cvc5 context, where it is free, so
@@ -741,6 +742,24 @@ ROUTES: tuple[InferRoute, ...] = (
         returns="smt",
         uses_llm=True,
         run=_run_ai_cegis,
+        options=(
+            Opt(
+                ("--cegar-budget",),
+                dict(
+                    type=float,
+                    default=None,
+                    metavar="SECONDS",
+                    help=(
+                        "Keep proposing candidates for this many seconds "
+                        "instead of stopping after 5 attempts. An attempt "
+                        "starts only while the slowest one so far would still "
+                        "finish inside the budget, so a run under an outer "
+                        "time limit gives up on its own rather than being "
+                        "killed mid-reply. Each attempt is an API call."
+                    ),
+                ),
+            ),
+        ),
     ),
     InferRoute(
         name="nuterm",
