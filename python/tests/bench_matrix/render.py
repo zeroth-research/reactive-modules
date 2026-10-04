@@ -19,6 +19,7 @@ import json
 import re
 import os
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -318,7 +319,7 @@ table.kv td:first-child{color:var(--dim);white-space:nowrap;width:1%}
 /* The header band -- name, path, description -- is tinted and accented, so a
    benchmark is seen to start; it sticks while its properties scroll past. */
 .bench>.bh{padding:11px 16px 9px;background:var(--band);
- box-shadow:inset 3px 0 0 var(--accent);position:sticky;top:0;z-index:2;
+ box-shadow:inset 3px 0 0 var(--accent);position:sticky;top:var(--stick,0);z-index:2;
  display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
 .bh .bname{font-weight:700;font-size:1.06rem;letter-spacing:-.01em;
  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -626,7 +627,8 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None,
     that command to the reader."""
     cls = verdict_class(run["verdict"], truth)
     dis = run.get("disagreed")
-    w('<details class="m"><summary>')
+    w(f'<details class="m" data-route="{esc(rt)}" data-verdict="{esc(run["verdict"])}">'
+      '<summary>')
     w(f'<span class="name">{esc(rt)}</span>')
     w(
         f'<span class="v {cls}">{esc(run["verdict"])}</span>'
@@ -924,6 +926,159 @@ VIEWER_JS = r"""
 """
 
 
+# The order the result chips are offered in: the verdicts as the legend
+# lists them, then the cells no pass measured.
+FILTER_VERDICTS = [*VERDICTS, "missing"]
+
+
+def filter_bar(w, routes: list[str], runs: dict) -> None:
+    """Chips that narrow the page to some routes and some verdicts.
+
+    A route row is shown when both its route and its verdict are on; a
+    property with no row left is hidden, and so are the benchmarks and
+    directories it empties. The summary table loses the columns of the
+    routes switched off. Everything is client-side (`FILTER_JS`): the page
+    is still one static file.
+    """
+    count = Counter(r["verdict"] for r in runs.values())
+    w('<div class="filters" id="filters">')
+    w('<div class="frow"><span class="flbl">routes</span>')
+    for r in routes:
+        w(f'<button type="button" class="chip on" data-route="{esc(r)}">{esc(r)}</button>')
+    w('<span class="fall"><button type="button" class="link" data-all="route">all</button>'
+      '<button type="button" class="link" data-none="route">none</button></span></div>')
+    w('<div class="frow"><span class="flbl">results</span>')
+    for v in FILTER_VERDICTS:
+        cls = VERDICTS.get(v, ("na", ""))[0]
+        label = "not measured" if v == "missing" else v
+        n = count.get(v, "")
+        w(f'<button type="button" class="chip on v-{cls}" data-verdict="{esc(v)}">'
+          f'{esc(label)}<span class="cn">{n}</span></button>')
+    w('<span class="fall"><button type="button" class="link" data-all="verdict">all</button>'
+      '<button type="button" class="link" data-none="verdict">none</button></span></div>')
+    w('<div class="frow"><label class="fopt"><input type="checkbox" id="f-unsolved"> '
+      "only properties none of the chosen routes verifies</label>"
+      '<span class="fcount" id="f-count"></span>'
+      '<button type="button" class="link" id="f-reset">reset</button></div>')
+    w('<p class="fnone" id="f-none" hidden>No property has a route row matching '
+      "these filters.</p>")
+    w("</div>")
+
+
+FILTER_CSS = """
+.filters{position:sticky;top:0;z-index:3;background:var(--bg);
+ border-bottom:1px solid var(--line);padding:8px 0 6px;margin:0 0 12px}
+.frow{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:3px 0}
+.flbl{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;
+ color:var(--dim);font-weight:600;width:56px;flex:none}
+.chip{font:600 11.5px ui-monospace,Menlo,monospace;padding:3px 8px;border-radius:12px;
+ border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer}
+.chip.on{background:var(--code);color:var(--fg);border-color:var(--dim)}
+.chip.on.v-ok{background:var(--okbg);color:var(--ok);border-color:var(--ok)}
+.chip.on.v-no{background:var(--nobg);color:var(--no);border-color:var(--no)}
+.chip.on.v-bad{background:var(--badbg);color:var(--bad);border-color:var(--bad)}
+.chip.on.v-open{background:var(--openbg);color:var(--open);border-color:var(--open)}
+.chip .cn{font-weight:400;margin-left:5px;opacity:.75}
+.chip:not(.on){text-decoration:line-through;opacity:.6}
+.fall{margin-left:4px}
+button.link{background:none;border:0;color:var(--accent);cursor:pointer;
+ font-size:12px;padding:2px 4px;text-decoration:underline}
+.fopt{font-size:12.5px;color:var(--dim);cursor:pointer}
+.fcount{margin-left:auto;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.fnone{color:var(--dim);font-style:italic;margin:6px 0 0}
+.hide{display:none!important}
+@media (max-width:600px){.flbl{width:100%}.fcount{margin-left:0;width:100%}}
+"""
+
+FILTER_JS = r"""
+(() => {
+  const bar = document.getElementById('filters');
+  if (!bar) return;
+  const KEY = 'bench-matrix-filters';
+  const chips = kind => [...bar.querySelectorAll(`.chip[data-${kind}]`)];
+  const on = kind => new Set(chips(kind).filter(c => c.classList.contains('on'))
+                                       .map(c => c.dataset[kind]));
+  const unsolved = document.getElementById('f-unsolved');
+  const props = [...document.querySelectorAll('.prop')];
+  const total = props.length;
+
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({
+        route: [...on('route')], verdict: [...on('verdict')], unsolved: unsolved.checked,
+        known: { route: chips('route').map(c => c.dataset.route),
+                 verdict: chips('verdict').map(c => c.dataset.verdict) } }));
+    } catch (e) {}
+  }
+  function load() {
+    try {
+      const st = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!st) return;
+      // A chip the saved state never saw -- a route added since -- starts on.
+      for (const kind of ['route', 'verdict'])
+        for (const c of chips(kind))
+          if ((st.known?.[kind] || []).includes(c.dataset[kind]))
+            c.classList.toggle('on', st[kind].includes(c.dataset[kind]));
+      unsolved.checked = !!st.unsolved;
+    } catch (e) {}
+  }
+
+  function apply() {
+    const routes = on('route'), verdicts = on('verdict');
+    let shown = 0, cells = 0;
+    for (const p of props) {
+      const rows = [...p.querySelectorAll('.grid .m')];
+      let any = 0, solved = false;
+      for (const r of rows) {
+        const inRoute = routes.has(r.dataset.route);
+        if (inRoute && r.dataset.verdict === 'VERIFIED') solved = true;
+        const vis = inRoute && verdicts.has(r.dataset.verdict);
+        r.classList.toggle('hide', !vis);
+        any += vis;
+      }
+      const vis = any > 0 && !(unsolved.checked && solved);
+      p.classList.toggle('hide', !vis);
+      if (vis) { shown++; cells += any; }
+    }
+    const benches = [...document.querySelectorAll('.bench')];
+    const dirsShown = new Set();
+    for (const b of benches) {
+      const vis = !!b.querySelector('.prop:not(.hide)');
+      b.classList.toggle('hide', !vis);
+      if (vis) dirsShown.add(b.dataset.dir);
+    }
+    for (const h of document.querySelectorAll('h3.dir'))
+      h.classList.toggle('hide', !dirsShown.has(h.dataset.dir));
+    for (const c of document.querySelectorAll('table.sum [data-route]'))
+      c.classList.toggle('hide', !routes.has(c.dataset.route));
+    document.getElementById('f-count').textContent =
+      `${shown} of ${total} properties, ${cells} cells`;
+    document.getElementById('f-none').hidden = shown > 0;
+    document.documentElement.style.setProperty('--stick', bar.offsetHeight + 'px');
+    save();
+  }
+
+  bar.addEventListener('click', e => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.classList.contains('chip')) t.classList.toggle('on');
+    else if (t.dataset.all) chips(t.dataset.all).forEach(c => c.classList.add('on'));
+    else if (t.dataset.none) chips(t.dataset.none).forEach(c => c.classList.remove('on'));
+    else if (t.id === 'f-reset') {
+      bar.querySelectorAll('.chip').forEach(c => c.classList.add('on'));
+      unsolved.checked = false;
+    } else return;
+    apply();
+  });
+  unsolved.addEventListener('change', apply);
+  window.addEventListener('resize', () =>
+    document.documentElement.style.setProperty('--stick', bar.offsetHeight + 'px'));
+  load();
+  apply();
+})();
+"""
+
+
 def render(data: dict, warns: list = ()) -> str:
     meta, rows, runs = data["meta"], data["rows"], data["runs"]
     m = meta["machine"]
@@ -932,7 +1087,7 @@ def render(data: dict, warns: list = ()) -> str:
     w = o.append
 
     w("<title>verith --infer route matrix</title>")
-    w(f"<style>{CSS}</style>")
+    w(f"<style>{CSS}{FILTER_CSS}</style>")
     w('<div class="wrap">')
     w("<h1>The <code>--infer</code> route matrix</h1>")
     w(
@@ -1161,9 +1316,10 @@ def render(data: dict, warns: list = ()) -> str:
         "kind that route accepts. Every cell behind these counts is below it, one "
         "property at a time.</p>"
     )
+    filter_bar(w, present, runs)
     w('<div class="scroll"><table class="sum"><thead><tr><th>suite</th>')
     for r in present:
-        w(f"<th>{esc(r)}</th>")
+        w(f'<th data-route="{esc(r)}">{esc(r)}</th>')
     w("</tr></thead><tbody>")
     for suite in suites + ["all"]:
         w(f"<tr{' class=all' if suite == 'all' else ''}><td>{esc(suite)}</td>")
@@ -1177,7 +1333,7 @@ def render(data: dict, warns: list = ()) -> str:
             ]
             ok = sum(1 for g in got if g["verdict"] == "VERIFIED")
             w(
-                f'<td class="{"n0" if not got else ""}">'
+                f'<td data-route="{esc(rt)}" class="{"n0" if not got else ""}">'
                 + (f"{ok} / {len(got)}" if got else "&mdash;")
                 + "</td>"
             )
@@ -1186,12 +1342,12 @@ def render(data: dict, warns: list = ()) -> str:
 
     suite_rank = {s_: i for i, s_ in enumerate(SUITE_BLURB)}
     for d in dir_order:
-        w(f'<h3 class="dir" id="d-{slug(d)}"><code>{esc(d)}/</code></h3>')
+        w(f'<h3 class="dir" id="d-{slug(d)}" data-dir="{slug(d)}"><code>{esc(d)}/</code></h3>')
         for path in sorted(dirs[d]):
             items = sorted(
                 by_file[path], key=lambda kv: (suite_rank.get(kv[1]["suite"], 9), kv[0])
             )
-            w(f'<div class="bench" id="b-{slug(path)}">')
+            w(f'<div class="bench" id="b-{slug(path)}" data-dir="{slug(d)}">')
             w(
                 f'<div class="bh"><span class="bname">{esc(Path(path).stem)}</span>'
                 + files.link((PY / path).resolve(), esc(path), "file path")
@@ -1247,7 +1403,8 @@ def render(data: dict, warns: list = ()) -> str:
                     run = runs.get(f"{key}::{rt}")
                     if not run:
                         w(
-                            f'<div class="m missing"><span class="name">{esc(rt)}</span>'
+                            f'<div class="m missing" data-route="{esc(rt)}" '
+                            f'data-verdict="missing"><span class="name">{esc(rt)}</span>'
                             '<span class="v na">not measured</span>'
                             "<span></span><span></span><span></span></div>"
                         )
@@ -1329,6 +1486,7 @@ def render(data: dict, warns: list = ()) -> str:
         + f'\n<style id="srccss">{SRC_CSS}</style>'
         + f'\n<script type="application/json" id="srcs">{files.payload()}</script>'
         + f"\n<script>{VIEWER_JS}</script>"
+        + f"\n<script>{FILTER_JS}</script>"
     )
 
 

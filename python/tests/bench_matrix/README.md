@@ -12,6 +12,10 @@ uv run python tests/bench_matrix/render.py -o matrix.html
 ```
 
 The page is a single local file — no server, no network, no build step.
+A bar above the summary narrows it to some routes and some verdicts —
+`houdini` alone, say, or every `PROOF-FAIL` — and can keep only the
+properties none of the chosen routes verifies. It filters in the browser
+and remembers its last setting there.
 
 ---
 
