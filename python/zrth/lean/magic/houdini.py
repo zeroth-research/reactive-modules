@@ -179,6 +179,9 @@ _MAX_BRANCH_FORMS = 6
 _REFITS = 3
 # Ranking functions a refit reads the solver's counter-models of.
 _WITNESSED = 4
+# How long a rung's fits may run, refits included: a refit that would end
+# past it is skipped. The first fit always runs.
+_REFIT_SECONDS = 20.0
 # Up to this many columns, every {-1, 0, 1} combination is a form; past it,
 # one or two columns at a time. There is no third rung, and a cap on the
 # pairs was measured and dropped: they are quadratic in the columns, but on
@@ -1464,6 +1467,9 @@ class TA2MagicHoudini(TA2Magic):
 
         prover = self.spec.build(ctx.tm, seconds=self.timeout, log=self.log)
         found, reached, tried = None, 0.0, 0
+        # Rounds a refutation taught the fit. Kept across rungs: a round
+        # cvc5 refuted a shape with is a counterexample at every limit.
+        learnt: list = []
         for limit in prover.ladder(self.timeout):
             if prover.left() < 0.5:
                 break
@@ -1480,14 +1486,18 @@ class TA2MagicHoudini(TA2Magic):
                     found = (self._minimise(prover, inv, conjuncts, None), None)
                     break
                 continue
-            at, candidates, learnt = None, [], []
+            at, candidates = None, []
+            fit_until = time.monotonic() + _REFIT_SECONDS
             for _ in range(_REFITS + 1):
-                candidates = self._ranks(ranks, inv, learnt)
+                started = time.monotonic()
+                candidates = self._ranks(ranks, inv, learnt, fit_until)
                 tried = max(tried, len(candidates))
                 if not candidates:
                     break
                 at = prover.first([ob.drops(inv, r) for r in candidates], limit)
                 if at is not None or not prover.refutes:
+                    break
+                if time.monotonic() + (time.monotonic() - started) > fit_until:
                     break
                 fresh = [r for r in self._refuting(prover, inv, candidates, limit)
                          if r not in learnt]
@@ -1618,14 +1628,16 @@ class TA2MagicHoudini(TA2Magic):
         return kept
 
     def _ranks(self, ranks: Ranks, inv: list[Candidate],
-               seen=()) -> list[Candidate]:
+               seen=(), fit_until: float = math.inf) -> list[Candidate]:
         """Shapes fitted to the rounds `inv` admits, smallest first.
 
         Fitted to the reached rounds and to sampled ones from states `inv`
         admits where the property fails -- `hrank` quantifies over all of
         those, so a shape that does not drop on a sampled round is one the
         solver would only be asked about to be told no -- and to `seen`,
-        rounds the solver refuted earlier shapes with.
+        rounds the solver refuted earlier shapes with, as far as `inv` still
+        admits them. A refit is skipped when another fit would run past
+        `fit_until`: on a wide module one fit is tens of seconds of Python.
         """
         sampled = sample_rounds(
             self.ctx, self.ob, self.ev, self.draws, self.runs.states,
@@ -1637,8 +1649,10 @@ class TA2MagicHoudini(TA2Magic):
         # shift of a shape is read off the rounds it was fitted to, and the
         # round that decides it -- one crossing between two modes from
         # exactly a bound -- is one a draw finds by luck.
-        learnt: list = list(seen)
+        learnt: list = [r for r in seen
+                        if all(self._holds(f, r[0]) for f in inv)]
         for _ in range(_REFITS + 1):
+            started = time.monotonic()
             fitted = self._parse(ranks.fit(list(self.runs.rounds) + sampled,
                                            keep=learnt))
             broken = [self._broken_on(r, wide) for r in fitted]
@@ -1646,6 +1660,8 @@ class TA2MagicHoudini(TA2Magic):
             fresh = [b for b in dict.fromkeys(b for b in broken if b is not None)
                      if b not in learnt]
             if kept or not fresh:
+                break
+            if time.monotonic() + (time.monotonic() - started) > fit_until:
                 break
             learnt += fresh
         self.log(f"[houdini] {len(fitted)} ranking functions drop on "
