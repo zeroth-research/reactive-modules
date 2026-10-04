@@ -8,8 +8,9 @@ solver decides what stays:
 * **the invariant** is Houdini's.  Candidate facts are the bound a component
   stays within, stated with a constant the program mentions; a congruence
   the runs keep; a relation between two components; the bounds a component
-  keeps on each side of a Bool flag; and under ``--safety`` the property's
-  own conjuncts.  Each is put to the solver (it holds at entry; a round
+  keeps on each side of a Bool flag; the bounds each mode of the Bool
+  columns keeps, computed rather than read (:mod:`.modes`); and under
+  ``--safety`` the property's own conjuncts.  Each is put to the solver (it holds at entry; a round
   preserves it given the others) and dropped when not proved, until a pass
   drops nothing.
 * **the ranking function** (``--buchi``) is one of a fixed list of shapes --
@@ -130,6 +131,7 @@ from ..houdini_solver import (
     smt_real,
 )
 from . import TA2Magic
+from .modes import mode_bounds
 from ..smt_synth import (
     SynthContext,
     affine_smt,
@@ -1450,8 +1452,11 @@ class TA2MagicHoudini(TA2Magic):
 
         self.pins = pinned_values(ctx, runs)
         conjuncts = self._conjuncts(ctx, cd) if cd.is_safety else []
+        # The computed bounds go last: the minimiser drops from the end, so
+        # a certificate the read ones carry keeps the program's constants.
         facts = self._parse(invariant_candidates(ctx, runs, constants,
-                                                 conjuncts, rationals))
+                                                 conjuncts, rationals)
+                            + mode_bounds(ctx, ob, log=self.log))
         self.log(f"[houdini] {len(facts)} candidate facts hold on the runs")
         ranks = None if cd.is_safety else Ranks(ctx, ev, cd.prp,
                                                 split_conditions(ctx, ob),

@@ -35,6 +35,7 @@ from zrth.lean.houdini_solver import SolverSpec
 
 LIMITS = Path(__file__).parent / "limits" / "mods"
 FIXTURES = Path(__file__).parent / "fixtures"
+HYBRID = Path(__file__).parent / "bench_matrix" / "hybrid"
 
 
 def module_at(path: Path):
@@ -667,6 +668,37 @@ def test_two_real_components_are_ranked_by_the_one_that_falls(solver):
                solver=solver_or_skip(solver))
     assert cd.ranking_smt == "(to_int s0)"
     assert "(= (- s0 s1) (- 2.0))" in cd.inv_smt
+
+
+def test_each_mode_is_bounded_by_what_its_round_reaches():
+    """The thermostat heats as `T' = 0.875 T + 3.75` while `T < 22`, so with
+    the heater on it never passes 23, and with it off never passes the
+    23.875 one more tick of heating gives -- constants no program text
+    names, computed rather than read."""
+    from zrth.lean.magic.modes import mode_bounds
+
+    magic, ob = a_search("m_thermostat", "buchi", "(>= s0 21.0)", fixture=HYBRID)
+    facts = mode_bounds(magic.ctx, ob, log=lambda *_: None)
+    assert "(=> s1 (<= s0 23.0))" in facts
+    assert "(=> (not s1) (<= 17.0 s0))" in facts
+    assert "(<= s0 23.875)" in facts
+
+
+@BOTH
+def test_a_hysteresis_band_is_proved_by_the_bounds_each_mode_keeps(solver):
+    """No interval is inductive for `15 <= T <= 25` -- from 25 with the
+    heater on the room reaches 25.5 -- and the bounds per mode are."""
+    cd = infer("m_thermostat", "safety", "(and (>= s0 15.0) (<= s0 25.0))",
+               solver=solver_or_skip(solver), fixture=HYBRID)
+    assert "(=> s1 (<= s0 23.0))" in cd.inv_smt
+
+
+def test_a_rank_is_fitted_again_to_the_round_the_solver_refutes_it_with():
+    """The tank fills by 1.5 to 12, and `24 - 2h` floors to 0 at h = 11.9:
+    a state off the half-unit lattice the draws live on. cvc5's refutation
+    is that state, and fitted to it the shift is 25."""
+    cd = infer("m_watertank", "buchi", "(>= s0 12.0)", fixture=HYBRID)
+    assert cd.ranking_smt.startswith("(ite s1 (to_int (+ 25.0 (* (- 2.0) s0)))")
 
 
 # ══════════════════════════════════════════════════════════════════════════
