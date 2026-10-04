@@ -276,7 +276,11 @@ def atom_to_lean_fbk_bridge(
         *_cascade(
             "Definition.INIT, toSlots, init_scalar_eq, Scalar.pack, Scalar.init"
             + (", Definition.PRE, init_pre" if has_pre else ""),
-            _lemmas(*(f"Definition.Init_{k}, Definition.var_{k}" for k in pinned)),
+            # Every slot's `var_k`, not only the pinned ones': a slot that
+            # starts at an input another slot took first is pinned *to* that
+            # slot (`fbk._free_init_slots`), which is free.
+            _lemmas(*(f"Definition.Init_{k}" for k in pinned),
+                    *(f"Definition.var_{k}" for k in range(n))),
             from_hyps=has_pre,
         ),
         "",

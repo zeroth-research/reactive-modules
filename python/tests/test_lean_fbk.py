@@ -436,8 +436,10 @@ def test_an_initial_value_built_from_an_input_is_refused():
         check_na_supported(LeanContext(module))
 
 
-def test_two_slots_from_one_input_are_refused():
-    """They start equal, and two slots each left free do not."""
+def test_two_slots_from_one_input_start_equal():
+    """They start equal, and two slots each left free do not: the first is
+    left free and the second is pinned to it -- SV-COMP's `i = N` after
+    `N = nondet()`, which `i <= N` rests on."""
     x = Var(Int([1, 1]))
     y = Var(Int([1, 1]))
     e = Var(Int([1, 1]))
@@ -446,8 +448,10 @@ def test_two_slots_from_one_input_are_refused():
         [Term(LIA.Id(), [X(x)], [X(e)]), Term(LIA.Id(), [X(y)], [X(e)])],
         [Term(LIA.Id(), [X(x)], [x]), Term(LIA.Id(), [X(y)], [y])],
     )
-    with pytest.raises(NAUnsupported, match="both start at the same"):
-        check_na_supported(LeanContext(module))
+    src = _na(module, "(<= s0 s1)")
+    assert "abbrev Init_0" not in src
+    assert "abbrev init_1 (state : StateType) : Int :=\n  (var_0 state)" in src
+    assert "INIT (state : StateType) : Bool :=\n  Init_1 state\n" in src
 
 
 # ── `--pre`, over the slots its inputs start ────────────────────────────────

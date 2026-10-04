@@ -341,8 +341,9 @@ def _input_names(acc: dict[str, list[str]]) -> dict[str, str]:
     }
 
 
-def _free_init_slots(init_text: list[str]) -> dict[int, str]:
-    """`slot -> input marker` for the slots `INIT` must leave alone.
+def _free_init_slots(init_text: list[str]) -> tuple[dict[int, str], dict[int, int]]:
+    """`slot -> input marker` for the slots `INIT` must leave alone, and
+    `slot -> slot` for those that start at an input another slot claimed.
 
     Raises :class:`NAUnsupported` for anything else that reads an input.
 
@@ -362,8 +363,16 @@ def _free_init_slots(init_text: list[str]) -> dict[int, str]:
     `s_k := 2 * input` would have to become "`s_k` is anything", and a
     REFUTED read off a model that admits odd `s_k` would be a counterexample
     the module cannot produce.
+
+    The one other read that is exact is a second slot starting at the same
+    input -- SV-COMP's `i = N` after `N = nondet()`. The first such slot is
+    left free and every later one *equal to it*: `Init_k` is
+    `var_k state == var_j state`, which is the module's initial set again,
+    where leaving both free would forget the equality (and `i <= N`, which
+    rests on it, would be refuted by a run the module cannot take).
     """
     free: dict[int, str] = {}
+    aliased: dict[int, int] = {}
     claimed: dict[str, int] = {}
     for k, body in enumerate(init_text):
         found = _INPUT_RE.findall(body)
@@ -377,15 +386,11 @@ def _free_init_slots(init_text: list[str]) -> dict[int, str]:
                 "at a function of something free"
             )
         if found[0] in claimed:
-            raise NAUnsupported(
-                f"slots {claimed[found[0]]} and {k} both start at the same "
-                "external input, and the NA encoding has nowhere to say "
-                "they are equal: each would have to start free, which "
-                "admits initial states the module has not got"
-            )
+            aliased[k] = claimed[found[0]]
+            continue
         claimed[found[0]] = k
         free[k] = found[0]
-    return free
+    return free, aliased
 
 
 def pre_over_slots(ctx: LeanContext, pre_term, bodies: SlotBodies) -> str:
@@ -574,7 +579,10 @@ def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
                 "encoding carries a module's state, and an input read while "
                 "stepping has no slot of either state to be"
             )
-    return SlotBodies(update_text, init_text, _free_init_slots(init_text))
+    free, aliased = _free_init_slots(init_text)
+    for k, j in aliased.items():
+        init_text[k] = f"(var_{j} state)"
+    return SlotBodies(update_text, init_text, free)
 
 
 def atom_to_lean_na(
@@ -689,7 +697,9 @@ def atom_to_lean_na(
     # --- initial condition ---
     # `init_i` is a closed term: an input read is the one thing that could
     # make it otherwise, and a slot that starts at one is left out of `INIT`
-    # entirely rather than given a body (:func:`_free_init_slots`).
+    # entirely rather than given a body (:func:`_free_init_slots`) -- unless
+    # another slot started at the same input first, and then its body is
+    # that slot, read from `state` like a transition body.
     #
     # `--pre` is what puts such a slot back under a constraint, and it is a
     # conjunct rather than a body because it is one predicate over the whole
@@ -700,6 +710,7 @@ def atom_to_lean_na(
         lines.append(f"  {pre_lean}")
         lines.append("")
     pinned = [k for k in range(n) if k not in bodies.free_init]
+    init_uses_state = ["state" in init_text[k] for k in pinned]
     lines += emit_rel_block(
         syn,
         RelBlock(
@@ -709,8 +720,8 @@ def atom_to_lean_na(
             state_binders="(state : StateType)",
             state_args="state",
             target="state",
-            binders=[""] * len(pinned),
-            args=[""] * len(pinned),
+            binders=[" (state : StateType)" if u else "" for u in init_uses_state],
+            args=[" state" if u else "" for u in init_uses_state],
             slots=tuple(pinned),
             extra=("PRE state",) if pre_lean else (),
         ),
