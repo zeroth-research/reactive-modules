@@ -105,6 +105,10 @@ class Query:
     goal: object
     defines: tuple[tuple[object, object], ...] = ()
     probes: tuple[tuple[str, object], ...] = ()
+    # Terms whose values a counter-model is read at -- the state and its
+    # successor, for an obligation whose refutation is a round to learn
+    # from. Outside `key` for the reason `probes` are.
+    witness: tuple = ()
 
     @property
     def key(self):
@@ -124,6 +128,9 @@ class Answer:
     # for and the solver gave one. Empty is not the same as `None`: `None`
     # is "no model", and the caller falls back to asking fact by fact.
     broken: "frozenset[str] | None" = None
+    # The query's `witness` terms at the counter-model, when a model was
+    # asked for and the solver gave one.
+    values: "tuple | None" = None
 
     @property
     def proved(self) -> bool:
@@ -142,7 +149,8 @@ class Answer:
         if self.verdict is Verdict.PROVED:
             return self.core is not None or not core
         if self.verdict is Verdict.REFUTED:
-            return self.broken is not None or not model
+            return (self.broken is not None or self.values is not None
+                    or not model)
         return False
 
 
@@ -305,7 +313,7 @@ class Cvc5Solver(Solver):
         solver.setOption("tlimit-per", limit)
         if core:
             solver.setOption("produce-unsat-cores", "true")
-        if model and q.probes:
+        if model and (q.probes or q.witness):
             solver.setOption("produce-models", "true")
         try:
             # The round, as equalities rather than `define-fun`: the same
@@ -322,7 +330,8 @@ class Cvc5Solver(Solver):
                                 self._core(solver, q) if core else None)
             elif result.isSat():
                 answer = Answer(Verdict.REFUTED, 0.0, None,
-                                self._broken(solver, q) if model else None)
+                                self._broken(solver, q) if model else None,
+                                self._values(solver, q) if model else None)
             else:
                 answer = Answer(Verdict.UNKNOWN)
         except RuntimeError as e:
@@ -334,7 +343,8 @@ class Cvc5Solver(Solver):
         dt = time.perf_counter() - t0
         self.calls += 1
         self.spent += dt
-        return Answer(answer.verdict, dt, answer.core, answer.broken)
+        return Answer(answer.verdict, dt, answer.core, answer.broken,
+                      answer.values)
 
     @staticmethod
     def _core(solver, q: Query) -> "frozenset[str] | None":
@@ -344,6 +354,29 @@ class Cvc5Solver(Solver):
         except RuntimeError:                         # pragma: no cover
             return None
         return frozenset(n for n, t in q.hyps if any(t == c for c in used))
+
+    @staticmethod
+    def _values(solver, q: Query) -> "tuple | None":
+        """The `witness` terms at this counter-model, as Python values: a
+        Fraction for a Real, an int, a bool. None if any cannot be read."""
+        if not q.witness:
+            return None
+        out = []
+        try:
+            for t in q.witness:
+                v = solver.getValue(t)
+                sort = t.getSort()
+                if sort.isBoolean():
+                    out.append(v.getBooleanValue())
+                elif sort.isInteger():
+                    out.append(v.getIntegerValue())
+                elif sort.isReal():
+                    out.append(Fraction(v.getRealValue()))
+                else:
+                    return None
+        except (RuntimeError, AttributeError):       # pragma: no cover
+            return None
+        return tuple(out)
 
     def _broken(self, solver, q: Query) -> "frozenset[str] | None":
         """The named probes this counter-model falsifies.

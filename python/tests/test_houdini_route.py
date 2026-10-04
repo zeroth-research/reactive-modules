@@ -311,6 +311,21 @@ def test_a_cached_proof_is_asked_again_only_when_a_core_is_wanted():
     assert asked == [False, True]
 
 
+def test_a_refuted_rank_comes_back_with_the_round_that_refutes_it():
+    """A ranking function's refutation is a state and its successor, and
+    cvc5 hands both back: the round the fit learns from next time."""
+    from zrth.lean.houdini_solver import Cvc5Solver, Verdict
+
+    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    inv = magic._parse(["(<= 0 s0)", "(<= s0 100)"])
+    rising = magic._parse(["(- 100 s0)"])[0]
+    answer = Cvc5Solver(magic.ctx.tm, seconds=30).prove(
+        ob.drops(inv, rising), 5, model=True)
+    assert answer.verdict is Verdict.REFUTED
+    (s,), (sp,) = answer.values[:1], answer.values[1:]
+    assert s > 0 and sp == s - 1                    # a round of the countdown
+
+
 def test_entry_is_narrowed_until_it_is_proved_not_once_per_model():
     """One counter-model names the facts *that* initial state breaks, and a
     different one may break others -- so the entry check is a fixpoint, not
