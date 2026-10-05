@@ -1,13 +1,14 @@
 import Mathlib.Geometry.Manifold.VectorBundle.Tangent
+import Mathlib.Probability.Kernel.Basic
 
 namespace Zrth2
 
-open Manifold
+open Manifold MeasureTheory ProbabilityTheory
 
 universe u v
 
 /-- A variable is anything with decidable equality and a type — a *manifold*:
-    `tp v` is the manifold of the values the variable `v` ranges over,
+    `M v` is the manifold of the values the variable `v` ranges over,
     modelled on the vector space `E v` through the model space `H v` by the
     model with corners `I v`. A real variable is `ℝ` modelled on itself; a
     discrete one is a manifold of dimension `0`. -/
@@ -24,11 +25,13 @@ class Variable (V : Type u) where
   I : (v : V) → ModelWithCorners ℝ (E v) (H v)
   /-- The manifold of the values of a variable. -/
   M : V → Type v
-  [topTp : ∀ v, TopologicalSpace (M v)]
+  [topM : ∀ v, TopologicalSpace (M v)]
   [charted : ∀ v, ChartedSpace (H v) (M v)]
+  [meas : ∀ v, MeasurableSpace (M v)]
 
 attribute [instance_reducible, instance] Variable.deq Variable.normed
-  Variable.normedSpace Variable.topH Variable.topTp Variable.charted
+  Variable.normedSpace Variable.topH Variable.topM Variable.charted
+  Variable.meas
 
 variable {V : Type u} [Variable V]
 
@@ -51,21 +54,28 @@ noncomputable abbrev T (l : List V) : Type v :=
 
 /-- An atom over the variables `V`. -/
 structure Atom (V : Type u) [Variable V] where
-  /-- The controlled variables. -/
-  ctrl : List V
-  /-- The read variables. -/
-  read : List V
-  /-- The awaited variables. -/
-  wait : List V
-  /-- The initial action: the initial values of the controlled variables,
-      given those of the awaited ones. -/
-  init : M wait → M ctrl
-  /-- The update action: the next values of the controlled variables, given
-      the values of the read and awaited ones. -/
-  update : M read × M wait → M ctrl
-  /-- The flow: a point of the tangent bundle of the controlled values —
-      the current controlled values and their rates of change — given the
-      values of the read variables. -/
-  flow : M read × T wait → T ctrl
+   /-- The controlled variables. -/
+   ctrl : List V
+   /-- The read variables. -/
+   read : List V
+   /-- The awaited variables. -/
+   wait : List V
+   /-- The initial action: the distribution of the initial values of the
+         controlled variables, given those of the awaited ones. -/
+   init : M wait → Measure (M ctrl)
+   /-- The update action: the distribution of the next values of the
+         controlled variables, given the values of the read and awaited ones. -/
+   update : M read × M wait → Measure (M ctrl)
+   /-- The flow: a point of the tangent bundle of the controlled values —
+         the current controlled values and their rates of change — given the
+         values of the read variables. -/
+   flow : M read × T wait → T ctrl
+
+   /-- The initial action is a transition kernel: a measurable family of
+      measures. -/
+   init_measurable : Measurable init
+   /-- The update action is a transition kernel: a measurable family of
+         measures. -/
+   update_measurable : Measurable update
 
 end Zrth2
