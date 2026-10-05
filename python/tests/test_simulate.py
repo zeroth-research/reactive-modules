@@ -42,6 +42,10 @@ def test_a_clock_expires_exactly_where_the_invariant_stops_time():
     assert trace.series(t) == trace.times
     assert math.isclose(trace.series(c)[-1], 5.0 - (1.0 - 0.37), rel_tol=1e-12)
     assert not trace.quiescent
+    # what each round saw: the clock exactly at 0.0 and the count not yet incremented
+    assert trace.before[0] is None
+    assert trace.before[1][c] == 0.0 and trace.before[1][k] == 0 and trace.states[1][c] == 5.0
+    assert trace.before[2][k] == 1 and len(trace.before) == len(trace)
 
 
 def test_a_frozen_clock_does_not_move_at_all():

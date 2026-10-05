@@ -26,7 +26,7 @@ number between rounds raises `FlowNotSolvable` rather than being integrated appr
 
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .zrth import SPN, Combinatorial, Differential, Sequential, X, d
 from .sort import Clock, Nat
@@ -81,11 +81,14 @@ class _Aff:
 @dataclass
 class Trace:
     """The snapshots of a run: `states[i]` maps every controlled variable (and the time
-    reference) to its value at `times[i]`; the first is the initial state, then one per
-    round, stuttering rounds included."""
+    reference) to its value at `times[i]`, after the round taken there; the first is the
+    initial state, then one per round, stuttering rounds included. `before[i]` is the
+    state that round saw, at the same instant: a clock that expired reads exactly 0.0
+    there and its re-armed value in `states[i]` (`before[0]` is None: no round at init)."""
 
     times: list
     states: list
+    before: list = field(default_factory=lambda: [None])
     quiescent: bool = False
 
     def series(self, var) -> list:
@@ -487,9 +490,11 @@ def simulate(module, *, t=None, horizon, seed=0, scheduler=None) -> Trace:
                 raise ValueError(f"the scheduler chose {delta}, outside (0, {min(hi, left)}]")
         state = _advanced(state, clocks, rates, t, delta, pins)
         now += delta
+        seen = _snapshot(state, ctrl, t)
         if trace.quiescent:
             trace.times.append(now)
-            trace.states.append(_snapshot(state, ctrl, t))
+            trace.states.append(seen)
+            trace.before.append(seen)
             break
         _round(module, state, lambda op, r: _eval(op, r, rng))
         changed = _latch(state, ctrl)
@@ -499,4 +504,5 @@ def simulate(module, *, t=None, horizon, seed=0, scheduler=None) -> Trace:
             raise e
         trace.times.append(now)
         trace.states.append(_snapshot(state, ctrl, t))
+        trace.before.append(seen)
     return trace
