@@ -31,15 +31,15 @@ universe u v
     exposes. -/
 structure Module (V : Type u) [Var V] where
   /-- The atoms. -/
-  atoms : List (Atom V)
+  atoms : Finset (Atom V)
   /-- The observable variables: visible to the environment. -/
   obs : Finset V
-  /-- No variable is controlled twice: the concatenation of the atoms'
-      controlled variables has no duplicates. -/
-  nodup : (atoms.flatMap fun a => List.ofFn a.ctrl).Nodup
-  /-- The atoms are ordered consistently with the awaits relation: no atom
-      awaits a later one. -/
-  ordered : atoms.Pairwise fun a b => ¬ a.Awaits b
+  /-- No variable is controlled twice: the controlled variables of the
+      atoms, taken together, have no duplicates. -/
+  nodup : (atoms.val.bind fun a => (List.ofFn a.ctrl : Multiset V)).Nodup
+  /-- The atoms can be ordered consistently with the awaits relation: some
+      enumeration has no atom awaiting a later one. -/
+  ordered : atoms.val.Pairwise fun a b => ¬ a.Awaits b
 
 namespace Module
 
@@ -47,7 +47,7 @@ variable {V : Type u} [Var V]
 
 /-- The controlled variables: those some atom controls. -/
 def ctrl (m : Module V) : Finset V :=
-  (m.atoms.flatMap fun a => List.ofFn a.ctrl).toFinset
+  m.atoms.biUnion fun a => (List.ofFn a.ctrl).toFinset
 
 /-- The interface variables: controlled and observable — the module's
     public outputs. -/
@@ -70,8 +70,7 @@ def vars (m : Module V) : Finset V := m.extl ∪ m.intf ∪ m.prvt
 def Compatible (m₁ m₂ : Module V) : Prop :=
   Disjoint m₁.ctrl m₂.ctrl ∧
   Disjoint m₁.prvt m₂.vars ∧ Disjoint m₁.vars m₂.prvt ∧
-  ∃ l : List (Atom V), l.Perm (m₁.atoms ++ m₂.atoms) ∧
-    l.Pairwise fun a b => ¬ a.Awaits b
+  (m₁.atoms.val + m₂.atoms.val).Pairwise fun a b => ¬ a.Awaits b
 
 end Module
 
