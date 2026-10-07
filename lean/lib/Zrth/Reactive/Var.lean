@@ -7,8 +7,8 @@ namespace Zrth2
 # Variables and their values
 
 A variable is anything with decidable equality and a type — a manifold. The
-values of a list of variables form a manifold (`M`), with a model (`M.model`)
-and a tangent bundle (`T`).
+values of a list of variables form a manifold (`Val`), with a model
+(`Val.model`).
 -/
 
 
@@ -45,20 +45,15 @@ attribute [instance_reducible, instance] Var.deq Var.normed
 variable {V : Type u} [Var V]
 
 /-- The values of a list of variables: a value of the right type for each
-    entry, positionally. A manifold, modelled by `M.model l`. -/
-abbrev M (l : List V) : Type v :=
+    entry, positionally. A manifold, modelled by `Val.model l`. -/
+abbrev Val (l : List V) : Type v :=
   (i : Fin l.length) → Var.M (l.get i)
 
 /-- The model of the values of a list of variables: the product of the
     models of its entries. -/
-noncomputable abbrev M.model (l : List V) :
+noncomputable abbrev Val.model (l : List V) :
     ModelWithCorners ℝ ((i : Fin l.length) → Var.E (l.get i))
       (ModelPi fun i : Fin l.length => Var.H (l.get i)) :=
   ModelWithCorners.pi fun i : Fin l.length => Var.I (l.get i)
-
-/-- The tangent bundle of the values of a list of variables: a value of
-    each entry together with a rate of change over it. -/
-noncomputable abbrev T (l : List V) : Type v :=
-  TangentBundle (M.model l) (M l)
 
 end Zrth2
