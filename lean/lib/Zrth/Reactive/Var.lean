@@ -44,16 +44,16 @@ attribute [instance_reducible, instance] Var.deq Var.normed
 
 variable {V : Type u} [Var V]
 
-/-- The values of a list of variables: a value of the right type for each
-    entry, positionally. A manifold, modelled by `Val.model l`. -/
-abbrev Val (l : List V) : Type v :=
-  (i : Fin l.length) → Var.M (l.get i)
+/-- The values of a tuple of variables: a value of the right type at each
+    position. A manifold, modelled by `I t`. -/
+abbrev M {n : ℕ} (t : Fin n → V) : Type v :=
+  (i : Fin n) → Var.M (t i)
 
-/-- The model of the values of a list of variables: the product of the
-    models of its entries. -/
-noncomputable abbrev Val.model (l : List V) :
-    ModelWithCorners ℝ ((i : Fin l.length) → Var.E (l.get i))
-      (ModelPi fun i : Fin l.length => Var.H (l.get i)) :=
-  ModelWithCorners.pi fun i : Fin l.length => Var.I (l.get i)
+/-- The model of the values of a tuple of variables: the product of the
+    models of its variables. -/
+noncomputable abbrev I {n : ℕ} (t : Fin n → V) :
+    ModelWithCorners ℝ ((i : Fin n) → Var.E (t i))
+      (ModelPi fun i : Fin n => Var.H (t i)) :=
+  ModelWithCorners.pi fun i : Fin n => Var.I (t i)
 
 end Zrth2

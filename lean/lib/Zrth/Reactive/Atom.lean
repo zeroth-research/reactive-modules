@@ -28,32 +28,34 @@ universe u v
 
 /-- An atom over the variables `V`. -/
 structure Atom (V : Type u) [Var V] where
+  /-- The arities: inferred from `ctrl`, `read` and `wait`. -/
+  {n m k : ℕ}
   /-- The controlled variables. -/
-  ctrl : List V
+  ctrl : Fin n → V
   /-- The read variables. -/
-  read : List V
+  read : Fin m → V
   /-- The awaited variables. -/
-  wait : List V
+  wait : Fin k → V
 
   /-- Each variable is controlled once: no duplicates. -/
-  nodup_ctrl : ctrl.Nodup
+  nodup_ctrl : Function.Injective ctrl
   /-- An atom does not await the variables it controls. -/
-  disjoint_ctrl_wait : ctrl.Disjoint wait
+  disjoint_ctrl_wait : ∀ i j, ctrl i ≠ wait j
 
   /-- The initial action: the credal set of the distributions of the
       initial values of the controlled variables, given those of the
       awaited ones. -/
-  init : Val wait → Set (Measure (Val ctrl))
+  init : M wait → Set (Measure (M ctrl))
   /-- The next action: the credal set of the distributions of the next
       values of the controlled variables, given the values of the read and
       awaited ones. -/
-  next : Val read × Val wait → Set (Measure (Val ctrl))
+  next : M read × M wait → Set (Measure (M ctrl))
   /-- The flow: the tangent vectors the controlled variables may move
       along at their current value `c`, given the values of the read
       variables and the tangents of the awaited ones — a differential
       inclusion. -/
-  flow : Val read × TangentBundle (Val.model wait) (Val wait) →
-    (c : Val ctrl) → Set (TangentSpace (Val.model ctrl) c)
+  flow : M read × TangentBundle (I wait) (M wait) →
+    (c : M ctrl) → Set (TangentSpace (I ctrl) c)
 
 
   /-- The initial action chooses among probability measures. -/
@@ -78,7 +80,7 @@ variable {V : Type u} [Var V]
 
 /-- `a` awaits `b`: `a` reads, within the current round, a variable that
     `b` controls. The awaits relation orders the atoms of a module. -/
-def Awaits (a b : Atom V) : Prop := ∃ v ∈ a.wait, v ∈ b.ctrl
+def Awaits (a b : Atom V) : Prop := ∃ i j, a.wait i = b.ctrl j
 
 end Atom
 

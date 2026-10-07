@@ -36,7 +36,7 @@ structure Module (V : Type u) [Var V] where
   obs : Finset V
   /-- No variable is controlled twice: the concatenation of the atoms'
       controlled variables has no duplicates. -/
-  nodup : (atoms.flatMap Atom.ctrl).Nodup
+  nodup : (atoms.flatMap fun a => List.ofFn a.ctrl).Nodup
   /-- The atoms are ordered consistently with the awaits relation: no atom
       awaits a later one. -/
   ordered : atoms.Pairwise fun a b => ¬ a.Awaits b
@@ -46,7 +46,8 @@ namespace Module
 variable {V : Type u} [Var V]
 
 /-- The controlled variables: those some atom controls. -/
-def ctrl (m : Module V) : Finset V := (m.atoms.flatMap Atom.ctrl).toFinset
+def ctrl (m : Module V) : Finset V :=
+  (m.atoms.flatMap fun a => List.ofFn a.ctrl).toFinset
 
 /-- The interface variables: controlled and observable — the module's
     public outputs. -/
@@ -59,21 +60,17 @@ def prvt (m : Module V) : Finset V := m.ctrl \ m.obs
     controlled by the environment. -/
 def extl (m : Module V) : Finset V := m.obs \ m.ctrl
 
-/-- All the variables of a module: those its atoms mention. -/
-def vars (m : Module V) : Finset V :=
-  (m.atoms.flatMap fun a => a.ctrl ++ a.read ++ a.wait).toFinset
+/-- All the variables of a module: the external, interface and private
+    ones. -/
+def vars (m : Module V) : Finset V := m.extl ∪ m.intf ∪ m.prvt
 
-/-- A list of modules is compatible — they can be composed: no two control
-    a common variable, none sees another's private variables, and all their
-    atoms together admit an order consistent with the awaits relation.
-
-    The first two conditions are pairwise; the last is irreducibly global —
-    pairwise schedulability does not rule out awaits cycles through three
-    or more modules. -/
-def Compatible (ms : List (Module V)) : Prop :=
-  (ms.Pairwise fun m₁ m₂ => Disjoint m₁.ctrl m₂.ctrl) ∧
-  (ms.Pairwise fun m₁ m₂ => Disjoint m₁.prvt m₂.vars ∧ Disjoint m₁.vars m₂.prvt) ∧
-  ∃ l : List (Atom V), l.Perm (ms.flatMap Module.atoms) ∧
+/-- Two modules are compatible — they can be composed: they control no
+    common variable, neither sees the other's private variables, and their
+    atoms together admit an order consistent with the awaits relation. -/
+def Compatible (m₁ m₂ : Module V) : Prop :=
+  Disjoint m₁.ctrl m₂.ctrl ∧
+  Disjoint m₁.prvt m₂.vars ∧ Disjoint m₁.vars m₂.prvt ∧
+  ∃ l : List (Atom V), l.Perm (m₁.atoms ++ m₂.atoms) ∧
     l.Pairwise fun a b => ¬ a.Awaits b
 
 end Module
