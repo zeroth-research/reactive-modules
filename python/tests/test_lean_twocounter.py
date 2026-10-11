@@ -1,14 +1,12 @@
 """Tests for the Module-to-Lean4 functional converter."""
 
 import torch
-import pytest
-from zrth import Wire, Term, Module, Sort as dt, LIA, Bool, Int, Var, X
+from zrth import Wire, Term, Module, LIA, Bool, Var, X
 from zrth.lean.project import (
     create_project,
 )
-from zrth.lean.cert import CertificateData
-
-from zrth.expr import Expr, Bool as BoolConst
+from zrth.lean.cert import lean_certificate
+from zrth.lean.certificate import Certificate, Claim
 
 from os.path import dirname
 from pathlib import Path
@@ -39,57 +37,6 @@ def _make_twobitcounter():
     return Module.sequential([b0, b1, enable], init, update)
 
 
-def _make_P(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
-    # P: b0' is false. main's LIA.Eq is Int-only, and Bool equality-with-false
-    # is just negation, so encode `false = b0'` as ¬b0'.
-    w_out = Wire(Bool([1, 1]))
-    t = Term(LIA.Not(), read=[X(ctrl[0])], write=[w_out])
-    return [t]
-
-
-def _make_ranking(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
-    # ranking = bit1 * 2 + bit0 - 3, fully in LIA. The bits are Bool, so each is
-    # cast to Int with Ite(bit, 1, 0); multiply-by-2 is linear (bit1 + bit1).
-    terms = []
-    w_out = Wire(Int([1, 1]))
-    one = Wire(Int([1, 1]))
-    zero = Wire(Int([1, 1]))
-    c3 = Wire(Int([1, 1]))
-    terms.append(Term(LIA.Int(torch.tensor([[1]])), write=[one]))
-    terms.append(Term(LIA.Int(torch.tensor([[0]])), write=[zero]))
-    terms.append(Term(LIA.Int(torch.tensor([[3]])), write=[c3]))
-
-    bit1 = Wire(Int([1, 1]))
-    bit0 = Wire(Int([1, 1]))
-    terms.append(Term(LIA.Ite(), read=[X(ctrl[1]), one, zero], write=[bit1]))
-    terms.append(Term(LIA.Ite(), read=[X(ctrl[0]), one, zero], write=[bit0]))
-
-    tmp1 = Wire(Int([1, 1]))
-    tmp2 = Wire(Int([1, 1]))
-    terms.append(
-        Term(
-            LIA.Add(),
-            read=[bit1, bit1],
-            write=[tmp1],
-        )
-    )
-    terms.append(
-        Term(
-            LIA.Add(),
-            read=[tmp1, bit0],
-            write=[tmp2],
-        )
-    )
-    terms.append(
-        Term(
-            LIA.Sub(),
-            read=[tmp2, c3],
-            write=[w_out],
-        )
-    )
-    return terms
-
-
 def test_twobitcounter_generates_lean():
     m = _make_twobitcounter()
 
@@ -98,8 +45,10 @@ def test_twobitcounter_generates_lean():
         module=m,
         project_name="TwoBitCertificate",
         executable=True,
-        cert_data=CertificateData(
-            prp=_make_P(m.ctrl),
-            ranking=_make_ranking(m.ctrl),
+        # P: b0 is false. ranking = 2*b1 + b0 - 3, each bit read as 0 or 1.
+        lean_cert=lean_certificate(
+            m,
+            Claim(prp="(not s0)"),
+            Certificate(ranking="(- (+ (ite s1 1 0) (ite s1 1 0) (ite s0 1 0)) 3)"),
         ),
     )

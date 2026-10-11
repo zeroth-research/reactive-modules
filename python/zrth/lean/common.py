@@ -186,13 +186,12 @@ def _bind_wires(params: list[tuple[str, list[Wire]]]) -> dict[int, str]:
 class LeanContext:
     """Pre-computed artifacts shared by module and certificate codegen.
 
-    Runs a one-time discovery pass over the module's init/update terms (and
-    optionally the certificate terms) to populate the constant registry and
-    the wire-name bindings for each block. Read-only after construction;
-    codegen consumers do not mutate it.
+    Runs a one-time discovery pass over the module's init/update terms to
+    populate the constant registry and the wire-name bindings for each
+    block. Read-only after construction; codegen consumers do not mutate it.
     """
 
-    def __init__(self, module: Module, cert_terms: "list | None" = None):
+    def __init__(self, module: Module):
         atoms = list(module.atoms)
         if len(atoms) != 1:
             raise ValueError(
@@ -211,8 +210,6 @@ class LeanContext:
         for term in self.atom.init:
             self.constants.intern(term)
         for term in self.atom.update:
-            self.constants.intern(term)
-        for term in cert_terms or []:
             self.constants.intern(term)
 
         # Modules that use Float/Real require `noncomputable` on defs that

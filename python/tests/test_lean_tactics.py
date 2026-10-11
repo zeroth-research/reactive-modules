@@ -432,15 +432,15 @@ def test_a_real_state_keeps_norm_num_in_prep():
 # ══════════════════════════════════════════════════════════════════════
 # The plan is about the predicates the certificate carries
 #
-# Both of the plan's inputs are computed before `--infer` runs, which is
-# before there is an invariant to compute them from. `main._replan` restates
-# them afterwards; without it an inferred certificate is planned for
-# predicates it does not have.
+# A route answers after the project is first generated, when there was no
+# invariant to plan from. `main._render` plans again from the answer;
+# without it an inferred certificate is planned for predicates it does not
+# have.
 # ══════════════════════════════════════════════════════════════════════
 
 
 class _Settings:
-    """The two fields `_replan` reads, without building a whole CLI parse."""
+    """The two fields `_render` reads, without building a whole CLI parse."""
 
     def __init__(self, smt_tactics="cvc5"):
         from zrth.lean.smt_query import SmtBudget
@@ -467,108 +467,89 @@ def _countdown():
     )
 
 
-def _before_and_after(inv, ranking):
-    """The plan inputs as the pipeline has them before a route runs, and as
-    `_replan` leaves them once the route has answered."""
+def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
+    """The certificate as the pipeline renders it before a route runs, and
+    after the route has answered."""
     pytest.importorskip("cvc5")
-    from zrth.lean.cert import CertificateData, smt_predicates_to_lean
-    from zrth.lean.main import _replan
+    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.main import _render
 
     module = _countdown()
-    prp = "(= s0 0)"
-    # Before: the property is all there is, so this is what `predicate_facts`
-    # had to read the shape of.
-    project = smt_predicates_to_lean(CertificateData(prp=prp, kind="buchi"), module)
-    before = project.facts
-
-    inferred = CertificateData(prp=prp, kind="buchi", inv=inv, ranking=ranking)
-    inferred.inv_smt, inferred.ranking_smt = inv, ranking
-    _replan(_Settings(), module, inferred, project)
-    return module, before, project
+    claim = Claim(prp="(= s0 0)")
+    settings = _Settings(smt_tactics)
+    # Before: the property is all there is to read the shape of.
+    before = _render(settings, module, claim, Certificate(), hints=False)
+    after = _render(settings, module, claim, Certificate(inv, ranking),
+                    hints=verbatim is None, restated=True, verbatim=verbatim)
+    return module, before, after
 
 
-def test_replan_sees_the_nonlinearity_the_route_introduced():
+def test_the_inferred_certificate_brings_its_nonlinearity_to_the_plan():
     """`features_for` takes `nonlinear` from the facts *over* the text scan,
     so stale facts do not merely omit a closer -- they remove one the text
     had already found. An inferred `s0 * s0` ranking with the pre-inference
     facts loses `nlinarith` and `positivity` outright."""
-    module, before, project = _before_and_after(
+    module, before, after = _before_and_after(
         "(and (>= s0 0) (<= s0 100))", "(* s0 s0)"
     )
-    assert before.nonlinear is False, "the property alone is linear"
-    assert project.facts.nonlinear is True, "the inferred ranking is not"
+    assert before.plan.facts.nonlinear is False, "the property alone is linear"
+    assert after.plan.facts.nonlinear is True, "the inferred ranking is not"
 
-    from zrth.lean.project import lean_context_for
-
-    ctx = lean_context_for(module, project)
-    text = f"{project.prp}\n{project.inv}\n{project.ranking}"
-    stale = plan_for(ctx, text, facts=before)
-    fresh = plan_for(ctx, text, facts=project.facts)
+    ctx = LeanContext(module)
+    d = after.defs
+    text = f"{d.prp}\n{d.inv}\n{d.ranking}"
+    stale = plan_for(ctx, text, facts=before.plan.facts)
+    fresh = plan_for(ctx, text, facts=after.plan.facts)
     assert not any("nlinarith" in c for c in stale.closers)
     assert any("nlinarith" in c for c in fresh.closers)
     assert "positivity" in fresh.closers
 
 
-def test_replan_asks_cvc5_about_the_invariant_that_now_exists():
+def test_cvc5_is_asked_about_the_invariant_that_now_exists():
     """`solver_hints` returns immediately on a `None` invariant, so before
     inference it answers nothing at all however branchy the certificate ends
     up. The condition below is one the invariant settles."""
-    _module, _before, project = _before_and_after(
+    _module, _before, after = _before_and_after(
         "(and (>= s0 0) (<= s0 100))", "(ite (<= s0 200) s0 999)"
     )
-    assert project.hints is not None
-    assert [value for _text, value in project.hints.determined] == [True]
-    assert "≤ 200" in project.hints.determined[0][0]
+    hints = after.plan.hints
+    assert hints is not None
+    assert [value for _text, value in hints.determined] == [True]
+    assert "≤ 200" in hints.determined[0][0]
 
 
-def test_replan_prints_the_settled_condition_unshared():
+def test_a_settled_condition_is_printed_unshared():
     """A `have` outside the definition cannot name a `let` inside it, so the
-    predicates are reprinted expanded once a condition is settled -- and all
+    predicates are printed expanded once a condition is settled -- and all
     of them, since a condition can come from the property."""
-    _module, _before, project = _before_and_after(
+    _module, _before, after = _before_and_after(
         "(and (>= s0 0) (<= s0 100))", "(ite (<= s0 200) s0 999)"
     )
-    assert project.hints.determined
-    assert "let " not in (project.ranking or "")
+    assert after.plan.hints.determined
+    assert "let " not in (after.defs.ranking or "")
 
 
-def test_replan_refreshes_the_facts_without_smt_tactics():
+def test_the_facts_do_not_wait_for_smt_tactics():
     """Reading the terms' shape is free -- they are parsed either way -- so
     it does not wait for `--smt-tactics cvc5`. Only the queries do."""
-    pytest.importorskip("cvc5")
-    from zrth.lean.cert import CertificateData, smt_predicates_to_lean
-    from zrth.lean.main import _replan
-
-    module = _countdown()
-    project = smt_predicates_to_lean(
-        CertificateData(prp="(= s0 0)", kind="buchi"), module
+    _module, _before, after = _before_and_after(
+        "(and (>= s0 0) (<= s0 100))", "(* s0 s0)", smt_tactics="none"
     )
-    inferred = CertificateData(prp="(= s0 0)", kind="buchi",
-                               inv="(and (>= s0 0) (<= s0 100))", ranking="(* s0 s0)")
-    inferred.inv_smt, inferred.ranking_smt = inferred.inv, inferred.ranking
-    _replan(_Settings(smt_tactics="none"), module, inferred, project)
-    assert project.facts.nonlinear is True
-    assert project.hints is None, "the queries are what the flag gates"
+    assert after.plan.facts.nonlinear is True
+    assert after.plan.hints is None, "the queries are what the flag gates"
 
 
-def test_replan_leaves_the_plan_alone_when_the_route_answered_in_lean():
-    """Nothing parses printed Lean back into a term, so a route with no SMT
-    source leaves the plan exactly as it was rather than half-restated."""
-    pytest.importorskip("cvc5")
-    from zrth.lean.cert import CertificateData, smt_predicates_to_lean
-    from zrth.lean.main import _replan
+def test_an_answer_in_lean_is_planned_from_the_property_alone():
+    """Nothing parses printed Lean back into a term, so a route that
+    answers in Lean leaves the facts those of the property and asks cvc5
+    nothing."""
+    from zrth.lean.certificate import LeanAnswer
 
-    module = _countdown()
-    project = smt_predicates_to_lean(
-        CertificateData(prp="(= s0 0)", kind="buchi"), module
-    )
-    before = project.facts
-    # Lean, as `--infer ai` hands it back: no `inv_smt` beside it.
-    inferred = CertificateData(prp="(= s0 0)", kind="buchi",
-                               inv="fun s => (s 0 0) ≥ 0", ranking="fun s => 1")
-    _replan(_Settings(), module, inferred, project)
-    assert project.facts is before
-    assert project.hints is None
+    answer = LeanAnswer(inv="fun s => (s 0 0) ≥ 0", ranking="fun s => 1")
+    _module, before, after = _before_and_after(None, None, verbatim=answer)
+    assert after.plan.facts == before.plan.facts
+    assert after.plan.hints is None
+    assert (after.defs.inv, after.defs.ranking) == (answer.inv, answer.ranking)
 
 
 # ── floored ranks ────────────────────────────────────────────────────────

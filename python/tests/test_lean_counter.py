@@ -5,7 +5,8 @@ from zrth import Wire, Term, Module, LIA as it, Bool, Int, Var, X
 from zrth.lean.project import (
     create_project,
 )
-from zrth.lean.cert import CertificateData
+from zrth.lean.cert import lean_certificate
+from zrth.lean.certificate import Certificate, Claim
 
 from os.path import dirname
 from pathlib import Path
@@ -92,10 +93,15 @@ def test_counter_generates_lean():
         module=m,
         project_name="Counter",
         executable=True,
-        cert_data=CertificateData(
-            prp="s[0][0] == 0",
-            inv="And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
-            init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
-            ranking="Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], s[2][0]) - s[0][0]) + 1)",
+        lean_cert=lean_certificate(
+            m,
+            Claim(
+                prp="s[0][0] == 0",
+                init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
+            ),
+            Certificate(
+                inv="And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
+                ranking="Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], s[2][0]) - s[0][0]) + 1)",
+            ),
         ),
     )

@@ -641,28 +641,33 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
     from types import SimpleNamespace
 
     from zrth.lean import main as m
-    from zrth.lean.cert import CertificateData
+    from zrth.lean.cert import LeanCertificate, LeanPredicates
+
+    def lean(**defs):
+        return LeanCertificate(LeanPredicates(**defs))
 
     built: list[Path] = []
     monkeypatch.setattr(m, "build_certificate", built.append)
     on = SimpleNamespace(build_cert=True)
 
-    m._build_cert(on, Path("/complete"), CertificateData(
-        prp="p", inv="i", ranking="r"))
+    m._build_cert(on, Path("/complete"), lean(prp="p", inv="i", ranking="r"))
     assert built == [Path("/complete")]
 
     with pytest.raises(SystemExit, match="no ranking"):
-        m._build_cert(on, Path("/p"), CertificateData(prp="p", inv="i"))
+        m._build_cert(on, Path("/p"), lean(prp="p", inv="i"))
     with pytest.raises(SystemExit, match="no invariant, ranking"):
-        m._build_cert(on, Path("/p"), CertificateData(prp="p"))
+        m._build_cert(on, Path("/p"), lean(prp="p"))
+    # A safety certificate has no ranking to be missing.
+    m._build_cert(on, Path("/safe"), lean(kind="safety", prp="p", inv="i"))
+    assert built == [Path("/complete"), Path("/safe")]
 
-    # --fbk-proveit installs ic3ia's certificate, which `cert_data` does not
-    # describe, so there is nothing to be complete about.
+    # --fbk-proveit installs ic3ia's certificate, which nothing here
+    # describes, so there is nothing to be complete about.
     m._build_cert(on, Path("/proveit"), None)
-    assert built == [Path("/complete"), Path("/proveit")]
+    assert built == [Path("/complete"), Path("/safe"), Path("/proveit")]
 
     m._build_cert(SimpleNamespace(build_cert=False), Path("/off"), None)
-    assert len(built) == 2
+    assert len(built) == 3
 
 
 def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(

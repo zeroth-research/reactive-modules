@@ -92,12 +92,19 @@ returns a :class:`zrth.Module`::
 from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
-from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
-from .certificate import LeanAnswer
+from .cert import (
+    CertificateData,
+    LeanCertificate,
+    PlanInputs,
+    generate_zeroth_hammer_lean,
+    predicate_terms,
+    render_certificate,
+)
+from .certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
-from .common import Refused
+from .common import LeanContext, Refused
 from .native import lean_gaps
-from .infer_route import InferInput, ProjectHandle
+from .infer_route import InferInput, InferResult, ProjectHandle
 from .project import (
     ENCODINGS,
     LakeBuildError,
@@ -105,18 +112,18 @@ from .project import (
     build_certificate,
     create_project,
     generate_standalone_cert_lean,
-    lean_context_for,
     load_module_from_file,
     write_encoding,
 )
-from .smt_query import ModuleQueries, pre_check, predicate_facts, solver_hints
+from .smt_query import pre_check, predicate_facts, solver_hints
 from .translate import ModuleToLean4
 
 
-def _build_cert(settings: Settings, project_dir: Path, cert_data) -> None:
+def _build_cert(settings: Settings, project_dir: Path,
+                lean_cert: "LeanCertificate | None") -> None:
     """Honour `--build-cert`, once the certificate is written.
 
-    `cert_data` is what the project's certificate was generated from, or
+    `lean_cert` is what the project's certificate was generated from, or
     `None` when the certificate came from elsewhere (`--infer fbk-proveit`
     installs ic3ia's). The predicates are re-checked here rather than only
     at parse time because a route can return without one: an LLM that
@@ -125,11 +132,12 @@ def _build_cert(settings: Settings, project_dir: Path, cert_data) -> None:
     """
     if not settings.build_cert:
         return
-    if cert_data is not None:
+    if lean_cert is not None:
+        defs = lean_cert.defs
         # A safety certificate has no ranking function to be missing.
-        required = [("property", cert_data.prp), ("invariant", cert_data.inv)]
-        if not cert_data.is_safety:
-            required.append(("ranking", cert_data.ranking))
+        required = [("property", defs.prp), ("invariant", defs.inv)]
+        if not defs.is_safety:
+            required.append(("ranking", defs.ranking))
         missing = [name for name, value in required if not value]
         if missing:
             raise SystemExit(
@@ -169,7 +177,7 @@ def _hammer_only(settings: Settings) -> None:
     print(f"Wrote {out}")
 
 
-def _standalone(settings: Settings, module, cert_data) -> None:
+def _standalone(settings: Settings, module, lean_cert) -> None:
     """`--cert-file`: a self-contained certificate and its sibling encodings.
 
     No project, so no route: the predicates are the ones supplied, which is
@@ -178,7 +186,7 @@ def _standalone(settings: Settings, module, cert_data) -> None:
     out = Path(settings.cert_file)
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(generate_standalone_cert_lean(module, cert_data))
+        out.write_text(generate_standalone_cert_lean(module, lean_cert))
     except (Refused, OSError) as e:
         raise SystemExit(f"error: --cert-file: {e}") from e
     print(f"Wrote standalone certificate: {out}")
@@ -258,69 +266,47 @@ def _workspace(settings: Settings, module, project_dir: Path) -> ArtifactStore:
     return store
 
 
-def _replan(settings: Settings, module, inferred, project_cert_data) -> None:
-    """Restate the tactic plan's inputs over the predicates that were inferred.
+def _render(settings: Settings, module, claim: "Claim | None",
+            cert: Certificate, *, hints: bool, restated: bool = False,
+            verbatim: "LeanAnswer | None" = None) -> "LeanCertificate | None":
+    """The certificate as codegen takes it. `None` without a claim: a bare
+    run asks cvc5 nothing.
 
-    Both of them are computed before the route runs, which is before there is
-    an invariant to compute them *from*. `predicate_facts` then reads the
-    shape of the property alone, and `solver_hints` answers nothing at all --
-    every question it asks is asked under the invariant, so a `None` one is
-    answered by returning immediately. A `--infer` certificate was therefore
-    generated from a plan about predicates it does not carry, and in two ways
-    that matter:
-
-    * `cert_facts` and `cert_thin` were `skip` on every inferred certificate,
-      however branchy the inferred predicates turned out to be -- the run
-      printed "nothing cvc5 can add to the plan" before the route that would
-      produce the thing to add it about had run;
-    * `features_for` takes `nonlinear` from the facts *over* what it read in
-      the printed Lean rather than merging the two, so an inferred nonlinear
-      predicate lost `nlinarith` and `positivity` from the closer list
-      entirely. Measured on a `(* s0 s0)` ranking, that is the whole
-      difference between a plan that can close `hrank` and one that cannot.
-
-    Needs the SMT source, since nothing parses the printed Lean back into a
-    term: that is what `inv_smt` / `ranking_smt` keep, and what
-    `_record_predicates` has just written to `artifacts/` beside the
-    obligations stated against it. A route that answers in Lean alone leaves
-    nothing to read and the plan stays exactly as it was.
+    The predicates are parsed once, and that one parse is printed as Lean,
+    read for its shape (`predicate_facts`) and, with `hints` under
+    `--smt-tactics cvc5`, put to `solver_hints`. A condition the hints
+    settle is spliced into a tactic in expanded form, and a `have` outside
+    a definition cannot name a `let` inside it, so the definitions are then
+    printed unshared -- every one, since a condition can come from the
+    property. `verbatim` is an answer that is Lean already.
     """
-    q = ModuleQueries.build(module, *inferred.split())
-    if q is None:
-        return
-
-    facts = predicate_facts(q)
-    if facts is not None:
-        project_cert_data.facts = facts
-
-    if settings.smt_tactics != "cvc5":
-        return
-    print(
-        f".. SMT-informed tactics (cvc5), restated over the inferred "
-        f"predicates: <={settings.budget.per_call_ms} ms per query, "
-        f"<={settings.budget.phase_ms} ms total"
+    if claim is None:
+        return None
+    q = predicate_terms(module, claim, cert)
+    h = None
+    if hints and settings.smt_tactics == "cvc5":
+        restating = ", restated over the inferred predicates" if restated else ""
+        print(
+            f".. SMT-informed tactics (cvc5){restating}: "
+            f"<={settings.budget.per_call_ms} ms per query, "
+            f"<={settings.budget.phase_ms} ms total"
+        )
+        h = solver_hints(q, settings.budget, log=print)
+    defs = render_certificate(
+        q, share=not (h and h.determined), verbatim=verbatim
     )
-    hints = solver_hints(q, settings.budget, log=print)
-    project_cert_data.hints = hints
-    if not hints.determined:
-        return
+    return LeanCertificate(defs, PlanInputs(predicate_facts(q), h))
 
-    # The same care the pre-inference path takes, for the same reason: a
-    # settled condition is spliced into a tactic in expanded form, so the
-    # definition it has to match cannot have its repeated subterms shared
-    # behind a `let` the `have` outside cannot name. Every predicate is
-    # reprinted, not only the two that were inferred -- a condition can come
-    # from the property, which was printed shared when the hints were empty.
-    try:
-        lean = smt_predicates_to_lean(inferred, module, share=False)
-    except Refused:
-        # Unshared printing is an optimisation on top of a plan that is
-        # already better than the one this function replaced. Losing it is
-        # not worth losing the run: the `have`s stay, each one `try`ed, and
-        # the ones that cannot match cost nothing.
-        return
-    for field in ("prp", "inv", "ranking", "init_pre", "update_pre"):
-        setattr(project_cert_data, field, getattr(lean, field))
+
+def _answer(route, result: InferResult) -> "tuple[Certificate, LeanAnswer | None]":
+    """What a route answered, in the language its row declares.
+
+    A `returns="smt"` row is rendered from its SMT-LIB even when it printed
+    Lean of its own, so every such certificate is printed in one place.
+    """
+    if route.returns == "lean":
+        return Certificate(), LeanAnswer(result.inv_lean, result.ranking_lean)
+    return Certificate(result.inv_smt, result.ranking_smt), None
 
 
 def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
@@ -360,12 +346,12 @@ def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
 
 def _infer(
     settings: Settings, module, handle: ProjectHandle, cert_data, prechecked
-) -> "CertificateData | None":
+) -> "InferResult | None":
     """Run the selected route against the generated project.
 
-    Returns the certificate it inferred, or `None` when the route installed
-    one itself -- there are then no predicates for the project to be
-    regenerated from.
+    Returns what it inferred, or `None` when the route installed the
+    certificate itself -- there are then no predicates for the project to
+    be regenerated from.
 
     Everything route-specific is a field of the row: what of the project it
     may read and write, which artifact roles it resumes from, and which
@@ -404,32 +390,7 @@ def _infer(
         )
     if route.returns == "installed":
         return None
-
-    # cvc5's own input back, for `--pre-check` to restate the obligations
-    # from: nothing parses the Lean below into a term.
-    cert_data.inv_smt, cert_data.ranking_smt = result.inv_smt, result.ranking_smt
-
-    if result.inv_lean or result.ranking_lean:
-        # The route rendered its own Lean -- `magic.cegar` from the cvc5
-        # context it already had, `magic.learn` on its way out. Rendering it
-        # again here would encode the module into cvc5 one more time for a
-        # string we were handed.
-        cert_data.inv, cert_data.ranking = result.inv_lean, result.ranking_lean
-    else:
-        try:
-            lean = smt_predicates_to_lean(
-                CertificateData(
-                    prp=settings.prp,
-                    kind=settings.kind,
-                    inv=result.inv_smt,
-                    ranking=result.ranking_smt,
-                ),
-                module,
-            )
-        except Refused as e:
-            raise _refused(settings, e) from e
-        cert_data.inv, cert_data.ranking = lean.inv, lean.ranking
-    return cert_data
+    return result
 
 
 def main():
@@ -493,9 +454,8 @@ def main():
     #
     # The context is built once and threaded: its discovery pass interns
     # every init/update term, and codegen and the rewrites after inference
-    # need the same one. `cert_data` contributes the terms
-    # `project_cert_data` would, since rendering passes term lists through.
-    ctx = lean_context_for(module, cert_data)
+    # need the same one.
+    ctx = LeanContext(module)
     gaps = lean_gaps(ctx)
     if gaps:
         raise _refused(settings, Refused(
@@ -525,35 +485,18 @@ def main():
             pre_check(module, *cert_data.split(), settings.budget,
                       artifacts=store)
 
-    # The hints have to come first: a settled branch condition is spliced
-    # into a tactic in expanded form, so the definition it has to match must
-    # be printed unshared.
-    hints = None
-    if settings.smt_tactics == "cvc5" and cert_data is not None:
-        print(
-            f".. SMT-informed tactics (cvc5): <={settings.budget.per_call_ms} ms per "
-            f"query, <={settings.budget.phase_ms} ms total"
-        )
-        hints = solver_hints(
-            ModuleQueries.build(module, *cert_data.split()), settings.budget,
-            log=print
-        )
-
-    # Translate SMT-LIB predicates to Lean expression strings for codegen.
-    # `cert_data` keeps the original SMT source so a route can parse it with
-    # its own cvc5 context.
-    project_cert_data = cert_data
-    if cert_data is not None:
-        try:
-            project_cert_data = smt_predicates_to_lean(
-                cert_data, module, share=not (hints and hints.determined)
-            )
-        except Refused as e:
-            raise SystemExit(f"error: {e}") from e
-        project_cert_data.hints = hints
+    # Read before any route runs: a route is handed `cert_data` and may
+    # change it.
+    claim, given = (
+        cert_data.split() if cert_data is not None else (None, Certificate())
+    )
+    try:
+        lean_cert = _render(settings, module, claim, given, hints=True)
+    except Refused as e:
+        raise SystemExit(f"error: {e}") from e
 
     if settings.cert_file:
-        _standalone(settings, module, project_cert_data)
+        _standalone(settings, module, lean_cert)
         return
 
     print(".. Generating lean code")
@@ -563,7 +506,7 @@ def main():
             module=module,
             project_name=settings.project_name,
             executable=settings.executable,
-            cert_data=project_cert_data,
+            lean_cert=lean_cert,
             module_file=settings.module_file,
             lakefile_vars=(
                 settings.route.lakefile(settings.route_config)
@@ -587,42 +530,43 @@ def main():
             resumes=frozenset(settings.route.reads_artifacts),
             artifacts=store,
         )
-        inferred = _infer(settings, module, handle, cert_data, prechecked)
+        result = _infer(settings, module, handle, cert_data, prechecked)
 
-        if inferred is None:
+        if result is None:
             # The route installed its own certificate, so there is nothing
-            # of `project_cert_data` to be complete about and nothing to
-            # regenerate from it.
-            _build_cert(settings, project_dir, cert_data=None)
+            # of ours to be complete about and nothing to regenerate from.
+            _build_cert(settings, project_dir, None)
             print(f"\nProject ready at: {project_dir}")
             return
 
+        inferred, verbatim = _answer(settings.route, result)
         if settings.pre_check == "cvc5":
-            claim, cert = inferred.split()
-            answer = (LeanAnswer(inferred.inv, inferred.ranking)
-                      if settings.route.returns == "lean" else cert)
-            pre_check(module, claim, answer, settings.budget, artifacts=store)
-        _record_predicates(store, settings, inferred, inferred=True)
+            pre_check(module, claim, verbatim or inferred, settings.budget,
+                      artifacts=store)
+        _record_predicates(store, settings, CertificateData(
+            prp=claim.prp, kind=claim.kind,
+            inv=result.inv_lean, ranking=result.ranking_lean,
+            inv_smt=result.inv_smt, ranking_smt=result.ranking_smt,
+        ), inferred=True)
 
-        # Merge the inferred predicates into what the project is generated
-        # from. The kind comes along: it decides which proof rule the
-        # rewritten files state, and `ranking` is `None` for a safety
-        # certificate by construction.
-        project_cert_data.inv = inferred.inv
-        project_cert_data.ranking = inferred.ranking
-
-        # And the tactic plan's two inputs with them: until this point there
-        # were no inferred predicates for either to be about.
-        _replan(settings, module, inferred, project_cert_data)
+        # The certificate is the route's answer alone, under the claim the
+        # run was given; the tactic plan is restated over it, since until
+        # now there were no inferred predicates for it to be about.
+        try:
+            lean_cert = _render(settings, module, claim, inferred,
+                                hints=verbatim is None, restated=True,
+                                verbatim=verbatim)
+        except Refused as e:
+            raise _refused(settings, e) from e
 
         # After inference the predicates are new, so both files are
         # rewritten -- `Data.lean` holds the definitions and
         # `Certificate.lean`'s tactics are generated from their shape. The
         # handle is what does it, so a route that writes more of the project
         # than the predicates and this pipeline go through one writer.
-        handle.write_predicates(project_cert_data)
+        handle.write_predicates(lean_cert)
 
-    _build_cert(settings, project_dir, cert_data=project_cert_data)
+    _build_cert(settings, project_dir, lean_cert)
 
     print(f"\nProject ready at: {project_dir}")
 

@@ -41,9 +41,3 @@ def test_split_takes_the_smt_source_over_the_lean_printed_from_it():
                           init_pre="(>= e0 0)", update_pre="(>= e0 1)")
     assert cert == Certificate(inv="(>= s0 0)", ranking="s0")
 
-
-def test_split_reads_a_field_with_no_source_as_absent():
-    """A term list is compiled IR, not SMT-LIB: nothing can parse it."""
-    claim, cert = CertificateData(prp=[], inv=["term"], kind="safety").split()
-    assert claim == Claim(kind="safety")
-    assert cert == Certificate()

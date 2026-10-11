@@ -46,7 +46,8 @@ topologically-sorted dataflow graph.
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
 | `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` |
-| `cert.py` | Certificate generation: `CertificateData`, `generate_certificate_lean`, ZerothHammer |
+| `certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
+| `cert.py` | Certificate generation: `predicate_terms`, `render_certificate`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
 
 ---
 
@@ -223,14 +224,15 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 ## Certificate Generation (`cert.py`)
 
 A **certificate** adds five predicates and a proof skeleton on top of the
-module encoding.  `CertificateData` holds them as either:
+module encoding.  The predicates are SMT-LIB over `s0..`, `e0..`, `el0..`
+(`certificate.Claim` and `certificate.Certificate`). `predicate_terms`
+parses them against the module, and `render_certificate` prints them as
+Lean `fun` expressions into a `LeanPredicates`; it is the only place they
+are printed. Codegen takes a `LeanCertificate`: those definitions and
+`PlanInputs`, the facts and solver hints the tactic plan reads. A predicate
+that is `None` becomes a `True` / `sorry` placeholder.
 
-- `None` → a `True` / `sorry` placeholder is emitted.
-- `str` → a raw Lean expression string is emitted verbatim.
-- `list[Term]` → compiled from the Python term IR into a Lean body (via
-  `_translate_terms` with `e`/`s` as the param names).
-
-`generate_certificate_lean(project_name, module_name, ctx, cert_data, ...)`:
+`generate_certificate_lean(ctx, lean_cert, *, module_inline=None)`:
 
 1. Emits imports (`Mathlib`, `Core.Basic`, module import or inline, hammer).
 2. Emits `init_pre`, `update_pre`, `inv`, `P`, `DecidablePred P`, `ranking`.
@@ -243,10 +245,14 @@ module encoding.  `CertificateData` holds them as either:
 **Wire bindings in certificates:**  State is accessed as `s`, externals as
 `e.1` (latched) and `e.2` (next).
 
-### `smt_predicates_to_lean`
+### `predicate_terms` / `render_certificate`
 
-Converts SMT-LIB string predicates (from a CEGIS loop) into Lean expression
-strings by parsing them with cvc5 and translating the AST.
+`predicate_terms` parses with cvc5 and refuses a predicate by the flag it
+came from; `render_certificate(q, share=..., verbatim=...)` translates the
+terms. `share=False` prints repeated subterms in full, which a condition
+`--smt-tactics` settled needs; `verbatim` takes the invariant and ranking of
+a `LeanAnswer` as they are. `lean_certificate(module, claim, cert)` does both
+for a caller that wants no solver hints.
 
 ---
 

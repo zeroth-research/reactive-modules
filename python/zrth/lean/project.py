@@ -14,7 +14,7 @@ from zrth.lean.cert import (
     generate_certificate_lean,
     generate_data_lean,
     generate_zeroth_hammer_lean,
-    CertificateData,
+    LeanCertificate,
 )
 from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 
@@ -507,37 +507,11 @@ def main : IO Unit := do
     return "\n".join(lines)
 
 
-def lean_context_for(
-    module: Module, cert_data: "CertificateData | None"
-) -> LeanContext:
-    """The `LeanContext` a run's codegen shares.
-
-    The discovery pass it runs interns every init/update term, so it is built
-    once per run and threaded: `create_project` takes one, hands it to the
-    files it writes, and the caller keeps it for the rewrites that come after
-    inference. The certificate's own term lists have to be in it -- a
-    predicate supplied as compiled IR rather than as SMT-LIB text contributes
-    constants the emitted definitions name.
-    """
-    cert_terms: list = []
-    if cert_data is not None:
-        for field in (
-            cert_data.prp,
-            cert_data.inv,
-            cert_data.init_pre,
-            cert_data.update_pre,
-            cert_data.ranking,
-        ):
-            if isinstance(field, list):
-                cert_terms.extend(field)
-    return LeanContext(module, cert_terms=cert_terms)
-
-
 def write_data_lean(
     project_dir: Path,
     project_name: str,
     module: Module,
-    cert_data: CertificateData | None,
+    lean_cert: LeanCertificate | None,
     ctx: LeanContext | None = None,
 ) -> Path:
     """Write/overwrite Certificate/Data.lean with init_pre, update_pre, inv, P,
@@ -553,12 +527,12 @@ def write_data_lean(
     is not guaranteed to run after ``write_certificate_lean``.
     """
     if ctx is None:
-        ctx = lean_context_for(module, cert_data)
+        ctx = LeanContext(module)
 
     src_dir = project_dir / "Certificate"
     src_dir.mkdir(parents=True, exist_ok=True)
     data_file = src_dir / "Data.lean"
-    data_file.write_text(generate_data_lean(ctx, cert_data))
+    data_file.write_text(generate_data_lean(ctx, lean_cert))
     print(f"Wrote {data_file}")
     return data_file
 
@@ -567,7 +541,7 @@ def write_certificate_lean(
     project_dir: Path,
     project_name: str,
     module: Module,
-    cert_data: CertificateData | None = None,
+    lean_cert: LeanCertificate | None = None,
     ctx: LeanContext | None = None,
 ) -> Path:
     """Write/overwrite Certificate.lean (stable proof structure, imports Data).
@@ -575,11 +549,10 @@ def write_certificate_lean(
     Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
     from ``create_project`` which already has one).
 
-    The *definitions* still live in ``Certificate/Data.lean`` beside it, but
-    ``cert_data`` is no
-    longer inert here: the proof tactics are generated from the shape of the
-    predicates (see ``zrth.lean.tactics``), so this file has to be rewritten
-    whenever they change — after ``--infer``, for instance.
+    The *definitions* live in ``Certificate/Data.lean`` beside it, but the
+    proof tactics are generated from the shape of the predicates (see
+    ``zrth.lean.tactics``), so this file has to be rewritten whenever they
+    change — after ``--infer``, for instance.
     """
     if ctx is None:
         ctx = LeanContext(module)
@@ -587,7 +560,7 @@ def write_certificate_lean(
     cert_dir = project_dir / "Certificate"
     cert_dir.mkdir(parents=True, exist_ok=True)
     cert_file = cert_dir / "Certificate.lean"
-    cert_file.write_text(generate_certificate_lean(ctx, cert_data))
+    cert_file.write_text(generate_certificate_lean(ctx, lean_cert))
     print(f"Wrote {cert_file}")
     return cert_file
 
@@ -598,7 +571,7 @@ def create_project(
     project_name: str = "Certificate",
     template_dir: Path = TEMPLATE_DIR,
     executable: bool = False,
-    cert_data: CertificateData | None = None,
+    lean_cert: LeanCertificate | None = None,
     module_file: Path | str | None = None,
     lakefile_vars: dict | None = None,
     ctx: "LeanContext | None" = None,
@@ -613,6 +586,8 @@ def create_project(
         `template_dir`:    Optional path to directory containing template .lean files.
         `project_name`:    Optional name of the Lean package / library.
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
+        `lean_cert`:       The certificate's predicates, printed; placeholders
+                           where it is `None`.
         `module_file`:     Path to the Python source file used to create the module
                            (written as a debug artifact alongside the project).
         `lakefile_vars`:   What the inference route needs of the lakefile,
@@ -623,9 +598,9 @@ def create_project(
                            Declared as data rather than passed per route:
                            the lakefile is written here, before any route
                            runs, so a route cannot amend it afterwards.
-        `ctx`:             A `lean_context_for` this run already built, so
-                           the discovery pass runs once rather than once
-                           here and again for every file rewritten after
+        `ctx`:             A `LeanContext` this run already built, so the
+                           discovery pass runs once rather than once here
+                           and again for every file rewritten after
                            inference.
     """
     project_dir = output_dir / project_name
@@ -713,7 +688,7 @@ def create_project(
     # Generate reactive module (init and update)
     # ----------------------------------------------------------
     if ctx is None:
-        ctx = lean_context_for(module, cert_data)
+        ctx = LeanContext(module)
     m2l = ModuleToLean4(ctx)
 
     root_lean = project_dir / "System.lean"
@@ -727,8 +702,8 @@ def create_project(
     for enc in ENCODINGS:
         print(f"++ Generated {write_encoding(enc, m2l, layout, module_name)} ++")
 
-    # -- certificate data (init_pre, inv, P, ranking — placeholders if no cert_data) --
-    write_data_lean(project_dir, project_name, module, cert_data, ctx=ctx)
+    # -- certificate data (init_pre, inv, P, ranking — placeholders if no lean_cert) --
+    write_data_lean(project_dir, project_name, module, lean_cert, ctx=ctx)
 
     # ----------------------------------------------------------
     # Generate Main.lean for executable
@@ -741,7 +716,7 @@ def create_project(
     # ----------------------------------------------------------
     # Always write Certificate.lean (stable proof structure, imports XXXData)
     # ----------------------------------------------------------
-    write_certificate_lean(project_dir, project_name, module, cert_data, ctx=ctx)
+    write_certificate_lean(project_dir, project_name, module, lean_cert, ctx=ctx)
 
     print()
     print(f"DONE: Project created at: {project_dir}")
@@ -750,7 +725,7 @@ def create_project(
 
 def generate_standalone_cert_lean(
     module: Module,
-    cert_data: CertificateData | None = None,
+    lean_cert: LeanCertificate | None = None,
 ) -> str:
     """Generate a self-contained certificate Lean file with init/update inlined.
 
@@ -761,12 +736,10 @@ def generate_standalone_cert_lean(
     Suitable for placing a single .lean file inside an existing lake project
     such as ``tests/lean/Certs/``.
     """
-    ctx = lean_context_for(module, cert_data)
+    ctx = LeanContext(module)
     m2l = ModuleToLean4(ctx)
     module_code = m2l.to_lean_functional()
-    return generate_certificate_lean(
-        ctx, cert_data=cert_data, module_inline=module_code
-    )
+    return generate_certificate_lean(ctx, lean_cert, module_inline=module_code)
 
 
 def load_module_from_file(filepath: str, module_def: str = "module") -> Module:

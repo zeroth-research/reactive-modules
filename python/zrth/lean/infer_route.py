@@ -51,6 +51,7 @@ from .houdini_solver import (
 if TYPE_CHECKING:
     from zrth import Module
 
+    from .cert import LeanCertificate
     from .common import LeanContext
 
 
@@ -135,24 +136,24 @@ class ProjectHandle:
     # restated.  Going through here rather than through two module-level
     # functions in the caller keeps that pairing in one place.
 
-    def write_data(self, cert_data: CertificateData) -> Path:
+    def write_data(self, lean_cert: "LeanCertificate") -> Path:
         from .project import write_data_lean
 
         return write_data_lean(
-            self.dir, self.name, self.module, cert_data, ctx=self.ctx
+            self.dir, self.name, self.module, lean_cert, ctx=self.ctx
         )
 
-    def write_certificate(self, cert_data: CertificateData) -> Path:
+    def write_certificate(self, lean_cert: "LeanCertificate") -> Path:
         from .project import write_certificate_lean
 
         return write_certificate_lean(
-            self.dir, self.name, self.module, cert_data, ctx=self.ctx
+            self.dir, self.name, self.module, lean_cert, ctx=self.ctx
         )
 
-    def write_predicates(self, cert_data: CertificateData) -> None:
+    def write_predicates(self, lean_cert: "LeanCertificate") -> None:
         """Both of the above, which is what an inferring route wants."""
-        self.write_data(cert_data)
-        self.write_certificate(cert_data)
+        self.write_data(lean_cert)
+        self.write_certificate(lean_cert)
 
     # --- writing more than that -----------------------------------------
 

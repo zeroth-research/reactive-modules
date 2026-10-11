@@ -33,9 +33,9 @@ used to make: every question `solver_hints` asks is asked *under* the
 invariant, so with `--infer` there was no invariant to ask under and the run
 printed "nothing cvc5 can add to the plan" before the route that would give
 it something to add had run. `cert_facts` and `cert_thin` were therefore
-`skip` on every inferred certificate. `main._replan` restates both the hints
-and `predicate_facts` once the route has answered, from the `inv_smt` /
-`ranking_smt` it kept -- which matters twice over, because `features_for`
+`skip` on every inferred certificate. `main._render` computes both the hints
+and `predicate_facts` again once the route has answered, from the SMT-LIB
+it answered with -- which matters twice over, because `features_for`
 takes `nonlinear` from the facts *over* the text scan rather than merging
 them, so stale facts did not merely omit `nlinarith` but removed one the
 printed Lean had already justified.
@@ -216,10 +216,10 @@ already been zeta-reduced into the goal, and only the rewrite removes the
 split. That is the whole of the missing benefit.
 
 So the predicate is now rendered **unshared whenever cvc5 settled a
-condition in it** (`solver_hints` runs before `smt_predicates_to_lean` and
-passes `share=False`; after inference `_replan` reprints the same way, and
-reprints *every* predicate rather than the two that were inferred, since a
-settled condition can come from the property). That costs almost nothing: settled conditions only
+condition in it** (`main._render` asks `solver_hints` before
+`render_certificate` and passes it `share=False`, for *every* predicate
+rather than the two that were inferred, since a settled condition can come
+from the property). That costs almost nothing: settled conditions only
 survive as `if`s in Real predicates, where sharing saves little
 (NN2RealWide4 is 556 chars against 422), while the deep Int nets where
 sharing matters fold to `max` and offer no conditions to settle at all.

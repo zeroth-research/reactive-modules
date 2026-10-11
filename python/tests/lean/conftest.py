@@ -23,7 +23,8 @@ import torch
 
 from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
+from zrth.lean.cert import CertificateData, generate_zeroth_hammer_lean, lean_certificate
+from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
 from zrth.lean.translate.scalar import _argmax_scalar_def_lines
 
@@ -210,10 +211,12 @@ def _make_mixed() -> Module:
     return Module.sequential([x, v], init, update)
 
 
-_COUNTDOWN_CERT = CertificateData(
-    prp="s[0][0] == 0",
-    inv="And(s[0][0] >= 0, s[0][0] <= 100)",
-    ranking="Ite(s[0][0] == 0, 0, s[0][0])",
+_COUNTDOWN_CERT = (
+    Claim(prp="s[0][0] == 0"),
+    Certificate(
+        inv="And(s[0][0] >= 0, s[0][0] <= 100)",
+        ranking="Ite(s[0][0] == 0, 0, s[0][0])",
+    ),
 )
 
 
@@ -274,20 +277,26 @@ _CERT_SPECS = [
     (
         "Counter",
         _make_counter,
-        CertificateData(
-            prp="s[0][0] == 0",
-            inv="And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
-            init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
-            ranking="Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], s[2][0]) - s[0][0]) + 1)",
+        (
+            Claim(
+                prp="s[0][0] == 0",
+                init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
+            ),
+            Certificate(
+                inv="And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
+                ranking="Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], s[2][0]) - s[0][0]) + 1)",
+            ),
         ),
     ),
     (
         "Countdown",
         _make_countdown,
-        CertificateData(
-            prp="(= s0 0)",
-            inv="(and (>= s0 0) (<= s0 100))",
-            ranking="(ite (= s0 0) 0 s0)",
+        (
+            Claim(prp="(= s0 0)"),
+            Certificate(
+                inv="(and (>= s0 0) (<= s0 100))",
+                ranking="(ite (= s0 0) 0 s0)",
+            ),
         ),
     ),
     (
@@ -296,28 +305,31 @@ _CERT_SPECS = [
         # else in this suite compiles a `--safety` certificate.
         "CountdownSafe",
         _make_countdown,
-        CertificateData(
-            kind="safety",
-            prp="(<= s0 100)",
-            inv="(and (>= s0 0) (<= s0 100))",
+        (
+            Claim(prp="(<= s0 100)", kind="safety"),
+            Certificate(inv="(and (>= s0 0) (<= s0 100))"),
         ),
     ),
     (
         "TwoVars",
         _make_twovars,
-        CertificateData(
-            prp="(= s0 s1)",
-            inv="(and (>= s0 0) (<= s0 s1) (= s1 10))",
-            ranking="(ite (= s0 s1) 0 (- s1 s0))",
+        (
+            Claim(prp="(= s0 s1)"),
+            Certificate(
+                inv="(and (>= s0 0) (<= s0 s1) (= s1 10))",
+                ranking="(ite (= s0 s1) 0 (- s1 s0))",
+            ),
         ),
     ),
     (
         "Collatz",
         _make_collatz,
-        CertificateData(
-            prp="(= s0 1)",
-            inv="(and (>= s0 1) (<= s0 8))",
-            ranking="(ite (= s0 1) 0 (- s0 1))",
+        (
+            Claim(prp="(= s0 1)"),
+            Certificate(
+                inv="(and (>= s0 1) (<= s0 8))",
+                ranking="(ite (= s0 1) 0 (- s0 1))",
+            ),
         ),
     ),
 ]
@@ -350,10 +362,11 @@ def generate_lean_files(sync_core_templates) -> None:
 
     # Certs/ — one self-contained certificate per module + scalar encoding file
     _CERTS_DIR.mkdir(exist_ok=True)
-    for name, make_module, cert_data in _CERT_SPECS:
+    for name, make_module, (claim, cert) in _CERT_SPECS:
         module = make_module()
-        lean_cert = smt_predicates_to_lean(cert_data, module)
-        content = generate_standalone_cert_lean(module, lean_cert)
+        content = generate_standalone_cert_lean(
+            module, lean_certificate(module, claim, cert)
+        )
         (_CERTS_DIR / f"{name}.lean").write_text(content)
 
     # Certs/LearnedCountdown.lean — the certificate `--infer nuterm` produces,
@@ -373,16 +386,15 @@ def generate_lean_files(sync_core_templates) -> None:
         learned = TA2MagicLearn("", module, log=lambda *a: None).infer(
             CertificateData(prp="(= s0 0)", kind="buchi")
         )
-        # The Lean the route rendered is for a project; a standalone
-        # certificate is generated from the SMT-LIB it kept beside it.
+        # Generated from the SMT-LIB the route answered with, as `verith`
+        # does it.
         (_CERTS_DIR / "LearnedCountdown.lean").write_text(
             generate_standalone_cert_lean(
                 module,
-                smt_predicates_to_lean(
-                    CertificateData(prp="(= s0 0)", kind="buchi",
-                                    inv=learned.inv_smt,
-                                    ranking=learned.ranking_smt),
+                lean_certificate(
                     module,
+                    Claim(prp="(= s0 0)"),
+                    Certificate(learned.inv_smt, learned.ranking_smt),
                 ),
             )
         )
@@ -469,7 +481,7 @@ def generate_lean_files(sync_core_templates) -> None:
         module = make_module()
         ctx = LeanContext(module)
         t = ModuleToLean4(module)
-        cert = smt_predicates_to_lean(CertificateData(prp=prop, kind="safety"), module)
+        cert = lean_certificate(module, Claim(prp=prop, kind="safety"))
         (_CERTS_DIR / f"Bridge{name}.lean").write_text(
             "\n".join([
                 "import Core.Basic", "import Core.Box", "import Core.Mat",

@@ -497,21 +497,10 @@ def test_an_empty_result_is_what_an_installing_route_returns():
     assert not InferResult(inv_lean="fun s => s.1 = 0").empty
 
 
-def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi"):
-    """Put one synthetic row through `main._infer`, counting renders."""
-    from zrth.lean import main as m
-    from zrth.lean.cert import CertificateData
+def _row(returns="smt", kind="buchi", result=None):
     from zrth.lean.infer_route import InferRoute
 
-    rendered = []
-
-    def _render(cd, module, **kw):
-        rendered.append(cd)
-        return CertificateData(inv="RENDERED_INV", ranking="RENDERED_RANK")
-
-    monkeypatch.setattr(m, "smt_predicates_to_lean", _render)
-    settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
-    settings.route = InferRoute(
+    return InferRoute(
         name="probe",
         summary="a synthetic row",
         kinds=frozenset({kind}),
@@ -520,49 +509,54 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi"):
         returns=returns,
         run=lambda inp: result,
     )
-    out = m._infer(
+
+
+def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi"):
+    """Put one synthetic row through `main._infer`."""
+    from zrth.lean import main as m
+    from zrth.lean.cert import CertificateData
+
+    settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
+    settings.route = _row(returns, kind, result)
+    return m._infer(
         settings,
         None,
         _handle(tmp_path),
         CertificateData(prp="(= s0 0)", kind=kind),
         None,
     )
-    return out, rendered
 
 
-def test_lean_that_came_back_is_not_rendered_again(monkeypatch, tmp_path):
-    """Rendering encodes the module into cvc5 again, so a route that already
-    has the Lean -- both `ai-cegis` and `nuterm` do -- is taken at its word.
-    """
-    out, rendered = _run_infer(
-        monkeypatch,
-        tmp_path,
-        InferResult(
-            inv_smt="(= s0 0)",
-            ranking_smt="s0",
-            inv_lean="fun s => s.1 = 0",
-            ranking_lean="fun s => s.1",
-        ),
-    )
-    assert rendered == [], "the pipeline re-rendered Lean it was handed"
-    assert out.inv == "fun s => s.1 = 0" and out.ranking == "fun s => s.1"
-    # cvc5's own input is kept either way: nothing parses the Lean back.
-    assert out.inv_smt == "(= s0 0)" and out.ranking_smt == "s0"
+def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
+    result = InferResult(inv_smt="(= s0 0)", ranking_smt="s0")
+    assert _run_infer(monkeypatch, tmp_path, result) is result
 
 
-def test_smt_with_no_lean_is_rendered_once(monkeypatch, tmp_path):
-    out, rendered = _run_infer(
-        monkeypatch, tmp_path, InferResult(inv_smt="(= s0 0)", ranking_smt="s0")
-    )
-    assert len(rendered) == 1
-    assert out.inv == "RENDERED_INV" and out.ranking == "RENDERED_RANK"
+def test_an_smt_row_is_rendered_from_its_smt_even_with_lean_beside_it():
+    """`ai-cegis` and `nuterm` print Lean of their own; the certificate is
+    still printed in one place, from the SMT-LIB they answered with."""
+    from zrth.lean.certificate import Certificate
+    from zrth.lean.main import _answer
+
+    both = InferResult(inv_smt="(= s0 0)", ranking_smt="s0",
+                       inv_lean="fun s => s.1 = 0", ranking_lean="fun s => s.1")
+    assert _answer(_row("smt"), both) == (Certificate("(= s0 0)", "s0"), None)
+
+
+def test_a_lean_row_is_taken_at_its_word():
+    from zrth.lean.certificate import Certificate, LeanAnswer
+    from zrth.lean.main import _answer
+
+    lean = InferResult(inv_lean="fun s => s.1 = 0", ranking_lean="fun s => 1")
+    assert _answer(_row("lean"), lean) == (
+        Certificate(), LeanAnswer("fun s => s.1 = 0", "fun s => 1"))
 
 
 def test_an_installing_route_hands_back_no_certificate(monkeypatch, tmp_path):
-    out, rendered = _run_infer(
+    out = _run_infer(
         monkeypatch, tmp_path, InferResult(), returns="installed", kind="safety"
     )
-    assert out is None and rendered == []
+    assert out is None
 
 
 def test_a_row_and_its_result_have_to_agree(monkeypatch, tmp_path):

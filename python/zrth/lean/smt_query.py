@@ -123,8 +123,8 @@ class ModuleQueries:
     Construct with `build`, which returns `None` rather than raising when the
     module or the predicates are outside what the encoder covers -- the whole
     point is that the caller can carry on without cvc5. A caller that cannot
-    carry on -- `smt_predicates_to_lean`, whose output *is* the Lean the
-    predicates become -- constructs directly and reports what went wrong:
+    carry on -- `cert.predicate_terms`, whose terms *are* what the Lean is
+    printed from -- constructs directly and reports what went wrong:
     `Refused` for a predicate, anything else for the module.
     """
 
