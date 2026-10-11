@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type, _translate_terms
+from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.common import LeanContext, Refused, _bind_wires
 from zrth.lean.tactics import plan_for
 from zrth.lean.template_env import render
@@ -56,6 +57,30 @@ class CertificateData:
     @property
     def is_safety(self) -> bool:
         return self.kind == "safety"
+
+    def split(self) -> tuple[Claim, Certificate]:
+        """The claim this data is about and the SMT-LIB answer it holds: the
+        bridge for callers that still hold a `CertificateData`.
+
+        Where `inv_smt` / `ranking_smt` are set they are the source and
+        `inv` / `ranking` the Lean printed from it. A field that is not a
+        string (a term list, an `Expr`) has no SMT-LIB form and reads as
+        `None`, as `ModuleQueries` has always read it.
+        """
+        def src(v):
+            return v if isinstance(v, str) else None
+
+        claim = Claim(
+            prp=src(self.prp),
+            kind=self.kind,
+            init_pre=src(self.init_pre),
+            update_pre=src(self.update_pre),
+        )
+        cert = Certificate(
+            inv=self.inv_smt or src(self.inv),
+            ranking=self.ranking_smt or src(self.ranking),
+        )
+        return claim, cert
 
 
 def _cert_def_lines(
