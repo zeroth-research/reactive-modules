@@ -1,6 +1,6 @@
 """Lean4 translation package.
 
-Public API: ``ModuleToLean4`` — identical to the old ``translate.py``.
+Public API: ``ModuleToLean4``; one submodule per encoding.
 """
 
 from zrth.lean.common import LeanContext, dtype_shape

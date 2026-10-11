@@ -221,9 +221,11 @@ def _build_why(out: str) -> str:
 # than by inspection. They differ only in how a row becomes a path and a
 # Lean module name, which is what `Layout` supplies.
 #
-# Row order is emission order, and it is load-bearing: `to_lean_*` methods
-# feed each other's lemma lists (see `translate/__init__.py`), so the
-# functional encoding has to be printed before the encodings that quote it.
+# Row order is emission order only: each producer prints its definitions
+# and the theorems about them in one call, so no row reads state another
+# left behind. Rows are coupled by Lean names -- `ScalarRel` rewrites by
+# `Scalar`'s `init_scalar_eq`, every row quotes the base's `init`/`update`
+# -- and `Encoding.needs`, which becomes each file's imports, records that.
 # ══════════════════════════════════════════════════════════════════════════
 
 

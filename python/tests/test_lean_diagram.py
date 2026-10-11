@@ -447,10 +447,9 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
 
 
 def test_scalar_translator_flattening_is_opt_in():
-    """`rel.py` types `effect_i` as the wire's `Mat`, so it opts out.
+    """Without the flag, each output is its wire's own `Mat`.
 
-    Making the flattening unconditional in `_translate_terms_scalar` broke
-    it, and nothing compiled it to notice.
+    The flat-tuple callers (`scalar.py`, `ScalarRel`) ask for it explicitly.
     """
     from zrth.lean.native import _translate_terms_scalar
     import inspect

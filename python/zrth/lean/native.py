@@ -366,10 +366,10 @@ def _translate_terms_scalar(
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
-    # `flatten_outputs` says which codomain the caller declared. The scalar
-    # encoding uses `_product_type_scalar` -- one component per *element* --
-    # so it wants the flat slots; `rel.py` and `fbk.py` type their `effect_i`
-    # as the wire's own `Mat`, so they want the matrix the terms built.
+    # `flatten_outputs` says which codomain the caller declared: one
+    # component per element (`_product_type_scalar`, what `scalar.py` and
+    # `ScalarRel` declare) wants the flat slots; one `Mat` per wire wants
+    # the matrix the terms built.
     out_exprs: list[str] = []
     for w in block_outputs:
         if flatten_outputs and w.id in flat_slots:

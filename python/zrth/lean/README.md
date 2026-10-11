@@ -45,7 +45,7 @@ topologically-sorted dataflow graph.
 | `ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
-| `translate.py` | Top-level `ModuleToLean4` class; assembles functional + circuit encodings |
+| `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` |
 | `cert.py` | Certificate generation: `CertificateData`, `generate_certificate_lean`, ZerothHammer |
 
 ---
@@ -90,7 +90,7 @@ Created once per module; shared across all code generators.  It extracts:
 
 ---
 
-## Encoding 1 — Functional (`native.py`, `translate.py`)
+## Encoding 1 — Functional (`native.py`, `translate/functional.py`)
 
 `_translate_terms(terms, input_bindings, block_outputs, constants)` produces a
 Lean function body as a string of `let` bindings followed by the output tuple:
@@ -117,7 +117,7 @@ native matrix forms.
 
 ---
 
-## Encoding 2 — Circuit (`circ.py`, `translate.py`)
+## Encoding 2 — Circuit (`circ.py`, `translate/circ.py`)
 
 The same computation is re-expressed as a `Box` (categorical wiring diagram)
 inside `namespace Circ`.  The translation:
@@ -150,7 +150,7 @@ plumbing lemmas.
 
 ---
 
-## Encoding 3 — Scalar (`native.py`, `translate.py`)
+## Encoding 3 — Scalar (`native.py`, `translate/scalar.py`)
 
 `_translate_terms_scalar` is like `_translate_terms` but uses bare scalar types
 (`Bool`, `Int`, `Real`) instead of `Mat T 1 1` for all 1×1 wires:
@@ -202,7 +202,7 @@ and the equivalence theorems.
 
 ---
 
-## `ModuleToLean4` (`translate.py`)
+## `ModuleToLean4` (`translate/__init__.py`)
 
 The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 
@@ -1205,11 +1205,13 @@ rather than gaining a second one.
 1. Add a translation function in `native.py` (or a new file) analogous to
    `_translate_terms`.  It receives `input_bindings: dict[wire_id, str]` and
    returns a Lean body string.
-2. Add a method to `ModuleToLean4` in `translate.py` that calls it and wraps
-   the result in the appropriate namespace / function signature.
+2. Add a module under `translate/` that wraps the result in the
+   appropriate namespace / function signature, and a method on
+   `ModuleToLean4` (`translate/__init__.py`) that calls it.
 3. Optionally add an equivalence theorem connecting the new encoding to the
    existing functional one.
-4. Wire it into `to_lean()`.
+4. Wire it into `to_lean()`, and give it a row in `ENCODINGS`
+   (`project.py`) to be written into the project.
 
 If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth
