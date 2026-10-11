@@ -46,6 +46,7 @@ design:
 | IN-3 | open | `--safety`/`--buchi`/`--pre` are positional SMT-LIB over `s0..sN` / `e0..eM`, so a property cannot be written in the input's own names. The bench harness translates (`tests/bench_matrix/suites.py` `smt()`, `entry_pre`). |
 | IN-4 | open | `module_file` is threaded into `create_project` only to copy it to `dbg/system.py` -- assumes Python input. |
 | IN-5 | open | The original input never reaches a decision procedure: `InferInput` has no field for it. `main.py`'s docstring says `init()`/`update()` are there "so that the AI inference can read the high-level logic", but `ai` reads the generated Lean -- and the prompt fences it as ```` ```python ```` (`magic/ai.py:307,326`, `smt_prompt.py:573`). |
+| IN-6 | open | `zrth/smv` changes a model's meaning silently: a non-assignment `TRANS`/`INIT`/`INVAR` is dropped (`_promote_constraints`, `smv/parser.py:189-211`), and a VAR with no `init` starts at 0 and with no `next` holds its value (`:700,707`) where NuSMV leaves both unconstrained. Specs (`INVARSPEC`/`LTLSPEC`) do not parse; `JUSTICE`/`FAIRNESS` parse and are ignored. Every type lowers to BitVec (`integer` is BV32), and none of `tests/smv_fixtures/*.smv` has a Lean form. Must be fixed before SMV becomes an input adapter. |
 
 **Direction:** an `InputAdapter` registry shaped like `ROUTES`, each adapter
 returning a `Problem(module, names, source, prp?, pre?)`. Move the Python
@@ -55,13 +56,13 @@ loader to `inputs/python.py`, add SMV, and let properties use names.
 
 | ID | Status | Finding |
 |----|--------|---------|
-| CD-1 | open | `prp`, `inv`, `ranking`, `init_pre`, `update_pre` are `str \| Expr \| None`, and a `str` is SMT-LIB, the Python DSL or Lean depending on the pipeline stage (`cert.py:24-38`). `main` keeps `cert_data` (SMT) and `project_cert_data` (Lean) side by side, and `_infer` rewrites the first into Lean in place (`main.py:408-429`). |
-| CD-2 | open | Readers disagree: `smt_query.py:185-188` reads a `str` as SMT (`inv_smt or inv`), `cert._cert_def_context` reads it as Lean. `pre_check` detects Lean-where-SMT-was-expected by swallowing every exception (`ModuleQueries.build`, `smt_query.py:206`) and encoding the module a second time to tell the two failures apart. |
-| CD-3 | open | Routes pick their own convention: sygus/linear/houdini/vampire write SMT into both `inv` and `inv_smt`; cegar/learn write Lean in `inv`, SMT in `inv_smt`; ai writes Lean only. |
-| CD-4 | open | Tactic-planning data (`facts`, `hints`, typed `object`) rides on the certificate. `smt_predicates_to_lean` drops `hints` and `main` re-attaches them. |
-| CD-5 | open | Routes mutate the pipeline's own object: `_take_inv` (`infer_route.py:438`) and every `infer(cd)`, although `InferInput` is frozen. |
-| CD-6 | open | `Expr` is in the annotation but never handled: `cert._field` (`cert.py:147-154`) silently falls through to the default `True` / `sorry`. The `list` (compiled IR) case is produced only by `tests/test_lean_twocounter.py:101` and `tutorials/counter_cvc5_lean.*` (the latter already broken by `from zrth import IType`). |
-| CD-7 | open | Bug: on `--infer ai` runs `_record_predicates` falls back from `inv_smt` to `inv` and writes the Lean answer to `artifacts/inv.smt` as `language="smt-src"`. Also `tests/test_lean_counter.py:95` hands Python-DSL strings straight to `create_project`, so its `Data.lean` holds `def P ... := s[0][0] == 0` -- CD-1 inside a test. |
+| CD-1 | fixed 7b293e24..ea995fba | `prp`, `inv`, `ranking`, `init_pre`, `update_pre` are `str \| Expr \| None`, and a `str` is SMT-LIB, the Python DSL or Lean depending on the pipeline stage (`cert.py:24-38`). `main` keeps `cert_data` (SMT) and `project_cert_data` (Lean) side by side, and `_infer` rewrites the first into Lean in place (`main.py:408-429`). |
+| CD-2 | fixed a4666f23 | Readers disagree: `smt_query.py:185-188` reads a `str` as SMT (`inv_smt or inv`), `cert._cert_def_context` reads it as Lean. `pre_check` detects Lean-where-SMT-was-expected by swallowing every exception (`ModuleQueries.build`, `smt_query.py:206`) and encoding the module a second time to tell the two failures apart. |
+| CD-3 | fixed e1f45825..ed5980b6 | Routes pick their own convention: sygus/linear/houdini/vampire write SMT into both `inv` and `inv_smt`; cegar/learn write Lean in `inv`, SMT in `inv_smt`; ai writes Lean only. |
+| CD-4 | fixed 8790cc61 | Tactic-planning data (`facts`, `hints`, typed `object`) rides on the certificate. `smt_predicates_to_lean` drops `hints` and `main` re-attaches them. |
+| CD-5 | fixed 88dce29f | Routes mutate the pipeline's own object: `_take_inv` (`infer_route.py:438`) and every `infer(cd)`, although `InferInput` is frozen. |
+| CD-6 | fixed 8790cc61 | `Expr` is in the annotation but never handled: `cert._field` (`cert.py:147-154`) silently falls through to the default `True` / `sorry`. The `list` (compiled IR) case is produced only by `tests/test_lean_twocounter.py:101` and `tutorials/counter_cvc5_lean.*` (the latter already broken by `from zrth import IType`). |
+| CD-7 | fixed ea995fba | Bug: on `--infer ai` runs `_record_predicates` falls back from `inv_smt` to `inv` and writes the Lean answer to `artifacts/inv.smt` as `language="smt-src"`. Also `tests/test_lean_counter.py:95` hands Python-DSL strings straight to `create_project`, so its `Data.lean` holds `def P ... := s[0][0] == 0` -- CD-1 inside a test. |
 
 **Direction:** three types -- an immutable `Problem` (property, kind,
 preconditions), a `Certificate` in one canonical language (SMT-LIB source),
@@ -73,15 +74,16 @@ explicit exception instead of a convention.
 
 | ID | Status | Finding |
 |----|--------|---------|
-| PL-1 | open | `main()` is ~200 lines running a dozen concerns in sequence; inference alone is spread over `precheck`, `_infer`, `_replan`, a re-render and `write_predicates`. No function per stage. |
+| PL-1 | fixed f42fc88f | `main()` is ~200 lines running a dozen concerns in sequence; inference alone is spread over `precheck`, `_infer`, `_replan`, a re-render and `write_predicates`. No function per stage. |
 | PL-2 | open | The module is encoded into cvc5 four to six times per run (`main.py:286,313,418,529,538`, each `pre_check`, then inside each route), while the `InferResult` docstring argues against re-encoding. A per-run encoding object would fix it. Related: `DESIGN_REVIEW.md` E. |
-| PL-3 | open | With a route, the pre-inference hints and Lean rendering are computed and then discarded by `_replan`. |
+| PL-3 | fixed e2dd5aaf | With a route, the pre-inference hints and Lean rendering are computed and then discarded by `_replan`. |
 | PL-4 | open | `returns="installed"` (fbk-proveit) is a second control path that bypasses codegen. |
 | PL-5 | fixed a4e6b159 | Bug: with no `--infer`, a module with no Lean form reports `error: --infer: ...` -- `_refused` falls back to that prefix when there is no route (`main.py:156,493`). |
 | PL-6 | fixed d5b31785 | Bug: `_record_predicates(..., inferred=True)` also labels the *property* "Inferred by this run's route" (`main.py:230`). |
 | PL-7 | fixed 16e37bf1 | Dead condition: `settings.hammer_file` at `main.py:504` (already returned at `:437`). |
 | PL-8 | fixed 16e37bf1 | Leftovers: `_build_cert(args, ...)` receives `Settings`; `".. Doing TA2Magic"` prints with no route. |
 | PL-9 | fixed 16e37bf1 | `lean_gaps(LeanContext(module))` (`main.py:491`) runs a discovery pass and drops it, though `lean_context_for` exists so that pass runs once. |
+| PL-10 | open | Since phase 2 a Lean-rendering failure after inference raises from `main._regenerate` without the artifact note `_note_refusal` used to write when the route rendered its own Lean. |
 
 ## 4. Decision procedures
 
@@ -91,7 +93,7 @@ that tracks staleness, generic CLI checks, good tests.
 | ID | Status | Finding |
 |----|--------|---------|
 | RT-1 | open | Adding a route means editing the 1,235-line `infer_route.py`: adapter, row, every option's help, and the resume helpers (`_resume_inv`, `_take_inv`, `_ruled_out`, `FIXABLE`) that other routes cannot reuse. |
-| RT-2 | open | `TA2Magic` (`magic/__init__.py:25`) is vestigial: no two constructors agree, `learn` ignores `source` (the adapter passes `""`), fbk has no class, and dispatch is through `_run_*` adapters. Its docstring says only CEGAR implements safety; five routes do. |
+| RT-2 | partly fixed 631c7026, e1f45825..ed5980b6 (docstring and `infer(claim, given)`; `ai` still differs, `learn` constructor still takes `source`) | `TA2Magic` (`magic/__init__.py:25`) is vestigial: no two constructors agree, `learn` ignores `source` (the adapter passes `""`), fbk has no class, and dispatch is through `_run_*` adapters. Its docstring says only CEGAR implements safety; five routes do. |
 | RT-3 | open | `ProjectHandle` access control is decorative: fbk receives `project_dir` and writes `ProveIt/*`, `Certificate/Certificate.lean`, `Certificate/Equivalence.lean` directly (`fbk_proveit.py:368,497,545`); `handle.path()` has no production caller. |
 | RT-4 | open | `create_project` imports `ROUTES` to delete every route's owned files (`project.py:678`): an import cycle with `infer_route`, and the project builder knows about routes. |
 | RT-5 | open | fbk-specific code lives in `project.py`: `PROVEIT_DIR`, `na_module_name`, `generate_lakefile(ltl_project=...)`. The `lakefile` hook returns fbk's own kwarg; it should return generic fragments (extra `require`s and `lean_lib`s). |
@@ -102,6 +104,7 @@ that tracks staleness, generic CLI checks, good tests.
 | RT-10 | open | Inconsistent plumbing: ai/cegar `print` while the rest take `log=`; cegar's cvc5 calls have no time limit (`cegar.py:387`); cegar defaults `model="gpt-4"`, ai `"claude-sonnet-4-6"`; cegar raises `RuntimeError`, not `Refused`, when cvc5 is missing. |
 | RT-11 | fixed ec35fe5d | **Security:** `smt_prompt.parse_predicate` runs `eval` on LLM replies with `{"__builtins__": {}}` (`smt_prompt.py:273`). That sandbox is escapable, so a reply can run arbitrary Python. |
 | RT-12 | open | `InferResult` carries only inv/ranking x smt/lean: no channel for lemmas, tactic hints or extra Lean other than writing files directly. |
+| RT-13 | open | `nuterm` records its answer only as `inv.smt` (`smt-src`, encoded), not as a resumable `inv` artifact, so a following `--infer ai-cegis` asks the model again instead of resuming. |
 
 **Direction:** one module per route exporting `ROUTE`; resume helpers on
 `ProjectHandle`; fbk through `handle.path()`; a generic lakefile hook; an
@@ -125,7 +128,7 @@ the certificate's proof structure.
 | CG-8 | open | Duplicated helpers that disagree: element type x4 (`dtype_to_lean_type`, `_flat_element_type`, `_sort_elem_ty`, `tactics._sort_name`); literals x4 (`_get_dtype_item`, `_tensor_to_lean_inline`, `_tensor_to_lean_scalar`, `smt_to_lean._walk`) formatting Int/Real differently; shape-to-`(m, n)` at ~10 sites that disagree on 1-D shapes (latent); two SMT-to-Lean walkers (`_walk`, `_walk_bool`). `_bind_wires_scalar` and `_vec_from_scalars` are dead. |
 | CG-9 | open | `common.py` is a grab-bag: `Refused` (the CLI-wide error type), type helpers, constants, `LeanContext`, bindings, `FlatLayout`. |
 | CG-10 | fixed 8b6caebd | Bug: `native._translate_terms` returns `"sorry /- no terms -/"` (`native.py:190,300`), which is truthy, so the `if init_body:` guards (`translate/functional.py:38,44`, likewise `scalar.py`) never skip and a module with no init terms gets `def init ... := sorry`. |
-| CG-11 | open | `write_certificate_lean` builds `LeanContext(module)` without the certificate's terms when no `ctx` is passed (`project.py:583`); `write_data_lean` uses `lean_context_for`. |
+| CG-11 | fixed 8790cc61 | `write_certificate_lean` builds `LeanContext(module)` without the certificate's terms when no `ctx` is passed (`project.py:583`); `write_data_lean` uses `lean_context_for`. |
 | CG-12 | open | Stateless modules (no controlled variables) after CG-10: the scalar and relational theorem guards still skip theorems for an empty block, but `translate/fbk_bridge.py` cites `init_scalar_eq` unconditionally; `cert._body` raises `IndexError` on an empty term list. |
 | CG-13 | open | `_translate_terms_scalar(flatten_outputs=False)` (the default) has no production caller. The README's `ModuleToLean4` table still describes `to_lean` as "all three encodings" and omits the `rel` flag. |
 
@@ -133,7 +136,7 @@ the certificate's proof structure.
 
 | ID | Status | Finding |
 |----|--------|---------|
-| DOC-1 | partly fixed 631c7026 (the `InferResult` argument remains, with PL-2) | Comments are long and narrate history and measurements ("used to", "today", "measured, 124 s"), and several are already wrong: the `TA2Magic` docstring (RT-2); `project.py:224` (CG-5); `native.py:373` (describes typing in `rel.py`/`fbk.py` that neither does); `translate/__init__.py:3` and `README.md` refer to `translate.py`; the `InferResult` re-encoding argument (PL-2). Keep invariants in comments; move rationale to commit messages or design docs. |
+| DOC-1 | fixed 631c7026, 88dce29f | Comments are long and narrate history and measurements ("used to", "today", "measured, 124 s"), and several are already wrong: the `TA2Magic` docstring (RT-2); `project.py:224` (CG-5); `native.py:373` (describes typing in `rel.py`/`fbk.py` that neither does); `translate/__init__.py:3` and `README.md` refer to `translate.py`; the `InferResult` re-encoding argument (PL-2). Keep invariants in comments; move rationale to commit messages or design docs. |
 
 ---
 
