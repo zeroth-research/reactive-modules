@@ -112,8 +112,14 @@ def _state_type_line(source: str) -> str:
     The system prompt says how a state is read in general; this says which
     case this module is. Without it a model reached for `s.1 0 0` on a
     one-component state -- a projection out of a function, which Lean
-    refuses -- on 16 of the bench matrix's single-wire modules."""
-    m = re.search(r"^@\[simp\] def init\b[^\n]*?\)\s*:\s*(.+?)\s*:=\s*$", source, re.M)
+    refuses -- on 16 of the bench matrix's single-wire modules.
+
+    `init` may carry modifiers between the attribute and `def`: a
+    Real-valued module's is `noncomputable`."""
+    m = re.search(
+        r"^@\[simp\]\s+(?:[a-z]+\s+)*def init\b[^\n]*?\)\s*:\s*(.+?)\s*:=\s*$",
+        source, re.M,
+    )
     if not m:
         return ""
     ty = m.group(1)

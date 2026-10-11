@@ -76,6 +76,28 @@ def test_a_tuple_state_is_named_with_its_whole_type():
     assert "tuple" in line
 
 
+def test_a_real_valued_state_is_named_too():
+    """A Real-valued module's `init` is `noncomputable def`, and the encoding
+    is read as `verith` prints it rather than as a hand-written line."""
+    import torch
+
+    from zrth import LRA, Module, Real, Term, Var, X
+    from zrth.lean.magic.ai import _state_type_line
+    from zrth.lean.translate import ModuleToLean4
+
+    s = Var(Real([1, 1]))
+    module = Module.sequential(
+        [s],
+        [Term(LRA.Real(torch.tensor([[0.0]])), [X(s)])],
+        [Term(LRA.Id(), [X(s)], [s])],
+    )
+    functional = ModuleToLean4(module).to_lean_functional()
+    assert "noncomputable def init" in functional
+    line = _state_type_line(functional)
+    assert "`(Mat Real 1 1)`" in line
+    assert "`s 0 0`" in line
+
+
 def test_no_prompt_says_every_state_is_read_through_dot_one():
     from zrth.lean.magic.ai import GENERATE_SYSTEM, VERIFY_SYSTEM
     for prompt in (GENERATE_SYSTEM, VERIFY_SYSTEM):
