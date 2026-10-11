@@ -20,8 +20,6 @@ module
 
    wrote artifact property.smt (encoded)
    wrote artifact inv.smt (encoded)
-.. SMT-informed tactics (cvc5): <=5000 ms per query, <=20000 ms total
-   nothing cvc5 can add to the plan
 .. Generating lean code
 Created project directory: `<OUT>/G`
 Wrote system.txt

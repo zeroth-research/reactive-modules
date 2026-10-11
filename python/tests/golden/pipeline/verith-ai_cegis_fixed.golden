@@ -21,8 +21,6 @@ module
    wrote artifact property.smt (encoded)
    wrote artifact inv.smt (encoded)
    wrote artifact ranking.smt (encoded)
-.. SMT-informed tactics (cvc5): <=5000 ms per query, <=20000 ms total
-   inv forces `((($v) 0 0) ≤ 200)` to be true
 .. Generating lean code
 Created project directory: `<OUT>/G`
 Wrote system.txt

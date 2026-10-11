@@ -486,12 +486,15 @@ def main():
                       artifacts=store)
 
     # Read before any route runs: a route is handed `cert_data` and may
-    # change it.
+    # change it. With a route this rendering is a placeholder the answer
+    # replaces, and no route reads `Certificate/`, so cvc5 is asked for
+    # hints only about the certificate the project ends up with.
     claim, given = (
         cert_data.split() if cert_data is not None else (None, Certificate())
     )
     try:
-        lean_cert = _render(settings, module, claim, given, hints=True)
+        lean_cert = _render(settings, module, claim, given,
+                            hints=settings.route is None)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 
