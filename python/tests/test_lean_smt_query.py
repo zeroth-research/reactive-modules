@@ -11,7 +11,10 @@ import torch
 
 from zrth import Module, Term, Var, Wire, X, LIA, Int
 from zrth.analyzer import convert_method
+from dataclasses import replace
+
 from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.smt_query import (
     ModuleQueries,
     SmtBudget,
@@ -41,13 +44,12 @@ def countdown() -> Module:
     )
 
 
-GOOD = CertificateData(
-    prp="(= s0 0)", inv="(and (>= s0 0) (<= s0 100))", ranking="s0"
-)
+CLAIM = Claim(prp="(= s0 0)")
+GOOD = Certificate(inv="(and (>= s0 0) (<= s0 100))", ranking="s0")
 
 
 def _status(cert, name):
-    q = ModuleQueries.build(countdown(), cert)
+    q = ModuleQueries.build(countdown(), CLAIM, cert)
     assert q is not None
     by_name = {v.name: v for v in q.check_obligations(SmtBudget())}
     return by_name[name]
@@ -62,15 +64,13 @@ def test_a_correct_certificate_holds_everywhere(name):
 
 
 def test_a_ranking_that_increases_is_refuted_with_a_witness():
-    v = _status(
-        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(- 100 s0)"), "hrank"
-    )
+    v = _status(replace(GOOD, ranking="(- 100 s0)"), "hrank")
     assert v.status is Status.REFUTED
     assert "s0 = 1" in v.detail
 
 
 def test_a_non_inductive_invariant_is_refuted_at_the_step():
-    cert = CertificateData(prp=GOOD.prp, inv="(and (>= s0 1) (<= s0 99))", ranking="s0")
+    cert = Certificate(inv="(and (>= s0 1) (<= s0 99))", ranking="s0")
     assert _status(cert, "step_inv").status is Status.REFUTED
     # ... and it is not even true at init, where the state is 100
     init = _status(cert, "init_inv")
@@ -80,7 +80,7 @@ def test_a_non_inductive_invariant_is_refuted_at_the_step():
 
 def test_obligations_needing_absent_predicates_are_not_checked():
     """No ranking and no property, so only the two invariant obligations."""
-    q = ModuleQueries.build(countdown(), CertificateData(inv=GOOD.inv))
+    q = ModuleQueries.build(countdown(), Claim(), Certificate(inv=GOOD.inv))
     assert [v.name for v in q.check_obligations(SmtBudget())] == [
         "init_inv",
         "step_inv",
@@ -88,21 +88,20 @@ def test_obligations_needing_absent_predicates_are_not_checked():
 
 
 def test_no_invariant_means_nothing_to_check():
-    q = ModuleQueries.build(countdown(), CertificateData(prp="(= s0 0)"))
+    q = ModuleQueries.build(countdown(), CLAIM)
     assert q.check_obligations(SmtBudget()) == []
 
 
 # ── which third obligation ───────────────────────────────────────────
 
 
-SAFE = CertificateData(
-    kind="safety", prp="(<= s0 100)", inv="(and (>= s0 0) (<= s0 100))"
-)
+SAFE_CLAIM = Claim(prp="(<= s0 100)", kind="safety")
+SAFE = Certificate(inv="(and (>= s0 0) (<= s0 100))")
 
 
 def test_a_safety_certificate_is_checked_against_rule_globally():
     """`G P` needs `inv -> P`, and has no ranking function to rank."""
-    q = ModuleQueries.build(countdown(), SAFE)
+    q = ModuleQueries.build(countdown(), SAFE_CLAIM, SAFE)
     verdicts = q.check_obligations(SmtBudget())
     assert [v.name for v in verdicts] == ["init_inv", "step_inv", "inv_imp_P"]
     assert {v.status for v in verdicts} == {Status.HOLDS}
@@ -111,8 +110,9 @@ def test_a_safety_certificate_is_checked_against_rule_globally():
 def test_an_invariant_too_weak_for_the_property_is_refuted():
     """Inductive and true at init, but it admits a state where `P` is false
     -- which a Buchi certificate would not care about at all."""
-    cert = CertificateData(kind="safety", prp="(<= s0 50)", inv=SAFE.inv)
-    by_name = {v.name: v for v in ModuleQueries.build(countdown(), cert).check_obligations(SmtBudget())}
+    claim = Claim(prp="(<= s0 50)", kind="safety")
+    q = ModuleQueries.build(countdown(), claim, SAFE)
+    by_name = {v.name: v for v in q.check_obligations(SmtBudget())}
     assert by_name["init_inv"].status is Status.HOLDS
     assert by_name["step_inv"].status is Status.HOLDS
     assert by_name["inv_imp_P"].status is Status.REFUTED
@@ -121,8 +121,8 @@ def test_an_invariant_too_weak_for_the_property_is_refuted():
 
 def test_a_safety_certificate_never_states_hrank():
     """Even handed a ranking function, `G P` has no obligation about it."""
-    cert = CertificateData(kind="safety", prp=SAFE.prp, inv=SAFE.inv, ranking="s0")
-    names = [v.name for v in ModuleQueries.build(countdown(), cert).check_obligations(SmtBudget())]
+    q = ModuleQueries.build(countdown(), SAFE_CLAIM, replace(SAFE, ranking="s0"))
+    names = [v.name for v in q.check_obligations(SmtBudget())]
     assert "hrank" not in names and "inv_imp_P" in names
 
 
@@ -130,7 +130,7 @@ def test_a_safety_certificate_never_states_hrank():
 
 
 def test_a_spent_phase_budget_yields_unknown_not_an_exception():
-    q = ModuleQueries.build(countdown(), GOOD)
+    q = ModuleQueries.build(countdown(), CLAIM, GOOD)
     verdicts = q.check_obligations(SmtBudget(per_call_ms=5000, phase_ms=0))
     assert {v.status for v in verdicts} == {Status.UNKNOWN}
     assert all("budget" in v.detail for v in verdicts)
@@ -155,7 +155,8 @@ def test_a_phase_can_be_refilled():
 
 
 def test_an_unparseable_predicate_gives_no_queries_rather_than_raising():
-    assert ModuleQueries.build(countdown(), CertificateData(inv="(this is not smt")) is None
+    bad = Certificate(inv="(this is not smt")
+    assert ModuleQueries.build(countdown(), Claim(), bad) is None
 
 
 def test_an_unencodable_module_gives_no_queries_rather_than_raising():
@@ -168,7 +169,7 @@ def test_an_unencodable_module_gives_no_queries_rather_than_raising():
         # `Uninterpreted` is a lone write (a source) or a lone read.
         [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])],
     )
-    q = ModuleQueries.build(module, GOOD)
+    q = ModuleQueries.build(module, CLAIM, GOOD)
     by_name = {v.name: v for v in q.check_obligations(SmtBudget())}
     # Encoding is lazy, so the failure lands on exactly the obligations that
     # touch the untranslatable transition -- `init` does not.
@@ -179,7 +180,8 @@ def test_an_unencodable_module_gives_no_queries_rather_than_raising():
 
 def test_pre_check_reports_without_raising_on_a_predicate_it_cannot_parse():
     lines: list[str] = []
-    out = pre_check(countdown(), CertificateData(inv="(bogus"), SmtBudget(), log=lines.append)
+    out = pre_check(countdown(), Claim(), Certificate(inv="(bogus"), SmtBudget(),
+                    log=lines.append)
     assert out == []
     # And it says *what* it could not read: the module encodes fine here, and
     # blaming it would send the reader after the wrong thing.
@@ -187,55 +189,39 @@ def test_pre_check_reports_without_raising_on_a_predicate_it_cannot_parse():
     assert not any("could not encode this module" in ln for ln in lines)
 
 
-# ── the inferred certificate ─────────────────────────────────────────
+# ── an answer in Lean ────────────────────────────────────────────────
 
 
-INFERRED = CertificateData(
-    prp=GOOD.prp,
-    # What `--infer ai-cegis` leaves behind: Lean in the fields the project
-    # is generated from, the SMT-LIB cvc5 was given beside them.
-    inv="fun s => 0 <= s.1 0 0 ∧ s.1 0 0 <= 100",
-    ranking="fun s => (s.1 0 0).toNat",
-    inv_smt=GOOD.inv,
-    ranking_smt=GOOD.ranking,
+LEAN = LeanAnswer(
+    inv="fun s => 0 <= s 0 0 ∧ s 0 0 <= 100",
+    ranking="fun s => (s 0 0).toNat",
 )
 
 
-def test_an_inferred_certificate_is_checked_through_its_smt_source():
-    """The Lean rendering parses back as nothing; `inv_smt` is the way in."""
-    q = ModuleQueries.build(countdown(), INFERRED)
-    assert [v.status for v in q.check_obligations(SmtBudget())] == [Status.HOLDS] * 3
-
-
-def test_an_inferred_certificate_that_is_wrong_is_refuted():
-    cert = CertificateData(
-        prp=GOOD.prp,
-        inv=INFERRED.inv,
-        ranking=INFERRED.ranking,
-        inv_smt=GOOD.inv,
-        ranking_smt="(- 100 s0)",
-    )
-    lines: list[str] = []
-    pre_check(countdown(), cert, SmtBudget(), log=lines.append)
-    assert "REFUTED" in "\n".join(lines)
-
-
-def test_an_inferred_certificate_with_no_smt_source_says_so():
+def test_a_lean_answer_is_not_put_to_cvc5():
     """`--infer ai` hands back Lean only, and nothing can parse it back."""
     lines: list[str] = []
-    out = pre_check(
-        countdown(), CertificateData(prp=GOOD.prp, inv=INFERRED.inv), SmtBudget(),
-        log=lines.append,
-    )
+    out = pre_check(countdown(), CLAIM, LEAN, SmtBudget(), log=lines.append)
     assert out == []
     assert any("predicates are not SMT-LIB" in ln for ln in lines)
+
+
+def test_lean_where_smt_lib_was_expected_says_so():
+    """The same line, not a complaint about the module, which encodes."""
+    lines: list[str] = []
+    out = pre_check(countdown(), CLAIM, Certificate(inv=LEAN.inv), SmtBudget(),
+                    log=lines.append)
+    assert out == []
+    assert any("predicates are not SMT-LIB" in ln for ln in lines)
+    assert not any("could not encode this module" in ln for ln in lines)
 
 
 def test_pre_check_names_the_refuted_obligations():
     lines: list[str] = []
     pre_check(
         countdown(),
-        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(- 100 s0)"),
+        CLAIM,
+        replace(GOOD, ranking="(- 100 s0)"),
         SmtBudget(),
         log=lines.append,
     )
@@ -250,7 +236,8 @@ def test_pre_check_names_the_refuted_obligations():
 
 
 def _facts(**fields):
-    return predicate_facts(ModuleQueries.build(countdown(), CertificateData(**fields)))
+    return predicate_facts(
+        ModuleQueries.build(countdown(), Claim(), Certificate(**fields)))
 
 
 def _relu(e: str) -> str:
@@ -297,7 +284,7 @@ def test_branch_points_do_not_move_when_the_printer_shares():
     """
     from zrth.lean.smt_to_lean import smt_to_lean_nat
 
-    q = ModuleQueries.build(countdown(), CertificateData(ranking=_dense(5)))
+    q = ModuleQueries.build(countdown(), Claim(), Certificate(ranking=_dense(5)))
     unshared = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
     shared = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=True)
     assert unshared.count("(max ") == 62
@@ -338,15 +325,15 @@ def test_facts_are_absent_rather_than_wrong_when_cvc5_cannot_parse():
 # ══════════════════════════════════════════════════════════════════════
 
 
-def _hints(cert, budget=None):
-    q = ModuleQueries.build(countdown(), cert)
+def _hints(cert, budget=None, claim=CLAIM):
+    q = ModuleQueries.build(countdown(), claim, cert)
     return solver_hints(q, budget or SmtBudget())
 
 
 def test_a_condition_the_invariant_settles_is_reported():
     """`s0 ≥ 0` is forced by the invariant, so `split_ifs` need not split."""
     h = _hints(
-        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 0) s0 1)")
+        replace(GOOD, ranking="(ite (>= s0 0) s0 1)")
     )
     assert [value for _, value in h.determined] == [True]
     assert "≥" in h.determined[0][0]
@@ -358,23 +345,23 @@ def test_the_hint_layer_shapes_the_obligation_the_kind_states():
     contributes `hrank`."""
     from zrth.lean.smt_query import _obligation_labels
 
-    buchi = ModuleQueries.build(countdown(), GOOD)
+    buchi = ModuleQueries.build(countdown(), CLAIM, GOOD)
     assert [name for name, _ in _obligation_labels(buchi)] == ["step_inv", "hrank"]
 
-    safe = ModuleQueries.build(countdown(), SAFE)
+    safe = ModuleQueries.build(countdown(), SAFE_CLAIM, SAFE)
     assert [name for name, _ in _obligation_labels(safe)] == ["step_inv", "inv_imp_P"]
 
 
 def test_a_condition_the_invariant_refutes_is_reported():
     h = _hints(
-        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (< s0 0) 7 s0)")
+        replace(GOOD, ranking="(ite (< s0 0) 7 s0)")
     )
     assert [value for _, value in h.determined] == [False]
 
 
 def test_an_undetermined_condition_is_left_to_split_ifs():
     h = _hints(
-        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 50) s0 1)")
+        replace(GOOD, ranking="(ite (>= s0 50) s0 1)")
     )
     assert h.determined == []
 
@@ -382,7 +369,7 @@ def test_an_undetermined_condition_is_left_to_split_ifs():
 def test_conditions_are_rendered_against_the_macro_binder():
     """They are spliced into a tactic, so they read the obligation's state."""
     h = _hints(
-        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 0) s0 1)")
+        replace(GOOD, ranking="(ite (>= s0 0) s0 1)")
     )
     assert "($v)" in h.determined[0][0]
 
@@ -390,16 +377,14 @@ def test_conditions_are_rendered_against_the_macro_binder():
 def test_a_folded_relu_is_not_offered_as_a_condition():
     """It becomes `max`, which never splits, so deciding it buys nothing."""
     h = _hints(
-        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 0) s0 0)")
+        replace(GOOD, ranking="(ite (>= s0 0) s0 0)")
     )
     assert h.determined == []
 
 
 def test_a_precondition_no_refutation_needs_is_reported_as_unused():
-    cert = CertificateData(
-        prp=GOOD.prp, inv=GOOD.inv, ranking="s0", update_pre="(= 1 1)"
-    )
-    assert _hints(cert).pre_unused is True
+    claim = replace(CLAIM, update_pre="(= 1 1)")
+    assert _hints(GOOD, claim=claim).pre_unused is True
 
 
 def test_the_refutations_are_recorded_as_linear_when_they_are():
@@ -407,13 +392,13 @@ def test_the_refutations_are_recorded_as_linear_when_they_are():
 
 
 def test_no_invariant_means_no_hints_and_no_queries():
-    h = _hints(CertificateData(prp="(= s0 0)"))
+    h = _hints(Certificate())
     assert not h.any
 
 
 def test_a_spent_budget_yields_no_hints_rather_than_an_exception():
     h = _hints(
-        CertificateData(prp=GOOD.prp, inv=GOOD.inv, ranking="(ite (>= s0 0) s0 1)"),
+        replace(GOOD, ranking="(ite (>= s0 0) s0 1)"),
         SmtBudget(per_call_ms=5000, phase_ms=0),
     )
     assert h.determined == []
@@ -427,7 +412,7 @@ def test_hints_survive_a_module_cvc5_cannot_encode():
 def test_the_hint_log_says_when_there_is_nothing_to_add():
     lines: list[str] = []
     solver_hints(
-        ModuleQueries.build(countdown(), CertificateData(prp="(= s0 0)")),
+        ModuleQueries.build(countdown(), CLAIM),
         SmtBudget(),
         log=lines.append,
     )

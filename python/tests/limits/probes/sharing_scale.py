@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.smt_query import ModuleQueries, predicate_facts
 from zrth.lean.smt_to_lean import smt_to_lean_nat
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
         f"{'max tree':>9s} {'max DAG':>8s} {'n_branch':>9s}"
     )
     for k in (2, 4, 6, 8, 10):
-        q = ModuleQueries.build(module, CertificateData(ranking=dense(k)))
+        q = ModuleQueries.build(module, Claim(), Certificate(ranking=dense(k)))
         wires = q.msmt.ctrl_next
         tree = smt_to_lean_nat(q.ranking, wires, share=False)
         dag = smt_to_lean_nat(q.ranking, wires, share=True)

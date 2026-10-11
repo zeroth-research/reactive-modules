@@ -163,7 +163,8 @@ class TA2MagicSygus(TA2Magic):
                 "--infer sygus certifies `G P`: the invariant is the whole "
                 "certificate and there is no ranking function to synthesise"
             )
-        ctx = SynthContext.build(self.module, cd, route="sygus", takes=READS)
+        ctx = SynthContext.build(self.module, cd.split()[0], route="sygus",
+                                 takes=READS)
         # The columns the grammar is affine over, with a Real kept Real:
         # this route synthesises an invariant and never a ranking function,
         # so nothing here has to land in `Nat` and flooring would only lose

@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 
 from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Claim
 from zrth.lean.common import Refused
 from zrth.lean.houdini_solver import SolverSpec
 
@@ -80,10 +81,10 @@ def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     from zrth.lean.magic.houdini import Obligations, TA2MagicHoudini, columns
     from zrth.lean.smt_synth import SynthContext
 
-    cd = CertificateData(prp=prp, kind=kind)
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"),
                             log=lambda *_: None)
-    magic.ctx = SynthContext.build(magic.module, cd, route="houdini",
+    magic.ctx = SynthContext.build(magic.module, Claim(prp=prp, kind=kind),
+                                   route="houdini",
                                    takes=("int", "bool", "bv", "real", "tuple"))
     magic.cols = columns(magic.ctx)
     return magic, Obligations(magic.ctx)
@@ -229,11 +230,11 @@ def test_a_real_module_is_no_longer_refused_for_its_sort():
     sort check: `SynthContext.build` still refuses one for every other route."""
     from zrth.lean.smt_synth import SynthContext
 
-    cd = CertificateData(prp="(= s0 0.0)", kind="buchi")
+    claim = Claim(prp="(= s0 0.0)", kind="buchi")
     module = module_at(LIMITS / "m_lra_lin.py")
     with pytest.raises(Refused, match="no integer reading"):
-        SynthContext.build(module, cd, route="smt-linear")
-    ctx = SynthContext.build(module, cd, route="houdini",
+        SynthContext.build(module, claim, route="smt-linear")
+    ctx = SynthContext.build(module, claim, route="houdini",
                              takes=("int", "bool", "bv", "real"))
     assert [str(s) for s in ctx.env.state_sorts] == ["Real"]
 

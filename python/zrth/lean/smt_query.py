@@ -26,12 +26,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
 
+from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
-
-if TYPE_CHECKING:
-    from .cert import CertificateData as _CertificateData  # noqa: F401
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -127,10 +124,11 @@ class ModuleQueries:
     module or the predicates are outside what the encoder covers -- the whole
     point is that the caller can carry on without cvc5. A caller that cannot
     carry on -- `smt_predicates_to_lean`, whose output *is* the Lean the
-    predicates become -- constructs directly and reports what went wrong.
+    predicates become -- constructs directly and reports what went wrong:
+    `Refused` for a predicate, anything else for the module.
     """
 
-    def __init__(self, module, cert_data):
+    def __init__(self, module, claim: Claim, cert: Certificate | None = None):
         import cvc5
 
         from .smt_module import ModuleSMT, keep_alive
@@ -165,7 +163,7 @@ class ModuleQueries:
             knows the sort here, so the flag can be told it is the wrong one
             rather than Lean being shown the result.
             """
-            if not isinstance(src, str):
+            if src is None:
                 return None
             try:
                 term = parse_predicate(self.env, src)
@@ -176,22 +174,14 @@ class ModuleQueries:
                 raise Refused(f"{flag}: must have sort {want}, got {got}")
             return term
 
-        # After `--infer`, `inv` and `ranking` hold Lean printed from a cvc5
-        # term, which nothing parses back; `inv_smt` / `ranking_smt` keep the
-        # source the solver was handed, and that is what it can read.
-        self.kind = getattr(cert_data, "kind", "buchi")
-        prp_flag = "--safety" if self.kind == "safety" else "--buchi"
-        self.prp = opt(cert_data.prp, prp_flag)
-        self.inv = opt(
-            getattr(cert_data, "inv_smt", None) or cert_data.inv, "--invariant"
-        )
-        self.ranking = opt(
-            getattr(cert_data, "ranking_smt", None) or cert_data.ranking,
-            "--ranking",
-            want="Int",
-        )
-        self.init_pre = opt(cert_data.init_pre, "--pre")
-        self.update_pre = opt(cert_data.update_pre, "--pre")
+        cert = cert or Certificate()
+        self.kind = claim.kind
+        prp_flag = "--safety" if claim.is_safety else "--buchi"
+        self.prp = opt(claim.prp, prp_flag)
+        self.inv = opt(cert.inv, "--invariant")
+        self.ranking = opt(cert.ranking, "--ranking", want="Int")
+        self.init_pre = opt(claim.init_pre, "--pre")
+        self.update_pre = opt(claim.update_pre, "--pre")
         # Retained whole, solvers included: `smt_module.keep_alive` owns the
         # shutdown-ordering workaround for every cvc5 object this package
         # mints, and the instance is what ties this term manager to the
@@ -200,9 +190,10 @@ class ModuleQueries:
         keep_alive(self)
 
     @classmethod
-    def build(cls, module, cert_data) -> "ModuleQueries | None":
+    def build(cls, module, claim: Claim,
+              cert: Certificate | None = None) -> "ModuleQueries | None":
         try:
-            return cls(module, cert_data)
+            return cls(module, claim, cert)
         except Exception:
             return None
 
@@ -576,12 +567,16 @@ _OBLIGATIONS = {
 }
 
 
-def pre_check(module, cert_data, budget: SmtBudget, log=print,
-              artifacts=None) -> list[Verdict]:
+_NOT_SMT = ("   the certificate predicates are not SMT-LIB, so cvc5 cannot "
+            "state the obligations -- skipping the pre-check")
+
+
+def pre_check(module, claim: Claim, answer: "Certificate | LeanAnswer | None",
+              budget: SmtBudget, log=print, artifacts=None) -> list[Verdict]:
     """Run the obligation pre-check and report it in a few lines.
 
-    Never raises: a module cvc5 cannot encode reports one `unknown` line and
-    generation carries on exactly as it would have.
+    Never raises: a module cvc5 cannot encode, or an answer it cannot read,
+    reports one line and generation carries on exactly as it would have.
 
     `artifacts` is where the module and each obligation are written out as
     runnable SMT-LIB -- see :mod:`.dump`. Nothing about the check changes when
@@ -591,30 +586,22 @@ def pre_check(module, cert_data, budget: SmtBudget, log=print,
         f".. SMT pre-check (cvc5): <={budget.per_call_ms} ms per query, "
         f"<={budget.phase_ms} ms total"
     )
-    q = ModuleQueries.build(module, cert_data)
-    if q is None:
-        # Two unrelated failures land here: the module is outside the encoder,
-        # or a predicate is not something cvc5 can parse -- Lean text from
-        # `--infer ai`, say, which has no SMT-LIB source beside it. Rebuilding
-        # with no certificate at all separates them for the price of one
-        # encoding, and nothing here is allowed to be misleading.
-        from .cert import CertificateData
-
-        if ModuleQueries.build(module, CertificateData()) is None:
-            log("   cvc5 could not encode this module -- skipping the pre-check")
-        else:
-            log("   the certificate predicates are not SMT-LIB, so cvc5 "
-                "cannot state the obligations -- skipping the pre-check")
+    if isinstance(answer, LeanAnswer):
+        log(_NOT_SMT)
+        return []
+    try:
+        q = ModuleQueries(module, claim, answer)
+    except Refused:
+        log(_NOT_SMT)
+        return []
+    except Exception:
+        log("   cvc5 could not encode this module -- skipping the pre-check")
         return []
     q.artifacts = artifacts
     q.dump_system(artifacts)
     verdicts = q.check_obligations(budget)
     if not verdicts:
-        if cert_data.inv is None:
-            log("   nothing to check (no invariant given)")
-        else:
-            log("   the invariant is not SMT-LIB, so cvc5 cannot state the "
-                "obligations -- skipping the pre-check")
+        log("   nothing to check (no invariant given)")
         return []
     for v in verdicts:
         log(v.line)

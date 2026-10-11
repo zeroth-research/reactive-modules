@@ -22,6 +22,7 @@ import pytest
 
 from zrth.lean.artifacts import ArtifactStore, module_digest
 from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Claim
 from zrth.lean.common import Refused
 
 MODS = Path(__file__).parent / "limits" / "mods"
@@ -323,7 +324,7 @@ def test_an_element_is_read_by_its_own_sort_not_the_component_s():
         [Term(LIA.Bool(torch.tensor([[True], [False]])), [X(b)])],
         [Term(LIA.Not(), [n], [b]), Term(LIA.Id(), [X(b)], [n])],
     )
-    ctx = SynthContext.build(module, CertificateData(prp="true", kind="safety"),
+    ctx = SynthContext.build(module, Claim(prp="true", kind="safety"),
                              route="test", takes=("bool", "tuple"))
     assert [slot for slot, _ in component_slots(ctx, 0)] == [0, 1]
     assert [(r.name, r.kind, r.slot) for r in component_readings(ctx, 0)] == [
@@ -588,7 +589,7 @@ def obligations_hold(name: str, cd: CertificateData) -> list[str]:
     """
     from zrth.lean.smt_query import ModuleQueries, SmtBudget, Status
 
-    q = ModuleQueries.build(module_of(name), cd)
+    q = ModuleQueries.build(module_of(name), *cd.split())
     assert q is not None, "the predicates should be readable for this module"
     return [
         v.name
@@ -776,7 +777,7 @@ def bv_counter(width: int, top: int):
 def obligations_of(module, cd: CertificateData) -> list[str]:
     from zrth.lean.smt_query import ModuleQueries, SmtBudget, Status
 
-    q = ModuleQueries.build(module, cd)
+    q = ModuleQueries.build(module, *cd.split())
     assert q is not None
     return [v.name for v in q.check_obligations(SmtBudget())
             if v.status is not Status.HOLDS]

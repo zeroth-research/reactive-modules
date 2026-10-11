@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 
 from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Claim
 from zrth.lean.common import Refused
 
 LIMITS = Path(__file__).parent / "limits" / "mods"
@@ -58,8 +59,8 @@ def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     from zrth.lean.magic.vampire import Question, split
     from zrth.lean.smt_synth import SynthContext
 
-    cd = CertificateData(prp=prp, kind=kind)
-    ctx = SynthContext.build(module_at(fixture / f"{name}.py"), cd,
+    ctx = SynthContext.build(module_at(fixture / f"{name}.py"),
+                             Claim(prp=prp, kind=kind),
                              route="vampire",
                              takes=("int", "bool", "bv", "tuple"))
     ob = Obligations(ctx)
@@ -395,7 +396,7 @@ def test_a_real_component_reaches_the_templates():
     magic = TA2MagicVampire(module_at(LIMITS / "m_lra_lin.py"),
                             vampire="/nowhere", log=lambda *_: None)
     ctx = SynthContext.build(magic.module,
-                             CertificateData(prp="(= s0 0.0)", kind="buchi"),
+                             Claim(prp="(= s0 0.0)", kind="buchi"),
                              route="vampire",
                              takes=("int", "bool", "bv", "real", "tuple"))
     magic._check_sorts(ctx)                  # the gate that used to refuse it
@@ -430,7 +431,7 @@ def test_a_bool_column_is_carried_rather_than_refused():
     magic = TA2MagicVampire(module_at(LIMITS / "m_boolint.py"),
                             vampire="/nowhere", log=lambda *_: None)
     ctx = SynthContext.build(magic.module,
-                             CertificateData(prp="(>= s1 0)", kind="safety"),
+                             Claim(prp="(>= s1 0)", kind="safety"),
                              route="vampire",
                              takes=("int", "bool", "bv", "real", "tuple"))
     magic._check_sorts(ctx)                  # the gate that used to refuse it
@@ -454,8 +455,7 @@ def test_a_module_with_nothing_to_bound_is_refused():
     magic = TA2MagicVampire(module_at(FIXTURES / "twobit_lia.py"),
                             vampire="/nowhere", log=lambda *_: None)
     ctx = SynthContext.build(magic.module,
-                             CertificateData(prp="(not (and s0 s1))",
-                                             kind="safety"),
+                             Claim(prp="(not (and s0 s1))", kind="safety"),
                              route="vampire",
                              takes=("int", "bool", "bv", "real", "tuple"))
 

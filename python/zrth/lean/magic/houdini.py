@@ -1418,7 +1418,7 @@ class TA2MagicHoudini(TA2Magic):
     # --- driver ---------------------------------------------------------
 
     def infer(self, cd: CertificateData) -> CertificateData:
-        ctx = SynthContext.build(self.module, cd, route="houdini",
+        ctx = SynthContext.build(self.module, cd.split()[0], route="houdini",
                                  takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx

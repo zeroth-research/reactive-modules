@@ -154,7 +154,7 @@ def _codegen(module: Module, cd: "CertificateData | None", hints: bool) -> str:
 
     lean = cd
     if cd is not None:
-        h = (solver_hints(ModuleQueries.build(module, cd), SmtBudget())
+        h = (solver_hints(ModuleQueries.build(module, *cd.split()), SmtBudget())
              if hints else None)
         lean = smt_predicates_to_lean(cd, module, share=not (h and h.determined))
         lean.hints = h

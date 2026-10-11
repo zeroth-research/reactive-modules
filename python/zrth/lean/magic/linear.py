@@ -248,7 +248,7 @@ class TA2MagicLinear(TA2Magic):
     # --- driver ---------------------------------------------------------
 
     def infer(self, cd: CertificateData) -> CertificateData:
-        ctx = SynthContext.build(self.module, cd, route="smt-linear",
+        ctx = SynthContext.build(self.module, cd.split()[0], route="smt-linear",
                                  takes=READS)
         scale = denominator_scale(program_rationals(ctx))
         cols = readings(ctx, allow=READS, route="smt-linear", scale=scale)

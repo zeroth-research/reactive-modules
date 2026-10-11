@@ -341,7 +341,7 @@ def smt_predicates_to_lean(
     # bodies further down -- `def P : … → Prop := (= s0` reaches the user as
     # a Lean parse error in generated code, if it reaches them at all.
     try:
-        q = ModuleQueries(module, cert_data)
+        q = ModuleQueries(module, *cert_data.split())
     except Refused:
         raise
     except Exception as e:

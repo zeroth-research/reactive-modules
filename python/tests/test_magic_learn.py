@@ -99,7 +99,8 @@ def _learn(module, prp, kind):
 
 def _verdicts(module, cd):
     return {v.name: v.status
-            for v in pre_check(module, cd, SmtBudget(), log=lambda *a: None)}
+            for v in pre_check(module, *cd.split(), SmtBudget(),
+                               log=lambda *a: None)}
 
 
 # ---------------------------------------------------------------------------

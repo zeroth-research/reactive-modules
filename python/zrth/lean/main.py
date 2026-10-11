@@ -93,6 +93,7 @@ from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
+from .certificate import LeanAnswer
 from .cli import Settings, parse_args
 from .common import Refused
 from .native import lean_gaps
@@ -284,7 +285,7 @@ def _replan(settings: Settings, module, inferred, project_cert_data) -> None:
     obligations stated against it. A route that answers in Lean alone leaves
     nothing to read and the plan stays exactly as it was.
     """
-    q = ModuleQueries.build(module, inferred)
+    q = ModuleQueries.build(module, *inferred.split())
     if q is None:
         return
 
@@ -521,7 +522,8 @@ def main():
         if cert_data is None:
             print(".. SMT pre-check: nothing to check (no certificate data)")
         else:
-            pre_check(module, cert_data, settings.budget, artifacts=store)
+            pre_check(module, *cert_data.split(), settings.budget,
+                      artifacts=store)
 
     # The hints have to come first: a settled branch condition is spliced
     # into a tactic in expanded form, so the definition it has to match must
@@ -533,7 +535,8 @@ def main():
             f"query, <={settings.budget.phase_ms} ms total"
         )
         hints = solver_hints(
-            ModuleQueries.build(module, cert_data), settings.budget, log=print
+            ModuleQueries.build(module, *cert_data.split()), settings.budget,
+            log=print
         )
 
     # Translate SMT-LIB predicates to Lean expression strings for codegen.
@@ -595,7 +598,10 @@ def main():
             return
 
         if settings.pre_check == "cvc5":
-            pre_check(module, inferred, settings.budget, artifacts=store)
+            claim, cert = inferred.split()
+            answer = (LeanAnswer(inferred.inv, inferred.ranking)
+                      if settings.route.returns == "lean" else cert)
+            pre_check(module, claim, answer, settings.budget, artifacts=store)
         _record_predicates(store, settings, inferred, inferred=True)
 
         # Merge the inferred predicates into what the project is generated

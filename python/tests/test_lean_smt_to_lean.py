@@ -13,6 +13,7 @@ import torch
 
 from zrth import Module, Term, Var, X, LIA, LRA, Int, Real
 from zrth.lean.cert import CertificateData, smt_predicates_to_lean
+from zrth.lean.certificate import Certificate, Claim
 
 
 def _int_module() -> Module:
@@ -140,7 +141,7 @@ def test_the_same_net_without_sharing_shows_what_it_costs():
     from zrth.lean.smt_to_lean import smt_to_lean_nat
     from zrth.lean.smt_query import ModuleQueries
 
-    q = ModuleQueries.build(_int_module(), CertificateData(ranking=_dense(4)))
+    q = ModuleQueries.build(_int_module(), Claim(), Certificate(ranking=_dense(4)))
     plain = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
     assert plain.count("(max ") == 30
     assert "let " not in plain
@@ -151,7 +152,7 @@ def test_sharing_never_makes_the_output_longer():
     from zrth.lean.smt_query import ModuleQueries
 
     for smt in ("s0", "(+ s0 1)", _relu("s0"), _dense(1), _dense(2), _dense(5)):
-        q = ModuleQueries.build(_int_module(), CertificateData(ranking=smt))
+        q = ModuleQueries.build(_int_module(), Claim(), Certificate(ranking=smt))
         wires = q.msmt.ctrl_next
         assert len(smt_to_lean_nat(q.ranking, wires, share=True)) <= len(
             smt_to_lean_nat(q.ranking, wires, share=False)

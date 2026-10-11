@@ -1012,7 +1012,7 @@ class TA2MagicVampire(TA2Magic):
         # `SynthContext.build` refuses a component this route cannot weigh
         # as an integer -- Real, bitvector, matrix-shaped -- before anything
         # here is printed, which is the same gate `--infer smt-linear` uses.
-        ctx = SynthContext.build(self.module, cd, route="vampire",
+        ctx = SynthContext.build(self.module, cd.split()[0], route="vampire",
                                  takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx

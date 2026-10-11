@@ -49,6 +49,7 @@ import math
 from dataclasses import dataclass
 from fractions import Fraction
 
+from .certificate import Claim
 from .common import Refused
 
 try:
@@ -99,7 +100,7 @@ class SynthContext:
         return [f"s{i}" for i in range(len(self.state))]
 
     @classmethod
-    def build(cls, module, cd, *, route: str,
+    def build(cls, module, claim: Claim, *, route: str,
               takes: tuple[str, ...] = ("int", "bool", "bv")) -> "SynthContext":
         """The context, or the reason this module is not one `route` reads.
 
@@ -125,7 +126,7 @@ class SynthContext:
         from .smt_module import ModuleSMT, keep_alive
         from .smt_prompt import CegarPromptEnv, parse_predicate
 
-        if not isinstance(cd.prp, str):
+        if claim.prp is None:
             raise Refused(
                 f"--infer {route} needs a property: pass --safety or --buchi"
             )
@@ -176,11 +177,11 @@ class SynthContext:
             tm=tm,
             msmt=msmt,
             env=env,
-            prp=parse_predicate(env, cd.prp),
-            init_pre=(parse_predicate(env, cd.init_pre)
-                      if isinstance(cd.init_pre, str) else true),
-            update_pre=(parse_predicate(env, cd.update_pre)
-                        if isinstance(cd.update_pre, str) else true),
+            prp=parse_predicate(env, claim.prp),
+            init_pre=(parse_predicate(env, claim.init_pre)
+                      if claim.init_pre is not None else true),
+            update_pre=(parse_predicate(env, claim.update_pre)
+                        if claim.update_pre is not None else true),
         )
 
     # --- terms the searches build on ------------------------------------

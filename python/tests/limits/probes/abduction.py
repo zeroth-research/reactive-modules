@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cvc5
 
-from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.smt_query import ModuleQueries
 
 CASES = [
@@ -30,7 +30,7 @@ CASES = [
 
 def abduce(modname: str, inv: str) -> str:
     module = importlib.import_module(f"mods.{modname}").module()
-    q = ModuleQueries.build(module, CertificateData(inv=inv))
+    q = ModuleQueries.build(module, Claim(), Certificate(inv=inv))
     if q is None:
         return "<cvc5 could not encode this module>"
     solver = cvc5.Solver(q.tm)

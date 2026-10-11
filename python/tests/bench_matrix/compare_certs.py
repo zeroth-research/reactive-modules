@@ -91,7 +91,7 @@ sys.path.insert(0, str(SP))
 
 from suites import all_rows, column_of                          # noqa: E402
 
-from zrth.lean.cert import CertificateData                      # noqa: E402
+from zrth.lean.certificate import Claim                         # noqa: E402
 from zrth.lean.project import load_module_from_file             # noqa: E402
 from zrth.lean.smt_synth import SynthContext                    # noqa: E402
 
@@ -125,9 +125,9 @@ def context_for(row):
     finally:
         for k, v in saved.items():
             os.environ.pop(k) if v is None else os.environ.__setitem__(k, v)
-    cd = CertificateData(prp=row.prop, kind=row.kind,
-                         init_pre=row.pre or None, update_pre=row.pre or None)
-    return SynthContext.build(module, cd, route="houdini", takes=ALL_KINDS)
+    claim = Claim(prp=row.prop, kind=row.kind,
+                  init_pre=row.pre or None, update_pre=row.pre or None)
+    return SynthContext.build(module, claim, route="houdini", takes=ALL_KINDS)
 
 
 # ══════════════════════════════════════════════════════════════════════════
