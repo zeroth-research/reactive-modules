@@ -94,7 +94,7 @@ from pathlib import Path
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
 from .cli import Settings, parse_args
-from .common import LeanContext, Refused
+from .common import Refused
 from .native import lean_gaps
 from .infer_route import InferInput, ProjectHandle
 from .project import (
@@ -112,7 +112,7 @@ from .smt_query import ModuleQueries, pre_check, predicate_facts, solver_hints
 from .translate import ModuleToLean4
 
 
-def _build_cert(args, project_dir: Path, cert_data) -> None:
+def _build_cert(settings: Settings, project_dir: Path, cert_data) -> None:
     """Honour `--build-cert`, once the certificate is written.
 
     `cert_data` is what the project's certificate was generated from, or
@@ -122,7 +122,7 @@ def _build_cert(args, project_dir: Path, cert_data) -> None:
     answers nothing usable leaves `inv` or `ranking` unset, and building
     that would report a proof of `sorry`.
     """
-    if not args.build_cert:
+    if not settings.build_cert:
         return
     if cert_data is not None:
         # A safety certificate has no ranking function to be missing.
@@ -489,7 +489,13 @@ def main():
     # here says it once, before any of the project exists. Left to codegen it
     # arrives as a missing table cell in the middle of a file, which is a
     # sentence about `ops.py` for a user who asked about a module.
-    gaps = lean_gaps(LeanContext(module))
+    #
+    # The context is built once and threaded: its discovery pass interns
+    # every init/update term, and codegen and the rewrites after inference
+    # need the same one. `cert_data` contributes the terms
+    # `project_cert_data` would, since rendering passes term lists through.
+    ctx = lean_context_for(module, cert_data)
+    gaps = lean_gaps(ctx)
     if gaps:
         raise _refused(settings, Refused(
             "this module has no Lean form: "
@@ -502,7 +508,7 @@ def main():
     # the pre-check rather than after `create_project`, because the pre-check
     # is the run's first encoding and what it encodes is worth keeping.
     store = (
-        None if settings.cert_file or settings.hammer_file
+        None if settings.cert_file
         else _workspace(settings, module,
                         settings.output_dir / settings.project_name)
     )
@@ -548,9 +554,6 @@ def main():
         return
 
     print(".. Generating lean code")
-    # Built once and threaded: the discovery pass interns every init/update
-    # term, and the files rewritten after inference need the same one.
-    ctx = lean_context_for(module, project_cert_data)
     try:
         project_dir = create_project(
             output_dir=settings.output_dir,
@@ -569,8 +572,8 @@ def main():
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e
 
-    print(".. Doing TA2Magic")
     if settings.route is not None:
+        print(f".. Inferring the certificate with --infer {settings.route.name}")
         handle = ProjectHandle(
             dir=project_dir,
             name=settings.project_name,

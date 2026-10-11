@@ -43,6 +43,7 @@ def test_verith_no_property():
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "CounterBasic")
         assert r.returncode == 0, r.stderr
+        assert "Inferring" not in r.stdout, "no route was asked for"
         assert (Path(tmpdir) / "CounterBasic").exists()
         data = (
             Path(tmpdir) / "CounterBasic" / "Certificate" / "Data.lean"
@@ -258,7 +259,7 @@ def test_pre_check_checks_the_inferred_certificate():
         assert "nothing to check" not in out
         # After inference, not before: the certificate it reports on is the
         # one the project was written with.
-        assert out.index("TA2Magic") < out.index("SMT pre-check")
+        assert out.index(".. Inferring the certificate") < out.index("SMT pre-check")
 
 
 def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
