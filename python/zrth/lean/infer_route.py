@@ -378,7 +378,7 @@ def _run_ai(inp: InferInput) -> InferResult:
 
 
 # Statuses that make a previously-found invariant a *fixed* invariant for
-# this route: `magic.cegar` takes `cd.inv` as given and infers only what is
+# this route: `magic.cegar` holds `given.inv` fixed and infers only what is
 # left, so what it is handed has to be inductive. `too_weak` is inductive
 # and merely fails to imply the property, which `rule_buchi` never asked of
 # it -- so it is usable for a Buchi certificate and is exactly the wrong
@@ -396,7 +396,7 @@ def _resume_inv(inp: InferInput) -> "Artifact | None":
     if inp.given.inv:
         return None
     # An inductive invariant is what this route can take as *given*:
-    # `magic.cegar` infers only what is left around a fixed `cd.inv`.
+    # `magic.cegar` infers only what is left around a fixed `given.inv`.
     for a in inp.project.resume("inv", languages=("smt",), statuses=FIXABLE):
         # The one thing the store cannot filter on: `too_weak` means
         # inductive but not implying the property, which is all `rule_buchi`
@@ -484,8 +484,7 @@ def _run_ai_cegis(inp: InferInput) -> InferResult:
         known=_ruled_out(inp),
         budget_s=inp.opts["cegar_budget"],
     )
-    cd = magic.infer(_legacy(inp))
-    return InferResult(Certificate(cd.inv_smt, cd.ranking_smt))
+    return InferResult(magic.infer(inp.claim, inp.given))
 
 
 def _run_nuterm(inp: InferInput) -> InferResult:

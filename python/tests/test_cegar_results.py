@@ -14,7 +14,7 @@ import cvc5
 from zrth import Module, Int, LIA, Var, X
 from zrth.analyzer import convert_method
 from zrth.lean.magic import cegar
-from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.magic.cegar import TA2MagicCEGAR
 from zrth.lean.smt_prompt import CEGAR_GENERATE_SYSTEM, CEGAR_SAFETY_SYSTEM
 
@@ -139,10 +139,10 @@ def _counter() -> Module:
     )
 
 
-def _infer(monkeypatch, cd, replies):
+def _infer(monkeypatch, claim, replies, given=Certificate()):
     """Run the real CEGAR loop, answering each prompt from `replies`.
 
-    Returns `(cert_data, prompts)` -- the prompts being `(system, user)`
+    Returns `(certificate, prompts)` -- the prompts being `(system, user)`
     pairs, so a test can say which prompt the route actually sent.
     """
     prompts: list[tuple[str, str]] = []
@@ -154,32 +154,30 @@ def _infer(monkeypatch, cd, replies):
 
     monkeypatch.setattr(cegar, "_make_client", lambda base_url, model: chat)
     magic = TA2MagicCEGAR("", _counter())
-    return magic.infer(cd), prompts
+    return magic.infer(claim, given), prompts
 
 
 def test_safety_inference_asks_for_an_invariant_alone(monkeypatch):
     """`rule_globally` takes no ranking function, so none is requested, none
     is parsed, and none ends up on the certificate."""
-    cd, prompts = _infer(
+    cert, prompts = _infer(
         monkeypatch,
-        CertificateData(kind="safety", prp="(<= s0 9)"),
+        Claim(kind="safety", prp="(<= s0 9)"),
         ["INVARIANT: (and (>= s0 0) (<= s0 9))"],
     )
     assert prompts[0][0] is CEGAR_SAFETY_SYSTEM
     assert "RANKING" not in prompts[0][1]
-    assert cd.inv is not None
-    assert cd.ranking is None
-    # The SMT source is kept beside the Lean, for `--pre-check`.
-    assert cd.inv_smt == "(and (>= s0 0) (<= s0 9))"
+    assert cert.inv == "(and (>= s0 0) (<= s0 9))"
+    assert cert.ranking is None
 
 
 def test_an_invariant_too_weak_for_the_property_comes_back_as_feedback(monkeypatch):
     """`(>= s0 0)` is inductive and true at init, and a Buchi certificate
     would accept it. It does not imply `s0 <= 9`, which is the obligation
     that only exists on the safety route."""
-    cd, prompts = _infer(
+    cert, prompts = _infer(
         monkeypatch,
-        CertificateData(kind="safety", prp="(<= s0 9)"),
+        Claim(kind="safety", prp="(<= s0 9)"),
         [
             "INVARIANT: (>= s0 0)",
             "INVARIANT: (and (>= s0 0) (<= s0 9))",
@@ -187,7 +185,7 @@ def test_an_invariant_too_weak_for_the_property_comes_back_as_feedback(monkeypat
     )
     assert len(prompts) == 2, "the first invariant should have been rejected"
     assert "inv_imp_P" in prompts[1][1]
-    assert cd.inv_smt == "(and (>= s0 0) (<= s0 9))"
+    assert cert.inv == "(and (>= s0 0) (<= s0 9))"
 
 
 def test_a_rank_is_bounded_only_where_the_property_fails(monkeypatch):
@@ -208,19 +206,35 @@ def test_a_rank_is_bounded_only_where_the_property_fails(monkeypatch):
 
     monkeypatch.setattr(cegar, "_make_client", lambda base_url, model: chat)
     bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
-    cd = TA2MagicCEGAR("", bench.build()[0]).infer(CertificateData(prp="(not (<= 0 s0))"))
+    cert = TA2MagicCEGAR("", bench.build()[0]).infer(Claim(prp="(not (<= 0 s0))"))
     assert len(prompts) == 1, "the candidate should have been accepted as proposed"
-    assert cd.ranking_smt == "(+ 1 s0)"
+    assert cert.ranking == "(+ 1 s0)"
 
 def test_a_buchi_property_still_asks_for_both(monkeypatch):
-    cd, prompts = _infer(
+    cert, prompts = _infer(
         monkeypatch,
-        CertificateData(prp="(= s0 0)"),
+        Claim(prp="(= s0 0)"),
         ["INVARIANT: (and (>= s0 0) (<= s0 9))\nRANKING: (ite (= s0 0) 0 (- 10 s0))"],
     )
     assert prompts[0][0] is CEGAR_GENERATE_SYSTEM
-    assert cd.inv is not None and cd.ranking is not None
-    assert cd.ranking_smt == "(ite (= s0 0) 0 (- 10 s0))"
+    assert cert.inv == "(and (>= s0 0) (<= s0 9))"
+    assert cert.ranking == "(ite (= s0 0) 0 (- 10 s0))"
+
+
+def test_a_given_invariant_is_kept_and_only_the_ranking_is_asked_for(monkeypatch):
+    """`--invariant`, or one resumed from `artifacts/`, arrives as `given`:
+    the model is shown it, asked for the ranking alone, and the answer
+    carries it unchanged."""
+    inv = "(and (>= s0 0) (<= s0 9))"
+    cert, prompts = _infer(
+        monkeypatch,
+        Claim(prp="(= s0 0)"),
+        ["RANKING: (ite (= s0 0) 0 (- 10 s0))"],
+        given=Certificate(inv=inv),
+    )
+    assert f"The invariant is GIVEN (do not propose a new one):\nINVARIANT: {inv}" \
+        in prompts[0][1]
+    assert cert == Certificate(inv, "(ite (= s0 0) 0 (- 10 s0))")
 
 
 # ── how long the loop keeps asking ───────────────────────────────────────
@@ -246,7 +260,7 @@ def test_without_a_budget_the_count_is_the_leash(monkeypatch):
     from zrth.lean.common import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 1.0)
     with pytest.raises(Refused, match="after 5 attempts"):
-        TA2MagicCEGAR("", _counter()).infer(CertificateData(kind="safety", prp="(<= s0 9)"))
+        TA2MagicCEGAR("", _counter()).infer(Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 5
 
 
@@ -258,7 +272,7 @@ def test_a_budget_keeps_asking_past_five_while_an_attempt_still_fits(monkeypatch
     prompts = _always_wrong(monkeypatch, [0.0], 10.0)
     with pytest.raises(Refused, match="after 9 attempts in 90 s of a 95 s budget"):
         TA2MagicCEGAR("", _counter(), budget_s=95).infer(
-            CertificateData(kind="safety", prp="(<= s0 9)"))
+            Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 9
 
 
@@ -268,5 +282,5 @@ def test_a_budget_always_allows_the_first_attempt(monkeypatch):
     prompts = _always_wrong(monkeypatch, [0.0], 10.0)
     with pytest.raises(Refused, match="after 1 attempt in "):
         TA2MagicCEGAR("", _counter(), budget_s=1).infer(
-            CertificateData(kind="safety", prp="(<= s0 9)"))
+            Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 1

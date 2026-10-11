@@ -38,7 +38,7 @@ except ImportError:
 
 from zrth import Module
 
-from ..cert import CertificateData
+from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
 from .ai import _make_client, _describe_preconditions
@@ -49,7 +49,6 @@ from ..smt_prompt import (
     parse_predicate,
     prompt_inv_ranking,
 )
-from ..smt_to_lean import smt_to_lean, smt_to_lean_nat
 
 
 @dataclass
@@ -74,7 +73,7 @@ class TA2MagicCEGAR(TA2Magic):
     `artifacts/` by `--infer smt-linear`. It is stated in the prompt so an
     attempt is not spent proposing what is already known not to exist.
 
-    A safety certificate (`cd.kind == "safety"`, from `--safety`) is the
+    A safety certificate (`claim.kind == "safety"`, from `--safety`) is the
     same loop over a smaller certificate: the LLM is asked for an invariant
     alone, and the obligations are init, inductive, and `inv → prp` --
     `rule_globally` has no ranking function to take, so the two ranking
@@ -118,36 +117,28 @@ class TA2MagicCEGAR(TA2Magic):
 
     # --- driver ---------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. What `given` holds is
+        fixed: it is shown to the model and only the rest is asked for."""
         tm = cvc5.TermManager()
         msmt = ModuleSMT(tm=tm, module=self.module)
         env = CegarPromptEnv(msmt)
 
         # Parse predicates — Python expression first, SMT-LIB fallback.
-        prp_term = (
-            parse_predicate(env, cd.prp)
-            if isinstance(cd.prp, str)
-            else tm.mkBoolean(True)
-        )
-        init_pre_term = (
-            parse_predicate(env, cd.init_pre)
-            if isinstance(cd.init_pre, str)
-            else tm.mkBoolean(True)
-        )
-        update_pre_term = (
-            parse_predicate(env, cd.update_pre)
-            if isinstance(cd.update_pre, str)
-            else tm.mkBoolean(True)
-        )
+        def parsed(src):
+            return tm.mkBoolean(True) if src is None else parse_predicate(env, src)
 
-        preconds = _describe_preconditions(cd)
+        prp_term = parsed(claim.prp)
+        init_pre_term = parsed(claim.init_pre)
+        update_pre_term = parsed(claim.update_pre)
+
+        preconds = _describe_preconditions(claim)
         feedback: str | None = None
 
-        safety = cd.is_safety
-        fixed_inv = cd.inv if isinstance(cd.inv, str) else None
-        fixed_ranking = None if safety else (
-            cd.ranking if isinstance(cd.ranking, str) else None
-        )
+        safety = claim.is_safety
+        fixed_inv = given.inv
+        fixed_ranking = None if safety else given.ranking
         # If everything this kind of certificate needs is user-provided,
         # no LLM loop — just verify once.
         complete = bool(fixed_inv) and (safety or bool(fixed_ranking))
@@ -162,12 +153,12 @@ class TA2MagicCEGAR(TA2Magic):
                     env,
                     self._chat,
                     self.source,
-                    str(cd.prp),
+                    str(claim.prp),
                     preconds,
                     feedback,
                     fixed_inv_src=fixed_inv,
                     fixed_ranking_src=fixed_ranking,
-                    kind=cd.kind,
+                    kind=claim.kind,
                     known=self.known,
                 )
             except Refused:
@@ -196,15 +187,9 @@ class TA2MagicCEGAR(TA2Magic):
             failures = [o for o in obligations if not o.ok]
             if not failures:
                 print("[CEGAR] all obligations UNSAT — accepted")
-                cd.inv = smt_to_lean(result.inv_term, msmt.ctrl_next)
-                # Keep what cvc5 was given: the Lean above is a rendering, and
-                # nothing can parse it back, so `--pre-check` would have no
-                # term left to ask about the certificate that was inferred.
-                cd.inv_smt = result.inv_src
-                if not safety:
-                    cd.ranking = smt_to_lean_nat(result.ranking_term, msmt.ctrl_next)
-                    cd.ranking_smt = result.ranking_src
-                return cd
+                return Certificate(
+                    result.inv_src, None if safety else result.ranking_src
+                )
 
             feedback = self._format_feedback(failures)
             print(f"[CEGAR] failures: {[o.name for o in failures]}")
