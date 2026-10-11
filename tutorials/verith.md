@@ -218,7 +218,6 @@ Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Data.lean
 Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Certificate.lean
 
 DONE: Project created at: /tmp/verith-tutorial.noindex/Rea
-.. Doing TA2Magic
 
 Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
