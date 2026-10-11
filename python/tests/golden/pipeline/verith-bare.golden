@@ -1,0 +1,195 @@
+=== exit 0
+=== stdout
+module
+  interface
+    #N : Int([1,1])
+  atom controls #N reads #N
+  init
+    #N := [[0]] 
+    X(#N) := Id #N
+  delay
+    d(#N) := ZERO 
+  update
+    #N := [[1]] 
+    #N := Add (#N, #N)
+    #N := [[10]] 
+    #N := Eq (#N, #N)
+    #N := [[0]] 
+    #N := Ite (#N, #N, #N)
+    X(#N) := Id #N
+
+.. Generating lean code
+Created project directory: `<OUT>/G`
+Wrote system.txt
+Wrote system.py
+Wrote <OUT>/G/lakefile.toml
+Wrote <OUT>/G/lean-toolchain
+Wrote <OUT>/G/ZerothHammer.lean
+Copied Basic.lean -> Core/
+Copied Box.lean -> Core/
+Copied LTL.lean -> Core/
+Copied Mat.lean -> Core/
+Copied template file LeanAI.lean -> /
+Copied template directory LeanAI -> /
+Wrote root module <OUT>/G/System.lean
+++ Generated <OUT>/G/System/System.lean ++
+++ Generated <OUT>/G/System/Circ.lean ++
+++ Generated <OUT>/G/System/Rel.lean ++
+++ Generated <OUT>/G/System/Scalar.lean ++
+++ Generated <OUT>/G/System/ScalarRel.lean ++
+Wrote <OUT>/G/Certificate/Data.lean
+Wrote <OUT>/G/Certificate/Certificate.lean
+
+DONE: Project created at: <OUT>/G
+
+Project ready at: <OUT>/G
+
+=== stderr
+
+=== Certificate/Data.lean
+import Core.Basic
+
+def init_pre (e : (Unit) × (Unit)) : Prop := True
+
+def update_pre (e : (Unit) × (Unit)) : Prop := True
+
+def inv (s : (Mat Int 1 1)) : Prop := True
+
+def P (s : (Mat Int 1 1)) : Prop := sorry
+
+instance : DecidablePred P := sorry
+
+def ranking (s : (Mat Int 1 1)) : Nat := sorry
+
+=== Certificate/Certificate.lean
+import Mathlib.Algebra.BigOperators.Fin
+import Core.Basic
+import System.System
+import Certificate.Data
+import ZerothHammer
+
+-- Budgets and tactics below are generated from the shape of this module and
+-- its certificate; see `zrth/lean/tactics.py`.
+-- state: Bool+Int, 1 slot(s), 9 term(s)
+-- predicates: branching, linear
+set_option maxRecDepth 13500
+set_option maxHeartbeats 2000000
+
+def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
+    init := fun e => init e.2
+    update := fun x e => update x e.1 e.2
+    init_pre := init_pre
+    update_pre := update_pre
+}
+
+-- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
+macro "simp_mat" : tactic =>
+  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
+
+-- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
+-- Gives omega/decide access to invariant and property conditions in hypotheses
+macro "simp_defs" : tactic =>
+  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp at *))
+
+-- Canonicalise the goal: only the steps this module's shapes call for.
+macro "cert_prep" : tactic =>
+  `(tactic| ((try split_ifs)))
+
+-- Close it: only the provers this state can use, cheapest first.
+macro "cert_close" : tactic =>
+  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | (constructor <;> first | omega | linarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (split_ifs at * <;> simp_all <;> omega))
+
+-- Enumerate the state, when it is finite and narrow enough to be worth it.
+-- `skip` otherwise. Takes the obligation's own state binder.
+macro "cert_states" v:ident : tactic =>
+  `(tactic| (skip))
+
+-- Branch conditions cvc5 decided under the invariant, so `split_ifs` does
+-- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
+-- obligation's own state binder; every step is `try`.
+macro "cert_facts" v:ident : tactic =>
+  `(tactic| (skip))
+
+-- Bridge each floored quantity to a bound on the Real under it, so the
+-- closers see the `Int` atom with a sign. `skip` when nothing is floored.
+-- Takes the obligation's own state binder; every step is `try`.
+macro "cert_floors" v:ident : tactic =>
+  `(tactic| (skip))
+
+-- Hypotheses no refutation needed. `skip` otherwise.
+macro "cert_thin" : tactic =>
+  `(tactic| (skip))
+
+-- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
+-- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
+macro "mat_collapse" : tactic =>
+  `(tactic| simp only [Mat_1_1_lt_iff, Mat_1_1_le_iff, Mat_1_1_eq_iff, Mat_1_1_ne_iff,
+                        ite_fun_apply,
+                        decide_eq_true_eq, Bool.or_eq_true, Bool.and_eq_true,
+                        Bool.not_eq_true'] at *)
+
+
+theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+   intro s hpre
+   try simp_mat
+   try simp_defs
+   all_goals (cert_prep <;> cert_close)
+
+theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+   intro s e ⟨hpre, hinv⟩
+   try cert_thin
+   try simp_defs
+   try cert_facts s
+   try cert_floors s
+   try simp_mat
+   try cert_states s
+   all_goals (cert_prep <;> cert_close)
+
+section TS
+
+def lts := RM.toTS
+
+theorem hinv' : lts.StateSet_isInductiveInitial inv := by
+  constructor
+  · intro s hs
+    unfold lts at hs; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs
+    obtain ⟨l, hpre, hl⟩ := hs
+    rw [← hl]
+    exact init_inv l hpre
+  · intro s s' ⟨hs, l, hstep⟩
+    unfold lts at hstep; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
+    rw [← hstep.2]
+    exact step_inv s l ⟨hstep.1, hs⟩
+
+theorem hinv : lts.StateSet_isInvariant inv := by
+  apply TS.StateSet_ind_init_is_inv lts
+  exact hinv'
+
+theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+    ranking s' < ranking s := by
+    intro s s' ⟨hi, hP, htr⟩
+    unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
+    obtain ⟨l, hpre, heq⟩ := htr
+    rw [← heq]
+    clear heq
+    try cert_thin
+    try simp_defs
+    try cert_facts s
+    try cert_floors s
+    try simp_mat
+    try cert_states s
+    all_goals (cert_prep <;> cert_close)
+
+def buchi := rule_buchi
+  lts
+  P
+  inv
+  hinv
+  ranking
+  hrank
+
+
+end TS
+
+=== artifacts/index.json
+(none)

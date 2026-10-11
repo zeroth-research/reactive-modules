@@ -1,0 +1,47 @@
+=== exit error: --buchi: cannot read `(= s0`: Expected SMT-LIBv2 term, got `` (EOF_TOK).
+=== stdout
+module
+  interface
+    #N : Int([1,1])
+  atom controls #N reads #N
+  init
+    #N := [[0]] 
+    X(#N) := Id #N
+  delay
+    d(#N) := ZERO 
+  update
+    #N := [[1]] 
+    #N := Add (#N, #N)
+    #N := [[10]] 
+    #N := Eq (#N, #N)
+    #N := [[0]] 
+    #N := Ite (#N, #N, #N)
+    X(#N) := Id #N
+
+   wrote artifact property.smt (encoded)
+
+=== stderr
+
+=== Certificate/Data.lean
+(none)
+
+=== Certificate/Certificate.lean
+(none)
+
+=== artifacts/index.json
+[
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt-src",
+    "module_digest": "<digest>",
+    "name": "property.smt",
+    "producer": "",
+    "prp": "(= s0",
+    "role": "property",
+    "seq": 1,
+    "status": "encoded",
+    "what": "The property this run was asked to prove, as it was given to `--safety` / `--buchi`.",
+    "why": ""
+  }
+]
