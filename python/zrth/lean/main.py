@@ -298,17 +298,6 @@ def _render(settings: Settings, module, claim: "Claim | None",
     return LeanCertificate(defs, PlanInputs(predicate_facts(q), h))
 
 
-def _answer(route, result: InferResult) -> "tuple[Certificate, LeanAnswer | None]":
-    """What a route answered, in the language its row declares.
-
-    A `returns="smt"` row is rendered from its SMT-LIB even when it printed
-    Lean of its own, so every such certificate is printed in one place.
-    """
-    if route.returns == "lean":
-        return Certificate(), LeanAnswer(result.inv_lean, result.ranking_lean)
-    return Certificate(result.inv_smt, result.ranking_smt), None
-
-
 def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
     """Leave *why* a route gave up in `artifacts/`, if it did not say so itself.
 
@@ -345,7 +334,8 @@ def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
 
 
 def _infer(
-    settings: Settings, module, handle: ProjectHandle, cert_data, prechecked
+    settings: Settings, module, handle: ProjectHandle, claim: Claim,
+    given: Certificate, prechecked,
 ) -> "InferResult | None":
     """Run the selected route against the generated project.
 
@@ -363,7 +353,8 @@ def _infer(
             InferInput(
                 project=handle,
                 module=module,
-                cert_data=cert_data,
+                claim=claim,
+                given=given,
                 opts=settings.route_opts,
                 config=settings.route_config,
                 prechecked=prechecked,
@@ -382,11 +373,18 @@ def _infer(
     # The row *declares* what comes back and the result carries it, so the
     # two are checked against each other once rather than each reader
     # trusting whichever is nearer to hand.
-    if (route.returns == "installed") != result.empty:
+    agrees = {
+        "installed": result.empty,
+        "lean": result.lean is not None,
+        "smt": result.lean is None and not result.empty,
+    }[route.returns]
+    if not agrees:
+        handed = "no predicates" if result.empty else "predicates"
+        if not result.empty and route.returns != "installed":
+            handed += " in Lean" if result.lean is not None else " in SMT-LIB"
         raise SystemExit(
             f"error: --infer {route.name}: the route's row declares "
-            f"returns={route.returns!r} but it handed back "
-            f"{'no predicates' if result.empty else 'predicates'}"
+            f"returns={route.returns!r} but it handed back {handed}"
         )
     if route.returns == "installed":
         return None
@@ -426,6 +424,9 @@ def main():
             cert_data.inv = settings.invariant
         if settings.ranking:
             cert_data.ranking = settings.ranking
+    claim, given = (
+        cert_data.split() if cert_data is not None else (None, Certificate())
+    )
 
     # The route's own shape check, before a line of Lean is written. Left
     # until the route runs, a module its encoding cannot express is met
@@ -438,7 +439,7 @@ def main():
     if settings.route is not None and settings.route.precheck is not None:
         try:
             prechecked = settings.route.precheck(
-                module, settings.route_opts, settings.route_config, cert_data
+                module, settings.route_opts, settings.route_config, claim
             )
         except (Refused, ImportError) as e:
             raise _refused(settings, e) from e
@@ -482,16 +483,12 @@ def main():
         if cert_data is None:
             print(".. SMT pre-check: nothing to check (no certificate data)")
         else:
-            pre_check(module, *cert_data.split(), settings.budget,
+            pre_check(module, claim, given, settings.budget,
                       artifacts=store)
 
-    # Read before any route runs: a route is handed `cert_data` and may
-    # change it. With a route this rendering is a placeholder the answer
-    # replaces, and no route reads `Certificate/`, so cvc5 is asked for
-    # hints only about the certificate the project ends up with.
-    claim, given = (
-        cert_data.split() if cert_data is not None else (None, Certificate())
-    )
+    # With a route this rendering is a placeholder the answer replaces, and
+    # no route reads `Certificate/`, so cvc5 is asked for hints only about
+    # the certificate the project ends up with.
     try:
         lean_cert = _render(settings, module, claim, given,
                             hints=settings.route is None)
@@ -533,7 +530,7 @@ def main():
             resumes=frozenset(settings.route.reads_artifacts),
             artifacts=store,
         )
-        result = _infer(settings, module, handle, cert_data, prechecked)
+        result = _infer(settings, module, handle, claim, given, prechecked)
 
         if result is None:
             # The route installed its own certificate, so there is nothing
@@ -542,14 +539,15 @@ def main():
             print(f"\nProject ready at: {project_dir}")
             return
 
-        inferred, verbatim = _answer(settings.route, result)
+        inferred, verbatim = result.cert, result.lean
         if settings.pre_check == "cvc5":
             pre_check(module, claim, verbatim or inferred, settings.budget,
                       artifacts=store)
         _record_predicates(store, settings, CertificateData(
             prp=claim.prp, kind=claim.kind,
-            inv=result.inv_lean, ranking=result.ranking_lean,
-            inv_smt=result.inv_smt, ranking_smt=result.ranking_smt,
+            inv=verbatim and verbatim.inv,
+            ranking=verbatim and verbatim.ranking,
+            inv_smt=inferred.inv, ranking_smt=inferred.ranking,
         ), inferred=True)
 
         # The certificate is the route's answer alone, under the claim the

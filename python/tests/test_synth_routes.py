@@ -22,7 +22,7 @@ import pytest
 
 from zrth.lean.artifacts import ArtifactStore, module_digest
 from zrth.lean.cert import CertificateData
-from zrth.lean.certificate import Claim
+from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.common import Refused
 
 MODS = Path(__file__).parent / "limits" / "mods"
@@ -538,7 +538,8 @@ def test_only_a_proof_of_absence_reaches_the_prompt(tmp_path):
         InferInput(
             project=handle,
             module=None,
-            cert_data=CertificateData(prp="(= s0 0)", kind="buchi"),
+            claim=Claim(prp="(= s0 0)", kind="buchi"),
+            given=Certificate(),
             opts={},
             log=lambda *_: None,
         )
@@ -568,7 +569,8 @@ def test_a_note_about_another_property_is_not_carried_over(tmp_path):
         InferInput(
             project=handle,
             module=None,
-            cert_data=CertificateData(prp="(= s0 7)", kind="buchi"),
+            claim=Claim(prp="(= s0 7)", kind="buchi"),
+            given=Certificate(),
             opts={},
             log=lambda *_: None,
         )
@@ -682,6 +684,7 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
     from zrth.lean.infer_route import (
         InferInput,
         ProjectHandle,
+        _legacy,
         _resume_inv_to_strengthen,
         _take_inv,
     )
@@ -702,14 +705,15 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
     inp = InferInput(
         project=handle,
         module=None,
-        cert_data=CertificateData(prp="(<= s0 100)", kind="safety"),
+        claim=Claim(prp="(<= s0 100)", kind="safety"),
+        given=Certificate(),
         opts={},
         log=lambda *_: None,
     )
-    _take_inv(inp, _resume_inv_to_strengthen(inp), "adding to it")
-    assert inp.cert_data.inv == "(>= s0 0)"
+    inp = _take_inv(inp, _resume_inv_to_strengthen(inp), "adding to it")
+    assert inp.given.inv == "(>= s0 0)"
 
-    out = TA2MagicLinearFor(inp.cert_data)
+    out = TA2MagicLinearFor(_legacy(inp))
     assert out.inv_smt.startswith("(and (>= s0 0)"), "kept, and added to"
     assert obligations_hold("m_countdown", out) == []
 
@@ -734,8 +738,8 @@ def test_an_explicit_invariant_is_not_overridden_by_a_resumed_one(tmp_path):
     inp = InferInput(
         project=handle,
         module=None,
-        cert_data=CertificateData(prp="(<= s0 100)", kind="safety",
-                                  inv="(<= s0 50)"),
+        claim=Claim(prp="(<= s0 100)", kind="safety"),
+        given=Certificate(inv="(<= s0 50)"),
         opts={},
         log=lambda *_: None,
     )

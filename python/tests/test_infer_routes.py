@@ -492,9 +492,11 @@ def test_the_declared_prefix_is_a_directory_not_a_string(tmp_path):
 
 def test_an_empty_result_is_what_an_installing_route_returns():
     """`empty` is what `main` checks the row's `returns` against."""
+    from zrth.lean.certificate import Certificate, LeanAnswer
+
     assert InferResult().empty
-    assert not InferResult(inv_smt="(= s0 0)").empty
-    assert not InferResult(inv_lean="fun s => s.1 = 0").empty
+    assert not InferResult(Certificate(inv="(= s0 0)")).empty
+    assert not InferResult(lean=LeanAnswer("fun s => s.1 = 0")).empty
 
 
 def _row(returns="smt", kind="buchi", result=None):
@@ -514,7 +516,7 @@ def _row(returns="smt", kind="buchi", result=None):
 def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi"):
     """Put one synthetic row through `main._infer`."""
     from zrth.lean import main as m
-    from zrth.lean.cert import CertificateData
+    from zrth.lean.certificate import Certificate, Claim
 
     settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
     settings.route = _row(returns, kind, result)
@@ -522,34 +524,38 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi"):
         settings,
         None,
         _handle(tmp_path),
-        CertificateData(prp="(= s0 0)", kind=kind),
+        Claim(prp="(= s0 0)", kind=kind),
+        Certificate(),
         None,
     )
 
 
 def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
-    result = InferResult(inv_smt="(= s0 0)", ranking_smt="s0")
+    from zrth.lean.certificate import Certificate
+
+    result = InferResult(Certificate("(= s0 0)", "s0"))
     assert _run_infer(monkeypatch, tmp_path, result) is result
 
 
-def test_an_smt_row_is_rendered_from_its_smt_even_with_lean_beside_it():
-    """`ai-cegis` and `nuterm` print Lean of their own; the certificate is
-    still printed in one place, from the SMT-LIB they answered with."""
-    from zrth.lean.certificate import Certificate
-    from zrth.lean.main import _answer
-
-    both = InferResult(inv_smt="(= s0 0)", ranking_smt="s0",
-                       inv_lean="fun s => s.1 = 0", ranking_lean="fun s => s.1")
-    assert _answer(_row("smt"), both) == (Certificate("(= s0 0)", "s0"), None)
-
-
-def test_a_lean_row_is_taken_at_its_word():
+def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
+    """Every SMT-LIB answer is printed as Lean in one place, so Lean from an
+    `smt` row has nowhere to go."""
     from zrth.lean.certificate import Certificate, LeanAnswer
-    from zrth.lean.main import _answer
 
-    lean = InferResult(inv_lean="fun s => s.1 = 0", ranking_lean="fun s => 1")
-    assert _answer(_row("lean"), lean) == (
-        Certificate(), LeanAnswer("fun s => s.1 = 0", "fun s => 1"))
+    both = InferResult(Certificate("(= s0 0)", "s0"),
+                       LeanAnswer("fun s => s.1 = 0", "fun s => s.1"))
+    with pytest.raises(SystemExit, match="handed back predicates in Lean"):
+        _run_infer(monkeypatch, tmp_path, both, returns="smt")
+
+
+def test_a_lean_row_is_taken_at_its_word(monkeypatch, tmp_path):
+    from zrth.lean.certificate import Certificate, LeanAnswer
+
+    lean = InferResult(lean=LeanAnswer("fun s => s.1 = 0", "fun s => 1"))
+    assert _run_infer(monkeypatch, tmp_path, lean, returns="lean") is lean
+    with pytest.raises(SystemExit, match="handed back predicates in SMT-LIB"):
+        _run_infer(monkeypatch, tmp_path, InferResult(Certificate("(= s0 0)")),
+                   returns="lean")
 
 
 def test_an_installing_route_hands_back_no_certificate(monkeypatch, tmp_path):
@@ -562,13 +568,15 @@ def test_an_installing_route_hands_back_no_certificate(monkeypatch, tmp_path):
 def test_a_row_and_its_result_have_to_agree(monkeypatch, tmp_path):
     """The row declares what comes back; nothing else has to guess which of
     the two to trust."""
+    from zrth.lean.certificate import Certificate
+
     with pytest.raises(SystemExit, match="declares returns='smt'"):
         _run_infer(monkeypatch, tmp_path, InferResult(), returns="smt")
     with pytest.raises(SystemExit, match="declares returns='installed'"):
         _run_infer(
             monkeypatch,
             tmp_path,
-            InferResult(inv_lean="x"),
+            InferResult(Certificate(inv="x")),
             returns="installed",
             kind="safety",
         )
@@ -603,7 +611,7 @@ def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
     knows what a stale artifact is and reports what it dropped); what is
     exercised here is the one rule left to the route.
     """
-    from zrth.lean.cert import CertificateData
+    from zrth.lean.certificate import Certificate, Claim
     from zrth.lean.infer_route import InferInput, _resume_inv
 
     handle = _handle(tmp_path, resumes=("inv",), store=_store(tmp_path, kind=kind))
@@ -611,7 +619,8 @@ def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
         InferInput(
             project=handle,
             module=None,
-            cert_data=CertificateData(prp="(= s0 0)", kind=kind, inv=supplied_inv),
+            claim=Claim(prp="(= s0 0)", kind=kind),
+            given=Certificate(inv=supplied_inv),
             opts={},
         )
     )

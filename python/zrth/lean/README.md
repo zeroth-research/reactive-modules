@@ -1099,8 +1099,8 @@ A row says:
   The check is generic and the reason is not: why the `ai` route cannot
   certify `G P` is prose about `rule_globally`, and why `nuterm` discards a
   precondition is prose about Houdini.
-* **what it seeds from** — `seeds`, the `CertificateData` fields it will
-  *use* rather than discard, and `seeds_refusal`.  A predicate outside the
+* **what it seeds from** — `seeds`, the given predicates it will *use*
+  rather than discard, and `seeds_refusal`.  A predicate outside the
   set is refused where it is passed, not dropped four steps later.
 * **the project** — `reads` (encoding suffixes; `""` is the functional one)
   and `owns` (project-relative paths it may write).  The route is handed a
@@ -1128,10 +1128,11 @@ A row says:
   older spelling that selects the route and fills one of those options
   (`--fbk-proveit DIR`), so a deprecated flag goes away with its row.
 
-A route that renders its own Lean hands **both** spellings back in its
-`InferResult`.  Rendering means encoding the module into cvc5 again, and
-`magic.cegar` and `magic.learn` both already have the Lean — so the pipeline
-renders only for a route that returns SMT alone.
+A route is handed a frozen `InferInput` — the `Claim`, and the `given`
+predicates it starts from — and answers with a new `InferResult`: SMT-LIB
+in `cert`, which the pipeline prints as Lean in one place
+(`cert.render_certificate`), or, for the one `returns="lean"` row (`ai`),
+Lean in `lean`.
 
 `tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
 checks the op matrix: a row declaring an encoding no row emits, an artifact
