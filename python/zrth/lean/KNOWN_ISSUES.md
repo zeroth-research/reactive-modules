@@ -246,10 +246,8 @@ See the Fixed table above (`be70a43`).
 
 ## Traps worth knowing
 
-* `templates/project/System/Scalar.lean.j2` is **never rendered** — nothing
-  passes it to `render()`. The live emitter is
-  `translate/scalar.py::_argmax_scalar_def_lines`. Kept in step anyway so
-  reviving it does not resurrect old semantics.
+* `System/*.lean` has no templates: `translate/` prints every encoding
+  (`ENCODINGS` in `project.py` names each producer).
 * `tests/lean/Core/` is **generated** by the `sync_core_templates` fixture
   and gitignored. Running `lake build` there without running pytest first
   compiles a stale copy — and a stale `Core` olean makes a new definition
@@ -274,5 +272,3 @@ See the Fixed table above (`be70a43`).
   every other spec is either all-1×1 (slot `i` *is* wire `i`) or a single
   wire (its slice is the whole tuple), so neither catches a per-wire
   projection of a per-element tuple.
-* `templates/project/System/ScalarRel.lean.j2` is not rendered either (same
-  as `Scalar.lean.j2`), and is kept in step for the same reason.

@@ -30,6 +30,18 @@ def test_every_lean_template_is_reachable_by_the_generator():
     )
 
 
+def test_every_project_template_is_rendered():
+    """A `.j2` that no `render()` call names drifts from the code that prints it."""
+    lean_pkg = TEMPLATES_DIR.parent
+    src = "\n".join(p.read_text() for p in lean_pkg.rglob("*.py"))
+    unused = sorted(
+        rel
+        for p in PROJECT_TEMPLATES_DIR.rglob("*.j2")
+        if f'"{(rel := p.relative_to(TEMPLATES_DIR).as_posix())}"' not in src
+    )
+    assert not unused, f"these templates are rendered by nothing: {unused}"
+
+
 @pytest.mark.parametrize("name", CORE_FILES)
 def test_core_file_exists_exactly_once(name):
     """One source of truth per Core file, under static/Core/."""
