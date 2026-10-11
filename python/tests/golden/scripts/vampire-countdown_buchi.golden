@@ -1,0 +1,7 @@
+(set-logic ALL)
+(assert-not (exists ((A0 Int) (B0 Int)) (let ((_let_1 (- 1010))) (and (<= _let_1 A0) (<= A0 1010) (<= _let_1 B0) (<= B0 1010) (and (and (<= A0 100) (<= 100 B0)) (forall ((s0 Int)) (=> (and (and (<= A0 s0) (<= s0 B0)) (= s0 0)) (and (<= A0 100) (<= 100 B0)))) (forall ((s0 Int)) (let ((_let_1 (+ (- 1) s0))) (=> (and (and (<= A0 s0) (<= s0 B0)) (not (= s0 0))) (and (<= A0 _let_1) (<= _let_1 B0))))))))))
+(check-sat)
+;; --- rank
+(set-logic ALL)
+(assert-not (exists ((R0 Int) (Rc Int)) (and (forall ((s0 Int)) (let ((_let_1 (+ Rc (* R0 s0)))) (let ((_let_2 (= s0 0))) (=> (and (and (<= 0 s0) (<= s0 100)) (not _let_2) _let_2) (and (> _let_1 0) (< (+ Rc (* R0 100)) _let_1)))))) (forall ((s0 Int)) (let ((_let_1 (+ Rc (* R0 s0)))) (let ((_let_2 (not (= s0 0)))) (=> (and (and (<= 0 s0) (<= s0 100)) _let_2 _let_2) (and (> _let_1 0) (< (+ Rc (* R0 (+ (- 1) s0))) _let_1)))))))))
+(check-sat)

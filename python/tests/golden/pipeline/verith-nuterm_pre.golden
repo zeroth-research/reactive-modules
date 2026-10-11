@@ -301,3 +301,46 @@ end TS
     "why": ""
   }
 ]
+
+=== artifacts/inv.smt
+(>= s0 0)
+=== artifacts/obligation-init_inv.smt2
+(set-logic ALL)
+
+(declare-fun i_en0 () Int)
+
+(assert (let ((_let_1 (>= i_en0 0))) (and _let_1 (not _let_1))))
+
+(check-sat)
+
+=== artifacts/obligation-inv_imp_P.smt2
+(set-logic ALL)
+
+(declare-fun p_s0 () Int)
+
+(assert (let ((_let_1 (>= p_s0 0))) (and _let_1 (not _let_1))))
+
+(check-sat)
+
+=== artifacts/obligation-step_inv.smt2
+(set-logic ALL)
+
+(declare-fun p_en0 () Int)
+(declare-fun p_s0 () Int)
+
+(assert (and (>= p_s0 0) (>= p_en0 0) (not (>= (ite (> p_s0 0) (- p_s0 1) p_s0) 0))))
+
+(check-sat)
+
+=== artifacts/property.smt
+(>= s0 0)
+=== artifacts/system.smt2
+(set-logic ALL)
+
+(define-fun init0 ((en0 Int)) Int en0)
+(define-fun next0 ((s0 Int) (el0 Int) (en0 Int)) Int (ite (> s0 0) (- s0 1) s0))
+(define-fun P ((s0 Int)) Bool (>= s0 0))
+(define-fun inv ((s0 Int)) Bool (>= s0 0))
+
+
+(check-sat)

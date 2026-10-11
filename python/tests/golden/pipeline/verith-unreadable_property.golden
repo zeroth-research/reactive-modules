@@ -45,3 +45,6 @@ module
     "why": ""
   }
 ]
+
+=== artifacts/property.smt
+(= s0

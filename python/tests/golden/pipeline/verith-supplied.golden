@@ -306,3 +306,46 @@ end TS
     "why": ""
   }
 ]
+
+=== artifacts/inv.smt
+(and (>= s0 0) (<= s0 9))
+=== artifacts/obligation-hrank.smt2
+(set-logic ALL)
+
+(declare-fun r_s0 () Int)
+
+(assert (let ((_let_1 (= r_s0 0))) (let ((_let_2 (ite (<= r_s0 200) (ite _let_1 0 (- 10 r_s0)) 999))) (let ((_let_3 (+ r_s0 1))) (let ((_let_4 (ite (= _let_3 10) 0 _let_3))) (let ((_let_5 (ite (<= _let_4 200) (ite (= _let_4 0) 0 (- 10 _let_4)) 999))) (and (and (>= r_s0 0) (<= r_s0 9)) (not _let_1) (not (< (ite (>= _let_5 0) _let_5 0) (ite (>= _let_2 0) _let_2 0))))))))))
+
+(check-sat)
+
+=== artifacts/obligation-init_inv.smt2
+(set-logic ALL)
+
+(assert (not (and (>= 0 0) (<= 0 9))))
+
+(check-sat)
+
+=== artifacts/obligation-step_inv.smt2
+(set-logic ALL)
+
+(declare-fun p_s0 () Int)
+
+(assert (let ((_let_1 (+ p_s0 1))) (let ((_let_2 (ite (= _let_1 10) 0 _let_1))) (and (and (>= p_s0 0) (<= p_s0 9)) (not (and (>= _let_2 0) (<= _let_2 9)))))))
+
+(check-sat)
+
+=== artifacts/property.smt
+(= s0 0)
+=== artifacts/ranking.smt
+(ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)
+=== artifacts/system.smt2
+(set-logic ALL)
+
+(define-fun init0 () Int 0)
+(define-fun next0 ((s0 Int)) Int (let ((_let_1 (+ s0 1))) (ite (= _let_1 10) 0 _let_1)))
+(define-fun P ((s0 Int)) Bool (= s0 0))
+(define-fun inv ((s0 Int)) Bool (and (>= s0 0) (<= s0 9)))
+(define-fun ranking ((s0 Int)) Int (ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999))
+
+
+(check-sat)

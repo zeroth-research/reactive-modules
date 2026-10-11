@@ -1,0 +1,7 @@
+(declare-fun v_s0 () Real)
+(declare-fun N0 () Real)
+(assert (= N0 (ite (> v_s0 0.0) (- v_s0 1.0) 5.0)))
+(declare-fun I0 () Real)
+(assert (= I0 5.0))
+(declare-fun PRE () Bool) (assert (= PRE true))
+(declare-fun IPRE () Bool) (assert (= IPRE true))

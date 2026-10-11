@@ -219,3 +219,6 @@ end TS
     "why": ""
   }
 ]
+
+=== artifacts/property.smt
+(= s0 0)

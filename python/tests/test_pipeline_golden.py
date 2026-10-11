@@ -241,7 +241,49 @@ RUNS = [
         "--buchi", "(= s0 0)", "--infer", "ai",
         "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
+    ("sygus", COUNTDOWN, [
+        "--safety", "(<= s0 100)", "--infer", "sygus",
+        "--pre-check", "cvc5", "--smt-tactics", "cvc5",
+    ]),
+    # A short declared limit: Vampire answers this one in about a second
+    # under 10 and in about six under the default 120.
+    ("vampire", COUNTDOWN, [
+        "--safety", "(<= s0 100)", "--infer", "vampire",
+        "--vampire-timeout", "10",
+        "--pre-check", "cvc5", "--smt-tactics", "cvc5",
+    ]),
 ]
+
+# `ModuleSMT`s built per run, pinned so that sharing one encoding per run
+# (PL-2) shows up as these numbers going down.
+ENCODINGS = {
+    "bare": 0, "supplied": 2, "supplied_pre": 2, "cert_file": 1,
+    "unreadable_property": 1, "smt_linear": 4, "houdini": 4, "nuterm": 3,
+    "nuterm_pre": 3, "ai_cegis_fixed": 4, "ai": 2, "sygus": 4, "vampire": 4,
+}
+
+
+def _has_vampire() -> bool:
+    from zrth.lean.common import Refused
+    from zrth.lean.houdini_solver import resolve_vampire
+
+    try:
+        resolve_vampire(None)
+    except Refused:
+        return False
+    return True
+
+
+def _runs() -> list:
+    out = []
+    for name, fixture, args in RUNS:
+        marks = ()
+        if "vampire" in args:
+            marks = pytest.mark.skipif(
+                not _has_vampire(),
+                reason="no Vampire binary: set $VAMPIRE or put `vampire` on PATH")
+        out.append(pytest.param(name, fixture, args, id=name, marks=marks))
+    return out
 
 
 def _offline(monkeypatch) -> None:
@@ -317,11 +359,37 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
     ]
     if (out / "Cert.lean").exists():
         parts += ["=== Cert.lean", (out / "Cert.lean").read_text()]
+    # Every file the run left in `artifacts/` but the two the index already
+    # pins: the SMT-LIB it asked (`system.smt2`, `obligation-*.smt2`), what
+    # it found and the notes it left.
+    store = project / "artifacts"
+    if store.is_dir():
+        for path in sorted(store.iterdir()):
+            if path.name not in ("index.json", "README.md"):
+                parts += [f"=== artifacts/{path.name}", path.read_text()]
     return _normalise("\n".join(parts), out)
 
 
-@pytest.mark.parametrize("name,fixture,args", RUNS, ids=[r[0] for r in RUNS])
+def _count_encodings(monkeypatch) -> list:
+    """Counts each `ModuleSMT` built from here on, in a one-element list."""
+    from zrth.lean.smt_module import ModuleSMT
+
+    built = [0]
+    post_init = ModuleSMT.__post_init__
+
+    def counted(self):
+        built[0] += 1
+        post_init(self)
+
+    monkeypatch.setattr(ModuleSMT, "__post_init__", counted)
+    return built
+
+
+@pytest.mark.parametrize("name,fixture,args", _runs())
 def test_verith_run_is_unchanged(name, fixture, args, monkeypatch, capsys,
                                  tmp_path):
+    built = _count_encodings(monkeypatch)
     _check(f"verith-{name}.golden",
            _transcript(monkeypatch, capsys, tmp_path, fixture, args))
+    assert built[0] == ENCODINGS.get(name), (
+        f"{name} encoded the module {built[0]} times")
