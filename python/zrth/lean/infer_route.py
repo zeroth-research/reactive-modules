@@ -37,7 +37,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
-from .cert import CertificateData
 from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
 # Constants only -- the module imports cvc5 lazily, so naming its defaults
@@ -369,12 +368,10 @@ def _run_ai(inp: InferInput) -> InferResult:
     magic = TA2MagicAI(
         inp.project.encoding(""), model=inp.model, base_url=inp.base_url
     )
-    cd = magic.infer(_legacy(inp))
     # Lean only: it is parsed out of an LLM reply and never had an SMT term
-    # behind it, which is what this route's `returns="lean"` declares.
-    if not (cd.inv or cd.ranking):
-        return InferResult()
-    return InferResult(lean=LeanAnswer(cd.inv, cd.ranking))
+    # behind it, which is what this route's `returns="lean"` declares. No
+    # answer is an empty result, which main reports against the row.
+    return InferResult(lean=magic.infer(inp.claim))
 
 
 # Statuses that make a previously-found invariant a *fixed* invariant for
@@ -430,17 +427,6 @@ def _take_inv(inp: InferInput, resumed, what: str) -> InferInput:
     inp.log(f".. resuming from {resumed.name} ({resumed.status}): {what}")
     inv = inp.project.artifacts.read(resumed)
     return replace(inp, given=replace(inp.given, inv=inv))
-
-
-def _legacy(inp: InferInput) -> CertificateData:
-    """`inp`'s claim and given predicates as a `CertificateData`, for a route
-    whose `infer` still takes one. Built per call, so what the route writes
-    into it stays with that call."""
-    c, g = inp.claim, inp.given
-    return CertificateData(
-        prp=c.prp, kind=c.kind, init_pre=c.init_pre, update_pre=c.update_pre,
-        inv=g.inv, ranking=g.ranking,
-    )
 
 
 def _ruled_out(inp: InferInput) -> tuple[str, ...]:

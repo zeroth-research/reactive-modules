@@ -8,7 +8,7 @@ For local LLMs (Ollama, vLLM, etc.) and OpenAI-compatible providers
 import os
 import re
 
-from ..cert import CertificateData
+from ..certificate import Claim, LeanAnswer
 from ..common import Refused
 from . import TA2Magic
 
@@ -185,12 +185,12 @@ def _absent_names(*values: str) -> str:
     return " ".join(said)
 
 
-def _describe_preconditions(cd: CertificateData) -> str:
+def _describe_preconditions(claim: Claim) -> str:
     parts = []
-    if cd.init_pre is not None:
-        parts.append(f"Precondition on init inputs (init_pre): {cd.init_pre}")
-    if cd.update_pre is not None:
-        parts.append(f"Precondition on update inputs (update_pre): {cd.update_pre}")
+    if claim.init_pre is not None:
+        parts.append(f"Precondition on init inputs (init_pre): {claim.init_pre}")
+    if claim.update_pre is not None:
+        parts.append(f"Precondition on update inputs (update_pre): {claim.update_pre}")
     if not parts:
         return "No preconditions on inputs."
     return "\n".join(parts)
@@ -276,11 +276,13 @@ class TA2MagicAI(TA2Magic):
         self.max_attempts = max_attempts
         self._chat = _make_client(base_url, model)
 
-    def infer(self, cd: CertificateData) -> CertificateData:
+    def infer(self, claim: Claim) -> LeanAnswer | None:
+        """The certificate of `claim`, as Lean the model wrote and the
+        auditor accepted; `None` when that reply holds neither predicate."""
         feedback = None
         for attempt in range(self.max_attempts):
             print(f"Generating invariant and ranking function (attempt {attempt})")
-            inv, ranking = self._generate(cd, feedback)
+            inv, ranking = self._generate(claim, feedback)
             print("Candidates:")
             print(f"  inv: {inv}")
             print(f"  ranking: {ranking}")
@@ -292,11 +294,9 @@ class TA2MagicAI(TA2Magic):
                 feedback = f"WRONG: that does not elaborate. {missing}"
                 continue
             print("Cross-checking...")
-            ok, feedback = self._verify(cd, inv, ranking)
+            ok, feedback = self._verify(claim, inv, ranking)
             if ok:
-                cd.inv = inv
-                cd.ranking = ranking
-                return cd
+                return LeanAnswer(inv, ranking) if inv or ranking else None
         # `Refused`, not `RuntimeError`: a route that asked the model
         # `max_attempts` times and did not get a certificate has given up, the
         # way every other route gives up, and that is a decision about the
@@ -307,12 +307,12 @@ class TA2MagicAI(TA2Magic):
             searched=True,
         )
 
-    def _generate(self, cd: CertificateData, feedback: str | None) -> tuple[str, str]:
-        preconds = _describe_preconditions(cd)
+    def _generate(self, claim: Claim, feedback: str | None) -> tuple[str, str]:
+        preconds = _describe_preconditions(claim)
         user_msg = (
             f"Source code:\n```python\n{self.source}\n```\n\n"
             f"{_state_type_line(self.source)}"
-            f"Property (prp): {cd.prp}\n\n"
+            f"Property (prp): {claim.prp}\n\n"
             f"{preconds}\n"
         )
         if feedback:
@@ -325,13 +325,13 @@ class TA2MagicAI(TA2Magic):
         return self._parse_generate_response(text)
 
     def _verify(
-        self, cd: CertificateData, inv: str, ranking: str
+        self, claim: Claim, inv: str, ranking: str
     ) -> tuple[bool, str | None]:
-        preconds = _describe_preconditions(cd)
+        preconds = _describe_preconditions(claim)
         user_msg = (
             f"Source code:\n```python\n{self.source}\n```\n\n"
             f"{_state_type_line(self.source)}"
-            f"Property (prp): {cd.prp}\n\n"
+            f"Property (prp): {claim.prp}\n\n"
             f"{preconds}\n\n"
             f"Proposed invariant: {inv}\n"
             f"Proposed ranking function: {ranking}\n"

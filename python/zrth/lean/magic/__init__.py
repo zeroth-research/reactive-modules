@@ -34,6 +34,8 @@ class TA2Magic:
     before it runs. `given` is what the run already holds of the answer
     (`--invariant`, `--ranking`, or a resumed invariant); an engine reads
     only what its route's `seeds` names.
+
+    `ai` is the exception: `infer(claim)` answers in Lean, a `LeanAnswer`.
     """
 
     def __init__(self, source: str):
