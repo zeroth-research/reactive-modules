@@ -23,7 +23,7 @@ import torch
 
 from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.cert import CertificateData, generate_zeroth_hammer_lean, lean_certificate
+from zrth.lean.cert import generate_zeroth_hammer_lean, lean_certificate
 from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
 from zrth.lean.translate.scalar import _argmax_scalar_def_lines
@@ -383,19 +383,13 @@ def generate_lean_files(sync_core_templates) -> None:
         pass
     else:
         module = _make_countdown()
-        learned = TA2MagicLearn("", module, log=lambda *a: None).infer(
-            CertificateData(prp="(= s0 0)", kind="buchi")
-        )
+        claim = Claim(prp="(= s0 0)", kind="buchi")
+        learned = TA2MagicLearn("", module, log=lambda *a: None).infer(claim)
         # Generated from the SMT-LIB the route answered with, as `verith`
         # does it.
         (_CERTS_DIR / "LearnedCountdown.lean").write_text(
             generate_standalone_cert_lean(
-                module,
-                lean_certificate(
-                    module,
-                    Claim(prp="(= s0 0)"),
-                    Certificate(learned.inv_smt, learned.ranking_smt),
-                ),
+                module, lean_certificate(module, claim, learned)
             )
         )
 

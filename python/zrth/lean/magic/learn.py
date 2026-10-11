@@ -54,7 +54,7 @@ from z3.z3util import get_vars
 
 from zrth import Module
 
-from ..cert import CertificateData, smt_predicates_to_lean
+from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
 
@@ -399,14 +399,17 @@ class TA2MagicLearn(TA2Magic):
 
     # --- driver ---------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. `given` is not read: the
+        row seeds from nothing but `--pre`, which is in the claim."""
         eng = _engine()
-        if not isinstance(cd.prp, str):
+        if claim.prp is None:
             raise Refused("--infer nuterm needs a property: pass --safety or --buchi")
         system = self._system(eng)
-        if isinstance(cd.init_pre, str):
-            system = self._assuming(system, cd.init_pre)
-        prp = _parse_property(cd.prp, self._declared(), system.names)
+        if claim.init_pre is not None:
+            system = self._assuming(system, claim.init_pre)
+        prp = _parse_property(claim.prp, self._declared(), system.names)
         self.log(f"[nuterm] columns: {', '.join(system.names)}")
 
         # The procedure refuses what it has no rule for by raising, and that
@@ -415,15 +418,16 @@ class TA2MagicLearn(TA2Magic):
         # of them is a reason this route cannot answer, so none of them is a
         # traceback.
         try:
-            if cd.is_safety:
-                inv_smt = self._safety_invariant(eng, system, prp, cd.prp)
+            if claim.is_safety:
+                inv_smt = self._safety_invariant(eng, system, prp, claim.prp)
                 rank_smt = None
             else:
-                inv_smt, rank_smt = self._buchi_certificate(eng, system, prp, cd.prp)
+                inv_smt, rank_smt = self._buchi_certificate(eng, system, prp,
+                                                            claim.prp)
         except eng.Unsupported as e:
             raise Refused(f"--infer nuterm cannot certify this property: {e}") from e
 
-        return self._emit(cd, inv_smt, rank_smt)
+        return self._emit(inv_smt, rank_smt)
 
     # --- the two kinds --------------------------------------------------
 
@@ -559,7 +563,7 @@ class TA2MagicLearn(TA2Magic):
                  f"{len(result.system.invariants)} conjuncts after pruning")
         return _smt_conjunction([_smt_term(t) for _, t in kept])
 
-    # --- rendering ------------------------------------------------------
+    # --- terms and the answer -------------------------------------------
 
     @staticmethod
     def _at(term, system, st):
@@ -567,20 +571,10 @@ class TA2MagicLearn(TA2Magic):
         subs = [(z3.Int(n), st[n]) for n in system.names]
         return z3.substitute(term, *subs) if subs else term
 
-    def _emit(self, cd: CertificateData, inv_smt: str, rank_smt: str | None):
-        """Fill ``cd`` with the certificate, as Lean and as the SMT-LIB behind it.
-
-        The project needs Lean; ``--pre-check`` needs cvc5's own input back, and
-        nothing parses the Lean rendering into one -- so both are kept, as the
-        other inferring routes keep them."""
+    def _emit(self, inv_smt: str, rank_smt: str | None) -> Certificate:
+        """The certificate, logged as the `inv:` / `ranking:` lines the bench
+        harness reads."""
         self.log(f"[nuterm] inv: {inv_smt}")
         if rank_smt is not None:
             self.log(f"[nuterm] ranking: {rank_smt}")
-        lean = smt_predicates_to_lean(
-            CertificateData(prp=cd.prp, kind=cd.kind, inv=inv_smt, ranking=rank_smt),
-            self.module,
-        )
-        cd.inv, cd.inv_smt = lean.inv, inv_smt
-        if rank_smt is not None:
-            cd.ranking, cd.ranking_smt = lean.ranking, rank_smt
-        return cd
+        return Certificate(inv_smt, rank_smt)

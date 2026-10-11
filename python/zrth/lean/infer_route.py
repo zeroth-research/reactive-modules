@@ -492,8 +492,7 @@ def _run_nuterm(inp: InferInput) -> InferResult:
     from .magic.learn import TA2MagicLearn
 
     magic = TA2MagicLearn("", inp.module, log=inp.log)
-    cd = magic.infer(_legacy(inp))
-    return InferResult(Certificate(cd.inv_smt, cd.ranking_smt))
+    return InferResult(magic.infer(inp.claim, inp.given))
 
 
 def _run_sygus(inp: InferInput) -> InferResult:

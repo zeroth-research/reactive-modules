@@ -17,7 +17,7 @@ import torch
 from zrth import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
 from zrth.analyzer import convert_method
 from zrth.sugar import ite
-from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Claim
 from zrth.lean.common import Refused
 from zrth.lean.magic.learn import (
     TA2MagicLearn,
@@ -92,14 +92,16 @@ def _write_only_second() -> Module:
     return Prog(ctrl=(Var(Int([1, 1])), Var(Int([1, 1]))), theory=LIA)
 
 
-def _learn(module, prp, kind):
-    cd = CertificateData(prp=prp, kind=kind)
-    return TA2MagicLearn("", module, log=lambda *a: None).infer(cd)
+def _learn(module, prp, kind, pre=None):
+    """The claim asked about and the route's answer to it. `--pre` fills both
+    preconditions."""
+    claim = Claim(prp=prp, kind=kind, init_pre=pre, update_pre=pre)
+    return claim, TA2MagicLearn("", module, log=lambda *a: None).infer(claim)
 
 
-def _verdicts(module, cd):
+def _verdicts(module, claim, cert):
     return {v.name: v.status
-            for v in pre_check(module, *cd.split(), SmtBudget(),
+            for v in pre_check(module, claim, cert, SmtBudget(),
                                log=lambda *a: None)}
 
 
@@ -112,10 +114,9 @@ def test_a_learned_buchi_certificate_holds_under_cvc5():
     obligations as cvc5 states them: the invariant holds at entry and is
     preserved, and the rank drops wherever the property does not hold."""
     module = _countdown()
-    cd = _learn(module, "(= s0 0)", "buchi")
-    assert cd.inv and cd.ranking, "a Buchi certificate is both"
-    assert cd.inv_smt and cd.ranking_smt, "cvc5 needs its own input back"
-    v = _verdicts(module, cd)
+    claim, cert = _learn(module, "(= s0 0)", "buchi")
+    assert cert.inv and cert.ranking, "a Buchi certificate is both"
+    v = _verdicts(module, claim, cert)
     assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
                  "hrank": Status.HOLDS}, v
 
@@ -124,9 +125,9 @@ def test_a_learned_safety_invariant_implies_the_property():
     """`rule_globally` takes no rank, so the certificate is the invariant --
     and what makes it a safety proof is that it implies the property."""
     module = _countdown()
-    cd = _learn(module, "(<= s0 100)", "safety")
-    assert cd.inv and cd.ranking is None, "a safety certificate has no rank"
-    v = _verdicts(module, cd)
+    claim, cert = _learn(module, "(<= s0 100)", "safety")
+    assert cert.inv and cert.ranking is None, "a safety certificate has no rank"
+    v = _verdicts(module, claim, cert)
     assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
                  "inv_imp_P": Status.HOLDS}, v
 
@@ -134,8 +135,8 @@ def test_a_learned_safety_invariant_implies_the_property():
 def test_the_invariant_is_the_one_the_program_has():
     """Houdini's lattice covers this program's bound, so the route finds it
     rather than something vacuous that happens to be inductive."""
-    cd = _learn(_countdown(), "(= s0 0)", "buchi")
-    assert "(<= s0 100)" in cd.inv_smt and "(>= s0 0)" in cd.inv_smt, cd.inv_smt
+    _, cert = _learn(_countdown(), "(= s0 0)", "buchi")
+    assert "(<= s0 100)" in cert.inv and "(>= s0 0)" in cert.inv, cert.inv
 
 
 def test_a_property_the_route_cannot_establish_is_refused():
@@ -171,8 +172,7 @@ def test_a_property_over_the_columns_of_such_a_module_is_certified():
     does not name one: the certificate is over the columns and verith's
     obligations are over the whole state."""
     module = _write_only_second()
-    cd = _learn(module, "(= s0 0)", "buchi")
-    v = _verdicts(module, cd)
+    v = _verdicts(module, *_learn(module, "(= s0 0)", "buchi"))
     assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
                  "hrank": Status.HOLDS}, v
 
@@ -195,7 +195,7 @@ def test_a_rule_shape_the_procedure_cannot_read_is_a_refusal_not_a_traceback():
 
 def test_a_run_with_no_property_is_refused():
     with pytest.raises(Refused, match="--safety or --buchi"):
-        TA2MagicLearn("", _countdown()).infer(CertificateData())
+        TA2MagicLearn("", _countdown()).infer(Claim())
 
 
 # ---------------------------------------------------------------------------
@@ -223,12 +223,6 @@ def _starts_at_an_input() -> Module:
     )
 
 
-def _learn_pre(module, prp, kind, pre):
-    cd = CertificateData(prp=prp, kind=kind)
-    cd.init_pre = cd.update_pre = pre          # `--pre` fills both
-    return TA2MagicLearn("", module, log=lambda *a: None).infer(cd)
-
-
 def test_without_the_precondition_there_is_no_invariant_to_find():
     """The control. `x` starts at an unconstrained input, so `0 <= x` fails
     initiation and Houdini drops it -- the property is not false, it is one
@@ -240,8 +234,8 @@ def test_without_the_precondition_there_is_no_invariant_to_find():
 def test_the_precondition_is_what_makes_the_invariant_inductive():
     """And with it the same question is answerable, by the same search."""
     module = _starts_at_an_input()
-    cd = _learn_pre(module, "(>= s0 0)", "safety", "(>= e0 0)")
-    assert cd.inv and "(>= s0 0)" in cd.inv_smt, cd.inv_smt
+    _, cert = _learn(module, "(>= s0 0)", "safety", "(>= e0 0)")
+    assert "(>= s0 0)" in cert.inv, cert.inv
 
 
 def test_the_certificate_holds_under_verith_own_obligations():
@@ -249,8 +243,7 @@ def test_the_certificate_holds_under_verith_own_obligations():
     obligations with `init_pre` in them -- so the assumption the search made
     and the assumption the check grants are the same one."""
     module = _starts_at_an_input()
-    cd = _learn_pre(module, "(>= s0 0)", "safety", "(>= e0 0)")
-    v = _verdicts(module, cd)
+    v = _verdicts(module, *_learn(module, "(>= s0 0)", "safety", "(>= e0 0)"))
     assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
                  "inv_imp_P": Status.HOLDS}, v
 
@@ -270,19 +263,19 @@ def test_a_precondition_over_an_input_that_starts_no_column_is_refused():
         [Term(LIA.Id(), [X(x)], [x])],
     )
     with pytest.raises(Refused, match="e0, which starts no column"):
-        _learn_pre(module, "(>= s0 0)", "safety", "(>= e0 0)")
+        _learn(module, "(>= s0 0)", "safety", "(>= e0 0)")
 
 
 def test_a_precondition_over_a_latched_input_is_refused():
     """`el0` is the input as the *previous* round left it, and at entry there
     is no previous round."""
     with pytest.raises(Refused, match="latched input el0"):
-        _learn_pre(_starts_at_an_input(), "(>= s0 0)", "safety", "(>= el0 0)")
+        _learn(_starts_at_an_input(), "(>= s0 0)", "safety", "(>= el0 0)")
 
 
 def test_a_precondition_that_is_not_smt_lib_is_refused():
     with pytest.raises(Refused, match="could not parse"):
-        _learn_pre(_starts_at_an_input(), "(>= s0 0)", "safety", "n >= 0")
+        _learn(_starts_at_an_input(), "(>= s0 0)", "safety", "n >= 0")
 
 
 def test_the_conjuncts_are_seeded_one_by_one():
@@ -368,9 +361,9 @@ def test_a_net_shaped_property_gets_a_flat_certificate():
     module = _countdown()
     net = ("(and (>= (+ (ite (>= s0 0) s0 0) (ite (>= (- 100 s0) 0) (- 100 s0) 0)) 100)"
            " (<= (+ (ite (>= s0 0) s0 0) (ite (>= (- 100 s0) 0) (- 100 s0) 0)) 100))")
-    cd = _learn(module, net, "safety")
-    assert "let" not in cd.inv_smt, cd.inv_smt
-    v = _verdicts(module, cd)
+    claim, cert = _learn(module, net, "safety")
+    assert "let" not in cert.inv, cert.inv
+    v = _verdicts(module, claim, cert)
     assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
                  "inv_imp_P": Status.HOLDS}, v
 
@@ -428,20 +421,19 @@ def test_the_witness_carries_the_pruned_invariant(monkeypatch):
 
     monkeypatch.setattr(invariants, "infer_invariants", spy_infer)
     monkeypatch.setattr(farkas, "certify", spy_certify)
-    cd = _learn(_countdown(), "(<= s0 100)", "safety")
+    _, cert = _learn(_countdown(), "(<= s0 100)", "safety")
 
     assert found and carried, "the route did not reach Houdini and the procedure"
     assert carried[0] < found[0], "the witness carried every candidate Houdini kept"
     # ... and the certificate states exactly what the witness carried
-    assert cd.inv_smt.count("(<=") + cd.inv_smt.count("(>=") == carried[0]
+    assert cert.inv.count("(<=") + cert.inv.count("(>=") == carried[0]
 
 
 def test_the_invariant_carries_no_redundant_conjunct():
     """End to end: the certificate states each fact once, and the property it
     has to imply need not appear in it -- being implied is the obligation."""
-    module = _countdown()
-    cd = _learn(module, "(<= s0 100)", "safety")
-    assert cd.inv_smt.count("(<= s0 100)") == 1, cd.inv_smt
+    _, cert = _learn(_countdown(), "(<= s0 100)", "safety")
+    assert cert.inv.count("(<= s0 100)") == 1, cert.inv
 
 
 def test_a_property_is_parsed_over_the_columns():
@@ -482,9 +474,9 @@ def test_a_wrap_around_gets_a_rank_zeroed_where_the_property_holds():
     rank where it holds. That is still verith's obligation: the round that
     reaches `P` drops from `delta + V` to `0`, and `V >= 0` structurally."""
     module = _counter(9)
-    cd = _learn(module, "(= s0 0)", "buchi")
-    assert cd.ranking_smt.startswith("(ite (= s0 0) 0 (+ 1 "), cd.ranking_smt
-    v = _verdicts(module, cd)
+    claim, cert = _learn(module, "(= s0 0)", "buchi")
+    assert cert.ranking.startswith("(ite (= s0 0) 0 (+ 1 "), cert.ranking
+    v = _verdicts(module, claim, cert)
     assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
                  "hrank": Status.HOLDS}, v
 
@@ -492,8 +484,8 @@ def test_a_wrap_around_gets_a_rank_zeroed_where_the_property_holds():
 def test_a_rank_that_needs_no_zeroing_is_left_alone():
     """Counting *down* to the property needs no wrap, so the first shape works
     and the certificate carries the net itself."""
-    cd = _learn(_countdown(), "(= s0 0)", "buchi")
-    assert not cd.ranking_smt.startswith("(ite"), cd.ranking_smt
+    _, cert = _learn(_countdown(), "(= s0 0)", "buchi")
+    assert not cert.ranking.startswith("(ite"), cert.ranking
 
 
 def test_the_bound_in_the_guard_is_offered_to_houdini():
