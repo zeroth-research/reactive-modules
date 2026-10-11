@@ -118,7 +118,7 @@ from dataclasses import dataclass, replace
 from fractions import Fraction
 from itertools import product
 
-from ..cert import CertificateData
+from ..certificate import Certificate, Claim
 from ..common import Refused
 from ..houdini_solver import (
     DEFAULT_SOLVER,
@@ -1417,8 +1417,11 @@ class TA2MagicHoudini(TA2Magic):
 
     # --- driver ---------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
-        ctx = SynthContext.build(self.module, cd.split()[0], route="houdini",
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. `given` is not read: the
+        row seeds from nothing but `--pre`, which is in the claim."""
+        ctx = SynthContext.build(self.module, claim, route="houdini",
                                  takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx
@@ -1435,7 +1438,7 @@ class TA2MagicHoudini(TA2Magic):
             self.log(f"[houdini] Real state: a ranking function is floored "
                      f"after scaling by {scale}")
 
-        runs = simulate(ctx, ob, ev, constants, safety=cd.is_safety,
+        runs = simulate(ctx, ob, ev, constants, safety=claim.is_safety,
                         rationals=rationals, scale=scale)
         self.log(f"[houdini] simulated {len(runs.rounds)} rounds, "
                  f"{len(runs.states)} distinct states")
@@ -1454,16 +1457,16 @@ class TA2MagicHoudini(TA2Magic):
                           rationals=rationals, scale=scale)
 
         self.pins = pinned_values(ctx, runs)
-        conjuncts = self._conjuncts(ctx, cd) if cd.is_safety else []
+        conjuncts = self._conjuncts(ctx, claim) if claim.is_safety else []
         # The computed bounds go last: the minimiser drops from the end, so
         # a certificate the read ones carry keeps the program's constants.
         facts = self._parse(invariant_candidates(ctx, runs, constants,
                                                  conjuncts, rationals)
                             + mode_bounds(ctx, ob, log=self.log))
         self.log(f"[houdini] {len(facts)} candidate facts hold on the runs")
-        ranks = None if cd.is_safety else Ranks(ctx, ev, cd.prp,
-                                                split_conditions(ctx, ob),
-                                                constants, rationals, scale)
+        ranks = None if claim.is_safety else Ranks(ctx, ev, claim.prp,
+                                                   split_conditions(ctx, ob),
+                                                   constants, rationals, scale)
 
         prover = self.spec.build(ctx.tm, seconds=self.timeout, log=self.log)
         found, reached, tried = None, 0.0, 0
@@ -1479,7 +1482,7 @@ class TA2MagicHoudini(TA2Magic):
             inv = self._houdini(prover, facts, limit)
             self.log(f"[houdini] Houdini kept {len(inv)} of {len(facts)}: "
                      + " ".join(f.src for f in inv))
-            if cd.is_safety:
+            if claim.is_safety:
                 need = self._property_rests_on(prover, inv, conjuncts, limit)
                 if need is not None:
                     inv = self._shrink(prover, inv, need, limit)
@@ -1520,9 +1523,9 @@ class TA2MagicHoudini(TA2Magic):
         self.log(f"[houdini] {prover.calls} {prover.name} calls{refuted}, "
                  f"{prover.spent:.1f} s")
         if found is None:
-            return self._none(cd, len(facts), tried, reached, prover)
+            return self._none(claim, len(facts), tried, reached, prover)
         inv, rank = found
-        return self._emit(cd, inv, rank)
+        return self._emit(inv, rank)
 
     # --- Houdini ----------------------------------------------------------
 
@@ -1900,7 +1903,7 @@ class TA2MagicHoudini(TA2Magic):
                 f"smt-linear` weighs a bitvector as its unsigned value."
             )
 
-    def _conjuncts(self, ctx: SynthContext, cd: CertificateData) -> list[str]:
+    def _conjuncts(self, ctx: SynthContext, claim: Claim) -> list[str]:
         """The property's top-level conjuncts, seeded as facts of their own.
 
         Split because Houdini keeps facts, not formulas: `(and a b)` is kept
@@ -1909,7 +1912,7 @@ class TA2MagicHoudini(TA2Magic):
         """
         p = ctx.prp
         parts = list(p) if p.getKind() == Kind.AND else [p]
-        return [str(t) if len(parts) > 1 else cd.prp.strip() for t in parts]
+        return [str(t) if len(parts) > 1 else claim.prp.strip() for t in parts]
 
     def _parse(self, srcs: list[str]) -> list[Candidate]:
         out = []
@@ -1925,18 +1928,16 @@ class TA2MagicHoudini(TA2Magic):
 
     # --- out --------------------------------------------------------------
 
-    def _emit(self, cd: CertificateData, inv: list[Candidate],
-              rank: "Candidate | None") -> CertificateData:
+    def _emit(self, inv: list[Candidate],
+              rank: "Candidate | None") -> Certificate:
         srcs = [f.src for f in inv]
         inv_src = ("true" if not srcs else srcs[0] if len(srcs) == 1
                    else "(and " + " ".join(srcs) + ")")
         self.log(f"[houdini] inv: {inv_src}")
-        cd.inv = cd.inv_smt = inv_src
         if rank is not None:
             self.log(f"[houdini] ranking: {rank.src}")
-            cd.ranking = cd.ranking_smt = rank.src
         self._record(inv_src, rank)
-        return cd
+        return Certificate(inv_src, None if rank is None else rank.src)
 
     def _record(self, inv_src: str, rank: "Candidate | None") -> None:
         if self.artifacts is None:
@@ -1954,8 +1955,8 @@ class TA2MagicHoudini(TA2Magic):
                      f"`hrank` for it over the invariant beside it.",
             )
 
-    def _none(self, cd, n_facts, n_ranks, reached, prover) -> CertificateData:
-        if cd.is_safety:
+    def _none(self, claim: Claim, n_facts, n_ranks, reached, prover):
+        if claim.is_safety:
             what, article = "inductive invariant implying the property", "an"
             started = f"Houdini started from {n_facts} facts the simulated runs keep"
         else:
@@ -1965,7 +1966,7 @@ class TA2MagicHoudini(TA2Magic):
                        f"dropped on every reached and sampled round")
         refuted = (f", {prover.refuted} of them refuted"
                    if prover.refutes else "")
-        if not cd.is_safety and not n_ranks:
+        if not claim.is_safety and not n_ranks:
             started += f", so no ranking function was put to {prover.name}"
         # What was spent, and the per-call limit the last call ran under --
         # which used to be printed as "the time limit reached 120 s" on runs

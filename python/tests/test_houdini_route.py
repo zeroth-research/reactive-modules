@@ -29,7 +29,6 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.cert import CertificateData
 from zrth.lean.certificate import Claim
 from zrth.lean.common import Refused
 from zrth.lean.houdini_solver import SolverSpec
@@ -72,7 +71,7 @@ def infer(name: str, kind: str, prp: str, *, solver="cvc5",
 
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"), solver=solver,
                             timeout=timeout, log=log or (lambda *_: None))
-    return magic.infer(CertificateData(prp=prp, kind=kind))
+    return magic.infer(Claim(prp=prp, kind=kind))
 
 
 def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
@@ -568,27 +567,27 @@ def test_vampires_answer_is_read_off_its_output(tmp_path):
 
 @BOTH
 def test_a_countdown_is_ranked(solver):
-    cd = infer("m_countdown", "buchi", "(= s0 0)", solver=solver_or_skip(solver))
-    assert cd.ranking_smt == "s0"
-    assert "(<= 0 s0)" in cd.inv_smt
+    cert = infer("m_countdown", "buchi", "(= s0 0)", solver=solver_or_skip(solver))
+    assert cert.ranking == "s0"
+    assert "(<= 0 s0)" in cert.inv
 
 
 @BOTH
 def test_a_safety_invariant_is_cut_to_what_its_proofs_use(solver):
     """Houdini keeps `0 <= s0` and `s0 <= 100`; the property is the second,
     and it is inductive on its own, so the core leaves the first out."""
-    cd = infer("m_countdown", "safety", "(<= s0 100)",
+    cert = infer("m_countdown", "safety", "(<= s0 100)",
                solver=solver_or_skip(solver))
-    assert cd.inv_smt == "(<= s0 100)"
+    assert cert.inv == "(<= s0 100)"
 
 
 @BOTH
 def test_the_congruence_a_parity_property_needs_is_kept(solver):
     """`m_step2` counts 0, 2, ..., 10: `s0 != 5` is not inductive (3 steps
     to 5), and `s0` being even is the fact that makes it so."""
-    cd = infer("m_step2", "safety", "(not (= s0 5))",
+    cert = infer("m_step2", "safety", "(not (= s0 5))",
                solver=solver_or_skip(solver))
-    assert "(= (mod s0 2) 0)" in cd.inv_smt
+    assert "(= (mod s0 2) 0)" in cert.inv
 
 
 @BOTH
@@ -596,10 +595,10 @@ def test_a_real_invariant_is_the_values_a_run_takes(solver):
     """`m_lra_lin` steps `x' = x - 1` while `x > 0`, so `0 <= x <= 5` admits
     `x = 1/2` and steps it out: over the reals it is the value set, not the
     interval, that is inductive. The pair `tests/limits` carries by hand."""
-    cd = infer("m_lra_lin", "buchi", "(= s0 0.0)", solver=solver_or_skip(solver))
-    assert cd.inv_smt == ("(or (= s0 0.0) (= s0 1.0) (= s0 2.0) (= s0 3.0) "
+    cert = infer("m_lra_lin", "buchi", "(= s0 0.0)", solver=solver_or_skip(solver))
+    assert cert.inv == ("(or (= s0 0.0) (= s0 1.0) (= s0 2.0) (= s0 3.0) "
                           "(= s0 4.0) (= s0 5.0))")
-    assert cd.ranking_smt == "(to_int s0)"
+    assert cert.ranking == "(to_int s0)"
 
 
 @BOTH
@@ -607,9 +606,9 @@ def test_a_real_ranking_function_is_scaled_before_it_is_floored(solver):
     """`m_lra_half` steps by a half, where `to_int s0` repeats -- 3.0 and 2.5
     both floor to 3 -- so the scale is the denominator the program writes.
     Either solver proves the floored obligation directly."""
-    cd = infer("m_lra_half", "buchi", "(= s0 0.0)", solver=solver_or_skip(solver))
-    assert cd.ranking_smt == "(to_int (* 2.0 s0))"
-    assert "(= s0 0.5)" in cd.inv_smt
+    cert = infer("m_lra_half", "buchi", "(= s0 0.0)", solver=solver_or_skip(solver))
+    assert cert.ranking == "(to_int (* 2.0 s0))"
+    assert "(= s0 0.5)" in cert.inv
 
 
 @BOTH
@@ -625,10 +624,10 @@ def test_a_matrix_component_is_ranked_by_one_of_its_elements(solver):
     per element, so what Vampire is shown has no tuple in it even though
     the certificate is written with selectors.
     """
-    cd = infer("m_relu_vec", "buchi", "(= ((_ tuple.select 0) s0) 0)",
+    cert = infer("m_relu_vec", "buchi", "(= ((_ tuple.select 0) s0) 0)",
                solver=solver_or_skip(solver))
-    assert cd.ranking_smt == "((_ tuple.select 0) s0)"
-    assert cd.inv_smt == "(<= 0 ((_ tuple.select 0) s0))"
+    assert cert.ranking == "((_ tuple.select 0) s0)"
+    assert cert.inv == "(<= 0 ((_ tuple.select 0) s0))"
 
 
 @BOTH
@@ -637,9 +636,9 @@ def test_an_element_of_one_component_is_told_from_an_element_of_another(solver):
     component's elements are columns 1, 2 and 3 while its own slots are 0,
     1 and 2. The property is about `v[0]`, and a certificate that confused
     the two indices would rank `x`."""
-    cd = infer("m_mixed", "buchi", "(= ((_ tuple.select 0) s1) 0)",
+    cert = infer("m_mixed", "buchi", "(= ((_ tuple.select 0) s1) 0)",
                solver=solver_or_skip(solver))
-    assert cd.ranking_smt == "((_ tuple.select 0) s1)"
+    assert cert.ranking == "((_ tuple.select 0) s1)"
 
 
 def test_no_obligation_names_anything_of_tuple_sort():
@@ -665,10 +664,10 @@ def test_no_obligation_names_anything_of_tuple_sort():
 def test_two_real_components_are_ranked_by_the_one_that_falls(solver):
     """`m_lra_conv`: `x` converges to 0 and `y` to 2, two rounds apart. The
     relation between them is a fact, so `y`'s range carries `x`'s rank."""
-    cd = infer("m_lra_conv", "buchi", "(and (= s0 0.0) (= s1 2.0))",
+    cert = infer("m_lra_conv", "buchi", "(and (= s0 0.0) (= s1 2.0))",
                solver=solver_or_skip(solver))
-    assert cd.ranking_smt == "(to_int s0)"
-    assert "(= (- s0 s1) (- 2.0))" in cd.inv_smt
+    assert cert.ranking == "(to_int s0)"
+    assert "(= (- s0 s1) (- 2.0))" in cert.inv
 
 
 def test_each_mode_is_bounded_by_what_its_round_reaches():
@@ -689,17 +688,17 @@ def test_each_mode_is_bounded_by_what_its_round_reaches():
 def test_a_hysteresis_band_is_proved_by_the_bounds_each_mode_keeps(solver):
     """No interval is inductive for `15 <= T <= 25` -- from 25 with the
     heater on the room reaches 25.5 -- and the bounds per mode are."""
-    cd = infer("m_thermostat", "safety", "(and (>= s0 15.0) (<= s0 25.0))",
+    cert = infer("m_thermostat", "safety", "(and (>= s0 15.0) (<= s0 25.0))",
                solver=solver_or_skip(solver), fixture=HYBRID)
-    assert "(=> s1 (<= s0 23.0))" in cd.inv_smt
+    assert "(=> s1 (<= s0 23.0))" in cert.inv
 
 
 def test_a_rank_is_fitted_again_to_the_round_the_solver_refutes_it_with():
     """The tank fills by 1.5 to 12, and `24 - 2h` floors to 0 at h = 11.9:
     a state off the half-unit lattice the draws live on. cvc5's refutation
     is that state, and fitted to it the shift is 25."""
-    cd = infer("m_watertank", "buchi", "(>= s0 12.0)", fixture=HYBRID)
-    assert cd.ranking_smt.startswith("(ite s1 (to_int (+ 25.0 (* (- 2.0) s0)))")
+    cert = infer("m_watertank", "buchi", "(>= s0 12.0)", fixture=HYBRID)
+    assert cert.ranking.startswith("(ite s1 (to_int (+ 25.0 (* (- 2.0) s0)))")
 
 
 # ══════════════════════════════════════════════════════════════════════════
