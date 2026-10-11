@@ -51,6 +51,7 @@ from fractions import Fraction
 
 from .certificate import Claim
 from .common import Refused
+from .smt.terms import literals
 
 try:
     import cvc5                                      # type: ignore
@@ -428,14 +429,7 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
     roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
     roots += list(ctx.msmt.init_state(ctx.extl_next))
     roots += list(ctx.msmt.update_state(ctx.state, ctx.extl_latched, ctx.extl_next))
-    stack = list(roots)
-    visited: set[int] = set()
-    while stack:
-        t = stack.pop()
-        key = t.getId() if hasattr(t, "getId") else id(t)
-        if key in visited:
-            continue
-        visited.add(key)
+    for t in literals(roots):
         if t.getKind() == Kind.CONST_INTEGER:
             value = int(t.getIntegerValue())
             if abs(value) <= _CONSTANT_LIMIT:
@@ -456,7 +450,6 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
                 # for a space that should not have been that one.
                 near = {value, value - 1, value + 1}
                 seen.update(near | {-v for v in near})
-        stack.extend(list(t))
     out = sorted(seen, key=lambda v: (abs(v), v))[:_CONSTANT_COUNT]
     return tuple(sorted(out))
 
@@ -474,13 +467,7 @@ def program_rationals(ctx: SynthContext) -> tuple:
     roots += list(ctx.msmt.update_state(ctx.state, ctx.extl_latched,
                                         ctx.extl_next))
     seen: set = set()
-    visited: set = set()
-    stack = list(roots)
-    while stack:
-        t = stack.pop()
-        if t.getId() in visited:
-            continue
-        visited.add(t.getId())
+    for t in literals(roots):
         if t.getKind() == Kind.CONST_RATIONAL:
             q = t.getRealValue()
             if abs(q) <= _CONSTANT_LIMIT:
@@ -488,7 +475,6 @@ def program_rationals(ctx: SynthContext) -> tuple:
                 # neighbours, since the bound is usually one step past the
                 # guard's own constant.
                 seen.update({q, q - 1, q + 1, -q, 1 - q, -1 - q})
-        stack.extend(list(t))
     return tuple(sorted(seen)[:32])
 
 

@@ -176,6 +176,7 @@ from ..houdini_solver import (
 )
 from . import TA2Magic
 from .houdini import Candidate, Obligations, columns
+from ..smt.terms import free_constants, ite_conditions
 from ..smt_synth import (
     SynthContext,
     denominator_scale,
@@ -225,25 +226,6 @@ class Branch:
 
     guard: tuple                # cvc5 Bool terms, all of them true here
     state: tuple                # the folded terms, ite-free
-
-
-def ite_conditions(terms) -> list:
-    """Every condition an `ite` in `terms` branches on, outermost first.
-
-    Deduplicated by printed form: a transition that tests `s0 = 0` in three
-    components is one case split, not three.
-    """
-    seen: dict = {}
-
-    def walk(t):
-        if t.getKind() == Kind.ITE:
-            seen.setdefault(str(t[0]), t[0])
-        for child in t:
-            walk(child)
-
-    for t in terms:
-        walk(t)
-    return list(seen.values())
 
 
 def split(ctx: SynthContext, terms, what: str) -> list[Branch]:
@@ -327,25 +309,6 @@ def refuse_ites(term) -> None:
             "answer-literal search does not see through a conditional. "
             "`--infer houdini` proves the same obligation with one."
         )
-
-
-def free_constants(term) -> list:
-    """Every uninterpreted constant `term` still mentions, outermost first.
-
-    What the old TPTP printer refused for free by having no variable for a
-    symbol: cvc5 prints a stray constant perfectly happily, and Vampire
-    reads an undeclared one as an error three steps later.
-    """
-    seen: dict = {}
-
-    def walk(t):
-        if t.getKind() == Kind.CONSTANT:
-            seen.setdefault(str(t), t)
-        for child in t:
-            walk(child)
-
-    walk(term)
-    return list(seen.values())
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -748,7 +711,10 @@ class Question:
         if pairs:
             body = body.substitute([c for c, _ in pairs],
                                    [v for _, v in pairs])
-        stray = free_constants(body)
+        # What the old TPTP printer refused for free by having no variable
+        # for a symbol: cvc5 prints a stray constant perfectly happily, and
+        # Vampire reads an undeclared one as an error three steps later.
+        stray = list(free_constants([body]).values())
         if stray:
             raise Refused(
                 f"--infer vampire states an obligation over "

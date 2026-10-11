@@ -58,6 +58,8 @@ try:
 except ImportError:                                  # pragma: no cover
     Kind = None
 
+from ..smt.terms import free_constants, literals
+
 # A mode is a valuation of the Bool columns, so the modes are exponential in
 # them; past this many, the split is not worth the queries.
 _MAX_MODE_BITS = 3
@@ -125,12 +127,8 @@ class _Model:
         nums = [i for i, s in enumerate(sorts) if not s.isBoolean()]
         if not nums or len(bits) > _MAX_MODE_BITS:
             return None
-        seen: dict = {}
-        from ..smt_query import _constants
-
         terms = list(ob.next) + list(ob.init) + [ob.update_pre, ob.init_pre]
-        for t in terms:
-            _constants(t, seen)
+        seen = free_constants(terms)
         if any(not (v.getSort().isBoolean() or v.getSort().isInteger()
                     or v.getSort().isReal()) for v in seen.values()):
             return None
@@ -392,18 +390,11 @@ def _moved(a: dict, b: dict) -> Fraction:
 def _literals(terms) -> set:
     """Every numeric literal in `terms`."""
     out: set = set()
-    seen: set = set()
-    stack = list(terms)
-    while stack:
-        t = stack.pop()
-        if t.getId() in seen:
-            continue
-        seen.add(t.getId())
+    for t in literals(terms):
         if t.getKind() == Kind.CONST_INTEGER:
             out.add(Fraction(t.getIntegerValue()))
-        elif t.getKind() == Kind.CONST_RATIONAL:
+        else:
             out.add(Fraction(t.getRealValue()))
-        stack.extend(t)
     return out
 
 

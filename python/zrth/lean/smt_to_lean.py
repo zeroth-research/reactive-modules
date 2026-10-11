@@ -13,6 +13,7 @@ from cvc5 import Kind
 
 from zrth import Wire, Sort
 from .common import Refused, _accessor, dtype_shape, _is_scalar_shape
+from .smt.terms import state_dependent
 
 
 # Binary / variadic operator maps
@@ -177,17 +178,7 @@ def _worth_binding(t: cvc5.Term) -> bool:
     """
     if t.getSort().isBoolean() or t.getNumChildren() == 0:
         return False
-    stack, seen = [t], set()
-    while stack:
-        node = stack.pop()
-        key = node.getId()
-        if key in seen:
-            continue
-        seen.add(key)
-        if node.getKind() == Kind.CONSTANT:
-            return True
-        stack.extend(node)
-    return False
+    return state_dependent(t)
 
 
 def _render(

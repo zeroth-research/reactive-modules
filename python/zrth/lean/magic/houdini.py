@@ -132,6 +132,7 @@ from ..houdini_solver import (
 )
 from . import TA2Magic
 from .modes import mode_bounds
+from ..smt.terms import free_constants, nodes
 from ..smt_synth import (
     SynthContext,
     affine_smt,
@@ -683,12 +684,10 @@ class Evaluator:
         return ops, [slot[t.getId()] for t in terms]
 
     def _rewrite(self, t, env):
-        from ..smt_query import _constants
-
         tm = self.tm
         if self._solver is None:
             self._solver = cvc5.Solver(tm)
-        consts = list(_constants(t, {}).values())
+        consts = list(free_constants([t]).values())
         vals = []
         for c in consts:
             v = env.get(c.getSymbol())
@@ -1113,27 +1112,19 @@ def split_conditions(ctx: SynthContext, ob: Obligations) -> list[str]:
     and is `(ite (<= y z) (- z x) (- y x))`, a branch the program never
     spells.
     """
-    from ..smt_query import _constants
-
     out: list[str] = []
     state = set(ctx.names)
     roots = [ctx.prp] + [t.substitute(ob.s, ctx.state) for t in ob.next]
-    seen: set = set()
-    stack = list(roots)
-    while stack:
-        t = stack.pop()
-        if t.getId() in seen:
-            continue
-        seen.add(t.getId())
+    # In this order: the list is cut at `_MAX_SPLITS`.
+    for t in nodes(roots, order="lifo"):
         k = t.getKind()
         kids = list(t)
         if k in (Kind.LT, Kind.LEQ, Kind.GT, Kind.GEQ) or (
             k == Kind.EQUAL and kids
             and (kids[0].getSort().isInteger() or kids[0].getSort().isReal())
         ):
-            if set(_constants(t, {})) <= state:
+            if set(free_constants([t])) <= state:
                 out.append(decimals(str(t)))
-        stack.extend(kids)
     cols = columns(ctx)
     ints = [c for c in cols if c.sort.isInteger()]
     reals = [c for c in cols if c.sort.isReal()]
@@ -1715,9 +1706,7 @@ class TA2MagicHoudini(TA2Magic):
         and Lean proves nothing, while adding `x in {0..3}` back -- a fact
         the other two imply -- builds in 2.6 s.
         """
-        from ..smt_query import _constants
-
-        read = set(_constants(rank.term, {}))
+        read = set(free_constants([rank.term]))
         # A pin is keyed by its column, and what the rank's term mentions is
         # the *component* -- an element and the tuple it lives in are one
         # constant to a solver -- so the column is mapped back to it.

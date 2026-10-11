@@ -594,14 +594,10 @@ class VampireSolver(Solver):
         core can say which of them the proof used; the goal is named too, so
         a core is never empty for a reason other than the goal being false.
         """
-        from .smt_query import _constants
+        from .smt.terms import free_constants
 
-        seen: dict = {}
-        for _v, body in q.defines:
-            _constants(body, seen)
-        for _n, t in q.hyps:
-            _constants(t, seen)
-        _constants(q.goal, seen)
+        seen = free_constants([body for _v, body in q.defines]
+                              + [t for _n, t in q.hyps] + [q.goal])
         defined = {str(v) for v, _b in q.defines}
         lines = ["(set-logic ALL)"]
         lines += [f"(declare-fun {sym} () {seen[sym].getSort()})"

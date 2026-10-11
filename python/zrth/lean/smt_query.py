@@ -29,6 +29,7 @@ from enum import Enum
 
 from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
+from .smt.terms import free_constants, ite_conditions, nodes, state_dependent
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -507,23 +508,6 @@ class ModuleQueries:
 # ══════════════════════════════════════════════════════════════════════
 
 
-def _constants(term, seen: dict) -> dict:
-    """Every free constant in `term`, by symbol.
-
-    cvc5 has no "the declarations this term needs", so the term is walked. A
-    constant is `Kind.CONSTANT`; an operator, a bound variable and a literal
-    are none of them declared.
-    """
-    import cvc5
-
-    if term.getKind() == cvc5.Kind.CONSTANT:
-        seen.setdefault(term.getSymbol(), term)
-        return seen
-    for child in term:
-        _constants(child, seen)
-    return seen
-
-
 def _script(asserts, *, defines=(), logic: str = "ALL") -> str:
     """`asserts` as a script that runs on its own under any SMT-LIB solver.
 
@@ -532,11 +516,8 @@ def _script(asserts, *, defines=(), logic: str = "ALL") -> str:
     component. Declarations are collected from everything mentioned, so a
     caller states what it wants said and not what it depends on.
     """
-    seen: dict = {}
-    for _n, _p, _s, body in defines:
-        _constants(body, seen)
-    for term in asserts:
-        _constants(term, seen)
+    seen = free_constants([body for _n, _p, _s, body in defines]
+                          + list(asserts))
 
     bound = {p for _n, params, _s, _b in defines for p, _ps in params}
     lines = [f"(set-logic {logic})", ""]
@@ -670,14 +651,7 @@ def _facts_walk(t, acc: dict) -> None:
 
     from .smt_to_lean import min_max_of
 
-    seen = set()
-    stack = [t]
-    while stack:
-        node = stack.pop()
-        key = node.getId()
-        if key in seen:
-            continue
-        seen.add(key)
+    for node in nodes([t], order="lifo"):
         k = node.getKind()
         if k == Kind.AND:
             acc["and"] = True
@@ -697,9 +671,8 @@ def _facts_walk(t, acc: dict) -> None:
                 acc["ite"] = True
                 acc["conds"].add(node[0].getId())
         elif k == Kind.MULT:
-            if sum(1 for c in node if _state_dependent(c)) > 1:
+            if sum(1 for c in node if state_dependent(c)) > 1:
                 acc["nonlinear"] = True
-        stack.extend(node)
 
 
 def _tree_branch_points(t) -> int:
@@ -742,27 +715,6 @@ def _tree_branch_points(t) -> int:
         return total
 
     return count(t)
-
-
-def _state_dependent(t) -> bool:
-    """Does this subterm read the state at all, or is it ground arithmetic?
-
-    The visited set is not an optimisation: without it a shared DAG is
-    walked as its expanded tree, which is exponential in a deep net.
-    """
-    from cvc5 import Kind
-
-    stack, seen = [t], set()
-    while stack:
-        node = stack.pop()
-        key = node.getId()
-        if key in seen:
-            continue
-        seen.add(key)
-        if node.getKind() == Kind.CONSTANT:
-            return True
-        stack.extend(node)
-    return False
 
 
 def predicate_facts(q: "ModuleQueries | None") -> PredicateFacts | None:
@@ -871,25 +823,6 @@ class SolverHints:
         return "\n".join(f"-- cvc5: {b}" for b in bits)
 
 
-def _kept_conditions(t, out: dict) -> None:
-    """Conditions of the `ite`s the printer will *not* fold into min/max."""
-    from cvc5 import Kind
-
-    from .smt_to_lean import min_max_of
-
-    stack, seen = [t], set()
-    while stack:
-        node = stack.pop()
-        key = node.getId()
-        if key in seen:
-            continue
-        seen.add(key)
-        if node.getKind() == Kind.ITE and min_max_of(node) is None:
-            cond = node[0]
-            out.setdefault(cond.getId(), cond)
-        stack.extend(node)
-
-
 def _proof_facts(solver) -> tuple[bool, list]:
     """`(is_linear, multiplied_terms)` from cvc5's refutation.
 
@@ -910,16 +843,9 @@ def _proof_facts(solver) -> tuple[bool, list]:
         seen.add(key)
         if str(step.getRule()).rsplit(".", 1)[-1] in _NONLINEAR_RULES:
             linear = False
-            sub, sub_seen = [step.getResult()], set()
-            while sub:
-                node = sub.pop()
-                nid = node.getId()
-                if nid in sub_seen:
-                    continue
-                sub_seen.add(nid)
+            for node in nodes([step.getResult()], order="lifo"):
                 if node.getKind() == Kind.MULT:
-                    products.setdefault(nid, node)
-                sub.extend(node)
+                    products.setdefault(node.getId(), node)
         stack.extend(step.getChildren())
     return linear, list(products.values())
 
@@ -937,7 +863,7 @@ def _hint_terms(products, ctrl_next) -> list:
     seen: set[str] = set()
     out: list[str] = []
     for prod in products:
-        args = [c for c in prod if _state_dependent(c)]
+        args = [c for c in prod if state_dependent(c)]
         if len(args) < 2:
             continue
         try:
@@ -1003,12 +929,18 @@ def solver_hints(q: "ModuleQueries | None", budget: SmtBudget, log=None) -> Solv
 
 def _branch_polarity(q: "ModuleQueries", budget: SmtBudget, hints: SolverHints) -> None:
     """Conditions the invariant already settles, so `split_ifs` need not."""
-    from .smt_to_lean import smt_to_lean_body
+    from .smt_to_lean import min_max_of, smt_to_lean_body
 
+    # Conditions of the `ite`s the printer does not fold into min/max, in
+    # this order: it is the order of `hints.determined`, which reaches Lean.
     conds: dict = {}
     for t in (q.inv, q.ranking, q.prp):
-        if t is not None:
-            _kept_conditions(t, conds)
+        if t is None:
+            continue
+        for cond in ite_conditions([t], order="lifo",
+                                   key=lambda c: c.getId(),
+                                   where=lambda ite: min_max_of(ite) is None):
+            conds.setdefault(cond.getId(), cond)
     for cond in list(conds.values())[:MAX_DECIDED_CONDITIONS]:
         if budget.exhausted:
             return
