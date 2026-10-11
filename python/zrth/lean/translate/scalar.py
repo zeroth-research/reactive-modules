@@ -198,12 +198,11 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         flat_slots=init_flat,
         flatten_outputs=True,
     )
-    if init_body:
-        lines.append(
-            f"@[simp] {noncomp}def init {_scalar_dom('extl_n', ctx.extl_next)} : {cod} :="
-        )
-        lines.append(_prepend_recon(init_recon, init_body))
-        lines.append("")
+    lines.append(
+        f"@[simp] {noncomp}def init {_scalar_dom('extl_n', ctx.extl_next)} : {cod} :="
+    )
+    lines.append(_prepend_recon(init_recon, init_body))
+    lines.append("")
 
     update_recon, update_bindings_scalar, update_flat = _scalar_bindings_with_recon(
         [
@@ -220,11 +219,10 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         flat_slots=update_flat,
         flatten_outputs=True,
     )
-    if update_body:
-        upd_dom = " ".join(_scalar_dom(p, w) for p, w in input_groups)
-        lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
-        lines.append(_prepend_recon(update_recon, update_body))
-        lines.append("")
+    upd_dom = " ".join(_scalar_dom(p, w) for p, w in input_groups)
+    lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
+    lines.append(_prepend_recon(update_recon, update_body))
+    lines.append("")
 
     lines.append("end Scalar")
     return "\n".join(lines), argmax_variants

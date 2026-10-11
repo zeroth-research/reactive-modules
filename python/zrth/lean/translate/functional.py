@@ -35,20 +35,18 @@ def atom_to_lean_functional(ctx: LeanContext) -> str:
     cod = _product_type(ctx.ctrl_next)
     noncomp = "noncomputable " if ctx.uses_real else ""
 
-    if init_body:
-        init_dom = f"(extl_n: {_product_type(ctx.extl_next)})"
-        lines.append(f"@[simp] {noncomp}def init {init_dom} : {cod} :=")
-        lines.append(init_body)
-        lines.append("")
+    init_dom = f"(extl_n: {_product_type(ctx.extl_next)})"
+    lines.append(f"@[simp] {noncomp}def init {init_dom} : {cod} :=")
+    lines.append(init_body)
+    lines.append("")
 
-    if update_body:
-        upd_dom = (
-            f"(ctrl: {_product_type(ctx.ctrl_latched)}) "
-            f"(extl_l: {_product_type(ctx.extl_latched)}) "
-            f"(extl_n: {_product_type(ctx.extl_next)})"
-        )
-        lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
-        lines.append(update_body)
-        lines.append("")
+    upd_dom = (
+        f"(ctrl: {_product_type(ctx.ctrl_latched)}) "
+        f"(extl_l: {_product_type(ctx.extl_latched)}) "
+        f"(extl_n: {_product_type(ctx.extl_next)})"
+    )
+    lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
+    lines.append(update_body)
+    lines.append("")
 
     return "\n".join(lines)

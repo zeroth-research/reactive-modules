@@ -183,16 +183,14 @@ def _translate_terms(
     `input_bindings` maps block-input wire IDs to their Lean accessor expressions
     (e.g. ``{w.id: "ctrl.1"}``) — pre-built by the caller via `_bind_wires`.
 
-    Returns the body string (let x0 := ...; ... ; (x1, x2)) or "sorry" if no terms.
+    Returns the body string (let x0 := ...; ... ; (x1, x2)). A block with no
+    terms has no outputs -- an atom writes every controlled next wire in both
+    blocks -- so its body is `()`, the only value of `Unit`.
     """
-    term_list = list(terms)
-    if not term_list:
-        return "sorry /- no terms -/"
-
     wire_expr: dict[int, str] = dict(input_bindings)
     let_lines: list[str] = []
 
-    for var_counter, term in enumerate(term_list):
+    for var_counter, term in enumerate(terms):
         name = itype_name(term.itype)
 
         if is_constant_name(name):
@@ -218,10 +216,23 @@ def _translate_terms(
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
     # Build output tuple
-    out_exprs = [wire_expr[w.id] for w in block_outputs]
+    out_exprs = [_output_expr(wire_expr, w) for w in block_outputs]
     result_line = f"  {_build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])
+
+
+def _output_expr(wire_expr: dict[int, str], w: Wire) -> str:
+    """The expression a block output is bound to, by a term or as an input.
+
+    Raises rather than emitting a placeholder: a `sorry` in `System/` is not
+    one `build_certificate` reports, so it would pass for a proof.
+    """
+    if w.id not in wire_expr:
+        raise ValueError(
+            f"block output wire #{w.id} is written by no term and is not an input"
+        )
+    return wire_expr[w.id]
 
 
 def _product_type_scalar(wires: list[Wire]) -> str:
@@ -287,24 +298,11 @@ def _translate_terms_scalar(
     Falls back to the op table's matrix column for non-scalar output wires
     and for the ops whose scalar cell is `ViaMat`.
     """
-    term_list = list(terms)
-    if not term_list:
-        slots = dict(flat_slots or {})
-        passthrough: list[str] = []
-        for w in block_outputs:
-            if flatten_outputs and w.id in slots:
-                passthrough.extend(slots[w.id])
-            elif w.id in input_bindings:
-                passthrough.append(input_bindings[w.id])
-            else:
-                return "sorry /- no terms -/"
-        return f"  {_build_tuple(passthrough)}"
-
     wire_expr: dict[int, str] = dict(input_bindings)
     flat_slots = dict(flat_slots or {})
     let_lines: list[str] = []
 
-    for var_counter, term in enumerate(term_list):
+    for var_counter, term in enumerate(terms):
         name = itype_name(term.itype)
         write_wire = term.write[0]
         var = f"x{var_counter}"
@@ -374,10 +372,10 @@ def _translate_terms_scalar(
     # as the wire's own `Mat`, so they want the matrix the terms built.
     out_exprs: list[str] = []
     for w in block_outputs:
-        if flatten_outputs:
-            out_exprs.extend(flat_slots.get(w.id, [wire_expr[w.id]]))
+        if flatten_outputs and w.id in flat_slots:
+            out_exprs.extend(flat_slots[w.id])
         else:
-            out_exprs.append(wire_expr[w.id])
+            out_exprs.append(_output_expr(wire_expr, w))
     result_line = f"  {_build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])
