@@ -226,10 +226,10 @@ def _record_predicates(store, settings: Settings, cert_data, *,
         )
         if src is None:
             continue
-        store.encoded(
-            role, role, src.strip(), language="smt-src",
-            what=(what + " Inferred by this run's route." if inferred else what),
-        )
+        # A route infers the certificate, never the property it was asked about.
+        if inferred and role != "property":
+            what += " Inferred by this run's route."
+        store.encoded(role, role, src.strip(), language="smt-src", what=what)
 
 
 def _workspace(settings: Settings, module, project_dir: Path) -> ArtifactStore:

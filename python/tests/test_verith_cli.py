@@ -261,6 +261,35 @@ def test_pre_check_checks_the_inferred_certificate():
         assert out.index("TA2Magic") < out.index("SMT pre-check")
 
 
+def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
+    """A route infers the invariant and the ranking function, never the
+    property: that is the question it was asked."""
+    from zrth.lean import main as m
+    from zrth.lean.artifacts import ArtifactStore
+    from zrth.lean.cert import CertificateData
+
+    def recorded(store) -> dict[str, str]:
+        return {a.role: a.what for a in store.list() if a.indexed}
+
+    # As `main` does it: once before the route, once after.
+    store = ArtifactStore(dir=tmp_path / "run", kind="buchi", prp="(= s0 0)")
+    cert = CertificateData(prp="(= s0 0)", kind="buchi")
+    m._record_predicates(store, None, cert)
+    cert.inv, cert.ranking = "(>= s0 0)", "s0"
+    m._record_predicates(store, None, cert, inferred=True)
+    what = recorded(store)
+    assert set(what) == {"property", "inv", "ranking"}
+    assert "Inferred" not in what["property"]
+    assert "Inferred" in what["inv"] and "Inferred" in what["ranking"]
+
+    # And without the first record to fall back on.
+    fresh = ArtifactStore(dir=tmp_path / "fresh", kind="buchi", prp="(= s0 0)")
+    m._record_predicates(fresh, None, cert, inferred=True)
+    what = recorded(fresh)
+    assert "Inferred" not in what["property"]
+    assert "Inferred" in what["inv"] and "Inferred" in what["ranking"]
+
+
 # ── safety and Buchi are different certificates ─────────────────────────────
 
 
