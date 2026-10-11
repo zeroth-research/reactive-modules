@@ -142,6 +142,45 @@ def test_a_refusal_is_an_error_line_not_a_traceback():
             assert "error:" in r.stderr, f"{case} said nothing:\n{r.stderr}"
 
 
+# `update` reads an `Uninterpreted` wire, which no Lean column can write.
+_NO_LEAN_FORM_MODULE = """\
+import torch
+from zrth import Int, LIA, Module, Term, Var, Wire, X
+
+def module():
+    x = Var(Int([1, 1]))
+    y = Wire(Int([1, 1]))
+    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
+    update = [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])]
+    return Module.sequential([x], init, update)
+"""
+
+
+def test_a_module_with_no_lean_form_is_refused_without_naming_infer(tmp_path):
+    """The refusal is about the module. A run that gave no `--infer` must
+    not be told about one."""
+    path = tmp_path / "uninterp.py"
+    path.write_text(_NO_LEAN_FORM_MODULE)
+    r = _verith(str(path), "-o", str(tmp_path), "-p", "P")
+    assert r.returncode != 0
+    assert "error: this module has no Lean form" in r.stderr, r.stderr
+    assert "--infer" not in r.stderr, r.stderr
+
+
+def test_a_refusal_names_only_the_flag_that_was_given():
+    from types import SimpleNamespace
+
+    from zrth.lean import main as m
+    from zrth.lean.common import Refused
+
+    def said(route) -> str:
+        return m._refused(SimpleNamespace(route=route), Refused("why")).code
+
+    assert said(None) == "error: why"
+    assert said(SimpleNamespace(errors_self_named=False)) == "error: --infer: why"
+    assert said(SimpleNamespace(errors_self_named=True)) == "error: why"
+
+
 def test_a_stale_bridge_is_not_left_for_lake_to_build():
     """`Certificate/` is globbed by the lakefile, so every file in it is
     built. Only `--fbk-proveit` writes `Equivalence.lean`, and it is about

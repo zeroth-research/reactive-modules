@@ -144,14 +144,15 @@ def _build_cert(args, project_dir: Path, cert_data) -> None:
 
 
 def _refused(settings: Settings, error: Exception) -> SystemExit:
-    """A route's refusal, under the flag it is about.
+    """A refusal, under the flag it is about.
 
     Most routes are asked for with `--infer`, so that is what a failure of
     one is reported under. The proveit route's own errors already name
     `--fbk-proveit`, `--ic3ia` or `--safety`, and prefixing those again
-    would name two flags for one problem.
+    would name two flags for one problem. With no route there is no flag to
+    name: the refusal is about the module.
     """
-    if settings.route is not None and settings.route.errors_self_named:
+    if settings.route is None or settings.route.errors_self_named:
         return SystemExit(f"error: {error}")
     return SystemExit(f"error: --infer: {error}")
 
