@@ -218,7 +218,7 @@ produces, and says something about the *module*.
 `smt_to_lean_bool`'s reading of the user's `--safety` formula, so that `P`
 would be the model's opinion of the property, not an independent one. The
 missing piece is the same predicate through the *other* translator —
-`smt_predicates_to_lean`, which the Büchi route already uses to write
+`render_certificate`, which the Büchi route already uses to write
 `Data.lean`'s `P` — and one more obligation in the same cascade:
 
 ```lean

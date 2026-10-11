@@ -215,27 +215,20 @@ _PREDICATES = (
 
 
 def _record_predicates(store, claim: "Claim | None", cert: Certificate, *,
-                       lean: "LeanAnswer | None" = None,
                        inferred: bool = False) -> None:
     """Leave the certificate's predicates in `artifacts/`, as SMT-LIB.
 
     They are what every obligation beside them is stated against, so a reader
     comparing `system.smt2` with a refuted obligation has the third side of it
     here rather than having to dig it out of `Certificate/Data.lean`, where it is
-    Lean and no longer the text any solver was given.
-
-    `lean` stands in where `cert` has no predicate, so an answer that is Lean
-    only (`--infer ai`) is recorded too, under the SMT-LIB label it is not.
+    Lean and no longer the text any solver was given. An answer that is Lean
+    only (`--infer ai`) has no SMT-LIB to record.
     """
     if store is None or claim is None:
         return
     for role, field, what in _PREDICATES:
-        values = ((claim.prp,) if field is None
-                  else (getattr(cert, field), getattr(lean, field, None)))
-        src = next(
-            (v for v in values if isinstance(v, str) and v.strip()), None
-        )
-        if src is None:
+        src = claim.prp if field is None else getattr(cert, field)
+        if not (src and src.strip()):
             continue
         # A route infers the certificate, never the property it was asked about.
         if inferred and role != "property":
@@ -503,7 +496,7 @@ def _regenerate(settings: Settings, module, handle: ProjectHandle, store,
     if settings.pre_check == "cvc5":
         pre_check(module, claim, lean or cert, settings.budget,
                   artifacts=store)
-    _record_predicates(store, claim, cert, lean=lean, inferred=True)
+    _record_predicates(store, claim, cert, inferred=True)
     try:
         lean_cert = _render(settings, module, claim, cert,
                             hints=lean is None, restated=True, verbatim=lean)

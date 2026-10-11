@@ -12,7 +12,7 @@ import pytest
 import torch
 
 from zrth import Module, Term, Var, X, LIA, LRA, Int, Real
-from zrth.lean.cert import CertificateData, smt_predicates_to_lean
+from zrth.lean.cert import LeanPredicates, predicate_terms, render_certificate
 from zrth.lean.certificate import Certificate, Claim
 
 
@@ -35,8 +35,15 @@ def _real_module() -> Module:
     )
 
 
+def _lean(module, **cert: str) -> LeanPredicates:
+    """`cert`'s predicates printed as the certificate prints them."""
+    return render_certificate(
+        predicate_terms(module, Claim(), Certificate(**cert))
+    )
+
+
 def _inv(module, smt: str) -> str:
-    return smt_predicates_to_lean(CertificateData(inv=smt), module).inv
+    return _lean(module, inv=smt).inv
 
 
 @pytest.mark.parametrize(
@@ -94,9 +101,7 @@ def test_a_whole_relu_layer_folds():
         f"(* {w} (ite (>= (+ s0 (- {b})) 0) (+ s0 (- {b})) 0))"
         for w, b in ((3, 0), (2, 1), (1, 2))
     )
-    lean = smt_predicates_to_lean(
-        CertificateData(ranking=f"(+ {units})"), _int_module()
-    ).ranking
+    lean = _rank(_int_module(), f"(+ {units})")
     assert lean.count("max") == 3, lean
     assert "if " not in lean, lean
 
@@ -126,7 +131,7 @@ def _dense(layers: int) -> str:
 
 
 def _rank(module, smt: str) -> str:
-    return smt_predicates_to_lean(CertificateData(ranking=smt), module).ranking
+    return _lean(module, ranking=smt).ranking
 
 
 def test_a_deep_net_is_emitted_once_per_unit_not_once_per_path():
@@ -167,9 +172,7 @@ def test_a_shallow_net_gets_no_bindings():
 def test_propositions_are_never_bound():
     """`split_ifs` / `casesm*` / `not_and_or` all match on this structure."""
     shared_cond = "(and (>= s0 3) (or (>= s0 3) (<= s0 9)))"
-    lean = smt_predicates_to_lean(
-        CertificateData(inv=shared_cond), _int_module()
-    ).inv
+    lean = _inv(_int_module(), shared_cond)
     assert "let " not in lean, lean
     assert lean.count("≥ 3") == 2
 

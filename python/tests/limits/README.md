@@ -309,7 +309,7 @@ rounds. For a counter running 1..9 and back to 0 that means
 `V₁` is constant, it covers no round, and the argument recurses into `V₂`.
 
 Nor can a lexicographic rank reach a verith certificate at all: `rule_buchi`
-takes one ranking function and `CertificateData.ranking` is one `Int`
+takes one ranking function and `Certificate.ranking` is one `Int`
 expression. `--ranks` is for the Farkas side, which has `lexDec` end to end.
 
 ---

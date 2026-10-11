@@ -27,25 +27,24 @@ behaviour `verith` had before. Nothing here may take information away.
 The two always-on items do no solving at all -- they read the parsed terms --
 so they need no budget and cannot hang.
 
-`--smt-tactics` acts on the predicates *as supplied*, and then again on the
-inferred ones. Running only the first way was the same mistake `--pre-check`
-used to make: every question `solver_hints` asks is asked *under* the
-invariant, so with `--infer` there was no invariant to ask under and the run
-printed "nothing cvc5 can add to the plan" before the route that would give
-it something to add had run. `cert_facts` and `cert_thin` were therefore
-`skip` on every inferred certificate. `main._render` computes both the hints
-and `predicate_facts` again once the route has answered, from the SMT-LIB
-it answered with -- which matters twice over, because `features_for`
-takes `nonlinear` from the facts *over* the text scan rather than merging
-them, so stale facts did not merely omit `nlinarith` but removed one the
-printed Lean had already justified.
+`--smt-tactics` acts on the predicates the certificate ends up with: as
+supplied, or with `--infer` the inferred ones. Running only on the supplied
+ones was the same mistake `--pre-check` used to make: every question
+`solver_hints` asks is asked *under* the invariant, so with `--infer` there
+was no invariant to ask under and the run printed "nothing cvc5 can add to
+the plan" before the route that would give it something to add had run.
+`cert_facts` and `cert_thin` were therefore `skip` on every inferred
+certificate. `main._render` computes both the hints and `predicate_facts`
+once the route has answered, from the SMT-LIB it answered with -- which
+matters twice over, because `features_for` takes `nonlinear` from the facts
+*over* the text scan rather than merging them, so stale facts did not
+merely omit `nlinarith` but removed one the printed Lean had already
+justified.
 
 `--pre-check` no longer does either: run there, the invariant it would check does
 not exist yet, so it reported "nothing to check" and the certificate that
 reached Lean went unchecked. With `--infer` it runs **after** inference, on
-what `magic` returned. `magic` hands back Lean text, which nothing parses
-back, so `ai-cegis` keeps the SMT-LIB it gave the solver in
-`CertificateData.inv_smt` / `.ranking_smt` and the check restates the
+the route's answer, a `Certificate` of SMT-LIB source, and restates the
 obligations from that.
 
 `--infer ai` is still out of reach, and it is the route that needs it most:

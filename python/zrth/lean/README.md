@@ -892,8 +892,8 @@ inference returns and lake cannot be trusted to fail loudly:
 * **After the route, before the build.** `--infer` can come back without an
   invariant or a ranking — an LLM that answers nothing usable — and the
   error names which one is missing instead of building a proof of `sorry`.
-  (`--fbk-proveit` is exempt: its certificate is ic3ia's, and no
-  `CertificateData` describes it.)
+  (`--fbk-proveit` is exempt: its certificate is ic3ia's, installed by the
+  route itself, and no `Certificate` describes it.)
 * **After the build.** `zeroth_hammer` leaves a `sorry` where it cannot
   close an obligation, and lake reports that as a *warning* and exits 0. So
   `build_certificate` also scans the log for `sorry` under `Certificate/` —

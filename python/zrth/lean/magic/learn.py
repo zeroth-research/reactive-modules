@@ -419,15 +419,15 @@ class TA2MagicLearn(TA2Magic):
         # traceback.
         try:
             if claim.is_safety:
-                inv_smt = self._safety_invariant(eng, system, prp, claim.prp)
-                rank_smt = None
+                inv_src = self._safety_invariant(eng, system, prp, claim.prp)
+                rank_src = None
             else:
-                inv_smt, rank_smt = self._buchi_certificate(eng, system, prp,
+                inv_src, rank_src = self._buchi_certificate(eng, system, prp,
                                                             claim.prp)
         except eng.Unsupported as e:
             raise Refused(f"--infer nuterm cannot certify this property: {e}") from e
 
-        return self._emit(inv_smt, rank_smt)
+        return self._emit(inv_src, rank_src)
 
     # --- the two kinds --------------------------------------------------
 
@@ -571,10 +571,10 @@ class TA2MagicLearn(TA2Magic):
         subs = [(z3.Int(n), st[n]) for n in system.names]
         return z3.substitute(term, *subs) if subs else term
 
-    def _emit(self, inv_smt: str, rank_smt: str | None) -> Certificate:
+    def _emit(self, inv_src: str, rank_src: str | None) -> Certificate:
         """The certificate, logged as the `inv:` / `ranking:` lines the bench
         harness reads."""
-        self.log(f"[nuterm] inv: {inv_smt}")
-        if rank_smt is not None:
-            self.log(f"[nuterm] ranking: {rank_smt}")
-        return Certificate(inv_smt, rank_smt)
+        self.log(f"[nuterm] inv: {inv_src}")
+        if rank_src is not None:
+            self.log(f"[nuterm] ranking: {rank_src}")
+        return Certificate(inv_src, rank_src)

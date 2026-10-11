@@ -19,64 +19,6 @@ def generate_zeroth_hammer_lean() -> str:
     return render("project/ZerothHammer.lean.j2")
 
 
-@dataclass
-class CertificateData:
-    """Data needed to generate a Lean certificate."""
-
-    prp: str | None = None
-    inv: str | None = None
-
-    # Which proof rule the certificate is built on, and so what `prp` means:
-    #
-    #   "buchi"  -- `G (F P)`, `rule_buchi`: an invariant *and* a ranking
-    #              function that decreases off `P`. `--buchi`.
-    #   "safety" -- `G P`, `rule_globally`: an invariant that implies `P`,
-    #              and no ranking at all -- there is nothing to rank when
-    #              the property never has to be re-reached. `--safety`.
-    kind: str = "buchi"
-
-    init_pre: str | None = None
-    update_pre: str | None = None
-    ranking: str | None = None
-
-    # SMT-LIB (or Python-expression) source for `inv` / `ranking` when those
-    # fields hold Lean text printed from a cvc5 term -- the `--infer ai-cegis`
-    # route. The project needs the Lean; cvc5 needs its own input back, so
-    # `--pre-check` restates the obligations from these.
-    inv_smt: str | None = None
-    ranking_smt: str | None = None
-
-    # Shape of the predicates as cvc5 sees them, set by
-    # `smt_predicates_to_lean`.
-    facts: "object | None" = None
-
-    # `smt_query.SolverHints` when `--smt-tactics=cvc5` ran.
-    hints: "object | None" = None
-
-    @property
-    def is_safety(self) -> bool:
-        return self.kind == "safety"
-
-    def split(self) -> tuple[Claim, Certificate]:
-        """The claim this data is about and the SMT-LIB answer it holds: the
-        bridge for callers that still hold a `CertificateData`.
-
-        Where `inv_smt` / `ranking_smt` are set they are the source and
-        `inv` / `ranking` the Lean printed from it.
-        """
-        claim = Claim(
-            prp=self.prp,
-            kind=self.kind,
-            init_pre=self.init_pre,
-            update_pre=self.update_pre,
-        )
-        cert = Certificate(
-            inv=self.inv_smt or self.inv,
-            ranking=self.ranking_smt or self.ranking,
-        )
-        return claim, cert
-
-
 # ══════════════════════════════════════════════════════════════════════════
 # The certificate as Lean
 # ══════════════════════════════════════════════════════════════════════════
@@ -378,43 +320,4 @@ def generate_certificate_lean(
         all_defs=all_defs,
         is_safety=defs.is_safety,
         plan=plan,
-    )
-
-
-def smt_predicates_to_lean(
-    cert_data: CertificateData, module: "Module", *, share: bool = True
-) -> CertificateData:
-    """`render_certificate` for a caller that still holds a `CertificateData`.
-
-    Fields that are not strings pass through unchanged, and `facts` is set
-    from the same terms.
-    """
-    fields = (
-        cert_data.prp,
-        cert_data.inv,
-        cert_data.init_pre,
-        cert_data.update_pre,
-        cert_data.ranking,
-    )
-    if not any(isinstance(f, str) for f in fields):
-        return cert_data
-
-    from .smt_query import predicate_facts
-
-    q = predicate_terms(module, *cert_data.split())
-    lean = render_certificate(q, share=share)
-
-    def keep(printed, original):
-        return original if printed is None else printed
-
-    return CertificateData(
-        prp=keep(lean.prp, cert_data.prp),
-        init_pre=keep(lean.init_pre, cert_data.init_pre),
-        update_pre=keep(lean.update_pre, cert_data.update_pre),
-        inv=keep(lean.inv, cert_data.inv),
-        ranking=keep(lean.ranking, cert_data.ranking),
-        kind=cert_data.kind,
-        inv_smt=cert_data.inv_smt,
-        ranking_smt=cert_data.ranking_smt,
-        facts=predicate_facts(q),
     )

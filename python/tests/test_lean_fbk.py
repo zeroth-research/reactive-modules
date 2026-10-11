@@ -866,7 +866,7 @@ def test_the_bridge_targets_the_scalar_encoding():
 
 def test_the_bridge_proves_the_property_twice_translated():
     """`PROPERTY` is `smt_to_lean_bool`'s reading of the formula and `P` is
-    `smt_predicates_to_lean`'s. Without tying them the chain would be sound
+    `render_certificate`'s. Without tying them the chain would be sound
     about the transition and silent about what is proved of it."""
     src = _bridge(_counter())
     assert "theorem PROPERTY_iff" in src
