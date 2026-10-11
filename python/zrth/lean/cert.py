@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type, _translate_terms
-from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.common import LeanContext, Refused, _bind_wires
 from zrth.lean.tactics import plan_for
 from zrth.lean.template_env import render
@@ -12,6 +12,8 @@ from ..expr import Expr
 
 if TYPE_CHECKING:
     from zrth import Module
+
+    from zrth.lean.smt_query import ModuleQueries
 
 def generate_zeroth_hammer_lean() -> str:
     """Generate a standalone ZerothHammer.lean with only the zeroth_hammer tactic."""
@@ -308,51 +310,64 @@ def generate_certificate_lean(
     )
 
 
-def smt_predicates_to_lean(
-    cert_data: CertificateData, module: "Module", *, share: bool = True
-) -> CertificateData:
-    """Translate SMT-LIB string fields in *cert_data* to Lean expression strings.
+@dataclass(frozen=True)
+class LeanPredicates:
+    """The certificate's definitions as Lean text, `fun s => ...` over the
+    state and `fun e => ...` over the inputs; `None` where the template's
+    placeholder stands. Built by `render_certificate` alone."""
 
-    None and compiled term-list fields pass through unchanged.
+    kind: str = "buchi"
+    prp: str | None = None
+    inv: str | None = None
+    ranking: str | None = None
+    init_pre: str | None = None
+    update_pre: str | None = None
 
-    `share=False` prints repeated subterms in full instead of `let`-binding
-    them. The caller wants that when `--smt-tactics` settled a branch
-    condition: `cert_facts` states the condition expanded, because a `have`
-    outside the definition cannot name a `let` inside it, and
-    `simp only [if_pos …]` then has nothing to match against a shared
-    `if (u3 ≥ 0) …`.
+    @property
+    def is_safety(self) -> bool:
+        return self.kind == "safety"
+
+
+def predicate_terms(
+    module: "Module", claim: Claim, cert: Certificate = Certificate()
+) -> "ModuleQueries":
+    """`claim` and `cert` parsed against `module`: what the Lean is printed
+    from, and what `predicate_facts` and `solver_hints` read.
+
+    A predicate that does not parse is refused naming its flag; anything
+    else is the module's, and refused as that.
     """
-    fields = (
-        cert_data.prp,
-        cert_data.inv,
-        cert_data.init_pre,
-        cert_data.update_pre,
-        cert_data.ranking,
-    )
-    if not any(isinstance(f, str) for f in fields):
-        return cert_data
+    from .smt_query import ModuleQueries
 
-    # Lazy imports keep cvc5 off the critical path when this function is unused.
-    from .smt_query import ModuleQueries, predicate_facts
-    from .smt_to_lean import smt_to_lean, smt_to_lean_nat
-
-    # Not `build`: its `None` would leave the SMT sources in the fields this
-    # function exists to translate, and they are interpolated into the `def`
-    # bodies further down -- `def P : … → Prop := (= s0` reaches the user as
-    # a Lean parse error in generated code, if it reaches them at all.
     try:
-        q = ModuleQueries(module, *cert_data.split())
+        return ModuleQueries(module, claim, cert)
     except Refused:
         raise
     except Exception as e:
         raise Refused(
             f"the certificate predicates cannot be read for this module: {e}"
         ) from e
+
+
+def render_certificate(
+    q: "ModuleQueries", *, share: bool = True,
+    verbatim: LeanAnswer | None = None,
+) -> LeanPredicates:
+    """The one place certificate predicates are printed as Lean.
+
+    `share=False` prints repeated subterms in full instead of `let`-binding
+    them: a condition `--smt-tactics` settled is spliced into a tactic
+    expanded, and a `have` outside the definition cannot name a `let`
+    inside it. `verbatim` is an answer that is Lean already; its `inv` and
+    `ranking` are taken as they are.
+    """
+    from .smt_to_lean import smt_to_lean, smt_to_lean_nat
+
     msmt = q.msmt
 
-    def translate(term, mode: str, original) -> str | None:
+    def translate(term, mode: str) -> str | None:
         if term is None:
-            return original
+            return None
         if mode in ("property", "invariant"):
             return smt_to_lean(term, msmt.ctrl_next, param_name="s", share=share)
         if mode == "ranking":
@@ -369,7 +384,7 @@ def smt_predicates_to_lean(
             share=share,
         )
 
-    def named(flag: str, term, mode: str, original) -> str | None:
+    def named(flag: str, term, mode: str) -> str | None:
         """`translate`, with the flag the source came from on any refusal.
 
         The translator walks a cvc5 term and knows nothing of the command
@@ -378,23 +393,59 @@ def smt_predicates_to_lean(
         which of five sources asked for it.
         """
         try:
-            return translate(term, mode, original)
+            return translate(term, mode)
         except Refused as e:
             raise Refused(f"{flag}: {e}") from e
 
-    prp_flag = "--safety" if cert_data.is_safety else "--buchi"
+    prp_flag = "--safety" if q.kind == "safety" else "--buchi"
+    prp = named(prp_flag, q.prp, "property")
+    init_pre = named("--pre", q.init_pre, "pre")
+    update_pre = named("--pre", q.update_pre, "pre")
+    if verbatim is not None:
+        inv, ranking = verbatim.inv, verbatim.ranking
+    else:
+        inv = named("--invariant", q.inv, "invariant")
+        ranking = named("--ranking", q.ranking, "ranking")
+    return LeanPredicates(
+        kind=q.kind, prp=prp, inv=inv, ranking=ranking,
+        init_pre=init_pre, update_pre=update_pre,
+    )
+
+
+def smt_predicates_to_lean(
+    cert_data: CertificateData, module: "Module", *, share: bool = True
+) -> CertificateData:
+    """`render_certificate` for a caller that still holds a `CertificateData`.
+
+    Fields that are not strings pass through unchanged, and `facts` is set
+    from the same terms.
+    """
+    fields = (
+        cert_data.prp,
+        cert_data.inv,
+        cert_data.init_pre,
+        cert_data.update_pre,
+        cert_data.ranking,
+    )
+    if not any(isinstance(f, str) for f in fields):
+        return cert_data
+
+    from .smt_query import predicate_facts
+
+    q = predicate_terms(module, *cert_data.split())
+    lean = render_certificate(q, share=share)
+
+    def keep(printed, original):
+        return original if printed is None else printed
+
     return CertificateData(
-        prp=named(prp_flag, q.prp, "property", cert_data.prp),
-        init_pre=named("--pre", q.init_pre, "pre", cert_data.init_pre),
-        update_pre=named("--pre", q.update_pre, "pre", cert_data.update_pre),
-        inv=named("--invariant", q.inv, "invariant", cert_data.inv),
-        ranking=named("--ranking", q.ranking, "ranking", cert_data.ranking),
-        # The rendering changes the predicates, not what they are a
-        # certificate *of*, nor what cvc5 was given to read them from.
+        prp=keep(lean.prp, cert_data.prp),
+        init_pre=keep(lean.init_pre, cert_data.init_pre),
+        update_pre=keep(lean.update_pre, cert_data.update_pre),
+        inv=keep(lean.inv, cert_data.inv),
+        ranking=keep(lean.ranking, cert_data.ranking),
         kind=cert_data.kind,
         inv_smt=cert_data.inv_smt,
         ranking_smt=cert_data.ranking_smt,
-        # The terms are already parsed, so reading their shape is free. The
-        # tactic plan uses it in place of guessing from the printed Lean.
         facts=predicate_facts(q),
     )

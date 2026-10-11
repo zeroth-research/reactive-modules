@@ -6,15 +6,15 @@ way a query can go wrong -- timeout, incompleteness, an unencodable module,
 a cvc5 exception -- comes back as `UNKNOWN` rather than an exception.
 """
 
+from dataclasses import replace
+
 import pytest
 import torch
 
 from zrth import Module, Term, Var, Wire, X, LIA, Int
 from zrth.analyzer import convert_method
-from dataclasses import replace
-
-from zrth.lean.cert import CertificateData
 from zrth.lean.certificate import Certificate, Claim, LeanAnswer
+from zrth.lean.common import Refused
 from zrth.lean.smt_query import (
     ModuleQueries,
     SmtBudget,
@@ -426,10 +426,26 @@ def test_translation_can_be_asked_not_to_share():
     a shared `if (u3 ≥ 0) …` gives `simp only [if_pos hf0]` nothing to match
     and the branch is never collapsed.
     """
-    from zrth.lean.cert import smt_predicates_to_lean
+    from zrth.lean.cert import predicate_terms, render_certificate
 
-    cert = CertificateData(ranking=_dense(4))
-    shared = smt_predicates_to_lean(cert, countdown(), share=True).ranking
-    plain = smt_predicates_to_lean(cert, countdown(), share=False).ranking
+    q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(4)))
+    shared = render_certificate(q, share=True).ranking
+    plain = render_certificate(q, share=False).ranking
     assert "let " in shared
     assert "let " not in plain
+
+
+def test_a_lean_answer_is_printed_as_it_was_given():
+    """`--infer ai`'s reply is Lean already; the property beside it is not."""
+    from zrth.lean.cert import predicate_terms, render_certificate
+
+    defs = render_certificate(predicate_terms(countdown(), CLAIM), verbatim=LEAN)
+    assert (defs.inv, defs.ranking) == (LEAN.inv, LEAN.ranking)
+    assert defs.prp == "fun s => ((s 0 0) = 0)"
+
+
+def test_a_predicate_that_does_not_parse_is_refused_by_its_flag():
+    from zrth.lean.cert import predicate_terms
+
+    with pytest.raises(Refused, match="--ranking"):
+        predicate_terms(countdown(), CLAIM, Certificate(ranking="(+ s0"))
