@@ -267,17 +267,17 @@ def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
     property: that is the question it was asked."""
     from zrth.lean import main as m
     from zrth.lean.artifacts import ArtifactStore
-    from zrth.lean.cert import CertificateData
+    from zrth.lean.certificate import Certificate, Claim
 
     def recorded(store) -> dict[str, str]:
         return {a.role: a.what for a in store.list() if a.indexed}
 
     # As `main` does it: once before the route, once after.
     store = ArtifactStore(dir=tmp_path / "run", kind="buchi", prp="(= s0 0)")
-    cert = CertificateData(prp="(= s0 0)", kind="buchi")
-    m._record_predicates(store, None, cert)
-    cert.inv, cert.ranking = "(>= s0 0)", "s0"
-    m._record_predicates(store, None, cert, inferred=True)
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    m._record_predicates(store, claim, Certificate())
+    cert = Certificate("(>= s0 0)", "s0")
+    m._record_predicates(store, claim, cert, inferred=True)
     what = recorded(store)
     assert set(what) == {"property", "inv", "ranking"}
     assert "Inferred" not in what["property"]
@@ -285,7 +285,7 @@ def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
 
     # And without the first record to fall back on.
     fresh = ArtifactStore(dir=tmp_path / "fresh", kind="buchi", prp="(= s0 0)")
-    m._record_predicates(fresh, None, cert, inferred=True)
+    m._record_predicates(fresh, claim, cert, inferred=True)
     what = recorded(fresh)
     assert "Inferred" not in what["property"]
     assert "Inferred" in what["inv"] and "Inferred" in what["ranking"]

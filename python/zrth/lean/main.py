@@ -93,7 +93,6 @@ from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from .cert import (
-    CertificateData,
     LeanCertificate,
     PlanInputs,
     generate_zeroth_hammer_lean,
@@ -202,21 +201,21 @@ def _standalone(settings: Settings, module, lean_cert) -> None:
         print(f"Wrote {enc.title.lower()}: {write_encoding(enc, m2l, layout, out.stem)}")
 
 
-# `inv` / `ranking` hold SMT-LIB when they were supplied and Lean once a route
-# has rendered them, and `*_smt` is where that route keeps the source. So each
-# is looked for in both places, source first.
+# Each predicate recorded: its role, the `Certificate` field it is read from
+# (`None` for the claim's property), and what it is.
 _PREDICATES = (
-    ("property", ("prp",),
+    ("property", None,
      "The property this run was asked to prove, as it was given to "
      "`--safety` / `--buchi`."),
-    ("inv", ("inv_smt", "inv"),
+    ("inv", "inv",
      "The invariant the certificate is generated from."),
-    ("ranking", ("ranking_smt", "ranking"),
+    ("ranking", "ranking",
      "The ranking function the certificate is generated from."),
 )
 
 
-def _record_predicates(store, settings: Settings, cert_data, *,
+def _record_predicates(store, claim: "Claim | None", cert: Certificate, *,
+                       lean: "LeanAnswer | None" = None,
                        inferred: bool = False) -> None:
     """Leave the certificate's predicates in `artifacts/`, as SMT-LIB.
 
@@ -224,14 +223,17 @@ def _record_predicates(store, settings: Settings, cert_data, *,
     comparing `system.smt2` with a refuted obligation has the third side of it
     here rather than having to dig it out of `Certificate/Data.lean`, where it is
     Lean and no longer the text any solver was given.
+
+    `lean` stands in where `cert` has no predicate, so an answer that is Lean
+    only (`--infer ai`) is recorded too, under the SMT-LIB label it is not.
     """
-    if store is None or cert_data is None:
+    if store is None or claim is None:
         return
-    for role, fields, what in _PREDICATES:
+    for role, field, what in _PREDICATES:
+        values = ((claim.prp,) if field is None
+                  else (getattr(cert, field), getattr(lean, field, None)))
         src = next(
-            (v for v in (getattr(cert_data, f, None) for f in fields)
-             if isinstance(v, str) and v.strip()),
-            None,
+            (v for v in values if isinstance(v, str) and v.strip()), None
         )
         if src is None:
             continue
@@ -391,71 +393,69 @@ def _infer(
     return result
 
 
-def main():
-    settings = parse_args()
+def _load(settings: Settings):
+    """The module the run is about.
 
-    if settings.hammer_file:
-        _hammer_only(settings)
-        return
-
-    # The loader refuses a path that is not there, a file that is not a
-    # module and a `-d` the file does not define. All three are the user's
-    # input, so they are reported rather than raised.
+    The loader refuses a path that is not there, a file that is not a
+    module and a `-d` the file does not define. All three are the user's
+    input, so they are reported rather than raised.
+    """
     try:
-        module = load_module_from_file(
+        return load_module_from_file(
             settings.module_file, module_def=settings.module_def
         )
     except (OSError, AttributeError, RuntimeError) as e:
         raise SystemExit(f"error: {e}") from e
-    print(module)
 
-    # The flags, gathered before anything asks about them. Nothing here
-    # needs the module; it is first because the route's shape check below
-    # is entitled to an opinion about the predicates as well as about the
-    # module -- `--pre` on `--infer fbk-proveit` is answerable only by the
-    # encoding, so it is answered where the encoding is made.
-    cert_data: CertificateData | None = None
-    if settings.prp or settings.pre or settings.invariant or settings.ranking:
-        cert_data = CertificateData(prp=settings.prp, kind=settings.kind)
-        if settings.pre:
-            cert_data.init_pre = settings.pre
-            cert_data.update_pre = settings.pre
-        if settings.invariant:
-            cert_data.inv = settings.invariant
-        if settings.ranking:
-            cert_data.ranking = settings.ranking
-    claim, given = (
-        cert_data.split() if cert_data is not None else (None, Certificate())
+
+def _claim(settings: Settings) -> "tuple[Claim | None, Certificate]":
+    """What the flags ask to be proved, and what of its certificate they
+    supply. No claim when no predicate flag was passed."""
+    if not (settings.prp or settings.pre or settings.invariant
+            or settings.ranking):
+        return None, Certificate()
+    claim = Claim(
+        prp=settings.prp,
+        kind=settings.kind,
+        init_pre=settings.pre or None,
+        update_pre=settings.pre or None,
     )
+    return claim, Certificate(settings.invariant or None,
+                              settings.ranking or None)
 
-    # The route's own shape check, before a line of Lean is written. Left
-    # until the route runs, a module its encoding cannot express is met
-    # first by `create_project` -- which fails about the functional
-    # encoding, in a traceback, for a route that was never going to use it.
-    #
-    # Making the check *is* encoding the module, so what it answered with is
-    # kept and handed to the route below rather than encoded again.
-    prechecked = None
-    if settings.route is not None and settings.route.precheck is not None:
-        try:
-            prechecked = settings.route.precheck(
-                module, settings.route_opts, settings.route_config, claim
-            )
-        except (Refused, ImportError) as e:
-            raise _refused(settings, e) from e
 
-    # The same question for the *project*, which every route needs written
-    # whatever it infers. After the route's own check, so a route with an
-    # opinion about this module still gets to state it in its own words.
-    #
-    # An operator with no Lean form is a fact about the module, and saying so
-    # here says it once, before any of the project exists. Left to codegen it
-    # arrives as a missing table cell in the middle of a file, which is a
-    # sentence about `ops.py` for a user who asked about a module.
-    #
-    # The context is built once and threaded: its discovery pass interns
-    # every init/update term, and codegen and the rewrites after inference
-    # need the same one.
+def _route_precheck(settings: Settings, module, claim: "Claim | None"):
+    """The route's own shape check, before a line of Lean is written; what
+    it computed reaches the route as `InferInput.prechecked`.
+
+    Left until the route runs, a module its encoding cannot express is met
+    first by `create_project` -- which fails about the functional encoding,
+    in a traceback, for a route that was never going to use it. The check
+    reads the claim as well: `--pre` on `--infer fbk-proveit` is answerable
+    only by the encoding, so it is answered where the encoding is made.
+    """
+    route = settings.route
+    if route is None or route.precheck is None:
+        return None
+    try:
+        return route.precheck(
+            module, settings.route_opts, settings.route_config, claim
+        )
+    except (Refused, ImportError) as e:
+        raise _refused(settings, e) from e
+
+
+def _lean_context(settings: Settings, module) -> LeanContext:
+    """The module's `LeanContext`, refusing a module with no Lean form.
+
+    After the route's own check, so a route with an opinion about this
+    module states it in its own words. An operator with no Lean form is a
+    fact about the module, said here once, before any of the project
+    exists, rather than as a missing table cell in the middle of a file.
+
+    Built once and threaded: its discovery pass interns every init/update
+    term, and codegen and the rewrites after inference need the same one.
+    """
     ctx = LeanContext(module)
     gaps = lean_gaps(ctx)
     if gaps:
@@ -463,45 +463,15 @@ def main():
             "this module has no Lean form: "
             + "; also ".join(gaps)
         ))
+    return ctx
 
-    # The workspace belongs to the project, not to the route: `--artifacts
-    # reset` is what to pass when a bad artifact is being inherited by every
-    # run, and a run that selects no route is one of those runs. Built before
-    # the pre-check rather than after `create_project`, because the pre-check
-    # is the run's first encoding and what it encodes is worth keeping.
-    store = (
-        None if settings.cert_file
-        else _workspace(settings, module,
-                        settings.output_dir / settings.project_name)
-    )
-    _record_predicates(store, settings, cert_data)
 
-    # With a route the certificate the project gets is the inferred one, so
-    # the check has to wait for it -- run at this point, there is no
-    # invariant yet to refute.
-    if settings.pre_check == "cvc5" and settings.route is None:
-        if cert_data is None:
-            print(".. SMT pre-check: nothing to check (no certificate data)")
-        else:
-            pre_check(module, claim, given, settings.budget,
-                      artifacts=store)
-
-    # With a route this rendering is a placeholder the answer replaces, and
-    # no route reads `Certificate/`, so cvc5 is asked for hints only about
-    # the certificate the project ends up with.
-    try:
-        lean_cert = _render(settings, module, claim, given,
-                            hints=settings.route is None)
-    except Refused as e:
-        raise SystemExit(f"error: {e}") from e
-
-    if settings.cert_file:
-        _standalone(settings, module, lean_cert)
-        return
-
+def _generate(settings: Settings, module, ctx: LeanContext,
+              lean_cert: "LeanCertificate | None") -> Path:
+    """The Lean project, with the certificate as it stands before inference."""
     print(".. Generating lean code")
     try:
-        project_dir = create_project(
+        return create_project(
             output_dir=settings.output_dir,
             module=module,
             project_name=settings.project_name,
@@ -518,6 +488,79 @@ def main():
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e
 
+
+def _regenerate(settings: Settings, module, handle: ProjectHandle, store,
+                claim: Claim, result: InferResult) -> LeanCertificate:
+    """The project's certificate, rewritten from the route's answer.
+
+    The certificate is that answer alone, under the claim the run was given,
+    and its tactic plan is restated over it. Both files are rewritten --
+    `Data.lean` holds the definitions and `Certificate.lean`'s tactics are
+    generated from their shape -- through the handle, so a route that
+    writes more of the project and this pipeline go through one writer.
+    """
+    cert, lean = result.cert, result.lean
+    if settings.pre_check == "cvc5":
+        pre_check(module, claim, lean or cert, settings.budget,
+                  artifacts=store)
+    _record_predicates(store, claim, cert, lean=lean, inferred=True)
+    try:
+        lean_cert = _render(settings, module, claim, cert,
+                            hints=lean is None, restated=True, verbatim=lean)
+    except Refused as e:
+        raise _refused(settings, e) from e
+    handle.write_predicates(lean_cert)
+    return lean_cert
+
+
+def main():
+    settings = parse_args()
+
+    if settings.hammer_file:
+        _hammer_only(settings)
+        return
+
+    module = _load(settings)
+    print(module)
+    claim, given = _claim(settings)
+    prechecked = _route_precheck(settings, module, claim)
+    ctx = _lean_context(settings, module)
+
+    # The workspace belongs to the project, not to the route: `--artifacts
+    # reset` is what to pass when a bad artifact is being inherited by every
+    # run, and a run that selects no route is one of those runs. Built
+    # before the pre-check, the run's first encoding, so what that encodes
+    # is kept.
+    store = (
+        None if settings.cert_file
+        else _workspace(settings, module,
+                        settings.output_dir / settings.project_name)
+    )
+    _record_predicates(store, claim, given)
+
+    # With a route the certificate is the inferred one, and `_regenerate`
+    # checks that instead.
+    if settings.pre_check == "cvc5" and settings.route is None:
+        if claim is None:
+            print(".. SMT pre-check: nothing to check (no certificate data)")
+        else:
+            pre_check(module, claim, given, settings.budget, artifacts=store)
+
+    # With a route this rendering is a placeholder the answer replaces, and
+    # no route reads `Certificate/`, so cvc5 is asked for hints only about
+    # the certificate the project ends up with.
+    try:
+        lean_cert = _render(settings, module, claim, given,
+                            hints=settings.route is None)
+    except Refused as e:
+        raise SystemExit(f"error: {e}") from e
+
+    if settings.cert_file:
+        _standalone(settings, module, lean_cert)
+        return
+
+    project_dir = _generate(settings, module, ctx, lean_cert)
+
     if settings.route is not None:
         print(f".. Inferring the certificate with --infer {settings.route.name}")
         handle = ProjectHandle(
@@ -531,41 +574,12 @@ def main():
             artifacts=store,
         )
         result = _infer(settings, module, handle, claim, given, prechecked)
-
-        if result is None:
-            # The route installed its own certificate, so there is nothing
-            # of ours to be complete about and nothing to regenerate from.
-            _build_cert(settings, project_dir, None)
-            print(f"\nProject ready at: {project_dir}")
-            return
-
-        inferred, verbatim = result.cert, result.lean
-        if settings.pre_check == "cvc5":
-            pre_check(module, claim, verbatim or inferred, settings.budget,
-                      artifacts=store)
-        _record_predicates(store, settings, CertificateData(
-            prp=claim.prp, kind=claim.kind,
-            inv=verbatim and verbatim.inv,
-            ranking=verbatim and verbatim.ranking,
-            inv_smt=inferred.inv, ranking_smt=inferred.ranking,
-        ), inferred=True)
-
-        # The certificate is the route's answer alone, under the claim the
-        # run was given; the tactic plan is restated over it, since until
-        # now there were no inferred predicates for it to be about.
-        try:
-            lean_cert = _render(settings, module, claim, inferred,
-                                hints=verbatim is None, restated=True,
-                                verbatim=verbatim)
-        except Refused as e:
-            raise _refused(settings, e) from e
-
-        # After inference the predicates are new, so both files are
-        # rewritten -- `Data.lean` holds the definitions and
-        # `Certificate.lean`'s tactics are generated from their shape. The
-        # handle is what does it, so a route that writes more of the project
-        # than the predicates and this pipeline go through one writer.
-        handle.write_predicates(lean_cert)
+        # `None`: the route installed its own certificate, so there is
+        # nothing of ours to be complete about and nothing to regenerate from.
+        lean_cert = (
+            None if result is None
+            else _regenerate(settings, module, handle, store, claim, result)
+        )
 
     _build_cert(settings, project_dir, lean_cert)
 
