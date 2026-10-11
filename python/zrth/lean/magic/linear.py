@@ -86,7 +86,7 @@ what answered.
 
 from __future__ import annotations
 
-from ..cert import CertificateData
+from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
 from dataclasses import dataclass
@@ -247,8 +247,12 @@ class TA2MagicLinear(TA2Magic):
 
     # --- driver ---------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
-        ctx = SynthContext.build(self.module, cd.split()[0], route="smt-linear",
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. `given.inv` is kept: the
+        rows strengthen it for `--safety` and the rank is searched under it
+        for `--buchi`."""
+        ctx = SynthContext.build(self.module, claim, route="smt-linear",
                                  takes=READS)
         scale = denominator_scale(program_rationals(ctx))
         cols = readings(ctx, allow=READS, route="smt-linear", scale=scale)
@@ -256,8 +260,9 @@ class TA2MagicLinear(TA2Magic):
         if scale != 1:
             self.log(f"[smt-linear] Real state: read through a floor after "
                      f"scaling by {scale}")
-        if cd.is_safety:
-            search = self._safety(ctx, cols, cd)
+        inv = given.inv if given.inv and given.inv.strip() else None
+        if claim.is_safety:
+            search = self._safety(ctx, cols, inv)
             if search.found is not None:
                 self.log(f"[smt-linear] inv: {search.found}")
             record(self.artifacts, search, log=self.log)
@@ -265,11 +270,9 @@ class TA2MagicLinear(TA2Magic):
                 raise Refused(
                     f"--infer smt-linear found no invariant. {search.note}",
                     searched=True)
-            cd.inv = cd.inv_smt = search.found
-            return cd
+            return Certificate(inv=search.found)
 
-        given = cd.inv if isinstance(cd.inv, str) and cd.inv.strip() else None
-        if given is None:
+        if inv is None:
             # Said rather than assumed: a rank that has to hold in *every*
             # state is a much harder ask than one over a real invariant, so
             # the rank is searched under `true` first and the invariant
@@ -279,7 +282,7 @@ class TA2MagicLinear(TA2Magic):
                 "none resumed): searching under `true` first, then for an "
                 "invariant to rank under"
             )
-        search, inv_src = self._buchi(ctx, cols, given, cd)
+        search, inv_src = self._buchi(ctx, cols, inv, claim)
         if search.found is not None:
             self.log(f"[smt-linear] inv: {inv_src}")
             self.log(f"[smt-linear] ranking: {search.found}")
@@ -289,13 +292,11 @@ class TA2MagicLinear(TA2Magic):
                 f"--infer smt-linear found no ranking function. {search.note}",
                 searched=True,
             )
-        cd.inv = cd.inv_smt = inv_src
-        cd.ranking = cd.ranking_smt = search.found
-        return cd
+        return Certificate(inv_src, search.found)
 
     # --- the ranking function, and the invariant it ranks under ---------
 
-    def _shapes(self, ctx: SynthContext, cd: CertificateData) -> list:
+    def _shapes(self, ctx: SynthContext, claim: Claim) -> list:
         """The rank shapes to try, simplest first: linear, then two with a branch.
 
         Linear comes first and at every invariant width before anything with
@@ -315,7 +316,7 @@ class TA2MagicLinear(TA2Magic):
           `(ite (<= 0 s1) s0 (- s1))`.
         """
         shapes = [_RankShape("linear")]
-        prp_src = cd.prp.strip() if isinstance(cd.prp, str) else ""
+        prp_src = claim.prp.strip() if isinstance(claim.prp, str) else ""
         if not prp_src.startswith("("):
             # A property written in Python syntax: the rank is SMT-LIB, so the
             # branch is the property as cvc5 prints it.
@@ -436,7 +437,7 @@ class TA2MagicLinear(TA2Magic):
         return (inv_src, rank_src), verdict
 
     def _buchi(self, ctx: SynthContext, cols: list, given: "str | None",
-               cd: CertificateData) -> tuple[Search, str]:
+               claim: Claim) -> tuple[Search, str]:
         """The rank, and the invariant it ranks under, widening the invariant.
 
         Width 0 is the rank under `given` alone, which is the whole of what
@@ -453,7 +454,7 @@ class TA2MagicLinear(TA2Magic):
         """
         names = [col.name for col in cols]
         inv_src = given or "true"
-        shapes = self._shapes(ctx, cd)
+        shapes = self._shapes(ctx, claim)
         # Per shape: the widest invariant it was decided empty under (-1 for
         # none yet), and whether a query about it went unanswered.
         decided = {i: -1 for i in range(len(shapes))}
@@ -551,7 +552,7 @@ class TA2MagicLinear(TA2Magic):
     # --- the invariant, one row at a time -------------------------------
 
     def _safety(self, ctx: SynthContext, cols: list,
-                cd: CertificateData) -> Search:
+                given: "str | None") -> Search:
         """`init -> inv`, `inv -> inv'`, `inv -> P`, over conjunctions of rows.
 
         A supplied invariant is not replaced but *strengthened*: it is the
@@ -564,7 +565,6 @@ class TA2MagicLinear(TA2Magic):
         in 30 s. Each `unsat` on the way is a fact worth keeping, and the
         widest one reached is what the note is allowed to claim.
         """
-        given = cd.inv if isinstance(cd.inv, str) and cd.inv.strip() else None
         if given:
             self.log(f"[smt-linear] strengthening the given invariant: {given}")
         decided, how, caveat = 0, _HOW_QUANTIFIED, ""

@@ -21,7 +21,6 @@ from pathlib import Path
 import pytest
 
 from zrth.lean.artifacts import ArtifactStore, module_digest
-from zrth.lean.cert import CertificateData
 from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.common import Refused
 
@@ -74,9 +73,9 @@ def test_sygus_finds_the_congruence_no_lattice_can_state():
     """
     from zrth.lean.magic.sygus import TA2MagicSygus
 
-    cd = CertificateData(prp="(not (= s0 1))", kind="safety")
-    out = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None).infer(cd)
-    assert "mod" in out.inv_smt
+    claim = Claim(prp="(not (= s0 1))", kind="safety")
+    out = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None).infer(claim)
+    assert "mod" in out.inv
 
 
 def test_a_synthesised_invariant_that_prints_with_let_is_kept():
@@ -93,8 +92,8 @@ def test_a_synthesised_invariant_that_prints_with_let_is_kept():
     prp = ("(and (>= s0 0) (<= s1 0) (>= (+ s0 (* (- 1) s1)) 0) (>= (+ s0 s1) 0) "
            "(<= (+ s0 s1) 0) (= (+ s0 s1) 0) (>= s0 (- 1)) (<= s1 1))")
     out = TA2MagicSygus(bench.build()[0], log=lambda *_: None).infer(
-        CertificateData(prp=prp, kind="safety"))
-    assert out.inv_smt
+        Claim(prp=prp, kind="safety"))
+    assert out.inv
 
 def test_sygus_without_congruences_cannot_state_it():
     """The same module under `--sygus-grammar linear`.
@@ -104,12 +103,12 @@ def test_sygus_without_congruences_cannot_state_it():
     """
     from zrth.lean.magic.sygus import TA2MagicSygus
 
-    cd = CertificateData(prp="(not (= s0 1))", kind="safety")
+    claim = Claim(prp="(not (= s0 1))", kind="safety")
     magic = TA2MagicSygus(
         module_of("m_step2"), grammar="linear", log=lambda *_: None
     )
     with pytest.raises(Refused, match="no invariant"):
-        magic.infer(cd)
+        magic.infer(claim)
 
 
 def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
@@ -119,13 +118,12 @@ def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
 
     store = store_for(tmp_path, "m_step2", kind="safety", prp="(not (= s0 1))",
                       producer="sygus")
-    cd = CertificateData(prp="(not (= s0 1))", kind="safety")
-    TA2MagicSygus(
+    out = TA2MagicSygus(
         module_of("m_step2"), artifacts=store, log=lambda *_: None
-    ).infer(cd)
+    ).infer(Claim(prp="(not (= s0 1))", kind="safety"))
     kept = store.usable("inv", languages=("smt",), statuses=("proved",))
     assert len(kept) == 1
-    assert store.read(kept[0]) == cd.inv_smt
+    assert store.read(kept[0]) == out.inv
 
 
 def test_a_real_state_keeps_its_rationals_in_the_grammar_route():
@@ -140,9 +138,9 @@ def test_a_real_state_keeps_its_rationals_in_the_grammar_route():
     from zrth.lean.magic.sygus import TA2MagicSygus
 
     lines: list[str] = []
-    cd = CertificateData(prp="(>= s0 0.0)", kind="safety")
+    claim = Claim(prp="(>= s0 0.0)", kind="safety")
     try:
-        TA2MagicSygus(module_of("m_lra_lin"), log=lines.append).infer(cd)
+        TA2MagicSygus(module_of("m_lra_lin"), log=lines.append).infer(claim)
     except Refused:
         pass                                 # the search may come back empty
     assert "[sygus] columns: s0" in lines
@@ -158,9 +156,9 @@ def test_sygus_weighs_a_bool_column_as_zero_or_one():
     from zrth.lean.magic.sygus import TA2MagicSygus
 
     lines: list[str] = []
-    cd = CertificateData(prp="(>= s1 0)", kind="safety")
+    claim = Claim(prp="(>= s1 0)", kind="safety")
     try:
-        TA2MagicSygus(module_of("m_boolint"), log=lines.append).infer(cd)
+        TA2MagicSygus(module_of("m_boolint"), log=lines.append).infer(claim)
     except Refused:
         pass
     assert any("(ite s0 1 0)" in ln for ln in lines if ln.startswith("[sygus] columns"))
@@ -178,11 +176,11 @@ def test_sygus_asks_the_narrow_grammars_before_the_wide_one():
     from zrth.lean.magic.sygus import TA2MagicSygus
 
     lines: list[str] = []
-    cd = CertificateData(prp="(and (>= s0 0) (<= s0 100))", kind="safety")
-    out = TA2MagicSygus(module_of("m_countdown"), log=lines.append).infer(cd)
+    claim = Claim(prp="(and (>= s0 0) (<= s0 100))", kind="safety")
+    out = TA2MagicSygus(module_of("m_countdown"), log=lines.append).infer(claim)
     assert "[sygus] no invariant of 1 atom(s); widening" in lines
     assert "[sygus] found at 2 atom(s)" in lines
-    assert out.inv_smt
+    assert out.inv
 
 
 def test_the_note_claims_the_widths_that_finished_and_no_more():
@@ -218,9 +216,9 @@ def test_a_ladder_that_decided_nothing_claims_nothing():
 def test_sygus_is_a_safety_route_in_the_class_as_well_as_the_row():
     from zrth.lean.magic.sygus import TA2MagicSygus
 
-    cd = CertificateData(prp="(= s0 0)", kind="buchi")
+    claim = Claim(prp="(= s0 0)", kind="buchi")
     with pytest.raises(Refused, match="ranking function"):
-        TA2MagicSygus(module_of("m_countdown"), log=lambda *_: None).infer(cd)
+        TA2MagicSygus(module_of("m_countdown"), log=lambda *_: None).infer(claim)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -239,10 +237,10 @@ def test_a_real_component_is_read_through_a_floor():
     from zrth.lean.magic.linear import TA2MagicLinear
 
     module = module_of("m_lra_lin")
-    cd = CertificateData(prp="(<= s0 0.0)", kind="buchi")
-    out = TA2MagicLinear(module, log=lambda *_: None).infer(cd)
-    assert "to_int s0" in out.ranking_smt
-    assert obligations_of(module, out) == []
+    claim = Claim(prp="(<= s0 0.0)", kind="buchi")
+    out = TA2MagicLinear(module, log=lambda *_: None).infer(claim)
+    assert "to_int s0" in out.ranking
+    assert obligations_of(module, claim, out) == []
 
 
 def test_a_real_rank_is_scaled_before_it_is_floored():
@@ -250,10 +248,10 @@ def test_a_real_rank_is_scaled_before_it_is_floored():
 
     module = module_of("m_lra_half")
     said: list[str] = []
-    cd = CertificateData(prp="(<= s0 0.0)", kind="buchi")
-    out = TA2MagicLinear(module, log=said.append).infer(cd)
-    assert "(to_int (* 2.0 s0))" in out.ranking_smt
-    assert obligations_of(module, out) == []
+    claim = Claim(prp="(<= s0 0.0)", kind="buchi")
+    out = TA2MagicLinear(module, log=said.append).infer(claim)
+    assert "(to_int (* 2.0 s0))" in out.ranking
+    assert obligations_of(module, claim, out) == []
     assert any("scaling by 2" in line for line in said)
 
 
@@ -275,11 +273,11 @@ def test_a_matrix_component_is_a_column_per_element():
 
     module = module_of("m_relu_vec")
     said: list[str] = []
-    cd = CertificateData(prp="(= ((_ tuple.select 0) s0) 0)", kind="buchi",
-                         inv="(>= ((_ tuple.select 0) s0) 0)")
-    out = TA2MagicLinear(module, log=said.append).infer(cd)
-    assert out.ranking_smt is not None
-    assert obligations_of(module, out) == []
+    claim = Claim(prp="(= ((_ tuple.select 0) s0) 0)", kind="buchi")
+    given = Certificate(inv="(>= ((_ tuple.select 0) s0) 0)")
+    out = TA2MagicLinear(module, log=said.append).infer(claim, given)
+    assert out.ranking is not None
+    assert obligations_of(module, claim, out) == []
     assert any("tuple.select 2" in line for line in said), (
         "every element is a column, not just the one the property reads"
     )
@@ -298,9 +296,9 @@ def test_an_operator_cvc5_cannot_encode_is_refused_before_the_search():
     from zrth.lean.magic.linear import TA2MagicLinear
 
     module = module_of("m_transpose")
-    cd = CertificateData(prp="(= ((_ tuple.select 0) s0) 1)", kind="buchi")
+    claim = Claim(prp="(= ((_ tuple.select 0) s0) 1)", kind="buchi")
     with pytest.raises(Refused, match="operator in it has no encoding"):
-        TA2MagicLinear(module, log=lambda _: None).infer(cd)
+        TA2MagicLinear(module, log=lambda _: None).infer(claim)
 
 
 def test_an_element_is_read_by_its_own_sort_not_the_component_s():
@@ -336,11 +334,11 @@ def test_an_element_is_read_by_its_own_sort_not_the_component_s():
 def test_smt_linear_finds_a_rank_when_the_shape_has_one():
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    cd = CertificateData(
-        prp="(= s0 0)", kind="buchi", inv="(and (>= s0 0) (<= s0 100))"
-    )
-    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
-    assert out.ranking_smt == "s0"
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    given = Certificate(inv="(and (>= s0 0) (<= s0 100))")
+    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(
+        claim, given)
+    assert out.ranking == "s0"
 
 
 def test_smt_linear_ranks_a_loop_whose_exit_states_are_unbounded():
@@ -354,9 +352,9 @@ def test_smt_linear_ranks_a_loop_whose_exit_states_are_unbounded():
     from zrth.lean.magic.linear import TA2MagicLinear
 
     bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
-    cd = CertificateData(prp="(not (<= 0 s0))", kind="buchi")
-    out = TA2MagicLinear(bench.build()[0], log=lambda *_: None).infer(cd)
-    assert out.ranking_smt is not None
+    claim = Claim(prp="(not (<= 0 s0))", kind="buchi")
+    out = TA2MagicLinear(bench.build()[0], log=lambda *_: None).infer(claim)
+    assert out.ranking is not None
 
 def test_smt_linear_proves_a_shape_empty_rather_than_failing_to_search_it():
     """`m_twovars` has no linear rank under any invariant this route states.
@@ -368,9 +366,9 @@ def test_smt_linear_proves_a_shape_empty_rather_than_failing_to_search_it():
     """
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    cd = CertificateData(prp="(and (= s0 0) (= s1 0))", kind="buchi")
+    claim = Claim(prp="(and (= s0 0) (= s1 0))", kind="buchi")
     with pytest.raises(Refused) as e:
-        TA2MagicLinear(module_of("m_twovars"), log=lambda *_: None).infer(cd)
+        TA2MagicLinear(module_of("m_twovars"), log=lambda *_: None).infer(claim)
     assert "proof that the space is empty" in str(e.value)
     assert "under any invariant of up to 2 linear inequalities" in str(e.value)
 
@@ -387,11 +385,11 @@ def test_smt_linear_finds_the_invariant_it_needs_to_rank_over():
 
     module = module_of("m_toward5")
     said: list[str] = []
-    cd = CertificateData(prp="(= s0 5)", kind="buchi")
-    out = TA2MagicLinear(module, log=said.append).infer(cd)
-    assert out.ranking_smt is not None
-    assert out.inv_smt != "true", "it had to find an invariant to rank under"
-    assert obligations_of(module, out) == []
+    claim = Claim(prp="(= s0 5)", kind="buchi")
+    out = TA2MagicLinear(module, log=said.append).infer(claim)
+    assert out.ranking is not None
+    assert out.inv != "true", "it had to find an invariant to rank under"
+    assert obligations_of(module, claim, out) == []
     assert any("widening the invariant" in line for line in said), (
         "width 0 is tried first, so the rank under `true` still costs one query"
     )
@@ -400,19 +398,20 @@ def test_smt_linear_finds_the_invariant_it_needs_to_rank_over():
 def test_smt_linear_finds_a_one_row_safety_invariant():
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    cd = CertificateData(prp="(<= s0 100)", kind="safety")
-    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
+    claim = Claim(prp="(<= s0 100)", kind="safety")
+    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(claim)
     # Divided through by the gcd: the same predicate, and the one the
     # certificate should carry.
-    assert out.inv_smt == "(>= (+ 100 (- s0)) 0)"
+    assert out.inv == "(>= (+ 100 (- s0)) 0)"
 
 
 def test_smt_linear_strengthens_a_supplied_invariant_rather_than_replacing_it():
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    cd = CertificateData(prp="(<= s0 100)", kind="safety", inv="(>= s0 0)")
-    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
-    assert out.inv_smt.startswith("(and (>= s0 0)")
+    claim = Claim(prp="(<= s0 100)", kind="safety")
+    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(
+        claim, Certificate(inv="(>= s0 0)"))
+    assert out.inv.startswith("(and (>= s0 0)")
 
 
 def test_smt_linear_writes_what_it_ruled_out(tmp_path):
@@ -421,11 +420,11 @@ def test_smt_linear_writes_what_it_ruled_out(tmp_path):
     prp = "(and (= s0 0) (= s1 0))"
     store = store_for(tmp_path, "m_twovars", kind="buchi", prp=prp,
                       producer="smt-linear")
-    cd = CertificateData(prp=prp, kind="buchi")
+    claim = Claim(prp=prp, kind="buchi")
     with pytest.raises(Refused):
         TA2MagicLinear(
             module_of("m_twovars"), artifacts=store, log=lambda *_: None
-        ).infer(cd)
+        ).infer(claim)
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     assert len(notes) == 1
     text = store.read(notes[0])
@@ -450,7 +449,7 @@ def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
 
     store = store_for(tmp_path, "m_lex", kind="safety", prp="(<= s0 3)",
                       producer="smt-linear")
-    cd = CertificateData(prp="(<= s0 3)", kind="safety")
+    claim = Claim(prp="(<= s0 3)", kind="safety")
     with pytest.raises(Refused):
         TA2MagicLinear(
             module_of("m_lex"),
@@ -458,7 +457,7 @@ def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
             budget=SmtBudget(per_call_ms=1, phase_ms=1),
             artifacts=store,
             log=lambda *_: None,
-        ).infer(cd)
+        ).infer(claim)
     assert not store.usable("note", statuses=("no_solution",))
     undecided = store.usable("note", statuses=("unknown",))
     assert len(undecided) == 1
@@ -582,8 +581,8 @@ def test_a_note_about_another_property_is_not_carried_over(tmp_path):
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def obligations_hold(name: str, cd: CertificateData) -> list[str]:
-    """The obligation names `smt_query` does not certify for `cd`.
+def obligations_hold(name: str, claim: Claim, cert: Certificate) -> list[str]:
+    """The obligation names `smt_query` does not certify for `cert`.
 
     A second opinion, and deliberately not the query that produced the
     answer: `check_obligations` states `init_inv`, `step_inv` and
@@ -591,7 +590,7 @@ def obligations_hold(name: str, cd: CertificateData) -> list[str]:
     """
     from zrth.lean.smt_query import ModuleQueries, SmtBudget, Status
 
-    q = ModuleQueries.build(module_of(name), *cd.split())
+    q = ModuleQueries.build(module_of(name), claim, cert)
     assert q is not None, "the predicates should be readable for this module"
     return [
         v.name
@@ -603,9 +602,9 @@ def obligations_hold(name: str, cd: CertificateData) -> list[str]:
 def test_a_synthesised_invariant_passes_the_obligations_cvc5_states():
     from zrth.lean.magic.sygus import TA2MagicSygus
 
-    cd = CertificateData(prp="(not (= s0 1))", kind="safety")
-    out = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None).infer(cd)
-    assert obligations_hold("m_step2", out) == []
+    claim = Claim(prp="(not (= s0 1))", kind="safety")
+    out = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None).infer(claim)
+    assert obligations_hold("m_step2", claim, out) == []
 
 
 def test_sygus_reads_a_module_with_an_external_input():
@@ -616,20 +615,20 @@ def test_sygus_reads_a_module_with_an_external_input():
     checks rather than merely that something was returned."""
     from zrth.lean.magic.sygus import TA2MagicSygus
 
-    cd = CertificateData(prp="(>= s0 0)", kind="safety")
-    out = TA2MagicSygus(module_of("m_relu_input"), log=lambda *_: None).infer(cd)
-    assert out.inv_smt
-    assert obligations_hold("m_relu_input", out) == []
+    claim = Claim(prp="(>= s0 0)", kind="safety")
+    out = TA2MagicSygus(module_of("m_relu_input"), log=lambda *_: None).infer(claim)
+    assert out.inv
+    assert obligations_hold("m_relu_input", claim, out) == []
 
 
 def test_a_linear_certificate_passes_the_obligations_too():
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    cd = CertificateData(
-        prp="(= s0 0)", kind="buchi", inv="(and (>= s0 0) (<= s0 100))"
-    )
-    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
-    assert obligations_hold("m_countdown", out) == []
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    given = Certificate(inv="(and (>= s0 0) (<= s0 100))")
+    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(
+        claim, given)
+    assert obligations_hold("m_countdown", claim, out) == []
 
 
 def test_sygus_writes_a_proof_of_absence_when_its_space_is_finite_and_empty(tmp_path):
@@ -644,12 +643,12 @@ def test_sygus_writes_a_proof_of_absence_when_its_space_is_finite_and_empty(tmp_
 
     store = store_for(tmp_path, "m_step2", kind="safety", prp="(not (= s0 1))",
                       producer="sygus")
-    cd = CertificateData(prp="(not (= s0 1))", kind="safety")
+    claim = Claim(prp="(not (= s0 1))", kind="safety")
     with pytest.raises(Refused):
         TA2MagicSygus(
             module_of("m_step2"), grammar="linear", artifacts=store,
             log=lambda *_: None,
-        ).infer(cd)
+        ).infer(claim)
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     assert len(notes) == 1
     text = store.read(notes[0])
@@ -668,9 +667,9 @@ def test_a_bound_the_program_mentions_is_seeded_the_other_way_round():
     """
     from zrth.lean.magic.sygus import TA2MagicSygus
 
-    cd = CertificateData(prp="(<= s0 100)", kind="safety")
-    out = TA2MagicSygus(module_of("m_countdown"), log=lambda *_: None).infer(cd)
-    assert obligations_hold("m_countdown", out) == []
+    claim = Claim(prp="(<= s0 100)", kind="safety")
+    out = TA2MagicSygus(module_of("m_countdown"), log=lambda *_: None).infer(claim)
+    assert obligations_hold("m_countdown", claim, out) == []
 
 
 def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
@@ -684,10 +683,10 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
     from zrth.lean.infer_route import (
         InferInput,
         ProjectHandle,
-        _legacy,
         _resume_inv_to_strengthen,
         _take_inv,
     )
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     store = store_for(tmp_path, "m_countdown", kind="safety", prp="(<= s0 100)")
     store.put("inv", "(>= s0 0)", status="too_weak", language="smt",
@@ -713,15 +712,10 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
     inp = _take_inv(inp, _resume_inv_to_strengthen(inp), "adding to it")
     assert inp.given.inv == "(>= s0 0)"
 
-    out = TA2MagicLinearFor(_legacy(inp))
-    assert out.inv_smt.startswith("(and (>= s0 0)"), "kept, and added to"
-    assert obligations_hold("m_countdown", out) == []
-
-
-def TA2MagicLinearFor(cd: CertificateData) -> CertificateData:
-    from zrth.lean.magic.linear import TA2MagicLinear
-
-    return TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
+    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(
+        inp.claim, inp.given)
+    assert out.inv.startswith("(and (>= s0 0)"), "kept, and added to"
+    assert obligations_hold("m_countdown", inp.claim, out) == []
 
 
 def test_an_explicit_invariant_is_not_overridden_by_a_resumed_one(tmp_path):
@@ -778,10 +772,10 @@ def bv_counter(width: int, top: int):
     )
 
 
-def obligations_of(module, cd: CertificateData) -> list[str]:
+def obligations_of(module, claim: Claim, cert: Certificate) -> list[str]:
     from zrth.lean.smt_query import ModuleQueries, SmtBudget, Status
 
-    q = ModuleQueries.build(module, *cd.split())
+    q = ModuleQueries.build(module, claim, cert)
     assert q is not None
     return [v.name for v in q.check_obligations(SmtBudget())
             if v.status is not Status.HOLDS]
@@ -793,14 +787,17 @@ def test_a_bool_component_is_weighed_as_zero_or_one():
     The Bool column enters the template as `(ite s0 1 0)`, so a row can say
     `b`, `¬b`, or a bound that mixes the flag with the counter -- and the
     invariant that comes back is put to the obligations like any other.
+    Whether that invariant gives the flag a nonzero coefficient is cvc5's
+    choice, and it varies with what the process asked cvc5 before.
     """
     from zrth.lean.magic.linear import TA2MagicLinear
 
     module = module_of("m_boolint")
-    cd = CertificateData(prp="(and (>= s1 0) (<= s1 5))", kind="safety")
-    out = TA2MagicLinear(module, log=lambda *_: None).infer(cd)
-    assert "(ite s0 1 0)" in out.inv_smt
-    assert obligations_of(module, out) == []
+    said: list[str] = []
+    claim = Claim(prp="(and (>= s1 0) (<= s1 5))", kind="safety")
+    out = TA2MagicLinear(module, log=said.append).infer(claim)
+    assert "[smt-linear] columns: (ite s0 1 0), s1" in said
+    assert obligations_of(module, claim, out) == []
 
 
 def test_a_bitvector_component_is_weighed_as_its_unsigned_value():
@@ -816,10 +813,10 @@ def test_a_bitvector_component_is_weighed_as_its_unsigned_value():
 
     module = bv_counter(8, 10)
     said: list[str] = []
-    cd = CertificateData(prp="(<= (ubv_to_int s0) 10)", kind="safety")
-    out = TA2MagicLinear(module, log=said.append).infer(cd)
-    assert "ubv_to_int s0" in out.inv_smt
-    assert obligations_of(module, out) == []
+    claim = Claim(prp="(<= (ubv_to_int s0) 10)", kind="safety")
+    out = TA2MagicLinear(module, log=said.append).infer(claim)
+    assert "ubv_to_int s0" in out.inv
+    assert obligations_of(module, claim, out) == []
     assert any("counterexample" in line for line in said), (
         "a bitvector column should fall back to the loop"
     )
@@ -832,8 +829,8 @@ def test_an_integer_state_does_not_pay_for_the_fallback():
     from zrth.lean.magic.linear import TA2MagicLinear
 
     said: list[str] = []
-    cd = CertificateData(prp="(<= s0 100)", kind="safety")
-    TA2MagicLinear(module_of("m_countdown"), log=said.append).infer(cd)
+    claim = Claim(prp="(<= s0 100)", kind="safety")
+    TA2MagicLinear(module_of("m_countdown"), log=said.append).infer(claim)
     assert not any("counterexample" in line for line in said)
 
 
@@ -850,10 +847,10 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
                           kind="safety", prp="(<= (ubv_to_int s0) 5)",
                           producer="smt-linear")
     # False: the counter reaches 10, so no invariant implies `s0 <= 5`.
-    cd = CertificateData(prp="(<= (ubv_to_int s0) 5)", kind="safety")
+    claim = Claim(prp="(<= (ubv_to_int s0) 5)", kind="safety")
     with pytest.raises(Refused):
         TA2MagicLinear(module, rows=1, artifacts=store,
-                       log=lambda *_: None).infer(cd)
+                       log=lambda *_: None).infer(claim)
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     if notes:                       # the loop decided it: then say how
         text = store.read(notes[0])
@@ -877,16 +874,16 @@ def test_smt_linear_zeroes_the_rank_where_the_property_holds():
     from zrth.lean.magic.linear import TA2MagicLinear
 
     module = _fixture("counter")
-    cd = CertificateData(prp="(= s0 0)", kind="buchi")
-    out = TA2MagicLinear(module, log=lambda *_: None).infer(cd)
-    assert out.ranking_smt.startswith("(ite (= s0 0) 0 ")
-    assert obligations_of(module, out) == []
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    out = TA2MagicLinear(module, log=lambda *_: None).infer(claim)
+    assert out.ranking.startswith("(ite (= s0 0) 0 ")
+    assert obligations_of(module, claim, out) == []
 
 
 def test_smt_linear_keeps_a_linear_rank_where_one_exists():
     """Linear is tried at every width before anything with a branch."""
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    cd = CertificateData(prp="(= s0 0)", kind="buchi")
-    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
-    assert "ite" not in out.ranking_smt
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(claim)
+    assert "ite" not in out.ranking

@@ -20,23 +20,27 @@ route rows import their own module, which is what keeps `verith --help`
 cheap. Importing a route from this package's `__init__` would undo that.
 """
 
-from ..cert import CertificateData
+from ..certificate import Certificate, Claim
 
 
 class TA2Magic:
-    """Base class of the engines: `infer(cd)` fills in the certificate.
+    """Base class of the engines: `infer(claim, given)` answers with a new
+    `Certificate`, in SMT-LIB.
 
-    `cd.kind == "buchi"` asks for `G (F prp)`: an invariant and a ranking
+    `claim.kind == "buchi"` asks for `G (F prp)`: an invariant and a ranking
     function that decreases on every step from an `inv ∧ ¬prp` state.
     `"safety"` asks for `G prp`: an invariant that implies `prp`, and no
     ranking. Which kinds an engine takes is its route's `kinds`, checked
-    before it runs.
+    before it runs. `given` is what the run already holds of the answer
+    (`--invariant`, `--ranking`, or a resumed invariant); an engine reads
+    only what its route's `seeds` names.
     """
 
     def __init__(self, source: str):
         self.source = source
 
-    def infer(self, cd: CertificateData) -> CertificateData:
-        """Fill in `cd.inv` (and `cd.ranking` for `buchi`) for `cd.prp`,
-        under the preconditions already in `cd` (`init_pre`, `update_pre`)."""
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim.prp`, under the claim's preconditions
+        (`init_pre`, `update_pre`)."""
         raise NotImplementedError

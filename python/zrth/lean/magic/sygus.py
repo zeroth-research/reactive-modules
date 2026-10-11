@@ -64,7 +64,7 @@ and the artifact is the answer being *reusable*.
 
 from __future__ import annotations
 
-from ..cert import CertificateData
+from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
 from ..smt_synth import (
@@ -155,15 +155,18 @@ class TA2MagicSygus(TA2Magic):
 
     # --- driver ---------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
-        if not cd.is_safety:
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The invariant of `claim`, as SMT-LIB. `given` is not read: the
+        row seeds from nothing but `--pre`, which is in the claim."""
+        if not claim.is_safety:
             # The row refuses `--buchi` at parse time; this is the same rule
             # where the search is, so the class is not usable another way.
             raise Refused(
                 "--infer sygus certifies `G P`: the invariant is the whole "
                 "certificate and there is no ranking function to synthesise"
             )
-        ctx = SynthContext.build(self.module, cd.split()[0], route="sygus",
+        ctx = SynthContext.build(self.module, claim, route="sygus",
                                  takes=READS)
         # The columns the grammar is affine over, with a Real kept Real:
         # this route synthesises an invariant and never a ranking function,
@@ -183,7 +186,7 @@ class TA2MagicSygus(TA2Magic):
                 searched=True,
             )
         self.log(f"[sygus] inv: {search.found}")
-        return self._emit(cd, search.found)
+        return Certificate(inv=search.found)
 
     # --- the search -----------------------------------------------------
 
@@ -526,15 +529,3 @@ class TA2MagicSygus(TA2Magic):
                 "searches no fixed space and is what to try next."
             ),
         )
-
-    # --- out ------------------------------------------------------------
-
-    def _emit(self, cd: CertificateData, inv_smt: str) -> CertificateData:
-        """The certificate, as SMT-LIB. The pipeline renders the Lean.
-
-        Unlike `magic.cegar` and `magic.learn` this route holds no rendering
-        of its own -- it never built one -- so handing back the SMT alone is
-        what its row's `returns="smt"` means, and `main` prints it once.
-        """
-        cd.inv, cd.inv_smt = inv_smt, inv_smt
-        return cd
