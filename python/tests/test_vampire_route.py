@@ -29,7 +29,6 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.cert import CertificateData
 from zrth.lean.certificate import Claim
 from zrth.lean.common import Refused
 
@@ -76,7 +75,7 @@ def derive(name: str, kind: str, prp: str, *, timeout: float = 30,
     magic = TA2MagicVampire(module_at(fixture / f"{name}.py"),
                             vampire=vampire or vampire_or_skip(),
                             timeout=timeout, log=lambda *_: None)
-    return magic.infer(CertificateData(prp=prp, kind=kind))
+    return magic.infer(Claim(prp=prp, kind=kind))
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -481,9 +480,9 @@ def test_the_templates_are_tried_smallest_first():
 def test_vampire_derives_a_countdowns_invariant():
     """The route's whole claim, on the case it reaches: nothing proposed
     `0 <= s0 <= 100`, Vampire answered `A0=0, B0=100`."""
-    cd = derive("m_countdown", "safety", "(<= s0 100)")
-    assert cd.inv_smt == "(and (<= 0 s0) (<= s0 100))"
-    assert cd.ranking_smt is None
+    cert = derive("m_countdown", "safety", "(<= s0 100)")
+    assert cert.inv == "(and (<= 0 s0) (<= s0 100))"
+    assert cert.ranking is None
 
 
 def test_what_vampire_answers_is_checked_before_it_is_emitted():
@@ -506,11 +505,11 @@ def test_vampire_derives_a_countdowns_invariant_and_ranking():
     """The Buchi claim, and the reason it is two questions: nothing proposed
     `0 <= s0 <= 100` or `1 + s0`, and the joint four-hole question for this
     module answers neither."""
-    cd = derive("m_countdown", "buchi", "(= s0 0)", timeout=40)
-    assert cd.inv_smt == "(and (<= 0 s0) (<= s0 100))"
-    assert cd.ranking_smt is not None
+    cert = derive("m_countdown", "buchi", "(= s0 0)", timeout=40)
+    assert cert.inv == "(and (<= 0 s0) (<= s0 100))"
+    assert cert.ranking is not None
     # Any `c + s0` ranks it; which constant Vampire picks is its business.
-    assert cd.ranking_smt.endswith(" s0)") and cd.ranking_smt.startswith("(+ ")
+    assert cert.ranking.endswith(" s0)") and cert.ranking.startswith("(+ ")
 
 
 def test_the_reach_is_two_holes():

@@ -166,7 +166,7 @@ from dataclasses import dataclass
 from itertools import combinations, product
 from pathlib import Path
 
-from ..cert import CertificateData
+from ..certificate import Certificate, Claim
 from ..common import Refused
 from ..houdini_solver import (
     DEFAULT_TIMEOUT,
@@ -1008,11 +1008,14 @@ class TA2MagicVampire(TA2Magic):
 
     # --- driver -----------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. `given` is not read: the
+        row seeds from nothing but `--pre`, which is in the claim."""
         # `SynthContext.build` refuses a component this route cannot weigh
         # as an integer -- Real, bitvector, matrix-shaped -- before anything
         # here is printed, which is the same gate `--infer smt-linear` uses.
-        ctx = SynthContext.build(self.module, cd.split()[0], route="vampire",
+        ctx = SynthContext.build(self.module, claim, route="vampire",
                                  takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx
@@ -1035,23 +1038,23 @@ class TA2MagicVampire(TA2Magic):
                      f"through a floor after scaling by {self.scale}")
 
         asker = Answers(self.exe, seconds=self.timeout, log=self.log)
-        derive = self._safety if cd.is_safety else self._ranked
+        derive = self._safety if claim.is_safety else self._ranked
         tried = []
-        for tpl in templates(ctx, ranked=not cd.is_safety):
+        for tpl in templates(ctx, ranked=not claim.is_safety):
             if asker.left() < 1:
                 break
             tried.append(tpl.name)
-            out = derive(q, tpl, asker, cd)
+            out = derive(q, tpl, asker, claim)
             if out is not None:
                 return out
             self.log(f"[vampire] nothing from {tpl.name} "
                      f"({asker.spent:.1f} s spent)")
         self.log(f"[vampire] {asker.calls} Vampire call(s), "
                  f"{asker.spent:.1f} s")
-        return self._none(cd, tried, asker)
+        return self._none(claim, tried, asker)
 
     def _safety(self, q: Question, tpl: Template, asker: Answers,
-                cd: CertificateData) -> "CertificateData | None":
+                claim: Claim) -> "Certificate | None":
         """One question: the invariant and the property it has to imply.
 
         `inv -> prp` is what pins the coefficients down, which is why this
@@ -1064,13 +1067,13 @@ class TA2MagicVampire(TA2Magic):
         if answer is None:
             return None
         for named in self._alternatives(answer, tpl.holes, asker):
-            inv, _ = self._read_back(tpl, named, cd)
-            if self._checks_out(inv, None, cd):
-                return self._emit(cd, inv, None, tpl)
+            inv, _ = self._read_back(tpl, named, claim)
+            if self._checks_out(inv, None, claim):
+                return self._emit(inv, None, tpl)
         return None
 
     def _ranked(self, q: Question, tpl: Template, asker: Answers,
-                cd: CertificateData) -> "CertificateData | None":
+                claim: Claim) -> "Certificate | None":
         """Two questions: an inductive invariant, then a rank that drops on
         it.
 
@@ -1099,9 +1102,10 @@ class TA2MagicVampire(TA2Magic):
                 self.log("[vampire] no ranking over that invariant")
                 continue
             for named in self._alternatives(ranks, tpl.rank, asker):
-                inv, rank = self._read_back(tpl, {**inv_named, **named}, cd)
-                if self._checks_out(inv, rank, cd):
-                    return self._emit(cd, inv, rank, tpl)
+                inv, rank = self._read_back(tpl, {**inv_named, **named},
+                                            claim)
+                if self._checks_out(inv, rank, claim):
+                    return self._emit(inv, rank, tpl)
         return None
 
     def _alternatives(self, answer: Derived, holes: tuple[str, ...],
@@ -1127,7 +1131,7 @@ class TA2MagicVampire(TA2Magic):
     # --- what the answer means --------------------------------------------
 
     def _read_back(self, tpl: Template, named: dict,
-                   cd: CertificateData) -> tuple:
+                   claim: Claim) -> tuple:
         """The template with Vampire's numbers in it, as SMT-LIB."""
         facts = []
         for row in tpl.rows:
@@ -1135,7 +1139,7 @@ class TA2MagicVampire(TA2Magic):
             facts.append(f"(<= {row.smt} {smt_int(named[row.hi])})")
         inv = ("true" if not facts else facts[0] if len(facts) == 1
                else "(and " + " ".join(facts) + ")")
-        if cd.is_safety:
+        if claim.is_safety:
             return inv, None
         # A coefficient of one is the column itself: `(* 1 s0)` is what the
         # template says and `s0` is what the certificate should read. The
@@ -1156,7 +1160,7 @@ class TA2MagicVampire(TA2Magic):
         return inv, rank
 
     def _checks_out(self, inv_src: str, rank_src: "str | None",
-                    cd: CertificateData) -> bool:
+                    claim: Claim) -> bool:
         """The four obligations, restated and put to cvc5.
 
         An answer literal is the substitution *a* refutation used, and this
@@ -1175,7 +1179,7 @@ class TA2MagicVampire(TA2Magic):
         solver = Cvc5Solver(ctx.tm, seconds=max(5.0, min(30.0, self.timeout)),
                             log=self.log)
         queries = [ob.holds_at_entry(facts), ob.preserved(facts, facts)]
-        if cd.is_safety:
+        if claim.is_safety:
             queries.append(ob.implies(facts, ctx.prp))
         else:
             queries.append(ob.drops(facts, rank))
@@ -1258,15 +1262,13 @@ class TA2MagicVampire(TA2Magic):
 
     # --- out ---------------------------------------------------------------
 
-    def _emit(self, cd: CertificateData, inv_src: str,
-              rank_src: "str | None", tpl: Template) -> CertificateData:
+    def _emit(self, inv_src: str, rank_src: "str | None",
+              tpl: Template) -> Certificate:
         self.log(f"[vampire] inv: {inv_src}")
-        cd.inv = cd.inv_smt = inv_src
         if rank_src is not None:
             self.log(f"[vampire] ranking: {rank_src}")
-            cd.ranking = cd.ranking_smt = rank_src
         self._record(inv_src, rank_src, tpl)
-        return cd
+        return Certificate(inv_src, rank_src)
 
     def _record(self, inv_src: str, rank_src: "str | None",
                 tpl: Template) -> None:
@@ -1284,8 +1286,8 @@ class TA2MagicVampire(TA2Magic):
                 "ranking", rank_src, status="proved", language="smt",
                 what=f"The ranking function this run found. {what}")
 
-    def _none(self, cd, tried, asker) -> CertificateData:
-        what = ("inductive invariant implying the property" if cd.is_safety
+    def _none(self, claim: Claim, tried, asker):
+        what = ("inductive invariant implying the property" if claim.is_safety
                 else "invariant and ranking function")
         detail = (
             f"Vampire was asked for one as the coefficients of "

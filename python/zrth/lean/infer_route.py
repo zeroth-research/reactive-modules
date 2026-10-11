@@ -577,8 +577,7 @@ def _run_vampire(inp: InferInput) -> InferResult:
         artifacts=inp.project.artifacts,
         log=inp.log,
     )
-    cd = magic.infer(_legacy(inp))
-    return InferResult(Certificate(cd.inv_smt, cd.ranking_smt))
+    return InferResult(magic.infer(inp.claim, inp.given))
 
 
 def _run_houdini(inp: InferInput) -> InferResult:
