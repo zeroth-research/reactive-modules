@@ -28,7 +28,7 @@ from .infer_route import (
     route_by_name,
     route_names,
 )
-from .smt_query import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
+from .smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 _EPILOG = """\
 examples:

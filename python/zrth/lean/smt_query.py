@@ -29,47 +29,9 @@ from enum import Enum
 
 from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
+from .smt.limits import SmtBudget, bounded_solver
 from .smt.script import script
 from .smt.terms import ite_conditions, nodes, state_dependent
-
-
-# ══════════════════════════════════════════════════════════════════════
-# Budget
-# ══════════════════════════════════════════════════════════════════════
-
-DEFAULT_CALL_MS = 5000
-DEFAULT_PHASE_MS = 20000
-
-
-@dataclass
-class SmtBudget:
-    """A per-call and a per-phase wall-clock bound on solving.
-
-    `phase_ms` is spent down by every query in the phase, so a phase that
-    fans out over many small queries (one per branch condition, say) cannot
-    add up to more than one obligation check's worth of time. Call
-    `start_phase` between phases to refill it.
-    """
-
-    per_call_ms: int = DEFAULT_CALL_MS
-    phase_ms: int = DEFAULT_PHASE_MS
-    _phase_start: float = field(default_factory=time.perf_counter, repr=False)
-
-    def start_phase(self) -> None:
-        self._phase_start = time.perf_counter()
-
-    @property
-    def phase_left_ms(self) -> int:
-        spent = (time.perf_counter() - self._phase_start) * 1000
-        return max(0, int(self.phase_ms - spent))
-
-    @property
-    def exhausted(self) -> bool:
-        return self.phase_left_ms <= 0
-
-    def next_call_ms(self) -> int:
-        """The limit for the next query: whichever bound bites first."""
-        return min(self.per_call_ms, self.phase_left_ms)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -136,7 +98,6 @@ class ModuleQueries:
         from .smt_module import ModuleSMT, keep_alive
         from .smt_prompt import CegarPromptEnv, parse_predicate
 
-        self.cvc5 = cvc5
         # `artifacts/` is written through this, when a caller supplies one.
         # Left off by default so that constructing the queries stays a pure
         # encoding step -- `predicate_facts` and `solver_hints` build these
@@ -229,12 +190,8 @@ class ModuleQueries:
         return None if term is None else term.substitute(self.state_vars, s)
 
     def _solver(self, budget: SmtBudget):
-        s = self.cvc5.Solver(self.tm)
+        s = bounded_solver(self.tm, budget.next_call_ms(), logic="ALL")
         self._solvers.append(s)
-        s.setLogic("ALL")
-        limit = budget.next_call_ms()
-        s.setOption("tlimit-per", str(limit))
-        s.setOption("tlimit", str(limit))
         return s
 
     def _ask(self, name, build, budget):

@@ -54,6 +54,7 @@ from enum import Enum
 from fractions import Fraction
 
 from .common import Refused
+from .smt.limits import bounded_solver
 from .smt.script import decimals, script
 from .smt.vampire import resolve_vampire, run_vampire
 
@@ -288,28 +289,25 @@ class Cvc5Solver(Solver):
         # Lazily, so that the route table above can name this class without
         # a bare `verith` run paying for the import.
         try:
-            import cvc5                              # type: ignore
-            from cvc5 import Kind
+            from cvc5 import Kind                    # type: ignore
         except ImportError as e:                     # pragma: no cover
             raise Refused(
                 "--houdini-solver cvc5 needs the `cvc5` package, which is "
                 "not importable. Install with: uv pip install cvc5"
             ) from e
-        self.cvc5, self.kind = cvc5, Kind
+        self.kind = Kind
         self.tm = tm
 
     def _run(self, q: Query, budget: float, core: bool, model: bool) -> Answer:
         tm, Kind = self.tm, self.kind
         t0 = time.perf_counter()
-        solver = self.cvc5.Solver(tm)
-        solver.setLogic("ALL")
-        limit = str(max(1, int(budget * 1000)))
-        solver.setOption("tlimit", limit)
-        solver.setOption("tlimit-per", limit)
+        options = {}
         if core:
-            solver.setOption("produce-unsat-cores", "true")
+            options["produce_unsat_cores"] = "true"
         if model and (q.probes or q.witness):
-            solver.setOption("produce-models", "true")
+            options["produce_models"] = "true"
+        solver = bounded_solver(tm, max(1, int(budget * 1000)), logic="ALL",
+                                **options)
         try:
             # The round, as equalities rather than `define-fun`: the same
             # constraint, and it leaves `v_sp*` as constants the model can

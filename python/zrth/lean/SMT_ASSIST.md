@@ -491,8 +491,8 @@ where `4*x1 + x0` would do.
 answer.** `tlimit` does **not** stop `checkSynth`: a 1000 ms limit ran 13.9 s
 and returned a solution. It does not stop a quantified `checkSat` either — a
 20 s limit ran past 400 s. **`tlimit-per` stops both** (1001 ms and 5007 ms,
-`unknown`). No subprocess is needed; `smt_query._solver` already sets the
-pair, and `smt_synth.bounded_solver` is that pair for the searches.
+`unknown`). No subprocess is needed; `smt.limits.bounded_solver` sets the
+pair for every query.
 
 **Step 5 — "a synthesised `ite` folds through the min/max peephole for free"
 — is wrong.** `smt_to_lean.min_max_of` fires only on `ite (a ⋈ b) a b`, where

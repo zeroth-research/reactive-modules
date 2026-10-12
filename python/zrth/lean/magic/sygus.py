@@ -67,12 +67,12 @@ from __future__ import annotations
 from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
+from ..smt.limits import bounded_solver, call_ms
 from ..smt_synth import (
     READING_KINDS,
     Search,
     SynthContext,
     body_of,
-    bounded_solver,
     readings,
     moduli,
     program_constants,
@@ -257,7 +257,7 @@ class TA2MagicSygus(TA2Magic):
         """
         tm = ctx.tm
         sorts = list(ctx.env.state_sorts)
-        solver = bounded_solver(tm, self.budget, sygus="true")
+        solver = bounded_solver(tm, call_ms(self.budget), sygus="true")
         try:
             solver.setLogic(self._logic(sorts))
         except Exception as e:                       # pragma: no cover

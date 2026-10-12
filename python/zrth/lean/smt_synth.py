@@ -39,8 +39,8 @@ shapes below are chosen from:
 holds it.**  Measured: `tlimit` alone does *not* stop `checkSynth` (a 1000 ms
 limit ran 13.9 s and returned a solution) and does not stop a quantified
 `checkSat` either (a 20 s limit ran past 400 s); `tlimit-per` stops both
-(1001 ms and 5007 ms, `unknown`).  `smt_query._solver` already sets the
-pair, and :func:`bounded_solver` is the same pair for the searches here.
+(1001 ms and 5007 ms, `unknown`).  `smt.limits.bounded_solver` sets the
+pair, for these searches and for the obligation queries alike.
 """
 
 from __future__ import annotations
@@ -514,32 +514,6 @@ def moduli(constants: tuple[int, ...]) -> tuple[int, ...]:
     """
     ks = {2} | {abs(c) for c in constants if 2 <= abs(c) <= 16}
     return tuple(sorted(ks))
-
-
-def bounded_solver(tm, budget, **options):
-    """A solver on this run's leash, with `options` set before the logic.
-
-    Both limits, because only one of them binds what these routes run:
-    `tlimit` does not stop `checkSynth` or a quantified `checkSat`, and
-    `tlimit-per` stops both. `smt_query._solver` sets the same pair for the
-    obligation queries.
-    """
-    solver = cvc5.Solver(tm)
-    limit = _limit_ms(budget)
-    solver.setOption("tlimit-per", str(limit))
-    solver.setOption("tlimit", str(limit))
-    for name, value in options.items():
-        solver.setOption(name.replace("_", "-"), value)
-    return solver
-
-
-def _limit_ms(budget) -> int:
-    """How long the next query may take, from the run's budget."""
-    if budget is None:
-        from .smt_query import DEFAULT_CALL_MS
-
-        return DEFAULT_CALL_MS
-    return max(1, budget.next_call_ms())
 
 
 # ══════════════════════════════════════════════════════════════════════════

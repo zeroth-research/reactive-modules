@@ -91,6 +91,7 @@ from ..common import Refused
 from . import TA2Magic
 from dataclasses import dataclass
 
+from ..smt.limits import bounded_solver, call_ms
 from ..smt.script import decimals
 from ..smt_prompt import parse_predicate
 from .houdini import Obligations, split_conditions
@@ -98,7 +99,6 @@ from ..smt_synth import (
     Search,
     SynthContext,
     affine_smt,
-    bounded_solver,
     conjunction_smt,
     denominator_scale,
     program_constants,
@@ -748,7 +748,7 @@ class TA2MagicLinear(TA2Magic):
     def _quantified(self, ctx: SynthContext, tpl: _Template) -> _Verdict:
         """`exists c. forall s, inputs. obligations(c)`, in one call."""
         tm = ctx.tm
-        solver = bounded_solver(tm, self.budget, produce_models="true")
+        solver = bounded_solver(tm, call_ms(self.budget), produce_models="true")
         solver.setLogic("ALL")
         st, el, en = self._bound_vars(ctx)
         body = tpl.build(st, el, en)
@@ -793,7 +793,8 @@ class TA2MagicLinear(TA2Magic):
         for step in range(DEFAULT_SAMPLES):
             if self.budget is not None and self.budget.exhausted:
                 return _Verdict("unknown")
-            propose = bounded_solver(tm, self.budget, produce_models="true")
+            propose = bounded_solver(tm, call_ms(self.budget),
+                                     produce_models="true")
             propose.setLogic("ALL")
             for x in tpl.unknowns:
                 propose.assertFormula(
@@ -813,7 +814,8 @@ class TA2MagicLinear(TA2Magic):
                 return _Verdict("unknown")
             values = [propose.getValue(x) for x in tpl.unknowns]
 
-            verify = bounded_solver(tm, self.budget, produce_models="true")
+            verify = bounded_solver(tm, call_ms(self.budget),
+                                    produce_models="true")
             verify.setLogic("ALL")
             st, el, en = self._fresh_consts(ctx, f"cex{step}_")
             verify.assertFormula(
