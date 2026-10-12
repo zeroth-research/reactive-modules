@@ -254,12 +254,12 @@ RUNS = [
     ]),
 ]
 
-# `ModuleSMT`s built per run. The pre-check and both renderings share the
-# run's `smt.run.lazy` encoding; a route that searches still builds its own.
+# `ModuleSMT`s built per run. The pre-check, both renderings and a route on
+# `InferInput.smt` share the run's `smt.run.lazy` encoding.
 ENCODINGS = {
     "bare": 0, "supplied": 1, "supplied_pre": 1, "cert_file": 1,
     "unreadable_property": 1, "smt_linear": 2, "houdini": 2, "nuterm": 1,
-    "nuterm_pre": 1, "ai_cegis_fixed": 2, "ai": 1, "sygus": 2, "vampire": 2,
+    "nuterm_pre": 1, "ai_cegis_fixed": 2, "ai": 1, "sygus": 1, "vampire": 2,
 }
 
 

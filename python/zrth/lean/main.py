@@ -331,7 +331,7 @@ def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
 
 def _infer(
     settings: Settings, module, handle: ProjectHandle, claim: Claim,
-    given: Certificate, prechecked,
+    given: Certificate, prechecked, smt=None,
 ) -> "InferResult | None":
     """Run the selected route against the generated project.
 
@@ -358,6 +358,7 @@ def _infer(
                 model=settings.model,
                 base_url=settings.base_url,
                 log=print,
+                smt=smt,
             )
         )
     except (Refused, ImportError) as e:
@@ -569,7 +570,8 @@ def main():
             resumes=frozenset(settings.route.reads_artifacts),
             artifacts=store,
         )
-        result = _infer(settings, module, handle, claim, given, prechecked)
+        result = _infer(settings, module, handle, claim, given, prechecked,
+                        smt=smt)
         # `None`: the route installed its own certificate, so there is
         # nothing of ours to be complete about and nothing to regenerate from.
         lean_cert = (

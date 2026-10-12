@@ -134,6 +134,7 @@ class TA2MagicSygus(TA2Magic):
         budget=None,
         artifacts=None,
         log=print,
+        encoding=None,
     ):
         super().__init__("")
         if cvc5 is None:                             # pragma: no cover
@@ -147,6 +148,9 @@ class TA2MagicSygus(TA2Magic):
                 f"{grammar!r} is not one"
             )
         self.module = module
+        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
         self.grammar = grammar
         self.conjuncts = max(1, int(conjuncts))
         self.budget = budget
@@ -166,8 +170,8 @@ class TA2MagicSygus(TA2Magic):
                 "--infer sygus certifies `G P`: the invariant is the whole "
                 "certificate and there is no ranking function to synthesise"
             )
-        ctx = SynthContext.build(self.module, claim, route="sygus",
-                                 takes=READS)
+        ctx = SynthContext.build(self.encoding or self.module, claim,
+                                 route="sygus", takes=READS)
         # The columns the grammar is affine over, with a Real kept Real:
         # this route synthesises an invariant and never a ranking function,
         # so nothing here has to land in `Nat` and flooring would only lose
@@ -325,7 +329,7 @@ class TA2MagicSygus(TA2Magic):
         body = tm.mkTerm(
             Kind.AND,
             ctx.with_inputs(ctx.init_pre, el, en),
-            self._same(ctx, state, ctx.msmt.init_state(en)),
+            self._same(ctx, state, ctx.enc.init_state(en)),
         )
         return self._exists(ctx, el + en, body)
 
@@ -339,7 +343,7 @@ class TA2MagicSygus(TA2Magic):
         body = tm.mkTerm(
             Kind.AND,
             ctx.with_inputs(ctx.update_pre, el, en),
-            self._same(ctx, nxt, ctx.msmt.update_state(state, el, en)),
+            self._same(ctx, nxt, ctx.enc.next_state(state, el, en)),
         )
         return self._exists(ctx, el + en, body)
 

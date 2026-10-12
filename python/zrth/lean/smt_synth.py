@@ -72,19 +72,33 @@ except ImportError:                                  # pragma: no cover
 class SynthContext:
     """One module and its property in cvc5, for a search over shapes.
 
-    The same front end the prompt routes use (`ModuleSMT` under
-    `CegarPromptEnv`), for the same reason: the property arrives as SMT-LIB
-    over ``s0..sN-1`` and that is the namespace every predicate this package
-    reads or writes is in, so a certificate found here is in it too.
+    Stated over the run's `smt.run.ModuleEncoding`, the front end the
+    pre-check and the prompt routes read predicates through: the property
+    arrives as SMT-LIB over ``s0..sN-1`` and that is the namespace every
+    predicate this package reads or writes is in, so a certificate found
+    here is in it too.
     """
 
-    module: object
-    tm: object
-    msmt: object
-    env: object
+    enc: object
     prp: object
     init_pre: object
     update_pre: object
+
+    @property
+    def module(self):
+        return self.enc.module
+
+    @property
+    def tm(self):
+        return self.enc.tm
+
+    @property
+    def msmt(self):
+        return self.enc.msmt
+
+    @property
+    def env(self):
+        return self.enc.env
 
     @property
     def state(self) -> list:
@@ -103,9 +117,10 @@ class SynthContext:
         return [f"s{i}" for i in range(len(self.state))]
 
     @classmethod
-    def build(cls, module, claim: Claim, *, route: str,
+    def build(cls, source, claim: Claim, *, route: str,
               takes: tuple[str, ...] = ("int", "bool", "bv")) -> "SynthContext":
         """The context, or the reason this module is not one `route` reads.
+        `source` is the module, its encoding or a `smt.run.lazy` factory.
 
         ``takes`` is the route's contract, as :data:`READING_KINDS`, and it
         is the same tuple :func:`readings` is given -- a route that declines
@@ -126,17 +141,14 @@ class SynthContext:
                 f"--infer {route} needs the `cvc5` package, which is not "
                 f"importable. Install with: uv pip install cvc5"
             )
-        from .smt_module import ModuleSMT, keep_alive
-        from .smt_prompt import CegarPromptEnv, parse_predicate
+        from .smt.run import encoding_of
 
         if claim.prp is None:
             raise Refused(
                 f"--infer {route} needs a property: pass --safety or --buchi"
             )
-        tm = cvc5.TermManager()
-        msmt = ModuleSMT(tm=tm, module=module)
-        env = CegarPromptEnv(msmt)
-        keep_alive(tm, msmt, env)
+        enc = encoding_of(source)
+        env = enc.env
 
         bad = [
             f"s{i} is {sort}"
@@ -158,32 +170,29 @@ class SynthContext:
                 f"cannot: {', '.join(bad)}. {why}{shaped}"
                 f"Use --infer ai-cegis."
             )
-        # The transition, encoded once here rather than lazily by whichever
-        # route first builds an obligation out of it. A module with an
-        # operator cvc5 has no term for -- `Transpose`, say -- is a refusal
-        # either way, but raised from the middle of a search it is a
-        # `ValueError` traceback several steps past the fact, for a user who
-        # asked about a module. Named up front instead, which is what
-        # `native.lean_gaps` does for the Lean side.
+        # The transition, asked for here rather than by whichever route
+        # first builds an obligation out of it. A module with an operator
+        # cvc5 has no term for -- `Transpose`, say -- is a refusal either way,
+        # but raised from the middle of a search it is a `ValueError`
+        # traceback several steps past the fact, for a user who asked about
+        # a module. Named up front instead, which is what `native.lean_gaps`
+        # does for the Lean side.
         try:
-            msmt.init_state(env.extl_next_vars)
-            msmt.update_state(env.state_vars, env.extl_latched_vars,
-                              env.extl_next_vars)
+            enc.init_state(enc.extl_next)
+            enc.next_state(enc.state, enc.extl_latched, enc.extl_next)
         except ValueError as e:
             raise Refused(
                 f"--infer {route} encodes this module's transition for cvc5, "
                 f"and an operator in it has no encoding. {e}"
             ) from e
-        true = tm.mkBoolean(True)
+        true = enc.tm.mkBoolean(True)
         return cls(
-            module=module,
-            tm=tm,
-            msmt=msmt,
-            env=env,
-            prp=parse_predicate(env, claim.prp),
-            init_pre=(parse_predicate(env, claim.init_pre)
+            enc=enc,
+            prp=enc.parse(claim.prp,
+                          "--safety" if claim.is_safety else "--buchi"),
+            init_pre=(enc.parse(claim.init_pre, "--pre")
                       if claim.init_pre is not None else true),
-            update_pre=(parse_predicate(env, claim.update_pre)
+            update_pre=(enc.parse(claim.update_pre, "--pre")
                         if claim.update_pre is not None else true),
         )
 
@@ -191,18 +200,15 @@ class SynthContext:
 
     def at(self, term, vs: list):
         """`term` with the state variables replaced by `vs`."""
-        return term.substitute(self.state, vs)
+        return self.enc.at(term, vs)
 
     def with_inputs(self, term, el: list, en: list):
         """`term` with the env's input constants replaced by `el` / `en`.
 
         A precondition is written over `e0..`/`el0..`, which are constants of
-        the parsing env; an obligation quantifies its own, so the two have to
-        be brought together exactly as `magic.cegar._subst_inputs` does it.
+        the parsing env; an obligation quantifies its own.
         """
-        old = list(self.extl_next) + list(self.extl_latched)
-        new = list(en) + list(el)
-        return term.substitute(old, new) if old else term
+        return self.enc.with_inputs(term, el, en)
 
 
 @dataclass(frozen=True)
@@ -429,8 +435,8 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
     """
     seen: set[int] = set(_BASE_CONSTANTS)
     roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
-    roots += list(ctx.msmt.init_state(ctx.extl_next))
-    roots += list(ctx.msmt.update_state(ctx.state, ctx.extl_latched, ctx.extl_next))
+    roots += ctx.enc.init_state(ctx.extl_next)
+    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
     for t in literals(roots):
         if t.getKind() == Kind.CONST_INTEGER:
             value = int(t.getIntegerValue())
@@ -465,9 +471,8 @@ def program_rationals(ctx: SynthContext) -> tuple:
     here instead.
     """
     roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
-    roots += list(ctx.msmt.init_state(ctx.extl_next))
-    roots += list(ctx.msmt.update_state(ctx.state, ctx.extl_latched,
-                                        ctx.extl_next))
+    roots += ctx.enc.init_state(ctx.extl_next)
+    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
     seen: set = set()
     for t in literals(roots):
         if t.getKind() == Kind.CONST_RATIONAL:

@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 
     from .cert import LeanCertificate
     from .common import LeanContext
+    from .smt.run import ModuleEncoding
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -215,6 +216,8 @@ class InferInput:
     model: str | None = None            # meaningful iff the row uses an LLM
     base_url: str | None = None
     log: Callable = print
+    # The run's one cvc5 encoding of `module`, built on first call.
+    smt: "Callable[[], ModuleEncoding] | None" = None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -490,6 +493,7 @@ def _run_sygus(inp: InferInput) -> InferResult:
         budget=inp.budget,
         artifacts=inp.project.artifacts,
         log=inp.log,
+        encoding=inp.smt,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 
