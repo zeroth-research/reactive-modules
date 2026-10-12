@@ -44,7 +44,7 @@ def module_at(path: Path):
 
 
 def vampire_or_skip() -> str:
-    from zrth.lean.houdini_solver import resolve_vampire
+    from zrth.lean.smt.vampire import resolve_vampire
 
     try:
         return resolve_vampire(None)

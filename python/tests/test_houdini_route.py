@@ -121,7 +121,7 @@ def test_cvc5s_ladder_is_a_cap_rather_than_a_schedule():
 
 
 def test_a_vampire_path_that_is_not_there_is_refused(tmp_path):
-    from zrth.lean.houdini_solver import resolve_vampire
+    from zrth.lean.smt.vampire import resolve_vampire
 
     with pytest.raises(Refused, match="--vampire: no such file"):
         resolve_vampire(str(tmp_path / "vampire"))
@@ -129,7 +129,7 @@ def test_a_vampire_path_that_is_not_there_is_refused(tmp_path):
 
 def test_a_directory_holding_vampire_is_accepted(tmp_path):
     """The release zip unpacks to a directory with the binary in it."""
-    from zrth.lean.houdini_solver import resolve_vampire
+    from zrth.lean.smt.vampire import resolve_vampire
 
     exe = tmp_path / "vampire"
     exe.write_text("#!/bin/sh\n")

@@ -265,7 +265,7 @@ ENCODINGS = {
 
 def _has_vampire() -> bool:
     from zrth.lean.common import Refused
-    from zrth.lean.houdini_solver import resolve_vampire
+    from zrth.lean.smt.vampire import resolve_vampire
 
     try:
         resolve_vampire(None)

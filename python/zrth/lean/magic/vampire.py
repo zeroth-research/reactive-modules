@@ -159,24 +159,18 @@ nothing is proposed, it is the one check that the derivation is honest.
 from __future__ import annotations
 
 import re
-import subprocess
-import tempfile
 import time
 from dataclasses import dataclass
 from itertools import combinations, product
-from pathlib import Path
 
 from ..certificate import Certificate, Claim
 from ..common import Refused
-from ..houdini_solver import (
-    DEFAULT_TIMEOUT,
-    Cvc5Solver,
-    _kill_group,
-)
+from ..houdini_solver import DEFAULT_TIMEOUT, Cvc5Solver
 from . import TA2Magic
 from .houdini import Candidate, Obligations, columns
 from ..smt.script import decimals, script, smt_int
 from ..smt.terms import free_constants, ite_conditions
+from ..smt.vampire import run_vampire
 from ..smt_synth import (
     SynthContext,
     denominator_scale,
@@ -854,48 +848,27 @@ class Answers:
               extra: tuple) -> "Derived | None":
         if budget < 1:
             return None
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".smt2", prefix="verith-vampire-qa-", delete=False
-        ) as f:
-            f.write(script)
-            path = f.name
         # Default mode, not `portfolio`: measured on this route's own
         # question for `m_countdown`, `--mode portfolio --schedule casc`
         # reaches the time limit where the default mode answers `[0,100]`
         # at once. A portfolio strategy is tuned to find a refutation, and
         # what is wanted here is the *substitution* a refutation carries.
-        cmd = [
-            self.exe, "--input_syntax", "smtlib2",
+        #
+        # `--time_limit` tells Vampire what schedule to run; `timeout` is
+        # the share of the deadline it actually gets.
+        run = run_vampire(self.exe, script, [
             "--question_answering", "plain",
             *extra,
             "--time_limit", f"{self.declared}",
-            path,
-        ]
-        t0 = time.perf_counter()
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True,
-                                start_new_session=True)
-        try:
-            # The real bound: `--time_limit` told Vampire what schedule to
-            # run, and this is the share of the deadline it actually gets.
-            out, _ = proc.communicate(timeout=budget)
-        except subprocess.TimeoutExpired:
-            _kill_group(proc)
-            out = ""
-        finally:
-            _kill_group(proc)
-            Path(path).unlink(missing_ok=True)
-        dt = time.perf_counter() - t0
+        ], timeout=budget, prefix="verith-vampire-qa-")
         self.calls += 1
-        self.spent += dt
-        error = next((ln for ln in out.splitlines()
-                      if "User error" in ln or "Parsing Error" in ln), None)
-        if error is not None:
+        self.spent += run.secs
+        if run.error is not None:
             raise Refused(
                 f"--infer vampire wrote a question Vampire cannot read: "
-                f"{error.strip()[:300]}"
+                f"{run.error[:300]}"
             )
-        return self._read(out, holes, dt)
+        return self._read(run.out, holes, run.secs)
 
     def _read(self, out: str, holes: int, dt: float) -> "Derived | None":
         alts = next(

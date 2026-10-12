@@ -58,7 +58,7 @@ PRE = ["--pre-check", "cvc5", "--smt-tactics", "cvc5"]
 
 def _cases(out: Path) -> list[list[str]]:
     from zrth.lean.common import Refused
-    from zrth.lean.houdini_solver import resolve_vampire
+    from zrth.lean.smt.vampire import resolve_vampire
 
     counter = str(FIXTURES / "counter.py")
     countdown = str(FIXTURES / "svcomp_countdown.py")

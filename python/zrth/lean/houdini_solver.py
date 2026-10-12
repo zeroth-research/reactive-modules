@@ -47,25 +47,20 @@ the cache re-asks only what is unsettled.
 from __future__ import annotations
 
 import os
-import shutil
-import signal
-import subprocess
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
-from pathlib import Path
 
 from .common import Refused
 from .smt.script import decimals, script
+from .smt.vampire import resolve_vampire, run_vampire
 
 SOLVERS = ("cvc5", "vampire")
 DEFAULT_SOLVER = "cvc5"
 DEFAULT_TIMEOUT = 120
 DEFAULT_CORES = 4
-ENV = "VAMPIRE"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -399,43 +394,8 @@ class Cvc5Solver(Solver):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# Vampire: a binary, a file, and one-sided answers
+# Vampire: a printed script, and one-sided answers
 # ══════════════════════════════════════════════════════════════════════════
-
-
-def resolve_vampire(spec: "str | None") -> str:
-    """`--vampire` as an executable, else `$VAMPIRE`, else `vampire` on PATH.
-
-    Resolved at parse time, so a run that cannot start the prover says so
-    before a project is generated rather than after. A directory is accepted
-    when it holds a `vampire` -- the release zip unpacks to one.
-    """
-    for source, value in (("--vampire", spec), (f"${ENV}", os.environ.get(ENV))):
-        if not value:
-            continue
-        path = Path(value).expanduser()
-        if path.is_dir():
-            path = path / "vampire"
-        if path.is_file():
-            if not os.access(path, os.X_OK):
-                raise Refused(f"{source}: {path} is not executable")
-            return str(path)
-        found = shutil.which(value)
-        if found:
-            return found
-        raise Refused(
-            f"{source}: no such file: {path}. Pass the Vampire binary, a "
-            f"directory holding one, or a name on PATH."
-        )
-    found = shutil.which("vampire")
-    if found:
-        return found
-    raise Refused(
-        "--houdini-solver vampire needs the Vampire prover: pass --vampire "
-        f"PATH, set ${ENV}, or put `vampire` on PATH. Builds for Linux and "
-        "macOS are at https://github.com/vprover/vampire/releases\n"
-        "`--houdini-solver cvc5` needs no binary."
-    )
 
 
 class VampireSolver(Solver):
@@ -471,39 +431,17 @@ class VampireSolver(Solver):
         self.jobs = max(1, min(4, (os.cpu_count() or 4) // self.cores))
 
     def _run(self, q: Query, budget: float, core: bool, model: bool) -> Answer:
-        script = self._script(q)
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".smt2", prefix="verith-vampire-", delete=False
-        ) as f:
-            f.write(script)
-            path = f.name
-        cmd = [
-            self.exe, "--input_syntax", "smtlib2",
+        run = run_vampire(self.exe, self._script(q), [
             "--mode", "portfolio", "--schedule", "smtcomp",
             "--cores", str(self.cores),
             "--output_mode", "ucore" if core else "smtcomp",
             # Deciseconds: a limit below a second is a real limit.
             "--time_limit", f"{max(1, int(budget * 10))}d",
-            path,
-        ]
-        t0 = time.perf_counter()
-        # Its own session: the portfolio forks a process per strategy, and a
-        # run killed from outside has to take them all with it.
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True,
-                                start_new_session=True)
-        try:
-            out, _ = proc.communicate(timeout=budget + 10)
-        except subprocess.TimeoutExpired:
-            _kill_group(proc)
-            out = ""
-        finally:
-            _kill_group(proc)
-            Path(path).unlink(missing_ok=True)
-        dt = time.perf_counter() - t0
+        ], timeout=budget + 10)
+        dt = run.secs
         self.calls += 1
         self.spent += dt
-        lines = [ln.strip() for ln in out.splitlines()]
+        lines = run.lines
         if "unsat" in lines:
             names = None
             if core:
@@ -514,10 +452,9 @@ class VampireSolver(Solver):
                 )
                 names = frozenset(n for n, _t in q.hyps if n in reported)
             return Answer(Verdict.PROVED, dt, names)
-        error = next((ln for ln in lines
-                      if "User error" in ln or "Parsing Error" in ln), None)
+        error = run.error
         if error is not None:
-            detail = out[out.find(error):].strip().splitlines()
+            detail = run.out[run.out.find(error):].strip().splitlines()
             raise Refused(
                 f"Vampire cannot read this module's encoding: "
                 f"{' '.join(detail[:2])[:300]}. `--houdini-solver cvc5` reads "
@@ -541,15 +478,6 @@ class VampireSolver(Solver):
                     + [t for _n, t in q.hyps] + [q.goal])
         return decimals(script(asserts, defines=defines, mentions=mentions,
                                spaced=False))
-
-
-def _kill_group(proc: subprocess.Popen) -> None:
-    if proc.poll() is None:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        proc.wait()
 
 
 # ══════════════════════════════════════════════════════════════════════════

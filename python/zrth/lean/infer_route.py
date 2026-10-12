@@ -546,7 +546,7 @@ def _check_houdini_options(settings, opts) -> "str | None":
 
 
 def _resolve_vampire(opts: dict):
-    from .houdini_solver import resolve_vampire
+    from .smt.vampire import resolve_vampire
 
     return resolve_vampire(opts["vampire"])
 
