@@ -57,6 +57,7 @@ from zrth import Module
 from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
+from ..smt.script import smt_int
 
 
 def _engine():
@@ -90,19 +91,13 @@ def _engine():
 # SMT-LIB in and out
 # ---------------------------------------------------------------------------
 
-def _smt_int(v) -> str:
-    """An integer literal. SMT-LIB has no negative numerals, so one is a negation."""
-    v = int(v)
-    return str(v) if v >= 0 else f"(- {-v})"
-
-
 def _smt_affine(coeffs, const, names) -> str:
     """``k + Σ cᵢ·sᵢ`` as an SMT-LIB term, written out in full.
 
     Printed here rather than through z3's ``sexpr``, which ``let``-binds the
     subterm a ReLU repeats -- and what this string has to survive is being read
     back and rendered as the body of a Lean definition."""
-    parts = [] if not int(const) else [_smt_int(const)]
+    parts = [] if not int(const) else [smt_int(const)]
     for c, n in zip(coeffs, names):
         c = int(c)
         if c == 1:
@@ -110,7 +105,7 @@ def _smt_affine(coeffs, const, names) -> str:
         elif c == -1:
             parts.append(f"(- {n})")
         elif c:
-            parts.append(f"(* {_smt_int(c)} {n})")
+            parts.append(f"(* {smt_int(c)} {n})")
     if not parts:
         return "0"
     return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
@@ -123,14 +118,14 @@ def _smt_ranking(layers, names) -> str:
     the composed module computed with, so the term and the wire the procedure
     certified are one function."""
     (W1, b1), (W2, b2) = layers
-    parts = [] if not int(b2[0]) else [_smt_int(b2[0])]
+    parts = [] if not int(b2[0]) else [smt_int(b2[0])]
     for j in range(W1.shape[0]):
         c = int(W2[0][j])
         if not c:
             continue
         pre = _smt_affine(W1[j], b1[j], names)
         unit = f"(ite (> {pre} 0) {pre} 0)"
-        parts.append(unit if c == 1 else f"(* {_smt_int(c)} {unit})")
+        parts.append(unit if c == 1 else f"(* {smt_int(c)} {unit})")
     if not parts:
         return "0"
     return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
@@ -550,7 +545,7 @@ class TA2MagicLearn(TA2Magic):
         self.log("[nuterm] zeroing the rank where the property holds")
         rank = _smt_ranking(result.layers, result.system.names)
         return (self._invariant_of(result),
-                f"(ite {prp_src} 0 (+ {_smt_int(self.delta)} {rank}))")
+                f"(ite {prp_src} 0 (+ {smt_int(self.delta)} {rank}))")
 
     def _invariant_of(self, result) -> str:
         """The invariant ``result`` was certified against, as SMT-LIB.

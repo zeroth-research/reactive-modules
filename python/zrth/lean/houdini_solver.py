@@ -57,9 +57,9 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 from pathlib import Path
-from re import Match, compile as _compile
 
 from .common import Refused
+from .smt.script import decimals, script
 
 SOLVERS = ("cvc5", "vampire")
 DEFAULT_SOLVER = "cvc5"
@@ -399,66 +399,6 @@ class Cvc5Solver(Solver):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# Literals Vampire reads
-# ══════════════════════════════════════════════════════════════════════════
-#
-# Its SMT-LIB front end sorts literals strictly, and cvc5's printer does
-# not write for it: a rational prints as `(/ 1 2)`, whose arguments are Int
-# ("invalid sort $int for interpretation /"), and an Int numeral anywhere a
-# Real is expected is a parse error rather than a coercion. So every real
-# literal written for a script is a decimal, and every term cvc5 prints is
-# passed through `decimals` on its way into one.
-#
-# The candidate shapes go through here too, because a candidate's `src` is
-# the SMT-LIB the certificate carries and it has to be a string either
-# solver reads -- cvc5 reads a decimal as happily as it reads `(/ 1 2)`.
-
-
-def smt_real(value) -> str:
-    """A Real literal: a decimal where one is exact, else a quotient of two.
-
-    `1/2` is `0.5` and `1/3` is `(/ 1.0 3.0)` -- a decimal cannot say the
-    second, and rounding it would state a different obligation.
-    """
-    q = Fraction(value)
-    sign, q = ("(- ", -q) if q < 0 else ("", -(-q))
-    close = ")" if sign else ""
-    rest = q.denominator
-    for factor in (2, 5):
-        while rest % factor == 0:
-            rest //= factor
-    if rest != 1:
-        return f"{sign}(/ {q.numerator}.0 {q.denominator}.0){close}"
-    places = 0
-    while 10 ** places % q.denominator:
-        places += 1
-    digits = str(q.numerator * 10 ** places // q.denominator).rjust(places + 1, "0")
-    whole, frac = digits[:len(digits) - places], digits[len(digits) - places:]
-    return f"{sign}{whole}.{frac or '0'}{close}"
-
-
-# `(/ 1 2)`, `(/ (- 1) 4)`: a rational as cvc5 prints one. Integer division
-# prints as `div`, so a `/` whose arguments are both numerals is always this.
-_RATIONAL = _compile(r"\(/ (?:\(- (\d+)\)|(\d+)) (\d+)\)")
-
-
-def decimals(text: str) -> str:
-    """`text` with cvc5's rational literals rewritten as Vampire reads them."""
-    def fix(m: Match) -> str:
-        neg, num, den = m.groups()
-        return smt_real(Fraction(-int(neg) if neg else int(num), int(den)))
-
-    return _RATIONAL.sub(fix, text)
-
-
-def smt_lit(value, sort) -> str:
-    """`value` as a literal of `sort`: an Int numeral, or a decimal."""
-    from .smt_synth import smt_int
-
-    return smt_real(value) if sort.isReal() else smt_int(int(value))
-
-
-# ══════════════════════════════════════════════════════════════════════════
 # Vampire: a binary, a file, and one-sided answers
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -594,20 +534,13 @@ class VampireSolver(Solver):
         core can say which of them the proof used; the goal is named too, so
         a core is never empty for a reason other than the goal being false.
         """
-        from .smt.terms import free_constants
-
-        seen = free_constants([body for _v, body in q.defines]
-                              + [t for _n, t in q.hyps] + [q.goal])
-        defined = {str(v) for v, _b in q.defines}
-        lines = ["(set-logic ALL)"]
-        lines += [f"(declare-fun {sym} () {seen[sym].getSort()})"
-                  for sym in sorted(seen) if sym not in defined]
-        lines += [f"(define-fun {v} () {v.getSort()} {body})"
-                  for v, body in q.defines]
-        lines += [f"(assert (! {t} :named {n}))" for n, t in q.hyps]
-        lines.append(f"(assert (! (not {q.goal}) :named goal))")
-        lines.append("(check-sat)")
-        return decimals("\n".join(lines)) + "\n"
+        defines = [(str(v), (), v.getSort(), body) for v, body in q.defines]
+        asserts = [f"(! {t} :named {n})" for n, t in q.hyps]
+        asserts.append(f"(! (not {q.goal}) :named goal)")
+        mentions = ([body for _v, body in q.defines]
+                    + [t for _n, t in q.hyps] + [q.goal])
+        return decimals(script(asserts, defines=defines, mentions=mentions,
+                               spaced=False))
 
 
 def _kill_group(proc: subprocess.Popen) -> None:

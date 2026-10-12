@@ -91,7 +91,7 @@ from ..common import Refused
 from . import TA2Magic
 from dataclasses import dataclass
 
-from ..houdini_solver import decimals
+from ..smt.script import decimals
 from ..smt_prompt import parse_predicate
 from .houdini import Obligations, split_conditions
 from ..smt_synth import (

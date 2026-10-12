@@ -51,6 +51,7 @@ from fractions import Fraction
 
 from .certificate import Claim
 from .common import Refused
+from .smt.script import smt_int
 from .smt.terms import literals
 
 try:
@@ -544,12 +545,6 @@ def _limit_ms(budget) -> int:
 # ══════════════════════════════════════════════════════════════════════════
 # SMT-LIB out
 # ══════════════════════════════════════════════════════════════════════════
-
-
-def smt_int(value: int) -> str:
-    """An integer literal. SMT-LIB has no negative numerals, so one is a negation."""
-    value = int(value)
-    return str(value) if value >= 0 else f"(- {-value})"
 
 
 def affine_smt(const: int, coeffs, names) -> str:

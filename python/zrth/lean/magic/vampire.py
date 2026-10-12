@@ -172,10 +172,10 @@ from ..houdini_solver import (
     DEFAULT_TIMEOUT,
     Cvc5Solver,
     _kill_group,
-    decimals,
 )
 from . import TA2Magic
 from .houdini import Candidate, Obligations, columns
+from ..smt.script import decimals, script, smt_int
 from ..smt.terms import free_constants, ite_conditions
 from ..smt_synth import (
     SynthContext,
@@ -184,7 +184,6 @@ from ..smt_synth import (
     floor_real_src,
     program_constants,
     program_rationals,
-    smt_int,
 )
 
 try:
@@ -266,31 +265,16 @@ def split(ctx: SynthContext, terms, what: str) -> list[Branch]:
 # SMT-LIB: cvc5 prints the question it built
 # ══════════════════════════════════════════════════════════════════════════
 
-_PRELUDE = "(set-logic ALL)\n"
-# Not `(assert (not ...))`: `assert-not` is what marks a formula as *the*
-# conjecture, which is what `--question_answering` attaches answer literals
-# to. An ordinary negated assertion is refuted without an answer.
-_CONJECTURE = "(assert-not {})\n(check-sat)\n"
-
 
 def script_for(conjecture) -> str:
-    """One cvc5 term as a whole SMT-LIB problem for Vampire.
+    """One closed cvc5 term as a whole SMT-LIB problem for Vampire.
 
-    Through `decimals`, which is the one rewrite cvc5's printing needs
-    before Vampire reads it: a rational prints as `(/ 1 2)`, whose
-    arguments are Int, and Vampire's SMT-LIB front end sorts literals
-    strictly enough to call that "invalid sort $int for interpretation /".
-    `houdini_solver` has said so since it began passing its own scripts
-    through the same function; this one did not, and nothing noticed while
-    the sorts gate refused every module with a rational in it.
-
-    The term *is* the question, so cvc5 prints it and this adds the two
-    lines around it. There is no printer here on purpose: the obligations
-    are cvc5 terms the module's own encoding produced, and every printer
-    between them and the prover is a chance to state something other than
-    what was encoded.
+    The term *is* the question: cvc5 prints it, and `decimals` rewrites the
+    rationals Vampire will not read. It goes under `assert-not`, not
+    `(assert (not ...))`, because that marks it as *the* conjecture, which
+    is what `--question_answering` attaches answer literals to.
     """
-    return _PRELUDE + decimals(_CONJECTURE.format(conjecture))
+    return decimals(script([conjecture], command="assert-not", spaced=False))
 
 
 def refuse_ites(term) -> None:

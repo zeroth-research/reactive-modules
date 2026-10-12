@@ -126,12 +126,10 @@ from ..houdini_solver import (
     Query,
     Solver,
     SolverSpec,
-    decimals,
-    smt_lit,
-    smt_real,
 )
 from . import TA2Magic
 from .modes import mode_bounds
+from ..smt.script import decimals, smt_int, smt_lit, smt_real
 from ..smt.terms import free_constants, nodes
 from ..smt_synth import (
     SynthContext,
@@ -142,7 +140,6 @@ from ..smt_synth import (
     moduli,
     program_constants,
     program_rationals,
-    smt_int,
 )
 
 try:

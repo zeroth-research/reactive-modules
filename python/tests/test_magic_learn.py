@@ -25,10 +25,10 @@ from zrth.lean.magic.learn import (
     _prune,
     _smt_affine,
     _smt_conjunction,
-    _smt_int,
     _smt_ranking,
     _smt_term,
 )
+from zrth.lean.smt.script import smt_int
 from zrth.lean.smt_query import SmtBudget, Status, pre_check
 
 pytest.importorskip("cvc5")
@@ -295,7 +295,7 @@ def test_the_conjuncts_are_seeded_one_by_one():
 
 def test_a_negative_literal_is_a_negation():
     """SMT-LIB has no negative numerals; `-3` is `(- 3)`."""
-    assert _smt_int(3) == "3" and _smt_int(-3) == "(- 3)" and _smt_int(0) == "0"
+    assert smt_int(3) == "3" and smt_int(-3) == "(- 3)" and smt_int(0) == "0"
 
 
 @pytest.mark.parametrize("coeffs, const, want", [

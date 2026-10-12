@@ -29,7 +29,8 @@ from enum import Enum
 
 from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
-from .smt.terms import free_constants, ite_conditions, nodes, state_dependent
+from .smt.script import script
+from .smt.terms import ite_conditions, nodes, state_dependent
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -317,7 +318,7 @@ class ModuleQueries:
         if self.artifacts is None:
             return
         try:
-            text = _script([negation])
+            text = script([negation])
         except Exception as e:                       # noqa: BLE001
             text = f"; this obligation could not be written out: {e}\n"
         self._dumped[name] = self.artifacts.encoded(
@@ -358,7 +359,7 @@ class ModuleQueries:
                                    ("ranking", self.ranking))
                 if term is not None
             ]
-            text = _script([], defines=defines)
+            text = script(defines=defines)
         except Exception as e:                       # noqa: BLE001
             # `update_state` raises on an op with no SMT form -- an
             # uninterpreted symbol, say. The run carries on; the note says why
@@ -506,33 +507,6 @@ class ModuleQueries:
 # ══════════════════════════════════════════════════════════════════════
 # Driver
 # ══════════════════════════════════════════════════════════════════════
-
-
-def _script(asserts, *, defines=(), logic: str = "ALL") -> str:
-    """`asserts` as a script that runs on its own under any SMT-LIB solver.
-
-    `defines` are `(name, params, sort, body)` emitted as `define-fun` ahead of
-    the assertions -- how the transition is written out, one function per state
-    component. Declarations are collected from everything mentioned, so a
-    caller states what it wants said and not what it depends on.
-    """
-    seen = free_constants([body for _n, _p, _s, body in defines]
-                          + list(asserts))
-
-    bound = {p for _n, params, _s, _b in defines for p, _ps in params}
-    lines = [f"(set-logic {logic})", ""]
-    lines += [f"(declare-fun {sym} () {seen[sym].getSort()})"
-              for sym in sorted(seen) if sym not in bound]
-    if len(lines) > 2:
-        lines.append("")
-    for name, params, sort, body in defines:
-        args = " ".join(f"({p} {srt})" for p, srt in params)
-        lines.append(f"(define-fun {name} ({args}) {sort} {body})")
-    if defines:
-        lines.append("")
-    lines += [f"(assert {term})" for term in asserts]
-    lines += ["", "(check-sat)"]
-    return "\n".join(lines) + "\n"
 
 
 _OBLIGATIONS = {

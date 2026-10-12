@@ -58,6 +58,7 @@ try:
 except ImportError:                                  # pragma: no cover
     Kind = None
 
+from ..smt.script import decimals, declarations, smt_lit
 from ..smt.terms import free_constants, literals
 
 # A mode is a valuation of the Bool columns, so the modes are exponential in
@@ -132,15 +133,13 @@ class _Model:
         if any(not (v.getSort().isBoolean() or v.getSort().isInteger()
                     or v.getSort().isReal()) for v in seen.values()):
             return None
-        return cls(ctx, ob, sorts, bits, nums, seen, terms, deadline)
+        return cls(ctx, ob, sorts, bits, nums, terms, deadline)
 
-    def __init__(self, ctx, ob, sorts, bits, nums, seen, terms, deadline):
-        from ..houdini_solver import decimals
-
+    def __init__(self, ctx, ob, sorts, bits, nums, terms, deadline):
         self.sorts, self.bits, self.nums = sorts, bits, nums
         self.deadline = deadline
         self.z = z = z3.Context()
-        lines = [f"(declare-fun {s} () {seen[s].getSort()})" for s in sorted(seen)]
+        lines = declarations(terms)
         for tag, ts in (("N", ob.next), ("I", ob.init)):
             for i, t in enumerate(ts):
                 lines.append(f"(declare-fun {tag}{i} () {t.getSort()})")
@@ -304,8 +303,6 @@ class _Model:
     # --- out --------------------------------------------------------------
 
     def facts(self, a: dict) -> list[str]:
-        from ..houdini_solver import smt_lit
-
         out: list[str] = []
         reached = [m for m in self.modes if a[m] is not None]
         everywhere = None

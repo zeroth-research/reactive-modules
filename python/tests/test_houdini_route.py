@@ -192,7 +192,7 @@ def test_a_bitvector_state_is_refused_by_name(solver, why):
 def test_a_real_literal_is_written_as_a_decimal_where_one_is_exact(value, written):
     from fractions import Fraction
 
-    from zrth.lean.magic.houdini import smt_real
+    from zrth.lean.smt.script import smt_real
 
     assert smt_real(Fraction(value)) == written
 
@@ -200,7 +200,7 @@ def test_a_real_literal_is_written_as_a_decimal_where_one_is_exact(value, writte
 def test_cvc5s_rationals_are_rewritten_on_the_way_into_a_vampire_script():
     """cvc5 prints one half as `(/ 1 2)`, whose arguments are Int-sorted;
     Vampire answers that with `invalid sort $int for interpretation /`."""
-    from zrth.lean.magic.houdini import decimals
+    from zrth.lean.smt.script import decimals
 
     assert decimals("(- v_s0 (/ 1 2))") == "(- v_s0 0.5)"
     assert decimals("(* (/ (- 1) 4) x)") == "(* (- 0.25) x)"
