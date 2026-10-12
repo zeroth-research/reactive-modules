@@ -24,12 +24,14 @@ here may change what `verith` emits except by *adding* information.
 from __future__ import annotations
 
 import time
+import weakref
 from dataclasses import dataclass, field
 from enum import Enum
 
 from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
-from .smt.limits import SmtBudget, bounded_solver
+from .smt.limits import SmtBudget
+from .smt.run import encoding_of
 from .smt.script import script
 from .smt.terms import ite_conditions, nodes, state_dependent
 
@@ -84,6 +86,8 @@ _VERDICT_STATUS = {
 class ModuleQueries:
     """A cvc5 view of one module together with its certificate predicates.
 
+    `source` is the module or its `smt.run.ModuleEncoding`; a run gets these
+    from `ModuleEncoding.queries`, which builds one per claim and certificate.
     Construct with `build`, which returns `None` rather than raising when the
     module or the predicates are outside what the encoder covers -- the whole
     point is that the caller can carry on without cvc5. A caller that cannot
@@ -92,71 +96,30 @@ class ModuleQueries:
     `Refused` for a predicate, anything else for the module.
     """
 
-    def __init__(self, module, claim: Claim, cert: Certificate | None = None):
-        import cvc5
-
-        from .smt_module import ModuleSMT, keep_alive
-        from .smt_prompt import CegarPromptEnv, parse_predicate
-
-        # `artifacts/` is written through this, when a caller supplies one.
-        # Left off by default so that constructing the queries stays a pure
-        # encoding step -- `predicate_facts` and `solver_hints` build these
-        # too, and neither is the run's record of what it asked.
-        self.artifacts = None
-        # Obligation name -> the artifact `_dump` wrote for it, so `_record`
-        # answers the file that was actually written rather than rebuilding
-        # its name and having to know which suffix `put` chose.
-        self._dumped: dict = {}
-        self.tm = cvc5.TermManager()
-        self.msmt = ModuleSMT(tm=self.tm, module=module)
-        self.env = CegarPromptEnv(self.msmt)
-        self.state_vars = self.env.state_vars
-
-        def opt(src, flag, want: str = "Bool"):
-            """Parse one predicate source, or refuse naming the flag it came
-            from. cvc5's parser reports the token it stopped at and nothing
-            about where the text came from, and the caller that prints this
-            has five sources in hand.
-
-            `want` is the sort the field is declared as and the Lean printer
-            assumes: a property, an invariant and a precondition become the
-            body of a `Prop`, a ranking function the body of a `Nat`. An Int
-            where a Prop is expected elaborates to nothing; a Bool ranking
-            prints as `(((s 0 0) = 0) : Int).toNat`, which is not Lean. cvc5
-            knows the sort here, so the flag can be told it is the wrong one
-            rather than Lean being shown the result.
-            """
-            if src is None:
-                return None
-            try:
-                term = parse_predicate(self.env, src)
-            except Exception as e:
-                raise Refused(f"{flag}: cannot read `{src}`: {e}") from e
-            got = term.getSort()
-            if not (got.isBoolean() if want == "Bool" else got.isInteger()):
-                raise Refused(f"{flag}: must have sort {want}, got {got}")
-            return term
+    def __init__(self, source, claim: Claim, cert: Certificate | None = None):
+        enc = encoding_of(source)
+        # Weak: `enc.queries` memoises this, and a cycle through the owner of
+        # a `TermManager` is finalised in arbitrary order (`smt_module._LIVE`).
+        self.enc = weakref.proxy(enc)
+        self.tm = enc.tm
+        self.msmt = enc.msmt
+        self.env = enc.env
+        self.state_vars = enc.state
 
         cert = cert or Certificate()
         self.kind = claim.kind
         prp_flag = "--safety" if claim.is_safety else "--buchi"
-        self.prp = opt(claim.prp, prp_flag)
-        self.inv = opt(cert.inv, "--invariant")
-        self.ranking = opt(cert.ranking, "--ranking", want="Int")
-        self.init_pre = opt(claim.init_pre, "--pre")
-        self.update_pre = opt(claim.update_pre, "--pre")
-        # Retained whole, solvers included: `smt_module.keep_alive` owns the
-        # shutdown-ordering workaround for every cvc5 object this package
-        # mints, and the instance is what ties this term manager to the
-        # solvers built from it.
-        self._solvers: list = []
-        keep_alive(self)
+        self.prp = enc.parse(claim.prp, prp_flag)
+        self.inv = enc.parse(cert.inv, "--invariant")
+        self.ranking = enc.parse(cert.ranking, "--ranking", want="Int")
+        self.init_pre = enc.parse(claim.init_pre, "--pre")
+        self.update_pre = enc.parse(claim.update_pre, "--pre")
 
     @classmethod
-    def build(cls, module, claim: Claim,
+    def build(cls, source, claim: Claim,
               cert: Certificate | None = None) -> "ModuleQueries | None":
         try:
-            return cls(module, claim, cert)
+            return cls(source, claim, cert)
         except Exception:
             return None
 
@@ -180,21 +143,15 @@ class ModuleQueries:
 
     def _sub_inputs(self, term, el, en):
         """Rebind the env's shared `e*`/`el*` consts to a query's own vars."""
-        if term is None:
-            return None
-        old = list(self.env.extl_next_vars) + list(self.env.extl_latched_vars)
-        new = list(en) + list(el)
-        return term.substitute(old, new) if old else term
+        return self.enc.with_inputs(term, el, en)
 
     def _sub_state(self, term, s):
-        return None if term is None else term.substitute(self.state_vars, s)
+        return self.enc.at(term, s)
 
     def _solver(self, budget: SmtBudget):
-        s = bounded_solver(self.tm, budget.next_call_ms(), logic="ALL")
-        self._solvers.append(s)
-        return s
+        return self.enc.solver(budget.next_call_ms(), logic="ALL")
 
-    def _ask(self, name, build, budget):
+    def _ask(self, name, build, budget, artifacts=None):
         """UNSAT on the negation means the obligation holds.
 
         `build` is a thunk returning `(negation, witness)` rather than the
@@ -206,9 +163,14 @@ class ModuleQueries:
         if budget.exhausted:
             return Verdict(name, Status.UNKNOWN, 0.0, "phase budget spent")
         t0 = time.perf_counter()
+        written = None
+
+        def record(verdict):
+            return _record(artifacts, written, verdict)
+
         try:
             negation, witness = build()
-            self._dump(name, negation)
+            written = _dump(artifacts, name, negation)
             solver = self._solver(budget)
             if witness:
                 solver.setOption("produce-models", "true")
@@ -216,71 +178,18 @@ class ModuleQueries:
             res = solver.checkSat()
         except Exception as e:  # cvc5 raises on unsupported terms and options
             dt = (time.perf_counter() - t0) * 1000
-            return self._record(
+            return record(
                 Verdict(name, Status.UNKNOWN, dt, f"cannot encode: {e}"[:120])
             )
         dt = (time.perf_counter() - t0) * 1000
         if res.isUnsat():
-            return self._record(Verdict(name, Status.HOLDS, dt))
+            return record(Verdict(name, Status.HOLDS, dt))
         if not res.isSat():
-            return self._record(
+            return record(
                 Verdict(name, Status.UNKNOWN, dt, res.getUnknownExplanation())
             )
-        return self._record(
+        return record(
             Verdict(name, Status.REFUTED, dt, self._witness(solver, witness))
-        )
-
-    def _record(self, verdict: Verdict) -> Verdict:
-        """Write the answer back onto the obligation `_dump` already wrote.
-
-        The question is left in `artifacts/` before the solver runs, so that
-        one that cannot be solved still says what was asked; this is the other
-        half, and without it `index.json` records only which obligations a run
-        asked about and never which of them came back refuted.
-
-        Returned rather than assigned, so the call reads as a pass-through on
-        each of `_ask`'s return paths. There are four, and a verdict recorded
-        on three of them would be worse than one recorded on none: a stale
-        `encoded` beside three answered obligations reads as "not asked".
-        """
-        written = self._dumped.get(verdict.name)
-        if self.artifacts is None or written is None:
-            # No artifact for this obligation: `--artifacts ignore`, or the
-            # encoding failed before `_dump` ran. Either way there is no
-            # question on disk for this to be the answer to.
-            return verdict
-        why = verdict.detail or ""
-        if verdict.status is Status.HOLDS:
-            # Nothing was wrong with it. `_describe` prints no status line for
-            # `proved` and no prose for an empty `why`, so an obligation that
-            # holds says nothing beyond what it is -- which is right.
-            why = ""
-        elif verdict.status is Status.REFUTED and not why:
-            why = "refuted, but the counterexample could not be read back"
-        try:
-            self.artifacts.resolve(
-                written, status=_VERDICT_STATUS[verdict.status], why=why
-            )
-        except Exception:      # pragma: no cover -- never worth the run
-            pass
-        return verdict
-
-    def _dump(self, name: str, negation) -> None:
-        """Leave this obligation in `artifacts/`, as the script cvc5 is given.
-
-        Inside `_ask`'s `try`, so its own failure would otherwise read as the
-        obligation being unencodable: a record of the question is worth having
-        and worth nothing at the price of changing the answer. What came back
-        is written onto it afterwards, by `_record`."""
-        if self.artifacts is None:
-            return
-        try:
-            text = script([negation])
-        except Exception as e:                       # noqa: BLE001
-            text = f"; this obligation could not be written out: {e}\n"
-        self._dumped[name] = self.artifacts.encoded(
-            "obligation", f"obligation-{name}", text,
-            what=_OBLIGATIONS.get(name, f"The `{name}` obligation, negated."),
         )
 
     def dump_system(self, artifacts) -> None:
@@ -294,18 +203,16 @@ class ModuleQueries:
         if artifacts is None:
             return
         try:
-            s = self.msmt.fresh_ctrl("s")
-            el = self.msmt.fresh_extl_l("el")
-            en = self.msmt.fresh_extl_n("en")
+            s, el, en = self.enc.fresh()
             ins = [(str(t), str(t.getSort())) for t in en]
             step = [(str(t), str(t.getSort())) for t in s + el + en]
             state = [(str(t), str(t.getSort())) for t in self.state_vars]
             defines = [
                 (f"init{i}", ins, str(t.getSort()), t)
-                for i, t in enumerate(self.msmt.init_state(en))
+                for i, t in enumerate(self.enc.init_state(en))
             ] + [
                 (f"next{i}", step, str(t.getSort()), t)
-                for i, t in enumerate(self.msmt.update_state(s, el, en))
+                for i, t in enumerate(self.enc.next_state(s, el, en))
             ] + [
                 # The certificate's own predicates, encoded over the same
                 # state. The `.smt` files beside this one are their source;
@@ -318,7 +225,7 @@ class ModuleQueries:
             ]
             text = script(defines=defines)
         except Exception as e:                       # noqa: BLE001
-            # `update_state` raises on an op with no SMT form -- an
+            # The transition raises on an op with no SMT form -- an
             # uninterpreted symbol, say. The run carries on; the note says why
             # the file a reader expects is not here.
             text = f"; this module has no SMT encoding: {e}\n"
@@ -358,13 +265,12 @@ class ModuleQueries:
 
     # ── the three obligations Certificate.lean states ─────────────────
 
-    def check_init_inv(self, budget: SmtBudget) -> Verdict:
+    def check_init_inv(self, budget: SmtBudget, artifacts=None) -> Verdict:
         """`∀ e, init_pre e → inv (init e)`."""
 
         def build():
-            el = self.msmt.fresh_extl_l("i_el")
-            en = self.msmt.fresh_extl_n("i_en")
-            s0 = self.msmt.init_state(en)
+            _, el, en = self.enc.fresh("i_")
+            s0 = self.enc.init_state(en)
             return (
                 self._and(
                     self._sub_inputs(self.init_pre, el, en),
@@ -373,16 +279,14 @@ class ModuleQueries:
                 self._labelled(s0),
             )
 
-        return self._ask("init_inv", build, budget)
+        return self._ask("init_inv", build, budget, artifacts)
 
-    def check_step_inv(self, budget: SmtBudget) -> Verdict:
+    def check_step_inv(self, budget: SmtBudget, artifacts=None) -> Verdict:
         """`∀ s e, update_pre e ∧ inv s → inv (update s e)`."""
 
         def build():
-            s = self.msmt.fresh_ctrl("p_s")
-            el = self.msmt.fresh_extl_l("p_el")
-            en = self.msmt.fresh_extl_n("p_en")
-            nxt = self.msmt.update_state(s, el, en)
+            s, el, en = self.enc.fresh("p_")
+            nxt = self.enc.next_state(s, el, en)
             return (
                 self._and(
                     self._sub_state(self.inv, s),
@@ -392,17 +296,15 @@ class ModuleQueries:
                 self._labelled(s),
             )
 
-        return self._ask("step_inv", build, budget)
+        return self._ask("step_inv", build, budget, artifacts)
 
-    def check_hrank(self, budget: SmtBudget) -> Verdict:
+    def check_hrank(self, budget: SmtBudget, artifacts=None) -> Verdict:
         """`inv s ∧ ¬P s ∧ update_pre e → ranking (update s e) < ranking s`."""
         from cvc5 import Kind
 
         def build():
-            s = self.msmt.fresh_ctrl("r_s")
-            el = self.msmt.fresh_extl_l("r_el")
-            en = self.msmt.fresh_extl_n("r_en")
-            nxt = self.msmt.update_state(s, el, en)
+            s, el, en = self.enc.fresh("r_")
+            nxt = self.enc.next_state(s, el, en)
             decrease = self.tm.mkTerm(
                 Kind.LT,
                 self._clamp(self._sub_state(self.ranking, nxt)),
@@ -418,9 +320,9 @@ class ModuleQueries:
                 self._labelled(s),
             )
 
-        return self._ask("hrank", build, budget)
+        return self._ask("hrank", build, budget, artifacts)
 
-    def check_inv_imp_P(self, budget: SmtBudget) -> Verdict:
+    def check_inv_imp_P(self, budget: SmtBudget, artifacts=None) -> Verdict:
         """`inv s → P s` -- the safety route's third obligation.
 
         `rule_globally` needs the invariant to be a strengthening of the
@@ -429,7 +331,7 @@ class ModuleQueries:
         """
 
         def build():
-            s = self.msmt.fresh_ctrl("p_s")
+            s, _, _ = self.enc.fresh("p_")
             return (
                 self._and(
                     self._sub_state(self.inv, s),
@@ -438,10 +340,12 @@ class ModuleQueries:
                 self._labelled(s),
             )
 
-        return self._ask("inv_imp_P", build, budget)
+        return self._ask("inv_imp_P", build, budget, artifacts)
 
-    def check_obligations(self, budget: SmtBudget) -> list[Verdict]:
-        """Every obligation the certificate data actually states.
+    def check_obligations(self, budget: SmtBudget,
+                          artifacts=None) -> list[Verdict]:
+        """Every obligation the certificate data actually states, each
+        question and its answer left in `artifacts` when given.
 
         Which third obligation there is follows the certificate's kind:
         `hrank` for `G (F P)`, `inv_imp_P` for `G P`.
@@ -450,20 +354,74 @@ class ModuleQueries:
         out: list[Verdict] = []
         if self.inv is None:
             return out
-        out.append(self.check_init_inv(budget))
-        out.append(self.check_step_inv(budget))
+        out.append(self.check_init_inv(budget, artifacts))
+        out.append(self.check_step_inv(budget, artifacts))
         if self.prp is None:
             return out
         if self.kind == "safety":
-            out.append(self.check_inv_imp_P(budget))
+            out.append(self.check_inv_imp_P(budget, artifacts))
         elif self.ranking is not None:
-            out.append(self.check_hrank(budget))
+            out.append(self.check_hrank(budget, artifacts))
         return out
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Driver
 # ══════════════════════════════════════════════════════════════════════
+
+
+def _record(artifacts, written, verdict: Verdict) -> Verdict:
+    """Write the answer back onto the obligation `_dump` already wrote.
+
+    The question is left in `artifacts/` before the solver runs, so that
+    one that cannot be solved still says what was asked; this is the other
+    half, and without it `index.json` records only which obligations a run
+    asked about and never which of them came back refuted.
+
+    Returned rather than assigned, so the call reads as a pass-through on
+    each of `_ask`'s return paths. There are four, and a verdict recorded
+    on three of them would be worse than one recorded on none: a stale
+    `encoded` beside three answered obligations reads as "not asked".
+    """
+    if artifacts is None or written is None:
+        # No artifact for this obligation: `--artifacts ignore`, or the
+        # encoding failed before `_dump` ran. Either way there is no
+        # question on disk for this to be the answer to.
+        return verdict
+    why = verdict.detail or ""
+    if verdict.status is Status.HOLDS:
+        # Nothing was wrong with it. `_describe` prints no status line for
+        # `proved` and no prose for an empty `why`, so an obligation that
+        # holds says nothing beyond what it is -- which is right.
+        why = ""
+    elif verdict.status is Status.REFUTED and not why:
+        why = "refuted, but the counterexample could not be read back"
+    try:
+        artifacts.resolve(
+            written, status=_VERDICT_STATUS[verdict.status], why=why
+        )
+    except Exception:      # pragma: no cover -- never worth the run
+        pass
+    return verdict
+
+def _dump(artifacts, name: str, negation):
+    """Leave this obligation in `artifacts/`, as the script cvc5 is given.
+
+    Inside `_ask`'s `try`, so its own failure would otherwise read as the
+    obligation being unencodable: a record of the question is worth having
+    and worth nothing at the price of changing the answer. What came back
+    is written onto it afterwards, by `_record`."""
+    if artifacts is None:
+        return None
+    try:
+        text = script([negation])
+    except Exception as e:                       # noqa: BLE001
+        text = f"; this obligation could not be written out: {e}\n"
+    return artifacts.encoded(
+        "obligation", f"obligation-{name}", text,
+        what=_OBLIGATIONS.get(name, f"The `{name}` obligation, negated."),
+    )
+
 
 
 _OBLIGATIONS = {
@@ -483,10 +441,11 @@ _NOT_SMT = ("   the certificate predicates are not SMT-LIB, so cvc5 cannot "
             "state the obligations -- skipping the pre-check")
 
 
-def pre_check(module, claim: Claim, answer: "Certificate | LeanAnswer | None",
+def pre_check(smt, claim: Claim, answer: "Certificate | LeanAnswer | None",
               budget: SmtBudget, log=print, artifacts=None) -> list[Verdict]:
     """Run the obligation pre-check and report it in a few lines.
 
+    `smt` is the module, its encoding or a `smt.run.lazy` factory for one.
     Never raises: a module cvc5 cannot encode, or an answer it cannot read,
     reports one line and generation carries on exactly as it would have.
 
@@ -502,16 +461,15 @@ def pre_check(module, claim: Claim, answer: "Certificate | LeanAnswer | None",
         log(_NOT_SMT)
         return []
     try:
-        q = ModuleQueries(module, claim, answer)
+        q = encoding_of(smt).queries(claim, answer)
     except Refused:
         log(_NOT_SMT)
         return []
     except Exception:
         log("   cvc5 could not encode this module -- skipping the pre-check")
         return []
-    q.artifacts = artifacts
     q.dump_system(artifacts)
-    verdicts = q.check_obligations(budget)
+    verdicts = q.check_obligations(budget, artifacts)
     if not verdicts:
         log("   nothing to check (no invariant given)")
         return []
@@ -875,7 +833,7 @@ def _branch_polarity(q: "ModuleQueries", budget: SmtBudget, hints: SolverHints) 
     for cond in list(conds.values())[:MAX_DECIDED_CONDITIONS]:
         if budget.exhausted:
             return
-        s = q.msmt.fresh_ctrl("d_s")
+        s, _, _ = q.enc.fresh("d_")
         inv_s = q._sub_state(q.inv, s)
         cond_s = cond.substitute(q.state_vars, s)
         value = None
@@ -957,10 +915,8 @@ def _obligation_labels(q: "ModuleQueries"):
     from cvc5 import Kind
 
     out = []
-    s = q.msmt.fresh_ctrl("h_s")
-    el = q.msmt.fresh_extl_l("h_el")
-    en = q.msmt.fresh_extl_n("h_en")
-    nxt = q.msmt.update_state(s, el, en)
+    s, el, en = q.enc.fresh("h_")
+    nxt = q.enc.next_state(s, el, en)
 
     def keep(d):
         return {

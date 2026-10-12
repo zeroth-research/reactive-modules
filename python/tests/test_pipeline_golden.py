@@ -254,12 +254,12 @@ RUNS = [
     ]),
 ]
 
-# `ModuleSMT`s built per run, pinned so that sharing one encoding per run
-# (PL-2) shows up as these numbers going down.
+# `ModuleSMT`s built per run. The pre-check and both renderings share the
+# run's `smt.run.lazy` encoding; a route that searches still builds its own.
 ENCODINGS = {
-    "bare": 0, "supplied": 2, "supplied_pre": 2, "cert_file": 1,
-    "unreadable_property": 1, "smt_linear": 4, "houdini": 4, "nuterm": 3,
-    "nuterm_pre": 3, "ai_cegis_fixed": 4, "ai": 2, "sygus": 4, "vampire": 4,
+    "bare": 0, "supplied": 1, "supplied_pre": 1, "cert_file": 1,
+    "unreadable_property": 1, "smt_linear": 2, "houdini": 2, "nuterm": 1,
+    "nuterm_pre": 1, "ai_cegis_fixed": 2, "ai": 1, "sygus": 2, "vampire": 2,
 }
 
 

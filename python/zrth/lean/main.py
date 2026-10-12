@@ -114,6 +114,7 @@ from .project import (
     load_module_from_file,
     write_encoding,
 )
+from .smt.run import lazy
 from .smt_query import pre_check, predicate_facts, solver_hints
 from .translate import ModuleToLean4
 
@@ -261,11 +262,11 @@ def _workspace(settings: Settings, module, project_dir: Path) -> ArtifactStore:
     return store
 
 
-def _render(settings: Settings, module, claim: "Claim | None",
+def _render(settings: Settings, smt, claim: "Claim | None",
             cert: Certificate, *, hints: bool, restated: bool = False,
             verbatim: "LeanAnswer | None" = None) -> "LeanCertificate | None":
     """The certificate as codegen takes it. `None` without a claim: a bare
-    run asks cvc5 nothing.
+    run asks cvc5 nothing. `smt` is the run's `smt.run.lazy` encoding.
 
     The predicates are parsed once, and that one parse is printed as Lean,
     read for its shape (`predicate_facts`) and, with `hints` under
@@ -277,7 +278,7 @@ def _render(settings: Settings, module, claim: "Claim | None",
     """
     if claim is None:
         return None
-    q = predicate_terms(module, claim, cert)
+    q = predicate_terms(smt, claim, cert)
     h = None
     if hints and settings.smt_tactics == "cvc5":
         restating = ", restated over the inferred predicates" if restated else ""
@@ -482,7 +483,7 @@ def _generate(settings: Settings, module, ctx: LeanContext,
         raise SystemExit(f"error: {e}") from e
 
 
-def _regenerate(settings: Settings, module, handle: ProjectHandle, store,
+def _regenerate(settings: Settings, smt, handle: ProjectHandle, store,
                 claim: Claim, result: InferResult) -> LeanCertificate:
     """The project's certificate, rewritten from the route's answer.
 
@@ -494,11 +495,11 @@ def _regenerate(settings: Settings, module, handle: ProjectHandle, store,
     """
     cert, lean = result.cert, result.lean
     if settings.pre_check == "cvc5":
-        pre_check(module, claim, lean or cert, settings.budget,
+        pre_check(smt, claim, lean or cert, settings.budget,
                   artifacts=store)
     _record_predicates(store, claim, cert, inferred=True)
     try:
-        lean_cert = _render(settings, module, claim, cert,
+        lean_cert = _render(settings, smt, claim, cert,
                             hints=lean is None, restated=True, verbatim=lean)
     except Refused as e:
         raise _refused(settings, e) from e
@@ -515,6 +516,8 @@ def main():
 
     module = _load(settings)
     print(module)
+    # The run's one cvc5 encoding, built by whichever stage asks first.
+    smt = lazy(module)
     claim, given = _claim(settings)
     prechecked = _route_precheck(settings, module, claim)
     ctx = _lean_context(settings, module)
@@ -537,13 +540,13 @@ def main():
         if claim is None:
             print(".. SMT pre-check: nothing to check (no certificate data)")
         else:
-            pre_check(module, claim, given, settings.budget, artifacts=store)
+            pre_check(smt, claim, given, settings.budget, artifacts=store)
 
     # With a route this rendering is a placeholder the answer replaces, and
     # no route reads `Certificate/`, so cvc5 is asked for hints only about
     # the certificate the project ends up with.
     try:
-        lean_cert = _render(settings, module, claim, given,
+        lean_cert = _render(settings, smt, claim, given,
                             hints=settings.route is None)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
@@ -571,7 +574,7 @@ def main():
         # nothing of ours to be complete about and nothing to regenerate from.
         lean_cert = (
             None if result is None
-            else _regenerate(settings, module, handle, store, claim, result)
+            else _regenerate(settings, smt, handle, store, claim, result)
         )
 
     _build_cert(settings, project_dir, lean_cert)

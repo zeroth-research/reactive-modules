@@ -60,18 +60,19 @@ class LeanCertificate:
 
 
 def predicate_terms(
-    module: "Module", claim: Claim, cert: Certificate = Certificate()
+    smt, claim: Claim, cert: Certificate = Certificate()
 ) -> "ModuleQueries":
-    """`claim` and `cert` parsed against `module`: what the Lean is printed
-    from, and what `predicate_facts` and `solver_hints` read.
+    """`claim` and `cert` parsed against the module: what the Lean is printed
+    from, and what `predicate_facts` and `solver_hints` read. `smt` is the
+    module, its encoding or a `smt.run.lazy` factory for one.
 
     A predicate that does not parse is refused naming its flag; anything
     else is the module's, and refused as that.
     """
-    from .smt_query import ModuleQueries
+    from .smt.run import encoding_of
 
     try:
-        return ModuleQueries(module, claim, cert)
+        return encoding_of(smt).queries(claim, cert)
     except Refused:
         raise
     except Exception as e:
