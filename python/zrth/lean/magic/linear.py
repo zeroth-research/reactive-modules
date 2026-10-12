@@ -232,6 +232,7 @@ class TA2MagicLinear(TA2Magic):
         budget=None,
         artifacts=None,
         log=print,
+        encoding=None,
     ):
         super().__init__("")
         if cvc5 is None:                             # pragma: no cover
@@ -240,6 +241,9 @@ class TA2MagicLinear(TA2Magic):
                 "importable. Install with: uv pip install cvc5"
             )
         self.module = module
+        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
         self.rows = max(1, int(rows))
         self.budget = budget
         self.artifacts = artifacts
@@ -252,8 +256,8 @@ class TA2MagicLinear(TA2Magic):
         """The certificate of `claim`, as SMT-LIB. `given.inv` is kept: the
         rows strengthen it for `--safety` and the rank is searched under it
         for `--buchi`."""
-        ctx = SynthContext.build(self.module, claim, route="smt-linear",
-                                 takes=READS)
+        ctx = SynthContext.build(self.encoding or self.module, claim,
+                                 route="smt-linear", takes=READS)
         scale = denominator_scale(program_rationals(ctx))
         cols = readings(ctx, allow=READS, route="smt-linear", scale=scale)
         self.log(f"[smt-linear] columns: {', '.join(c.name for c in cols)}")
@@ -393,7 +397,7 @@ class TA2MagicLinear(TA2Magic):
             return affine(cs[0], vs)
 
         def build(st, el, en):
-            nxt = ctx.msmt.update_state(st, el, en)
+            nxt = ctx.enc.next_state(st, el, en)
             drops = tm.mkTerm(Kind.LT, rank(nxt), rank(st))
             if shape.kind == "zeroed":
                 # `(ite P 0 r)` at a successor where `P` holds is 0, below the
@@ -627,12 +631,12 @@ class TA2MagicLinear(TA2Magic):
         return (
             tm.mkTerm(Kind.IMPLIES,
                       ctx.with_inputs(ctx.init_pre, el, en),
-                      inv(ctx.msmt.init_state(en))),
+                      inv(ctx.enc.init_state(en))),
             tm.mkTerm(
                 Kind.IMPLIES,
                 tm.mkTerm(Kind.AND, inv(st),
                           ctx.with_inputs(ctx.update_pre, el, en)),
-                inv(ctx.msmt.update_state(st, el, en)),
+                inv(ctx.enc.next_state(st, el, en)),
             ),
         )
 

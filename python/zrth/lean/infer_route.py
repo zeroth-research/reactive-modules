@@ -515,6 +515,7 @@ def _run_smt_linear(inp: InferInput) -> InferResult:
         budget=inp.budget,
         artifacts=inp.project.artifacts,
         log=inp.log,
+        encoding=inp.smt,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 
