@@ -578,6 +578,7 @@ def _run_houdini(inp: InferInput) -> InferResult:
         timeout=inp.opts["houdini_timeout"],
         artifacts=inp.project.artifacts,
         log=inp.log,
+        encoding=inp.smt,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 

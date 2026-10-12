@@ -263,8 +263,8 @@ class Obligations:
         self.en = consts(ctx.extl_next, "v_en")
         readable = self._readable
 
-        self.next = [readable(t) for t in ctx.msmt.update_state(self.s, self.el, self.en)]
-        self.init = [readable(t) for t in ctx.msmt.init_state(self.en)]
+        self.next = [readable(t) for t in ctx.enc.next_state(self.s, self.el, self.en)]
+        self.init = [readable(t) for t in ctx.enc.init_state(self.en)]
         self.update_pre = readable(ctx.with_inputs(ctx.update_pre, self.el, self.en))
         self.init_pre = readable(ctx.with_inputs(ctx.init_pre, self.el, self.en))
 
@@ -1390,7 +1390,8 @@ class TA2MagicHoudini(TA2Magic):
     """
 
     def __init__(self, module, *, solver=DEFAULT_SOLVER,
-                 timeout: float = DEFAULT_TIMEOUT, artifacts=None, log=print):
+                 timeout: float = DEFAULT_TIMEOUT, artifacts=None, log=print,
+                 encoding=None):
         super().__init__("")
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
@@ -1400,6 +1401,9 @@ class TA2MagicHoudini(TA2Magic):
             )
         self.spec = solver if isinstance(solver, SolverSpec) else SolverSpec(solver)
         self.module = module
+        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
         self.timeout = float(timeout)
         self.artifacts = artifacts
         self.log = log
@@ -1410,7 +1414,8 @@ class TA2MagicHoudini(TA2Magic):
               given: Certificate = Certificate()) -> Certificate:
         """The certificate of `claim`, as SMT-LIB. `given` is not read: the
         row seeds from nothing but `--pre`, which is in the claim."""
-        ctx = SynthContext.build(self.module, claim, route="houdini",
+        ctx = SynthContext.build(self.encoding or self.module, claim,
+                                 route="houdini",
                                  takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx
