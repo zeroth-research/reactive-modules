@@ -11,26 +11,24 @@
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module, nxt, ite, ne
+from zrth.sugar import Module, X, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, var
 
 
 class Program(Module):
-    def init(self, extl):
-        x0 = extl                               # single input, unwrapped
-        return nxt(x0)                          # x = nondet
+    def init(self, x0):  # single input, unwrapped
+        return X(x0)                          # x = nondet
 
-    def update(self, ctrl):
-        x = ctrl
-        guard = ne(x, 0)
+    def update(self, x, _x0):
+        guard = (x != 0)
         wx = ite(x > 0, x - 1, x + 1)           # if (x>0) x-1 else x+1
         return ite(guard, wx, x)
 
 
 def _build():
-    x = pair()
-    x0 = pair()
+    x = var()
+    x0 = var()
     prog = Program(theory=LIA, ctrl=(x,), extl=(x0,))
     return prog, {"x": x}, {"x0": x0}
 

@@ -52,6 +52,7 @@ import dataclasses
 from pathlib import Path
 
 import z3
+from zrth import X
 
 from ._farkas import (CellCert, Inductive, LexDecrease, Unsupported, _find_ite_cond,
                       _flatten_and, affine_coeffs, entry_predicate, reading, resolve)
@@ -699,8 +700,8 @@ def _emit_direct_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
     n = len(s_syms)
     body = list(pcert.body)
     body_affines = [affine_coeffs(e, s_syms) for e in body]
-    wire_terms = {system.W[pr[1].id]: _affine_str(c, k)
-                  for pr, (c, k) in zip(system.pairs, body_affines)}
+    wire_terms = {system.W[X(v).id]: _affine_str(c, k)
+                  for v, (c, k) in zip(system.vars, body_affines)}
     parts = [f"def trans (s : Vector {n} Int) : Prop :=\n"
              f"  {_render_conjuncts(pcert.guard, s_syms)}",
              _emit_post_state(body_affines, n),
@@ -756,8 +757,8 @@ def _emit_path(path: str, pcert, res, system, s_syms, trivial_inv: bool,
 
     # per device: its input, activations, and a bound per distinct mask slice or a
     # collapse per region; `haves[r]` collects what `step_ok` brings in on region r
-    wire_terms = {system.W[pr[1].id]: _affine_str(c, k)
-                  for pr, (c, k) in zip(system.pairs, body_affines)}
+    wire_terms = {system.W[X(v).id]: _affine_str(c, k)
+                  for v, (c, k) in zip(system.vars, body_affines)}
     haves = [[] for _ in regions]
     for k, dev in enumerate(res.devices):
         net, units = res.nets[dev.net], pcert.device_units[k]
@@ -921,7 +922,7 @@ def _claim_terms(system, s_syms, named, devices, nets, what: str):
     this proof is its network at the state. A wire reading the next state is
     refused by name. Returns ``(terms, step)``."""
     n = len(s_syms)
-    nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
+    nexts = {X(v).id: k for k, v in enumerate(system.vars)}
     by_id = {d.wire_id: d for d in devices}
     terms, step = {}, False
     for w in named:

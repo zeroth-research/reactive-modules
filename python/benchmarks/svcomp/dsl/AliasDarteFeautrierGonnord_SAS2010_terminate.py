@@ -17,18 +17,16 @@
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module, nxt, ite
+from zrth.sugar import Module, X, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, var
 
 
 class Program(Module):
-    def init(self, extl):
-        i0, j0, k0 = extl
-        return nxt(i0), nxt(j0), nxt(k0)
+    def init(self, i0, j0, k0):
+        return X(i0), X(j0), X(k0)
 
-    def update(self, ctrl):
-        i, j, k = ctrl
+    def update(self, i, j, k, _i0, _j0, _k0):
         guard = (i <= 100) & (j <= k)
         wi, wj, wk = i, j, k
         ell = wi          # ell = i    (old i)
@@ -39,8 +37,8 @@ class Program(Module):
 
 
 def _build():
-    i, j, k = pair(), pair(), pair()
-    i0, j0, k0 = pair(), pair(), pair()
+    i, j, k = var(), var(), var()
+    i0, j0, k0 = var(), var(), var()
     prog = Program(theory=LIA, ctrl=(i, j, k), extl=(i0, j0, k0))
     return prog, {"i": i, "j": j, "k": k}, {"i0": i0, "j0": j0, "k0": k0}
 

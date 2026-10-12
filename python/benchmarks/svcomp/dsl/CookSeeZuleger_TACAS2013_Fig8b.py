@@ -17,26 +17,24 @@ the comparison to that domain.
 from __future__ import annotations
 
 from zrth import LIA
-from zrth.sugar import Module, nxt, ite, ne
+from zrth.sugar import Module, X, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, var
 
 
 class Program(Module):
-    def init(self, extl):
-        x0, M0 = extl
-        return nxt(x0), nxt(M0)                 # x, M both nondet
+    def init(self, x0, M0):
+        return X(x0), X(M0)                 # x, M both nondet
 
-    def update(self, ctrl):
-        x, M = ctrl
-        guard = ne(x, M)
+    def update(self, x, M, _x0, _M0):
+        guard = (x != M)
         wx = ite(x > M, 0, x + 1)               # if (x>M) 0 else x+1
         return ite(guard, wx, x), M             # M unchanged
 
 
 def _build():
-    x, M = pair(), pair()
-    x0, M0 = pair(), pair()
+    x, M = var(), var()
+    x0, M0 = var(), var()
     prog = Program(theory=LIA, ctrl=(x, M), extl=(x0, M0))
     return prog, {"x": x, "M": M}, {"x0": x0, "M0": M0}
 

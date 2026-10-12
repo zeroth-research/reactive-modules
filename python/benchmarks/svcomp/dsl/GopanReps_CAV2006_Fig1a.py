@@ -17,15 +17,14 @@ from __future__ import annotations
 from zrth import LIA
 from zrth.sugar import Module, ite
 
-from .._bench import Bench, pair
+from .._bench import Bench, var
 
 
 class Program(Module):
-    def init(self, extl):
+    def init(self):
         return 0, 0                             # x = 0, y = 0
 
-    def update(self, ctrl):
-        x, y = ctrl
+    def update(self, x, y):
         guard = y >= 0
         wx, wy = x, y
         wy = ite(wx <= 50, wy + 1, wy - 1)      # if (x<=50) y+1 else y-1
@@ -34,7 +33,7 @@ class Program(Module):
 
 
 def _build():
-    x, y = pair(), pair()
+    x, y = var(), var()
     prog = Program(theory=LIA, ctrl=(x, y), extl=())
     return prog, {"x": x, "y": y}, {}
 
