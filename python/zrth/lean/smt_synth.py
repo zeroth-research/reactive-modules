@@ -51,6 +51,7 @@ from fractions import Fraction
 
 from .certificate import Claim
 from .common import Refused
+from .smt.record import found, note
 from .smt.script import smt_int
 from .smt.terms import literals
 
@@ -626,20 +627,16 @@ class Search:
 def record(store, search: Search, *, log=None) -> None:
     """Leave `search` in `artifacts/` for the next run.
 
-    A found predicate is written as its own role, in SMT-LIB and with the
-    status that makes it resumable -- `infer_route.FIXABLE` is what a later
-    `--infer ai-cegis` will take as given. An empty space is written as a
-    note, because what it is worth is what it *says*, and `no_solution` is
-    the status that tells a consumer the saying was proved.
+    A found predicate is written as its own role (`smt.record.found`). An
+    empty space is written as a note, because what it is worth is what it
+    *says*, and `no_solution` is the status that tells a consumer the
+    saying was proved.
     """
-    if store is None:
-        return
     if search.found is not None:
-        store.put(
+        found(
+            store,
             search.field,
             search.found,
-            status="proved",
-            language="smt",
             what=(
                 f"The {search.field} this run found. {search.space} It "
                 f"satisfies the obligations by construction: cvc5 answered "
@@ -648,7 +645,8 @@ def record(store, search: Search, *, log=None) -> None:
             ),
         )
         return
-    store.note(
+    note(
+        store,
         search.note + "\n",
         status="no_solution" if search.exhausted else "unknown",
         what=(

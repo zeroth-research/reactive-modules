@@ -168,6 +168,7 @@ from ..common import Refused
 from ..houdini_solver import DEFAULT_TIMEOUT, Cvc5Solver
 from . import TA2Magic
 from .houdini import Candidate, Obligations, columns
+from ..smt.record import found, note
 from ..smt.script import decimals, script, smt_int
 from ..smt.terms import free_constants, ite_conditions
 from ..smt.vampire import run_vampire
@@ -1195,19 +1196,16 @@ class TA2MagicVampire(TA2Magic):
 
     def _record(self, inv_src: str, rank_src: "str | None",
                 tpl: Template) -> None:
-        if self.artifacts is None:
-            return
         what = (f"Derived by Vampire's answer literals from a `{tpl.name}` "
                 f"template with {len(tpl.all_holes)} holes -- the "
                 f"obligations were stated with the certificate open and "
                 f"Vampire returned the coefficients -- then checked against "
                 f"the module's encoding with cvc5.")
-        self.artifacts.put("inv", inv_src, status="proved", language="smt",
-                           what=f"The invariant this run found. {what}")
+        found(self.artifacts, "inv", inv_src,
+              what=f"The invariant this run found. {what}")
         if rank_src is not None:
-            self.artifacts.put(
-                "ranking", rank_src, status="proved", language="smt",
-                what=f"The ranking function this run found. {what}")
+            found(self.artifacts, "ranking", rank_src,
+                  what=f"The ranking function this run found. {what}")
 
     def _none(self, claim: Claim, tried, asker):
         what = ("inductive invariant implying the property" if claim.is_safety
@@ -1223,12 +1221,12 @@ class TA2MagicVampire(TA2Magic):
             f"what is missing. `--infer houdini` searches the same module by "
             f"proposing facts and proving them, which is a different reach."
         )
-        if self.artifacts is not None:
-            self.artifacts.note(
-                f"--infer vampire derived no {what}. {detail}\n",
-                status="unknown",
-                what=f"A derivation of {what} that did not succeed.",
-                why="Vampire answers or times out; nothing was refuted.",
-            )
+        note(
+            self.artifacts,
+            f"--infer vampire derived no {what}. {detail}\n",
+            status="unknown",
+            what=f"A derivation of {what} that did not succeed.",
+            why="Vampire answers or times out; nothing was refuted.",
+        )
         raise Refused(f"--infer vampire derived no {what}. {detail}",
                       searched=True)

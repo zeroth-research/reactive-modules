@@ -129,6 +129,7 @@ from ..houdini_solver import (
 )
 from . import TA2Magic
 from .modes import mode_bounds
+from ..smt.record import found, note
 from ..smt.script import decimals, smt_int, smt_lit, smt_real
 from ..smt.terms import free_constants, nodes
 from ..smt_synth import (
@@ -1926,20 +1927,16 @@ class TA2MagicHoudini(TA2Magic):
         return Certificate(inv_src, None if rank is None else rank.src)
 
     def _record(self, inv_src: str, rank: "Candidate | None") -> None:
-        if self.artifacts is None:
-            return
         by = self.spec.kind
         what = (f"Houdini over facts read off simulated runs of the module, "
                 f"each proved by {by} -- it holds at entry and every round "
                 f"preserves it -- and cut down to the facts the proofs used.")
-        self.artifacts.put("inv", inv_src, status="proved", language="smt",
-                           what=f"The invariant this run found. {what}")
+        found(self.artifacts, "inv", inv_src,
+              what=f"The invariant this run found. {what}")
         if rank is not None:
-            self.artifacts.put(
-                "ranking", rank.src, status="proved", language="smt",
-                what=f"The ranking function this run found: {by} proved "
-                     f"`hrank` for it over the invariant beside it.",
-            )
+            found(self.artifacts, "ranking", rank.src,
+                  what=f"The ranking function this run found: {by} proved "
+                       f"`hrank` for it over the invariant beside it.")
 
     def _none(self, claim: Claim, n_facts, n_ranks, reached, prover):
         if claim.is_safety:
@@ -1963,16 +1960,16 @@ class TA2MagicHoudini(TA2Magic):
             f"{prover.spent:.1f} s, the last under a {reached:g} s limit"
             f"{refuted}. {prover.inconclusive}"
         )
-        if self.artifacts is not None:
-            self.artifacts.note(
-                f"--infer houdini found no {what}. {detail}\n",
-                status="unknown",
-                what=f"A search for {article} {what} that did not succeed.",
-                why=(f"{prover.name} decided every candidate it was asked "
-                     f"about; the shapes proposed were the limit."
-                     if prover.refutes else
-                     f"{prover.name} proves or times out; nothing here was "
-                     f"refuted."),
-            )
+        note(
+            self.artifacts,
+            f"--infer houdini found no {what}. {detail}\n",
+            status="unknown",
+            what=f"A search for {article} {what} that did not succeed.",
+            why=(f"{prover.name} decided every candidate it was asked "
+                 f"about; the shapes proposed were the limit."
+                 if prover.refutes else
+                 f"{prover.name} proves or times out; nothing here was "
+                 f"refuted."),
+        )
         raise Refused(f"--infer houdini found no {what}. {detail}",
                       searched=True)
