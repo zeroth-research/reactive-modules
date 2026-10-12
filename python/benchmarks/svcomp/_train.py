@@ -17,8 +17,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import z3
-from torch import nn
 from zrth import X
+from torch import nn
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)

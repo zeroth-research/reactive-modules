@@ -73,7 +73,7 @@ def test_a_nested_branch_renders_as_a_nested_if():
     ``refines`` lemma splits as many times as the column has branches."""
     layers = [(np.array([[1], [-1]]), np.array([0, 0])),
               (np.array([[1, 1]]), np.array([0]))]
-    bench = loop_bench(("x",), lambda x: ite(ne(x, 0), ite(x > 0, x - 1, x + 1), x))
+    bench = loop_bench(("x",), lambda x: ite(x != 0, ite(x > 0, x - 1, x + 1), x))
     ob = candidate(bench, layers)
     res = certify(ob.system, ob.claim, ob.witness)
     assert res.verified, res.status
@@ -489,7 +489,7 @@ def test_the_label_is_the_clients_and_stays_in_the_header():
 def _countdown():
     """``while (x != 0) x--`` from ``x = 5``, and two facts proved about it on
     the bare system: ``x >= 0`` and ``x <= 5``."""
-    bench = loop_bench(("x",), lambda x: ite(ne(x, 0), x - 1, x), init=lambda: (5,))
+    bench = loop_bench(("x",), lambda x: ite(x != 0, x - 1, x), init=lambda: (5,))
     system = system_of(bench)
     nonneg = lambda W, S: S["x"] >= 0
     atmost = lambda W, S: S["x"] <= 5
@@ -631,7 +631,7 @@ def test_the_proof_layer_refuses_a_claim_naming_a_device_on_the_next_state():
 def _assuming_safety():
     """``x`` counts down from 5 and stops at 0; ``x >= 0`` is proved and assumed,
     and the weaker ``x >= -1`` is then claimed with no invariant of its own."""
-    bench = loop_bench(("x",), lambda x: ite(ne(x, 0), x - 1, x), init=lambda: (5,))
+    bench = loop_bench(("x",), lambda x: ite(x != 0, x - 1, x), init=lambda: (5,))
     system = system_of(bench)
     nonneg = lambda W, S: S["x"] >= 0
     proof = certify(system, Safety(nonneg), inductive((nonneg,)))

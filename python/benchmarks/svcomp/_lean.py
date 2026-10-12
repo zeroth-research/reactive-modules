@@ -922,7 +922,7 @@ def _claim_terms(system, s_syms, named, devices, nets, what: str):
     this proof is its network at the state. A wire reading the next state is
     refused by name. Returns ``(terms, step)``."""
     n = len(s_syms)
-    nexts = {pr[1].id: k for k, pr in enumerate(system.pairs)}
+    nexts = {X(v).id: k for k, v in enumerate(system.vars)}
     by_id = {d.wire_id: d for d in devices}
     terms, step = {}, False
     for w in named:

@@ -10,6 +10,7 @@
 Notes:
   - `y` is a constant (init 100, never written) and `z` is a nondet parameter
     (read in the branch, never written), both held unchanged as ctrl vars.
+  - `z == 0` is written with `==` directly.
 """
 
 from __future__ import annotations

@@ -58,16 +58,16 @@ def _V_term(xs, layers):
 def _v_module(state_vars, layers, *, read_next: bool):
     """A one-output module computing V over the program's state variables.
 
-    ``read_next=False`` -> V(s): a **sequential** atom whose update reads the
-    *latched* state, so its output wire carries V(s) (its init awaits the next
-    state, since a sequential atom's init may not read a latched wire).
-    ``read_next=True`` -> V(s'): a **combinatorial** atom awaiting the program's
-    *next* state. Both compute the same function; composed with the program they
-    are two wires the witness can name — V at each end of a step.
+    ``read_next=False`` -> V(s): a **sequential** atom reading the *latched* state
+    (its init awaits the next state, since a sequential atom's init may not read a
+    latched wire). ``read_next=True`` -> V(s'): a **combinatorial** atom awaiting
+    the program's *next* state. Both compute the same function; composed with the
+    program they are two wires the witness can name: V at each end of a step.
 
     The blocks are written out as ordinary terms rather than through
-    :mod:`zrth.sugar`, whose methods take one parameter per variable: the state
-    here is as wide as the program, which is not known until it is read."""
+    :mod:`zrth.sugar`, whose methods take one parameter per variable (and which
+    has no combinatorial block): the state here is as wide as the program, which
+    is not known until it is read."""
     out = var()
     state_vars = tuple(state_vars)
 

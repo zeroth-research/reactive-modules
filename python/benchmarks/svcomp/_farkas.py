@@ -653,7 +653,7 @@ def read_system(module, names=()) -> System:
     under and ``X(v)`` is the other end of the round. Wires are scalar integers:
     a symbol per wire is what the rows, the regions and the proof's
     ``Vector n Int`` state quantify over, so anything else is refused here by
-    name."""
+    name rather than read element by element."""
     all_vars = tuple(module.ctrl)
     inputs = tuple(module.extl)
     for v in all_vars + inputs:
