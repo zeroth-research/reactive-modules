@@ -30,6 +30,7 @@ from enum import Enum
 
 from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
+from .smt import obligations as ob
 from .smt.limits import SmtBudget
 from .smt.run import encoding_of
 from .smt.script import script
@@ -249,19 +250,14 @@ class ModuleQueries:
             return "counterexample: <unreadable>"
         return "counterexample: " + ", ".join(bits) if bits else None
 
-    def _clamp(self, rank):
-        """Mirror Lean's `Int.toNat` clamp on the ranking function."""
-        from cvc5 import Kind
-
-        if rank.getSort().isReal():
-            rank = self.tm.mkTerm(Kind.TO_INTEGER, rank)
-        zero = self.tm.mkInteger(0)
-        return self.tm.mkTerm(
-            Kind.ITE, self.tm.mkTerm(Kind.GEQ, rank, zero), rank, zero
-        )
-
     def _labelled(self, s):
         return [(f"s{i}", v) for i, v in enumerate(s)]
+
+    def frame(self, prefix: str) -> ob.Frame:
+        """Fresh constants `{prefix}s0..` and the round from them, the
+        preconditions read over their inputs."""
+        return ob.Frame(self.enc, prefix, init_pre=self.init_pre,
+                        update_pre=self.update_pre)
 
     # ── the three obligations Certificate.lean states ─────────────────
 
@@ -269,15 +265,9 @@ class ModuleQueries:
         """`∀ e, init_pre e → inv (init e)`."""
 
         def build():
-            _, el, en = self.enc.fresh("i_")
-            s0 = self.enc.init_state(en)
-            return (
-                self._and(
-                    self._sub_inputs(self.init_pre, el, en),
-                    self._not(self._sub_state(self.inv, s0)),
-                ),
-                self._labelled(s0),
-            )
+            f = self.frame("i_")
+            return (ob.init_inv(f, [self.inv]).negation(self.tm),
+                    self._labelled(f.entry))
 
         return self._ask("init_inv", build, budget, artifacts)
 
@@ -285,40 +275,19 @@ class ModuleQueries:
         """`∀ s e, update_pre e ∧ inv s → inv (update s e)`."""
 
         def build():
-            s, el, en = self.enc.fresh("p_")
-            nxt = self.enc.next_state(s, el, en)
-            return (
-                self._and(
-                    self._sub_state(self.inv, s),
-                    self._sub_inputs(self.update_pre, el, en),
-                    self._not(self._sub_state(self.inv, nxt)),
-                ),
-                self._labelled(s),
-            )
+            f = self.frame("p_")
+            q = ob.step_inv(f, [("inv", self.inv)], [self.inv])
+            return q.negation(self.tm), self._labelled(f.s)
 
         return self._ask("step_inv", build, budget, artifacts)
 
     def check_hrank(self, budget: SmtBudget, artifacts=None) -> Verdict:
         """`inv s ∧ ¬P s ∧ update_pre e → ranking (update s e) < ranking s`."""
-        from cvc5 import Kind
 
         def build():
-            s, el, en = self.enc.fresh("r_")
-            nxt = self.enc.next_state(s, el, en)
-            decrease = self.tm.mkTerm(
-                Kind.LT,
-                self._clamp(self._sub_state(self.ranking, nxt)),
-                self._clamp(self._sub_state(self.ranking, s)),
-            )
-            return (
-                self._and(
-                    self._sub_state(self.inv, s),
-                    self._not(self._sub_state(self.prp, s)),
-                    self._sub_inputs(self.update_pre, el, en),
-                    self._not(decrease),
-                ),
-                self._labelled(s),
-            )
+            f = self.frame("r_")
+            q = ob.hrank(f, [("inv", self.inv)], self.prp, self.ranking)
+            return q.negation(self.tm), self._labelled(f.s)
 
         return self._ask("hrank", build, budget, artifacts)
 
@@ -331,14 +300,9 @@ class ModuleQueries:
         """
 
         def build():
-            s, _, _ = self.enc.fresh("p_")
-            return (
-                self._and(
-                    self._sub_state(self.inv, s),
-                    self._not(self._sub_state(self.prp, s)),
-                ),
-                self._labelled(s),
-            )
+            f = self.frame("p_")
+            q = ob.inv_imp_P(f, [("inv", self.inv)], self.prp)
+            return q.negation(self.tm), self._labelled(f.s)
 
         return self._ask("inv_imp_P", build, budget, artifacts)
 
@@ -912,64 +876,15 @@ def _obligation_labels(q: "ModuleQueries"):
     A hypothesis that is literally `true` is left out: it would be in no
     unsat core and would make every core look like a strict subset.
     """
-    from cvc5 import Kind
-
-    out = []
-    s, el, en = q.enc.fresh("h_")
-    nxt = q.enc.next_state(s, el, en)
-
-    def keep(d):
-        return {
-            k: v
-            for k, v in d.items()
-            if v is not None and v.getKind() != Kind.CONST_BOOLEAN
-        }
-
-    out.append(
-        (
-            "step_inv",
-            keep(
-                {
-                    "inv": q._sub_state(q.inv, s),
-                    "pre": q._sub_inputs(q.update_pre, el, en),
-                    "goal": q._not(q._sub_state(q.inv, nxt)),
-                }
-            ),
-        )
-    )
+    f = q.frame("h_")
+    inv = [("inv", q.inv)]
+    out = [("step_inv", ob.step_inv(f, inv, [q.inv]).labelled(q.tm))]
     if q.kind == "safety":
         if q.prp is not None:
-            out.append(
-                (
-                    "inv_imp_P",
-                    keep(
-                        {
-                            "inv": q._sub_state(q.inv, s),
-                            "goal": q._not(q._sub_state(q.prp, s)),
-                        }
-                    ),
-                )
-            )
+            out.append(("inv_imp_P", ob.inv_imp_P(f, inv, q.prp).labelled(q.tm)))
         return out
     if q.ranking is not None and q.prp is not None:
-        decrease = q.tm.mkTerm(
-            Kind.LT,
-            q._clamp(q._sub_state(q.ranking, nxt)),
-            q._clamp(q._sub_state(q.ranking, s)),
-        )
-        out.append(
-            (
-                "hrank",
-                keep(
-                    {
-                        "inv": q._sub_state(q.inv, s),
-                        "notP": q._not(q._sub_state(q.prp, s)),
-                        "pre": q._sub_inputs(q.update_pre, el, en),
-                        "goal": q._not(decrease),
-                    }
-                ),
-            )
-        )
+        out.append(("hrank", ob.hrank(f, inv, q.prp, q.ranking).labelled(q.tm)))
     return out
 
 

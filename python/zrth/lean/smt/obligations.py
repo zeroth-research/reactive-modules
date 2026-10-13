@@ -1,13 +1,25 @@
 """Obligations as questions: named hypotheses, a goal, and the round they
 read.
 
-`Obligations` states a module's obligations over one set of constants, and
-`Query` is what it hands a solver.
+A `Query` is one obligation. What `rule_buchi` and `rule_globally` ask --
+`init_inv`, `step_inv`, `inv_imp_P`, `hrank`, and `hrank` split into
+`rank_decrease` and `rank_positive` -- is stated once, here, over a *frame*:
+the constants an obligation is stated over and the round from them.
+
+* `Frame` is inline: fresh constants `{prefix}s0..`, `{prefix}el0..` and
+  `{prefix}en0..`, and the successor is the encoded round substituted in.
+* `Obligations` is defined: one frame `v_*` whose successor is constants
+  `v_sp*` each query defines, so a query about twenty facts carries the
+  round once.
+
+A precondition is taken as given: `None` is no hypothesis, and a literal
+`true` is one.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from functools import cached_property
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -42,6 +54,26 @@ class Query:
     def key(self):
         return (self.hyps, self.goal, self.defines)
 
+    def negation(self, tm):
+        """The hypotheses and the goal's negation, conjoined: unsat exactly
+        when the obligation holds. Inline only -- a defined successor would
+        be left free."""
+        from cvc5 import Kind
+
+        assert not self.defines, "a defined round has no negation form"
+        parts = [t for _, t in self.hyps] + [tm.mkTerm(Kind.NOT, self.goal)]
+        return parts[0] if len(parts) == 1 else tm.mkTerm(Kind.AND, *parts)
+
+    def labelled(self, tm) -> dict:
+        """`negation` as named parts, the goal's negation as `goal`. A
+        literal `true` or `false` is left out: an unsat core never needs it."""
+        from cvc5 import Kind
+
+        parts = dict(self.hyps)
+        parts["goal"] = tm.mkTerm(Kind.NOT, self.goal)
+        return {k: v for k, v in parts.items()
+                if v.getKind() != Kind.CONST_BOOLEAN}
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -51,8 +83,178 @@ class Candidate:
     term: object            # the same, parsed, over `ctx.state`
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# The obligations, over a frame
+#
+# A frame has `tm`; the constants `s`; `succ`, the state after one round from
+# them, and `entry`, the state after tick 0; the preconditions `init_pre` and
+# `update_pre` over its inputs; `at(term, vs)`, a term over the state read at
+# `vs`; and `define_next()` / `define_entry()`, what a query must define for
+# `succ` / `entry` to mean the round. Each statement builds its terms in the
+# order written, which is the order cvc5 numbers them in.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def conjunction(tm, terms):
+    """`terms` conjoined: `true` for none, the term itself for one."""
+    from cvc5 import Kind
+
+    if not terms:
+        return tm.mkBoolean(True)
+    return terms[0] if len(terms) == 1 else tm.mkTerm(Kind.AND, *terms)
+
+
+def clamp(tm, t):
+    """`t` as Lean's `Int.toNat` reads an Int: itself when non-negative,
+    else 0."""
+    from cvc5 import Kind
+
+    zero = tm.mkInteger(0)
+    return tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.GEQ, t, zero), t, zero)
+
+
+def _named(f, hyps) -> list:
+    return [(name, f.at(term, f.s)) for name, term in hyps]
+
+
+def _outside(f, hyps, prp) -> list:
+    """What a ranking obligation assumes: `hyps` and `~P` at `s`, and the
+    update precondition."""
+    from cvc5 import Kind
+
+    return _named(f, hyps) + [
+        ("notP", f.tm.mkTerm(Kind.NOT, f.at(prp, f.s))),
+        ("pre", f.update_pre),
+    ]
+
+
+def _query(hyps, goal, *, defines=(), probes=()) -> Query:
+    """Named hypotheses, a goal, and the conjuncts of it worth naming.
+
+    A probe is named `g<i>` against the position of the fact it came from,
+    which is how a counter-model is read back: the names are positions in
+    the list the caller asked about. A goal that is one thing gets no probes
+    -- there would be nothing to learn from naming it that `REFUTED` does
+    not already say. An absent precondition is no hypothesis.
+    """
+    probes = list(probes)
+    return Query(
+        hyps=tuple((n, h) for n, h in hyps if h is not None),
+        goal=goal,
+        defines=tuple(defines),
+        probes=tuple((f"g{i}", t) for i, t in enumerate(probes))
+        if len(probes) > 1 else (),
+    )
+
+
+def init_inv(f, goals: list) -> Query:
+    """`init_pre e -> goals (init e)`, for all of `goals` at once."""
+    entry = f.entry
+    pre = f.init_pre
+    at = [f.at(g, entry) for g in goals]
+    goal = conjunction(f.tm, at)
+    return _query([("pre", pre)], goal, defines=f.define_entry(), probes=at)
+
+
+def step_inv(f, hyps: list, goals: list) -> Query:
+    """`hyps s /\\ update_pre e -> goals (update s e)`; `hyps` are named."""
+    succ = f.succ
+    named = _named(f, hyps)
+    pre = f.update_pre
+    at = [f.at(g, succ) for g in goals]
+    goal = conjunction(f.tm, at)
+    return _query(named + [("pre", pre)], goal, defines=f.define_next(),
+                  probes=at)
+
+
+def inv_imp_P(f, hyps: list, goal) -> Query:
+    """`hyps s -> goal s`: the invariant is a proof of the property."""
+    named = _named(f, hyps)
+    return _query(named, f.at(goal, f.s))
+
+
+def hrank(f, hyps: list, prp, rank) -> Query:
+    """`hyps s /\\ ~P s /\\ update_pre e -> V (update s e) < V s`.
+
+    With `V = Int.toNat rank`, exactly as `rule_buchi` states it: a clamp
+    on both sides, so the rank may be anything where the property holds.
+    """
+    from cvc5 import Kind
+
+    succ = f.succ
+    named = _outside(f, hyps, prp)
+    goal = f.tm.mkTerm(Kind.LT, clamp(f.tm, f.at(rank, succ)),
+                       clamp(f.tm, f.at(rank, f.s)))
+    return _query(named, goal, defines=f.define_next())
+
+
+def rank_decrease(f, hyps: list, prp, rank) -> Query:
+    """`hrank`'s first half: `rank (update s e) < rank s`, unclamped.
+
+    With `rank_positive`, exactly `hrank` for an Int rank: `toNat r' <
+    toNat r` holds iff `r >= 1` and `r' < r`.
+    """
+    from cvc5 import Kind
+
+    succ = f.succ
+    named = _outside(f, hyps, prp)
+    goal = f.tm.mkTerm(Kind.LT, f.at(rank, succ), f.at(rank, f.s))
+    return _query(named, goal, defines=f.define_next())
+
+
+def rank_positive(f, hyps: list, prp, rank) -> Query:
+    """`hrank`'s second half: `rank s >= 1` wherever it has to fall."""
+    from cvc5 import Kind
+
+    named = _outside(f, hyps, prp)
+    goal = f.tm.mkTerm(Kind.GEQ, f.at(rank, f.s), f.tm.mkInteger(1))
+    return _query(named, goal)
+
+
+class Frame:
+    """An inline frame: fresh constants, and the encoded round from them.
+
+    `enc` is the run's `smt.run.ModuleEncoding`; `init_pre` and
+    `update_pre` are over the parser's inputs, as it reads them. `succ`,
+    `entry` and the preconditions are built on first use, so a statement
+    that never reads one never encodes it.
+    """
+
+    def __init__(self, enc, prefix: str, *, init_pre=None, update_pre=None):
+        self.enc = enc
+        self.tm = enc.tm
+        self.s, self.el, self.en = enc.fresh(prefix)
+        self._pres = (init_pre, update_pre)
+
+    @cached_property
+    def succ(self) -> list:
+        return self.enc.next_state(self.s, self.el, self.en)
+
+    @cached_property
+    def entry(self) -> list:
+        return self.enc.init_state(self.en)
+
+    @cached_property
+    def init_pre(self):
+        return self.enc.with_inputs(self._pres[0], self.el, self.en)
+
+    @cached_property
+    def update_pre(self):
+        return self.enc.with_inputs(self._pres[1], self.el, self.en)
+
+    def at(self, term, vs):
+        return self.enc.at(term, vs)
+
+    def define_next(self) -> tuple:
+        return ()
+
+    def define_entry(self) -> tuple:
+        return ()
+
+
 class Obligations:
-    """One module's obligations, as questions rather than as files.
+    """One module's obligations, as questions rather than as files: a
+    defined frame (see the module docstring).
 
     The round is stated once per query as `defines` -- the successor state
     `v_sp*` over the latched state `v_s*` and the inputs -- and every fact
@@ -183,7 +385,7 @@ class Obligations:
         """
         from cvc5 import Kind
 
-        tm = self.ctx.tm
+        tm = self.tm
         if t.getKind() == Kind.ITE:
             return tm.mkTerm(Kind.ITE, t[0],
                              self._select(t[1], k), self._select(t[2], k))
@@ -211,49 +413,51 @@ class Obligations:
                 out.append((c, self._select(v, k)))
         return out
 
+    # --- the frame ------------------------------------------------------
+
+    @property
+    def tm(self):
+        return self.ctx.tm
+
+    @property
+    def succ(self) -> list:
+        return self.sp
+
+    @property
+    def entry(self) -> list:
+        return self.si
+
+    def at(self, term, vs):
+        """`term`, over the state, read at `vs` -- folded, because
+        substituting a matrix-shaped holder leaves a select of a constructor
+        where the component was."""
+        return self._readable(term.substitute(self.ctx.state, vs))
+
+    def define_next(self) -> list:
+        return self._defines(self.sp, self.next)
+
+    def define_entry(self) -> list:
+        return self._defines(self.si, self.init)
+
     # --- the queries ------------------------------------------------------
 
     def holds_at_entry(self, facts: list[Candidate]) -> Query:
         """`init_pre e -> fact (init e)`, for all of `facts` at once."""
-        at = [self._at(f.term, self.si) for f in facts]
-        return self._query([("pre", self.init_pre)], self._and(at),
-                           defines=self._defines(self.si, self.init),
-                           probes=at)
+        return init_inv(self, [f.term for f in facts])
 
     def preserved(self, hyps: list[Candidate], goals: list[Candidate]) -> Query:
         """`hyps s /\\ update_pre e -> goals (update s e)`."""
-        named = [(f"h{i}", self._at(h.term, self.s)) for i, h in enumerate(hyps)]
-        at = [self._at(g.term, self.sp) for g in goals]
-        return self._query(named + [("pre", self.update_pre)], self._and(at),
-                           defines=self._defines(self.sp, self.next),
-                           probes=at)
+        return step_inv(self, _facts(hyps), [g.term for g in goals])
 
     def implies(self, hyps: list[Candidate], goal) -> Query:
         """`hyps s -> goal s`: the invariant is a proof of the property."""
-        named = [(f"h{i}", self._at(h.term, self.s)) for i, h in enumerate(hyps)]
-        return self._query(named, self._at(goal, self.s))
+        return inv_imp_P(self, _facts(hyps), goal)
 
     def drops(self, hyps: list[Candidate], rank: Candidate) -> Query:
-        """`hrank`: `inv s /\\ ~P s /\\ update_pre e -> V (update s e) < V s`.
-
-        With `V = Int.toNat rank`, exactly as `rule_buchi` states it and
-        `smt_query.check_hrank` restates it: a clamp on both sides, so the
-        rank may be anything where the property holds.
-        """
+        """`hrank` over the facts `hyps`."""
         from cvc5 import Kind
 
-        tm = self.ctx.tm
-        named = [(f"h{i}", self._at(h.term, self.s)) for i, h in enumerate(hyps)]
-        named += [
-            ("notP", tm.mkTerm(Kind.NOT, self._at(self.ctx.prp, self.s))),
-            ("pre", self.update_pre),
-        ]
-        goal = tm.mkTerm(
-            Kind.LT,
-            self._clamp(self._at(rank.term, self.sp)),
-            self._clamp(self._at(rank.term, self.s)),
-        )
-        q = self._query(named, goal, defines=self._defines(self.sp, self.next))
+        q = hrank(self, _facts(hyps), self.ctx.prp, rank.term)
         # A refutation is a round the rank does not drop on, and the round
         # is what the fit learns from -- read back only for a state of
         # scalars, which is the shape a simulated round has.
@@ -261,43 +465,7 @@ class Obligations:
             q = replace(q, witness=tuple(self.s) + tuple(self.sp))
         return q
 
-    # --- plumbing ---------------------------------------------------------
 
-    def _at(self, term, vs):
-        # Folded, because substituting a matrix-shaped holder leaves a
-        # select of a constructor where the component was.
-        return self._readable(term.substitute(self.ctx.state, vs))
-
-    def _and(self, terms):
-        from cvc5 import Kind
-
-        tm = self.ctx.tm
-        if not terms:
-            return tm.mkBoolean(True)
-        return terms[0] if len(terms) == 1 else tm.mkTerm(Kind.AND, *terms)
-
-    def _clamp(self, t):
-        from cvc5 import Kind
-
-        tm = self.ctx.tm
-        zero = tm.mkInteger(0)
-        return tm.mkTerm(Kind.ITE, tm.mkTerm(Kind.GEQ, t, zero), t, zero)
-
-    @staticmethod
-    def _query(hyps, goal, *, defines=(), probes=()) -> Query:
-        """Named hypotheses, a goal, and the conjuncts of it worth naming.
-
-        A probe is named `g<i>` against the position of the fact it came
-        from, which is how `_survivors` reads a counter-model back: the
-        names are positions in the list the caller asked about. A goal that
-        is one thing gets no probes -- there would be nothing to learn from
-        naming it that `REFUTED` does not already say.
-        """
-        probes = list(probes)
-        return Query(
-            hyps=tuple(hyps),
-            goal=goal,
-            defines=tuple(defines),
-            probes=tuple((f"g{i}", t) for i, t in enumerate(probes))
-            if len(probes) > 1 else (),
-        )
+def _facts(hyps: list[Candidate]) -> list:
+    """`hyps` named `h<i>`, by position: how an unsat core is read back."""
+    return [(f"h{i}", h.term) for i, h in enumerate(hyps)]

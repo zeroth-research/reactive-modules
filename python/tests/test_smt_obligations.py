@@ -31,18 +31,14 @@ def _module(name: str):
 
 
 def _clamps():
-    """`(name, tm, clamp)` for each clamp a route states `hrank` with."""
-    from zrth.lean.smt.obligations import Obligations
+    """`(name, tm, clamp)` for each clamp `hrank` is stated with."""
+    from zrth.lean.smt.obligations import clamp
     from zrth.lean.smt_query import ModuleQueries
-    from zrth.lean.smt_synth import SynthContext
 
     claim = Claim(prp="(= s0 0)")
     q = ModuleQueries(_module("m_countdown"), claim,
                       Certificate("(>= s0 0)", "s0"))
-    ctx = SynthContext.build(_module("m_countdown"), claim, route="houdini",
-                             takes=("int", "bool", "bv", "real", "tuple"))
-    ob = Obligations(ctx)
-    return [("pre-check", q.tm, q._clamp), ("houdini", ctx.tm, ob._clamp)]
+    return [("smt.obligations", q.tm, lambda t: clamp(q.tm, t))]
 
 
 @pytest.mark.parametrize("positive", [1, 0], ids=["r>=1", "r>0"])
