@@ -48,6 +48,10 @@ topologically-sorted dataflow graph.
 | `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` |
 | `certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
 | `cert.py` | Certificate generation: `predicate_terms`, `render_certificate`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
+| `smt/` | What the cvc5 routes and the pre-check share: the run's one encoding of the module (`run.ModuleEncoding`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
+| `smt_query.py` | `--pre-check` and `--smt-tactics`: `ModuleQueries`, `pre_check`, `solver_hints` |
+| `smt_synth.py` | What a searching route reads a module as: `SynthContext`, its columns and readings, the branch conditions a rank may split on |
+| `magic/` | One engine per `--infer` route (`TA2Magic`), plus `llm` (the model both LLM routes ask) and `modes`; no route imports another |
 
 ---
 

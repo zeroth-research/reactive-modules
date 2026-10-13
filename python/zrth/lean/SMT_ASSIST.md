@@ -1,8 +1,9 @@
 # Using cvc5 inside `verith`
 
 `verith` has always had a complete symbolic encoding of every module
-(`smt_module.ModuleSMT`), but outside the `--infer ai-cegis` loop it never
-asked the solver anything: cvc5 parsed the SMT-LIB predicates, handed them to
+(`smt_module.ModuleSMT`; a run builds it once, as `smt.run.ModuleEncoding`,
+and the pre-check and every cvc5 route share it), but outside the
+`--infer ai-cegis` loop it never asked the solver anything: cvc5 parsed the SMT-LIB predicates, handed them to
 the Lean printer, and went home. This is what it is used for now, what that
 bought, and what is left.
 
@@ -465,8 +466,8 @@ showed (cvc5 1.3.4, `tests/limits` fixtures), and then what shipped.
 
 **What the plan had right.** `Solver.synthFun` + `addSygusConstraint` +
 `checkSynth` does find ranking functions with no LLM and no API key, and
-`ModuleSMT.update_state` against `declareSygusVar` state variables is the
-encoding — step 2 was exactly right and is what both routes do.
+the module's encoded round (`ModuleEncoding.next_state`) against
+`declareSygusVar` state variables is the encoding — step 2 was exactly right and is what both routes do.
 
 **Step 3 — "give it a grammar" — was half wrong.** A grammar is not
 automatically a pruning:
