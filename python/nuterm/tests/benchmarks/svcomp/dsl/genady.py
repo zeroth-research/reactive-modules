@@ -11,6 +11,13 @@
 Notes:
   - Declaration order `i, j` (ctrl order); the C initialises `j` then `i`.
   - No `__VERIFIER_nondet_int()` calls, so there are no `extl` inputs.
+
+Original header comment:
+
+    An example that looks simple, given to me by Genady Trifon
+    Date: 15.12.2013
+    Author: Amir Ben-Amram, amirben@cs.mta.ac.il
+
 """
 
 from __future__ import annotations

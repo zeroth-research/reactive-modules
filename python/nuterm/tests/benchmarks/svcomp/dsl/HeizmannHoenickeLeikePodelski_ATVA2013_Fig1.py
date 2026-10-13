@@ -7,6 +7,14 @@
         x = x - y;
         y = y + 1;
     }
+
+Original header comment:
+
+    Program from Figure 1 of
+    2013ATVA - Heizmann, Hoenicke, Leike, Podelski - Linear Ranking for Linear Lasso Programs
+
+    Date: 2014-06-29
+    Author: Jan Leike
 """
 
 from __future__ import annotations

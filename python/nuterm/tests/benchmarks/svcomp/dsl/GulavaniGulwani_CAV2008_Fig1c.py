@@ -8,6 +8,14 @@
         i = i + 1;
         x = x + 1;
     }
+
+Original header comment:
+
+    Program from Fig.1c of
+    2008CAV - Gulavani,Gulwani - A Numerical Abstract Domain Based on Expression Abstraction and Max Operator with Application in Timing Analysis
+
+    Date: 2014
+    Author: Caterina Urban
 """
 
 from __future__ import annotations

@@ -12,6 +12,14 @@
 
 The loop only runs under the outer `if (2*y >= z)`; the precondition
 restricts the comparison to that domain.
+
+Original header comment:
+
+    Program from Figure 9 of
+    2013ATVA - Heizmann, Hoenicke, Leike, Podelski - Linear Ranking for Linear Lasso Programs
+
+    Date: 2014-06-29
+    Author: Jan Leike
 """
 
 from __future__ import annotations

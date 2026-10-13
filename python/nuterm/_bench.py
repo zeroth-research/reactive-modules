@@ -30,8 +30,8 @@ class Bench:
     """One encoded SV-COMP benchmark.
 
     - ``name``   : the benchmark's canonical name (matches the .c stem).
-    - ``source`` : filename of the original C file in this package's ``c/``
-                   directory (ground truth for the faithfulness checker).
+    - ``source`` : filename of the original C program (informational; the
+                   faithfulness checker takes the C file as an argument).
     - ``state``  : ctrl variable names, in C declaration order.
     - ``inputs`` : extl (nondeterministic input) names.
     - ``build``  : ``() -> (module, ctrl_by_name, extl_by_name)``, which builds

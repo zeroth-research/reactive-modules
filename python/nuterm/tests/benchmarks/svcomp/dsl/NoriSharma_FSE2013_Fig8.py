@@ -24,6 +24,14 @@ Notes:
   - `u, v, w` are entry copies of `x, y, z`, never written; held unchanged.
   - In the then-branch `x = x + z` reads the decremented `z`, so the new `x`
     is `x + (z - 1)`.
+
+Original header comment:
+
+    Program from Fig.8 of
+    2013FSE - Nori,Sharma - Termination Proofs from Tests
+
+    Date: 18.12.2013
+    Author: heizmann@informatik.uni-freiburg.de
 """
 
 from __future__ import annotations

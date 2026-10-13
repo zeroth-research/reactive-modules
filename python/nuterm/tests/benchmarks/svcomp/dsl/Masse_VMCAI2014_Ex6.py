@@ -7,6 +7,14 @@
         x = x + y;
         if (y >= 0) { y = y - 1; }
     }
+
+Original header comment:
+
+    Program from Ex6 of
+    2014VMCAI - Massé - Policy Iteration-Based Conditional Termination and Ranking Functions
+
+    Date: 2014
+    Author: Caterina Urban
 """
 
 from __future__ import annotations

@@ -45,9 +45,6 @@ from zrth.eval import eval_itype
 from nuterm._bench import Bench
 from nuterm._train import run_block
 
-# The C sources live in this package (self-contained).
-_C_DIR = Path(__file__).parent / "c"
-
 _HARNESS = r"""
 #include <stdio.h>
 #include <stdlib.h>
@@ -178,17 +175,16 @@ class Result:
         return self.skipped is None and not self.failures and self.trials > 0
 
 
-def check(bench: Bench, c_file: Path | None = None, c_vars: tuple[str, ...] | None = None,
+def check(bench: Bench, c_file: Path, c_vars: tuple[str, ...] | None = None,
           trials: int = 300, seed: int = 0,
           lo: int = -40, hi: int = 40, max_steps: int = 50_000) -> Result:
     """Compare ``bench``'s DSL encoding against its compiled C source on random
     inputs drawn from ``[lo, hi]``, and report where the final states differ.
 
-    ``c_file`` defaults to ``bench.source`` in this package's ``c/`` directory.
+    ``c_file`` is the original C program.
     ``c_vars`` names the C variables dumped, positionally matching
     ``bench.state`` (default: the same names)."""
-    c_file = Path(c_file) if c_file is not None else _C_DIR / bench.source
-    c_source = c_file.read_text()
+    c_source = Path(c_file).read_text()
     c_vars = tuple(c_vars) if c_vars is not None else bench.state
     if len(c_vars) != len(bench.state):
         return Result(bench.name, 0, 0, [],

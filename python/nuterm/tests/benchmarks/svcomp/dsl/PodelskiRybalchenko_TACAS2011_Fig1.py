@@ -5,6 +5,14 @@
     while (y >= 0) {
         y = y - 1;
     }
+
+Original header comment:
+
+    Program from Fig.1 of
+    2011TACAS - Podelski,Rybalchenko - Transition Invariants and Transition Predicate Abstraction for Program Termination
+
+    Date: 2014
+    Author: Caterina Urban
 """
 
 from __future__ import annotations

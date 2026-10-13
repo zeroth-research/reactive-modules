@@ -12,6 +12,14 @@
     }
 
 `tmp` is a pure per-iteration temporary (a plain local, not ctrl).
+
+Original header comment:
+
+    Program from Fig.1 of
+    2001TACAS - Colon,Sipma - Synthesis of Linear Ranking Functions
+
+    Date: 2014-06-21
+    Author: Caterina Urban, Matthias Heizmann
 """
 
 from __future__ import annotations

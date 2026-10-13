@@ -11,6 +11,14 @@
 Notes:
   - Declaration order is `p, q` (ctrl order), but the C reads nondet as
     `q` then `p` (inputs order `q0, p0`).
+
+Original header comment:
+
+    Program from Example 9 of
+    2014TACAS - Leike, Heizmann - Ranking Templates for Linear Loops
+
+    Date: 2014-06-29
+    Author: Jan Leike
 """
 
 from __future__ import annotations

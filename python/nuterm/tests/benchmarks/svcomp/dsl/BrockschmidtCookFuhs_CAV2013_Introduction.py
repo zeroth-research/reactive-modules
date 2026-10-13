@@ -7,6 +7,14 @@
         x = x - y;
         y = y + 1;
     }
+
+Original header comment:
+
+    Program from the introduction of
+    2013CAV - Brockschmidt,Cook,Fuhs - Better termination proving through cooperation -draft
+
+    Date: 12.12.2013
+    Author: heizmann@informatik.uni-freiburg.de
 """
 
 from __future__ import annotations

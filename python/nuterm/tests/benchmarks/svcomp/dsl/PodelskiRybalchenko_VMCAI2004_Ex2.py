@@ -5,6 +5,14 @@
     while (x >= 0) {
         x = -2*x + 10;
     }
+
+Original header comment:
+
+    Program from Example 2 of
+    2004VMCAI - Podelski,Rybalchenko - A complete method for the synthesis of linear ranking functions
+
+    Date: 18.12.2013
+    Author: heizmann@informatik.uni-freiburg.de
 """
 
 from __future__ import annotations

@@ -10,6 +10,14 @@
     }
 
 Note: `-b` is encoded as `-1 * b` (unary minus is not overloaded).
+
+Original header comment:
+
+    Program from Fig.1a of
+    2014VMCAI - Massé - Policy Iteration-Based Conditional Termination and Ranking Functions
+
+    Date: 2014
+    Author: Caterina Urban
 """
 
 from __future__ import annotations
