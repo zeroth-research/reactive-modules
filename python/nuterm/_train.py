@@ -18,12 +18,12 @@ import torch
 import torch.nn.functional as F
 import z3
 from zrth import X
+from zrth.eval import eval_itype
 from torch import nn
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
 from nuterm._farkas import certify, resolve_domain
-from ._equiv import run_block
 from ._termination import compose_lex, prove_invariants, system_of, terminates
 
 
@@ -64,6 +64,16 @@ class TorchNRF(nn.Module):
 # ---------------------------------------------------------------------------
 # Rollout: sample in-domain states from the module, take one program step
 # ---------------------------------------------------------------------------
+
+def run_block(atoms, state, get_block):
+    """Evaluate one block of every atom against ``state``, writing each term's
+    outputs back, and return the updated state."""
+    for a in atoms:
+        for t in get_block(a):
+            read = [state[w] for w in t.read]
+            out_sort = t.write[0].dtype if len(t.write) else None
+            state.update(zip(t.write, eval_itype(t.itype, read, out_sort)))
+
 
 def _t(v: int) -> torch.Tensor:
     return torch.tensor([[int(v)]], dtype=torch.int64)
@@ -293,15 +303,3 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
                        last_nets[0] if last_nets else None, last_nets,
                        reason="trained but not verified")
 
-
-if __name__ == "__main__":
-    import sys
-    from . import discover
-    only = sys.argv[1] if len(sys.argv) > 1 else None
-    for b in discover():
-        if only and only not in b.name:
-            continue
-        r = learn_ranking(b)
-        tag = "VERIFIED" if r.verified else "unverified"
-        extra = f" ({r.reason})" if r.reason else ""
-        print(f"{tag:10s} {r.name}: {r.n_pairs} pairs, loss {r.final_loss:.4g}{extra}")

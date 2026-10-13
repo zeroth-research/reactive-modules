@@ -17,11 +17,11 @@ import z3
 from tests._fixtures import candidate, loop_bench
 from nuterm._lean import (_render_conjuncts, _term_str, _trivial,
                                      emit_program)
-from benchmarks.svcomp import discover
+from tests.benchmarks.svcomp import discover
 from nuterm._farkas import (Unsupported, certify, inductive, lex_decrease,
                                        read_system)
-from benchmarks.svcomp._termination import terminates
-from benchmarks.svcomp._termination import _v_module, compose, system_of
+from nuterm._termination import terminates
+from nuterm._termination import _v_module, compose, system_of
 from zrth import Module, X
 from nuterm._property import Safety
 from zrth.sugar import ite

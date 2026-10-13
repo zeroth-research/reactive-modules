@@ -1,11 +1,11 @@
 """Run the ranking-function pipeline over the sv_comp corpus.
 
-    python -m benchmarks.svcomp                  # train + verify every benchmark
-    python -m benchmarks.svcomp ndecr            # only names containing 'ndecr'
-    python -m benchmarks.svcomp --lean           # also emit and kernel-check proofs
-    python -m benchmarks.svcomp --lean --jobs 4  # with four benchmarks in flight
-    python -m benchmarks.svcomp --ranks 2        # allow a lexicographic rank
-    python -m benchmarks.svcomp --export out/     # write each proof as its own project
+    python -m tests.benchmarks.svcomp                  # train + verify every benchmark
+    python -m tests.benchmarks.svcomp ndecr            # only names containing 'ndecr'
+    python -m tests.benchmarks.svcomp --lean           # also emit and kernel-check proofs
+    python -m tests.benchmarks.svcomp --lean --jobs 4  # with four benchmarks in flight
+    python -m tests.benchmarks.svcomp --ranks 2        # allow a lexicographic rank
+    python -m tests.benchmarks.svcomp --export out/     # write each proof as its own project
 
 Without ``--lean`` each DSL-encoded program gets a trained neural ranking
 function certified over the composed module, summarised as
@@ -25,7 +25,7 @@ imports, a lakefile and the toolchain file. Nothing is compiled.
 
 Faithfulness of the encodings against the C sources is a separate check::
 
-    python -m benchmarks.svcomp._equiv
+    python -m tests.benchmarks.svcomp._equiv
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import discover
-from ._train import learn_ranking
+from nuterm._train import learn_ranking
 
 WORKER_FLAG = "--worker"
 _WORKER_TIMEOUT = 2400.0        # above _lean_check.CHECK_TIMEOUT plus training
@@ -94,7 +94,7 @@ def _spawn(name: str):
     result, so the benchmark sees an empty Z3 context."""
     from nuterm import _lean_check as lc
 
-    cmd = [sys.executable, "-m", "benchmarks.svcomp", WORKER_FLAG, name]
+    cmd = [sys.executable, "-m", "tests.benchmarks.svcomp", WORKER_FLAG, name]
     if RANKS != 1:
         cmd += ["--ranks", str(RANKS)]      # a worker is a fresh process
     # the ranking nets have a handful of hidden units, so a worker gains nothing
