@@ -219,7 +219,7 @@ def check_module(
 
     Answering either means encoding into cvc5, so the answers are handed
     back and carried to the two files written from them
-    (:func:`write_na_model`, :func:`write_equivalence`).  `main.py`'s call,
+    (:func:`write_na_model`, :func:`equivalence_lean`).  `main.py`'s call,
     before the project is generated, is then the only encoding a whole run
     makes: five of them on a one-wire counter before this was threaded
     through, one now.
@@ -366,7 +366,7 @@ def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
 
 
 def write_na_model(
-    project_dir: Path,
+    path: Callable[[str], Path],
     project_name: str,
     ctx: LeanContext,
     property_lean: str,
@@ -380,11 +380,10 @@ def write_na_model(
     model under (`resolve_model` uses the stem for an out-of-tree model),
     so it has to be a valid Lean identifier -- and it is the same name the
     generated lakefile's lean_lib declares, which is why both come from
-    `na_module_name`.
+    `na_module_name`.  `path` is the project handle's: the model is the one
+    file this route writes itself, because `proveit.py` reads it from disk.
     """
-    out_dir = project_dir / PROVEIT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    model = out_dir / f"{na_module_name(project_name)}.lean"
+    model = path(f"{PROVEIT_DIR}/{na_module_name(project_name)}.lean")
     model.write_text(
         atom_to_lean_na(
             ctx,
@@ -456,7 +455,7 @@ def run(
     *,
     ltl_project: str | Path,
     module,
-    project_dir: Path,
+    path: Callable[[str], Path],
     project_name: str,
     property_smt: str,
     pre_smt: str | None = None,
@@ -465,8 +464,14 @@ def run(
     simplify: bool = True,
     equivalence: bool = True,
     prechecked: NAEncoding | None = None,
-) -> Path:
-    """Run the whole route and return the installed certificate's path.
+    log: Callable = print,
+) -> dict[str, str]:
+    """Run the whole route and return the certificate it made, and the proof
+    that the model is the module, as text by project-relative path.
+
+    Only `ProveIt/` is written here, through `path` (the project handle's),
+    because `proveit.py` works on files; the two Lean files that are the
+    route's answer are handed back for the pipeline to install.
 
     `prechecked` is what `check_module` returned to a caller that has
     already made the check -- `main.py` does, before it generates the
@@ -488,7 +493,7 @@ def run(
 
     property_lean = property_to_bool_lean(module, property_smt)
     model = write_na_model(
-        project_dir, project_name, ctx, property_lean, simplify, bodies, pre_lean
+        path, project_name, ctx, property_lean, simplify, bodies, pre_lean
     )
 
     targets = " ".join(_LAKE_TARGETS)
@@ -511,37 +516,34 @@ def run(
             f"certificate to {raw_cert}"
         )
 
-    installed = project_dir / "Certificate" / "Certificate.lean"
-    installed.parent.mkdir(parents=True, exist_ok=True)
     text, patched = leave_bool_before_generalize(raw_cert.read_text())
     text, omegas = try_omega_before_smt(text)
-    installed.write_text(text)
     notes = []
     if patched:
         notes.append(f"{patched} normalised out of Bool")
     if omegas:
         notes.append(f"{omegas} offered omega before smt")
-    print(f"Installed certificate: {installed}"
-          + (f" ({', '.join(notes)})" if notes else ""))
+    if notes:
+        log(f".. proveit.py's certificate: {', '.join(notes)}")
 
+    files = {"Certificate/Certificate.lean": text}
     if equivalence:
-        write_equivalence(
-            project_dir, project_name, ctx,
+        files["Certificate/Equivalence.lean"] = equivalence_lean(
+            project_name, ctx,
             simplify=simplify, bodies=bodies, pre_lean=pre_lean,
         )
-    return installed
+    return files
 
 
-def write_equivalence(
-    project_dir: Path,
+def equivalence_lean(
     project_name: str,
     ctx: LeanContext,
     *,
     simplify: bool = True,
     bodies: SlotBodies | None = None,
     pre_lean: str = "",
-) -> Path:
-    """Write the proof that the model is the module, and make lake see it.
+) -> str:
+    """The proof that the model is the module, as the text of its file.
 
     The certificate `proveit.py` installs is about the NA model. This is the
     file that carries it back to the module -- see `translate/fbk_bridge.py`
@@ -559,16 +561,10 @@ def write_equivalence(
     """
     from .translate.fbk_bridge import atom_to_lean_fbk_bridge
 
-    out = project_dir / "Certificate" / "Equivalence.lean"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        atom_to_lean_fbk_bridge(
-            ctx,
-            na_module=na_module_name(project_name),
-            simplify=simplify,
-            bodies=bodies,
-            pre_lean=pre_lean,
-        )
+    return atom_to_lean_fbk_bridge(
+        ctx,
+        na_module=na_module_name(project_name),
+        simplify=simplify,
+        bodies=bodies,
+        pre_lean=pre_lean,
     )
-    print(f"Wrote the model-is-the-module proof: {out}")
-    return out

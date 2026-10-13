@@ -100,10 +100,10 @@ def _run(inp: InferInput) -> InferResult:
     from ..fbk_proveit import run as run_proveit
 
     try:
-        run_proveit(
+        files = run_proveit(
             ltl_project=inp.config,
             module=inp.module,
-            project_dir=inp.project.dir,
+            path=inp.project.path,
             project_name=inp.project.name,
             property_smt=str(inp.claim.prp),
             pre_smt=inp.claim.init_pre,
@@ -111,12 +111,13 @@ def _run(inp: InferInput) -> InferResult:
             simplify=inp.opts["fbk_simplify"] == "cvc5",
             equivalence=inp.opts["fbk_equiv"] == "lean",
             prechecked=inp.prechecked,
+            log=inp.log,
         )
     except ProveItError as e:
         raise Refused(str(e), searched=e.searched) from e
-    # The installed certificate carries ic3ia's invariant: no predicates come
-    # back, which is what this route's `returns="installed"` declares.
-    return InferResult()
+    # The certificate carries ic3ia's invariant: no predicates come back,
+    # which is what this route's `returns="files"` declares.
+    return InferResult(files=files)
 
 
 ROUTE = InferRoute(
@@ -160,7 +161,7 @@ ROUTE = InferRoute(
             "it selects the route and names the checkout in one flag.",
         ),
     ),
-    returns="installed",
+    returns="files",
     errors_self_named=True,
     options=(
         Opt(

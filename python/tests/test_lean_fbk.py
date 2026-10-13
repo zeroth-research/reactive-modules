@@ -902,20 +902,20 @@ def test_the_bridge_closes_goals_only_with_tactics_it_imports():
     assert not [l for l in arms if "smt" in l], "an arm needs `import Smt`"
 
 
-def test_the_bridge_is_not_imported_by_the_certificate_root(tmp_path):
+def test_the_bridge_is_not_imported_by_the_certificate_root():
     """The bridge speaks `Core.LTL` and the certificate speaks
     `LTLCertifying`, and both declare a top-level `LTLFormula`: one module
     importing the two is rejected before it is elaborated. Lake reaches the
     bridge through the `Certificate` lean_lib's glob instead."""
-    from zrth.lean.fbk_proveit import write_equivalence
+    from zrth.lean.fbk_proveit import equivalence_lean
+    from zrth.lean.template_env import render
 
-    root = tmp_path / "Certificate.lean"
-    root.write_text("import Certificate.Certificate\n")
+    text = equivalence_lean("Proj", LeanContext(_counter()))
 
-    out = write_equivalence(tmp_path, "Proj", LeanContext(_counter()))
-
-    assert out.read_text()
-    assert root.read_text() == "import Certificate.Certificate\n"
+    assert text.strip()
+    root = render("project/Certificate.lean.j2")
+    assert "Certificate.Certificate" in root
+    assert "Certificate.Equivalence" not in root
 
 
 def test_ic3ia_directory_resolves_to_the_binary_inside_it():
@@ -1134,9 +1134,12 @@ def test_the_na_lib_names_the_file_the_model_is_written_to(tmp_path):
     import the certificate already carries."""
     from zrth.lean.fbk_proveit import PROVEIT_DIR, na_module_name, write_na_model
 
-    model = write_na_model(
-        tmp_path, "Proj", LeanContext(_counter()), "true"
-    )
+    def path(rel):
+        out = tmp_path / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        return out
+
+    model = write_na_model(path, "Proj", LeanContext(_counter()), "true")
     assert model.parent.name == PROVEIT_DIR
     assert model.stem == na_module_name("Proj")
 

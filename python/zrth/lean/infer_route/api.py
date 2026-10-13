@@ -3,8 +3,8 @@ back, and the row itself."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -135,9 +135,9 @@ class ProjectHandle:
 
         Refuses anything undeclared.  The point is not to police a route --
         it could import `pathlib` -- but to make the declaration the truth:
-        `create_project` can then clean up what no route in *this* run owns,
-        instead of hardcoding one route's filenames to unlink (`project.py`
-        does that for `Certificate/Equivalence.lean` today).
+        the pipeline can then clean up what no route in *this* run owns
+        (`create_project` unlinks what every row owns before the project is
+        written), instead of hardcoding one route's filenames.
         """
         if rel == ARTIFACTS_DIR or rel.startswith(ARTIFACTS_DIR + "/"):
             raise Refused(
@@ -145,7 +145,7 @@ class ProjectHandle:
                 f"`project.path`: an artifact with no role, status or `why` is "
                 f"a file the next run can do nothing with but read"
             )
-        if not self._owned(rel):
+        if not self.owns_path(rel):
             raise Refused(
                 f"{rel} is not among this route's declared paths "
                 f"({', '.join(self.owns) or 'none'})"
@@ -154,10 +154,20 @@ class ProjectHandle:
         out.parent.mkdir(parents=True, exist_ok=True)
         return out
 
-    def _owned(self, rel: str) -> bool:
+    def owns_path(self, rel: str) -> bool:
+        """Whether `rel` is one of the declared paths, or under a declared
+        directory."""
         return any(
             rel == o or rel.startswith(o.rstrip("/") + "/") for o in self.owns
         )
+
+    def write_files(self, files: Mapping[str, str]) -> None:
+        """Write whole files a route handed back in `InferResult.files`, in
+        the mapping's order, each through `path()`."""
+        for rel, text in files.items():
+            out = self.path(rel)
+            out.write_text(text)
+            print(f"Wrote {out}")
 
 
 @dataclass(frozen=True)
@@ -257,16 +267,21 @@ class InferInput:
 @dataclass(frozen=True)
 class InferResult:
     """What a route answered: SMT-LIB in `cert`, or Lean in `lean` for the
-    one row that answers in Lean (`returns="lean"`). Neither is the answer
-    of a route that installed the certificate itself (`returns="installed"`).
+    one row that answers in Lean (`returns="lean"`). A route whose answer is
+    a certificate it produced whole hands back `files` instead and no
+    predicates (`returns="files"`).
+
+    `files` are whole files by project-relative path, which the pipeline
+    writes; each has to be a path the row owns.
     """
 
     cert: Certificate = Certificate()
     lean: LeanAnswer | None = None
+    files: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def empty(self) -> bool:
-        return self.cert.empty and self.lean is None
+        return self.cert.empty and self.lean is None and not self.files
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -371,7 +386,9 @@ class InferRoute:
     #                obligations from them
     # "lean"       -- Lean text only, and nothing parses it back, so the
     #                obligations cannot be restated
-    # "installed"  -- the route wrote the certificate into the project itself
+    # "files"      -- the certificate is a file the route produced, and there
+    #                are no predicates, so `--pre-check` cannot restate the
+    #                obligations
     returns: str = "smt"
     uses_llm: bool = False          # `--model` / `--base-url` are meaningful
     # Whether this route's own refusals already name the flag they are about.
