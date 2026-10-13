@@ -46,7 +46,7 @@ def _module(path: Path):
 
 
 def _context(path: Path, kind: str, prp: str, route: str):
-    from zrth.lean.magic.houdini import Obligations
+    from zrth.lean.smt.obligations import Obligations
     from zrth.lean.smt_synth import SynthContext
 
     ctx = SynthContext.build(_module(path), Claim(prp=prp, kind=kind),
@@ -56,7 +56,7 @@ def _context(path: Path, kind: str, prp: str, route: str):
 
 
 def _candidates(ctx, srcs):
-    from zrth.lean.magic.houdini import Candidate
+    from zrth.lean.smt.obligations import Candidate
 
     return [Candidate(s, ctx.env.parse_expr(s)) for s in srcs]
 

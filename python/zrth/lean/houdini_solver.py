@@ -54,6 +54,7 @@ from enum import Enum
 from fractions import Fraction
 
 from .common import Refused
+from .smt.obligations import Query
 from .smt.limits import bounded_solver
 from .smt.script import decimals, script
 from .smt.vampire import resolve_vampire, run_vampire
@@ -80,35 +81,6 @@ class Verdict(Enum):
     PROVED = "proved"
     REFUTED = "refuted"
     UNKNOWN = "unknown"
-
-
-@dataclass(frozen=True)
-class Query:
-    """One obligation: named hypotheses, a goal, and the round they read.
-
-    `defines` states the round once -- the successor state over the latched
-    state and the inputs -- so a query about twenty facts carries the
-    transition once rather than twenty times.
-
-    `probes` are the goal's conjuncts under their own names.  A solver that
-    returns a counter-model reports which of them that model falsifies; one
-    that does not, ignores them.  They are deliberately outside `key`: the
-    same obligation asked with and without probes is the same question, and
-    a cached answer that already carries what the caller wants is reused.
-    """
-
-    hyps: tuple[tuple[str, object], ...]
-    goal: object
-    defines: tuple[tuple[object, object], ...] = ()
-    probes: tuple[tuple[str, object], ...] = ()
-    # Terms whose values a counter-model is read at -- the state and its
-    # successor, for an obligation whose refutation is a round to learn
-    # from. Outside `key` for the reason `probes` are.
-    witness: tuple = ()
-
-    @property
-    def key(self):
-        return (self.hyps, self.goal, self.defines)
 
 
 @dataclass(frozen=True)

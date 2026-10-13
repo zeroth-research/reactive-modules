@@ -93,8 +93,8 @@ from dataclasses import dataclass
 
 from ..smt.limits import bounded_solver, call_ms
 from ..smt.script import decimals
+from ..smt.obligations import Obligations
 from ..smt_prompt import parse_predicate
-from .houdini import Obligations, split_conditions
 from ..smt_synth import (
     Search,
     SynthContext,
@@ -105,6 +105,7 @@ from ..smt_synth import (
     program_rationals,
     readings,
     record,
+    split_conditions,
 )
 
 try:
@@ -315,7 +316,7 @@ class TA2MagicLinear(TA2Magic):
           property's state has no linear rank and has this one:
           `(ite (= s0 0) 0 (- 11 s0))` on `m_step2`.
         * **two pieces**, `(ite c r1 r2)`, `c` one of the conditions the
-          property and the transition branch on (`houdini.split_conditions`),
+          property and the transition branch on (`smt_synth.split_conditions`),
           for a rank that falls through a different quantity on each side --
           `(ite (<= 0 s1) s0 (- s1))`.
         """

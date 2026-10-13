@@ -48,12 +48,13 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from fractions import Fraction
+from typing import TYPE_CHECKING
 
 from .certificate import Claim
 from .common import Refused
 from .smt.record import found, note
-from .smt.script import smt_int
-from .smt.terms import literals
+from .smt.script import decimals, smt_int, smt_lit
+from .smt.terms import free_constants, literals, nodes
 
 try:
     import cvc5                                      # type: ignore
@@ -61,6 +62,9 @@ try:
 except ImportError:                                  # pragma: no cover
     cvc5 = None
     Kind = None
+
+if TYPE_CHECKING:
+    from .smt.obligations import Obligations
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -298,6 +302,41 @@ def element(ctx: "SynthContext", i: int, slot: "int | None") -> tuple:
             ctx.tm.mkTerm(Kind.APPLY_SELECTOR, ctor[slot].getTerm(), var))
 
 
+@dataclass(frozen=True)
+class Column:
+    """One scalar a candidate or a ranking function may be stated over.
+
+    A scalar component is its own column. A matrix-shaped one is a column
+    per element -- `((_ tuple.select k) s0)`, the spelling `smt_to_lean`
+    renders and a property already uses -- which is what lets a fact be
+    said about `v[0]` when the component it lives in is a 3-vector. Without
+    it the only sayable facts are about the whole tuple, and there are
+    none: a tuple has no order to bound and no arithmetic to relate.
+
+    `sort` is the *element's*, never the component's, because everything
+    downstream branches on it -- an integer column is bounded by program
+    constants, a Real one by rationals and pinned to the values a run
+    takes, a Bool one splits a fact in two.
+    """
+
+    src: str                        # SMT-LIB over `s0..`
+    sort: object                    # the element's cvc5 sort
+    index: int                      # which component it reads
+    slot: "int | None"              # which element of it, or the whole thing
+
+    def at(self, state):
+        """This column's value in a simulated state."""
+        v = state[self.index]
+        return v if self.slot is None else v[self.slot]
+
+
+def columns(ctx: "SynthContext") -> list[Column]:
+    """Every scalar this module's state is made of, in certificate order."""
+    return [Column(element(ctx, i, slot)[0], srt, i, slot)
+            for i in range(len(ctx.state))
+            for slot, srt in component_slots(ctx, i)]
+
+
 def component_readings(ctx: "SynthContext", i: int, *, scale: int = 1,
                        floor_reals: bool = True) -> list[Reading]:
     """Every arithmetic reading of state component `i`, in column order.
@@ -407,6 +446,47 @@ def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
             f"value, and `--infer ai-cegis` reads whatever cvc5 encodes."
         )
     return out
+
+
+# The most branch conditions `split_conditions` offers.
+_MAX_SPLITS = 24
+
+
+def split_conditions(ctx: "SynthContext", ob: "Obligations") -> list[str]:
+    """What a piecewise ranking function may branch on, as SMT-LIB over `s0..`.
+
+    First the comparisons the property and the transition branch on -- where
+    a run changes what it does, and so where the quantity that falls changes
+    too -- then each Bool column, the sign of each integer one, and the
+    order of each pair: `max(y, z) - x` falls on `while (x < y) {x++; y = z}`
+    and is `(ite (<= y z) (- z x) (- y x))`, a branch the program never
+    spells.
+    """
+    out: list[str] = []
+    state = set(ctx.names)
+    roots = [ctx.prp] + [t.substitute(ob.s, ctx.state) for t in ob.next]
+    # In this order: the list is cut at `_MAX_SPLITS`.
+    for t in nodes(roots, order="lifo"):
+        k = t.getKind()
+        kids = list(t)
+        if k in (Kind.LT, Kind.LEQ, Kind.GT, Kind.GEQ) or (
+            k == Kind.EQUAL and kids
+            and (kids[0].getSort().isInteger() or kids[0].getSort().isReal())
+        ):
+            if set(free_constants([t])) <= state:
+                out.append(decimals(str(t)))
+    cols = columns(ctx)
+    ints = [c for c in cols if c.sort.isInteger()]
+    reals = [c for c in cols if c.sort.isReal()]
+    for col in cols:
+        if col.sort.isBoolean():
+            out.append(col.src)
+        else:
+            out.append(f"(<= {smt_lit(0, col.sort)} {col.src})")
+    for group in (ints, reals):
+        out += [f"(<= {x.src} {y.src})"
+                for a, x in enumerate(group) for y in group[a + 1:]]
+    return list(dict.fromkeys(out))[:_MAX_SPLITS]
 
 
 # ══════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,122 @@
+"""Which module may import what, read off the source.
+
+A route is a module of `zrth.lean.magic` that defines a `TA2Magic`: what two
+routes share lives under `zrth.lean.smt` or in `smt_synth`, never in one of
+them. And a name with a leading underscore is its module's own: no module of
+the SMT layer imports one from another, nor reads one off an imported
+module. The Lean code generators are not held to the second rule yet
+(review item CG-9).
+"""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import pytest
+
+LEAN = Path(__file__).parent.parent / "zrth" / "lean"
+MAGIC = LEAN / "magic"
+
+# The SMT layer: every module a decision procedure is built from.
+SMT_LAYER = sorted(
+    [*MAGIC.glob("*.py"), *(LEAN / "smt").glob("*.py")]
+    + [LEAN / f"{name}.py" for name in (
+        "houdini_solver", "infer_route", "smt_encode", "smt_module",
+        "smt_prompt", "smt_query", "smt_synth")]
+)
+
+
+def _tree(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(), filename=str(path))
+
+
+def _package(path: Path) -> list[str]:
+    """`path`'s package as a dotted list: `["zrth", "lean", "magic"]`."""
+    return ["zrth", *path.parent.relative_to(LEAN.parent).parts]
+
+
+def _imports(path: Path):
+    """`(module, name, bound, line)` for every import in `path`, the module
+    absolute.
+
+    `name` is what a `from` import takes out of `module`, and `None` for a
+    plain `import`; `bound` is the name the import binds in `path`."""
+    pkg = _package(path)
+    for node in ast.walk(_tree(path)):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                yield a.name, None, a.asname or a.name.split(".")[0], node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                base = pkg[:len(pkg) - node.level + 1]
+                module = ".".join(base + ([node.module] if node.module else []))
+            else:
+                module = node.module or ""
+            for a in node.names:
+                yield module, a.name, a.asname or a.name, node.lineno
+
+
+def _is_route(path: Path) -> bool:
+    return any(
+        isinstance(node, ast.ClassDef)
+        and any(isinstance(b, ast.Name) and b.id == "TA2Magic" for b in node.bases)
+        for node in ast.walk(_tree(path))
+    )
+
+
+ROUTES = {f"zrth.lean.magic.{p.stem}" for p in MAGIC.glob("*.py") if _is_route(p)}
+
+
+def _private(name: str) -> bool:
+    return name.startswith("_") and not name.startswith("__")
+
+
+def _name(path: Path) -> str:
+    return str(path.relative_to(LEAN))
+
+
+# Open: review item RT-9.
+_OPEN = {MAGIC / "cegar.py": "cegar builds its LLM client with ai's private helpers"}
+
+
+def _cases(paths):
+    return [pytest.param(p, id=_name(p), marks=(
+        [pytest.mark.xfail(strict=True, reason=_OPEN[p])] if p in _OPEN else []))
+        for p in paths]
+
+
+def test_the_routes_are_found():
+    assert {r.rsplit(".", 1)[1] for r in ROUTES} >= {
+        "ai", "cegar", "houdini", "learn", "linear", "sygus", "vampire"}
+
+
+@pytest.mark.parametrize("path", _cases(sorted(MAGIC.glob("*.py"))))
+def test_no_route_imports_another(path):
+    me = f"zrth.lean.magic.{path.stem}"
+    bad = []
+    for module, name, _, line in _imports(path):
+        target = f"{module}.{name}" if name and f"{module}.{name}" in ROUTES else module
+        if target in ROUTES and target != me:
+            bad.append(f"{_name(path)}:{line} imports {target}")
+    assert not bad, "\n".join(bad)
+
+
+@pytest.mark.parametrize("path", _cases(SMT_LAYER))
+def test_no_private_name_crosses_a_module(path):
+    bad = []
+    imported = set()
+    for module, name, bound, line in _imports(path):
+        if not module.startswith("zrth"):
+            continue
+        imported.add(bound)
+        if name and _private(name):
+            bad.append(f"{_name(path)}:{line} imports {module}.{name}")
+    # `mod._name`, where `mod` is a module or a name this one imported.
+    for node in ast.walk(_tree(path)):
+        if (isinstance(node, ast.Attribute) and _private(node.attr)
+                and isinstance(node.value, ast.Name)
+                and node.value.id in imported):
+            bad.append(f"{_name(path)}:{node.lineno} reads "
+                       f"{node.value.id}.{node.attr}")
+    assert not bad, "\n".join(bad)

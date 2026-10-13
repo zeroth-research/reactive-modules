@@ -77,8 +77,9 @@ def infer(name: str, kind: str, prp: str, *, solver="cvc5",
 def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A route mid-flight: its context, obligations and candidate parser,
     without a search having been run. What the seam's cases ask about."""
-    from zrth.lean.magic.houdini import Obligations, TA2MagicHoudini, columns
-    from zrth.lean.smt_synth import SynthContext
+    from zrth.lean.magic.houdini import TA2MagicHoudini
+    from zrth.lean.smt.obligations import Obligations
+    from zrth.lean.smt_synth import SynthContext, columns
 
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"),
                             log=lambda *_: None)

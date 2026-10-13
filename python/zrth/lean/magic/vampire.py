@@ -167,13 +167,14 @@ from ..certificate import Certificate, Claim
 from ..common import Refused
 from ..houdini_solver import DEFAULT_TIMEOUT, Cvc5Solver
 from . import TA2Magic
-from .houdini import Candidate, Obligations, columns
+from ..smt.obligations import Candidate, Obligations
 from ..smt.record import found, note
 from ..smt.script import decimals, script, smt_int
 from ..smt.terms import free_constants, ite_conditions
 from ..smt.vampire import run_vampire
 from ..smt_synth import (
     SynthContext,
+    columns,
     denominator_scale,
     floor_real,
     floor_real_src,

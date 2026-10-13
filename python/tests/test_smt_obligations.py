@@ -32,7 +32,7 @@ def _module(name: str):
 
 def _clamps():
     """`(name, tm, clamp)` for each clamp a route states `hrank` with."""
-    from zrth.lean.magic.houdini import Obligations
+    from zrth.lean.smt.obligations import Obligations
     from zrth.lean.smt_query import ModuleQueries
     from zrth.lean.smt_synth import SynthContext
 
