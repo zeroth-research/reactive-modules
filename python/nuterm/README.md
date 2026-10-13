@@ -23,6 +23,22 @@ The procedure is sound but incomplete.
 | `_lean_check.py` | Compiles the proof with `lake`. |
 | `lean/` | The Lean library the proofs build on. |
 
+## Run on a file
+
+```sh
+python -m nuterm FILE.py                # train and verify
+python -m nuterm FILE.py --lean         # also kernel-check the proof
+python -m nuterm FILE.py --export out/  # write the proof as its own Lean project
+```
+
+`FILE.py` defines `module()`, which returns a `zrth.Module`. Or it defines
+`BENCH`, a `Bench`. For a module, state is named `s0..` and inputs `e0..`.
+See `tests/test_nuterm_cli.py` for an example. The exit code is 0 only if
+every file is verified.
+
+`--lean` and `--export` need `lake` on `PATH`. Proofs are written to
+`nuterm/lean/proofs/<name>/`.
+
 ## Run on the benchmarks
 
 The SV-COMP corpus is in `tests/benchmarks/svcomp/`. Run from `python/`:
@@ -35,16 +51,13 @@ python -m tests.benchmarks.svcomp --lean --jobs 4  # four in flight
 python -m tests.benchmarks.svcomp --export out/    # each proof as its own project
 ```
 
-`--lean` and `--export` need `lake` on `PATH`. Proofs are written to
-`nuterm/lean/proofs/<name>/`.
-
 Check that the encodings match the C sources:
 
 ```sh
 python -m tests.benchmarks.svcomp._equiv
 ```
 
-## Run on your own program
+## Use from Python
 
 Build a `Bench`. Copy `tests/benchmarks/svcomp/dsl/_template.py` for the
 conventions.

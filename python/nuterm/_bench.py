@@ -55,3 +55,12 @@ class Bench:
     inputs: tuple[str, ...]
     build: Callable[[], BuildResult]
     precondition: Callable[[dict], list] | None = None
+
+
+def bench_of_module(module, name: str, source: str = "") -> Bench:
+    """A :class:`Bench` for a ready-made module: its ctrl variables are named
+    ``s0..``, its extl variables ``e0..``, in declaration order."""
+    ctrl = {f"s{i}": v for i, v in enumerate(module.ctrl)}
+    extl = {f"e{i}": v for i, v in enumerate(module.extl)}
+    return Bench(name=name, source=source, state=tuple(ctrl), inputs=tuple(extl),
+                 build=lambda: (module, ctrl, extl))
