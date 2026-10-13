@@ -9,7 +9,7 @@ expressions, cvc5 verifies, counterexamples are fed back to the LLM.
 # `TA2MagicCEGAR` out of `magic/cegar.py` and prints `[CEGAR] attempt 0`.
 # What the rename has to reach, together, in one commit:
 #   * this module (-> `magic/cegis.py`), `TA2MagicCEGAR`, the docstring above,
-#     and the `magic.cegar` mentions in `infer_route.py`, `smt_synth.py` and
+#     and the `magic.cegar` mentions in `infer_route/`, `smt_synth.py` and
 #     `magic/sygus.py`;
 #   * `smt_prompt.CegarPromptEnv`, `CEGAR_GENERATE_SYSTEM`,
 #     `CEGAR_SAFETY_SYSTEM` and the `"cegar"` parser tag -- `smt_synth.py`,

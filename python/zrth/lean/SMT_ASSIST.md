@@ -504,7 +504,8 @@ has that shape, so each one costs a `split_ifs` branch, doubled because
 **Step 6 — "fall back to `--infer ai-cegis`" — was not built, deliberately.**
 A route is a row and routes do not chain: a route that silently becomes
 another one makes two identical command lines mean different things, which
-is the argument `_resume_inv` already makes about inheriting a predicate.
+is the argument `InferInput.resumable_inv` already makes about inheriting
+a predicate.
 The handoff is through `artifacts/` instead, which is explicit, inspectable
 and survives the process.
 

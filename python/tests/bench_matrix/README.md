@@ -33,7 +33,7 @@ matrix cannot survive.
 ### The routes
 
 The `--infer` routes of
-[`zrth/lean/infer_route.py`](../../zrth/lean/infer_route.py), one column each
+[`zrth/lean/infer_route/`](../../zrth/lean/infer_route/), one column each
 -- except `houdini`, which is two: the same proposals decided by cvc5
 (`houdini`) or refuted by Vampire (`houdini-vampire`), so a cell where one
 succeeds and the other times out says which half of the route the difference
@@ -429,6 +429,6 @@ compare_certs.py  what the routes found, compared as formulas not as text
 ```
 
 The page's prose is generated too: the method cards are each route's own
-`summary` from `infer_route.py`, so the page cannot drift from what
+`summary` from `infer_route/`, so the page cannot drift from what
 `--infer` accepts, and the machine block and every timing come from
 `results.json`.
